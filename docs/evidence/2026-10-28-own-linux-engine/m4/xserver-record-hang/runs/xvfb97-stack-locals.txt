@@ -1,0 +1,90 @@
+Using host libthread_db library "/lib/x86_64-linux-gnu/libthread_db.so.1".
+0x00007f35f1b29af4 in __GI___writev (fd=13, iov=iov@entry=0x7ffc73217c20, iovcnt=iovcnt@entry=0) at ../sysdeps/unix/sysv/linux/writev.c:26
+#0  0x00007f35f1b29af4 in __GI___writev (fd=13, iov=iov@entry=0x7ffc73217c20, iovcnt=iovcnt@entry=0) at ../sysdeps/unix/sysv/linux/writev.c:26
+#1  0x0000632b1f98b9b0 in _XSERVTransSocketWritev (ciptr=0x632b31618050, buf=0x7ffc73217c20, size=<optimized out>) at /usr/include/X11/Xtrans/Xtranssock.c:2228
+#2  0x0000632b1f98613f in FlushClient (who=0x632b316180c0, oc=0x632b3138d2e0, __extraBuf=__extraBuf@entry=0x0, extraCount=extraCount@entry=0) at ../../../../os/io.c:891
+#3  0x0000632b1f98655c in FlushAllOutput () at ../../../../os/io.c:634
+#4  FlushAllOutput () at ../../../../os/io.c:612
+#5  0x0000632b1f92a095 in Dispatch () at ../../../../dix/dispatch.c:577
+#6  0x0000632b1f92e40a in dix_main (argc=9, argv=<optimized out>, envp=<optimized out>) at ../../../../dix/main.c:274
+#7  0x00007f35f1a2a1ca in __libc_start_call_main (main=main@entry=0x632b1f836d50 <main>, argc=argc@entry=9, argv=argv@entry=0x7ffc73217ea8) at ../sysdeps/nptl/libc_start_call_main.h:58
+#2  0x0000632b1f98613f in FlushClient (who=0x632b316180c0, oc=0x632b3138d2e0, __extraBuf=__extraBuf@entry=0x0, extraCount=extraCount@entry=0) at ../../../../os/io.c:891
+before = <optimized out>
+remain = <optimized out>
+i = <optimized out>
+len = <optimized out>
+oco = 0x632b3138d1b0
+trans_conn = <optimized out>
+iov = {{iov_base = 0x7ffc73217c60, iov_len = 109037160129376}, {iov_base = 0x632b316d9098, iov_len = 16365727124191494144}, {iov_base = 0x0, iov_len = 109037160129376}}
+padBuffer = "\000\000"
+extraBuf = 0x0
+written = 0
+padsize = 0
+notWritten = 50184
+todo = 50184
+$1 = (ConnectionOutputPtr) 0x0
+$2 = {next = 0x632d03d2847d, buf = 0xe4e282d55d242113 <error: Cannot access memory at address 0xe4e282d55d242113>, size = 50292, count = 0}
+$3 = 6
+$4 = 12582912
+[Inferior 1 (process 2322011) detached]
+---
+Using host libthread_db library "/lib/x86_64-linux-gnu/libthread_db.so.1".
+0x00007f35f1b29af4 in __GI___writev (fd=13, iov=iov@entry=0x7ffc73217c20, iovcnt=iovcnt@entry=0) at ../sysdeps/unix/sysv/linux/writev.c:26
+#0  0x00007f35f1b29af4 in __GI___writev (fd=13, iov=iov@entry=0x7ffc73217c20, iovcnt=iovcnt@entry=0) at ../sysdeps/unix/sysv/linux/writev.c:26
+#1  0x0000632b1f98b9b0 in _XSERVTransSocketWritev (ciptr=0x632b31618050, buf=0x7ffc73217c20, size=<optimized out>) at /usr/include/X11/Xtrans/Xtranssock.c:2228
+#2  0x0000632b1f98613f in FlushClient (who=0x632b316180c0, oc=0x632b3138d2e0, __extraBuf=__extraBuf@entry=0x0, extraCount=extraCount@entry=0) at ../../../../os/io.c:891
+#3  0x0000632b1f98655c in FlushAllOutput () at ../../../../os/io.c:634
+#4  FlushAllOutput () at ../../../../os/io.c:612
+#5  0x0000632b1f92a095 in Dispatch () at ../../../../dix/dispatch.c:577
+#6  0x0000632b1f92e40a in dix_main (argc=9, argv=<optimized out>, envp=<optimized out>) at ../../../../dix/main.c:274
+#7  0x00007f35f1a2a1ca in __libc_start_call_main (main=main@entry=0x632b1f836d50 <main>, argc=argc@entry=9, argv=argv@entry=0x7ffc73217ea8) at ../sysdeps/nptl/libc_start_call_main.h:58
+#2  0x0000632b1f98613f in FlushClient (who=0x632b316180c0, oc=0x632b3138d2e0, __extraBuf=__extraBuf@entry=0x0, extraCount=extraCount@entry=0) at ../../../../os/io.c:891
+before = <optimized out>
+remain = <optimized out>
+i = <optimized out>
+len = <optimized out>
+oco = 0x632b3138d1b0
+trans_conn = <optimized out>
+iov = {{iov_base = 0x7ffc73217c60, iov_len = 109037160129376}, {iov_base = 0x632b316d9098, iov_len = 16365727124191494144}, {iov_base = 0x0, iov_len = 109037160129376}}
+padBuffer = "\000\000"
+extraBuf = 0x0
+written = 0
+padsize = 0
+notWritten = 50184
+todo = 50184
+$1 = (ConnectionOutputPtr) 0x0
+$2 = {next = 0x632d03d2847d, buf = 0xe4e282d55d242113 <error: Cannot access memory at address 0xe4e282d55d242113>, size = 50292, count = 0}
+$3 = 6
+$4 = 12582912
+[Inferior 1 (process 2322011) detached]
+---
+Using host libthread_db library "/lib/x86_64-linux-gnu/libthread_db.so.1".
+0x00007f35f1b29af4 in __GI___writev (fd=13, iov=iov@entry=0x7ffc73217c20, iovcnt=iovcnt@entry=0) at ../sysdeps/unix/sysv/linux/writev.c:26
+#0  0x00007f35f1b29af4 in __GI___writev (fd=13, iov=iov@entry=0x7ffc73217c20, iovcnt=iovcnt@entry=0) at ../sysdeps/unix/sysv/linux/writev.c:26
+#1  0x0000632b1f98b9b0 in _XSERVTransSocketWritev (ciptr=0x632b31618050, buf=0x7ffc73217c20, size=<optimized out>) at /usr/include/X11/Xtrans/Xtranssock.c:2228
+#2  0x0000632b1f98613f in FlushClient (who=0x632b316180c0, oc=0x632b3138d2e0, __extraBuf=__extraBuf@entry=0x0, extraCount=extraCount@entry=0) at ../../../../os/io.c:891
+#3  0x0000632b1f98655c in FlushAllOutput () at ../../../../os/io.c:634
+#4  FlushAllOutput () at ../../../../os/io.c:612
+#5  0x0000632b1f92a095 in Dispatch () at ../../../../dix/dispatch.c:577
+#6  0x0000632b1f92e40a in dix_main (argc=9, argv=<optimized out>, envp=<optimized out>) at ../../../../dix/main.c:274
+#7  0x00007f35f1a2a1ca in __libc_start_call_main (main=main@entry=0x632b1f836d50 <main>, argc=argc@entry=9, argv=argv@entry=0x7ffc73217ea8) at ../sysdeps/nptl/libc_start_call_main.h:58
+#2  0x0000632b1f98613f in FlushClient (who=0x632b316180c0, oc=0x632b3138d2e0, __extraBuf=__extraBuf@entry=0x0, extraCount=extraCount@entry=0) at ../../../../os/io.c:891
+before = <optimized out>
+remain = <optimized out>
+i = <optimized out>
+len = <optimized out>
+oco = 0x632b3138d1b0
+trans_conn = <optimized out>
+iov = {{iov_base = 0x7ffc73217c60, iov_len = 109037160129376}, {iov_base = 0x632b316d9098, iov_len = 16365727124191494144}, {iov_base = 0x0, iov_len = 109037160129376}}
+padBuffer = "\000\000"
+extraBuf = 0x0
+written = 0
+padsize = 0
+notWritten = 50184
+todo = 50184
+$1 = (ConnectionOutputPtr) 0x0
+$2 = {next = 0x632d03d2847d, buf = 0xe4e282d55d242113 <error: Cannot access memory at address 0xe4e282d55d242113>, size = 50292, count = 0}
+$3 = 6
+$4 = 12582912
+[Inferior 1 (process 2322011) detached]
+---

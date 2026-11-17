@@ -1,0 +1,24 @@
+== head ed5bf1bc1384859cb19fd4d3b910da241ebad2e1; home <home>; DISPLAY=:1; bus unix:path=/Users/new/.local/share/cua-171/task80/logs/accept/desktop/session/bus/dbus-Z2yzYcGR5b,guid=b4592fab9a13fa9cc0e257e96af8c5fa
+install exit 0
+-rwxr-xr-x 1 new new 2134880 Nov 14 12:35 <home>/cua/engine/linux/cua-engine
+<home>/cua/engine/linux/cua-engine: ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), static-pie linked, BuildID[sha1]=291b1b029197dd9d4a1738faf2594dbdf6bdd495, stripped
+cua-engine 0.4.0 (c55c8e08d9cb)
+sha256 751ec9be45e1f5b8e10fc3aa0a4695f785ecb12a44acd5b069374926ba383cca
+pin    751ec9be45e1f5b8e10fc3aa0a4695f785ecb12a44acd5b069374926ba383cca (linux-engine-v0.4.0)
+== install.json
+{
+  "schema": 1,
+  "build": "pinned",
+  "version": "0.4.0",
+  "release": "linux-engine-v0.4.0",
+  "sha256": "751ec9be45e1f5b8e10fc3aa0a4695f785ecb12a44acd5b069374926ba383cca",
+  "source": "https://github.com/SSFSKIM/cua/releases/download/linux-engine-v0.4.0/cua-engine-0.4.0-linux-x64",
+  "installedAt": "2026-11-14T20:35:34.804Z"
+}
+
+== CUA_NATIVE_ENGINE=cua node scripts/accept/linux-native.mjs (no CUA_LINUX_ENGINE_BIN) under the 50 ms sampler
+fixture exit 0
+watch: exit 0, 3355 samples, sky_linux at most 0, 2 cua-engine process(es)
+== cua-engine processes of this home left: 0
+home removed
+private-desktop: :1 session; command exit 0; watchdog clean

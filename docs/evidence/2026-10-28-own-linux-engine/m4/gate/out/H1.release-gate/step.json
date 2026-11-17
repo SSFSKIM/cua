@@ -1,0 +1,41 @@
+{
+  "label": "release gate",
+  "step": "H1",
+  "pilot": false,
+  "what": "T17's Electron cells: plain drags and handles, the controls, the four releases off the window",
+  "display": "private",
+  "load": "idle",
+  "minutes": 22,
+  "run_name": "m4-gate-H1",
+  "checkout": {
+    "root": "/Users/new/Developer/GitHub/cua/.claude/worktrees/t76-gate/",
+    "commit": "514f5c62dd6c74b1ed24c48f112ca9c35a70eece",
+    "clean": true
+  },
+  "candidate": {
+    "path": "/Users/new/.local/share/cua-171/gate/artifact/cua-engine-0.4.0-linux-x64",
+    "sha256": "f7c12e9bc2ca415050c9dd0f955012aedc3f5d0e1fbcd8661daea7bee0b83937"
+  },
+  "command": "/Users/new/.local/share/cua-171/locked.sh t18-gate /usr/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/t76-gate/scripts/linux-engine-gate/gate.mjs run H1 --candidate /Users/new/.local/share/cua-171/gate/artifact/cua-engine-0.4.0-linux-x64 --out /Users/new/.local/share/cua-171/gate/out",
+  "argv": [
+    "scripts/linux-engine-diff.mjs",
+    "--experiment",
+    "drop-signals",
+    "--family",
+    "electron",
+    "--plan",
+    "t17-fix3",
+    "--cua",
+    "/Users/new/.local/share/cua-171/gate/artifact/cua-engine-0.4.0-linux-x64",
+    "--run",
+    "m4-gate-H1",
+    "--gate",
+    "--out",
+    "/Users/new/.local/share/cua-171/gate/out/H1.release-gate/run"
+  ],
+  "started": "2026-11-13T17:57:53.861Z",
+  "finished": "2026-11-13T18:15:45.286Z",
+  "exit": 0,
+  "child_exit": 0,
+  "display_watchdog": "clean"
+}

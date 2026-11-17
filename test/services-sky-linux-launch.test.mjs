@@ -84,7 +84,7 @@ test('Linux launch_app in any other shape goes to the vendor unchanged once the 
 // and drop (or a failed watch) the engine has not reported yet is then the launch's answer, and nothing is launched.
 // The vendor's service has no preflight, and nothing changes there (the tests above).
 test('Linux launch_app through cua\'s own Linux service: a pending late drag-and-drop notice is the launch\'s answer and nothing is launched; without one it launches', async t => {
-  const notice = 'Google-chrome started a drag and drop after your drag ended; it may have dropped and changed the desktop; this request was not run, so read the window before sending it again';
+  const notice = 'Pending from your last drag, a late drag and drop: Google-chrome started a drag and drop after your drag into it ended, so the drag did not end as it answered; it may have dropped and changed the desktop; this preflight request was not run, so read the window before sending it again';
   const engine = fakeLinuxEngine(t);
   const pending = join(engine.dir, 'pending');
   engine.behave(`import {existsSync, unlinkSync} from 'node:fs';

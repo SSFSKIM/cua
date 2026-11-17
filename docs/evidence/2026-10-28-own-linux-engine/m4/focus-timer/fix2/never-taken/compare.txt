@@ -1,0 +1,18 @@
+== proxied-1: proxy :42, runs 6, outcomes {'never-taken': 3, 'ok': 3}
+      3  ('never-taken', 'targets after dispatch', 'no data asked')
+      3  ('ok', 'targets at or before dispatch', 'data asked')
+   ok runs: confirm_ms median 22.6 (p90 26.6); answered_ms median 156.3
+== proxied-2: proxy :43, runs 60, outcomes {'ok': 33, 'never-taken': 27}
+     13  ('never-taken', 'targets after dispatch', 'no data asked')
+     14  ('never-taken', 'targets at or before dispatch', 'no data asked')
+     33  ('ok', 'targets at or before dispatch', 'data asked')
+   ok runs: confirm_ms median 24.9 (p90 38.4); answered_ms median 190.4
+== direct-1: proxy None, runs 6, outcomes {'ok': 6}
+      6  ('ok', 'targets at or before dispatch', 'data asked')
+   ok runs: confirm_ms median 24.7 (p90 28.8); answered_ms median 204.6
+== direct-2: proxy None, runs 200, outcomes {'ok': 178, 'never-taken': 21, 'other': 1}
+     12  ('never-taken', 'targets after dispatch', 'no data asked')
+      9  ('never-taken', 'targets at or before dispatch', 'no data asked')
+    178  ('ok', 'targets at or before dispatch', 'data asked')
+      1  ('other', 'targets at or before dispatch', 'data asked')
+   ok runs: confirm_ms median 24.2 (p90 33.1); answered_ms median 192.0

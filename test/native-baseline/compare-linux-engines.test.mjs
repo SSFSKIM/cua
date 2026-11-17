@@ -7,6 +7,7 @@
 // fields an engine-lane run records for the lane it stands for.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
+import {spawnSync} from 'node:child_process';
 import {mkdtempSync, mkdirSync, rmSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
@@ -14,6 +15,7 @@ import {fileURLToPath} from 'node:url';
 import {readRuns} from '../../scripts/native-baseline/summary.mjs';
 import {compareLanes, LINUX_LANE_MODES, renderComparison} from '../../scripts/native-baseline/compare.mjs';
 
+const SCRIPT = fileURLToPath(new URL('../../scripts/native-baseline.mjs', import.meta.url));
 const EVIDENCE = fileURLToPath(new URL('../../docs/evidence/2026-10-14-own-repl-host-native/m5-cua-bench/cua', import.meta.url));
 const REAL = readRuns(EVIDENCE);
 const BIN = '/home/admin/Developer/GitHub/cua-171/native/linux-engine/target/release/cua-engine';
@@ -79,7 +81,8 @@ test('an operation the engine answers fails when cua\'s median is above the vend
   const result = judge(t, triple('vendor'), triple('cua', {scale: {...FASTER, 'warm.getAXState': 1.05}}));
   assert.equal(result.verdict, 'FAIL');
   assert.equal(op(result, 'warm.getAXState').verdict, 'fail');
-  assert.match(op(result, 'warm.getAXState').reasons.join(' '), /above the vendor engine's .* an operation the engine answers/);
+  // 90 samples a side: judged by Acceptance 3's interval rule, a 5% loss reaching past max(5% of the bar, 1 ms)
+  assert.match(op(result, 'warm.getAXState').reasons.join(' '), /bootstrap 95% interval .* of cua's median minus the vendor engine's .* past the bound .* an operation the engine answers/);
   // An operation the engine is not in is judged by the tolerance alone, and listed when cua's median is above.
   const noise = judge(t, triple('vendor'), triple('cua', {scale: {...FASTER, 'warm.noop': 1.05}}));
   assert.equal(op(noise, 'warm.noop').verdict, 'pass');
@@ -131,4 +134,196 @@ test('the Linux comparison refuses the macOS modes, a lane of the wrong engine, 
   const vendorService = judge(t, triple('vendor'), triple('cua', {scale: FASTER, edit: meta => { meta.nativeEngine.observed[0].service = 'vendor'; }}));
   assert.equal(vendorService.verdict, 'NO VERDICT');
   assert.ok(vendorService.problems.some(p => /the vendor service drove the engine, not the cua lane's/.test(p)), JSON.stringify(vendorService.problems));
+});
+
+// #171 M4 T18 (the design session's ruling): the Linux engine comparison judges an operation the engine answers by
+// Acceptance 3's speed rule, the gate's own (scripts/linux-engine-diff/stats.mjs judgeSeriesSpeed over events.mjs
+// medianDifferenceInterval): with at least 20 samples a side, it passes when the upper end of the bootstrap 95% interval
+// of cua's median minus the vendor's is within max(5% of the vendor's median, 1 ms). Its basis is the counted sitting at
+// 8ab1cc75 (docs/evidence/2026-10-28-own-linux-engine/m4/facade/baseline/): warm.getState and warm.listApps, cua's medians
+// 0.3 and 0.4 ms above the vendor's, a tie the old rule (no cua median above) failed.
+const SITTING = fileURLToPath(new URL('../../docs/evidence/2026-10-28-own-linux-engine/m4/facade/baseline/', import.meta.url));
+const sitting = side => readRuns(join(SITTING, side));
+// The old rule failed both ties. Acceptance 3's passes warm.getState's (its interval includes 0 and stays within the
+// 1 ms bound) and leaves warm.listApps's undetermined (its interval includes 0 but reaches past the bound), which at 90
+// samples a side fails.
+test('the counted sitting re-judged by Acceptance 3\'s interval rule: getState\'s tie passes, listApps\'s interval reaches past the bound', () => {
+  const result = compareLanes('engines', sitting('cv'), sitting('cc'));
+  assert.deepEqual(result.problems, []);
+  assert.deepEqual(result.operations.filter(o => o.verdict === 'fail').map(o => o.op), ['warm.listApps']);
+  const state = op(result, 'warm.getState'), apps = op(result, 'warm.listApps');
+  assert.equal(state.verdict, 'pass');
+  assert.deepEqual([state.speed.rule, state.speed.samples, state.speed.label], ['interval', {vendor: 90, cua: 90}, 'same (within noise)']);
+  assert.ok(state.speed.interval[0] <= 0 && state.speed.interval[1] <= state.speed.bound, JSON.stringify(state.speed));
+  assert.equal(apps.speed.label, 'undetermined');
+  assert.ok(apps.speed.interval[0] <= 0 && apps.speed.interval[1] > apps.speed.bound, JSON.stringify(apps.speed));
+  assert.match(apps.reasons.join(' '), /undetermined at 90 samples a side/);
+  for (const name of ['warm.getState', 'warm.listApps']) assert.ok(result.above.some(a => a.op === name && a.engineAnswered), name);
+  // every other operation the engine answers passes, the series with 20 samples or more as faster
+  for (const name of ['warm.getAXState', 'warm.getScreenshot', 'task.act', 'task.verify', 'task.clear', 'task.total']) assert.deepEqual([op(result, name).verdict, op(result, name).speed.label], ['pass', 'faster'], name);
+  for (const name of ['bind.getApp', 'method.typeText', 'method.paste']) assert.deepEqual([op(result, name).verdict, op(result, name).speed.rule], ['pass', 'median'], name);
+  const text = renderComparison(result);
+  assert.match(text, /## Speed of the operations the engine answers/);
+  assert.match(text, /\| warm\.getState \| 90 \/ 90 \|.*\| same \(within noise\) \| pass \|/);
+  assert.match(text, /\| warm\.listApps \| 90 \/ 90 \|.*\| undetermined \| fail \|/);
+  assert.match(text, /- warm\.getState: cua 17\.9 ms, vendor 17\.6 ms \(an operation the engine answers: judged by Acceptance 3's interval rule, pass\)/);
+});
+
+test('a clear cua loss beyond the bound still fails by the interval rule, as does a cua median above on a series too short for it', () => {
+  const slower = sitting('cc').map(run => ({...run, rows: run.rows.map(r => (r.op === 'warm.getState' && r.ok ? {...r, wallMs: r.wallMs + 5} : r))}));
+  const result = compareLanes('engines', sitting('cv'), slower);
+  assert.equal(result.verdict, 'FAIL');
+  const o = op(result, 'warm.getState');
+  assert.equal(o.verdict, 'fail');
+  assert.ok(o.speed.interval[0] > o.speed.bound, JSON.stringify(o.speed));
+  assert.equal(o.speed.label, 'loss');
+  assert.match(o.reasons.join(' '), /bootstrap 95% interval .* of cua's median minus the vendor engine's .* past the bound .*: a loss/);
+  // bind.getApp has 3 samples a side, fewer than the interval rule's 20: it keeps the median rule
+  const bind = sitting('cc').map(run => ({...run, rows: run.rows.map(r => (r.op === 'bind.getApp' && r.ok ? {...r, wallMs: 700} : r))}));
+  const short = compareLanes('engines', sitting('cv'), bind);
+  assert.equal(op(short, 'bind.getApp').verdict, 'fail');
+  assert.equal(op(short, 'bind.getApp').speed.rule, 'median');
+  assert.match(op(short, 'bind.getApp').reasons.join(' '), /above the vendor engine's .* fewer than 20 samples a side/);
+});
+
+// #171 M4 T18, the gate's R2 (the design session, 2026-11-13): Acceptance 3's own remedy for a series the comparison
+// leaves undetermined, built into the comparison. The counted sitting names the series that need it (`topUp.needed`); a
+// comparison given one top-up (three more runs a lane, the same candidate and display) pools exactly those series through
+// the committed rule's own calls, once. Its basis is the facade's own top-up at 8ab1cc75 (m4/facade/baseline-topup/):
+// warm.listApps at 180 a side, pooled by scripts/pool-listapps.mjs to [-0.16, 0.732] ms.
+const TOPUP = fileURLToPath(new URL('../../docs/evidence/2026-10-28-own-linux-engine/m4/facade/baseline-topup/', import.meta.url));
+const topUpSitting = side => readRuns(join(TOPUP, side));
+// The counted sitting's own runs standing in for a top-up of the same session, cua's warm.listApps samples edited.
+const editedTopUp = edit => ({baseline: sitting('cv'), candidate: sitting('cc').map(run => {
+  let i = 0;
+  return {...run, rows: run.rows.map(r => (r.op === 'warm.listApps' && r.ok === true ? {...r, wallMs: edit(r.wallMs, i++)} : r))};
+})});
+
+test('the counted sitting names the undetermined series a top-up would decide, and only those', () => {
+  const result = compareLanes('engines', sitting('cv'), sitting('cc'));
+  assert.deepEqual(result.topUp, {given: false, needed: ['warm.listApps'], pooled: [], undetermined: []});
+  // a series that fails on anything else is no top-up's to decide: a clear loss is final, and so is every other failure
+  const loss = compareLanes('engines', sitting('cv'), sitting('cc').map(run => ({...run, rows: run.rows.map(r => (r.op === 'warm.getAXState' && r.ok ? {...r, wallMs: r.wallMs + 500} : r))})));
+  assert.equal(op(loss, 'warm.getAXState').speed.label, 'loss');
+  assert.deepEqual(loss.topUp.needed, [], 'another failure stands whatever a top-up finds, so none is run');
+  const failed = compareLanes('engines', sitting('cv'), sitting('cc').map(run => ({...run, rows: run.rows.map(r => (r.op === 'task.verify' ? {...r, ok: false, error: 'verify failed'} : r))})));
+  assert.deepEqual(failed.topUp.needed, []);
+  assert.match(renderComparison(result), /## Top-up\n\nUndetermined at the samples of this sitting, and so failing until its one top-up \(three more runs a lane, the same candidate and display\) decides it: warm\.listApps\./);
+});
+
+test('a series undetermined in the counted sitting resolves when pooled with its top-up', () => {
+  const result = compareLanes('engines', sitting('cv'), sitting('cc'), {topUp: {baseline: topUpSitting('cv'), candidate: topUpSitting('cc')}});
+  assert.deepEqual(result.problems, []);
+  assert.equal(result.verdict, 'PASS', JSON.stringify(result.operations.filter(o => o.verdict === 'fail').map(o => [o.op, o.reasons])));
+  const apps = op(result, 'warm.listApps');
+  assert.deepEqual([apps.verdict, apps.speed.verdict, apps.speed.label], ['pass', 'pass', 'same (within noise)']);
+  // the committed rule's own calls over both sittings' samples, as pool-listapps.mjs makes them
+  assert.deepEqual([apps.speed.samples, apps.speed.interval, apps.speed.bound], [{vendor: 180, cua: 180}, [-0.16, 0.732], 1]);
+  assert.deepEqual(apps.speed.toppedUp, {samples: {vendor: 90, cua: 90}, interval: [-0.227, 1.124], bound: 1, label: 'undetermined'});
+  assert.deepEqual(result.topUp, {given: true, needed: [], pooled: ['warm.listApps'], undetermined: []});
+  // a series the counted sitting decided is not pooled: warm.getState stays at its 90 a side
+  assert.deepEqual([op(result, 'warm.getState').speed.samples, op(result, 'warm.getState').speed.toppedUp], [{vendor: 90, cua: 90}, undefined]);
+  const text = renderComparison(result);
+  assert.match(text, /\| warm\.listApps \| 180 \/ 180 \|.*\| \[-0\.16, 0\.732\] \| 1 \| same \(within noise\) \| pass \|/);
+  assert.match(text, /## Top-up\n\nOne top-up, three more runs a lane.*\n\n- warm\.listApps: undetermined at 90 \/ 90, \[-0\.227, 1\.124\] ms; pooled at 180 \/ 180, \[-0\.16, 0\.732\] ms against the bound 1 ms: same \(within noise\), pass/);
+  assert.match(text, /Verdict: \*\*PASS\*\*/);
+});
+
+test('a series still undetermined after its top-up is reported with its interval, and is not a failure', () => {
+  const result = compareLanes('engines', sitting('cv'), sitting('cc'), {topUp: editedTopUp((ms, i) => ms + (i % 2 ? 4 : -4))});
+  assert.deepEqual(result.problems, []);
+  assert.equal(result.verdict, 'PASS', JSON.stringify(result.operations.filter(o => o.verdict === 'fail').map(o => [o.op, o.reasons])));
+  const apps = op(result, 'warm.listApps');
+  assert.deepEqual([apps.verdict, apps.speed.verdict, apps.speed.label], ['pass', 'undetermined', 'undetermined']);
+  assert.ok(apps.speed.interval[0] <= 0 && apps.speed.interval[1] > apps.speed.bound, JSON.stringify(apps.speed));
+  assert.deepEqual(result.topUp.undetermined, [{op: 'warm.listApps', samples: {vendor: 180, cua: 180}, interval: apps.speed.interval, bound: 1}]);
+  assert.deepEqual(result.topUp.needed, [], 'one top-up only: a series still undetermined asks for no second');
+  assert.match(apps.reasons.join(' '), /still undetermined after its one top-up, at 180 samples a side: reported, not a failure/);
+  const text = renderComparison(result);
+  assert.match(text, /\| warm\.listApps \| 180 \/ 180 \|.*\| undetermined \| undetermined \|/);
+  assert.match(text, new RegExp(`Still undetermined after its top-up, reported and not a failure: warm\\.listApps \\[${apps.speed.interval.join(', ').replace(/[.[\]-]/g, '\\$&')}\\] ms against the bound 1 ms\\.`));
+});
+
+test('a series the top-up shows cua slower beyond the bound fails', () => {
+  const result = compareLanes('engines', sitting('cv'), sitting('cc'), {topUp: editedTopUp(ms => ms + 3)});
+  assert.equal(result.verdict, 'FAIL');
+  const apps = op(result, 'warm.listApps');
+  assert.deepEqual([apps.verdict, apps.speed.verdict, apps.speed.label, apps.speed.samples], ['fail', 'fail', 'loss', {vendor: 180, cua: 180}]);
+  assert.ok(apps.speed.interval[0] > 0 && apps.speed.interval[1] > apps.speed.bound, JSON.stringify(apps.speed));
+  assert.match(apps.reasons.join(' '), /pooled with its top-up at 180 samples a side .* a loss/);
+  assert.deepEqual(result.topUp.undetermined, []);
+});
+
+// The review of 2d5cfeb5 (the coordinator, 2026-11-13): a top-up's failed requests must never vanish from the verdict.
+// Its sitting is judged by every rule the counted sitting is (outcomes, verification, method cases, latency), each failure
+// carried into the result, and a series is pooled only when both of its top-up sides lost no sample.
+const failing = (runs, name) => runs.map(run => ({...run, rows: run.rows.map(r => (r.op === name ? {...r, ok: false, error: 'the request failed'} : r))}));
+test('a top-up whose candidate warm.listApps requests all failed fails, never pooling to a passing interval', () => {
+  const result = compareLanes('engines', sitting('cv'), sitting('cc'), {topUp: {baseline: topUpSitting('cv'), candidate: failing(topUpSitting('cc'), 'warm.listApps')}});
+  assert.equal(result.verdict, 'FAIL');
+  const apps = op(result, 'warm.listApps');
+  assert.equal(apps.verdict, 'fail');
+  assert.match(apps.reasons.join(' '), /top-up: 0\/90 succeeded, the baseline 90\/90/);
+  assert.match(apps.reasons.join(' '), /not pooled: its top-up's candidate lost 90 of 90 samples/);
+  assert.equal(apps.speed.verdict, 'fail');
+  assert.equal(apps.speed.toppedUp, undefined, 'the series was not pooled');
+  assert.deepEqual(apps.speed.samples, {vendor: 90, cua: 90});
+  assert.deepEqual(result.topUp.pooled, []);
+});
+
+test('a top-up whose task.verify requests all failed fails the comparison, though the counted sitting\'s verify passed', () => {
+  const result = compareLanes('engines', sitting('cv'), sitting('cc'), {topUp: {baseline: topUpSitting('cv'), candidate: failing(topUpSitting('cc'), 'task.verify')}});
+  assert.equal(result.verdict, 'FAIL');
+  const verify = op(result, 'task.verify');
+  assert.equal(verify.verdict, 'fail');
+  assert.match(verify.reasons.join(' '), /top-up: 0\/30 succeeded, the baseline 30\/30/);
+  // the undetermined series itself was clean on both sides, so it is still pooled and judged
+  assert.deepEqual(op(result, 'warm.listApps').speed.samples, {vendor: 180, cua: 180});
+});
+
+test('a series whose top-up lost a sample on either side is not pooled, even when both sides lost alike', () => {
+  const one = runs => runs.map((run, k) => ({...run, rows: run.rows.map(r => (k === 0 && r.op === 'warm.listApps' && r.sample === run.rows.find(x => x.op === 'warm.listApps').sample ? {...r, ok: false, error: 'the request failed'} : r))}));
+  const result = compareLanes('engines', sitting('cv'), sitting('cc'), {topUp: {baseline: one(topUpSitting('cv')), candidate: one(topUpSitting('cc'))}});
+  assert.equal(result.verdict, 'FAIL');
+  const apps = op(result, 'warm.listApps');
+  assert.equal(apps.verdict, 'fail');
+  assert.match(apps.reasons.join(' '), /not pooled: its top-up's baseline lost 1 of 90 samples .* candidate lost 1 of 90/);
+  assert.deepEqual(result.topUp.pooled, []);
+});
+
+test('at most one top-up: it pools each undetermined series once, must match its sitting, and is Linux\'s alone', () => {
+  // the pooled series is the counted sitting's samples and one top-up's, never more: a second top-up has no way in
+  const result = compareLanes('engines', sitting('cv'), sitting('cc'), {topUp: {baseline: topUpSitting('cv'), candidate: topUpSitting('cc')}});
+  assert.equal(op(result, 'warm.listApps').speed.samples.cua, 180);
+  assert.throws(() => compareLanes('engines', sitting('cv'), sitting('cc'), {topUp: [{baseline: topUpSitting('cv'), candidate: topUpSitting('cc')}]}), /one top-up/);
+  // a top-up of another candidate, or one incomplete, decides nothing: no verdict
+  const other = compareLanes('engines', sitting('cv'), sitting('cc'), {topUp: {baseline: topUpSitting('cv'), candidate: topUpSitting('cc').map(run => ({...run, meta: {...run.meta, commit: 'f'.repeat(40)}}))}});
+  assert.equal(other.verdict, 'NO VERDICT');
+  assert.ok(other.problems.some(p => /^top-up: the candidate's commit differs from its sitting's/.test(p)), JSON.stringify(other.problems));
+  const short = compareLanes('engines', sitting('cv'), sitting('cc'), {topUp: {baseline: topUpSitting('cv').slice(0, 2), candidate: topUpSitting('cc')}});
+  assert.equal(short.verdict, 'NO VERDICT');
+  assert.ok(short.problems.some(p => /^top-up: .*2 runs/.test(p)), JSON.stringify(short.problems));
+});
+
+test('compare --engines prints the series a top-up would decide, takes one top-up and prints what it left undetermined', t => {
+  const counted = [join(SITTING, 'cv'), join(SITTING, 'cc')];
+  const wide = editedTopUp((ms, i) => ms + (i % 2 ? 4 : -4));
+  const still = spawnSync(process.execPath, [SCRIPT, 'compare', '--engines', ...counted, '--top-up-baseline', dir(t, wide.baseline), '--top-up-candidate', dir(t, wide.candidate)], {encoding: 'utf8'});
+  assert.equal(still.status, 0, still.stderr);
+  assert.match(still.stderr, /^UNDETERMINED AFTER TOP-UP \(reported, not a failure\): warm\.listApps \[-?[\d.]+, [\d.]+\] ms, bound 1 ms, 180 \/ 180 samples$/m);
+  assert.match(still.stderr, /^VERDICT: PASS$/m);
+  const first = spawnSync(process.execPath, [SCRIPT, 'compare', '--engines', ...counted], {encoding: 'utf8'});
+  assert.equal(first.status, 1);
+  assert.match(first.stderr, /^TOP-UP NEEDED: warm\.listApps$/m);
+  assert.match(first.stderr, /^VERDICT: FAIL$/m);
+  const topped = spawnSync(process.execPath, [SCRIPT, 'compare', '--engines', ...counted, '--top-up-baseline', join(TOPUP, 'cv'), '--top-up-candidate', join(TOPUP, 'cc')], {encoding: 'utf8'});
+  assert.equal(topped.status, 0, topped.stderr);
+  assert.doesNotMatch(topped.stderr, /TOP-UP NEEDED/);
+  assert.match(topped.stderr, /^VERDICT: PASS$/m);
+  const twice = spawnSync(process.execPath, [SCRIPT, 'compare', '--engines', ...counted, '--top-up-baseline', join(TOPUP, 'cv'), '--top-up-candidate', join(TOPUP, 'cc'), '--top-up-baseline', join(TOPUP, 'cv'), '--top-up-candidate', join(TOPUP, 'cc')], {encoding: 'utf8'});
+  assert.notEqual(twice.status, 0);
+  assert.match(twice.stderr, /one top-up/);
+  const half = spawnSync(process.execPath, [SCRIPT, 'compare', '--engines', ...counted, '--top-up-baseline', join(TOPUP, 'cv')], {encoding: 'utf8'});
+  assert.notEqual(half.status, 0);
+  assert.match(half.stderr, /--top-up-baseline and --top-up-candidate/);
 });

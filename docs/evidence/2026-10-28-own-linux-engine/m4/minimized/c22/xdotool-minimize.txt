@@ -1,0 +1,5 @@
+front 18874468 target 20971620 active before: 0x1400064
+xdotool windowminimize: exit 0 in 5 ms; state Iconic; active 0x1200064
+{"window":20971620,"iconic":true,"ms":5.4}
+xprobe: active after 0x1200064
+active at end: 0x600002

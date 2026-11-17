@@ -1,0 +1,24 @@
+spinning descriptor: fd 9 (from the stall's stack)
+before: cpu 100% answers no
+record client killed (as on :0); peer of fd 9 now: 0
+after the kill, before the close: cpu 100% answers no
+close: $1 = 0
+after the close: cpu 3% answers yes
+clients the server lists: 0; flood windows (10x10 root children) before 0, now 2
+a flood window's property: TASK41_FLOOD(CARDINAL) = 1515870810, 1515870810, 1515870810, 1515870810, 1515870
+load pid 2343552: alive
+load pid 2343553: alive
+load pid 2343554: alive
++10 s: up yes cpu 3% answers yes
++20 s: up yes cpu 3% answers yes
++30 s: up yes cpu 3% answers yes
++40 s: up yes cpu 3% answers yes
++50 s: up yes cpu 3% answers yes
++60 s: up yes cpu 3% answers yes
++70 s: up yes cpu 4% answers yes
++80 s: up yes cpu 3% answers yes
++90 s: up yes cpu 4% answers yes
++100 s: up yes cpu 4% answers yes
++110 s: up yes cpu 3% answers yes
++120 s: up yes cpu 3% answers yes
+server log after the close (last lines):

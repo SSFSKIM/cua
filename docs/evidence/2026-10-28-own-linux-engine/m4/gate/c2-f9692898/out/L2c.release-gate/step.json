@@ -1,0 +1,47 @@
+{
+  "label": "release gate",
+  "step": "L2c",
+  "pilot": false,
+  "what": "Gecko's kinds under the motion model",
+  "display": "private",
+  "load": "load2",
+  "minutes": 40,
+  "run_name": "m4-gate-L2c",
+  "checkout": {
+    "root": "/Users/new/Developer/GitHub/cua/.claude/worktrees/t77-gate/",
+    "commit": "f96928983006fbcb3ef50afe1ecd87e7ef1ac1ad",
+    "clean": true
+  },
+  "candidate": {
+    "path": "/Users/new/.local/share/cua-171/gate/artifact-c2/cua-engine-0.4.0-linux-x64",
+    "sha256": "90b9650eb599ec7f81f23e98b211085adb449fc906c17bd5093d9062934c0dbd"
+  },
+  "command": "/Users/new/.local/share/cua-171/locked.sh t18-gate /usr/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/t77-gate/scripts/linux-engine-gate/gate.mjs run L2c --candidate /Users/new/.local/share/cua-171/gate/artifact-c2/cua-engine-0.4.0-linux-x64 --out /Users/new/.local/share/cua-171/gate/out-c2",
+  "argv": [
+    "scripts/linux-engine-diff.mjs",
+    "--experiment",
+    "drag",
+    "--vendor",
+    "/Users/new/.local/share/cua/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+    "--newest",
+    "/Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+    "--occlusion",
+    "visible",
+    "--family",
+    "firefox",
+    "--load-factor",
+    "2",
+    "--cua",
+    "/Users/new/.local/share/cua-171/gate/artifact-c2/cua-engine-0.4.0-linux-x64",
+    "--run",
+    "m4-gate-L2c",
+    "--gate",
+    "--out",
+    "/Users/new/.local/share/cua-171/gate/out-c2/L2c.release-gate/run"
+  ],
+  "started": "2026-11-14T08:14:53.118Z",
+  "finished": "2026-11-14T08:42:56.599Z",
+  "exit": 0,
+  "child_exit": 0,
+  "display_watchdog": "clean"
+}

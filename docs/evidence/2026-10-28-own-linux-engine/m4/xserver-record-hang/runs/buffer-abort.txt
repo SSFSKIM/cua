@@ -1,0 +1,14 @@
+xvfb 2290505 on :93; rec /Users/new/.local/share/cua-171/task41/xprobe-e54658b8 (da72e17c4433); floods 4 batch 50 churn 20 pause 1; secs 40
+result: record-ended after 11 s, 14 cycles
+xvfb alive: yes 78.0 2163304; answers: no
+{"kind":"req","ms":1793670354664,"client":14680064,"seq":72081,"t":502553224,"op":"ChangeProperty","window":14680064,"property":231,"name":"TASK41_FLOOD","type":31,"length":1520}
+{"kind":"failed","ms":1793670355011,"error":"the record collector failed, so the record is incomplete: The X11 server closed the connection"}
+--- gdb at the abort (MarkClientException)
+#0  MarkClientException (client=client@entry=0x571ba81b9b00) at ../../../../dix/dispatch.c:3824
+#1  0x0000571b9c856244 in FlushClient (who=0x571ba81b9b00, oc=0x571ba848f6b0, __extraBuf=0x571ba84a05d8, extraCount=extraCount@entry=976) at ../../../../os/io.c:930
+#2  0x0000571b9c85677a in WriteToClient (who=<optimized out>, count=count@entry=976, __buf=<optimized out>) at ../../../../os/io.c:804
+#3  0x0000571b9c7451df in RecordFlushReplyBuffer (len2=<optimized out>, data2=<optimized out>, len1=<optimized out>, data1=<optimized out>, pContext=<optimized out>) at ../../../../record/record.c:248
+#4  RecordAProtocolElement (pContext=pContext@entry=0x571ba8201310, pClient=pClient@entry=0x571ba84b7690, category=category@entry=1, data=data@entry=0x571ba84a05d8, datalen=<optimized out>, padlen=padlen@entry=0, futurelen=0) at ../../../../record/record.c:393
+#5  0x0000571b9c745819 in RecordARequest (client=0x571ba84b7690) at ../../../../record/record.c:544
+#6  0x0000571b9c7f9ff0 in Dispatch () at ../../../../dix/dispatch.c:551
+#7  0x0000571b9c7fe40a in dix_main (argc=9, argv=<optimized out>, envp=<optimized out>) at ../../../../dix/main.c:274

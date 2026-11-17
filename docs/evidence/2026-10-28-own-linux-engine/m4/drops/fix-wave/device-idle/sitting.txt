@@ -1,0 +1,5 @@
+cua-engine 0.3.0 (bba041594132)
+start device-idle 2026-11-10T16:47:00Z loadavg 1.32 0.98 1.84
+run exit 0; watchdog clean
+private run device-idle exit 0 17:04:32
+end device-idle 2026-11-10T17:04:32Z loadavg 0.74 0.66 0.96 status 0

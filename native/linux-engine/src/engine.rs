@@ -1,16 +1,33 @@
 //! The request dispatcher: one request at a time, in arrival order (Design, Process model). Observation lives here;
-//! input is in the child modules: keys (`keyboard`), the pointer (`pointer`), element actions (`elements`), the
-//! window and application requests (`windows`) and the clipboard's (`clipboard`).
+//! input is in the child modules: keys (`keyboard`), the pointer (`pointer`, and `handle` for `drag_handle`), element
+//! actions (`elements`), the window and application requests (`windows`) and the clipboard's (`clipboard`).
 
 mod clipboard;
 mod elements;
+mod handle;
+#[cfg(test)]
+mod identity_faults;
+mod idle_watchdog;
 mod keyboard;
+#[cfg(test)]
+mod menu_faults;
 mod paste;
 #[cfg(test)]
 mod paste_faults;
 mod pointer;
+#[cfg(test)]
+mod refusal_faults;
+#[cfg(test)]
+mod targets_faults;
+#[cfg(test)]
+mod vcl_faults;
 mod way;
 mod windows;
+mod within;
+#[cfg(test)]
+mod within_faults;
+
+pub use handle::HANDLE_IDLE;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -25,7 +42,7 @@ use crate::dbus::{Broken, Bus, BusStats};
 use crate::families::{self, DragPacing, Family};
 use crate::input::Pacing;
 use crate::readiness::CaptureWait;
-use crate::route::Inputs;
+use crate::route::{Inputs, Sent};
 use crate::tree;
 use crate::wire::{self, GetWindowStateInput, NoInput, Request, Response, parse_input};
 use crate::x11::{Retention, X11};
@@ -62,6 +79,33 @@ pub struct Config {
     /// How long after a Chromium drag source's take a drag the engine lets drop is released at the soonest
     /// (`dnd::RELEASE_AFTER_TAKE`; `--drag-dnd-after-take-ms`, measurement only, sets another, 0 none).
     pub dnd_after_take: std::time::Duration,
+    /// Measurement only (`--targets-wait-ms`): how long every paste waits after taking CLIPBOARD for its target to ask
+    /// for `TARGETS`, whatever its family (`engine/paste.rs` `targets_wait`).
+    pub targets_wait: Option<std::time::Duration>,
+    /// In shared mode, how long a background press to a family whose press activates a window it has not focused waits
+    /// for the window's frame to report the session's synthetic focus taken (`focus_ack.rs`; `--focus-ack-ms`,
+    /// measurement only, sets another, 0 none).
+    pub focus_ack: std::time::Duration,
+    /// Measurement only (T13 and T14, `--drag-dnd-release-at-accept`): a Chrome drop whose confirmation the engine reads
+    /// (`dnd::LateWatch`), once its source took `XdndSelection`, sends the rest of its path at its own pacing and is
+    /// released at Chrome's accept cursor (`accept.rs`), the floor after the take (`dnd_after_take`) its ceiling. Not
+    /// shipped: task 69's press-inside control had one drop released at a stale accept that Chrome confirmed and the
+    /// page never took (the design session's ruling, 2026-11-10: a single false release reverts it).
+    pub dnd_release_at_accept: bool,
+    /// Measurement only (T13, `--drag-ignore-cover`): `unless_path_unobscured` never refuses or reroutes a drag, so a
+    /// drag goes out on the background route along a covered path.
+    pub drag_ignore_cover: bool,
+    /// Measurement only (T19, `--ignore-cover`): no cover condition (`unless_path_unobscured`) refuses or reroutes a
+    /// request, so a covered window's listed kinds go out on the background route and the harness measures what the
+    /// application does with them; a kind listed `always` is still refused.
+    pub ignore_cover: bool,
+    /// Measurement only (T19, `--ignore-pointer`): the pointer condition (`unless_pointer_within`) never refuses or
+    /// reroutes a request, and no request is watched for the pointer leaving, so the harness can count what the
+    /// application does with input sent while the pointer is elsewhere.
+    pub ignore_pointer: bool,
+    /// How long a held `drag_handle` may go with no request of its own before the engine releases it where it is
+    /// (`handle::HANDLE_IDLE`; `--drag-handle-idle-ms` sets another, for the live tests).
+    pub handle_idle: std::time::Duration,
 }
 
 pub struct Engine {
@@ -80,25 +124,38 @@ pub struct Engine {
     launched: apps::Launched,
     /// Each window's family, looked up once (`families.rs`).
     families: HashMap<x11rb::protocol::xproto::Window, Option<&'static Family>>,
-    /// The pacing of the drag a `drag_handle` holds, from its start to its end.
-    handle_pacing: pointer::HandlePacing,
+    /// Whether each window of no listed family is a Qt application's, and by which mark (`families::qt_mark`), looked
+    /// up once (`Engine::qt_without_toolkit`).
+    qt_marks: HashMap<x11rb::protocol::xproto::Window, Option<families::QtMark>>,
+    /// The `drag_handle` between its start and its end (`handle.rs`).
+    handle: Option<handle::Handle>,
+    /// A handle the idle bound released (its application, and where it was released, None on another screen): every
+    /// later move or end is refused with that, until a start presses again or cua's `release_handle` forgets it.
+    expired_handle: Option<(String, Option<(i16, i16)>)>,
+    /// The drag handles' hold watch (`stray::HoldWatch`), its connection opened by the first handle with a target.
+    hold_watch: Option<crate::stray::HoldWatch>,
     /// The clipboard's own connections, opened on first use.
     clipboard: Option<crate::clipboard::Clipboard>,
     /// `clipboard_read`'s snapshots, until released or the engine exits.
     handles: crate::clipboard::Handles,
     /// A watched drag's after-release watch (`dnd::LateWatch`), until it ends by itself or an acting request stops it.
     late_watch: Option<crate::dnd::LateWatch>,
-    /// What an ended watch left to report (a late drag and drop, or the watch's own failure), with the application:
-    /// the first acting request answers it, not run.
+    /// What an ended watch left to report (a late drag and drop, an unconfirmed drop, or the watch's own failure), with
+    /// the application: every reply carries it as its `notice` until the first acting request, which answers it, not
+    /// run.
     late_pending: Option<(String, crate::dnd::WatchEnd)>,
     /// The Chromium drags' press watch (`stray.rs`), its connection opened by the first such drag.
     stray_watch: Option<crate::stray::StrayWatch>,
+    /// A held handle's idle bound while another request runs (`idle_watchdog.rs`), its thread started by the first.
+    idle_watchdog: Option<idle_watchdog::IdleWatchdog>,
 }
 
-/// Whether a request sends input or changes state, and so is refused while a late drag and drop or a failed watch is
-/// unreported (the design session's ruling, 2026-10-31). Reads run (`list_windows`, `list_apps`, `get_screenshot`,
+/// Whether a request sends input or changes state, and so is refused while a late drag and drop, an unconfirmed drop
+/// or a failed watch is unreported (the design session's rulings, 2026-10-31 and 2026-11-02). Reads run, their replies
+/// carrying the notice (`list_windows`, `list_apps`, `get_screenshot`,
 /// `get_window_state`, `clipboard_read`, `capabilities`), and so do releases of what is held (`key_up`,
-/// `clipboard_release`, `drag_handle`'s `end`), so a held key or button is never left down at the server; unknown
+/// `clipboard_release`, `drag_handle`'s `end`, cua's `release_handle`), so a held key or button is never left down at
+/// the server; unknown
 /// commands answer their own error. `preflight` sends nothing, but stands for an action its caller takes by another
 /// route (cua's wrapper launching an application through the supervisor), so it acts.
 pub fn acts(command: &str, input: Option<&Value>) -> bool {
@@ -117,8 +174,97 @@ pub fn acts(command: &str, input: Option<&Value>) -> bool {
         | "clipboard_write"
         | "type_text"
         | "type_characters" => true,
-        "drag_handle" => input.and_then(|i| i.get("action")).and_then(Value::as_str) != Some("end"),
+        "drag_handle" => !is_handle_end(command, input),
         _ => false,
+    }
+}
+
+/// Whether a request is a `drag_handle`'s `end`.
+fn is_handle_end(command: &str, input: Option<&Value>) -> bool {
+    command == "drag_handle" && input.and_then(|i| i.get("action")).and_then(Value::as_str) == Some("end")
+}
+
+/// The window a request sends input to, when that input is refused while the window is minimized (Design, Minimized
+/// windows; M4, the design session's rulings F8 and C21): every window-targeted input, element actions included (a
+/// primary element click, `perform_secondary_action`, `clipboard_read`'s Copy), in either device mode. Releases are
+/// exempt and always run (`key_up`, `clipboard_release`, `drag_handle`'s end; a drag's own release is inside its
+/// request), so nothing is left held on the person's desktop; `activate_window` is the remedy the refusal names;
+/// `get_window_state` reads the tree and answers no screenshot. None for a request with no window (the desktop route)
+/// or one whose window is not a well-formed id, which the request itself refuses.
+fn input_window(command: &str, input: Option<&Value>) -> Option<u32> {
+    match command {
+        "press_key"
+        | "key_down"
+        | "click"
+        | "move"
+        | "scroll"
+        | "drag"
+        | "perform_secondary_action"
+        | "type_text"
+        | "type_characters"
+        | "clipboard_write"
+        | "clipboard_read" => {
+            let id = input?.get("window")?.get("id")?.as_u64()?;
+            u32::try_from(id).ok()
+        }
+        _ => None,
+    }
+}
+
+/// The answer to window-targeted input while its window is minimized: nothing was sent.
+fn minimized_sentence(window: u32) -> String {
+    format!("Window {window} is minimized; activate it first")
+}
+
+/// The answer, in shared mode, to input to a window a modal dialog of its own blocks, for a toolkit that hands the
+/// input's synthetic focus to the dialog (`Engine::modal_refusal`): nothing was sent. The same set of requests as the
+/// minimized refusal (`input_window`), each of which opens the window's input session and so its `FocusIn`, or (a
+/// `clipboard_read` whose Copy left a menu open) may; releases always run.
+fn modal_sentence(app: &str, window: u32, dialog: u32) -> String {
+    format!(
+        "{}; nothing was sent: send the input to the dialog, or use a dedicated desktop",
+        crate::focus_ack::blocked_by(app, window, dialog)
+    )
+}
+
+/// The `truncated` that `get_window_state` reports beside its tree (Design, The tree read; M4): the accessibility read's
+/// cut points, and nothing when it cut nothing or when the tree is the X11 fallback, which no read made. An addition
+/// to the vendor's output that its JavaScript ignores.
+fn reported_truncation(source: &str, truncated: tree::Truncated) -> Option<tree::Truncated> {
+    (source == "at_spi" && !truncated.is_empty()).then_some(truncated)
+}
+
+/// What a state read found on the accessibility bus.
+#[derive(Debug)]
+enum Observed {
+    /// The tree, and how its frame was told.
+    Tree(tree::AxNode, atspi::Told),
+    /// One of cua's own association routes found no frame it can stand behind, or its frame's read or confirmation
+    /// failed: the sentence or the error, never the X11 tree.
+    Refused(atspi::Unassociated),
+    /// One of the vendor's own failures: its X11 tree.
+    Fallback(atspi::Fallback),
+}
+
+/// The read of a frame one of cua's own routes found (`atspi::Associated::fallback` gives no leave for it): its tree,
+/// once the association is confirmed again after the read, else the refusal. No path here holds leave for the X11
+/// fallback, so neither a failed read, a root that does not answer, nor a changed association can end in a tree that
+/// looks like an empty window (F5).
+fn own_route_read(
+    window: u32,
+    told: atspi::Told,
+    read: Result<Option<tree::AxNode>>,
+    confirm: impl FnOnce() -> Result<bool>,
+) -> Observed {
+    use atspi::Unassociated::{Changed, Failed};
+    match read {
+        Err(error) => Observed::Refused(Failed(error)),
+        Ok(None) => Observed::Refused(Changed(window)),
+        Ok(Some(tree)) => match confirm() {
+            Ok(true) => Observed::Tree(tree, told),
+            Ok(false) => Observed::Refused(Changed(window)),
+            Err(error) => Observed::Refused(Failed(error)),
+        },
     }
 }
 
@@ -132,6 +278,10 @@ fn late_stats(app: &str, end: &crate::dnd::WatchEnd) -> Value {
             "escaped": late.escaped,
         }),
         crate::dnd::WatchEnd::Failed(why) => json!({ "app": app, "failed": why }),
+        crate::dnd::WatchEnd::Unconfirmed => json!({ "app": app, "unconfirmed": true }),
+        crate::dnd::WatchEnd::IdleHandle { idle, at } => {
+            json!({ "app": app, "idle_handle": { "idle_ms": idle.as_secs_f64() * 1000.0, "at": at } })
+        }
         crate::dnd::WatchEnd::Quiet => json!({ "app": app }),
     }
 }
@@ -162,13 +312,17 @@ impl Engine {
             extra: Default::default(),
             pending_stats: None,
             families: HashMap::new(),
-            handle_pacing: pointer::HandlePacing::default(),
+            qt_marks: HashMap::new(),
+            handle: None,
+            expired_handle: None,
+            hold_watch: None,
             launched: apps::Launched::default(),
             clipboard: None,
             handles: crate::clipboard::Handles::new(),
             late_watch: None,
             late_pending: None,
             stray_watch: None,
+            idle_watchdog: None,
         })
     }
 
@@ -176,28 +330,60 @@ impl Engine {
         self.x.drain_events();
         self.launched.reap();
         let started = Instant::now();
+        // a held handle past its idle bound is released before anything else, so a request that came at its due time
+        // finds it as the loop's own release would have left it
+        self.release_idle_handle();
         // the last watched drag's after-release watch: an acting request stops it (a round trip first, so every take
         // before now counts); any other request only collects it once it has ended by itself
         let acting = acts(&request.command, request.input.as_ref());
-        if self.late_watch.as_ref().is_some_and(|w| acting || w.finished()) {
-            let watch = self.late_watch.take().expect("checked");
-            let app = watch.app.clone();
-            match watch.stop() {
-                crate::dnd::WatchEnd::Quiet => {}
-                end => self.late_pending = Some((app, end)),
-            }
+        self.collect_late_watch(acting);
+        // a held handle's idle bound, kept while this request runs, however long (`idle_watchdog.rs`): for every
+        // request but the handle's own, which keep or end the hold themselves
+        if !matches!(request.command.as_str(), "drag_handle" | "release_handle")
+            && let Some(due) = self.handle_due()
+        {
+            let teller = self.handle_release_teller();
+            self.idle_watchdog
+                .get_or_insert_with(idle_watchdog::IdleWatchdog::start)
+                .arm(due, teller);
         }
-        // a late drag and drop, or a watch that failed, is the first acting request's answer, the request not run;
-        // reads and releases run meanwhile, and the report waits for the request that would act
-        let refusal = if acting { self.late_pending.take() } else { None };
+        self.inputs.request = request.id.clone();
+        // a late drag and drop, an unconfirmed drop or a watch that failed is the first acting request's answer, the
+        // request not run; reads and releases run meanwhile, and each of their replies carries the notice. The `end`
+        // of a handle the engine released for its idle bound has nothing left to release: the timeout is its answer
+        let ends_released_handle = self.handle.is_none()
+            && is_handle_end(&request.command, request.input.as_ref())
+            && matches!(self.late_pending, Some((_, crate::dnd::WatchEnd::IdleHandle { .. })));
+        let refusal = if acting || ends_released_handle {
+            self.late_pending.take()
+        } else {
+            None
+        };
         if let Some((app, end)) = &refusal {
             self.extra.insert("late_dnd".into(), late_stats(app, end));
         }
+        // input to a minimized window is refused before anything is sent and before any other check of the request
+        // (the device refusal included), in either mode
+        let minimized = match refusal {
+            None => input_window(&request.command, request.input.as_ref()).filter(|&w| self.x.minimized(w)),
+            Some(_) => None,
+        };
+        if minimized.is_some() {
+            self.extra.insert("minimized".into(), json!(true));
+        }
+        // in shared mode, input to a window its modal dialog blocks, for a toolkit that would hand the session's
+        // synthetic focus to the dialog, is refused before anything is sent, after the minimized refusal
+        let blocked = match (&refusal, minimized) {
+            (None, None) => input_window(&request.command, request.input.as_ref()).and_then(|w| self.modal_refusal(w)),
+            _ => None,
+        };
         let result = match request.command.as_str() {
-            _ if refusal.is_some() => Err(anyhow!(match refusal.as_ref().expect("checked") {
-                (app, crate::dnd::WatchEnd::Failed(why)) => crate::dnd::watch_failed_notice(app, why),
-                (app, _) => crate::dnd::late_notice(app),
-            })),
+            _ if refusal.is_some() => {
+                let (app, end) = refusal.as_ref().expect("checked");
+                Err(anyhow!(crate::dnd::pending_refusal(app, end, &request.command)))
+            }
+            _ if minimized.is_some() => Err(anyhow!(minimized_sentence(minimized.expect("checked")))),
+            _ if blocked.is_some() => Err(anyhow!(blocked.expect("checked"))),
             "list_windows" => self.list_windows(request.input),
             "list_apps" => self.list_apps(request.input),
             "get_screenshot" => self.get_screenshot(request.input),
@@ -222,12 +408,49 @@ impl Engine {
             "capabilities" => self.capabilities(request.input),
             // reached only with nothing to report: the refusal above answered otherwise
             "preflight" => parse_input::<NoInput>(request.input).map(|_| Value::Null),
+            "release_handle" => parse_input::<NoInput>(request.input).map(|_| self.release_lost_handle()),
             "server" => Err(anyhow!("server command cannot be nested")),
             command if wire::COMMANDS.contains(&command) => Err(anyhow!(wire::not_available(command))),
             command => Err(anyhow!("unknown command `{command}`")),
         };
         if let Some(bus) = self.bus.as_mut() {
             merge(&mut self.bus_stats, bus.take_stats());
+        }
+        // a handle the watchdog released while the request ran: what that did is pending from now, this reply first
+        if let Some(fired) = self
+            .idle_watchdog
+            .as_ref()
+            .and_then(idle_watchdog::IdleWatchdog::disarm)
+        {
+            self.collect_watchdog_release(fired);
+        }
+        // a drag's session is kept past its request only while its late-take watch is armed: one that armed none (its
+        // drag refused, cancelled in time, or failed) ends with its request
+        if self.late_watch.is_none() {
+            self.inputs.end_watched(&mut self.x);
+        }
+        // a reply that ran while something is pending carries its notice: a watch that ended during the request is
+        // collected first, so a read that follows a late take reports it (the design session's rulings, 2026-11-02)
+        let notice = match refusal {
+            Some(_) => None,
+            None => {
+                self.collect_late_watch(false);
+                self.late_pending
+                    .as_ref()
+                    .map(|(app, end)| crate::dnd::pending_notice(app, end))
+            }
+        };
+        if notice.is_some() {
+            self.extra.insert("notice".into(), json!(true));
+        }
+        let sent = self.inputs.take_sent();
+        if !sent.is_empty() {
+            self.extra
+                .insert("focus_out".into(), sent.iter().map(Sent::record).collect());
+        }
+        if let Some(waited) = self.inputs.desktop.on_top_waited.take() {
+            self.extra
+                .insert("on_top_wait_ms".into(), json!(waited.as_secs_f64() * 1000.0));
         }
         if self.cfg.stats {
             self.pending_stats = Some((
@@ -240,6 +463,70 @@ impl Engine {
         match result {
             Ok(output) => Response::success(request.id, output),
             Err(error) => Response::failure(request.id, format!("{error:#}")),
+        }
+        .with_notice(notice)
+    }
+
+    /// Collects the after-release watch when `acting` (stopping it) or once it has ended by itself: what it saw waits in
+    /// `late_pending` for the first acting request. Its Escape, sent at once on the watch's own connection, is a key to
+    /// the target window that the settles follow (`settle.rs`): the exit's unredirect could cut it. Then the drag's
+    /// session, kept focused while the watch was armed, ends: its `FocusOut` comes after the Escape, which the watch's
+    /// own round trip had the server process before the watch ended (the design session's ruling on task 60).
+    fn collect_late_watch(&mut self, acting: bool) {
+        if !self.late_watch.as_ref().is_some_and(|w| acting || w.finished()) {
+            return;
+        }
+        let watch = self.late_watch.take().expect("checked");
+        let (app, target) = (watch.app.clone(), watch.target);
+        match watch.stop() {
+            crate::dnd::WatchEnd::Quiet => {}
+            end => {
+                // a synthetic Escape is a key to the window's redirected session; one through XTEST is the desktop's
+                if let crate::dnd::WatchEnd::Late(late) = &end
+                    && let Some(at) = late.escaped_at
+                    && let Some(target) = target
+                {
+                    self.inputs.note_key(target, at);
+                }
+                self.late_pending = Some((app, end));
+            }
+        }
+        self.inputs.end_watched(&mut self.x);
+    }
+
+    /// When the engine must act with no request (`serve.rs`): an armed late-take watch's end, `dnd::SETTLE` after its
+    /// drag's release, which its drag's `FocusOut` follows; and a held `drag_handle`'s idle bound (`handle.rs`).
+    pub fn next_due(&self) -> Option<Instant> {
+        let watch = self.late_watch.as_ref().and_then(crate::dnd::LateWatch::ends_at);
+        match (watch, self.handle_due()) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        }
+    }
+
+    /// Once an armed late-take watch's time is up with no request come: the watch run out (it ends by itself a poll
+    /// later at most) and collected, and its drag's session ended, its `FocusOut` reported on a `--stats` line of its
+    /// own. What the watch saw still waits for the first acting request. A held handle past its idle bound is released.
+    pub fn tick(&mut self) {
+        self.release_idle_handle();
+        let Some(watch) = &self.late_watch else {
+            return;
+        };
+        if watch.ends_at().is_none_or(|at| at > Instant::now()) {
+            return;
+        }
+        watch.run_out();
+        self.collect_late_watch(true);
+        self.report_sent();
+    }
+
+    /// The `FocusOut`s the exit sent, each on a `--stats` line of its own: `{"stats": {"id": null, "focus_out": …}}`.
+    fn report_sent(&mut self) {
+        let sent = self.inputs.take_sent();
+        if self.cfg.stats {
+            for record in sent.iter().map(Sent::record) {
+                eprintln!("{}", json!({ "stats": { "id": null, "focus_out": [record] } }));
+            }
         }
     }
 
@@ -259,6 +546,7 @@ impl Engine {
                 "settle_ms": self.cfg.settle.as_millis() as u64,
                 "capture_wait": format!("{:?}", self.cfg.capture_wait).to_lowercase(),
                 "teardown_ms": self.cfg.pacing.teardown.as_millis() as u64,
+                "paste_settle_ms": self.cfg.pacing.paste_settle.as_millis() as u64,
                 "key_pace_ms": self.cfg.pacing.key.as_millis() as u64,
             },
             "bus": {
@@ -318,6 +606,59 @@ impl Engine {
         found
     }
 
+    /// Whether `window` is a Qt application's that no listed family names, so one with no accessibility tree on the bus
+    /// (no `ToolkitName` to read), and by which mark (`families::qt_mark`), looked up once (task 61's fixes, the design
+    /// session's rulings): Qt's `_XEMBED_INFO` on the window, which cua's worker sandbox can read, else its process's
+    /// map, which the sandbox cannot (its own PID namespace and `/proc`). A window with neither (no mark, and no map to
+    /// read: no `_NET_WM_PID`, a process of another user or of a PID namespace the engine does not see, a remote
+    /// client) is not: its toolkit is unknown. The mark found goes on the `--stats` line as `qt_without_tree`.
+    fn qt_without_toolkit(&mut self, window: x11rb::protocol::xproto::Window) -> Option<families::QtMark> {
+        if self.family_of(window).is_some() {
+            return None;
+        }
+        let mark = match self.qt_marks.get(&window) {
+            Some(&mark) => mark,
+            None => {
+                let x = &self.x;
+                let mark = families::qt_mark(x.xembed_marked(window), || {
+                    x.pid(window).and_then(families::process_is_qt)
+                });
+                self.qt_marks.insert(window, mark);
+                mark
+            }
+        };
+        if let Some(mark) = mark {
+            self.extra.insert("qt_without_tree".into(), json!(mark.name()));
+        }
+        mark
+    }
+
+    /// In shared mode, the refusal of input to `window` while a modal dialog of its own is shown, for a toolkit that
+    /// hands the synthetic `FocusIn` of that input's session to the dialog, asking for the dialog's activation (Qt,
+    /// `families.rs` `relays_focus_to_modal`; the design session's ruling A). A dialog that cannot be looked for is a
+    /// refusal too: the window or its client may be gone.
+    fn modal_refusal(&mut self, window: u32) -> Option<String> {
+        if self.cfg.desktop != DesktopMode::Shared {
+            return None;
+        }
+        let relays = self.family_of(window).is_some_and(|f| f.relays_focus_to_modal)
+            || self.qt_without_toolkit(window).is_some();
+        if !relays {
+            return None;
+        }
+        let dialog = match self.x.modal_transient_of(window) {
+            Ok(dialog) => dialog?,
+            Err(error) => return Some(format!("{error:#}")),
+        };
+        self.extra.insert("modal_dialog".into(), json!(dialog));
+        let app = self
+            .x
+            .get_window(window)
+            .map(|i| i.app)
+            .unwrap_or_else(|_| format!("x11:{window}"));
+        Some(modal_sentence(&app, window, dialog))
+    }
+
     /// A drag's pacing: the flags' where they fix it, else the family of the window it goes to; no window, or an
     /// unlisted family, is no wait.
     fn drag_pacing_for(&mut self, window: Option<x11rb::protocol::xproto::Window>) -> DragPacing {
@@ -335,6 +676,11 @@ impl Engine {
                 "family": found.map(|f| f.name),
                 "evidence": found.map(|f| f.evidence),
                 "step_us": pacing.step.as_micros() as u64,
+                "elapsed": pacing.elapsed,
+                "rest_ms": pacing.rest.as_millis() as u64,
+                "held_step_us": pacing.held_step.as_micros() as u64,
+                "held_rest_ms": pacing.held_rest.as_millis() as u64,
+                "held_lead_pause": pacing.held_lead_pause,
                 "press_ms": pacing.press.as_millis() as u64,
                 "release_ms": pacing.release.as_millis() as u64,
             }),
@@ -374,28 +720,54 @@ impl Engine {
         let window = self.cfg.window;
         let mut read_stats = tree::ReadStats::default();
         let at_spi = self.with_bus(|bus, x| {
-            let frame = match atspi::associate(bus, x, &info)? {
-                Association::Frame(frame) => frame,
-                Association::NoMatch | Association::Refused(_) => return Ok(None),
+            let associated = match atspi::associate(bus, x, &info)? {
+                Association::Frame(associated) => associated,
+                Association::Identity(unassociated) => return Ok(Observed::Refused(unassociated)),
+                Association::NoMatch(leave) | Association::Refused(_, leave) => return Ok(Observed::Fallback(leave)),
             };
-            let (tree, stats) = tree::read(bus, &frame, window)?;
-            read_stats = stats;
-            Ok(tree)
+            let read = tree::read(bus, &associated.frame, window).map(|(tree, stats)| {
+                read_stats = stats;
+                tree
+            });
+            match associated.fallback() {
+                // the vendor's own match: an error is its fallback, and so is a root that fails to read (behaviour §4)
+                Some(leave) => {
+                    Ok(read?.map_or(Observed::Fallback(leave), |tree| Observed::Tree(tree, associated.told)))
+                }
+                // one of cua's own routes: the association is confirmed again once its tree is read, since a toolkit
+                // may correct the `active` state a moment after an activation, and a read that began on the previous
+                // active window's frame is refused, not answered with that window's tree
+                None => Ok(own_route_read(id, associated.told, read, || associated.confirm(bus, x))),
+            }
         });
-        let (tree, source) = match at_spi {
-            Ok(Some(tree)) => (tree, "at_spi"),
-            _ => (self.x.fallback_tree(id)?, "x11"),
+        let (tree, source, told) = match at_spi {
+            Ok(Observed::Tree(tree, told)) => (tree, "at_spi", Some(told)),
+            // never the X11 fallback, which would look like an empty window (Design, Window association)
+            Ok(Observed::Refused(unassociated)) => {
+                self.extra
+                    .insert("tree".into(), json!({ "identity": unassociated.name() }));
+                return Err(unassociated.into_error());
+            }
+            Ok(Observed::Fallback(leave)) => (self.x.fallback_tree(id, leave)?, "x11", None),
+            // cua's own routes answer no error here (`atspi::associate`, `own_route_read`): this is the vendor's
+            Err(_) => (
+                self.x.fallback_tree(id, atspi::Fallback::after_vendor_error())?,
+                "x11",
+                None,
+            ),
         };
         self.extra.insert(
             "tree".into(),
             json!({
                 "source": source,
+                "identity": told.map(atspi::Told::name),
                 "admitted": read_stats.admitted,
                 "discovered": read_stats.discovered,
                 "wasted_calls": read_stats.wasted_calls,
                 "tables_sampled": read_stats.tables_sampled,
                 "tables_listed": read_stats.tables_listed,
                 "hit_tests": read_stats.hit_tests,
+                "truncated": read_stats.truncated,
             }),
         );
         let tree = match input.query.as_deref() {
@@ -403,7 +775,8 @@ impl Engine {
             None => tree,
         };
         let mut screenshots = Vec::new();
-        if input.include_screenshot.unwrap_or(true) {
+        // a minimized window has no contents to capture: no screenshot, which the facade answers as unavailable
+        if input.include_screenshot.unwrap_or(true) && info.minimized != Some(true) {
             let (rgb, width, height) = self.x.capture_window(id)?;
             if let Some(w) = self.x.last_capture_wait.take() {
                 let ms = |d: std::time::Duration| d.as_secs_f64() * 1000.0;
@@ -413,6 +786,7 @@ impl Engine {
                         "wait_ms": ms(w.waited),
                         "reason": w.reason.name(),
                         "unobscured": w.unobscured,
+                        "offscreen": w.offscreen,
                         "damage_ignored": w.ignored,
                         "damage_counted": w.counted,
                         "first_damage_ms": w.first.map(ms),
@@ -421,7 +795,12 @@ impl Engine {
             }
             screenshots.push(json!({ "filepath": self.save_screenshot(&rgb, width, height)? }));
         }
-        Ok(json!({ "ax_tree": tree, "ax_tree_source": source, "screenshots": screenshots, "window": info }))
+        let mut state =
+            json!({ "ax_tree": tree, "ax_tree_source": source, "screenshots": screenshots, "window": info });
+        if let Some(truncated) = reported_truncation(source, read_stats.truncated) {
+            state["truncated"] = json!(truncated);
+        }
+        Ok(state)
     }
 
     /// `capabilities` (Design, The capability report): the backend's capabilities and the device mode.
@@ -475,11 +854,43 @@ impl Engine {
         Ok(dir)
     }
 
-    /// The orderly exit: every key still held released and every open input session closed, the clipboard's owner
-    /// stopped (CLIPBOARD goes with it, as the vendor's does), then the screenshot directory removed.
+    /// The orderly exit: a `drag_handle` still held ended, every key still held released, an armed after-release watch
+    /// run out, its drag's session and the sessions a hold kept open ended, the exit's settle waited out (`settle::EXIT_SETTLE`), the
+    /// clipboard's owner stopped (CLIPBOARD goes with it, as the vendor's does), then the screenshot directory removed.
     pub fn shutdown(&mut self) {
-        self.inputs.release_everything(&mut self.x);
-        let _ = self.x.flush();
+        // first, every key and button still held released, so no wait below keeps one down (the design session's
+        // rulings, M4 T7b): a drag_handle between its start and its end ends as its own end would, its drop where the
+        // pointer is, a Chromium handle's after-release watch armed and run out below; then the holds; then whatever
+        // the ledger still has down (pressed.rs; normally nothing)
+        if self.handle.is_some() {
+            let _ = self.end_drag_handle();
+        }
+        self.inputs.release_held(&mut self.x);
+        crate::pressed::release_rest(&self.x.conn, self.x.root);
+        // an armed after-release watch then runs out its lifetime (at most `dnd::SETTLE` after its drag's release), so
+        // a late take inside it is still cancelled, its Escape sent before the connections close and before the
+        // FocusOut of its drag's session and of a session the exit released; collected then, the Escape is a key the
+        // settle below follows
+        if let Some(watch) = &self.late_watch {
+            watch.run_out();
+        }
+        self.collect_late_watch(true);
+        self.inputs.end_watched(&mut self.x);
+        self.inputs.end_released(&mut self.x);
+        self.report_sent();
+        let _ = self.x.sync();
+        // the exit drops every redirect it holds: input still queued in a covered Chromium window would be cut, so the
+        // last input to such a window is given the exit's settle first (`settle::EXIT_SETTLE`)
+        let until = self.inputs.exit_settle_until(&self.x);
+        let started = Instant::now();
+        crate::settle::wait(until);
+        if self.cfg.stats && until.is_some() {
+            let waited = started.elapsed().as_secs_f64() * 1000.0;
+            eprintln!(
+                "{}",
+                json!({ "stats": { "id": null, "exit_settle": { "waited_ms": (waited * 1000.0).round() / 1000.0 } } })
+            );
+        }
         self.clipboard = None;
         if let Some(dir) = self.shot_dir.take() {
             let _ = std::fs::remove_dir_all(dir);
@@ -489,8 +900,156 @@ impl Engine {
 
 #[cfg(test)]
 mod tests {
-    use super::acts;
+    use super::{
+        Observed, acts, input_window, minimized_sentence, modal_sentence, own_route_read, reported_truncation,
+    };
+    use crate::atspi::{Told, Unassociated};
+    use crate::tree::{AxNode, Truncated};
     use serde_json::json;
+
+    fn node() -> AxNode {
+        AxNode {
+            actions: None,
+            children: Vec::new(),
+            description: None,
+            id: ":1.2:/frame".into(),
+            name: None,
+            role: "frame".into(),
+            states: None,
+            value: None,
+        }
+    }
+
+    #[test]
+    fn a_frame_found_by_cuas_own_routes_answers_its_tree_only_once_confirmed() {
+        let refused = |observed: Observed| match observed {
+            Observed::Refused(Unassociated::Changed(7)) => "changed",
+            Observed::Refused(Unassociated::Failed(_)) => "failed",
+            other => panic!("refused, not {other:?}"),
+        };
+        let confirmed = || Ok(true);
+        assert!(matches!(
+            own_route_read(7, Told::Active, Ok(Some(node())), confirmed),
+            Observed::Tree(_, Told::Active)
+        ));
+        // whatever the read or the confirmation does, a sentence or an error, never the X11 tree
+        assert_eq!(
+            refused(own_route_read(7, Told::Position, Ok(Some(node())), || Ok(false))),
+            "changed"
+        );
+        assert_eq!(
+            refused(own_route_read(7, Told::Active, Ok(Some(node())), || anyhow::bail!(
+                "bus timeout"
+            ))),
+            "failed"
+        );
+        assert_eq!(
+            refused(own_route_read(7, Told::Caption, Ok(None), confirmed)),
+            "changed",
+            "a root that fails"
+        );
+        assert_eq!(
+            refused(own_route_read(
+                7,
+                Told::Position,
+                Err(anyhow::anyhow!("bus timeout")),
+                confirmed
+            )),
+            "failed"
+        );
+        let mut asked = false;
+        own_route_read(7, Told::Position, Ok(None), || {
+            asked = true;
+            Ok(true)
+        });
+        assert!(!asked, "no tree, nothing to confirm");
+    }
+
+    #[test]
+    fn truncation_is_reported_only_for_an_accessibility_read_that_cut_something() {
+        let cut = Truncated {
+            nodes: 12,
+            depth: 2,
+            failed: 1,
+        };
+        assert_eq!(reported_truncation("at_spi", cut), Some(cut));
+        assert_eq!(
+            json!(reported_truncation("at_spi", cut)),
+            json!({"nodes": 12, "depth": 2, "failed": 1})
+        );
+        assert_eq!(
+            reported_truncation("at_spi", Truncated::default()),
+            None,
+            "omitted when every count is 0"
+        );
+        assert_eq!(reported_truncation("x11", cut), None, "the X11 fallback is no read");
+    }
+
+    #[test]
+    fn a_minimized_window_refuses_every_window_targeted_input_but_releases_reads_and_activation() {
+        let window = json!({"window": {"id": 77, "app": "gedit", "minimized": true}});
+        for command in [
+            "press_key",
+            "key_down",
+            "click",
+            "move",
+            "scroll",
+            "drag",
+            "perform_secondary_action",
+            "type_text",
+            "type_characters",
+            "clipboard_write",
+            // its Copy is an element action, or a context menu and an Escape
+            "clipboard_read",
+        ] {
+            assert_eq!(input_window(command, Some(&window)), Some(77), "{command} is refused");
+        }
+        for command in [
+            // releases always run
+            "key_up",
+            "clipboard_release",
+            "drag_handle",
+            // the remedy the sentence names
+            "activate_window",
+            // reads: the tree is read and the screenshot is answered as unavailable
+            "get_window_state",
+            "list_windows",
+            "capabilities",
+            "launch_app",
+            "preflight",
+            "no_such_command",
+        ] {
+            assert_eq!(input_window(command, Some(&window)), None, "{command} is not refused");
+        }
+        assert_eq!(
+            input_window("press_key", Some(&json!({"key": "a"}))),
+            None,
+            "the desktop route"
+        );
+        assert_eq!(
+            input_window("press_key", Some(&json!({"window": null, "key": "a"}))),
+            None
+        );
+        assert_eq!(input_window("press_key", None), None);
+        assert_eq!(
+            input_window("press_key", Some(&json!({"window": {"id": "77"}}))),
+            None,
+            "a malformed window is the request's own error"
+        );
+        assert_eq!(minimized_sentence(77), "Window 77 is minimized; activate it first");
+    }
+
+    #[test]
+    fn a_window_its_modal_dialog_blocks_is_refused_naming_the_dialog_to_send_the_input_to() {
+        // the same requests as the minimized refusal (input_window, above): each opens the window's input session,
+        // whose synthetic FocusIn Qt hands to the dialog; releases, reads and activation are not refused
+        assert_eq!(
+            modal_sentence("org.kde.kate", 6291462, 6291476),
+            "org.kde.kate window 6291462 is blocked by its modal dialog, window 6291476, which takes the desktop's \
+             focus on background input to the window; nothing was sent: send the input to the dialog, or use a \
+             dedicated desktop"
+        );
+    }
 
     #[test]
     fn a_late_drag_and_drop_refuses_only_requests_that_send_input_or_change_state() {
@@ -522,6 +1081,8 @@ mod tests {
             "capabilities",
             "key_up",
             "clipboard_release",
+            // the service's release of a handle whose REPL state is gone: a release, which always runs
+            "release_handle",
             "no_such_command",
         ] {
             assert!(!acts(command, None), "{command} runs");

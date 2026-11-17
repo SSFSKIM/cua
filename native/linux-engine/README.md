@@ -14,7 +14,12 @@ desktop) on the observation side (M1a.1); `press_key`, `key_down`, `key_up`, `cl
 `type_text` and `clipboard_write`, and `type_characters`. M3.1 adds `capabilities` (`caps.rs`: the X11 backend's
 fixed capabilities, the device mode, the version and the commit) and applies the device mode to every input kind a
 family ignores on the background route (below). M3's review adds `preflight`, a request that acts and sends nothing
-(below).
+(below). M4's T17 adds `release_handle`, a release cua's service sends at a new REPL kernel's setup (after `js_reset`
+or a cell's timeout): a `drag_handle` still held is released there as its end would release it, nothing held sends
+nothing, and it answers null. A held handle that gets no request of its own for 30 s (`--drag-handle-idle-ms` sets
+another) is released by the engine between requests where the pointer is, which is then pending as a drag's watch
+end is (`a drag handle released by timeout: …`): every reply carries it, and the next acting request, or the released
+handle's own `end`, is refused with it (`engine/handle.rs`).
 
 ```bash
 cargo build --release
@@ -22,7 +27,9 @@ printf '%s\n' '{"id":1,"command":"list_windows","input":{}}' | target/release/cu
 target/release/cua-engine --version   # cua-engine <version> (<git sha>)
 cargo test
 # the live tests (an X display, a session bus with AT-SPI, yad for a GTK 3 window), as the engine-linux gate runs them
-xvfb-run -a dbus-run-session -- cargo test --features live -- --test-threads 1
+xvfb-run -a dbus-run-session --dbus-daemon="$PWD/tests/dbus-daemon-quiet" -- cargo test --features live -- --test-threads 1
+# the two-screen tests on a private Xorg whose screens sit side by side (xserver-xorg-core, xserver-xorg-video-dummy)
+tests/two-screens.sh
 ```
 
 Releases are built, tested and attested by `.github/workflows/linux-engine.yml` from the version in `Cargo.toml`
@@ -55,9 +62,146 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
 
 - **Routes** (`route.rs`): a request naming a window goes through that window's background session (`input.rs`):
   synthetic `FocusIn` unless the focus is already within it, key and pointer events by `SendEvent` (pointer events
-  to the deepest child under the point), the vendor's 100 ms before `FocusOut`; nothing on it activates, raises,
-  focuses or moves the pointer. A request without a window uses the desktop route (`desktop.rs`, XTEST). The window
-  is redirected (retained) before its first targeted input, with no wait after it; keys are not paced.
+  to the deepest child under the point), and `FocusOut` as the request's input ends, before its answer; nothing on it
+  activates, raises, focuses or moves the pointer. A request without a window uses the desktop route (`desktop.rs`,
+  XTEST). The window is redirected (retained) before its first targeted input, with no wait after it; keys are not
+  paced.
+- **No wait before `FocusOut`** (`route.rs`, M4's T7 as the design session ruled on task 59's measurement): the
+  vendor's 100 ms before each `FocusOut` is gone. It was kept because Chromium cut and reordered the last keys of a
+  burst when `FocusOut` came sooner (M0.4), but what cut them was the window's redirect going away (M0.4's control
+  ended its engine before reading); with the redirect retained, a `FocusOut` at once cut and reordered no key on any
+  family, idle or at twice the load (task 59). Nothing is left pending between requests, so input to another window
+  waits for nothing. A session stays open across requests only while a `key_down` holds keys in it, or while its
+  drag's late-take watch is armed (Drag and drop into Chrome, below). With `--stats`,
+  each `FocusOut` is reported (`focus_out`: window, cause `request`, `watch` or `exit`, the time since the session's input
+  ended, and the request whose input it ends): on the line of the request it went out in, or for the exit's and one a
+  watch's end sent between requests on a line of its own (`"id": null`).
+- **A requested context menu** (`engine/elements.rs`, `copy.rs` `open_menu`; candidate 3): an element action that
+  runs `showContextMenu` (`perform_secondary_action` naming it, a right click's fallback to it when the element has no
+  visible point, or a primary click whose action 0 it is) answers ok only once a menu appears: a child of the
+  element's application that was not among its children just before the action, holding a `menu item`, polled every
+  20 ms for up to 1 s, the detection the context-menu Copy uses. The 1 s is one deadline over every read after the
+  action, the menu's search included: a read still unanswered then is abandoned, so an application that answers
+  slowly or not at all is answered at 1 s, and a menu not seen by then counts as none. A menu already open when the
+  action is asked for confirms nothing by itself. When none appears the answer is `menuUnconfirmed`, an error sent
+  after the action, like
+  the paste's unconfirmed answer: `showContextMenu was sent and no menu was seen within 1 s; the application may have
+  shown its own menu or ignored the request; read the window before retrying`. A page that handles `contextmenu`
+  itself (its own HTML menu) gets that answer too, which says so. The vendor answers ok as soon as the action is asked
+  for (behaviour §7.2), menu or none. In Chromium, a context menu requested on a window that is not focused
+  (perform_secondary_action showContextMenu, the right-button fallback, or a window-bound right click) does not stay
+  open after the request. To use a menu item, focus the window first where you may (on a shared desktop, only when the
+  person allows it), or use the clipboard operations for copy and paste.
+- **The paste's settle** (`settle.rs`, `engine/paste.rs`): a paste observes its field before it acts, and keys its
+  window took just before may not have landed yet, so the observation reads the field short and the paste is refused
+  with nothing sent, or lands at a caret the confirmation did not expect (task 59). So a paste whose window took a key
+  within `--paste-settle-ms` (100 ms) waits, before its observation and before the clipboard lock and never between
+  the observation and the dispatch, until that long has passed since the key. A click just before races it the same
+  way (a click into another field can land after the observation, which then reads the field it left), so a paste
+  whose window took a background click (a press of button 1 to 3) within `--paste-click-settle-ms` (25 ms) waits too,
+  until that long has passed since the click (the design session's ruling on task 60: 0 missed on Electron at twice
+  the load, 25 held; the review's probe, whose page spends 50 ms on the press, confirmed 10 of 10 at 25). Each
+  paste's `--stats` record says how long after the key and the click it came and what it waited (`paste.settle`).
+- **A paste naming no element looks again for the focus** (`engine/paste.rs`, task 74): it pastes into the window's
+  focused element, read from the tree right after its session's synthetic `FocusIn`, and a toolkit can report that
+  focus a moment after it took it. GTK 3 marks its focus widget `focused` for AT-SPI only from an idle callback after
+  the focus-in (`gail_focus_notify_when_idle`), which the walk's own calls can hold off, so the walk could find none
+  and refuse a paste the window would have taken (6 of 30 on one contended CPU). So when the request's own session
+  synthesized the focus, a walk that finds none is repeated every 2 ms for up to 50 ms; a window that already held
+  the focus is read once. The longest wait measured was 15.3 ms on one contended CPU (7.3 ms idle). A refusal for
+  no focused element after a synthetic `FocusIn` therefore comes up to 50 ms later. `--stats` carries the look's
+  time (`paste.focused_ms`).
+- **A press waits for Qt's focus** (`focus_ack.rs`, task 61): Qt asks the window manager to activate a window when it
+  handles a button press while the window is not its own focus window, and it makes the window its focus window only
+  once it delivers the event the window's `FocusIn` queued, after the batch of X events it read the `FocusIn` in. A
+  synthetic `FocusIn` and the press just after it arrive in one batch when Qt's main thread is late, as at twice the
+  gate's load, and the press then activates the window (kate and qtcreator, in every engine, the vendor's included).
+  So in shared mode, before the first press of a background session that synthesized the focus (a click, a drag, an
+  element's right click, a paste's focusing click), a press to a family that does this (`families.rs`
+  `activates_on_press`, Qt) waits until the window's AT-SPI frame reports `active`, Qt's own state of the window, at
+  most `--focus-ack-ms` (25 ms, by the wait rule at twice the load: every bound from 25 to 200 ms held on kate and
+  qtcreator, the wait itself a median of 4 to 8 ms); a frame already active before the session opens (an earlier session's `FocusOut`,
+  which Qt counts down for 100 ms) is first waited out until it reads inactive, before the `FocusIn`. A press with no
+  such report in time is refused, nothing pressed: "`<app>` did not take the background focus within 25 ms, so a
+  press could have activated its window; nothing was sent, so it is safe to retry". Dedicated mode waits for nothing.
+  With `--stats` each such press's line carries `focus_ack` (its bound, what it waited, and `refocused` and
+  `native_child`, below). Three more rules, from task 61's review and the design session's rulings (2026-11-05):
+  - *The press's recipient.* A press goes to the deepest X window under its point, and Qt compares that window's
+    own focus with the top-level's: a native child window (a widget made native) is never Qt's focus window, so Qt
+    focuses it on any press, however long the frame's `active` was waited for. In shared mode a press to a Qt window
+    whose recipient at that point is not the window itself is refused, nothing sent: "`<app>` gives a native child
+    window of its own the input focus on a press at that point, …". No press lands on one in the Qt applications on
+    the #171 VM (0 of 10,800 points over 8 applications).
+  - *The real focus before every press.* A session a hold keeps open is reused, and one opened while the real focus
+    was within the window synthesized no `FocusIn`. Before each press, every press of a multi-click included, the
+    real focus is read again; when it has left such a session, the session takes a synthetic focus then, as a fresh
+    one would (the earlier focus let go, the `FocusIn`, its `active` waited for), and its end sends the `FocusOut`. A
+    press refused after earlier clicks of its request went says so: "…; the request's next click was not sent, but
+    `<n>` of its `<count>` clicks already reached the window, so read the window before retrying".
+  - *No acknowledgement outlives its press* (task 61's fix 3). Every press, on every route, spends a `PressAck` that
+    only `focus_ack::press_ack` issues, reading the recipient and Qt's state again just before that press; the press
+    refuses one taken for another window, point or press, and `tests/press_boundary.rs` holds that no code presses
+    without one or keeps one. Once a request's synthetic `FocusIn` was reported taken, a later press reads the frame
+    again: Qt may have given its focus to another of the application's windows meanwhile (the person focusing it
+    during a held click), and then the press takes a fresh `FocusIn` with its own report, as a fresh session would,
+    unless a modal dialog of the window's is shown by then, which refuses it.
+  - *Qt with no accessibility tree.* A window no listed family names that carries `_XEMBED_INFO` (Qt's xcb backend
+    sets it on every window it creates; no other family surveyed carries it: GTK 3, GTK 4, VTE, Firefox, Chrome,
+    Electron, Java AWT and Swing, Tk, LibreOffice, xterm), or whose process maps Qt 5's or Qt 6's core library
+    (`/proc/<pid>/maps`, by `_NET_WM_PID`; only the two names are looked for), has no frame to wait on: its presses
+    are refused in shared mode ("`<app>` is a Qt application with no accessibility tree on the bus, …"); keys still
+    go. The mark is read from the X server, so it answers inside cua's worker sandbox, whose own PID namespace and
+    `/proc` hide every application's map; a window with neither (unmarked, and its map unreadable) is of an unknown
+    toolkit and its press goes unwaited. With `--stats` the line carries `qt_without_tree` (`xembed` or `map`).
+- **A window its modal dialog blocks** (`engine.rs`, the design session's ruling A): Qt hands a `FocusIn` or a
+  `FocusOut` on a window its modal dialog blocks to the dialog, and asks for the dialog's activation, so any background
+  input's synthetic `FocusIn` makes the dialog take the desktop's focus (5 of 5 on Qt 5 and Qt 6, with and without
+  Openbox, and on kate's and Qt Creator's Open dialogs; GTK 3, GTK 4 and Chrome 0 of 5). In shared mode, input to a
+  Qt window (`families.rs` `relays_focus_to_modal`, or Qt with no tree, above) while a modal transient of its own X
+  client is shown (`_NET_WM_STATE_MODAL`, `WM_TRANSIENT_FOR`, viewable or iconic) that is not one of the window's own
+  ancestors along `WM_TRANSIENT_FOR` (a modal dialog that opened a modal dialog over itself is blocked by it, and the
+  dialog on top takes input) is refused before anything is sent, after the minimized refusal and for the same
+  requests: "`<app>` window `<id>` is blocked by its modal dialog,
+  window `<dialog>`, which takes the desktop's focus on background input to the window; nothing was sent: send the
+  input to the dialog, or use a dedicated desktop". Releases always run; dedicated mode is unchanged. A dialog that
+  maps during a request is not seen by it: when that request's own click opened it, Qt asks for its activation as it
+  shows it, which no rule of the engine's can stop.
+- **Exit** (`serve.rs`): stdin closing, SIGTERM, SIGINT or SIGHUP end the engine through its orderly exit: a
+  `drag_handle` still between its start and its end ends first as its own end would (the family's release dwell, then
+  button 1 up where the pointer is), then held keys are released, so no wait of the exit keeps one down; then an armed
+  after-release drag-and-drop watch runs out its lifetime (at most 300 ms after its drag's release), so a late
+  take is still cancelled with its Escape, inside the drag's session; then that session and a session a hold kept
+  open get their `FocusOut`; then the
+  exit's settle: the engine waits until `--exit-settle-ms` (300 ms) has passed since the last background input to
+  a window whose redirect it still holds, the watch's Escape included (clicks too: once no `FocusOut` drain waits first, the unredirect cuts them as it
+  cuts keys). At its longest, a stop right after a watched drag whose late take comes at the end of the watch,
+  that is about 300 + 300 ms after the drag's release, inside the 1 s backstop. Its exit drops those redirects (the X
+  connection closes), and a covered Chromium window whose redirect goes while it still has input queued cuts that input
+  and delivers it only with its next `FocusIn`. So a burst answered just before the signal still arrives in order; an
+  exit with no such input in the last 300 ms waits for nothing. The declared limits
+  are SIGKILL and load beyond twice the gate's. A request already running finishes first; requests
+  queued behind the signal are not run. The exit code is 0 for stdin closing and 128 plus the signal's number
+  otherwise. A second SIGINT, or an exit still not done 1 s after the first signal (the backstop), ends the process at
+  once, a request still running included, but first releases every key and button still down over a connection of its
+  own, waiting at most 200 ms for it (`pressed.rs`, the record kept beside the bookkeeping), and so does a panic, from
+  a copy the panicking thread keeps of that record, before its diagnostics are written; a second SIGTERM or SIGHUP
+  changes nothing, since a supervisor may send its own after another's. A drag's button released there (a `drag` cut
+  by the forced exit, a `drag_handle` before its end) ends the drag where the pointer is. SIGKILL cuts the
+  settle and the release: a window whose session was still open (a hold, a watched drag's, a request still running) keeps its
+  synthetic focus until it next gets a `FocusOut`, and a key
+  held at the server stays down, unless the engine runs under cua's launcher shim (`cua-engine launcher-shim`,
+  `shim.rs`, the REPL host's on Linux): there the engine writes its XTEST-held keys and buttons to a held record
+  (`held.rs`: a bitmap of every key and button, written on a pipe whose write end the shim hands down, named in
+  `CUA_ENGINE_HELD_FD`, to the trusted worker and from it to each engine, never through a path model code could
+  reach), a press's before it is sent, and the shim, outside the sandbox, releases what that record still shows down
+  on the XTEST devices once the engine is gone, whether the sandbox's end or its supervisor's death took it; an engine
+  that outlives the shim's wait for it is ended first, so nothing is pressed after the release. The stop signals are
+  blocked in every thread and taken by one thread with `sigwait`; a program `launch_app` starts gets them unblocked.
+  The drain reads nothing from stdin and writes nothing to stdout, and an answer that cannot go out does not hold it
+  back: answers are written by a thread of their own, and the loop, waiting for each, also watches for the stop. That is
+  how cua's REPL host stops the engine on Linux: it freezes the trusted worker's whole tree, which stops the engine's
+  reader, sends the engine alone SIGTERM and SIGCONT, waits for its exit (at most 1.25 s, the backstop and the forced release's 200 ms with 50 ms to spare), then SIGKILLs everything it
+  froze (`src/repl-host/kernel-child.mjs` `stopProcessTree`), so an answer may sit in a full pipe for good.
 - **Keys** (`keys.rs`, `engine/keyboard.rs`): the vendor's chord grammar and Shift rule (`Z` is z without Shift, so
   `Ctrl+Z` stays undo), and its held-key bookkeeping: counts per target and keycode shared by `press_key`, `key_down`
   and every command's `key` chord; a window with held keys keeps its session across requests until the last hold is
@@ -78,13 +222,29 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   as the family of the window under its start asks, in place of the vendor's 8 ms between their points.
 - **Elements and windows** (`engine/elements.rs`, `engine/windows.rs`): element clicks through action 0 or a right
   click at the visible point, named actions, the element scroll, `activate_window` and `launch_app`.
+- **LibreOffice's positions** (`vcl.rs`, M4's T16): LibreOffice 24.2 on its gtk3 VCL plugin reports what VCL draws too
+  high by its native menu bar's height after a ConfigureNotify and until the next pointer event. A point taken from a
+  LibreOffice element's extents (the right click's, a paste's focusing click's, the element scroll's) is moved by the
+  GTK host panel's offset from VCL's root pane where the two disagree in that shape, and refused, nothing sent, where
+  the structure is another one. The structure is read from the element itself up, so an action naming the root pane
+  is corrected or refused too. Left element clicks are `DoAction` and take no point.
 - **The device mode** (`engine/way.rs`, `families.rs`, `route.rs`): a family lists, per input kind, whether it ignores
-  the background route always or unless its window is fully unobscured (`cover.rs`): the paste chord, keys
+  the background route always, unless the real pointer is in its window, or unless a drag's path is unobscured: the
+  paste chord, keys
   (`press_key`, `key_down`, `key_up`, `type_characters`), clicks (a coordinate `click` into a window and an element's
   right click), scroll (at a point, the window's centre or an element), `drag` and `move`. GTK 4 ignores all of these
-  always; Gecko its clicks, scrolls, moves and drags unless unobscured; Chromium its drags unless every point and
-  segment of the drag's path is unobscured (`cover.rs`' `points_unobscured`); Qt its scrolls; xterm its keys (and has
-  no verified paste route). Element actions through AT-SPI are never listed. For a listed kind and condition, `--desktop shared`
+  always; Gecko its clicks, scrolls, moves and drags unless the real pointer is in its window (`unless_pointer_within`:
+  the deepest window the server finds under the pointer is the window or below it, so a pointer over a window that
+  covers it is outside; T19, evidence `m4/pointer-route/`); Chromium its drags unless every point and segment of the
+  drag's path is unobscured (`cover.rs`' `points_unobscured`); Qt its scrolls; xterm its keys (and has no verified
+  paste route). A Gecko click, scroll, move or drag on the background route is watched for the real pointer leaving
+  the window (a `LeaveNotify` of the window to no window inside it, on the press watch's connection, `stray.rs`),
+  from a second read of the pointer to a round trip after its events went out, and the pointer is read again at its
+  end (`engine/within.rs`). A pointer gone at the second read is judged outside then, with no third read: the
+  request is refused or takes the foreground route as below, nothing sent on the background route. A request the pointer left during, or ended outside, is answered `<app> may not have
+  taken the <request>: the desktop pointer left its window during the <request>, and <app> takes background pointer
+  input only while the pointer is in its window. Read the window to see what happened before trying again`, never
+  success (`--stats` `pointer_watch`). Element actions through AT-SPI are never listed. For a listed kind and condition, `--desktop shared`
   refuses with `<app> does not accept background input; use a dedicated desktop or activate the window first`
   before anything is sent; `--desktop dedicated` activates the window (`_NET_ACTIVE_WINDOW`, a raise, the input
   focus), waits for it to hold the focus, and sends the input through XTEST at the same window-relative points (the
@@ -105,17 +265,24 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   - no take by the release: the drag answers at once as a plain drag (it claims nothing about drops). A watch on its
     own X connection, subscribed before the drag began and told the instant the button went up, goes on off the
     request path for 300 ms from the release, or until a request that acts stops it. A take then gets the cancel's
-    Escape at once (synthetic, to Chrome's window, never XTEST). The first request that sends input or changes state
+    Escape at once (synthetic, to Chrome's window, never XTEST). The drag's own session stays focused until the watch
+    ends, so that Escape lands inside it whatever Chrome does with an unfocused one; the session's `FocusOut` follows
+    the watch's end (cause `watch`), and an engine with no request to handle wakes for it (`serve.rs`; the design
+    session's ruling on task 60). A drag that arms no watch ends its session with its answer. The first request that sends input or changes state
     (`press_key`, `key_down`, `click`, `move`, `move_relative`, `scroll`, `drag`, `drag_handle`'s start and moves,
     `perform_secondary_action`, `activate_window`, `launch_app`, `clipboard_write`, `type_text`, `type_characters`,
-    `preflight`) is answered, not run, with `<app> started a drag and drop after your drag ended; it may have dropped
-    and changed the desktop; this request was not run, so read the window before sending it again` (`--stats`
-    `late_dnd`). Reads
-    (`list_windows`, `list_apps`, `get_screenshot`, `get_window_state`, `clipboard_read`, `capabilities`) and releases
-    of what is held (`key_up`, `clipboard_release`, `drag_handle`'s end) run meanwhile, so no key or button stays down
-    at the server. A watch that failed (its connection lost, a round trip failed) is reported the same way: `the
-    drag-and-drop watch after your drag into <app> failed (<why>), so a drop may have happened unseen and changed the
-    desktop; …`; a panicking watch ends the engine (the release profile aborts on a panic). The live tests inject both
+    `preflight`) is answered, not run, with `Pending from your last drag, a late drag and drop: <app> started a drag
+    and drop after your drag into it ended, so the drag did not end as it answered; it may have dropped and changed the
+    desktop; this <command> request was not run, so read the window before sending it again` (`--stats` `late_dnd`).
+    Reads (`list_windows`, `list_apps`, `get_screenshot`, `get_window_state`, `clipboard_read`, `capabilities`) and
+    releases of what is held (`key_up`, `clipboard_release`, `drag_handle`'s end) run meanwhile, so no key or button
+    stays down at the server, and each of their replies carries the pending cause as `notice` after the vendor's keys
+    (`Pending from your last drag, …. Read the window before sending input again: your next input request will not be
+    run`; M4's T14, the design session's rulings of 2026-11-02 and 2026-11-10), which cua's service hands the facade in
+    the window state, rendered as the observation's first line. A watch that failed (its connection lost, a round trip
+    failed) is reported the same way, its cause `a failed watch: the drag-and-drop watch after your drag into <app>
+    failed (<why>), so a drop may have happened unseen and changed the desktop`; a panicking watch ends the engine (the
+    release profile aborts on a panic). The live tests inject both
     through `CUA_ENGINE_FAULT`, honoured only in a build with the `live` feature, never a release asset. `preflight`
     (no input, answers null) is for a caller about to change the desktop by a route the engine never sees: cua's
     service sends it just before its wrapper launches an application through the supervisor, so that launch gets the
@@ -138,6 +305,33 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   floor waited out without one dropped nothing after a take on the path's last sample or after it. These keepalives
   come only after a take, only on such a Chromium drag.
 
+  Every such drag has the after-release watch too (M4's T14, #264; the design session's rulings, 2026-11-02): one
+  that reached its release with no take is watched for a late one exactly as the shared-mode guard's is, its Escape on
+  the route the drag used (synthetic to the window on the background route, XTEST on the foreground and desktop
+  routes), and reported the same way. A Chrome drop that was under way at its release is confirmed by Chrome's own
+  `_NET_ACTIVE_WINDOW` request for the drop's window (source 1), which its drop sends (`WebContents::Focus`) and a
+  leave never does (task 68: 1,861 of 1,861 drops, none of 354 drags that did not land), read inside the window from
+  the release's stamp (taken as the release goes out) to 150 ms after it (`dnd.rs` `DROP_CONFIRM`: about three times
+  task 68's largest, 52.9 ms; a request read before the stamp, or after the window however late it was read, confirms
+  nothing: task 69's fix wave), read on the watch's own connection with
+  `SubstructureNotify` on the root. Only a request for that window counts, and only where the window manager lists
+  `_NET_ACTIVE_WINDOW` in `_NET_SUPPORTED`, read at the drag. Electron's drop sends none: it is confirmed by its
+  drag loop's accept cursor, read at the release itself on a cursor watch of its own begun before the press
+  (`drop_cursor.rs`: the accept is the unnamed cursor shown then whose image is none of the one shown at the press,
+  those shown up to the take and the drag loop's own, the first from 3 ms before the take; the design session's ruling
+  on task 73's review, adopted on 0 drags answered ok without a drop in 720 a load, plain drags and handles, at idle,
+  at the gate's window load and at twice the load, evidence `m4/drag-handle/fix/`). Every other window keeps the floor
+  with nothing to confirm.
+  With no request (or no accept) in time the drop is unconfirmed, never ok: `Pending from
+  your last drag, an unconfirmed drop: …`, on every reply until the first acting request, refused with it. An acting
+  request that comes before the 150 ms are over waits for the rest of them. The release at Chrome's accept cursor
+  (`accept.rs`, the cursors told apart by their image) is measurement only (`--drag-dnd-release-at-accept`): Chrome's
+  cursor is its last status, which answers a position the renderer has handled, not necessarily the path's last. In
+  task 69's press-inside control one drag of 30 was released at the path's end on an in-zone accept not yet
+  withdrawn; Chrome dropped and confirmed it, and the page took nothing (evidence `m4/drops/`; the design session's
+  ruling, 2026-11-10: a single false release reverts the early release, not the confirmation). The floor gives the
+  renderer time to answer the last position, and its keepalives revisit it.
+
   A short path can end before the take (task 22, evidence `m3/drop-misses/task22/`): under a load of Chrome windows
   the renderer gets the drag's first moves a frame or a stall late and starts the drag and drop after a 40 px path has
   ended, and a release before the take drops nothing while the drag answers success (`m3-gate-final`'s three cold
@@ -152,11 +346,13 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
     later than 250 ms after the press: the drag answers success;
   - a speed gap: a Chromium drag that never takes (a text selection, a range, a short thumb drag) holds its button
     until 250 ms after the press, paying 250 ms less its path's time: a 40 px Chrome selection goes from about 134 ms
-    to about 355, a 40 px range from about 130 to about 350; a drag whose path lasts 250 ms or more pays nothing;
-  - a speed gap: the short Chrome drop (40 px, in front) takes 469 ms, against the newest vendor build's 258 and the
-    pinned build's 280 (which lands 11 of 12). A lead: release when Chrome's accept cursor shows, with the take plus
-    350 ms as the ceiling, which helps only if reading the accept cursor has no false positives (task 18's replay of it
-    matched Chrome's accept in 85 to 100% of drags by condition, without saying which way the rest failed).
+    to about 254, a 40 px range from about 130 to about 350; a drag whose path lasts 250 ms or more pays nothing. On
+    the selection the vendor builds take as long (task 69, every lane in front: cua 254.4 ms, the newest build 251.9,
+    the pinned 254.1), so the speed rule passes;
+  - a speed gap: the short Chrome drop (40 px, in front) takes 365.9 ms and lands 40 of 40, against the newest vendor
+    build's 251.5 (25 of 40 landed) and the pinned build's 252.9 (22 of 40; task 69). The release at Chrome's accept
+    cursor closes it (task 68: medians of 54 to 66 ms) but does not ship: a stale accept released one drop Chrome
+    confirmed and the page never took (above).
 
   Every drag into a Chromium-family window (Chrome by its classes, the Chromium toolkit) presses atomically and is
   watched (`stray.rs`; task 20, evidence `m3/drop-misses/task20/`). Blink resets its press on any mouse move that
@@ -221,7 +417,11 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   `EditableText.CopyText` of its one selection, else its context menu's Copy item; then CLIPBOARD's new contents are
   snapshotted under a handle (`<pid>-<nanoseconds>-<n>`, at most 32 and 256 MiB). The application's copy stays on
   CLIPBOARD. `clipboard_release` frees a handle, an unknown one without error. A context menu the Copy opened and
-  found no Copy in is closed with Escape through the background route, so the request leaves no menu open.
+  found no Copy in is closed with Escape through the background route, so the request leaves no menu open. A Copy
+  whose clipboard change does not come within 2 s is `clipboard update timed out`; after a context-menu Copy the
+  answer adds that the application may still complete the Copy later and that its menus on the window may stay
+  unresponsive (task 77: Chrome under load once served a Copy late, and once left every later menu unopened). Nothing
+  is sent to recover: an Escape with no menu up reaches the page.
 - **The paste route** (`engine/paste.rs`, `paste.rs`, `field.rs`): `type_text` and `clipboard_write` (a handle's
   snapshot into the window's focused element). In order: text over 64 MiB is refused; while an earlier unconfirmed
   paste's `CurrentTime` refusal runs, a new paste is refused (`a previous paste could not be confirmed and may still
@@ -232,12 +432,32 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   focused one: its focus, editability, character count, caret and selection); a named element without the focus is
   clicked at its visible point (once more if the focus has not shown 500 ms later: background Chrome drops a first
   click in some states; `paste.clicks` and `paste.focus_ms` on the `--stats` line) and its caret or selection put back
-  (`AddSelection`, `SetCaretOffset`; a refusal is no failure). Then the lock, the snapshot and CLIPBOARD taken; the field and the desktop focus revalidated
-  (`requested field or selection changed before dispatch; nothing was sent`); the chord sent once; the field read
+  (`AddSelection`, `SetCaretOffset`; a refusal is no failure). Then the lock, the snapshot and CLIPBOARD taken; the
+  target's `TARGETS` answered before the chord (a client that keeps CLIPBOARD's targets, as gnome-terminal does,
+  drops a paste chord that comes before the new owner's: task 56, fix 3): the owner thread handles every request the
+  server has given it and makes a round trip, so an answer to a `TARGETS` request from the target's X client (its
+  window's resource range) since the take is delivered before the chord, in every family; a family that asks at every
+  owner change (`refreshes_targets`: GTK 3, GTK 4, VTE) is waited for, every 2 ms, at most 25 ms
+  (`paste::TARGETS_REFRESH_WAIT`; `paste.targets` on the `--stats` line: answered, waited, the bound;
+  `--targets-wait-ms` sets the wait for every family, measurement only); then the field and the desktop focus
+  revalidated, after the wait (`requested field or selection changed before dispatch; nothing was sent`); the chord
+  sent once; the field read
   every 20 ms for up to 2 s for the inserted segment where the caret or selection was (for Gecko, without the U+FEFF
   it adds after each character beyond the BMP), each read bounded by that deadline and counted only if it ends
   before it, while the target's selection transfer is followed, counting only requests from the target's X client
-  (its window's resource-id base); and the cleanup. The answer is success when the segment is read back, else
+  (its window's resource-id base); and the cleanup. In a family whose text scrolls away at its start (VTE: a full
+  screen's first row leaves as text wraps its last), the field is also observed whole, its text and its lines
+  (`GetTextAtOffset` at `LINE_START`, the terminal's rows, soft wraps included), and a field that has lost text since
+  confirms only when the whole of it reads as the observed text with the paste at the caret less a prefix ending where
+  an observed line starts, the paste whole after it, and no reading short of the whole paste (none of it, or only its
+  first characters, at the caret, less a prefix ending where an observed line starts) is the same; anything else
+  stays unconfirmed (`paste.confirm_rule` `segment` or `scrolled` on the `--stats` line). A whole read that reads
+  the same as one the rule left unconfirmed is not judged again (`paste.scrolled` `checks`, `unchanged`, `check_ms`;
+  `paste.confirm_looks`): one judging at the limits, a field of 65,536 characters in 512 lines and a 64 KiB paste, takes
+  about 3 ms, the readings compared in place as bytes, with nothing of the paste's size allocated; a read too short to
+  hold the paste whole is refused from its length alone. The field is not observed whole past those limits, and then
+  only the segment confirms. The answer is
+  success when the segment is read back, or the scrolled field confirms, else
   `Paste was sent once and could not be confirmed; read the field before retrying`. Only a refusal before dispatch, or
   a chord press the X server answered with an X error naming it (so the chord's last key never arrived), says that
   nothing was sent or pasted; a press whose acknowledgement never came may have arrived, and is answered as sent. The
@@ -259,7 +479,11 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
 | `--retention` | `session`, `per-request`, `none` | when the target window is redirected through Composite: once until destroyed, per request as the vendor does, or never |
 | `--settle-ms` | 0 | the wait after a window's redirect before input to it |
 | `--capture-wait` | `damage`, `fixed` | a capture of a fresh pixmap waits for the DAMAGE rule, or a fixed 100 ms once per pixmap (the fallback) |
-| `--teardown-ms` | 100 | the wait before a background session's teardown |
+| `--exit-settle-ms` | 300 | the exit's wait after the last background input to a window whose redirect it still holds (Exit, above); the measured value, set lower or higher only to measure it |
+| `--teardown-ms` | 0 | a wait before each background session's `FocusOut`, on the request path, for measurement only (0.3.0's wait, the vendor's 100 ms there); 0 sends each `FocusOut` as its request's input ends |
+| `--paste-settle-ms` | 100 | a paste's wait before it observes, after the last key to its window (The paste's settle, above); the measured value, set otherwise only to measure it |
+| `--paste-click-settle-ms` | 25 | a paste's wait before it observes, after the last click to its window (The paste's settle, above); the measured value, set otherwise only to measure it |
+| `--focus-ack-ms` | 25 | in shared mode, how long a background press to a Qt window waits for its frame to report the session's focus taken (A press waits for Qt's focus, above); the measured value, set otherwise only to measure it; 0 turns the press's checks off (the control), the modal dialog's refusal staying |
 | `--key-pace-ms` | 0 | the wait after each new key edge (the pinned build's is 33) |
 | `--drag-step-ms`, `--drag-step-us` | by family | the wait after each drag sample, fixed for every target (the vendor's is 1 ms; measurement only) |
 | `--drag-press-dwell-ms`, `--drag-release-dwell-ms` | by family | the wait after a drag's press and before its release, fixed for every target (measurement only); any drag flag sets the others to 0 |
@@ -267,7 +491,10 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
 | `--drag-dnd-hold-ms` | 250 | how long after the press a Chromium drag the engine lets drop keeps its button down for its source's take when none came by the path's end (measurement only; 0 turns the hold off; `--stats` `hold`) |
 | `--dnd-cancel-after-release` | off | a drag and drop the engine cancels is cancelled only after the release, too late (measurement only: the harness's check of the honest answer) |
 | `--dnd-defer-take` | off | a drag and drop that begins during a watched drag is left unseen until after the release, so the after-release watch finds it and the next request carries the notice (measurement only: Acceptance 8's late-take case) |
-| `--stats` | off | one JSON line per request on stderr: bus calls by member, waits, waits with one call outstanding, the most calls in flight, reply bytes, the tree's admitted, discovered and wasted counts and its tables, a capture's wait and the damage it saw, and how a desktop screenshot was read (`shm` or `get_image`) |
+| `--drag-ignore-cover` | off | a drag into a family listed `unless_path_unobscured` (Chromium) goes out on the background route along a covered path (measurement only: T13's covered paths) |
+| `--ignore-cover` | off | no cover condition (`unless_path_unobscured`) refuses or reroutes a request, so a covered window's listed kinds go out on the background route; a kind listed `always` is still refused (measurement only: what the application does with them, T19's sitting) |
+| `--ignore-pointer` | off | the pointer condition (`unless_pointer_within`) never refuses or reroutes a request, and no Gecko request is watched for the pointer leaving (measurement only: what Gecko does with input sent while the pointer is elsewhere, the predicates manifest's `cua:any-pointer` lane) |
+| `--stats` | off | one JSON line per request on stderr: bus calls by member, waits, waits with one call outstanding, the most calls in flight, reply bytes, the tree's admitted, discovered and wasted counts and its tables, a capture's wait and the damage it saw, how a desktop screenshot was read (`shm` or `get_image`), each `FocusOut` (`focus_out`, above), the exit's on a line of its own, a paste's settle (`paste.settle`), and a press's wait for Qt's focus (`focus_ack`) |
 
 ## Dependencies
 

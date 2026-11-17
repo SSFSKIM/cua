@@ -34,8 +34,10 @@ function cli(home,args,{file,nodeOverride}={}){
  catch(error){throw new Error(`Remote cua ${args.slice(0,2).join(' ')} failed (${error.status??error.code}); inspect privately on device`);}
  finally{if(fd!==undefined)closeSync(fd);}
 }
-export function prepareEndpoint({experiment,relay,plan,prepared,enrollment=true},{directoryRoot=base(),tempRoot=realpathSync(tmpdir()),inspect=executionFacts,runCli=cli,registry=readRegistry,cacheArchives=prepareArchiveCache}={}){
+// `nativeOnly`: a native-only parity preparation (./prepare-device.mjs), which aliases no profile's backend.
+export function prepareEndpoint({experiment,relay,plan,prepared,enrollment=true,nativeOnly=false},{directoryRoot=base(),tempRoot=realpathSync(tmpdir()),inspect=executionFacts,runCli=cli,registry=readRegistry,cacheArchives=prepareArchiveCache}={}){
  endpointPlan(experiment,plan.device);assertPreparedFacts(prepared,inspect({source:prepared.home}));
+ if(nativeOnly&&enrollment)throw new Error('a native-only preparation enrolls nothing');
  mkdirSync(directoryRoot,{recursive:true,mode:0o700});const parent=realpathSync(directoryRoot);
  if(parent===tempRoot||parent.startsWith(tempRoot+'/'))throw new Error('Remote home must be outside TMPDIR');
  const home=mkdtempSync(join(parent,experiment+'-')),token=randomUUID(),endpoint={...plan,experiment,home,token,...(prepared.nodeOverride?{nodeOverride:prepared.nodeOverride}:{}),nodeMode:prepared.nodeOverride?'diagnostic-override':'managed'};
@@ -48,6 +50,7 @@ export function prepareEndpoint({experiment,relay,plan,prepared,enrollment=true}
   runCli(home,installArgs(archives));
   const installed=inspect({source:home,ambient:nodeEnvironment({...process.env,...scratchEnvironment(home)},endpoint.nodeOverride)});
   if(!endpoint.nodeOverride)assertManagedNode(installed);
+  if(nativeOnly)return {...endpoint,profile:null,extensionInstanceId:null,profileFacts:'native-only: no profile bound',release:installed.release,ownNode:installed.ownNode,commit:prepared.commit};
   // Discovery aliases only. Never copy profile contents or register/rebind an extension.
   const binding=registry(prepared.home).profiles[prepared.profile];
   if(!binding||binding.route!=='cua'||binding.extensionInstanceId!==prepared.extensionInstanceId)throw new Error('Prepared cua profile binding changed');

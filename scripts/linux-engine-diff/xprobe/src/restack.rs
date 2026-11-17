@@ -6,6 +6,11 @@
 //! override-redirect flag) when a span begins and records each event; `witness.mjs` replays them.
 //!
 //! - `xprobe toplevel <window>`: the root child the window lies in (a managed client's window manager frame).
+//! - `xprobe top-at <x> <y> [<window>...]`: `{"top":…,"holds":…}`, the topmost viewable root child covering a screen
+//!   point (0 for none: the root), and which of the given windows lies in it (null for none). The harness reads it
+//!   before it moves the pointer there.
+//! - `xprobe popups <window>...`: `{"popups":[…]}`, the viewable override-redirect root children of the clients the
+//!   windows belong to: a foreground sample starts once the run's Chrome has none open (`foregroundStart`).
 //! - `xprobe restack-grabbed <window>...`: under one server grab, raises each window in turn (`ConfigureWindow`
 //!   stack mode `Above`), the harness's coalesced negative check.
 //! - `xprobe popup <x> <y> <width> <height> <ms>`: an override-redirect window of xprobe's own, mapped for `ms` and
@@ -98,14 +103,115 @@ pub fn toplevel_of(conn: &RustConnection, root: Window, window: Window) -> Resul
     }
 }
 
+/// A root child as `top-at` reads it: whether it is viewable, and the rectangle it covers, its border included.
+pub struct Placed {
+    pub id: Window,
+    pub viewable: bool,
+    pub x: i32,
+    pub y: i32,
+    pub w: i32,
+    pub h: i32,
+}
+
+/// The topmost viewable window covering a point, among the root's children bottom first (QueryTree's order).
+pub fn top_at(stack: &[Placed], x: i32, y: i32) -> Option<Window> {
+    stack
+        .iter()
+        .rev()
+        .find(|p| p.viewable && x >= p.x && y >= p.y && x < p.x + p.w && y < p.y + p.h)
+        .map(|p| p.id)
+}
+
+pub fn top_at_cmd(args: &[String]) -> Result<()> {
+    let [x, y, candidates @ ..] = args else {
+        return Err("top-at <x> <y> [<window>...]".into());
+    };
+    let (x, y): (i32, i32) = (x.parse()?, y.parse()?);
+    let candidates = candidates
+        .iter()
+        .map(|a| crate::parse_window(a))
+        .collect::<Result<Vec<_>>>()?;
+    let (conn, screen) = crate::xconnect(None)?;
+    let root = conn.setup().roots[screen].root;
+    let children = conn.query_tree(root)?.reply()?.children;
+    let attributes = children
+        .iter()
+        .map(|&w| conn.get_window_attributes(w))
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    let geometries = children
+        .iter()
+        .map(|&w| conn.get_geometry(w))
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    let mut stack = Vec::with_capacity(children.len());
+    for ((&id, a), g) in children.iter().zip(attributes).zip(geometries) {
+        // a window destroyed since the tree was read covers nothing
+        let (Ok(a), Ok(g)) = (a.reply(), g.reply()) else {
+            continue;
+        };
+        let border = 2 * i32::from(g.border_width);
+        stack.push(Placed {
+            id,
+            viewable: a.map_state == MapState::VIEWABLE,
+            x: i32::from(g.x),
+            y: i32::from(g.y),
+            w: i32::from(g.width) + border,
+            h: i32::from(g.height) + border,
+        });
+    }
+    let top = top_at(&stack, x, y);
+    let holds = top.and_then(|top| {
+        candidates
+            .iter()
+            .copied()
+            .find(|&c| toplevel_of(&conn, root, c).is_ok_and(|t| t == top))
+    });
+    let shown = |w: Option<Window>| w.map_or("null".to_string(), |w| w.to_string());
+    println!("{{\"top\":{},\"holds\":{}}}", top.unwrap_or(0), shown(holds));
+    Ok(())
+}
+
 pub fn toplevel(args: &[String]) -> Result<()> {
     let [window] = args else {
         return Err("toplevel <window>".into());
     };
     let window = crate::parse_window(window)?;
-    let (conn, screen) = x11rb::connect(None)?;
+    let (conn, screen) = crate::xconnect(None)?;
     let root = conn.setup().roots[screen].root;
     println!("{{\"toplevel\":{}}}", toplevel_of(&conn, root, window)?);
+    Ok(())
+}
+
+/// The X server's resource range of one client: a window id with its resource bits cleared (`witness.mjs`
+/// `CLIENT_MASK`).
+const CLIENT_MASK: u32 = 0x1f_ffff;
+
+/// The viewable override-redirect root children of the clients the given windows belong to: `{"popups":[…]}`, the
+/// ones open now (a client's own popups, menus and tooltips, which it may close when it loses the focus).
+pub fn popups(args: &[String]) -> Result<()> {
+    if args.is_empty() {
+        return Err("popups <window>...".into());
+    }
+    let clients = args
+        .iter()
+        .map(|a| crate::parse_window(a).map(|w| w & !CLIENT_MASK))
+        .collect::<Result<Vec<_>>>()?;
+    let (conn, screen) = crate::xconnect(None)?;
+    let root = conn.setup().roots[screen].root;
+    let children = conn.query_tree(root)?.reply()?.children;
+    let ours: Vec<Window> = children.into_iter().filter(|w| clients.contains(&(w & !CLIENT_MASK))).collect();
+    let attributes = ours
+        .iter()
+        .map(|&w| conn.get_window_attributes(w))
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    let mut open = Vec::new();
+    for (&id, a) in ours.iter().zip(attributes) {
+        // a window destroyed since the tree was read is not open
+        let Ok(a) = a.reply() else { continue };
+        if a.override_redirect && a.map_state == MapState::VIEWABLE {
+            open.push(id.to_string());
+        }
+    }
+    println!("{{\"popups\":[{}]}}", open.join(","));
     Ok(())
 }
 
@@ -119,7 +225,7 @@ pub fn restack_grabbed(args: &[String]) -> Result<()> {
         .iter()
         .map(|a| crate::parse_window(a))
         .collect::<Result<Vec<_>>>()?;
-    let (conn, _) = x11rb::connect(None)?;
+    let (conn, _) = crate::xconnect(None)?;
     conn.grab_server()?;
     for &w in &windows {
         conn.configure_window(w, &ConfigureWindowAux::new().stack_mode(StackMode::ABOVE))?;
@@ -136,7 +242,7 @@ pub fn popup(args: &[String]) -> Result<()> {
     let [x, y, width, height, ms] = args else {
         return Err("popup <x> <y> <width> <height> <ms>".into());
     };
-    let (conn, screen) = x11rb::connect(None)?;
+    let (conn, screen) = crate::xconnect(None)?;
     let screen = &conn.setup().roots[screen];
     let id = conn.generate_id()?;
     let aux = CreateWindowAux::new()
@@ -176,7 +282,7 @@ pub fn overlay(args: &[String]) -> Result<()> {
         [x, y, w, h, word, window] if word == "below" => ([x, y, w, h], Some(crate::parse_window(window)?)),
         _ => return Err("overlay <x> <y> <width> <height> [below <window>]".into()),
     };
-    let (conn, screen) = x11rb::connect(None)?;
+    let (conn, screen) = crate::xconnect(None)?;
     let screen = &conn.setup().roots[screen];
     let id = conn.generate_id()?;
     let aux = CreateWindowAux::new()
@@ -230,6 +336,28 @@ mod tests {
     use x11rb::protocol::xproto::{ConfigureNotifyEvent, MapNotifyEvent, PropertyNotifyEvent};
 
     const ROOT: Window = 0x100;
+
+    #[test]
+    fn the_top_window_at_a_point_is_the_highest_viewable_root_child_covering_it() {
+        let placed = |id, viewable, x, y, w, h| Placed {
+            id,
+            viewable,
+            x,
+            y,
+            w,
+            h,
+        };
+        // bottom first, as QueryTree lists them: a frame, a popup over part of it, an unmapped window over all
+        let stack = [
+            placed(1, true, 0, 0, 100, 100),
+            placed(2, true, 50, 50, 20, 20),
+            placed(3, false, 0, 0, 200, 200),
+        ];
+        assert_eq!(top_at(&stack, 10, 10), Some(1));
+        assert_eq!(top_at(&stack, 55, 55), Some(2), "the popup over the frame");
+        assert_eq!(top_at(&stack, 70, 70), Some(1), "the popup's far edge is outside it");
+        assert_eq!(top_at(&stack, 150, 150), None, "only the root there");
+    }
 
     #[test]
     fn each_restack_of_a_root_child_is_recorded_with_its_sibling() {

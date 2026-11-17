@@ -10,6 +10,27 @@ use std::sync::mpsc::{Receiver, channel};
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
+/// `unshare`'s options for [`Engine::start_sandboxed`]: a user namespace mapping the test's user, a PID namespace with
+/// its own `/proc`, the engine its first child, killed with `unshare`.
+const SANDBOX: [&str; 6] = [
+    "--user",
+    "--map-current-user",
+    "--pid",
+    "--fork",
+    "--kill-child",
+    "--mount-proc",
+];
+
+/// Whether process `pid` of the test's namespace can be read from inside a namespace as [`Engine::start_sandboxed`]
+/// makes: its map, as the engine would read it.
+pub fn sandbox_reads_maps_of(pid: u32) -> bool {
+    Command::new("unshare")
+        .args(SANDBOX)
+        .args(["sh", "-c", &format!("head -c 1 /proc/{pid}/maps >/dev/null 2>&1")])
+        .status()
+        .is_ok_and(|s| s.success())
+}
+
 /// How long one wire request may take before the test gives up on the engine.
 pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -32,6 +53,8 @@ pub struct Engine {
     stdin: Option<ChildStdin>,
     lines: Receiver<String>,
     next_id: u64,
+    /// The engine's stdout, held open and never read ([`Engine::start_unread`]).
+    unread: Option<std::process::ChildStdout>,
 }
 
 /// Removes the display's record of an unconfirmed paste's window (the root window's `CUA_CLIPBOARD_QUARANTINE`), which
@@ -78,26 +101,54 @@ impl Engine {
         Engine::spawn_with(&live_build(), options, &[("CUA_ENGINE_FAULT", fault)])
     }
 
+    /// An engine on this X display (`DISPLAY`) in place of the test's own.
+    pub fn start_on_display(display: &str) -> Engine {
+        let mut command = Command::new(engine_bin());
+        command.arg("server").env("DISPLAY", display);
+        Engine::spawn_command(command, &engine_bin().display().to_string(), false)
+    }
+
     /// The engine's process id.
     pub fn pid(&self) -> u32 {
         self.child.id()
     }
 
+    /// [`Engine::start_with`] inside a PID namespace of its own with its own `/proc`, as cua's worker sandbox runs it
+    /// (`codex-linux-sandbox`'s bwrap: `--unshare-pid` and a fresh proc), so no process of the display's applications
+    /// is visible to it and their `/proc/<pid>/maps` cannot be read. `unshare` makes a user namespace that maps the
+    /// test's own user, so the X server and the accessibility bus see the same peer. None, said on stderr, where this
+    /// host refuses such namespaces.
+    pub fn start_sandboxed(options: &[&str]) -> Option<Engine> {
+        if !Command::new("unshare")
+            .args(SANDBOX)
+            .arg("true")
+            .stderr(Stdio::null())
+            .status()
+            .is_ok_and(|s| s.success())
+        {
+            eprintln!("skipped: unshare cannot make a user and PID namespace here");
+            return None;
+        }
+        clear_display_record();
+        let mut command = Command::new("unshare");
+        command.args(SANDBOX).arg(engine_bin()).arg("server").args(options);
+        Some(Engine::spawn_command(command, "the sandboxed engine", false))
+    }
+
     fn spawn_with(bin: &std::path::Path, options: &[&str], env: &[(&str, &str)]) -> Engine {
-        let mut child = Command::new(bin)
-            .arg("server")
-            .args(options)
-            .envs(env.iter().copied())
-            // an engine given an injected fault says so on stderr; the test reads its effect, not the message
-            .stderr(if env.is_empty() {
-                Stdio::inherit()
-            } else {
-                Stdio::null()
-            })
+        let mut command = Command::new(bin);
+        command.arg("server").args(options).envs(env.iter().copied());
+        // an engine given an injected fault says so on stderr; the test reads its effect, not the message
+        Engine::spawn_command(command, &bin.display().to_string(), !env.is_empty())
+    }
+
+    fn spawn_command(mut command: Command, what: &str, quiet: bool) -> Engine {
+        let mut child = command
+            .stderr(if quiet { Stdio::null() } else { Stdio::inherit() })
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .spawn()
-            .unwrap_or_else(|e| panic!("cannot start {}: {e}", bin.display()));
+            .unwrap_or_else(|e| panic!("cannot start {what}: {e}"));
         let stdin = child.stdin.take();
         let stdout = child.stdout.take().unwrap();
         let (tx, lines) = channel();
@@ -113,6 +164,30 @@ impl Engine {
             stdin,
             lines,
             next_id: 1,
+            unread: None,
+        }
+    }
+
+    /// An engine whose answers nobody reads: its stdout is held open and never read, as when the REPL host has frozen
+    /// the trusted worker that reads it, so once the pipe is full the engine's next answer cannot go out. Only
+    /// `pipeline`, `signal` and `exit_within` apply.
+    pub fn start_unread() -> Engine {
+        clear_display_record();
+        let mut child = Command::new(engine_bin())
+            .arg("server")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .unwrap_or_else(|e| panic!("cannot start {}: {e}", engine_bin().display()));
+        let stdin = child.stdin.take();
+        let unread = child.stdout.take();
+        Engine {
+            child,
+            stdin,
+            lines: channel().1,
+            next_id: 1,
+            unread,
         }
     }
 
@@ -136,6 +211,76 @@ impl Engine {
         } else {
             Err(answer["error"].as_str().unwrap_or("").to_string())
         })
+    }
+
+    /// Writes requests without waiting for their answers (pipelined, as a service may): `pipeline` then `answers`.
+    pub fn pipeline(&mut self, requests: &[(&str, Value)]) {
+        let stdin = self.stdin.as_mut().unwrap();
+        for (command, input) in requests {
+            let line = json!({"id": self.next_id, "command": command, "input": input}).to_string();
+            self.next_id += 1;
+            writeln!(stdin, "{line}").unwrap();
+        }
+        stdin.flush().unwrap();
+    }
+
+    /// The next `n` answers, in order, each with when it arrived.
+    pub fn answers(&mut self, n: usize) -> Vec<(Value, Instant)> {
+        (0..n)
+            .map(|_| {
+                let line = self
+                    .lines
+                    .recv_timeout(REQUEST_TIMEOUT)
+                    .unwrap_or_else(|_| panic!("no answer within {REQUEST_TIMEOUT:?}"));
+                let at = Instant::now();
+                (
+                    serde_json::from_str(&line).unwrap_or_else(|e| panic!("not JSON ({e}): {line}")),
+                    at,
+                )
+            })
+            .collect()
+    }
+
+    /// Sends the engine a signal (`rustix::process::Signal::TERM`, `KILL`).
+    pub fn signal(&self, signal: rustix::process::Signal) {
+        let pid = rustix::process::Pid::from_raw(self.child.id() as i32).expect("a process id");
+        rustix::process::kill_process(pid, signal).expect("the engine is signalled");
+    }
+
+    /// Closes the engine's stdin, its orderly exit.
+    pub fn close_stdin(&mut self) {
+        drop(self.stdin.take());
+    }
+
+    /// The engine's exit, waited for at most `bound`, with when it was seen: None if it is still running.
+    pub fn exit_within(&mut self, bound: Duration) -> Option<(std::process::ExitStatus, Instant)> {
+        let deadline = Instant::now() + bound;
+        loop {
+            if let Ok(Some(status)) = self.child.try_wait() {
+                return Some((status, Instant::now()));
+            }
+            if Instant::now() >= deadline {
+                return None;
+            }
+            sleep(Duration::from_millis(1));
+        }
+    }
+
+    /// One request's whole answer line, `notice` included when the engine sent one.
+    pub fn exchange(&mut self, command: &str, input: Value) -> Value {
+        let id = self.next_id;
+        self.next_id += 1;
+        let line = json!({"id": id, "command": command, "input": input}).to_string();
+        let stdin = self.stdin.as_mut().unwrap();
+        writeln!(stdin, "{line}").unwrap();
+        stdin.flush().unwrap();
+        let answer = self
+            .lines
+            .recv_timeout(REQUEST_TIMEOUT)
+            .unwrap_or_else(|_| panic!("no answer to {command} within {REQUEST_TIMEOUT:?}"));
+        let answer: Value = serde_json::from_str(&answer).unwrap_or_else(|e| panic!("not JSON ({e}): {answer}"));
+        assert_eq!(answer["id"], json!(id), "answers come in request order");
+        answer
     }
 
     /// One request; the output on success, the error sentence otherwise.

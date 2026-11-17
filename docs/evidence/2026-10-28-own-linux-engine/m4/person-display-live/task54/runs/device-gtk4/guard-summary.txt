@@ -1,0 +1,30 @@
+exit 0 samples 5384 maps 1796 ss 1078 processes 2947 browsers 34
+flags []
+decoys []
+leftovers []
+xauthority {"person ~/.Xauthority": ["cat", "chrome_crashpad", "cua-engine", "dbus-daemon", "gnome-text-edit", "node", "python3", "sky_linux_x64", "sleep", "xprobe", "xterm", "xtrace"], "trace proxy (cua171-audit-*/Xauthority)": ["MainThread", "cua-engine", "xdotool", "xprobe"], "unset": ["MainThread", "chrome"]}
+outside peers {
+"MainThread -> unnamed (peer ended or pid not shown)": 373,
+"None -> @/tmp/.X11-unix/X0 (pid not shown)": 8,
+"chrome -> /run/dbus/system_bus_socket (pid not shown)": 1049,
+"chrome -> /run/user/501/at-spi/bus_0 (dbus-daemon)": 1049,
+"chrome -> @/tmp/.X11-unix/X0 (pid not shown)": 5245,
+"cua-engine -> /run/user/501/at-spi/bus_0 (dbus-daemon)": 1699,
+"cua-engine -> /run/user/501/at-spi/bus_0 (pid not shown)": 2,
+"cua-engine -> @/tmp/.X11-unix/X0 (pid not shown)": 1895,
+"gnome-text-edit -> /run/user/501/at-spi/bus_0 (dbus-daemon)": 4,
+"gnome-text-edit -> @/tmp/.X11-unix/X0 (pid not shown)": 5,
+"python3 -> /run/user/501/at-spi/bus_0 (dbus-daemon)": 1052,
+"python3 -> @/tmp/.X11-unix/X0 (pid not shown)": 1052,
+"sky_linux_x64 -> @/tmp/.X11-unix/X0 (pid not shown)": 13,
+"xprobe -> @/tmp/.X11-unix/X0 (pid not shown)": 2170,
+"xterm -> @/tmp/.X11-unix/X0 (pid not shown)": 2114,
+"xtrace -> /tmp/.X11-unix/X0 (pid not shown)": 362,
+"xtrace -> unnamed (peer ended or pid not shown)": 4
+}
+home paths {}
+browser nss {"<run scratch>/home/.local/share/pki/nssdb/cert9.db": ["chrome (fd/cwd)"], "<run scratch>/home/.local/share/pki/nssdb/key4.db": ["chrome (fd/cwd)"]} {"/tmp/c50-O3o62L/cua171-run-WQKvWu/home/.local/share/pki/nssdb": {"first": 9.779, "entries": ["cert9.db", "key4.db", "pkcs11.txt"]}}
+browser kinds ["('chrome', 'gpu-process', False, True)", "('chrome', 'renderer', False, True)", "('chrome', 'utility', False, True)", "('chrome', 'zygote', False, True)", "('chrome', None, False, False)", "('chrome', None, True, True)"]
+browser homes (readable) ['/tmp/c50-O3o62L/cua171-run-WQKvWu/home']
+meta {"run": "task54-device-gtk4", "kind": "meta", "commit": "1525e2beee2bcd81864ef951bf73487cfde4562a", "cua_version": "cua-engine 0.3.0 (7ad6f03d2966)", "gate": false, "candidate": {"gate": false, "sha256": "5b7e38cf299e3e7f105321612de68919fcdd27ee93b52b6a298fcb58a37cd9cf", "target": "x86_64-unknown-linux-musl", "linkage": "static-pie", "version": "cua-engine 0.3.0 (7ad6f03d2966)", "commit": "1525e2beee2bcd81864ef951bf73487cfde4562a", "clean": false, "attestation": null}, "via": "wire", "engines": [{"label": "pinned", "args": [], "sha256": "7ac3c2ae45a3dacc9209063e91d2df4ea9f206b814a9ffd976f5bcf90d73f1cd"}, {"label": "newest", "args": [], "sha256": "88ce5e0ae64290dd36dbb2942a33ece6a7222f7294fc66410f4e26c29e4b2991"}, {"label": "cua", "args": [], "sha256": "5b7e38cf299e3e7f105321612de68919fcdd27ee93b52b6a298fcb58a37cd9cf"}], "vendor": "/Users/new/.local/share/cua/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64", "newest": "/Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64", "scenes": ["device-gtk4"], "ops": ["desktop:list_windows", "desktop:list_apps", "desktop:get_screenshot", "desktop:launch_app", "desktop:capabilities", "device-gtk4:gtk4_click_shared", "device-gtk4:gtk4_click_dedicated", "device-gtk4:gtk4_key_shared", "device-gtk4:gtk4_key_dedicated", "device-gtk4:gtk4_key_down_shared", "device-gtk4:gtk4_right_click_shared", "device-gtk4:gtk4_element_click", "device-gtk4:gtk4_scroll_shared", "device-gtk4:gtk4_scroll_dedicated", "device-gtk4:gtk4_move_shared", "device-gtk4:gtk4_move_dedicated", "device-gtk4:gtk4_drag_shared", "device-gtk4:gtk4_drag_dedicated"], "blocks": 3, "samples_tree": 7, "samples_input": 5, "occlusion": "covered", "started": "2026-11-03T19:09:05.880Z"}
+end {"run": "task54-device-gtk4", "kind": "end", "gate": false, "valid": true, "pass": true, "failed": [], "parity": [], "refused": [], "restores": {"pinned": 0, "newest": 0, "cua": 0}, "desktop": {"active_start": {"id": 6291458, "owner": "foreign"}, "active_end": {"id": 6291458, "owner": "foreign"}, "holder": 23068686, "skipped": [], "trace": {"clean": true, "requests": 11496, "mutating": 934, "foreign": [], "unplaced": 0}, "watchdog": {"state": "ended", "round_trips": 331}, "chrome": {"spawned": 1, "terminated": [], "killed": [], "left": []}, "session": {"address": "unix:path=/tmp/c50-O3o62L/cua171-run-WQKvWu/session/bus/dbus-6Bt2MF67hT,guid=2b5c977b20a27acf9588050e6aea3151", "a11y": "unix:path=/run/user/501/at-spi/bus_0,guid=12a554ae794680a8a548f4d86ae192dd", "terminated": true, "killed": false, "stub": {"terminated": true, "killed": false}}, "record": {"skipped": "the whole-run RECORD runs only on a private display marked CUA171_PRIVATE_DISPLAY: it can freeze X.Org 21.1 (task 41), so a person's display gets the sampled route audits instead"}}, "finished": "2026-11-03T19:20:07.684Z"}

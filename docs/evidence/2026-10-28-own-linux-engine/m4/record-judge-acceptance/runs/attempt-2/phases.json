@@ -1,0 +1,40 @@
+[
+ {
+  "name": "warm-gtk4-shaders",
+  "kind": "driver",
+  "script": "probe.mjs",
+  "expect": "zero",
+  "env": {
+   "PROBE_MODE": "private",
+   "PROBE_CONTROL": "",
+   "PROBE_FAMILIES": "gnome-text-editor",
+   "MESA_SHADER_CACHE_DIR": "{TMPDIR}/mesa-shader-cache"
+  }
+ },
+ {
+  "name": "record-judge",
+  "kind": "cli",
+  "entry": "harness",
+  "expect": "any",
+  "env": {
+   "MESA_SHADER_CACHE_DIR": "{TMPDIR}/mesa-shader-cache"
+  },
+  "args": [
+   "--dev",
+   "--vendor",
+   "/Users/new/.local/share/cua/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+   "--newest",
+   "/Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+   "--cua",
+   "/Users/new/.local/share/cua-171/task42/engine/cua-engine",
+   "--scene",
+   "gedit,paste-target,gnome-text-editor",
+   "--ops",
+   "all",
+   "--blocks",
+   "3",
+   "--run",
+   "t49-recordjudge"
+  ]
+ }
+]

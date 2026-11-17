@@ -6,16 +6,19 @@
 
 use std::time::{Duration, Instant};
 
-use anyhow::{Result, bail};
+use anyhow::{Result, anyhow, bail};
 use serde_json::json;
 use x11rb::protocol::xproto::Window;
 
 use super::Engine;
 use super::windows::activate;
+use crate::atspi;
 use crate::engine::DesktopMode;
 use crate::families::{Kind, When};
+use crate::focus_ack::{FocusAck, no_frame, nothing_pressed};
 use crate::input::focus_is_within;
 use crate::route::Target;
+use crate::tree::ObjRef;
 
 /// How long an activated window may take to hold the X input focus (the foreground route).
 const ACTIVATION_WAIT: Duration = Duration::from_secs(1);
@@ -62,18 +65,9 @@ pub(super) fn no_background_input(app: &str) -> String {
 
 impl Engine {
     /// The route `kind` takes into `window` (None: the desktop route), refusing it in shared mode where the family
-    /// ignores it; on the foreground route the window is activated and holds the X input focus before this returns.
-    /// The route is recorded as the `--stats` line's `route`.
-    pub(super) fn way_for(&mut self, window: Option<Window>, kind: Kind) -> Result<Way> {
-        let way = self.route_for(window, kind)?;
-        if let (Way::Foreground, Some(window)) = (way, window) {
-            self.enter(window)?;
-        }
-        Ok(way)
-    }
-
-    /// [`Engine::way_for`]'s choice alone, with nothing activated yet: for a request that checks its own input
-    /// before the foreground route activates the window, so that one refused for its input changes nothing.
+    /// ignores it, with nothing activated yet (`Engine::enter` and `enter_checked` activate the foreground route's
+    /// window), so a request refused for its input changes nothing. The route is recorded as the `--stats` line's
+    /// `route`.
     pub(super) fn route_for(&mut self, window: Option<Window>, kind: Kind) -> Result<Way> {
         self.route_along(window, kind, &[])
     }
@@ -87,26 +81,44 @@ impl Engine {
                 let family = self.family_of(window);
                 let ignored = match family.and_then(|f| f.ignores(kind)) {
                     Some(When::Always) => true,
-                    Some(When::UnlessUnobscured) => !self.x.unobscured(window),
-                    Some(When::UnlessPathUnobscured) => !self.x.points_unobscured(window, path),
+                    // measurement only (T19, `--ignore-pointer`): the pointer not judged
+                    Some(When::UnlessPointerWithin) => !self.cfg.ignore_pointer && !self.pointer_within(window),
+                    // measurement only (T13, T19): the path's cover left unjudged
+                    Some(When::UnlessPathUnobscured) => {
+                        !self.cfg.drag_ignore_cover && !self.cfg.ignore_cover && !self.x.points_unobscured(window, path)
+                    }
                     None => false,
                 };
-                match (ignored, self.cfg.desktop) {
-                    (false, _) => Way::Background,
-                    (true, DesktopMode::Dedicated) => Way::Foreground,
-                    (true, DesktopMode::Shared) => bail!(no_background_input(&self.x.get_window(window)?.app)),
-                }
+                return self.route_judged(window, ignored);
             }
         };
         self.record_route(way);
         Ok(way)
     }
 
-    /// The input target `kind` takes into `window` (None: the desktop), refused in shared mode where the family ignores
-    /// it, the window entered on the foreground route: for a request whose input needs no check before the route.
-    pub(super) fn target_for(&mut self, window: Option<Window>, kind: Kind) -> Result<Target> {
-        let way = self.way_for(window, kind)?;
-        Ok(window.map_or(Target::Desktop, |window| way.target(window)))
+    /// The route into `window` once whether its family ignores the request there is judged (`ignored`): the background
+    /// route if not, else the foreground route in dedicated mode, refused in shared mode. Recorded as `--stats`'s
+    /// `route`.
+    pub(super) fn route_judged(&mut self, window: Window, ignored: bool) -> Result<Way> {
+        let way = match (ignored, self.cfg.desktop) {
+            (false, _) => Way::Background,
+            (true, DesktopMode::Dedicated) => Way::Foreground,
+            (true, DesktopMode::Shared) => bail!(no_background_input(&self.x.get_window(window)?.app)),
+        };
+        self.record_route(way);
+        Ok(way)
+    }
+
+    /// Whether the real pointer is in `window`: the deepest window the server finds under it is the window or below it
+    /// (`X11::pointer_in`, from the window's parent). A read that fails is doubt, which counts as outside.
+    pub(super) fn pointer_within(&self, window: Window) -> bool {
+        // test builds only: the desktop changed just before this read
+        #[cfg(test)]
+        crate::fault::identity(crate::fault::Identity::PointerRead);
+        self.x
+            .parent(window)
+            .and_then(|parent| self.x.pointer_in(window, parent))
+            .unwrap_or(false)
     }
 
     /// The foreground route's start for a request that checks its own input first (`check`: its chord, its path, its
@@ -125,12 +137,66 @@ impl Engine {
         Ok(())
     }
 
+    /// The wait a background press into `target` needs before it (`focus_ack.rs`): in shared mode, for a family whose
+    /// press activates a window it has not focused, with a bound set; None otherwise. `frame`: the window's frame where
+    /// the request has associated it already (an element's), else associated here, the association's refusal answering
+    /// a window with no frame it can stand behind. Before the request's session opens, an earlier focus the toolkit still
+    /// holds is let go, unless a session is open for the window already or the real focus is within it.
+    pub(super) fn focus_ack_for(&mut self, target: Target, frame: Option<ObjRef>) -> Result<Option<FocusAck>> {
+        let Target::Window(window) = target else {
+            return Ok(None);
+        };
+        if self.cfg.desktop != DesktopMode::Shared || self.cfg.focus_ack.is_zero() {
+            return Ok(None);
+        }
+        if !self.family_of(window).is_some_and(|f| f.activates_on_press) {
+            // Qt with no accessibility tree has no frame to wait on (the design session's ruling B), found by its
+            // `_XEMBED_INFO` mark or its process's map (`qt_without_tree` on the `--stats` line)
+            if self.qt_without_toolkit(window).is_some() {
+                bail!(nothing_pressed(no_frame(&self.x.get_window(window)?.app)));
+            }
+            return Ok(None);
+        }
+        let info = self.x.get_window(window)?;
+        let frame = match frame {
+            Some(frame) => frame,
+            None => {
+                self.with_bus(|bus, x| atspi::associated(bus, x, &info))?
+                    .map_err(anyhow::Error::msg)?
+                    .frame
+            }
+        };
+        let mut ack = FocusAck::new(frame, info.app, self.cfg.focus_ack);
+        if !self.inputs.open_for(window) && !focus_is_within(&self.x, window)? {
+            let bus = self
+                .bus
+                .as_mut()
+                .ok_or_else(|| anyhow!("AT-SPI accessibility bus is unavailable"))?;
+            if let Err(cause) = ack.released(bus)? {
+                bail!(nothing_pressed(cause));
+            }
+            // the session this request opens sends a FocusIn of its own, which its first press waits for
+            ack.expect_focus_in();
+        }
+        Ok(Some(ack))
+    }
+
+    /// A press's wait on the `--stats` line (`focus_ack`), for the harness: its bound and what it waited.
+    pub(super) fn record_focus_ack(&mut self, ack: Option<&FocusAck>) {
+        if let Some(ack) = ack {
+            self.extra.insert("focus_ack".into(), ack.record());
+        }
+    }
+
     /// The route on the `--stats` line, for the harness's witness.
     pub(super) fn record_route(&mut self, way: Way) {
         self.extra.insert("route".into(), json!(way.name()));
     }
 
-    /// The foreground route's start: the window activated, and holding the X input focus.
+    /// The foreground route's start: the window activated, and holding the X input focus. The focus is the engine's own
+    /// request and comes at once; the raise is the window manager's and can come later, so pointer input waits for it
+    /// at its own points before it sends anything (`Route::on_top_at`, task 63). Keys go to the focus, which this waits
+    /// for.
     pub(super) fn enter(&mut self, window: Window) -> Result<()> {
         activate(&self.x, window)?;
         let deadline = Instant::now() + ACTIVATION_WAIT;

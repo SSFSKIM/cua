@@ -11,8 +11,11 @@ setup:
   install: npm ci
   fetch_depth: 0      # browser-parity and repl-parity tests read committed evidence revisions
 gates:
+  # npm test, then the Linux engine harness's suite again through its cleanup check (test/linux-engine-diff/
+  # suite-check.mjs: no process or scratch directory of a run left behind; #171 task 47). npm test keeps its plain
+  # form, which scripts/repl-parity/coverage.mjs reads.
   - name: test
-    run: npm test
+    run: npm test && npm run test:linux-engine-diff
     lane: hosted-macos
     timeout: 20
   - name: plugin
@@ -49,6 +52,9 @@ gates:
   # release workflow (.github/workflows/linux-engine.yml) builds it, and its tests run: the unit tests, and under Xvfb
   # with a session bus and AT-SPI the live ones (a GTK 3 window's tree read, a background key read back through the
   # tree, a window screenshot; M2 adds paste). Comparisons against the vendor's engine run on the #171 VM, never here.
+  # Clippy runs over the live build's every target and over the shipped binary, whose `live` stubs only it compiles.
+  # Last, tests/two-screens.sh: the two-screen tests on a private Xorg (the dummy driver) whose screens sit side by
+  # side, which Xvfb cannot lay out; it exits nonzero unless both ran and passed.
   # No Node, so no shared setup; the toolchain is rust-toolchain.toml's.
   - name: engine-linux
     lane: hosted
@@ -56,16 +62,37 @@ gates:
     setup: false
     run: |
       sudo apt-get update -y
-      sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends xvfb xauth dbus at-spi2-core yad
+      sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends xvfb xauth dbus at-spi2-core yad xserver-xorg-core xserver-xorg-video-dummy python3-gi gir1.2-gtk-3.0
       cd native/linux-engine
       rustup toolchain install
       rustup target add x86_64-unknown-linux-musl
       rustc --version
       cargo fmt --check
+      cargo clippy --release --locked --target x86_64-unknown-linux-musl --all-targets --features live -- -D warnings
+      cargo clippy --release --locked --target x86_64-unknown-linux-musl -- -D warnings
       cargo build --release --locked --target x86_64-unknown-linux-musl
-      xvfb-run -a dbus-run-session -- cargo test --release --locked --target x86_64-unknown-linux-musl --features live -- --test-threads 1
+      CUA171_GTK_TESTS=required xvfb-run -a dbus-run-session --dbus-daemon="$PWD/tests/dbus-daemon-quiet" -- cargo test --release --locked --target x86_64-unknown-linux-musl --features live -- --test-threads 1
+      tests/two-screens.sh
     paths:
       - "native/linux-engine/**"
+      - ".github/ci-kit.yml"
+  # #171 task 48: the Linux engine harness's stand-in for org.a11y.Bus (scripts/linux-engine-diff/a11y-stub.mjs) answers
+  # on a session bus beside the person's, so its tests run in CI, each on a dbus-daemon it starts itself. The `test`
+  # gate's hosted macOS has no dbus-daemon; here, on GitHub's Ubuntu runner with dbus installed,
+  # CUA171_DBUS_TESTS=required turns a missing tool into a failure, never a skip. Through the suite's cleanup check, with
+  # its own test (a stand-in left behind its bus) and the session bus's tests beside them. No X display is started.
+  # The trace proxy's lifetime tests (audit-proxy-lifetime.test.mjs: setpriv's parent-death signal, /proc) are
+  # Linux's too, and run here beside them.
+  - name: harness-dbus
+    lane: hosted
+    timeout: 15
+    run: |
+      sudo apt-get update -y
+      sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends dbus dbus-bin
+      CUA171_DBUS_TESTS=required node test/linux-engine-diff/suite-check.mjs test/linux-engine-diff/a11y-stub.test.mjs test/linux-engine-diff/leak-check.test.mjs test/linux-engine-diff/session-bus.test.mjs test/linux-engine-diff/audit-proxy-lifetime.test.mjs
+    paths:
+      - "scripts/linux-engine-diff/**"
+      - "test/linux-engine-diff/**"
       - ".github/ci-kit.yml"
   # #159: cua's headless macOS live checks (the #115 oracles, own-sandbox on both hosts, probe-secrets) on a runtime
   # `cua install` fetches into a scratch home, so a sandbox change is proven with no time on the Mac mini. Public logs
@@ -177,3 +204,13 @@ gates:
       - "src/services/sky.mjs"
       - "runtime/releases/**"
       - ".github/ci-kit.yml"
+  # #168, diagnosis only: gate parity-browser's run with the hosted Mac loaded while suite api runs (PARITY_STRESS, two
+  # CPU burners per core; scripts/repl-parity/hosted/hosted.sh's header), to expose a race an idle runner hides; the
+  # harness Chrome's anti-throttling flags (PARITY_CHROME_FLAGS) are added to its run line only for a diagnosis. Dispatch
+  # only, so no ci/** ref's run selects it on its own: `ci-gate --gates parity-browser-stress`. Its verdict is evidence,
+  # never a gate on a change.
+  - name: parity-browser-stress
+    on: [dispatch]
+    lane: hosted-macos
+    timeout: 50
+    run: PARITY_STRESS=cpu:2 sh scripts/repl-parity/hosted/hosted.sh browser

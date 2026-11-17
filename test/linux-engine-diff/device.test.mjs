@@ -2,13 +2,13 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { auditNothingSent, parseXtrace } from '../../scripts/linux-engine-diff/audit.mjs';
-import { DEVICE_OPS, DEVICE_SCENE_OPS, capabilitiesAnswer, scalePath, deviceSentence, dndCancelledSentence, dndLateNotice, dndMayHaveDroppedSentence, judgeDevice, strayNotice } from '../../scripts/linux-engine-diff/device.mjs';
+import { DEVICE_OPS, DEVICE_SCENE_OPS, capabilitiesAnswer, scalePath, deviceSentence, dndCancelledSentence, dndLateNotice, dndLateRefusal, dndMayHaveDroppedSentence, dndUnconfirmedNotice, dndUnconfirmedRefusal, judgeDevice, strayNotice } from '../../scripts/linux-engine-diff/device.mjs';
 import { allowPointer } from '../../scripts/linux-engine-diff/safety.mjs';
 import { OPS, SCENE_OPS } from '../../scripts/linux-engine-diff/ops.mjs';
-import { DEVICE_REFUSAL, DND_REFUSAL, declaredRefusal } from '../../scripts/linux-engine-diff/deviations.mjs';
+import { DEVIATIONS, DEVICE_REFUSAL, DND_REFUSAL, GECKO_POINTER_LEFT, GECKO_POINTER_REFUSALS, declaredRefusal } from '../../scripts/linux-engine-diff/deviations.mjs';
 import { pagePath } from '../../scripts/linux-engine-diff/drag.mjs';
 import { planOps, routeOf, runsOp } from '../../scripts/linux-engine-diff/run.mjs';
-import { runOutcome, verdictLine } from '../../scripts/linux-engine-diff/stats.mjs';
+import { dropCounts, runOutcome, verdictLine } from '../../scripts/linux-engine-diff/stats.mjs';
 
 const GET = '000:<:0010: 12: Request(20): GetProperty delete=false(0x00) window=0x012000f8 property=0x43("WM_CLASS") type=0x0';
 const KEY = '000:<:02db: 44: Request(25): SendEvent propagate=false(0x00) destination=0x012000f8 event-mask=0 KeyPress(2) detail=0x35';
@@ -24,8 +24,8 @@ test('a refused request is audited for nothing sent: a SendEvent of any kind, or
 });
 
 test("Acceptance 8's cases: each kind and condition, refused in shared mode, foreground in dedicated, the rest background", () => {
-  const plan = planOps(['device-gtk4', 'device-firefox', 'device-xterm', 'device-qt', 'device-chrome', 'device-chrome-dnd', 'gnome-text-editor'], Object.values(DEVICE_SCENE_OPS).flat().filter((op) => op !== 'capabilities'));
-  assert.equal(plan.length, 46);
+  const plan = planOps(['device-gtk4', 'device-firefox', 'device-xterm', 'device-qt', 'device-chrome', 'device-chrome-dnd', 'gnome-text-editor'], Object.entries(DEVICE_SCENE_OPS).filter(([scene]) => !scene.startsWith('minimized') && !scene.startsWith('identity')).flatMap(([, ops]) => ops).filter((op) => op !== 'capabilities'));
+  assert.equal(plan.length, 52);
   for (const { op, scene } of plan) {
     const def = OPS[op];
     assert.ok(SCENE_OPS[scene].includes(op));
@@ -40,6 +40,19 @@ test("Acceptance 8's cases: each kind and condition, refused in shared mode, for
     }
   }
   assert.equal(routeOf('firefox_click_visible_shared', 'device-firefox'), 'background');
+  // Gecko by the real pointer (T19): every Firefox case parks it, in the window's visible part for the background
+  // route, under the cover or outside for a refusal, and the background route is taken half covered too
+  for (const op of SCENE_OPS['device-firefox']) assert.ok(OPS[op].park, `${op} parks the real pointer`);
+  for (const op of ['firefox_click_overlap_pointer_in_shared', 'firefox_move_overlap_pointer_in_shared', 'firefox_drag_overlap_pointer_in_shared', 'firefox_scroll_overlap_pointer_in_shared']) {
+    assert.equal(OPS[op].device, 'background', op);
+    assert.equal(routeOf(op, 'device-firefox'), 'background', op);
+  }
+  for (const op of ['firefox_click_pointer_out_shared', 'firefox_click_pointer_under_shared', 'firefox_move_pointer_out_shared', 'firefox_drag_pointer_out_shared', 'firefox_scroll_pointer_out_shared']) assert.equal(OPS[op].device, 'refusal', op);
+  // each Firefox refusal is declared against the vendor, which answers ok there for input Gecko ignores
+  const refusals = SCENE_OPS['device-firefox'].filter((op) => OPS[op].device === 'refusal');
+  assert.deepEqual([...refusals].sort(), [...GECKO_POINTER_REFUSALS].sort());
+  for (const op of refusals) assert.ok(DEVIATIONS.some((d) => d.op === op && d.scene === 'device-firefox' && d.answer({ ok: false, error: 'firefox does not accept background input; use a dedicated desktop or activate the window first' })), op);
+  for (const what of ['click', 'scroll', 'move', 'drag']) assert.ok(GECKO_POINTER_LEFT.test(`firefox may not have taken the ${what}: the desktop pointer left its window during the ${what}, and firefox takes background pointer input only while the pointer is in its window. Read the window to see what happened before trying again`), what);
   assert.equal(routeOf('chrome_drag_visible_path_shared', 'device-chrome'), 'background', 'a visible path in a partly covered window');
   assert.equal(routeOf('gtk4_element_click', 'device-gtk4'), null, 'an element action records no route');
   assert.equal(routeOf('chrome_dnd_in_front_shared', 'device-chrome-dnd'), 'background', 'Chrome already in front');
@@ -141,9 +154,10 @@ test('a cancelled drag and drop passes only with the cancel sentence, nothing dr
 test('a cancel forced too late passes only if every answer is honest and the drop was seen at least once', () => {
   const cancelled = dndCancelledSentence('Google-chrome');
   const late = dndMayHaveDroppedSentence('Google-chrome');
-  const fields = { expected_error: cancelled, late_error: late };
-  const mayHave = row({ ok: false, error: late, dropped: true, witness: false, ...fields });
-  const nothing = row({ ok: false, error: cancelled, dropped: false, witness: true, ...fields });
+  // each drag's engine record (Chrome took before the release, so the cancel's order decided) and its pending read
+  const fields = { expected_error: cancelled, late_error: late, state_notice: null, next_ok: true, next_error: null };
+  const mayHave = row({ ok: false, error: late, dropped: true, witness: false, dnd: { in_front: false, outcome: 'late' }, ...fields });
+  const nothing = row({ ok: false, error: cancelled, dropped: false, witness: true, dnd: { in_front: false, outcome: 'in_time' }, ...fields });
   const background = { clean: true, kind: 'background', answered: [{ ok: false, error: late, ...fields }] };
   assert.equal(judgeDevice('chrome_dnd_late_shared', [mayHave], { ...background, answered: [{ ok: true }] }).pass, false, 'the audited drag answered success');
   assert.deepEqual(judgeDevice('chrome_dnd_late_shared', [mayHave, nothing], background), { pass: true, reasons: [] });
@@ -155,10 +169,10 @@ test('a cancel forced too late passes only if every answer is honest and the dro
 
 test('the in-front drop passes only where the engine recorded the window in front and the desktop ended as it began', () => {
   assert.equal(DEVICE_OPS.chrome_dnd_in_front_shared.inFront, true, 'the witness allowance is declared for the in-front drops alone');
-  assert.deepEqual(Object.keys(DEVICE_OPS).filter((op) => DEVICE_OPS[op].inFront), ['chrome_dnd_in_front_shared', 'chrome_dnd_short_in_front_shared', 'chrome_dnd_short_pointer_outside_shared', 'chrome_select_nudged_shared']);
-  const good = row({ ok: true, effect: true, route: 'background', dnd: { in_front: true }, desktop_same: true });
+  assert.deepEqual(Object.keys(DEVICE_OPS).filter((op) => DEVICE_OPS[op].inFront), ['chrome_dnd_in_front_shared', 'chrome_dnd_short_in_front_shared', 'chrome_dnd_inzone_out_in_front_shared', 'chrome_dnd_long_left_in_front_shared', 'chrome_dnd_short_pointer_outside_shared', 'chrome_select_nudged_shared']);
+  const good = row({ ok: true, effect: true, route: 'background', dnd: { in_front: true }, desktop_same: true, state_notice: null });
   const audit = { clean: true, kind: 'background', answered: [{ ok: true }] };
-  assert.deepEqual(judgeDevice('chrome_dnd_in_front_shared', [good], audit), { pass: true, reasons: [] });
+  assert.deepEqual(judgeDevice('chrome_dnd_in_front_shared', [good], audit), { pass: true, reasons: [], drops: { samples: 1, landed: 1, ok: 1, false_ok: 0, unconfirmed_landed: 0 } });
   assert.equal(judgeDevice('chrome_dnd_in_front_shared', [{ ...good, dnd: { in_front: false } }], audit).pass, false, 'not the in-front path');
   assert.equal(judgeDevice('chrome_dnd_in_front_shared', [{ ...good, desktop_same: false }], audit).pass, false);
   assert.equal(judgeDevice('chrome_dnd_in_front_shared', [{ ...good, witness: false }], audit).pass, false);
@@ -182,7 +196,7 @@ test('with the signature already held, the cases pass only where the engine watc
   assert.deepEqual(judgeDevice('chrome_dnd_obscured_in_front_shared', [good], audit), { pass: true, reasons: [] });
   assert.equal(judgeDevice('chrome_dnd_obscured_in_front_shared', [{ ...good, dnd: { in_front: true } }], audit).pass, false, 'not watched');
   assert.equal(judgeDevice('chrome_dnd_obscured_in_front_shared', [{ ...good, dnd: { ...held, held_at_start: false } }], audit).pass, false, 'the arrangement did not hold');
-  const fields = { expected_error: cancelled, late_error: late };
+  const fields = { expected_error: cancelled, late_error: late, state_notice: null, next_ok: true, next_error: null };
   const mayHave = row({ ok: false, error: late, dropped: true, witness: false, dnd: { ...held, outcome: 'late' }, ...fields });
   const lateAudit = { clean: true, kind: 'background', answered: [{ ok: false, error: late, ...fields }] };
   assert.deepEqual(judgeDevice('chrome_dnd_obscured_in_front_late_shared', [mayHave], lateAudit), { pass: true, reasons: [] });
@@ -190,19 +204,100 @@ test('with the signature already held, the cases pass only where the engine watc
   assert.equal(judgeDevice('chrome_dnd_obscured_in_front_late_shared', [{ ...mayHave, error: cancelled }], lateAudit).pass, false);
 });
 
-test('the forced late take passes only where the drag answered plainly, the next request carried the notice, and the witness saw the drop', () => {
-  const notice = dndLateNotice('Google-chrome');
-  assert.equal(notice, 'Google-chrome started a drag and drop after your drag ended; it may have dropped and changed the desktop; this request was not run, so read the window before sending it again');
+test('the forced late take passes only where the drag answered plainly, the read carried the notice, the next request was refused with it, and the witness saw the drop', () => {
+  const app = 'Google-chrome';
+  assert.equal(
+    dndLateNotice(app),
+    'Pending from your last drag, a late drag and drop: Google-chrome started a drag and drop after your drag into it ended, so the drag did not end as it answered; it may have dropped and changed the desktop. Read the window before sending input again: your next input request will not be run',
+    "dnd.rs's notice",
+  );
+  const notice = dndLateRefusal(app, 'move');
+  assert.equal(notice, 'Pending from your last drag, a late drag and drop: Google-chrome started a drag and drop after your drag into it ended, so the drag did not end as it answered; it may have dropped and changed the desktop; this move request was not run, so read the window before sending it again');
   assert.deepEqual(OPS.chrome_dnd_late_take_shared.cuaArgs('device-chrome-dnd'), ['--dnd-defer-take']);
-  const good = row({ ok: true, read_ok: true, next_ok: false, next_error: notice, expected_notice: notice, dropped: true, witness: false });
+  const good = row({ ok: true, read_ok: true, read_notice: true, next_ok: false, next_error: notice, expected_notice: notice, dropped: true, witness: false });
   const audit = { clean: true, kind: 'background', answered: [{ ok: true }] };
   assert.deepEqual(judgeDevice('chrome_dnd_late_take_shared', [good], audit), { pass: true, reasons: [] });
+  assert.equal(judgeDevice('chrome_dnd_late_take_shared', [{ ...good, read_notice: false }], audit).pass, false, "the read's reply carried no notice");
   assert.equal(judgeDevice('chrome_dnd_late_take_shared', [{ ...good, next_ok: true, next_error: null }], audit).pass, false, 'the notice was not given');
   assert.equal(judgeDevice('chrome_dnd_late_take_shared', [{ ...good, ok: false, error: 'x' }], audit).pass, false, 'the drag itself refused');
   assert.equal(judgeDevice('chrome_dnd_late_take_shared', [{ ...good, read_ok: false }], audit).pass, false, 'the read was refused');
   assert.equal(judgeDevice('chrome_dnd_late_take_shared', [{ ...good, witness: true }], audit).pass, false, 'a drop the witness did not record');
   assert.equal(judgeDevice('chrome_dnd_late_take_shared', [{ ...good, dropped: false, witness: true }], audit).pass, false, 'no drop: nothing shown');
   assert.equal(judgeDevice('chrome_dnd_late_take_shared', [good, { ...good, dropped: false, witness: true }], audit).pass, true, 'a missed drop beside landed ones');
+});
+
+test("an unconfirmed drop's refusal is dnd.rs's, naming the request not run", () => {
+  assert.equal(
+    dndUnconfirmedRefusal('Google-chrome', 'click'),
+    'Pending from your last drag, an unconfirmed drop: your drag into Google-chrome began a drag and drop, and Google-chrome did not confirm a drop after the release, so the drop may not have landed as the drag answered; this click request was not run, so read the window before sending it again',
+  );
+});
+
+test("a drop case's notice holds only with the next acting request refused with it (the harness-fix wave): without the refusal it excuses nothing", () => {
+  const op = 'chrome_dnd_inzone_out_in_front_shared';
+  const notice = dndUnconfirmedNotice('Google-chrome');
+  const refused = { next_ok: false, next_error: dndUnconfirmedRefusal('Google-chrome', 'preflight') };
+  const base = row({ ok: true, effect: false, started: true, dropped: false, dnd: { in_front: true }, desktop_same: true, state_notice: notice, ...refused });
+  const audit = { clean: true, kind: 'background', answered: [{ ok: true }] };
+  assert.equal(judgeDevice(op, [base], audit).pass, true);
+  const unrefused = judgeDevice(op, [base, { ...base, i: 1, next_ok: true, next_error: null }], audit);
+  assert.equal(unrefused.pass, false);
+  assert.ok(unrefused.reasons.some((r) => /answered ok with no drop and nothing pending on 1 of 2 samples/.test(r)), unrefused.reasons.join('\n'));
+  assert.ok(unrefused.reasons.some((r) => /a notice the next acting request was not refused with on 1 of 2 samples/.test(r)), unrefused.reasons.join('\n'));
+  // a landed drop's notice without its refusal: no false ok, and still the contract broken
+  const landed = row({ ok: true, effect: true, route: 'background', dnd: { in_front: true }, desktop_same: true, state_notice: notice, next_ok: true, next_error: null });
+  const v = judgeDevice('chrome_dnd_in_front_shared', [landed], audit);
+  assert.equal(v.pass, false);
+  assert.equal(v.drops.unconfirmed_landed, 0, 'an unrefused notice is not an honest unconfirmed');
+});
+
+test("a landed drop reported unconfirmed is honest, counted apart; a false ok fails its case (the design session, 2026-11-10)", () => {
+  for (const op of ['chrome_dnd_in_front_shared', 'chrome_dnd_short_in_front_shared', 'chrome_dnd_covered_dedicated', 'chrome_dnd_short_covered_dedicated', 'chrome_dnd_short_pointer_outside_dedicated']) {
+    assert.equal(OPS[op].confirm, true, op);
+    const dedicated = OPS[op].device === 'foreground';
+    const good = row({ ok: true, effect: true, state_notice: null, ...(dedicated ? { route: 'foreground', activated: true } : { dnd: { in_front: true }, desktop_same: true }) });
+    const audit = { clean: true, kind: dedicated ? 'foreground' : 'background', answered: [{ ok: true }] };
+    assert.deepEqual(judgeDevice(op, [good], audit), { pass: true, reasons: [], drops: { samples: 1, landed: 1, ok: 1, false_ok: 0, unconfirmed_landed: 0 } }, op);
+    // landed, its confirmation late: honest, the case passes and the run counts it
+    const honest = judgeDevice(op, [good, { ...good, i: 1, state_notice: dndUnconfirmedNotice('Google-chrome'), next_ok: false, next_error: dndUnconfirmedRefusal('Google-chrome', 'preflight') }], audit);
+    assert.equal(honest.pass, true, `${op}: an honest unconfirmed`);
+    assert.deepEqual(honest.drops, { samples: 2, landed: 2, ok: 2, false_ok: 0, unconfirmed_landed: 1 });
+  }
+  // a false ok: answered ok, nothing dropped, nothing pending
+  const op = 'chrome_dnd_inzone_out_in_front_shared';
+  const base = row({ ok: true, effect: false, started: true, dropped: false, dnd: { in_front: true }, desktop_same: true, state_notice: dndUnconfirmedNotice('Google-chrome'), next_ok: false, next_error: dndUnconfirmedRefusal('Google-chrome', 'preflight') });
+  const audit = { clean: true, kind: 'background', answered: [{ ok: true }] };
+  assert.deepEqual(judgeDevice(op, [base], audit), { pass: true, reasons: [], drops: { samples: 1, landed: 0, ok: 1, false_ok: 0, unconfirmed_landed: 0 } }, 'nothing landed, reported');
+  const falseOk = judgeDevice(op, [base, { ...base, i: 1, state_notice: null }], audit);
+  assert.equal(falseOk.pass, false);
+  assert.match(falseOk.reasons[0], /answered ok with no drop and nothing pending on 1 of 2 samples/);
+  assert.equal(judgeDevice(op, [{ ...base, started: false }], audit).pass, false, 'no drag and drop started: the control proved nothing');
+  assert.deepEqual(OPS[op].cuaArgs('device-chrome-dnd'), [], 'shipped, the floor');
+  assert.ok(DEVICE_SCENE_OPS['device-chrome-dnd'].includes(op), 'in the gate');
+  assert.deepEqual(pagePath('dnd-inzone', 0), [[720, 195], [720, 250]], 'from inside the zone out of its bottom edge');
+  // the long path that leaves: the same judge, in the gate, at the floor, its path longer than the floor's 350 ms
+  const long = 'chrome_dnd_long_left_in_front_shared';
+  assert.equal(OPS[long].device, 'leaves');
+  assert.deepEqual(OPS[long].cuaArgs('device-chrome-dnd'), []);
+  assert.ok(DEVICE_SCENE_OPS['device-chrome-dnd'].includes(long));
+  assert.equal(judgeDevice(long, [{ ...base, state_notice: null }], audit).pass, false, 'a false ok fails it');
+  const p = pagePath('dnd-long-left', 0);
+  const length = p.slice(1).reduce((n, [x, y], k) => n + Math.hypot(x - p[k][0], y - p[k][1]), 0);
+  assert.ok(length > 700, `${length} px`);
+  const inTarget = ([x, y]) => x >= 560 && x <= 760 && y >= 120 && y <= 220;
+  assert.ok(p.some(inTarget) && !inTarget(p.at(-1)), 'across the target, ending outside it');
+});
+
+test("a run's landed drops reported unconfirmed are a finding only above 5% of its landed drops", () => {
+  const v = (landed, unconfirmed) => ({ kind: 'verdict', scene: 's', op: `o${landed}${unconfirmed}`, candidate: 'cua', pass: true, verdict: 'pass', drops: { samples: landed, landed, ok: landed, false_ok: 0, unconfirmed_landed: unconfirmed } });
+  assert.equal(dropCounts([v(45, 2)]).finding, null, '2 of 45, 4.4%');
+  assert.match(dropCounts([v(45, 3)]).finding, /3 of 45, over 5%/);
+  // summed over the run's cases: one load
+  assert.deepEqual({ ...dropCounts([v(9, 1), v(36, 1), { kind: 'verdict', pass: true }]), finding: null }, { cases: 2, samples: 45, landed: 45, ok: 45, false_ok: 0, unconfirmed_landed: 2, finding: null });
+  const outcome = runOutcome([v(20, 2)], { valid: true });
+  assert.equal(outcome.pass, false);
+  assert.match(outcome.failed[0], /landed drops reported unconfirmed: 2 of 20/);
+  assert.equal(runOutcome([v(45, 2)], { valid: true }).pass, true);
 });
 
 test("a Chromium drag a stray pointer event may have reset passes only with the engine's sentence, nothing dropped, the witness unchanged and the background audit clean", () => {
@@ -241,7 +336,7 @@ test('every Chromium case that takes the background route parks the real pointer
   const chromium = [...DEVICE_SCENE_OPS['device-chrome'], ...DEVICE_SCENE_OPS['device-chrome-dnd']];
   const background = chromium.filter((op) => !['refusal', 'foreground'].includes(DEVICE_OPS[op].device) && op !== 'chrome_dnd_short_pointer_outside_shared');
   assert.deepEqual(background.filter((op) => !DEVICE_OPS[op].park), [], 'parked in the window');
-  assert.equal(background.length, 9);
+  assert.equal(background.length, 11);
   assert.equal(DEVICE_OPS.chrome_dnd_short_pointer_outside_shared.park, undefined, 'parked outside by its condition instead');
 });
 
@@ -252,4 +347,194 @@ test("the pointer allowance lifts the pointer field alone, and only for a case w
   assert.deepEqual(allowPointer({ clean: false, fields: ['pointer', 'focus'], allowed: [] }, true), { clean: false, fields: ['focus'], allowed: ['pointer'] }, 'the focus still fails');
   const clean = { clean: true, fields: [], allowed: [] };
   assert.equal(allowPointer(clean, true), clean, 'nothing to lift');
+});
+
+test("a case's pointer goes only onto the root or a live window of the run's, read at the point just before each move", async () => {
+  const { parkPointer } = await import('../../scripts/linux-engine-diff/device.mjs');
+  // `unsafe`: the points where the top window is not the run's (a popup of the person's, say); `later`: those that
+  // become so by the time the sample's cleanup runs
+  const run = ({ unsafe = [], later = [] } = {}) => {
+    const calls = [];
+    const disposals = [];
+    const skips = [];
+    // the pointer lands where it is moved, over the scene's window (its frame, then its client)
+    let at = { x: 300, y: 200 };
+    const tool = (...args) => {
+      calls.push(args.join(' '));
+      if (args[0] === 'mousemove') at = { x: args[1], y: args[2] };
+      return args[0] === 'getmouselocation' ? 'X=300\nY=200\nSCREEN=0\nWINDOW=7\n' : '';
+    };
+    const read = () => ({ ...at, same_screen: true, chain: [0x41, 0x42] });
+    let blocked = unsafe;
+    const isBlocked = (p) => blocked.some((b) => b.x === p.x && b.y === p.y);
+    // the scene's window 0x42 on top at every point not blocked, another's (0x99) where blocked
+    const desktop = {
+      pointerSafeAt: (p) => !isBlocked(p),
+      skip: (what, window, reason) => skips.push(what),
+      windows: [{ id: 0x42 }],
+      topAt: (p) => (isBlocked(p) ? { top: 0x99, holds: null } : { top: 0x41, holds: 0x42 }),
+      liveOwned: (id) => id === 0x42,
+    };
+    const ctx = { desktop, dispose: (fn) => disposals.push(fn) };
+    let error = null;
+    try {
+      parkPointer(ctx, { x: 600, y: 600 }, { tool, read });
+    } catch (e) {
+      error = e;
+    }
+    blocked = [...unsafe, ...later];
+    for (const fn of disposals) fn();
+    return { moves: calls.filter((c) => c.startsWith('mousemove')), skips, error };
+  };
+  assert.deepEqual(run().moves, ['mousemove 600 600', 'mousemove 300 200'], 'back where it was found');
+  // found over another's window: parked on the front window's middle instead, a window of the run's
+  assert.deepEqual(run({ unsafe: [{ x: 300, y: 200 }] }).moves, ['mousemove 600 600', 'mousemove 1170 715']);
+  // the park point itself under another's window (the person's menu over the scene): no move, and the case fails
+  const blocked = run({ unsafe: [{ x: 600, y: 600 }] });
+  assert.deepEqual(blocked.moves, []);
+  assert.match(blocked.error?.message ?? '', /over a window the run did not open/);
+  // both places another's by the cleanup: the pointer stays, and the skip is recorded
+  const stays = run({ later: [{ x: 300, y: 200 }, { x: 1170, y: 715 }] });
+  assert.deepEqual(stays.moves, ['mousemove 600 600']);
+  assert.deepEqual(stays.skips, ['pointer restore']);
+});
+
+test("a case's park is verified where it landed, over the run's window on top at the point, and refused elsewhere", async () => {
+  const { parkPointer } = await import('../../scripts/linux-engine-diff/device.mjs');
+  const { ParkRefused } = await import('../../scripts/linux-engine-diff/park.mjs');
+  const tool = (...args) => (args[0] === 'getmouselocation' ? 'X=300\nY=200\nSCREEN=0\nWINDOW=7\n' : '');
+  // the cover over the scene's bottom half (`UNDER`) is the run's window on top there, so it is the one meant
+  const desktop = { pointerSafeAt: () => true, windows: [{ id: 0x42 }, { id: 0x50 }], topAt: () => ({ top: 0x51, holds: 0x50 }), liveOwned: () => true };
+  const ctx = { desktop, dispose: () => {} };
+  assert.deepEqual(parkPointer(ctx, { x: 700, y: 650 }, { tool, read: () => ({ x: 700, y: 650, chain: [0x51, 0x50] }) }).chain, [0x51, 0x50]);
+  // the pointer under the scene, not the cover: a park the case did not mean
+  assert.throws(() => parkPointer(ctx, { x: 700, y: 650 }, { tool, read: () => ({ x: 700, y: 650, chain: [0x41, 0x42] }) }), (e) => e instanceof ParkRefused && /not over window 0x00000050/.test(e.message));
+  // nothing on top at the point: the bare root is meant
+  const bare = { ...desktop, topAt: () => ({ top: 0 }) };
+  assert.throws(() => parkPointer({ desktop: bare, dispose: () => {} }, { x: 1, y: 1 }, { tool, read: () => ({ x: 1, y: 1, chain: [0x42] }) }), /not on the bare root/);
+});
+
+// V5's three false successes (M4's release gate, 2026-11-13): the device cases' telemetry, so a sample like them is
+// diagnosable from its own record
+
+/** The drag page's counts as the device cases read them: a press count, its pointer log's press, its motion record. */
+const pageAt = (downs, seq, received = { seq: downs, target: 'near', raw: 6, moves: 6, raw_events: 6, move_events: 6 }) => ({ downs, drops: 0, ups: 0, log: seq === null ? null : { seq, n: 1, moves: [] }, received });
+
+test("a drag-and-drop sample's pointer log must be its own press's: a stale or unread log fails the case (V5's in-zone sample)", () => {
+  const op = 'chrome_dnd_short_in_front_shared';
+  const good = row({ ok: true, effect: true, route: 'background', dnd: { in_front: true }, desktop_same: true, state_notice: null, drop_status: { before: pageAt(51, 51), after: pageAt(52, 52) } });
+  const audit = { clean: true, kind: 'background', answered: [{ ok: true }] };
+  assert.equal(judgeDevice(op, [good], audit).pass, true);
+  // V5's line 282: the press counted (74 to 75), the log still the press before it (72)
+  const stale = judgeDevice(op, [good, { ...good, i: 1, drop_status: { before: pageAt(74, 72), after: pageAt(75, 72) } }], audit);
+  assert.equal(stale.pass, false);
+  assert.ok(stale.reasons.some((r) => /the page's pointer log was not the sample's own press on 1 of 2 samples \(0\/1\)/.test(r)), stale.reasons.join('\n'));
+  const unread = judgeDevice(op, [{ ...good, drop_status: { before: pageAt(51, 51), after: pageAt(52, null) } }], audit);
+  assert.equal(unread.pass, false, 'a press with no log read');
+  // a press on no source (a text selection) leaves the counts and the log as they were: nothing to hold it to
+  const sentence = strayNotice('Google-chrome');
+  const select = row({ ok: false, error: sentence, expected_error: sentence, dropped: false, dnd: { in_front: true }, desktop_same: true, drop_status: { before: pageAt(75, 72), after: pageAt(75, 72) } });
+  assert.equal(judgeDevice('chrome_select_nudged_shared', [select], { clean: true, kind: 'background', answered: [{ ok: false, error: sentence, expected_error: sentence }] }).pass, true);
+});
+
+test("a late case proves something only on its late branch: a sample Chrome took no drag and drop for by the release is unexercised, and every sample's notice is held to the next acting request's refusal", () => {
+  const app = 'Google-chrome';
+  const op = 'chrome_dnd_obscured_in_front_late_shared';
+  const cancelled = dndCancelledSentence(app);
+  const late = dndMayHaveDroppedSentence(app);
+  const fields = { expected_error: cancelled, late_error: late };
+  const held = { in_front: false, held_at_start: true, late: true };
+  const quiet = { state_notice: null, next_ok: true, next_error: null };
+  const mayHave = row({ ok: false, error: late, dropped: true, witness: false, dnd: { ...held, outcome: 'late' }, ...quiet, ...fields });
+  const audit = { clean: true, kind: 'background', answered: [{ ok: false, error: late, ...fields }] };
+  assert.deepEqual(judgeDevice(op, [mayHave], audit), { pass: true, reasons: [] });
+  // V5's line 266: no take by the release, answered ok as a plain drag, nothing dropped, nothing pending
+  const noStart = row({ i: 1, ok: true, dropped: false, witness: true, dnd: { ...held, outcome: 'no_start' }, ...quiet, ...fields });
+  const v = judgeDevice(op, [mayHave, noStart], audit);
+  assert.equal(v.pass, false);
+  assert.ok(v.reasons.some((r) => /unexercised: Chrome took no drag and drop by the release, so the late branch was not reached, on 1 of 2 samples \(0\/1\)/.test(r)), v.reasons.join('\n'));
+  assert.ok(!v.reasons.some((r) => /answered success|not honest/.test(r)), `an honest plain drag is unexercised, not a false answer: ${v.reasons.join('\n')}`);
+  // off the branch, a late take the after-release watch reports is honest only with its notice refused
+  const reported = { ...noStart, dropped: true, witness: false, state_notice: dndLateNotice(app), next_ok: false, next_error: dndLateRefusal(app, 'preflight') };
+  assert.ok(!judgeDevice(op, [mayHave, reported], audit).reasons.some((r) => /not honest/.test(r)));
+  const unreported = { ...reported, ...quiet };
+  assert.ok(judgeDevice(op, [mayHave, unreported], audit).reasons.some((r) => /an answer was not honest on 1 of 2/.test(r)), 'a drop answered ok with nothing pending');
+  // T14's contract on every sample: a notice the next acting request was not refused with, or a refusal with no notice
+  const unrefused = judgeDevice(op, [{ ...mayHave, state_notice: dndLateNotice(app) }], audit);
+  assert.ok(unrefused.reasons.some((r) => /the read's notice and the next acting request's refusal did not agree on 1 of 1/.test(r)), unrefused.reasons.join('\n'));
+  const unannounced = judgeDevice(op, [{ ...mayHave, next_ok: false, next_error: dndLateRefusal(app, 'preflight') }], audit);
+  assert.equal(unannounced.pass, false);
+  assert.equal(judgeDevice(op, [{ ...mayHave, state_notice: undefined, next_ok: undefined }], audit).pass, false, 'a sample whose notice was never read');
+  // the same holds for the plain late case
+  assert.equal(judgeDevice('chrome_dnd_late_shared', [mayHave, noStart], audit).pass, false);
+});
+
+test("the late cases drag along a path that lingers in the drop zone, so Chrome's take comes before the release at the gate's load", async () => {
+  const dnd = pagePath('dnd', 0);
+  const linger = pagePath('dnd-linger', 0);
+  const length = (p) => p.slice(1).reduce((n, [x, y], k) => n + Math.hypot(x - p[k][0], y - p[k][1]), 0);
+  assert.deepEqual(linger.slice(0, dnd.length), dnd, "the plain drop's path, from the source into the zone");
+  // V5's line 266: the renderer began the drag 164 ms after the press, the path's 196 px already released at about 97 ms;
+  // the engine paces a Chromium path at about 2 px a ms, so 600 px more holds the button about 300 ms longer
+  assert.ok(length(linger) - length(dnd) >= 600, `${length(linger) - length(dnd)} px more`);
+  const inTarget = ([x, y]) => x >= 560 && x <= 760 && y >= 120 && y <= 220;
+  assert.ok(linger.slice(dnd.length - 1).every(inTarget), 'every lingering step over the drop zone');
+  const inzone = ([x, y]) => x >= 700 && x <= 740 && y >= 180 && y <= 210;
+  assert.ok(!linger.some(inzone), 'never over the in-zone source');
+  const scene = { id: 7, dndPath: [{ x: 1, y: 1 }], dndLingerPath: [{ x: 2, y: 2 }] };
+  for (const op of ['chrome_dnd_late_shared', 'chrome_dnd_obscured_in_front_late_shared']) {
+    assert.deepEqual(DEVICE_OPS[op].request({ scene }), ['drag', { window: { id: 7 }, path: scene.dndLingerPath }], op);
+  }
+  // the corner overlay stays off the lingering path too
+  const { cornerOverlay } = await import('../../scripts/linux-engine-diff/device.mjs');
+  const g = { X: 0, Y: 0, WIDTH: 1050, HEIGHT: 780 };
+  await assert.rejects(cornerOverlay({ scene: { dndPath: [{ x: 10, y: 10 }], dndLingerPath: [{ x: 1000, y: 740 }] }, dispose: () => {} }, g, async () => ({ stop: async () => {} })), /runs under the corner overlay/);
+});
+
+/** A stand-in engine for a case's own requests after the drag: each command's answer and `--stats` record. */
+function fakeEngine(answers) {
+  const calls = [];
+  let id = 40;
+  return {
+    calls,
+    request: async (command, input) => {
+      calls.push([command, input]);
+      id += 1;
+      const { response, stats } = answers[command];
+      return { id, response: { id, ...response }, stats: stats ? { id, ...stats } : null };
+    },
+  };
+}
+
+test("after a late case's answer, the notice and the next acting request's answer are read through the engine, the watch's raw record kept with each request's id", async () => {
+  const app = 'Google-chrome';
+  const watch = { app, after_release_ms: 2.4, escape_after_release_ms: 3.1, escaped: true };
+  const engine = fakeEngine({
+    get_window_state: { response: { ok: true, notice: dndLateNotice(app) }, stats: { notice: true } },
+    preflight: { response: { ok: false, error: dndLateRefusal(app, 'preflight') }, stats: { late_dnd: watch } },
+  });
+  const ctx = { engine, scene: { id: 0x500001, app }, before: null, desktop: {} };
+  const out = await DEVICE_OPS.chrome_dnd_obscured_in_front_late_shared.check(ctx, { ok: true });
+  assert.deepEqual(engine.calls.map(([c]) => c), ['get_window_state', 'preflight']);
+  assert.deepEqual(engine.calls[0][1], { window: { id: 0x500001 }, include_screenshot: false });
+  assert.equal(out.state_notice, dndLateNotice(app));
+  assert.equal(out.next_ok, false);
+  assert.equal(out.next_error, dndLateRefusal(app, 'preflight'));
+  assert.deepEqual(out.late_watch, { read: { id: 41, notice: true }, next: { id: 42, late_dnd: watch } });
+  // nothing pending: the next acting request still runs, so a refusal with no notice would show; both records null
+  const quiet = fakeEngine({ get_window_state: { response: { ok: true }, stats: {} }, preflight: { response: { ok: true, output: null }, stats: {} } });
+  const plain = await DEVICE_OPS.chrome_dnd_late_shared.check({ engine: quiet, scene: { id: 0x500001, app }, before: null, desktop: {} }, { ok: false, error: dndMayHaveDroppedSentence(app) });
+  assert.deepEqual(quiet.calls.map(([c]) => c), ['get_window_state', 'preflight'], 'read whatever the drag answered');
+  assert.deepEqual([plain.state_notice, plain.next_ok, plain.next_error], [null, true, null]);
+  assert.deepEqual(plain.late_watch, { read: { id: 41, notice: null }, next: { id: 42, late_dnd: null } });
+});
+
+test("a drop case whose next acting request was refused with no notice on the read breaks T14's contract", () => {
+  const op = 'chrome_dnd_short_in_front_shared';
+  const good = row({ ok: true, effect: true, route: 'background', dnd: { in_front: true }, desktop_same: true, state_notice: null, next_ok: true, next_error: null });
+  const audit = { clean: true, kind: 'background', answered: [{ ok: true }] };
+  assert.equal(judgeDevice(op, [good], audit).pass, true);
+  const unannounced = judgeDevice(op, [{ ...good, next_ok: false, next_error: dndUnconfirmedRefusal('Google-chrome', 'preflight') }], audit);
+  assert.equal(unannounced.pass, false);
+  assert.ok(unannounced.reasons.some((r) => /refused for something pending with no notice on the read on 1 of 1/.test(r)), unannounced.reasons.join('\n'));
 });

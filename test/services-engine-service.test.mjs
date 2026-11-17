@@ -658,6 +658,31 @@ test('#354: type_text\'s read-back rides as cua/typeReadback, typeUnconfirmed re
   assert.equal(meta['cua/typeReadback'], null, 'reset by the next call');
 });
 
+test('#374: a Show Menu\'s confirmation rides as cua/menu, and menuUnconfirmed reaches the model with its sentence, name and meta', async t => {
+  const seen = {seen: 'ancestor', openBefore: 0, polls: 2, ms: 21.4};
+  const unseen = {seen: null, openBefore: 1, polls: 51, ms: 1000.2, actionError: -25204};
+  const unconfirmed = 'The Show Menu action was sent to TextEdit, but no menu was seen to open within 1 s. TextEdit may have shown a menu of its own that accessibility does not expose (a web page\'s own menu, for one), or ignored the request. Observe the app (take a screenshot or call getAXState()) before any retry, and never retry blindly.';
+  const actionMeta = {...INPUT_META, inputRoute: 1, activationGuardMs: undefined, pointUnconfirmed: undefined};
+  let shown = true;
+  const {getApp, call, meta} = await session(t, {handlers: {'execute:perform_secondary_action': () => {
+    if (shown) return {meta: {...actionMeta, menu: seen}};
+    throw new EngineFailure(-10005, unconfirmed, 'menuUnconfirmed', {meta: {...actionMeta, menu: unseen}});
+  }}});
+  const {app} = await getApp('TextEdit');
+  await call(() => app.performSecondaryAction(2, 'Show Menu'));
+  assert.deepEqual(meta['cua/menu'], seen);
+  await call(() => app.getAXState({emit: false}));
+  assert.equal(meta['cua/menu'], null, 'reset by the next call');
+  shown = false;
+  await assert.rejects(call(() => app.performSecondaryAction(2, 'Show Menu')), error => {
+    assert.equal(error.message, `Computer Use server error -10005: ${unconfirmed}`, 'the whole sentence');
+    assert.equal(error.errorName, 'menuUnconfirmed');
+    return true;
+  });
+  assert.deepEqual(meta['cua/menu'], unseen);
+  assert.deepEqual(meta['cua/actionInterval'], {startedAt: 1000, endedAt: 1042}, 'the action was sent');
+});
+
 test('a control build\'s variant rides in cua/nativeEngine, on its results and its input errors alike', async t => {
   const {getApp, call, meta} = await session(t, {identity: {engineVersion: '0.1.0', build: 'b1', variant: 'control-no-inert-click'},
     handlers: {'execute:press_key': () => { throw new EngineFailure(-10005, 'activationFailed', 'activationFailed', {meta: INPUT_META}); }}});

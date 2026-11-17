@@ -1,0 +1,5 @@
+cua-engine 0.3.0 (d70b9e8956ad)
+start pilot4-handle 2026-11-11T10:44:58Z loadavg 0.81 0.97 1.03
+run exit 0; watchdog clean
+private run pilot4-handle exit 0 10:46:06
+end pilot4-handle 2026-11-11T10:46:06Z loadavg 0.53 0.87 0.99 status 0

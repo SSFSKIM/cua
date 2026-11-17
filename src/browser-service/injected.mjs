@@ -127,6 +127,11 @@ export class InjectedScripts {
   mainFrames = new Map();             // targetKey(target) -> the target's main frame id
   epoch = 0;                          // counts invalidations, so a world made or filled across one is not kept
 
+  // A locator's CDP command (SelectorEngine.call): its budget running out keeps the tab's debugger (#168).
+  call(target, method, params, options = {}) {
+    return this.cdp.callTarget(target, method, params, {...options, preserveOnTimeout: true});
+  }
+
   // --- evaluation --------------------------------------------------------------------------------------------------
 
   // Runs `expression` in frame `frameId` of `target` (its main frame when null) with the script installed -> its value;
@@ -184,7 +189,7 @@ export class InjectedScripts {
   async evaluateInWorld(target, frameId, params, options = {}) {
     const executionContextId = await this.world(target, frameId, options);
     checkSelectorDeadline(options.deadline);
-    return {...(await this.cdp.callTarget(target, 'Runtime.evaluate', {...params, contextId: executionContextId}, callOptions(options))), executionContextId};
+    return {...(await this.call(target, 'Runtime.evaluate', {...params, contextId: executionContextId}, callOptions(options))), executionContextId};
   }
 
   // Installs the script in the frame's world unless it is there (ensurePlaywrightInjectedInTarget). A world found gone
@@ -211,7 +216,7 @@ export class InjectedScripts {
     if (known != null) return known;
     checkSelectorDeadline(options.deadline);
     const epoch = this.epoch;
-    const {executionContextId} = await this.cdp.callTarget(target, 'Page.createIsolatedWorld',
+    const {executionContextId} = await this.call(target, 'Page.createIsolatedWorld',
       {frameId, worldName: WORLD_NAME, grantUniveralAccess: false}, callOptions(options));
     if (this.epoch !== epoch) return executionContextId;
     this.worlds.set(key, executionContextId);
@@ -228,7 +233,7 @@ export class InjectedScripts {
     const key = targetKey(target);
     const known = this.mainFrames.get(key);
     if (known != null) return known;
-    const {frameTree} = await this.cdp.callTarget(target, 'Page.getFrameTree', undefined, callOptions(options));
+    const {frameTree} = await this.call(target, 'Page.getFrameTree', undefined, callOptions(options));
     if (!frameTree?.frame?.id) throw new Error('Frame target is not available for this iframe selector path');       // Cf
     this.mainFrames.set(key, frameTree.frame.id);
     return frameTree.frame.id;
@@ -238,7 +243,7 @@ export class InjectedScripts {
   async release(target, objectIds) {
     for (const objectId of new Set(objectIds)) {
       if (objectId == null) continue;
-      await this.cdp.callTarget(target, 'Runtime.releaseObject', {objectId}, {deadline: new Deadline(RELEASE_MS)}).catch(() => {});
+      await this.call(target, 'Runtime.releaseObject', {objectId}, {deadline: new Deadline(RELEASE_MS)}).catch(() => {});
     }
   }
 

@@ -1,0 +1,13 @@
+# linux-engine-diff summary
+
+## t63-fu-cell-load2 (experiment settle)
+
+| cell | lane | runs | misses (late / never) | streak at the end | verdict |
+|---|---|---:|---|---:|---|
+| settle-gtk3 activate_click background | shipped | 30 | 0 (0 / 0) | 30 | 30 consecutive |
+| settle-gtk3 activate_click background | settle-0 | 30 | 0 (0 / 0) | 30 | 30 consecutive |
+| settle-gtk3 activate_click dedicated | shipped | 30 | 0 (0 / 0) | 30 | 30 consecutive |
+| settle-gtk3 activate_click dedicated | settle-0 | 30 | 0 (0 / 0) | 30 | 30 consecutive |
+
+desktop: started with no window active, ended with 0x00c0000c active (harness), neither acted on; holder none; the harness's own trace: 7658 requests, 502 changes of a window, every one of its own; the run's record: not run (the display is a private one, and the run's caller declined to start the whole-run RECORD on it)
+

@@ -1,0 +1,42 @@
+{
+  "label": "release gate",
+  "step": "L3c",
+  "pilot": false,
+  "what": "the settle's observations: Firefox, gedit",
+  "display": "own",
+  "load": "load2",
+  "minutes": 31,
+  "run_name": "m4-gate-L3c",
+  "checkout": {
+    "root": "/Users/new/Developer/GitHub/cua/.claude/worktrees/t77-gate/",
+    "commit": "f96928983006fbcb3ef50afe1ecd87e7ef1ac1ad",
+    "clean": true
+  },
+  "candidate": {
+    "path": "/Users/new/.local/share/cua-171/gate/artifact-c2/cua-engine-0.4.0-linux-x64",
+    "sha256": "90b9650eb599ec7f81f23e98b211085adb449fc906c17bd5093d9062934c0dbd"
+  },
+  "command": "/Users/new/.local/share/cua-171/locked.sh t18-gate /usr/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/t77-gate/scripts/linux-engine-gate/gate.mjs run L3c --candidate /Users/new/.local/share/cua-171/gate/artifact-c2/cua-engine-0.4.0-linux-x64 --out /Users/new/.local/share/cua-171/gate/out-c2",
+  "argv": [
+    "scripts/linux-engine-diff.mjs",
+    "--experiment",
+    "settle",
+    "--lanes",
+    "shipped",
+    "--family",
+    "firefox,gedit",
+    "--load-factor",
+    "2",
+    "--cua",
+    "/Users/new/.local/share/cua-171/gate/artifact-c2/cua-engine-0.4.0-linux-x64",
+    "--run",
+    "m4-gate-L3c",
+    "--gate",
+    "--out",
+    "/Users/new/.local/share/cua-171/gate/out-c2/L3c.release-gate/run"
+  ],
+  "started": "2026-11-14T09:42:28.583Z",
+  "finished": "2026-11-14T10:17:13.136Z",
+  "exit": 0,
+  "child_exit": 0
+}

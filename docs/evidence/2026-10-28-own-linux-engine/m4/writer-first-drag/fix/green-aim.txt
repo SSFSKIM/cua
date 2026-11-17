@@ -1,0 +1,13 @@
+✔ a Writer drag is aimed where VCL draws the text, by the host panel's offset, after a configure as after a pointer event (2.616012ms)
+✔ the aim samples VCL's offset with each character's extents, so a pointer event or a configure after locate moves neither (0.470174ms)
+✔ another family's text keeps the AT-SPI extents less the window's origin (0.204465ms)
+✔ VCL's offset is the host's origin less the root pane's, and only the menu bar's shape is read (0.684498ms)
+✔ the declared refusal is the engine's own sentence (native/linux-engine/src/vcl.rs `UNTRUSTED`) (0.895796ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 5
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 117.782357

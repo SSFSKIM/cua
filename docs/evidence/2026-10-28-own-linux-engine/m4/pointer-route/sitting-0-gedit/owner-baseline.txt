@@ -1,0 +1,7 @@
+owner pid=2546101 start=51157914
+tmproot /tmp/c71-2GksI2
+args: --experiment pointer-route --vendor <home>/.local/share/cua/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64 --cua <task71>/build/aff8c0328186b6d16d6df5f4379fdccabf030f0b/src/native/linux-engine/target/x86_64-unknown-linux-musl/release/cua-engine --run t71-person3 --family gedit
+started 2026-11-10T06:52:36Z finished 2026-11-10T07:12:05Z wrap exit 0
+tmproot left: []
+/tmp/cua171-run-* left: [/tmp/cua171-run-AdXsUJ /tmp/cua171-run-lLeOBG /tmp/cua171-run-q8ExPO ]
+owner side: no difference

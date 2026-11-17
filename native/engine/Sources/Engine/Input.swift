@@ -116,6 +116,8 @@ struct InputMeta {
   /// #354: press_key answers once its keys are posted, so what an editing key did is not confirmed; said on its every
   /// answer once it posts (`keyEffect: "unconfirmed"`).
   var keyEffectUnconfirmed = false
+  /// #374's Show Menu confirmation (MenuConfirm.swift): where the new menu was seen, or that none was, and the wait.
+  var menu: MenuConfirmRecord?
   /// With detection on, the milliseconds from the app's last attributed user event to the request's receipt (null when
   /// none was attributed while the app was driven); with detection off, the machine-wide HID idle time at receipt.
   var hidIdleMs: Int?
@@ -181,6 +183,7 @@ struct InputMeta {
     if let scroll { wire["scroll"] = scroll.wire }
     if let typeReadback { wire["typeReadback"] = typeReadback.wire }
     if keyEffectUnconfirmed { wire["keyEffect"] = "unconfirmed" }
+    if let menu { wire["menu"] = menu.wire }
     if let afterActionRepairs = context.connection.afterAction.wire { wire["afterActionRepairs"] = afterActionRepairs }
     return wire
   }

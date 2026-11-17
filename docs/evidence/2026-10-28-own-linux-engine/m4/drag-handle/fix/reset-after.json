@@ -1,0 +1,1 @@
+{"engine":"cua-engine 0.3.0 (d70b9e8956ad)","start":{"ok":true},"move":{"ok":true},"held_before_reset":true,"click_while_held":{"ok":false,"error":"a drag handle is held; end it before sending desktop pointer input (a handle that gets no request for 30 s is released where it is)"},"setup_ms":2,"held_after_reset":false,"click_after_reset":{"ok":true},"held_at_end":false}

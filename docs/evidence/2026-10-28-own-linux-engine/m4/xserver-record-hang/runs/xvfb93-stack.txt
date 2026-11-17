@@ -1,0 +1,42 @@
+#0  0x000075f519929af4 in __GI___writev (fd=9, iov=iov@entry=0x7ffd88e2a0b0, iovcnt=iovcnt@entry=0) at ../sysdeps/unix/sysv/linux/writev.c:26
+#1  0x00005784050d89b0 in _XSERVTransSocketWritev (ciptr=0x5784383c25e0, buf=0x7ffd88e2a0b0, size=<optimized out>) at /usr/include/X11/Xtrans/Xtranssock.c:2228
+#2  0x00005784050d313f in FlushClient (who=0x5784380edce0, oc=0x5784383c1ec0, __extraBuf=__extraBuf@entry=0x0, extraCount=extraCount@entry=0) at ../../../../os/io.c:891
+#3  0x00005784050d355c in FlushAllOutput () at ../../../../os/io.c:634
+#4  FlushAllOutput () at ../../../../os/io.c:612
+#5  0x0000578405077095 in Dispatch () at ../../../../dix/dispatch.c:577
+#6  0x000057840507b40a in dix_main (argc=9, argv=<optimized out>, envp=<optimized out>) at ../../../../dix/main.c:274
+#7  0x000075f51982a1ca in __libc_start_call_main (main=main@entry=0x578404f83d50 <main>, argc=argc@entry=9, argv=argv@entry=0x7ffd88e2a338) at ../sysdeps/nptl/libc_start_call_main.h:58
+#8  0x000075f51982a28b in __libc_start_main_impl (main=0x578404f83d50 <main>, argc=9, argv=0x7ffd88e2a338, init=<optimized out>, fini=<optimized out>, rtld_fini=<optimized out>, stack_end=0x7ffd88e2a328) at ../csu/libc-start.c:360
+#9  0x0000578404f83d85 in _start ()
+rdi            0x9                 9
+rsi            0x7ffd88e2a0b0      140726900007088
+rdx            0x0                 0
+---
+#0  0x000075f519929af4 in __GI___writev (fd=9, iov=iov@entry=0x7ffd88e2a0b0, iovcnt=iovcnt@entry=0) at ../sysdeps/unix/sysv/linux/writev.c:26
+#1  0x00005784050d89b0 in _XSERVTransSocketWritev (ciptr=0x5784383c25e0, buf=0x7ffd88e2a0b0, size=<optimized out>) at /usr/include/X11/Xtrans/Xtranssock.c:2228
+#2  0x00005784050d313f in FlushClient (who=0x5784380edce0, oc=0x5784383c1ec0, __extraBuf=__extraBuf@entry=0x0, extraCount=extraCount@entry=0) at ../../../../os/io.c:891
+#3  0x00005784050d355c in FlushAllOutput () at ../../../../os/io.c:634
+#4  FlushAllOutput () at ../../../../os/io.c:612
+#5  0x0000578405077095 in Dispatch () at ../../../../dix/dispatch.c:577
+#6  0x000057840507b40a in dix_main (argc=9, argv=<optimized out>, envp=<optimized out>) at ../../../../dix/main.c:274
+#7  0x000075f51982a1ca in __libc_start_call_main (main=main@entry=0x578404f83d50 <main>, argc=argc@entry=9, argv=argv@entry=0x7ffd88e2a338) at ../sysdeps/nptl/libc_start_call_main.h:58
+#8  0x000075f51982a28b in __libc_start_main_impl (main=0x578404f83d50 <main>, argc=9, argv=0x7ffd88e2a338, init=<optimized out>, fini=<optimized out>, rtld_fini=<optimized out>, stack_end=0x7ffd88e2a328) at ../csu/libc-start.c:360
+#9  0x0000578404f83d85 in _start ()
+rdi            0x9                 9
+rsi            0x7ffd88e2a0b0      140726900007088
+rdx            0x0                 0
+---
+#0  0x000075f519929af4 in __GI___writev (fd=9, iov=iov@entry=0x7ffd88e2a0b0, iovcnt=iovcnt@entry=0) at ../sysdeps/unix/sysv/linux/writev.c:26
+#1  0x00005784050d89b0 in _XSERVTransSocketWritev (ciptr=0x5784383c25e0, buf=0x7ffd88e2a0b0, size=<optimized out>) at /usr/include/X11/Xtrans/Xtranssock.c:2228
+#2  0x00005784050d313f in FlushClient (who=0x5784380edce0, oc=0x5784383c1ec0, __extraBuf=__extraBuf@entry=0x0, extraCount=extraCount@entry=0) at ../../../../os/io.c:891
+#3  0x00005784050d355c in FlushAllOutput () at ../../../../os/io.c:634
+#4  FlushAllOutput () at ../../../../os/io.c:612
+#5  0x0000578405077095 in Dispatch () at ../../../../dix/dispatch.c:577
+#6  0x000057840507b40a in dix_main (argc=9, argv=<optimized out>, envp=<optimized out>) at ../../../../dix/main.c:274
+#7  0x000075f51982a1ca in __libc_start_call_main (main=main@entry=0x578404f83d50 <main>, argc=argc@entry=9, argv=argv@entry=0x7ffd88e2a338) at ../sysdeps/nptl/libc_start_call_main.h:58
+#8  0x000075f51982a28b in __libc_start_main_impl (main=0x578404f83d50 <main>, argc=9, argv=0x7ffd88e2a338, init=<optimized out>, fini=<optimized out>, rtld_fini=<optimized out>, stack_end=0x7ffd88e2a328) at ../csu/libc-start.c:360
+#9  0x0000578404f83d85 in _start ()
+rdi            0x9                 9
+rsi            0x7ffd88e2a0b0      140726900007088
+rdx            0x0                 0
+---

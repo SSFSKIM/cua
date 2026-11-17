@@ -1,0 +1,5 @@
+cua-engine 0.3.0 (6c4a739ca342)
+start probe1 2026-11-10T01:14:36Z loadavg 0.31 0.52 0.63
+run exit 0; watchdog clean
+private run probe1 exit 0 01:30:07
+end probe1 2026-11-10T01:30:07Z loadavg 0.23 0.30 0.44 status 0

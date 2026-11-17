@@ -1,0 +1,9 @@
+# m4-gate-V3: chrome-input's declared unconfirmed cells, checked row by row (rulings 688, 691)
+label: release gate; candidate 751ec9be45e1f5b8e10fc3aa0a4695f785ecb12a44acd5b069374926ba383cca (cua-engine 0.4.0 (c55c8e08d9cb)); gate/out-c3/V3.release-gate/run/results.jsonl
+
+| cell | samples (timed) | 1. menuUnconfirmed | 2. context rose | 3. witness unchanged | all three | audit | stored verdict | holds |
+|---|---|---|---|---|---|---|---|---|
+| chrome-input right_click_fallback cua | 40 (40) | 40/40 | 40/40 | 40/40 | 40/40 | clean, 2 menuUnconfirmed | declared unconfirmed | yes |
+| chrome-input secondary_action cua | 40 (40) | 40/40 | 40/40 | 40/40 | 40/40 | clean, 2 menuUnconfirmed | declared unconfirmed | yes |
+
+VERDICT (declared unconfirmed, listed apart, never a pass): HOLDS for 2 of 2 cells

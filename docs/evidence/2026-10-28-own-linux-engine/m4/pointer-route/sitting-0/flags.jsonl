@@ -1,0 +1,2 @@
+{"t": 3662.322, "kind": "outside-peer-connection", "pids": [336832], "comm": "electron", "peer_path": "/tmp/c71-dQgLPJ/cua171-run-NJtLr6/session/bus/dbus-v84LfMaLM0", "peer_pids": [], "peer_comm": null, "peer_inode": "128560064"}
+{"t": 3662.322, "kind": "stop-sent", "pid": 177019, "why": "outside-peer-connection"}

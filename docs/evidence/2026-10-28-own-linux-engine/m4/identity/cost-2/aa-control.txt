@@ -1,0 +1,9 @@
+cost gedit tree | T4 newest-lane 93.4 − T4 pinned-lane 98.0 (n 21) | [-13.38, 5.52] | undetermined
+cost gedit type_text | T4 newest-lane 169.0 − T4 pinned-lane 169.0 (n 42) | [-5.985, 6.89] | same (within noise)
+cost gedit clipboard_read | T4 newest-lane 39.2 − T4 pinned-lane 38.7 (n 42) | [-2.77, 3.695] | undetermined
+cost chrome tree | T4 newest-lane 64.2 − T4 pinned-lane 66.0 (n 42) | [-6.46, 3.225] | same (within noise)
+cost chrome-input click_element | T4 newest-lane 146.2 − T4 pinned-lane 142.9 (n 21) | [-3.87, 8.52] | undetermined
+cost-2 gedit tree | T4 newest-lane 88.5 − T4 pinned-lane 85.3 (n 84) | [-1.055, 6.39] | undetermined
+cost-2 gedit type_text | T4 newest-lane 174.6 − T4 pinned-lane 170.0 (n 84) | [-0.13, 8.83] | undetermined
+cost-2 gedit clipboard_read | T4 newest-lane 39.2 − T4 pinned-lane 39.6 (n 84) | [-1.71, 2.53] | undetermined
+cost-2 chrome tree | T4 newest-lane 65.3 − T4 pinned-lane 65.4 (n 84) | [-2.675, 4.475] | undetermined

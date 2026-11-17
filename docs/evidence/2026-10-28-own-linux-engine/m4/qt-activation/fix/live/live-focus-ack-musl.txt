@@ -1,0 +1,17 @@
+    Finished `release` profile [optimized] target(s) in 0.03s
+     Running tests/live_focus_ack.rs (target/release/deps/live_focus_ack-c9af77cccabc9385)
+
+running 10 tests
+test a_background_click_to_a_late_qt_window_waits_for_its_focus_and_leaves_the_x_focus_where_it_was ... ok
+test a_background_drag_to_a_late_qt_window_leaves_the_x_focus_where_it_was ... ok
+test a_background_press_onto_a_native_child_of_a_qt_window_is_refused_with_nothing_sent ... ok
+test a_background_press_to_a_qt_window_with_no_accessibility_tree_is_refused_in_shared_mode ... ok
+test a_click_on_a_held_session_the_real_focus_has_left_takes_a_fresh_focus_first ... ok
+test a_click_right_after_a_key_to_a_late_qt_window_leaves_the_x_focus_where_it_was ... ok
+test at_a_bound_shorter_than_qt_s_turn_a_press_is_refused_with_nothing_sent_or_sent_with_the_focus_taken ... ok
+test background_input_to_a_qt_window_its_modal_dialog_blocks_is_refused_in_shared_mode ... ok
+test in_dedicated_mode_a_background_click_is_as_before_and_waits_for_nothing ... ok
+test with_no_focus_wait_the_late_qt_window_takes_the_x_focus_on_a_background_click ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 140.04s
+

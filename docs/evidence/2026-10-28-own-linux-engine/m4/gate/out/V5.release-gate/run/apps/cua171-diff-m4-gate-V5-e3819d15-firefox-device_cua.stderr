@@ -1,0 +1,1 @@
+internal error, please report: running "firefox" failed: cannot create transient scope: DBus error "org.freedesktop.DBus.Error.ServiceUnknown": [The name org.freedesktop.systemd1 was not provided by any .service files]

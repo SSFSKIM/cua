@@ -1,5 +1,5 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
-import {prepareCommand,cellsCommand,linuxSession,parityScratchPrefix,ownNodeEnv} from '../../scripts/repl-parity/topology.mjs';
+import {prepareCommand,cellsCommand,linuxSession,linuxSessionFor,parityDisplay,parityScratchPrefix,ownNodeEnv} from '../../scripts/repl-parity/topology.mjs';
 import {serveCommand} from '../../scripts/browser-parity/topology.mjs';
 import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,rmSync} from 'node:fs';
 import {join} from 'node:path';
@@ -81,3 +81,19 @@ test('every parity lane keeps its runtime warm through a pause',async()=>{
   assert.match(command.args.at(-1),/exec env -u CUA_NODE -u CUA_PARITY_NODE_MODE CUA_RUNTIME_IDLE_MS=0 /);
  assert.equal(settingsFrom({CUA_RUNTIME_IDLE_MS:'0'}).runtimeIdleMs,0);
 });
+
+// #171 M4 (T18): a run on a private display names it on the controller (CUA_PARITY_DISPLAY), and every device shell
+// takes that display's session, never the first one it finds; the name is validated before it reaches the shell.
+test('the device session is the controller\'s named private display when it names one',()=>{
+ assert.equal(parityDisplay({}),undefined);
+ assert.equal(parityDisplay({CUA_PARITY_DISPLAY:':57'}),':57');
+ for(const bad of ['57',':0',':5x',"':5'",':5;id'])assert.throws(()=>parityDisplay({CUA_PARITY_DISPLAY:bad}),/CUA_PARITY_DISPLAY/);
+ assert.match(linuxSessionFor({CUA_PARITY_DISPLAY:':57'}),/\(fs,\{"display":":57"\}\)/);
+ assert.match(linuxSessionFor({}),/\(fs,\{\}\)/);
+ assert.equal(linuxSession,linuxSessionFor(process.env));
+});
+test('Linux prepare forwards a native-only preparation',()=>deviceShell(({execute})=>{
+ const result=execute(prepareCommand({device:'cua-171',commit:'1234567890abcdef',nativeOnly:true}),{DEVICE_OS:'Linux'});assert.equal(result.status,0,result.stderr);
+ assert.deepEqual(JSON.parse(result.stdout).args,['scripts/repl-parity/prepare-device.mjs','prepare','--device','cua-171','--native-only']);
+ assert.throws(()=>prepareCommand({device:'cua-171',commit:'1234567890abcdef',nativeOnly:true,profile:'me'}),/native-only.*profile/);
+}));

@@ -5,13 +5,13 @@
 // later (CUA_NODE); skips visibly otherwise.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdirSync, symlinkSync, writeFileSync} from 'node:fs';
+import {existsSync, mkdirSync, symlinkSync, writeFileSync} from 'node:fs';
 import {createServer} from 'node:net';
 import {join} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {kernelNode} from './kernel-harness.mjs';
 import {alive, descendants, launches, startHost, texts} from './supervisor-harness.mjs';
-import {TRUSTED_WORKER, TRUSTED_EXIT_SENTENCE, TURN_MARGIN_MS} from '../../src/repl-host/supervisor.mjs';
+import {KERNEL_RESET_MS, TIMEOUT_SENTENCE, TRUSTED_WORKER, TRUSTED_EXIT_SENTENCE, TURN_MARGIN_MS} from '../../src/repl-host/supervisor.mjs';
 import {FORM_UNSUPPORTED_SENTENCE, INVALID_SCHEMA_PREFIX, UNEXPECTED_RESPONSE_SENTENCE} from '../../src/repl-host/elicitation.mjs';
 import {REPL_HOST_META_KEY, REPL_HOST_VERSION} from '../../src/repl-host/identity.mjs';
 
@@ -98,23 +98,29 @@ test('trusted code gets exactly the retained privileged API: no config storage, 
 
 test('cells get no privilege: their nodeRepl is the base one, and privileged requests forged on the kernel\'s stdout are ignored', own, async t => {
   let connections = 0;
-  const host = await startHost(t, {node, capabilities: {elicitation: {}}, services: {svc: 'export const handleRpc = () => 1;'}});
+  const host = await startHost(t, {node, capabilities: {elicitation: {}}, services: {svc: 'let resets = 0; export const handleRpc = () => resets; export function kernelReset() { resets++; }'}});
   const socket = join(host.root, 'p.sock');
   const server = createServer(c => { connections++; c.destroy(); }).listen(socket);
   t.after(() => server.close());
   assert.deepEqual(parsed(await host.js('nodeRepl.write(JSON.stringify(Object.keys(nodeRepl).sort()))')),
     ['cwd', 'emitImage', 'env', 'homeDir', 'requestMeta', 'rpc', 'tmpDir', 'write']);
   assert.deepEqual(parsed(await host.js('nodeRepl.write(JSON.stringify(["createElicitation","nativePipe","launchServices","addTurnEndedHandler","addAfterSubmittedCodeHook","withSuspendedTimeout","setResponseMeta","emitContentItem"].filter(k => k in nodeRepl)))')), []);
+  assert.equal(parsed(await host.js(rpc('svc', {}))), 0, 'the worker runs');
   const forged = [
     {type: 'native_pipe_request', id: 'native-pipe-0', op: 'connect', path: socket},
     {type: 'elicit', id: 'forged-elicitation', exec_id: 'exec-3', message: 'forged', requested_schema: {type: 'object', properties: {}}, meta: null},
     {type: 'launch_services_action', id: 'forged-ls', exec_id: 'exec-3', action: 'open_application', bundle_identifier: 'com.example'},
+    // the host's own reset message to the worker and the worker's answer (supervisor.mjs kernelResetToWorker)
+    {type: 'kernel_reset', id: 'kernel-reset-0'},
+    {type: 'kernel_reset_result', id: 'kernel-reset-0'},
   ];
   // A console line outside any execution goes to the kernel's stdout unwrapped: the one way a cell can write there.
   await host.js(`setTimeout(() => { for (const line of ${JSON.stringify(forged.map(f => JSON.stringify(f)))}) console.log(line); }, 0); await new Promise(r => setTimeout(r, 50));`);
   await host.js('await new Promise(r => setTimeout(r, 300));');
   assert.equal(connections, 0, 'no socket was opened for the kernel');
   assert.deepEqual(host.serverRequests.filter(m => m.method === 'elicitation/create'), [], 'no elicitation was asked for the kernel');
+  assert.equal(parsed(await host.js(rpc('svc', {}))), 0, 'no kernel reset reached the worker\'s services');
+  assert.equal(parsed(await host.js(rpc('svc', {type: 'kernel_reset'}))), 0, 'and a cell\'s rpc is the service\'s request, never the reset');
 });
 
 test('after-code hooks: sequential, after a thrown cell too, each under its deadline, errors swallowed, output and content items kept; unregister stops them', own, async t => {
@@ -281,6 +287,91 @@ test('the worker outlives kernel timeouts and resets; a timed-out call\'s late a
   const workerLaunches = launches(host.codexHome).filter(l => l.argv.includes(TRUSTED_WORKER));
   assert.equal(workerLaunches.length, 2);
   assert.deepEqual(workerLaunches[0].argv.slice(-4), [node, '--experimental-vm-modules', TRUSTED_WORKER, host.cwd], 'under the same sandbox as the kernel, given the working directory');
+});
+
+// A service that holds what a kernel started (as cua's Linux service holds drag handles) and releases it at
+// `kernelReset`, taking `RESET_MS`; `log` reads what it saw. A kernelReset that runs records when it began and ended.
+const HOLDER = `${SLEEP}import {writeFileSync} from 'node:fs';
+  const log = [];
+  export const RESET_MS = 200;
+  export let resetHangs = false;
+  export async function handleRpc(request) {
+    if (request.op === 'log') return log.splice(0);
+    if (request.op === 'hang') { resetHangs = true; return 'hanging'; }
+    if (request.op === 'slow') { log.push('slow'); await sleep(request.ms); return 'LATE'; }
+    log.push('hold');
+    return 'held';
+  }
+  export async function kernelReset() {
+    log.push('reset-start');
+    if (resetHangs) return new Promise(() => {});
+    await sleep(RESET_MS);
+    log.push('reset-end');
+  }`;
+
+test('js_reset tells the trusted worker before it answers: each loaded service\'s kernelReset runs to its end; a service never loaded stays unloaded, and one without the export or whose reset throws changes nothing', own, async t => {
+  const host = await startHost(t, {node, services: {
+    holder: HOLDER,
+    plain: 'export const handleRpc = () => \'plain\';',
+    throws: 'export const handleRpc = () => \'throws\'; export function kernelReset() { throw new Error(\'reset boom\'); }',
+    unloaded: 'import {writeFileSync} from \'node:fs\'; writeFileSync(\'unloaded-was-loaded\', \'\'); export const handleRpc = () => 1; export function kernelReset() {}',
+  }});
+  assert.deepEqual(texts(await host.call('js_reset', {})), ['js kernel reset'], 'no worker yet: a reset as before');
+  for (const svc of ['holder', 'plain', 'throws']) assert.equal(parsed(await host.js(rpc(svc, {}))), svc === 'holder' ? 'held' : svc);
+  const started = performance.now();
+  const reset = await host.call('js_reset', {});
+  const elapsed = performance.now() - started;
+  assert.deepEqual([reset.isError, texts(reset)], [false, ['js kernel reset']], 'the answer is unchanged');
+  assert.ok(elapsed >= 190 && elapsed < KERNEL_RESET_MS, `the reset waited for the release (${Math.round(elapsed)} ms)`);
+  assert.deepEqual(parsed(await host.js(rpc('holder', {op: 'log'}))), ['hold', 'reset-start', 'reset-end'], 'the release ran once, to its end, before the reset answered');
+  assert.equal(existsSync(join(host.cwd, 'unloaded-was-loaded')), false, 'nothing is loaded for a reset');
+  assert.equal(parsed(await host.js(rpc('throws', {}))), 'throws', 'the same worker serves on');
+  assert.equal(workers(host).length, 1);
+});
+
+test('a kernelReset that never answers holds js_reset and a cell\'s timeout for the bound only, and the worker serves on', own, async t => {
+  const host = await startHost(t, {node, services: {holder: HOLDER}});
+  // the kernel is warm from here on, so the cell below reaches its service well inside its budget
+  assert.equal(parsed(await host.js(rpc('holder', {op: 'hang'}))), 'hanging');
+  // A cell blocked in its service (the engine busy with the request that timed out) and a release that cannot answer.
+  let started = performance.now();
+  assert.deepEqual(texts(await host.js(rpc('holder', {op: 'slow', ms: 5000}), {timeoutMs: 1000})), [TIMEOUT_SENTENCE]);
+  let elapsed = performance.now() - started;
+  assert.ok(elapsed >= 1000 + KERNEL_RESET_MS - 20 && elapsed < 1000 + KERNEL_RESET_MS + 700, `the timeout answered at its budget plus the bound, no later (${Math.round(elapsed)} ms)`);
+  started = performance.now();
+  assert.deepEqual(texts(await host.call('js_reset', {})), ['js kernel reset']);
+  elapsed = performance.now() - started;
+  assert.ok(elapsed >= KERNEL_RESET_MS - 20 && elapsed < KERNEL_RESET_MS + 700, `the reset answered at the bound (${Math.round(elapsed)} ms)`);
+  assert.deepEqual(parsed(await host.js(rpc('holder', {op: 'log'}))), ['slow', 'reset-start', 'reset-start'], 'one release asked at the timeout and one at the reset');
+  assert.equal(workers(host).length, 1);
+});
+
+test('a cell\'s timeout releases before the timeout sentence answers, as js_reset does', own, async t => {
+  const host = await startHost(t, {node, services: {holder: HOLDER}});
+  assert.equal(parsed(await host.js(rpc('holder', {}))), 'held');
+  const started = performance.now();
+  assert.deepEqual(texts(await host.js(`${rpc('holder', {})} await new Promise(() => {});`, {timeoutMs: 500})), [TIMEOUT_SENTENCE]);
+  const elapsed = performance.now() - started;
+  assert.ok(elapsed >= 500 + 190 && elapsed < 500 + KERNEL_RESET_MS, `the timeout waited for the release (${Math.round(elapsed)} ms)`);
+  assert.deepEqual(parsed(await host.js(rpc('holder', {op: 'log'}))), ['hold', 'hold', 'reset-start', 'reset-end']);
+});
+
+test('services with no kernelReset (macOS\'s engine, the vendor\'s): js_reset and a timeout answer as fast and as before', own, async t => {
+  const host = await startHost(t, {node, services: {plain: 'export const handleRpc = () => \'plain\';'}});
+  assert.equal(parsed(await host.js(rpc('plain', {}))), 'plain');
+  let started = performance.now();
+  const reset = await host.call('js_reset', {});
+  const resetMs = performance.now() - started;
+  assert.deepEqual([reset.isError, texts(reset)], [false, ['js kernel reset']]);
+  assert.equal(parsed(await host.js(rpc('plain', {}))), 'plain');
+  started = performance.now();
+  const timedOut = await host.js(`${rpc('plain', {})} await new Promise(() => {});`, {timeoutMs: 400});
+  const timeoutMs = performance.now() - started;
+  assert.deepEqual([timedOut.isError, texts(timedOut)], [true, [TIMEOUT_SENTENCE]]);
+  // the worker's answer ended the wait, never the bound: the kernel's stop is all either waits on
+  assert.ok(resetMs < KERNEL_RESET_MS * 0.75, `the reset answered at once (${Math.round(resetMs)} ms)`);
+  assert.ok(timeoutMs < 400 + KERNEL_RESET_MS * 0.75, `the timeout answered at its budget (${Math.round(timeoutMs)} ms)`);
+  assert.equal(workers(host).length, 1);
 });
 
 test('a sandbox-policy change replaces the worker with the kernel; shutdown stops both', own, async t => {

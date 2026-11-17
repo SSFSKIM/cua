@@ -1,0 +1,24 @@
+xprobe 29f01ef9e920
+== 1. record-run on an unmarked display
+exit 1
+xprobe: the whole-run RECORD can freeze X.Org 21.1 (task 41), so it runs only on a private display marked CUA171_PRIVATE_DISPLAY
+== 2. marked private
+exit 0 kinds:       5 "kind":"client"       1 "kind":"end"       1 "kind":"ready" 
+== 3. the watchdog on an answering display
+exit 0
+{"kind":"ready","ms":1793673133681,"display":":91","interval_ms":500,"bound_ms":2000}
+{"kind":"end","ms":1793673136680,"round_trips":6}
+== 4. a frozen server (Xvfb stopped)
+caught after 2140 ms; exit 3; guarded gone; run gone
+{"kind":"ready","ms":1793673136688,"display":":91","interval_ms":500,"bound_ms":2000}
+{"kind":"stall","ms":1793673140238,"display":":91","bound_ms":2000,"round_trips":3,"reason":"no GetInputFocus reply in 2000 ms","killed":[2399057],"stopped":2399058}
+cua171 WATCHDOG: the X display :91 stopped answering (no GetInputFocus reply in 2000 ms); killed the guarded processes 2399057 and stopped the run (pid 2399058). Do not run anything more against :91 until it answers again.
+== 5. the real spin, watched
+after 97 s: exit 3; record client gone; run gone; server cpu 11.8
+{"kind":"ready","ms":1793673140518,"display":":92","interval_ms":2000,"bound_ms":5000}
+{"kind":"stall","ms":1793673237573,"display":":92","bound_ms":5000,"round_trips":46,"reason":"no GetInputFocus reply in 5000 ms","killed":[2399173],"stopped":2399183}
+cua171 WATCHDOG: the X display :92 stopped answering (no GetInputFocus reply in 5000 ms); killed the guarded processes 2399173 and stopped the run (pid 2399183). Do not run anything more against :92 until it answers again.
+#0  0x00007581ba329af4 in __GI___writev (fd=9, iov=0x7fffe8ff8320, iovcnt=0) at ../sysdeps/unix/sysv/linux/writev.c:26
+#1  0x00005eeeaf0579b0 in ?? ()
+#2  0x00005eeeaf05213f in ?? ()
+#3  0x00005eeeaf05255c in FlushAllOutput ()

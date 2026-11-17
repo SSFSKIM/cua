@@ -1,0 +1,15 @@
+stress-ng: 0
+cell 1 true keys [50] buttons [1]
+tree [["anchor",1855574,"S"],["supervisor",1855580,"S"],["kernel",1855589,"S"],["shim",1855602,"S"],["worker",1855603,"S"],["engine",1855612,"S"]]
+worker SIGKILLed
+engine gone after 5 ms
++5 ms keys [] buttons []
++51 ms keys [] buttons []
++200 ms keys [] buttons []
++1001 ms keys [] buttons []
+left after 3 s: [["anchor",1855574,"S"],["supervisor",1855580,"S"],["kernel",1855589,"S"]]
+keys after [] buttons after []
+stopped after []
+shim said []
+{"summary":"head-worker-disabled","mode":"worker","left":[],"keys":[],"buttons":[]}
+exit 0

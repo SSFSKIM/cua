@@ -1,0 +1,15 @@
+stress-ng: 0
+cell 1 true keys [50] buttons [1]
+tree [["anchor",1841214,"S"],["supervisor",1841220,"S"],["kernel-launcher",1841229,"S"],["bwrap",1841233,"S"],["kernel-launcher",1841234,"S"],["kernel",1841235,"S"],["worker-launcher",1841247,"S"],["bwrap",1841251,"S"],["worker-launcher",1841252,"S"],["worker",1841253,"S"],["engine",1841262,"S"]]
+worker SIGKILLed
+engine gone after 6 ms
++6 ms keys [50] buttons [1,5]
++52 ms keys [50] buttons [1,5]
++202 ms keys [50] buttons [1,5]
++1004 ms keys [50] buttons [1,5]
+left after 3 s: [["anchor",1841214,"S"],["supervisor",1841220,"S"],["kernel-launcher",1841229,"S"],["bwrap",1841233,"S"],["kernel-launcher",1841234,"S"],["kernel",1841235,"S"]]
+keys after [50] buttons after [1,5]
+stopped after []
+shim said []
+{"summary":"fix3-worker-busy-scoped","mode":"worker-busy","left":[],"keys":[50],"buttons":[1,5]}
+exit 0

@@ -478,13 +478,14 @@ export function createServer({
 
 // `platform` picks the host notes and search hints (src/mcp/surface.mjs); the process's own by default. `devices`: the
 // connection has the device tools (stdio), whose rule joins the notes.
-export function settingsFrom(env, {platform = process.platform, devices = false} = {}) {
+// `inAppBrowser`: a MAWS backend is configured, which the browser surface's notes then say (#368).
+export function settingsFrom(env, {platform = process.platform, devices = false, inAppBrowser = false} = {}) {
   const persist = env.CUA_SHIM_PERSIST ?? 'session';
   if (persist === 'always') fail('invalid_setting', PERSIST_ALWAYS_REFUSAL);
   if (!PERSIST_MODES.includes(persist)) fail('invalid_setting', `CUA_SHIM_PERSIST must be one of ${PERSIST_MODES.join(', ')}`);
   const surfaces = surfacesFrom(env.CUA_SHIM_SURFACES);
   const feedbackDir = env.CUA_FEEDBACK_DIR;
-  const hostNotes = withFeedbackNote(env.CUA_SHIM_HOST_NOTES === 'none' ? '' : (env.CUA_SHIM_HOST_NOTES ?? hostNotesFor(surfaces, {platform, devices})), feedbackDir);
+  const hostNotes = withFeedbackNote(env.CUA_SHIM_HOST_NOTES === 'none' ? '' : (env.CUA_SHIM_HOST_NOTES ?? hostNotesFor(surfaces, {platform, devices, inAppBrowser})), feedbackDir);
   const secrets = env.CUA_SHIM_SECRETS ?? 'on';
   if (!['on', 'off'].includes(secrets)) fail('invalid_setting', 'CUA_SHIM_SECRETS must be on or off');
   // CUA_REPL_HOST is checked here whatever the surfaces; which host a connection runs, or whether it refuses one, is
@@ -514,8 +515,9 @@ const SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP'];
 // Claude Code starts the server in its session's directory, so the server's own working directory names it.
 export async function serve({home, env = process.env, input = process.stdin, output = process.stdout,
   prepareLaunch, diagnostics = line => process.stderr.write(`cua serve: ${line}\n`), chrome, listBackends, idleTimer, engine, project = projectRoot()}) {
-  const settings = settingsFrom(env, {devices: true});
+  let settings = settingsFrom(env, {devices: true});
   const mawsPaths = settings.surfaces.includes('browser') ? configuredBackends(env) : [];
+  if (mawsPaths.length) settings = settingsFrom(env, {devices: true, inAppBrowser: true});
   try {
     const swept = describeSweep(sweepRun(home));
     if (swept) diagnostics(`$CUA_HOME/run: ${swept}`);

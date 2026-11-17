@@ -1,0 +1,7 @@
+fatal: not a git repository (or any of the parent directories): .git
+| cell | lane | runs | misses (late / never / refused / invalid) | streak at the end | verdict |
+|---|---|---:|---|---:|---|
+| chrome-input move desktop | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| electron-input move desktop | shipped | 31 | 31 (31 / 0 / 0 / 0) | 0 | not reached |
+
+**Incomplete or failed:** electron-input move desktop (shipped): no 30 consecutive passing runs in 31.

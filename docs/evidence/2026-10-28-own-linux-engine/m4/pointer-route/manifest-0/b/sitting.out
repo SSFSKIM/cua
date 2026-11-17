@@ -1,0 +1,12 @@
+cua-engine 0.3.0 (ddee5fd5ae5a)
+c51164ac234a8de82963d94162d7f4f56130eb97189a5d2e9c32daa7cd1746b3  <task71>/build/ddee5fd5ae5ab14c7612564e7858aab01d8e02cc/src/native/linux-engine/target/x86_64-unknown-linux-musl/release/cua-engine
+start manifest0-b 2026-11-10T14:39:18Z loadavg 0.72 0.88 0.80
+owner pid=2546101 start=51157914
+tmproot left: []
+/tmp/cua171-run-* left: [/tmp/cua171-run-AdXsUJ /tmp/cua171-run-lLeOBG /tmp/cua171-run-q8ExPO ]
+owner side DIFFERS:
+43c43
+< mtime ~/.config/google-chrome 1794321529.168899919
+---
+> mtime ~/.config/google-chrome 1794323781.228089115
+end manifest0-b 2026-11-10T15:32:53Z loadavg 1.12 1.00 0.89 status 0

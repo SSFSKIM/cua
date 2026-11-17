@@ -4,16 +4,23 @@
 // `--summarize` (rewrite summary.md from results.jsonl); and M0.4's: `--experiment matrix` (the application-family
 // matrix), `--family` (the families an experiment runs on, by name, families.mjs) and `--load` (every core busy
 // during the experiment); and #267's: a verdict run is a release gate on the attested candidate `--cua` names
-// (candidate.mjs), or `--dev`, a run on any build that is not one.
+// (candidate.mjs), or `--dev`, a run on any build that is not one; and M4's T18: an experiment that joins the gate
+// (`--gate`) takes its candidate through the same preparation, and one run without it is labelled a development run.
 
 export const USAGE = `usage:
   linux-engine-diff.mjs --check-wire --vendor-js <@oai/sky directory>
   linux-engine-diff.mjs --vendor <bin> --newest <bin> --cua <artifact> --scene <list> --ops <list|all> --out <dir>
-      [--dev] [--blocks 3] [--samples-tree 7] [--samples-input 5] [--variant <label>=<cua flags>]... [--run <name>]
-      [--occlusion covered|visible|partial (drag, kinds)] [--no-counts] [--no-audit] [--via wire|vendor-js --vendor-js <@oai/sky directory>]
-  linux-engine-diff.mjs --experiment capture-readiness|key-pace|matrix|qt-bridge|element-click|partial-cover|events|engine-readiness|drag|kinds|dnd --cua <bin> --out <dir> [--run <name>]
-      [--vendor <bin> --newest <bin>] [--family <list>] [--load | --load-factor <workers per core>] [--no-grabs] [--dnd-short] [--dnd-cold [--cover-ms N] [--prelude dedicated] [--ballast gate] [--grab-at-ms N] [--stray nudge|popup:N] [--park-pointer X,Y]] (dnd) [--samples-input 5] [--samples-text 2] [--trials 12] [--geometry WxH]
-      [--via vendor-js --vendor-js <@oai/sky directory>] (events only) [--lanes <labels>] (drag, kinds, dnd)
+      [--dev] [--ballast gate] [--blocks 3] [--samples-tree 7] [--samples-input 5] [--variant <label>=<cua flags>]... [--run <name>]
+      [--occlusion covered|visible|partial (drag, kinds)] [--no-counts] [--no-audit] [--via wire|vendor-js --vendor-js <@oai/sky directory>] [--trace-engine (with --dev)]
+  linux-engine-diff.mjs --experiment capture-readiness|key-pace|matrix|qt-bridge|element-click|partial-cover|events|engine-readiness|drag|kinds|dnd|atspi|focus-timer|engine-stop|qt-activation|settle|drop-signals|predicates|pointer-route|writer-drag --cua <bin> --out <dir> [--run <name>] [--gate]
+      [--vendor <bin> --newest <bin>] [--family <list>] [--load | --load-factor <workers per core>] [--no-grabs] [--dnd-short | --dnd-select] [--stops-only] [--exit-settle-ms <ms>] [--scenarios <list>] [--lanes <list>] [--trace] (focus-timer) [--dnd-cold [--cover-ms N] [--prelude dedicated] [--ballast gate] [--stray nudge|popup:N] [--park-pointer X,Y]] (dnd) [--samples-input 5] [--samples-text 2] [--trials 12] [--geometry WxH]
+      [--via vendor-js --vendor-js <@oai/sky directory>] (events only) [--lanes <labels>] (drag, kinds, dnd, engine-stop, qt-activation)
+      [--released <bin>] [--kinds click,key-click,press_key,drag,scroll] (qt-activation)
+      [--control-root <cua checkout> [--paths idle,eof,signal,remote,held-back] [--cases hold,burst,pairs,handle] [--browsers chrome,electron] [--sandbox scoped|disabled] [--require-burst-cut]] (engine-stop)
+      [--family <list>] [--kinds <list>] [--routes background,desktop,dedicated] [--lanes shipped,settle-<ms>...] [--no-audit] (settle)
+      [--plan main|cover|pilot] [--family chrome|electron] [--ballast gate] [--load-factor 2] [--lanes <labels>] [--trials <cap>] (drop-signals)
+      --vendor <bin> [--ops <kinds>] [--plan manifest|leave] (predicates: T19's adopted cases, predicates.mjs; the gate runs every case)
+      --vendor <bin> [--family firefox,chrome,electron,gedit] [--ops click,scroll,move,select] [--trials 10] (pointer-route: T19's sitting, pointer-route.mjs)
   linux-engine-diff.mjs --record-wire --cua <bin>
   linux-engine-diff.mjs --summarize --out <dir>`;
 
@@ -30,6 +37,12 @@ const VALUE_FLAGS = {
   '--run': 'run',
   '--experiment': 'experiment',
   '--occlusion': 'occlusion',
+  // the engine-stop experiment's control: a checkout whose REPL host stops the tree at once (engine-stop.mjs)
+  '--control-root': 'controlRoot',
+  // the qt-activation experiment's released lane: cua's engine as a release shipped it (qt-activation.mjs)
+  '--released': 'released',
+  // the drop-signals experiment's plan (drop-signals.mjs PLANS)
+  '--plan': 'plan',
 };
 const NUMBER_FLAGS = { '--blocks': 'blocks', '--samples-tree': 'samplesTree', '--samples-input': 'samplesInput', '--samples-text': 'samplesText', '--trials': 'samplesTrials', '--first-rounds': 'firstRounds' };
 
@@ -62,12 +75,32 @@ export function parseArgs(argv) {
     else if (flag === '--summarize') a.mode = 'summarize';
     // a verdict run on any build, its verdict labelled not a release gate (candidate.mjs); without it the run is a gate
     else if (flag === '--dev') a.dev = true;
+    // an experiment that joins the gate: its candidate the release workflow's attested artifact of the checkout's commit,
+    // checked as a verdict run's is (candidate.mjs); without it an experiment is a development run, and says so
+    else if (flag === '--gate') a.gate = true;
     else if (flag === '--no-counts') a.counts = false;
     else if (flag === '--no-audit') a.audit = false;
     // the dnd experiment without its 100 ms grab sampler, whose own grabs can fail Chrome's drag-start grab (M3.1)
     else if (flag === '--no-grabs') a.grabs = false;
     // the dnd experiment on the page's short drop (40 px from the near source), every lane's window activated first
     else if (flag === '--dnd-short') a.dndShort = true;
+    // the same experiment on a 40 px text selection (M4's T14: the hold's cost, #263), every lane's window in front
+    else if (flag === '--dnd-select') a.dndSelect = true;
+    // the focus-timer experiment's stop runs alone (the exit settle's measured steps, with --exit-settle-ms)
+    else if (flag === '--stops-only') a.stopsOnly = true;
+    // the focus-timer experiment's series of these scenarios alone, with no stop runs
+    else if (flag === '--scenarios') a.scenarios = need().split(',').filter(Boolean);
+    // the focus-timer experiment's series runs each through xtrace, a missed run's trace kept (a sitting of its own)
+    else if (flag === '--trace') a.trace = true;
+    // a development verdict run's engine through an xtrace proxy in its timed samples, each series's trace kept (V5's
+    // reproduction: what the engine sent, against what the page received)
+    else if (flag === '--trace-engine') a.traceEngine = true;
+    // the stop runs' exit settle, 0 included
+    else if (flag === '--exit-settle-ms') {
+      const n = Number(need());
+      if (!Number.isInteger(n) || n < 0) throw new Error('--exit-settle-ms needs a whole number of milliseconds');
+      a.exitSettleMs = n;
+    }
     // the dnd experiment cold (task 20): every drag the first request of a fresh engine, the lanes interleaved, each
     // window in front after the device case's settle; `--cover-ms` covers it fully first, as the gate's previous case did
     else if (flag === '--dnd-cold') a.dndCold = true;
@@ -77,12 +110,6 @@ export function parseArgs(argv) {
       a.prelude = 'dedicated';
     }
     // measurement only: another client's momentary pointer and keyboard grab, that long after each cold drag is sent
-    else if (flag === '--grab-at-ms') {
-      const n = Number(need());
-      if (!Number.isInteger(n) || n < 0) throw new Error('--grab-at-ms needs a whole number of ms, 0 or more');
-      a.grabAtMs = n;
-    }
-    // measurement only: a pointer event that is not the drag's, `<nudge|popup>:<ms>` after each cold drag is sent
     else if (flag === '--stray') {
       const m = need().match(/^(nudge|popup):(\d+)$/);
       if (!m) throw new Error('--stray needs nudge:<ms> or popup:<ms>');
@@ -111,7 +138,27 @@ export function parseArgs(argv) {
       a.loadFactor = Number(need());
     }
     else if (flag === '--family') a.families = need().split(',').filter(Boolean);
+    // the qt-activation and settle experiments' input kinds (qt-activation.mjs KINDS, action-settle-cells.mjs KIND_METHOD)
+    else if (flag === '--kinds') a.kinds = need().split(',').filter(Boolean);
+    // the settle experiment's routes (action-settle-cells.mjs CELLS)
+    else if (flag === '--routes') {
+      a.routes = need().split(',').filter(Boolean);
+      for (const route of a.routes) if (!['background', 'desktop', 'dedicated'].includes(route)) throw new Error('--routes takes background, desktop and dedicated');
+    }
     else if (flag === '--lanes') a.lanes = need().split(',').filter(Boolean);
+    // the engine-stop experiment's stop paths, by name (engine-stop.mjs PATHS)
+    else if (flag === '--paths') a.paths = need().split(',').filter(Boolean);
+    // and its cases (engine-stop.mjs CASES), and the sandbox its cua serve runs the REPL host under
+    else if (flag === '--cases') a.cases = need().split(',').filter(Boolean);
+    // and the browsers its bursts run in (engine-stop.mjs BROWSERS; Chrome alone by default)
+    else if (flag === '--browsers') a.browsers = need().split(',').filter(Boolean);
+    // the control's bursts must show the cut, not merely be reported (engine-stop.mjs `engineStopVerdict`)
+    else if (flag === '--require-burst-cut') a.requireBurstCut = true;
+    else if (flag === '--sandbox') {
+      const mode = need();
+      if (!['scoped', 'disabled'].includes(mode)) throw new Error('--sandbox is scoped or disabled');
+      a.sandbox = mode;
+    }
     else if (flag === '--geometry') {
       const m = need().match(/^(\d+)x(\d+)$/);
       if (!m) throw new Error('--geometry needs <width>x<height>');
@@ -132,11 +179,16 @@ export function parseArgs(argv) {
     } else throw new Error(`unknown argument ${flag}\n${USAGE}`);
   }
   if (a.experiment) a.mode = 'experiment';
-  for (const [key, flag] of [['coverMs', '--cover-ms'], ['prelude', '--prelude'], ['ballast', '--ballast'], ['grabAtMs', '--grab-at-ms'], ['stray', '--stray'], ['parkPointer', '--park-pointer']]) {
-    if (a[key] !== undefined && !a.dndCold) throw new Error(`${flag} is the cold drag-and-drop run's (--dnd-cold)`);
+  for (const [key, flag] of [['coverMs', '--cover-ms'], ['prelude', '--prelude'], ['ballast', '--ballast'], ['stray', '--stray'], ['parkPointer', '--park-pointer']]) {
+    // the drop-signals experiment opens the gate's ballast too (T13), with no cold run, and so does a verdict run whose
+    // step carries the gate's Chrome drops (T18: a gate split into steps keeps M3's Chrome window load)
+    if (a[key] !== undefined && !a.dndCold && !(key === 'ballast' && (a.experiment === 'drop-signals' || a.mode === 'run'))) throw new Error(`${flag} is the cold drag-and-drop run's (--dnd-cold)`);
   }
   if (a.dndCold) a.coverMs ??= 0;
-  if (a.dev && a.mode !== 'run') throw new Error('--dev is the verdict run\'s: only a verdict run is a release gate');
+  if (a.dev && a.mode !== 'run') throw new Error('--dev is the verdict run\'s: an experiment is a development run unless --gate');
+  if (a.gate && a.mode !== 'experiment') throw new Error('--gate is the experiments\': a verdict run is a release gate unless --dev');
+  // the proxy is on the timed path: a measurement, never a gate's
+  if (a.traceEngine && !(a.mode === 'run' && a.dev)) throw new Error("--trace-engine is a development run's (--dev): its proxy is on the timed path");
   const require = (...keys) => {
     for (const key of keys) {
       const flag = Object.entries({ ...VALUE_FLAGS }).find(([, k]) => k === key)?.[0] ?? `--${key}`;
@@ -148,9 +200,11 @@ export function parseArgs(argv) {
   else if (a.mode === 'summarize') require('out');
   else if (a.mode === 'experiment') {
     require('cua', 'out');
-    if (!['capture-readiness', 'key-pace', 'matrix', 'qt-bridge', 'element-click', 'partial-cover', 'events', 'engine-readiness', 'drag', 'kinds', 'dnd'].includes(a.experiment)) throw new Error(`unknown experiment ${a.experiment}\n${USAGE}`);
+    if (!['capture-readiness', 'key-pace', 'matrix', 'qt-bridge', 'element-click', 'partial-cover', 'events', 'engine-readiness', 'drag', 'kinds', 'dnd', 'atspi', 'focus-timer', 'engine-stop', 'qt-activation', 'settle', 'drop-signals', 'predicates', 'pointer-route', 'writer-drag'].includes(a.experiment)) throw new Error(`unknown experiment ${a.experiment}\n${USAGE}`);
     if (['matrix', 'element-click', 'partial-cover', 'events'].includes(a.experiment)) require('vendor', 'newest');
-    if (['qt-bridge', 'engine-readiness', 'drag', 'kinds', 'dnd'].includes(a.experiment)) require('vendor');
+    if (['qt-bridge', 'engine-readiness', 'drag', 'kinds', 'dnd', 'predicates', 'pointer-route', 'writer-drag'].includes(a.experiment)) require('vendor');
+    // the drag experiment's load lane runs 40 drags a side (T10; drag.mjs `dragTrials`), refused before anything starts
+    if (a.experiment === 'drag' && a.load && a.samplesTrials !== undefined && a.samplesTrials < 40) throw new Error(`--trials ${a.samplesTrials}: the drag experiment under load runs 40 drags a side`);
     // the drag and kinds experiments also measure a window with its bottom half covered (Gecko's cover condition)
     if (!['covered', 'visible', ...(['drag', 'kinds'].includes(a.experiment) ? ['partial', 'partial-deep', 'partial-top'] : [])].includes(a.occlusion)) throw new Error(`--occlusion ${a.occlusion} is not one ${a.experiment} takes`);
     // the events experiment's desktop-only commands through OpenAI's JavaScript client

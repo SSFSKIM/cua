@@ -1,0 +1,22 @@
+#!/bin/bash
+# One focus-timer sitting on a private Xvfb (the experiment starts its own), from an exported harness, on a musl build.
+# usage: sitting.sh <harness dir> <engine> <name> [focus-timer args...]
+# The Mozilla Firefox deb unpacked beside task 59's run comes first on PATH (the system's is a snap that cannot start on
+# the run's own session bus). Refuses to start while another stress-ng runs.
+set -u
+harness=$1
+engine=$2
+name=$3
+shift 3
+out=$HOME/.local/share/cua-171/task60/runs/$name
+if pgrep -x stress-ng >/dev/null; then
+  echo "stress-ng is running: not starting $name" >&2
+  exit 3
+fi
+mkdir -p "$out"
+cd "$harness" || exit 2
+export PATH=$HOME/.local/share/cua-171/task59/bin:$PATH
+node scripts/linux-engine-diff.mjs --experiment focus-timer --cua "$engine" --out "$out" --run "t60-$name" "$@" > "$out.out" 2>&1
+code=$?
+echo "sitting $name exit $code $(date -u +%T)"
+tail -40 "$out.out"

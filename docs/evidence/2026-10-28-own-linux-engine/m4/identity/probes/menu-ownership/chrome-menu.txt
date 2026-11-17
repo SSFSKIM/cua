@@ -1,0 +1,72 @@
+a11y unix:path=/run/user/501/at-spi/bus,guid=e1ba19e2d05003fa3886a7676ae8fa1b
+total 0
+drwx------ 2 new new  80 Nov  2 13:01 .
+drwx------ 8 new new 220 Oct 28 00:59 ..
+srwxrwxrwx 1 new new   0 Nov  2 13:01 bus
+srwxrwxrwx 1 new new   0 Oct 27 23:14 bus_0
+window 2097154
+:1.0:/org/a11y/atspi/accessible/198 1 paragraph None
+bus :1.0 path /org/a11y/atspi/accessible/198 idx 1
+(true,)
+--- new app children
+/org/a11y/atspi/accessible/226
+== /org/a11y/atspi/accessible/226 (depth 0)
+role: ('frame',)
+name: (<''>,)
+parent: (<(':1.0', objectpath '/org/a11y/atspi/accessible/root')>,)
+relations: (@a(ua(so)) [],)
+attributes: ({'class': 'MenuHostRootView', 'explicit-name': 'true'},)
+extents: ((400, 104, 449, 410),)
+== /org/a11y/atspi/accessible/227 (depth 1)
+role: ('menu bar',)
+name: (<''>,)
+parent: (<(':1.0', objectpath '/org/a11y/atspi/accessible/226')>,)
+relations: (@a(ua(so)) [],)
+attributes: ({'class': 'MenuScrollViewContainer'},)
+extents: ((400, 104, 449, 410),)
+== /org/a11y/atspi/accessible/228 (depth 2)
+role: ('panel',)
+name: (<''>,)
+parent: (<(':1.0', objectpath '/org/a11y/atspi/accessible/227')>,)
+relations: (@a(ua(so)) [],)
+attributes: ({'class': 'View'},)
+extents: ((400, 108, 449, 402),)
+== /org/a11y/atspi/accessible/229 (depth 3)
+role: ('panel',)
+name: (<''>,)
+parent: (<(':1.0', objectpath '/org/a11y/atspi/accessible/228')>,)
+relations: (@a(ua(so)) [],)
+attributes: ({'class': 'MenuScrollButton', 'hidden': 'true'},)
+extents: ((400, 108, 0, 0),)
+== /org/a11y/atspi/accessible/230 (depth 3)
+role: ('panel',)
+name: (<''>,)
+parent: (<(':1.0', objectpath '/org/a11y/atspi/accessible/228')>,)
+relations: (@a(ua(so)) [],)
+attributes: ({'class': 'MenuScrollViewContainer::MenuScrollView'},)
+extents: ((400, 108, 449, 402),)
+== /org/a11y/atspi/accessible/231 (depth 3)
+role: ('panel',)
+name: (<''>,)
+parent: (<(':1.0', objectpath '/org/a11y/atspi/accessible/228')>,)
+relations: (@a(ua(so)) [],)
+attributes: ({'class': 'MenuScrollButton', 'hidden': 'true'},)
+extents: ((400, 108, 0, 0),)
+--- the target element's relations
+(@a(ua(so)) [],)
+--- the frame's relations
+frame /org/a11y/atspi/accessible/1
+([(uint32 13, [(':1.0', objectpath '/org/a11y/atspi/accessible/76')])],)
+frame /org/a11y/atspi/accessible/2
+(@a(ua(so)) [],)
+frame /org/a11y/atspi/accessible/3
+(@a(ua(so)) [],)
+--- X11 override-redirect windows
+or 0x200010
+WM_TRANSIENT_FOR:  not found.
+_NET_WM_WINDOW_TYPE(ATOM) = _NET_WM_WINDOW_TYPE_MENU
+WM_CLASS:  not found.
+  Absolute upper-left X:  400
+  Absolute upper-left Y:  104
+  Width: 449
+  Height: 410

@@ -1,0 +1,55 @@
+✔ every method that defers has its own constant, the element click and each animating family theirs; a whole number of ms from 0, at most the vendor's 100 but where a family animates its action (3.71835ms)
+✔ an animated action settles by its family's own constant; a family the service does not know, by the longest of them (0.344748ms)
+✖ the constants are T8's measured steps; where no step up to 100 showed every effect, the vendor's 100 (2.085109ms)
+✔ nothing deferred: wait returns at once (0.451868ms)
+✔ after a defer, wait sleeps out the rest of that method's constant, and only once (0.415943ms)
+✔ each method defers by its own constant; a 0 ms constant defers nothing (0.230703ms)
+✔ a later defer extends the deadline, an earlier or shorter one never shortens it (0.214343ms)
+✔ the shipped constants by default (0.244729ms)
+✔ a method with no constant is refused, and so are settles that leave one out or are not whole ms from 0 (0.876798ms)
+ℹ tests 9
+ℹ suites 0
+ℹ pass 8
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 89.819067
+
+✖ failing tests:
+
+test at test/services-engine-linux/settle.test.mjs:36:1
+✖ the constants are T8's measured steps; where no step up to 100 showed every effect, the vendor's 100 (2.085109ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  ... Skipped lines
+  
+    {
+      activate_window: 10,
+      animated_gtk4: 250,
+      animated_qt: 125,
+      click: 25,
+  ...
+      clipboard_write: 0,
+  +   drag: 10,
+  -   drag: 25,
+      drag_handle: 10,
+      key_down: 25,
+      key_up: 50,
+      launch_app: 100,
+      move: 75,
+  
+      at TestContext.<anonymous> (file://<worktree>/test/services-engine-linux/settle.test.mjs:37:10)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1402:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:974:18)
+      at Test.postRun (node:internal/test_runner/test:1542:19)
+      at Test.run (node:internal/test_runner/test:1467:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: { perform_secondary_action: 10, click: 25, click_element: 10, animated_gtk4: 250, animated_qt: 125, clipboard_read: 0, clipboard_write: 0, drag: 10, drag_handle: 10, activate_window: 10, move: 75, move_relative: 0, press_key: 100, key_down: 25, key_up: 50, scroll: 75, type_text: 0, launch_app: 100 },
+    expected: { perform_secondary_action: 10, click: 25, click_element: 10, animated_gtk4: 250, animated_qt: 125, clipboard_read: 0, clipboard_write: 0, drag: 25, drag_handle: 10, activate_window: 10, move: 75, move_relative: 0, press_key: 100, key_down: 25, key_up: 50, scroll: 75, type_text: 0, launch_app: 100 },
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }

@@ -64,7 +64,19 @@ export function normalizeState(state, { label = null, exactIds = false } = {}) {
     ax_tree_source: state.ax_tree_source,
     screenshots: (state.screenshots ?? []).map(() => ({})),
     window,
+    // cua's count of where its read was cut (M4): part of the state, so one no declaration covers is a difference
+    ...(state.truncated !== undefined ? { truncated: state.truncated } : {}),
   };
+}
+
+/**
+ * A rendered state (bind-linux-app.mjs) split into the state and the count its trailing truncation line shows, null
+ * when it ends with none (Design, The tree read; Decision Log, M3.2: `Accessibility tree truncated: at least <n>
+ * elements not shown (<reason>)`, after the tree).
+ */
+export function splitTruncationLine(rendered) {
+  const line = /\nAccessibility tree truncated: at least (\d+) elements not shown \([^\n]+\)$/.exec(rendered);
+  return line ? { state: rendered.slice(0, line.index), shown: Number(line[1]) } : { state: rendered, shown: null };
 }
 
 /** Compares two outputs; reports equality, node counts and the first difference (preorder position and field). */
@@ -81,7 +93,7 @@ export function compareStates(a, b, { exactIds = false, labelA = null, labelB = 
     result.first_difference = { position, field, a: show(x), b: show(y) };
     return result;
   };
-  for (const field of ['ax_tree_source', 'window', 'screenshots']) {
+  for (const field of ['ax_tree_source', 'window', 'screenshots', 'truncated']) {
     if (!isDeepStrictEqual(na[field], nb[field])) return differ(null, field, na[field], nb[field]);
   }
   for (let i = 0; i < Math.max(pa.length, pb.length); i++) {

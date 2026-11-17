@@ -1,0 +1,10 @@
+qtcreator [openbox]: dialog 8388632 'WM_TRANSIENT_FOR(WINDOW): window id # 0x80000e\n_NET_WM_STATE(ATOM) = _NET_WM_STATE_MODAL'; main 8388622; front 4194307
+qtcreator [openbox] control 1: nothing sent, focus 4194307 active 4194307 (front 4194307)
+qtcreator [openbox] control 2: nothing sent, focus 4194307 active 4194307 (front 4194307)
+qtcreator [openbox] control 3: nothing sent, focus 4194307 active 4194307 (front 4194307)
+qtcreator [openbox] press_key 1: before focus/active ('4194307', '4194307'), answer ok=True None, after focus/active ('8388632', '8388632')  <- moved
+qtcreator [openbox] press_key 2: before focus/active ('4194307', '4194307'), answer ok=True None, after focus/active ('8388632', '8388632')  <- moved
+qtcreator [openbox] press_key 3: before focus/active ('4194307', '4194307'), answer ok=True None, after focus/active ('8388632', '8388632')  <- moved
+qtcreator [openbox] press_key 4: before focus/active ('4194307', '4194307'), answer ok=True None, after focus/active ('8388632', '8388632')  <- moved
+qtcreator [openbox] press_key 5: before focus/active ('4194307', '4194307'), answer ok=True None, after focus/active ('8388632', '8388632')  <- moved
+qtcreator [openbox]: the X focus or the active window moved off the front window after 5 of 5 background press_keys to the blocked main window

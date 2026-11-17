@@ -141,10 +141,11 @@ const base = () => join(homedir(), '.local/share/cua-native-baseline');
 // `declared` resolves the device's declaration (repl-parity/devices.mjs); a caller preparing this Mac itself (the spike's
 // `measure.mjs --device local --lane vendor`, which calls these functions in process) gives its own.
 export function prepareNative({device, display, node, approvedHome}, {directoryRoot = base(), tempRoot = fs.realpathSync(tmpdir()), ambient = process.env,
-  desktop = () => discoverDesktopEnvironment(fs), run = execFileSync, inspect = executionFacts, declared = declaredDevice, ...reuse} = {}) {
+  desktop = name => discoverDesktopEnvironment(fs, {display: name}), run = execFileSync, inspect = executionFacts, declared = declaredDevice, ...reuse} = {}) {
   const declaration = declared(device);
   if (approvedHome !== undefined) return prepareReused({device, node, approvedHome, declaration}, {directoryRoot, tempRoot, inspect, ...reuse});
-  const xSession = declaration.platform === 'linux' ? sessionEnvironment(desktop()) : {};
+  // the session of the named display (a private one beside the person's, #171 M4), else the first session found
+  const xSession = declaration.platform === 'linux' ? sessionEnvironment(desktop(display)) : {};
   if (display !== undefined && display !== xSession.DISPLAY) throw new Error('--display does not match the discovered device X session');
   fs.mkdirSync(directoryRoot, {recursive: true, mode: 0o700});
   const parent = fs.realpathSync(directoryRoot);

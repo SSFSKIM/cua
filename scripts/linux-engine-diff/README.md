@@ -9,9 +9,9 @@ operation's X requests. M0 cut it; M1a.3 gave it the full operation set, the aud
 large-table scenes, `--via vendor-js` and the declared deviations.
 
 Run it on an X11 desktop with AT-SPI on (the #171 VM), in the X session's environment. The scenes are windows it
-opens, owns and closes: gedit on scratch files it writes, Chrome windows (in the running Chrome) on its pages under
-`pages/` with unique titles, and an xterm that holds the focus so every scene window is a background window. Nothing
-is logged of windows it did not open, beyond `list_windows` digests and counts.
+opens, owns and closes: gedit on scratch files it writes, Chrome windows (in the run's own Chrome, below) on its pages
+under `pages/` with unique titles, and an xterm that holds the focus so every scene window is a background window.
+Nothing is logged of windows it did not open, beyond `list_windows` digests and counts.
 
 ```bash
 cargo build --release --offline --manifest-path scripts/linux-engine-diff/xprobe/Cargo.toml   # the witness and probes
@@ -82,7 +82,126 @@ release gate`. Iterate on dev builds; a speed claim or an adoption run takes a m
 (`--target x86_64-unknown-linux-musl`, the workflow's `RUSTFLAGS` path remaps, `CUA_ENGINE_GIT_SHA`, and its `strip`),
 still a dev run, or better the workflow's own artifact.
 
-The experiments (`--experiment`) take `--cua` as before and are not gates.
+An experiment (`--experiment`) is a development run unless it is given `--gate` (M4's T18): with it, its candidate goes
+through the same preparation and checks as a gate verdict run's, before anything starts, and a refusal exits 2 with
+nothing run. Either way the run's `meta` and summary rows, its `summary.md` heading and its first and last lines on
+stdout carry its label, `release gate` or `development run, not a release gate`; a gate verdict run's heading and
+verdict line now say `release gate` too.
+
+## M4's gate as steps (`../linux-engine-gate/`, T18)
+
+`scripts/linux-engine-gate/steps.mjs` is the gate as one runnable sequence: steps of 45 minutes or less, each a valid run of its own (its
+`--run`, its directory, its stub check, a verdict step's explicit `--ops`), the verdict steps on `:0` and everything
+else on private displays, idle and at twice the load. `node scripts/linux-engine-gate/gate.mjs --list` prints every
+step's minutes, display, load and command with the totals; `print <step>` prints one step's command and writes its
+labelled directory; `run <step>` runs one step that is not `:0`'s, under the host lock (the printed commands include
+`locked.sh`). The `:0` steps are only ever printed: they run in the declared sitting through task 50's guards
+(`run71.sh` under `wrap71.py`). A gate step runs from a clean checkout at the candidate's commit (a symlinked
+`node_modules` counts as a change), with its out directory outside it; `--dev` runs a development build, and `--dev
+--pilot <n>` each step's smallest form. Each step's directory is named `<step>.release-gate` or
+`<step>.development-run[.pilot]` and opens with a README and `step.json` carrying the label. T17's Electron cells
+(`drop-signals --family electron --plan t17-fix3`) are judged by `drop-signals-judge.mjs` `electronDropVerdict`: a false
+ok, a missing landing, an error for a drop that landed and a missing cell fail; landed drops answered unconfirmed are
+findings with their counts.
+
+## Instances of the run's own (task 43)
+
+The harness never hands a window to, starts on, or takes over a person's application instance or profile, on any
+display. A Chrome started without `--user-data-dir` takes the person's profile: on 2026-11-02 a run on a private
+display did, and when the owner's Chrome (on a frozen `:0`) missed the profile's singleton handshake, the newcomer
+killed it.
+
+- **Chrome** (`chrome.mjs`): one instance per run, on `<scratch>/chrome-profile`, a directory the run makes (mode
+  0700). Every Chrome window is an open of it (`Desktop.openChrome`, `openDuplicates`): `google-chrome` with the
+  run's `--user-data-dir`, `--no-first-run`, `--no-default-browser-check`, `--disable-search-engine-choice-screen`,
+  `--password-store=basic` (no use of the person's keyring), `--force-renderer-accessibility` and `--new-window
+  <page>`. The first open starts the browser; a later one hands its window to it through the run's profile. No flag
+  changes how Chrome renders, schedules or takes input. `assertOwnChrome` refuses any Chrome command line (`google-chrome`
+  and its channels, `chrome`, `chromium`, `chromium-browser`, by file name) whose profile is not one existing
+  directory, not a link, inside the run's scratch directory; `Desktop.spawnApp` refuses Chrome altogether. Windows
+  close as Chrome closes one (WM_DELETE_WINDOW); the run's end then stops the instance by the pids it spawned, each
+  only while `/proc/<pid>/cmdline` carries the run's `--user-data-dir` and no `--type=` (SIGTERM, SIGKILL after 10 s),
+  and removes the profile. The end row's `desktop.chrome` says what it stopped and what was left. A harness killed by
+  SIGKILL leaves its Chrome running.
+- **The families** (`families.mjs`): each starts as an instance of its own: gedit and gnome-text-editor
+  `--standalone`, kate `-n`, qtcreator on its own settings path, Firefox `--no-remote --new-instance` on a scratch
+  profile, LibreOffice on a scratch user installation, Electron on a scratch user data directory, gnome-terminal on a
+  terminal server of the scene's own (`/usr/libexec/gnome-terminal-server --app-id <scene>`, then the client for that
+  name: a plain `gnome-terminal` asks the session's running server, the person's), xterm and the Python scenes plain.
+  `instances.test.mjs` fails a family added without saying how it keeps to itself.
+- **A private display's session bus** (`session-bus.mjs`): on a display marked `CUA171_PRIVATE_DISPLAY`,
+  `Desktop.begin` starts a `dbus-daemon` of the run's own (listening in the run's scratch directory, its own process
+  group) before anything else of the run's, and every process the run starts inherits its address. It can start
+  exactly one service, the accessibility bus launcher (`org.a11y.Bus`): anything else a scene application asks for
+  (dconf's writer, a portal, gvfs, the keyring, a terminal server) is unknown at once, so nothing of the person's
+  session is reached or started. The run begins only once the launcher's bus is the display's `AT_SPI_BUS`, where
+  the engines and the oracle look first; the applications' AT-SPI bridges (libatspi, Qt) would take
+  `AT_SPI_BUS_ADDRESS` first, so no application is handed one (task 46 found that Qt 6 registers no tree with it set;
+  they find the run's bus through the display's property and the launcher on the run's session bus), the harness's
+  own processes get the run's, and the daemon inherits none of the person's. The end stops the daemon's group and puts the harness's own `DBUS_SESSION_BUS_ADDRESS` and
+  `AT_SPI_BUS_ADDRESS` back. A dbus-daemon that cannot be started fails the run's start, which ends what it began.
+- **A person's display's session bus** (`session-bus.mjs` `startAppSession`, task 47; the design session's ruling
+  B2): on any other display the run's applications get a session bus of the run's too, the same daemon with no
+  service at all, so it can activate nothing (kate on the person's bus had D-Bus-activated the person's
+  kactivitymanagerd and kglobalaccel). The applications find the person's accessibility bus through the display's
+  `AT_SPI_BUS`, as the engines do; a display that names none refuses the run. The harness's own processes (its tools,
+  the engines, the reader) keep the person's session bus. That bus has no `org.a11y.Status`, so Firefox gets
+  `GNOME_ACCESSIBILITY=1` and Chrome and Electron `ACCESSIBILITY_ENABLED=1` (the variables each reads first); Qt 5.15
+  and 6.4 turn their bridge on only through `org.a11y.Bus` on the session bus, so the run's stand-in for the launcher
+  (`a11y-stub.mjs`, task 48; the design session's ruling, sminos 334) owns that one name on that bus: `GetAddress`
+  answers exactly the display's root `AT_SPI_BUS`, `org.a11y.Status` reads `IsEnabled` and `ScreenReaderEnabled` true
+  through `Get` and `GetAll` and refuses every `Set` and any other call with a D-Bus error, and it forwards nothing,
+  owns no other name and activates nothing. It is a node process of its own with an empty environment (it reaches no
+  display), started with the bus, stopped with it and ending by itself when the bus does. With it Qt scenes run there;
+  a stand-in that cannot start (a root value that is not a plain address, the name taken) leaves the run going and
+  every Qt scene refused, with the reason (`QT_ON_PERSONS_DISPLAY`, and why the stand-in is missing). Its tests run on
+  a dbus-daemon each starts itself, in ci-kit's `harness-dbus` gate on Ubuntu, where dbus is required.
+- **The run's scratch directory** (`scenes.mjs` `scratchRoot`, task 51): `cua171-run-XXXXXX`, in the harness's
+  TMPDIR when the longest gedit title the scenes build for the run's name stays whole there, else in `/tmp`. gedit
+  middle-truncates a title's directory to what is left of 100 characters (`gedit-title.mjs`), and each lane's window is
+  on a file of its own label, so a shortened title differs between lanes (task 49's `gedit tree_shot`). A gedit
+  window whose title would still be shortened, under a run name too long for it, is refused before it opens.
+- **A scene window on the screen** (scenes.mjs `placeOnScreen`, task 62's fix wave): every scene window a run
+  places (`Desktop.place`, families.mjs `openFamily`, the recorder's window) is set at the screen's top left at its
+  listed size shrunk, where needed, so that its frame as the window manager reports it (`_NET_FRAME_EXTENTS`; none
+  read, no frame) lies inside the 1280x800 screen with 8 px to spare (`fitted`). A fixed size alone was not enough:
+  this VM's title bar grew 2 px when its fonts changed (2026-11-07), a 1050x780 Firefox window ran off the screen, and
+  every case that needs its window fully visible was refused.
+- **The run's home** (`app-env.mjs`, task 45): every application the run launches, on every display, through the one
+  place that builds its environment (`Desktop.appEnvironment`, which `spawnApp` and the run's Chrome take), runs with
+  `HOME`, `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_CACHE_HOME` and `XDG_STATE_HOME` under `<scratch>/home`, made by
+  the run (mode 0700) and removed with its scratch: settings, recent files (`recently-used.xbel`), KConfig files,
+  Firefox's `~/.mozilla`, the Chrome wrapper's `mimeapps.list` and Chrome's NSS database (`~/.pki`) are the run's.
+  `DISPLAY`, `XAUTHORITY` (when unset, named where the harness's HOME puts it on a display a person uses, since Xlib
+  would look under the new HOME, and a path in the run's home that holds none on a private display, whose server
+  keeps none; the spawner, below, gives a display the run created its own) and `XDG_RUNTIME_DIR` are handed on
+  unchanged; the session bus is the run's own on every display (above), and
+  no application starts before the run has one; `AT_SPI_BUS_ADDRESS`, `SESSION_MANAGER` and the bus's starter
+  variables are not handed on. On a display a person uses, `GSETTINGS_BACKEND=memory`: a GSettings write would
+  otherwise reach the person's dconf. A family's own variables (`env`) are applied last; one that names a variable the
+  run decides (`PROTECTED_VARS`: the display, its authority, the runtime directory, the buses, `SESSION_MANAGER`,
+  `GSETTINGS_BACKEND`, `TMPDIR`) is refused at its launch, naming the family and the variable (task 47), and none may
+  place a file outside the scratch. A family a separate HOME breaks may declare `home: 'xdg'`
+  (the harness's HOME, the run's XDG directories); none does. `TMPDIR` is the run's, `<scratch>/tmp` (task 51), for
+  every application and, while the run is open (`Desktop.begin` to its end, engine.mjs `runEngines`), every engine:
+  cua's, both vendor builds' (whose screenshots, `<pid>_<ns>.jpg`, the run removes once copied), the
+  vendor-JavaScript lane's, and the two-services instrument's (`services.mjs`: both services start their engine with
+  the process's environment, so the run's TMPDIR is put there while its run is open, `runTmpdirInProcess`, the same
+  for both lanes). Otherwise engines are not applications: they keep the harness's environment and their
+  own variables. Qt Creator's single-instance socket, lockfile and `qipc_*` files, which Qt names for the application
+  and the user, are then the run's alone. A private display's session bus (and so its accessibility bus launcher) starts with the run's home and
+  its settings in memory, so the launcher reads nothing of the person's, and the run turns its accessibility switch
+  on there at its start (below).
+- **The accessibility switches** (`a11y-status.mjs`, task 45): `org.a11y.Status` `IsEnabled` and
+  `ScreenReaderEnabled`, which Qt and Firefox read when they start. On a display a person uses they are the person's
+  settings, which the harness never writes, and its applications do not see them (their bus is the run's, above): they
+  see the stand-in's, both on and read-only, which a Qt scene (the families marked `qt`, and a Qt `openDuplicates`)
+  reads before it starts, refusing when it does not answer. qt-bridge sets none of its conditions there; it runs kate
+  and qtcreator with the stand-in, then stops the stand-in (`stopStub`) and runs them again as the control, each row
+  with the registry's view, both engines' tree sources and cua's node count.
+  On a private display they are the run's own launcher's: the run's start sets `IsEnabled` on the run's
+  bus and reads it back (a switch that does not take fails the start), a Qt scene refuses when both are off, and
+  qt-bridge sets its conditions there and puts them back.
 
 ## What a run does
 
@@ -153,11 +272,20 @@ variants included; their evidence is written either way. The run's `end` row kee
   for the differential run. It records each family's `Application.ToolkitName` and version, its X11 class, and the
   tree source both cua-engine and the pinned build answer.
 - **Families** (`families.mjs`): `gedit`, `gnome-text-editor`, `kate`, `qtcreator`, `firefox`, `chrome` (a window of
-  the running Chrome), `electron` (cua's fixture, `scripts/native-matrix/fixtures/electron/`, run by the `electron`
+  the run's own Chrome), `electron` (cua's fixture, `scripts/native-matrix/fixtures/electron/`, run by the `electron`
   dev dependency's Linux build with `--force-renderer-accessibility`), `writer` (gtk3), `writer-gen` (X11 only),
   `xterm` and `xterm-allow` (`allowSendEvents` on). Each is started as its own process group with scratch settings
   (a scratch Firefox profile and Writer profile, gnome-text-editor's session directories, qtcreator's settings), on
   a document or page the harness writes (`pages/matrix.html` for the browsers), and ended with its group.
+- **GTK 4** (`gtk4` families: gnome-text-editor, the GTK 4 button and input scenes; and the identity scene's GTK 4
+  windows, task 51): a run's fresh home starts with a cold GPU shader cache, and GTK 4's GL renderer compiles before
+  the window's tree reaches the bus, so the run's first GTK 4 window read as X11 for seconds (task 49). Before it, the
+  run opens a warm-up window of its own (`warmGtk4`: gnome-text-editor on a document of its own, through the one
+  launcher in the run's home), waits for its AT-SPI frame and closes it, once a run; the cache is the run's home's,
+  and a shader cache the harness's environment names (`MESA_SHADER_CACHE_DIR` and its kin) never reaches an
+  application. A GTK 4 window settles only on its AT-SPI tree: a frame not registered within 45 s fails its case,
+  the identity scene's GTK 4 windows too when not all of their frames registered within that bound, and a warm-up
+  that fails fails each GTK 4 scene of the run.
 - **Effects** are read by the harness itself (`oracle.mjs`, `busctl` on the accessibility bus), not through an
   engine's tree, where the tree does not carry them: an editor's text and caret (`Text.GetText`, `CaretOffset`), a
   Writer document's paragraphs, a page's field and its button's label, the Electron fixture's status, what xterm's
@@ -174,8 +302,8 @@ variants included; their evidence is written either way. The run's `end` row kee
 
 - `--experiment events --vendor <bin> --newest <bin> --cua <bin> --out <dir>` (`events.mjs`): every engine gets the
   same request sequences against `xprobe record`, a harness-owned recorder window that prints every input event it
-  receives, on a private X server the experiment starts itself (Xvfb, so the desktop route's XTEST input reaches
-  nobody's desktop). The scenarios: mixed-case shortcuts and the chord grammar, held chords (`key_down`, `key_up`,
+  receives, on a private X server the experiment starts itself (Xvfb through `startPrivateServer`, watched from its
+  first client on, so the desktop route's XTEST input reaches nobody's desktop). The scenarios: mixed-case shortcuts and the chord grammar, held chords (`key_down`, `key_up`,
   shared keys, holds left at exit), clicks, moves, scrolls and drags on both routes, `drag_handle`,
   `move_relative`, `activate_window` and `launch_app` (against an entry of its own). Each request's answer and its
   events (type, sent or real, keycode or button, state, window, coordinates; not timestamps) are compared with the
@@ -207,7 +335,116 @@ variants included; their evidence is written either way. The run's `end` row kee
   ConfigureWindow with a stack mode, WarpPointer, a `_NET_ACTIVE_WINDOW` ClientMessage and XTEST FakeInput (matched
   by the opcode the server reported for XTEST, minor 2). The verdict needs cua's audit clean wherever a vendor
   build's witness or audit is. The negative check drives the stub through a proxy too, and the run is valid only when
-  the witness and the audit both fail it. `--no-audit` leaves the pass out.
+  the witness and the audit both fail it. `--no-audit` leaves the pass out. A proxy's credentials (task 46's finding
+  3): on a private display xtrace copies none and reads no authority file (the harness's X server has none); on a
+  person's display it reads the person's authority file where it is (xtrace 1.4.0 reads from its `-F` file and writes
+  into its `-f` file, the reverse of its help) and writes the proxy's credentials into the proxy's own directory,
+  which goes at the proxy's stop and when it fails to start.
+- **Windows the harness did not open** (the design session, 2026-11-02, and T4b's audit round; `scenes.mjs`,
+  `xtools.mjs`, `foreign.mjs`, xprobe `record-run`): no request of the harness's, or of an engine it drives, may change
+  a window the harness did not open. It catches accidental changes; it is no proof against an adversarial engine.
+  - *What changes a window* (`foreign.mjs` `changeOf`): destroying, reparenting, mapping, unmapping, configuring or
+    circulating it; any SendEvent to it (a client message names its window too); warping the pointer into it; focusing
+    it; killing its client; writing, deleting or rotating its properties (a deleting GetProperty too); changing its
+    attributes other than our own event selection (an override-redirect change included); a Composite redirect; a
+    window created inside it; and input that lands in it: XTEST and a warp, a key by the input focus, a button by the
+    window under the pointer, a motion or warp by where it ends. The root is the desktop: writes to its properties and
+    event selections on it stay out, and it is the neutral destination of a client message to the window manager.
+    One exemption, the selection owner's answer, paired with the SelectionRequest our connection received and written
+    by that connection: the property the request named, written while it is served (an INCR transfer's announcement
+    and every chunk up to its zero-length end), and the SelectionNotify for the request's selection and target. A
+    write no request asked for, a write after its transfer ended, or a notify for another target is foreign. The
+    record reads its delivered events (SelectionRequest, DestroyNotify) on a context without errors, and its errors on
+    a second one: X.Org's RECORD drops every delivered event of a client whose ranges include errors.
+  - *Whose a window is*, judged in trace order: a window the harness registered, for the one life it had when the
+    harness found it (`Desktop.registry`, each id with every time it was found; a finding binds the life born before it
+    and after the id's previous life ended); a window our connection created, once the server accepted the creation
+    (no error for its sequence number), under the root or one of ours; a window another client created inside one of
+    ours; a window manager frame while it holds one of ours; and an override-redirect window on the root that the
+    client of a live harness window opens during an engine's operation on that window (`Desktop.operations`, from
+    `engine.mjs` `watchOperations`: Chrome's drag image during the drag, a select's list during the click). Chrome
+    serves the person's windows from the same client, so a popup opened at any other time is foreign. A life ends at
+    its DestroyNotify, a DestroyWindow, or its creating client's end, so a reused id is foreign again. A window reparented into one of ours
+    keeps the owner it had. Parentage is the trace's own, at request time: no window is resolved on the display after
+    the run.
+  - *Two sources.* The run's own xtrace proxy (`Desktop.begin`), through which every `xdotool` and every acting xprobe
+    command connects (`xtools.mjs`; a test keeps it so), and every audit pass's engine trace, the activating stub's
+    included, are judged by `auditForeign`; there every connection is ours, and XTEST is placed only by what the trace
+    shows (the focus a request set or a reply read, the pointer a reply read), the rest counted as unplaced. In an
+    engine's route audit (task 53) the audited window's ancestry is in the trace itself: `xprobe ancestry`, connected
+    through the same proxy before the engine (`watchAncestry`), selects the window's structure and reads its parents,
+    so the trace's QueryTree replies say which frame holds it and its ReparentNotify and DestroyNotify say when that
+    changes; a watcher that does not end cleanly at the audit's end, its end line written, leaves it unclean. There
+    XTEST input counts as the harness's only through a live harness window whose end the trace would see (one of our
+    connections selected its structure): on it, inside it, on the frame holding it, or in its client's range (GTK 4's
+    focus window inside its toplevel). On a
+    private display only (marked `CUA171_PRIVATE_DISPLAY`; `startRunRecord` and xprobe both refuse any other), the whole
+    run is also recorded server-side through RECORD (`xprobe record-run`, `startRunRecord`), every client's requests
+    of those kinds, each client attributed by its process (X-Resource and `/proc`): ours when it descends from the
+    harness's process and is one of its X tools or engines. `auditRecord` judges every request of ours, sampled by an
+    audit pass or not; the record places XTEST by reading the focus and the pointer right after the server handled it.
+    A client it could not attribute is counted, not judged. Any foreign change, a harness trace that recorded nothing,
+    or a record that did not begin and end cleanly fails the run. Both are read from their files line by line, the
+    trace keeping only the requests the judge reads (`parseXtraceFile`, `auditRecordFile`), and xtrace shows lists to
+    256 entries (`-m 256`): each xdotool call's connection setup and keymaps were 60 KB, and a 40-minute run's trace
+    passed Node's 512 MB string limit.
+  - *The record stays off a person's display, and every run is watched* (task 41). X.Org 21.1's `FlushClient`, re-entered by
+    RECORD's flush callback for a recording client that fell behind, drops recorded bytes or spins for good on a
+    zero-length `writev`; that froze `:0` (evidence: `docs/evidence/2026-10-28-own-linux-engine/m4/xserver-record-hang/`).
+    So on a display not marked private the run has no record client, and the engines' requests are judged by the
+    sampled route audits; the harness's own trace stays whole-run everywhere. `Desktop.begin` first starts the run's
+    watchdog (`startRunWatchdog`, `xprobe watchdog`), on every display, before anything of the run's reads the display
+    (task 44; the constructor reads nothing): a GetInputFocus round trip every 2 s from its own connection, in a process
+    group of its own. A display that does not answer the first fails the start. One unanswered later for 5 s kills
+    the guarded processes (the record client, guarded from its spawn), stops the run (SIGTERM), writes a `stall` line
+    to the run's `watchdog.jsonl` and an alert naming the display, then SIGKILLs the run if it still lives after 20 s;
+    the run's own stop never cuts that short. Readiness is the watchdog's own (a `ready` line with its pid, written
+    after its spawn; one that ends before the start takes that line up fails the start), and a watchdog that ends
+    before the run asked it to stops the run (SIGTERM) and fails it, as any end other than a clean one does
+    (`desktopEnding`). The cleanup after that loss runs unwatched (a stated limit), so the run exits nonzero and its
+    last line, `cua171 STOPPED: …`, names the loss and whether the cleanup completed (`stop.mjs` `stopBecause`). Every X server the harness starts itself is watched the same
+    way from its first client on (`startPrivateServer`, the events experiment's). A test process reaches no real
+    display (`hermetic.mjs`; xprobe's test build connects to none), and everything the harness starts that reaches
+    an X display (its X tools, the engines, the applications, Chrome, the bus daemon) goes through one spawner
+    (`xspawn.mjs`, task 47), which refuses a display the run did not create (a private server it started, or a trace
+    proxy in front of one) unless the process is a declared live run (`declareLiveRun`, made by the CLI,
+    `services.mjs` and `scripts/accept/linux-device-mode.mjs`, never honored in a test); the hermetic names
+    (`:cua171-…`) reach no display and pass. A start the harness hands to code of another's, which starts the
+    engine with the process's environment (`--via vendor-js`: OpenAI's client), is checked the same way before the
+    client is loaded, made or called, on that environment with the lane's variables over it (`VendorJsEngine`, task
+    48); a source test fails any other write into `process.env` that is not listed as handing on no display, or behind
+    the check. Every start the spawner makes on a display the run created, and the vendor-JavaScript lane's, gets
+    XAUTHORITY naming that display's own authority: a trace proxy's own file, or for the harness's Xvfb, which keeps
+    none, a path of the run's that does not exist (`NO_AUTHORITY`), whatever the caller's environment held, since an
+    unset XAUTHORITY sends a client to the person's `~/.Xauthority` (task 51's review). On a display the run did not
+    create, the environment is left as it is: for a person's display that is as it should be (the harness is the
+    person's client there), and for a display a parent process created (for example a session script's own Xvfb) the
+    harness's own X tools inherit the parent's XAUTHORITY, so the parent sets XAUTHORITY to that display's own file or
+    to a nonexistent path; applications on any private display get a nonexistent path regardless (`app-env.mjs`). The harness's suite runs as `npm run
+    test:linux-engine-diff`, through a wrapper (`test/linux-engine-diff/suite-check.mjs`, task 45; a wrapper since task
+    47, so it runs on the whole declared Node range, and ci-kit's `test` gate runs it) that gives the suite a
+    temporary directory of its own and fails it, naming each, on any process it started that still names a run's
+    scratch directory or profile when it ends, and on any scratch directory it left; each is then ended or removed.
+  - *No window of the person's can be taken for the run's*: every title carries the run's label and a random nonce of
+    the run's own (`Desktop.label`), and a window already on the display when the run began is never found or adopted
+    (`Desktop.preexisting`), whatever its title.
+  - *The harness acts only on a window that is still the run's*: cleanup closes a Chrome window it found only while
+    that id is alive and titled with the scene's label (`Desktop.stillOurs`; the person may have closed it and Chrome
+    given its id to a window of theirs), and never registers it again; a window not closed so is recorded in the end
+    row (`skipped`). Every pointer move of the harness's (`parkPointer`, the dnd experiment's `--park-pointer`, the
+    GTK 4 probe) reads the top window at its point first (xprobe `top-at`, `Desktop.pointerSafeAt`) and goes only onto
+    the root or a live window of the run's.
+  - *Observers that act are fenced* (`xtools.mjs`): xprobe `retention` redirects only a live window of the run's, and
+    xprobe `grabs`, which takes the root's pointer and keyboard, runs only on a private display marked
+    `CUA171_PRIVATE_DISPLAY` (xprobe refuses any other; `startPrivateServer` marks the harness's own Xvfb). The post-request check that no
+    grab is left reads the server's record of every client's grabs (`clip.mjs` `watchGrabs`, `grabsIn`) instead of
+    grabbing; so does the dnd experiment, whose momentary foreign grab (`--grab-at-ms`) is gone.
+  - The window found active at the start is recorded and never activated again. A run that starts with a foreign
+    window active first opens and activates a holder (an xterm in the front window's corner), closed after every other
+    window of the run's; what the window manager activates then is its own doing. The `meta` row records the start's
+    active window, and the `end` row (`desktop`) both active windows, each marked `foreign` or `harness`, the holder,
+    the trace's audit and the record's. The negative checks raise and activate only the top two of the harness's own
+    windows.
 - **Deviations** (`deviations.mjs`): a difference from the pinned build passes only when a declared deviation names
   its operation, its field and cua's exact answer. (In M1a the text and clipboard commands were checked apart, cua
   alone, each refused with `<command> is not available in this engine build`; M2 replaced that with its text
@@ -256,7 +493,10 @@ variants included; their evidence is written either way. The run's `end` row kee
   clean wherever a vendor build's is, its audit clean wherever a vendor build's witness or audit is); a family that
   fails it makes the run incomplete. `--no-audit` leaves the pass out.
 - **Readiness's vendor reference** (`judgeReadinessRun`): the run passes only when the pinned build's captures of
-  every condition agree with the truth cua's first captures are judged against; one off or unjudged fails it.
+  every condition agree with the truth cua's first captures are judged against. Its outcome (`readinessOutcome`, the
+  design session, 2026-11-07) names what kept it from passing: FAIL for a wrong or unjudged first capture of cua's;
+  otherwise REFERENCE MISMATCH for a pinned capture off its truth or unjudged, and CONTROL NON-DISCRIMINATING for a
+  `--variant` control lane that captured every first frame right. None of these is a pass.
 - **The M1a branch review's rules:**
   - An audit counts only when its audited requests answered as the timed pass's did (`auditVerdict`; the matrix's
     audit pass requires its keys and clicks answered).
@@ -288,7 +528,10 @@ variants included; their evidence is written either way. The run's `end` row kee
   witness span, its effect read back after it. The lanes: the pinned build (the reference), the newest build
   (recorded, not judged), `cua` as it ships (each drag paced by its target's family, `families.rs`), `cua:0ms` (no
   wait after a sample, the press or before the release) and the variants (for example a dwell,
-  `--variant dwell='--drag-step-ms 0 --drag-press-dwell-ms 30 --drag-release-dwell-ms 30'`).
+  `--variant dwell='--drag-step-ms 0 --drag-press-dwell-ms 30 --drag-release-dwell-ms 30'`; T11's motion model,
+  `--drag-elapsed` to pace the step by elapsed time and `--drag-rest-ms` for the rest at corners and at the end, so
+  `--drag-step-us 500 --drag-elapsed --drag-rest-ms 20` is Chromium's row and `--drag-step-us 500` its row before
+  T11).
 - **Kinds**: `select` (a text-selection drag: the page's selection, an editor's AT-SPI selection, a terminal's
   PRIMARY), `range` (an HTML range input), `scale` (a GTK 3 scale, `pages/gtk-scale.py`), `scroller` (a page
   element's scrollbar thumb), `scrollbar` (an editor's vertical scroll bar, gedit with classic scroll bars), `dnd`
@@ -302,6 +545,47 @@ variants included; their evidence is written either way. The run's `end` row kee
   build never takes (GTK 4) is recorded, not judged. The run is complete only when every requested family and kind
   produced its cell and nothing threw (`dragCompleteness`); a family's error leaves its remaining kinds unmeasured
   and the run incomplete, while a lane that misses is a measured outcome.
+- **M4's judges** (T10, `drag-judge.mjs`; Acceptance 3; the Decision Log's M4 pre-flight). They decide the run's
+  verdict for the shipped `cua` lane, and the run exits nonzero when it fails; every other cua lane is measured, not
+  judged:
+  - *Effect*: every run of `cua` takes effect, wherever the pinned build missed too (the M1a.4 rule). A drop or a
+    stroke has its reader proven by either vendor build's take, and a long path is judged on every run whatever the
+    vendor builds took (`judgeDragCell`).
+  - *Thumbs*: Chrome's and Electron's `scroller` runs each land at or past the pinned build's mean distance, the mean
+    of its runs that took in the same sitting (`thumbReach`), never a stored constant.
+  - *Long paths* (Chrome's and Firefox's `canvas`, Chrome's `dnd`), warm, under Acceptance 3's interval rule
+    (stats.mjs `judgeSeriesSpeed`): a run that took is a usable sample, each engine's first request is cold and left
+    to the verdict run; 20 usable a side or the series is not judged; a vendor build sets the bar only with 20 usable,
+    and one short of that at 40 drags gives the bar up; an undetermined cell is topped up in rounds of 10 to 40 a side
+    (`topUpRuns`); the summary names the build that set the bar. Run them `--occlusion visible`: a covered Chromium
+    path or Gecko window is a declared refusal.
+  - *Chrome's drag and drop* runs in front for every lane (raised and activated before each drag), as its drop needs.
+  - *Under load* (`--load` or `--load-factor <n>`, the load lane, 40 drags a side by default and never fewer): the
+    landed counts decide, `cua`'s at least the pinned build's or fewer by chance (the one-sided Fisher test of its
+    misses against the pinned build's, p >= 0.05; the design session's ruling on ffdnd-fix, 2026-11-13), with every
+    side's distances reported (`loadCounts`). A false success fails the lane whatever its counts: a run answered ok whose
+    effect did not happen, or landed on another target than the one asked for (drag.mjs `falseSuccess`, per kind). An
+    honest miss (not ok) and the right target's effect at the wrong magnitude are landing misses, under the tolerance.
+    Speed and the thumb reach are reported, not judged. The load lane of #265:
+    `--experiment drag --load-factor 2 --family chrome,electron --ops scroller,range --occlusion visible --lanes pinned,cua`.
+  - *The motions the browser received*: `pages/drag.html` counts, per press, the coalesced samples of the
+    `pointerrawupdate` events (which Chrome dispatches as it takes each motion, a scrollbar drag's included, where no
+    `pointermove` reaches the page) and of the `pointermove` events (`raw`, `moves`), with the dispatched events beside
+    them (`raw_events`, `move_events`); each page run keeps the record as `received`, beside its `before` and `after`,
+    only when its press is newer than the record read before the drag (`freshReceived`: a drag that pressed nothing has
+    none), for T11's plot of distance against the motions received.
+  - *Blocks*: a cell's drags run in rotating blocks of 10, every lane's block on a fresh engine, the lanes' order
+    rotating from block to block and the top-ups continuing it (`blockPlan`); each block's first request is cold.
+  - *Named only* (`OPTIONAL_KINDS`, by `--ops`): `select-unprimed` on Writer, every run a fresh window's first drag,
+    judged absolutely by the text its path spans (`selectionCovers`), beside the `select` cell, whose even runs
+    that took the judge must take too (REFERENCE MISMATCH otherwise); and `handle-canvas`, `handle-dnd` on Firefox (and
+    on Chrome and Electron, whose held moves T11 reran as the controls of Gecko's),
+    `drag_handle`'s start, a held move to each point and its end, its requests spaced by cua's service's own
+    `drag_handle` settle (`HANDLE_GAP_MS`), with a `cua:no-press` control lane that moves along the same points without
+    pressing and must miss every run (CONTROL NON-DISCRIMINATING otherwise). A held move's pacing is measured with the
+    engine's flags as variants (any drag flag fixes the pacing for every target, the ones it does not name at zero):
+    `--held-step-ms`/`-us` between its points, `--held-rest-ms` at its end, `--held-lead-pause` after its leading
+    motion; `--drag-step-us 300 --drag-release-dwell-ms 30 --held-lead-pause` is Gecko's held pacing before T11.
 
 ## M2's additions: text, clipboard and the paste safety cases
 
@@ -332,7 +616,7 @@ variants included; their evidence is written either way. The run's `end` row kee
   `judgeRouteSpan`). Where both are `foreground`, the request may activate its target and move the pointer and nothing
   else (`judgeForegroundSpan`: the active window and the focus end in the target; the stacking is judged on the
   restack events, `judgeRestacks`, and only the target's top-level, its window manager frame from `xprobe toplevel`,
-  may move, and only to the top; then a quiet 300 ms span and no grab left, `xprobe grabs`); every other request must
+  may move, and only to the top; then a quiet 300 ms span and no grab left, read from the server's record of grabs since T4b); every other request must
   leave the witness unchanged. The restack events come from `SubstructureNotify` on the root: the witness records the
   root's children when a span begins and every `ConfigureNotify`, `CirculateNotify`, map, unmap, creation, destruction
   and reparenting of one in order (`xprobe/src/restack.rs`). They are never coalesced, unlike
@@ -396,8 +680,9 @@ variants included; their evidence is written either way. The run's `end` row kee
     sample invalid. The caps count the resample as before.
   - Every restore counts in its lane's total: the samples', the failed preparations', the warm-ups', the audit's
     (`text_restores` on its row) and the bus pass's. None of them adds a timed sample.
-- **A stopped run** (`stop.mjs`): SIGINT or SIGTERM stops the witness and closes every window the harness opened (its
-  Chrome scenes live in the person's Chrome) before the process exits 130 or 143.
+- **A stopped run** (`stop.mjs`): SIGINT or SIGTERM stops the witness, closes every window the harness opened, and
+  stops the run's Chrome and its session bus before the process exits 130 or 143. A stop during the run's start
+  waits for it: the start ends what it acquired (its trace, record, session bus and watchdog) and starts nothing more.
 - **Every cleanup a case owes runs when it ends** (`Cases.guarded`): the engines, clipboard owners and target windows
   a case starts, whether it ends by its verdict or by an exception half-way through its setup; a sample's clipboard
   owner ends with the sample the same way (`runSample`). Each disposal establishes that what it ends is gone (an
@@ -469,7 +754,8 @@ variants included; their evidence is written either way. The run's `end` row kee
   Chrome windows a full verdict run has open. Each row carries the page's counters and its pointer log. Measurement
   only, for the mechanism: `--stray nudge|popup:<ms>` puts a pointer event that is not the drag's into it (the real
   pointer nudged a pixel and back through XTEST, or another client's window mapped under the real pointer for 5 ms),
-  `--park-pointer X,Y` parks the real pointer first, and `--grab-at-ms` fires another client's momentary grab.
+  `--park-pointer X,Y` parks the real pointer first. (`--grab-at-ms`, another client's momentary grab, is gone: it took
+  the person's pointer and keyboard on `:0`.)
 - **The drop-miss instruments** (task 18, run beside any run; none is started by the harness): `xprobe request-watch`
   records through RECORD every client's `SetSelectionOwner`, core and XInput 2 pointer and keyboard grabs with their
   replies, server grabs, XDND client messages sent over the wire (Chrome short-circuits its own), and synthetic
@@ -501,6 +787,53 @@ variants included; their evidence is written either way. The run's `end` row kee
   before the request, and the witness allows the pointer field alone, `pointerMoves`). In dedicated mode the pointer
   parked outside takes the foreground route and the short drop lands. A parked pointer goes back where the case found
   it in the sample's cleanup.
+  Since V5's three false successes (M4's release gate, 2026-11-13), every sample is diagnosable from its own row: the
+  engine's whole `--stats` record of the request (`engine_stats`, with the request's id) and the engine's own lines
+  written between requests (`untied_stats`); a drop case's page counts carry the pointer log of every source's press,
+  the in-zone source's included, and the page's received-motion record (`received`), and the judge fails a sample whose
+  log is not its own press's; the drop and late cases read, after the watch's lifetime, the window's notice and the
+  next acting request's answer (`preflight`, run whatever the read carried) with the engine's raw record of the watch
+  (`late_watch`: the read's `notice`, the refused request's `late_dnd`). The late cases drag along a path that lingers
+  in the zone (`dnd-linger`), so Chrome takes before the release, and a sample Chrome took nothing for by its release is
+  unexercised, a failure of its case. A development run (`--dev --trace-engine`) puts each cua series's engine behind
+  an xtrace proxy of its own, its trace under `xtrace/` and each sample's span in it on the row (`xtrace`).
+- **Minimized windows** (M4's T4, `minimized.mjs`, the scenes `minimized` (gedit), `minimized-xterm` and
+  `minimized-recorder`): cua alone, each sample's window minimized with `xprobe minimize` (the harness's front window
+  takes the focus first, so the window manager's focus fallback lands on a harness window; the active window afterwards
+  is recorded, and one the harness did not open stops the run) and restored with `xprobe restore` after it, both
+  outside the spans. Every window-targeted input answers `Window <id> is minimized; activate it first` with nothing
+  sent (the `nothing-sent` audit), in both modes and before the device refusal. `list_windows` lists the window with
+  `minimized: true` and no other. A state read answers for the requested window (its id, the field on it, a tree
+  showing the fixture's marker, gedit's file name) with no screenshot. The same window restored loses the field and
+  gives one screenshot that is a real image of it: the file exists and decodes at the window's size, and matches the
+  window's own contents (`xprobe snap`, then `xprobe imgdiff` with no rows masked). A key held before the minimize is
+  released after it, the hold proven first and then the release, on each route's own evidence:
+  - on the background route, on `minimized-recorder`, a window `xprobe record … managed` holds (the window manager
+    manages it, and its client is the harness, so a synthetic event reaches the harness): it received the hold's
+    synthetic press, then exactly the release of the held key, with nothing beside it but the route's FocusOut;
+  - on xterm's foreground route in dedicated mode, the server's keymap (`xprobe keys-down`): the key down after the
+    hold and up after the release.
+
+  Either way the `held-release` audit splits the trace at the case's marks (`ctx.traceMark`, the proxy's log offsets
+  once the log is quiet) and requires the hold's press on its route, then release events for exactly the held set,
+  with no press, no motion, no activation and no focus request. `activate_window` restores the window and answers
+  success; a withdrawn window answers the first focus error at the engine's 1 s bound. Elsewhere in the run, a
+  listing's minimized windows are set aside where the deviation declares them (`setAsideMinimized`).
+- **Identity** (M4's T5, `identity.mjs`, the scenes `identity` (Chrome), `identity-gtk3`, `identity-gtk4` and
+  `identity-kate`): cua alone, on windows of one process with one title, unique to the run, and one size, each
+  showing its own marker (`Desktop.openDuplicates`: Chrome windows on `pages/identity.html`, opened one at a time and
+  each found as the one new window of the title; or one process of `pages/identity-windows.py`, which reports each
+  window's marker and X11 id once it is mapped). Each sample reads one window in turn; the harness arranges the
+  windows before the request, outside the spans, and waits until their origins read back (and, on GTK, until one
+  frame says `active`). Placed apart, each read answers its own tree, its marker and no other's (GTK 4, whose
+  extents are window-relative, the sentence); stacked with the front window active, each answers `Window <id>
+  matches several accessibility windows; close or retitle the duplicates`; stacked with the read window active, GTK 3
+  answers its own tree (the active-state tie-break) and Chrome, which marks no frame active, the sentence; stacked
+  with another duplicate active, the sentence. On the Chrome scene, stacked, an element click, a secondary action,
+  `type_text` and `clipboard_read` answer the sentence with nothing sent (the `nothing-sent` audit), and Shift held
+  while the windows are apart is released once they are stacked, the page then showing it up. kate's two windows each
+  read their own document, by the caption rule. Every read's answer must be one `deviations.mjs` declares for the
+  scene.
 - **The witness's allowances** (`witness.mjs`):
   - **Foreground.** Override-redirect windows of the target's own X client (its resource-id base) may map, restack
     and unmap; one may stay mapped at the end only where the input opens it, as a right click's menu. Every other
@@ -537,8 +870,317 @@ variants included; their evidence is written either way. The run's `end` row kee
   recorded as a loss (verdict `declared refusal`, listed apart, never a pass) while every cua sample answers the
   declared sentence with the witness unchanged. It excuses only what the refusal itself makes differ (the failed
   request, the answer, the effect; `declaredRefusalVerdict`); the audit and every other failure the judge finds stand.
+  A declaration that is `unconfirmed` (candidate 3: `chrome-input`'s `right_click_fallback` and `secondary_action`,
+  whose page cancels the menu their `showContextMenu` asks for) declares cua's `menuUnconfirmed` answer instead
+  (verdict `declared unconfirmed`); with `effect`, the effect is read for that answer too and required of every
+  sample (the page's context counter rose), so an ignored request never passes, and its speed is not judged, since
+  cua's answer comes after its 1 s wait for a menu.
+- **The settle experiment's context menus** (candidate 3): `chrome-input` and `electron-input` open the input page
+  with `menu=native`, whose Native button lets the browser's own menu open (the Electron page app pops a native menu
+  for it). Their `secondary_action` asks for that menu, which the engine must confirm; the harness then closes it with
+  an XTEST Escape on the run's display (the menu's grab takes it), and the run fails unless the menu has gone within
+  2 s and the page counted no Escape (`closeMenu`). Beside it, `menu_unconfirmed` asks for the Menu button's menu,
+  which the page cancels, and passes on `menuUnconfirmed` with the page's context counter risen.
 - **The drag-and-drop experiment's probes** (`withDropProbes`): each drag's `XdndSelection` watcher and grab sampler
   are stopped whatever happens, each stop tried on its own.
+
+## M4 T6's addition: the AT-SPI probe (`--experiment atspi`)
+
+One probe pass for the spec's two AT-SPI questions (Plan of Work, M4, T6): whether `Cache.GetItems` could stand in for
+the per-element tree read, and what GTK 4's `EditableText` does. It is a read-only instrument, never a gate, and it
+changes no engine.
+
+```bash
+node scripts/linux-engine-diff.mjs --experiment atspi --cua "$INSTALLED" --out "$OUT/atspi" [--family <list>]
+```
+
+- **Its display.** It starts its own private X server (`startPrivateServer`, under its watchdog, marked private) and
+  Openbox there, and runs the harness's own Desktop on it: every application through the one spawner, in the run's
+  homes, under the run's session bus. That bus starts the run's own accessibility bus launcher, whose socket is
+  `$XDG_RUNTIME_DIR/at-spi/bus_<n>` under the person's runtime directory, `<n>` the probe's private display number
+  (the person's display's launcher's is `bus_0`). That number is never one of the person's displays: Xvfb takes a
+  number no running X server has (`-displayfd`), and the harness refuses `:0` and any number whose socket was there
+  before the server started (xspawn.mjs `registerDisplay`). Before anything starts it withdraws the
+  entry point's live-run declaration, so the spawner refuses every display the process did not create, `:0` included;
+  the shell's DISPLAY is never read. Its accessibility bus is its own display's, so the probe never appears in another
+  run's bus trace, and a bus-traced verdict run never sees it. No whole-run RECORD runs (only the probe's own windows
+  are on the display, and RECORD can freeze the server, task 41).
+- **`Cache.GetItems`** (`atspi-probe.mjs`, read by `atspi-cache.mjs`): each family of the matrix (or `--family`) opened
+  once; its application asked at `/org/a11y/atspi/cache`, the answer's signature taken from the answer (the current
+  `a((so)(so)(so)iiassusau)` or Qt's legacy `a((so)(so)(so)a(so)assusau)`; Qt's introspection data advertises a third
+  shape its answers do not have) beside the advertised one; the window's subtree rebuilt from the answer alone and
+  compared with cua-engine's read of the same window, node by node: the numbers through libatspi's role table
+  (`ATSPI_ROLE_NAMES`) against `GetRoleName`, Name, Description, the vendor's states and the children in order, with the
+  -1 sentinels and the answer's own inconsistencies counted, and each node only the cache holds asked about directly.
+  Then the adoption rule's cases: `pages/atspi-gtk4.py` and `pages/atspi-qt.py` open their own menus (the probe sends no
+  input) and change their trees every 250 ms, recording each change; the changing tree is read in 30 pairs (the answer,
+  then the per-element read), each pair quiet or straddling a change by that record, compared whole, by structure
+  (everything but the role names) and by its moving parts. The verdict (`adoptionReasons`) lists what stands against
+  adoption.
+- **GTK 4's `EditableText`**, in a text view and an entry of `pages/atspi-gtk4.py` (which record the signals their edits
+  raise) and in gnome-text-editor's document, each a window of the probe's: the interfaces and methods offered, then one
+  XTEST key, `InsertText` away from it, and two XTEST Ctrl+Z, each step's text read back up to `CharacterCount` (GTK
+  4.14's entry answers `GetText(0, -1)` with nothing); a control in a window of its own (the key, then one Ctrl+Z) shows
+  each widget's undo working without `InsertText`. These are the probe's only writes, into windows it opened.
+
+## M4 T7's addition: the FocusOut and the paste settle (`--experiment focus-timer`)
+
+The proof of the background route's `FocusOut` and the paste's settle (Plan of Work, M4, T7, as the design session
+ruled on task 59's measurement, 2026-11-04; the engine's `route.rs` and `settle.rs`). A background request's synthetic
+`FocusOut` goes as its input ends, before its answer, the window's redirect kept; a paste whose window took a key just
+before waits its settle before it observes its field. The experiment keeps the name it had for T7's timer, which it
+measured and which is gone.
+
+```bash
+node scripts/linux-engine-diff.mjs --experiment focus-timer --cua "$CANDIDATE" --out "$OUT/focus-timer/idle" [--family <list>]
+node scripts/linux-engine-diff.mjs --experiment focus-timer --cua "$CANDIDATE" --out "$OUT/focus-timer/load2" --load-factor 2
+node scripts/linux-engine-diff.mjs --experiment focus-timer --cua "$CANDIDATE" --out "$OUT/paste-settle/idle" --lanes settle-25,settle-50,settle-75,settle-100 --scenarios paste
+node scripts/linux-engine-diff.mjs --experiment focus-timer --cua "$CANDIDATE" --out "$OUT/paste-settle/fix/click-idle" --lanes click-0 --scenarios click-paste
+```
+
+- **Its display**, as the AT-SPI probe's: a private X server it starts itself, Openbox, the harness's own Desktop with
+  the run's applications, homes, session bus and own Chrome and Electron; the live-run declaration withdrawn first, so
+  nothing reaches `:0`. `--load-factor 2` runs it under twice the gate's load.
+- **The families**: every family of the matrix whose background keys cua sends (Chrome, Electron, gedit, kate,
+  qtcreator, Firefox, Writer on gtk3, gnome-terminal; Writer on gen exposes no text field), two windows each, covered by
+  the front window. Chromium's windows show `pages/keys.html`, whose page spends 3 ms on each key, so a burst outruns
+  the renderer, and 3 ms on each press in its field. A scenario a family cannot have (`NOT_APPLICABLE`: click-then-paste
+  on Firefox, whose caret no background click moves) runs no series or audit there, and the verdict lists it.
+- **The lanes**: the engine as it ships (`shipped`); the paste's settle at each of its measured steps (`settle-25`,
+  `settle-50`, `settle-75`, `settle-100`: `--paste-settle-ms`, the redirect kept); the settle after a click at its
+  steps (`click-0` to `click-100`: `--paste-click-settle-ms`, 0 the engine before the click trigger); and a control
+  whose every request drops its redirect with its `FocusOut` (`control`, `--retention per-request`; its paste series
+  drops the settle instead, `--paste-settle-ms 0` with the redirect kept, and its click-then-paste series the click
+  settle, `--paste-click-settle-ms 0`), which cuts Chromium's keys and
+  delivers them with the next `FocusIn`, the reorder M0.4 saw (on the private Xvfb a `FocusOut` with the redirect kept
+  cuts nothing, tasks 56 and 59). `--lanes <list>` runs only the lanes it names, at least one judged, and no stop runs.
+  `--trace` runs every series run with the engine's connection through xtrace and keeps a missed run's trace under
+  `traces/`, with its synthetic-focus sessions and the engine's Composite requests on its row; the proxy delays every
+  request, so a traced sitting is one of its own, never the verdict's. Each run is a fresh engine's. The scenarios,
+  pipelined: `burst` (20 keys, Shift chords among them), `aba` (8 keys to A, 8 to B, 8 to A again) and `paste` (8
+  keys, then a `type_text` to the same window, of `Pasted` and three letters of the run's own: a terminal's screen
+  holds many runs' text, and the engine confirms a paste the screen's scroll moved only under its strict rule, task 56
+  fix 3); and, named with `--scenarios`, `click-paste` (a fresh engine first puts the caret at the field's end, an empty
+  field given text first; then a click at the field's first character and a `type_text` with no element: the paste must
+  land at the text's start and be confirmed; a terminal, whose recorder reports the click, takes it after the click's
+  reports, at its end). `--scenarios <list>` runs only those, with no stop runs. A run passes when every answer is a success and each
+  window's text is exactly its old text with the scenario's text put at the caret read before the run, and the desktop
+  was left alone (task 61): its requests and the reads of their effect run inside a witness span, which must see no
+  change and no activation request, and the front window must still be active after it (`runPasses`; the miss cause
+  `desktop`). A run that finds the front window behind an earlier run's activation puts it back first
+  (`restored_front` on its row). Every lane but
+  the control needs 30 consecutive passing runs of each scenario (at most 60; a miss restarts the series and is
+  reported; `--trials` sets fewer for a development run, which the verdict then fails); the control lane runs 10 and
+  must fail on Chromium, which shows the run can see a cut; its line counts the runs whose text was wrong. A paste
+  series reports its settle's cost (`settleCost`: the pastes, the median and the largest wait, and the median times
+  since the window's last key and its last click), from each paste's `--stats` record.
+- **The audit**, a pass per family and lane: each scenario once, each on an engine of its own with the flags its
+  series ran with (`auditRuns`: the control's paste with no settle, not unredirected), its X connection through xtrace
+  and its `--stats` records of its `FocusOut`s, one row per scenario. Nothing the background route forbids; the synthetic-focus sessions, by window and
+  in order, exactly the scenarios' (one per request); no two windows under synthetic focus at once; every `FocusOut` in
+  the trace attributed to the request whose input it ends, and none left past that request's answer (`audit.mjs`
+  `attributeFocusOuts`, `auditVerdict`).
+- **Independent starts** (the design session's ruling on T7's review): a Chromium window holds a cut's tail until its
+  next `FocusIn`, so before each Chromium run a fresh engine sends Shift to each of the run's windows (its `FocusIn`
+  delivers any tail) and empties the field (Ctrl+A, BackSpace); a run after an unconfirmed paste waits out the engine's
+  retry guard (11 s). Each series reports two counts: the independent one, which the verdict judges (30 consecutive),
+  and the raw one, in which a run whose start met a tail, or that follows an unconfirmed paste, fails too, as it would
+  have in use (`rawOks`). A series' misses are listed by cause (`missCause`: `guard`, `unconfirmed`, `refused`, `error`,
+  `text`), and each paste run keeps its `--stats` record (what its observation and confirmation saw, and its settle). A
+  row's index is `trial`; `run` is the sitting's name.
+- **The exit** (Chromium): a burst to a fresh engine, then SIGTERM straight after its last answer, inside the exit's
+  settle: every key in order, every request's session closed by its `FocusOut` in the trace, the exit's settle run
+  (its `--stats` record) and an exit code of 143 within 0.9 s, in all 30 runs (`stopPasses`); then ten clicks on the
+  keys page's pad followed by SIGTERM the same way, 30 runs, their presses and releases read from the page's log (`d`,
+  `u`; a drag has no such case on Chromium, whose background drags shared mode refuses), the settle run after them
+  too; SIGKILL, the documented limit, is the control that skips the settle. `--exit-settle-ms <ms>` runs the
+  stop runs' engine with that settle, and `--stops-only` runs the stop runs alone (the settle's measured steps).
+
+The events experiment (`events.mjs`) reads each step's events once the synthetic focus it left open has closed, at most
+300 ms (`settleFocus`); cua's `FocusOut` now goes before its answer again, as the pinned build's does, so a step is read
+once, a hold's after the bound.
+
+## M4 task 61's addition: a background press and Qt's activation (`--experiment qt-activation`)
+
+Whether a background input activates a Qt window (task 61). Qt asks the window manager to activate a window when it
+handles a press while the window is not its focus window, and it makes the window its focus window only once it delivers
+the event the synthetic `FocusIn` queued; at twice the gate's load a background click to kate or qtcreator then
+activates the window, in every engine. The engine's press waits for the window's AT-SPI frame to report `active`
+(`focus_ack.rs`).
+
+```bash
+node scripts/linux-engine-diff.mjs --experiment qt-activation --cua "$CANDIDATE" --vendor "$PINNED" --released <0.3.0> --out "$OUT/qt-activation/load2" --load-factor 2 [--family kate,qtcreator] [--lanes pinned,released,shipped,control] [--kinds click,key-click,press_key,drag,scroll]
+```
+
+- **Its display**, as the focus-timer experiment's: a private X server it starts itself, Openbox, the harness's Desktop
+  with one window of each Qt family (kate on Qt 5.15, qtcreator on Qt 6.4) covered by the front window, which holds the
+  focus; the live-run declaration withdrawn first, every lane's binary checked before the server starts.
+- **The lanes**: the pinned vendor build (`pinned`, `--vendor`), cua's released 0.3.0 (`released`, `--released`), the
+  engine as it ships (`shipped`), the focus wait at each measured bound (`ack-25`, `ack-50`, `ack-100`, `ack-200`:
+  `--focus-ack-ms`) and the control with no wait (`control`, `--focus-ack-ms 0`).
+- **The kinds**: `click` (at the field's first character, the caret put at the text's end through AT-SPI first: the
+  caret must land in the first line), `key-click` (a `press_key` of Shift and that click pipelined: the click's session
+  opens while Qt counts the key's `FocusOut` down), `press_key` (`Left`: the caret one back), `drag` (along the first
+  line: a selection in it) and `scroll` (refused on cua's lanes, since Qt ignores synthetic wheel events; judged by the
+  desktop alone).
+- **A run**: a fresh engine's requests and the wait for their effect, inside a witness span with a 200 ms tail; it
+  passes when the span saw no change and no activation request, the front window is still active 300 ms after it,
+  every answer is a success and the effect landed. A run that finds the front window behind an earlier activation puts
+  it back first. The judged lanes (`shipped`, `ack-<ms>`) need 30 consecutive passing runs in at most 60; the others
+  run 30 and are counted (activated, activation requests, refused, landed). At load the control must activate at least
+  once per family on a click, which shows the witness sees an activation. Each cua run keeps its `--stats` `focus_ack`
+  (the bound, the wait for the focus, and the wait for an earlier focus let go), summarized per series.
+
+The witness (`xprobe witness`) selects StructureNotify on the root as well as SubstructureNotify, since Qt sends its own
+activation request with StructureNotify and SubstructureRedirect: before task 61 its focus record missed Qt's requests,
+though the activation itself still showed as a change.
+
+## M4 T7b's addition: the REPL host's stop (`--experiment engine-stop`)
+
+The proof that the engine's orderly exit runs when cua's REPL host stops it on Linux (T7b; `src/repl-host/kernel-child.mjs`
+`stopProcessTree`: the trusted worker's tree frozen, the engine alone given SIGTERM and SIGCONT, its exit awaited, then
+everything frozen SIGKILLed), through `cua serve` itself on the engine under test.
+
+```bash
+node scripts/linux-engine-diff.mjs --experiment engine-stop --cua "$CANDIDATE" --out "$OUT/engine-stop/idle" --control-root <checkout before T7b> [--paths idle,eof,signal,remote,held-back] [--cases hold,burst,pairs,handle] [--browsers chrome,electron] [--lanes drain,kill] [--sandbox scoped|disabled] [--require-burst-cut] [--load-factor 2] [--trials 10]
+```
+
+- **Its display**, as the focus-timer experiment's: a private X server it starts itself, Openbox, the harness's Desktop
+  with the run's own xterm and Chrome (`pages/keys.html`), the live-run declaration withdrawn first. Each run starts a
+  fresh `cua serve` on that display and the run's bus, with `CUA_NATIVE_ENGINE=cua`, the candidate as
+  `CUA_LINUX_ENGINE_BIN`, `dedicated` mode, the computer surface alone and no secrets; it approves only its own scene's app.
+- **The stop paths**: `idle` (end_task, then the idle stop, `CUA_RUNTIME_IDLE_MS` 1), `eof` (the MCP stream's end),
+  `signal` (SIGTERM to the REPL host's supervisor) and `remote` (end_task, then DELETE on a Streamable HTTP session of
+  `remote-serve.mjs`, cua's own handler from the same checkout on a loopback listener and a bearer of the run's), and
+  `held-back` (the stream's end while an admitted cell runs 12 s: cua serve waits 5 s for the task's completion, then
+  upstream's teardown sends the owned group SIGTERM at by(0.4), 7 s after the end, and SIGKILL at by(0.7); hold only).
+  `--sandbox disabled` runs the REPL host with `CUA_SHIM_SANDBOX=disabled`, where the engine is in the owned group.
+- **The cases**: `hold`, key_down of Shift on the xterm, which only the foreground route delivers: the X server holds it
+  (read before the stop, the positive control) and must hold nothing after; `burst`, press_key one key after another
+  into the covered Chrome window, the stop straight after the last answer, every key at the field's caret in order;
+  `pairs`, the same keys as key_down then key_up requests, whose settles are shorter than press_key's (T8);
+  `--browsers chrome,electron` runs both bursts in Electron's window on the keys page as well, each judged apart.
+- **The lanes**: `drain`, this checkout's REPL host, must pass every run; `kill`, the REPL host of `--control-root`
+  (whose stop SIGKILLs the tree at once), must leave the key down on every hold run, so the check can see a missing
+  release (the harness releases it after), except `held-back` with the sandbox disabled, where the group's SIGTERM
+  reaches the engine first in either lane. A control run that failed on its way (no engine found, a cell refused) is
+  not the failure it stands for and fails the verdict. Its bursts are counted, and with `--require-burst-cut` at least
+  one must be cut on each path, burst case and browser, or the sitting showed no pending burst. The engine is the same
+  in both lanes. T8's fix wave builds the control from the head with only the stop of before T7b (the three files T7b
+  changed in `src/repl-host/`, from f59575fb), so its service and settle are the head's
+  (`docs/evidence/2026-10-28-own-linux-engine/m4/settle/fix/scripts/control-tree.sh`). Every run
+  first requires the session's one engine; its effect is read once that engine has gone and before the run's own
+  cleanup. Each row records how long the engine lived after the stop began and after the last answer; the control is
+  recorded by its directory's name (`control_label`), never its path.
+
+## M4 T8's addition: the action settle through cua's service (`--experiment settle`)
+
+cua's Linux service holds the call after a successful input until that input's settle has passed
+(`src/services/engine/linux/settle.mjs`, per method since T8, a click's by what it runs since its fix wave), so the
+model's next observation finds the input's effect.
+The experiment measures, per cell (a scene, an input kind, a route, an occlusion: `action-settle-cells.mjs` `CELLS`),
+whether an observation straight after the input's answer shows the effect, through the service itself
+(`createService`, in this process, its engine the candidate).
+
+```bash
+node scripts/linux-engine-diff.mjs --experiment settle --cua "$CANDIDATE" --out "$OUT/settle/search-idle" [--family <list>] [--kinds <list>] [--routes background,desktop,dedicated]
+node scripts/linux-engine-diff.mjs --experiment settle --cua "$CANDIDATE" --out "$OUT/settle/search-load2" --load-factor 2
+node scripts/linux-engine-diff.mjs --experiment settle --cua "$CANDIDATE" --out "$OUT/settle/shipped-idle" --lanes shipped
+```
+
+- **Its display**, as the focus-timer experiment's: a private X server it starts itself, Openbox, the harness's Desktop
+  with one family's windows at a time (`FAMILY_SCENES`), the front window over them holding the focus.
+- **The scenes**: Chrome, Electron and Firefox on the input page (`pages/input.html`, every pointer and key kind
+  counted in its status lines) and on the matrix page's field (the text kinds); gedit, kate, qtcreator and Writer;
+  gnome-terminal and xterm running the recorder; the settle scenes `pages/settle-gtk3.py` and `pages/settle-qt.py`
+  (a button counting presses, a pad counting moves and wheel steps, in accessible names); GTK 4's button and input
+  scenes and gnome-text-editor. A kind the family's `families.rs` entry ignores on the background route is refused in
+  shared mode with nothing sent, so GTK 4's kinds and xterm's keys run in dedicated mode (the foreground route), and
+  so, with their windows covered, do Firefox's pointer kinds, Chrome's and Electron's drags and Qt's scroll (task 63).
+  `xprobe order-watch`, attached to the sitting's display, records the order of each foreground request's focus, the
+  window manager's raise and the press (`docs/evidence/2026-10-28-own-linux-engine/m4/foreground-raise/`).
+- **A run**: prepared outside its span (a caret put at the text's end through AT-SPI, a terminal's screen cleared,
+  a key held for a `key_up`, a word copied for a `clipboard_write`, a value of the run's own put on the clipboard for a
+  `clipboard_read`), read once its scene has stopped changing, then its requests through the service and the reading of
+  its effect inside one witness span. The effect is read through the service's own `get_window_state` where the tree
+  carries it, else (a caret, a selection, a field whose node has no value, a terminal's screen, the clipboard, what
+  xterm's program received, an activation's `_NET_ACTIVE_WINDOW` and frame `ACTIVE` state) by the harness the moment the
+  service's settle ends, every reader one already running: one kept D-Bus connection (`bus-client.mjs`; `busctl` would
+  start each read about 5 ms late), one kept X connection for the clipboard and `_NET_ACTIVE_WINDOW` (`xprobe reader`,
+  `clip.mjs` `startReader`), the recorder's file read in place; an activation's two words are asked for at once.
+- **The complete effect** (`landed`): the run's reading must show all of its input, not the start of it. A terminal's
+  mouse reports are decoded in full (a click's press and release, a drag's press and its release elsewhere, one wheel
+  report a step; gnome-terminal's screen ends on the last report its program echoed); every wheel step is counted
+  (`pages/input.html`'s `wheels` line, Chromium's legacy delta summing the events it coalesces); and where the
+  application may still be taking the input in (an editor's drag selection, GTK 4's scale, a move's motions, on a
+  page where its last one left the pointer,
+  `settledFields`) the reading must equal the scene's settled reading, read every 25 ms until it holds still for 300 ms,
+  and a drag's path must settle where it settled before. A `clipboard_read` passes only on the copied word over the
+  run's own value.
+- **A run passes** on its answers and its complete effect, and on the background route on a desktop left alone (the
+  witness clean, no activation request, the front window still active). A miss records whether its effect came within
+  2 s of the answer (`late_ms`) or never. A run whose judging failed (its preparation, a reader, the settled reading, or
+  the settle the service deferred not the cell's) is `invalid`, apart from a command that failed (`refused`;
+  `runClass`).
+- **The lanes**: every settle at one step (`settle-0`, `-10`, `-25`, `-50`, `-75`, `-100`, and from 100 by 25 ms to 400
+  for an animating family's element action, `ANIMATED_STEPS`) or the shipped constants (`shipped`). Without `--lanes` a
+  sitting searches each cell upward from 0 ms, the control, through its settle's steps, stopping at the first step that
+  reaches 30 consecutive passing runs in at most 60 (a series stops once it cannot). A fresh service and engine for each
+  series. With `--lanes shipped`, each background cell also gets an audit pass through xtrace (`--no-audit`), which
+  passes only on a clean trace of the engine's requests whose every run ran its input (`auditVerdict`).
+- **The settles** (`settleOf`): each method's, a click's and a named action's by what they run: a coordinate or right
+  click `click`'s, an element's primary action `click_element`'s, and in a family whose toolkit animates that action
+  (GTK 4, Qt: `SCENES`' `animates`, as cua-engine names the family in its answer) the family's own, the named action
+  that runs it included. A run checks that the service deferred the cell's settle.
+- **The constants**: each settle's is the largest held step across its cells, idle and at twice the load
+  (`methodConstants`); a cell that held at no step keeps it at the vendor's 100, unless its input is lost on a complete
+  and valid measurement (`lostInput`) and the loss is established on its own (`SET_ASIDE`, empty).
+
+## M4 T16's addition: LibreOffice's positions (`--experiment writer-drag`)
+
+LibreOffice on its gtk3 VCL plugin (24.2) reports what VCL draws (a document's paragraphs, a sheet's cells, a slide's
+shapes) too high by its native menu bar's height after a ConfigureNotify (the harness's raise) and until the next
+pointer event. The drag experiment's Writer cell aimed there, into the page's header margin, so on a private display
+no drag of any engine, a real XTEST drag included, selected anything, and the cell primed each window to hide a miss
+that was its own aim. `vcl-aim.mjs` reads VCL's offset itself, as the GTK panel hosting VCL's root pane less the root
+pane (they agree after a pointer event), and `drag.mjs`'s `locate` moves LibreOffice's character extents by it, the
+offset read with each character's extents (`vclDrawn`: between two readings that agree, since a pointer event or a
+configure between two aims moves both); the cell primes nothing. T8's settle instrument aims its Writer clicks and
+drags the same way (`action-settle.mjs` `linesOf`). The engine corrects its element points the same way
+(`native/linux-engine/src/vcl.rs`) or refuses them; the harness's reading stays its own, so a proof aimed by it shows
+the engine's points independently.
+
+Two shared helpers came out of T16's fix wave (the design session, 2026-11-10), for any runner to import:
+
+- **The park** (`park.mjs`): `parkPointer(point, intended)` moves the real pointer, then reads where it landed through
+  `QueryPointer`'s child chain (`xprobe pointer-chain`) and throws `ParkRefused` unless it is at the point and over
+  the intended window (anywhere in the chain), or on the bare root for `ROOT`; a refused park's trial never counts.
+  `parkOnFront` parks on the run's front window, off every application under test (a park ending on the bare root
+  names a window the run did not open, by the harness's own audit). T16's runners (`writer-drag.mjs`,
+  `vcl-probe.mjs`) use it.
+- **The application's identity** (`app-identity.mjs`): `verifyIdentity(oracle, scene)` reads the scene's AT-SPI
+  application name and toolkit and the role of its frame's first document, and throws `IdentityRefused` unless they
+  are its family's (`APP_IDENTITY`), so Writer standing in for Impress fails. T16's runners, the drag experiment's
+  Writer cell and the settle instrument's LibreOffice scenes use it.
+
+- **The Writer probe** (`writer-drag.mjs`, measured, never judged but by `--plan first`): Writer windows, fresh for each
+  run or one for a case, each run a drag (or a selection made otherwise) read by AT-SPI's selections of the first
+  paragraphs and by PRIMARY (the harness's marker claimed first), the real pointer parked where the case says
+  (`out`, the pointer on another window of the run's, off Writer: the front window; `text`; `blank`) and verified
+  there (`park.mjs`), the window's geometry recorded before and after. Lanes: an engine by its drag lane label,
+  `xtest` (cua's windowless drag through XTEST, the window active), `xdotool`, `xclick`, `xhold` (real input through
+  xdotool at a person's pace), `atspi` (`Text.AddSelection`), `keys` (a background click, then Shift+Right). Aims:
+  `locate` (the drag cell's), `raw` (the drag cell's before T16), `frame`. `--plan first` is T16's proof: fresh windows,
+  every run the window's first drag, cua 30, the pointer in three places, the vendor builds, an audited case through
+  `xtrace`, and the pre-T16 aim as the control that must miss. The pilot plans (`observe`, `press`, `pacing`,
+  `mechanism`, `geometry`) are the investigation's, kept as they ran.
+- **The point probes** (`vcl-probe.mjs`): `--plan hierarchy`, each LibreOffice application's AT-SPI levels by state;
+  `--plan element`, an engine's element right click on fresh Writer, Calc and Impress windows and after that first
+  pointer event, located by the context menu VCL opens at the press (for Calc, whose menu opens above a press near the
+  bottom, only inferred from where it opens, beside the cells at the true and the stale centre),
+  against the element's true centre from the host panel, with a plain GTK 3 window the window manager frames
+  (`pages/point-gtk3.py`) as the control and `writer-root` (Writer's root pane itself) as the case whose own
+  ancestors hold no root pane; `--plan identity`, what each family's application shows through AT-SPI.
 
 ## Files
 
@@ -546,6 +1188,7 @@ variants included; their evidence is written either way. The run's `end` row kee
 |---|---|
 | `../linux-engine-diff.mjs` | the entry point |
 | `cli.mjs` | the command line |
+| `../linux-engine-gate/` | M4's gate as steps (T18): `steps.mjs` the plan and its commands, `gate.mjs` the runner that lists, prints or runs one, `display.mjs` a step's private display, `norecord.mjs` its harness script with no whole-run RECORD; a launcher above the harness, outside this directory's source checks |
 | `candidate.mjs` | a verdict run's cua candidate: stored, its target read, its attestation verified; a gate's refusals |
 | `engine.mjs` | an engine process over the wire |
 | `run.mjs`, `ops.mjs` | the differential run and its operations |
@@ -554,6 +1197,11 @@ variants included; their evidence is written either way. The run's `end` row kee
 | `vendor-js.mjs` | `--via vendor-js`: the engines behind OpenAI's JavaScript client |
 | `readiness-check.mjs` | the engine's capture readiness judged by content, per family |
 | `scenes.mjs`, `stop.mjs` | the harness's windows and the reader that reads effects back; their cleanup on SIGINT or SIGTERM |
+| `chrome.mjs` | the run's own Chrome: its one launcher, the guard on every Chrome command line, its stop by the pids it spawned |
+| `session-bus.mjs` | the run's own session bus: a private display's, its accessibility bus wired to the display; a person's display's, for the applications, activating nothing |
+| `app-env.mjs` | the environment every application the run launches runs with: the run's home, the display and buses handed on |
+| `a11y-status.mjs` | the session's accessibility switches: read on a person's display, set only on the run's own bus |
+| `a11y-stub.mjs`, `dbus-wire.mjs` | the run's stand-in for org.a11y.Bus on a person's display's application bus, and the D-Bus wire it speaks |
 | `prepare.mjs` | the gate's rule for a sample whose harness-side preparation fails: one resample, the counts and caps |
 | `witness.mjs`, `xprobe/` | the witness; `xprobe` is the harness's own X client (witness, retention probe, image comparison, window close) |
 | `busmon.mjs` | accessibility-bus call counts |
@@ -563,7 +1211,14 @@ variants included; their evidence is written either way. The run's `end` row kee
 | `wire-check.mjs`, `stub-replay.mjs`, `record-wire.mjs`, `fixtures/wire/` | the wire fixtures |
 | `stub-activating.mjs` | the negative check's stub engine |
 | `events.mjs`, `xprobe/src/record.rs` | M1a.2's input events experiment and its recorder window |
+| `focus-timer.mjs`, `pages/keys.html` | M4 T7's FocusOut and paste-settle experiment and its Chromium page |
+| `qt-activation.mjs` | M4 task 61's experiment: whether a background input activates a Qt window, per engine and kind |
+| `engine-stop.mjs`, `remote-serve.mjs` | M4 T7b's REPL-host stop experiment through `cua serve`, and its remote session's endpoint |
+| `action-settle.mjs`, `action-settle-cells.mjs`, `bus-client.mjs`, `pages/settle-gtk3.py`, `pages/settle-qt.py` | M4 T8's settle experiment through cua's service: its live runs, its cells and judges, the kept D-Bus connection its readings use, its GTK 3 and Qt scenes |
 | `pages/` | the Chrome scenes (`input.html` the pointer and key scene, `text.html` the text scene) and `gtk-table.py`, the large-table scene |
 | `text.mjs`, `safety.mjs`, `safety-judge.mjs`, `clip.mjs`, `xprobe/src/clip.rs`, `pages/paste-target.py` | M2's text operations, the paste safety cases and their judges, the clipboard owner and reader, the paste-target window |
 | `kinds.mjs`, `dnd.mjs`, `device.mjs`, `xprobe/src/dnd.rs`, `pages/gtk4-input.py`, `pages/qt-input.py` | M3.1's kinds and drag-and-drop experiments, Acceptance 8's device cases, the `XdndSelection` watch, the GTK 4 and Qt scenes |
 | `rejudge.mjs` | a recorded run's speed verdicts judged again under the revised rule |
+| `vcl-aim.mjs`, `writer-drag.mjs`, `vcl-probe.mjs`, `pages/point-gtk3.py` | M4 T16's LibreOffice offset as the harness reads it, the Writer drag probe, the point probes and their GTK 3 control scene |
+| `park.mjs`, `xprobe/src/pointer.rs`, `app-identity.mjs` | the verified pointer park (`xprobe pointer-chain`) and the application's identity, shared by any runner (T16's fix wave) |
+| `atspi-probe.mjs`, `atspi-cache.mjs`, `pages/atspi-gtk4.py`, `pages/atspi-qt.py` | M4 T6's AT-SPI probe on its own private display: `Cache.GetItems` over the matrix and GTK 4's `EditableText`, the answers' reading and comparison, and its GTK 4 and Qt scenes |

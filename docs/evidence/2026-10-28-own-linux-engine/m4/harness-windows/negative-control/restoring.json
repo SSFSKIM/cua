@@ -1,0 +1,41 @@
+{
+  "run": "control-restoring",
+  "front": 10485772,
+  "holder": 8388620,
+  "record": {
+    "active_start": {
+      "id": 4194316,
+      "owner": "foreign"
+    },
+    "active_end": {
+      "id": 4194316,
+      "owner": "foreign"
+    },
+    "holder": 8388620,
+    "trace": {
+      "clean": false,
+      "requests": 2528,
+      "mutating": 10,
+      "foreign": [
+        "_NET_ACTIVE_WINDOW ClientMessage on 0x0040000c"
+      ]
+    }
+  },
+  "foreign": [
+    "the harness: _NET_ACTIVE_WINDOW ClientMessage on 0x0040000c"
+  ],
+  "audit": {
+    "clean": false,
+    "traced": true,
+    "requests": 2528,
+    "mutating": 10,
+    "foreign": [
+      {
+        "conn": 104,
+        "seq": 31,
+        "what": "_NET_ACTIVE_WINDOW ClientMessage",
+        "window": 4194316
+      }
+    ]
+  }
+}

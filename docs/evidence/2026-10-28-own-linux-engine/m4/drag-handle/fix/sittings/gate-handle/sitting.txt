@@ -1,0 +1,5 @@
+cua-engine 0.3.0 (d70b9e8956ad)
+start gate-handle 2026-11-11T11:23:13Z loadavg 0.65 0.80 0.87
+run exit 0; watchdog clean
+private run gate-handle exit 0 11:34:08
+end gate-handle 2026-11-11T11:34:08Z loadavg 0.86 0.79 0.84 status 0

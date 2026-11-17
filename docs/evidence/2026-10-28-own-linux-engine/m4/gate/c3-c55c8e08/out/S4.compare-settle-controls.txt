@@ -1,0 +1,6 @@
+ok   the summaries as stored: SAME
+ok   a change to a window the experiment did not open, at the later run's cleanup: DIFFERS (the runs' own failures: earlier none; later a window the experiment did not open was changed: the harness: 0x00a00003 ConfigureWindow (raised); differing: only in the later: a window the experiment did not open was changed: the harness: 0x00a00003 ConfigureWindow (raised))
+ok   the later run's private display's watchdog failed: DIFFERS (the runs' own failures: earlier none; later the private display's watchdog: it stalled for 2.1 s; differing: only in the later: the private display's watchdog: it stalled for 2.1 s)
+ok   a cell gone from the later run: DIFFERS (cells: 37 and 36; audited: 19 and 19; verdicts differing 0, cells in one only 1, audits differing 0, cells whose misses differ 0)
+ok   an audit of the later run failed: DIFFERS (cells: 37 and 37; audited: 19 and 19; verdicts differing 0, cells in one only 0, audits differing 1, cells whose misses differ 0)
+controls: every one as expected

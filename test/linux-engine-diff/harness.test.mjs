@@ -3,7 +3,7 @@ import { test } from 'node:test';
 
 import { attributeCalls, parseMonitor } from '../../scripts/linux-engine-diff/busmon.mjs';
 import { parseArgs } from '../../scripts/linux-engine-diff/cli.mjs';
-import { compareStates, normalizeState, retainedIds } from '../../scripts/linux-engine-diff/normalize.mjs';
+import { compareStates, normalizeState, retainedIds, splitTruncationLine } from '../../scripts/linux-engine-diff/normalize.mjs';
 import { analyzeTrial } from '../../scripts/linux-engine-diff/readiness.mjs';
 import { medianDifferenceInterval } from '../../scripts/linux-engine-diff/events.mjs';
 import { blockOrder, median, judgeOperation } from '../../scripts/linux-engine-diff/stats.mjs';
@@ -177,6 +177,26 @@ test('a run-wide label pattern and the volatile Chrome memory text are replaced'
   b.ax_tree.children[0].value = "Open 'cua171-diff-r1-gedit-newest.txt' - Memory usage - 24.3 MB";
   assert.equal(compareStates(a, b, { labelA: pattern, labelB: pattern }).equal, true);
   assert.equal(normalizeState(a, { label: pattern }).ax_tree.children[0].value, "Open '<label>.txt' - Memory usage - <n>");
+});
+
+test("a state's truncated is part of the state as compared, named as the difference (M4 T3)", () => {
+  const cut = { ...state('s', ['a', 'b']), truncated: { nodes: 3, depth: 1, failed: 0 } };
+  assert.deepEqual(normalizeState(cut).truncated, { nodes: 3, depth: 1, failed: 0 });
+  assert.equal('truncated' in normalizeState(state('s', ['a', 'b'])), false, 'a state without it compares as before');
+  const diff = compareStates(state('s', ['a', 'b']), cut);
+  assert.equal(diff.equal, false);
+  assert.equal(diff.first_difference.field, 'truncated');
+  assert.equal(compareStates(cut, { ...cut }).equal, true);
+});
+
+test('a rendered state splits from its trailing truncation line, whose count is read', () => {
+  const tree = 'Accessibility source: at_spi\n0 frame Window\n\t1 push button Open';
+  const line = 'Accessibility tree truncated: at least 33 elements not shown (30 over the element limit, 2 below the depth limit, 1 unreadable)';
+  assert.deepEqual(splitTruncationLine(`${tree}\n${line}`), { state: tree, shown: 33 });
+  assert.deepEqual(splitTruncationLine(tree), { state: tree, shown: null });
+  // only a last line: the same words inside the tree (a node's name) are not the line
+  const named = `${tree}\n\t2 label ${line}\n\t3 push button Close`;
+  assert.deepEqual(splitTruncationLine(named), { state: named, shown: null });
 });
 
 test('retained native ids in preorder', () => {
@@ -378,6 +398,12 @@ test('the Interfaces command line parses, with M0 variants', async () => {
   assert.equal(short.dndShort, true);
   assert.deepEqual(dndLanes(short).map((l) => [l.label, l.activate]), [['pinned', true], ['newest', true], ['cua', true]]);
   assert.deepEqual(dndLanes(parseArgs([...dnd, '--lanes', 'pinned,cua'])).map((l) => l.activate ?? false), [false, false]);
+  // the 40 px selection (M4's T14, the hold's cost): every lane in front too, on its own path, runs apart
+  const select = parseArgs([...dnd, '--newest', '/n', '--dnd-select', '--lanes', 'pinned,newest,cua']);
+  assert.equal(select.dndSelect, true);
+  assert.deepEqual(dndLanes(select).map((l) => [l.label, l.activate]), [['pinned', true], ['newest', true], ['cua', true]]);
+  const { pagePath } = await import('../../scripts/linux-engine-diff/drag.mjs');
+  assert.deepEqual([pagePath('select-short', 0), pagePath('select-short', 1)], [[[50, 32], [90, 32]], [[314, 32], [354, 32]]]);
   // the cold drop (task 20): every drag the first request of a fresh engine, its window in front, after a full cover
   const cold = parseArgs([...dnd, '--dnd-short', '--dnd-cold', '--cover-ms', '3000', '--lanes', 'pinned,cua']);
   assert.equal(cold.dndCold, true);
@@ -393,8 +419,8 @@ test('the Interfaces command line parses, with M0 variants', async () => {
   assert.throws(() => parseArgs([...dnd, '--dnd-cold', '--prelude', 'shared']), /--prelude/);
   assert.throws(() => parseArgs([...dnd, '--prelude', 'dedicated']), /--dnd-cold/);
   // and, measurement only, another client's momentary grab that long after each drag is sent
-  assert.equal(parseArgs([...dnd, '--dnd-cold', '--grab-at-ms', '20']).grabAtMs, 20);
-  assert.throws(() => parseArgs([...dnd, '--grab-at-ms', '20']), /--dnd-cold/);
+  // the momentary foreign grab is gone (T4b's audit round): it took the person's pointer and keyboard on :0
+  assert.throws(() => parseArgs([...dnd, '--dnd-cold', '--grab-at-ms', '20']), /--grab-at-ms/);
   // and a pointer event that is not the drag's: the real pointer nudged, or a window mapped under it
   assert.deepEqual(parseArgs([...dnd, '--dnd-cold', '--stray', 'nudge:5']).stray, { kind: 'nudge', ms: 5 });
   assert.deepEqual(parseArgs([...dnd, '--dnd-cold', '--stray', 'popup:0']).stray, { kind: 'popup', ms: 0 });

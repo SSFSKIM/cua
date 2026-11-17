@@ -1,0 +1,1 @@
+[{"name": "probe-private", "kind": "driver", "script": "probe.mjs", "expect": "zero", "env": {"PROBE_MODE": "private", "PROBE_CONTROL": ""}}, {"name": "probe-appbus", "kind": "driver", "script": "probe.mjs", "expect": "zero", "env": {"PROBE_MODE": "appbus"}}]

@@ -1,0 +1,1015 @@
+{
+ "exit": 0,
+ "samples": 278,
+ "maps_samples": 94,
+ "ss_samples": 57,
+ "maps_reads": 1292,
+ "fd_reads": 3848,
+ "sample_gap_ms": {
+  "median": 109.8,
+  "max": 143.9
+ },
+ "flags": [],
+ "decoy_connections": [],
+ "leftovers": [],
+ "browsers": [],
+ "browser_run_home_nss": {},
+ "browser_nss_libraries": {},
+ "run_home_nss_dirs": {},
+ "processes": [
+  {
+   "pid": 2969513,
+   "start": 53027912,
+   "comm": "MainThread",
+   "ppid": 2969491,
+   "pgid": 2969372,
+   "first": 0.208,
+   "argv": "node /Users/new/.local/share/cua-171/task49/scripts/session.mjs /Users/new/.local/share/cua-171/task49/runs/part2 /Users/new/.local/share/cua-171/task49/runs/part2/phases.json",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/task49/runs/part2/decoy/session.sock",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/task49/runs/part2/decoy/a11y.sock"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 28.39
+  },
+  {
+   "pid": 2969524,
+   "start": 53027923,
+   "comm": "xprobe",
+   "ppid": 2969513,
+   "pgid": 2969524,
+   "first": 0.326,
+   "argv": "/Users/new/.local/share/cua-171/live-43/scripts/linux-engine-diff/xprobe/target/release/xprobe watchdog --display :1 --interval-ms 2000 --bound-ms 5000 --grace-ms 20000 --stop 2969513",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/task49/runs/part2/decoy/session.sock",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/task49/runs/part2/decoy/a11y.sock"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 28.283
+  },
+  {
+   "pid": 2969521,
+   "start": 53027916,
+   "comm": "Xvfb",
+   "ppid": 2969513,
+   "pgid": 2969372,
+   "first": 0.326,
+   "argv": "Xvfb -displayfd 3 -noreset -screen 0 1280x800x24 -nolisten tcp",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/task49/runs/part2/decoy/session.sock",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/task49/runs/part2/decoy/a11y.sock"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 28.39
+  },
+  {
+   "pid": 2969530,
+   "start": 53027926,
+   "comm": "openbox",
+   "ppid": 2969513,
+   "pgid": 2969372,
+   "first": 0.433,
+   "argv": "openbox",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/task49/runs/part2/decoy/session.sock",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/task49/runs/part2/decoy/a11y.sock",
+    "DISPLAY": ":1"
+   },
+   "paths": [
+    "/Users/new/.cache/openbox/openbox.log"
+   ],
+   "browser": null,
+   "last": 27.844
+  },
+  {
+   "pid": 2969535,
+   "start": 53027936,
+   "comm": "xterm",
+   "ppid": 2969513,
+   "pgid": 2969372,
+   "first": 0.54,
+   "argv": "xterm -T person -e sleep 100000",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/task49/runs/part2/decoy/session.sock",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/task49/runs/part2/decoy/a11y.sock",
+    "DISPLAY": ":1"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 27.844
+  },
+  {
+   "pid": 2969537,
+   "start": 53027942,
+   "comm": "sleep",
+   "ppid": 2969535,
+   "pgid": 2969537,
+   "first": 0.541,
+   "argv": "sleep 100000",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/task49/runs/part2/decoy/session.sock",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/task49/runs/part2/decoy/a11y.sock",
+    "DISPLAY": ":1"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 27.844
+  },
+  {
+   "pid": 2969543,
+   "start": 53027963,
+   "comm": "MainThread",
+   "ppid": 2969513,
+   "pgid": 2969372,
+   "first": 0.756,
+   "argv": "/usr/bin/node /Users/new/.local/share/cua-171/live-43/scripts/linux-engine-diff.mjs --dev --vendor /Users/new/.local/share/cua/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64 --newest /Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64 --cua /Users/new/.local/share/cua-171/task42/engine/cua-engine --scene gedit --ops tree --blocks 1 --samples-tree 1 --run t49-sigterm --out /Users/new/.local/share/cua-171/task49/runs/part2/sigterm-begin",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/task49/runs/part2/decoy/session.sock",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/task49/runs/part2/decoy/a11y.sock",
+    "DISPLAY": ":1"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 1.861
+  },
+  {
+   "pid": 2969565,
+   "start": 53027977,
+   "comm": "xprobe",
+   "ppid": 2969543,
+   "pgid": 2969565,
+   "first": 0.874,
+   "argv": "/Users/new/.local/share/cua-171/live-43/scripts/linux-engine-diff/xprobe/target/release/xprobe watchdog --display :1 --interval-ms 2000 --bound-ms 5000 --grace-ms 20000 --stop 2969543",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/task49/runs/part2/decoy/session.sock",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/task49/runs/part2/decoy/a11y.sock",
+    "DISPLAY": ":1"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 0.874
+  },
+  {
+   "pid": 2969628,
+   "start": 53028389,
+   "comm": "MainThread",
+   "ppid": 2969513,
+   "pgid": 2969372,
+   "first": 5.061,
+   "argv": "/usr/bin/node /Users/new/.local/share/cua-171/live-43/scripts/linux-engine-diff.mjs --dev --vendor /Users/new/.local/share/cua/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64 --newest /Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64 --cua /Users/new/.local/share/cua-171/task42/engine/cua-engine --scene gedit,paste-target,gnome-text-editor --ops all --blocks 3 --run t49-recordjudge --out /Users/new/.local/share/cua-171/task49/runs/part2/record-judge",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/task49/runs/part2/decoy/session.sock",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/task49/runs/part2/decoy/a11y.sock",
+    "DISPLAY": ":1"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 24.417
+  },
+  {
+   "pid": 2969636,
+   "start": 53028397,
+   "comm": "git",
+   "ppid": 2969628,
+   "pgid": 2969372,
+   "first": 5.061,
+   "argv": "git -C /Users/new/.local/share/cua-171/live-43/ status --porcelain",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/task49/runs/part2/decoy/session.sock",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/task49/runs/part2/decoy/a11y.sock",
+    "DISPLAY": ":1"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 5.061
+  },
+  {
+   "pid": 2969661,
+   "start": 53028406,
+   "comm": "at-spi-bus-laun",
+   "ppid": 2969491,
+   "pgid": 2969657,
+   "first": 5.169,
+   "argv": "/usr/libexec/at-spi-bus-launcher",
+   "env": {
+    "XDG_CACHE_HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home/.cache",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/session/bus/dbus-VPuMbeDc6L,guid=09a1f3188b227a6a8248ecdb6ae9a91b",
+    "XAUTHORITY": "/Users/new/.Xauthority",
+    "XDG_STATE_HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home/.local/state",
+    "XDG_CONFIG_HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home/.config",
+    "GSETTINGS_BACKEND": "memory",
+    "HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home",
+    "DISPLAY": ":1",
+    "XDG_DATA_HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home/.local/share"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 24.417
+  },
+  {
+   "pid": 2969666,
+   "start": 53028407,
+   "comm": "dbus-daemon",
+   "ppid": 2969661,
+   "pgid": 2969657,
+   "first": 5.17,
+   "argv": "/usr/bin/dbus-daemon --config-file=/usr/share/defaults/at-spi2/accessibility.conf --nofork --print-address 10 --address=unix:path=/run/user/501/at-spi/bus_1",
+   "env": {
+    "XDG_CACHE_HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home/.cache",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/session/bus/dbus-VPuMbeDc6L,guid=09a1f3188b227a6a8248ecdb6ae9a91b",
+    "XAUTHORITY": "/Users/new/.Xauthority",
+    "XDG_STATE_HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home/.local/state",
+    "XDG_CONFIG_HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home/.config",
+    "GSETTINGS_BACKEND": "memory",
+    "HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home",
+    "DISPLAY": ":1",
+    "XDG_DATA_HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home/.local/share"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 24.417
+  },
+  {
+   "pid": 2969657,
+   "start": 53028405,
+   "comm": "dbus-daemon",
+   "ppid": 2969628,
+   "pgid": 2969657,
+   "first": 5.171,
+   "argv": "dbus-daemon --config-file=/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/session/session.conf --nofork --nopidfile --print-address=3",
+   "env": {
+    "HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DISPLAY": ":1",
+    "XDG_CONFIG_HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home/.config",
+    "XDG_DATA_HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home/.local/share",
+    "XDG_CACHE_HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home/.cache",
+    "XDG_STATE_HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home/.local/state",
+    "XAUTHORITY": "/Users/new/.Xauthority",
+    "GSETTINGS_BACKEND": "memory"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 24.306
+  },
+  {
+   "pid": 2969650,
+   "start": 53028401,
+   "comm": "xprobe",
+   "ppid": 2969628,
+   "pgid": 2969650,
+   "first": 5.172,
+   "argv": "/Users/new/.local/share/cua-171/live-43/scripts/linux-engine-diff/xprobe/target/release/xprobe watchdog --display :1 --interval-ms 2000 --bound-ms 5000 --grace-ms 20000 --stop 2969628",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/task49/runs/part2/decoy/session.sock",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/task49/runs/part2/decoy/a11y.sock",
+    "DISPLAY": ":1"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 24.418
+  },
+  {
+   "pid": 2969678,
+   "start": 53028414,
+   "comm": "cua-engine",
+   "ppid": 2969628,
+   "pgid": 2969372,
+   "first": 5.294,
+   "argv": "/tmp/cua171-task49-oWm0UZ/cua171-candidate-9V0Xi0/cua-engine server",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/session/bus/dbus-VPuMbeDc6L,guid=09a1f3188b227a6a8248ecdb6ae9a91b",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/run/user/501/at-spi/bus_1,guid=10412151a39b1b0738e93b446ae9a91b",
+    "DISPLAY": ":1"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 23.389
+  },
+  {
+   "pid": 2969677,
+   "start": 53028414,
+   "comm": "xterm",
+   "ppid": 2969628,
+   "pgid": 2969677,
+   "first": 5.294,
+   "argv": "xterm -T cua171-diff-t49-recordjudge-61dfadc3-holder -e sleep 86400",
+   "env": {
+    "HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DISPLAY": ":1",
+    "XDG_CONFIG_HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home/.config",
+    "XDG_DATA_HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home/.local/share",
+    "XDG_CACHE_HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home/.cache",
+    "XDG_STATE_HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home/.local/state",
+    "XAUTHORITY": "/Users/new/.Xauthority",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/session/bus/dbus-VPuMbeDc6L,guid=09a1f3188b227a6a8248ecdb6ae9a91b"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 23.389
+  },
+  {
+   "pid": 2969679,
+   "start": 53028418,
+   "comm": "sleep",
+   "ppid": 2969677,
+   "pgid": 2969679,
+   "first": 5.294,
+   "argv": "sleep 86400",
+   "env": {
+    "HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DISPLAY": ":1",
+    "XDG_CONFIG_HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home/.config",
+    "XDG_DATA_HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home/.local/share",
+    "XDG_CACHE_HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home/.cache",
+    "XDG_STATE_HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home/.local/state",
+    "XAUTHORITY": "/Users/new/.Xauthority",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/session/bus/dbus-VPuMbeDc6L,guid=09a1f3188b227a6a8248ecdb6ae9a91b"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 23.389
+  },
+  {
+   "pid": 2969676,
+   "start": 53028411,
+   "comm": "xtrace",
+   "ppid": 2969628,
+   "pgid": 2969372,
+   "first": 5.294,
+   "argv": "xtrace -k -m 256 -d :1 -D :40 -n -o /tmp/cua171-task49-oWm0UZ/cua171-audit-pl2REY/x11.log",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/session/bus/dbus-VPuMbeDc6L,guid=09a1f3188b227a6a8248ecdb6ae9a91b",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/run/user/501/at-spi/bus_1,guid=10412151a39b1b0738e93b446ae9a91b",
+    "DISPLAY": ":1"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 24.306
+  },
+  {
+   "pid": 2969671,
+   "start": 53028409,
+   "comm": "xprobe",
+   "ppid": 2969628,
+   "pgid": 2969372,
+   "first": 5.294,
+   "argv": "/Users/new/.local/share/cua-171/live-43/scripts/linux-engine-diff/xprobe/target/release/xprobe record-run --ours 2969628",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/session/bus/dbus-VPuMbeDc6L,guid=09a1f3188b227a6a8248ecdb6ae9a91b",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/run/user/501/at-spi/bus_1,guid=10412151a39b1b0738e93b446ae9a91b",
+    "DISPLAY": ":1"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 24.418
+  },
+  {
+   "pid": 2969683,
+   "start": 53028442,
+   "comm": "sleep",
+   "ppid": 2969628,
+   "pgid": 2969372,
+   "first": 5.511,
+   "argv": "sleep 0.05",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/session/bus/dbus-VPuMbeDc6L,guid=09a1f3188b227a6a8248ecdb6ae9a91b",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/run/user/501/at-spi/bus_1,guid=10412151a39b1b0738e93b446ae9a91b",
+    "DISPLAY": ":1"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 5.511
+  },
+  {
+   "pid": 2969697,
+   "start": 53028460,
+   "comm": "sleep",
+   "ppid": 2969628,
+   "pgid": 2969372,
+   "first": 5.729,
+   "argv": "sleep 0.05",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/session/bus/dbus-VPuMbeDc6L,guid=09a1f3188b227a6a8248ecdb6ae9a91b",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/run/user/501/at-spi/bus_1,guid=10412151a39b1b0738e93b446ae9a91b",
+    "DISPLAY": ":1"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 5.729
+  },
+  {
+   "pid": 2969718,
+   "start": 53028472,
+   "comm": "sleep",
+   "ppid": 2969628,
+   "pgid": 2969372,
+   "first": 5.849,
+   "argv": "sleep 0.05",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/session/bus/dbus-VPuMbeDc6L,guid=09a1f3188b227a6a8248ecdb6ae9a91b",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/run/user/501/at-spi/bus_1,guid=10412151a39b1b0738e93b446ae9a91b",
+    "DISPLAY": ":1"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 5.849
+  },
+  {
+   "pid": 2969725,
+   "start": 53028484,
+   "comm": "sleep",
+   "ppid": 2969628,
+   "pgid": 2969372,
+   "first": 5.96,
+   "argv": "sleep 0.05",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/session/bus/dbus-VPuMbeDc6L,guid=09a1f3188b227a6a8248ecdb6ae9a91b",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/run/user/501/at-spi/bus_1,guid=10412151a39b1b0738e93b446ae9a91b",
+    "DISPLAY": ":1"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 5.96
+  },
+  {
+   "pid": 2969729,
+   "start": 53028495,
+   "comm": "sleep",
+   "ppid": 2969628,
+   "pgid": 2969372,
+   "first": 6.068,
+   "argv": "sleep 0.05",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/session/bus/dbus-VPuMbeDc6L,guid=09a1f3188b227a6a8248ecdb6ae9a91b",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/run/user/501/at-spi/bus_1,guid=10412151a39b1b0738e93b446ae9a91b",
+    "DISPLAY": ":1"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 6.068
+  },
+  {
+   "pid": 2969741,
+   "start": 53028507,
+   "comm": "sleep",
+   "ppid": 2969628,
+   "pgid": 2969372,
+   "first": 6.177,
+   "argv": "sleep 0.05",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/session/bus/dbus-VPuMbeDc6L,guid=09a1f3188b227a6a8248ecdb6ae9a91b",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/run/user/501/at-spi/bus_1,guid=10412151a39b1b0738e93b446ae9a91b",
+    "DISPLAY": ":1"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 6.177
+  },
+  {
+   "pid": 2969745,
+   "start": 53028519,
+   "comm": "sleep",
+   "ppid": 2969628,
+   "pgid": 2969372,
+   "first": 6.29,
+   "argv": "sleep 0.05",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/session/bus/dbus-VPuMbeDc6L,guid=09a1f3188b227a6a8248ecdb6ae9a91b",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/run/user/501/at-spi/bus_1,guid=10412151a39b1b0738e93b446ae9a91b",
+    "DISPLAY": ":1"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 6.29
+  },
+  {
+   "pid": 2969750,
+   "start": 53028531,
+   "comm": "sleep",
+   "ppid": 2969628,
+   "pgid": 2969372,
+   "first": 6.41,
+   "argv": "sleep 0.05",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/session/bus/dbus-VPuMbeDc6L,guid=09a1f3188b227a6a8248ecdb6ae9a91b",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/run/user/501/at-spi/bus_1,guid=10412151a39b1b0738e93b446ae9a91b",
+    "DISPLAY": ":1"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 6.41
+  },
+  {
+   "pid": 2969754,
+   "start": 53028543,
+   "comm": "sleep",
+   "ppid": 2969628,
+   "pgid": 2969372,
+   "first": 6.519,
+   "argv": "sleep 0.05",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/session/bus/dbus-VPuMbeDc6L,guid=09a1f3188b227a6a8248ecdb6ae9a91b",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/run/user/501/at-spi/bus_1,guid=10412151a39b1b0738e93b446ae9a91b",
+    "DISPLAY": ":1"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 6.519
+  },
+  {
+   "pid": 2969765,
+   "start": 53028572,
+   "comm": "sleep",
+   "ppid": 2969628,
+   "pgid": 2969372,
+   "first": 6.85,
+   "argv": "sleep 0.05",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/session/bus/dbus-VPuMbeDc6L,guid=09a1f3188b227a6a8248ecdb6ae9a91b",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/run/user/501/at-spi/bus_1,guid=10412151a39b1b0738e93b446ae9a91b",
+    "DISPLAY": ":1"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 6.85
+  },
+  {
+   "pid": 2969774,
+   "start": 53028596,
+   "comm": "sleep",
+   "ppid": 2969628,
+   "pgid": 2969372,
+   "first": 7.082,
+   "argv": "sleep 0.05",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/session/bus/dbus-VPuMbeDc6L,guid=09a1f3188b227a6a8248ecdb6ae9a91b",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/run/user/501/at-spi/bus_1,guid=10412151a39b1b0738e93b446ae9a91b",
+    "DISPLAY": ":1"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 7.082
+  },
+  {
+   "pid": 2969779,
+   "start": 53028607,
+   "comm": "sleep",
+   "ppid": 2969628,
+   "pgid": 2969372,
+   "first": 7.191,
+   "argv": "sleep 0.05",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/session/bus/dbus-VPuMbeDc6L,guid=09a1f3188b227a6a8248ecdb6ae9a91b",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/run/user/501/at-spi/bus_1,guid=10412151a39b1b0738e93b446ae9a91b",
+    "DISPLAY": ":1"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 7.191
+  },
+  {
+   "pid": 2969783,
+   "start": 53028619,
+   "comm": "sleep",
+   "ppid": 2969628,
+   "pgid": 2969372,
+   "first": 7.302,
+   "argv": "sleep 0.05",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/session/bus/dbus-VPuMbeDc6L,guid=09a1f3188b227a6a8248ecdb6ae9a91b",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/run/user/501/at-spi/bus_1,guid=10412151a39b1b0738e93b446ae9a91b",
+    "DISPLAY": ":1"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 7.302
+  },
+  {
+   "pid": 2969787,
+   "start": 53028631,
+   "comm": "sleep",
+   "ppid": 2969628,
+   "pgid": 2969372,
+   "first": 7.411,
+   "argv": "sleep 0.05",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/session/bus/dbus-VPuMbeDc6L,guid=09a1f3188b227a6a8248ecdb6ae9a91b",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/run/user/501/at-spi/bus_1,guid=10412151a39b1b0738e93b446ae9a91b",
+    "DISPLAY": ":1"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 7.411
+  },
+  {
+   "pid": 2969799,
+   "start": 53028642,
+   "comm": "sleep",
+   "ppid": 2969628,
+   "pgid": 2969372,
+   "first": 7.53,
+   "argv": "sleep 0.05",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/session/bus/dbus-VPuMbeDc6L,guid=09a1f3188b227a6a8248ecdb6ae9a91b",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/run/user/501/at-spi/bus_1,guid=10412151a39b1b0738e93b446ae9a91b",
+    "DISPLAY": ":1"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 7.53
+  },
+  {
+   "pid": 2969805,
+   "start": 53028654,
+   "comm": "sleep",
+   "ppid": 2969628,
+   "pgid": 2969372,
+   "first": 7.64,
+   "argv": "sleep 0.05",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/session/bus/dbus-VPuMbeDc6L,guid=09a1f3188b227a6a8248ecdb6ae9a91b",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/run/user/501/at-spi/bus_1,guid=10412151a39b1b0738e93b446ae9a91b",
+    "DISPLAY": ":1"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 7.641
+  },
+  {
+   "pid": 2969809,
+   "start": 53028666,
+   "comm": "sleep",
+   "ppid": 2969628,
+   "pgid": 2969372,
+   "first": 7.748,
+   "argv": "sleep 0.05",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/session/bus/dbus-VPuMbeDc6L,guid=09a1f3188b227a6a8248ecdb6ae9a91b",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/run/user/501/at-spi/bus_1,guid=10412151a39b1b0738e93b446ae9a91b",
+    "DISPLAY": ":1"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 7.748
+  },
+  {
+   "pid": 2969828,
+   "start": 53028707,
+   "comm": "sleep",
+   "ppid": 2969628,
+   "pgid": 2969372,
+   "first": 8.201,
+   "argv": "sleep 0.05",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/session/bus/dbus-VPuMbeDc6L,guid=09a1f3188b227a6a8248ecdb6ae9a91b",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/run/user/501/at-spi/bus_1,guid=10412151a39b1b0738e93b446ae9a91b",
+    "DISPLAY": ":1"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 8.201
+  },
+  {
+   "pid": 2969832,
+   "start": 53028719,
+   "comm": "sleep",
+   "ppid": 2969628,
+   "pgid": 2969372,
+   "first": 8.312,
+   "argv": "sleep 0.05",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/session/bus/dbus-VPuMbeDc6L,guid=09a1f3188b227a6a8248ecdb6ae9a91b",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/run/user/501/at-spi/bus_1,guid=10412151a39b1b0738e93b446ae9a91b",
+    "DISPLAY": ":1"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 8.312
+  },
+  {
+   "pid": 2969836,
+   "start": 53028730,
+   "comm": "sleep",
+   "ppid": 2969628,
+   "pgid": 2969372,
+   "first": 8.419,
+   "argv": "sleep 0.05",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/session/bus/dbus-VPuMbeDc6L,guid=09a1f3188b227a6a8248ecdb6ae9a91b",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/run/user/501/at-spi/bus_1,guid=10412151a39b1b0738e93b446ae9a91b",
+    "DISPLAY": ":1"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 8.419
+  },
+  {
+   "pid": 2969840,
+   "start": 53028742,
+   "comm": "sleep",
+   "ppid": 2969628,
+   "pgid": 2969372,
+   "first": 8.529,
+   "argv": "sleep 0.05",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/session/bus/dbus-VPuMbeDc6L,guid=09a1f3188b227a6a8248ecdb6ae9a91b",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/run/user/501/at-spi/bus_1,guid=10412151a39b1b0738e93b446ae9a91b",
+    "DISPLAY": ":1"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 8.529
+  },
+  {
+   "pid": 2969844,
+   "start": 53028751,
+   "comm": "gedit",
+   "ppid": 2969628,
+   "pgid": 2969844,
+   "first": 8.647,
+   "argv": "gedit --standalone /tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/cua171-diff-t49-recordjudge-61dfadc3-gedit-read.txt",
+   "env": {
+    "HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DISPLAY": ":1",
+    "XDG_CONFIG_HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home/.config",
+    "XDG_DATA_HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home/.local/share",
+    "XDG_CACHE_HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home/.cache",
+    "XDG_STATE_HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home/.local/state",
+    "XAUTHORITY": "/Users/new/.Xauthority",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/session/bus/dbus-VPuMbeDc6L,guid=09a1f3188b227a6a8248ecdb6ae9a91b"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 22.368
+  },
+  {
+   "pid": 2969876,
+   "start": 53028771,
+   "comm": "at-spi2-registr",
+   "ppid": 2969491,
+   "pgid": 2969657,
+   "first": 8.866,
+   "argv": "/usr/libexec/at-spi2-registryd --use-gnome-session",
+   "env": {
+    "XDG_CACHE_HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home/.cache",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/session/bus/dbus-VPuMbeDc6L,guid=09a1f3188b227a6a8248ecdb6ae9a91b",
+    "XAUTHORITY": "/Users/new/.Xauthority",
+    "XDG_STATE_HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home/.local/state",
+    "XDG_CONFIG_HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home/.config",
+    "GSETTINGS_BACKEND": "memory",
+    "HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home",
+    "DISPLAY": ":1",
+    "XDG_DATA_HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home/.local/share"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 24.417
+  },
+  {
+   "pid": 2969970,
+   "start": 53028914,
+   "comm": "gedit",
+   "ppid": 2969628,
+   "pgid": 2969970,
+   "first": 10.333,
+   "argv": "gedit --standalone /tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/cua171-diff-t49-recordjudge-61dfadc3-gedit-pinned.txt",
+   "env": {
+    "HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DISPLAY": ":1",
+    "XDG_CONFIG_HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home/.config",
+    "XDG_DATA_HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home/.local/share",
+    "XDG_CACHE_HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home/.cache",
+    "XDG_STATE_HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home/.local/state",
+    "XAUTHORITY": "/Users/new/.Xauthority",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/session/bus/dbus-VPuMbeDc6L,guid=09a1f3188b227a6a8248ecdb6ae9a91b"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 22.367
+  },
+  {
+   "pid": 2969993,
+   "start": 53029074,
+   "comm": "gedit",
+   "ppid": 2969628,
+   "pgid": 2969993,
+   "first": 11.915,
+   "argv": "gedit --standalone /tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/cua171-diff-t49-recordjudge-61dfadc3-gedit-newest.txt",
+   "env": {
+    "HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DISPLAY": ":1",
+    "XDG_CONFIG_HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home/.config",
+    "XDG_DATA_HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home/.local/share",
+    "XDG_CACHE_HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home/.cache",
+    "XDG_STATE_HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home/.local/state",
+    "XAUTHORITY": "/Users/new/.Xauthority",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/session/bus/dbus-VPuMbeDc6L,guid=09a1f3188b227a6a8248ecdb6ae9a91b"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 22.367
+  },
+  {
+   "pid": 2970019,
+   "start": 53029235,
+   "comm": "gedit",
+   "ppid": 2969628,
+   "pgid": 2970019,
+   "first": 13.505,
+   "argv": "gedit --standalone /tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/cua171-diff-t49-recordjudge-61dfadc3-gedit-cua.txt",
+   "env": {
+    "HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DISPLAY": ":1",
+    "XDG_CONFIG_HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home/.config",
+    "XDG_DATA_HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home/.local/share",
+    "XDG_CACHE_HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home/.cache",
+    "XDG_STATE_HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home/.local/state",
+    "XAUTHORITY": "/Users/new/.Xauthority",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/session/bus/dbus-VPuMbeDc6L,guid=09a1f3188b227a6a8248ecdb6ae9a91b"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 22.366
+  },
+  {
+   "pid": 2970060,
+   "start": 53029405,
+   "comm": "gedit",
+   "ppid": 2969628,
+   "pgid": 2970060,
+   "first": 15.141,
+   "argv": "gedit --standalone /tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/cua171-diff-t49-recordjudge-61dfadc3-gedit-text_pinned.txt",
+   "env": {
+    "HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DISPLAY": ":1",
+    "XDG_CONFIG_HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home/.config",
+    "XDG_DATA_HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home/.local/share",
+    "XDG_CACHE_HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home/.cache",
+    "XDG_STATE_HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home/.local/state",
+    "XAUTHORITY": "/Users/new/.Xauthority",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/session/bus/dbus-VPuMbeDc6L,guid=09a1f3188b227a6a8248ecdb6ae9a91b"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 22.365
+  },
+  {
+   "pid": 2970159,
+   "start": 53029593,
+   "comm": "gedit",
+   "ppid": 2969628,
+   "pgid": 2970159,
+   "first": 17.118,
+   "argv": "gedit --standalone /tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/cua171-diff-t49-recordjudge-61dfadc3-gedit-text_newest.txt",
+   "env": {
+    "HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DISPLAY": ":1",
+    "XDG_CONFIG_HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home/.config",
+    "XDG_DATA_HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home/.local/share",
+    "XDG_CACHE_HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home/.cache",
+    "XDG_STATE_HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home/.local/state",
+    "XAUTHORITY": "/Users/new/.Xauthority",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/session/bus/dbus-VPuMbeDc6L,guid=09a1f3188b227a6a8248ecdb6ae9a91b"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 22.364
+  },
+  {
+   "pid": 2970191,
+   "start": 53029766,
+   "comm": "gedit",
+   "ppid": 2969628,
+   "pgid": 2970191,
+   "first": 18.761,
+   "argv": "gedit --standalone /tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/cua171-diff-t49-recordjudge-61dfadc3-gedit-text_cua.txt",
+   "env": {
+    "HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DISPLAY": ":1",
+    "XDG_CONFIG_HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home/.config",
+    "XDG_DATA_HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home/.local/share",
+    "XDG_CACHE_HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home/.cache",
+    "XDG_STATE_HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home/.local/state",
+    "XAUTHORITY": "/Users/new/.Xauthority",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/session/bus/dbus-VPuMbeDc6L,guid=09a1f3188b227a6a8248ecdb6ae9a91b"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 22.363
+  },
+  {
+   "pid": 2970285,
+   "start": 53029941,
+   "comm": "gnome-text-edit",
+   "ppid": 2969628,
+   "pgid": 2970285,
+   "first": 20.51,
+   "argv": "gnome-text-editor --standalone /tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/cua171-diff-t49-recordjudge-61dfadc3-gnometexteditor-cua/cua171-diff-t49-recordjudge-61dfadc3-gnometexteditor-cua.txt",
+   "env": {
+    "HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DISPLAY": ":1",
+    "XDG_CONFIG_HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home/.config",
+    "XDG_DATA_HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/cua171-diff-t49-recordjudge-61dfadc3-gnometexteditor-cua/data",
+    "XDG_CACHE_HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/home/.cache",
+    "XDG_STATE_HOME": "/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/cua171-diff-t49-recordjudge-61dfadc3-gnometexteditor-cua/state",
+    "XAUTHORITY": "/Users/new/.Xauthority",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/cua171-task49-oWm0UZ/cua171-diff-t49-recordjudge-z3bGcy/session/bus/dbus-VPuMbeDc6L,guid=09a1f3188b227a6a8248ecdb6ae9a91b"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 22.362
+  }
+ ],
+ "home_paths_by_comm": {
+  "openbox": [
+   "/Users/new/.cache/openbox/openbox.log"
+  ]
+ }
+}

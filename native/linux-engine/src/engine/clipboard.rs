@@ -6,7 +6,7 @@ use anyhow::{Result, anyhow, bail};
 use serde_json::{Value, json};
 
 use super::Engine;
-use crate::atspi::{self, Association};
+use crate::atspi;
 use crate::clipboard::{COPY_WAIT, Clipboard};
 use crate::copy;
 use crate::input::chord_keycodes;
@@ -31,42 +31,53 @@ impl Engine {
         // The application's Copy changes what CLIPBOARD serves, and the application serves it, so no refusal of the
         // engine's could reach a late conversion of an unconfirmed paste: while one's window runs, no Copy is made.
         if let Some(wait) = clipboard.quarantine()? {
-            bail!(crate::paste::previous_unconfirmed(wait));
+            bail!(crate::paste::previous_unconfirmed(wait, false));
         }
         let before = clipboard.generation()?;
         let copied = self.with_bus(|bus, x| {
-            let frame = match atspi::associate(bus, x, &info)? {
-                Association::Frame(frame) => frame,
-                Association::NoMatch => {
-                    return Ok(Err("window has no AT-SPI accessibility tree".to_string().into()));
-                }
-                Association::Refused(sentence) => return Ok(Err(sentence.into())),
+            let associated = match atspi::associated(bus, x, &info)? {
+                Ok(associated) => associated,
+                Err(refused) => return Ok(Err(refused.into())),
             };
-            let Some(focused) = copy::focused(bus, &frame)? else {
+            let Some(focused) = copy::focused(bus, &associated.frame)? else {
                 return Ok(Err(
                     format!("window {} has no focused element to Copy from", info.id).into()
                 ));
             };
-            copy::copy(bus, &focused)
+            // the walk read the frame association chose: the Copy confirms it again just before `CopyText`, and on
+            // cua's own routes refuses a context menu, which cannot be bound to the window
+            copy::copy(
+                bus,
+                &focused,
+                copy::Guard {
+                    window: info.id,
+                    confirm: &mut |bus| associated.confirm(bus, x),
+                    menu_refused: associated.context_menu_refusal(),
+                },
+            )
         });
-        if let Err(refused) = copied? {
-            if refused.menu_open {
-                // The menu the Copy opened is closed, so the request leaves none behind: Escape through the
-                // background route; the refusal stays the answer whatever the key's outcome.
-                let Engine { x, inputs, .. } = self;
-                let _ = inputs.with_route(x, Target::Window(info.id), |x, route, _| {
-                    let held = route.acquire(x, &chord_keycodes(x, "Escape")?)?;
-                    route.release(x, &held)
-                });
+        let route = match copied? {
+            Ok(route) => route,
+            Err(refused) => {
+                if refused.menu_open {
+                    // The menu the Copy opened is closed, so the request leaves none behind: Escape through the
+                    // background route. The refusal stays the answer, saying whether the Escape was sent.
+                    let Engine { x, inputs, .. } = self;
+                    let escape = inputs.with_route(x, Target::Window(info.id), |x, route, _| {
+                        let held = route.acquire(x, &chord_keycodes(x, "Escape")?)?;
+                        route.release(x, &held)
+                    });
+                    bail!(copy::after_escape(&refused.sentence, escape.as_ref().map(|_| ())));
+                }
+                bail!(refused.sentence);
             }
-            bail!(refused.sentence);
-        }
+        };
         let clipboard = self
             .clipboard
             .as_mut()
             .ok_or_else(|| anyhow!("clipboard connection is gone"))?;
         if !clipboard.wait_for_change(before, COPY_WAIT)? {
-            bail!("clipboard update timed out");
+            bail!(copy::timed_out(route));
         }
         if clipboard.owner_window()? == x11rb::NONE {
             bail!("Copy cleared the clipboard");

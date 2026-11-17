@@ -1,0 +1,4 @@
+{"t":"2026-11-12T09:52:14.128Z","kind":"server","display":":1","pid":1782631}
+{"t":"2026-11-12T09:52:14.496Z","kind":"setup","openbox":1782642,"person":"8388620"}
+{"t":"2026-11-12T10:32:28.855Z","kind":"run-end","code":143,"signal":null}
+{"t":"2026-11-12T10:32:29.862Z","kind":"server-stopped","clean":false,"reason":"the display stopped answering (Broken pipe (os error 32))"}

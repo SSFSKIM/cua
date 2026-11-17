@@ -5,7 +5,7 @@
 //! (`SendEvent`, the background route) or real (XTEST, the desktop and foreground routes), so "nothing was sent" and
 //! "the foreground route" are read from the window itself, on a display with no window manager (the CI gate's Xvfb).
 //!
-//!   xvfb-run -a dbus-run-session -- cargo test --features live -- --test-threads 1
+//!   xvfb-run -a dbus-run-session --dbus-daemon="$PWD/tests/dbus-daemon-quiet" -- cargo test --features live -- --test-threads 1
 
 #![cfg(feature = "live")]
 
@@ -96,6 +96,12 @@ impl Probe {
     /// The input events received since the last call, waiting `SETTLE` for any still on their way.
     fn inputs(&self) -> Vec<Input> {
         sleep(SETTLE);
+        // A round trip on the window's own connection, so every event the server queued to it before is read. A
+        // background drag sends the window some 1,800 synthetic events, one socket write each, and the socket holds
+        // 278 of them: the rest wait in the server until the window reads, and a drain alone stopped short of the
+        // release whenever it found the socket empty before the server refilled it (task 75, evidence
+        // `m4/drag-control-race/`).
+        self.conn.sync().unwrap();
         let mut seen = Vec::new();
         while let Some(event) = self.conn.poll_for_event().unwrap() {
             let sent = event.sent_event();
@@ -165,6 +171,55 @@ fn app_of(engine: &mut Engine, window: Window) -> String {
         .and_then(|w| w["app"].as_str())
         .map(str::to_string)
         .expect("the probe window is listed")
+}
+
+/// What a late drag and drop leaves pending (`dnd::pending_notice`), as every reply carries it, and as the first acting
+/// request, `command`, is refused with it (`dnd::pending_refusal`).
+fn late_cause(app: &str) -> String {
+    format!(
+        "Pending from your last drag, a late drag and drop: {app} started a drag and drop after your drag into it ended, \
+         so the drag did not end as it answered; it may have dropped and changed the desktop"
+    )
+}
+fn late_notice(app: &str) -> String {
+    format!(
+        "{}. Read the window before sending input again: your next input request will not be run",
+        late_cause(app)
+    )
+}
+fn late_refusal(app: &str, command: &str) -> String {
+    format!(
+        "{}; this {command} request was not run, so read the window before sending it again",
+        late_cause(app)
+    )
+}
+/// The same for a drop its target did not confirm.
+fn unconfirmed_cause(app: &str) -> String {
+    format!(
+        "Pending from your last drag, an unconfirmed drop: your drag into {app} began a drag and drop, and {app} did not \
+         confirm a drop after the release, so the drop may not have landed as the drag answered"
+    )
+}
+fn unconfirmed_notice(app: &str) -> String {
+    format!(
+        "{}. Read the window before sending input again: your next input request will not be run",
+        unconfirmed_cause(app)
+    )
+}
+fn unconfirmed_refusal(app: &str, command: &str) -> String {
+    format!(
+        "{}; this {command} request was not run, so read the window before sending it again",
+        unconfirmed_cause(app)
+    )
+}
+/// Whether `sentence` is the refusal of `command` after the watch of a drag into `app` failed (its cause in between).
+fn is_watch_failed_refusal(sentence: &str, app: &str, command: &str) -> bool {
+    sentence.starts_with(&format!(
+        "Pending from your last drag, a failed watch: the drag-and-drop watch after your drag into {app} failed ("
+    )) && sentence.ends_with(&format!(
+        "), so a drop may have happened unseen and changed the desktop; this {command} request was not run, so read the \
+         window before sending it again"
+    ))
 }
 
 fn sent(inputs: &[Input]) -> bool {
@@ -280,62 +335,83 @@ fn keys_to_a_family_that_ignores_them_are_refused_when_shared_and_sent_to_the_ac
     assert_eq!(xterm.inputs(), vec![]);
 }
 
-/// Gecko (class `firefox`) ignores synthetic coordinate clicks unless its window is fully unobscured: fully visible,
-/// the click takes the background route in shared mode; with another window over part of it, the click and an
-/// element's right click are refused in shared mode with nothing sent, and in dedicated mode the window is activated,
-/// raised and clicked through XTEST at the same window-relative point. Its keys are not listed.
+/// Gecko (class `firefox`) takes background pointer input only while the real pointer is in its window (T19, evidence
+/// `m4/pointer-route/`): the deepest window the server finds under the pointer is the window or below it. With the
+/// pointer in its visible part, a click, a scroll, a move and a drag take the background route in shared mode, a window
+/// over part of it or not; with the pointer under that window or outside, they are refused in shared mode with nothing
+/// sent, its keys still go, and in dedicated mode the window is activated, raised and clicked through XTEST. With
+/// `--ignore-pointer` (measurement only) the pointer is not judged.
 #[test]
-fn clicks_to_a_window_that_ignores_them_while_covered_are_refused_when_shared_and_sent_through_the_desktop_when_dedicated()
- {
+fn gecko_pointer_input_takes_the_background_route_only_while_the_real_pointer_is_in_its_window() {
     let firefox = Probe::open("firefox", (0, 0, 320, 200));
+    pointer_to(100, 60);
     let mut shared = Engine::start();
     let refusal = format!("{}{SENTENCE}", app_of(&mut shared, firefox.id));
-    shared
-        .request("click", json!({"window": firefox.target(), "x": 40, "y": 40}))
-        .unwrap();
-    let clicked = firefox.inputs();
-    assert_eq!(clicked.len(), 2, "{clicked:?}");
-    assert!(sent(&clicked), "fully unobscured: the background route: {clicked:?}");
-
+    let pressing = || {
+        vec![
+            ("click", json!({"window": firefox.target(), "x": 40, "y": 40})),
+            (
+                "scroll",
+                json!({"window": firefox.target(), "x": 40, "y": 40, "direction": "down", "pixels": 100}),
+            ),
+            (
+                "drag",
+                json!({"window": firefox.target(), "path": [{"x": 20, "y": 20}, {"x": 180, "y": 100}]}),
+            ),
+        ]
+    };
+    let moving = || ("move", json!({"window": firefox.target(), "x": 60, "y": 60}));
+    let sent_each = |engine: &mut Engine, what: &str| {
+        for (command, input) in pressing() {
+            engine.request(command, input).unwrap();
+            let received = firefox.inputs();
+            assert_eq!(
+                received.len(),
+                2,
+                "{what}: {command}: a press and a release: {received:?}"
+            );
+            assert!(sent(&received), "{what}: {command}: the background route: {received:?}");
+        }
+        let (command, input) = moving();
+        engine.request(command, input).unwrap();
+    };
+    sent_each(&mut shared, "the pointer in it, nothing over it");
     let cover = Probe::open("Cover", (200, 120, 200, 200));
-    assert_eq!(
-        shared.request("click", json!({"window": firefox.target(), "x": 40, "y": 40})),
-        Err(refusal.clone()),
-        "partly covered (the click point itself visible)"
-    );
-    assert_eq!(
-        shared.request(
+    sent_each(&mut shared, "the pointer in its visible part, a window over part of it");
+    for (place, (x, y)) in [("under the cover", (300, 180)), ("outside the window", (600, 500))] {
+        pointer_to(x, y);
+        let right = (
             "click",
-            json!({"window": firefox.target(), "x": 40, "y": 40, "mouse_button": "right", "click_count": 2})
-        ),
-        Err(refusal.clone()),
-    );
-    shared
-        .request("press_key", json!({"window": firefox.target(), "key": "a"}))
-        .unwrap();
-    let keyed = firefox.inputs();
-    assert_eq!(keyed.len(), 2, "keys are not listed for Gecko: {keyed:?}");
-    assert!(sent(&keyed));
-    // its scrolls and pointer moves follow the clicks' rule
-    for (command, input) in [
-        (
-            "scroll",
-            json!({"window": firefox.target(), "x": 40, "y": 40, "direction": "down", "pixels": 100}),
-        ),
-        ("move", json!({"window": firefox.target(), "x": 60, "y": 60})),
-    ] {
-        assert_eq!(shared.request(command, input), Err(refusal.clone()), "{command}");
+            json!({"window": firefox.target(), "x": 40, "y": 40, "mouse_button": "right", "click_count": 2}),
+        );
+        for (command, input) in pressing().into_iter().chain([moving(), right]) {
+            assert_eq!(
+                shared.request(command, input),
+                Err(refusal.clone()),
+                "{place}: {command}"
+            );
+        }
+        assert_eq!(firefox.inputs(), vec![], "{place}: nothing was sent");
+        shared
+            .request("press_key", json!({"window": firefox.target(), "key": "a"}))
+            .unwrap();
+        let keyed = firefox.inputs();
+        assert_eq!(keyed.len(), 2, "{place}: keys are not listed for Gecko: {keyed:?}");
+        assert!(sent(&keyed));
     }
-    assert_eq!(firefox.inputs(), vec![], "nothing was sent");
     drop(shared);
+    // measurement only: the pointer not judged, so the harness can count what Gecko does with such input
+    let mut measuring = Engine::start_with(&["--ignore-pointer"]);
+    sent_each(&mut measuring, "--ignore-pointer, the pointer outside");
+    drop(measuring);
 
     let mut dedicated = Engine::start_with(&["--desktop", "dedicated"]);
     firefox.unfocus();
     cover.raise();
     assert!(cover.above(&firefox));
-    // a point under the cover: the foreground route raises the window first, so the click lands in it
+    // the pointer outside: the foreground route raises the window first, so the click lands in it
     dedicated
-        .request("click", json!({"window": firefox.target(), "x": 300, "y": 180}))
+        .request("click", json!({"window": firefox.target(), "x": 40, "y": 40}))
         .unwrap();
     assert!(firefox.has_focus() && firefox.above(&cover), "activated and raised");
     assert_eq!(
@@ -347,9 +423,10 @@ fn clicks_to_a_window_that_ignores_them_while_covered_are_refused_when_shared_an
         "real button events, through XTEST"
     );
     assert_eq!(cover.inputs(), vec![], "nothing reached the window that covered it");
-    // covered again: a scroll through the foreground route, one wheel step as real button 5 events
+    // under the cover again: a scroll through the foreground route, one wheel step as real button 5 events
     firefox.unfocus();
     cover.raise();
+    pointer_to(300, 180);
     dedicated
         .request(
             "scroll",
@@ -364,6 +441,266 @@ fn clicks_to_a_window_that_ignores_them_while_covered_are_refused_when_shared_an
             Input::ButtonRelease { button: 5, sent: false }
         ]
     );
+}
+
+/// A Gecko drag whose real pointer leaves the window while it runs never answers success (T19): Gecko stops taking the
+/// drag's events once the pointer is out, so the engine reports it, whether the pointer stays out or comes back before
+/// the release. A drag the pointer stays in for answers success.
+#[test]
+fn a_gecko_drag_the_real_pointer_leaves_while_it_runs_is_reported() {
+    let firefox = Probe::open("firefox", (0, 0, 400, 300));
+    let mut shared = Engine::start();
+    let app = app_of(&mut shared, firefox.id);
+    // a zigzag, every corner a rest of the browsers' pacing: a drag of a few hundred milliseconds
+    let path: Vec<Value> = (0..12)
+        .map(|i| json!({"x": 20 + 30 * i, "y": if i % 2 == 0 { 40 } else { 200 }}))
+        .collect();
+    let drag = json!({"window": firefox.target(), "path": path});
+    pointer_to(350, 280);
+    shared.request("drag", drag.clone()).unwrap();
+    assert_eq!(firefox.inputs().len(), 2, "the pointer stayed in: a plain drag");
+    for (what, back) in [("left and stayed out", false), ("left and came back", true)] {
+        pointer_to(350, 280);
+        let mover = std::thread::spawn(move || {
+            sleep(Duration::from_millis(60));
+            pointer_to(600, 500);
+            if back {
+                sleep(Duration::from_millis(40));
+                pointer_to(350, 280);
+            }
+        });
+        let answer = shared.request("drag", drag.clone());
+        mover.join().unwrap();
+        let error = answer.expect_err(what);
+        assert!(
+            error.starts_with(&format!("{app} may not have taken the drag")),
+            "{what}: {error}"
+        );
+        assert_eq!(
+            firefox.inputs().len(),
+            2,
+            "{what}: the drag was sent, a press and a release"
+        );
+    }
+}
+
+/// What a [`gecko_dragging_window`] did with one drag: the input events it received, and whether its drag and drop
+/// began (its pointer grab succeeded and it took `XdndSelection`).
+struct GeckoDrag {
+    inputs: Vec<Input>,
+    began: bool,
+}
+
+/// A window of the test's own, classed `firefox`, whose client begins an HTML5 drag and drop as GTK's drag source does
+/// under Gecko (the trace of ffdnd-fix, Firefox's dnd cell): at the first motion with the button held, `start_after` or
+/// more after the press, it grabs the pointer on an input-only window of its own off the screen (GTK's ipc window) and,
+/// the grab taken, makes that window `XdndSelection`'s owner; the release ends the grab and the selection. A grab that
+/// another client holds already fails, and then no drag and drop begins, as GTK's `gtk_drag_begin` gives up. The real
+/// pointer, parked in the window, crosses out of it in mode `Grab` and back in mode `Ungrab` without moving. `pressed`
+/// is told when the press arrives. One drag; the window stays until it is told to stop and has read the release, then
+/// answers what it saw.
+fn gecko_dragging_window(
+    start_after: Duration,
+    pressed: Option<mpsc::Sender<()>>,
+) -> (Window, mpsc::Sender<()>, std::thread::JoinHandle<GeckoDrag>) {
+    use x11rb::protocol::xproto::{ChangeWindowAttributesAux, GrabMode, GrabStatus};
+    let (ready, window) = mpsc::channel();
+    let (stop, stopped) = mpsc::channel();
+    let handle = std::thread::spawn(move || {
+        let probe = Probe::open("firefox", (0, 0, 400, 300));
+        let conn = &probe.conn;
+        let events = EventMask::BUTTON_PRESS | EventMask::BUTTON_RELEASE | EventMask::BUTTON_MOTION;
+        conn.change_window_attributes(probe.id, &ChangeWindowAttributesAux::new().event_mask(events))
+            .unwrap();
+        let ipc = conn.generate_id().unwrap();
+        let aux = CreateWindowAux::new().override_redirect(1);
+        conn.create_window(
+            0,
+            ipc,
+            probe.root,
+            -100,
+            -100,
+            10,
+            10,
+            0,
+            WindowClass::INPUT_ONLY,
+            0,
+            &aux,
+        )
+        .unwrap();
+        conn.map_window(ipc).unwrap();
+        let selection = conn.intern_atom(false, b"XdndSelection").unwrap().reply().unwrap().atom;
+        conn.sync().unwrap();
+        ready.send(probe.id).unwrap();
+        let (mut inputs, mut began, mut press, mut released) = (Vec::new(), false, None, false);
+        // told to stop, it still reads on to the drag's release (a background drag sends some 1,800 events, which the
+        // server holds until the window reads them: task 75), within a bound
+        let mut stop_by = None;
+        loop {
+            if stop_by.is_none() && stopped.try_recv().is_ok() {
+                stop_by = Some(Instant::now() + Duration::from_secs(10));
+            }
+            if stop_by.is_some_and(|by| released || Instant::now() > by) {
+                break;
+            }
+            let Some(event) = conn.poll_for_event().unwrap() else {
+                sleep(Duration::from_millis(1));
+                continue;
+            };
+            let sent = event.sent_event();
+            match event {
+                Event::ButtonPress(e) => {
+                    inputs.push(Input::ButtonPress { button: e.detail, sent });
+                    press = Some(Instant::now());
+                    if let Some(cue) = &pressed {
+                        let _ = cue.send(());
+                    }
+                }
+                Event::MotionNotify(_) if !began && press.is_some_and(|at| at.elapsed() >= start_after) => {
+                    let mask = EventMask::BUTTON_RELEASE | EventMask::POINTER_MOTION;
+                    let (none, now, mode) = (x11rb::NONE, x11rb::CURRENT_TIME, GrabMode::ASYNC);
+                    let status = conn
+                        .grab_pointer(false, ipc, mask, mode, mode, none, none, now)
+                        .unwrap()
+                        .reply()
+                        .unwrap()
+                        .status;
+                    if status == GrabStatus::SUCCESS {
+                        conn.set_selection_owner(ipc, selection, now).unwrap();
+                        conn.sync().unwrap();
+                        began = true;
+                    } else {
+                        // GTK gives the drag up: nothing more is tried for this press
+                        press = None;
+                    }
+                }
+                Event::ButtonRelease(e) => {
+                    inputs.push(Input::ButtonRelease { button: e.detail, sent });
+                    if began {
+                        conn.ungrab_pointer(x11rb::CURRENT_TIME).unwrap();
+                        conn.set_selection_owner(x11rb::NONE, selection, x11rb::CURRENT_TIME)
+                            .unwrap();
+                        conn.sync().unwrap();
+                    }
+                    press = None;
+                    released = true;
+                }
+                _ => {}
+            }
+        }
+        let _ = conn.destroy_window(ipc);
+        GeckoDrag { inputs, began }
+    });
+    (window.recv().unwrap(), stop, handle)
+}
+
+/// A Gecko drag that begins Gecko's own drag and drop answers success with the real pointer in the window all along
+/// (ffdnd-fix; the design session's ruling on T19, 2026-11-12): GTK's drag source grabs the pointer, which crosses out of
+/// the window in mode `Grab` though it never moved, and the target's own client takes `XdndSelection` while that grab
+/// holds, so the crossing is its own drag and drop's, not a leave. Another client's grab during the same drag is still
+/// a leave, and so is a pointer that leaves and stays out.
+#[test]
+fn a_gecko_drag_that_begins_its_own_drag_and_drop_with_the_pointer_in_its_window_answers_success() {
+    use x11rb::protocol::xproto::GrabMode;
+    // a zigzag, every corner a rest of the browsers' pacing: a drag of a few hundred milliseconds
+    let path: Vec<Value> = (0..12)
+        .map(|i| json!({"x": 20 + 30 * i, "y": if i % 2 == 0 { 40 } else { 200 }}))
+        .collect();
+    let pressed_and_released = [
+        Input::ButtonPress { button: 1, sent: true },
+        Input::ButtonRelease { button: 1, sent: true },
+    ];
+
+    let (window, stop, dragged) = gecko_dragging_window(Duration::ZERO, None);
+    let mut shared = Engine::start();
+    let app = app_of(&mut shared, window);
+    pointer_to(350, 280);
+    let answer = shared.request("drag", json!({"window": {"id": window}, "path": path}));
+    stop.send(()).unwrap();
+    let seen = dragged.join().unwrap();
+    assert!(seen.began, "the window's drag and drop began");
+    assert_eq!(seen.inputs, pressed_and_released, "the background route");
+    assert_eq!(answer, Ok(Value::Null), "the pointer in the window all along");
+
+    // control: another client grabs the pointer during the drag, before the window's drag and drop begins, and lets
+    // it go; the window's own grab and take come after, in the same request
+    let (cue, pressed) = mpsc::channel();
+    let (window, stop, dragged) = gecko_dragging_window(Duration::from_millis(150), Some(cue));
+    let foreign = std::thread::spawn(move || {
+        let (conn, screen) = x11rb::connect(None).expect("an X connection");
+        let root = conn.setup().roots[screen].root;
+        pressed.recv_timeout(Duration::from_secs(10)).expect("the press");
+        sleep(Duration::from_millis(20));
+        let (none, now, mode) = (x11rb::NONE, x11rb::CURRENT_TIME, GrabMode::ASYNC);
+        let status = conn
+            .grab_pointer(false, root, EventMask::BUTTON_PRESS, mode, mode, none, none, now)
+            .unwrap()
+            .reply()
+            .unwrap()
+            .status;
+        sleep(Duration::from_millis(40));
+        conn.ungrab_pointer(x11rb::CURRENT_TIME).unwrap();
+        conn.sync().unwrap();
+        status
+    });
+    pointer_to(350, 280);
+    let answer = shared.request("drag", json!({"window": {"id": window}, "path": path}));
+    assert_eq!(
+        foreign.join().unwrap(),
+        x11rb::protocol::xproto::GrabStatus::SUCCESS,
+        "the foreign grab was taken"
+    );
+    stop.send(()).unwrap();
+    let seen = dragged.join().unwrap();
+    assert!(
+        seen.began,
+        "the window's drag and drop began after the foreign grab ended"
+    );
+    assert_eq!(seen.inputs, pressed_and_released);
+    let error = answer.expect_err("another client's grab is a leave");
+    assert!(
+        error.starts_with(&format!("{app} may not have taken the drag")),
+        "{error}"
+    );
+
+    // the window's drag and drop began, and the real pointer left during it and stayed out
+    let (cue, pressed) = mpsc::channel();
+    let (window, stop, dragged) = gecko_dragging_window(Duration::ZERO, Some(cue));
+    pointer_to(350, 280);
+    let mover = std::thread::spawn(move || {
+        pressed.recv_timeout(Duration::from_secs(10)).expect("the press");
+        sleep(Duration::from_millis(60));
+        pointer_to(600, 500);
+    });
+    let answer = shared.request("drag", json!({"window": {"id": window}, "path": path}));
+    mover.join().unwrap();
+    stop.send(()).unwrap();
+    let seen = dragged.join().unwrap();
+    assert!(seen.began);
+    let error = answer.expect_err("a pointer that left and stayed out");
+    assert!(
+        error.starts_with(&format!("{app} may not have taken the drag")),
+        "{error}"
+    );
+}
+
+/// `--ignore-cover`, a measurement flag (T19's sitting): no cover condition refuses or reroutes, so a Chromium drag
+/// along a covered path (`unless_path_unobscured`) goes out on the background route in shared mode, and the harness
+/// measures what the application does with it.
+#[test]
+fn the_ignore_cover_flag_sends_a_drag_along_a_covered_path_on_the_background_route() {
+    let chrome = Probe::open("Google-chrome", (0, 0, 320, 200));
+    let _cover = Probe::open("Cover", (0, 100, 400, 400));
+    let mut measuring = Engine::start_with(&["--ignore-cover"]);
+    measuring
+        .request(
+            "drag",
+            json!({"window": chrome.target(), "path": [{"x": 20, "y": 20}, {"x": 200, "y": 150}]}),
+        )
+        .unwrap();
+    let dragged = chrome.inputs();
+    assert_eq!(dragged.len(), 2, "a press and a release: {dragged:?}");
+    assert!(sent(&dragged), "the background route: {dragged:?}");
 }
 
 /// Chromium (class `Google-chrome`) takes a background drag only along a path that is visible in its window: with
@@ -414,7 +751,8 @@ fn drag_source(on_release: OnRelease) -> (Window, mpsc::Sender<()>, std::thread:
             | EventMask::KEY_RELEASE
             | EventMask::BUTTON_PRESS
             | EventMask::BUTTON_RELEASE
-            | EventMask::BUTTON1_MOTION;
+            | EventMask::BUTTON1_MOTION
+            | EventMask::FOCUS_CHANGE;
         probe
             .conn
             .change_window_attributes(
@@ -429,12 +767,84 @@ fn drag_source(on_release: OnRelease) -> (Window, mpsc::Sender<()>, std::thread:
             .reply()
             .unwrap()
             .atom;
+        // a `Drops` source's cursors: each a cursor of its own, as Chrome makes them, the no-drop pattern for its drag
+        // loop's and its no-drop status's, another for its accept
+        let cursor_of = |probe: &Probe, pattern: u8| -> u32 {
+            let pixmap = probe.conn.generate_id().unwrap();
+            probe.conn.create_pixmap(1, pixmap, probe.id, 16, 16).unwrap();
+            let gc = probe.conn.generate_id().unwrap();
+            probe
+                .conn
+                .create_gc(gc, pixmap, &x11rb::protocol::xproto::CreateGCAux::new().foreground(1))
+                .unwrap();
+            let bits: Vec<x11rb::protocol::xproto::Rectangle> = (0..16)
+                .filter(|row| row % pattern as i16 == 0)
+                .map(|row| x11rb::protocol::xproto::Rectangle {
+                    x: 0,
+                    y: row,
+                    width: 16,
+                    height: 1,
+                })
+                .collect();
+            probe.conn.poly_fill_rectangle(pixmap, gc, &bits).unwrap();
+            let cursor = probe.conn.generate_id().unwrap();
+            probe
+                .conn
+                .create_cursor(cursor, pixmap, pixmap, 0, 0, 0, 0xffff, 0xffff, 0xffff, 0, 0)
+                .unwrap();
+            cursor
+        };
+        let show = |probe: &Probe, cursor: u32| {
+            probe
+                .conn
+                .change_window_attributes(
+                    probe.id,
+                    &x11rb::protocol::xproto::ChangeWindowAttributesAux::new().cursor(cursor),
+                )
+                .unwrap();
+            probe.conn.flush().unwrap();
+        };
+        let mut pending_cursors: Vec<(Duration, u32)> = match on_release {
+            OnRelease::Drops { cursors, .. } => cursors
+                .iter()
+                .map(|&(ms, shape)| {
+                    let cursor = cursor_of(&probe, if shape == Shape::NoDrop { 2 } else { 3 });
+                    (Duration::from_millis(ms), cursor)
+                })
+                .collect(),
+            _ => Vec::new(),
+        };
+        let loop_cursor = matches!(on_release, OnRelease::Drops { .. }).then(|| cursor_of(&probe, 2));
+        let active_window = probe
+            .conn
+            .intern_atom(false, b"_NET_ACTIVE_WINDOW")
+            .unwrap()
+            .reply()
+            .unwrap()
+            .atom;
         probe.conn.sync().unwrap();
         ready.send(probe.id).unwrap();
         let take = |probe: &Probe| {
+            if let Some(cursor) = loop_cursor {
+                show(probe, cursor);
+            }
             probe
                 .conn
                 .set_selection_owner(probe.id, selection, x11rb::CURRENT_TIME)
+                .unwrap();
+            probe.conn.flush().unwrap();
+        };
+        let activate = |probe: &Probe| {
+            let window = DROP_ACTIVATES.lock().unwrap().unwrap_or(probe.id);
+            let request = x11rb::protocol::xproto::ClientMessageEvent::new(32, window, active_window, [1, 0, 0, 0, 0]);
+            probe
+                .conn
+                .send_event(
+                    false,
+                    probe.root,
+                    EventMask::SUBSTRUCTURE_NOTIFY | EventMask::SUBSTRUCTURE_REDIRECT,
+                    request,
+                )
                 .unwrap();
             probe.conn.flush().unwrap();
         };
@@ -452,7 +862,7 @@ fn drag_source(on_release: OnRelease) -> (Window, mpsc::Sender<()>, std::thread:
         let mut seen = Vec::new();
         let mut taken = matches!(
             on_release,
-            OnRelease::TakesLate | OnRelease::NeverTakes | OnRelease::TakesAfter(_)
+            OnRelease::TakesLate | OnRelease::TakesLateAfter(_) | OnRelease::NeverTakes | OnRelease::TakesAfter(_)
         );
         let mut late_take: Option<Instant> = None;
         let mut took_at: Option<Instant> = None;
@@ -460,7 +870,17 @@ fn drag_source(on_release: OnRelease) -> (Window, mpsc::Sender<()>, std::thread:
         *TAKE_TO_RELEASE.lock().unwrap() = None;
         *PRESS_TO_RELEASE.lock().unwrap() = None;
         AFTER_TAKE_MOTIONS.lock().unwrap().clear();
+        ESCAPES_AND_FOCUS_OUTS.lock().unwrap().clear();
         while stopped.try_recv().is_err() {
+            if let Some(took) = took_at {
+                pending_cursors.retain(|&(after, cursor)| {
+                    let due = took.elapsed() >= after;
+                    if due {
+                        show(&probe, cursor);
+                    }
+                    !due
+                });
+            }
             if let (OnRelease::TakesAfter(after), Some(pressed), None) = (on_release, pressed_at, took_at)
                 && pressed.elapsed() >= after
                 && !seen.iter().any(|i| matches!(i, Input::ButtonRelease { .. }))
@@ -479,7 +899,16 @@ fn drag_source(on_release: OnRelease) -> (Window, mpsc::Sender<()>, std::thread:
                     Event::MotionNotify(e) if took_at.is_some() => {
                         AFTER_TAKE_MOTIONS.lock().unwrap().push((e.event_x, e.event_y));
                     }
+                    Event::FocusOut(_) if sent => {
+                        ESCAPES_AND_FOCUS_OUTS
+                            .lock()
+                            .unwrap()
+                            .push(("focus-out", Instant::now()));
+                    }
                     Event::KeyPress(_) => {
+                        if sent {
+                            ESCAPES_AND_FOCUS_OUTS.lock().unwrap().push(("escape", Instant::now()));
+                        }
                         if let Some(took) = late_take.take() {
                             *TAKE_TO_ESCAPE.lock().unwrap() = Some(took.elapsed());
                         }
@@ -503,6 +932,17 @@ fn drag_source(on_release: OnRelease) -> (Window, mpsc::Sender<()>, std::thread:
                                 late_take = Some(Instant::now());
                                 focus(&probe);
                             }
+                            OnRelease::TakesLateAfter(after) => {
+                                sleep(after);
+                                take(&probe);
+                                late_take = Some(Instant::now());
+                            }
+                            // an Escape on either route ends Chrome's drag and drop before its drop
+                            OnRelease::Drops { activates: true, .. }
+                                if !seen.iter().any(|i| matches!(i, Input::KeyPress { .. })) =>
+                            {
+                                activate(&probe)
+                            }
                             _ => {}
                         }
                     }
@@ -525,17 +965,42 @@ enum OnRelease {
     Nothing,
     Focuses,
     TakesLate,
+    /// `XdndSelection` taken this long after the release, the focus left alone: a drag and drop that begins after the
+    /// drag, late enough that an exit straight after the drag's answer would have drained its FocusOut by then.
+    TakesLateAfter(Duration),
     /// No take at all, during the drag or after it: an ordinary drag.
     NeverTakes,
     /// A take this long after the press, the button still down, whatever motion came.
     TakesAfter(Duration),
+    /// A Chrome drop: the take at the first motion, its drag loop's cursor shown on the window just before it, then
+    /// each of `cursors` that many milliseconds after the take; at the release, unless an Escape came, an activation
+    /// request for its window when `activates`, as Chrome's drop asks the window manager (`WebContents::Focus`).
+    Drops {
+        activates: bool,
+        cursors: &'static [(u64, Shape)],
+    },
 }
+
+/// A cursor a `Drops` source shows: Chrome's no-drop status, whose image is its drag loop's, or its accept.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Shape {
+    NoDrop,
+    Accept,
+}
+
+/// The window a `Drops` source's activation request names in place of its own: the drop's destination, another Chrome
+/// window, whose renderer asks for its own window's activation when the drop lands in it. None: the source's own.
+static DROP_ACTIVATES: std::sync::Mutex<Option<Window>> = std::sync::Mutex::new(None);
 
 /// The window-relative places of the motions the last drag's source saw after its take.
 static AFTER_TAKE_MOTIONS: std::sync::Mutex<Vec<(i16, i16)>> = std::sync::Mutex::new(Vec::new());
 
 /// How long the last late take (`OnRelease::TakesLate`) waited for the engine's Escape, as its source saw it.
 static TAKE_TO_ESCAPE: std::sync::Mutex<Option<Duration>> = std::sync::Mutex::new(None);
+
+/// The synthetic Escape presses and synthetic `FocusOut`s the last drag's source received, in order, each with when it
+/// arrived.
+static ESCAPES_AND_FOCUS_OUTS: std::sync::Mutex<Vec<(&'static str, Instant)>> = std::sync::Mutex::new(Vec::new());
 
 /// How long after its take of `XdndSelection` the last drag's source saw the button's release (None: no take), and how
 /// long after the press: what the release schedule after a take is measured by.
@@ -593,6 +1058,7 @@ fn a_drag_that_becomes_a_drag_and_drop_is_cancelled_before_the_drop_when_shared(
              dropped. Use a dedicated desktop, or activate the window first"
         ))
     );
+    let answered = Instant::now();
     sleep(SETTLE);
     stop.send(()).unwrap();
     assert_eq!(
@@ -605,8 +1071,23 @@ fn a_drag_that_becomes_a_drag_and_drop_is_cancelled_before_the_drop_when_shared(
         ],
         "Escape before the release"
     );
+    // a drag cancelled in time arms no late-take watch: its session ends at once, before the drop signature's look
+    // (300 ms with no signature here), not held back as a watched drag's is
+    let order = ESCAPES_AND_FOCUS_OUTS.lock().unwrap().clone();
+    assert_eq!(
+        order.iter().map(|(what, _)| *what).collect::<Vec<_>>(),
+        ["escape", "focus-out"]
+    );
+    assert!(
+        answered.saturating_duration_since(order[1].1) > Duration::from_millis(150),
+        "the FocusOut {:?} before the answer",
+        answered.saturating_duration_since(order[1].1)
+    );
     drop(shared);
     let (window, stop, recorder) = drag_source(OnRelease::Nothing);
+    // the real pointer in the window, as a dedicated drag needs for the background route (the test's server centres it
+    // whenever its last client left)
+    pointer_to(100, 100);
     let mut dedicated = Engine::start_with(&["--desktop", "dedicated"]);
     dedicated
         .request("drag", json!({"window": {"id": window}, "path": path}))
@@ -795,6 +1276,163 @@ fn a_take_after_a_short_path_s_end_is_held_for_and_its_floor_filled_with_motions
     }
 }
 
+/// What a [`coalescing_source`] dispatched: each motion it handed on (window-relative, with its button state), and when
+/// it took `XdndSelection` after the press (None: never).
+#[derive(Debug, Default)]
+struct Coalesced {
+    dispatched: Vec<(i16, i16, u16)>,
+    take_after_press: Option<Duration>,
+}
+
+/// A window of the test's own, classed `Google-chrome`, whose client reads input as Chromium's X11 window does with
+/// core `MotionNotify` (`ui/base/x/x11_util.cc` `CoalescePendingMotionEvents`, Chrome 156; V5's lost motion): busy for
+/// `stall` from the press, reading nothing, then, at each motion it reads, every matching motion already queued behind
+/// it (same window, child and state; other events without coordinates skipped over) thrown away, and the one read
+/// dispatched. It takes `XdndSelection` at the first dispatched motion with button 1 held at least 4 px from the press,
+/// as Blink starts its drag and drop. It runs until told to stop.
+fn coalescing_source(stall: Duration) -> (Window, mpsc::Sender<()>, std::thread::JoinHandle<Coalesced>) {
+    let (ready, window) = mpsc::channel();
+    let (stop, stopped) = mpsc::channel();
+    let handle = std::thread::spawn(move || {
+        let probe = Probe::open("Google-chrome", (0, 0, 400, 300));
+        let mask = EventMask::BUTTON_PRESS | EventMask::BUTTON_RELEASE | EventMask::BUTTON1_MOTION;
+        probe
+            .conn
+            .change_window_attributes(
+                probe.id,
+                &x11rb::protocol::xproto::ChangeWindowAttributesAux::new().event_mask(mask),
+            )
+            .unwrap();
+        let selection = probe
+            .conn
+            .intern_atom(false, b"XdndSelection")
+            .unwrap()
+            .reply()
+            .unwrap()
+            .atom;
+        probe.conn.sync().unwrap();
+        ready.send(probe.id).unwrap();
+        let mut out = Coalesced::default();
+        let mut queue: std::collections::VecDeque<Event> = std::collections::VecDeque::new();
+        let mut pressed: Option<(Instant, i16, i16)> = None;
+        let mut stalled = false;
+        while stopped.try_recv().is_err() {
+            while let Some(event) = probe.conn.poll_for_event().unwrap() {
+                queue.push_back(event);
+            }
+            while let Some(event) = queue.pop_front() {
+                match event {
+                    Event::ButtonPress(e) => {
+                        pressed = Some((Instant::now(), e.event_x, e.event_y));
+                        if !stalled {
+                            // busy from the press: everything the engine sends meanwhile queues unread
+                            stalled = true;
+                            sleep(stall);
+                            while let Some(event) = probe.conn.poll_for_event().unwrap() {
+                                queue.push_back(event);
+                            }
+                        }
+                    }
+                    Event::MotionNotify(m) => {
+                        // `conn->ReadResponses()`, then the walk: matching motions moved out, the rest left
+                        while let Some(event) = probe.conn.poll_for_event().unwrap() {
+                            queue.push_back(event);
+                        }
+                        let mut kept = std::collections::VecDeque::new();
+                        let mut walking = true;
+                        for next in queue.drain(..) {
+                            if walking {
+                                match &next {
+                                    Event::MotionNotify(n)
+                                        if n.event == m.event && n.child == m.child && n.state == m.state =>
+                                    {
+                                        continue;
+                                    }
+                                    Event::MotionNotify(_) | Event::ButtonPress(_) | Event::ButtonRelease(_) => {
+                                        walking = false
+                                    }
+                                    _ => {}
+                                }
+                            }
+                            kept.push_back(next);
+                        }
+                        queue = kept;
+                        let state = u16::from(m.state);
+                        out.dispatched.push((m.event_x, m.event_y, state));
+                        if let Some((at, px, py)) = pressed
+                            && out.take_after_press.is_none()
+                            && state & u16::from(x11rb::protocol::xproto::KeyButMask::BUTTON1) != 0
+                            && ((m.event_x - px).abs() >= 4 || (m.event_y - py).abs() >= 4)
+                        {
+                            probe
+                                .conn
+                                .set_selection_owner(probe.id, selection, x11rb::CURRENT_TIME)
+                                .unwrap();
+                            probe.conn.flush().unwrap();
+                            out.take_after_press = Some(at.elapsed());
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            sleep(Duration::from_millis(1));
+        }
+        out
+    });
+    (window.recv().unwrap(), stop, handle)
+}
+
+/// V5's lost motion (2026-11-13): a Chromium window busy from the press until the background drag's whole short path is
+/// queued gets only the first motion it reads (Chromium's core `MotionNotify` coalescing, [`coalescing_source`]), so it
+/// never starts its drag and drop and, on 0.4.0, the drag answered success with nothing dropped. The hold now refreshes
+/// the path's end while it waits, so the motion read once the window catches up carries it: the take comes inside the
+/// hold, and the floor follows. A window that catches up only past the hold's last refresh still gets nothing (the
+/// stated residual).
+#[test]
+fn a_chromium_window_busy_through_a_background_drag_s_path_still_gets_its_end_from_the_hold() {
+    let path = json!([{"x": 20, "y": 20}, {"x": 60, "y": 20}]);
+    let (window, stop, source) = coalescing_source(Duration::from_millis(100));
+    in_front(window);
+    let mut engine = Engine::start_with(&[]);
+    let started = Instant::now();
+    let dragged = engine.request("drag", json!({"window": {"id": window}, "path": path}));
+    let answered = started.elapsed();
+    set_active_window(None);
+    dragged.unwrap();
+    sleep(SETTLE);
+    stop.send(()).unwrap();
+    let seen = source.join().unwrap();
+    let took = seen
+        .take_after_press
+        .unwrap_or_else(|| panic!("the window took nothing: it dispatched {:?}", seen.dispatched));
+    assert!(
+        took < Duration::from_millis(220),
+        "taken {took:?} after the press, inside the hold: {:?}",
+        seen.dispatched
+    );
+    assert!(
+        answered >= took + Duration::from_millis(345),
+        "the floor after the take: answered after {answered:?}"
+    );
+    // a window that reads again only after the hold's last refresh: the first motion alone, no take (the residual)
+    let (window, stop, source) = coalescing_source(Duration::from_millis(260));
+    in_front(window);
+    let mut engine = Engine::start_with(&[]);
+    let dragged = engine.request("drag", json!({"window": {"id": window}, "path": path}));
+    set_active_window(None);
+    dragged.unwrap();
+    sleep(SETTLE);
+    stop.send(()).unwrap();
+    let seen = source.join().unwrap();
+    assert_eq!(seen.take_after_press, None, "{:?}", seen.dispatched);
+    let held = seen
+        .dispatched
+        .iter()
+        .filter(|(_, _, state)| state & u16::from(x11rb::protocol::xproto::KeyButMask::BUTTON1) != 0)
+        .count();
+    assert_eq!(held, 1, "the first held motion alone: {:?}", seen.dispatched);
+}
+
 /// The window given `WM_STATE` (normal), as a window manager marks the clients it manages, so the engine finds it as
 /// the client under a desktop point (`X11::client_at`); the test's display has no window manager to do it.
 fn managed(window: Window) {
@@ -841,8 +1479,8 @@ fn a_windowless_drag_and_drop_over_chromium_is_released_no_sooner_than_350_ms_af
 
 /// A drag and drop that begins only after the drag's release (the source takes `XdndSelection` and the focus 30 ms
 /// after it, where no look during the drag could see it): the drag answers at its release as a plain drag; the watch,
-/// told the instant the button went up, sends the cancel's Escape within a few milliseconds of the take, before the
-/// drag's own teardown (100 ms) is over; a read runs, and the first acting request answers the notice, not run, with
+/// told the instant the button went up, sends the cancel's Escape within a few milliseconds of the take, not after any
+/// wait of the drag's own; a read runs, and the first acting request answers the notice, not run, with
 /// nothing sent (the design session's rulings, 2026-10-31).
 #[test]
 fn a_drag_and_drop_that_begins_after_the_release_is_reported_by_the_next_acting_request() {
@@ -866,15 +1504,23 @@ fn a_drag_and_drop_that_begins_after_the_release_is_reported_by_the_next_acting_
         .expect("the watch's Escape reached the source");
     assert!(
         waited < Duration::from_millis(50),
-        "the Escape {waited:?} after the take: at once, not after the teardown"
+        "the Escape {waited:?} after the take: at once"
     );
-    assert!(shared.request("list_windows", json!({})).is_ok(), "a read runs");
+    let read = shared.exchange("list_windows", json!({}));
+    assert_eq!(read["ok"], json!(true), "a read runs");
+    assert_eq!(
+        read["notice"],
+        json!(late_notice(&app)),
+        "and its reply carries the notice"
+    );
     assert_eq!(
         shared.request("click", json!({"window": {"id": window}, "x": 50, "y": 50})),
-        Err(format!(
-            "{app} started a drag and drop after your drag ended; it may have dropped and changed the desktop; this \
-             request was not run, so read the window before sending it again"
-        ))
+        Err(late_refusal(&app, "click"))
+    );
+    assert_eq!(
+        shared.exchange("list_windows", json!({}))["notice"],
+        Value::Null,
+        "reported, and gone"
     );
     stop.send(()).unwrap();
     assert_eq!(
@@ -902,6 +1548,564 @@ fn a_drag_and_drop_that_begins_after_the_release_is_reported_by_the_next_acting_
         answered < unwatched + Duration::from_millis(150),
         "no settle on the request path: {answered:?} against {unwatched:?} unwatched"
     );
+}
+
+/// The root's `_NET_SUPPORTED` listing `_NET_ACTIVE_WINDOW`, as a window manager that supports the request lists it,
+/// for the guard's life, and deleted at its end: the test's display has no window manager. The guard keeps its X
+/// connection open, since the test's server resets (its root properties gone, its pointer centred) once its last
+/// client leaves.
+struct ActiveWindowSupported {
+    conn: RustConnection,
+    root: Window,
+    supported: u32,
+}
+
+impl ActiveWindowSupported {
+    fn listed() -> ActiveWindowSupported {
+        let (conn, screen) = x11rb::connect(None).expect("an X connection");
+        let root = conn.setup().roots[screen].root;
+        let atom = |name: &[u8]| conn.intern_atom(false, name).unwrap().reply().unwrap().atom;
+        let (supported, active) = (atom(b"_NET_SUPPORTED"), atom(b"_NET_ACTIVE_WINDOW"));
+        conn.change_property32(PropMode::REPLACE, root, supported, AtomEnum::ATOM, &[active])
+            .unwrap();
+        conn.sync().unwrap();
+        ActiveWindowSupported { conn, root, supported }
+    }
+}
+
+impl Drop for ActiveWindowSupported {
+    fn drop(&mut self) {
+        let _ = self.conn.delete_property(self.root, self.supported);
+        let _ = self.conn.sync();
+    }
+}
+
+/// #264 (M4's T14): a late take on every Chromium drag whose drop the engine lets land, not only a guarded background
+/// one. In front on a shared desktop (the background route), on a dedicated desktop, and on the desktop route over
+/// Chromium, a source that takes `XdndSelection` only after the drag's release (a real take, no fault injected) is
+/// cancelled at once by an Escape on the route the drag used (synthetic, or XTEST); the drag answered at its release, a
+/// read that follows runs and its reply carries the notice, and the next acting request is refused once, sending
+/// nothing. On the background route the Escape comes inside the drag's session, before its `FocusOut`.
+#[test]
+fn a_late_take_into_a_chromium_window_the_engine_lets_drop_is_cancelled_on_the_drag_s_route_and_reported_by_every_reply()
+ {
+    let path = json!([{"x": 20, "y": 20}, {"x": 200, "y": 120}]);
+    for (case, args, named, synthetic) in [
+        ("in front, shared", &[][..], true, true),
+        ("dedicated", &["--desktop", "dedicated"][..], true, true),
+        ("the desktop route", &[][..], false, false),
+    ] {
+        let (window, stop, recorder) = drag_source(OnRelease::TakesLate);
+        managed(window);
+        in_front(window);
+        // the real pointer in the window, so the dedicated drag keeps the background route
+        pointer_to(100, 100);
+        let mut engine = Engine::start_with(args);
+        let app = app_of(&mut engine, window);
+        *TAKE_TO_ESCAPE.lock().unwrap() = None;
+        let request = if named {
+            json!({"window": {"id": window}, "path": path})
+        } else {
+            json!({"path": path})
+        };
+        assert_eq!(
+            engine.request("drag", request),
+            Ok(Value::Null),
+            "{case}: answered at the release"
+        );
+        sleep(SETTLE);
+        let waited = TAKE_TO_ESCAPE
+            .lock()
+            .unwrap()
+            .unwrap_or_else(|| panic!("{case}: the watch's Escape reached the source"));
+        assert!(
+            waited < Duration::from_millis(50),
+            "{case}: the Escape {waited:?} after the take"
+        );
+        let read = engine.exchange("list_windows", json!({}));
+        assert_eq!(read["ok"], json!(true), "{case}: a read runs");
+        assert_eq!(
+            read["notice"],
+            json!(late_notice(&app)),
+            "{case}: its reply carries the notice"
+        );
+        assert_eq!(
+            engine.request("click", json!({"window": {"id": window}, "x": 50, "y": 50})),
+            Err(late_refusal(&app, "click")),
+            "{case}"
+        );
+        assert_eq!(
+            engine.exchange("list_windows", json!({}))["notice"],
+            Value::Null,
+            "{case}: reported once"
+        );
+        set_active_window(None);
+        stop.send(()).unwrap();
+        let seen = recorder.join().unwrap();
+        assert_eq!(
+            seen,
+            vec![
+                Input::ButtonPress {
+                    button: 1,
+                    sent: synthetic
+                },
+                Input::ButtonRelease {
+                    button: 1,
+                    sent: synthetic
+                },
+                Input::KeyPress { sent: synthetic },
+                Input::KeyRelease { sent: synthetic },
+            ],
+            "{case}: the drag, the watch's Escape on its route, nothing of the refused click"
+        );
+        // the window holds the real focus here, so its session synthesizes no focus change; whatever `FocusOut` it
+        // sent comes after the watch's Escape (the guard's case above proves the session kept for it)
+        let order = ESCAPES_AND_FOCUS_OUTS.lock().unwrap().clone();
+        let at = |kind: &str| order.iter().position(|(what, _)| *what == kind);
+        assert!(
+            at("focus-out").is_none_or(|out| at("escape").is_some_and(|escape| escape < out)),
+            "{case}: the Escape before any FocusOut: {order:?}"
+        );
+    }
+}
+
+/// The drop's confirmation (the design session's ruling on task 68, 2026-11-09): a Chrome drag and drop under way at
+/// its release, under a window manager that lists `_NET_ACTIVE_WINDOW`, is confirmed by Chrome's own activation request
+/// for its window after the release; with none inside `dnd::DROP_CONFIRM` the drop is unconfirmed, never ok, and every
+/// reply carries that notice until the next acting request, refused. An acting request straight after the drag waits
+/// for the rest of the window rather than run first. With no window manager support, the floor answers as before.
+#[test]
+fn a_chrome_drop_under_way_at_its_release_is_confirmed_by_its_activation_request_or_reported_unconfirmed() {
+    let path = json!([{"x": 20, "y": 20}, {"x": 200, "y": 120}]);
+    let drop_with = |activates: bool, supported: bool| {
+        let listed = supported.then(ActiveWindowSupported::listed);
+        let (window, stop, recorder) = drag_source(OnRelease::Drops {
+            activates,
+            cursors: &[],
+        });
+        in_front(window);
+        let mut engine = Engine::start();
+        let app = app_of(&mut engine, window);
+        let dragged = engine.request("drag", json!({"window": {"id": window}, "path": path}));
+        (listed, window, stop, recorder, engine, app, dragged)
+    };
+    // confirmed: no notice, and the next acting request runs
+    let (listed, window, stop, recorder, mut engine, _, dragged) = drop_with(true, true);
+    assert_eq!(dragged, Ok(Value::Null));
+    sleep(SETTLE);
+    assert_eq!(
+        engine.exchange("list_windows", json!({}))["notice"],
+        Value::Null,
+        "a confirmed drop"
+    );
+    assert_eq!(
+        engine.request("click", json!({"window": {"id": window}, "x": 50, "y": 50})),
+        Ok(Value::Null)
+    );
+    set_active_window(None);
+    stop.send(()).unwrap();
+    let _ = recorder.join();
+    drop(listed);
+    // unconfirmed: every reply carries the notice, the next acting request is refused once
+    let (listed, window, stop, recorder, mut engine, app, dragged) = drop_with(false, true);
+    assert_eq!(dragged, Ok(Value::Null), "the drag answered at its release");
+    sleep(SETTLE);
+    for read in ["list_windows", "list_apps"] {
+        let answer = engine.exchange(read, json!({}));
+        assert_eq!(answer["notice"], json!(unconfirmed_notice(&app)), "{read}");
+    }
+    assert_eq!(
+        engine.request("click", json!({"window": {"id": window}, "x": 50, "y": 50})),
+        Err(unconfirmed_refusal(&app, "click"))
+    );
+    assert_eq!(
+        engine.request("click", json!({"window": {"id": window}, "x": 50, "y": 50})),
+        Ok(Value::Null)
+    );
+    set_active_window(None);
+    stop.send(()).unwrap();
+    let seen = recorder.join().unwrap();
+    assert_eq!(
+        seen.iter().filter(|i| matches!(i, Input::ButtonPress { .. })).count(),
+        2,
+        "the drag's press and the second click's, nothing of the refused one: {seen:?}"
+    );
+    drop(listed);
+    // an acting request straight after the drag's answer waits for the window's rest, and is refused
+    let (listed, window, stop, recorder, mut engine, app, dragged) = drop_with(false, true);
+    assert_eq!(dragged, Ok(Value::Null));
+    let started = Instant::now();
+    assert_eq!(
+        engine.request("click", json!({"window": {"id": window}, "x": 50, "y": 50})),
+        Err(unconfirmed_refusal(&app, "click"))
+    );
+    assert!(
+        started.elapsed() < Duration::from_millis(200),
+        "bounded by the window: {:?}",
+        started.elapsed()
+    );
+    set_active_window(None);
+    stop.send(()).unwrap();
+    let _ = recorder.join();
+    drop(listed);
+    // no window manager support: nothing to confirm by, the floor answers as before
+    let (_, window, stop, recorder, mut engine, _, dragged) = drop_with(false, false);
+    assert_eq!(dragged, Ok(Value::Null));
+    sleep(SETTLE);
+    assert_eq!(engine.exchange("list_windows", json!({}))["notice"], Value::Null);
+    assert_eq!(
+        engine.request("click", json!({"window": {"id": window}, "x": 50, "y": 50})),
+        Ok(Value::Null)
+    );
+    set_active_window(None);
+    stop.send(()).unwrap();
+    let _ = recorder.join();
+}
+
+/// A dedicated drag into Chrome with the real pointer outside its window takes the foreground route (XTEST), whose path
+/// may leave the window: the drop's window is the managed top-level under the real pointer at the button-up, as on
+/// every XTEST release, not the window the drag named (the whole-branch review of M4, P2: a drop into a second Chrome
+/// window, confirmed by that window's activation request, was reported unconfirmed and refused the next acting
+/// request). A drop that window never confirms is still unconfirmed.
+#[test]
+fn a_dedicated_foreground_drag_from_one_chrome_window_into_another_is_confirmed_by_the_window_under_its_release() {
+    // from inside the source, at (0, 0) 400 by 300, to inside the destination at (700, 0)
+    let path = json!([{"x": 100, "y": 200}, {"x": 800, "y": 200}]);
+    let listed = ActiveWindowSupported::listed();
+    for destination_confirms in [true, false] {
+        let destination = Probe::open("Google-chrome", (700, 0, 400, 300));
+        managed(destination.id);
+        *DROP_ACTIVATES.lock().unwrap() = Some(destination.id);
+        let (window, stop, recorder) = drag_source(OnRelease::Drops {
+            activates: destination_confirms,
+            cursors: &[],
+        });
+        managed(window);
+        let mut dedicated = Engine::start_with(&["--desktop", "dedicated"]);
+        let app = app_of(&mut dedicated, window);
+        // outside both windows: the foreground route
+        pointer_to(600, 450);
+        let dragged = dedicated.request("drag", json!({"window": {"id": window}, "path": path}));
+        sleep(SETTLE);
+        let notice = dedicated.exchange("list_windows", json!({}))["notice"].clone();
+        let next = dedicated.request("click", json!({"x": 600, "y": 450}));
+        set_active_window(None);
+        *DROP_ACTIVATES.lock().unwrap() = None;
+        stop.send(()).unwrap();
+        let seen = recorder.join().unwrap();
+        assert_eq!(
+            &seen[..2],
+            [
+                Input::ButtonPress { button: 1, sent: false },
+                Input::ButtonRelease { button: 1, sent: false },
+            ],
+            "the foreground route: pressed in the source, released to its grab"
+        );
+        if destination_confirms {
+            assert_eq!(
+                (dragged, notice, next),
+                (Ok(Value::Null), Value::Null, Ok(Value::Null)),
+                "the destination's activation confirms the drop"
+            );
+        } else {
+            assert_eq!(
+                (dragged, notice, next),
+                (
+                    Ok(Value::Null),
+                    json!(unconfirmed_notice(&app)),
+                    Err(unconfirmed_refusal(&app, "click"))
+                ),
+                "no activation: unconfirmed"
+            );
+        }
+    }
+    drop(listed);
+}
+
+/// The release at the accept, measurement only (`--drag-dnd-release-at-accept`): on the desktop route over a Chrome
+/// window whose drop the engine can confirm, the drag is released once its source shows the accept cursor, not at the
+/// floor 350 ms after the take. The cursors are told apart by their image: an accept a later no-drop withdrew, an
+/// accept shown as the first status (a press inside the zone), and a window manager without `_NET_ACTIVE_WINDOW` all
+/// leave the drag to the floor. The shipped engine keeps the floor on every drop (task 69's live counts: a release at a
+/// stale accept that Chrome confirmed and the page never took; the design session's ruling, 2026-11-10).
+#[test]
+fn a_chrome_drop_keeps_its_floor_and_only_the_measurement_flag_releases_it_at_its_accept_cursor() {
+    let path = json!([{"x": 20, "y": 20}, {"x": 200, "y": 120}]);
+    const ACCEPTS: &[(u64, Shape)] = &[(3, Shape::NoDrop), (40, Shape::Accept)];
+    const LEAVES: &[(u64, Shape)] = &[(3, Shape::NoDrop), (40, Shape::Accept), (70, Shape::NoDrop)];
+    const INSIDE: &[(u64, Shape)] = &[(3, Shape::Accept), (70, Shape::NoDrop)];
+    const AT_ACCEPT: &[&str] = &["--drag-dnd-release-at-accept"];
+    for (case, cursors, supported, options, early) in [
+        ("shipped: an accept", ACCEPTS, true, &[][..], false),
+        ("an accept", ACCEPTS, true, AT_ACCEPT, true),
+        ("an accept the path then left", LEAVES, true, AT_ACCEPT, false),
+        (
+            "a first status that accepts, then leaves",
+            INSIDE,
+            true,
+            AT_ACCEPT,
+            false,
+        ),
+        ("no window manager support", ACCEPTS, false, AT_ACCEPT, false),
+    ] {
+        let listed = supported.then(ActiveWindowSupported::listed);
+        let (window, stop, recorder) = drag_source(OnRelease::Drops {
+            activates: true,
+            cursors,
+        });
+        managed(window);
+        let mut engine = Engine::start_with(options);
+        assert_eq!(engine.request("drag", json!({"path": path})), Ok(Value::Null), "{case}");
+        sleep(SETTLE);
+        assert_eq!(
+            engine.exchange("list_windows", json!({}))["notice"],
+            Value::Null,
+            "{case}: confirmed"
+        );
+        stop.send(()).unwrap();
+        recorder.join().unwrap();
+        let after_take = TAKE_TO_RELEASE.lock().unwrap().expect("the source took XdndSelection");
+        if early {
+            assert!(
+                after_take < Duration::from_millis(250),
+                "{case}: released {after_take:?} after the take"
+            );
+        } else {
+            assert!(
+                after_take >= Duration::from_millis(345) && after_take < Duration::from_millis(600),
+                "{case}: released {after_take:?} after the take, at the floor"
+            );
+        }
+        drop(listed);
+    }
+}
+
+/// How long after the release the exit test's late drag and drop begins: well after the drag answered, inside the
+/// watch's 300 ms.
+const EXIT_LATE_TAKE: Duration = Duration::from_millis(200);
+
+/// The exit's settle after the last key to a window it holds redirected (`settle::EXIT_SETTLE`).
+const EXIT_SETTLE: Duration = Duration::from_millis(300);
+
+/// An engine stopped straight after a watched drag's answer, with the after-release watch still armed: a drag and drop
+/// that begins well after the drag answered is still cancelled. The drag's session is still open, kept focused while
+/// its watch is armed (the design session's ruling on task 60); the watch runs out its lifetime, its Escape reaches the
+/// source inside that session, the session's `FocusOut` follows, and the engine exits only once the exit's settle has
+/// passed since that Escape, so the redirect it would drop cannot cut it (the re-review of T7's first fix: a safety
+/// Escape cut at exit lets a late drop land).
+#[test]
+fn an_exit_inside_the_watch_s_lifetime_still_cancels_a_late_drag_and_drop_and_settles_after_its_escape() {
+    let path = json!([{"x": 20, "y": 20}, {"x": 200, "y": 120}]);
+    let (window, stop, recorder) = drag_source(OnRelease::TakesLateAfter(EXIT_LATE_TAKE));
+    focus_nothing();
+    let mut shared = Engine::start();
+    *TAKE_TO_ESCAPE.lock().unwrap() = None;
+    assert_eq!(
+        shared.request("drag", json!({"window": {"id": window}, "path": path})),
+        Ok(Value::Null),
+        "no take by the release: a plain drag"
+    );
+    let answered = Instant::now();
+    shared.signal(rustix::process::Signal::TERM);
+    let (status, exited) = shared.exit_within(Duration::from_secs(5)).expect("the engine exits");
+    assert_eq!(status.code(), Some(143), "an orderly exit");
+    // the source reads on, so a late event would still be seen
+    sleep(SETTLE);
+    stop.send(()).unwrap();
+    assert_eq!(
+        recorder.join().unwrap(),
+        vec![
+            Input::ButtonPress { button: 1, sent: true },
+            Input::ButtonRelease { button: 1, sent: true },
+            Input::KeyPress { sent: true },
+            Input::KeyRelease { sent: true },
+        ],
+        "the drag, then the watch's Escape"
+    );
+    let waited = TAKE_TO_ESCAPE
+        .lock()
+        .unwrap()
+        .expect("the watch's Escape reached the source");
+    assert!(
+        waited < Duration::from_millis(50),
+        "the Escape {waited:?} after the take"
+    );
+    let order = ESCAPES_AND_FOCUS_OUTS.lock().unwrap().clone();
+    assert_eq!(
+        order.iter().map(|(what, _)| *what).collect::<Vec<_>>(),
+        vec!["escape", "focus-out"],
+        "the watch's Escape inside the drag's session, then its FocusOut, after the watch ran out"
+    );
+    // the source reads the Escape at most a poll after it arrived (it reads the FocusOut only after its own wait for the
+    // late take, so that read's time says nothing)
+    assert!(
+        exited >= order[0].1 + EXIT_SETTLE - Duration::from_millis(20),
+        "the exit settled after the Escape: {:?}",
+        exited.saturating_duration_since(order[0].1)
+    );
+    assert!(
+        exited - answered >= EXIT_LATE_TAKE,
+        "the exit waited for the watch: {:?}",
+        exited - answered
+    );
+    // the take, then the exit's settle after the Escape (300 ms), and no more: not the 1 s backstop
+    assert!(
+        exited - answered < EXIT_LATE_TAKE + Duration::from_millis(300 + 250),
+        "{:?}",
+        exited - answered
+    );
+}
+
+/// The after-release watch's lifetime after the release (`dnd::SETTLE`).
+const WATCH: Duration = Duration::from_millis(300);
+
+/// A watched drag's session stays focused until its late-take watch ends, with no request to end it (the design
+/// session's ruling on task 60): a take well after the drag answered gets its Escape inside the session, and the
+/// session's `FocusOut` follows only then, by the watch's end 300 ms after the release, whether a take came or not.
+#[test]
+fn a_watched_drag_s_focus_out_waits_for_its_watch_to_end_so_a_late_take_s_escape_comes_inside_the_session() {
+    let path = json!([{"x": 20, "y": 20}, {"x": 200, "y": 120}]);
+    for take in [Some(EXIT_LATE_TAKE), None] {
+        let (window, stop, recorder) = drag_source(match take {
+            Some(after) => OnRelease::TakesLateAfter(after),
+            None => OnRelease::NeverTakes,
+        });
+        focus_nothing();
+        let mut shared = Engine::start();
+        assert_eq!(
+            shared.request("drag", json!({"window": {"id": window}, "path": path})),
+            Ok(Value::Null),
+            "no take by the release: a plain drag"
+        );
+        let answered = Instant::now();
+        // no request comes: the watch's end alone ends the session
+        sleep(WATCH + Duration::from_millis(300));
+        stop.send(()).unwrap();
+        recorder.join().unwrap();
+        let order = ESCAPES_AND_FOCUS_OUTS.lock().unwrap().clone();
+        let what: Vec<_> = order.iter().map(|(what, _)| *what).collect();
+        match take {
+            Some(_) => assert_eq!(
+                what,
+                ["escape", "focus-out"],
+                "the Escape inside the session, then its FocusOut"
+            ),
+            None => assert_eq!(what, ["focus-out"], "a quiet watch: the FocusOut alone"),
+        }
+        let focus_out = order.last().expect("the drag's FocusOut").1 - answered;
+        // the source reads the FocusOut after its own wait for the late take at most, so only the quiet watch's time
+        // is read to the millisecond
+        if take.is_none() {
+            assert!(
+                focus_out >= WATCH - Duration::from_millis(30),
+                "held back until the watch's end: {focus_out:?} after the answer"
+            );
+        }
+        assert!(
+            focus_out < WATCH + Duration::from_millis(100),
+            "no later than the watch's end: {focus_out:?} after the answer"
+        );
+        drop(shared);
+    }
+}
+
+/// An acting request inside a watched drag's watch stops the watch and ends the drag's session before its own input:
+/// the drag's `FocusOut` goes with that request, not at the watch's end.
+#[test]
+fn an_acting_request_inside_the_watch_ends_the_watched_drag_s_session_first() {
+    let path = json!([{"x": 20, "y": 20}, {"x": 200, "y": 120}]);
+    let (window, stop, recorder) = drag_source(OnRelease::NeverTakes);
+    focus_nothing();
+    let mut shared = Engine::start();
+    shared
+        .request("drag", json!({"window": {"id": window}, "path": path}))
+        .unwrap();
+    let answered = Instant::now();
+    shared
+        .request("click", json!({"window": {"id": window}, "x": 50, "y": 50}))
+        .unwrap();
+    sleep(SETTLE);
+    stop.send(()).unwrap();
+    assert_eq!(
+        recorder.join().unwrap(),
+        vec![
+            Input::ButtonPress { button: 1, sent: true },
+            Input::ButtonRelease { button: 1, sent: true },
+            Input::ButtonPress { button: 1, sent: true },
+            Input::ButtonRelease { button: 1, sent: true },
+        ],
+        "the drag, then the click"
+    );
+    let order = ESCAPES_AND_FOCUS_OUTS.lock().unwrap().clone();
+    assert_eq!(
+        order.iter().map(|(what, _)| *what).collect::<Vec<_>>(),
+        ["focus-out", "focus-out"],
+        "the drag's session, then the click's"
+    );
+    let drag_s = order[0].1 - answered;
+    assert!(
+        drag_s < WATCH / 2,
+        "the drag's FocusOut with the click, not at the watch's end: {drag_s:?} after the drag's answer"
+    );
+}
+
+/// The exit's first act is the release of what the engine holds (the design session's ruling, M4 T7b): a key held at
+/// the server is up at once after the stop, before the watch's wait (the take comes `EXIT_LATE_TAKE` after the answer),
+/// and the watch still runs out and cancels its late take.
+#[test]
+fn the_exit_releases_a_held_key_before_it_waits_out_the_late_take_watch() {
+    let path = json!([{"x": 20, "y": 20}, {"x": 200, "y": 120}]);
+    let (window, stop, recorder) = drag_source(OnRelease::TakesLateAfter(EXIT_LATE_TAKE));
+    focus_nothing();
+    let (conn, _) = x11rb::connect(None).expect("an X connection");
+    let shift = keycode_of(&conn, 0xffe1);
+    let held = |conn: &RustConnection| {
+        let keys = conn.query_keymap().unwrap().reply().unwrap().keys;
+        keys[usize::from(shift / 8)] & (1 << (shift % 8)) != 0
+    };
+    let mut shared = Engine::start();
+    *TAKE_TO_ESCAPE.lock().unwrap() = None;
+    shared.request("key_down", json!({"key": "shift"})).unwrap();
+    assert!(held(&conn), "Shift down at the server");
+    assert_eq!(
+        shared.request("drag", json!({"window": {"id": window}, "path": path})),
+        Ok(Value::Null)
+    );
+    let answered = Instant::now();
+    shared.signal(rustix::process::Signal::TERM);
+    let mut up = None;
+    while up.is_none() && answered.elapsed() < Duration::from_secs(3) {
+        if !held(&conn) {
+            up = Some(answered.elapsed());
+        }
+        sleep(Duration::from_millis(2));
+    }
+    let (status, exited) = shared.exit_within(Duration::from_secs(5)).expect("the engine exits");
+    assert_eq!(status.code(), Some(143), "an orderly exit");
+    sleep(SETTLE);
+    stop.send(()).unwrap();
+    recorder.join().unwrap();
+    let up = up.expect("Shift released at the server");
+    assert!(
+        up < EXIT_LATE_TAKE / 2,
+        "released at once, before the watch's wait: {up:?}"
+    );
+    assert!(
+        TAKE_TO_ESCAPE.lock().unwrap().is_some(),
+        "the watch still ran out and cancelled its late take"
+    );
+    let order = ESCAPES_AND_FOCUS_OUTS.lock().unwrap().clone();
+    assert_eq!(
+        order.iter().map(|(what, _)| *what).collect::<Vec<_>>(),
+        vec!["escape", "focus-out"],
+        "the watch's Escape after the release, inside the drag's session, then its FocusOut"
+    );
+    assert!(
+        exited >= order[0].1 + EXIT_SETTLE - Duration::from_millis(20),
+        "the exit settled after the Escape: {:?}",
+        exited.saturating_duration_since(order[0].1)
+    );
+    assert!(exited - answered >= EXIT_LATE_TAKE, "{:?}", exited - answered);
 }
 
 /// The forced late take (`--dnd-defer-take`) with a key held at the server: the release of the held key runs and the
@@ -933,17 +2137,22 @@ fn a_late_drag_and_drop_lets_releases_and_reads_run_and_refuses_the_next_acting_
         "a release runs"
     );
     assert!(!held(&conn), "Shift up at the server");
-    assert!(deferred.request("list_windows", json!({})).is_ok(), "a read runs");
+    let read = deferred.exchange("list_windows", json!({}));
+    assert_eq!(
+        (read["ok"].clone(), read["notice"].clone()),
+        (json!(true), json!(late_notice(&app))),
+        "a read runs, carrying the notice"
+    );
     assert_eq!(
         deferred.request("click", json!({"window": {"id": window}, "x": 50, "y": 50})),
-        Err(format!(
-            "{app} started a drag and drop after your drag ended; it may have dropped and changed the desktop; this \
-             request was not run, so read the window before sending it again"
-        ))
+        Err(late_refusal(&app, "click"))
     );
     deferred
         .request("click", json!({"window": {"id": window}, "x": 50, "y": 50}))
         .unwrap();
+    // the click answers as soon as its release and its FocusOut are sent: the recorder
+    // reads on until the release has arrived
+    sleep(SETTLE);
     stop.send(()).unwrap();
     assert_eq!(
         recorder.join().unwrap(),
@@ -982,10 +2191,7 @@ fn preflight_answers_a_pending_late_drag_and_drop_or_watch_failure_as_an_acting_
     );
     assert_eq!(
         deferred.request("preflight", json!({})),
-        Err(format!(
-            "{app} started a drag and drop after your drag ended; it may have dropped and changed the desktop; this \
-             request was not run, so read the window before sending it again"
-        ))
+        Err(late_refusal(&app, "preflight"))
     );
     assert_eq!(
         deferred.request("preflight", json!({})),
@@ -1016,10 +2222,7 @@ fn preflight_answers_a_pending_late_drag_and_drop_or_watch_failure_as_an_acting_
     let sentence = lost
         .request("preflight", json!({}))
         .expect_err("the failed watch is the answer");
-    assert!(
-        sentence.starts_with(&format!("the drag-and-drop watch after your drag into {app} failed (")),
-        "{sentence}"
-    );
+    assert!(is_watch_failed_refusal(&sentence, &app, "preflight"), "{sentence}");
     assert_eq!(
         lost.request("preflight", json!({"x": 1})),
         Err("failed to parse command input: unknown field `x`, there are no fields".into()),
@@ -1046,7 +2249,9 @@ fn keycode_of(conn: &RustConnection, keysym: u32) -> u8 {
 /// A watch that fails after the release (the live build's fault injection) never lets the next acting request run
 /// as though nothing happened. Its connection killed by the server: a read runs, the click is refused with the
 /// watch-failure sentence and sends nothing. Its thread panicked: the engine's release profile aborts on a panic, so
-/// the engine ends instead of answering, and nothing more is sent.
+/// the engine ends and nothing more is sent. The panic comes when the watch hears of the release, off the request path,
+/// so the drag's own answer, which goes as soon as its release is sent, may
+/// or may not be out first; the next request is never answered.
 #[test]
 fn a_failed_after_release_watch_never_lets_the_next_acting_request_run() {
     let path = json!([{"x": 20, "y": 20}, {"x": 200, "y": 120}]);
@@ -1063,14 +2268,7 @@ fn a_failed_after_release_watch_never_lets_the_next_acting_request_run() {
     let sentence = lost
         .request("click", json!({"window": {"id": window}, "x": 50, "y": 50}))
         .expect_err("the click is refused");
-    assert!(
-        sentence.starts_with(&format!("the drag-and-drop watch after your drag into {app} failed ("))
-            && sentence.ends_with(
-                "), so a drop may have happened unseen and changed the desktop; this request was not run, so read the \
-                 window before sending it again"
-            ),
-        "{sentence}"
-    );
+    assert!(is_watch_failed_refusal(&sentence, &app, "click"), "{sentence}");
     stop.send(()).unwrap();
     assert_eq!(
         recorder.join().unwrap(),
@@ -1083,10 +2281,14 @@ fn a_failed_after_release_watch_never_lets_the_next_acting_request_run() {
     let (window, stop, recorder) = drag_source(OnRelease::NeverTakes);
     let mut panicked = Engine::start_with_fault(&[], "late-watch-panic");
     let dragged = panicked.try_request("drag", json!({"window": {"id": window}, "path": path}));
-    assert_eq!(dragged, None, "the engine ended instead of answering");
+    assert!(
+        matches!(dragged, None | Some(Ok(Value::Null))),
+        "the drag answered as a drag, or the engine ended first: {dragged:?}"
+    );
     assert_eq!(
         panicked.try_request("click", json!({"window": {"id": window}, "x": 50, "y": 50})),
-        None
+        None,
+        "the engine ended instead of answering"
     );
     sleep(SETTLE);
     stop.send(()).unwrap();
@@ -1186,11 +2388,7 @@ fn a_watch_whose_x_connection_is_lost_refuses_the_next_acting_request_and_sends_
             .request(command, input)
             .expect_err("the failed watch is the answer");
         assert!(
-            sentence.starts_with(&format!("the drag-and-drop watch after your drag into {app} failed ("))
-                && sentence.ends_with(
-                    "), so a drop may have happened unseen and changed the desktop; this request was not run, so \
-                     read the window before sending it again"
-                ),
+            is_watch_failed_refusal(&sentence, &app, command),
             "{command}: {sentence}"
         );
         assert_eq!(engine.request("preflight", json!({})), Ok(Value::Null), "reported once");
@@ -1572,4 +2770,1594 @@ fn a_real_pointer_motion_in_the_press_window_answers_that_the_drag_may_not_have_
             Input::ButtonRelease { button: 1, sent: true },
         ]
     );
+}
+
+/// A window manager's stand-in, on its own connection (task 63): it takes `SubstructureRedirect` on the root, so a
+/// client's restack of a top-level window comes to it as a `ConfigureRequest`. It carries out `slow`'s only `delay`
+/// later (never, with None), as a window manager under load raises an activated window after the engine's own focus
+/// request has already given it the focus, and every other request at once. The engine's activation request reaches
+/// it too, and asks nothing more of it. `keeping` windows it keeps on top as a window manager keeps its ABOVE, dock and
+/// notification layers: each is raised again after every restack it carries out. Dropped, it lets the redirect go.
+struct SlowRaises {
+    stop: mpsc::Sender<()>,
+    thread: Option<std::thread::JoinHandle<()>>,
+}
+
+impl SlowRaises {
+    fn start(slow: Window, delay: Option<Duration>) -> SlowRaises {
+        SlowRaises::keeping(slow, delay, Vec::new())
+    }
+
+    fn keeping(slow: Window, delay: Option<Duration>, keep: Vec<Window>) -> SlowRaises {
+        use x11rb::protocol::xproto::{ChangeWindowAttributesAux, ConfigureRequestEvent};
+        let (stop, stopped) = mpsc::channel();
+        let (ready, started) = mpsc::channel();
+        let thread = std::thread::spawn(move || {
+            let (conn, screen) = x11rb::connect(None).expect("an X connection");
+            let root = conn.setup().roots[screen].root;
+            conn.change_window_attributes(
+                root,
+                &ChangeWindowAttributesAux::new().event_mask(EventMask::SUBSTRUCTURE_REDIRECT),
+            )
+            .unwrap()
+            .check()
+            .expect("no window manager on the test's display");
+            ready.send(()).unwrap();
+            let carry_out = |e: &ConfigureRequestEvent| {
+                let aux = ConfigureWindowAux::from_configure_request(e);
+                let _ = conn.configure_window(e.window, &aux);
+                for &w in &keep {
+                    let _ = conn.configure_window(w, &ConfigureWindowAux::new().stack_mode(StackMode::ABOVE));
+                }
+                let _ = conn.flush();
+            };
+            let mut pending: Vec<(Instant, ConfigureRequestEvent)> = Vec::new();
+            while stopped.try_recv().is_err() {
+                while let Some(event) = conn.poll_for_event().unwrap() {
+                    match event {
+                        Event::ConfigureRequest(e) if e.window == slow => {
+                            if let Some(delay) = delay {
+                                pending.push((Instant::now() + delay, e));
+                            }
+                        }
+                        Event::ConfigureRequest(e) => carry_out(&e),
+                        Event::MapRequest(e) => {
+                            let _ = conn.map_window(e.window);
+                            let _ = conn.flush();
+                        }
+                        _ => {}
+                    }
+                }
+                let now = Instant::now();
+                for (_, e) in pending.iter().filter(|(due, _)| *due <= now) {
+                    carry_out(e);
+                }
+                pending.retain(|(due, _)| *due > now);
+                sleep(Duration::from_millis(1));
+            }
+        });
+        started.recv().unwrap();
+        SlowRaises {
+            stop,
+            thread: Some(thread),
+        }
+    }
+}
+
+impl Drop for SlowRaises {
+    fn drop(&mut self) {
+        let _ = self.stop.send(());
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
+}
+
+/// The foreground route's pointer input waits until its activated window is on top at the input's points, not only
+/// until it holds the focus (task 63): with the window manager's raise 150 ms behind the engine's focus request, the
+/// click, the wheel step and the drag each still land in the window and none reaches the window that covered it,
+/// which received every one of them while the route waited for the focus alone.
+#[test]
+fn foreground_pointer_input_waits_for_the_window_manager_to_raise_its_window() {
+    let firefox = Probe::open("firefox", (0, 0, 320, 200));
+    let cover = Probe::open("Cover", (0, 0, 400, 300));
+    let mut dedicated = Engine::start_with(&["--desktop", "dedicated"]);
+    let cases = [
+        ("click", json!({"window": firefox.target(), "x": 100, "y": 100}), 1),
+        (
+            "scroll",
+            json!({"window": firefox.target(), "x": 100, "y": 100, "direction": "down", "pixels": 100}),
+            5,
+        ),
+        (
+            "drag",
+            json!({"window": firefox.target(), "path": [{"x": 60, "y": 60}, {"x": 160, "y": 120}]}),
+            1,
+        ),
+    ];
+    for (command, input, button) in cases {
+        firefox.unfocus();
+        cover.raise();
+        assert!(cover.above(&firefox), "{command}: covered before the request");
+        let raises = SlowRaises::start(firefox.id, Some(Duration::from_millis(150)));
+        let started = Instant::now();
+        dedicated.request(command, input).unwrap();
+        let took = started.elapsed();
+        drop(raises);
+        assert_eq!(
+            cover.inputs(),
+            vec![],
+            "{command}: nothing reached the window that covered it"
+        );
+        assert!(firefox.above(&cover), "{command}: raised");
+        assert_eq!(
+            firefox.inputs(),
+            vec![
+                Input::ButtonPress { button, sent: false },
+                Input::ButtonRelease { button, sent: false }
+            ],
+            "{command}: its real button events, in the window"
+        );
+        assert!(
+            took >= Duration::from_millis(150),
+            "{command}: it waited for the raise ({took:?})"
+        );
+    }
+}
+
+/// A window the window manager never raises over the point is refused at the wait's bound, with nothing sent: no event
+/// reaches the window or the window covering it.
+#[test]
+fn foreground_pointer_input_is_refused_with_nothing_sent_when_its_window_is_not_on_top_at_its_points() {
+    let firefox = Probe::open("firefox", (0, 0, 320, 200));
+    let cover = Probe::open("Cover", (0, 0, 400, 300));
+    let mut dedicated = Engine::start_with(&["--desktop", "dedicated"]);
+    firefox.unfocus();
+    cover.raise();
+    let raises = SlowRaises::start(firefox.id, None);
+    let started = Instant::now();
+    let refused = dedicated.request("click", json!({"window": firefox.target(), "x": 100, "y": 100}));
+    let took = started.elapsed();
+    drop(raises);
+    let refusal = refused.expect_err("never raised: refused");
+    assert!(
+        refusal.starts_with(&format!("window {} was still covered at the input's point", firefox.id))
+            && refusal.ends_with("; nothing was sent, so it is safe to retry"),
+        "{refusal}"
+    );
+    assert!(took >= Duration::from_millis(1000), "refused at the bound ({took:?})");
+    assert_eq!(firefox.inputs(), vec![], "nothing reached the window");
+    assert_eq!(cover.inputs(), vec![], "nor the window covering it");
+}
+
+/// Only the points inside the window wait for its raise; the rest go as before the wait (the design session's ruling
+/// on task 63, 2026-11-06): a dedicated-mode drag from the covered window into another window beside it is sent, its
+/// press in the window (which holds the implicit grab to the release), and a move to a point beyond the window too.
+#[test]
+fn a_foreground_drag_from_its_window_into_another_window_is_sent_not_refused() {
+    let firefox = Probe::open("firefox", (0, 0, 320, 200));
+    let other = Probe::open("Other", (330, 0, 300, 200));
+    let cover = Probe::open("Cover", (0, 0, 320, 200));
+    let mut dedicated = Engine::start_with(&["--desktop", "dedicated"]);
+    firefox.unfocus();
+    cover.raise();
+    dedicated
+        .request(
+            "drag",
+            json!({"window": firefox.target(), "path": [{"x": 60, "y": 60}, {"x": 400, "y": 60}]}),
+        )
+        .expect("a drag into another window is sent");
+    assert_eq!(
+        firefox.inputs(),
+        vec![
+            Input::ButtonPress { button: 1, sent: false },
+            Input::ButtonRelease { button: 1, sent: false }
+        ],
+        "pressed in the window, released to its grab"
+    );
+    assert_eq!(cover.inputs(), vec![], "nothing reached the window that covered it");
+    firefox.unfocus();
+    cover.raise();
+    dedicated
+        .request("move", json!({"window": firefox.target(), "x": 400, "y": 60}))
+        .expect("a move beyond the window is sent");
+    assert_eq!(other.inputs(), vec![], "a move presses nothing");
+}
+
+/// `activate_window` answers once the window manager has raised the window over its visible area, so pointer input
+/// pipelined on its answer (a windowless click at once, no observation between) lands in it and not in the window that
+/// covered it, which on a shared desktop is the person's; a window never raised answers an error at the bound, with
+/// nothing else sent (the design session's ruling on task 63, 2026-11-06).
+#[test]
+fn activate_window_answers_once_its_window_is_on_top_so_a_pipelined_click_lands_in_it() {
+    let firefox = Probe::open("firefox", (0, 0, 320, 200));
+    let cover = Probe::open("Cover", (0, 0, 400, 300));
+    for mode in ["shared", "dedicated"] {
+        let mut engine = Engine::start_with(&["--desktop", mode]);
+        firefox.unfocus();
+        cover.raise();
+        let raises = SlowRaises::start(firefox.id, Some(Duration::from_millis(150)));
+        let started = Instant::now();
+        engine
+            .request("activate_window", json!({"window": firefox.target()}))
+            .unwrap();
+        let took = started.elapsed();
+        engine.request("click", json!({"x": 100, "y": 100})).unwrap();
+        drop(raises);
+        assert_eq!(
+            cover.inputs(),
+            vec![],
+            "{mode}: nothing reached the window that covered it"
+        );
+        assert_eq!(
+            firefox.inputs(),
+            vec![
+                Input::ButtonPress { button: 1, sent: false },
+                Input::ButtonRelease { button: 1, sent: false }
+            ],
+            "{mode}: the pipelined click, in the activated window"
+        );
+        assert!(
+            took >= Duration::from_millis(150),
+            "{mode}: it waited for the raise ({took:?})"
+        );
+
+        firefox.unfocus();
+        cover.raise();
+        let raises = SlowRaises::start(firefox.id, None);
+        let started = Instant::now();
+        let refused = engine.request("activate_window", json!({"window": firefox.target()}));
+        let took = started.elapsed();
+        drop(raises);
+        assert_eq!(
+            refused,
+            Err(format!(
+                "the activation of window {} was requested, but a normal window still covered it after 1000 ms; \
+                 nothing else was sent",
+                firefox.id
+            )),
+            "{mode}"
+        );
+        assert!(took >= Duration::from_millis(1000), "{mode}: at the bound ({took:?})");
+        assert_eq!(firefox.inputs(), vec![], "{mode}: nothing else was sent");
+        assert_eq!(cover.inputs(), vec![], "{mode}");
+    }
+}
+
+/// A point under the window's own popup (an override-redirect window of its own X client, as a menu it opened) is the
+/// application's: the foreground click goes to it at once, as it did before the wait, and is not refused.
+#[test]
+fn a_foreground_click_into_the_window_s_own_popup_is_not_held_back() {
+    let firefox = Probe::open("firefox", (0, 0, 320, 200));
+    let menu = override_redirect(&firefox.conn, (80, 80, 60, 60));
+    let mut dedicated = Engine::start_with(&["--desktop", "dedicated"]);
+    firefox.unfocus();
+    let started = Instant::now();
+    dedicated
+        .request("click", json!({"window": firefox.target(), "x": 100, "y": 100}))
+        .expect("its own popup's point is the application's");
+    assert!(started.elapsed() < Duration::from_millis(500), "not held to the bound");
+    assert!(firefox.has_focus(), "the foreground route: its own popup over it");
+    let _ = firefox.conn.destroy_window(menu);
+    let _ = firefox.conn.flush();
+}
+
+/// The window's `_NET_WM_STATE` or `_NET_WM_WINDOW_TYPE` set to these atoms, as its client would set them.
+fn set_atoms(probe: &Probe, property: &str, values: &[&str]) {
+    let atom = |name: &str| {
+        probe
+            .conn
+            .intern_atom(false, name.as_bytes())
+            .unwrap()
+            .reply()
+            .unwrap()
+            .atom
+    };
+    let values: Vec<u32> = values.iter().map(|v| atom(v)).collect();
+    probe
+        .conn
+        .change_property32(PropMode::REPLACE, probe.id, atom(property), AtomEnum::ATOM, &values)
+        .unwrap();
+    probe.conn.sync().unwrap();
+}
+
+/// `activate_window` waits only for windows of the window manager's normal layer (the design session's ruling on task
+/// 63, 2026-11-06): with an ABOVE window and a dock strip kept over part of the window, it answers once the normal
+/// window covering it is lowered, in both modes. Its success says nothing of what they cover: a click at a point under
+/// the strip is decided by the click's own rules, refused in shared mode (Gecko takes no click while the real pointer is
+/// not in its window, and here it is on the strip, T19) and in dedicated mode held to the foreground route's bound and
+/// refused, never sent to the strip or the window.
+#[test]
+fn activation_waits_for_no_window_kept_above_the_normal_layer_and_a_click_under_one_is_not_sent() {
+    let firefox = Probe::open("firefox", (0, 0, 320, 200));
+    let cover = Probe::open("Cover", (0, 0, 400, 300));
+    let above = Probe::open("Above", (250, 40, 120, 60));
+    set_atoms(&above, "_NET_WM_STATE", &["_NET_WM_STATE_ABOVE"]);
+    let dock = Probe::open("Dock", (0, 170, 640, 40));
+    set_atoms(&dock, "_NET_WM_WINDOW_TYPE", &["_NET_WM_WINDOW_TYPE_DOCK"]);
+    for mode in ["shared", "dedicated"] {
+        let mut engine = Engine::start_with(&["--desktop", mode]);
+        let refusal = format!("{}{SENTENCE}", app_of(&mut engine, firefox.id));
+        firefox.unfocus();
+        cover.raise();
+        above.raise();
+        dock.raise();
+        let raises = SlowRaises::keeping(firefox.id, Some(Duration::from_millis(50)), vec![above.id, dock.id]);
+        let started = Instant::now();
+        engine
+            .request("activate_window", json!({"window": firefox.target()}))
+            .expect("the ABOVE window and the dock neither hold nor fail the activation");
+        let took = started.elapsed();
+        assert!(
+            took < Duration::from_millis(500),
+            "{mode}: answered at the raise ({took:?})"
+        );
+        assert!(firefox.above(&cover), "{mode}: raised over the normal window");
+        assert!(
+            dock.above(&firefox) && above.above(&firefox),
+            "{mode}: the layers kept above it"
+        );
+        // the real pointer on the strip, at the click's point
+        pointer_to(100, 185);
+        let clicked = engine.request("click", json!({"window": firefox.target(), "x": 100, "y": 185}));
+        drop(raises);
+        match mode {
+            "shared" => assert_eq!(clicked, Err(refusal), "shared: the pointer on the strip, so refused"),
+            _ => assert!(
+                clicked.as_ref().is_err_and(
+                    |e| e.starts_with(&format!("window {} was still covered at the input's point", firefox.id))
+                ),
+                "dedicated: held to the bound and refused: {clicked:?}"
+            ),
+        }
+        assert_eq!(dock.inputs(), vec![], "{mode}: nothing sent to the strip");
+        assert_eq!(firefox.inputs(), vec![], "{mode}: nor to the window under it");
+        assert_eq!(cover.inputs(), vec![], "{mode}");
+    }
+}
+
+/// Each motion a listener received: its root position and server time.
+type Motions = Vec<(i16, i16, u32)>;
+
+/// The motions a window of the test's own receives (core `MotionNotify`: root position and server time) until told to
+/// stop: an override-redirect window over `rect`, selecting pointer motion only.
+fn motion_listener(rect: (i16, i16, u16, u16)) -> (mpsc::Sender<()>, std::thread::JoinHandle<Motions>) {
+    let (conn, _) = x11rb::connect(None).expect("an X connection");
+    let window = override_redirect(&conn, rect);
+    conn.change_window_attributes(
+        window,
+        &x11rb::protocol::xproto::ChangeWindowAttributesAux::new().event_mask(EventMask::POINTER_MOTION),
+    )
+    .unwrap();
+    conn.sync().unwrap();
+    let (stop, stopped) = mpsc::channel::<()>();
+    let listening = std::thread::spawn(move || {
+        let mut motions = Vec::new();
+        loop {
+            let done = stopped.try_recv().is_ok();
+            conn.sync().unwrap();
+            while let Some(event) = conn.poll_for_event().unwrap() {
+                if let Event::MotionNotify(e) = event {
+                    motions.push((e.root_x, e.root_y, e.time));
+                }
+            }
+            if done {
+                let _ = conn.destroy_window(window);
+                let _ = conn.flush();
+                return motions;
+            }
+            sleep(Duration::from_millis(2));
+        }
+    });
+    (stop, listening)
+}
+
+/// A desktop `move` visits the pinned build's points, its leading motion at the pointer's own position included (the
+/// server delivers a motion there, task 64's listener), with the vendor's 8 ms between two positions but none after
+/// that leading motion, which moves nothing (M4's T9): a one-step move answers at once, as the newest build's does.
+/// Read from the motions' server times, which the engine's own timing cannot blur.
+#[test]
+fn a_desktop_move_pauses_between_two_positions_and_not_after_the_pointer_s_own() {
+    let mut engine = Engine::start();
+    engine.request("move", json!({"x": 10, "y": 10})).unwrap();
+    let (stop, listening) = motion_listener((0, 0, 400, 300));
+    engine.request("move", json!({"x": 330, "y": 250})).unwrap();
+    engine.request("move", json!({"x": 340, "y": 250})).unwrap();
+    stop.send(()).unwrap();
+    let motions = listening.join().unwrap();
+    let points: Vec<(i16, i16)> = motions.iter().map(|&(x, y, _)| (x, y)).collect();
+    // (10, 10) → (330, 250): 400 px, ten steps of (32, 24), the start included; then (330, 250) → (340, 250), one step
+    // (behaviour §10.2)
+    let mut expected: Vec<(i16, i16)> = (0..=10).map(|i| (10 + 32 * i, 10 + 24 * i)).collect();
+    expected.extend([(330, 250), (340, 250)]);
+    assert_eq!(points, expected, "the pinned build's points, in order");
+    let gap = |i: usize| motions[i].2.wrapping_sub(motions[i - 1].2);
+    assert!(
+        gap(1) < 8,
+        "no pause after the long path's leading motion ({} ms)",
+        gap(1)
+    );
+    for i in 2..=10 {
+        assert!(
+            gap(i) >= 7,
+            "the vendor's 8 ms between two positions (step {i}: {} ms)",
+            gap(i)
+        );
+    }
+    assert!(gap(12) < 8, "a one-step move pauses nowhere ({} ms)", gap(12));
+}
+
+/// What a held-move listener received: a motion, the press or the release, at its root position and server time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Held {
+    Motion(i16, i16, u32),
+    Press(u32),
+    Release(u32),
+}
+
+/// A top-level window of the test's own with this `WM_CLASS`, over `rect`, recording the pointer motions and button 1's
+/// press and release it receives until told to stop: what a `drag_handle` over a family's window sends it.
+fn held_listener(class: &str, rect: (i16, i16, u16, u16)) -> (mpsc::Sender<()>, std::thread::JoinHandle<Vec<Held>>) {
+    let probe = Probe::open(class, rect);
+    probe
+        .conn
+        .change_window_attributes(
+            probe.id,
+            &x11rb::protocol::xproto::ChangeWindowAttributesAux::new()
+                .event_mask(EventMask::POINTER_MOTION | EventMask::BUTTON_PRESS | EventMask::BUTTON_RELEASE),
+        )
+        .unwrap();
+    probe.conn.sync().unwrap();
+    managed(probe.id);
+    let (stop, stopped) = mpsc::channel::<()>();
+    let listening = std::thread::spawn(move || {
+        let mut seen = Vec::new();
+        loop {
+            let done = stopped.try_recv().is_ok();
+            probe.conn.sync().unwrap();
+            while let Some(event) = probe.conn.poll_for_event().unwrap() {
+                match event {
+                    Event::MotionNotify(e) => seen.push(Held::Motion(e.root_x, e.root_y, e.time)),
+                    Event::ButtonPress(e) if e.detail == 1 => seen.push(Held::Press(e.time)),
+                    Event::ButtonRelease(e) if e.detail == 1 => seen.push(Held::Release(e.time)),
+                    _ => {}
+                }
+            }
+            if done {
+                return seen;
+            }
+            sleep(Duration::from_millis(2));
+        }
+    });
+    (stop, listening)
+}
+
+/// M4's T11: a browser's held move rests at its end and visits it again (Firefox and Chromium merged held points under
+/// a millisecond apart into two or three events and lost the stroke's corners), and the handle's end rests and visits
+/// the pointer's place once more before its release (a drop target accepts only a position after it has answered an
+/// earlier one, and a cold window's drag can start after the last move). A family that does not rest (xterm) gets
+/// neither. Read from the events' server times.
+#[test]
+fn a_browser_s_drag_handle_rests_at_each_held_move_s_end_and_before_its_release() {
+    for (class, rests) in [("firefox", true), ("Google-chrome", true), ("XTerm", false)] {
+        let mut engine = Engine::start();
+        engine.request("move", json!({"x": 20, "y": 20})).unwrap();
+        let (stop, listening) = held_listener(class, (100, 100, 400, 300));
+        sleep(Duration::from_millis(100));
+        engine
+            .request("drag_handle", json!({"action": "start", "x": 150, "y": 150}))
+            .unwrap();
+        engine
+            .request("drag_handle", json!({"action": "move_to", "x": 330, "y": 250}))
+            .unwrap();
+        engine.request("drag_handle", json!({"action": "end"})).unwrap();
+        sleep(Duration::from_millis(100));
+        stop.send(()).unwrap();
+        let seen = listening.join().unwrap();
+        let pressed = seen.iter().position(|h| matches!(h, Held::Press(_))).expect("a press");
+        let Some(&Held::Release(released)) = seen.last() else {
+            panic!("{class}: the release comes last: {seen:?}")
+        };
+        let held: Vec<(i16, i16, u32)> = seen[pressed..]
+            .iter()
+            .filter_map(|h| match *h {
+                Held::Motion(x, y, t) => Some((x, y, t)),
+                _ => None,
+            })
+            .collect();
+        let at_end: Vec<u32> = held.iter().filter(|m| (m.0, m.1) == (330, 250)).map(|m| m.2).collect();
+        if rests {
+            // the move's end, its second visit after the rest, and the end's visit before the release
+            assert_eq!(at_end.len(), 3, "{class}: {held:?}");
+            assert!(
+                at_end[1] - at_end[0] >= 18,
+                "{class}: the rest at the move's end: {at_end:?}"
+            );
+            assert!(
+                at_end[2] - at_end[1] >= 18,
+                "{class}: the rest before the release: {at_end:?}"
+            );
+            assert!(
+                released >= at_end[2],
+                "{class}: the release after it: {released} {at_end:?}"
+            );
+        } else {
+            assert_eq!(at_end.len(), 1, "{class}: the end once, no rest: {held:?}");
+        }
+    }
+}
+
+/// An X server of the test's own with two screens, each its own root (`Xvfb -screen 0 … -screen 1 …`), on a display it
+/// picks itself (`-displayfd`); killed on drop. `CUA_LIVE_TWO_SCREENS` names a running two-screen display to use in
+/// its place: Xvfb puts both screens at one origin, so a motion on one screen's root moves the pointer within the
+/// screen it is on, where an Xorg whose layout puts the screens side by side carries it across (`tests/two-screens.sh`
+/// runs the two-screen tests on such a server).
+struct TwoScreens {
+    server: Option<std::process::Child>,
+    display: String,
+}
+
+impl TwoScreens {
+    fn start() -> TwoScreens {
+        use std::io::BufRead;
+        if let Ok(display) = std::env::var("CUA_LIVE_TWO_SCREENS") {
+            return TwoScreens { server: None, display };
+        }
+        let mut server = std::process::Command::new("Xvfb")
+            .args([
+                "-displayfd",
+                "1",
+                "-nolisten",
+                "tcp",
+                "-screen",
+                "0",
+                "640x480x24",
+                "-screen",
+                "1",
+                "640x480x24",
+            ])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("Xvfb starts");
+        let mut number = String::new();
+        std::io::BufReader::new(server.stdout.take().unwrap())
+            .read_line(&mut number)
+            .expect("Xvfb names its display");
+        TwoScreens {
+            server: Some(server),
+            display: format!(":{}", number.trim()),
+        }
+    }
+}
+
+impl Drop for TwoScreens {
+    fn drop(&mut self) {
+        // terminated, not killed, so it removes its socket and lock: a display left named by them refuses the next
+        // server that would take it
+        if let Some(server) = self.server.as_mut() {
+            if let Some(pid) = rustix::process::Pid::from_raw(server.id() as i32) {
+                let _ = rustix::process::kill_process(pid, rustix::process::Signal::TERM);
+            }
+            let _ = server.wait();
+        }
+    }
+}
+
+/// What a window grabbing the pointer was told after a `drag_handle`'s end: a motion or button 1's release, with the
+/// root it was reported on and the position on that root.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Reported {
+    Motion { root: Window, x: i16, y: i16 },
+    Release { root: Window, x: i16, y: i16 },
+}
+
+/// The motions and button 1's releases queued for a connection, once the server has handled everything before.
+fn reported(conn: &RustConnection) -> Vec<Reported> {
+    conn.sync().unwrap();
+    let mut seen = Vec::new();
+    while let Some(event) = conn.poll_for_event().unwrap() {
+        match event {
+            Event::MotionNotify(e) => seen.push(Reported::Motion {
+                root: e.root,
+                x: e.root_x,
+                y: e.root_y,
+            }),
+            Event::ButtonRelease(e) if e.detail == 1 => seen.push(Reported::Release {
+                root: e.root,
+                x: e.root_x,
+                y: e.root_y,
+            }),
+            _ => {}
+        }
+    }
+    seen
+}
+
+/// How a `drag_handle` ends: its `end`, or the engine's exit with the handle held (`Engine::shutdown`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HandleEnd {
+    End,
+    Exit,
+}
+
+/// A `drag_handle` that ends while the pointer is on another screen of the display, with button 1 held, releases the
+/// button where the pointer is and sends no motion first: the end's visit of the pointer's place (a browser's held
+/// rest, M4's T11) would carry that screen's coordinates onto the engine's own root, moving the held pointer back
+/// there and releasing it over whatever window is under that point (review of T11, finding 2).
+#[test]
+fn a_drag_handle_ended_with_the_pointer_on_another_screen_releases_there_and_moves_nothing() {
+    handle_ended_on_another_screen(HandleEnd::End);
+}
+
+/// The engine's exit ends a held `drag_handle` as its `end` does, the pointer on another screen included.
+#[test]
+fn an_exit_with_a_drag_handle_held_and_the_pointer_on_another_screen_releases_there_and_moves_nothing() {
+    handle_ended_on_another_screen(HandleEnd::Exit);
+}
+
+/// A `drag_handle` over Gecko's window (which rests at a held move's end and before the release) on screen 0 of a
+/// two-screen display, the pointer then put on screen 1 with button 1 still held, and the handle ended: the window
+/// took the implicit grab at the press, so it is told of every motion and of the release wherever the pointer is.
+fn handle_ended_on_another_screen(ending: HandleEnd) {
+    let display = TwoScreens::start();
+    let (conn, _) = x11rb::connect(Some(&display.display)).expect("the two-screen display");
+    let (root, other) = (conn.setup().roots[0].root, conn.setup().roots[1].root);
+    let window = conn.generate_id().unwrap();
+    let aux = CreateWindowAux::new()
+        .event_mask(EventMask::POINTER_MOTION | EventMask::BUTTON_PRESS | EventMask::BUTTON_RELEASE);
+    conn.create_window(
+        0,
+        window,
+        root,
+        100,
+        100,
+        400,
+        300,
+        0,
+        WindowClass::INPUT_OUTPUT,
+        0,
+        &aux,
+    )
+    .unwrap();
+    conn.change_property8(
+        PropMode::REPLACE,
+        window,
+        AtomEnum::WM_CLASS,
+        AtomEnum::STRING,
+        b"probe\0firefox\0",
+    )
+    .unwrap();
+    let state = conn.intern_atom(false, b"WM_STATE").unwrap().reply().unwrap().atom;
+    conn.change_property32(PropMode::REPLACE, window, state, state, &[1, x11rb::NONE])
+        .unwrap();
+    conn.map_window(window).unwrap();
+    conn.sync().unwrap();
+    let button1 = x11rb::protocol::xproto::KeyButMask::BUTTON1;
+    conn.warp_pointer(x11rb::NONE, root, 0, 0, 0, 0, 20, 20).unwrap();
+    let mut engine = Engine::start_on_display(&display.display);
+    engine
+        .request("drag_handle", json!({"action": "start", "x": 150, "y": 150}))
+        .unwrap();
+    engine
+        .request("drag_handle", json!({"action": "move_to", "x": 330, "y": 250}))
+        .unwrap();
+    // the pointer goes to the other screen, button 1 still held
+    conn.warp_pointer(x11rb::NONE, other, 0, 0, 0, 0, 200, 120).unwrap();
+    let pointer = conn.query_pointer(root).unwrap().reply().unwrap();
+    assert!(
+        !pointer.same_screen && pointer.root == other && (pointer.root_x, pointer.root_y) == (200, 120),
+        "the pointer is on the other screen: {pointer:?}"
+    );
+    assert!(pointer.mask.contains(button1), "button 1 is held");
+    reported(&conn);
+    match ending {
+        // the person carried the pointer away from the last move, so the end says where it was released (T17)
+        HandleEnd::End => {
+            assert_eq!(
+                engine.request("drag_handle", json!({"action": "end"})),
+                Err(pointer_moved("firefox", None, (330, 250)))
+            );
+        }
+        HandleEnd::Exit => {
+            engine.close_stdin();
+            engine.exit_within(Duration::from_secs(10)).expect("the engine exits");
+        }
+    }
+    assert_eq!(
+        reported(&conn),
+        vec![Reported::Release {
+            root: other,
+            x: 200,
+            y: 120
+        }],
+        "{ending:?}: the release where the pointer is, no motion before it"
+    );
+    let pointer = conn.query_pointer(root).unwrap().reply().unwrap();
+    assert!(
+        pointer.root == other && (pointer.root_x, pointer.root_y) == (200, 120) && !pointer.mask.contains(button1),
+        "{ending:?}: released on the other screen: {pointer:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// T17 (#250): `drag_handle`'s lifecycle (handle.rs; the design session's ruling, 2026-11-10)
+
+/// The refusal of desktop pointer input while a handle is held (handle.rs `handle_held`), at the shipped idle bound.
+const HANDLE_HELD: &str = "a drag handle is held; end it before sending desktop pointer input (a handle that gets no \
+     request for 30 s is released where it is)";
+
+/// The refusal of a handle's start while another client holds the pointer (handle.rs `POINTER_HELD_ELSEWHERE`).
+const POINTER_HELD_ELSEWHERE: &str = "another application holds the pointer (an open menu, or a drag in progress); \
+     nothing was pressed. Close it or wait, then start the handle again";
+
+/// The end of a handle whose hold another client's grab cut (stray.rs `hold_cut`).
+fn hold_cut(app: &str) -> String {
+    format!(
+        "{app} may not have received your drag: another application took the pointer while the handle was held. Read \
+         the window to see what happened before dragging again"
+    )
+}
+
+/// The end of a handle whose pointer the person moved from where the last request put it (handle.rs `pointer_moved`).
+fn pointer_moved(app: &str, at: Option<(i16, i16)>, asked: (i16, i16)) -> String {
+    let at = at.map_or_else(|| "on another screen".to_string(), |(x, y)| format!("at ({x}, {y})"));
+    format!(
+        "{app} may not have received your drag where you asked: the desktop pointer was moved while the handle was \
+         held, so it was released {at} instead of at ({}, {}). Read the window to see what happened before dragging \
+         again",
+        asked.0, asked.1
+    )
+}
+
+/// Another client's active pointer grab on the root, as an open menu or a person's drag holds one, taken now and held
+/// until `release`.
+struct ForeignGrab {
+    release: mpsc::Sender<()>,
+    thread: std::thread::JoinHandle<()>,
+}
+
+impl ForeignGrab {
+    fn take() -> (ForeignGrab, x11rb::protocol::xproto::GrabStatus) {
+        use x11rb::protocol::xproto::GrabMode;
+        let (release, released) = mpsc::channel::<()>();
+        let (grabbed, held) = mpsc::channel();
+        let thread = std::thread::spawn(move || {
+            let (conn, screen) = x11rb::connect(None).expect("an X connection");
+            let root = conn.setup().roots[screen].root;
+            let (none, now, mode) = (x11rb::NONE, x11rb::CURRENT_TIME, GrabMode::ASYNC);
+            let status = conn
+                .grab_pointer(false, root, EventMask::BUTTON_PRESS, mode, mode, none, none, now)
+                .unwrap()
+                .reply()
+                .unwrap()
+                .status;
+            grabbed.send(status).unwrap();
+            let _ = released.recv_timeout(Duration::from_secs(10));
+            conn.ungrab_pointer(x11rb::CURRENT_TIME).unwrap();
+            conn.sync().unwrap();
+        });
+        let status = held.recv().unwrap();
+        (ForeignGrab { release, thread }, status)
+    }
+
+    fn release(self) {
+        self.release.send(()).unwrap();
+        self.thread.join().unwrap();
+    }
+}
+
+/// Whether the server holds button 1 down.
+fn button1_down() -> bool {
+    let (conn, screen) = x11rb::connect(None).expect("an X connection");
+    let root = conn.setup().roots[screen].root;
+    let pointer = conn.query_pointer(root).unwrap().reply().unwrap();
+    pointer.mask.contains(x11rb::protocol::xproto::KeyButMask::BUTTON1)
+}
+
+/// A probe window of `class`, managed, at the screen's top left, that selects no button events: no client takes the
+/// implicit grab of a press in it, so another client's grab can be taken during a handle's hold, as an application that
+/// takes the pointer mid-drag does.
+fn ungrabbed_window(class: &str) -> Probe {
+    let probe = Probe::open(class, (0, 0, 400, 300));
+    probe
+        .conn
+        .change_window_attributes(
+            probe.id,
+            &x11rb::protocol::xproto::ChangeWindowAttributesAux::new().event_mask(EventMask::STRUCTURE_NOTIFY),
+        )
+        .unwrap();
+    probe.conn.sync().unwrap();
+    managed(probe.id);
+    probe
+}
+
+/// A handle started while another client's grab holds the pointer would press into that grab: the page never sees the
+/// press, and the vendor and cua answered ok (task 73's probe, 60 of 60 each). The pre-press try sees the grab, and
+/// `start` is refused with nothing pressed, in either device mode; with the grab gone, a handle starts and ends.
+#[test]
+fn a_drag_handle_started_while_another_client_holds_the_pointer_is_refused_with_nothing_pressed() {
+    for args in [&[][..], &["--desktop", "dedicated"][..]] {
+        let probe = Probe::open("Google-chrome", (0, 0, 400, 300));
+        managed(probe.id);
+        let mut engine = Engine::start_with(args);
+        let (grab, status) = ForeignGrab::take();
+        assert_eq!(
+            status,
+            x11rb::protocol::xproto::GrabStatus::SUCCESS,
+            "the foreign grab is held"
+        );
+        assert_eq!(
+            engine.request("drag_handle", json!({"action": "start", "x": 150, "y": 150})),
+            Err(POINTER_HELD_ELSEWHERE.to_string()),
+            "{args:?}"
+        );
+        assert!(!button1_down(), "{args:?}: nothing pressed");
+        grab.release();
+        assert_eq!(probe.inputs(), vec![], "{args:?}: nothing reached the window");
+        engine
+            .request("drag_handle", json!({"action": "start", "x": 150, "y": 150}))
+            .unwrap();
+        engine
+            .request("drag_handle", json!({"action": "move_to", "x": 250, "y": 200}))
+            .unwrap();
+        assert_eq!(
+            engine.request("drag_handle", json!({"action": "end"})),
+            Ok(Value::Null),
+            "{args:?}"
+        );
+        assert_eq!(
+            probe.inputs(),
+            vec![
+                Input::ButtonPress { button: 1, sent: false },
+                Input::ButtonRelease { button: 1, sent: false },
+            ],
+            "{args:?}: with the grab gone, the handle's press and release"
+        );
+    }
+}
+
+/// The pre-press try holds the pointer only inside a server grab, given up in the same request batch: a person's click
+/// sent at that moment (a second X client's, from the live build's hook) waits for the server and lands in the window
+/// under the pointer, and the handle presses and releases as asked.
+#[test]
+fn a_click_sent_during_the_pre_press_try_still_lands() {
+    let probe = Probe::open("Google-chrome", (0, 0, 400, 300));
+    managed(probe.id);
+    let mut engine = Engine::start_with_fault(&[], "handle-try-click");
+    engine
+        .request("drag_handle", json!({"action": "start", "x": 150, "y": 150}))
+        .unwrap();
+    engine.request("drag_handle", json!({"action": "end"})).unwrap();
+    let seen = probe.inputs();
+    for input in [
+        Input::ButtonPress { button: 3, sent: false },
+        Input::ButtonRelease { button: 3, sent: false },
+        Input::ButtonPress { button: 1, sent: false },
+        Input::ButtonRelease { button: 1, sent: false },
+    ] {
+        assert!(seen.contains(&input), "{input:?} landed: {seen:?}");
+    }
+    assert!(!button1_down());
+}
+
+/// Another client's grab taken during the hold (where no client holds the press's implicit grab) crosses the target in
+/// mode `Grab`, and its end crosses back in mode `Ungrab`: the end releases and answers that the drag may not have been
+/// received, never success; never a `move_to`, which would leave the button down. Undisturbed, the same handle answers
+/// ok. A drag and drop begun by the target's client (its take of `XdndSelection`) takes the pointer itself, and silences
+/// the answer.
+#[test]
+fn a_grab_taken_during_a_drag_handle_s_hold_makes_its_end_answer_that_the_drag_may_not_have_been_received() {
+    let probe = ungrabbed_window("probe-handle");
+    let mut engine = Engine::start();
+    let app = app_of(&mut engine, probe.id);
+    let handle = |engine: &mut Engine, during: &dyn Fn()| {
+        engine
+            .request("drag_handle", json!({"action": "start", "x": 150, "y": 150}))
+            .unwrap();
+        during();
+        let moved = engine.request("drag_handle", json!({"action": "move_to", "x": 250, "y": 200}));
+        (moved, engine.request("drag_handle", json!({"action": "end"})))
+    };
+    assert_eq!(
+        handle(&mut engine, &|| {}),
+        (Ok(Value::Null), Ok(Value::Null)),
+        "undisturbed"
+    );
+    let cut = handle(&mut engine, &|| {
+        let (grab, status) = ForeignGrab::take();
+        assert_eq!(
+            status,
+            x11rb::protocol::xproto::GrabStatus::SUCCESS,
+            "taken during the hold"
+        );
+        grab.release();
+    });
+    assert_eq!(
+        cut,
+        (Ok(Value::Null), Err(hold_cut(&app))),
+        "the move answers, the end reports"
+    );
+    assert!(!button1_down(), "released");
+    // a grab still held at the end: the same answer, the button up
+    engine
+        .request("drag_handle", json!({"action": "start", "x": 150, "y": 150}))
+        .unwrap();
+    let (grab, _) = ForeignGrab::take();
+    let moved = engine.request("drag_handle", json!({"action": "move_to", "x": 250, "y": 200}));
+    let ended = engine.request("drag_handle", json!({"action": "end"}));
+    grab.release();
+    assert_eq!((moved, ended), (Ok(Value::Null), Err(hold_cut(&app))));
+    assert!(!button1_down(), "released");
+    // the target's client took XdndSelection: a drag and drop, whose own grab is not a cut
+    let selection = probe
+        .conn
+        .intern_atom(false, b"XdndSelection")
+        .unwrap()
+        .reply()
+        .unwrap()
+        .atom;
+    let taken = handle(&mut engine, &|| {
+        probe
+            .conn
+            .set_selection_owner(probe.id, selection, x11rb::CURRENT_TIME)
+            .unwrap();
+        probe.conn.sync().unwrap();
+        let (grab, _) = ForeignGrab::take();
+        grab.release();
+    });
+    assert_eq!(taken, (Ok(Value::Null), Ok(Value::Null)), "a drag and drop began");
+}
+
+/// The real pointer moved away from the last move while the handle was held (a second client's motion, as the person's
+/// mouse): the release goes where the pointer is, and the end says so. Motion that a later `move_to` corrected raises
+/// nothing, and a start then an end is a press and a release in place.
+#[test]
+fn a_drag_handle_whose_pointer_the_person_moved_reports_it_at_its_end() {
+    let probe = Probe::open("XTerm", (0, 0, 400, 300));
+    managed(probe.id);
+    let mut engine = Engine::start();
+    let app = app_of(&mut engine, probe.id);
+    engine
+        .request("drag_handle", json!({"action": "start", "x": 150, "y": 150}))
+        .unwrap();
+    engine
+        .request("drag_handle", json!({"action": "move_to", "x": 330, "y": 250}))
+        .unwrap();
+    pointer_to(200, 200);
+    assert_eq!(
+        engine.request("drag_handle", json!({"action": "end"})),
+        Err(pointer_moved(&app, Some((200, 200)), (330, 250)))
+    );
+    assert!(!button1_down(), "released where the pointer was");
+    // corrected by the next move: nothing to report
+    engine
+        .request("drag_handle", json!({"action": "start", "x": 150, "y": 150}))
+        .unwrap();
+    pointer_to(200, 200);
+    engine
+        .request("drag_handle", json!({"action": "move_to", "x": 330, "y": 250}))
+        .unwrap();
+    assert_eq!(engine.request("drag_handle", json!({"action": "end"})), Ok(Value::Null));
+    // a start then an end: a press and a release in place
+    engine
+        .request("drag_handle", json!({"action": "start", "x": 150, "y": 150}))
+        .unwrap();
+    assert_eq!(engine.request("drag_handle", json!({"action": "end"})), Ok(Value::Null));
+    probe.inputs();
+}
+
+/// While a handle is held, pointer input through XTEST would end the hold (its button) or move the held pointer: the
+/// desktop route's, and the foreground route's (dedicated mode), are refused, a second start included; keys and the
+/// background route run. After the end, desktop pointer input runs again.
+#[test]
+fn desktop_pointer_input_is_refused_while_a_drag_handle_is_held() {
+    let probe = Probe::open("Google-chrome", (0, 0, 400, 300));
+    managed(probe.id);
+    // a Gecko window away from the pointer: its pointer input takes the foreground route in dedicated mode (T19)
+    let gecko = Probe::open("firefox", (600, 400, 300, 200));
+    let mut engine = Engine::start_with(&["--desktop", "dedicated"]);
+    engine
+        .request("drag_handle", json!({"action": "start", "x": 150, "y": 150}))
+        .unwrap();
+    for (command, input) in [
+        ("click", json!({"x": 100, "y": 100})),
+        ("move", json!({"x": 100, "y": 100})),
+        ("scroll", json!({"x": 100, "y": 100, "direction": "down"})),
+        ("drag", json!({"path": [{"x": 100, "y": 100}, {"x": 200, "y": 100}]})),
+        ("move_relative", json!({"dx": 5, "dy": 0})),
+        ("drag_handle", json!({"action": "start", "x": 100, "y": 100})),
+        ("click", json!({"window": gecko.target(), "x": 50, "y": 50})),
+    ] {
+        assert_eq!(
+            engine.request(command, input.clone()),
+            Err(HANDLE_HELD.to_string()),
+            "{command} {input}"
+        );
+    }
+    assert!(button1_down(), "the hold stands");
+    assert_eq!(
+        engine.request("press_key", json!({"key": "a"})),
+        Ok(Value::Null),
+        "keys run"
+    );
+    assert_eq!(
+        engine.request("click", json!({"window": probe.target(), "x": 50, "y": 50})),
+        Ok(Value::Null),
+        "the background route runs"
+    );
+    engine
+        .request("drag_handle", json!({"action": "move_to", "x": 250, "y": 200}))
+        .unwrap();
+    assert_eq!(engine.request("drag_handle", json!({"action": "end"})), Ok(Value::Null));
+    assert_eq!(
+        engine.request("move", json!({"x": 20, "y": 20})),
+        Ok(Value::Null),
+        "ended: it runs"
+    );
+    assert_eq!(gecko.inputs(), vec![], "nothing reached the refused window");
+    probe.inputs();
+}
+
+/// A Chromium handle's end arms T14's after-release watch: a take after its release (a real one, the source taking
+/// `XdndSelection` after the button went up) is cancelled by an Escape through XTEST at once and reported by the next
+/// replies, the next acting request refused once; a Chrome drop under way at the release is confirmed by its activation
+/// request for the window under the release, where the window manager lists `_NET_ACTIVE_WINDOW`, and otherwise
+/// reported unconfirmed, never left at ok. A confirmed drop leaves nothing pending.
+#[test]
+fn a_chromium_drag_handle_s_end_arms_the_after_release_watch() {
+    let handle = |engine: &mut Engine| {
+        engine
+            .request("drag_handle", json!({"action": "start", "x": 20, "y": 20}))
+            .unwrap();
+        engine
+            .request("drag_handle", json!({"action": "move_to", "x": 200, "y": 120}))
+            .unwrap();
+        engine.request("drag_handle", json!({"action": "end"}))
+    };
+    // a late take
+    let (window, stop, recorder) = drag_source(OnRelease::TakesLate);
+    managed(window);
+    // the focus on the source, where the Escape through XTEST goes
+    in_front(window);
+    let mut engine = Engine::start();
+    let app = app_of(&mut engine, window);
+    *TAKE_TO_ESCAPE.lock().unwrap() = None;
+    assert_eq!(handle(&mut engine), Ok(Value::Null), "answered at the release");
+    sleep(SETTLE);
+    let waited = TAKE_TO_ESCAPE
+        .lock()
+        .unwrap()
+        .expect("the watch's Escape reached the source");
+    assert!(
+        waited < Duration::from_millis(50),
+        "the Escape {waited:?} after the take"
+    );
+    assert_eq!(
+        engine.exchange("list_windows", json!({}))["notice"],
+        json!(late_notice(&app))
+    );
+    assert_eq!(
+        engine.request("click", json!({"window": {"id": window}, "x": 50, "y": 50})),
+        Err(late_refusal(&app, "click"))
+    );
+    set_active_window(None);
+    stop.send(()).unwrap();
+    assert_eq!(
+        recorder.join().unwrap(),
+        vec![
+            Input::ButtonPress { button: 1, sent: false },
+            Input::ButtonRelease { button: 1, sent: false },
+            Input::KeyPress { sent: false },
+            Input::KeyRelease { sent: false },
+        ],
+        "the handle, the watch's Escape through XTEST, nothing of the refused click"
+    );
+    drop(engine);
+    // a drop under way at the release, confirmed or not; with and without Chrome's drag image, an override-redirect
+    // window of its own under the pointer, over the window the drop is for (task 73's sittings: every handle drop
+    // found that image under the release and confirmed nothing, answering ok)
+    let listed = ActiveWindowSupported::listed();
+    for (activates, image) in [(true, false), (false, false), (true, true), (false, true)] {
+        let (window, stop, recorder) = drag_source(OnRelease::Drops {
+            activates,
+            cursors: &[],
+        });
+        managed(window);
+        let (conn, _) = x11rb::connect(None).expect("an X connection");
+        let image = image.then(|| override_redirect(&conn, (190, 110, 24, 24)));
+        let mut engine = Engine::start();
+        let app = app_of(&mut engine, window);
+        assert_eq!(
+            handle(&mut engine),
+            Ok(Value::Null),
+            "activates: {activates}, image: {image:?}"
+        );
+        sleep(SETTLE);
+        let notice = engine.exchange("list_windows", json!({}))["notice"].clone();
+        let next = engine.request("click", json!({"window": {"id": window}, "x": 50, "y": 50}));
+        if activates {
+            assert_eq!(
+                (notice, next),
+                (Value::Null, Ok(Value::Null)),
+                "a confirmed drop, image: {image:?}"
+            );
+        } else {
+            assert_eq!(
+                (notice, next),
+                (json!(unconfirmed_notice(&app)), Err(unconfirmed_refusal(&app, "click"))),
+                "an unconfirmed drop, image: {image:?}"
+            );
+        }
+        if let Some(image) = image {
+            conn.destroy_window(image).unwrap();
+            conn.sync().unwrap();
+        }
+        set_active_window(None);
+        stop.send(()).unwrap();
+        let _ = recorder.join();
+    }
+    drop(listed);
+}
+
+/// The cause a handle the engine released after its idle bound leaves pending (handle.rs `idle_released`, through
+/// dnd.rs `pending_cause`), after "Pending from your last drag, ".
+fn idle_cause(app: &str, seconds: &str, at: (i16, i16)) -> String {
+    format!(
+        "Pending from your last drag, a drag handle released by timeout: your drag handle in {app} got no request for \
+         {seconds} s, so it was released where the pointer was, at ({}, {}); the release may have dropped what it \
+         held and changed the desktop",
+        at.0, at.1
+    )
+}
+
+/// A handle whose cell lost it (an agent's cell that threw between `start` and `end`) gets no request again, and every
+/// desktop pointer request was refused for good with button 1 held (task 73's review, P1). A handle that gets no request
+/// for the idle bound (30 s; `--drag-handle-idle-ms` sets another, here 300 ms) is released by the engine where the
+/// pointer is, with no request come; the next reply carries the notice, and the next acting request, or an `end` of the
+/// released handle, is refused once with it, not run. A handle whose requests come inside the bound stays held, a
+/// refused desktop request does not extend it, and the refusal while held names the bound.
+#[test]
+fn a_drag_handle_that_gets_no_request_for_its_idle_bound_is_released_where_it_is_and_the_next_request_says_so() {
+    let probe = Probe::open("XTerm", (0, 0, 400, 300));
+    managed(probe.id);
+    let mut engine = Engine::start_with(&["--drag-handle-idle-ms", "300"]);
+    let app = app_of(&mut engine, probe.id);
+    // requests inside the bound keep the hold
+    engine
+        .request("drag_handle", json!({"action": "start", "x": 150, "y": 150}))
+        .unwrap();
+    for x in [200, 250] {
+        sleep(Duration::from_millis(200));
+        engine
+            .request("drag_handle", json!({"action": "move_to", "x": x, "y": 200}))
+            .unwrap();
+    }
+    sleep(Duration::from_millis(150));
+    assert!(button1_down(), "held: each request came inside the bound");
+    assert_eq!(
+        engine.request("click", json!({"x": 20, "y": 20})),
+        Err(
+            "a drag handle is held; end it before sending desktop pointer input (a handle that gets no request for 0.3 \
+             s is released where it is)"
+                .to_string()
+        ),
+        "the refusal names the bound"
+    );
+    // a refused desktop request is no request of the handle's: the bound runs on
+    sleep(Duration::from_millis(300));
+    assert!(!button1_down(), "released by the engine, with no request come");
+    assert_eq!(
+        probe.inputs(),
+        vec![
+            Input::ButtonPress { button: 1, sent: false },
+            Input::ButtonRelease { button: 1, sent: false },
+        ],
+        "the press, and the release where the pointer was"
+    );
+    let notice = engine.exchange("list_windows", json!({}))["notice"].clone();
+    assert_eq!(
+        notice,
+        json!(format!(
+            "{}. Read the window before sending input again: your next input request will not be run",
+            idle_cause(&app, "0.3", (250, 200))
+        ))
+    );
+    assert_eq!(
+        engine.request("click", json!({"x": 20, "y": 20})),
+        Err(format!(
+            "{}; this click request was not run, so read the window before sending it again",
+            idle_cause(&app, "0.3", (250, 200))
+        )),
+        "the next acting request answers the timeout, not run"
+    );
+    assert_eq!(
+        engine.request("click", json!({"x": 20, "y": 20})),
+        Ok(Value::Null),
+        "then desktop pointer input runs"
+    );
+    // the released handle's own end, its first request after the bound: refused with the timeout, nothing sent
+    engine
+        .request("drag_handle", json!({"action": "start", "x": 150, "y": 150}))
+        .unwrap();
+    sleep(Duration::from_millis(500));
+    assert!(!button1_down(), "released by the engine");
+    assert_eq!(
+        engine.request("drag_handle", json!({"action": "end"})),
+        Err(format!(
+            "{}; this drag_handle request was not run, so read the window before sending it again",
+            idle_cause(&app, "0.3", (150, 150))
+        ))
+    );
+    assert_eq!(
+        engine.request("click", json!({"x": 20, "y": 20})),
+        Ok(Value::Null),
+        "answered once"
+    );
+    probe.inputs();
+}
+
+/// The screen of a private Xorg set through RandR to `width` by `height`, one of its modes (tests/xorg-resizable.conf):
+/// its CRTC shows that mode and the root takes its size, the CRTC changed first when shrinking and last when growing so
+/// the screen always holds it. The root's size is read back.
+fn screen_mode(conn: &RustConnection, root: Window, (width, height): (u16, u16)) {
+    use x11rb::protocol::randr::{ConnectionExt as _, Rotation};
+    conn.randr_query_version(1, 6).unwrap().reply().unwrap();
+    let resources = conn.randr_get_screen_resources_current(root).unwrap().reply().unwrap();
+    let mode = resources
+        .modes
+        .iter()
+        .find(|m| (m.width, m.height) == (width, height))
+        .unwrap_or_else(|| panic!("a {width}x{height} mode: {:?}", resources.modes))
+        .id;
+    let crtc = resources.crtcs[0];
+    let info = conn
+        .randr_get_crtc_info(crtc, resources.config_timestamp)
+        .unwrap()
+        .reply()
+        .unwrap();
+    let outputs = if info.outputs.is_empty() {
+        resources.outputs[..1].to_vec()
+    } else {
+        info.outputs
+    };
+    let set_crtc = || {
+        let (now, config) = (x11rb::CURRENT_TIME, resources.config_timestamp);
+        conn.randr_set_crtc_config(crtc, now, config, 0, 0, mode, Rotation::ROTATE0, &outputs)
+            .unwrap()
+            .reply()
+            .expect("RandR sets the CRTC's mode");
+    };
+    // about 96 dpi: RandR wants non-zero millimetres
+    let set_size = || {
+        let mm = |pixels: u16| (u32::from(pixels) * 254 / 960).max(1);
+        conn.randr_set_screen_size(root, width, height, mm(width), mm(height))
+            .unwrap()
+            .check()
+            .expect("RandR sets the screen's size");
+    };
+    if width < info.width || height < info.height {
+        set_crtc();
+        set_size();
+    } else {
+        set_size();
+        set_crtc();
+    }
+    let geometry = conn.get_geometry(root).unwrap().reply().unwrap();
+    assert_eq!((geometry.width, geometry.height), (width, height), "the root's size");
+}
+
+/// A handle's asked point is kept on the screen as it is now, not as it was when the engine connected (the
+/// whole-branch review of M4, P2): the connection's setup gives the root's size at the engine's start, so after the
+/// screen grew a move into the new area recorded a point the server never kept the pointer at, and `end` answered that
+/// the person had moved the pointer. A move beyond the grown screen is still kept on it. Xvfb's RandR never grows a
+/// screen past the size it started with, so this runs on the private Xorg that `CUA_LIVE_RESIZABLE` names
+/// (`tests/two-screens.sh` starts it from tests/xorg-resizable.conf, and requires this test to pass), and says it is
+/// skipped without one.
+#[test]
+fn a_drag_handle_moved_into_screen_area_added_after_the_engine_started_ends_as_asked() {
+    let Ok(display) = std::env::var("CUA_LIVE_RESIZABLE") else {
+        eprintln!("skipped: CUA_LIVE_RESIZABLE names no resizable display (tests/two-screens.sh runs this test)");
+        return;
+    };
+    let (conn, screen) = x11rb::connect(Some(&display)).expect("the resizable display");
+    let root = conn.setup().roots[screen].root;
+    let place = || {
+        let pointer = conn.query_pointer(root).unwrap().reply().unwrap();
+        let held = pointer.mask.contains(x11rb::protocol::xproto::KeyButMask::BUTTON1);
+        ((pointer.root_x, pointer.root_y), held)
+    };
+    screen_mode(&conn, root, (640, 480));
+    let mut engine = Engine::start_on_display(&display);
+    engine.request("list_windows", json!({})).unwrap();
+    // the screen grows after the engine connected
+    screen_mode(&conn, root, (1280, 800));
+    let mut handle = |action: Value| engine.request("drag_handle", action);
+    let ended = (|| {
+        handle(json!({"action": "start", "x": 150, "y": 150}))?;
+        handle(json!({"action": "move_to", "x": 900, "y": 600}))?;
+        let moved = place();
+        let first = handle(json!({"action": "end"}));
+        // beyond the grown screen: kept on it, at its edge, and that is where it was asked to be
+        handle(json!({"action": "start", "x": 150, "y": 150}))?;
+        handle(json!({"action": "move_to", "x": 1320, "y": 150}))?;
+        let edge = place();
+        let second = handle(json!({"action": "end"}));
+        Ok::<_, String>((moved, first, edge, second, place()))
+    })();
+    drop(engine);
+    screen_mode(&conn, root, (640, 480));
+    let (moved, first, edge, second, after) = ended.expect("the handle's requests");
+    assert_eq!(
+        moved,
+        ((900, 600), true),
+        "the server put the held pointer in the new area"
+    );
+    assert_eq!(first, Ok(Value::Null), "released where it was asked to be");
+    assert_eq!(edge, ((1279, 150), true));
+    assert_eq!(second, Ok(Value::Null));
+    assert_eq!(after, ((1279, 150), false), "released");
+}
+
+/// The refusal of a move or an end of a handle the idle bound released, after the timeout's own (handle.rs
+/// `handle_expired`).
+fn handle_expired(app: &str, seconds: &str, at: (i16, i16)) -> String {
+    format!(
+        "your drag handle in {app} is no longer held: it got no request for {seconds} s, so it was released where the \
+         pointer was, at ({}, {}); this drag_handle request was not run. Start a new handle to drag again",
+        at.0, at.1
+    )
+}
+
+/// The real pointer's place on the screen.
+fn pointer_place() -> (i16, i16) {
+    let (conn, screen) = x11rb::connect(None).expect("an X connection");
+    let root = conn.setup().roots[screen].root;
+    let pointer = conn.query_pointer(root).unwrap().reply().unwrap();
+    (pointer.root_x, pointer.root_y)
+}
+
+/// A handle the idle bound released stays released (the whole-branch review of M4, P2): the timeout's refusal is
+/// answered once, and a move retried after it answered ok with the button up, moving the pointer as if it dragged. Every
+/// later move or end of it is refused with the expiry, nothing sent, until a new start, which holds and drags as ever. A
+/// move with no start at all, in an engine that released no handle, still moves the pointer and presses nothing.
+#[test]
+fn a_drag_handle_released_for_its_idle_bound_refuses_every_later_move_and_end_until_a_new_start() {
+    let probe = Probe::open("XTerm", (0, 0, 400, 300));
+    managed(probe.id);
+    let mut engine = Engine::start_with(&["--drag-handle-idle-ms", "300"]);
+    let app = app_of(&mut engine, probe.id);
+    engine
+        .request("drag_handle", json!({"action": "start", "x": 150, "y": 150}))
+        .unwrap();
+    engine
+        .request("drag_handle", json!({"action": "move_to", "x": 250, "y": 200}))
+        .unwrap();
+    sleep(Duration::from_millis(500));
+    assert!(!button1_down(), "released by the engine");
+    assert_eq!(
+        engine.request("drag_handle", json!({"action": "move_to", "x": 260, "y": 200})),
+        Err(format!(
+            "{}; this drag_handle request was not run, so read the window before sending it again",
+            idle_cause(&app, "0.3", (250, 200))
+        )),
+        "the first: the timeout"
+    );
+    for (what, request) in [
+        ("a retried move", json!({"action": "move_to", "x": 260, "y": 200})),
+        ("another move", json!({"action": "move_to", "x": 270, "y": 210})),
+        ("its end", json!({"action": "end"})),
+        ("its end again", json!({"action": "end"})),
+    ] {
+        assert_eq!(
+            engine.request("drag_handle", request),
+            Err(handle_expired(&app, "0.3", (250, 200))),
+            "{what}"
+        );
+    }
+    assert_eq!(pointer_place(), (250, 200), "nothing moved the pointer");
+    assert!(!button1_down());
+    assert_eq!(
+        probe.inputs(),
+        vec![
+            Input::ButtonPress { button: 1, sent: false },
+            Input::ButtonRelease { button: 1, sent: false },
+        ],
+        "the press, and the release where the pointer was: nothing after it"
+    );
+    // a new start holds and drags as ever
+    engine
+        .request("drag_handle", json!({"action": "start", "x": 150, "y": 150}))
+        .unwrap();
+    engine
+        .request("drag_handle", json!({"action": "move_to", "x": 200, "y": 180}))
+        .unwrap();
+    assert!(button1_down(), "held again");
+    assert_eq!(engine.request("drag_handle", json!({"action": "end"})), Ok(Value::Null));
+    assert_eq!(
+        probe.inputs(),
+        vec![
+            Input::ButtonPress { button: 1, sent: false },
+            Input::ButtonRelease { button: 1, sent: false },
+        ]
+    );
+    // the wire's move with no start, in an engine that released no handle: the pointer moves, nothing is pressed
+    let mut fresh = Engine::start_with(&["--drag-handle-idle-ms", "300"]);
+    assert_eq!(
+        fresh.request("drag_handle", json!({"action": "move_to", "x": 120, "y": 110})),
+        Ok(Value::Null)
+    );
+    assert_eq!(pointer_place(), (120, 110));
+    assert!(!button1_down());
+    assert_eq!(probe.inputs(), vec![], "a move presses nothing");
+}
+
+/// The idle bound holds while another request blocks the engine (the second review of task 73, P3): the release between
+/// requests and at a request's entry never ran while a request was running, so a keyboard request allowed during the
+/// hold (a key held for a minute) kept button 1 down past the bound. A held handle is released at its bound whatever the
+/// engine is doing; the blocked request's own reply carries the timeout's notice, and the next acting request is refused
+/// once with it, through the same pending path.
+#[test]
+fn a_drag_handle_s_idle_bound_holds_while_another_request_blocks_the_engine() {
+    let probe = Probe::open("XTerm", (0, 0, 400, 300));
+    managed(probe.id);
+    let mut engine = Engine::start_with(&["--drag-handle-idle-ms", "300"]);
+    let app = app_of(&mut engine, probe.id);
+    engine
+        .request("drag_handle", json!({"action": "start", "x": 150, "y": 150}))
+        .unwrap();
+    engine
+        .request("drag_handle", json!({"action": "move_to", "x": 250, "y": 200}))
+        .unwrap();
+    // a key held 1.5 s, five times the bound: keyboard input runs while a handle is held
+    let sampled = std::thread::spawn(|| {
+        sleep(Duration::from_millis(900));
+        button1_down()
+    });
+    let reply = engine.exchange("press_key", json!({"key": "shift", "duration": 1500}));
+    assert!(
+        !sampled.join().unwrap(),
+        "released at the bound, while the key was still held"
+    );
+    let cause = idle_cause(&app, "0.3", (250, 200));
+    assert_eq!(
+        (&reply["ok"], &reply["notice"]),
+        (
+            &json!(true),
+            &json!(format!(
+                "{cause}. Read the window before sending input again: your next input request will not be run"
+            ))
+        ),
+        "the key request ran, and its reply carries the timeout"
+    );
+    assert_eq!(
+        engine.request("click", json!({"x": 20, "y": 20})),
+        Err(format!(
+            "{cause}; this click request was not run, so read the window before sending it again"
+        )),
+        "the next acting request answers the timeout, not run"
+    );
+    let buttons: Vec<Input> = probe
+        .inputs()
+        .into_iter()
+        .filter(|i| matches!(i, Input::ButtonPress { .. } | Input::ButtonRelease { .. }))
+        .collect();
+    assert_eq!(
+        buttons,
+        vec![
+            Input::ButtonPress { button: 1, sent: false },
+            Input::ButtonRelease { button: 1, sent: false },
+        ],
+        "the press, and one release where the pointer was"
+    );
+}
+
+/// A reset frees desktop pointer input at once: the REPL state that held a handle is gone (`js_reset`, a cell's
+/// timeout), and cua's service, at the next kernel's setup, sends `release_handle` (the design session's ruling on task
+/// 73's review). The held handle is released there and then, nothing is left pending, and the next desktop pointer
+/// request runs; with no handle held the release sends nothing.
+#[test]
+fn a_reset_s_release_frees_desktop_pointer_input_at_once() {
+    let probe = Probe::open("XTerm", (0, 0, 400, 300));
+    managed(probe.id);
+    let mut engine = Engine::start();
+    engine
+        .request("drag_handle", json!({"action": "start", "x": 150, "y": 150}))
+        .unwrap();
+    engine
+        .request("drag_handle", json!({"action": "move_to", "x": 250, "y": 200}))
+        .unwrap();
+    assert!(
+        engine
+            .request("click", json!({"x": 20, "y": 20}))
+            .is_err_and(|e| e.starts_with("a drag handle is held")),
+        "held"
+    );
+    assert_eq!(engine.request("release_handle", json!({})), Ok(Value::Null));
+    assert!(!button1_down(), "released at once");
+    assert_eq!(
+        engine.exchange("list_windows", json!({}))["notice"],
+        Value::Null,
+        "nothing pending"
+    );
+    assert_eq!(
+        engine.request("click", json!({"x": 20, "y": 20})),
+        Ok(Value::Null),
+        "desktop pointer input runs at once"
+    );
+    assert_eq!(
+        probe.inputs(),
+        vec![
+            Input::ButtonPress { button: 1, sent: false },
+            Input::ButtonRelease { button: 1, sent: false },
+            Input::ButtonPress { button: 1, sent: false },
+            Input::ButtonRelease { button: 1, sent: false },
+        ],
+        "the handle's press and release, then the click"
+    );
+    assert_eq!(engine.request("release_handle", json!({})), Ok(Value::Null));
+    assert_eq!(probe.inputs(), vec![], "nothing held: nothing sent");
+}
+
+/// A Chrome handle's drag and drop under way at its release over a window Chrome's activation request cannot confirm
+/// (the bare root here; any window not Chrome's) is unconfirmed, never ok, where the window manager supports the
+/// request (task 73's review, P2: such a drop answered ok with nothing pending).
+#[test]
+fn a_chrome_handle_s_drop_released_where_nothing_can_confirm_it_is_unconfirmed() {
+    let listed = ActiveWindowSupported::listed();
+    let (window, stop, recorder) = drag_source(OnRelease::Drops {
+        activates: true,
+        cursors: &[],
+    });
+    managed(window);
+    let mut engine = Engine::start();
+    let app = app_of(&mut engine, window);
+    engine
+        .request("drag_handle", json!({"action": "start", "x": 20, "y": 20}))
+        .unwrap();
+    engine
+        .request("drag_handle", json!({"action": "move_to", "x": 200, "y": 120}))
+        .unwrap();
+    // off the source, to the bare root: no top-level there to confirm the drop
+    engine
+        .request("drag_handle", json!({"action": "move_to", "x": 800, "y": 600}))
+        .unwrap();
+    assert_eq!(engine.request("drag_handle", json!({"action": "end"})), Ok(Value::Null));
+    sleep(SETTLE);
+    let notice = engine.exchange("list_windows", json!({}))["notice"].clone();
+    let next = engine.request("click", json!({"window": {"id": window}, "x": 50, "y": 50}));
+    assert_eq!(
+        (notice, next),
+        (json!(unconfirmed_notice(&app)), Err(unconfirmed_refusal(&app, "click"))),
+        "a drop nothing could confirm"
+    );
+    set_active_window(None);
+    stop.send(()).unwrap();
+    let _ = recorder.join();
+    drop(listed);
+}
+
+/// The pointer at a handle's release is read after the release dwell and the hold watch's round trip, as close to the
+/// button-up as the drop window's lookup allows, and that reading decides both the pointer-moved answer and the drop
+/// window (task 73's review, P3: both used a reading from before the dwell). The person's motion during Gecko's 30 ms
+/// dwell (a second client's XTEST motion, the live build's hook) is reported.
+#[test]
+fn a_pointer_moved_during_the_release_dwell_is_the_one_the_end_reports() {
+    let probe = Probe::open("firefox", (0, 0, 400, 300));
+    managed(probe.id);
+    let mut engine = Engine::start_with_fault(&[], "handle-dwell-move");
+    let app = app_of(&mut engine, probe.id);
+    engine
+        .request("drag_handle", json!({"action": "start", "x": 150, "y": 150}))
+        .unwrap();
+    engine
+        .request("drag_handle", json!({"action": "move_to", "x": 250, "y": 200}))
+        .unwrap();
+    assert_eq!(
+        engine.request("drag_handle", json!({"action": "end"})),
+        Err(pointer_moved(&app, Some((300, 250)), (250, 200))),
+        "the hook's motion during the dwell, to (300, 250)"
+    );
+    assert!(!button1_down(), "released");
+    probe.inputs();
 }

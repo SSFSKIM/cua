@@ -47,7 +47,13 @@ async function startEngine(bin){
  w?.close();if(engine&&engine.exitCode===null&&engine.signalCode===null){await new Promise((ok,no)=>{const t=setTimeout(()=>no(Error('engine did not stop; abort shard')),5000);engine.once('exit',()=>{clearTimeout(t);ok()});engine.kill('SIGTERM')})}
  const socket=join(process.env.RUNNER_TEMP,`s359-${process.pid}-${++engineSerial}.sock`);rmSync(socket,{force:true});
  engine=spawn(bin,[],{env:{...process.env,CUA_ENGINE_SOCKET:socket},stdio:['ignore','ignore','pipe']});engine.stderr.on('data',d=>appendFileSync(join(OUT,'engine-stderr.txt'),d));
- w=await until(async()=>{try{const socket359=await new Promise((ok,no)=>{const s=createConnection(socket);s.once('connect',()=>ok(s));s.once('error',no)});const wire=new Wire(socket359),ping=await wire.call('ping',{clientApiVersion:'cua-engine-1',desktop:'shared'});if(ping.error){wire.close();return false}return wire}catch{return false}},15000);
+ const connectDeadline=Date.now()+15000;
+ for(;;){
+  try{w=new Wire(await new Promise((ok,no)=>{const s=createConnection(socket);s.once('connect',()=>{s.setTimeout(0);ok(s)});s.once('error',e=>{s.destroy();no(e)});s.setTimeout(Math.max(1,connectDeadline-Date.now()),()=>s.destroy(Error('engine connect timeout')))}));break}
+  catch(e){if(!['ENOENT','ECONNREFUSED'].includes(e.code)||Date.now()>=connectDeadline)throw e;await sleep(25)}
+ }
+ // Only connecting is retried, never a ping, RPC, or measured action.
+ const ping=await w.call('ping',{clientApiVersion:'cua-engine-1',desktop:'shared'});requireOK(ping,'engine ping');
 }
 async function rpc(method,args={}){const startedAt=Date.now(),raw=await w.execute(method,{pid,...args});return {startedAt,endedAt:Date.now(),error:raw.error??null,meta:raw.result?.meta??raw.error?.data?.meta??raw.error?.meta,probe:raw.result?.probe359,raw}}
 const clean=r=>{const {raw,...rest}=r;return rest};
@@ -65,6 +71,7 @@ async function attempt(c){
   row.prepare=await command({op:'prepare',id:c.id,editor:EDITOR,key:''});
   // The one real screenshot on this connection supplies both the point and the stale-point guard's lineage.
   const shot=await rpc('get_app_state',{includeScreenshot:true,outputDirectory:join(OUT,'shots',String(rows.length))});requireOK(shot,'observation');
+  row.observation=clean(shot); // #366's readiness wait, if cold, completes before any measured interval.
   const state=shot.raw.result,fields=state.nodes.filter(n=>['AXTextArea','AXTextField'].includes(n.role)&&n.frame&&/Draft control|Message Body/.test([n.title,n.description,n.placeholder].join(' ')));
   if(fields.length!==1)throw Error('fixture field AX identity ambiguous/missing '+fields.length);
   const field=fields[0],frame=state.window.frame,scale=state.screenshot.width/frame.width;
@@ -84,7 +91,11 @@ async function attempt(c){
   requireOK(row.click,'measured click');stage='selection';
   // Intentionally no observation, read, cover check or sleep between these calls.
   row.next=c.selection==='script'?await command({op:'select-all',id:c.id}):clean(await rpc('press_key',{key:'cmd+a'}));requireOK(row.next,'selection');
-  if(c.suite!=='trace'&&c.suite!=='isolate'){stage='type';row.type=clean(await rpc('type_text',{text:REQUESTED}));requireOK(row.type,'type_text')}
+  if(c.suite!=='trace'&&c.suite!=='isolate'){
+   stage='type';const typed=await rpc('type_text',{text:REQUESTED});row.type={...clean(typed),answer:typed.raw};
+   // #354's honest refusal is a measured answer, not a lost outcome or permission to retry.
+   if(row.type.error?.errorName!=='typeUnconfirmed')requireOK(row.type,'type_text');
+  }
   stage='tail';const returnedAt=row.type?.endedAt??row.next.endedAt;
   row.samples=[];for(const delay of [0,250,1500]){await sleep(returnedAt+delay-Date.now());const s=await command({op:'read'});row.samples.push({...s,requestedDelayMs:delay,actualDelayMs:s.at-returnedAt})}
   row.events=[...(row.next.trace??[]),...row.samples.flatMap(s=>s.trace??[])];
@@ -108,7 +119,9 @@ try{
  for(const instrumented of [false,true]){
   await startEngine(instrumented?TRACED:ENGINE);
   // A late tree is intentional in the rate/attribution corpus; fresh #341 coverage is a separate future regression run.
-  await front(pid);for(let i=0;i<2;i++){requireOK(await rpc('get_app_state',{includeScreenshot:false}),'warmup');await sleep(1200)}
+  await front(pid);meta.warmups??=[];
+  for(let i=0;i<2;i++){const warmup=await rpc('get_app_state',{includeScreenshot:false});requireOK(warmup,'warmup');meta.warmups.push({instrumented,...clean(warmup)});await sleep(1200)}
+  // Both cold and late warmups have returned; #366's ~2.5 s first observation is never timed as click latency.
   // Deterministic interleaving by rep/selection/suite, not a whole candidate at a different browser age.
   for(const c of planned.filter(c=>(!['rate','control'].includes(c.suite))===instrumented))await attempt(c);
  }

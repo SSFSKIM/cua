@@ -1,8 +1,8 @@
 # #359: measure the late caret, before choosing a fix
 
-**Offline preparation only. No hosted run is authorized by this kit.** The workflow has only `workflow_dispatch`, not a push trigger. Do not dispatch or introduce a registration push trigger until the owner rules on hosted runs. A new manual-only workflow may need GitHub registration before it can be selected; that is an approval-stage question, not something this kit silently works around.
+**Hosted A/B runs are authorized by the owner (design ruling 1ea561bc:733).** The workflow has a push trigger limited to `probe/359-hosted` and this kit's paths, defaulting to the 200-attempt smoke; manual dispatch defaults to smoke too. Pushing a trigger-matching commit without `[skip ci]` starts a run and registers the workflow. Push only when ready to run; later kit commits use `[skip ci]`, and full measurement is an explicit dispatch (`reps=20, smoke=false`).
 
-This is an experiment branch, never a product change or a PR to main. Its base is `origin/probe/354-measure` at `9c36bed5`. Both engine arms pin main `9020bb18acb9091f817a4b648f7c332174b11153`, which includes #324 and #341, not lane 1's unfinished #354 branch. `patch.mjs` changes only a detached build source and refuses to patch the kit checkout. The branch contains no changes under `native/`.
+This is an experiment branch, never a product change or a PR to main. The offline kit is `probe/359-measure` at `f4ccd10b`, based on `origin/probe/354-measure` at `9c36bed5`. Both engine arms now pin current main `15acf09b714dd19efc796e4a3a2ff8d57e2f7994`, including #354, #360 and #366. Refresh and record the pin at smoke dispatch; keep full-run evidence on the smoke-qualified pin unless a new pin is separately smoked. `patch.mjs` changes only a detached build source and refuses to patch the kit checkout. The branch contains no changes under `native/`.
 
 ## What is already known, and what is not
 
@@ -18,7 +18,7 @@ The source has an important distinction:
 
 References: Decision Log entries #283, #324, #341 in `docs/doperpowers/specs/2026-10-18-own-native-engine-design.md` on the pinned engine; the coordinate branch of `Input.swift`, `WebAreaFocus.swift`, `ElementInput.swift`, `AX.swift`, and `DesktopGate.swift`.
 
-## Run plan after approval
+## Run plan
 
 First run an explicitly labelled `reps=1, smoke=true` smoke (200 attempts). Check all 12 visible-owner bindings, field roles, screenshot points, cover order, AX notification registration results, and complete tail samples. A failed smoke is not rate evidence and is not followed by automatic input retries. Fix the kit, not the measured outcome, before approving a full run.
 
@@ -40,13 +40,13 @@ Plain pinned engines carry primary rates and no-click controls. A separate patch
 
 1. Bring only the disposable runner browser forward. Bind the page's random nonce and time origin to its visible AX window title using #354's owned transport. The `probe354:` title is deliberately retained for that protocol; experiment records and artifacts say #359.
 2. Build the fixture and focus it by script, with its caret at the seed's **end**, not the measured click's offset. No preparation engine click can leave an earlier caret write pending.
-3. Observe once with a screenshot on the same engine connection that will click. Require exactly one labelled fixture AX field. Its monospace point is the field's AX frame +35,+20 (nominal offset 3); the actual write's range is recorded in traced runs. A smoke must validate this mapping in each editor/browser.
+3. Complete both connection warmup observations before any attempt; record their start/end and metadata. #366's cold Chromium accessibility wait (about 2.5 s when present on the pinned main) completes here, never inside a measured click. Observe once with a screenshot on the same engine connection that will click, also recording its interval. Require exactly one labelled fixture AX field. Its monospace point is the field's AX frame +35,+20 (nominal offset 3); the actual write's range is recorded in traced runs. A smoke must validate this mapping in each editor/browser.
 4. Bind the AX watcher to that labelled field within the nonce-matched window. Move the disposable cover forward, settle deactivation for 250 ms, and verify the seed, intended end caret, foreground PID, and browser-behind-cover order. No setup failure becomes a semantic success.
 5. Click once (or skip it in the no-click control). **Immediately issue selection, then type** in the rate/candidate arms. No observation, AX read, cover check, or wait is inserted between those calls by the controller. Script selection has unavoidable transport latency, measured explicitly. Cmd+A has its own RPC latency. A candidate's wait is inside the click before its answer.
 6. Keep DOM event history and take tail samples requested at 0/250/1500 ms after the final call. Record actual times, not timer targets. Trace/isolation arms omit typing and watch the selection for that same tail.
 7. Stop the observer, check that the visible window is still the bound nonce, and read foreground state without activation. Context loss is invalid evidence with posted actions retained, never retried. A raise is a separate constraint failure and does not erase a scorable text outcome.
 
-There are no automatic measured-action retries. Three consecutive invalid setups abort a shard. Incomplete rows, refusal stages, missing IDs, and rejected transport answers remain in the evidence. The 1.5 s observation horizon is finite: no change within it does not prove no later effect exists.
+There are no automatic measured-action retries. Engine startup retries only the socket connection on ENOENT/ECONNREFUSED, within 15 s; ping and all RPCs are issued once. Three consecutive invalid setups abort a shard. Incomplete rows, refusal stages, missing IDs, and rejected transport answers remain in the evidence. The 1.5 s observation horizon is finite: no change within it does not prove no later effect exists.
 
 ## Instrumentation and candidate prices
 
@@ -79,11 +79,11 @@ node scripts/probe-359/readers.mjs timeline /absolute/downloaded-artifacts /abso
 node scripts/probe-359/readers.mjs summarize /absolute/smoke-artifacts /absolute/smoke-tables --smoke
 ```
 
-- `summary.json`: requested/attempted/valid/invalid/refused counts, missing/unexpected IDs, wrong final text, placed claims followed by an observed late script-caret reversion, ambiguous timings, constraint failures, candidate confirmations/refusals/accepted-wrong outcomes, and latency percentiles by cell. Duplicate IDs fail loudly. Smoke and primary rows cannot mix.
+- `summary.json`: requested/attempted/valid/invalid/refused counts, missing/unexpected IDs, wrong final text, per-attempt `type_text` answer counts, false success (success on wrong DOM text), honest unconfirmed (typeUnconfirmed on wrong DOM text), unconfirmed on correct DOM text, placed claims followed by an observed late script-caret reversion, ambiguous timings, constraint failures, candidate confirmations/refusals/accepted-wrong outcomes, and latency percentiles by cell. Duplicate IDs fail loudly. Smoke and primary rows cannot mix.
 - `timeline.jsonl`: original controller/engine/DOM/AX events normalized against **both click return and next-call start**, while retaining absolute timestamps and source. Use it to inspect each traced step, not just final text.
 - Raw artifacts: rows, config with the shard manifest and pins, progress, transport ownership events, engine stderr, and screenshot lineage evidence. Browser profiles are not uploaded. Keep different kit/engine pins and separate completed runs in separate input directories; there is intentionally no automatic best-of/retry merge.
 
-Denominators are requested attempts and valid scorable attempts side by side. Refusals and invalid fixture setups are not successful replacements. `wrongFinal / valid` is meaningful only in typing suites; `placedThenLate / placedClaims` and `lateCaretAfterScript / valid` are mechanism observations with a finite horizon. Candidate false acceptance is reported by selection type so Cmd+A's separate race is visible. Missing/coalesced selectionchange notifications are not reconstructed from the first input's caret.
+Denominators are requested attempts and valid scorable attempts side by side. #354's `typeUnconfirmed` is a measured typing answer: retain the raw response and finish the DOM tail so an honest refusal can be distinguished from success on the wrong placement. It does not invalidate an otherwise scorable attempt. Refusals and invalid fixture setups are not successful replacements. #354 also settles recent keypresses before typing, so current Cmd+A rates are not estimates of the old pre-#354 engine's race. A successful type read-back proves replacement of its own pre-type snapshot, which may already reflect the click's wrong caret; the DOM's intended full replacement remains the judge. `wrongFinal / valid` is meaningful only in typing suites; `placedThenLate / placedClaims` and `lateCaretAfterScript / valid` are mechanism observations with a finite horizon. Candidate false acceptance is reported by selection type so Cmd+A's separate race is visible. Missing/coalesced selectionchange notifications are not reconstructed from the first input's caret.
 
 ## Decision after measurement
 

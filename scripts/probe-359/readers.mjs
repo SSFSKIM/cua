@@ -37,13 +37,18 @@ export function summary(rows,expected=cells(),{smoke=false}={}){
  if(rows.some(r=>r.smoke===true)&&!smoke)throw Error('smoke evidence cannot enter primary summary; use explicit smoke mode');
  if(smoke&&rows.some(r=>r.smoke!==true))throw Error('mixed smoke and primary evidence');
  const seen=new Set(),groups=new Map(),missing=[];
- const make=r=>{const key=groupKey(r);if(!groups.has(key))groups.set(key,{cell:key,requested:0,attempted:0,valid:0,invalid:0,refused:0,wrongFinal:0,foregroundViolations:0,windowRaisesObserved:0,lateCaretAfterScript:0,placedClaims:0,placedThenLate:0,ambiguousTiming:0,candidateConfirmed:0,candidateRefused:0,candidateAcceptedWrongFinal:0,candidateAcceptedThenLate:0,barrierTimes:[],clickTimes:[],gaps:[],lastCaretTimes:[]});return groups.get(key)};
+ const make=r=>{const key=groupKey(r);if(!groups.has(key))groups.set(key,{cell:key,requested:0,attempted:0,valid:0,invalid:0,refused:0,wrongFinal:0,typeAnswers:{},typeFalseSuccess:0,typeHonestUnconfirmed:0,typeUnconfirmedCorrect:0,foregroundViolations:0,windowRaisesObserved:0,lateCaretAfterScript:0,placedClaims:0,placedThenLate:0,ambiguousTiming:0,candidateConfirmed:0,candidateRefused:0,candidateAcceptedWrongFinal:0,candidateAcceptedThenLate:0,barrierTimes:[],clickTimes:[],gaps:[],lastCaretTimes:[]});return groups.get(key)};
  for(const e of expected)make(e).requested++;
  for(const r of rows){if(seen.has(r.id))throw Error('duplicate evidence id: '+r.id);seen.add(r.id);const g=make(r);g.attempted++;
   if(r.click?.error||r.next?.error||r.type?.error)g.refused++;
   if(r.foregroundViolation)g.foregroundViolations++;if(r.windowRaiseObserved)g.windowRaisesObserved++;
   if(!r.valid){g.invalid++;continue}g.valid++;const f=facts(r);
-  if(r.type&&!f.correct)g.wrongFinal++;
+  if(r.type){
+   const answer=r.type.error?.errorName??(r.type.error?'otherError':'success');
+   g.typeAnswers[answer]=(g.typeAnswers[answer]??0)+1;
+   if(!f.correct){g.wrongFinal++;if(answer==='success')g.typeFalseSuccess++;if(answer==='typeUnconfirmed')g.typeHonestUnconfirmed++}
+   else if(answer==='typeUnconfirmed')g.typeUnconfirmedCorrect++;
+  }
   for(const key of ['lateCaretAfterScript','placedThenLate','ambiguousTiming'])if(f[key])g[key]++;
   if(f.placed)g.placedClaims++;
   if(f.barrier){if(f.barrier.confirmed){g.candidateConfirmed++;if(r.type&&!f.correct)g.candidateAcceptedWrongFinal++;if(f.lateCaretAfterScript)g.candidateAcceptedThenLate++}else g.candidateRefused++;g.barrierTimes.push(f.barrier.ms)}

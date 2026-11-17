@@ -61,6 +61,17 @@ test('a raised browser remains a semantic trial and separately violates the no-r
  const g=summary([{...row,foregroundViolation:true,windowRaiseObserved:true}],[cell]).groups[0];
  assert.equal(g.valid,1);assert.equal(g.foregroundViolations,1);assert.equal(g.windowRaisesObserved,1);
 });
+test('type readback answers distinguish honest unconfirmed from false success against the DOM',()=>{
+ const wrong={...row,type:{...row.type,error:null}},unconfirmed={...row,type:{...row.type,error:{code:-32000,errorName:'typeUnconfirmed',message:'not confirmed'}}};
+ const g=summary([wrong,{...unconfirmed,id:'unconfirmed'}],[cell,{...cell,id:'unconfirmed'}]).groups[0];
+ assert.equal(g.valid,2);assert.equal(g.wrongFinal,2);assert.equal(g.typeAnswers.success,1);assert.equal(g.typeAnswers.typeUnconfirmed,1);
+ assert.equal(g.typeFalseSuccess,1);assert.equal(g.typeHonestUnconfirmed,1);assert.equal(g.typeUnconfirmedCorrect,0);
+ const good=summary([{...unconfirmed,samples:[{text:'NEW'}]}],[cell]).groups[0];
+ assert.equal(good.wrongFinal,0);assert.equal(good.typeUnconfirmedCorrect,1);assert.equal(good.typeHonestUnconfirmed,0);
+});
+test('a missing typing outcome never becomes a false success',()=>{
+ const g=summary([{...row,type:undefined}],[cell]).groups[0];assert.deepEqual(g.typeAnswers,{});assert.equal(g.typeFalseSuccess,0);
+});
 test('timeline preserves source and click/next-call offsets',()=>{
  const t=timeline(row);const e=t.find(x=>x.source==='engine'&&x.kind==='read');assert.equal(e.clickReturnMs,-2);assert.equal(e.nextStartMs,-2);assert.ok(t.some(x=>x.source==='dom'&&x.kind==='selectionchange'&&x.clickReturnMs===10));
 });

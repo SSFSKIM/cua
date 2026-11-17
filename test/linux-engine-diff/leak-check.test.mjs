@@ -14,6 +14,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { SUITE_MARK, findLeaks, leftDirectories, listProcesses, scratchPrefixes } from './suite-check.mjs';
+import { SUITE_ROOT_PREFIX } from './test-root.mjs';
 
 const HAS_PROC = existsSync('/proc/self/cmdline');
 const CHECK = join(import.meta.dirname, 'suite-check.mjs');
@@ -30,9 +31,9 @@ const alive = (pid) => {
 
 test("a leak is a process naming the suite's directory, or one of the suite's naming a run's scratch or profile", () => {
   assert.ok(scratchPrefixes('/tmp').includes('/tmp/cua171-'));
-  const suiteDir = '/tmp/cua171-suite-abc';
+  const suiteDir = '/tmp/cua171-s-abc';
   const processes = [
-    { pid: 10, argv: ['node', '-e', 'x', '--user-data-dir=/tmp/cua171-suite-abc/cua171-chrome-scratch-1/chrome-profile'], marked: false, linux: true },
+    { pid: 10, argv: ['node', '-e', 'x', '--user-data-dir=/tmp/cua171-s-abc/cua171-chrome-scratch-1/chrome-profile'], marked: false, linux: true },
     { pid: 11, argv: ['google-chrome', '--user-data-dir=/tmp/cua171-diff-run-x/chrome-profile'], marked: true, linux: true },
     // another checkout's live run: its scratch, not carrying the suite's mark
     { pid: 12, argv: ['google-chrome', '--user-data-dir=/tmp/cua171-diff-live-y/chrome-profile'], marked: false, linux: true },
@@ -40,10 +41,10 @@ test("a leak is a process naming the suite's directory, or one of the suite's na
     // an exited child not yet reaped
     { pid: 14, argv: [], marked: true, linux: true },
     // this process
-    { pid: process.pid, argv: ['node', '/tmp/cua171-suite-abc/x'], marked: true, linux: true },
+    { pid: process.pid, argv: ['node', '/tmp/cua171-s-abc/x'], marked: true, linux: true },
     // where no environment can be read (off Linux), only the suite's own directory counts
     { pid: 15, argv: ['node /tmp/cua171-diff-z/x'], marked: null, linux: false },
-    { pid: 16, argv: ['node /tmp/cua171-suite-abc/cua171-diff-z/x'], marked: null, linux: false },
+    { pid: 16, argv: ['node /tmp/cua171-s-abc/cua171-diff-z/x'], marked: null, linux: false },
   ];
   assert.deepEqual(findLeaks({ processes, suiteDir, prefixes: scratchPrefixes('/tmp') }).map((p) => p.pid), [10, 11, 16]);
 });
@@ -84,7 +85,7 @@ test('a suite that leaves a stand-in behind fails, naming its pid and command li
     const run = nestedSuite('process', pidFile);
     pid = Number(readFileSync(pidFile, 'utf8'));
     assert.equal(run.status, 1, `the suite fails: ${run.stderr}`);
-    assert.match(run.stderr, new RegExp(`cua171 SUITE LEAK: .*\\n  process ${pid}: .*setInterval.*--user-data-dir=\\S*/cua171-suite-\\w+/cua171-leak-fixture-\\w+/chrome-profile`));
+    assert.match(run.stderr, new RegExp(`cua171 SUITE LEAK: .*\\n  process ${pid}: .*setInterval.*--user-data-dir=\\S*/cua171-s-\\w+/cua171-leak-fixture-\\w+/chrome-profile`));
     assert.equal(alive(pid), false, 'and the stand-in is ended');
   } finally {
     if (pid && alive(pid)) process.kill(pid, 'SIGKILL');
@@ -106,7 +107,7 @@ test("a suite that leaves the run's org.a11y.Bus stand-in behind its bus fails, 
     const run = nestedSuite('a11y-stub', pidFile);
     pid = Number(readFileSync(pidFile, 'utf8'));
     assert.equal(run.status, 1, `the suite fails: ${run.stderr}`);
-    assert.match(run.stderr, new RegExp(`cua171 SUITE LEAK: .*\\n  process ${pid}: \\S+ \\S+/scripts/linux-engine-diff/a11y-stub\\.mjs --bus unix:path=\\S*/cua171-suite-\\w+/cua171-leak-fixture-\\w+/bus/`));
+    assert.match(run.stderr, new RegExp(`cua171 SUITE LEAK: .*\\n  process ${pid}: \\S+ \\S+/scripts/linux-engine-diff/a11y-stub\\.mjs --bus unix:path=\\S*/cua171-s-\\w+/cua171-leak-fixture-\\w+/bus/`));
     assert.equal(alive(pid), false, 'and the stand-in is ended');
   } finally {
     if (pid && alive(pid)) process.kill(pid, 'SIGKILL');
@@ -123,7 +124,7 @@ test('a suite that leaves a scratch directory behind fails, naming it, and the d
 });
 
 test('a suite that leaves nothing behind passes, and its own directory is gone', () => {
-  const suites = () => readdirSync(tmpdir()).filter((name) => name.startsWith('cua171-suite-')).sort();
+  const suites = () => readdirSync('/tmp').filter((name) => name.startsWith(SUITE_ROOT_PREFIX)).sort();
   const before = suites();
   const run = nestedSuite('none', '/nonexistent');
   assert.equal(run.status, 0, run.stderr);

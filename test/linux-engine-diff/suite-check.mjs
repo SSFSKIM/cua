@@ -10,19 +10,23 @@
 // it replaced, is not in ^22.14). `npm test` keeps its plain `node --test "<pattern>"`, the form repl-parity's coverage
 // check reads (scripts/repl-parity/coverage.mjs), and ci-kit's `test` gate runs both.
 //
-// What is the suite's: the wrapper makes a temporary directory of the suite's own (`/tmp/cua171-suite-*`) and names it as
-// TMPDIR for `node --test`, which every test process inherits, so every scratch directory a test or the harness under test
-// makes (`mkdtemp(tmpdir())`) lies in it, and it puts a nonce in the environment. A process counts when it names that
-// directory, or, carrying the nonce (read from /proc on Linux), names any `/tmp/cua171-*` path; a directory counts when it
-// is left in the suite's. A harness run from another checkout on the same machine (its scratch is `/tmp/cua171-*` too),
-// or another suite running beside this one, is never taken for the suite's.
+// What is the suite's: the wrapper makes a temporary directory of the suite's own, the suite's test root
+// (`/tmp/cua171-s-*`, test-root.mjs: short, so a test's run keeps its scratch in it rather than in /tmp's production
+// namespace), and names it as TMPDIR for `node --test`, which every test process inherits, so every scratch directory a
+// test or the harness under test makes (`mkdtemp(tmpdir())`) lies in it, and it puts a nonce in the environment. A
+// process counts when it names that directory, or, carrying the nonce (read from /proc on Linux), names any
+// `/tmp/cua171-*` path; a directory counts when it is left in the suite's. A harness run from another checkout on the
+// same machine (its scratch is `/tmp/cua171-*` too), or another suite running beside this one, is never taken for the
+// suite's.
 
 import { execFileSync, spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+
+import { SUITE_ROOT_PREFIX, TEST_ROOT, makeTestRoot } from './test-root.mjs';
 
 /** The variable that marks this suite's processes. */
 export const SUITE_MARK = 'CUA171_TEST_SUITE';
@@ -130,9 +134,9 @@ export function leakReport({ leaks, dirs }) {
  */
 export async function runSuite(patterns, { env = process.env } = {}) {
   const tmp = tmpdir();
-  const suiteDir = mkdtempSync(join(tmp, 'cua171-suite-'));
+  const suiteDir = makeTestRoot(SUITE_ROOT_PREFIX);
   const value = randomBytes(6).toString('hex');
-  const child = spawn(process.execPath, ['--test', ...patterns], { stdio: 'inherit', env: { ...env, [SUITE_MARK]: value, TMPDIR: suiteDir } });
+  const child = spawn(process.execPath, ['--test', ...patterns], { stdio: 'inherit', env: { ...env, [SUITE_MARK]: value, TMPDIR: suiteDir, [TEST_ROOT]: suiteDir } });
   const forward = (signal) => child.kill(signal);
   process.on('SIGINT', forward);
   process.on('SIGTERM', forward);

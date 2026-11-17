@@ -79,7 +79,11 @@ test("every failing step is reported, together, and marks the run's end unclean,
   assert.equal(desktopEnding(clean.desktop.ending).record.unclean, undefined);
 });
 
-/** A child process holding a Desktop with a bus of its own, its scratch in `tmp`; `then` is the code that ends it. */
+/**
+ * A child process holding a Desktop with a bus of its own, its end check over `tmp`; `then` is the code that ends it. Its
+ * scratch is in the test root it inherits (fixture-scope.mjs): a TMPDIR as long as `tmp` would put it in /tmp's
+ * production namespace (scenes.mjs `scratchRoot`).
+ */
 function child(then) {
   const tmp = mkdtempSync(join(scratch, 'tmp-'));
   const marker = join(tmp, 'session-stopped');
@@ -96,7 +100,7 @@ process.stdout.write(desktop.dir + '\\n');
 setInterval(() => {}, 1000);
 ${then}
 `);
-  const proc = spawn(process.execPath, [script], { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, TMPDIR: tmp } });
+  const proc = spawn(process.execPath, [script], { stdio: ['ignore', 'pipe', 'pipe'] });
   let stdout = '';
   let stderr = '';
   proc.stdout.on('data', (d) => (stdout += d));

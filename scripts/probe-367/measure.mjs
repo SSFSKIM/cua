@@ -1,10 +1,11 @@
 // Hosted-only #367 public-facade live check. Product sources and engine are the same pinned head; no product patches.
 import fs from 'node:fs';
-import {join} from 'node:path';
+import {join,dirname} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {spawn,execFileSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {win,usableFrame,sameFrame,offscreenProof,current,spaceIds,anotherSpaceProof,visibleOnSpace,missingAuthorization,windowMatch,raiseTarget,compareReturn} from './evidence.mjs';
+import {win,usableFrame,offscreenProof,current,spaceIds,anotherSpaceProof,visibleOnSpace,missingAuthorization,windowMatch,raiseTarget,compareReturn} from './evidence.mjs';
+import {offscreenFixture,restoreOriginalFrame,switchToSpace} from './fixtures.mjs';
 if(process.env.RUNNER_ENVIRONMENT!=='github-hosted'||process.platform!=='darwin')throw Error('disposable GitHub-hosted macOS only');
 const [source,engine,tool,fixture,out,head,sha]=process.argv.slice(2);
 fs.mkdirSync(out,{recursive:true});
@@ -67,11 +68,12 @@ try{
    emitted,meta:structuredClone(meta),raw};
   save(label+'.json',row);return row;
  }
- const document=join(out,'Cua367-owned.txt');fs.writeFileSync(document,'Cua 367 owned window\nStable text for window placement checks.\n');
+ // Both heads open the same file URL; per-head evidence directories must not change the observed document identity.
+ const document=join(dirname(out),'Cua367-owned.txt');fs.writeFileSync(document,'Cua 367 owned window\nStable text for window placement checks.\n');
  for(const scene of ['textedit','electron']){
   const bundle=scene==='textedit'?'com.apple.TextEdit':'io.github.ssfskim.cua.fixture.electron';
   const appPath=scene==='textedit'?'/System/Applications/TextEdit.app':fixture;
-  const row={head,sha,scene,appPath};rows.push(row);
+  const row={head,sha,scene,appPath,...(scene==='textedit'?{documentPath:document}:{})};rows.push(row);
   const checkpoint=()=>save('results.json',rows);checkpoint();
   const before=oracle('find',bundle).apps.map(a=>a.pid);
   execFileSync('/usr/bin/open',['-n','-g','-a',appPath,...(scene==='textedit'?[document]:['--args',`--cua-fixture-user-data=${join(out,'profile')}`,'--cua-fixture-bounds=100,200,900,500'])],{timeout:10000});
@@ -82,19 +84,13 @@ try{
   row.initialOracle=initial;checkpoint();if(!initial.ok)throw Error(scene+' no independently identifiable owned AX window');
   const number=win(initial.value).number;row.windowNumber=number;
   const sceneOracle=(...a)=>oracle(...a,`--window=${number}`),info=()=>sceneOracle('info',pid);
-  // Setup may cross several known adjacent Spaces, but never retries a failed transition or a measured Raise.
-  async function switchTo(target){
-   const steps=[];let now=info();
-   for(let step=0;step<8&&current(now)!==target;step++){
-    const ids=now.managedDisplaySpaces?.[0]?.Spaces?.map(s=>s.ManagedSpaceID)??[];
-    const from=ids.indexOf(current(now)),to=ids.indexOf(target);
-    if(from<0||to<0)return {ok:false,reason:'cannot resolve active/target Space in the managed display list',steps,value:now};
-    const command=from<to?'switch-right':'switch-left',posted=oracle(command),was=current(now);
-    const changed=await until(info,i=>current(i)!==null&&current(i)!==was,6000);steps.push({before:now,posted,after:changed});
-    now=changed.value;if(!changed.ok)return {ok:false,reason:'one posted Space transition did not complete; not retried',steps,value:now};
-   }
-   return {ok:current(now)===target,steps,value:now};
-  }
+  const frameIO={read:info,move:(x,y)=>sceneOracle('move',pid,x,y),size:(w,h)=>sceneOracle('size',pid,w,h),
+   wait:(accept,ms=12000)=>until(info,accept,ms)};
+  // Both initial setup and main's lineage-refresh setup use the same bounded routes and independent ID checks.
+  const switchTo=target=>switchToSpace(target,{read:info,wait:accept=>until(info,accept,6000),post:command=>oracle(command),
+   activateFinder:()=>oracle('activate','com.apple.finder'),
+   openMissionControl:async()=>{const posted=oracle('mission-control');await delay(1000);return {posted,oracle:info()};},
+   selectDesktop:ordinal=>oracle('select-desktop',ordinal),dismissMissionControl:()=>oracle('escape')});
   row.initialSize=sceneOracle('size',pid,900,500);row.initialMove=sceneOracle('move',pid,100,200);row.initialActivate=oracle('activate','com.apple.finder');
   let bound;
   // Warm Chromium once, then pin the actual stable public getApp/getAXState/getScreenshot outputs.
@@ -106,8 +102,8 @@ try{
   row.baselineMatch=windowMatch(row.baseline,row.baselineOracle);
   const origin=win(info())?.frame;if(!usableFrame(origin))throw Error(scene+' original frame unknown');
   checkpoint();
-  row.offscreenMove=sceneOracle('move',pid,-5000,200);
-  const off=await until(info,offscreenProof);row.offscreenOracle=off;checkpoint();
+  row.offscreenSetup=await offscreenFixture(frameIO);row.offscreenMove=row.offscreenSetup.attempts[0].setter;
+  const off={ok:row.offscreenSetup.ok,value:row.offscreenSetup.value};row.offscreenOracle=off;checkpoint();
   if(off.ok){
    row.offscreenGetApp=await call(scene+'-2-getApp',async()=>{bound=await cua.getApp(bundle);});
    row.offscreen=await call(scene+'-2-state',()=>bound.getAXState({disableDiffing:true,emit:false}));
@@ -117,14 +113,15 @@ try{
    let target=raiseTarget(row.offscreen,off.value,row.offscreenScreenshot.raw);
    if(head==='main'&&(!row.offscreenGetApp.ok||!row.offscreen.ok||!row.offscreenDiff.ok||!row.offscreenScreenshot.raw)){
     // disableDiff failures reset native lineage. Rebuild it via a successful *public facade* observation while visible.
-    const setup=row.offscreenRaiseSetup={};setup.restore=sceneOracle('move',pid,origin.x,origin.y);
-    setup.visible=await until(info,i=>sameFrame(win(i)?.frame,origin)&&win(i)?.overlapsDisplay===true&&win(i)?.inOnscreenList===true);
+    const setup=row.offscreenRaiseSetup={};setup.restoration=await restoreOriginalFrame(frameIO,origin);
+    setup.restoreSize=setup.restoration.size;setup.restore=setup.restoration.move;setup.visible=setup.restoration.verified;
     if(setup.visible.ok){
      setup.state=await call(scene+'-2-raise-refresh',()=>bound.getAXState({disableDiffing:true,emit:false}));
      setup.observedOracle=info();target=raiseTarget(setup.state,setup.observedOracle);
     }else target={available:false,reason:'original visible frame could not be re-established for lineage refresh'};
-    setup.moveOffscreen=sceneOracle('move',pid,-5000,200);setup.offscreen=await until(info,offscreenProof);
-    if(!setup.offscreen.ok)target={available:false,reason:'refreshed window not independently confirmed off every display'};
+    setup.offscreenConstruction=await offscreenFixture(frameIO);setup.moveOffscreen=setup.offscreenConstruction.attempts[0].setter;
+    setup.offscreen={ok:setup.offscreenConstruction.ok,value:setup.offscreenConstruction.value};
+    if(!setup.offscreen.ok)target={available:false,reason:'refreshed window not independently confirmed off every display: '+setup.offscreenConstruction.reason};
    }
    row.offscreenRaiseTarget=target;row.offscreenWindowToken=target.token??null;row.offscreenRaiseBefore=info();
    row.offscreenRaise=target.available&&offscreenProof(row.offscreenRaiseBefore)
@@ -132,8 +129,14 @@ try{
     :unavailable(target.reason??'offscreen precondition no longer proven');
    if(row.offscreenRaise.attempted)await delay(1200);
    row.offscreenRaiseAfter=info();checkpoint();
-  }else row.offscreenRaise=unavailable('offscreen fixture not independently established');
-  row.restoreAfterOffscreen=sceneOracle('move',pid,origin.x,origin.y);
+  }else{
+   row.offscreenBlocker={reason:row.offscreenSetup.reason,attemptedRoutes:row.offscreenSetup.attempts.map(a=>a.route)};
+   row.offscreenRaise=unavailable(row.offscreenSetup.reason);
+  }
+  row.offscreenRestoration=await restoreOriginalFrame(frameIO,origin);
+  row.restoreSizeAfterOffscreen=row.offscreenRestoration.size;row.restoreAfterOffscreen=row.offscreenRestoration.move;
+  checkpoint();
+  if(!row.offscreenRestoration.verified.ok)throw Error(scene+' original size/frame could not be restored after offscreen setup; subsequent fixtures would not be comparable');
   // Keep 110 points visible, independent of the hosted display's width and the app's actual accepted width.
   const w=win(info())?.frame?.width,screen=row.baselineOracle.screens?.[0];
   if(!Number.isFinite(w)||!usableFrame(screen))throw Error(scene+' partial fixture geometry unavailable');
@@ -144,7 +147,13 @@ try{
   checkpoint();
   async function measureAnotherSpace(away){
    row.anotherSpaceOracle=away;
-   if(!away.ok){row.anotherRaise=unavailable('distinct active/window Spaces and false independent CG visibility not established');checkpoint();return;}
+   if(!away.ok){
+    row.anotherSpaceBlocker={reason:row.spaceRoute==='fullscreen'
+     ?'Fullscreen Space was created, but switching to a distinct desktop did not establish the independent another-Space preconditions'
+     :'Desktop selection did not establish distinct active/window Spaces with false independent CG visibility',
+     switchSetup:row.spaceSwitchAway??null};
+    row.anotherRaise=unavailable(row.anotherSpaceBlocker.reason);checkpoint();return;
+   }
    row.anotherGetApp=await call(scene+'-4-getApp',async()=>{bound=await cua.getApp(bundle);});
    row.another=await call(scene+'-4-state',()=>bound.getAXState({disableDiffing:true,emit:false}));
    row.anotherScreenshot=await call(scene+'-4-screenshot',()=>bound.getScreenshot({emit:false}));

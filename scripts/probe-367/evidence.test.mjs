@@ -5,6 +5,7 @@ import {createService} from '../../src/services/engine/service.mjs';
 import {createSkyService} from '../../src/services/sky.mjs';
 import {SkyComputerUseError} from '../../src/services/engine/protocol.mjs';
 import {node,skyshot} from '../../test/native-goldens/builder.mjs';
+import {offscreenFixture,restoreOriginalFrame,switchToSpace} from './fixtures.mjs';
 
 const frame={x:-5000,y:200,width:900,height:500};
 const screen={x:0,y:0,width:1440,height:900};
@@ -95,4 +96,69 @@ test('the real public facade refreshes a lineage invalidated by main capture fai
  offscreen=true; // Independent AX setup moves the same window; no further observation invalidates its fresh lineage.
  await bound.performSecondaryAction(target.index,'Raise');
  assert.equal(actions.length,1);
+});
+
+// The boundary models the observed hosted clamp: successful AXPosition still leaves 40 points on screen.
+function clampedWindow({resizeClamps=false,bottomClamps=false}={}){
+ let actual={x:100,y:200,width:900,height:500};const actions=[];
+ const read=()=>{
+  const overlap=actual.x+actual.width>0&&actual.x<1024&&actual.y+actual.height>0&&actual.y<768;
+  return {...info({frame:{...actual},overlapsDisplay:overlap,inOnscreenList:true}),screens:[{x:0,y:0,width:1024,height:768}]};
+ };
+ const io={read,move:(x,y)=>{actions.push(['move',x,y]);actual.x=x<0?-actual.width+40:x;actual.y=bottomClamps?Math.min(y,728):y;return {axResult:0};},
+  size:(width,height)=>{actions.push(['size',width,height]);actual.width=width;actual.height=height;if(resizeClamps&&actual.x<0)actual.x=-width+40;return {axResult:0};},
+  wait:accept=>{const value=read();return {ok:Boolean(accept(value)),value};}};
+ return {io,actions};
+}
+test('clamped move is retained, then shrink at its readback origin independently establishes offscreen',async()=>{
+ const {io,actions}=clampedWindow(),result=await offscreenFixture(io);
+ assert.equal(result.ok,true);assert.equal(offscreenProof(result.value),true);
+ assert.deepEqual(actions,[['move',-5000,200],['size',300,300]]);
+ assert.deepEqual(win(result.attempts[0].readback).frame,{x:-860,y:200,width:900,height:500});
+ assert.equal(result.attempts[0].setter.axResult,0);assert.equal(result.attempts[0].proof.ok,false);
+ assert.deepEqual(win(result.attempts[1].readback).frame,{x:-860,y:200,width:300,height:300});
+});
+test('a constrained resize takes one distinct extreme-bottom route, not an identical move retry',async()=>{
+ const {io,actions}=clampedWindow({resizeClamps:true}),result=await offscreenFixture(io);
+ assert.equal(result.ok,true);assert.equal(offscreenProof(result.value),true);
+ assert.deepEqual(actions,[['move',-5000,200],['size',300,300],['move',100,5768]]);
+ assert.equal(result.attempts.length,3);
+});
+test('all constrained AX constructions produce a fixture blocker rather than a false offscreen success',async()=>{
+ const {io,actions}=clampedWindow({resizeClamps:true,bottomClamps:true}),result=await offscreenFixture(io);
+ assert.equal(result.ok,false);assert.equal(offscreenProof(result.value),false);
+ assert.equal(actions.length,3);assert.match(result.reason,/overlap/i);
+ assert.equal(result.attempts.length,3);
+});
+test('the resized offscreen fixture restores both original size and origin before a successful visible refresh',async()=>{
+ const {io,actions}=clampedWindow();await offscreenFixture(io);actions.length=0;
+ const restored=await restoreOriginalFrame(io,{x:100,y:200,width:900,height:500});
+ assert.equal(restored.verified.ok,true);
+ assert.deepEqual(actions,[['size',900,500],['move',100,200]]);
+ assert.deepEqual(win(restored.verified.value).frame,{x:100,y:200,width:900,height:500});
+});
+function spaceSetup({finderWorks=true,selectionWorks=true}={}){
+ let active=10;const actions=[];
+ const read=()=>({...info({spaces:[10],cgWindowFound:true,cgOnscreen:active===10,inOnscreenList:active===10}),activeSpace:active,
+  managedDisplaySpaces:[{'Current Space':{ManagedSpaceID:active},Spaces:[{ManagedSpaceID:1,type:0},{ManagedSpaceID:10,type:4}]}]});
+ const io={read,wait:accept=>{const value=read();return {ok:Boolean(accept(value)),value};},
+  post:command=>{actions.push(command);return {posted:command};},activateFinder:()=>{actions.push('activate-finder');if(finderWorks)active=1;return {activated:true};},
+  openMissionControl:()=>{actions.push('mission-control');return {posted:'mission-control'};},selectDesktop:ordinal=>{actions.push(['select-desktop',ordinal]);if(selectionWorks)active=1;return {axPressResult:0};},
+  dismissMissionControl:()=>{actions.push('escape');return {posted:'escape'};}};
+ return {io,actions};
+}
+test('one ineffective Space shortcut falls back to Finder and independently proves the original desktop',async()=>{
+ const {io,actions}=spaceSetup(),result=await switchToSpace(1,io);
+ assert.equal(result.ok,true);assert.equal(current(result.value),1);assert.equal(anotherSpaceProof(result.value),true);
+ assert.deepEqual(actions,['switch-left','activate-finder']);assert.equal(result.steps[0].after.ok,false);
+});
+test('if Finder does not switch Spaces, Mission Control selects the known original desktop exactly once',async()=>{
+ const {io,actions}=spaceSetup({finderWorks:false}),result=await switchToSpace(1,io);
+ assert.equal(result.ok,true);assert.equal(current(result.value),1);assert.equal(anotherSpaceProof(result.value),true);
+ assert.deepEqual(actions,['switch-left','activate-finder','mission-control',['select-desktop',1],'escape']);
+});
+test('an unchanged fullscreen Space remains a switching blocker, not a second-Space creation failure',async()=>{
+ const {io,actions}=spaceSetup({finderWorks:false,selectionWorks:false}),result=await switchToSpace(1,io);
+ assert.equal(result.ok,false);assert.equal(current(result.value),10);
+ assert.match(result.reason,/switch|select/i);assert.equal(actions.filter(a=>a==='switch-left').length,1);
 });

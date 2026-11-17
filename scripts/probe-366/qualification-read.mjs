@@ -22,12 +22,18 @@ const POSTHOLD_IDLE_MS=36000;
 const POSTHOLD_PRIORS=['true','false','unreadable'];
 const finite=Number.isFinite,count=v=>Number.isInteger(v)&&v>=0;
 const supplementSpecs=browser=>['cold','posthold'].flatMap(group=>['main','fix'].map(engineSide=>({group,engineSide,launches:browser==='electron'?10:5,labels:['cold',group==='cold'?'warm':'posthold']})));
-const specOf=r=>(r?.phase==='qualification-supplement'?supplementSpecs(r.browser):SPECS).find(s=>s.group===r?.group&&s.engineSide===r?.engineSide);
+const lifecycleSpecs=[{group:'lifecycle',engineSide:'fix',launches:3,labels:['cold','held','new-task']}];
+const specOf=r=>(r?.phase==='qualification-lifecycle'?lifecycleSpecs:r?.phase==='qualification-supplement'?supplementSpecs(r.browser):SPECS).find(s=>s.group===r?.group&&s.engineSide===r?.engineSide);
 
 // One cell per fresh launch. The cell order rotates by repetition so no group or engine side always launches first.
-export function qualificationPlan({browser,smoke=false,supplement=false}) {
+export function qualificationPlan({browser,smoke=false,supplement=false,lifecycle=false,repair=false}) {
  if(!BROWSERS.includes(browser))throw Error('unknown browser');
- const specs=supplement?supplementSpecs(browser):SPECS,phase=supplement?'qualification-supplement':'qualification',cells=[];
+ // One fresh-launch recovery of the full run's setup-invalid cell; the original record remains untouched.
+ if(repair){
+  if(browser!=='electron')throw Error('recovery is only for the missing default-Electron value cell');
+  return [{phase:'qualification-repair',browser,group:'value',engineSide:'fix',rep:1,expectedCalls:['value'],id:'qualification-repair/electron/value/fix/1',recoveryOf:'qualification/electron/value/fix/1'}];
+ }
+ const specs=lifecycle?lifecycleSpecs:supplement?supplementSpecs(browser):SPECS,phase=lifecycle?'qualification-lifecycle':supplement?'qualification-supplement':'qualification',cells=[];
  for(let rep=0;rep<(smoke?2:Math.max(...specs.map(s=>s.launches)));rep++) {
   const here=specs.filter(s=>rep<s.launches),k=rep%here.length;
   for(const s of [...here.slice(k),...here.slice(0,k)])
@@ -41,6 +47,16 @@ const loadSampleOk=s=>!!s&&finite(s.at)&&Number.isInteger(s.expected)&&s.expecte
 const loadMeasured=c=>finite(c?.loadCpuPercent)&&c.loadCpuPercent>0&&loadSampleOk(c.loadBefore)&&loadSampleOk(c.loadAfter)&&c.loadBefore.expected===c.loadAfter.expected;
 // A wait is evidenced by the signpost (finite, so 0 ms is real) or, on main only, by the deliberate no-gate known zero.
 const waitEvidenced=(r,c)=>(c.waitEvidence==='signpost'&&finite(c.waitMs)&&c.waitMs>=0)||(c.waitEvidence==='main-no-gate'&&r.engineSide==='main');
+
+const enablementAttribute=browser=>browser==='cft'?'AXEnhancedUserInterface':'AXManualAccessibility';
+// Electron's accessibility-support-changed is an independent setter event; Chrome for Testing has none.
+const settersApply=browser=>browser!=='cft';
+// A cached-ref action record (read-only, no fresh walk): usable when it is timed and the button's action lookup reported an AX error code.
+function cachedState(rec) {
+ const b=rec?.cached?.button;
+ if(!(finite(rec?.startedAt)&&finite(rec?.endedAt)&&rec.endedAt>=rec.startedAt&&Number.isInteger(b?.actionsError)))return null;
+ return {startedAt:rec.startedAt,endedAt:rec.endedAt,error:b.actionsError,press:b.actionsError===0&&Array.isArray(b.actions)?b.actions.includes('AXPress'):null};
+}
 
 // Why a launch row cannot be scored (null when complete): the expected calls, each once and finished, and an established owner.
 function rowProblem(r) {
@@ -56,6 +72,19 @@ function rowProblem(r) {
   if(second.startedAt-first.endedAt<POSTHOLD_IDLE_MS)return 'posthold-idle';
   const release=r.postholdRelease;
   if(!(release?.verified===true&&POSTHOLD_PRIORS.includes(release.prior)&&finite(release.idleFromRequestEndMs)&&release.idleFromRequestEndMs>=POSTHOLD_IDLE_MS))return 'posthold-release';
+ }
+ if(spec.group==='lifecycle'){
+  if(r.observations?.length!==3||!r.observations.every(o=>finite(o.startedAt)&&finite(o.endedAt)&&!!o.raw?.result))return 'lifecycle-observations';
+  const [cold,held]=r.calls,[,idle,next]=r.observations,task=r.taskEnd,read=r.releaseRead,ev=r.releaseEvidence;
+  if(idle.startedAt-cold.endedAt<POSTHOLD_IDLE_MS)return 'lifecycle-idle';
+  // endTask only has to be recorded (a result or an error reply); its `released` count is computed and proves nothing.
+  if(!(finite(task?.startedAt)&&finite(task?.endedAt)&&task.startedAt>=held.endedAt&&task.endedAt>=task.startedAt&&!!(task.raw?.result||task.raw?.error)))return 'lifecycle-task-end';
+  // The raw native read must exist, whatever it read (false, true or an AX error): it never decides release or blocks the new task.
+  if(!(read?.attribute===enablementAttribute(r.browser)&&Number.isInteger(read.axError)&&(read.value===null||typeof read.value==='boolean')&&finite(read.startedAt)&&finite(read.endedAt)&&read.startedAt>=task.endedAt&&read.endedAt>=read.startedAt&&read.endedAt<=next.startedAt))return 'lifecycle-release';
+  const before=cachedState(ev?.cachedBefore),after=cachedState(ev?.cachedAfter);
+  if(!(before&&after&&before.startedAt>=held.endedAt&&before.endedAt<=task.startedAt&&after.startedAt>=task.endedAt&&after.endedAt<=next.startedAt&&ev.errors&&Object.keys(ev.errors).length===0))return 'lifecycle-cache';
+  const wait=ev.setterWait;
+  if(settersApply(r.browser)&&!(Array.isArray(r.appInfo)&&finite(r.targetPid)&&finite(wait?.startedAt)&&finite(wait?.endedAt)&&wait.startedAt>=task.endedAt&&wait.endedAt>=wait.startedAt&&wait.endedAt<=next.startedAt&&finite(wait.deadlineMs)))return 'lifecycle-setter';
  }
  if(spec.group==='load'&&!loadMeasured(r.calls[0]))return 'load-unmeasured';
  // The early action must use a token from an observation forced to the readiness deadline (the first observation).
@@ -100,8 +129,52 @@ function judgeOracle(r,call) {
  return {...out,known:true,delivered:delta>0,exact:delta===1,duplicate:delta>1,falseSuccess:answered&&delta===0};
 }
 
+// Lifecycle smoke thresholds: a held (owned) observation must not wait substantially (under 100 ms); a cold or new-task observation is expected to wait
+// a substantial part of the readiness window (at least 2000 ms, not a one-second wait). Exact p50/p95 stay reported beside the verdicts.
+const HELD_WAIT_MAX_MS=100,EXPECTED_WAIT_MIN_MS=2000;
+const allOf=checks=>checks.includes(false)?false:checks.includes(null)?null:true;
+const known=v=>v===undefined?null:v;
+const waitOf=(r,o)=>o&&waitEvidenced(r,o)&&o.waitEvidence==='signpost'?o.waitMs:null;
+const deliveryOf=(r,label)=>{const j=qualificationJudgeCall(r,r.calls?.find?.(c=>c?.label===label));return !j.known?null:!j.delivered?'notDelivered':j.duplicate?'duplicate':j.exact?'exact':'delivered'};
+// Per-stage product outcomes of one lifecycle launch (true, false, or null for unknown), separate from coverage, plus the release signals counted
+// apart. The native getter read and endTask's `released` are computed values: neither is an independent confirmation of the mode release.
+export function lifecycleProduct(r) {
+ const obs=Array.isArray(r?.observations)?r.observations:[],timing=i=>obs[i]?.raw?.result?.timings??null,task=r?.taskEnd,read=r?.releaseRead,ev=r?.releaseEvidence;
+ const prior=i=>{const t=timing(i);return t?known(t.enablementPrior)??'absent':null};
+ const write=i=>{const t=timing(i);return t?known(t.enablementWrite)??'absent':null};
+ const replyOf=label=>{const c=r?.calls?.find?.(x=>x?.label===label);return c?.raw?.error?false:c?.raw?.result?true:null};
+ const waits=(i,delivery,replyOk)=>{
+  const p=prior(i),w=write(i),ms=waitOf(r,obs[i]);
+  return {prior:p,write:w,waitMs:ms,delivery,replyOk,
+   priorNotOwned:p===null?null:POSTHOLD_PRIORS.includes(p),owned:p===null?null:p==='owned',wrote:w===null?null:w!=='absent',acceptedWrite:w===null?null:w==='success',
+   expectedWait:ms===null?null:ms>=EXPECTED_WAIT_MIN_MS,noWait:ms===null?null:ms<HELD_WAIT_MAX_MS};
+ };
+ const cold=waits(0,deliveryOf(r,'cold'),replyOf('cold')),held=waits(1,deliveryOf(r,'held'),replyOf('held')),next=waits(2,deliveryOf(r,'new-task'),replyOf('new-task'));
+ // The attempted write is its own fact (held must have none); cold and new-task need an accepted write, an OK reply and exact delivery.
+ cold.pass=allOf([cold.priorNotOwned,cold.acceptedWrite,cold.expectedWait,cold.replyOk,cold.delivery===null?null:cold.delivery==='exact']);
+ held.noWrite=held.wrote===null?null:!held.wrote;
+ held.pass=allOf([held.owned,held.noWrite,held.noWait,held.replyOk,held.delivery===null?null:held.delivery==='exact']);
+ next.pass=allOf([next.priorNotOwned,next.acceptedWrite,next.expectedWait,next.replyOk,next.delivery===null?null:next.delivery==='exact']);
+ const gapMs=finite(obs[1]?.startedAt)&&finite(r?.calls?.find?.(c=>c?.label==='cold')?.endedAt)?obs[1].startedAt-r.calls.find(c=>c.label==='cold').endedAt:null;
+ const gap={ms:gapMs,genuine:gapMs===null?null:gapMs>=POSTHOLD_IDLE_MS};gap.pass=gap.genuine;
+ const replied=task?.raw?.error?false:task?.raw?.result?true:null;
+ const endTask={replied,releasedComputed:Number.isInteger(task?.raw?.result?.released)?task.raw.result.released:null,pass:replied};
+ // Release signals, each counted apart.
+ const nativeRead=read&&Number.isInteger(read.axError)?(read.axError!==0||typeof read.value!=='boolean'?'unreadable':String(read.value)):'missing';
+ const b=cachedState(ev?.cachedBefore),a=cachedState(ev?.cachedAfter);
+ const cachedAction=!b||!a?'unavailable':b.press!==true?'no-baseline':a.error!==0?'refInvalid':a.press===true?'retained':'lost';
+ const applies=settersApply(r?.browser),window=finite(task?.startedAt)&&finite(obs[2]?.startedAt)?[task.startedAt,obs[2].startedAt]:null;
+ const events=applies&&window&&Array.isArray(r?.appInfo)&&finite(r?.targetPid)?r.appInfo.filter(e=>e?.kind==='accessibility-support-changed'&&e.pid===r.targetPid&&finite(e.at)&&e.at>=window[0]&&e.at<=window[1]):null;
+ const setterFalse=events?events.filter(e=>e.enabled===false).length:null,setterTrue=events?events.filter(e=>e.enabled===true).length:null;
+ const independentSignal=setterFalse>0?'setter-event':cachedAction==='lost'?'cached-action-loss':'none';
+ const stages={cold,gap,held,endTask,newTask:next};
+ return {id:r?.id,evidenceComplete:rowProblem(r)===null,stages,release:{native:nativeRead,cachedAction,setterFalse,setterTrue,independentSignal},pass:allOf(Object.values(stages).map(x=>x.pass))};
+}
+
 const group=(rows,keyOf)=>{const m=new Map();for(const x of rows){const k=keyOf(x),id=JSON.stringify(k);if(!m.has(id))m.set(id,{k,rows:[]});m.get(id).rows.push(x)}return [...m.values()]};
 const zero=()=>Object.fromEntries(EFFECTS.map(k=>[k,0]));
+// Counts as reported; an absent or unknown value is its own key, never filled in.
+const tally=(values,missing='absent')=>{const t={};for(const v of values){const key=v===undefined||v===null?missing:String(v);t[key]=(t[key]??0)+1}return t};
 
 export function qualificationSummarize(rows) {
  rows=rows.filter(r=>r&&typeof r==='object');
@@ -137,19 +210,37 @@ export function qualificationSummarize(rows) {
    if(r.profileCleanup?.ok===false)g.profileCleanupFailures++;
    const p=rowProblem(r);if(p){g.invalid++;g.invalidByReason[p]=(g.invalidByReason[p]??0)+1}else g.valid++;
   }
-  // Posthold observation timings are reported raw, as the controller stored them.
-  if(k.group==='posthold'){
+  // Posthold and lifecycle observation timings are reported raw, as the controller stored them.
+  if(k.group==='posthold'||k.group==='lifecycle'){
    g.observationTimings=rows.flatMap(r=>(r.observations??[]).flatMap((o,index)=>o?.raw?.result?.timings?[{id:r.id,index,timings:o.raw.result.timings}]:[]));
-   // What each observation reported about the enablement, counted as reported (an absent field is 'absent', never filled in),
-   // and what the release record says, over every attempted launch.
-   const tally=values=>{const t={};for(const v of values){const key=v===undefined||v===null?'absent':String(v);t[key]=(t[key]??0)+1}return t};
-   const rec=rows.map(r=>r.postholdRelease);
-   g.release={prior:tally(rec.map(x=>x?.prior)),verified:tally(rec.map(x=>x?.verified)),idleFromRequestEndMs:firstStats(rec.map(x=>x?.idleFromRequestEndMs))};
+   // What each observation reported about the enablement, counted as reported (an absent field is 'absent', never filled in).
    const indexes=[...new Set(rows.flatMap(r=>(r.observations??[]).map((_,i)=>i)))].sort((a,b)=>a-b);
    g.observationFields=indexes.map(index=>{
     const at=rows.flatMap(r=>r.observations?.[index]?[r.observations[index].raw?.result?.timings??{}]:[]);
     return {index,enablementPrior:tally(at.map(t=>t.enablementPrior)),enablementWrite:tally(at.map(t=>t.enablementWrite)),enabled:tally(at.map(t=>t.enabled))};
    });
+  }
+  if(k.group==='posthold'){
+   const rec=rows.map(r=>r.postholdRelease);
+   g.release={prior:tally(rec.map(x=>x?.prior)),verified:tally(rec.map(x=>x?.verified)),idleFromRequestEndMs:firstStats(rec.map(x=>x?.idleFromRequestEndMs))};
+  }
+  if(k.group==='lifecycle'){
+   // Over every attempted launch: stage outcomes (product) are kept apart from evidence completeness (coverage).
+   const ps=rows.map(lifecycleProduct),stage=name=>ps.map(p=>p.stages[name]),ms=name=>firstStats(stage(name).map(x=>x.waitMs).filter(finite));
+   const obsStage=name=>({prior:tally(stage(name).map(x=>x.prior)),write:tally(stage(name).map(x=>x.write)),waitMs:ms(name),delivery:tally(stage(name).map(x=>x.delivery),'unknown'),pass:tally(stage(name).map(x=>x.pass),'unknown')});
+   g.lifecycle={
+    rows:ps,
+    evidenceComplete:tally(ps.map(p=>p.evidenceComplete)),
+    product:{pass:ps.filter(p=>p.pass===true).length,fail:ps.filter(p=>p.pass===false).length,unknown:ps.filter(p=>p.pass===null).length},
+    stages:{cold:obsStage('cold'),
+     gap:{ms:firstStats(stage('gap').map(x=>x.ms).filter(finite)),genuine:tally(stage('gap').map(x=>x.genuine),'unknown'),pass:tally(stage('gap').map(x=>x.pass),'unknown')},
+     held:{...obsStage('held'),noWrite:tally(stage('held').map(x=>x.noWrite),'unknown'),noWait:tally(stage('held').map(x=>x.noWait),'unknown')},
+     endTask:{replied:tally(stage('endTask').map(x=>x.replied),'unknown'),releasedComputed:tally(stage('endTask').map(x=>x.releasedComputed)),pass:tally(stage('endTask').map(x=>x.pass),'unknown')},
+     newTask:obsStage('newTask')},
+    release:{
+     note:'nativeRead is a computed getter and endTask releasedComputed counts processes no longer observed; neither independently confirms the mode release. Independent signals: an Electron setter false event, or a cached same-ref action lost (a ref AX error is refInvalid, not known loss).',
+     nativeRead:tally(ps.map(p=>p.release.native)),cachedAction:tally(ps.map(p=>p.release.cachedAction)),
+     setterFalseEvents:tally(ps.map(p=>p.release.setterFalse),'notApplicable'),independentSignal:tally(ps.map(p=>p.release.independentSignal))}};
   }
   return g;
  });
@@ -170,11 +261,13 @@ export function qualificationSummarize(rows) {
  return {calls,launches,observations};
 }
 
-export function qualificationCoverage(rows,{browser,smoke,supplement}={}) {
+export function qualificationCoverage(rows,{browser,smoke,supplement,lifecycle,repair}={}) {
  smoke??=rows.length>0&&rows.every(r=>r.smoke===true);
  supplement??=rows.length>0&&rows.every(r=>r.phase==='qualification-supplement');
+ lifecycle??=rows.length>0&&rows.every(r=>r.phase==='qualification-lifecycle');
+ repair??=rows.length>0&&rows.every(r=>r.phase==='qualification-repair');
  const browsers=browser?[browser]:[...new Set(rows.map(r=>r.browser))];
- const cells=browsers.flatMap(b=>qualificationPlan({browser:b,smoke,supplement})),byId=new Map(cells.map(c=>[c.id,c]));
+ const cells=browsers.flatMap(b=>qualificationPlan({browser:b,smoke,supplement,lifecycle,repair})),byId=new Map(cells.map(c=>[c.id,c]));
  const expected=cells.map(c=>c.id),have=new Set(rows.map(r=>r.id));
  const duplicates=[...new Set(rows.filter((r,i)=>rows.findIndex(x=>x.id===r.id)!==i).map(r=>r.id))];
  const launches=new Map();
@@ -189,6 +282,7 @@ export function qualificationCoverage(rows,{browser,smoke,supplement}={}) {
  // The same for every observation, by index: the native observation wait is a primary cost. A reported timing never stands in for it.
  report.observationWaitMissing=rows.filter(r=>byId.has(r.id)&&!problem(r)).map(r=>({id:r.id,indices:(r.observations??[]).flatMap((o,i)=>waitEvidenced(r,o??{})?[]:[i])})).filter(x=>x.indices.length);
  report.ok=report.rows>0&&report.expectedLaunches>0&&!report.missing.length&&!duplicates.length&&!report.unexpected.length&&!report.invalid.length&&!reusedLaunchIds.length&&!report.waitMissing.length&&!report.observationWaitMissing.length;
+ if(lifecycle)report.meaning='coverage is plan and evidence completeness only; per-stage product outcomes are in the summary (launches[].lifecycle), never implied by ok';
  return report;
 }
 

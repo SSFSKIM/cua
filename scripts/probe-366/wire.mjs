@@ -1,6 +1,15 @@
 import {createConnection} from 'node:net';
 export class Wire {
- static connect(path){return new Promise((ok,no)=>{const s=createConnection(path);s.once('connect',()=>{s.off('error',no);ok(new Wire(s));});s.once('error',no);});}
+ // The engine creates its socket inode before listen is ready: only the pre-connect ENOENT/ECONNREFUSED are retried, within timeoutMs; no RPC is ever retried.
+ static async connect(path,{timeoutMs=5000,retryMs=25}={}){
+  const end=Date.now()+timeoutMs;
+  for(;;){
+   try {return await Wire.#attempt(path);}
+   catch(e){if((e.code!=='ENOENT'&&e.code!=='ECONNREFUSED')||Date.now()+retryMs>=end)throw e;}
+   await new Promise(r=>setTimeout(r,retryMs));
+  }
+ }
+ static #attempt(path){return new Promise((ok,no)=>{const s=createConnection(path);s.once('connect',()=>{s.off('error',no);ok(new Wire(s));});s.once('error',e=>{s.destroy();no(e);});});}
  constructor(socket){
   this.socket=socket;this.buffer=Buffer.alloc(0);this.pending=new Map();this.serial=0;this.lineage=null;
   socket.on('data',data=>{try {

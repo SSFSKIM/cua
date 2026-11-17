@@ -9,7 +9,7 @@ on:
       mode:
         description: 'Readiness factorial or controlled threshold sweep (8 delays; 2 smoke / 10 full reps)'
         type: choice
-        options: [smoke, full, threshold-smoke, threshold, qualification-smoke, qualification, qualification-diagnostic, qualification-supplement]
+        options: [smoke, full, threshold-smoke, threshold, qualification-smoke, qualification, qualification-diagnostic, qualification-supplement, qualification-lifecycle, qualification-repair]
         default: smoke
       fix_ref:
         description: 'Real engine fix commit for qualification (full waits for reviewed-head confirmation)'
@@ -20,7 +20,7 @@ permissions:
 env:
   ENGINE_REF: b99232def1e37307848dd1ccb08726729eb81b66
 concurrency:
-  group: probe-366
+  group: ${{ inputs.mode == 'qualification-lifecycle' && 'probe-366-lifecycle' || 'probe-366' }}
   cancel-in-progress: false
 jobs:
   measure:
@@ -105,7 +105,7 @@ jobs:
       fail-fast: false
       max-parallel: 3
       matrix:
-        browser: [electron, electron-parity, cft]
+        browser: ${{ fromJSON(inputs.mode == 'qualification-repair' && '["electron"]' || '["electron","electron-parity","cft"]') }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
@@ -144,8 +144,10 @@ jobs:
           SMOKE: ${{ inputs.mode == 'qualification-smoke' || inputs.mode == 'qualification-diagnostic' }}
           DIAGNOSTIC: ${{ inputs.mode == 'qualification-diagnostic' }}
           SUPPLEMENT: ${{ inputs.mode == 'qualification-supplement' }}
+          LIFECYCLE: ${{ inputs.mode == 'qualification-lifecycle' }}
+          REPAIR: ${{ inputs.mode == 'qualification-repair' }}
         run: |
-          node scripts/probe-366/qualification.mjs --browser "$BROWSER" --smoke "$SMOKE" --diagnostic "$DIAGNOSTIC" --supplement "$SUPPLEMENT" --main-engine "$RUNNER_TEMP/qual-build-main/release/cua-engine" --fix-engine "$RUNNER_TEMP/qual-build-fix/release/cua-engine" --main-ref "$QUAL_MAIN_REF" --fix-ref "$QUAL_FIX_REF" --tool "$RUNNER_TEMP/qual-tool366" --out "$RUNNER_TEMP/probe-366-qualification/$BROWSER"
+          node scripts/probe-366/qualification.mjs --browser "$BROWSER" --smoke "$SMOKE" --diagnostic "$DIAGNOSTIC" --supplement "$SUPPLEMENT" --lifecycle "$LIFECYCLE" --repair "$REPAIR" --main-engine "$RUNNER_TEMP/qual-build-main/release/cua-engine" --fix-engine "$RUNNER_TEMP/qual-build-fix/release/cua-engine" --main-ref "$QUAL_MAIN_REF" --fix-ref "$QUAL_FIX_REF" --tool "$RUNNER_TEMP/qual-tool366" --out "$RUNNER_TEMP/probe-366-qualification/$BROWSER"
       - name: Read qualification outcomes and wait evidence
         if: ${{ always() && inputs.mode != 'qualification-diagnostic' }}
         run: |

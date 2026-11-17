@@ -165,7 +165,18 @@ if CommandLine.arguments.contains("--cover") {
   } else if op == "title" { r["title"] = window(pid).map { text($0,kAXTitleAttribute) } as Any? ?? NSNull() }
   else if op == "bind" { _ = try bind(pid); r["ax"] = read(pid); r["geometry"] = geometry(pid) }
   else if op == "read" { r["ax"] = read(pid); if q["geometry"] as? Bool == true { r["geometry"] = geometry(pid) } }
+  else if op == "read-enablement" {
+   guard let name=q["attribute"] as? String, ["AXManualAccessibility","AXEnhancedUserInterface"].contains(name) else { throw NSError(domain:"enablement attribute missing",code:13) }
+   let (value,error)=copy(appElement(pid),name)
+   r["attribute"]=name; r["axError"]=error.rawValue; r["value"]=(value as? Bool) as Any? ?? NSNull()
+  }
   else if op == "cache-diagnostic" { let c=try diagnosticControls(pid);let key=String(pid)+":"+(q["cacheName"] as? String ?? "early");diagnosticCache[key]=c;r["cached"]=diagnosticWire(c) }
+  else if op == "cached-diagnostic" {
+   // Read-only: the cached refs' own attributes and action names, with no fresh walk and no action dispatched.
+   let key=String(pid)+":"+(q["cacheName"] as? String ?? "early")
+   guard let cached=diagnosticCache[key] else { throw NSError(domain:"diagnostic cache missing",code:12) }
+   r["cached"]=diagnosticWire(cached)
+  }
   else if op == "compare-diagnostic" {
    let key=String(pid)+":"+(q["cacheName"] as? String ?? "early")
    guard let cached=diagnosticCache[key] else { throw NSError(domain:"diagnostic cache missing",code:12) }

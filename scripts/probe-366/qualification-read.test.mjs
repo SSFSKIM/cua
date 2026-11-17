@@ -5,7 +5,7 @@ import {tmpdir} from 'node:os';
 import {join,dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
-import {qualificationPlan,qualificationJudgeCall,qualificationSummarize,qualificationCoverage} from './qualification-read.mjs';
+import {qualificationPlan,qualificationJudgeCall,qualificationSummarize,qualificationCoverage,lifecycleProduct} from './qualification-read.mjs';
 const here=dirname(fileURLToPath(import.meta.url));
 const BROWSERS=['electron-parity','electron','cft'];
 // group/engineSide -> [launches, expected call labels]
@@ -51,6 +51,19 @@ test('plan: 100 launches and 130 calls per browser, 14 launches in smoke, unique
  assert.equal(new Set(all.map(c=>c.id)).size,300);
  assert.throws(()=>qualificationPlan({browser:'safari'}));
 });
+test('recovery isolates the setup-invalid value cell and never replaces its original attempt',()=>{
+ const cells=qualificationPlan({browser:'electron',repair:true});
+ assert.equal(cells.length,1);
+ assert.deepEqual(cells[0],{phase:'qualification-repair',browser:'electron',group:'value',engineSide:'fix',rep:1,expectedCalls:['value'],id:'qualification-repair/electron/value/fix/1',recoveryOf:'qualification/electron/value/fix/1'});
+ const r={...row(cells[0]),phase:cells[0].phase,recoveryOf:cells[0].recoveryOf};
+ assert.equal(qualificationCoverage([r]).ok,true);
+ assert.equal(qualificationCoverage([r],{browser:'electron',repair:true}).expectedCalls,1);
+ assert.equal(qualificationSummarize([r]).calls[0].delivered,1);
+ assert.equal(qualificationCoverage([r,r]).ok,false);
+ assert.equal(qualificationCoverage([{...r,calls:[]}]).ok,false);
+ assert.throws(()=>qualificationPlan({browser:'cft',repair:true}));
+ assert.equal(qualificationPlan({browser:'electron'}).length,100);
+});
 test('matched supplement gives both heads warm and genuinely released posthold cells without changing the full plan',()=>{
  const all=[];
  for(const browser of BROWSERS){
@@ -75,6 +88,133 @@ test('matched supplement gives both heads warm and genuinely released posthold c
  }
  assert.deepEqual([all.length,all.reduce((n,r)=>n+r.calls.length,0)],[80,160]);
  assert.equal(qualificationCoverage(all).ok,true);
+});
+// A complete lifecycle launch: cold (waits), 36 s idle, held (owned, no write, no wait), endTask, then a new connection's observation (waits).
+const PRESS=['AXPress'],cachedRec=(startedAt,actions=PRESS,actionsError=0)=>({startedAt,endedAt:startedAt+1,cached:{button:{actions,actionsError},field:{actions:null,actionsError:0}}});
+const lifeRow=(c,browser,over={})=>({...row(c),phase:c.phase,targetPid:4242,
+ appInfo:browser==='cft'?[]:[{kind:'accessibility-support-changed',pid:4242,enabled:true,at:1100},{kind:'accessibility-support-changed',pid:4242,enabled:false,at:55005}],
+ calls:[call('cold',{},0),call('held',{startedAt:50100,endedAt:50110},1),call('new-task',{startedAt:58000,endedAt:58010},2)],
+ observations:[
+  {startedAt:1000,endedAt:9990,waitMs:2501,waitEvidence:'signpost',raw:{result:{timings:{enablementPrior:'false',enablementWrite:'success'}}}},
+  {startedAt:50000,endedAt:50010,waitMs:0.01,waitEvidence:'signpost',raw:{result:{timings:{enablementPrior:'owned'}}}},
+  {startedAt:55020,endedAt:57990,waitMs:2505,waitEvidence:'signpost',raw:{result:{timings:{enablementPrior:'false',enablementWrite:'success'}}}},
+ ],
+ taskEnd:{startedAt:55000,endedAt:55010,raw:{result:{released:1}}},
+ releaseRead:{startedAt:55013,endedAt:55014,attribute:browser==='cft'?'AXEnhancedUserInterface':'AXManualAccessibility',axError:0,value:false},
+ releaseEvidence:{cachedBefore:cachedRec(50200),cachedAfter:cachedRec(55011),...(browser==='cft'?{}:{setterWait:{startedAt:55015,endedAt:55016,deadlineMs:3000}}),errors:{}},
+ ...over});
+const lifeRows=(browser,over)=>qualificationPlan({browser,lifecycle:true}).map(c=>lifeRow(c,browser,over));
+test('lifecycle smoke plan is fix only: cold, held, then a new task after endTask',()=>{
+ for(const browser of BROWSERS){
+  const cells=qualificationPlan({browser,lifecycle:true});
+  assert.equal(cells.length,3);
+  assert.ok(cells.every(c=>c.phase==='qualification-lifecycle'&&c.engineSide==='fix'&&c.group==='lifecycle'&&JSON.stringify(c.expectedCalls)===JSON.stringify(['cold','held','new-task'])));
+  const rows=lifeRows(browser);
+  assert.equal(qualificationCoverage(rows,{browser,lifecycle:true}).ok,true);
+  assert.equal(qualificationCoverage(rows).ok,true);
+  assert.equal(qualificationSummarize(rows).calls.every(c=>c.valid===3),true);
+  const invalid=extra=>qualificationCoverage(lifeRows(browser).map((r,i)=>i===0?{...r,...extra}:r)).invalid[0]?.reason;
+  assert.equal(invalid({observations:rows[0].observations.slice(0,2)}),'lifecycle-observations');
+  assert.equal(invalid({observations:rows[0].observations.map((o,i)=>i===1?{...o,startedAt:45999}:o)}),'lifecycle-idle');
+  assert.equal(invalid({taskEnd:{...rows[0].taskEnd,raw:{}}}),'lifecycle-task-end');
+  assert.equal(invalid({releaseRead:undefined}),'lifecycle-release');
+  assert.equal(invalid({releaseRead:{...rows[0].releaseRead,endedAt:58001}}),'lifecycle-release');
+  assert.equal(invalid({releaseRead:{...rows[0].releaseRead,attribute:'AXFocused'}}),'lifecycle-release');
+  assert.equal(invalid({releaseEvidence:undefined}),'lifecycle-cache');
+  assert.equal(invalid({releaseEvidence:{...rows[0].releaseEvidence,cachedAfter:undefined}}),'lifecycle-cache');
+  assert.equal(invalid({releaseEvidence:{...rows[0].releaseEvidence,cachedBefore:cachedRec(55001)}}),'lifecycle-cache');
+  assert.equal(invalid({releaseEvidence:{...rows[0].releaseEvidence,setterWait:undefined}}),browser==='cft'?undefined:'lifecycle-setter');
+  assert.equal(invalid({releaseEvidence:{...rows[0].releaseEvidence,errors:{cachedAfter:'boom'}}}),'lifecycle-cache');
+  assert.equal(qualificationCoverage(rows.slice(1),{browser,lifecycle:true}).missing.length,1);
+ }
+});
+test('a failed release read or a still-true native getter is retained as evidence and never blocks or proves release',()=>{
+ for(const browser of BROWSERS){
+  for(const read of [{value:true},{value:null,axError:-25205},{value:false}]){
+   const rows=lifeRows(browser,{});rows.forEach(r=>Object.assign(r.releaseRead,read));
+   assert.equal(qualificationCoverage(rows).ok,true,JSON.stringify(read));
+   const p=lifecycleProduct(rows[0]);
+   assert.equal(p.release.native,read.value===false?'false':read.value===true?'true':'unreadable');
+   // The native read alone is never an independent release signal.
+   assert.equal(p.release.independentSignal,browser==='cft'?'none':'setter-event');
+   assert.equal(p.pass,true);
+  }
+ }
+});
+test('lifecycle product checks are per stage and separate from coverage: a complete failed smoke stays failed',()=>{
+ const good=lifecycleProduct(lifeRows('electron')[0]);
+ assert.equal(good.evidenceComplete,true);assert.equal(good.pass,true);
+ assert.deepEqual(Object.fromEntries(Object.entries(good.stages).map(([k,v])=>[k,v.pass])),{cold:true,gap:true,held:true,endTask:true,newTask:true});
+ assert.equal(good.stages.gap.ms,39990);assert.equal(good.stages.held.prior,'owned');assert.equal(good.stages.held.waitMs,0.01);
+ assert.equal(good.stages.newTask.waitMs,2505);assert.equal(good.stages.cold.delivery,'exact');assert.equal(good.stages.endTask.releasedComputed,1);
+ const mod=(index,timings,waitMs)=>lifeRows('electron')[0].observations.map((o,i)=>i===index?{...o,waitMs:waitMs??o.waitMs,raw:{result:{timings}}}:o);
+ const failed=(observations,stage)=>{const r={...lifeRows('electron')[0],observations},p=lifecycleProduct(r);assert.equal(p.evidenceComplete,true);assert.equal(p.stages[stage].pass,false,stage);assert.equal(p.pass,false);assert.equal(qualificationCoverage([r,...lifeRows('electron').slice(1)]).ok,true);return p};
+ failed(mod(1,{enablementPrior:'false'}),'held');
+ failed(mod(1,{enablementPrior:'owned',enablementWrite:'success'}),'held');
+ failed(mod(1,{enablementPrior:'owned'},2400),'held');
+ failed(mod(0,{enablementPrior:'false'}),'cold');
+ failed(mod(0,{enablementPrior:'false',enablementWrite:'success'},40),'cold');
+ failed(mod(0,{enablementPrior:'false',enablementWrite:'success'},1999),'cold');
+ failed(mod(2,{enablementPrior:'false',enablementWrite:'success'},1000),'newTask');
+ failed(mod(1,{enablementPrior:'owned'},100),'held');
+ failed(mod(2,{enablementPrior:'owned',enablementWrite:'success'}),'newTask');
+ failed(mod(2,{enablementPrior:'false'}),'newTask');
+ failed(mod(2,{enablementPrior:'false',enablementWrite:'success'},10),'newTask');
+ // A failed write keeps the attempted-write fact (so held's no-write check sees it) but is not an accepted write.
+ const fw=failed(mod(0,{enablementPrior:'false',enablementWrite:'failed'}),'cold');
+ assert.deepEqual([fw.stages.cold.wrote,fw.stages.cold.acceptedWrite],[true,false]);
+ assert.equal(failed(mod(2,{enablementPrior:'false',enablementWrite:'failed'}),'newTask').stages.newTask.acceptedWrite,false);
+ const hw=failed(mod(1,{enablementPrior:'owned',enablementWrite:'failed'}),'held');
+ assert.deepEqual([hw.stages.held.wrote,hw.stages.held.noWrite],[true,false]);
+ // An error reply with the handler count still delivered is not a pass.
+ for(const [label,stage] of [['cold','cold'],['held','held'],['new-task','newTask']]){
+  const r=lifeRows('electron')[0],p=lifecycleProduct({...r,calls:r.calls.map(c=>c.label===label?{...c,raw:{error:{errorName:'x'}}}:c)});
+  assert.equal(p.stages[stage].delivery,'exact');assert.equal(p.stages[stage].replyOk,false);assert.equal(p.stages[stage].pass,false,label);assert.equal(p.pass,false);
+ }
+ const miss=(label,e)=>{const r=lifeRows('electron')[0],p=lifecycleProduct({...r,calls:r.calls.map(c=>c.label===label?{...c,after:{...c.after,presses:0}}:c)});assert.equal(p.stages[e].delivery,'notDelivered');assert.equal(p.stages[e].pass,false);};
+ miss('cold','cold');miss('held','held');miss('new-task','newTask');
+ const dup=lifeRows('electron')[0],d=lifecycleProduct({...dup,calls:dup.calls.map(c=>c.label==='held'?{...c,after:{...c.after,presses:2}}:c)});
+ assert.equal(d.stages.held.delivery,'duplicate');assert.equal(d.stages.held.pass,false);
+ const e=lifeRows('electron')[0],err=lifecycleProduct({...e,taskEnd:{...e.taskEnd,raw:{error:{errorName:'x'}}}});
+ assert.equal(err.stages.endTask.replied,false);assert.equal(err.pass,false);
+ const shortGap=lifecycleProduct({...e,observations:e.observations.map((o,i)=>i===1?{...o,startedAt:30000}:o)});
+ assert.equal(shortGap.stages.gap.genuine,false);assert.equal(shortGap.pass,false);
+ const unknown=lifecycleProduct({...e,observations:e.observations.map((o,i)=>i===1?{...o,waitEvidence:'missing',waitMs:null}:o)});
+ assert.equal(unknown.stages.held.noWait,null);assert.equal(unknown.pass,null);
+});
+test('release signals are counted apart: native read, cached same-ref action, setter events; a computed released count is labelled computed',()=>{
+ const cft=lifeRows('cft')[0],ev=extra=>({...cft.releaseEvidence,...extra});
+ const sig=r=>lifecycleProduct(r).release;
+ assert.deepEqual([sig(cft).cachedAction,sig(cft).independentSignal,sig(cft).setterFalse],['retained','none',null]);
+ const lost=sig({...cft,releaseEvidence:ev({cachedAfter:cachedRec(55011,[])})});
+ assert.deepEqual([lost.cachedAction,lost.independentSignal],['lost','cached-action-loss']);
+ const inv=sig({...cft,releaseEvidence:ev({cachedAfter:cachedRec(55011,null,-25202)})});
+ assert.deepEqual([inv.cachedAction,inv.independentSignal],['refInvalid','none']);
+ assert.equal(sig({...cft,releaseEvidence:ev({cachedBefore:cachedRec(50200,[])})}).cachedAction,'no-baseline');
+ const el=lifeRows('electron')[0];
+ assert.deepEqual([sig(el).setterFalse,sig(el).setterTrue,sig(el).independentSignal],[1,0,'setter-event']);
+ // Events outside the endTask..next-observation window, from another pid, or enabling are not release events.
+ const f=(at,extra={})=>({kind:'accessibility-support-changed',pid:4242,enabled:false,at,...extra});
+ const noise=sig({...el,appInfo:[f(54999),f(55020.5),f(55005,{pid:1}),f(55005,{enabled:true})]});
+ assert.deepEqual([noise.setterFalse,noise.setterTrue,noise.independentSignal],[0,1,'none']);
+ assert.equal(sig({...el,appInfo:[f(55000),f(55020)]}).setterFalse,2);
+ // Summary: tallies per signal, the new-task prior/write/wait beside them, observationFields, and the computed note.
+ const rows=[...lifeRows('electron'),...lifeRows('electron').map((r,i)=>i===0?{...r,appInfo:[],releaseRead:{...r.releaseRead,value:true}}:r)].map((r,i)=>({...r,id:r.id+(i>=3?'x':''),appLaunchId:r.appLaunchId+i}));
+ const [launch]=qualificationSummarize(rows).launches,l=launch.lifecycle;
+ assert.equal(launch.group,'lifecycle');
+ assert.deepEqual(l.release.nativeRead,{false:5,true:1});
+ assert.deepEqual(l.release.setterFalseEvents,{0:1,1:5});
+ assert.deepEqual(l.release.independentSignal,{'setter-event':5,none:1});
+ assert.deepEqual(l.release.cachedAction,{retained:6});
+ assert.match(l.release.note,/computed/);
+ assert.deepEqual(l.stages.endTask.releasedComputed,{1:6});
+ assert.deepEqual(l.stages.newTask.prior,{false:6});assert.deepEqual(l.stages.newTask.write,{success:6});assert.equal(l.stages.newTask.waitMs.p50,2505);
+ assert.deepEqual(l.stages.held.prior,{owned:6});assert.deepEqual(l.stages.held.write,{absent:6});assert.equal(l.stages.held.waitMs.max,0.01);
+ assert.deepEqual(l.stages.gap.genuine,{true:6});
+ assert.deepEqual(l.product,{pass:6,fail:0,unknown:0});
+ assert.deepEqual(launch.observationFields.map(f=>f.index),[0,1,2]);
+ assert.deepEqual(launch.observationFields[1].enablementPrior,{owned:6});assert.deepEqual(launch.observationFields[2].enablementWrite,{success:6});
+ assert.equal(launch.observationTimings.length,6*3);
 });
 test('press oracle is the handler count change; never unchanged-state confirmation',()=>{
  const j=(before,after,extra={})=>{const r=rowOf('cold/main');r.calls[0]={...r.calls[0],before:{...owner,presses:before},after:{...owner,presses:after},...extra};return qualificationJudgeCall(r,r.calls[0])};

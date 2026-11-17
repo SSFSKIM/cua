@@ -19,7 +19,7 @@ import {startCpu2,cpuUsageBetween} from './qualification-load.mjs';
 if(process.env.RUNNER_ENVIRONMENT!=='github-hosted')throw Error('hosted runners only');
 const arg=n=>{const i=process.argv.indexOf('--'+n);return i<0?undefined:process.argv[i+1];};
 const OUT=resolve(arg('out')),browser=arg('browser'),smoke=arg('smoke')==='true',TOOL=arg('tool');
-const diagnostic=arg('diagnostic')==='true',supplement=arg('supplement')==='true';
+const diagnostic=arg('diagnostic')==='true',supplement=arg('supplement')==='true',lifecycle=arg('lifecycle')==='true',repair=arg('repair')==='true';
 const engines={main:arg('main-engine'),fix:arg('fix-engine')},refs={main:arg('main-ref'),fix:arg('fix-ref')};
 const dir=dirname(fileURLToPath(import.meta.url)),fixture=join(dir,'fixture'),electron=browser.startsWith('electron'),start=Date.now();
 const sleep=ms=>new Promise(ok=>setTimeout(ok,Math.max(0,ms)));
@@ -43,8 +43,8 @@ createInterface({input:helper.stdout}).on('line',line=>{const w=waiters.shift();
 function ask(q){return new Promise((ok,no)=>{const w={ok,no,timer:setTimeout(()=>no(Error('native helper timeout')),15000)};waiters.push(w);helper.stdin.write(JSON.stringify(q)+'\n');});}
 async function front(pid,activate=true){const r=await ask({op:'front',pid,activate});if(!r.ok||r.frontmostPid!==pid)throw Error('frontmost not verified');return r;}
 async function stop(child){if(!child||child.exitCode!==null||child.signalCode!==null)return true;child.kill('SIGTERM');try{await until(()=>child.exitCode!==null||child.signalCode!==null,5000);return true;}catch{child.kill('SIGKILL');try{await until(()=>child.exitCode!==null||child.signalCode!==null,2000);return true;}catch{return false;}}}
-const cells=qualificationPlan({browser,smoke,supplement}).filter(c=>!diagnostic||(c.group==='value'&&c.engineSide==='fix'&&c.rep===0)),config={schema:2,experiment:diagnostic?'real-engine-cache-diagnostic':supplement?'real-engine-matched-supplement':'real-engine-qualification',browser,smoke,diagnostic,supplement,refs,kit:process.env.GITHUB_SHA,image:process.env.ImageVersion,cells,startedAt:start,
- engine:'unmodified source builds; ordinary snapshot element tokens; no probe gating or forced routes',waitEvidence:'post-trial log show; gate inside native request, matched to RPC by method/order; not wall-clock joining',postholdIdleMs:36000,postholdProof:'next observation must re-read true/false/unreadable, never owned; 30s grace plus 3s dispatch leeway plus 3s margin',earlyObservationDeadlineMs:1250,effectWindowMs:3000,load:'hosted parity cpu:2; worker CPU-time deltas measured'};
+const cells=qualificationPlan({browser,smoke,supplement,lifecycle,repair}).filter(c=>!diagnostic||(c.group==='value'&&c.engineSide==='fix'&&c.rep===0)),config={schema:2,experiment:diagnostic?'real-engine-cache-diagnostic':repair?'real-engine-cell-recovery':lifecycle?'real-engine-lifecycle-smoke':supplement?'real-engine-matched-supplement':'real-engine-qualification',browser,smoke,diagnostic,supplement,lifecycle,repair,refs,kit:process.env.GITHUB_SHA,image:process.env.ImageVersion,cells,startedAt:start,
+ engine:'unmodified source builds; ordinary snapshot element tokens; no probe gating or forced routes',waitEvidence:'post-trial log show; gate inside native request, matched to RPC by method/order; not wall-clock joining',postholdIdleMs:36000,postholdProof:lifecycle?'36s observation should remain owned with no write or substantial wait; endTask is followed by the raw native read (retained, never proof), a cached same-ref action read and Electron setter events, then always a new connection observation and click':'next observation must re-read true/false/unreadable, never owned; 30s grace plus 3s dispatch leeway plus 3s margin',earlyObservationDeadlineMs:1250,effectWindowMs:3000,load:'hosted parity cpu:2; worker CPU-time deltas measured'};
 writeFileSync(join(OUT,'config.json'),JSON.stringify(config,null,2));
 let cover,coverPid,target,engine,load,w;const rows=[];
 async function rpc(pid,method,args={},options={}){const startedAt=Date.now(),raw=await w.execute(method,{pid,...args},options);return {method,startedAt,endedAt:Date.now(),raw};}
@@ -109,6 +109,27 @@ try{
      await measured(row,'fresh-click',pid,token(row.freshClickObservation,'press'));
      row.afterFreshClick=await ask({op:'compare-diagnostic',pid,cacheName:'click'});
     }
+   }
+   else if(cell.group==='lifecycle'){
+    const first=await measured(row,'cold',pid,element);
+    row.idleStartedAt=Date.now();await sleep(first.endedAt+config.postholdIdleMs-Date.now());row.idleEndedAt=Date.now();
+    const held=await observe(row,pid);await measured(row,'held',pid,token(held,'press'));
+    // The raw native getter is only retained (a computed getter, unreliable as a mode indicator in either direction): it never proves release or blocks the new task.
+    // Independent signals: Electron's setter event, and the same cached AX ref's actions read before and after endTask (no fresh walk, no action).
+    const evidence=row.releaseEvidence={errors:{}};
+    const capture=async(name,fn)=>{try{evidence[name]=await fn();}catch(e){evidence.errors[name]=String(e);}};
+    await capture('cachedBefore',()=>ask({op:'cache-diagnostic',pid,cacheName:'lifecycle'}));
+    const startedAt=Date.now(),raw=await w.call('endTask',{});row.taskEnd={startedAt,endedAt:Date.now(),raw};
+    await capture('cachedAfter',()=>ask({op:'cached-diagnostic',pid,cacheName:'lifecycle'}));
+    try{row.releaseRead=await ask({op:'read-enablement',pid,attribute:browser==='cft'?'AXEnhancedUserInterface':'AXManualAccessibility'});}catch(e){evidence.errors.releaseRead=String(e);}
+    if(electron){
+     const setterWait={startedAt:Date.now(),deadlineMs:3000};
+     try{await until(()=>row.appInfo.some(e=>e.kind==='accessibility-support-changed'&&e.pid===pid&&e.enabled===false&&e.at>=startedAt),setterWait.deadlineMs);}catch{}
+     setterWait.endedAt=Date.now();evidence.setterWait=setterWait;
+    }
+    w.close();w=await Wire.connect(socket);
+    const ping=await w.call('ping',{clientApiVersion:'cua-engine-1',desktop:'shared'});if(ping.error)throw Error('new task ping '+JSON.stringify(ping.error));
+    const next=await observe(row,pid);await measured(row,'new-task',pid,token(next,'press'));
    }
    else {
     const first=await measured(row,cell.group==='load'?'loaded':cell.group==='early'?'early':'cold',pid,element);

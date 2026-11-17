@@ -20,7 +20,7 @@ jobs:
   measure:
     if: github.ref == 'refs/heads/probe/360-measure'
     runs-on: macos-latest
-    timeout-minutes: 80
+    timeout-minutes: 90
     env:
       ENGINE_REF: 'b99232def1e37307848dd1ccb08726729eb81b66'
       SMOKE: ${{ github.event_name == 'push' && 'true' || inputs.smoke }}

@@ -13,12 +13,12 @@ if(!OUT||!ENGINE||!SIDE||!['true','false'].includes(arg('smoke'))||process.env.E
 mkdirSync(OUT,{recursive:true});
 const sleep=ms=>new Promise(r=>setTimeout(r,Math.max(0,ms))),startedAt=Date.now(),cells=plan(SMOKE);
 const config={kit:process.env.GITHUB_SHA,engine:ENGINE_REF,image:process.env.ImageVersion,smoke:SMOKE,reps:SMOKE?1:20,planned:cells.length,startedAt,
- fixtureOwnershipVersion:3,browser:'firefox',samplingMs:DELAYS,sideWatchMs:20,budgetMinutes:60,
+ fixtureOwnershipVersion:3,browser:'firefox',samplingMs:DELAYS,sideWatchMs:20,budgetMinutes:75,
  baseline:'pinned current-main engine preflight and original EventPoster.event/keyPresses, forced route 2-prime; no inherited focus hold',
  setup:'foreground fixture DOM setup without engine clicks; cover foreground; 250ms settle; verify owned document/selection then arm trace',
  expected:'ASCII seed end: Left [28,0], Option+Left [24,0], Cmd+Left [0,0], Cmd+Shift+Left [0,29]; foreground cells independently check these expectations',
  noRetry:'Every planned row is attempted once; setup failures/posted failures stay in the denominator. Three consecutive invalid setups stop the run.',
- safety:'No activation/raise calls in measured engine branch; equivalent-prelude is synthetic subtype1/inert-outside-click/keys/subtype2 only, not full production held route3. 20ms passive foreground/order samples; stop on any observed violation. Sampling cannot exclude sub-20ms flashes.',
+ safety:'No activation/raise calls in measured engine branch; equivalent-prelude is synthetic subtype1/inert-outside-click/keys/subtype2 only, not full production held route3. Requested 20ms passive foreground/order sampling; actual timestamps retained, stop on any observed violation. Scheduling gaps and cache lag can miss brief flashes.',
  ax:'Retain focused field before key; raw AXSelectedTextRange only, never values/selected text; same-field CFEqual checked each read. DOM-only baseline controls reader observer effect. No secret fields tested.',
  caveat:'This is an intervention study, not instrumentation inside Gecko. Stock NativeKeyBindings/KeyboardHandler/IMEHandler logs are collected; missing logs are not evidence of absence.'};
 const persist=()=>writeFileSync(join(OUT,'config.json'),JSON.stringify(config,null,2));persist();
@@ -108,7 +108,7 @@ try {
  for(let i=0;i<2;i++){const r=await warm.execute('get_app_state',{pid,includeScreenshot:false});if(r.error)throw Error('AX warmup '+JSON.stringify(r.error));await sleep(1200)}warm.close();
  config.targetPid=pid;config.coverPid=coverPid;persist();
  writeFileSync(join(OUT,'plan.json'),JSON.stringify(cells,null,2));
- for(const c of cells){if(Date.now()-startedAt>60*60000)throw Error('60 minute measurement budget exceeded (partial coverage is not a pass)');await trial(c)}
+ for(const c of cells){if(Date.now()-startedAt>75*60000)throw Error('75 minute measurement budget exceeded (partial coverage is not a pass)');await trial(c)}
 } catch(e){config.failure=String(e.stack??e);console.error(config.failure);process.exitCode=1;}
 finally {
  transport.retire('shutdown');stopped=await stop(engine);writeFileSync(join(OUT,'engine-stopped.json'),JSON.stringify({stopped,at:Date.now()}));

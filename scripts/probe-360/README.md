@@ -5,28 +5,27 @@ The engine is pinned to current main at preparation, `b99232def1e37307848dd1ccb0
 The earlier #354 reproduction base was `3c669314`; this kit measures the code a fix would land on.
 Only a runner-owned scratch copy is patched. The vendor runtime is untouched.
 
-## Dispatch (not run during preparation)
+## Dispatch
 
-**The kit commit remains local while Actions is billing-locked. Do not push it yet.**
-A manual-only workflow on a non-default branch is not registered for dispatch. Per the updated brief,
-`probe-360.yml` has a push trigger restricted to `probe/360-measure` and the kit/workflow paths.
-When the owner pushes the kit at #360's turn, that first eligible push registers it and runs **smoke only**.
-Full measurement is available by explicit dispatch after registration. No inherited workflow is changed.
+The workflow is registered as **420915277**. Its push trigger is restricted to `probe/360-measure` and
+this kit/workflow's paths; every eligible push runs **smoke only**. Full measurement is available only by
+explicit dispatch. No inherited workflow is changed. Initial preparation stayed local while Actions was
+billing-locked; hosted execution began with [smoke 44018349366](https://github.com/SSFSKIM/cua/actions/runs/44018349366).
 
 ```sh
 # Smoke: 128 attempts, one repetition per labelled cell.
-gh workflow run probe-360.yml -R SSFSKIM/cua --ref probe/360-measure -f smoke=true
+gh workflow run 420915277 -R SSFSKIM/cua --ref probe/360-measure -f smoke=true
 # Full: 2,560 attempts, 20 repetitions per labelled cell.
-gh workflow run probe-360.yml -R SSFSKIM/cua --ref probe/360-measure -f smoke=false
+gh workflow run 420915277 -R SSFSKIM/cua --ref probe/360-measure -f smoke=false
 ```
 
 The only push trigger is this branch plus the kit's own paths; push always defaults to smoke.
 There are no PR, schedule or workflow-call triggers. One hosted macOS job,
-approximately an hour for full measurement plus installation/build margin;
-60-minute measurement budget, 80-minute job timeout. This is an estimate, not a measured duration.
+approximately an hour for full measurement plus installation/build margin.
+The first smoke's measured cell times project the full plan to 63 minutes; the controller therefore has a
+75-minute measurement budget and the job a 90-minute timeout. The plan is not reduced to fit the old 60-minute cap.
 A budget expiry retains partial evidence and fails coverage; it never trims the planned denominator.
-The Mac mini and the owner's GUI/profile are not used. Actions is billing-locked at preparation time;
-**preparation stops at the local commit: no push, dispatch or hosted run**.
+The Mac mini and the owner's GUI/profile are not used.
 
 ## Cells and denominators
 
@@ -114,8 +113,10 @@ node scripts/probe-360/read.mjs /absolute/path/to/artifact/data
 
 An exact effect means the known seed is unchanged and the DOM range equals the intended destination after 1 s.
 A safe effect additionally requires readable foreground/order samples without a violation or editor focus loss.
-The watcher stops the run on any observed foreground/order violation; it never repairs it. Sub-20-ms flashes
-cannot be excluded by this sampling, so 0/20 is not proof of zero risk. No variant is a general delivery guarantee.
+The watcher stops the run on any observed foreground/order violation; it never repairs it. Its 20 ms interval is
+requested, not guaranteed: first-smoke actual gaps were p50 38.8 ms, p95 89.4 ms, maximum 293.6 ms. Use each run's
+recorded timestamps to price its actual resolution. A brief activation/raise between samples can be missed, so
+0 observed in 20 is not proof of zero risk. No variant is a general delivery guarantee.
 
 The foreground sample is NSWorkspace's cached frontmost app. Apple documents that such state persists until the next
 main run-loop turn in a common mode, so the side helper keeps its main thread turning that loop for its whole life and

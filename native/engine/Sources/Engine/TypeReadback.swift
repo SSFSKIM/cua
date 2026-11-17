@@ -177,7 +177,14 @@ extension ReadbackReads where Element == AXUIElement {
         return found
       }
       return readbackFocusedField(application: application, focused: { element($0, kAXFocusedUIElementAttribute) },
-                                  primaryWindow: { element($0, kAXFocusedWindowAttribute) ?? element($0, kAXMainWindowAttribute) })
+                                  primaryWindow: { element($0, kAXFocusedWindowAttribute) ?? element($0, kAXMainWindowAttribute) },
+                                  walk: ReadbackFocusWalk(children: { node in
+                                    elementList(attribute(node, kAXChildrenAttribute)).map { child in
+                                      AXUIElementSetMessagingTimeout(child, typeReadbackMessagingTimeout)
+                                      return child
+                                    }
+                                  }, isFocused: { bool(attribute($0, kAXFocusedAttribute)) == true },
+                                  role: { stringAttribute($0, kAXRoleAttribute) }))
     }, role: { stringAttribute($0, kAXRoleAttribute) }, subrole: liveReadbackSubrole,
        value: { stringAttribute($0, kAXValueAttribute) }, valueUnits: liveReadbackValueUnits, range: { element in
       guard let range = rangeWire(attribute(element, kAXSelectedTextRangeAttribute)), let location = range["location"],
@@ -187,14 +194,61 @@ extension ReadbackReads where Element == AXUIElement {
   }
 }
 
-/// The field typed keys reach: the application's AXFocusedUIElement, else its primary window's (AXFocusedWindow, else
-/// AXMainWindow). An app that is not active can answer no focused element at the application (#354's A/B, run
-/// 43752829833: background Safari answered none for its focused input in 120 of 120 cells that took no route 3 hold
-/// first, and found it in every cell whose ⌘ key had just taken one), while its window still names the element its
-/// first responder holds, where the posted keys go.
-func readbackFocusedField<Element>(application: Element, focused: (Element) -> Element?, primaryWindow: (Element) -> Element?) -> Element? {
+/// The bounds of the walk for the focused field (`readbackFocusedByWalk`), sized from run 44022892172 (Safari 27.2, 10
+/// reps): the window to its AXWebArea took 28 nodes at depth 6 in 4.7/10.9 ms p50/p95, the web area to its focused
+/// AXTextField 5 nodes at depth 2 in 0.5/1.0 ms. A walk of the whole window, needed to see that only one element is
+/// focused, reads more than that path; the bounds leave about 6 times the nodes, 1.5 times the depth and 3 times the
+/// time of the measured path.
+let typeReadbackFocusWalkNodes = 200
+let typeReadbackFocusWalkDepth = 12
+let typeReadbackFocusWalkMs: Double = 40
+/// The roles the walk claims: the text-entry roles, and a secure field's, which the snapshot then refuses unread.
+let typeReadbackFocusWalkRoles: Set<String> = typeReadbackTextRoles.union(["AXSecureTextField"])
+
+/// The reads of the walk, live or faked: an element's children, whether it reads AXFocused true, its role, the clock.
+struct ReadbackFocusWalk<Element> {
+  var children: (Element) -> [Element]
+  var isFocused: (Element) -> Bool
+  var role: (Element) -> String?
+  var now: () -> Double = monotonicMilliseconds
+}
+
+/// The field typed keys reach: the application's AXFocusedUIElement, else the one its primary window's walk finds
+/// (`readbackFocusedByWalk`; AXFocusedWindow, else AXMainWindow). An app that is not active can answer no focused element
+/// at the application (#354's A/B, run 43752829833: background Safari, 120 of 120 cells with no route 3 hold first).
+/// Run 44022892172 showed what answers then: the application's AXFocusedUIElement no value (-25212), the windows' focus
+/// attributes unsupported (-25205), the web area's AXFocusedUIElement no value; a walk of the window for the element
+/// that reads AXFocused true found the text field 10 of 10. Only AX attributes are read; nothing is activated.
+func readbackFocusedField<Element>(application: Element, focused: (Element) -> Element?, primaryWindow: (Element) -> Element?,
+                                   walk: ReadbackFocusWalk<Element>) -> Element? {
   if let field = focused(application) { return field }
-  return primaryWindow(application).flatMap(focused)
+  return primaryWindow(application).flatMap { readbackFocusedByWalk($0, walk) }
+}
+
+/// The window walked breadth first for elements that read AXFocused true with a role the walk claims
+/// (`typeReadbackFocusWalkRoles`), the role read only of a focused one. A focused element of another role is walked
+/// through, never claimed nor counted: after a key press Safari's AXWebArea reads AXFocused true beside its editor (run
+/// 44022892172, 10 of 10). The one found is claimed only when the walk
+/// finished inside its node and time bounds and found no other: zero, several, or a walk cut short claim nothing, since
+/// an element past the bound could be another. Children are read down to `typeReadbackFocusWalkDepth` (the window is
+/// depth 0), and never of a claimed element, so nothing inside the field, whose children follow its text, is read.
+func readbackFocusedByWalk<Element>(_ window: Element, _ walk: ReadbackFocusWalk<Element>) -> Element? {
+  let started = walk.now()
+  var queue: [(element: Element, depth: Int)] = [(window, 0)]
+  var index = 0
+  var found: Element?
+  while index < queue.count {
+    if index >= typeReadbackFocusWalkNodes || walk.now() - started > typeReadbackFocusWalkMs { return nil }
+    let (element, depth) = queue[index]
+    index += 1
+    if walk.isFocused(element), let role = walk.role(element), typeReadbackFocusWalkRoles.contains(role) {
+      if found != nil { return nil }
+      found = element
+      continue
+    }
+    if depth < typeReadbackFocusWalkDepth { queue += walk.children(element).map { ($0, depth + 1) } }
+  }
+  return found
 }
 
 /// AXValue copied straight from its CFString into a buffer the caller owns and zeroes (no Swift String is made of it).

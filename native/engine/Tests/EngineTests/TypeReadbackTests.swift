@@ -380,29 +380,159 @@ final class TypeReadbackTests: XCTestCase {
     XCTAssertEqual(record(meta)["reason"] as? String, "unchanged")
   }
 
-  /// #354's A/B (run 43752829833): an app that is not active answers no focused element at the application; its primary
-  /// window still names the field. The application's answer comes first; the focused window before the main one.
-  func testTheFocusedFieldFallsBackToThePrimaryWindowsWhenTheApplicationAnswersNone() {
-    final class Node { let name: String; var focused: Node?; var focusedWindow: Node?; var mainWindow: Node?; init(_ n: String) { name = n } }
-    let app = Node("app"), field = Node("field"), main = Node("main"), other = Node("other")
-    var reads: [String] = []
-    func lookup() -> String? {
-      readbackFocusedField(application: app, focused: { reads.append("focused@\($0.name)"); return $0.focused },
-                           primaryWindow: { node in reads.append("window"); return node.focusedWindow ?? node.mainWindow })?.name
+  /// A node of a fake accessibility tree, for the focused field's lookup.
+  private final class Node {
+    let name: String
+    var role: String?
+    var focusedFlag = false
+    var children: [Node] = []
+    var focused: Node?
+    var focusedWindow: Node?
+    var mainWindow: Node?
+    var value: String? = "v"
+    init(_ name: String, role: String? = "AXGroup", children: [Node] = []) { self.name = name; self.role = role; self.children = children }
+  }
+
+  /// The lookup over a fake tree, every read recorded; `msPerNode` advances the clock at each node's AXFocused read.
+  private func lookup(_ app: Node, reads: inout [String], msPerNode: Double = 0) -> Node? {
+    var log: [String] = [], clock = 0.0
+    defer { reads = log }
+    return readbackFocusedField(application: app, focused: { log.append("focused@\($0.name)"); return $0.focused },
+                                primaryWindow: { node in log.append("window"); return node.focusedWindow ?? node.mainWindow },
+                                walk: ReadbackFocusWalk(children: { log.append("children@\($0.name)"); return $0.children },
+                                                        isFocused: { clock += msPerNode; log.append("isFocused@\($0.name)"); return $0.focusedFlag },
+                                                        role: { log.append("role@\($0.name)"); return $0.role },
+                                                        now: { clock }))
+  }
+
+  /// Run 44022892172 (Safari 27.2, no key first): the application's AXFocusedUIElement answered no value, the windows'
+  /// focus attributes were unsupported and the web area's answered no value, while a walk of the window found the one
+  /// element with AXFocused true, the text field, 10 of 10. The application's answer comes first; else the primary
+  /// window (focused, else main) is walked, and exactly one focused text-entry element is claimed.
+  func testTheFocusedFieldIsFoundByAWalkWhenTheApplicationAnswersNone() {
+    func page(_ fields: [Node]) -> Node {
+      let web = Node("web", role: "AXWebArea", children: [Node("heading", role: "AXHeading"), Node("form", children: fields)])
+      let window = Node("window", role: "AXWindow", children: [Node("toolbar", role: "AXToolbar", children: [Node("back", role: "AXButton")]), web])
+      let app = Node("app", role: "AXApplication")
+      app.mainWindow = window
+      return app
     }
-    main.focused = field
-    app.mainWindow = main
-    XCTAssertEqual(lookup(), "field", "an inactive app: its main window's focused element")
-    XCTAssertEqual(reads, ["focused@app", "window", "focused@main"])
-    app.focusedWindow = Node("focusedWindow")
-    app.focusedWindow?.focused = other
-    XCTAssertEqual(lookup(), "other", "the focused window before the main one")
+    var reads: [String] = []
+    let field = Node("field", role: "AXTextField", children: [Node("text", role: "AXStaticText")])
+    field.focusedFlag = true
+    let app = page([Node("label", role: "AXStaticText"), field])
+    XCTAssertTrue(lookup(app, reads: &reads) === field, "the one focused text field in the web area")
+    XCTAssertEqual(Array(reads.prefix(2)), ["focused@app", "window"])
+    XCTAssertFalse(reads.contains("children@field"), "nothing inside the claimed field is read: \(reads)")
+    XCTAssertFalse(reads.contains("focused@window"), "the window's own focus attribute is not asked")
+    XCTAssertFalse(reads.contains("role@heading"), "a role is read only of a focused element")
+
     app.focused = field
-    reads = []
-    XCTAssertEqual(lookup(), "field", "the application's own answer first")
-    XCTAssertEqual(reads, ["focused@app"], "no window read when the application answers")
-    app.focused = nil; app.focusedWindow = nil; app.mainWindow = nil
-    XCTAssertNil(lookup(), "no window: no field")
+    XCTAssertTrue(lookup(app, reads: &reads) === field)
+    XCTAssertEqual(reads, ["focused@app"], "the application's own answer first, nothing walked")
+
+    // The focused window before the main one.
+    let other = Node("other", role: "AXTextArea")
+    other.focusedFlag = true
+    let app2 = page([field])
+    app2.focusedWindow = Node("front", role: "AXWindow", children: [other])
+    XCTAssertTrue(lookup(app2, reads: &reads) === other)
+
+    // A focused element that is not a text-entry role is no claim (a focused button).
+    let button = Node("button", role: "AXButton")
+    button.focusedFlag = true
+    XCTAssertNil(lookup(page([button]), reads: &reads))
+
+    // No window: no field.
+    XCTAssertNil(lookup(Node("bare", role: "AXApplication"), reads: &reads))
+  }
+
+  /// Run 44022892172: after a key press Safari's AXWebArea itself reads AXFocused true beside the editor, 10 of 10. Only
+  /// text-entry elements count, so the web area is walked through, never claimed nor counted against the field.
+  func testAFocusedWebAreaIsNeitherClaimedNorCounted() {
+    var reads: [String] = []
+    let field = Node("editor", role: "AXTextField")
+    field.focusedFlag = true
+    let web = Node("web", role: "AXWebArea", children: [Node("group", children: [field])])
+    web.focusedFlag = true
+    let app = Node("app")
+    app.mainWindow = Node("window", role: "AXWindow", children: [web])
+    XCTAssertTrue(lookup(app, reads: &reads) === field, "the web area and the field both focused: the field")
+    let editable = Node("region", role: "AXTextArea")  // a contenteditable region reads as a text area
+    editable.focusedFlag = true
+    web.children = [editable]
+    XCTAssertTrue(lookup(app, reads: &reads) === editable, "a contenteditable region beside a focused web area")
+    web.children = [Node("group", children: [Node("editor", role: "AXTextField")])]
+    XCTAssertNil(lookup(app, reads: &reads), "only the web area focused: no claim")
+  }
+
+  /// Zero or several focused text-entry elements make no claim, and neither does a walk past its node or time bound.
+  func testTheWalkClaimsOnlyOneFocusedFieldWithinItsBounds() {
+    var reads: [String] = []
+    let one = Node("one", role: "AXTextField"), two = Node("two", role: "AXTextArea")
+    one.focusedFlag = true
+    two.focusedFlag = true
+    let app = Node("app")
+    app.mainWindow = Node("window", role: "AXWindow", children: [Node("a", children: [one]), Node("b", children: [two])])
+    XCTAssertNil(lookup(app, reads: &reads), "two focused fields: no claim")
+    two.focusedFlag = false
+    XCTAssertTrue(lookup(app, reads: &reads) === one)
+    one.focusedFlag = false
+    XCTAssertNil(lookup(app, reads: &reads), "none: no claim")
+
+    // Past the node bound: the field sits after more nodes than the walk visits.
+    one.focusedFlag = true
+    let filler = (0..<typeReadbackFocusWalkNodes).map { Node("n\($0)") }
+    app.mainWindow = Node("window", role: "AXWindow", children: filler + [one])
+    XCTAssertNil(lookup(app, reads: &reads), "over the node bound: no claim")
+    XCTAssertEqual(reads.filter { $0.hasPrefix("isFocused@") }.count, typeReadbackFocusWalkNodes)
+    // Within it: the window, the field and the nodes between them fill the bound exactly.
+    app.mainWindow = Node("window", role: "AXWindow", children: Array(filler.prefix(typeReadbackFocusWalkNodes - 2)) + [one])
+    XCTAssertTrue(lookup(app, reads: &reads) === one, "the window, the field and the nodes between fit the bound")
+
+    // Past the time bound: each node costing a millisecond, the walk unfinished at the budget.
+    let past = Array(filler.prefix(Int(typeReadbackFocusWalkMs) + 5))
+    app.mainWindow = Node("window", role: "AXWindow", children: past + [one])
+    XCTAssertNil(lookup(app, reads: &reads, msPerNode: 1), "over the time bound: no claim")
+    // A second focused field past the bound would be unseen, so only a walk that finished claims.
+    app.mainWindow = Node("window", role: "AXWindow", children: [one] + past)
+    XCTAssertNil(lookup(app, reads: &reads, msPerNode: 1), "found early, but the walk did not finish: no claim")
+    app.mainWindow = Node("window", role: "AXWindow", children: [one] + Array(filler.prefix(Int(typeReadbackFocusWalkMs) - 5)))
+    XCTAssertTrue(lookup(app, reads: &reads, msPerNode: 1) === one, "finished inside the time bound")
+
+    // The depth bound: the window is depth 0, and an element at the bound is read but its children are not.
+    func nested(_ depth: Int) -> Node {
+      let field = Node("deep", role: "AXTextField")
+      field.focusedFlag = true
+      var node = field
+      for level in 1..<depth { node = Node("g\(level)", children: [node]) }
+      return Node("window", role: "AXWindow", children: [node])
+    }
+    app.mainWindow = nested(typeReadbackFocusWalkDepth)
+    XCTAssertEqual(lookup(app, reads: &reads)?.name, "deep", "a field at the depth bound")
+    app.mainWindow = nested(typeReadbackFocusWalkDepth + 1)
+    XCTAssertNil(lookup(app, reads: &reads), "a field past the depth bound is not reached")
+    XCTAssertFalse(reads.contains("isFocused@deep"))
+  }
+
+  /// A secure field the walk finds is handled as any secure field: refused, its value and range never read.
+  func testASecureFieldFoundByTheWalkIsNeverRead() {
+    let secure = Node("password", role: "AXSecureTextField")
+    secure.focusedFlag = true
+    secure.value = "hunter2"
+    let app = Node("app")
+    app.mainWindow = Node("window", role: "AXWindow", children: [Node("web", role: "AXWebArea", children: [secure])])
+    var valueReads = 0
+    let walk = ReadbackFocusWalk<Node>(children: { $0.children }, isFocused: { $0.focusedFlag }, role: { $0.role }, now: { 0 })
+    let reads = ReadbackReads<Node>(
+      focused: { readbackFocusedField(application: app, focused: { $0.focused }, primaryWindow: { $0.focusedWindow ?? $0.mainWindow }, walk: walk) },
+      role: { $0.role }, subrole: { _ in .absent }, value: { valueReads += 1; return $0.value },
+      valueUnits: { valueReads += 1; return $0.value.map { Array($0.utf16) } },
+      range: { _ in valueReads += 1; return NSRange(location: 0, length: 0) }, same: { $0 === $1 }, now: { 0 }, sleep: { _ in })
+    var settle: ReadbackSettle?
+    guard case .refused(let reason) = readbackSnapshot(reads: reads, settle: &settle) else { return XCTFail("a secure field is refused") }
+    XCTAssertEqual(reason, .secure)
+    XCTAssertEqual(valueReads, 0)
   }
 
   func testAConcealedTextIntoASecureFieldIsNeverRead() {

@@ -4,11 +4,16 @@
 // `/tmp/.X11-unix/X<N>`, alive at that check. V5's first attempt and F3's V3 were stopped by exactly that row
 // (`outside-peer-connection` to /tmp/.X11-unix/X40, `peer_pids: []`, while the run's xtrace -D :40 was alive).
 //
+// Fix wave 1: the proxy must own the socket. In the same ss snapshot every listener at exactly that path is the recorded
+// proxy's pid, so a foreign listener at the path, an ownerless one or a listener left from an earlier proxy on the
+// display flags; and the process is read stat, cmdline, stat, so a pid reused between the reads never lends its argv.
+//
 // Display-free and socket-free: the guard runs in private mode around a driver that stands for the run, and reads its
 // socket table from a stand-in `ss` first on its PATH, which prints the table the driver writes: the driver's own
-// connection and, at its other end, a socket named for the proxy's path with no pid, the stopped runs' row. The proxy is
-// a real stand-in process named xtrace (its kernel name, as the real one's), in the run's tree or outside it. Nothing
-// listens on /tmp/.X11-unix and no display is reached.
+// connection; at its other end a socket named for the proxy's path with no pid, the stopped runs' row; and the listening
+// sockets at that path, each with the owners the spec names. The proxy is a real stand-in process named xtrace (its
+// kernel name, as the real one's), in the run's tree or outside it. Nothing listens on /tmp/.X11-unix and no display is
+// reached.
 
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
@@ -54,6 +59,7 @@ const finish = async (code) => {
 };
 process.on('SIGTERM', () => finish(143));
 let proxy = null;
+let earlier = null;
 if (spec.proxy && spec.end === 'zombie') {
   // a parent that never waits: the proxy, once killed, stays a zombie in the run's tree
   const parent = spawn('sh', ['-c', '"$@" & echo $! > "$PIDFILE"; exec sleep 30', 'sh', ...spec.proxy], { stdio: 'ignore', env: { ...process.env, PIDFILE: spec.dir + '/proxy.pid' } });
@@ -65,6 +71,13 @@ if (spec.proxy && spec.end === 'zombie') {
   proxy = spawn('sh', ['-c', 'sleep 1.5; exec "$0" -D "$SHOWN"', spec.proxy[0]], { stdio: 'ignore', env: { ...process.env, SHOWN: spec.proxy.at(-1) } }).pid;
   writeFileSync(spec.dir + '/proxy.pid', String(proxy));
 } else if (spec.proxy) {
+  if (spec.reuse) {
+    // an earlier proxy on the same display, recorded and then ended, before the one alive now
+    earlier = spawn(spec.proxy[0], spec.proxy.slice(1), { stdio: 'ignore' });
+    await sleep(800);
+    earlier.kill('SIGKILL');
+    while (state(earlier.pid) !== null) await sleep(20);
+  }
   proxy = spawn(spec.proxy[0], spec.proxy.slice(1), { stdio: 'ignore' }).pid;
   writeFileSync(spec.dir + '/proxy.pid', String(proxy));
 }
@@ -78,10 +91,14 @@ if (spec.end) {
   while (!gone(state(proxy))) await sleep(20);
 }
 const table = spec.dir + '/ss.txt';
+// each listener row's owners, by name: the proxy (or the one outside the run), the driver, the earlier proxy
+const owner = { proxy: spec.outsidePid ?? proxy, driver: process.pid, earlier: earlier?.pid };
+const users = (names) => names.length ? ' users:(' + names.map((n) => '("x",pid=' + owner[n] + ',fd=3)').join(',') + ')' : '';
 writeFileSync(table + '.new', [
   'Netid State Recv-Q Send-Q Local Address:Port Peer Address:Port Process',
   'u_str ESTAB 0 0 * 7400001 * 7400002 users:(("node",pid=' + process.pid + ',fd=40))',
   'u_str ESTAB 0 0 ' + spec.peer + ' 7400002 * 7400001',
+  ...spec.listen.map((names, i) => 'u_str LISTEN 0 4 ' + spec.peer + ' ' + (7400100 + i) + ' * 0' + users(names)),
 ].join('\\n') + '\\n');
 renameSync(table + '.new', table);
 await sleep(2500);
@@ -97,7 +114,7 @@ await finish(0);
  * tail for the stand-in), or an `outside` one the test starts beside the guard, `end` the proxy's end before the
  * connection shows (`reaped`, `zombie`), `peer` the path the table names. Its exit, summary, counted rows and proxy pid.
  */
-async function guard({ proxy = null, outside = null, end = null, late = false, peer = SOCKET, named = 'xtrace' } = {}) {
+async function guard({ proxy = null, outside = null, end = null, late = false, reuse = false, listen = [['proxy']], peer = SOCKET, named = 'xtrace' } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'cua171-guard-'));
   let stranger = null;
   try {
@@ -110,7 +127,7 @@ async function guard({ proxy = null, outside = null, end = null, late = false, p
     chmodSync(join(bin, 'ss'), 0o755);
     chmodSync(join(bin, named), 0o755);
     if (outside) stranger = spawn(join(bin, named), outside, { stdio: 'ignore' });
-    const spec = { dir, peer, end, late, proxy: proxy && [join(bin, named), ...proxy] };
+    const spec = { dir, peer, end, late, reuse, listen, outsidePid: stranger?.pid, proxy: proxy && [join(bin, named), ...proxy] };
     const run = spawn('python3', ['-I', WRAP71, join(dir, 'out'), join(dir, 'tmp'), 'private', process.execPath, join(dir, 'driver.mjs'), JSON.stringify(spec)], {
       env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, FAKE_SS_TABLE: join(dir, 'ss.txt') },
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -172,6 +189,13 @@ describe("wrap71's rule for the run's own audit proxy (ruling 773)", { concurren
     ['after the proxy has exited, a zombie its parent has not reaped', { proxy: ['-D', ':740'], end: 'zombie' }],
     ["when the proxy is not in the run's tree", { outside: ['-D', ':740'] }],
     ["for the proxy's display reached by its abstract name, which is not the proxy's socket", { proxy: ['-D', ':740'], peer: '@/tmp/.X11-unix/X740' }],
+    // fix wave 1: the socket must be the proxy's own, in the same snapshot
+    ['when another process of the run listens at that path', { proxy: ['-D', ':740'], listen: [['driver']] }],
+    ['when the listener at that path shows no owner', { proxy: ['-D', ':740'], listen: [[]] }],
+    ['when no listener at that path is in the snapshot', { proxy: ['-D', ':740'], listen: [] }],
+    ['when a second listener at that path is not the proxy\'s', { proxy: ['-D', ':740'], listen: [['proxy'], ['driver']] }],
+    ['when the listener is shared with another process', { proxy: ['-D', ':740'], listen: [['proxy', 'driver']] }],
+    ['when the listener is an earlier proxy\'s on that display, with a new proxy alive', { proxy: ['-D', ':740'], reuse: true, listen: [['earlier']] }],
   ];
   for (const [what, setup] of controls) {
     it(`still flags it ${what}`, async () => {
@@ -181,5 +205,48 @@ describe("wrap71's rule for the run's own audit proxy (ruling 773)", { concurren
       assert.deepEqual(ownProxyRows(r.counted), []);
       assert.notEqual(r.code, 0, 'the flag stops the run');
     });
+  }
+});
+
+// Fix wave 1, finding 2: the guard reads a process at the check as stat, cmdline, stat, and takes it only when both
+// stats are the same live process: a pid reused between the reads must never lend the new process's argv to the old
+// one's name and start. The reads are scripted here, since a pid's reuse between two reads can't be staged for real.
+const RULE = new URL('../../docs/evidence/2026-10-28-own-linux-engine/m5/guards/own_audit_proxy.py', import.meta.url).pathname;
+const stat = (comm, state, start) => `4242 (${comm}) ${state} 1 4242 4242 0 -1 4194304 0 0 0 0 0 0 0 0 20 0 1 0 ${start} 1000 10`;
+/** process_at_check(4242, recorded start 777) over reads that answer, in order, `reads` (null: the read fails). */
+function atCheck(reads) {
+  const program = `
+import importlib.util, json, sys
+sys.dont_write_bytecode = True
+spec = importlib.util.spec_from_file_location('rule', sys.argv[1]); rule = importlib.util.module_from_spec(spec); spec.loader.exec_module(rule)
+answers = json.loads(sys.argv[2])
+def read(path):
+    a = answers.pop(0)
+    if a is None:
+        raise OSError('gone')
+    return a.encode()
+print(json.dumps(rule.process_at_check(4242, 777, read)))
+`;
+  const run = spawnSync('python3', ['-I', '-c', program, RULE, JSON.stringify(reads)], { encoding: 'utf8' });
+  assert.equal(run.status, 0, run.stderr);
+  return JSON.parse(run.stdout);
+}
+const XTRACE_ARGV = 'xtrace\0-d\0:739\0-D\0:740\0';
+
+describe('the process at the check: stat, cmdline, stat (fix wave 1)', { skip: !linux && 'Linux only' }, () => {
+  it('is the recorded xtrace, with its argv, when both stats are that live process', () => {
+    assert.deepEqual(atCheck([stat('xtrace', 'S', 777), XTRACE_ARGV, stat('xtrace', 'S', 777)]), { comm: 'xtrace', argv: 'xtrace -d :739 -D :740' });
+  });
+  const none = [
+    ['the pid reused between the reads by a not-xtrace -D :740', [stat('xtrace', 'S', 777), 'not-xtrace\0-D\0:740\0', stat('not-xtrace', 'S', 912)]],
+    ['the pid reused by another xtrace, its start moved', [stat('xtrace', 'S', 777), XTRACE_ARGV, stat('xtrace', 'S', 912)]],
+    ['the process renamed between the reads', [stat('xtrace', 'S', 777), XTRACE_ARGV, stat('xtrace2', 'S', 777)]],
+    ['a zombie on the second read', [stat('xtrace', 'S', 777), '', stat('xtrace', 'Z', 777)]],
+    ['a start other than the recorded one', [stat('xtrace', 'S', 912), XTRACE_ARGV, stat('xtrace', 'S', 912)]],
+    ['a process gone before its cmdline is read', [stat('xtrace', 'S', 777), null]],
+    ['a process gone before the second stat', [stat('xtrace', 'S', 777), XTRACE_ARGV, null]],
+  ];
+  for (const [what, reads] of none) {
+    it(`is nothing for ${what}`, () => assert.equal(atCheck(reads), null));
   }
 });

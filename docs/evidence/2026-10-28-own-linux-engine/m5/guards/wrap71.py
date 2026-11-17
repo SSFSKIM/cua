@@ -27,8 +27,9 @@
 # M5's copy (task 91, the design session's ruling 773), from M4's pointer-route/scripts/wrap71.py, which stays the record
 # of what ran at H, with one change marked `ruling 773`: task 71's race met on the run's own audit proxy (V5's first
 # attempt, F3's V3). A connection whose server end shows no pid, to /tmp/.X11-unix/X<N> while the run's own recorded
-# xtrace -D :<N> is alive, is counted as task 71 counts the session bus, never flagged; the rule is own_audit_proxy.py's,
-# beside this file.
+# xtrace -D :<N> is alive and holds every listener at that path in the same socket snapshot (which is why the table is
+# read with -a, its listening rows set apart), is counted as task 71 counts the session bus, never flagged; the rule is
+# own_audit_proxy.py's, beside this file.
 # usage: wrap71.py <out> <tmproot> private|person <command...>
 import ctypes, importlib.util, json, os, pwd, re, signal, socket, struct, subprocess, sys, threading, time
 
@@ -202,19 +203,26 @@ def env_of(pid):
 
 
 def ss_table():
+    """The unix socket table, one snapshot: the connected sockets (task 50's rows, what `ss -xpn` lists), and, ruling
+    773's fix wave 1, the listening ones by path, each the pids ss shows holding it. `-a` adds only the LISTEN and UNCONN
+    rows to `-xpn`'s, so those are set apart and the rest is the same table as before."""
     try:
-        text = subprocess.run(['ss', '-xpn'], capture_output=True, text=True, timeout=5).stdout
+        text = subprocess.run(['ss', '-xapn'], capture_output=True, text=True, timeout=5).stdout
     except Exception:
-        return []
+        return [], {}
     rows = []
+    listening = {}
     for line in text.splitlines()[1:]:
         t = line.split()
         if len(t) < 8:
             continue
         users = ' '.join(t[8:])
         pids = [int(x) for x in re.findall(r'pid=(\d+)', users)]
-        rows.append({'laddr': t[4], 'lport': t[5], 'pport': t[7], 'pids': pids})
-    return rows
+        if t[1] == 'LISTEN':
+            listening.setdefault(t[4], []).append(pids)
+        elif t[1] != 'UNCONN':
+            rows.append({'laddr': t[4], 'lport': t[5], 'pport': t[7], 'pids': pids})
+    return rows, listening
 
 
 def comm_of(pid):
@@ -226,24 +234,15 @@ def comm_of(pid):
 
 def at_check_in(run_now):
     """ruling 773: a recorded process as it is at this check, its kernel name and argv, while it is alive: in the run's
-    tree as read after the socket table, the same process (its start time) and not a zombie; else None."""
+    tree as read after the socket table, and (own_audit_proxy.py's process_at_check: stat, cmdline, stat) the same
+    process, by its start time, and not a zombie; else None."""
     def at_check(rec):
-        if rec['pid'] not in run_now:
-            return None
-        try:
-            s = open(f'/proc/{rec["pid"]}/stat').read()
-            argv = open(f'/proc/{rec["pid"]}/cmdline', 'rb').read().split(b'\0')
-        except OSError:
-            return None
-        f = s[s.rfind(')') + 2:].split()
-        if f[0] in ('Z', 'X') or int(f[19]) != rec['start']:
-            return None
-        return {'comm': s[s.find('(') + 1:s.rfind(')')], 'argv': ' '.join(a.decode(errors='replace') for a in argv if a)}
+        return own_audit_proxy_rule.process_at_check(rec['pid'], rec['start']) if rec['pid'] in run_now else None
     return at_check
 
 
 def check_connections(runset):
-    rows = ss_table()
+    rows, listening = ss_table()
     # a process the run started after the tree was read (a short-lived child at the other end of a pipe-like socket)
     # is the run's too: the tree is read again after the socket table
     run_now = set(tree()[0])
@@ -284,11 +283,12 @@ def check_connections(runset):
             with lock, open(os.path.join(out, 'counted.jsonl'), 'a') as f:
                 f.write(json.dumps({'t': now(), 'kind': 'own-session-bus-not-accepted', 'pids': ours, 'comm': comm, 'peer_path': path, 'peer_inode': r['pport']}) + '\n')
             continue
-        proxy = own_audit_proxy_rule.own_audit_proxy(path, list(procs.values()), at_check_in(run_now)) if not peer['pids'] else None
+        proxy = own_audit_proxy_rule.own_audit_proxy(path, list(procs.values()), at_check_in(run_now), listening.get(path, [])) if not peer['pids'] else None
         if proxy:
             # ruling 773: task 71's race on the run's own audit proxy, a connection to /tmp/.X11-unix/X<N> its server
-            # end shows no pid for while the run's recorded xtrace -D :<N> is alive (V5's first attempt, 2026-11-17
-            # 02:16:17Z; F3's V3, 11:42:58Z); counted as the session bus is, never flagged
+            # end shows no pid for while the run's recorded xtrace -D :<N> is alive and, in this snapshot, holds every
+            # listener at that path alone (V5's first attempt, 2026-11-17 02:16:17Z; F3's V3, 11:42:58Z); counted as the
+            # session bus is, never flagged
             key = f'{comm} -> {path} (the run\'s own audit proxy, not yet accepted)'
             outside[key] = outside.get(key, 0) + 1
             with lock, open(os.path.join(out, 'counted.jsonl'), 'a') as f:

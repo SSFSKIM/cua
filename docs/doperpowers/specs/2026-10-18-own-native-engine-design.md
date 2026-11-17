@@ -5465,6 +5465,81 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      placement; the hosted re-run (Electron on another Space answering `windowOnAnotherSpace` at once, a Raise there
      refused) waits on GitHub Actions.
   Date/Author: 2026-11-17, cursor235's implementer for #367 (ruling 1ea561bc:782).
+- Decision (#359, 2026-11-17, `fix/359-click-ordering`; the design session's ruling 1ea561bc:785 on the spike's runs
+  44107967517, 44112583792 and 44126242634, kit `probe/359-measure` on main 15acf09b): **a posted pointer press arms a
+  per-process window in which an accessibility action on the process's text first waits for the click to land.**
+  The measured cause is a foreground ordering race, not #341's caret write: with the browser in the background (#341's
+  route) 0 of 3,437 scorable attempts were wrong. In the foreground a coordinate click is a posted mouse event that
+  answers at once, and the browser dequeues it late: the caret's revert landed p50 14 to 19 ms after the click returned,
+  at worst 419 ms. AX actions overtake it, posted keys never do. In run 44126242634's foreground-equal scene (20 per
+  cell, caret already at the click's point): click then script selection then type_text was wrong 7, 19 and 2 of 20 in
+  Safari, Chrome for Testing and Firefox, every Safari and 13 Chrome ones answered success (a starting point read after
+  the revert, self-consistent and wrong); click then select_text then type_text was wrong 3 and 1 of 20 in Safari and
+  Chrome (one false success each), 4 of 20 in Safari's traced arm (3 false successes); click then Cmd+A then type_text
+  was wrong 0 of 20 in every browser; the no-click controls 0 everywhere. set_value's value was right 240 of 240, its
+  caret moved off the end after it in 4 of 40 Safari tails. The `stable50` candidate (a range unchanged for 50 ms,
+  sampled every 10 ms, inside the click) had 0 wrong and 0 accepted-then-late in 240 attempts, 62 to 79 ms p50 and at
+  most 110 ms.
+  1. **The window** (ClickOrdering.swift, `Engine.clickOrdering`, one per engine across connections): `deliverPointer`
+     calls `pointerPosted` once the action's own events are posted, by every caller that posts a press (a coordinate
+     click, a synthesized element click, set_value's and select_text's focusing fallback click, a drag), recording the
+     receiving process and the app. #282's element route returns before posting and arms nothing, so a background click
+     by #341's route never does. Within `pendingClickWindowMs` (1,000 ms) of that press, select_text before its range
+     write, set_value before its value write, an element click carried by a text field's action (#313) and #283/#315's
+     background focus routes each wait (`awaitRange` .stable): the field's AXSelectedTextRange, with whether the app's
+     focus was elsewhere, unchanged for `pendingClickDwellMs` (50 ms), read every `pendingClickSampleMs` (10 ms), at
+     most `pendingClickCapMs` (300 ms); a password field ends it unread, an unreadable range starts the dwell again. At
+     the cap the action goes on and its own read-back answers. type_text's snapshot takes the same wait on the focused
+     field (`readbackSnapshot`'s `baseline`) after its secure and text-role checks, the role and subrole checked before
+     every read, before #354's settle. press_key never waits. The meta's `pendingClick` (`waitMs`, `reads`, `capped`)
+     and the read-back's `baselineWait` record it.
+  2. **select_text then type_text.** select_text records the range it wrote; every other input method to the app
+     drops it at dispatch (`selectionKeepingMethods`: type_text and scroll keep it), and type_text takes it once
+     whatever its route. Within `selectedRangeWindowMs` (1,000 ms) the snapshot reads the field's range until it equals
+     that one, to the same cap. Still another at the cap, the selection the agent made is gone, and the text is **not
+     typed**: `typeUnconfirmed` with reason `selectionChanged`, `entered` 0, saying nothing was typed, that a late click
+     can move the selection, and to observe and select again. Not typing is the safe reading because nothing has been
+     posted yet, the read-back can only answer unconfirmed either way, and typing would put the text where the click
+     left the caret for the agent to repair; refusals before the first event are the engine's usual shape.
+  3. **set_value** inside the window watches the field after an accepted write (`watchWrittenValue`): its value and
+     caret read every 10 ms; once both read as written (the caret at the value's UTF-16 end), held for the dwell, it is
+     confirmed; a read off either after that, or a write never seen to land by the cap, is `valueUnconfirmed`
+     (`valueChanged`, `caretMoved`), thrown after the vendor's re-fetch so the token stays resolvable. Only a text
+     role's string is watched; a password field never; a concealed request's value is never read, only its caret.
+  4. **What stays.** #341's "placed" only on proof and nothing raised, and #354's strict equality, are untouched; no
+     wait claims a click final: a stable range is not a proof of the queue's drain (an equal range may be re-applied
+     later), and the read-back stays the judge.
+  5. **What this costs and risks.** An action within a second after a posted click pays at least one dwell (50 ms) and
+     at most the cap; outside the window a dictionary lookup. Chrome and Firefox read a stale AXSelectedTextRange for
+     tens of ms after select_text's write (the traced arm read {3, 0} at the snapshot in 20 of 20 and 16 of 20 while the
+     page held the selection; the reread100 and stable100 candidates read it 19 and 20 of 20), so item 2 waits for it;
+     an app whose range stays stale past 300 ms would answer `selectionChanged` with nothing typed where #354 answered
+     unconfirmed over the right text. Item 3 assumes a value write leaves the caret at the value's end, as all three
+     browsers measured; an app that leaves it elsewhere answers unconfirmed within the window. The activation's own
+     clicks (FakeActivation's activation-point and inert clicks) do not arm: they precede the action's events, which
+     do, or land outside the frame. The paste route keeps its own baseline (#361) and takes no wait. The hosted
+     qualification of ruling 785's success criteria (20 of 20 per browser foreground for click, select_text or
+     set_value, then type_text; Cmd+A unchanged; confirmed rate near the no-click control; a tail cell past the cap
+     answering typeUnconfirmed; #341's corpus unchanged) is still to run.
+  6. **The model's document**: one sentence after the fourth paragraph's valueUnconfirmed, one after the typing
+     paragraph's pressKey wait (the surface inventory's "(2026-11-17, #359)", the copies byte for byte).
+  Date/Author: 2026-11-17, cursor235's implementer for #359 (ruling 785).
+- Decision (#359's review, 2026-11-17, `fix/359-click-ordering`; reviewer-high on ef998db6, one P1 and two P2 findings,
+  all verified and accepted; amends "#359" above, items 2 and 3):
+  1. **P1, the starting point itself.** The selection check validated the wait's read, while the snapshot reads the
+     range again and #354's settle can replace it: a click landing in between was adopted and the read-back confirmed
+     text typed at its caret. Now the snapshot's final range, after any settle, must equal select_text's range, else
+     `selectionChanged` with nothing typed (`readbackSnapshot`). Tested with the range moving before the snapshot's own
+     read and during the settle, and with a settle that finds it back (typed over).
+  2. **P2, a value at Chromium's cap.** The watch passed any read that might be cut at the cap; a cut can explain only a
+     missing end, so a read at the cap now counts as the written value only when it is a strict prefix of it
+     (`writtenValueRead`), any other difference `valueChanged`.
+  3. **P2, the field re-classified.** The watch now asks before every read whether the field turned secure or cannot be
+     classified (`writtenValueFieldClosed`: no role, a password role or subrole, a subrole that cannot be read), as the
+     range wait and the read-back do; then it reads neither value nor caret and ends unconfirmed: `valueUnconfirmed`
+     with the new reason `fieldClosed`, since an accepted write that can no longer be checked is "sent, effect not
+     seen".
+  Date/Author: 2026-11-17, cursor235's implementer for #359 (the review of ef998db6).
 
 ## Outcomes & Retrospective
 

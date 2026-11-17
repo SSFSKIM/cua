@@ -8,7 +8,9 @@ import Foundation
 // the source's UTF-16 offsets with syntax at its edges skipped inward; `selection_type` text, cursor_before or
 // cursor_after gives (L, N), (L, 0) or (L + N, 0), written as AXSelectedTextRange after the settable check and the
 // field's focus (a field needing focus checked again after it, #324). No scroll into view. Route 1, or route 3 when the app does not believe it has focus (its activation
-// held, FocusHold.swift): nothing is posted to the field unless the focus fallback clicks.
+// held, FocusHold.swift): nothing is posted to the field unless the focus fallback clicks. Within the window of a posted
+// pointer press to the app, the range is let settle before the write, and the range written is what a type_text right
+// after expects (#359, ClickOrdering.swift).
 
 /// A text element's value as an attributed string over its first `length` UTF-16 units (the parameterized read the
 /// observation's Markdown comes from); nil when the element gives none.
@@ -180,14 +182,20 @@ extension Engine {
       }
       try focusField(target, app: app, appPid: appPid, guarding: guarding, context: context, meta: &meta)
       try selectionSettableAfterFocus(target.element, ax: ax, due: checkAfterFocus)
+      // #359: a pointer press posted to the app within the window (an earlier click, or the focus's own fallback click)
+      // may land after the write and move the caret back: its range is let settle first.
+      awaitPendingClick(on: target.element, pids: [appPid, target.owner], meta: &meta)
       try guarding.checkInFlight()
       var written = AXError.failure
+      let selection = selectionType.selection(match)
       cursor.afterElementAction(connection: context.connection.id, app: app.key, element: target.element, storedFrame: target.entry.frame) {
-        meta.posting { written = ax.write(target.element, kAXSelectedTextRangeAttribute, axRangeValue(selectionType.selection(match))); return true }
+        meta.posting { written = ax.write(target.element, kAXSelectedTextRangeAttribute, axRangeValue(selection)); return true }
         return written == .success
       }
       context.connection.markActed(app)
       guard written == .success else { throw EngineError(name: "actionFailed", "The element did not accept the text selection.") }
+      // The range type_text right after expects to type over (#359).
+      clickOrdering.selectionWritten(pid: appPid, range: NSRange(location: selection.location, length: selection.length))
       return ["meta": meta.wire]
     } catch let error as EngineError {
       throw withMeta(error, meta)

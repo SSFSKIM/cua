@@ -45,6 +45,9 @@ final class Engine: @unchecked Sendable {
   let heldActivations = HeldActivations()
   /// press_key's last post per app, which settles a type_text's snapshot soon after (TypeReadbackSettle.swift, #354).
   let recentKeys = RecentKeyPosts()
+  /// The posted pointer presses and select_text's ranges per process, which an accessibility action on the process's
+  /// text waits for or type_text expects (ClickOrdering.swift, #359).
+  let clickOrdering = ClickOrdering()
   /// The workspace's real activations and deactivations, which make a held process's activation stale.
   private var activationObservers: [NSObjectProtocol] = []
   /// Whether the Mac is locked now (the session dictionary; replaced in the unit tests).
@@ -244,6 +247,8 @@ final class Engine: @unchecked Sendable {
     let active = (inputMethods.contains(method) || method == "get_app_state") ? target.flatMap { app in
       app.pid.map { (pid: $0, generation: processGeneration(launchDate: app.running?.launchDate, pid: $0), app: app) }
     } : nil
+    // #359: an input that can move the caret leaves select_text's range no longer the one type_text types over.
+    if let active, inputMethods.contains(method), !selectionKeepingMethods.contains(method) { clickOrdering.dropSelection(pid: active.pid) }
     if let active, inputMethods.contains(method) {
       webAccessibility.inputEnablement(chromium: webAccessibility.isChromiumFamily(active.app.appPath), pid: active.pid, launched: active.generation,
                                        connection: connection.id, access: .live(pid: active.pid, launched: active.generation))

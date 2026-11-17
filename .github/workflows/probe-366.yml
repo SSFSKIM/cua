@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'first AXPress: smoke 16 fresh apps per browser; full 320 per browser, 20 reps per factorial cell'
+        description: 'AXPress readiness: smoke 40 fresh apps/browser; full 408, observed main/bare cells 20 reps'
         type: choice
         options: [smoke, full]
         default: smoke
@@ -21,7 +21,7 @@ concurrency:
 jobs:
   measure:
     runs-on: macos-latest
-    timeout-minutes: 85
+    timeout-minutes: 95
     strategy:
       fail-fast: false
       max-parallel: 3
@@ -64,6 +64,7 @@ jobs:
         run: |
           if [ -f "$RUNNER_TEMP/probe-366-first/${{ matrix.browser }}/rows.jsonl" ]; then
             node scripts/probe-366/first-read.mjs summary "$RUNNER_TEMP/probe-366-first/${{ matrix.browser }}" > "$RUNNER_TEMP/probe-366-first/${{ matrix.browser }}/summary.json"
+            node scripts/probe-366/first-read.mjs readiness "$RUNNER_TEMP/probe-366-first/${{ matrix.browser }}" > "$RUNNER_TEMP/probe-366-first/${{ matrix.browser }}/readiness.json"
             node scripts/probe-366/first-read.mjs coverage "$RUNNER_TEMP/probe-366-first/${{ matrix.browser }}"
           fi
       - name: Upload owned-fixture evidence (never its browser profile)
@@ -83,5 +84,6 @@ jobs:
             ${{ runner.temp }}/probe-366-first/**/app-stderr.txt
             ${{ runner.temp }}/probe-366-first/**/process-error.txt
             ${{ runner.temp }}/probe-366-first/**/coverage.json
+            ${{ runner.temp }}/probe-366-first/**/readiness.json
             ${{ runner.temp }}/probe-366-first/**/shots/**
           if-no-files-found: warn

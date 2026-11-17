@@ -11,12 +11,12 @@ const BROWSERS=['electron-parity','electron','cft'];
 
 const page=(presses=0,open=true)=>({pageId:'a'.repeat(32),timeOrigin:1000,trial:'t1',presses,open,events:[]});
 const quiet={dialogClosed:false,frontmostChanged:false,raised:false,windowMoved:false,otherPointer:false,ownerLost:false};
-const base={id:'x',phase:'first-press',operation:'press',foreground:false,browser:'electron',temperature:'cold',scene:'modal',variant:'main',rep:0};
+const base={id:'x',phase:'first-press',operation:'press',foreground:false,browser:'electron',temperature:'cold',scene:'modal',variant:'main',age:'immediate',observeFirst:true,rep:0};
 const primer=()=>({call:{startedAt:1500,endedAt:1510,raw:{result:{meta:{}}}},before:{primerPresses:0},after:{primerPresses:1}});
 // A valid row; warm rows get the prior press count and primer unless the test overrides them.
 const row=(extra={})=>{
  const temperature=extra.temperature??base.temperature,warm=temperature==='warm';
- const r={...base,valid:true,appLaunchId:'L'+(extra.id??'x'),preMeasureAXPressCount:warm?1:0,before:page(),after:page(1),
+ const r={...base,valid:true,appLaunchId:'L'+(extra.id??'x'),preMeasureAXPressCount:warm?1:0,targetObservationCount:(extra.observeFirst??base.observeFirst)?((extra.age??base.age)==='aged'?2:1):0,ageAtPressMs:(extra.age??base.age)==='aged'?10500:900,before:page(),after:page(1),
   call:{startedAt:2000,endedAt:2010,raw:{result:{meta:{}}}},samples:[],trace:[],sideEffects:{...quiet},...extra};
  if(warm&&!('primer' in extra))r.primer=primer();
  return r;
@@ -81,36 +81,90 @@ test('unknown context or identity is invalid, never a known drop',()=>{
   assert.equal(j.falseSuccess,false);assert.equal(j.exact,false);
  }
 });
-test('plan: 320 per browser and 16 in smoke, unique ids containing every factor',()=>{
+test('observation count is 1 for immediate observed, 2 for aged observed, 0 unobserved; aged presses are at least 10 s old',()=>{
+ assert.equal(firstJudge(row({observeFirst:true,targetObservationCount:1})).eligible,true);
+ assert.equal(firstJudge(row({observeFirst:true,age:'aged',targetObservationCount:2})).eligible,true);
+ assert.equal(firstJudge(row({observeFirst:true,age:'aged',targetObservationCount:1})).eligible,false);
+ assert.equal(firstJudge(row({observeFirst:true,age:'immediate',targetObservationCount:2})).eligible,false);
+ assert.equal(firstJudge(row({observeFirst:false,age:'aged',targetObservationCount:0})).eligible,true);
+ assert.equal(firstJudge(row({observeFirst:false,age:'aged',targetObservationCount:2})).eligible,false);
+ assert.equal(firstJudge(row({observeFirst:true,targetObservationCount:0})).eligible,false);
+ assert.equal(firstJudge(row({observeFirst:true,targetObservationCount:2})).eligible,false);
+ assert.equal(firstJudge(row({observeFirst:false,targetObservationCount:0})).eligible,true);
+ assert.equal(firstJudge(row({observeFirst:false,targetObservationCount:1})).eligible,false);
+ assert.equal(firstJudge(row({observeFirst:false,targetObservationCount:undefined})).eligible,false);
+ assert.equal(firstJudge(row({age:'aged',ageAtPressMs:10000})).eligible,true);
+ assert.equal(firstJudge(row({age:'aged',ageAtPressMs:9999})).eligible,false);
+ assert.equal(firstJudge(row({age:'aged',ageAtPressMs:undefined})).eligible,false);
+ assert.equal(firstJudge(row({age:'immediate',ageAtPressMs:undefined})).eligible,true);
+ assert.equal(firstJudge(row({age:'later'})).eligible,false);
+ assert.equal(firstJudge(row({observeFirst:'yes'})).eligible,false);
+});
+const key=c=>[c.temperature,c.scene,c.variant,c.age,c.observeFirst].join('/');
+test('plan: 408 full and 40 smoke rows per browser, unique ids containing every factor',()=>{
  const all=[];
  for(const browser of BROWSERS) {
   const full=firstPlan({browser}),smoke=firstPlan({browser,smoke:true});
-  assert.equal(full.length,320);assert.equal(smoke.length,16);
+  assert.equal(full.length,408);assert.equal(smoke.length,40);
   assert.ok(smoke.every(c=>c.rep===0));
+  assert.equal(new Set(smoke.map(key)).size,40);assert.equal(new Set(full.map(key)).size,40);
   for(const cells of [full,smoke]) {
    assert.equal(new Set(cells.map(c=>c.id)).size,cells.length);
    for(const c of cells) {
     assert.deepEqual([c.phase,c.operation,c.foreground,c.browser],['first-press','press',false,browser]);
-    for(const f of [c.browser,c.temperature,c.scene,c.variant,String(c.rep)])assert.ok(c.id.split('/').includes(f),c.id+' lacks '+f);
+    for(const f of [c.browser,c.temperature,c.scene,c.variant,c.age,c.observeFirst?'observed':'unobserved',String(c.rep)])assert.ok(c.id.split('/').includes(f),c.id+' lacks '+f);
    }
   }
+  assert.deepEqual(smoke.map(c=>c.id),full.filter(c=>c.rep===0).map(c=>c.id));
   all.push(...full);
  }
- assert.equal(new Set(all.map(c=>c.id)).size,960);
+ assert.equal(new Set(all.map(c=>c.id)).size,1224);
  assert.throws(()=>firstPlan({browser:'safari'}));
 });
-test('plan is balanced per cell and rotates treatment and trap order across repetitions',()=>{
+test('plan allocation: critical observed main/bare cells run reps 0..19, exploratory cells are spread',()=>{
  const cells=firstPlan({browser:'electron'});
- const count=new Map();for(const c of cells){const k=[c.temperature,c.scene,c.variant].join('/');count.set(k,(count.get(k)??0)+1)}
- assert.equal(count.size,16);assert.ok([...count.values()].every(n=>n===20));
+ const repsOf=f=>{const m=new Map();for(const c of cells.filter(f)){const k=key(c);m.set(k,[...(m.get(k)??[]),c.rep].sort((a,b)=>a-b))}return m};
+ const inRange=(m,expected,n)=>{assert.equal(m.size,n);for(const r of m.values())assert.deepEqual(r,expected)};
+ const range=Array.from({length:20},(_,i)=>i);
+ inRange(repsOf(c=>c.observeFirst&&['main','bare'].includes(c.variant)),range,16);
+ inRange(repsOf(c=>c.observeFirst&&c.variant.startsWith('inert')),[0,4,9,14,19],8);
+ inRange(repsOf(c=>!c.observeFirst),[0,9,19],16);
+ // every temperature x scene appears for every distinct (variant, age, observeFirst)
+ const combos=new Set(cells.map(c=>[c.variant,c.age,c.observeFirst].join('/')));
+ assert.equal(combos.size,10);
+ for(const k of combos)assert.equal(new Set(cells.filter(c=>[c.variant,c.age,c.observeFirst].join('/')===k).map(c=>c.temperature+c.scene)).size,4);
+ // the unobserved and aged-observed arms contain only main/bare, aged never has inert
+ assert.ok(cells.filter(c=>!c.observeFirst||c.age==='aged').every(c=>['main','bare'].includes(c.variant)));
+ assert.deepEqual([...new Set(cells.filter(c=>!c.observeFirst).map(c=>c.age))].sort(),['aged','immediate']);
+ // exploratory reps are not all early
+ assert.ok(cells.filter(c=>c.variant.startsWith('inert')).some(c=>c.rep===19));
+});
+test('critical observed main/bare cells run first, interleaved by repetition, then the exploratory cells at their assigned indices',()=>{
+ const critical=c=>c.observeFirst&&['main','bare'].includes(c.variant);
+ for(const smoke of [false,true]) {
+  const cells=firstPlan({browser:'cft',smoke}),n=smoke?16:320,head=cells.slice(0,n),tail=cells.slice(n);
+  assert.ok(head.every(critical));assert.ok(tail.every(c=>!critical(c)));
+  assert.deepEqual(head.map(c=>c.rep),[...head.map(c=>c.rep)].sort((a,b)=>a-b));
+  assert.deepEqual(tail.map(c=>c.rep),[...tail.map(c=>c.rep)].sort((a,b)=>a-b));
+  assert.equal(tail.length,smoke?24:88);
+  assert.deepEqual([...new Set(head.map(c=>c.age))].sort(),['aged','immediate']);
+ }
+ const tail=firstPlan({browser:'cft'}).slice(320);
+ assert.deepEqual([...new Set(tail.map(c=>c.rep))],[0,4,9,14,19]);
+ assert.deepEqual(tail.filter(c=>c.observeFirst).map(c=>c.rep).filter((r,i,a)=>a.indexOf(r)===i),[0,4,9,14,19]);
+});
+test('plan rotates treatment, trap and temperature order across repetitions',()=>{
+ const cells=firstPlan({browser:'electron'});
  const blocks=Array.from({length:20},(_,r)=>cells.filter(c=>c.rep===r));
- assert.ok(blocks.every(b=>b.length===16));
- assert.equal(new Set(blocks.map(b=>b[0].variant)).size,4);
+ assert.deepEqual(blocks.map(b=>b.length),[40,16,16,16,24,16,16,16,16,40,16,16,16,16,24,16,16,16,16,40]);
  assert.equal(blocks.filter(b=>b[0].scene==='modal').length,10);
  assert.equal(blocks.filter(b=>b[0].temperature==='cold').length,10);
- const pos={};for(const b of blocks)b.forEach((c,i)=>{pos[c.variant]=(pos[c.variant]??0)+i});
- const vals=Object.values(pos);assert.ok(Math.max(...vals)-Math.min(...vals)<=20,JSON.stringify(pos));
- assert.ok(new Set(blocks.map(b=>b.map(c=>c.id.split('/').slice(2,5).join('/')).join())).size>=4);
+ assert.ok(new Set(blocks.map(b=>b[0].variant)).size>=2);
+ assert.ok(new Set(blocks.map(b=>b[0].age+b[0].observeFirst)).size>=2);
+ assert.ok(new Set(blocks.map(b=>b.map(key).join())).size>=4);
+ // main does not always run before bare within the same rep
+ const mainFirst=blocks.map(b=>b.findIndex(c=>c.variant==='main')<b.findIndex(c=>c.variant==='bare'));
+ assert.ok(mainFirst.includes(true)&&mainFirst.includes(false));
 });
 test('summary groups by browser/temperature/scene/variant and counts every outcome',()=>{
  const rows=[
@@ -120,12 +174,14 @@ test('summary groups by browser/temperature/scene/variant and counts every outco
   row({id:'4',after:page(1),call:{startedAt:0,endedAt:20,raw:{error:{name:'e'}}},sideEffects:{...quiet,raised:true,dialogClosed:true}}),
   row({id:'5',valid:false,failureStage:'launch',problem:'x'}),
   row({id:'6',temperature:'warm'}),
+  row({id:'8',age:'aged'}),row({id:'9',observeFirst:false}),
   // Lost the page after the call: ground truth unknown, but its side effects still count.
   row({id:'7',valid:false,failureStage:'readback',problem:'page lost',after:undefined,sideEffects:{...quiet,raised:true,ownerLost:true}}),
  ];
  const s=firstSummarize(rows);
- assert.equal(s.length,2);
- const g=s.find(x=>x.temperature==='cold');
+ assert.equal(s.length,4);
+ assert.deepEqual(s.map(x=>[x.temperature,x.age,x.observeFirst].join('/')).sort(),['cold/aged/true','cold/immediate/false','cold/immediate/true','warm/immediate/true']);
+ const g=s.find(x=>x.temperature==='cold'&&x.age==='immediate'&&x.observeFirst);
  assert.deepEqual([g.browser,g.scene,g.variant],['electron','modal','main']);
  assert.deepEqual([g.attempted,g.valid,g.invalid],[6,4,2]);
  assert.deepEqual([g.repliesOK,g.errors],[3,1]);
@@ -147,11 +203,11 @@ test('coverage rejects missing, duplicate, invalid and unplanned rows, and accep
  assert.equal(rep.invalid.length,1);assert.equal(rep.ok,false);
  const extra=firstCoverage([...ok,{...ok[0],id:'zzz',appLaunchId:'Lzzz'}],{browser:'cft',smoke:true});
  assert.deepEqual(extra.unexpected,['zzz']);assert.equal(extra.ok,false);
- assert.equal(firstCoverage(ok,{browser:'cft',smoke:false}).missing.length,304);
+ assert.equal(firstCoverage(ok,{browser:'cft',smoke:false}).missing.length,368);
  const full=firstCoverage(rowsFor('electron',false),{browser:'electron'});
- assert.deepEqual([full.expected,full.ok],[320,true]);
+ assert.deepEqual([full.expected,full.ok],[408,true]);
  const two=firstCoverage([...rowsFor('cft',true),...rowsFor('electron',true)],{smoke:true});
- assert.deepEqual([two.expected,two.ok],[32,true]);
+ assert.deepEqual([two.expected,two.ok],[80,true]);
 });
 test('coverage exposes a reused appLaunchId because every cell needs a fresh launch',()=>{
  const ok=firstPlan({browser:'cft',smoke:true}).map(c=>row(c));
@@ -164,7 +220,7 @@ test('empty evidence is never complete, with or without an explicit browser',()=
  assert.equal(firstCoverage([]).ok,false);
  assert.equal(firstCoverage([],{smoke:true}).ok,false);
  const named=firstCoverage([],{browser:'cft',smoke:true});
- assert.deepEqual([named.ok,named.missing.length],[false,16]);
+ assert.deepEqual([named.ok,named.missing.length],[false,40]);
 });
 test('CLI plan, summary and coverage modes read directories and rows.jsonl',()=>{
  const dir=mkdtempSync(join(tmpdir(),'first-read-'));
@@ -173,8 +229,8 @@ test('CLI plan, summary and coverage modes read directories and rows.jsonl',()=>
   const rows=firstPlan({browser:'cft',smoke:true}).map(c=>row({...c,smoke:true}));
   writeFileSync(join(sub,'rows.jsonl'),rows.map(r=>JSON.stringify(r)).join('\n')+'\n');
   const run=(...a)=>spawnSync(process.execPath,[join(here,'first-read.mjs'),...a],{encoding:'utf8'});
-  const p=run('plan','cft','smoke');assert.equal(p.status,0);assert.equal(JSON.parse(p.stdout).length,16);
-  const s=run('summary',dir);assert.equal(s.status,0);assert.equal(JSON.parse(s.stdout).length,16);
+  const p=run('plan','cft','smoke');assert.equal(p.status,0);assert.equal(JSON.parse(p.stdout).length,40);
+  const s=run('summary',dir);assert.equal(s.status,0);assert.equal(JSON.parse(s.stdout).length,40);
   const c=run('coverage',join(sub,'rows.jsonl'));assert.equal(c.status,0,c.stdout+c.stderr);assert.equal(JSON.parse(c.stdout).ok,true);
   writeFileSync(join(sub,'rows.jsonl'),rows.slice(1).map(r=>JSON.stringify(r)).join('\n')+'\n');
   assert.equal(run('coverage',dir).status,1);

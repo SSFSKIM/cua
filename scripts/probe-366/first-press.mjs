@@ -10,7 +10,9 @@ import {createInterface} from 'node:readline';
 import {FixtureTransport} from './transport.mjs';
 import {Wire} from './wire.mjs';
 import {firstPlan,firstJudge,firstSummarize,firstCoverage} from './first-read.mjs';
-import {inertPoint} from './first-points.mjs';
+import {firstReadiness} from './first-readiness.mjs';
+import {finalizeTiming} from './first-timing.mjs';
+import {recordSample,deriveEffects} from './first-effects.mjs';
 import {windowOptions} from './fixture/window-options.mjs';
 if(process.env.RUNNER_ENVIRONMENT!=='github-hosted')throw Error('hosted runners only');
 const arg=n=>{const i=process.argv.indexOf('--'+n);return i<0?undefined:process.argv[i+1];};
@@ -44,18 +46,16 @@ const socket=join(process.env.RUNNER_TEMP,'p366-first-'+browser+'.sock');rmSync(
 let trace=[],traceBuffer='',engine,cover,coverPid,target;
 async function connect(){const w=await Wire.connect(socket),p=await w.call('ping',{clientApiVersion:'cua-engine-1',desktop:'shared'});if(p.error)throw Error(JSON.stringify(p));return w;}
 async function rpc(w,pid,method,args={}){const startedAt=Date.now(),raw=await w.execute(method,{pid,...args});return {startedAt,endedAt:Date.now(),raw};}
-const label=n=>[n.title,n.description].filter(x=>typeof x==='string').join(' ');
-async function observeButton(w,pid,name){
- const attempts=[],end=Date.now()+7000;
- do {
-  const r=await rpc(w,pid,'get_app_state',{includeScreenshot:false,disableDiff:true});
-  if(r.raw.error)throw Error('observation '+JSON.stringify(r.raw.error));
-  const n=r.raw.result.nodes?.find(n=>n.role==='AXButton'&&label(n).includes(name));
-  attempts.push({at:r.endedAt,actions:n?.actions??null});
-  if(n?.actions?.includes('AXPress'))return {token:n.token,observation:r,attempts};
-  await sleep(100);
- }while(Date.now()<end);
- throw Error('button did not advertise AXPress: '+name+' '+JSON.stringify(attempts));
+async function fullObservation(w,pid,row){
+ row.targetObservationCount++;
+ const r=await rpc(w,pid,'get_app_state',{includeScreenshot:false,disableDiff:true});
+ if(r.raw.error)throw Error('full observation '+JSON.stringify(r.raw.error));
+ return r;
+}
+async function ageGate(row){
+ if(row.age!=='aged')return;
+ await sleep(row.launchedAt+10000-Date.now());
+ await until(()=>Date.now()-row.launchedAt>=10000,1000);
 }
 async function stopOwned(child){
  if(!child)return true;if(child.exitCode!==null||child.signalCode!==null)return true;
@@ -63,13 +63,17 @@ async function stopOwned(child){
  try{await until(()=>child.exitCode!==null||child.signalCode!==null,5000);return true;}
  catch{child.kill('SIGKILL');try{await until(()=>child.exitCode!==null||child.signalCode!==null,2000);return true;}catch{return false;}}
 }
-const config={schema:3,experiment:'first-press',ruling:757,browser,smoke,kit:process.env.GITHUB_SHA,engine:process.env.ENGINE_REF,
+const config={schema:4,experiment:'first-press-readiness',ruling:757,browser,smoke,kit:process.env.GITHUB_SHA,engine:process.env.ENGINE_REF,
  image:process.env.ImageVersion,startedAt:start,cells,windowStyle:electron?style:'browser',windowOptions:electron?windowOptions(style):null,
- cold:'fresh app/profile; no earlier native AXPress',warm:'fresh app/profile; one earlier foreground primer AXPress, independently marker-checked; no inherited activation hold',
- repetitions:smoke?1:20,sampleDelays:smoke?[0,50,250,1000]:[0,50,250,1000,3000],
- confirmation:'only the handler marker; dialog survival is never confirmation',timelineClock:'renderer wallAt against native wall clock; events within 1 ms unordered',
- pointCandidates:'titlebar: 75% across visible window, top+14; toolbar: visible web area x+min(400,width/2), top+22; original window target retained',
- sideEffectOtherPointer:'a page pointer outside action/primer, or changed active owned-window title',budgetMinutes:65};
+ cold:'fresh app/profile; no earlier native AXPress',warm:'fresh app/profile; one earlier foreground bare primer AXPress, marker-checked even if dropped; no activation hold',
+ observation:'aged+observed: early full getState then another just before press; immediate+observed: one just before; unobserved: no pre-press full walk, only minimal target lookup; smoke screenshots follow the entire 3s effect window',
+ observationCount:'targetObservationCount counts only pre-press full walks',
+ age:'aged waits until at least 10s since launch; actual last enablement-write delta, not assigned age, is the primary axis',
+ repetitions:'observed main/bare 20, immediate inside-point controls 5, no-observation directional controls 3; critical observed cells first',sampleDelays:[0,50,250,1000,3000],
+ carrier:'probe-only named AXButton resolution, then production input enablement, actionRoute, cursor announcement and elementActionClick in every arm',
+ confirmation:'only the handler marker; dialog survival is never confirmation',timelineClock:'renderer wallAt, Electron main Date.now and native wall clock; events within 1ms unordered',
+ pointCandidates:'native probe copy: titlebar 75% across visible window top+14; toolbar visible web area x+min(400,width/2) top+22; original window ID retained',
+ sideEffectOtherPointer:'a page pointer outside action/primer, or changed active owned-window title',budgetMinutes:75};
 writeFileSync(join(OUT,'config.json'),JSON.stringify(config,null,2));
 let complete=0,invalid=0,consecutiveInvalid=0;
 try {
@@ -84,9 +88,9 @@ try {
  config.browserVersion=electron?JSON.parse(readFileSync(join(fixture,'node_modules/electron/package.json'),'utf8')).version:spawnSync(bin,['--version'],{encoding:'utf8',timeout:10000}).stdout.trim();
  writeFileSync(join(OUT,'config.json'),JSON.stringify(config,null,2));
  for(const cell of cells) {
-  if(Date.now()-start>65*60000)throw Error('65 minute budget exceeded');
+  if(Date.now()-start>75*60000)throw Error('75 minute budget exceeded; critical observed cells precede exploratory cells');
   transport.close();transport=newTransport();trace=[];
-  const row={...cell,smoke,appLaunchId:randomUUID(),valid:false,startedAt:Date.now(),sideEffects:{dialogClosed:false,frontmostChanged:false,raised:false,windowMoved:false,otherPointer:false,ownerLost:false}};
+  const row={...cell,smoke,appLaunchId:randomUUID(),valid:false,targetObservationCount:0,startedAt:Date.now(),sideEffects:{dialogClosed:false,frontmostChanged:false,raised:false,windowMoved:false,otherPointer:false,ownerLost:false}};
   const profile=join(OUT,'profiles',row.appLaunchId);mkdirSync(profile,{recursive:true});
   let w,stage='launch',appInfo=[];
   try {
@@ -98,28 +102,29 @@ try {
    let appBuffer='';target.stdout.on('data',d=>{appendFileSync(join(OUT,'app-stdout.txt'),row.appLaunchId+' '+d);appBuffer+=d;for(;;){const i=appBuffer.indexOf('\n');if(i<0)break;const l=appBuffer.slice(0,i);appBuffer=appBuffer.slice(i+1);if(l.startsWith('{'))try{appInfo.push(JSON.parse(l));}catch{}}});
    target.stderr.on('data',d=>appendFileSync(join(OUT,'app-stderr.txt'),row.appLaunchId+' '+d));
    await until(()=>transport.clients.size>0,20000);
-   if(electron){const info=await until(()=>appInfo[0]);if(info.electron!=='44.4.5'||info.userData!==profile||info.sessionData!==profile)throw Error('fresh pinned Electron profile not established '+JSON.stringify(info));}
+   if(electron){const info=await until(()=>appInfo.find(i=>i.kind==='fixture-ready'));if(info.electron!=='44.4.5'||info.userData!==profile||info.sessionData!==profile)throw Error('fresh pinned Electron profile not established '+JSON.stringify(info));}
    await front(pid);stage='setup';
    w=await connect();
-   // Both temperatures take the same readiness reads while the dialog is still closed.
-   row.initial=await observeButton(w,pid,'Prime probe button');
+   // Cold aged unobserved apps receive no AX ownership/title request until the age gate.
+   if(cell.age==='aged'&&!cell.observeFirst&&cell.temperature==='cold')await ageGate(row);
+   row.ownerBindingStartedAt=Date.now();
    await until(async()=>{const t=await ask({op:'title',pid});try{transport.bind(t.title);return true;}catch{return false;}},10000);
-   row.owner={...transport.owner};
+   row.ownerBindingEndedAt=Date.now();row.owner={...transport.owner};
+   if(cell.age==='aged'&&cell.observeFirst)row.earlyObservation=await fullObservation(w,pid,row);
    const initial=await command({op:'read'});
    if(initial.open||initial.primerPresses!==0)throw Error('fresh app primer state not empty');
    if(cell.temperature==='warm') {
     row.primer={before:initial};
-    row.primer.call=await rpc(w,pid,'click',{element:row.initial.token,spikeRoute:1,probe366Variant:'bare',probe366Id:cell.id+'/primer'});
-    let snapshot=await command({op:'read'}),deadline=Date.now()+1000;
-    while(snapshot.primerPresses===0&&Date.now()<deadline){await sleep(20);snapshot=await command({op:'read'});}
-    row.primer.after=snapshot; // A known dropped primer is retained, never retried or filtered away.
+    row.primer.call=await rpc(w,pid,'click',{probe366NamedButton:'Prime probe button',probe366Variant:'bare',probe366Id:cell.id+'/primer'});
+    row.primer.immediate=await command({op:'read'});
+    await sleep(row.primer.call.endedAt+3000-Date.now());
+    row.primer.after=await command({op:'read'}); // Full 3s window, no input retry; even a dropped primer is a prior API call.
    }
-   w.close();w=null;
+   await ageGate(row);
    row.reset=await command({op:'reset',trial:cell.id,scene:cell.scene});
-   w=await connect();row.observed=await observeButton(w,pid,'Run probe button');
-   row.bound=await ask({op:'bind',pid});row.beforeGeometry=row.bound.geometry;
-   row.inertPoint=inertPoint(cell.variant,row.beforeGeometry);
    row.frontTransition=await front(coverPid);await sleep(250);
+   if(cell.observeFirst)row.prePressObservation=await fullObservation(w,pid,row);
+   const nativeBefore=await ask({op:'status',pid,coverPid});row.beforeGeometry=nativeBefore.geometry;
    row.before=await command({op:'read'});
    if(row.before.pageId!==row.owner.pageId||row.before.timeOrigin!==row.owner.timeOrigin||row.before.trial!==cell.id||!row.before.open||row.before.presses!==0||row.before.active!=='action')throw Error('initial measured state not established');
    if(electron&&(row.before.chrome?.toolbarHeight!==44||row.before.chrome?.toolbarRegion!=='drag'||row.before.chrome?.controlRegion!=='no-drag'))throw Error('toolbar parity not established');
@@ -127,16 +132,14 @@ try {
    if(row.preMeasureAXPressCount!==(cell.temperature==='warm'?1:0))throw Error('unexpected previous native AXPress count '+row.preMeasureAXPressCount);
    row.frontBefore=await front(coverPid,false);row.ageAtPressMs=Date.now()-row.launchedAt;
    row.valid=true;stage='action';
-   row.call=await rpc(w,pid,'click',{element:row.observed.token,probe366Variant:cell.variant,probe366Id:cell.id,
-    ...(row.inertPoint?{probe366InertPoint:row.inertPoint}:{})});
+   row.call=await rpc(w,pid,'click',{probe366NamedButton:'Run probe button',probe366Variant:cell.variant,probe366Id:cell.id});
    stage='readback';row.samples=[];
    for(const requestedMs of config.sampleDelays) {
     await sleep(row.call.endedAt+requestedMs-Date.now());
-    const ax=await ask({op:'read',pid,coverPid,geometry:requestedMs===config.sampleDelays.at(-1)});
-    const effect=await command({op:'read'});
-    if(effect.pageId!==row.owner.pageId||effect.timeOrigin!==row.owner.timeOrigin||effect.trial!==cell.id)throw Error('effect is from another fixture owner');
-    row.samples.push({requestedMs,at:ax.endedAt,startedAt:ax.startedAt,ax:ax.ax,frontmostPid:ax.frontmostPid,order:ax.order,effect});
-    row.after=effect;if(ax.geometry)row.afterGeometry=ax.geometry;
+    // The native observation is persisted before the renderer is asked, so a renderer failure keeps any raise/frontmost harm.
+    const sample=await recordSample(row.samples,requestedMs,{native:()=>ask({op:'status',pid,coverPid,windowID:row.beforeGeometry?.windowID}),
+     renderer:()=>command({op:'read'}),owns:e=>e.pageId===row.owner.pageId&&e.timeOrigin===row.owner.timeOrigin&&e.trial===cell.id});
+    row.after=sample.effect;if(sample.geometry)row.afterGeometry=sample.geometry;
    }
    row.frontAfter=await ask({op:'title',pid});
    row.trace=trace.filter(e=>e.trial===cell.id);row.priorTrace=trace.filter(e=>e.trial===cell.id+'/primer');
@@ -155,13 +158,9 @@ try {
    if(row.targetPid)await ask({op:'forget',pid:row.targetPid});
    target=null;
   }
+  finalizeTiming(row,trace,appInfo);
   row.inertClicks=row.trace.filter(e=>e.kind==='activation.click');
-  row.sideEffects.dialogClosed=row.after?.open===false;
-  row.sideEffects.frontmostChanged=(row.samples??[]).some(s=>s.frontmostPid!==coverPid)||row.trace.some(e=>e.frontmostPid&&e.frontmostPid!==coverPid);
-  row.sideEffects.raised=(row.samples??[]).some(s=>s.order?.targetAboveCover===true)||row.trace.some(e=>e.kind==='perform.begin'&&e.action==='AXRaise');
-  const a=row.beforeGeometry?.windowFrame,b=row.afterGeometry?.windowFrame;
-  row.sideEffects.windowMoved=!!a&&!!b&&['x','y','width','height'].some(k=>Math.abs(a[k]-b[k])>1);
-  row.sideEffects.otherPointer=(row.after?.events??[]).some(e=>e.wallAt>=row.call?.startedAt&&e.type==='pointerdown'&&e.target!=='action')||(typeof row.frontAfter?.title==='string'&&!row.frontAfter.title.includes('probe366:'+row.owner.pageId));
+  Object.assign(row.sideEffects,deriveEffects(row,coverPid));
   row.endedAt=Date.now();row.judgment=firstJudge(row);
   appendFileSync(join(OUT,'rows.jsonl'),JSON.stringify(row)+'\n');complete++;
   if(!row.judgment.eligible){invalid++;consecutiveInvalid++;}else consecutiveInvalid=0;
@@ -173,6 +172,7 @@ try {
  const rows=readFileSync(join(OUT,'rows.jsonl'),'utf8').trim().split('\n').map(JSON.parse);
  writeFileSync(join(OUT,'summary.json'),JSON.stringify(firstSummarize(rows),null,2));
  writeFileSync(join(OUT,'coverage.json'),JSON.stringify(firstCoverage(rows,{browser,smoke}),null,2));
+ writeFileSync(join(OUT,'readiness.json'),JSON.stringify(firstReadiness(rows),null,2));
  if(invalid)process.exitCode=1;
 } catch(e){writeFileSync(join(OUT,'fatal.json'),JSON.stringify({error:String(e.stack??e),complete,planned:cells.length},null,2));throw e;}
 finally{await stopOwned(target);cover?.kill();engine?.kill();side.kill();transport.close();server.closeAllConnections();server.close();}

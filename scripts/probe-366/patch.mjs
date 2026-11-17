@@ -16,18 +16,23 @@ export function render(root) {
  // DesktopGate does not otherwise import AppKit.
  edit('DesktopGate.swift','import Foundation','import Foundation\nimport AppKit');
  edit('DesktopGate.swift','  DesktopGate.allows("AXUIElementPerformAction(\\(action))") ? AXUIElementPerformAction(element, action as CFString) : .cannotComplete',
-`  spike366Log("perform.begin", ["action": action, "element": CFHash(element)])
+`  var owner: pid_t = 0; AXUIElementGetPid(element, &owner)
+  spike366Log("perform.begin", ["action": action, "element": CFHash(element), "pid": owner])
   let error = DesktopGate.allows("AXUIElementPerformAction(\\(action))") ? AXUIElementPerformAction(element, action as CFString) : .cannotComplete
-  spike366Log("perform.end", ["action": action, "element": CFHash(element), "error": error.rawValue])
+  spike366Log("perform.end", ["action": action, "element": CFHash(element), "pid": owner, "error": error.rawValue])
   return error`);
  edit('DesktopGate.swift','  DesktopGate.allows("AXUIElementSetAttributeValue(\\(attribute))") ? AXUIElementSetAttributeValue(element, attribute as CFString, value) : .cannotComplete',
-`  spike366Log("write.begin", ["attribute": attribute, "element": CFHash(element)])
+`  var owner: pid_t = 0; AXUIElementGetPid(element, &owner)
+  var record: [String: Any] = ["attribute": attribute, "element": CFHash(element), "pid": owner]
+  if ["AXManualAccessibility", "AXEnhancedUserInterface"].contains(attribute), let flag = value as? NSNumber { record["value"] = flag }
+  spike366Log("write.begin", record)
   let error = DesktopGate.allows("AXUIElementSetAttributeValue(\\(attribute))") ? AXUIElementSetAttributeValue(element, attribute as CFString, value) : .cannotComplete
-  spike366Log("write.end", ["attribute": attribute, "element": CFHash(element), "error": error.rawValue])
+  record["error"] = error.rawValue; spike366Log("write.end", record)
   return error`);
  edit('AX.swift','  return (error == .success ? value : nil, error)',
-`  if ["AXValue", "AXFocused", "AXMain", "AXFrontmost"].contains(attribute) {
-    var record: [String: Any] = ["attribute": attribute, "element": CFHash(element), "error": error.rawValue]
+`  if ["AXValue", "AXFocused", "AXMain", "AXFrontmost", "AXManualAccessibility", "AXEnhancedUserInterface"].contains(attribute) {
+    var owner: pid_t = 0; AXUIElementGetPid(element, &owner)
+    var record: [String: Any] = ["attribute": attribute, "element": CFHash(element), "pid": owner, "error": error.rawValue]
     if let v = value as? String { record["value"] = String(v.prefix(120)) }
     else if let v = value as? NSNumber { record["value"] = v }
     spike366Log("read", record)
@@ -56,7 +61,7 @@ export function render(root) {
         }
         let pointing = ElementPointing(target.element, owner: target.owner, ax: ax)`);
  for(const [file,signature] of [['Input.swift','  func click(_ args: [String: Any], _ context: ExecutionContext) throws -> Any {'],['ValueSetting.swift','  func setValue(_ args: [String: Any], _ context: ExecutionContext) throws -> Any {']]) {
-  edit(file,signature,signature+'\n    let probe366Finish = spike366Scope(args); defer { probe366Finish() }');
+  edit(file,signature,signature+'\n    let probe366Finish = spike366Scope(args); defer { probe366Finish() }'+(file==='Input.swift'?'\n    if let name = args["probe366NamedButton"] as? String { return try spike366NamedPress(args, context, name: name) }':''));
  }
  return files;
 }
@@ -67,6 +72,7 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).hr
   if(process.env.RUNNER_ENVIRONMENT!=='github-hosted')throw Error('materializing patches is hosted-only');
   for(const [path,s]of files)writeFileSync(path,s);
   copyFileSync(new URL('./trace.swift',import.meta.url),join(root,'native/engine/Sources/Engine/Spike366.swift'));
+  copyFileSync(new URL('./named.swift',import.meta.url),join(root,'native/engine/Sources/Engine/Spike366Named.swift'));
  }
  console.log(JSON.stringify({checked:process.argv.includes('--check'),files:[...files.keys()]}));
 }

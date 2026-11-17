@@ -34,3 +34,28 @@ func spike366Log(_ kind: String, _ fields: [String: Any] = [:]) {
     FileHandle.standardError.write(Data(("PROBE366 " + text + "\n").utf8))
   }
 }
+
+// candidate-point:begin
+// Pure geometry, shared by the probe carrier and the offline native logic check.
+enum Spike366PointError: Error { case missingGeometry, offscreen, unknownVariant }
+func spike366CandidatePoint(_ variant: String, window: CGRect?, web: CGRect?, screen: CGRect) throws -> CGPoint? {
+  if variant == "main" || variant == "bare" { return nil }
+  let region: CGRect
+  let point: CGPoint
+  if variant == "inert-titlebar" {
+    guard let window else { throw Spike366PointError.missingGeometry }
+    region = window.intersection(screen)
+    point = CGPoint(x: region.minX + region.width * 0.75, y: window.minY + 14)
+  } else if variant == "inert-toolbar" {
+    guard let web else { throw Spike366PointError.missingGeometry }
+    region = web.intersection(screen)
+    point = CGPoint(x: region.minX + min(400, region.width / 2), y: web.minY + 22)
+  } else { throw Spike366PointError.unknownVariant }
+  guard !region.isNull, !region.isEmpty, region.contains(point) else { throw Spike366PointError.offscreen }
+  return point
+}
+// candidate-point:end
+func spike366FrameWire(_ r: CGRect?) -> Any {
+  guard let r else { return NSNull() }
+  return ["x":r.minX,"y":r.minY,"width":r.width,"height":r.height]
+}

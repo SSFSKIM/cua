@@ -15,7 +15,7 @@ mkdirSync(join(dir,'.offline'),{recursive:true});const scratch=mkdtempSync(join(
 try {
  const paths=[];
  for(const [path,text] of render(root)){const output=join(scratch,basename(path));writeFileSync(output,text);paths.push(output);}
- run('swiftc',['-frontend','-parse',...paths,join(dir,'trace.swift')]);
+ run('swiftc',['-frontend','-parse',...paths,join(dir,'trace.swift'),join(dir,'named.swift')]);
  run('swiftc',['-swift-version','6','-typecheck',join(dir,'trace.swift')]);
  run('swiftc',['-typecheck',join(dir,'tool.swift')]);
 } finally {rmSync(scratch,{recursive:true,force:true});}

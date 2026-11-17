@@ -102,6 +102,16 @@ func geometry(_ pid: pid_t) -> [String:Any] {
          "screenFrame":wireRect(CGDisplayBounds(CGMainDisplayID())),
          "windows":owned.map { ["id":$0[kCGWindowNumber as String] as Any? ?? NSNull(),"bounds":$0[kCGWindowBounds as String] as Any? ?? NSNull()] }]
 }
+// Window effects without traversing the renderer AX tree (the no-observation arm).
+func statusGeometry(_ pid: pid_t, wanted: Int?) -> [String:Any] {
+ let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly,.excludeDesktopElements],kCGNullWindowID) as? [[String:Any]] ?? []
+ let owned = list.filter { ($0[kCGWindowOwnerPID as String] as? Int) == Int(pid) && ($0[kCGWindowLayer as String] as? Int) == 0 }
+ let chosen = wanted.flatMap { id in owned.first { ($0[kCGWindowNumber as String] as? Int) == id } } ?? (wanted == nil ? owned.first : nil)
+ let bounds = (chosen?[kCGWindowBounds as String] as? [String:Any]).flatMap { CGRect(dictionaryRepresentation:$0 as CFDictionary) }
+ return ["windowID":chosen?[kCGWindowNumber as String] as Any? ?? NSNull(),"windowFrame":bounds.map(wireRect) as Any? ?? NSNull(),
+         "screenFrame":wireRect(CGDisplayBounds(CGMainDisplayID())),
+         "windows":owned.map { ["id":$0[kCGWindowNumber as String] as Any? ?? NSNull(),"bounds":$0[kCGWindowBounds as String] as Any? ?? NSNull()] }]
+}
 func emit(_ v: [String: Any]) {
  if let data = try? JSONSerialization.data(withJSONObject: v, options: [.sortedKeys]), let s = String(data:data,encoding:.utf8) { print(s); fflush(stdout) }
 }
@@ -126,6 +136,7 @@ if CommandLine.arguments.contains("--cover") {
   else if op == "bind" { _ = try bind(pid); r["ax"] = read(pid); r["geometry"] = geometry(pid) }
   else if op == "read" { r["ax"] = read(pid); if q["geometry"] as? Bool == true { r["geometry"] = geometry(pid) } }
   else if op == "forget" { bound.removeValue(forKey:pid); r["ok"] = true }
+  else if op == "status" { r["geometry"] = statusGeometry(pid,wanted:(q["windowID"] as? NSNumber)?.intValue) }
   else if op.hasPrefix("raw-") {
    guard let c = bound[pid] else { throw NSError(domain:"bind first",code:3) }
    let error: AXError

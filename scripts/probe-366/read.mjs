@@ -4,7 +4,7 @@ import {resolve,join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 
 export function plan({browser,smoke=false}) {
- if(!['electron','cft'].includes(browser))throw Error('unknown browser');
+ if(!['electron','electron-parity','cft'].includes(browser))throw Error('unknown browser');
  const cells=[];
  for(let rep=0;rep<(smoke?1:20);rep++) {
   const block=[];
@@ -54,7 +54,8 @@ export function confirmation(r,budget=250,policy='dialog-survives') {
 }
 export function timeline(r) {
  const start=r.call?.startedAt??0;
- return [{at:start,kind:'call.begin'},...(r.trace??[]),...(r.after?.events??[]),{at:r.call?.endedAt,kind:'call.end'}]
+ const pageEvents=(r.after?.events??[]).map(e=>({...e,performanceAt:e.at,at:Number.isFinite(e.wallAt)?e.wallAt:e.at}));
+ return [{at:start,kind:'call.begin'},...(r.trace??[]),...pageEvents,{at:r.call?.endedAt,kind:'call.end'}]
   .filter(e=>Number.isFinite(e.at)&&e.at>=start).sort((a,b)=>a.at-b.at).map(e=>({...e,offsetMs:e.at-start}));
 }
 export function summarize(rows) {
@@ -105,7 +106,7 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).hr
  const [mode,...paths]=process.argv.slice(2);
  if(mode==='plan'){console.log(JSON.stringify(plan({browser:paths[0]??'electron',smoke:paths[1]==='smoke'}),null,2));}
  else {
-  if(!paths.length||!['summary','ab','timeline','coverage'].includes(mode))throw Error('read.mjs plan [electron|cft] [smoke] | summary|ab|timeline|coverage <artifact-directory-or-rows.jsonl>...');
+  if(!paths.length||!['summary','ab','timeline','coverage'].includes(mode))throw Error('read.mjs plan [electron|electron-parity|cft] [smoke] | summary|ab|timeline|coverage <artifact-directory-or-rows.jsonl>...');
   const rows=paths.flatMap(files).flatMap(p=>readFileSync(p,'utf8').trim().split('\n').filter(Boolean).map(l=>JSON.parse(l)));
   if(mode==='summary')console.log(JSON.stringify(summarize(rows),null,2));
   if(mode==='ab')console.log(JSON.stringify(ab(rows),null,2));

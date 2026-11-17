@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {plan,judge,summarize,timeline,confirmation,ab} from './read.mjs';
 import {FixtureTransport} from './transport.mjs';
 import {createLifecycle,pressMarker,valueMarker} from './fixture/lifecycle.mjs';
+import {windowOptions} from './fixture/window-options.mjs';
 import {readFileSync,mkdtempSync,writeFileSync,rmSync} from 'node:fs';
 import {createRequire} from 'node:module';
 import {tmpdir} from 'node:os';
@@ -44,6 +45,25 @@ test('bounded AX disappearance is a refusal estimator, not proof of a button han
 test('timeline preserves asynchronous page events against native substeps and call boundaries',()=>{
  const r=row({after:{...state(false,0),events:[{at:2004.5,type:'pointerdown',target:'outside'},{at:2005,type:'onOpenChange',open:false}]},trace:[{at:2003,kind:'post',eventType:1},{at:2007,kind:'perform.begin',action:'AXPress'}]});
  assert.deepEqual(timeline(r).map(e=>[e.offsetMs,e.type??e.kind]),[[0,'call.begin'],[3,'post'],[4.5,'pointerdown'],[5,'onOpenChange'],[7,'perform.begin'],[10,'call.end']]);
+});
+test('cross-process timelines use renderer wall time when performance clocks drift',()=>{
+ const r=row({after:{...state(false,0),events:[{at:1950,wallAt:2004,type:'pointerdown'},{at:1951,wallAt:2005,type:'onOpenChange'}]},trace:[{at:2003,kind:'post'},{at:2007,kind:'perform.begin'}]});
+ const events=timeline(r);
+ assert.deepEqual(events.map(e=>[e.offsetMs,e.type??e.kind]),[[0,'call.begin'],[3,'post'],[4,'pointerdown'],[5,'onOpenChange'],[7,'perform.begin'],[10,'call.end']]);
+ assert.equal(events[2].performanceAt,1950);
+});
+test('MAWS-parity and default windows share focus preferences and differ only in native title chrome',()=>{
+ const parity=windowOptions('maws'),control=windowOptions('default');
+ assert.equal(parity.titleBarStyle,'hiddenInset');assert.deepEqual(parity.trafficLightPosition,{x:16,y:15});
+ assert.deepEqual(parity.webPreferences,{sandbox:true,contextIsolation:true,nodeIntegration:false,webSecurity:true,plugins:true});
+ assert.equal(parity.show,false);assert.equal(parity.width,1440);assert.equal(parity.height,900);
+ assert.equal(parity.minWidth,960);assert.equal(parity.minHeight,600);
+ assert.equal(parity.frame,undefined);assert.equal(parity.vibrancy,undefined);
+ const {titleBarStyle:p,trafficLightPosition:t,...rest}=parity;
+ const {titleBarStyle:c,...restControl}=control;
+ assert.equal(c,'default');assert.deepEqual(rest,restControl);
+ const a=plan({browser:'electron',smoke:true}),b=plan({browser:'electron-parity',smoke:true});
+ assert.equal(b.length,60);assert.equal(new Set([...a,...b].map(r=>r.id)).size,120);
 });
 test('paired A/B excludes invalid pairs and prices the same repetition',()=>{
  const a=row({rep:0}),b=row({rep:0,variant:'bare',call:{startedAt:2000,endedAt:2005,raw:{result:{}}}});

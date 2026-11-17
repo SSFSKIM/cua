@@ -3,9 +3,11 @@ import {createRoot} from 'react-dom/client';
 import {flushSync} from 'react-dom';
 import * as Dialog from '@radix-ui/react-dialog';
 import {createLifecycle,pressMarker,valueMarker} from './lifecycle.mjs';
+import {chrome} from './window-options.mjs';
 
 const pageId=crypto.randomUUID().replaceAll('-',''),timeOrigin=performance.timeOrigin;
 document.title='probe366:'+pageId;
+document.body.style.margin='0';
 const at=()=>performance.timeOrigin+performance.now();
 let trial=null,events=[],api,reason=null;
 const lifecycle=createLifecycle();
@@ -14,7 +16,7 @@ function note(type,data={}) {events.push({at:at(),wallAt:Date.now(),type,...data
 window.__probe366Note=note;
 window.__probe366Trap=true;
 for(const type of ['focusin','focusout','pointerdown','pointerup','mousedown','mouseup','click','input','change','keydown'])
- document.addEventListener(type,e=>note(type,{target:label(e.target),related:label(e.relatedTarget),outside:!document.getElementById('content')?.contains(e.target),isTrusted:e.isTrusted,key:e.key,defaultPrevented:e.defaultPrevented}),true);
+ document.addEventListener(type,e=>note(type,{target:label(e.target),related:label(e.relatedTarget),outside:!document.getElementById('content')?.contains(e.target),inToolbar:!!e.target?.closest?.('[data-toolbar]'),clientX:e.clientX,clientY:e.clientY,isTrusted:e.isTrusted,key:e.key,defaultPrevented:e.defaultPrevented}),true);
 for(const type of ['focus','blur','visibilitychange'])window.addEventListener(type,()=>note('window.'+type,{hasFocus:document.hasFocus(),visibility:document.visibilityState}));
 function outside(type,e) {
  reason=type;note(type,{target:label(e.target),originalType:e.detail?.originalEvent?.type,defaultPrevented:e.defaultPrevented});
@@ -24,6 +26,16 @@ function Fixture() {
  const [open,setOpen]=useState(false),[presses,setPresses]=useState(0),[value,setValue]=useState('');
  useLayoutEffect(()=>{api={open,presses,value,setOpen,setPresses,setValue};});
  return <main>
+  <header id="toolbar" data-toolbar style={{height:chrome.toolbarHeight,boxSizing:'border-box',display:'flex',alignItems:'center',minWidth:0,borderBottom:'1px solid #aaa',background:'#faf9f6',userSelect:'none',WebkitAppRegion:chrome.drag}}>
+   <div style={{width:300,boxSizing:'border-box',height:'100%',display:'flex',alignItems:'center',justifyContent:'flex-end',gap:4,flexShrink:0,paddingLeft:chrome.trafficLightPadding,paddingRight:12}}>
+    <button id="sidebar-control" aria-label="Sidebar control" style={{width:28,height:28,WebkitAppRegion:chrome.noDrag}}>S</button>
+    <button id="overview-control" aria-label="Overview control" style={{width:28,height:28,WebkitAppRegion:chrome.noDrag}}>O</button>
+   </div>
+   <span style={{paddingLeft:20}}>Owned window toolbar</span>
+   <div data-toolbar-end style={{marginLeft:'auto',display:'flex',paddingRight:12,WebkitAppRegion:chrome.noDrag}}>
+    <button id="end-control" aria-label="Toolbar end control" style={{width:28,height:28}}>E</button>
+   </div>
+  </header>
   <h1>Owned dialog probe</h1><button id="outside">Outside button</button>
   <Dialog.Root open={open} onOpenChange={next=>{note('onOpenChange',{open:next,reason});setOpen(next);}}>
    <Dialog.Trigger id="trigger">Open dialog</Dialog.Trigger>
@@ -49,7 +61,9 @@ function Fixture() {
 }
 createRoot(document.getElementById('root')).render(<Fixture/>);
 function snapshot() {
- return {pageId,timeOrigin,trial,at:at(),wallAt:Date.now(),visibility:document.visibilityState,hasFocus:document.hasFocus(),active:label(document.activeElement),open:!!document.getElementById('content'),presses:api.presses,value:document.getElementById('search')?.value??null,reactValue:api.value,trap:window.__probe366Trap,events:[...events]};
+ const toolbar=document.getElementById('toolbar'),control=document.getElementById('sidebar-control'),rect=toolbar.getBoundingClientRect();
+ const chrome={toolbarHeight:rect.height,toolbarRegion:getComputedStyle(toolbar).getPropertyValue('-webkit-app-region'),controlRegion:getComputedStyle(control).getPropertyValue('-webkit-app-region')};
+ return {pageId,timeOrigin,trial,at:at(),wallAt:Date.now(),visibility:document.visibilityState,hasFocus:document.hasFocus(),active:label(document.activeElement),open:!!document.getElementById('content'),presses:api.presses,value:document.getElementById('search')?.value??null,reactValue:api.value,trap:window.__probe366Trap,chrome,events:[...events]};
 }
 async function command(q) {
  if(q.op==='reset') {

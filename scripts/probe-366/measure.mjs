@@ -10,10 +10,12 @@ import {createInterface} from 'node:readline';
 import {FixtureTransport} from './transport.mjs';
 import {Wire} from './wire.mjs';
 import {plan,judge,summarize} from './read.mjs';
+import {windowOptions} from './fixture/window-options.mjs';
 if(process.env.RUNNER_ENVIRONMENT!=='github-hosted')throw Error('hosted runners only; never run on either owner Mac');
 const arg=n=>{const i=process.argv.indexOf('--'+n);return i<0?undefined:process.argv[i+1];};
 const OUT=resolve(arg('out')),ENGINE=arg('engine'),TOOL=arg('tool'),browser=arg('browser'),smoke=arg('smoke')==='true';
 const dir=dirname(fileURLToPath(import.meta.url)),fixture=join(dir,'fixture'),start=Date.now(),cells=plan({browser,smoke});
+const windowStyle=browser==='electron-parity'?'maws':browser==='electron'?'default':'browser';
 const sleep=ms=>new Promise(ok=>setTimeout(ok,Math.max(0,ms)));
 async function until(fn,ms=10000){const end=Date.now()+ms;while(Date.now()<end){const v=await fn();if(v)return v;await sleep(20);}throw Error('condition timeout');}
 mkdirSync(OUT,{recursive:true});
@@ -41,7 +43,7 @@ async function front(pid,activate=true){const r=await ask({op:'front',pid,activa
 let target,cover,engine;
 let trace=[],traceBuffer='',coverBuffer='';
 const socket=join(process.env.RUNNER_TEMP,'p366-'+browser+'.sock');rmSync(socket,{force:true});
-const config={schema:1,browser,smoke,kit:process.env.GITHUB_SHA,engine:process.env.ENGINE_REF,image:process.env.ImageVersion,
+const config={schema:2,browser,windowStyle,windowOptions:windowStyle==='browser'?null:windowOptions(windowStyle),pageTimelineClock:'wallAt (renderer Date.now), not performance-based at',smoke,kit:process.env.GITHUB_SHA,engine:process.env.ENGINE_REF,image:process.env.ImageVersion,
  startedAt:start,node:process.version,arch:process.arch,os:release(),cells,fixtureBuild:JSON.parse(readFileSync(join(fixture,'build.json'),'utf8')),electron:'44.4.5',radix:'1.1.15',
  fullRateReps:20,fullDiagnosticReps:3,setup:'foreground DOM reset; AX-window-title owner binding; cold engine connection; 250ms deactivation settle; verified frontmost immediately before action',
  sampleDelays:smoke?[0,50,250,1000]:[0,50,250,1000,3000],confirmation:'offline sampled AX wrappers, actual elapsed time; dialog survival alone is NOT handler proof',
@@ -75,11 +77,11 @@ try {
  await until(()=>existsSync(socket));
  cover=spawn(join(process.env.RUNNER_TEMP,'Probe366 Cover.app/Contents/MacOS/cover366'),['--cover'],{stdio:['ignore','pipe','inherit']});cover.stdout.on('data',d=>{coverBuffer+=d;});
  const coverPid=await until(()=>{try{return JSON.parse(coverBuffer.trim()).pid;}catch{return null;}});
- if(browser==='electron') {
+ if(browser.startsWith('electron')) {
   const require=createRequire(join(fixture,'package.json')),bin=require('electron');
   config.browserVersion=JSON.parse(readFileSync(join(fixture,'node_modules/electron/package.json'),'utf8')).version;
   if(config.browserVersion!=='44.4.5')throw Error('Electron version pin drift');
-  target=spawn(bin,[fixture],{env:{...process.env,PROBE366_URL:url},stdio:['ignore','pipe','pipe']});
+  target=spawn(bin,[fixture],{env:{...process.env,PROBE366_URL:url,PROBE366_WINDOW_STYLE:windowStyle},stdio:['ignore','pipe','pipe']});
   target.stdout.on('data',d=>appendFileSync(join(OUT,'app-stdout.txt'),d));target.stderr.on('data',d=>appendFileSync(join(OUT,'app-stderr.txt'),d));
  } else {
   const bin=process.env.CFT_BIN??'/Applications/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing';
@@ -116,6 +118,7 @@ try {
     obs=await observe(w,pid);row.warmObservation=obs.observation;row.bound=await ask({op:'bind',pid});await sleep(250);
    }
    row.before=await command({op:'read'});
+   if(browser.startsWith('electron')&&(row.before.chrome?.toolbarHeight!==44||row.before.chrome?.toolbarRegion!=='drag'||row.before.chrome?.controlRegion!=='no-drag'))throw Error('renderer toolbar parity not established '+JSON.stringify(row.before.chrome));
    if(row.before.trial!==cell.id||row.before.pageId!==owner.pageId||row.before.timeOrigin!==owner.timeOrigin||row.before.visibility!=='visible'||!row.before.open||row.before.presses!==0||row.before.value!==''||row.before.reactValue!==''||row.before.active!=='action')throw Error('intended state not established '+JSON.stringify(row.before));
    row.frontBefore=await front(cell.foreground?pid:coverPid,false);
    row.valid=true;stage='action';
@@ -147,7 +150,7 @@ try {
    if(w){try {row.release=await rpc(w,coverPid,'get_app_state',{includeScreenshot:false});}catch(e){row.releaseError=String(e);}w.close();}
    await sleep(150);
   }
-  row.trace=trace.filter(e=>e.trial===cell.id||(row.call&&e.at>=row.call.startedAt&&e.at<=(row.after?.at??row.call.endedAt)));
+  row.trace=trace.filter(e=>e.trial===cell.id||(row.call&&e.at>=row.call.startedAt&&e.at<=(row.after?.wallAt??row.after?.at??row.call.endedAt)));
   trace=[];row.endedAt=Date.now();row.judgment=judge(row);
   appendFileSync(join(OUT,'rows.jsonl'),JSON.stringify(row)+'\n');completed++;
   if(!row.judgment.eligible){invalid++;consecutiveInvalid++;}else consecutiveInvalid=0;

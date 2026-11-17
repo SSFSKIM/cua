@@ -298,9 +298,9 @@ final class ValueWithoutFocusTests: XCTestCase {
     XCTAssertFalse(writtenValueMatches(NSNumber(value: 3), NSNumber(value: 4)))
   }
 
-  /// A read at Chromium's 10,000 cap never confirms a longer write: a 12,000-character write read back as its first
-  /// 10,000 is valueUnconfirmed, its own reason, never ok; only the whole value read confirms, the cap's length included.
-  func testACappedReadNeverConfirmsALongerWrite() throws {
+  /// A read at Chromium's 10,000 cap never confirms: a 12,000-character write read back as its first 10,000, and a
+  /// 10,000-character write read back equal, are valueUnconfirmed, their own reason, never ok.
+  func testACappedReadNeverConfirms() throws {
     let written = String(repeating: "a", count: 12_000) as CFString
     let cut = String(repeating: "a", count: typeReadbackValueCap) as CFString
     XCTAssertFalse(writtenValueMatches(cut, written))
@@ -312,8 +312,15 @@ final class ValueWithoutFocusTests: XCTestCase {
     XCTAssertEqual(answer.errorName, "valueUnconfirmed")
     XCTAssertTrue(answer.message.contains("the field holds more text than accessibility reports in full"))
 
-    XCTAssertTrue(writtenValueMatches(cut, cut), "a value of exactly the cap's length, read whole")
-    XCTAssertFalse(writtenValueCut(cut, cut))
+    // A write of exactly the cap's length read back equal: the field may hold that and more, so not confirmed either.
+    XCTAssertFalse(writtenValueMatches(cut, cut))
+    XCTAssertTrue(writtenValueCut(cut, cut))
+    clock = 0
+    let equal = unfocusedValueReadback(cut, concealed: false, closed: { false }, value: { cut }, now: { clock }, sleep: { clock += $0 })
+    XCTAssertEqual(equal.result, .possiblyTruncated)
+    XCTAssertEqual(unfocusedValueAnswer(equal, app: "Chrome")?.errorName, "valueUnconfirmed")
+    let under = String(repeating: "a", count: 9_000) as CFString
+    XCTAssertTrue(writtenValueMatches(under, under), "below the cap an equal read confirms")
     let away = String(repeating: "a", count: 9_000) as CFString
     XCTAssertFalse(writtenValueCut(away, written), "a shorter read away from the cap is a mismatch, not a cut")
     clock = 0

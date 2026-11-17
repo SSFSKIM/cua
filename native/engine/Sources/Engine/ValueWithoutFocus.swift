@@ -55,8 +55,8 @@ enum UnfocusedValueResult: String, Equatable {
   case confirmed
   /// The field read a value, never the one written within the budget.
   case mismatch
-  /// Its last read sat at Chromium's cap shorter than the value written (`readbackMayBeTruncated`): a cut read, which
-  /// cannot show the rest landed.
+  /// Its last read sat at Chromium's cap (`readbackMayBeTruncated`), as type_text's read-back counts it: the field may
+  /// hold more than the read shows, so the read confirms nothing, even one equal to the value written.
   case possiblyTruncated
   /// No read answered a value.
   case unreadable
@@ -107,19 +107,20 @@ func unfocusedValueReadback(_ written: CFTypeRef, concealed: Bool, closed: () ->
 
 /// Whether a value read is the value written, exactly: a string written equal in UTF-16 units to a string or an
 /// attributed string read; any other value (a number, a Boolean, a date) by CFEqual. Nothing read is no match. Unlike
-/// #359's watch (ClickOrdering.swift `writtenValueRead`), a read cut at Chromium's cap never counts: here the read is
-/// the only proof the write landed, and a cut read cannot show its end did.
+/// #359's watch (ClickOrdering.swift `writtenValueRead`), a read at Chromium's cap never counts, shorter or equal
+/// (`writtenValueCut`): here the read is the only proof the write landed, and such a read cannot show the field holds
+/// no more than it.
 func writtenValueMatches(_ found: CFTypeRef?, _ written: CFTypeRef) -> Bool {
   guard let found else { return false }
   guard CFGetTypeID(written) == CFStringGetTypeID() else { return CFEqual(found, written) }
-  guard let text = readText(found) else { return false }
+  guard let text = readText(found), !readbackMayBeTruncated(text) else { return false }
   return text.utf16.elementsEqual((written as! String).utf16)
 }
 
-/// Whether a read is a string at Chromium's cap shorter than the string written (`readbackMayBeTruncated`).
+/// Whether a string written was read as a string at Chromium's cap (`readbackMayBeTruncated`), whatever it holds.
 func writtenValueCut(_ found: CFTypeRef?, _ written: CFTypeRef) -> Bool {
   guard let found, CFGetTypeID(written) == CFStringGetTypeID(), let text = readText(found) else { return false }
-  return readbackMayBeTruncated(text) && text.utf16.count < (written as! String).utf16.count
+  return readbackMayBeTruncated(text)
 }
 
 /// A string or an attributed string read, as text; nil for any other value.

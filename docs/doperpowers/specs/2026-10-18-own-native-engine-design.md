@@ -5615,6 +5615,25 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   3. **Not changed:** the observation itself still reads every element's AXValue as it walks, a password field's
      included (outside set_value; its value is what the app exposes there).
   Date/Author: 2026-11-17, cursor235's implementer for #390 (the review of c236f268).
+- Decision (#390's re-review, 2026-11-17, `fix/390-value-without-focus`; the review of 2532a1b5, two P2 findings, both
+  accepted; amends "#390's review" above): **no read at Chromium's cap confirms, and set_value's token re-reads never
+  read AXValue, on any route.**
+  1. **Equality at the cap.** A write of exactly 10,000 characters read back equal may sit in a field holding that and
+     more. Any read whose length is at the cap (`readbackMayBeTruncated`, type_text's own test) now confirms nothing,
+     shorter or equal, and answers `valueUnconfirmed` (`possiblyTruncated`).
+  2. **The classification no longer runs ahead of the reads.** The previous fix decided from the recorded identity
+     and once after the scroll, so a field that turned secure since the observation, or in the focus step, could still
+     be read. The simpler shape: set_value's resolutions (the invalidated re-read, the scroll's `.always`, the
+     `.ignoringValue` re-check after the write, its walk included) always take the valueless source, the value left out
+     of their match; set_value replaces the value, so it was weak evidence of the element there. The coercion is the
+     one remaining read before the write, and `setValueClosed` classifies the field in that same step, after the focus
+     and just before the read (concealed, a password field by role or subrole, or a role or subrole that cannot be
+     read: no read, the value written as a string). The unfocused read-back already re-checks before every read.
+     Re-classifying at each step was the alternative; it was not taken because it keeps a decision per read site,
+     where these sites need no value at all. The cost: after any set_value the token's identity keeps no value until
+     the next observation, so a later re-fetch of it matches on the other ten attributes. A field whose subrole changed
+     still fails the re-check, which answers `valueUnconfirmed` as before.
+  Date/Author: 2026-11-17, cursor235's implementer for #390 (the review of 2532a1b5).
 
 ## Outcomes & Retrospective
 

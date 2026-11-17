@@ -375,6 +375,7 @@ extension Engine {
                        targetActive: { NSRunningApplication(processIdentifier: owner)?.isActive == true },
                        beforeActivating: guarding.checkInFlight, beforePosting: guarding.checkInFlight,
                        announce: { cursor.act(connection: connection, app: app.key, window: pointing.windowID, .click(point)) },
+                       pointerPosted: { clickOrdering.pointerPosted(pids: [owner, appPid]) },
                        post: gatedPost, meta: &meta)
     }
   }
@@ -567,6 +568,8 @@ extension Engine {
     }
     let field = target.element
     return { [self] meta in
+      // #359: within the window of a pointer press posted to the app, the field's range settles first, before #296's check.
+      awaitPendingClick(on: field, pids: [appPid, ownerPid(of: field, fallback: appPid)], meta: &meta)
       // #296: the field must be the node the screenshot showed at the point or its ancestor, before it is pressed.
       try checkStalePoint(stalePoint, pressing: field, waited: false, meta: &meta)
       let owner = ownerPid(of: field, fallback: appPid)
@@ -625,6 +628,8 @@ extension Engine {
     }
     let field = target.element
     return { [self] meta in
+      // #359: within the window of a pointer press posted to the app, the field's range settles first, before #296's check.
+      awaitPendingClick(on: field, pids: [appPid, ownerPid(of: field, fallback: appPid)], meta: &meta)
       // #296: the field must be the node the screenshot showed at the point or its ancestor, before it is focused.
       try checkStalePoint(stalePoint, pressing: field, waited: false, meta: &meta)
       let owner = ownerPid(of: field, fallback: appPid)

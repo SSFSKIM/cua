@@ -45,6 +45,9 @@ private final class FakeField {
   /// Before anything is typed, the value and selected range each value read finds, one per read (an editing key's
   /// effect landing while the snapshot settles); the field keeps the last.
   var statesBeforeTyping: [(String, NSRange)] = []
+  /// Before anything is typed, the selected range each range read finds, one per read (a late click moving the caret
+  /// while #359's wait reads it); the field keeps the last.
+  var rangesBeforeTyping: [NSRange] = []
   private var rangeReads = 0
   private(set) var initialRange: NSRange?
   private var shown: String?
@@ -85,6 +88,7 @@ private final class FakeField {
   func readRange() -> NSRange? {
     calls.append("range")
     rangeReads += 1
+    if !delivered, !rangesBeforeTyping.isEmpty { range = rangesBeforeTyping.removeFirst() }
     defer { if rangeReads == changeAfterRangeReads { changeAtRange(self) } }
     return reportedRange
   }
@@ -123,10 +127,12 @@ final class TypeReadbackTests: XCTestCase {
 
   /// Types `text` into `app` through keyTextReadBack; the error it threw, if any, and the meta.
   @discardableResult
-  private func type(_ text: String, into app: FakeApp, concealed: Bool = false, settle: Bool = false) -> (EngineError?, InputMeta) {
+  private func type(_ text: String, into app: FakeApp, concealed: Bool = false, settle: Bool = false,
+                    baseline: BaselineWait? = nil) -> (EngineError?, InputMeta) {
     var meta = meta()
     do {
-      try keyTextReadBack(units(text), concealed: concealed, settle: settle, reads: app.reads, checkSource: { _, _ in }, checkIntervention: {},
+      try keyTextReadBack(units(text), concealed: concealed, settle: settle, baseline: baseline, reads: app.reads, checkSource: { _, _ in },
+                          checkIntervention: {},
                           post: { event in
                             if event.kind == .down, let text = event.text { app.focused?.deliver(text) }
                             return true
@@ -1248,6 +1254,130 @@ final class TypeReadbackTests: XCTestCase {
       XCTAssertEqual(same.record, other.record, "moving: \(moving)")
       XCTAssertNil(same.record["settleReads"], "a concealed record counts nothing")
     }
+  }
+
+  // MARK: The wait before the snapshot for a late click (#359, ruling 1ea561bc:785)
+
+  private let seed = "Old draft sentence goes here."
+  private let whole = NSRange(location: 0, length: 29), clickCaret = NSRange(location: 3, length: 0)
+
+  private func baselineRecord(_ meta: InputMeta) -> [String: Any] { record(meta)["baselineWait"] as? [String: Any] ?? [:] }
+
+  /// select_text then type_text, the late click having moved the caret back past the cap: nothing is typed and the
+  /// answer is typeUnconfirmed, never a success over the click's caret (the spike's false success: a starting point read
+  /// after the click, self-consistent and wrong).
+  func testSelectTextThenTypeTextWithTheRangeRevertedPastTheCapIsUnconfirmedAndTypesNothing() {
+    let field = FakeField(value: seed, range: clickCaret)
+    let app = FakeApp(field)
+    var posted = 0
+    var meta = meta()
+    XCTAssertThrowsError(try keyTextReadBack(units("NEW359"), concealed: false, baseline: .selection(whole), reads: app.reads,
+                                             checkSource: { _, _ in }, checkIntervention: {}, post: { _ in posted += 1; return true },
+                                             pause: {}, meta: &meta)) { error in
+      let error = error as? EngineError
+      XCTAssertEqual(error?.errorName, "typeUnconfirmed")
+      XCTAssertTrue(error?.message.hasPrefix("Nothing was typed: the field's selection is no longer the one selectText made") == true,
+                    error?.message ?? "")
+    }
+    XCTAssertEqual(posted, 0, "no key posted")
+    XCTAssertNil(meta.startedAt)
+    XCTAssertEqual(meta.entered, 0)
+    XCTAssertEqual(field.value, seed, "the field untouched")
+    XCTAssertEqual(record(meta)["reason"] as? String, "selectionChanged")
+    XCTAssertEqual(record(meta)["confirmed"] as? Bool, false)
+    XCTAssertEqual(baselineRecord(meta)["for"] as? String, "selection")
+    XCTAssertEqual(baselineRecord(meta)["capped"] as? Bool, true)
+    XCTAssertEqual(baselineRecord(meta)["waitMs"] as? Double, pendingClickCapMs)
+    XCTAssertFalse(field.calls.contains("value"), "refused before the value is read")
+  }
+
+  /// select_text's range read at once: one read, no wait, and the text replaces the selection.
+  func testSelectTextsRangeReadAtOnceIsTypedOver() {
+    let field = FakeField(value: seed, range: whole)
+    let app = FakeApp(field)
+    let (error, meta) = type("NEW359", into: app, baseline: .selection(whole))
+    XCTAssertNil(error)
+    XCTAssertEqual(field.value, "NEW359")
+    XCTAssertEqual(app.sleeps, 0)
+    XCTAssertEqual(baselineRecord(meta)["reads"] as? Int, 1)
+    XCTAssertNil(baselineRecord(meta)["capped"])
+    XCTAssertEqual(record(meta)["confirmed"] as? Bool, true)
+  }
+
+  /// select_text's range showing late within the cap is waited for, and typed over.
+  func testSelectTextsRangeShowingLateIsWaitedFor() {
+    let field = FakeField(value: seed, range: clickCaret)
+    field.rangesBeforeTyping = [clickCaret, clickCaret, whole]
+    let app = FakeApp(field)
+    let (error, meta) = type("NEW359", into: app, baseline: .selection(whole))
+    XCTAssertNil(error)
+    XCTAssertEqual(field.value, "NEW359")
+    XCTAssertEqual(baselineRecord(meta)["waitMs"] as? Double, 2 * pendingClickSampleMs)
+  }
+
+  /// A click pending without select_text: the starting point is taken once the range has held still, so the click that
+  /// lands during the wait is in it, and the text typed at the click's caret confirms.
+  func testAPendingClickIsWaitedForBeforeTheStartingPoint() {
+    let field = FakeField(value: seed, range: whole)
+    field.rangesBeforeTyping = [whole, whole, clickCaret]
+    let app = FakeApp(field)
+    let (error, meta) = type("NEW359", into: app, baseline: .stable)
+    XCTAssertNil(error)
+    XCTAssertEqual(field.value, "OldNEW359 draft sentence goes here.", "typed at the click's caret, as the click meant")
+    XCTAssertEqual(baselineRecord(meta)["for"] as? String, "stable")
+    XCTAssertEqual(baselineRecord(meta)["waitMs"] as? Double, 2 * pendingClickSampleMs + pendingClickDwellMs)
+  }
+
+  /// A range that never holds still: the wait ends at its cap and the text is typed, #354's read-back answering what it
+  /// sees.
+  func testAStableWaitAtItsCapGoesOn() {
+    let field = FakeField(value: seed, range: whole)
+    field.rangesBeforeTyping = (0..<40).map { $0 % 2 == 0 ? whole : clickCaret }
+    let app = FakeApp(field)
+    let (_, meta) = type("NEW359", into: app, baseline: .stable)
+    XCTAssertNotNil(meta.startedAt, "typed")
+    XCTAssertEqual(baselineRecord(meta)["capped"] as? Bool, true)
+    XCTAssertEqual(baselineRecord(meta)["waitMs"] as? Double, pendingClickCapMs)
+  }
+
+  /// Without a pending click or select_text no wait is taken (the snapshot's reads are #354's alone).
+  func testNoWaitWithoutAPendingClick() {
+    let field = FakeField(value: seed, range: whole)
+    let app = FakeApp(field)
+    let (error, meta) = type("NEW359", into: app)
+    XCTAssertNil(error)
+    XCTAssertEqual(app.sleeps, 0)
+    XCTAssertNil(record(meta)["baselineWait"])
+  }
+
+  /// The wait comes after the secure check and checks the field before every read: a password field's range is never
+  /// read, and one turning secure is read no further.
+  func testTheWaitNeverReadsASecureField() {
+    let field = FakeField(value: "hunter2", range: NSRange(location: 7, length: 0))
+    field.role = "AXSecureTextField"
+    XCTAssertEqual(record(type("pass", into: FakeApp(field), baseline: .selection(whole)).1)["reason"] as? String, "secure")
+    XCTAssertFalse(field.calls.contains("range"))
+    let turning = FakeField(value: "user", range: clickCaret)
+    turning.role = "AXTextField"
+    turning.changeAfterRangeReads = 1
+    turning.changeAtRange = { $0.role = "AXSecureTextField" }
+    let (error, meta) = type("pass", into: FakeApp(turning), baseline: .stable)
+    XCTAssertEqual(record(meta)["reason"] as? String, "becameSecure")
+    XCTAssertEqual(error?.errorName, "typeUnconfirmed")
+    XCTAssertEqual(turning.calls.filter { $0 == "range" }.count, 1, "no range read after it turned secure")
+    XCTAssertEqual(baselineRecord(meta)["closed"] as? Bool, true)
+  }
+
+  /// A secret after select_text whose range is gone: nothing typed, no count in the meta, the reason alone.
+  func testASecretAfterAChangedSelectionTypesNothing() {
+    let field = FakeField(value: seed, range: clickCaret)
+    let (error, meta) = type("hunter2", into: FakeApp(field), concealed: true, baseline: .selection(whole))
+    XCTAssertEqual(error?.errorName, "typeUnconfirmed")
+    XCTAssertNil(meta.entered)
+    XCTAssertNil(meta.startedAt)
+    XCTAssertEqual(record(meta)["reason"] as? String, "selectionChanged")
+    XCTAssertNil(record(meta)["baselineWait"], "a concealed record counts nothing")
+    XCTAssertEqual(field.value, seed)
   }
 
   func testOnlyKeysAndEmptyText() {

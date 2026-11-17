@@ -1688,45 +1688,59 @@ final class KeyRouteTests: XCTestCase {
     XCTAssertEqual(try route("a", focus: false, forced: .activation), .activation)
   }
 
-  /// Every caret-navigation key press_key names (the arrows, Home and its alias Begin, End, Page Up and Page Down under
-  /// both names), and each under the modifiers a caret move or a selection extension takes.
-  private let navigationKeys = ["Left", "Right", "Up", "Down", "Home", "Begin", "End", "Prior", "Page_Up", "Next", "Page_Down"]
+  /// The arrow keys, and the other keys that navigate (Home and its alias Begin, End, Page Up and Page Down under both
+  /// names), each under the modifiers a caret move or a selection extension takes.
+  private let arrowKeys = ["Left", "Right", "Up", "Down"]
+  private let otherNavigationKeys = ["Home", "Begin", "End", "Prior", "Page_Up", "Next", "Page_Down"]
   private let navigationModifiers = ["", "shift+", "alt+", "alt+shift+", "cmd+", "cmd+shift+", "ctrl+", "ctrl+alt+"]
 
   private func route(_ keys: String, focus: Bool, engine: PageEngine, forced: InputRoute? = nil) throws -> InputRoute {
     pressKeyRoute(forced: forced, presses: try parseKeySequence(keys), believesFocus: focus, engine: engine)
   }
 
-  /// #360 (ruling 764): a background Firefox does not move a rich editor's caret for a posted Left, Option+Left or
-  /// Cmd+Left until the editor has logical focus, so every caret-navigation key there takes the ⌘ chord's route 3.
-  func testInBackgroundFirefoxEveryCaretNavigationKeyTakesRouteThree() throws {
-    for key in navigationKeys {
+  /// The route a key had before #360: route 3 for a ⌘ chord, else 2′.
+  private func chordRoute(_ modifiers: String) -> InputRoute { modifiers.hasPrefix("cmd+") ? .activation : .plainPost }
+
+  /// #360 (rulings 764 and 767): a background Firefox does not move a rich editor's caret for a posted Left, Option+Left
+  /// or Cmd+Left until the editor has logical focus, so every arrow key there takes the ⌘ chord's route 3.
+  func testInBackgroundFirefoxEveryArrowKeyTakesRouteThree() throws {
+    for key in arrowKeys {
       for modifiers in navigationModifiers {
         XCTAssertEqual(try route(modifiers + key, focus: false, engine: .gecko), .activation, modifiers + key)
       }
     }
     XCTAssertEqual(try route("a Left", focus: false, engine: .gecko), .activation, "a sequence holding one is activated before its first press")
+    XCTAssertEqual(try route("Home Down", focus: false, engine: .gecko), .activation, "a sequence holding one is activated before its first press")
     XCTAssertEqual(try route("Left", focus: false, engine: .gecko, forced: .plainPost), .plainPost, "a spike cell's forced route wins")
   }
 
-  /// The same keys keep their route everywhere else: a Firefox that believes it has focus, and a background Chrome or
-  /// Safari (a key equivalent among them stays route 3 as a ⌘ chord, the rest 2′).
-  func testCaretNavigationKeysKeepTheirRouteOutsideBackgroundFirefox() throws {
-    for key in navigationKeys {
+  /// Ruling 767: Home, End, Page Up and Page Down scroll rather than move the caret, and a background Firefox already
+  /// matched the foreground for them by 2′, so they keep their route there: 2′, or route 3 as a ⌘ chord.
+  func testInBackgroundFirefoxHomeEndAndThePageKeysKeepTheirRoute() throws {
+    for key in otherNavigationKeys {
       for modifiers in navigationModifiers {
-        let keys = modifiers + key
-        let chord: InputRoute = modifiers.hasPrefix("cmd+") ? .activation : .plainPost
-        XCTAssertEqual(try route(keys, focus: true, engine: .gecko), .plainPost, "foreground Firefox: \(keys)")
-        XCTAssertEqual(try route(keys, focus: false, engine: .chromium), chord, "background Chrome: \(keys)")
-        XCTAssertEqual(try route(keys, focus: false, engine: .other), chord, "background Safari: \(keys)")
+        XCTAssertEqual(try route(modifiers + key, focus: false, engine: .gecko), chordRoute(modifiers), modifiers + key)
       }
     }
   }
 
-  /// Every key that moves no caret keeps its route in a background Firefox: 2′, or route 3 for a ⌘ chord.
+  /// Every navigation key keeps its route everywhere else: a Firefox that believes it has focus, and a background Chrome
+  /// or Safari (a key equivalent among them stays route 3 as a ⌘ chord, the rest 2′).
+  func testNavigationKeysKeepTheirRouteOutsideBackgroundFirefox() throws {
+    for key in arrowKeys + otherNavigationKeys {
+      for modifiers in navigationModifiers {
+        let keys = modifiers + key
+        XCTAssertEqual(try route(keys, focus: true, engine: .gecko), .plainPost, "foreground Firefox: \(keys)")
+        XCTAssertEqual(try route(keys, focus: false, engine: .chromium), chordRoute(modifiers), "background Chrome: \(keys)")
+        XCTAssertEqual(try route(keys, focus: false, engine: .other), chordRoute(modifiers), "background Safari: \(keys)")
+      }
+    }
+  }
+
+  /// Every key that is no arrow keeps its route in a background Firefox: 2′, or route 3 for a ⌘ chord.
   func testABackgroundFirefoxKeepsTheRouteOfEveryOtherKey() throws {
     for plain in ["a", "A", "Return", "Tab", "shift+Tab", "BackSpace", "Delete", "space", "Escape", "alt+Return", "ctrl+a",
-                  "F1", "KP_4", "KP_8", "KP_2", "KP_6", "KP_Enter", "super", "shift", "Tab Return"] {
+                  "F1", "KP_4", "KP_8", "KP_2", "KP_6", "KP_Enter", "super", "shift", "Tab Return", "Home End"] {
       XCTAssertEqual(try route(plain, focus: false, engine: .gecko), .plainPost, plain)
     }
     XCTAssertEqual(try route("cmd+a", focus: false, engine: .gecko), .activation, "a ⌘ chord keeps route 3")

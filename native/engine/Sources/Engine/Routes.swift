@@ -214,21 +214,23 @@ func keyRoute(forced: InputRoute?) -> InputRoute { forced ?? .plainPost }
 /// A press that is a menu key equivalent: a key with ⌘ (a modifier pressed alone is none).
 func isKeyEquivalent(_ press: KeyPress) -> Bool { press.keyCode != nil && press.modifiers.contains(.command) }
 
-/// The keys that move a caret (#360): the arrows, Home, End, Page Up and Page Down (press_key's Begin, Prior and Next are
-/// the same keys), whatever their modifiers, so a move and its Shift-extended selection take one rule.
-private let caretNavigationKeyCodes: Set<CGKeyCode> = [0x7B, 0x7C, 0x7D, 0x7E, 0x73, 0x77, 0x74, 0x79]
+/// The arrow keys (#360): Left, Right, Down, Up, whatever their modifiers, so a caret move and its Shift-extended
+/// selection take one rule. Home, End, Page Up and Page Down are not among them (ruling 767): they scroll rather than
+/// move the caret, and a background Firefox's rich editor already matched the foreground for them by 2′ (hosted run
+/// 44047809532, 160 of 160).
+private let arrowKeyCodes: Set<CGKeyCode> = [0x7B, 0x7C, 0x7D, 0x7E]
 
-/// A press of a caret-navigation key (`caretNavigationKeyCodes`), with or without modifiers.
-func isCaretNavigation(_ press: KeyPress) -> Bool { press.keyCode.map(caretNavigationKeyCodes.contains) ?? false }
+/// A press of an arrow key (`arrowKeyCodes`), with or without modifiers.
+func isArrowKey(_ press: KeyPress) -> Bool { press.keyCode.map(arrowKeyCodes.contains) ?? false }
 
 /// Whether a press needs route 3's held activation in an app that does not believe it has focus: a key equivalent, which
 /// a background app does not perform (M2a.5: ⌘A in an inactive window had no effect; it computes its menu items'
-/// enablement as an inactive app); and on a Gecko page (`PageEngine`) a caret-navigation key, since a background
-/// Firefox's rich editor has its caret disabled until it has focus, so Left, Option+Left and Cmd+Left scroll instead of
-/// moving it (#360's hosted spike, run 44024467862: 0 of 120 posted, 120 of 120 after route 3's prelude; ruling 764).
+/// enablement as an inactive app); and on a Gecko page (`PageEngine`) an arrow key, since a background Firefox's rich
+/// editor has its caret disabled until it has focus, so Left, Option+Left and Cmd+Left scroll instead of moving it
+/// (#360's hosted spike, run 44024467862: 0 of 120 posted, 120 of 120 after route 3's prelude; rulings 764 and 767).
 /// No editor role is read: the rule is the key's, in every Firefox field.
 func needsHeldActivation(_ press: KeyPress, engine: PageEngine) -> Bool {
-  isKeyEquivalent(press) || engine == .gecko && isCaretNavigation(press)
+  isKeyEquivalent(press) || engine == .gecko && isArrowKey(press)
 }
 
 /// press_key's route: 3 when the sequence holds a press that `needsHeldActivation` and the app does not believe it has

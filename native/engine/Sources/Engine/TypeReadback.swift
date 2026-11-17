@@ -179,12 +179,15 @@ extension ReadbackReads where Element == AXUIElement {
       return readbackFocusedField(application: application, focused: { element($0, kAXFocusedUIElementAttribute) },
                                   primaryWindow: { element($0, kAXFocusedWindowAttribute) ?? element($0, kAXMainWindowAttribute) },
                                   walk: ReadbackFocusWalk(children: { node in
-                                    elementList(attribute(node, kAXChildrenAttribute)).map { child in
-                                      AXUIElementSetMessagingTimeout(child, typeReadbackMessagingTimeout)
-                                      return child
+                                    liveWalkRead(node, kAXChildrenAttribute) { raw in
+                                      guard CFGetTypeID(raw) == CFArrayGetTypeID() else { return nil }
+                                      return elementList(raw).map { child in
+                                        AXUIElementSetMessagingTimeout(child, typeReadbackMessagingTimeout)
+                                        return child
+                                      }
                                     }
-                                  }, isFocused: { bool(attribute($0, kAXFocusedAttribute)) == true },
-                                  role: { stringAttribute($0, kAXRoleAttribute) }))
+                                  }, isFocused: { liveWalkRead($0, kAXFocusedAttribute, bool) },
+                                  role: { liveWalkRead($0, kAXRoleAttribute) { CFGetTypeID($0) == CFStringGetTypeID() ? ($0 as! String) : nil } }))
     }, role: { stringAttribute($0, kAXRoleAttribute) }, subrole: liveReadbackSubrole,
        value: { stringAttribute($0, kAXValueAttribute) }, valueUnits: liveReadbackValueUnits, range: { element in
       guard let range = rangeWire(attribute(element, kAXSelectedTextRangeAttribute)), let location = range["location"],
@@ -205,12 +208,36 @@ let typeReadbackFocusWalkMs: Double = 40
 /// The roles the walk claims: the text-entry roles, and a secure field's, which the snapshot then refuses unread.
 let typeReadbackFocusWalkRoles: Set<String> = typeReadbackTextRoles.union(["AXSecureTextField"])
 
-/// The reads of the walk, live or faked: an element's children, whether it reads AXFocused true, its role, the clock.
+/// One attribute read of the walk: its value, absent (the element has none: noValue, attributeUnsupported), or failed
+/// (any other error, such as cannotComplete or a timeout, or a value of the wrong type), which leaves the walk unfinished.
+enum ReadbackWalkRead<Value> {
+  case value(Value)
+  case absent
+  case failed
+}
+
+/// The reads of the walk, live or faked: an element's children, its AXFocused, its role, the clock.
 struct ReadbackFocusWalk<Element> {
-  var children: (Element) -> [Element]
-  var isFocused: (Element) -> Bool
-  var role: (Element) -> String?
+  var children: (Element) -> ReadbackWalkRead<[Element]>
+  var isFocused: (Element) -> ReadbackWalkRead<Bool>
+  var role: (Element) -> ReadbackWalkRead<String>
   var now: () -> Double = monotonicMilliseconds
+}
+
+/// A live attribute read for the walk, its error kept (the review of 1bac4017..45e5a5ed, P2: a failed read read as an
+/// absence could hide a second focused field).
+func liveWalkRead<Value>(_ element: AXUIElement, _ name: String, _ convert: (CFTypeRef) -> Value?) -> ReadbackWalkRead<Value> {
+  let (raw, error) = copyAttribute(element, name)
+  return readbackWalkRead(raw, error, convert)
+}
+
+/// What one attribute read answered, as the walk counts it.
+func readbackWalkRead<Value>(_ raw: CFTypeRef?, _ error: AXError, _ convert: (CFTypeRef) -> Value?) -> ReadbackWalkRead<Value> {
+  switch error {
+  case .success: return raw.flatMap(convert).map { .value($0) } ?? .failed
+  case .noValue, .attributeUnsupported: return .absent
+  default: return .failed
+  }
 }
 
 /// The field typed keys reach: the application's AXFocusedUIElement, else the one its primary window's walk finds
@@ -225,13 +252,15 @@ func readbackFocusedField<Element>(application: Element, focused: (Element) -> E
   return primaryWindow(application).flatMap { readbackFocusedByWalk($0, walk) }
 }
 
-/// The window walked breadth first for elements that read AXFocused true with a role the walk claims
-/// (`typeReadbackFocusWalkRoles`), the role read only of a focused one. A focused element of another role is walked
-/// through, never claimed nor counted: after a key press Safari's AXWebArea reads AXFocused true beside its editor (run
-/// 44022892172, 10 of 10). The one found is claimed only when the walk
-/// finished inside its node and time bounds and found no other: zero, several, or a walk cut short claim nothing, since
-/// an element past the bound could be another. Children are read down to `typeReadbackFocusWalkDepth` (the window is
-/// depth 0), and never of a claimed element, so nothing inside the field, whose children follow its text, is read.
+/// The window walked breadth first, each element's role read: an element with a role the walk claims
+/// (`typeReadbackFocusWalkRoles`) is a leaf of the walk, focused or not, its AXFocused read and its children never, so
+/// nothing typed into any field is read (the review of 1bac4017..45e5a5ed, P2: a field a concealed request left, its
+/// text under it, would otherwise change the reads of the identity check's walk). Any other element is walked through,
+/// focused or not: after a key press Safari's AXWebArea reads AXFocused true beside its editor (run 44022892172, 10 of
+/// 10). The one focused field is claimed only when the walk finished with nothing left unread: past the node or time
+/// bound, a failed read, or an element at `typeReadbackFocusWalkDepth` (the window is depth 0) that has children (that
+/// review's P1) leave it unfinished, and an unfinished walk, like one that found several, claims nothing, since what
+/// it did not read could be another.
 func readbackFocusedByWalk<Element>(_ window: Element, _ walk: ReadbackFocusWalk<Element>) -> Element? {
   let started = walk.now()
   var queue: [(element: Element, depth: Int)] = [(window, 0)]
@@ -241,12 +270,27 @@ func readbackFocusedByWalk<Element>(_ window: Element, _ walk: ReadbackFocusWalk
     if index >= typeReadbackFocusWalkNodes || walk.now() - started > typeReadbackFocusWalkMs { return nil }
     let (element, depth) = queue[index]
     index += 1
-    if walk.isFocused(element), let role = walk.role(element), typeReadbackFocusWalkRoles.contains(role) {
-      if found != nil { return nil }
-      found = element
+    switch walk.role(element) {
+    case .failed: return nil
+    case .value(let role) where typeReadbackFocusWalkRoles.contains(role):
+      switch walk.isFocused(element) {
+      case .failed: return nil
+      case .value(true):
+        if found != nil { return nil }
+        found = element
+      case .value(false), .absent: break
+      }
       continue
+    case .value, .absent: break
     }
-    if depth < typeReadbackFocusWalkDepth { queue += walk.children(element).map { ($0, depth + 1) } }
+    switch walk.children(element) {
+    case .failed: return nil
+    case .absent: break
+    case .value(let children):
+      if children.isEmpty { break }
+      if depth >= typeReadbackFocusWalkDepth { return nil }
+      queue += children.map { ($0, depth + 1) }
+    }
   }
   return found
 }

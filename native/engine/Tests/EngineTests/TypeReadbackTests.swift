@@ -390,19 +390,36 @@ final class TypeReadbackTests: XCTestCase {
     var focusedWindow: Node?
     var mainWindow: Node?
     var value: String? = "v"
+    /// The walk's reads of this element that fail (a timeout, cannotComplete): "role", "focused", "children"; "noFocus"
+    /// makes its AXFocused absent instead.
+    var failing: Set<String> = []
     init(_ name: String, role: String? = "AXGroup", children: [Node] = []) { self.name = name; self.role = role; self.children = children }
   }
 
-  /// The lookup over a fake tree, every read recorded; `msPerNode` advances the clock at each node's AXFocused read.
+  /// The walk's reads over a fake tree, each logged; `msPerNode` advances the clock at each element's role read.
+  private func walkReads(_ log: @escaping (String) -> Void, clock: @escaping () -> Double = { 0 }, tick: @escaping () -> Void = {}) -> ReadbackFocusWalk<Node> {
+    ReadbackFocusWalk(children: { node in
+      log("children@\(node.name)")
+      return node.failing.contains("children") ? .failed : .value(node.children)
+    }, isFocused: { node in
+      log("isFocused@\(node.name)")
+      if node.failing.contains("focused") { return .failed }
+      return node.failing.contains("noFocus") ? .absent : .value(node.focusedFlag)
+    }, role: { node in
+      tick()
+      log("role@\(node.name)")
+      if node.failing.contains("role") { return .failed }
+      return node.role.map { .value($0) } ?? .absent
+    }, now: clock)
+  }
+
+  /// The lookup over a fake tree, every read recorded; `msPerNode` advances the clock at each element's role read.
   private func lookup(_ app: Node, reads: inout [String], msPerNode: Double = 0) -> Node? {
     var log: [String] = [], clock = 0.0
     defer { reads = log }
     return readbackFocusedField(application: app, focused: { log.append("focused@\($0.name)"); return $0.focused },
                                 primaryWindow: { node in log.append("window"); return node.focusedWindow ?? node.mainWindow },
-                                walk: ReadbackFocusWalk(children: { log.append("children@\($0.name)"); return $0.children },
-                                                        isFocused: { clock += msPerNode; log.append("isFocused@\($0.name)"); return $0.focusedFlag },
-                                                        role: { log.append("role@\($0.name)"); return $0.role },
-                                                        now: { clock }))
+                                walk: walkReads({ log.append($0) }, clock: { clock }, tick: { clock += msPerNode }))
   }
 
   /// Run 44022892172 (Safari 27.2, no key first): the application's AXFocusedUIElement answered no value, the windows'
@@ -423,9 +440,9 @@ final class TypeReadbackTests: XCTestCase {
     let app = page([Node("label", role: "AXStaticText"), field])
     XCTAssertTrue(lookup(app, reads: &reads) === field, "the one focused text field in the web area")
     XCTAssertEqual(Array(reads.prefix(2)), ["focused@app", "window"])
-    XCTAssertFalse(reads.contains("children@field"), "nothing inside the claimed field is read: \(reads)")
+    XCTAssertFalse(reads.contains("children@field"), "nothing inside the field is read: \(reads)")
     XCTAssertFalse(reads.contains("focused@window"), "the window's own focus attribute is not asked")
-    XCTAssertFalse(reads.contains("role@heading"), "a role is read only of a focused element")
+    XCTAssertFalse(reads.contains("isFocused@heading"), "AXFocused is read only of a text-entry element")
 
     app.focused = field
     XCTAssertTrue(lookup(app, reads: &reads) === field)
@@ -466,7 +483,8 @@ final class TypeReadbackTests: XCTestCase {
     XCTAssertNil(lookup(app, reads: &reads), "only the web area focused: no claim")
   }
 
-  /// Zero or several focused text-entry elements make no claim, and neither does a walk past its node or time bound.
+  /// Zero or several focused text-entry elements make no claim, and neither does a walk past its node, time or depth
+  /// bound: an element left unread could be another.
   func testTheWalkClaimsOnlyOneFocusedFieldWithinItsBounds() {
     var reads: [String] = []
     let one = Node("one", role: "AXTextField"), two = Node("two", role: "AXTextArea")
@@ -485,7 +503,7 @@ final class TypeReadbackTests: XCTestCase {
     let filler = (0..<typeReadbackFocusWalkNodes).map { Node("n\($0)") }
     app.mainWindow = Node("window", role: "AXWindow", children: filler + [one])
     XCTAssertNil(lookup(app, reads: &reads), "over the node bound: no claim")
-    XCTAssertEqual(reads.filter { $0.hasPrefix("isFocused@") }.count, typeReadbackFocusWalkNodes)
+    XCTAssertEqual(reads.filter { $0.hasPrefix("role@") }.count, typeReadbackFocusWalkNodes)
     // Within it: the window, the field and the nodes between them fill the bound exactly.
     app.mainWindow = Node("window", role: "AXWindow", children: Array(filler.prefix(typeReadbackFocusWalkNodes - 2)) + [one])
     XCTAssertTrue(lookup(app, reads: &reads) === one, "the window, the field and the nodes between fit the bound")
@@ -500,19 +518,93 @@ final class TypeReadbackTests: XCTestCase {
     app.mainWindow = Node("window", role: "AXWindow", children: [one] + Array(filler.prefix(Int(typeReadbackFocusWalkMs) - 5)))
     XCTAssertTrue(lookup(app, reads: &reads, msPerNode: 1) === one, "finished inside the time bound")
 
-    // The depth bound: the window is depth 0, and an element at the bound is read but its children are not.
-    func nested(_ depth: Int) -> Node {
+    // The depth bound: the window is depth 0; an element at the bound is read, and children under it leave the walk
+    // unfinished, so it claims nothing.
+    func chain(_ depth: Int) -> (top: Node, deep: Node) {
       let field = Node("deep", role: "AXTextField")
       field.focusedFlag = true
       var node = field
       for level in 1..<depth { node = Node("g\(level)", children: [node]) }
-      return Node("window", role: "AXWindow", children: [node])
+      return (node, field)
     }
-    app.mainWindow = nested(typeReadbackFocusWalkDepth)
+    app.mainWindow = Node("window", role: "AXWindow", children: [chain(typeReadbackFocusWalkDepth).top])
     XCTAssertEqual(lookup(app, reads: &reads)?.name, "deep", "a field at the depth bound")
-    app.mainWindow = nested(typeReadbackFocusWalkDepth + 1)
+    app.mainWindow = Node("window", role: "AXWindow", children: [chain(typeReadbackFocusWalkDepth + 1).top])
     XCTAssertNil(lookup(app, reads: &reads), "a field past the depth bound is not reached")
-    XCTAssertFalse(reads.contains("isFocused@deep"))
+    XCTAssertFalse(reads.contains("role@deep"))
+    // The review of 1bac4017..45e5a5ed (P1): one field near the top and another past the depth bound claim nothing.
+    let shallow = Node("shallow", role: "AXTextField")
+    shallow.focusedFlag = true
+    app.mainWindow = Node("window", role: "AXWindow", children: [shallow, chain(typeReadbackFocusWalkDepth + 1).top])
+    XCTAssertNil(lookup(app, reads: &reads), "a subtree left unread at the depth bound could hold another")
+    let unfocused = chain(typeReadbackFocusWalkDepth)
+    unfocused.deep.focusedFlag = false
+    app.mainWindow = Node("window", role: "AXWindow", children: [shallow, unfocused.top])
+    XCTAssertTrue(lookup(app, reads: &reads) === shallow, "a field at the depth bound is read whole, nothing left unread")
+  }
+
+  /// The review of 1bac4017..45e5a5ed (P2): every text-entry element is a leaf of the walk, focused or not, so nothing
+  /// typed into a field is read: after a concealed request moved focus on (a trailing Tab), the identity check's walk
+  /// reads the same elements whatever the editor it left now holds.
+  func testTheWalkReadsNothingInsideAnyTextEntryElement() {
+    func walked(_ lines: Int) -> [String] {
+      let previous = Node("previous", role: "AXTextArea", children: (0..<lines).map { Node("line\($0)", role: "AXStaticText") })
+      let next = Node("next", role: "AXTextField")
+      next.focusedFlag = true
+      let app = Node("app")
+      app.mainWindow = Node("window", role: "AXWindow", children: [Node("web", role: "AXWebArea", children: [previous, next])])
+      var reads: [String] = []
+      XCTAssertTrue(lookup(app, reads: &reads) === next)
+      return reads
+    }
+    XCTAssertEqual(walked(1), walked(8), "the same reads with 1 and 8 text elements under the editor left")
+    XCTAssertFalse(walked(8).contains { $0.hasPrefix("children@previous") || $0.hasPrefix("role@line") })
+  }
+
+  /// The review of 1bac4017..45e5a5ed (P2): a read that fails (a timeout, cannotComplete) leaves the walk unfinished, so
+  /// it claims nothing; an attribute the element does not have (noValue, unsupported) is an absence, not a failure.
+  func testAFailedReadLeavesTheWalkUnfinished() {
+    var reads: [String] = []
+    let field = Node("field", role: "AXTextField")
+    field.focusedFlag = true
+    let group = Node("group", children: [Node("inner")])
+    let app = Node("app")
+    app.mainWindow = Node("window", role: "AXWindow", children: [field, group])
+    XCTAssertTrue(lookup(app, reads: &reads) === field)
+    for read in ["children", "role"] {
+      group.failing = [read]
+      XCTAssertNil(lookup(app, reads: &reads), "a subtree whose \(read) read failed could hold another field")
+    }
+    group.failing = []
+    let other = Node("other", role: "AXTextField")
+    other.failing = ["focused"]
+    group.children = [other]
+    XCTAssertNil(lookup(app, reads: &reads), "a text field whose AXFocused read failed could be focused")
+    other.failing = ["noFocus"]  // no AXFocused: not focused
+    XCTAssertTrue(lookup(app, reads: &reads) === field)
+    other.failing = []
+    group.role = nil  // no role: an absence, walked through
+    XCTAssertTrue(lookup(app, reads: &reads) === field)
+  }
+
+  /// The live reads' errors as the walk counts them: noValue and attributeUnsupported are absences; any other error, and
+  /// a value of the wrong type, a failure.
+  func testTheWalksReadsKeepTheirErrors() {
+    func kind(_ read: ReadbackWalkRead<String>) -> String {
+      switch read {
+      case .value(let value): return "value \(value)"
+      case .absent: return "absent"
+      case .failed: return "failed"
+      }
+    }
+    let asString: (CFTypeRef) -> String? = { CFGetTypeID($0) == CFStringGetTypeID() ? ($0 as! String) : nil }
+    XCTAssertEqual(kind(readbackWalkRead("AXTextField" as CFString, .success, asString)), "value AXTextField")
+    XCTAssertEqual(kind(readbackWalkRead(kCFBooleanTrue, .success, asString)), "failed", "a value of the wrong type")
+    XCTAssertEqual(kind(readbackWalkRead(nil, .noValue, asString)), "absent")
+    XCTAssertEqual(kind(readbackWalkRead(nil, .attributeUnsupported, asString)), "absent")
+    for error in [AXError.cannotComplete, .invalidUIElement, .failure, .notImplemented, .apiDisabled] {
+      XCTAssertEqual(kind(readbackWalkRead(nil, error, asString)), "failed", "\(error.rawValue)")
+    }
   }
 
   /// A secure field the walk finds is handled as any secure field: refused, its value and range never read.
@@ -523,7 +615,7 @@ final class TypeReadbackTests: XCTestCase {
     let app = Node("app")
     app.mainWindow = Node("window", role: "AXWindow", children: [Node("web", role: "AXWebArea", children: [secure])])
     var valueReads = 0
-    let walk = ReadbackFocusWalk<Node>(children: { $0.children }, isFocused: { $0.focusedFlag }, role: { $0.role }, now: { 0 })
+    let walk = walkReads({ _ in })
     let reads = ReadbackReads<Node>(
       focused: { readbackFocusedField(application: app, focused: { $0.focused }, primaryWindow: { $0.focusedWindow ?? $0.mainWindow }, walk: walk) },
       role: { $0.role }, subrole: { _ in .absent }, value: { valueReads += 1; return $0.value },

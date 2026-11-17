@@ -80,9 +80,11 @@ function rowProblem(r) {
   // endTask only has to be recorded (a result or an error reply); its `released` count is computed and proves nothing.
   if(!(finite(task?.startedAt)&&finite(task?.endedAt)&&task.startedAt>=held.endedAt&&task.endedAt>=task.startedAt&&!!(task.raw?.result||task.raw?.error)))return 'lifecycle-task-end';
   // The raw native read must exist, whatever it read (false, true or an AX error): it never decides release or blocks the new task.
-  if(!(read?.attribute===enablementAttribute(r.browser)&&Number.isInteger(read.axError)&&(read.value===null||typeof read.value==='boolean')&&finite(read.startedAt)&&finite(read.endedAt)&&read.startedAt>=task.endedAt&&read.endedAt>=read.startedAt&&read.endedAt<=next.startedAt))return 'lifecycle-release';
+  // Swift's epoch ms have fractions; JS Date.now truncates them. Compare cross-process boundaries at the coarser JS resolution,
+  // retaining raw precision for each native interval's internal order. This is not a wider timing tolerance or a cross-clock log join.
+  if(!(read?.attribute===enablementAttribute(r.browser)&&Number.isInteger(read.axError)&&(read.value===null||typeof read.value==='boolean')&&finite(read.startedAt)&&finite(read.endedAt)&&Math.floor(read.startedAt)>=task.endedAt&&read.endedAt>=read.startedAt&&Math.floor(read.endedAt)<=next.startedAt))return 'lifecycle-release';
   const before=cachedState(ev?.cachedBefore),after=cachedState(ev?.cachedAfter);
-  if(!(before&&after&&before.startedAt>=held.endedAt&&before.endedAt<=task.startedAt&&after.startedAt>=task.endedAt&&after.endedAt<=next.startedAt&&ev.errors&&Object.keys(ev.errors).length===0))return 'lifecycle-cache';
+  if(!(before&&after&&Math.floor(before.startedAt)>=held.endedAt&&Math.floor(before.endedAt)<=task.startedAt&&Math.floor(after.startedAt)>=task.endedAt&&Math.floor(after.endedAt)<=next.startedAt&&ev.errors&&Object.keys(ev.errors).length===0))return 'lifecycle-cache';
   const wait=ev.setterWait;
   if(settersApply(r.browser)&&!(Array.isArray(r.appInfo)&&finite(r.targetPid)&&finite(wait?.startedAt)&&finite(wait?.endedAt)&&wait.startedAt>=task.endedAt&&wait.endedAt>=wait.startedAt&&wait.endedAt<=next.startedAt&&finite(wait.deadlineMs)))return 'lifecycle-setter';
  }

@@ -128,6 +128,19 @@ test('lifecycle smoke plan is fix only: cold, held, then a new task after endTas
   assert.equal(qualificationCoverage(rows.slice(1),{browser,lifecycle:true}).missing.length,1);
  }
 });
+test('lifecycle auxiliary boundaries compare at JS millisecond resolution without discarding native interval order',()=>{
+ for(const fraction of [0.3359375,0.156005859375,0.419921875,0.5419921875,0.999]){
+  const rows=lifeRows('electron'),r=rows[0];
+  r.releaseEvidence.cachedBefore.endedAt=r.taskEnd.startedAt+fraction;
+  r.releaseRead.endedAt=r.observations[2].startedAt+fraction;
+  assert.equal(qualificationCoverage(rows).ok,true,String(fraction));
+ }
+ const check=change=>{const rows=lifeRows('electron');change(rows[0]);return qualificationCoverage(rows).invalid[0]?.reason;};
+ assert.equal(check(r=>r.releaseEvidence.cachedBefore.endedAt=r.taskEnd.startedAt+1),'lifecycle-cache');
+ assert.equal(check(r=>r.releaseRead.endedAt=r.observations[2].startedAt+1),'lifecycle-release');
+ assert.equal(check(r=>{r.releaseRead.startedAt=55020.8;r.releaseRead.endedAt=55020.2;}),'lifecycle-release');
+ assert.equal(check(r=>r.releaseEvidence.cachedAfter.startedAt=r.taskEnd.endedAt-1),'lifecycle-cache');
+});
 test('a failed release read or a still-true native getter is retained as evidence and never blocks or proves release',()=>{
  for(const browser of BROWSERS){
   for(const read of [{value:true},{value:null,axError:-25205},{value:false}]){

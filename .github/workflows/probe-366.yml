@@ -9,8 +9,12 @@ on:
       mode:
         description: 'Readiness factorial or controlled threshold sweep (8 delays; 2 smoke / 10 full reps)'
         type: choice
-        options: [smoke, full, threshold-smoke, threshold]
+        options: [smoke, full, threshold-smoke, threshold, qualification-smoke, qualification]
         default: smoke
+      fix_ref:
+        description: 'Real engine fix commit for qualification (full waits for reviewed-head confirmation)'
+        type: string
+        default: ''
 permissions:
   contents: read
 env:
@@ -20,6 +24,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   measure:
+    if: ${{ !startsWith(inputs.mode, 'qualification') }}
     runs-on: macos-latest
     timeout-minutes: 95
     strategy:
@@ -91,4 +96,77 @@ jobs:
             ${{ runner.temp }}/probe-366-first/**/coverage.json
             ${{ runner.temp }}/probe-366-first/**/readiness.json
             ${{ runner.temp }}/probe-366-first/**/shots/**
+          if-no-files-found: warn
+  qualification:
+    if: ${{ startsWith(inputs.mode, 'qualification') }}
+    runs-on: macos-latest
+    timeout-minutes: 80
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        browser: [electron, electron-parity, cft]
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Build pinned fixture and native observer
+        run: |
+          npm ci --prefix scripts/probe-366/fixture --no-audit --no-fund
+          node scripts/probe-366/build-fixture.mjs
+          swiftc -O -o "$RUNNER_TEMP/qual-tool366" scripts/probe-366/tool.swift
+          mkdir -p "$RUNNER_TEMP/Probe366 Cover.app/Contents/MacOS"
+          cp "$RUNNER_TEMP/qual-tool366" "$RUNNER_TEMP/Probe366 Cover.app/Contents/MacOS/cover366"
+          cp scripts/probe-366/cover.plist "$RUNNER_TEMP/Probe366 Cover.app/Contents/Info.plist"
+      - name: Build real main and fix engines without patches
+        env:
+          REQUESTED_FIX: ${{ inputs.fix_ref }}
+        run: |
+          MAIN_REF=c7eee72403d64c420231ce59baa445524032102f
+          case "$REQUESTED_FIX" in *[!0-9a-fA-F]*|'') echo 'qualification requires an exact fix commit'; exit 1;; esac
+          test "${#REQUESTED_FIX}" -eq 40
+          FIX_REF=$(git rev-parse --verify "$REQUESTED_FIX^{commit}")
+          echo "QUAL_MAIN_REF=$MAIN_REF" >> "$GITHUB_ENV"
+          echo "QUAL_FIX_REF=$FIX_REF" >> "$GITHUB_ENV"
+          git worktree add --detach "$RUNNER_TEMP/qual-main" "$MAIN_REF"
+          git worktree add --detach "$RUNNER_TEMP/qual-fix" "$FIX_REF"
+          swift build -c release --package-path "$RUNNER_TEMP/qual-main/native/engine" --scratch-path "$RUNNER_TEMP/qual-build-main"
+          swift build -c release --package-path "$RUNNER_TEMP/qual-fix/native/engine" --scratch-path "$RUNNER_TEMP/qual-build-fix"
+          git -C "$RUNNER_TEMP/qual-main" diff --exit-code
+          git -C "$RUNNER_TEMP/qual-fix" diff --exit-code
+      - name: Qualify real action paths (no native probe gate)
+        env:
+          BROWSER: ${{ matrix.browser }}
+          SMOKE: ${{ inputs.mode == 'qualification-smoke' }}
+        run: |
+          node scripts/probe-366/qualification.mjs --browser "$BROWSER" --smoke "$SMOKE" --main-engine "$RUNNER_TEMP/qual-build-main/release/cua-engine" --fix-engine "$RUNNER_TEMP/qual-build-fix/release/cua-engine" --main-ref "$QUAL_MAIN_REF" --fix-ref "$QUAL_FIX_REF" --tool "$RUNNER_TEMP/qual-tool366" --out "$RUNNER_TEMP/probe-366-qualification/$BROWSER"
+      - name: Read qualification outcomes and wait evidence
+        if: always()
+        run: |
+          OUT="$RUNNER_TEMP/probe-366-qualification/${{ matrix.browser }}"
+          if [ -f "$OUT/rows.jsonl" ]; then
+            node scripts/probe-366/qualification-read.mjs summary "$OUT" > "$OUT/summary.json"
+            node scripts/probe-366/qualification-read.mjs coverage "$OUT"
+          fi
+      - name: Upload qualification evidence (no profiles)
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: probe-366-qualification-${{ matrix.browser }}-${{ inputs.mode }}
+          path: |
+            ${{ runner.temp }}/probe-366-qualification/**/rows.jsonl
+            ${{ runner.temp }}/probe-366-qualification/**/config.json
+            ${{ runner.temp }}/probe-366-qualification/**/progress.json
+            ${{ runner.temp }}/probe-366-qualification/**/fatal.json
+            ${{ runner.temp }}/probe-366-qualification/**/summary.json
+            ${{ runner.temp }}/probe-366-qualification/**/coverage.json
+            ${{ runner.temp }}/probe-366-qualification/**/signposts.ndjson
+            ${{ runner.temp }}/probe-366-qualification/**/transport.jsonl
+            ${{ runner.temp }}/probe-366-qualification/**/engine-stderr.txt
+            ${{ runner.temp }}/probe-366-qualification/**/app-stdout.txt
+            ${{ runner.temp }}/probe-366-qualification/**/app-stderr.txt
           if-no-files-found: warn

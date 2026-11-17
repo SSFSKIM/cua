@@ -75,7 +75,8 @@ async function command(q) {
   flushSync(()=>{api.setPresses(0);api.setValue('');});
   flushSync(()=>api.setOpen(true));
   await new Promise(r=>setTimeout(r,50));events=[];note('trial.ready',{trap:window.__probe366Trap});
- } else if(q.op==='mark') {note(q.name,{controllerAt:q.controllerAt});}
+ } else if(q.op==='focus-field') {document.getElementById('search')?.focus();note('setup.focus-field');}
+ else if(q.op==='mark') {note(q.name,{controllerAt:q.controllerAt});}
  else if(q.op!=='read')throw Error('unknown fixture command');
  return snapshot();
 }

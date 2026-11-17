@@ -10,6 +10,7 @@ import {Deadline} from '../../src/browser-service/budgets.mjs';
 import {Clipboard} from '../../src/browser-service/clipboard.mjs';
 import {NATIVE_CLIPBOARD_DISABLED} from '../../src/browser-service/keyboard.mjs';
 import {pageClipboardAction, performClipboardShortcut, richTextHtml, typeText} from '../../src/browser-service/paste.mjs';
+import {earlyTimers, settle} from './support/early-timer.mjs';
 
 // The virtual clipboard with its page bridge recorded rather than installed (the bridge has its own tests,
 // clipboard-commands.test.mjs): `bridged` lists each installation asked for, with its options.
@@ -233,6 +234,21 @@ test('every CDP call of a paste or shortcut carries its deadline; one queued pas
   await busy;
   await new Promise(resolve => setTimeout(resolve, 20));
   assert.equal(evaluated.length, before, 'the queued paste never ran');
+});
+
+test('a paste answered timeout by its deadline\'s timer never runs, though the timer fired before the clock reached the end', async t => {
+  const {calls, evaluated, session: s} = session();
+  const clock = earlyTimers(t);
+  let release;
+  const busy = s.clipboard.runExclusive(() => new Promise(resolve => { release = resolve; }));
+  const late = rejection(typeText(s, {tab_id: '5', text: 'late'}, 'cua_type', {deadline: new Deadline(20)}));
+  await settle();
+  clock.elapse(20);
+  assert.equal((await late).code, 'timeout');
+  release();
+  await busy;
+  await settle();
+  assert.deepEqual({calls: calls.length, evaluated: evaluated.length}, {calls: 0, evaluated: 0}, 'the queued paste never ran');
 });
 
 test('cua_type pastes into the focused frame: an out-of-process frame in its own target, a same-process one in a world in it', async () => {

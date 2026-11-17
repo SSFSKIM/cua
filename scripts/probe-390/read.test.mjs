@@ -52,3 +52,12 @@ test('plan adds cap-suffix to Chromium only: 290 full and 40 smoke actions',()=>
  const n=smoke=>['cft','electron','electron-parity','safari'].reduce((t,b)=>t+plan(b,smoke).length,0);assert.equal(n(false),290);assert.equal(n(true),40);
  assert.equal(plan('cft',false).filter(x=>x.cell==='cap-suffix'&&x.head==='fix').length,5);assert.equal(plan('safari',false).some(x=>x.cell==='cap-suffix'),false);
 });
+test('a setup-invalid row with no RPC and no native evidence is reported as no answer, not ok or activation',()=>{
+ const r={id:'x',browser:'electron',head:'fix',cell:'long',rep:4,valid:false,targetPid:1,coverPid:2,startedAt:0,samples:[],problem:'Error: frontmost not verified'};
+ const j=judge(r);assert.equal(j.eligible,false);assert.equal(j.pass,false);assert.equal(j.answered,false);assert.equal(j.ok,false);assert.equal(j.nativeKnown,false);assert.equal(j.activation,false);assert.equal(j.raised,false);assert.equal(j.falseOk,false);
+ const s=summarize([r])[0];assert.deepEqual(s.answers,{noAnswer:1});assert.equal(s.activation,0);assert.equal(s.raised,0);assert.equal(s.nativeUnknown,1);assert.equal(s.valid,0);assert.equal(s.pass,0);
+ const mixed=summarize([r,{...row(),browser:'electron',cell:'long',head:'fix',id:'y'}])[0];assert.deepEqual(mixed.answers,{noAnswer:1,ok:1});
+});
+test('an observed activation is still counted when other native samples are absent',()=>{
+ const r=row();r.samples.push({frontmostPid:1,order:{targetAboveCover:false}});assert.equal(judge(r).activation,true);
+});

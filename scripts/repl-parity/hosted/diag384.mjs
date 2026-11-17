@@ -46,6 +46,11 @@ for (const c of rows.filter(r => r.k === 'cdp')) {
     lane: c.lane ?? s.lane ?? laneAt(c.s0), window: laneAt(c.s0), case: c.case, m: c.m, ok: c.ok, timedOut: c.timedOut === true,
     expired: s.expired !== undefined, late: s.late === true, limit: c.limit, s0: c.s0,
     total: d(c.s0, end ?? c.hDone), svcWait: s.expired !== undefined ? d(c.s0, s.expired) : null,
+    // Free of clock skew between processes: each is a difference of one process's own times.
+    pipeRound: end != null && typeof c.hRx === 'number' && typeof c.hDone === 'number' ? Math.round((end - c.s0 - (c.hDone - c.hRx)) * 10) / 10 : null,
+    hostOwn: typeof c.hOut === 'number' && typeof c.hBack === 'number' ? Math.round(((c.hOut - c.hRx) + (c.hDone - c.hBack)) * 10) / 10 : null,
+    extRound: d(c.hOut, c.hBack),
+    nmRound: typeof c.hBack === 'number' && typeof c.e1 === 'number' ? Math.round(((c.hBack - c.hOut) - (c.e1 - c.eIn)) * 10) / 10 : null,
     pipeOut: d(c.s0, c.hRx), wToSup: so ? d(c.s0, so.t) : null, supToHost: so ? d(so.t, c.hRx) : null,
     hostDecode: d(c.hRx, c.hDec), hostQueue: d(c.hDec, c.hIn), hostPre: d(c.hIn, c.hOut),
     nmOut: d(c.hOut, c.eIn), extPre: d(c.eIn, c.e0), chrome: d(c.e0, c.e1), nmBack: d(c.e1, c.hBack), hostPost: d(c.hBack, c.hDone),
@@ -60,7 +65,7 @@ const pct = (values, p) => {
   return String(Math.round(v[Math.min(v.length - 1, Math.floor((p / 100) * v.length))]));
 };
 const stats = values => `n ${values.filter(x => typeof x === 'number').length} p50 ${pct(values, 50)} p95 ${pct(values, 95)} p99 ${pct(values, 99)} max ${pct(values, 100)}`;
-const SEGMENTS = ['total', 'pipeOut', 'wToSup', 'supToHost', 'hostDecode', 'hostQueue', 'hostPre', 'nmOut', 'extPre', 'chrome', 'nmBack', 'hostPost', 'pipeBack', 'hostToSup', 'supToW'];
+const SEGMENTS = ['total', 'pipeRound', 'hostOwn', 'extRound', 'nmRound', 'pipeOut', 'wToSup', 'supToHost', 'hostDecode', 'hostQueue', 'hostPre', 'nmOut', 'extPre', 'chrome', 'nmBack', 'hostPost', 'pipeBack', 'hostToSup', 'supToW'];
 const lanes = [...new Set(cmds.map(c => c.lane))].sort();
 
 console.log(`${P} rows ${rows.length} commands ${cmds.length} windows ${spans.map(s => `${label(s.lane)}/${label(s.suite)} ${Math.round((s.to - s.from) / 1000)}s`).join(', ')}`);
@@ -73,17 +78,36 @@ for (const lane of lanes) {
   const methods = [...byMethod.keys()].sort((a, b) => byMethod.get(b).length - byMethod.get(a).length).slice(0, 12);
   for (const m of methods) {
     const list = byMethod.get(m);
-    console.log(`${P}   ${label(lane)} method ${label(m)}: total ${stats(list.map(c => c.total))}; chrome p95 ${pct(list.map(c => c.chrome), 95)} max ${pct(list.map(c => c.chrome), 100)}`);
+    const q = seg => `${seg} p50 ${pct(list.map(c => c[seg]), 50)} p95 ${pct(list.map(c => c[seg]), 95)}`;
+    console.log(`${P}   ${label(lane)} method ${label(m)}: total ${stats(list.map(c => c.total))}; ${['pipeRound', 'hostOwn', 'nmRound', 'chrome'].map(q).join('; ')}; chrome max ${pct(list.map(c => c.chrome), 100)}`);
   }
+}
+// The cell each command ran in, from the harness's cell rows (scripts/repl-parity.mjs diagCell: end time and ms).
+const cells = rows.filter(r => r.k === 'cell' && r.cell != null && typeof r.ms === 'number').map(r => ({...r, from: r.t - r.ms}));
+const cellAt = (lane, t) => cells.find(r => r.lane === lane && t >= r.from && t <= r.t);
+const lateOf = new Map(rows.filter(r => r.k === 'cdpLate').map(r => [r.key, r]));
+for (const c of cmds) {
+  const cell = cellAt(c.lane, c.s0);
+  c.cellCase = cell?.case; c.cellLabel = cell?.cell;
+  const late = lateOf.get(c.key);
+  if (late) c.lateAfter = Math.round(late.hBack - late.hOut), c.lateChrome = typeof late.e1 === 'number' ? Math.round(late.e1 - late.e0) : null;
 }
 // The slow commands, each with every segment.
 const slow = cmds.filter(c => (c.total ?? 0) > 1000 || c.expired || c.timedOut).sort((a, b) => a.s0 - b.s0);
 console.log(`${P} slow commands (over 1s, expired or timed out): ${slow.length}`);
 const t0 = Math.min(...spans.map(s => s.from).filter(Number.isFinite), ...cmds.map(c => c.s0));
 for (const c of slow.slice(0, 80)) {
-  console.log(`${P}   +${Math.round((c.s0 - t0) / 1000)}s ${label(c.lane)} ${label(c.case)} ${label(c.m)} ok ${c.ok} timedOut ${c.timedOut} expired ${c.expired} limit ${c.limit} | `
+  console.log(`${P}   +${Math.round((c.s0 - t0) / 1000)}s ${label(c.lane)} ${label(c.cellCase)} ${label(c.cellLabel)} ${label(c.m)} ok ${c.ok} timedOut ${c.timedOut} expired ${c.expired} limit ${c.limit}`
+    + `${c.lateAfter !== undefined ? ` lateAnswer ${c.lateAfter} lateChrome ${c.lateChrome}` : ' noLateAnswer'} | `
     + SEGMENTS.filter(s => c[s] !== null && c[s] !== undefined).map(s => `${s} ${Math.round(c[s])}`).join(' '));
 }
+// Slow commands by lane and case.
+const byCase = new Map();
+for (const c of slow) { const k = `${c.lane} ${c.cellCase}`; byCase.set(k, (byCase.get(k) ?? 0) + 1); }
+for (const [k, n] of [...byCase.entries()].sort()) { const [lane, kase] = k.split(' '); console.log(`${P} slow by case ${label(lane)} ${label(kase)}: ${n}`); }
+// Every cell of the lanes that took over 3 s, with its case, for the side-by-side.
+for (const r of cells.filter(r => r.ms > 3000).sort((a, b) => a.case < b.case ? -1 : a.case > b.case ? 1 : a.lane < b.lane ? -1 : 1))
+  console.log(`${P} slow cell ${label(r.lane)} ${label(r.case)} ${label(r.cell)} ms ${Math.round(r.ms)} ok ${r.ok}`);
 // Event-loop delay by process, per lane window.
 const lag = rows.filter(r => r.k === 'lag');
 for (const span of spans) {
@@ -106,7 +130,7 @@ for (const span of spans) {
   console.log(`${P} machine ${label(span.lane)}/${label(span.suite)}: samples ${mine.length} load1 mean ${mean(mine.map(r => r.load1))} max ${max(mine.map(r => r.load1))} swapUsedMB max ${max(mine.map(r => r.swapUsedMB ?? 0))} compressedPages max ${max(mine.map(r => r.compressedPages))} freePages min ${Math.min(...mine.map(r => r.freePages))} swapins +${mine.at(-1).swapins - mine[0].swapins} pageins +${mine.at(-1).pageins - mine[0].pageins}`);
   for (const role of roles) {
     const cpu = mine.map(r => r.roles[role]?.cpu ?? 0), rss = mine.map(r => r.roles[role]?.rssMB ?? 0), n = mine.map(r => r.roles[role]?.n ?? 0);
-    console.log(`${P}   ${label(span.lane)}/${label(span.suite)} role ${label(role)}: cpu mean ${mean(cpu)} max ${max(cpu)} rssMB max ${max(rss)} processes max ${max(n)}`);
+    console.log(`${P}   ${label(span.lane)}/${label(span.suite)} role ${label(role)}: cpu mean ${mean(cpu)} max ${max(cpu)} rssMB max ${max(rss)} processes max ${max(n)} busiest max ${max(mine.map(r => r.roles[role]?.top ?? 0))}`);
   }
 }
 // Around each of the 12 worst commands: the delay each process saw and what the machine was doing.
@@ -116,7 +140,7 @@ for (const c of [...slow].sort((a, b) => (b.total ?? 0) - (a.total ?? 0)).slice(
   const near = ps.filter(r => r.t >= c.s0 - 2000 && r.t <= end + 2000);
   const top = near.length ? Object.entries(near.reduce((acc, r) => { for (const [k, v] of Object.entries(r.roles)) acc[k] = Math.max(acc[k] ?? 0, v.cpu); return acc; }, {}))
     .sort((a, b) => b[1] - a[1]).slice(0, 6).map(([k, v]) => `${label(k)} ${Math.round(v)}`).join(' ') : '-';
-  console.log(`${P} around ${label(c.lane)} ${label(c.case)} ${label(c.m)} total ${Math.round(c.total ?? 0)}: lag svc ${during('svc')} host ${during('host')} ext ${during('ext')} sup ${during('sup')}; cpu ${top}; renderers ${near.length ? Math.max(...near.map(r => r.roles['chrome-renderer']?.n ?? 0)) : '-'}`);
+  console.log(`${P} around ${label(c.lane)} ${label(c.case)} ${label(c.m)} total ${Math.round(c.total ?? 0)}: lag svc ${during('svc')} host ${during('host')} ext ${during('ext')} sup ${during('sup')}; cpu ${top}; renderers ${near.length ? Math.max(...near.map(r => r.roles['chrome-renderer']?.n ?? 0)) : '-'} busiest renderer ${near.length ? Math.round(Math.max(...near.map(r => r.roles['chrome-renderer']?.top ?? 0))) : '-'}; cell ${label(c.cellCase)} ${label(c.cellLabel)}`);
 }
 // The service's agent commands.
 const rpc = rows.filter(r => r.k === 'rpc');

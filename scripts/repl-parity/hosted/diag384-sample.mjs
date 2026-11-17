@@ -11,9 +11,10 @@ const dir = process.argv[2];
 const out = join(dir, 'ps.jsonl');
 const ROLES = [
   ['burner', a => /^(\S*\/)?yes$/.test(a)],
-  ['chrome-ext', a => /Chrome for Testing Helper \(Renderer\)/.test(a) && /--extension-process/.test(a)],
-  ['chrome-renderer', a => /Chrome for Testing Helper \(Renderer\)/.test(a)],
-  ['chrome-gpu', a => /Chrome for Testing Helper \(GPU\)/.test(a)],
+  ['chrome-ext', a => /--type=renderer/.test(a) && /--extension-process/.test(a)],
+  ['chrome-renderer', a => /--type=renderer/.test(a)],
+  ['chrome-gpu', a => /--type=gpu-process/.test(a)],
+  ['chrome-network', a => /--utility-sub-type=network/.test(a)],
   ['chrome-helper', a => /Chrome for Testing Helper/.test(a)],
   ['chrome-browser', a => /Google Chrome for Testing/.test(a)],
   ['cua-supervisor', a => /repl-host\/supervisor\.mjs/.test(a)],
@@ -33,12 +34,13 @@ const run = (cmd, args) => { try { return execFileSync(cmd, args, {encoding: 'ut
 
 function sample() {
   const roles = {};
-  for (const line of run('ps', ['-A', '-o', 'pcpu=,rss=,args=']).split('\n')) {
+  for (const line of run('ps', ['-A', '-ww', '-o', 'pcpu=,rss=,args=']).split('\n')) {
     const m = /^\s*([\d.]+)\s+(\d+)\s+(.*)$/.exec(line);
     if (!m) continue;
     const role = roleOf(m[3]);
-    const r = roles[role] ??= {cpu: 0, rssMB: 0, n: 0};
+    const r = roles[role] ??= {cpu: 0, rssMB: 0, n: 0, top: 0};
     r.cpu = Math.round((r.cpu + Number(m[1])) * 10) / 10;
+    r.top = Math.max(r.top, Number(m[1]));
     r.rssMB += Math.round(Number(m[2]) / 1024);
     r.n++;
   }

@@ -6,6 +6,7 @@ import {nativeMacDiff,summaryLine} from './repl-parity/native-mac-diff.mjs';
 import {assertEngineOptions} from './native-baseline/engine.mjs';
 import {parseArgs} from 'node:util';
 import {mkdirSync,readFileSync,writeFileSync,appendFileSync} from 'node:fs';
+import {homedir} from 'node:os';
 import {join,resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {execFileSync} from 'node:child_process';
@@ -153,7 +154,7 @@ export async function main(argv=process.argv.slice(2)){
   pool.addObservations({connections:[connection],hostAttestations:[{connection,host:v.host,serverInfo:observation.serverInfo,_meta:observation._meta,executionFacts:observation.executionFacts}]},'profiles');
   return {result,observation};
  };
- const emit=row=>{const declared=pendingCellsFor(meta.pendingEnvironment,row.case).find(p=>p.cell===row.cell);if(declared){let status;try{status=classifyPendingCell(row);}catch{status='unexpected-result';}row={...row,pendingCell:{...declared,status}};}const scenario=selected.find(s=>s.id===row.case);if(scenario?.boundaryProof||scenario?.backend==='binder-double')row={...row,proof:scenario.boundaryProof??'binder-double'};const defect=declaredVendorDefect(meta,row,[...runRows,row]);if(defect)row={...row,vendorDefect:defect.id};runRows.push(row);appendFileSync(join(out,'results.jsonl'),JSON.stringify(row)+'\n');};
+ const emit=row=>{const declared=pendingCellsFor(meta.pendingEnvironment,row.case).find(p=>p.cell===row.cell);if(declared){let status;try{status=classifyPendingCell(row);}catch{status='unexpected-result';}row={...row,pendingCell:{...declared,status}};}const scenario=selected.find(s=>s.id===row.case);if(scenario?.boundaryProof||scenario?.backend==='binder-double')row={...row,proof:scenario.boundaryProof??'binder-double'};const defect=declaredVendorDefect(meta,row,[...runRows,row]);if(defect)row={...row,vendorDefect:defect.id};runRows.push(row);appendFileSync(join(out,'results.jsonl'),JSON.stringify(row)+'\n');diagCell(meta.host,row);};
  try{
   let client=await pool.open(cellsCommand({...prepared,host:v.host}));let lane='no-services';
   save(join(out,'tools.json'),await client.request('tools/list'));
@@ -200,3 +201,8 @@ export async function main(argv=process.argv.slice(2)){
  console.log(JSON.stringify({out,cases:selected.length,pending:pending.length,pendingEnvironmentCells:meta.pendingEnvironment.flatMap(d=>d.cases).length,pendingObligations:meta.pendingObligations,complete:meta.complete,assertions:failed?'FAIL':meta.vendorDefects?.length?'RECORDED_VENDOR_DEFECT':'PASS',coveredCases:meta.coveredCases,recordedVendorDefects:meta.vendorDefects?.length??0,...(meta.engine!==undefined?{engine:meta.engine}:{})}));if(failed)process.exitCode=1;
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href)main().catch(e=>{console.error(e.message);process.exitCode=1;});
+
+// #384 diagnosis only (branch diag/384-cdp-latency): each cell's end time, its case and cell labels and its ms, beside
+// the instrumented processes' rows (src/chrome/diag384.mjs's directory).
+function diagCell(lane,row){try{const {dir}=JSON.parse(readFileSync(join(homedir(),'.cua-diag-384.json'),'utf8'));const ms=typeof row.ms==='number'?row.ms:typeof row.ms?.elapsed==='number'?row.ms.elapsed:null;
+ appendFileSync(join(dir,'cells.jsonl'),JSON.stringify({k:'cell',lane,case:row.case,cell:row.cell??null,assertion:row.assertion?row.assertion.ok:undefined,ok:row.ok,ms,t:Date.now()})+'\n');}catch{}}

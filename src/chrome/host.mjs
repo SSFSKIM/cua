@@ -552,6 +552,11 @@ export function createHost({extension: port, hello, home = null, now = () => new
         if (d) d.hOut = diag.now();
         return extension.request('debugger.sendCommand', {debuggee, ...(sessionId != null ? {sessionId} : {}), method, params: commandParams ?? {}, timeoutMs: limit, ...(d ? {diag: true} : {})})
           .then(reply => {
+            if (d && late) {
+              // #384: the extension's answer after the host gave up: when it came and what the extension saw.
+              const e = reply && typeof reply === 'object' && reply.__cuaDiag ? reply.__cuaDiag : {};
+              diag.write({k: 'cdpLate', key: d.key, lane: d.lane, m: method, hOut: d.hOut, hBack: diag.now(), ...e});
+            }
             if (d) d.hBack = diag.now();
             if (d && reply && typeof reply === 'object' && reply.__cuaDiag) { Object.assign(d, reply.__cuaDiag); return reply.result; }
             return reply;

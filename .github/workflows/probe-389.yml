@@ -41,6 +41,8 @@ jobs:
         with:
           e2e: 'true'
       - name: Build pinned MAWS app
+        env:
+          NODE_OPTIONS: --max-old-space-size=5120
         run: pnpm build:app
       - name: Build unmodified engine and separate logging-only arm
         run: |

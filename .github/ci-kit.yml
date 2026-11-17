@@ -231,3 +231,14 @@ gates:
     lane: hosted-macos
     timeout: 50
     run: PARITY_ORDER=cua-first PARITY_CHROME_FLAGS=anti-throttling PARITY_STRESS=cpu:2 sh scripts/repl-parity/hosted/hosted.sh browser
+  # #384 diagnosis: --disable-renderer-backgrounding alone, both orders.
+  - name: parity-browser-stress-rb
+    on: [dispatch]
+    lane: hosted-macos
+    timeout: 50
+    run: PARITY_CHROME_FLAGS=renderer-backgrounding PARITY_STRESS=cpu:2 sh scripts/repl-parity/hosted/hosted.sh browser
+  - name: parity-browser-stress-rb-swap
+    on: [dispatch]
+    lane: hosted-macos
+    timeout: 50
+    run: PARITY_ORDER=cua-first PARITY_CHROME_FLAGS=renderer-backgrounding PARITY_STRESS=cpu:2 sh scripts/repl-parity/hosted/hosted.sh browser

@@ -56,7 +56,8 @@ esac
 case "${PARITY_CHROME_FLAGS:-}" in
   '') CHROME_FLAGS='' ;;
   anti-throttling) CHROME_FLAGS='--disable-renderer-backgrounding --disable-backgrounding-occluded-windows --disable-background-timer-throttling' ;;
-  *) echo "hosted-parity: PARITY_CHROME_FLAGS must be anti-throttling" >&2; exit 2 ;;
+  renderer-backgrounding) CHROME_FLAGS='--disable-renderer-backgrounding' ;;   # #384 diagnosis: that flag alone
+  *) echo "hosted-parity: PARITY_CHROME_FLAGS must be anti-throttling or renderer-backgrounding" >&2; exit 2 ;;
 esac
 if [ "$(uname -s)" != Darwin ] || [ "${RUNNER_ENVIRONMENT:-}" != github-hosted ]; then
   echo "hosted-parity: refused: it edits ~/.ssh, starts an sshd and registers a native host under the real HOME, so it runs only on a GitHub-hosted macOS runner" >&2

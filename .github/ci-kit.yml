@@ -242,3 +242,24 @@ gates:
     lane: hosted-macos
     timeout: 50
     run: PARITY_ORDER=cua-first PARITY_CHROME_FLAGS=renderer-backgrounding PARITY_STRESS=cpu:2 sh scripts/repl-parity/hosted/hosted.sh browser
+  # #384 ruling 791: a realistic load (one burner per core, PARITY_STRESS=cpu:1) and none as the control, both orders.
+  - name: parity-browser-load
+    on: [dispatch]
+    lane: hosted-macos
+    timeout: 50
+    run: PARITY_STRESS=cpu:1 sh scripts/repl-parity/hosted/hosted.sh browser
+  - name: parity-browser-load-swap
+    on: [dispatch]
+    lane: hosted-macos
+    timeout: 50
+    run: PARITY_ORDER=cua-first PARITY_STRESS=cpu:1 sh scripts/repl-parity/hosted/hosted.sh browser
+  - name: parity-browser-none
+    on: [dispatch]
+    lane: hosted-macos
+    timeout: 50
+    run: sh scripts/repl-parity/hosted/hosted.sh browser
+  - name: parity-browser-none-swap
+    on: [dispatch]
+    lane: hosted-macos
+    timeout: 50
+    run: PARITY_ORDER=cua-first sh scripts/repl-parity/hosted/hosted.sh browser

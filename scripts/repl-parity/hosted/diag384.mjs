@@ -111,6 +111,32 @@ for (const c of slow.slice(0, 80)) {
     + ` | meanwhile same tab ${others(c, true)} other tabs ${others(c, false)}${probeText(c.probe)} | `
     + SEGMENTS.filter(s => c[s] !== null && c[s] !== undefined).map(s => `${s} ${Math.round(c[s])}`).join(' '));
 }
+// Stall episodes (#384 ruling 791): a lane's timed-out or over-1 s commands, joined while each starts within 5 s of
+// the previous one's end; an episode's length runs from its first command's send to its last command's end. The
+// download and file-chooser cases (#383) are named apart.
+const DOWNLOAD_FAMILY = /playwrightapi\/waitforevent|playwrightdownload\/|playwrightfilechooser\/|playwrightlocator\/downloadmedia/;
+for (const lane of lanes) {
+  const mine = slow.filter(c => c.lane === lane).sort((a, b) => a.s0 - b.s0);
+  const episodes = [];
+  for (const c of mine) {
+    const end = c.s0 + (c.total ?? 0);
+    const last = episodes.at(-1);
+    if (last && c.s0 <= last.end + 5000) { last.end = Math.max(last.end, end); last.n++; last.timedOut += c.timedOut ? 1 : 0; last.cases.add(c.cellCase ?? '-'); }
+    else episodes.push({from: c.s0, end, n: 1, timedOut: c.timedOut ? 1 : 0, cases: new Set([c.cellCase ?? '-'])});
+  }
+  const family = e => ([...e.cases].some(k => DOWNLOAD_FAMILY.test(k)) ? 'download' : 'other');
+  const other = episodes.filter(e => family(e) === 'other');
+  console.log(`${P} episodes ${label(lane)}: ${episodes.length} (outside the download family ${other.length}), lengths ms outside it [${other.map(e => Math.round(e.end - e.from)).join(',')}], timed-out commands outside it ${other.reduce((a, e) => a + e.timedOut, 0)}`);
+  for (const e of episodes) console.log(`${P}   episode ${label(lane)} +${Math.round((e.from - t0) / 1000)}s length ${Math.round(e.end - e.from)} commands ${e.n} timedOut ${e.timedOut} family ${family(e)} cases ${[...e.cases].map(k => (k === '-' ? '-' : label(k))).join(',')}`);
+}
+// The load each api run saw (#384 ruling 791).
+for (const span of spans.filter(s => s.suite === 'api')) {
+  const mine = rows.filter(r => r.k === 'ps' && r.t >= span.from && r.t <= span.to);
+  if (!mine.length) continue;
+  const loads = mine.map(r => r.load1);
+  const burners = mine.map(r => r.roles.burner?.n ?? 0);
+  console.log(`${P} load ${label(span.lane)}/api: ncpu ${mine[0].ncpu ?? '-'} burners ${Math.max(...burners)} load1 p50 ${pct(loads, 50)} mean ${Math.round(loads.reduce((a, b) => a + b, 0) / loads.length * 10) / 10} max ${pct(loads, 100)} samples ${mine.length}`);
+}
 // Slow commands by lane and case.
 const byCase = new Map();
 for (const c of slow) { const k = `${c.lane} ${c.cellCase}`; byCase.set(k, (byCase.get(k) ?? 0) + 1); }

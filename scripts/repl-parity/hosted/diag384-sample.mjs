@@ -32,6 +32,7 @@ const ROLES = [
 const roleOf = args => ROLES.find(([, test]) => test(args))?.[0] ?? 'other';
 const run = (cmd, args) => { try { return execFileSync(cmd, args, {encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore']}); } catch { return ''; } };
 
+const NCPU = Number(run('sysctl', ['-n', 'hw.ncpu']).trim()) || null;
 function sample() {
   const roles = {};
   for (const line of run('ps', ['-A', '-ww', '-o', 'pcpu=,rss=,args=']).split('\n')) {
@@ -48,7 +49,7 @@ function sample() {
   const swap = /used = ([\d.]+)M/.exec(run('sysctl', ['-n', 'vm.swapusage']))?.[1];
   const vm = run('vm_stat', []);
   const pages = name => Number(new RegExp(`${name}:\\s+(\\d+)`).exec(vm)?.[1] ?? NaN);
-  const row = {k: 'ps', t: Date.now(), load1: load[0], swapUsedMB: swap === undefined ? null : Number(swap),
+  const row = {k: 'ps', t: Date.now(), ncpu: NCPU, load1: load[0], swapUsedMB: swap === undefined ? null : Number(swap),
     freePages: pages('Pages free'), compressedPages: pages('Pages occupied by compressor'), swapins: pages('Swapins'), swapouts: pages('Swapouts'),
     pageins: pages('Pageins'), roles};
   try { appendFileSync(out, `${JSON.stringify(row)}\n`); } catch {}

@@ -4867,6 +4867,12 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
         `{{secret:…}}` typed there answers `typeUnconfirmed` (`unchanged`) even though the text went in; the model is
         told to observe the field. A stated limit (ruling 1ea561bc:761): the caret stays required for secrets, and
         Firefox's behaviour is unchanged; #394.
+    11. In background Safari on a large page, the walk for the focused field (item 10.16) reaches its bounds before it
+        has read the whole window, so it claims nothing and `type_text` answers `typeUnconfirmed`
+        (`noFocusedElement`): no confirmation, never a wrong one. Measured in run 44031200818 on a page of 1,600
+        accessibility children: 20 of 20 walks cut at 200 elements (depth 8, 24.4/29.0 ms p50/p95), 0 claimed, the
+        final text right in 20 of 20; the same run's text-marker trace (item 10.16's (b)) found the field in all 20.
+        A stated limit (ruling 1ea561bc:765); the text-marker route is #395.
   8. **The documents.** `docs/cua-api/agent-cursor.md` gains a sixth paragraph: what `typeText` confirms, that
      `typeUnconfirmed` may mean some text went in and the remedy is to observe, then `setValue`; the fields it cannot
      read; the OS's substitutions answering unconfirmed, never a silent success; keys in the text; and `setValue`, or
@@ -5063,7 +5069,9 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   tested). The service (`cua/typeReadback`,
   `cua/keyEffect`, the sentence reaching the model), the wrapper's admission and the matrix's expected difference have
   node tests.
-  **The merge gate** (the ruling): a hosted A/B against main on the spike's cells, the real engine's answers, with the
+  **The merge gate** (the ruling; met, ruling 1ea561bc:765: the final run 44031200818, 2,980 of 2,980 valid, 0 wrong
+  successes and 0 privacy failures, with the runs before it, `docs/evidence/2026-11-17-type-readback/README.md`): a
+  hosted A/B against main on the spike's cells, the real engine's answers, with the
   cost stated: the race cells (Cmd+A, Cmd+Z, Cmd+V then `type_text`, three browsers, four editors, 20 each) with 0 wrong
   values answering success and the branch's `typeUnconfirmed` rate against main's success; the clean cells at 30, 120
   and 500 characters confirmed; password and canvas unconfirmed with no values and no secure value read; a concealed

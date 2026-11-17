@@ -329,9 +329,16 @@ const primitives = {
   },
 
   // A child session (Target.attachedToTarget, flatten) is addressed by its sessionId within the debuggee.
-  'debugger.sendCommand': async ({debuggee, sessionId, method, params}) => {
+  'debugger.sendCommand': async ({debuggee, sessionId, method, params, diag}) => {
     const d = debuggeeOf(debuggee);
     try {
+      // #384 diagnosis: with `diag`, the answer is {__cuaDiag: {eIn, e0, e1}, result} and the host unwraps it.
+      if (diag === true) {
+        const eIn = diagNow();
+        const e0 = diagNow();
+        const result = await chrome.debugger.sendCommand(sessionId != null ? {...d, sessionId} : d, method, params);
+        return {__cuaDiag: {eIn, e0, e1: diagNow()}, result};
+      }
       return await chrome.debugger.sendCommand(sessionId != null ? {...d, sessionId} : d, method, params);
     } catch (error) {
       if (notAttached(error) && held.delete(keyOf(d))) changed();
@@ -372,6 +379,23 @@ function createPeer(p) {
 
 function tell(method, params) {
   peer?.notify(method, params);
+}
+
+// #384 diagnosis: the worker's own timer delay, one row a second to the host (diag.lag {t, max, mean}).
+const diagNow = () => Math.round((performance.timeOrigin + performance.now()) * 10) / 10;
+{
+  const TICK = 100;
+  let last = performance.now(), max = 0, sum = 0, n = 0, windowStart = last;
+  setInterval(() => {
+    const at = performance.now();
+    const late = Math.max(0, at - last - TICK);
+    last = at;
+    max = Math.max(max, late); sum += late; n++;
+    if (at - windowStart >= 1000) {
+      tell('diag.lag', {t: diagNow(), max: Math.round(max * 10) / 10, mean: Math.round((sum / n) * 10) / 10});
+      max = 0; sum = 0; n = 0; windowStart = at;
+    }
+  }, TICK);
 }
 
 // Tells an open popup to re-read the status; with no popup open nobody answers, which is fine.

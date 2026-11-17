@@ -65,6 +65,7 @@ import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createPeer, frameDecoder, NO_HANDLER} from './protocol.mjs';
 import {sessionTrace, traceSession} from './trace.mjs';
+import * as diag from './diag384.mjs';
 import {backendDir, clientModeDir, logDir, PROTOCOL_VERSION, socketNameFor} from './extension.mjs';
 
 export const DEFAULT_CDP_TIMEOUT_MS = 10_000;
@@ -528,7 +529,7 @@ export function createHost({extension: port, hello, home = null, now = () => new
       return {};
     },
 
-    async executeCdp({target, method, commandParams, timeoutMs, preserveDebuggerOnTimeout}, s, turn) {
+    async executeCdp({target, method, commandParams, timeoutMs, preserveDebuggerOnTimeout, cua_diag: cuaDiag}, s, turn) {
       if (typeof method !== 'string') refuse('executeCdp requires a method');
       const {tabId, sessionId, targetId} = target ?? {};
       if (sessionId != null && targetId != null) refuse('CDP target must provide either sessionId or targetId, not both.');
@@ -544,18 +545,30 @@ export function createHost({extension: port, hello, home = null, now = () => new
       // A close's preflight (closedBy's target lookup, the window check) can outlast the limit: once the caller has been
       // told the command timed out, the send behind it is refused, never dispatched.
       let late = false;
+      // #384: the command's times, from the service's send to this host's answer.
+      const d = cuaDiag && typeof cuaDiag === 'object' ? {...cuaDiag, hIn: diag.now()} : null;
       const send = () => {
         if (late) refuse(`CDP command ${method} timed out before it was sent`);
-        return extension.request('debugger.sendCommand', {debuggee, ...(sessionId != null ? {sessionId} : {}), method, params: commandParams ?? {}, timeoutMs: limit});
+        if (d) d.hOut = diag.now();
+        return extension.request('debugger.sendCommand', {debuggee, ...(sessionId != null ? {sessionId} : {}), method, params: commandParams ?? {}, timeoutMs: limit, ...(d ? {diag: true} : {})})
+          .then(reply => {
+            if (d) d.hBack = diag.now();
+            if (d && reply && typeof reply === 'object' && reply.__cuaDiag) { Object.assign(d, reply.__cuaDiag); return reply.result; }
+            return reply;
+          });
       };
+      const finishDiag = outcome => { if (d) diag.write({k: 'cdp', ...d, m: method, case: s.title, tabId, ...(targetId != null || sessionId != null ? {nested: true} : {}), limit, hDone: diag.now(), ...outcome}); };
       const command = method === 'Target.getTargets'
         ? extension.request('debugger.getTargets', {}).then(targetInfos => ({targetInfos}))
         : cursorPeer ? send() : closedBy(tabId, {method, sessionId, targetId, params: commandParams}).then(closes => (closes === null || late ? send() : closeTab(closes, send)));
       let timer;
       const timeout = new Promise((resolve, reject) => { timer = setTimeout(() => { late = true; reject(TIMED_OUT); }, limit); });
       try {
-        return await Promise.race([command, timeout]);
+        const value = await Promise.race([command, timeout]);
+        finishDiag({ok: true});
+        return value;
       } catch (error) {
+        finishDiag({ok: false, timedOut: error === TIMED_OUT});
         if (error === TIMED_OUT) {
           if (preserveDebuggerOnTimeout !== true && tab.attached) {
             tab.attached = false;
@@ -848,6 +861,7 @@ export async function runHost({stdin, stdout, env = process.env, home = env.CUA_
   const logFd = openSync(logPath, socketName ? 'a' : 'w', 0o600);
   const log = line => { try { writeSync(logFd, `${new Date().toISOString()} ${line}\n`); } catch {} };
   log(`start pid=${pid} node=${process.version}`);
+  diag.start('host');
   if (captureProcessErrors) {
     const fatal = error => { log(`fatal: ${error?.stack ?? error}`); process.exit(1); };
     process.on('uncaughtException', fatal);
@@ -866,7 +880,8 @@ export async function runHost({stdin, stdout, env = process.env, home = env.CUA_
     onError: (error, method) => log(`extension notification ${method} failed: ${error?.stack ?? error}`),
     handlers: {hello: params => gotHello(params), 'debugger.event': forward('debugger.event'), 'debugger.detached': forward('debugger.detached'),
       'tabs.removed': forward('tabs.removed'), 'tabs.updated': forward('tabs.updated'), 'tabs.popup': forward('tabs.popup'), 'tabs.adopted': forward('tabs.adopted'),
-      'downloads.created': forward('downloads.created'), 'downloads.changed': forward('downloads.changed')},
+      'downloads.created': forward('downloads.created'), 'downloads.changed': forward('downloads.changed'),
+      'diag.lag': row => diag.write({k: 'lag', p: 'ext', ...row})},
   });
   const push = frameDecoder(MAX_FROM_EXTENSION_BYTES);
   stdin.on('data', chunk => {
@@ -913,13 +928,21 @@ export async function runHost({stdin, stdout, env = process.env, home = env.CUA_
     sockets.add(socket);
     const client = {notify: (method, params) => peer.notify(method, params)};
     const peer = createPeer({
-      send: bytes => { if (!socket.destroyed) socket.write(bytes); },
+      send: bytes => { diag.countOut(bytes.length); if (!socket.destroyed) socket.write(bytes); },
       onError: (error, method) => log(`client notification ${method} failed: ${error?.message ?? error}`),
-      handlers: Object.fromEntries(host.methods.map(method => [method, params => host.handleBackendRequest(client, {method, params})])),
+      handlers: {...Object.fromEntries(host.methods.map(method => [method, params => host.handleBackendRequest(client, {method, params})])),
+        cuaDiag: row => diag.write({...row, hRxNote: diag.now()})},
     });
     const decode = frameDecoder();
     socket.on('data', chunk => {
-      try { for (const message of decode(chunk)) peer.receive(message); } catch (error) { log(`client frame error: ${error.message}`); socket.destroy(); }
+      const rx = diag.now();
+      diag.countIn(chunk.length);
+      try {
+        for (const message of decode(chunk)) {
+          if (message?.params?.cua_diag && typeof message.params.cua_diag === 'object') { message.params.cua_diag.hRx = rx; message.params.cua_diag.hDec = diag.now(); }
+          peer.receive(message);
+        }
+      } catch (error) { log(`client frame error: ${error.message}`); socket.destroy(); }
     });
     socket.on('error', () => {});
     socket.once('close', () => {

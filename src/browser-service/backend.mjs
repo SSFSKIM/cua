@@ -17,6 +17,7 @@ import {endianness} from 'node:os';
 import {isAbsolute} from 'node:path';
 import {BrowserServiceError, DEADLINE_EXCEEDED, serviceError} from './errors.mjs';
 import {Deadline} from './budgets.mjs';
+import * as diag from './diag384.mjs';
 
 const HEADER_BYTES = 4;
 const LE = endianness() === 'LE';
@@ -70,6 +71,8 @@ export class Backend {
   #handlers = new Map();
   #closeListeners = new Set();
   #terminal = null;
+  #diagSink = null;
+  #diagPending = new Map();   // request id -> {key, m, s0} (#384)
 
   // `stream` is a nativePipe connection: write(bytes), on/off('data' | 'close' | 'error'), end().
   constructor(stream) {
@@ -77,6 +80,7 @@ export class Backend {
     stream.on('data', chunk => { if (this.#stream === stream) this.#receive(chunk); });
     stream.on('error', error => { if (this.#stream === stream) this.close(asError(error)); });
     stream.on('close', () => { if (this.#stream === stream) this.#markClosed(new Error('native pipe closed before response')); });
+    this.#diagSink = diag.addSink(row => this.notify('cuaDiag', row));
   }
 
   get closed() { return this.#terminal !== null; }
@@ -89,6 +93,8 @@ export class Backend {
     try { deadline?.check(); } catch (error) { return Promise.reject(error); }
     const message = {...params, ...(sessionId !== undefined ? {session_id: sessionId, turn_id: turnId, session_context: sessionContext} : {})};
     const id = this.#nextId++;
+    const traced = method === 'executeCdp' ? {key: diag.nextKey(), m: typeof params.method === 'string' ? params.method : '?', s0: diag.now()} : null;
+    if (traced) { message.cua_diag = {key: traced.key, lane: diag.LANE, s0: traced.s0}; this.#diagPending.set(id, traced); }
     return new Promise((resolve, reject) => {
       let disarm = () => {};
       const settle = (fn, value) => { disarm(); fn(value); };
@@ -100,7 +106,13 @@ export class Backend {
         settle(reject, error);
         return;
       }
-      if (deadline) disarm = deadline.whenSpent(() => { if (this.#pending.delete(id)) reject(expired()); });
+      if (deadline) disarm = deadline.whenSpent(() => {
+        if (this.#pending.delete(id)) {
+          const t = this.#diagPending.get(id);
+          if (t) diag.record({k: 'svc', key: t.key, id, m: t.m, s0: t.s0, expired: diag.now()});   // kept: a late answer is timed too
+          reject(expired());
+        }
+      });
     });
   }
 
@@ -163,6 +175,11 @@ export class Backend {
       return;
     }
     const entry = this.#pending.get(message.id);
+    const traced = this.#diagPending.get(message.id);
+    if (traced) {
+      this.#diagPending.delete(message.id);
+      diag.record({k: 'svc', key: traced.key, id: message.id, m: traced.m, s0: traced.s0, sRecv: diag.now(), late: !entry, ok: !('error' in message)});
+    }
     if (!entry) return;
     this.#pending.delete(message.id);
     if ('error' in message) {
@@ -177,6 +194,7 @@ export class Backend {
     if (this.#terminal) return;
     this.#terminal = {error};
     this.#stream = null;
+    this.#diagSink?.();
     const reason = error?.message ?? 'transport closed before response';
     for (const entry of this.#pending.values()) entry.reject(new Error(reason));
     this.#pending.clear();

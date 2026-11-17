@@ -67,8 +67,13 @@ cd "$R" || exit 2
 H=scripts/repl-parity/hosted
 S=$(mktemp -d "${RUNNER_TEMP:-$HOME}/cua159p.XXXXXX") && S=$(cd "$S" && pwd -P) || exit 2
 case "$S" in */cua159p.*) ;; *) echo "hosted-parity: no scratch root" >&2; exit 2 ;; esac
-ERR=$S/stderr RUNS=$S/runs SSHD=$S/sshd
-mkdir -p "$ERR" "$RUNS" "$SSHD"
+ERR=$S/stderr RUNS=$S/runs SSHD=$S/sshd DIAG=$S/diag
+mkdir -p "$ERR" "$RUNS" "$SSHD" "$DIAG"
+# #384 diagnosis (branch diag/384-cdp-latency, never merged): the instrumented host, supervisor and service write their
+# timing rows under $DIAG (src/chrome/diag384.mjs reads this file); PARITY_ORDER=cua-first runs cua's host first.
+printf '{"dir":"%s"}\n' "$DIAG" > "$HOME/.cua-diag-384.json"
+ORDER=${PARITY_ORDER:-vendor-first}
+case "$ORDER" in vendor-first|cua-first) ;; *) echo "hosted-parity: PARITY_ORDER must be vendor-first or cua-first" >&2; exit 2 ;; esac
 CFT="/Applications/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"
 UDD="$HOME/Library/Application Support/Google/Chrome"
 EXTENSION_ID=jkejaaijdfpohkdhankllbekkhmnippb
@@ -88,8 +93,11 @@ stress_start() {
   while [ $b_i -lt $b_n ]; do yes > /dev/null 3>&- & BURNERS="$BURNERS $!"; b_i=$((b_i + 1)); done
   say "stress: $b_n CPU burners ($STRESS on $b_cores cores) while suite api runs"
 }
+SAMPLER=''
 cleanup() {
   stress_stop
+  [ -z "$SAMPLER" ] || kill "$SAMPLER" 2> /dev/null
+  rm -f "$HOME/.cua-diag-384.json"
   [ "$prepared" = no ] || node scripts/repl-parity.mjs cleanup-prepared --device "$DEVICE" > /dev/null 2>&1
   sudo -n pkill -f "log stream --style ndjson" 2> /dev/null
   [ -f "$S/chrome.pid" ] && kill "$(cat "$S/chrome.pid")" 2> /dev/null
@@ -254,9 +262,12 @@ gated $ok "repl-parity prepare on $DEVICE, profile harness" prepare || ok=no
 
 # run <host> <suite>: repl-parity's run; it must exit 0 and its summary show a complete run whose assertions passed.
 # -> nonzero when either does not hold.
+mark() { node -e 'require("fs").appendFileSync(process.argv[1], JSON.stringify({k:"win", lane:process.argv[2], suite:process.argv[3], phase:process.argv[4], t:Date.now()})+"\n")' "$DIAG/windows.jsonl" "$@" 2>> "$ERR/mark"; }
 run() {
   r_dir=$RUNS/$1-$2 r_code=0
+  mark "$1" "$2" start
   quiet "run-$1-$2" node scripts/repl-parity.mjs run --device "$DEVICE" --host "$1" --suite "$2" --out "$r_dir" > "$r_dir.out" || r_code=$?
+  mark "$1" "$2" end
   public run "$r_dir.out" "$r_dir" "$1/$2" || [ "$r_code" != 0 ] || r_code=1
   return "$r_code"
 }
@@ -312,14 +323,20 @@ diff_suite() {
   return "$d_code"
 }
 if [ "$ITEM" = browser ]; then
+  node "$H/diag384-sample.mjs" "$DIAG" > /dev/null 2> "$ERR/sampler" 3>&- &
+  SAMPLER=$!
+  say "diag384: order $ORDER"
+  if [ "$ORDER" = cua-first ]; then FIRST=cua SECOND=vendor; else FIRST=vendor SECOND=cua; fi
   for suite in api docs-profiles; do
     sides=$ok
     [ "$suite" != api ] || stress_start
-    gated $ok "vendor host, suite $suite" run vendor "$suite" || sides=no
-    gated $ok "cua host, suite $suite" run cua "$suite" || sides=no
+    gated $ok "$FIRST host, suite $suite" run $FIRST "$suite" || sides=no
+    gated $ok "$SECOND host, suite $suite" run $SECOND "$suite" || sides=no
     stress_stop
     gated $sides "diff $suite: no undeclared difference" diff_suite "$suite"
   done
+  kill "$SAMPLER" 2> /dev/null; SAMPLER=''
+  node "$H/diag384.mjs" "$DIAG" 2> "$ERR/diag384" | sed 's/^/hosted-parity: /' >&3
 fi
 
 # --- cleanup -------------------------------------------------------------------------------------------------------

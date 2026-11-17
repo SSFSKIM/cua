@@ -31,7 +31,9 @@
 import {closeSync, fstatSync, openSync, realpathSync, statSync} from 'node:fs';
 import {createConnection} from 'node:net';
 import {isAbsolute} from 'node:path';
+import {endianness} from 'node:os';
 import {connectInDirectory as connectInDirectoryDefault} from './native-pipe-directory.mjs';
+import * as diag from '../chrome/diag384.mjs';
 
 export const DEFAULT_CONNECT_TIMEOUT_MS = 1000;
 export const CONNECT_TIMEOUT_SENTENCE = 'native pipe initial connect timed out';
@@ -107,7 +109,8 @@ export function osErrorSentence(error, platform = process.platform) {
 // `own(pid)` (the owned-group reaper's, -> release) protecting the connector process while it lives.
 export function nativePipeRelay({send, connectTimeoutMs = DEFAULT_CONNECT_TIMEOUT_MS, connect = createConnection, realpath = realpathSync.native,
   stat = statSync, platform = process.platform, openDirectory = openDirectoryDefault, connectInDirectory = connectInDirectoryDefault,
-  own = () => () => {}}) {
+  own = () => () => {}, diagPid = () => undefined}) {
+  diag.start('sup');
   const sunPath = SUN_PATH_BYTES[platform] ?? SUN_PATH_BYTES.linux;
   const connections = new Map();     // connection_id -> {socket, reportClosed}
   const connecting = new Map();      // socket -> its connect timer, until the connect is answered
@@ -169,7 +172,13 @@ export function nativePipeRelay({send, connectTimeoutMs = DEFAULT_CONNECT_TIMEOU
       connections.set(connectionId, {socket, reportClosed});
       reply(id, {ok: true, result: {connection_id: connectionId}});
     });
-    socket.on('data', chunk => { if (connected && !closedAll) send({type: 'native_pipe_data', connection_id: connectionId, data_base64: chunk.toString('base64')}); });
+    const peek = diagReplies(connectionId, diagPid);
+    socket.on('data', chunk => {
+      const t = diag.now();
+      diag.countIn(chunk.length);
+      if (connected && !closedAll) send({type: 'native_pipe_data', connection_id: connectionId, data_base64: chunk.toString('base64')});
+      peek(chunk, t);
+    });
     socket.on('end', () => {
       if (!connected) return;
       reportClosed(null);
@@ -224,7 +233,13 @@ export function nativePipeRelay({send, connectTimeoutMs = DEFAULT_CONNECT_TIMEOU
     const socket = connection?.socket;
     if (!socket || socket.destroyed || !socket.writable) return fail(id, NOT_CONNECTED_SENTENCE);
     if (typeof data !== 'string') return fail(id, `${WRITE_FAILED_PREFIX}expected base64 data`);
-    socket.write(Buffer.from(data, 'base64'), error => {
+    const t = diag.now();
+    const bytes = Buffer.from(data, 'base64');
+    diag.countOut(bytes.length);
+    // #384: a request frame ends with its id ({jsonrpc, method, params, id}).
+    const rid = bytes.length > 8 ? /"id":(\d+)\}$/.exec(bytes.subarray(-24).toString('latin1'))?.[1] : undefined;
+    socket.write(bytes, error => {
+      if (rid !== undefined) diag.write({k: 'sup', dir: 'out', conn: connectionId, wpid: diagPid(), id: Number(rid), t, tW: diag.now(), bytes: bytes.length});
       if (!error) return reply(id, {ok: true, result: null});
       // A write into a pipe the peer left: the close goes first, so the worker's bridge sees close only.
       if (peerGoneOnWrite(error)) {
@@ -260,5 +275,30 @@ export function nativePipeRelay({send, connectTimeoutMs = DEFAULT_CONNECT_TIMEOU
       for (const {socket} of connections.values()) socket.destroy();
       connections.clear();
     },
+  };
+}
+
+// #384: the replies' ids on a connection's bytes from the host, read from each frame's start ({"jsonrpc":"2.0","id":N,...}),
+// with the time its first chunk arrived. Frames are tracked by their u32 length; a header split across chunks stops
+// the peeking for the connection (rows are then missing, never wrong).
+function diagReplies(connectionId, diagPid) {
+  let remaining = 0;     // bytes of the current frame still to come
+  let lost = false;
+  return (chunk, t) => {
+    if (lost) return;
+    let offset = 0;
+    while (offset < chunk.length) {
+      if (remaining > 0) {
+        const take = Math.min(remaining, chunk.length - offset);
+        remaining -= take; offset += take;
+        continue;
+      }
+      if (chunk.length - offset < 4) { lost = true; return; }
+      const length = endianness() === 'LE' ? chunk.readUInt32LE(offset) : chunk.readUInt32BE(offset);
+      const head = chunk.subarray(offset + 4, Math.min(chunk.length, offset + 4 + 48)).toString('latin1');
+      const m = /^\{"jsonrpc":"2\.0","id":(\d+),/.exec(head);
+      if (m) diag.write({k: 'sup', dir: 'in', conn: connectionId, wpid: diagPid(), id: Number(m[1]), t, bytes: length});
+      remaining = length; offset += 4;
+    }
   };
 }

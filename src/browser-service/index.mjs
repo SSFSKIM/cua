@@ -22,6 +22,7 @@
 // recovery and observation machinery, the response-meta hook (the Codex confirmation policies), and the
 // executeUnhandledCommand fallback for any command without a handler (viewport.mjs registers the backend's
 // capability commands by name).
+import * as diag from './diag384.mjs';
 import {ACTION_HANDLERS} from './actions.mjs';
 import {ASSET_HANDLERS} from './assets.mjs';
 import {AUTH_HANDOFF_HANDLERS} from './authhandoff.mjs';
@@ -218,7 +219,16 @@ export function createBrowserService({runtime} = {}) {
     async handleRpc(request) {
       const method = Object.getOwnPropertyDescriptor(methods, request?.method)?.value;
       if (typeof method !== 'function') throw new Error('Unsupported browser service request');
-      return await method(request.params);
+      const type = typeof request.params?.type === 'string' ? request.params.type : String(request?.method);
+      const t0 = diag.now();
+      let ok = false;
+      try {
+        const value = await method(request.params);
+        ok = true;
+        return value;
+      } finally {
+        diag.record({k: 'rpc', type, t0, t1: diag.now(), ok});
+      }
     },
     async dispose() {
       const last = current;

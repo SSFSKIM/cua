@@ -214,3 +214,9 @@ gates:
     lane: hosted-macos
     timeout: 50
     run: PARITY_STRESS=cpu:2 sh scripts/repl-parity/hosted/hosted.sh browser
+  # #384 diagnosis (branch diag/384-cdp-latency, never merged): the stress gate with cua's host run first.
+  - name: parity-browser-stress-swap
+    on: [dispatch]
+    lane: hosted-macos
+    timeout: 50
+    run: PARITY_ORDER=cua-first PARITY_STRESS=cpu:2 sh scripts/repl-parity/hosted/hosted.sh browser

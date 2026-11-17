@@ -1,0 +1,36 @@
+owner pid=2546101 start=51157914
+tmproot left: []
+/tmp/cua171-run-* left: []
+owner side DIFFERS:
+43c43
+< mtime ~/.config/google-chrome 1794872781.445277609
+---
+> mtime ~/.config/google-chrome 1794875422.108227019
+all-clear: clear
+--- V1 exit 0
+--- owner-baseline
+owner pid=2546101 start=51157914
+tmproot /tmp/c71-uutSQm
+args: --vendor /Users/new/.local/share/cua-171/m5/home-x64/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64 --newest /Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64 --cua /Users/new/.local/share/cua-171/m5/home-x64/engine/linux/cua-engine --scene gedit --ops type_text,type_text_selection,type_text_dedicated,clipboard_read,clipboard_write,clipboard_release,caret_placed --blocks 3 --run pinned-V1 --pinned
+started 2026-11-16T23:53:27Z finished 2026-11-17T00:30:16Z wrap exit 0
+tmproot left: []
+/tmp/cua171-run-* left: []
+owner side DIFFERS:
+43c43
+< mtime ~/.config/google-chrome 1794872781.445277609
+---
+> mtime ~/.config/google-chrome 1794875422.108227019
+--- pointer
+pointer at start 142 130
+pointer restored to 142 130, reads 142 130 
+--- wrap.out tail
+negative check: the witness failed the activating stub (stacking, active, focus); the audit failed it (_NET_ACTIVE_WINDOW ClientMessage, XTEST FakeInput)
+in-front checks: held (the target activated again: clean; another window activated and the target again: stacking, active, focus; another raised and the target raised back under one server grab: stacking; another client's override-redirect window raised across the target's frame and back under one server grab: stacking)
+case gedit caret_placed 0: PASS
+run valid; acceptance on the pinned release: every verdict PASS; text restores (the first word put back before a sample): pinned 43, newest 0, cua 0; text windows a lane ended (a vendor's restarted, never scored): pinned 0, newest 0, cua 0
+results: /Users/new/.local/share/cua-171/m5/out-x64/V1.pinned-release/run/results.jsonl
+{"exit": 0, "samples": 17607, "maps_samples": 5870, "flags": 0, "decoy_connections": 0, "leftovers": [], "processes": 974, "browsers": 32}
+--- all-clear
+all-clear: clear
+- the run's own side: clean
+- the sitting's exit: 0

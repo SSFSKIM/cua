@@ -1,0 +1,26 @@
+flag: {"t": 968.282, "kind": "outside-peer-connection", "pids": [465174], "comm": null, "peer_path": "/tmp/.X11-unix/X40", "peer_pids": [], "peer_comm": null, "peer_inode": "222450639"}
+record keys: ['argv', 'browser', 'comm', 'env', 'first', 'last', 'paths', 'pgid', 'pid', 'ppid', 'start']
+
+1. processes serving :40 (argv names -D :40) and every xtrace proxy, by first/last seen
+  pid 398197 display :40 first 5.478 last 973.843 ppid 398109 :: xtrace -k -m 256 -d :0 -D :40 -c -f /tmp/c71-Ecd7qI/cua171-audit-dbYhzW/Xauthority -F /Users/new/.Xauthority -o /tmp/c71-Ecd7qI/cua171-audit-dbYhzW/x11.log
+  pid 403468 display :41 first 88.254 last 88.373 ppid 398109 :: xtrace -k -m 256 -d :0 -D :41 -c -f /tmp/c71-Ecd7qI/cua171-audit-hneXac/Xauthority -F /Users/new/.Xauthority -o /tmp/c71-Ecd7qI/cua171-audit-hneXac/x11.log
+
+2. pid 465174 and its parent chain
+  (pid 465174: no record of the run's; the chain ends here)
+
+3. every X server recorded (Xvfb, Xorg, Xephyr, Xwayland, Xvnc, xtrace)
+  pid 398197 comm xtrace first 5.478 last 973.843 :: xtrace -k -m 256 -d :0 -D :40 -c -f /tmp/c71-Ecd7qI/cua171-audit-dbYhzW/Xauthority -F /Users/new/.Xauthority -o /tmp/c71-Ecd7qI/cua171-audit-dbYhzW/x11.log
+  pid 403468 comm xtrace first 88.254 last 88.373 :: xtrace -k -m 256 -d :0 -D :41 -c -f /tmp/c71-Ecd7qI/cua171-audit-hneXac/Xauthority -F /Users/new/.Xauthority -o /tmp/c71-Ecd7qI/cua171-audit-hneXac/x11.log
+
+2b. the run processes recorded with DISPLAY=:40 or :41 in their environment (who reaches the proxies), by comm and argv[0]
+  145 x (':40', 'xdotool')
+  9 x (':40', 'xprobe')
+  1 x (':41', 'MainThread')
+  1 x (':41', 'xdotool')
+
+2c. the recorded pids next to 465174 (none recorded between 464825 and 465195):
+  464814 ppid 398109 sleep first 964.567 :: sleep 0.05
+  464821 ppid 398109 sleep first 964.774 :: sleep 0.05
+  464825 ppid 398109 sleep first 964.892 :: sleep 0.05
+  465195 ppid 398109 sleep first 968.684 :: sleep 0.05
+  465200 ppid 398109 sleep first 968.804 :: sleep 0.05

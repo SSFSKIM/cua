@@ -23,8 +23,8 @@ env:
   MAIN_REF: '9020bb18acb9091f817a4b648f7c332174b11153'
   BRANCH_REF: '3141f1709451ebf77e3b94c5500308d105619f6f'
   SETTLE_BEFORE_REF: '3141f1709451ebf77e3b94c5500308d105619f6f'
-  # Deliberately unarmed: the coordinator will confirm the post-761 Safari+settle head.
-  SETTLE_AFTER_REF: ''
+  # Coordinator-approved round-10 Safari+settle head, with observer hooks pinned to this source.
+  SETTLE_AFTER_REF: 'a7529ee006d79cd7a5bf40d9d37dc0e829df790d'
 jobs:
   plan:
     runs-on: ubuntu-latest
@@ -43,7 +43,7 @@ jobs:
           DIAGNOSTIC: ${{ github.event.inputs.diagnostic || 'primary' }}
         run: |
           node --input-type=module -e 'import {validateRunInputs} from "./scripts/probe-354-fences/caret.mjs"; validateRunInputs({diagnostic:process.env.DIAGNOSTIC,reps:Number(process.env.REPS),smoke:process.env.SMOKE});'
-          node --test scripts/probe-354-fences/ab.test.mjs scripts/probe-354-fences/ab-extra.test.mjs scripts/probe-354-fences/ab-secret.test.mjs scripts/probe-354-fences/kit.test.mjs scripts/probe-354-fences/audit-patch.test.mjs scripts/probe-354-fences/offline/ab-table.test.mjs scripts/probe-354-fences/caret.test.mjs scripts/probe-354-fences/caret-patch.test.mjs scripts/probe-354-fences/offline/caret-table.test.mjs scripts/probe-354-fences/followup.test.mjs scripts/probe-354-fences/diagnostic.test.mjs scripts/probe-354-fences/safari-ax.test.mjs scripts/probe-354-fences/safari-ax-source.test.mjs scripts/probe-354-fences/offline/safari-ax-table.test.mjs scripts/probe-354-fences/settle-plan.test.mjs scripts/probe-354-fences/settle-report.test.mjs
+          node --test scripts/probe-354-fences/ab.test.mjs scripts/probe-354-fences/ab-extra.test.mjs scripts/probe-354-fences/ab-secret.test.mjs scripts/probe-354-fences/kit.test.mjs scripts/probe-354-fences/audit-patch.test.mjs scripts/probe-354-fences/offline/ab-table.test.mjs scripts/probe-354-fences/caret.test.mjs scripts/probe-354-fences/caret-patch.test.mjs scripts/probe-354-fences/offline/caret-table.test.mjs scripts/probe-354-fences/followup.test.mjs scripts/probe-354-fences/diagnostic.test.mjs scripts/probe-354-fences/safari-ax.test.mjs scripts/probe-354-fences/safari-ax-source.test.mjs scripts/probe-354-fences/offline/safari-ax-table.test.mjs scripts/probe-354-fences/settle-plan.test.mjs scripts/probe-354-fences/settle-report.test.mjs scripts/probe-354-fences/large-page.test.mjs scripts/probe-354-fences/walk.test.mjs scripts/probe-354-fences/walk-patch.test.mjs
       - id: matrix
         env:
           ONLY: ${{ github.event.inputs.only }}
@@ -99,6 +99,8 @@ jobs:
             node scripts/probe-354-fences/audit-patch.mjs "$RUNNER_TEMP/$arm-src" > "$RUNNER_TEMP/probe-354-ab/$arm-audit-patch.json"
             if [ "$DIAGNOSTIC" = firefox-caret ]; then
               node scripts/probe-354-fences/caret-patch.mjs "$RUNNER_TEMP/$arm-src" > "$RUNNER_TEMP/probe-354-ab/$arm-caret-patch.json"
+            elif [ "$DIAGNOSTIC" = settle-ab ] && [ "$arm" = branch ]; then
+              node scripts/probe-354-fences/walk-patch.mjs "$RUNNER_TEMP/$arm-src" > "$RUNNER_TEMP/probe-354-ab/$arm-walk-patch.json"
             fi
             swift build -c release --package-path "$RUNNER_TEMP/$arm-src/native/engine" --scratch-path "$RUNNER_TEMP/$arm-build"
           done
@@ -139,12 +141,15 @@ jobs:
           path: |
             ${{ runner.temp }}/probe-354-ab/*-audit-patch.json
             ${{ runner.temp }}/probe-354-ab/*-caret-patch.json
+            ${{ runner.temp }}/probe-354-ab/*-walk-patch.json
             ${{ runner.temp }}/probe-354-ab/audit-controls.jsonl
             ${{ runner.temp }}/probe-354-ab/**/config.json
             ${{ runner.temp }}/probe-354-ab/**/progress.json
             ${{ runner.temp }}/probe-354-ab/**/engine-stopped.json
             ${{ runner.temp }}/probe-354-ab/**/summary.json
             ${{ runner.temp }}/probe-354-ab/**/settle-summary.json
+            ${{ runner.temp }}/probe-354-ab/**/walk-summary.json
+            ${{ runner.temp }}/probe-354-ab/**/large-page-summary.json
             ${{ runner.temp }}/probe-354-ab/**/rows.jsonl
             ${{ runner.temp }}/probe-354-ab/**/caret-rows.jsonl
             ${{ runner.temp }}/probe-354-ab/**/safari-ax-rows.jsonl

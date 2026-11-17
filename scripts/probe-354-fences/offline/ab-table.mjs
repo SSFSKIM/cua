@@ -12,6 +12,8 @@ import {planFor,matrixFor} from '../caret.mjs';
 import {FOLLOWUP} from '../followup.mjs';
 import {SETTLE_MODE} from '../settle-plan.mjs';
 import {writeSettleTables} from '../settle-report.mjs';
+import {writeWalkTables} from '../walk.mjs';
+import {writeLargePageTables} from '../large-page.mjs';
 import {readbackStatus,needsForegroundReference,renderedVerdict} from '../ab-extra.mjs';
 function tsv(rows,columns){return [columns.join('\t'),...rows.map(r=>columns.map(k=>r[k]==null?'':typeof r[k]==='object'?JSON.stringify(r[k]):r[k]).join('\t'))].join('\n')+'\n'}
 function rescoreRendered(rows){return rows.map(r=>{
@@ -73,7 +75,9 @@ export function writeTables(out,rows,collection={status:'incremental',complete:f
  writeFileSync(join(out,'cost-ab.tsv'),tsv(paired,['browser','length','path','mainN','branchN','mainP50','branchP50','deltaP50','mainP95','branchP95','deltaP95']));
  const diagnostics=rows.filter(r=>r.recordKind==='cell'&&r.expectedAnswer).map(r=>({arm:r.arm,browser:r.browser,editor:r.editor,part:r.part,variant:r.variant,rep:r.rep,expectedAnswer:r.expectedAnswer,expectedReason:r.expectedReason??null,errorName:r.typeRPC?.raw?.error?.errorName??null,...readbackStatus(r.typeRPC?.raw),correct:r.correct,requestedExact:r.requestedExact,finalSelection:r.finalSelection,secretReadbackEqual:r.secretReadbackEqual,contractFailure:!!r.contractFailure,privacyViolation:!!r.privacyViolation,serviceError:r.secretService?.error?.code??null}));
  writeFileSync(join(out,'diagnostics.tsv'),tsv(diagnostics,['arm','browser','editor','part','variant','rep','expectedAnswer','expectedReason','errorName','reason','confirmed','keysUnconfirmed','checkpoints','correct','requestedExact','finalSelection','secretReadbackEqual','contractFailure','privacyViolation','serviceError']));
- if(collection.cohort===SETTLE_MODE||rows.some(r=>r.cohort===SETTLE_MODE))writeSettleTables(out,rows,{reps:collection.reps??collection.arms?.[0]?.reps??20});
+ if(collection.cohort===SETTLE_MODE||rows.some(r=>r.cohort===SETTLE_MODE)){
+  writeSettleTables(out,rows,{reps:collection.reps??collection.arms?.[0]?.reps??20});writeWalkTables(out,rows);writeLargePageTables(out,rows);
+ }
  return s;
 }
 function collectionCoverage(sets,only,cohort){
@@ -104,7 +108,7 @@ function collectionCoverage(sets,only,cohort){
     if(seen.has(r.id))issues.push('duplicate planned cell: '+r.id);seen.set(r.id,r);
     if(config&&['arm','browser','shard','kit','engine'].some(k=>r[k]!==config[k]))issues.push('row/config identity mismatch: '+r.id);
     const c=expectedCells.get(r.id);
-    if(c&&['part','editor','key','length','variant','rep','concealed','privateField','expectedAnswer','expectedReason','preventInput','secret','returnUnits'].some(k=>(r[k]??null)!==(c[k]??null)))issues.push('row/plan mismatch: '+r.id);
+    if(c&&['part','editor','key','length','variant','rep','concealed','privateField','expectedAnswer','expectedReason','preventInput','secret','returnUnits','largePageNodes','observerEffect'].some(k=>(r[k]??null)!==(c[k]??null)))issues.push('row/plan mismatch: '+r.id);
    }
    const missing=plan.filter(c=>!seen.has(c.id)).map(c=>c.id),invalid=rows.filter(r=>r.valid!==true).map(r=>r.id),unexpected=rows.filter(r=>!expectedCells.has(r.id)).map(r=>r.id);
    const valid=plan.filter(c=>seen.get(c.id)?.valid===true).length,planned=plan.length||null;

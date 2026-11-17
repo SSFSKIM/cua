@@ -14,6 +14,8 @@ import {FOLLOWUP,FOLLOWUP_SCOPES,CAP_RETRIES} from './followup.mjs';
 import {CARET_MODE,planFor,isDiagnosticMode,validateRunInputs,caretIntent,traceArgs,parseCaretLine,caretLogLine,lateCaretSnapshot,sanitizeCaretRow,writeCaretTables} from './caret.mjs';
 import {SAFARI_AX_MODE,observeSafariCase,writeSafariAXTables} from './safari-ax.mjs';
 import {SETTLE_MODE} from './settle-plan.mjs';
+import {walkArgs,parseWalkLine} from './walk.mjs';
+import {observeLargeMarker} from './large-page.mjs';
 import {writeTables} from './offline/ab-table.mjs';
 import {snapshot} from '../probe-354-substitutions/diagnostic.mjs';
 import {readbackStatus,qualifiedKeyAnswer,diagnosticContractFailure,needsForegroundReference,referenceKey,publicDOM,renderedVerdict} from './ab-extra.mjs';
@@ -46,16 +48,18 @@ class Wire{
 const socket=join(process.env.RUNNER_TEMP,'ab354.sock');
 if(Buffer.byteLength(socket)>=103)throw Error('engine socket path too long');
 rmSync(socket,{force:true});
-const auditWaiters=new Map(),caretWaiters=new Map();
+const auditWaiters=new Map(),caretWaiters=new Map(),walkWaiters=new Map();
 const engine=spawn(ENGINE,[],{env:{...process.env,CUA_ENGINE_SOCKET:socket},stdio:['ignore','ignore','pipe']});
 const engineLogLines=createInterface({input:engine.stderr}),engineLogsClosed=new Promise(ok=>engineLogLines.once('close',ok));
 engineLogLines.on('line',l=>{
  appendFileSync(join(OUT,'engine-stderr.txt'),(IS_CARET?caretLogLine(l):secretProbe?secretProbe.log(l):l)+'\n');
  try{const a=JSON.parse(l).probe354Audit;if(a){auditWaiters.get(a.id)?.(a);auditWaiters.delete(a.id)}}catch{}
  if(IS_CARET){const r=parseCaretLine(l);if(r.trace){caretWaiters.get(r.trace.id)?.(r.trace);caretWaiters.delete(r.trace.id)}}
+ if(IS_SETTLE){const r=parseWalkLine(l);if(r.trace){walkWaiters.get(r.trace.id)?.(r.trace);walkWaiters.delete(r.trace.id)}}
 });
 function waitCaret(id){return new Promise(ok=>{const t=setTimeout(()=>{caretWaiters.delete(id);ok({error:'caret trace missing'})},10000);caretWaiters.set(id,trace=>{clearTimeout(t);ok({trace})})})}
 function waitAudit(id){return new Promise(ok=>{const t=setTimeout(()=>{auditWaiters.delete(id);ok({id,error:'audit record missing'})},7000);auditWaiters.set(id,a=>{clearTimeout(t);ok(a)})})}
+function waitWalk(id){return new Promise(ok=>{const t=setTimeout(()=>{walkWaiters.delete(id);ok({error:'walk trace missing'})},10000);walkWaiters.set(id,trace=>{clearTimeout(t);ok({trace})})})}
 async function connect(){for(let i=0;i<200;i++){if(engine.exitCode!==null||engine.signalCode!==null)throw Error('engine exited before socket readiness');try{const w=await Wire.connect(socket),r=await w.call('ping',{clientApiVersion:'cua-engine-1',desktop:'shared'});if(r.error){w.close();throw Error(JSON.stringify(r.error))}w.identity=r.result;return w}catch{await sleep(50)}}throw Error('engine unavailable')}
 const side=spawn(SIDE,[],{stdio:['pipe','pipe','inherit']}),waiters=[];
 createInterface({input:side.stdout}).on('line',l=>{let r;try{r=JSON.parse(l)}catch{r={error:l}}waiters.shift()?.(r)});
@@ -82,7 +86,7 @@ meta.cohort=DIAGNOSTIC;
 if(IS_FOLLOWUP)Object.assign(meta,{primaryEvidence:false,pooling:'same-head control cells may be combined; keep raw cohorts separate and never pool different branch heads or observer-effect caret measurements',followup:{scopes:FOLLOWUP_SCOPES[KIND+'-'+SHARD],...(FOLLOWUP_SCOPES[KIND+'-'+SHARD].includes('unicode-cap-retries')?{capRetries:CAP_RETRIES[ARM]}:{}),noKey:'no press_key between setup and type_text; the secret cell uses the trusted wrapper and an isolated synthetic HOME'}});
 if(IS_CARET)Object.assign(meta,{diagnostic:CARET_MODE,primaryEvidence:false,observerEffect:true,answers:'real result/error/meta retained with field-text strings withheld; no primary verdict inferred',sampling:'no post-type DOM sampling; one guarded range/count sidecar approximately 300ms after actual engine reply',race:'not collected',clean:'not collected',pollDefinition:'production compare calls after role/subrole guards',addedObservations:'AXNumberOfCharacters per guarded production poll, plus range/count sidecar approximately 300ms after reply; no DOM post-type sampling',unitInterpretation:'unresolved; raw replies and known public control offsets only',arms:['branch'],beforeSelection:'actual production range replies before the keyed-delivery boundary; expected carets from both that AX location and the established DOM location',secrets:'synthetic temporary-HOME secrets only; no field text or secret bytes; intended UTF-16 length and actual AX ranges/counts are retained only in this diagnostic, not added to product wire metadata'});
 if(IS_SAFARI_AX)Object.assign(meta,{diagnostic:SAFARI_AX_MODE,primaryEvidence:false,observerEffect:true,answers:'public synthetic fixture; actual type_text result plus read-only AX path/error evidence, not a confirmation gate',setup:'page focuses input, Safari stays behind the cover; no key in no-key cells; key-first uses Command+A on the same connection and restores DOM selection without a key',sampling:'AX path snapshot before and after typing, then one public DOM read; every actual query is timed; no primary timed samples',flags:'accessibility flags are observed; mutations skipped unless genuinely reversible with no state carryover',arms:['branch']});
-if(IS_SETTLE)Object.assign(meta,{primaryEvidence:false,comparison:{roles:{main:'before',branch:'after'},baseline:process.env.MAIN_REF,candidate:process.env.BRANCH_REF,scope:'race Cmd+A/Z/V and clean30/120/500, 20 reps across all12 shards; Safari input additionally20 plain+20 trusted-secret no-key cases per head',pooling:'paired run only; never combine with the historical9020bb18 control or observer diagnostics',cost:'settleReads counts completed additional value/range pairs; 15ms times reads is a programmed-wait lower bound only; snapshotMs and call latency are measured, no dedicated settle-only timer'}});
+if(IS_SETTLE)Object.assign(meta,{primaryEvidence:false,comparison:{roles:{main:'before',branch:'after'},baseline:process.env.MAIN_REF,candidate:process.env.BRANCH_REF,scope:'race Cmd+A/Z/V and clean30/120/500,20 reps across all12 shards; Safari input additionally20 plain+20 trusted-secret no-key cases per head, plus20 public large-page observer cases after-only',pooling:'paired run only; never combine with the historical9020bb18 control or observer diagnostics',cost:'settleReads counts completed additional value/range pairs; 15ms times reads is a programmed-wait lower bound only; snapshotMs and call latency are measured, no dedicated settle-only timer'}});
 let done=0,valid=0,invalid=0,setupFailures=0,consecutiveInvalid=0,aborted=null;
 const compact=[],calibrations=new Map(),foregroundReferences=new Map();let safariSnapshotOrdinal=0;
 function progress(last){writeFileSync(join(OUT,'progress.json'),JSON.stringify({done,valid,invalid,planned:cells.length,setupFailures,consecutiveInvalid,aborted,last,elapsedMs:Date.now()-start,fixture:{bound:fixture.fx.bound,foreignPolls:fixture.fx.foreignPolls,expired:fixture.fx.expired,bindings:fixture.fx.bindings.length}},null,2))}
@@ -105,13 +109,14 @@ function check(s,c,label,intended=initial(c)){
 async function setup(c,row,privateInitial,{foreground=false}={}){
  row.prepareForeground=await front(pid);
  const intended=privateInitial??initial(c),expected=c.privateField||c.secret?intended.text:undefined;
- row.reset=await fixture.command({op:'reset',cell:c.id,editor:c.editor,seed:privateInitial?.text??c.seed,privateField:c.privateField||c.secret,renderedText:c.renderedText,dropInput:c.secret&&c.variant==='mismatch',preventInput:c.preventInput,expected});
+ row.reset=await fixture.command({op:'reset',cell:c.id,editor:c.editor,seed:privateInitial?.text??c.seed,privateField:c.privateField||c.secret,renderedText:c.renderedText,dropInput:c.secret&&c.variant==='mismatch',preventInput:c.preventInput,largePageNodes:c.largePageNodes,expected});
  const selection=c.key==='cmd+z'?[seedFor(c).length,0]:intended.selection;
  row.setup=await fixture.command({op:'prepare',cell:c.id,editor:c.editor,key:c.key,selection,expected});check(row.setup,c,'prepared state',intended);
  if(c.key==='cmd+v'){row.clip=await ask({op:'clip',text:CLIP});if(!row.clip.ok)throw new SetupError('known clipboard not established')}
  row.foregroundSetup=c.editor==='password'||foreground;const target=row.foregroundSetup?pid:coverPid;
  row.foregroundTransition=await front(target);row.setupSettleMs=250;await sleep(250);
  row.settledSetup=await fixture.command({op:'read',cell:c.id,expected});check(row.settledSetup,c,'settled state',intended);
+ if(c.part==='large-page'&&(!(row.settledSetup.largePage?.domChildren>=1500)||row.settledSetup.largePage.fieldAfterFiller!==true))throw new SetupError('large public DOM fixture not established');
  row.beforeMeasuredForeground=await front(target,false);
 }
 function semantic(key,s){
@@ -195,12 +200,18 @@ async function cell(c,{warmup=false}={}){
   }
   stage='type';
   const auditRequested=c.privateField||c.secret||c.auditPositiveControl||IS_CARET;
-  const auditPromise=auditRequested?waitAudit(c.id):null,caretPromise=IS_CARET?waitCaret(c.id):null;
+  const auditPromise=auditRequested?waitAudit(c.id):null,caretPromise=IS_CARET?waitCaret(c.id):null,walkPromise=c.part==='large-page'?waitWalk(c.id):null;
   if(c.secret){
    const startedAt=Date.now(),reply=await secretProbe.run({app:secretTarget.appPath,bundle:secretTarget.bundleIdentifier,pid,id:c.id,returnUnits:c.returnUnits,selectionVariant:c.part==='secret-selection'?c.variant:undefined,pair:c.part+'/'+c.rep,identity:w.identity,execute:(method,args)=>w.execute(method,IS_CARET&&method==='type_text'?{...args,...traceArgs(DIAGNOSTIC,c.id)}:args)}),endedAt=Date.now();
    row.typeRPC={startedAt,endedAt,durationMs:endedAt-startedAt,engineTiming:reply.timing.engine,trustedTiming:reply.timing.trusted,raw:reply.engineRaw,meta:reply.engineRaw.result?.meta??reply.engineRaw.error?.meta??null};row.secretService=reply.service;row.secretFindings=reply.findings;row.secretReadbackEqual=reply.returnMetadataEqual;row.secretSelectionEqual=reply.selectionMetadataEqual;
-  }else row.typeRPC=await rpc(w,'type_text',{text:c.text,...(c.concealed?{concealed:true}:{}),...(auditRequested?{probe354Audit:c.id}:{}),...(IS_CARET?traceArgs(DIAGNOSTIC,c.id):{})});
+  }else row.typeRPC=await rpc(w,'type_text',{text:c.text,...(c.concealed?{concealed:true}:{}),...(auditRequested?{probe354Audit:c.id}:{}),...(IS_CARET?traceArgs(DIAGNOSTIC,c.id):{}),...walkArgs(c)});
   const latePromise=IS_CARET?lateCaretSnapshot({replyAt:row.typeRPC.engineTiming?.endedAt??row.typeRPC.endedAt,read:()=>ask({op:'focusEvidence',pid,mode:'caretRangeCount',lane:'firefox-caret'})}):null;
+  if(walkPromise){
+   const observed=await walkPromise;row.walkTrace=observed.trace??null;row.walkTraceError=observed.error??null;
+   try{row.largeMarker=await observeLargeMarker({pid,coverPid,replyAt:row.typeRPC.endedAt,read:()=>ask({op:'safariLargeMarker',pid,lane:'safari-large-page',tag:c.id})})}catch(e){row.largeMarker=e.diagnosticEvidence??null;throw e}
+   const group=row.largeMarker.largeGroup,children=group?.children;row.largeAXElements=group?.available===true&&Number.isSafeInteger(children?.count)&&Number.isSafeInteger(children?.nonElements)?children.count-children.nonElements:null;
+   row.largeAXSizeVerified=row.largeAXElements>=1500;
+  }
   row.readbackStatus=readbackStatus(row.typeRPC.raw);
   row.returnedAt=row.typeRPC.endedAt;row.answer=answer(row.typeRPC.raw);row.keyToTypeGapMs=row.keyRPC?row.typeRPC.startedAt-row.keyRPC.endedAt:null;
   // The privacy audit wait is outside type_text's measured time and adds no AX requests.
@@ -235,14 +246,14 @@ async function cell(c,{warmup=false}={}){
    row.correct=row.renderedVerdict.correct;
   }
   if(c.part==='ending-tab'&&!c.secret&&!c.privateField&&!['password','canvas'].includes(c.editor))row.afterTabFocus={dom:await fixture.command({op:'focus',cell:c.id}),ax:await ask({op:'focusEvidence',pid,mode:'labelsOnly',lane:'terminal-tab'})};
-  row.contractFailure=ARM==='branch'&&diagnosticContractFailure(row,row.typeRPC.raw);
+  row.contractFailure=ARM==='branch'&&(diagnosticContractFailure(row,row.typeRPC.raw)||(c.part==='large-page'&&(!!row.walkTraceError||!row.largeAXSizeVerified)));
   row.valid=true;
   if(ARM==='branch'&&row.answer.success&&!row.correct&&!qualifiedKeyAnswer(row,row.typeRPC.raw))console.error('BRANCH SUCCESS WITH WRONG FINAL VALUE',KIND,SHARD,c.id);
   }
   }
  }catch(e){
   if(IS_SAFARI_AX&&e.diagnosticEvidence)Object.assign(row,e.diagnosticEvidence);
-  if(IS_SAFARI_AX&&e.fatalDiagnostic)fatalError=new Abort(e.message);
+  if((IS_SAFARI_AX||c.part==='large-page')&&e.fatalDiagnostic)fatalError=new Abort(e.message);
   lost=e instanceof FixtureLost;row.valid=false;row.setupFailure=stage==='setup'||e instanceof SetupError||lost;row.fixtureLost=lost;row.failureStage=stage;row.problem=String(e.stack??e).slice(0,3000);
  }finally{
   w?.close();row.endedAt=Date.now();

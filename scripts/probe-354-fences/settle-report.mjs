@@ -104,19 +104,20 @@ function costStats(list){
 function coverageFor(obs,reps){
  const shards=groupBy(obs,['browser','editor','arm']),plans=new Map();
  return shards.map(({d,list})=>{
-  const pk=d.browser+'/'+d.editor;
+  const pk=d.browser+'/'+d.editor+'/'+d.arm;
   if(!plans.has(pk)){
    const core=BROWSERS.includes(d.browser)&&EDITORS.includes(d.editor)?abPlan({browser:d.browser,editor:d.editor,reps}).filter(c=>CORE_PARTS.includes(c.part)).map(c=>[c.part,c.key,c.length,c.rep].join('/')):[];
-   const diag=d.browser==='safari'&&d.editor==='input'?Array.from({length:reps},(_,i)=>['no-key/plain/'+(i+1),'secret/equality/'+(i+1)]).flat():[];
-   plans.set(pk,{core,diag});
+   // Safari input runs no-key plain and trusted-secret equality on both arms; the large-page public no-key cells run on the after arm only.
+   const scope=d.browser==='safari'&&d.editor==='input'?['no-key/plain','secret/equality',...(d.arm==='branch'?['large-page/plain']:[])]:[];
+   plans.set(pk,{core,diag:scope.flatMap(s=>Array.from({length:reps},(_,i)=>s+'/'+(i+1))),scope});
   }
-  const {core,diag}=plans.get(pk),coreRows=list.filter(o=>o.core),diagRows=list.filter(o=>!o.core);
+  const {core,diag,scope}=plans.get(pk),coreRows=list.filter(o=>o.core),diagRows=list.filter(o=>!o.core);
   const coreKey=o=>[o.part,o.key,o.length,o.rep].join('/'),diagKey=o=>[o.part,o.variant,o.rep].join('/');
   const coreSeen=new Set(coreRows.map(coreKey)),diagSeen=new Set(diagRows.map(diagKey));
   const validCore=new Set(coreRows.filter(o=>o.inStats).map(coreKey)),validDiag=new Set(diagRows.filter(o=>o.inStats).map(diagKey));
   const r={...d,planned:core.length,observed:coreRows.length,valid:core.filter(k=>validCore.has(k)).length,missing:core.filter(k=>!coreSeen.has(k)).length,
    unexpected:coreRows.filter(o=>!core.includes(coreKey(o))).length,
-   diagnosticPlanned:diag.length,diagnosticObserved:diagRows.length,diagnosticValid:diag.filter(k=>validDiag.has(k)).length,
+   diagnosticScope:scope,diagnosticPlanned:diag.length,diagnosticObserved:diagRows.length,diagnosticValid:diag.filter(k=>validDiag.has(k)).length,
    diagnosticMissing:diag.filter(k=>!diagSeen.has(k)).length,diagnosticUnexpected:diagRows.filter(o=>!diag.includes(diagKey(o))).length};
   return {...r,complete:r.valid===r.planned&&r.unexpected===0&&r.diagnosticValid===r.diagnosticPlanned&&r.diagnosticUnexpected===0};
  });
@@ -164,7 +165,7 @@ export function summarizeSettle(rows,{reps=20}={}){
   wrongSuccesses:list.filter(o=>o.inStats&&o.outcome==='success'&&o.correct===false).length,privacyViolations:list.filter(o=>o.privacyViolation).length,
   privacyViolationsValid:list.filter(o=>o.inStats&&o.privacyViolation).length,contractFailures:list.filter(o=>o.contractFailure&&!o.expectedUnconfirmed).length}));
  const invalidTrials=obs.filter(o=>!o.valid||(o.valid&&!o.inStats)).map(o=>({...pick(o,['id','arm','browser','editor','part','variant','key','length','rep','core','privacyViolation']),problem:o.valid?'malformed engine response':o.problem}));
- return {cohort:SETTLE_COHORT,notes:NOTES,scope:{reps,corePlan:'12 shards x (race cmd+a/cmd+z/cmd+v at 30, clean 30/120/500)',extraCells:'Safari input no-key plain and trusted-secret equality'},
+ return {cohort:SETTLE_COHORT,notes:NOTES,scope:{reps,corePlan:'12 shards x (race cmd+a/cmd+z/cmd+v at 30, clean 30/120/500)',extraCells:'Safari input no-key plain and trusted-secret equality (both arms), plus large-page plain (branch arm only); informational diagnostics, never core rate or cost'},
   ignored:{warmupOrOtherRecords:other},overall,cells:cellRates,diagnostics,safety,invalidTrials,wrongSuccesses,
   privacyViolationTrials:obs.filter(o=>o.privacyViolation).map(o=>pick(o,['id','arm','browser','editor','part','variant','valid'])),
   cost,costAB,diagnosticCost,pairedTrials,coverage:coverageFor(obs,reps),
@@ -195,6 +196,6 @@ export function writeSettleTables(out,rows,opts){
  w('settle-cost-ab.tsv',tsv(s.costAB,['browser','part','key','length','metric','mainN','branchN','mainP50','branchP50','deltaP50','mainP95','branchP95','deltaP95','pairedN','pairedDeltaP50','pairedDeltaP95','pairedDeltaMax']));
  w('settle-paired.tsv',tsv(s.pairedTrials,['browser','editor','part','key','length','rep','mainId','branchId','mainValid','branchValid','mainOutcome','branchOutcome','mainDurationMs','branchDurationMs','durationDeltaMs','mainSnapshotMs','branchSnapshotMs','snapshotDeltaMs','branchSettleReads','branchSettleReadsState','branchSettleCapped','branchProgrammedWaitLowerBoundMs']));
  w('settle-observations.tsv',tsv(s.observations,['id','arm','browser','editor','part','variant','key','length','rep','core','valid','outcome','correct','backgroundSetup','expectedUnconfirmed','durationMs','snapshotMs','hasReadback','settleReads','settleReadsState','settleCapped','settleCappedState','programmedWaitLowerBoundMs','keysUnconfirmed','privacyViolation','contractFailure','refusalReason','problem','engine']));
- w('settle-coverage.tsv',tsv(s.coverage,['browser','editor','arm','planned','observed','valid','missing','unexpected','diagnosticPlanned','diagnosticObserved','diagnosticValid','diagnosticMissing','diagnosticUnexpected','complete']));
+ w('settle-coverage.tsv',tsv(s.coverage,['browser','editor','arm','planned','observed','valid','missing','unexpected','diagnosticScope','diagnosticPlanned','diagnosticObserved','diagnosticValid','diagnosticMissing','diagnosticUnexpected','complete']));
  return s;
 }

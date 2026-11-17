@@ -205,6 +205,8 @@ function fullRows(){
   if(browser==='safari'&&editor==='input'){
    rs.push(row({arm,browser,editor,rep,part:'no-key',variant:'plain',key:null,length:64}));
    rs.push(row({arm,browser,editor,rep,part:'secret',variant:'equality',key:null,length:64}));
+   // the after arm alone also runs the large-page public no-key cells
+   if(arm==='branch')rs.push(row({arm,browser,editor,rep,part:'large-page',variant:'plain',key:null,length:64,largePageNodes:1600}));
   }
  }
  return rs;
@@ -215,9 +217,25 @@ test('coverage is explicit per shard for race/clean and separately for the Safar
  assert.ok(f.coverage.every(x=>x.planned===120&&x.complete&&x.unexpected===0));
  const safariInput=find(f.coverage,{browser:'safari',editor:'input',arm:'main'});
  assert.equal(safariInput.diagnosticPlanned,40);assert.equal(safariInput.diagnosticValid,40);assert.equal(safariInput.diagnosticUnexpected,0);
- assert.equal(f.coverage.filter(x=>x.arm==='branch').reduce((n,x)=>n+x.planned+x.diagnosticPlanned,0),1480);
- assert.equal(f.coverage.filter(x=>x.arm==='branch').reduce((n,x)=>n+x.observed+x.diagnosticObserved,0),1480);
+ assert.deepEqual(safariInput.diagnosticScope,['no-key/plain','secret/equality']);
+ const after=find(f.coverage,{browser:'safari',editor:'input',arm:'branch'});
+ assert.equal(after.diagnosticPlanned,60);assert.equal(after.diagnosticValid,60);assert.equal(after.diagnosticUnexpected,0);assert.equal(after.diagnosticMissing,0);assert.equal(after.complete,true);
+ assert.deepEqual(after.diagnosticScope,['no-key/plain','secret/equality','large-page/plain']);
+ const total=arm=>f.coverage.filter(x=>x.arm===arm).reduce((n,x)=>n+x.planned+x.diagnosticPlanned,0);
+ assert.equal(total('main'),1480);assert.equal(total('branch'),1500);
+ assert.equal(f.coverage.filter(x=>x.arm==='branch').reduce((n,x)=>n+x.observed+x.diagnosticObserved,0),1500);
+ assert.equal(f.coverage.reduce((n,x)=>n+x.planned,0),2880,'the race/clean core is unchanged');
  assert.equal(find(f.coverage,{browser:'cft',editor:'input',arm:'main'}).diagnosticPlanned,0);
+ // the large-page cells are diagnostics only: never in core rates or cost
+ assert.ok(!f.overall.some(g=>g.part==='large-page')&&!f.cost.some(g=>g.part==='large-page'));
+ assert.equal(find(f.diagnostics,{arm:'branch',part:'large-page',variant:'plain'}).attempted,20);
+ // the main arm, other browsers and other editors never plan them
+ const lp=(o)=>row({part:'large-page',variant:'plain',key:null,length:64,largePageNodes:1600,...o});
+ const stray=summarizeSettle([lp({arm:'main',browser:'safari',editor:'input'}),lp({arm:'branch',browser:'cft',editor:'input'}),lp({arm:'branch',browser:'safari',editor:'textarea'})]);
+ for(const [arm,browser,editor] of [['main','safari','input'],['branch','cft','input'],['branch','safari','textarea']]){
+  const c=find(stray.coverage,{arm,browser,editor});assert.equal(c.diagnosticUnexpected,1,arm+browser+editor);assert.equal(c.diagnosticPlanned,arm==='main'?40:0);
+ }
+ assert.equal(find(stray.coverage,{arm:'branch',browser:'safari',editor:'textarea'}).diagnosticPlanned,0);
  const s=summarizeSettle([row({editor:'textarea'})]);
  const c=find(s.coverage,{browser:'cft',editor:'textarea',arm:'branch'});
  assert.equal(c.planned,120);assert.equal(c.observed,1);assert.equal(c.valid,1);assert.equal(c.missing,119);assert.equal(c.complete,false);

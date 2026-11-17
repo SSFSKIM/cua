@@ -55,19 +55,53 @@ test('identifiers are read only after a readable, non-secure classification',()=
  assert.ok(guard>=0&&guard<firstRead,'the readable guard precedes the identifier reads');
 });
 
-test('existing ops are untouched by the new op except one dispatch branch',()=>{
- // Breaks when an existing op starts depending on the new region or accepts the new lane.
+test('existing ops are untouched by the region except one dispatch branch per region op',()=>{
+ // Breaks when an existing op starts depending on the region or accepts a region lane.
  const {inside,outside}=region(),insideCode=code(inside),outsideCode=code(outside);
  const outsideSymbols=outsideCode.replace(/"(?:[^"\\\n]|\\.)*"/g,'""');
  const declared=[...insideCode.matchAll(/^(?:final\s+)?(?:func|enum|struct|class|let|var)\s+([A-Za-z_]\w*)/gm)].map(m=>m[1]);
- assert.ok(declared.includes('safariAXPaths'));
+ const ops=['safariAXPaths','safariLargeMarker'];
+ for(const op of ops)assert.ok(declared.includes(op),op+' declared in the region');
  for(const name of declared){
   const uses=[...outsideSymbols.matchAll(new RegExp('\\b'+name+'\\b','g'))].length;
-  assert.equal(uses,name==='safariAXPaths'?1:0,name+' used outside the region');
+  assert.equal(uses,ops.includes(name)?1:0,name+' used outside the region');
  }
- assert.match(outsideCode,/q\["op"\] as\? String == "safariAXPaths" \{\n\s*answer\.merge\(safariAXPaths\(q\)\) \{ _, new in new \}/);
- assert.ok(!body(outsideCode,'focusEvidence').text.includes('safari-no-key-ax'),'focusEvidence keeps its own lanes');
+ for(const op of ops)assert.match(outsideCode,new RegExp('q\\["op"\\] as\\? String == "'+op+'" \\{\\n\\s*answer\\.merge\\('+op+'\\(q\\)\\) \\{ _, new in new \\}'));
+ for(const lane of ['safari-no-key-ax','safari-large-page'])assert.ok(!body(outsideCode,'focusEvidence').text.includes(lane),'focusEvidence keeps its own lanes');
  // The region must not redefine a name the existing ops use.
  const existing=[...outsideCode.matchAll(/^func\s+([A-Za-z_]\w*)/gm)].map(m=>m[1]);
  for(const name of existing)assert.ok(!declared.includes(name),name+' redefined in the region');
+});
+
+// safariLargeMarker: after the actual type_text on the large page, the marker chain comes first and survives the size check.
+const large=()=>body(code(region().inside),'safariLargeMarker').text;
+
+test('the large-page op reads the marker chain right after finding the web area, with no focus or flag read before it',()=>{
+ // Breaks when a focus path, focus walk, flag read or any other walk is inserted ahead of the marker observation.
+ const text=large(),at=text.indexOf('.textMarker(');
+ assert.ok(at>=0,'the marker chain is read');
+ const head=text.slice(0,at);
+ assert.deepEqual([...head.matchAll(/"(AX\w+)"/g)].map(m=>m[1]),['AXFocusedWindow','AXMainWindow','AXWindows'],'only front-window discovery is named before the marker');
+ assert.deepEqual([...head.matchAll(/goal:\s*\.(\w+)/g)].map(m=>m[1]),['webArea'],'only the web-area walk precedes the marker');
+ assert.ok(!text.includes('.focused'),'no focus walk');
+});
+
+test('the large group is found after the marker and its children are counted once without being registered or walked',()=>{
+ // Breaks when the size check moves ahead of the marker, registers the group's children or walks into them.
+ const text=large(),marker=text.indexOf('.textMarker('),search=text.search(/goal:\s*\.domIdentifier/);
+ assert.ok(search>marker,'the group search follows the marker');
+ assert.deepEqual([...text.matchAll(/goal:\s*\.(\w+)/g)].map(m=>m[1]),['webArea','domIdentifier'],'two bounded walks, none from the group');
+ const children=[...text.slice(search).matchAll(/query\([^\n]*"AXChildren"[^\n]*\)/g)].map(m=>m[0]);
+ assert.equal(children.length,1,'one AXChildren read of the group');
+ assert.match(children[0],/arrayCap:\s*0\b/,'no child of the group is registered');
+});
+
+test('the marker result is recorded before the size check and no later path returns without it',()=>{
+ // Breaks when a size-check failure returns early or the marker is recorded only after the size check.
+ const text=large(),marker=text.indexOf('.textMarker('),search=text.search(/goal:\s*\.domIdentifier/);
+ const recorded=text.search(/result\["textMarker"\]\s*=\s*marker/);
+ assert.ok(recorded>marker&&recorded<search,'recorded between the marker read and the size check');
+ const returns=[...text.slice(marker).matchAll(/\breturn\b/g)].length;
+ assert.equal(returns,1,'only the final return follows the marker read');
+ assert.match(text.slice(marker),/return result\s*\}\s*$/);
 });

@@ -126,12 +126,19 @@ test('page script parses', () => {
  const html=page(),src=html.slice(html.indexOf('<script>')+8,html.lastIndexOf('</script>'));
  assert.doesNotThrow(()=>new Function(src));
 });
+test('large-page reset places1600 semantic controls before the public field, survives prepare and clears on ordinary reset',async()=>{
+ const f=fixtureScript();await f.run({op:'reset',cell:'large',editor:'input',largePageNodes:1600});
+ assert.deepEqual(f.answers.at(-1).largePage,{domChildren:1600,fieldAfterFiller:true});
+ await f.run({op:'prepare',cell:'large',editor:'input',selection:[3,0]});assert.equal(f.answers.at(-1).largePage.domChildren,1600);
+ await f.run({op:'reset',cell:'ordinary',editor:'input'});assert.equal(f.answers.at(-1).largePage,undefined);
+ await assert.rejects(()=>f.run({op:'reset',cell:'private-large',editor:'input',privateField:true,largePageNodes:1600}),/public normal-input/);
+});
 
 // Run the real fixture script against a small DOM boundary, without launching a browser.
 function fixtureScript(){
- const listeners=new Map(),answers=[],host={},document={activeElement:null,title:'',hasFocus:()=>true,addEventListener(event,fn){if(!listeners.has(event))listeners.set(event,[]);listeners.get(event).push(fn)},querySelector:s=>s==='#host'?host:element};
+ let filler=null;const listeners=new Map(),answers=[],host={},document={activeElement:null,title:'',hasFocus:()=>true,addEventListener(event,fn){if(!listeners.has(event))listeners.set(event,[]);listeners.get(event).push(fn)},querySelector:s=>s==='#host'?host:s==='#large-before-editor'?filler:element};
  const element={value:'',selectionStart:0,selectionEnd:0,focus(){document.activeElement=this;for(const fn of listeners.get('focusin')??[])fn({target:this})},setSelectionRange(start,end){this.selectionStart=start;this.selectionEnd=end},getBoundingClientRect:()=>({x:0,y:0,width:500,height:44})};
- Object.defineProperty(host,'innerHTML',{set(){for(const fn of listeners.get('focusout')??[])fn({target:element})}});
+ Object.defineProperty(host,'innerHTML',{set(html){filler=html.includes('id="large-before-editor"')?{childElementCount:(html.match(/<button /g)??[]).length,nextElementSibling:element}:null;for(const fn of listeners.get('focusout')??[])fn({target:element})}});
  const context=createContext({document,self:{},performance:{getEntriesByType:()=>[]},location:{href:'http://fixture/'},setTimeout,fetch:(url,options)=>{
   if(url.startsWith('/cmd'))return new Promise(()=>{});answers.push(JSON.parse(options.body));return Promise.resolve({});
  }}),html=page();

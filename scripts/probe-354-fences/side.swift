@@ -183,7 +183,7 @@ final class SafariAXSnapshot {
       }
     }
   }
-  enum WalkGoal: String { case webArea, focused }
+  enum WalkGoal: String { case webArea, focused, domIdentifier }
   /// One request as sent: its error, its value when it succeeded, and the elements it named, by registry index.
   struct Reply {
     let seq: Int
@@ -414,6 +414,14 @@ final class SafariAXSnapshot {
     return wire
   }
 
+  /// A query entry with its element's descriptor attached when it names one.
+  func enriched(_ entry: [String: Any]) -> [String: Any] {
+    guard let index = Self.index(entry["element"]) else { return entry }
+    var wire = entry
+    wire["elementDescriptor"] = descriptor(index)
+    return wire
+  }
+
   /// A path of element-valued attributes from `start`: the element at its end, or where and why it stopped (an AX
   /// error, a success with no value, a value that is not an element, or a request the budget kept from being sent).
   func chain(_ root: String, from start: Int, _ attributes: [String], phase: String,
@@ -444,8 +452,11 @@ final class SafariAXSnapshot {
 
   /// A breadth-first walk from `root`, bounded by depth, node count, children per node and its own time budget inside
   /// the snapshot's. .webArea stops at the first AXWebArea by AXRole; .focused visits every node in bounds and
-  /// collects those whose AXFocused reads true.
-  func walk(_ phase: String, from root: Int, goal: WalkGoal, limits: WalkLimits) -> (wire: [String: Any], matches: [Int]) {
+  /// collects those whose AXFocused reads true; .domIdentifier stops at the first readable element whose
+  /// AXDOMIdentifier, read through classify and so only after its secure guard, is `target`. The phase budget is
+  /// checked between nodes; a node's classification reads are bounded by the total budget.
+  func walk(_ phase: String, from root: Int, goal: WalkGoal, limits: WalkLimits,
+            target: String = "") -> (wire: [String: Any], matches: [Int]) {
     let started = now()
     let phaseDeadline = started + limits.budgetMs
     let firstQuery = queries.count
@@ -476,6 +487,12 @@ final class SafariAXSnapshot {
            let raw = reply.raw, CFGetTypeID(raw) == CFBooleanGetTypeID(), CFBooleanGetValue((raw as! CFBoolean)) {
           matches.append(index)
           matchWire.append(["element": Self.id(index), "depth": depth])
+        }
+      case .domIdentifier:
+        if classify(index, phase: phase) == "readable", info[index]["domIdentifier"] as? String == target {
+          matches.append(index)
+          matchWire.append(["element": Self.id(index), "depth": depth])
+          stoppedAtMatch = true
         }
       }
       if stoppedAtMatch { break }
@@ -741,6 +758,133 @@ func safariAXPaths(_ q: [String: Any]) -> [String: Any] {
   result["ok"] = true
   return result
 }
+
+/// #354's large-page cell (lane safari-large-page), read once after the actual type_text, under safariAXPaths' rules:
+/// read-only, value-free, bounded, never primary evidence. It finds the front window's web area and reads the
+/// text-marker chain first, with no focus path, focus walk or flag read ahead of it. Only then does it look for the
+/// fixture's large group by its DOM id and read that group's AXChildren once, for its count, registering none of the
+/// children. A size check that cannot run leaves the recorded marker result as it was.
+func safariLargeMarker(_ q: [String: Any]) -> [String: Any] {
+  var result: [String: Any] = ["schema": "probe354.safariLargeMarker.v1", "ok": false, "diagnostic": "observer-effect",
+                               "primaryEvidence": false]
+  func refuse(_ reason: String) -> [String: Any] {
+    var refused = result
+    refused["error"] = "safari large marker unavailable"
+    refused["reason"] = reason
+    return refused
+  }
+  guard q["lane"] as? String == "safari-large-page" else { return refuse("invalid-lane") }
+  result["lane"] = "safari-large-page"
+  guard let tag = q["tag"] as? String, (1...64).contains(tag.count),
+        tag.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || "._:/-".contains($0)) }) else {
+    return refuse("invalid-tag")
+  }
+  result["tag"] = tag
+  guard let number = q["pid"] as? NSNumber,
+        CFGetTypeID(number as CFTypeRef) != CFBooleanGetTypeID(),
+        number.int32Value > 0, number.doubleValue == Double(number.int32Value) else {
+    return refuse("invalid-pid")
+  }
+  let pid = number.int32Value
+  result["pid"] = Int(pid)
+  result["bundleIdentifier"] = SafariAXSnapshot.orNull(NSRunningApplication(processIdentifier: pid)?.bundleIdentifier)
+  let largeGroupDOMIdentifier = "large-before-editor"
+  let largeGroupWalk = SafariAXSnapshot.WalkLimits(maxDepth: 8, maxNodes: 200, budgetMs: 1500)
+
+  let before = safariAXFrontmost(pid)
+  let snapshot = SafariAXSnapshot(application: AXUIElementCreateApplication(pid))
+
+  // The front window: AXFocusedWindow, else AXMainWindow, else the first of AXWindows, each read only when needed.
+  var front: Int? = nil
+  var provenance = "none"
+  var windowQueries: [Int] = []
+  for attribute in ["AXFocusedWindow", "AXMainWindow", "AXWindows"] where front == nil {
+    guard let reply = snapshot.query("frontWindow", "app." + attribute, 0, attribute, arrayCap: SafariAXSnapshot.maxWindows) else { continue }
+    windowQueries.append(reply.seq)
+    if let window = reply.element ?? reply.items.first {
+      front = window
+      provenance = reply.element != nil ? attribute : attribute + "[0]"
+    }
+  }
+  var walks: [String: Any] = [:]
+  var webArea: Int? = nil
+  if let front {
+    let found = snapshot.walk("webAreaWalk", from: front, goal: .webArea, limits: SafariAXSnapshot.webAreaWalk)
+    walks["webArea"] = found.wire
+    webArea = found.matches.first
+  } else {
+    walks["webArea"] = ["skipped": "noFrontWindow"]
+  }
+
+  // The marker chain next, gated as safariAXPaths gates it: only on a readable (so not secure) web area.
+  let marker: [String: Any]
+  if let webArea, snapshot.classify(webArea, phase: "classify") == "readable" {
+    marker = snapshot.textMarker(webArea)
+  } else {
+    marker = ["attempted": false, "symbols": SafariAXMarkerAPI.wire,
+              "skipped": webArea == nil ? "noWebArea" : "webAreaNotReadable"]
+  }
+  result["textMarker"] = marker
+
+  // The size check last: the group by DOM id, then its AXChildren once, counted but not registered or walked.
+  var largeGroup: [String: Any] = ["domIdentifier": largeGroupDOMIdentifier, "childrenRegistered": 0]
+  var sizeReason = "noWebArea"
+  if let webArea {
+    let search = snapshot.walk("largeGroupWalk", from: webArea, goal: .domIdentifier, limits: largeGroupWalk, target: largeGroupDOMIdentifier)
+    walks["largeGroup"] = search.wire
+    sizeReason = "groupNotFound"
+    if let group = search.matches.first {
+      largeGroup["element"] = SafariAXSnapshot.id(group)
+      let children = snapshot.query("largeGroup", SafariAXSnapshot.id(group) + ".AXChildren", group, "AXChildren", arrayCap: 0)
+      largeGroup["children"] = snapshot.stepWire(children)
+      if let children {
+        if children.code != .success { sizeReason = "childrenAXError" }
+        else if let raw = children.raw, CFGetTypeID(raw) == CFArrayGetTypeID() { sizeReason = "available" }
+        else { sizeReason = "childrenNotArray" }
+      } else {
+        sizeReason = "childrenNotIssued"
+      }
+    }
+  } else {
+    walks["largeGroup"] = ["skipped": "noWebArea"]
+  }
+  largeGroup["available"] = sizeReason == "available"
+  largeGroup["reason"] = sizeReason
+
+  let after = safariAXFrontmost(pid)
+  let ended = now()
+  result["frontmostPidBefore"] = before["workspacePid"]
+  result["frontmostPidAfter"] = after["workspacePid"]
+  let workspaceChanged: Bool = (before["workspacePid"] as? Int) != (after["workspacePid"] as? Int)
+  let ownerChanged: Bool = (before["frontWindowOwnerPid"] as? Int) != (after["frontWindowOwnerPid"] as? Int)
+  let becameFront: Bool = (after["targetIsWorkspaceFrontmost"] as? Bool) == true && (before["targetIsWorkspaceFrontmost"] as? Bool) != true
+  let frontmost: [String: Any] = ["before": before, "after": after, "changed": workspaceChanged || ownerChanged,
+                                  "activationDetected": becameFront]
+  result["frontmost"] = frontmost
+  let frontWindow: [String: Any] = ["element": SafariAXSnapshot.orNull(front.map { SafariAXSnapshot.id($0) }),
+                                    "provenance": provenance, "queries": windowQueries]
+  result["frontWindow"] = frontWindow
+  result["largeGroup"] = largeGroup
+  result["walks"] = walks
+  result["queries"] = snapshot.queries.map { snapshot.enriched($0) }
+  result["elements"] = snapshot.info
+  result["notIssued"] = snapshot.notIssued
+  result["omissions"] = snapshot.omissions
+  result["notQueriedByDesign"] = "field values, selected text, text for a marker range, text marker bytes, flags"
+  result["mutations"] = "none"
+  let limits: [String: Any] = [
+    "messagingTimeoutSeconds": Double(SafariAXSnapshot.messagingTimeout), "totalBudgetMs": SafariAXSnapshot.totalBudgetMs,
+    "maxWindows": SafariAXSnapshot.maxWindows, "maxChildrenPerNode": SafariAXSnapshot.maxChildren,
+    "maxMarkerAncestors": SafariAXSnapshot.maxMarkerAncestors, "workspaceSettleMs": SafariAXSnapshot.settleMs,
+    "webAreaWalk": SafariAXSnapshot.webAreaWalk.wire, "largeGroupWalk": largeGroupWalk.wire, "largeGroupChildrenRegistered": 0
+  ]
+  result["limits"] = limits
+  let budget: [String: Any] = ["startedAt": snapshot.startedAt, "deadline": snapshot.deadline, "endedAt": ended,
+                               "spentMs": ended - snapshot.startedAt, "exhausted": !snapshot.notIssued.isEmpty]
+  result["budget"] = budget
+  result["ok"] = true
+  return result
+}
 // MARK: safariAXPaths end
 
 func now() -> Double { Date().timeIntervalSince1970 * 1000 }
@@ -766,6 +910,8 @@ while let line = readLine() {
     answer.merge(focusEvidence(q)) { _, new in new }
   } else if let data = line.data(using: .utf8), let q = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any], q["op"] as? String == "safariAXPaths" {
     answer.merge(safariAXPaths(q)) { _, new in new }
+  } else if let data = line.data(using: .utf8), let q = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any], q["op"] as? String == "safariLargeMarker" {
+    answer.merge(safariLargeMarker(q)) { _, new in new }
   } else {
     answer["error"] = "bad request"
   }

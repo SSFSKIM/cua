@@ -2,6 +2,7 @@
 // bound, and the harness binds only the document its browser window visibly shows: a hidden, reloaded or second
 // document cannot take a command. Private inputs hold only synthetic fixture values; values and typed characters
 // are hidden before seed/focus events, and the harness scrubs transient fixture lengths/ranges before saving.
+import {largePagePrefix} from './large-page.mjs';
 export const SEED='Old draft sentence goes here.';
 export const EDITORS=['textarea','input','contenteditable','compose','canvas','password'];
 // A terminal empty paragraph's single placeholder BR can add one layout-only innerText newline.
@@ -23,11 +24,12 @@ export function page(){return `<!doctype html><html><head><meta charset="utf-8">
 "use strict";
 const SEED=${JSON.stringify(SEED)},TEXT_EVENTS=60;
 const editingText=${editingText.toString()};
+const largePagePrefix=${largePagePrefix.toString()};
 const DOC=(self.crypto&&crypto.randomUUID)?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2);
 const NAV=(performance.getEntriesByType&&performance.getEntriesByType('navigation')[0]||{}).type||null,NONCE=DOC.replace(/-/g,'').slice(0,12);
 // The visible owner: the harness binds only the document whose nonce its browser window's AX title shows.
 document.title='probe354f '+NONCE;
-let e=null,editor=null,cell=null,trace=[],lastSent=0,model='',caret=0,seedValue=SEED,privateFixture=false,renderedFixture=false,dropInput=false,preventInput=false;
+let e=null,editor=null,cell=null,trace=[],lastSent=0,model='',caret=0,seedValue=SEED,privateFixture=false,renderedFixture=false,dropInput=false,preventInput=false,largeFiller=null;
 const secure=()=>editor==='password'||privateFixture;
 const value=()=>editor==='canvas'?model:e?(e.value??(renderedFixture?editingText(e):e.textContent)):null;
 function selection(){if(!e)return null;if(editor==='canvas')return [caret,0];if('selectionStart'in e&&e.selectionStart!==null)return [e.selectionStart,e.selectionEnd-e.selectionStart];const s=getSelection();if(!s.rangeCount)return null;let r=s.getRangeAt(0),b=document.createRange();b.selectNodeContents(e);try{b.setEnd(r.startContainer,r.startOffset);return [b.toString().length,r.toString().length]}catch{return null}}
@@ -35,7 +37,7 @@ function select(start,len){e.focus();if(editor==='canvas'){caret=start;return}if
 function draw(){const c=e.getContext('2d');c.clearRect(0,0,e.width,e.height);c.font='16px monospace';c.fillText(model,8,40)}
 function seed(){if(editor==='canvas'){model=seedValue;draw()}else if('value'in e)e.value=seedValue;else{e.replaceChildren();const child=document.createElement(editor==='compose'?'div':'span');child.textContent=seedValue;e.appendChild(child)}}
 // A secure editor's state never carries its value; with an expectation it carries only whether the value matches.
-function state(expected){const v=value(),o={doc:DOC,cell,editor,selection:selection(),length:v==null?null:v.length,at:Date.now(),focused:!!e&&document.activeElement===e};if(secure()){o.text=null;o.secure=true;if(typeof expected==='string')o.matchesExpected=v===expected}else{o.text=v;if(renderedFixture){o.innerText=e.innerText;o.domText=e.textContent;o.html=e.innerHTML}}return o}
+function state(expected){const v=value(),o={doc:DOC,cell,editor,selection:selection(),length:v==null?null:v.length,at:Date.now(),focused:!!e&&document.activeElement===e};if(secure()){o.text=null;o.secure=true;if(typeof expected==='string')o.matchesExpected=v===expected}else{o.text=v;if(renderedFixture){o.innerText=e.innerText;o.domText=e.textContent;o.html=e.innerHTML}}const filler=largeFiller;if(filler&&!secure())o.largePage={domChildren:filler.childElementCount,fieldAfterFiller:filler.nextElementSibling===e};return o}
 // No keepalive: it caps a body at 64 KB, and a long sample's trace is larger.
 const send=o=>fetch('/answer',{method:'POST',body:JSON.stringify(o)}).catch(()=>{});
 function take(){const t=trace.slice(lastSent);lastSent=trace.length;return t}
@@ -55,12 +57,14 @@ document.addEventListener('input',()=>{if(dropInput&&editor==='input'){seed();se
 async function run(c){
  if(c.op==='reset'){
   // Teardown can emit focus events from the outgoing private editor. Do not observe it under the next cell's policy.
-  e=null;
+  e=null;largeFiller=null;
   cell=c.cell;editor=c.editor;seedValue=typeof c.seed==='string'?c.seed:SEED;privateFixture=!!c.privateField;renderedFixture=!!c.renderedText;dropInput=!!c.dropInput;preventInput=!!c.preventInput;trace=[];lastSent=0;const host=document.querySelector('#host');
+  if(c.largePageNodes&&(editor!=='input'||privateFixture))throw Error('large page is a public normal-input fixture only');
   if(editor==='canvas')host.innerHTML='<canvas id="editor" tabindex="0" width="500" height="120" aria-label="Canvas draft"></canvas>';
   else if(editor==='password')host.innerHTML='<input id="editor" type="password" autocomplete="off" aria-label="Fixture secret control">';
-  else if(editor==='input'||editor==='textarea')host.innerHTML='<'+editor+' id="editor" aria-label="Draft control"></'+editor+'>';
+  else if(editor==='input'||editor==='textarea')host.innerHTML=largePagePrefix(c.largePageNodes??0)+'<'+editor+' id="editor" aria-label="Draft control"></'+editor+'>';
   else host.innerHTML='<div id="editor" contenteditable="true"'+(editor==='compose'?' role="textbox" aria-label="Message Body" aria-multiline="true"':' aria-label="Draft control"')+'></div>';
+  largeFiller=c.largePageNodes?document.querySelector('#large-before-editor'):null;
   e=document.querySelector('#editor');seed();select(3,0);const r=e.getBoundingClientRect();
   await send({n:c.n,op:c.op,...state(c.expected),rect:{x:r.x,y:r.y,width:r.width,height:r.height},trace:take()});return;
  }

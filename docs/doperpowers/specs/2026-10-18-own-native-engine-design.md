@@ -4898,6 +4898,8 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      (`deadlineUnixMilliseconds`, or receipt plus 120 s) is refused before the sleep as `timeoutReached`, the engine's
      answer for a settle or launch wait the deadline cuts, with the input meta and nothing dispatched; the holds stay as
      they were. A refusal before the deadline is preferred to sleeping into it, since nothing could be sent after it.
+     A sleep can overshoot, so every wake checks the deadline again before the ready path returns, and a wake at or past
+     it is `timeoutReached` too (the re-review's probe: a 2,600 ms budget whose 2,500 ms sleep woke at 3,000 ms).
   3. **Scroll waits only when it names an element** (`mayCarryElementAction`). An element scroll sends AXScrollToVisible
      (or its fallbacks' writes, Positioning.swift) to the page before its wheel, which is an AX element action into the
      renderer. A scroll at a point or the window's centre is a posted wheel and its read-back, and its #328 bar write

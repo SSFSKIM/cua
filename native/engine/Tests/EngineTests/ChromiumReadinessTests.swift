@@ -342,4 +342,31 @@ final class ChromiumReadinessTests: XCTestCase {
     }
     XCTAssertEqual(late.slept, [2_500], "the second window's 2.5 s would end past the 4 s budget")
   }
+
+  func testASleepThatOversleepsTheDeadlineDispatchesNothing() {
+    // The review's probe: a 2,600 ms budget, a 2,500 ms sleep that wakes at 3,000 ms. The window has passed by then, but
+    // so has the deadline: timeoutReached, not the ready path.
+    let clock = Clock()
+    let engine = engine(clock)
+    observe(engine, FakeEnablement())
+    clock.onWake = { clock.now += 500 }
+    do {
+      _ = try engine.awaitChromiumReadiness(method: "click", args: [:], app: app("Electron"), pid: 7, launched: launched,
+                                            connection: ConnectionState(id: 1, fd: -1), budgetMs: 2_600)
+      XCTFail("dispatched past the deadline")
+    } catch let error as EngineError {
+      XCTAssertEqual(error.errorName, "timeoutReached")
+    } catch {
+      XCTFail("\(error)")
+    }
+    XCTAssertEqual(clock.slept, [2_500])
+    XCTAssertEqual(clock.now, 13_000)
+
+    // The same oversleep inside the budget is ready.
+    let roomy = Clock()
+    let other = self.engine(roomy)
+    observe(other, FakeEnablement())
+    roomy.onWake = { roomy.now += 500 }
+    XCTAssertEqual(gate(other, app("Electron"), budgetMs: 3_100), 2_500)
+  }
 }

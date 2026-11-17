@@ -56,7 +56,8 @@ let chromiumReadinessTimeout = EngineError(name: "timeoutReached", "timeoutReach
 /// recorded menu's span holds an activation, its focus hold ended before `sleep` runs. `lastWrite` is read again after
 /// every sleep: an accepted write another connection made meanwhile (an attribute that could not be read is written but
 /// never owned, so a later observation writes it again) restarts the window, which is waited out too, until none of it
-/// remains. A wait that would end at or past `budgetMs` from its start, the request's remaining deadline, throws
+/// remains. A wake at or past the deadline throws too, before the ready path returns (a sleep can overshoot). A wait
+/// that would end at or past `budgetMs` from its start, the request's remaining deadline, throws
 /// `chromiumReadinessTimeout` before it sleeps, the holds as they were. Answers the milliseconds waited.
 @discardableResult
 func waitOutChromiumWindow(engine: PageEngine, lastWrite: () -> Double?, connection: ConnectionState, budgetMs: Double,
@@ -71,6 +72,8 @@ func waitOutChromiumWindow(engine: PageEngine, lastWrite: () -> Double?, connect
     if connection.focusHold.app != nil { connection.endFocusHold() }
     sleep(wait)
     waited += wait
+    // A sleep that overslept into the deadline dispatches nothing, whatever remains of the window.
+    guard now() < end else { throw chromiumReadinessTimeout }
   }
 }
 

@@ -4888,6 +4888,23 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   7. **The model's document** gains one sentence at the end of agent-cursor.md's second paragraph (the surface
      inventory's #366 addition), copied byte for byte into the docs oracle and the core-documentation test.
   Date/Author: 2026-11-17, cursor235's implementer for #366 (ruling 766).
+- Decision (#366's review, 2026-11-17, `fix/366-chromium-ax-ready`; the review of c7eee724..d94039ec, two P2 findings
+  and one scope note, all accepted by the design session; amends "#366" above, items 1, 2 and 6):
+  1. **The window is read again after every sleep.** A write over a value that could not be read is not owned, so
+     another connection's observation writes it again while a request sleeps (accepted writes at 0 s and 1 s would have
+     woken the request at 2.5 s, 1.5 s after the latest). `waitOutChromiumWindow` re-reads `lastEnablementWrite` after
+     each sleep and waits out what remains, until none does; only then does the method take a hold or dispatch.
+  2. **The wait is bounded by the request's deadline.** A window that would end at or past the remaining deadline
+     (`deadlineUnixMilliseconds`, or receipt plus 120 s) is refused before the sleep as `timeoutReached`, the engine's
+     answer for a settle or launch wait the deadline cuts, with the input meta and nothing dispatched; the holds stay as
+     they were. A refusal before the deadline is preferred to sleeping into it, since nothing could be sent after it.
+  3. **Scroll waits only when it names an element** (`mayCarryElementAction`). An element scroll sends AXScrollToVisible
+     (or its fallbacks' writes, Positioning.swift) to the page before its wheel, which is an AX element action into the
+     renderer. A scroll at a point or the window's centre is a posted wheel and its read-back, and its #328 bar write
+     never targets a web area's or a page scroller's bar, so it serves no readiness and no longer waits.
+     `elementActionMethods` keeps click, set_value, select_text and perform_secondary_action, each of which can act
+     through accessibility on every request shape (a coordinate click through #282's element route).
+  Date/Author: 2026-11-17, cursor235's implementer for #366 (the design session's acceptance of the review).
 
 ## Outcomes & Retrospective
 

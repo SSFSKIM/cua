@@ -265,10 +265,16 @@ final class Engine: @unchecked Sendable {
     // The focus hold ends before anything aimed at another app.
     if focusHoldEndsBefore(app: target?.key, heldApp: connection.focusHold.app) { connection.endFocusHold() }
     // #366: an element action into a Chromium-family app waits out the rest of 2.5 s after the engine's last enablement
-    // write, before the method takes any hold (ChromiumReadiness.swift).
+    // write, before the method takes any hold, within the request's deadline (ChromiumReadiness.swift): a window the
+    // deadline cannot wait out is timeoutReached with the input meta, nothing dispatched.
     if let active {
-      _ = signposted("prologue.chromiumReady") {
-        awaitChromiumReadiness(method: method, app: active.app, pid: active.pid, launched: active.generation, connection: connection)
+      do {
+        _ = try signposted("prologue.chromiumReady") {
+          try awaitChromiumReadiness(method: method, args: args, app: active.app, pid: active.pid, launched: active.generation,
+                                     connection: connection, budgetMs: Double(deadline - unixMilliseconds()))
+        }
+      } catch let error as EngineError {
+        throw withMeta(error, InputMeta(context))
       }
     }
     let spanBefore = connection.menuSpan.serial

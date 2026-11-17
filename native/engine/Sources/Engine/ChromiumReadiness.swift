@@ -25,11 +25,20 @@ import Foundation
 /// The wait is what remains of the window, from 0 up to the whole of it.
 let chromiumActionWindowMs: Double = 2_500
 
-/// The methods whose request may carry an AX element action into its app (#366): an element click's own action and the
-/// focus of a field, a coordinate click's #282 element route, perform_secondary_action's actions (AXShowMenu included),
-/// set_value's and select_text's writes, and an element scroll's scroll into view or a scroll's bar write (#328). press_key,
-/// type_text, paste and drag post events only; get_app_state, resolve_app and list_apps act on nothing.
-let elementActionMethods: Set<String> = ["click", "perform_secondary_action", "scroll", "select_text", "set_value"]
+/// The methods whose every request may carry an AX element action into its app (#366): an element click's own action,
+/// its scroll into view and the focus of a field, a coordinate click's #282 element route, perform_secondary_action's
+/// actions (AXShowMenu included), set_value's and select_text's writes. A scroll carries one only when it names an
+/// element (`mayCarryElementAction`). press_key, type_text, paste and drag post events only; get_app_state, resolve_app
+/// and list_apps act on nothing.
+let elementActionMethods: Set<String> = ["click", "perform_secondary_action", "select_text", "set_value"]
+
+/// Whether a request may carry an AX element action into its app (#366): `elementActionMethods`, and a scroll naming an
+/// element, whose AXScrollToVisible (or its fallbacks' writes, Positioning.swift) goes to the page before the wheel. A
+/// scroll at a point or the window's centre is a posted wheel and its read-back; its fallback's bar write (#328) is
+/// never a web area's or a page scroller's (ScrollConfirm.swift), so it does not wait.
+func mayCarryElementAction(method: String, args: [String: Any]) -> Bool {
+  elementActionMethods.contains(method) || (method == "scroll" && args["element"] != nil)
+}
 
 /// How long an element action into an app of page engine `engine` waits at `now` (monotonic ms) when the engine's last
 /// accepted enablement write of its process returned at `lastWrite`: what remains of `chromiumActionWindowMs` for a
@@ -39,27 +48,43 @@ func chromiumActionWaitMs(engine: PageEngine, lastWrite: Double?, now: Double) -
   return min(chromiumActionWindowMs, max(0, lastWrite + chromiumActionWindowMs - now))
 }
 
+/// The readiness the request's deadline cannot wait for (#366): the engine's timeout, as a settle or a launch wait the
+/// deadline cuts (Skyshot.swift), with nothing dispatched.
+let chromiumReadinessTimeout = EngineError(name: "timeoutReached", "timeoutReached")
+
 /// The wait itself on `connection` (`chromiumActionWaitMs`), with the holds the module comment names: none while its
-/// recorded menu's span holds an activation, its focus hold ended before `sleep` runs. Answers the milliseconds waited.
+/// recorded menu's span holds an activation, its focus hold ended before `sleep` runs. `lastWrite` is read again after
+/// every sleep: an accepted write another connection made meanwhile (an attribute that could not be read is written but
+/// never owned, so a later observation writes it again) restarts the window, which is waited out too, until none of it
+/// remains. A wait that would end at or past `budgetMs` from its start, the request's remaining deadline, throws
+/// `chromiumReadinessTimeout` before it sleeps, the holds as they were. Answers the milliseconds waited.
 @discardableResult
-func waitOutChromiumWindow(engine: PageEngine, lastWrite: Double?, connection: ConnectionState, now: () -> Double,
-                           sleep: (Double) -> Void) -> Double {
-  let wait = chromiumActionWaitMs(engine: engine, lastWrite: lastWrite, now: now())
-  guard wait > 0, connection.menuSpan.app == nil else { return 0 }
-  if connection.focusHold.app != nil { connection.endFocusHold() }
-  sleep(wait)
-  return wait
+func waitOutChromiumWindow(engine: PageEngine, lastWrite: () -> Double?, connection: ConnectionState, budgetMs: Double,
+                           now: () -> Double, sleep: (Double) -> Void) throws -> Double {
+  let end = now() + budgetMs
+  var waited = 0.0
+  while true {
+    let started = now()
+    let wait = chromiumActionWaitMs(engine: engine, lastWrite: lastWrite(), now: started)
+    guard wait > 0, connection.menuSpan.app == nil else { return waited }
+    guard started + wait < end else { throw chromiumReadinessTimeout }
+    if connection.focusHold.app != nil { connection.endFocusHold() }
+    sleep(wait)
+    waited += wait
+  }
 }
 
 extension Engine {
-  /// execute's step (#366), after the input's enablement and the holds' steps, before the method runs: for a method that
-  /// may carry an element action (`elementActionMethods`), the wait for `app`'s process `pid` of generation `launched`,
-  /// on the engine's clock and sleeper. Answers the milliseconds waited.
+  /// execute's step (#366), after the input's enablement and the holds' steps, before the method runs: for a request that
+  /// may carry an element action (`mayCarryElementAction`), the wait for `app`'s process `pid` of generation `launched`,
+  /// on the engine's clock and sleeper, within `budgetMs`, the request's remaining deadline. Answers the milliseconds
+  /// waited; throws `chromiumReadinessTimeout` when the window outlasts the budget.
   @discardableResult
-  func awaitChromiumReadiness(method: String, app: ResolvedApp, pid: pid_t, launched: Date?, connection: ConnectionState) -> Double {
-    guard elementActionMethods.contains(method) else { return 0 }
-    return waitOutChromiumWindow(engine: webAccessibility.pageEngine(app.appPath),
-                                 lastWrite: webAccessibility.lastEnablementWrite(pid: pid, launched: launched),
-                                 connection: connection, now: monotonicClock, sleep: pause)
+  func awaitChromiumReadiness(method: String, args: [String: Any], app: ResolvedApp, pid: pid_t, launched: Date?,
+                              connection: ConnectionState, budgetMs: Double) throws -> Double {
+    guard mayCarryElementAction(method: method, args: args) else { return 0 }
+    return try waitOutChromiumWindow(engine: webAccessibility.pageEngine(app.appPath),
+                                     lastWrite: { [webAccessibility] in webAccessibility.lastEnablementWrite(pid: pid, launched: launched) },
+                                     connection: connection, budgetMs: budgetMs, now: monotonicClock, sleep: pause)
   }
 }

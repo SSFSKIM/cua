@@ -12,13 +12,15 @@ private final class FakeEnablement: @unchecked Sendable {
   var names = ["AXManualAccessibility", "AXEnhancedUserInterface"]
   var values: [String: Bool] = [:]
   var answer: AXError = .success
+  /// The attribute reads as unreadable: written, but never owned, so every observation writes it again.
+  var unreadable = false
   var writes: [String] = []
 
   var access: EnablementAccess {
     EnablementAccess(
       listed: { self.names },
       readRole: {},
-      read: { self.values[$0] ?? false },
+      read: { self.unreadable ? nil : self.values[$0] ?? false },
       write: { name, value in
         self.writes.append("\(name)=\(value)")
         if self.answer == .success || self.answer == .notImplemented { self.values[name] = value }
@@ -33,6 +35,8 @@ private final class Clock: @unchecked Sendable {
   var slept: [Double] = []
   /// Runs as the sleeper is called, before the clock moves on.
   var onSleep: () -> Void = {}
+  /// Runs once the clock has moved on by the sleep.
+  var onWake: () -> Void = {}
 }
 
 final class ChromiumReadinessTests: XCTestCase {
@@ -61,6 +65,7 @@ final class ChromiumReadinessTests: XCTestCase {
              clock.onSleep()
              clock.slept.append(ms)
              clock.now += ms
+             clock.onWake()
            })
   }
 
@@ -69,8 +74,15 @@ final class ChromiumReadinessTests: XCTestCase {
     _ = engine.webAccessibility.enable(pid: 7, launched: launched, connection: connection, access: fake.access)
   }
 
-  private func gate(_ engine: Engine, _ app: ResolvedApp, method: String = "click", connection: ConnectionState = ConnectionState(id: 1, fd: -1)) -> Double {
-    engine.awaitChromiumReadiness(method: method, app: app, pid: 7, launched: launched, connection: connection)
+  private func gate(_ engine: Engine, _ app: ResolvedApp, method: String = "click", args: [String: Any] = [:],
+                    connection: ConnectionState = ConnectionState(id: 1, fd: -1), budgetMs: Double = 120_000) -> Double {
+    do {
+      return try engine.awaitChromiumReadiness(method: method, args: args, app: app, pid: 7, launched: launched, connection: connection,
+                                               budgetMs: budgetMs)
+    } catch {
+      XCTFail("refused: \(error)")
+      return -1
+    }
   }
 
   func testAnActionWaitsOutWhatRemainsOfTheWindowSinceTheWrite() {
@@ -115,7 +127,9 @@ final class ChromiumReadinessTests: XCTestCase {
     observe(engine, FakeEnablement())
     clock.now = 10_500
     for name in ["Firefox", "TextEdit"] {
-      for method in elementActionMethods { XCTAssertEqual(gate(engine, app(name), method: method), 0, "\(name) \(method)") }
+      for method in elementActionMethods.union(["scroll"]) {
+        XCTAssertEqual(gate(engine, app(name), method: method, args: ["element": "e1"]), 0, "\(name) \(method)")
+      }
     }
     XCTAssertEqual(clock.slept, [])
   }
@@ -237,20 +251,95 @@ final class ChromiumReadinessTests: XCTestCase {
     XCTAssertEqual(held.focusHold.app, electron.key)
   }
 
-  func testEveryMethodThatMayCarryAnElementActionGoesThroughTheGate() {
-    // execute's vocabulary (Methods.swift): the methods that may act on an element through accessibility wait; the ones
-    // that only post events, observe or resolve do not.
+  func testEveryRequestThatMayCarryAnElementActionGoesThroughTheGate() {
+    // execute's vocabulary (Methods.swift): the methods that may act on an element through accessibility wait, a scroll
+    // only when it names an element (its scroll into view); the ones that only post events, observe or resolve do not.
     let vocabulary = ["list_apps", "resolve_app", "get_app_state", "click", "press_key", "type_text", "paste", "set_value", "select_text",
                       "perform_secondary_action", "scroll", "drag"]
-    let elementActions: Set<String> = ["click", "set_value", "select_text", "perform_secondary_action", "scroll"]
+    let elementActions: Set<String> = ["click", "set_value", "select_text", "perform_secondary_action"]
     XCTAssertEqual(elementActionMethods, elementActions)
     let clock = Clock()
     let engine = engine(clock)
     observe(engine, FakeEnablement())
     for method in vocabulary {
-      clock.now = 10_500
-      clock.slept = []
-      XCTAssertEqual(gate(engine, app("Electron"), method: method), elementActions.contains(method) ? 2_000 : 0, method)
+      for args in [[:], ["element": "e1"]] as [[String: Any]] {
+        clock.now = 10_500
+        let waits = elementActions.contains(method) || (method == "scroll" && args["element"] != nil)
+        XCTAssertEqual(gate(engine, app("Electron"), method: method, args: args), waits ? 2_000 : 0, "\(method) \(args)")
+      }
     }
+    XCTAssertFalse(mayCarryElementAction(method: "scroll", args: ["x": 10, "y": 10]), "a scroll at a point posts a wheel")
+  }
+
+  func testAWriteLandingMidWaitIsWaitedOutToo() {
+    // An attribute that could not be read is written but never owned, so another connection's observation writes it
+    // again while this request sleeps: the window restarts there, and the request waits until none of it remains.
+    let clock = Clock()
+    let engine = engine(clock)
+    let fake = FakeEnablement()
+    fake.unreadable = true
+    observe(engine, fake)
+    var wakes = 0
+    clock.onWake = {
+      wakes += 1
+      guard wakes == 1 else { return }
+      let woke = clock.now
+      clock.now = 11_000
+      self.observe(engine, fake, connection: 2)
+      clock.now = woke
+    }
+    XCTAssertEqual(gate(engine, app("Electron")), 3_500)
+    XCTAssertEqual(fake.writes, ["AXManualAccessibility=true", "AXManualAccessibility=true"])
+    XCTAssertEqual(clock.slept, [2_500, 1_000], "woken at 12.5 s, 1.5 s after the second write: its last 1.0 s waited out")
+    XCTAssertEqual(clock.now, 13_500)
+  }
+
+  func testAWindowTheDeadlineCannotWaitOutTimesOutWithNothingDispatched() {
+    let clock = Clock()
+    let engine = engine(clock)
+    observe(engine, FakeEnablement())
+    let electron = app("Electron")
+    let connection = ConnectionState(id: 1, fd: -1)
+    var released = false
+    connection.focusHold.hold(app: electron.key) { released = true; return true }
+    func refused(_ budgetMs: Double) -> String? {
+      do {
+        _ = try engine.awaitChromiumReadiness(method: "click", args: [:], app: electron, pid: 7, launched: launched,
+                                              connection: connection, budgetMs: budgetMs)
+        return nil
+      } catch let error as EngineError {
+        return error.errorName
+      } catch {
+        return "\(error)"
+      }
+    }
+    XCTAssertEqual(refused(100), "timeoutReached", "a 100 ms deadline on a fresh write")
+    XCTAssertEqual(refused(2_500), "timeoutReached", "readiness at the deadline itself is past it")
+    XCTAssertEqual(clock.slept, [], "nothing slept")
+    XCTAssertFalse(released, "the holds as they were")
+    XCTAssertEqual(connection.focusHold.app, electron.key)
+    XCTAssertNil(refused(2_501))
+    XCTAssertEqual(clock.slept, [2_500])
+
+    // A write landing mid-wait that pushes readiness past the deadline times out at the wake, before any dispatch.
+    let late = Clock()
+    let other = self.engine(late)
+    let fake = FakeEnablement()
+    fake.unreadable = true
+    observe(other, fake)
+    late.onWake = {
+      late.onWake = {}
+      self.observe(other, fake, connection: 2)
+    }
+    do {
+      _ = try other.awaitChromiumReadiness(method: "click", args: [:], app: electron, pid: 7, launched: launched,
+                                           connection: ConnectionState(id: 4, fd: -1), budgetMs: 4_000)
+      XCTFail("dispatched past the deadline")
+    } catch let error as EngineError {
+      XCTAssertEqual(error.errorName, "timeoutReached")
+    } catch {
+      XCTFail("\(error)")
+    }
+    XCTAssertEqual(late.slept, [2_500], "the second window's 2.5 s would end past the 4 s budget")
   }
 }

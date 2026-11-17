@@ -1,0 +1,457 @@
+{
+  "run": "https://github.com/SSFSKIM/cua/actions/runs/44101305953",
+  "rows": [
+    {
+      "head": "main",
+      "sha": "15acf09b714dd19efc796e4a3a2ff8d57e2f7994",
+      "scene": "textedit",
+      "headBlocker": null,
+      "baseline": "ok; 13 nodes; omitted=none",
+      "baselineMatch": true,
+      "baselineScreenshot": "900×500; 21989 B; 0d9e156003ce",
+      "offscreenEstablished": false,
+      "offscreenGetApp": "not measured",
+      "offscreen": "not measured",
+      "offscreenMatch": null,
+      "offscreenLine": "not measured",
+      "offscreenDiffLine": "not measured",
+      "offscreenScreenshot": "not measured",
+      "offscreenRaise": {
+        "measured": false,
+        "reason": "offscreen fixture not independently established"
+      },
+      "partial": "ok; 13 nodes; omitted=none",
+      "partialScreenshot": "900×500; 21989 B; 0d9e156003ce",
+      "partialLine": "none",
+      "partialFrame": "(-790, 200, 900, 500) [AX]",
+      "anotherSpaceEstablished": false,
+      "spaceRoute": "fullscreen",
+      "anotherSpaceBlocker": null,
+      "anotherSpaceGetApp": "not measured",
+      "anotherSpace": "not measured",
+      "anotherSpaceMatch": null,
+      "anotherSpaceLine": "not measured",
+      "anotherSpaceGetAppLine": "not measured",
+      "anotherSpaceOmitted": {
+        "getApp": null,
+        "getAXState": null,
+        "getScreenshot": null
+      },
+      "anotherSpaceEvidence": {
+        "before": {
+          "active": 10,
+          "windowSpaces": [
+            10
+          ],
+          "allCGOnscreen": true,
+          "includingCGOnscreen": null,
+          "inOnscreenList": true,
+          "axAvailable": true,
+          "geometry": {
+            "source": "AX",
+            "bounds": {
+              "height": 768,
+              "width": 1024,
+              "x": 0,
+              "y": 0
+            }
+          }
+        },
+        "afterGetApp": {
+          "active": null,
+          "windowSpaces": null,
+          "allCGOnscreen": null,
+          "includingCGOnscreen": null,
+          "inOnscreenList": null,
+          "axAvailable": false,
+          "geometry": null
+        },
+        "afterGetAXState": {
+          "active": null,
+          "windowSpaces": null,
+          "allCGOnscreen": null,
+          "includingCGOnscreen": null,
+          "inOnscreenList": null,
+          "axAvailable": false,
+          "geometry": null
+        },
+        "afterGetScreenshot": {
+          "active": null,
+          "windowSpaces": null,
+          "allCGOnscreen": null,
+          "includingCGOnscreen": null,
+          "inOnscreenList": null,
+          "axAvailable": false,
+          "geometry": null
+        }
+      },
+      "anotherSpaceScreenshot": "not measured",
+      "anotherSpaceRaise": {
+        "measured": false,
+        "reason": "distinct active/window Spaces and false independent CG visibility not established"
+      },
+      "hidden": "ERROR noCapturableWindow",
+      "hiddenScreenshot": "ERROR Computer Use server error -10005: No capturable window found: TextEdit",
+      "hiddenLine": "not measured",
+      "returnComparison": {
+        "textEqual": false,
+        "jpegBytesEqual": false,
+        "byteLengthsEqual": false,
+        "dimensionsEqual": true
+      },
+      "returned": "ok; 13 nodes; omitted=none",
+      "returnScreenshot": "900×500; 21920 B; 74d3ef1db650",
+      "cost": {
+        "successful": 20,
+        "total": 20,
+        "walkP50Ms": 30.598,
+        "totalP50Ms": 36.1185,
+        "cgReadSamples": 20,
+        "cgReadP50Ms": 0.17904150000000002
+      }
+    },
+    {
+      "head": "main",
+      "sha": "15acf09b714dd19efc796e4a3a2ff8d57e2f7994",
+      "scene": "electron",
+      "headBlocker": null,
+      "baseline": "ok; 26 nodes; omitted=none",
+      "baselineMatch": true,
+      "baselineScreenshot": "900×500; 25145 B; d5ccb680b5e1",
+      "offscreenEstablished": false,
+      "offscreenGetApp": "not measured",
+      "offscreen": "not measured",
+      "offscreenMatch": null,
+      "offscreenLine": "not measured",
+      "offscreenDiffLine": "not measured",
+      "offscreenScreenshot": "not measured",
+      "offscreenRaise": {
+        "measured": false,
+        "reason": "offscreen fixture not independently established"
+      },
+      "partial": "ok; 26 nodes; omitted=none",
+      "partialScreenshot": "900×500; 25145 B; d5ccb680b5e1",
+      "partialLine": "none",
+      "partialFrame": "(-790, 200, 900, 500) [AX]",
+      "anotherSpaceEstablished": false,
+      "spaceRoute": "fullscreen",
+      "anotherSpaceBlocker": null,
+      "anotherSpaceGetApp": "not measured",
+      "anotherSpace": "not measured",
+      "anotherSpaceMatch": null,
+      "anotherSpaceLine": "not measured",
+      "anotherSpaceGetAppLine": "not measured",
+      "anotherSpaceOmitted": {
+        "getApp": null,
+        "getAXState": null,
+        "getScreenshot": null
+      },
+      "anotherSpaceEvidence": {
+        "before": {
+          "active": 15,
+          "windowSpaces": [
+            15
+          ],
+          "allCGOnscreen": true,
+          "includingCGOnscreen": null,
+          "inOnscreenList": true,
+          "axAvailable": true,
+          "geometry": {
+            "source": "AX",
+            "bounds": {
+              "height": 768,
+              "width": 1024,
+              "x": 0,
+              "y": 0
+            }
+          }
+        },
+        "afterGetApp": {
+          "active": null,
+          "windowSpaces": null,
+          "allCGOnscreen": null,
+          "includingCGOnscreen": null,
+          "inOnscreenList": null,
+          "axAvailable": false,
+          "geometry": null
+        },
+        "afterGetAXState": {
+          "active": null,
+          "windowSpaces": null,
+          "allCGOnscreen": null,
+          "includingCGOnscreen": null,
+          "inOnscreenList": null,
+          "axAvailable": false,
+          "geometry": null
+        },
+        "afterGetScreenshot": {
+          "active": null,
+          "windowSpaces": null,
+          "allCGOnscreen": null,
+          "includingCGOnscreen": null,
+          "inOnscreenList": null,
+          "axAvailable": false,
+          "geometry": null
+        }
+      },
+      "anotherSpaceScreenshot": "not measured",
+      "anotherSpaceRaise": {
+        "measured": false,
+        "reason": "distinct active/window Spaces and false independent CG visibility not established"
+      },
+      "hidden": "ERROR noCapturableWindow",
+      "hiddenScreenshot": "ERROR Computer Use server error -10005: No capturable window found: cua Electron Fixture",
+      "hiddenLine": "not measured",
+      "returnComparison": {
+        "textEqual": true,
+        "jpegBytesEqual": false,
+        "byteLengthsEqual": false,
+        "dimensionsEqual": true
+      },
+      "returned": "ok; 26 nodes; omitted=none",
+      "returnScreenshot": "900×500; 25230 B; 73fd1bdd522d",
+      "cost": {
+        "successful": 20,
+        "total": 20,
+        "walkP50Ms": 35.428,
+        "totalP50Ms": 38.9395,
+        "cgReadSamples": 20,
+        "cgReadP50Ms": 0.5465625000000001
+      }
+    },
+    {
+      "head": "fix",
+      "sha": "2b7804bdbbebd29ea7d88568878f329aaa77999d",
+      "scene": "textedit",
+      "headBlocker": null,
+      "baseline": "ok; 13 nodes; omitted=none",
+      "baselineMatch": true,
+      "baselineScreenshot": "900×500; 21989 B; 0d9e156003ce",
+      "offscreenEstablished": false,
+      "offscreenGetApp": "not measured",
+      "offscreen": "not measured",
+      "offscreenMatch": null,
+      "offscreenLine": "not measured",
+      "offscreenDiffLine": "not measured",
+      "offscreenScreenshot": "not measured",
+      "offscreenRaise": {
+        "measured": false,
+        "reason": "offscreen fixture not independently established"
+      },
+      "partial": "ok; 13 nodes; omitted=none",
+      "partialScreenshot": "900×500; 21989 B; 0d9e156003ce",
+      "partialLine": "none",
+      "partialFrame": "(-790, 200, 900, 500) [AX]",
+      "anotherSpaceEstablished": false,
+      "spaceRoute": "fullscreen",
+      "anotherSpaceBlocker": null,
+      "anotherSpaceGetApp": "not measured",
+      "anotherSpace": "not measured",
+      "anotherSpaceMatch": null,
+      "anotherSpaceLine": "not measured",
+      "anotherSpaceGetAppLine": "not measured",
+      "anotherSpaceOmitted": {
+        "getApp": null,
+        "getAXState": null,
+        "getScreenshot": null
+      },
+      "anotherSpaceEvidence": {
+        "before": {
+          "active": 20,
+          "windowSpaces": [
+            20
+          ],
+          "allCGOnscreen": true,
+          "includingCGOnscreen": null,
+          "inOnscreenList": true,
+          "axAvailable": true,
+          "geometry": {
+            "source": "AX",
+            "bounds": {
+              "height": 768,
+              "width": 1024,
+              "x": 0,
+              "y": 0
+            }
+          }
+        },
+        "afterGetApp": {
+          "active": null,
+          "windowSpaces": null,
+          "allCGOnscreen": null,
+          "includingCGOnscreen": null,
+          "inOnscreenList": null,
+          "axAvailable": false,
+          "geometry": null
+        },
+        "afterGetAXState": {
+          "active": null,
+          "windowSpaces": null,
+          "allCGOnscreen": null,
+          "includingCGOnscreen": null,
+          "inOnscreenList": null,
+          "axAvailable": false,
+          "geometry": null
+        },
+        "afterGetScreenshot": {
+          "active": null,
+          "windowSpaces": null,
+          "allCGOnscreen": null,
+          "includingCGOnscreen": null,
+          "inOnscreenList": null,
+          "axAvailable": false,
+          "geometry": null
+        }
+      },
+      "anotherSpaceScreenshot": "not measured",
+      "anotherSpaceRaise": {
+        "measured": false,
+        "reason": "distinct active/window Spaces and false independent CG visibility not established"
+      },
+      "hidden": "ERROR noCapturableWindow",
+      "hiddenScreenshot": "ERROR Computer Use server error -10005: No capturable window found: TextEdit",
+      "hiddenLine": "not measured",
+      "returnComparison": {
+        "textEqual": false,
+        "jpegBytesEqual": false,
+        "byteLengthsEqual": false,
+        "dimensionsEqual": true
+      },
+      "returned": "ok; 13 nodes; omitted=none",
+      "returnScreenshot": "900×500; 21920 B; 74d3ef1db650",
+      "cost": {
+        "successful": 20,
+        "total": 20,
+        "walkP50Ms": 21.0855,
+        "totalP50Ms": 24.037,
+        "cgReadSamples": 20,
+        "cgReadP50Ms": 0.1845
+      }
+    },
+    {
+      "head": "fix",
+      "sha": "2b7804bdbbebd29ea7d88568878f329aaa77999d",
+      "scene": "electron",
+      "headBlocker": null,
+      "baseline": "ok; 26 nodes; omitted=none",
+      "baselineMatch": true,
+      "baselineScreenshot": "900×500; 25145 B; d5ccb680b5e1",
+      "offscreenEstablished": false,
+      "offscreenGetApp": "not measured",
+      "offscreen": "not measured",
+      "offscreenMatch": null,
+      "offscreenLine": "not measured",
+      "offscreenDiffLine": "not measured",
+      "offscreenScreenshot": "not measured",
+      "offscreenRaise": {
+        "measured": false,
+        "reason": "offscreen fixture not independently established"
+      },
+      "partial": "ok; 26 nodes; omitted=none",
+      "partialScreenshot": "900×500; 25145 B; d5ccb680b5e1",
+      "partialLine": "none",
+      "partialFrame": "(-790, 200, 900, 500) [AX]",
+      "anotherSpaceEstablished": false,
+      "spaceRoute": "fullscreen",
+      "anotherSpaceBlocker": null,
+      "anotherSpaceGetApp": "not measured",
+      "anotherSpace": "not measured",
+      "anotherSpaceMatch": null,
+      "anotherSpaceLine": "not measured",
+      "anotherSpaceGetAppLine": "not measured",
+      "anotherSpaceOmitted": {
+        "getApp": null,
+        "getAXState": null,
+        "getScreenshot": null
+      },
+      "anotherSpaceEvidence": {
+        "before": {
+          "active": 25,
+          "windowSpaces": [
+            25
+          ],
+          "allCGOnscreen": true,
+          "includingCGOnscreen": null,
+          "inOnscreenList": true,
+          "axAvailable": true,
+          "geometry": {
+            "source": "AX",
+            "bounds": {
+              "height": 768,
+              "width": 1024,
+              "x": 0,
+              "y": 0
+            }
+          }
+        },
+        "afterGetApp": {
+          "active": null,
+          "windowSpaces": null,
+          "allCGOnscreen": null,
+          "includingCGOnscreen": null,
+          "inOnscreenList": null,
+          "axAvailable": false,
+          "geometry": null
+        },
+        "afterGetAXState": {
+          "active": null,
+          "windowSpaces": null,
+          "allCGOnscreen": null,
+          "includingCGOnscreen": null,
+          "inOnscreenList": null,
+          "axAvailable": false,
+          "geometry": null
+        },
+        "afterGetScreenshot": {
+          "active": null,
+          "windowSpaces": null,
+          "allCGOnscreen": null,
+          "includingCGOnscreen": null,
+          "inOnscreenList": null,
+          "axAvailable": false,
+          "geometry": null
+        }
+      },
+      "anotherSpaceScreenshot": "not measured",
+      "anotherSpaceRaise": {
+        "measured": false,
+        "reason": "distinct active/window Spaces and false independent CG visibility not established"
+      },
+      "hidden": "ERROR noCapturableWindow",
+      "hiddenScreenshot": "ERROR Computer Use server error -10005: No capturable window found: cua Electron Fixture",
+      "hiddenLine": "not measured",
+      "returnComparison": {
+        "textEqual": true,
+        "jpegBytesEqual": false,
+        "byteLengthsEqual": false,
+        "dimensionsEqual": true
+      },
+      "returned": "ok; 26 nodes; omitted=none",
+      "returnScreenshot": "900×500; 25230 B; 73fd1bdd522d",
+      "cost": {
+        "successful": 20,
+        "total": 20,
+        "walkP50Ms": 19.499000000000002,
+        "totalP50Ms": 23.075499999999998,
+        "cgReadSamples": 20,
+        "cgReadP50Ms": 0.163333
+      }
+    }
+  ],
+  "crossHead": [
+    {
+      "scene": "textedit",
+      "textEqual": false,
+      "jpegBytesEqual": true,
+      "byteLengthsEqual": true,
+      "dimensionsEqual": true
+    },
+    {
+      "scene": "electron",
+      "textEqual": true,
+      "jpegBytesEqual": true,
+      "byteLengthsEqual": true,
+      "dimensionsEqual": true
+    }
+  ]
+}

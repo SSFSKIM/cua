@@ -1,0 +1,2673 @@
+{
+  "run": "https://github.com/SSFSKIM/cua/actions/runs/44111743279",
+  "rows": [
+    {
+      "head": "main",
+      "sha": "15acf09b714dd19efc796e4a3a2ff8d57e2f7994",
+      "scene": "textedit",
+      "headBlocker": null,
+      "baseline": "ok; 13 nodes; omitted=none",
+      "baselineMatch": true,
+      "baselineScreenshot": "900×500; 21989 B; 0d9e156003ce",
+      "offscreenEstablished": false,
+      "offscreenGetApp": "not measured",
+      "offscreen": "not measured",
+      "offscreenMatch": null,
+      "offscreenLine": "not measured",
+      "offscreenDiffLine": "not measured",
+      "offscreenScreenshot": "not measured",
+      "offscreenRaise": {
+        "measured": false,
+        "reason": "Distinct AX move/shrink constructions retained display overlap; this bounded offscreen fixture is unavailable"
+      },
+      "partial": "ok; 13 nodes; omitted=none",
+      "partialScreenshot": "900×500; 21989 B; 0d9e156003ce",
+      "partialLine": "none",
+      "partialFrame": "(-790, 200, 900, 500) [AX]",
+      "anotherSpaceEstablished": false,
+      "spaceRoute": "fullscreen",
+      "anotherSpaceBlocker": {
+        "reason": "Fullscreen Space was created, but switching to a distinct desktop did not establish the independent another-Space preconditions",
+        "switchSetup": {
+          "ok": true,
+          "route": "system-events-key-code",
+          "steps": [
+            {
+              "before": {
+                "activeSpace": 10,
+                "at": 1794929790.1229281,
+                "frontmost": {
+                  "bundleId": "com.apple.TextEdit",
+                  "pid": 8177
+                },
+                "hidden": false,
+                "managedDisplaySpaces": [
+                  {
+                    "Current Space": {
+                      "fs_wid": 34,
+                      "id64": 10,
+                      "ManagedSpaceID": 10,
+                      "pid": 8177,
+                      "TileLayoutManager": {
+                        "Age": 0.9127474166666616,
+                        "ConfigAge": 0.911805291666667,
+                        "Inter-Tile Spacing": {
+                          "Height": 12,
+                          "Width": 12
+                        },
+                        "Layout Rect": {
+                          "Height": 768,
+                          "Width": 1024,
+                          "X": 0,
+                          "Y": 0
+                        },
+                        "Max Tile Config": {
+                          "Height": 1,
+                          "Width": 2
+                        },
+                        "PreferredLayout": [
+                          {
+                            "DisplaySize": {
+                              "Height": 768,
+                              "Width": 1024
+                            },
+                            "FirstTileSize": {
+                              "Height": 768,
+                              "Width": 1024
+                            }
+                          }
+                        ],
+                        "ReservedArea": {
+                          "Bottom": 0,
+                          "Left": 0,
+                          "Right": 0,
+                          "Top": 0
+                        },
+                        "TileSpaces": [
+                          {
+                            "appName": "TextEdit",
+                            "com.apple.appkit.disablemcexit": false,
+                            "fromSpace": "",
+                            "fs_wid": 34,
+                            "id64": 12,
+                            "ManagedSpaceID": 10,
+                            "name": "Cua367-owned.txt",
+                            "pid": 8177,
+                            "SizeConstraints": {
+                              "Max": {
+                                "Height": 100000,
+                                "Width": 100000
+                              },
+                              "Min": {
+                                "Height": 46,
+                                "Width": 115
+                              },
+                              "Preferred": {
+                                "Height": 500,
+                                "Width": 900
+                              }
+                            },
+                            "TileLimitedClipping": true,
+                            "TileRect": {
+                              "Height": 768,
+                              "Width": 1024,
+                              "X": 0,
+                              "Y": 0
+                            },
+                            "TileType": "Primary",
+                            "TileWindowID": 34,
+                            "type": 5,
+                            "uuid": "79D0415B-43CB-4E1C-97D4-3DC4698A1038"
+                          }
+                        ]
+                      },
+                      "type": 4,
+                      "uuid": "6F993932-B025-4A23-A14A-2D315B717489",
+                      "WallSpace": {
+                        "id64": 11,
+                        "ManagedSpaceID": 10,
+                        "type": 6,
+                        "uuid": "9920E7A9-8596-4746-9A28-2454991C3C39"
+                      }
+                    },
+                    "Display Identifier": "EEBC8EBB-1747-4179-8CB3-7038F756154C",
+                    "Spaces": [
+                      {
+                        "id64": 1,
+                        "ManagedSpaceID": 1,
+                        "type": 0,
+                        "uuid": ""
+                      },
+                      {
+                        "fs_wid": 34,
+                        "id64": 10,
+                        "ManagedSpaceID": 10,
+                        "pid": 8177,
+                        "TileLayoutManager": {
+                          "Age": 0.9127615416666686,
+                          "ConfigAge": 0.911819416666674,
+                          "Inter-Tile Spacing": {
+                            "Height": 12,
+                            "Width": 12
+                          },
+                          "Layout Rect": {
+                            "Height": 768,
+                            "Width": 1024,
+                            "X": 0,
+                            "Y": 0
+                          },
+                          "Max Tile Config": {
+                            "Height": 1,
+                            "Width": 2
+                          },
+                          "PreferredLayout": [
+                            {
+                              "DisplaySize": {
+                                "Height": 768,
+                                "Width": 1024
+                              },
+                              "FirstTileSize": {
+                                "Height": 768,
+                                "Width": 1024
+                              }
+                            }
+                          ],
+                          "ReservedArea": {
+                            "Bottom": 0,
+                            "Left": 0,
+                            "Right": 0,
+                            "Top": 0
+                          },
+                          "TileSpaces": [
+                            {
+                              "appName": "TextEdit",
+                              "com.apple.appkit.disablemcexit": false,
+                              "fromSpace": "",
+                              "fs_wid": 34,
+                              "id64": 12,
+                              "ManagedSpaceID": 10,
+                              "name": "Cua367-owned.txt",
+                              "pid": 8177,
+                              "SizeConstraints": {
+                                "Max": {
+                                  "Height": 100000,
+                                  "Width": 100000
+                                },
+                                "Min": {
+                                  "Height": 46,
+                                  "Width": 115
+                                },
+                                "Preferred": {
+                                  "Height": 500,
+                                  "Width": 900
+                                }
+                              },
+                              "TileLimitedClipping": true,
+                              "TileRect": {
+                                "Height": 768,
+                                "Width": 1024,
+                                "X": 0,
+                                "Y": 0
+                              },
+                              "TileType": "Primary",
+                              "TileWindowID": 34,
+                              "type": 5,
+                              "uuid": "79D0415B-43CB-4E1C-97D4-3DC4698A1038"
+                            }
+                          ]
+                        },
+                        "type": 4,
+                        "uuid": "6F993932-B025-4A23-A14A-2D315B717489",
+                        "WallSpace": {
+                          "id64": 11,
+                          "ManagedSpaceID": 10,
+                          "type": 6,
+                          "uuid": "9920E7A9-8596-4746-9A28-2454991C3C39"
+                        }
+                      }
+                    ]
+                  }
+                ],
+                "pid": 8177,
+                "screens": [
+                  {
+                    "height": 768,
+                    "width": 1024,
+                    "x": 0,
+                    "y": 0
+                  }
+                ],
+                "screensKnown": true,
+                "selectedWindowNumber": 34,
+                "symbols": {
+                  "active": true,
+                  "managed": true,
+                  "windowSpaces": true
+                },
+                "windows": [
+                  {
+                    "cg": {
+                      "kCGWindowAlpha": 1,
+                      "kCGWindowBounds": {
+                        "Height": 768,
+                        "Width": 1024,
+                        "X": 0,
+                        "Y": 0
+                      },
+                      "kCGWindowIsOnscreen": true,
+                      "kCGWindowLayer": 0,
+                      "kCGWindowMemoryUsage": 2368,
+                      "kCGWindowName": "Cua367-owned.txt",
+                      "kCGWindowNumber": 34,
+                      "kCGWindowOwnerName": "TextEdit",
+                      "kCGWindowOwnerPID": 8177,
+                      "kCGWindowSharingState": 1,
+                      "kCGWindowStoreType": 1
+                    },
+                    "cgOnscreen": true,
+                    "cgWindowFound": true,
+                    "frame": {
+                      "height": 768,
+                      "width": 1024,
+                      "x": 0,
+                      "y": 0
+                    },
+                    "fullScreen": true,
+                    "geometryStatus": "known",
+                    "inOnscreenList": true,
+                    "minimized": false,
+                    "number": 34,
+                    "numberResult": 0,
+                    "overlapsDisplay": true,
+                    "spaces": [
+                      10
+                    ],
+                    "title": "Cua367-owned.txt"
+                  }
+                ]
+              },
+              "posted": {
+                "exitCode": 0,
+                "keyCode": 123,
+                "mechanism": "osascript/System Events key code",
+                "modifiers": [
+                  "control"
+                ],
+                "posted": "switch-left",
+                "requested": "switch-left",
+                "script": "with timeout of 3 seconds\n tell application \"System Events\" to key code 123 using control down\nend timeout",
+                "stderr": "",
+                "stdout": "",
+                "timedOut": false
+              },
+              "after": {
+                "ok": true,
+                "value": {
+                  "activeSpace": 1,
+                  "at": 1794929791.428117,
+                  "frontmost": {
+                    "bundleId": "com.apple.finder",
+                    "pid": 359
+                  },
+                  "hidden": false,
+                  "managedDisplaySpaces": [
+                    {
+                      "Current Space": {
+                        "id64": 1,
+                        "ManagedSpaceID": 1,
+                        "type": 0,
+                        "uuid": ""
+                      },
+                      "Display Identifier": "EEBC8EBB-1747-4179-8CB3-7038F756154C",
+                      "Spaces": [
+                        {
+                          "id64": 1,
+                          "ManagedSpaceID": 1,
+                          "type": 0,
+                          "uuid": ""
+                        },
+                        {
+                          "fs_wid": 34,
+                          "id64": 10,
+                          "ManagedSpaceID": 10,
+                          "pid": 8177,
+                          "TileLayoutManager": {
+                            "Age": 2.2175587083333426,
+                            "ConfigAge": 2.216616583333348,
+                            "Inter-Tile Spacing": {
+                              "Height": 12,
+                              "Width": 12
+                            },
+                            "Layout Rect": {
+                              "Height": 768,
+                              "Width": 1024,
+                              "X": 0,
+                              "Y": 0
+                            },
+                            "Max Tile Config": {
+                              "Height": 1,
+                              "Width": 2
+                            },
+                            "PreferredLayout": [
+                              {
+                                "DisplaySize": {
+                                  "Height": 768,
+                                  "Width": 1024
+                                },
+                                "FirstTileSize": {
+                                  "Height": 768,
+                                  "Width": 1024
+                                }
+                              }
+                            ],
+                            "ReservedArea": {
+                              "Bottom": 0,
+                              "Left": 0,
+                              "Right": 0,
+                              "Top": 0
+                            },
+                            "TileSpaces": [
+                              {
+                                "appName": "TextEdit",
+                                "com.apple.appkit.disablemcexit": false,
+                                "fromSpace": "",
+                                "fs_wid": 34,
+                                "id64": 12,
+                                "ManagedSpaceID": 10,
+                                "name": "Cua367-owned.txt",
+                                "pid": 8177,
+                                "SizeConstraints": {
+                                  "Max": {
+                                    "Height": 100000,
+                                    "Width": 100000
+                                  },
+                                  "Min": {
+                                    "Height": 33,
+                                    "Width": 115
+                                  },
+                                  "Preferred": {
+                                    "Height": 422,
+                                    "Width": 656
+                                  }
+                                },
+                                "TileLimitedClipping": true,
+                                "TileRect": {
+                                  "Height": 768,
+                                  "Width": 1024,
+                                  "X": 0,
+                                  "Y": 0
+                                },
+                                "TileType": "Primary",
+                                "TileWindowID": 34,
+                                "type": 5,
+                                "uuid": "79D0415B-43CB-4E1C-97D4-3DC4698A1038"
+                              }
+                            ]
+                          },
+                          "type": 4,
+                          "uuid": "6F993932-B025-4A23-A14A-2D315B717489",
+                          "WallSpace": {
+                            "id64": 11,
+                            "ManagedSpaceID": 10,
+                            "type": 6,
+                            "uuid": "9920E7A9-8596-4746-9A28-2454991C3C39"
+                          }
+                        }
+                      ]
+                    }
+                  ],
+                  "pid": 8177,
+                  "screens": [
+                    {
+                      "height": 768,
+                      "width": 1024,
+                      "x": 0,
+                      "y": 0
+                    }
+                  ],
+                  "screensKnown": true,
+                  "selectedWindowNumber": 34,
+                  "symbols": {
+                    "active": true,
+                    "managed": true,
+                    "windowSpaces": true
+                  },
+                  "windows": [
+                    {
+                      "cg": {
+                        "kCGWindowAlpha": 1,
+                        "kCGWindowBounds": {
+                          "Height": 768,
+                          "Width": 1024,
+                          "X": 0,
+                          "Y": 0
+                        },
+                        "kCGWindowIsOnscreen": true,
+                        "kCGWindowLayer": 0,
+                        "kCGWindowMemoryUsage": 2368,
+                        "kCGWindowName": "Cua367-owned.txt",
+                        "kCGWindowNumber": 34,
+                        "kCGWindowOwnerName": "TextEdit",
+                        "kCGWindowOwnerPID": 8177,
+                        "kCGWindowSharingState": 1,
+                        "kCGWindowStoreType": 1
+                      },
+                      "cgOnscreen": true,
+                      "cgWindowFound": true,
+                      "frame": {
+                        "height": 768,
+                        "width": 1024,
+                        "x": 0,
+                        "y": 0
+                      },
+                      "fullScreen": true,
+                      "geometryStatus": "known",
+                      "inOnscreenList": false,
+                      "minimized": false,
+                      "number": 34,
+                      "numberResult": 0,
+                      "overlapsDisplay": true,
+                      "spaces": [
+                        10
+                      ],
+                      "title": "Cua367-owned.txt"
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "value": {
+            "activeSpace": 1,
+            "at": 1794929791.428117,
+            "frontmost": {
+              "bundleId": "com.apple.finder",
+              "pid": 359
+            },
+            "hidden": false,
+            "managedDisplaySpaces": [
+              {
+                "Current Space": {
+                  "id64": 1,
+                  "ManagedSpaceID": 1,
+                  "type": 0,
+                  "uuid": ""
+                },
+                "Display Identifier": "EEBC8EBB-1747-4179-8CB3-7038F756154C",
+                "Spaces": [
+                  {
+                    "id64": 1,
+                    "ManagedSpaceID": 1,
+                    "type": 0,
+                    "uuid": ""
+                  },
+                  {
+                    "fs_wid": 34,
+                    "id64": 10,
+                    "ManagedSpaceID": 10,
+                    "pid": 8177,
+                    "TileLayoutManager": {
+                      "Age": 2.2175587083333426,
+                      "ConfigAge": 2.216616583333348,
+                      "Inter-Tile Spacing": {
+                        "Height": 12,
+                        "Width": 12
+                      },
+                      "Layout Rect": {
+                        "Height": 768,
+                        "Width": 1024,
+                        "X": 0,
+                        "Y": 0
+                      },
+                      "Max Tile Config": {
+                        "Height": 1,
+                        "Width": 2
+                      },
+                      "PreferredLayout": [
+                        {
+                          "DisplaySize": {
+                            "Height": 768,
+                            "Width": 1024
+                          },
+                          "FirstTileSize": {
+                            "Height": 768,
+                            "Width": 1024
+                          }
+                        }
+                      ],
+                      "ReservedArea": {
+                        "Bottom": 0,
+                        "Left": 0,
+                        "Right": 0,
+                        "Top": 0
+                      },
+                      "TileSpaces": [
+                        {
+                          "appName": "TextEdit",
+                          "com.apple.appkit.disablemcexit": false,
+                          "fromSpace": "",
+                          "fs_wid": 34,
+                          "id64": 12,
+                          "ManagedSpaceID": 10,
+                          "name": "Cua367-owned.txt",
+                          "pid": 8177,
+                          "SizeConstraints": {
+                            "Max": {
+                              "Height": 100000,
+                              "Width": 100000
+                            },
+                            "Min": {
+                              "Height": 33,
+                              "Width": 115
+                            },
+                            "Preferred": {
+                              "Height": 422,
+                              "Width": 656
+                            }
+                          },
+                          "TileLimitedClipping": true,
+                          "TileRect": {
+                            "Height": 768,
+                            "Width": 1024,
+                            "X": 0,
+                            "Y": 0
+                          },
+                          "TileType": "Primary",
+                          "TileWindowID": 34,
+                          "type": 5,
+                          "uuid": "79D0415B-43CB-4E1C-97D4-3DC4698A1038"
+                        }
+                      ]
+                    },
+                    "type": 4,
+                    "uuid": "6F993932-B025-4A23-A14A-2D315B717489",
+                    "WallSpace": {
+                      "id64": 11,
+                      "ManagedSpaceID": 10,
+                      "type": 6,
+                      "uuid": "9920E7A9-8596-4746-9A28-2454991C3C39"
+                    }
+                  }
+                ]
+              }
+            ],
+            "pid": 8177,
+            "screens": [
+              {
+                "height": 768,
+                "width": 1024,
+                "x": 0,
+                "y": 0
+              }
+            ],
+            "screensKnown": true,
+            "selectedWindowNumber": 34,
+            "symbols": {
+              "active": true,
+              "managed": true,
+              "windowSpaces": true
+            },
+            "windows": [
+              {
+                "cg": {
+                  "kCGWindowAlpha": 1,
+                  "kCGWindowBounds": {
+                    "Height": 768,
+                    "Width": 1024,
+                    "X": 0,
+                    "Y": 0
+                  },
+                  "kCGWindowIsOnscreen": true,
+                  "kCGWindowLayer": 0,
+                  "kCGWindowMemoryUsage": 2368,
+                  "kCGWindowName": "Cua367-owned.txt",
+                  "kCGWindowNumber": 34,
+                  "kCGWindowOwnerName": "TextEdit",
+                  "kCGWindowOwnerPID": 8177,
+                  "kCGWindowSharingState": 1,
+                  "kCGWindowStoreType": 1
+                },
+                "cgOnscreen": true,
+                "cgWindowFound": true,
+                "frame": {
+                  "height": 768,
+                  "width": 1024,
+                  "x": 0,
+                  "y": 0
+                },
+                "fullScreen": true,
+                "geometryStatus": "known",
+                "inOnscreenList": false,
+                "minimized": false,
+                "number": 34,
+                "numberResult": 0,
+                "overlapsDisplay": true,
+                "spaces": [
+                  10
+                ],
+                "title": "Cua367-owned.txt"
+              }
+            ]
+          }
+        }
+      },
+      "anotherSpaceGetApp": "not measured",
+      "anotherSpace": "not measured",
+      "anotherSpaceMatch": null,
+      "anotherSpaceLine": "not measured",
+      "anotherSpaceGetAppLine": "not measured",
+      "anotherSpaceOmitted": {
+        "getApp": null,
+        "getAXState": null,
+        "getScreenshot": null
+      },
+      "anotherSpaceEvidence": {
+        "before": {
+          "active": 1,
+          "windowSpaces": null,
+          "allCGOnscreen": null,
+          "includingCGOnscreen": null,
+          "inOnscreenList": null,
+          "axAvailable": false,
+          "geometry": null
+        },
+        "afterGetApp": {
+          "active": null,
+          "windowSpaces": null,
+          "allCGOnscreen": null,
+          "includingCGOnscreen": null,
+          "inOnscreenList": null,
+          "axAvailable": false,
+          "geometry": null
+        },
+        "afterGetAXState": {
+          "active": null,
+          "windowSpaces": null,
+          "allCGOnscreen": null,
+          "includingCGOnscreen": null,
+          "inOnscreenList": null,
+          "axAvailable": false,
+          "geometry": null
+        },
+        "afterGetScreenshot": {
+          "active": null,
+          "windowSpaces": null,
+          "allCGOnscreen": null,
+          "includingCGOnscreen": null,
+          "inOnscreenList": null,
+          "axAvailable": false,
+          "geometry": null
+        }
+      },
+      "anotherSpaceScreenshot": "not measured",
+      "anotherSpaceRaise": {
+        "measured": false,
+        "reason": "Fullscreen Space was created, but switching to a distinct desktop did not establish the independent another-Space preconditions"
+      },
+      "hidden": "ok; 6 nodes; omitted=none",
+      "hiddenScreenshot": "1024×768; 26988 B; e4a7fa556c92",
+      "hiddenLine": "none",
+      "returnComparison": {
+        "textEqual": false,
+        "jpegBytesEqual": false,
+        "byteLengthsEqual": false,
+        "dimensionsEqual": false
+      },
+      "returned": "ok; 6 nodes; omitted=none",
+      "returnScreenshot": "1024×768; 26988 B; e4a7fa556c92",
+      "cost": {
+        "successful": 20,
+        "total": 20,
+        "walkP50Ms": 12.5765,
+        "totalP50Ms": 32.875,
+        "cgReadSamples": 20,
+        "cgReadP50Ms": 0.203271
+      }
+    },
+    {
+      "head": "main",
+      "sha": "15acf09b714dd19efc796e4a3a2ff8d57e2f7994",
+      "scene": "electron",
+      "headBlocker": null,
+      "baseline": "ok; 26 nodes; omitted=none",
+      "baselineMatch": true,
+      "baselineScreenshot": "900×500; 25145 B; d5ccb680b5e1",
+      "offscreenEstablished": false,
+      "offscreenGetApp": "not measured",
+      "offscreen": "not measured",
+      "offscreenMatch": null,
+      "offscreenLine": "not measured",
+      "offscreenDiffLine": "not measured",
+      "offscreenScreenshot": "not measured",
+      "offscreenRaise": {
+        "measured": false,
+        "reason": "Owned Electron setBounds did not yield both a matching successful ACK and independent zero display overlap"
+      },
+      "partial": "ok; 26 nodes; omitted=none",
+      "partialScreenshot": "900×500; 25145 B; d5ccb680b5e1",
+      "partialLine": "none",
+      "partialFrame": "(-790, 200, 900, 500) [AX]",
+      "anotherSpaceEstablished": false,
+      "spaceRoute": "fullscreen",
+      "anotherSpaceBlocker": {
+        "reason": "Fullscreen Space was created, but switching to a distinct desktop did not establish the independent another-Space preconditions",
+        "switchSetup": {
+          "ok": true,
+          "route": "system-events-key-code",
+          "steps": [
+            {
+              "before": {
+                "activeSpace": 14,
+                "at": 1794929846.750392,
+                "frontmost": {
+                  "bundleId": "io.github.ssfskim.cua.fixture.electron",
+                  "pid": 10274
+                },
+                "hidden": false,
+                "managedDisplaySpaces": [
+                  {
+                    "Current Space": {
+                      "fs_wid": 77,
+                      "id64": 14,
+                      "ManagedSpaceID": 14,
+                      "pid": 10274,
+                      "TileLayoutManager": {
+                        "Age": 0.8519048750000024,
+                        "ConfigAge": 0.851074833333314,
+                        "Inter-Tile Spacing": {
+                          "Height": 12,
+                          "Width": 12
+                        },
+                        "Layout Rect": {
+                          "Height": 768,
+                          "Width": 1024,
+                          "X": 0,
+                          "Y": 0
+                        },
+                        "Max Tile Config": {
+                          "Height": 1,
+                          "Width": 2
+                        },
+                        "PreferredLayout": [
+                          {
+                            "DisplaySize": {
+                              "Height": 768,
+                              "Width": 1024
+                            },
+                            "FirstTileSize": {
+                              "Height": 768,
+                              "Width": 1024
+                            }
+                          }
+                        ],
+                        "ReservedArea": {
+                          "Bottom": 0,
+                          "Left": 0,
+                          "Right": 0,
+                          "Top": 0
+                        },
+                        "TileSpaces": [
+                          {
+                            "appName": "cua Electron Fixture",
+                            "com.apple.appkit.disablemcexit": false,
+                            "fromSpace": "",
+                            "fs_wid": 77,
+                            "id64": 16,
+                            "ManagedSpaceID": 14,
+                            "name": "cua Electron fixture",
+                            "pid": 10274,
+                            "SizeConstraints": {
+                              "Max": {
+                                "Height": 100000,
+                                "Width": 100000
+                              },
+                              "Min": {
+                                "Height": 33,
+                                "Width": 87
+                              },
+                              "Preferred": {
+                                "Height": 500,
+                                "Width": 900
+                              }
+                            },
+                            "TileLimitedClipping": true,
+                            "TileRect": {
+                              "Height": 768,
+                              "Width": 1024,
+                              "X": 0,
+                              "Y": 0
+                            },
+                            "TileType": "Primary",
+                            "TileWindowID": 77,
+                            "type": 5,
+                            "uuid": "D567446A-2F31-4CAD-959F-DB828358EE15"
+                          }
+                        ]
+                      },
+                      "type": 4,
+                      "uuid": "F0E3F48F-6711-40DA-9B72-C4EA7F6D8D65",
+                      "WallSpace": {
+                        "id64": 15,
+                        "ManagedSpaceID": 14,
+                        "type": 6,
+                        "uuid": "9B07B933-76AA-44CD-8659-87C647DBA9D9"
+                      }
+                    },
+                    "Display Identifier": "EEBC8EBB-1747-4179-8CB3-7038F756154C",
+                    "Spaces": [
+                      {
+                        "id64": 1,
+                        "ManagedSpaceID": 1,
+                        "type": 0,
+                        "uuid": ""
+                      },
+                      {
+                        "fs_wid": 77,
+                        "id64": 14,
+                        "ManagedSpaceID": 14,
+                        "pid": 10274,
+                        "TileLayoutManager": {
+                          "Age": 0.8519188333333432,
+                          "ConfigAge": 0.8510887916666547,
+                          "Inter-Tile Spacing": {
+                            "Height": 12,
+                            "Width": 12
+                          },
+                          "Layout Rect": {
+                            "Height": 768,
+                            "Width": 1024,
+                            "X": 0,
+                            "Y": 0
+                          },
+                          "Max Tile Config": {
+                            "Height": 1,
+                            "Width": 2
+                          },
+                          "PreferredLayout": [
+                            {
+                              "DisplaySize": {
+                                "Height": 768,
+                                "Width": 1024
+                              },
+                              "FirstTileSize": {
+                                "Height": 768,
+                                "Width": 1024
+                              }
+                            }
+                          ],
+                          "ReservedArea": {
+                            "Bottom": 0,
+                            "Left": 0,
+                            "Right": 0,
+                            "Top": 0
+                          },
+                          "TileSpaces": [
+                            {
+                              "appName": "cua Electron Fixture",
+                              "com.apple.appkit.disablemcexit": false,
+                              "fromSpace": "",
+                              "fs_wid": 77,
+                              "id64": 16,
+                              "ManagedSpaceID": 14,
+                              "name": "cua Electron fixture",
+                              "pid": 10274,
+                              "SizeConstraints": {
+                                "Max": {
+                                  "Height": 100000,
+                                  "Width": 100000
+                                },
+                                "Min": {
+                                  "Height": 33,
+                                  "Width": 87
+                                },
+                                "Preferred": {
+                                  "Height": 500,
+                                  "Width": 900
+                                }
+                              },
+                              "TileLimitedClipping": true,
+                              "TileRect": {
+                                "Height": 768,
+                                "Width": 1024,
+                                "X": 0,
+                                "Y": 0
+                              },
+                              "TileType": "Primary",
+                              "TileWindowID": 77,
+                              "type": 5,
+                              "uuid": "D567446A-2F31-4CAD-959F-DB828358EE15"
+                            }
+                          ]
+                        },
+                        "type": 4,
+                        "uuid": "F0E3F48F-6711-40DA-9B72-C4EA7F6D8D65",
+                        "WallSpace": {
+                          "id64": 15,
+                          "ManagedSpaceID": 14,
+                          "type": 6,
+                          "uuid": "9B07B933-76AA-44CD-8659-87C647DBA9D9"
+                        }
+                      }
+                    ]
+                  }
+                ],
+                "pid": 10274,
+                "screens": [
+                  {
+                    "height": 768,
+                    "width": 1024,
+                    "x": 0,
+                    "y": 0
+                  }
+                ],
+                "screensKnown": true,
+                "selectedWindowNumber": 77,
+                "symbols": {
+                  "active": true,
+                  "managed": true,
+                  "windowSpaces": true
+                },
+                "windows": [
+                  {
+                    "cg": {
+                      "kCGWindowAlpha": 1,
+                      "kCGWindowBounds": {
+                        "Height": 768,
+                        "Width": 1024,
+                        "X": 0,
+                        "Y": 0
+                      },
+                      "kCGWindowIsOnscreen": true,
+                      "kCGWindowLayer": 0,
+                      "kCGWindowMemoryUsage": 2368,
+                      "kCGWindowName": "cua Electron fixture",
+                      "kCGWindowNumber": 77,
+                      "kCGWindowOwnerName": "cua Electron Fixture",
+                      "kCGWindowOwnerPID": 10274,
+                      "kCGWindowSharingState": 1,
+                      "kCGWindowStoreType": 1
+                    },
+                    "cgOnscreen": true,
+                    "cgWindowFound": true,
+                    "frame": {
+                      "height": 768,
+                      "width": 1024,
+                      "x": 0,
+                      "y": 0
+                    },
+                    "fullScreen": true,
+                    "geometryStatus": "known",
+                    "inOnscreenList": true,
+                    "minimized": false,
+                    "number": 77,
+                    "numberResult": 0,
+                    "overlapsDisplay": true,
+                    "spaces": [
+                      14
+                    ],
+                    "title": "cua Electron fixture"
+                  }
+                ]
+              },
+              "posted": {
+                "exitCode": 0,
+                "keyCode": 123,
+                "mechanism": "osascript/System Events key code",
+                "modifiers": [
+                  "control"
+                ],
+                "posted": "switch-left",
+                "requested": "switch-left",
+                "script": "with timeout of 3 seconds\n tell application \"System Events\" to key code 123 using control down\nend timeout",
+                "stderr": "",
+                "stdout": "",
+                "timedOut": false
+              },
+              "after": {
+                "ok": true,
+                "value": {
+                  "activeSpace": 1,
+                  "at": 1794929847.4965239,
+                  "frontmost": {
+                    "bundleId": "com.apple.finder",
+                    "pid": 359
+                  },
+                  "hidden": false,
+                  "managedDisplaySpaces": [
+                    {
+                      "Current Space": {
+                        "id64": 1,
+                        "ManagedSpaceID": 1,
+                        "type": 0,
+                        "uuid": ""
+                      },
+                      "Display Identifier": "EEBC8EBB-1747-4179-8CB3-7038F756154C",
+                      "Spaces": [
+                        {
+                          "id64": 1,
+                          "ManagedSpaceID": 1,
+                          "type": 0,
+                          "uuid": ""
+                        },
+                        {
+                          "fs_wid": 77,
+                          "id64": 14,
+                          "ManagedSpaceID": 14,
+                          "pid": 10274,
+                          "TileLayoutManager": {
+                            "Age": 1.5977505000000178,
+                            "ConfigAge": 1.5969204583333294,
+                            "Inter-Tile Spacing": {
+                              "Height": 12,
+                              "Width": 12
+                            },
+                            "Layout Rect": {
+                              "Height": 768,
+                              "Width": 1024,
+                              "X": 0,
+                              "Y": 0
+                            },
+                            "Max Tile Config": {
+                              "Height": 1,
+                              "Width": 2
+                            },
+                            "PreferredLayout": [
+                              {
+                                "DisplaySize": {
+                                  "Height": 768,
+                                  "Width": 1024
+                                },
+                                "FirstTileSize": {
+                                  "Height": 768,
+                                  "Width": 1024
+                                }
+                              }
+                            ],
+                            "ReservedArea": {
+                              "Bottom": 0,
+                              "Left": 0,
+                              "Right": 0,
+                              "Top": 0
+                            },
+                            "TileSpaces": [
+                              {
+                                "appName": "cua Electron Fixture",
+                                "com.apple.appkit.disablemcexit": false,
+                                "fromSpace": "",
+                                "fs_wid": 77,
+                                "id64": 16,
+                                "ManagedSpaceID": 14,
+                                "name": "cua Electron fixture",
+                                "pid": 10274,
+                                "SizeConstraints": {
+                                  "Max": {
+                                    "Height": 100000,
+                                    "Width": 100000
+                                  },
+                                  "Min": {
+                                    "Height": 33,
+                                    "Width": 87
+                                  },
+                                  "Preferred": {
+                                    "Height": 500,
+                                    "Width": 900
+                                  }
+                                },
+                                "TileLimitedClipping": true,
+                                "TileRect": {
+                                  "Height": 768,
+                                  "Width": 1024,
+                                  "X": 0,
+                                  "Y": 0
+                                },
+                                "TileType": "Primary",
+                                "TileWindowID": 77,
+                                "type": 5,
+                                "uuid": "D567446A-2F31-4CAD-959F-DB828358EE15"
+                              }
+                            ]
+                          },
+                          "type": 4,
+                          "uuid": "F0E3F48F-6711-40DA-9B72-C4EA7F6D8D65",
+                          "WallSpace": {
+                            "id64": 15,
+                            "ManagedSpaceID": 14,
+                            "type": 6,
+                            "uuid": "9B07B933-76AA-44CD-8659-87C647DBA9D9"
+                          }
+                        }
+                      ]
+                    }
+                  ],
+                  "pid": 10274,
+                  "screens": [
+                    {
+                      "height": 768,
+                      "width": 1024,
+                      "x": 0,
+                      "y": 0
+                    }
+                  ],
+                  "screensKnown": true,
+                  "selectedWindowNumber": 77,
+                  "symbols": {
+                    "active": true,
+                    "managed": true,
+                    "windowSpaces": true
+                  },
+                  "windows": [
+                    {
+                      "cg": {
+                        "kCGWindowAlpha": 1,
+                        "kCGWindowBounds": {
+                          "Height": 768,
+                          "Width": 1024,
+                          "X": 0,
+                          "Y": 0
+                        },
+                        "kCGWindowIsOnscreen": true,
+                        "kCGWindowLayer": 0,
+                        "kCGWindowMemoryUsage": 2368,
+                        "kCGWindowName": "cua Electron fixture",
+                        "kCGWindowNumber": 77,
+                        "kCGWindowOwnerName": "cua Electron Fixture",
+                        "kCGWindowOwnerPID": 10274,
+                        "kCGWindowSharingState": 1,
+                        "kCGWindowStoreType": 1
+                      },
+                      "cgOnscreen": true,
+                      "cgWindowFound": true,
+                      "frame": {
+                        "height": 768,
+                        "width": 1024,
+                        "x": 0,
+                        "y": 0
+                      },
+                      "fullScreen": true,
+                      "geometryStatus": "known",
+                      "inOnscreenList": true,
+                      "minimized": false,
+                      "number": 77,
+                      "numberResult": 0,
+                      "overlapsDisplay": true,
+                      "spaces": [
+                        14
+                      ],
+                      "title": "cua Electron fixture"
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "value": {
+            "activeSpace": 1,
+            "at": 1794929847.4965239,
+            "frontmost": {
+              "bundleId": "com.apple.finder",
+              "pid": 359
+            },
+            "hidden": false,
+            "managedDisplaySpaces": [
+              {
+                "Current Space": {
+                  "id64": 1,
+                  "ManagedSpaceID": 1,
+                  "type": 0,
+                  "uuid": ""
+                },
+                "Display Identifier": "EEBC8EBB-1747-4179-8CB3-7038F756154C",
+                "Spaces": [
+                  {
+                    "id64": 1,
+                    "ManagedSpaceID": 1,
+                    "type": 0,
+                    "uuid": ""
+                  },
+                  {
+                    "fs_wid": 77,
+                    "id64": 14,
+                    "ManagedSpaceID": 14,
+                    "pid": 10274,
+                    "TileLayoutManager": {
+                      "Age": 1.5977505000000178,
+                      "ConfigAge": 1.5969204583333294,
+                      "Inter-Tile Spacing": {
+                        "Height": 12,
+                        "Width": 12
+                      },
+                      "Layout Rect": {
+                        "Height": 768,
+                        "Width": 1024,
+                        "X": 0,
+                        "Y": 0
+                      },
+                      "Max Tile Config": {
+                        "Height": 1,
+                        "Width": 2
+                      },
+                      "PreferredLayout": [
+                        {
+                          "DisplaySize": {
+                            "Height": 768,
+                            "Width": 1024
+                          },
+                          "FirstTileSize": {
+                            "Height": 768,
+                            "Width": 1024
+                          }
+                        }
+                      ],
+                      "ReservedArea": {
+                        "Bottom": 0,
+                        "Left": 0,
+                        "Right": 0,
+                        "Top": 0
+                      },
+                      "TileSpaces": [
+                        {
+                          "appName": "cua Electron Fixture",
+                          "com.apple.appkit.disablemcexit": false,
+                          "fromSpace": "",
+                          "fs_wid": 77,
+                          "id64": 16,
+                          "ManagedSpaceID": 14,
+                          "name": "cua Electron fixture",
+                          "pid": 10274,
+                          "SizeConstraints": {
+                            "Max": {
+                              "Height": 100000,
+                              "Width": 100000
+                            },
+                            "Min": {
+                              "Height": 33,
+                              "Width": 87
+                            },
+                            "Preferred": {
+                              "Height": 500,
+                              "Width": 900
+                            }
+                          },
+                          "TileLimitedClipping": true,
+                          "TileRect": {
+                            "Height": 768,
+                            "Width": 1024,
+                            "X": 0,
+                            "Y": 0
+                          },
+                          "TileType": "Primary",
+                          "TileWindowID": 77,
+                          "type": 5,
+                          "uuid": "D567446A-2F31-4CAD-959F-DB828358EE15"
+                        }
+                      ]
+                    },
+                    "type": 4,
+                    "uuid": "F0E3F48F-6711-40DA-9B72-C4EA7F6D8D65",
+                    "WallSpace": {
+                      "id64": 15,
+                      "ManagedSpaceID": 14,
+                      "type": 6,
+                      "uuid": "9B07B933-76AA-44CD-8659-87C647DBA9D9"
+                    }
+                  }
+                ]
+              }
+            ],
+            "pid": 10274,
+            "screens": [
+              {
+                "height": 768,
+                "width": 1024,
+                "x": 0,
+                "y": 0
+              }
+            ],
+            "screensKnown": true,
+            "selectedWindowNumber": 77,
+            "symbols": {
+              "active": true,
+              "managed": true,
+              "windowSpaces": true
+            },
+            "windows": [
+              {
+                "cg": {
+                  "kCGWindowAlpha": 1,
+                  "kCGWindowBounds": {
+                    "Height": 768,
+                    "Width": 1024,
+                    "X": 0,
+                    "Y": 0
+                  },
+                  "kCGWindowIsOnscreen": true,
+                  "kCGWindowLayer": 0,
+                  "kCGWindowMemoryUsage": 2368,
+                  "kCGWindowName": "cua Electron fixture",
+                  "kCGWindowNumber": 77,
+                  "kCGWindowOwnerName": "cua Electron Fixture",
+                  "kCGWindowOwnerPID": 10274,
+                  "kCGWindowSharingState": 1,
+                  "kCGWindowStoreType": 1
+                },
+                "cgOnscreen": true,
+                "cgWindowFound": true,
+                "frame": {
+                  "height": 768,
+                  "width": 1024,
+                  "x": 0,
+                  "y": 0
+                },
+                "fullScreen": true,
+                "geometryStatus": "known",
+                "inOnscreenList": true,
+                "minimized": false,
+                "number": 77,
+                "numberResult": 0,
+                "overlapsDisplay": true,
+                "spaces": [
+                  14
+                ],
+                "title": "cua Electron fixture"
+              }
+            ]
+          }
+        }
+      },
+      "anotherSpaceGetApp": "not measured",
+      "anotherSpace": "not measured",
+      "anotherSpaceMatch": null,
+      "anotherSpaceLine": "not measured",
+      "anotherSpaceGetAppLine": "not measured",
+      "anotherSpaceOmitted": {
+        "getApp": null,
+        "getAXState": null,
+        "getScreenshot": null
+      },
+      "anotherSpaceEvidence": {
+        "before": {
+          "active": 1,
+          "windowSpaces": null,
+          "allCGOnscreen": null,
+          "includingCGOnscreen": null,
+          "inOnscreenList": null,
+          "axAvailable": false,
+          "geometry": null
+        },
+        "afterGetApp": {
+          "active": null,
+          "windowSpaces": null,
+          "allCGOnscreen": null,
+          "includingCGOnscreen": null,
+          "inOnscreenList": null,
+          "axAvailable": false,
+          "geometry": null
+        },
+        "afterGetAXState": {
+          "active": null,
+          "windowSpaces": null,
+          "allCGOnscreen": null,
+          "includingCGOnscreen": null,
+          "inOnscreenList": null,
+          "axAvailable": false,
+          "geometry": null
+        },
+        "afterGetScreenshot": {
+          "active": null,
+          "windowSpaces": null,
+          "allCGOnscreen": null,
+          "includingCGOnscreen": null,
+          "inOnscreenList": null,
+          "axAvailable": false,
+          "geometry": null
+        }
+      },
+      "anotherSpaceScreenshot": "not measured",
+      "anotherSpaceRaise": {
+        "measured": false,
+        "reason": "Fullscreen Space was created, but switching to a distinct desktop did not establish the independent another-Space preconditions"
+      },
+      "hidden": "ERROR timeoutReached",
+      "hiddenScreenshot": "ERROR Computer Use server error -10005: timeoutReached",
+      "hiddenLine": "not measured",
+      "returnComparison": {
+        "textEqual": null,
+        "jpegBytesEqual": null,
+        "byteLengthsEqual": null,
+        "dimensionsEqual": null
+      },
+      "returned": "ERROR timeoutReached",
+      "returnScreenshot": "ERROR Computer Use server error -10005: timeoutReached",
+      "cost": {
+        "successful": 0,
+        "total": 20,
+        "walkP50Ms": null,
+        "totalP50Ms": null,
+        "cgReadSamples": 0,
+        "cgReadP50Ms": null
+      }
+    },
+    {
+      "head": "fix",
+      "sha": "2b7804bdbbebd29ea7d88568878f329aaa77999d",
+      "scene": "textedit",
+      "headBlocker": null,
+      "baseline": "ok; 6 nodes; omitted=none",
+      "baselineMatch": true,
+      "baselineScreenshot": "1024×768; 26988 B; e4a7fa556c92",
+      "offscreenEstablished": false,
+      "offscreenGetApp": "not measured",
+      "offscreen": "not measured",
+      "offscreenMatch": null,
+      "offscreenLine": "not measured",
+      "offscreenDiffLine": "not measured",
+      "offscreenScreenshot": "not measured",
+      "offscreenRaise": {
+        "measured": false,
+        "reason": "Distinct AX move/shrink constructions retained display overlap; this bounded offscreen fixture is unavailable"
+      },
+      "partial": "ok; 6 nodes; omitted=none",
+      "partialScreenshot": "1024×768; 26988 B; e4a7fa556c92",
+      "partialLine": "none",
+      "partialFrame": "(0, 0, 1024, 768) [AX]",
+      "anotherSpaceEstablished": false,
+      "spaceRoute": "mission-control",
+      "anotherSpaceBlocker": {
+        "reason": "New desktop created; its single selection AXPress did not establish distinct active/window Spaces with false CG visibility",
+        "addDesktop": {
+          "axPressResult": 0,
+          "candidateIndexes": [
+            32
+          ],
+          "complete": true,
+          "dockPid": 355,
+          "errors": {
+            "actions:-25200": 7
+          },
+          "nodes": [
+            {
+              "actions": [],
+              "description": "",
+              "identifier": "",
+              "role": "AXApplication",
+              "title": "Dock"
+            },
+            {
+              "actions": [],
+              "description": "",
+              "identifier": "",
+              "role": "AXList",
+              "title": ""
+            },
+            {
+              "actions": [],
+              "description": "",
+              "identifier": "mc",
+              "role": "AXGroup",
+              "title": "Mission Control"
+            },
+            {
+              "actions": [
+                "AXPress",
+                "AXShowMenu",
+                "AXShowExpose"
+              ],
+              "description": "",
+              "identifier": "",
+              "role": "AXDockItem",
+              "title": "Finder"
+            },
+            {
+              "actions": [
+                "AXPress",
+                "AXShowMenu"
+              ],
+              "description": "",
+              "identifier": "",
+              "role": "AXDockItem",
+              "title": "Apps"
+            },
+            {
+              "actions": [
+                "AXPress",
+                "AXShowMenu",
+                "AXShowExpose"
+              ],
+              "description": "",
+              "identifier": "",
+              "role": "AXDockItem",
+              "title": "Safari"
+            },
+            {
+              "actions": [
+                "AXPress",
+                "AXShowMenu",
+                "AXShowExpose"
+              ],
+              "description": "",
+              "identifier": "",
+              "role": "AXDockItem",
+              "title": "Messages"
+            },
+            {
+              "actions": [
+                "AXPress",
+                "AXShowMenu",
+                "AXShowExpose"
+              ],
+              "description": "",
+              "identifier": "",
+              "role": "AXDockItem",
+              "title": "Mail"
+            },
+            {
+              "actions": [
+                "AXPress",
+                "AXShowMenu",
+                "AXShowExpose"
+              ],
+              "description": "",
+              "identifier": "",
+              "role": "AXDockItem",
+              "title": "Maps"
+            },
+            {
+              "actions": [
+                "AXPress",
+                "AXShowMenu",
+                "AXShowExpose"
+              ],
+              "description": "",
+              "identifier": "",
+              "role": "AXDockItem",
+              "title": "Photos"
+            },
+            {
+              "actions": [
+                "AXPress",
+                "AXShowMenu",
+                "AXShowExpose"
+              ],
+              "description": "",
+              "identifier": "",
+              "role": "AXDockItem",
+              "title": "FaceTime"
+            },
+            {
+              "actions": [
+                "AXPress",
+                "AXShowMenu",
+                "AXShowExpose"
+              ],
+              "description": "",
+              "identifier": "",
+              "role": "AXDockItem",
+              "title": "Phone"
+            },
+            {
+              "actions": [
+                "AXPress",
+                "AXShowMenu",
+                "AXShowExpose"
+              ],
+              "description": "",
+              "identifier": "",
+              "role": "AXDockItem",
+              "title": "Calendar"
+            },
+            {
+              "actions": [
+                "AXPress",
+                "AXShowMenu",
+                "AXShowExpose"
+              ],
+              "description": "",
+              "identifier": "",
+              "role": "AXDockItem",
+              "title": "Contacts"
+            },
+            {
+              "actions": [
+                "AXPress",
+                "AXShowMenu",
+                "AXShowExpose"
+              ],
+              "description": "",
+              "identifier": "",
+              "role": "AXDockItem",
+              "title": "Reminders"
+            },
+            {
+              "actions": [
+                "AXPress",
+                "AXShowMenu",
+                "AXShowExpose"
+              ],
+              "description": "",
+              "identifier": "",
+              "role": "AXDockItem",
+              "title": "Notes"
+            },
+            {
+              "actions": [
+                "AXPress",
+                "AXShowMenu",
+                "AXShowExpose"
+              ],
+              "description": "",
+              "identifier": "",
+              "role": "AXDockItem",
+              "title": "TV"
+            },
+            {
+              "actions": [
+                "AXPress",
+                "AXShowMenu",
+                "AXShowExpose"
+              ],
+              "description": "",
+              "identifier": "",
+              "role": "AXDockItem",
+              "title": "Music"
+            },
+            {
+              "actions": [
+                "AXPress",
+                "AXShowMenu",
+                "AXShowExpose"
+              ],
+              "description": "",
+              "identifier": "",
+              "role": "AXDockItem",
+              "title": "Games"
+            },
+            {
+              "actions": [
+                "AXPress",
+                "AXShowMenu",
+                "AXShowExpose"
+              ],
+              "description": "",
+              "identifier": "",
+              "role": "AXDockItem",
+              "title": "App Store"
+            },
+            {
+              "actions": [
+                "AXPress",
+                "AXShowMenu",
+                "AXShowExpose"
+              ],
+              "description": "",
+              "identifier": "",
+              "role": "AXDockItem",
+              "title": "iPhone Mirroring"
+            },
+            {
+              "actions": [
+                "AXPress",
+                "AXShowMenu",
+                "AXShowExpose"
+              ],
+              "description": "",
+              "identifier": "",
+              "role": "AXDockItem",
+              "title": "System Settings"
+            },
+            {
+              "actions": [
+                "AXPress",
+                "AXShowMenu"
+              ],
+              "description": "",
+              "identifier": "",
+              "role": "AXDockItem",
+              "title": ""
+            },
+            {
+              "actions": [
+                "AXPress",
+                "AXShowMenu",
+                "AXShowExpose"
+              ],
+              "description": "",
+              "identifier": "",
+              "role": "AXDockItem",
+              "title": "TextEdit"
+            },
+            {
+              "actions": [
+                "AXPress",
+                "AXShowMenu"
+              ],
+              "description": "",
+              "identifier": "",
+              "role": "AXDockItem",
+              "title": ""
+            },
+            {
+              "actions": [
+                "AXPress",
+                "AXShowMenu"
+              ],
+              "description": "",
+              "identifier": "",
+              "role": "AXDockItem",
+              "title": "Downloads"
+            },
+            {
+              "actions": [
+                "AXPress",
+                "AXShowMenu"
+              ],
+              "description": "",
+              "identifier": "",
+              "role": "AXDockItem",
+              "title": "Trash"
+            },
+            {
+              "actions": [],
+              "description": "",
+              "identifier": "mc.display",
+              "role": "AXGroup",
+              "title": ""
+            },
+            {
+              "actions": [],
+              "description": "",
+              "identifier": "mc.windows",
+              "role": "AXGroup",
+              "title": ""
+            },
+            {
+              "actions": [],
+              "description": "",
+              "identifier": "mc.spaces",
+              "role": "AXGroup",
+              "title": "Spaces Bar"
+            },
+            {
+              "actions": [
+                "AXPress"
+              ],
+              "description": "Cua367-owned.txt",
+              "identifier": "",
+              "role": "AXButton",
+              "title": "Cua367-owned.txt"
+            },
+            {
+              "actions": [],
+              "description": "",
+              "identifier": "mc.spaces.list",
+              "role": "AXList",
+              "title": ""
+            },
+            {
+              "actions": [
+                "AXPress"
+              ],
+              "description": "add desktop",
+              "identifier": "mc.spaces.add",
+              "role": "AXButton",
+              "title": ""
+            },
+            {
+              "actions": [
+                "AXPress"
+              ],
+              "description": "exit to Desktop",
+              "identifier": "",
+              "role": "AXButton",
+              "title": "Desktop"
+            }
+          ],
+          "request": "add desktop",
+          "visited": 34
+        },
+        "created": {
+          "ok": true,
+          "value": {
+            "activeSpace": 1,
+            "at": 1794930069.114706,
+            "frontmost": {
+              "bundleId": "com.apple.TextEdit",
+              "pid": 18126
+            },
+            "hidden": false,
+            "managedDisplaySpaces": [
+              {
+                "Current Space": {
+                  "id64": 1,
+                  "ManagedSpaceID": 1,
+                  "type": 0,
+                  "uuid": ""
+                },
+                "Display Identifier": "EEBC8EBB-1747-4179-8CB3-7038F756154C",
+                "Spaces": [
+                  {
+                    "id64": 1,
+                    "ManagedSpaceID": 1,
+                    "type": 0,
+                    "uuid": ""
+                  },
+                  {
+                    "id64": 24,
+                    "ManagedSpaceID": 24,
+                    "type": 0,
+                    "uuid": "43B71A83-1228-4429-9542-5B0730A500F7"
+                  }
+                ]
+              }
+            ],
+            "pid": 18126,
+            "screens": [
+              {
+                "height": 768,
+                "width": 1024,
+                "x": 0,
+                "y": 0
+              }
+            ],
+            "screensKnown": true,
+            "selectedWindowNumber": 112,
+            "symbols": {
+              "active": true,
+              "managed": true,
+              "windowSpaces": true
+            },
+            "windows": [
+              {
+                "cg": {
+                  "kCGWindowAlpha": 1,
+                  "kCGWindowBounds": {
+                    "Height": 422,
+                    "Width": 656,
+                    "X": 79,
+                    "Y": 254
+                  },
+                  "kCGWindowIsOnscreen": true,
+                  "kCGWindowLayer": 0,
+                  "kCGWindowMemoryUsage": 2368,
+                  "kCGWindowName": "Cua367-owned.txt",
+                  "kCGWindowNumber": 112,
+                  "kCGWindowOwnerName": "TextEdit",
+                  "kCGWindowOwnerPID": 18126,
+                  "kCGWindowSharingState": 1,
+                  "kCGWindowStoreType": 1
+                },
+                "cgOnscreen": true,
+                "cgWindowFound": true,
+                "frame": {
+                  "height": 422,
+                  "width": 656,
+                  "x": 79,
+                  "y": 56
+                },
+                "fullScreen": false,
+                "geometryStatus": "known",
+                "inOnscreenList": true,
+                "minimized": false,
+                "number": 112,
+                "numberResult": 0,
+                "overlapsDisplay": true,
+                "spaces": [
+                  1
+                ],
+                "title": "Cua367-owned.txt"
+              }
+            ]
+          }
+        }
+      },
+      "anotherSpaceGetApp": "not measured",
+      "anotherSpace": "not measured",
+      "anotherSpaceMatch": null,
+      "anotherSpaceLine": "not measured",
+      "anotherSpaceGetAppLine": "not measured",
+      "anotherSpaceOmitted": {
+        "getApp": null,
+        "getAXState": null,
+        "getScreenshot": null
+      },
+      "anotherSpaceEvidence": {
+        "before": {
+          "active": 24,
+          "windowSpaces": null,
+          "allCGOnscreen": null,
+          "includingCGOnscreen": null,
+          "inOnscreenList": null,
+          "axAvailable": false,
+          "geometry": null
+        },
+        "afterGetApp": {
+          "active": null,
+          "windowSpaces": null,
+          "allCGOnscreen": null,
+          "includingCGOnscreen": null,
+          "inOnscreenList": null,
+          "axAvailable": false,
+          "geometry": null
+        },
+        "afterGetAXState": {
+          "active": null,
+          "windowSpaces": null,
+          "allCGOnscreen": null,
+          "includingCGOnscreen": null,
+          "inOnscreenList": null,
+          "axAvailable": false,
+          "geometry": null
+        },
+        "afterGetScreenshot": {
+          "active": null,
+          "windowSpaces": null,
+          "allCGOnscreen": null,
+          "includingCGOnscreen": null,
+          "inOnscreenList": null,
+          "axAvailable": false,
+          "geometry": null
+        }
+      },
+      "anotherSpaceScreenshot": "not measured",
+      "anotherSpaceRaise": {
+        "measured": false,
+        "reason": "New desktop created; its single selection AXPress did not establish distinct active/window Spaces with false CG visibility"
+      },
+      "hidden": "ERROR noCapturableWindow",
+      "hiddenScreenshot": "ERROR Computer Use server error -10005: No capturable window found: TextEdit",
+      "hiddenLine": "not measured",
+      "returnComparison": {
+        "textEqual": false,
+        "jpegBytesEqual": false,
+        "byteLengthsEqual": false,
+        "dimensionsEqual": false
+      },
+      "returned": "ok; 13 nodes; omitted=none",
+      "returnScreenshot": "1024×676; 27162 B; 924bf6265861",
+      "cost": {
+        "successful": 20,
+        "total": 20,
+        "walkP50Ms": 29.526,
+        "totalP50Ms": 36.623000000000005,
+        "cgReadSamples": 20,
+        "cgReadP50Ms": 0.185521
+      }
+    },
+    {
+      "head": "fix",
+      "sha": "2b7804bdbbebd29ea7d88568878f329aaa77999d",
+      "scene": "electron",
+      "headBlocker": null,
+      "baseline": "ok; 26 nodes; omitted=none",
+      "baselineMatch": true,
+      "baselineScreenshot": "900×500; 25145 B; d5ccb680b5e1",
+      "offscreenEstablished": false,
+      "offscreenGetApp": "not measured",
+      "offscreen": "not measured",
+      "offscreenMatch": null,
+      "offscreenLine": "not measured",
+      "offscreenDiffLine": "not measured",
+      "offscreenScreenshot": "not measured",
+      "offscreenRaise": {
+        "measured": false,
+        "reason": "Owned Electron setBounds did not yield both a matching successful ACK and independent zero display overlap"
+      },
+      "partial": "ok; 26 nodes; omitted=none",
+      "partialScreenshot": "900×500; 25145 B; d5ccb680b5e1",
+      "partialLine": "none",
+      "partialFrame": "(-790, 200, 900, 500) [AX]",
+      "anotherSpaceEstablished": false,
+      "spaceRoute": "fullscreen",
+      "anotherSpaceBlocker": {
+        "reason": "Fullscreen Space was created, but switching to a distinct desktop did not establish the independent another-Space preconditions",
+        "switchSetup": {
+          "ok": true,
+          "route": "system-events-key-code",
+          "steps": [
+            {
+              "before": {
+                "activeSpace": 26,
+                "at": 1794930122.832505,
+                "frontmost": {
+                  "bundleId": "io.github.ssfskim.cua.fixture.electron",
+                  "pid": 20513
+                },
+                "hidden": false,
+                "managedDisplaySpaces": [
+                  {
+                    "Current Space": {
+                      "fs_wid": 162,
+                      "id64": 26,
+                      "ManagedSpaceID": 26,
+                      "pid": 20513,
+                      "TileLayoutManager": {
+                        "Age": 0.8479874166665695,
+                        "ConfigAge": 0.8469821666666348,
+                        "Inter-Tile Spacing": {
+                          "Height": 12,
+                          "Width": 12
+                        },
+                        "Layout Rect": {
+                          "Height": 768,
+                          "Width": 1024,
+                          "X": 0,
+                          "Y": 0
+                        },
+                        "Max Tile Config": {
+                          "Height": 1,
+                          "Width": 2
+                        },
+                        "PreferredLayout": [
+                          {
+                            "DisplaySize": {
+                              "Height": 768,
+                              "Width": 1024
+                            },
+                            "FirstTileSize": {
+                              "Height": 768,
+                              "Width": 1024
+                            }
+                          }
+                        ],
+                        "ReservedArea": {
+                          "Bottom": 0,
+                          "Left": 0,
+                          "Right": 0,
+                          "Top": 0
+                        },
+                        "TileSpaces": [
+                          {
+                            "appName": "cua Electron Fixture",
+                            "com.apple.appkit.disablemcexit": false,
+                            "fromSpace": "",
+                            "fs_wid": 162,
+                            "id64": 28,
+                            "ManagedSpaceID": 26,
+                            "name": "cua Electron fixture",
+                            "pid": 20513,
+                            "SizeConstraints": {
+                              "Max": {
+                                "Height": 100000,
+                                "Width": 100000
+                              },
+                              "Min": {
+                                "Height": 33,
+                                "Width": 87
+                              },
+                              "Preferred": {
+                                "Height": 500,
+                                "Width": 900
+                              }
+                            },
+                            "TileLimitedClipping": true,
+                            "TileRect": {
+                              "Height": 768,
+                              "Width": 1024,
+                              "X": 0,
+                              "Y": 0
+                            },
+                            "TileType": "Primary",
+                            "TileWindowID": 162,
+                            "type": 5,
+                            "uuid": "EB274B1F-735F-4DCD-BBF1-C13F3A604EB2"
+                          }
+                        ]
+                      },
+                      "type": 4,
+                      "uuid": "DD394558-DC38-4238-92BE-EB0E78D305A1",
+                      "WallSpace": {
+                        "id64": 27,
+                        "ManagedSpaceID": 26,
+                        "type": 6,
+                        "uuid": "5C6045AA-11EE-4867-92A7-9B23376793D2"
+                      }
+                    },
+                    "Display Identifier": "EEBC8EBB-1747-4179-8CB3-7038F756154C",
+                    "Spaces": [
+                      {
+                        "id64": 1,
+                        "ManagedSpaceID": 1,
+                        "type": 0,
+                        "uuid": ""
+                      },
+                      {
+                        "fs_wid": 162,
+                        "id64": 26,
+                        "ManagedSpaceID": 26,
+                        "pid": 20513,
+                        "TileLayoutManager": {
+                          "Age": 0.8480011249999961,
+                          "ConfigAge": 0.8469958750000615,
+                          "Inter-Tile Spacing": {
+                            "Height": 12,
+                            "Width": 12
+                          },
+                          "Layout Rect": {
+                            "Height": 768,
+                            "Width": 1024,
+                            "X": 0,
+                            "Y": 0
+                          },
+                          "Max Tile Config": {
+                            "Height": 1,
+                            "Width": 2
+                          },
+                          "PreferredLayout": [
+                            {
+                              "DisplaySize": {
+                                "Height": 768,
+                                "Width": 1024
+                              },
+                              "FirstTileSize": {
+                                "Height": 768,
+                                "Width": 1024
+                              }
+                            }
+                          ],
+                          "ReservedArea": {
+                            "Bottom": 0,
+                            "Left": 0,
+                            "Right": 0,
+                            "Top": 0
+                          },
+                          "TileSpaces": [
+                            {
+                              "appName": "cua Electron Fixture",
+                              "com.apple.appkit.disablemcexit": false,
+                              "fromSpace": "",
+                              "fs_wid": 162,
+                              "id64": 28,
+                              "ManagedSpaceID": 26,
+                              "name": "cua Electron fixture",
+                              "pid": 20513,
+                              "SizeConstraints": {
+                                "Max": {
+                                  "Height": 100000,
+                                  "Width": 100000
+                                },
+                                "Min": {
+                                  "Height": 33,
+                                  "Width": 87
+                                },
+                                "Preferred": {
+                                  "Height": 500,
+                                  "Width": 900
+                                }
+                              },
+                              "TileLimitedClipping": true,
+                              "TileRect": {
+                                "Height": 768,
+                                "Width": 1024,
+                                "X": 0,
+                                "Y": 0
+                              },
+                              "TileType": "Primary",
+                              "TileWindowID": 162,
+                              "type": 5,
+                              "uuid": "EB274B1F-735F-4DCD-BBF1-C13F3A604EB2"
+                            }
+                          ]
+                        },
+                        "type": 4,
+                        "uuid": "DD394558-DC38-4238-92BE-EB0E78D305A1",
+                        "WallSpace": {
+                          "id64": 27,
+                          "ManagedSpaceID": 26,
+                          "type": 6,
+                          "uuid": "5C6045AA-11EE-4867-92A7-9B23376793D2"
+                        }
+                      },
+                      {
+                        "id64": 24,
+                        "ManagedSpaceID": 24,
+                        "type": 0,
+                        "uuid": "43B71A83-1228-4429-9542-5B0730A500F7"
+                      }
+                    ]
+                  }
+                ],
+                "pid": 20513,
+                "screens": [
+                  {
+                    "height": 768,
+                    "width": 1024,
+                    "x": 0,
+                    "y": 0
+                  }
+                ],
+                "screensKnown": true,
+                "selectedWindowNumber": 162,
+                "symbols": {
+                  "active": true,
+                  "managed": true,
+                  "windowSpaces": true
+                },
+                "windows": [
+                  {
+                    "cg": {
+                      "kCGWindowAlpha": 1,
+                      "kCGWindowBounds": {
+                        "Height": 768,
+                        "Width": 1024,
+                        "X": 0,
+                        "Y": 0
+                      },
+                      "kCGWindowIsOnscreen": true,
+                      "kCGWindowLayer": 0,
+                      "kCGWindowMemoryUsage": 2368,
+                      "kCGWindowName": "cua Electron fixture",
+                      "kCGWindowNumber": 162,
+                      "kCGWindowOwnerName": "cua Electron Fixture",
+                      "kCGWindowOwnerPID": 20513,
+                      "kCGWindowSharingState": 1,
+                      "kCGWindowStoreType": 1
+                    },
+                    "cgOnscreen": true,
+                    "cgWindowFound": true,
+                    "frame": {
+                      "height": 768,
+                      "width": 1024,
+                      "x": 0,
+                      "y": 0
+                    },
+                    "fullScreen": true,
+                    "geometryStatus": "known",
+                    "inOnscreenList": true,
+                    "minimized": false,
+                    "number": 162,
+                    "numberResult": 0,
+                    "overlapsDisplay": true,
+                    "spaces": [
+                      26
+                    ],
+                    "title": "cua Electron fixture"
+                  }
+                ]
+              },
+              "posted": {
+                "exitCode": 0,
+                "keyCode": 123,
+                "mechanism": "osascript/System Events key code",
+                "modifiers": [
+                  "control"
+                ],
+                "posted": "switch-left",
+                "requested": "switch-left",
+                "script": "with timeout of 3 seconds\n tell application \"System Events\" to key code 123 using control down\nend timeout",
+                "stderr": "",
+                "stdout": "",
+                "timedOut": false
+              },
+              "after": {
+                "ok": true,
+                "value": {
+                  "activeSpace": 1,
+                  "at": 1794930123.966971,
+                  "frontmost": {
+                    "bundleId": "com.apple.finder",
+                    "pid": 359
+                  },
+                  "hidden": false,
+                  "managedDisplaySpaces": [
+                    {
+                      "Current Space": {
+                        "id64": 1,
+                        "ManagedSpaceID": 1,
+                        "type": 0,
+                        "uuid": ""
+                      },
+                      "Display Identifier": "EEBC8EBB-1747-4179-8CB3-7038F756154C",
+                      "Spaces": [
+                        {
+                          "id64": 1,
+                          "ManagedSpaceID": 1,
+                          "type": 0,
+                          "uuid": ""
+                        },
+                        {
+                          "fs_wid": 162,
+                          "id64": 26,
+                          "ManagedSpaceID": 26,
+                          "pid": 20513,
+                          "TileLayoutManager": {
+                            "Age": 1.9821242916666506,
+                            "ConfigAge": 1.981119041666716,
+                            "Inter-Tile Spacing": {
+                              "Height": 12,
+                              "Width": 12
+                            },
+                            "Layout Rect": {
+                              "Height": 768,
+                              "Width": 1024,
+                              "X": 0,
+                              "Y": 0
+                            },
+                            "Max Tile Config": {
+                              "Height": 1,
+                              "Width": 2
+                            },
+                            "PreferredLayout": [
+                              {
+                                "DisplaySize": {
+                                  "Height": 768,
+                                  "Width": 1024
+                                },
+                                "FirstTileSize": {
+                                  "Height": 768,
+                                  "Width": 1024
+                                }
+                              }
+                            ],
+                            "ReservedArea": {
+                              "Bottom": 0,
+                              "Left": 0,
+                              "Right": 0,
+                              "Top": 0
+                            },
+                            "TileSpaces": [
+                              {
+                                "appName": "cua Electron Fixture",
+                                "com.apple.appkit.disablemcexit": false,
+                                "fromSpace": "",
+                                "fs_wid": 162,
+                                "id64": 28,
+                                "ManagedSpaceID": 26,
+                                "name": "cua Electron fixture",
+                                "pid": 20513,
+                                "SizeConstraints": {
+                                  "Max": {
+                                    "Height": 100000,
+                                    "Width": 100000
+                                  },
+                                  "Min": {
+                                    "Height": 33,
+                                    "Width": 87
+                                  },
+                                  "Preferred": {
+                                    "Height": 500,
+                                    "Width": 900
+                                  }
+                                },
+                                "TileLimitedClipping": true,
+                                "TileRect": {
+                                  "Height": 768,
+                                  "Width": 1024,
+                                  "X": 0,
+                                  "Y": 0
+                                },
+                                "TileType": "Primary",
+                                "TileWindowID": 162,
+                                "type": 5,
+                                "uuid": "EB274B1F-735F-4DCD-BBF1-C13F3A604EB2"
+                              }
+                            ]
+                          },
+                          "type": 4,
+                          "uuid": "DD394558-DC38-4238-92BE-EB0E78D305A1",
+                          "WallSpace": {
+                            "id64": 27,
+                            "ManagedSpaceID": 26,
+                            "type": 6,
+                            "uuid": "5C6045AA-11EE-4867-92A7-9B23376793D2"
+                          }
+                        },
+                        {
+                          "id64": 24,
+                          "ManagedSpaceID": 24,
+                          "type": 0,
+                          "uuid": "43B71A83-1228-4429-9542-5B0730A500F7"
+                        }
+                      ]
+                    }
+                  ],
+                  "pid": 20513,
+                  "screens": [
+                    {
+                      "height": 768,
+                      "width": 1024,
+                      "x": 0,
+                      "y": 0
+                    }
+                  ],
+                  "screensKnown": true,
+                  "selectedWindowNumber": 162,
+                  "symbols": {
+                    "active": true,
+                    "managed": true,
+                    "windowSpaces": true
+                  },
+                  "windows": []
+                }
+              }
+            }
+          ],
+          "value": {
+            "activeSpace": 1,
+            "at": 1794930123.966971,
+            "frontmost": {
+              "bundleId": "com.apple.finder",
+              "pid": 359
+            },
+            "hidden": false,
+            "managedDisplaySpaces": [
+              {
+                "Current Space": {
+                  "id64": 1,
+                  "ManagedSpaceID": 1,
+                  "type": 0,
+                  "uuid": ""
+                },
+                "Display Identifier": "EEBC8EBB-1747-4179-8CB3-7038F756154C",
+                "Spaces": [
+                  {
+                    "id64": 1,
+                    "ManagedSpaceID": 1,
+                    "type": 0,
+                    "uuid": ""
+                  },
+                  {
+                    "fs_wid": 162,
+                    "id64": 26,
+                    "ManagedSpaceID": 26,
+                    "pid": 20513,
+                    "TileLayoutManager": {
+                      "Age": 1.9821242916666506,
+                      "ConfigAge": 1.981119041666716,
+                      "Inter-Tile Spacing": {
+                        "Height": 12,
+                        "Width": 12
+                      },
+                      "Layout Rect": {
+                        "Height": 768,
+                        "Width": 1024,
+                        "X": 0,
+                        "Y": 0
+                      },
+                      "Max Tile Config": {
+                        "Height": 1,
+                        "Width": 2
+                      },
+                      "PreferredLayout": [
+                        {
+                          "DisplaySize": {
+                            "Height": 768,
+                            "Width": 1024
+                          },
+                          "FirstTileSize": {
+                            "Height": 768,
+                            "Width": 1024
+                          }
+                        }
+                      ],
+                      "ReservedArea": {
+                        "Bottom": 0,
+                        "Left": 0,
+                        "Right": 0,
+                        "Top": 0
+                      },
+                      "TileSpaces": [
+                        {
+                          "appName": "cua Electron Fixture",
+                          "com.apple.appkit.disablemcexit": false,
+                          "fromSpace": "",
+                          "fs_wid": 162,
+                          "id64": 28,
+                          "ManagedSpaceID": 26,
+                          "name": "cua Electron fixture",
+                          "pid": 20513,
+                          "SizeConstraints": {
+                            "Max": {
+                              "Height": 100000,
+                              "Width": 100000
+                            },
+                            "Min": {
+                              "Height": 33,
+                              "Width": 87
+                            },
+                            "Preferred": {
+                              "Height": 500,
+                              "Width": 900
+                            }
+                          },
+                          "TileLimitedClipping": true,
+                          "TileRect": {
+                            "Height": 768,
+                            "Width": 1024,
+                            "X": 0,
+                            "Y": 0
+                          },
+                          "TileType": "Primary",
+                          "TileWindowID": 162,
+                          "type": 5,
+                          "uuid": "EB274B1F-735F-4DCD-BBF1-C13F3A604EB2"
+                        }
+                      ]
+                    },
+                    "type": 4,
+                    "uuid": "DD394558-DC38-4238-92BE-EB0E78D305A1",
+                    "WallSpace": {
+                      "id64": 27,
+                      "ManagedSpaceID": 26,
+                      "type": 6,
+                      "uuid": "5C6045AA-11EE-4867-92A7-9B23376793D2"
+                    }
+                  },
+                  {
+                    "id64": 24,
+                    "ManagedSpaceID": 24,
+                    "type": 0,
+                    "uuid": "43B71A83-1228-4429-9542-5B0730A500F7"
+                  }
+                ]
+              }
+            ],
+            "pid": 20513,
+            "screens": [
+              {
+                "height": 768,
+                "width": 1024,
+                "x": 0,
+                "y": 0
+              }
+            ],
+            "screensKnown": true,
+            "selectedWindowNumber": 162,
+            "symbols": {
+              "active": true,
+              "managed": true,
+              "windowSpaces": true
+            },
+            "windows": []
+          }
+        }
+      },
+      "anotherSpaceGetApp": "not measured",
+      "anotherSpace": "not measured",
+      "anotherSpaceMatch": null,
+      "anotherSpaceLine": "not measured",
+      "anotherSpaceGetAppLine": "not measured",
+      "anotherSpaceOmitted": {
+        "getApp": null,
+        "getAXState": null,
+        "getScreenshot": null
+      },
+      "anotherSpaceEvidence": {
+        "before": {
+          "active": 1,
+          "windowSpaces": null,
+          "allCGOnscreen": null,
+          "includingCGOnscreen": null,
+          "inOnscreenList": null,
+          "axAvailable": false,
+          "geometry": null
+        },
+        "afterGetApp": {
+          "active": null,
+          "windowSpaces": null,
+          "allCGOnscreen": null,
+          "includingCGOnscreen": null,
+          "inOnscreenList": null,
+          "axAvailable": false,
+          "geometry": null
+        },
+        "afterGetAXState": {
+          "active": null,
+          "windowSpaces": null,
+          "allCGOnscreen": null,
+          "includingCGOnscreen": null,
+          "inOnscreenList": null,
+          "axAvailable": false,
+          "geometry": null
+        },
+        "afterGetScreenshot": {
+          "active": null,
+          "windowSpaces": null,
+          "allCGOnscreen": null,
+          "includingCGOnscreen": null,
+          "inOnscreenList": null,
+          "axAvailable": false,
+          "geometry": null
+        }
+      },
+      "anotherSpaceScreenshot": "not measured",
+      "anotherSpaceRaise": {
+        "measured": false,
+        "reason": "Fullscreen Space was created, but switching to a distinct desktop did not establish the independent another-Space preconditions"
+      },
+      "hidden": "ERROR timeoutReached",
+      "hiddenScreenshot": "ERROR Computer Use server error -10005: timeoutReached",
+      "hiddenLine": "not measured",
+      "returnComparison": {
+        "textEqual": null,
+        "jpegBytesEqual": null,
+        "byteLengthsEqual": null,
+        "dimensionsEqual": null
+      },
+      "returned": "ERROR timeoutReached",
+      "returnScreenshot": "ERROR Computer Use server error -10005: timeoutReached",
+      "cost": {
+        "successful": 0,
+        "total": 20,
+        "walkP50Ms": null,
+        "totalP50Ms": null,
+        "cgReadSamples": 0,
+        "cgReadP50Ms": null
+      }
+    }
+  ],
+  "crossHead": [
+    {
+      "scene": "textedit",
+      "textEqual": false,
+      "jpegBytesEqual": false,
+      "byteLengthsEqual": false,
+      "dimensionsEqual": false
+    },
+    {
+      "scene": "electron",
+      "textEqual": true,
+      "jpegBytesEqual": true,
+      "byteLengthsEqual": true,
+      "dimensionsEqual": true
+    }
+  ]
+}

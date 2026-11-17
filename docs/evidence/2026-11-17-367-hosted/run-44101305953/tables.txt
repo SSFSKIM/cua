@@ -1,0 +1,77 @@
+# #367 hosted live check
+
+Run: https://github.com/SSFSKIM/cua/actions/runs/44101305953
+
+| Head | SHA | Scene | Setup blocker |
+| --- | --- | --- | --- |
+| main | 15acf09b714dd19efc796e4a3a2ff8d57e2f7994 | textedit | none |
+| main | 15acf09b714dd19efc796e4a3a2ff8d57e2f7994 | electron | none |
+| fix | 2b7804bdbbebd29ea7d88568878f329aaa77999d | textedit | none |
+| fix | 2b7804bdbbebd29ea7d88568878f329aaa77999d | electron | none |
+
+| Step | Head / scene | Result | Screenshot / comparison |
+| --- | --- | --- | --- |
+| 1 owned on-screen | main / textedit | ok; 13 nodes; omitted=none; independent window match=true | 900×500; 21989 B; 0d9e156003ce |
+| 2 off every display | main / textedit | independent geometry=false; getApp not measured; getAXState not measured | not measured |
+| 3 partly off | main / textedit | ok; 13 nodes; omitted=none; placement line=none; frame=(-790, 200, 900, 500) [AX] | 900×500; 21989 B; 0d9e156003ce |
+| 4 another Space | main / textedit | independent membership=false; route=fullscreen; getApp not measured; getAXState not measured | not measured |
+| 5 hidden app | main / textedit | ERROR noCapturableWindow; placement line=not measured | ERROR Computer Use server error -10005: No capturable window found: TextEdit |
+| 6 back on screen | main / textedit | ok; 13 nodes; omitted=none | {"textEqual":false,"jpegBytesEqual":false,"byteLengthsEqual":false,"dimensionsEqual":true} |
+| 7 cost | main / textedit | 20/20 observations; walk p50 30.598 ms; total p50 36.1185 ms | 20 exact per-window CG reads; p50 0.17904150000000002 ms |
+| 1 owned on-screen | main / electron | ok; 26 nodes; omitted=none; independent window match=true | 900×500; 25145 B; d5ccb680b5e1 |
+| 2 off every display | main / electron | independent geometry=false; getApp not measured; getAXState not measured | not measured |
+| 3 partly off | main / electron | ok; 26 nodes; omitted=none; placement line=none; frame=(-790, 200, 900, 500) [AX] | 900×500; 25145 B; d5ccb680b5e1 |
+| 4 another Space | main / electron | independent membership=false; route=fullscreen; getApp not measured; getAXState not measured | not measured |
+| 5 hidden app | main / electron | ERROR noCapturableWindow; placement line=not measured | ERROR Computer Use server error -10005: No capturable window found: cua Electron Fixture |
+| 6 back on screen | main / electron | ok; 26 nodes; omitted=none | {"textEqual":true,"jpegBytesEqual":false,"byteLengthsEqual":false,"dimensionsEqual":true} |
+| 7 cost | main / electron | 20/20 observations; walk p50 35.428 ms; total p50 38.9395 ms | 20 exact per-window CG reads; p50 0.5465625000000001 ms |
+| 1 owned on-screen | fix / textedit | ok; 13 nodes; omitted=none; independent window match=true | 900×500; 21989 B; 0d9e156003ce |
+| 2 off every display | fix / textedit | independent geometry=false; getApp not measured; getAXState not measured | not measured |
+| 3 partly off | fix / textedit | ok; 13 nodes; omitted=none; placement line=none; frame=(-790, 200, 900, 500) [AX] | 900×500; 21989 B; 0d9e156003ce |
+| 4 another Space | fix / textedit | independent membership=false; route=fullscreen; getApp not measured; getAXState not measured | not measured |
+| 5 hidden app | fix / textedit | ERROR noCapturableWindow; placement line=not measured | ERROR Computer Use server error -10005: No capturable window found: TextEdit |
+| 6 back on screen | fix / textedit | ok; 13 nodes; omitted=none | {"textEqual":false,"jpegBytesEqual":false,"byteLengthsEqual":false,"dimensionsEqual":true} |
+| 7 cost | fix / textedit | 20/20 observations; walk p50 21.0855 ms; total p50 24.037 ms | 20 exact per-window CG reads; p50 0.1845 ms |
+| 1 owned on-screen | fix / electron | ok; 26 nodes; omitted=none; independent window match=true | 900×500; 25145 B; d5ccb680b5e1 |
+| 2 off every display | fix / electron | independent geometry=false; getApp not measured; getAXState not measured | not measured |
+| 3 partly off | fix / electron | ok; 26 nodes; omitted=none; placement line=none; frame=(-790, 200, 900, 500) [AX] | 900×500; 25145 B; d5ccb680b5e1 |
+| 4 another Space | fix / electron | independent membership=false; route=fullscreen; getApp not measured; getAXState not measured | not measured |
+| 5 hidden app | fix / electron | ERROR noCapturableWindow; placement line=not measured | ERROR Computer Use server error -10005: No capturable window found: cua Electron Fixture |
+| 6 back on screen | fix / electron | ok; 26 nodes; omitted=none | {"textEqual":true,"jpegBytesEqual":false,"byteLengthsEqual":false,"dimensionsEqual":true} |
+| 7 cost | fix / electron | 20/20 observations; walk p50 19.499000000000002 ms; total p50 23.075499999999998 ms | 20 exact per-window CG reads; p50 0.163333 ms |
+
+| Placement | Head / scene | Action valid | Active Space before → after | Window Spaces before → after | Frame before → after | Front app before → after | On a display after |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| offscreen | main / textedit | false | "offscreen fixture not independently established" | unavailable | unavailable | unavailable | unavailable |
+| anotherSpace | main / textedit | false | "distinct active/window Spaces and false independent CG visibility not established" | unavailable | unavailable | unavailable | unavailable |
+| offscreen | main / electron | false | "offscreen fixture not independently established" | unavailable | unavailable | unavailable | unavailable |
+| anotherSpace | main / electron | false | "distinct active/window Spaces and false independent CG visibility not established" | unavailable | unavailable | unavailable | unavailable |
+| offscreen | fix / textedit | false | "offscreen fixture not independently established" | unavailable | unavailable | unavailable | unavailable |
+| anotherSpace | fix / textedit | false | "distinct active/window Spaces and false independent CG visibility not established" | unavailable | unavailable | unavailable | unavailable |
+| offscreen | fix / electron | false | "offscreen fixture not independently established" | unavailable | unavailable | unavailable | unavailable |
+| anotherSpace | fix / electron | false | "distinct active/window Spaces and false independent CG visibility not established" | unavailable | unavailable | unavailable | unavailable |
+
+| Scene | Cross-head on-screen text equal | JPEG bytes equal | JPEG lengths equal | Image dimensions equal |
+| --- | --- | --- | --- | --- |
+| textedit | false | true | true | true |
+| electron | true | true | true | true |
+
+| Head / scene | Off-display line | Off-display diff line | Another-Space line |
+| --- | --- | --- | --- |
+| main / textedit | not measured | not measured | not measured |
+| main / electron | not measured | not measured | not measured |
+| fix / textedit | not measured | not measured | not measured |
+| fix / electron | not measured | not measured | not measured |
+
+## Another-Space product contract
+
+| Head / scene | Independent before (active; window Spaces; on-screen-only) | CG flags All / IncludingWindow | getApp line | getAXState outcome / line | screenshotOmitted metadata | getScreenshot | Independent after getScreenshot |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| main / textedit | 10; [10]; true | true / null | not measured / not measured | not measured / not measured | {"getApp":null,"getAXState":null,"getScreenshot":null} | not measured | null; null; null |
+| main / electron | 15; [15]; true | true / null | not measured / not measured | not measured / not measured | {"getApp":null,"getAXState":null,"getScreenshot":null} | not measured | null; null; null |
+| fix / textedit | 20; [20]; true | true / null | not measured / not measured | not measured / not measured | {"getApp":null,"getAXState":null,"getScreenshot":null} | not measured | null; null; null |
+| fix / electron | 25; [25]; true | true / null | not measured / not measured | not measured / not measured | {"getApp":null,"getAXState":null,"getScreenshot":null} | not measured | null; null; null |
+
+Scope: the public facade and trusted service are imported from the same pinned source head as each unmodified engine. The transport adapter is the existing hosted/test nativePipe bridge; this is not an MCP-host/sandbox qualification. All GUI applications and documents belong to the disposable runner. No owner profile, secrets, or local/Mac-mini GUI was used.
+
+Cost: p50 is the ordinary median of successful native timing values (20 observations requested per app/head). Placement has no separately timed native field; walk/total timings do not isolate its added CGWindow read. The independent oracle separately samples the exact per-window CGWindow read. Both arms include #366 after the coordinator-required base merge.

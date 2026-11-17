@@ -1,0 +1,77 @@
+# #367 hosted live check
+
+Run: https://github.com/SSFSKIM/cua/actions/runs/44111743279
+
+| Head | SHA | Scene | Setup blocker |
+| --- | --- | --- | --- |
+| main | 15acf09b714dd19efc796e4a3a2ff8d57e2f7994 | textedit | none |
+| main | 15acf09b714dd19efc796e4a3a2ff8d57e2f7994 | electron | none |
+| fix | 2b7804bdbbebd29ea7d88568878f329aaa77999d | textedit | none |
+| fix | 2b7804bdbbebd29ea7d88568878f329aaa77999d | electron | none |
+
+| Step | Head / scene | Result | Screenshot / comparison |
+| --- | --- | --- | --- |
+| 1 owned on-screen | main / textedit | ok; 13 nodes; omitted=none; independent window match=true | 900×500; 21989 B; 0d9e156003ce |
+| 2 off every display | main / textedit | independent geometry=false; getApp not measured; getAXState not measured | not measured |
+| 3 partly off | main / textedit | ok; 13 nodes; omitted=none; placement line=none; frame=(-790, 200, 900, 500) [AX] | 900×500; 21989 B; 0d9e156003ce |
+| 4 another Space | main / textedit | independent membership=false; route=fullscreen; getApp not measured; getAXState not measured | "Fullscreen Space was created, but switching to a distinct desktop did not establish the independent another-Space preconditions" |
+| 5 hidden app | main / textedit | ok; 6 nodes; omitted=none; placement line=none | 1024×768; 26988 B; e4a7fa556c92 |
+| 6 back on screen | main / textedit | ok; 6 nodes; omitted=none | {"textEqual":false,"jpegBytesEqual":false,"byteLengthsEqual":false,"dimensionsEqual":false} |
+| 7 cost | main / textedit | 20/20 observations; walk p50 12.5765 ms; total p50 32.875 ms | 20 exact per-window CG reads; p50 0.203271 ms |
+| 1 owned on-screen | main / electron | ok; 26 nodes; omitted=none; independent window match=true | 900×500; 25145 B; d5ccb680b5e1 |
+| 2 off every display | main / electron | independent geometry=false; getApp not measured; getAXState not measured | not measured |
+| 3 partly off | main / electron | ok; 26 nodes; omitted=none; placement line=none; frame=(-790, 200, 900, 500) [AX] | 900×500; 25145 B; d5ccb680b5e1 |
+| 4 another Space | main / electron | independent membership=false; route=fullscreen; getApp not measured; getAXState not measured | "Fullscreen Space was created, but switching to a distinct desktop did not establish the independent another-Space preconditions" |
+| 5 hidden app | main / electron | ERROR timeoutReached; placement line=not measured | ERROR Computer Use server error -10005: timeoutReached |
+| 6 back on screen | main / electron | ERROR timeoutReached | {"textEqual":null,"jpegBytesEqual":null,"byteLengthsEqual":null,"dimensionsEqual":null} |
+| 7 cost | main / electron | 0/20 observations; walk p50 null ms; total p50 null ms | 0 exact per-window CG reads; p50 null ms |
+| 1 owned on-screen | fix / textedit | ok; 6 nodes; omitted=none; independent window match=true | 1024×768; 26988 B; e4a7fa556c92 |
+| 2 off every display | fix / textedit | independent geometry=false; getApp not measured; getAXState not measured | not measured |
+| 3 partly off | fix / textedit | ok; 6 nodes; omitted=none; placement line=none; frame=(0, 0, 1024, 768) [AX] | 1024×768; 26988 B; e4a7fa556c92 |
+| 4 another Space | fix / textedit | independent membership=false; route=mission-control; getApp not measured; getAXState not measured | "New desktop created; its single selection AXPress did not establish distinct active/window Spaces with false CG visibility" |
+| 5 hidden app | fix / textedit | ERROR noCapturableWindow; placement line=not measured | ERROR Computer Use server error -10005: No capturable window found: TextEdit |
+| 6 back on screen | fix / textedit | ok; 13 nodes; omitted=none | {"textEqual":false,"jpegBytesEqual":false,"byteLengthsEqual":false,"dimensionsEqual":false} |
+| 7 cost | fix / textedit | 20/20 observations; walk p50 29.526 ms; total p50 36.623000000000005 ms | 20 exact per-window CG reads; p50 0.185521 ms |
+| 1 owned on-screen | fix / electron | ok; 26 nodes; omitted=none; independent window match=true | 900×500; 25145 B; d5ccb680b5e1 |
+| 2 off every display | fix / electron | independent geometry=false; getApp not measured; getAXState not measured | not measured |
+| 3 partly off | fix / electron | ok; 26 nodes; omitted=none; placement line=none; frame=(-790, 200, 900, 500) [AX] | 900×500; 25145 B; d5ccb680b5e1 |
+| 4 another Space | fix / electron | independent membership=false; route=fullscreen; getApp not measured; getAXState not measured | "Fullscreen Space was created, but switching to a distinct desktop did not establish the independent another-Space preconditions" |
+| 5 hidden app | fix / electron | ERROR timeoutReached; placement line=not measured | ERROR Computer Use server error -10005: timeoutReached |
+| 6 back on screen | fix / electron | ERROR timeoutReached | {"textEqual":null,"jpegBytesEqual":null,"byteLengthsEqual":null,"dimensionsEqual":null} |
+| 7 cost | fix / electron | 0/20 observations; walk p50 null ms; total p50 null ms | 0 exact per-window CG reads; p50 null ms |
+
+| Placement | Head / scene | Action valid | Active Space before → after | Window Spaces before → after | Frame before → after | Front app before → after | On a display after |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| offscreen | main / textedit | false | "Distinct AX move/shrink constructions retained display overlap; this bounded offscreen fixture is unavailable" | unavailable | unavailable | unavailable | unavailable |
+| anotherSpace | main / textedit | false | "Fullscreen Space was created, but switching to a distinct desktop did not establish the independent another-Space preconditions" | unavailable | unavailable | unavailable | unavailable |
+| offscreen | main / electron | false | "Owned Electron setBounds did not yield both a matching successful ACK and independent zero display overlap" | unavailable | unavailable | unavailable | unavailable |
+| anotherSpace | main / electron | false | "Fullscreen Space was created, but switching to a distinct desktop did not establish the independent another-Space preconditions" | unavailable | unavailable | unavailable | unavailable |
+| offscreen | fix / textedit | false | "Distinct AX move/shrink constructions retained display overlap; this bounded offscreen fixture is unavailable" | unavailable | unavailable | unavailable | unavailable |
+| anotherSpace | fix / textedit | false | "New desktop created; its single selection AXPress did not establish distinct active/window Spaces with false CG visibility" | unavailable | unavailable | unavailable | unavailable |
+| offscreen | fix / electron | false | "Owned Electron setBounds did not yield both a matching successful ACK and independent zero display overlap" | unavailable | unavailable | unavailable | unavailable |
+| anotherSpace | fix / electron | false | "Fullscreen Space was created, but switching to a distinct desktop did not establish the independent another-Space preconditions" | unavailable | unavailable | unavailable | unavailable |
+
+| Scene | Cross-head on-screen text equal | JPEG bytes equal | JPEG lengths equal | Image dimensions equal |
+| --- | --- | --- | --- | --- |
+| textedit | false | false | false | false |
+| electron | true | true | true | true |
+
+| Head / scene | Off-display line | Off-display diff line | Another-Space line |
+| --- | --- | --- | --- |
+| main / textedit | not measured | not measured | not measured |
+| main / electron | not measured | not measured | not measured |
+| fix / textedit | not measured | not measured | not measured |
+| fix / electron | not measured | not measured | not measured |
+
+## Another-Space product contract
+
+| Head / scene | Independent before (active; window Spaces; on-screen-only) | CG flags All / IncludingWindow | getApp line | getAXState outcome / line | screenshotOmitted metadata | getScreenshot | Independent after getScreenshot |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| main / textedit | 1; null; null | null / null | not measured / not measured | not measured / not measured | {"getApp":null,"getAXState":null,"getScreenshot":null} | not measured | null; null; null |
+| main / electron | 1; null; null | null / null | not measured / not measured | not measured / not measured | {"getApp":null,"getAXState":null,"getScreenshot":null} | not measured | null; null; null |
+| fix / textedit | 24; null; null | null / null | not measured / not measured | not measured / not measured | {"getApp":null,"getAXState":null,"getScreenshot":null} | not measured | null; null; null |
+| fix / electron | 1; null; null | null / null | not measured / not measured | not measured / not measured | {"getApp":null,"getAXState":null,"getScreenshot":null} | not measured | null; null; null |
+
+Scope: the public facade and trusted service are imported from the same pinned source head as each unmodified engine. The transport adapter is the existing hosted/test nativePipe bridge; this is not an MCP-host/sandbox qualification. All GUI applications and documents belong to the disposable runner. No owner profile, secrets, or local/Mac-mini GUI was used.
+
+Cost: p50 is the ordinary median of successful native timing values (20 observations requested per app/head). Placement has no separately timed native field; walk/total timings do not isolate its added CGWindow read. The independent oracle separately samples the exact per-window CGWindow read. Both arms include #366 after the coordinator-required base merge.

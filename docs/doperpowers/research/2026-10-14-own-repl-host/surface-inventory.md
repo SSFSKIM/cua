@@ -834,4 +834,8 @@ menu or none. A page that handles contextmenu itself and draws its own menu answ
 menu is on screen, so the sentence names that case and points at a screenshot. One sentence closes the fourth paragraph,
 after the scroll's answers:
 
-> A Show Menu (`performSecondaryAction` with "Show Menu") succeeds only once a menu was seen to open. Otherwise it fails with `menuUnconfirmed`: the action was sent but no menu was seen within 1 s, and the app may have shown a menu of its own that accessibility does not expose (a web page's own menu, which a screenshot shows) or ignored the request, so observe the app before any retry.
+> A Show Menu (`performSecondaryAction` with "Show Menu") succeeds only once a menu was seen to open. Otherwise it fails with `menuUnconfirmed`: the action was sent but no menu was seen within 1 s, and the app may have shown a menu of its own that accessibility does not expose (a web page's own menu, which a screenshot shows) or ignored the request, so observe the app before any retry. A Show Menu that succeeds means a menu appeared, not which one: if something else opens a menu in the same window within that second, its success can be that menu's, so check what the next observation shows before choosing an item.
+
+The last two sentences are ruling 1ea561bc:753's stated limit (the native engine spec's Decision Log, "#374's coincident
+menu"): the hosted controls showed a menu opened in the same window within the wait by something other than the request
+confirming it, and no discriminator separates the two.

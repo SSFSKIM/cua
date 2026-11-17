@@ -492,7 +492,8 @@ error    {code: number (the vendor's codes where mapped; -10005 otherwise), mess
     scroll whose container under the point was not seen to move, the bar's fallback included, or that has no readable
     container; its sentence asks the model to observe before scrolling again); menuUnconfirmed (#374: a Show Menu sent
     whose menu was not seen to open within 1 s; its sentence says the app may have shown its own menu or ignored the
-    request, and asks the model to observe before any retry)
+    request, and asks the model to observe before any retry; its success means a menu appeared, not which one: the
+    Decision Log's "#374's coincident menu")
   activationGuardMs: route 3's guard time, present only when a guard ran; activationClick: what the inert-point rule
     decided at the window's AXActivationPoint when an activation ran, "posted" there or the reason it was not ("noPoint",
     "outsideFrame", "spared", "control", "actionsUnknown", "hitTestFailed"); activationClickKind: the click that
@@ -4820,6 +4821,28 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      confirm; if one does, a discriminator (the menu's position against the element's frame, or its appearance after
      the send) comes before shipping.
   Date/Author: 2026-11-16, cursor235's implementer for #374 (ruling 1ea561bc:752).
+- Decision (#374's coincident menu, 2026-11-16, `fix/374-menu-unconfirmed`; the design session's ruling 1ea561bc:753
+  on smoke run 44010453311, kit `probe/374-measure` be48e33a, candidate 7ad0362b; follows "#374's menu hosts" above):
+  **the ancestor and focus rule ships with no discriminator, and its limit is stated: a success means a menu appeared,
+  not which one.** When something other than the request opens a menu in the same window within the 1 s wait, under a
+  host of the element or taking the focus, the Show Menu answers success on it; the agent's next observation shows
+  which menu is open. The model's document says so beside `menuUnconfirmed` (agent-cursor.md, the surface inventory's
+  #374 addition).
+  1. **The evidence** (ruling 1ea561bc:752's negative controls, each a menu raised 300 ms into the wait after a Show
+     Menu on a target that opens nothing). Confirmed: a focused ARIA menu the page opened on a timer (Chrome for
+     Testing, Electron, Firefox, Safari; through `focus`), a context menu popped up in the window's content view
+     (AppKit; through `ancestor`, the content view being a host) and Firefox's `<select>` popup opened on a timer
+     (through `ancestor`: Gecko hangs it under a host). Excluded by the rule: a sibling view's own context menu
+     (AppKit's text view, beside the target), an AXMenu inside an AXPopover (Firefox's datalist suggestions) and Chrome's
+     datalist suggestions (an AXList in a layer-999 window). The full run's rates are in the evidence for #374.
+  2. **Why no discriminator.** Position was measured and fails both ways: a real menu can open far from the element
+     (Electron's Menu.popup() opens at the pointer, 256 points from the target, as most Electron apps do), and a
+     coincident menu can open next to it (Firefox's select, 13 points below the target). "Appeared after the send"
+     holds for every control, and structure cannot tell a real AppKit context menu from one popped up in the same
+     view. The coincidence needs an unrelated menu to open in the same window within 1 s of the request; the Linux
+     engine's contract (a new menu child of the application within the wait) has the same limit.
+  3. **Registered at merge** as a platform-neutral ticket shared with Linux (the design session registers it).
+  Date/Author: 2026-11-16, cursor235's implementer for #374 (ruling 1ea561bc:753).
 
 ## Outcomes & Retrospective
 

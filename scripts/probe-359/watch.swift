@@ -118,6 +118,8 @@ func closeHoldTap359() {
   holdTap359 = nil; holdSource359 = nil
 }
 // Idempotent: the tap is disabled and invalidated before the originals are reposted, so they are never seen again.
+// That also means events still being posted during the replay reach the pid directly and can overtake the buffer;
+// stressExercised is not FIFO proof, and the reader qualifies only producers that finished posting before releasedAt.
 func releaseHold359(_ reason: String, early: Bool, generation: Int? = nil) {
   if let generation, generation != holdGeneration359 { return }
   guard hold359 != nil, hold359!.releasedAt == nil else { closeHoldTap359(); return }

@@ -65,11 +65,24 @@ const groupKey=c=>[c.head,c.cohort,c.browser,c.editor,c.selection,c.suite].join(
 const LINEAGE=['cohort','head','engineRef','suite','browser','editor','selection','rep','foreground','initialCaret','stressQueueMs','qualification','mode'];
 const inputsSince=(r,since)=>(r.events??[]).filter(e=>['input','beforeinput'].includes(e.event)&&(!(e.at<since))).length;
 
+// Within one DOM event stream: the fixture's seq, then its monotonic clock, then its epoch. A tie is ambiguous (null).
+const domOrder=(a,b)=>{
+ for(const k of ['seq','monoMs','at'])if(Number.isFinite(a[k])&&Number.isFinite(b[k]))return a[k]===b[k]?null:a[k]<b[k]?-1:1;
+ return null;
+};
+// Keyboard.swift posts flags, down, up and restore per typed unit: REQUESTED's 6 units are 24 key events.
+const KEY_TYPES={10:6,11:6,12:12},KEYBOARD=new Set([10,11,12]);
+
 // Prove an intact posted-event FIFO and that the selection plus typing baseline ran while its click was pending.
 // Either the complete type RPC or its actual first key post (which follows the baseline) must precede delivery.
 // This uses action timestamps, never snapshotMs or the typing answer, and keeps recovered stress unqualified.
+// The watcher replays its buffer after closing the tap, so a producer still posting at the release could overtake
+// buffered keys; the raw stressExercised flag is not FIFO proof. Only a producer-quiescent capture qualifies: either
+// all 24 measured key posts are in the buffer and their actual last post precedes the release, or nothing was
+// entered, no key was held and the whole type RPC ended before the release. Everything else is unqualified.
 export function tailQualification(r){
- const events=[...(r.events??[])].sort((a,b)=>a.at-b.at),md=events.find(e=>e.event==='mousedown')?.at,u=r.clockUncertaintyMs??2;
+ const events=r.events??[],downs=events.filter(e=>e.event==='mousedown'),u=r.clockUncertaintyMs??2;
+ const mdEvent=downs.reduce((x,e)=>!x||domOrder(e,x)===-1?e:x,null),md=mdEvent?.at;
  const stress=num(r.stress?.busyStartedAt)??num(r.stress?.startedAt)??num(events.find(e=>e.event==='busy-start')?.at);
  const no=reason=>({qualified:false,reason});
  if(!Number.isFinite(md))return no('noMousedown');
@@ -78,14 +91,34 @@ export function tailQualification(r){
  if(!r.next||r.next.error||!Number.isFinite(r.next.endedAt))return no('selectionNotSuccessful');
  if(!(r.next.endedAt+u<md))return no('mousedownBeforeSelection');
  if(!r.type||!Number.isFinite(r.type.startedAt)||!Number.isFinite(r.type.endedAt))return no('typeNotAttempted');
- const h=r.ax?.pointerHold;
- if(!h||h.stressExercised!==true||h.earlyRelease!==false||h.pointerCaptured!==2||h.pointerReleased!==2||!Number.isInteger(h.captured)||h.captured<2||h.released!==h.captured||h.extraEvents!==0||h.copyFailures!==0||h.overflow||h.error)return no('holdNotComplete');
- if(events.some(e=>['keydown','keyup','beforeinput','input'].includes(e.event)&&e.at+u<md))return no('postedInputOvertookPointer');
+ const h=r.ax?.pointerHold,captures=Array.isArray(h?.captures)?h.captures:null,released=num(h?.releasedAt);
+ if(!h||h.stressExercised!==true||h.earlyRelease!==false||h.pointerCaptured!==2||h.pointerReleased!==2||!Number.isInteger(h.captured)||h.captured<2||h.released!==h.captured||h.extraEvents!==0||h.copyFailures!==0||h.overflow||h.error
+  ||!captures||captures.length!==h.captured||released===null)return no('holdNotComplete');
+ // Cross-process: a DOM mousedown before the release (beyond the uncertainty) cannot be the held pointer.
+ if(md<released-u)return no('mousedownBeforeRelease');
+ // Same-stream order: no clock-uncertainty excuse inside the page's own event history.
+ for(const e of events)if(['keydown','keyup','beforeinput','input'].includes(e.event)){
+  const o=domOrder(e,mdEvent);if(o===-1)return no('postedInputOvertookPointer');if(o===null)return no('domOrderAmbiguous');
+ }
  // InputMeta.startedAt is the actual first key post, after the baseline. No snapshotMs reconstruction.
- const firstPost=metas(r.type).map(m=>num(m.startedAt)).find(v=>v!==null);
+ const m=metas(r.type),firstPost=m.map(x=>num(x.startedAt)).find(v=>v!==null),lastPost=m.map(x=>num(x.endedAt)).find(v=>v!==null);
  const postedBefore=Number.isFinite(firstPost)&&firstPost+u<md;
  if(!(r.type.endedAt+u<md)&&!postedBefore)return no('mousedownBeforeTypeReturn');
- if(postedBefore&&!(h.keyCaptured>0))return no('postedKeysNotHeld');
+ const n=entered(r.type);
+ if(n!==0&&n!==REQUESTED.length)return no('producerUnaccounted');
+ // Every held event has its actual time and comes from the process that posted the triggering down.
+ const src=captures[0]?.sourcePid;
+ if(captures[0]?.type!==1||!Number.isInteger(src)||captures.some(c=>![1,2,...KEYBOARD].includes(c.type)||c.sourcePid!==src||num(c.at)===null))return no('capturedStreamUnexpected');
+ const keys=captures.filter(c=>KEYBOARD.has(c.type));
+ if(n===0){
+  if(!(r.type.endedAt+u<released))return no('producerNotQuiescent');
+  if(keys.length)return no('keyboardStreamIncomplete');
+  return {qualified:true};
+ }
+ if(firstPost==null||lastPost==null||!(lastPost+u<released))return no('producerNotQuiescent');
+ if(Object.entries(KEY_TYPES).some(([t,c])=>keys.filter(k=>k.type===+t).length!==c))return no('keyboardStreamIncomplete');
+ // Captures are tap receipts after each post returned, so they may trail meta.endedAt (the last post), never the release.
+ if(keys.some(k=>!(k.at>=firstPost-u&&k.at<=released+u)))return no('capturedStreamUnexpected');
  return {qualified:true};
 }
 

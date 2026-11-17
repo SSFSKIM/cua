@@ -19,9 +19,27 @@ function good(c,over={}){
  const r={...c,requested:REQUESTED,valid:true,smoke:false,click,next,type,clockUncertaintyMs:2,preClick:{text:SEED},
   samples:[sample(t+30),sample(t+280),sample(t+1530)],events:[],foregroundViolation:false,windowRaiseObserved:false};
  if(c.selection==='set_value_type')r.valueWrite=next;
- if(tail){r.ax={pointerHold:{captured:2,released:2,pointerCaptured:2,pointerReleased:2,keyCaptured:0,earlyRelease:false,extraEvents:0,copyFailures:0,overflow:false,stressExercised:true}};r.stress={busyStartedAt:t-100,busyUntil:t+900};r.events=[{event:'busy-start',at:t-100},{event:'mousedown',at:t+500},{event:'busy-end',at:t+900}]}
- return {...r,...over};
+ if(tail){r.stress={busyStartedAt:t-100,busyUntil:t+900};r.events=[{event:'busy-start',at:t-100},{event:'mousedown',at:t+905},{event:'busy-end',at:t+900}]}
+ const out={...r,...over};
+ // Unless a test supplies its own, the tail's hold wire is what the watcher would capture from this row's real posts.
+ if(tail&&!('ax' in over))out.ax={pointerHold:holdFor(out.type,out.events)};
+ return out;
 }
+// Keyboard.swift's keyPressEvents: flags, down, up, restore per typed unit; NEW359 is 6 units, so 24 posted key events.
+const KEYS=(first,last,n=24)=>Array.from({length:n},(_,i)=>({type:[12,10,11,12][i%4],at:first+(n>1?(last-first)*i/(n-1):0),sourcePid:1}));
+function hold(keys=[],over={}){
+ const captures=[{type:1,at:10005,sourcePid:1},{type:2,at:10006,sourcePid:1},...keys];
+ return {delayMs:900,armedAt:9900,captured:captures.length,released:captures.length,pointerCaptured:2,pointerReleased:2,keyCaptured:keys.length,earlyRelease:false,extraEvents:0,copyFailures:0,overflow:false,
+  stressExercised:true,captures,extras:[],releaseDueAt:10905,releasedAt:10905,releaseReason:'timer',...over};
+}
+// The click's down is held from 10005; the release lands in the same millisecond as the row's observed mousedown
+// (10905 by default, a 900 ms hold). Rows that move the mousedown to test other boundaries move the release with it, never after it.
+const holdFor=(type,events)=>{
+ const m=type?.meta??type?.error?.meta,md=(events??[]).find(e=>e.event==='mousedown')?.at,releasedAt=Number.isFinite(md)?md:10905;
+ return hold(m?.entered===6&&Number.isFinite(m.startedAt)&&Number.isFinite(m.endedAt)?KEYS(m.startedAt,m.endedAt):[],{releasedAt,releaseDueAt:releasedAt,delayMs:releasedAt-10005});
+};
+// A tail type_text that really posted all six units: first and last actual post times, well before the release.
+const typedOk=(over={})=>({startedAt:10021,endedAt:10030,error:null,meta:{startedAt:10022,endedAt:10028,entered:6,typeReadback:{confirmed:true}},...over});
 const rowsFor=cells=>cells.map(c=>good(c));
 const find=(cells,pred)=>cells.find(pred);
 const group=(s,pred)=>s.groups.find(g=>pred(g));
@@ -210,7 +228,7 @@ test('tail qualification depends only on observed mousedown timing and stress st
  // a stress command answer alone does not qualify
  g=only(tailCell,mk({stress:{ok:true},events:[{event:'mousedown',at:t0+500}]}));assert.equal(g.tailQualified,0);
  // outcome independence: an unsafe ok row with a late mousedown still qualifies
- g=only(tailCell,mk({type:{startedAt:t0+21,endedAt:t0+30,error:null,meta:{entered:6,typeReadback:{confirmed:true}}},samples:[{text:'NEW359',selection:[6,0]}]}));
+ g=only(tailCell,mk({type:typedOk(),samples:[{text:'NEW359',selection:[6,0]}]}));
  assert.deepEqual([g.tailQualified,g.tailOk],[1,1]);
 });
 
@@ -226,21 +244,21 @@ test('tail safe refusal needs typeUnconfirmed/selectionChanged, entered 0, no in
  let g=only(tailCell,good(tailCell));
  assert.deepEqual([g.safeRefusal,g.selectionChanged,g.nothingTypedSeedUnchanged,g.typedEvents,g.tailOk,g.wrongPlacement,g.wrongFinal],[1,1,1,0,0,0,0]);
  assert.equal(g.finalMet,0,'a refusal is not a successful placement');
- g=only(tailCell,good(tailCell,{events:[...good(tailCell).events,{event:'beforeinput',at:10600}]}));
+ g=only(tailCell,good(tailCell,{events:[...good(tailCell).events,{event:'beforeinput',at:11000}]}));
  assert.deepEqual([g.typedEvents,g.safeRefusal,g.nothingTypedSeedUnchanged,g.wrongPlacement],[1,0,0,1]);
- g=only(tailCell,good(tailCell,{events:[...good(tailCell).events,{event:'input',at:10600}]}));assert.equal(g.typedEvents,1);
+ g=only(tailCell,good(tailCell,{events:[...good(tailCell).events,{event:'input',at:11000}]}));assert.equal(g.typedEvents,1);
  g=only(tailCell,good(tailCell,{samples:[{text:SEED+'x',selection:[0,0]}]}));
  assert.deepEqual([g.nothingTypedSeedUnchanged,g.safeRefusal,g.wrongFinal],[0,0,1]);
  // tail ok is unsafe even when the text is superficially the requested text
- g=only(tailCell,good(tailCell,{type:{startedAt:10021,endedAt:10030,error:null,meta:{entered:6,typeReadback:{confirmed:true}}},samples:[{text:'NEW359',selection:[6,0]}]}));
+ g=only(tailCell,good(tailCell,{type:typedOk(),samples:[{text:'NEW359',selection:[6,0]}]}));
  assert.deepEqual([g.tailOk,g.tailUnsafeOk,g.tailOkTextMatchesRequested,g.safeRefusal,g.wrongPlacement,g.wrongFinal],[1,1,1,0,1,1]);
  // an ok that left the seed untouched and typed nothing is still an unsafe false success
- g=only(tailCell,good(tailCell,{type:{startedAt:10021,endedAt:10030,error:null,meta:{typeReadback:{confirmed:true}}}}));assert.deepEqual([g.tailOk,g.tailUnsafeOk],[1,1]);
+ g=only(tailCell,good(tailCell,{type:{startedAt:10021,endedAt:10030,error:null,meta:{entered:0,typeReadback:{confirmed:true}}}}));assert.deepEqual([g.tailOk,g.tailUnsafeOk],[1,1]);
  // other reasons are not safe
  g=only(tailCell,good(tailCell,{type:{startedAt:10021,endedAt:10030,error:{errorName:'typeUnconfirmed',meta:{entered:0,typeReadback:{reason:'valueMismatch'}}}}}));
  assert.deepEqual([g.selectionChanged,g.safeRefusal,g.wrongPlacement],[0,0,1]);
  g=only(tailCell,good(tailCell,{type:{startedAt:10021,endedAt:10030,error:{errorName:'typeUnconfirmed',meta:{entered:2,typeReadback:{reason:'selectionChanged'}}}}}));
- assert.deepEqual([g.selectionChanged,g.safeRefusal],[1,0],'selectionChanged counted, but entered>0 is not safe');
+ assert.deepEqual([g.tailUnqualifiedReasons,g.tailUnqualifiedTypeUnconfirmedReasons,g.safeRefusal],[{producerUnaccounted:1},{selectionChanged:1},0],'a partial producer is unqualified, never safe');
 });
 
 test('background AX-route rows must not wait anywhere, in any RPC metadata',()=>{
@@ -287,7 +305,7 @@ test('entered is the top-level meta field of the real wire, not a typeReadback m
  assert.equal(only(fg,refuse({typeReadback:{reason:'selectionChanged',entered:0}})).safeNoType,0,'a nested entered is not the wire shape');
  assert.equal(only(fg,refuse({entered:'0',typeReadback:{reason:'selectionChanged'}})).safeNoType,0);
  const g=only(tailCell,good(tailCell,{type:{startedAt:10021,endedAt:10030,error:{errorName:'typeUnconfirmed',meta:{typeReadback:{reason:'selectionChanged',entered:0}}}}}));
- assert.deepEqual([g.selectionChanged,g.safeRefusal],[1,0]);
+ assert.deepEqual([g.tailUnqualifiedReasons,g.safeRefusal],[{producerUnaccounted:1},0],'without the wire entered the producer is unaccounted');
 });
 
 test('after a JSON round trip next and valueWrite are one logical RPC, not two',()=>{
@@ -330,9 +348,9 @@ test('a tail qualifies only when select_text and type_text both completed before
  g=only(tailCell,mk({type:undefined}));assert.deepEqual(g.tailUnqualifiedReasons,{typeNotAttempted:1});
  g=only(tailCell,mk({type:{error:null}}));assert.deepEqual(g.tailUnqualifiedReasons,{typeNotAttempted:1},'a type record without a call interval');
  // qualification ignores the answer and the wait metadata: ok or unconfirmed, any reason
- g=only(tailCell,mk({type:{startedAt:10021,endedAt:10030,error:null,meta:{entered:6,typeReadback:{confirmed:true}}},samples:[{text:'NEW359',selection:[6,0]}]}));
+ g=only(tailCell,mk({type:typedOk(),samples:[{text:'NEW359',selection:[6,0]}]}));
  assert.deepEqual([g.tailQualified,g.tailOk,g.tailUnsafeOk],[1,1,1]);
- g=only(tailCell,mk({type:{startedAt:10021,endedAt:10030,error:{errorName:'typeUnconfirmed',meta:{typeReadback:{reason:'valueMismatch'}}}}}));assert.equal(g.tailQualified,1);
+ g=only(tailCell,mk({type:{startedAt:10021,endedAt:10030,error:{errorName:'typeUnconfirmed',meta:{entered:0,typeReadback:{reason:'valueMismatch'}}}}}));assert.equal(g.tailQualified,1);
 });
 
 test('a recovered, correct late-pointer replacement is unqualified stress, never an unsafe ok, and its answers stay countable',()=>{
@@ -431,7 +449,7 @@ import {summary as legacySummary} from './readers.mjs';
 
 // Pointer and later keys must share the same delayed FIFO; AX remains runnable.
 test('queue-held tail proves complete once-only FIFO release and an early baseline from actual first-post time',()=>{
- const r=good(tailCell,{stress:{startedAt:9900},ax:{pointerHold:{captured:14,released:14,pointerCaptured:2,pointerReleased:2,keyCaptured:12,earlyRelease:false,extraEvents:0,copyFailures:0,overflow:false,stressExercised:true}},
+ const r=good(tailCell,{stress:{startedAt:9900},ax:{pointerHold:hold(KEYS(10050,10300),{releasedAt:10895})},
   type:{startedAt:10021,endedAt:11500,error:{errorName:'typeUnconfirmed'},meta:{startedAt:10050,endedAt:10300,entered:6,typeReadback:{reason:'valueMismatch'}}},
   events:[{event:'mousedown',at:10900},{event:'mouseup',at:10901},{event:'keydown',at:10902},{event:'beforeinput',at:10903},{event:'input',at:10904}],samples:[{text:'OldNEW359 draft sentence goes here.',selection:[9,0],at:13000}]});
  let g=only(tailCell,r);assert.equal(g.tailQualified,1);assert.deepEqual(g.typeUnconfirmedReasons,{valueMismatch:1});assert.equal(g.tailReadbackDecline,1);assert.equal(g.safeRefusal,0,'declined after typing differs from nothing typed');
@@ -452,4 +470,69 @@ test('background posted-route waits are a cost; only AX-route waits violate the 
  const ax={...post,meta:{...post.meta,elementClick:{plan:'action',action:'AXSelectedTextRange',caret:'placed'},inputRoute:1}};
  g=only(b,{...base,click:ax,type});assert.equal(g.backgroundWaitViolations,1);assert.equal(g.backgroundAX,1);
  g=only(b,{...base,click:{...base.click,meta:{}},type});assert.equal(g.backgroundWaitUnclassified,1,'an unknown carrier does not become a clean AX-route pass');
+});
+
+// ---- review wave: the held FIFO only qualifies a producer that had finished posting before the hand-back ----
+// Closing the tap before replay lets a still-running producer's newer keys overtake buffered ones, so the raw
+// stressExercised flag alone is not FIFO proof: the whole measured keyboard stream must already be in the buffer.
+test('a typed tail qualifies only with all 24 key posts captured and finished before the release',()=>{
+ const typed=(meta={},holdOver={},keys)=>{const m={startedAt:10022,endedAt:10028,entered:6,typeReadback:{reason:'valueMismatch'},...meta};
+  return good(tailCell,{type:{startedAt:10021,endedAt:11500,error:{errorName:'typeUnconfirmed'},meta:m},ax:{pointerHold:hold(keys??KEYS(m.startedAt??10022,m.endedAt??10028),holdOver)}})};
+ const reason=r=>only(tailCell,r).tailUnqualifiedReasons;
+ assert.equal(only(tailCell,typed()).tailQualified,1,'type RPC still reading back at release is fine once its posts are done');
+ // the last post must end strictly before release by the clock uncertainty (2)
+ assert.equal(only(tailCell,typed({endedAt:10902})).tailQualified,1);
+ assert.deepEqual(reason(typed({endedAt:10903})),{producerNotQuiescent:1});
+ assert.deepEqual(reason(typed({endedAt:undefined},{},KEYS(10022,10028))),{producerNotQuiescent:1},'no actual last-post time');
+ const noFirst=typed({startedAt:undefined},{},KEYS(10022,10028));noFirst.type.endedAt=10030;
+ assert.deepEqual(reason(noFirst),{producerNotQuiescent:1},'type returned before the mousedown, but no actual first-post time');
+ // inventory: exactly 6 keyDown, 6 keyUp and 12 flagsChanged
+ assert.deepEqual(reason(typed({},{},KEYS(10022,10028,23))),{keyboardStreamIncomplete:1});
+ assert.deepEqual(reason(typed({},{},[...KEYS(10022,10028),{type:10,at:10028,sourcePid:1}])),{keyboardStreamIncomplete:1});
+ const swapped=KEYS(10022,10028).map((k,i)=>i===0?{...k,type:10}:k);
+ assert.deepEqual(reason(typed({},{},swapped)),{keyboardStreamIncomplete:1},'7 keyDown and 11 flags is not the keyed stream');
+ // a captured event the producer cannot account for
+ assert.deepEqual(reason(typed({},{},[...KEYS(10022,10028),{type:5,at:10029,sourcePid:1}])),{capturedStreamUnexpected:1});
+ // captures are tap receipts after the post returned: a late receipt before the release is fine, one after it is not
+ assert.equal(only(tailCell,typed({},{},KEYS(10022,10028).map((k,i)=>i===23?{...k,at:10048}:k))).tailQualified,1,'last key received 20 ms after its post');
+ assert.equal(only(tailCell,typed({},{},KEYS(10022,10028).map((k,i)=>i===23?{...k,at:10907}:k))).tailQualified,1,'received within the uncertainty of the release');
+ assert.deepEqual(reason(typed({},{},KEYS(10022,10028).map((k,i)=>i===23?{...k,at:10908}:k))),{capturedStreamUnexpected:1},'a capture after the release');
+ assert.deepEqual(reason(typed({},{},KEYS(10022,10028).map((k,i)=>i===0?{...k,at:10019}:k))),{capturedStreamUnexpected:1},'a key held before the first post');
+ assert.deepEqual(reason(typed({},{},KEYS(10022,10028).map((k,i)=>i===5?{...k,sourcePid:2}:k))),{capturedStreamUnexpected:1},'a key from another source process');
+ assert.deepEqual(reason(typed({},{},KEYS(10022,10028).map((k,i)=>i===5?{...k,at:undefined}:k))),{capturedStreamUnexpected:1},'a capture without its timestamp');
+ assert.deepEqual(reason(typed({},{captures:undefined})),{holdNotComplete:1},'counts without the capture sequence');
+ // partial or unknown producers are explicitly unqualified, whatever the answer says
+ assert.deepEqual(reason(typed({entered:5})),{producerUnaccounted:1});
+ assert.deepEqual(reason(typed({entered:undefined})),{producerUnaccounted:1});
+});
+
+test('a no-input tail qualifies only with no captured keys and its type RPC complete before release, whatever it answered',()=>{
+ const none=(type={},keys=[])=>good(tailCell,{events:[{event:'mousedown',at:10950}],type:{startedAt:10021,endedAt:10030,error:{errorName:'typeUnconfirmed',meta:{entered:0,typeReadback:{reason:'selectionChanged'}}},...type},ax:{pointerHold:hold(keys)}});
+ assert.deepEqual([only(tailCell,none()).tailQualified,only(tailCell,none()).safeRefusal],[1,1]);
+ assert.equal(only(tailCell,none({endedAt:10902})).tailQualified,1,'type RPC ended u before the release');
+ assert.deepEqual(only(tailCell,none({endedAt:10903})).tailUnqualifiedReasons,{producerNotQuiescent:1});
+ assert.deepEqual(only(tailCell,none({},KEYS(10022,10028,4))).tailUnqualifiedReasons,{keyboardStreamIncomplete:1},'keys held although nothing was entered');
+ const wrongOk=only(tailCell,none({error:null,meta:{entered:0,typeReadback:{confirmed:true}}}));
+ assert.deepEqual([wrongOk.tailQualified,wrongOk.tailUnsafeOk,wrongOk.safeRefusal],[1,1,0],'an entered-0 success still qualifies and counts unsafe');
+});
+
+// Finding 2: one DOM event stream is ordered by its own seq/mono/epoch, never excused by cross-process RTT.
+test('DOM input before the held mousedown is judged within the page stream, ties rejected',()=>{
+ const reason=(events,u=2)=>only(tailCell,good(tailCell,{clockUncertaintyMs:u,events})).tailUnqualifiedReasons;
+ assert.deepEqual(reason([{event:'keydown',at:10499},{event:'mousedown',at:10500}],50),{postedInputOvertookPointer:1},'1 ms earlier despite u=50');
+ assert.deepEqual(reason([{event:'input',at:10500,seq:4,monoMs:99},{event:'mousedown',at:10500,seq:5,monoMs:99}]),{postedInputOvertookPointer:1},'tied epoch, earlier seq');
+ assert.deepEqual(reason([{event:'input',at:10500,monoMs:98},{event:'mousedown',at:10500,monoMs:99}]),{postedInputOvertookPointer:1},'tied epoch, earlier mono');
+ assert.deepEqual(reason([{event:'mousedown',at:10500,seq:5},{event:'input',at:10500,seq:6}]),{},'same epoch, known later seq');
+ assert.equal(only(tailCell,good(tailCell,{events:[{event:'mousedown',at:10500,seq:5},{event:'input',at:10500,seq:6}]})).tailQualified,1);
+ assert.deepEqual(reason([{event:'keydown',at:10500},{event:'mousedown',at:10500}]),{domOrderAmbiguous:1},'tie with no stream order');
+ assert.deepEqual(reason([{event:'mousedown',at:10500,seq:9},{event:'keyup',at:10499,seq:10}]),{},'seq outranks a skewed epoch');
+});
+
+// A DOM mousedown earlier than the release (beyond the cross-process uncertainty) cannot be the held pointer.
+test('a mousedown observed before the hold released is not the held pointer',()=>{
+ const at=(md,releasedAt)=>only(tailCell,good(tailCell,{events:[{event:'mousedown',at:md}],ax:{pointerHold:hold([],{releasedAt})}}));
+ assert.equal(at(10906,10905).tailQualified,1);
+ assert.equal(at(10903,10905).tailQualified,1,'within the uncertainty of the release');
+ assert.deepEqual(at(10902,10905).tailUnqualifiedReasons,{mousedownBeforeRelease:1});
+ assert.deepEqual(at(10500,10905).tailUnqualifiedReasons,{mousedownBeforeRelease:1},'the earlier fixture shape');
 });

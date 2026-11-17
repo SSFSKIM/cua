@@ -4,6 +4,8 @@ import {mkdtempSync,readFileSync,writeFileSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {spawnSync} from 'node:child_process';
+import {qualificationCells,qualificationSummary} from './qualification-readers.mjs';
+import {SEED,REQUESTED} from './page.mjs';
 
 // The hold-pointer stress runs only on the hosted fixture. Offline, the watcher's pure queue/state model is compiled
 // alone (Foundation only) against fake events; nothing here creates a tap or posts input.
@@ -64,6 +66,26 @@ do { // an uncopyable event is never suppressed: before the trigger it does not 
   let vb = feed(&b, ["D1@10", "K1@15", "U1@20"], copyFails: ["K1"])
   let posted = b.release(at: 910, early: false, reason: "timer"); emit("copy-failed-later", b, ["v": vb, "posted": posted])
 }
+// A type_text producer posting NEW359 as Keyboard.swift does (flags, down, up, restore per unit) after a click whose
+// down/up the hold captured. Events posted before the release are held; the watcher then closes the tap and replays,
+// and any post landing during that replay reaches the pid directly (here, right after the replayed down).
+func producer(_ name: String, keyStart: Double, keyStep: Double) {
+  var h = PointerHold359<String>(delayMs: 900, armedAt: 9900)
+  var posts: [(String, Double)] = [("D", 10005), ("U", 10006)]
+  for i in 0..<24 { posts.append((["F", "K", "k", "F"][i % 4] + String(i), keyStart + Double(i) * keyStep)) }
+  let releaseAt = 10905.0
+  _ = feed(&h, posts.filter { $0.1 <= releaseAt }.map { "\($0.0)@\($0.1)" })
+  let replay = h.release(at: releaseAt, early: false, reason: "timer")
+  var delivered: [String] = []
+  for (i, e) in replay.enumerated() {
+    delivered.append(e)
+    // After the replayed down, later posts the tap no longer sees reach the pid before the rest of the buffer.
+    if i == 0 { for p in posts where p.1 > releaseAt { _ = feed(&h, ["\(p.0)@\(p.1)"]); delivered.append(p.0) } }
+  }
+  emit(name, h, ["delivered": delivered, "firstPost": keyStart, "lastPost": posts.last!.1])
+}
+producer("quiescent", keyStart: 10022, keyStep: 0.25)
+producer("replay-overtake", keyStart: 10040, keyStep: 40)
 do { // overflow: the event past the limit is still held (never dropped) and the caller is told to release now
   var h = PointerHold359<String>(delayMs: 900, armedAt: 0, limit: 3)
   let v = feed(&h, ["D1@10", "U1@11", "K1@12", "k1@13", "K2@14"])
@@ -138,4 +160,25 @@ test('the real path closes the tap before reposting, and the watcher compiles',(
  const fn=body.slice(0,body.indexOf('\n}\n'));
  assert.ok(fn.indexOf('closeHoldTap359()')>=0&&fn.indexOf('closeHoldTap359()')<fn.indexOf('postToPid('),'tap must be gone before the originals are reposted');
  const r=spawnSync('swiftc',['-typecheck',watchPath],{encoding:'utf8'});assert.equal(r.status,0,r.stderr);
+});
+
+// The reviewer's scenario on the real model: a producer still posting at the release overtakes the buffer during replay.
+// The watcher's raw flag still says exercised; the reader must reject it from the wire and the real post interval.
+test('a producer still posting at the hand-back is rejected by the reader even though the raw flag says exercised',()=>{
+ const tail=qualificationCells({heads:{main:'a'.repeat(40),fix:'b'.repeat(40)}}).find(c=>c.cohort==='tail');
+ const row=(c,meta={})=>{const {case:_,delivered,firstPost,lastPost,...wire}=c;return {...tail,requested:REQUESTED,valid:true,smoke:false,clockUncertaintyMs:2,
+  click:{startedAt:10000,endedAt:10010,error:null,meta:{}},next:{startedAt:10011,endedAt:10020,error:null,meta:{}},stress:{startedAt:9900},
+  type:{startedAt:10021,endedAt:11500,error:{errorName:'typeUnconfirmed'},meta:{startedAt:firstPost,endedAt:lastPost,entered:6,typeReadback:{reason:'valueMismatch'},...meta}},
+  ax:{pointerHold:wire},events:[{event:'mousedown',at:10906,seq:1},{event:'keydown',at:10921,seq:2},{event:'mouseup',at:10922,seq:3}],
+  samples:[{text:SEED,selection:[0,0]}],foregroundViolation:false,windowRaiseObserved:false}};
+ const verdict=r=>{const g=qualificationSummary([r],[tail]).groups[0];return [g.tailQualified,g.tailUnqualifiedReasons]};
+ const q=cases.quiescent,o=cases['replay-overtake'];
+ assert.deepEqual([q.captured,q.keyCaptured,q.stressExercised],[26,24,true]);assert.deepEqual(q.delivered.slice(0,3),['D','U','F0']);
+ assert.deepEqual(verdict(row(q)),[1,{}]);
+ // 22 of the 24 key posts were held; k22 and F23 arrived during the replay, after the replayed down and before U.
+ assert.deepEqual([o.captured,o.released,o.keyCaptured,o.pointerCaptured,o.extraEvents,o.stressExercised],[24,24,22,2,0,true]);
+ assert.deepEqual(o.delivered.slice(0,4),['D','k22','F23','U'],'newer keys overtook the buffered up and keys');
+ assert.deepEqual(verdict(row(o)),[0,{producerNotQuiescent:1}]);
+ // Even if the last post were (wrongly) stamped before the release, the incomplete stream is still refused.
+ assert.deepEqual(verdict(row(o,{endedAt:10900})),[0,{keyboardStreamIncomplete:1}]);
 });

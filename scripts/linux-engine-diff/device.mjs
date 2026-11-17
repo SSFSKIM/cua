@@ -12,7 +12,9 @@
 //   with the witness unchanged and the background audit clean;
 // - `cancel` (shared mode, a drag that Chrome turns into a drag and drop): the request answers that the drag and drop
 //   was cancelled before the drop, exactly, with nothing dropped, the witness unchanged and the background audit clean
-//   (the cancel's Escape is a synthetic key event, never XTEST);
+//   (the cancel's Escape is a synthetic key event, never XTEST); a drag Chrome took nothing for by its release, and
+//   took after it, is judged by the late-take rules instead (ruling 756): the plain drag's ok, the after-release
+//   watch's Escape, nothing dropped, and the next sample refused with the late notice, not run;
 // - `late` (the same, the cancel forced after the release, `--dnd-cancel-after-release`, along a path that holds the
 //   button until Chrome has taken): every answer is honest (that the drop may have happened, or that nothing was dropped
 //   only where nothing dropped and the witness is unchanged), at least one answer says the drop may have happened, the
@@ -465,6 +467,49 @@ function ownPointerLog(r) {
 /** Whether a late case's drag reached its branch: a take before the release, so the engine decided an order (dnd.rs `Outcome`). */
 const lateBranch = (r) => typeof r.dnd?.outcome === 'string' && r.dnd.outcome !== 'no_start';
 
+/** The page's counts a drag would move (pages/drag.html): its press on a source, its drag start, its drop, its end. */
+const PAGE_COUNTS = ['downs', 'starts', 'drops', 'ends', 'ups'];
+
+/**
+ * Whether a sample shows no drag of its own: no route, drag or press record (the row's or the engine's), the page read
+ * before and after with every count it keeps unmoved, and the witness unchanged. A refused request's text alone does not
+ * show it was not run (the task review's probe: a drag that ran, with a refusal's text, passed).
+ */
+function notRun(r) {
+  const es = r.engine_stats ?? {};
+  const { before, after } = r.drop_status ?? {};
+  const pageStill = before != null && after != null && PAGE_COUNTS.every((k) => typeof before[k] === 'number' && after[k] === before[k]);
+  return r.route == null && r.dnd == null && r.press == null && es.dnd == null && es.press == null && es.wall == null && pageStill && r.witness === true;
+}
+
+/**
+ * A cancel case's late takes (the design session's ruling 756, from V5's rerun at H): a drag Chrome took nothing for by
+ * its release (the engine's record, `dnd.outcome` `no_start`) answers at the release as a plain drag, and a take after
+ * the release is T14's after-release watch's, as the late-take case's (`--dnd-defer-take`) is: its Escape sent and
+ * recorded with the take's time after the release (`late_dnd`) on the next request on the same engine, the block's next
+ * sample, which is refused with the late notice and shows no drag of its own (`notRun`). Returns each such drag and its
+ * refused request: they answer without the cancel's sentence, and the case's other rules (nothing dropped, the witness
+ * unchanged) still judge both. A drag Chrome took before its release is a drag and drop under way, so it still needs
+ * the sentence.
+ */
+function lateTakes(rows) {
+  const pairs = new Set();
+  for (const drag of rows) {
+    const next = rows.find((r) => r.block === drag.block && r.i === drag.i + 1);
+    if (!next) continue;
+    const late = next.engine_stats?.late_dnd;
+    const app = late?.app;
+    const takenAfterRelease = drag.ok === true && drag.dnd?.outcome === 'no_start' && typeof late?.after_release_ms === 'number' && late.after_release_ms > 0 && late.escaped === true;
+    // the next request answered the notice as T14's contract says, for this case's app: the drag it was, not run
+    const answeredNotice = next.ok === false && next.expected_error === dndCancelledSentence(app) && next.error === dndLateRefusal(app, 'drag');
+    if (takenAfterRelease && answeredNotice && notRun(next)) {
+      pairs.add(drag);
+      pairs.add(next);
+    }
+  }
+  return pairs;
+}
+
 const at = (point) => ({ x: point.x, y: point.y });
 
 export const DEVICE_OPS = {
@@ -641,8 +686,10 @@ export function judgeDevice(op, rows, audit) {
     bad('not refused with the Device mode sentence', (r) => !r.ok && r.error === r.expected_error);
     bad('the window changed', (r) => r.unchanged === true);
   }
+  // a take after the release is judged by the late-take rules (ruling 756, `lateTakes`)
+  const late = expect === 'cancel' ? lateTakes(rows) : new Set();
   if (expect === 'cancel') {
-    bad('not cancelled with the drag-and-drop sentence', (r) => !r.ok && r.error === r.expected_error);
+    bad('not cancelled with the drag-and-drop sentence', (r) => (!r.ok && r.error === r.expected_error) || late.has(r));
     bad('it dropped', (r) => r.dropped === false);
   }
   if (expect === 'stray') {
@@ -701,7 +748,9 @@ export function judgeDevice(op, rows, audit) {
     bad('a request failed', (r) => r.ok);
     bad('the effect was not verified', (r) => r.effect === true);
   }
-  if (DEVICE_OPS[op].heldAtStart) bad('the engine did not watch the drag with the signature already held', (r) => r.dnd?.in_front === false && r.dnd?.held_at_start === true);
+  // a request refused for a late take did not run, so there is no drag of its own to have watched
+  const ran = (r) => !(late.has(r) && r.ok === false);
+  if (DEVICE_OPS[op].heldAtStart) bad('the engine did not watch the drag with the signature already held', (r) => !ran(r) || (r.dnd?.in_front === false && r.dnd?.held_at_start === true));
   if (DEVICE_OPS[op].inFront) {
     bad('the engine did not record the window as in front', (r) => r.dnd?.in_front === true);
     bad('the desktop at the end was not as at the start', (r) => r.desktop_same === true);

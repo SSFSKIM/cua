@@ -226,6 +226,86 @@ test('the forced late take passes only where the drag answered plainly, the read
   assert.equal(judgeDevice('chrome_dnd_late_take_shared', [good, { ...good, dropped: false, witness: true }], audit).pass, true, 'a missed drop beside landed ones');
 });
 
+// The design session's ruling 756, from V5's rerun at H (chrome_dnd_shared 0/0 and 0/1): Chrome took nothing by the
+// release, so the drag answered as a plain drag; its X-level take came 2.35 ms after the release, the after-release
+// watch's Escape at 4.47 ms, nothing dropped, and the next request carried the late notice, not run.
+test("a cancel case's take after the release is judged by the late-take rules; one before the release still needs the sentence (ruling 756)", () => {
+  const app = 'Google-chrome';
+  const cancelled = dndCancelledSentence(app);
+  const late = { after_release_ms: 2.353375, app, escape_after_release_ms: 4.46738, escaped: true };
+  // as V5 recorded them: the drag Chrome took nothing for by its release, the next sample refused with the notice, then
+  // an in-time cancel
+  const plain = row({ i: 0, series: 'cold', ok: true, expected_error: cancelled, dropped: false, dnd: { outcome: 'no_start', started: false, in_front: false, held_at_start: false }, press: { taken: false }, engine_stats: { command: 'drag' } });
+  // not run: no drag record of its own, and the page's counts as they were (V5 0/1's)
+  const page = { starts: 1, drops: 0, downs: 1, ends: 1, ups: 0 };
+  const refused = row({ i: 1, series: 'warm', ok: false, error: dndLateRefusal(app, 'drag'), expected_error: cancelled, dropped: false, drop_status: { before: page, after: page }, engine_stats: { command: 'drag', late_dnd: late } });
+  const inTime = row({ i: 2, series: 'warm', ok: false, error: cancelled, expected_error: cancelled, dropped: false, dnd: { outcome: 'in_time', started: true, in_front: false, held_at_start: false } });
+  const audit = { clean: true, kind: 'background', answered: [{ ok: false, error: cancelled, expected_error: cancelled }] };
+  const judged = (rows, op = 'chrome_dnd_shared') => judgeDevice(op, rows, audit);
+  assert.deepEqual(judged([plain, refused, inTime]), { pass: true, reasons: [] }, 'the positive control: V5 0/0 and 0/1 beside an in-time cancel');
+
+  // negative control 1: a take before the release, answered without the sentence, whatever the next request carried
+  for (const dnd of [{ ...plain.dnd, outcome: 'in_time', started: true }, { ...plain.dnd, outcome: 'late' }, undefined]) {
+    const r = judged([{ ...plain, dnd }, refused, inTime]);
+    assert.equal(r.pass, false, `a take by the release (${dnd?.outcome ?? 'no engine record'}) answered ok`);
+    assert.match(r.reasons.join('\n'), /not cancelled with the drag-and-drop sentence on 2 of 3 samples \(0\/0, 0\/1\)/);
+  }
+  assert.equal(judged([{ ...inTime, ok: true, error: undefined }]).pass, false, 'an in-time take answered ok');
+  // and on the notice-carrying sample: one that ran a drag of its own is no refused request, whatever its text (the
+  // task review's probe on V5's rows: 0/1's notice and late_dnd kept, 0/2's in-time drag record, press and page copied in)
+  const ranPage = { starts: 2, drops: 0, downs: 2, ends: 2, ups: 1 };
+  const ranDrag = { ...refused, route: 'background', dnd: inTime.dnd, press: { taken: true }, drop_status: { before: page, after: ranPage }, engine_stats: { ...refused.engine_stats, dnd: inTime.dnd, press: { taken: true } } };
+  const ran = [
+    ['the review probe: a drag that ran and took in time', ranDrag],
+    ['its own drag outcome', { ...refused, dnd: { outcome: 'no_start' } }],
+    ["the engine's drag record", { ...refused, engine_stats: { ...refused.engine_stats, dnd: { outcome: 'in_time' } } }],
+    ['its press taken', { ...refused, press: { taken: true } }],
+    ["the engine's press record", { ...refused, engine_stats: { ...refused.engine_stats, press: { taken: false } } }],
+    ['a route of its own', { ...refused, route: 'background' }],
+    ["the page's press", { ...refused, drop_status: { before: page, after: { ...page, downs: 2 } } }],
+    ["the page's drag start", { ...refused, drop_status: { before: page, after: { ...page, starts: 2 } } }],
+    ["the page's drop", { ...refused, drop_status: { before: page, after: { ...page, drops: 1 } } }],
+    ["the page's counts unread", { ...refused, drop_status: { before: page, after: null } }],
+    ['the witness changed', { ...refused, witness: false }],
+  ];
+  for (const [what, next] of ran) {
+    const r = judged([plain, next, inTime]);
+    assert.equal(r.pass, false, what);
+    assert.match(r.reasons.join('\n'), /not cancelled with the drag-and-drop sentence on 2 of 3 samples \(0\/0, 0\/1\)/, what);
+  }
+  assert.equal(judged([{ ...plain, dnd: { ...plain.dnd, held_at_start: true } }, { ...ranDrag, dnd: { ...inTime.dnd, held_at_start: false } }, inTime], 'chrome_dnd_obscured_in_front_shared').pass, false, 'a drag that ran is held to the signature-held watch');
+
+  // negative control 2: a late take with a drop, by the page's record or the witness's, on the drag or after it
+  assert.match(judged([{ ...plain, dropped: true }, refused, inTime]).reasons.join('\n'), /it dropped on 1 of 3 samples \(0\/0\)/);
+  assert.match(judged([{ ...plain, witness: false }, refused, inTime]).reasons.join('\n'), /the witness changed on 1 of 3 samples \(0\/0\)/);
+  assert.match(judged([plain, { ...refused, dropped: true }, inTime]).reasons.join('\n'), /it dropped on 1 of 3 samples \(0\/1\)/);
+  assert.match(judged([plain, { ...refused, witness: false }, inTime]).reasons.join('\n'), /the witness changed on 1 of 3 samples \(0\/1\)/);
+
+  // negative control 3: a late take with no notice on the next request
+  const unnoticed = [
+    ['the next sample cancelled in time', [plain, { ...inTime, i: 1 }]],
+    ['the next sample answered ok', [plain, { ...plain, i: 1, engine_stats: { command: 'drag', late_dnd: late } }]],
+    ['refused for another cause', [plain, { ...refused, error: dndUnconfirmedRefusal(app, 'drag') }]],
+    ['the late refusal naming another request', [plain, { ...refused, error: dndLateRefusal(app, 'move') }]],
+    ['no next sample in its block', [plain]],
+    ['the next sample on another engine (the next block)', [plain, { ...refused, block: 1, i: 0 }]],
+    ['a sample between them', [plain, { ...refused, i: 2 }]],
+  ];
+  for (const [what, rows] of unnoticed) assert.equal(judged(rows).pass, false, what);
+  // and the engine's record of the late take: the take after the release, and its Escape sent
+  for (const [what, l] of [['no late take recorded', undefined], ['the take not after the release', { ...late, after_release_ms: null }], ['no Escape sent', { ...late, escaped: false }], ['another app', { ...late, app: 'Firefox' }]]) {
+    assert.equal(judged([plain, { ...refused, engine_stats: { command: 'drag', late_dnd: l } }, inTime]).pass, false, what);
+  }
+  // a refusal with no late drag before it excuses nothing
+  assert.equal(judged([{ ...inTime, i: 0 }, refused]).pass, false, 'a late refusal after an in-time cancel');
+
+  // the same in the cancel case with the signature held: the refused request did not run, so the engine has no watch of
+  // its own to record; the late drag's own record is still judged
+  const held = { outcome: 'no_start', started: false, in_front: false, held_at_start: true };
+  assert.deepEqual(judged([{ ...plain, dnd: held }, refused, { ...inTime, dnd: { ...inTime.dnd, held_at_start: true } }], 'chrome_dnd_obscured_in_front_shared'), { pass: true, reasons: [] });
+  assert.equal(judged([{ ...plain, dnd: { ...held, held_at_start: false } }, refused], 'chrome_dnd_obscured_in_front_shared').pass, false, 'the late drag not watched with the signature held');
+});
+
 test("an unconfirmed drop's refusal is dnd.rs's, naming the request not run", () => {
   assert.equal(
     dndUnconfirmedRefusal('Google-chrome', 'click'),

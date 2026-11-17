@@ -7,7 +7,7 @@
 // as it starts; `LEAK_HOLD`: a file it waits for before it ends, so another suite can run beside this one.
 
 import { spawn } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -16,7 +16,11 @@ import { startA11yStub } from '../../../scripts/linux-engine-diff/a11y-stub.mjs'
 import { startSessionBus } from '../../../scripts/linux-engine-diff/session-bus.mjs';
 
 test('a test that leaves something of a run behind, or not', async () => {
-  if (process.env.LEAK_ROOT) writeFileSync(process.env.LEAK_ROOT, tmpdir());
+  // by a rename, so the file appears whole: the test reads it as soon as it holds something
+  if (process.env.LEAK_ROOT) {
+    writeFileSync(`${process.env.LEAK_ROOT}.part`, tmpdir());
+    renameSync(`${process.env.LEAK_ROOT}.part`, process.env.LEAK_ROOT);
+  }
   for (let i = 0; process.env.LEAK_HOLD && !existsSync(process.env.LEAK_HOLD) && i < 600; i++) await new Promise((r) => setTimeout(r, 50));
   const dir = mkdtempSync(join(tmpdir(), 'cua171-leak-fixture-'));
   if (process.env.LEAK === 'process') {

@@ -91,10 +91,13 @@ function startedSuite(leak, extra) {
   return new Promise((resolve) => child.once('exit', (code) => (clearTimeout(timer), resolve({ status: code, stderr }))));
 }
 
-/** Waits for `file` to exist (a nested suite's fixture writing it), at most 30 s. */
+/** What a nested suite's fixture wrote to `file`, once it holds something (at most 30 s). */
 async function written(file) {
-  for (let i = 0; i < 600 && !existsSync(file); i++) await new Promise((r) => setTimeout(r, 50));
-  return readFileSync(file, 'utf8');
+  const read = () => (existsSync(file) ? readFileSync(file, 'utf8') : '');
+  for (let i = 0; i < 600 && read() === ''; i++) await new Promise((r) => setTimeout(r, 50));
+  const text = read();
+  assert.notEqual(text, '', `the nested suite wrote ${file}`);
+  return text;
 }
 
 test('a suite that leaves a stand-in behind fails, naming its pid and command line, and the stand-in is ended', { skip: !HAS_PROC && 'no /proc here' }, async () => {

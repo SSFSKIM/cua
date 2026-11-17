@@ -4834,7 +4834,7 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      (AppKit; through `ancestor`, the content view being a host) and Firefox's `<select>` popup opened on a timer
      (through `ancestor`: Gecko hangs it under a host). Excluded by the rule: a sibling view's own context menu
      (AppKit's text view, beside the target), an AXMenu inside an AXPopover (Firefox's datalist suggestions) and Chrome's
-     datalist suggestions (an AXList in a layer-999 window). The full run's rates are in the evidence for #374.
+     datalist suggestions (an AXList in a layer-999 window). The full run (44012053373, reps 10): the timer ARIA menu confirmed 80 of 80, the content-view menu 20 of 20, Firefox's select 20 of 20, Firefox's datalist 1 of 7 fired; the sibling's menu 0 of 20, Chrome's datalist 0 of 20 (`docs/evidence/2026-11-16-show-menu/`). On the request cells the candidate gave 0 false ok in 400 rows, against main's 120.
   2. **Why no discriminator.** Position was measured and fails both ways: a real menu can open far from the element
      (Electron's Menu.popup() opens at the pointer, 256 points from the target, as most Electron apps do), and a
      coincident menu can open next to it (Firefox's select, 13 points below the target). "Appeared after the send"

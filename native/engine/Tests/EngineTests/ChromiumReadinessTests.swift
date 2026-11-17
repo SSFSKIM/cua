@@ -381,15 +381,29 @@ private final class FakeResolving {
   let tree: FakeTree
   var invalidated = false
   var valid: Set<Int>? = nil
+  /// How many validations answer before every handle reads as invalid (nil: no limit).
+  var validations: Int? = nil
+  /// The elements that become unreadable from the second source on (the handle changing after the refresh's read).
+  var unreadableAfterFirstSource: Set<Int> = []
   private(set) var treeReads = 0
+  private var sources = 0
+  private var validated = 0
 
   init(_ tree: FakeTree) { self.tree = tree }
 
   var resolver: ElementResolver {
     ElementResolver(
       invalidated: { [self] _ in invalidated },
-      stillValid: { [self] element in valid.map { $0.contains(tree.id(element)) } ?? true },
-      source: { [self] in FakeSource(tree) },
+      stillValid: { [self] element in
+        validated += 1
+        if let validations, validated > validations { return false }
+        return valid.map { $0.contains(tree.id(element)) } ?? true
+      },
+      source: { [self] in
+        sources += 1
+        if sources > 1 { tree.unreadable.formUnion(unreadableAfterFirstSource) }
+        return FakeSource(tree)
+      },
       tree: { [self] _ in
         treeReads += 1
         return (Engine.element(0), [])
@@ -556,6 +570,34 @@ final class ChromiumMetadataTests: XCTestCase {
       }
       XCTAssertEqual(resolving.treeReads, 0, "\(gone): nothing re-found by identity")
       XCTAssertTrue(CFEqual(try XCTUnwrap(again.entry(1)).element, Engine.element(1)), "\(gone): the entry keeps its own handle")
+    }
+  }
+
+  func testAHandleLostAfterTheRefreshIsRefusedNotReplacedByAnIdentityWalk() throws {
+    // Round 4's probe: the marked button's handle reads and validates for the refresh, then goes (invalid, unreadable)
+    // before anything else reads it, while another element (6) matches the identity the refresh just read. The
+    // resolution stays pinned to the handle: refused, no walk, the token still the old handle's.
+    let tree = basicMode()
+    let lineage = Lineage()
+    observe(tree, lineage, at: 10_400)
+    completeMode(tree)
+    tree.children[0] = [1, 2, 6]
+    tree.extra[6] = ["AXRole": "AXButton" as CFString, "AXTitle": "Go" as CFString]
+    tree.actions[6] = ["AXPress", "AXShowMenu", "AXScrollToVisible"]
+    for refetch in [Refetch.ifNeeded, .always, .ignoringValue] {
+      let fake = FakeResolving(tree)
+      fake.invalidated = true
+      fake.validations = 1
+      fake.unreadableAfterFirstSource = [1]
+      tree.unreadable = []
+      XCTAssertThrowsError(try lineage.resolve(elementToken(1), resolver: fake.resolver, refetch: refetch,
+                                               readiness: EntryReadiness(readyAt: 12_500, now: 12_600)), "\(refetch)") { error in
+        XCTAssertEqual((error as? EngineError)?.errorName, "elementNoLongerValid")
+      }
+      XCTAssertEqual(fake.treeReads, 0, "\(refetch): no identity walk")
+      XCTAssertTrue(CFEqual(try XCTUnwrap(lineage.entry(1)).element, Engine.element(1)), "\(refetch): handle 6 not adopted")
+      XCTAssertEqual(lineage.entry(1)?.recordedAt, 10_400, "\(refetch): left as recorded, still marked")
+      XCTAssertEqual(lineage.entry(1)?.actions, ["AXShowMenu", "AXScrollToVisible"], "\(refetch): nothing the lost handle read was kept")
     }
   }
 

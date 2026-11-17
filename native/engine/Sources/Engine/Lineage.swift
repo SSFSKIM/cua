@@ -236,11 +236,15 @@ final class Lineage {
   }
 
   /// The backstop's refresh (ruling 772): `entry` read again from its own handle, nothing else.
+  /// The handle is validated before the read and again after it, and the entry changes only once both pass: a refusal
+  /// leaves it as recorded, still marked.
   private func refreshFromHandle(_ number: Int, _ entry: LineageEntry, inMenu: Bool, resolver: ElementResolver, now: Double) throws -> LineageEntry {
     guard resolver.stillValid(entry.element) else { throw ElementErrors.noLongerValid }
     let source = resolver.source()
     guard let data = inMenu ? source.listedData(entry.element) : source.data(entry.element) else { throw ElementErrors.noLongerValid }
-    renew(number, element: entry.element, data: data, owner: entry.identity.pid, actions: source.actions(entry.element))
+    let actions = source.actions(entry.element)
+    guard resolver.stillValid(entry.element) else { throw ElementErrors.noLongerValid }
+    renew(number, element: entry.element, data: data, owner: entry.identity.pid, actions: actions)
     current?.entries[number]?.recordedAt = now
     return self.entry(number)!
   }
@@ -292,12 +296,14 @@ final class Lineage {
   ///
   /// `readiness` (ruling 772, ChromiumReadiness.swift): an entry recorded before its process's readiness is first read
   /// again from its own handle, its identity and actions taking what the handle reads now, and its read time now; never
-  /// re-found by identity, so no other handle is adopted for it. A handle that no longer validates or reads is no longer
-  /// valid, before anything is written. The resolution then goes on as above with the entry read again.
+  /// re-found by identity, so no other handle is adopted for it. That resolution stays pinned to the handle: it never
+  /// enters the re-read or the re-fetch above, and the handle is validated before its read and again after it; a handle
+  /// that no longer validates or reads at any of those points is no longer valid, before anything is written, and the
+  /// entry is left as recorded.
   func resolve(_ token: String, resolver: ElementResolver, refetch: Refetch = .ifNeeded, readiness: EntryReadiness? = nil) throws -> LineageEntry {
-    guard let number = tokenNumber(token), var entry = entry(number), let observed = current else { throw ElementErrors.noLongerValid }
+    guard let number = tokenNumber(token), let entry = entry(number), let observed = current else { throw ElementErrors.noLongerValid }
     if let readiness, recordedBeforeReadiness(entry.recordedAt, readyAt: readiness.readyAt) {
-      entry = try refreshFromHandle(number, entry, inMenu: observed.menu.contains(number), resolver: resolver, now: readiness.now)
+      return try refreshFromHandle(number, entry, inMenu: observed.menu.contains(number), resolver: resolver, now: readiness.now)
     }
     if refetch == .ifNeeded, !resolver.invalidated(entry) {
       guard resolver.stillValid(entry.element) else { throw ElementErrors.noLongerValid }

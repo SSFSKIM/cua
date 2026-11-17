@@ -4931,7 +4931,11 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      after the action's wait, a target recorded before readiness is read again from its cached handle (identity,
      actions, read time now) and only then resolved as before; a handle that no longer validates or reads is
      elementNoLongerValid before any write. It never re-finds by identity, so no other handle is adopted for the token.
-     An entry read after readiness, or a process with no readiness, is left as recorded.
+     An entry read after readiness, or a process with no readiness, is left as recorded. Review round 4 (P2, accepted):
+     the refreshed resolution is pinned to the handle and ends there, never entering the ordinary re-read or the
+     identity re-fetch, which could otherwise adopt another element matching the identity just read when the handle
+     went between the two reads (the reviewer's probe moved t1 from handle 1 to 6). The handle is validated before and
+     after its read, and the entry changes only once both pass, so a refusal leaves it as recorded, still marked.
   4. **valueUnconfirmed** (ValueSetting.swift, `confirmingWrittenValue`): a set_value whose write was accepted and
      whose re-fetch then fails, whatever its refusal, answers `valueUnconfirmed` ("sent, effect not seen", beside
      clickUnconfirmed, scrollUnconfirmed and menuUnconfirmed) in place of elementNoLongerValid, which told the model

@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {win,offscreenProof,compareReturn,raiseTarget,current,anotherSpaceProof,missingAuthorization} from './evidence.mjs';
+import {win,offscreenProof,compareReturn,raiseTarget,current,anotherSpaceProof,missingAuthorization,windowMatch} from './evidence.mjs';
 import {createService} from '../../src/services/engine/service.mjs';
 import {createSkyService} from '../../src/services/sky.mjs';
 import {SkyComputerUseError} from '../../src/services/engine/protocol.mjs';
 import {node,skyshot} from '../../test/native-goldens/builder.mjs';
-import {offscreenFixture,restoreOriginalFrame,switchToSpace,requestOwnedBounds} from './fixtures.mjs';
+import {offscreenFixture,restoreOriginalFrame,switchToSpace,requestOwnedBounds,returnToWindowSpace} from './fixtures.mjs';
 import fs from 'node:fs';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
@@ -42,10 +42,10 @@ test('populated return samples compare text, actual JPEG digest/length, and nume
  assert.deepEqual(compareReturn(state(),state({value:'different'}),jpeg(),jpeg({value:{jpeg:true,bytes:41,sha256:'b'.repeat(64)},raw:{screenshot:{width:800,height:500}}})),
   {textEqual:false,jpegBytesEqual:false,byteLengthsEqual:false,dimensionsEqual:false});
 });
-test('unknown CG visibility and conflicting active Space IDs cannot prove another Space',()=>{
+test('unknown list membership or window ownership and conflicting active Space IDs cannot prove another Space',()=>{
  const away={...info({spaces:[2],cgWindowFound:true,cgOnscreen:false,inOnscreenList:false}),activeSpace:1,managedDisplaySpaces:[{'Current Space':{ManagedSpaceID:1},Spaces:[{ManagedSpaceID:1},{ManagedSpaceID:2}]}]};
  assert.equal(anotherSpaceProof(away),true);
- for(const input of [{...away,windows:[{...win(away),cgOnscreen:null}]},{...away,windows:[{...win(away),inOnscreenList:null}]},{...away,windows:[{...win(away),cgWindowFound:false}]},{...away,activeSpace:3}]){
+ for(const input of [{...away,windows:[{...win(away),spaces:[]}]},{...away,windows:[{...win(away),inOnscreenList:null}]},{...away,windows:[{...win(away),cgWindowFound:false}]},{...away,activeSpace:3}]){
   assert.equal(anotherSpaceProof(input),false);
  }
  assert.equal(current({...away,activeSpace:3}),null);
@@ -207,4 +207,34 @@ test('the real command-file client rejects a stale operation ACK before acceptin
  };
  const result=await requestOwnedBounds({directory,bounds,id:'fresh',pid:process.pid,wait});
  assert.equal(result.ok,true);assert.equal(result.ack.id,'fresh');assert.deepEqual(calls,[bounds]);
+});
+
+function serverSnapshot(active=1){
+ return {...info(),windows:[],activeSpace:active,managedDisplaySpaces:[{'Current Space':{ManagedSpaceID:active},Spaces:[{ManagedSpaceID:1,type:0},{ManagedSpaceID:10,type:4}]}],
+  pinnedWindowServer:{number:42,ownerPid:123,cgWindowFound:true,spaces:[10],inOnscreenList:active===10,
+   allCG:{kCGWindowIsOnscreen:true},allCGOnscreen:true,includingCG:{kCGWindowIsOnscreen:true},includingCGOnscreen:true,
+   cgBounds:{x:0,y:0,width:1024,height:768},cgBoundsSource:'optionIncludingWindow'}};
+}
+test('positive Space membership and on-screen-only exclusion outrank a contradictory per-window CG flag',()=>{
+ const away={...info({spaces:[10],cgWindowFound:true,cgOnscreen:true,inOnscreenList:false}),activeSpace:1};
+ assert.equal(anotherSpaceProof(away),true);
+ assert.equal(win(away).cgOnscreen,true,'the contradictory raw flag must not be normalized');
+});
+test('the pinned server record proves another Space with no AX window and keeps CG bounds separate',()=>{
+ const away=serverSnapshot();
+ assert.equal(win(away),undefined);assert.equal(anotherSpaceProof(away),true);
+ assert.equal(windowMatch(state({raw:{...state().raw,window:{pid:123,frame:away.pinnedWindowServer.cgBounds}}}),away),true);
+ assert.equal(offscreenProof(away),false,'CG geometry must not fabricate an AX offscreen frame');
+ assert.equal(anotherSpaceProof({...away,pinnedWindowServer:{...away.pinnedWindowServer,ownerPid:456}}),false);
+ assert.equal(anotherSpaceProof({...away,pinnedWindowServer:{...away.pinnedWindowServer,inOnscreenList:null}}),false);
+ assert.equal(anotherSpaceProof({...away,pinnedWindowServer:{...away.pinnedWindowServer,spaces:[1]}}),false);
+});
+test('return-to-target switches the positively known Space before reading AX or invoking refresh/cleanup',async()=>{
+ let active=1;const operations=[];
+ const read=()=>active===1?serverSnapshot():{...serverSnapshot(10),windows:[{number:42,numberResult:0,frame:{x:0,y:0,width:1024,height:768},fullScreen:true,spaces:[10],inOnscreenList:true}]};
+ const result=await returnToWindowSpace({read,switchTo:async target=>{operations.push(['switch',target]);active=target;return {ok:true,value:read()};},
+  wait:async accept=>{operations.push('AX read');const value=read();return {ok:accept(value),value};}});
+ assert.equal(result.ok,true);assert.equal(result.targetSpaceId,10);
+ operations.push('public refresh','AXFullScreen false');
+ assert.deepEqual(operations,[['switch',10],'AX read','public refresh','AXFullScreen false']);
 });

@@ -4,8 +4,8 @@ import {join,dirname} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {spawn,execFileSync} from 'node:child_process';
 import {createHash,randomUUID} from 'node:crypto';
-import {win,usableFrame,offscreenProof,current,spaceIds,anotherSpaceProof,visibleOnSpace,missingAuthorization,windowMatch,raiseTarget,compareReturn} from './evidence.mjs';
-import {offscreenFixture,restoreOriginalFrame,switchToSpace,requestOwnedBounds} from './fixtures.mjs';
+import {win,usableFrame,offscreenProof,current,spaceIds,anotherSpaceProof,visibleOnSpace,missingAuthorization,windowMatch,windowGeometry,raiseTarget,compareReturn} from './evidence.mjs';
+import {offscreenFixture,restoreOriginalFrame,switchToSpace,requestOwnedBounds,returnToWindowSpace} from './fixtures.mjs';
 if(process.env.RUNNER_ENVIRONMENT!=='github-hosted'||process.platform!=='darwin')throw Error('disposable GitHub-hosted macOS only');
 const [source,engine,tool,fixture,out,head,sha,fixtureManifest]=process.argv.slice(2);
 fs.mkdirSync(out,{recursive:true});
@@ -100,6 +100,7 @@ try{
   };
   // If the actual System Events shortcut does not switch Spaces, stop setup rather than trying more routes.
   const switchTo=target=>switchToSpace(target,{read:info,wait:accept=>until(info,accept,6000),post:command=>oracle(command)});
+  const returnToTarget=()=>returnToWindowSpace({read:info,switchTo,wait:accept=>until(info,accept,15000)});
   row.initialSize=sceneOracle('size',pid,900,500);row.initialMove=sceneOracle('move',pid,100,200);row.initialActivate=oracle('activate','com.apple.finder');
   let bound;
   // Warm Chromium once, then pin the actual stable public getApp/getAXState/getScreenshot outputs.
@@ -159,25 +160,28 @@ try{
    if(!away.ok){
     row.anotherSpaceBlocker={reason:row.spaceRoute==='fullscreen'
      ?'Fullscreen Space was created, but switching to a distinct desktop did not establish the independent another-Space preconditions'
-     :'Desktop selection did not establish distinct active/window Spaces with false independent CG visibility',
+     :'Desktop selection did not establish positive distinct Space membership and on-screen-only list exclusion',
      switchSetup:row.spaceSwitchAway??null};
     row.anotherRaise=unavailable(row.anotherSpaceBlocker.reason);checkpoint();return;
    }
    row.anotherGetApp=await call(scene+'-4-getApp',async()=>{bound=await cua.getApp(bundle);});
    row.another=await call(scene+'-4-state',()=>bound.getAXState({disableDiffing:true,emit:false}));
-   row.anotherScreenshot=await call(scene+'-4-screenshot',()=>bound.getScreenshot({emit:false}));
-   row.anotherMatch=windowMatch(row.another,away.value);
+   row.anotherScreenshot=await call(scene+'-4-screenshot',()=>bound.getScreenshot({emit:false}),{capture:true});
+   row.anotherMatch=windowMatch(row.another,away.value);row.anotherMatchGeometry=windowGeometry(away.value);
    let target=raiseTarget(row.another,away.value,row.anotherScreenshot.raw);
-   if(head==='main'&&(!row.anotherGetApp.ok||!row.another.ok||!row.anotherScreenshot.raw)){
-    const setup=row.anotherRaiseSetup={};setup.activate=oracle('activate',bundle);
-    setup.entered=await until(info,visibleOnSpace,15000);
-    if(setup.entered.ok){
+   // Either engine may fail its another-Space observation. Keep those failures above; refresh only on the target's Space.
+   if(!row.anotherGetApp.ok||!row.another.ok||!row.anotherScreenshot.raw){
+    const setup=row.anotherRaiseSetup={};setup.returnToTarget=await returnToTarget();
+    setup.entered=setup.returnToTarget.entered??{ok:false,value:setup.returnToTarget.before};
+    if(setup.returnToTarget.ok){
      setup.state=await call(scene+'-4-raise-refresh',()=>bound.getAXState({disableDiffing:true,emit:false}));
      setup.observedOracle=info();target=raiseTarget(setup.state,setup.observedOracle);
     }else target={available:false,reason:'target Space not independently entered for successful lineage refresh'};
-    setup.switchAway=await switchTo(current(away.value));
-    setup.away=await until(info,anotherSpaceProof);
-    if(!setup.switchAway.ok||!setup.away.ok)target={available:false,reason:'another-Space precondition could not be independently re-established after refresh'};
+    if(target.available){
+     setup.switchAway=await switchTo(current(away.value));
+     setup.away=await until(info,i=>current(i)===current(away.value)&&anotherSpaceProof(i));
+     if(!setup.switchAway.ok||!setup.away.ok)target={available:false,reason:'another-Space precondition could not be independently re-established after refresh'};
+    }
    }
    row.anotherRaiseTarget=target;row.anotherRaiseBefore=info();
    row.anotherRaise=target.available&&anotherSpaceProof(row.anotherRaiseBefore)
@@ -199,8 +203,11 @@ try{
    }else row.anotherRaise=unavailable('fullscreen Space created but target could not be independently entered');
   }else{
    // Real Mission Control fallback: one Add Desktop AXPress attempt, then prove a new managed ID and select it by AX.
-   const mc=row.missionControlSetup={};mc.exitFullscreen=sceneOracle('fullscreen',pid,false);
+   const mc=row.missionControlSetup={};mc.returnToTarget=await returnToTarget();
+   if(!mc.returnToTarget.ok){row.anotherSpaceBlocker={reason:'cannot return to target Space before fullscreen cleanup',returnToTarget:mc.returnToTarget};checkpoint();throw Error(scene+' target Space unavailable before Mission Control fallback cleanup');}
+   mc.exitFullscreen=sceneOracle('fullscreen',pid,false);
    mc.restored=await until(info,i=>win(i)?.fullScreen===false,15000);
+   if(!mc.restored.ok){row.anotherSpaceBlocker={reason:'fullscreen cleanup did not complete on the target Space',restored:mc.restored};checkpoint();throw Error(scene+' fullscreen cleanup unavailable before Mission Control fallback');}
    mc.activate=oracle('activate',bundle);mc.targetVisible=await until(info,visibleOnSpace);
    mc.before=info();row.missionControl=oracle('mission-control');await delay(1000);
    mc.addDesktop=oracle('add-desktop');
@@ -215,14 +222,20 @@ try{
      mc.selectDesktop=oracle('select-desktop',ordinal);
      mc.switched=await until(info,i=>current(i)===added[0]&&anotherSpaceProof(i));
      row.spaceRoute='mission-control';await measureAnotherSpace(mc.switched);
-     if(!mc.switched.ok)mc.blocker='New desktop created; its single selection AXPress did not establish distinct active/window Spaces with false CG visibility';
+     if(!mc.switched.ok)mc.blocker='New desktop created; its single selection AXPress did not establish distinct Space membership with on-screen-only list exclusion';
     }else mc.blocker='New managed Space found, but its desktop ordinal is not independently resolvable';
    }else mc.blocker=mc.addDesktop.axPressResult!==0?'Add Desktop AXPress unavailable or failed; see bounded Dock scan and AX result':!mc.created.ok?'Add Desktop pressed; no new managed Space ID observed':!mc.targetVisible.ok?'Target was not proven on its original desktop before creating the new one':'Space creation yielded ambiguous new managed IDs';
    mc.dismiss=oracle('escape');
    if(mc.blocker){row.anotherSpaceBlocker={reason:mc.blocker,addDesktop:mc.addDesktop,created:mc.created};row.anotherRaise=unavailable(mc.blocker);}
   }
+  // A failed refresh return is already a recorded capability blocker, not a switching action to retry for cleanup.
+  row.cleanupReturnToTarget=row.anotherRaiseSetup?.returnToTarget?.ok===false?row.anotherRaiseSetup.returnToTarget:await returnToTarget();
+  row.returnToTarget=row.cleanupReturnToTarget.switched;
+  checkpoint();
+  if(!row.cleanupReturnToTarget.ok){row.cleanupBlocker={reason:'target Space/AX window unavailable before cleanup',returnToTarget:row.cleanupReturnToTarget};checkpoint();throw Error(scene+' cannot safely clean up before returning to the target Space');}
   row.exitFullscreen=sceneOracle('fullscreen',pid,false);row.fullscreenExited=await until(info,i=>win(i)?.fullScreen===false,15000);
-  row.returnToTarget=oracle('activate',bundle);row.targetSpaceRestored=await until(info,visibleOnSpace);
+  row.targetSpaceRestored=await until(info,i=>visibleOnSpace(i)&&usableFrame(win(i)?.frame));
+  if(!row.fullscreenExited.ok||!row.targetSpaceRestored.ok){row.cleanupBlocker={reason:'fullscreen exit or AX restoration did not complete on the target Space'};checkpoint();throw Error(scene+' fullscreen cleanup failed; remaining on-screen samples unavailable');}
   if(controlDirectory){
    row.fullscreenRestoration=await restoreOriginalFrame(frameIO,origin);
    row.restoreMove=row.fullscreenRestoration.boundsControl;

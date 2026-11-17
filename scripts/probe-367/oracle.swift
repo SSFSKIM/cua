@@ -31,9 +31,17 @@ func frame(_ w: AXUIElement) -> CGRect? {
   let r = CGRect(origin:pt,size:sz)
   return usable(r) ? r : nil
 }
+func cgBounds(_ info: [String: Any]?) -> [String: Double]? {
+  guard let b=info?[kCGWindowBounds as String] as? [String: Any], let x=b["X"] as? NSNumber, let y=b["Y"] as? NSNumber,
+        let width=b["Width"] as? NSNumber, let height=b["Height"] as? NSNumber else { return nil }
+  let r=CGRect(x:x.doubleValue,y:y.doubleValue,width:width.doubleValue,height:height.doubleValue)
+  return usable(r) ? rect(r) : nil
+}
 func info(_ pid: pid_t) -> [String: Any] {
   let app = AXUIElementCreateApplication(pid), ws = windows(pid)
+  let allReadAt=Date().timeIntervalSince1970
   let all = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]]
+  let onReadAt=Date().timeIntervalSince1970
   let on = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]]
   let top = NSScreen.screens.first?.frame.maxY ?? 0
   let screens = NSScreen.screens.map { CGRect(x:$0.frame.minX,y:top-$0.frame.maxY,width:$0.frame.width,height:$0.frame.height) }
@@ -52,7 +60,26 @@ func info(_ pid: pid_t) -> [String: Any] {
       "inOnscreenList":onscreen as Any? ?? NSNull(),
       "spaces":numberKnown ? (spaces?(connection,7,[NSNumber(value:n)] as CFArray)?.takeRetainedValue() as Any? ?? NSNull()) : NSNull()]
   }
-  return ["at":Date().timeIntervalSince1970,"pid":pid,"selectedWindowNumber":selectedNumber as Any? ?? rows.first?["number"] ?? NSNull(),
+  // Query the cached window number even if the app's AXWindows vanishes on another Space. Keep AX absence intact.
+  let pinnedNumber=selectedNumber ?? (rows.first?["number"] as? UInt32)
+  var pinned: [String: Any]? = nil
+  if let n=pinnedNumber, n>0 {
+    let listed=all?.first { ($0[kCGWindowNumber as String] as? UInt32)==n }
+    let includingReadAt=Date().timeIntervalSince1970
+    let includingList=CGWindowListCopyWindowInfo([.optionIncludingWindow],n) as? [[String: Any]]
+    let exact=includingList?.first { ($0[kCGWindowNumber as String] as? UInt32)==n }
+    let owner=(exact ?? listed)?[kCGWindowOwnerPID as String] as? Int
+    let exactBounds=cgBounds(exact), bounds=exactBounds ?? cgBounds(listed)
+    pinned=["number":n,"ownerPid":owner as Any? ?? NSNull(),"ownerMatches":owner==Int(pid),"cgWindowFound":exact != nil || listed != nil,
+      "allCG":listed ?? [:],"allCGOnscreen":listed.map { $0[kCGWindowIsOnscreen as String] as? Bool ?? false } as Any? ?? NSNull(),
+      "includingCG":exact ?? [:],"includingCGOnscreen":exact.map { $0[kCGWindowIsOnscreen as String] as? Bool ?? false } as Any? ?? NSNull(),
+      "includingListRead":includingList != nil,"allReadAt":allReadAt,"includingReadAt":includingReadAt,"onScreenListReadAt":onReadAt,
+      "inOnscreenList":on.map { list in list.contains { ($0[kCGWindowNumber as String] as? UInt32)==n } } as Any? ?? NSNull(),
+      "spaces":spaces?(connection,7,[NSNumber(value:n)] as CFArray)?.takeRetainedValue() as Any? ?? NSNull(),
+      "cgBounds":bounds as Any? ?? NSNull(),"cgBoundsSource":bounds == nil ? "unknown" : exactBounds != nil ? "optionIncludingWindow" : "optionAll",
+      "axWindowAvailable":rows.contains { ($0["number"] as? UInt32)==n && ($0["numberResult"] as? Int32)==0 }]
+  }
+  return ["at":Date().timeIntervalSince1970,"pid":pid,"selectedWindowNumber":pinnedNumber as Any? ?? NSNull(),"pinnedWindowServer":pinned as Any? ?? NSNull(),
     "hidden":attr(app,kAXHiddenAttribute) ?? NSNull(),"windows":rows,"screens":screens.map(rect),"screensKnown":screensKnown,
     "frontmost":["pid":front?.processIdentifier ?? 0,"bundleId":front?.bundleIdentifier ?? ""],
     "activeSpace":active?(connection) as Any? ?? NSNull(),"managedDisplaySpaces":managed?(connection)?.takeRetainedValue() as Any? ?? NSNull(),

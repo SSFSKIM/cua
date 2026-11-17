@@ -5,8 +5,18 @@ const overlaps=(a,b)=>Math.min(a.x+a.width,b.x+b.width)>Math.max(a.x,b.x)&&Math.
 export const offscreenProof=i=>usableFrame(win(i)?.frame)&&Array.isArray(i?.screens)&&i.screens.length>0&&i.screens.every(usableFrame)
  &&win(i).overlapsDisplay===false&&i.screens.every(s=>!overlaps(win(i).frame,s));
 export const sameFrame=(a,b)=>usableFrame(a)&&usableFrame(b)&&['x','y','width','height'].every(k=>Math.abs(a[k]-b[k])<=1);
+function pinnedServerWindow(i){
+ const w=i?.pinnedWindowServer;
+ return w?.number===i?.selectedWindowNumber&&Number.isSafeInteger(w?.number)&&w.number>0&&w.ownerPid===i.pid&&w.cgWindowFound===true?w:null;
+}
+export function windowGeometry(i){
+ const ax=win(i);
+ if(ax?.numberResult===0&&ax.number>0&&usableFrame(ax.frame))return {source:'AX',bounds:ax.frame};
+ const cg=pinnedServerWindow(i);
+ return usableFrame(cg?.cgBounds)?{source:'CGWindowBounds',bounds:cg.cgBounds}:null;
+}
 export function windowMatch(row,i){
- return row?.ok===true&&row.raw?.window?.pid===i?.pid&&win(i)?.numberResult===0&&win(i)?.number>0&&sameFrame(row.raw.window.frame,win(i)?.frame);
+ return row?.ok===true&&row.raw?.window?.pid===i?.pid&&sameFrame(row.raw?.window?.frame,windowGeometry(i)?.bounds);
 }
 const spaceId=n=>Number.isSafeInteger(n)&&n>0;
 export function current(i){
@@ -15,10 +25,18 @@ export function current(i){
  return spaceId(display)?display:spaceId(active)?active:null;
 }
 export const spaceIds=i=>i?.managedDisplaySpaces?.flatMap(d=>(d.Spaces??[]).map(s=>s.ManagedSpaceID)).filter(spaceId)??[];
-export const anotherSpaceProof=i=>current(i)!==null&&win(i)?.numberResult===0&&win(i)?.number>0&&Array.isArray(win(i)?.spaces)
- &&win(i).spaces.length>0&&win(i).spaces.every(spaceId)&&!win(i).spaces.includes(current(i))
- &&win(i).cgWindowFound===true&&win(i).cgOnscreen===false&&win(i).inOnscreenList===false;
-export const visibleOnSpace=i=>current(i)!==null&&win(i)?.spaces?.includes(current(i))===true&&win(i)?.cgOnscreen===true&&win(i)?.inOnscreenList===true;
+export function spaceWindow(i){
+ if(Object.hasOwn(i??{},'pinnedWindowServer'))return pinnedServerWindow(i);
+ const w=win(i);return w?.numberResult===0&&w.number>0&&w.cgWindowFound===true?w:null;
+}
+export function windowSpaceIds(i){
+ const ids=spaceWindow(i)?.spaces;return Array.isArray(ids)&&ids.length>0&&ids.every(spaceId)?ids:[];
+}
+// Per-window .optionAll/.optionIncludingWindow flags may contradict the on-screen-only list. Preserve them as data,
+// not ground truth: positive memberships excluding the known active Space plus list exclusion establish this fixture.
+export const anotherSpaceProof=i=>Boolean(current(i)!==null&&windowSpaceIds(i).length>0&&!windowSpaceIds(i).includes(current(i))
+ &&spaceWindow(i)?.inOnscreenList===false);
+export const visibleOnSpace=i=>Boolean(current(i)!==null&&windowSpaceIds(i).includes(current(i))&&spaceWindow(i)?.inOnscreenList===true);
 export const missingAuthorization=(oracle,engine)=>[
  ...['accessibility','screenRecording','canPostHid'].filter(k=>oracle?.[k]!==true).map(k=>'oracle.'+k),
  ...['accessibility','screenRecording'].filter(k=>engine?.[k]!==true).map(k=>'engine.'+k),

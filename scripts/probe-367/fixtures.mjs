@@ -1,5 +1,5 @@
 // Hosted setup operations; every accepted fixture is proven by independent readback, never a setter's return code.
-import {win,usableFrame,offscreenProof,current,sameFrame} from './evidence.mjs';
+import {win,usableFrame,offscreenProof,current,sameFrame,windowSpaceIds,spaceIds,visibleOnSpace} from './evidence.mjs';
 import fs from 'node:fs';
 import {join} from 'node:path';
 export async function requestOwnedBounds({directory,bounds,id,pid,wait}){
@@ -52,6 +52,17 @@ export async function restoreOriginalFrame(io,origin){
  const size=await io.size(origin.width,origin.height),afterSize=await io.read();
  const move=await io.move(origin.x,origin.y),readback=await io.read(),verified=await io.wait(visible);
  return {method:'AXSize/AXPosition',before,size,afterSize,move,readback,verified};
+}
+export async function returnToWindowSpace(io){
+ const before=await io.read(),memberships=windowSpaceIds(before),here=current(before);
+ const candidates=memberships.filter(id=>spaceIds(before).includes(id));
+ const targetSpaceId=memberships.includes(here)?here:candidates.includes(io.preferredSpaceId)?io.preferredSpaceId:candidates.length===1?candidates[0]:null;
+ if(targetSpaceId===null)return {ok:false,reason:'no unambiguous positively known target-window Space',before,targetSpaceId};
+ const switched=await io.switchTo(targetSpaceId);
+ if(!switched.ok)return {ok:false,reason:'could not switch back to the target-window Space',before,targetSpaceId,switched};
+ // AX may vanish on another Space. Do not refresh or send AXFullScreen until it has returned on the proven Space.
+ const entered=await io.wait(i=>current(i)===targetSpaceId&&visibleOnSpace(i)&&usableFrame(win(i)?.frame));
+ return {ok:entered.ok,reason:entered.ok?undefined:'AX window did not become available on its positively known Space',before,targetSpaceId,switched,entered};
 }
 export async function switchToSpace(target,io){
  const steps=[];let now=await io.read();

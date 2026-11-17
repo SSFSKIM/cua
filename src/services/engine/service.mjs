@@ -89,6 +89,8 @@
 //   `scrollUnconfirmed`. Both are input errors with the meta; the scroll's record rides as cua/scroll.
 // - The Show Menu's confirmation (#374): perform_secondary_action "Show Menu" answers success only once a menu was seen
 //   to open within 1 s, else `menuUnconfirmed`, an input error with the meta; the confirmation's record rides as cua/menu.
+// - set_value's re-check (#366, ruling 772): a value written and accepted whose field cannot be found again after the
+//   write answers `valueUnconfirmed`, an input error with the meta, in place of elementNoLongerValid.
 import {createEngineClient} from './client.mjs';
 import {createObservations} from './observations.mjs';
 import {createPolicy, toolSurface} from './policy.mjs';

@@ -5449,8 +5449,9 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      with a window, a failed read, and an app not running never run it (`PreparationTests`). The check claims another
      Space only on positive reads: one `CGWindowListCopyWindowInfo(.optionAll)` (a mean 2.5 ms with 203 windows listed,
      the MacBook, 2026-11-17) finds the pid's layer-0 windows, none on screen; SkyLight's `SLSCopySpacesForWindows`
-     (mask 7) puts at least one on a Space, and on none of the Spaces `SLSCopyManagedDisplaySpaces` names as a display's
-     current one; and `NSRunningApplication.isHidden` reads false. The SPIs the #367 entry declined are needed here:
+     (mask 7) puts none of them on a Space `SLSCopyManagedDisplaySpaces` names as a display's current one (any window
+     there, one opening here, vetoes the claim: the review of d7784552, P2) and at least one on another Space; and
+     `NSRunningApplication.isHidden` reads false. The SPIs the #367 entry declined are needed here:
      with no AX window there is no frame, and the on-screen flag alone cannot tell such a window from an ordered-out
      one. The same read-only probe found ordered-out windows (helpers, closed panels) on no Space, and windows not shown
      but on the current Space (Chrome, Safari, Obsidian) on Space 1, so neither kind is claimed. An app merely slow to

@@ -164,6 +164,9 @@ final class AbsentWindowOnAnotherSpaceTests: XCTestCase {
     XCTAssertFalse(check([]), "no window listed yet")
     XCTAssertFalse(check([window(10)], spaces: [10: here]), "a window on the current Space that is not shown yet")
     XCTAssertFalse(check([window(10)]), "a window ordered out is on no Space")
+    XCTAssertFalse(check([window(10), window(11)], spaces: [10: here, 11: away]),
+                   "a window opening here vetoes the claim, though another is on another Space")
+    XCTAssertFalse(check([window(11), window(10)], spaces: [10: here, 11: away]), "whichever window is listed first")
   }
 
   func testAWindowShownHereOrSharedWithTheCurrentSpaceMakesNoClaim() {

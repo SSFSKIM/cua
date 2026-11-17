@@ -101,18 +101,22 @@ struct SpacedWindow: Equatable {
 }
 
 /// Whether an app that accessibility lists no window for has its windows on another Space: none of its layer-0 windows
-/// is on screen, at least one is on a Space and on none of the Spaces the displays show now, and the app is confirmed
-/// not hidden. Each claim needs a positive read, so an app that is merely slow to open its window (no window listed, or
-/// one on the current Space), one with only ordered-out windows (on no Space: a closed document's buffer, a hidden
-/// helper), and an unread current Space or hidden flag all answer false, and the observation reopens and waits as
-/// before. The Space reads are made only once a window could answer yes, the hidden flag last.
+/// is on screen or on any of the Spaces the displays show now, at least one is on another Space, and the app is
+/// confirmed not hidden. Each claim needs a positive read, so an app that is merely slow to open its window (no window
+/// listed, or one on the current Space, even beside another window elsewhere), one with only ordered-out windows (on no
+/// Space: a closed document's buffer, a hidden helper), and an unread current Space or hidden flag all answer false,
+/// and the observation reopens and waits as before. The Space reads are made only once a window could answer yes, the
+/// hidden flag last.
 func windowsOnAnotherSpace(_ windows: [SpacedWindow], currentSpaces: () -> Set<UInt64>, spaces: (CGWindowID) -> Set<UInt64>,
                            appHidden: () -> Bool?) -> Bool {
   let normal = windows.filter { $0.layer == 0 }
   guard !normal.isEmpty, !normal.contains(where: \.onScreen) else { return false }
   let current = currentSpaces()
   guard !current.isEmpty else { return false }
-  guard normal.contains(where: { let on = spaces($0.number); return !on.isEmpty && on.isDisjoint(with: current) }) else { return false }
+  let memberships = normal.map { spaces($0.number) }
+  // A window on a Space shown now (one opening here) vetoes the claim, whatever the app's other windows are on.
+  guard !memberships.contains(where: { !$0.isDisjoint(with: current) }) else { return false }
+  guard memberships.contains(where: { !$0.isEmpty }) else { return false }
   return appHidden() == false
 }
 

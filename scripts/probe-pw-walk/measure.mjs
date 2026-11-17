@@ -8,6 +8,7 @@ import {createRequire} from 'node:module';
 import {pathToFileURL} from 'node:url';
 import {randomBytes} from 'node:crypto';
 import {Wire} from '../probe-366/wire.mjs';
+import {firefoxProfile} from './firefox-profile.mjs';
 if(process.env.RUNNER_ENVIRONMENT!=='github-hosted')throw Error('hosted only');
 const arg=n=>process.argv[process.argv.indexOf('--'+n)+1],out=resolve(arg('out')),browser=arg('browser'),source=resolve(arg('source'));
 const root=process.env.RUNNER_TEMP,home=join(root,'pw-home-'+browser),fixture=resolve('scripts/probe-390/fixture');
@@ -42,7 +43,7 @@ try{
  }else if(browser.startsWith('electron')){
   app=child(require('electron'),[fixture],{PROBE366_URL:url,PROBE366_PROFILE:join(home,'profile'),PROBE366_WINDOW_STYLE:browser==='electron-parity'?'maws':'default'});pid=app.pid;await until(()=>logs.get(app).stdout.includes('fixture-ready'));config.version=logs.get(app).stdout.split('\n').map(l=>{try{return JSON.parse(l);}catch{return null;}}).find(q=>q?.kind==='fixture-ready');
  }else if(browser==='firefox'){
-  const profile=join(home,'profile');mkdirSync(profile,{recursive:true});writeFileSync(join(profile,'user.js'),'user_pref("browser.shell.checkDefaultBrowser", false);\nuser_pref("browser.startup.homepage_override.mstone", "ignore");\nuser_pref("browser.aboutwelcome.enabled", false);\nuser_pref("datareporting.policy.dataSubmissionPolicyBypassNotification", true);\n');
+  const profile=firefoxProfile(join(home,'profile'));
   const bin='/Applications/Firefox.app/Contents/MacOS/firefox';app=child(bin,['-no-remote','-profile',profile,url]);pid=app.pid;config.version=execFileSync('/usr/libexec/PlistBuddy',['-c','Print :CFBundleShortVersionString','/Applications/Firefox.app/Contents/Info.plist'],{encoding:'utf8'}).trim();
  }else{
   const bin='/Applications/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing';if(!existsSync(bin))throw Error('CfT missing');app=child(bin,['--user-data-dir='+join(home,'profile'),'--no-first-run','--no-default-browser-check','--disable-search-engine-choice-screen',url]);pid=app.pid;config.version=execFileSync(bin,['--version'],{encoding:'utf8'}).trim();

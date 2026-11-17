@@ -1,5 +1,5 @@
 // Offline + incremental tables for the existing #354 kit's A/B mode. No browser, engine or GUI.
-// Final collection: ab-table.mjs <artifact-root> [--only all|browser-editor,...] [--cohort primary|followup].
+// Final collection: ab-table.mjs <artifact-root> [--only all|browser-editor,...] [--cohort primary|followup|settle-ab].
 // Without --only, scope is the observed shards, not a claim that all workflow shards were downloaded.
 // One cohort per collection (default primary): each arm is checked against that cohort's own expected plan, and an artifact
 // naming another cohort is rejected, never pooled.
@@ -10,6 +10,8 @@ import {summarize,answer} from '../ab-model.mjs';
 import {quantiles} from '../classify.mjs';
 import {planFor,matrixFor} from '../caret.mjs';
 import {FOLLOWUP} from '../followup.mjs';
+import {SETTLE_MODE} from '../settle-plan.mjs';
+import {writeSettleTables} from '../settle-report.mjs';
 import {readbackStatus,needsForegroundReference,renderedVerdict} from '../ab-extra.mjs';
 function tsv(rows,columns){return [columns.join('\t'),...rows.map(r=>columns.map(k=>r[k]==null?'':typeof r[k]==='object'?JSON.stringify(r[k]):r[k]).join('\t'))].join('\n')+'\n'}
 function rescoreRendered(rows){return rows.map(r=>{
@@ -71,6 +73,7 @@ export function writeTables(out,rows,collection={status:'incremental',complete:f
  writeFileSync(join(out,'cost-ab.tsv'),tsv(paired,['browser','length','path','mainN','branchN','mainP50','branchP50','deltaP50','mainP95','branchP95','deltaP95']));
  const diagnostics=rows.filter(r=>r.recordKind==='cell'&&r.expectedAnswer).map(r=>({arm:r.arm,browser:r.browser,editor:r.editor,part:r.part,variant:r.variant,rep:r.rep,expectedAnswer:r.expectedAnswer,expectedReason:r.expectedReason??null,errorName:r.typeRPC?.raw?.error?.errorName??null,...readbackStatus(r.typeRPC?.raw),correct:r.correct,requestedExact:r.requestedExact,finalSelection:r.finalSelection,secretReadbackEqual:r.secretReadbackEqual,contractFailure:!!r.contractFailure,privacyViolation:!!r.privacyViolation,serviceError:r.secretService?.error?.code??null}));
  writeFileSync(join(out,'diagnostics.tsv'),tsv(diagnostics,['arm','browser','editor','part','variant','rep','expectedAnswer','expectedReason','errorName','reason','confirmed','keysUnconfirmed','checkpoints','correct','requestedExact','finalSelection','secretReadbackEqual','contractFailure','privacyViolation','serviceError']));
+ if(collection.cohort===SETTLE_MODE||rows.some(r=>r.cohort===SETTLE_MODE))writeSettleTables(out,rows,{reps:collection.reps??collection.arms?.[0]?.reps??20});
  return s;
 }
 function collectionCoverage(sets,only,cohort){
@@ -118,7 +121,7 @@ function collectionCoverage(sets,only,cohort){
 }
 // Evidence from one cohort per collection: artifacts written before cohorts existed are primary.
 export function collect(root,{only,cohort='primary'}={}){
- if(!['primary',FOLLOWUP].includes(cohort))throw Error('unknown cohort for the A/B collector: '+cohort);
+ if(!['primary',FOLLOWUP,SETTLE_MODE].includes(cohort))throw Error('unknown cohort for the A/B collector: '+cohort);
  const sets=[],paths=[],rows=[],ids=new Set();
  const same=(found,where)=>{if((found??'primary')!==cohort)throw Error(`cohort mismatch: collecting ${cohort} but ${where} is ${found??'primary'}; cohorts are never pooled`)};
  function walk(d){
@@ -140,7 +143,7 @@ export function collect(root,{only,cohort='primary'}={}){
  return {paths:paths.sort(),rows:rescoreRendered(rows),collection:collectionCoverage(sets.map(s=>({...s,rows:rescoreRendered(s.rows)})),only,cohort)};
 }
 if(process.argv[1]&&realpathSync(process.argv[1])===fileURLToPath(import.meta.url)){
- const [root,...rest]=process.argv.slice(2),flags={},usage='usage: ab-table.mjs <downloaded-run-directory> [--only all|browser-editor,...] [--cohort primary|followup]';
+ const [root,...rest]=process.argv.slice(2),flags={},usage='usage: ab-table.mjs <downloaded-run-directory> [--only all|browser-editor,...] [--cohort primary|followup|settle-ab]';
  for(let i=0;i<rest.length;i+=2){const flag=rest[i];if(!['--only','--cohort'].includes(flag)||!rest[i+1]||Object.hasOwn(flags,flag))throw Error(usage);flags[flag]=rest[i+1]}
  if(!root)throw Error(usage);
  const {paths,rows,collection}=collect(root,{only:flags['--only'],cohort:flags['--cohort']}),s=writeTables(root,rows,collection);

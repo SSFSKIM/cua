@@ -15,37 +15,47 @@ on:
         description: 'Comma-separated browser-editor shard ids of the selected cohort, or all'
         default: 'all'
       diagnostic:
-        description: 'Cohort: primary, followup, or branch-only firefox-caret / safari-no-key-ax diagnostics (3141f170 pinned)'
+        description: 'Cohort: primary, followup, held settle-ab comparison, or branch-only firefox-caret / safari-no-key-ax'
         default: 'primary'
 permissions:
   contents: read
 env:
   MAIN_REF: '9020bb18acb9091f817a4b648f7c332174b11153'
   BRANCH_REF: '3141f1709451ebf77e3b94c5500308d105619f6f'
+  SETTLE_BEFORE_REF: '3141f1709451ebf77e3b94c5500308d105619f6f'
+  # Deliberately unarmed: the coordinator will confirm the post-761 Safari+settle head.
+  SETTLE_AFTER_REF: ''
 jobs:
   plan:
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
+      main_ref: ${{ steps.matrix.outputs.main_ref }}
+      branch_ref: ${{ steps.matrix.outputs.branch_ref }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           persist-credentials: false
-      - name: Refuse an unpinned branch and check pure kit logic
+      - name: Check pure kit logic and requested cohort
         env:
           REPS: ${{ github.event.inputs.reps }}
           SMOKE: ${{ github.event.inputs.smoke }}
           DIAGNOSTIC: ${{ github.event.inputs.diagnostic || 'primary' }}
         run: |
-          node --input-type=module -e 'import {assertPins} from "./scripts/probe-354-fences/ab-model.mjs"; import {validateRunInputs} from "./scripts/probe-354-fences/caret.mjs"; assertPins(process.env.MAIN_REF, process.env.BRANCH_REF); validateRunInputs({diagnostic:process.env.DIAGNOSTIC,reps:Number(process.env.REPS),smoke:process.env.SMOKE});'
-          node --test scripts/probe-354-fences/ab.test.mjs scripts/probe-354-fences/ab-extra.test.mjs scripts/probe-354-fences/ab-secret.test.mjs scripts/probe-354-fences/kit.test.mjs scripts/probe-354-fences/audit-patch.test.mjs scripts/probe-354-fences/offline/ab-table.test.mjs scripts/probe-354-fences/caret.test.mjs scripts/probe-354-fences/caret-patch.test.mjs scripts/probe-354-fences/offline/caret-table.test.mjs scripts/probe-354-fences/followup.test.mjs scripts/probe-354-fences/diagnostic.test.mjs scripts/probe-354-fences/safari-ax.test.mjs scripts/probe-354-fences/safari-ax-source.test.mjs scripts/probe-354-fences/offline/safari-ax-table.test.mjs
+          node --input-type=module -e 'import {validateRunInputs} from "./scripts/probe-354-fences/caret.mjs"; validateRunInputs({diagnostic:process.env.DIAGNOSTIC,reps:Number(process.env.REPS),smoke:process.env.SMOKE});'
+          node --test scripts/probe-354-fences/ab.test.mjs scripts/probe-354-fences/ab-extra.test.mjs scripts/probe-354-fences/ab-secret.test.mjs scripts/probe-354-fences/kit.test.mjs scripts/probe-354-fences/audit-patch.test.mjs scripts/probe-354-fences/offline/ab-table.test.mjs scripts/probe-354-fences/caret.test.mjs scripts/probe-354-fences/caret-patch.test.mjs scripts/probe-354-fences/offline/caret-table.test.mjs scripts/probe-354-fences/followup.test.mjs scripts/probe-354-fences/diagnostic.test.mjs scripts/probe-354-fences/safari-ax.test.mjs scripts/probe-354-fences/safari-ax-source.test.mjs scripts/probe-354-fences/offline/safari-ax-table.test.mjs scripts/probe-354-fences/settle-plan.test.mjs scripts/probe-354-fences/settle-report.test.mjs
       - id: matrix
         env:
           ONLY: ${{ github.event.inputs.only }}
           DIAGNOSTIC: ${{ github.event.inputs.diagnostic || 'primary' }}
-        run: node scripts/probe-354-fences/caret.mjs matrix "$ONLY" "$DIAGNOSTIC" >> "$GITHUB_OUTPUT"
+        run: |
+          node scripts/probe-354-fences/caret.mjs refs "$DIAGNOSTIC" >> "$GITHUB_OUTPUT"
+          node scripts/probe-354-fences/caret.mjs matrix "$ONLY" "$DIAGNOSTIC" >> "$GITHUB_OUTPUT"
   measure:
     needs: plan
+    env:
+      MAIN_REF: ${{ needs.plan.outputs.main_ref }}
+      BRANCH_REF: ${{ needs.plan.outputs.branch_ref }}
     runs-on: macos-latest
     timeout-minutes: 115
     strategy:
@@ -125,7 +135,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
         with:
-          name: ${{ github.event.inputs.diagnostic == 'firefox-caret' && 'probe-354-caret' || github.event.inputs.diagnostic == 'safari-no-key-ax' && 'probe-354-safari-ax' || github.event.inputs.diagnostic == 'followup' && 'probe-354-followup' || 'probe-354-ab' }}-${{ matrix.id }}
+          name: ${{ github.event.inputs.diagnostic == 'firefox-caret' && 'probe-354-caret' || github.event.inputs.diagnostic == 'safari-no-key-ax' && 'probe-354-safari-ax' || github.event.inputs.diagnostic == 'followup' && 'probe-354-followup' || github.event.inputs.diagnostic == 'settle-ab' && 'probe-354-settle' || 'probe-354-ab' }}-${{ matrix.id }}
           path: |
             ${{ runner.temp }}/probe-354-ab/*-audit-patch.json
             ${{ runner.temp }}/probe-354-ab/*-caret-patch.json
@@ -134,6 +144,7 @@ jobs:
             ${{ runner.temp }}/probe-354-ab/**/progress.json
             ${{ runner.temp }}/probe-354-ab/**/engine-stopped.json
             ${{ runner.temp }}/probe-354-ab/**/summary.json
+            ${{ runner.temp }}/probe-354-ab/**/settle-summary.json
             ${{ runner.temp }}/probe-354-ab/**/rows.jsonl
             ${{ runner.temp }}/probe-354-ab/**/caret-rows.jsonl
             ${{ runner.temp }}/probe-354-ab/**/safari-ax-rows.jsonl

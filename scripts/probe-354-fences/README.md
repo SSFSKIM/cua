@@ -50,7 +50,7 @@ AXEnhancedUserInterface and AXManualAccessibility values/settable status are rea
 
 Messaging timeout is 0.5s/element; total AX budget is 5s, plus one bounded after-traversal re-read. Web-area discovery is capped at depth 12/400 nodes/1.5s; focus search at depth 40/800 nodes/1.5s. At most eight windows and 200 children/node are traversed. Raw `safari-ax-rows.jsonl`, `safari-ax-paths.tsv`, `safari-ax-walks.tsv` and `safari-ax-cases.tsv` preserve observations and cost. The collector is `node scripts/probe-354-fences/offline/safari-ax-table.mjs <artifact-root>`; it rejects mixed cohorts/control rows and reports incomplete coverage.
 
-Both approved diagnostic commands (after publishing the verified kit) are separate runs, and have not been executed merely by documenting them:
+These separate approved diagnostics completed on kit `c7efb2d4`: [Firefox caret, run 44022876278](https://github.com/SSFSKIM/cua/actions/runs/44022876278) (60/60 valid) and [Safari AX, run 44022892172](https://github.com/SSFSKIM/cua/actions/runs/44022892172) (20/20 valid). Their dispatch syntax was:
 
 ```sh
 gh workflow run 413201833 -R SSFSKIM/cua --ref probe/354-measure \
@@ -59,7 +59,34 @@ gh workflow run 413201833 -R SSFSKIM/cua --ref probe/354-measure \
   -f diagnostic=safari-no-key-ax -f only=safari-input -f reps=10 -f smoke=false
 ```
 
-Offline checks are Node tests/syntax and workflow lint only. The first hosted build verifies new Swift compilation; until then no live AX behavior is claimed.
+Offline checks are Node tests/syntax and workflow lint only. Both hosted diagnostics compiled and ran the new Swift successfully. They remain observer-effect evidence, not new primary rates. The background-Firefox secret refusals are the stated expected-unconfirmed limit [#394](https://github.com/SSFSKIM/cua/issues/394), not a confirmation failure to fix by weakening privacy or inventing a caret. This does not exempt any scorable cell from wrong-success or privacy accounting.
+
+## Held settle + Safari comparison
+
+`--diagnostic settle-ab` is a paired measurement cohort, **prepared but not dispatched**. `main` means **before**, builder `3141f1709451ebf77e3b94c5500308d105619f6f`, not the historical 9020bb18 control. `branch` means **after**, the coordinator's final settle + Safari bounded-walk head (rulings 754 and 761). The provisional settle-only head was `1bac401717e99877c34969b44f8e73952691b6f3`; it is not the launch pin. `SETTLE_AFTER_REF` stays empty until the coordinator supplies the final immutable SHA. The plan job refuses an empty/unpinned reference before creating any macOS job. The ordinary `MAIN_REF`/`BRANCH_REF` pins remain unchanged for the old cohorts and two diagnostics.
+
+Scope at 20 repetitions is **1480 scored attempts/head, 2960 total**:
+- All 12 browser/editor shards: Cmd+A/Z/V race cells and clean 30/120/500-character cells, 20 each (120/head/shard; 1440/head core).
+- Safari input additionally: 20 plain and 20 trusted-secret no-key cells/head, using the existing synthetic-HOME service and independently checked final field. No key is sent between their own setup and typing. They run after that shard's race/clean cells.
+
+Historical cell identities, counterbalanced arm order, separate key-only calibration, 500ms clean-key settle, and 0/250/1000/3000ms DOM samples are retained. Neither observer patch nor the Safari AX path operation runs in this measurement. Keep this comparison separate from both the historical control pool and the observer diagnostics.
+
+`settle-rates.tsv` reports false-unconfirmed numerators (`typeUnconfirmed` with a correct final field) over **all valid trials**, per browser/arm/part, with the conditional fraction among refusals beside it. Each complete browser has 240 race and 240 clean trials/head. `settle-rates-cells.tsv` retains editor/key/length strata. Wrong successes and privacy are counted across **every cell**, including both Safari no-key forms; `settle-safety.tsv`, the ordinary `privacy.tsv`, and `no-key-confirmation.tsv` preserve those outcomes separately. Any background-Firefox secret refusal, if present in a later expansion, is labelled expected-unconfirmed under #394; no such Firefox secret cell is in this grid.
+
+Cost is informational. `settle-cost.tsv`, `settle-cost-ab.tsv`, `settle-paired.tsv` and `settle-observations.tsv` preserve actual call latency and plain `typeReadback.snapshotMs`, `settleReads`, and `settleCapped`, with p50/p95 and matched before/after deltas. **One `settleReads` is one additional completed value/range pair after the first**, the ordinary two-agree case. Its 15ms multiple is only a programmed-wait lower bound: an early guard exit can sleep without incrementing the count, AX work also costs time, and there is no dedicated settle-only timer. Snapshot-time differences are a proxy; total-call differences also include delivery and avoided/added readback polling. Absent baseline telemetry stays unavailable, never a made-up zero duration. Safari no-key diagnostics have their own outcome/cost tables. The collector certifies both actual configs/plans; the report's own coverage table is informational.
+
+Only after the coordinator confirms the final head and the quoted `SETTLE_AFTER_REF` is published, the prepared launch syntax is:
+
+```sh
+gh workflow run 413201833 -R SSFSKIM/cua --ref probe/354-measure \
+  -f diagnostic=settle-ab -f only=all -f reps=20 -f smoke=false
+```
+
+Artifacts begin `probe-354-settle-`. Collect them separately with:
+
+```sh
+node scripts/probe-354-fences/offline/ab-table.mjs <artifact-root> --only all --cohort settle-ab
+```
 
 ## Follow-up measurement cohort (completed as run 44001080688)
 

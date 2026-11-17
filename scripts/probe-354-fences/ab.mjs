@@ -13,6 +13,7 @@ import {answer,privacyFindings,warmupCell,calibrationKeys} from './ab-model.mjs'
 import {FOLLOWUP,FOLLOWUP_SCOPES,CAP_RETRIES} from './followup.mjs';
 import {CARET_MODE,planFor,isDiagnosticMode,validateRunInputs,caretIntent,traceArgs,parseCaretLine,caretLogLine,lateCaretSnapshot,sanitizeCaretRow,writeCaretTables} from './caret.mjs';
 import {SAFARI_AX_MODE,observeSafariCase,writeSafariAXTables} from './safari-ax.mjs';
+import {SETTLE_MODE} from './settle-plan.mjs';
 import {writeTables} from './offline/ab-table.mjs';
 import {snapshot} from '../probe-354-substitutions/diagnostic.mjs';
 import {readbackStatus,qualifiedKeyAnswer,diagnosticContractFailure,needsForegroundReference,referenceKey,publicDOM,renderedVerdict} from './ab-extra.mjs';
@@ -22,7 +23,7 @@ if(process.env.RUNNER_ENVIRONMENT!=='github-hosted')throw Error('hosted runners 
 const arg=n=>{const i=process.argv.indexOf('--'+n);return i<0?undefined:process.argv[i+1]};
 const OUT=arg('out'),ENGINE=arg('engine'),SIDE=arg('side'),KIND=arg('browser'),SHARD=arg('shard'),ARM=arg('arm'),HEAD=arg('head'),REPS=+(arg('reps')??20),SMOKE=arg('smoke')==='true';
 if(!OUT||!ENGINE||!SIDE||!['main','branch'].includes(ARM)||!/^[a-f0-9]{40}$/.test(HEAD??''))throw Error('invalid A/B arguments');
-const DIAGNOSTIC=arg('diagnostic')??'primary',IS_CARET=DIAGNOSTIC===CARET_MODE,IS_FOLLOWUP=DIAGNOSTIC===FOLLOWUP,IS_SAFARI_AX=DIAGNOSTIC===SAFARI_AX_MODE,IS_DIAGNOSTIC=isDiagnosticMode(DIAGNOSTIC);
+const DIAGNOSTIC=arg('diagnostic')??'primary',IS_CARET=DIAGNOSTIC===CARET_MODE,IS_FOLLOWUP=DIAGNOSTIC===FOLLOWUP,IS_SAFARI_AX=DIAGNOSTIC===SAFARI_AX_MODE,IS_SETTLE=DIAGNOSTIC===SETTLE_MODE,IS_DIAGNOSTIC=isDiagnosticMode(DIAGNOSTIC);
 validateRunInputs({diagnostic:DIAGNOSTIC,reps:REPS,smoke:SMOKE});
 if(IS_DIAGNOSTIC&&ARM!=='branch')throw Error('isolated diagnostic runs are branch-only');
 const cells=planFor({browser:KIND,editor:SHARD,reps:REPS,arm:ARM,diagnostic:DIAGNOSTIC});
@@ -81,6 +82,7 @@ meta.cohort=DIAGNOSTIC;
 if(IS_FOLLOWUP)Object.assign(meta,{primaryEvidence:false,pooling:'same-head control cells may be combined; keep raw cohorts separate and never pool different branch heads or observer-effect caret measurements',followup:{scopes:FOLLOWUP_SCOPES[KIND+'-'+SHARD],...(FOLLOWUP_SCOPES[KIND+'-'+SHARD].includes('unicode-cap-retries')?{capRetries:CAP_RETRIES[ARM]}:{}),noKey:'no press_key between setup and type_text; the secret cell uses the trusted wrapper and an isolated synthetic HOME'}});
 if(IS_CARET)Object.assign(meta,{diagnostic:CARET_MODE,primaryEvidence:false,observerEffect:true,answers:'real result/error/meta retained with field-text strings withheld; no primary verdict inferred',sampling:'no post-type DOM sampling; one guarded range/count sidecar approximately 300ms after actual engine reply',race:'not collected',clean:'not collected',pollDefinition:'production compare calls after role/subrole guards',addedObservations:'AXNumberOfCharacters per guarded production poll, plus range/count sidecar approximately 300ms after reply; no DOM post-type sampling',unitInterpretation:'unresolved; raw replies and known public control offsets only',arms:['branch'],beforeSelection:'actual production range replies before the keyed-delivery boundary; expected carets from both that AX location and the established DOM location',secrets:'synthetic temporary-HOME secrets only; no field text or secret bytes; intended UTF-16 length and actual AX ranges/counts are retained only in this diagnostic, not added to product wire metadata'});
 if(IS_SAFARI_AX)Object.assign(meta,{diagnostic:SAFARI_AX_MODE,primaryEvidence:false,observerEffect:true,answers:'public synthetic fixture; actual type_text result plus read-only AX path/error evidence, not a confirmation gate',setup:'page focuses input, Safari stays behind the cover; no key in no-key cells; key-first uses Command+A on the same connection and restores DOM selection without a key',sampling:'AX path snapshot before and after typing, then one public DOM read; every actual query is timed; no primary timed samples',flags:'accessibility flags are observed; mutations skipped unless genuinely reversible with no state carryover',arms:['branch']});
+if(IS_SETTLE)Object.assign(meta,{primaryEvidence:false,comparison:{roles:{main:'before',branch:'after'},baseline:process.env.MAIN_REF,candidate:process.env.BRANCH_REF,scope:'race Cmd+A/Z/V and clean30/120/500, 20 reps across all12 shards; Safari input additionally20 plain+20 trusted-secret no-key cases per head',pooling:'paired run only; never combine with the historical9020bb18 control or observer diagnostics',cost:'settleReads counts completed additional value/range pairs; 15ms times reads is a programmed-wait lower bound only; snapshotMs and call latency are measured, no dedicated settle-only timer'}});
 let done=0,valid=0,invalid=0,setupFailures=0,consecutiveInvalid=0,aborted=null;
 const compact=[],calibrations=new Map(),foregroundReferences=new Map();let safariSnapshotOrdinal=0;
 function progress(last){writeFileSync(join(OUT,'progress.json'),JSON.stringify({done,valid,invalid,planned:cells.length,setupFailures,consecutiveInvalid,aborted,last,elapsedMs:Date.now()-start,fixture:{bound:fixture.fx.bound,foreignPolls:fixture.fx.foreignPolls,expired:fixture.fx.expired,bindings:fixture.fx.bindings.length}},null,2))}
@@ -91,7 +93,7 @@ function save(row){
  const {samples,trace,reset,setup,settledSetup,priorKeyEffect,...small}=row;
  // Preserve just the pre-effect key witnesses needed by incremental scoring, not the whole text event trace.
  if(['ending-return','ending-tab'].includes(row.part))small.trace=(trace??[]).filter(t=>t.event==='keydown'&&['Enter','Tab'].includes(t.key));
- compact.push(small);writeTables(OUT,compact);
+ compact.push(small);writeTables(OUT,compact,IS_SETTLE?{status:'incremental',complete:false,cohort:DIAGNOSTIC,reps:REPS}:undefined);
 }
 const seedFor=c=>c.seed??SEED;
 function initial(c){const seed=seedFor(c),undo=c.key==='cmd+z';return {text:seed+(undo?' undo':''),selection:IS_CARET&&c.selection?c.selection:[c.key==='cmd+v'?0:undo?seed.length+5:3,0]}}
@@ -294,9 +296,10 @@ finally{
  }else if(IS_CARET){
   meta.diagnosticSummary=writeCaretTables(OUT,compact);if(!meta.coverage.complete)process.exitCode=1;
  }else{
-  const summary=writeTables(OUT,compact);meta.branchWrongSuccesses=summary.wrongSuccesses.filter(r=>r.arm==='branch').length;
+  const summary=writeTables(OUT,compact,IS_SETTLE?{status:'incremental',complete:false,cohort:DIAGNOSTIC,reps:REPS}:undefined);meta.branchWrongSuccesses=summary.wrongSuccesses.filter(r=>r.arm==='branch').length;
   meta.contractFailures=compact.filter(r=>r.recordKind==='cell'&&(r.privacyViolation||r.contractFailure||(ARM==='branch'&&r.valid&&((['unsupported','truncation'].includes(r.part)&&!r.answer.unconfirmed)||(r.part==='clean'&&(!r.correct||!r.answer.success))||(r.part==='substitution'&&!r.correct&&!r.answer.unconfirmed))))).map(r=>r.id);
-  if(!meta.coverage.complete||meta.branchWrongSuccesses||meta.contractFailures.length)process.exitCode=1;
+  if(IS_SETTLE)meta.comparisonWrongSuccesses=summary.wrongSuccesses.length;
+  if(!meta.coverage.complete||meta.branchWrongSuccesses||meta.comparisonWrongSuccesses||meta.contractFailures.length)process.exitCode=1;
  }
  writeFileSync(join(OUT,'config.json'),JSON.stringify(meta,null,2));progress(null);console.log('354ab coverage',JSON.stringify(meta.coverage));
  fixture.close();

@@ -6,8 +6,9 @@ import {abPlan,armOrder} from './ab-model.mjs';
 import {matrix} from './matrix.mjs';
 import {FOLLOWUP,followupPlan,followupMatrix} from './followup.mjs';
 import {SAFARI_AX_MODE,safariAXPlan,safariAXMatrix} from './safari-ax.mjs';
+import {SETTLE_MODE,settlePlan,measurementRefs} from './settle-plan.mjs';
 export const CARET_MODE='firefox-caret';
-const modes=['primary',FOLLOWUP,CARET_MODE,SAFARI_AX_MODE];
+const modes=['primary',FOLLOWUP,CARET_MODE,SAFARI_AX_MODE,SETTLE_MODE];
 export const isDiagnosticMode=mode=>[CARET_MODE,SAFARI_AX_MODE].includes(mode);
 export function buildArmsFor(mode){if(!modes.includes(mode))throw Error('unknown cohort: '+mode);return isDiagnosticMode(mode)?['branch']:['main','branch']}
 export function runArmsFor(mode,browser,editor){const arms=buildArmsFor(mode);return isDiagnosticMode(mode)?arms:armOrder(browser,editor)}
@@ -20,6 +21,7 @@ export function validateRunInputs({diagnostic='primary',reps,smoke}){
 // Cohort selector shared by the driver, the workflow matrix and the collector. Only the follow-up plan depends on `arm`.
 export function planFor({browser,editor,reps,arm,diagnostic='primary'}){
  if(diagnostic==='primary')return abPlan({browser,editor,reps});
+ if(diagnostic===SETTLE_MODE)return settlePlan({browser,editor,arm,reps});
  if(diagnostic===FOLLOWUP)return followupPlan({browser,editor,arm,reps});
  if(diagnostic===SAFARI_AX_MODE)return safariAXPlan({browser,editor,arm,reps});
  if(diagnostic!==CARET_MODE)throw Error('unknown cohort: '+diagnostic);
@@ -39,7 +41,7 @@ export function planFor({browser,editor,reps,arm,diagnostic='primary'}){
  return out;
 }
 export function matrixFor(only='all',diagnostic='primary'){
- if(diagnostic==='primary')return matrix(only);
+ if(diagnostic==='primary'||diagnostic===SETTLE_MODE)return matrix(only);
  if(diagnostic===FOLLOWUP)return followupMatrix(only);
  if(diagnostic===SAFARI_AX_MODE)return safariAXMatrix(only);
  if(diagnostic!==CARET_MODE)throw Error('unknown cohort: '+diagnostic);
@@ -132,5 +134,9 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
  if(command==='matrix')console.log('matrix='+JSON.stringify(matrixFor(process.argv[3]??'all',process.argv[4]??'primary')));
  else if(command==='build-arms')console.log(buildArmsFor(process.argv[3]??'primary').join(' '));
  else if(command==='run-arms')console.log(runArmsFor(process.argv[3]??'primary',process.argv[4],process.argv[5]).join(' '));
- else throw Error('usage: caret.mjs matrix <only> <cohort> | build-arms <cohort> | run-arms <cohort> <browser> <editor>');
+ else if(command==='refs'){
+  const refs=measurementRefs(process.argv[3]??'primary',{main:process.env.MAIN_REF,branch:process.env.BRANCH_REF,before:process.env.SETTLE_BEFORE_REF,after:process.env.SETTLE_AFTER_REF});
+  console.log(`main_ref=${refs.main}\nbranch_ref=${refs.branch}`);
+ }
+ else throw Error('usage: caret.mjs matrix <only> <cohort> | build-arms <cohort> | run-arms <cohort> <browser> <editor> | refs <cohort>');
 }

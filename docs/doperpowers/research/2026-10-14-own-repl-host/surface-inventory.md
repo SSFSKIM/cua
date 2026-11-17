@@ -842,10 +842,10 @@ confirming it, and no discriminator separates the two.
 
 ### Table 3 addition (2026-11-16, #360)
 
-#360 (the native engine spec's Decision Log, "#360's caret-navigation keys"; the design session's ruling 764) routes a
-caret-navigation key (an arrow, Home, End, Page Up or Page Down, with any modifiers) in a background Firefox through route
-3's held activation, as a ⌘ chord already was, because a background Firefox's rich editor keeps its caret disabled until
-it has focus. That focus is visible to the page as a focus event on the field before the key, which a page may act on,
+#360 (the native engine spec's Decision Log, "#360's arrow keys"; the design session's rulings 764 and 767) routes an
+arrow key (with any modifiers) in a background Firefox through route 3's held activation, as a ⌘ chord already was,
+because a background Firefox's rich editor keeps its caret disabled until it has focus. Ruling 764 also named Home, End,
+Page Up and Page Down; ruling 767 took them out once the qualification showed they already worked without it. That focus is visible to the page as a focus event on the field before the key, which a page may act on,
 so the model is told. One sentence closes the background-click paragraph:
 
-> In a Firefox window in the background, a `pressKey` of an arrow key, Home, End, Page Up or Page Down, with or without modifiers, first focuses the field the key goes to, which the page can see as a focus event.
+> In a Firefox window in the background, a `pressKey` of an arrow key, with or without modifiers, first focuses the field the key goes to, which the page can see as a focus event.

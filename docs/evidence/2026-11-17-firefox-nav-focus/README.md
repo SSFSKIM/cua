@@ -1,7 +1,11 @@
-# #360: caret-navigation keys in background Firefox take route 3 (hosted, 2026-11-16 and 2026-11-17)
+# #360: arrow keys in background Firefox take route 3 (hosted, 2026-11-16 and 2026-11-17)
 
-Two hosted runs back the fix (the native engine spec's Decision Log, "#360's caret-navigation keys"; the design
-session's ruling 764). Both ran from kit `probe/360-measure` (workflow 420915277) on GitHub-hosted macOS runners. The
+Two hosted runs back the fix (the native engine spec's Decision Log, "#360's arrow keys"; the design session's
+rulings 764 and 767): in a Firefox that does not believe it has focus, `press_key` sends a sequence holding an arrow key
+(Left, Right, Up or Down, with any modifiers, Shift included) through route 3's held activation, as it does a ⌘ chord.
+Ruling 764 also named Home, End, Page Up and Page Down, and the qualification measured the fix f066023e that routed them
+too; ruling 767 took them out, because they were measured to work without it (below, "The keys ruling 767 left
+out"). Both ran from kit `probe/360-measure` (workflow 420915277) on GitHub-hosted macOS runners. The
 kit's README (`scripts/probe-360/README.md` on the kit branch) describes the cells, the oracle and the watch. The
 oracle is the fixture page's own DOM at 1 s after the key: its text, selection and scroll positions. Firefox's
 AXSelectedTextRange is not an oracle, because it is stale (#394).
@@ -65,6 +69,11 @@ the release left all 1,600 documents unchanged. Main's 80 failures are the rich 
 in each of the four cells), where the fix passes 80 of 80. On the rich collapse keys main passed 40 of 120 (Cmd+Left
 alone, already route 3 as a ⌘ chord) and the fix 120 of 120.
 
+**What covers the shipped rule.** The arrow rule is the arrows' cells: Left, Option+Left, Cmd+Left and Cmd+Shift+Left
+in all four editors, 320 of 320 in the background and 320 of 320 in the foreground. Right, Up and Down were not run;
+they are the same rule on the same route. The Home, End and page-key rows below measured route 3 for keys the shipped
+rule no longer routes there.
+
 | editor | key | fix, foreground | fix, background | main, background | fix, background ms p50/p95 |
 |---|---|---|---|---|---|
 | textarea | Left | 20/20 | 20/20 | not run | 113/149 |
@@ -102,10 +111,13 @@ alone, already route 3 as a ⌘ chord) and the fix 120 of 120.
 
 **The N/A cells.** Home, End, Page Up and Page Down do nothing in a single-line input, even in the foreground: no
 selection change and no scroll. Those 160 rows (80 foreground, 80 background) are not applicable, never counted as
-passes; a background row that changed anything there would have been a failure, and none did. In the other editors
-these four keys scroll and do not move the caret, in the foreground as in the background, so their passes are scroll
-matches. In the rich editors main's plain post already matched the foreground for them (160 of 160): route 3 changes
-nothing measurable there and costs its activation (below).
+passes; a background row that changed anything there would have been a failure, and none did.
+
+**The keys ruling 767 left out.** In the other editors Home, End, Page Up and Page Down scroll and do not move the
+caret, in the foreground as in the background, so their passes are scroll matches. In the rich editors main's plain
+post already matched the foreground for them, 160 of 160, without route 3: route 3 changed nothing measurable there and
+cost its activation (below), so ruling 767 left them on 2′. A background textarea's Home, End and page keys by 2′ were
+not measured (main's control ran the rich editors only); the fix's route 3 matched the foreground there, 80 of 80.
 
 ## The watch
 
@@ -113,8 +125,8 @@ A passive watch sampled the frontmost app and the window order (ID-only `CGWindo
 from before each call until 500 ms after its connection closed, so the hold's release is inside the watched interval.
 It observed **no activation or raise in 501,913 samples.** The actual gaps between samples were p50/p95/max
 5.0/6.7/176 ms for the frontmost app; one window-order read spans up to 230 ms (p50 5.5 ms). This is sampled evidence,
-not a guarantee that nothing flashed: an activation or raise shorter than a gap, or one the system's cache had not yet
-caught up with, can go unseen. The spike's coarser watch (median 36 ms gaps) is the same kind of evidence.
+not a guarantee that nothing flashed. The longest gap was 176 ms (p50 5.0 ms), so a flash shorter than that window
+cannot be excluded where it fell, and one the system's cache had not yet caught up with can go unseen too. The spike's coarser watch (median 36 ms gaps) is the same kind of evidence.
 
 ## The price of route 3
 
@@ -128,7 +140,8 @@ Measured cold: a fresh connection per attempt, so every background call ran the 
 | fix, foreground, route 2′ | 640 | 4/6/107 | |
 
 On the 240 comparable rows (the same editor and key, where main's call naturally took route 2′) the fix's call is
-110/147 ms p50/p95 against main's 3/6 ms; the guard is about 104 of those 110 ms. The price is the ⌘ chord's own
+110/147 ms p50/p95 against main's 3/6 ms; the guard is about 104 of those 110 ms. Under the shipped rule only the
+arrows pay it: their 16 background cells run 95 to 126 ms p50 (the table above). The price is the ⌘ chord's own
 (main's route-3 rows cost the same). It is paid once per hold: the kit did not measure a call inside an already held
 interaction, where the activation is not taken again, nor the hold's 120 s idle expiry.
 

@@ -16,7 +16,7 @@ const REPS=Number(arg('reps')??20),SMOKE=arg('smoke')==='true';
 if(!OUT||!ENGINE||!TRACED||!TOOL||!WATCH||!['safari','cft','firefox'].includes(BROWSER)||!['textarea','input','contenteditable','compose'].includes(EDITOR))throw Error('missing or invalid arguments');
 if(REPS!==20&&!SMOKE)throw Error('non20 repetitions must be explicitly labelled smoke');
 const planned=cells({reps:REPS,browsers:[BROWSER],editors:[EDITOR]});
-mkdirSync(OUT,{recursive:true});
+mkdirSync(join(OUT,'shots'),{recursive:true});
 const sleep=ms=>new Promise(r=>setTimeout(r,Math.max(0,ms))),startedAt=Date.now();
 const sh=(cmd,args)=>{const r=spawnSync(cmd,args,{encoding:'utf8',timeout:20000});if(r.error||r.status!==0)throw Error(cmd+': '+r.stderr);return r.stdout.trim()};
 const budget=()=>{if(Date.now()-startedAt>45*60000)throw Error('45minute shard measurement budget exceeded')};

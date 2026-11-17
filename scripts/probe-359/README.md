@@ -22,6 +22,8 @@ References: Decision Log entries #283, #324, #341 in `docs/doperpowers/specs/202
 
 ## Run plan
 
+The registration smoke `44098241467` is rejected setup evidence: 36 invalid attempts, 164 missing, zero measured clicks. The driver had not created `OUT/shots`, while the engine deliberately creates only the final screenshot directory. The kit now prepares that parent before observation, with a fail-before/pass-after filesystem regression. Keep that run separate from subsequent smoke and full results.
+
 First run an explicitly labelled `reps=1, smoke=true` smoke (200 attempts). Check all 12 visible-owner bindings, field roles, screenshot points, cover order, AX notification registration results, and complete tail samples. A failed smoke is not rate evidence and is not followed by automatic input retries. Fix the kit, not the measured outcome, before approving a full run.
 
 A full run has **3,680 requested attempts**, on Safari, Chrome for Testing, and Firefox, each with textarea, input, contenteditable, and a compose-style contenteditable. Compose is a synthetic nested editor, not a claim about Gmail or another production composer. Every cell uses shared mode and a physically overlapping TextEdit cover. The fixture seed is public synthetic text only.

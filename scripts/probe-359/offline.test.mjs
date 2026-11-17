@@ -3,7 +3,18 @@ import assert from 'node:assert/strict';
 import {cells,summary,timeline} from './readers.mjs';
 import {assertVisibleOwner,page,SEED} from './page.mjs';
 import vm from 'node:vm';
-import {readFileSync} from 'node:fs';
+import {readFileSync,mkdirSync,mkdtempSync,statSync,rmSync} from 'node:fs';
+import {join} from 'node:path';
+import {tmpdir} from 'node:os';
+
+test('driver creates the screenshot parent before asking the engine for nested attempt directories',()=>{
+ const source=readFileSync(new URL('./measure.mjs',import.meta.url),'utf8'),root=mkdtempSync(join(tmpdir(),'cua359-'));
+ try{
+  const OUT=join(root,'evidence'),ctx=vm.createContext({OUT,mkdirSync,join});
+  vm.runInContext(source.slice(source.indexOf('mkdirSync('),source.indexOf('const sleep=')),ctx);
+  assert.equal(statSync(join(OUT,'shots')).isDirectory(),true);
+ }finally{rmSync(root,{recursive:true,force:true})}
+});
 
 test('clean observation and warmup records retain readiness and enablement timings without raw responses',async()=>{
  const source=readFileSync(new URL('./measure.mjs',import.meta.url),'utf8');

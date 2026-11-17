@@ -16,6 +16,7 @@ mkdirSync(out,{recursive:true});mkdirSync(home,{recursive:true});
 const passwords=['',randomBytes(16).toString('hex').slice(0,23),randomBytes(20).toString('hex').slice(0,31)];
 const redact=s=>{for(const pw of passwords.filter(Boolean)){s=s.split(pw).join('[TEST_PW]').split(pw.slice(0,7)).join('[TEST_PW]');}return s;};
 const save=(name,q)=>writeFileSync(join(out,name),redact(typeof q==='string'?q:JSON.stringify(q,null,2)));
+const disclosure=v=>{const s=typeof v==='string'?v:JSON.stringify(v);return{serializedLength:s.length,perPassword:passwords.map((pw,password)=>({password,passwordLength:pw.length,full:!!pw&&s.includes(pw),selected:!!pw&&s.includes(pw.slice(0,7))}))};};
 const sleep=ms=>new Promise(ok=>setTimeout(ok,ms));
 async function until(fn,ms=25000){const end=Date.now()+ms;while(Date.now()<end){const v=await fn();if(v)return v;await sleep(100);}throw Error('condition timeout');}
 const logs=new Map(),children=[];
@@ -35,10 +36,10 @@ let app,pid,engine,w,safariOwned=false;const rows=[];
 try{
  const require=createRequire(join(fixture,'package.json'));
  if(browser==='appkit'){
-  app=child(arg('fixture'),[]);pid=app.pid;await until(()=>logs.get(app).stdout.includes('"ready":true'));
+  app=child(arg('fixture'),[]);pid=app.pid;await until(()=>logs.get(app).stdout.includes('"ready":true'));if((await ask({op:'lookup',bundle:'dev.cua.probe.pwwalk.fixture'})).pid!==pid)throw Error('AppKit fixture is not a registered bundle app');
  }else if(browser==='safari'){
   if((await ask({op:'lookup',bundle:'com.apple.Safari'})).pid)throw Error('Safari already running, not adopting it');
-  app=child('/Applications/Safari.app/Contents/MacOS/Safari',[url]);pid=await until(async()=> (await ask({op:'lookup',bundle:'com.apple.Safari'})).pid);safariOwned=true;
+  app=child('/Applications/Safari.app/Contents/MacOS/Safari',[]);pid=await until(async()=> (await ask({op:'lookup',bundle:'com.apple.Safari'})).pid);if(pid!==app.pid)throw Error('Safari process is not the owned launch, not adopting it');safariOwned=true;execFileSync('/usr/bin/open',['-a','/Applications/Safari.app',url]);
   config.version=execFileSync('/usr/libexec/PlistBuddy',['-c','Print :CFBundleShortVersionString','/Applications/Safari.app/Contents/Info.plist'],{encoding:'utf8'}).trim();
  }else if(browser.startsWith('electron')){
   app=child(require('electron'),[fixture],{PROBE366_URL:url,PROBE366_PROFILE:join(home,'profile'),PROBE366_WINDOW_STYLE:browser==='electron-parity'?'maws':'default'});pid=app.pid;await until(()=>logs.get(app).stdout.includes('fixture-ready'));config.version=logs.get(app).stdout.split('\n').map(l=>{try{return JSON.parse(l);}catch{return null;}}).find(q=>q?.kind==='fixture-ready');
@@ -62,7 +63,7 @@ try{
   const text=observations.observe('pw-owned-fixture',reply.result,{disableDiff:true});
   const repeated=await w.execute('get_app_state',{pid,includeScreenshot:false});if(repeated.error)throw Error('repeat observation error');
   const repeatText=observations.observe('pw-owned-fixture',repeated.result,{disableDiff:false});
-  const row={trial,expectedLength:pw.length,raw,native:reply,text,repeatText,repeatNative:repeated,nativeContainsFullPassword:!!pw&&JSON.stringify(reply).includes(pw),nativeContainsSelectedSubstring:!!pw&&JSON.stringify(reply).includes(pw.slice(0,7)),textContainsFullPassword:!!pw&&String(text).includes(pw),textContainsSelectedSubstring:!!pw&&String(text).includes(pw.slice(0,7))};
+  const row={trial,expectedLength:pw.length,raw,native:reply,text,repeatText,repeatNative:repeated,nativeContainsFullPassword:!!pw&&JSON.stringify(reply).includes(pw),nativeContainsSelectedSubstring:!!pw&&JSON.stringify(reply).includes(pw.slice(0,7)),textContainsFullPassword:!!pw&&String(text).includes(pw),textContainsSelectedSubstring:!!pw&&String(text).includes(pw.slice(0,7)),disclosure:{native:disclosure(reply),text:disclosure(text),repeatNative:disclosure(repeated),repeatText:disclosure(repeatText)}};
   rows.push(row);save('rows.json',rows);
  }
  save('summary.json',{complete:true,rows:rows.length,seedRequests});

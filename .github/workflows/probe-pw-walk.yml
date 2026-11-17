@@ -32,7 +32,26 @@ jobs:
         run: |
           npm ci --prefix scripts/probe-390/fixture --no-audit --no-fund
           swiftc -O -o "$RUNNER_TEMP/pw-ax" scripts/probe-pw-walk/ax.swift
-          swiftc -O -o "$RUNNER_TEMP/pw-fixture" scripts/probe-pw-walk/fixture.swift
+          # AppKit fixture as a minimal .app bundle: the pinned engine needs NSRunningApplication.bundleURL.
+          fixture_app="$RUNNER_TEMP/PWWalkFixture.app"
+          mkdir -p "$fixture_app/Contents/MacOS"
+          swiftc -O -o "$fixture_app/Contents/MacOS/pw-fixture" scripts/probe-pw-walk/fixture.swift
+          cat > "$fixture_app/Contents/Info.plist" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+          <key>CFBundleExecutable</key><string>pw-fixture</string>
+          <key>CFBundleIdentifier</key><string>dev.cua.probe.pwwalk.fixture</string>
+          <key>CFBundleName</key><string>PWWalkFixture</string>
+          <key>CFBundlePackageType</key><string>APPL</string>
+          <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+          <key>CFBundleVersion</key><string>1</string>
+          <key>CFBundleShortVersionString</key><string>1</string>
+          <key>LSMinimumSystemVersion</key><string>13.0</string>
+          </dict></plist>
+          PLIST
+          plutil -lint "$fixture_app/Contents/Info.plist"
+          codesign --force --sign - "$fixture_app"
           if [ '${{ matrix.browser }}' = firefox ]; then
             # Same hosted Firefox source and update policy as probe/359-hosted.
             if [ ! -d /Applications/Firefox.app ]; then brew install --cask firefox; fi
@@ -47,7 +66,7 @@ jobs:
           test -z "$(git -C "$RUNNER_TEMP/pw-main" status --porcelain)"
       - name: Compare raw AX, native reply, production render and repeated observation
         run: |
-          node scripts/probe-pw-walk/measure.mjs --browser '${{ matrix.browser }}' --engine "$RUNNER_TEMP/pw-build/release/cua-engine" --source "$RUNNER_TEMP/pw-main" --engine-ref "$ENGINE_REF" --tool "$RUNNER_TEMP/pw-ax" --fixture "$RUNNER_TEMP/pw-fixture" --out "$RUNNER_TEMP/pw-evidence"
+          node scripts/probe-pw-walk/measure.mjs --browser '${{ matrix.browser }}' --engine "$RUNNER_TEMP/pw-build/release/cua-engine" --source "$RUNNER_TEMP/pw-main" --engine-ref "$ENGINE_REF" --tool "$RUNNER_TEMP/pw-ax" --fixture "$RUNNER_TEMP/PWWalkFixture.app/Contents/MacOS/pw-fixture" --out "$RUNNER_TEMP/pw-evidence"
       - name: Upload redacted owned evidence only
         if: always()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f

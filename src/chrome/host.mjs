@@ -422,6 +422,35 @@ export function createHost({extension: port, hello, home = null, now = () => new
     return info?.type === 'page' && Number.isInteger(info.tabId) ? info.tabId : null;
   }
 
+  // --- #384 ruling 794: experiments that would keep a hidden agent tab's renderer at foreground priority ---------------
+  // audio: a quiet 30 Hz tone (gain 0.001, about -60 dBFS) in each loaded document, started with a user gesture so
+  // autoplay allows it; screencast: a tiny, slow Page.startScreencast held on each attached tab, its frames acked;
+  // window: agent tabs open in a window of their own behind the person's (extension tabs.create diagWindow).
+  const HUM = `(async () => { if (window.__cuaHum) return 'again'; const c = new AudioContext(); const o = c.createOscillator();
+    const g = c.createGain(); o.frequency.value = 30; g.gain.value = 0.001; o.connect(g).connect(c.destination); o.start();
+    window.__cuaHum = c; await c.resume(); return c.state; })()`;
+  const fgSend = (tabId, method, params) => extension.request('debugger.sendCommand', {debuggee: {tabId}, method, params, timeoutMs: 5000});
+  const screencastFrames = new Map();
+  function foregroundEvent(tabId, method, params) {
+    const mode = diag.experiment();
+    if (mode === 'audio' && method === 'Page.loadEventFired') {
+      fgSend(tabId, 'Runtime.evaluate', {expression: HUM, awaitPromise: true, userGesture: true, returnByValue: true})
+        .then(r => r?.result?.value, () => 'failed')
+        .then(state => setTimeout(() => extension.request('diag.tab', {tabId}).then(t => diag.write({k: 'fg', mode, tabId, t: diag.now(), state: String(state), ...t}), () => {}), 1500));
+    }
+    if (mode === 'screencast' && method === 'Page.screencastFrame') {
+      quiet(fgSend(tabId, 'Page.screencastFrameAck', {sessionId: params?.sessionId}));
+      const n = (screencastFrames.get(tabId) ?? 0) + 1;
+      screencastFrames.set(tabId, n);
+      if (n === 1 || n % 20 === 0) diag.write({k: 'fg', mode, tabId, t: diag.now(), frames: n});
+    }
+  }
+  function foregroundAttached(tabId) {
+    if (diag.experiment() !== 'screencast') return;
+    fgSend(tabId, 'Page.startScreencast', {format: 'jpeg', quality: 1, maxWidth: 32, maxHeight: 32, everyNthFrame: 30})
+      .then(() => diag.write({k: 'fg', mode: 'screencast', tabId, t: diag.now(), started: true}), () => diag.write({k: 'fg', mode: 'screencast', tabId, t: diag.now(), started: false}));
+  }
+
   // --- the backend methods ------------------------------------------------------------------------------------------
 
   const handlers = {
@@ -458,7 +487,7 @@ export function createHost({extension: port, hello, home = null, now = () => new
     async createTab({preferredWindowId}, s, turn) {
       if (s.ended.has(turn)) refuse(turnOver(s, turn));
       const windowId = await pickWindow(preferredWindowId);
-      const created = await extension.request('tabs.create', {url: 'about:blank', windowId, group: {key: s.id, title: s.title}, guard: true});
+      const created = await extension.request('tabs.create', {...(diag.experiment() === 'window' ? {diagWindow: true} : {}), url: 'about:blank', windowId, group: {key: s.id, title: s.title}, guard: true});
       if (s.closed || s.ended.has(turn)) {
         await quiet(closeTab(created.id));
         refuse(turnOver(s, turn));
@@ -491,6 +520,7 @@ export function createHost({extension: port, hello, home = null, now = () => new
       tab.attached = true;
       changed();
       if (tab.viewport) await sendViewport(tab);
+      foregroundAttached(tabId);
       return {};
     },
 
@@ -710,6 +740,7 @@ export function createHost({extension: port, hello, home = null, now = () => new
     'debugger.event'({debuggee, sessionId, method, params}) {
       const o = ownerOf(debuggee);
       if (!o) return;
+      if (o.targetId === undefined && !sessionId) foregroundEvent(o.tabId, method, params);
       tell(o.session, 'onCDPEvent', {source: {tabId: o.tabId, ...(sessionId ? {sessionId} : {}), ...(o.targetId !== undefined ? {targetId: o.targetId} : {})}, method, params});
     },
     'debugger.detached'({debuggee, reason}) {
@@ -755,7 +786,7 @@ export function createHost({extension: port, hello, home = null, now = () => new
         log(`popup from tab ${openerTabId} dropped: no current turn owns the tab`);
         return;
       }
-      const created = await extension.request('tabs.create', {url, openerTabId, group: {key: s.id, title: s.title}, guard: true});
+      const created = await extension.request('tabs.create', {...(diag.experiment() === 'window' ? {diagWindow: true} : {}), url, openerTabId, group: {key: s.id, title: s.title}, guard: true});
       if (!live()) {
         await quiet(closeTab(created.id));
         return;
@@ -900,7 +931,7 @@ export async function runHost({stdin, stdout, env = process.env, home = env.CUA_
     handlers: {hello: params => gotHello(params), 'debugger.event': forward('debugger.event'), 'debugger.detached': forward('debugger.detached'),
       'tabs.removed': forward('tabs.removed'), 'tabs.updated': forward('tabs.updated'), 'tabs.popup': forward('tabs.popup'), 'tabs.adopted': forward('tabs.adopted'),
       'downloads.created': forward('downloads.created'), 'downloads.changed': forward('downloads.changed'),
-      'diag.lag': row => diag.write({k: 'lag', p: 'ext', ...row})},
+      'diag.lag': row => diag.write({k: 'lag', p: 'ext', ...row}), 'diag.window': row => diag.write({k: 'fg', mode: 'window', t: diag.now(), ...row})},
   });
   const push = frameDecoder(MAX_FROM_EXTENSION_BYTES);
   stdin.on('data', chunk => {

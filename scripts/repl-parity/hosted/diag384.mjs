@@ -137,6 +137,25 @@ for (const span of spans.filter(s => s.suite === 'api')) {
   const burners = mine.map(r => r.roles.burner?.n ?? 0);
   console.log(`${P} load ${label(span.lane)}/api: ncpu ${mine[0].ncpu ?? '-'} burners ${Math.max(...burners)} load1 p50 ${pct(loads, 50)} mean ${Math.round(loads.reduce((a, b) => a + b, 0) / loads.length * 10) / 10} max ${pct(loads, 100)} samples ${mine.length}`);
 }
+// Renderer scheduling priority (ps pri) per api run, summed over samples (ruling 794), and the foreground experiment's
+// own rows.
+for (const span of spans.filter(s => s.suite === 'api')) {
+  const mine = rows.filter(r => r.k === 'ps' && r.t >= span.from && r.t <= span.to && r.rendererPri);
+  if (!mine.length) continue;
+  const total = {};
+  for (const r of mine) for (const [pri, n] of Object.entries(r.rendererPri)) total[pri] = (total[pri] ?? 0) + n;
+  const cpu = mine.map(r => r.roles['chrome-renderer']?.cpu ?? 0), all = mine.map(r => Object.entries(r.roles).filter(([k]) => k.startsWith('chrome')).reduce((a, [, v]) => a + v.cpu, 0));
+  console.log(`${P} renderers ${label(span.lane)}/api: pri ${Object.entries(total).sort((a, b) => Number(a[0]) - Number(b[0])).map(([p, n]) => `${p}:${n}`).join(' ')} (renderer-samples)`
+    + `; renderer cpu mean ${Math.round(cpu.reduce((a, b) => a + b, 0) / cpu.length)} chrome cpu mean ${Math.round(all.reduce((a, b) => a + b, 0) / all.length)}`);
+}
+const fgRows = rows.filter(r => r.k === 'fg');
+if (fgRows.length) {
+  const audio = fgRows.filter(r => r.mode === 'audio');
+  if (audio.length) console.log(`${P} fg audio: armed ${audio.length} running ${audio.filter(r => r.state === 'running').length} audible ${audio.filter(r => r.audible === true).length} muted ${audio.filter(r => r.muted === true).length} states ${[...new Set(audio.map(r => r.state))].map(label).join(',')}`);
+  const sc = fgRows.filter(r => r.mode === 'screencast');
+  if (sc.length) console.log(`${P} fg screencast: started ${sc.filter(r => r.started === true).length} failed ${sc.filter(r => r.started === false).length} tabs with frames ${new Set(sc.filter(r => r.frames).map(r => r.tabId)).size} max frames on a tab ${Math.max(0, ...sc.map(r => r.frames ?? 0))}`);
+  for (const w of fgRows.filter(r => r.mode === 'window')) console.log(`${P} fg window: front ${['left', 'top', 'width', 'height', 'focused'].map(k => `${k} ${w.front?.[k]}`).join(' ')}; agent ${['left', 'top', 'width', 'height', 'focused'].map(k => `${k} ${w.agent?.[k]}`).join(' ')}`);
+}
 // Slow commands by lane and case.
 const byCase = new Map();
 for (const c of slow) { const k = `${c.lane} ${c.cellCase}`; byCase.set(k, (byCase.get(k) ?? 0) + 1); }

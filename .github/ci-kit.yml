@@ -263,3 +263,74 @@ gates:
     lane: hosted-macos
     timeout: 50
     run: PARITY_ORDER=cua-first sh scripts/repl-parity/hosted/hosted.sh browser
+  # #384 ruling 794: the threshold (duty-cycled burners, one per core) and the foreground experiments at one burner per core.
+  - name: parity-browser-duty25
+    on: [dispatch]
+    lane: hosted-macos
+    timeout: 50
+    run: PARITY_STRESS=duty:25 sh scripts/repl-parity/hosted/hosted.sh browser
+  - name: parity-browser-duty25-swap
+    on: [dispatch]
+    lane: hosted-macos
+    timeout: 50
+    run: PARITY_ORDER=cua-first PARITY_STRESS=duty:25 sh scripts/repl-parity/hosted/hosted.sh browser
+  - name: parity-browser-duty50
+    on: [dispatch]
+    lane: hosted-macos
+    timeout: 50
+    run: PARITY_STRESS=duty:50 sh scripts/repl-parity/hosted/hosted.sh browser
+  - name: parity-browser-duty50-swap
+    on: [dispatch]
+    lane: hosted-macos
+    timeout: 50
+    run: PARITY_ORDER=cua-first PARITY_STRESS=duty:50 sh scripts/repl-parity/hosted/hosted.sh browser
+  - name: parity-browser-duty75
+    on: [dispatch]
+    lane: hosted-macos
+    timeout: 50
+    run: PARITY_STRESS=duty:75 sh scripts/repl-parity/hosted/hosted.sh browser
+  - name: parity-browser-duty75-swap
+    on: [dispatch]
+    lane: hosted-macos
+    timeout: 50
+    run: PARITY_ORDER=cua-first PARITY_STRESS=duty:75 sh scripts/repl-parity/hosted/hosted.sh browser
+  - name: parity-browser-fg-audio
+    on: [dispatch]
+    lane: hosted-macos
+    timeout: 50
+    run: PARITY_FG=audio PARITY_STRESS=cpu:1 sh scripts/repl-parity/hosted/hosted.sh browser
+  - name: parity-browser-fg-audio-swap
+    on: [dispatch]
+    lane: hosted-macos
+    timeout: 50
+    run: PARITY_ORDER=cua-first PARITY_FG=audio PARITY_STRESS=cpu:1 sh scripts/repl-parity/hosted/hosted.sh browser
+  - name: parity-browser-fg-window
+    on: [dispatch]
+    lane: hosted-macos
+    timeout: 50
+    run: PARITY_FG=window PARITY_STRESS=cpu:1 sh scripts/repl-parity/hosted/hosted.sh browser
+  - name: parity-browser-fg-window-swap
+    on: [dispatch]
+    lane: hosted-macos
+    timeout: 50
+    run: PARITY_ORDER=cua-first PARITY_FG=window PARITY_STRESS=cpu:1 sh scripts/repl-parity/hosted/hosted.sh browser
+  - name: parity-browser-fg-screencast
+    on: [dispatch]
+    lane: hosted-macos
+    timeout: 50
+    run: PARITY_FG=screencast PARITY_STRESS=cpu:1 sh scripts/repl-parity/hosted/hosted.sh browser
+  - name: parity-browser-fg-screencast-swap
+    on: [dispatch]
+    lane: hosted-macos
+    timeout: 50
+    run: PARITY_ORDER=cua-first PARITY_FG=screencast PARITY_STRESS=cpu:1 sh scripts/repl-parity/hosted/hosted.sh browser
+  - name: parity-browser-fg-policy
+    on: [dispatch]
+    lane: hosted-macos
+    timeout: 50
+    run: PARITY_FG=policy PARITY_STRESS=cpu:1 sh scripts/repl-parity/hosted/hosted.sh browser
+  - name: parity-browser-fg-policy-swap
+    on: [dispatch]
+    lane: hosted-macos
+    timeout: 50
+    run: PARITY_ORDER=cua-first PARITY_FG=policy PARITY_STRESS=cpu:1 sh scripts/repl-parity/hosted/hosted.sh browser

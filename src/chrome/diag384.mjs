@@ -11,6 +11,7 @@ import {monitorEventLoopDelay} from 'node:perf_hooks';
 export const now = () => Math.round((performance.timeOrigin + performance.now()) * 10) / 10;
 let role = 'host';
 let file = null;
+let fg = '';
 let checked = 0;
 function target() {
   if (file) return file;
@@ -18,11 +19,14 @@ function target() {
   if (t - checked < 2000) return null;
   checked = t;
   try {
-    const {dir} = JSON.parse(readFileSync(join(homedir(), '.cua-diag-384.json'), 'utf8'));
-    if (typeof dir === 'string' && isAbsolute(dir)) file = join(dir, `${role}-${process.pid}.jsonl`);
+    const config = JSON.parse(readFileSync(join(homedir(), '.cua-diag-384.json'), 'utf8'));
+    if (typeof config.dir === 'string' && isAbsolute(config.dir)) file = join(config.dir, `${role}-${process.pid}.jsonl`);
+    if (typeof config.fg === 'string') fg = config.fg;
   } catch {}
   return file;
 }
+// The foreground experiment the run names (ruling 794): '', audio, window, screencast or policy.
+export const experiment = () => { target(); return fg; };
 export function write(row) {
   const path = target();
   if (!path) return;

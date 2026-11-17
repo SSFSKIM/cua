@@ -50,8 +50,8 @@ case "$ITEM" in denials|browser) ;; *) echo "usage: sh scripts/repl-parity/hoste
 STRESS=${PARITY_STRESS:-}
 case "$STRESS" in
   '') ;;
-  cpu:[1-9]) [ "$ITEM" = browser ] || { echo "hosted-parity: PARITY_STRESS is for the browser item" >&2; exit 2; } ;;
-  *) echo "hosted-parity: PARITY_STRESS must be cpu:<1-9>" >&2; exit 2 ;;
+  cpu:[1-9]|duty:[1-9][0-9]) [ "$ITEM" = browser ] || { echo "hosted-parity: PARITY_STRESS is for the browser item" >&2; exit 2; } ;;
+  *) echo "hosted-parity: PARITY_STRESS must be cpu:<1-9> or duty:<10-99>" >&2; exit 2 ;;
 esac
 case "${PARITY_CHROME_FLAGS:-}" in
   '') CHROME_FLAGS='' ;;
@@ -72,7 +72,12 @@ ERR=$S/stderr RUNS=$S/runs SSHD=$S/sshd DIAG=$S/diag
 mkdir -p "$ERR" "$RUNS" "$SSHD" "$DIAG"
 # #384 diagnosis (branch diag/384-cdp-latency, never merged): the instrumented host, supervisor and service write their
 # timing rows under $DIAG (src/chrome/diag384.mjs reads this file); PARITY_ORDER=cua-first runs cua's host first.
-printf '{"dir":"%s"}\n' "$DIAG" > "$HOME/.cua-diag-384.json"
+# PARITY_FG (#384 ruling 794) names an experiment that keeps hidden agent tabs at foreground priority: audio, window,
+# screencast (the host and extension read it from the same file) or policy (Chrome's ForceForegroundPriorityForUrls,
+# written below as a managed preference before Chrome starts).
+FG=${PARITY_FG:-}
+case "$FG" in ''|audio|window|screencast|policy) ;; *) echo "hosted-parity: PARITY_FG must be audio, window, screencast or policy" >&2; exit 2 ;; esac
+printf '{"dir":"%s","fg":"%s"}\n' "$DIAG" "$FG" > "$HOME/.cua-diag-384.json"
 ORDER=${PARITY_ORDER:-vendor-first}
 case "$ORDER" in vendor-first|cua-first) ;; *) echo "hosted-parity: PARITY_ORDER must be vendor-first or cua-first" >&2; exit 2 ;; esac
 CFT="/Applications/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"
@@ -90,8 +95,14 @@ stress_stop() { [ -z "$BURNERS" ] || kill $BURNERS 2> /dev/null; BURNERS=''; }
 stress_start() {
   [ -n "$STRESS" ] || return 0
   b_cores=$(sysctl -n hw.ncpu) b_i=0
-  b_n=$((b_cores * ${STRESS#cpu:}))
-  while [ $b_i -lt $b_n ]; do yes > /dev/null 3>&- & BURNERS="$BURNERS $!"; b_i=$((b_i + 1)); done
+  case "$STRESS" in
+    duty:*)   # #384 ruling 794: one process per core that burns ${STRESS#duty:} % of every 100 ms and sleeps the rest
+      b_n=$b_cores
+      while [ $b_i -lt $b_n ]; do node "$H/diag384-duty.mjs" "${STRESS#duty:}" > /dev/null 2>&1 3>&- & BURNERS="$BURNERS $!"; b_i=$((b_i + 1)); done ;;
+    *)
+      b_n=$((b_cores * ${STRESS#cpu:}))
+      while [ $b_i -lt $b_n ]; do yes > /dev/null 3>&- & BURNERS="$BURNERS $!"; b_i=$((b_i + 1)); done ;;
+  esac
   say "stress: $b_n CPU burners ($STRESS on $b_cores cores) while suite api runs"
 }
 SAMPLER=''
@@ -158,6 +169,14 @@ register() {
 }
 launch_chrome() {
   [ -z "$CHROME_FLAGS" ] || say "chrome flags: ${PARITY_CHROME_FLAGS}"
+  [ -z "$FG" ] || say "diag384: fg experiment $FG"
+  if [ "$FG" = policy ]; then
+    bid=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "/Applications/Google Chrome for Testing.app/Contents/Info.plist" 2> /dev/null)
+    sudo -n mkdir -p "/Library/Managed Preferences" 2> /dev/null
+    sudo -n defaults write "/Library/Managed Preferences/$bid" ForceForegroundPriorityForUrls -array "127.0.0.1" 2> /dev/null
+    sudo -n killall cfprefsd 2> /dev/null
+    say "diag384: policy written $(defaults read "/Library/Managed Preferences/$bid" ForceForegroundPriorityForUrls > /dev/null 2>&1 && echo yes || echo no) for bundle $( [ -n "$bid" ] && echo found || echo missing)"
+  fi
   # $CHROME_FLAGS is unquoted on purpose: one of the fixed sets above, split into its flags.
   "$CFT" --user-data-dir="$UDD" --profile-directory=Default --no-first-run --no-default-browser-check \
     --disable-search-engine-choice-screen $CHROME_FLAGS --load-extension="$R/extension" about:blank > /dev/null 2> "$ERR/chrome" 3>&- &

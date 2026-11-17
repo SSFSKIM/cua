@@ -35,10 +35,12 @@ const run = (cmd, args) => { try { return execFileSync(cmd, args, {encoding: 'ut
 const NCPU = Number(run('sysctl', ['-n', 'hw.ncpu']).trim()) || null;
 function sample() {
   const roles = {};
-  for (const line of run('ps', ['-A', '-ww', '-o', 'pcpu=,rss=,args=']).split('\n')) {
-    const m = /^\s*([\d.]+)\s+(\d+)\s+(.*)$/.exec(line);
+  const rendererPri = {};
+  for (const line of run('ps', ['-A', '-ww', '-o', 'pcpu=,rss=,pri=,args=']).split('\n')) {
+    const m = /^\s*([\d.]+)\s+(\d+)\s+(\d+)\s+(.*)$/.exec(line);
     if (!m) continue;
-    const role = roleOf(m[3]);
+    const role = roleOf(m[4]);
+    if (role === 'chrome-renderer') rendererPri[m[3]] = (rendererPri[m[3]] ?? 0) + 1;
     const r = roles[role] ??= {cpu: 0, rssMB: 0, n: 0, top: 0};
     r.cpu = Math.round((r.cpu + Number(m[1])) * 10) / 10;
     r.top = Math.max(r.top, Number(m[1]));
@@ -51,7 +53,7 @@ function sample() {
   const pages = name => Number(new RegExp(`${name}:\\s+(\\d+)`).exec(vm)?.[1] ?? NaN);
   const row = {k: 'ps', t: Date.now(), ncpu: NCPU, load1: load[0], swapUsedMB: swap === undefined ? null : Number(swap),
     freePages: pages('Pages free'), compressedPages: pages('Pages occupied by compressor'), swapins: pages('Swapins'), swapouts: pages('Swapouts'),
-    pageins: pages('Pageins'), roles};
+    pageins: pages('Pageins'), roles, rendererPri};
   try { appendFileSync(out, `${JSON.stringify(row)}\n`); } catch {}
 }
 process.on('SIGTERM', () => process.exit(0));

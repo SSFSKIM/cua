@@ -267,8 +267,8 @@ const primitives = {
   // Agent tabs never take the user's focus, and sit in their session's group so the user sees which not to touch.
   // Grouping is cosmetic: a tab Chrome would not group is still the host's. A tab opened for a page (openerTabId) opens
   // in its opener's window; `guard` guards it from its first document on.
-  'tabs.create': async ({url, windowId, group, openerTabId, guard}) => {
-    const w = windowId ?? (openerTabId != null ? (await chrome.tabs.get(openerTabId)).windowId : undefined);
+  'tabs.create': async ({url, windowId, group, openerTabId, guard, diagWindow}) => {
+    const w = diagWindow === true ? await agentWindow() : windowId ?? (openerTabId != null ? (await chrome.tabs.get(openerTabId)).windowId : undefined);
     const tab = await chrome.tabs.create({...(url != null ? {url} : {}), ...(w != null ? {windowId: w} : {}),
       ...(openerTabId != null ? {openerTabId} : {}), active: false});
     if (guard === true) guarded.add(tab.id);
@@ -348,6 +348,12 @@ const primitives = {
 
   'debugger.getTargets': () => chrome.debugger.getTargets(),
 
+  // #384 diagnosis: a tab's audible, muted and active state.
+  'diag.tab': async ({tabId}) => {
+    const t = await chrome.tabs.get(tabId);
+    return {audible: t.audible ?? null, muted: t.mutedInfo?.muted ?? null, active: t.active};
+  },
+
   // #384 diagnosis: what Chrome says of a tab whose command has gone unanswered: its state words and booleans, and how
   // long a trivial Runtime.evaluate takes in it now (null when it did not answer within 2 s).
   'diag.probe': async ({tabId}) => {
@@ -400,6 +406,20 @@ function createPeer(p) {
     },
     notify: (method, params) => send({jsonrpc: '2.0', method, params}),
   };
+}
+
+// #384 ruling 794 (experiment window): one window for agent tabs, opened unfocused with the bounds of the window the
+// person last focused, which is then focused again so it covers the agent window.
+let agentWindowId = null;
+async function agentWindow() {
+  if (agentWindowId !== null && await chrome.windows.get(agentWindowId).then(() => true, () => false)) return agentWindowId;
+  const front = await chrome.windows.getLastFocused({windowTypes: ['normal']});
+  const created = await chrome.windows.create({focused: false, type: 'normal', left: front.left, top: front.top, width: front.width, height: front.height});
+  agentWindowId = created.id;
+  await chrome.windows.update(front.id, {focused: true}).catch(() => {});
+  tell('diag.window', {front: {left: front.left, top: front.top, width: front.width, height: front.height, focused: front.focused},
+    agent: {left: created.left, top: created.top, width: created.width, height: created.height, focused: created.focused}});
+  return agentWindowId;
 }
 
 function tell(method, params) {

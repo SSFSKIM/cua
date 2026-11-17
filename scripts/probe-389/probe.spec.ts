@@ -6,8 +6,8 @@ import { spawn, execFileSync } from 'node:child_process';
 import { mkdirSync, appendFileSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
-// @ts-ignore -- the kit is outside MAWS's checkout; Playwright transpiles the test.
-import { Wire } from '../../scripts/probe-389/wire.mjs';
+// @ts-ignore -- the kit checkout is .cua-probe under MAWS's root; Playwright transpiles the test.
+import { Wire } from '../.cua-probe/scripts/probe-389/wire.mjs';
 const OUT=process.env.PROBE389_OUT!, TEMP=process.env.RUNNER_TEMP!;
 const sleep=(ms:number)=>new Promise(r=>setTimeout(r,ms));
 const reps=Number(process.env.PROBE389_REPS??10);

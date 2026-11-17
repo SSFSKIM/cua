@@ -22,47 +22,45 @@ jobs:
   measure:
     runs-on: macos-26
     timeout-minutes: 90
-    defaults:
-      run:
-        working-directory: .maws-probe
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
-        with:
-          fetch-depth: 0
-          persist-credentials: false
+      # Topology: pinned MAWS is the workspace root, so its composite setup action runs in its native context
+      # (composite run steps do not inherit job defaults.run.working-directory). The kit lives under .cua-probe.
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           repository: SSFSKIM/MAWS
           ref: ${{ env.MAWS_REF }}
-          path: .maws-probe
           persist-credentials: false
-      - uses: ./.maws-probe/.github/actions/setup
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ github.sha }}
+          path: .cua-probe
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/setup
         with:
           e2e: 'true'
       - name: Build pinned MAWS app
-        working-directory: .maws-probe
         run: pnpm build:app
       - name: Build unmodified engine and separate logging-only arm
-        working-directory: ${{ github.workspace }}
         run: |
-          git worktree add --detach "$RUNNER_TEMP/main389" "$ENGINE_REF"
+          git -C .cua-probe worktree add --detach "$RUNNER_TEMP/main389" "$ENGINE_REF"
           swift build -c release --package-path "$RUNNER_TEMP/main389/native/engine" --scratch-path "$RUNNER_TEMP/build389"
           git -C "$RUNNER_TEMP/main389" diff --exit-code
-          node scripts/probe-389/patch.mjs "$RUNNER_TEMP/main389"
+          node .cua-probe/scripts/probe-389/patch.mjs "$RUNNER_TEMP/main389"
           swift build -c release --package-path "$RUNNER_TEMP/main389/native/engine" --scratch-path "$RUNNER_TEMP/trace389"
-          swiftc -O -o "$RUNNER_TEMP/tool389" scripts/probe-389/tool.swift
+          swiftc -O -o "$RUNNER_TEMP/tool389" .cua-probe/scripts/probe-389/tool.swift
           mkdir -p "$RUNNER_TEMP/Probe389 Cover.app/Contents/MacOS"
           cp "$RUNNER_TEMP/tool389" "$RUNNER_TEMP/Probe389 Cover.app/Contents/MacOS/cover389"
           printf '%s' '<plist version="1.0"><dict><key>CFBundleIdentifier</key><string>test.probe389.cover</string><key>CFBundleExecutable</key><string>cover389</string><key>CFBundleName</key><string>Probe389 Cover</string></dict></plist>' > "$RUNNER_TEMP/Probe389 Cover.app/Contents/Info.plist"
-          git -C .maws-probe diff --exit-code
+          git diff --exit-code
       - name: Probe exact Add project dialog through ordinary engine facade
-        working-directory: .maws-probe
         env:
           PROBE389_REPS: ${{ inputs.reps || '2' }}
           PROBE389_OUT: ${{ runner.temp }}/evidence389
           PROBE389_KIT: ${{ github.sha }}
         run: |
-          cp ../scripts/probe-389/probe.spec.ts e2e/probe-389.spec.ts
+          cp .cua-probe/scripts/probe-389/probe.spec.ts e2e/probe-389.spec.ts
           pnpm exec playwright test e2e/probe-389.spec.ts --workers=1 --retries=0 --reporter=line
       - name: Upload scratch-owned evidence only
         if: always()

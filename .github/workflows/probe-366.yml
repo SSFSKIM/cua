@@ -9,7 +9,7 @@ on:
       mode:
         description: 'Readiness factorial or controlled threshold sweep (8 delays; 2 smoke / 10 full reps)'
         type: choice
-        options: [smoke, full, threshold-smoke, threshold, qualification-smoke, qualification]
+        options: [smoke, full, threshold-smoke, threshold, qualification-smoke, qualification, qualification-diagnostic]
         default: smoke
       fix_ref:
         description: 'Real engine fix commit for qualification (full waits for reviewed-head confirmation)'
@@ -141,11 +141,12 @@ jobs:
       - name: Qualify real action paths (no native probe gate)
         env:
           BROWSER: ${{ matrix.browser }}
-          SMOKE: ${{ inputs.mode == 'qualification-smoke' }}
+          SMOKE: ${{ inputs.mode != 'qualification' }}
+          DIAGNOSTIC: ${{ inputs.mode == 'qualification-diagnostic' }}
         run: |
-          node scripts/probe-366/qualification.mjs --browser "$BROWSER" --smoke "$SMOKE" --main-engine "$RUNNER_TEMP/qual-build-main/release/cua-engine" --fix-engine "$RUNNER_TEMP/qual-build-fix/release/cua-engine" --main-ref "$QUAL_MAIN_REF" --fix-ref "$QUAL_FIX_REF" --tool "$RUNNER_TEMP/qual-tool366" --out "$RUNNER_TEMP/probe-366-qualification/$BROWSER"
+          node scripts/probe-366/qualification.mjs --browser "$BROWSER" --smoke "$SMOKE" --diagnostic "$DIAGNOSTIC" --main-engine "$RUNNER_TEMP/qual-build-main/release/cua-engine" --fix-engine "$RUNNER_TEMP/qual-build-fix/release/cua-engine" --main-ref "$QUAL_MAIN_REF" --fix-ref "$QUAL_FIX_REF" --tool "$RUNNER_TEMP/qual-tool366" --out "$RUNNER_TEMP/probe-366-qualification/$BROWSER"
       - name: Read qualification outcomes and wait evidence
-        if: always()
+        if: ${{ always() && inputs.mode != 'qualification-diagnostic' }}
         run: |
           OUT="$RUNNER_TEMP/probe-366-qualification/${{ matrix.browser }}"
           if [ -f "$OUT/rows.jsonl" ]; then

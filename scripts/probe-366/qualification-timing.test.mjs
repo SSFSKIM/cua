@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {attachWaits, captureWaitSignposts, waitIntervals, WAIT_SIGNPOST, ENGINE_SUBSYSTEM} from './qualification-timing.mjs';
+import {attachWaits, captureWaitSignposts, readIntervals, WAIT_SIGNPOST, REQUEST_SIGNPOST, ENGINE_SUBSYSTEM} from './qualification-timing.mjs';
 
 // Lines shaped as `log show --signpost --style ndjson` prints an OSSignposter interval (fields and order of a real record,
 // ids and wall stamps as it writes them: the id a bare 64-bit integer, the stamp local time to the microsecond).
@@ -10,136 +10,212 @@ const stamp = ms => {
   const p = (n, w = 2) => String(n).padStart(w, '0');
   return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())}.${p(d.getUTCMilliseconds(), 3)}${p(micro, 3)}-0800`;
 };
-const line = (type, id, at, {pid = ENGINE, name = WAIT_SIGNPOST, subsystem = ENGINE_SUBSYSTEM, mach} = {}) =>
-  `{"timezoneName":"","eventType":"signpostEvent","signpostID":${id},"signpostScope":"process","source":null,"formatString":"","userID":501,"activityIdentifier":0,"subsystem":"${subsystem}","category":"timing","threadID":2606775194,"senderImageUUID":"10C63D59-07BC-3518-87A0-83CAC48D8A70","signpostType":"${type}","backtrace":{"frames":[{"imageOffset":61072,"imageUUID":"10C63D59-07BC-3518-87A0-83CAC48D8A70"}]},"bootUUID":"9DEFE614-EAA6-4E3D-94A0-2DCC11149C7E","processImagePath":"\\/Applications\\/cua Engine.app\\/Contents\\/MacOS\\/cua-engine","senderImagePath":"\\/Applications\\/cua Engine.app\\/Contents\\/MacOS\\/cua-engine","timestamp":"${stamp(T0 + at)}","signpostName":"${name}","machTimestamp":${mach ?? 102905063376194 + Math.round(at * 24000)},"eventMessage":"","processImageUUID":"FA70F8E6-62B3-361E-8628-F4882492C488","traceID":1290000550590710022,"processID":${pid},"senderProgramCounter":61072,"parentActivityIdentifier":0}`;
-const pairOf = (id, begin, end, extra) => [line('begin', id, begin, extra), line('end', id, end, extra)];
-const text = (...lines) => lines.flat().join('\n') + '\n';
-const call = (startedAt, endedAt, extra = {}) => ({startedAt: T0 + startedAt, endedAt: T0 + endedAt, ...extra});
+const line = (type, id, at, {pid = ENGINE, name = WAIT_SIGNPOST, subsystem = ENGINE_SUBSYSTEM, mach, message = ''} = {}) =>
+  `{"timezoneName":"","eventType":"signpostEvent","signpostID":${id},"signpostScope":"process","source":null,"formatString":"","userID":501,"activityIdentifier":0,"subsystem":"${subsystem}","category":"timing","threadID":2606775194,"senderImageUUID":"10C63D59-07BC-3518-87A0-83CAC48D8A70","signpostType":"${type}","backtrace":{"frames":[{"imageOffset":61072,"imageUUID":"10C63D59-07BC-3518-87A0-83CAC48D8A70"}]},"bootUUID":"9DEFE614-EAA6-4E3D-94A0-2DCC11149C7E","processImagePath":"\\/Applications\\/cua Engine.app\\/Contents\\/MacOS\\/cua-engine","senderImagePath":"\\/Applications\\/cua Engine.app\\/Contents\\/MacOS\\/cua-engine","timestamp":"${stamp(T0 + at)}","signpostName":"${name}","machTimestamp":${mach ?? 102905063376194 + Math.round(at * 24000)},"eventMessage":${JSON.stringify(message)},"processImageUUID":"FA70F8E6-62B3-361E-8628-F4882492C488","traceID":1290000550590710022,"processID":${pid},"senderProgramCounter":61072,"parentActivityIdentifier":0}`;
+// The gate's interval, and a request's (its method the begin's message, as the engine writes it), on the engine's clock.
+const gate = (id, begin, end, extra) => [line('begin', id, begin, extra), line('end', id, end, extra)];
+const req = (id, begin, end, method, extra) => [line('begin', id, begin, {...extra, name: REQUEST_SIGNPOST, message: method}), line('end', id, end, {...extra, name: REQUEST_SIGNPOST})];
+const text = (...lines) => lines.flat(Infinity).join('\n') + '\n';
+// A call in the client's clock, which runs `skew` ms ahead of the log's: the engine's request [begin, end] seen from outside,
+// the rpc starting `lead` ms before it and ending `tail` ms after.
+const SKEW = 129;
+const call = (method, begin, end, {skew = SKEW, lead = 0.6, tail = 0.9, ...extra} = {}) => ({method, startedAt: Math.floor(T0 + begin + skew - lead), endedAt: Math.ceil(T0 + end + skew + tail), ...extra});
 const fix = (calls, ...lines) => attachWaits(calls, text(...lines), {enginePid: ENGINE, engineSide: 'fix'});
+const verdicts = out => out.map(a => [a.waitMs, a.waitEvidence, a.waitWhy]);
 // A real record from the log on the MacBook (Finder's, kept verbatim): other processes' signposts are noise here.
 const REAL = '{"timezoneName":"","eventType":"signpostEvent","signpostID":2953015387832229088,"signpostScope":"process","source":null,"formatString":"-[ISIcon initWithURL:]","userID":501,"activityIdentifier":0,"subsystem":"com.apple.iconservices","category":"url-cache","threadID":2606775194,"senderImageUUID":"10C63D59-07BC-3518-87A0-83CAC48D8A70","signpostType":"begin","backtrace":{"frames":[{"imageOffset":61072,"imageUUID":"10C63D59-07BC-3518-87A0-83CAC48D8A70"}]},"bootUUID":"9DEFE614-EAA6-4E3D-94A0-2DCC11149C7E","processImagePath":"\\/System\\/Library\\/CoreServices\\/Finder.app\\/Contents\\/MacOS\\/Finder","senderImagePath":"\\/System\\/Library\\/PrivateFrameworks\\/IconServices.framework\\/Versions\\/A\\/IconServices","timestamp":"2026-11-17 02:00:56.612554-0800","signpostName":"accessing URL","machTimestamp":102905063376194,"eventMessage":"-[ISIcon initWithURL:]","processImageUUID":"FA70F8E6-62B3-361E-8628-F4882492C488","traceID":1290000550590710022,"processID":87423,"senderProgramCounter":61072,"parentActivityIdentifier":0}';
 
-test('a clean begin and end of the engine process give the wait as their wall difference, from the line text, not the call', () => {
-  const [a] = fix([call(1000, 2900, {tag: 'kept'})], '{"count":0,"finished":1}', REAL, line('begin', 17, 1005, {name: 'request'}), pairOf(17, 1010.25, 1010.25 + 1873.412), line('event', 18, 1500));
+// The engine's own records from hosted run 44064188276 (electron, fix engine pid 5540), kept verbatim: a get_app_state, a cold
+// click that waited, a warm click that did not. The runner's Date.now() ran 129 ms and then 132 ms ahead of these stamps.
+const HOSTED_FIX_5540 = [
+  "{\"timezoneName\":\"\",\"eventType\":\"signpostEvent\",\"signpostID\":2,\"signpostScope\":\"process\",\"source\":null,\"formatString\":\"%{public}s\",\"userID\":501,\"activityIdentifier\":0,\"subsystem\":\"io.github.ssfskim.cua.engine\",\"category\":\"timing\",\"threadID\":23905,\"senderImageUUID\":\"00F60C85-1DA9-31B1-B79B-4FD58234181F\",\"signpostType\":\"begin\",\"backtrace\":{\"frames\":[{\"imageOffset\":819412,\"imageUUID\":\"00F60C85-1DA9-31B1-B79B-4FD58234181F\"}]},\"bootUUID\":\"B70CDB50-4B61-48D8-B0C3-F054A7E07FA3\",\"processImagePath\":\"\\/Users\\/runner\\/work\\/_temp\\/qual-build-fix\\/arm64-apple-macosx\\/release\\/cua-engine\",\"senderImagePath\":\"\\/Users\\/runner\\/work\\/_temp\\/qual-build-fix\\/arm64-apple-macosx\\/release\\/cua-engine\",\"timestamp\":\"2026-11-17 10:25:35.908358+0000\",\"signpostName\":\"request\",\"machTimestamp\":6490706710,\"eventMessage\":\"get_app_state\",\"processImageUUID\":\"00F60C85-1DA9-31B1-B79B-4FD58234181F\",\"traceID\":6850861565378822,\"processID\":5540,\"senderProgramCounter\":819412,\"parentActivityIdentifier\":0}",
+  "{\"timezoneName\":\"\",\"eventType\":\"signpostEvent\",\"signpostID\":7,\"signpostScope\":\"process\",\"source\":null,\"formatString\":\"\",\"userID\":501,\"activityIdentifier\":0,\"subsystem\":\"io.github.ssfskim.cua.engine\",\"category\":\"timing\",\"threadID\":23905,\"senderImageUUID\":\"00F60C85-1DA9-31B1-B79B-4FD58234181F\",\"signpostType\":\"begin\",\"backtrace\":{\"frames\":[{\"imageOffset\":1160532,\"imageUUID\":\"00F60C85-1DA9-31B1-B79B-4FD58234181F\"}]},\"bootUUID\":\"B70CDB50-4B61-48D8-B0C3-F054A7E07FA3\",\"processImagePath\":\"\\/Users\\/runner\\/work\\/_temp\\/qual-build-fix\\/arm64-apple-macosx\\/release\\/cua-engine\",\"senderImagePath\":\"\\/Users\\/runner\\/work\\/_temp\\/qual-build-fix\\/arm64-apple-macosx\\/release\\/cua-engine\",\"timestamp\":\"2026-11-17 10:25:35.917038+0000\",\"signpostName\":\"prologue.chromiumReady\",\"machTimestamp\":6490915037,\"eventMessage\":\"\",\"processImageUUID\":\"00F60C85-1DA9-31B1-B79B-4FD58234181F\",\"traceID\":6471315305431302,\"processID\":5540,\"senderProgramCounter\":1160532,\"parentActivityIdentifier\":0}",
+  "{\"timezoneName\":\"\",\"eventType\":\"signpostEvent\",\"signpostID\":7,\"signpostScope\":\"process\",\"source\":null,\"formatString\":\"\",\"userID\":501,\"activityIdentifier\":0,\"subsystem\":\"io.github.ssfskim.cua.engine\",\"category\":\"timing\",\"threadID\":23905,\"senderImageUUID\":\"00F60C85-1DA9-31B1-B79B-4FD58234181F\",\"signpostType\":\"end\",\"backtrace\":{\"frames\":[{\"imageOffset\":1161108,\"imageUUID\":\"00F60C85-1DA9-31B1-B79B-4FD58234181F\"}]},\"bootUUID\":\"B70CDB50-4B61-48D8-B0C3-F054A7E07FA3\",\"processImagePath\":\"\\/Users\\/runner\\/work\\/_temp\\/qual-build-fix\\/arm64-apple-macosx\\/release\\/cua-engine\",\"senderImagePath\":\"\\/Users\\/runner\\/work\\/_temp\\/qual-build-fix\\/arm64-apple-macosx\\/release\\/cua-engine\",\"timestamp\":\"2026-11-17 10:25:35.917046+0000\",\"signpostName\":\"prologue.chromiumReady\",\"machTimestamp\":6490915210,\"eventMessage\":\"\",\"processImageUUID\":\"00F60C85-1DA9-31B1-B79B-4FD58234181F\",\"traceID\":6471315305431558,\"processID\":5540,\"senderProgramCounter\":1161108,\"parentActivityIdentifier\":0}",
+  "{\"timezoneName\":\"\",\"eventType\":\"signpostEvent\",\"signpostID\":2,\"signpostScope\":\"process\",\"source\":null,\"formatString\":\"\",\"userID\":501,\"activityIdentifier\":0,\"subsystem\":\"io.github.ssfskim.cua.engine\",\"category\":\"timing\",\"threadID\":23905,\"senderImageUUID\":\"00F60C85-1DA9-31B1-B79B-4FD58234181F\",\"signpostType\":\"end\",\"backtrace\":{\"frames\":[{\"imageOffset\":834476,\"imageUUID\":\"00F60C85-1DA9-31B1-B79B-4FD58234181F\"}]},\"bootUUID\":\"B70CDB50-4B61-48D8-B0C3-F054A7E07FA3\",\"processImagePath\":\"\\/Users\\/runner\\/work\\/_temp\\/qual-build-fix\\/arm64-apple-macosx\\/release\\/cua-engine\",\"senderImagePath\":\"\\/Users\\/runner\\/work\\/_temp\\/qual-build-fix\\/arm64-apple-macosx\\/release\\/cua-engine\",\"timestamp\":\"2026-11-17 10:25:36.399176+0000\",\"signpostName\":\"request\",\"machTimestamp\":6502486347,\"eventMessage\":\"\",\"processImageUUID\":\"00F60C85-1DA9-31B1-B79B-4FD58234181F\",\"traceID\":6471315305431558,\"processID\":5540,\"senderProgramCounter\":834476,\"parentActivityIdentifier\":0}",
+  "{\"timezoneName\":\"\",\"eventType\":\"signpostEvent\",\"signpostID\":8,\"signpostScope\":\"process\",\"source\":null,\"formatString\":\"%{public}s\",\"userID\":501,\"activityIdentifier\":0,\"subsystem\":\"io.github.ssfskim.cua.engine\",\"category\":\"timing\",\"threadID\":23905,\"senderImageUUID\":\"00F60C85-1DA9-31B1-B79B-4FD58234181F\",\"signpostType\":\"begin\",\"backtrace\":{\"frames\":[{\"imageOffset\":819412,\"imageUUID\":\"00F60C85-1DA9-31B1-B79B-4FD58234181F\"}]},\"bootUUID\":\"B70CDB50-4B61-48D8-B0C3-F054A7E07FA3\",\"processImagePath\":\"\\/Users\\/runner\\/work\\/_temp\\/qual-build-fix\\/arm64-apple-macosx\\/release\\/cua-engine\",\"senderImagePath\":\"\\/Users\\/runner\\/work\\/_temp\\/qual-build-fix\\/arm64-apple-macosx\\/release\\/cua-engine\",\"timestamp\":\"2026-11-17 10:25:36.426898+0000\",\"signpostName\":\"request\",\"machTimestamp\":6503151658,\"eventMessage\":\"click\",\"processImageUUID\":\"00F60C85-1DA9-31B1-B79B-4FD58234181F\",\"traceID\":6850861565378822,\"processID\":5540,\"senderProgramCounter\":819412,\"parentActivityIdentifier\":0}",
+  "{\"timezoneName\":\"\",\"eventType\":\"signpostEvent\",\"signpostID\":13,\"signpostScope\":\"process\",\"source\":null,\"formatString\":\"\",\"userID\":501,\"activityIdentifier\":0,\"subsystem\":\"io.github.ssfskim.cua.engine\",\"category\":\"timing\",\"threadID\":23905,\"senderImageUUID\":\"00F60C85-1DA9-31B1-B79B-4FD58234181F\",\"signpostType\":\"begin\",\"backtrace\":{\"frames\":[{\"imageOffset\":1160532,\"imageUUID\":\"00F60C85-1DA9-31B1-B79B-4FD58234181F\"}]},\"bootUUID\":\"B70CDB50-4B61-48D8-B0C3-F054A7E07FA3\",\"processImagePath\":\"\\/Users\\/runner\\/work\\/_temp\\/qual-build-fix\\/arm64-apple-macosx\\/release\\/cua-engine\",\"senderImagePath\":\"\\/Users\\/runner\\/work\\/_temp\\/qual-build-fix\\/arm64-apple-macosx\\/release\\/cua-engine\",\"timestamp\":\"2026-11-17 10:25:36.428571+0000\",\"signpostName\":\"prologue.chromiumReady\",\"machTimestamp\":6503191822,\"eventMessage\":\"\",\"processImageUUID\":\"00F60C85-1DA9-31B1-B79B-4FD58234181F\",\"traceID\":6471315305431302,\"processID\":5540,\"senderProgramCounter\":1160532,\"parentActivityIdentifier\":0}",
+  "{\"timezoneName\":\"\",\"eventType\":\"signpostEvent\",\"signpostID\":13,\"signpostScope\":\"process\",\"source\":null,\"formatString\":\"\",\"userID\":501,\"activityIdentifier\":0,\"subsystem\":\"io.github.ssfskim.cua.engine\",\"category\":\"timing\",\"threadID\":23905,\"senderImageUUID\":\"00F60C85-1DA9-31B1-B79B-4FD58234181F\",\"signpostType\":\"end\",\"backtrace\":{\"frames\":[{\"imageOffset\":1161108,\"imageUUID\":\"00F60C85-1DA9-31B1-B79B-4FD58234181F\"}]},\"bootUUID\":\"B70CDB50-4B61-48D8-B0C3-F054A7E07FA3\",\"processImagePath\":\"\\/Users\\/runner\\/work\\/_temp\\/qual-build-fix\\/arm64-apple-macosx\\/release\\/cua-engine\",\"senderImagePath\":\"\\/Users\\/runner\\/work\\/_temp\\/qual-build-fix\\/arm64-apple-macosx\\/release\\/cua-engine\",\"timestamp\":\"2026-11-17 10:25:38.457814+0000\",\"signpostName\":\"prologue.chromiumReady\",\"machTimestamp\":6551893661,\"eventMessage\":\"\",\"processImageUUID\":\"00F60C85-1DA9-31B1-B79B-4FD58234181F\",\"traceID\":6471315305431558,\"processID\":5540,\"senderProgramCounter\":1161108,\"parentActivityIdentifier\":0}",
+  "{\"timezoneName\":\"\",\"eventType\":\"signpostEvent\",\"signpostID\":8,\"signpostScope\":\"process\",\"source\":null,\"formatString\":\"\",\"userID\":501,\"activityIdentifier\":0,\"subsystem\":\"io.github.ssfskim.cua.engine\",\"category\":\"timing\",\"threadID\":23905,\"senderImageUUID\":\"00F60C85-1DA9-31B1-B79B-4FD58234181F\",\"signpostType\":\"end\",\"backtrace\":{\"frames\":[{\"imageOffset\":834476,\"imageUUID\":\"00F60C85-1DA9-31B1-B79B-4FD58234181F\"}]},\"bootUUID\":\"B70CDB50-4B61-48D8-B0C3-F054A7E07FA3\",\"processImagePath\":\"\\/Users\\/runner\\/work\\/_temp\\/qual-build-fix\\/arm64-apple-macosx\\/release\\/cua-engine\",\"senderImagePath\":\"\\/Users\\/runner\\/work\\/_temp\\/qual-build-fix\\/arm64-apple-macosx\\/release\\/cua-engine\",\"timestamp\":\"2026-11-17 10:25:38.553056+0000\",\"signpostName\":\"request\",\"machTimestamp\":6554179460,\"eventMessage\":\"\",\"processImageUUID\":\"00F60C85-1DA9-31B1-B79B-4FD58234181F\",\"traceID\":6471315305431558,\"processID\":5540,\"senderProgramCounter\":834476,\"parentActivityIdentifier\":0}",
+  "{\"timezoneName\":\"\",\"eventType\":\"signpostEvent\",\"signpostID\":43,\"signpostScope\":\"process\",\"source\":null,\"formatString\":\"%{public}s\",\"userID\":501,\"activityIdentifier\":0,\"subsystem\":\"io.github.ssfskim.cua.engine\",\"category\":\"timing\",\"threadID\":23905,\"senderImageUUID\":\"00F60C85-1DA9-31B1-B79B-4FD58234181F\",\"signpostType\":\"begin\",\"backtrace\":{\"frames\":[{\"imageOffset\":819412,\"imageUUID\":\"00F60C85-1DA9-31B1-B79B-4FD58234181F\"}]},\"bootUUID\":\"B70CDB50-4B61-48D8-B0C3-F054A7E07FA3\",\"processImagePath\":\"\\/Users\\/runner\\/work\\/_temp\\/qual-build-fix\\/arm64-apple-macosx\\/release\\/cua-engine\",\"senderImagePath\":\"\\/Users\\/runner\\/work\\/_temp\\/qual-build-fix\\/arm64-apple-macosx\\/release\\/cua-engine\",\"timestamp\":\"2026-11-17 10:25:41.606999+0000\",\"signpostName\":\"request\",\"machTimestamp\":6627474083,\"eventMessage\":\"click\",\"processImageUUID\":\"00F60C85-1DA9-31B1-B79B-4FD58234181F\",\"traceID\":6850861565378822,\"processID\":5540,\"senderProgramCounter\":819412,\"parentActivityIdentifier\":0}",
+  "{\"timezoneName\":\"\",\"eventType\":\"signpostEvent\",\"signpostID\":48,\"signpostScope\":\"process\",\"source\":null,\"formatString\":\"\",\"userID\":501,\"activityIdentifier\":0,\"subsystem\":\"io.github.ssfskim.cua.engine\",\"category\":\"timing\",\"threadID\":23905,\"senderImageUUID\":\"00F60C85-1DA9-31B1-B79B-4FD58234181F\",\"signpostType\":\"begin\",\"backtrace\":{\"frames\":[{\"imageOffset\":1160532,\"imageUUID\":\"00F60C85-1DA9-31B1-B79B-4FD58234181F\"}]},\"bootUUID\":\"B70CDB50-4B61-48D8-B0C3-F054A7E07FA3\",\"processImagePath\":\"\\/Users\\/runner\\/work\\/_temp\\/qual-build-fix\\/arm64-apple-macosx\\/release\\/cua-engine\",\"senderImagePath\":\"\\/Users\\/runner\\/work\\/_temp\\/qual-build-fix\\/arm64-apple-macosx\\/release\\/cua-engine\",\"timestamp\":\"2026-11-17 10:25:41.608066+0000\",\"signpostName\":\"prologue.chromiumReady\",\"machTimestamp\":6627499708,\"eventMessage\":\"\",\"processImageUUID\":\"00F60C85-1DA9-31B1-B79B-4FD58234181F\",\"traceID\":6471315305431302,\"processID\":5540,\"senderProgramCounter\":1160532,\"parentActivityIdentifier\":0}",
+  "{\"timezoneName\":\"\",\"eventType\":\"signpostEvent\",\"signpostID\":48,\"signpostScope\":\"process\",\"source\":null,\"formatString\":\"\",\"userID\":501,\"activityIdentifier\":0,\"subsystem\":\"io.github.ssfskim.cua.engine\",\"category\":\"timing\",\"threadID\":23905,\"senderImageUUID\":\"00F60C85-1DA9-31B1-B79B-4FD58234181F\",\"signpostType\":\"end\",\"backtrace\":{\"frames\":[{\"imageOffset\":1161108,\"imageUUID\":\"00F60C85-1DA9-31B1-B79B-4FD58234181F\"}]},\"bootUUID\":\"B70CDB50-4B61-48D8-B0C3-F054A7E07FA3\",\"processImagePath\":\"\\/Users\\/runner\\/work\\/_temp\\/qual-build-fix\\/arm64-apple-macosx\\/release\\/cua-engine\",\"senderImagePath\":\"\\/Users\\/runner\\/work\\/_temp\\/qual-build-fix\\/arm64-apple-macosx\\/release\\/cua-engine\",\"timestamp\":\"2026-11-17 10:25:41.608069+0000\",\"signpostName\":\"prologue.chromiumReady\",\"machTimestamp\":6627499767,\"eventMessage\":\"\",\"processImageUUID\":\"00F60C85-1DA9-31B1-B79B-4FD58234181F\",\"traceID\":6471315305431558,\"processID\":5540,\"senderProgramCounter\":1161108,\"parentActivityIdentifier\":0}",
+  "{\"timezoneName\":\"\",\"eventType\":\"signpostEvent\",\"signpostID\":43,\"signpostScope\":\"process\",\"source\":null,\"formatString\":\"\",\"userID\":501,\"activityIdentifier\":0,\"subsystem\":\"io.github.ssfskim.cua.engine\",\"category\":\"timing\",\"threadID\":23905,\"senderImageUUID\":\"00F60C85-1DA9-31B1-B79B-4FD58234181F\",\"signpostType\":\"end\",\"backtrace\":{\"frames\":[{\"imageOffset\":834476,\"imageUUID\":\"00F60C85-1DA9-31B1-B79B-4FD58234181F\"}]},\"bootUUID\":\"B70CDB50-4B61-48D8-B0C3-F054A7E07FA3\",\"processImagePath\":\"\\/Users\\/runner\\/work\\/_temp\\/qual-build-fix\\/arm64-apple-macosx\\/release\\/cua-engine\",\"senderImagePath\":\"\\/Users\\/runner\\/work\\/_temp\\/qual-build-fix\\/arm64-apple-macosx\\/release\\/cua-engine\",\"timestamp\":\"2026-11-17 10:25:41.771064+0000\",\"signpostName\":\"request\",\"machTimestamp\":6631411649,\"eventMessage\":\"\",\"processImageUUID\":\"00F60C85-1DA9-31B1-B79B-4FD58234181F\",\"traceID\":6471315305431558,\"processID\":5540,\"senderProgramCounter\":834476,\"parentActivityIdentifier\":0}",
+];
+const HOSTED_CALLS = [
+  {label: 'cold', method: 'click', startedAt: 1794911136556, endedAt: 1794911138684},
+  {label: 'warm', method: 'click', startedAt: 1794911141739, endedAt: 1794911141904},
+];
+
+test('the hosted run\'s real records give the cold wait and the warm wait although the client\'s clock is 129 ms off the log\'s', () => {
+  const body = ['{"count":0,"finished":1}', ...HOSTED_FIX_5540, '{"count":12,"finished":1}'].join('\n') + '\n';
+  const out = attachWaits(HOSTED_CALLS, body, {enginePid: 5540, engineSide: 'fix'});
+  assert.deepEqual(out.map(a => [a.label, a.waitMs, a.waitEvidence]), [['cold', 2029.243, 'signpost'], ['warm', 0.003, 'signpost']]);
+  assert.deepEqual(out.map(a => [a.waitSlackMs, a.waitClockOffsetMs]), [[1.842, 129.1], [0.935, 132]]);
+  assert.deepEqual(out.map(a => a.waitRequest.durationMs), [2126.158, 164.065]);
+  assert.equal(attachWaits(HOSTED_CALLS, body, {enginePid: 5541, engineSide: 'fix'})[0].waitWhy, 'no-request', 'another pid reads none of it');
+  assert.deepEqual(attachWaits(HOSTED_CALLS, body, {enginePid: 5540, engineSide: 'main'}).map(a => a.waitWhy), ['main-emitted-gate', 'main-emitted-gate']);
+});
+
+test('the gate inside the call\'s request gives the wait as its own wall difference, whatever the clock offset to the client', () => {
+  const [a] = fix([call('click', 1000, 3130, {tag: 'kept'})], '{"count":0,"finished":1}', REAL, req(1, 1000, 3130, 'click'), gate(17, 1002.5, 1002.5 + 2029.243), line('event', 18, 1500));
   assert.equal(a.waitEvidence, 'signpost');
-  assert.equal(a.waitMs, 1873.412);
+  assert.equal(a.waitMs, 2029.243);
   assert.equal(a.tag, 'kept', 'the call stays as it was, annotated');
-  assert.deepEqual(a.waitIntervals.map(i => [i.signpostID, i.durationMs]), [['17', 1873.412]]);
-  assert.notEqual(a.waitMs, 1900, 'not the RPC subtraction');
+  assert.deepEqual(a.waitIntervals.map(i => [i.signpostID, i.durationMs]), [['17', 2029.243]]);
+  assert.equal(a.waitRequest.durationMs, 2130);
+  assert.equal(a.waitClockOffsetMs, 128, 'the offset between the clocks is reported, not hidden: the 129 ms skew less the rpc\'s lead, to the whole millisecond Date.now() gives');
   assert.equal(a.waitWhy, undefined);
 });
 
+test('another request\'s gate is not taken, calls need not come in order, and the offset may differ call to call', () => {
+  const lines = [req(1, 500, 900, 'get_app_state'), gate(2, 502, 502.01), req(3, 1000, 3130, 'click'), gate(4, 1002, 1002 + 2029.243), req(5, 4000, 4164, 'click'), gate(6, 4001, 4001.003)];
+  const cold = call('click', 1000, 3130, {skew: 129}), warm = call('click', 4000, 4164, {skew: 133});
+  assert.deepEqual(fix([warm, cold], lines).map(a => [a.waitMs, a.waitClockOffsetMs]), [[0.003, 132], [2029.243, 128]]);
+  const obs = fix([call('get_app_state', 500, 900)], lines)[0];
+  assert.deepEqual([obs.waitMs, obs.waitEvidence], [0.01, 'signpost'], 'a call of that method gets that request\'s gate');
+});
+
 test('a near-zero wait that was measured is a number, not missing and not an assumed zero', () => {
-  const [a] = fix([call(1000, 1040)], pairOf(5, 1010, 1010.021));
+  const [a] = fix([call('click', 1000, 1040)], req(1, 1000, 1040, 'click'), gate(5, 1010, 1010.021));
   assert.equal(a.waitEvidence, 'signpost');
   assert.equal(a.waitMs, 0.021);
 });
 
-test('another process\'s interval is not the engine\'s: a wrong pid alone leaves the call unknown, and with the right one beside it the right one is read', () => {
-  const [alone] = fix([call(1000, 2900)], pairOf(9, 1010, 2500, {pid: 777}));
-  assert.deepEqual([alone.waitMs, alone.waitEvidence, alone.waitWhy], [null, 'missing', 'no-interval']);
-  const [both] = fix([call(1000, 2900)], pairOf(9, 1010, 2500, {pid: 777}), pairOf(9, 1020, 1030, {pid: ENGINE}));
-  assert.deepEqual([both.waitMs, both.waitEvidence], [10, 'signpost'], 'the same id under two processes pairs apart');
-  assert.deepEqual(waitIntervals(text(pairOf(9, 1010, 2500, {pid: 777})), {enginePid: ENGINE}), {pairs: [], fragments: [], unreadable: 0, otherProcess: 2});
+test('another process\'s intervals are not the engine\'s: a wrong pid alone leaves the call unknown, and with the right one beside it the right one is read', () => {
+  const other = [req(1, 1000, 3130, 'click', {pid: 777}), gate(9, 1010, 2500, {pid: 777})];
+  const [alone] = fix([call('click', 1000, 3130)], other);
+  assert.deepEqual(verdicts([alone]), [[null, 'missing', 'no-request']]);
+  const [both] = fix([call('click', 1000, 3130)], other, req(1, 1000, 3130, 'click'), gate(9, 1020, 1030));
+  assert.deepEqual([both.waitMs, both.waitEvidence], [10, 'signpost'], 'the same ids under two processes pair apart');
+  const read = readIntervals(text(other), {enginePid: ENGINE});
+  assert.deepEqual([read.wait.pairs, read.request.pairs, read.otherProcess], [[], [], 4]);
 });
 
-test('an interval without its begin or end, or ending before it began, is incomplete and unknown, never zero', () => {
-  for (const [name, lines] of [['begin only', [line('begin', 3, 1010)]], ['end only', [line('end', 3, 1500)]], ['end before begin', pairOf(3, 1500, 1010)]]) {
-    const [a] = fix([call(1000, 2900)], lines);
-    assert.deepEqual([a.waitMs, a.waitEvidence, a.waitWhy], [null, 'missing', 'incomplete'], name);
+test('a gate without its begin or end, or ending before it began, inside the request is incomplete and unknown, never zero', () => {
+  for (const [name, lines] of [['begin only', [line('begin', 3, 1010)]], ['end only', [line('end', 3, 1500)]], ['end before begin', gate(3, 1500, 1010)]]) {
+    const [a] = fix([call('click', 1000, 3130)], req(1, 1000, 3130, 'click'), lines);
+    assert.deepEqual(verdicts([a]), [[null, 'missing', 'incomplete']], name);
   }
-  const [straddle] = fix([call(1000, 2900)], pairOf(3, 2890, 3050));
-  assert.deepEqual([straddle.waitMs, straddle.waitWhy, straddle.waitIntervals], [null, 'straddles-call', undefined], 'a pair that ends after the call is not its wait');
-  const [empty] = fix([call(1000, 2900)], '');
-  assert.deepEqual([empty.waitMs, empty.waitEvidence, empty.waitWhy], [null, 'missing', 'no-interval']);
+  const [straddle] = fix([call('click', 1000, 3130)], req(1, 1000, 3130, 'click'), gate(3, 3100, 3200));
+  assert.deepEqual([straddle.waitMs, straddle.waitWhy, straddle.waitIntervals], [null, 'straddles-request', undefined], 'a pair that ends after the request is not its wait');
+  const [empty] = fix([call('click', 1000, 3130)], req(1, 1000, 3130, 'click'));
+  assert.deepEqual(verdicts([empty]), [[null, 'missing', 'no-interval']]);
+  const [elsewhere] = fix([call('click', 1000, 3130)], req(1, 1000, 3130, 'click'), gate(3, 1100, 1200), req(2, 400, 600, 'get_app_state'), line('begin', 4, 500));
+  assert.deepEqual(verdicts([elsewhere]), [[100, 'signpost', undefined]], 'a stray begin in another request spoils that request only');
 });
 
-test('a truncated or malformed line that names the interval makes the fix\'s calls unknown; other malformed lines are skipped', () => {
+test('a request that did not complete, or that has no begin to name its method, leaves the calls of its method unknown', () => {
+  const unfinished = line('begin', 1, 1000, {name: REQUEST_SIGNPOST, message: 'click'});
+  assert.deepEqual(verdicts(fix([call('click', 1000, 3130)], unfinished, req(2, 1000, 3130, 'click'), gate(3, 1010, 1020))), [[null, 'missing', 'request-incomplete']]);
+  assert.deepEqual(verdicts(fix([call('click', 1000, 3130)], line('end', 1, 900, {name: REQUEST_SIGNPOST}), req(2, 1000, 3130, 'click'), gate(3, 1010, 1020))), [[null, 'missing', 'request-incomplete']]);
+  assert.deepEqual(verdicts(fix([call('click', 1000, 3130)], unfinished.replace('"click"', '"get_app_state"'), req(2, 1000, 3130, 'click'), gate(3, 1010, 1020))), [[10, 'signpost', undefined]], 'another method\'s does not');
+});
+
+test('a truncated or malformed line that names the gate makes the fix\'s calls unknown; other malformed lines are skipped', () => {
+  const base = [req(1, 1000, 3130, 'click'), gate(4, 1010, 1020)], c = () => [call('click', 1000, 3130)];
   const cut = line('begin', 3, 1010).slice(0, 200) + WAIT_SIGNPOST;
-  assert.equal(fix([call(1000, 2900)], pairOf(4, 1010, 1020), cut)[0].waitWhy, 'unreadable-signpost');
-  assert.deepEqual(fix([call(1000, 2900)], pairOf(4, 1010, 1020), '{"not json', 'plain text')[0].waitMs, 10);
-  const noId = line('begin', 4, 1010).replace('"signpostID":4,', '');
-  assert.equal(fix([call(1000, 2900)], pairOf(4, 1010, 1020), noId)[0].waitWhy, 'unreadable-signpost', 'a begin without an id cannot be paired');
-  const badStamp = line('end', 4, 1020).replace(/"timestamp":"[^"]*"/, '"timestamp":"yesterday"');
-  assert.equal(fix([call(1000, 2900)], line('begin', 4, 1010), badStamp)[0].waitWhy, 'unreadable-signpost');
+  assert.equal(fix(c(), base, cut)[0].waitWhy, 'unreadable-signpost');
+  assert.equal(fix(c(), base, '{"not json', 'plain text')[0].waitMs, 10);
+  assert.equal(fix(c(), base, line('begin', 4, 1010).replace('"signpostID":4,', ''))[0].waitWhy, 'unreadable-signpost', 'a begin without an id cannot be paired');
+  assert.equal(fix(c(), base, line('end', 4, 1020).replace(/"timestamp":"[^"]*"/, '"timestamp":"yesterday"'))[0].waitWhy, 'unreadable-signpost');
+  assert.equal(fix(c(), base, '{"signpostName":"request","oops')[0].waitWhy, 'unreadable-signpost', 'nor can a request line that is cut');
+  assert.equal(attachWaits(c(), text(base[0], '{"signpostName":"request","oops'), {enginePid: ENGINE, engineSide: 'main'})[0].waitEvidence, 'main-no-gate', 'main reads no request');
 });
 
-test('duplicates are unknown: a second begin or end under one id, or two clean pairs inside one call', () => {
-  const [dupBegin] = fix([call(1000, 2900)], pairOf(8, 1010, 1020), line('begin', 8, 1015));
-  assert.deepEqual([dupBegin.waitMs, dupBegin.waitEvidence, dupBegin.waitWhy], [null, 'missing', 'duplicate']);
-  const [dupEnd] = fix([call(1000, 2900)], pairOf(8, 1010, 1020), line('end', 8, 1025));
-  assert.equal(dupEnd.waitWhy, 'duplicate');
-  const [two] = fix([call(1000, 2900)], pairOf(8, 1010, 1020), pairOf(9, 1100, 1200));
+test('duplicates are unknown: a second begin or end under one id, or two clean gates inside one request', () => {
+  const base = req(1, 1000, 3130, 'click'), c = () => [call('click', 1000, 3130)];
+  assert.deepEqual(verdicts(fix(c(), base, gate(8, 1010, 1020), line('begin', 8, 1015))), [[null, 'missing', 'duplicate']]);
+  assert.equal(fix(c(), base, gate(8, 1010, 1020), line('end', 8, 1025))[0].waitWhy, 'duplicate');
+  const [two] = fix(c(), base, gate(8, 1010, 1020), gate(9, 1100, 1200));
   assert.deepEqual([two.waitMs, two.waitWhy, two.waitIntervals.map(i => i.durationMs)], [null, 'duplicate', [10, 100]], 'a request has one gate: two cannot both be its wait');
+  const dupRequest = fix(c(), base, req(1, 1000, 3130, 'click', {mach: 5}), gate(8, 1010, 1020));
+  assert.equal(dupRequest[0].waitWhy, 'request-incomplete', 'a second begin under a request\'s id spoils the request');
 });
 
 test('the same log record twice (overlapping reads) counts once, but a second record at another tick is a duplicate', () => {
-  const begin = line('begin', 8, 1010), end = line('end', 8, 1020);
-  assert.deepEqual(fix([call(1000, 2900)], begin, begin, end, end).map(a => [a.waitMs, a.waitEvidence]), [[10, 'signpost']]);
-  assert.equal(fix([call(1000, 2900)], begin, end, line('begin', 8, 1010, {mach: 5})).at(0).waitWhy, 'duplicate');
+  const [rb, re] = req(1, 1000, 3130, 'click'), [gb, ge] = gate(8, 1010, 1020);
+  assert.deepEqual(fix([call('click', 1000, 3130)], rb, rb, gb, gb, ge, re, ge, re).map(a => [a.waitMs, a.waitEvidence]), [[10, 'signpost']]);
+  assert.equal(fix([call('click', 1000, 3130)], rb, re, gb, ge, line('begin', 8, 1010, {mach: 5}))[0].waitWhy, 'duplicate');
 });
 
-test('two calls each take their own interval; a call with none stays unknown; a stray fragment between calls touches none', () => {
-  const calls = [call(1000, 1100), call(3000, 3200), call(5000, 5050), call(6000, 6100)];
-  const out = fix(calls, pairOf(1, 1010, 1060), pairOf(2, 3010, 3190), line('begin', 3, 4000), pairOf(4, 6010, 6020));
-  assert.deepEqual(out.map(a => [a.waitMs, a.waitEvidence, a.waitWhy]), [[50, 'signpost', undefined], [180, 'signpost', undefined], [null, 'missing', 'no-interval'], [10, 'signpost', undefined]]);
-  assert.deepEqual(out.map(a => a.startedAt), calls.map(c => c.startedAt));
-  const [a, b] = fix([call(1000, 1100), call(3000, 3200)], pairOf(1, 1010, 1060), line('begin', 3, 3050));
-  assert.deepEqual([a.waitMs, b.waitWhy], [50, 'incomplete'], 'a begin without an end inside a call spoils that call only');
+test('the request is the call\'s by method and order, checked: counts, overlap, and a duration that fits', () => {
+  const requests = [req(1, 1000, 3130, 'click'), gate(2, 1002, 3031), req(3, 4000, 4164, 'click'), gate(4, 4001, 4001.003)];
+  const cold = call('click', 1000, 3130), warm = call('click', 4000, 4164);
+  assert.deepEqual(fix([cold, warm], requests).map(a => a.waitMs), [2029, 0.003]);
+  assert.deepEqual(verdicts(fix([cold], requests)), [[null, 'missing', 'request-count-mismatch']], 'two requests, one call: which is it?');
+  assert.deepEqual(verdicts(fix([cold, warm, call('click', 6000, 6100)], requests)).map(v => v[2]), ['request-count-mismatch', 'request-count-mismatch', 'request-count-mismatch']);
+  assert.deepEqual(verdicts(fix([cold], '')), [[null, 'missing', 'no-request']]);
+  // Swapped durations: the order says the cold call is the first request, the first request is not the cold call's.
+  const swapped = fix([call('click', 4000, 4164), call('click', 1000, 3130)], req(1, 1000, 1164, 'click'), gate(2, 1001, 1001.003), req(3, 4000, 6130, 'click'), gate(4, 4001, 6030));
+  assert.deepEqual(swapped.map(a => [a.waitWhy, a.waitMs]), [['request-mismatch', null], ['request-mismatch', null]]);
+  assert.equal(swapped[0].waitSlackMs !== undefined && swapped[0].waitRequest !== undefined, true, 'the mismatch is shown');
+  // A request a little longer than its call by the clocks' allowance is still its call's: Date.now() truncates each end.
+  assert.equal(fix([{method: 'click', startedAt: T0 + 1129, endedAt: T0 + 1129 + 100}], req(1, 1000, 1100.9, 'click'), gate(2, 1010, 1020))[0].waitMs, 10);
+  assert.equal(fix([{method: 'click', startedAt: T0 + 1129, endedAt: T0 + 1129 + 100}], req(1, 1000, 1102, 'click'), gate(2, 1010, 1020))[0].waitWhy, 'request-mismatch');
+  // A request far shorter than its call is not its call's.
+  assert.equal(fix([{method: 'click', startedAt: T0, endedAt: T0 + 2000}], req(1, 1000, 1164, 'click'), gate(2, 1010, 1020))[0].waitWhy, 'request-mismatch');
+  assert.equal(attachWaits([{method: 'click', startedAt: T0, endedAt: T0 + 2000}], text(req(1, 1000, 1164, 'click'), gate(2, 1010, 1020)), {enginePid: ENGINE, engineSide: 'fix', maxRpcOverheadMs: 5000})[0].waitMs, 10, 'the bound is an option');
+  // Two calls of one method that overlap in the client's time cannot be told apart by order.
+  const overlapping = fix([call('click', 1000, 1100), call('click', 1050, 1150)], req(1, 1000, 1100, 'click'), gate(2, 1010, 1020), req(3, 1050, 1150, 'click'), gate(4, 1060, 1070));
+  assert.deepEqual(overlapping.map(a => a.waitWhy), ['ambiguous-call', 'ambiguous-call']);
 });
 
-test('a pair that two overlapping calls both contain belongs to neither', () => {
-  const out = fix([call(1000, 1100), call(1020, 1090), call(2000, 2100)], pairOf(1, 1030, 1050), pairOf(2, 2010, 2020));
-  assert.deepEqual(out.map(a => [a.waitMs, a.waitWhy]), [[null, 'ambiguous-call'], [null, 'ambiguous-call'], [10, undefined]]);
+test('calls of different methods take their own requests; a call without a method or times is invalid', () => {
+  const lines = [req(1, 1000, 3130, 'click'), gate(2, 1002, 3031), req(3, 3500, 5900, 'set_value'), gate(4, 3502, 5800)];
+  assert.deepEqual(fix([call('set_value', 3500, 5900), call('click', 1000, 3130)], lines).map(a => [a.method, a.waitMs]), [['set_value', 2298], ['click', 2029]]);
+  const invalid = fix([{startedAt: T0 + 1000, endedAt: T0 + 1100}, {method: 'click', startedAt: T0 + 1100, endedAt: T0 + 1000}, {method: 'click', startedAt: T0 + 1000}, null], lines);
+  assert.deepEqual(invalid.map(a => a.waitWhy), ['invalid-call', 'invalid-call', 'invalid-call', 'invalid-call']);
+  assert.equal(fix([call('click', 1000, 3130), {}], lines)[0].waitMs, 2029, 'one bad call does not spoil the others');
 });
 
-test('association is bounded at plus or minus 1 ms of the call\'s own clock', () => {
-  assert.equal(fix([call(1000, 1100)], pairOf(1, 999.2, 1100.9))[0].waitEvidence, 'signpost', 'inside the 1 ms the whole-millisecond clocks allow');
-  assert.equal(fix([call(1000, 1100)], pairOf(1, 998.4, 1050))[0].waitWhy, 'straddles-call');
-  assert.equal(fix([call(1000, 1100)], pairOf(1, 1050, 1101.5))[0].waitWhy, 'straddles-call');
-  const [wide] = attachWaits([call(1000, 1100)], text(pairOf(1, 995, 1050)), {enginePid: ENGINE, engineSide: 'fix', toleranceMs: 6});
-  assert.equal(wide.waitEvidence, 'signpost', 'the bound is an option, 1 ms by default');
+test('a gate that two requests both contain belongs to neither', () => {
+  const [a] = fix([call('click', 1000, 3130)], req(1, 1000, 3130, 'click'), req(2, 900, 3300, 'get_app_state'), gate(3, 1010, 1020));
+  assert.deepEqual([a.waitMs, a.waitWhy, a.waitIntervals.map(i => i.durationMs)], [null, 'ambiguous-request', [10]]);
 });
 
-test('64-bit signpost ids that a double cannot tell apart still pair each begin with its own end', () => {
-  const [x, y] = ['4611686018427387905', '4611686018427387906'];
+test('64-bit ids that a double cannot tell apart still pair each begin with its own end, gates and requests alike', () => {
+  const [x, y] = ['4611686018427387905', '4611686018427387906'], [p, q] = ['4611686018427387911', '4611686018427387912'];
   assert.equal(Number(x), Number(y), 'the premise: JSON.parse would merge these');
-  const out = fix([call(1000, 1100), call(2000, 2100)], line('begin', x, 1010), line('begin', y, 2010), line('end', y, 2030), line('end', x, 1070));
-  assert.deepEqual(out.map(a => [a.waitMs, a.waitEvidence, a.waitIntervals[0].signpostID]), [[60, 'signpost', x], [20, 'signpost', y]]);
+  const lines = [line('begin', p, 1000, {name: REQUEST_SIGNPOST, message: 'click'}), line('begin', q, 4000, {name: REQUEST_SIGNPOST, message: 'click'}),
+    line('begin', x, 1010), line('begin', y, 4010), line('end', y, 4030), line('end', x, 1070), line('end', q, 4164, {name: REQUEST_SIGNPOST}), line('end', p, 1100, {name: REQUEST_SIGNPOST})];
+  const out = fix([call('click', 1000, 1100), call('click', 4000, 4164)], lines);
+  assert.deepEqual(out.map(a => [a.waitMs, a.waitEvidence, a.waitIntervals[0].signpostID, a.waitRequest.signpostID]), [[60, 'signpost', x, p], [20, 'signpost', y, q]]);
 });
 
-test('main has no readiness gate: its calls are main-no-gate with a deliberate 0, with or without signposts; a gate seen on main\'s pid voids the call', () => {
-  const calls = [call(1000, 1100), call(3000, 3200)];
-  for (const body of ['', text(line('begin', 1, 1010, {name: 'request'}), REAL)]) {
+test('main has no readiness gate: its calls are main-no-gate with a deliberate 0, with or without signposts; a gate seen on main\'s pid voids them', () => {
+  const calls = [call('click', 1000, 1100), call('click', 3000, 3200)];
+  for (const body of ['', text(req(1, 1000, 1100, 'click'), REAL)]) {
     const out = attachWaits(calls, body, {enginePid: ENGINE, engineSide: 'main'});
     assert.deepEqual(out.map(a => [a.waitMs, a.waitEvidence, a.waitIntervals]), [[0, 'main-no-gate', undefined], [0, 'main-no-gate', undefined]]);
   }
-  const odd = attachWaits(calls, text(pairOf(1, 3010, 3050)), {enginePid: ENGINE, engineSide: 'main'});
-  assert.deepEqual(odd.map(a => [a.waitMs, a.waitEvidence, a.waitWhy]), [[0, 'main-no-gate', undefined], [null, 'missing', 'main-emitted-gate']]);
-  assert.equal(attachWaits(calls, text(pairOf(1, 3010, 3050, {pid: 9})), {enginePid: ENGINE, engineSide: 'main'})[1].waitEvidence, 'main-no-gate', 'another process\'s is not main\'s');
+  const odd = attachWaits(calls, text(gate(1, 3010, 3050)), {enginePid: ENGINE, engineSide: 'main'});
+  assert.deepEqual(verdicts(odd), [[null, 'missing', 'main-emitted-gate'], [null, 'missing', 'main-emitted-gate']], 'the run was not main');
+  assert.equal(attachWaits(calls, text(gate(1, 3010, 3050, {pid: 9})), {enginePid: ENGINE, engineSide: 'main'})[1].waitEvidence, 'main-no-gate', 'another process\'s is not main\'s');
+  assert.deepEqual(attachWaits([{startedAt: 1}, null], '', {enginePid: ENGINE, engineSide: 'main'}).map(a => a.waitEvidence), ['main-no-gate', 'main-no-gate']);
 });
 
-test('a call without usable times is unknown on the fix; it is still main-no-gate on main', () => {
-  const calls = [{startedAt: T0 + 1000}, {startedAt: T0 + 1100, endedAt: T0 + 1000}, null];
-  assert.deepEqual(fix(calls, pairOf(1, 1010, 1020)).map(a => [a.waitMs, a.waitWhy]), [[null, 'invalid-call'], [null, 'invalid-call'], [null, 'invalid-call']]);
-  assert.deepEqual(attachWaits(calls, '', {enginePid: ENGINE, engineSide: 'main'}).map(a => a.waitEvidence), ['main-no-gate', 'main-no-gate', 'main-no-gate']);
-});
-
-test('the inputs are checked at the boundary and not mutated', () => {
-  const calls = [call(1000, 1100)], before = JSON.stringify(calls);
+test('rescoring a row drops the verdict an earlier attach left on it, and the inputs are checked at the boundary and not mutated', () => {
+  const calls = [call('click', 1000, 3130)], before = JSON.stringify(calls);
+  const first = fix(calls, req(1, 1000, 3130, 'click'));
+  assert.equal(first[0].waitWhy, 'no-interval');
+  const again = fix(first, req(1, 1000, 3130, 'click'), gate(2, 1010, 1020));
+  assert.deepEqual([again[0].waitMs, again[0].waitEvidence, 'waitWhy' in again[0]], [10, 'signpost', false]);
+  const asMain = attachWaits(again, '', {enginePid: ENGINE, engineSide: 'main'});
+  assert.deepEqual(['waitWhy' in asMain[0], 'waitRequest' in asMain[0], 'waitIntervals' in asMain[0], asMain[0].waitMs], [false, false, false, 0]);
+  assert.equal(JSON.stringify(calls), before);
   assert.throws(() => attachWaits(calls, '', {enginePid: ENGINE, engineSide: 'both'}), /engineSide/);
   assert.throws(() => attachWaits(calls, '', {enginePid: 0, engineSide: 'fix'}), /enginePid/);
   assert.throws(() => attachWaits(calls, '', {engineSide: 'fix'}), /enginePid/);
   assert.throws(() => attachWaits('calls', '', {enginePid: ENGINE, engineSide: 'fix'}), /calls/);
-  fix(calls, pairOf(1, 1010, 1020));
-  assert.equal(JSON.stringify(calls), before);
 });
 
-test('the capture reads the engine window once, from the earliest start to the latest end, and a failed read throws', async () => {
+test('the capture reads the engine window once, from the earliest start to the latest end padded for the clock offset, and a failed read throws', async () => {
   const seen = [];
-  const raw = await captureWaitSignposts([call(2000, 2100), {startedAt: 'x'}, call(1000, 1500), call(3000, 4000)], {read: async (a, b) => { seen.push([+a, +b]); return 'RAW'; }});
+  const raw = await captureWaitSignposts([call('click', 2000, 2100), {startedAt: 'x'}, call('click', 1000, 1500), call('click', 3000, 4000)], {read: async (a, b) => { seen.push([+a, +b]); return 'RAW'; }});
   assert.equal(raw, 'RAW');
-  assert.deepEqual(seen, [[T0 + 1000, T0 + 4000]]);
+  const starts = [Math.floor(T0 + 1000 + SKEW - 0.6), Math.ceil(T0 + 4000 + SKEW + 0.9)];
+  assert.deepEqual(seen, [[starts[0] - 4000, starts[1] + 4000]]);
+  await captureWaitSignposts([{startedAt: 10, endedAt: 20}], {padMs: 0, read: async (a, b) => { assert.deepEqual([+a, +b], [10, 20]); return ''; }});
   assert.equal(await captureWaitSignposts([{startedAt: 1}], {read: async () => assert.fail('no window, no read')}), '');
-  await assert.rejects(captureWaitSignposts([call(1, 2)], {read: async () => { throw new Error('log show timed out'); }}), /timed out/);
+  await assert.rejects(captureWaitSignposts([call('click', 1, 2)], {read: async () => { throw new Error('log show timed out'); }}), /timed out/);
 });

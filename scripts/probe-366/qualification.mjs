@@ -19,6 +19,7 @@ import {startCpu2,cpuUsageBetween} from './qualification-load.mjs';
 if(process.env.RUNNER_ENVIRONMENT!=='github-hosted')throw Error('hosted runners only');
 const arg=n=>{const i=process.argv.indexOf('--'+n);return i<0?undefined:process.argv[i+1];};
 const OUT=resolve(arg('out')),browser=arg('browser'),smoke=arg('smoke')==='true',TOOL=arg('tool');
+const diagnostic=arg('diagnostic')==='true';
 const engines={main:arg('main-engine'),fix:arg('fix-engine')},refs={main:arg('main-ref'),fix:arg('fix-ref')};
 const dir=dirname(fileURLToPath(import.meta.url)),fixture=join(dir,'fixture'),electron=browser.startsWith('electron'),start=Date.now();
 const sleep=ms=>new Promise(ok=>setTimeout(ok,Math.max(0,ms)));
@@ -42,8 +43,8 @@ createInterface({input:helper.stdout}).on('line',line=>{const w=waiters.shift();
 function ask(q){return new Promise((ok,no)=>{const w={ok,no,timer:setTimeout(()=>no(Error('native helper timeout')),15000)};waiters.push(w);helper.stdin.write(JSON.stringify(q)+'\n');});}
 async function front(pid,activate=true){const r=await ask({op:'front',pid,activate});if(!r.ok||r.frontmostPid!==pid)throw Error('frontmost not verified');return r;}
 async function stop(child){if(!child||child.exitCode!==null||child.signalCode!==null)return true;child.kill('SIGTERM');try{await until(()=>child.exitCode!==null||child.signalCode!==null,5000);return true;}catch{child.kill('SIGKILL');try{await until(()=>child.exitCode!==null||child.signalCode!==null,2000);return true;}catch{return false;}}}
-const cells=qualificationPlan({browser,smoke}),config={schema:1,experiment:'real-engine-qualification',browser,smoke,refs,kit:process.env.GITHUB_SHA,image:process.env.ImageVersion,cells,startedAt:start,
- engine:'unmodified source builds; ordinary snapshot element tokens; no probe gating or forced routes',waitEvidence:'post-trial log show of native prologue.chromiumReady interval',postholdIdleMs:31500,effectWindowMs:3000,load:'hosted parity cpu:2; worker CPU-time deltas measured'};
+const cells=qualificationPlan({browser,smoke}).filter(c=>!diagnostic||(c.group==='value'&&c.engineSide==='fix'&&c.rep===0)),config={schema:2,experiment:diagnostic?'real-engine-cache-diagnostic':'real-engine-qualification',browser,smoke,diagnostic,refs,kit:process.env.GITHUB_SHA,image:process.env.ImageVersion,cells,startedAt:start,
+ engine:'unmodified source builds; ordinary snapshot element tokens; no probe gating or forced routes',waitEvidence:'post-trial log show; gate inside native request, matched to RPC by method/order; not wall-clock joining',postholdIdleMs:31500,effectWindowMs:3000,load:'hosted parity cpu:2; worker CPU-time deltas measured'};
 writeFileSync(join(OUT,'config.json'),JSON.stringify(config,null,2));
 let cover,coverPid,target,engine,load,w;const rows=[];
 async function rpc(pid,method,args={}){const startedAt=Date.now(),raw=await w.execute(method,{pid,...args});return {method,startedAt,endedAt:Date.now(),raw};}
@@ -52,7 +53,7 @@ function token(observation,kind){const n=observation.raw.result?.nodes?.find(n=>
 async function measured(row,label,pid,element,method='click'){
  const before=await command({op:'read'}),native=await ask({op:'status',pid,coverPid});
  const call={label,method,before,beforeGeometry:native.geometry,samples:[],owner:row.owner,sideEffects:{ownerLost:false}};row.calls.push(call);
- const args={element};if(method==='set_value'){call.expectedValue='qual-'+row.appLaunchId.slice(0,8);args.value=call.expectedValue;}
+ const args={element};if(method==='set_value'){call.expectedValue='qual-'+row.appLaunchId.slice(0,8)+'-'+label;args.value=call.expectedValue;}
  // Side effects are finalized even when a later step throws, so native harm already sampled is never lost.
  return withFinalEffects(call,{owner:row.owner,coverPid},async()=>{
   // The cover must still be frontmost right before this RPC (never reactivated here); otherwise nothing is dispatched.
@@ -88,7 +89,25 @@ try{
    engine=spawn(engines[cell.engineSide],[],{env:{...process.env,HOME:home,CUA_ENGINE_SOCKET:socket},stdio:['ignore','ignore','pipe']});row.enginePid=engine.pid;row.engineRef=refs[cell.engineSide];engine.stderr.on('data',d=>appendFileSync(join(OUT,'engine-stderr.txt'),row.appLaunchId+' '+d));
    await until(()=>existsSync(socket));w=await Wire.connect(socket);const ping=await w.call('ping',{clientApiVersion:'cua-engine-1',desktop:'shared'});if(ping.error)throw Error('engine ping '+JSON.stringify(ping));
    await front(coverPid);await sleep(250);const observation=await observe(row,pid),element=token(observation,cell.group==='value'?'value':'press');
-   if(cell.group==='value')await measured(row,'value',pid,element,'set_value');
+   if(diagnostic){
+    row.cachedEarly=await ask({op:'cache-diagnostic',pid});
+    await sleep(observation.endedAt+2600-Date.now());
+    row.modeOnlyCompare=await ask({op:'compare-diagnostic',pid});
+   }
+   if(cell.group==='value'){
+    await measured(row,'value',pid,element,'set_value');
+    if(diagnostic){
+     row.cachedLate=await ask({op:'compare-diagnostic',pid});
+     row.freshObservation=await observe(row,pid);
+     row.completeCache=await ask({op:'cache-diagnostic',pid,cacheName:'complete'});
+     await measured(row,'fresh-value',pid,token(row.freshObservation,'value'),'set_value');
+     row.afterFreshValue=await ask({op:'compare-diagnostic',pid,cacheName:'complete'});
+     row.freshClickObservation=await observe(row,pid);
+     row.clickCache=await ask({op:'cache-diagnostic',pid,cacheName:'click'});
+     await measured(row,'fresh-click',pid,token(row.freshClickObservation,'press'));
+     row.afterFreshClick=await ask({op:'compare-diagnostic',pid,cacheName:'click'});
+    }
+   }
    else {
     const first=await measured(row,cell.group==='load'?'loaded':'cold',pid,element);
     if(cell.group==='cold'&&cell.engineSide==='fix')await measured(row,'warm',pid,element);
@@ -105,7 +124,7 @@ try{
    row.profileCleanup=row.targetStopped&&row.engineStopped?removeProfile(profile):{attempted:false,ok:null};
    if(row.enginePid){
     await sleep(1000);
-    try{const text=await readEngineWindow(new Date(row.startedAt),new Date());appendFileSync(join(OUT,'signposts.ndjson'),text);const attached=attachWaits(row.calls,text,{enginePid:row.enginePid,engineSide:row.engineSide});if(Array.isArray(attached))row.calls=attached;}
+    try{const text=await readEngineWindow(new Date(row.startedAt-5000),new Date(Date.now()+5000));appendFileSync(join(OUT,'signposts.ndjson'),text);const attached=attachWaits(row.calls,text,{enginePid:row.enginePid,engineSide:row.engineSide});if(Array.isArray(attached))row.calls=attached;}
     catch(e){row.signpostError=String(e);for(const c of row.calls){c.waitMs=null;c.waitEvidence='missing';}}
    }
    row.endedAt=Date.now();rows.push(row);appendFileSync(join(OUT,'rows.jsonl'),JSON.stringify(row)+'\n');writeFileSync(join(OUT,'progress.json'),JSON.stringify({complete:rows.length,planned:cells.length,last:row.id}));
@@ -113,6 +132,6 @@ try{
    if(!row.targetStopped||!row.engineStopped)throw Error('owned process failed to stop');await sleep(1000);
   }
  }
- writeFileSync(join(OUT,'summary.json'),JSON.stringify(qualificationSummarize(rows),null,2));const coverage=qualificationCoverage(rows,{browser,smoke});writeFileSync(join(OUT,'coverage.json'),JSON.stringify(coverage,null,2));if(!coverage.ok)process.exitCode=1;
+ writeFileSync(join(OUT,'summary.json'),JSON.stringify(diagnostic?{diagnostic:true,rows:rows.length,problems:rows.filter(r=>r.problem).map(r=>r.problem)}:qualificationSummarize(rows),null,2));const coverage=diagnostic?{ok:rows.length===cells.length&&rows.every(r=>r.valid),diagnostic:true,rows:rows.length,expected:cells.length}:qualificationCoverage(rows,{browser,smoke});writeFileSync(join(OUT,'coverage.json'),JSON.stringify(coverage,null,2));if(!coverage.ok)process.exitCode=1;
 }catch(e){writeFileSync(join(OUT,'fatal.json'),JSON.stringify({error:String(e.stack??e),complete:rows.length,planned:cells.length},null,2));throw e;}
 finally{await stop(target);await stop(engine);if(load)await load.stop();await stop(cover);helper.kill();transport.close();server.closeAllConnections();server.close();}

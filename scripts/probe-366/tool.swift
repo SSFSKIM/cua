@@ -112,6 +112,36 @@ func statusGeometry(_ pid: pid_t, wanted: Int?) -> [String:Any] {
          "screenFrame":wireRect(CGDisplayBounds(CGMainDisplayID())),
          "windows":owned.map { ["id":$0[kCGWindowNumber as String] as Any? ?? NSNull(),"bounds":$0[kCGWindowBounds as String] as Any? ?? NSNull()] }]
 }
+// Separate diagnostic-only cache: minimal role/name lookup, never used by qualification actions.
+var diagnosticCache: [String:Controls] = [:]
+func diagnosticControls(_ pid: pid_t) throws -> Controls {
+ guard let w = window(pid) else { throw NSError(domain:"diagnostic window missing",code:10) }
+ var queue=[w], i=0, seen=Set<CFHashCode>(), button: AXUIElement?, field: AXUIElement?
+ while i < queue.count && i < 500 {
+  let e=queue[i];i += 1;if !seen.insert(CFHash(e)).inserted { continue }
+  AXUIElementSetMessagingTimeout(e,0.2)
+  let role=text(e,kAXRoleAttribute)
+  if role == kAXButtonRole || role == kAXTextFieldRole {
+   let names=[text(e,kAXTitleAttribute),text(e,kAXDescriptionAttribute)]
+   if role == kAXButtonRole && names.contains("Run probe button") { button=e }
+   if role == kAXTextFieldRole && names.contains("Probe search") { field=e }
+  }
+  if let button, let field { return Controls(window:w,button:button,field:field) }
+  queue += (attr(e,kAXChildrenAttribute) as? [AXUIElement]) ?? []
+ }
+ throw NSError(domain:"diagnostic owned controls missing",code:11)
+}
+func diagnosticElement(_ e: AXUIElement) -> [String:Any] {
+ var values: [String:Any]=[:]
+ for name in [kAXRoleAttribute,kAXTitleAttribute,kAXDescriptionAttribute,kAXIdentifierAttribute,"AXDOMIdentifier",kAXPlaceholderValueAttribute,kAXValueAttribute,kAXFocusedAttribute] {
+  let (v,error)=copy(e,name)
+  let value: Any = (v as? String) as Any? ?? (v as? NSNumber) as Any? ?? NSNull()
+  values[name] = ["error":error.rawValue,"value":value]
+ }
+ var actions: CFArray?;let error=AXUIElementCopyActionNames(e,&actions);var pid: pid_t=0;AXUIElementGetPid(e,&pid)
+ return ["hash":CFHash(e),"pid":pid,"attributes":values,"actions":(actions as? [String]) as Any? ?? NSNull(),"actionsError":error.rawValue]
+}
+func diagnosticWire(_ c: Controls) -> [String:Any] { ["button":diagnosticElement(c.button),"field":diagnosticElement(c.field)] }
 func emit(_ v: [String: Any]) {
  if let data = try? JSONSerialization.data(withJSONObject: v, options: [.sortedKeys]), let s = String(data:data,encoding:.utf8) { print(s); fflush(stdout) }
 }
@@ -135,7 +165,15 @@ if CommandLine.arguments.contains("--cover") {
   } else if op == "title" { r["title"] = window(pid).map { text($0,kAXTitleAttribute) } as Any? ?? NSNull() }
   else if op == "bind" { _ = try bind(pid); r["ax"] = read(pid); r["geometry"] = geometry(pid) }
   else if op == "read" { r["ax"] = read(pid); if q["geometry"] as? Bool == true { r["geometry"] = geometry(pid) } }
-  else if op == "forget" { bound.removeValue(forKey:pid); r["ok"] = true }
+  else if op == "cache-diagnostic" { let c=try diagnosticControls(pid);let key=String(pid)+":"+(q["cacheName"] as? String ?? "early");diagnosticCache[key]=c;r["cached"]=diagnosticWire(c) }
+  else if op == "compare-diagnostic" {
+   let key=String(pid)+":"+(q["cacheName"] as? String ?? "early")
+   guard let cached=diagnosticCache[key] else { throw NSError(domain:"diagnostic cache missing",code:12) }
+   r["cached"]=diagnosticWire(cached)
+   do { let fresh=try diagnosticControls(pid);r["fresh"]=diagnosticWire(fresh);r["buttonEqual"]=CFEqual(cached.button,fresh.button);r["fieldEqual"]=CFEqual(cached.field,fresh.field) }
+   catch { r["freshError"]=String(describing:error) }
+  }
+  else if op == "forget" { bound.removeValue(forKey:pid); diagnosticCache = diagnosticCache.filter { !$0.key.hasPrefix(String(pid)+":") }; r["ok"] = true }
   else if op == "status" { r["geometry"] = statusGeometry(pid,wanted:(q["windowID"] as? NSNumber)?.intValue) }
   else if op.hasPrefix("raw-") {
    guard let c = bound[pid] else { throw NSError(domain:"bind first",code:3) }

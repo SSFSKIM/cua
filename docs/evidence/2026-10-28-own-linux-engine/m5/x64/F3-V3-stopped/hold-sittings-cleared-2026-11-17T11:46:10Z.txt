@@ -1,0 +1,7 @@
+cleared by the controller (session linux171), on the design session's ruling 773 (sminos 1ea561bc:773), which applies 749's proof standard as 750 did
+proof: /Users/new/.local/share/cua-171/task89/f3-v3-flag-proof.txt (by v5-flag-proof.py), from /Users/new/.local/share/cua-171/m5/f3-out-x64/V3.development-run/wrap-summary.json (processes) and flags.jsonl
+finding: the flagged peer /tmp/.X11-unix/X40 was the run's own live audit proxy (xtrace pid 1371679, ppid 1371630 the harness, -D :40, seen 0.565-2182.497 s); the flag came at 2180.356 s; its empty peer list was xtrace's accept queue, the same race as V5's first attempt (749/750); a guard false stop that failed closed
+checked before clearing: no cua-engine or sky_linux process alive; /tmp/.X11-unix holds X0 only; the pointer restored to 142,130; owner-watch 212 checks changed=0 (T5's report)
+the hold's text was:
+2026-11-17T11:42:58.200Z the :0 sitting /Users/new/.local/share/cua-171/m5/f3-out-x64/V3.development-run is not all-clear: wrap71 flagged 1 reach into the person's session and 0 decoy connections; the harness's terminal row (end) is missing, so its audit of the windows it did not open is unshown
+next (773): F3's V3 is not rerun; wrap71 is fixed narrowly before T7 (task 91), giving H''

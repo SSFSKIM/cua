@@ -227,7 +227,7 @@ owner's Chrome kept pid 2546101 throughout every sitting and was never signalled
 |---|---|---|---|---|---|
 | 1 | sminos 745 | 11-16 23:53:26 – 11-17 02:16:40 (released with status 8: the launcher stopped after V5) | 04:08:25 | V1, V2, V3, V4 exit 0; V5 stopped by wrap71 (exit 1); Z0 not started | V1–V4 clear. **V5 not clear: hold-sittings written** at 02:16:40Z (below). Cleared by the controller at 02:30:44Z on rulings 749 and 750 |
 | 2 (the rerun) | sminos 751 | 11-17 03:20:07 – 04:08:19 (status 0) | 04:50:00 | V5 exit 1 (its verdict, below), Z0 exit 0 | both clear |
-| F3's lane | sminos 763 | 11-17 10:41:18 – 11:42:58 (released with status 8: the launcher stopped after V3) | 12:11:18 | V2, V3 as development runs | V2 clear. **V3 not clear: hold-sittings written** at 11:42:58Z, the same race (below) |
+| F3's lane | sminos 763 | 11-17 10:41:18 – 11:42:58 (released with status 8: the launcher stopped after V3) | 12:11:18 | V2, V3 as development runs | V2 clear. **V3 not clear: hold-sittings written** at 11:42:58Z, the same race (below). Cleared by the controller at 11:46:10Z on ruling 773 |
 
 Preconditions at each start: no hold-sittings, no stress-ng, the owner's Chrome at pid 2546101, the pointer at 142,130,
 no `/tmp/cua171-run-*`, `gate.mjs leftovers` clear, task 59's Firefox on PATH, and google-chrome 156.0.8078.73. Loads:
@@ -439,7 +439,8 @@ bar stays its two builds (F3), so nothing here is a verdict. These are medians f
   `scripts/f3-v3-flag-proof.txt`). Its all-clear wrote hold-sittings at 11:42:58Z. The harness exited 143 with no end
   row and no summary, and nothing was left running. Its chrome-input series were complete, 20 a side, so scroll's and
   drag's medians below are read straight from its raw rows (`run/results.jsonl`), not from a summary. It is recorded as
-  stopped by the guard, with no rerun (the controller's proposal to the design session).
+  stopped by the guard, with no rerun (ruling 773). The controller cleared hold-sittings at 11:46:10Z on the same
+  proof (`F3-V3-stopped/`: the proof and the clearance record).
 - **The race is not rare.** It stopped 2 of this run's 9 `:0` steps: V5's first attempt and F3's V3. M4's sittings had
   none. The proofs are `V5-stopped/v5-flag-proof.txt` and `scripts/f3-v3-flag-proof.txt`, both read by
   `v5-flag-proof.py` from the step's own `wrap-summary.json` and `flags.jsonl`.
@@ -465,7 +466,8 @@ The seven operations, three medians each (cold / warm, ms): the pinned build, th
 | chrome-input | scroll | V3 (raw rows, stopped run) | 314.8 / 316.5 / 114.5 | 311.3 / 311.9 / 110.1 |
 | chrome-input | drag | V3 (raw rows, stopped run) | 713.4 / 417.6 / 3.5 | 710.4 / 412.6 / 1.1 |
 
-`drag` here is chrome-input's shared-mode drag, cua's declared refusal, so cua's time is a refusal's.
+cua's `drag` figure is chrome-input's shared-mode refusal (M3.1's declared refusal), not a comparable drag: its time is a
+refusal's, against the vendor builds' drags.
 
 ## Files
 
@@ -476,7 +478,8 @@ The seven operations, three medians each (cold / warm, ms): the pinned build, th
   rows at H′ (`rejudge-fix1.out`, its `*.rejudge-device.jsonl`, and its control `probe-ran.mjs` with `.out`).
 - `V5-stopped/`: the proof read from the first V5's records (`v5-flag-proof.py`, `.txt`) and the controller's clearance
   record.
-- `f3-out/`: F3's lane, V2 and the stopped V3 (development runs).
+- `f3-out/`: F3's lane, V2 and the stopped V3 (development runs). `F3-V3-stopped/`: V3's flag proof and the clearance
+  record (ruling 773).
 - `scripts/`: task 89's launchers and records as they ran.
   - The setup, the home, item 9 and its transcript.
   - The local proof and its logs (`proof/`).

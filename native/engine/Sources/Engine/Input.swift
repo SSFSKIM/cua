@@ -24,6 +24,8 @@ import Foundation
 // area is refused as backgroundClickRefused with nothing posted, or a plain click there is carried by the hit's own
 // action (`elementClick.reason` webArea); one whose own down consumed the activation's arm in a view not known to accept
 // first mouse answers clickUnconfirmed after its events.
+// A keyed type_text reads the focused field back and answers `typeUnconfirmed` unless it holds the text (#354,
+// TypeReadback.swift, meta `typeReadback`); press_key answers once posted, its meta `keyEffect: "unconfirmed"`.
 // The settle an action arms runs at the next get_app_state (markActed).
 // Spike-only arguments, which the facade never sends: `spikeRoute` ("1"|"2'"|"2"|"3", force one route; route 2, the ⌘
 // post, is reachable only this way), `spikeEventSource` ("private", post keys from a private event source instead of
@@ -109,6 +111,11 @@ struct InputMeta {
   var stalePoint: StalePointRecord?
   /// #328's scroll confirmation (ScrollConfirm.swift): the container read, the move seen, the end, the fallback's write.
   var scroll: ScrollConfirmRecord?
+  /// #354's read-back of a keyed type_text (TypeReadback.swift): confirmed or why not, its cost, lengths on a mismatch.
+  var typeReadback: TypeReadbackRecord?
+  /// #354: press_key answers once its keys are posted, so what an editing key did is not confirmed; said on its every
+  /// answer once it posts (`keyEffect: "unconfirmed"`).
+  var keyEffectUnconfirmed = false
   /// #374's Show Menu confirmation (MenuConfirm.swift): where the new menu was seen, or that none was, and the wait.
   var menu: MenuConfirmRecord?
   /// With detection on, the milliseconds from the app's last attributed user event to the request's receipt (null when
@@ -174,6 +181,8 @@ struct InputMeta {
     if let pointerEstablish { wire["pointerEstablish"] = pointerEstablish.wire }
     if let stalePoint { wire["stalePoint"] = stalePoint.wire }
     if let scroll { wire["scroll"] = scroll.wire }
+    if let typeReadback { wire["typeReadback"] = typeReadback.wire }
+    if keyEffectUnconfirmed { wire["keyEffect"] = "unconfirmed" }
     if let menu { wire["menu"] = menu.wire }
     if let afterActionRepairs = context.connection.afterAction.wire { wire["afterActionRepairs"] = afterActionRepairs }
     return wire
@@ -319,13 +328,16 @@ func deliverPointer(to pid: pid_t, route: InputRoute, activation: FakeActivation
 /// Typed text keyed unit by unit (the spec's Design, "Text"): the input source checked before every event and after the
 /// last, the intervention guard between units (never between a key down and its key up), `pause` after every event. The
 /// meta's interval runs from the first event to the last one posted, and `entered` counts the UTF-16 units entered,
-/// stopped or not, unless the request is concealed.
+/// stopped or not, unless the request is concealed. `beforeUnit` runs before each unit's guard (#354's checkpoint before
+/// a key, TypeReadback.swift), so a stop there leaves the unit unsent and the guard runs after its wait.
 func keyText(_ units: [TypedUnit], concealed: Bool, checkSource: (_ entered: Int, _ total: Int) throws -> Void,
+             beforeUnit: (_ index: Int) throws -> Void = { _ in },
              checkIntervention: () throws -> Void, post: (KeyEvent) -> Bool, pause: () -> Void, meta: inout InputMeta) throws {
   let total = units.reduce(0) { $0 + $1.consumed }
   var entered = 0
   defer { if !concealed { meta.entered = entered } }
-  for unit in units {
+  for (index, unit) in units.enumerated() {
+    try beforeUnit(index)
     try checkIntervention()
     for spec in unit.events {
       try checkSource(entered, total)
@@ -337,8 +349,11 @@ func keyText(_ units: [TypedUnit], concealed: Bool, checkSource: (_ entered: Int
   try checkSource(entered, total)
 }
 
-/// A key sequence's presses, each its four events with no gap (F §6.4), the intervention guard between presses.
+/// A key sequence's presses, each its four events with no gap (F §6.4), the intervention guard between presses. Answered
+/// once posted, as the vendor's (#354: no tested signal fences a key's effect), so once anything is posted the meta says
+/// the keys' effect is unconfirmed.
 func keyPresses(_ presses: [KeyPress], checkIntervention: () throws -> Void, post: (KeyEvent) -> Bool, meta: inout InputMeta) throws {
+  defer { if meta.startedAt != nil { meta.keyEffectUnconfirmed = true } }
   for press in presses {
     try checkIntervention()
     for spec in keyPressEvents(press) { meta.posting { post(spec) } }
@@ -556,7 +571,9 @@ extension Engine {
   /// keys by 2′ delivered on every scene without firing the app's activation hooks); a sequence holding a ⌘ chord, a
   /// menu key equivalent, by route 3 when the app does not believe it has focus, its activation held (FocusHold.swift)
   /// and taken before the first press. A sequence stops between presses at a user event attributed to the app. A spike
-  /// cell may force route 3's per-action activation first, or label the post route 2.
+  /// cell may force route 3's per-action activation first, or label the post route 2. It answers once its keys are
+  /// posted, not once the app has acted on them (#354): the meta says `keyEffect: "unconfirmed"`, since an editing key's
+  /// effect (⌘A, ⌘Z, ⌘V) can land after text typed right after it.
   func pressKey(_ args: [String: Any], _ context: ExecutionContext) throws -> Any {
     guard let key = args["key"] as? String else { throw EngineError.invalidArguments("key is required") }
     let presses = try parseKeySequence(key)  // validated before anything is resolved, so an unknown name never posts
@@ -586,6 +603,7 @@ extension Engine {
       defer { _ = release?() }  // every path out of the posting, error or success, ends a forced activation's lease
       let poster = EventPoster.toProcess(target, sourceState: privateSourceArg(args) ? .privateState : .hidSystemState)
       defer { context.connection.markActed(app) }  // a sequence stopped midway changed the app too
+      defer { if meta.startedAt != nil { recentKeys.record(pid: pid) } }  // its effect may land after a type_text's snapshot
       try signposted("pressKey.post") { try keyPresses(presses, checkIntervention: guarding.checkInFlight, post: { poster.post($0) }, meta: &meta) }
       return ["meta": meta.wire]
     } catch let error as EngineError {
@@ -600,7 +618,9 @@ extension Engine {
   /// activation, with the source checked before every event and after the last; anything else takes the paste route
   /// (Paste.swift), its newlines pressed as Return. A concealed request never takes the paste route and never keys
   /// under a reading it cannot trust: it fails closed as concealedInputUnavailable before anything is entered. A keyed
-  /// request stops between characters at a user event attributed to the app, reporting what it entered.
+  /// request stops between characters at a user event attributed to the app, reporting what it entered. A keyed request
+  /// answers success only once the focused field reads its text in place of the selection, else `typeUnconfirmed`
+  /// (#354, TypeReadback.swift); the paste route keeps its own confirmation.
   func typeText(_ args: [String: Any], _ context: ExecutionContext) throws -> Any {
     guard let text = args["text"] as? String else { throw EngineError(name: "invalidArguments", "Missing text to type") }
     let concealed = (args["concealed"] as? NSNumber)?.boolValue ?? false
@@ -644,11 +664,14 @@ extension Engine {
       let poster = EventPoster.toProcess(target, sourceState: privateSourceArg(args) ? .privateState : .hidSystemState)
       let initialSource = currentInputSourceID()
       defer { context.connection.markActed(app) }  // text stopped midway changed the app too
-      try keyText(typedUnits(text, press: layout.press(for:)), concealed: concealed,
-                  checkSource: { try self.checkInputSource(initialSource, entered: $0, total: $1) },
-                  checkIntervention: guarding.checkInFlight, post: { poster.post($0) },
-                  pause: { usleep(250) },  // the vendor's gap between typed-text events (F §12)
-                  meta: &meta)
+      // #354: the focused field snapshotted here, the last thing before the first event, and read back after the last;
+      // settled first when press_key posted to the app within the window (ruling 1ea561bc:754).
+      try keyTextReadBack(typedUnits(text, press: layout.press(for:)), concealed: concealed,
+                          settle: recentKeys.settles(pid: pid), reads: .live(pid: pid),
+                          checkSource: { try self.checkInputSource(initialSource, entered: $0, total: $1) },
+                          checkIntervention: guarding.checkInFlight, post: { poster.post($0) },
+                          pause: { usleep(250) },  // the vendor's gap between typed-text events (F §12)
+                          meta: &meta)
       return ["meta": meta.wire]
     } catch let error as EngineError {
       throw withMeta(error, meta)

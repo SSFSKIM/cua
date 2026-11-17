@@ -43,6 +43,8 @@ final class Engine: @unchecked Sendable {
   let routeAdvice = RouteAdviceTracker()
   /// The held activations of menus and focus holds, one per process across connections (MenuSpan.swift, FocusHold.swift).
   let heldActivations = HeldActivations()
+  /// press_key's last post per app, which settles a type_text's snapshot soon after (TypeReadbackSettle.swift, #354).
+  let recentKeys = RecentKeyPosts()
   /// The workspace's real activations and deactivations, which make a held process's activation stale.
   private var activationObservers: [NSObjectProtocol] = []
   /// Whether the Mac is locked now (the session dictionary; replaced in the unit tests).

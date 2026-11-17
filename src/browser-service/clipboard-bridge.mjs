@@ -11,11 +11,18 @@
 // turn or is disposed (the page's own navigator.clipboard restored, the binding and script removed).
 // Changed: an installation's CDP calls carry the deadline of the command that starts it, and a command that joins an
 // installation waits for it only within its own deadline (a starter's spent deadline does not fail the joiner, which
-// installs again on its own budget), where the vendor's installation calls take the host's 10 s each.
+// installs again on its own budget), where the vendor's installation calls take the host's 10 s each. A removal's
+// steps share one budget (DEFAULT_ACTION_MS), where the vendor gives each step one of its own: a tab whose renderer
+// does not answer costs the removal one timed-out command, after which the host has detached the tab and the spent
+// budget sends nothing more, so no later step attaches it again only to time out once more (#384). Disposal removes
+// the bridge only from tabs still attached, never attaching one, within DISPOSE_CLEANUP_MS: the next setup waits on
+// it, and the backend connection that closes after it ends the debugger sessions, and the binding and script with them.
 import {Deadline, DEFAULT_ACTION_MS} from './budgets.mjs';
 import {isDeadlineError} from './errors.mjs';
 
 const DISPOSED = 'Browser Use clipboard bridge is disposed';
+// What disposal waits for the page side's removal, across every installation.
+export const DISPOSE_CLEANUP_MS = 1000;
 
 // The page side (XQ), run in the page's main world with the binding's name.
 const installPageClipboardBridge = (bindingName) => {
@@ -229,9 +236,12 @@ export class PageClipboardBridge {                                              
     }
   }
 
-  dispose() {
+  // Removes every installation from its page within `deadline` (a removal already under way is waited for only within
+  // it), sending only to tabs still attached.
+  dispose(deadline = new Deadline(DISPOSE_CLEANUP_MS)) {
     if (this.disposal == null) {
-      this.disposal = this.cleanup();
+      this.disposal = Promise.all([...this.installations].map(([key, entry]) =>
+        deadline.race(this.cleanupInstallation(key, entry, {deadline, attach: false})).catch(() => {})));
       this.cdp.removeListener('event', this.handleCdpEvent);
       this.cdp.removeListener('tabDetached', this.handleTabDetached);
       this.removeTabCleanupHandler();
@@ -306,19 +316,21 @@ export class PageClipboardBridge {                                              
     await Promise.all([...this.installations.entries()].filter(([key]) => keyOfTab(key, tabId)).map(([key, entry]) => this.cleanupInstallation(key, entry)));
   }
 
-  cleanupInstallation(key, entry) {
+  // `removal` ({deadline?, attach?}) is cleanupTarget's, for a removal this call starts.
+  cleanupInstallation(key, entry, removal) {
     entry.cleanup ??= entry.installation
-      .then(installed => this.cleanupTarget(installed), () => {})
+      .then(installed => this.cleanupTarget(installed, removal), () => {})
       .finally(() => { if (this.installations.get(key) === entry) this.installations.delete(key); });
     return entry.cleanup;
   }
 
-  // Removes the page side, the script and the binding; each step on a budget of its own, any failure ignored (the
-  // tab may be gone, or a dialog may hold it).
-  async cleanupTarget({bindingName, identifier, target}) {
-    const options = () => ({deadline: new Deadline(DEFAULT_ACTION_MS)});
-    await this.cdp.callTarget(target, 'Runtime.evaluate', {expression: removeSource(bindingName), returnByValue: true}, options()).catch(() => {});
-    if (identifier != null) await this.cdp.callTarget(target, 'Page.removeScriptToEvaluateOnNewDocument', {identifier}, options()).catch(() => {});
-    await this.cdp.callTarget(target, 'Runtime.removeBinding', {name: bindingName}, options()).catch(() => {});
+  // Removes the page side, the script and the binding, all three within one budget (`deadline`, by default one action's
+  // from now), any failure ignored (the tab may be gone, or a dialog may hold it). With `attach: false` only a tab still
+  // attached is sent to.
+  async cleanupTarget({bindingName, identifier, target}, {deadline = new Deadline(DEFAULT_ACTION_MS), attach} = {}) {
+    const options = attach === false ? {deadline, attach} : {deadline};
+    await this.cdp.callTarget(target, 'Runtime.evaluate', {expression: removeSource(bindingName), returnByValue: true}, options).catch(() => {});
+    if (identifier != null) await this.cdp.callTarget(target, 'Page.removeScriptToEvaluateOnNewDocument', {identifier}, options).catch(() => {});
+    await this.cdp.callTarget(target, 'Runtime.removeBinding', {name: bindingName}, options).catch(() => {});
   }
 }

@@ -9,9 +9,11 @@
 // beforeunload dialog is accepted at once (dialogs.mjs answers the others). Every call carries the command's
 // Deadline (budgets.mjs) as the backend's timeoutMs.
 //
-// Options of a call: {deadline, timeoutMs, preserveOnTimeout, beforeDispatch, prepareDispatch}. `beforeDispatch()` runs
-// immediately before the command is handed to the backend (the no-replay rule marks a user script dispatched there);
-// `prepareDispatch()` is awaited before that, within the deadline.
+// Options of a call: {deadline, timeoutMs, preserveOnTimeout, beforeDispatch, prepareDispatch, attach}. `beforeDispatch()`
+// runs immediately before the command is handed to the backend (the no-replay rule marks a user script dispatched
+// there); `prepareDispatch()` is awaited before that, within the deadline. `attach: false` sends the command only to a
+// tab already attached: a detached tab fails it with tab_detached at once, and "Debugger unattached" is not recovered
+// by attaching again (cua's own, #384: a disposal never attaches a tab whose renderer may be starved).
 //
 // Dropped from cf: OpenAI's browser-auth machinery (credential target protection, service-worker start protection and
 // bypass, raw network suppression, the auth branch of dialog handling), MCP-app document targets (forDocument), cached
@@ -259,7 +261,8 @@ export class CdpController extends Emitter {
   async executeTargetCdp(target, method, params, options = {}, retry = true) {
     this.throwIfJsDialogBlocksMethod(target.tabId, method);
     checkDeadline(options);
-    const canRetry = retry && !isNested(target) && !this.initializingTabIds.has(target.tabId);
+    if (options.attach === false && !this.attachedTabIds.has(target.tabId)) throw classified(new Error(UNATTACHED));
+    const canRetry = retry && options.attach !== false && !isNested(target) && !this.initializingTabIds.has(target.tabId);
     try {
       await withinDeadline(this.ensureAttachedTab(target.tabId, setupOptions(options)), options);
     } catch (error) {

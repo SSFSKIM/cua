@@ -21,16 +21,17 @@ const POSTHOLD_IDLE_MS=36000;
 // The enablement the engine read before acting after the hold: true, false or unreadable are all admissible (none is assumed); owned is not.
 const POSTHOLD_PRIORS=['true','false','unreadable'];
 const finite=Number.isFinite,count=v=>Number.isInteger(v)&&v>=0;
-const specOf=r=>SPECS.find(s=>s.group===r?.group&&s.engineSide===r?.engineSide);
+const supplementSpecs=browser=>['cold','posthold'].flatMap(group=>['main','fix'].map(engineSide=>({group,engineSide,launches:browser==='electron'?10:5,labels:['cold',group==='cold'?'warm':'posthold']})));
+const specOf=r=>(r?.phase==='qualification-supplement'?supplementSpecs(r.browser):SPECS).find(s=>s.group===r?.group&&s.engineSide===r?.engineSide);
 
 // One cell per fresh launch. The cell order rotates by repetition so no group or engine side always launches first.
-export function qualificationPlan({browser,smoke=false}) {
+export function qualificationPlan({browser,smoke=false,supplement=false}) {
  if(!BROWSERS.includes(browser))throw Error('unknown browser');
- const cells=[];
- for(let rep=0;rep<(smoke?2:20);rep++) {
-  const here=SPECS.filter(s=>rep<s.launches),k=rep%here.length;
+ const specs=supplement?supplementSpecs(browser):SPECS,phase=supplement?'qualification-supplement':'qualification',cells=[];
+ for(let rep=0;rep<(smoke?2:Math.max(...specs.map(s=>s.launches)));rep++) {
+  const here=specs.filter(s=>rep<s.launches),k=rep%here.length;
   for(const s of [...here.slice(k),...here.slice(0,k)])
-   cells.push({phase:'qualification',browser,group:s.group,engineSide:s.engineSide,rep,expectedCalls:s.labels,id:['qualification',browser,s.group,s.engineSide,rep].join('/')});
+   cells.push({phase,browser,group:s.group,engineSide:s.engineSide,rep,expectedCalls:s.labels,id:[phase,browser,s.group,s.engineSide,rep].join('/')});
  }
  return cells;
 }
@@ -169,10 +170,11 @@ export function qualificationSummarize(rows) {
  return {calls,launches,observations};
 }
 
-export function qualificationCoverage(rows,{browser,smoke}={}) {
+export function qualificationCoverage(rows,{browser,smoke,supplement}={}) {
  smoke??=rows.length>0&&rows.every(r=>r.smoke===true);
+ supplement??=rows.length>0&&rows.every(r=>r.phase==='qualification-supplement');
  const browsers=browser?[browser]:[...new Set(rows.map(r=>r.browser))];
- const cells=browsers.flatMap(b=>qualificationPlan({browser:b,smoke})),byId=new Map(cells.map(c=>[c.id,c]));
+ const cells=browsers.flatMap(b=>qualificationPlan({browser:b,smoke,supplement})),byId=new Map(cells.map(c=>[c.id,c]));
  const expected=cells.map(c=>c.id),have=new Set(rows.map(r=>r.id));
  const duplicates=[...new Set(rows.filter((r,i)=>rows.findIndex(x=>x.id===r.id)!==i).map(r=>r.id))];
  const launches=new Map();

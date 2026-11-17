@@ -51,6 +51,31 @@ test('plan: 100 launches and 130 calls per browser, 14 launches in smoke, unique
  assert.equal(new Set(all.map(c=>c.id)).size,300);
  assert.throws(()=>qualificationPlan({browser:'safari'}));
 });
+test('matched supplement gives both heads warm and genuinely released posthold cells without changing the full plan',()=>{
+ const all=[];
+ for(const browser of BROWSERS){
+  const reps=browser==='electron'?10:5,cells=qualificationPlan({browser,supplement:true});
+  assert.equal(cells.length,reps*4);
+  for(const group of ['cold','posthold'])for(const side of ['main','fix']){
+   const matched=cells.filter(c=>c.group===group&&c.engineSide===side);
+   assert.equal(matched.length,reps);
+   assert.ok(matched.every(c=>c.phase==='qualification-supplement'&&c.id.startsWith('qualification-supplement/')&&JSON.stringify(c.expectedCalls)===JSON.stringify(['cold',group==='cold'?'warm':'posthold'])));
+  }
+  const rows=cells.map(c=>({...row(c),phase:c.phase}));
+  assert.equal(qualificationCoverage(rows,{browser,supplement:true}).ok,true);
+  assert.equal(qualificationCoverage(rows).ok,true);
+  const mainWarm=rows.find(r=>r.group==='cold'&&r.engineSide==='main');
+  assert.equal(qualificationCoverage(rows.map(r=>r===mainWarm?{...r,calls:r.calls.slice(0,1)}:r)).invalid[0].reason,'calls');
+  const mainHold=rows.find(r=>r.group==='posthold'&&r.engineSide==='main');
+  assert.equal(qualificationCoverage(rows.map(r=>r===mainHold?{...r,postholdRelease:{...r.postholdRelease,prior:'owned'}}:r)).invalid[0].reason,'posthold-release');
+  assert.equal(qualificationCoverage(rows.slice(1),{browser,supplement:true}).missing.length,1);
+  assert.equal(qualificationSummarize(rows).calls.filter(c=>c.engineSide==='main').length,4);
+  assert.equal(qualificationPlan({browser}).length,100);
+  all.push(...rows);
+ }
+ assert.deepEqual([all.length,all.reduce((n,r)=>n+r.calls.length,0)],[80,160]);
+ assert.equal(qualificationCoverage(all).ok,true);
+});
 test('press oracle is the handler count change; never unchanged-state confirmation',()=>{
  const j=(before,after,extra={})=>{const r=rowOf('cold/main');r.calls[0]={...r.calls[0],before:{...owner,presses:before},after:{...owner,presses:after},...extra};return qualificationJudgeCall(r,r.calls[0])};
  const sig=o=>[o.known,o.delivered,o.exact,o.duplicate,o.falseSuccess,o.error];

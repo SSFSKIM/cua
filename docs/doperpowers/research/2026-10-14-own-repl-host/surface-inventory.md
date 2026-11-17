@@ -942,6 +942,18 @@ user asked the model to work in. The paragraph now ends:
 
 > … In a Chromium-based app, a table's column and header elements take new element IDs at every observation. When the app's window lies outside every display or on another Space, the tree says so in a line such as `[window off screen: …]`, the window may show no content, and `getScreenshot()` fails naming the reason; its Raise action can bring it back without activating the app, but use it only if the user asked you to work in that window, and otherwise ask them to move it.
 
+### Table 3 amendment (2026-11-17, #367, ruling 1ea561bc:782)
+
+The hosted measurement of #367 (the native engine spec's Decision Log, ruling 782's entry; run 44122922177) found the
+window's Raise action answering success and doing nothing for a window on another Space, in all four cases, and could
+not place a window off every display to measure it there; an Electron app on another Space, whose accessibility lists
+no window off its Space, failed every observation `timeoutReached` after the engine's 5 s window wait. The ruling drops
+Raise from both remedies, which now ask the user, makes the engine refuse that observation at once and a Raise of a
+window on another Space before anything is sent, both as `windowOnAnotherSpace` with the screenshot's reason and remedy.
+The #367 sentence becomes two, so the paragraph now ends:
+
+> … In a Chromium-based app, a table's column and header elements take new element IDs at every observation. When the app's window lies outside every display or on another Space, the tree says so in a line such as `[window off screen: …]`, the window may show no content, and `getScreenshot()` fails naming the reason; ask the user to move it onto a display, or to bring it here or switch to its Space. Some apps' windows on another Space make observing the app fail with `windowOnAnotherSpace` instead, and a window's Raise action fails the same way there, with nothing sent.
+
 ### Table 3 addition (2026-11-17, #366)
 
 #366 (the native engine spec's Decision Log, the #366 entry; the design session's ruling 766) makes the first element

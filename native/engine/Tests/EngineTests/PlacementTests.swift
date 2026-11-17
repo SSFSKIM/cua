@@ -137,3 +137,99 @@ final class PlacementObservationTests: XCTestCase {
     XCTAssertEqual(windowWire(title: "Untitled", frame: frame, pid: 501, placement: .anotherSpace)["placement"] as? String, "anotherSpace")
   }
 }
+
+// Ruling 1ea561bc:782: an app accessibility lists no window for, whose windows the window server places on another
+// Space (Electron's case on the hosted runner, run 44122922177), is refused at once; anything less certain is not.
+final class AbsentWindowOnAnotherSpaceTests: XCTestCase {
+  /// The current Space of the one display, and the fullscreen Space the hosted Electron window was on.
+  private let here: Set<UInt64> = [1]
+  private let away: Set<UInt64> = [25]
+
+  private func check(_ windows: [SpacedWindow], current: Set<UInt64>? = nil, spaces: [CGWindowID: Set<UInt64>] = [:],
+                     hidden: Bool? = false) -> Bool {
+    windowsOnAnotherSpace(windows, currentSpaces: { current ?? self.here }, spaces: { spaces[$0] ?? [] }, appHidden: { hidden })
+  }
+
+  private func window(_ number: CGWindowID, layer: Int = 0, onScreen: Bool = false) -> SpacedWindow {
+    SpacedWindow(number: number, layer: layer, onScreen: onScreen)
+  }
+
+  func testAnAppWhoseWindowIsOnlyOnAnotherSpaceIsOnAnotherSpace() {
+    XCTAssertTrue(check([window(10)], spaces: [10: away]))
+    XCTAssertTrue(check([window(10), window(11)], spaces: [11: away]), "one window there is enough; the other ordered out")
+    XCTAssertTrue(check([window(10)], current: [1, 2], spaces: [10: [3]]), "two displays, each showing its own Space")
+  }
+
+  func testAnAppMerelySlowToOpenItsWindowIsNot() {
+    XCTAssertFalse(check([]), "no window listed yet")
+    XCTAssertFalse(check([window(10)], spaces: [10: here]), "a window on the current Space that is not shown yet")
+    XCTAssertFalse(check([window(10)]), "a window ordered out is on no Space")
+  }
+
+  func testAWindowShownHereOrSharedWithTheCurrentSpaceMakesNoClaim() {
+    XCTAssertFalse(check([window(10, onScreen: true), window(11)], spaces: [10: here, 11: away]), "one of its windows is shown here")
+    XCTAssertFalse(check([window(10)], spaces: [10: [1, 25]]), "a window on every Space is on this one too")
+    XCTAssertFalse(check([window(10)], current: [1, 2], spaces: [10: [2]]), "on the Space the second display shows")
+  }
+
+  func testOnlyNormalWindowsCount() {
+    XCTAssertFalse(check([window(10, layer: 3)], spaces: [10: away]), "a floating panel there is not the app's window")
+    XCTAssertTrue(check([window(10), window(11, layer: 25, onScreen: true)], spaces: [10: away]),
+                  "a status item shown here does not count as a window shown here")
+  }
+
+  func testAnUnreadOrHiddenStateMakesNoClaim() {
+    XCTAssertFalse(check([window(10)], current: [], spaces: [10: away]), "the current Spaces unread")
+    XCTAssertFalse(check([window(10)], spaces: [10: away], hidden: true), "a hidden app")
+    XCTAssertFalse(check([window(10)], spaces: [10: away], hidden: nil), "the hidden flag unread")
+  }
+
+  func testTheSpaceAndHiddenReadsAreMadeOnlyWhenNeeded() {
+    var currentReads = 0, spaceReads = 0, hiddenReads = 0
+    let counted = { (windows: [SpacedWindow], spaces: Set<UInt64>) -> Bool in
+      windowsOnAnotherSpace(windows, currentSpaces: { currentReads += 1; return self.here }, spaces: { _ in spaceReads += 1; return spaces },
+                            appHidden: { hiddenReads += 1; return false })
+    }
+    XCTAssertFalse(counted([], away))
+    XCTAssertFalse(counted([window(10, onScreen: true)], away))
+    XCTAssertEqual([currentReads, spaceReads, hiddenReads], [0, 0, 0], "no window, or one shown here, reads no Space")
+    XCTAssertFalse(counted([window(10)], here))
+    XCTAssertEqual([currentReads, spaceReads, hiddenReads], [1, 1, 0], "the hidden flag only once a window is elsewhere")
+    XCTAssertTrue(counted([window(10)], away))
+    XCTAssertEqual([currentReads, spaceReads, hiddenReads], [2, 2, 1])
+  }
+
+  func testTheRefusalNamesTheReasonAndTheRemedy() {
+    let refusal = windowOnAnotherSpace(app: "cua Electron Fixture")
+    XCTAssertEqual(refusal.errorName, "windowOnAnotherSpace")
+    XCTAssertEqual(refusal.message, "The cua Electron Fixture window is on another Space. Ask the user to bring it here or switch to its Space.")
+  }
+}
+
+// Ruling 1ea561bc:782: a Raise on a window on another Space answered success and did nothing (run 44122922177), so it is
+// refused before anything is sent; a Raise on a window off every display stays as it was.
+final class RaiseRefusalTests: XCTestCase {
+  private func refusal(_ action: String = kAXRaiseAction, role: String? = kAXWindowRole, placement: WindowPlacement?) -> EngineError? {
+    raiseRefusal(action: action, role: role, placement: { placement }, app: "TextEdit")
+  }
+
+  func testARaiseOnAWindowOnAnotherSpaceIsRefused() {
+    let refused = refusal(placement: .anotherSpace)
+    XCTAssertEqual(refused?.errorName, "windowOnAnotherSpace")
+    XCTAssertEqual(refused?.message, windowOnAnotherSpace(app: "TextEdit").message)
+  }
+
+  func testARaiseOnAWindowShownHereOrOffEveryDisplayGoesAhead() {
+    XCTAssertNil(refusal(placement: nil))
+    XCTAssertNil(refusal(placement: .offScreen), "off every display, Raise stays as it was")
+  }
+
+  func testOtherActionsAndOtherElementsAreNotReadOrRefused() {
+    var reads = 0
+    let read: () -> WindowPlacement? = { reads += 1; return .anotherSpace }
+    XCTAssertNil(raiseRefusal(action: kAXPressAction, role: kAXWindowRole, placement: read, app: "TextEdit"))
+    XCTAssertNil(raiseRefusal(action: kAXRaiseAction, role: kAXCellRole, placement: read, app: "TextEdit"), "a Raise a cell offers")
+    XCTAssertNil(raiseRefusal(action: kAXRaiseAction, role: nil, placement: read, app: "TextEdit"))
+    XCTAssertEqual(reads, 0, "the placement is read only for a Raise on a window")
+  }
+}

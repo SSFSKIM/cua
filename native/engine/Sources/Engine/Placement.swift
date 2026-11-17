@@ -1,3 +1,4 @@
+import AppKit
 import ApplicationServices
 import CoreGraphics
 import Foundation
@@ -8,7 +9,8 @@ import Foundation
 // nothing saying why. The observation names the placement in the Skyshot's `window.placement` ("offScreen",
 // "anotherSpace"), which the service prints as one line, and takes no screenshot, as for a minimized window, the reason
 // in `screenshotOmitted` ("windowOffScreen", "windowOnAnotherSpace") and the facade's screenshot error naming the remedy.
-// Nothing else changes: an on-screen window's Skyshot gains no key, and no input is refused for it.
+// Nothing else changes: an on-screen window's Skyshot gains no key, and no input is refused for it (ruling 782, below,
+// refuses a Raise on a window on another Space, and an app whose windows there accessibility does not list).
 //
 // Detection, cheap and claiming only what it read:
 // - Off screen: the window's AX frame (already read for the walk and the capture) overlaps no screen's frame (the
@@ -68,4 +70,97 @@ func windowServerOnScreen(_ number: CGWindowID) -> Bool? {
   guard let list = CGWindowListCopyWindowInfo([.optionIncludingWindow], number) as? [[String: Any]],
         let info = list.first(where: { ($0[kCGWindowNumber as String] as? Int).map(CGWindowID.init) == number }) else { return nil }
   return info[kCGWindowIsOnscreen as String] as? Bool ?? false
+}
+
+/// A window's placement read live (the observation's, and the Raise refusal's): its AX frame against the screens, then
+/// the window server's flag, its AXMinimized and its app's AXHidden, each only as needed.
+func livePlacement(of window: AXUIElement, application: AXUIElement, frame windowFrame: CGRect?) -> WindowPlacement? {
+  windowPlacement(
+    frame: windowFrame, screens: screenScales.current.map(\.frame),
+    onScreen: { windowNumber(of: window, pid: pid(of: window), frame: windowFrame).flatMap(windowServerOnScreen) },
+    minimized: { bool(attribute(window, kAXMinimizedAttribute)) }, appHidden: { bool(attribute(application, kAXHiddenAttribute)) })
+}
+
+// Ruling 1ea561bc:782 (the Decision Log's entry for it), from the hosted measurement (run 44122922177): a window's Raise
+// action on a window on another Space answered success and did nothing, in all four cases; and an Electron app whose
+// only window is on another Space lists no window in AXWindows there, so its observation read the primary window as
+// absent, reopened the app, and failed `timeoutReached` after the 5 s primary-window wait. Both now answer the refusal
+// below at once, with the reason and remedy of the screenshot's another-Space error (render.mjs's
+// WINDOW_PLACEMENT.anotherSpace, word for word after the app's name; test/services-engine-render.test.mjs pins it).
+
+/// The refusal of a window on another Space that cannot be read or raised from here.
+func windowOnAnotherSpace(app: String) -> EngineError {
+  EngineError(name: "windowOnAnotherSpace", "The \(app) window is on another Space. Ask the user to bring it here or switch to its Space.")
+}
+
+/// A window the window server lists for an app: what the absence check reads of its CGWindowListCopyWindowInfo entry.
+struct SpacedWindow: Equatable {
+  let number: CGWindowID
+  let layer: Int
+  let onScreen: Bool
+}
+
+/// Whether an app that accessibility lists no window for has its windows on another Space: none of its layer-0 windows
+/// is on screen, at least one is on a Space and on none of the Spaces the displays show now, and the app is confirmed
+/// not hidden. Each claim needs a positive read, so an app that is merely slow to open its window (no window listed, or
+/// one on the current Space), one with only ordered-out windows (on no Space: a closed document's buffer, a hidden
+/// helper), and an unread current Space or hidden flag all answer false, and the observation reopens and waits as
+/// before. The Space reads are made only once a window could answer yes, the hidden flag last.
+func windowsOnAnotherSpace(_ windows: [SpacedWindow], currentSpaces: () -> Set<UInt64>, spaces: (CGWindowID) -> Set<UInt64>,
+                           appHidden: () -> Bool?) -> Bool {
+  let normal = windows.filter { $0.layer == 0 }
+  guard !normal.isEmpty, !normal.contains(where: \.onScreen) else { return false }
+  let current = currentSpaces()
+  guard !current.isEmpty else { return false }
+  guard normal.contains(where: { let on = spaces($0.number); return !on.isEmpty && on.isDisjoint(with: current) }) else { return false }
+  return appHidden() == false
+}
+
+/// A Raise on a window read as on another Space is refused before anything is sent. Any other action, any other
+/// element, and a Raise on a window off every display or shown here go ahead (the placement is read only for a Raise
+/// on a window).
+func raiseRefusal(action: String, role: String?, placement: () -> WindowPlacement?, app: String) -> EngineError? {
+  guard action == kAXRaiseAction, role == kAXWindowRole, placement() == .anotherSpace else { return nil }
+  return windowOnAnotherSpace(app: app)
+}
+
+/// The window server's windows of `pid`: one CGWindowListCopyWindowInfo(.optionAll) read, which lists windows on every
+/// Space (about 2.5 ms with 200 windows listed).
+func listedWindows(pid: pid_t) -> [SpacedWindow] {
+  guard let list = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]] else { return [] }
+  return list.compactMap { info in
+    guard (info[kCGWindowOwnerPID as String] as? Int).map(pid_t.init) == pid, let number = info[kCGWindowNumber as String] as? Int,
+          let layer = info[kCGWindowLayer as String] as? Int else { return nil }
+    return SpacedWindow(number: CGWindowID(number), layer: layer, onScreen: info[kCGWindowIsOnscreen as String] as? Bool ?? false)
+  }
+}
+
+/// SkyLight's Space reads (private, resolved with dlsym; an empty set when absent or unread, which claims nothing).
+enum SpaceMembership {
+  private typealias ConnectionID = @convention(c) () -> Int32
+  private typealias ManagedSpaces = @convention(c) (Int32) -> Unmanaged<CFArray>?
+  private typealias SpacesForWindows = @convention(c) (Int32, Int32, CFArray) -> Unmanaged<CFArray>?
+  private static let mainConnectionID: ConnectionID? = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "SLSMainConnectionID").map { unsafeBitCast($0, to: ConnectionID.self) }
+  private static let managedSpaces: ManagedSpaces? = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "SLSCopyManagedDisplaySpaces").map { unsafeBitCast($0, to: ManagedSpaces.self) }
+  private static let spacesForWindows: SpacesForWindows? = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "SLSCopySpacesForWindows").map { unsafeBitCast($0, to: SpacesForWindows.self) }
+
+  /// The Space each display shows now (each managed display's "Current Space").
+  static func current() -> Set<UInt64> {
+    guard let connection = mainConnectionID?(), let displays = managedSpaces?(connection)?.takeRetainedValue() as? [[String: Any]] else { return [] }
+    return Set(displays.compactMap { (($0["Current Space"] as? [String: Any])?["ManagedSpaceID"] as? NSNumber)?.uint64Value })
+  }
+
+  /// The Spaces a window is on (every kind, mask 7); none for a window ordered out.
+  static func of(_ number: CGWindowID) -> Set<UInt64> {
+    guard let connection = mainConnectionID?(),
+          let spaces = spacesForWindows?(connection, 7, [NSNumber(value: number)] as CFArray)?.takeRetainedValue() as? [NSNumber] else { return [] }
+    return Set(spaces.map(\.uint64Value))
+  }
+}
+
+/// The absence check the observation's preparation runs before it would reopen an app with no accessible window: the
+/// refusal when that app's windows are on another Space, else nil.
+func absentWindowRefusal(pid: pid_t, app: String) -> EngineError? {
+  windowsOnAnotherSpace(listedWindows(pid: pid), currentSpaces: SpaceMembership.current, spaces: SpaceMembership.of,
+                        appHidden: { NSRunningApplication(processIdentifier: pid)?.isHidden }) ? windowOnAnotherSpace(app: app) : nil
 }

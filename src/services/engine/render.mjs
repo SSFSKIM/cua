@@ -45,17 +45,19 @@ export const NOTE = 'Note: Pay special attention to the content selected by the 
 
 // cua's own words for a primary window the engine found off every display or on another Space (#367; the Skyshot's
 // `window.placement`): the observation's line, and the reason the facade's getScreenshot gives (`screenshot`). The
-// remedy is stated with cua's host rule, so the line names the Raise action without inviting a raise the user did not
-// ask for.
-const RAISE = 'without activating the app: use it if the user asked you to work in this window, otherwise ask them to';
+// remedy asks the user (ruling 1ea561bc:782): the window's Raise action did nothing for a window on another Space in
+// every hosted measurement (run 44122922177) and is unmeasured for one off every display, so the text offers it for
+// neither. The engine's windowOnAnotherSpace refusal (native/engine/Sources/Engine/Placement.swift) gives the same
+// reason and remedy, ANOTHER_SPACE_REMEDY word for word.
+export const ANOTHER_SPACE_REMEDY = 'Ask the user to bring it here or switch to its Space.';
 export const WINDOW_PLACEMENT = Object.freeze({
   offScreen: Object.freeze({
-    line: `[window off screen: the window lies outside every display, so it may show no content and has no screenshot. Its Raise action can bring it back ${RAISE} move it.]`,
-    screenshot: `the window is off screen, outside every display. Its Raise action can bring it back ${RAISE} move it.`,
+    line: '[window off screen: the window lies outside every display, so it may show no content and has no screenshot. Ask the user to move it onto a display.]',
+    screenshot: 'the window is off screen, outside every display. Ask the user to move it onto a display.',
   }),
   anotherSpace: Object.freeze({
-    line: `[window on another Space: the window is not on the current Space, so it may show no content and has no screenshot. Its Raise action can bring it here ${RAISE} bring it here.]`,
-    screenshot: `the window is on another Space. Its Raise action can bring it here ${RAISE} bring it here.`,
+    line: `[window on another Space: the window is not on the current Space, so it may show no content and has no screenshot. ${ANOTHER_SPACE_REMEDY}]`,
+    screenshot: `the window is on another Space. ${ANOTHER_SPACE_REMEDY}`,
   }),
 });
 

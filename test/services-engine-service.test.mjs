@@ -722,8 +722,8 @@ test('#367: a window off screen or on another Space: the state says so in one li
   assert.deepEqual([...await call(() => app.getScreenshot({emit: false}))], [0xff, 0xd8, 0xff, 0xd9]);
 
   for (const [placement, omitted, reason] of [
-    ['offScreen', 'windowOffScreen', 'the window is off screen, outside every display. Its Raise action can bring it back without activating the app: use it if the user asked you to work in this window, otherwise ask them to move it.'],
-    ['anotherSpace', 'windowOnAnotherSpace', 'the window is on another Space. Its Raise action can bring it here without activating the app: use it if the user asked you to work in this window, otherwise ask them to bring it here.'],
+    ['offScreen', 'windowOffScreen', 'the window is off screen, outside every display. Ask the user to move it onto a display.'],
+    ['anotherSpace', 'windowOnAnotherSpace', 'the window is on another Space. Ask the user to bring it here or switch to its Space.'],
   ]) {
     Object.assign(tree, {screenshot: null, screenshotOmitted: omitted, window: {...shown.window, placement}});
     const state = await call(() => app.getAXState({emit: false, disableDiffing: true}));

@@ -53,9 +53,12 @@ func deadlineBounded(deadline: Int64, now: @escaping () -> Int64, setTimeout: @e
 /// then `timeoutReached`), where the vendor's failed read reads as no window; and a minimized primary window is never
 /// reopened, since the reopen would un-minimize the owner's window. The reads are charged to the request's deadline: no
 /// open is sent once it has passed. The open's own process is the one observed after it, so an app replaced
-/// meanwhile is followed. -> {opened, the open's process (nil when nothing was opened), the pid to observe}.
+/// meanwhile is followed. A third (ruling 1ea561bc:782, Placement.swift): a running app read as having no window is
+/// asked `absentRefusal` first, and one whose windows are on another Space, where accessibility lists none (Electron),
+/// is refused at once rather than reopened and waited for; the check runs only on an absence, so an app with a window
+/// pays nothing for it. -> {opened, the open's process (nil when nothing was opened), the pid to observe}.
 func prepareTarget<Running>(pid: pid_t?, deadline: Int64, now: () -> Int64, sleep: () -> Void,
-                            read: (pid_t) -> WindowRead,
+                            read: (pid_t) -> WindowRead, absentRefusal: (pid_t) -> EngineError?,
                             open: (_ deadline: Int64) throws -> (running: Running, pid: pid_t)) throws -> (opened: Bool, running: Running?, pid: pid_t) {
   let timeout = EngineError(name: "timeoutReached", "timeoutReached")
   func openNow() throws -> (opened: Bool, running: Running?, pid: pid_t) {
@@ -70,7 +73,9 @@ func prepareTarget<Running>(pid: pid_t?, deadline: Int64, now: () -> Int64, slee
     guard now() < deadline else { throw timeout }  // a read that ends past the deadline is not accepted
     switch found {
     case .window: return (false, nil, pid)
-    case .absent: return try openNow()
+    case .absent:
+      if let refusal = absentRefusal(pid) { throw refusal }
+      return try openNow()
     case .failed:
       sleep()
       guard now() < deadline else { throw timeout }
@@ -171,6 +176,7 @@ extension Engine {
                                                                    setTimeout: { AXUIElementSetMessagingTimeout(element, $0) },
                                                                    copy: { copyAttribute(element, $0) }))
                         },
+                        absentRefusal: { pid in absentWindowRefusal(pid: pid, app: app.displayName) },
                         open: { deadline in let running = try apps.launch(app, deadline: deadline); return (running, running.processIdentifier) })
     }
     if let running = target.running {
@@ -305,10 +311,7 @@ extension Engine {
     let windowFrame = frame(of: window)
     // A window off every display or on another Space (Placement.swift, #367) is observed with no screenshot and its
     // placement named; a minimized window is the minimized rule's.
-    let placement = minimized ? nil : windowPlacement(
-      frame: windowFrame, screens: screenScales.current.map(\.frame),
-      onScreen: { windowNumber(of: window, pid: pid(of: window), frame: windowFrame).flatMap(windowServerOnScreen) },
-      minimized: { bool(attribute(window, kAXMinimizedAttribute)) }, appHidden: { bool(attribute(application, kAXHiddenAttribute)) })
+    let placement = minimized ? nil : livePlacement(of: window, application: application, frame: windowFrame)
     if let placement { timings.set("placement", placement.rawValue) }
     let plan = placementObservation(placement, plan: minimizedPlan, includeScreenshot: includeScreenshot)
     // The window capture runs beside the tree walk (in-sitting tuning iteration 1): it needs only the window and its

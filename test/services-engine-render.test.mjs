@@ -3,7 +3,8 @@
 // item 3; the rules are sky-behaviour.md §5–§8). The scenes' recorded captures are test/services-engine-render-goldens.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {advanceNumbering, indexState, render, formatNumber, shortenUrl, NOTE, WINDOW_PLACEMENT, placementLine} from '../src/services/engine/render.mjs';
+import {readFileSync} from 'node:fs';
+import {advanceNumbering, indexState, render, formatNumber, shortenUrl, NOTE, WINDOW_PLACEMENT, ANOTHER_SPACE_REMEDY, placementLine} from '../src/services/engine/render.mjs';
 import {node, skyshot} from './native-goldens/builder.mjs';
 
 const win = (children = []) => [node('w', 0, 'AXWindow', {roleDescription: 'standard window', title: 'W', actions: ['AXRaise']}), ...children];
@@ -296,19 +297,27 @@ test('#367: a window off every display says so in one line after the tree, befor
   const shot = placed('offScreen', {truncated: {count: 3}});
   assert.equal(render(shot, advanceNumbering(null, shot)),
     'Window: "W", App: Example.\n0 standard window W, Secondary Actions: Raise\n'
-    + '[window off screen: the window lies outside every display, so it may show no content and has no screenshot. Its Raise action can bring it back without activating the app: use it if the user asked you to work in this window, otherwise ask them to move it.]\n'
+    + '[window off screen: the window lies outside every display, so it may show no content and has no screenshot. Ask the user to move it onto a display.]\n'
     + '[truncated: 3 elements omitted]\n');
 });
 
 test('#367: a window on another Space says so in one line', () => {
   const shot = placed('anotherSpace');
   assert.equal(render(shot, advanceNumbering(null, shot)).split('\n').at(-2),
-    '[window on another Space: the window is not on the current Space, so it may show no content and has no screenshot. Its Raise action can bring it here without activating the app: use it if the user asked you to work in this window, otherwise ask them to bring it here.]');
+    '[window on another Space: the window is not on the current Space, so it may show no content and has no screenshot. Ask the user to bring it here or switch to its Space.]');
   assert.equal(WINDOW_PLACEMENT.anotherSpace.line, placementLine(shot));
-  assert.equal(WINDOW_PLACEMENT.offScreen.screenshot,
-    'the window is off screen, outside every display. Its Raise action can bring it back without activating the app: use it if the user asked you to work in this window, otherwise ask them to move it.');
-  assert.equal(WINDOW_PLACEMENT.anotherSpace.screenshot,
-    'the window is on another Space. Its Raise action can bring it here without activating the app: use it if the user asked you to work in this window, otherwise ask them to bring it here.');
+  assert.equal(WINDOW_PLACEMENT.offScreen.screenshot, 'the window is off screen, outside every display. Ask the user to move it onto a display.');
+  assert.equal(WINDOW_PLACEMENT.anotherSpace.screenshot, 'the window is on another Space. Ask the user to bring it here or switch to its Space.');
+});
+
+// Ruling 1ea561bc:782: the engine's windowOnAnotherSpace refusal (an app with no accessible window there, or a Raise
+// of a window there) gives the screenshot's reason and remedy, so the remedy is one sentence in both languages.
+test('#367 ruling 782: the engine\'s windowOnAnotherSpace refusal ends with the screenshot\'s reason and remedy', () => {
+  const source = readFileSync(new URL('../native/engine/Sources/Engine/Placement.swift', import.meta.url), 'utf8');
+  const sentence = source.match(/EngineError\(name: "windowOnAnotherSpace", "The \\\(app\) (window is on another Space\. [^"]+)"\)/);
+  assert.ok(sentence, 'Placement.swift builds the refusal');
+  assert.equal(`the ${sentence[1]}`, WINDOW_PLACEMENT.anotherSpace.screenshot);
+  assert.ok(WINDOW_PLACEMENT.anotherSpace.screenshot.endsWith(ANOTHER_SPACE_REMEDY));
 });
 
 // ---- The transformations (sky-behaviour.md §5) ----

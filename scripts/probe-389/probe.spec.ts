@@ -50,6 +50,8 @@ test('MAWS Add project: ordinary background element press and search set_value',
     let folder='';
     maws=await launchMaws({env:{MAWS_ENGINE_REPLAY:'1'},prepare:({userData,claudeConfigDir})=>{folder=join(userData,'probe389-folder');mkdirSync(folder);folder=realpathSync.native(folder);seedTranscript(claudeConfigDir,folder,'Probe 389 scratch discovered session');}});
     const {page,app}=maws;const pid=app.process().pid;row.pid=pid;row.folder=folder;
+    // Playwright's Electron bootstrap enables focus emulation on the main page (document.hasFocus() stays true whatever is frontmost). Turn it off once; the session lives until the app is cleaned up.
+    const cdp=await page.context().newCDPSession(page);row.focusEmulationOff=await cdp.send('Emulation.setFocusEmulationEnabled',{enabled:false}).then(()=>true);
     await expect(page.locator('[data-region="sidebar"]')).toBeVisible({timeout:30000});
     // Pure renderer observation, kept in one clock and sequence. No synthetic events or focus changes here.
     await page.evaluate(()=>{
@@ -64,6 +66,21 @@ test('MAWS Add project: ordinary background element press and search set_value',
      record('installed');
     });
     await app.evaluate(({BrowserWindow}:any)=>{const w=BrowserWindow.getAllWindows().find((w:any)=>w.isVisible());w.setBounds({x:20,y:50,width:1200,height:900});w.show();w.focus();});
+    {
+     // Positive control, per launch and for every cohort: native activation of the cover must take the page's focus, and activating MAWS must give it back with a new window.focus event. A failed control invalidates the trial; it is never read as non-reproduction.
+     const hasFocus=()=>page.evaluate(()=>document.hasFocus());
+     const focusEvents=()=>page.evaluate(()=>(window as any).__probe389.log.filter((e:any)=>e.kind==='window.focus').length);
+     const fc:any=row.focusControl={};
+     try {
+      fc.initialHasFocus=await hasFocus();fc.baselineFocusEvents=await focusEvents();
+      fc.coverFront=await ask({op:'front',pid:coverPid});
+      await expect.poll(hasFocus,{timeout:5000}).toBe(false);fc.hasFocusWithCoverFront=false;
+      fc.mawsFront=await ask({op:'front',pid});
+      await expect.poll(hasFocus,{timeout:5000}).toBe(true);fc.hasFocusWithMawsFront=true;
+      fc.newFocusEvents=await focusEvents()-fc.baselineFocusEvents;
+      if(fc.newFocusEvents<1)throw Error('no new window.focus event after MAWS was activated');
+     } catch(e:any){fc.error=String(e.message??e);fc.hasFocusNow=await hasFocus().catch(()=>null);throw Error('focus-control-invalid: '+fc.error);}
+    }
     await expect.poll(()=>origin(maws.userData,folder),{timeout:30000}).toBe('discovered');
     row.originBefore=origin(maws.userData,folder);
     engine=spawn(join(TEMP,engineDir,'release/cua-engine'),[],{env:{...process.env,HOME:work,CUA_ENGINE_SOCKET:join(work,'e.sock')},stdio:['ignore','ignore','pipe']});
@@ -108,6 +125,8 @@ test('MAWS Add project: ordinary background element press and search set_value',
     }
     await ask({op:'cover',pid:coverPid,wide:sequence==='covered'});
     row.coverSetup=await ask({op:'front',pid:coverPid});if(row.coverSetup.frontmostPid!==coverPid)throw Error('cover not front');
+    // Before the first observation the page must really be in the background (an earlier-click opener may legitimately restore focus later).
+    await expect.poll(()=>page.evaluate(()=>document.hasFocus()),{timeout:5000,message:'page still has focus after the cover was activated'}).toBe(false);row.hasFocusAfterCover=false;
     if(sequence==='earlier-click'){
      const nodes=await observe();row.earlierClick=await rpc('click',{element:token(nodes,'AXPopUpButton','Add project')});
      await expect(dialog).toBeVisible({timeout:5000});

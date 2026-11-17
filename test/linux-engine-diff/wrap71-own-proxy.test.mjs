@@ -29,19 +29,23 @@ const FAKE_XTRACE = (python) => `#!${python} -I
 import time
 time.sleep(60)
 `;
-// the socket table: what the driver wrote, or the header alone
+// the socket table: what the driver wrote, or the header alone; each read is counted once it is done
 const FAKE_SS = `#!/bin/sh
 cat "$FAKE_SS_TABLE" 2>/dev/null || echo 'Netid State Recv-Q Send-Q Local Address:Port Peer Address:Port Process'
+echo read >> "$FAKE_SS_TABLE.reads"
 `;
 // the run: starts the proxy as the spec says, lets the guard's samples record it, ends it (reaped, or left a zombie
 // under a parent that never waits) when asked, then holds its connection in the table for a few socket samples. On
-// its end, or the guard's stop, it ends what it started and waits until each is gone (the guard reaps the orphans)
+// its end it takes the connection out of the table and ends the proxy only after two more reads, so no check that read
+// the table is still judging the proxy; on its end or the guard's stop it ends what it started and waits until each is
+// gone (the guard reaps the orphans)
 const DRIVER = `
 import { spawn } from 'node:child_process';
 import { readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 const spec = JSON.parse(process.argv[2]);
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 const state = (pid) => { try { const s = readFileSync('/proc/' + pid + '/stat', 'utf8'); return s[s.lastIndexOf(')') + 2]; } catch { return null; } };
+const comm = (pid) => { try { return readFileSync('/proc/' + pid + '/comm', 'utf8').trim(); } catch { return null; } };
 const started = [];
 const finish = async (code) => {
   for (const pid of started) try { process.kill(pid, 'SIGKILL'); } catch {}
@@ -56,8 +60,9 @@ if (spec.proxy && spec.end === 'zombie') {
   started.push(parent.pid);
   while (!proxy) { await sleep(20); try { proxy = Number(readFileSync(spec.dir + '/proxy.pid', 'utf8')) || null; } catch {} }
 } else if (spec.proxy && spec.late) {
-  // the proxy's process recorded before its exec: a shell first (its argv names no display), then the stand-in
-  proxy = spawn('sh', ['-c', 'sleep 0.4; exec "$0" -D "$SHOWN"', spec.proxy[0]], { stdio: 'ignore', env: { ...process.env, SHOWN: spec.proxy.at(-1) } }).pid;
+  // the proxy's process recorded before its exec: a shell first for longer than a sample takes (its argv names no
+  // display), then the stand-in
+  proxy = spawn('sh', ['-c', 'sleep 1.5; exec "$0" -D "$SHOWN"', spec.proxy[0]], { stdio: 'ignore', env: { ...process.env, SHOWN: spec.proxy.at(-1) } }).pid;
   writeFileSync(spec.dir + '/proxy.pid', String(proxy));
 } else if (spec.proxy) {
   proxy = spawn(spec.proxy[0], spec.proxy.slice(1), { stdio: 'ignore' }).pid;
@@ -65,6 +70,8 @@ if (spec.proxy && spec.end === 'zombie') {
 }
 if (proxy) started.push(proxy);
 await sleep(800);
+// a proxy that execs late is shown only once it has
+while (spec.late && comm(proxy) !== 'xtrace') await sleep(20);
 if (spec.end) {
   process.kill(proxy, 'SIGKILL');
   const gone = spec.end === 'zombie' ? (s) => s === 'Z' : (s) => s === null;
@@ -79,6 +86,10 @@ writeFileSync(table + '.new', [
 renameSync(table + '.new', table);
 await sleep(2500);
 rmSync(table, { force: true });
+// checks run one at a time: once a read has finished after the one under way, every check of the table is done
+const reads = () => { try { return readFileSync(table + '.reads', 'utf8').split('\\n').length - 1; } catch { return 0; } };
+const seen = reads();
+while (reads() < seen + 2) await sleep(20);
 await finish(0);
 `;
 /**

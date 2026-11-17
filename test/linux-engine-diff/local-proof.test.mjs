@@ -24,7 +24,9 @@ function proof({ test: testScript, harness, parts = 'npm-test,harness', hold = f
     writeFileSync(join(checkout, 'package.json'), JSON.stringify({ name: 'stand-in', private: true, scripts: { test: testScript, 'test:linux-engine-diff': harness } }));
     if (hold) writeFileSync(join(dir, 'hold'), 'held by the test\n');
     const out = join(dir, 'out');
-    const env = { ...process.env, PROOF_PARTS: parts, PROOF_HOLD: join(dir, 'hold') };
+    // npm keeps a compile cache in the temporary directory: the test's own, removed with it
+    mkdirSync(join(dir, 'tmp'));
+    const env = { ...process.env, TMPDIR: join(dir, 'tmp'), PROOF_PARTS: parts, PROOF_HOLD: join(dir, 'hold') };
     delete env.PROOF_LOCK;
     const run = spawnSync('bash', [PROOF, out, checkout], { encoding: 'utf8', env, timeout: 120000 });
     const read = (name) => readFileSync(join(out, name), 'utf8');

@@ -4843,6 +4843,51 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      engine's contract (a new menu child of the application within the wait) has the same limit.
   3. **Registered at merge** as a platform-neutral ticket shared with Linux (the design session registers it).
   Date/Author: 2026-11-16, cursor235's implementer for #374 (ruling 1ea561bc:753).
+- Decision (#366, 2026-11-17, `fix/366-chromium-ax-ready`; the design session's ruling 766 on the spike's findings,
+  hosted runs 44032504512 and 44052940748, kit `probe/366-measure`, engine b99232de; ruling 757 narrowed the issue to
+  this false success): **an element action into a Chromium-family app waits out what remains of 2.5 s since the
+  engine's last accepted enablement write of the app's process.** A first AX press into Electron or Chrome answered
+  success and ran no handler when it landed less than about 2.25 s after the write: 0 of 124 presses delivered at 0.92 s
+  or less, 283 of 283 at 3.45 s or more; the threshold sweep delivered 30 of 30 at 2.25 s, 7 of 30 at 2 s and none at
+  1.75 s, in a parity and a default Electron 44.4.5 window and Chrome for Testing 156. Every AXManualAccessibility write
+  restarts Electron's 2 s debounce to its complete mode (`electron_application.mm`), until which a button is exposed but
+  its press does not reach the renderer; Electron announces only the write, and no attribute on every page's root shows
+  the mode's arrival, so the wait is fixed, not read.
+  1. **The gate** (`ChromiumReadiness.swift`): execute's prologue, after the input's own enablement step
+     (`inputEnablement`) and the holds' steps, before the method runs, for the methods that may carry an element action
+     (`elementActionMethods`: click, set_value, select_text, perform_secondary_action, scroll) on an app whose page engine
+     is `.chromium` (`pageEngineOf`), waits `chromiumActionWaitMs`: what remains of `chromiumActionWindowMs` (2.5 s, the
+     sweep's 2.25 s and a margin) since `WebAccessibility.lastEnablementWrite`, 0 once it has passed or with no write.
+     The cause is the renderer's mode, so every element action waits, not the press alone. The answer is unchanged: a
+     dispatch stays a dispatch (ruling 757). The engine takes an injectable monotonic clock and sleeper for it.
+  2. **No hold through the wait.** It runs before the method takes any hold. A focus hold the connection keeps on the
+     app from an earlier action (FocusHold.swift's 120 s bound outlasts the enablement's 30 s grace, so an action after a
+     grace release meets one) ends before the wait, and the action takes it again. A recorded menu's span is the one
+     hold an action keeps, a press on the menu's item, which must land inside it: that press does not wait, its item
+     being AppKit's menu, not the page's renderer. Another connection's hold on the same process is not this request's
+     to end, and is left as it is.
+  3. **Read before write** holds already and is pinned by tests: an owned attribute is neither read nor written again
+     (#244); one that reads true and is not the engine's own write-back is left alone, so neither restarts the window.
+     The one rewrite of a value that reads true is after the engine's own write-back, whose true is AppKit's readback
+     with the mode gone (Decision Log 2026-10-22); that write is a real restart, and is waited out.
+  4. **Where the first write is**: already at the first contact. get_app_state's enablement step (Skyshot.swift,
+     `observeEnablement`) runs before the window read, the web-area wait, the walk and the screenshot, so the window runs
+     while the agent reads the observation; an input with no observation before it writes in `inputEnablement` and then
+     waits the whole window. Only cua's own launch or reopen (its window wait and open settle) and an armed or forced
+     settle come before the step, and the armed one follows an action that has already enabled the process. The write
+     is not moved ahead of the open settle: the settle's adopted tree is keyed on no enablement since it began
+     (`adoptsSettledTree`), and the gain is confined to an app cua itself launched.
+  5. **Accepted** is what `enableReporting` counts as set: success, or Chrome's kAXErrorNotImplemented with the
+     attribute reading true after it (#292). The ruling's "owned" is read as the engine's own write: one that set an
+     attribute whose value could not be read (not owned, so never written back) restarts the countdown all the same, and
+     is waited out.
+  6. **Over-approximation.** The gate is per method, not per Accessibility call, so a coordinate click or scroll that
+     ends as posted events alone (dedicated mode, a non-web view) waits too, once, within 2.5 s of a write; a per-call
+     gate would run inside the holds the actions take before their perform. press_key, type_text, paste and drag post
+     events only and never wait.
+  7. **The model's document** gains one sentence at the end of agent-cursor.md's second paragraph (the surface
+     inventory's #366 addition), copied byte for byte into the docs oracle and the core-documentation test.
+  Date/Author: 2026-11-17, cursor235's implementer for #366 (ruling 766).
 
 ## Outcomes & Retrospective
 

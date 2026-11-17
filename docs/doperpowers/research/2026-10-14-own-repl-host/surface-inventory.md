@@ -839,3 +839,14 @@ after the scroll's answers:
 The last two sentences are ruling 1ea561bc:753's stated limit (the native engine spec's Decision Log, "#374's coincident
 menu"): the hosted controls showed a menu opened in the same window within the wait by something other than the request
 confirming it, and no discriminator separates the two.
+
+### Table 3 addition (2026-11-17, #366)
+
+#366 (the native engine spec's Decision Log, the #366 entry; the design session's ruling 766) makes the first element
+action on a Chromium-family app that cua has just enabled wait: Electron and Chrome answer an element action as done
+and run no handler until their complete accessibility mode lands, about 2.25 s after cua's enablement write, so the
+engine waits out what remains of 2.5 s after that write before a click, set_value, select_text, secondary action or
+scroll. The model sees the wait only as a slower first action, which the sentence names so it is not read as a stall.
+One sentence closes the second paragraph, which describes the element actions cua takes in a background web page:
+
+> A web page in a Chromium-based app (Chrome, Electron apps) or in Firefox that is in the background does not take a pointer: unless this Mac is a dedicated desktop, a left click, double click or drag there is refused with "<App>'s web page does not accept a background click; use a dedicated desktop, or ask the person to bring <App> forward", and nothing is sent. A plain click there on a button, checkbox, radio button, link, pop-up button or menu item goes through the accessibility action of that element instead, and one on a checkbox or radio button whose state does not change fails with `clickUnconfirmed`. A plain click there into a text field, text area or editable region gives it keyboard focus through accessibility instead, with no mouse event, so the page sees no click; the result's text says whether the caret was put at the point, and when it was not, typing goes to the field's existing selection or its start, so use select_text or set_value first if the position matters. In Firefox the field is focused by its own accessibility action instead, which does not put the caret at the point. A field that does not report focus fails with `clickUnconfirmed`. Unless this Mac is a dedicated desktop, a click on a background Firefox window outside its page, on the toolbar for instance, can fail with `clickUnconfirmed` even when it took effect, as Reload does. A click or drag that fails with `clickUnconfirmed` was sent but may only have activated the window: observe the app before any retry. In a Chromium-based app that cua has just started reading, the first action may wait up to 2.5 s before it is sent, while the app turns on its accessibility.

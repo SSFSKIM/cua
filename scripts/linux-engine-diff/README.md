@@ -137,7 +137,7 @@ else on private displays, idle and at twice the load. `node scripts/linux-engine
 step's minutes, display, load and command with the totals; `print <step>` prints one step's command and writes its
 labelled directory; `run <step>` runs one step that is not `:0`'s, under the host lock (the printed commands include
 `locked.sh`). The `:0` steps are only ever printed: they run in the declared sitting through task 50's guards
-(`run71.sh` under `wrap71.py`). A gate step runs from a clean checkout at the candidate's commit (a symlinked
+(`run71.sh` under `wrap71.py`, M5's copy in `docs/evidence/2026-10-28-own-linux-engine/m5/guards/`, ruling 773). A gate step runs from a clean checkout at the candidate's commit (a symlinked
 `node_modules` counts as a change), with its out directory outside it; `--dev` runs a development build, and `--dev
 --pilot <n>` each step's smallest form; `--pinned <home> --pilot <n>` the same as a development run on the pinned
 release, the pinned rule run inside the step. Each step's directory is named `<step>.release-gate`,

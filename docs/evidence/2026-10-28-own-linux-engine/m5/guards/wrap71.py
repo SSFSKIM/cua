@@ -24,8 +24,20 @@
 # M5's T4: the person is read from the session, never assumed: the account the guard runs as, its uid and the home its
 # passwd entry names (on the #171 x86-64 VM uid 501 and /Users/new, which task 50 wrote in; the arm64 VM's may differ),
 # and the person's runtime directory /run/user/<uid>; wrap-summary.json records them (`person`).
+# M5's copy (task 91, the design session's ruling 773), from M4's pointer-route/scripts/wrap71.py, which stays the record
+# of what ran at H, with one change marked `ruling 773`: task 71's race met on the run's own audit proxy (V5's first
+# attempt, F3's V3). A connection whose server end shows no pid, to /tmp/.X11-unix/X<N> while the run's own recorded
+# xtrace -D :<N> is alive, is counted as task 71 counts the session bus, never flagged; the rule is own_audit_proxy.py's,
+# beside this file.
 # usage: wrap71.py <out> <tmproot> private|person <command...>
-import ctypes, json, os, pwd, re, signal, socket, struct, subprocess, sys, threading, time
+import ctypes, importlib.util, json, os, pwd, re, signal, socket, struct, subprocess, sys, threading, time
+
+# ruling 773's rule, from the file beside this one (-I keeps this directory off sys.path); no bytecode is written, so
+# the checkout a step runs from stays clean
+sys.dont_write_bytecode = True
+_spec = importlib.util.spec_from_file_location('own_audit_proxy', os.path.join(os.path.dirname(os.path.realpath(__file__)), 'own_audit_proxy.py'))
+own_audit_proxy_rule = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(own_audit_proxy_rule)
 
 PERSON_UID = os.getuid()
 # the home defines the forbidden paths, so an identity that resolves to no existing home fails closed, before anything
@@ -212,11 +224,30 @@ def comm_of(pid):
         return None
 
 
+def at_check_in(run_now):
+    """ruling 773: a recorded process as it is at this check, its kernel name and argv, while it is alive: in the run's
+    tree as read after the socket table, the same process (its start time) and not a zombie; else None."""
+    def at_check(rec):
+        if rec['pid'] not in run_now:
+            return None
+        try:
+            s = open(f'/proc/{rec["pid"]}/stat').read()
+            argv = open(f'/proc/{rec["pid"]}/cmdline', 'rb').read().split(b'\0')
+        except OSError:
+            return None
+        f = s[s.rfind(')') + 2:].split()
+        if f[0] in ('Z', 'X') or int(f[19]) != rec['start']:
+            return None
+        return {'comm': s[s.find('(') + 1:s.rfind(')')], 'argv': ' '.join(a.decode(errors='replace') for a in argv if a)}
+    return at_check
+
+
 def check_connections(runset):
     rows = ss_table()
     # a process the run started after the tree was read (a short-lived child at the other end of a pipe-like socket)
     # is the run's too: the tree is read again after the socket table
-    runset = runset | set(tree()[0])
+    run_now = set(tree()[0])
+    runset = runset | run_now
     by_inode = {r['lport']: r for r in rows}
     for r in rows:
         ours = [p for p in r['pids'] if p in runset]
@@ -252,6 +283,16 @@ def check_connections(runset):
             # every sighting the rule counts is recorded, for the evidence (the design session, 2026-11-10)
             with lock, open(os.path.join(out, 'counted.jsonl'), 'a') as f:
                 f.write(json.dumps({'t': now(), 'kind': 'own-session-bus-not-accepted', 'pids': ours, 'comm': comm, 'peer_path': path, 'peer_inode': r['pport']}) + '\n')
+            continue
+        proxy = own_audit_proxy_rule.own_audit_proxy(path, list(procs.values()), at_check_in(run_now)) if not peer['pids'] else None
+        if proxy:
+            # ruling 773: task 71's race on the run's own audit proxy, a connection to /tmp/.X11-unix/X<N> its server
+            # end shows no pid for while the run's recorded xtrace -D :<N> is alive (V5's first attempt, 2026-11-17
+            # 02:16:17Z; F3's V3, 11:42:58Z); counted as the session bus is, never flagged
+            key = f'{comm} -> {path} (the run\'s own audit proxy, not yet accepted)'
+            outside[key] = outside.get(key, 0) + 1
+            with lock, open(os.path.join(out, 'counted.jsonl'), 'a') as f:
+                f.write(json.dumps({'t': now(), 'kind': 'own-audit-proxy-not-accepted', 'pids': ours, 'comm': comm, 'peer_path': path, 'peer_inode': r['pport'], 'proxy_pid': proxy['pid'], 'proxy_display': ':' + own_audit_proxy_rule.X_SOCKET.fullmatch(path).group(1)}) + '\n')
             continue
         if path in ('*', '') and peer_comm in CHROME_NAMES:
             # an unnamed socket shared with a Chrome that is not the run's: the owner's

@@ -82,16 +82,18 @@ gates:
   # CUA171_DBUS_TESTS=required turns a missing tool into a failure, never a skip. Through the suite's cleanup check, with
   # its own test (a stand-in left behind its bus) and the session bus's tests beside them. No X display is started.
   # The trace proxy's lifetime tests (audit-proxy-lifetime.test.mjs: setpriv's parent-death signal, /proc) are
-  # Linux's too, and run here beside them.
+  # Linux's too, and run here beside them, as do the `:0` guard's rule for the run's own audit proxy (wrap71-own-proxy:
+  # the subreaper, /proc; #171 ruling 773).
   - name: harness-dbus
     lane: hosted
     timeout: 15
     run: |
       sudo apt-get update -y
       sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends dbus dbus-bin
-      CUA171_DBUS_TESTS=required node test/linux-engine-diff/suite-check.mjs test/linux-engine-diff/a11y-stub.test.mjs test/linux-engine-diff/leak-check.test.mjs test/linux-engine-diff/session-bus.test.mjs test/linux-engine-diff/audit-proxy-lifetime.test.mjs
+      CUA171_DBUS_TESTS=required node test/linux-engine-diff/suite-check.mjs test/linux-engine-diff/a11y-stub.test.mjs test/linux-engine-diff/leak-check.test.mjs test/linux-engine-diff/session-bus.test.mjs test/linux-engine-diff/audit-proxy-lifetime.test.mjs test/linux-engine-diff/wrap71-own-proxy.test.mjs
     paths:
       - "scripts/linux-engine-diff/**"
+      - "docs/evidence/2026-10-28-own-linux-engine/m5/guards/**"
       - "test/linux-engine-diff/**"
       - ".github/ci-kit.yml"
   # #159: cua's headless macOS live checks (the #115 oracles, own-sandbox on both hosts, probe-secrets) on a runtime

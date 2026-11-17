@@ -1,0 +1,174 @@
+// #171 M5, task 91, the design session's ruling 773: the `:0` guard (M5's wrap71.py) counts a run process's
+// connection to the socket of the run's own audit proxy that ss shows no server pid for, as task 71 counts the step's
+// own session bus, and only when the proxy is recorded and alive: an xtrace in the run's tree whose `-D :<N>` names
+// `/tmp/.X11-unix/X<N>`, alive at that check. V5's first attempt and F3's V3 were stopped by exactly that row
+// (`outside-peer-connection` to /tmp/.X11-unix/X40, `peer_pids: []`, while the run's xtrace -D :40 was alive).
+//
+// Display-free and socket-free: the guard runs in private mode around a driver that stands for the run, and reads its
+// socket table from a stand-in `ss` first on its PATH, which prints the table the driver writes: the driver's own
+// connection and, at its other end, a socket named for the proxy's path with no pid, the stopped runs' row. The proxy is
+// a real stand-in process named xtrace (its kernel name, as the real one's), in the run's tree or outside it. Nothing
+// listens on /tmp/.X11-unix and no display is reached.
+
+import assert from 'node:assert/strict';
+import { spawn, spawnSync } from 'node:child_process';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { describe, it } from 'node:test';
+
+const WRAP71 = new URL('../../docs/evidence/2026-10-28-own-linux-engine/m5/guards/wrap71.py', import.meta.url).pathname;
+const SOCKET = '/tmp/.X11-unix/X740';
+const linux = process.platform === 'linux';
+// the interpreter the guard runs on, for the proxy stand-in's first line
+const PYTHON = linux ? spawnSync('python3', ['-I', '-c', 'import sys; print(sys.executable)'], { encoding: 'utf8' }).stdout.trim() : null;
+
+// the proxy stand-in: runs until it is ended, its argv the real proxy's shape (audit.mjs: xtrace … -D :<N> …). Python,
+// since its kernel name stays the file's (xtrace), as the real proxy's does; Node renames its thread MainThread
+const FAKE_XTRACE = (python) => `#!${python} -I
+import time
+time.sleep(60)
+`;
+// the socket table: what the driver wrote, or the header alone
+const FAKE_SS = `#!/bin/sh
+cat "$FAKE_SS_TABLE" 2>/dev/null || echo 'Netid State Recv-Q Send-Q Local Address:Port Peer Address:Port Process'
+`;
+// the run: starts the proxy as the spec says, lets the guard's samples record it, ends it (reaped, or left a zombie
+// under a parent that never waits) when asked, then holds its connection in the table for a few socket samples. On
+// its end, or the guard's stop, it ends what it started and waits until each is gone (the guard reaps the orphans)
+const DRIVER = `
+import { spawn } from 'node:child_process';
+import { readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+const spec = JSON.parse(process.argv[2]);
+const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
+const state = (pid) => { try { const s = readFileSync('/proc/' + pid + '/stat', 'utf8'); return s[s.lastIndexOf(')') + 2]; } catch { return null; } };
+const started = [];
+const finish = async (code) => {
+  for (const pid of started) try { process.kill(pid, 'SIGKILL'); } catch {}
+  for (let i = 0; i < 100 && started.some((pid) => state(pid) !== null); i++) await sleep(20);
+  process.exit(code);
+};
+process.on('SIGTERM', () => finish(143));
+let proxy = null;
+if (spec.proxy && spec.end === 'zombie') {
+  // a parent that never waits: the proxy, once killed, stays a zombie in the run's tree
+  const parent = spawn('sh', ['-c', '"$@" & echo $! > "$PIDFILE"; exec sleep 30', 'sh', ...spec.proxy], { stdio: 'ignore', env: { ...process.env, PIDFILE: spec.dir + '/proxy.pid' } });
+  started.push(parent.pid);
+  while (!proxy) { await sleep(20); try { proxy = Number(readFileSync(spec.dir + '/proxy.pid', 'utf8')) || null; } catch {} }
+} else if (spec.proxy && spec.late) {
+  // the proxy's process recorded before its exec: a shell first (its argv names no display), then the stand-in
+  proxy = spawn('sh', ['-c', 'sleep 0.4; exec "$0" -D "$SHOWN"', spec.proxy[0]], { stdio: 'ignore', env: { ...process.env, SHOWN: spec.proxy.at(-1) } }).pid;
+  writeFileSync(spec.dir + '/proxy.pid', String(proxy));
+} else if (spec.proxy) {
+  proxy = spawn(spec.proxy[0], spec.proxy.slice(1), { stdio: 'ignore' }).pid;
+  writeFileSync(spec.dir + '/proxy.pid', String(proxy));
+}
+if (proxy) started.push(proxy);
+await sleep(800);
+if (spec.end) {
+  process.kill(proxy, 'SIGKILL');
+  const gone = spec.end === 'zombie' ? (s) => s === 'Z' : (s) => s === null;
+  while (!gone(state(proxy))) await sleep(20);
+}
+const table = spec.dir + '/ss.txt';
+writeFileSync(table + '.new', [
+  'Netid State Recv-Q Send-Q Local Address:Port Peer Address:Port Process',
+  'u_str ESTAB 0 0 * 7400001 * 7400002 users:(("node",pid=' + process.pid + ',fd=40))',
+  'u_str ESTAB 0 0 ' + spec.peer + ' 7400002 * 7400001',
+].join('\\n') + '\\n');
+renameSync(table + '.new', table);
+await sleep(2500);
+rmSync(table, { force: true });
+await finish(0);
+`;
+/**
+ * wrap71.py in private mode around the driver, in a fresh directory: the run's proxy started from `proxy` (an argv
+ * tail for the stand-in), or an `outside` one the test starts beside the guard, `end` the proxy's end before the
+ * connection shows (`reaped`, `zombie`), `peer` the path the table names. Its exit, summary, counted rows and proxy pid.
+ */
+async function guard({ proxy = null, outside = null, end = null, late = false, peer = SOCKET, named = 'xtrace' } = {}) {
+  const dir = mkdtempSync(join(tmpdir(), 'cua171-guard-'));
+  let stranger = null;
+  try {
+    const bin = join(dir, 'bin');
+    mkdirSync(bin);
+    mkdirSync(join(dir, 'tmp'));
+    writeFileSync(join(bin, 'ss'), FAKE_SS);
+    writeFileSync(join(bin, named), FAKE_XTRACE(PYTHON));
+    writeFileSync(join(dir, 'driver.mjs'), DRIVER);
+    chmodSync(join(bin, 'ss'), 0o755);
+    chmodSync(join(bin, named), 0o755);
+    if (outside) stranger = spawn(join(bin, named), outside, { stdio: 'ignore' });
+    const spec = { dir, peer, end, late, proxy: proxy && [join(bin, named), ...proxy] };
+    const run = spawn('python3', ['-I', WRAP71, join(dir, 'out'), join(dir, 'tmp'), 'private', process.execPath, join(dir, 'driver.mjs'), JSON.stringify(spec)], {
+      env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, FAKE_SS_TABLE: join(dir, 'ss.txt') },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let said = '';
+    run.stdout.on('data', (d) => { said += d; });
+    run.stderr.on('data', (d) => { said += d; });
+    const code = await new Promise((done) => run.once('exit', done));
+    const read = (name) => readFileSync(join(dir, 'out', name), 'utf8');
+    assert.ok(existsSync(join(dir, 'out', 'wrap-summary.json')), `no summary: ${said}`);
+    const counted = existsSync(join(dir, 'out', 'counted.jsonl')) ? read('counted.jsonl').split('\n').filter(Boolean).map((l) => JSON.parse(l)) : [];
+    const pidFile = join(dir, 'proxy.pid');
+    return { code, said, summary: JSON.parse(read('wrap-summary.json')), counted, proxyPid: existsSync(pidFile) ? Number(readFileSync(pidFile, 'utf8')) : stranger?.pid };
+  } finally {
+    stranger?.kill('SIGKILL');
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+const peerFlags = (summary, peer = SOCKET) => summary.flags.filter((f) => f.kind === 'outside-peer-connection' && f.peer_path === peer && f.peer_pids.length === 0);
+const ownProxyRows = (counted) => counted.filter((r) => r.kind === 'own-audit-proxy-not-accepted');
+
+describe("wrap71's rule for the run's own audit proxy (ruling 773)", { concurrency: true, skip: !linux && 'Linux only (/proc, the subreaper)' }, () => {
+  it("counts a not-yet-accepted connection to the live recorded proxy's socket, and flags nothing", async () => {
+    const r = await guard({ proxy: ['-k', '-m', '256', '-d', ':739', '-D', ':740', '-c', '-o', '/dev/null'] });
+    assert.deepEqual(r.summary.flags, [], r.said);
+    assert.equal(r.code, 0, r.said);
+    const rows = ownProxyRows(r.counted);
+    assert.ok(rows.length >= 1, `no counted sighting: ${JSON.stringify(r.counted)}`);
+    for (const row of rows) {
+      assert.equal(row.peer_path, SOCKET);
+      assert.equal(row.proxy_pid, r.proxyPid);
+      assert.equal(row.proxy_display, ':740');
+      assert.equal(row.peer_inode, '7400002');
+    }
+    const key = Object.keys(r.summary.outside_peers_allowed).find((k) => k.includes(`-> ${SOCKET} (the run's own audit proxy, not yet accepted)`));
+    assert.ok(key, JSON.stringify(r.summary.outside_peers_allowed));
+    assert.equal(r.summary.outside_peers_allowed[key], rows.length);
+    // the rule is loaded from beside the guard with no bytecode written, so a step's checkout stays clean
+    assert.equal(existsSync(join(dirname(WRAP71), '__pycache__')), false);
+  });
+
+  // a sample can read a child between its fork and its exec, and the record keeps that first argv: the proxy is judged
+  // as it is at the check, as its liveness is
+  it('counts it when the proxy was recorded before its exec, by its argv at the check', async () => {
+    const r = await guard({ proxy: ['-D', ':740'], late: true });
+    assert.deepEqual(r.summary.flags, [], r.said);
+    const recorded = r.summary.processes.find((p) => p.pid === r.proxyPid);
+    assert.doesNotMatch(recorded.argv, /-D :740/, 'the record holds the argv from before the exec');
+    assert.ok(ownProxyRows(r.counted).length >= 1, JSON.stringify(r.counted));
+  });
+
+  // the negative controls: each is the stopped runs' row, and each must still stop the run
+  const controls = [
+    ['with no recorded proxy at all', {}],
+    ['when the process in the run serving that argv is not an xtrace', { proxy: ['-D', ':740'], named: 'xserve' }],
+    ['when the recorded proxy is on another display', { proxy: ['-D', ':741'] }],
+    ['after the proxy has exited and been reaped', { proxy: ['-D', ':740'], end: 'reaped' }],
+    ['after the proxy has exited, a zombie its parent has not reaped', { proxy: ['-D', ':740'], end: 'zombie' }],
+    ["when the proxy is not in the run's tree", { outside: ['-D', ':740'] }],
+    ["for the proxy's display reached by its abstract name, which is not the proxy's socket", { proxy: ['-D', ':740'], peer: '@/tmp/.X11-unix/X740' }],
+  ];
+  for (const [what, setup] of controls) {
+    it(`still flags it ${what}`, async () => {
+      const r = await guard(setup);
+      const peer = setup.peer ?? SOCKET;
+      assert.equal(peerFlags(r.summary, peer).length, 1, `${r.said}\n${JSON.stringify(r.summary.flags)}`);
+      assert.deepEqual(ownProxyRows(r.counted), []);
+      assert.notEqual(r.code, 0, 'the flag stops the run');
+    });
+  }
+});

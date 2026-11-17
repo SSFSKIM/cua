@@ -12,7 +12,8 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 const EVIDENCE = new URL('../../docs/evidence/2026-10-28-own-linux-engine/m4/', import.meta.url).pathname;
-const WRAP71 = join(EVIDENCE, 'pointer-route/scripts/wrap71.py');
+// the guard the :0 steps run under now: M5's copy (task 91, ruling 773), which carries T4's reading of the person
+const WRAP71 = new URL('../../docs/evidence/2026-10-28-own-linux-engine/m5/guards/wrap71.py', import.meta.url).pathname;
 const PERSON = join(EVIDENCE, 'person-display-live/scripts/person.sh');
 const linux = process.platform === 'linux';
 // whether this machine lets an unprivileged user map itself to root in a user namespace (Ubuntu may restrict it)

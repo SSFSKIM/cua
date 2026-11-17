@@ -39,6 +39,15 @@ final class ClickOrderingTests: XCTestCase {
 
   private let caret = NSRange(location: 3, length: 0), selected = NSRange(location: 0, length: 29)
 
+  /// Ruling 785's numbers, pinned: the other tests derive from these, so a change here is a change of the ruling.
+  func testTheRulingsConstants() {
+    XCTAssertEqual(pendingClickWindowMs, 1_000, "about 1 s, past the spike's worst late landing (419 ms)")
+    XCTAssertEqual(pendingClickDwellMs, 50, "the stable50 candidate")
+    XCTAssertEqual(pendingClickSampleMs, 10)
+    XCTAssertEqual(pendingClickCapMs, 300, "about 300 ms")
+    XCTAssertEqual(selectedRangeWindowMs, 1_000)
+  }
+
   // MARK: What arms the window
 
   /// A foreground click's events posted to the process arm the window, at the time they went, for the process and the
@@ -255,10 +264,12 @@ final class ClickOrderingTests: XCTestCase {
     XCTAssertEqual(early.ms, pendingClickCapMs)
   }
 
-  /// A value other than the one written after it landed: valueChanged.
+  /// A value other than the one written after it landed: valueChanged, whether or not its length changed.
   func testAValueChangedAfterTheWriteIsValueUnconfirmed() {
     let (changed, _) = watch(written: "NEW359", length: 6, values: ["NEW359", "NEW35"], ranges: [end, NSRange(location: 5, length: 0)])
     XCTAssertEqual(changed.drift, .valueChanged)
+    let (sameLength, _) = watch(written: "NEW359", length: 6, values: ["NEW359", "NEW358"], ranges: [end])
+    XCTAssertEqual(sameLength.drift, .valueChanged, "the same length, other text")
     XCTAssertTrue(valueUnconfirmed(app: "Safari", drift: .valueChanged).message.contains("read another value just after"))
     XCTAssertEqual(valueUnconfirmed(app: "Safari").message,
                    "The value was sent to Safari and accepted, but the field could not be found again to confirm it. Observe the app (take a screenshot or call getAXState()) before any retry, and never retry blindly.",

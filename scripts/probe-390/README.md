@@ -3,7 +3,7 @@
 Probe-only branch `probe/390-qual`, forked from `probe/366-measure` at `fc3b8495`.
 No product edits, engine patches, forced routes, native probe gates, owner profiles or owner secrets.
 The workflow pins both engine commits and builds each in a separate scratch worktree.
-The candidate pin is `e417be4a2dd5b49f778b6705c4de2472afb7c4dd`. Smoke may run once the kit review is clean; the full run awaits coordinator confirmation.
+The final fix pin is `e417be4a2dd5b49f778b6705c4de2472afb7c4dd`; main is `290303c131c20e4dc88001b8b970d03785ec0b1d`. Both the fix re-review and the kit's closing medium review were clean before registration. Full qualification follows smoke inspection.
 
 ## Predeclared cells
 

@@ -18,7 +18,7 @@ concurrency:
 env:
   MAIN_REF: 290303c131c20e4dc88001b8b970d03785ec0b1d
   # Candidate supplied by the coordinator; smoke may run after clean kit review, full awaits coordinator confirmation.
-  FIX_REF: 2532a1b583b3166b414a5bc8a63c1598c974687d
+  FIX_REF: e417be4a2dd5b49f778b6705c4de2472afb7c4dd
 jobs:
   qualify:
     runs-on: macos-latest

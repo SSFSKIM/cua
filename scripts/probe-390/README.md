@@ -3,7 +3,7 @@
 Probe-only branch `probe/390-qual`, forked from `probe/366-measure` at `fc3b8495`.
 No product edits, engine patches, forced routes, native probe gates, owner profiles or owner secrets.
 The workflow pins both engine commits and builds each in a separate scratch worktree.
-The candidate pin is `2532a1b583b3166b414a5bc8a63c1598c974687d`. Smoke may run once the kit review is clean; the full run awaits coordinator confirmation (the next fix head is not yet supplied).
+The candidate pin is `e417be4a2dd5b49f778b6705c4de2472afb7c4dd`. Smoke may run once the kit review is clean; the full run awaits coordinator confirmation.
 
 ## Predeclared cells
 
@@ -14,7 +14,7 @@ Each browser job uses one owned fixture process/profile. Each action gets a fres
 | CfT, default Electron, MAWS-chrome-parity Electron | background distinct value | 20 | Fix: ok, DOM and React exact match, `unfocusedValue.confirmed` with positive read count; main: backgroundClickRefused and empty values |
 | Same | synchronous uppercase-on-input guard | 5 | Fix: valueUnconfirmed and mismatch read-back, DOM/React transformed; main: refused and empty |
 | Same | >12,000-character value | 5 | Fix: valueUnconfirmed and `possiblyTruncated`, DOM/React full value; capped AX prefix must not confirm; main: refused and empty |
-| Same | exactly 10,000-character value (unique random prefix, padded); the fixture synchronously appends a suffix on input | 5 | Fix: valueUnconfirmed, never ok; final DOM/React are exactly the request plus the suffix; any non-`confirmed` `unfocusedValue` result is recorded as measured; main: refused and empty |
+| Same | exactly 10,000-character value (unique random prefix, padded); the fixture synchronously appends a suffix on input | 5 | Fix: valueUnconfirmed, never ok; final DOM/React are exactly the request plus the suffix; `unfocusedValue.result` must be `possiblyTruncated` with positive reads (as for every value of 10,000 characters or more); main: refused and empty |
 | Same | placeholder secret | 5 | Fix: valueUnconfirmed, concealed with zero read-back reads, DOM/React value delivered; main: refused and empty |
 | Same | foreground ordinary value | 5 | Both: ok and exact DOM/React delivery |
 | Safari | background, foreground ordinary value | 5 each | Both: ok and exact DOM/React delivery |

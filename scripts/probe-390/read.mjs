@@ -28,7 +28,7 @@ export function judge(r){
  if(r.head==='main'&&bg&&r.browser!=='safari')expectedAnswer=error==='backgroundClickRefused'&&emptyAt;
  else if(r.cell==='guard')expectedAnswer=error==='valueUnconfirmed'&&u?.result==='mismatch'&&u.reads>0&&a?.value===r.expected.toUpperCase()&&a?.reactValue===r.expected.toUpperCase();
  else if(r.cell==='long')expectedAnswer=error==='valueUnconfirmed'&&u?.result==='possiblyTruncated'&&u.reads>0&&delivered;
- else if(r.cell==='cap-suffix'){const landed=eligible&&r.expected?.length===CAP_LENGTH&&a.value===r.expected+CAP_SUFFIX&&a.reactValue===r.expected+CAP_SUFFIX;expectedAnswer=error==='valueUnconfirmed'&&landed;}
+ else if(r.cell==='cap-suffix'){const landed=eligible&&r.expected?.length===CAP_LENGTH&&a.value===r.expected+CAP_SUFFIX&&a.reactValue===r.expected+CAP_SUFFIX;expectedAnswer=error==='valueUnconfirmed'&&u?.result==='possiblyTruncated'&&u.reads>0&&landed;}
  else if(r.cell==='secret')expectedAnswer=error==='valueUnconfirmed'&&u?.result==='concealed'&&u.reads===0&&delivered;
  else expectedAnswer=ok&&delivered&&settled&&(!(bg&&r.browser!=='safari')||(u?.result==='confirmed'&&u.reads>0));
  // Main can post its old inert pointer. Only the new Chromium background path must be pointer/key free.

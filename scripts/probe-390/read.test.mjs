@@ -33,11 +33,13 @@ test('refused baseline cells stay empty at every checkpoint',()=>{
  assert.equal(judge(r).pass,true);at(r,250,{value:'v',reactValue:'v'});assert.equal(judge(r).pass,false);
 });
 const cap=()=>{const r=row();r.cell='cap-suffix';r.expected=capValue('cap-a1b2c3d4-0');const landed=r.expected+CAP_SUFFIX;for(const c of r.checkpoints)Object.assign(c.after,{value:landed,reactValue:landed});Object.assign(r.after,{value:landed,reactValue:landed});r.call.raw={error:{errorName:'valueUnconfirmed',meta:{unfocusedValue:{result:'possiblyTruncated',reads:1,ms:5}}}};return r;};
-test('cap-suffix: exact-length request, synchronous suffix, never ok, any non-confirmed result is measured',()=>{
+test('cap-suffix: exact-length request, synchronous suffix, never ok, only possiblyTruncated with reads passes',()=>{
  assert.equal(capValue('p').length,CAP_LENGTH);assert.equal(CAP_LENGTH,10000);assert.equal(modeFor('cap-suffix'),'suffix');assert.equal(modeFor('guard'),'uppercase');assert.equal(modeFor('long'),'plain');
  assert.equal(transform('suffix','ab'),'ab'+CAP_SUFFIX);assert.equal(transform('uppercase','ab'),'AB');assert.equal(transform('plain','ab'),'ab');
  const r=cap();assert.equal(judge(r).pass,true);assert.equal(judge(r).falseOk,false);
- for(const result of ['mismatch','unavailable','absent']){const q=cap();q.call.raw.error.meta.unfocusedValue=result==='absent'?undefined:{result,reads:0,ms:0};assert.equal(judge(q).pass,true,result);}
+ for(const result of ['mismatch','unavailable','confirmed','absent']){const q=cap();q.call.raw.error.meta.unfocusedValue=result==='absent'?undefined:{result,reads:1,ms:5};assert.equal(judge(q).pass,false,result);assert.equal(judge(q).falseOk,false,result);}
+ const noReads=cap();noReads.call.raw.error.meta.unfocusedValue.reads=0;assert.equal(judge(noReads).pass,false);
+ const noMeta=cap();delete noMeta.call.raw.error.meta;assert.equal(judge(noMeta).pass,false);
  const ok=cap();ok.call.raw={result:{meta:{unfocusedValue:{result:'confirmed',reads:1,ms:5}}}};assert.equal(judge(ok).falseOk,true);assert.equal(judge(ok).pass,false);
  const okMeta=cap();okMeta.call.raw={result:{meta:{}}};assert.equal(judge(okMeta).pass,false);
 });

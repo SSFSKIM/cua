@@ -1021,6 +1021,6 @@ the sixth paragraph:
 that does not have focus: main's preparation clicked the field to focus it, which shared mode refuses there, so it answered
 `backgroundClickRefused` before any write. The engine now writes the value with no hold and no click and reads it back,
 answering success only on a read as written and `valueUnconfirmed` otherwise, a secret's or a password field's always,
-since neither is read. One sentence closes the fourth paragraph:
+since neither is read. Two sentences close the fourth paragraph; the second, on focus events, is ruling 1ea561bc:793 after the hosted qualification found the page gets none:
 
-> Unless this Mac is a dedicated desktop, a `setValue` on a text field of a web page in a Chromium-based app in the background, when the field does not already have keyboard focus, sets the value without a click and then reads it back: it succeeds only once the field reads the new value, and otherwise fails with `valueUnconfirmed`, as it always does there for a `{{secret:…}}` or a password field, whose value is never read back, so observe the field before any retry.
+> Unless this Mac is a dedicated desktop, a `setValue` on a text field of a web page in a Chromium-based app in the background, when the field does not already have keyboard focus, sets the value without a click and then reads it back: it succeeds only once the field reads the new value, and otherwise fails with `valueUnconfirmed`, as it always does there for a `{{secret:…}}` or a password field, whose value is never read back, so observe the field before any retry. The field becomes the focused element of the page, but the page gets no focus or blur event for it, so anything a page does only on focus, such as opening a list of suggestions, does not happen.

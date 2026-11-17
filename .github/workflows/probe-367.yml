@@ -18,14 +18,35 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Save runner context before setup or builds
+        run: |
+          mkdir -p "$RUNNER_TEMP/evidence367"
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import {execFileSync} from 'node:child_process';
+          const config = {
+            kit: process.env.GITHUB_SHA, run: process.env.GITHUB_RUN_ID,
+            runnerOS: process.env.ImageOS, imageVersion: process.env.ImageVersion,
+            runnerArch: process.env.RUNNER_ARCH, node: process.version,
+            authorizationPolicy: 'Non-prompting preflight only. Never request grants or change TCC.'
+          };
+          const save = () => fs.writeFileSync(process.env.RUNNER_TEMP + '/evidence367/setup.json', JSON.stringify(config, null, 2) + '\n');
+          save();
+          for (const [key, command, args] of [['os', '/usr/bin/sw_vers', []], ['kernel', '/usr/bin/uname', ['-a']], ['xcode', '/usr/bin/xcodebuild', ['-version']]]) {
+            try { config[key] = execFileSync(command, args, {encoding: 'utf8'}); }
+            catch (error) { config[key] = {error: error.message}; }
+            save();
+          }
+          NODE
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '22'
       - name: Build pinned real engines and owned spike fixture
         run: |
           set -euo pipefail
-          FIX_REF=34edcafe0eb8aa0c037bc6721d6a03efccf06746
-          MAIN_REF=4a3e26ed9fd35a34aba782da44301e400d6cf990
+          node --test scripts/probe-367/evidence.test.mjs
+          FIX_REF=2b7804bdbbebd29ea7d88568878f329aaa77999d
+          MAIN_REF=15acf09b714dd19efc796e4a3a2ff8d57e2f7994
           git worktree add --detach "$RUNNER_TEMP/src367-fix" "$FIX_REF"
           git worktree add --detach "$RUNNER_TEMP/src367-main" "$MAIN_REF"
           swift build -c release --package-path "$RUNNER_TEMP/src367-fix/native/engine" --scratch-path "$RUNNER_TEMP/build367-fix"
@@ -52,10 +73,8 @@ jobs:
         with:
           name: probe-367-live
           path: |
-            ${{ runner.temp }}/evidence367/*/config.json
-            ${{ runner.temp }}/evidence367/*/results.json
-            ${{ runner.temp }}/evidence367/*/fatal.json
+            ${{ runner.temp }}/evidence367/*.json
+            ${{ runner.temp }}/evidence367/*/*.json
             ${{ runner.temp }}/evidence367/*/engine-stderr.txt
-            ${{ runner.temp }}/evidence367/*/*-*.json
             ${{ runner.temp }}/evidence367/*/*.jpg
           if-no-files-found: warn

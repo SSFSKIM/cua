@@ -12,62 +12,130 @@ let connection = symbol("CGSMainConnectionID", (@convention(c) () -> Int32).self
 let active = symbol("CGSGetActiveSpace", (@convention(c) (Int32) -> UInt64).self)
 let managed = symbol("CGSCopyManagedDisplaySpaces", (@convention(c) (Int32) -> Unmanaged<CFArray>?).self)
 let spaces = symbol("CGSCopySpacesForWindows", (@convention(c) (Int32, Int32, CFArray) -> Unmanaged<CFArray>?).self)
+let rawArgs = Array(CommandLine.arguments.dropFirst())
+let selectedNumber = rawArgs.first(where: { $0.hasPrefix("--window=") }).flatMap { UInt32($0.dropFirst(9)) }
+let args = rawArgs.filter { !$0.hasPrefix("--window=") }
 func attr(_ e: AXUIElement, _ key: String) -> CFTypeRef? { var v: CFTypeRef?; return AXUIElementCopyAttributeValue(e, key as CFString, &v) == .success ? v : nil }
 func windows(_ pid: pid_t) -> [AXUIElement] { attr(AXUIElementCreateApplication(pid), kAXWindowsAttribute) as? [AXUIElement] ?? [] }
-func rect(_ r: CGRect) -> [String: Double] { ["x":r.minX,"y":r.minY,"width":r.width,"height":r.height] }
+func selectedWindow(_ pid: pid_t) -> AXUIElement? {
+  let ws = windows(pid)
+  guard let selectedNumber else { return ws.first }
+  return ws.first { w in var n: CGWindowID = 0; return windowNumber(w,&n) == .success && n == selectedNumber }
+}
+func rect(_ r: CGRect) -> [String: Double] { ["x":r.origin.x,"y":r.origin.y,"width":r.size.width,"height":r.size.height] }
+func usable(_ r: CGRect) -> Bool { [r.origin.x,r.origin.y,r.size.width,r.size.height].allSatisfy { $0.isFinite } && r.size.width >= 1 && r.size.height >= 1 }
 func frame(_ w: AXUIElement) -> CGRect? {
   guard let p = attr(w,kAXPositionAttribute), let s = attr(w,kAXSizeAttribute), CFGetTypeID(p) == AXValueGetTypeID(), CFGetTypeID(s) == AXValueGetTypeID() else { return nil }
   var pt = CGPoint.zero; var sz = CGSize.zero
   guard AXValueGetValue(p as! AXValue,.cgPoint,&pt), AXValueGetValue(s as! AXValue,.cgSize,&sz) else { return nil }
-  return CGRect(origin:pt,size:sz)
+  let r = CGRect(origin:pt,size:sz)
+  return usable(r) ? r : nil
 }
 func info(_ pid: pid_t) -> [String: Any] {
   let app = AXUIElementCreateApplication(pid), ws = windows(pid)
-  let all = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]] ?? []
-  let on = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
+  let all = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]]
+  let on = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]]
   let top = NSScreen.screens.first?.frame.maxY ?? 0
   let screens = NSScreen.screens.map { CGRect(x:$0.frame.minX,y:top-$0.frame.maxY,width:$0.frame.width,height:$0.frame.height) }
+  let screensKnown = !screens.isEmpty && screens.allSatisfy(usable)
   let front = NSWorkspace.shared.frontmostApplication
   let rows: [[String: Any]] = ws.map { w in
-    var n: CGWindowID = 0; let numberResult = windowNumber(w,&n)
+    var n: CGWindowID = 0; let numberResult = windowNumber(w,&n), numberKnown = numberResult == .success && n > 0
     let f = frame(w)
-    let cg = all.first { ($0[kCGWindowNumber as String] as? UInt32) == n }
-    return ["number": n, "numberResult":numberResult.rawValue, "title":attr(w,kAXTitleAttribute) as? String ?? "", "frame":f.map(rect) ?? [:],
-      "overlapsDisplay":f.map { f in screens.contains { let r=$0.intersection(f); return !r.isNull && r.width>0 && r.height>0 } } ?? false,
+    let cg = numberKnown ? all?.first { ($0[kCGWindowNumber as String] as? UInt32) == n } : nil
+    let overlap: Bool? = screensKnown ? f.map { f in screens.contains { let r=$0.intersection(f); return !r.isNull && r.width>0 && r.height>0 } } : nil
+    let onscreen: Bool? = numberKnown ? on.map { list in list.contains { ($0[kCGWindowNumber as String] as? UInt32)==n } } : nil
+    return ["number": n, "numberResult":numberResult.rawValue, "title":attr(w,kAXTitleAttribute) as? String ?? "", "frame":f.map(rect) as Any? ?? NSNull(),
+      "overlapsDisplay":overlap as Any? ?? NSNull(), "geometryStatus":f == nil ? "unknown-frame" : screensKnown ? "known" : "unknown-screens",
       "minimized":attr(w,kAXMinimizedAttribute) ?? NSNull(),"fullScreen":attr(w,"AXFullScreen") ?? NSNull(),
-      "cg":cg ?? [:], "inOnscreenList":on.contains { ($0[kCGWindowNumber as String] as? UInt32)==n },
-      "spaces":spaces?(connection,7,[NSNumber(value:n)] as CFArray)?.takeRetainedValue() as Any? ?? NSNull()]
+      "cg":cg ?? [:], "cgWindowFound":cg != nil, "cgOnscreen":cg.map { $0[kCGWindowIsOnscreen as String] as? Bool ?? false } as Any? ?? NSNull(),
+      "inOnscreenList":onscreen as Any? ?? NSNull(),
+      "spaces":numberKnown ? (spaces?(connection,7,[NSNumber(value:n)] as CFArray)?.takeRetainedValue() as Any? ?? NSNull()) : NSNull()]
   }
-  return ["at":Date().timeIntervalSince1970,"pid":pid,"hidden":attr(app,kAXHiddenAttribute) ?? NSNull(),"windows":rows,"screens":screens.map(rect),
+  return ["at":Date().timeIntervalSince1970,"pid":pid,"selectedWindowNumber":selectedNumber as Any? ?? rows.first?["number"] ?? NSNull(),
+    "hidden":attr(app,kAXHiddenAttribute) ?? NSNull(),"windows":rows,"screens":screens.map(rect),"screensKnown":screensKnown,
     "frontmost":["pid":front?.processIdentifier ?? 0,"bundleId":front?.bundleIdentifier ?? ""],
     "activeSpace":active?(connection) as Any? ?? NSNull(),"managedDisplaySpaces":managed?(connection)?.takeRetainedValue() as Any? ?? NSNull(),
     "symbols":["active":active != nil,"managed":managed != nil,"windowSpaces":spaces != nil]]
 }
 func set(_ w: AXUIElement,_ key: String,_ value: CFTypeRef) -> Int32 { AXUIElementSetAttributeValue(w,key as CFString,value).rawValue }
-let args = Array(CommandLine.arguments.dropFirst())
+
+// Mission Control belongs to Dock. A bounded independent walk retains every discovered label/action and all AX errors.
+// It never infers that macOS cannot create Spaces from opening Mission Control alone.
+func desktopControl(_ ordinal: Int?) -> [String: Any] {
+  guard let dock = NSRunningApplication.runningApplications(withBundleIdentifier:"com.apple.dock").first else { return ["blocker":"Dock process absent"] }
+  var queue = [AXUIElementCreateApplication(dock.processIdentifier)], seen = Set<CFHashCode>(), visited = 0
+  var nodes: [[String: Any]] = [], candidates: [AXUIElement] = [], candidateIndexes: [Int] = [], errors: [String: Int] = [:]
+  let deadline = ProcessInfo.processInfo.systemUptime + 4
+  func note(_ name: String,_ error: AXError) { if error != .success && error != .attributeUnsupported && error != .noValue { errors[name+":"+String(error.rawValue),default:0] += 1 } }
+  while !queue.isEmpty && visited < 1200 && ProcessInfo.processInfo.systemUptime < deadline {
+    let e = queue.removeFirst(); visited += 1
+    if !seen.insert(CFHash(e)).inserted { continue }
+    AXUIElementSetMessagingTimeout(e,0.08)
+    func read(_ name: String) -> CFTypeRef? { var v: CFTypeRef?; let error=AXUIElementCopyAttributeValue(e,name as CFString,&v);note(name,error);return error == .success ? v : nil }
+    func text(_ name: String) -> String { String((read(name) as? String ?? "").prefix(300)) }
+    let role=text(kAXRoleAttribute), title=text(kAXTitleAttribute), description=text(kAXDescriptionAttribute), identifier=text(kAXIdentifierAttribute)
+    var actionNames: CFArray?; let actionError=AXUIElementCopyActionNames(e,&actionNames);note("actions",actionError)
+    let actions=actionNames as? [String] ?? [], labels=[title,description,identifier].map { $0.lowercased() }
+    let matches: Bool
+    if let ordinal {
+      matches=labels.contains { $0 == "desktop \(ordinal)" || $0.hasPrefix("desktop \(ordinal),") || $0.hasPrefix("desktop \(ordinal) ") }
+        && !labels.contains { $0.contains("remove") }
+    } else {
+      matches=labels.contains { $0.contains("add desktop") || $0.contains("new desktop") || $0 == "mc.spaces.add" }
+    }
+    nodes.append(["role":role,"title":title,"description":description,"identifier":identifier,"actions":actions])
+    if matches && actions.contains(kAXPressAction) { candidates.append(e);candidateIndexes.append(nodes.count-1) }
+    if let children=read(kAXChildrenAttribute) as? [AXUIElement] { queue.append(contentsOf:children) }
+  }
+  var result: [String: Any] = ["dockPid":dock.processIdentifier,"visited":visited,"complete":queue.isEmpty,"nodes":nodes,"errors":errors,"candidateIndexes":candidateIndexes,
+    "request":ordinal.map { "select Desktop \($0)" } ?? "add desktop", "axPressResult":NSNull()]
+  if candidates.count == 1 { result["axPressResult"]=AXUIElementPerformAction(candidates[0],kAXPressAction as CFString).rawValue }
+  else { result["blocker"]=candidates.isEmpty ? "No matching AXPress control exposed in the bounded Dock walk" : "Ambiguous Dock desktop controls; none pressed" }
+  return result
+}
+
 var result: [String: Any] = [:]
-if args[0] == "find" {
+if args.first == "preflight" {
+  // No request APIs, consent dialogs, or settings changes: these checks only read the current authorization state.
+  result=["at":Date().timeIntervalSince1970,"pid":getpid(),"accessibility":AXIsProcessTrusted(),"screenRecording":CGPreflightScreenCaptureAccess(),
+    "canPostHid":CGPreflightPostEventAccess(),"inputMonitoring":CGPreflightListenEventAccess()]
+} else if args.first == "add-desktop" || args.first == "select-desktop" {
+  result=desktopControl(args.first == "select-desktop" ? Int(args[1]) : nil)
+} else if args.first == "find" {
   result = ["apps":NSRunningApplication.runningApplications(withBundleIdentifier:args[1]).map { ["pid":$0.processIdentifier,"path":$0.bundleURL?.path ?? ""] }]
-} else if args[0] == "switch-left" || args[0] == "mission-control" {
-  let code: CGKeyCode = args[0] == "switch-left" ? 123 : 126
-  for down in [true,false] { let e=CGEvent(keyboardEventSource:nil,virtualKey:code,keyDown:down)!;e.flags = .maskControl;e.post(tap:.cghidEventTap) }
+} else if ["switch-left","switch-right","mission-control","escape"].contains(args.first ?? "") {
+  let code: CGKeyCode = args[0] == "switch-left" ? 123 : args[0] == "switch-right" ? 124 : args[0] == "escape" ? 53 : 126
+  for down in [true,false] { let e=CGEvent(keyboardEventSource:nil,virtualKey:code,keyDown:down)!;if args[0] != "escape" { e.flags = .maskControl };e.post(tap:.cghidEventTap) }
   result = ["posted":args[0]]
-} else if args[0] == "activate" {
+} else if args.first == "activate" {
   let a=NSRunningApplication.runningApplications(withBundleIdentifier:args[1]).first
   result=["activated":a?.activate(options:[]) ?? false]
-} else {
-  let pid = pid_t(args[1])!
+} else if args.count >= 2, let pid = pid_t(args[1]) {
   if args[0] == "info" { result=info(pid) }
   else if args[0] == "hide" { result=["success":NSRunningApplication(processIdentifier:pid)?.hide() ?? false] }
-  else if args[0] == "unhide" { result=["success":NSRunningApplication(processIdentifier:pid)?.unhideWithoutActivation() ?? false] }
-  else if let w=windows(pid).first {
+  else if args[0] == "unhide" { result=["success":NSRunningApplication(processIdentifier:pid)?.unhide() ?? false] }
+  else if let w=selectedWindow(pid) {
     switch args[0] {
     case "move": var p=CGPoint(x:Double(args[2])!,y:Double(args[3])!); result=["axResult":set(w,kAXPositionAttribute,AXValueCreate(.cgPoint,&p)!)]
     case "size": var s=CGSize(width:Double(args[2])!,height:Double(args[3])!); result=["axResult":set(w,kAXSizeAttribute,AXValueCreate(.cgSize,&s)!)]
     case "fullscreen": result=["axResult":set(w,"AXFullScreen",args[2]=="true" ? kCFBooleanTrue : kCFBooleanFalse)]
+    case "cg-cost":
+      var n: CGWindowID = 0; let numberResult=windowNumber(w,&n)
+      var samples: [[String: Any]] = []
+      if numberResult == .success && n > 0 {
+        for _ in 0..<20 {
+          let start=DispatchTime.now().uptimeNanoseconds
+          let list=CGWindowListCopyWindowInfo([.optionIncludingWindow],n) as? [[String: Any]]
+          let elapsed=Double(DispatchTime.now().uptimeNanoseconds-start)/1_000_000
+          let cg=list?.first { ($0[kCGWindowNumber as String] as? UInt32)==n }
+          samples.append(["elapsedMs":elapsed,"found":cg != nil,"onscreen":cg.map { $0[kCGWindowIsOnscreen as String] as? Bool ?? false } as Any? ?? NSNull()])
+        }
+      }
+      result=["number":n,"numberResult":numberResult.rawValue,"samples":samples,"read":"CGWindowListCopyWindowInfo(.optionIncludingWindow)"]
     default: result=["error":"unknown command"]
     }
-  } else { result=["error":"no AX window"] }
-}
+  } else { result=["error":"pinned AX window unavailable"] }
+} else { result=["error":"missing command or PID"] }
 let data=try JSONSerialization.data(withJSONObject:result,options:[.sortedKeys])
 print(String(data:data,encoding:.utf8)!)

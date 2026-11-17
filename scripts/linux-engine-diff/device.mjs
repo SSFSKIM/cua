@@ -467,14 +467,30 @@ function ownPointerLog(r) {
 /** Whether a late case's drag reached its branch: a take before the release, so the engine decided an order (dnd.rs `Outcome`). */
 const lateBranch = (r) => typeof r.dnd?.outcome === 'string' && r.dnd.outcome !== 'no_start';
 
+/** The page's counts a drag would move (pages/drag.html): its press on a source, its drag start, its drop, its end. */
+const PAGE_COUNTS = ['downs', 'starts', 'drops', 'ends', 'ups'];
+
+/**
+ * Whether a sample shows no drag of its own: no route, drag or press record (the row's or the engine's), the page read
+ * before and after with every count it keeps unmoved, and the witness unchanged. A refused request's text alone does not
+ * show it was not run (the task review's probe: a drag that ran, with a refusal's text, passed).
+ */
+function notRun(r) {
+  const es = r.engine_stats ?? {};
+  const { before, after } = r.drop_status ?? {};
+  const pageStill = before != null && after != null && PAGE_COUNTS.every((k) => typeof before[k] === 'number' && after[k] === before[k]);
+  return r.route == null && r.dnd == null && r.press == null && es.dnd == null && es.press == null && es.wall == null && pageStill && r.witness === true;
+}
+
 /**
  * A cancel case's late takes (the design session's ruling 756, from V5's rerun at H): a drag Chrome took nothing for by
  * its release (the engine's record, `dnd.outcome` `no_start`) answers at the release as a plain drag, and a take after
  * the release is T14's after-release watch's, as the late-take case's (`--dnd-defer-take`) is: its Escape sent and
  * recorded with the take's time after the release (`late_dnd`) on the next request on the same engine, the block's next
- * sample, which is refused with the late notice and not run. Returns each such drag and its refused request: they
- * answer without the cancel's sentence, and the case's other rules (nothing dropped, the witness unchanged) still judge
- * both. A drag Chrome took before its release is a drag and drop under way, so it still needs the sentence.
+ * sample, which is refused with the late notice and shows no drag of its own (`notRun`). Returns each such drag and its
+ * refused request: they answer without the cancel's sentence, and the case's other rules (nothing dropped, the witness
+ * unchanged) still judge both. A drag Chrome took before its release is a drag and drop under way, so it still needs
+ * the sentence.
  */
 function lateTakes(rows) {
   const pairs = new Set();
@@ -486,7 +502,7 @@ function lateTakes(rows) {
     const takenAfterRelease = drag.ok === true && drag.dnd?.outcome === 'no_start' && typeof late?.after_release_ms === 'number' && late.after_release_ms > 0 && late.escaped === true;
     // the next request answered the notice as T14's contract says, for this case's app: the drag it was, not run
     const answeredNotice = next.ok === false && next.expected_error === dndCancelledSentence(app) && next.error === dndLateRefusal(app, 'drag');
-    if (takenAfterRelease && answeredNotice) {
+    if (takenAfterRelease && answeredNotice && notRun(next)) {
       pairs.add(drag);
       pairs.add(next);
     }

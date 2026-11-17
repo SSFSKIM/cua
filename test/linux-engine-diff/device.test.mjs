@@ -236,7 +236,9 @@ test("a cancel case's take after the release is judged by the late-take rules; o
   // as V5 recorded them: the drag Chrome took nothing for by its release, the next sample refused with the notice, then
   // an in-time cancel
   const plain = row({ i: 0, series: 'cold', ok: true, expected_error: cancelled, dropped: false, dnd: { outcome: 'no_start', started: false, in_front: false, held_at_start: false }, press: { taken: false }, engine_stats: { command: 'drag' } });
-  const refused = row({ i: 1, series: 'warm', ok: false, error: dndLateRefusal(app, 'drag'), expected_error: cancelled, dropped: false, engine_stats: { command: 'drag', late_dnd: late } });
+  // not run: no drag record of its own, and the page's counts as they were (V5 0/1's)
+  const page = { starts: 1, drops: 0, downs: 1, ends: 1, ups: 0 };
+  const refused = row({ i: 1, series: 'warm', ok: false, error: dndLateRefusal(app, 'drag'), expected_error: cancelled, dropped: false, drop_status: { before: page, after: page }, engine_stats: { command: 'drag', late_dnd: late } });
   const inTime = row({ i: 2, series: 'warm', ok: false, error: cancelled, expected_error: cancelled, dropped: false, dnd: { outcome: 'in_time', started: true, in_front: false, held_at_start: false } });
   const audit = { clean: true, kind: 'background', answered: [{ ok: false, error: cancelled, expected_error: cancelled }] };
   const judged = (rows, op = 'chrome_dnd_shared') => judgeDevice(op, rows, audit);
@@ -249,6 +251,29 @@ test("a cancel case's take after the release is judged by the late-take rules; o
     assert.match(r.reasons.join('\n'), /not cancelled with the drag-and-drop sentence on 2 of 3 samples \(0\/0, 0\/1\)/);
   }
   assert.equal(judged([{ ...inTime, ok: true, error: undefined }]).pass, false, 'an in-time take answered ok');
+  // and on the notice-carrying sample: one that ran a drag of its own is no refused request, whatever its text (the
+  // task review's probe on V5's rows: 0/1's notice and late_dnd kept, 0/2's in-time drag record, press and page copied in)
+  const ranPage = { starts: 2, drops: 0, downs: 2, ends: 2, ups: 1 };
+  const ranDrag = { ...refused, route: 'background', dnd: inTime.dnd, press: { taken: true }, drop_status: { before: page, after: ranPage }, engine_stats: { ...refused.engine_stats, dnd: inTime.dnd, press: { taken: true } } };
+  const ran = [
+    ['the review probe: a drag that ran and took in time', ranDrag],
+    ['its own drag outcome', { ...refused, dnd: { outcome: 'no_start' } }],
+    ["the engine's drag record", { ...refused, engine_stats: { ...refused.engine_stats, dnd: { outcome: 'in_time' } } }],
+    ['its press taken', { ...refused, press: { taken: true } }],
+    ["the engine's press record", { ...refused, engine_stats: { ...refused.engine_stats, press: { taken: false } } }],
+    ['a route of its own', { ...refused, route: 'background' }],
+    ["the page's press", { ...refused, drop_status: { before: page, after: { ...page, downs: 2 } } }],
+    ["the page's drag start", { ...refused, drop_status: { before: page, after: { ...page, starts: 2 } } }],
+    ["the page's drop", { ...refused, drop_status: { before: page, after: { ...page, drops: 1 } } }],
+    ["the page's counts unread", { ...refused, drop_status: { before: page, after: null } }],
+    ['the witness changed', { ...refused, witness: false }],
+  ];
+  for (const [what, next] of ran) {
+    const r = judged([plain, next, inTime]);
+    assert.equal(r.pass, false, what);
+    assert.match(r.reasons.join('\n'), /not cancelled with the drag-and-drop sentence on 2 of 3 samples \(0\/0, 0\/1\)/, what);
+  }
+  assert.equal(judged([{ ...plain, dnd: { ...plain.dnd, held_at_start: true } }, { ...ranDrag, dnd: { ...inTime.dnd, held_at_start: false } }, inTime], 'chrome_dnd_obscured_in_front_shared').pass, false, 'a drag that ran is held to the signature-held watch');
 
   // negative control 2: a late take with a drop, by the page's record or the witness's, on the drag or after it
   assert.match(judged([{ ...plain, dropped: true }, refused, inTime]).reasons.join('\n'), /it dropped on 1 of 3 samples \(0\/0\)/);

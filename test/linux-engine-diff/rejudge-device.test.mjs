@@ -7,11 +7,12 @@ import { rejudgeDevice } from '../../scripts/linux-engine-diff/rejudge-device.mj
 const app = 'Google-chrome';
 const cancelled = dndCancelledSentence(app);
 const sample = (fields) => ({ run: 'pinned-V5', kind: 'sample', engine: 'cua', scene: 'device-chrome-dnd', op: 'chrome_dnd_shared', block: 0, witness: true, dropped: false, expected_error: cancelled, ...fields });
+const page = { starts: 1, drops: 0, downs: 1, ends: 1, ups: 0 };
 // V5's rerun at H: the drag Chrome took nothing for by its release, its late take recorded on the next request, refused
 const rows = [
   { run: 'pinned-V5', kind: 'meta' },
   sample({ i: 0, ok: true, dnd: { outcome: 'no_start' } }),
-  sample({ i: 1, ok: false, error: dndLateRefusal(app, 'drag'), engine_stats: { late_dnd: { after_release_ms: 2.35, app, escaped: true } } }),
+  sample({ i: 1, ok: false, error: dndLateRefusal(app, 'drag'), drop_status: { before: page, after: page }, engine_stats: { late_dnd: { after_release_ms: 2.35, app, escaped: true } } }),
   sample({ i: 2, ok: false, error: cancelled, dnd: { outcome: 'in_time' } }),
   { run: 'pinned-V5', kind: 'audit', engine: 'cua', scene: 'device-chrome-dnd', op: 'chrome_dnd_shared', clean: true, audit: 'background', answered: [{ ok: false, error: cancelled, expected_error: cancelled }], forbidden: [] },
   { run: 'pinned-V5', kind: 'verdict', scene: 'device-chrome-dnd', op: 'chrome_dnd_shared', candidate: 'cua', device: 'cancel', pass: false, reasons: ['not cancelled with the drag-and-drop sentence on 2 of 3 samples (0/0, 0/1)'], verdict: 'fail' },

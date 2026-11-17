@@ -16,8 +16,8 @@ export class Wire {
   const id=++this.serial,b=Buffer.from(JSON.stringify({jsonrpc:'2.0',id,method,params})),h=Buffer.alloc(4);h.writeUInt32LE(b.length);
   return new Promise((ok,no)=>{const timer=setTimeout(()=>{this.pending.delete(id);no(Error('RPC timeout '+method));},30000);this.pending.set(id,{ok,no,timer});this.socket.write(Buffer.concat([h,b]));});
  }
- async execute(method,args){
-  const result=await this.call('execute',{method,args,lineage:this.lineage,deadlineUnixMilliseconds:Date.now()+25000});
+ async execute(method,args,{deadlineMs=25000}={}){
+  const result=await this.call('execute',{method,args,lineage:this.lineage,deadlineUnixMilliseconds:Date.now()+deadlineMs});
   if(result.result?.lineage)this.lineage=result.result.lineage;
   return result;
  }

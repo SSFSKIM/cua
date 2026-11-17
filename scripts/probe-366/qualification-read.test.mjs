@@ -9,7 +9,7 @@ import {qualificationPlan,qualificationJudgeCall,qualificationSummarize,qualific
 const here=dirname(fileURLToPath(import.meta.url));
 const BROWSERS=['electron-parity','electron','cft'];
 // group/engineSide -> [launches, expected call labels]
-const SPECS={'cold/main':[20,['cold']],'cold/fix':[20,['cold','warm']],'posthold/fix':[10,['cold','posthold']],'value/main':[10,['value']],'value/fix':[10,['value']],'load/fix':[20,['loaded']]};
+const SPECS={'cold/main':[20,['cold']],'cold/fix':[20,['cold','warm']],'posthold/fix':[10,['cold','posthold']],'value/main':[10,['value']],'value/fix':[10,['value']],'load/fix':[20,['loaded']],'early/fix':[10,['early']]};
 
 const quiet={dialogClosed:false,frontmostChanged:false,raised:false,windowMoved:false,otherPointer:false,ownerLost:false};
 const owner={pageId:'a'.repeat(32),timeOrigin:1000};
@@ -18,20 +18,21 @@ const presses=(n,m=n+1)=>[{...owner,presses:n},{...owner,presses:m,events:[]}];
 const call=(label,extra={},i=0)=>{
  const value=label==='value',[before,after]=value?[{...owner,value:'',reactValue:''},{...owner,value:'needle',reactValue:'needle',events:[{type:'search.handler',value:'needle',wallAt:10000+i*100+5}]}]:presses(0);
  return {label,method:value?'set_value':'click',startedAt:10000+i*100,endedAt:10000+i*100+10,raw:{result:{}},before,after,samples:[],waitMs:12,waitEvidence:'signpost',sideEffects:{...quiet},...(value?{expectedValue:'needle'}:{}),
-  ...(label==='loaded'?{loadBefore:loadSample(1),loadAfter:loadSample(2),loadCpuPercent:190}:{}),...extra};
+  ...(label==='loaded'?{loadBefore:loadSample(1),loadAfter:loadSample(2),loadCpuPercent:190}:{}),...(label==='early'?{wrongTargetHits:[]}:{}),...extra};
 };
 const loadSample=at=>({at,workers:[{pid:11,percent:90,cpuSeconds:at},{pid:12,percent:95,cpuSeconds:at}],expected:2,status:'ok'});
-const row=(cell,extra={})=>({id:cell.id,browser:cell.browser,group:cell.group,engineSide:cell.engineSide,rep:cell.rep,appLaunchId:'L-'+cell.id,valid:true,owner,observations:[],
- calls:cell.expectedCalls.map((l,i)=>call(l,l==='posthold'?{startedAt:50000,endedAt:50010}:{},i)),profileCleanup:{attempted:true,ok:true},...extra});
+const row=(cell,extra={})=>({id:cell.id,browser:cell.browser,group:cell.group,engineSide:cell.engineSide,rep:cell.rep,appLaunchId:'L-'+cell.id,valid:true,owner,observations:[{startedAt:1,endedAt:2,waitMs:5,waitEvidence:'signpost',raw:{result:{timings:cell.group==='early'?{chromiumReady:'deadline'}:{}}}}],
+ calls:cell.expectedCalls.map((l,i)=>call(l,l==='posthold'?{startedAt:50000,endedAt:50010}:{},i)),profileCleanup:{attempted:true,ok:true},
+ ...(cell.group==='posthold'?{postholdRelease:{prior:'false',verified:true,idleFromRequestEndMs:36500,eventsBeforeObservation:[]}}:{}),...extra});
 const cellOf=(spec,browser='electron',rep=0)=>{const [group,engineSide]=spec.split('/');return qualificationPlan({browser}).find(c=>c.group===group&&c.engineSide===engineSide&&c.rep===rep)};
 const rowOf=(spec,extra={},browser='electron',rep=0)=>row(cellOf(spec,browser,rep),extra);
 
-test('plan: 90 launches and 120 calls per browser, 12 launches in smoke, unique ids and fresh launches',()=>{
+test('plan: 100 launches and 130 calls per browser, 14 launches in smoke, unique ids and fresh launches',()=>{
  const all=[];
  for(const browser of BROWSERS) {
   const full=qualificationPlan({browser}),smoke=qualificationPlan({browser,smoke:true});
-  assert.equal(full.length,90);assert.equal(smoke.length,12);
-  assert.equal(full.reduce((n,c)=>n+c.expectedCalls.length,0),120);assert.equal(smoke.reduce((n,c)=>n+c.expectedCalls.length,0),16);
+  assert.equal(full.length,100);assert.equal(smoke.length,14);
+  assert.equal(full.reduce((n,c)=>n+c.expectedCalls.length,0),130);assert.equal(smoke.reduce((n,c)=>n+c.expectedCalls.length,0),18);
   for(const [spec,[launches,labels]] of Object.entries(SPECS)) {
    const [group,engineSide]=spec.split('/'),cells=full.filter(c=>c.group===group&&c.engineSide===engineSide);
    assert.equal(cells.length,launches,spec);
@@ -39,15 +40,15 @@ test('plan: 90 launches and 120 calls per browser, 12 launches in smoke, unique 
    assert.ok(cells.every(c=>JSON.stringify(c.expectedCalls)===JSON.stringify(labels)&&c.browser===browser&&c.phase==='qualification'));
    assert.deepEqual(smoke.filter(c=>c.group===group&&c.engineSide===engineSide).map(c=>c.rep),[0,1]);
   }
-  assert.deepEqual([...new Set(full.map(c=>c.group))].sort(),['cold','load','posthold','value']);
-  assert.equal(new Set(full.map(c=>c.id)).size,90);
+  assert.deepEqual([...new Set(full.map(c=>c.group))].sort(),['cold','early','load','posthold','value']);
+  assert.equal(new Set(full.map(c=>c.id)).size,100);
   assert.ok(full.every(c=>c.id===['qualification',browser,c.group,c.engineSide,c.rep].join('/')));
   assert.deepEqual(smoke.map(c=>c.id),full.filter(c=>c.rep<2).map(c=>c.id));
   // The cell order rotates, so no group or engine side always launches first.
   assert.ok(new Set(Array.from({length:10},(_,r)=>full.find(c=>c.rep===r).group+full.find(c=>c.rep===r).engineSide)).size>=4);
   all.push(...full);
  }
- assert.equal(new Set(all.map(c=>c.id)).size,270);
+ assert.equal(new Set(all.map(c=>c.id)).size,300);
  assert.throws(()=>qualificationPlan({browser:'safari'}));
 });
 test('press oracle is the handler count change; never unchanged-state confirmation',()=>{
@@ -117,9 +118,49 @@ test('a row is valid only when complete: unique expected call labels, owner, lau
   assert.ok(calls.every(c=>c.valid===0&&c.invalid===1),name);
  }
  assert.ok(qualificationSummarize([base]).calls.every(c=>c.valid===1));
- // The posthold second call must follow a >30 s idle after the first.
+ // The posthold second call must follow at least 36 s after the first call ends.
  const ph=rowOf('posthold/fix'),idle=gap=>({...ph,calls:[{...ph.calls[0],startedAt:1000,endedAt:1010},{...ph.calls[1],startedAt:1010+gap,endedAt:1020+gap}]});
- for(const [gap,valid] of [[30001,1],[30000,1],[29999,0]])assert.ok(qualificationSummarize([idle(gap)]).calls.every(c=>c.valid===valid),String(gap));
+ for(const [gap,valid] of [[36001,1],[36000,1],[35999,0],[30001,0]])assert.ok(qualificationSummarize([idle(gap)]).calls.every(c=>c.valid===valid),String(gap));
+});
+test('a posthold launch needs a verified release, a readable-or-unreadable prior (not owned) and 36 s idle from the request end',()=>{
+ const ph=rowOf('posthold/fix'),valid=extra=>qualificationSummarize([{...ph,postholdRelease:{...ph.postholdRelease,...extra}}]).calls.every(c=>c.valid===1);
+ const reason=extra=>qualificationSummarize([{...ph,postholdRelease:extra===null?undefined:{...ph.postholdRelease,...extra}}]).launches[0].invalidByReason;
+ // The prior may be true, false or unreadable: a clean-slate (false) prior is not required, and true-only is not assumed.
+ for(const prior of ['true','false','unreadable'])assert.equal(valid({prior}),true,prior);
+ assert.equal(valid({idleFromRequestEndMs:36000}),true);
+ assert.equal(valid({eventsBeforeObservation:[{kind:'accessibility-support-changed'}]}),true);
+ // Owned, unknown or mis-typed priors, an unverified release or too short an idle make the launch invalid.
+ for(const [name,extra] of Object.entries({owned:{prior:'owned'},undefinedPrior:{prior:undefined},nullPrior:{prior:null},boolPrior:{prior:true},upper:{prior:'True'},
+  unverified:{verified:false},noVerified:{verified:undefined},stringVerified:{verified:'true'},
+  short:{idleFromRequestEndMs:35999},noIdle:{idleFromRequestEndMs:undefined},nanIdle:{idleFromRequestEndMs:NaN},stringIdle:{idleFromRequestEndMs:'40000'}}))
+  assert.deepEqual(reason(extra),{'posthold-release':1},name);
+ assert.deepEqual(reason(null),{'posthold-release':1});
+ // Other groups need no release record.
+ assert.ok(qualificationSummarize([rowOf('cold/fix')]).calls.every(c=>c.valid===1));
+ // Coverage reports the invalid launch, and a long idle alone does not replace a verified release.
+ const rows=qualificationPlan({browser:'cft',smoke:true}).map(c=>row(c,{smoke:true}));
+ const rep=qualificationCoverage(rows.map(r=>r.group==='posthold'&&r.rep===0?{...r,postholdRelease:{...r.postholdRelease,verified:false}}:r),{browser:'cft',smoke:true});
+ assert.deepEqual([rep.ok,rep.invalid.map(x=>x.reason)],[false,['posthold-release']]);
+});
+test('posthold launches summarize the release record and the raw enablement fields of each observation as reported',()=>{
+ const t=(prior,write,enabled)=>({raw:{result:{timings:{...(prior===undefined?{}:{enablementPrior:prior}),...(write===undefined?{}:{enablementWrite:write}),...(enabled===undefined?{}:{enabled})}}}});
+ const mk=(rep,release,observations)=>rowOf('posthold/fix',{postholdRelease:{prior:'false',verified:true,idleFromRequestEndMs:36500,eventsBeforeObservation:[],...release},observations},'electron',rep);
+ const rows=[mk(0,{prior:'true',idleFromRequestEndMs:36100},[t('false','success','AXManualAccessibility'),t('owned',undefined,undefined)]),
+  mk(1,{prior:'unreadable',idleFromRequestEndMs:37000},[t('false','success','AXManualAccessibility'),t('true','notImplemented','AXEnhancedUserInterface')]),
+  mk(2,{prior:'false',verified:false},[t('false','success','AXManualAccessibility')])];
+ const l=qualificationSummarize(rows).launches.find(x=>x.group==='posthold');
+ assert.deepEqual(l.release.prior,{true:1,unreadable:1,false:1});
+ assert.deepEqual(l.release.verified,{true:2,false:1});
+ assert.deepEqual(l.release.idleFromRequestEndMs,{p50:36500,p95:37000,max:37000});
+ const f=i=>l.observationFields.find(x=>x.index===i);
+ assert.deepEqual(f(0).enablementPrior,{false:3});
+ assert.deepEqual(f(0).enablementWrite,{success:3});
+ assert.deepEqual(f(0).enabled,{AXManualAccessibility:3});
+ // Absent fields are counted as absent, never filled in.
+ assert.deepEqual(f(1).enablementPrior,{owned:1,true:1});
+ assert.deepEqual(f(1).enablementWrite,{absent:1,notImplemented:1});
+ assert.deepEqual(f(1).enabled,{absent:1,AXEnhancedUserInterface:1});
+ assert.equal('release' in qualificationSummarize([rowOf('cold/main')]).launches[0],false);
 });
 test('summary: per browser, group, call label and engine side with exact accounting and tri-state effects over every attempt',()=>{
  const [r0,r1,r2,r3,r4]=[0,1,2,3,4].map(i=>rowOf('cold/fix',{},'electron',i));
@@ -200,13 +241,114 @@ test('coverage flags missing fix wait evidence as unknown; a signpost zero is va
  // A clean coverage report has an empty list.
  assert.deepEqual(qualificationCoverage(ok,{browser:'cft',smoke:true}).waitMissing,[]);
 });
+test('an early call is safe only when it delivers exactly to the action or refuses elementNoLongerValid with zero effect',()=>{
+ const e=(extra={},after=1)=>{const r=rowOf('early/fix');r.calls[0]={...r.calls[0],before:{...owner,presses:0},after:{...owner,presses:after},...extra};return qualificationJudgeCall(r,r.calls[0])};
+ const nlv={raw:{error:{errorName:'elementNoLongerValid'}}},hit=[{target:'other-button'}];
+ assert.equal(e().safeOutcome,'deliveredSameTarget');
+ assert.equal(e(nlv,0).safeOutcome,'refusedNoLongerValid');
+ // Any observed click on a non-action control is a wrong target, whatever else is known or unknown.
+ for(const extra of [{wrongTargetHits:hit},{...nlv,wrongTargetHits:hit}])assert.equal(e(extra,extra.raw?0:1).safeOutcome,'wrongTarget');
+ assert.equal(e({wrongTargetHits:hit},NaN).safeOutcome,'wrongTarget');
+ // Known, but neither a same-target delivery nor a zero-effect refusal: unsafe.
+ assert.equal(e({},2).safeOutcome,'unsafe');                                              // duplicate delivery
+ assert.equal(e(nlv,1).safeOutcome,'unsafe');                                             // refusal that had an effect
+ assert.equal(e({},0).safeOutcome,'unsafe');                                              // success reply with no effect
+ assert.equal(e({raw:{error:{errorName:'backgroundClickRefused'}}},0).safeOutcome,'unsafe');
+ assert.equal(e({raw:{error:{errorName:'elementNoLongerValid'}},wrongTargetHits:[]},2).safeOutcome,'unsafe');
+ // Unknown stays unknown: no oracle, or no record of wrong-target hits, proves nothing.
+ assert.equal(e({},NaN).safeOutcome,null);
+ assert.equal(e({wrongTargetHits:undefined}).safeOutcome,null);
+ assert.equal(e({wrongTargetHits:null}).safeOutcome,null);
+ // Only the early label carries a safe outcome.
+ const r=rowOf('cold/fix');assert.equal(qualificationJudgeCall(r,r.calls[0]).safeOutcome,undefined);
+});
+test('summary counts the early safe outcomes beside the oracle counts, and valueUnconfirmed explicitly',()=>{
+ const mk=(rep,extra,after=1)=>{const r=rowOf('early/fix',{},'electron',rep);r.calls[0]={...r.calls[0],before:{...owner,presses:0},after:{...owner,presses:after},...extra};return r};
+ const nlv={raw:{error:{errorName:'elementNoLongerValid'}}};
+ const rows=[mk(0,{}),mk(1,nlv,0),mk(2,{wrongTargetHits:[{target:'x'}]}),mk(3,{},2),mk(4,{wrongTargetHits:undefined}),mk(5,{},NaN)];
+ rows.push({...mk(6,{}),observations:[]});
+ const early=qualificationSummarize(rows).calls.find(c=>c.label==='early');
+ assert.deepEqual([early.attempted,early.valid,early.invalid,early.invalidByReason],[7,6,1,{'early-not-forced':1}]);
+ assert.deepEqual(early.safeOutcome,{deliveredSameTarget:1,refusedNoLongerValid:1,wrongTarget:1,unsafe:1});
+ assert.equal(early.unknown,2);
+ const value=(rep,error)=>{const r=rowOf('value/fix',{},'electron',rep);if(error)r.calls[0]={...r.calls[0],raw:{error}};return r};
+ const v=qualificationSummarize([value(0),value(1,{errorName:'valueUnconfirmed'}),value(2,{errorName:'valueUnconfirmed'}),value(3,{errorName:'elementNoLongerValid'}),value(4,{name:'legacy'})]).calls.find(c=>c.label==='value');
+ assert.deepEqual([v.valueUnconfirmed,v.errors,v.errorNames],[2,4,{valueUnconfirmed:2,elementNoLongerValid:1,legacy:1}]);
+ // Every call summary carries the count, zero when there is none; non-early summaries carry no safe outcome.
+ const cold=qualificationSummarize([rowOf('cold/main')]).calls[0];
+ assert.deepEqual([cold.valueUnconfirmed,'safeOutcome' in cold],[0,false]);
+});
+test('an early launch whose first observation was not forced to the deadline is invalid early-not-forced',()=>{
+ const base=rowOf('early/fix');
+ const forced=t=>[{raw:{result:{timings:t}}}];
+ for(const [name,observations] of Object.entries({none:[],noTimings:[{raw:{result:{}}}],noMarker:forced({chromiumReadyWaitMs:5}),ready:forced({chromiumReady:'ready'}),waited:forced({chromiumReady:'waited'}),
+  laterOnly:[{raw:{result:{timings:{}}}},...forced({chromiumReady:'deadline'})]})) {
+  const {calls}=qualificationSummarize([{...base,observations}]);
+  assert.deepEqual([calls[0].valid,calls[0].invalidByReason],[0,{'early-not-forced':1}],name);
+ }
+ const ok=qualificationSummarize([base]).calls[0];assert.equal(ok.valid,1);
+ // Coverage reports it as an invalid row too; other groups need no such marker.
+ const rowsFor=()=>qualificationPlan({browser:'cft',smoke:true}).map(c=>row(c,{smoke:true}));
+ const rep=qualificationCoverage(rowsFor().map(r=>r.group==='early'&&r.rep===0?{...r,observations:[]}:r),{browser:'cft',smoke:true});
+ assert.deepEqual([rep.ok,rep.invalid.map(x=>x.reason)],[false,['early-not-forced']]);
+ assert.equal(qualificationCoverage(rowsFor(),{browser:'cft',smoke:true}).ok,true);
+});
+test('observation summary per browser, group, side and index reports RPC time and the actual wait beside the reported one',()=>{
+ const obs=(ms,extra={},reported)=>({startedAt:1000,endedAt:1000+ms,waitMs:null,waitEvidence:'missing',raw:{result:{timings:{...(reported===undefined?{}:{chromiumReadyWaitMs:reported})}}},...extra});
+ const rows=[
+  rowOf('cold/fix',{observations:[obs(10,{waitMs:100,waitEvidence:'signpost'},98)]},'electron',0),
+  rowOf('cold/fix',{observations:[obs(30,{waitMs:200,waitEvidence:'signpost'},190)]},'electron',1),
+  rowOf('cold/fix',{observations:[obs(20,{},50)]},'electron',2),
+  rowOf('cold/fix',{observations:[obs(40)]},'electron',3),
+  rowOf('cold/main',{observations:[obs(5,{waitMs:0,waitEvidence:'main-no-gate'},0)]},'electron',0),
+  rowOf('posthold/fix',{observations:[obs(8,{waitMs:90,waitEvidence:'signpost'},90),obs(9,{waitMs:60,waitEvidence:'signpost'})]},'electron',0),
+ ];
+ const {observations}=qualificationSummarize(rows);
+ const fix=observations.find(o=>o.group==='cold'&&o.engineSide==='fix'&&o.index===0);
+ assert.deepEqual([fix.browser,fix.attempted],['electron',4]);
+ assert.deepEqual(fix.rpcMs,{p50:20,p95:40,max:40});
+ assert.deepEqual(fix.actualWaitMs,{p50:100,p95:200,max:200});
+ assert.deepEqual(fix.reportedWaitMs,{p50:98,p95:190,max:190});
+ assert.deepEqual(fix.wait,{signpost:2,mainNoGate:0,missing:2});
+ // The cross-check lists only observations that have both; nothing is inferred for the others.
+ assert.deepEqual(fix.crossCheck,{both:2,maxAbsDiffMs:10});
+ const main=observations.find(o=>o.group==='cold'&&o.engineSide==='main');
+ assert.deepEqual([main.wait,main.actualWaitMs.max,main.crossCheck.both],[{signpost:0,mainNoGate:1,missing:0},null,0]);
+ const posthold=observations.filter(o=>o.group==='posthold').sort((a,b)=>a.index-b.index);
+ assert.deepEqual(posthold.map(o=>[o.index,o.attempted,o.actualWaitMs.max,o.reportedWaitMs.max,o.crossCheck.both]),[[0,1,90,90,1],[1,1,60,null,0]]);
+});
+test('coverage also needs a known wait for every observation, listed by id and index, never inferred from reported timings',()=>{
+ const ok=qualificationPlan({browser:'cft',smoke:true}).map(c=>row(c,{smoke:true}));
+ const cover=rows=>qualificationCoverage(rows,{browser:'cft',smoke:true});
+ const coldFix=ok.find(r=>r.group==='cold'&&r.engineSide==='fix'),coldMain=ok.find(r=>r.group==='cold'&&r.engineSide==='main'),posthold=ok.find(r=>r.group==='posthold');
+ const obs=(extra={},reported)=>({startedAt:1,endedAt:2,raw:{result:{timings:reported===undefined?{}:{chromiumReadyWaitMs:reported}}},...extra});
+ const swap=(target,observations)=>cover(ok.map(r=>r===target?{...r,observations}:r));
+ assert.deepEqual([cover(ok).ok,cover(ok).observationWaitMissing],[true,[]]);
+ // Signpost 0 ms is a real wait; main-no-gate is valid on main only.
+ assert.equal(swap(coldFix,[obs({waitMs:0,waitEvidence:'signpost'})]).ok,true);
+ assert.equal(swap(coldMain,[obs({waitMs:0,waitEvidence:'main-no-gate'})]).ok,true);
+ for(const [name,o] of Object.entries({missing:{waitEvidence:'missing',waitMs:null},none:{},nan:{waitEvidence:'signpost',waitMs:NaN},negative:{waitEvidence:'signpost',waitMs:-1},noGateOnFix:{waitEvidence:'main-no-gate',waitMs:0}})) {
+  // A reported readiness wait never stands in for the missing signpost.
+  const rep=swap(coldFix,[obs(o,2300)]);
+  assert.deepEqual([rep.ok,rep.observationWaitMissing,rep.waitMissing,rep.invalid],[false,[{id:coldFix.id,indices:[0]}],[],[]],name);
+ }
+ assert.equal(swap(coldMain,[obs({waitEvidence:'missing'},0)]).ok,false);
+ // Every observation counts: the second of a two-observation launch is listed by its index.
+ const good={waitMs:90,waitEvidence:'signpost'};
+ assert.deepEqual(swap(posthold,[obs(good),obs({waitEvidence:'missing'})]).observationWaitMissing,[{id:posthold.id,indices:[1]}]);
+ assert.deepEqual(swap(posthold,[obs({}),obs({waitEvidence:'missing'})]).observationWaitMissing,[{id:posthold.id,indices:[0,1]}]);
+ assert.equal(swap(posthold,[obs(good),obs(good)]).ok,true);
+ // An already invalid launch is reported as invalid, not again as a missing wait; the call wait list is separate.
+ const bad=cover(ok.map(r=>r===coldFix?{...r,valid:false,observations:[obs({})]}:r));
+ assert.deepEqual([bad.observationWaitMissing,bad.invalid.length],[[],1]);
+});
 test('coverage needs the exact plan, fresh launch ids and complete rows, and imposes no expected delivery',()=>{
  const rowsFor=(browser,smoke)=>qualificationPlan({browser,smoke}).map(c=>row(c,{smoke}));
  const ok=rowsFor('cft',true);
  // A designed failure (main never delivers) is data, not a coverage failure.
  const undelivered=ok.map(r=>r.engineSide==='main'?{...r,calls:r.calls.map(c=>c.label==='value'?{...c,after:{...c.after,value:'',reactValue:'',events:[]}}:{...c,after:{...owner,presses:0}})}:r);
  const rep=qualificationCoverage(undelivered,{browser:'cft',smoke:true});
- assert.deepEqual([rep.ok,rep.expectedLaunches,rep.expectedCalls],[true,12,16]);
+ assert.deepEqual([rep.ok,rep.expectedLaunches,rep.expectedCalls],[true,14,18]);
  assert.equal(qualificationCoverage(ok.slice(1),{browser:'cft',smoke:true}).missing.length,1);
  const dup=qualificationCoverage([...ok,ok[3]],{browser:'cft',smoke:true});
  assert.deepEqual(dup.duplicates,[ok[3].id]);assert.equal(dup.ok,false);
@@ -221,11 +363,11 @@ test('coverage needs the exact plan, fresh launch ids and complete rows, and imp
  assert.deepEqual(reused.reusedLaunchIds,[{appLaunchId:ok[2].appLaunchId,ids:[ok[2].id,ok[5].id]}]);assert.equal(reused.ok,false);
  const extra=qualificationCoverage([...ok,{...ok[0],id:'zzz',appLaunchId:'Lz'}],{browser:'cft',smoke:true});
  assert.deepEqual(extra.unexpected,['zzz']);assert.equal(extra.ok,false);
- assert.equal(qualificationCoverage(ok,{browser:'cft',smoke:false}).missing.length,78);
+ assert.equal(qualificationCoverage(ok,{browser:'cft',smoke:false}).missing.length,86);
  const full=qualificationCoverage(rowsFor('electron',false),{browser:'electron'});
- assert.deepEqual([full.expectedLaunches,full.expectedCalls,full.ok],[90,120,true]);
+ assert.deepEqual([full.expectedLaunches,full.expectedCalls,full.ok],[100,130,true]);
  const two=qualificationCoverage([...rowsFor('cft',true),...rowsFor('electron',true)],{smoke:true});
- assert.deepEqual([two.expectedLaunches,two.ok],[24,true]);
+ assert.deepEqual([two.expectedLaunches,two.ok],[28,true]);
  assert.equal(qualificationCoverage([]).ok,false);
  assert.equal(qualificationCoverage([],{browser:'cft',smoke:true}).ok,false);
 });
@@ -236,8 +378,8 @@ test('CLI plan, summary and coverage read directories and rows.jsonl as data',()
   const rows=qualificationPlan({browser:'cft',smoke:true}).map(c=>row(c,{smoke:true}));
   writeFileSync(join(sub,'rows.jsonl'),rows.map(r=>JSON.stringify(r)).join('\n')+'\n');
   const run=(...a)=>spawnSync(process.execPath,[join(here,'qualification-read.mjs'),...a],{encoding:'utf8'});
-  const p=run('plan','cft','smoke');assert.equal(p.status,0);assert.equal(JSON.parse(p.stdout).length,12);
-  const s=run('summary',dir);assert.equal(s.status,0);const out=JSON.parse(s.stdout);assert.deepEqual([out.calls.length,out.launches.length],[8,6]);
+  const p=run('plan','cft','smoke');assert.equal(p.status,0);assert.equal(JSON.parse(p.stdout).length,14);
+  const s=run('summary',dir);assert.equal(s.status,0);const out=JSON.parse(s.stdout);assert.deepEqual([out.calls.length,out.launches.length],[9,7]);
   const c=run('coverage',join(sub,'rows.jsonl'));assert.equal(c.status,0,c.stdout+c.stderr);assert.equal(JSON.parse(c.stdout).ok,true);
   writeFileSync(join(sub,'rows.jsonl'),rows.slice(1).map(r=>JSON.stringify(r)).join('\n')+'\n');
   assert.equal(run('coverage',dir).status,1);

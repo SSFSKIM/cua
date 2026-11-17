@@ -36,13 +36,25 @@
 // with waitMs null and a `waitWhy`, never 0, so an absent signpost cannot read as an instant gate. A wait of 0.02 ms that
 // was measured is a number.
 //
-// The side matters. The fix (d94039ec) emits the gate on every input request and every get_app_state that names an
-// app, near zero when no wait was owed; its calls need a valid pair. Main (c7eee724) has no readiness gate and no such
-// signpost, so its calls are `main-no-gate` with a deliberate 0 ms, and if main's pid shows the interval anywhere the run
-// was not main and its calls are `missing`.
+// Two gates, by the method. An element action's wait is the `prologue.chromiumReady` interval in execute's prologue
+// (ChromiumReadiness.swift's awaitChromiumReadiness); the fix emits it on every input request and on every get_app_state
+// that names an app, near zero when no wait was owed. A get_app_state's own wait (the head 22f4d305's ruling 772: the
+// first observation after an enablement waits for readiness before it reads the tree) is the `observation.chromiumReady`
+// interval in the walk (Skyshot.swift), so a get_app_state request holds both, the prologue's near zero and the
+// observation's the real delay. The call's `waitMs` is the gate its method owns, an observation's the observation
+// interval, and the prologue's is kept beside it (`waitPrologueMs`), not added: it waited for nothing. What the
+// observation says of itself (`raw.result.timings`: whether the deadline cut the wait, the engine's own reading of the
+// phase and its slept total) rides along as audit, `waitDeadline` among them: a deadline-cut wait is a measured near-zero
+// one, with its marker, not an unknown. A call needs a valid pair of its gate.
+//
+// The side matters. Main (c7eee724) has no readiness gate and no such signposts, so its calls are `main-no-gate` with a
+// deliberate 0 ms, an observation's included, and if main's pid shows either interval anywhere the run was not main and
+// its calls are `missing`.
 import {logTimestampMs, readEngineWindow} from '../cursor-sitting/signposts.mjs';
 
 export const WAIT_SIGNPOST = 'prologue.chromiumReady';
+export const OBSERVATION_SIGNPOST = 'observation.chromiumReady';
+export const OBSERVATION_METHOD = 'get_app_state';
 export const REQUEST_SIGNPOST = 'request';
 export const ENGINE_SUBSYSTEM = 'io.github.ssfskim.cua.engine';
 // What a call's own time may exceed its engine request by: the socket, the JSON, the client's event loop. Measured in the
@@ -56,39 +68,41 @@ export const CAPTURE_PAD_MS = 4000;
 
 const microseconds = ms => Math.round(ms * 1000) / 1000;
 
-// One ndjson line as a begin or end of the gate's or a request's interval of process `enginePid`, or why it is not one.
-// -> null (not those intervals', or another subsystem's), {unreadable: true, wait} (`wait`: the gate's line), {otherProcess: true}
+const GATES = [WAIT_SIGNPOST, OBSERVATION_SIGNPOST];
+
+// One ndjson line as a begin or end of a gate's or a request's interval of process `enginePid`, or why it is not one.
+// -> null (not those intervals', or another subsystem's), {unreadable: true, gate} (`gate`: a gate's line), {otherProcess: true}
 // or {name, type, ms, id, mach, message}.
 function readLine(line, enginePid) {
   if (!line.startsWith('{')) return null;
   let e;
   try { e = JSON.parse(line); } catch {
-    return line.includes(WAIT_SIGNPOST) ? {unreadable: true, wait: true} : line.includes(`"signpostName":"${REQUEST_SIGNPOST}"`) ? {unreadable: true, wait: false} : null;
+    return GATES.some(name => line.includes(name)) ? {unreadable: true, gate: true} : line.includes(`"signpostName":"${REQUEST_SIGNPOST}"`) ? {unreadable: true, gate: false} : null;
   }
-  if (e?.signpostName !== WAIT_SIGNPOST && e?.signpostName !== REQUEST_SIGNPOST) return null;
+  if (!GATES.includes(e?.signpostName) && e?.signpostName !== REQUEST_SIGNPOST) return null;
   if (e.subsystem !== undefined && e.subsystem !== ENGINE_SUBSYSTEM) return null;
   if (e.signpostType !== 'begin' && e.signpostType !== 'end') return null;
   if (e.processID !== enginePid) return {otherProcess: true};
   const id = /"signpostID":\s*(-?\d+)/.exec(line)?.[1];
   const ms = logTimestampMs(e.timestamp);
-  if (id === undefined || ms === null) return {unreadable: true, wait: e.signpostName === WAIT_SIGNPOST};
+  if (id === undefined || ms === null) return {unreadable: true, gate: e.signpostName !== REQUEST_SIGNPOST};
   return {name: e.signpostName, type: e.signpostType, ms, id, mach: e.machTimestamp ?? e.timestamp, message: typeof e.eventMessage === 'string' ? e.eventMessage : ''};
 }
 
-// The gate's and the requests' intervals of process `enginePid` in `text` (log show's ndjson).
-// -> {wait, request, unreadable, unreadableWait, otherProcess}: `wait` and `request` each {pairs: [{signpostID, beginMs, endMs,
-// durationMs}], fragments: [{signpostID, kind, times}]}; a request's pair or fragment also has `method`, the begin's message
-// (null when there is no begin). `pairs` are the clean begin+end couples (epoch ms, microseconds kept); `fragments` what is
-// not one, kind unmatched-begin, unmatched-end, duplicate or inverted (an end before its begin), `times` every event's time;
-// `unreadable` the lines that name either interval and cannot be placed (`unreadableWait` of them the gate's); `otherProcess`
-// those of other processes, ignored.
+// The gates' and the requests' intervals of process `enginePid` in `text` (log show's ndjson).
+// -> {wait, observation, request, unreadable, unreadableGate, otherProcess}: `wait` (the prologue's gate), `observation` (the
+// walk's) and `request` each {pairs: [{signpostID, beginMs, endMs, durationMs}], fragments: [{signpostID, kind, times}]}; a
+// request's pair or fragment also has `method`, the begin's message (null when there is no begin). `pairs` are the clean
+// begin+end couples (epoch ms, microseconds kept); `fragments` what is not one, kind unmatched-begin, unmatched-end,
+// duplicate or inverted (an end before its begin), `times` every event's time; `unreadable` the lines that name any of the
+// intervals and cannot be placed (`unreadableGate` of them a gate's); `otherProcess` those of other processes, ignored.
 export function readIntervals(text, {enginePid}) {
   const groups = new Map(), seen = new Set();
-  let unreadable = 0, unreadableWait = 0, otherProcess = 0;
+  let unreadable = 0, unreadableGate = 0, otherProcess = 0;
   for (const line of String(text ?? '').split('\n')) {
     const read = readLine(line, enginePid);
     if (read === null) continue;
-    if (read.unreadable) { unreadable++; if (read.wait) unreadableWait++; continue; }
+    if (read.unreadable) { unreadable++; if (read.gate) unreadableGate++; continue; }
     if (read.otherProcess) { otherProcess++; continue; }
     const record = `${read.name}|${read.mach}|${read.id}|${read.type}`;
     if (seen.has(record)) continue;
@@ -98,9 +112,9 @@ export function readIntervals(text, {enginePid}) {
     group[read.type === 'begin' ? 'begins' : 'ends'].push({ms: read.ms, message: read.message});
     groups.set(key, group);
   }
-  const wait = {pairs: [], fragments: []}, request = {pairs: [], fragments: []};
+  const wait = {pairs: [], fragments: []}, observation = {pairs: [], fragments: []}, request = {pairs: [], fragments: []};
   for (const {name, id, begins, ends} of groups.values()) {
-    const into = name === WAIT_SIGNPOST ? wait : request;
+    const into = name === WAIT_SIGNPOST ? wait : name === OBSERVATION_SIGNPOST ? observation : request;
     const extra = name === REQUEST_SIGNPOST ? {method: begins[0]?.message ?? null} : {};
     if (begins.length === 1 && ends.length === 1 && ends[0].ms >= begins[0].ms) {
       into.pairs.push({signpostID: id, beginMs: begins[0].ms, endMs: ends[0].ms, durationMs: microseconds(ends[0].ms - begins[0].ms), ...extra});
@@ -109,34 +123,49 @@ export function readIntervals(text, {enginePid}) {
       into.fragments.push({signpostID: id, kind, times: [...begins, ...ends].map(x => x.ms), ...extra});
     }
   }
-  for (const side of [wait, request]) side.pairs.sort((a, b) => a.beginMs - b.beginMs);
-  return {wait, request, unreadable, unreadableWait, otherProcess};
+  for (const side of [wait, observation, request]) side.pairs.sort((a, b) => a.beginMs - b.beginMs);
+  return {wait, observation, request, unreadable, unreadableGate, otherProcess};
 }
 
 const interval = ({signpostID, beginMs, endMs, durationMs}) => ({signpostID, beginMs, endMs, durationMs});
 // The call without a wait annotation an earlier attach left on it: a rescored row carries none of the old verdict.
 const bare = call => {
-  const {waitMs, waitEvidence, waitWhy, waitIntervals, waitRequest, waitSlackMs, waitClockOffsetMs, ...rest} = call ?? {};
+  const {waitMs, waitEvidence, waitWhy, waitIntervals, waitRequest, waitSlackMs, waitClockOffsetMs,
+    waitPrologueMs, waitPrologueIntervals, waitDeadline, waitReportedMs, waitSleptMs, ...rest} = call ?? {};
   return rest;
 };
 
-// `calls` ({method, startedAt, endedAt}, the probe's rpc records, times in epoch ms) with the wait each really took, each a
-// copy with `waitMs` (ms, null when unknown), `waitEvidence` (signpost | main-no-gate | missing) and, for the fix:
-// `waitIntervals` (the gate pair), `waitRequest` (the engine's request interval it sat in), `waitSlackMs` (the call's time
-// less the request's, the check that the two are one) and `waitClockOffsetMs` (the call's start less the request's begin:
-// the client's clock against the log's, which is not 0); when missing, `waitWhy`: invalid-call, unreadable-signpost,
-// ambiguous-call, no-request, request-incomplete, request-count-mismatch, request-mismatch, ambiguous-request,
-// duplicate, incomplete, straddles-request, no-interval or main-emitted-gate. `signpostText` is `log show`'s ndjson for the
-// engine; `enginePid` the process whose intervals count; `engineSide` 'fix' or 'main'.
+// What a get_app_state says of its own readiness wait (`raw.result.timings`, Skyshot.swift): whether the request's deadline
+// cut it (`chromiumReady: "deadline"`), the phase as the engine timed it (`chromiumReadyMs`, a number of ms) and what it
+// slept (`chromiumReadyWaitMs`, set only when above 0). null where the call carries no timings (an error, an old record).
+function reportedReadiness(call) {
+  const t = call?.raw?.result?.timings;
+  if (t === null || typeof t !== 'object') return {waitDeadline: null, waitReportedMs: null, waitSleptMs: null};
+  return {waitDeadline: t.chromiumReady === 'deadline', waitReportedMs: Number.isFinite(t.chromiumReadyMs) ? t.chromiumReadyMs : null,
+    waitSleptMs: Number.isFinite(t.chromiumReadyWaitMs) ? t.chromiumReadyWaitMs : 0};
+}
+
+// `calls` ({method, startedAt, endedAt}, the probe's rpc records and observations alike, times in epoch ms) with the wait each
+// really took, each a copy with `waitMs` (ms, null when unknown), `waitEvidence` (signpost | main-no-gate | missing) and, for
+// the fix: `waitIntervals` (the gate pair its method owns: the prologue's, or for get_app_state the observation's),
+// `waitRequest` (the engine's request interval it sat in), `waitSlackMs` (the call's time less the request's, the check that
+// the two are one) and `waitClockOffsetMs` (the call's start less the request's begin: the client's clock against the log's,
+// which is not 0); for a get_app_state also `waitPrologueMs` and `waitPrologueIntervals` (the prologue's own near-zero gate in
+// the same request, null when it is not one clean pair, never part of `waitMs`) and `waitDeadline`, `waitReportedMs`,
+// `waitSleptMs` (reportedReadiness); when missing, `waitWhy`: invalid-call, unreadable-signpost, ambiguous-call, no-request,
+// request-incomplete, request-count-mismatch, request-mismatch, ambiguous-request, duplicate, incomplete, straddles-request,
+// no-interval or main-emitted-gate. `signpostText` is `log show`'s ndjson for the engine; `enginePid` the process whose
+// intervals count; `engineSide` 'fix' or 'main'.
 export function attachWaits(calls, signpostText, {enginePid, engineSide, maxRpcOverheadMs = MAX_RPC_OVERHEAD_MS} = {}) {
   if (!Array.isArray(calls)) throw new TypeError('attachWaits: calls must be an array');
   if (engineSide !== 'fix' && engineSide !== 'main') throw new TypeError(`attachWaits: engineSide must be 'fix' or 'main', not ${engineSide}`);
   if (!Number.isInteger(enginePid) || enginePid <= 0) throw new TypeError(`attachWaits: enginePid must be a process id, not ${enginePid}`);
-  const {wait, request, unreadable, unreadableWait} = readIntervals(signpostText, {enginePid});
+  const {wait, observation, request, unreadable, unreadableGate} = readIntervals(signpostText, {enginePid});
   const missing = (call, waitWhy, extra = {}) => ({...bare(call), waitMs: null, waitEvidence: 'missing', waitWhy, ...extra});
   if (engineSide === 'main') {
-    return calls.map(call => unreadableWait ? missing(call, 'unreadable-signpost')
-      : wait.pairs.length || wait.fragments.length ? missing(call, 'main-emitted-gate') : {...bare(call), waitMs: 0, waitEvidence: 'main-no-gate'});
+    const emitted = [wait, observation].some(gate => gate.pairs.length || gate.fragments.length);
+    return calls.map(call => unreadableGate ? missing(call, 'unreadable-signpost')
+      : emitted ? missing(call, 'main-emitted-gate') : {...bare(call), waitMs: 0, waitEvidence: 'main-no-gate'});
   }
   const out = new Array(calls.length), byMethod = new Map();
   calls.forEach((call, i) => {
@@ -154,15 +183,23 @@ export function attachWaits(calls, signpostText, {enginePid, engineSide, maxRpcO
     const requests = request.pairs.filter(q => q.method === method);
     if (!requests.length) { all('no-request'); continue; }
     if (requests.length !== indexes.length) { all('request-count-mismatch'); continue; }
+    // The gate the method owns: an observation's wait is the walk's, an action's the prologue's.
+    const observing = method === OBSERVATION_METHOD, owned = observing ? observation : wait;
     indexes.forEach((i, k) => {
       const call = calls[i], q = requests[k], callMs = call.endedAt - call.startedAt;
       const audit = {waitRequest: interval(q), waitSlackMs: microseconds(callMs - q.durationMs), waitClockOffsetMs: Math.round((call.startedAt - q.beginMs) * 10) / 10};
+      if (observing) {
+        // The prologue's gate in the same request is kept beside the observation's wait, and is one only when it is one clean pair.
+        const prologue = wait.pairs.filter(pair => contains(q, pair));
+        const clean = prologue.length === 1 && !wait.fragments.some(f => f.times.some(t => t >= q.beginMs && t <= q.endMs));
+        Object.assign(audit, {waitPrologueMs: clean ? prologue[0].durationMs : null, waitPrologueIntervals: prologue.map(interval), ...reportedReadiness(call)});
+      }
       const fail = (why, extra = {}) => { out[i] = missing(call, why, {...audit, ...extra}); };
       if (q.durationMs > callMs + TRUNCATION_MS + callMs * CLOCK_RATE_ALLOWANCE || callMs - q.durationMs > maxRpcOverheadMs) return fail('request-mismatch');
-      const touching = wait.fragments.filter(f => f.times.some(t => t >= q.beginMs && t <= q.endMs));
+      const touching = owned.fragments.filter(f => f.times.some(t => t >= q.beginMs && t <= q.endMs));
       if (touching.length) return fail(touching.some(f => f.kind === 'duplicate') ? 'duplicate' : 'incomplete');
-      if (wait.pairs.some(pair => pair.beginMs <= q.endMs && pair.endMs >= q.beginMs && !contains(q, pair))) return fail('straddles-request');
-      const inside = wait.pairs.filter(pair => contains(q, pair));
+      if (owned.pairs.some(pair => pair.beginMs <= q.endMs && pair.endMs >= q.beginMs && !contains(q, pair))) return fail('straddles-request');
+      const inside = owned.pairs.filter(pair => contains(q, pair));
       if (!inside.length) return fail('no-interval');
       if (inside.length > 1) return fail('duplicate', {waitIntervals: inside.map(interval)});
       if (request.pairs.filter(other => contains(other, inside[0])).length > 1) return fail('ambiguous-request', {waitIntervals: [interval(inside[0])]});

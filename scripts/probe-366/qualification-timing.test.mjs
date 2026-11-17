@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {attachWaits, captureWaitSignposts, readIntervals, WAIT_SIGNPOST, REQUEST_SIGNPOST, ENGINE_SUBSYSTEM} from './qualification-timing.mjs';
+import {attachWaits, captureWaitSignposts, readIntervals, WAIT_SIGNPOST, OBSERVATION_SIGNPOST, REQUEST_SIGNPOST, ENGINE_SUBSYSTEM} from './qualification-timing.mjs';
 
 // Lines shaped as `log show --signpost --style ndjson` prints an OSSignposter interval (fields and order of a real record,
 // ids and wall stamps as it writes them: the id a bare 64-bit integer, the stamp local time to the microsecond).
@@ -72,7 +72,76 @@ test('another request\'s gate is not taken, calls need not come in order, and th
   const cold = call('click', 1000, 3130, {skew: 129}), warm = call('click', 4000, 4164, {skew: 133});
   assert.deepEqual(fix([warm, cold], lines).map(a => [a.waitMs, a.waitClockOffsetMs]), [[0.003, 132], [2029.243, 128]]);
   const obs = fix([call('get_app_state', 500, 900)], lines)[0];
-  assert.deepEqual([obs.waitMs, obs.waitEvidence], [0.01, 'signpost'], 'a call of that method gets that request\'s gate');
+  assert.deepEqual([obs.waitMs, obs.waitWhy, obs.waitPrologueMs], [null, 'no-interval', 0.01], 'an observation\'s wait is the walk\'s gate: the prologue\'s near-zero one does not stand in for it');
+});
+
+// A get_app_state's request holds the prologue's gate (near zero) and, after the enablement, the walk's own wait.
+const obsGate = (id, begin, end, extra) => [line('begin', id, begin, {...extra, name: OBSERVATION_SIGNPOST}), line('end', id, end, {...extra, name: OBSERVATION_SIGNPOST})];
+const observation = (begin, end, {skew = SKEW, ...extra} = {}) => call('get_app_state', begin, end, {skew, ...extra});
+
+test('a get_app_state\'s wait is the observation interval, the prologue\'s near-zero gate kept beside it and not added', () => {
+  const lines = [req(1, 500, 3100, 'get_app_state'), gate(2, 502, 502.004), obsGate(3, 900, 2999.5)];
+  const timings = {chromiumReadyMs: 2099.4, chromiumReadyWaitMs: 2090, other: 1};
+  const [a] = fix([observation(500, 3100, {raw: {result: {timings}}, tag: 'obs'})], lines);
+  assert.deepEqual([a.waitMs, a.waitEvidence, a.waitWhy, a.tag], [2099.5, 'signpost', undefined, 'obs']);
+  assert.deepEqual(a.waitIntervals.map(i => [i.signpostID, i.durationMs]), [['3', 2099.5]], 'the interval that makes the wait');
+  assert.deepEqual([a.waitPrologueMs, a.waitPrologueIntervals.map(i => i.signpostID)], [0.004, ['2']]);
+  assert.deepEqual([a.waitDeadline, a.waitReportedMs, a.waitSleptMs], [false, 2099.4, 2090], 'what the engine says of it, as audit');
+  assert.equal(a.waitRequest.durationMs, 2600);
+});
+
+test('a deadline-cut observation is a measured near-zero wait with its marker, not an unknown', () => {
+  const lines = [req(1, 500, 560, 'get_app_state'), gate(2, 502, 502.004), obsGate(3, 520, 520.12)];
+  const [a] = fix([observation(500, 560, {raw: {result: {timings: {chromiumReady: 'deadline', chromiumReadyMs: 0.1}}}})], lines);
+  assert.deepEqual([a.waitMs, a.waitEvidence, a.waitDeadline, a.waitReportedMs, a.waitSleptMs], [0.12, 'signpost', true, 0.1, 0]);
+  const [bare] = fix([observation(500, 560)], lines);
+  assert.deepEqual([bare.waitMs, bare.waitDeadline, bare.waitReportedMs, bare.waitSleptMs], [0.12, null, null, null], 'a call with no timings has no marker to read, and is still measured');
+  const [failed] = fix([observation(500, 560, {raw: {error: {name: 'timeoutReached'}}})], lines);
+  assert.deepEqual([failed.waitMs, failed.waitDeadline], [0.12, null], 'an observation that errored after its wait still waited');
+});
+
+test('an observation needs the walk\'s own pair: the prologue\'s alone, a broken one, a duplicate or a straddling one leave it unknown', () => {
+  const base = [req(1, 500, 3100, 'get_app_state'), gate(2, 502, 502.004)];
+  assert.deepEqual(verdicts(fix([observation(500, 3100)], base)), [[null, 'missing', 'no-interval']]);
+  assert.equal(fix([observation(500, 3100)], base, line('begin', 3, 900, {name: OBSERVATION_SIGNPOST}))[0].waitWhy, 'incomplete');
+  assert.equal(fix([observation(500, 3100)], base, line('end', 3, 900, {name: OBSERVATION_SIGNPOST}))[0].waitWhy, 'incomplete');
+  assert.equal(fix([observation(500, 3100)], base, obsGate(3, 900, 950), line('begin', 3, 920, {name: OBSERVATION_SIGNPOST}))[0].waitWhy, 'duplicate');
+  assert.equal(fix([observation(500, 3100)], base, obsGate(3, 900, 950), obsGate(4, 1000, 1050))[0].waitWhy, 'duplicate');
+  assert.equal(fix([observation(500, 3100)], base, obsGate(3, 3000, 3200))[0].waitWhy, 'straddles-request');
+  assert.equal(fix([observation(500, 3100)], base, obsGate(3, 900, 950), req(5, 400, 3200, 'click'))[0].waitWhy, 'ambiguous-request', 'a pair that two requests contain');
+  assert.equal(fix([observation(500, 3100)], base, line('begin', 3, 900, {name: OBSERVATION_SIGNPOST}).slice(0, 150) + OBSERVATION_SIGNPOST)[0].waitWhy, 'unreadable-signpost');
+});
+
+test('a broken prologue gate beside a valid observation pair leaves the observation measured and the prologue unknown', () => {
+  const [a] = fix([observation(500, 3100)], req(1, 500, 3100, 'get_app_state'), line('begin', 2, 502), obsGate(3, 900, 2999.5));
+  assert.deepEqual([a.waitMs, a.waitEvidence, a.waitPrologueMs], [2099.5, 'signpost', null]);
+  const [none] = fix([observation(500, 3100)], req(1, 500, 3100, 'get_app_state'), obsGate(3, 900, 2999.5));
+  assert.deepEqual([none.waitMs, none.waitPrologueMs, none.waitPrologueIntervals], [2099.5, null, []]);
+  const [two] = fix([observation(500, 3100)], req(1, 500, 3100, 'get_app_state'), gate(2, 502, 502.004), gate(4, 600, 600.002), obsGate(3, 900, 2999.5));
+  assert.deepEqual([two.waitMs, two.waitPrologueMs, two.waitPrologueIntervals.length], [2099.5, null, 2], 'two prologue gates in one request: neither is the prologue\'s');
+  const [stray] = fix([observation(500, 3100)], req(1, 500, 3100, 'get_app_state'), gate(2, 502, 502.004), line('end', 5, 700), obsGate(3, 900, 2999.5));
+  assert.deepEqual([stray.waitMs, stray.waitPrologueMs], [2099.5, null]);
+});
+
+test('observations and actions together: each takes its own request and gate, in order, whatever order they are given', () => {
+  const lines = [
+    req(1, 500, 3100, 'get_app_state'), gate(2, 502, 502.004), obsGate(3, 900, 2999.5),           // the first observation waits
+    req(4, 3300, 3460, 'click'), gate(5, 3302, 3302.003), obsGate(6, 3303, 3303.1),               // the click's request: an observation interval here is not its wait
+    req(7, 9000, 9120, 'get_app_state'), gate(8, 9001, 9001.003), obsGate(9, 9050, 9050.01),      // a later observation waits for nothing
+    req(10, 9300, 9460, 'click'), gate(11, 9302, 9302.002)];
+  const o1 = observation(500, 3100), c1 = call('click', 3300, 3460, {skew: 130}), o2 = observation(9000, 9120, {skew: 131}), c2 = call('click', 9300, 9460, {skew: 131});
+  const out = fix([c2, o2, c1, o1], lines);
+  assert.deepEqual(out.map(a => [a.method, a.waitMs, a.waitEvidence, a.waitPrologueMs]), [['click', 0.002, 'signpost', undefined], ['get_app_state', 0.01, 'signpost', 0.003], ['click', 0.003, 'signpost', undefined], ['get_app_state', 2099.5, 'signpost', 0.004]]);
+  assert.deepEqual(out.map(a => a.waitIntervals[0].signpostID), ['11', '9', '5', '3']);
+  // The caller can hand observations and actions as one list and take them apart by identity, the copies in the order given.
+  const mixed = [o1, c1, o2, c2], parted = fix(mixed, lines);
+  assert.deepEqual(parted.map((a, i) => [a.method === mixed[i].method, a.startedAt === mixed[i].startedAt]), [[true, true], [true, true], [true, true], [true, true]]);
+  assert.deepEqual(parted.map(a => a.waitMs), [2099.5, 0.003, 0.01, 0.002]);
+  // Actions alone still work with no observation in the list: the unlisted requests are not theirs.
+  assert.deepEqual(fix([c1, c2], lines).map(a => a.waitMs), [0.003, 0.002]);
+  // A count that does not agree fails closed for that method only.
+  assert.deepEqual(fix([o1, c1, c2], lines).map(a => [a.method, a.waitWhy]), [['get_app_state', 'request-count-mismatch'], ['click', undefined], ['click', undefined]]);
+  assert.deepEqual(fix([o1, o2, c1], lines).map(a => [a.method, a.waitWhy]), [['get_app_state', undefined], ['get_app_state', undefined], ['click', 'request-count-mismatch']]);
 });
 
 test('a near-zero wait that was measured is a number, not missing and not an assumed zero', () => {
@@ -192,6 +261,12 @@ test('main has no readiness gate: its calls are main-no-gate with a deliberate 0
   assert.deepEqual(verdicts(odd), [[null, 'missing', 'main-emitted-gate'], [null, 'missing', 'main-emitted-gate']], 'the run was not main');
   assert.equal(attachWaits(calls, text(gate(1, 3010, 3050, {pid: 9})), {enginePid: ENGINE, engineSide: 'main'})[1].waitEvidence, 'main-no-gate', 'another process\'s is not main\'s');
   assert.deepEqual(attachWaits([{startedAt: 1}, null], '', {enginePid: ENGINE, engineSide: 'main'}).map(a => a.waitEvidence), ['main-no-gate', 'main-no-gate']);
+  // An observation on main has no gate either: a known 0, with nothing of the fix's observation fields.
+  const [obs] = attachWaits([observation(500, 900, {raw: {result: {timings: {}}}})], text(req(1, 500, 900, 'get_app_state')), {enginePid: ENGINE, engineSide: 'main'});
+  assert.deepEqual([obs.waitMs, obs.waitEvidence, 'waitPrologueMs' in obs, 'waitDeadline' in obs], [0, 'main-no-gate', false, false]);
+  const seen = attachWaits([observation(500, 900)], text(obsGate(1, 600, 700)), {enginePid: ENGINE, engineSide: 'main'});
+  assert.deepEqual(verdicts(seen), [[null, 'missing', 'main-emitted-gate']], 'the observation\'s interval on main\'s pid says the run was not main');
+  assert.equal(attachWaits(calls, text(line('begin', 3, 900, {name: OBSERVATION_SIGNPOST}).slice(0, 150) + OBSERVATION_SIGNPOST), {enginePid: ENGINE, engineSide: 'main'})[0].waitWhy, 'unreadable-signpost');
 });
 
 test('rescoring a row drops the verdict an earlier attach left on it, and the inputs are checked at the boundary and not mutated', () => {
@@ -202,6 +277,10 @@ test('rescoring a row drops the verdict an earlier attach left on it, and the in
   assert.deepEqual([again[0].waitMs, again[0].waitEvidence, 'waitWhy' in again[0]], [10, 'signpost', false]);
   const asMain = attachWaits(again, '', {enginePid: ENGINE, engineSide: 'main'});
   assert.deepEqual(['waitWhy' in asMain[0], 'waitRequest' in asMain[0], 'waitIntervals' in asMain[0], asMain[0].waitMs], [false, false, false, 0]);
+  const watched = fix([observation(500, 900, {raw: {result: {timings: {chromiumReady: 'deadline'}}}})], req(1, 500, 900, 'get_app_state'), gate(2, 502, 502.1), obsGate(3, 520, 520.2));
+  assert.equal(watched[0].waitDeadline, true);
+  const asMainAgain = attachWaits(watched, '', {enginePid: ENGINE, engineSide: 'main'});
+  assert.deepEqual(['waitPrologueMs', 'waitPrologueIntervals', 'waitDeadline', 'waitReportedMs', 'waitSleptMs'].map(k => k in asMainAgain[0]), [false, false, false, false, false]);
   assert.equal(JSON.stringify(calls), before);
   assert.throws(() => attachWaits(calls, '', {enginePid: ENGINE, engineSide: 'both'}), /engineSide/);
   assert.throws(() => attachWaits(calls, '', {enginePid: 0, engineSide: 'fix'}), /enginePid/);

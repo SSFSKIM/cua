@@ -12,6 +12,14 @@ const OUT=process.env.PROBE389_OUT!, TEMP=process.env.RUNNER_TEMP!;
 const sleep=(ms:number)=>new Promise(r=>setTimeout(r,ms));
 const reps=Number(process.env.PROBE389_REPS??10);
 const rows:any[]=[];
+// Explicit arm plan; every arm is reported separately, never pooled. The historical arm is the main engine of 2026-11-11 (fresh-observation only).
+const ALL=['fresh-observation','earlier-click','covered'];
+const plan=[
+ {arm:'unmodified',engineDir:'build389',ref:process.env.ENGINE_REF,sequences:ALL,reps},
+ {arm:'trace',engineDir:'trace389',ref:process.env.ENGINE_REF,sequences:ALL,reps:2},
+ {arm:'history-unmodified',engineDir:'history389',ref:process.env.HISTORY_REF,sequences:['fresh-observation'],reps},
+ {arm:'history-trace',engineDir:'history-trace389',ref:process.env.HISTORY_REF,sequences:['fresh-observation'],reps:2},
+];
 mkdirSync(OUT,{recursive:true});
 function save(row:any){rows.push(row);appendFileSync(join(OUT,'rows.jsonl'),JSON.stringify(row)+'\n');console.log(JSON.stringify({id:row.id,valid:row.valid,closed:row.after?.dialog===false,handler:row.handlerRan,error:row.problem,meta:row.call?.raw?.result?.meta}));}
 async function stop(p:any){if(!p||p.exitCode!==null)return;p.kill('SIGTERM');await Promise.race([new Promise(r=>p.once('exit',r)),sleep(4000)]);if(p.exitCode===null)p.kill('SIGKILL');}
@@ -21,7 +29,7 @@ function summarize(){const groups:any={};for(const r of rows){const key=[r.arm,r
 test('MAWS Add project: ordinary background element press and search set_value',async()=>{
  test.setTimeout(65*60*1000);
  if(process.env.RUNNER_ENVIRONMENT!=='github-hosted')throw Error('hosted runners only');
- writeFileSync(join(OUT,'pins.json'),JSON.stringify({engine:process.env.ENGINE_REF,maws:process.env.MAWS_REF,kit:process.env.PROBE389_KIT,reps,image:process.env.ImageVersion,arms:'Unmodified engine rate; separate logging-only engine trace. No forced routes. MAWS build:app product UI, launchMaws scratch profile; no live engine.'},null,2));
+ writeFileSync(join(OUT,'pins.json'),JSON.stringify({engine:process.env.ENGINE_REF,historyEngine:process.env.HISTORY_REF,plan:plan.map(a=>({...a,sequences:a.sequences.join(',')})),maws:process.env.MAWS_REF,kit:process.env.PROBE389_KIT,reps,image:process.env.ImageVersion,arms:'Unmodified engine rate; separate logging-only engine trace; historical unmodified and logging-only arms at HISTORY_REF, fresh-observation only. No forced routes. MAWS build:app product UI, launchMaws scratch profile; no live engine.'},null,2));
  const helper=spawn(join(TEMP,'tool389'),[],{stdio:['pipe','pipe','inherit']}),waiters:any[]=[];
  createInterface({input:helper.stdout}).on('line',line=>{const w=waiters.shift();if(w){clearTimeout(w.timer);try{w.resolve(JSON.parse(line));}catch(e){w.reject(e);}}});
  function ask(q:any):Promise<any>{return new Promise((resolve,reject)=>{const w={resolve,reject,timer:setTimeout(()=>reject(Error('helper timeout')),10000)};waiters.push(w);helper.stdin.write(JSON.stringify(q)+'\n');});}
@@ -29,8 +37,8 @@ test('MAWS Add project: ordinary background element press and search set_value',
  let coverPid:number;
  try {
   coverPid=await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('cover launch timeout')),10000);createInterface({input:cover.stdout}).once('line',line=>{clearTimeout(timer);resolve(JSON.parse(line).pid);});});
-  for(const arm of ['unmodified','trace'])for(const sequence of ['fresh-observation','earlier-click','covered'])for(const operation of ['click','set_value'])for(let rep=0;rep<(arm==='trace'?2:reps);rep++){
-   const row:any={id:[arm,sequence,operation,rep].join('-'),arm,sequence,operation,rep,valid:false,calls:[],startedAt:Date.now()};
+  for(const {arm,engineDir,ref,sequences,reps:armReps} of plan)for(const sequence of sequences)for(const operation of ['click','set_value'])for(let rep=0;rep<armReps;rep++){
+   const row:any={id:[arm,sequence,operation,rep].join('-'),arm,engineRef:ref,sequence,operation,rep,valid:false,calls:[],startedAt:Date.now()};
    let maws:any,w:any,engine:any;const work=mkdtempSync('/tmp/p389-');
    try {
     let folder='';
@@ -52,7 +60,7 @@ test('MAWS Add project: ordinary background element press and search set_value',
     await app.evaluate(({BrowserWindow}:any)=>{const w=BrowserWindow.getAllWindows().find((w:any)=>w.isVisible());w.setBounds({x:20,y:50,width:1200,height:900});w.show();w.focus();});
     await expect.poll(()=>origin(maws.userData,folder),{timeout:30000}).toBe('discovered');
     row.originBefore=origin(maws.userData,folder);
-    engine=spawn(join(TEMP,arm==='trace'?'trace389/release/cua-engine':'build389/release/cua-engine'),[],{env:{...process.env,HOME:work,CUA_ENGINE_SOCKET:join(work,'e.sock')},stdio:['ignore','ignore','pipe']});
+    engine=spawn(join(TEMP,engineDir,'release/cua-engine'),[],{env:{...process.env,HOME:work,CUA_ENGINE_SOCKET:join(work,'e.sock')},stdio:['ignore','ignore','pipe']});
     engine.stderr.on('data',d=>appendFileSync(join(OUT,row.id+'-engine.txt'),d));
     w=await Wire.connect(join(work,'e.sock'));const ping=await w.call('ping',{clientApiVersion:'cua-engine-1',desktop:'shared'});if(ping.error)throw Error(JSON.stringify(ping.error));
     async function rpc(method:string,args:any){const call={method,args,startedAt:Date.now(),raw:await w.execute(method,{pid,...args}),endedAt:Date.now()};row.calls.push(call);return call;}

@@ -17,6 +17,7 @@ concurrency:
   cancel-in-progress: false
 env:
   ENGINE_REF: 466409bd879191fbdb9aa67b3c9ebe271e153a29
+  HISTORY_REF: 9020bb18acb9091f817a4b648f7c332174b11153
   MAWS_REF: 77af813a4a4a642d747f7511a343448db489a9ab
 jobs:
   measure:
@@ -44,13 +45,18 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=5120
         run: pnpm build:app
-      - name: Build unmodified engine and separate logging-only arm
+      - name: Build unmodified engines and separate logging-only arms (current and historical)
         run: |
           git -C .cua-probe worktree add --detach "$RUNNER_TEMP/main389" "$ENGINE_REF"
           swift build -c release --package-path "$RUNNER_TEMP/main389/native/engine" --scratch-path "$RUNNER_TEMP/build389"
           git -C "$RUNNER_TEMP/main389" diff --exit-code
           node .cua-probe/scripts/probe-389/patch.mjs "$RUNNER_TEMP/main389"
           swift build -c release --package-path "$RUNNER_TEMP/main389/native/engine" --scratch-path "$RUNNER_TEMP/trace389"
+          git -C .cua-probe worktree add --detach "$RUNNER_TEMP/history389src" "$HISTORY_REF"
+          swift build -c release --package-path "$RUNNER_TEMP/history389src/native/engine" --scratch-path "$RUNNER_TEMP/history389"
+          git -C "$RUNNER_TEMP/history389src" diff --exit-code
+          node .cua-probe/scripts/probe-389/patch.mjs "$RUNNER_TEMP/history389src"
+          swift build -c release --package-path "$RUNNER_TEMP/history389src/native/engine" --scratch-path "$RUNNER_TEMP/history-trace389"
           swiftc -O -o "$RUNNER_TEMP/tool389" .cua-probe/scripts/probe-389/tool.swift
           mkdir -p "$RUNNER_TEMP/Probe389 Cover.app/Contents/MacOS"
           cp "$RUNNER_TEMP/tool389" "$RUNNER_TEMP/Probe389 Cover.app/Contents/MacOS/cover389"

@@ -1,0 +1,66 @@
+{
+  "purpose": "Issue367 hosted live-check evidence; no PR or product-branch mutation by this lane.",
+  "controlMain": "15acf09b714dd19efc796e4a3a2ff8d57e2f7994",
+  "fix": "2b7804bdbbebd29ea7d88568878f329aaa77999d",
+  "originalRequestedFix": "34edcafe0eb8aa0c037bc6721d6a03efccf06746",
+  "matchedBaseRuling": "Coordinator merged main/#366 into the fix before dispatch so readiness changes are present in both arms.",
+  "registrationCommit": "5bc0c60b5388d6646f182d2ca89623aad2c610e7",
+  "registrationException": "Only this registration commit omitted [skip ci], after checking ordinary CI is push-restricted to ci/**; all other probe commits retain it.",
+  "runs": [
+    {
+      "id": "44101305953",
+      "kit": "5bc0c60b5388d6646f182d2ca89623aad2c610e7",
+      "scope": "Initial clamps and ineffective CGEvent shortcuts; no special Raise scored."
+    },
+    {
+      "id": "44106077029",
+      "kit": "d8a30f3306b1d6691c1ca0f8df1f4dd12f4b1393",
+      "scope": "AX shrink/bottom routes plus Finder/MC alternatives; fixtures still rejected."
+    },
+    {
+      "id": "44111743279",
+      "kit": "5bb43cdff0ff94eb07245fcbd2e2e3da99f1fce8",
+      "scope": "Owned Electron setBounds also clamps; actual System Events switches, but AX-dependent observer/proof prevented valid scoring."
+    },
+    {
+      "id": "44122922177",
+      "kit": "16753e1929c8c6e31121b2ff98313740c644bf5e",
+      "scope": "Decisive pinned CG/Space product-contract and four public Raise measurements."
+    }
+  ],
+  "rawArtifactSha256FinalRun": {
+    "main/results.json": "0b7c90b677edbf9b672da66655488b6f6a48e89bb47a6e94870bded50d202b3f",
+    "main/oracle-events.json": "84c9dfbe69e365dcf0817aa6b3e43c36312107b60a1039c082b452ff6d3bda05",
+    "main/config.json": "c6228a33fd2075a8564dfc19b95937acfb85ba785f19f090280b56ffcafd630d",
+    "main/preflight.json": "44e49cafdde419d6db3035e5d7b7f55acc778ba7141d55a7ddb25f98d05ec72c",
+    "fix/results.json": "e27fe6b45084d0952e1c10ff0157a3b426d5a88b7e21fc07e7992c6a182e3c0f",
+    "fix/oracle-events.json": "f201be820dde9f9f1c2411037774fc2cbd714db2bb70ec9750cc003813e87ae7",
+    "fix/config.json": "34d147bba839796ac057f7f15445a946317893c5330aa9f3b100a0bdc4c9f62c",
+    "fix/preflight.json": "f1cc02da360eb33bfb998801891369802c5c6258bf03f6a58b7c02840a90bdc7"
+  },
+  "remedies": {
+    "offScreen": {
+      "source": "src/services/engine/render.mjs:53-54",
+      "currentRemedy": "Its Raise action can bring it back without activating the app: use it if the user asked you to work in this window, otherwise ask them to move it.",
+      "liveQualification": "Not qualified: both AX and owned Electron setBounds keep 24\u201340 pixels visible; no true off-display Raise was attempted."
+    },
+    "anotherSpace": {
+      "source": "src/services/engine/render.mjs:57-58",
+      "currentRemedy": "Its Raise action can bring it here without activating the app: use it if the user asked you to work in this window, otherwise ask them to bring it here.",
+      "measuredContradiction": "All four successful Raises left the window on its existing fullscreen Space. Neither active Space nor membership/frame/frontmost changed at the 1.6s post-action sample."
+    },
+    "combinedDocs": {
+      "source": "docs/cua-api/agent-cursor.md:9",
+      "currentFragment": "its Raise action can bring it back without activating the app",
+      "action": "Separate the other-Space case and remove its Raise remedy."
+    }
+  },
+  "review": "reviewer-medium reviewed the kit and each substantive recovery change; final report-only unknown-membership finding fixed by16753e19 and actual-reader regression;23 focused tests passed.",
+  "scopeLimits": [
+    "Public facade/trusted service over the real unmodified source-built native engine; nativePipe is the existing test/hosted adapter, not an MCP sandbox qualification.",
+    "Only fullscreen Spaces were tested, not ordinary second-desktop windows.",
+    "Raise endpoints are before and1.6s after; no continuous transient-Space trace.",
+    "Off-every-display cell is capability-blocked and no off-display Raise was issued.",
+    "No local/Mac-mini GUI, owner profiles, secrets, TCC changes, PR or merge."
+  ]
+}

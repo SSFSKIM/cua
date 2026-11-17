@@ -1,0 +1,77 @@
+# #367 hosted live check
+
+Run: https://github.com/SSFSKIM/cua/actions/runs/44122922177
+
+| Head | SHA | Scene | Setup blocker |
+| --- | --- | --- | --- |
+| main | 15acf09b714dd19efc796e4a3a2ff8d57e2f7994 | textedit | none |
+| main | 15acf09b714dd19efc796e4a3a2ff8d57e2f7994 | electron | none |
+| fix | 2b7804bdbbebd29ea7d88568878f329aaa77999d | textedit | none |
+| fix | 2b7804bdbbebd29ea7d88568878f329aaa77999d | electron | none |
+
+| Step | Head / scene | Result | Screenshot / comparison |
+| --- | --- | --- | --- |
+| 1 owned on-screen | main / textedit | ok; 13 nodes; omitted=none; independent window match=true | 900×500; 21989 B; 0d9e156003ce |
+| 2 off every display | main / textedit | independent geometry=false; getApp not measured; getAXState not measured | not measured |
+| 3 partly off | main / textedit | ok; 13 nodes; omitted=none; placement line=none; frame=(-790, 200, 900, 500) [AX] | 900×500; 21989 B; 0d9e156003ce |
+| 4 another Space | main / textedit | independent membership=true; route=fullscreen; getApp ERROR noCapturableWindow; getAXState ERROR noCapturableWindow | ERROR Computer Use server error -10005: No capturable window found: TextEdit |
+| 5 hidden app | main / textedit | ERROR noCapturableWindow; placement line=not measured | ERROR Computer Use server error -10005: No capturable window found: TextEdit |
+| 6 back on screen | main / textedit | ok; 13 nodes; omitted=none | {"textEqual":false,"jpegBytesEqual":false,"byteLengthsEqual":false,"dimensionsEqual":true} |
+| 7 cost | main / textedit | 20/20 observations; walk p50 22.088 ms; total p50 28.457500000000003 ms | 20 exact per-window CG reads; p50 0.169229 ms |
+| 1 owned on-screen | main / electron | ok; 26 nodes; omitted=none; independent window match=true | 900×500; 25145 B; d5ccb680b5e1 |
+| 2 off every display | main / electron | independent geometry=false; getApp not measured; getAXState not measured | not measured |
+| 3 partly off | main / electron | ok; 26 nodes; omitted=none; placement line=none; frame=(-790, 200, 900, 500) [AX] | 900×500; 25145 B; d5ccb680b5e1 |
+| 4 another Space | main / electron | independent membership=true; route=fullscreen; getApp ERROR timeoutReached; getAXState ERROR timeoutReached | ERROR Computer Use server error -10005: timeoutReached |
+| 5 hidden app | main / electron | ERROR noCapturableWindow; placement line=not measured | ERROR Computer Use server error -10005: No capturable window found: cua Electron Fixture |
+| 6 back on screen | main / electron | ok; 26 nodes; omitted=none | {"textEqual":true,"jpegBytesEqual":false,"byteLengthsEqual":false,"dimensionsEqual":true} |
+| 7 cost | main / electron | 20/20 observations; walk p50 28.1755 ms; total p50 31.286 ms | 20 exact per-window CG reads; p50 0.163437 ms |
+| 1 owned on-screen | fix / textedit | ok; 13 nodes; omitted=none; independent window match=true | 900×500; 21989 B; 0d9e156003ce |
+| 2 off every display | fix / textedit | independent geometry=false; getApp not measured; getAXState not measured | not measured |
+| 3 partly off | fix / textedit | ok; 13 nodes; omitted=none; placement line=none; frame=(-790, 200, 900, 500) [AX] | 900×500; 21989 B; 0d9e156003ce |
+| 4 another Space | fix / textedit | independent membership=true; route=fullscreen; getApp ok; 6 nodes; omitted=windowOnAnotherSpace; getAXState ok; 6 nodes; omitted=windowOnAnotherSpace | ERROR Screenshot unavailable for /System/Applications/TextEdit.app: the window is on another Space. Its Raise action can bring it here without activating the app: use it if the user asked you to work in this window, otherwise ask them to bring it here. |
+| 5 hidden app | fix / textedit | ERROR noCapturableWindow; placement line=not measured | ERROR Computer Use server error -10005: No capturable window found: TextEdit |
+| 6 back on screen | fix / textedit | ok; 13 nodes; omitted=none | {"textEqual":false,"jpegBytesEqual":false,"byteLengthsEqual":false,"dimensionsEqual":true} |
+| 7 cost | fix / textedit | 20/20 observations; walk p50 22.6475 ms; total p50 26.2185 ms | 20 exact per-window CG reads; p50 0.2571045 ms |
+| 1 owned on-screen | fix / electron | ok; 26 nodes; omitted=none; independent window match=true | 900×500; 25145 B; d5ccb680b5e1 |
+| 2 off every display | fix / electron | independent geometry=false; getApp not measured; getAXState not measured | not measured |
+| 3 partly off | fix / electron | ok; 26 nodes; omitted=none; placement line=none; frame=(-790, 200, 900, 500) [AX] | 900×500; 25145 B; d5ccb680b5e1 |
+| 4 another Space | fix / electron | independent membership=true; route=fullscreen; getApp ERROR timeoutReached; getAXState ERROR timeoutReached | ERROR Computer Use server error -10005: timeoutReached |
+| 5 hidden app | fix / electron | ERROR noCapturableWindow; placement line=not measured | ERROR Computer Use server error -10005: No capturable window found: cua Electron Fixture |
+| 6 back on screen | fix / electron | ok; 26 nodes; omitted=none | {"textEqual":true,"jpegBytesEqual":false,"byteLengthsEqual":false,"dimensionsEqual":true} |
+| 7 cost | fix / electron | 20/20 observations; walk p50 21.8045 ms; total p50 25.7835 ms | 20 exact per-window CG reads; p50 0.39225 ms |
+
+| Placement | Head / scene | Action valid | Active Space before → after | Window Spaces before → after | Frame before → after | Front app before → after | On a display after |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| offscreen | main / textedit | false | "Distinct AX move/shrink constructions retained display overlap; this bounded offscreen fixture is unavailable" | unavailable | unavailable | unavailable | unavailable |
+| anotherSpace | main / textedit | true | 1 → 1 | [10] → [10] | (0, 0, 1024, 768) [CGWindowBounds] → (0, 0, 1024, 768) [CGWindowBounds] | com.apple.finder → com.apple.finder | unavailable |
+| offscreen | main / electron | false | "Owned Electron setBounds did not yield both a matching successful ACK and independent zero display overlap" | unavailable | unavailable | unavailable | unavailable |
+| anotherSpace | main / electron | true | 1 → 1 | [15] → [15] | (0, 0, 1024, 768) [CGWindowBounds] → (0, 0, 1024, 768) [CGWindowBounds] | com.apple.finder → com.apple.finder | unavailable |
+| offscreen | fix / textedit | false | "Distinct AX move/shrink constructions retained display overlap; this bounded offscreen fixture is unavailable" | unavailable | unavailable | unavailable | unavailable |
+| anotherSpace | fix / textedit | true | 1 → 1 | [20] → [20] | (0, 0, 1024, 768) [CGWindowBounds] → (0, 0, 1024, 768) [CGWindowBounds] | com.apple.finder → com.apple.finder | unavailable |
+| offscreen | fix / electron | false | "Owned Electron setBounds did not yield both a matching successful ACK and independent zero display overlap" | unavailable | unavailable | unavailable | unavailable |
+| anotherSpace | fix / electron | true | 1 → 1 | [25] → [25] | (0, 0, 1024, 768) [CGWindowBounds] → (0, 0, 1024, 768) [CGWindowBounds] | com.apple.finder → com.apple.finder | unavailable |
+
+| Scene | Cross-head on-screen text equal | JPEG bytes equal | JPEG lengths equal | Image dimensions equal |
+| --- | --- | --- | --- | --- |
+| textedit | true | true | true | true |
+| electron | true | true | true | true |
+
+| Head / scene | Off-display line | Off-display diff line | Another-Space line |
+| --- | --- | --- | --- |
+| main / textedit | not measured | not measured | not measured |
+| main / electron | not measured | not measured | not measured |
+| fix / textedit | not measured | not measured | [window on another Space: the window is not on the current Space, so it may show no content and has no screenshot. Its Raise action can bring it here without activating the app: use it if the user asked you to work in this window, otherwise ask them to bring it here.] |
+| fix / electron | not measured | not measured | not measured |
+
+## Another-Space product contract
+
+| Head / scene | Independent before (active; window Spaces; on-screen-only) | CG flags All / IncludingWindow | getApp line | getAXState outcome / line | screenshotOmitted metadata | getScreenshot | Independent after getScreenshot |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| main / textedit | 1; [10]; false | false / false | ERROR noCapturableWindow / not measured | ERROR noCapturableWindow / not measured | {"getApp":null,"getAXState":null,"getScreenshot":null} | ERROR Computer Use server error -10005: No capturable window found: TextEdit | 1; [10]; false |
+| main / electron | 1; [15]; false | false / false | ERROR timeoutReached / not measured | ERROR timeoutReached / not measured | {"getApp":null,"getAXState":null,"getScreenshot":null} | ERROR Computer Use server error -10005: timeoutReached | 1; [15]; false |
+| fix / textedit | 1; [20]; false | false / false | ok; 6 nodes; omitted=windowOnAnotherSpace / [window on another Space: the window is not on the current Space, so it may show no content and has no screenshot. Its Raise action can bring it here without activating the app: use it if the user asked you to work in this window, otherwise ask them to bring it here.] | ok; 6 nodes; omitted=windowOnAnotherSpace / [window on another Space: the window is not on the current Space, so it may show no content and has no screenshot. Its Raise action can bring it here without activating the app: use it if the user asked you to work in this window, otherwise ask them to bring it here.] | {"getApp":"windowOnAnotherSpace","getAXState":"windowOnAnotherSpace","getScreenshot":"windowOnAnotherSpace"} | ERROR Screenshot unavailable for /System/Applications/TextEdit.app: the window is on another Space. Its Raise action can bring it here without activating the app: use it if the user asked you to work in this window, otherwise ask them to bring it here. | 1; [20]; false |
+| fix / electron | 1; [25]; false | false / false | ERROR timeoutReached / not measured | ERROR timeoutReached / not measured | {"getApp":null,"getAXState":null,"getScreenshot":null} | ERROR Computer Use server error -10005: timeoutReached | 1; [25]; false |
+
+Scope: the public facade and trusted service are imported from the same pinned source head as each unmodified engine. The transport adapter is the existing hosted/test nativePipe bridge; this is not an MCP-host/sandbox qualification. All GUI applications and documents belong to the disposable runner. No owner profile, secrets, or local/Mac-mini GUI was used.
+
+Cost: p50 is the ordinary median of successful native timing values (20 observations requested per app/head). Placement has no separately timed native field; walk/total timings do not isolate its added CGWindow read. The independent oracle separately samples the exact per-window CGWindow read. Both arms include #366 after the coordinator-required base merge.

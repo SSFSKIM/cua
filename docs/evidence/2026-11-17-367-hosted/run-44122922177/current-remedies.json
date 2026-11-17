@@ -1,0 +1,17 @@
+{
+  "offScreen": {
+    "source": "src/services/engine/render.mjs:53-54",
+    "currentRemedy": "Its Raise action can bring it back without activating the app: use it if the user asked you to work in this window, otherwise ask them to move it.",
+    "liveQualification": "Not qualified: both AX and owned Electron setBounds keep 24\u201340 pixels visible; no true off-display Raise was attempted."
+  },
+  "anotherSpace": {
+    "source": "src/services/engine/render.mjs:57-58",
+    "currentRemedy": "Its Raise action can bring it here without activating the app: use it if the user asked you to work in this window, otherwise ask them to bring it here.",
+    "measuredContradiction": "All four successful Raises left the window on its existing fullscreen Space. Neither active Space nor membership/frame/frontmost changed at the 1.6s post-action sample."
+  },
+  "combinedDocs": {
+    "source": "docs/cua-api/agent-cursor.md:9",
+    "currentFragment": "its Raise action can bring it back without activating the app",
+    "action": "Separate the other-Space case and remove its Raise remedy."
+  }
+}

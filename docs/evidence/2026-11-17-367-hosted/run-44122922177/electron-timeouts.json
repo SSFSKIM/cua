@@ -1,0 +1,109 @@
+{
+  "run": "https://github.com/SSFSKIM/cua/actions/runs/44122922177",
+  "calls": [
+    {
+      "head": "main",
+      "sha": "15acf09b714dd19efc796e4a3a2ff8d57e2f7994",
+      "call": "getApp",
+      "error": {
+        "name": "SkyComputerUseError",
+        "errorName": "timeoutReached",
+        "message": "Computer Use server error -10005: timeoutReached"
+      },
+      "bracketSeconds": 5.121,
+      "beforeOracleSampleUnixSeconds": 1794932188.617132,
+      "afterCallOracleInvocation": "2026-11-17T16:16:33.738Z",
+      "AXWindowsBefore": 0,
+      "AXWindowsAfter": 0
+    },
+    {
+      "head": "main",
+      "sha": "15acf09b714dd19efc796e4a3a2ff8d57e2f7994",
+      "call": "getAXState",
+      "error": {
+        "name": "SkyComputerUseError",
+        "errorName": "timeoutReached",
+        "message": "Computer Use server error -10005: timeoutReached"
+      },
+      "bracketSeconds": 5.024,
+      "beforeOracleSampleUnixSeconds": 1794932193.7856832,
+      "afterCallOracleInvocation": "2026-11-17T16:16:38.810Z",
+      "AXWindowsBefore": 0,
+      "AXWindowsAfter": 0
+    },
+    {
+      "head": "main",
+      "sha": "15acf09b714dd19efc796e4a3a2ff8d57e2f7994",
+      "call": "getScreenshot",
+      "error": {
+        "name": "SkyComputerUseError",
+        "errorName": "timeoutReached",
+        "message": "Computer Use server error -10005: timeoutReached"
+      },
+      "bracketSeconds": 5.025,
+      "beforeOracleSampleUnixSeconds": 1794932198.846062,
+      "afterCallOracleInvocation": "2026-11-17T16:16:43.871Z",
+      "AXWindowsBefore": 0,
+      "AXWindowsAfter": 0
+    },
+    {
+      "head": "fix",
+      "sha": "2b7804bdbbebd29ea7d88568878f329aaa77999d",
+      "call": "getApp",
+      "error": {
+        "name": "SkyComputerUseError",
+        "errorName": "timeoutReached",
+        "message": "Computer Use server error -10005: timeoutReached"
+      },
+      "bracketSeconds": 5.141,
+      "beforeOracleSampleUnixSeconds": 1794932259.486835,
+      "afterCallOracleInvocation": "2026-11-17T16:17:44.628Z",
+      "AXWindowsBefore": 0,
+      "AXWindowsAfter": 0
+    },
+    {
+      "head": "fix",
+      "sha": "2b7804bdbbebd29ea7d88568878f329aaa77999d",
+      "call": "getAXState",
+      "error": {
+        "name": "SkyComputerUseError",
+        "errorName": "timeoutReached",
+        "message": "Computer Use server error -10005: timeoutReached"
+      },
+      "bracketSeconds": 5.06,
+      "beforeOracleSampleUnixSeconds": 1794932264.702364,
+      "afterCallOracleInvocation": "2026-11-17T16:17:49.762Z",
+      "AXWindowsBefore": 0,
+      "AXWindowsAfter": 0
+    },
+    {
+      "head": "fix",
+      "sha": "2b7804bdbbebd29ea7d88568878f329aaa77999d",
+      "call": "getScreenshot",
+      "error": {
+        "name": "SkyComputerUseError",
+        "errorName": "timeoutReached",
+        "message": "Computer Use server error -10005: timeoutReached"
+      },
+      "bracketSeconds": 5.157,
+      "beforeOracleSampleUnixSeconds": 1794932269.8527842,
+      "afterCallOracleInvocation": "2026-11-17T16:17:55.010Z",
+      "AXWindowsBefore": 0,
+      "AXWindowsAfter": 0
+    }
+  ],
+  "timingDefinition": "Pre-call independent Swift oracle sample to the next post-call Node oracle invocation. Includes small serialization/bookkeeping overhead; not dedicated RPC timers.",
+  "ending": "Native engine timeoutReached response, not the kit/client timer.",
+  "clientDeadlineMs": 120000,
+  "clientGraceMs": 2000,
+  "nativeWindowWaitMs": 5000,
+  "captureTimeoutSeconds": 10,
+  "phase": "Window acquisition/reopen before a tree/capture result. AXWindows is empty. Capture timeout errors are screenCaptureFailed, not timeoutReached.",
+  "limit": "The raw native error has no phase trace distinguishing NSWorkspace reopen completion from the following primary-window wait; that exact subphase was not instrumented.",
+  "sourceRefs": [
+    "native/engine/Sources/Engine/Skyshot.swift:14,57-76,193-195,465-469",
+    "native/engine/Sources/Engine/Apps.swift:232-250",
+    "native/engine/Sources/Engine/Screenshot.swift:16-29,86-87",
+    "src/services/engine/client.mjs:54-55,305-307"
+  ]
+}

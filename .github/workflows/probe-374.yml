@@ -15,7 +15,7 @@ on:
 permissions:
   contents: read
 env:
-  CANDIDATE_REF: 'fc2711e340e6a1f2daf514b76926d27cb764974b'
+  CANDIDATE_REF: '7ad0362bc8c0124ded33df8e379c26bcff9fb00b'
   CONTROL_REF: 'b99232def1e37307848dd1ccb08726729eb81b66'
 jobs:
   measure:

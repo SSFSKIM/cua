@@ -12,7 +12,7 @@ import {join} from 'node:path';
 import {createRequire} from 'node:module';
 import {createInterface} from 'node:readline';
 import {fileURLToPath} from 'node:url';
-import {page, POPUPS, TARGETS} from './page.mjs';
+import {page, POPUPS, QUIET, TARGETS} from './page.mjs';
 import {gate, summarize, table} from './judge.mjs';
 import {placeChromeForTesting} from '../native-matrix/fixtures/chrome-for-testing.mjs';
 
@@ -93,10 +93,11 @@ async function freshState(after, ms = 2000) {
 // The apps.
 const version = path => sh('defaults', ['read', `${path}/Contents/Info`, 'CFBundleShortVersionString']).stdout.trim();
 const pgrep = name => Number(sh('pgrep', ['-x', name]).stdout.split('\n')[0]) || null;
-let appkitShows = {};
+let appkitShows = {}, appkitIn = null;
 async function launchTarget() {
   if (FAMILY === 'appkit') {
-    const child = spawn(APPKIT, [], {stdio: ['ignore', 'pipe', 'inherit']});
+    const child = spawn(APPKIT, [], {stdio: ['pipe', 'pipe', 'inherit']});
+    appkitIn = child.stdin;
     createInterface({input: child.stdout}).on('line', l => {
       try { const e = JSON.parse(l); if (e.event === 'showMenu') appkitShows[e.target] = e.count; appendFileSync(join(OUT, 'appkit-events.jsonl'), `${l}\n`); } catch {}
     });
@@ -142,9 +143,13 @@ async function launchCover() {
   throw new Error('TextEdit did not start');
 }
 
+// The negative controls (ruling 1ea561bc:752) ask for the menu of a target that opens nothing while a menu the
+// request did not open comes up in the same window 300 ms into the wait.
+const NC_DELAY = 300;
 const CELLS = FAMILY === 'appkit'
-  ? [['native', 'Fixture text'], ['popup', 'Fixture popup'], ['ignored', 'Ignored menu'], ['blocking', 'Blocking menu']]
-  : Object.entries(TARGETS);
+  ? [['native', 'Fixture text'], ['popup', 'Fixture popup'], ['ignored', 'Ignored menu'], ['blocking', 'Blocking menu'],
+     ['nc-host', 'Ignored menu'], ['nc-sibling', 'Ignored menu']]
+  : [...Object.entries(TARGETS), ['nc-timer-aria', QUIET], ['nc-timer-select', QUIET], ['nc-datalist', QUIET]];
 const PLACEMENTS = ['foreground', 'background'];
 
 const w = await connect();
@@ -202,9 +207,23 @@ measure: for (const placement of PLACEMENTS) {
             row.before = await ask({op: 'menus', pid});
             row.pageBefore = latest;
             const showsBefore = appkitShows[label] ?? 0;
+            row.targetFrame = node.frame;
+            let typed = null;
+            if (cell.startsWith('nc-')) {
+              if (FAMILY === 'appkit') appkitIn.write(`later ${cell === 'nc-host' ? 'host' : 'sibling'} ${NC_DELAY}\n`);
+              else {
+                command = {op: 'schedule', kind: cell.slice(3), delay: NC_DELAY};
+                await freshState(Date.now(), 1000);
+                if (cell === 'nc-datalist') typed = ask({op: 'keyLater', pid, delay: NC_DELAY});
+              }
+            }
             const t0 = Date.now();
             const r = await w.execute('perform_secondary_action', {pid, element: node.token, action: 'Show Menu'}, lineage);
             row.wallMs = Date.now() - t0;
+            if (typed) row.typed = await typed;
+            // The oracle reads at least 1.2 s after the send on either engine, so a menu that draws after an answer at
+            // once is not missed (the control's).
+            await sleep(t0 + 1200 - Date.now());
             row.after = await ask({op: 'menus', pid});
             // Where the menu lives in the AX tree, whenever one is on screen (or the engine saw none): hit-tests at
             // each pop-up window and a bounded search of the tree.
@@ -214,6 +233,8 @@ measure: for (const placement of PLACEMENTS) {
             const m = r.result?.meta ?? r.error?.meta;
             row.menu = m?.menu ?? null; row.inputRoute = m?.inputRoute ?? null;
             if (FAMILY !== 'appkit') row.page = await freshState(t0 + row.wallMs + 250, 2500);
+            // The datalist letter is a key event the intervention tap took as the user's: its debounce is waited out.
+            if (typed) await sleep(5300);
             else { await sleep(250); row.appkitShows = (appkitShows[label] ?? 0) - showsBefore; }
           }
         }

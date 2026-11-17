@@ -99,6 +99,12 @@ while let line = readLine() {
     switch op {
     case "menus": answer = menus(pid)
     case "locate": answer = locate(pid)
+    case "keyLater":
+      // One letter posted to the process after `delay` ms (the datalist control's trigger). A key event: the engine's
+      // intervention tap takes it as the user's, so the harness waits out the debounce after.
+      usleep(useconds_t(((q["delay"] as? NSNumber)?.doubleValue ?? 300) * 1000))
+      for down in [true, false] { CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: down)?.postToPid(pid) }
+      answer = ["typedAt": Date().timeIntervalSince1970 * 1000]
     case "hover":
       // A pointer move only (not a type the engine's intervention tap counts), to raise a tooltip.
       let x = (q["x"] as? NSNumber)?.doubleValue ?? 0, y = (q["y"] as? NSNumber)?.doubleValue ?? 0

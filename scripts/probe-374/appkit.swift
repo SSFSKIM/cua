@@ -57,12 +57,28 @@ final class BlockingTarget: MenuTarget {
 
 final class Delegate: NSObject, NSApplicationDelegate {
   var window: NSWindow!
+  var text: NSTextView!
+  /// "later host <ms>" or "later sibling <ms>" on stdin: a context menu popped up that long after, in the content view
+  /// or in the text view, as a menu the request did not open (ruling 1ea561bc:752's negative control).
+  func listen() {
+    Thread.detachNewThread {
+      while let line = readLine() {
+        let parts = line.split(separator: " ")
+        guard parts.count == 3, parts[0] == "later", let ms = Double(parts[2]) else { continue }
+        DispatchQueue.main.asyncAfter(deadline: .now() + ms / 1000) {
+          let view: NSView = parts[1] == "host" ? self.window.contentView! : self.text
+          emit(["event": "later", "where": String(parts[1]), "at": Date().timeIntervalSince1970 * 1000])
+          contextMenu("Later").popUp(positioning: nil, at: NSPoint(x: 300, y: 30), in: view)
+        }
+      }
+    }
+  }
   func applicationDidFinishLaunching(_ notification: Notification) {
     window = NSWindow(contentRect: NSRect(x: 420, y: 200, width: 520, height: 420), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
     window.title = "probe374 AppKit"
     let content = NSView(frame: NSRect(x: 0, y: 0, width: 520, height: 420))
     let scroll = NSScrollView(frame: NSRect(x: 20, y: 290, width: 480, height: 110))
-    let text = NSTextView(frame: NSRect(x: 0, y: 0, width: 480, height: 110))
+    text = NSTextView(frame: NSRect(x: 0, y: 0, width: 480, height: 110))
     text.string = "Right-click here for AppKit's own text menu."
     text.setAccessibilityLabel("Fixture text")
     scroll.documentView = text
@@ -76,6 +92,7 @@ final class Delegate: NSObject, NSApplicationDelegate {
     window.contentView = content
     window.makeKeyAndOrderFront(nil)
     NSApp.activate(ignoringOtherApps: true)
+    listen()
     emit(["event": "ready", "pid": Int(ProcessInfo.processInfo.processIdentifier)])
   }
 }

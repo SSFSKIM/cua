@@ -16,6 +16,7 @@
 export const EXPECT = Object.freeze({
   native: 'confirmed', popup: 'confirmed', blocking: 'confirmed', aria: 'confirmed',
   own: 'ownUnconfirmed', ignored: 'honestUnconfirmed',
+  'nc-host': 'ncHeld', 'nc-sibling': 'ncHeld', 'nc-timer-aria': 'ncHeld', 'nc-timer-select': 'ncHeld', 'nc-datalist': 'ncHeld',
 });
 
 const more = (after, before, key) => (after?.[key] ?? 0) > (before?.[key] ?? 0);
@@ -27,8 +28,18 @@ export function truth(row) {
   return {menuOpen: native || aria, native, aria, reached: row.page ? rose(row) : row.appkitShows > 0, ownOpen: row.page?.ownOpen === true};
 }
 
+/// A negative control's other menu came up: a new pop-up window or AXMenu child, or the page's timer menu open.
+export function ncFired(row) {
+  return more(row.after, row.before, 'windows') || more(row.after, row.before, 'axMenus') || row.page?.timerOpen === true;
+}
+
 export function classify(row) {
   if (row.offered === false) return 'notOffered';
+  if (row.cell?.startsWith('nc-')) {
+    if (row.answer === 'ok') return 'ncConfirmed';
+    if (row.answer !== 'menuUnconfirmed') return 'error';
+    return ncFired(row) ? 'ncHeld' : 'ncNotFired';
+  }
   const t = truth(row);
   if (row.answer === 'ok') return t.menuOpen ? 'confirmed' : 'falseOk';
   if (row.answer === 'menuUnconfirmed') {
@@ -65,7 +76,7 @@ export function summarize(rows) {
     const reached = cellRows.filter(r => truth(r).reached).length;
     const expected = EXPECT[cell.cell];
     let verdict = 'review';
-    if (classes.falseOk) verdict = 'fail';
+    if (classes.falseOk || classes.ncConfirmed) verdict = 'fail';
     else if (classes.notOffered === cellRows.length) verdict = 'limit';
     else if (classes[expected] === cellRows.length && (expected !== 'ownUnconfirmed' || reached === cellRows.length)) verdict = 'pass';
     else if (cell.cell === 'aria' && (classes.honestUnconfirmed ?? 0) + (classes.falseUnconfirmed ?? 0) === cellRows.length && !seen.focus) verdict = 'limit';
@@ -77,7 +88,7 @@ export function summarize(rows) {
 
 /// The run's gate: no falseOk anywhere, and every cell pass or a stated limit.
 export function gate(summary) {
-  const falseOk = summary.reduce((n, c) => n + (c.classes.falseOk ?? 0), 0);
+  const falseOk = summary.reduce((n, c) => n + (c.classes.falseOk ?? 0) + (c.classes.ncConfirmed ?? 0), 0);
   const open = summary.filter(c => !['pass', 'limit'].includes(c.verdict)).map(c => `${c.family}/${c.cell}/${c.placement}: ${c.verdict}`);
   return {falseOk, open, green: falseOk === 0 && open.length === 0};
 }

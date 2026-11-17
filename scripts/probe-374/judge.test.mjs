@@ -56,3 +56,15 @@ test('the blocking cell\'s timed-out action is counted from the record', () => {
   assert.deepEqual(cell.actionErrors, {'-25204': 1});
   assert.equal(cell.verdict, 'pass');
 });
+
+test('a negative control holds when the other menu came up and the answer stayed menuUnconfirmed; a confirm fails the run', () => {
+  const nc = over => row({cell: 'nc-timer-select', answer: 'menuUnconfirmed', menu: {seen: null, ms: 1000}, ...over});
+  assert.equal(classify(nc({})), 'ncHeld', 'the select popup is a new window');
+  assert.equal(classify(nc({after: none, page: page({}, {timerOpen: true})})), 'ncHeld', 'the page\'s timer menu');
+  assert.equal(classify(nc({after: none})), 'ncNotFired', 'nothing came up: the control did not run');
+  assert.equal(classify(nc({answer: 'ok'})), 'ncConfirmed');
+  const summary = summarize([nc({}), nc({rep: 1, answer: 'ok'})]);
+  assert.equal(summary[0].verdict, 'fail');
+  assert.equal(gate(summary).falseOk, 1, 'a confirmed control counts against the gate');
+  assert.equal(summarize([nc({}), nc({rep: 1})])[0].verdict, 'pass');
+});

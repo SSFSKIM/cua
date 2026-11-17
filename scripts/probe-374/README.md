@@ -13,7 +13,7 @@ ID from `gh api repos/SSFSKIM/cua/actions/workflows --jq '.workflows[] | select(
 ## What runs
 
 There is one job per app family and engine: 5 families × {candidate, control} = 10 jobs. The candidate is the fix
-(`CANDIDATE_REF`, fc2711e3). The control is main before it (`CONTROL_REF`, b99232de), and it shows the defect: ok
+(`CANDIDATE_REF`, 7ad0362b: the ancestor rule of ruling 1ea561bc:752). The control is main before it (`CONTROL_REF`, b99232de), and it shows the defect: ok
 answered with no menu. Each job builds its engine on the runner, then `measure.mjs` takes the following steps for
 every cell, in two placements (`foreground`: the app frontmost; `background`: a TextEdit document frontmost, shared
 mode), `reps` times each:
@@ -41,6 +41,23 @@ page, never against the answer, and writes `summary.md` and `summary.json`.
 | Chrome for Testing (pinned), Electron (the repo's pinned `electron`, `electron/main.js`), Firefox, Safari | native | a textarea with no handler (`page.mjs`) | the browser's own context menu (Electron's through its `context-menu` handler) | ok, seen `application` |
 | | aria | a button whose contextmenu handler cancels the browser's menu and opens a role=menu, focus on its first item | a page's ARIA menu | ok, seen `focus` |
 | | own | a button whose handler cancels the browser's menu and draws plain elements, no role, no focus | **the negative control**: a Docs-style page's own menu | `menuUnconfirmed`, with the page's contextmenu counter risen |
+
+**Negative controls** (ruling 1ea561bc:752): a Show Menu on a target that opens nothing while a menu the request did
+not open comes up in the same window 300 ms into the wait. Each must answer `menuUnconfirmed` with the other menu seen
+by the oracle (`ncHeld`); a confirm (`ncConfirmed`) counts against the gate like a false ok, and a control whose menu
+never came up (`ncNotFired`) is for review.
+
+| family | cell | the other menu |
+|---|---|---|
+| AppKit | nc-host | a context menu popped up in the window's content view (one of the target's hosts) |
+| | nc-sibling | the text view's context menu (a sibling's own) |
+| web families | nc-timer-aria | a focused role=menu the page opens on a timer, far from the target |
+| | nc-timer-select | the page's `<select>` opened on a timer (`showPicker`) |
+| | nc-datalist | the datalist's suggestions, raised by a letter the oracle types into the focused field |
+
+The oracle reads at least 1.2 s after the send on both engines, so a menu that draws after an answer at once is seen.
+Every row also records the target's frame and each pop-up window's bounds, so a position discriminator can be scored
+offline if a control confirms.
 
 Office and LibreOffice are not on the hosted image, so they are not covered here (the issue says "where available").
 

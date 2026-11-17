@@ -9,10 +9,15 @@ import {launch,placePid,version} from '../probe-316/browser.mjs';
 import {FixtureTransport,FixtureError} from '../probe-354/transport.mjs';
 import {BROWSERS,cells,diagnosticCells,summary} from './readers.mjs';
 import {page,SEED,REQUESTED,assertVisibleOwner} from './page.mjs';
+import {qualificationPage} from './qualification-page.mjs';
+import {qualificationCells,qualificationExpected,qualificationFollow,qualificationSummary} from './qualification-readers.mjs';
 if(process.env.RUNNER_ENVIRONMENT!=='github-hosted')throw Error('hosted runners only; offline stage must not launch this driver');
 const arg=n=>{const i=process.argv.indexOf('--'+n);return i<0?undefined:process.argv[i+1]};
 const OUT=arg('out'),BROWSER=arg('browser'),EDITOR=arg('editor'),ENGINE=arg('engine'),TRACED=arg('traced-engine'),TOOL=arg('tool'),WATCH=arg('watch');
 const REPS=Number(arg('reps')??20),SMOKE=arg('smoke')==='true',DIAGNOSTIC=arg('diagnostic')&&arg('diagnostic')!=='none'?arg('diagnostic'):null;
+const QUALIFICATION=arg('qualification')==='true',HEAD=arg('head');
+const qualificationRequest=QUALIFICATION?{smoke:SMOKE,heads:{main:arg('main-ref'),fix:arg('fix-ref')},browsers:BROWSERS,editors:['textarea','input','contenteditable','compose']}:null;
+if(QUALIFICATION&&(DIAGNOSTIC||!['main','fix'].includes(HEAD)||Object.values(qualificationRequest.heads).some(ref=>! /^[a-f0-9]{40}$/.test(ref??''))))throw Error('qualification requires two exact pins, main/fix head, and no diagnostic mode');
 if(!OUT||!ENGINE||!TRACED||!TOOL||!WATCH||!['safari','cft','firefox'].includes(BROWSER)||!['textarea','input','contenteditable','compose'].includes(EDITOR))throw Error('missing or invalid arguments');
 if(REPS!==20&&!SMOKE&&!DIAGNOSTIC)throw Error('non20 repetitions must be explicitly labelled smoke or diagnostic');
 if(DIAGNOSTIC&&(SMOKE||EDITOR!=='textarea'))throw Error('diagnostic is a separate textarea corpus, never smoke');
@@ -22,7 +27,7 @@ const diagnosticRequest=DIAGNOSTIC?{kind:DIAGNOSTIC,reps:REPS,browsers:DIAGNOSTI
 if(diagnosticRequest&&!diagnosticRequest.browsers.includes(BROWSER))throw Error('shard browser is outside diagnostic request');
 const routeGroup=arg('route-group')??'all';
 if(!['all','script-keys','ax-actions'].includes(routeGroup)||(DIAGNOSTIC!=='candidates'&&routeGroup!=='all'))throw Error('invalid route group for corpus');
-const shardPlan=DIAGNOSTIC?diagnosticCells({...diagnosticRequest,browsers:[BROWSER]}):cells({reps:REPS,browsers:[BROWSER],editors:[EDITOR]});
+const shardPlan=QUALIFICATION?qualificationCells(qualificationRequest).filter(c=>c.head===HEAD&&c.browser===BROWSER&&c.editor===EDITOR):DIAGNOSTIC?diagnosticCells({...diagnosticRequest,browsers:[BROWSER]}):cells({reps:REPS,browsers:[BROWSER],editors:[EDITOR]});
 const planned=shardPlan.filter(c=>routeGroup==='all'||(routeGroup==='script-keys'?['script','cmd+a']:['select_text','set_value']).includes(c.selection));
 if(!planned.length)throw Error('empty shard manifest');
 mkdirSync(join(OUT,'shots'),{recursive:true});
@@ -42,7 +47,7 @@ async function front(pid,activate=true){const r=await tool.ask({op:'front',pid,a
 const transport=new FixtureTransport({onEvent:e=>appendFileSync(join(OUT,'transport.jsonl'),JSON.stringify(e)+'\n')});
 const server=createServer(async(req,res)=>{
  res.setHeader('Cache-Control','no-store');const u=new URL(req.url,'http://fixture');
- if(u.pathname==='/'){res.setHeader('Content-Type','text/html; charset=utf-8');res.end(page());return}
+ if(u.pathname==='/'){res.setHeader('Content-Type','text/html; charset=utf-8');res.end(QUALIFICATION?qualificationPage():page());return}
  res.setHeader('Content-Type','application/json');
  if(u.pathname==='/cmd'){transport.poll({pageId:u.searchParams.get('pageId'),timeOrigin:Number(u.searchParams.get('timeOrigin'))},res);return}
  if(u.pathname==='/answer'){let b='';for await(const c of req)b+=c;try{const a=JSON.parse(b),ok=a.op==='ready'?transport.register(a):transport.accept(a);res.statusCode=ok?200:409}catch{res.statusCode=400}res.end('{}');return}
@@ -84,7 +89,7 @@ async function sceneForeground(c,expectedForeground,row){
  row.foregroundTransition=await front(expectedForeground);if(!c.foreground)row.cover=row.foregroundTransition;await sleep(250);
 }
 async function attempt(c){
- budget();const row={...c,requested:REQUESTED,startedAt:Date.now(),smoke:SMOKE,fixtureOwnershipVersion:3,valid:false};let stage='setup';
+ budget();const row={...c,requested:REQUESTED,...(QUALIFICATION?{expected:qualificationExpected(c)}:{}),startedAt:Date.now(),smoke:SMOKE,fixtureOwnershipVersion:3,valid:false};let stage='setup';
  try{
   row.prepareForeground=await front(pid);row.binding=await bindVisible();
   row.reset=await command({op:'reset',id:c.id,editor:EDITOR,key:''});
@@ -96,23 +101,25 @@ async function attempt(c){
   const state=shot.raw.result,fields=state.nodes.filter(n=>['AXTextArea','AXTextField'].includes(n.role)&&n.frame&&/Draft control|Message Body/.test([n.title,n.description,n.placeholder].join(' ')));
   if(fields.length!==1)throw Error('fixture field AX identity ambiguous/missing '+fields.length);
   const field=fields[0],frame=state.window.frame,scale=state.screenshot.width/frame.width;
-  row.target={element:field.token,lineage:state.lineage};if(['select_text','set_value'].includes(c.selection)&&(!field.token||!state.lineage))throw Error('AX continuation target token/lineage missing');
+  row.target={element:field.token,lineage:state.lineage};if(['select_text','set_value','set_value_type'].includes(c.selection)&&(!field.token||!state.lineage))throw Error('AX continuation target token/lineage missing');
   row.point={screen:{x:field.frame.x+35,y:field.frame.y+20},source:'fixture monospace AX text-entry frame +35,+20',intendedOffset:3};
   const observe=c.suite==='trace'||c.suite==='type-trace'||c.suite==='candidate'||c.suite==='isolate';
-  row.watchBind=await watch.ask({op:'bind',pid,coverPid,title:'probe354:'+row.binding.owner.pageId,observe});requireOK(row.watchBind,'observer binding');
+  row.watchBind=await watch.ask({op:'bind',pid,coverPid,title:'probe354:'+row.binding.owner.pageId,observe,observeWindows:QUALIFICATION&&!c.foreground});requireOK(row.watchBind,'observer binding');
   await sceneForeground(c,expectedForeground,row);
   row.preClickOrder=await watch.ask({op:'mark'});requireOK(row.preClickOrder,'window order');
   if(row.preClickOrder.frontmostPid!==expectedForeground||row.preClickOrder.windows.browserAboveCover!==Boolean(c.foreground))throw Error('foreground PID or browser/cover order does not match the scene');
   row.preClick=await command({op:'read'});
   if(row.preClick.text!==SEED||JSON.stringify(row.preClick.selection)!==JSON.stringify([initialCaret,0])||!row.preClick.focused)throw Error('setup/deactivation changed intended caret');
   row.clockUncertaintyMs=Math.max(2,row.preClick.endedAt-row.preClick.startedAt);
-  row.beforeClickForeground=await front(expectedForeground,false);stage='click';
+  row.beforeClickForeground=await front(expectedForeground,false);
+  if(c.stressBusyMs){stage='stress';row.stress=await command({op:'busy',id:c.id,busyMs:c.stressBusyMs});if(Date.now()>=row.stress.busyUntil-350)throw Error('busy acknowledgement too late to force the tail; no click issued')}
+  stage='click';
   if(c.suite==='isolate'){const carrierStartedAt=Date.now(),r=await watch.ask({op:'mutate',kind:c.mode,browser:BROWSER});row.click={...r,nativeStartedAt:r.startedAt,nativeEndedAt:r.endedAt,startedAt:carrierStartedAt,endedAt:Date.now()}}
   else if(c.suite==='control'){const at=Date.now();row.click={startedAt:at,endedAt:at,noClick:true}}
   else row.click=clean(await rpc('click',{x:Math.round((row.point.screen.x-frame.x)*scale),y:Math.round((row.point.screen.y-frame.y)*scale),...(observe?{spike359Trace:true}:{}),...(c.suite==='candidate'?{spike359Mode:c.mode}:{})}));
   requireOK(row.click,'measured click');stage='selection';
   // Intentionally no observation, read, cover check or sleep between these calls.
-  row.next=await followingAction(c,row.target);if(c.selection==='set_value')row.valueWrite=row.next;
+  row.next=QUALIFICATION?await qualificationFollow(c,{rpc:async(method,args)=>{const r=await rpc(method,args);return {...clean(r),answer:r.raw}},command,target:row.target}):await followingAction(c,row.target);if(['set_value','set_value_type'].includes(c.selection))row.valueWrite=row.next;
   if(row.next.error?.errorName!=='valueUnconfirmed')requireOK(row.next,'selection or value write');
   if(c.selection!=='set_value'&&c.suite!=='trace'&&c.suite!=='isolate'){
    stage='type';const typed=await rpc('type_text',{text:REQUESTED,...(['type-trace','candidate'].includes(c.suite)?{spike359TypeTrace:true}:{})});row.type={...clean(typed),answer:typed.raw};
@@ -121,7 +128,7 @@ async function attempt(c){
   }
   stage='tail';const returnedAt=row.type?.endedAt??row.next.endedAt;
   row.samples=[];for(const delay of [0,250,1500]){await sleep(returnedAt+delay-Date.now());const s=await command({op:'read'});row.samples.push({...s,requestedDelayMs:delay,actualDelayMs:s.at-returnedAt})}
-  row.events=[...(row.next.trace??[]),...row.samples.flatMap(s=>s.trace??[])];
+  row.events=[...(row.stress?.trace??[]),...(row.next.trace??[]),...row.samples.flatMap(s=>s.trace??[])];
   row.ax=await watch.ask({op:'stop'});requireOK(row.ax,'observer stop');
   if(row.ax.truncated)throw Error('AX trace truncated');
   row.finalVisibleWindow=await tool.ask({op:'window-title',pid});
@@ -134,12 +141,12 @@ async function attempt(c){
  finally{row.endedAt=Date.now();rows.push(row);appendFileSync(join(OUT,'rows.jsonl'),JSON.stringify(row)+'\n');writeFileSync(join(OUT,'progress.json'),JSON.stringify({attempted:rows.length,requested:planned.length,last:row.id,elapsedMs:Date.now()-startedAt},null,2));console.log('359',row.id,row.valid?'scored':row.problem)}
  if(consecutiveSetupFailures>=3)throw Error('three consecutive invalid setups; abort rather than fabricate coverage');
 }
-const meta={schema:1,kit:process.env.GITHUB_SHA,engine:process.env.ENGINE_REF,browser:BROWSER,editor:EDITOR,reps:REPS,smoke:SMOKE,diagnostic:DIAGNOSTIC,diagnosticRequest,routeGroup,image:process.env.ImageVersion,startedAt,planned,transport:'354 owner-v3 visible AX title binds nonce/timeOrigin; no hidden Firefox realm',clock:'same hosted machine epoch clocks; monotonic stamps in DOM/Swift; conservative command RTT uncertainty retained',tailMs:1500};
+const meta={schema:1,kit:process.env.GITHUB_SHA,engine:process.env.ENGINE_REF,browser:BROWSER,editor:EDITOR,reps:REPS,smoke:SMOKE,diagnostic:DIAGNOSTIC,diagnosticRequest,qualification:QUALIFICATION,qualificationRequest,head:HEAD,routeGroup,image:process.env.ImageVersion,startedAt,planned,transport:'354 owner-v3 visible AX title binds nonce/timeOrigin; no hidden Firefox realm',clock:'same hosted machine epoch clocks; monotonic stamps in DOM/Swift; conservative command RTT uncertainty retained',tailMs:1500};
 try{
  browser=await launch(BROWSER,fixtureURL,join(OUT,'profile'),{x:400,y:30,w:620,h:720});pid=browser.pid;await until(()=>transport.clients.size>0,30000);await sleep(BROWSER==='cft'?Math.max(0,browser.launchedAt+22000-Date.now()):1500);placePid(pid,{x:400,y:30,w:620,h:720});
  const doc=join(OUT,'cover.txt');writeFileSync(doc,'#359 disposable cover.');sh('open',['-a','TextEdit',doc]);await sleep(1000);coverPid=Number(sh('pgrep',['-x','TextEdit']).split('\n')[0]);if(!coverPid)throw Error('cover unavailable');placePid(coverPid,{x:360,y:25,w:660,h:740});
  meta.version=version(BROWSER);meta.pid=pid;meta.coverPid=coverPid;writeFileSync(join(OUT,'config.json'),JSON.stringify(meta,null,2));
- for(const instrumented of [false,true]){
+ for(const instrumented of (QUALIFICATION?[false]:[false,true])){
   await startEngine(instrumented?TRACED:ENGINE);
   // A late tree is intentional in the rate/attribution corpus; fresh #341 coverage is a separate future regression run.
   await front(pid);meta.warmups??=[];
@@ -150,7 +157,7 @@ try{
  }
 }catch(e){meta.failure=String(e.stack??e);console.error(meta.failure);process.exitCode=1}
 finally{
- meta.finishedAt=Date.now();writeFileSync(join(OUT,'config.json'),JSON.stringify(meta,null,2));writeFileSync(join(OUT,'summary.json'),JSON.stringify(summary(rows,planned,{smoke:SMOKE,diagnostic:Boolean(DIAGNOSTIC)}),null,2));
+ meta.finishedAt=Date.now();writeFileSync(join(OUT,'config.json'),JSON.stringify(meta,null,2));writeFileSync(join(OUT,'summary.json'),JSON.stringify(QUALIFICATION?qualificationSummary(rows,planned,{smoke:SMOKE}):summary(rows,planned,{smoke:SMOKE,diagnostic:Boolean(DIAGNOSTIC)}),null,2));
  transport.retire('shutdown');w?.close();engine?.kill('SIGTERM');tool.child.kill('SIGTERM');watch.child.kill('SIGTERM');if(browser)try{process.kill(browser.pid,'SIGTERM')}catch{}
  server.closeAllConnections();server.close();
 }

@@ -1,4 +1,4 @@
-# Hosted A/B authorized by design ruling 1ea561bc:733. Kit pushes run smoke only.
+# Hosted spike (733) and unmodified-engine qualification (785). Kit pushes run smoke only.
 name: probe-359
 on:
   push:
@@ -30,12 +30,18 @@ on:
         type: choice
         options: ['all', 'cft', 'safari', 'firefox']
         default: 'all'
+      qualification:
+        description: 'Ruling 785: paired unmodified main/fix, foreground + forced tail + background regression'
+        type: boolean
+        default: false
 permissions:
   contents: read
 env:
   ENGINE_REF: '15acf09b714dd19efc796e4a3a2ff8d57e2f7994'
+  MAIN_REF: '136183aa196a8fd80a0dcc3fe933adff67f9cc39'
+  FIX_REF: 'f350ced9b39230879e4a46d0f540175e0157a71e'
 concurrency:
-  group: ${{ inputs.diagnostic && inputs.diagnostic != 'none' && 'probe-359-diagnostic' || 'probe-359' }}
+  group: ${{ inputs.qualification && 'probe-359-qualification' || inputs.diagnostic && inputs.diagnostic != 'none' && 'probe-359-diagnostic' || 'probe-359' }}
   cancel-in-progress: false
 jobs:
   measure:
@@ -58,8 +64,12 @@ jobs:
           REPS: ${{ inputs.reps || '1' }}
           SMOKE: ${{ github.event_name == 'push' || inputs.smoke }}
           DIAGNOSTIC: ${{ inputs.diagnostic || 'none' }}
+          QUALIFICATION: ${{ inputs.qualification || false }}
         run: |
-          if [ "$DIAGNOSTIC" = none ]; then
+          if [ "$QUALIFICATION" = true ]; then
+            test "$DIAGNOSTIC" = none
+            test "$REPS" = 20 || test "$SMOKE" = true
+          elif [ "$DIAGNOSTIC" = none ]; then
             test "$REPS" = 20 || test "$SMOKE" = true
           else
             test "$SMOKE" = false
@@ -84,6 +94,7 @@ jobs:
             defaults write com.apple.TextEdit "$key" -bool NO
           done
       - name: Build pinned plain and traced engines
+        if: ${{ !inputs.qualification }}
         run: |
           git log -1 --format='kit %H %s'
           git worktree add --detach "$RUNNER_TEMP/plain" "$ENGINE_REF"
@@ -94,6 +105,7 @@ jobs:
           swiftc -O -o "$RUNNER_TEMP/tool359" scripts/probe-354/tool.swift
           swiftc -O -o "$RUNNER_TEMP/watch359" scripts/probe-359/watch.swift
       - name: Measure shared-mode ordering
+        if: ${{ !inputs.qualification }}
         env:
           BROWSER: ${{ matrix.browser }}
           EDITOR: ${{ matrix.editor }}
@@ -105,6 +117,35 @@ jobs:
           ROUTE_GROUP: ${{ matrix.route_group }}
         run: |
           node scripts/probe-359/measure.mjs --browser "$BROWSER" --editor "$EDITOR" --engine "$RUNNER_TEMP/plain-build/release/cua-engine" --traced-engine "$RUNNER_TEMP/traced-build/release/cua-engine" --tool "$RUNNER_TEMP/tool359" --watch "$RUNNER_TEMP/watch359" --out "$RUNNER_TEMP/probe-359/$BROWSER-$EDITOR-$ROUTE_GROUP" --reps "$REPS" --smoke "$SMOKE" --diagnostic "$DIAGNOSTIC" --diagnostic-browser "$DIAGNOSTIC_BROWSER" --scene "$SCENE" --route-group "$ROUTE_GROUP"
+      - name: Build unmodified qualification heads
+        if: ${{ inputs.qualification }}
+        run: |
+          git log -1 --format='kit %H %s'
+          for HEAD in main fix; do
+            if [ "$HEAD" = main ]; then REF="$MAIN_REF"; else REF="$FIX_REF"; fi
+            test "$(git rev-parse "$REF")" = "$REF"
+            git worktree add --detach "$RUNNER_TEMP/$HEAD" "$REF"
+            swift build -c release --package-path "$RUNNER_TEMP/$HEAD/native/engine" --scratch-path "$RUNNER_TEMP/$HEAD-build"
+            test -z "$(git -C "$RUNNER_TEMP/$HEAD" status --porcelain)"
+          done
+          swiftc -O -o "$RUNNER_TEMP/tool359" scripts/probe-354/tool.swift
+          swiftc -O -o "$RUNNER_TEMP/watch359" scripts/probe-359/watch.swift
+      - name: Qualify foreground, forced tail and background regression
+        if: ${{ inputs.qualification }}
+        env:
+          BROWSER: ${{ matrix.browser }}
+          EDITOR: ${{ matrix.editor }}
+          SMOKE: ${{ inputs.smoke }}
+        run: |
+          # Pair both heads on the same browser binary/image; vary which runs first.
+          ORDER="main fix"
+          case "$BROWSER-$EDITOR" in cft-*|*-input|*-compose) ORDER="fix main" ;; esac
+          STATUS=0
+          for HEAD in $ORDER; do
+            if [ "$HEAD" = main ]; then REF="$MAIN_REF"; else REF="$FIX_REF"; fi
+            ENGINE_REF="$REF" node scripts/probe-359/measure.mjs --browser "$BROWSER" --editor "$EDITOR" --engine "$RUNNER_TEMP/$HEAD-build/release/cua-engine" --traced-engine "$RUNNER_TEMP/$HEAD-build/release/cua-engine" --tool "$RUNNER_TEMP/tool359" --watch "$RUNNER_TEMP/watch359" --out "$RUNNER_TEMP/probe-359/$HEAD-$BROWSER-$EDITOR" --reps 20 --smoke "$SMOKE" --qualification true --head "$HEAD" --main-ref "$MAIN_REF" --fix-ref "$FIX_REF" || STATUS=1
+          done
+          exit "$STATUS"
       - name: Upload evidence even on incomplete coverage
         if: always()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f

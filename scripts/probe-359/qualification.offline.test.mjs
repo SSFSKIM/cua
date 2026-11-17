@@ -1,0 +1,305 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {qualificationCells,qualificationExpected,qualificationFollow,qualificationSummary} from './qualification-readers.mjs';
+import {SEED,REQUESTED} from './page.mjs';
+
+const HEADS={main:'a'.repeat(40),fix:'b'.repeat(40)};
+const full=qualificationCells({heads:HEADS}),smoke=qualificationCells({smoke:true,heads:HEADS});
+const clone=x=>JSON.parse(JSON.stringify(x));
+const caretOf=c=>qualificationExpected(c).caret;
+
+// A row that satisfies every expectation for its cell; tests perturb one fact at a time.
+function good(c,over={}){
+ const e=qualificationExpected(c),tail=c.cohort==='tail',t=10000;
+ const click=c.suite==='control'?{startedAt:t,endedAt:t,noClick:true}:{startedAt:t,endedAt:t+10,error:null,meta:{elementClick:{caret:'placed'}}};
+ const next={startedAt:t+11,endedAt:t+20,error:null,meta:{}};
+ const typeMeta=tail?{entered:0,typeReadback:{confirmed:false,reason:'selectionChanged'}}:{entered:6,typeReadback:{confirmed:true}};
+ const type=tail?{startedAt:t+21,endedAt:t+30,error:{errorName:'typeUnconfirmed',meta:typeMeta}}:{startedAt:t+21,endedAt:t+30,error:null,meta:typeMeta};
+ const sample=(at)=>({at,text:e.text,selection:e.caret??[0,0]});
+ const r={...c,requested:REQUESTED,valid:true,smoke:false,click,next,type,clockUncertaintyMs:2,preClick:{text:SEED},
+  samples:[sample(t+30),sample(t+280),sample(t+1530)],events:[],foregroundViolation:false,windowRaiseObserved:false};
+ if(c.selection==='set_value_type')r.valueWrite=next;
+ if(tail){r.stress={busyStartedAt:t-100,busyUntil:t+900};r.events=[{event:'busy-start',at:t-100},{event:'mousedown',at:t+500},{event:'busy-end',at:t+900}]}
+ return {...r,...over};
+}
+const rowsFor=cells=>cells.map(c=>good(c));
+const find=(cells,pred)=>cells.find(pred);
+const group=(s,pred)=>s.groups.find(g=>pred(g));
+const fg=find(full,c=>c.cohort==='foreground'&&c.selection==='select_text'&&c.suite==='rate'&&c.head==='main'&&c.browser==='cft');
+const tailCell=find(full,c=>c.cohort==='tail'&&c.head==='main'&&c.browser==='cft');
+const bg=(editor='input',selection='script')=>find(full,c=>c.cohort==='background'&&c.editor===editor&&c.selection===selection&&c.head==='main'&&c.browser==='cft');
+const only=(cell,row)=>qualificationSummary([row],[cell]).groups[0];
+
+test('the plan crosses both heads with foreground textarea routes, a busy tail and every background editor',()=>{
+ const per=(cs,h,b)=>cs.filter(c=>c.head===h&&c.browser===b);
+ // foreground: 3 routes x rate/control x 20 ; tail 20 ; background: 4 editors x 2 routes x 10
+ assert.equal(full.length,2*3*(120+20+80));
+ assert.equal(smoke.length,2*3*(6+1+8));
+ assert.equal(new Set(full.map(c=>c.id)).size,full.length);
+ for(const h of ['main','fix'])for(const b of ['safari','cft','firefox']){
+  const cs=per(full,h,b),f=cs.filter(c=>c.cohort==='foreground'),t=cs.filter(c=>c.cohort==='tail'),k=cs.filter(c=>c.cohort==='background');
+  assert.equal(f.length,120);assert.equal(t.length,20);assert.equal(k.length,80);
+  assert.ok([...f,...t].every(c=>c.editor==='textarea'&&c.foreground===true&&c.initialCaret==='target'));
+  assert.deepEqual([...new Set(f.map(c=>c.selection))].sort(),['cmd+a','select_text','set_value_type']);
+  assert.deepEqual([...new Set(f.map(c=>c.suite))].sort(),['control','rate']);
+  assert.equal(f.filter(c=>c.suite==='control'&&c.selection==='cmd+a').length,20);
+  assert.ok(t.every(c=>c.selection==='select_text'&&c.suite==='rate'&&c.stressBusyMs===900));
+  assert.ok(k.every(c=>c.suite==='rate'&&c.foreground===false&&c.initialCaret==='end'&&['script','cmd+a'].includes(c.selection)));
+  assert.deepEqual([...new Set(k.map(c=>c.editor))].sort(),['compose','contenteditable','input','textarea']);
+  assert.equal(k.filter(c=>c.editor==='compose'&&c.selection==='script').length,10);
+ }
+ for(const c of full){
+  assert.equal(c.qualification,true);assert.equal(c.mode,'natural');assert.equal(c.engineRef,HEADS[c.head]);
+  for(const k of ['cohort','head','engineRef','suite','browser','editor','selection','rep'])assert.ok(c[k]!==undefined,k);
+  for(const k of [c.cohort,c.head,c.suite,c.browser,c.editor,c.selection,String(c.rep)])assert.ok(c.id.split('/').includes(k),c.id+' lacks '+k);
+  if(c.cohort!=='tail')assert.equal(c.stressBusyMs,undefined);
+ }
+ assert.ok(smoke.every(c=>c.rep===1));
+});
+
+test('manifest options are validated and restrict the plan',()=>{
+ assert.throws(()=>qualificationCells({heads:{}}));
+ assert.throws(()=>qualificationCells({heads:{main:''}}));
+ assert.throws(()=>qualificationCells({heads:HEADS,browsers:['edge']}));
+ assert.throws(()=>qualificationCells({heads:HEADS,editors:['textarea','canvas']}));
+ const noTextarea=qualificationCells({heads:HEADS,editors:['input'],browsers:['cft'],smoke:true});
+ assert.ok(noTextarea.every(c=>c.cohort==='background'&&c.editor==='input'));
+ assert.equal(noTextarea.length,2*2);
+});
+
+test('expectations: set_value_type types onto the written value, tails demand an untouched seed',()=>{
+ assert.deepEqual(qualificationExpected(fg),{text:'NEW359',caret:[6,0],requested:'NEW359',safeRefusalRequired:false});
+ const sv=find(full,c=>c.selection==='set_value_type');
+ assert.equal(qualificationExpected(sv).text,'NEW359NEW359');assert.deepEqual(qualificationExpected(sv).caret,[12,0]);
+ const e=qualificationExpected(tailCell);assert.equal(e.text,SEED);assert.equal(e.caret,null);assert.equal(e.safeRefusalRequired,true);
+ assert.equal(qualificationExpected(bg()).text,'NEW359');
+});
+
+test('qualificationFollow runs exactly the route call, passes lineage through target, and never retries or rewrites the result',async()=>{
+ const calls=[],answer={error:{errorName:'valueUnconfirmed'},meta:{x:1}};
+ const rpc=async(m,a)=>{calls.push(['rpc',m,a]);return answer},command=async q=>{calls.push(['cmd',q]);return answer};
+ const target={element:'e1',lineage:'l1'},run=selection=>qualificationFollow({id:'i',selection},{rpc,command,target});
+ assert.equal(await run('script'),answer);assert.deepEqual(calls.pop(),['cmd',{op:'select-all',id:'i'}]);
+ assert.equal(await run('cmd+a'),answer);assert.deepEqual(calls.pop(),['rpc','press_key',{key:'cmd+a'}]);
+ assert.equal(await run('select_text'),answer);assert.deepEqual(calls.pop(),['rpc','select_text',{element:'e1',lineage:'l1',text:SEED,selection_type:'text'}]);
+ assert.equal(await run('set_value_type'),answer);assert.deepEqual(calls.pop(),['rpc','set_value',{element:'e1',lineage:'l1',value:'NEW359'}]);
+ assert.equal(calls.length,0);
+ await assert.rejects(run('nope'));
+ await assert.rejects(qualificationFollow({id:'i',selection:'select_text'},{rpc,command,target:{element:'e1'}}));
+ await assert.rejects(qualificationFollow({id:'i',selection:'set_value_type'},{rpc,command}));
+ assert.equal(calls.length,0);
+});
+
+test('a fully satisfied plan scores clean with every head and arm denominator present',()=>{
+ const s=qualificationSummary(rowsFor(full),full);
+ assert.equal(s.requested,full.length);assert.equal(s.attempted,full.length);
+ assert.deepEqual([s.missing,s.unexpected,s.duplicates,s.mismatched],[[],[],[],[]]);assert.equal(s.complete,true);
+ assert.deepEqual(Object.keys(s.arms).sort(),['fix/background','fix/foreground','fix/tail','main/background','main/foreground','main/tail']);
+ assert.equal(s.arms['fix/foreground'].requested,360);assert.equal(s.arms['main/tail'].scorable,60);
+ for(const g of s.groups){assert.equal(g.requested,g.valid);assert.equal(g.wrongFinal,0);assert.equal(g.wrongPlacement,0);assert.equal(g.typeFalseSuccess,0)}
+ assert.equal(s.arms['main/foreground'].finalMet,360);assert.equal(s.arms['main/tail'].safeRefusal,60);
+});
+
+test('a head whose arm produced no rows stays in the denominator',()=>{
+ const rows=rowsFor(full.filter(c=>c.head==='main'));
+ const s=qualificationSummary(rows,full);
+ assert.equal(s.complete,false);assert.equal(s.missing.length,full.filter(c=>c.head==='fix').length);
+ const g=group(s,g=>g.head==='fix'&&g.cohort==='foreground'&&g.selection==='select_text'&&g.suite==='rate'&&g.browser==='cft');
+ assert.deepEqual([g.requested,g.attempted,g.valid],[20,0,0]);
+ assert.equal(s.arms['fix/foreground'].attempted,0);assert.equal(s.arms['fix/foreground'].requested,360);
+});
+
+test('missing, unexpected, duplicate and lineage-mismatched rows are preserved, never scored silently',()=>{
+ const cells=[fg,bg()],stray={...good(fg),id:'qual/stray'};
+ const dup=good(fg,{type:{startedAt:1,endedAt:2,error:{errorName:'typeUnconfirmed'}}});
+ const wrongHead=good(bg(),{head:'fix',engineRef:HEADS.fix});
+ let s=qualificationSummary([good(fg),dup,stray],cells);
+ assert.deepEqual(s.missing,[bg().id]);assert.deepEqual(s.unexpected,['qual/stray']);assert.deepEqual(s.duplicates,[fg.id]);
+ const g=group(s,g=>g.id===undefined&&g.head==='main'&&g.cohort==='foreground');
+ assert.equal(g.valid,1,'the duplicate is not scored twice');assert.equal(g.typeUnconfirmed??0,0);
+ s=qualificationSummary([good(fg),wrongHead],cells);
+ assert.deepEqual(s.mismatched,[bg().id]);assert.deepEqual(s.missing,[bg().id]);assert.equal(s.complete,false);
+ for(const field of ['engineRef','cohort','foreground','initialCaret','qualification','mode','stressBusyMs']){
+  const c=field==='stressBusyMs'?tailCell:fg,bad=good(c,{[field]:field==='foreground'?!c.foreground:field==='qualification'?false:'zz'});
+  assert.deepEqual(qualificationSummary([bad],[c]).mismatched,[c.id],field);
+ }
+});
+
+test('smoke and primary evidence cannot mix',()=>{
+ assert.throws(()=>qualificationSummary([good(fg,{smoke:true})],[fg]));
+ assert.throws(()=>qualificationSummary([good(fg)],[fg],{smoke:true}));
+ assert.equal(qualificationSummary([good(fg,{smoke:true})],[fg],{smoke:true}).attempted,1);
+});
+
+test('invalid rows count against the denominator but are not scored',()=>{
+ const g=only(fg,good(fg,{valid:false,problem:'x'}));
+ assert.deepEqual([g.requested,g.attempted,g.valid,g.invalid,g.wrongFinal],[1,1,0,1,0]);
+});
+
+test('type outcomes: reasons are read from every meta location and unknown stays explicit',()=>{
+ const refuse=meta=>good(fg,{type:{startedAt:1,endedAt:2,error:{errorName:'typeUnconfirmed',...meta}},samples:[{text:SEED,selection:[0,SEED.length]}]});
+ let g=only(fg,refuse({meta:{entered:6,typeReadback:{reason:'valueMismatch'}}}));
+ assert.deepEqual(g.typeUnconfirmedReasons,{valueMismatch:1});assert.equal(g.wrongFinal,1);assert.equal(g.typeHonestUnconfirmed,1);
+ g=only(fg,refuse({data:{meta:{entered:0,typeReadback:{reason:'selectionChanged'}}}}));assert.deepEqual(g.typeUnconfirmedReasons,{selectionChanged:1});
+ g=only(fg,good(fg,{type:{startedAt:1,endedAt:2,error:{errorName:'typeUnconfirmed'},meta:{typeReadback:{reason:'valueMismatch'}}},samples:[{text:SEED,selection:[0,0]}]}));
+ assert.deepEqual(g.typeUnconfirmedReasons,{valueMismatch:1},'row-level meta as the driver records it');
+ g=only(fg,refuse({}));assert.deepEqual(g.typeUnconfirmedReasons,{unknown:1});
+ g=only(fg,good(fg,{type:{startedAt:1,endedAt:2,error:{errorName:'weird'}}}));assert.deepEqual(g.typeAnswers,{weird:1});
+ g=only(fg,good(fg,{type:{startedAt:1,endedAt:2,error:'boom'}}));assert.deepEqual(g.typeAnswers,{otherError:1});
+ g=only(fg,good(fg));assert.deepEqual(g.typeAnswers,{success:1});assert.equal(g.typeSuccess,1);
+});
+
+test('false success and a late wrong caret are wrong placements',()=>{
+ let g=only(fg,good(fg,{samples:[{text:'NEWOld draft sentence goes here.',selection:[6,0]}]}));
+ assert.deepEqual([g.wrongFinal,g.wrongPlacement,g.typeFalseSuccess,g.finalMet,g.placedFinalWrong],[1,1,1,0,1]);
+ g=only(fg,good(fg,{samples:[{text:'NEW359',selection:[3,0]}]}));assert.equal(g.wrongFinal,1,'right text with the wrong final caret is not met');
+ g=only(fg,good(fg,{samples:[{text:'NEW359',selection:[6,0]},{text:'NEW359',selection:[6,0]},{text:'x',selection:[1,0]}]}));
+ assert.equal(g.wrongFinal,1,'the final sample decides');assert.equal(g.finalUnstable,1);
+ g=only(fg,good(fg,{type:undefined}));assert.deepEqual([g.typeMissing,g.wrongFinal,g.wrongPlacement],[1,1,1]);
+ g=only(fg,good(fg,{samples:[]}));assert.deepEqual([g.noFinalSample,g.wrongFinal],[1,1]);
+ g=only(fg,good(fg,{type:{startedAt:1,endedAt:2,error:{errorName:'typeUnconfirmed',meta:{typeReadback:{reason:'valueMismatch'}}}}}));
+ assert.deepEqual([g.typeUnconfirmedCorrect,g.wrongFinal],[1,0],'an unconfirmed answer with a correct final is reported, not wrong');
+});
+
+test('an honest selectionChanged refusal is a safe no-type, never a successful placement, only when nothing was typed',()=>{
+ const refuse=(over={})=>good(fg,{type:{startedAt:20000,endedAt:20010,error:{errorName:'typeUnconfirmed',meta:{entered:0,typeReadback:{reason:'selectionChanged'}}}},samples:[{text:SEED,selection:[5,0]}],...over});
+ let g=only(fg,refuse());
+ assert.deepEqual([g.safeNoType,g.wrongFinal,g.wrongPlacement,g.finalMet,g.unsafeRefusal],[1,1,0,0,0]);
+ g=only(fg,refuse({events:[{event:'input',at:20005}]}));
+ assert.deepEqual([g.safeNoType,g.wrongPlacement,g.unsafeRefusal],[0,1,1],'typed input after the refusal call began');
+ g=only(fg,refuse({events:[{event:'beforeinput',at:19000}]}));assert.equal(g.safeNoType,1,'input before the type call (set_value) is not typing');
+ g=only(fg,refuse({type:{startedAt:20000,endedAt:20010,error:{errorName:'typeUnconfirmed',meta:{entered:3,typeReadback:{reason:'selectionChanged'}}}}}));
+ assert.deepEqual([g.safeNoType,g.unsafeRefusal],[0,1]);
+ g=only(fg,refuse({type:{startedAt:20000,endedAt:20010,error:{errorName:'typeUnconfirmed',meta:{typeReadback:{reason:'selectionChanged'}}}}}));
+ assert.equal(g.safeNoType,0,'entered must be reported as 0');
+});
+
+test('set_value_type: set_value is not terminal; the typed continuation and final text decide',()=>{
+ const sv=find(full,c=>c.selection==='set_value_type'&&c.suite==='rate'&&c.browser==='cft'&&c.head==='main');
+ const unconfirmed={startedAt:1,endedAt:2,error:{errorName:'valueUnconfirmed',meta:{pendingClick:{drift:'caretMoved',waitMs:12}}}};
+ let g=only(sv,good(sv));
+ assert.deepEqual([g.valueSuccess,g.valueUnconfirmed,g.wrongFinal,g.typeSuccess],[1,0,0,1]);
+ g=only(sv,good(sv,{valueWrite:unconfirmed,next:unconfirmed}));
+ assert.deepEqual([g.valueUnconfirmed,g.wrongFinal],[1,0],'valueUnconfirmed followed by a correct type is not wrong');
+ assert.deepEqual(g.valueUnconfirmedDrift,{caretMoved:1});
+ g=only(sv,good(sv,{valueWrite:{startedAt:1,endedAt:2,error:{errorName:'valueUnconfirmed',meta:{pendingClick:{}}}}}));assert.deepEqual(g.valueUnconfirmedDrift,{unknown:1});
+ g=only(sv,good(sv,{valueWrite:{startedAt:1,endedAt:2,error:{errorName:'valueUnconfirmed',data:{meta:{pendingClick:{drift:'fieldClosed'}}}}}}));
+ assert.deepEqual([g.valueUnconfirmedDrift,g.valueFieldClosed],[{fieldClosed:1},1]);
+ g=only(sv,good(sv,{valueWrite:{startedAt:1,endedAt:2,error:{errorName:'valueUnconfirmed',meta:{typeReadback:{reason:'fieldClosed'}}}}}));assert.equal(g.valueUnconfirmedDrift.unknown,1);
+ g=only(sv,good(sv,{valueWrite:{startedAt:1,endedAt:2,error:{errorName:'valueUnconfirmed',meta:{}},meta:{pendingClick:{drift:'x'}}}}));assert.deepEqual(g.valueUnconfirmedDrift,{x:1},'row-level meta');
+ g=only(sv,good(sv,{valueWrite:{startedAt:1,endedAt:2,error:{errorName:'otherThing'}}}));assert.deepEqual(g.valueAnswers,{otherThing:1});
+ // a single NEW359 means the typed continuation never ran onto the written value
+ g=only(sv,good(sv,{samples:[{text:'NEW359',selection:[6,0]}]}));assert.deepEqual([g.wrongFinal,g.typeFalseSuccess],[1,1]);
+ // set_value success with no type call at all is a missing continuation, not a pass
+ g=only(sv,good(sv,{type:undefined,samples:[{text:'NEW359',selection:[6,0]}]}));assert.deepEqual([g.typeMissing,g.wrongFinal],[1,1]);
+});
+
+test('tail qualification depends only on observed mousedown timing and stress start, never on the outcome',()=>{
+ const t0=10000,ev=at=>[{event:'busy-start',at:9900},{event:'mousedown',at},{event:'busy-end',at:10900}];
+ const mk=over=>good(tailCell,over);
+ let g=only(tailCell,mk({}));assert.deepEqual([g.tailQualified,g.tailScorable,g.tailUnqualified],[1,1,0]);
+ // click returned at t0+10; mousedown must exceed return + 300 + clockUncertainty(2) strictly
+ g=only(tailCell,mk({events:ev(t0+10+302)}));assert.equal(g.tailQualified,0,'exactly at the bound is not later than it');
+ g=only(tailCell,mk({events:ev(t0+10+303)}));assert.equal(g.tailQualified,1);
+ g=only(tailCell,mk({clockUncertaintyMs:50,events:ev(t0+10+340)}));assert.deepEqual([g.tailQualified,g.tailUnqualified],[0,1]);
+ assert.deepEqual(g.tailUnqualifiedReasons,{mousedownNotLate:1});
+ g=only(tailCell,mk({events:[{event:'busy-start',at:9900}]}));assert.deepEqual(g.tailUnqualifiedReasons,{noMousedown:1});
+ g=only(tailCell,mk({stress:undefined,events:[{event:'mousedown',at:t0+500}]}));assert.deepEqual(g.tailUnqualifiedReasons,{stressNotBeforeClick:1});
+ g=only(tailCell,mk({stress:{busyStartedAt:t0+5},events:[{event:'mousedown',at:t0+500}]}));assert.deepEqual(g.tailUnqualifiedReasons,{stressNotBeforeClick:1});
+ g=only(tailCell,mk({stress:undefined,events:[{event:'busy-start',at:9900},{event:'mousedown',at:t0+500}]}));assert.equal(g.tailQualified,1,'busy-start event is an equivalent stress record');
+ // a stress command answer alone does not qualify
+ g=only(tailCell,mk({stress:{ok:true},events:[{event:'mousedown',at:t0+500}]}));assert.equal(g.tailQualified,0);
+ // outcome independence: an unsafe ok row with a late mousedown still qualifies
+ g=only(tailCell,mk({type:{startedAt:t0+21,endedAt:t0+30,error:null,meta:{entered:6,typeReadback:{confirmed:true}}},samples:[{text:'NEW359',selection:[6,0]}]}));
+ assert.deepEqual([g.tailQualified,g.tailOk],[1,1]);
+});
+
+test('unqualified tails are preserved with a count and excluded from every tail safety metric',()=>{
+ const early=good(tailCell,{events:[{event:'busy-start',at:9900},{event:'mousedown',at:10015}],type:{startedAt:10021,endedAt:10030,error:null,meta:{entered:6,typeReadback:{confirmed:true}}},samples:[{text:'NEW359',selection:[6,0]}]});
+ const g=only(tailCell,early);
+ assert.deepEqual([g.valid,g.tailUnqualified,g.tailScorable,g.tailOk,g.tailUnsafeOk,g.safeRefusal,g.wrongFinal],[1,1,0,0,0,0,0]);
+ assert.equal(g.requested,1);
+ const s=qualificationSummary([early],[tailCell]);assert.equal(s.arms['main/tail'].tailUnqualified,1);assert.equal(s.arms['main/tail'].scorable,0);
+});
+
+test('tail safe refusal needs typeUnconfirmed/selectionChanged, entered 0, no input events and the seed untouched',()=>{
+ let g=only(tailCell,good(tailCell));
+ assert.deepEqual([g.safeRefusal,g.selectionChanged,g.nothingTypedSeedUnchanged,g.typedEvents,g.tailOk,g.wrongPlacement,g.wrongFinal],[1,1,1,0,0,0,0]);
+ assert.equal(g.finalMet,0,'a refusal is not a successful placement');
+ g=only(tailCell,good(tailCell,{events:[...good(tailCell).events,{event:'beforeinput',at:10600}]}));
+ assert.deepEqual([g.typedEvents,g.safeRefusal,g.nothingTypedSeedUnchanged,g.wrongPlacement],[1,0,0,1]);
+ g=only(tailCell,good(tailCell,{events:[...good(tailCell).events,{event:'input',at:10600}]}));assert.equal(g.typedEvents,1);
+ g=only(tailCell,good(tailCell,{samples:[{text:SEED+'x',selection:[0,0]}]}));
+ assert.deepEqual([g.nothingTypedSeedUnchanged,g.safeRefusal,g.wrongFinal],[0,0,1]);
+ // tail ok is unsafe even when the text is superficially the requested text
+ g=only(tailCell,good(tailCell,{type:{startedAt:10021,endedAt:10030,error:null,meta:{entered:6,typeReadback:{confirmed:true}}},samples:[{text:'NEW359',selection:[6,0]}]}));
+ assert.deepEqual([g.tailOk,g.tailUnsafeOk,g.tailOkTextMatchesRequested,g.safeRefusal,g.wrongPlacement,g.wrongFinal],[1,1,1,0,1,1]);
+ // an ok that left the seed untouched and typed nothing is still an unsafe false success
+ g=only(tailCell,good(tailCell,{type:{startedAt:10021,endedAt:10030,error:null,meta:{typeReadback:{confirmed:true}}}}));assert.deepEqual([g.tailOk,g.tailUnsafeOk],[1,1]);
+ // other reasons are not safe
+ g=only(tailCell,good(tailCell,{type:{startedAt:10021,endedAt:10030,error:{errorName:'typeUnconfirmed',meta:{entered:0,typeReadback:{reason:'valueMismatch'}}}}}));
+ assert.deepEqual([g.selectionChanged,g.safeRefusal,g.wrongPlacement],[0,0,1]);
+ g=only(tailCell,good(tailCell,{type:{startedAt:10021,endedAt:10030,error:{errorName:'typeUnconfirmed',meta:{entered:2,typeReadback:{reason:'selectionChanged'}}}}}));
+ assert.deepEqual([g.selectionChanged,g.safeRefusal],[1,0],'selectionChanged counted, but entered>0 is not safe');
+});
+
+test('background rows must not wait anywhere, in any RPC metadata',()=>{
+ const b=bg();
+ let g=only(b,good(b));assert.equal(g.backgroundWaitViolations,0);
+ const pend=ms=>({startedAt:1,endedAt:2,error:null,meta:{pendingClick:{waitMs:ms}}});
+ for(const rpcName of ['click','next','type']){
+  const base=good(b);
+  g=only(b,good(b,{[rpcName]:{...base[rpcName],meta:{...base[rpcName].meta,pendingClick:{waitMs:5}}}}));assert.deepEqual([g.backgroundWaitViolations,g.backgroundWaitPositive],[1,1],rpcName);
+  g=only(b,good(b,{[rpcName]:{...base[rpcName],meta:{...base[rpcName].meta,pendingClick:{waitMs:0}}}}));assert.deepEqual([g.backgroundWaitViolations,g.backgroundWaitPositive],[1,0],rpcName+' zero wait still appeared');
+  g=only(b,good(b,{[rpcName]:{...base[rpcName],meta:{...base[rpcName].meta,pendingClick:{watchMs:3}}}}));assert.deepEqual([g.backgroundWaitViolations,g.backgroundWaitPositive],[1,0],rpcName+' watch-only record');
+ }
+ g=only(b,good(b,{type:{startedAt:1,endedAt:2,error:null,meta:{entered:6,typeReadback:{confirmed:true,baselineWait:{waitMs:40}}}}}));assert.equal(g.backgroundWaitViolations,1);
+ g=only(b,good(b,{type:{startedAt:1,endedAt:2,error:{errorName:'typeUnconfirmed',meta:{typeReadback:{reason:'valueMismatch',baselineWait:{waitMs:40}}}}}}));assert.equal(g.backgroundWaitViolations,1,'error-side metadata counts too');
+ const sv=find(full,c=>c.cohort==='background'&&c.selection==='script');
+ g=only(sv,good(sv,{valueWrite:pend(9),next:undefined}));assert.equal(g.backgroundWaitViolations,1,'valueWrite is the fallback when next is absent');
+ g=only(b,good(b,{type:{startedAt:1,endedAt:2,error:null,meta:{entered:6,typeReadback:{confirmed:true,baselineWait:{}}}}}));assert.equal(g.backgroundWaitViolations,1,'an empty baselineWait record still appeared');
+ // foreground waits are expected behaviour and never violations
+ g=only(fg,good(fg,{next:pend(30)}));assert.equal(g.backgroundWaitViolations,0);
+});
+
+test('foreground and window constraints are counted per group',()=>{
+ let g=only(fg,good(fg,{foregroundViolation:true}));assert.equal(g.foregroundViolations,1);
+ g=only(bg(),good(bg(),{windowRaiseObserved:true,foregroundViolation:true}));assert.deepEqual([g.windowRaisesObserved,g.foregroundViolations],[1,1]);
+});
+
+test('wait and end-to-end summaries report n/p50/p95/max and never invent zeros for missing metadata',()=>{
+ const none=only(fg,good(fg));
+ assert.deepEqual(none.pendingClickWaitMs,{n:0,p50:null,p95:null,max:null});assert.deepEqual(none.baselineWaitMs,{n:0,p50:null,p95:null,max:null});
+ const rows=[10,20,30,40].map((ms,i)=>good(fg,{id:'x'+i,next:{startedAt:1,endedAt:1+ms+5,error:null,meta:{pendingClick:{waitMs:ms}}},
+  type:{startedAt:1,endedAt:1+ms,error:null,meta:{entered:6,typeReadback:{confirmed:true,baselineWait:{waitMs:ms*2}}}}}));
+ const cells=rows.map(r=>({...fg,id:r.id})),s=qualificationSummary(rows,cells).groups[0];
+ assert.deepEqual(s.pendingClickWaitMs,{n:4,p50:20,p95:40,max:40});assert.deepEqual(s.baselineWaitMs,{n:4,p50:40,p95:80,max:80});
+ assert.equal(s.totalWaitMs.max,120);assert.equal(s.totalWaitMs.n,4);
+ assert.deepEqual(s.nextMs,{n:4,p50:25,p95:45,max:45});assert.equal(s.typeMs.max,40);assert.equal(s.clickMs.n,4);
+ const withNull=only(fg,good(fg,{next:{startedAt:1,endedAt:2,error:null,meta:{pendingClick:{waitMs:null}}}}));assert.equal(withNull.pendingClickWaitMs.n,0);
+ const noClick=only(find(full,c=>c.suite==='control'&&c.cohort==='foreground'),good(find(full,c=>c.suite==='control'&&c.cohort==='foreground')));
+ assert.equal(noClick.clickMs.n,0,'a no-click control has no click latency');
+});
+
+test('entered is the top-level meta field of the real wire, not a typeReadback member',()=>{
+ const refuse=meta=>good(fg,{type:{startedAt:20000,endedAt:20010,error:{errorName:'typeUnconfirmed',meta}},samples:[{text:SEED,selection:[5,0]}]});
+ assert.equal(only(fg,refuse({entered:0,typeReadback:{reason:'selectionChanged'}})).safeNoType,1);
+ assert.equal(only(fg,refuse({typeReadback:{reason:'selectionChanged',entered:0}})).safeNoType,0,'a nested entered is not the wire shape');
+ assert.equal(only(fg,refuse({entered:'0',typeReadback:{reason:'selectionChanged'}})).safeNoType,0);
+ const g=only(tailCell,good(tailCell,{type:{startedAt:10021,endedAt:10030,error:{errorName:'typeUnconfirmed',meta:{typeReadback:{reason:'selectionChanged',entered:0}}}}}));
+ assert.deepEqual([g.selectionChanged,g.safeRefusal],[1,0]);
+});
+
+test('after a JSON round trip next and valueWrite are one logical RPC, not two',()=>{
+ const sv=find(full,c=>c.selection==='set_value_type'&&c.suite==='rate'&&c.browser==='cft'&&c.head==='main');
+ const next={startedAt:1,endedAt:51,error:null,meta:{pendingClick:{waitMs:30,watchMs:5}}};
+ const r=clone(good(sv,{next,valueWrite:next,type:{startedAt:60,endedAt:90,error:null,meta:{entered:6,typeReadback:{confirmed:true,baselineWait:{waitMs:7}}}}}));
+ assert.notEqual(r.next,r.valueWrite);
+ const g=only(sv,r);
+ assert.deepEqual(g.pendingClickWaitMs,{n:1,p50:30,p95:30,max:30});assert.deepEqual(g.baselineWaitMs,{n:1,p50:7,p95:7,max:7});
+ assert.equal(g.totalWaitMs.max,37);assert.equal(g.nextMs.n,1);assert.equal(g.valueSuccess,1);
+ const noNext=clone(good(sv,{next:undefined,valueWrite:next}));
+ assert.deepEqual(only(sv,noNext).pendingClickWaitMs,{n:1,p50:30,p95:30,max:30},'valueWrite counts when next is absent');
+ const bgSv=bg('input','script'),bn={startedAt:1,endedAt:2,error:null,meta:{pendingClick:{waitMs:0}}};
+ assert.equal(only(bgSv,clone(good(bgSv,{next:bn,valueWrite:bn}))).backgroundWaitViolations,1,'one row, counted once');
+});

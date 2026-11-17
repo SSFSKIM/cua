@@ -94,6 +94,12 @@ func handle359(_ q: [String: Any]) -> [String: Any] {
       }
       timer359 = Timer.scheduledTimer(withTimeInterval: 0.01, repeats: true) { _ in sample359() }
       sample359()
+    } else if q["observeWindows"] as? Bool == true {
+      // Qualification's background constraint lane observes order without AX range reads.
+      timer359 = Timer.scheduledTimer(withTimeInterval: 0.01, repeats: true) { _ in
+        if now359() - lastOrder359 >= 50 { lastOrder359 = now359(); event359("window-order", order359()) }
+      }
+      event359("window-order", order359())
     }
     out["registrations"] = registrations359
   } else if op == "raise" {

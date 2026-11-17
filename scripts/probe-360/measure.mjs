@@ -6,6 +6,7 @@ import {mkdirSync,writeFileSync,appendFileSync,rmSync,createWriteStream} from 'n
 import {FixtureTransport,FixtureError} from '../probe-354/transport.mjs';
 import {launch,placePid,version} from '../probe-316/browser.mjs';import {SEED} from '../probe-354/page.mjs';
 import {page360} from './page.mjs';import {plan,classify,ENGINE_REF,DELAYS} from './model.mjs';import {readEvidence} from './read.mjs';
+import {bindVisibleFixture} from './setup.mjs';
 if(process.platform!=='darwin'||process.env.RUNNER_ENVIRONMENT!=='github-hosted'||process.env.GITHUB_ACTIONS!=='true')throw Error('GitHub hosted macOS only; never run on an owner device');
 const arg=n=>{const i=process.argv.indexOf('--'+n);return i<0?undefined:process.argv[i+1]};
 const OUT=arg('out'),ENGINE=arg('engine'),SIDE=arg('side'),SMOKE=arg('smoke')==='true';
@@ -15,7 +16,7 @@ const sleep=ms=>new Promise(r=>setTimeout(r,Math.max(0,ms))),startedAt=Date.now(
 const config={kit:process.env.GITHUB_SHA,engine:ENGINE_REF,image:process.env.ImageVersion,smoke:SMOKE,reps:SMOKE?1:20,planned:cells.length,startedAt,
  fixtureOwnershipVersion:3,browser:'firefox',samplingMs:DELAYS,sideWatchMs:20,budgetMinutes:75,
  baseline:'pinned current-main engine preflight and original EventPoster.event/keyPresses, forced route 2-prime; no inherited focus hold',
- setup:'foreground fixture DOM setup without engine clicks; cover foreground; 250ms settle; verify owned document/selection then arm trace',
+ setup:'bounded visible-title/poll read wait (3s, no activation/input retry); foreground fixture DOM setup without engine clicks; cover foreground; 250ms settle; verify owned document/selection then arm trace',
  expected:'ASCII seed end: Left [28,0], Option+Left [24,0], Cmd+Left [0,0], Cmd+Shift+Left [0,29]; foreground cells independently check these expectations',
  noRetry:'Every planned row is attempted once; setup failures/posted failures stay in the denominator. Three consecutive invalid setups stop the run.',
  safety:'No activation/raise calls in measured engine branch; equivalent-prelude is synthetic subtype1/inert-outside-click/keys/subtype2 only, not full production held route3. Requested 20ms passive foreground/order sampling; actual timestamps retained, stop on any observed violation. Scheduling gaps and cache lag can miss brief flashes.',
@@ -45,7 +46,8 @@ async function trial(c){
  const r={...c,startedAt:Date.now(),targetPid:pid,coverPid};let w,watching=false,stage='setup',sampling;
  try {
   w=await connect();await front(pid,true);
-  const visible=await ask({op:'window-title',pid});r.owner=transport.bindVisible(visible.windowTitle);await until(()=>transport.hasPoll());
+  r.fixtureBindingAttempts=[];
+  r.owner=await bindVisibleFixture({transport,pid,attempts:r.fixtureBindingAttempts,readWindow:()=>ask({op:'window-title',pid})});
   r.foregroundReset=await command({op:'reset',id:c.id,editor:c.editor,key:c.key});
   r.foregroundPrepare=await command({op:'prepare',id:c.id,editor:c.editor,key:c.key,scene:c.boundary?'boundary':'normal'});
   await front(c.scene==='foreground'?pid:coverPid,true);await sleep(250);

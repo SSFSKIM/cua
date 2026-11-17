@@ -31,8 +31,12 @@ The Mac mini and the owner's GUI/profile are not used.
 
 Four ordinary public fixtures: textarea, input, contenteditable (`span` content), and compose
 (nested `div`, textbox role). All use `Old draft sentence goes here.` (29 ASCII characters).
-Each row sets up the visible owned document in the foreground without an engine click, brings the
-cover forward, settles 250 ms, verifies the intended selection, then measures **one key only**.
+Each row first waits up to 3 seconds for the foreground browser's registered fixture title and live command
+poll (the #354 binder's bound); it records each identity read in `fixtureBindingAttempts`. A transient null AX
+title is not treated as a different realm or a hidden-owner fallback. If the bound expires, the row remains an
+explicit setup failure with no key posted. The row then sets up the visible owned document in the foreground
+without an engine click, brings the cover forward, settles 250 ms, verifies the intended selection, then measures
+**one key only**.
 No typing, screenshot, activation, raise, repair, or automatic key retry occurs in the measurement interval.
 Foreground-reference rows deliberately keep Firefox in front; they are not background successes.
 

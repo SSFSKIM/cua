@@ -12,6 +12,7 @@ import {
 } from '../../src/browser-service/backend.mjs';
 import {Deadline} from '../../src/browser-service/budgets.mjs';
 import {nativePipe, startRealHost, waitFor} from './support/real-host.mjs';
+import {earlyTimers} from './support/early-timer.mjs';
 import {shortScratch} from '../fixtures/runtime-fixture.mjs';
 
 const LE = endianness() === 'LE';
@@ -162,6 +163,21 @@ test('a request abandoned at its deadline is forgotten: its late answer is dropp
   assert.equal(backend.pendingCount, 0);
   pipe.answer(1, {result: {late: true}});
   assert.equal(backend.closed, false);
+});
+
+test('a request abandoned on its deadline\'s timer leaves the deadline spent: nothing more is sent on it, though the clock is short of its end', async t => {
+  const clock = earlyTimers(t);
+  const pipe = memoryPipe();
+  const backend = new Backend(pipe.stream);
+  const deadline = new Deadline(20);
+  const abandoned = rejection(backend.request('executeCdp', {}, {sessionId: 's', turnId: 't', deadline}));
+  clock.elapse(20);
+  assert.equal((await abandoned).code, 'timeout');
+  assert.ok(Date.now() < deadline.at, 'the timer fired before the clock reached the end');
+  assert.equal(deadline.expired(), true, 'the timeout answered is the deadline\'s');
+  const next = await rejection(backend.request('executeCdp', {}, {sessionId: 's', turnId: 't', deadline}));
+  assert.equal(next.code, 'timeout');
+  assert.equal(pipe.sent.length, 1, 'a request after the timeout is never sent');
 });
 
 test('connect needs the trusted worker\'s nativePipe bridge', async () => {

@@ -90,8 +90,8 @@ export class Backend {
     const message = {...params, ...(sessionId !== undefined ? {session_id: sessionId, turn_id: turnId, session_context: sessionContext} : {})};
     const id = this.#nextId++;
     return new Promise((resolve, reject) => {
-      let timer;
-      const settle = (fn, value) => { clearTimeout(timer); fn(value); };
+      let disarm = () => {};
+      const settle = (fn, value) => { disarm(); fn(value); };
       this.#pending.set(id, {resolve: value => settle(resolve, value), reject: error => settle(reject, error)});
       try {
         this.#send({jsonrpc: '2.0', method, params: message, id});
@@ -100,7 +100,7 @@ export class Backend {
         settle(reject, error);
         return;
       }
-      if (deadline) timer = setTimeout(() => { if (this.#pending.delete(id)) reject(expired()); }, deadline.remaining());
+      if (deadline) disarm = deadline.whenSpent(() => { if (this.#pending.delete(id)) reject(expired()); });
     });
   }
 

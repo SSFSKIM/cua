@@ -303,3 +303,127 @@ test('after a JSON round trip next and valueWrite are one logical RPC, not two',
  const bgSv=bg('input','script'),bn={startedAt:1,endedAt:2,error:null,meta:{pendingClick:{waitMs:0}}};
  assert.equal(only(bgSv,clone(good(bgSv,{next:bn,valueWrite:bn}))).backgroundWaitViolations,1,'one row, counted once');
 });
+
+// ---- review wave: tail exposure must be proved by the answer boundary, not by the late mousedown alone ----
+test('a tail qualifies only when select_text and type_text both completed before the delayed mousedown',()=>{
+ const t0=10000,u=2,md=at=>[{event:'busy-start',at:9900},{event:'mousedown',at},{event:'busy-end',at:10900}];
+ const sel=(s,e,error=null)=>({startedAt:s,endedAt:e,error,meta:{}});
+ const typ=(s,e,error=null)=>({startedAt:s,endedAt:e,error,meta:{entered:0,typeReadback:{reason:'selectionChanged'}}});
+ const mk=over=>good(tailCell,{events:md(10500),...over});
+ let g=only(tailCell,mk({}));assert.equal(g.tailQualified,1);
+ // the pointer landed before the AX selection was written: stress that was recovered from, not a protection test
+ g=only(tailCell,mk({next:sel(10600,10610),type:typ(10620,10640)}));
+ assert.deepEqual([g.tailQualified,g.tailUnqualifiedReasons],[0,{mousedownBeforeSelection:1}]);
+ // select_text returned in time but the type call was still running when the pointer landed
+ g=only(tailCell,mk({type:typ(10490,10520)}));assert.deepEqual(g.tailUnqualifiedReasons,{mousedownBeforeTypeReturn:1});
+ g=only(tailCell,mk({type:typ(10600,10620)}));assert.deepEqual(g.tailUnqualifiedReasons,{mousedownBeforeTypeReturn:1},'type attempted only after the mousedown');
+ // boundary: strictly earlier by the clock uncertainty
+ g=only(tailCell,mk({type:typ(10390,10497),events:md(10500)}));assert.equal(g.tailQualified,1);
+ g=only(tailCell,mk({type:typ(10390,10498),events:md(10500)}));assert.deepEqual(g.tailUnqualifiedReasons,{mousedownBeforeTypeReturn:1},'type end + uncertainty equals the mousedown');
+ g=only(tailCell,mk({next:sel(10300,10498)}));assert.deepEqual(g.tailUnqualifiedReasons,{mousedownBeforeSelection:1});
+ g=only(tailCell,mk({next:sel(10300,10497),type:typ(10498,10499)}));assert.equal(g.tailQualified,0,'type end inside the uncertainty margin');
+ g=only(tailCell,mk({clockUncertaintyMs:50,type:typ(10390,10449)}));assert.equal(g.tailQualified,1);
+ g=only(tailCell,mk({clockUncertaintyMs:50,type:typ(10390,10450)}));assert.equal(g.tailQualified,0);
+ // the select_text must have succeeded and type_text must have been attempted
+ g=only(tailCell,mk({next:sel(10011,10020,{errorName:'elementStale'})}));assert.deepEqual(g.tailUnqualifiedReasons,{selectionNotSuccessful:1});
+ g=only(tailCell,mk({next:undefined}));assert.deepEqual(g.tailUnqualifiedReasons,{selectionNotSuccessful:1});
+ g=only(tailCell,mk({type:undefined}));assert.deepEqual(g.tailUnqualifiedReasons,{typeNotAttempted:1});
+ g=only(tailCell,mk({type:{error:null}}));assert.deepEqual(g.tailUnqualifiedReasons,{typeNotAttempted:1},'a type record without a call interval');
+ // qualification ignores the answer and the wait metadata: ok or unconfirmed, any reason
+ g=only(tailCell,mk({type:{startedAt:10021,endedAt:10030,error:null,meta:{entered:6,typeReadback:{confirmed:true}}},samples:[{text:'NEW359',selection:[6,0]}]}));
+ assert.deepEqual([g.tailQualified,g.tailOk,g.tailUnsafeOk],[1,1,1]);
+ g=only(tailCell,mk({type:{startedAt:10021,endedAt:10030,error:{errorName:'typeUnconfirmed',meta:{typeReadback:{reason:'valueMismatch'}}}}}));assert.equal(g.tailQualified,1);
+});
+
+test('a recovered, correct late-pointer replacement is unqualified stress, never an unsafe ok, and its answers stay countable',()=>{
+ const recovered=good(tailCell,{events:[{event:'busy-start',at:9900},{event:'mousedown',at:10500}],next:{startedAt:10600,endedAt:10610,error:null,meta:{}},
+  type:{startedAt:10620,endedAt:10640,error:null,meta:{entered:6,typeReadback:{confirmed:true}}},samples:[{text:'NEW359',selection:[6,0]}]});
+ const g=only(tailCell,recovered);
+ assert.deepEqual([g.tailUnqualified,g.tailOk,g.tailUnsafeOk,g.wrongFinal,g.wrongPlacement,g.safeRefusal,g.scorable],[1,0,0,0,0,0,0]);
+ assert.deepEqual(g.tailUnqualifiedTypeAnswers,{success:1});assert.deepEqual(g.typeAnswers,{});
+ const refused=good(tailCell,{events:[{event:'busy-start',at:9900},{event:'mousedown',at:10500}],next:{startedAt:10600,endedAt:10610,error:null,meta:{}},
+  type:{startedAt:10620,endedAt:10640,error:{errorName:'typeUnconfirmed',meta:{entered:0,typeReadback:{reason:'selectionChanged'}}}}});
+ const g2=only(tailCell,refused);assert.deepEqual([g2.tailUnqualifiedTypeAnswers,g2.tailUnqualifiedTypeUnconfirmedReasons,g2.safeRefusal],[{typeUnconfirmed:1},{selectionChanged:1},0]);
+});
+
+test('zero qualified tail coverage never reads as passing',()=>{
+ const ok=qualificationSummary(rowsFor(full),full);
+ assert.equal(ok.exercisedAllTails,true);assert.deepEqual(ok.tailUnexercised,[]);
+ const noExposure=rowsFor(full).map(r=>r.cohort==='tail'?{...r,events:[{event:'busy-start',at:9900}]}:r);
+ const s=qualificationSummary(noExposure,full);
+ assert.equal(s.exercisedAllTails,false);assert.equal(s.tailUnexercised.length,6);assert.ok(s.tailUnexercised.every(k=>k.includes('/tail/')));
+ assert.equal(s.arms['main/tail'].tailUnqualified,60);assert.equal(s.arms['main/tail'].safeRefusal,0);
+ // one head's tails exposed, the other's not: still not exercised for that head
+ const half=rowsFor(full).map(r=>r.cohort==='tail'&&r.head==='fix'?{...r,events:[]}:r);
+ assert.equal(qualificationSummary(half,full).tailUnexercised.every(k=>k.startsWith('fix/')),true);
+});
+
+// ---- dispatch-wide plan reconstruction ----
+import {qualificationPlan} from './qualification-readers.mjs';
+import {mkdtempSync,mkdirSync,writeFileSync,readFileSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {spawnSync} from 'node:child_process';
+const request=(over={})=>({smoke:true,heads:{...HEADS},browsers:['safari','cft','firefox'],editors:['textarea','input','contenteditable','compose'],...over});
+const config=(over={},req=request())=>({qualification:true,qualificationRequest:req,planned:[],...over});
+
+test('qualificationPlan rebuilds the whole requested plan from any surviving request',()=>{
+ assert.deepEqual(qualificationPlan([config()]).map(c=>c.id),smoke.map(c=>c.id));
+ assert.equal(qualificationPlan([config(),config()]).length,90);
+ assert.equal(qualificationPlan([config({planned:[{id:'only-this'}]})],).length,90,'surviving shard manifests do not bound the plan');
+ assert.equal(qualificationPlan([config({},request({smoke:false}))]).length,1320);
+ assert.equal(qualificationPlan([config({},request({browsers:['cft'],editors:['textarea']}))]).length,2*(6+1+2));
+});
+
+test('qualificationPlan rejects absent, inconsistent or malformed requests',()=>{
+ const bad=x=>assert.throws(()=>qualificationPlan(x));
+ bad([]);bad([{qualification:true}]);bad([config(),{qualification:true}]);
+ bad([config(),config({},request({smoke:false}))]);
+ bad([config(),config({},request({browsers:['cft']}))]);
+ bad([config(),config({},request({editors:['textarea']}))]);
+ bad([config(),config({},request({heads:{main:HEADS.main,fix:'c'.repeat(40)}}))]);
+ bad([config({},request({heads:{main:HEADS.main}}))]);
+ bad([config({},request({heads:{main:HEADS.main,fix:HEADS.fix,extra:'c'.repeat(40)}}))]);
+ bad([config({},request({heads:{main:HEADS.main,fix:'short'}}))]);
+ bad([config({},request({heads:{main:HEADS.main,fix:HEADS.main}}))]);
+ bad([config({},request({smoke:'yes'}))]);
+ bad([config({},request({browsers:[]}))]);bad([config({},request({browsers:['cft','cft']}))]);bad([config({},request({browsers:['edge']}))]);
+ bad([config({},request({editors:['canvas']}))]);
+});
+
+const READERS=new URL('./readers.mjs',import.meta.url).pathname;
+function scratch(){return mkdtempSync(join(tmpdir(),'q359-'))}
+function shard(root,name,cfg,rows){const d=join(root,name);mkdirSync(d,{recursive:true});if(cfg)writeFileSync(join(d,'config.json'),JSON.stringify(cfg));writeFileSync(join(d,'rows.jsonl'),rows.map(r=>JSON.stringify(r)).join('\n')+(rows.length?'\n':''))}
+const cli=(...a)=>spawnSync(process.execPath,[READERS,...a],{encoding:'utf8'});
+
+test('the qualification CLI scores the dispatch against the full plan even when one shard survived',()=>{
+ const root=scratch(),out=join(root,'out'),survivor=smoke.find(c=>c.head==='main'&&c.browser==='safari'&&c.cohort==='background');
+ shard(join(root,'in'),'main-safari-textarea',config(),[good(survivor,{smoke:true})]);
+ const r=cli('summarize',join(root,'in'),out,'--qualification');assert.equal(r.status,0,r.stderr);
+ const s=JSON.parse(readFileSync(join(out,'summary.json'),'utf8'));
+ assert.equal(s.requested,90);assert.equal(s.attempted,1);assert.equal(s.missing.length,89);assert.equal(s.complete,false);assert.equal(s.smoke,true);
+ assert.ok(s.groups.some(g=>g.head==='fix'&&g.browser==='firefox'&&g.requested>0&&g.attempted===0),'absent fix/firefox stays in the denominator');
+ assert.equal(s.arms['fix/tail'].requested,3);assert.equal(s.exercisedAllTails,false);
+});
+
+test('the qualification CLI rejects absent or inconsistent requests and mismatched smoke flags',()=>{
+ const root=scratch(),run=(inputs,...extra)=>{const dir=join(root,String(Math.random()));for(const [n,c,rows] of inputs)shard(dir,n,c,rows);return cli('summarize',dir,join(dir,'out'),'--qualification',...extra)};
+ assert.notEqual(run([['a',null,[]]]).status,0);
+ assert.notEqual(run([['a',{qualification:true},[]]]).status,0);
+ assert.notEqual(run([['a',config(),[]],['b',config({},request({smoke:false})),[]]]).status,0);
+ assert.notEqual(run([['a',config(),[]]],'--diagnostic').status,0);
+ assert.notEqual(run([['a',config({},request({smoke:false})),[]]],'--smoke').status,0,'an explicit --smoke that contradicts the request');
+ assert.equal(run([['a',config(),[]]],'--smoke').status,0);
+ assert.equal(run([['a',config(),[]]]).status,0,'smoke is derived from the request');
+});
+
+test('the legacy reader and legacy CLI never ingest qualification rows',()=>{
+ assert.throws(()=>legacySummary([good(fg)],[]),/qualification/);
+ const root=scratch(),out=join(root,'out');
+ shard(join(root,'in'),'a',{qualification:true,qualificationRequest:request()},[good(fg,{smoke:false})]);
+ const r=cli('summarize',join(root,'in'),out);assert.notEqual(r.status,0);assert.match(r.stderr,/qualification/);
+ const t=cli('summarize',join(root,'in'),out,'--smoke');assert.notEqual(t.status,0);
+ // and a legacy row in a qualification summary is an unexpected id, not a scored one
+ const s=qualificationSummary([{id:'rate/cft/textarea/script/natural/1',valid:true}],smoke);assert.deepEqual(s.unexpected,['rate/cft/textarea/script/natural/1']);
+});
+import {summary as legacySummary} from './readers.mjs';

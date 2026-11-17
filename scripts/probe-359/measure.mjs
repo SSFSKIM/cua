@@ -157,7 +157,7 @@ try{
  }
 }catch(e){meta.failure=String(e.stack??e);console.error(meta.failure);process.exitCode=1}
 finally{
- meta.finishedAt=Date.now();writeFileSync(join(OUT,'config.json'),JSON.stringify(meta,null,2));writeFileSync(join(OUT,'summary.json'),JSON.stringify(QUALIFICATION?qualificationSummary(rows,planned,{smoke:SMOKE}):summary(rows,planned,{smoke:SMOKE,diagnostic:Boolean(DIAGNOSTIC)}),null,2));
+ meta.finishedAt=Date.now();writeFileSync(join(OUT,'config.json'),JSON.stringify(meta,null,2));writeFileSync(join(OUT,'summary.json'),JSON.stringify(QUALIFICATION?{scope:'head-browser-editor shard',...qualificationSummary(rows,planned,{smoke:SMOKE})}:summary(rows,planned,{smoke:SMOKE,diagnostic:Boolean(DIAGNOSTIC)}),null,2));
  transport.retire('shutdown');w?.close();engine?.kill('SIGTERM');tool.child.kill('SIGTERM');watch.child.kill('SIGTERM');if(browser)try{process.kill(browser.pid,'SIGTERM')}catch{}
  server.closeAllConnections();server.close();
 }

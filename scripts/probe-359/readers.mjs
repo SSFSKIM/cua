@@ -2,6 +2,7 @@
 import {readFileSync,readdirSync,writeFileSync,mkdirSync} from 'node:fs';
 import {join,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {qualificationPlan,qualificationSummary} from './qualification-readers.mjs';
 export const BROWSERS=['safari','cft','firefox'],EDITORS=['textarea','input','contenteditable','compose'];
 export const MODES=['reread50','reread100','stable50','stable100'];
 export function cells({reps=20,browsers=BROWSERS,editors=EDITORS,suites=['rate','control','trace','isolate','candidate'],selections=['script','cmd+a'],candidateModes=MODES}={}){
@@ -52,6 +53,7 @@ export function facts(r){
   lastCaretAfterReturnMs:late.length?Math.max(...late.map(e=>e.at-r.click.endedAt)):null};
 }
 export function summary(rows,expected=cells(),{smoke=false,diagnostic=false}={}){
+ if(rows.some(r=>r.qualification))throw Error('qualification evidence cannot enter the legacy summary; use summarize --qualification');
  if(rows.some(r=>r.diagnostic)&&!diagnostic)throw Error('diagnostic evidence cannot enter the primary summary');
  if(diagnostic&&rows.some(r=>!r.diagnostic))throw Error('mixed diagnostic and primary evidence');
  if(rows.some(r=>r.smoke===true)&&!smoke)throw Error('smoke evidence cannot enter primary summary; use explicit smoke mode');
@@ -94,7 +96,14 @@ if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
  if(command==='plan'){const p=cells();console.log(JSON.stringify({attempts:p.length,cells:p},null,2))}
  else if(command==='summarize'||command==='timeline'){
   if(!input||!output)throw Error('usage: readers.mjs summarize|timeline INPUT_DIRECTORY OUTPUT_DIRECTORY');mkdirSync(output,{recursive:true});const rows=load(input);
-  if(command==='summarize'){const smoke=process.argv.includes('--smoke'),diagnostic=process.argv.includes('--diagnostic'),expected=diagnostic?diagnosticPlan(load(input,'config.json')):cells({reps:smoke?1:20});writeFileSync(join(output,'summary.json'),JSON.stringify(summary(rows,expected,{smoke,diagnostic}),null,2))}
+  if(command==='summarize'&&process.argv.includes('--qualification')){
+   if(process.argv.includes('--diagnostic'))throw Error('--qualification and --diagnostic are separate corpora');
+   const configs=load(input,'config.json'),expected=qualificationPlan(configs),smoke=configs[0].qualificationRequest.smoke;
+   // Smoke comes from the dispatch's own request; an explicit --smoke may only agree with it.
+   if(process.argv.includes('--smoke')&&!smoke)throw Error('--smoke contradicts the qualification request');
+   writeFileSync(join(output,'summary.json'),JSON.stringify(qualificationSummary(rows,expected,{smoke}),null,2));
+  }
+  else if(command==='summarize'){const smoke=process.argv.includes('--smoke'),diagnostic=process.argv.includes('--diagnostic'),expected=diagnostic?diagnosticPlan(load(input,'config.json')):cells({reps:smoke?1:20});writeFileSync(join(output,'summary.json'),JSON.stringify(summary(rows,expected,{smoke,diagnostic}),null,2))}
   else writeFileSync(join(output,'timeline.jsonl'),rows.flatMap(timeline).map(r=>JSON.stringify(r)).join('\n')+'\n');
  }else throw Error('usage: readers.mjs plan | summarize|timeline INPUT_DIRECTORY OUTPUT_DIRECTORY');
 }

@@ -56,7 +56,7 @@ const NUMS=['requested','attempted','valid','invalid','scorable','typeMissing','
  'typeSuccess','typeFalseSuccess','typeHonestUnconfirmed','typeUnconfirmedCorrect','selectionChanged','safeNoType','unsafeRefusal','typedEvents',
  'valueSuccess','valueUnconfirmed','valueFieldClosed','tailQualified','tailUnqualified','tailScorable','tailOk','tailUnsafeOk','tailOkTextMatchesRequested','nothingTypedSeedUnchanged','safeRefusal',
  'foregroundViolations','windowRaisesObserved','backgroundWaitViolations','backgroundWaitPositive'];
-const MAPS=['typeAnswers','typeUnconfirmedReasons','valueAnswers','valueUnconfirmedDrift','tailUnqualifiedReasons'];
+const MAPS=['typeAnswers','typeUnconfirmedReasons','valueAnswers','valueUnconfirmedDrift','tailUnqualifiedReasons','tailUnqualifiedTypeAnswers','tailUnqualifiedTypeUnconfirmedReasons'];
 const SERIES=['pendingClickWaitMs','baselineWaitMs','totalWaitMs','clickMs','nextMs','typeMs'];
 const blank=()=>({...Object.fromEntries(NUMS.map(k=>[k,0])),...Object.fromEntries(MAPS.map(k=>[k,{}])),...Object.fromEntries(SERIES.map(k=>[k,[]]))});
 const merge=(a,b)=>{for(const k of NUMS)a[k]+=b[k];for(const k of MAPS)for(const [x,n] of Object.entries(b[k]))bump(a[k],x,n);for(const k of SERIES)a[k].push(...b[k])};
@@ -65,12 +65,21 @@ const groupKey=c=>[c.head,c.cohort,c.browser,c.editor,c.selection,c.suite].join(
 const LINEAGE=['cohort','head','engineRef','suite','browser','editor','selection','rep','foreground','initialCaret','stressBusyMs','qualification','mode'];
 const inputsSince=(r,since)=>(r.events??[]).filter(e=>['input','beforeinput'].includes(e.event)&&(!(e.at<since))).length;
 
+// A tail is exercised only if the delayed pointer was still pending when select_text and type_text had both
+// returned (each by more than the clock uncertainty). A mousedown that merely arrives late, after the AX selection
+// was written or after type_text finished, shows recovery from stress and not the tested answer boundary.
+// Qualification never depends on the answer or on wait metadata.
 export function tailQualification(r){
- const events=[...(r.events??[])].sort((a,b)=>a.at-b.at),md=events.find(e=>e.event==='mousedown')?.at;
+ const events=[...(r.events??[])].sort((a,b)=>a.at-b.at),md=events.find(e=>e.event==='mousedown')?.at,u=r.clockUncertaintyMs??2;
  const stress=num(r.stress?.busyStartedAt)??num(events.find(e=>e.event==='busy-start')?.at);
- if(!Number.isFinite(md))return {qualified:false,reason:'noMousedown'};
- if(!(stress!==null&&stress<r.click?.startedAt))return {qualified:false,reason:'stressNotBeforeClick'};
- if(!(md>r.click.endedAt+TAIL_MIN_GAP_MS+(r.clockUncertaintyMs??2)))return {qualified:false,reason:'mousedownNotLate'};
+ const no=reason=>({qualified:false,reason});
+ if(!Number.isFinite(md))return no('noMousedown');
+ if(!(stress!==null&&stress<r.click?.startedAt))return no('stressNotBeforeClick');
+ if(!(md>r.click.endedAt+TAIL_MIN_GAP_MS+u))return no('mousedownNotLate');
+ if(!r.next||r.next.error||!Number.isFinite(r.next.endedAt))return no('selectionNotSuccessful');
+ if(!(r.next.endedAt+u<md))return no('mousedownBeforeSelection');
+ if(!r.type||!Number.isFinite(r.type.startedAt)||!Number.isFinite(r.type.endedAt))return no('typeNotAttempted');
+ if(!(r.type.endedAt+u<md))return no('mousedownBeforeTypeReturn');
  return {qualified:true};
 }
 
@@ -91,7 +100,12 @@ function scoreRow(r,cell,g){
   if(w.some(x=>x.pendingRecord||x.baselineRecord))g.backgroundWaitViolations++;
   if([...pend,...base].some(v=>v>0))g.backgroundWaitPositive++;
  }
- if(tail){const q=tailQualification(r);if(!q.qualified){g.tailUnqualified++;bump(g.tailUnqualifiedReasons,q.reason);return}g.tailQualified++;g.tailScorable++}
+ if(tail){const q=tailQualification(r);if(!q.qualified){
+   g.tailUnqualified++;bump(g.tailUnqualifiedReasons,q.reason);
+   // Raw type answers of unqualified stress stay countable, apart from the scored outcomes.
+   if(r.type){const a=answerOf(r.type);bump(g.tailUnqualifiedTypeAnswers,a);if(a==='typeUnconfirmed'){const why=field(r.type,'typeReadback')?.reason;bump(g.tailUnqualifiedTypeUnconfirmedReasons,typeof why==='string'&&why?why:'unknown')}}
+   return;
+  }g.tailQualified++;g.tailScorable++}
  g.scorable++;
  const samples=r.samples??[],final=samples.at(-1),prev=samples.at(-2);
  if(!final)g.noFinalSample++;else if(prev&&!(prev.text===final.text&&same(prev.selection,final.selection)))g.finalUnstable++;
@@ -141,7 +155,23 @@ export function qualificationSummary(rows,expected,{smoke=false}={}){
  }
  const missing=expected.filter(c=>!scored.has(c.id)).map(c=>c.id),arms=new Map();
  for(const g of groups.values()){const k=g.head+'/'+g.cohort;if(!arms.has(k))arms.set(k,{key:k,head:g.head,cohort:g.cohort,...blank()});merge(arms.get(k),g)}
+ const tailUnexercised=[...groups.values()].filter(g=>g.cohort==='tail'&&g.requested>0&&g.tailScorable===0).map(g=>g.key);
  const complete=![missing,unexpected,mismatched].some(a=>a.length)&&!duplicates.size;
- return {smoke,requested:expected.length,attempted:rows.length,missing,unexpected,duplicates:[...duplicates],mismatched,unqualifiedTails,complete,
+ return {smoke,requested:expected.length,attempted:rows.length,missing,unexpected,duplicates:[...duplicates],mismatched,unqualifiedTails,tailUnexercised,exercisedAllTails:tailUnexercised.length===0,complete,
   groups:[...groups.values()].map(finish),arms:Object.fromEntries([...arms].map(([k,v])=>[k,finish(v)]))};
+}
+
+// Dispatch-wide plan from the surviving configs' qualificationRequest, independent of which shards survived.
+const HEX40=/^[a-f0-9]{40}$/;
+export function qualificationPlan(configs){
+ const requests=configs.map(c=>c?.qualificationRequest);
+ if(!requests.length||requests.some(r=>!r))throw Error('qualification request manifests missing; cannot infer coverage from surviving shards');
+ const sig=r=>JSON.stringify([r.smoke,r.heads,r.browsers,r.editors]),request=requests[0];
+ if(requests.some(r=>sig(r)!==sig(request)))throw Error('inconsistent qualification requests; keep dispatches separate');
+ const names=Object.keys(request.heads??{}),unique=a=>new Set(a).size===a.length;
+ if(typeof request.smoke!=='boolean')throw Error('invalid qualification request: smoke must be boolean');
+ if(!same(names,['main','fix'])||names.some(h=>!HEX40.test(request.heads[h]))||request.heads.main===request.heads.fix)throw Error('invalid qualification request: heads must be exactly main and fix, distinct 40-hex refs');
+ for(const [key,known] of [['browsers',QUAL_BROWSERS],['editors',QUAL_EDITORS]])
+  if(!Array.isArray(request[key])||!request[key].length||!unique(request[key])||request[key].some(v=>!known.includes(v)))throw Error('invalid qualification request: '+key);
+ return qualificationCells({smoke:request.smoke,heads:request.heads,browsers:request.browsers,editors:request.editors});
 }

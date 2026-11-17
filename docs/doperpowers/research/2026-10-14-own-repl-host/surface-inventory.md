@@ -1006,3 +1006,11 @@ does: observe first. One sentence closes the fourth paragraph:
 and one follows the sixth paragraph's sentence on the wait after `pressKey`:
 
 > A click is sent at once but an app can take it in later, so within a second after a click in the same app, `selectText`, `setValue` and `typeText` first wait, up to about 0.3 s, for the field's selection to hold still; `typeText` right after `selectText` types only over the selection `selectText` made, and when a late click has moved it, it types nothing and fails with `typeUnconfirmed`: observe the app, then select the text again.
+
+### Table 3 amendment (2026-11-17, #359, ruling 1ea561bc:788)
+
+The design session's ruling 1ea561bc:788: the wait after a click is no fence, since a click can still land after it, so
+the model is told what `typeText` answers then and what to do. One sentence follows the "(2026-11-17, #359)" sentence in
+the sixth paragraph:
+
+> A click can still land after that wait; then `typeText` fails with `typeUnconfirmed` rather than claiming the text, which may already have gone in at the click's point, so observe the field and put it right with `setValue`.

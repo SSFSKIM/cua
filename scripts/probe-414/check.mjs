@@ -84,7 +84,8 @@ export function inspect(input,values,{literal=false,stringsOnly=false,surface=nu
     seen.add(v);
     if(Array.isArray(v)&&v.length>=8&&v.every(n=>Number.isSafeInteger(n)&&n>=0&&n<=65535))string(String.fromCharCode(...v.slice(0,64000)),depth);
     for(const k of Object.getOwnPropertyNames(v)){
-      if(k==='stack'&&v instanceof Error)continue;
+      // Array.length is not serialized; actual length keys inside its items still fail.
+      if(k==='length'&&Array.isArray(v)||k==='stack'&&v instanceof Error)continue;
       const x=v[k],at=path.join('.'),parent=path.at(-1),inReadback=parent==='typeReadback'||parent==='cua/typeReadback';
       string(k,depth);
       const exempt=!nested&&literal&&(

@@ -199,13 +199,16 @@ async function main(){
   }
   const summary=summarize(rows),auditGate=audit?auditPairs(schedules,smoke?1:5):null;
   const privacyViolations=summary.privacyViolations+(globalPrivacy.size?1:0);
+  // Findings carry only the harness's surface label and scanner's fixed code, never the offending text or key.
+  const privacyCodes=Object.create(null);
+  for(const code of [...globalPrivacy,...rows.flatMap(r=>r.privacy)])privacyCodes[code]=(privacyCodes[code]??0)+1;
   const needed=cells.filter(c=>c.kind!=='rewrite').length;
   const gates={coverage:rows.filter(r=>r.valid&&!r.informational).length===needed&&abort===null,
     privacy:privacyViolations===0, outcome:audit?null:summary.scored.passed===needed&&summary.wrongSuccesses===0&&rows.every(r=>!r.observationMissing&&!r.evidenceFailure),
     schedule:auditGate?.pass??null};
   const publishable=gates.privacy;
   const status={lane,phase,kit:config.kit,refs:config.refs,abort,planned:cells.length,completed:rows.length,invalid:summary.invalid,
-    unattempted:cells.length-rows.length,privacyViolations,gates,publishable,presentation:config.presentation??null,foregroundFallback:config.foregroundFallback??null};
+    unattempted:cells.length-rows.length,privacyViolations,privacyCodes,gates,publishable,presentation:config.presentation??null,foregroundFallback:config.foregroundFallback??null};
   writeFileSync(join(out,'status.json'),JSON.stringify(status,null,2)+'\n');
   // Counts and timings rebuilt from closed codes may leave even a privacy-failed run; rows, hashes and traces never do.
   writeFileSync(join(out,'coded.json'),JSON.stringify(coded(summary,auditGate),null,2)+'\n');

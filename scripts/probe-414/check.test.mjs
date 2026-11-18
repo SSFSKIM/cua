@@ -260,3 +260,10 @@ test('the coded projection holds only counts, timings and closed codes',()=>{
   assert.equal(JSON.stringify(coded({heads:{},cells:{['fix/'+words[0]]:{planned:1}},invalid:{[words[0]]:2},negative:{reasons:{[words[1]]:3,secure:2}}})).includes(words[0]),false);
   assert.equal(JSON.stringify(coded({negative:{reasons:{[words[1]]:3,secure:2}}})).includes(words[1]),false);
 });
+
+test('JSON-facing arrays do not disclose their JavaScript implementation length',()=>{
+  const observation={secure:true,actions:['AXConfirm','AXCancel','AXPick'],actionDescriptions:['confirm','cancel','pick'],domClassList:[],value:null};
+  assert.deepEqual(inspect(observation,[]),[]);
+  assert.notDeepEqual(inspect([{length:8}],[]),[]);
+  assert.notDeepEqual(inspect(['cua-engine: {"actualLength":8}'],[]),[]);
+});

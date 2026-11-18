@@ -2,6 +2,14 @@
 
 ## Open
 
+- **2026-11-18 — rejudge-device.mjs exits 0 by default on a stopped V5 record (P3, M5 task 100).** When a stored V5 run lists the premise cells in `meta.ops` but has no end record and no device verdicts, the unflagged replay exits 0 with `failing: []`. That is the same status as a successful V4 replay. Ruling 847 makes replays of V5's premise cells diagnostic only, never a pass, so no verdict can flip. But the exit code can mislead a reader. Fix: withhold default-mode success whenever the plan includes a premise cell, even one with no verdict. Add the stopped-run case to the CLI test. Related, same file: the direct `run/results.jsonl` input path looks for `step.json` one directory too deep and so falsely fails an unaudited replay. And `docs/evidence/.../m5/v5-823/rejudge-823.sh` records a bare `exit` field, which is the agreement exit under `--diagnostic`; name it `agreement_exit`. Check: run the replay on a stopped V5 record without flags; it should exit 1.
+- **2026-11-18 — Small M5 code-comment and wording items from task reviews (P4).**
+  - `src/services/engine/linux/client.mjs`'s header says an Electron `ok` can never come with a missed drop. That overclaims: docs/cua-api/linux-engine.md correctly states ruling 830's limit. Describe the stale-cursor fix without promising delivery to the application.
+  - `scripts/linux-engine-diff/drop-signals-judge.mjs` (~L704): the root-cell finding says unverified ends were "released over Chrome ballast". The flag also covers wrong coordinates, another screen, or an unreadable pointer, read after the drag. Say "position unverified".
+  - `test/linux-engine-diff/pid-identity.test.mjs` (~L180) embeds a TMPDIR path in shell source unquoted. Pass it as an argument and quote it.
+
+  Check: read each line.
+- **2026-11-18 — Two macOS engine tests flaked on hosted CI (`test` gate).** On m5-engine-041 7522dcb8, run 44372605193: `BackgroundPointerTests.testAFailedEnablementWriteStillOpens…` and the "engine without the cursor method" test. Both were green at d5c4a737 and on the rerun 44376308254, and the commit touched no macOS code. Workaround: rerun. Check: search the test logs for either name.
 - **2026-11-18: two browser-service tests flaked once on hosted CI (`test` gate).** On m5-v5-823 ab319ab1, a commit that doesn't touch the browser service, run [44346353066](https://github.com/SSFSKIM/cua/actions/runs/44346353066) failed two tests. Its `test` rerun, 44351423586, was green.
   - `test/browser-service/input.test.mjs`: "a click's budget bounds the cursor's acknowledgment and the load wait: a silent cursor sends nothing after it" (31.9 ms).
   - `test/browser-service/wheel-scroll-chrome.test.mjs`: "real Chrome: an inner scroller at its edge chains the wheel to the page, which is watched; overflow:hidden is no scroller" (1.37 s).

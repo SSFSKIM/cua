@@ -89,7 +89,7 @@ private final class StubSafari {
     case kAXRoleAttribute: return roles[id].map { ($0 as CFString, .success) } ?? (nil, .noValue)
     case kAXSubroleAttribute: return subroles[id].map { ($0 as CFString, .success) } ?? (nil, .noValue)
     case kAXFocusedAttribute: return (focused.contains(id) ? kCFBooleanTrue : kCFBooleanFalse, .success)
-    case "AXSelectedTextMarkerRange" where id == Self.web: return (markerRangeError == .success ? markerRange : nil, markerRangeError)
+    case "AXSelectedTextMarkerRange" where id == Self.web: return (markerRange, markerRangeError)  // a range beside an error too: the error decides
     case kAXValueAttribute where id == Self.field: return (value as CFString, .success)
     case kAXSelectedTextRangeAttribute where id == Self.field:
       return (axRangeValue(CFRange(location: selection.location, length: selection.length)), .success)
@@ -387,8 +387,8 @@ final class TypeReadbackMarkerTests: XCTestCase {
   func testAnOddMarkerReplyClaimsNothing() {
     let symbols = ReadbackMarkerSymbols.live!
     let cases: [(String, (StubSafari) -> Void)] = [
-      ("no range", { $0.markerRangeError = .noValue }),
-      ("a failed range read", { $0.markerRangeError = .cannotComplete }),
+      ("no range", { $0.markerRange = nil; $0.markerRangeError = .noValue }),
+      ("a failed range read beside a range", { $0.markerRangeError = .cannotComplete }),
       ("a string for the range", { safari in
         safari.markerRange = "range" as CFString
         safari.symbols = ReadbackMarkerSymbols(rangeTypeID: symbols.rangeTypeID, markerTypeID: symbols.markerTypeID, copyStart: { _ in safari.start })

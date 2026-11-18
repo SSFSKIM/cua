@@ -1,0 +1,168 @@
+name: probe-414-qualification
+on:
+  push:
+    branches: ['probe/414-qual']
+    paths: ['.github/workflows/probe-414-qual.yml']
+  workflow_dispatch:
+    inputs:
+      main:
+        description: Exact 40-character baseline engine SHA
+        required: true
+        type: string
+      fix:
+        description: Exact 40-character candidate engine SHA
+        required: true
+        type: string
+      mode:
+        description: One round per lane or full qualification
+        type: choice
+        options: [smoke, full]
+        default: smoke
+      secure_poll:
+        description: Candidate Swift function that owns the complete secure polling loop
+        type: string
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: probe-414-qualification
+  cancel-in-progress: false
+jobs:
+  register:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo 'Registered; explicit product SHA pins required for hosted macOS qualification.'
+  qualify:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: macos-latest
+    timeout-minutes: 55
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {lane: cft, phase: stock}
+          - {lane: electron, phase: stock}
+          - {lane: electron-parity, phase: stock}
+          - {lane: safari, phase: stock}
+          - {lane: firefox, phase: stock}
+          - {lane: appkit, phase: stock}
+          - {lane: cft, phase: audit}
+          - {lane: safari, phase: audit}
+    name: ${{ matrix.lane }} / ${{ matrix.phase }}
+    env:
+      MAIN_SHA: ${{ inputs.main }}
+      FIX_SHA: ${{ inputs.fix }}
+      MODE: ${{ inputs.mode }}
+      POLL: ${{ inputs.secure_poll }}
+      LANE: ${{ matrix.lane }}
+      PHASE: ${{ matrix.phase }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Validate the kit and build pinned engine sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          [[ "$MAIN_SHA" =~ ^[0-9a-f]{40}$ && "$FIX_SHA" =~ ^[0-9a-f]{40}$ && "$MAIN_SHA" != "$FIX_SHA" ]]
+          test "$(git rev-parse "$MAIN_SHA^{commit}")" = "$MAIN_SHA"
+          test "$(git rev-parse "$FIX_SHA^{commit}")" = "$FIX_SHA"
+          git merge-base --is-ancestor "$MAIN_SHA" "$FIX_SHA"
+          git log -1 --format='kit %H %s'
+          sw_vers
+          node --test scripts/probe-414/*.test.mjs
+          heads=(main fix)
+          if [[ "$PHASE" == audit ]]; then heads=(fix); fi
+          for head in "${heads[@]}"; do
+            pin="$MAIN_SHA"
+            if [[ "$head" == fix ]]; then pin="$FIX_SHA"; fi
+            base="$RUNNER_TEMP/q414-$PHASE-$head"
+            git worktree add --detach "$base-src" "$pin"
+            test "$(git -C "$base-src" rev-parse HEAD)" = "$pin"
+            test -z "$(git -C "$base-src" status --porcelain)"
+            if [[ "$PHASE" == audit ]]; then node scripts/probe-414/patch-audit.mjs "$base-src" "$POLL"; fi
+            swift build -c release --package-path "$base-src/native/engine" --scratch-path "$base-build"
+            if [[ "$PHASE" == stock ]]; then test -z "$(git -C "$base-src" status --porcelain)"; fi
+          done
+      - name: Install lane prerequisites and compile the owned fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$LANE" == electron* ]]; then npm ci --prefix scripts/probe-390/fixture --no-audit --no-fund; fi
+          if [[ "$LANE" == firefox ]]; then
+            if [[ ! -d /Applications/Firefox.app ]]; then brew install --cask firefox; fi
+            mkdir -p /Applications/Firefox.app/Contents/Resources/distribution
+            printf '%s\n' '{"policies":{"DisableAppUpdate":true}}' > /Applications/Firefox.app/Contents/Resources/distribution/policies.json
+          fi
+          swiftc -O scripts/probe-414/host.swift -o "$RUNNER_TEMP/q414-host"
+          cover="$RUNNER_TEMP/Probe414 Cover.app"
+          appkit="$RUNNER_TEMP/Probe414 Fixture.app"
+          for bundle in "$cover" "$appkit"; do
+            mkdir -p "$bundle/Contents/MacOS"
+            id=org.cua.probe395.cover
+            if [[ "$bundle" == "$appkit" ]]; then id=dev.cua.probe.pwwalk.fixture; fi
+            cat > "$bundle/Contents/Info.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+          <key>CFBundleExecutable</key><string>q414</string>
+          <key>CFBundleIdentifier</key><string>$id</string>
+          <key>CFBundleName</key><string>Probe414</string>
+          <key>CFBundlePackageType</key><string>APPL</string>
+          <key>CFBundleVersion</key><string>1</string>
+          </dict></plist>
+          PLIST
+          done
+          cp "$RUNNER_TEMP/q414-host" "$cover/Contents/MacOS/q414"
+          codesign --force --sign - "$cover"
+          if [[ "$LANE" == appkit ]]; then
+            swiftc -O scripts/probe-414/fixture.swift -o "$appkit/Contents/MacOS/q414"
+            codesign --force --sign - "$appkit"
+          fi
+      - name: Run the lane and publish only the attested projection
+        id: qualification
+        shell: bash
+        run: |
+          set -euo pipefail
+          prefix="$RUNNER_TEMP/q414-$PHASE"
+          stage="$RUNNER_TEMP/q414-stage"
+          evidence="$RUNNER_TEMP/q414-evidence"
+          mkdir -p "$evidence"
+          rc=0
+          node scripts/probe-414/run.mjs "$LANE" "$MODE" "$PHASE" "$RUNNER_TEMP" "$stage" \
+            "$RUNNER_TEMP/q414-host" "$RUNNER_TEMP/Probe414 Cover.app/Contents/MacOS/q414" \
+            "$RUNNER_TEMP/Probe414 Fixture.app/Contents/MacOS/q414" \
+            "$prefix-main-src" "$prefix-main-build/release/cua-engine" \
+            "$prefix-fix-src" "$prefix-fix-build/release/cua-engine" || rc=$?
+          if [[ -s "$stage/status.json" ]]; then
+            cp "$stage/status.json" "$evidence/status.json"
+            if jq -e '.publishable == true' "$stage/status.json" >/dev/null; then
+              for f in config summary rows schedules auditGate; do
+                if [[ -f "$stage/$f.json" ]]; then cp "$stage/$f.json" "$evidence/$f.json"; fi
+              done
+            fi
+          else
+            printf '%s\n' '{"publishable":false,"abort":"publication-missing"}' > "$evidence/status.json"
+            rc=1
+          fi
+          exit "$rc"
+      - name: Record setup failure when no runner evidence was produced
+        if: ${{ !cancelled() && steps.qualification.outcome == 'skipped' }}
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/q414-evidence"
+          printf '%s\n' '{"publishable":false,"abort":"build-or-provisioning-setup"}' > "$RUNNER_TEMP/q414-evidence/status.json"
+      - name: Upload fixed status and scrubbed evidence, never runner state
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: probe-414-${{ matrix.lane }}-${{ matrix.phase }}-${{ env.MODE }}
+          path: ${{ runner.temp }}/q414-evidence/*.json
+          if-no-files-found: error
+          retention-days: 30

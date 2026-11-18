@@ -1,0 +1,213 @@
+// Hosted-only qualification. Never print child output or raw responses; staging keeps a closed projection only.
+import {mkdirSync,mkdtempSync,writeFileSync,rmSync} from 'node:fs';
+import {randomInt} from 'node:crypto';
+import {join} from 'node:path';
+import {pathToFileURL} from 'node:url';
+import {execFileSync} from 'node:child_process';
+import {Wire} from '../probe-366/wire.mjs';
+import {owned,stop,startPlatform,pause,environment} from './platform.mjs';
+import {plan,score,inspect,auditSchedule,auditPairs,summarize} from './check.mjs';
+
+const SLOT='PROBE414', safeReasons=new Set(['secure','noFocusedElement','roleUnreadable','notTextField','valueUnreadable','rangeUnreadable',
+  'fieldUnreadable','fieldChanged','becameSecure','selectionChanged','concealedMismatch','valueMismatch','unchanged','possiblyTruncated',
+  'secureCountUnavailable','secureCountMismatch','secureRangeUnavailable','secureCountUnreadable','secureRangeUnreadable','secureMismatch','lengthUnreadable','lengthMismatch','caretMismatch','selectionUnreadable','noLongerSecure']);
+const pickReason=x=>safeReasons.has(x)?x:x==null?null:'other';
+const ascii=n=>Array.from({length:n},()=> 'abcdefghijklmnopqrstuvwxy'[randomInt(25)]).join('');
+function materialize({kind}){
+  const initial=kind==='selection'?ascii(19):'', start=kind==='selection'?4:0, end=kind==='selection'?11:0;
+  const text=kind==='unicode'?ascii(4)+String.fromCodePoint(0x1f4a1)+ascii(3):ascii(kind==='long'?31:8), effect=['add','drop','rewrite'].includes(kind)?kind:'none';
+  const surround=t=>initial.slice(0,start)+t+initial.slice(end);
+  // Exactly one controlled edit; final equality is independently checked by the owned app/document.
+  const altered=effect==='add'?'z'+text:effect==='drop'?text.slice(1):effect==='rewrite'?'z'+text.slice(1):null;
+  return {seed:{expected:initial,start,end,effect,first:text[0]},text,expected:surround(text),control:altered===null?null:surround(altered)};
+}
+const weakReason=()=>{throw Error('owned target could not be resolved');};
+function decodeAudit(d){
+  if(d?.v!==1||d.dropped||d.aliasOverflow||d.offThread||d.overlaps||!Array.isArray(d.e)||!Array.isArray(d.names))return null;
+  const events=[];let firstInput=0,poll=0;
+  for(const [api,k,id] of d.e){
+    const name=d.names[k];
+    if(typeof name!=='string'||!Number.isSafeInteger(api)||!Number.isSafeInteger(id))return null;
+    const s=d.roles[id]==='AXSecureTextField'||d.subroles[id]==='AXSecureTextField'?'secure':null;
+    if(api===6||api===7){if(name==='securePoll'){events.push(['p',api===6?'begin':'end']);if(api===6)poll++;}continue;}
+    if(api===5)firstInput++;
+    events.push([['r','b','q','w','a','event','p','p','names','actions','hit'][api],name,id,s]);
+  }
+  if(firstInput!==1||poll!==1)return null;
+  return auditSchedule(events);
+}
+async function startEngine({name,src,bin,root,platform,audit,globalPrivacy}){
+  const home=join(root,name[0]);mkdirSync(home,{mode:0o700});const socket=join(home,'e.sock');
+  const env=environment(home);const traces=new Map(),registry=new Set();let active=null;
+  const note=(label,data,opts={})=>{
+    const words=active?[active.words[0],...registry]:[...registry];
+    for(const code of inspect(data,words,opts))(active?.flags??globalPrivacy).add(label+'/'+code);
+  };
+  const child=owned(bin,[],{...env,CUA_ENGINE_SOCKET:socket},{stdout:l=>note('stdout',l),stderr:l=>{
+    if(audit){try{const d=JSON.parse(l)?.probe395Audit;if(d){traces.set(d.id,decodeAudit(d));return;}}catch{}}
+    note('stderr',l);
+  }});
+  let w;
+  try{
+    w=await Wire.connect(socket,{timeoutMs:15000});
+    const ping=await w.call('ping',{clientApiVersion:'cua-engine-1',desktop:'shared'});
+    if(ping.error||!ping.result)throw Error('engine ping failed');
+    const load=f=>import(pathToFileURL(join(src,'src',f)).href);
+    const [skyModule,nativeModule,storeModule,protocol,renderer]=await Promise.all([
+      load('services/sky.mjs'),load('services/engine/service.mjs'),load('secrets/store.mjs'),load('services/engine/protocol.mjs'),load('services/engine/render.mjs')]);
+    const store=storeModule.fileStore({dir:storeModule.storeDir(env)});
+    const resolved=await w.execute('resolve_app',{pid:platform.pid});
+    const target=resolved.result;
+    if(target?.pid!==platform.pid||target?.bundleIdentifier!==platform.bundle||!target.appPath?.startsWith('/'))weakReason();
+    async function observe(){
+      const r=await w.execute('get_app_state',{pid:platform.pid,includeScreenshot:false,disableDiff:true});
+      const shot=r.result;
+      if(!shot||shot.app?.pid!==platform.pid||!Array.isArray(shot.nodes))return false;
+      if(!audit){
+        const nodes=[...shot.nodes,...(shot.menuBar??[])].filter(n=>n.role==='AXSecureTextField'||n.subrole==='AXSecureTextField'||n.secure===true||[n.title,n.description,n.identifier].includes('PW walk test'));
+        note('observation-native',nodes);
+        note('observation-focus',{selectedText:shot.selectedText,selectedTextRange:shot.selectedTextRange});
+        note('observation-text',renderer.render(shot,renderer.advanceNumbering(null,shot)));
+        // Scan all serialized text for a value/mask that escaped the node or was misclassified; ordinary AX values are legitimate.
+        for(const code of inspect(r,[...registry],{stringsOnly:true}))active.flags.add('observation-native/'+code);
+        return nodes.length>0;
+      }
+      return true;
+    }
+    async function type(m,id,literal){
+      const meta={}, content=[], logged=[], original={};let native=null,sent=0,guarded=true;
+      const nodeRepl={env,setResponseMeta:x=>Object.assign(meta,x),emitContentItem:x=>content.push(x),createElicitation:async q=>{
+        if(q.meta?.tool_params?.app!==target.bundleIdentifier)throw Error('unexpected approval');
+        return {action:'accept'};
+      }};
+      const client={identity:ping.result,async execute(method,args){
+        const started=performance.now();
+        if(method==='type_text'){
+          sent++;
+          if(args.app!==target.appPath||args.text!==m.text||Boolean(args.concealed)===literal||sent!==1){guarded=false;throw Error('unexpected type request');}
+        }
+        const r=await w.execute(method,audit&&method==='type_text'?{...args,probe395Audit:id}:args);
+        if(method==='resolve_app'&&(r.result?.pid!==target.pid||r.result?.bundleIdentifier!==target.bundleIdentifier))weakReason();
+        if(method==='type_text')native=r;
+        note(method==='type_text'?'ipc-type':'ipc-other',r,{literal:literal&&method==='type_text'});
+        if(r.error)throw protocol.serverError(r.error);
+        return {result:r.result,engineMs:performance.now()-started};
+      }};
+      const service=nativeModule.createService({nodeRepl,client});
+      const sky=skyModule.createSkyService({env,platform:'darwin',nodeRepl,secrets:store,loadVendor:async()=>service,setResponseMeta:x=>Object.assign(meta,x)});
+      if(!literal)await store.write(SLOT,m.text);
+      const originalHome=process.env.HOME;
+      process.env.HOME=home;
+      for(const k of ['log','warn','error','info','debug']){original[k]=console[k];console[k]=(...a)=>logged.push(...a);}
+      let rendered,error=null;
+      try{rendered=await sky.handleRpc({type:'execute',method:'type_text',args:[{app:target.appPath,text:literal?m.text:'{{secret:'+SLOT+'}}'}]});}
+      catch(e){error=e;}
+      finally{
+        Object.assign(console,original);
+        if(originalHome==null)delete process.env.HOME;else process.env.HOME=originalHome;
+        if(!literal)await store.remove(SLOT);
+      }
+      note('sky-result',rendered);note('sky-error',error,{literal});note('forwarded',meta,{literal});note('rendered-content',content);note('console',logged);
+      const raw=native?.error?.meta?.typeReadback??native?.result?.meta?.typeReadback;
+      const engineReason=native?.error?.errorName, expectedWrap=literal?error?.errorName==='typeUnconfirmed':error?.code==='secret_input_failed';
+      const skyClass=error?(engineReason==='typeUnconfirmed'&&expectedWrap?'typeUnconfirmed':'unexpected-error'):'ok';
+      if(!guarded||sent!==1||!native) return {reply:false,raw:null,forwarded:null,sky:'missing',serviceMs:null};
+      return {reply:true,raw,forwarded:meta['cua/typeReadback'],sky:skyClass,serviceMs:Number.isFinite(meta['cua/serviceMs'])?meta['cua/serviceMs']:null};
+    }
+    // Prime AX access before the first scored field. No action and no instrumented audit tag are sent.
+    await w.execute('get_app_state',{pid:platform.pid,includeScreenshot:false,disableDiff:true});
+    return {type,observe,traces,scope:x=>{active=x;if(x)for(const v of x.words)registry.add(v);},close:async()=>{
+      try{await w.call('endTask',{});}catch{}w.close();return stop(child);
+    }};
+  }catch(e){w?.close();await stop(child);throw e;}
+}
+
+async function main(){
+  const [lane,mode,phase,root,out,helper,cover,appkit,mainSrc,mainBin,fixSrc,fixBin]=process.argv.slice(2);
+  if(process.env.RUNNER_ENVIRONMENT!=='github-hosted')throw Error('hosted runners only');
+  if(!['cft','electron','electron-parity','safari','firefox','appkit'].includes(lane)||!['smoke','full'].includes(mode)||!['stock','audit'].includes(phase))throw Error('invalid lane');
+  const audit=phase==='audit',smoke=mode==='smoke';
+  mkdirSync(out,{recursive:true});const tmp=mkdtempSync(join(root,'q414-')),home=join(tmp,'platform');mkdirSync(home);
+  const rows=[],schedules=[],globalPrivacy=new Set(),engines={};let platform,stage='launch',abort=null,streak=0;
+  const cells=plan(smoke,{audit});
+  // Paired primary rows receive the exact same disposable text, not independently generated treatments.
+  const inputs=new Map();
+  for(const c of cells){const k=`${c.kind}/${c.rep}`;if(!inputs.has(k))inputs.set(k,materialize(c));}
+  const config={kit:process.env.GITHUB_SHA,refs:{main:process.env.MAIN_SHA,fix:process.env.FIX_SHA},image:process.env.ImageVersion,
+    os:execFileSync('sw_vers',['-productVersion'],{encoding:'utf8',stdio:['ignore','pipe','ignore']}).trim(),lane,mode,phase};
+  try{
+    platform=await startPlatform({lane,home,helper,cover,appkit,stage:x=>{stage=x;}});
+    Object.assign(config,{version:platform.version,presentation:platform.presentation,foregroundFallback:platform.fallback});
+    stage='engine-start';
+    const sources=audit?{fix:[fixSrc,fixBin]}:{main:[mainSrc,mainBin],fix:[fixSrc,fixBin]};
+    for(const [name,[src,bin]] of Object.entries(sources))engines[name]=await startEngine({name,src,bin,root:tmp,platform,audit,globalPrivacy});
+    let trial=0;
+    for(const c of cells){
+      const id=`${c.head}-${c.kind}-${c.rep}`,m=inputs.get(`${c.kind}/${c.rep}`),e=engines[c.head];
+      const row={...c};let s='prepare',armed=false,attested=false,receipt=null,delivery=null;
+      const scope={words:[m.text,...new Set([m.seed.expected,m.expected,m.control].filter(Boolean))],flags:new Set()};e.scope(scope);
+      try{
+        await platform.arm(++trial,m.seed,x=>{s=x;});armed=true;
+        s='action';receipt=await e.type(m,id,c.kind==='literal');
+        s='delivery';
+        const end=performance.now()+2500;
+        do{
+          const d=await platform.command({op:'read',trial,expected:m.expected,control:m.control});
+          if(d.trial!==trial||!d.shape||!d.focused)throw Error('fixture no longer focused');
+          delivery=d;
+          if(m.control!==null?d.controlExact&&d.hit&&d.key:d.exact&&d.key)break;
+          await pause(35);
+        }while(performance.now()<end);
+        // An untouched fixture or a delivery mismatch after a witnessed call is a product miss, not setup-invalid.
+        s='witness-end';const valid=await platform.disarm();armed=false;
+        if(!valid)throw Error('presentation changed');attested=true;
+        if(!audit){s='observation';if(!await e.observe())row.observationMissing=true;}
+        if(audit){
+          s='audit';
+          // The recorder always emits complete JSON lines; the wire final reply can win the pipe race.
+          for(let i=0;i<20&&!e.traces.has(id);i++)await pause(20);
+          const trace=e.traces.get(id);e.traces.delete(id);
+          schedules.push({...c,valid:attested&&receipt?.reply&&delivery?.exact===true,...(trace??{pass:false})});
+        }
+      }catch{if(!attested)row.invalid=s;else row.evidenceFailure=s;}
+      finally{
+        if(armed){try{await platform.disarm();}catch{row.witnessCleanup=false;}}
+        e.scope(null);
+      }
+      const controlOK=delivery?.controlExact===true&&delivery.hit===true&&delivery.key===true;
+      Object.assign(row,score({...c,lane,raw:receipt?.raw,forwarded:receipt?.forwarded,sky:receipt?.sky,fixture:attested,
+        domExact:delivery?.exact,controlExact:controlOK}));
+      if(!row.valid&&!row.invalid)row.invalid='control-not-realized';
+      row.typeRequest=receipt?.reply===true;
+      row.keyEvent=delivery?.key===true;
+      row.controlRealized=m.control===null?null:controlOK;
+      row.reason=pickReason(receipt?.raw?.reason);
+      row.snapshotMs=Number.isFinite(receipt?.raw?.snapshotMs)?receipt.raw.snapshotMs:null;
+      row.serviceMs=receipt?.serviceMs??null;
+      row.privacy=[...scope.flags];
+      rows.push(row);
+      streak=attested?0:streak+1;
+      if(streak>=4){abort='consecutive-invalid';break;}
+    }
+  }catch{abort=stage;}
+  finally{
+    for(const e of Object.values(engines))if(!await e.close())globalPrivacy.add('engine-drain-incomplete');
+    await platform?.dispose();rmSync(tmp,{recursive:true,force:true});
+  }
+  const summary=summarize(rows),auditGate=audit?auditPairs(schedules,smoke?1:5):null;
+  const privacyViolations=summary.privacyViolations+(globalPrivacy.size?1:0);
+  const needed=cells.filter(c=>c.kind!=='rewrite').length;
+  const gates={coverage:rows.filter(r=>r.valid&&!r.informational).length===needed&&abort===null,
+    privacy:privacyViolations===0, outcome:audit?null:summary.scored.passed===needed&&summary.wrongSuccesses===0&&rows.every(r=>!r.observationMissing&&!r.evidenceFailure),
+    schedule:auditGate?.pass??null};
+  const publishable=gates.privacy;
+  const status={lane,phase,kit:config.kit,refs:config.refs,abort,planned:cells.length,completed:rows.length,invalid:summary.invalid,
+    unattempted:cells.length-rows.length,privacyViolations,gates,publishable,presentation:config.presentation??null,foregroundFallback:config.foregroundFallback??null};
+  writeFileSync(join(out,'status.json'),JSON.stringify(status,null,2)+'\n');
+  if(publishable){
+    for(const [name,value] of Object.entries({config,summary,rows,...(audit?{schedules,auditGate}:{})}))writeFileSync(join(out,`${name}.json`),JSON.stringify(value,null,2)+'\n');
+  }
+  console.log(JSON.stringify(status));
+  if(Object.values(gates).some(x=>x===false))process.exitCode=1;
+}
+main().catch(()=>{console.error('Qualification harness failed before evidence publication');process.exitCode=1;});

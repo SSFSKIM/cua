@@ -157,7 +157,8 @@ test('a cancel forced too late passes only if every answer is honest and the dro
   // each drag's engine record (Chrome took before the release, so the cancel's order decided) and its pending read
   const fields = { expected_error: cancelled, late_error: late, state_notice: null, next_ok: true, next_error: null };
   const mayHave = row({ ok: false, error: late, dropped: true, witness: false, dnd: { in_front: false, outcome: 'late' }, ...fields });
-  const nothing = row({ ok: false, error: cancelled, dropped: false, witness: true, dnd: { in_front: false, outcome: 'in_time' }, ...fields });
+  // the series' next sample: a slot names one sample (review 6)
+  const nothing = row({ i: 1, ok: false, error: cancelled, dropped: false, witness: true, dnd: { in_front: false, outcome: 'in_time' }, ...fields });
   const background = { clean: true, kind: 'background', answered: [{ ok: false, error: late, ...fields }] };
   assert.equal(judgeDevice('chrome_dnd_late_shared', [mayHave], { ...background, answered: [{ ok: true }] }).pass, false, 'the audited drag answered success');
   assert.deepEqual(judgeDevice('chrome_dnd_late_shared', [mayHave, nothing], background), { pass: true, reasons: [] });
@@ -223,7 +224,8 @@ test('the forced late take passes only where the drag answered plainly, the read
   assert.equal(judgeDevice('chrome_dnd_late_take_shared', [{ ...good, read_ok: false }], audit).pass, false, 'the read was refused');
   assert.equal(judgeDevice('chrome_dnd_late_take_shared', [{ ...good, witness: true }], audit).pass, false, 'a drop the witness did not record');
   assert.equal(judgeDevice('chrome_dnd_late_take_shared', [{ ...good, dropped: false, witness: true }], audit).pass, false, 'no drop: nothing shown');
-  assert.equal(judgeDevice('chrome_dnd_late_take_shared', [good, { ...good, dropped: false, witness: true }], audit).pass, true, 'a missed drop beside landed ones');
+  assert.equal(judgeDevice('chrome_dnd_late_take_shared', [good, { ...good, i: 1, dropped: false, witness: true }], audit).pass, true, 'a missed drop beside landed ones');
+  assert.equal(judgeDevice('chrome_dnd_late_take_shared', [good, { ...good, dropped: false, witness: true }], audit).pass, false, 'both at one slot (review 6)');
 });
 
 // The design session's ruling 756, from V5's rerun at H (chrome_dnd_shared 0/0 and 0/1): Chrome took nothing by the

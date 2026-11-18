@@ -21,6 +21,9 @@
 //   background audit is clean, and every sample is on the branch: a drag Chrome took nothing for by its release is
 //   unexercised, a failure of the case, whatever it answered; every sample's notice is read with the next acting
 //   request's answer and held to T14's contract;
+// - in the cancel, late and late-take cases, a plain-drag ok for a drag Chrome never started a drag session for at all
+//   is no sample of the case (ruling 823, premise.mjs): excluded and counted within its run, its cell left short of its
+//   plan reading incomplete, and saying so when that is all it fails for (route D, ruling 841);
 // - `late-take` (the take left unseen until after the release, `--dnd-defer-take`): the drag answers as a plain drag at
 //   its release, a read on the same engine runs, the first acting request answers the late drag-and-drop notice (not
 //   run), and wherever the drop landed the witness shows the change the notice reports;
@@ -45,9 +48,15 @@
 // mode unless Chrome is already in front) and gnome-text-editor's text refusal on the `gnome-text-editor` scene.
 // M3.1's listings beyond M0's (scroll and move for GTK 4 and Gecko, scroll for Qt) join the cases as M0's did.
 
-import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { createHash, randomUUID } from 'node:crypto';
+import { appendFileSync, existsSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { pendingOf } from './drop-signals-judge.mjs';
+import { AUDIT_PLAN, FOLLOW_UP_FIELDS, TIMED_QUOTAS, bindAudit, bindTimed, evidenceLabel, isShortage, judgePremise, repeatedSlots, slotProblems } from './premise.mjs';
+import { preorder } from './normalize.mjs';
 import { readGtk4Status } from './families.mjs';
 import { IDENTITY_OPS, IDENTITY_SCENE_OPS, judgeIdentity } from './identity.mjs';
 import { MINIMIZED_OPS, MINIMIZED_SCENE_OPS, judgeMinimized } from './minimized.mjs';
@@ -97,6 +106,12 @@ export function desktopState() {
 }
 
 const DEDICATED = ['--desktop', 'dedicated'];
+/**
+ * The expectations whose cells measure what cua does once Chrome turns the drag into a drag and drop, so a drag Chrome
+ * never took leaves their premise unmet (ruling 823, premise.mjs): the cancel, the late cancel and the late take. A drop
+ * case's plain ok with no drop is ruling 650's false ok instead, and a stray case expects no drag and drop at all.
+ */
+const PREMISE_KINDS = ['cancel', 'late', 'late-take'];
 const LATE = ['--dnd-cancel-after-release'];
 /** The measurement option that leaves a take during the drag unseen until after the release (dnd.rs `LateWatch`). */
 const DEFER = ['--dnd-defer-take'];
@@ -116,12 +131,22 @@ const scrollBar = (ctx) => {
     return null;
   }
 };
-/** The drag page's drag-and-drop status (pages/drag.html): `{drops, ...}`. */
+/**
+ * The drag page's drag-and-drop status (pages/drag.html): `{drops, ...}`, as drag.mjs `readEffect` reads a page's, with
+ * the page's own status lines kept as written beside it (`raw`: each distinct `dnd` and `moves` line the tree carried,
+ * and whether it carried the scene's page title), the evidence ruling 823's unmet premise is shown by (premise.mjs).
+ * The read's time goes on the sample (`premiseReadAt`), never into the read, which `settledRead` compares.
+ */
 const dropStatus = async (ctx) => {
   try {
     // drag.mjs imports run.mjs, which imports this module
-    const { readEffect } = await import('./drag.mjs');
-    return await readEffect({ desktop: ctx.desktop, oracle: ctx.desktop.oracle }, ctx.scene, ctx.scene.dndAt, 'dnd');
+    const { parseDragStatus } = await import('./drag.mjs');
+    const nodes = preorder((await ctx.desktop.state(ctx.scene)).ax_tree);
+    const texts = nodes.flatMap((n) => [n.name, n.value, n.text].filter((t) => typeof t === 'string'));
+    const status = parseDragStatus(texts);
+    const lines = (prefix) => [...new Set(texts.filter((t) => t.startsWith(prefix)))];
+    ctx.premiseReadAt = Date.now();
+    return { ...status.dnd, log: status.moves, received: status.received, raw: { dnd: lines('dnd '), moves: lines('moves '), titled: typeof ctx.scene.label === 'string' && texts.some((t) => t.includes(ctx.scene.label)) } };
   } catch {
     return null;
   }
@@ -378,6 +403,11 @@ function device({ device: expect, condition = covered, park, read, request, effe
     effect: ['refusal', 'cancel', 'late', 'late-take', 'stray'].includes(expect) ? undefined : effect,
     check: async (ctx, response) => {
       const out = {};
+      // the sample's attempt, for ruling 823's evidence: from the page's last read before the request
+      const attemptFrom = ctx.premiseReadAt;
+      // the reply's own notice, for ruling 823's plain-drag ok (premise.mjs): one that claims or implies a drop is never
+      // an unmet premise
+      if (PREMISE_KINDS.includes(expect)) out.reply_notice = response.notice ?? null;
       // past the drop's window: a confirmed drop leaves nothing pending, an unconfirmed one its notice; a late case's
       // drag, whatever it answered, may leave the after-release watch's report of a late take
       if ((confirm && response.ok) || expect === 'late') Object.assign(out, await readPending(ctx));
@@ -399,7 +429,10 @@ function device({ device: expect, condition = covered, park, read, request, effe
         out.expected_notice = dndLateRefusal(ctx.scene.app, 'move');
         const listed = await ctx.engine.request('list_windows', {});
         out.read_ok = listed.response.ok === true;
+        if (!out.read_ok) out.read_error = String(listed.response.error);
         out.read_notice = listed.response.notice === dndLateNotice(ctx.scene.app);
+        // whatever notice the read carried, the late one or another (ruling 823: a notice implies a drop)
+        out.read_notice_text = listed.response.notice ?? null;
         const next = await ctx.engine.request('move', { window: { id: ctx.scene.id }, x: 10, y: 10 });
         out.next_ok = next.response.ok === true;
         out.next_error = next.response.ok ? null : String(next.response.error);
@@ -427,6 +460,8 @@ function device({ device: expect, condition = covered, park, read, request, effe
       if (inFront) out.desktop_same = JSON.stringify(desktopState()) === JSON.stringify(ctx.desktopBefore);
       // a drag-and-drop case's page counts, before and after, for the record
       if (read === dropStatus) out.drop_status = { before: ctx.before, after: await read(ctx) };
+      // ruling 823's evidence of the sample, on its row and in the run's own record of it (premise.mjs)
+      if (PREMISE_KINDS.includes(expect)) out.premise_evidence = recordPremise(ctx, response, out, { from: attemptFrom, to: Date.now() });
       return out;
     },
     // the foreground route leaves its window active: the front window takes the focus back, outside every span (a
@@ -447,6 +482,7 @@ async function readPending(ctx) {
   const state = await ctx.engine.request('get_window_state', { window: { id: ctx.scene.id }, include_screenshot: false });
   const next = await ctx.engine.request('preflight', {});
   return {
+    state_ok: state.response.ok === true,
     state_notice: state.response.notice ?? null,
     next_ok: next.response.ok === true,
     next_error: next.response.ok ? null : String(next.response.error),
@@ -635,6 +671,140 @@ for (const op of Object.values(DEVICE_OPS)) {
   }
 }
 
+// ---------------------------------------------------------------------------------------------------------------
+// ruling 823's evidence of each sample (premise.mjs)
+
+const here = dirname(fileURLToPath(import.meta.url));
+const once = new Map();
+const cached = (key, make) => (once.has(key) ? once.get(key) : once.set(key, make()).get(key));
+/** The checkout's head, as run.mjs's meta row records it. */
+const head = () =>
+  cached('head', () => {
+    try {
+      return execFileSync('git', ['rev-parse', 'HEAD'], { cwd: here, encoding: 'utf8' }).trim();
+    } catch {
+      return null;
+    }
+  });
+/** The sha256 of the engine binary a sample's engine runs. */
+const engineSha = (bin) => (typeof bin === 'string' && existsSync(bin) ? cached(`sha|${bin}`, () => createHash('sha256').update(readFileSync(bin)).digest('hex')) : null);
+/** The run's load profile, from its own meta row (run.mjs writes it first): its ballast and occlusion. */
+const loadOf = (results) => {
+  if (once.has(`load|${results}`)) return once.get(`load|${results}`);
+  try {
+    const meta = JSON.parse(readFileSync(results, 'utf8').split('\n')[0]);
+    if (meta.kind !== 'meta') return null;
+    // and the run's recorded plan, its blocks, for the in-run judge (`premiseBinding`)
+    if (Number.isInteger(meta.blocks) && typeof meta.run === 'string') PLANS.set(meta.run, meta.blocks);
+    return once.set(`load|${results}`, { ballast: meta.ballast ?? null, occlusion: meta.occlusion ?? null }).get(`load|${results}`);
+  } catch {
+    // not read yet: nothing kept, so the next sample reads it again
+    return null;
+  }
+};
+
+/**
+ * Every evidence record this process made, by run (`recordedPremise`): the in-run judge's own, for the audit's samples,
+ * whose rows run.mjs does not keep, and the sidecar the judge binds every sample to. A re-judge of stored rows reads the
+ * same records from the run's `premise-evidence.jsonl` (rejudge-device.mjs).
+ */
+const RECORDED = [];
+/** Each run's recorded plan (its meta's `blocks`), by run, as this process's recorder read it. */
+const PLANS = new Map();
+
+/**
+ * A premise case's sample as its evidence (premise.mjs): the sample named (its run, scene, case, block and request
+ * number, its engine's lifecycle, the engine's request id, the window and the page's title), the run's head, engine
+ * bytes and load, its attempt (from the page's last read before the request to the check's end, epoch ms), cua's
+ * reply, the page's status lines before and after as the page wrote them, and the case's own reads. Kept in memory and
+ * appended to the run's `premise-evidence.jsonl` beside its results.
+ */
+function recordPremise(ctx, response, out, attempt) {
+  ctx.engine.premiseLifecycle ??= randomUUID();
+  const outDir = ctx.desktop.logs ? dirname(ctx.desktop.logs) : null;
+  // the case's follow-up reads, by the one allowlist the binding reads them by (premise.mjs `FOLLOW_UPS`)
+  const reads = Object.fromEntries(FOLLOW_UP_FIELDS.filter((k) => k in out).map((k) => [k, out[k]]));
+  const { op, block, i } = ctx.scene.lastRequest ?? {};
+  const record = {
+    kind: 'premise-evidence',
+    run: ctx.desktop.run ?? null,
+    head: head(),
+    engine_sha256: engineSha(ctx.engine.bin),
+    load: outDir ? loadOf(join(outDir, 'results.jsonl')) : null,
+    scene: ctx.sceneName,
+    op,
+    block,
+    i,
+    series: i === 0 ? 'cold' : 'warm',
+    lifecycle: ctx.engine.premiseLifecycle,
+    request: Number.isInteger(response.id) ? response.id : null,
+    window: ctx.scene.id,
+    fixture: { label: ctx.scene.label ?? null },
+    attempt,
+    reply: { ok: response.ok === true, error: response.ok ? null : String(response.error).slice(0, 300), notice: response.notice ?? null },
+    page: { before: ctx.before?.raw ?? null, after: out.drop_status?.after?.raw ?? null },
+    dropped: out.dropped,
+    reads,
+  };
+  RECORDED.push(record);
+  if (outDir) appendFileSync(join(outDir, 'premise-evidence.jsonl'), `${JSON.stringify(record)}\n`);
+  return record;
+}
+
+/**
+ * The in-run judge's sidecar: every record this process made for the samples' run (`lines`, null where it made none, as
+ * for stored rows), and the window its audit is bound to, the run's timed evidence's. A process records one run, so the
+ * run's records are all of them, a foreign fixture's among them a binding error.
+ */
+function recordedPremise(samples) {
+  const run = samples[0]?.run;
+  const ofRun = RECORDED.filter((r) => r.run === run);
+  return { lines: ofRun.length ? ofRun : null, window: samples.find((r) => r.premise_evidence)?.premise_evidence.window ?? null };
+}
+
+/**
+ * A premise cell's two passes bound to the run's sidecar and checked against its recorded plan, both before either is
+ * classified (review 5, finding 4). `premise`: the re-judge's `{lines, window, plan}`; without it (or without `plan`) the
+ * in-run judge's, from this process's records and the run's meta. The plan (`{blocks, audit}`) checks the timed slots
+ * and the audit's cardinality whether or not evidence exists; with none recorded, nothing is excluded and the cell is
+ * marked `unverified`. A slot recorded twice is a problem with or without a plan (review 6). With any problem in either
+ * pass, neither keeps evidence: both are judged from their own rows and answers. Answers `{plan, problems: {slots, plan,
+ * timed, audit}, rows, entries, unverified}`, `rows` the samples or their copies, index for index.
+ */
+export function premiseBinding(op, samples, audit, premise = undefined) {
+  const run = samples[0]?.run;
+  const source = premise?.lines !== undefined ? premise : recordedPremise(samples);
+  const plan = premise && 'plan' in premise ? premise.plan : Number.isInteger(PLANS.get(run)) ? { blocks: PLANS.get(run), audit: audit?.kind !== 'skipped' } : null;
+  const answered = audit && audit.kind !== 'skipped' ? audit.answered ?? [] : [];
+  const bare = bindAudit({ ...audit, answered }, null, { run }).entries;
+  const strip = () => samples.map((r) => (r.premise_evidence == null ? r : (({ premise_evidence, ...rest }) => rest)(r)));
+  const problems = { slots: repeatedSlots(samples), plan: [], timed: [], audit: [] };
+  const lines = source.lines ?? null;
+  const evidenced = samples.some((r) => r.premise_evidence) || (lines ?? []).some((l) => l?.op === op && l?.run === run);
+  if (!plan) return { plan, problems, rows: strip(), entries: bare, unverified: evidenced };
+  problems.plan.push(...slotProblems(samples, { blocks: plan.blocks, seriesLength: 1 + (DEVICE_OPS[op].warmSamples ?? 0) }));
+  if (plan.audit && (!audit || audit.kind === 'skipped')) problems.plan.push('no audit, where its plan has one');
+  else if (plan.audit && answered.length !== AUDIT_PLAN) problems.plan.push(`the audit recorded ${answered.length} request${answered.length === 1 ? '' : 's'}, its plan ${AUDIT_PLAN}`);
+  else if (!plan.audit && audit && audit.kind !== 'skipped') problems.plan.push('an audit its plan has none for (--no-audit)');
+  const timed = bindTimed(samples, { lines });
+  problems.timed.push(...timed.problems);
+  let entries = bare;
+  if (audit?.kind === 'skipped') {
+    // the runner's skipped-audit sentinel (`--no-audit`): no audit, so no audit evidence either
+    const stray = (lines ?? []).filter((l) => l?.block === 'audit' && l?.op === op && l?.run === run);
+    if (stray.length) problems.audit.push(`${stray.length} audit evidence lines for an audit the run skipped`);
+  } else if (audit) {
+    const bound = bindAudit(audit, lines, { run, scene: samples[0]?.scene, op, expect: DEVICE_OPS[op].device, window: source.window, label: evidenceLabel(samples) });
+    problems.audit.push(...bound.problems);
+    entries = bound.entries;
+  }
+  const any = Object.values(problems).some((p) => p.length > 0);
+  return { plan, problems, rows: any ? strip() : timed.rows, entries: any ? bare : entries, unverified: false };
+}
+
+/** The cells ruling 823's unmet premise can occur in (`PREMISE_KINDS`): V5's cancel, late and late-take cells. */
+export const PREMISE_OPS = new Set(Object.keys(DEVICE_OPS).filter((op) => PREMISE_KINDS.includes(DEVICE_OPS[op].device)));
+
 export const DEVICE_SCENE_OPS = {
   'device-gtk4': ['gtk4_click_shared', 'gtk4_click_dedicated', 'gtk4_key_shared', 'gtk4_key_dedicated', 'gtk4_key_down_shared', 'gtk4_right_click_shared', 'gtk4_element_click', 'gtk4_scroll_shared', 'gtk4_scroll_dedicated', 'gtk4_move_shared', 'gtk4_move_dedicated', 'gtk4_drag_shared', 'gtk4_drag_dedicated'],
   // the scroll last: its series ends with the page put back at its top (`reset`)
@@ -672,27 +842,64 @@ export function capabilitiesAnswer(output, version) {
  * A device case's verdict from its samples and its audit (`{clean, kind, answered}`, the audit kind its expectation
  * needs): every sample as its expectation says (module header), and the audit clean over at least one audited request
  * that answered as the case expects (a refusal or a cancel its sentence, a late case an honest one, the others
- * success), so a trace of requests that never did what the case measures proves nothing. Returns `{pass, reasons}`.
+ * success), so a trace of requests that never did what the case measures proves nothing. In ruling 823's cells
+ * (`PREMISE_OPS`) a sample or audited request whose premise was unmet is excluded first (premise.mjs). Returns `{pass,
+ * reasons}`, with `drops` for a drop case and `premise_unmet` (each pass's record) where anything was excluded.
  */
-export function judgeDevice(op, rows, audit) {
+export function judgeDevice(op, samples, audit, premise = undefined) {
   // the minimized cases have expectations of their own (minimized.mjs)
-  if (op in MINIMIZED_OPS) return judgeMinimized(op, rows, audit);
+  if (op in MINIMIZED_OPS) return judgeMinimized(op, samples, audit);
   // and so do the identity cases (identity.mjs)
-  if (op in IDENTITY_OPS) return judgeIdentity(op, rows, audit);
+  if (op in IDENTITY_OPS) return judgeIdentity(op, samples, audit);
   const expect = DEVICE_OPS[op].device;
   const reasons = [];
-  if (!rows.length) return { pass: false, reasons: ['no samples'] };
-  const bad = (what, pred) => {
-    const failed = rows.filter((r) => !pred(r));
-    if (failed.length) reasons.push(`${what} on ${failed.length} of ${rows.length} samples (${failed.slice(0, 3).map((r) => `${r.block}/${r.i}`).join(', ')})`);
+  if (!samples.length) return { pass: false, reasons: ['no samples'] };
+  // ruling 823 (premise.mjs): a sample whose premise was unmet is excluded and counted, and every rule below judges the
+  // rest; a cell short of its planned cold or warm samples fails as incomplete (route D, ruling 841). Only evidence
+  // bound to the run's sidecar (`premise`: `{lines, window}`, the re-judge's; else this process's records) excludes;
+  // evidence that does not fit its samples is never excluded on, and fails the cell.
+  const unmet = {};
+  let rows = samples;
+  let excluded = 0;
+  let binding = null;
+  if (PREMISE_OPS.has(op)) {
+    // both passes bound and checked against the plan before either is classified
+    binding = premiseBinding(op, samples, audit, premise);
+    for (const p of binding.problems.slots) reasons.push(`the run's rows record a slot twice (ruling 823, never excluded on): ${p}`);
+    for (const p of binding.problems.plan) reasons.push(`the run's rows do not fit its recorded plan (ruling 823, never excluded on): ${p}`);
+    for (const p of binding.problems.timed) reasons.push(`the premise evidence of the timed samples does not fit them (ruling 823, never excluded on): ${p}`);
+    for (const p of binding.problems.audit) reasons.push(`the premise evidence of the ${audit?.kind ?? ''} audit does not fit it (ruling 823, never excluded on): ${p}`);
+    const judged = judgePremise(binding.rows, { name: (r) => `${r.block}/${r.i}`, quotas: TIMED_QUOTAS });
+    reasons.push(...judged.reasons);
+    if (judged.record) unmet.timed = judged.record;
+    rows = judged.judged;
+    excluded += judged.excluded;
+  }
+  // a condition that some judged sample shows something, where every sample was excluded for its unmet premise: untested,
+  // not failed, since the cell is short of its plan already (review 3, finding 2)
+  const exists = (what, pred) => {
+    if (!rows.length) reasons.push(`untested: every sample was excluded for its unmet premise, so whether ${what} is untested`);
+    else if (!rows.some(pred)) return false;
+    return true;
   };
+  const badOf = (list) => (what, pred) => {
+    const failed = list.filter((r) => !pred(r));
+    if (failed.length) reasons.push(`${what} on ${failed.length} of ${list.length} samples (${failed.slice(0, 3).map((r) => `${r.block}/${r.i}`).join(', ')})`);
+  };
+  const bad = badOf(rows);
+  // a check of the engine's own guard, which holds whether or not Chrome took the drag: over every sample, the excluded
+  // ones too, so an exclusion never excuses it (task 100's review 2, finding 5)
+  const badAll = badOf(samples);
   if (expect === 'answer') bad('the answer was not the report', (r) => r.ok && r.answer_ok === true);
   if (expect === 'refusal') {
     bad('not refused with the Device mode sentence', (r) => !r.ok && r.error === r.expected_error);
     bad('the window changed', (r) => r.unchanged === true);
   }
-  // a take after the release is judged by the late-take rules (ruling 756, `lateTakes`)
-  const late = expect === 'cancel' ? lateTakes(rows) : new Set();
+  // a take after the release is judged by the late-take rules (ruling 756, `lateTakes`): the very rows it was found on,
+  // and their copies the binding judges (their evidence stripped, index for index), never another row of their slot
+  // (task 100's review 6)
+  const late = new Set(expect === 'cancel' ? lateTakes(samples) : []);
+  binding?.rows.forEach((r, k) => late.has(samples[k]) && late.add(r));
   if (expect === 'cancel') {
     bad('not cancelled with the drag-and-drop sentence', (r) => (!r.ok && r.error === r.expected_error) || late.has(r));
     bad('it dropped', (r) => r.dropped === false);
@@ -708,7 +915,7 @@ export function judgeDevice(op, rows, audit) {
     bad('the next acting request did not carry the late drag and drop', (r) => r.next_ok === false && r.next_error === r.expected_notice);
     // the notice says the desktop may have changed: where the drop landed, the witness must show it
     bad('a drop the witness did not record', (r) => !r.dropped || r.witness === false);
-    if (!rows.some((r) => r.dropped && r.witness === false)) reasons.push('no drop landed: the case showed no change for the notice to report');
+    if (!exists('a drop landed', (r) => r.dropped && r.witness === false)) reasons.push('no drop landed: the case showed no change for the notice to report');
   }
   // the drops the engine confirms or reports, counted (the design session, 2026-11-10): a drop that landed and was
   // reported unconfirmed is honest, counted for the run (stats.mjs `dropCounts`, a finding only over 5% of a load's
@@ -736,7 +943,8 @@ export function judgeDevice(op, rows, audit) {
   }
   if (expect === 'late') {
     // the case measures a cancel that comes after the release, so only a drag Chrome took by its release is on its
-    // branch; one it took nothing for answers as a plain drag and proves nothing, whatever it answered (V5's line 266)
+    // branch; one it took nothing for answers as a plain drag and proves nothing, whatever it answered (V5's line 266),
+    // and one it never started a drag session for at all was excluded above (ruling 823)
     bad('unexercised: Chrome took no drag and drop by the release, so the late branch was not reached,', lateBranch);
     bad('a request answered success', (r) => !lateBranch(r) || !r.ok);
     // "nothing was dropped" only where nothing dropped and the desktop is as it was; off the branch, a plain drag's ok
@@ -747,7 +955,7 @@ export function judgeDevice(op, rows, audit) {
     );
     // every drag's pending read, on the branch or off it, held to T14's contract
     bad("the read's notice and the next acting request's refusal did not agree", (r) => r.state_notice !== undefined && r.next_ok !== undefined && pendingKept(r));
-    if (!rows.some((r) => r.error === r.late_error)) reasons.push('no answer said the drop may have happened: no cancel came too late');
+    if (!exists('an answer said the drop may have happened', (r) => r.error === r.late_error)) reasons.push('no answer said the drop may have happened: no cancel came too late');
   }
   if (expect === 'foreground' || expect === 'background') {
     bad('a request failed', (r) => r.ok);
@@ -755,7 +963,7 @@ export function judgeDevice(op, rows, audit) {
   }
   // a request refused for a late take did not run, so there is no drag of its own to have watched
   const ran = (r) => !(late.has(r) && r.ok === false);
-  if (DEVICE_OPS[op].heldAtStart) bad('the engine did not watch the drag with the signature already held', (r) => !ran(r) || (r.dnd?.in_front === false && r.dnd?.held_at_start === true));
+  if (DEVICE_OPS[op].heldAtStart) badAll('the engine did not watch the drag with the signature already held', (r) => !ran(r) || (r.dnd?.in_front === false && r.dnd?.held_at_start === true));
   if (DEVICE_OPS[op].inFront) {
     bad('the engine did not record the window as in front', (r) => r.dnd?.in_front === true);
     bad('the desktop at the end was not as at the start', (r) => r.desktop_same === true);
@@ -771,15 +979,31 @@ export function judgeDevice(op, rows, audit) {
     else if (!audit.clean) reasons.push(`the ${audit.kind} audit found ${audit.forbidden?.join(', ') || 'no traced requests'}`);
     if (audit && audit.kind !== 'skipped') {
       // the audit counts only where its requests did what the case measures: answered as the case expects
-      const answered = audit.answered ?? [];
+      const audited = audit.answered ?? [];
+      let answered = audited;
+      // the audit's own requests as the binding left them (`premiseBinding`), those whose premise was unmet excluded
+      // (ruling 823); a binding error in either pass binds none, so none is excluded
+      if (PREMISE_OPS.has(op)) {
+        const judged = judgePremise(binding.entries, { name: (e) => `audit/${e.i}`, what: 'audited requests', prefix: `the ${audit.kind} audit is incomplete` });
+        reasons.push(...judged.reasons);
+        if (judged.record) unmet.audit = judged.record;
+        answered = judged.judged;
+        excluded += judged.excluded;
+      }
       const expected = (a) => {
         if (expect === 'refusal' || expect === 'cancel' || expect === 'stray') return !a.ok && a.error === a.expected_error;
         if (expect === 'late') return !a.ok && (a.error === a.late_error || a.error === a.expected_error);
         return a.ok;
       };
-      if (!answered.length) reasons.push(`the ${audit.kind} audit audited no request`);
+      if (!audited.length) reasons.push(`the ${audit.kind} audit audited no request`);
       else if (!answered.every(expected)) reasons.push(`the ${audit.kind} audit's requests did not answer as the case expects (${answered.map((a) => (a.ok ? 'success' : a.error)).join('; ').slice(0, 200)})`);
     }
   }
-  return { pass: reasons.length === 0, reasons, ...(drops ? { drops } : {}) };
+  // a cell that excluded samples says first what it fails for, so the cause reads off the verdict: only the shortage
+  // (whether V5 is rerun whole for it is the controller's call under §8.2, route D), or more than that
+  if (excluded > 0 && reasons.some(isShortage)) {
+    const n = `${excluded} proven premise-unmet sample${excluded === 1 ? '' : 's'}`;
+    reasons.unshift(reasons.every(isShortage) ? `incomplete only by ${n} (a whole V5 rerun under §8.2, the controller's call)` : `incomplete by ${n}, and failing for more than that (below)`);
+  }
+  return { pass: reasons.length === 0, reasons, ...(drops ? { drops } : {}), ...(Object.keys(unmet).length ? { premise_unmet: unmet } : {}), ...(binding?.unverified ? { plan_unverified: true } : {}) };
 }

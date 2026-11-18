@@ -894,8 +894,54 @@ variants included; their evidence is written either way. The run's `end` row kee
   next acting request's answer (`preflight`, run whatever the read carried) with the engine's raw record of the watch
   (`late_watch`: the read's `notice`, the refused request's `late_dnd`). The late cases drag along a path that lingers
   in the zone (`dnd-linger`), so Chrome takes before the release, and a sample Chrome took nothing for by its release is
-  unexercised, a failure of its case. A development run (`--dev --trace-engine`) puts each cua series's engine behind
+  unexercised, a failure of its case, unless Chrome never started a drag session for it at all (ruling 823, below). A development run (`--dev --trace-engine`) puts each cua series's engine behind
   an xtrace proxy of its own, its trace under `xtrace/` and each sample's span in it on the row (`xtrace`).
+  The design session's rulings 823, 825 and 841 (`premise.mjs`; route D: the judge alone decides).
+  - In the cancel, late and late-take cells, a sample whose premise was unmet is excluded and counted: a plain-drag ok
+    with no notice on its reply (`reply_notice`), where the page proves Chrome never started a drag session.
+  - The proof is the drag page's own status lines, kept as the page wrote them (`drop_status.raw`) and parsed strictly.
+    The press must be the sample's own: its count up by one, the log numbered with it, its time inside the sample's
+    attempt. Its log must carry an explicit pointerup time and an explicit `-1` for dragstart, pointercancel and
+    dragend, and no drag start, end or drop may be counted. Each line must be the one distinct line of its kind, in a
+    tree that carries the scene's page title.
+  - Chrome fires dragstart before it starts the X session, and a started drag ends the press in pointercancel and
+    dragend, never a pointerup.
+  - Anything missing, truncated or foreign proves nothing: the sample is judged as before. So is a sample the engine's
+    own take records contradict (its drag, press and late-take records), or one that dropped or changed the desktop.
+  - A reply or notice that claims or implies a drop, where the page proves no session, fails its cell. An excluded
+    sample whose own reads failed still fails its cell.
+  - Each premise sample's evidence is on its row (`premise_evidence`). It is also in the run's
+    `premise-evidence.jsonl`, the only record of the audit's samples. Each line is bound to its run, scene, case,
+    block, request number, engine lifecycle (one id per engine process), request id, window (its XID) and fixture (the
+    scene's label, which carries the run's nonce), with the run's head, engine sha256 and load, and cua's reply recorded
+    whole (its ok, error and notice, each present).
+  - Only evidence bound to the run's own sidecar excludes. The in-run judge binds to this process's records of the run,
+    a re-judge to the step's `premise-evidence.jsonl`.
+    - A timed row binds to exactly one line, its ok, error and notice the line's reply, one to one both ways: a line
+      its row does not carry is a binding error.
+    - The rows and the audit are checked against the run's recorded plan, whether or not evidence exists: the meta's
+      blocks, the case's warm count, and the audit, or `--no-audit` (the runner's sentinel). A run whose meta records
+      no plan is judged as before, marked `plan_unverified`, and nothing in it is excluded.
+    - A binding or plan error in either pass excludes nothing in the cell: both passes are judged from their own rows
+      and answers. Bare audit answers carry only the runner's four reply fields.
+    - A planned audit binds only with both its requests bound. An audit the run skipped (`--no-audit`, the runner's
+      sentinel) must have no audit lines.
+    - A binding error never excludes, and fails its cell. Without a sidecar, nothing is excluded.
+  - The next request on an engine, for every rule, is the one on the same lifecycle (`adjacency`).
+  - An obscured case's engine guard (the drag watched with the signature already held, not in front) is checked on every
+    sample, the excluded ones too.
+  - An audit line's follow-up reads are its case's alone (`FOLLOW_UPS`: none for the cancel case, `readPending`'s for
+    the late case, the read and the next acting request for the late take), each of its shape. An unknown or missing
+    one binds nothing, and nothing it carries replaces a field the binding set.
+  - Where every sample was excluded, an existence condition (a drop landed, an answer said the drop may have happened)
+    reads `untested`, a part of the cell's shortage, not a failure of its own.
+  - A cell left short of its planned count, of its cold or warm quota or of its audit's, fails with `incomplete` in the
+    run's own verdict, its rate reported cold and warm apart (`premise_unmet.timed.quotas`). Its first reason names
+    the cause:
+    - "incomplete only by N proven premise-unmet samples (a whole V5 rerun under §8.2, the controller's call)" where
+      that is all it fails for;
+    - "incomplete by N proven premise-unmet samples, and failing for more than that (below)" where it fails for more.
+    Nothing reruns V5 on its own; a rerun is the controller's call, another V5 step judged as any is.
 - **Minimized windows** (M4's T4, `minimized.mjs`, the scenes `minimized` (gedit), `minimized-xterm` and
   `minimized-recorder`): cua alone, each sample's window minimized with `xprobe minimize` (the harness's front window
   takes the focus first, so the window manager's focus fallback lands on a harness window; the active window afterwards
@@ -1319,7 +1365,8 @@ Two shared helpers came out of T16's fix wave (the design session, 2026-11-10), 
 | `text.mjs`, `safety.mjs`, `safety-judge.mjs`, `clip.mjs`, `xprobe/src/clip.rs`, `pages/paste-target.py` | M2's text operations, the paste safety cases and their judges, the clipboard owner and reader, the paste-target window |
 | `kinds.mjs`, `dnd.mjs`, `device.mjs`, `xprobe/src/dnd.rs`, `pages/gtk4-input.py`, `pages/qt-input.py` | M3.1's kinds and drag-and-drop experiments, Acceptance 8's device cases, the `XdndSelection` watch, the GTK 4 and Qt scenes |
 | `rejudge.mjs` | a recorded run's speed verdicts judged again under the revised rule |
-| `rejudge-device.mjs` | a stored verdict run's device verdicts judged again by this checkout's `judgeDevice`, beside the stored ones and a former judge's (`--old`), read-only (the M5 pre-flight's §8.1, point 4) |
+| `rejudge-device.mjs` | a stored verdict run's device verdicts judged again by this checkout's `judgeDevice`, beside the stored ones and a former judge's (`--old`), with how each sample of ruling 823's cells reads under it, read-only (the M5 pre-flight's §8.1, point 4); a replayed pass of ruling 823's cells is diagnostic only, never a release pass (exit 1; `--diagnostic` exits on agreement with the stored verdicts) |
+| `premise.mjs` | rulings 823, 825 and 841: the unmet premise in V5's cancel, late and late-take cells (the page's strict proof that Chrome never started a drag session, the evidence's binding to the run's sidecar, the exclusion, its quotas and its rate) |
 | `vcl-aim.mjs`, `writer-drag.mjs`, `vcl-probe.mjs`, `pages/point-gtk3.py` | M4 T16's LibreOffice offset as the harness reads it, the Writer drag probe, the point probes and their GTK 3 control scene |
 | `park.mjs`, `xprobe/src/pointer.rs`, `app-identity.mjs` | the verified pointer park (`xprobe pointer-chain`) and the application's identity, shared by any runner (T16's fix wave) |
 | `atspi-probe.mjs`, `atspi-cache.mjs`, `pages/atspi-gtk4.py`, `pages/atspi-qt.py` | M4 T6's AT-SPI probe on its own private display: `Cache.GetItems` over the matrix and GTK 4's `EditableText`, the answers' reading and comparison, and its GTK 4 and Qt scenes |

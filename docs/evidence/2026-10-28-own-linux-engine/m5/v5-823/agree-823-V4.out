@@ -1,0 +1,2 @@
+{"dir":"docs/evidence/2026-10-28-own-linux-engine/m5/x64/out/V4.pinned-release","run":"pinned-V4","device_verdicts":19,"base_vs_823_differ":[]}
+{"dir":"docs/evidence/2026-10-28-own-linux-engine/m5/arm64/pilot/out-zero-r1/V4.development-run.pinned.pilot","run":"pdev-V4","device_verdicts":19,"base_vs_823_differ":[]}

@@ -19,9 +19,9 @@ on:
         options: [smoke, full]
         default: smoke
       secure_poll:
-        description: Candidate Swift function that owns the complete secure polling loop
+        description: Candidate Swift function whose own loop polls the secure length (default is the reviewed confirmLength anchor)
         type: string
-        required: true
+        default: confirmLength
 permissions:
   contents: read
 concurrency:
@@ -54,7 +54,7 @@ jobs:
       MAIN_SHA: ${{ inputs.main }}
       FIX_SHA: ${{ inputs.fix }}
       MODE: ${{ inputs.mode }}
-      POLL: ${{ inputs.secure_poll }}
+      POLL: ${{ inputs.secure_poll || 'confirmLength' }}
       LANE: ${{ matrix.lane }}
       PHASE: ${{ matrix.phase }}
     steps:
@@ -142,6 +142,8 @@ jobs:
             "$prefix-fix-src" "$prefix-fix-build/release/cua-engine" || rc=$?
           if [[ -s "$stage/status.json" ]]; then
             cp "$stage/status.json" "$evidence/status.json"
+            # Fixed coded counts and timings only (no rows, hashes or traces) may leave even a privacy-failed run.
+            if [[ -f "$stage/coded.json" ]]; then cp "$stage/coded.json" "$evidence/coded.json"; fi
             if jq -e '.publishable == true' "$stage/status.json" >/dev/null; then
               for f in config summary rows schedules auditGate; do
                 if [[ -f "$stage/$f.json" ]]; then cp "$stage/$f.json" "$evidence/$f.json"; fi

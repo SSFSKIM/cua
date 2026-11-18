@@ -6,7 +6,7 @@ import {pathToFileURL} from 'node:url';
 import {execFileSync} from 'node:child_process';
 import {Wire} from '../probe-366/wire.mjs';
 import {owned,stop,startPlatform,pause,environment} from './platform.mjs';
-import {plan,score,inspect,auditSchedule,auditPairs,summarize} from './check.mjs';
+import {plan,score,inspect,auditSchedule,auditPairs,summarize,coded,noteAttested} from './check.mjs';
 
 const SLOT='PROBE414', safeReasons=new Set(['secure','noFocusedElement','roleUnreadable','notTextField','valueUnreadable','rangeUnreadable',
   'fieldUnreadable','fieldChanged','becameSecure','selectionChanged','concealedMismatch','valueMismatch','unchanged','possiblyTruncated',
@@ -22,21 +22,23 @@ function materialize({kind}){
   return {seed:{expected:initial,start,end,effect,first:text[0]},text,expected:surround(text),control:altered===null?null:surround(altered)};
 }
 const weakReason=()=>{throw Error('owned target could not be resolved');};
-function decodeAudit(d){
+// Overlap, drops, an off-thread call or a missing boundary make the trace unusable (a failed row), never a quiet pass.
+function decodeAudit(d,lane){
   if(d?.v!==1||d.dropped||d.aliasOverflow||d.offThread||d.overlaps||!Array.isArray(d.e)||!Array.isArray(d.names))return null;
   const events=[];let firstInput=0,poll=0;
   for(const [api,k,id] of d.e){
     const name=d.names[k];
     if(typeof name!=='string'||!Number.isSafeInteger(api)||!Number.isSafeInteger(id))return null;
-    const s=d.roles[id]==='AXSecureTextField'||d.subroles[id]==='AXSecureTextField'?'secure':null;
+    const role=d.roles[id],sub=d.subroles[id];
+    const s=role==='AXSecureTextField'||sub==='AXSecureTextField'?'secure':role==='AXWebArea'?'webArea':null;
     if(api===6||api===7){if(name==='securePoll'){events.push(['p',api===6?'begin':'end']);if(api===6)poll++;}continue;}
     if(api===5)firstInput++;
     events.push([['r','b','q','w','a','event','p','p','names','actions','hit'][api],name,id,s]);
   }
-  if(firstInput!==1||poll!==1)return null;
-  return auditSchedule(events);
+  if(firstInput!==1||poll<1)return null;
+  return auditSchedule(events,{marker:lane==='safari'});
 }
-async function startEngine({name,src,bin,root,platform,audit,globalPrivacy}){
+async function startEngine({name,src,bin,root,platform,audit,globalPrivacy,lane}){
   const home=join(root,name[0]);mkdirSync(home,{mode:0o700});const socket=join(home,'e.sock');
   const env=environment(home);const traces=new Map(),registry=new Set();let active=null;
   const note=(label,data,opts={})=>{
@@ -44,7 +46,7 @@ async function startEngine({name,src,bin,root,platform,audit,globalPrivacy}){
     for(const code of inspect(data,words,opts))(active?.flags??globalPrivacy).add(label+'/'+code);
   };
   const child=owned(bin,[],{...env,CUA_ENGINE_SOCKET:socket},{stdout:l=>note('stdout',l),stderr:l=>{
-    if(audit){try{const d=JSON.parse(l)?.probe395Audit;if(d){traces.set(d.id,decodeAudit(d));return;}}catch{}}
+    if(audit){try{const d=JSON.parse(l)?.probe395Audit;if(d){traces.set(d.id,decodeAudit(d,lane));return;}}catch{}}
     note('stderr',l);
   }});
   let w;
@@ -67,14 +69,14 @@ async function startEngine({name,src,bin,root,platform,audit,globalPrivacy}){
         const nodes=[...shot.nodes,...(shot.menuBar??[])].filter(n=>n.role==='AXSecureTextField'||n.subrole==='AXSecureTextField'||n.secure===true||[n.title,n.description,n.identifier].includes('PW walk test'));
         note('observation-native',nodes);
         note('observation-focus',{selectedText:shot.selectedText,selectedTextRange:shot.selectedTextRange});
-        note('observation-text',renderer.render(shot,renderer.advanceNumbering(null,shot)));
+        note('observation-text',renderer.render(shot,renderer.advanceNumbering(null,shot)),{names:false});
         // Scan all serialized text for a value/mask that escaped the node or was misclassified; ordinary AX values are legitimate.
-        for(const code of inspect(r,[...registry],{stringsOnly:true}))active.flags.add('observation-native/'+code);
+        for(const code of inspect(r,[...registry],{stringsOnly:true,names:false}))active.flags.add('observation-native/'+code);
         return nodes.length>0;
       }
       return true;
     }
-    async function type(m,id,literal){
+    async function type(m,id,literal,head){
       const meta={}, content=[], logged=[], original={};let native=null,sent=0,guarded=true;
       const nodeRepl={env,setResponseMeta:x=>Object.assign(meta,x),emitContentItem:x=>content.push(x),createElicitation:async q=>{
         if(q.meta?.tool_params?.app!==target.bundleIdentifier)throw Error('unexpected approval');
@@ -89,7 +91,7 @@ async function startEngine({name,src,bin,root,platform,audit,globalPrivacy}){
         const r=await w.execute(method,audit&&method==='type_text'?{...args,probe395Audit:id}:args);
         if(method==='resolve_app'&&(r.result?.pid!==target.pid||r.result?.bundleIdentifier!==target.bundleIdentifier))weakReason();
         if(method==='type_text')native=r;
-        note(method==='type_text'?'ipc-type':'ipc-other',r,{literal:literal&&method==='type_text'});
+        note(method==='type_text'?'ipc-type':'ipc-other',r,{literal:literal&&method==='type_text',surface:'ipc',baseline:head==='main'});
         if(r.error)throw protocol.serverError(r.error);
         return {result:r.result,engineMs:performance.now()-started};
       }};
@@ -107,12 +109,13 @@ async function startEngine({name,src,bin,root,platform,audit,globalPrivacy}){
         if(originalHome==null)delete process.env.HOME;else process.env.HOME=originalHome;
         if(!literal)await store.remove(SLOT);
       }
-      note('sky-result',rendered);note('sky-error',error,{literal});note('forwarded',meta,{literal});note('rendered-content',content);note('console',logged);
+      const seen={literal,baseline:head==='main'};
+      note('sky-result',rendered);note('sky-error',error,{...seen,surface:'sky-error'});note('forwarded',meta,{...seen,surface:'forwarded'});note('rendered-content',content);note('console',logged);
       const raw=native?.error?.meta?.typeReadback??native?.result?.meta?.typeReadback;
       const engineReason=native?.error?.errorName, expectedWrap=literal?error?.errorName==='typeUnconfirmed':error?.code==='secret_input_failed';
       const skyClass=error?(engineReason==='typeUnconfirmed'&&expectedWrap?'typeUnconfirmed':'unexpected-error'):'ok';
       if(!guarded||sent!==1||!native) return {reply:false,raw:null,forwarded:null,sky:'missing',serviceMs:null};
-      return {reply:true,raw,forwarded:meta['cua/typeReadback'],sky:skyClass,serviceMs:Number.isFinite(meta['cua/serviceMs'])?meta['cua/serviceMs']:null};
+      return {reply:true,raw,forwarded:meta['cua/typeReadback'],sky:skyClass,noted:noteAttested(native?.result?.note,content),serviceMs:Number.isFinite(meta['cua/serviceMs'])?meta['cua/serviceMs']:null};
     }
     // Prime AX access before the first scored field. No action and no instrumented audit tag are sent.
     await w.execute('get_app_state',{pid:platform.pid,includeScreenshot:false,disableDiff:true});
@@ -140,7 +143,7 @@ async function main(){
     Object.assign(config,{version:platform.version,presentation:platform.presentation,foregroundFallback:platform.fallback});
     stage='engine-start';
     const sources=audit?{fix:[fixSrc,fixBin]}:{main:[mainSrc,mainBin],fix:[fixSrc,fixBin]};
-    for(const [name,[src,bin]] of Object.entries(sources))engines[name]=await startEngine({name,src,bin,root:tmp,platform,audit,globalPrivacy});
+    for(const [name,[src,bin]] of Object.entries(sources))engines[name]=await startEngine({name,src,bin,root:tmp,platform,audit,globalPrivacy,lane});
     let trial=0;
     for(const c of cells){
       const id=`${c.head}-${c.kind}-${c.rep}`,m=inputs.get(`${c.kind}/${c.rep}`),e=engines[c.head];
@@ -148,7 +151,7 @@ async function main(){
       const scope={words:[m.text,...new Set([m.seed.expected,m.expected,m.control].filter(Boolean))],flags:new Set()};e.scope(scope);
       try{
         await platform.arm(++trial,m.seed,x=>{s=x;});armed=true;
-        s='action';receipt=await e.type(m,id,c.kind==='literal');
+        s='action';receipt=await e.type(m,id,c.kind==='literal'||c.literal===true,c.head);
         s='delivery';
         const end=performance.now()+2500;
         do{
@@ -167,7 +170,7 @@ async function main(){
           // The recorder always emits complete JSON lines; the wire final reply can win the pipe race.
           for(let i=0;i<20&&!e.traces.has(id);i++)await pause(20);
           const trace=e.traces.get(id);e.traces.delete(id);
-          schedules.push({...c,valid:attested&&receipt?.reply&&delivery?.exact===true,...(trace??{pass:false})});
+          schedules.push({...c,lane,valid:attested&&receipt?.reply&&delivery?.exact===true,...(trace??{pass:false})});
         }
       }catch{if(!attested)row.invalid=s;else row.evidenceFailure=s;}
       finally{
@@ -175,7 +178,7 @@ async function main(){
         e.scope(null);
       }
       const controlOK=delivery?.controlExact===true&&delivery.hit===true&&delivery.key===true;
-      Object.assign(row,score({...c,lane,raw:receipt?.raw,forwarded:receipt?.forwarded,sky:receipt?.sky,fixture:attested,
+      Object.assign(row,score({...c,lane,preliminary:smoke,raw:receipt?.raw,forwarded:receipt?.forwarded,sky:receipt?.sky,noted:receipt?.noted,fixture:attested,
         domExact:delivery?.exact,controlExact:controlOK}));
       if(!row.valid&&!row.invalid)row.invalid='control-not-realized';
       row.typeRequest=receipt?.reply===true;
@@ -204,6 +207,8 @@ async function main(){
   const status={lane,phase,kit:config.kit,refs:config.refs,abort,planned:cells.length,completed:rows.length,invalid:summary.invalid,
     unattempted:cells.length-rows.length,privacyViolations,gates,publishable,presentation:config.presentation??null,foregroundFallback:config.foregroundFallback??null};
   writeFileSync(join(out,'status.json'),JSON.stringify(status,null,2)+'\n');
+  // Counts and timings rebuilt from closed codes may leave even a privacy-failed run; rows, hashes and traces never do.
+  writeFileSync(join(out,'coded.json'),JSON.stringify(coded(summary,auditGate),null,2)+'\n');
   if(publishable){
     for(const [name,value] of Object.entries({config,summary,rows,...(audit?{schedules,auditGate}:{})}))writeFileSync(join(out,`${name}.json`),JSON.stringify(value,null,2)+'\n');
   }

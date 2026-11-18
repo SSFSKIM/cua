@@ -5,7 +5,7 @@ import {createInterface} from 'node:readline';
 import {createRequire} from 'node:module';
 import {firefoxProfile} from '../probe-pw-walk/firefox-profile.mjs';
 import {createFixture} from './fixture-server.mjs';
-import {page} from './page.mjs';
+import {page,FILLER} from './page.mjs';
 
 export const pause=ms=>new Promise(ok=>setTimeout(ok,ms));
 export async function until(fn,ms=15000){
@@ -57,7 +57,10 @@ export async function startPlatform({lane,home,helper,cover,appkit,stage}){
   let appReady,coverReady;
   const dispose=async()=>{
     fx?.close();
-    await Promise.all([stop(coverApp),stop(app)]);
+    // The owned Chrome for Testing child is never signalled (project rule); the job's cleanup ends it. Its parent-side pipes are
+    // closed and it is unreferenced so Node can exit.
+    const release=child=>{if(child){child.stdin?.destroy();child.stdout?.destroy();child.stderr?.destroy();child.unref();}return true;};
+    await Promise.all([stop(coverApp),lane==='cft'?release(app):stop(app)]);
     // The owned Safari process belongs to the disposable hosted job; do not signal a browser or browser host.
     await stop(side);
   };
@@ -68,7 +71,7 @@ export async function startPlatform({lane,home,helper,cover,appkit,stage}){
   const command=(q,ms=8000)=>fx?fx.command(q,ms):app.ask({...q,request:++appkitRequest},r=>r.request===appkitRequest,ms);
   try{
     stage('launch');
-    if(lane!=='appkit')fx=await createFixture(page,{lostMs:8000});
+    if(lane!=='appkit')fx=await createFixture(page(lane==='safari'?FILLER:0),{lostMs:8000});
     if(lane==='safari'){
       bundle='com.apple.Safari';
       if((await ask({op:'lookup',bundle})).pid)throw Error('Safari already present');

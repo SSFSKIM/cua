@@ -1,9 +1,9 @@
-// Hosted scratch-build audit for the #395 qualification. Records the ORDER and TIMING of the Accessibility calls a tagged
+// Hosted scratch-build audit for the #414 qualification. Records the ORDER and TIMING of the Accessibility calls a tagged
 // type_text issues (reads, writes, actions, posted events, named phases) so plain and concealed schedules can be compared.
 // It makes no AX request of its own, never looks at a returned value (the one exception: the string of an AXRole or AXSubrole
-// answer, kept only when it is a public AX role constant; the wrapper hands over no other answer, and the recorder checks the
-// attribute name before it casts or inspects anything), keeps no value, text, range, marker, byte or length, and does not
-// alter any return or error. Counts of calls, attribute NAMES, element aliases, outcomes and clocks are all it holds.
+// answer, from a single-attribute call or from those two named slots of a batch, kept only when it is a public AX role
+// constant; the wrapper hands over no other answer or slot, and the name decides before anything is cast or inspected), keeps
+// no value, text, range, marker, byte or length, and does not alter any return or error. Counts of calls, attribute NAMES, element aliases, outcomes and clocks are all it holds.
 // Of the posted events only the first is recorded (the pre-input boundary): a count of the rest would show how much was typed.
 // Adapted from the #395 qualification. This recorder has no underlying #354 hooks.
 import ApplicationServices
@@ -78,7 +78,8 @@ final class Probe395Audit: @unchecked Sendable {
   }
 
   /// One finished call. `name` is a single attribute name, a "+"-joined batch, an action, a key label or a phase name.
-  func record(api: Int, name: String, element: AXUIElement?, error: AXError?, started: UInt64, ended: UInt64, roleResult: CFTypeRef? = nil) {
+  func record(api: Int, name: String, element: AXUIElement?, error: AXError?, started: UInt64, ended: UInt64, roleResult: CFTypeRef? = nil,
+              slotRoles: [(String, String)] = []) {
     let t0 = Probe395Audit.now()
     lock.lock(); defer { lock.unlock() }
     guard id != nil else { return }
@@ -98,6 +99,10 @@ final class Probe395Audit: @unchecked Sendable {
          let roleResult, CFGetTypeID(roleResult) == CFStringGetTypeID() {
         let s = roleResult as! String
         if isRoleConstant(s) { if label == "AXRole" { roles[a] = s } else { subroles[a] = s } }
+      }
+      // A batch's role and subrole slots, named by the batch's own attribute list; no other slot was handed over.
+      if api == Probe395Audit.apiBatch, a >= 0, error == .success {
+        for (slot, s) in slotRoles where isRoleConstant(s) { if slot == "AXRole" { roles[a] = s } else { subroles[a] = s } }
       }
     }
     overheadNs &+= Probe395Audit.now() &- t0
@@ -168,7 +173,18 @@ func probe395CopyAttributeValue(_ element: AXUIElement, _ name: CFString, _ out:
 func probe395CopyMultipleAttributeValues(_ element: AXUIElement, _ names: CFArray, _ options: AXCopyMultipleAttributeOptions, _ out: UnsafeMutablePointer<CFArray?>) -> AXError {
   let t0 = Probe395Audit.now()
   let code = AXUIElementCopyMultipleAttributeValues(element, names, options, out)
-  Probe395Audit.shared.record(api: Probe395Audit.apiBatch, name: ((names as? [String]) ?? []).joined(separator: "+"), element: element, error: code, started: t0, ended: Probe395Audit.now())
+  let list = (names as? [String]) ?? []
+  // Only the slots the request itself named AXRole or AXSubrole are fetched from the reply, by position; every other slot stays unread.
+  var slots: [(String, String)] = []
+  if code == .success, let answer = out.pointee, CFArrayGetCount(answer) == list.count {
+    for (i, name) in list.enumerated() where name == "AXRole" || name == "AXSubrole" {
+      guard let raw = CFArrayGetValueAtIndex(answer, i) else { continue }
+      let item = Unmanaged<AnyObject>.fromOpaque(raw).takeUnretainedValue()
+      if CFGetTypeID(item) == CFStringGetTypeID(), let s = item as? String { slots.append((name, s)) }
+    }
+  }
+  Probe395Audit.shared.record(api: Probe395Audit.apiBatch, name: list.joined(separator: "+"), element: element, error: code, started: t0, ended: Probe395Audit.now(),
+                              slotRoles: slots)
   return code
 }
 func probe395CopyParameterizedAttributeValue(_ element: AXUIElement, _ name: CFString, _ parameter: CFTypeRef, _ out: UnsafeMutablePointer<CFTypeRef?>) -> AXError {

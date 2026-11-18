@@ -60,8 +60,7 @@ func readbackLength<Element>(_ field: Element, role: String, reads: ReadbackRead
     count = .absent
   }
   var range: NSRange?
-  if !read.unreadable.contains(kAXSelectedTextRangeAttribute), let wire = rangeWire(read.values[kAXSelectedTextRangeAttribute]),
-     let location = wire["location"], let length = wire["length"] {
+  if let wire = rangeWire(read.values[kAXSelectedTextRangeAttribute]), let location = wire["location"], let length = wire["length"] {
     range = NSRange(location: location, length: length)
   }
   return .read(count: count, range: range)

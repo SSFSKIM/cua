@@ -19,7 +19,7 @@ private final class StubPasswordApp {
   var value: String
   var selection: NSRange
   /// What the length batch's count and range slots answer: their value, nothing (absent), or a failure.
-  enum Slot { case answers, absent, fails }
+  enum Slot { case answers, absent, fails, wrongType }
   var countSlot = Slot.answers
   var rangeSlot = Slot.answers
   var batchFails = false
@@ -83,12 +83,14 @@ private final class StubPasswordApp {
         case .answers: read.values[name] = (value as NSString).length as CFNumber
         case .absent: break
         case .fails: read.unreadable.insert(name)
+        case .wrongType: read.values[name] = kCFBooleanTrue
         }
       case kAXSelectedTextRangeAttribute:
         switch rangeSlot {
         case .answers: read.values[name] = axRangeValue(CFRange(location: reportedSelection.location, length: reportedSelection.length))
         case .absent: break
         case .fails: read.unreadable.insert(name)
+        case .wrongType: read.values[name] = "range" as CFString
         }
       // Anything else a batch could ask for, the plaintext among it, is answered too: none may be asked.
       default: read.values[name] = value as CFString
@@ -365,7 +367,8 @@ final class SecureTypeReadbackTests: XCTestCase {
     XCTAssertNil(type("pass", into: empty).error)
     XCTAssertEqual(empty.value, "pass")
     for (label, setUp) in [("absent", { (app: StubPasswordApp) in app.rangeSlot = .absent }),
-                           ("failed", { (app: StubPasswordApp) in app.rangeSlot = .fails })] {
+                           ("failed", { (app: StubPasswordApp) in app.rangeSlot = .fails }),
+                           ("not a range", { (app: StubPasswordApp) in app.rangeSlot = .wrongType })] {
       let holding = field(count: 5, selection: NSRange(location: 5, length: 0))
       setUp(holding)
       let (error, meta, _) = type("pass", into: holding)
@@ -412,10 +415,12 @@ final class SecureTypeReadbackTests: XCTestCase {
     dropped.transform = { delivered += 1; return delivered == 2 ? "" : $0 }
     XCTAssertEqual(reason(type("pass", into: dropped).meta), "caretMismatch", "a dropped character moves the caret one short")
 
-    let failed = field(selection: NSRange(location: 31_337, length: 0))
-    failed.countSlot = .fails
-    XCTAssertEqual(reason(type("pass", into: failed).meta), "lengthUnreadable", "a failed count read is never taken for an absent one")
-    XCTAssertEqual(failed.batches, 1)
+    for slot in [StubPasswordApp.Slot.fails, .wrongType] {
+      let failed = field(selection: NSRange(location: 31_337, length: 0))
+      failed.countSlot = slot
+      XCTAssertEqual(reason(type("pass", into: failed).meta), "lengthUnreadable", "\(slot): a failed count read is never taken for an absent one")
+      XCTAssertEqual(failed.batches, 1, "\(slot)")
+    }
     XCTAssertEqual(reason(type("pass", into: countless(NSRange(location: 31_337, length: 3))).meta), "lengthUnreadable", "a selection")
     let rangeless = countless()
     rangeless.rangeSlot = .absent

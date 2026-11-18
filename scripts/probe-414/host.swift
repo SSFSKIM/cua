@@ -76,6 +76,42 @@ func disarm() -> [String: Any] {
   if let reason = b.reason { w["reason"] = reason + "-at-disarm" }
   return w
 }
+// Owned AppKit fixture capability probe: names and a shape only. Never reads AXValue or any content.
+let fixtureBundle = "dev.cua.probe.pwwalk.fixture"
+func findLabeledSecure(_ root: AXUIElement) -> AXUIElement? {
+  var queue: [(AXUIElement, Int)] = [(root, 0)], seen = 0, found: [AXUIElement] = []
+  while !queue.isEmpty && seen < 300 {
+    let (e, depth) = queue.removeFirst(); seen += 1
+    AXUIElementSetMessagingTimeout(e, 0.5)
+    let secure = attr(e, "AXRole") as? String == "AXSecureTextField" || attr(e, "AXSubrole") as? String == "AXSecureTextField"
+    if secure, attr(e, "AXDescription") as? String == "PW walk test" || attr(e, "AXTitle") as? String == "PW walk test" { found.append(e) }
+    if depth < 8, let kids = attr(e, "AXChildren") as? [AXUIElement] { queue += kids.prefix(50).map { ($0, depth + 1) } }
+  }
+  return found.count == 1 ? found[0] : nil
+}
+func appkitCapabilities(_ q: [String: Any], pid: pid_t) -> [String: Any] {
+  let unavailable: [String: Any] = ["unavailable": true]
+  guard NSRunningApplication(processIdentifier: pid)?.bundleIdentifier == fixtureBundle,
+        let units = (q["expectedUnits"] as? NSNumber)?.intValue, units >= 0 else { return unavailable }
+  let app = AXUIElementCreateApplication(pid)
+  AXUIElementSetMessagingTimeout(app, 0.5)
+  guard let field = findLabeledSecure(app) else { return unavailable }
+  // Each name API is independent: one unsupported leaves its list null without hiding the range shape.
+  var names: CFArray?, params: CFArray?
+  let attrs: Any = AXUIElementCopyAttributeNames(field, &names) == .success ? ((names as? [String]).map { $0 as Any } ?? NSNull()) : NSNull()
+  let pnames: Any = AXUIElementCopyParameterizedAttributeNames(field, &params) == .success ? ((params as? [String]).map { $0 as Any } ?? NSNull()) : NSNull()
+  var readable = false
+  var atZero: Any = NSNull(), matches: Any = NSNull()
+  if let v = attr(field, "AXVisibleCharacterRange"), CFGetTypeID(v) == AXValueGetTypeID() {
+    let value = v as! AXValue
+    var r = CFRange()
+    if AXValueGetType(value) == .cfRange, AXValueGetValue(value, .cfRange, &r) {
+      readable = true; atZero = r.location == 0; matches = r.location == 0 && r.length == units
+    }
+  }
+  return ["attributeNames": attrs, "parameterizedNames": pnames,
+          "visibleRange": ["readable": readable, "atZero": atZero, "matchesFixture": matches] as [String: Any]]
+}
 func dispatch(_ q: [String: Any]) -> [String: Any] {
   switch q["op"] as? String {
   case "arm": return arm(q)
@@ -118,6 +154,7 @@ func dispatch(_ q: [String: Any]) -> [String: Any] {
     let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
     let shown = windows.contains { ($0[kCGWindowLayer as String] as? Int) == 0 && ($0[kCGWindowOwnerPID as String] as? Int) == Int(pid) }
     return ["bundleOk": NSRunningApplication(processIdentifier: pid)?.bundleIdentifier == coverBundle, "onScreen": shown]
+  case "appkit-capabilities": return appkitCapabilities(q, pid: pid)
   case "titles":
     let app = AXUIElementCreateApplication(pid)
     AXUIElementSetMessagingTimeout(app, 0.5)

@@ -50,7 +50,7 @@ export async function stop(child){
 }
 const plistVersion=bundle=>execFileSync('/usr/libexec/PlistBuddy',['-c','Print :CFBundleShortVersionString',bundle+'/Contents/Info.plist'],{encoding:'utf8',stdio:['ignore','pipe','ignore']}).trim();
 const safari='/Applications/Safari.app', cft='/Applications/Google Chrome for Testing.app', firefox='/Applications/Firefox.app';
-export async function startPlatform({lane,home,helper,cover,appkit,stage}){
+export async function startPlatform({lane,home,helper,cover,appkit,stage,singlePassword=false}){
   const env=environment(home), profile=join(home,'profile');
   const side=owned(helper,[],env), ask=q=>side.ask(q);
   let fx,app,coverApp,pid,safariStarted=false,bundle,version,active,presentation='background',fallback=null,appkitRequest=0;
@@ -71,7 +71,7 @@ export async function startPlatform({lane,home,helper,cover,appkit,stage}){
   const command=(q,ms=8000)=>fx?fx.command(q,ms):app.ask({...q,request:++appkitRequest},r=>r.request===appkitRequest,ms);
   try{
     stage('launch');
-    if(lane!=='appkit')fx=await createFixture(page(lane==='safari'?FILLER:0),{lostMs:8000});
+    if(lane!=='appkit')fx=await createFixture(page(lane==='safari'?FILLER:0,singlePassword),{lostMs:8000});
     if(lane==='safari'){
       bundle='com.apple.Safari';
       if((await ask({op:'lookup',bundle})).pid)throw Error('Safari already present');
@@ -121,7 +121,11 @@ export async function startPlatform({lane,home,helper,cover,appkit,stage}){
     async function arm(trial,m,onStage=()=>{}){
       onStage('prepare');await ensureFront(pid);
       const prep=await command({op:'prepare',trial,expected:'',setupText:m.setupText});
-      if(prep.trial!==trial||!prep.shape||!prep.plainFocused||!prep.exact||(m.setupText&&prep.setupExact!==true))throw Error('prepare fixture');
+      if(prep.trial!==trial||!prep.shape||!(singlePassword?prep.focused:prep.plainFocused)||!prep.exact||(m.setupText&&prep.setupExact!==true))throw Error('prepare fixture');
+      const q={op:'seed',trial,...m};
+      const seeded=s=>s.trial===trial&&s.shape&&s.focused&&s.exact&&s.selection&&!s.key&&!s.hit;
+      // The password-only Firefox cell never changes focus after the cover. That distinguishes stale setup focus from a provider gap.
+      if(singlePassword&&!seeded(await command(q)))throw Error('foreground password seed');
       if(presentation==='background'){
         onStage('cover');await ensureFront(active);await pause(250);
       }
@@ -130,12 +134,9 @@ export async function startPlatform({lane,home,helper,cover,appkit,stage}){
       if(!a.valid)throw Error('arm witness');
       try{
         onStage('seed');
-        const q={op:'seed',trial,...m};
-        const seed=await command(q);
-        if(seed.trial!==trial||!seed.shape||!seed.focused||!seed.exact||!seed.selection||seed.key||seed.hit)throw Error('seed fixture');
+        if(!singlePassword&&!seeded(await command(q)))throw Error('seed fixture');
         if(presentation==='background')await pause(250);
-        const state=await command({...q,op:'read'});
-        if(state.trial!==trial||!state.shape||!state.focused||!state.exact||!state.selection||state.key||state.hit)throw Error('seed unstable');
+        if(!seeded(await command({...q,op:'read'})))throw Error('seed unstable');
       }catch(e){await ask({op:'disarm'});throw e;}
     }
     const disarm=async()=> (await ask({op:'disarm'})).valid===true;
@@ -149,6 +150,19 @@ export async function startPlatform({lane,home,helper,cover,appkit,stage}){
       fallback=probeStage;presentation='frontmost';active=pid;
       await arm(-2,empty);if(!await disarm())throw Error('frontmost witness');
     }
-    return {pid,bundle,version,presentation,fallback,arm,disarm,command,dispose};
+    async function appkitCapabilities(){
+      if(lane!=='appkit')return null;
+      const expected='appkit-probe';
+      try{
+        await arm(-3,{expected,start:0,end:0,effect:'none',first:''});
+        const answer=await ask({op:'appkit-capabilities',pid,expectedUnits:expected.length});
+        if(!await disarm()||answer.unavailable===true)return {unavailable:true};
+        const names=a=>Array.isArray(a)?a.filter(n=>typeof n==='string'&&/^AX[A-Za-z0-9]{1,80}$/.test(n)):null;
+        const bool=v=>typeof v==='boolean'?v:null;
+        return {attributeNames:names(answer.attributeNames),parameterizedNames:names(answer.parameterizedNames),
+          visibleRange:{readable:bool(answer.visibleRange?.readable),atZero:bool(answer.visibleRange?.atZero),matchesFixture:bool(answer.visibleRange?.matchesFixture)}};
+      }catch{try{await disarm();}catch{}return {unavailable:true};}
+    }
+    return {pid,bundle,version,presentation,fallback,arm,disarm,command,dispose,appkitCapabilities};
   }catch(e){await dispose();throw e;}
 }

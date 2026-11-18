@@ -3,9 +3,9 @@
 // scrolls its input into view; shape then also asserts the filler's size and that it lies above the field. The default page has none.
 export const FILLER=1600;
 const group=n=>n?'<div id="large-before-editor" role="group" aria-label="Filler controls">'+Array.from({length:n},(_,i)=>`<button type="button" tabindex="-1" id="large-node-${i}">Filler ${i}</button>`).join('')+'</div>':'';
-export const page=(filler=0)=>`<!doctype html><meta charset="utf-8"><title>Qualification</title>
+export const page=(filler=0,singlePassword=false)=>`<!doctype html><meta charset="utf-8"><title>Qualification</title>
 <style>body{font: 18px sans-serif; margin: 28px} input{display:block; width:340px; margin:16px; padding:6px}</style>
-${group(filler)}<input id="setup" type="text" aria-label="Setup control" autocomplete="off">
+${group(filler)}${singlePassword?'':'<input id="setup" type="text" aria-label="Setup control" autocomplete="off">'}
 <input id="password" type="password" aria-label="PW walk test" autocomplete="off">
 <script>
 const FILLER=${filler};
@@ -31,12 +31,13 @@ const reveal=el=>{if(FILLER>0)el.scrollIntoView({block:'nearest'});};
 function state(c){return {trial,focused:document.activeElement===field,plainFocused:document.activeElement===setup,
   shape:field===document.getElementById('password')&&field.type==='password'&&field.isConnected&&filler(),
   exact:field.value===c.expected, controlExact:c.control!=null&&field.value===c.control,
-  setupExact:typeof c.setupText==='string'?setup.value===c.setupText:null,
+  setupExact:setup&&typeof c.setupText==='string'?setup.value===c.setupText:null,
   selection:c.end!=null&&field.selectionStart===c.start&&field.selectionEnd===c.end,key,input,hit};}
 function run(c){
   if(c.op==='prepare'){
-    setup.value=c.setupText??'';setup.focus();setup.setSelectionRange(setup.value.length,setup.value.length);
-    reveal(setup);trial=c.trial;field.value='';effect='none';first='';key=input=hit=false;
+    if(setup){setup.value=c.setupText??'';setup.focus();setup.setSelectionRange(setup.value.length,setup.value.length);reveal(setup);}
+    else field.focus();
+    trial=c.trial;field.value='';effect='none';first='';key=input=hit=false;
   }else if(c.op==='seed'){
     if(c.trial!==trial)throw Error('generation');
     effect=c.effect;first=c.first;field.value=c.expected;field.focus();reveal(field);field.setSelectionRange(c.start,c.end);

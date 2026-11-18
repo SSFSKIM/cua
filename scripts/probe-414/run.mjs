@@ -6,7 +6,7 @@ import {pathToFileURL} from 'node:url';
 import {execFileSync} from 'node:child_process';
 import {Wire} from '../probe-366/wire.mjs';
 import {owned,stop,startPlatform,pause,environment} from './platform.mjs';
-import {plan,score,inspect,auditSchedule,auditPairs,summarize,coded,noteAttested,firefoxDisclosure} from './check.mjs';
+import {plan,score,inspect,auditSchedule,auditPairs,summarize,coded,noteAttested,firefoxDisclosure,drainIntervals,drainStats} from './check.mjs';
 
 const SLOT='PROBE414', safeReasons=new Set(['secure','noFocusedElement','roleUnreadable','notTextField','valueUnreadable','rangeUnreadable',
   'fieldUnreadable','fieldChanged','becameSecure','selectionChanged','concealedMismatch','valueMismatch','unchanged','possiblyTruncated',
@@ -25,7 +25,8 @@ function materialize({kind}){
   const surround=t=>initial.slice(0,start)+t+initial.slice(end);
   // Exactly one controlled edit; final equality is independently checked by the owned app/document.
   const altered=effect==='add'?'z'+text:effect==='drop'?text.slice(1):effect==='rewrite'?'z'+text.slice(1):null;
-  return {seed:{expected:initial,start,end,effect,first:text[0]},text,expected:surround(text),control:altered===null?null:surround(altered)};
+  return {seed:{expected:initial,start,end,effect,first:text[0]},text,expected:surround(text),control:altered===null?null:surround(altered),
+    requestedCaret:start+text.length,controlCaret:altered===null?null:start+altered.length};
 }
 const weakReason=()=>{throw Error('owned target could not be resolved');};
 // Overlap, drops, an off-thread call or a missing boundary make the trace unusable (a failed row), never a quiet pass.
@@ -50,7 +51,7 @@ function decodeFirefox(d){
   const role=s=>typeof s==='string'&&/^(?:AX[A-Za-z]{1,45}|absent|failed|unrecognized)$/.test(s)?s:null;
   return {role:role(d.role),subrole:role(d.subrole),relationship:d.relationship};
 }
-async function startEngine({name,src,bin,root,platform,audit,focus,globalPrivacy,lane}){
+async function startEngine({name,src,bin,root,platform,audit,focus,drain,globalPrivacy,lane}){
   const home=join(root,name[0]);mkdirSync(home,{mode:0o700});const socket=join(home,'e.sock');
   const env=environment(home);const traces=new Map(),registry=new Set();let active=null;
   const note=(label,data,opts={})=>{
@@ -60,6 +61,7 @@ async function startEngine({name,src,bin,root,platform,audit,focus,globalPrivacy
   const child=owned(bin,[],{...env,CUA_ENGINE_SOCKET:socket},{stdout:l=>note('stdout',l),stderr:l=>{
     if(audit){try{const d=JSON.parse(l)?.probe395Audit;if(d){traces.set(d.id,decodeAudit(d,lane));return;}}catch{}}
     if(focus){try{const d=JSON.parse(l)?.probe414Firefox;if(d){const decoded=decodeFirefox(d);if(decoded)traces.set(d.id,decoded);return;}}catch{}}
+    if(drain){try{const d=JSON.parse(l)?.probe414AppKit;if(d){traces.set(d.id,d);return;}}catch{}}
     note('stderr',l);
   }});
   let w,identity;
@@ -103,7 +105,7 @@ async function startEngine({name,src,bin,root,platform,audit,focus,globalPrivacy
       return true;
     }
     async function type(m,id,literal,head){
-      const meta={}, content=[], logged=[], original={};let native=null,sent=0,guarded=true;
+      const meta={}, content=[], logged=[], original={};let native=null,sent=0,guarded=true,replyAtMs=null;
       const nodeRepl={env,setResponseMeta:x=>Object.assign(meta,x),emitContentItem:x=>content.push(x),createElicitation:async q=>{
         if(q.meta?.tool_params?.app!==target.bundleIdentifier)throw Error('unexpected approval');
         return {action:'accept'};
@@ -114,10 +116,10 @@ async function startEngine({name,src,bin,root,platform,audit,focus,globalPrivacy
           sent++;
           if(args.app!==target.appPath||args.text!==m.text||Boolean(args.concealed)===literal||sent!==1){guarded=false;throw Error('unexpected type request');}
         }
-        const extra=method==='type_text'?(audit?{probe395Audit:id}:focus?{probe414Firefox:id}:null):null;
+        const extra=method==='type_text'?(audit?{probe395Audit:id}:focus?{probe414Firefox:id}:drain?{probe414AppKit:id}:null):null;
         const r=await w.execute(method,extra?{...args,...extra}:args);
         if(method==='resolve_app'&&(r.result?.pid!==target.pid||r.result?.bundleIdentifier!==target.bundleIdentifier))weakReason();
-        if(method==='type_text')native=r;
+        if(method==='type_text'){native=r;replyAtMs=Date.now();}
         note(method==='type_text'?'ipc-type':'ipc-other',r,{literal:literal&&method==='type_text',surface:'ipc',baseline:head==='main'});
         if(r.error)throw protocol.serverError(r.error);
         return {result:r.result,engineMs:performance.now()-started};
@@ -145,7 +147,7 @@ async function startEngine({name,src,bin,root,platform,audit,focus,globalPrivacy
       if(!guarded||sent!==1||!native) return {reply:false,raw:null,forwarded:null,sky:'missing',serviceMs,action};
       const disclosureOf=surface=>firefoxDisclosure(surface,{setupText:m.seed.setupText,passwordText:m.expected});
       const disclosure=lane==='firefox'?{ipc:disclosureOf(native),forwarded:disclosureOf(meta),skyError:disclosureOf(error),rendered:disclosureOf(rendered)}:null;
-      return {reply:true,raw,forwarded:meta['cua/typeReadback'],sky:skyClass,noted:noteAttested(native?.result?.note,content),serviceMs,action,disclosure};
+      return {reply:true,raw,forwarded:meta['cua/typeReadback'],sky:skyClass,noted:noteAttested(native?.result?.note,content),serviceMs,action,disclosure,replyAtMs};
     }
     // Prime AX access before the first scored field. No action and no instrumented audit tag are sent.
     await w.execute('get_app_state',{pid:platform.pid,includeScreenshot:false,disableDiff:true});
@@ -160,12 +162,16 @@ async function startEngine({name,src,bin,root,platform,audit,focus,globalPrivacy
 async function main(){
   const [lane,mode,phase,root,out,helper,cover,appkit,mainSrc,mainBin,fixSrc,fixBin]=process.argv.slice(2);
   if(process.env.RUNNER_ENVIRONMENT!=='github-hosted')throw Error('hosted runners only');
-  if(!['cft','electron','electron-parity','safari','firefox','appkit'].includes(lane)||!['smoke','full','firefox-focus'].includes(mode)||!['stock','audit','focus'].includes(phase))throw Error('invalid lane');
-  const audit=phase==='audit',smoke=mode==='smoke',focus=phase==='focus',diagnostic=mode==='firefox-focus';
-  if(diagnostic?(lane!=='firefox'||audit):focus)throw Error('invalid focus lane');
+  if(!['cft','electron','electron-parity','safari','firefox','appkit'].includes(lane)||!['smoke','full','firefox-focus','firefox-single','appkit-race','drain'].includes(mode)||!['stock','audit','focus','drain'].includes(phase))throw Error('invalid lane');
+  const audit=phase==='audit',smoke=mode==='smoke',focus=phase==='focus',drain=phase==='drain',race=mode==='appkit-race',diagnostic=mode.startsWith('firefox-');
+  const singlePassword=lane==='firefox'&&mode!=='firefox-focus'&&mode!=='smoke';
+  if(diagnostic?(lane!=='firefox'||audit||drain):focus)throw Error('invalid focus lane');
   mkdirSync(out,{recursive:true});const tmp=mkdtempSync(join(root,'q414-')),home=join(tmp,'platform');mkdirSync(home);
-  const rows=[],schedules=[],firefoxFacts=[],globalPrivacy=new Set(),engines={};let platform,stage='launch',abort=null,streak=0;
-  const cells=diagnostic?Array.from({length:3},(_,rep)=>['literal','short'].flatMap((kind,i)=>
+  const rows=[],schedules=[],firefoxFacts=[],timings=[],globalPrivacy=new Set(),engines={};let platform,capabilities=null,stage='launch',abort=null,streak=0;
+  const additions=Array.from({length:20},(_,rep)=>({head:'fix',kind:'add',rep,literal:rep%2===1}));
+  const timingCells=Array.from({length:20},(_,i)=>[{head:'fix',kind:'short',rep:i*2},{head:'fix',kind:'short',rep:i*2+1},
+    {head:'fix',kind:'long',rep:i*2},{head:'fix',kind:'long',rep:i*2+1},additions[i]]).flat();
+  const cells=race?additions:drain?timingCells:diagnostic?Array.from({length:3},(_,rep)=>['literal','short'].flatMap((kind,i)=>
     ((rep+i)%2?['fix','main']:['main','fix']).map(head=>({head,kind,rep})))).flat():plan(smoke,{audit});
   // Paired primary rows receive the exact same disposable text, not independently generated treatments.
   const inputs=new Map();
@@ -178,17 +184,19 @@ async function main(){
     }
   }
   const config={kit:process.env.GITHUB_SHA,refs:{main:process.env.MAIN_SHA,fix:process.env.FIX_SHA},image:process.env.ImageVersion,
-    os:execFileSync('sw_vers',['-productVersion'],{encoding:'utf8',stdio:['ignore','pipe','ignore']}).trim(),lane,mode,phase};
+    os:execFileSync('sw_vers',['-productVersion'],{encoding:'utf8',stdio:['ignore','pipe','ignore']}).trim(),lane,mode,phase,
+    fixtureShape:singlePassword?'password-only':lane==='safari'?'large-with-setup':'with-setup'};
   try{
-    platform=await startPlatform({lane,home,helper,cover,appkit,stage:x=>{stage=x;}});
+    platform=await startPlatform({lane,home,helper,cover,appkit,singlePassword,stage:x=>{stage=x;}});
     Object.assign(config,{version:platform.version,presentation:platform.presentation,foregroundFallback:platform.fallback});
+    if(lane==='appkit')capabilities=await platform.appkitCapabilities();
     stage='engine-start';
-    const sources=audit?{fix:[fixSrc,fixBin]}:{main:[mainSrc,mainBin],fix:[fixSrc,fixBin]};
-    for(const [name,[src,bin]] of Object.entries(sources))engines[name]=await startEngine({name,src,bin,root:tmp,platform,audit,focus,globalPrivacy,lane});
+    const sources=audit||drain||race?{fix:[fixSrc,fixBin]}:{main:[mainSrc,mainBin],fix:[fixSrc,fixBin]};
+    for(const [name,[src,bin]] of Object.entries(sources))engines[name]=await startEngine({name,src,bin,root:tmp,platform,audit,focus,drain,globalPrivacy,lane});
     let trial=0;
     for(const c of cells){
       const id=`${c.head}-${c.kind}-${c.rep}`,m=inputs.get(`${c.kind}/${c.rep}`),e=engines[c.head];
-      const row={...c};let s='prepare',armed=false,attested=false,receipt=null,delivery=null,focusFacts=null;
+      const row={...c};let s='prepare',armed=false,attested=false,receipt=null,delivery=null,focusFacts=null,timingTrace=null;
       const scope={words:[m.text,...new Set([m.seed.expected,m.expected,m.control].filter(Boolean))],flags:new Set()};e.scope(scope);
       try{
         s='engine-attach';await e.attach();
@@ -197,7 +205,8 @@ async function main(){
         s='delivery';
         const end=performance.now()+2500;
         do{
-          const d=await platform.command({op:'read',trial,expected:m.expected,control:m.control,setupText:m.seed.setupText});
+          const d=await platform.command({op:'read',trial,expected:m.expected,control:m.control,setupText:m.seed.setupText,
+            requestedCaret:m.requestedCaret,controlCaret:m.controlCaret});
           if(d.trial!==trial||!d.shape||!d.focused)throw Error('fixture no longer focused');
           delivery=d;
           if(m.control!==null?d.controlExact&&d.hit&&d.key:d.exact&&d.key)break;
@@ -206,7 +215,11 @@ async function main(){
         // An untouched fixture or a delivery mismatch after a witnessed call is a product miss, not setup-invalid.
         s='witness-end';const valid=await platform.disarm();armed=false;
         if(!valid)throw Error('presentation changed');attested=true;
-        if(!audit&&!focus){s='observation';if(!await e.observe())row.observationMissing=true;}
+        if(!audit&&!focus&&!drain){s='observation';if(!await e.observe())row.observationMissing=true;}
+        if(drain){
+          for(let i=0;i<20&&!e.traces.has(id);i++)await pause(20);
+          timingTrace=e.traces.get(id)??null;e.traces.delete(id);
+        }
         if(focus){
           for(let i=0;i<20&&!e.traces.has(id);i++)await pause(20);
           focusFacts=e.traces.get(id)??null;e.traces.delete(id);
@@ -225,7 +238,7 @@ async function main(){
         e.scope(null);
       }
       const controlOK=delivery?.controlExact===true&&delivery.hit===true&&delivery.key===true;
-      Object.assign(row,score({...c,lane,preliminary:smoke,raw:receipt?.raw,forwarded:receipt?.forwarded,sky:receipt?.sky,noted:receipt?.noted,fixture:attested,
+      Object.assign(row,score({...c,lane,preliminary:smoke||race,raw:receipt?.raw,forwarded:receipt?.forwarded,sky:receipt?.sky,noted:receipt?.noted,fixture:attested,
         domExact:delivery?.exact,controlExact:controlOK}));
       if(!row.valid&&!row.invalid)row.invalid='control-not-realized';
       row.typeRequest=receipt?.reply===true;
@@ -237,6 +250,8 @@ async function main(){
       row.serviceMs=receipt?.serviceMs??null;
       row.privacy=[...scope.flags];
       rows.push(row);
+      if(drain)timings.push({kind:c.kind,rep:c.rep,literal:c.literal===true,valid:row.valid,reason:row.reason,lengthConfirmed:row.lengthConfirmed,wrongSuccess:row.wrongSuccess,
+        sampled:timingTrace!==null,elapsed:drainIntervals(timingTrace,{replyAtMs:receipt?.replyAtMs,confirmed:row.lengthConfirmed,app:lane==='appkit'?delivery:null})});
       if(lane==='firefox')firefoxFacts.push({head:c.head,kind:c.kind,rep:c.rep,valid:row.valid,domExact:row.domExact,setupUnchanged:delivery?.setupExact??null,action:row.action,
         reason:row.reason,disclosure:receipt?.disclosure??null,focus:focusFacts});
       streak=attested?0:streak+1;
@@ -258,8 +273,9 @@ async function main(){
   for(const row of rows)if(row.action){const tally=actionCodes[row.head];tally[row.action]=(tally[row.action]??0)+1;}
   const needed=cells.filter(c=>c.kind!=='rewrite').length;
   const gates={coverage:rows.filter(r=>r.valid&&!r.informational).length===needed&&abort===null,
-    privacy:privacyViolations===0, outcome:audit||diagnostic?null:summary.scored.passed===needed&&summary.wrongSuccesses===0&&rows.every(r=>!r.observationMissing&&!r.evidenceFailure),
-    schedule:auditGate?.pass??null, focus:focus?firefoxFacts.length===needed&&firefoxFacts.every(r=>r.valid&&r.focus!==null):null};
+    privacy:privacyViolations===0, outcome:audit||drain||focus||mode==='firefox-focus'?null:summary.scored.passed===needed&&summary.wrongSuccesses===0&&rows.every(r=>!r.observationMissing&&!r.evidenceFailure),
+    schedule:auditGate?.pass??null, focus:focus?firefoxFacts.length===needed&&firefoxFacts.every(r=>r.valid&&r.focus!==null):null,
+    timing:drain?timings.length===needed&&timings.every(r=>r.sampled):null};
   const publishable=gates.privacy;
   const status={lane,phase,kit:config.kit,refs:config.refs,abort,planned:cells.length,completed:rows.length,invalid:summary.invalid,
     unattempted:cells.length-rows.length,privacyViolations,privacyCodes,actionCodes,observationsMissing:rows.filter(r=>r.observationMissing).length,
@@ -267,7 +283,13 @@ async function main(){
   writeFileSync(join(out,'status.json'),JSON.stringify(status,null,2)+'\n');
   // Counts and timings rebuilt from closed codes may leave even a privacy-failed run; rows, hashes and traces never do.
   writeFileSync(join(out,'coded.json'),JSON.stringify(coded(summary,auditGate),null,2)+'\n');
-  if(lane==='firefox')writeFileSync(join(out,'focus.json'),JSON.stringify({phase,presentation:config.presentation??null,rows:firefoxFacts},null,2)+'\n');
+  if(lane==='firefox')writeFileSync(join(out,'focus.json'),JSON.stringify({phase,fixtureShape:config.fixtureShape,presentation:config.presentation??null,rows:firefoxFacts},null,2)+'\n');
+  if(capabilities)writeFileSync(join(out,'appkit-capabilities.json'),JSON.stringify(capabilities,null,2)+'\n');
+  if(drain){
+    const valid=timings.filter(r=>r.valid&&r.elapsed),metric=k=>drainStats(valid.map(r=>r.elapsed[k]));
+    const stats={changeGapsMs:drainStats(valid.flatMap(r=>r.elapsed.changeGapsMs)),drainMs:metric('drainMs'),finalReadMs:metric('finalReadMs')};
+    writeFileSync(join(out,'timing.json'),JSON.stringify({lane,mode,planned:needed,covered:valid.length,stats,rows:timings},null,2)+'\n');
+  }
   if(publishable){
     for(const [name,value] of Object.entries({config,summary,rows,...(audit?{schedules,auditGate}:{})}))writeFileSync(join(out,`${name}.json`),JSON.stringify(value,null,2)+'\n');
   }

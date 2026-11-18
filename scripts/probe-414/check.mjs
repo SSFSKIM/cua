@@ -20,7 +20,10 @@ export function plan(smoke,{selection=true,audit=false}={}){
       if(kind==='selection'&&!selection)return;
       for(const head of (rep+i)%2===0?['main','fix']:['fix','main'])rows.push({head,kind,rep});
     });
-    for(const kind of negative)for(let i=0;i<(smoke?1:2);i++)rows.push({head:'fix',kind,rep:2*rep+i,literal:i===1});
+    for(const kind of negative){
+      const perRound=smoke?1:kind==='add'?4:2;
+      for(let i=0;i<perRound;i++)rows.push({head:'fix',kind,rep:perRound*rep+i,literal:i%2===1});
+    }
     rows.push({head:'fix',kind:'rewrite',rep});
     for(let i=0;i<(smoke?1:4);i++)for(const head of (rep+i)%2===0?['main','fix']:['fix','main'])rows.push({head,kind:'unicode',rep:(smoke?1:4)*rep+i});
   }
@@ -122,6 +125,25 @@ export function firefoxDisclosure(surface,{setupText,passwordText}={}){
     actual:present('actual')||/\bthe field reads ["']/.test(text),
     masks:/[•]/.test(text)||/[•]/.test(JSON.stringify(r)),
     lengths:present('expectedLength')||present('actualLength')||/\b\d+ characters long\b/.test(text),actualClass};
+}
+
+// Only same-machine elapsed times leave the scratch timing lane. The p99 sizing metric excludes intentional quiet sampling.
+export function drainIntervals(trace,{replyAtMs,confirmed=false,app}={}){
+  const {lastPostAtMs:post,firstReadAtMs:first,sampledAtMs:changes,finalReadAtMs:final,confirmReadAtMs:confirmation,sampledDropped:dropped}=trace??{};
+  if(dropped!==0||![post,first,final].every(Number.isFinite)||!Array.isArray(changes)||!changes.every(Number.isFinite)||
+    final<post||first>final||changes.some((x,i)=>x<first||x>final||i>0&&x<changes[i-1]))return null;
+  const observed=changes.filter(t=>t>post),last=observed.at(-1)??Math.max(first,post);
+  const delta=(a,b)=>Number.isFinite(a)&&Number.isFinite(b)?Math.round((a-b)*1000)/1000:null;
+  const bool=x=>typeof x==='boolean'?x:null;
+  return {changeGapsMs:observed.slice(1).map((x,i)=>delta(x,observed[i])),drainMs:delta(last,post),finalReadMs:delta(final,post),
+    confirmReadMs:confirmed&&confirmation>=post?delta(confirmation,post):null,replyMs:delta(replyAtMs,post),
+    consumptionAfterPostMs:delta(app?.lastKeyAppliedAtMs,post),arrivalAfterPostMs:delta(app?.lastKeyAtMs,post),
+    insertionRelativeToLastKeyMs:delta(app?.addedAtMs,app?.lastKeyAppliedAtMs),replyAfterLastKeyMs:delta(replyAtMs,app?.lastKeyAppliedAtMs),
+    addAdvancedCaret:bool(app?.addAdvancedCaret),requestedCaretOk:bool(app?.requestedCaretOk),controlCaretOk:bool(app?.controlCaretOk)};
+}
+export function drainStats(values){
+  const sorted=values.filter(Number.isFinite).sort((a,b)=>a-b),p=q=>sorted[Math.ceil(sorted.length*q)-1]??null;
+  return {n:sorted.length,p50:p(.5),p95:p(.95),p99:p(.99),max:sorted.at(-1)??null};
 }
 
 const forbiddenAX=new Set(['AXValue','AXValueDescription','AXSelectedText']);

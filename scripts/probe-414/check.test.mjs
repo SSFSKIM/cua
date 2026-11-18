@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {plan, score, inspect, auditSchedule, auditPairs, summarize, coded, noteAttested, NOTE_PREFIX, firefoxDisclosure} from './check.mjs';
+import {plan, score, inspect, auditSchedule, auditPairs, summarize, coded, noteAttested, NOTE_PREFIX, firefoxDisclosure, drainIntervals, drainStats} from './check.mjs';
 
 const success={confirmed:true,secure:true,confirmation:'length',snapshotMs:4};
 const old={confirmed:false,concealed:true,reason:'secure',snapshotMs:3};
@@ -10,14 +10,16 @@ function row({head='fix',kind='short',lane='cft',literal=false,preliminary=false
 }
 test('plan balances each cell and interleaves product pins',()=>{
   const rows=plan(false);
-  assert.equal(rows.length,105);
+  assert.equal(rows.length,115);
   for(const kind of ['short','long','selection','literal']){
     const paired=rows.filter(r=>r.kind===kind);
     assert.equal(paired.length,10);
     for(let i=0;i<10;i+=2){assert.equal(paired[i].rep,paired[i+1].rep);assert.notEqual(paired[i].head,paired[i+1].head);}
   }
-  for(const kind of ['drop','add'])assert.equal(rows.filter(r=>r.kind===kind&&r.head==='fix').length,10);
-  for(const kind of ['drop','add'])assert.equal(rows.filter(r=>r.kind===kind&&r.literal===true).length,5);
+  assert.equal(rows.filter(r=>r.kind==='drop'&&r.head==='fix').length,10);
+  assert.equal(rows.filter(r=>r.kind==='add'&&r.head==='fix').length,20);
+  assert.equal(rows.filter(r=>r.kind==='drop'&&r.literal===true).length,5);
+  assert.equal(rows.filter(r=>r.kind==='add'&&r.literal===true).length,10);
   assert.equal(rows.filter(r=>r.kind==='rewrite').length,5);
   for(const head of ['main','fix'])assert.equal(rows.filter(r=>r.kind==='unicode'&&r.head===head).length,20);
   assert.equal(plan(true).length,13);
@@ -277,4 +279,22 @@ test('Firefox diagnostic reports excerpt, expected/actual, masks and lengths as 
   assert.deepEqual(firefoxDisclosure({meta:{typeReadback:{actual:''}}}),{excerpt:false,expected:false,actual:true,masks:true,lengths:false,actualClass:'password'});
   assert.equal(firefoxDisclosure({message:'From character 5, expected "stqbot"; the field reads "wqpjuz".'},
     {setupText:'qwqpjuzq',passwordText:'stqbotcv'}).actualClass,'setup');
+});
+
+test('drain projections exclude pre-final-post samples and distinguish the final read from the change bound',()=>{
+  const trace={lastPostAtMs:1000,firstReadAtMs:980,sampledAtMs:[991,1012,1034],finalReadAtMs:1086,confirmReadAtMs:1085,sampledDropped:0};
+  const x=drainIntervals(trace,{replyAtMs:1090,confirmed:true,app:{lastKeyAtMs:1001,lastKeyAppliedAtMs:1002,addedAtMs:994,addAdvancedCaret:true,controlCaretOk:true}});
+  assert.deepEqual(x.changeGapsMs,[22]);
+  assert.equal(x.drainMs,34);
+  assert.equal(x.finalReadMs,86);
+  assert.equal(x.confirmReadMs,85);
+  assert.equal(x.replyMs,90);
+  assert.equal(x.insertionRelativeToLastKeyMs,-8);
+  assert.equal(x.replyAfterLastKeyMs,88);
+  assert.equal(x.controlCaretOk,true);
+  assert.equal(drainIntervals({...trace,sampledDropped:1},{}),null);
+  assert.equal(drainIntervals({...trace,firstReadAtMs:1003,sampledAtMs:[]},{}).drainMs,3);
+  assert.equal(drainIntervals({...trace,finalReadAtMs:990},{}),null);
+  assert.deepEqual(drainStats([1,2,3,4,5]),{n:5,p50:3,p95:5,p99:5,max:5});
+  assert.deepEqual(drainStats([]),{n:0,p50:null,p95:null,p99:null,max:null});
 });

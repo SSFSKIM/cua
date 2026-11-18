@@ -14,9 +14,9 @@ on:
         required: true
         type: string
       mode:
-        description: One round per lane, full qualification, or focused Firefox privacy/identity diagnostic
+        description: Stock qualification, scratch drain timing, or a targeted provider diagnostic
         type: choice
-        options: [smoke, full, firefox-focus]
+        options: [smoke, full, drain, firefox-focus, firefox-single, appkit-race]
         default: smoke
       secure_poll:
         description: Candidate Swift function whose own loop polls the secure length (default is the reviewed confirmLength anchor)
@@ -25,7 +25,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: probe-414-qualification${{ inputs.mode == 'firefox-focus' && '-focus' || '' }}
+  group: probe-414-qualification-${{ inputs.mode || 'register' }}
   cancel-in-progress: false
 jobs:
   register:
@@ -40,7 +40,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(inputs.mode == 'firefox-focus' && '[{"lane":"firefox","phase":"stock"},{"lane":"firefox","phase":"focus"}]' || '[{"lane":"cft","phase":"stock"},{"lane":"electron","phase":"stock"},{"lane":"electron-parity","phase":"stock"},{"lane":"safari","phase":"stock"},{"lane":"firefox","phase":"stock"},{"lane":"appkit","phase":"stock"},{"lane":"cft","phase":"audit"},{"lane":"safari","phase":"audit"}]') }}
+        include: >-
+          ${{ fromJSON((inputs.mode == 'firefox-focus' || inputs.mode == 'firefox-single') &&
+          '[{"lane":"firefox","phase":"stock"},{"lane":"firefox","phase":"focus"}]' ||
+          inputs.mode == 'appkit-race' && '[{"lane":"appkit","phase":"stock"},{"lane":"appkit","phase":"drain"}]' ||
+          inputs.mode == 'drain' && '[{"lane":"cft","phase":"drain"},{"lane":"electron","phase":"drain"},{"lane":"electron-parity","phase":"drain"},{"lane":"safari","phase":"drain"},{"lane":"firefox","phase":"drain"},{"lane":"appkit","phase":"drain"}]' ||
+          '[{"lane":"cft","phase":"stock"},{"lane":"electron","phase":"stock"},{"lane":"electron-parity","phase":"stock"},{"lane":"safari","phase":"stock"},{"lane":"firefox","phase":"stock"},{"lane":"appkit","phase":"stock"},{"lane":"cft","phase":"audit"},{"lane":"safari","phase":"audit"}]') }}
     name: ${{ matrix.lane }} / ${{ matrix.phase }}
     env:
       MAIN_SHA: ${{ inputs.main }}
@@ -70,7 +75,7 @@ jobs:
           sw_vers
           node --test scripts/probe-414/*.test.mjs
           heads=(main fix)
-          if [[ "$PHASE" == audit ]]; then heads=(fix); fi
+          if [[ "$PHASE" == audit || "$PHASE" == drain || "$MODE" == appkit-race ]]; then heads=(fix); fi
           for head in "${heads[@]}"; do
             pin="$MAIN_SHA"
             if [[ "$head" == fix ]]; then pin="$FIX_SHA"; fi
@@ -80,6 +85,7 @@ jobs:
             test -z "$(git -C "$base-src" status --porcelain)"
             if [[ "$PHASE" == audit ]]; then node scripts/probe-414/patch-audit.mjs "$base-src" "$POLL"; fi
             if [[ "$PHASE" == focus ]]; then node scripts/probe-414/patch-firefox.mjs "$base-src"; fi
+            if [[ "$PHASE" == drain ]]; then node scripts/probe-414/patch-appkit.mjs "$base-src"; fi
             swift build -c release --package-path "$base-src/native/engine" --scratch-path "$base-build"
             if [[ "$PHASE" == stock ]]; then test -z "$(git -C "$base-src" status --porcelain)"; fi
           done
@@ -138,6 +144,8 @@ jobs:
             # Fixed coded counts and timings only (no rows, hashes or traces) may leave even a privacy-failed run.
             if [[ -f "$stage/coded.json" ]]; then cp "$stage/coded.json" "$evidence/coded.json"; fi
             if [[ -f "$stage/focus.json" ]]; then cp "$stage/focus.json" "$evidence/focus.json"; fi
+            if [[ -f "$stage/timing.json" ]]; then cp "$stage/timing.json" "$evidence/timing.json"; fi
+            if [[ -f "$stage/appkit-capabilities.json" ]]; then cp "$stage/appkit-capabilities.json" "$evidence/appkit-capabilities.json"; fi
             if jq -e '.publishable == true' "$stage/status.json" >/dev/null; then
               for f in config summary rows schedules auditGate; do
                 if [[ -f "$stage/$f.json" ]]; then cp "$stage/$f.json" "$evidence/$f.json"; fi

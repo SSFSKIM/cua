@@ -27,7 +27,7 @@ import { pinnedEngine } from './pinned-home.mjs';
 import { stacking, startOverlay, toplevel, waitQuarantineOver, within } from './clip.mjs';
 import { desktopEntry } from './desktop-entry.mjs';
 import { DEVICE_REFUSAL, SPEED_GAPS, declaredDeviation, declaredParity, declaredRefusal, declaredSpeedGap, describe, setAsideMinimized, setAsideTruncation, truncationMismatch } from './deviations.mjs';
-import { PREMISE_OPS, judgeDevice } from './device.mjs';
+import { judgeDevice } from './device.mjs';
 import { IDENTITY_OPS, identityAuditKind } from './identity.mjs';
 import { MINIMIZED_OPS, minimizedAuditKind } from './minimized.mjs';
 import { Engine } from './engine.mjs';
@@ -37,7 +37,6 @@ import { compareStates, normalizeState, retainedIds } from './normalize.mjs';
 import { OPS, SCENE_OPS, inputOp, ownWindow, shotOf, targeted } from './ops.mjs';
 import { Oracle } from './oracle.mjs';
 import { ORACLE, PrepareStepError, judgePrepareFaults, judgeTextRestores, judgeWarmUps, prepareFailureRow, sampleUnderRule } from './prepare.mjs';
-import { premiseFields, refill } from './premise.mjs';
 import { writeSummary } from './report.mjs';
 import { CandidateSceneEnded, auditInSegments, invalidRestartRow, judgeSceneEnds, keepLaneScene, endedTarget, markEndedTargets, mergeAudits, restartLaneScene } from './scene-ended.mjs';
 import { routeWitness, runCases } from './safety.mjs';
@@ -1300,11 +1299,8 @@ async function diffRun(args, candidate, { handoff }) {
     // the in-front allowance's controls, in every run with the stub's
     if (stubScene && !(await inFrontNegativeCheck(witness, emit, isHarness))) valid = false;
 
-    // cua's samples of ruling 823's cells (device.mjs PREMISE_OPS), by `<scene>|<op>`, for their refill after the blocks
-    const premiseRows = new Map(blockPlan.filter((p) => PREMISE_OPS.has(p.op)).map((p) => [`${p.scene}|${p.op}`, []]));
-    // One engine's series of an operation in a block: a fresh process, its cold sample and `n - 1` warm ones; a refill's
-    // samples (ruling 823) marked `fill`.
-    const measureSeries = async ({ sceneName, op, label, block, n, fill = false }) => {
+    // One engine's series of an operation in a block: a fresh process, its cold sample and `n - 1` warm ones.
+    const measureSeries = async ({ sceneName, op, label, block, n }) => {
       const spec = engineSpecFor(engines.find((e) => e.label === label), op, sceneName);
       let target = measuredTarget(windows, sceneName, op, label);
       // the series' cold sample finds its lane's text window still the run's, or a fresh one (M5's T4)
@@ -1402,8 +1398,6 @@ async function diffRun(args, candidate, { handoff }) {
               if (leftByVendor(shot.filepath, desktop.dir)) rmSync(shot.filepath, { force: true });
             }
           }
-          if (fill) row.fill = true;
-          if (label === 'cua') premiseRows.get(`${sceneName}|${op}`)?.push(row);
           emit(row);
         }
       } finally {
@@ -1426,18 +1420,6 @@ async function diffRun(args, candidate, { handoff }) {
           await measureSeries({ sceneName, op, label, block, n: 1 + samplesFor(op) });
         }
       }
-    }
-    // Ruling 823's refill (premise.mjs): a sample of cua's whose premise was unmet is replaced within the timed pass by
-    // more series of the operation's own length, each on a fresh engine and numbered on from the blocks, until the cell
-    // judges its planned count again or has run as many extra samples as it planned
-    for (const { scene: sceneName, op } of blockPlan.filter((p) => PREMISE_OPS.has(p.op) && labels.includes('cua'))) {
-      const rows = premiseRows.get(`${sceneName}|${op}`);
-      let block = args.blocks;
-      await refill(rows, (r) => rows.find((x) => x.block === r.block && x.i === r.i + 1), async ({ room }) => {
-        const n = Math.min(1 + samplesFor(op), room);
-        await measureSeries({ sceneName, op, label: 'cua', block: block++, n, fill: true });
-        return n;
-      });
     }
 
     // The top-up (Acceptance 3, revised at M3.1): a series is judged only on 20 samples a side and through its interval,
@@ -1537,12 +1519,11 @@ async function diffRun(args, candidate, { handoff }) {
           // the audit's two requests in one lifecycle while the window lasts: a request that ended its lane's text window
           // ends its lifecycle, and the next is audited on the recovered window in a fresh one, its ancestry watched anew
           // (scene-ended.mjs `auditInSegments`, M5's T4 fix wave 1); a candidate's ended window stops the run there
-          const ended = async () => isText(op) && Boolean(await desktop.sceneEnded(measuredTarget(windows, sceneName, op, spec.label)));
-          const recover = (next) => laneScene(sceneName, spec.label, { op, block: 'audit', i: next, series: 'cold' });
-          // a refill's requests (ruling 823) are numbered on from the audit's planned two (`base`) and marked `fill`
-          const segment =
-            (base = 0) =>
-            async ({ from, samples, stopAfter }) => {
+          const segments = await auditInSegments({
+            samples: 2,
+            ended: async () => isText(op) && Boolean(await desktop.sceneEnded(measuredTarget(windows, sceneName, op, spec.label))),
+            recover: (next) => laneScene(sceneName, spec.label, { op, block: 'audit', i: next, series: 'cold' }),
+            segment: async ({ from, samples, stopAfter }) => {
               const target = measuredTarget(windows, sceneName, op, spec.label);
               let ran = 0;
               // the proxy, the watcher and the engine, each ended however the samples go
@@ -1559,29 +1540,19 @@ async function diffRun(args, candidate, { handoff }) {
                   },
                 },
                 async (engine, p) => {
-                  for (let k = from; k < samples; k++) {
-                    const i = base + k;
+                  for (let i = from; i < samples; i++) {
                     const { row } = await runSample({ desktop, witness: null, engine, target, op, i, block: 'audit', label: spec.label, sceneName, cuaVersion, traceMark: (tag) => p.mark(`${tag}:${i}`) });
                     if (row.text_restored) restoredText.push({ i, ...row.text_restored });
                     oks.push(row.ok);
-                    // with what ruling 823's cells keep of the sample (premise.mjs), the page's record of its press among it
-                    answered.push({ ok: row.ok, error: row.error ?? null, expected_error: row.expected_error ?? null, late_error: row.late_error ?? null, ...(PREMISE_OPS.has(op) ? premiseFields(row) : {}), ...(base ? { fill: true } : {}) });
+                    answered.push({ ok: row.ok, error: row.error ?? null, expected_error: row.expected_error ?? null, late_error: row.late_error ?? null });
                     ran++;
-                    if (await stopAfter(k)) break;
+                    if (await stopAfter(i)) break;
                   }
                 },
               );
               return { ran, target, ...life };
-            };
-          const segments = await auditInSegments({ samples: 2, ended, recover, segment: segment() });
-          // ruling 823's refill within the audit pass: a request of cua's whose premise was unmet is replaced by another
-          // audited one, in a lifecycle of its own, up to as many more as the audit planned
-          if (PREMISE_OPS.has(op) && spec.label === 'cua') {
-            await refill(answered, (a, i) => answered[i + 1], async ({ need }) => {
-              const base = answered.length;
-              segments.push(...(await auditInSegments({ samples: need, ended, recover: (next) => recover(base + next), segment: segment(base) })));
-            });
-          }
+            },
+          });
           // a cua request that must take the foreground route is audited against that route: only its target's activation,
           // raise and focus and XTEST input (M2 whole-branch review)
           const foregroundAudit = !VENDORS.includes(spec.label) && routeOf(op, sceneName) === 'foreground';

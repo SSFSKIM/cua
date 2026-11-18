@@ -7,7 +7,6 @@ import { join } from 'node:path';
 
 import { DEVELOPMENT_ON_PINNED, DEVELOPMENT_RUN, PINNED_RELEASE, RELEASE_GATE, candidateLine, gateLabel } from './candidate.mjs';
 import { matrixMarkdown } from './matrix-judge.mjs';
-import { premiseMarkdown } from './premise.mjs';
 import { UNCONFIRMED_LANDED_SHARE, dropCounts, summarizeEngine, verdictLine } from './stats.mjs';
 
 const fmt = (v) => (v === null || v === undefined ? '–' : String(v));
@@ -176,8 +175,6 @@ export function renderSummary(lines) {
       for (const v of verdicts.filter((x) => x.drops)) out.push(`| ${v.scene} | ${v.op} | ${v.drops.samples} | ${v.drops.landed} | ${v.drops.ok} | ${v.drops.false_ok} | ${v.drops.unconfirmed_landed} |`);
       out.push(`| **run** | | ${drops.samples} | ${drops.landed} | ${drops.ok} | ${drops.false_ok} | ${drops.unconfirmed_landed} |`);
     }
-    // V5's drag-and-drop samples whose premise was unmet, each cell's rate (ruling 823, premise.mjs)
-    out.push(...premiseMarkdown(verdicts));
     // every pass that is a small measured loss inside the bound, in one table (Acceptance 3)
     // a label's `candidate` is the candidate's median; the engine is the verdict's own `candidate`
     const bound = verdicts.flatMap((v) => (v.labels ?? []).filter((l) => l.label === 'within the bound').map((l) => ({ ...l, scene: v.scene, op: v.op, engine: v.candidate })));

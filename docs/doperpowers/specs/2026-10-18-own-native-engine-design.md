@@ -6590,11 +6590,20 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      so #359's `selectionChanged` refusal pastes nothing and never touches it. Cost: the snapshot's reads, and any
      stable wait (at least 50 ms), now sit between the activation and the first ⌘V, inside the screen-update hold that
      the hold's 100 ms timer still caps; the effect baseline read no longer taken there offsets part of it.
-  3. **The final poll runs once the paste answered**: after the last line's read wait, the restore, the paste lock and
-     the activation, from then (`finish` with no post time), not from the last ⌘V. The app inserts a paste after it
-     reads it, so the read wait never eats the 1 s budget, and the person's clipboard is not held through the poll.
-     Every constant is the keyed route's (`typeReadbackBudgetMs`, the poll interval, the quiet window, #359's), none
-     the paste's own, so a measured change moves both routes or is a new constant beside `pasteReadTimeoutMs`.
+  3. **The final poll runs once the pasteboard is restored, while the activation still holds** (`PasteTyping.finish`,
+     inside the paste lock), from then (`finish` with no post time), not from the last ⌘V. The app inserts a paste after
+     it reads it, so the read wait never eats the 1 s budget, and the person's clipboard is not held through the poll.
+     It is not after the activation's release: the hosted probe (probe/361-qual, scripts/probe-361/README.md, on main
+     517ab543) found background Electron naming no focused element once the paste's activation ended in 100 of 100
+     trials and Safari in 58 of 100, so the poll's identity check, which asks for the focus again, would answer
+     `fieldChanged` on a field that took the text. Polling under the activation was chosen over reading the snapshot's
+     own handle with no identity check: equality on the handle alone would turn Firefox's late focus (the probe, below) into a
+     mismatch whose excerpt shows another field's text, and would keep no guard on a field that lost the focus to
+     another; under the activation the identity check is the keyed route's, unchanged. Its cost: the paste lock and the
+     activation's lease (not its screen-update hold, which its timer caps) last until the text reads back, within
+     232 ms of the last post on every probed lane but one Firefox trial (763 ms), at most the 1 s budget. Every constant
+     is the keyed route's (`typeReadbackBudgetMs`, the poll interval, the quiet window, #359's), none the paste's own, so
+     a measured change moves both routes or is a new constant beside `pasteReadTimeoutMs`.
   4. **Newlines follow the keyed route.** In a multi-line field a Return is text, read back like any character, with no
      checkpoint; in a single-line field (and Gecko's `AXApplicationGroup`) it is a checkpoint, posted only once the text
      before it reads back, with the clipboard still the engine's, its effect unconfirmed (`keysUnconfirmed`); a
@@ -6636,10 +6645,26 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   field's Return is a checkpoint, and a mismatch before it sends neither it nor the next line; a paste never read keeps
   `clipboardReadTimedOut`; select_text's lost range pastes nothing; the snapshot is pinned after the activation's events
   and before the pasteboard's write, with the stable wait after an in-window click; a password field confirms by its
-  length with nothing but the length batch read; the clipboard is restored on every path. Two mutations (no final poll;
-  no wait for the activation's click) each failed the suite. PasteTests' multi-line effect-mode tests moved to the
-  read-back mode or went with the settle. Live, on hosted macOS: the measuring session's paste-route run (CJK input
-  sources in Safari, Chrome for Testing, Firefox and TextEdit) is pending.
+  length with nothing but the length batch read; the clipboard is restored on every path; the final poll runs before
+  the deactivation, an app that loses its focus there still confirming; AppKit's Return that selects its field, a
+  Return that drops the next line, and Firefox's late focus are unconfirmed. Three mutations (no final poll; no wait
+  for the activation's click; the poll after the activation's release) each failed the suite. PasteTests' multi-line effect-mode tests moved to the
+  read-back mode or went with the settle.
+  **What the hosted probe measured, on main before this change** (five lanes, Safari 27.2, Chrome for Testing
+     156/157, Firefox 160, Electron 44 and an AppKit fixture, under Korean 2-Set, Japanese Romaji and Kana and Pinyin,
+     all on the paste route): #187's check answered success on 599 of 599 realized controls (a rewritten character, an
+     added one, a stale selection), and on 40 of 40 two-line pastes into AppKit's single-line field, whose Return selects
+     the field so the second line replaces the first (the browsers kept line 1 alone and answered `pasteUnconfirmed`
+     after a 2.1 to 2.4 s Return settle). Every plain cell delivered exactly and the clipboard was restored 2000 of
+     2000; the input source played no part once the route was paste. Its instrumented read-back found the expected
+     value readable within 232 ms of the last post everywhere but one Firefox trial (763 ms), and never under a
+     realized control (0 of 150): equality is sound and the budget fits. The AppKit case now answers `typeUnconfirmed`
+     (the checkpoint confirms line 1, the final poll finds line 2 alone; a stub test). Firefox (#419) named the field
+     focused before as the focus in 100 of 100 trials until 35 ms before to 58 ms after the first ⌘V, so a snapshot
+     can be of that field while the paste lands in the target: no wait before ⌘V can see a focus that moves only as ⌘V
+     is handled, so that case answers `fieldChanged`, with no excerpt and never a success (a stub test), the residual
+     the qualification measures. Background Electron's and Safari's lost focus is item 3's.
+  Live, on hosted macOS: the qualification of this branch's head is the measuring session's.
   Date/Author: 2026-11-18, cursor235's implementer for #361.
 
 ## Outcomes & Retrospective

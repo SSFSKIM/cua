@@ -38,7 +38,7 @@ import Foundation
 // the app was handed (a line once read, a Return once posted). The focused field is snapshotted once the paste's
 // activation ran and before the pasteboard is touched (`PasteTyping`), after a stable range when that activation
 // clicked inside the window (`activationClickPending`); a Return the field does not take as text is a checkpoint,
-// pressed only once the text before it reads back; and once the operation answered, its restore done, the field is
+// pressed only once the text before it reads back; and once the pasteboard is restored, the activation still held, the field is
 // polled for the snapshot with its selection replaced by the text: success only when it reads so, else
 // `typeUnconfirmed`. The read-back replaces #187's effect wait and the Return's settle on this route, and only those:
 // the clipboard's snapshot, restore and conflict checks and the read wait are the paste's own; each line's record
@@ -459,7 +459,7 @@ private final class MainLag: @unchecked Sendable {
 ///
 /// `beforePart`, type_text's read-back (#361, `PasteTyping`), runs before each part and replaces the effect wait, and
 /// only it: a line is done once the app was handed it and the pasteboard is still the engine's, and the read-back
-/// confirms the text once the operation answered. Nothing waits for a Return's effect: only type_text's text has
+/// confirms the text once the operation restored the pasteboard. Nothing waits for a Return's effect: only type_text's text has
 /// newlines, and its read-back checks them.
 @discardableResult
 func runPaste(_ parts: [PastePart], pasteboard: PasteboardAccess, effect: PasteEffect, readTimeoutMs: Double = pasteReadTimeoutMs,
@@ -690,7 +690,7 @@ extension Engine {
   /// activation ran, before the pasteboard is touched (`PasteTyping`), with `selection` and `settle` as the keyed route
   /// takes them and a stable range first when a click may still land (`pointerPending`, or the activation's own click
   /// inside the window); a Return the field does not take as text is a checkpoint; the final poll runs once the
-  /// operation answered, its restore done and its lock released. `entered` is what the app was handed, also in the
+  /// pasteboard is restored, while the activation still holds (`PasteTyping.finish`). `entered` is what the app was handed, also in the
   /// sentence of a line no app read (`typedPasteError`); the read-back's record rides in the meta whatever the answer.
   /// Answers a password field's length note (`readbackLengthNote`), as the keyed route does. Empty text pastes nothing
   /// and reads nothing.
@@ -712,13 +712,12 @@ extension Engine {
       readback = made
       // #359: select_text's range gone, nothing is pasted and the pasteboard is never touched.
       if made.refusesTyping { throw typeUnconfirmed(.selectionChanged) }
-    }, beforePart: { try readback?.beforeUnit($0) })
+    }, beforePart: { try readback?.beforeUnit($0) }, finish: { try readback?.finish() })
     do {
       try pasteOperation(parts, target, context, typing: typing, entered: &entered, meta: &meta)
     } catch let error as EngineError {
       throw typedPasteError(error, entered: entered, total: text.utf16.count, line: meta.paste?.line, lines: meta.paste?.lines)
     }
-    try readback?.finish()
     if let record = readback?.record, record.secure, record.lengthConfirmed { meta.note = readbackLengthNote }
     return meta.note
   }
@@ -796,13 +795,18 @@ extension Engine {
       // and a page's select-on-focus run, and whose click inside the window can land after a read (`awaitRange`'s stable
       // wait then runs first), and before the pasteboard is touched, so a refusal leaves it alone.
       try typing?.snapshot(standing.map { activationClickPending($0, now: system.now()) } ?? false)
-      return try runPaste(parts, pasteboard: pasteboardAccess(), effect: effect,
+      let outcome = try runPaste(parts, pasteboard: pasteboardAccess(), effect: effect,
                    remainingMs: { Double(context.deadline - unixMilliseconds()) },
                    keyFocusAtPaste: { keyFocusReading(pid: target.pid, keyboard: target.keyboard, application: application, window: window, system: system) },
                    focusEnforcement: enforcement, activationNow: system.now, deliver: deliver, beforePart: typing?.beforePart,
                    checkInFlight: target.guarding.checkInFlight,
                    postPaste: { press(commandV) }, postReturn: { press(KeyPress(keyCode: returnKeyCode, modifiers: [])) },
                    entered: &entered, meta: &meta)
+      // #361: the final poll once the pasteboard is restored, but while the activation still holds: a background Safari
+      // or Electron names no focused element once it is released (the hosted probe: Electron 100 of 100, Safari 58 of
+      // 100), and the read-back's identity check asks for it again.
+      try typing?.finish()
+      return outcome
     }
   }
 
@@ -877,11 +881,13 @@ func deliveredUnits(_ representations: [PasteRepresentation]) -> Int? {
 /// type_text's read-back as the paste operation drives it (`TypeReadback`, the keyed route's): `snapshot` once the
 /// paste's activation ran and before the pasteboard is touched, told whether that activation's click inside the window
 /// may still land (`activationClickPending`), throwing when nothing may be pasted; `beforePart` before each part, a
-/// checkpoint ahead of a Return the field does not take as text. The final poll is the caller's, once the operation
-/// answered.
+/// checkpoint ahead of a Return the field does not take as text; `finish`, the final poll, once the pasteboard is
+/// restored and before the activation and the lock are released, since a background app can name no focused element
+/// once its activation ends and the poll's identity check asks for it (#361's hosted probe).
 struct PasteTyping {
   let snapshot: (_ activationClickPending: Bool) throws -> Void
   let beforePart: (_ index: Int) throws -> Void
+  let finish: () throws -> Void
 }
 
 /// The paste route's parts as the read-back's units, one for one, so a part's index is its unit's: a line is text with

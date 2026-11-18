@@ -73,7 +73,7 @@ import Foundation
 // The paste route (Paste.swift, an input method or a background app's unknown source) is read back by this same
 // machinery (#361, `typeTextByPaste`): each pasted line a unit with no key, each newline a Return, so a Return the field
 // does not take as text is the same checkpoint; its snapshot is taken after the paste's activation, its final poll once
-// the paste answered. Its requests are never concealed.
+// the pasteboard is restored, before the activation ends. Its requests are never concealed.
 
 /// The poll's budget after the last event (or before a checkpoint's key), its interval, and the messaging timeout of
 /// every read: the spike's soft 1000 ms, 5 ms polls and 100 ms AX timeout, whose confirmed reads took p50 26 to 34 ms.

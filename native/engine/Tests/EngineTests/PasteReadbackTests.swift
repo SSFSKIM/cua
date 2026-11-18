@@ -20,6 +20,8 @@ private struct Pasted {
   var keys: [String]
   /// At the read-back's snapshot: the activation's events posted so far, the pasteboard's contents, the keys so far.
   var atSnapshot: (posts: [GuardPost.Kind], pasteboard: [String], keys: [String])?
+  /// At the read-back's last identity check (the final poll's): the events posted so far, the pasteboard's contents.
+  var atLastFocusCheck: (posts: [GuardPost.Kind], pasteboard: [String])?
   var pasteboard: [String]
 
   var record: [String: Any] { meta.wire["typeReadback"] as? [String: Any] ?? [:] }
@@ -30,9 +32,11 @@ private struct Pasted {
 /// its activation point at `activationPoint` (nil: outside the frame, so the activation's click is the inert one
 /// outside), read back over `reads`. At each ⌘V's key down the app reads the pasteboard and hands the text to `deliver`
 /// (unless `readsPaste` is false: it never reads), and at each Return's key down hands it a Return; `onActivation` runs
-/// once the activation's subtype 1 is posted (what the app does on being activated).
+/// once the activation's subtype 1 is posted (what the app does on being activated), `onDeactivation` once its subtype 2
+/// is, and `onCommandV` at each ⌘V's key down before the app reads.
 private func typeByPaste<Element>(_ text: String, reads: ReadbackReads<Element>, deliver: @escaping ([UInt16]) -> Void,
-                                  activationPoint: CGPoint? = nil, onActivation: @escaping () -> Void = {}, readsPaste: Bool = true,
+                                  activationPoint: CGPoint? = nil, onActivation: @escaping () -> Void = {},
+                                  onDeactivation: @escaping () -> Void = {}, onCommandV: @escaping () -> Void = {}, readsPaste: Bool = true,
                                   selection: NSRange? = nil, deadlineMs: Int64 = 60_000) -> Pasted {
   let seam = GuardSeam(frontmost: 990_002)
   seam.activationPoint = activationPoint ?? CGPoint(x: -1, y: 1_441)
@@ -45,6 +49,7 @@ private func typeByPaste<Element>(_ text: String, reads: ReadbackReads<Element>,
     if event.type == .keyDown {
       let code = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
       if code == 0x09 {
+        onCommandV()
         if readsPaste, let pasted = pasteboard.appReads() {
           keys.append("⌘V " + pasted)
           deliver(Array(pasted.utf16))
@@ -59,6 +64,7 @@ private func typeByPaste<Element>(_ text: String, reads: ReadbackReads<Element>,
     }
     post(event, pid)
     if seam.posts.last?.kind == .appKit(1) { onActivation() }
+    if seam.posts.last?.kind == .appKit(2) { onDeactivation() }
   }
   system.windowPlacement = { _, _ in (frame, 41) }
   let engine = Engine(paths: ServerPaths(socket: "/tmp/x.sock", directory: "/tmp", lock: "/tmp/x.lock", usage: "/tmp/cua-engine-test-usage.json"),
@@ -76,6 +82,11 @@ private func typeByPaste<Element>(_ text: String, reads: ReadbackReads<Element>,
     if atSnapshot == nil { atSnapshot = (seam.posts.map(\.kind), pasteboard.strings(), keys) }
     return reads.focused()
   }
+  var atLastFocusCheck: (posts: [GuardPost.Kind], pasteboard: [String])?
+  watched.stillFocused = { field, found in
+    atLastFocusCheck = (seam.posts.map(\.kind), pasteboard.strings())
+    return reads.stillFocused(field, found)
+  }
   var meta = InputMeta(context)
   var failure: EngineError?
   do {
@@ -84,15 +95,18 @@ private func typeByPaste<Element>(_ text: String, reads: ReadbackReads<Element>,
   } catch {
     failure = error as? EngineError
   }
-  return Pasted(error: failure, meta: meta, keys: keys, atSnapshot: atSnapshot, pasteboard: pasteboard.strings())
+  return Pasted(error: failure, meta: meta, keys: keys, atSnapshot: atSnapshot, atLastFocusCheck: atLastFocusCheck,
+                pasteboard: pasteboard.strings())
 }
 
-/// The same over a fake field read through `FakeApp`'s reads.
-private func typeByPaste(_ text: String, into field: FakeField, activationPoint: CGPoint? = nil, onActivation: @escaping () -> Void = {},
-                         readsPaste: Bool = true, selection: NSRange? = nil, deadlineMs: Int64 = 60_000,
-                         deliver: (([UInt16]) -> Void)? = nil) -> Pasted {
-  typeByPaste(text, reads: FakeApp(field).reads, deliver: deliver ?? { field.deliver($0) }, activationPoint: activationPoint,
-              onActivation: onActivation, readsPaste: readsPaste, selection: selection, deadlineMs: deadlineMs)
+/// The same over a fake field read through `FakeApp`'s reads (or `app`'s, whose focus a test moves).
+private func typeByPaste(_ text: String, into field: FakeField, app: FakeApp? = nil, activationPoint: CGPoint? = nil,
+                         onActivation: @escaping () -> Void = {}, onDeactivation: @escaping () -> Void = {},
+                         onCommandV: @escaping () -> Void = {}, readsPaste: Bool = true, selection: NSRange? = nil,
+                         deadlineMs: Int64 = 60_000, deliver: (([UInt16]) -> Void)? = nil) -> Pasted {
+  typeByPaste(text, reads: (app ?? FakeApp(field)).reads, deliver: deliver ?? { field.deliver($0) }, activationPoint: activationPoint,
+              onActivation: onActivation, onDeactivation: onDeactivation, onCommandV: onCommandV, readsPaste: readsPaste,
+              selection: selection, deadlineMs: deadlineMs)
 }
 
 final class PasteReadbackTests: XCTestCase {
@@ -294,6 +308,70 @@ final class PasteReadbackTests: XCTestCase {
     XCTAssertEqual(wait["for"] as? String, "stable")
     XCTAssertNil(pasted.error)
     XCTAssertEqual(field.value, "Hello!", "the paste at the caret the click left, which the snapshot read")
+    XCTAssertEqual(pasted.pasteboard, [owner])
+  }
+
+  // MARK: The final poll (#361's hosted probe)
+
+  /// The final poll runs once the pasteboard is restored and before the activation ends: a background Safari or
+  /// Electron names no focused element once its activation is released (the probe: Electron 100 of 100, Safari 58 of
+  /// 100), and the poll's identity check asks for it again, so a poll after the release would answer `fieldChanged`.
+  func testTheFinalPollRunsWhileTheActivationHolds() throws {
+    let field = FakeField(value: "", range: NSRange(location: 0, length: 0))
+    let app = FakeApp(field)
+    let pasted = typeByPaste("배경 앱", into: field, app: app, onDeactivation: { app.focused = nil })
+    XCTAssertNil(pasted.error, pasted.error?.message ?? "")
+    XCTAssertEqual(pasted.record["confirmed"] as? Bool, true)
+    let at = try XCTUnwrap(pasted.atLastFocusCheck)
+    XCTAssertFalse(at.posts.contains(.appKit(2)), "before the deactivation: \(at.posts)")
+    XCTAssertEqual(at.pasteboard, [owner], "after the restore")
+    XCTAssertNil(app.focused, "the deactivation came after, and the field lost its focus then")
+  }
+
+  /// The probe's AppKit case: two lines into a single-line field whose Return selects the whole field, so the second
+  /// line replaces the first. #187's effect check answered success (40 of 40); the checkpoint confirms the first line,
+  /// and the final poll finds the field short of the text: `typeUnconfirmed`. The browsers' case, where the Return
+  /// leaves the field and the second line never lands, is unconfirmed too.
+  func testASingleLineFieldThatLosesALineIsUnconfirmed() {
+    let selects = FakeField(value: "", range: NSRange(location: 0, length: 0))
+    selects.role = "AXTextField"
+    selects.returnInserts = false
+    var pasted = typeByPaste("line one\nline two", into: selects, deliver: { units in
+      if units == [0x0D] { selects.range = NSRange(location: 0, length: ((selects.value ?? "") as NSString).length) } else { selects.deliver(units) }
+    })
+    XCTAssertEqual(selects.value, "line two")
+    XCTAssertEqual(pasted.keys, ["⌘V line one", "Return", "⌘V line two"])
+    XCTAssertEqual(pasted.record["checkpoints"] as? Int, 1, "the first line read back before its Return")
+    XCTAssertEqual(pasted.error?.errorName, "typeUnconfirmed")
+    XCTAssertEqual(pasted.reason, "valueMismatch")
+    XCTAssertEqual(pasted.pasteboard, [owner])
+
+    let drops = FakeField(value: "", range: NSRange(location: 0, length: 0))
+    drops.role = "AXTextField"
+    drops.returnInserts = false
+    pasted = typeByPaste("line one\nline two", into: drops, deliver: { units in
+      if units == [0x0D] { drops.ignoresInput = true } else { drops.deliver(units) }
+    })
+    XCTAssertEqual(drops.value, "line one")
+    XCTAssertEqual(pasted.error?.errorName, "typeUnconfirmed")
+    XCTAssertEqual(pasted.reason, "valueMismatch")
+    XCTAssertEqual(pasted.pasteboard, [owner])
+  }
+
+  /// Firefox (#419, the probe): accessibility names the field focused before as the focus until about the first ⌘V, so
+  /// the snapshot can be of that field while the paste lands in the target. The poll's identity check then finds the
+  /// focus moved: `fieldChanged`, with no excerpt of the other field's text, never a success.
+  func testAFocusThatSettlesOnlyAtTheFirstCommandVIsFieldChanged() {
+    let setup = FakeField(value: "setup text", range: NSRange(location: 10, length: 0))
+    let target = FakeField(value: "", range: NSRange(location: 0, length: 0))
+    let app = FakeApp(setup)
+    let pasted = typeByPaste("목표", into: target, app: app, onCommandV: { app.focused = target })
+    XCTAssertEqual(target.value, "목표")
+    XCTAssertEqual(setup.value, "setup text")
+    XCTAssertEqual(pasted.error?.errorName, "typeUnconfirmed")
+    XCTAssertEqual(pasted.reason, "fieldChanged")
+    XCTAssertFalse(pasted.error?.message.contains("setup") ?? true, "no excerpt of the other field")
+    XCTAssertNil(pasted.record["expectedLength"])
     XCTAssertEqual(pasted.pasteboard, [owner])
   }
 

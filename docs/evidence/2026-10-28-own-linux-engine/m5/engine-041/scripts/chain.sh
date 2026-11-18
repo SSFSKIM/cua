@@ -1,7 +1,8 @@
 #!/bin/bash
 # Task 101: the candidate's development measurement on a VM, one run after another, each its own locked hold (holder
 # m5-engine041), each capped at 45 minutes: the gate's own steps through gate.mjs as task 96 and task 98 ran them
-# (--dev --pilot 100) on the candidate's release build. A STOP file in the out root stops it before the next run, and
+# (--dev --pilot 100) on the candidate's release build, and `stall`, the t101-stall plan (Electron's browser stopped
+# across a plain drop's end) at idle through t101-run.mjs. A STOP file in the out root stops it before the next run, and
 # so does hold-sittings. usage: chain.sh <sha> <step>...   (T101_CHECKOUT: an existing checkout, used as it is)
 set -u
 D=/Users/new/.local/share/cua-171
@@ -20,11 +21,19 @@ stopped() {
 }
 stopped setup
 "$D/locked.sh" m5-engine041 timeout -s TERM -k 120 40m "$T/bin/setup.sh" "$SHA" > "$OUT/setup-$SHA.log" 2>&1 || { log "setup at $SHA failed"; exit 6; }
-log "checkout $G at $(git -C "$G" rev-parse HEAD), engine $("$BIN" --version), sha256 $(sha256sum "$BIN" | cut -d' ' -f1)"
+log "checkout $G at $(git -C "$G" rev-parse HEAD) ($(git -C "$G" status --porcelain | wc -l) changes), engine $("$BIN" --version), sha256 $(sha256sum "$BIN" | cut -d' ' -f1)"
 for step in "$@"; do
   stopped "$step"
-  log "start gate $step --candidate $BIN --dev --pilot 100 loadavg=$(cut -d' ' -f1-3 /proc/loadavg)"
-  "$D/locked.sh" m5-engine041 timeout -s TERM -k 120 45m node "$G/scripts/linux-engine-gate/gate.mjs" run "$step" --candidate "$BIN" --dev --pilot 100 --out "$OUT/gate" --holder m5-engine041 > "$OUT/gate-$step.driver.out" 2>&1
-  log "end gate $step exit $? loadavg=$(cut -d' ' -f1-3 /proc/loadavg) $(tail -1 "$OUT/gate-$step.driver.out" | cut -c1-200)"
+  case "$step" in
+    stall)
+      log "start stall (t101-stall, idle) loadavg=$(cut -d' ' -f1-3 /proc/loadavg)"
+      "$D/locked.sh" m5-engine041 timeout -s TERM -k 120 45m node "$T/bin/t101-run.mjs" "$G" "$OUT/stall" stall \
+        --experiment drop-signals --family electron --plan t101-stall --cua "$BIN" > "$OUT/stall.driver.out" 2>&1
+      log "end stall exit $? $(tail -1 "$OUT/stall.driver.out" | cut -c1-200)" ;;
+    *)
+      log "start gate $step --candidate $BIN --dev --pilot 100 loadavg=$(cut -d' ' -f1-3 /proc/loadavg)"
+      "$D/locked.sh" m5-engine041 timeout -s TERM -k 120 45m node "$G/scripts/linux-engine-gate/gate.mjs" run "$step" --candidate "$BIN" --dev --pilot 100 --out "$OUT/gate" --holder m5-engine041 > "$OUT/gate-$step.driver.out" 2>&1
+      log "end gate $step exit $? loadavg=$(cut -d' ' -f1-3 /proc/loadavg) $(tail -1 "$OUT/gate-$step.driver.out" | cut -c1-200)" ;;
+  esac
 done
 log "chain done: $*"

@@ -1,5 +1,8 @@
 # 0.4.1's candidate: the settle, measured (task 101)
 
+**Superseded by the fix wave's measurement below** (review 1: the rule changed after 2d8f6ad9). The first table stays as
+the record of 2d8f6ad9.
+
 Development runs of the 0.4.1 release candidate, never counted. They follow the way task 98 ran its prototype
 (`m5/l4a-fix/`). Nothing here is released: no tag, no release workflow run that publishes, and no change to the pin or
 to `MIN_ENGINE_VERSION`.
@@ -27,7 +30,7 @@ to `MIN_ENGINE_VERSION`.
 | plain cells: not landed, of 100 each (`cua`, `cua:handle`) | **0, 0** | 0, 0 | **0, 0** |
 | landed but unconfirmed | 0 of 200 | 0 of 200 | 0 of 200 |
 | the judge | pass (exit 0) | pass (exit 0) | pass (exit 0) |
-| `drop_settles` summed: entered | 560 | 560 | 560 |
+| settle records (reconstructed from per-drag `drop_cursor.settle`, not `drop_settles`): entered | 560 | 560 | 560 |
 | second rest taken | 9 | 0 | 8 |
 | second rest skipped (did not fit) | 1 | 0 | 0 |
 | unsettled | 0 | 0 | 0 |
@@ -82,3 +85,41 @@ record.
 - `tests/two-screens.sh`: 3 of 3 on x64 and 3 of 3 on arm64 (aarch64-unknown-linux-musl, from the host), each on Xorg
   :100 and :101, from this branch's own checkouts, with no target override.
 - `ci-gate --gates engine-linux,test` on 2d8f6ad9: GREEN, run 44301764159.
+
+## Fix wave 1: the final candidate, measured again (`fix1/`)
+
+Review 1 of task 101 found six Important issues; the fixes are b2ebc57e (the rule's five fixes, ruling 835's precedence
+test and 837's record) and ac8d86a6 (838: `settle_failed_activation_confirmed` in the drag's own record). The runs
+below are of **ac8d86a6**, each from a clean checkout at that commit (`step.json`: `clean: true`): the x64 worktree
+and the arm64 worktree `t101-041`, each VM's own release build (`cua-engine 0.4.1 (ac8d86a62f9a)`; x64 sha256 in
+`fix1/x64/L4a/README.md`). The head after them, 5710996e and its follow-up, changes only `--stats` lines written with
+no request (the exit's and the idle release's: `drop_settles`, `settle_final`, `exit_settle`): no input, wait or
+answer moves, so the runs stand for it. Totals are reconstructed from each drag's `drop_cursor.settle` record.
+
+| | arm64 L4a, twice the load | arm64 H1, idle | x64 L4a, twice the load |
+|---|---:|---:|---:|
+| drags | 560 | 560 | 560 |
+| false oks (the judge's) | **0** | **0** | **0** |
+| plain cells not landed (`cua`, `cua:handle`, of 100) | **0, 0** | 0, 0 | **0, 0** |
+| landed but unconfirmed | 0 of 200 | 0 of 200 | 0 of 200 |
+| left cells answered ok with no zone drop (ruling 830's class) | 0 | 0 | 0 |
+| the judge | pass (exit 0) | pass (exit 0) | pass (exit 0) |
+| settle entered / unsettled | 560 / 0 | 560 / 0 | 560 / 0 |
+| second rest taken / skipped / needless | 12 / 0 / 548 | 0 / 0 / 560 | 11 / 0 / 549 |
+| syncs unanswered | 0 | 0 | 0 |
+| `settle_failed_activation_confirmed` (no Chrome destination in these plans) | 0 | 0 | 0 |
+| the two syncs' waits summed, every drag: median / p95 / max (ms) | 2.6 / 8.6 / 90.0 | 1.1 / 1.5 / 14.5 | 2.5 / 7.7 / 70.3 |
+| the same, `cua:handle plain` | 3.3 / 63.1 / 90.0 | 1.1 / 1.6 / 13.1 | 2.8 / 45.2 / 70.3 |
+| the same, `cua plain` | 2.4 / 5.6 / 10.1 | 1.0 / 1.5 / 1.6 | 2.3 / 5.0 / 6.6 |
+
+- **The second rest by cell.** arm64 L4a: `cua:handle plain` 9 taken, ok 9, all landed; `cua:handle inzone-out` 2 and
+  `cua:handle xterm` 1 taken, unconfirmed, none landed (the controls). x64 L4a: `cua:handle plain` 9 taken, ok 9, all
+  landed; `cua:handle inzone-out` 2 taken, unconfirmed, none landed. None skipped as not fitting. Their first syncs
+  waited 42.6–89.1 ms on arm64 and 31.7–69.3 ms on x64, every one a block's cold first handle drag.
+- **The failed settle, end to end** (`fix1/*/stall/`, the harness's `t101-stall` plan: the plain short drop with the
+  Electron browser process the harness spawned stopped from 300 to 950 ms after the request, idle): on each VM 10 of 10
+  drags had both syncs unanswered (the waits read 150 ms each, the bound), skipped the second rest, settled nothing, and
+  answered with the new notice, "… did not answer in time for its drop to be confirmed …"; the next acting request was
+  refused with the same cause, and its `late_dnd` reads `unanswered: true`. Every one of the drops landed once Electron
+  continued: honest unconfirmed, never ok.
+- A second-rest skip was not seen in these runs; the live-clock rule (829) is proven by its unit tests.

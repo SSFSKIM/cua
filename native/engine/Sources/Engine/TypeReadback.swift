@@ -755,12 +755,25 @@ final class TypeReadback<Element> {
   /// collapses a selection to its end, or jumps its caret to its text's end, without taking the text), so ending on
   /// either would make the reply's time tell it. A concealed request that leaves a held match never confirms after it and
   /// polls on; its failure always takes the whole budget, at one cadence, and its reason is the last reply's. A closed
-  /// reply ends the poll at once for both, as it does not depend on the secret.
+  /// reply ends the reads at once for both, and a match that held is still checked for the focus.
+  ///
+  /// A concealed request's failure, whatever its cause (a mismatch, a closed reply, the focus check), is answered only
+  /// once the budget is spent (the review of f35a42b8..cbce12e2, P1): when a field closes or a match holds can depend on
+  /// the secret's length, so the reads stop where the rule says and the rest of the budget is slept through. Only its
+  /// success ends early. A read confirms only if it starts within the budget (same review, P2): a match taken off the
+  /// poll's grid, or a late wake, cannot confirm past it.
   private func confirmLength(through end: Int, beforeKey: Bool) throws {
     guard case .expectLength(let field, let role, let basis, _, let found) = plan else { return }
     let typed = units[0..<end].reduce(0) { leaves($1) ? $0 : $0 + readbackLengthUnits($1) }  // a key that can leave adds nothing
     let started = reads.now()
     defer { record.pollMs += reads.now() - started }
+    func fail(_ reason: TypeReadbackReason) -> EngineError {
+      if concealed {
+        let left = typeReadbackBudgetMs - (reads.now() - started)
+        if left > 0 { reads.sleep(left) }
+      }
+      return unconfirmed(reason, beforeKey)
+    }
     var last: ReadbackLengthRead?
     // The held match: its reply, and the end of the read that took it. A later read that starts at least the window
     // after it and still finds the same reply shows the reply held that long.
@@ -770,14 +783,14 @@ final class TypeReadback<Element> {
     poll: while true {
       let at = reads.now()
       switch readbackLength(field, role: role, reads: reads) {
-      case .closed(let why): throw unconfirmed(why, beforeKey)
+      case .closed(let why): throw fail(why)
       case .read(let count, let range):
         let judged = readbackLengthJudged(count: count, range: range, basis: basis, typed: typed)
         record.reads += 1
         last = judged
         if let match = held {
           if count == match.count, range == match.range {
-            if at - match.since >= typeReadbackLengthDwellMs { confirmed = true; break poll }
+            if at - match.since >= typeReadbackLengthDwellMs, at - started <= typeReadbackBudgetMs { confirmed = true; break poll }
           } else {
             // A changed reply that still judges confirmed differs only by a range its basis (an empty field read without
             // one) never checks: its caret moved.
@@ -796,16 +809,16 @@ final class TypeReadback<Element> {
       if reads.now() - started >= typeReadbackBudgetMs { break }
       reads.sleep(typeReadbackPollIntervalMs)
     }
-    guard reads.stillFocused(field, found) else { throw unconfirmed(.fieldChanged, beforeKey) }
+    guard reads.stillFocused(field, found) else { throw fail(.fieldChanged) }
     if confirmed {
       record.lengthConfirmed = true
       return
     }
     switch last {
     // A match that never held for the window: too late before the budget, or after a concealed request's reply left one.
-    case .confirmed?, .differs?: throw unconfirmed(.lengthMismatch, beforeKey)
-    case .caretElsewhere?: throw unconfirmed(concealed ? .lengthMismatch : .caretMismatch, beforeKey)
-    case .unreadable?, nil: throw unconfirmed(.lengthUnreadable, beforeKey)
+    case .confirmed?, .differs?: throw fail(.lengthMismatch)
+    case .caretElsewhere?: throw fail(concealed ? .lengthMismatch : .caretMismatch)
+    case .unreadable?, nil: throw fail(.lengthUnreadable)
     }
   }
 

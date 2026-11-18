@@ -153,15 +153,17 @@ func readbackLengthJudged(count: ReadbackWalkRead<Int>, range: NSRange?, basis: 
 /// overshoot: until the app takes the first key a genuine field's count is the snapshot's own, past the expected count
 /// whenever the selection is longer than the text, and ending on it would fail a genuine field and tell, by the reply's
 /// time, whether a secret is shorter than the selection. Only a literal request's poll ends on an overshoot
-/// (`confirmLength`): each form compares with a value that depends on the text's length.
+/// (`confirmLength`): each form compares with a value that depends on the text's length. A caret past
+/// `readbackLengthLimit` (`{NSNotFound, 0}`, an app's unavailable caret) is never one, on either basis: it is judged as
+/// any read and the poll goes on (the review of f35a42b8..cbce12e2, P2).
 func readbackLengthOvershoots(count: ReadbackWalkRead<Int>, range: NSRange?, basis: ReadbackLengthBasis, typed: Int) -> Bool {
   switch basis {
   case .count(let before, let selection):
-    if let selection, let range, range.location > selection.location + typed { return true }
+    if let selection, let range, range.location <= readbackLengthLimit, range.location > selection.location + typed { return true }
     guard (selection?.length ?? 0) == 0, case .value(let now) = count else { return false }
     return now > before - (selection?.length ?? 0) + typed
   case .caret(let start):
-    guard let range else { return false }
+    guard let range, range.location <= readbackLengthLimit else { return false }
     return range.location > start.location + typed
   }
 }

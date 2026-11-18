@@ -51,6 +51,10 @@ private final class StubPasswordApp {
   private var heldBatches = 0
   private(set) var batches = 0
   private var delivered = false
+  /// The read-back's fake clock, in ms: a read takes no time unless a test moves it (in `beforeBatch`), and a sleep
+  /// lasts what `wake` makes of the time asked for, at the clock's time.
+  var clock = 0.0
+  var wake: (Double, Double) -> Double = { asked, _ in asked }
   var log: [String] = []
 
   init(value: String, selection: NSRange) {
@@ -195,9 +199,8 @@ final class SecureTypeReadbackTests: XCTestCase {
   private func type(_ text: String, into app: StubPasswordApp, concealed: Bool = false, settle: Bool = false, baseline: BaselineWait? = nil)
     -> (error: EngineError?, meta: InputMeta, reply: String) {
     var reads = ReadbackReads.live(pid: StubPasswordApp.pid, markerRoute: false, ax: app.ax)
-    var clock = 0.0
-    reads.now = { clock }
-    reads.sleep = { clock += $0 }
+    reads.now = { app.clock }
+    reads.sleep = { app.clock += app.wake($0, app.clock) }
     var meta = meta()
     var failure: EngineError?
     do {
@@ -533,6 +536,94 @@ final class SecureTypeReadbackTests: XCTestCase {
     XCTAssertEqual(record(matched.meta) as NSDictionary, record(never.meta) as NSDictionary)
   }
 
+  // MARK: The review of f35a42b8..cbce12e2
+
+  /// P1: a concealed request's failure is answered only once the budget is spent, whatever its cause: a mismatch, a
+  /// closed read mid-poll or a focus that moved. In a field that takes the whole text, cuts it to four units 10 ms
+  /// later and moves its focus, a short secret held its match and failed the focus check at 50 ms while a long one
+  /// failed it at the budget: both now answer fieldChanged at 1000 ms. A literal request still ends when it fails.
+  func testAConcealedFailureEndsAtTheBudgetWhateverItsCause() {
+    func limited(_ secret: String) -> InputMeta {
+      let app = field(count: 0, selection: NSRange(location: 0, length: 0))
+      app.beforeBatch = { index in
+        if index == 1 { app.focus = 2 }
+        if index == 3, app.value.utf16.count > 4 {  // the four-unit limit, 10 ms into the poll
+          app.value = String(app.value.prefix(4))
+          app.selection = NSRange(location: 4, length: 0)
+        }
+      }
+      return type(secret, into: app, concealed: true).meta
+    }
+    let short = limited("abc"), long = limited("abcdefgh")
+    XCTAssertEqual(reason(short), "fieldChanged")
+    XCTAssertEqual(reason(long), "fieldChanged")
+    XCTAssertEqual(short.typeReadback?.pollMs, typeReadbackBudgetMs)
+    XCTAssertEqual(long.typeReadback?.pollMs, typeReadbackBudgetMs)
+    XCTAssertEqual(record(short) as NSDictionary, record(long) as NSDictionary)
+
+    for concealed in [false, true] {
+      let label = "concealed \(concealed)"
+      let closed = field()
+      closed.beforeBatch = { if $0 == 3 { closed.subrole = nil } }
+      let (_, closedMeta, _) = type("pass", into: closed, concealed: concealed)
+      XCTAssertEqual(reason(closedMeta), "noLongerSecure", label)
+      XCTAssertEqual(closed.batches, 4, "\(label): read no further")
+      XCTAssertEqual(closedMeta.typeReadback?.pollMs, concealed ? typeReadbackBudgetMs : 2 * typeReadbackPollIntervalMs, label)
+
+      let moved = field()
+      moved.beforeBatch = { if $0 == 1 { moved.focus = 2 } }
+      let (_, movedMeta, _) = type("pass", into: moved, concealed: concealed)
+      XCTAssertEqual(reason(movedMeta), "fieldChanged", label)
+      XCTAssertEqual(moved.batches, 1 + 1 + windowReads, "\(label): the match held, the focus checked once")
+      XCTAssertEqual(movedMeta.typeReadback?.pollMs, concealed ? typeReadbackBudgetMs : typeReadbackLengthDwellMs, label)
+    }
+    let confirmed = type("pass", into: field(), concealed: true).meta
+    XCTAssertEqual(confirmed.typeReadback?.pollMs, typeReadbackLengthDwellMs, "a concealed success ends when it confirms")
+  }
+
+  /// P2: a read confirms only if it starts within the budget. A match taken off the poll's grid (its read ending at
+  /// 951 ms) and one whose last wake comes late would each hold for the window only at a read past 1000 ms: both are
+  /// unconfirmed, a too-late match, plain and concealed.
+  func testAMatchConfirmsOnlyByAReadThatStartsWithinTheBudget() {
+    for concealed in [false, true] {
+      let offGrid = field()
+      offGrid.beforeBatch = { index in
+        offGrid.caretShift = index < 190 ? -1 : 0
+        if index == 190 { offGrid.clock += 6 }  // the matching read, started at 945 ms, ends at 951 ms
+      }
+      let (offError, offMeta, _) = type("pass", into: offGrid, concealed: concealed)
+      XCTAssertNotNil(offError, "off the grid, concealed \(concealed)")
+      XCTAssertEqual(reason(offMeta), "lengthMismatch", "off the grid, concealed \(concealed)")
+      XCTAssertEqual(offGrid.batches, 1 + 200, "the read at 1001 ms is the last")
+
+      let late = field()
+      late.beforeBatch = { late.caretShift = $0 < 191 ? -1 : 0 }  // the match at 950 ms, on the grid
+      late.wake = { asked, now in now >= 995 ? asked + 3 : asked }  // the last wake 3 ms late
+      let (lateError, lateMeta, _) = type("pass", into: late, concealed: concealed)
+      XCTAssertNotNil(lateError, "a late wake, concealed \(concealed)")
+      XCTAssertEqual(reason(lateMeta), "lengthMismatch", "a late wake, concealed \(concealed)")
+      XCTAssertEqual(late.batches, 1 + 201)
+    }
+  }
+
+  /// P2: a caret the app reports as unavailable ({NSNotFound, 0}, past `readbackLengthLimit`) is no evidence of a read
+  /// past the text: it is judged as any read, and the poll goes on, on either basis. A literal request whose first reply
+  /// has it beside the right count, and whose next is right, confirms.
+  func testAnUnavailableCaretIsNoOvershoot() {
+    let notFound = axRangeValue(CFRange(location: NSNotFound, length: 0))
+    for (label, count) in [("a count", true), ("the caret alone", false)] {
+      let app = field(selection: count ? selection : NSRange(location: location, length: 0))
+      if !count { app.countSlot = .absent }
+      app.beforeBatch = { app.rangeSlot = $0 == 1 ? .reply(notFound) : .answers }
+      XCTAssertNil(type("pass", into: app).error, label)
+      XCTAssertEqual(app.batches, 1 + 2 + windowReads, label)
+    }
+    let sentinel = NSRange(location: NSNotFound, length: 0)
+    XCTAssertFalse(readbackLengthOvershoots(count: .value(after), range: sentinel, basis: .count(before, range: selection), typed: 4))
+    XCTAssertFalse(readbackLengthOvershoots(count: .absent, range: sentinel, basis: .caret(NSRange(location: location, length: 0)), typed: 4))
+    XCTAssertTrue(readbackLengthOvershoots(count: .value(after), range: NSRange(location: location + 5, length: 0), basis: .count(before, range: selection), typed: 4))
+  }
+
   /// The window does not run past the budget: a genuine field must have taken the text within the budget less the
   /// window (950 ms of the poll's start). A match there holds until the budget's last read and confirms; one a read
   /// later cannot hold for the window and is unconfirmed at the budget, plain and concealed, answering lengthMismatch.
@@ -624,6 +715,16 @@ final class SecureTypeReadbackTests: XCTestCase {
       XCTAssertEqual(shorter.message, longer.message, field.label)
       XCTAssertEqual(record(shorter.meta) as NSDictionary, record(longer.meta) as NSDictionary, field.label)
     }
+    // The documented limit of a length (the review of f35a42b8..cbce12e2, P2; the DL's item 10): a field that drops the
+    // text but collapses a selection exactly as long as it reads as one that replaced the selection with it, and holds
+    // that, so it confirms at the window though nothing went in. No length or caret can tell the two apart.
+    let collapsed = field(count: 10, selection: NSRange(location: 2, length: 4))
+    collapsed.ignoresInput = true
+    collapsed.caretOnIgnore = .selectionEnd
+    let (error, meta, _) = type("abcd", into: collapsed, concealed: true)
+    XCTAssertNil(error, "the limit: a secret as long as the selection confirms")
+    XCTAssertEqual(record(meta)["confirmation"] as? String, "length")
+    XCTAssertEqual(collapsed.value.count, 10, "nothing went in")
   }
 
   // MARK: The range

@@ -5751,6 +5751,37 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      does not revise what was read before.
   9. **Proof**: SecureFieldTests (14) and two paste operation tests over the stub; each new guard mutated away and caught.
   Date/Author: 2026-11-17, cursor235's implementer for #405 (the review of 6dc4bcd0..6a1c7658).
+- Decision (#405, design ruling 1ea561bc:811, 2026-11-17, `fix/405-secure-field-unread`; with the review of
+  6a1c7658..bc52384a's four findings; supersedes "#405" item 1, "#405's review" items 3 and 4 and the preflights of its
+  items 4 and 5, and "#405's re-review" item 3's structure-first match): **one AX batch per element carries its role,
+  subrole and value-bearing attributes together; the element is classified from that same reply, and a closed one's
+  value attributes are dropped as the reply is decoded.** The ticket guards what leaves the engine or stays in it (IPC,
+  the cache, identity, render, logs); a value inside the engine's process only for the life of one AX reply is the same
+  trust domain, ruling 808's line.
+  1. **A, the separate classification request, rejected**: on smoke 44224481847 (CfT 157, p50 of 2) its second request
+     per element cost +44–61% walk time on every page: a 69-node fixture 53→77 ms wall; a 286-node page with 216 inputs
+     279→436 ms, attributesMs 88→180; a reused settle tree's final walk 150→230 ms; AppKit's large fixture 123→147 ms.
+  2. **The read** (`ElementSource.classifiedData`): `observedAttributes` (the listed read's names, with the role and
+     subrole always) in one request, `valueReadClosed` over that reply, and a closed element's value, value
+     description and length dropped in the same function, before anything reads or formats the reply; nothing logs an
+     element's attributes. An element whose role or subrole is missing or fails is treated as a password field (`secure`
+     in its node and identity, `secure text` rendered). The busy walk, the reuse of its reads and the re-fetch walk go
+     back to main's one read per element; the structure-only read, the reuse's reclassification and its cache are gone.
+  3. **Other value-bearing reads** (`classifiedRead`): the focused element's AXSelectedText and select_text's AXValue
+     each ride in one batch with the role and subrole, dropped when it is closed. The parameterized reads no batch can
+     carry keep a classification request just before them, failing closed: the walk's Markdown read (a failed or closed
+     classification closes the data and its cache entry as secure) and select_text's attributed read (refused).
+  4. **Kept from the third review**: a failed paste poll is no reading (nil), and a password field's reading moves only
+     on a number it read (a number lost since is no movement, and a lost count confirms nothing); the paste's batch
+     keeps the budget's messaging timeout (`fetchAttributesAsTimed`); the identity records `secure` and compares it, so
+     a same-labelled plain field never inherits a password field's token, whatever role and subrole each kept; and two
+     failed reads match only for the same handle (`sameElement`), never another element. Moot under one batch: the
+     closure's stale role and subrole (a single reply has no older ones).
+  5. **Proof**: SecureFieldTests (16) over a stub that answers plaintext to every request, also beside a slot it reports
+     failed, asserting no emission and no retention: node and reply, cache, identity, screenshot record, error sentences
+     and the stderr captured over an observation, resolutions and a refusal; one case reads a plain field's value and
+     then has the Markdown's classification fail. Each guard mutated away and caught.
+  Date/Author: 2026-11-17, cursor235's implementer for #405 (ruling 1ea561bc:811 and the review of 6a1c7658..bc52384a).
 
 ## Outcomes & Retrospective
 

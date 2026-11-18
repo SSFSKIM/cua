@@ -5970,16 +5970,22 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
        exactly `zz` before the last key lands, and #354's poll accepts it (the review of f35a42b8..cbce12e2, P3). That
        is #354's, outside #414.
      - **The window.** A reply that matches confirms only once the same reply has held for `typeReadbackLengthDwellMs`
-       (50 ms). The same means the same count and range; for the caret's basis, still no count and the same range. The
+       (180 ms). The same means the same count and range; for the caret's basis, still no count and the same range. The
        window is timed from the end of the matching read to the start of a later read that finds the same reply.
      - **One cadence.** The window is read at the poll's own interval (`typeReadbackPollIntervalMs`, 5 ms), in the same
        loop. The design session first approved a 50 ms window sampled every 10 ms; the 5 ms poll replaces the 10 ms
        sample so a concealed request's schedule has one shape, whether or not a match came.
-     - **Inside the budget.** The window no longer runs past the 1 s budget. A match that cannot hold for 50 ms before
-       the budget is unconfirmed at the budget, answering `lengthMismatch`. A genuine field must therefore finish taking
-       the text within 950 ms of the poll's start: the budget less the window. agent-cursor.md says so.
-     - **Ruling 842: one constant.** The window is one value for every lane, never one per lane. If any lane's measured
-       drain p99, times three, exceeds 50 ms, the constant is raised; it is one line.
+     - **Inside the budget.** The window no longer runs past the 1 s budget. A match that cannot hold for the window
+       before the budget is unconfirmed at the budget, answering `lengthMismatch`. A genuine field must therefore
+       finish taking the text within 820 ms of the poll's start: the budget less the window. agent-cursor.md says so.
+     - **Ruling 842: one constant, sized from the qualification.** The window is one value for every lane, never one
+       per lane, and it is one line to change. The design session set it at 180 ms from the hosted qualification's
+       drain data:
+       - three times AppKit's worst post-to-edit lag of 59.9 ms is 179.7 ms, the largest, which 180 ms covers;
+       - three times the parity Electron lane's inter-change gap p99 of 55.9 ms is 168 ms;
+       - Safari's last-change bound, 107 ms at three times.
+       The samples: Safari n=2, Electron n=9, parity n=16, AppKit n=0 gaps. Chrome for Testing's drain had not reported
+       when the value was set; if its gap p99 times three exceeds 180 ms, the constant rises. It first stood at 50 ms.
      - **Why a change means a fault**: "A genuine field never moves away from a final match: once it has taken every
        key nothing changes it, and before that none of its readings equals the expected one, because its caret has not
        yet reached the end of the text (and, from an empty field read without a range, its count is still short of the
@@ -6003,24 +6009,25 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
        it never confirms for the rest of the poll and polls on to the budget, its reason the last reply's (one that
        judges confirmed answers `lengthMismatch`). A failed count inside a window taints it the same way.
      - **Every concealed failure is answered at the budget** (the review of f35a42b8..cbce12e2, P1). A held match left
-       the loop, and a focus check that then failed threw `fieldChanged` at about 50 ms, where a tainted run threw it
+       the loop, and a focus check that then failed threw `fieldChanged` at the window's end, where a tainted run threw it
        at 1000 ms; a closed read ended the poll at once, and when that happens can depend on the secret in some field.
        Now a concealed request stops reading where the rule says (a closed field is read no further; the focus check
        is unchanged), sleeps through the rest of `typeReadbackBudgetMs` from the poll's start, and then throws. Only a
        concealed success ends early. A literal request is unchanged.
      - **The deadline** (same review, P2). A read confirms only if it starts within the budget. A match taken off the
-       5 ms grid (a read ending at 951 ms) or a late wake could otherwise confirm at 1001 ms; such a match is now
-       unconfirmed (`lengthMismatch`), as a match too late to hold is.
+       5 ms grid (a read ending 1 ms past the last time a match could start and still hold) or a late wake could
+       otherwise confirm at 1001 ms; such a match is now unconfirmed (`lengthMismatch`), as a match too late to hold
+       is.
      - **An unavailable caret is no overshoot** (same review, P2). A range whose location is past `readbackLengthLimit`
        (an app's `{NSNotFound, 0}`) is never evidence of a read past the text, on either basis: it is judged as any
        read, and the poll goes on.
      - **The schedule.** The window has a fixed length and starts only on a match, so in a given field the reads, their
        order and their timing stay the same whatever the secret's length or content (item 9). It applies to every
        password-field confirmation, a literal request's checkpoints included.
-     - **The residual.** An app that stalls longer than the window between consuming its last two keys can still show
+     - **The residual.** An app that stalls longer than 180 ms between consuming its last two keys can still show
        a matching in-between reply for the whole window. No read-back sees a change made after it returns, the same
        limit the plain path has for a value changed after its confirmation.
-     - **The cost.** Each password-field confirmation, and each literal checkpoint, takes 50 ms and about ten batches
+     - **The cost.** Each password-field confirmation, and each literal checkpoint, takes 180 ms and about 36 batches
        more. A literal failure ends sooner on a change or an overshoot. A concealed failure always takes the budget: a
        mismatch did already, and a closed read or a moved focus now waits out the rest of it.
      - **Tests** (SecureTypeReadbackTests). `StubPasswordApp`'s drains-late mode (`extraFirst`, `lateUnits`) reproduces
@@ -6030,11 +6037,11 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
          concealed: it confirmed before the fix. Now it is unconfirmed with no confirmation and no note, a literal
          request at the read that left the match, a concealed one at the budget.
        - The control, a field that takes only its last key late, confirms after the window on both bases.
-       - A change at each of the window's ten reads, the last included, is caught, and one after it is not, so the
-         window spans at least 50 ms. A literal request ends at the change; a concealed one polls the budget, and a
+       - A change at each of the window's 36 reads, the last included, is caught, and one after it is not, so the
+         window spans at least 180 ms. A literal request ends at the change; a concealed one polls the budget, and a
          change that comes back still never confirms. A closed reply in the window ends either kind's reads at once (a
          concealed request answers at the budget); a failed count ends a literal request's.
-       - A match at 950 ms confirms at the budget's last read; one 5 ms later, or at the last read, is unconfirmed at
+       - A match at 820 ms confirms at the budget's last read; one 5 ms later, or at the last read, is unconfirmed at
          the budget, plain and concealed.
        - Overshoot ends a literal request's poll at the read past the text, by caret on both bases and by count from
          nothing selected; concealed, the same fields poll the budget, and over a selection such a count polls it too.
@@ -6048,7 +6055,7 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
        - From the review of f35a42b8..cbce12e2 (each failed before its fix): the reviewer's field, which takes the whole
          text, cuts it to four units 10 ms later and moves its focus, answers `fieldChanged` at 1000 ms for a short and
          a long secret; a concealed closed read mid-poll and a concealed focus failure after a held match each end at
-         1000 ms, while a literal request's still end at once; an off-grid match (its read ending at 951 ms) and a
+         1000 ms, while a literal request's still end at once; an off-grid match (its read ending 1 ms past the last that holds) and a
          late last wake are each unconfirmed, plain and concealed; and an `NSNotFound` caret beside the right count,
          then a right reply, confirms a literal request on both bases.
        - The schedule-identity test now also compares the uncollapsed number of reads and the poll's time, the

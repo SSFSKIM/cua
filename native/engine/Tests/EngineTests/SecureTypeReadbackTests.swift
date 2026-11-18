@@ -458,8 +458,8 @@ final class SecureTypeReadbackTests: XCTestCase {
   /// a password field ends the poll at once for both, as the poll's own closed reads do; one whose count fails ends a
   /// literal request's poll, and a concealed one's polls on.
   func testAChangeAnywhereInTheQuietWindowIsUnconfirmed() {
-    XCTAssertEqual(typeReadbackLengthDwellMs, 50)
-    // Batch 0 is the snapshot, 1 the match, 2 through 11 the window's reads.
+    XCTAssertEqual(typeReadbackLengthDwellMs, 180, "ruling 1ea561bc:842's value")
+    // Batch 0 is the snapshot, 1 the match, 2 through 1 + windowReads the window's reads.
     for index in 2...(2 + windowReads) {
       let inside = index < 2 + windowReads
       for concealed in [false, true] {
@@ -540,7 +540,7 @@ final class SecureTypeReadbackTests: XCTestCase {
 
   /// P1: a concealed request's failure is answered only once the budget is spent, whatever its cause: a mismatch, a
   /// closed read mid-poll or a focus that moved. In a field that takes the whole text, cuts it to four units 10 ms
-  /// later and moves its focus, a short secret held its match and failed the focus check at 50 ms while a long one
+  /// later and moves its focus, a short secret held its match and failed the focus check after the window while a long one
   /// failed it at the budget: both now answer fieldChanged at 1000 ms. A literal request still ends when it fails.
   func testAConcealedFailureEndsAtTheBudgetWhateverItsCause() {
     func limited(_ secret: String) -> InputMeta {
@@ -581,28 +581,31 @@ final class SecureTypeReadbackTests: XCTestCase {
     XCTAssertEqual(confirmed.typeReadback?.pollMs, typeReadbackLengthDwellMs, "a concealed success ends when it confirms")
   }
 
-  /// P2: a read confirms only if it starts within the budget. A match taken off the poll's grid (its read ending at
-  /// 951 ms) and one whose last wake comes late would each hold for the window only at a read past 1000 ms: both are
-  /// unconfirmed, a too-late match, plain and concealed.
+  /// P2: a read confirms only if it starts within the budget. A match taken off the poll's grid (its read ending 1 ms
+  /// past the last read that could hold for the window) and one whose last wake comes late would each hold for the
+  /// window only at a read past 1000 ms: both are unconfirmed, a too-late match, plain and concealed.
   func testAMatchConfirmsOnlyByAReadThatStartsWithinTheBudget() {
+    let lastHolding = Int((typeReadbackBudgetMs - typeReadbackLengthDwellMs) / typeReadbackPollIntervalMs) + 1  // its read at 820 ms
+    let budgetReads = Int(typeReadbackBudgetMs / typeReadbackPollIntervalMs)
     for concealed in [false, true] {
       let offGrid = field()
       offGrid.beforeBatch = { index in
-        offGrid.caretShift = index < 190 ? -1 : 0
-        if index == 190 { offGrid.clock += 6 }  // the matching read, started at 945 ms, ends at 951 ms
+        offGrid.caretShift = index < lastHolding - 1 ? -1 : 0
+        // The matching read, started one interval before the last that could hold, ends 1 ms past that one's time.
+        if index == lastHolding - 1 { offGrid.clock += typeReadbackPollIntervalMs + 1 }
       }
       let (offError, offMeta, _) = type("pass", into: offGrid, concealed: concealed)
       XCTAssertNotNil(offError, "off the grid, concealed \(concealed)")
       XCTAssertEqual(reason(offMeta), "lengthMismatch", "off the grid, concealed \(concealed)")
-      XCTAssertEqual(offGrid.batches, 1 + 200, "the read at 1001 ms is the last")
+      XCTAssertEqual(offGrid.batches, 1 + budgetReads, "the read at 1001 ms is the last")
 
       let late = field()
-      late.beforeBatch = { late.caretShift = $0 < 191 ? -1 : 0 }  // the match at 950 ms, on the grid
-      late.wake = { asked, now in now >= 995 ? asked + 3 : asked }  // the last wake 3 ms late
+      late.beforeBatch = { late.caretShift = $0 < lastHolding ? -1 : 0 }  // the last match that holds, on the grid
+      late.wake = { asked, now in now >= typeReadbackBudgetMs - typeReadbackPollIntervalMs ? asked + 3 : asked }  // the last wake 3 ms late
       let (lateError, lateMeta, _) = type("pass", into: late, concealed: concealed)
       XCTAssertNotNil(lateError, "a late wake, concealed \(concealed)")
       XCTAssertEqual(reason(lateMeta), "lengthMismatch", "a late wake, concealed \(concealed)")
-      XCTAssertEqual(late.batches, 1 + 201)
+      XCTAssertEqual(late.batches, 1 + budgetReads + 1)
     }
   }
 
@@ -625,10 +628,10 @@ final class SecureTypeReadbackTests: XCTestCase {
   }
 
   /// The window does not run past the budget: a genuine field must have taken the text within the budget less the
-  /// window (950 ms of the poll's start). A match there holds until the budget's last read and confirms; one a read
+  /// window (820 ms of the poll's start). A match there holds until the budget's last read and confirms; one a read
   /// later cannot hold for the window and is unconfirmed at the budget, plain and concealed, answering lengthMismatch.
   func testAMatchTooLateToHoldBeforeTheBudgetIsUnconfirmed() {
-    let lastHolding = Int((typeReadbackBudgetMs - typeReadbackLengthDwellMs) / typeReadbackPollIntervalMs) + 1  // batch 191, at 950 ms
+    let lastHolding = Int((typeReadbackBudgetMs - typeReadbackLengthDwellMs) / typeReadbackPollIntervalMs) + 1  // its read at 820 ms
     for concealed in [false, true] {
       for (matchAt, confirms) in [(lastHolding, true), (lastHolding + 1, false), (201, false)] {
         let label = "a match at batch \(matchAt), concealed \(concealed)"

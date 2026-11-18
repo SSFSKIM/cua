@@ -74,9 +74,12 @@ import Foundation
 let typeReadbackBudgetMs: Double = 1_000
 let typeReadbackPollIntervalMs: Double = 5
 /// A password field's quiet window (#414; the design session's ruling 1ea561bc:842): a length read that matches confirms
-/// only once the same read has held unchanged this long, read at `typeReadbackPollIntervalMs` within the budget. One
-/// constant for every lane, never one per lane; raise it if a lane's measured drain p99, times three, passes it.
-let typeReadbackLengthDwellMs: Double = 50
+/// only once the same read has held unchanged this long, read at `typeReadbackPollIntervalMs` within the budget, so a
+/// field must take the text within the budget less this (820 ms). One constant for every lane, never one per lane,
+/// sized at three times the slowest drain the hosted qualification measured: AppKit's worst post-to-edit lag of 59.9 ms
+/// (179.7 ms), above the parity Electron lane's inter-change gap p99 of 55.9 ms (168 ms; n=16) and Safari's last-change
+/// bound of 107 ms at three times. Raise it if a lane's measured drain p99, times three, passes it.
+let typeReadbackLengthDwellMs: Double = 180
 let typeReadbackMessagingTimeout: Float = 0.1
 /// Chromium cuts a text field's AXValue at 10,000 (#290's hosted measurement: a 20,499-character ASCII field read back
 /// 10,000 long; #350): a read at that length may be cut, and so may compare equal to an expected value that is not the

@@ -294,8 +294,8 @@ final class TypeReadbackTests: XCTestCase {
       XCTAssertEqual(field.value, "hunter2pass", name)
       XCTAssertEqual(record(meta) as NSDictionary, ["confirmed": true, "secure": true, "confirmation": "length", "snapshotMs": 0.0] as NSDictionary, name)
       XCTAssertEqual(meta.note, readbackLengthNote, name)
-      XCTAssertEqual(field.calls, ["focused", "role", "subrole", "batch"] + Array(repeating: "batch", count: 1 + 10) + ["focused"],
-                     "\(name): no value or range read; the match, then the quiet window's ten reads")
+      XCTAssertEqual(field.calls, ["focused", "role", "subrole", "batch"] + Array(repeating: "batch", count: 1 + Int(typeReadbackLengthDwellMs / typeReadbackPollIntervalMs)) + ["focused"],
+                     "\(name): no value or range read; the match, then the quiet window's reads")
     }
     for (name, role, subrole) in [("a group's unreadable subrole", "AXGroup", ReadbackSubrole.failed),
                                   ("a static text marked secure", "AXStaticText", .value("AXSecureTextField"))] {
@@ -1344,7 +1344,7 @@ final class TypeReadbackTests: XCTestCase {
     XCTAssertEqual(record(meta)["confirmation"] as? String, "length")
     XCTAssertNil(record(meta)["settleReads"], "a password field's record counts nothing")
     XCTAssertFalse(field.calls.contains("value") || field.calls.contains("range"), "\(field.calls)")
-    XCTAssertEqual(app.sleeps, 2 + 10, "two settle intervals, until two reads agreed, then the quiet window's ten")
+    XCTAssertEqual(app.sleeps, 2 + Int(typeReadbackLengthDwellMs / typeReadbackPollIntervalMs), "two settle intervals, until two reads agreed, then the quiet window's")
     // A select-all landing after the snapshot: the starting point is the caret before it, and the length cannot match.
     let unsettled = FakeField(value: "hunter2", range: NSRange(location: 7, length: 0))
     unsettled.role = "AXSecureTextField"

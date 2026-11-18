@@ -4,8 +4,8 @@
 // it starts Xvfb, Openbox, an xterm and node itself, which the harness's own source checks forbid any harness module.
 //
 //   node scripts/linux-engine-gate/gate.mjs --list [--pinned <home> | --candidate <file>] [--out <dir>] [--dev] [--pilot <n>]
-//   node scripts/linux-engine-gate/gate.mjs print <step> (--pinned <home> | --candidate <file>) --out <dir> [--dev] [--pilot <n>]
-//   node scripts/linux-engine-gate/gate.mjs run <step> (--pinned <home> | --candidate <file>) --out <dir> [--dev] [--pilot <n>]
+//   node scripts/linux-engine-gate/gate.mjs print <step> (--pinned <home> | --candidate <file>) --out <dir> [--dev] [--pilot <n>] [--engine-stats]
+//   node scripts/linux-engine-gate/gate.mjs run <step> (--pinned <home> | --candidate <file>) --out <dir> [--dev] [--pilot <n>] [--engine-stats]
 //   node scripts/linux-engine-gate/gate.mjs check --pinned <home>
 //   node scripts/linux-engine-gate/gate.mjs leftovers [--remove <dir> [--confirm]]
 //
@@ -61,14 +61,14 @@ import { homedir, tmpdir } from 'node:os';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { PINNED_DEVELOPMENT, REPO_ROOT, candidateLine, gateLabel, isPinnedRule, prepareCandidate } from '../linux-engine-diff/candidate.mjs';
+import { PINNED_DEVELOPMENT, REPO_ROOT, candidateLine, gateLabel, isCounted, isPinnedRule, prepareCandidate } from '../linux-engine-diff/candidate.mjs';
 import { defaultScope, leftoverCheck, leftoverLines, removeLeftover, scratchDirs, startCheck, startRefusalText } from '../linux-engine-diff/leftovers.mjs';
 // a test process reaches no real display (hermetic.mjs); the leftover checks' scope is never switched by it
 import '../linux-engine-diff/hermetic.mjs';
 import { pinnedEngine } from '../linux-engine-diff/pinned-home.mjs';
 import { scratchRoot } from '../linux-engine-diff/scratch-root.mjs';
 import { linuxEnginePath } from '../../src/runtime/linux-engine.mjs';
-import { MAX_STEP_MINUTES, STEPS, runName, stepArgs, stepLabel, stepNamed, stepScript, suiteEnv, totals } from './steps.mjs';
+import { MAX_STEP_MINUTES, STEPS, runName, startsEnginesThroughHarness, stepArgs, stepLabel, stepNamed, stepScript, suiteEnv, totals } from './steps.mjs';
 
 const HOME = homedir();
 /** The pinned vendor release, whose runtime holds the pinned vendor build and the vendor's client. */
@@ -156,8 +156,8 @@ export class GateRefused extends Error {
 
 const USAGE = `usage:
   gate.mjs --list [--pinned <home> | --candidate <file>] [--out <dir>] [--dev] [--pilot <n>]
-  gate.mjs print <step> (--pinned <home> | --candidate <file>) --out <dir> [--dev] [--pilot <n>]
-  gate.mjs run <step> (--pinned <home> | --candidate <file>) --out <dir> [--dev] [--pilot <n>]
+  gate.mjs print <step> (--pinned <home> | --candidate <file>) --out <dir> [--dev] [--pilot <n>] [--engine-stats]
+  gate.mjs run <step> (--pinned <home> | --candidate <file>) --out <dir> [--dev] [--pilot <n>] [--engine-stats]
   gate.mjs check --pinned <home>
   gate.mjs leftovers [--remove <dir> [--confirm]]
   gate.mjs summary --out <dir>
@@ -182,6 +182,8 @@ export function parseGateArgs(argv, { arch = process.arch, env = process.env } =
     else if (flag === '--remove') a.remove = resolve(value());
     else if (flag === '--confirm') a.confirm = true;
     else if (flag === '--dev') a.gate = false;
+    // every cua lane's engine with --stats, its settle counter recorded (ruling 834): refused below on a counted run
+    else if (flag === '--engine-stats') a.engineStats = true;
     else if (flag === '--pilot') {
       a.pilot = Number(value());
       if (!Number.isInteger(a.pilot) || a.pilot < 1) throw new GateRefused('--pilot needs a positive whole number of trials');
@@ -217,9 +219,12 @@ export function parseGateArgs(argv, { arch = process.arch, env = process.env } =
     if (!a.gate) throw new GateRefused('check is the pinned rule itself: no --dev');
     return a;
   }
+  if (a.engineStats && isCounted(a.gate)) throw new GateRefused(`--engine-stats is a development run's or a pilot's: --stats adds reads to a paste and a line after every request, so a counted run (${gateLabel(a.gate)}) never takes it; give --dev, or --pilot with --pinned`);
+  if (a.engineStats && !['print', 'run'].includes(a.mode)) throw new GateRefused('--engine-stats belongs to print and run');
   if (a.gate && a.pilot && a.gate !== PINNED_DEVELOPMENT) throw new GateRefused('a pilot is never a release gate, nor acceptance: give --dev with --pilot, or --pinned <home> for a development run on the pinned release');
   if (a.mode !== 'list') {
     if (!STEPS.some((s) => s.name === a.step)) throw new GateRefused(`no gate step ${a.step}; the steps: ${STEPS.map((s) => s.name).join(', ')}`);
+    if (a.engineStats && !startsEnginesThroughHarness(stepNamed(a.step))) throw new GateRefused(`--engine-stats: ${a.step} does not start its engines through engine.mjs (cua's service or cua serve starts them), so the opt-in cannot reach them`);
     if (!a.candidate) throw new GateRefused(`${a.mode} needs --pinned <home> or --candidate <file>\n${USAGE}`);
     if (!a.out) throw new GateRefused(`${a.mode} needs --out\n${USAGE}`);
   }
@@ -259,14 +264,14 @@ export const stepDir = (step, a) => join(a.out, `${step.name}.${stepLabel(a).slu
 export function launchCommand(step, a, root = REPO_ROOT) {
   const lock = [a.locked, a.holder];
   if (step.display === ':0') {
-    const args = stepArgs(step, { paths: { ...a, candidate: a.candidate ?? '<candidate>' }, gate: a.gate, pilot: a.pilot });
+    const args = stepArgs(step, { paths: { ...a, candidate: a.candidate ?? '<candidate>' }, gate: a.gate, pilot: a.pilot, engineStats: a.engineStats });
     const dir = a.out ? stepDir(step, a) : '<out>/<step>';
     // under the sitting launcher (sitting.mjs): its refusal while hold-sittings exists, the start check, and the end check
     // and the all-clear however the sitting ends (review finding 3, ruling 730)
     return line([...lock, process.execPath, join(root, SITTING), '--dir', dir, '--hold', a.hold, '--terminal', step.kind === 'verdict' ? 'end' : 'experiment-summary', '--', 'env', `WRAP=${join(root, WRAP71)}`, join(root, GUARDS, 'run71.sh'), dir, root, ...args]);
   }
   const engine = a.pinned ? ['--pinned', a.pinned] : ['--candidate', a.candidate ?? '<candidate>'];
-  return line([...lock, process.execPath, fileURLToPath(import.meta.url), 'run', step.name, ...engine, '--out', a.out ?? '<out>', ...(a.gate ? [] : ['--dev']), ...(a.pilot ? ['--pilot', String(a.pilot)] : [])]);
+  return line([...lock, process.execPath, fileURLToPath(import.meta.url), 'run', step.name, ...engine, '--out', a.out ?? '<out>', ...(a.gate ? [] : ['--dev']), ...(a.pilot ? ['--pilot', String(a.pilot)] : []), ...(a.engineStats ? ['--engine-stats'] : [])]);
 }
 
 /** `--list`: every step's minutes, display, load and what it covers, its command, and the totals. */
@@ -388,7 +393,7 @@ export async function runStep(a, { root = REPO_ROOT, git, held = () => existsSyn
   }
   // a suite's out is suites.sh's environment (`suiteEnv`), every other script's its --out; a suite's logs are written to
   // a short scratch directory (its session bus's socket lies there) and copied into the step's `logs/` at its end
-  const args = [...stepArgs(step, { paths: { ...a, candidate: candidatePath }, gate: a.gate, pilot: a.pilot }), ...(step.kind === 'suite' ? [] : ['--out', join(dir, 'run')])];
+  const args = [...stepArgs(step, { paths: { ...a, candidate: candidatePath }, gate: a.gate, pilot: a.pilot, engineStats: a.engineStats }), ...(step.kind === 'suite' ? [] : ['--out', join(dir, 'run')])];
   const script = stepScript(step);
   record.argv = [script, ...args];
   // under /tmp itself, whatever TMPDIR names (a macOS TMPDIR alone is about 50 bytes): the socket's 108 bytes

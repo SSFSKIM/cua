@@ -180,8 +180,10 @@ export function stepLabel({ gate, pilot }) {
  * verdict one block; and the harness's `--pilot`, so it takes no top-up and reports what it could not decide unjudged
  * (ruling 722). A pilot on the pinned rule (`gate` 'pinned-dev') gives `--pinned --pilot`.
  */
-export function stepArgs(step, { paths, gate, pilot = null }) {
+export function stepArgs(step, { paths, gate, pilot = null, engineStats = false }) {
   const run = runName(step, { gate, pilot });
+  // the opt-in --stats of every cua lane (engine.mjs `recordEngines`), a development run's, whose refusal is gate.mjs's
+  const stats = engineStats ? ['--engine-stats'] : [];
   const fill = (args) => args.map((a) => ({ '{vendor}': paths.vendor, '{newest}': paths.newest })[a] ?? a);
   if (step.kind === 'verdict') {
     return [
@@ -191,6 +193,7 @@ export function stepArgs(step, { paths, gate, pilot = null }) {
       ...(step.ballast ? ['--ballast', 'gate'] : []),
       ...(gate === 'pinned' || gate === PINNED_DEVELOPMENT ? ['--pinned'] : gate ? [] : ['--dev']),
       ...(pilot ? ['--pilot'] : []),
+      ...stats,
     ];
   }
   if (step.kind === 'facade') return ['--vendor-js', paths.vendorJs, '--engine', paths.candidate, ...step.args];
@@ -198,7 +201,18 @@ export function stepArgs(step, { paths, gate, pilot = null }) {
   if (step.kind === 'suite') return [...step.args];
   const base = fill(step.args);
   const sized = pilot ? (step.pilot ?? ((args, n) => [...args, '--trials', String(n)]))(base, pilot) : base;
-  return [...sized, '--cua', paths.candidate, '--run', run, ...(gate === 'pinned' || gate === PINNED_DEVELOPMENT ? ['--pinned'] : gate ? ['--gate'] : []), ...(pilot ? ['--pilot'] : [])];
+  return [...sized, '--cua', paths.candidate, '--run', run, ...(gate === 'pinned' || gate === PINNED_DEVELOPMENT ? ['--pinned'] : gate ? ['--gate'] : []), ...(pilot ? ['--pilot'] : []), ...stats];
+}
+
+/**
+ * Whether a step's measured engines start through engine.mjs, where the opt-in `--engine-stats` reaches them: the
+ * verdict runs and the experiments, except the settle (cua's own service starts its engines) and the engine stop (cua
+ * serve does); the facade and the suites start theirs through cua's service too.
+ */
+export function startsEnginesThroughHarness(step) {
+  if (!['verdict', 'experiment'].includes(step.kind)) return false;
+  const experiment = step.kind === 'experiment' ? step.args[step.args.indexOf('--experiment') + 1] : null;
+  return !['settle', 'engine-stop'].includes(experiment);
 }
 
 /** The harness script a step runs, relative to the checkout: a suite's is suites.sh, whatever its engine. */

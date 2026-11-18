@@ -95,6 +95,10 @@ test('negative control: a stale or prepopulated out directory is refused, and no
   const to = refillDir(step.dir, 1);
   mkdirSync(join(to, 'run'), { recursive: true });
   writeFileSync(join(to, 'run', 'results.jsonl'), `${JSON.stringify({ run: 'pinned-V5', kind: 'meta' })}\n`);
+  // the plan's print says so, and fails: a refill the step needs cannot be launched
+  const printed = [];
+  assert.equal((await refillStep({ dir: step.dir, print: true, launch: () => assert.fail('nothing launched'), log: (l) => printed.push(l) })).code, 1);
+  assert.match(printed.join('\n'), /nothing to refill \(refill r1 could not be launched: .*\.r1 exists/);
   const { code } = await refillStep({ dir: step.dir, launch: step.runner.launch, log: quiet });
   assert.equal(code, 1);
   assert.equal(step.runner.calls.length, 1, 'no refill launched');

@@ -252,6 +252,9 @@ export function refillCommand(command, { dir, to }) {
   return out;
 }
 
+/** The run name a command loads: its `--run`'s value (V5's command always names one), else null. */
+const commandRun = (argv) => (argv.includes('--run') ? (argv[argv.indexOf('--run') + 1] ?? null) : null);
+
 /** What failed in `runs` and their premise cells beyond the shortage, each named by its run. */
 function failuresOf(runs) {
   const out = [];
@@ -327,6 +330,7 @@ export async function refillStep({ dir: given, launch = defaultLaunch, print = f
       const guard = main.step?.display === ':0' ? zeroStepProblems({ run: main.run, dir: resolvedAsRun71(to) }) : [];
       if (guard.length) throw new Error(guard.join('; '));
       argv = refillCommand(main.step?.command, { dir, to });
+      if (commandRun(argv) !== main.run) throw new Error(`its command runs ${commandRun(argv)}, not the main run's ${main.run}`);
     } catch (error) {
       refusals.push(`refill r${n} could not be launched: ${error.message}`);
       break;
@@ -342,7 +346,7 @@ export async function refillStep({ dir: given, launch = defaultLaunch, print = f
     const refill = loadStep(to);
     const problems = refill.meta ? [] : ['it recorded no meta row'];
     if (refill.meta) {
-      if (refill.run !== main.run) problems.push(`its run is ${refill.run}, not its command's ${main.run}`);
+      if (refill.run !== commandRun(argv)) problems.push(`its run is ${refill.run}, not its command's ${commandRun(argv)}`);
       problems.push(...matchProblems(main, refill));
       // its evidence its own: no fixture label or engine lifecycle of another run's
       const mine = fixturesOf(refill);
@@ -354,7 +358,8 @@ export async function refillStep({ dir: given, launch = defaultLaunch, print = f
   }
   if (print) {
     if (!printed.length) log(`premise-refill: nothing to refill${skipped ? ` (${skipped})` : refusals.length ? ` (${refusals.join('; ')})` : ''}`);
-    return { code: 0, printed };
+    // a refill the step needs but that could not be launched is no plan
+    return { code: refusals.length ? 1 : 0, printed };
   }
   const judged = cells();
   const failed = [...refusals, ...failuresOf(runs), ...judged.filter((c) => !c.pass).map((c) => `${cellName(c.op)}: ${c.reasons.join('; ')}`)];

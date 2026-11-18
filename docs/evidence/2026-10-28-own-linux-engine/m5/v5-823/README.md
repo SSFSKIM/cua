@@ -1,9 +1,9 @@
 # V5's unmet premise (the design session's rulings 823 and 825), re-judged read-only
 
-Task 100, branch `m5-v5-823` from `feat/171-m5` at dec76845, with fix wave 1. The pieces:
+Task 100, branch `m5-v5-823` from `feat/171-m5` at dec76845, with fix waves 1 and 2. The pieces:
 - the rule: `scripts/linux-engine-diff/premise.mjs`;
 - the judge that applies it: `device.mjs` `judgeDevice`, which also records the evidence;
-- the refill, by more runs of the unchanged runner: `scripts/linux-engine-gate/premise-refill.mjs`;
+- the refill, by at most two whole reruns of V5 (the controller's route B'): `scripts/linux-engine-gate/premise-refill.mjs`;
 - the negative controls, made through the real paths: `test/linux-engine-diff/premise.test.mjs` and
   `premise-refill.test.mjs`, with `premise-fixture.mjs`.
 
@@ -74,3 +74,31 @@ No stored sample reads premise unmet, and no stored verdict moves. The shape the
 `chrome_dnd_shared` audit pass, and its stored rows cannot show (ii): its first audited request, a plain-drag ok, kept no
 page record. So it is judged as before and still fails. Only V5's rerun after 0.4.1, with the evidence, can tell
 whether Chrome never took that drag. If it reads unmet there, `premise-refill.mjs` refills it.
+
+## The live check (fix wave 2): the real page tree and sidecar, on a private display
+
+`live-fix2/` is a development run, never counted: the harness's own CLI on this branch (82925197), driving V5's five
+premise cells (`--scene device-chrome-dnd --blocks 1 --dev --run v5pl`, no ballast) with the pinned x64 engine. It ran
+on a private display of its own (`display.mjs` `runOnPrivateDisplay`, which refuses `:0`), on the x64 VM, under the
+host lock. The scripts are `live-probe.mjs` and `live-check.mjs`. The run ended valid, with every verdict passing and
+a clean display watchdog (`session.jsonl`, `stdout.log`).
+
+`live-check.mjs` reads the real records with this checkout's own code (its output is `live-check.json`):
+
+| cell | page reads | the scene's label in the tree | one `dnd` and one `moves` line | parsed (`parsePageRead`) | sidecar lines bound | audit binding problems | classes |
+|---|---:|---:|---:|---:|---:|---|---|
+| chrome_dnd_shared | 10 | 10 | 10 | 10 | 5 of 5 | none | 3 + 2 started |
+| chrome_dnd_late_shared | 10 | 10 | 10 | 10 | 5 of 5 | none | 3 + 2 started |
+| chrome_dnd_obscured_in_front_shared | 10 | 10 | 10 | 10 | 5 of 5 | none | 3 + 2 started |
+| chrome_dnd_late_take_shared | 10 | 10 | 10 | 10 | 5 of 5 | none | 3 + 2 started |
+| chrome_dnd_obscured_in_front_late_shared | 10 | 10 | 10 | 10 | 5 of 5 | none | 3 + 2 started |
+
+- **The page tree.** In Chrome's real AT-SPI tree for V5's drag page, every read carried the scene's label
+  (`cua171-diff-v5pl-3b6cfeff-drag-device_cua`, with the run's nonce). Each status line appeared once, as premise.mjs
+  reads them: one distinct `dnd` line and one `moves` line, each in the page's exact form.
+- **The sidecar.** `premise-refill.mjs` `sidecarProblems` found nothing in its 25 lines (5 cells × 3 timed + 2
+  audited). Each line was bound to its sample or audited request, on the cell's one fixture, with the reply's notice
+  field present. Every audit line bound to the run (`bindAudit`, by the label, the XID, the ordinal and ok/error).
+- **What it does not show.** Chrome took every drag in this run, so the records show the shape of a started drag:
+  pointercancel and dragend, no pointerup, and the page's `ups` count up by one. A genuine no-take is still unseen
+  live. Its lines are the same page's, in the same form, with the other tokens explicit. No refill has run live either.

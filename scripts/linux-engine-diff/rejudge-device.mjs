@@ -48,10 +48,11 @@ function noAuditOf(path) {
 }
 
 /**
- * A judge's verdict as the replay reports it. A premise cell judged without its recorded plan (`plan_unverified`, a meta
- * with no `blocks`) keeps the marker, and its pass is never reported as one (task 100's review 6).
+ * A judge's verdict as the replay reports it. A premise cell whose run recorded no plan (`plan_unverified`, a meta with
+ * no `blocks`), with premise evidence or without, keeps the marker, and its pass is never reported as one (task 100's
+ * review 6, wave 7). The former judge's (`--old`) is reported as it judged.
  */
-export const UNVERIFIED_PASS = 'replayed, plan unverified: not a release pass';
+const UNVERIFIED_PASS = 'replayed, plan unverified: not a release pass';
 const outcome = (judged) => ({
   verdict: judged.pass ? (judged.plan_unverified ? UNVERIFIED_PASS : 'pass') : 'fail',
   reasons: judged.reasons,
@@ -94,7 +95,10 @@ export function rejudgeDevice(rows, { judge = judgeDevice, old = null, lines = n
       // judged from the step's own sidecar and recorded plan (none for a run from before the fix: then nothing is
       // excluded), and its classes read off the same binding the verdict used
       const premiseArgs = { lines, window, plan };
-      const now = outcome(PREMISE_OPS.has(v.op) ? judge(v.op, opRows, audit, premiseArgs) : judge(v.op, opRows, audit));
+      const judged = PREMISE_OPS.has(v.op) ? judge(v.op, opRows, audit, premiseArgs) : judge(v.op, opRows, audit);
+      // with no recorded plan the replay cannot check the cell's slots or its audit's count, evidence or none: no
+      // release pass (wave 7)
+      const now = outcome(PREMISE_OPS.has(v.op) && !plan ? { ...judged, plan_unverified: true } : judged);
       const bound = PREMISE_OPS.has(v.op) ? premiseBinding(v.op, opRows, audit, premiseArgs) : null;
       const then = old ? outcome(old(v.op, opRows, audit)) : null;
       // and how its timed samples and its audited requests read under it

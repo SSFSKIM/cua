@@ -6,7 +6,7 @@ import {pathToFileURL} from 'node:url';
 import {execFileSync} from 'node:child_process';
 import {Wire} from '../probe-366/wire.mjs';
 import {owned,stop,startPlatform,pause,environment} from './platform.mjs';
-import {plan,score,inspect,auditSchedule,auditPairs,summarize,coded,noteAttested,firefoxDisclosure,drainIntervals,terminalEditAtMs,drainIneligible,drainSummary,drainSizingOk,runShape,setupLabel,focusAllowed,concealedFailureTiming,drainStats} from './check.mjs';
+import {plan,score,inspect,auditSchedule,auditPairs,summarize,coded,noteAttested,firefoxDisclosure,drainIntervals,terminalEditAtMs,drainIneligible,drainSummary,drainSizingOk,runShape,setupLabel,focusAllowed,concealedFailureTiming,drainStats,reducedPlan,REDUCED_LANES,SNAPSHOT_REFUSAL_LABEL,budgetProfile,readbackProfile,legacyBaselineCase,legacyBaselineTally,reducedBudgetCoverage} from './check.mjs';
 
 const SLOT='PROBE414', safeReasons=new Set(['secure','noFocusedElement','roleUnreadable','notTextField','valueUnreadable','rangeUnreadable',
   'fieldUnreadable','fieldChanged','becameSecure','selectionChanged','concealedMismatch','valueMismatch','unchanged','possiblyTruncated',
@@ -51,7 +51,7 @@ function decodeFirefox(d){
   const role=s=>typeof s==='string'&&/^(?:AX[A-Za-z]{1,45}|absent|failed|unrecognized)$/.test(s)?s:null;
   return {role:role(d.role),subrole:role(d.subrole),relationship:d.relationship};
 }
-async function startEngine({name,src,bin,root,platform,audit,focus,drain,globalPrivacy,lane}){
+async function startEngine({name,src,bin,root,platform,audit,focus,drain,globalPrivacy,lane,mode}){
   const home=join(root,name[0]);mkdirSync(home,{mode:0o700});const socket=join(home,'e.sock');
   const env=environment(home);const traces=new Map(),registry=new Set();let active=null;
   const note=(label,data,opts={})=>{
@@ -155,8 +155,10 @@ async function startEngine({name,src,bin,root,platform,audit,focus,drain,globalP
       if(!guarded||sent!==1||!native) return {reply:false,raw:null,forwarded:null,sky:'missing',serviceMs,action};
       const disclosureOf=surface=>firefoxDisclosure(surface,{setupText:m.seed.setupText,passwordText:m.expected});
       const disclosure=lane==='firefox'?{ipc:disclosureOf(native),forwarded:disclosureOf(meta),skyError:disclosureOf(error),rendered:disclosureOf(rendered)}:null;
-      const budget=concealedFailureTiming({head,lane,kind,literal,action,raw,startedAt:nativeMeta?.startedAt,endedAt:nativeMeta?.endedAt,replyAt:replyAtMs});
-      return {reply:true,raw,forwarded:meta['cua/typeReadback'],sky:skyClass,noted:noteAttested(native?.result?.note,content),serviceMs,action,disclosure,replyAtMs,budget};
+      const budget=concealedFailureTiming({head,lane,kind,literal,action,raw,startedAt:nativeMeta?.startedAt,endedAt:nativeMeta?.endedAt,replyAt:replyAtMs,mode});
+      // Raw readbacks are profiled in memory into closed booleans; nothing of them is kept (see legacyBaselineCase).
+      const legacy={ipc:readbackProfile(raw),wrapper:readbackProfile(error?.meta?.typeReadback??error?.meta?.['cua/typeReadback']),forwarded:readbackProfile(meta['cua/typeReadback'])};
+      return {reply:true,raw,forwarded:meta['cua/typeReadback'],sky:skyClass,noted:noteAttested(native?.result?.note,content),serviceMs,action,disclosure,replyAtMs,budget,legacy};
     }
     // Prime AX access before the first scored field. No action and no instrumented audit tag are sent.
     await w.execute('get_app_state',{pid:platform.pid,includeScreenshot:false,disableDiff:true});
@@ -171,19 +173,20 @@ async function startEngine({name,src,bin,root,platform,audit,focus,drain,globalP
 async function main(){
   const [lane,mode,phase,root,out,helper,cover,appkit,mainSrc,mainBin,fixSrc,fixBin]=process.argv.slice(2);
   if(process.env.RUNNER_ENVIRONMENT!=='github-hosted')throw Error('hosted runners only');
-  if(!['cft','electron','electron-parity','safari','firefox','appkit'].includes(lane)||!['smoke','full','firefox-focus','firefox-single','appkit-race','drain','unicode'].includes(mode)||!['stock','audit','focus','drain'].includes(phase))throw Error('invalid lane');
-  const audit=phase==='audit',smoke=mode==='smoke',focus=phase==='focus',drain=phase==='drain',race=mode==='appkit-race',diagnostic=mode.startsWith('firefox-');
+  if(!['cft','electron','electron-parity','safari','firefox','appkit'].includes(lane)||!['smoke','full','firefox-focus','firefox-single','appkit-race','drain','unicode','reduced'].includes(mode)||!['stock','audit','focus','drain'].includes(phase))throw Error('invalid lane');
+  const audit=phase==='audit',smoke=mode==='smoke',focus=phase==='focus',drain=phase==='drain',race=mode==='appkit-race',reduced=mode==='reduced',diagnostic=mode.startsWith('firefox-');
   const {singlePassword,setupCanary,requireBackground}=runShape(lane,mode);
   // The focus scratch job of smoke runs the same short/literal pairs as the diagnostics, on the password-only page, without a canary.
   const miniPlan=diagnostic||smoke&&focusAllowed(lane,mode,phase);
   if(diagnostic?(lane!=='firefox'||audit||drain):focus&&!miniPlan)throw Error('invalid focus lane');
+  if(reduced&&(!REDUCED_LANES.includes(lane)||focus||drain))throw Error('invalid reduced lane');
   mkdirSync(out,{recursive:true});const tmp=mkdtempSync(join(root,'q414-')),home=join(tmp,'platform');mkdirSync(home);
-  const rows=[],schedules=[],firefoxFacts=[],timings=[],globalPrivacy=new Set(),engines={};let platform,capabilities=null,stage='launch',abort=null,abortStep=null,streak=0;
+  const rows=[],legacyCases=[],schedules=[],firefoxFacts=[],timings=[],globalPrivacy=new Set(),engines={};let platform,capabilities=null,stage='launch',abort=null,abortStep=null,streak=0;
   const additions=Array.from({length:20},(_,rep)=>({head:'fix',kind:'add',rep,literal:rep%2===1}));
   const timingCells=Array.from({length:20},(_,i)=>[{head:'fix',kind:'short',rep:i*2},{head:'fix',kind:'short',rep:i*2+1},
     {head:'fix',kind:'long',rep:i*2},{head:'fix',kind:'long',rep:i*2+1},additions[i]]).flat();
   const cells=race?additions:drain?timingCells:mode==='unicode'?plan(false).filter(r=>r.kind==='unicode'&&r.rep<5):
-    miniPlan?Array.from({length:3},(_,rep)=>['literal','short'].flatMap((kind,i)=>
+    reduced&&!audit?reducedPlan(lane):miniPlan?Array.from({length:3},(_,rep)=>['literal','short'].flatMap((kind,i)=>
       ((rep+i)%2?['fix','main']:['main','fix']).map(head=>({head,kind,rep})))).flat():plan(smoke,{audit});
   // Paired primary rows receive the exact same disposable text, not independently generated treatments.
   const inputs=new Map();
@@ -207,7 +210,7 @@ async function main(){
     if(lane==='appkit')capabilities=await platform.appkitCapabilities();
     stage='engine-start';
     const sources=audit||drain||race?{fix:[fixSrc,fixBin]}:{main:[mainSrc,mainBin],fix:[fixSrc,fixBin]};
-    for(const [name,[src,bin]] of Object.entries(sources))engines[name]=await startEngine({name,src,bin,root:tmp,platform,audit,focus,drain,globalPrivacy,lane});
+    for(const [name,[src,bin]] of Object.entries(sources))engines[name]=await startEngine({name,src,bin,root:tmp,platform,audit,focus,drain,globalPrivacy,lane,mode});
     let trial=0;
     for(const c of cells){
       const id=`${c.head}-${c.kind}-${c.rep}`,m=inputs.get(`${c.kind}/${c.rep}`),e=engines[c.head];
@@ -269,6 +272,8 @@ async function main(){
         row.unicodeShape=row.domExact?'exact':labels.includes(delivery?.unicodeShape)?delivery.unicodeShape:'unclassified';
       }
       row.privacy=[...scope.flags];
+      if(c.label)row.label=c.label;
+      legacyCases.push(legacyBaselineCase({head:c.head,reason:row.reason,flags:row.privacy,surfaces:receipt?.legacy}));
       rows.push(row);
       if(drain){
         // Realized terminal content, judged by the independent fixture: an ordinary row's exact text or a control's exact altered text.
@@ -303,20 +308,32 @@ async function main(){
   const needed=cells.filter(c=>c.kind!=='rewrite').length;
   const failureTimes=rows.filter(r=>r.valid&&r.concealedFailure).map(r=>r.concealedFailure);
   const postFailures=failureTimes.filter(t=>t.phase==='after-input'),snapshotRefusals=failureTimes.filter(t=>t.phase==='snapshot-refused');
-  const budgetMisses=postFailures.filter(t=>!t.withinBudget).length;
-  const concealedBudget={postFailures:postFailures.length,misses:budgetMisses,beforeInput:failureTimes.filter(t=>t.phase==='before-input').length,
+  // The reduced profile also budgets snapshot refusals after posting; the legacy one leaves them as evidence only.
+  const profile=budgetProfile(mode),budgeted=failureTimes.filter(t=>t.withinBudget!==null);
+  const budgetMisses=budgeted.filter(t=>!t.withinBudget).length;
+  const budgetCoverage=reducedBudgetCoverage(lane,rows);
+  const concealedBudget={profile:profile.name,coverage:reduced?budgetCoverage:null,windowMs:[profile.minMs,profile.maxMs],budgeted:budgeted.length,postFailures:postFailures.length,misses:budgetMisses,
+    postMisses:postFailures.filter(t=>!t.withinBudget).length,beforeInput:failureTimes.filter(t=>t.phase==='before-input').length,
     fromLastPostMs:drainStats(postFailures.map(t=>t.fromLastPostMs)),fromFirstPostMs:drainStats(postFailures.map(t=>t.fromFirstPostMs)),
-    snapshotRefusals:snapshotRefusals.length,snapshotRefusedFromLastPostMs:drainStats(snapshotRefusals.map(t=>t.fromLastPostMs))};
+    snapshotRefusals:snapshotRefusals.length,snapshotMisses:snapshotRefusals.filter(t=>t.withinBudget===false).length,
+    snapshotRefusedFromLastPostMs:drainStats(snapshotRefusals.map(t=>t.fromLastPostMs)),snapshotRefusedFromFirstPostMs:drainStats(snapshotRefusals.map(t=>t.fromFirstPostMs))};
+  // Output only: what the reduced run claims and does not (the audit scratch lanes judge the success path alone), and the labeled control.
+  const reducedReport=reduced?{planned:cells.length,perHead:Object.fromEntries(['main','fix'].map(h=>[h,cells.filter(c=>c.head===h).reduce((o,c)=>{
+      const k=c.kind+(c.kind==='add'||c.kind==='drop'?(c.literal?'-literal':'-concealed'):'');o[k]=(o[k]??0)+1;return o;},{})])),
+    snapshotRefusalControl:{label:SNAPSHOT_REFUSAL_LABEL,planned:rows.filter(r=>r.label).length,refused:rows.filter(r=>r.label&&r.valid&&r.concealedFailure?.phase==='snapshot-refused').length},
+    bounds:['audit-success-path-only','held-match-focus-fail-schedule-not-compared','lost-match-schedule-not-compared']}:null;
+  const legacyBaseline=legacyBaselineTally(legacyCases);
   const gates={coverage:rows.filter(r=>r.valid&&!r.informational).length===needed&&abort===null,
     privacy:privacyViolations===0, outcome:audit||drain||focus||mode==='firefox-focus'||mode==='unicode'?null:summary.scored.passed===needed&&summary.wrongSuccesses===0&&rows.every(r=>r.informational||!r.observationMissing&&!r.evidenceFailure),
     schedule:auditGate?.pass??null, focus:focus?firefoxFacts.length===needed&&firefoxFacts.every(r=>r.valid&&r.focus!==null):null,
-    concealedBudget:mode==='full'&&phase==='stock'&&postFailures.length>0?budgetMisses===0:null,
+    // Legacy full run: judged only when a failure occurred. Reduced: never vacuous; the expected timing rows must all be seen.
+    concealedBudget:reduced&&phase==='stock'?budgetCoverage.ok&&budgetMisses===0:mode==='full'&&phase==='stock'&&budgeted.length>0?budgetMisses===0:null,
     // The race run only collects evidence rows; sizing is judged by the drain run alone.
     timing:drain&&!race?drainSizingOk(drainSummary(timings,needed),timings.length):null};
   const publishable=gates.privacy;
   const status={lane,phase,kit:config.kit,refs:config.refs,abort,abortStep,setupSteps:rows.reduce((o,r)=>r.setupStep?{...o,[r.setupStep]:(o[r.setupStep]??0)+1}:o,{}),planned:cells.length,completed:rows.length,invalid:summary.invalid,
     unattempted:cells.length-rows.length,privacyViolations,privacyCodes,actionCodes,unicodeShapes,observationsMissing:rows.filter(r=>r.observationMissing).length,
-    gates,concealedBudget,publishable,presentation:config.presentation??null,foregroundFallback:config.foregroundFallback??null};
+    gates,concealedBudget,reduced:reducedReport,legacyBaseline,publishable,presentation:config.presentation??null,foregroundFallback:config.foregroundFallback??null};
   writeFileSync(join(out,'status.json'),JSON.stringify(status,null,2)+'\n');
   // Counts and timings rebuilt from closed codes may leave even a privacy-failed run; rows, hashes and traces never do.
   writeFileSync(join(out,'coded.json'),JSON.stringify(coded(summary,auditGate),null,2)+'\n');

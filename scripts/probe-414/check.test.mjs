@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {plan, score, inspect, auditSchedule, auditPairs, summarize, coded, noteAttested, NOTE_PREFIX, firefoxDisclosure, drainIntervals, drainStats, terminalEditAtMs, drainIneligible, drainSummary, drainSizingOk, runShape, setupLabel, focusAllowed, concealedFailureTiming, appliedEditGaps} from './check.mjs';
+import {plan, score, inspect, auditSchedule, auditPairs, summarize, coded, noteAttested, NOTE_PREFIX, firefoxDisclosure, drainIntervals, drainStats, terminalEditAtMs, drainIneligible, drainSummary, drainSizingOk, runShape, setupLabel, focusAllowed, concealedFailureTiming, appliedEditGaps, reducedPlan, REDUCED_LANES, SNAPSHOT_REFUSAL_LABEL, budgetProfile, REDUCED_PAD_MS, REDUCED_OVERHEAD_MS, readbackProfile, legacyBaselineCase, legacyBaselineTally, reducedBudgetCoverage} from './check.mjs';
 
 const success={confirmed:true,secure:true,confirmation:'length',snapshotMs:4};
 const old={confirmed:false,concealed:true,reason:'secure',snapshotMs:3};
@@ -400,4 +400,107 @@ test('the smoke focus scratch job is allowed for Firefox only and setup failures
   assert.equal(setupLabel(Object.assign(Error('x'),{setupStep:words[0]})),null);
   assert.equal(setupLabel(Error('x')),null);
   assert.equal(setupLabel(undefined),null);
+});
+
+test('reduced plan: per-head counts, fix-only controls, interleaving, AppKit-only labeled selection',()=>{
+  assert.deepEqual(REDUCED_LANES,['cft','electron','electron-parity','safari','appkit']);
+  const count=(rows,f)=>rows.filter(f).length;
+  for(const lane of REDUCED_LANES){
+    const rows=reducedPlan(lane);
+    for(const head of ['main','fix']){
+      assert.equal(count(rows,r=>r.head===head&&r.kind==='short'),10);
+      assert.equal(count(rows,r=>r.head===head&&r.kind==='long'),10);
+      assert.equal(count(rows,r=>r.head===head&&r.kind==='literal'),5);
+    }
+    assert.equal(count(rows,r=>r.head==='main'&&!['short','long','literal'].includes(r.kind)),0);
+    assert.equal(count(rows,r=>r.kind==='add'),20);
+    assert.equal(count(rows,r=>r.kind==='add'&&r.literal),10);
+    assert.equal(count(rows,r=>r.kind==='drop'),10);
+    assert.equal(count(rows,r=>r.kind==='drop'&&r.literal),5);
+    assert.equal(count(rows,r=>['rewrite','unicode'].includes(r.kind)),0);
+    const sel=rows.filter(r=>r.kind==='selection');
+    assert.equal(sel.length,lane==='appkit'?5:0);
+    assert.ok(sel.every(r=>r.head==='fix'&&r.label===SNAPSHOT_REFUSAL_LABEL));
+    assert.equal(rows.length,lane==='appkit'?85:80);
+    for(const kind of ['short','long','literal']){
+      const paired=rows.filter(r=>r.kind===kind);
+      for(let i=0;i<paired.length;i+=2){assert.equal(paired[i].rep,paired[i+1].rep);assert.notEqual(paired[i].head,paired[i+1].head);}
+    }
+  }
+  // The added scratch audit jobs run the existing five trios per lane.
+  assert.equal(plan(false,{audit:true}).length,15);
+});
+test('selection control is excluded from the head comparison but scored like any row',()=>{
+  const sel={...row({kind:'selection',lane:'appkit',raw:{confirmed:false,secure:true,reason:'lengthUnreadable',snapshotMs:2}}),head:'fix',kind:'selection',label:SNAPSHOT_REFUSAL_LABEL};
+  const s=summarize([sel,{...row(),head:'fix',kind:'short'}]);
+  assert.equal(s.heads.fix.planned,1);
+  assert.equal(s.cells['fix/selection'].passed,1);
+});
+test('the reduced AppKit selection is an explicit snapshot-refusal test and the reduced budget gate is never vacuous',()=>{
+  const refused={confirmed:false,concealed:true,secure:true,reason:'lengthUnreadable',snapshotMs:2};
+  const sel=(over={})=>score({head:'fix',kind:'selection',lane:'appkit',label:SNAPSHOT_REFUSAL_LABEL,raw:refused,forwarded:refused,sky:'typeUnconfirmed',fixture:true,domExact:true,...over});
+  assert.equal(sel().pass,true);
+  assert.equal(sel({raw:{...refused,reason:'selectionUnreadable'},forwarded:{...refused,reason:'selectionUnreadable'}}).pass,true);
+  // A success, a disagreement, an unrelated refusal, inexact content or an unlabeled lane are not the test.
+  for(const over of [{raw:success,forwarded:success,sky:'ok'},{forwarded:{...refused,reason:'selectionUnreadable'}},{forwarded:old},
+    {raw:{...refused,reason:'lengthMismatch'},forwarded:{...refused,reason:'lengthMismatch'}},{raw:{...refused,concealed:false}},{raw:{...refused,secure:false}},
+    {domExact:false},{domExact:undefined},{sky:'unexpected-error'},{fixture:false},{lane:'cft'},{head:'main'}])
+    assert.equal(sel(over).pass,false,JSON.stringify(over));
+  const timed=(over={})=>({valid:true,head:'fix',...over});
+  const post={phase:'after-input'},snap={phase:'snapshot-refused'};
+  const ctl=Array.from({length:15},(_,i)=>timed({kind:i<10?'add':'drop',literal:false,concealedFailure:post}));
+  const five=Array.from({length:5},()=>timed({kind:'selection',label:SNAPSHOT_REFUSAL_LABEL,concealedFailure:snap}));
+  assert.equal(reducedBudgetCoverage('cft',ctl).ok,true);
+  assert.equal(reducedBudgetCoverage('appkit',[...ctl,...five]).ok,true);
+  assert.equal(reducedBudgetCoverage('cft',[]).ok,false,'zero failures is not a pass');
+  assert.equal(reducedBudgetCoverage('appkit',ctl).ok,false);
+  assert.equal(reducedBudgetCoverage('appkit',[...ctl,...five.slice(1)]).ok,false);
+  assert.equal(reducedBudgetCoverage('cft',ctl.slice(1)).ok,false);
+  assert.equal(reducedBudgetCoverage('cft',[...ctl.slice(1),timed({kind:'add',literal:false,concealedFailure:{phase:'before-input'}})]).ok,false);
+  assert.equal(reducedBudgetCoverage('cft',[...ctl.slice(1),timed({kind:'add',literal:false,valid:false,concealedFailure:post})]).ok,false);
+  assert.equal(reducedBudgetCoverage('cft',[...ctl.slice(1),timed({kind:'short',concealedFailure:post})]).ok,false);
+});
+test('the budget window is a seam: legacy 999..1100, reduced pads every posted refusal including snapshot refusals',()=>{
+  assert.deepEqual(budgetProfile('full'),{name:'legacy',minMs:999,maxMs:1100,snapshotBudgeted:false});
+  assert.equal(budgetProfile('reduced').minMs,REDUCED_PAD_MS-1);
+  assert.equal(budgetProfile('reduced').maxMs,REDUCED_PAD_MS+REDUCED_OVERHEAD_MS);
+  const s={head:'fix',lane:'cft',kind:'add',literal:false,action:'typeUnconfirmed',startedAt:1000,endedAt:1040};
+  const raw={confirmed:false,concealed:true,secure:true,reason:'lengthMismatch'};
+  const at=(ms,more={},mode)=>concealedFailureTiming({...s,raw,replyAt:1040+ms,mode,...more});
+  for(const [ms,ok] of [[998,false],[999,true],[1100,true],[1101,false]])assert.equal(at(ms).withinBudget,ok,'legacy '+ms);
+  for(const [ms,ok] of [[1000,false],[1098,false],[1099,true],[1150,true],[1151,false]])assert.equal(at(ms,{},'reduced').withinBudget,ok,'reduced '+ms);
+  assert.equal(at(1120,{},'reduced').fromFirstPostMs,1160);
+  // A snapshot refusal after posting: evidence only under legacy, budgeted under reduced.
+  const snap={raw:{confirmed:false,concealed:true,secure:true,reason:'lengthUnreadable'},lane:'appkit',kind:'selection'};
+  assert.equal(at(1120,snap).phase,'snapshot-refused');
+  assert.equal(at(1120,snap).withinBudget,null);
+  assert.equal(at(1120,snap,'reduced').withinBudget,true);
+  assert.equal(at(500,snap,'reduced').withinBudget,false);
+  assert.equal(at(1120,{startedAt:null,endedAt:null},'reduced').withinBudget,null);
+  assert.equal(at(1120,{literal:true},'reduced'),null);
+});
+const zero={confirmed:false,reason:'noFocusedElement',snapshotMs:3,pollMs:0,reads:0};
+const surfaces=(r=zero)=>({ipc:readbackProfile(r),wrapper:readbackProfile(r),forwarded:readbackProfile(r)});
+const baselineFlags=['ipc-type/private-key','ipc-type/readback-shape','forwarded/private-key','sky-error/private-key'];
+test('legacy baseline diagnostic reports closed booleans, grants no exemption and fails closed when unknown',()=>{
+  assert.notDeepEqual(inspect({result:{meta:{typeReadback:zero}}},words,{literal:true,surface:'ipc',baseline:true}),[],'strict scan still flags noFocusedElement');
+  const ok=legacyBaselineCase({head:'main',reason:'noFocusedElement',flags:baselineFlags,surfaces:surfaces()});
+  assert.equal(ok.allowed,true);
+  assert.equal(ok.surfaces.ipc.zeroCounters,true);
+  assert.equal(legacyBaselineCase({head:'main',reason:'x',flags:[],surfaces:surfaces()}),null);
+  const bad=r=>legacyBaselineCase({head:'main',reason:'noFocusedElement',flags:baselineFlags,surfaces:surfaces(r)});
+  for(const r of [{...zero,pollMs:3},{...zero,reads:1},{confirmed:false,reason:'noFocusedElement',snapshotMs:3},{...zero,excerpt:'x'},{...zero,actual:'x'},{...zero,expected:'x'},
+    {...zero,value:'x'},{...zero,masks:1},{...zero,expectedLength:3},{...zero,length:3},{...zero,novel:true},{...zero,secure:'yes'},{...zero,nested:{a:1}},null])
+    assert.equal(bad(r).allowed,false,JSON.stringify(r));
+  assert.equal(legacyBaselineCase({head:'main',reason:'noFocusedElement',flags:[...baselineFlags,'ipc-type/private-text'],surfaces:surfaces()}).allowed,false);
+  assert.equal(legacyBaselineCase({head:'main',reason:'noFocusedElement',flags:[...baselineFlags,'sky-error/synthetic-value'],surfaces:surfaces()}).allowed,false);
+  assert.equal(legacyBaselineCase({head:'fix',reason:'noFocusedElement',flags:baselineFlags,surfaces:surfaces()}).allowed,false);
+  assert.equal(legacyBaselineCase({head:'main',reason:'noFocusedElement',flags:baselineFlags,surfaces:{...surfaces(),wrapper:{present:false}}}).allowed,false);
+  assert.equal(legacyBaselineCase({head:'main',reason:'noFocusedElement',flags:baselineFlags,surfaces:undefined}).allowed,false);
+  const t=legacyBaselineTally([ok,bad({...zero,pollMs:3}),null,legacyBaselineCase({head:'fix',reason:'secure',flags:baselineFlags,surfaces:surfaces()})]);
+  assert.deepEqual(t.allowed,{main:{noFocusedElement:1},fix:{}});
+  assert.deepEqual(t.unproven,{main:{noFocusedElement:1},fix:{secure:1}});
+  assert.equal(t.flagged,3);
+  assert.equal(t.surfaces.ipc.zeroCounters,2);
+  assert.deepEqual(inspect(JSON.stringify(ok),words,{names:false,stringsOnly:true}),[]);
 });

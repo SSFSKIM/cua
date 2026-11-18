@@ -33,15 +33,26 @@ export function patchAudit(root,poll=DEFAULT_POLL){
     if(count(t,methodBinding)!==1||t.indexOf(methodBinding)>at||count(t,enablement)!==1||t.indexOf(enablement)<at)throw Error('dispatch boundary drift');
     return t.replace(dispatchBinding,()=>dispatchBinding+'    let probeTag = method == "type_text" ? Probe395Audit.shared.begin(args) : nil\n    defer { Probe395Audit.shared.finish(probeTag) }\n');
   });
-  // The secure length poll: each pass of its own loop is one bracketed iteration; the focus checks after the loop stay outside it.
+  // The secure length poll: each pass of its own loop is one bracketed iteration. Two forms, each required exactly; any other
+  // arrangement of the focus checks is drift:
+  //  - one focus check, after the loop (older candidates): the iteration is the whole pass, a defer at its top;
+  //  - two (wave five): a concealed success's own check in the loop after the batch, then the final one after the loop. The
+  //    iteration is closed right after its one length batch returns (the batch's reply bound to a name, no added call, consumed by
+  //    the same switch), so the in-loop check, a real AX call, falls outside every iteration and stays an ordered call of the
+  //    schedule beside the final check, never absorbed into a bracket.
   one(new RegExp(`\\bfunc ${poll}(?=[<(])[^{}]*\\{\\n`,'g'),(t,m)=>{
     const head=m.index+m[0].length, end=t.indexOf('\n  }\n',head);
     if(end<0)throw Error('poll boundary drift');
-    const body=t.slice(head,end), loop=['    poll: while true {\n','    while true {\n'].find(x=>body.includes(x)), at=body.indexOf(loop), focus=body.indexOf('reads.stillFocused('), batch=body.indexOf('readbackLength(');
-    if(count(body,'while true {')!==1||at<0||count(body,'reads.stillFocused(')!==1||count(body,'readbackLength(')!==1||count(body,'reads.sleep(typeReadbackPollIntervalMs)')!==1||
-       !(at<batch&&batch<focus))throw Error('poll boundary drift');
-    const open='      let probeIteration = Probe395Audit.shared.phaseBegin("securePoll")\n      defer { Probe395Audit.shared.phaseEnd("securePoll", probeIteration) }\n';
-    return t.slice(0,head)+body.slice(0,at+loop.length)+open+body.slice(at+loop.length)+t.slice(end);
+    const body=t.slice(head,end), loop=['    poll: while true {\n','    while true {\n'].find(x=>body.includes(x)), at=body.indexOf(loop), batch=body.indexOf('readbackLength('), sleep=body.indexOf('reads.sleep(typeReadbackPollIntervalMs)');
+    if(!loop||count(body,'while true {')!==1||count(body,'readbackLength(')!==1||count(body,'reads.sleep(typeReadbackPollIntervalMs)')!==1||!(at<batch&&batch<sleep))throw Error('poll boundary drift');
+    const close=body.indexOf('\n    }\n',at+loop.length), focus=[...body.matchAll(/reads\.stillFocused\(/g)].map(x=>x.index);  // the loop body nests deeper than its brace
+    if(close<sleep)throw Error('poll boundary drift');
+    const top=at+loop.length, open='      let probeIteration = Probe395Audit.shared.phaseBegin("securePoll")\n', first=/^( *)switch (readbackLength\([^\n]*\)) \{\n/m.exec(body.slice(top));
+    if(focus.length===1&&focus[0]>close)
+      return t.slice(0,head)+body.slice(0,top)+open+'      defer { Probe395Audit.shared.phaseEnd("securePoll", probeIteration) }\n'+body.slice(top)+t.slice(end);
+    if(focus.length!==2||!(batch<focus[0]&&focus[0]<sleep&&close<focus[1])||!first||top+first.index+first[0].indexOf('readbackLength(')!==batch)throw Error('poll boundary drift');
+    const [line,indent,call]=first, swapped=`${indent}let probeLengthReply = ${call}\n${indent}Probe395Audit.shared.phaseEnd("securePoll", probeIteration)\n${indent}switch probeLengthReply {\n`;
+    return t.slice(0,head)+body.slice(0,top)+open+body.slice(top,top+first.index)+swapped+body.slice(top+first.index+line.length)+t.slice(end);
   });
   for(const call of ['event.postToPid(pid)','event.post(tap: .cghidEventTap)'])
     one(new RegExp(`\\{ ${escape(call)} \\}`,'g'),t=>t.replace(`{ ${call} }`,()=>`{ Probe395Audit.shared.eventPosted(event); ${call} }`));

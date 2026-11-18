@@ -123,3 +123,61 @@ test('a labelled poll loop is bracketed as the unnamed one, and the labelled for
   assert.throws(()=>patched({'TypeReadback.swift':helper.replace('reads.sleep(typeReadbackPollIntervalMs)','reads.sleep(left)')}),undefined,'no production sleep');
   assert.throws(()=>patched({'TypeReadback.swift':helper.replace('      if last == .confirmed { break }','      reads.sleep(typeReadbackPollIntervalMs)\n      if last == .confirmed { break }')}),undefined,'second production sleep');
 });
+
+// Wave five (a concealed success's own focus check in the loop, the final one after it): the iteration closes right after its
+// one batch, bound to a name and consumed by the same switch, so the in-loop focus check is outside every iteration.
+const wave5=`final class TypeReadback<Element> {
+  private func confirmLength(through end: Int, beforeKey: Bool) throws {
+    guard case .expectLength(let field, let role, let basis, _, let found) = plan else { return }
+    var confirmed = false
+    poll: while true {
+      let at = reads.now()
+      switch readbackLength(field, role: role, reads: reads) {
+      case .closed(let why): throw unconfirmed(why, beforeKey)
+      case .read(let count, let range):
+        if let match = held {
+          if at - match.since >= 1 {
+            guard concealed else { confirmed = true; break poll }
+            let asked = reads.now()
+            if reads.stillFocused(field, found) { confirmed = true; break poll }
+            focusLost = true
+          }
+        }
+      }
+      if reads.now() - budgetStart >= 5 { break }
+      reads.sleep(typeReadbackPollIntervalMs)
+    }
+    if confirmed, concealed {
+      return
+    }
+    guard reads.stillFocused(field, found), !focusLost else { throw unconfirmed(.fieldChanged, beforeKey) }
+  }
+}
+`;
+test('wave five: the iteration closes right after its one batch, which is bound and consumed unchanged; both focus checks stay outside it, in order',()=>{
+  const {root,dir}=tree({'TypeReadback.swift':wave5});
+  try{
+    patchAudit(root);
+    const r=readFileSync(join(dir,'TypeReadback.swift'),'utf8');
+    const at=i=>{assert.ok(i>=0);return i;};
+    const begin=at(r.indexOf('let probeIteration = Probe395Audit.shared.phaseBegin("securePoll")')), bind=at(r.indexOf('let probeLengthReply = readbackLength(field, role: role, reads: reads)\n')),
+      end=at(r.indexOf('Probe395Audit.shared.phaseEnd("securePoll", probeIteration)\n')), sw=at(r.indexOf('switch probeLengthReply {\n')), inLoop=at(r.indexOf('if reads.stillFocused(')), final=at(r.indexOf('guard reads.stillFocused('));
+    assert.ok(r.indexOf('poll: while true {\n      let probeIteration')>0&&begin<bind&&bind<end&&end<sw&&sw<inLoop&&inLoop<final);
+    assert.ok(!r.includes('defer { Probe395Audit.shared.phaseEnd'));
+    assert.equal((r.match(/readbackLength\(/g)??[]).length,1);
+    assert.equal((r.match(/phaseBegin\("securePoll"\)/g)??[]).length,1);
+    assert.equal((r.match(/phaseEnd\("securePoll"/g)??[]).length,1);
+    assert.equal((r.match(/reads\.stillFocused\(field, found\)/g)??[]).length,2);
+  }finally{rmSync(root,{recursive:true,force:true});}
+  const drift={
+    'third focus check':wave5.replace('    if confirmed, concealed {','    _ = reads.stillFocused(field, found)\n    if confirmed, concealed {'),
+    'in-loop check only':wave5.replace('    guard reads.stillFocused(field, found), !focusLost else','    guard !focusLost else'),
+    'both checks after the loop':wave5.replace('            if reads.stillFocused(field, found) { confirmed = true; break poll }\n','').replace('    if confirmed, concealed {','    _ = reads.stillFocused(field, found)\n    if confirmed, concealed {'),
+    'in-loop check after the sleep':wave5.replace('            if reads.stillFocused(field, found) { confirmed = true; break poll }\n','').replace('      reads.sleep(typeReadbackPollIntervalMs)\n','      reads.sleep(typeReadbackPollIntervalMs)\n      _ = reads.stillFocused(field, found)\n'),
+    'batch not a switch subject':wave5.replace('switch readbackLength(field, role: role, reads: reads) {','let reply = readbackLength(field, role: role, reads: reads)\n      switch reply {'),
+    'second batch':wave5.replace('      if reads.now()','      _ = readbackLength(field, role: role, reads: reads)\n      if reads.now()'),
+    'second loop':wave5.replace('    if confirmed, concealed','    while true { break }\n    if confirmed, concealed'),
+    'no sleep':wave5.replace('reads.sleep(','other.nap('),
+  };
+  for(const [name,edit] of Object.entries(drift))assert.throws(()=>patched({'TypeReadback.swift':edit}),undefined,name);
+});

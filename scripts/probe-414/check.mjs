@@ -27,7 +27,31 @@ export function plan(smoke,{selection=true,audit=false}={}){
   return rows;
 }
 
-export function score({head,kind,lane,literal=false,preliminary=false,raw,forwarded,sky,fixture,domExact,controlExact,noted}){
+// Stock reduced run (mode=reduced): per head 10 short and 10 long concealed and 5 literal; the fix alone adds 20 adds (10 concealed, 10
+// literal) and 10 drops (5/5). No rewrite or unicode. AppKit alone adds 5 fix-only prefilled selections, a separately labeled
+// snapshot-refusal control (never part of a head's comparison). Product pins interleave exactly as in the full plan.
+export const REDUCED_LANES=['cft','electron','electron-parity','safari','appkit'];
+export const SNAPSHOT_REFUSAL_LABEL='appkit-selection-snapshot-refusal';
+export function reducedPlan(lane){
+  const rows=[];
+  for(let rep=0;rep<20;rep++){
+    [['short',0,10],['long',1,10],['literal',3,5]].forEach(([kind,i,n])=>{
+      if(rep>=n)return;
+      for(const head of (rep+i)%2===0?['main','fix']:['fix','main'])rows.push({head,kind,rep});
+    });
+    if(lane==='appkit'&&rep<5)rows.push({head:'fix',kind:'selection',rep,label:SNAPSHOT_REFUSAL_LABEL});
+    if(rep<10)rows.push({head:'fix',kind:'drop',rep,literal:rep%2===1});
+    rows.push({head:'fix',kind:'add',rep,literal:rep%2===1});
+  }
+  return rows;
+}
+
+// The reduced AppKit selection row is an explicit snapshot-refusal test, never an optional success: both readbacks must agree on an
+// unconfirmed secure concealed refusal at the snapshot (lengthUnreadable or selectionUnreadable), with the observed content exact.
+export const snapshotRefusalPass=({valid,raw,forwarded,sky,domExact})=>valid===true&&domExact===true&&sky==='typeUnconfirmed'&&
+  [raw,forwarded].every(r=>r?.confirmed===false&&r.secure===true)&&raw.concealed===true&&
+  ['lengthUnreadable','selectionUnreadable'].includes(raw.reason)&&raw.reason===forwarded.reason;
+export function score({head,kind,lane,literal=false,preliminary=false,raw,forwarded,sky,fixture,domExact,controlExact,noted,label}){
   // Confirmed means the agreed length metadata on both surfaces and the production sky success; any other success claim is bare.
   const agreed=lengthSuccess(raw)&&lengthSuccess(forwarded)&&sky==='ok';
   const claim=raw?.confirmed===true||forwarded?.confirmed===true||sky==='ok';
@@ -41,10 +65,11 @@ export function score({head,kind,lane,literal=false,preliminary=false,raw,forwar
   // A controlled count change is rejected by the count (or, on the AppKit caret fallback, the caret); a Firefox notTextField is not that proof.
   const lengthRejected=unconfirmed&&raw.secure===true&&forwarded.secure===true&&(raw.reason==='lengthMismatch'||raw.reason==='caretMismatch'&&(literal||preliminary&&lane==='appkit'));
   const controlled=negative.includes(kind);
+  const refusalTest=label===SNAPSHOT_REFUSAL_LABEL;
   return {valid, outcome, lengthConfirmed, knownLimit, lengthRejected:controlled&&lengthRejected, informational:kind==='rewrite',
     // A wrong success is any success claim over a DOM known to differ, even when the control's own edit was not the only corruption.
     wrongSuccess:fixture===true&&(outcome==='confirmed'||outcome==='bare')&&domExact===false,
-    pass:valid&&(kind==='rewrite'?unconfirmed&&domExact===false:controlled?domExact===false&&(lengthRejected||firefoxLimit):
+    pass:refusalTest?head==='fix'&&lane==='appkit'&&kind==='selection'&&snapshotRefusalPass({valid,raw,forwarded,sky,domExact}):valid&&(kind==='rewrite'?unconfirmed&&domExact===false:controlled?domExact===false&&(lengthRejected||firefoxLimit):
       domExact===true&&(knownLimit||(head==='main'?unconfirmed&&raw.reason==='secure':lengthConfirmed))),
     domExact:domExact===true};
 }
@@ -186,15 +211,71 @@ export function drainSummary(rows,planned){
 export const drainSizingOk=(summary,recorded)=>recorded===summary.planned&&summary.eligible>=summary.minimum;
 
 // Stock IPC supplies first/last native post timestamps, but not the snapshot end. The budget starts after typing.
-export function concealedFailureTiming({head,lane,kind,literal,action,raw,startedAt,endedAt,replyAt}){
+// The window is a seam: the legacy gate (full run) is one second after the last post, 999..1100 ms. The reduced run's product pads
+// every posted concealed secure refusal, a snapshot refusal after posting included, to the 1000 ms budget plus the fixed
+// 100 ms focus-read cap. REDUCED_OVERHEAD_MS is the independent native IPC timing allowance above the nominal 1100 ms.
+export const REDUCED_PAD_MS=1100, REDUCED_OVERHEAD_MS=50;
+export const budgetProfile=mode=>mode==='reduced'?{name:'reduced',minMs:REDUCED_PAD_MS-1,maxMs:REDUCED_PAD_MS+REDUCED_OVERHEAD_MS,snapshotBudgeted:true}:
+  {name:'legacy',minMs:999,maxMs:1100,snapshotBudgeted:false};
+export function concealedFailureTiming({head,lane,kind,literal,action,raw,startedAt,endedAt,replyAt,mode='full'}){
   if(head!=='fix'||literal||action!=='typeUnconfirmed'||raw?.confirmed!==false||raw?.concealed!==true||raw?.secure!==true)return null;
-  const posted=Number.isFinite(startedAt);
+  const posted=Number.isFinite(startedAt),profile=budgetProfile(mode);
   const snapshot=raw.reason==='selectionUnreadable'||raw.reason==='lengthUnreadable'&&lane==='appkit'&&kind==='selection';
   const phase=!posted?'before-input':snapshot?'snapshot-refused':'after-input';
   const interval=t=>Number.isFinite(t)&&Number.isFinite(replyAt)?replyAt-t:null;
   const fromLastPostMs=interval(endedAt),fromFirstPostMs=interval(startedAt);
+  const budgeted=phase==='after-input'||phase==='snapshot-refused'&&profile.snapshotBudgeted;
   return {phase,fromLastPostMs,fromFirstPostMs,
-    withinBudget:phase==='after-input'?(fromLastPostMs!==null&&fromLastPostMs>=999&&fromLastPostMs<=1100):null};
+    withinBudget:budgeted?(fromLastPostMs!==null&&fromLastPostMs>=profile.minMs&&fromLastPostMs<=profile.maxMs):null};
+}
+
+// The reduced budget gate is never vacuous: every realized concealed fix add/drop control must yield a known post-input failure
+// timing row (15 per lane), and AppKit's five selection controls must each yield a snapshot-refused timing row. Rows are valid-only.
+export const REDUCED_EXPECTED={afterInput:15,snapshot:lane=>lane==='appkit'?5:0};
+export function reducedBudgetCoverage(lane,rows){
+  const timed=rows.filter(r=>r.valid&&r.head==='fix'&&r.concealedFailure);
+  const afterInput=timed.filter(r=>['add','drop'].includes(r.kind)&&r.literal!==true&&r.concealedFailure.phase==='after-input').length;
+  const snapshot=timed.filter(r=>r.label===SNAPSHOT_REFUSAL_LABEL&&r.concealedFailure.phase==='snapshot-refused').length;
+  const expected={afterInput:REDUCED_EXPECTED.afterInput,snapshot:REDUCED_EXPECTED.snapshot(lane)};
+  return {expected,afterInput,snapshot,ok:afterInput===expected.afterInput&&snapshot===expected.snapshot};
+}
+
+// Output-only diagnosis of a baseline readback that the strict privacy scan flags (zero pollMs/reads counters). It grants no
+// exemption: from the raw record held in memory it reports closed booleans about one surface's readback, never a key or a value.
+const legacyKeys=new Set([...readbackKeys,'pollMs','reads']);
+export function readbackProfile(r){
+  if(!r||typeof r!=='object'||Array.isArray(r))return {present:false};
+  const keys=Object.getOwnPropertyNames(r),own=k=>Object.prototype.hasOwnProperty.call(r,k);
+  const answer=/excerpt|actual|expected/i,length=/length|count|characters|entered|checkpoints|range|location|offset|caret|selection/i,value=/value|text|mask|bullet/i;
+  const plain=k=>!answer.test(k)&&!length.test(k)&&!value.test(k);
+  const typed=keys.filter(k=>plain(k)&&legacyKeys.has(k)).every(k=>['confirmed','secure','concealed','stoppedBeforeKey','keysUnconfirmed'].includes(k)?typeof r[k]==='boolean':
+    k==='reason'?typeof r[k]==='string'&&/^[a-z][A-Za-z]{2,40}$/.test(r[k]):k===markerKey?r[k]==='length':Number.isFinite(r[k]));
+  return {present:true,hasPollMs:own('pollMs'),hasReads:own('reads'),zeroCounters:own('pollMs')&&own('reads')&&r.pollMs===0&&r.reads===0,
+    answerFields:keys.some(k=>answer.test(k)),valueFields:keys.some(k=>!answer.test(k)&&value.test(k)),lengthFields:keys.some(k=>!answer.test(k)&&length.test(k)),
+    novelKeys:keys.some(k=>plain(k)&&!legacyKeys.has(k))||!typed,nested:keys.some(k=>r[k]!==null&&typeof r[k]==='object')};
+}
+const profileClean=p=>p?.present===true&&p.zeroCounters===true&&!p.answerFields&&!p.valueFields&&!p.lengthFields&&!p.novelKeys&&!p.nested;
+// Findings this diagnosis may explain are exactly the key/shape flags on the three readback-bearing surfaces; any other is unexplained.
+const explainable=/^(?:ipc-type|sky-error|forwarded)\/(?:private-key|readback-shape)$/;
+const surfaceNames=['ipc','wrapper','forwarded'];
+export function legacyBaselineCase({head,reason,flags,surfaces}){
+  if(!(flags??[]).some(f=>explainable.test(f)))return null;
+  const allowed=head==='main'&&flags.every(f=>explainable.test(f))&&surfaceNames.every(n=>profileClean(surfaces?.[n]));
+  return {head:head==='fix'?'fix':'main',reason:typeof reason==='string'?reason:'none',allowed,
+    surfaces:Object.fromEntries(surfaceNames.map(n=>[n,Object.fromEntries(['present','hasPollMs','hasReads','zeroCounters','answerFields','valueFields','lengthFields','novelKeys','nested'].map(k=>[k,surfaces?.[n]?.[k]===true]))]))};
+}
+// Counts per head and reason; unproven rows stay fail-closed in the privacy gate regardless.
+export function legacyBaselineTally(cases){
+  const out={flagged:0,allowed:{main:{},fix:{}},unproven:{main:{},fix:{}},surfaces:{}};
+  for(const c of cases.filter(Boolean)){
+    out.flagged++;
+    const tally=(c.allowed?out.allowed:out.unproven)[c.head];tally[c.reason]=(tally[c.reason]??0)+1;
+    for(const [n,p] of Object.entries(c.surfaces)){
+      const s=out.surfaces[n]??={};
+      for(const [k,v] of Object.entries(p))if(v)s[k]=(s[k]??0)+1;
+    }
+  }
+  return out;
 }
 
 const forbiddenAX=new Set(['AXValue','AXValueDescription','AXSelectedText']);
@@ -256,7 +337,7 @@ export function summarize(rows){
     privacyViolations:a.filter(x=>x.privacy?.length).length,
     snapshotMs:quantiles(a.filter(x=>x.valid).map(x=>x.snapshotMs)),serviceMs:quantiles(a.filter(x=>x.valid).map(x=>x.serviceMs))});
   const scored=rows.filter(x=>!x.informational&&x.kind!=='rewrite'),limits=rows.filter(x=>x.kind==='rewrite'&&x.valid);
-  return {heads:Object.fromEntries(['main','fix'].map(head=>[head,summary(rows.filter(x=>x.head===head&&primary.includes(x.kind)))])),
+  return {heads:Object.fromEntries(['main','fix'].map(head=>[head,summary(rows.filter(x=>x.head===head&&primary.includes(x.kind)&&!x.label))])),
     cells:Object.fromEntries([...new Set(rows.map(r=>`${r.head}/${r.kind}`))].map(cell=>[cell,summary(rows.filter(r=>`${r.head}/${r.kind}`===cell))])),
     negative:summary(rows.filter(x=>negative.includes(x.kind))),invalid:count(rows.filter(x=>!x.valid),'invalid'),
     scored:summary(scored),wrongSuccesses:scored.filter(x=>x.wrongSuccess).length,knownLimit:{valid:limits.length,lengthConfirmed:limits.filter(x=>x.lengthConfirmed).length},

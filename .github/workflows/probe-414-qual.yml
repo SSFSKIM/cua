@@ -16,7 +16,7 @@ on:
       mode:
         description: Stock qualification, scratch drain timing, or a targeted provider diagnostic
         type: choice
-        options: [smoke, full, drain, firefox-focus, firefox-single, appkit-race, unicode]
+        options: [smoke, full, reduced, drain, firefox-focus, firefox-single, appkit-race, unicode]
         default: smoke
       firefox:
         description: Coverage selection for full/drain; omit Firefox if its one background setup retry fails
@@ -46,7 +46,8 @@ jobs:
       fail-fast: false
       matrix:
         include: >-
-          ${{ fromJSON(inputs.mode == 'unicode' && '[{"lane":"cft","phase":"stock"}]' ||
+          ${{ fromJSON(inputs.mode == 'reduced' && '[{"lane":"cft","phase":"stock"},{"lane":"electron","phase":"stock"},{"lane":"electron-parity","phase":"stock"},{"lane":"safari","phase":"stock"},{"lane":"appkit","phase":"stock"},{"lane":"cft","phase":"audit"},{"lane":"appkit","phase":"audit"}]' ||
+          inputs.mode == 'unicode' && '[{"lane":"cft","phase":"stock"}]' ||
           (inputs.mode == 'firefox-focus' || inputs.mode == 'firefox-single') &&
           '[{"lane":"firefox","phase":"stock"},{"lane":"firefox","phase":"focus"}]' ||
           inputs.mode == 'appkit-race' && '[{"lane":"appkit","phase":"stock"},{"lane":"appkit","phase":"drain"}]' ||
@@ -173,6 +174,28 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/q414-evidence"
           printf '%s\n' '{"publishable":false,"abort":"build-or-provisioning-setup"}' > "$RUNNER_TEMP/q414-evidence/status.json"
+      - name: Check both concealed failure schedules in the exact candidate stub
+        if: ${{ !cancelled() && inputs.mode == 'reduced' && matrix.lane == 'cft' && matrix.phase == 'audit' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/q414-evidence"
+          mkdir -p "$out"
+          dir="$RUNNER_TEMP/q414-failure-stub-src"
+          git worktree add --detach "$dir" "$FIX_SHA"
+          test "$(git -C "$dir" rev-parse HEAD)" = "$FIX_SHA"
+          test -z "$(git -C "$dir" status --porcelain)"
+          log="$RUNNER_TEMP/q414-failure-stub.log"
+          rc=0
+          swift test --package-path "$dir/native/engine" --scratch-path "$RUNNER_TEMP/q414-failure-stub-build" \
+            --filter 'SecureTypeReadbackTests/(testAHeldMatchWhoseFocusFailsReadsAsALostMatchWithOneFocusReadMore|testEveryConcealedFailureAfterPostingAnswersAtOneDeadline)' > "$log" 2>&1 || rc=$?
+          if [[ "$rc" == 0 ]] && grep -Eq 'Executed 2 tests?, with 0 failures' "$log"; then
+            printf '%s\n' '{"passed":true,"tests":2}' > "$out/failure-stub.json"
+          else
+            printf '%s\n' '{"passed":false}' > "$out/failure-stub.json"
+            echo 'Exact-candidate stub proof did not execute both named tests successfully.'
+            exit 1
+          fi
       - name: Upload fixed status and scrubbed evidence, never runner state
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f

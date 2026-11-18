@@ -328,6 +328,8 @@ export function publicAuditRow(a){
   privacy:{ok:privacyOk,codes:Object.keys(priv.codes??{}).map(code)},
   engine:stripped?null:{outcome:['success','error'].includes(e.outcome)?e.outcome:null,errorName:token(e.errorName),errorCode:Number.isSafeInteger(e.errorCode)?e.errorCode:null},
   typeReadback:readbackOf(a.typeReadback,lane,state),skyTypeReadback:readbackOf(a.skyTypeReadback,lane,state),concealed:bool(a.typeReadbackConcealed),
+  // The literal diagnostic only: whether the canonical wire meta named the keyed route (a boolean; the route itself is never kept).
+  ...(typeof a.keyedRoute==='boolean'?{keyedRoute:a.keyedRoute}:{}),
   schedule:scheduleOf(a.schedule,state),
   audit354:a.audit354?{textReadAttempts:int(a.audit354.textReadAttempts),rangeReadAttempts:int(a.audit354.rangeReadAttempts),byAttribute:countMap(a.audit354.byAttribute,state)}:null,
   clocks:a.clocks?{rpcMs:num(a.clocks.rpcMs),routeWallMs:num(a.clocks.routeWallMs),auditSpanMs:num(a.clocks.auditSpanMs),checks:{auditWithinRpc:bool(a.clocks.checks?.auditWithinRpc),routeWithinRpc:bool(a.clocks.checks?.routeWithinRpc)}}:null,
@@ -512,6 +514,14 @@ async function main(){
    evidence:'stock rows are the outcome and privacy evidence; audit rows (scratch builds) are schedule evidence only',
    privacy:'synthetic values only, in memory; rows hold labels, booleans, counts, timings and a fixed projection of the audit row (publicAuditRow: the sanitized typeReadbacks, coded findings and the schedule, never the reply, surfaces, event or input counts or opaque bytes); each engine has its own socket directory and an environment of only a temporary HOME and TMPDIR; an attestation scans the output and sets publishable',
    abort:CONSECUTIVE_CAP+' consecutive harness-invalid cells, '+SETUP_FAILURE_CAP+' setup failures, a failed secret cleanup or witness cleanup, a stuck tool, or the 120 minute budget'}};
+ // The password-literal diagnostic types public synthetic text, so its design differs from the qualification's in these respects.
+ if(passwordLiteral)Object.assign(meta.design,{
+  order:'each repetition holds one cell per head on the large page: the two heads run back to back and their order alternates by repetition, so each head leads half of the repetitions; the two heads of a pair type the same synthetic value',
+  cell:'browser forward, DOM setup (a plain setup input focused), cover forward (up to 4 activations), 250ms settle, DOM re-read, witness arm; under the verified cover the already-password-typed input takes its seed and focus; exactly one real type_text with the synthetic text itself as a literal argument (no secret handle, no fileStore entry, no concealed flag); cover check; DOM confirmation and exact scoring on both heads; one DOM re-read; witness disarm. No supplemental marker walk. There are no ordinary warmups: exactly one type_text per head per repetition.',
+  expected:'both heads: typeUnconfirmed with reason secure on the large page, except main (reason noFocusedElement); the DOM of both heads is scored against the full typed text and caret for every row',
+  scoring:'strict = harness valid, engine outcome and reason as expected, the engine\'s raw and sky\'s forwarded typeReadback both explicitly false, and (the DOM being required on every row) the DOM exactly the seed with the text inserted at the caret, the caret after it and input events seen, with no wrong success. A row whose DOM is not exact is not strict; its only browser diagnostic is the mismatch category and size delta described under privacy.',
+  evidence:'stock rows only: this diagnostic has no scratch (audit-patch) build and no schedule evidence; its stock capture is the privacy and outcome evidence',
+  privacy:'the typed text is public synthetic data but every surface is still scanned in the secure lane and fails closed. Two known refusal-metadata fields are validated and discarded at their actual positions only (the raw reply\'s result or error meta, the thrown wrapper error\'s meta, sky\'s merged meta): the readback\'s pollMs and reads must be exactly 0, and entered (cua/entered in sky\'s meta) must be a safe integer from 0 to the typed length, which counts the synthetic units posted and is not the DOM or readback length. A nonzero poll or read, a malformed or out-of-range count, an actual/expected field length or any other unexpected field is a privacy violation. A DOM that is not exact is described only by a category (shorter, longer, reordered, same-size-different) and the size delta from one browser read taken after exact scoring (post-only: no earlier comparison exists); because the text is synthetic and the page a fixed fixture, that category and delta disclose nothing about any secret, and no value, substring, index or absolute length leaves the page.'});
  const budget=()=>{if(Date.now()-start>BUDGET_MS)throw new Abort()};
  const progress=last=>writeFileSync(join(outDir,'progress.json'),JSON.stringify({phase,planned,done,harnessValid,strict,invalid,setupFailures,consecutiveInvalid,privacyViolations,auditFailures,auditWithheld,storeCleanupFailures,failureStages,aborted:aborted!==null,elapsedMs:Date.now()-start,last},null,2));
  // Final defence: nothing is written that contains a synthetic value.
@@ -631,7 +641,7 @@ async function main(){
    // Every secret-lane value is known to the audit capture before anything is typed.
    audit.registerSecret(SEED,'seed');
    audit.registerSecret(m.text,c.kind==='plain'?'plain':'secret');
-   audit.begin(c.tag,{head:c.head,page:c.page,kind:c.kind,length:m.text.length,rep:c.rep,secureField:m.secure,fieldLengths:[m.length],expectConcealed:conceal(c)});auditOpen=true;
+   audit.begin(c.tag,{head:c.head,page:c.page,kind:c.kind,length:m.text.length,rep:c.rep,secureField:m.secure,fieldLengths:[m.length],expectConcealed:conceal(c),literal:passwordLiteral});auditOpen=true;
    try{row.typeTiming=await typeThrough(head,c,m,rec)}finally{if(rec.cleanup==='failed')cleanupFailed=true}
    if(cleanupFailed)throw new Fail();
    if(rec.sent!==1||rec.replied!==1)throw new Fail();
@@ -781,9 +791,10 @@ async function main(){
   }
   meta.pid=pid;meta.coverPid=coverPid;writeFileSync(join(outDir,'config.json'),JSON.stringify(meta,null,2));progress(null);
   stage='warmup';
-  // Unscored repetition-0 warmups. The password-only diagnostic does not visit an ordinary field or the small page.
-  for(const h of HEADS)for(const pg of meta.pages){
-   const id=['warmup',h,pg].join('/'),kind=passwordLiteral?'secure':'plain';
+  // Unscored repetition-0 warmups. The password-only diagnostic types nothing outside its scored cells (exactly one type_text
+  // per head per repetition), so it has none; the preflight above is its only preparation.
+  if(!passwordLiteral)for(const h of HEADS)for(const pg of meta.pages){
+   const id=['warmup',h,pg].join('/'),kind='plain';
    await cell({id,tag:tagOf(id),part:'warmup',rep:0,head:h,page:pg,kind,expected:expectationFor(h,pg,kind)},{warmup:true});
   }
   stage='cells';

@@ -29,6 +29,88 @@ test('literal password audits require literal arguments while keeping secure met
  assert.equal(r.row.lane,'secure');
 });
 
+async function literalRow({literal=true,mode='stock',length=32,engineMeta,skyMeta,errorMeta=engineMeta,field=61,withError=true}){
+ const capture=createAuditCapture({mode}),tag='main-large-secure-r01';
+ capture.begin(tag,{head:'main',page:'large',kind:'secure',length,fieldLengths:[field],expectConcealed:false,literal});
+ capture.engineArgs(tag,'type_text',{});
+ capture.engineReply(tag,'type_text',{error:{errorName:'typeUnconfirmed',code:-1,message:'refused',meta:engineMeta}});
+ const error=Object.assign(new Error('refused'),{name:'SkyComputerUseError',errorName:'typeUnconfirmed',meta:errorMeta});
+ capture.sky(tag,{error:withError?error:null,meta:skyMeta});
+ return capture.end(tag);
+}
+const refusal=(reason,extra={},entered=32)=>({typeReadback:{confirmed:false,reason,snapshotMs:5,pollMs:0,reads:0,...extra},entered,inputRoute:"2'",startedAt:1,endedAt:2});
+const skyOf=(m,entered=m.entered)=>({'cua/typeReadback':m.typeReadback,'cua/entered':entered});
+
+test('literal password diagnostic validates and discards the known refusal telemetry at its wire positions',async()=>{
+ for(const reason of ['secure','noFocusedElement']){
+  const m=refusal(reason),a=await literalRow({engineMeta:m,skyMeta:skyOf(m)});
+  assert.deepEqual(a.privacy.codes,{},reason);
+  const r=publicAuditRow(a);
+  assert.equal(r.publishable,true,reason);assert.equal(r.row.ok,true);assert.equal(r.row.keyedRoute,true);
+  const kept={confirmed:false,reason,snapshotMs:5};
+  assert.deepEqual(r.row.typeReadback,kept);assert.deepEqual(r.row.skyTypeReadback,kept);
+  assert.ok(!JSON.stringify(a).includes('"entered"')&&!JSON.stringify(a).includes('cua/entered')&&!JSON.stringify(a).includes('pollMs'));
+ }
+ // A refusal that posted nothing, and a sky result with null forwarded fields, are in shape too.
+ const none=refusal('secure',{},0),a=await literalRow({engineMeta:none,skyMeta:{'cua/typeReadback':null,'cua/entered':null},withError:false});
+ assert.equal(a.privacy.violations,0);
+});
+
+test('literal password diagnostic keeps keyedRoute a boolean from canonical wire meta and not for other routes',async()=>{
+ const m=refusal('secure');m.inputRoute='3';
+ const r=publicAuditRow(await literalRow({engineMeta:m,skyMeta:skyOf(m)}));
+ assert.equal(r.row.keyedRoute,false);
+ assert.ok(!JSON.stringify(r.row).includes('inputRoute'));
+});
+
+test('literal password diagnostic still fails closed on anything beyond the known fields',async()=>{
+ const bad=[
+  ['nonzero poll',refusal('secure',{pollMs:1})],['nonzero reads',refusal('secure',{reads:3})],['string poll',refusal('secure',{pollMs:'0'})],
+  ['entered above the typed length',refusal('secure',{},33)],['entered at the field length',refusal('secure',{},61)],['negative entered',refusal('secure',{},-1)],
+  ['fractional entered',refusal('secure',{},1.5)],['string entered',refusal('secure',{},'32')],['object entered',refusal('secure',{},{n:32})],
+  ['actual length',refusal('secure',{actualLength:29})],['expected length',refusal('secure',{expectedLength:61})],['unknown field',refusal('secure',{extra:1})],
+  ['checkpoints',refusal('secure',{checkpoints:2})],
+ ];
+ for(const [name,m] of bad){
+  for(const where of ['engine','sky-meta','sky-error']){
+   const clean=refusal('secure'),opts={engineMeta:clean,skyMeta:skyOf(clean),errorMeta:clean};
+   if(where==='engine')opts.engineMeta=m;
+   else if(where==='sky-meta'){opts.skyMeta=skyOf(m)}
+   else opts.errorMeta=m;
+   const a=await literalRow(opts),r=publicAuditRow(a);
+   assert.ok(a.privacy.violations>0,name+' '+where);assert.equal(r.publishable,false,name+' '+where);
+  }
+ }
+});
+
+test('literal exemptions apply only at wire metadata positions, only when declared and only on a stock secure request',async()=>{
+ const m=refusal('secure'),skyAt=meta=>({'cua/typeReadback':m.typeReadback,...meta});
+ // The same fields anywhere else, or on a request that did not declare the literal diagnostic, remain violations.
+ assert.ok((await literalRow({literal:false,engineMeta:m,skyMeta:skyOf(m),withError:false})).privacy.violations>0);
+ const nested=await literalRow({engineMeta:{...m,extra:{entered:32}},skyMeta:skyOf(m),withError:false});
+ assert.ok(nested.privacy.violations>0);
+ const wrongKey=await literalRow({engineMeta:m,skyMeta:skyAt({entered:32}),withError:false});
+ assert.ok(wrongKey.privacy.violations>0);
+ const flat=await literalRow({engineMeta:m,skyMeta:skyOf(m),withError:false});
+ const alias=createAuditCapture({mode:'stock'}),at='main-large-secure-r01';
+ alias.begin(at,{head:'main',page:'large',kind:'secure',length:32,expectConcealed:false,literal:true});
+ alias.engineArgs(at,'type_text',{});
+ alias.engineReply(at,'type_text',{'error.meta':{entered:32,typeReadback:{confirmed:false,reason:'secure',snapshotMs:5,pollMs:0}}});
+ alias.sky(at,{});
+ assert.equal(flat.privacy.violations,0);
+ assert.ok((await alias.end(at)).privacy.violations>=2);
+ const inResult=createAuditCapture({mode:'stock'}),tag='main-large-secure-r01';
+ inResult.begin(tag,{head:'main',page:'large',kind:'secure',length:32,expectConcealed:false,literal:true});
+ inResult.engineArgs(tag,'type_text',{});
+ inResult.engineReply(tag,'type_text',{result:{entered:32}});
+ inResult.surface(tag,'content',[{entered:32}]);
+ inResult.sky(tag,{});
+ assert.ok((await inResult.end(tag)).privacy.violations>=2);
+ assert.throws(()=>createAuditCapture({mode:'audit'}).begin('a-b-r01',{head:'main',page:'large',kind:'secure',length:32,expectConcealed:false,literal:true}));
+ assert.throws(()=>createAuditCapture({mode:'stock'}).begin('a-b-r01',{head:'main',page:'large',kind:'plain',length:32,literal:true}));
+ assert.throws(()=>createAuditCapture({mode:'stock'}).begin('a-b-r01',{head:'main',page:'large',kind:'secure',length:32,literal:true}));
+});
+
 test('twenty trials per cell and head, balanced interleaving with independent A/B pairs',()=>{
  const rounds=plan({reps:20,seed:395});
  assert.equal(rounds.flat().length,320);

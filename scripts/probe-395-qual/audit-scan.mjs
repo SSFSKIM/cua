@@ -23,6 +23,12 @@ export const REASON=/^[a-z][A-Za-z]{2,40}$/;
 export const SECRET_READBACK_KEYS=Object.freeze({confirmed:'boolean',reason:'reason',snapshotMs:'number',concealed:'true',keysUnconfirmed:'true',stoppedBeforeKey:'true'});
 export const SECURE_READBACK_KEYS=Object.freeze({confirmed:'boolean',reason:'reason',snapshotMs:'number',concealed:'true',secure:'true'});
 export const PLAIN_READBACK_KEYS=Object.freeze(['confirmed','reason','snapshotMs','pollMs','reads','checkpoints','keysUnconfirmed','expectedLength','actualLength','start','expected','actual','stoppedBeforeKey','placeholderLine','placeholderCaretUnread','settleReads','settleCapped']);
+// The positions where a literal diagnostic's engine metadata really lives: the raw reply's result/error meta, the thrown wrapper
+// error's meta and sky's merged response meta (whose keys carry the `cua/` prefix). Nothing else is exempt.
+const LITERAL_METAS=Object.freeze({'engine-reply:type_text':[['result','meta'],['error','meta']],'sky-error':[['meta']],'sky-meta':[[]]});
+const LITERAL_ENTERED=Object.freeze({'engine-reply:type_text':'entered','sky-error':'entered','sky-meta':'cua/entered'});
+const LITERAL_READBACK=Object.freeze({'engine-reply:type_text':'typeReadback','sky-error':'typeReadback','sky-meta':'cua/typeReadback'});
+const LITERAL_ZERO_KEYS=Object.freeze(['pollMs','reads']);
 const PLAIN_QUOTE_KEYS=/^(before|actual|expected|value|text|.*excerpt)$/i;
 const safeKey=k=>/^[A-Za-z0-9_./@-]{1,48}$/.test(k)?k:'(key)';
 const b64=buf=>buf.toString('base64');
@@ -58,11 +64,13 @@ export function createScanner({extraSecretReadbackKeys=[]}={}){
  function lengthCandidates(ctx){return ctx.lengths}
  function ctxOf(lane,lengths=[]){if(!LANES.includes(lane))throw Error('invalid lane');return {lane,lengths:new Set(lengths.filter(n=>Number.isSafeInteger(n)&&n>0))}}
  // ---- scan -------------------------------------------------------------------------------------------------------
- function scan(value,{lane,lengths=[],surface='surface'}){
+ function scan(value,{lane,lengths=[],surface='surface',literal=null}){
   const ctx=ctxOf(lane,lengths),findings=[],stats={withheld:0,plainQuotes:0,novelKeys:[]};
   const strict=lane!=='plain';
   const flag=(code,path)=>{findings.push({code,surface,path:path.map(safeKey).join('.')});return '[redacted:'+code+']'};
   const seen=new WeakSet();
+  // Literal exemptions apply only to a secure-lane request that declared them, and only at a known metadata position.
+  const metaHere=path=>lane==='secure'&&literal!==null&&(LITERAL_METAS[surface]?.some(m=>m.length===path.length&&m.every((c,i)=>c===path[i]))??false);
   const readbackKeys=lane==='secure'?{...SECURE_READBACK_KEYS}:{...SECRET_READBACK_KEYS};
   for(const k of extraSecretReadbackKeys)readbackKeys[k]='scalar';
   function str(s,key,path,siblingLabels){
@@ -119,7 +127,12 @@ export function createScanner({extraSecretReadbackKeys=[]}={}){
      if(!/^[A-Za-z0-9_./@ -]{1,64}$/.test(k)){out['(key)']=flag('novel-key',p);continue}
      if(MARKER_CONTENT_KEY.test(k)&&x!==null&&typeof x!=='boolean'&&!(typeof x==='string'&&REASON.test(x))){out[k]=flag('marker-key',p);continue}
      if(MARKER_KEY.test(k)&&x!==null&&typeof x==='object'){out[k]=flag('marker-key',p);continue}
-     if(k==='typeReadback'||k==='cua/typeReadback'){out[k]=readback(x,p);continue}
+     if(k==='typeReadback'||k==='cua/typeReadback'){out[k]=readback(x,p,metaHere(path)&&LITERAL_READBACK[surface]===k);continue}
+     if(metaHere(path)&&LITERAL_ENTERED[surface]===k&&x!==null&&x!==undefined){
+      // A count of the public synthetic units posted: known, checked and not kept. Any other shape fails closed.
+      if(!(Number.isSafeInteger(x)&&x>=0&&Number.isSafeInteger(literal.maxEntered)&&x<=literal.maxEntered))out[k]=flag('forbidden-key',p);
+      continue;
+     }
      if(strict&&FORBIDDEN_SECRET_KEY.test(k)&&x!==null&&x!==undefined&&!(k==='keysUnconfirmed'&&typeof x==='boolean')){out[k]=flag('forbidden-key',p);continue}
      if(k==='message'&&typeof x==='string'){out[k]=str(x,k,p,[]);continue}
      out[k]=walk(x,p,k,v,inReadback);
@@ -130,7 +143,7 @@ export function createScanner({extraSecretReadbackKeys=[]}={}){
   }
   function errorObject(e){return {...Object.fromEntries(Object.getOwnPropertyNames(e).filter(k=>k!=='stack').map(k=>[k,e[k]])),name:e.name,message:e.message}}
   // A type-readback record: the lane's allowlist decides what may stay. Everything kept is a scalar that passed the string checks.
-  function readback(rec,path){
+  function readback(rec,path,literalMeta=false){
    if(rec===null||rec===undefined)return null;
    if(typeof rec!=='object'||Array.isArray(rec))return flag('novel-key',path);
    const out={};
@@ -138,6 +151,7 @@ export function createScanner({extraSecretReadbackKeys=[]}={}){
     const p=[...path,k];
     if(!/^[A-Za-z][A-Za-z0-9_]{0,31}$/.test(k)){out['(key)']=flag('novel-key',p);continue}
     if(strict){
+     if(literalMeta&&LITERAL_ZERO_KEYS.includes(k)){if(x!==0)out[k]=flag('secure-meta',p);continue}
      const rule=readbackKeys[k];
      if(!rule){out[k]=flag(FORBIDDEN_SECRET_KEY.test(k)||MARKER_CONTENT_KEY.test(k)?'forbidden-key':'novel-key',p);continue}
      const ok=rule==='boolean'?typeof x==='boolean'

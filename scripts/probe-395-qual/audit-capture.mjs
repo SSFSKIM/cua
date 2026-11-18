@@ -35,7 +35,7 @@ export function createAuditCapture({mode='audit',sink=null,clock=()=>performance
  const need=tag=>{const t=tags.get(tag);if(!t)throw Error('unknown audit tag');return t};
  const add=(t,found,surfaceStats)=>{for(const f of found){t.findings.push(f);t.codes[f.code]=(t.codes[f.code]??0)+1}if(surfaceStats){t.stats.withheld+=surfaceStats.withheld;t.stats.plainQuotes+=surfaceStats.plainQuotes;for(const k of surfaceStats.novelKeys)t.stats.novelKeys.add(k)}};
  function scanInto(t,value,surface){
-  const r=scanner.scan(value,{lane:t.lane,lengths:t.lengths,surface});add(t,r.findings,r.stats);return r.clean;
+  const r=scanner.scan(value,{lane:t.lane,lengths:t.lengths,surface,literal:t.literal?{maxEntered:t.length}:null});add(t,r.findings,r.stats);return r.clean;
  }
  function handleLine(head,line){
   if(line.startsWith('{"'+AUDIT_KEY+'":')||line.startsWith('{"'+AUDIT354_KEY+'":')){
@@ -53,16 +53,19 @@ export function createAuditCapture({mode='audit',sink=null,clock=()=>performance
   registerSecret(value,kind='secret'){if(!['secret','plain','seed'].includes(kind))throw Error('invalid value kind');scanner.register(value,kind)},
   // The patch's stdout JSON for a head, so the pre-input boundary is known to exist (or not) in that build.
   setProvenance(head,patch){provenance.set(head,patch)},
-  begin(tag,{head,page,kind,length,rep,secret,secureField,fieldLengths=[],route=null,expectConcealed}={}){
+  begin(tag,{head,page,kind,length,rep,secret,secureField,fieldLengths=[],route=null,expectConcealed,literal=false}={}){
    if(typeof tag!=='string'||!TAG.test(tag))throw Error('invalid audit tag');
    if(scanner.carries(tag).size)throw Error('audit tag carries a registered value');
    if(!KINDS.includes(kind)||!LABEL.test(String(head))||!LABEL.test(String(page)))throw Error('invalid audit labels');
    if(tags.has(tag))throw Error('audit tag already used');
    if(openByHead.has(head))throw Error('another audited request is open on this head');
    if(typeof secret==='string')scanner.register(secret,'secret');
-   const lane=laneOf(kind,secureField),typed=Number.isSafeInteger(length)?length:(typeof secret==='string'?secret.length:null);
+   const lane=laneOf(kind,secureField);
+   // The stock literal secure diagnostic only: a public synthetic string typed into a password field on an unmodified build.
+   if(literal===true&&(mode!=='stock'||lane!=='secure'||expectConcealed!==false))throw Error('literal audits are stock secure-lane only');
+   const typed=Number.isSafeInteger(length)?length:(typeof secret==='string'?secret.length:null);
    const lengths=lane==='plain'?[]:[typed,...fieldLengths].filter(Number.isSafeInteger);
-   const t={tag,head,page,kind,lane,rep:repOf(tag,rep),length:typed,route:typeof route==='string'&&LABEL.test(route)?route:null,lengths,openedAt:clock(),
+   const t={tag,head,page,kind,lane,rep:repOf(tag,rep),length:typed,route:typeof route==='string'&&LABEL.test(route)?route:null,lengths,literal:literal===true,openedAt:clock(),
     requests:0,methods:{},expectConcealed:expectConcealed??(lane!=='plain'),concealedOk:null,sentAt:null,recvAt:null,engine:null,sky:{rendered:null,error:null,meta:null},extra:{},findings:[],codes:{},stats:{withheld:0,plainQuotes:0,novelKeys:new Set()},stderrLines:0,ended:false,hasReply:false};
    tags.set(tag,t);openByHead.set(head,tag);return {tag};
   },
@@ -79,7 +82,7 @@ export function createAuditCapture({mode='audit',sink=null,clock=()=>performance
    if(method==='type_text'){t.recvAt=at;t.hasReply=true}
    const clean=scanInto(t,raw,'engine-reply:'+method);
    if(method==='type_text'){
-    t.engine={clean,wall:(()=>{const m=raw?.result?.meta??raw?.error?.meta;return Number.isFinite(m?.startedAt)&&Number.isFinite(m?.endedAt)?m.endedAt-m.startedAt:null})(),reason:reasonOf(raw)};
+    t.engine={clean,keyedRoute:t.literal?(raw?.error?.meta??raw?.result?.meta)?.inputRoute==="2'":null,wall:(()=>{const m=raw?.result?.meta??raw?.error?.meta;return Number.isFinite(m?.startedAt)&&Number.isFinite(m?.endedAt)?m.endedAt-m.startedAt:null})(),reason:reasonOf(raw)};
    }
   },
   sky(tag,{rendered=null,error=null,meta=null}={}){
@@ -155,6 +158,7 @@ export function createAuditCapture({mode='audit',sink=null,clock=()=>performance
     privacy:{ok:privacyOk,violations:t.findings.length,codes:t.codes,paths:[...new Set(t.findings.map(f=>f.surface+':'+f.path+':'+f.code))].slice(0,50),withheldStrings:t.stats.withheld,plainQuotesWithheld:t.stats.plainQuotes,novelPlainReadbackKeys:[...t.stats.novelKeys].sort(),stderrLines:t.stderrLines},
     engine:{...sanitizedOutcome,reply:engineClean},typeReadback,skyTypeReadback,
     typeReadbackConcealed:typeReadback&&typeof typeReadback==='object'?typeReadback.concealed===true:null,
+    ...(t.literal?{keyedRoute:t.engine?.keyedRoute===true}:{}),
     sky:t.sky,surfaces:t.extra,routeTimings,clocks,schedule,audit354,requests:{typeText:t.requests,methods:t.methods}};
    // A row too large to keep is a harness fault, not a reason to drop the privacy verdict.
    let size=JSON.stringify(row).length;

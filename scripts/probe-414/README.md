@@ -263,3 +263,41 @@ Last-post IPC times are in ms. Both mutation ranges overlap by length in all lan
 | Electron parity | 3.3/6.4 → 3.0/5.6 | 135.902/269.523 → 386.738/546.501 |
 | Safari large | 6.0/9.0 → 8.2/11.7 | 129.161/412.317 → 469.679/542.052 |
 | AppKit | 0.5/1.1 → 0.7/1.3 | 212.190/378.646 → 397.424/560.666 |
+
+## Standard-timeout fixed slots at 220 ms
+
+[Wave-eight hosted run](https://github.com/SSFSKIM/cua/actions/runs/44386516599), workflow `422774845`, kit `f82dd4e8e9435e9cfd322ef9dcba3be448b6034e`, baseline `517ab5430a3a81718910b030488ba8d855087b21`, fix `405b63b333683669ac8d441daab31eb9d019d8cb`, mode `deadline`. The five stock lanes, paired positives, 30 concealed and 15 literal mutations per lane, and five AppKit selection controls are unchanged from wave seven. The only executable kit change is the second named hosted property selector.
+
+Every AX read uses the usual 100 ms timeout instead of shrinking it near the cutoff. From the last native post, regular concealed reads start no later than +800 ms, the final length batch has its +900 ms slot, the final focus read its +1000 ms slot, and the failure deadline is +1100 ms. The 220 ms hold leaves a 680 ms drain allowance. The flag retains the 10 ms native tolerance after padding. The exact hosted proof runs the original `testConcealedTimingAndReasonsHoldOverRandomCases` plus `testExactControlsAnswerLengthMismatchOnTimeAtLiveCosts` (seed `0x414_F218`). Each runs 2,000 paired different-length cases. The second uses deterministic simulated costs of 20–90 ms per length batch and 10–90 ms per focus read, and requires exact adds/drops to refuse `lengthMismatch` on time and genuine fields to confirm. These simulated costs are not live measurements.
+
+The stock bar is exact success, no false confirmations, expected mutation refusals without spurious `fieldUnreadable` or `fieldChanged`, equal short/long reason distributions per mutation, and privacy. Native deadline semantics are checked in the hosted properties. Stock reports late-flag prevalence and IPC timing separately; IPC arrival is not a native completion timestamp.
+
+**Hosted workflow green; late replies are not rare.** All five lanes passed outcomes, reason parity, privacy and coverage, and **both named hosted properties passed** on the exact candidate. All 100 candidate positives delivered exactly and length-confirmed, and all 100 baseline positives delivered exactly and refused `secure`. Zero of 150 synchronous adds or 75 drops confirmed. Every concealed add/drop refused `lengthMismatch` in both the short and long cohorts; the 75 literal controls refused the expected `lengthMismatch` or AppKit `caretMismatch`. All five AppKit selection controls posted, delivered exactly and refused `lengthUnreadable`. This fixes the observed `fieldUnreadable` regression (62/150 → 0/150) and preserves zero `fieldChanged` (wave six had 78/150). `lateReply`, however, still appeared on **137/155 (88.4%)** measured failures, versus 138/155 in wave seven. The requested rarity criterion was not met; it is not a GitHub workflow gate.
+
+| Lane | `fieldUnreadable` wave seven → eight (of 30) | `fieldChanged` wave seven → eight (of 30) | Wrong adds | Correct add / drop rejections | Reason parity (add/drop) | Privacy / invalid | `lateReply` |
+| --- | ---: | ---: | ---: | ---: | --- | ---: | ---: |
+| CfT | 9 → 0 | 0 → 0 | 0/30 | 30/30; 15/15 | Pass / pass | 0 / 0 | 26/30 |
+| Electron default | 13 → 0 | 0 → 0 | 0/30 | 30/30; 15/15 | Pass / pass | 0 / 0 | 24/30 |
+| Electron parity | 10 → 0 | 0 → 0 | 0/30 | 30/30; 15/15 | Pass / pass | 0 / 0 | 23/30 |
+| Safari large | 17 → 0 | 0 → 0 | 0/30 | 30/30; 15/15 | Pass / pass | 0 / 0 | 30/30 |
+| AppKit | 13 → 0 | 0 → 0 | 0/30 | 30/30; 15/15 | Pass / pass | 0 / 0 | 34/35 |
+
+The earliest flagged IPC arrival was 1111 ms; four unflagged arrivals were 1111–1115 ms. No flagged arrival was at or below 1110 ms. All 71 above the old 1150 ms band had flags; 66 flagged arrivals were inside that band. This comparison includes transport time and does not contradict the exact native-clock property. All five posted AppKit selection controls were flagged, with p50/p95/max **1151/1155/1155 ms** (three above the old band). Their snapshot phase remains inferred, not traced. Hosted macOS was 26.7.2: CfT returned to 157.0.8103.78, the two Electron variants ran 44.4.5 / Chromium 152.0.7977.130, Safari 27.2. AppKit alone ran frontmost.
+
+| Lane | Above old IPC band (1150 ms) | Short add p50/p95/max (n) | Long add p50/p95/max (n) | Short drop p50/p95/max (n) | Long drop p50/p95/max (n) |
+| --- | ---: | --- | --- | --- | --- |
+| CfT | 9/30 | 1139/1170/1170 (10) | 1136.5/1177/1177 (10) | 1137/1168/1168 (5) | 1116/1164/1164 (5) |
+| Electron default | 16/30 | 1116.5/1186/1186 (10) | 1150/1173/1173 (10) | 1166/1176/1176 (5) | 1162/1172/1172 (5) |
+| Electron parity | 12/30 | 1137.5/1182/1182 (10) | 1159.5/1170/1170 (10) | 1135/1149/1149 (5) | 1127/1155/1155 (5) |
+| Safari large | 18/30 | 1168.5/1184/1184 (10) | 1151/1178/1178 (10) | 1159/1183/1183 (5) | 1157/1175/1175 (5) |
+| AppKit | 16/35 | 1151.5/1175/1175 (10) | 1126/1185/1185 (10) | 1167/1175/1175 (5) | 1153/1160/1160 (5) |
+
+Last-post IPC times are in ms. Short and long ranges overlapped for both mutations in all lanes. Four-median spreads were 23, 49.5, 32.5, 17.5 and 41 ms in table order. The direction was mixed; neither these spreads nor the old band were gates.
+
+| Lane | Primary snapshot p50/p95 ms (main → fix) | Primary service p50/p95 ms (main → fix) |
+| --- | --- | --- |
+| CfT | 0.3/0.6 → 0.4/1.0 | 174.103/269.897 → 456.014/549.992 |
+| Electron default | 3.5/6.5 → 2.8/6.3 | 113.736/246.649 → 392.091/504.402 |
+| Electron parity | 2.5/5.5 → 2.7/5.4 | 138.994/246.349 → 379.910/520.502 |
+| Safari large | 4.7/8.9 → 5.4/8.8 | 169.676/247.104 → 393.709/516.649 |
+| AppKit | 0.3/0.7 → 0.5/3.0 | 162.339/246.016 → 364.469/545.739 |

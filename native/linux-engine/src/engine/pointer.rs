@@ -1234,27 +1234,32 @@ impl Engine {
                     // and only one the application had settled on, as a handle's (M5's task 98)
                     let settled = settle
                         .map(|(before, after)| crate::drop_cursor::settled(&read.steps, before, after, xtest_route));
-                    over["settle"] = json!({
-                        "asked": drop_settle,
-                        "before_rest": settle.map(|(before, _)| before.record()),
-                        "after_motion": settle.map(|(_, after)| after.record()),
-                        "settled": settled,
-                        "accept_unsettled": held,
-                    });
+                    // what `linux-engine-v0.4.0` answered on this read, beside what the settle left of it
+                    over["accept_unsettled"] = json!(held);
                     over_aware = Some(over);
                     cursor = Some(Some(held && (settled == Some(true) || !drop_settle)));
                 }
                 let confirming = super::handle::confirming(confirm, supported, cursor);
                 let by_cursor = cursor.map(|accepted| accepted == Some(true));
                 if let Some(watch) = &drop_cursor {
-                    self.extra.insert(
-                        "drop_cursor".into(),
-                        match (watch, &at_release) {
-                            (Ok(_), Some(read)) => read.record(),
-                            (Ok(_), None) => json!({ "read": false }),
-                            (Err(error), _) => json!({ "accepted": null, "error": error }),
+                    let mut record = match (watch, &at_release) {
+                        (Ok(_), Some(read)) => read.record(),
+                        (Ok(_), None) => json!({ "read": false }),
+                        (Err(error), _) => json!({ "accepted": null, "error": error }),
+                    };
+                    // the settle, whatever the cursor showed (a handle's record carries the same)
+                    record["settle"] = json!({
+                        "asked": drop_settle && settle.is_some(),
+                        "before_rest": settle.map(|(before, _)| before.record()),
+                        "after_motion": settle.map(|(_, after)| after.record()),
+                        "settled": match (&at_release, settle) {
+                            (Some(read), Some((before, after))) => {
+                                Some(crate::drop_cursor::settled(&read.steps, before, after, xtest_route))
+                            }
+                            _ => None,
                         },
-                    );
+                    });
+                    self.extra.insert("drop_cursor".into(), record);
                 }
                 self.extra.insert(
                     "after_release".into(),

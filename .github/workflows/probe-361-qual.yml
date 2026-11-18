@@ -1,0 +1,191 @@
+name: probe-361-qualification
+on:
+  push:
+    branches: ['probe/361-qual']
+    paths: ['.github/workflows/probe-361-qual.yml']
+  workflow_dispatch:
+    inputs:
+      main:
+        description: Exact 40-character baseline engine SHA
+        required: true
+        type: string
+      fix:
+        description: Exact 40-character candidate SHA (empty measures main alone)
+        type: string
+        default: ''
+      mode:
+        description: smoke (one trial per cell), measure (ten per cell per head), qualify (twenty per cell per head, interleaved)
+        type: choice
+        options: [smoke, measure, qualify]
+        default: smoke
+      lanes:
+        description: Comma list of safari, cft, firefox, electron, appkit
+        type: string
+        default: safari,cft,firefox,electron,appkit
+      sources:
+        description: Comma list of ko, ja-romaji, ja-kana, zh
+        type: string
+        default: ko,ja-romaji,ja-kana,zh
+      ax:
+        description: The instrumented AX read-back probe (main only, the first source), beside or instead of the stock lanes
+        type: choice
+        options: [include, omit, only]
+        default: include
+permissions:
+  contents: read
+concurrency:
+  group: probe-361-qualification-${{ github.run_id }}
+  cancel-in-progress: false
+jobs:
+  register:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo 'Registered; explicit product SHA pins required for hosted macOS qualification.'
+  plan:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - id: plan
+        shell: bash
+        env:
+          LANES: ${{ inputs.lanes }}
+          AX: ${{ inputs.ax }}
+          MODE: ${{ inputs.mode }}
+          FIX: ${{ inputs.fix }}
+        run: |
+          set -euo pipefail
+          if [[ "$MODE" == qualify && -z "$FIX" ]]; then echo 'qualify needs a fix SHA'; exit 1; fi
+          node -e '
+            const lanes=process.env.LANES.split(",").map(s=>s.trim()).filter(Boolean),ax=process.env.AX,mode=process.env.MODE;
+            const known=["safari","cft","firefox","electron","appkit"];
+            if(!lanes.length||lanes.some(l=>!known.includes(l)))throw Error("unknown lane");
+            const m=[];
+            if(ax!=="only")for(const lane of lanes)m.push({lane,phase:"stock"});
+            if(ax!=="omit"&&mode!=="qualify")for(const lane of lanes)m.push({lane,phase:"ax"});
+            if(!m.length)throw Error("empty matrix");
+            require("fs").appendFileSync(process.env.GITHUB_OUTPUT,"matrix="+JSON.stringify({include:m})+"\n");'
+  qualify:
+    needs: plan
+    runs-on: macos-latest
+    timeout-minutes: 170
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    name: ${{ matrix.lane }} / ${{ matrix.phase }}
+    env:
+      MAIN_SHA: ${{ inputs.main }}
+      FIX_SHA: ${{ inputs.fix }}
+      MODE: ${{ inputs.mode }}
+      SOURCES: ${{ inputs.sources }}
+      LANE: ${{ matrix.lane }}
+      PHASE: ${{ matrix.phase }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Validate the kit and build the pinned engines
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          [[ "$MAIN_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse "$MAIN_SHA^{commit}")" = "$MAIN_SHA"
+          if [[ -n "$FIX_SHA" ]]; then
+            [[ "$FIX_SHA" =~ ^[0-9a-f]{40}$ && "$FIX_SHA" != "$MAIN_SHA" ]]
+            test "$(git rev-parse "$FIX_SHA^{commit}")" = "$FIX_SHA"
+            git merge-base --is-ancestor "$MAIN_SHA" "$FIX_SHA"
+          fi
+          git log -1 --format='kit %H %s'
+          sw_vers
+          node --test scripts/probe-361/kit.test.mjs
+          heads=(main)
+          if [[ -n "$FIX_SHA" && "$PHASE" == stock ]]; then heads=(main fix); fi
+          printf '%s\n' "${heads[@]}" > "$RUNNER_TEMP/q361-heads"
+          for head in "${heads[@]}"; do
+            pin="$MAIN_SHA"
+            if [[ "$head" == fix ]]; then pin="$FIX_SHA"; fi
+            base="$RUNNER_TEMP/q361-$head"
+            git worktree add --detach "$base-src" "$pin"
+            test "$(git -C "$base-src" rev-parse HEAD)" = "$pin"
+            test -z "$(git -C "$base-src" status --porcelain)"
+            if [[ "$PHASE" == ax ]]; then node scripts/probe-361/patch-ax.mjs "$base-src"; fi
+            swift build -c release --package-path "$base-src/native/engine" --scratch-path "$base-build"
+            if [[ "$PHASE" == stock ]]; then test -z "$(git -C "$base-src" status --porcelain)"; fi
+          done
+      - name: Install lane prerequisites and compile the owned helper, cover and fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$LANE" == electron ]]; then npm ci --prefix scripts/probe-390/fixture --no-audit --no-fund; fi
+          if [[ "$LANE" == firefox ]]; then
+            if [[ ! -d /Applications/Firefox.app ]]; then brew install --cask firefox; fi
+            mkdir -p /Applications/Firefox.app/Contents/Resources/distribution
+            printf '%s\n' '{"policies":{"DisableAppUpdate":true}}' > /Applications/Firefox.app/Contents/Resources/distribution/policies.json
+          fi
+          swiftc -O scripts/probe-361/host.swift -o "$RUNNER_TEMP/q361-host"
+          cover="$RUNNER_TEMP/Probe361 Cover.app"
+          appkit="$RUNNER_TEMP/Probe361 Fixture.app"
+          for bundle in "$cover" "$appkit"; do
+            mkdir -p "$bundle/Contents/MacOS"
+            id=org.cua.probe395.cover
+            if [[ "$bundle" == "$appkit" ]]; then id=dev.cua.probe361.fixture; fi
+            cat > "$bundle/Contents/Info.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+          <key>CFBundleExecutable</key><string>q361</string>
+          <key>CFBundleIdentifier</key><string>$id</string>
+          <key>CFBundleName</key><string>Probe361</string>
+          <key>CFBundlePackageType</key><string>APPL</string>
+          <key>CFBundleVersion</key><string>1</string>
+          </dict></plist>
+          PLIST
+          done
+          cp "$RUNNER_TEMP/q361-host" "$cover/Contents/MacOS/q361"
+          codesign --force --sign - "$cover"
+          if [[ "$LANE" == appkit ]]; then
+            swiftc -O scripts/probe-361/fixture.swift -o "$appkit/Contents/MacOS/q361"
+            codesign --force --sign - "$appkit"
+          fi
+      - name: Run the lane and publish its coded evidence
+        id: qualification
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/q361-evidence"
+          mkdir -p "$evidence"
+          sources="$SOURCES"
+          # The AX probe needs the paste route, not every source: the first one.
+          if [[ "$PHASE" == ax ]]; then sources="${SOURCES%%,*}"; fi
+          specs=()
+          while read -r head; do specs+=("$head::$RUNNER_TEMP/q361-$head-src::$RUNNER_TEMP/q361-$head-build/release/cua-engine"); done < "$RUNNER_TEMP/q361-heads"
+          rc=0
+          node scripts/probe-361/run.mjs "$LANE" "$MODE" "$PHASE" "$RUNNER_TEMP" "$evidence" \
+            "$RUNNER_TEMP/q361-host" "$RUNNER_TEMP/Probe361 Cover.app/Contents/MacOS/q361" \
+            "$RUNNER_TEMP/Probe361 Fixture.app/Contents/MacOS/q361" "$sources" "${specs[@]}" || rc=$?
+          if [[ ! -s "$evidence/status.json" ]]; then
+            printf '%s\n' '{"pass":false,"abort":"publication-missing"}' > "$evidence/status.json"
+            rc=1
+          fi
+          exit "$rc"
+      - name: Record setup failure when no runner evidence was produced
+        if: ${{ !cancelled() && steps.qualification.outcome == 'skipped' }}
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/q361-evidence"
+          printf '%s\n' '{"pass":false,"abort":"build-or-provisioning-setup"}' > "$RUNNER_TEMP/q361-evidence/status.json"
+      - name: Upload the coded evidence, never runner state
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: probe-361-${{ matrix.lane }}-${{ matrix.phase }}-${{ env.MODE }}
+          path: ${{ runner.temp }}/q361-evidence/*.json
+          if-no-files-found: error
+          retention-days: 30

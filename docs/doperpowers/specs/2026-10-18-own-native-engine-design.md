@@ -5689,6 +5689,38 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      guard mutated away and caught. The live run of the pw-walk kit across its six lanes, and the run typing a
      `{{secret:…}}` into a password field, wait on a hosted run.
   Date/Author: 2026-11-17, cursor235's implementer for #405.
+- Decision (#405's review, 2026-11-17, `fix/405-secure-field-unread`; the review of 2e5b3059..6dc4bcd0, five P1 and two
+  P2 findings, all accepted, and ruling 1ea561bc:808 on the paste; amends "#405" above, items 1, 2, 3 and 7): **a
+  value-bearing attribute is only ever requested in a batch that reads the role and subrole again, its whole answer
+  dropped when that classification is closed, and only after a classification made just before it** (`guardedRead`,
+  #390's principle made one function). A classification older than the read does not authorise it.
+  1. **AXValueDescription is value-bearing** (P1): it moves into the guarded batch (`valueAttributes`), a password field's
+     node and identity carry none, and the renderer drops Details on a secure node. The identity now matches the value
+     description together with the value: both are left out when either is (`ignoringValue`, `valueUnread`).
+  2. **A field the Markdown's classification finds closed** (P1) closes the walk's data too, and the source's cache: the
+     node becomes `secure` with no value or length, and its identity `valueUnread`.
+  3. **The settle's reads reused** (P1): a structure read by the busy walk is classified again (a classification-only
+     request) before the value's batch. The cost is one more request per element on an observation that reuses a
+     settled tree, three in all where main made one.
+  4. **The focused selected text** (P1): a classification-only request, then AXSelectedText in one batch with the role
+     and subrole, dropped when closed (`focusedSelectedText`).
+  5. **select_text** (P1): its value read goes through `guardedRead`; the attributed read is preceded by a
+     classification of its own, and a field closed by then is refused, nothing more read.
+  6. **A failed value read is not an omission** (P2): `ElementData.valueFailed` (the value's request failed, or AXValue's
+     slot) is kept apart from `valueUnread` (deliberately not read), and a match that needs the value fails on a side
+     whose value read failed, so a timed-out read no longer matches a different control as a wildcard.
+  7. **A listed read** (P2): the role and subrole are requested for the classification whether or not the element lists
+     them, and kept in its data only when it does.
+  8. **The paste** (ruling 1ea561bc:808, in #405's scope; item 7 above withdrawn, its debt entry removed): the ticket
+     limits what leaves the engine, not what it uses. The effect reading classifies the focused element first
+     (`focusedEffectReading`) and still reads a password field's range and count, marked `secure`; such a reading
+     confirms only a count moved by exactly the pasted line less the selection it replaced (`pasteEffectSeen`; any
+     change, as before, when a count is missing or for any other field), and the meta's records say only `secure: true`
+     for it, no range or count.
+  9. **Proof**: SecureFieldTests (10) and a paste operation test over the stub; each new guard mutated away and caught.
+     The request filter at the source's boundary (`request` keeping only what it asked for) is now covered twice (the
+     structure read keeps only its own names), so its mutation alone is not caught.
+  Date/Author: 2026-11-17, cursor235's implementer for #405 (the review of 2e5b3059..6dc4bcd0).
 
 ## Outcomes & Retrospective
 

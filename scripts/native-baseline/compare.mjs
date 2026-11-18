@@ -529,8 +529,10 @@ export function compareLanes(mode, baselineRuns, candidateRuns, {topUp, declared
   const ruled = problems.length ? 'NO VERDICT' : operations.some(o => o.verdict === 'fail') ? 'FAIL' : 'PASS';
   const diagnostic = plainPlan([...baselineRuns, ...candidateRuns], ruled);
   const describe = side => ({host: side.host, serverInfo: side.serverInfo, commits: side.commits, runs: side.summary.runs, attestation: side.summary.attestation, sshMedianMs: side.ssh});
-  // the vendor samples that ended their target, per method, never a speed bar (fix wave 1): listed apart
-  const endedTargets = lane.linux ? [...baseline.ended].filter(([, n]) => n > 0).map(([op, count]) => ({op, count})) : null;
+  // the vendor samples that ended their target, per method, never a speed bar (fix wave 1): listed apart, the sitting's
+  // (`count`) and, when a top-up was given, the top-up's beside them (`topUp`, fix wave 2), each timed out of its own side
+  const endedOps = lane.linux ? [...new Set([...baseline.ended.keys(), ...(extra ? extra.baseline.ended.keys() : [])])] : [];
+  const endedTargets = lane.linux ? endedOps.map(op => ({op, count: baseline.ended.get(op) ?? 0, ...(extra ? {topUp: extra.baseline.ended.get(op) ?? 0} : {})})).filter(e => e.count + (e.topUp ?? 0) > 0) : null;
   return {mode, lane, baseline: describe(baseline), candidate: describe(candidate), operations, permitted, problems, ...(above ? {above} : {}), ...(endedTargets ? {endedTargets} : {}),
     ...(topUpRecord ? {topUp: topUpRecord} : {}), ...(unproved ? {unproved} : {}), verdict: diagnostic ? 'DIAGNOSTIC' : ruled, ...(diagnostic ? {diagnostic} : {})};
 }
@@ -573,8 +575,11 @@ export function renderComparison(result) {
     ...(result.permitted.length ? result.permitted.map(p => `- ${p.field}: ${p.baseline} -> ${p.candidate} (${p.reason})`) : ['None: the configuration is unchanged.']));
   if (result.endedTargets?.length) lines.push('', '## Vendor samples that ended their target (never a speed bar)', '',
     'A vendor engine sample whose target its method ended (`target: exited`) sets no timing: its outcome is counted as recorded, its times are left out (the pre-flight T4 row: a vendor lane\'s ended target is never scored against cua). A method none of whose vendor samples is left has its speed not judged; its outcomes and cua\'s text obligations still judge it.', '',
-    '| Method case | Vendor samples that ended their target | Speed |', '|---|---|---|',
-    ...result.endedTargets.map(e => `| ${e.op} | ${e.count} | ${result.operations.find(o => o.op === e.op)?.speedNotJudged ?? 'judged on the vendor samples left'} |`));
+    ...(result.topUp?.given
+      ? ['| Method case | Vendor samples that ended their target, in the sitting | In its top-up | Speed |', '|---|---|---|---|',
+        ...result.endedTargets.map(e => `| ${e.op} | ${e.count} | ${e.topUp ?? 0} | ${result.operations.find(o => o.op === e.op)?.speedNotJudged ?? 'judged on the vendor samples left'} |`)]
+      : ['| Method case | Vendor samples that ended their target | Speed |', '|---|---|---|',
+        ...result.endedTargets.map(e => `| ${e.op} | ${e.count} | ${result.operations.find(o => o.op === e.op)?.speedNotJudged ?? 'judged on the vendor samples left'} |`)]));
   const speeds = result.operations.filter(o => o.speed);
   const span = interval => (interval ? `[${interval.join(', ')}]` : '–');
   if (speeds.length) lines.push('', '## Speed of the operations the engine answers (Acceptance 3\'s rule)', '',

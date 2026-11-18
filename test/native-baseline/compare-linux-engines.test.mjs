@@ -489,6 +489,21 @@ test('one ended vendor sample: the method\'s vendor median is computed without i
   assert.equal(op(result, 'method.typeText').baseline.inCell.n, N('method.typeText'));
 });
 
+// fix wave 2 (review 2's minor): the top-up's vendor samples that ended their target are left out of its timing too, and
+// listed with their count, labelled as the top-up's, beside the sitting's
+test("the top-up's vendor samples that ended their target are listed apart, as the top-up's", () => {
+  const exitedIn = runs => runs.map(run => ({...run, rows: run.rows.map(r => (r.op === 'method.typeText' ? {...r, target: 'exited', inserted: null} : r))}));
+  const topUp = {baseline: exitedIn(topUpSitting('cv')), candidate: edited(topUpSitting('cc'), 'warm.listApps', widen)};
+  const result = compareLanes('engines', sitting('cv'), wideSitting(), {topUp});
+  assert.deepEqual(result.endedTargets, [{op: 'method.typeText', count: 0, topUp: 3}]);
+  assert.match(renderComparison(result), /\| method\.typeText \| 0 \| 3 \|/);
+  // the sitting's own ends and the top-up's, each counted where they were
+  const both = compareLanes('engines', exitedIn(sitting('cv')), wideSitting(), {topUp});
+  assert.deepEqual(both.endedTargets, [{op: 'method.typeText', count: 3, topUp: 3}]);
+  // with no top-up given, the column is the sitting's alone
+  assert.deepEqual(compareLanes('engines', exitedIn(sitting('cv')), wideSitting()).endedTargets, [{op: 'method.typeText', count: 3}]);
+});
+
 test('the candidate side and the macOS comparisons are unchanged: an exited target there is timed as before', async t => {
   // a cua sample whose target exited is never dropped from cua's timing (and fails cua's own text obligation)
   const result = judge(t, triple('vendor'), triple('cua', {scale: FASTER, edit: exited('method.paste', k => k === 0)}));

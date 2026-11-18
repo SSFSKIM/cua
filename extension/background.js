@@ -270,7 +270,7 @@ const primitives = {
   'tabs.create': async ({url, windowId, group, openerTabId, guard, diagWindow}) => {
     const w = diagWindow === true ? await agentWindow() : windowId ?? (openerTabId != null ? (await chrome.tabs.get(openerTabId)).windowId : undefined);
     const tab = await chrome.tabs.create({...(url != null ? {url} : {}), ...(w != null ? {windowId: w} : {}),
-      ...(openerTabId != null ? {openerTabId} : {}), active: false});
+      ...(openerTabId != null ? {openerTabId} : {}), active: diagWindow === true});   // #384 window: the agent window's active tab
     if (guard === true) guarded.add(tab.id);
     if (group) await groupTab(tab, group).catch(error => console.warn(`cua: cannot group tab ${tab.id}: ${error?.message ?? error}`));
     return {id: tab.id, windowId: tab.windowId};

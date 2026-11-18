@@ -175,7 +175,8 @@ launch_chrome() {
     sudo -n mkdir -p "/Library/Managed Preferences" 2> /dev/null
     sudo -n defaults write "/Library/Managed Preferences/$bid" ForceForegroundPriorityForUrls -array "127.0.0.1" 2> /dev/null
     sudo -n killall cfprefsd 2> /dev/null
-    say "diag384: policy written $(defaults read "/Library/Managed Preferences/$bid" ForceForegroundPriorityForUrls > /dev/null 2>&1 && echo yes || echo no) for bundle $( [ -n "$bid" ] && echo found || echo missing)"
+    sudo -n chmod 644 "/Library/Managed Preferences/$bid.plist" 2> /dev/null
+    say "diag384: policy written $(sudo -n defaults read "/Library/Managed Preferences/$bid" ForceForegroundPriorityForUrls > /dev/null 2>&1 && echo yes || echo no), readable by the user $(defaults read "/Library/Managed Preferences/$bid" ForceForegroundPriorityForUrls > /dev/null 2>&1 && echo yes || echo no), bundle $( [ -n "$bid" ] && echo found || echo missing)"
   fi
   # $CHROME_FLAGS is unquoted on purpose: one of the fixed sets above, split into its flags.
   "$CFT" --user-data-dir="$UDD" --profile-directory=Default --no-first-run --no-default-browser-check \

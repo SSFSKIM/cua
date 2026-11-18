@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {plan, score, inspect, auditSchedule, auditPairs, summarize, coded, noteAttested, NOTE_PREFIX, firefoxDisclosure, drainIntervals, drainStats, terminalEditAtMs, drainIneligible, drainSummary, drainSizingOk, runShape, setupLabel, focusAllowed, concealedFailureTiming, appliedEditGaps, reducedPlan, REDUCED_LANES, SNAPSHOT_REFUSAL_LABEL, budgetProfile, REDUCED_PAD_MS, REDUCED_OVERHEAD_MS, readbackProfile, legacyBaselineCase, legacyBaselineTally, reducedBudgetCoverage} from './check.mjs';
+import {plan, score, inspect, auditSchedule, auditPairs, summarize, coded, noteAttested, NOTE_PREFIX, firefoxDisclosure, drainIntervals, drainStats, terminalEditAtMs, drainIneligible, drainSummary, drainSizingOk, runShape, setupLabel, focusAllowed, concealedFailureTiming, appliedEditGaps, reducedPlan, REDUCED_LANES, SNAPSHOT_REFUSAL_LABEL, budgetProfile, REDUCED_PAD_MS, REDUCED_OVERHEAD_MS, readbackProfile, legacyBaselineCase, legacyBaselineTally, reducedBudgetCoverage, lateReplyPresent, failureDistributions} from './check.mjs';
 
 const success={confirmed:true,secure:true,confirmation:'length',snapshotMs:4};
 const old={confirmed:false,concealed:true,reason:'secure',snapshotMs:3};
@@ -430,6 +430,28 @@ test('reduced plan: per-head counts, fix-only controls, interleaving, AppKit-onl
   // The added scratch audit jobs run the existing five trios per lane.
   assert.equal(plan(false,{audit:true}).length,15);
 });
+test('deadline plan retains paired concealed positives and independent short/long failure cohorts',()=>{
+  for(const lane of REDUCED_LANES){
+    const rows=reducedPlan(lane,{mode:'deadline'});
+    const controls=rows.filter(r=>['add','drop'].includes(r.kind));
+    const n=(kind,literal,inputClass)=>controls.filter(r=>r.kind===kind&&r.literal===literal&&r.inputClass===inputClass).length;
+    assert.equal(rows.length,lane==='appkit'?90:85);
+    assert.ok(controls.every(r=>r.head==='fix'));
+    assert.equal(new Set(controls.map(r=>`${r.kind}/${r.rep}`)).size,controls.length,'inputs must not collide across cohorts');
+    assert.deepEqual([n('add',false,'short'),n('add',false,'long'),n('drop',false,'short'),n('drop',false,'long'),
+      n('add',true),n('drop',true)],[10,10,5,5,10,5]);
+    for(const kind of ['short','long']){
+      const pairs=rows.filter(r=>r.kind===kind);
+      assert.equal(pairs.length,20);
+      for(let i=0;i<pairs.length;i+=2){
+        assert.equal(pairs[i].rep,pairs[i+1].rep);
+        assert.deepEqual(new Set([pairs[i].head,pairs[i+1].head]),new Set(['main','fix']));
+      }
+    }
+    assert.ok(!rows.some(r=>r.kind==='literal'));
+    assert.equal(rows.filter(r=>r.head==='fix'&&r.kind==='selection'&&r.label===SNAPSHOT_REFUSAL_LABEL).length,lane==='appkit'?5:0);
+  }
+});
 test('selection control is excluded from the head comparison but scored like any row',()=>{
   const sel={...row({kind:'selection',lane:'appkit',raw:{confirmed:false,secure:true,reason:'lengthUnreadable',snapshotMs:2}}),head:'fix',kind:'selection',label:SNAPSHOT_REFUSAL_LABEL};
   const s=summarize([sel,{...row(),head:'fix',kind:'short'}]);
@@ -478,6 +500,55 @@ test('the budget window is a seam: legacy 999..1100, reduced pads every posted r
   assert.equal(at(500,snap,'reduced').withinBudget,false);
   assert.equal(at(1120,{startedAt:null,endedAt:null},'reduced').withinBudget,null);
   assert.equal(at(1120,{literal:true},'reduced'),null);
+});
+test('deadline timing rejects a late wire reply independently of the stock IPC allowance',()=>{
+  const raw={confirmed:false,concealed:true,secure:true,reason:'lengthMismatch',snapshotMs:4};
+  const s={head:'fix',lane:'cft',kind:'add',literal:false,action:'typeUnconfirmed',startedAt:1000,endedAt:1040,replyAt:2148,mode:'deadline'};
+  assert.equal(concealedFailureTiming({...s,raw}).withinBudget,true);
+  assert.equal(concealedFailureTiming({...s,raw:{...raw,lateReply:true}}).withinBudget,false);
+  assert.equal(concealedFailureTiming({...s,raw,lateReply:true}).withinBudget,false);
+  assert.equal(concealedFailureTiming({...s,raw,replyAt:2138}).withinBudget,false);
+  assert.equal(concealedFailureTiming({...s,raw,replyAt:2191}).withinBudget,false);
+  const snap={...s,lane:'appkit',kind:'selection',raw:{...raw,reason:'lengthUnreadable'}};
+  assert.equal(concealedFailureTiming(snap).withinBudget,true);
+  assert.equal(concealedFailureTiming({...snap,lateReply:true}).withinBudget,false);
+  assert.equal(concealedFailureTiming({...snap,replyAt:1042}).withinBudget,false);
+  assert.equal(lateReplyPresent(null,raw,{}),false);
+  assert.equal(lateReplyPresent(raw,{'cua/lateReply':true}),true);
+  assert.equal(lateReplyPresent({...raw,lateReply:false}),true,'malformed flag presence is still a failure');
+  assert.deepEqual(inspect({error:{meta:{typeReadback:{...raw,lateReply:true}}}},[],{surface:'ipc'}),[]);
+  assert.ok(inspect({error:{meta:{typeReadback:{...raw,lateReply:false}}}},[],{surface:'ipc'}).includes('readback-shape'));
+});
+test('deadline distributions fail on missing cohorts, disjoint ranges, or separated medians',()=>{
+  const group=(kind,inputClass,ms)=>ms.map(fromLastPostMs=>({kind,inputClass,head:'fix',literal:false,valid:true,concealedFailure:{phase:'after-input',fromLastPostMs}}));
+  const a=group('add','short',[1100,1101,1102,1103,1104,1105,1106,1107,1108,1109]);
+  const b=group('add','long',[1108,1108,1108,1108,1108,1109,1109,1109,1109,1110]);
+  const c=group('drop','short',[1100,1101,1102,1108,1109]);
+  const d=group('drop','long',[1101,1102,1105,1107,1109]);
+  const rows=[...a,...b,...c,...d];
+  const extras=[{...a[0],valid:false},{...a[0],literal:true},{...a[0],head:'main'},
+    {...a[0],concealedFailure:{phase:'before-input',fromLastPostMs:2}},
+    {...a[0],kind:'selection',label:SNAPSHOT_REFUSAL_LABEL,concealedFailure:{phase:'snapshot-refused',fromLastPostMs:1123}}];
+  const report=failureDistributions([...rows,...extras],'deadline');
+  assert.equal(report.pass,true);
+  assert.deepEqual(report.groups['add-short'],{n:10,min:1100,p50:1104.5,p95:1109,max:1109});
+  assert.deepEqual(report.groups['drop-long'],{n:5,min:1101,p50:1105,p95:1109,max:1109});
+  assert.ok(report.pairs.add.overlap&&report.pairs.drop.overlap);
+  assert.equal(report.spreadMs,6.5);
+  assert.equal(reducedBudgetCoverage('cft',rows,'deadline').ok,true);
+  assert.equal(reducedBudgetCoverage('appkit',rows,'deadline').ok,false);
+  assert.equal(reducedBudgetCoverage('appkit',[...rows,...Array(5).fill(extras.at(-1))],'deadline').ok,true);
+  assert.equal(failureDistributions(rows.slice(1),'deadline').pass,false);
+  assert.equal(failureDistributions([{...a[0],inputClass:undefined},...rows.slice(1)],'deadline').pass,false);
+  const shifted=(kind,ms)=>failureDistributions([...rows.filter(r=>r.kind!==kind||r.inputClass!=='long'),...group(kind,'long',ms)],'deadline');
+  const disjoint=shifted('add',Array(10).fill(1110));
+  assert.equal(disjoint.pairs.add.overlap,false);
+  assert.equal(disjoint.pass,false);
+  const separated=shifted('drop',[1109,1115,1116,1117,1118]);
+  assert.equal(separated.pairs.drop.overlap,true);
+  assert.equal(separated.spreadMs,14);
+  assert.equal(separated.pass,false);
+  assert.equal(failureDistributions([],'deadline').pass,false);
 });
 const zero={confirmed:false,reason:'noFocusedElement',snapshotMs:3,pollMs:0,reads:0};
 const surfaces=(r=zero)=>({ipc:readbackProfile(r),wrapper:readbackProfile(r),forwarded:readbackProfile(r)});

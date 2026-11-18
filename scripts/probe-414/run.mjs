@@ -6,7 +6,7 @@ import {pathToFileURL} from 'node:url';
 import {execFileSync} from 'node:child_process';
 import {Wire} from '../probe-366/wire.mjs';
 import {owned,stop,startPlatform,pause,environment} from './platform.mjs';
-import {plan,score,inspect,auditSchedule,auditPairs,summarize,coded,noteAttested,firefoxDisclosure,drainIntervals,terminalEditAtMs,drainIneligible,drainSummary,drainSizingOk,runShape,setupLabel,focusAllowed,concealedFailureTiming,drainStats,reducedPlan,REDUCED_LANES,SNAPSHOT_REFUSAL_LABEL,budgetProfile,readbackProfile,legacyBaselineCase,legacyBaselineTally,reducedBudgetCoverage} from './check.mjs';
+import {plan,score,inspect,auditSchedule,auditPairs,summarize,coded,noteAttested,firefoxDisclosure,drainIntervals,terminalEditAtMs,drainIneligible,drainSummary,drainSizingOk,runShape,setupLabel,focusAllowed,concealedFailureTiming,drainStats,reducedPlan,REDUCED_LANES,SNAPSHOT_REFUSAL_LABEL,budgetProfile,readbackProfile,legacyBaselineCase,legacyBaselineTally,reducedBudgetCoverage,lateReplyPresent,failureDistributions} from './check.mjs';
 
 const SLOT='PROBE414', safeReasons=new Set(['secure','noFocusedElement','roleUnreadable','notTextField','valueUnreadable','rangeUnreadable',
   'fieldUnreadable','fieldChanged','becameSecure','selectionChanged','concealedMismatch','valueMismatch','unchanged','possiblyTruncated',
@@ -19,9 +19,9 @@ const actionCode=(native,error,guarded)=>!guarded?'request-shape':native?.error?
   nativeCodes.has(native.error.errorName)?native.error.errorName:'native-other':error?
   wrapperCodes.has(error.code)?error.code:'wrapper-other':native?.result?'success':'missing';
 const ascii=n=>Array.from({length:n},()=> 'abcdefghijklmnopqrstuvwxy'[randomInt(25)]).join('');
-function materialize({kind}){
+function materialize({kind,inputClass}){
   const initial=kind==='selection'?ascii(19):'', start=kind==='selection'?4:0, end=kind==='selection'?11:0;
-  const text=kind==='unicode'?ascii(4)+String.fromCodePoint(0x1f4a1)+ascii(3):ascii(kind==='long'?31:8), effect=['add','drop','rewrite'].includes(kind)?kind:'none';
+  const text=kind==='unicode'?ascii(4)+String.fromCodePoint(0x1f4a1)+ascii(3):ascii(kind==='long'||inputClass==='long'?31:8), effect=['add','drop','rewrite'].includes(kind)?kind:'none';
   const surround=t=>initial.slice(0,start)+t+initial.slice(end);
   // Exactly one controlled edit; final equality is independently checked by the owned app/document.
   const altered=effect==='add'?'z'+text:effect==='drop'?text.slice(1):effect==='rewrite'?'z'+text.slice(1):null;
@@ -155,10 +155,11 @@ async function startEngine({name,src,bin,root,platform,audit,focus,drain,globalP
       if(!guarded||sent!==1||!native) return {reply:false,raw:null,forwarded:null,sky:'missing',serviceMs,action};
       const disclosureOf=surface=>firefoxDisclosure(surface,{setupText:m.seed.setupText,passwordText:m.expected});
       const disclosure=lane==='firefox'?{ipc:disclosureOf(native),forwarded:disclosureOf(meta),skyError:disclosureOf(error),rendered:disclosureOf(rendered)}:null;
-      const budget=concealedFailureTiming({head,lane,kind,literal,action,raw,startedAt:nativeMeta?.startedAt,endedAt:nativeMeta?.endedAt,replyAt:replyAtMs,mode});
+      const lateReply=lateReplyPresent(raw,nativeMeta,native?.result,native?.error,meta,meta['cua/typeReadback'],error,error?.meta,error?.meta?.typeReadback);
+      const budget=concealedFailureTiming({head,lane,kind,literal,action,raw,startedAt:nativeMeta?.startedAt,endedAt:nativeMeta?.endedAt,replyAt:replyAtMs,mode,lateReply});
       // Raw readbacks are profiled in memory into closed booleans; nothing of them is kept (see legacyBaselineCase).
       const legacy={ipc:readbackProfile(raw),wrapper:readbackProfile(error?.meta?.typeReadback??error?.meta?.['cua/typeReadback']),forwarded:readbackProfile(meta['cua/typeReadback'])};
-      return {reply:true,raw,forwarded:meta['cua/typeReadback'],sky:skyClass,noted:noteAttested(native?.result?.note,content),serviceMs,action,disclosure,replyAtMs,budget,legacy};
+      return {reply:true,raw,forwarded:meta['cua/typeReadback'],sky:skyClass,noted:noteAttested(native?.result?.note,content),serviceMs,action,disclosure,replyAtMs,budget,legacy,lateReply};
     }
     // Prime AX access before the first scored field. No action and no instrumented audit tag are sent.
     await w.execute('get_app_state',{pid:platform.pid,includeScreenshot:false,disableDiff:true});
@@ -173,8 +174,8 @@ async function startEngine({name,src,bin,root,platform,audit,focus,drain,globalP
 async function main(){
   const [lane,mode,phase,root,out,helper,cover,appkit,mainSrc,mainBin,fixSrc,fixBin]=process.argv.slice(2);
   if(process.env.RUNNER_ENVIRONMENT!=='github-hosted')throw Error('hosted runners only');
-  if(!['cft','electron','electron-parity','safari','firefox','appkit'].includes(lane)||!['smoke','full','firefox-focus','firefox-single','appkit-race','drain','unicode','reduced'].includes(mode)||!['stock','audit','focus','drain'].includes(phase))throw Error('invalid lane');
-  const audit=phase==='audit',smoke=mode==='smoke',focus=phase==='focus',drain=phase==='drain',race=mode==='appkit-race',reduced=mode==='reduced',diagnostic=mode.startsWith('firefox-');
+  if(!['cft','electron','electron-parity','safari','firefox','appkit'].includes(lane)||!['smoke','full','firefox-focus','firefox-single','appkit-race','drain','unicode','reduced','deadline'].includes(mode)||!['stock','audit','focus','drain'].includes(phase))throw Error('invalid lane');
+  const audit=phase==='audit',smoke=mode==='smoke',focus=phase==='focus',drain=phase==='drain',race=mode==='appkit-race',deadline=mode==='deadline',reduced=mode==='reduced'||deadline,diagnostic=mode.startsWith('firefox-');
   const {singlePassword,setupCanary,requireBackground}=runShape(lane,mode);
   // The focus scratch job of smoke runs the same short/literal pairs as the diagnostics, on the password-only page, without a canary.
   const miniPlan=diagnostic||smoke&&focusAllowed(lane,mode,phase);
@@ -186,7 +187,7 @@ async function main(){
   const timingCells=Array.from({length:20},(_,i)=>[{head:'fix',kind:'short',rep:i*2},{head:'fix',kind:'short',rep:i*2+1},
     {head:'fix',kind:'long',rep:i*2},{head:'fix',kind:'long',rep:i*2+1},additions[i]]).flat();
   const cells=race?additions:drain?timingCells:mode==='unicode'?plan(false).filter(r=>r.kind==='unicode'&&r.rep<5):
-    reduced&&!audit?reducedPlan(lane):miniPlan?Array.from({length:3},(_,rep)=>['literal','short'].flatMap((kind,i)=>
+    reduced&&!audit?reducedPlan(lane,{mode}):miniPlan?Array.from({length:3},(_,rep)=>['literal','short'].flatMap((kind,i)=>
       ((rep+i)%2?['fix','main']:['main','fix']).map(head=>({head,kind,rep})))).flat():plan(smoke,{audit});
   // Paired primary rows receive the exact same disposable text, not independently generated treatments.
   const inputs=new Map();
@@ -267,6 +268,7 @@ async function main(){
       row.snapshotMs=Number.isFinite(receipt?.raw?.snapshotMs)?receipt.raw.snapshotMs:null;
       row.serviceMs=receipt?.serviceMs??null;
       row.concealedFailure=receipt?.budget??null;
+      if(deadline)row.lateReply=receipt?.lateReply===true;
       if(c.kind==='unicode'&&row.valid){
         const labels=['exact','empty','missing','question-mark','replacement-character','ascii-substitution','split-or-unpaired','surrounding-mismatch','other-substitution'];
         row.unicodeShape=row.domExact?'exact':labels.includes(delivery?.unicodeShape)?delivery.unicodeShape:'unclassified';
@@ -311,7 +313,7 @@ async function main(){
   // The reduced profile also budgets snapshot refusals after posting; the legacy one leaves them as evidence only.
   const profile=budgetProfile(mode),budgeted=failureTimes.filter(t=>t.withinBudget!==null);
   const budgetMisses=budgeted.filter(t=>!t.withinBudget).length;
-  const budgetCoverage=reducedBudgetCoverage(lane,rows);
+  const budgetCoverage=reducedBudgetCoverage(lane,rows,mode),distributions=reduced?failureDistributions(rows,mode):null;
   const concealedBudget={profile:profile.name,coverage:reduced?budgetCoverage:null,windowMs:[profile.minMs,profile.maxMs],budgeted:budgeted.length,postFailures:postFailures.length,misses:budgetMisses,
     postMisses:postFailures.filter(t=>!t.withinBudget).length,beforeInput:failureTimes.filter(t=>t.phase==='before-input').length,
     fromLastPostMs:drainStats(postFailures.map(t=>t.fromLastPostMs)),fromFirstPostMs:drainStats(postFailures.map(t=>t.fromFirstPostMs)),
@@ -328,12 +330,14 @@ async function main(){
     schedule:auditGate?.pass??null, focus:focus?firefoxFacts.length===needed&&firefoxFacts.every(r=>r.valid&&r.focus!==null):null,
     // Legacy full run: judged only when a failure occurred. Reduced: never vacuous; the expected timing rows must all be seen.
     concealedBudget:reduced&&phase==='stock'?budgetCoverage.ok&&budgetMisses===0:mode==='full'&&phase==='stock'&&budgeted.length>0?budgetMisses===0:null,
+    lateReply:deadline&&phase==='stock'?rows.every(r=>!r.lateReply):null,
+    failureDistributions:deadline&&phase==='stock'?distributions.pass:null,
     // The race run only collects evidence rows; sizing is judged by the drain run alone.
     timing:drain&&!race?drainSizingOk(drainSummary(timings,needed),timings.length):null};
   const publishable=gates.privacy;
   const status={lane,phase,kit:config.kit,refs:config.refs,abort,abortStep,setupSteps:rows.reduce((o,r)=>r.setupStep?{...o,[r.setupStep]:(o[r.setupStep]??0)+1}:o,{}),planned:cells.length,completed:rows.length,invalid:summary.invalid,
     unattempted:cells.length-rows.length,privacyViolations,privacyCodes,actionCodes,unicodeShapes,observationsMissing:rows.filter(r=>r.observationMissing).length,
-    gates,concealedBudget,reduced:reducedReport,legacyBaseline,publishable,presentation:config.presentation??null,foregroundFallback:config.foregroundFallback??null};
+    gates,concealedBudget,distributions,lateReplies:deadline?rows.filter(r=>r.lateReply).length:null,reduced:reducedReport,legacyBaseline,publishable,presentation:config.presentation??null,foregroundFallback:config.foregroundFallback??null};
   writeFileSync(join(out,'status.json'),JSON.stringify(status,null,2)+'\n');
   // Counts and timings rebuilt from closed codes may leave even a privacy-failed run; rows, hashes and traces never do.
   writeFileSync(join(out,'coded.json'),JSON.stringify(coded(summary,auditGate),null,2)+'\n');

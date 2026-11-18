@@ -27,21 +27,29 @@ export function plan(smoke,{selection=true,audit=false}={}){
   return rows;
 }
 
-// Stock reduced run (mode=reduced): per head 10 short and 10 long concealed and 5 literal; the fix alone adds 20 adds (10 concealed, 10
-// literal) and 10 drops (5/5). No rewrite or unicode. AppKit alone adds 5 fix-only prefilled selections, a separately labeled
-// snapshot-refusal control (never part of a head's comparison). Product pins interleave exactly as in the full plan.
+// Both reduced stock profiles pair 10 short and 10 long concealed positives per head and include five fix-only AppKit
+// snapshot refusals. The historical reduced profile adds five literal positives per head. Deadline drops those and instead
+// splits concealed controls by input class. Both keep 10 literal adds and 5 literal drops. No rewrite or Unicode.
 export const REDUCED_LANES=['cft','electron','electron-parity','safari','appkit'];
 export const SNAPSHOT_REFUSAL_LABEL='appkit-selection-snapshot-refusal';
-export function reducedPlan(lane){
-  const rows=[];
+export function reducedPlan(lane,{mode='reduced'}={}){
+  const rows=[],deadline=mode==='deadline';
   for(let rep=0;rep<20;rep++){
-    [['short',0,10],['long',1,10],['literal',3,5]].forEach(([kind,i,n])=>{
+    [['short',0,10],['long',1,10],['literal',3,deadline?0:5]].forEach(([kind,i,n])=>{
       if(rep>=n)return;
       for(const head of (rep+i)%2===0?['main','fix']:['fix','main'])rows.push({head,kind,rep});
     });
     if(lane==='appkit'&&rep<5)rows.push({head:'fix',kind:'selection',rep,label:SNAPSHOT_REFUSAL_LABEL});
-    if(rep<10)rows.push({head:'fix',kind:'drop',rep,literal:rep%2===1});
-    rows.push({head:'fix',kind:'add',rep,literal:rep%2===1});
+    if(!deadline){
+      if(rep<10)rows.push({head:'fix',kind:'drop',rep,literal:rep%2===1});
+      rows.push({head:'fix',kind:'add',rep,literal:rep%2===1});
+    }else{
+      const inputClass=rep%2===0?'short':'long';
+      if(rep<10)rows.push({head:'fix',kind:'drop',rep,literal:false,inputClass});
+      rows.push({head:'fix',kind:'add',rep,literal:false,inputClass});
+      if(rep<5)rows.push({head:'fix',kind:'drop',rep:10+rep,literal:true});
+      if(rep<10)rows.push({head:'fix',kind:'add',rep:20+rep,literal:true});
+    }
   }
   return rows;
 }
@@ -79,7 +87,7 @@ const forbidden=/^(?:(?:cua\/)?(?:entered|checkpoints)|(?:ax)?(?:value|valueDesc
 const textEvidence=/[•●◦\uf79a]|\*{3,}|\b\d+\s*(?:characters?|chars?|code units?|bytes?)\b|\b(?:AXNumberOfCharacters|AXSelectedTextRange|length|count|numberOfCharacters|selectedText(?:Range)?|selection|range|offset|characters|(?:cua\/)?entered)\b["']?\s*(?:is\b|of\b|[=:])?\s*[[(]?\s*\d/i;
 const axNames=/\bAX(?:Value|ValueDescription|SelectedText|SelectedTextRange|NumberOfCharacters)\b/;
 const textName=/(?<![A-Za-z0-9_])(?:cua\/)?(?:entered|checkpoints|reads|pollMs|settleReads|expectedLength|actualLength|selectionStart|selectionEnd|selectionLength|selectedTextRange|selectedText|numberOfCharacters|valueDescription|value|length|count|characters|caret|range|location|offset|actual|expected|excerpt)["']?\s*[:=]/i;
-const readbackKeys=new Set(['confirmed','reason','snapshotMs','concealed','secure','keysUnconfirmed','stoppedBeforeKey',markerKey]);
+const readbackKeys=new Set(['confirmed','reason','snapshotMs','concealed','secure','keysUnconfirmed','stoppedBeforeKey','lateReply',markerKey]);
 // A literal request's `entered` is a count of public units, posted at three production positions only.
 const enteredAt={ipc:[['result.meta','entered'],['error.meta','entered']],'sky-error':[['meta','entered']],forwarded:[['','cua/entered']]};
 const readbackPaths=['result.meta.typeReadback','error.meta.typeReadback','meta.typeReadback','cua/typeReadback'];
@@ -121,7 +129,7 @@ export function inspect(input,values,{literal=false,stringsOnly=false,surface=nu
         baseline&&inReadback&&['pollMs','reads'].includes(k)&&x===0&&readbackPaths.includes(at)&&v.reason==='secure'&&v.confirmed===false&&v.secure===undefined&&v.concealed===undefined);
       if(exempt)continue;
       if(!stringsOnly&&x!==null&&x!==undefined&&forbidden.test(k))findings.add('private-key');
-      if(!stringsOnly&&inReadback&&(!readbackKeys.has(k)||k===markerKey&&x!=='length'||['secure','concealed','stoppedBeforeKey','keysUnconfirmed'].includes(k)&&typeof x!=='boolean'||k==='confirmed'&&typeof x!=='boolean'||k==='snapshotMs'&&!Number.isFinite(x)||k==='reason'&&(typeof x!=='string'||!/^[a-z][A-Za-z]{2,40}$/.test(x))))findings.add('readback-shape');
+      if(!stringsOnly&&inReadback&&(!readbackKeys.has(k)||k===markerKey&&x!=='length'||k==='lateReply'&&x!==true||['secure','concealed','stoppedBeforeKey','keysUnconfirmed'].includes(k)&&typeof x!=='boolean'||k==='confirmed'&&typeof x!=='boolean'||k==='snapshotMs'&&!Number.isFinite(x)||k==='reason'&&(typeof x!=='string'||!/^[a-z][A-Za-z]{2,40}$/.test(x))))findings.add('readback-shape');
       walk(x,[...path,k],depth,nested);
     }
   }
@@ -210,14 +218,13 @@ export function drainSummary(rows,planned){
 }
 export const drainSizingOk=(summary,recorded)=>recorded===summary.planned&&summary.eligible>=summary.minimum;
 
-// Stock IPC supplies first/last native post timestamps, but not the snapshot end. The budget starts after typing.
-// The window is a seam: the legacy gate (full run) is one second after the last post, 999..1100 ms. The reduced run's product pads
-// every posted concealed secure refusal, a snapshot refusal after posting included, to the 1000 ms budget plus the fixed
-// 100 ms focus-read cap. REDUCED_OVERHEAD_MS is the independent native IPC timing allowance above the nominal 1100 ms.
+// Stock measures IPC arrival against the last native post, not a snapshot or first-key timestamp. The historical full
+// profile used 999..1100 ms and excluded snapshot refusals. Both reduced profiles include posted snapshot refusals and
+// allow 50 ms for IPC after a nominal 1100 ms deadline. The deadline profile separately rejects any lateReply flag.
 export const REDUCED_PAD_MS=1100, REDUCED_OVERHEAD_MS=50;
-export const budgetProfile=mode=>mode==='reduced'?{name:'reduced',minMs:REDUCED_PAD_MS-1,maxMs:REDUCED_PAD_MS+REDUCED_OVERHEAD_MS,snapshotBudgeted:true}:
+export const budgetProfile=mode=>['reduced','deadline'].includes(mode)?{name:mode,minMs:REDUCED_PAD_MS-1,maxMs:REDUCED_PAD_MS+REDUCED_OVERHEAD_MS,snapshotBudgeted:true}:
   {name:'legacy',minMs:999,maxMs:1100,snapshotBudgeted:false};
-export function concealedFailureTiming({head,lane,kind,literal,action,raw,startedAt,endedAt,replyAt,mode='full'}){
+export function concealedFailureTiming({head,lane,kind,literal,action,raw,startedAt,endedAt,replyAt,mode='full',lateReply=lateReplyPresent(raw)}){
   if(head!=='fix'||literal||action!=='typeUnconfirmed'||raw?.confirmed!==false||raw?.concealed!==true||raw?.secure!==true)return null;
   const posted=Number.isFinite(startedAt),profile=budgetProfile(mode);
   const snapshot=raw.reason==='selectionUnreadable'||raw.reason==='lengthUnreadable'&&lane==='appkit'&&kind==='selection';
@@ -226,18 +233,42 @@ export function concealedFailureTiming({head,lane,kind,literal,action,raw,starte
   const fromLastPostMs=interval(endedAt),fromFirstPostMs=interval(startedAt);
   const budgeted=phase==='after-input'||phase==='snapshot-refused'&&profile.snapshotBudgeted;
   return {phase,fromLastPostMs,fromFirstPostMs,
-    withinBudget:budgeted?(fromLastPostMs!==null&&fromLastPostMs>=profile.minMs&&fromLastPostMs<=profile.maxMs):null};
+    withinBudget:budgeted?(fromLastPostMs!==null&&fromLastPostMs>=profile.minMs&&fromLastPostMs<=profile.maxMs&&!(mode==='deadline'&&lateReply)):null};
+}
+// A lateReply flag is a public deadline diagnostic, not a field value; the deadline gate still rejects its presence.
+export function lateReplyPresent(...surfaces){
+  return surfaces.some(s=>s!=null&&typeof s==='object'&&['lateReply','cua/lateReply'].some(k=>Object.hasOwn(s,k)));
 }
 
 // The reduced budget gate is never vacuous: every realized concealed fix add/drop control must yield a known post-input failure
-// timing row (15 per lane), and AppKit's five selection controls must each yield a snapshot-refused timing row. Rows are valid-only.
+// timing row (15 in reduced, 30 in deadline), and AppKit's five selection controls must each yield a snapshot-refused timing row.
 export const REDUCED_EXPECTED={afterInput:15,snapshot:lane=>lane==='appkit'?5:0};
-export function reducedBudgetCoverage(lane,rows){
+export function reducedBudgetCoverage(lane,rows,mode='reduced'){
   const timed=rows.filter(r=>r.valid&&r.head==='fix'&&r.concealedFailure);
   const afterInput=timed.filter(r=>['add','drop'].includes(r.kind)&&r.literal!==true&&r.concealedFailure.phase==='after-input').length;
   const snapshot=timed.filter(r=>r.label===SNAPSHOT_REFUSAL_LABEL&&r.concealedFailure.phase==='snapshot-refused').length;
-  const expected={afterInput:REDUCED_EXPECTED.afterInput,snapshot:REDUCED_EXPECTED.snapshot(lane)};
+  const expected={afterInput:mode==='deadline'?30:REDUCED_EXPECTED.afterInput,snapshot:REDUCED_EXPECTED.snapshot(lane)};
   return {expected,afterInput,snapshot,ok:afterInput===expected.afterInput&&snapshot===expected.snapshot};
+}
+// Fixed cohorts: measure concealed negatives from their shared post-typing origin, never include literal or snapshot controls.
+export function failureDistributions(rows,mode){
+  const groups={};
+  for(const kind of negative)for(const size of ['short','long']){
+    const values=rows.filter(r=>r.valid&&r.head==='fix'&&r.kind===kind&&r.literal!==true&&
+      (mode==='deadline'?r.inputClass:r.inputClass??'short')===size&&r.concealedFailure?.phase==='after-input')
+      .map(r=>r.concealedFailure.fromLastPostMs).filter(Number.isFinite).sort((a,b)=>a-b);
+    const n=values.length,mid=Math.floor(n/2);
+    groups[`${kind}-${size}`]={n,min:values[0]??null,p50:n===0?null:n%2===1?values[mid]:(values[mid-1]+values[mid])/2,
+      p95:values[Math.ceil(n*.95)-1]??null,max:values.at(-1)??null};
+  }
+  const pairs=Object.fromEntries(negative.map(kind=>{
+    const a=groups[`${kind}-short`],b=groups[`${kind}-long`],n=kind==='add'?10:5;
+    const complete=a.n===n&&b.n===n,overlap=complete&&Math.max(a.min,b.min)<=Math.min(a.max,b.max),medianDeltaMs=complete?Math.abs(a.p50-b.p50):null;
+    return [kind,{complete,overlap,medianDeltaMs}];
+  }));
+  const medians=Object.values(groups).map(g=>g.p50),spreadMs=medians.every(Number.isFinite)?Math.max(...medians)-Math.min(...medians):null;
+  const pass=Object.values(pairs).every(p=>p.complete&&p.overlap)&&spreadMs!==null&&spreadMs<=10;
+  return {groups,pairs,spreadMs,pass:mode==='deadline'?pass:null};
 }
 
 // Output-only diagnosis of a baseline readback that the strict privacy scan flags (zero pollMs/reads counters). It grants no

@@ -1119,6 +1119,8 @@ async function diffRun(args, candidate, { handoff }) {
   const textPlanned = blockPlan.some((p) => isText(p.op));
   const samplesFor = (op) => OPS[op].warmSamples ?? (inputOp(op) ? args.samplesInput : args.samplesTree);
 
+  // each lane's build by its binary's sha256: the meta row's, and what a vendor's declared ends name (scene-ended.mjs)
+  const builds = Object.fromEntries(engines.map((e) => [e.label, fileSha(e.bin)]));
   // the run's desktop; the window active before the run opens anything is recorded, marked, and never activated again
   const desktop = new Desktop({ cua: args.cua, run, logs: args.out });
   // the Desktop's stop handler is in place (stop.mjs): the checks' handler hands over to it, with no moment between
@@ -1130,7 +1132,7 @@ async function diffRun(args, candidate, { handoff }) {
     gate: candidate.gate,
     candidate,
     via,
-    engines: engines.map((e) => ({ label: e.label, args: e.args, sha256: fileSha(e.bin) })),
+    engines: engines.map((e) => ({ label: e.label, args: e.args, sha256: builds[e.label] })),
     vendor: args.vendor,
     newest: args.newest,
     scenes: args.scenes,
@@ -1722,7 +1724,7 @@ async function diffRun(args, candidate, { handoff }) {
     // the backstop's warm-ups: a candidate's that failed fails the run (fix round 1)
     const warmUps = judgeWarmUps(after, VENDORS);
     // the text windows a lane ended (M5's T4): a vendor's restarts counted, never scored
-    const sceneEnds = textPlanned ? judgeSceneEnds(after, labels, VENDORS) : null;
+    const sceneEnds = textPlanned ? judgeSceneEnds(after, labels, VENDORS, { builds }) : null;
     if (sceneEnds) emit({ kind: 'text-scene-ends', ...sceneEnds });
     // every verdict the plan owes must be drawn: one missing fails the run (runOutcome)
     const planned = plannedVerdicts(plan, labels.filter((l) => !VENDORS.includes(l)));
@@ -1736,7 +1738,7 @@ async function diffRun(args, candidate, { handoff }) {
     const rows = readFileSync(results, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((r) => r.run === run);
     const restores = judgeTextRestores(rows, labels);
     emit({ kind: 'text-restores', ...restores });
-    const sceneEnds = textPlanned ? judgeSceneEnds(rows, labels, VENDORS) : null;
+    const sceneEnds = textPlanned ? judgeSceneEnds(rows, labels, VENDORS, { builds }) : null;
     if (sceneEnds) emit({ kind: 'text-scene-ends', ...sceneEnds });
     const where = at.op ? `${at.scene} ${at.op} ${at.engine} ${at.block}/${at.i}` : `${at.scene} ${at.engine}, the ${at.pass} pass`;
     judged = { verdicts: [], options: { valid, restores: restores.lanes, warmUps: judgeWarmUps(rows, VENDORS), sceneEnds, stop: `${where}: ${error.message}; the run stopped there` } };
@@ -1747,7 +1749,7 @@ async function diffRun(args, candidate, { handoff }) {
   // judged once every window of the run's is closed: its own trace covers the cleanup
   const ending = desktopEnding(desktop.ending);
   const outcome = runOutcome(judged.verdicts, { ...judged.options, foreign: [...engineForeign, ...ending.foreign] });
-  emit({ kind: 'end', gate: candidate.gate, valid: outcome.valid, pass: outcome.pass, failed: outcome.failed, parity: outcome.parity, refused: outcome.refused, declared: outcome.declared, ...(outcome.unjudged ? { unjudged: outcome.unjudged } : {}), restores: outcome.restores, ...(outcome.sceneEnds ? { scene_ends: outcome.sceneEnds } : {}), desktop: ending.record, finished: new Date().toISOString() });
+  emit({ kind: 'end', gate: candidate.gate, valid: outcome.valid, pass: outcome.pass, failed: outcome.failed, parity: outcome.parity, refused: outcome.refused, declared: outcome.declared, ...(outcome.unjudged ? { unjudged: outcome.unjudged } : {}), restores: outcome.restores, ...(outcome.sceneEnds ? { scene_ends: outcome.sceneEnds } : {}), ...(outcome.vendorEnds ? { vendor_ends: outcome.vendorEnds } : {}), desktop: ending.record, finished: new Date().toISOString() });
   writeSummary(args.out);
   const label = gateLabel(candidate.gate);
   process.stdout.write(`run ${outcome.valid ? 'valid' : 'INVALID (the negative check did not hold)'}; ${label ? `${label}: ` : ''}${verdictLine(outcome)}\nresults: ${results}\n`);

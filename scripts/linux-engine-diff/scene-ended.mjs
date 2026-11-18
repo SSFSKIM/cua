@@ -64,21 +64,82 @@ export function invalidRestartRow({ label, sceneName, op, block, i, restart }) {
   return { kind: 'prepare-failure', engine: label, scene: sceneName, op, block, series: i === 0 ? 'cold' : 'warm', i, step: 'oracle', error: restart.invalid, attempts: [], outcome: 'invalid', why: `the restart of the lane's ended window could not reproduce the warm condition: ${restart.invalid}` };
 }
 
+const PILOT = 'docs/evidence/2026-10-28-own-linux-engine/m5/arm64/pilot/out-zero-r1/V1.development-run.pinned.pilot/run/results.jsonl (V1 at da306cc6, stopped by the restore fixed in item (c))';
+/**
+ * The vendor builds' declared ends of their own scene windows (#171 M5, T4's arm64 round, item (a); the design session's
+ * word): each names the build by its binary's sha256 and its release, the scene, and the operation of the request that
+ * ended the window, with what the pilot counted (`ended` of `requests`: timed samples, restarts' warm-ups and audit
+ * requests) and where. A declared end is listed apart as declared, and an undeclared one apart as undeclared: neither
+ * fails a step, and neither is ever counted as a cua pass or loss (the pre-flight's T4 row: a vendor's ended window is
+ * restarted, counted and never scored against cua). The table documents what the pilot saw; an undeclared end is a
+ * vendor behaviour it did not see, for a look.
+ */
+export const DECLARED_VENDOR_ENDS = Object.freeze([
+  ...['type_text', 'type_text_selection', 'clipboard_write'].map((op) => ({
+    id: `arm64-pinned-gedit-${op}`,
+    release: '26.928.40906-linux-arm64',
+    sha256: 'a2ee3b612a2a65a9e1cb429b69954f9cfddf26072568aeb882f42e0545da2193',
+    scene: 'gedit',
+    op,
+    counts: { ended: 13, requests: 13 },
+    evidence: PILOT,
+    reason: `the pinned arm64 build's ${op} on gedit (GTK 3) ended gedit on every request that reached it (6 timed, 5 warm-ups, 2 audit), answering a D-Bus ServiceUnknown that names the ended window's accessibility connection`,
+  })),
+  {
+    id: 'arm64-newest-gedit-clipboard_write',
+    release: '26.1023.51421-linux-arm64',
+    sha256: 'b407257f647fc135df7dec9d9c6c1afffd33c0e929169d8330f69f25fad3d7d9',
+    scene: 'gedit',
+    op: 'clipboard_write',
+    counts: { ended: 12, requests: 13 },
+    evidence: PILOT,
+    reason: "the newest arm64 build's clipboard_write on gedit ended gedit on every request whose end was recorded (12 of 13: the 13th, the audit's last, was found ended as the run stopped); its type_text and type_text_selection left gedit alive",
+  },
+]);
+
+/**
+ * A run's vendor ends by build, scene and operation (`builds`: lane -> its binary's sha256, the meta row's): each counted
+ * once per request that ended a window, the request that last reached it (`last`), and the restart's warm-up that ended
+ * the fresh window too with its own operation. `{declared: [...], undeclared: [...]}`, each `{engine, release, sha256,
+ * scene, op, count}`, a declared one with its table `id`.
+ */
+function vendorEnds(ended, vendors, builds) {
+  const groups = new Map();
+  const add = (r, op) => {
+    const sha256 = builds?.[r.engine] ?? null;
+    const declared = DECLARED_VENDOR_ENDS.find((d) => d.sha256 === sha256 && d.scene === r.scene && d.op === op) ?? null;
+    const key = `${r.engine}|${r.scene}|${op}`;
+    const g = groups.get(key) ?? { engine: r.engine, release: declared?.release ?? DECLARED_VENDOR_ENDS.find((d) => d.sha256 === sha256)?.release ?? null, sha256, scene: r.scene, op, count: 0, ...(declared ? { id: declared.id } : {}) };
+    g.count++;
+    groups.set(key, g);
+  };
+  for (const r of ended.filter((x) => x.kind === 'scene-ended' && vendors.includes(x.engine))) {
+    add(r, r.last?.op ?? null);
+    if (r.restart?.warm_up_ended) add(r, r.op ?? null);
+  }
+  const all = [...groups.values()];
+  return { declared: all.filter((g) => g.id), undeclared: all.filter((g) => !g.id) };
+}
+
 /**
  * The text windows a lane ended, over a run's rows: every lane counted, one at 0 named too, a vendor's restarts
  * (`scene-ended`, and a window its restart's warm-up ended too, `warm_up_ended`) and a candidate's stop (`scene-lost`)
- * alike. A restart is recorded only for a vendor lane, so a `scene-ended` row of a candidate's fails the run.
- * `{lanes, ended, pass, reasons}`.
+ * alike. A restart is recorded only for a vendor lane, so a `scene-ended` row of a candidate's fails the run. The
+ * vendor's ends are also sorted into declared and undeclared (`DECLARED_VENDOR_ENDS`, by `builds`), which fail nothing.
+ * `{lanes, ended, pass, reasons, vendor: {declared, undeclared}}`.
  */
-export function judgeSceneEnds(rows, lanes, vendors) {
+export function judgeSceneEnds(rows, lanes, vendors, { builds = null } = {}) {
   const ended = rows.filter((r) => r.kind === 'scene-ended' || r.kind === 'scene-lost');
   const counts = Object.fromEntries(lanes.map((l) => [l, 0]));
   for (const r of ended) counts[r.engine] = (counts[r.engine] ?? 0) + 1 + (r.restart?.warm_up_ended ? 1 : 0);
   const reasons = ended
     .filter((r) => r.kind === 'scene-ended' && !vendors.includes(r.engine))
     .map((r) => `${r.engine}'s own ${r.scene} window ended at ${r.op ?? r.pass} ${r.block ?? ''}/${r.i ?? ''}: a candidate's window is never restarted`);
-  return { lanes: counts, ended, pass: reasons.length === 0, reasons };
+  return { lanes: counts, ended, pass: reasons.length === 0, reasons, vendor: vendorEnds(ended, vendors, builds) };
 }
+
+/** A vendor end group as a line names it: scene, operation, lane, build. */
+export const vendorEndName = (g) => `${g.scene} ${g.op ?? 'an unrecorded request'} ${g.engine} (${g.release ?? 'an unnamed build'})`;
 
 /**
  * The audit's requests on one lane window (fix wave 1): `samples` audited requests in as few lifecycles as the window

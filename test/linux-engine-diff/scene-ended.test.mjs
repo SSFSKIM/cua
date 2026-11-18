@@ -7,7 +7,7 @@ import test from 'node:test';
 
 import { renderSummary, textSceneEndsMarkdown } from '../../scripts/linux-engine-diff/report.mjs';
 import { judgePrepareFaults, judgeTextRestores } from '../../scripts/linux-engine-diff/prepare.mjs';
-import { CandidateSceneEnded, auditInSegments, invalidRestartRow, judgeSceneEnds, keepLaneScene, mergeAudits, restartLaneScene } from '../../scripts/linux-engine-diff/scene-ended.mjs';
+import { CandidateSceneEnded, DECLARED_VENDOR_ENDS, auditInSegments, invalidRestartRow, judgeSceneEnds, keepLaneScene, mergeAudits, restartLaneScene } from '../../scripts/linux-engine-diff/scene-ended.mjs';
 import { Desktop } from '../../scripts/linux-engine-diff/scenes.mjs';
 import { runOutcome, verdictLine } from '../../scripts/linux-engine-diff/stats.mjs';
 
@@ -128,7 +128,7 @@ test('the verdict line and the summary carry the count per lane; a vendor\'s res
   const sceneEnds = judgeSceneEnds([{ kind: 'scene-ended', engine: 'pinned', scene: 'gedit', op: 'type_text', block: 0, i: 1, ended: 'gone', last: { op: 'type_text', block: 0, i: 0 }, restart: { old_pid: 7, new_pid: 8, old_id: 42, new_id: 100, warm_up: null } }], LANES, VENDORS);
   const outcome = runOutcome([{ kind: 'verdict', scene: 'gedit', op: 'type_text', candidate: 'cua', pass: true }], { valid: true, sceneEnds });
   assert.equal(outcome.code, 0);
-  assert.equal(verdictLine(outcome), 'every verdict PASS; text windows a lane ended (a vendor\'s restarted, never scored): pinned 1, newest 0, cua 0');
+  assert.equal(verdictLine(outcome), 'every verdict PASS; text windows a lane ended (a vendor\'s restarted, never scored): pinned 1, newest 0, cua 0; vendor ends undeclared (never scored, for a look): gedit type_text pinned (an unnamed build) 1');
   const md = textSceneEndsMarkdown([{ kind: 'text-scene-ends', ...sceneEnds }]).join('\n');
   assert.match(md, /pinned 1, newest 0, cua 0/);
   assert.match(md, /gedit type_text pinned 0\/1: gone after type_text 0\/0; restarted \(gedit 7 replaced by 8, window 42 by 100\)/);
@@ -248,4 +248,100 @@ test("the audit lifecycles' judgments merge: clean only if every one is, forbidd
   assert.deepEqual(merged, { clean: false, traced: true, requests: 5, forbidden: [{ what: 'ConfigureWindow' }], allowed: ['a'] });
   assert.equal(mergeAudits([{ clean: true, traced: false, requests: 0, forbidden: [] }, { clean: true, traced: true, requests: 1, forbidden: [] }]).traced, false);
   assert.deepEqual(mergeAudits([{ clean: true, traced: true, requests: 1, forbidden: [] }]), { clean: true, traced: true, requests: 1, forbidden: [] });
+});
+
+// #171 M5, T4's arm64 round, item (a), the design session's word (B): the arm64 vendor builds' gedit ends are declared per
+// build (its binary's sha256 and release), scene and the operation of the request that last reached the window, with
+// their counts and evidence. Declared ends and undeclared ones are each listed apart in the verdict line; neither fails
+// the step, and neither is ever counted as a cua pass or loss. A candidate's end is judged exactly as before.
+const PINNED_ARM64 = DECLARED_VENDOR_ENDS.find((d) => d.release === '26.928.40906-linux-arm64' && d.op === 'type_text').sha256;
+const NEWEST_ARM64 = DECLARED_VENDOR_ENDS.find((d) => d.release === '26.1023.51421-linux-arm64').sha256;
+const BUILDS = { pinned: PINNED_ARM64, newest: NEWEST_ARM64, cua: '0cbde8f0' };
+const end = (engine, lastOp, extra = {}) => ({ kind: 'scene-ended', engine, scene: 'gedit', op: lastOp, block: 0, i: 1, ended: 'gone', last: { op: lastOp, block: 0, i: 0 }, restart: { old_pid: 7, new_pid: 8, old_id: 42, new_id: 100, warm_up: null }, ...extra });
+
+test("the arm64 vendor builds' declared ends: the pilot's, each with its build, counts and evidence", () => {
+  assert.deepEqual(DECLARED_VENDOR_ENDS.map((d) => `${d.release} ${d.scene} ${d.op}`).sort(), [
+    '26.1023.51421-linux-arm64 gedit clipboard_write',
+    '26.928.40906-linux-arm64 gedit clipboard_write',
+    '26.928.40906-linux-arm64 gedit type_text',
+    '26.928.40906-linux-arm64 gedit type_text_selection',
+  ]);
+  for (const d of DECLARED_VENDOR_ENDS) {
+    assert.match(d.sha256, /^[0-9a-f]{64}$/, d.id);
+    assert.ok(Number.isInteger(d.counts.ended) && d.counts.ended > 0 && d.counts.ended <= d.counts.requests, d.id);
+    assert.match(d.evidence, /^docs\/evidence\/2026-10-28-own-linux-engine\/m5\/arm64\/pilot\//, d.id);
+  }
+  assert.equal(new Set(DECLARED_VENDOR_ENDS.map((d) => d.id)).size, DECLARED_VENDOR_ENDS.length);
+});
+
+test('a declared vendor end is listed apart as declared; an undeclared one apart as undeclared; neither fails', () => {
+  const rows = [
+    end('pinned', 'type_text'),
+    end('pinned', 'type_text', { restart: { old_pid: 7, new_pid: 8, old_id: 42, new_id: 100, warm_up: { ok: false }, warm_up_ended: 'gone', then: {} } }),
+    end('newest', 'clipboard_write'),
+    // the newest build has no declared type_text end, and clipboard_read is declared for neither
+    end('newest', 'type_text'),
+    end('pinned', 'clipboard_read'),
+  ];
+  const judged = judgeSceneEnds(rows, LANES, VENDORS, { builds: BUILDS });
+  assert.equal(judged.pass, true);
+  assert.deepEqual(judged.reasons, []);
+  assert.deepEqual(judged.lanes, { pinned: 4, newest: 2, cua: 0 });
+  assert.deepEqual(judged.vendor.declared.map((d) => [d.engine, d.op, d.count]), [['pinned', 'type_text', 3], ['newest', 'clipboard_write', 1]], 'the warm-up that ended the restarted window counts with its operation');
+  assert.deepEqual(judged.vendor.undeclared.map((d) => [d.engine, d.op, d.count]), [['newest', 'type_text', 1], ['pinned', 'clipboard_read', 1]]);
+  const outcome = runOutcome([{ kind: 'verdict', scene: 'gedit', op: 'type_text', candidate: 'cua', pass: true }], { valid: true, sceneEnds: judged });
+  assert.equal(outcome.code, 0, 'no vendor end fails the step');
+  assert.deepEqual(outcome.failed, []);
+  const line = verdictLine(outcome);
+  assert.match(line, /^every verdict PASS; /);
+  assert.match(line, /; vendor ends declared \(never scored\): gedit type_text pinned \(26\.928\.40906-linux-arm64\) 3, gedit clipboard_write newest \(26\.1023\.51421-linux-arm64\) 1/);
+  assert.match(line, /; vendor ends undeclared \(never scored, for a look\): gedit type_text newest \(26\.1023\.51421-linux-arm64\) 1, gedit clipboard_read pinned \(26\.928\.40906-linux-arm64\) 1/);
+  // a build no table names (x64's, another release) declares nothing: its ends are listed undeclared
+  const other = judgeSceneEnds([end('pinned', 'type_text')], LANES, VENDORS, { builds: { ...BUILDS, pinned: 'f'.repeat(64) } });
+  assert.deepEqual([other.vendor.declared.length, other.vendor.undeclared.length, other.pass], [0, 1, true]);
+});
+
+test("a candidate's end still fails as before, and is never listed among the vendor's", () => {
+  const judged = judgeSceneEnds([end('pinned', 'type_text'), end('cua', 'type_text')], LANES, VENDORS, { builds: BUILDS });
+  assert.equal(judged.pass, false);
+  assert.match(judged.reasons[0], /cua's own gedit window ended at type_text 0\/1/);
+  assert.deepEqual([...judged.vendor.declared, ...judged.vendor.undeclared].map((d) => d.engine), ['pinned']);
+  // even a candidate whose sha256 a table entry named is never declared: the table names vendor builds alone
+  const named = judgeSceneEnds([end('cua', 'type_text')], LANES, VENDORS, { builds: { ...BUILDS, cua: PINNED_ARM64 } });
+  assert.equal(named.pass, false);
+  assert.deepEqual(named.vendor.declared, []);
+  const outcome = runOutcome([{ kind: 'verdict', scene: 'gedit', op: 'type_text', candidate: 'cua', pass: true }], { valid: true, sceneEnds: judged });
+  assert.equal(outcome.code, 1);
+});
+
+test('the summary lists declared and undeclared vendor ends apart, and a run with none shows neither', () => {
+  const judged = judgeSceneEnds([end('pinned', 'type_text'), end('newest', 'type_text')], LANES, VENDORS, { builds: BUILDS });
+  const md = textSceneEndsMarkdown([{ kind: 'text-scene-ends', ...judged }]).join('\n');
+  assert.match(md, /Vendor ends declared \(scene-ended\.mjs DECLARED_VENDOR_ENDS; never scored\):\n\n- gedit type_text pinned \(26\.928\.40906-linux-arm64, a2ee3b61…\): 1, declared as arm64-pinned-gedit-type_text/);
+  assert.match(md, /Vendor ends undeclared \(never scored; a vendor behaviour the pilot did not see, for a look\):\n\n- gedit type_text newest \(26\.1023\.51421-linux-arm64, b407257f…\): 1/);
+  const none = judgeSceneEnds([], LANES, VENDORS, { builds: BUILDS });
+  assert.equal(verdictLine(runOutcome([], { valid: true, sceneEnds: none })), "every verdict PASS; text windows a lane ended (a vendor's restarted, never scored): pinned 0, newest 0, cua 0");
+  assert.doesNotMatch(textSceneEndsMarkdown([{ kind: 'text-scene-ends', ...none }]).join('\n'), /Vendor ends/);
+  // the summary's verdict line reads them from the end row
+  const rows = [{ kind: 'meta', run: 'r', engines: [] }, { kind: 'end', run: 'r', valid: true, pass: true, failed: [], restores: { pinned: 0, newest: 0, cua: 0 }, scene_ends: judged.lanes, vendor_ends: judged.vendor }];
+  assert.match(renderSummary(rows), /vendor ends undeclared \(never scored, for a look\): gedit type_text newest/);
+});
+
+test("x64's stored verdict runs re-judge unchanged: no vendor end, counts and pass as recorded", async () => {
+  const { rejudgeSceneEnds } = await import('../../scripts/linux-engine-diff/rejudge-scene-ends.mjs');
+  const { readFileSync } = await import('node:fs');
+  const { gunzipSync } = await import('node:zlib');
+  const x64 = new URL('../../docs/evidence/2026-10-28-own-linux-engine/m5/x64/', import.meta.url);
+  // every x64 M5 run that counted its text windows' ends
+  const files = ['out/V1.pinned-release/run/results.jsonl', 'out/V2.pinned-release/run/results.jsonl.gz', 'out/V4.pinned-release/run/results.jsonl', 'f3-out/V2.development-run/run/results.jsonl.gz'];
+  for (const f of files) {
+    const bytes = readFileSync(new URL(f, x64));
+    const rows = (f.endsWith('.gz') ? gunzipSync(bytes) : bytes).toString('utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+    const [run] = rejudgeSceneEnds(rows);
+    assert.equal(run.stands, true, f);
+    assert.deepEqual([run.now.vendor.declared, run.now.vendor.undeclared], [[], []], f);
+  }
+  // a run whose stored count a judge would now read differently does not stand
+  const moved = rejudgeSceneEnds([{ run: 'r', kind: 'meta', engines: [{ label: 'pinned', sha256: 'p' }, { label: 'newest', sha256: 'n' }, { label: 'cua', sha256: 'c' }] }, end('cua', 'type_text'), { run: 'r', kind: 'text-scene-ends', lanes: { pinned: 0, newest: 0, cua: 1 }, pass: true, reasons: [] }].map((r) => ({ run: 'r', ...r })));
+  assert.equal(moved[0].stands, false);
 });

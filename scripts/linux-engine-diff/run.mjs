@@ -38,7 +38,7 @@ import { OPS, SCENE_OPS, inputOp, ownWindow, shotOf, targeted } from './ops.mjs'
 import { Oracle } from './oracle.mjs';
 import { ORACLE, PrepareStepError, judgePrepareFaults, judgeTextRestores, judgeWarmUps, prepareFailureRow, sampleUnderRule } from './prepare.mjs';
 import { writeSummary } from './report.mjs';
-import { CandidateSceneEnded, auditInSegments, invalidRestartRow, judgeSceneEnds, keepLaneScene, mergeAudits, restartLaneScene } from './scene-ended.mjs';
+import { CandidateSceneEnded, auditInSegments, invalidRestartRow, judgeSceneEnds, keepLaneScene, endedTarget, markEndedTargets, mergeAudits, restartLaneScene } from './scene-ended.mjs';
 import { routeWitness, runCases } from './safety.mjs';
 import { Desktop, XPROBE, a11yBusAddress, desktopEnding } from './scenes.mjs';
 import { xdotool, xprobe } from './xtools.mjs';
@@ -1364,7 +1364,9 @@ async function diffRun(args, candidate, { handoff }) {
         // again while failed samples left one short, a bounded number of times; what is still open after that is
         // decided as it stands
         for (let look = 0; ; look++) {
-          const sampled = readFileSync(results, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((r) => r.run === run && r.kind === 'sample');
+          const own = readFileSync(results, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((r) => r.run === run);
+          // a vendor sample that ended its own window sets no bar (scene-ended.mjs `markEndedTargets`)
+          const sampled = markEndedTargets(own.filter((r) => r.kind === 'sample'), own, VENDORS);
           const opRows = sampled.filter((r) => r.scene === sceneName && r.op === op);
           const looked = speedDecisions(opRows, { vendors: VENDORS, candidates, text: isText(op), parity, decided });
           decided = looked.decided;
@@ -1570,6 +1572,10 @@ async function diffRun(args, candidate, { handoff }) {
     }
     for (const { scene: sceneName, op } of blockPlan.filter((p) => !isDevice(p.op))) {
       const opRows = rows.filter((r) => r.scene === sceneName && r.op === op);
+      // a vendor sample that ended its own window sets no bar (scene-ended.mjs `markEndedTargets`), marked on the
+      // run's rows in memory (the stored rows stay as written), every row kept
+      const ended = endedTarget(rows, VENDORS);
+      for (const r of opRows) if (r.kind === 'sample' && ended(r)) r.ended_target = true;
       // The reference is the pinned build's answer in the same block: a scene's own windows change across blocks
       // (gedit marks a document modified, a counter grows), and so does the window list. A text command's is the
       // answer of a build whose route applied it in that block (the newest build's for its own type_characters).

@@ -310,8 +310,9 @@ export function judgeOperation(rows, { vendors, candidate, audits = null, judgeS
     engines[label] = summarizeEngine(rows.filter((r) => r.engine === label));
   }
   const vendorRows = vendors.map((v) => engines[v]).filter(Boolean);
-  // the speed bar's samples: with `text`, a vendor build's successes only
-  const barRowsOf = (v) => rows.filter((r) => r.engine === v && (!text || r.ok));
+  // the speed bar's samples: with `text`, a vendor build's successes only; never a sample whose request ended its own
+  // window (scene-ended.mjs `markEndedTargets`, M5's T4 arm64 round: a vendor's ended window is never scored)
+  const barRowsOf = (v) => rows.filter((r) => r.engine === v && (!text || r.ok) && !r.ended_target);
   const barTimes = (v, series) => timedMs(barRowsOf(v).filter((r) => r.series === series));
   // a vendor build sampled to the top-ups' end (twice MIN_NOISE_SAMPLES) with fewer than MIN_NOISE_SAMPLES usable samples
   // has failed the operation in that series and sets no bar there: the rule guards against a build that genuinely fails

@@ -345,3 +345,31 @@ test("x64's stored verdict runs re-judge unchanged: no vendor end, counts and pa
   const moved = rejudgeSceneEnds([{ run: 'r', kind: 'meta', engines: [{ label: 'pinned', sha256: 'p' }, { label: 'newest', sha256: 'n' }, { label: 'cua', sha256: 'c' }] }, end('cua', 'type_text'), { run: 'r', kind: 'text-scene-ends', lanes: { pinned: 0, newest: 0, cua: 1 }, pass: true, reasons: [] }].map((r) => ({ run: 'r', ...r })));
   assert.equal(moved[0].stands, false);
 });
+
+// Fix wave 1, finding 4: (B) keeps a vendor's ended windows out of the scoring. A vendor sample whose request ended its
+// own window (the `last` request a scene-ended row names) is excluded from the speed bar, even one that answered ok and
+// is otherwise usable; its row stays as evidence, and nothing of the candidate's changes.
+test('a vendor sample that ended its own window, ok or not, sets no bar; its row stays, and the candidate\'s are untouched', async () => {
+  const { judgeOperation } = await import('../../scripts/linux-engine-diff/stats.mjs');
+  const { markEndedTargets } = await import('../../scripts/linux-engine-diff/scene-ended.mjs');
+  const sample = (engine, i, ms) => ({ kind: 'sample', engine, scene: 'gedit', op: 'type_text', block: 0, i, series: 'warm', ok: true, ms, witness: true });
+  const rows = [];
+  for (let i = 0; i < 20; i++) rows.push(sample('pinned', i, 100), sample('pinned', 100 + i, 10), sample('newest', i, 100), sample('cua', i, 90));
+  // each fast pinned sample answered ok and ended its window: the end found before the next request names it `last`
+  const ends = Array.from({ length: 20 }, (_, k) => ({ ...end('pinned', 'type_text'), i: 101 + k, last: { op: 'type_text', block: 0, i: 100 + k } }));
+  // and the candidate's own end is never a reason to drop its sample
+  ends.push({ ...end('cua', 'type_text'), last: { op: 'type_text', block: 0, i: 3 } });
+  const marked = markEndedTargets(rows, [...rows, ...ends], VENDORS);
+  assert.equal(marked.length, rows.length, 'every row stays');
+  assert.equal(marked.filter((r) => r.ended_target).length, 20);
+  assert.ok(marked.filter((r) => r.ended_target).every((r) => r.engine === 'pinned' && r.ms === 10 && r.ok), 'the ok vendor replies that ended their window');
+  assert.equal(marked.filter((r) => r.engine === 'cua' && r.ended_target).length, 0, "a candidate's sample is never dropped");
+  assert.equal(rows.some((r) => r.ended_target), false, 'the stored rows are not changed');
+  const options = { vendors: VENDORS, candidate: 'cua', text: true };
+  assert.equal(judgeOperation(rows, options).bar.warm, 55, 'unmarked, the ended samples lower the bar');
+  assert.equal(judgeOperation(marked, options).bar.warm, 100, 'marked, they set none of it');
+  // an audit request's end names no timed sample
+  assert.equal(markEndedTargets(rows, [...rows, { ...end('pinned', 'type_text'), last: { op: 'type_text', block: 'audit', i: 0 } }], VENDORS).filter((r) => r.ended_target).length, 0);
+  // without the text rule too: an ok reply that ended its window is still no bar sample
+  assert.equal(judgeOperation(marked, { ...options, text: false }).bar.warm, 100);
+});

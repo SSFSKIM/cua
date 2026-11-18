@@ -138,6 +138,30 @@ export function judgeSceneEnds(rows, lanes, vendors, { builds = null } = {}) {
   return { lanes: counts, ended, pass: reasons.length === 0, reasons, vendor: vendorEnds(ended, vendors, builds) };
 }
 
+/**
+ * A run's sample rows with each vendor sample whose request ended its own window marked `ended_target` (fix wave 1,
+ * finding 4: the design session's (B), "never scored"): the timed sample a vendor's `scene-ended` row names as the
+ * request that last reached the window (`last`, a numbered block; an audit request's names no timed sample). The
+ * judge (stats.mjs `judgeOperation`) sets no bar from a marked sample, even one that answered ok. The rows are copies:
+ * the stored rows stay as they were written, every one kept as evidence, and a candidate's sample is never marked (its
+ * end stops the run).
+ */
+export function markEndedTargets(samples, rows, vendors) {
+  const ended = endedTarget(rows, vendors);
+  return samples.map((s) => (ended(s) ? { ...s, ended_target: true } : s));
+}
+
+/** Whether a sample row is one a vendor's `scene-ended` row names as having ended its window (`markEndedTargets`). */
+export function endedTarget(rows, vendors) {
+  const key = (engine, scene, op, block, i) => `${engine}|${scene}|${op}|${block}|${i}`;
+  const ended = new Set(
+    rows
+      .filter((r) => r.kind === 'scene-ended' && vendors.includes(r.engine) && r.last && typeof r.last.block === 'number')
+      .map((r) => key(r.engine, r.scene, r.last.op, r.last.block, r.last.i)),
+  );
+  return (s) => vendors.includes(s.engine) && ended.has(key(s.engine, s.scene, s.op, s.block, s.i));
+}
+
 /** A vendor end group as a line names it: scene, operation, lane, build. */
 export const vendorEndName = (g) => `${g.scene} ${g.op ?? 'an unrecorded request'} ${g.engine} (${g.release ?? 'an unnamed build'})`;
 

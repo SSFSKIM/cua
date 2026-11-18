@@ -443,13 +443,13 @@ export const SLOW_CELL_MODE = 'declared-race';
 const RACE_CELL = 'slow';
 
 /**
- * L4a's residue (the design session's ruling 827, 3b, 2026-11-18). In the plain cell at twice the load (the row's load
- * `load2`, `--load-factor 2`), an honest unconfirmed non-landing is allowed at most `allowed` times per `per` plain drops;
- * one more fails. Honest: the drag answered the unconfirmed notice, kept by the next acting request's refusal, and the
- * page shows no drop. A cell of n drops other than 100 is allowed floor(allowed × n / per), never rounded up. Each
- * lane's plain cell carries its own bound. A false ok is never residue, and no other load or cell has one.
+ * L4a's residue (the design session's ruling 827, 3b, 2026-11-18). In L4a's plain cell (plan `t17-fix3`, opted in by
+ * the dispatcher, with the row's load `load2`, `--load-factor 2`), an honest unconfirmed non-landing (`honestNonLanding`)
+ * is allowed at most `allowed` times per `per` plain drops; one more fails. A cell of n drops other than 100 is allowed
+ * floor(allowed × n / per), never rounded up. Each lane's plain cell carries its own bound. A false ok is never residue,
+ * and no other plan, load or cell has one.
  */
-export const RESIDUE = { load: 'load2', cell: 'plain', allowed: 2, per: 100 };
+export const RESIDUE = { plan: 't17-fix3', load: 'load2', cell: 'plain', allowed: 2, per: 100 };
 
 /** The residue's bound for a plain cell of `n` drops: floor(2 × n / 100). */
 export const residueBound = (n) => Math.floor((RESIDUE.allowed * n) / RESIDUE.per);
@@ -530,6 +530,22 @@ function planCells(rows, specs, failed) {
 const droppedOf = (r) => Boolean(r.outcome?.landed) || (!OFF_WINDOW_CELLS.includes(r.base ?? r.cell) && (ownDragend(r) ?? 0) > 0);
 
 /**
+ * A non-landing L4a's residue may hold, on its whole evidence (task 102's review): the dispatch answered ok, no handle
+ * step failed before its end and the harness did not end the drag and drop with its own Escape; the unconfirmed notice
+ * was on the read, kept by the next acting request's refusal; the zone's drop counter was read before and after and did
+ * not move; and this trial's own completed dragend reports no drop (`ownDragend` 0, never a missing, stale, foreign or
+ * unfinished record). Anything less is not residue, and is judged as any non-landing is.
+ */
+export function honestNonLanding(r) {
+  if (r.ok !== true || r.error != null || r.handle?.end !== undefined || r.escaped === true) return false;
+  if (honest(r) !== 'unconfirmed') return false;
+  const src = CELL_SOURCE[r.base ?? r.cell];
+  const [b, a] = [r.before?.dnd?.[src], r.after?.dnd?.[src]];
+  if (!src || !Number.isInteger(b?.drops) || !Number.isInteger(a?.drops) || a.drops !== b.drops) return false;
+  return ownDragend(r) === 0;
+}
+
+/**
  * Why a landed drop answered unconfirmed, as the gate counts it (Decision Log, T17 as built: none fails the gate):
  * `move-link`, a drop that only moves or links (this trial's own dragend), whose accept breeze_cursors draws as no drop
  * (or does not have); `cold-load`, a block's cold handle drop at load, whose cursor can still show no drop (#364, about
@@ -547,7 +563,8 @@ export function unconfirmedClass(r) {
  * pending: a notice counts only with the next acting request refused with it, `pendingOf`); T14's pending contract
  * broken (a notice without its refusal, or a refusal without its notice);
  * a missing landing in a cell that expects one (honesty excuses an unconfirmed answer, not a missing effect), save L4a's
- * residue: in the plain cell at twice the load, up to floor(2 × n / 100) honest unconfirmed non-landings in its n drops,
+ * residue: in L4a's plain cell (plan `t17-fix3`, `plan`) at twice the load, up to floor(2 × n / 100) honest unconfirmed
+ * non-landings (`honestNonLanding`) in its n drops,
  * reported with the count and the bound, and one more fails (`RESIDUE`, ruling 827 3b); an error
  * answered for a drop that landed (T17's proof: no false error undisturbed); a cell with fewer drags than its plan, or
  * drags the plan does not name (a missing case fails, as a missing operation does). Findings, counted and never a fail:
@@ -555,7 +572,7 @@ export function unconfirmedClass(r) {
  * whose every end was not verified (the bare root under the gate's ballast: unmeasured). An off-window drag whose end
  * was not verified is left out of its cell and counted apart. Answers `{md, failed, findings, counts}`.
  */
-export function electronDropVerdict(rows, { specs = [], share = 0.05, slowMode = SLOW_CELL_MODE } = {}) {
+export function electronDropVerdict(rows, { specs = [], share = 0.05, slowMode = SLOW_CELL_MODE, plan = null } = {}) {
   if (!['hard', 'declared-race'].includes(slowMode)) throw new Error(`the slow cell's mode is hard or declared-race, not ${slowMode}`);
   const failed = [];
   // #365's declared race: the hung sink's false oks per lane, and its drags
@@ -581,10 +598,10 @@ export function electronDropVerdict(rows, { specs = [], share = 0.05, slowMode =
     const falseOk = list.filter((r) => r.ok === true && honest(r) === null && !droppedOf(r));
     const landing = LANDING_CELLS.includes(base);
     const nonLanding = landing ? list.filter((r) => !r.outcome?.landed) : [];
-    // L4a's residue (ruling 827 3b, `RESIDUE`): the plain cell at twice the load only; its honest non-landings are
+    // L4a's residue (ruling 827 3b, `RESIDUE`): L4a's plan's plain cell at twice the load only; its honest non-landings are
     // counted against the cell's bound, and every other non-landing is still a missing landing
-    const residueApplies = base === RESIDUE.cell && list.length > 0 && list.every((r) => r.load === RESIDUE.load);
-    const residual = residueApplies ? nonLanding.filter((r) => honest(r) === 'unconfirmed' && !droppedOf(r)) : [];
+    const residueApplies = plan === RESIDUE.plan && base === RESIDUE.cell && list.length > 0 && list.every((r) => r.load === RESIDUE.load);
+    const residual = residueApplies ? nonLanding.filter(honestNonLanding) : [];
     const missing = nonLanding.filter((r) => !residual.includes(r));
     const falseError = landing ? list.filter((r) => r.outcome?.landed && r.ok !== true) : [];
     const landedUnconfirmed = list.filter((r) => r.outcome?.landed && honest(r) === 'unconfirmed');
@@ -746,7 +763,7 @@ export function chromeDropVerdict(rows, { specs = [], plan = null, capped = fals
 export function dropSignalsVerdict(args, rows) {
   const drags = rows.filter((r) => r.kind === 'drop-signal');
   const specs = rows.find((r) => r.kind === 'drop-signal-scene')?.specs ?? [];
-  if (judgedElectronPlan(args)) return { judge: 'electronDropVerdict', ...electronDropVerdict(drags, { specs }) };
+  if (judgedElectronPlan(args)) return { judge: 'electronDropVerdict', ...electronDropVerdict(drags, { specs, plan: args.plan }) };
   if (judgedChromePlan(args)) return { judge: 'chromeDropVerdict', ...chromeDropVerdict(drags, { specs, plan: args.plan, capped: args.samplesTrials != null }) };
   return null;
 }

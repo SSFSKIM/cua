@@ -1,91 +1,103 @@
 ## x64 T5 L4a (counted, pinned 0.4.0, at H)
 source: docs/evidence/2026-10-28-own-linux-engine/m5/x64/out/L4a.pinned-release
-run pinned-L4a, plan t17-fix3, load load2, trials the plan whole, 560 drags; judge electronDropVerdict
-H's judge (fefe306c): pass; with the residue: pass; verdict unchanged
+run pinned-L4a, plan t17-fix3, load load2, trials the plan whole; checkout fefe306c; step exit 0
+stored: pass (H's judge reproduces the stored verdict: pass); with the residue: pass; result unchanged
 residue: cua plain 0 of 100, bound 2; cua:handle plain 0 of 100, bound 2
 
 ## x64 pilot L4a (task 87, pilot 2)
 source: docs/evidence/2026-10-28-own-linux-engine/m5/x64/pilot/out/L4a.development-run.pilot
-run m4-dev-L4a-pilot, plan t17-fix3, load load2, trials 2, 28 drags; judge electronDropVerdict
-H's judge (fefe306c): pass; with the residue: pass; verdict unchanged
+run m4-dev-L4a-pilot, plan t17-fix3, load load2, trials 2; checkout 01ff0648; step exit 0
+stored: pass (H's judge reproduces the stored verdict: pass); with the residue: pass; result unchanged
 residue: cua plain 0 of 2, bound 0; cua:handle plain 0 of 2, bound 0
 
 ## arm64 pilot L4a (task 96, pilot 2, pinned 0.4.0)
 source: docs/evidence/2026-10-28-own-linux-engine/m5/arm64/pilot/out/L4a.development-run.pinned.pilot
-run m5-pinned-dev-L4a-pilot, plan t17-fix3, load load2, trials 2, 28 drags; judge electronDropVerdict
-H's judge (fefe306c): FAIL; with the residue: FAIL; verdict unchanged
+run m5-pinned-dev-L4a-pilot, plan t17-fix3, load load2, trials 2; checkout da306cc6; step exit 1
+stored: FAIL (H's judge reproduces the stored verdict: FAIL); with the residue: FAIL; result unchanged
 residue: cua plain 0 of 2, bound 0; cua:handle plain 0 of 2, bound 0
-fails that stand: cua:handle left: answered ok with no drop and nothing pending on 1 of 2 (#0)
+failures that stand: cua:handle left: answered ok with no drop and nothing pending on 1 of 2 (#0)
 
 ## arm64 pilot L4a rate run (task 96, pilot 100, pinned 0.4.0; task 98's 0.4.0 column)
 source: docs/evidence/2026-10-28-own-linux-engine/m5/arm64/pilot/l4a-rate/L4a/L4a.development-run.pinned.pilot
-run m5-pinned-dev-L4a-pilot, plan t17-fix3, load load2, trials 100, 560 drags; judge electronDropVerdict
-H's judge (fefe306c): FAIL; with the residue: FAIL; verdict unchanged
+run m5-pinned-dev-L4a-pilot, plan t17-fix3, load load2, trials 100; checkout da306cc6; step exit 1
+stored: FAIL (H's judge reproduces the stored verdict: FAIL); with the residue: FAIL; result unchanged
 residue: cua plain 0 of 100, bound 2; cua:handle plain 1 of 100, bound 2
-fails the residue removed: cua:handle plain: the drop did not land on 1 of 100, in a cell that expects it (#20)
-fails that stand: cua:handle left: answered ok with no drop and nothing pending on 1 of 30 (#20)
+judge failures the residue cleared: cua:handle plain: the drop did not land on 1 of 100, in a cell that expects it (#20)
+failures that stand: cua:handle left: answered ok with no drop and nothing pending on 1 of 30 (#20)
 
 ## task 98 L4a on the prototype (arm64, b74961ca, pilot 100)
-source: git:85886a76:docs/evidence/2026-10-28-own-linux-engine/m5/l4a-fix/arm64/gate/L4a.development-run.pilot/run/results.jsonl.gz
-run m5-dev-L4a-pilot, plan t17-fix3, load load2, trials 100, 560 drags; judge electronDropVerdict
-H's judge (fefe306c): FAIL; with the residue: pass; VERDICT MOVED
+source: git:85886a76:docs/evidence/2026-10-28-own-linux-engine/m5/l4a-fix/arm64/gate/L4a.development-run.pilot
+run m5-dev-L4a-pilot, plan t17-fix3, load load2, trials 100; checkout b74961ca; step exit 1
+stored: FAIL (H's judge reproduces the stored verdict: FAIL); with the residue: pass; RESULT MOVED
 residue: cua plain 0 of 100, bound 2; cua:handle plain 1 of 100, bound 2
-fails the residue removed: cua:handle plain: the drop did not land on 1 of 100, in a cell that expects it (#0)
+judge failures the residue cleared: cua:handle plain: the drop did not land on 1 of 100, in a cell that expects it (#0)
 
 ## x64 T5 H1 (counted, idle)
 source: docs/evidence/2026-10-28-own-linux-engine/m5/x64/out/H1.pinned-release
-run pinned-H1, plan t17-fix3, load idle, trials the plan whole, 560 drags; judge electronDropVerdict
-H's judge (fefe306c): pass; with the residue: pass; verdict unchanged
+run pinned-H1, plan t17-fix3, load idle, trials the plan whole; checkout fefe306c; step exit 0
+stored: pass (H's judge reproduces the stored verdict: pass); with the residue: pass; result unchanged
 residue: not covered
 
 ## x64 T5 H2 (counted, the gate's window load)
 source: docs/evidence/2026-10-28-own-linux-engine/m5/x64/out/H2.pinned-release
-run pinned-H2, plan t17-fix3, load gate-windows, trials the plan whole, 560 drags; judge electronDropVerdict
-H's judge (fefe306c): pass; with the residue: pass; verdict unchanged
+run pinned-H2, plan t17-fix3, load gate-windows, trials the plan whole; checkout fefe306c; step exit 0
+stored: pass (H's judge reproduces the stored verdict: pass); with the residue: pass; result unchanged
 residue: not covered
 
 ## x64 pilot H1 (task 87)
 source: docs/evidence/2026-10-28-own-linux-engine/m5/x64/pilot/out/H1.development-run.pilot
-run m4-dev-H1-pilot, plan t17-fix3, load idle, trials 2, 28 drags; judge electronDropVerdict
-H's judge (fefe306c): pass; with the residue: pass; verdict unchanged
+run m4-dev-H1-pilot, plan t17-fix3, load idle, trials 2; checkout 01ff0648; step exit 0
+stored: pass (H's judge reproduces the stored verdict: pass); with the residue: pass; result unchanged
 residue: not covered
 
 ## x64 pilot H2 (task 87)
 source: docs/evidence/2026-10-28-own-linux-engine/m5/x64/pilot/out/H2.development-run.pilot
-run m4-dev-H2-pilot, plan t17-fix3, load gate-windows, trials 2, 28 drags; judge electronDropVerdict
-H's judge (fefe306c): pass; with the residue: pass; verdict unchanged
+run m4-dev-H2-pilot, plan t17-fix3, load gate-windows, trials 2; checkout 01ff0648; step exit 0
+stored: pass (H's judge reproduces the stored verdict: pass); with the residue: pass; result unchanged
 residue: not covered
 
 ## arm64 pilot H1 (task 96, pilot 2)
 source: docs/evidence/2026-10-28-own-linux-engine/m5/arm64/pilot/out/H1.development-run.pinned.pilot
-run m5-pinned-dev-H1-pilot, plan t17-fix3, load idle, trials 2, 28 drags; judge electronDropVerdict
-H's judge (fefe306c): pass; with the residue: pass; verdict unchanged
+run m5-pinned-dev-H1-pilot, plan t17-fix3, load idle, trials 2; checkout da306cc6; step exit 0
+stored: pass (H's judge reproduces the stored verdict: pass); with the residue: pass; result unchanged
 residue: not covered
 
 ## arm64 pilot H2 (task 96, pilot 2)
 source: docs/evidence/2026-10-28-own-linux-engine/m5/arm64/pilot/out/H2.development-run.pinned.pilot
-run m5-pinned-dev-H2-pilot, plan t17-fix3, load gate-windows, trials 2, 28 drags; judge electronDropVerdict
-H's judge (fefe306c): pass; with the residue: pass; verdict unchanged
+run m5-pinned-dev-H2-pilot, plan t17-fix3, load gate-windows, trials 2; checkout da306cc6; step exit 0
+stored: pass (H's judge reproduces the stored verdict: pass); with the residue: pass; result unchanged
 residue: not covered
 
 ## arm64 pilot H1 rate run (task 96, pilot 100)
 source: docs/evidence/2026-10-28-own-linux-engine/m5/arm64/pilot/l4a-rate/H1/H1.development-run.pinned.pilot
-run m5-pinned-dev-H1-pilot, plan t17-fix3, load idle, trials 100, 560 drags; judge electronDropVerdict
-H's judge (fefe306c): pass; with the residue: pass; verdict unchanged
+run m5-pinned-dev-H1-pilot, plan t17-fix3, load idle, trials 100; checkout da306cc6; step exit 0
+stored: pass (H's judge reproduces the stored verdict: pass); with the residue: pass; result unchanged
 residue: not covered
 
 ## task 98 H1 on the prototype (arm64, b74961ca, pilot 100)
-source: git:85886a76:docs/evidence/2026-10-28-own-linux-engine/m5/l4a-fix/arm64/gate/H1.development-run.pilot/run/results.jsonl.gz
-run m5-dev-H1-pilot, plan t17-fix3, load idle, trials 100, 560 drags; judge electronDropVerdict
-H's judge (fefe306c): pass; with the residue: pass; verdict unchanged
+source: git:85886a76:docs/evidence/2026-10-28-own-linux-engine/m5/l4a-fix/arm64/gate/H1.development-run.pilot
+run m5-dev-H1-pilot, plan t17-fix3, load idle, trials 100; checkout b74961ca; step exit 0
+stored: pass (H's judge reproduces the stored verdict: pass); with the residue: pass; result unchanged
 residue: not covered
 
 ## negative controls on task 98 L4a on the prototype (arm64, b74961ca, pilot 100) (cua:handle plain: 1 of 100, bound 2)
 - one more honest non-landing than the bound (2 landed drops made the residue's shape): FAIL, as it must (cua:handle plain: 3 honest unconfirmed non-landings of 100, over L4a's residue of 2 (ruling 827 3b: floor(2 × 100 / 100), never rounded up) (#0, #1, #2))
 - the residue row answered ok, its notice and refusal removed: a false ok: FAIL, as it must (cua:handle plain: answered ok with no drop and nothing pending on 1 of 100 (#0) | cua:handle plain: the drop did not land on 1 of 100, in a cell that expects it (#0))
 - the residue row's notice not kept by the next acting request: FAIL, as it must (cua:handle plain: answered ok with no drop and nothing pending on 1 of 100 (#0) | cua:handle plain: the drop did not land on 1 of 100, in a cell that expects it (#0) | cua:handle plain: the read carried a notice, and the next acting request was not refused with it, on 1 of 100 (#0))
-- the residue row's own dragend a drop elsewhere on the page: FAIL, as it must (cua:handle plain: the drop did not land on 1 of 100, in a cell that expects it (#0))
+- the residue row answered an error, its notice kept: FAIL, as it must (cua:handle plain: the drop did not land on 1 of 100, in a cell that expects it (#0))
+- the residue row's dragend record missing: FAIL, as it must (cua:handle plain: the drop did not land on 1 of 100, in a cell that expects it (#0))
+- the residue row's dragend an earlier press's (stale): FAIL, as it must (cua:handle plain: the drop did not land on 1 of 100, in a cell that expects it (#0))
+- the residue row's dragend another source's (foreign): FAIL, as it must (cua:handle plain: the drop did not land on 1 of 100, in a cell that expects it (#0))
+- the residue row's dragend a drop: FAIL, as it must (cua:handle plain: the drop did not land on 1 of 100, in a cell that expects it (#0))
+- the residue row's zone counters unread: FAIL, as it must (cua:handle plain: the drop did not land on 1 of 100, in a cell that expects it (#0))
 - the same rows at idle: FAIL, as it must (cua:handle plain: the drop did not land on 1 of 100, in a cell that expects it (#0))
-- the same rows at the gate's window load: FAIL, as it must (cua:handle plain: the drop did not land on 1 of 100, in a cell that expects it (#0))
+- the same rows under another judged plan at twice the load (t17-fix2): FAIL, as it must (cua:handle plain: the drop did not land on 1 of 100, in a cell that expects it (#0))
 - a false ok added in the same series (another landed drop answered ok, nothing dropped): FAIL, as it must (cua:handle plain: answered ok with no drop and nothing pending on 1 of 100 (#1) | cua:handle plain: the drop did not land on 1 of 100, in a cell that expects it (#1))
-controls: 7 of 7 failed
+- a failure of the run outside this judge kept in its terminal outcome (a window the harness did not open): FAIL, as it must (a window the harness did not open was changed: 0x1 (control))
+- the private display's watchdog not clean: FAIL, as it must (the private display's watchdog: flagged (control))
+- no terminal outcome stored: replay refused, as it must (0 experiment-summary rows: the run has no single terminal outcome); the step keeps its stored result
+- no step.json: replay refused, as it must (no step.json: the step has no terminal record); the step keeps its stored result
+- a stored judge verdict H's judge does not reproduce: replay refused, as it must (H's judge does not reproduce the stored judge verdict); the step keeps its stored result
+- a terminal outcome without the judge's failures: replay refused, as it must (the terminal outcome does not carry the judge's failures); the step keeps its stored result
+- a run exit its terminal outcome does not explain: replay refused, as it must (the run exited 0 on a terminal outcome incomplete); the step keeps its stored result
+controls: 19 of 19 failed

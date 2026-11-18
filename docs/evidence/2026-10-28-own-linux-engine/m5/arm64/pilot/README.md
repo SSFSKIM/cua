@@ -134,9 +134,10 @@ harness defects and one guard stop each wrote hold-sittings. The controller clea
 | 3 | `out-zero-z1/` | V5 | 05:13:15–05:30:46 | 1 | clear | run valid: 50 PASS, **FAIL** on `chrome_dnd_shared` (the audit pass) and `chrome_dnd_late_take_shared` (the witness span), the two cells that failed in x64's V5 (finding 6) |
 | 3 | `out-zero-z1/` | Z0 | 05:30:46–05:32:46 | 0 | clear | the judges' verdict for cua: PASS (Firefox dnd and Writer select); the cua:0ms control FAILs as designed |
 
-- **V1–V5 in `out-zero-r1/` (and V1 in `out-zero/`) ran without the session-bus decoy.** wrap71's decoy thread threw
+- **V1–V5 in `out-zero-r1/` ran without the session-bus decoy.** wrap71's decoy thread threw
   `OSError: AF_UNIX path too long` binding `<step dir>/decoy/session.sock`, a 108-byte path under that out root with
-  the pilot's label, and wrap71 ran on without it. So their "0 decoy connections" does not cover the session bus. The
+  the pilot's label, and wrap71 ran on without it. The first sitting's V1, under `out-zero/` (105 bytes), had both
+  decoys. So their "0 decoy connections" does not cover the session bus. The
   a11y decoy bound. The third sitting ran under the short out root `m5/pa/z1` (91- and 88-byte decoy paths, checked
   first by `scripts/print-zero-z1.sh`), and no decoy failed (finding 7).
 - **The guards, every step:** the pointer read 640,400 and was restored to 640,400. tmproot was left empty. No
@@ -272,7 +273,7 @@ Each was sent to the controller as it came. The controller's word on each is in 
      Its samples answered ok in about 157 ms, with dnd outcome `no_start`, dropped true/true/false and witness
      true/false/true.
 7. **wrap71 runs on when a decoy can't bind.** The session-bus decoy failed with `AF_UNIX path too long`, at a 108-byte
-   path, in every step under `out-zero-r1/` (and `out-zero/`'s V1). wrap71 kept going without it. [T4's (d): wrap71 fails
+   path, in every step under `out-zero-r1/` (V1–V5). wrap71 kept going without it. [T4's (d): wrap71 fails
    closed before a step whose decoy can't bind, and checks the path length up front.]
 8. **A false ok from the shipped engine at twice the load (L4a).**
    - In the pilot it was "cua:handle left: answered ok with no drop and nothing pending on 1 of 2". Its rate run is

@@ -491,6 +491,19 @@ test("the lost motion's bound and the guarded route: a sweep of stops past the h
   // where the stop ends against the hold (press + 250, its last refresh a rest before): before the refresh stops, in
   // the rest, past the release
   assert.deepEqual(PLANS['v5-bound'].map(([lane, cell, n]) => `${lane} ${cell} ${n}`), ['cua prefreeze-150 20', 'cua prefreeze-200 20', 'cua prefreeze-215 20', 'cua prefreeze-230 20', 'cua prefreeze-260 20', 'cua prefreeze-300 20']);
+  // task 98's cold order: no drag follows a drag of its own cell, each a block of its own (a fresh engine), and each
+  // cell has as many drags of one lane as of the other; the plans open L4a's scene first
+  const { t98Order } = await import('../../scripts/linux-engine-diff/drop-signals.mjs');
+  const order = t98Order(2, 'S', 'U');
+  assert.equal(order.length, 32);
+  for (let k = 1; k < order.length; k++) assert.notEqual(order[k][1], order[k - 1][1], `drag ${k} follows its own cell`);
+  for (const [cell, n] of [['left', 8], ['plain', 4], ['inzone-out', 4]]) {
+    for (const lane of ['S', 'U']) assert.equal(order.filter(([l, c, one]) => l === lane && c === cell && one === 1).length, n, `${lane} ${cell}`);
+  }
+  for (const plan of ['t98-cold', 't98-cold-shipped', 't98-cold-drag']) {
+    assert.deepEqual(PLANS[plan].slice(0, 3).map(([, cell]) => cell), ['other', 'slow', 'left'], plan);
+  }
+  assert.equal(PLANS['t98-cold'].length, 258);
   // the guarded route: Chrome raised and not activated, so the engine watches the drag and releases at its path's end
   assert.deepEqual(LANES['cua:guarded'], { args: [], guarded: true });
   assert.deepEqual(PLANS['v5-guarded'].map(([lane, cell, n]) => `${lane} ${cell} ${n}`), ['cua:guarded plain 20', 'cua:guarded prefreeze-30 20', 'cua:guarded prefreeze-40 20', 'cua:guarded prefreeze-150 20']);

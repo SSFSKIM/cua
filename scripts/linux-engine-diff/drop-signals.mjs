@@ -284,6 +284,17 @@ export async function handleDrag(engine, scene, path) {
   return { ...value, ms: performance.now() - t0, end: failed ? end.response : undefined };
 }
 
+/**
+ * Task 98's order of single drags, `rounds` rounds of 16: the cells left, plain, left, inzone-out in turn, so no drag
+ * follows a drag of its own cell, and two lanes spread over them so that each cell has as many drags of one lane as of
+ * the other (8 lefts, 4 plains and 4 inzone-outs a round, half a lane).
+ */
+export function t98Order(rounds, settled, unsettled) {
+  const cells = ['left', 'plain', 'left', 'inzone-out'];
+  const lanes = 'SUUSUSSUUSSUSUUS';
+  return Array.from({ length: rounds * 16 }, (_, k) => [lanes[k % 16] === 'S' ? settled : unsettled, cells[k % 4], 1]);
+}
+
 /** The plans: `[lane, cell, drags]`. The never-take survey reads every drag's start point, whatever its lane. */
 export const PLANS = {
   main: [
@@ -368,27 +379,18 @@ export const PLANS = {
   't17-moved': [['cua:desktop', 'moved', 30]],
   // 60 cold first-handle drags into the hung sink, each a fresh engine's first: the design session's count for #365 (2026-11-12)
   't17-slow-cold': Array.from({ length: 60 }, () => ['cua:handle', 'slow', 1]),
-  // M5's task 98 (L4a's false ok on arm64: 2 of 4 cold handles at twice the load answered ok outside the zone): every
-  // drag a fresh engine's first (`cold`), the settled engine and the unsettled one taking turns, so both meet the same
-  // load: the accepted-then-left control and the short drop 50 each a lane, the press inside the zone 25 (a sitting of
-  // about 260 fresh engines, about 25 minutes at load; run twice for 100). L4a's scene stands as it found the false
-  // oks: one `other` and one `slow` drag every tenth round open the second Electron window and the sink (without them
-  // the drag loop ran about half as far behind the pointer: the first sitting, stopped, `cold1`).
-  // `t98-cold-shipped`: the same cells on one lane, for an engine without the flag (linux-engine-v0.4.0 itself).
-  // `t98-cold-drag`: the plain drag's cells the same way, behind the floor
-  't98-cold': Array.from({ length: 50 }, (_, k) => [
-    ['cua:handle', 'left', 1], ['cua:handle-unsettled', 'left', 1], ['cua:handle', 'plain', 1], ['cua:handle-unsettled', 'plain', 1],
-    ...(k % 2 === 0 ? [['cua:handle', 'inzone-out', 1], ['cua:handle-unsettled', 'inzone-out', 1]] : []),
-    ...(k % 10 === 0 ? [['cua:handle', 'other', 1], ['cua:handle', 'slow', 1]] : []),
-  ]).flat(),
-  't98-cold-shipped': Array.from({ length: 50 }, (_, k) => [
-    ['cua:handle', 'left', 1], ['cua:handle', 'plain', 1], ...(k % 2 === 0 ? [['cua:handle', 'inzone-out', 1]] : []),
-    ...(k % 10 === 0 ? [['cua:handle', 'other', 1], ['cua:handle', 'slow', 1]] : []),
-  ]).flat(),
-  't98-cold-drag': Array.from({ length: 30 }, (_, k) => [
-    ['cua', 'left', 1], ['cua:unsettled', 'left', 1], ['cua', 'plain', 1], ['cua:unsettled', 'plain', 1],
-    ...(k % 10 === 0 ? [['cua:desktop', 'other', 1], ['cua:desktop', 'slow', 1]] : []),
-  ]).flat(),
+  // M5's task 98 (L4a's false ok on arm64: 2 of 4 "cold" handles at twice the load answered ok outside the zone). What
+  // L4a's rows call cold is not the fresh engine: Electron's drag loop runs behind the pointer on a drag that follows a
+  // drag of another cell (the sitting `cold2`: its first status came over 15 ms after the take on 95 of 98 such drags,
+  // and on 10 of 98 that followed the same cell). So every drag here follows a drag of another cell, each a fresh
+  // engine's first as well, the settled engine and the unsettled one balanced over the cells and their order
+  // (`t98Order`), in L4a's scene (one `other` and one `slow` drag first open the second Electron window and the sink):
+  // 16 rounds of 16, the accepted-then-left control 64 a lane, the short drop and the press inside the zone 32 a lane.
+  // `t98-cold-shipped`: the same order on one lane, for an engine without the flag (linux-engine-v0.4.0 itself).
+  // `t98-cold-drag`: the plain drag's cells the same way, behind the floor, 8 rounds
+  't98-cold': [['cua:handle', 'other', 1], ['cua:handle', 'slow', 1], ...t98Order(16, 'cua:handle', 'cua:handle-unsettled')],
+  't98-cold-shipped': [['cua:handle', 'other', 1], ['cua:handle', 'slow', 1], ...t98Order(16, 'cua:handle', 'cua:handle')],
+  't98-cold-drag': [['cua:desktop', 'other', 1], ['cua:desktop', 'slow', 1], ...t98Order(8, 'cua', 'cua:unsettled')],
   // the gate's own plan with the unsettled lanes beside the settled ones (`t17-fix3` is L4a's and H1's)
   't98-fix3': [
     ['cua', 'plain', 100], ['cua', 'left', 30], ['cua', 'inzone-out', 30],

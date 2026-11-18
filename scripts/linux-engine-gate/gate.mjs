@@ -66,6 +66,7 @@ import { defaultScope, leftoverCheck, leftoverLines, removeLeftover, scratchDirs
 // a test process reaches no real display (hermetic.mjs); the leftover checks' scope is never switched by it
 import '../linux-engine-diff/hermetic.mjs';
 import { pinnedEngine } from '../linux-engine-diff/pinned-home.mjs';
+import { scratchRoot } from '../linux-engine-diff/scenes.mjs';
 import { linuxEnginePath } from '../../src/runtime/linux-engine.mjs';
 import { MAX_STEP_MINUTES, STEPS, runName, stepArgs, stepLabel, stepNamed, stepScript, suiteEnv, totals } from './steps.mjs';
 
@@ -97,6 +98,35 @@ export function defaultsFor(arch = process.arch, cuaHome = join(HOME, '.local/sh
 const GUARDS = 'docs/evidence/2026-10-28-own-linux-engine/m4/pointer-route/scripts';
 /** The outer guard run71.sh runs under: M5's copy of wrap71.py (task 91, ruling 773), M4's left as the record of H. */
 const WRAP71 = 'docs/evidence/2026-10-28-own-linux-engine/m5/guards/wrap71.py';
+/** The TMPDIR run71.sh gives a `:0` step's run, as its `mktemp -d` template makes it: every one is this long. */
+export const RUN71_TMPDIR = '/tmp/c71-XXXXXX';
+/**
+ * The decoy buses wrap71.py binds for a `:0` step, `<step dir>/decoy/<name>.sock`, and the longest path each may be: a
+ * Unix socket's path is at most sun_path's 108 bytes, and a client that adds its terminating NUL (libdbus) needs one
+ * of them, so a longer decoy either fails to bind or binds where a run process's client could not connect to it.
+ */
+export const DECOYS = ['session', 'a11y'];
+export const UNIX_PATH_MAX = 107;
+
+/**
+ * What would make wrap71 stop a `:0` step mid-step, or run it unguarded, that the step's own command decides (M5's T4,
+ * arm64 round, items (b) and (d)), as reasons; none when there is nothing. `run`: the step's run name; `dir`: its
+ * directory.
+ * - the run's scratch (scenes.mjs `scratchRoot`) must stay under run71.sh's TMPDIR: the run's Chrome lives in it, and
+ *   wrap71 stops a run Chrome whose home is outside that TMPDIR (the arm64 pilot's V1, 2026-11-18 04:35Z);
+ * - every decoy bus's path must fit (`UNIX_PATH_MAX`): the arm64 pilot's decoys failed to bind and the guard ran on.
+ */
+export function zeroStepProblems({ run, dir }) {
+  const problems = [];
+  if (scratchRoot(run, RUN71_TMPDIR) !== RUN71_TMPDIR) problems.push(`run ${run}: the run's scratch would leave the TMPDIR run71.sh gives it (${RUN71_TMPDIR}), since a gedit title would not stay whole under it; the guard would stop the run's Chrome there. Give it a shorter run name`);
+  for (const name of DECOYS) {
+    const path = join(dir, 'decoy', `${name}.sock`);
+    const bytes = Buffer.byteLength(path);
+    if (bytes > UNIX_PATH_MAX) problems.push(`the ${name} decoy bus ${path} is ${bytes} bytes, past the ${UNIX_PATH_MAX} a Unix socket's path can take: give the step a shorter --out`);
+  }
+  return problems;
+}
+
 /** The :0 sitting's outer launcher, relative to the checkout. */
 const SITTING = 'scripts/linux-engine-gate/sitting.mjs';
 /** The harness's X client, built in the checkout (xtools.mjs `XPROBE`). */
@@ -282,6 +312,11 @@ export function printStep(a, { root = REPO_ROOT, git } = {}) {
   const step = stepNamed(a.step);
   const checkout = checkCheckout({ root, out: a.out, gate: a.gate, git });
   const dir = stepDir(step, a);
+  // a :0 step the guard would stop mid-step, or run unguarded, for its command alone: refused before launch
+  if (step.display === ':0') {
+    const problems = zeroStepProblems({ run: runName(step, a), dir: resolve(dir) });
+    if (problems.length) throw new GateRefused(`${step.name} on :0 would not run whole under its guard: ${problems.join('; ')}`);
+  }
   mkdirSync(dir, { recursive: true });
   const command = launchCommand(step, a, root);
   writeRecord(dir, stepRecord(step, a, { root, checkout, command }));

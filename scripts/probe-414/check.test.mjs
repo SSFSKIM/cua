@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {plan, score, inspect, auditSchedule, auditPairs, summarize, coded, noteAttested, NOTE_PREFIX, firefoxDisclosure, drainIntervals, drainStats, terminalEditAtMs, drainIneligible, drainSummary, drainSizingOk, runShape, setupLabel, focusAllowed, concealedFailureTiming} from './check.mjs';
+import {plan, score, inspect, auditSchedule, auditPairs, summarize, coded, noteAttested, NOTE_PREFIX, firefoxDisclosure, drainIntervals, drainStats, terminalEditAtMs, drainIneligible, drainSummary, drainSizingOk, runShape, setupLabel, focusAllowed, concealedFailureTiming, appliedEditGaps} from './check.mjs';
 
 const success={confirmed:true,secure:true,confirmation:'length',snapshotMs:4};
 const old={confirmed:false,concealed:true,reason:'secure',snapshotMs:3};
@@ -381,6 +381,14 @@ test('every post-input secure concealed failure has a native one-second budget, 
   assert.equal(concealedFailureTiming({...s,raw:basisRefused,literal:true}),null);
   assert.equal(concealedFailureTiming({...s,raw:basisRefused,head:'main'}),null);
   assert.equal(concealedFailureTiming({...s,raw:{...basisRefused,secure:false}}),null);
+});
+test('genuine edit intervals include the state active at the last post, not the whole typing cadence',()=>{
+  assert.deepEqual(appliedEditGaps([980,999,1009,1038],1000),[10,29]);
+  assert.deepEqual(appliedEditGaps([980,990,999],1000),[]);
+  assert.deepEqual(appliedEditGaps([1005,1012],1000),[7]);
+  assert.deepEqual(appliedEditGaps([999,1008,1005],1000),[]);
+  assert.deepEqual(appliedEditGaps([999,'1010',1040],1000),[]);
+  assert.deepEqual(appliedEditGaps([999,1009],null),[]);
 });
 test('the smoke focus scratch job is allowed for Firefox only and setup failures project fixed labels', ()=>{
   assert.equal(focusAllowed('firefox','smoke','focus'),true);

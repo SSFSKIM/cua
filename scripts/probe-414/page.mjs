@@ -29,13 +29,16 @@ const nonBmpShape=${nonBmpShape.toString()};
 const setup=document.getElementById('setup'), field=document.getElementById('password');
 const doc=self.crypto.randomUUID(), nonce=doc.split('-')[0];
 document.title='Qualification '+nonce;
-let trial=null, effect='none', first='', hit=false, key=false, input=false, lastInputAtMs=null, seen='';
+let trial=null, effect='none', first='', hit=false, key=false, input=false, lastInputAtMs=null, seen='', measureEdits=false, editTimesMs=[];
 const post=o=>fetch('/answer',{method:'POST',body:JSON.stringify({doc,...o})});
 // Runner-clock Unix milliseconds of the last genuine user edit of the password node: trusted, targeted at it, and its text changed.
 field.addEventListener('input',event=>{
   input=true;
   const changed=field.value!==seen;seen=field.value;
-  if(event.isTrusted&&event.target===field&&changed)lastInputAtMs=Date.now();
+  if(event.isTrusted&&event.target===field&&changed){
+    lastInputAtMs=Date.now();
+    if(measureEdits&&editTimesMs.length<64)editTimesMs.push(lastInputAtMs);
+  }
 });
 field.addEventListener('keydown',event=>{
   if(!event.isTrusted||event.key.length!==1)return;
@@ -55,15 +58,16 @@ function state(c){return {trial,focused:document.activeElement===field,plainFocu
   exact:field.value===c.expected, controlExact:c.control!=null&&field.value===c.control,
   setupExact:setup&&typeof c.setupText==='string'?setup.value===c.setupText:null,
   unicodeShape:c.unicode===true?nonBmpShape(c.expected,field.value):null,
-  selection:c.end!=null&&field.selectionStart===c.start&&field.selectionEnd===c.end,key,input,hit,lastInputAtMs};}
+  selection:c.end!=null&&field.selectionStart===c.start&&field.selectionEnd===c.end,key,input,hit,lastInputAtMs,
+  ...(measureEdits&&c.op==='read'?{editTimesMs}: {})};}
 function run(c){
   if(c.op==='prepare'){
     if(setup){setup.value=c.setupText??'';setup.focus();setup.setSelectionRange(setup.value.length,setup.value.length);reveal(setup);}
     else if(!c.keepFocus)field.focus();
-    trial=c.trial;field.value='';seen='';effect='none';first='';key=input=hit=false;lastInputAtMs=null;
+    trial=c.trial;field.value='';seen='';effect='none';first='';key=input=hit=false;lastInputAtMs=null;measureEdits=false;editTimesMs=[];
   }else if(c.op==='seed'){
     if(c.trial!==trial)throw Error('generation');
-    effect=c.effect;first=c.first;field.value=c.expected;seen=field.value;
+    effect=c.effect;first=c.first;field.value=c.expected;seen=field.value;measureEdits=c.measureEdits===true;
     // keepFocus: the password node already holds focus from the one foreground seed; a background trial never re-focuses it.
     if(!c.keepFocus){field.focus();reveal(field);}
     field.setSelectionRange(c.start,c.end);

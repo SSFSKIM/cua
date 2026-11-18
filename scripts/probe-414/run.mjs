@@ -192,6 +192,7 @@ async function main(){
     if(!inputs.has(k)){
       const m=materialize(c);
       if(setupCanary)m.seed.setupText=ascii(11);
+      if(drain)m.seed.measureEdits=true;
       inputs.set(k,m);
     }
   }
@@ -272,7 +273,8 @@ async function main(){
       if(drain){
         // Realized terminal content, judged by the independent fixture: an ordinary row's exact text or a control's exact altered text.
         const realized=m.control===null?row.domExact===true:controlOK;
-        const elapsed=drainIntervals(timingTrace,{replyAtMs:receipt?.replyAtMs,confirmed:row.lengthConfirmed,app:lane==='appkit'?delivery:null,editAtMs:terminalEditAtMs(delivery)});
+        const elapsed=drainIntervals(timingTrace,{replyAtMs:receipt?.replyAtMs,confirmed:row.lengthConfirmed,app:lane==='appkit'?delivery:null,
+          editAtMs:terminalEditAtMs(delivery),editTimesMs:delivery?.editTimesMs});
         timings.push({kind:c.kind,rep:c.rep,literal:c.literal===true,valid:row.valid,reason:row.reason,lengthConfirmed:row.lengthConfirmed,wrongSuccess:row.wrongSuccess,
           sampled:timingTrace!==null,realized,elapsed,ineligible:drainIneligible({valid:row.valid,realized,elapsed})});
       }

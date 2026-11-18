@@ -54,7 +54,8 @@ jobs:
           format('[{{"lane":"cft","phase":"drain"}},{{"lane":"electron","phase":"drain"}},{{"lane":"electron-parity","phase":"drain"}},{{"lane":"safari","phase":"drain"}},{{"lane":"appkit","phase":"drain"}}{0}]',
           inputs.firefox == 'omit' && '' || inputs.firefox == 'include' && ',{"lane":"firefox","phase":"drain"}' || '')) ||
           inputs.firefox == 'only' && '[{"lane":"firefox","phase":"stock"}]' ||
-          format('[{{"lane":"cft","phase":"stock"}},{{"lane":"electron","phase":"stock"}},{{"lane":"electron-parity","phase":"stock"}},{{"lane":"safari","phase":"stock"}},{{"lane":"appkit","phase":"stock"}},{{"lane":"cft","phase":"audit"}},{{"lane":"safari","phase":"audit"}}{0}]',
+          format('[{{"lane":"cft","phase":"stock"}},{{"lane":"electron","phase":"stock"}},{{"lane":"electron-parity","phase":"stock"}},{{"lane":"safari","phase":"stock"}},{{"lane":"appkit","phase":"stock"}},{{"lane":"cft","phase":"audit"}},{{"lane":"safari","phase":"audit"}}{0}{1}]',
+          inputs.mode == 'full' && ',{"lane":"cft","phase":"drain"},{"lane":"electron","phase":"drain"},{"lane":"electron-parity","phase":"drain"},{"lane":"safari","phase":"drain"},{"lane":"appkit","phase":"drain"}' || '',
           inputs.firefox == 'include' && (inputs.mode == 'smoke' && ',{"lane":"firefox","phase":"stock"},{"lane":"firefox","phase":"focus"}' || ',{"lane":"firefox","phase":"stock"}') || '')) }}
     name: ${{ matrix.lane }} / ${{ matrix.phase }}
     env:

@@ -14,6 +14,7 @@ final class Fixture: NSObject {
     var trial = -1, effect = "none", first = "", key = false, hit = false
     // Diagnostics only (Unix ms): last genuine printable target key arrival, the mutation insert's completion, and whether it advanced the caret.
     var lastKeyAtMs: Double?, addedAtMs: Double?, addAdvanced: Bool?, lastKeyAppliedAtMs: Double?, armed = false
+    var measureEdits = false, editTimesMs: [Double] = []
     var editor: NSTextView? { secure.currentEditor() as? NSTextView }
 
     func launch() {
@@ -24,7 +25,9 @@ final class Fixture: NSObject {
         // The field editor's own text change, delivered while a proceeding genuine key is armed (never the monitor's injected insert).
         NotificationCenter.default.addObserver(forName:NSText.didChangeNotification, object:nil, queue:nil) { [weak self] n in
             guard let self, self.armed, let editor = self.editor, n.object as AnyObject === editor else { return }
-            self.lastKeyAppliedAtMs = Date().timeIntervalSince1970 * 1000
+            let at = Date().timeIntervalSince1970 * 1000
+            self.lastKeyAppliedAtMs = at
+            if self.measureEdits, self.editTimesMs.count < 64 { self.editTimesMs.append(at) }
             self.armed = false
         }
         window.makeKeyAndOrderFront(nil)
@@ -66,12 +69,14 @@ final class Fixture: NSObject {
             window.makeFirstResponder(setup); secure.stringValue = ""
             trial = n; effect = "none"; first = ""; key = false; hit = false
             lastKeyAtMs = nil; addedAtMs = nil; addAdvanced = nil; lastKeyAppliedAtMs = nil; armed = false
+            measureEdits = false; editTimesMs = []
         } else if op == "seed", n == trial, let value = q["expected"] as? String,
                   let start = q["start"] as? Int, let end = q["end"] as? Int {
             secure.stringValue = value
             window.makeFirstResponder(secure)
             editor?.setSelectedRange(NSRange(location:start,length:end-start))
             effect = q["effect"] as? String ?? "none"; first = q["first"] as? String ?? ""
+            measureEdits = q["measureEdits"] as? Bool == true
         }
         let field = editor, range = field?.selectedRange(), value = field?.string ?? secure.stringValue
         var out: [String:Any] = ["trial":trial,"shape":secure.window === window,"focused":field != nil && window.firstResponder === field,
@@ -86,6 +91,7 @@ final class Fixture: NSObject {
                 return range.location == want && range.length == 0
             }
             out["lastKeyAtMs"] = lastKeyAtMs ?? NSNull(); out["lastKeyAppliedAtMs"] = lastKeyAppliedAtMs ?? NSNull(); out["addedAtMs"] = addedAtMs ?? NSNull()
+            if measureEdits { out["editTimesMs"] = editTimesMs }
             out["addAdvancedCaret"] = addAdvanced ?? NSNull()
             out["requestedCaretOk"] = caretIs("requestedCaret"); out["controlCaretOk"] = caretIs("controlCaret")
         }

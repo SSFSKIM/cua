@@ -136,14 +136,20 @@ export const setupLabel=e=>setupSteps.has(e?.setupStep)?e.setupStep:null;
 export const focusAllowed=(lane,mode,phase)=>phase==='focus'&&lane==='firefox'&&(mode==='smoke'||mode.startsWith('firefox-'));
 // Require a genuine edit. The independently injected prefix precedes the last regular key and cannot stand in for it.
 export const terminalEditAtMs=d=>Number.isFinite(d?.lastInputAtMs)?d.lastInputAtMs:Number.isFinite(d?.lastKeyAppliedAtMs)?d.lastKeyAppliedAtMs:null;
-export function drainIntervals(trace,{replyAtMs,confirmed=false,app,editAtMs}={}){
+// Timings only: include the genuine edit just before the final post if it gives way to a later edit.
+export function appliedEditGaps(times,post){
+  if(!Array.isArray(times)||!Number.isFinite(post)||times.some((x,i)=>!Number.isFinite(x)||i>0&&x<times[i-1]))return [];
+  const crossed=times.findIndex(x=>x>=post);
+  return crossed<0?[]:times.slice(Math.max(crossed,1)).map((x,i)=>Math.round((x-times[Math.max(crossed,1)+i-1])*1000)/1000);
+}
+export function drainIntervals(trace,{replyAtMs,confirmed=false,app,editAtMs,editTimesMs}={}){
   const {lastPostAtMs:post,firstReadAtMs:first,sampledAtMs:changes,finalReadStartedAtMs:started,finalReadAtMs:final,confirmReadAtMs:confirmation,sampledDropped:dropped}=trace??{};
   if(dropped!==0||![post,first,started,final].every(Number.isFinite)||!Array.isArray(changes)||!changes.every(Number.isFinite)||
     final<post||first>final||started>final||changes.some((x,i)=>x<first||x>final||i>0&&x<changes[i-1]))return null;
   const observed=changes.filter(t=>t>post),last=observed.at(-1)??Math.max(first,post);
   const delta=(a,b)=>Number.isFinite(a)&&Number.isFinite(b)?Math.round((a-b)*1000)/1000:null;
   const bool=x=>typeof x==='boolean'?x:null;
-  return {changeGapsMs:observed.slice(1).map((x,i)=>delta(x,observed[i])),drainMs:delta(last,post),finalReadMs:delta(final,post),
+  return {changeGapsMs:observed.slice(1).map((x,i)=>delta(x,observed[i])),fixtureEditGapsMs:appliedEditGaps(editTimesMs,post),drainMs:delta(last,post),finalReadMs:delta(final,post),
     finalStartAfterEditMs:delta(started,editAtMs),editAfterPostMs:delta(editAtMs,post),
     confirmReadMs:confirmed&&confirmation>=post?delta(confirmation,post):null,replyMs:delta(replyAtMs,post),
     consumptionAfterPostMs:delta(app?.lastKeyAppliedAtMs,post),arrivalAfterPostMs:delta(app?.lastKeyAtMs,post),
@@ -173,7 +179,9 @@ export function drainSummary(rows,planned){
   const metric=k=>drainStats(sizing.map(r=>r.elapsed[k]));
   return {planned,sampled:rows.filter(r=>r.sampled).length,elapsed:rows.filter(r=>r.elapsed).length,realized:rows.filter(r=>r.valid&&r.realized).length,
     eligible:sizing.length,reasons,minimum:Math.ceil(planned*SIZING_MIN_RATIO),
-    stats:{changeGapsMs:drainStats(sizing.flatMap(r=>r.elapsed.changeGapsMs)),drainMs:metric('drainMs'),editAfterPostMs:metric('editAfterPostMs'),finalReadMs:metric('finalReadMs')}};
+    stats:{changeGapsMs:drainStats(sizing.flatMap(r=>r.elapsed.changeGapsMs)),
+      fixtureEditGapsMs:drainStats(rows.filter(r=>r.valid&&r.realized).flatMap(r=>r.elapsed?.fixtureEditGapsMs??[])),
+      drainMs:metric('drainMs'),editAfterPostMs:drainStats(rows.filter(r=>r.valid&&r.realized).map(r=>r.elapsed?.editAfterPostMs)),finalReadMs:metric('finalReadMs')}};
 }
 export const drainSizingOk=(summary,recorded)=>recorded===summary.planned&&summary.eligible>=summary.minimum;
 

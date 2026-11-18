@@ -14,11 +14,13 @@ import {containsSynthetic,judgeControls,judgePassword,passwordNodes,pasteDisclos
 
 if (process.env.RUNNER_ENVIRONMENT !== 'github-hosted') throw Error('GitHub-hosted runners only');
 const cli = Object.fromEntries(process.argv.slice(2).reduce((a,v,i,args)=>i%2 ? a : [...a,[v.slice(2),args[i+1]]],[]));
-const out = resolve(cli.out), browser = cli.browser, smoke = cli.mode === 'smoke';
-const repCount = smoke ? 1 : 5, headNames = ['main','fix'], timingBlocks = smoke ? 1 : 4, blockSamples = smoke ? 2 : 5;
+const out = resolve(cli.out), browser = cli.browser, smoke = cli.mode === 'smoke', settleTail = cli.mode === 'settle-tail';
+const repCount = settleTail ? 0 : smoke ? 1 : 5, headNames = ['main','fix'];
+const timingBlocks = settleTail ? 8 : smoke ? 1 : 4, blockSamples = smoke ? 2 : 5;
 const lengthCases = [0,23,31], benchFields = 216;
 const benchLane = ['cft','appkit'].includes(browser), isAppKit = browser === 'appkit';
-const timingArms=['small','large','large-reused-settle'];
+if (settleTail && !isAppKit) throw Error('settle-tail is AppKit-only');
+const timingArms=settleTail ? ['large-reused-settle'] : ['small','large','large-reused-settle'];
 const root = process.env.RUNNER_TEMP, home = mkdtempSync(join(root,'q405-home-'));
 const fixture = resolve('scripts/probe-390/fixture');
 mkdirSync(out,{recursive:true});
@@ -473,9 +475,11 @@ function complete() {
 try {
   save('config.json',config);
   await launch();save('config.json',config);
-  await seeded();
-  await secrets();
-  await paste();
+  if (!settleTail) {
+    await seeded();
+    await secrets();
+    await paste();
+  }
   await timings();
   coverage.failures=complete();
   save('summary.json',coverage);

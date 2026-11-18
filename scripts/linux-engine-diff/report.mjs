@@ -251,7 +251,7 @@ export function renderSummary(lines) {
     out.push(...textSceneEndsMarkdown(rows));
     const end = rows.find((r) => r.kind === 'end');
     const endLabel = gateLabel(end?.gate);
-    const ending = !end || end.pass === undefined ? '' : `; ${endLabel ? `${endLabel}: ` : ''}${verdictLine({ ...end, sceneEnds: end.scene_ends ?? null }, (s) => `**${s}**`)}`;
+    const ending = !end || end.pass === undefined ? '' : `; ${endLabel ? `${endLabel}: ` : ''}${verdictLine({ ...end, sceneEnds: end.scene_ends ?? null, vendorEnds: end.vendor_ends ?? null }, (s) => `**${s}**`)}`;
     out.push('', end ? `run ${end.valid ? 'valid' : '**invalid**'}${ending}, finished ${end.finished}` : 'run unfinished', '');
     // a run from before the harness audited its own trace has no record
     if (end && 'desktop' in end) out.push(desktopLine(end.desktop), '');
@@ -297,6 +297,11 @@ export function textSceneEndsMarkdown(rows) {
   const head = `Text windows a lane ended (a vendor's restarted before its next request, never scored; a candidate's stops the run): ${Object.entries(ends.lanes).map(([lane, n]) => `${lane} ${n}`).join(', ')}`;
   if (!ends.ended.length) return ['', `${head}.`];
   const out = ['', `${head}:`, ''];
+  // the vendor's ends, declared and undeclared, each apart (M5's T4 arm64 round): neither fails a step
+  const build = (g) => `${g.scene} ${g.op ?? 'an unrecorded request'} ${g.engine} (${g.release ?? 'an unnamed build'}, ${g.sha256 ? `${g.sha256.slice(0, 8)}…` : 'no sha256'})`;
+  const vendor = [];
+  if (ends.vendor?.declared?.length) vendor.push('', 'Vendor ends declared (scene-ended.mjs DECLARED_VENDOR_ENDS; never scored):', '', ...ends.vendor.declared.map((g) => `- ${build(g)}: ${g.count}, declared as ${g.id}`));
+  if (ends.vendor?.undeclared?.length) vendor.push('', "Vendor ends undeclared (never scored; a vendor behaviour the pilot did not see, for a look):", '', ...ends.vendor.undeclared.map((g) => `- ${build(g)}: ${g.count}`));
   for (const e of ends.ended) {
     const at = e.op ? `${e.op} ${e.engine} ${e.block}/${e.i}` : `${e.engine}, the ${e.pass} pass`;
     const last = e.last ? ` after ${e.last.op} ${e.last.block}/${e.last.i}` : '';
@@ -304,7 +309,7 @@ export function textSceneEndsMarkdown(rows) {
     const then = e.kind === 'scene-lost' ? '**the run stopped: a request of its lane ended the application**' : r ? `restarted (${e.scene} ${r.old_pid} replaced by ${r.new_pid}, window ${r.old_id} by ${r.new_id}${warmUpText(r.warm_up)}${r.then ? `; the warm-up ended it too (${r.warm_up_ended}), restarted again unwarmed: window ${r.then.new_id}` : ''})` : 'not restarted: no request was left for it';
     out.push(`- ${e.scene} ${at}: ${e.ended}${last}; ${then}`);
   }
-  return out;
+  return [...out, ...vendor];
 }
 
 /**

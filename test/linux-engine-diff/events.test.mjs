@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { parseArgs } from '../../scripts/linux-engine-diff/cli.mjs';
-import { bindStep, firstDifference, interruptedStep, normalizeAnswer, normalizeEvent, scenarios } from '../../scripts/linux-engine-diff/events.mjs';
+import { bindStep, firstDifference, interruptedStep, judgeScenario, normalizeAnswer, normalizeEvent, scenarios, sentDrag, traced } from '../../scripts/linux-engine-diff/events.mjs';
+import { parseXtrace } from '../../scripts/linux-engine-diff/audit.mjs';
 
 const key = (type, detail, state) => ({ type, send: true, detail, state, window: 'top', x: 0, y: 0, root_x: 0, root_y: 0 });
 
@@ -216,4 +217,181 @@ test("each scenario's pointer is parked at its start on the experiment's own dis
   // a window left under the start (an earlier scenario's recorder not yet gone) would take the motions: refused
   assert.throws(() => parkAtStart({ DISPLAY: ':93' }, { move: () => {}, read: () => ({ x, y, same_screen: true, chain: [0x600003] }) }), ParkRefused);
   assert.throws(() => parkAtStart({ DISPLAY: ':93' }, { move: () => {}, read: () => ({ x: x + 1, y, chain: [] }), pause: () => {} }), /not at \(300, 300\)/);
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// #171 M5, T4's arm64 round, item (f), and its fix wave 1: E1's judge for "an interrupted drag under a held key, then a
+// move" (the design session's ruling 818). On the arm64 VM cua's drag finished in 0.8 ms, before the fragile recorder
+// destroyed its child, and answered ok; on x64 the destruction cut it, an X Window error. Fix wave 1 binds both to what
+// the run recorded: an ok passes only when the recorder shows every pointer event the engine's own trace (the audit
+// proxy's, in the judged run) says it sent the child between its press and its release; an ok:false only when the
+// error's bad value, read before masking, is the recorder's own child XID. Anything else fails.
+
+const CHILD = 0x01800064;
+const held = (x, y) => pointer('MotionNotify', 'child', { state: 260, x: x - 500, y: y - 400, root_x: x, root_y: y });
+// root coordinates: the recorder at (100, 100), the path (450, 350) to (460, 360), the child at (400, 300)
+const MOTIONS = [[550, 450], [551, 451], [553, 453], [556, 456], [559, 459], [560, 460]];
+const WHOLE = [...MOTIONS.map(([x, y]) => held(x, y)), { ...held(560, 460), type: 'ButtonRelease', detail: 1 }];
+const keyDown = { answer: ok, events: [{ type: 'KeyPress', send: true, detail: 37, state: 0, window: 'top', x: 0, y: 0, root_x: 0, root_y: 0 }] };
+
+// the engine's trace, as xtrace writes it: its SendEvents to the child, on its connection `conn`
+let seq = 0x100;
+const sendTo = (event, x, y, { conn = 1, destination = CHILD } = {}) => `00${conn}:<:${(seq++).toString(16).padStart(4, '0')}: 44: Request(25): SendEvent propagate=false(0x00) destination=0x${destination.toString(16).padStart(8, '0')} event-mask=0 ${event} time=0x00000000 root=0x000003c5 event=0x${destination.toString(16).padStart(8, '0')} child=None(0x00000000) root-x=${x} root-y=${y} event-x=${x - 500} event-y=${y - 400} state=Button1,Control same-screen=true(0x01)`;
+const press = (o) => sendTo('ButtonPress(4) button=left button(0x01)', 550, 450, o);
+const motion = ([x, y], o) => sendTo('MotionNotify(6) detail=Normal(0x00)', x, y, o);
+const release = (o) => sendTo('ButtonRelease(5) button=left button(0x01)', 560, 460, o);
+const traceOf = (lines) => sentDrag(parseXtrace(lines.join('\n')), CHILD);
+const SENT = () => traceOf([press(), ...MOTIONS.map((m) => motion(m)), release()]);
+
+const dragLane = (response, events, { child = CHILD, sent = SENT() } = {}) => {
+  const step = { command: 'drag', interrupted: true, ...interruptedStep(response, events, { child }), raw: normalizeAnswer(response) };
+  return [keyDown, response.ok ? { ...step, sent } : step, after, keyDown];
+};
+const namedWindow = (bad = CHILD) => ({ ok: false, error: `X11 error X11Error { error_kind: Window, error_code: 3, sequence: 22, bad_value: ${bad}, minor_opcode: 0, major_opcode: 25, extension_name: None, request_name: Some("SendEvent") }` });
+const REFERENCE = () => dragLane(namedWindow(), [...PRESSED, held(550, 450)]);
+// E1's own steps: the judge reads the drag's requested path from them (ruling 818's "whole drag", fix wave 2)
+const E1 = scenarios().find((s) => s.name === 'an interrupted drag under a held key, then a move');
+const judgeE1 = (reference, candidate) => firstDifference(reference, candidate, E1.steps);
+
+test("E1: the trace's drag is the press to this run's child on its connection, then every pointer event to it through the release", () => {
+  const sent = SENT();
+  assert.deepEqual([sent.traced, sent.conn, sent.released, sent.xtest, sent.after.length], [true, 1, true, false, 7]);
+  assert.deepEqual(sent.after.at(-1), { type: 'ButtonRelease', detail: 1, root_x: 560, root_y: 460 });
+  // another connection's motions in the span are not this drag's; nor is a press to another run's child
+  assert.equal(traceOf([press(), motion([551, 451], { conn: 2 }), ...MOTIONS.map((m) => motion(m)), release()]).after.length, 7);
+  assert.equal(traceOf([press({ destination: 0x02a00064 }), ...MOTIONS.map((m) => motion(m)), release()]).press, null);
+  assert.equal(traceOf([]).traced, false);
+});
+
+test('E1: an ok drag passes only when the recorder shows every event the trace says was sent the child', () => {
+  assert.equal(judgeE1(REFERENCE(), dragLane(ok, [...PRESSED, ...WHOLE])), null, 'the whole drag, then the release');
+  for (const [what, tail, sent] of [
+    // the review's control: an interior motion dropped, both endpoints and the release kept
+    ['an interior motion dropped from the recorder', [...WHOLE.slice(0, 2), ...WHOLE.slice(3)]],
+    ['the recorder reduced to the last motion and the release', WHOLE.slice(-2)],
+    ['a trace motion the recorder lacks', WHOLE, traceOf([press(), ...MOTIONS.map((m) => motion(m)), motion([560, 460]), release()])],
+    ['a missing trace', WHOLE, undefined],
+    ['an empty trace', WHOLE, traceOf([])],
+    ["a trace from another run's recorder", WHOLE, sentDrag(parseXtrace([press({ destination: 0x02a00064 }), ...MOTIONS.map((m) => motion(m, { destination: 0x02a00064 })), release({ destination: 0x02a00064 })].join('\n')), CHILD)],
+    ['a trace whose motions came on another connection', WHOLE, traceOf([press(), ...MOTIONS.map((m) => motion(m, { conn: 2 })), release({ conn: 2 })])],
+    ['a trace with no release', WHOLE.slice(0, -1), traceOf([press(), ...MOTIONS.map((m) => motion(m))])],
+    ['a motion at another position', [...WHOLE.slice(0, 3), held(554, 454), ...WHOLE.slice(4)]],
+    ['an event after the release', [...WHOLE, held(560, 460)]],
+  ]) {
+    const lane = dragLane(ok, [...PRESSED, ...tail], { sent });
+    if (sent === undefined) delete lane[1].sent;
+    const difference = judgeE1(REFERENCE(), lane);
+    assert.equal(difference?.what, 'answer', what);
+    assert.equal(difference.step, 1, what);
+  }
+  // XTEST pointer input names no window to pair: a sample that shows it fails closed
+  const xtest = { ...SENT(), xtest: true };
+  assert.equal(judgeE1(REFERENCE(), dragLane(ok, [...PRESSED, ...WHOLE], { sent: xtest }))?.what, 'answer');
+  // the child never pressed: no drag reached it at all
+  assert.equal(judgeE1(REFERENCE(), dragLane(ok, PRESSED.slice(0, 2)))?.what, 'answer');
+  // the events up to the press are still compared exactly
+  assert.equal(judgeE1(REFERENCE(), dragLane(ok, [...PRESSED.slice(1), ...WHOLE]))?.what, 'event');
+});
+
+// Fix wave 2 (review 2's finding 1; the controller's ruling): agreement between the trace and the recorder is not a
+// whole drag. Each control below has both records agree, event for event, on a drag that is not the one requested, and
+// each must fail: the press at the requested start, motions with button 1 held reaching the requested end, and button
+// 1's release there are checked in the recorder on their own.
+test('E1: an ok drag that the trace and the recorder agree on must still be the whole requested drag', () => {
+  const release1 = ([x, y]) => ({ ...held(x, y), type: 'ButtonRelease', detail: 1 });
+  const release3 = ([x, y]) => ({ ...pointer('ButtonRelease', 'child', { detail: 3, state: 1028, x: x - 500, y: y - 400, root_x: x, root_y: y }) });
+  const held3 = ([x, y]) => pointer('MotionNotify', 'child', { state: 1028, x: x - 500, y: y - 400, root_x: x, root_y: y });
+  const unheld = ([x, y]) => pointer('MotionNotify', 'child', { state: 4, x: x - 500, y: y - 400, root_x: x, root_y: y });
+  const releaseAt = ([x, y], button = 'left button(0x01)') => sendTo(`ButtonRelease(5) button=${button}`, x, y);
+  // one control: the recorder's events after the press, and the trace's lines after its press, the same drag
+  for (const [what, tail, lines] of [
+    ['a truncated drag: no motion, the release at once', [release1([550, 450])], [releaseAt([550, 450])]],
+    ['a truncated drag: the motions stop short of the requested end, released there', [...MOTIONS.slice(0, 4).map(([x, y]) => held(x, y)), release1([556, 456])], [...MOTIONS.slice(0, 4).map((m) => motion(m)), releaseAt([556, 456])]],
+    ['the release back at the press point, after reaching the end', [...MOTIONS.map(([x, y]) => held(x, y)), held(550, 450), release1([550, 450])], [...MOTIONS.map((m) => motion(m)), motion([550, 450]), releaseAt([550, 450])]],
+    ['the wrong button released at the end (3), button 1 never released', [...MOTIONS.map(([x, y]) => held(x, y)), release3([560, 460])], [...MOTIONS.map((m) => motion(m)), releaseAt([560, 460], 'right button(0x03)')]],
+    ['the motions with button 3 held, and button 3 released', [...MOTIONS.map(held3), release3([560, 460])], [...MOTIONS.map((m) => motion(m)), releaseAt([560, 460], 'right button(0x03)')]],
+    ['the motions with no button held', [...MOTIONS.map(unheld), release1([560, 460])], [...MOTIONS.map((m) => motion(m)), release()]],
+  ]) {
+    const sent = traceOf([press(), ...lines]);
+    const difference = judgeE1(REFERENCE(), dragLane(ok, [...PRESSED, ...tail], { sent }));
+    assert.equal(difference?.what, 'answer', what);
+    assert.equal(difference.step, 1, what);
+  }
+  // the press not at the requested start, both records agreeing on it
+  const offStart = [pointer('EnterNotify', 'child', { mode: 0, detail: 3, x: 52, y: 52, root_x: 552, root_y: 452 }), pointer('MotionNotify', 'child', { x: 52, y: 52, root_x: 552, root_y: 452 }), pointer('ButtonPress', 'child', { detail: 1, x: 52, y: 52, root_x: 552, root_y: 452 })];
+  const offSent = traceOf([sendTo('ButtonPress(4) button=left button(0x01)', 552, 452), ...MOTIONS.map((m) => motion(m)), release()]);
+  assert.equal(judgeE1(REFERENCE(), dragLane(ok, [...offStart, ...WHOLE], { sent: offSent }))?.what, 'answer', 'a press off the requested start');
+  // a trace whose only release is button 3's holds no release of button 1
+  assert.equal(traceOf([press(), ...MOTIONS.map((m) => motion(m)), releaseAt([560, 460], 'right button(0x03)')]).released, false);
+  // with no steps the requested drag is unknown: an ok fails closed
+  assert.equal(firstDifference(REFERENCE(), dragLane(ok, [...PRESSED, ...WHOLE]))?.what, 'answer');
+  // and the whole requested drag, both records agreeing, still passes
+  assert.equal(judgeE1(REFERENCE(), dragLane(ok, [...PRESSED, ...WHOLE])), null);
+});
+
+// Fix wave 2, review 2's minor: the scenario's steps reach the judge, the run's and an injected one alike (a historical
+// judge that reads the requested path, 570ff0bd's, needs them)
+test("E1: judgeScenario hands the scenario's steps to its judge", () => {
+  const seen = [];
+  const first = (a, b, steps) => {
+    seen.push(steps);
+    return firstDifference(a, b, steps);
+  };
+  const records = { pinned: REFERENCE(), newest: REFERENCE(), cua: dragLane(ok, [...PRESSED, ...WHOLE]) };
+  assert.deepEqual(judgeScenario(E1, records, ['pinned', 'newest', 'cua'], { first }).verdicts, { newest: null, cua: null });
+  assert.deepEqual(seen, [E1.steps, E1.steps]);
+  assert.deepEqual(judgeScenario(E1, records, ['pinned', 'newest', 'cua']).verdicts, { newest: null, cua: null }, 'the default judge reads them too');
+});
+
+test('E1: an interrupted drag answered ok:false passes only when its error names the destroyed child', () => {
+  assert.equal(judgeE1(REFERENCE(), dragLane(namedWindow(), [...PRESSED, held(550, 450)])), null);
+  for (const [what, response, child] of [
+    // the review's control: a wrong XID in the error
+    ['an error naming another window', namedWindow(1), CHILD],
+    ["an error naming another run's child", namedWindow(0x02a00064), CHILD],
+    ['a Window error with no bad value', { ok: false, error: 'X11 error X11Error { error_kind: Window, error_code: 3, request_name: Some("SendEvent") }' }, CHILD],
+    ['an error of another kind', { ok: false, error: `X11 error X11Error { error_kind: Match, error_code: 8, sequence: 22, bad_value: ${CHILD} }` }, CHILD],
+    ["an error that is not X's", { ok: false, error: 'drag failed: the window is gone' }, CHILD],
+    ["no child recorded (a row from before the fix: the error's value masked)", namedWindow(), null],
+  ]) {
+    const difference = judgeE1(REFERENCE(), dragLane(response, [...PRESSED, held(550, 450)], { child }));
+    assert.equal(difference?.what, 'answer', what);
+  }
+  // the reference must still have been interrupted as planned
+  assert.equal(judgeE1(dragLane(ok, [...PRESSED, ...WHOLE]), dragLane(ok, [...PRESSED, ...WHOLE]))?.what, 'reference not interrupted');
+  // the stored form, `<id>` masked and no `bad_value`, is not enough
+  const stored = REFERENCE();
+  const masked = { ...stored[1] };
+  delete masked.bad_value;
+  assert.equal(judgeE1(REFERENCE(), [stored[0], masked, ...stored.slice(2)])?.what, 'answer');
+});
+
+test("E1: the click scenario keeps the interruption rule: a click answered ok still fails", () => {
+  const lane = (response, events) => [keyDown, { command: 'click', interrupted: true, ...interruptedStep(response, events, { child: CHILD }), raw: normalizeAnswer(response) }, after, keyDown, keyDown];
+  const done = [{ ...held(550, 450), type: 'ButtonRelease', detail: 1 }];
+  assert.equal(firstDifference(lane(namedWindow(), PRESSED), lane(ok, [...PRESSED, ...done]))?.what, 'answer');
+});
+
+test('E1: only the fragile scenarios run through the proxy, and their times are never counted', () => {
+  const fragile = scenarios().filter((s) => traced(s)).map((s) => s.name);
+  assert.deepEqual(fragile, ['an interrupted drag under a held key, then a move', 'an interrupted click under a held key, then a move']);
+  assert.equal(traced(scenarios().find((s) => s.fragile), 'vendor-js'), false);
+});
+
+// the x64 cua engine's own trace of this scenario (a development probe on a private display, task 97 fix wave 1):
+// its press to the child, four motions and two releases, in xtrace's own words
+const REAL = [
+  "000:<:004d: 44: Request(25): SendEvent propagate=false(0x00) destination=0x00400001 event-mask=0 ButtonPress(4) button=left button(0x01) time=0x6c6ab986 root=0x000001ff event=0x00400001 child=None(0x00000000) root-x=550 root-y=450 event-x=50 event-y=50 state=Control same-screen=true(0x01)",
+  "000:<:0050: 44: Request(25): SendEvent propagate=false(0x00) destination=0x00400001 event-mask=0 MotionNotify(6) detail=Normal(0x00) time=0x6c6ab986 root=0x000001ff event=0x00400001 child=None(0x00000000) root-x=550 root-y=450 event-x=50 event-y=50 state=Control,Button1 same-screen=true(0x01)",
+  "000:<:0053: 44: Request(25): SendEvent propagate=false(0x00) destination=0x00400001 event-mask=0 MotionNotify(6) detail=Normal(0x00) time=0x6c6ab986 root=0x000001ff event=0x00400001 child=None(0x00000000) root-x=550 root-y=450 event-x=50 event-y=50 state=Control,Button1 same-screen=true(0x01)",
+  "000:<:0056: 44: Request(25): SendEvent propagate=false(0x00) destination=0x00400001 event-mask=0 MotionNotify(6) detail=Normal(0x00) time=0x6c6ab987 root=0x000001ff event=0x00400001 child=None(0x00000000) root-x=551 root-y=451 event-x=51 event-y=51 state=Control,Button1 same-screen=true(0x01)",
+  "000:<:0059: 44: Request(25): SendEvent propagate=false(0x00) destination=0x00400001 event-mask=0 MotionNotify(6) detail=Normal(0x00) time=0x6c6ab987 root=0x000001ff event=0x00400001 child=None(0x00000000) root-x=552 root-y=452 event-x=52 event-y=52 state=Control,Button1 same-screen=true(0x01)",
+  "000:<:005b: 44: Request(25): SendEvent propagate=false(0x00) destination=0x00400001 event-mask=0 ButtonRelease(5) button=left button(0x01) time=0x6c6ab987 root=0x000001ff event=0x00400001 child=None(0x00000000) root-x=551 root-y=451 event-x=51 event-y=51 state=Control,Button1 same-screen=true(0x01)",
+  "000:<:0061: 44: Request(25): SendEvent propagate=false(0x00) destination=0x00400001 event-mask=0 ButtonRelease(5) button=left button(0x01) time=0x6c6ab987 root=0x000001ff event=0x00400001 child=None(0x00000000) root-x=551 root-y=451 event-x=51 event-y=51 state=Control,Button1 same-screen=true(0x01)",
+];
+test("E1: the trace's real form: xtrace names the button, and the engine's drag reads as its press, motions and release", () => {
+  const sent = sentDrag(parseXtrace(REAL.join('\n')), 0x00400001);
+  assert.deepEqual([sent.traced, sent.conn, sent.press, sent.released, sent.after.length], [true, 0, { root_x: 550, root_y: 450 }, true, 5]);
+  assert.deepEqual(sent.after.map((e) => `${e.type} ${e.root_x},${e.root_y}`), ['MotionNotify 550,450', 'MotionNotify 550,450', 'MotionNotify 551,451', 'MotionNotify 552,452', 'ButtonRelease 551,451']);
+  assert.equal(sentDrag(parseXtrace(REAL.join('\n')), 0x00400002).press, null, "another window's trace holds no press to this child");
 });

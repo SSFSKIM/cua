@@ -33,6 +33,39 @@
         "result": {"cell": "exercise", "isError": false, "content": [{"type": "text", "text": "NATIVE:[{\"listed\":true,\"others\":true,\"focusedFront\":true},{\"full\":true,\"source\":true,\"owned\":true},{\"error\":\"Screenshot unavailable for window <id>.\"},{\"error\":\"Window <id> is minimized; activate it first\"},\"undefined\",{\"restored\":true},{\"bytes\":true}]"}]}
       },
       "reason": "#171 M4's T4 runs getAXState on a minimized window, the getAXState case's named variant (the plain case stays positive on both lanes): cua lists it with `minimized: true` (no other window carries the field), reads its full tree, answers its screenshot as unavailable, refuses input with `Window <id> is minimized; activate it first`, and activate_window restores it, after which the field is gone and the screenshot returns. The pinned x64 vendor engine leaves the minimized window out of list_windows, so every request answers `Window <id> is unavailable.`, the declared vendor defect named above."
+    },
+    {
+      "id": "linux-text-typetext-m5-arm64",
+      "case": "native/app/typetext",
+      "cells": ["exercise"],
+      "vendorDefect": "linux-arm64-vendor-engine-typetext-ended-gedit",
+      "cua": {
+        "assertion": {"ok": true},
+        "result": {"cell": "exercise", "isError": false, "content": [{"type": "text", "text": "NATIVE:[\"undefined\",1,false]"}]}
+      },
+      "reason": "Plan of Work M2 makes typeText positive: cua returns successfully, inserts the marker exactly once and leaves gedit alive, as on x64 (task 96's R1, 34 of 34). The pinned arm64 vendor engine ends gedit instead, answering one of two errors, the declared vendor defect named above (M5's T4, arm64 round)."
+    },
+    {
+      "id": "linux-text-paste-m5-arm64",
+      "case": "native/app/paste",
+      "cells": ["exercise"],
+      "vendorDefect": "linux-arm64-vendor-engine-paste-ended-gedit",
+      "cua": {
+        "assertion": {"ok": true},
+        "result": {"cell": "exercise", "isError": false, "content": [{"type": "text", "text": "NATIVE:[{\"error\":\"Linux paste supports only text format.\"},{\"error\":\"Linux paste supports only text format.\"},\"undefined\",1,false]"}]}
+      },
+      "reason": "Plan of Work M2 makes paste positive: cua returns successfully, inserts the marker exactly once and leaves gedit alive, as on x64. The pinned arm64 vendor engine ends gedit instead, the declared vendor defect named above (M5's T4, arm64 round). The two leading errors are the case's intentional html and md format-refusal probes, which the facade rejects before either engine is called."
+    },
+    {
+      "id": "linux-getaxstate-minimized-m5-arm64",
+      "case": "native/target-app-decorated-tab/getaxstate/minimized",
+      "cells": ["exercise"],
+      "vendorDefect": "linux-arm64-vendor-engine-minimized-window-unavailable",
+      "cua": {
+        "assertion": {"ok": true},
+        "result": {"cell": "exercise", "isError": false, "content": [{"type": "text", "text": "NATIVE:[{\"listed\":true,\"others\":true,\"focusedFront\":true},{\"full\":true,\"source\":true,\"owned\":true},{\"error\":\"Screenshot unavailable for window <id>.\"},{\"error\":\"Window <id> is minimized; activate it first\"},\"undefined\",{\"restored\":true},{\"bytes\":true}]"}]}
+      },
+      "reason": "M4's T4 on arm64: cua lists the minimized window with `minimized: true`, reads its full tree, answers its screenshot as unavailable, refuses input as minimized and restores it on activate_window, as on x64. The pinned arm64 vendor engine leaves it out of list_windows, x64's defect, declared for the arm64 release (M5's T4, arm64 round)."
     }
   ]
 }

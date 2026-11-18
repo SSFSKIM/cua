@@ -45,6 +45,7 @@ import { CHROME_ENV, ChromeInstance, isChromeCommand } from './chrome.mjs';
 import { Engine, runEngines, watchOperations } from './engine.mjs';
 import { auditForeign, auditRecord, auditRecordFile, foreignKeep, foreignLine } from './foreign.mjs';
 import { geditTitle } from './gedit-title.mjs';
+import { scratchRoot } from './scratch-root.mjs';
 import { preorder } from './normalize.mjs';
 import { startRunSession } from './session-bus.mjs';
 import { cleanupOnFatal, cleanupOnStop } from './stop.mjs';
@@ -204,22 +205,12 @@ export function desktopEnding(ending) {
 // the run's scratch directory's name before mkdtemp's six characters (leftovers.mjs, whose end check lists others')
 export { SCRATCH_PREFIX };
 
-/**
- * The longest label tail the scenes give a gedit window (`openGedit`): the minimized scene's text window of a vendor
- * lane (run.mjs `openScene`; gedit-title.test.mjs lists every one).
- */
-const LONGEST_GEDIT_TAIL = ['minimized', 'text_pinned'];
+// where the run's scratch directory goes (scratch-root.mjs)
+export { scratchRoot };
 
-/**
- * Where the run's scratch directory goes (task 51; the design session's ruling, sminos 336): the harness's TMPDIR when
- * the longest gedit title the scenes build for `run` stays whole under it, else /tmp. gedit middle-truncates a title's
- * directory to what is left of 100 characters (gedit-title.mjs), and each lane's window is on a file of its own label,
- * so a shortened title differs between lanes: task 49's session TMPDIR failed `gedit tree_shot` on the title alone.
- */
-export function scratchRoot(run, tmp = tmpdir()) {
-  const longest = `${['cua171-diff', run, 'n'.repeat(8), ...LONGEST_GEDIT_TAIL].join('-')}.txt`;
-  return geditTitle(join(tmp, `${SCRATCH_PREFIX}XXXXXX`, longest)).ellipsized ? '/tmp' : tmp;
-}
+/** Each spawned child's own record (`spawnApp`), and each lane scene's own spawn (`openGedit`), held by object, never by pid. */
+const ownSpawns = new WeakMap();
+const laneSpawns = new WeakMap();
 
 export class Desktop {
   /**
@@ -660,6 +651,8 @@ export class Desktop {
       const entry = { pid: child.pid, label, start: processState(child.pid).start ?? null, exited: false };
       child.once('exit', () => (entry.exited = true));
       this.spawned.push(entry);
+      // this spawn's own record, for a scene to keep (M5's T4 arm64 round: a lane's restore closes and waits on it)
+      ownSpawns.set(child, entry);
       return child;
     } finally {
       // the child holds its own copy
@@ -808,6 +801,7 @@ export class Desktop {
       const child = this.spawnApp(label, 'gedit', ['--standalone', file]);
       // registered with its process at once: a stop or a window that never comes ends the process
       const scene = { kind: 'gedit', role, label, file, content, pid: child.pid, id: null };
+      this.keepLaneSpawn(scene, child);
       this.windows.push(scene);
       const name = basename(file);
       const info = await this.waitForWindow((w) => w.app === 'org.gnome.gedit' && w.title.includes(name), label);
@@ -1221,6 +1215,68 @@ export class Desktop {
         // the group ended on SIGTERM
       }
     }
+  }
+
+  /**
+   * A lane scene's own spawn kept with it, never looked up by pid again (`closeLaneScene`, `laneSceneRunning`): the
+   * child's handle and the record `spawnApp` made of it (`record`, the display-free tests' own).
+   */
+  keepLaneSpawn(scene, child, record = ownSpawns.get(child)) {
+    laneSpawns.set(scene, { record, child });
+  }
+
+  /**
+   * A lane's text window closed for its restore (run.mjs `restoreLaneScene`, its only caller; M5's T4 arm64 round, item
+   * (c), and its fix waves 1 and 2). The vendor lanes on arm64 kept ending gedit, and X gave a freed window id to another
+   * lane's fresh window. A text lane is gedit, gnome-text-editor (a family scene, in a process group of its own) or a
+   * Chrome page. A Chrome window is closed by its window, as `close` closes it. A scene the run spawned is closed through
+   * the spawn bound to it as it opened (`keepLaneSpawn`), its exit checked first:
+   * - gedit, while it runs, through the child's own handle, which never reaches another process however its pid is
+   *   given out, with or without /proc; once it has exited, nothing is left to signal;
+   * - a group, while its leader (the spawn) runs, through the leader's pid, which names this group and no other while
+   *   the leader lives; SIGTERM, then SIGKILL a second later if the leader still runs. Once the leader has exited the
+   *   group id may be another's, so the group is never signalled.
+   * Where the scene's ownership cannot be established at this moment (a group whose leader exited, or a process scene
+   * with no spawn bound), nothing is signalled: the refusal is recorded (`skips`) and answered (`{refused}`), and the
+   * restore decides on its window. Every scene closed here leaves the run's windows, so the run's end never signals it
+   * by its pid either. Every other caller's close is unchanged.
+   */
+  async closeLaneScene(scene) {
+    const own = laneSpawns.get(scene);
+    if (!own && scene.kind === 'chrome') return this.close([scene]);
+    const refused = !own ? `${scene.label ?? 'the scene'} has no spawn of its own bound to it, so no process can be shown to be its own` : scene.group && own.record.exited ? `${scene.label ?? 'the scene'}'s process group leader (pid ${own.child.pid}) has exited, so the group id is no longer provably its own` : null;
+    if (refused) this.skip('signal', scene.id ?? null, refused);
+    else if (!own.record.exited) {
+      try {
+        if (scene.group) process.kill(-own.child.pid, 'SIGTERM');
+        else own.child.kill('SIGTERM');
+      } catch (error) {
+        if (error?.code !== 'ESRCH') this.closeErrors.push(`closing ${scene.label ?? scene.id}: ${error?.message ?? error}`);
+      }
+    }
+    this.windows = this.windows.filter((w) => w !== scene);
+    if (!this.closed.includes(scene)) this.closed.push(scene);
+    if (refused) return { refused };
+    if (scene.group) {
+      await sleep(1000);
+      try {
+        // the leader still running holds the group's id, so the group is still the scene's own
+        if (!own.record.exited) process.kill(-own.child.pid, 'SIGKILL');
+      } catch {
+        // the group ended on SIGTERM
+      }
+    }
+    return {};
+  }
+
+  /**
+   * Whether the process a lane's scene was spawned as still runs (a group's leader), by its own spawn record (its exit,
+   * never a lookup by pid), for its restore's wait: false for a scene with no spawn of its own (the window alone is
+   * waited on then).
+   */
+  laneSceneRunning(scene) {
+    const own = laneSpawns.get(scene);
+    return Boolean(own) && !own.record.exited;
   }
 
   /** Everything the harness opened closed, once: the end of the run and a stop that interrupts it share one cleanup. */

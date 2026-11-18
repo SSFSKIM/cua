@@ -156,7 +156,9 @@ export const verdictOps = (step) => [...new Set(step.scenes.flatMap((scene) => s
  */
 export function runName(step, { gate, pilot }) {
   if (gate === 'pinned') return `pinned-${step.name}`;
-  if (gate === PINNED_DEVELOPMENT) return `m5-pinned-dev-${step.name}${pilot ? '-pilot' : ''}`;
+  // the pinned pilot's is shortened (M5's T4, arm64 round, item (b)): `m5-pinned-dev-V1-pilot` kept no gedit title
+  // whole under run71.sh's TMPDIR, so the run's scratch left it (scenes.mjs `scratchRoot`; gate.mjs `zeroStepProblems`)
+  if (gate === PINNED_DEVELOPMENT) return pilot ? `m5-pdev-${step.name}-pilot` : `m5-pinned-dev-${step.name}`;
   return `m5-${gate ? 'gate' : 'dev'}-${step.name}${pilot ? '-pilot' : ''}`;
 }
 

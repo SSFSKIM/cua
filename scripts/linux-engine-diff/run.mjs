@@ -38,7 +38,7 @@ import { OPS, SCENE_OPS, inputOp, ownWindow, shotOf, targeted } from './ops.mjs'
 import { Oracle } from './oracle.mjs';
 import { ORACLE, PrepareStepError, judgePrepareFaults, judgeTextRestores, judgeWarmUps, prepareFailureRow, sampleUnderRule } from './prepare.mjs';
 import { writeSummary } from './report.mjs';
-import { CandidateSceneEnded, auditInSegments, invalidRestartRow, judgeSceneEnds, keepLaneScene, mergeAudits, restartLaneScene } from './scene-ended.mjs';
+import { CandidateSceneEnded, auditInSegments, invalidRestartRow, judgeSceneEnds, keepLaneScene, endedTarget, markEndedTargets, mergeAudits, restartLaneScene } from './scene-ended.mjs';
 import { routeWitness, runCases } from './safety.mjs';
 import { Desktop, XPROBE, a11yBusAddress, desktopEnding } from './scenes.mjs';
 import { xdotool, xprobe } from './xtools.mjs';
@@ -852,9 +852,17 @@ async function openSceneWindow(desktop, scene, role, { text = false } = {}) {
 export async function restoreLaneScene({ desktop, windows, sceneName, label, occlusion, warmUp }) {
   const started = performance.now();
   const old = windows[sceneName].text[label];
-  await desktop.close([old]);
-  // the old window gone before its successor is looked for: the fresh one is found by its file's name, as the old was
-  for (const deadline = Date.now() + 10000; (await desktop.listWindows()).some((w) => w.id === old.id); await sleep(250)) {
+  // a close that could not show the old scene's process to be its own signalled nothing (fix wave 2): a window of it
+  // still there is then nobody's to close, and the restore refuses, rather than wait on it or open a second beside it
+  const closed = await desktop.closeLaneScene(old);
+  // the old window gone before its successor is looked for: the fresh one is found by its file's name, as the old was.
+  // Gone is keyed on the old window itself, its id and its label (lane and nonce), and on its own spawn's exit (M5's T4,
+  // arm64 round, item (c), fix wave 1): X gives a freed id again, across lanes, so a window of another lane's may hold
+  // the old one's id and must never be waited on, nor closed
+  const oldListed = async () => (await desktop.listWindows()).some((w) => w.id === old.id && (!old.label || String(w.title ?? '').includes(old.label)));
+  if (closed?.refused && (await oldListed())) throw new Error(`${old.label}'s restore refused: ${closed.refused}`);
+  const oldStill = async () => (await oldListed()) || desktop.laneSceneRunning(old);
+  for (const deadline = Date.now() + 10000; await oldStill(); await sleep(250)) {
     if (Date.now() > deadline) throw new Error(`${old.label} did not close for its scene's restore`);
   }
   const fresh = await openScene(desktop, sceneName, old.role, { text: true });
@@ -863,7 +871,7 @@ export async function restoreLaneScene({ desktop, windows, sceneName, label, occ
   else desktop.focusFront();
   const warm_up = warmUp ? await warmUp(fresh) : null;
   // the X server may give the fresh window the old one's id (a freed client's id range is reused): the processes tell them apart
-  const record = { old_id: old.id, new_id: fresh.id, old_pid: old.pid, new_pid: fresh.pid, warm_up, ms: Math.round(performance.now() - started) };
+  const record = { old_id: old.id, new_id: fresh.id, old_pid: old.pid, new_pid: fresh.pid, warm_up, ms: Math.round(performance.now() - started), ...(closed?.refused ? { close_refused: closed.refused } : {}) };
   if (warm_up?.refused) record.invalid = `the warm-up's preparation was refused: ${warm_up.refused}`;
   return record;
 }
@@ -1016,6 +1024,78 @@ export function judgeWithDecisions(rows, options, decided = new Map()) {
   return { ...speed, engines: all.engines, reasons, verdict, pass: verdict === 'pass', decisions: [...frozen.values()].map(({ keys, ...d }) => d) };
 }
 
+/**
+ * One look of the top-up schedule at an operation's series (`speedDecisions`), on the run's rows as written. A request's
+ * end of its own window is found only at its lane's next request (scene-ended.mjs `keepLaneScene`), so the pending ends
+ * are resolved first (`resolveEnds`; the run looks at the scene's vendor lane windows): a vendor sample that ended its
+ * window is marked (`markEndedTargets`, against every written row) before any decision rests on it, and never sets a bar
+ * a decision is frozen with (#171 M5, T4's arm64 round, fix wave 2). `{decided, open, fresh, opRows}`.
+ */
+export async function lookAtSeries({ resolveEnds, readRows, sceneName, op, vendors, candidates, text, parity, decided = new Map() }) {
+  await resolveEnds();
+  const written = readRows();
+  const opRows = markEndedTargets(written.filter((r) => r.kind === 'sample'), written, vendors).filter((r) => r.scene === sceneName && r.op === op);
+  return { ...speedDecisions(opRows, { vendors, candidates, text, parity, decided }), opRows };
+}
+
+/**
+ * One operation's sample rows for its verdicts, from the run's rows as written (`written`): the written row objects
+ * themselves, each vendor sample whose request ended its own window marked `ended_target` in place, matched against
+ * every written row, since the `scene-ended` rows that name them are not samples (fix wave 2: matched against the sample
+ * rows alone, nothing was ever marked).
+ */
+export function operationRows(written, { sceneName, op, vendors }) {
+  const ended = endedTarget(written, vendors);
+  const opRows = written.filter((r) => r.kind === 'sample' && r.scene === sceneName && r.op === op);
+  for (const r of opRows) if (ended(r)) r.ended_target = true;
+  return opRows;
+}
+
+/**
+ * Each sample's answer against its block's reference (`equal`, a declared deviation's `deviation`), on the rows
+ * `operationRows` gave. The reference is the pinned build's answer in the same block: a scene's own windows change
+ * across blocks (gedit marks a document modified, a counter grows), and so does the window list. A text command's is
+ * the answer of a build whose route applied it in that block (the newest build's for its own type_characters). A vendor
+ * sample that ended its own window is never a reference (fix wave 2: it is never scored, and its reply is the crash's);
+ * a block whose vendor samples all ended theirs has no reference, so none of its samples' answers is compared, each
+ * marked `unreferenced`. An operation no vendor build runs (`cuaOnly`) is not given here. `imageOf`: each sample's
+ * screenshot comparison; `answers`: each sample's answer as compared.
+ */
+export function judgeAnswers(opRows, { op, sceneName, text, vendors, imageOf, answers, reference: fixed = OPS[op]?.reference ?? null }) {
+  const usable = opRows.filter((r) => !r.ended_target);
+  const of = (engine, block) => usable.filter((r) => r.engine === engine && r.block === block);
+  const refEngine = (block) => fixed ?? (text ? (vendors.find((v) => of(v, block).some((r) => r.ok)) ?? vendors.find((v) => of(v, block).length) ?? 'pinned') : 'pinned');
+  const refRows = (block) => {
+    const mine = of(refEngine(block), block);
+    return text && mine.some((r) => r.ok) ? mine.filter((r) => r.ok) : mine;
+  };
+  const reference = (block) => mode(refRows(block).map((r) => r.digest));
+  const refAnswer = (block) => {
+    const digest = reference(block);
+    const r = refRows(block).find((x) => x.digest === digest);
+    return r ? answers.get(`${r.engine}|${sceneName}|${op}|${block}|${r.i}`) : null;
+  };
+  // a block whose every possible reference ended its window (a block with no vendor sample at all is compared as before)
+  const endedAway = (block) => !refRows(block).length && opRows.some((r) => r.block === block && r.ended_target);
+  for (const r of opRows) {
+    if (endedAway(r.block)) {
+      r.unreferenced = true;
+      continue;
+    }
+    const image = imageOf.get(`${r.engine}|${r.scene}|${r.op}|${r.block}|${r.i}`);
+    r.equal = r.digest === reference(r.block) && image !== false;
+    if (!r.equal && image !== false && answers.has(`${r.engine}|${sceneName}|${op}|${r.block}|${r.i}`)) {
+      const candidate = answers.get(`${r.engine}|${sceneName}|${op}|${r.block}|${r.i}`);
+      const field = differingField(refAnswer(r.block), candidate);
+      const deviation = field ? declaredDeviation({ op, scene: sceneName, field, candidate }) : null;
+      if (deviation) {
+        r.equal = true;
+        r.deviation = deviation.op ?? op;
+      }
+    }
+  }
+}
+
 /** A verdict run that cannot start: its name already has rows in the out directory. */
 export class RunRefused extends Error {
   constructor(message) {
@@ -1115,6 +1195,8 @@ async function diffRun(args, candidate, { handoff }) {
   const textPlanned = blockPlan.some((p) => isText(p.op));
   const samplesFor = (op) => OPS[op].warmSamples ?? (inputOp(op) ? args.samplesInput : args.samplesTree);
 
+  // each lane's build by its binary's sha256: the meta row's, and what a vendor's declared ends name (scene-ended.mjs)
+  const builds = Object.fromEntries(engines.map((e) => [e.label, fileSha(e.bin)]));
   // the run's desktop; the window active before the run opens anything is recorded, marked, and never activated again
   const desktop = new Desktop({ cua: args.cua, run, logs: args.out });
   // the Desktop's stop handler is in place (stop.mjs): the checks' handler hands over to it, with no moment between
@@ -1126,7 +1208,7 @@ async function diffRun(args, candidate, { handoff }) {
     gate: candidate.gate,
     candidate,
     via,
-    engines: engines.map((e) => ({ label: e.label, args: e.args, sha256: fileSha(e.bin) })),
+    engines: engines.map((e) => ({ label: e.label, args: e.args, sha256: builds[e.label] })),
     vendor: args.vendor,
     newest: args.newest,
     scenes: args.scenes,
@@ -1358,9 +1440,24 @@ async function diffRun(args, candidate, { handoff }) {
         // again while failed samples left one short, a bounded number of times; what is still open after that is
         // decided as it stands
         for (let look = 0; ; look++) {
-          const sampled = readFileSync(results, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((r) => r.run === run && r.kind === 'sample');
-          const opRows = sampled.filter((r) => r.scene === sceneName && r.op === op);
-          const looked = speedDecisions(opRows, { vendors: VENDORS, candidates, text: isText(op), parity, decided });
+          // a vendor sample that ended its own window sets no bar (lookAtSeries): its end, found only at its lane's next
+          // request, is resolved first on each vendor lane's text window of the scene (restarted as before a cold
+          // sample), so no decision is frozen on a bar it set (fix wave 2)
+          const looked = await lookAtSeries({
+            resolveEnds: async () => {
+              if (!isText(op)) return;
+              for (const label of Object.keys(windows[sceneName]?.text ?? {}).filter((l) => VENDORS.includes(l))) await laneScene(sceneName, label, { pass: 'speed-look' });
+            },
+            readRows: () => readFileSync(results, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((r) => r.run === run),
+            sceneName,
+            op,
+            vendors: VENDORS,
+            candidates,
+            text: isText(op),
+            parity,
+            decided,
+          });
+          const { opRows } = looked;
           decided = looked.decided;
           for (const d of looked.fresh) emit({ kind: 'speed-decision', scene: sceneName, op, look, ...d });
           // a pilot takes no top-up (ruling 722): what its blocks leave open is closed unjudged
@@ -1563,37 +1660,13 @@ async function diffRun(args, candidate, { handoff }) {
       emit(row);
     }
     for (const { scene: sceneName, op } of blockPlan.filter((p) => !isDevice(p.op))) {
-      const opRows = rows.filter((r) => r.scene === sceneName && r.op === op);
-      // The reference is the pinned build's answer in the same block: a scene's own windows change across blocks
-      // (gedit marks a document modified, a counter grows), and so does the window list. A text command's is the
-      // answer of a build whose route applied it in that block (the newest build's for its own type_characters).
-      const refEngine = (block) => OPS[op].reference ?? (isText(op) ? (VENDORS.find((v) => opRows.some((r) => r.engine === v && r.block === block && r.ok)) ?? 'pinned') : 'pinned');
-      const refRows = (block) => {
-        const mine = opRows.filter((r) => r.engine === refEngine(block) && r.block === block);
-        return isText(op) && mine.some((r) => r.ok) ? mine.filter((r) => r.ok) : mine;
-      };
-      const reference = (block) => mode(refRows(block).map((r) => r.digest));
-      const refAnswer = (block) => {
-        const digest = reference(block);
-        const r = refRows(block).find((x) => x.digest === digest);
-        return r ? answers.get(`${r.engine}|${sceneName}|${op}|${block}|${r.i}`) : null;
-      };
+      // a vendor sample that ended its own window sets no bar and is no answer reference (fix wave 2), marked against
+      // every row the run wrote, where its `scene-ended` rows are, on the run's rows in memory (the stored rows stay as
+      // written), every row kept
+      const opRows = operationRows(written, { sceneName, op, vendors: VENDORS });
       const refKept = keep[`pinned|${sceneName}|${op}`];
-      for (const r of opRows) {
-        // an operation no vendor build runs has no answer to equal
-        if (OPS[op].cuaOnly) continue;
-        const image = imageOf.get(`${r.engine}|${r.scene}|${r.op}|${r.block}|${r.i}`);
-        r.equal = r.digest === reference(r.block) && image !== false;
-        if (!r.equal && image !== false && answers.has(`${r.engine}|${sceneName}|${op}|${r.block}|${r.i}`)) {
-          const candidate = answers.get(`${r.engine}|${sceneName}|${op}|${r.block}|${r.i}`);
-          const field = differingField(refAnswer(r.block), candidate);
-          const deviation = field ? declaredDeviation({ op, scene: sceneName, field, candidate }) : null;
-          if (deviation) {
-            r.equal = true;
-            r.deviation = deviation.op ?? op;
-          }
-        }
-      }
+      // an operation no vendor build runs has no answer to equal
+      if (!OPS[op].cuaOnly) judgeAnswers(opRows, { op, sceneName, text: isText(op), vendors: VENDORS, imageOf, answers });
       for (const candidate of labels.filter((l) => !VENDORS.includes(l))) {
         const mine = opRows.filter((r) => r.engine === candidate);
         const routes = [...new Set(mine.map((r) => r.route).filter(Boolean))];
@@ -1608,6 +1681,9 @@ async function diffRun(args, candidate, { handoff }) {
         const verdict = judgeWithDecisions(opRows.filter((r) => [...VENDORS, candidate].includes(r.engine)), { vendors: VENDORS, candidate, audits: opAudits, judgeSpeed: via === 'wire', text: isText(op), noise: medianDifferenceInterval, parity }, speedDecided.get(`${sceneName}|${op}`));
         const extra = {};
         if (routes.length) extra.routes = routes;
+        // its samples in blocks whose vendor samples all ended their windows: no answer to compare them with (judgeAnswers)
+        const unreferenced = mine.filter((r) => r.unreferenced).length;
+        if (unreferenced) extra.answers_unreferenced = unreferenced;
         if (isText(op) && routeOf(op, sceneName)) extra.route_expected = routeOf(op, sceneName);
         if (foreground && args.audit) {
           // the foreground audit: the route's own requests on the target and nothing else, required of cua
@@ -1691,7 +1767,7 @@ async function diffRun(args, candidate, { handoff }) {
       // an operation no vendor build runs (cuaOnly) has no answer to equal
       for (const { scene: sceneName, op } of blockPlan.filter((p) => !OPS[p.op].cuaOnly)) {
         const mine = rows.filter((r) => r.engine === label && r.scene === sceneName && r.op === op && r.digest);
-        if (mine.length) emit({ kind: 'equality', engine: label, scene: sceneName, op, equal: mine.filter((r) => r.equal).length, of: mine.length, declared: mine.filter((r) => r.deviation).length });
+        if (mine.length) emit({ kind: 'equality', engine: label, scene: sceneName, op, equal: mine.filter((r) => r.equal).length, of: mine.length, declared: mine.filter((r) => r.deviation).length, ...(mine.some((r) => r.unreferenced) ? { unreferenced: mine.filter((r) => r.unreferenced).length } : {}) });
       }
     }
     // the safety cases: each passes when it ran and every trial passed; the phase's bus trace has no forbidden call
@@ -1718,7 +1794,7 @@ async function diffRun(args, candidate, { handoff }) {
     // the backstop's warm-ups: a candidate's that failed fails the run (fix round 1)
     const warmUps = judgeWarmUps(after, VENDORS);
     // the text windows a lane ended (M5's T4): a vendor's restarts counted, never scored
-    const sceneEnds = textPlanned ? judgeSceneEnds(after, labels, VENDORS) : null;
+    const sceneEnds = textPlanned ? judgeSceneEnds(after, labels, VENDORS, { builds }) : null;
     if (sceneEnds) emit({ kind: 'text-scene-ends', ...sceneEnds });
     // every verdict the plan owes must be drawn: one missing fails the run (runOutcome)
     const planned = plannedVerdicts(plan, labels.filter((l) => !VENDORS.includes(l)));
@@ -1732,7 +1808,7 @@ async function diffRun(args, candidate, { handoff }) {
     const rows = readFileSync(results, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((r) => r.run === run);
     const restores = judgeTextRestores(rows, labels);
     emit({ kind: 'text-restores', ...restores });
-    const sceneEnds = textPlanned ? judgeSceneEnds(rows, labels, VENDORS) : null;
+    const sceneEnds = textPlanned ? judgeSceneEnds(rows, labels, VENDORS, { builds }) : null;
     if (sceneEnds) emit({ kind: 'text-scene-ends', ...sceneEnds });
     const where = at.op ? `${at.scene} ${at.op} ${at.engine} ${at.block}/${at.i}` : `${at.scene} ${at.engine}, the ${at.pass} pass`;
     judged = { verdicts: [], options: { valid, restores: restores.lanes, warmUps: judgeWarmUps(rows, VENDORS), sceneEnds, stop: `${where}: ${error.message}; the run stopped there` } };
@@ -1743,7 +1819,7 @@ async function diffRun(args, candidate, { handoff }) {
   // judged once every window of the run's is closed: its own trace covers the cleanup
   const ending = desktopEnding(desktop.ending);
   const outcome = runOutcome(judged.verdicts, { ...judged.options, foreign: [...engineForeign, ...ending.foreign] });
-  emit({ kind: 'end', gate: candidate.gate, valid: outcome.valid, pass: outcome.pass, failed: outcome.failed, parity: outcome.parity, refused: outcome.refused, declared: outcome.declared, ...(outcome.unjudged ? { unjudged: outcome.unjudged } : {}), restores: outcome.restores, ...(outcome.sceneEnds ? { scene_ends: outcome.sceneEnds } : {}), desktop: ending.record, finished: new Date().toISOString() });
+  emit({ kind: 'end', gate: candidate.gate, valid: outcome.valid, pass: outcome.pass, failed: outcome.failed, parity: outcome.parity, refused: outcome.refused, declared: outcome.declared, ...(outcome.unjudged ? { unjudged: outcome.unjudged } : {}), restores: outcome.restores, ...(outcome.sceneEnds ? { scene_ends: outcome.sceneEnds } : {}), ...(outcome.vendorEnds ? { vendor_ends: outcome.vendorEnds } : {}), desktop: ending.record, finished: new Date().toISOString() });
   writeSummary(args.out);
   const label = gateLabel(candidate.gate);
   process.stdout.write(`run ${outcome.valid ? 'valid' : 'INVALID (the negative check did not hold)'}; ${label ? `${label}: ` : ''}${verdictLine(outcome)}\nresults: ${results}\n`);

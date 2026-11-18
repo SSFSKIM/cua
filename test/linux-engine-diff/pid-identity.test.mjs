@@ -5,7 +5,7 @@
 
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
@@ -107,6 +107,135 @@ test("a scene's close signals its pidfile's pid only while it is the scene's pro
     await desktop.close([own]);
     assert.ok(await until(() => !running(program)), 'its own program ended');
   } finally {
+    desktop.unhookStop();
+    rmSync(desktop.dir, { recursive: true, force: true });
+  }
+});
+
+// #171 M5, T4's arm64 round, item (c), fix wave 1: a lane's restore (run.mjs `restoreLaneScene`, the only caller of
+// `closeLaneScene` and `laneSceneRunning`) closes and waits on the scene's own spawn, kept with the scene: its exit
+// checked first, a live one signalled through its own child handle, never looked up by pid. Every other close is
+// as it was at da306cc6.
+test("a lane's restore closes the scene's own spawn and never another process under its pid", { skip }, async () => {
+  const desktop = new Desktop({ cua: 'unused', run: 'pidtest', reader: { async close() {} }, startActive: 0, nonce: 'n1' });
+  try {
+    const lane = (child, record) => {
+      const s = { kind: 'gedit', id: 0, pid: child.pid, label: `scene-${child.pid}` };
+      desktop.windows.push(s);
+      desktop.keepLaneSpawn(s, child, record);
+      return s;
+    };
+    // the scene's own spawn, live: signalled through its handle, and running until it ends
+    const own = sleeper();
+    const ownRecord = { pid: own.pid, label: 'gedit', start: '1', exited: false };
+    own.once('exit', () => (ownRecord.exited = true));
+    const ownScene = lane(own, ownRecord);
+    assert.equal(desktop.laneSceneRunning(ownScene), true);
+    await desktop.closeLaneScene(ownScene);
+    assert.ok(await until(() => !running(own)), 'its own process ended');
+    assert.ok(await until(() => !desktop.laneSceneRunning(ownScene)), 'and the wait sees it gone');
+    assert.equal(desktop.windows.includes(ownScene), false);
+    // two spawn generations sharing a pid: the old scene's spawn exited, and its pid now names a later child. Its close
+    // checks its own exit first and signals nothing; the later child runs on
+    const later = sleeper();
+    const oldHandle = { kill: () => assert.fail('an exited spawn is never signalled') };
+    const oldScene = lane(later, { pid: later.pid, label: 'gedit', start: '1', exited: true });
+    desktop.keepLaneSpawn(oldScene, oldHandle, { pid: later.pid, label: 'gedit', start: '1', exited: true });
+    desktop.spawned.push({ pid: later.pid, label: 'gedit', start: '2', exited: false });
+    assert.equal(desktop.laneSceneRunning(oldScene), false, 'an exited spawn is not waited on, whatever runs under its pid');
+    await desktop.closeLaneScene(oldScene);
+    assert.equal(running(later), true, 'the later child under the same pid was never signalled');
+    // an unreadable start (no /proc at the spawn): still the original child, through its own handle
+    const unread = sleeper();
+    const unreadRecord = { pid: unread.pid, label: 'gedit', start: null, exited: false };
+    unread.once('exit', () => (unreadRecord.exited = true));
+    await desktop.closeLaneScene(lane(unread, unreadRecord));
+    assert.ok(await until(() => !running(unread)), 'signalled through its own handle');
+    // a scene with no spawn of its own (a Chrome window) is closed as `close` closes it, and only its window is waited on
+    const chrome = { kind: 'chrome', id: 0, label: 'chrome-scene' };
+    desktop.windows.push(chrome);
+    assert.equal(desktop.laneSceneRunning(chrome), false);
+    await desktop.closeLaneScene(chrome);
+    assert.equal(desktop.windows.includes(chrome), false);
+  } finally {
+    desktop.unhookStop();
+    rmSync(desktop.dir, { recursive: true, force: true });
+  }
+});
+
+// Fix wave 2 (review 2's finding 3; the controller's ruling): V4's gnome-text-editor text lane is a family scene started
+// as a process group of its own (families.mjs `openFamily`, `group`). Its restore binds that lane's own spawn too: the
+// group is signalled only while its leader, the spawn itself, still runs (its pid then names this group and no other),
+// and a restore whose ownership cannot be established (the leader gone, or no spawn bound) refuses, recorded, rather
+// than signalling.
+
+// each group ended whole by its test, through its leader while it runs (its pid then names this group alone)
+const groups = [];
+const endGroups = () => {
+  for (const g of groups) if (running(g)) process.kill(-g.pid, 'SIGKILL');
+};
+/** A process group of the test's own, as a family scene's is: its leader and one member, whose pid it writes. */
+async function group() {
+  const file = join(scratch, `member-${children.length}`);
+  const leader = spawn('sh', ['-c', `sleep 60 & echo $! > ${file}; exec sleep 60`], { stdio: 'ignore', detached: true });
+  children.push(leader);
+  groups.push(leader);
+  await until(() => {
+    try {
+      return Number(readFileSync(file, 'utf8')) > 0;
+    } catch {
+      return false;
+    }
+  });
+  return { leader, member: Number(readFileSync(file, 'utf8')) };
+}
+const alive = (pid) => {
+  try {
+    process.kill(pid, 0);
+    return processIdentity(pid) !== null;
+  } catch {
+    return false;
+  }
+};
+
+test("a group lane's restore signals the lane's own group while its leader runs, and refuses, recorded, when ownership cannot be shown", { skip }, async () => {
+  const desktop = new Desktop({ cua: 'unused', run: 'pidtest', reader: { async close() {} }, startActive: 0, nonce: 'n2' });
+  const family = (pid, label) => {
+    const s = { kind: 'family', family: 'gnome-text-editor', id: 7, pid, group: true, label };
+    desktop.windows.push(s);
+    return s;
+  };
+  try {
+    // the lane's own group, its leader running: the whole group ends, through the leader's own pid
+    const own = await group();
+    const ownRecord = { pid: own.leader.pid, label: 'gte', start: '1', exited: false };
+    own.leader.once('exit', () => (ownRecord.exited = true));
+    const ownScene = family(own.leader.pid, 'gte-own');
+    desktop.keepLaneSpawn(ownScene, own.leader, ownRecord);
+    assert.equal(desktop.laneSceneRunning(ownScene), true);
+    const closed = await desktop.closeLaneScene(ownScene);
+    assert.equal(closed?.refused, undefined);
+    assert.ok(await until(() => !running(own.leader) && !alive(own.member)), 'the leader and its member ended');
+    assert.equal(desktop.windows.includes(ownScene), false);
+    // the leader exited: the group id may name another's group now, so nothing is signalled, and the refusal recorded.
+    // Its stand-in: a live group under the recorded pid, which must run on
+    const foreign = await group();
+    const goneScene = family(foreign.leader.pid, 'gte-gone');
+    desktop.keepLaneSpawn(goneScene, { pid: foreign.leader.pid, kill: () => assert.fail('an exited leader is never signalled') }, { pid: foreign.leader.pid, label: 'gte', start: '1', exited: true });
+    const refused = await desktop.closeLaneScene(goneScene);
+    assert.match(refused?.refused ?? '', /exited/);
+    assert.equal(running(foreign.leader), true, 'the group under the old leader pid was never signalled');
+    assert.equal(alive(foreign.member), true);
+    assert.equal(desktop.windows.includes(goneScene), false, "the run's end never signals it by its pid either");
+    assert.deepEqual(desktop.skips.at(-1), { what: 'signal', window: '0x00000007', reason: refused.refused });
+    // a process scene with no spawn bound to it: refused, recorded, nothing signalled
+    const unbound = family(foreign.leader.pid, 'gte-unbound');
+    const none = await desktop.closeLaneScene(unbound);
+    assert.match(none?.refused ?? '', /no spawn of its own/);
+    assert.equal(running(foreign.leader), true);
+    assert.equal(desktop.skips.at(-1).reason, none.refused);
+  } finally {
+    endGroups();
     desktop.unhookStop();
     rmSync(desktop.dir, { recursive: true, force: true });
   }

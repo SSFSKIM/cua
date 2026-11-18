@@ -12,10 +12,11 @@ import { after, test } from 'node:test';
 // its runs' start and end checks read a fixture, never the real roots or /proc (fixture-scope.mjs)
 import './fixture-scope.mjs';
 
-import { GateRefused, checkCheckout, gateSummary, launchCommand, listText, parseGateArgs, printStep, runStep, stepDir } from '../../scripts/linux-engine-gate/gate.mjs';
-import { GATE_SCENES, MAX_STEP_MINUTES, STEPS, SUITES_SCRIPT, stepArgs, stepLabel, stepNamed, stepScript, suiteEnv, totals, verdictOps } from '../../scripts/linux-engine-gate/steps.mjs';
+import { GateRefused, RUN71_TMPDIR, checkCheckout, gateSummary, launchCommand, listText, parseGateArgs, printStep, runStep, stepDir, zeroStepProblems } from '../../scripts/linux-engine-gate/gate.mjs';
+import { GATE_SCENES, MAX_STEP_MINUTES, STEPS, SUITES_SCRIPT, runName, stepArgs, stepLabel, stepNamed, stepScript, suiteEnv, totals, verdictOps } from '../../scripts/linux-engine-gate/steps.mjs';
 import { parseArgs } from '../../scripts/linux-engine-diff/cli.mjs';
 import { planOps } from '../../scripts/linux-engine-diff/run.mjs';
+import { scratchRoot } from '../../scripts/linux-engine-diff/scenes.mjs';
 import { dropSignalsVerdict } from '../../scripts/linux-engine-diff/drop-signals-judge.mjs';
 import { PREDICATE_KINDS } from '../../scripts/linux-engine-diff/predicates.mjs';
 import { controlRootRefusal } from '../../scripts/linux-engine-diff/engine-stop.mjs';
@@ -409,13 +410,13 @@ test('--pinned with --pilot is a development run on the pinned release: the rule
   assert.deepEqual(stepLabel({ gate: 'pinned-dev', pilot: 1 }), { label: 'development run on the pinned release, not acceptance, never counted', slug: 'development-run.pinned.pilot', pilot: true });
   assert.equal(stepDir(stepNamed('D1'), a), '/o/D1.development-run.pinned.pilot');
   assert.match(launchCommand(stepNamed('D1'), a, ROOT), new RegExp(`gate\\.mjs run D1 --pinned ${ACC} --out /o --pilot 1$`));
-  assert.match(launchCommand(stepNamed('V3'), a, ROOT), new RegExp(`--blocks 1 --run m5-pinned-dev-V3-pilot --pinned --pilot$`), "the :0 step's printed command too");
+  assert.match(launchCommand(stepNamed('V3'), a, ROOT), new RegExp(`--blocks 1 --run m5-pdev-V3-pilot --pinned --pilot$`), "the :0 step's printed command too");
   for (const s of STEPS.filter((x) => ['verdict', 'experiment'].includes(x.kind))) {
     const parsed = parseArgs([...stepArgs(s, { paths: a, gate: 'pinned-dev', pilot: 1 }), '--out', '/o']);
     assert.equal(parsed.gate, 'pinned-dev', s.name);
     assert.equal(parsed.pilot, true, s.name);
     assert.equal(parsed.cua, ACC_ENGINE, s.name);
-    assert.equal(parsed.run, `m5-pinned-dev-${s.name}-pilot`);
+    assert.equal(parsed.run, `m5-pdev-${s.name}-pilot`);
   }
   const env = suiteEnv({ candidate: ACC_ENGINE, dir: '/d', gate: 'pinned-dev', logs: '/tmp/l', pinned: true, device: 'cua-171' });
   assert.deepEqual([env.ENGINE, env.LABEL, env.ENGINE_BIN, env.PINNED_RULE], ['installed', 'pilot', undefined, 'enforce'], 'never counted, the rule enforced in its own homes');
@@ -602,4 +603,59 @@ test("a step's record names its unclean end, from its run's end row and from wha
   assert.match(summary, /^\| D2 \| development run, not a release gate \(pilot\) \| 0 \| \*\*2\*\*: its Chrome left 1 process running; its scratch left behind: .*cua171-run-Left01 \| – \|$/m);
   assert.match(summary, /^\| D4 \| development run, not a release gate \(pilot\) \| 0 \| clean \| – \|$/m);
   assert.match(summary, /Unclean ends: 1 of 2 steps/);
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// #171 M5, T4's arm64 round, items (b) and (d): a `:0` step's command is refused before launch when the sitting's guard
+// would stop it mid-step for what the command alone decides. (b) The arm64 pilot's V1 (2026-11-18 04:35Z): the pinned
+// pilot's run name `m5-pinned-dev-V1-pilot` made scenes.mjs `scratchRoot` put the run's scratch under /tmp, outside the
+// TMPDIR run71.sh gives the run, so the run's Chrome lived outside it and wrap71 stopped the sitting. (d) Its decoy
+// buses under `<step dir>/decoy/` could not bind (AF_UNIX path too long) under a deep out root, and wrap71 ran on.
+
+test("every :0 step's run name keeps the run's scratch under run71's TMPDIR, the pinned pilot's shortened", () => {
+  const template = readFileSync(new URL('../../docs/evidence/2026-10-28-own-linux-engine/m4/pointer-route/scripts/run71.sh', import.meta.url), 'utf8').match(/mktemp -d (\S+)\)/)[1];
+  assert.equal(RUN71_TMPDIR, template, "the TMPDIR is run71.sh's own template, whose length every one has");
+  for (const s of STEPS.filter((x) => x.display === ':0')) {
+    for (const [gate, pilot] of [[true, null], [false, null], [false, 2], ['pinned', null], ['pinned-dev', null], ['pinned-dev', 2]]) {
+      const run = runName(s, { gate, pilot });
+      assert.equal(scratchRoot(run, RUN71_TMPDIR), RUN71_TMPDIR, `${s.name} ${gate} ${pilot}: ${run}`);
+      assert.deepEqual(zeroStepProblems({ run, dir: `/Users/new/.local/share/cua-171/m5/x64/out/${s.name}.development-run.pinned.pilot` }), []);
+    }
+  }
+  assert.equal(runName(stepNamed('V1'), { gate: 'pinned-dev', pilot: 2 }), 'm5-pdev-V1-pilot');
+  assert.equal(runName(stepNamed('V1'), { gate: 'pinned-dev', pilot: null }), 'm5-pinned-dev-V1', 'only the pilot is shortened');
+});
+
+test('a :0 command whose scratch would leave its TMPDIR, or whose decoy bus could not bind, is refused before anything is written', () => {
+  // (b) the pilot's name before the fix: the scratch falls back to /tmp
+  assert.match(zeroStepProblems({ run: 'm5-pinned-dev-V1-pilot', dir: '/o/V1' }).join('\n'), /scratch would leave the TMPDIR run71\.sh gives it/);
+  // (d) every decoy path at most 107 bytes: 108 is sun_path's size, and a client that adds its NUL could not connect
+  const dirFor = (bytes) => `/${'d'.repeat(bytes - '/decoy/session.sock'.length - 1)}`;
+  assert.equal(`${dirFor(107)}/decoy/session.sock`.length, 107);
+  assert.deepEqual(zeroStepProblems({ run: 'm5-gate-V1', dir: dirFor(107) }), []);
+  assert.match(zeroStepProblems({ run: 'm5-gate-V1', dir: dirFor(108) }).join('\n'), /decoy bus .*session\.sock is 108 bytes/);
+  // a path's bytes, not its characters
+  assert.match(zeroStepProblems({ run: 'm5-gate-V1', dir: `${dirFor(106)}é` }).join('\n'), /session\.sock is 108 bytes/);
+  // the printed command: refused, nothing written, under an out root as deep as the arm64 pilot's
+  const deep = join(fresh('deep'), 'm5/pilot-arm64/out-zero-r1/and-deeper-than-that-for-the-test-of-the-decoys');
+  const a = parseGateArgs(['print', 'V5', '--candidate', PATHS.candidate, '--out', deep, '--dev']);
+  assert.throws(() => printStep(a, { root: ROOT, git: cleanGit() }), (e) => e instanceof GateRefused && /decoy bus/.test(e.message));
+  assert.equal(existsSync(deep), false, 'the refused print wrote nothing');
+  // a private step takes no such check
+  assert.doesNotThrow(() => printStep(parseGateArgs(['print', 'D1', '--candidate', PATHS.candidate, '--out', deep, '--dev']), { root: ROOT, git: cleanGit() }));
+});
+
+// Fix wave 1, minor: run71.sh takes the step directory through `realpath -m`, so the decoys lie under the resolved path.
+// A short symlink to a long out root passes a lexical check and is then refused by the wrapper mid-sitting: print reads
+// the path run71 will use.
+test("a :0 step's decoy paths are measured where run71.sh puts them: through the out root's symlinks", async () => {
+  const { symlinkSync } = await import('node:fs');
+  const base = fresh('link');
+  const long = join(base, 'a-long-out-root-for-the-decoys-of-the-sitting-to-pass-their-limit-after-resolution');
+  mkdirSync(long, { recursive: true });
+  const short = join(base, 's');
+  symlinkSync(long, short);
+  const a = parseGateArgs(['print', 'V5', '--candidate', PATHS.candidate, '--out', short, '--dev']);
+  assert.ok(Buffer.byteLength(join(short, 'V5.development-run', 'decoy', 'session.sock')) <= 107, 'the lexical path fits');
+  assert.throws(() => printStep(a, { root: ROOT, git: cleanGit() }), (e) => e instanceof GateRefused && /decoy bus/.test(e.message) && e.message.includes(long));
 });

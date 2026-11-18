@@ -1,5 +1,7 @@
 // Medians, block rotation and the per-operation verdict of the differential harness (Design, Verification system).
 
+import { vendorEndName } from './scene-ended.mjs';
+
 export function median(values) {
   const xs = values.filter((v) => typeof v === 'number' && Number.isFinite(v)).sort((a, b) => a - b);
   if (xs.length === 0) return null;
@@ -23,6 +25,7 @@ export const DECLARED_LOSSES = ['declared refusal', 'declared unconfirmed', 'dec
  * `warmUps` (prepare.mjs `judgeWarmUps`): each candidate warm-up that failed is one more failure.
  * `sceneEnds` (scene-ended.mjs `judgeSceneEnds`): the text windows a lane ended, per lane, carried to the verdict line
  * (M5's T4); a vendor's restarts fail nothing, and each reason it gives (a candidate's restart) is one more failure.
+ * Its vendor ends, declared and undeclared (`vendor`, M5's T4 arm64 round), are carried to the verdict line apart.
  * `foreign`: each change of a window the harness did not open (audit.mjs `auditForeign`, by the harness or an engine
  * it drove), and each trace that could not show there was none, is one more failure, whatever the verdicts.
  * `planned` (run.mjs `plannedVerdicts`): each verdict the plan owes that the run did not draw is one more failure.
@@ -51,7 +54,7 @@ export function runOutcome(verdicts, { valid, faults = null, restores = null, st
   for (const p of planned ?? []) if (!judged.some((v) => name(v) === p)) failed.push(`${p}: no verdict`);
   if (drops.finding) failed.push(drops.finding);
   const pass = failed.length === 0;
-  return { valid, pass, failed, parity, refused, declared, ...(unjudged.length ? { unjudged } : {}), ...(restores ? { restores } : {}), ...(sceneEnds ? { sceneEnds: sceneEnds.lanes } : {}), code: valid && pass ? 0 : 1 };
+  return { valid, pass, failed, parity, refused, declared, ...(unjudged.length ? { unjudged } : {}), ...(restores ? { restores } : {}), ...(sceneEnds ? { sceneEnds: sceneEnds.lanes } : {}), ...(sceneEnds?.vendor ? { vendorEnds: sceneEnds.vendor } : {}), code: valid && pass ? 0 : 1 };
 }
 
 /** The share of a run's landed drops left unconfirmed above which the run has a finding (the design session, 2026-11-10). */
@@ -76,14 +79,17 @@ export function dropCounts(verdicts) {
  * the scene text put back per lane (task 24) and the text windows a lane ended (M5's T4), every lane named, when the run
  * counted them.
  */
-export function verdictLine({ pass, failed, parity = [], refused = [], declared = null, unjudged = [], restores = null, sceneEnds = null }, strong = (s) => s) {
+export function verdictLine({ pass, failed, parity = [], refused = [], declared = null, unjudged = [], restores = null, sceneEnds = null, vendorEnds = null }, strong = (s) => s) {
   const perLane = (counts) => Object.entries(counts).map(([lane, n]) => `${lane} ${n}`).join(', ');
   const restored = restores ? `; text restores (the first word put back before a sample): ${perLane(restores)}` : '';
   const ended = sceneEnds ? `; text windows a lane ended (a vendor's restarted, never scored): ${perLane(sceneEnds)}` : '';
+  // the vendor's ends, declared and undeclared, each apart (scene-ended.mjs DECLARED_VENDOR_ENDS): neither fails a step
+  const groups = (list) => list.map((g) => `${vendorEndName(g)} ${g.count}`).join(', ');
+  const vendor = `${vendorEnds?.declared?.length ? `; vendor ends declared (never scored): ${groups(vendorEnds.declared)}` : ''}${vendorEnds?.undeclared?.length ? `; vendor ends undeclared (never scored, for a look): ${groups(vendorEnds.undeclared)}` : ''}`;
   // each declared loss by its own verdict; an end row from before `declared` names them all declared refusals
   const losses = Object.entries(declared ?? (refused.length ? { 'declared refusal': refused } : {}));
   const open = unjudged.length ? `; ${strong('unjudged')} (a pilot takes no top-up; not a pass): ${unjudged.join(', ')}` : '';
-  const listed = `${parity.length ? `; ${strong('parity')} (declared, not a pass): ${parity.join(', ')}` : ''}${losses.map(([d, names]) => `; ${strong(d)} (a loss, not a pass): ${names.join(', ')}`).join('')}${open}${restored}${ended}`;
+  const listed = `${parity.length ? `; ${strong('parity')} (declared, not a pass): ${parity.join(', ')}` : ''}${losses.map(([d, names]) => `; ${strong(d)} (a loss, not a pass): ${names.join(', ')}`).join('')}${open}${restored}${ended}${vendor}`;
   if (!pass) return `${strong('FAIL')}: ${failed.join(', ')}${listed}`;
   return `${parity.length || refused.length || unjudged.length ? 'no verdict FAIL' : 'every verdict PASS'}${listed}`;
 }
@@ -304,8 +310,9 @@ export function judgeOperation(rows, { vendors, candidate, audits = null, judgeS
     engines[label] = summarizeEngine(rows.filter((r) => r.engine === label));
   }
   const vendorRows = vendors.map((v) => engines[v]).filter(Boolean);
-  // the speed bar's samples: with `text`, a vendor build's successes only
-  const barRowsOf = (v) => rows.filter((r) => r.engine === v && (!text || r.ok));
+  // the speed bar's samples: with `text`, a vendor build's successes only; never a sample whose request ended its own
+  // window (scene-ended.mjs `markEndedTargets`, M5's T4 arm64 round: a vendor's ended window is never scored)
+  const barRowsOf = (v) => rows.filter((r) => r.engine === v && (!text || r.ok) && !r.ended_target);
   const barTimes = (v, series) => timedMs(barRowsOf(v).filter((r) => r.series === series));
   // a vendor build sampled to the top-ups' end (twice MIN_NOISE_SAMPLES) with fewer than MIN_NOISE_SAMPLES usable samples
   // has failed the operation in that series and sets no bar there: the rule guards against a build that genuinely fails

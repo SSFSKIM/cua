@@ -30,6 +30,11 @@
 # xtrace -D :<N> is alive and holds every listener at that path in the same socket snapshot (which is why the table is
 # read with -a, its listening rows set apart), is counted as task 71 counts the session bus, never flagged; the rule is
 # own_audit_proxy.py's, beside this file.
+# M5's T4, arm64 round (task 97), two changes marked `item (d)` and `item (e)`: every decoy bus is bound before the step
+# starts, its path's length checked first, and a decoy that cannot be had refuses the step, recorded (the arm64 pilot's
+# session decoy failed to bind and the guard ran on); and a not-yet-accepted connection to an autobind abstract address
+# whose listener the run's own chrome or chrome_crashpad holds is counted, never flagged (own_chrome_listener.py, beside
+# this file; the arm64 pilot's V5).
 # usage: wrap71.py <out> <tmproot> private|person <command...>
 import ctypes, importlib.util, json, os, pwd, re, signal, socket, struct, subprocess, sys, threading, time
 
@@ -39,6 +44,11 @@ sys.dont_write_bytecode = True
 _spec = importlib.util.spec_from_file_location('own_audit_proxy', os.path.join(os.path.dirname(os.path.realpath(__file__)), 'own_audit_proxy.py'))
 own_audit_proxy_rule = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(own_audit_proxy_rule)
+# M5's T4, arm64 round, item (e): the rule for the run's own Chrome's autobind sockets, from beside this file too
+_spec = importlib.util.spec_from_file_location('own_chrome_listener', os.path.join(os.path.dirname(os.path.realpath(__file__)), 'own_chrome_listener.py'))
+own_chrome_rule = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(own_chrome_rule)
+CLOCK_TICKS = os.sysconf('SC_CLK_TCK')
 
 PERSON_UID = os.getuid()
 # the home defines the forbidden paths, so an identity that resolves to no existing home fails closed, before anything
@@ -133,12 +143,29 @@ def stop_run(why):
             f.write(json.dumps({'t': now(), 'kind': 'stop-failed', 'error': str(e)}) + '\n')
 
 
-def decoy(path, name):
-    if os.path.exists(path):
-        os.unlink(path)
-    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    s.bind(path)
-    s.listen(16)
+# M5's T4, arm64 round, item (d): a Unix socket's path is at most sun_path's 108 bytes, and a client that adds its
+# terminating NUL (libdbus) needs one of them, so a decoy past 107 bytes either fails to bind or binds where a run
+# process's client could not reach it: either way the decoy would catch nothing
+DECOY_PATH_MAX = 107
+
+
+def bind_decoy(path):
+    """A decoy's listening socket at `path`, bound before the step starts; raises why it cannot be had."""
+    size = len(os.fsencode(path))
+    if size > DECOY_PATH_MAX:
+        raise ValueError(f'{path} is {size} bytes, past the {DECOY_PATH_MAX} a Unix socket path can take')
+    try:
+        if os.path.lexists(path):
+            os.unlink(path)
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        s.bind(path)
+        s.listen(16)
+    except OSError as e:
+        raise ValueError(f'{path} could not be bound: {e}') from e
+    return s
+
+
+def decoy(s, name):
     while True:
         c, _ = s.accept()
         try:
@@ -205,11 +232,13 @@ def env_of(pid):
 def ss_table():
     """The unix socket table, one snapshot: the connected sockets (task 50's rows, what `ss -xpn` lists), and, ruling
     773's fix wave 1, the listening ones by path, each the pids ss shows holding it. `-a` adds only the LISTEN and UNCONN
-    rows to `-xpn`'s, so those are set apart and the rest is the same table as before."""
+    rows to `-xpn`'s, so those are set apart and the rest is the same table as before. M5's T4, arm64 round, item (e):
+    with the boot clock in clock ticks, read before the table, so a process can be told to have started before it."""
+    ticks = int(time.clock_gettime(time.CLOCK_BOOTTIME) * CLOCK_TICKS)
     try:
         text = subprocess.run(['ss', '-xapn'], capture_output=True, text=True, timeout=5).stdout
     except Exception:
-        return [], {}
+        return [], {}, ticks
     rows = []
     listening = {}
     for line in text.splitlines()[1:]:
@@ -222,7 +251,7 @@ def ss_table():
             listening.setdefault(t[4], []).append(pids)
         elif t[1] != 'UNCONN':
             rows.append({'laddr': t[4], 'lport': t[5], 'pport': t[7], 'pids': pids})
-    return rows, listening
+    return rows, listening, ticks
 
 
 def comm_of(pid):
@@ -242,7 +271,7 @@ def at_check_in(run_now):
 
 
 def check_connections(runset):
-    rows, listening = ss_table()
+    rows, listening, snapshot_ticks = ss_table()
     # a process the run started after the tree was read (a short-lived child at the other end of a pipe-like socket)
     # is the run's too: the tree is read again after the socket table
     run_now = set(tree()[0])
@@ -293,6 +322,17 @@ def check_connections(runset):
             outside[key] = outside.get(key, 0) + 1
             with lock, open(os.path.join(out, 'counted.jsonl'), 'a') as f:
                 f.write(json.dumps({'t': now(), 'kind': 'own-audit-proxy-not-accepted', 'pids': ours, 'comm': comm, 'peer_path': path, 'peer_inode': r['pport'], 'proxy_pid': proxy['pid'], 'proxy_display': ':' + own_audit_proxy_rule.X_SOCKET.fullmatch(path).group(1)}) + '\n')
+            continue
+        chrome = own_chrome_rule.own_chrome_listener(path, listening.get(path, []), run_now, snapshot_ticks) if not peer['pids'] else None
+        if chrome:
+            # M5's T4, arm64 round, item (e): ruling 773's rule extended narrowly, a connection to an autobind abstract
+            # address its server end shows no pid for, while in this snapshot every listener there is held by the run's
+            # own chrome or chrome_crashpad, started before the snapshot (the arm64 pilot's V5, 2026-11-18 05:10Z: the
+            # run's Chrome to its crashpad handler at @011e2, 26 ms after it started); counted, never flagged
+            key = f'{comm} -> {path} (the run\'s own Chrome, not yet accepted)'
+            outside[key] = outside.get(key, 0) + 1
+            with lock, open(os.path.join(out, 'counted.jsonl'), 'a') as f:
+                f.write(json.dumps({'t': now(), 'kind': 'own-chrome-not-accepted', 'pids': ours, 'comm': comm, 'peer_path': path, 'peer_inode': r['pport'], 'holders': chrome}) + '\n')
             continue
         if path in ('*', '') and peer_comm in CHROME_NAMES:
             # an unnamed socket shared with a Chrome that is not the run's: the owner's
@@ -439,10 +479,26 @@ def sampler(done):
 
 env = dict(os.environ)
 decoys = os.path.join(out, 'decoy')
-os.makedirs(decoys, exist_ok=True)
+# M5's T4, arm64 round, item (d): every decoy bound here, before the step starts, or the step never starts. The arm64
+# pilot's session decoy failed to bind in its own thread ("AF_UNIX path too long") and the guard ran on without it.
+# Fix wave 1: the decoys' directory is part of it, so a non-directory there is a recorded refusal, not a traceback.
+bound = {}
 for name in ['session', 'a11y']:
-    threading.Thread(target=decoy, args=(os.path.join(decoys, f'{name}.sock'), name), daemon=True).start()
-time.sleep(0.2)
+    try:
+        try:
+            os.makedirs(decoys, exist_ok=True)
+        except OSError as e:
+            raise ValueError(f'directory {decoys} could not be made: {e}') from e
+        bound[name] = bind_decoy(os.path.join(decoys, f'{name}.sock'))
+    except ValueError as e:
+        why = f'the {name} decoy {e}: the step is refused before it starts, since a run process could reach the person\'s bus unseen'
+        with open(os.path.join(out, 'flags.jsonl'), 'a') as f:
+            f.write(json.dumps({'t': now(), 'kind': 'decoy-refused', 'decoy': name, 'why': why}) + '\n')
+        with open(os.path.join(out, 'wrap-summary.json'), 'w') as f:
+            json.dump({'exit': None, 'refused': why, 'flags': [], 'decoy_connections': [], 'leftovers': [], 'mode': MODE, 'person': {'uid': PERSON_UID, 'home': HOME, 'runtime_dir': RUNTIME}}, f, indent=1)
+        sys.exit(f'wrap71: {why}')
+for name, s in bound.items():
+    threading.Thread(target=decoy, args=(s, name), daemon=True).start()
 env['DBUS_SESSION_BUS_ADDRESS'] = f'unix:path={decoys}/session.sock'
 env['AT_SPI_BUS_ADDRESS'] = f'unix:path={decoys}/a11y.sock'
 env['TMPDIR'] = tmproot

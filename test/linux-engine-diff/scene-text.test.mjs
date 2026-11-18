@@ -353,27 +353,39 @@ test("the engine's own failure restores no scene: it is never resampled", async 
 // ---------------------------------------------------------------------------------------------------------------
 // the backstop's scene restore in run.mjs: a fresh window for the lane, the cover back, a warm engine warmed again
 
-function fakeDesktop({ lingers = 0, application = 'gedit' } = {}) {
+function fakeDesktop({ lingers = 0, application = 'gedit', others = [], alive = 0, refused = null } = {}) {
   const log = [];
   let next = 100;
   let closed = null;
   let left = lingers;
+  let living = alive;
   const desktop = {
     log,
     // the harness's own bus reader, as the fresh window's identity is verified through it (app-identity.mjs)
     oracle: { name: () => application, toolkit: () => ({ toolkit: 'gtk', toolkit_version: '3.24.41' }) },
-    async close(scenes) {
-      closed = scenes[0].id;
-      log.push(`close ${scenes.map((s) => s.id).join(',')}`);
+    // the restore's own close (`Desktop.closeLaneScene`); nothing else here closes
+    async closeLaneScene(scene) {
+      closed = scene;
+      log.push(`close ${scene.id}`);
+      // a close that could not show the scene's process is still its own (`refused`) signals nothing
+      return refused ? { refused } : {};
     },
-    // the closed window still listed `lingers` times after its close
+    // the closed window still listed `lingers` times after its close, under its own title; `others`, windows of other
+    // lanes, listed throughout (one may hold the closed window's id, which X gave it again)
     async listWindows() {
       if (closed !== null && left > 0) {
         left--;
         log.push('listed old');
-        return [{ id: closed }];
+        return [...others, { id: closed.id, title: `${closed.label}.txt (/tmp/x) - gedit` }];
       }
-      return [];
+      return others;
+    },
+    // the closed window's process still running `alive` times after its close (`Desktop.laneSceneRunning`)
+    laneSceneRunning(scene) {
+      if (scene !== closed || living <= 0) return false;
+      living--;
+      log.push('process alive');
+      return true;
     },
     async openGedit(role, content) {
       const id = next++;
@@ -425,9 +437,49 @@ test("a cold sample's restored window gets no warm-up: a fresh engine and a fres
 
 test('the old window is gone before its successor is looked for, which is found by the same file name', async () => {
   const desktop = fakeDesktop({ lingers: 2 });
-  const windows = { gedit: { text: { pinned: { kind: 'gedit', role: 'text_pinned', id: 42 } } } };
+  const windows = { gedit: { text: { pinned: { kind: 'gedit', role: 'text_pinned', id: 42, label: 'cua171-diff-run-gedit-text_pinned' } } } };
   await restoreLaneScene({ desktop, windows, sceneName: 'gedit', label: 'pinned', occlusion: 'covered', warmUp: null });
   assert.deepEqual(desktop.log, ['close 42', 'listed old', 'listed old', 'open text_pinned', 'focus front']);
+});
+
+// #171 M5, T4's arm64 round, item (c): the arm64 pilot's V1 (2026-11-18 04:43Z). The vendor lanes kept ending gedit, and
+// X gave each fresh window a freed id again, across lanes: the newest lane's window held the id the pinned lane's ended
+// window had had, and a restore that waited on the id alone waited on another lane's live window until it threw
+// ("did not close for its scene's restore"). The close and its wait are keyed on the scene's own window (its id and
+// its label, which names the lane and the run's nonce) and on its own process (its pid and start).
+test("a restore never waits on another lane's window that X gave the ended window's id", async () => {
+  const newest = { id: 42, title: 'cua171-diff-run-n0-gedit-text_newest.txt (/tmp/x) - gedit' };
+  const desktop = fakeDesktop({ others: [newest] });
+  const windows = { gedit: { text: { pinned: { kind: 'gedit', role: 'text_pinned', id: 42, pid: 10, label: 'cua171-diff-run-n0-gedit-text_pinned' } } } };
+  const started = Date.now();
+  const record = await restoreLaneScene({ desktop, windows, sceneName: 'gedit', label: 'pinned', occlusion: 'covered', warmUp: null });
+  assert.ok(Date.now() - started < 2000, "no wait on the other lane's window");
+  assert.deepEqual(desktop.log, ['close 42', 'open text_pinned', 'focus front']);
+  assert.equal(record.old_id, 42);
+});
+
+test("a restore waits for the ended window's own process too, keyed on its pid and start", async () => {
+  const desktop = fakeDesktop({ alive: 2 });
+  const windows = { gedit: { text: { pinned: { kind: 'gedit', role: 'text_pinned', id: 42, pid: 10, label: 'cua171-diff-run-n0-gedit-text_pinned' } } } };
+  await restoreLaneScene({ desktop, windows, sceneName: 'gedit', label: 'pinned', occlusion: 'covered', warmUp: null });
+  assert.deepEqual(desktop.log, ['close 42', 'process alive', 'process alive', 'open text_pinned', 'focus front']);
+});
+
+// fix wave 2 (review 2's finding 3): a close refused because the scene's process cannot be shown to be its own
+// (`Desktop.closeLaneScene`) leaves a window that is still there to nobody: the restore refuses at once, with the
+// reason, rather than wait on it or open a second window beside it; a window already gone needed no signal
+test('a restore whose close was refused stops at once while the old window is still there, and goes on when it is gone', async () => {
+  const lane = () => ({ gedit: { text: { pinned: { kind: 'gedit', role: 'text_pinned', id: 42, pid: 10, label: 'cua171-diff-run-n0-gedit-text_pinned' } } } });
+  const still = fakeDesktop({ lingers: 50, refused: 'its leader exited' });
+  const started = Date.now();
+  await assert.rejects(restoreLaneScene({ desktop: still, windows: lane(), sceneName: 'gedit', label: 'pinned', occlusion: 'covered', warmUp: null }), /restore refused: its leader exited/);
+  assert.ok(Date.now() - started < 2000, 'no wait');
+  assert.equal(still.log.includes('open text_pinned'), false, 'no fresh window beside it');
+  const gone = fakeDesktop({ refused: 'its leader exited' });
+  const windows = lane();
+  const record = await restoreLaneScene({ desktop: gone, windows, sceneName: 'gedit', label: 'pinned', occlusion: 'covered', warmUp: null });
+  assert.equal(record.new_id, 100);
+  assert.equal(record.close_refused, 'its leader exited', 'recorded on the restore');
 });
 
 test("the restored window is verified as the scene's application before it stands in, and refused otherwise", async () => {

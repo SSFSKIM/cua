@@ -22,8 +22,8 @@
 //   unexercised, a failure of the case, whatever it answered; every sample's notice is read with the next acting
 //   request's answer and held to T14's contract;
 // - in the cancel, late and late-take cases, a plain-drag ok for a drag Chrome never started a drag session for at all
-//   is no sample of the case (ruling 823, premise.mjs): excluded and counted within its run, whose cell, short of its
-//   plan by that alone, premise-refill.mjs answers by rerunning V5 whole;
+//   is no sample of the case (ruling 823, premise.mjs): excluded and counted within its run, its cell left short of its
+//   plan reading incomplete, and saying so when that is all it fails for (route D, ruling 841);
 // - `late-take` (the take left unseen until after the release, `--dnd-defer-take`): the drag answers as a plain drag at
 //   its release, a read on the same engine runs, the first acting request answers the late drag-and-drop notice (not
 //   run), and wherever the drop landed the witness shows the change the notice reports;
@@ -55,7 +55,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { pendingOf } from './drop-signals-judge.mjs';
-import { FOLLOW_UP_FIELDS, TIMED_QUOTAS, bindAudit, bindTimed, evidenceLabel, judgePremise } from './premise.mjs';
+import { FOLLOW_UP_FIELDS, TIMED_QUOTAS, bindAudit, bindTimed, evidenceLabel, isShortage, judgePremise } from './premise.mjs';
 import { preorder } from './normalize.mjs';
 import { readGtk4Status } from './families.mjs';
 import { IDENTITY_OPS, IDENTITY_SCENE_OPS, judgeIdentity } from './identity.mjs';
@@ -698,7 +698,8 @@ const loadOf = (results) => {
 
 /**
  * Every evidence record this process made, by run (`recordedPremise`): the in-run judge's own, for the audit's samples,
- * whose rows run.mjs does not keep. premise-refill.mjs reads the same records from the run's `premise-evidence.jsonl`.
+ * whose rows run.mjs does not keep, and the sidecar the judge binds every sample to. A re-judge of stored rows reads the
+ * same records from the run's `premise-evidence.jsonl` (rejudge-device.mjs).
  */
 const RECORDED = [];
 
@@ -742,25 +743,14 @@ function recordPremise(ctx, response, out, attempt) {
 }
 
 /**
- * The evidence this process recorded for an operation's audit, for the in-run judge: the run's records (null where the
- * process recorded none for the run, as a re-judge of stored rows), and what they are bound to, the run's timed
- * evidence's window and fixture label. A process records one run; records of another run of the same name in the same
- * process (a test's) are another fixture's, told by the label's nonce, and are not this run's. premise-refill.mjs
- * validates the run's whole sidecar against its plan instead.
+ * The in-run judge's sidecar: every record this process made for the samples' run (`lines`, null where it made none, as
+ * for stored rows), and the window its audit is bound to, the run's timed evidence's. A process records one run, so the
+ * run's records are all of them, a foreign fixture's among them a binding error.
  */
-function recordedPremise(op, samples) {
+function recordedPremise(samples) {
   const run = samples[0]?.run;
-  const scene = samples[0]?.scene;
-  const label = evidenceLabel(samples);
-  const ofRun = RECORDED.filter((r) => r.run === run && r.fixture?.label === label);
-  if (!ofRun.length) return null;
-  return { lines: ofRun.filter((r) => r.op === op && r.scene === scene && r.block === 'audit'), window: samples.find((r) => r.premise_evidence)?.premise_evidence.window ?? null, label };
-}
-
-/** The in-run judge's audit entries: the audit bound to the evidence this process recorded for it (premise.mjs). */
-function inRunAudit(op, samples, audit) {
-  const recorded = recordedPremise(op, samples);
-  return bindAudit(audit, recorded?.lines ?? null, { run: samples[0]?.run, scene: samples[0]?.scene, op, expect: DEVICE_OPS[op].device, window: recorded?.window ?? null, label: recorded?.label ?? null });
+  const ofRun = RECORDED.filter((r) => r.run === run);
+  return { lines: ofRun.length ? ofRun : null, window: samples.find((r) => r.premise_evidence)?.premise_evidence.window ?? null };
 }
 
 /** The cells ruling 823's unmet premise can occur in (`PREMISE_KINDS`): V5's cancel, late and late-take cells. */
@@ -807,7 +797,7 @@ export function capabilitiesAnswer(output, version) {
  * (`PREMISE_OPS`) a sample or audited request whose premise was unmet is excluded first (premise.mjs). Returns `{pass,
  * reasons}`, with `drops` for a drop case and `premise_unmet` (each pass's record) where anything was excluded.
  */
-export function judgeDevice(op, samples, audit, premiseAudit = undefined) {
+export function judgeDevice(op, samples, audit, premise = undefined) {
   // the minimized cases have expectations of their own (minimized.mjs)
   if (op in MINIMIZED_OPS) return judgeMinimized(op, samples, audit);
   // and so do the identity cases (identity.mjs)
@@ -816,14 +806,15 @@ export function judgeDevice(op, samples, audit, premiseAudit = undefined) {
   const reasons = [];
   if (!samples.length) return { pass: false, reasons: ['no samples'] };
   // ruling 823 (premise.mjs): a sample whose premise was unmet is excluded and counted, and every rule below judges the
-  // rest; a cell short of its planned cold or warm samples fails closed as incomplete, which premise-refill.mjs answers
-  // by rerunning V5 whole, each run judged alone (route C, ruling 836). Evidence that does not fit its samples is never
-  // excluded on, and fails the cell.
+  // rest; a cell short of its planned cold or warm samples fails as incomplete (route D, ruling 841). Only evidence
+  // bound to the run's sidecar (`premise`: `{lines, window}`, the re-judge's; else this process's records) excludes;
+  // evidence that does not fit its samples is never excluded on, and fails the cell.
   const unmet = {};
   let rows = samples;
   let excluded = 0;
+  const source = PREMISE_OPS.has(op) ? (premise ?? recordedPremise(samples)) : null;
   if (PREMISE_OPS.has(op)) {
-    const timed = bindTimed(samples);
+    const timed = bindTimed(samples, { lines: source.lines, seriesLength: 1 + (DEVICE_OPS[op].warmSamples ?? 0) });
     for (const p of timed.problems) reasons.push(`the premise evidence of the timed samples does not fit them (ruling 823, never excluded on): ${p}`);
     const judged = judgePremise(timed.rows, { name: (r) => `${r.block}/${r.i}`, quotas: TIMED_QUOTAS });
     reasons.push(...judged.reasons);
@@ -930,14 +921,19 @@ export function judgeDevice(op, samples, audit, premiseAudit = undefined) {
   if (expect !== 'answer') {
     if (!audit) reasons.push('the audit did not run');
     else if (!audit.clean) reasons.push(`the ${audit.kind} audit found ${audit.forbidden?.join(', ') || 'no traced requests'}`);
+    // the runner's skipped-audit sentinel (`--no-audit`): no audit, so no audit evidence either
+    if (PREMISE_OPS.has(op) && audit?.kind === 'skipped') {
+      const stray = (source.lines ?? []).filter((l) => l?.block === 'audit' && l?.op === op && l?.run === samples[0]?.run);
+      if (stray.length) reasons.push(`the premise evidence of the audit does not fit it (ruling 823, never excluded on): ${stray.length} audit evidence lines for an audit the run skipped`);
+    }
     if (audit && audit.kind !== 'skipped') {
       // the audit counts only where its requests did what the case measures: answered as the case expects
       const audited = audit.answered ?? [];
       let answered = audited;
-      // the audit's own requests, bound to the evidence their samples recorded (the in-run judge's from this process,
-      // premise-refill.mjs's from the run's sidecar), those whose premise was unmet excluded (ruling 823)
+      // the audit's own requests, bound to the evidence their samples recorded, those whose premise was unmet excluded
+      // (ruling 823); a binding error binds none, so none is excluded
       if (PREMISE_OPS.has(op)) {
-        const bound = premiseAudit ?? inRunAudit(op, samples, audit);
+        const bound = bindAudit(audit, source.lines, { run: samples[0]?.run, scene: samples[0]?.scene, op, expect, window: source.window, label: evidenceLabel(samples) });
         for (const p of bound.problems) reasons.push(`the premise evidence of the ${audit.kind} audit does not fit it (ruling 823, never excluded on): ${p}`);
         const judged = judgePremise(bound.entries, { name: (e) => `audit/${e.i}`, what: 'audited requests', prefix: `the ${audit.kind} audit is incomplete` });
         reasons.push(...judged.reasons);
@@ -954,9 +950,11 @@ export function judgeDevice(op, samples, audit, premiseAudit = undefined) {
       else if (!answered.every(expected)) reasons.push(`the ${audit.kind} audit's requests did not answer as the case expects (${answered.map((a) => (a.ok ? 'success' : a.error)).join('; ').slice(0, 200)})`);
     }
   }
-  // a run's own verdict that excluded a sample is provisional: premise-refill.mjs gives V5's final one, rerunning V5 whole
-  // where the shortage is the run's only failure (route C, ruling 836); one that excluded nothing is final as it stands
-  const provisional = excluded > 0;
-  if (provisional) reasons.push('provisional: premise-refill.mjs reruns V5 whole where this shortage is the run\'s only failure, each run judged alone (rulings 823, 836)');
-  return { pass: reasons.length === 0, reasons, ...(drops ? { drops } : {}), ...(Object.keys(unmet).length ? { premise_unmet: unmet } : {}), ...(provisional ? { provisional } : {}) };
+  // a cell that excluded samples says first what it fails for, so the cause reads off the verdict: only the shortage
+  // (whether V5 is rerun whole for it is the controller's call under §8.2, route D), or more than that
+  if (excluded > 0 && reasons.some(isShortage)) {
+    const n = `${excluded} proven premise-unmet sample${excluded === 1 ? '' : 's'}`;
+    reasons.unshift(reasons.every(isShortage) ? `incomplete only by ${n} (a whole V5 rerun under §8.2, the controller's call)` : `incomplete by ${n}, and failing for more than that (below)`);
+  }
+  return { pass: reasons.length === 0, reasons, ...(drops ? { drops } : {}), ...(Object.keys(unmet).length ? { premise_unmet: unmet } : {}) };
 }

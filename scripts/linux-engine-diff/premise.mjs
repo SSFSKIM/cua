@@ -21,12 +21,16 @@
 // dropped answer, the drag's own reads carrying a notice, the next request refused for something pending) is a claim of
 // cua's: where the page proves Chrome never started a drag session, it is a false claim and fails its cell.
 //
-// Such a sample is excluded from its cell's judgment and counted, inside its own run. A cell short of its planned count,
-// of its cold or warm quota or of its audit's, fails as incomplete; where that shortage is a run's only failure,
-// premise-refill.mjs reruns V5 whole, and each rerun is judged alone (the controller's route C, the design session's
-// ruling 836). A separate failure of the excluded sample's own reads still fails its cell. Every evidence line is bound
-// to its run's own fixture label, which carries the harness's per-run nonce (scenes.mjs `label`), and to its window's
-// XID.
+// Such a sample is excluded from its cell's judgment and counted, inside its own run, its rate reported cold and warm
+// apart. A cell short of its planned count, of its cold or warm quota or of its audit's, fails as incomplete in the
+// run's own verdict, and the verdict says when that is all it fails for: whether V5 is rerun whole for it is the
+// controller's call under §8.2 (route D, the design session's ruling 841; nothing reruns it on its own). A separate
+// failure of the excluded sample's own reads still fails its cell.
+//
+// Only evidence bound to the run's own sidecar excludes: each timed row to exactly one line, its ok, error and notice the
+// line's reply, its slot the plan's; each audited request likewise, both of a planned audit's requests bound. Every line
+// is bound to its run's own fixture label, which carries the harness's per-run nonce (scenes.mjs `label`), and to its
+// window's XID. Without the sidecar, or with any binding error, nothing is excluded and the samples are judged as before.
 
 /** The start of every refusal or notice a drag's after-release watch leaves pending (dnd.rs `pending_notice`). */
 const PENDING = 'Pending from your last drag';
@@ -192,6 +196,8 @@ export function bindAudit(audit, lines, { run, scene, op, expect = null, window 
   if (lines == null) return { entries: bare, problems: [] };
   const problems = [];
   if (!(expect in FOLLOW_UPS)) problems.push(`no premise case's follow-ups for the expectation ${expect}`);
+  // a planned audit's requests, every one: a lifecycle that recorded fewer excludes nothing
+  if (answered.length !== AUDIT_PLAN) problems.push(`the audit recorded ${answered.length} request${answered.length === 1 ? '' : 's'}, its plan ${AUDIT_PLAN}`);
   // what the lines are bound to: the audited window (its XID) and the run's own fixture, whose label carries the run's
   // name and its Desktop's nonce, so a line of a prior run of the same name, even on a reused XID, never binds
   if (!Number.isInteger(window)) problems.push('no audited window to bind the lines to');
@@ -263,6 +269,9 @@ export function followUpProblems(reads, expect) {
   return problems;
 }
 
+/** The requests run.mjs's audit pass makes of each operation (`auditInSegments`, two samples). */
+export const AUDIT_PLAN = 2;
+
 /** Whether an evidence line records cua's reply whole: its ok, its error and its notice, each present (null or not). */
 export const hasReply = (l) => l?.reply != null && typeof l.reply === 'object' && ['ok', 'error', 'notice'].every((k) => k in l.reply);
 
@@ -276,29 +285,75 @@ export function evidenceLabel(rows) {
 }
 
 /**
- * A run's timed rows bound to their evidence: each row's evidence must name the row's own run, scene, operation, block
- * and request number, and every row of a scene the same window and page. Answers the problems; a row whose evidence does
- * not fit keeps none (judged as before).
+ * A run's timed rows of one case bound to their evidence, which only then may exclude: `lines` the run's own sidecar (null
+ * where it has none: then no row keeps its evidence, and nothing fails for it), `seriesLength` the case's planned series
+ * (its cold request and its warm ones). Each row's evidence must name the row's own run, scene, case, block and request,
+ * the run's fixture, and cua's reply whole, which must be the row's own answer (its ok, error and notice); it must be
+ * exactly one line of the sidecar, equal to it, and every timed line of the case a row's; the rows must be the plan's
+ * slots (whole series from block 0, each request once, the cold one first); and the rows of the run one window and page.
+ * Answers the problems; with any, no row keeps its evidence (judged as before).
  */
-export function bindTimed(rows) {
+export function bindTimed(rows, { lines = null, seriesLength = null } = {}) {
+  const strip = () => rows.map(({ premise_evidence, ...rest }) => rest);
+  if (!rows.some((r) => r.premise_evidence != null)) return { rows, problems: [] };
+  if (lines == null) return { rows: strip(), problems: [] };
   const problems = [];
-  const bound = rows.map((r) => {
+  const run = rows[0].run;
+  const op = rows[0].op;
+  const timedLines = lines.filter((l) => l?.block !== 'audit' && l?.op === op && l?.run === run);
+  for (const r of rows) {
     const e = r.premise_evidence;
-    if (e == null) return r;
+    const at = `${r.block}/${r.i}`;
+    if (e == null) continue;
     const wrong = e.run !== r.run || e.scene !== r.scene || e.op !== r.op || e.block !== r.block || e.i !== r.i;
-    if (wrong) problems.push(`${r.block}/${r.i}'s evidence names another sample (${e.run} ${e.scene} ${e.op} ${e.block}/${e.i})`);
-    else if (!ownLabel(e.fixture?.label, r.run)) problems.push(`${r.block}/${r.i}'s evidence names a fixture not of run ${r.run} (${e.fixture?.label ?? 'none'})`);
-    else if (!hasReply(e)) problems.push(`${r.block}/${r.i}'s evidence does not record the reply's ok, error and notice`);
-    else return r;
-    const { premise_evidence, ...rest } = r;
-    return rest;
-  });
-  // one window and page for a scene in each run
-  for (const run of new Set(bound.map((r) => r.run))) {
-    const windows = new Set(bound.filter((r) => r.run === run && r.premise_evidence).map((r) => `${r.premise_evidence.window}|${r.premise_evidence.fixture?.label}`));
-    if (windows.size > 1) problems.push(`the evidence names ${windows.size} windows or pages for one scene in run ${run}`);
+    if (wrong) {
+      problems.push(`${at}'s evidence names another sample (${e.run} ${e.scene} ${e.op} ${e.block}/${e.i})`);
+      continue;
+    }
+    if (!ownLabel(e.fixture?.label, r.run)) problems.push(`${at}'s evidence names a fixture not of run ${r.run} (${e.fixture?.label ?? 'none'})`);
+    if (!hasReply(e)) problems.push(`${at}'s evidence does not record the reply's ok, error and notice`);
+    else {
+      // the row's own answer, the reply its evidence recorded (review 4, finding 1)
+      const differ = [];
+      if (e.reply.ok !== (r.ok === true)) differ.push('ok');
+      if (e.reply.error !== (r.error == null ? null : String(r.error).slice(0, 300))) differ.push('error');
+      if (!('reply_notice' in r) || e.reply.notice !== r.reply_notice) differ.push('notice');
+      if (differ.length) problems.push(`${at}'s row does not answer as its evidence's reply (${differ.join(', ')})`);
+    }
+    const found = timedLines.filter((l) => l.block === r.block && l.i === r.i);
+    if (found.length !== 1) problems.push(`${found.length} sidecar lines for ${at}`);
+    else if (JSON.stringify(found[0]) !== JSON.stringify(e)) problems.push(`${at}'s sidecar line is not its evidence`);
   }
-  return { rows: problems.length ? rows.map(({ premise_evidence, ...rest }) => rest) : bound, problems };
+  for (const l of timedLines) if (!rows.some((r) => r.block === l.block && r.i === l.i)) problems.push(`a sidecar line for no row (${l.block}/${l.i})`);
+  if (Number.isInteger(seriesLength)) problems.push(...slotProblems(rows, seriesLength));
+  // one window and page for a scene in each run
+  const windows = new Set(rows.filter((r) => r.premise_evidence).map((r) => `${r.premise_evidence.window}|${r.premise_evidence.fixture?.label}`));
+  if (windows.size > 1) problems.push(`the evidence names ${windows.size} windows or pages for one scene in run ${run}`);
+  return { rows: problems.length ? strip() : rows, problems };
+}
+
+/**
+ * Whether a case's timed rows are its plan's slots, nothing collapsed: whole series from block 0, each request of each
+ * series once, the cold one first and the rest warm (run.mjs's blocks). Answers the problems.
+ */
+function slotProblems(rows, seriesLength) {
+  const problems = [];
+  const count = new Map();
+  for (const r of rows) {
+    if (!Number.isInteger(r.block) || !Number.isInteger(r.i) || r.block < 0 || r.i < 0 || r.i >= seriesLength) problems.push(`a row for no planned slot (${r.block}/${r.i})`);
+    else count.set(`${r.block}/${r.i}`, (count.get(`${r.block}/${r.i}`) ?? 0) + 1);
+    const want = r.i === 0 ? 'cold' : 'warm';
+    if (Number.isInteger(r.i) && r.series !== want) problems.push(`${r.block}/${r.i} is the ${want} slot of its series, its row says ${r.series ?? 'none'}`);
+  }
+  const blocks = Math.max(-1, ...rows.map((r) => (Number.isInteger(r.block) ? r.block : -1))) + 1;
+  for (let b = 0; b < blocks; b++) {
+    for (let i = 0; i < seriesLength; i++) {
+      const n = count.get(`${b}/${i}`) ?? 0;
+      if (n === 0) problems.push(`no row for ${b}/${i}`);
+      else if (n > 1) problems.push(`${n} rows for ${b}/${i}`);
+    }
+  }
+  return problems;
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -337,9 +392,18 @@ export function judgePremise(entries, { name, what = 'samples', prefix = 'incomp
       reasons.push(`${prefix}: Chrome never started a drag and drop on ${excluded} of ${entries.length} ${what} (the premise unmet, ruling 823), so ${have}${which} ${was(have)} judged of the ${want} planned`);
     }
   }
-  const record = excluded || falseClaims.length ? { samples: entries.length, unmet: excluded, rate: rate(excluded, entries.length), judged: judged.length, unmet_samples: names((e, i) => unmet[i]), ...(falseClaims.length ? { false_claims: falseClaims } : {}), need } : null;
+  // the rate per quota, the timed pass's cold and warm apart
+  const perQuota = Object.keys(quotas).length > 1 ? { quotas: Object.fromEntries(Object.entries(quotas).map(([q, inQuota]) => {
+    const inQ = entries.map((e, i) => [e, i]).filter(([e]) => inQuota(e));
+    const n = inQ.filter(([, i]) => unmet[i]).length;
+    return [q, { samples: inQ.length, unmet: n, rate: rate(n, inQ.length) }];
+  })) } : {};
+  const record = excluded || falseClaims.length ? { samples: entries.length, unmet: excluded, rate: rate(excluded, entries.length), ...perQuota, judged: judged.length, unmet_samples: names((e, i) => unmet[i]), ...(falseClaims.length ? { false_claims: falseClaims } : {}), need } : null;
   return { judged, record, reasons, need, excluded, classes };
 }
 
 /** The timed pass's quotas: its cold samples and its warm ones, each kept apart (the gate's cold-sample requirement). */
 export const TIMED_QUOTAS = QUOTAS;
+
+/** A cell's reasons that are its shortage: an incomplete quota, or an existence condition left untested by it. */
+export const isShortage = (reason) => /^(incomplete|the \w+ audit is incomplete): Chrome never started a drag and drop/.test(reason) || /^untested: every sample was excluded for its unmet premise/.test(reason);

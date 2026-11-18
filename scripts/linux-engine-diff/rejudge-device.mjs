@@ -68,7 +68,8 @@ export function rejudgeDevice(rows, { judge = judgeDevice, old = null, lines = n
       const auditRow = own.find((r) => r.kind === 'audit' && r.engine === 'cua' && r.scene === v.scene && r.op === v.op);
       const window = Array.isArray(auditRow?.ancestry) && Number.isInteger(auditRow.ancestry[0]) ? auditRow.ancestry[0] : null;
       const bound = PREMISE_OPS.has(v.op) && audit ? bindAudit(audit, lines, { run, scene: v.scene, op: v.op, expect: DEVICE_OPS[v.op].device, window, label: evidenceLabel(opRows) }) : null;
-      const now = outcome(bound ? judge(v.op, opRows, audit, bound) : judge(v.op, opRows, audit));
+      // judged from the step's own sidecar (none for a run from before the fix: then nothing is excluded)
+      const now = outcome(PREMISE_OPS.has(v.op) ? judge(v.op, opRows, audit, { lines, window }) : judge(v.op, opRows, audit));
       const then = old ? outcome(old(v.op, opRows, audit)) : null;
       // and how its timed samples and its audited requests read under it
       const premise = PREMISE_OPS.has(v.op) ? { timed: classes(opRows), audit: bound ? classes(bound.entries) : null } : null;

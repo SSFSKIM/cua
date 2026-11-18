@@ -896,7 +896,7 @@ variants included; their evidence is written either way. The run's `end` row kee
   in the zone (`dnd-linger`), so Chrome takes before the release, and a sample Chrome took nothing for by its release is
   unexercised, a failure of its case, unless Chrome never started a drag session for it at all (ruling 823, below). A development run (`--dev --trace-engine`) puts each cua series's engine behind
   an xtrace proxy of its own, its trace under `xtrace/` and each sample's span in it on the row (`xtrace`).
-  The design session's rulings 823 and 825 (`premise.mjs`, and `scripts/linux-engine-gate/premise-refill.mjs`).
+  The design session's rulings 823, 825 and 841 (`premise.mjs`; route D: the judge alone decides).
   - In the cancel, late and late-take cells, a sample whose premise was unmet is excluded and counted: a plain-drag ok
     with no notice on its reply (`reply_notice`), where the page proves Chrome never started a drag session.
   - The proof is the drag page's own status lines, kept as the page wrote them (`drop_status.raw`) and parsed strictly.
@@ -914,7 +914,14 @@ variants included; their evidence is written either way. The run's `end` row kee
     `premise-evidence.jsonl`, the only record of the audit's samples. Each line is bound to its run, scene, case,
     block, request number, engine lifecycle (one id per engine process), request id, window (its XID) and fixture (the
     scene's label, which carries the run's nonce), with the run's head, engine sha256 and load, and cua's reply recorded
-    whole (its ok, error and notice, each present). A line that does not fit is never excluded on, and fails its cell.
+    whole (its ok, error and notice, each present).
+  - Only evidence bound to the run's own sidecar excludes. The in-run judge binds to this process's records of the run,
+    a re-judge to the step's `premise-evidence.jsonl`.
+    - A timed row binds to exactly one line, its ok, error and notice the line's reply, and the rows must be the plan's
+      slots: whole series from block 0, each request once, the cold one first.
+    - A planned audit binds only with both its requests bound. An audit the run skipped (`--no-audit`, the runner's
+      sentinel) must have no audit lines.
+    - A binding error never excludes, and fails its cell. Without a sidecar, nothing is excluded.
   - The next request on an engine, for every rule, is the one on the same lifecycle (`adjacency`).
   - An obscured case's engine guard (the drag watched with the signature already held, not in front) is checked on every
     sample, the excluded ones too.
@@ -922,29 +929,14 @@ variants included; their evidence is written either way. The run's `end` row kee
     the late case, the read and the next acting request for the late take), each of its shape. An unknown or missing
     one binds nothing, and nothing it carries replaces a field the binding set.
   - Where every sample was excluded, an existence condition (a drop landed, an answer said the drop may have happened)
-    reads `untested`, which leaves the cell short, not failed.
-  - A run's own verdict that excluded a sample is `provisional`. `premise-refill.mjs <V5 step dir>` gives V5's final
-    verdict, by the controller's route C (ruling 836). Each V5 run is judged alone, on its own rows, and nothing is
-    pooled across runs.
-  - A run's premise cells are its plan's. Each planned timed slot and audited request must be there exactly once, and
-    every sidecar line must be bound to its slot, its run and its fixture. A planned cell with no rows fails.
-  - A cell is short when its recorded verdict and its replay both fail solely for its shortage. That means a quota left
-    short by proven-unmet samples, with any untested conditions. Anything else fails, and is final.
-  - When the main run's only failures are short cells, V5 is rerun whole: its own command from step.json, as the gate
-    printed it, with only the step's directory changed, to one under a fresh out root (`<out>.r<n>`, which must not
-    exist).
-    - A rerun that passes alone passes V5. One short again for the same reason only may be followed by the next, up to
-      two reruns. Then V5 is incomplete.
-    - A rerun with any other failure fails V5.
-    - `--print` prints the rerun's command, in `gate.mjs print`'s form, without launching it or writing.
-  - Each rerun must load its command's run name, and match the main run's head, engine bytes and arguments, load and
-    plan by positive equality: a field missing on either side fails. Its launcher's exit must agree with its terminal
-    record (0 a passing run, 1 a recorded failing one), and its sitting must be all-clear.
-  - When V5 already fails for anything but the shortage, no rerun is launched, and the record names every such failure.
-    A run's unclean end is listed and fails nothing (ruling 730 (a)).
-  - The record is `premise-refill.jsonl` and `premise.md` in the main step's directory: every run side by side, the
-    main run included. Each run has its verdict, its failures and its unclean end. Each cell has its status and its
-    counts, cold and warm, judged and excluded, and the audit's.
+    reads `untested`, a part of the cell's shortage, not a failure of its own.
+  - A cell left short of its planned count, of its cold or warm quota or of its audit's, fails with `incomplete` in the
+    run's own verdict, its rate reported cold and warm apart (`premise_unmet.timed.quotas`). Its first reason names
+    the cause:
+    - "incomplete only by N proven premise-unmet samples (a whole V5 rerun under §8.2, the controller's call)" where
+      that is all it fails for;
+    - "incomplete by N proven premise-unmet samples, and failing for more than that (below)" where it fails for more.
+    Nothing reruns V5 on its own; a rerun is the controller's call, another V5 step judged as any is.
 - **Minimized windows** (M4's T4, `minimized.mjs`, the scenes `minimized` (gedit), `minimized-xterm` and
   `minimized-recorder`): cua alone, each sample's window minimized with `xprobe minimize` (the harness's front window
   takes the focus first, so the window manager's focus fallback lands on a harness window; the active window afterwards
@@ -1369,7 +1361,7 @@ Two shared helpers came out of T16's fix wave (the design session, 2026-11-10), 
 | `kinds.mjs`, `dnd.mjs`, `device.mjs`, `xprobe/src/dnd.rs`, `pages/gtk4-input.py`, `pages/qt-input.py` | M3.1's kinds and drag-and-drop experiments, Acceptance 8's device cases, the `XdndSelection` watch, the GTK 4 and Qt scenes |
 | `rejudge.mjs` | a recorded run's speed verdicts judged again under the revised rule |
 | `rejudge-device.mjs` | a stored verdict run's device verdicts judged again by this checkout's `judgeDevice`, beside the stored ones and a former judge's (`--old`), with how each sample of ruling 823's cells reads under it, read-only (the M5 pre-flight's §8.1, point 4) |
-| `premise.mjs`, `../linux-engine-gate/premise-refill.mjs` | rulings 823 and 825: the unmet premise in V5's cancel, late and late-take cells (the page's strict proof that Chrome never started a drag session, the evidence's binding, the exclusion and its quotas), and V5's whole reruns for it, each run judged alone |
+| `premise.mjs` | rulings 823, 825 and 841: the unmet premise in V5's cancel, late and late-take cells (the page's strict proof that Chrome never started a drag session, the evidence's binding to the run's sidecar, the exclusion, its quotas and its rate) |
 | `vcl-aim.mjs`, `writer-drag.mjs`, `vcl-probe.mjs`, `pages/point-gtk3.py` | M4 T16's LibreOffice offset as the harness reads it, the Writer drag probe, the point probes and their GTK 3 control scene |
 | `park.mjs`, `xprobe/src/pointer.rs`, `app-identity.mjs` | the verified pointer park (`xprobe pointer-chain`) and the application's identity, shared by any runner (T16's fix wave) |
 | `atspi-probe.mjs`, `atspi-cache.mjs`, `pages/atspi-gtk4.py`, `pages/atspi-qt.py` | M4 T6's AT-SPI probe on its own private display: `Cache.GetItems` over the matrix and GTK 4's `EditableText`, the answers' reading and comparison, and its GTK 4 and Qt scenes |

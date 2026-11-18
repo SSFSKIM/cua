@@ -67,10 +67,20 @@ function foldRetries(runs) {
 }
 const round = ms => (ms === null || ms === undefined ? null : Math.round(ms * 10) / 10);
 
+// A method sample whose target the method ended (#171 M5, T4's arm64 round, fix wave 1): the arm64 vendor engine's
+// typeText and paste end gedit.
+const endedTarget = row => typeof row.op === 'string' && row.op.startsWith('method.') && row.target === 'exited';
 // What one side's runs are: their pooled summary, their requested host (when every run agrees on one) and its problems.
-function sideOf(label, recorded, expectedHost, usage = 'compare <vendor-dir> <cua-dir>', judgedBy = 'acceptance 8') {
+// `endedApart` (the Linux engine comparison's vendor side alone): a sample whose target its method ended sets no timing
+// (the pre-flight T4 row: a vendor lane's ended target is never scored against cua). Its counts stay in `summary`; its
+// times are left out of `timing` and of the in-cell and wall samples, and each method's such samples are counted in
+// `ended`.
+function sideOf(label, recorded, expectedHost, usage = 'compare <vendor-dir> <cua-dir>', judgedBy = 'acceptance 8', {endedApart = false} = {}) {
   const runs = foldRetries(recorded);
   const summary = summarize(runs);
+  const ended = new Map();
+  if (endedApart) for (const run of runs) for (const row of run.rows) if (endedTarget(row)) ended.set(row.op, (ended.get(row.op) ?? 0) + 1);
+  const timing = endedApart ? summarize(runs.map(run => ({...run, rows: run.rows.filter(row => !endedTarget(row))}))) : summary;
   const problems = summary.problems.map(p => `${label}: ${p}`);
   if (runs.length !== RUNS) problems.push(`${label}: ${runs.length} run${runs.length === 1 ? '' : 's'}, ${judgedBy} needs three`);
   const hosts = [...new Set(runs.map(r => r.meta.host))];
@@ -83,21 +93,23 @@ function sideOf(label, recorded, expectedHost, usage = 'compare <vendor-dir> <cu
   for (const run of runs) for (const row of run.rows) if (typeof row.op === 'string' && row.op.startsWith('method.')) add(methodRows, row.op, row);
   // each operation's successful in-cell times, the samples Linux judges an operation the engine answers by (#370,
   // linuxEngineSpeed), the successful samples that carry none, and their wall times, reported beside them
-  for (const run of runs) for (const row of run.rows) if (typeof row.op === 'string' && row.ok === true) {
+  for (const run of runs) for (const row of run.rows) if (typeof row.op === 'string' && row.ok === true && !(endedApart && endedTarget(row))) {
     if (typeof row.wallMs === 'number') add(okWall, row.op, row.wallMs);
     if (Number.isFinite(row.inCellMs)) add(okInCell, row.op, row.inCellMs); else noInCell.set(row.op, (noInCell.get(row.op) ?? 0) + 1);
   }
-  return {label, summary, host, ssh, methodRows, okWall, okInCell, noInCell, problems, commits: [...new Set(runs.map(r => r.meta.commit))],
+  return {label, summary, timing, ended, host, ssh, methodRows, okWall, okInCell, noInCell, problems, commits: [...new Set(runs.map(r => r.meta.commit))],
     serverInfo: [...new Set(runs.flatMap(r => (r.meta.hostAttestations ?? []).map(a => `${a?.serverInfo?.name ?? '?'} ${a?.serverInfo?.version ?? '?'}`)))]};
 }
 
 const valid = f => f.samples - f.invalid;
 // One side's figures for an operation; its judged median is the wall time's (net of ssh for the cold phases), or with
 // `inCell` the in-cell time's.
+// Its times are the side's `timing` (a vendor sample that ended its target left out, `sideOf`), its counts all of them.
 function figures(o, side, net, inCell) {
   if (!o) return null;
-  const judgedMs = inCell ? (o.inCell ? round(o.inCell.median) : null) : o.wall ? round(o.wall.median - (net && side.ssh !== null ? side.ssh : 0)) : null;
-  return {samples: o.samples, ok: o.ok, invalid: o.invalid.length, errors: o.errors.length, wall: o.wall, inCell: o.inCell, judgedMs};
+  const t = (side.timing ?? side.summary).operations.find(x => x.op === o.op) ?? {wall: null, inCell: null};
+  const judgedMs = inCell ? (t.inCell ? round(t.inCell.median) : null) : t.wall ? round(t.wall.median - (net && side.ssh !== null ? side.ssh : 0)) : null;
+  return {samples: o.samples, ok: o.ok, invalid: o.invalid.length, errors: o.errors.length, wall: t.wall, inCell: t.inCell, judgedMs, ...(side.ended ? {ended: side.ended.get(o.op) ?? 0} : {})};
 }
 
 // `linux`: the Linux engine comparison, where an operation the engine answers is timed in the cell (#370; the design
@@ -135,13 +147,16 @@ function judgeOperation(op, baseline, candidate, {linux = false} = {}) {
     wallBackstop = {baselineMs: round(b.wall.median), candidateMs: round(c.wall.median), limitMs: round(limit), verdict: over ? 'fail' : 'pass'};
     if (over) reasons.push(`wall backstop: cua's wall median ${wallBackstop.candidateMs} ms is above the vendor engine's ${wallBackstop.baselineMs} ms plus max(10%, 500 ms), ${wallBackstop.limitMs} ms; in-cell time judges the operation, and this backstop fails a gross regression outside the cell (ruling 706)`);
   }
+  // a method whose every vendor sample ended its target has no bar: its speed is not judged, listed apart, and the
+  // outcome rule and cua's text obligations decide it (fix wave 1; never an undetermined series)
+  const neverCompleted = b.judgedMs === null && b.ended > 0;
   let limitMs = null;
   if (b.judgedMs !== null) {
     limitMs = round(latencyLimit(b.judgedMs));
     if (c.judgedMs === null) reasons.push('no successful candidate sample to time');
     else if (c.judgedMs > limitMs) reasons.push(`median ${c.judgedMs} ms is above the limit ${limitMs} ms (baseline ${b.judgedMs} ms + max(10%, 500 ms))`);
   }
-  return {...base, limitMs, ...(wallBackstop ? {wallBackstop} : {}), verdict: reasons.length ? 'fail' : 'pass', reasons};
+  return {...base, limitMs, ...(wallBackstop ? {wallBackstop} : {}), ...(neverCompleted ? {speedNotJudged: 'not judged: the vendor never completed it'} : {}), verdict: reasons.length ? 'fail' : 'pass', reasons};
 }
 
 // A method case's observed outcome, one per sample: what the method did, its error, its window's fate, the read-back.
@@ -398,7 +413,7 @@ function laneValue(meta, key) {
 
 // One side of a lane comparison: sideOf's, with the lane's engine attestation, environment and launch witness checked.
 function laneSide(label, runs, expected, usage, lane) {
-  const side = sideOf(label, runs, expected.host, usage, `comparison ${lane.id}`);
+  const side = sideOf(label, runs, expected.host, usage, `comparison ${lane.id}`, {endedApart: Boolean(lane.linux) && label === 'baseline'});
   for (const run of runs) if (!run.meta.nativeEngine) side.problems.push(`${label}: ${run.name} has no requested engine (recorded before engine attestation; remeasure it)`);
   const engines = [...new Set(runs.map(r => r.meta.nativeEngine?.requested).filter(Boolean))];
   if (engines.length > 1) side.problems.push(`${label}: its runs requested ${engines.join(' and ')} engines`);
@@ -514,7 +529,9 @@ export function compareLanes(mode, baselineRuns, candidateRuns, {topUp, declared
   const ruled = problems.length ? 'NO VERDICT' : operations.some(o => o.verdict === 'fail') ? 'FAIL' : 'PASS';
   const diagnostic = plainPlan([...baselineRuns, ...candidateRuns], ruled);
   const describe = side => ({host: side.host, serverInfo: side.serverInfo, commits: side.commits, runs: side.summary.runs, attestation: side.summary.attestation, sshMedianMs: side.ssh});
-  return {mode, lane, baseline: describe(baseline), candidate: describe(candidate), operations, permitted, problems, ...(above ? {above} : {}),
+  // the vendor samples that ended their target, per method, never a speed bar (fix wave 1): listed apart
+  const endedTargets = lane.linux ? [...baseline.ended].filter(([, n]) => n > 0).map(([op, count]) => ({op, count})) : null;
+  return {mode, lane, baseline: describe(baseline), candidate: describe(candidate), operations, permitted, problems, ...(above ? {above} : {}), ...(endedTargets ? {endedTargets} : {}),
     ...(topUpRecord ? {topUp: topUpRecord} : {}), ...(unproved ? {unproved} : {}), verdict: diagnostic ? 'DIAGNOSTIC' : ruled, ...(diagnostic ? {diagnostic} : {})};
 }
 
@@ -554,6 +571,10 @@ export function renderComparison(result) {
     ...methods.map(o => `| ${o.op} | ${o.baseline?.samples ?? 0} | ${o.baseline?.outcomes.join('<br>') || '–'} | ${o.candidate?.samples ?? 0} | ${o.candidate?.outcomes.join('<br>') || '–'} | ${triple(o.baseline?.wall)} | ${triple(o.candidate?.wall)} |${methodBasis ? ` ${triple(o.baseline?.inCell)} | ${triple(o.candidate?.inCell)} | ${o.basis ?? '–'} |` : ''} ${fmt(o.limitMs)} | ${o.verdict} |`));
   if (sameHost) lines.push('', '## Permitted configuration differences', '',
     ...(result.permitted.length ? result.permitted.map(p => `- ${p.field}: ${p.baseline} -> ${p.candidate} (${p.reason})`) : ['None: the configuration is unchanged.']));
+  if (result.endedTargets?.length) lines.push('', '## Vendor samples that ended their target (never a speed bar)', '',
+    'A vendor engine sample whose target its method ended (`target: exited`) sets no timing: its outcome is counted as recorded, its times are left out (the pre-flight T4 row: a vendor lane\'s ended target is never scored against cua). A method none of whose vendor samples is left has its speed not judged; its outcomes and cua\'s text obligations still judge it.', '',
+    '| Method case | Vendor samples that ended their target | Speed |', '|---|---|---|',
+    ...result.endedTargets.map(e => `| ${e.op} | ${e.count} | ${result.operations.find(o => o.op === e.op)?.speedNotJudged ?? 'judged on the vendor samples left'} |`));
   const speeds = result.operations.filter(o => o.speed);
   const span = interval => (interval ? `[${interval.join(', ')}]` : '–');
   if (speeds.length) lines.push('', '## Speed of the operations the engine answers (Acceptance 3\'s rule)', '',

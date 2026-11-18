@@ -441,3 +441,66 @@ test('compare --engines prints the series a top-up would decide, takes one top-u
   assert.notEqual(half.status, 0);
   assert.match(half.stderr, /--top-up-baseline and --top-up-candidate/);
 });
+
+// #171 M5, T4's arm64 round, fix wave 1, finding 4 on R2 (the controller's word): the pre-flight T4 row's rule, a vendor
+// lane's ended target is never scored against cua, in the Linux engine comparison. A vendor (baseline) method sample
+// whose target exited sets no timing bar, whether it errored or not; it is listed apart, per method, with its count.
+// A method none of whose vendor samples is usable has its speed not judged ("the vendor never completed it"), listed
+// apart, never an undetermined series; the outcome rule and cua's text obligations still decide it. Every candidate row
+// and obligation is unchanged, and so is every macOS comparison.
+const exited = (name, which = () => true) => (meta, rows) => {
+  let k = 0;
+  for (const r of rows) if (r.op === name && which(k++)) Object.assign(r, {target: 'exited', inserted: null});
+};
+const vendorEnded = (options) => triple('vendor', options);
+const N = name => REAL.flatMap(r => r.rows).filter(r => r.op === name).length;
+
+test('a vendor method whose every sample ended its target is not judged on speed, listed apart; cua\'s text obligations still decide it', t => {
+  const result = judge(t, vendorEnded({edit: exited('method.typeText')}), triple('cua', {scale: FASTER}));
+  const typeText = op(result, 'method.typeText');
+  assert.equal(typeText.verdict, 'pass', JSON.stringify(typeText.reasons));
+  assert.equal(typeText.speedNotJudged, 'not judged: the vendor never completed it');
+  assert.equal(typeText.speed, undefined, 'no speed series, so none undetermined');
+  assert.equal(typeText.baseline.judgedMs, null);
+  assert.equal(typeText.baseline.ended, N('method.typeText'));
+  assert.deepEqual(result.endedTargets, [{op: 'method.typeText', count: N('method.typeText')}]);
+  assert.equal(result.verdict, 'PASS');
+  assert.match(renderComparison(result), new RegExp(`## Vendor samples that ended their target[\\s\\S]*\\| method\\.typeText \\| ${N('method.typeText')} \\| not judged: the vendor never completed it \\|`));
+  // the control on cua's side: a bad cua text sample still fails the method
+  const bad = judge(t, vendorEnded({edit: exited('method.typeText')}), triple('cua', {scale: FASTER, edit: (meta, rows) => { rows.find(r => r.op === 'method.typeText').inserted = false; }}));
+  assert.equal(op(bad, 'method.typeText').verdict, 'fail');
+  assert.match(op(bad, 'method.typeText').reasons.join(' '), /cua text samples did not return without an error, survive and read back/);
+});
+
+test('one ended vendor sample: the method\'s vendor median is computed without it, and it is listed apart', t => {
+  // the ended sample is the slowest by far: with it the max would be its time
+  const slow = (meta, rows) => { exited('method.paste', k => k === 0)(meta, rows); rows.find(r => r.op === 'method.paste').inCellMs = 99_999; };
+  const runs = triple('vendor');
+  slow(runs[0].meta, runs[0].rows);
+  const result = judge(t, runs, triple('cua', {scale: FASTER}));
+  const paste = op(result, 'method.paste');
+  assert.equal(paste.baseline.ended, 1);
+  assert.equal(paste.baseline.inCell.max, 10_190, 'the ended sample sets none of the bar');
+  assert.equal(paste.baseline.inCell.n, N('method.paste') - 1);
+  assert.equal(paste.speedNotJudged, undefined, 'judged on the rest');
+  assert.deepEqual(result.endedTargets, [{op: 'method.paste', count: 1}]);
+  // a vendor sample that errored while its target survived still counts as before: the stock rows already are such
+  assert.equal(op(result, 'method.typeText').baseline.ended, 0);
+  assert.equal(op(result, 'method.typeText').baseline.inCell.n, N('method.typeText'));
+});
+
+test('the candidate side and the macOS comparisons are unchanged: an exited target there is timed as before', async t => {
+  // a cua sample whose target exited is never dropped from cua's timing (and fails cua's own text obligation)
+  const result = judge(t, triple('vendor'), triple('cua', {scale: FASTER, edit: exited('method.paste', k => k === 0)}));
+  assert.equal(op(result, 'method.paste').candidate.inCell.n, N('method.paste'));
+  assert.equal(op(result, 'method.paste').verdict, 'fail');
+  assert.deepEqual(result.endedTargets, []);
+  // the host comparison (acceptance 8, macOS's): its baseline's exited samples are timed as before
+  const {compare} = await import('../../scripts/native-baseline/compare.mjs');
+  const runs = vendorEnded({edit: exited('method.typeText')});
+  const host = compare(readRuns(dir(t, runs)), readRuns(dir(t, triple('cua'))));
+  const typeText = host.operations.find(o => o.op === 'method.typeText');
+  assert.equal(typeText.baseline.inCell.n, N('method.typeText'));
+  assert.equal(typeText.speedNotJudged, undefined);
+  assert.equal(host.endedTargets, undefined);
+});

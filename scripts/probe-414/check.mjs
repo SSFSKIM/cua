@@ -33,8 +33,9 @@ export function plan(smoke,{selection=true,audit=false}={}){
 export const REDUCED_LANES=['cft','electron','electron-parity','safari','appkit'];
 export const SNAPSHOT_REFUSAL_LABEL='appkit-selection-snapshot-refusal';
 export const isDeadlineMode=mode=>mode==='deadline'||mode==='deadline-controls';
+export const isBalancedMode=mode=>isDeadlineMode(mode)||mode==='sampled-hold';
 export function reducedPlan(lane,{mode='reduced'}={}){
-  const rows=[],deadline=isDeadlineMode(mode);
+  const rows=[],deadline=isBalancedMode(mode);
   for(let rep=0;rep<20;rep++){
     [['short',0,10],['long',1,10],['literal',3,deadline?0:5]].forEach(([kind,i,n])=>{
       if(rep>=n)return;
@@ -219,11 +220,11 @@ export function drainSummary(rows,planned){
 }
 export const drainSizingOk=(summary,recorded)=>recorded===summary.planned&&summary.eligible>=summary.minimum;
 
-// Stock measures IPC arrival against the last native post, not a snapshot or first-key timestamp. The historical full
-// profile used 999..1100 ms and excluded snapshot refusals. Both reduced profiles include posted snapshot refusals and
-// allow 50 ms for IPC after a nominal 1100 ms deadline. The deadline profile separately rejects any lateReply flag.
+// Measure IPC arrival against the last native post. Keep historical scoring for earlier exact pins; sampled-hold
+// has no fixed failure deadline and measures both ordinary and snapshot failures without a timing decision.
 export const REDUCED_PAD_MS=1100, REDUCED_OVERHEAD_MS=50;
-export const budgetProfile=mode=>mode==='reduced'||isDeadlineMode(mode)?{name:mode,minMs:REDUCED_PAD_MS-1,maxMs:REDUCED_PAD_MS+REDUCED_OVERHEAD_MS,snapshotBudgeted:true}:
+export const budgetProfile=mode=>mode==='sampled-hold'?{name:mode,minMs:null,maxMs:null,snapshotBudgeted:false}:
+  mode==='reduced'||isDeadlineMode(mode)?{name:mode,minMs:REDUCED_PAD_MS-1,maxMs:REDUCED_PAD_MS+REDUCED_OVERHEAD_MS,snapshotBudgeted:true}:
   {name:'legacy',minMs:999,maxMs:1100,snapshotBudgeted:false};
 export function concealedFailureTiming({head,lane,kind,literal,action,raw,startedAt,endedAt,replyAt,mode='full',lateReply=lateReplyPresent(raw)}){
   if(head!=='fix'||literal||action!=='typeUnconfirmed'||raw?.confirmed!==false||raw?.concealed!==true||raw?.secure!==true)return null;
@@ -232,13 +233,24 @@ export function concealedFailureTiming({head,lane,kind,literal,action,raw,starte
   const phase=!posted?'before-input':snapshot?'snapshot-refused':'after-input';
   const interval=t=>Number.isFinite(t)&&Number.isFinite(replyAt)?replyAt-t:null;
   const fromLastPostMs=interval(endedAt),fromFirstPostMs=interval(startedAt);
-  const budgeted=phase==='after-input'||phase==='snapshot-refused'&&profile.snapshotBudgeted;
+  const budgeted=profile.minMs!==null&&(phase==='after-input'||phase==='snapshot-refused'&&profile.snapshotBudgeted);
   return {phase,fromLastPostMs,fromFirstPostMs,
     withinBudget:budgeted?(fromLastPostMs!==null&&fromLastPostMs>=profile.minMs&&fromLastPostMs<=profile.maxMs&&!(isDeadlineMode(mode)&&lateReply)):null};
 }
-// A lateReply flag is a public deadline diagnostic, not a field value; the deadline gate still rejects its presence.
+// Detect wire key presence regardless of its value, including nested RPC and wrapper records. Do not read getters.
 export function lateReplyPresent(...surfaces){
-  return surfaces.some(s=>s!=null&&typeof s==='object'&&['lateReply','cua/lateReply'].some(k=>Object.hasOwn(s,k)));
+  const seen=new Set();
+  while(surfaces.length){
+    const s=surfaces.pop();
+    if(s==null||typeof s!=='object'||seen.has(s))continue;
+    seen.add(s);
+    for(const key of Object.getOwnPropertyNames(s)){
+      if(key==='lateReply'||key==='cua/lateReply')return true;
+      const value=Object.getOwnPropertyDescriptor(s,key)?.value;
+      if(value&&typeof value==='object')surfaces.push(value);
+    }
+  }
+  return false;
 }
 
 // The reduced budget gate is never vacuous: every realized concealed fix add/drop control must yield a known post-input failure
@@ -248,7 +260,7 @@ export function reducedBudgetCoverage(lane,rows,mode='reduced'){
   const timed=rows.filter(r=>r.valid&&r.head==='fix'&&r.concealedFailure);
   const afterInput=timed.filter(r=>['add','drop'].includes(r.kind)&&r.literal!==true&&r.concealedFailure.phase==='after-input').length;
   const snapshot=timed.filter(r=>r.label===SNAPSHOT_REFUSAL_LABEL&&r.concealedFailure.phase==='snapshot-refused').length;
-  const expected={afterInput:isDeadlineMode(mode)?30:REDUCED_EXPECTED.afterInput,snapshot:REDUCED_EXPECTED.snapshot(lane)};
+  const expected={afterInput:isBalancedMode(mode)?30:REDUCED_EXPECTED.afterInput,snapshot:REDUCED_EXPECTED.snapshot(lane)};
   return {expected,afterInput,snapshot,ok:afterInput===expected.afterInput&&snapshot===expected.snapshot};
 }
 // Fixed cohorts: measure concealed negatives from their shared post-typing origin, never include literal or snapshot controls.
@@ -256,7 +268,7 @@ export function failureDistributions(rows,mode){
   const groups={};
   for(const kind of negative)for(const size of ['short','long']){
     const values=rows.filter(r=>r.valid&&r.head==='fix'&&r.kind===kind&&r.literal!==true&&
-      (isDeadlineMode(mode)?r.inputClass:r.inputClass??'short')===size&&r.concealedFailure?.phase==='after-input')
+      (isBalancedMode(mode)?r.inputClass:r.inputClass??'short')===size&&r.concealedFailure?.phase==='after-input')
       .map(r=>r.concealedFailure.fromLastPostMs).filter(Number.isFinite).sort((a,b)=>a-b);
     const n=values.length,mid=Math.floor(n/2);
     groups[`${kind}-${size}`]={n,min:values[0]??null,p50:n===0?null:n%2===1?values[mid]:(values[mid-1]+values[mid])/2,
@@ -270,6 +282,11 @@ export function failureDistributions(rows,mode){
   const medians=Object.values(groups).map(g=>g.p50),spreadMs=medians.every(Number.isFinite)?Math.max(...medians)-Math.min(...medians):null;
   const pass=Object.values(pairs).every(p=>p.complete&&p.overlap)&&spreadMs!==null&&spreadMs<=10;
   return {groups,pairs,spreadMs,pass:isDeadlineMode(mode)?pass:null};
+}
+
+export function failureTimingByLength(rows){
+  const controls=rows.filter(r=>r.valid&&r.head==='fix'&&negative.includes(r.kind)&&r.literal===false&&r.concealedFailure?.phase==='after-input');
+  return Object.fromEntries(['short','long'].map(size=>[size,drainStats(controls.filter(r=>r.inputClass===size).map(r=>r.concealedFailure.fromLastPostMs))]));
 }
 
 // The live mix is measured separately from elapsed time; equal code sets can still hide different refusal frequencies.

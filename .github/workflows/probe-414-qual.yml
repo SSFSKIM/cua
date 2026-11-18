@@ -16,7 +16,7 @@ on:
       mode:
         description: Stock qualification, scratch drain timing, or a targeted provider diagnostic
         type: choice
-        options: [smoke, full, reduced, deadline, deadline-controls, drain, firefox-focus, firefox-single, appkit-race, unicode]
+        options: [smoke, full, reduced, deadline, deadline-controls, sampled-hold, drain, firefox-focus, firefox-single, appkit-race, unicode]
         default: smoke
       firefox:
         description: Coverage selection for full/drain; omit Firefox if its one background setup retry fails
@@ -46,7 +46,7 @@ jobs:
       fail-fast: false
       matrix:
         include: >-
-          ${{ fromJSON(startsWith(inputs.mode, 'deadline') && '[{"lane":"cft","phase":"stock"},{"lane":"electron","phase":"stock"},{"lane":"electron-parity","phase":"stock"},{"lane":"safari","phase":"stock"},{"lane":"appkit","phase":"stock"}]' ||
+          ${{ fromJSON((startsWith(inputs.mode, 'deadline') || inputs.mode == 'sampled-hold') && '[{"lane":"cft","phase":"stock"},{"lane":"electron","phase":"stock"},{"lane":"electron-parity","phase":"stock"},{"lane":"safari","phase":"stock"},{"lane":"appkit","phase":"stock"}]' ||
           inputs.mode == 'reduced' && '[{"lane":"cft","phase":"stock"},{"lane":"electron","phase":"stock"},{"lane":"electron-parity","phase":"stock"},{"lane":"safari","phase":"stock"},{"lane":"appkit","phase":"stock"},{"lane":"cft","phase":"audit"},{"lane":"appkit","phase":"audit"}]' ||
           inputs.mode == 'unicode' && '[{"lane":"cft","phase":"stock"}]' ||
           (inputs.mode == 'firefox-focus' || inputs.mode == 'firefox-single') &&

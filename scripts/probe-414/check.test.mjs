@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {plan, score, inspect, auditSchedule, auditPairs, summarize, coded, noteAttested, NOTE_PREFIX, firefoxDisclosure, drainIntervals, drainStats, terminalEditAtMs, drainIneligible, drainSummary, drainSizingOk, runShape, setupLabel, focusAllowed, concealedFailureTiming, appliedEditGaps, reducedPlan, REDUCED_LANES, SNAPSHOT_REFUSAL_LABEL, budgetProfile, REDUCED_PAD_MS, REDUCED_OVERHEAD_MS, readbackProfile, legacyBaselineCase, legacyBaselineTally, reducedBudgetCoverage, lateReplyPresent, failureDistributions, failureReasonParity} from './check.mjs';
+import {plan, score, inspect, auditSchedule, auditPairs, summarize, coded, noteAttested, NOTE_PREFIX, firefoxDisclosure, drainIntervals, drainStats, terminalEditAtMs, drainIneligible, drainSummary, drainSizingOk, runShape, setupLabel, focusAllowed, concealedFailureTiming, appliedEditGaps, reducedPlan, REDUCED_LANES, SNAPSHOT_REFUSAL_LABEL, budgetProfile, REDUCED_PAD_MS, REDUCED_OVERHEAD_MS, readbackProfile, legacyBaselineCase, legacyBaselineTally, reducedBudgetCoverage, lateReplyPresent, failureDistributions, failureReasonParity, failureTimingByLength} from './check.mjs';
 
 const success={confirmed:true,secure:true,confirmation:'length',snapshotMs:4};
 const old={confirmed:false,concealed:true,reason:'secure',snapshotMs:3};
@@ -468,6 +468,33 @@ test('deadline-controls runs only the balanced concealed controls and keeps the 
   assert.equal(concealedFailureTiming(wait).withinBudget,true);
   assert.equal(concealedFailureTiming({...wait,lateReply:true}).withinBudget,false);
   assert.equal(concealedFailureTiming({...wait,replyAt:2140-2}).withinBudget,false);
+});
+test('sampled-hold uses the identical balanced stock manifest without deadline decisions',()=>{
+  const mode='sampled-hold';
+  for(const lane of REDUCED_LANES)assert.deepEqual(reducedPlan(lane,{mode}),reducedPlan(lane,{mode:'deadline'}));
+  const raw={confirmed:false,concealed:true,secure:true,reason:'lengthMismatch'};
+  const args={head:'fix',lane:'cft',kind:'add',literal:false,action:'typeUnconfirmed',startedAt:1000,endedAt:1040,mode,raw};
+  assert.deepEqual(concealedFailureTiming({...args,replyAt:2040}),{phase:'after-input',fromLastPostMs:1000,fromFirstPostMs:1040,withinBudget:null});
+  assert.equal(concealedFailureTiming({...args,replyAt:2200,lateReply:true}).withinBudget,null);
+  assert.deepEqual(concealedFailureTiming({...args,lane:'appkit',kind:'selection',raw:{...raw,reason:'lengthUnreadable'},replyAt:1043}),
+    {phase:'snapshot-refused',fromLastPostMs:3,fromFirstPostMs:43,withinBudget:null});
+});
+test('concealed failure reply times pool valid add and drop rows only within each length',()=>{
+  const timed=(kind,inputClass,fromLastPostMs)=>({head:'fix',kind,inputClass,literal:false,valid:true,concealedFailure:{phase:'after-input',fromLastPostMs}});
+  const s=timed('add','short',901),l=timed('drop','long',987);
+  const r=failureTimingByLength([s,l,timed('drop','short',917),timed('add','short',905),
+    {...s,head:'main'},{...s,literal:true},{...l,valid:false},{...l,kind:'selection'},
+    {...l,concealedFailure:{phase:'after-input',fromLastPostMs:null}},{...l,concealedFailure:{phase:'snapshot-refused',fromLastPostMs:2}}]);
+  assert.deepEqual(r.short,{n:3,p50:905,p95:917,p99:917,max:917});
+  assert.deepEqual(r.long,{n:1,p50:987,p95:987,p99:987,max:987});
+});
+test('removed wire key detection catches presence anywhere in structured replies without following cycles or reading getters',()=>{
+  const error=Error('fixed');Object.defineProperty(error,'meta',{value:{detail:[{'cua/lateReply':false}]}});
+  const cyclic={};cyclic.self=cyclic;
+  Object.defineProperty(cyclic,'computed',{get(){throw Error('must not inspect computed values');}});
+  assert.equal(lateReplyPresent(cyclic,{error}),true);
+  assert.equal(lateReplyPresent(cyclic,{payload:{lateReply:null}}),true);
+  assert.equal(lateReplyPresent(cyclic,{payload:'the lateReply key is absent'}),false);
 });
 test('selection control is excluded from the head comparison but scored like any row',()=>{
   const sel={...row({kind:'selection',lane:'appkit',raw:{confirmed:false,secure:true,reason:'lengthUnreadable',snapshotMs:2}}),head:'fix',kind:'selection',label:SNAPSHOT_REFUSAL_LABEL};

@@ -5880,7 +5880,7 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      into an absence. Three positive controls show ruling 824's test can see a leak: the start marker's offset, decoded
      from its bytes and written in turn to stderr, into the error sentence and into the read-back's record, each fails it.
   Date/Author: 2026-11-18, cursor235's implementer for #395 (ruling 1ea561bc:824).
-- Decision (#414, design rulings 1ea561bc:826, 833 and 839, 2026-11-18, `fix/414-secure-type-confirm`; ruling 808's paste
+- Decision (#414, design rulings 1ea561bc:826, 833, 839 and 842, 2026-11-18, `fix/414-secure-type-confirm`; ruling 808's paste
   rule ("#405's review", item 8) applied to type_text; amends "#354", whose snapshot refused a password field unread
   (`secure`), and "#395" item 2(c), whose route refused one): **type_text into a password field is confirmed by its
   length, never its value, and its success says that is all it proves.** The read-back refused a secure field, so a
@@ -5957,6 +5957,87 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      - another password role: `fieldChanged`.
      After the poll, the "still the focused field" check is unchanged. A field the application's focus or the walk
      found is looked up again that way. One #395's marker found is asked for its own AXFocused, with no marker call.
+     **Amended: the quiet window** (the hosted qualification's finding; ruling 1ea561bc:842, 2026-11-18). The poll
+     confirmed on the first reply that matched, and a reply can match before the field is done.
+     - **The defect.** An AppKit fixture puts an extra "z" in at the caret before the first typed key, so the final
+       field holds "z" and the whole text, its caret one past the text's end. The engine posts keys 250 µs apart
+       (Input.swift, the vendor's gap), so the poll begins while the app is still working through its event queue. The
+       app answers an AX batch on its main run loop between two queued keys. That reply held "z" and every key but the
+       last, its caret exactly at location + typed: the expected count and caret. It confirmed (`confirmation:
+       "length"`). Both bases were open to it, the count with its range and ruling 839's caret alone. The value path is
+       not: no in-between value equals the expected full value.
+     - **The window.** A reply that matches confirms only once the same reply has held for `typeReadbackLengthDwellMs`
+       (50 ms). The same means the same count and range; for the caret's basis, still no count and the same range. The
+       window is timed from the end of the matching read to the start of a later read that finds the same reply.
+     - **One cadence.** The window is read at the poll's own interval (`typeReadbackPollIntervalMs`, 5 ms), in the same
+       loop. The design session first approved a 50 ms window sampled every 10 ms; the 5 ms poll replaces the 10 ms
+       sample so a concealed request's schedule has one shape, whether or not a match came.
+     - **Inside the budget.** The window no longer runs past the 1 s budget. A match that cannot hold for 50 ms before
+       the budget is unconfirmed at the budget, answering `lengthMismatch`. A genuine field must therefore finish taking
+       the text within 950 ms of the poll's start: the budget less the window. agent-cursor.md says so.
+     - **Ruling 842: one constant.** The window is one value for every lane, never one per lane. If any lane's measured
+       drain p99, times three, exceeds 50 ms, the constant is raised; it is one line.
+     - **Why a change means a fault**: "A genuine field never moves away from a final match: once it has taken every
+       key nothing changes it, and before that none of its readings equals the expected one, because its caret has not
+       yet reached the end of the text (and, from an empty field read without a range, its count is still short of the
+       text's length). So a reading that matches and then changes means a character was added or dropped."
+     - **A literal request** ends its poll at a reply that leaves a held match, judged as any reply: `lengthMismatch`,
+       `caretMismatch`, or `lengthUnreadable` for a failed count. A changed reply that still judges confirmed differs
+       only in a range its basis never checks (an empty field read without one), and answers as a caret elsewhere.
+     - **Overshoot** (`readbackLengthOvershoots`) ends a literal request's poll at once, judged as any reply, in two
+       narrow forms. A caret whose location is past location + typed: a genuine caret rises from the selection's start
+       to there and never beyond. From a basis with nothing selected (an empty range, or an empty field read without
+       one), a count past the expected one. A failed count read is no evidence either way, and the poll goes on.
+     - **The count's form is narrowed.** Over a non-empty selection, a genuine field's count is the snapshot's own until
+       the app takes the first key, and that exceeds the expected count whenever the selection is longer than the text.
+       The rule would fail a genuine field there, and its timing would tell whether a secret is shorter than the
+       selection.
+     - **A concealed request's failure never ends before the budget, and its schedule never depends on the secret.**
+       Every overshoot form compares a reply with an expected count or caret that depends on the secret's length, and
+       whether a match comes and goes at all can depend on it too. Some fields would then end early for one length and
+       not another: one that collapses a selection to its end without taking the text, or jumps its caret to the end
+       of its text. So a concealed request never ends on an overshoot. A reply that leaves a held match taints it: it
+       never confirms for the rest of the poll and polls on to the budget, its reason the last reply's (one that judges
+       confirmed answers `lengthMismatch`). A failed count inside a window taints it the same way. A concealed failure
+       is always 1 + 201 batches and 1000 ms. A closed reply ends the poll at once for both kinds, as before, since it
+       does not depend on the secret.
+     - **The schedule.** The window has a fixed length and starts only on a match, so in a given field the reads, their
+       order and their timing stay the same whatever the secret's length or content (item 9). It applies to every
+       password-field confirmation, a literal request's checkpoints included.
+     - **The residual.** An app that stalls longer than the window between consuming its last two keys can still show
+       a matching in-between reply for the whole window. No read-back sees a change made after it returns, the same
+       limit the plain path has for a value changed after its confirmation.
+     - **The cost.** Each password-field confirmation, and each literal checkpoint, takes 50 ms and about ten batches
+       more. A failure costs nothing extra: a concealed one polls the budget as before, and a literal one ends sooner
+       on a change or an overshoot.
+     - **Tests** (SecureTypeReadbackTests). `StubPasswordApp`'s drains-late mode (`extraFirst`, `lateUnits`) reproduces
+       the fixture: the "z" goes in before the first unit, the last `lateUnits` units are held, and they land when the
+       second batch after typing is answered.
+       - The defect, on three bases (a count over a selection, a count at a caret, the caret alone), plain and
+         concealed: it confirmed before the fix. Now it is unconfirmed with no confirmation and no note, a literal
+         request at the read that left the match, a concealed one at the budget.
+       - The control, a field that takes only its last key late, confirms after the window on both bases.
+       - A change at each of the window's ten reads, the last included, is caught, and one after it is not, so the
+         window spans at least 50 ms. A literal request ends at the change; a concealed one polls the budget, and a
+         change that comes back still never confirms. A closed reply in the window ends either kind at once; a failed
+         count ends a literal request's.
+       - A match at 950 ms confirms at the budget's last read; one 5 ms later, or at the last read, is unconfirmed at
+         the budget, plain and concealed.
+       - Overshoot ends a literal request's poll at the read past the text, by caret on both bases and by count from
+         nothing selected; concealed, the same fields poll the budget, and over a selection such a count polls it too.
+       - The concealed pins answer with the same reads, number of reads, time, reason, message and record whatever the
+         secret's length: a field that ignores a secret in place, one that collapses its selection to its end, and one
+         that jumps its caret to its text's end, each with the secret shorter and longer than what it moves over; and
+         a field ("zz" put in first, the last two keys late) where "pass" makes a match come and go and "p" makes none.
+         The last two fields' pins, and the transient-match pin, failed before their gates.
+       - The schedule-identity test now also compares the uncollapsed number of reads and the poll's time, the
+         window's included, and a drains-late run joins ruling 826's leak test.
+       - Mutants: the count's overshoot unnarrowed fails the selection test; a window one read short fails the
+         end-of-window case; a concealed request ending on a change fails the transient-match pin.
+     - Exact schedules moved with the window: the read logs and batch counts after a match now carry the window's ten
+       batches (SecureTypeReadbackTests' reads-in-order, checkpoint and settle tests, TypeReadbackTests' secure-field
+       calls and settle sleeps, TypeReadbackMarkerTests' password route log). An extra character, typed concealed,
+       still polls the budget.
   6. **The settle and the wait.** The settle after a recent press_key (ruling 754) and #359's wait for a stable range
      after a pending click (ruling 785) both run for a password field, on its batch; the settle waits for two readings
      that agree. A select_text range is never a password field's. select_text refuses one (#405), and ClickOrdering
@@ -6026,13 +6107,14 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   11. **The model's document**: agent-cursor.md's typing paragraph, the surface inventory's "Table 3 amendment
       (2026-11-18, #414, …)", the docs oracle and the core-documentation test byte for byte, and the README's secrets
       paragraph. The MCP surface names no password confirmation, so no pinned digest moves.
-  12. **Proof**: SecureTypeReadbackTests (25) run the live reads over a stub app whose password field holds plaintext,
+  12. **Proof**: SecureTypeReadbackTests (32) run the live reads over a stub app whose password field holds plaintext,
       answers it to any request, and reports distinctive counts and ranges. Ruling 826's leak test covers fifteen runs:
       - confirmations, plain, concealed and by the caret alone;
       - a dropped and an extra character, a caret elsewhere concealed and plain, a field that ignores a secret (its
         selection as long as the secret, and not), one shown as text mid-poll, a count that fails, no range, the caret
         alone off by one;
-      - a checkpoint.
+      - a checkpoint;
+      - an app whose extra character makes a read between its last two keys match (item 5's amendment).
       The posting's own times (`startedAt`, `endedAt`, real Unix milliseconds) are checked to be times and fixed before
       the scan, so a timestamp that holds a distinctive number's digits by chance cannot fail it.
       Across them, none of the count, caret location or selection length, nor anything typing makes of them, reaches
@@ -6068,7 +6150,8 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
       failed, two of them by the overflow trap that item 4's test provokes once its bound is gone. The survivor, a held
       field's `noLongerSecure` refusal recorded as a plain field's, is now asserted by the marker route's test. The hosted qualification of the six
       lanes (probe/414-qual) is the design session's.
-  Date/Author: 2026-11-18, cursor235's implementer for #414 (rulings 1ea561bc:826, 833 and 839).
+  Date/Author: 2026-11-18, cursor235's implementer for #414 (rulings 1ea561bc:826, 833 and 839; ruling 842's quiet
+  window by its fix wave).
 
 ## Outcomes & Retrospective
 

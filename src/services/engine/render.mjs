@@ -225,7 +225,7 @@ const secureNode = raw => raw.secure === true || raw.role === 'AXSecureTextField
 
 // A working copy of one Skyshot node. A text area's value is its Markdown rendering when the engine fetched one
 // (retrieveAttributedTextFromTextAreas [B §5]); actions pass filterActions and keep the descriptions the engine read.
-// A password field keeps no value: its Value part prints `secure text` (#405).
+// A password field keeps no value, value description or Markdown: its Value part prints `secure text` (#405).
 function element(raw, context) {
   const secure = secureNode(raw);
   const markdown = !secure && raw.role === 'AXTextArea' && typeof raw.valueMarkdown === 'string' ? raw.valueMarkdown : null;
@@ -233,7 +233,7 @@ function element(raw, context) {
     token: raw.token, role: raw.role, subrole: raw.subrole ?? null, roleDescription: raw.roleDescription ?? null,
     title: raw.title ?? null, description: raw.description ?? null, value: secure ? null : markdown ?? raw.value ?? null,
     valueType: secure ? null : markdown != null ? 'string' : raw.valueType ?? null, identifier: raw.identifier ?? null,
-    valueDescription: raw.valueDescription ?? null, placeholder: raw.placeholder ?? null, help: raw.help ?? null,
+    valueDescription: secure ? null : raw.valueDescription ?? null, placeholder: raw.placeholder ?? null, help: raw.help ?? null,
     url: raw.url ?? null, rowIndexRange: raw.rowIndexRange ?? null, columnIndexRange: raw.columnIndexRange ?? null,
     domClassList: raw.domClassList ?? null, servesAsTitleFor: raw.servesAsTitleFor ?? null, shown: raw.shown ?? null,
     flags: {...raw.flags}, actions: filterActions(raw, context), descriptions: actionDescriptions(raw), children: [],

@@ -155,17 +155,23 @@ let selectTextSecure = EngineError(name: "selectionNotSettable",
   "Cannot select text in a password field, whose text is never read")
 
 /// The text select_text searches: the element's plain value and, for a text field or area (by `observedRole`) within
-/// the walk's bound, the Markdown the observation would render (`attributed`). #405: the field is classified just
-/// before, and a password field, or one whose role or subrole cannot be read, is refused with nothing of it read, so no
-/// search can tell what it holds.
+/// the walk's bound, the Markdown the observation would render (`attributed`). #405: the value is read only through
+/// `guardedRead` (classified first, then read beside its role and subrole again), and the attributed read only after a
+/// classification just before it; a password field, or one whose role or subrole cannot be read, at either point is
+/// refused with nothing more of it read, so no search can tell what it holds. A value read that fails searches nothing.
 func selectionSearchText(_ element: AXUIElement, observedRole: String, ax: AXOps,
                          attributed: (AXUIElement, Int) -> NSAttributedString?) throws -> (plain: String?, markdown: (text: String, offsets: [Int?])?) {
-  guard !writtenValueFieldClosed(role: ax.role(element), subrole: ax.classifiedSubrole(element)) else { throw selectTextSecure }
-  let plain = plainText(ax.read(element, kAXValueAttribute))
+  let plain: String?
+  switch guardedRead([kAXValueAttribute], request: { ax.batch(element, $0) }) {
+  case .closed: throw selectTextSecure
+  case .failed: plain = nil
+  case .read(let read): plain = plainText(read.values[kAXValueAttribute])
+  }
   let length = plain?.utf16.count ?? 0
-  let markdown = [kAXTextAreaRole, kAXTextFieldRole].contains(observedRole) && length > 0 && length <= markdownMaxLength
-    ? attributed(element, length).flatMap(markdownMapped) : nil
-  return (plain, markdown)
+  guard [kAXTextAreaRole, kAXTextFieldRole].contains(observedRole), length > 0, length <= markdownMaxLength else { return (plain, nil) }
+  guard let classification = ax.batch(element, classifyingAttributes) else { return (plain, nil) }
+  if valueReadClosed(classification).closed { throw selectTextSecure }
+  return (plain, attributed(element, length).flatMap(markdownMapped))
 }
 
 extension Engine {

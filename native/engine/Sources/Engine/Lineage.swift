@@ -100,9 +100,12 @@ struct ElementIdentity {
   let help: String?
   let identifier: String?
   let url: String?
-  /// #390: the value was not read (a sensitive set_value's re-read), so the match leaves it out. #405: so is a password
-  /// field's, or one that could not be classified, whose identity keeps no value: it is matched by its other ten.
+  /// #390: the value was not read (a sensitive set_value's re-read), so the match leaves it out, and (#405) its value
+  /// description with it. #405: so is a password field's, or one that could not be classified, whose identity keeps
+  /// neither: it is matched by its other nine.
   let valueUnread: Bool
+  /// #405: the value was asked for and could not be read (`ElementData.valueFailed`): a match that needs it fails.
+  let valueFailed: Bool
   fileprivate(set) var pid: pid_t
 
   init(_ data: ElementData, pid: pid_t) {
@@ -118,15 +121,19 @@ struct ElementIdentity {
     identifier = data.identifier
     url = data.url
     valueUnread = data.valueUnread
+    valueFailed = data.valueFailed
     self.pid = pid
   }
 
-  /// The vendor's match (FUN_100221838); `ignoringValue` leaves the value out, as the re-check after set_value's write
-  /// does (F §3.6, §16.4), and so does an identity whose value was not read (#390, `valueUnread`).
+  /// The vendor's match (FUN_100221838); `ignoringValue` leaves the value and its description out, as the re-check after
+  /// set_value's write does (F §3.6, §16.4), and so does an identity whose value was deliberately not read (#390, #405:
+  /// `valueUnread`). Where the value counts, a side whose value read failed matches nothing (#405, `valueFailed`).
   func matches(_ other: ElementIdentity, ignoringValue: Bool = false) -> Bool {
-    role == other.role && subrole == other.subrole && roleDescription == other.roleDescription && title == other.title
-      && (ignoringValue || valueUnread || other.valueUnread || value == other.value) && valueDescription == other.valueDescription && description == other.description
-      && placeholder == other.placeholder && help == other.help && identifier == other.identifier && url == other.url
+    let valueCounts = !ignoringValue && !valueUnread && !other.valueUnread
+    return role == other.role && subrole == other.subrole && roleDescription == other.roleDescription && title == other.title
+      && (!valueCounts || (!valueFailed && !other.valueFailed && value == other.value && valueDescription == other.valueDescription))
+      && description == other.description && placeholder == other.placeholder && help == other.help && identifier == other.identifier
+      && url == other.url
   }
 }
 

@@ -44,6 +44,8 @@ final class FakeTree {
   var unreadableAttributes: [Int: Set<String>] = [:]
   /// Every request answers all an element carries, asked for or not (#405's stub of a careless app).
   var answersEverything = false
+  /// Elements whose every request for AXValue fails (a timed-out value read, #405).
+  var valueRequestsFail: Set<Int> = []
   /// Called after each request is answered, by id and names (a test's change to the tree between requests).
   var answered: ((Int, [String]) -> Void)?
 
@@ -75,6 +77,7 @@ final class FakeSource: ElementSource, @unchecked Sendable {
       if let delay = tree.slow[id] { usleep(delay) }
     }
     if tree.unreadable.contains(id) { return nil }
+    if tree.valueRequestsFail.contains(id), names.contains(kAXValueAttribute) { return nil }
     // Each request that asked for AXValue counted (#390).
     if names.contains(kAXValueAttribute) { valueReads[id, default: 0] += 1 }
     var values = answers(id)

@@ -401,12 +401,12 @@ const password = (token, depth, fields = {}) => node(token, depth, 'AXTextField'
   roleDescription: 'secure text field', subrole: 'AXSecureTextField', description: 'PW', flags: {settable: true, focusable: true}, ...fields,
 });
 
-test('#405: a password field prints `secure text` as its value, with no length, mask or selected text', () => {
+test('#405: a password field prints `secure text` as its value, with no length, mask, value description or selected text', () => {
   // As the engine sends it: no value, marked secure.
   assert.deepEqual(lines(skyshot(win([password('p', 1, {secure: true, value: null})]))),
     ['0 standard window W, Secondary Actions: Raise', '\t1 secure text field (settable) Description: PW, Value: secure text']);
   // Whatever value a node of that role or subrole carries (an engine that read it), none of it is printed.
-  for (const fields of [{value: 'PLAINTEXT', numberOfCharacters: 9, valueMarkdown: '**PLAINTEXT**'}, {value: '•••••••••', valueType: 'string'},
+  for (const fields of [{value: 'PLAINTEXT', numberOfCharacters: 9, valueMarkdown: '**PLAINTEXT**', valueDescription: 'PLAINTEXT of length 9'}, {value: '•••••••••', valueType: 'string'},
     {role: 'AXSecureTextField', subrole: null, value: 'PLAINTEXT'}]) {
     const shot = skyshot(win([password('p', 1, fields)]), {focused: 'p', selectedText: 'PLAINTEXT'});
     const text = render(shot, advanceNumbering(null, shot));

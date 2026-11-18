@@ -8,8 +8,8 @@ import Foundation
 struct AXOps {
   var role: (AXUIElement) -> String? = { stringAttribute($0, kAXRoleAttribute) }
   var subrole: (AXUIElement) -> String? = { stringAttribute($0, kAXSubroleAttribute) }
-  /// The subrole read as the secure classification takes it, a failed read told from none (`SubroleRead`).
-  var classifiedSubrole: (AXUIElement) -> SubroleRead = { subroleRead($0) }
+  /// One batched read of the named attributes (`fetchAttributes`), what `guardedRead` requests through (#405).
+  var batch: (AXUIElement, [String]) -> AttributeRead? = { fetchAttributes($0, $1) }
   /// The element's frame read now (never the observed one).
   var frame: (AXUIElement) -> CGRect? = liveFrame
   var parent: (AXUIElement) -> AXUIElement? = { elementAttribute($0, kAXParentAttribute) }

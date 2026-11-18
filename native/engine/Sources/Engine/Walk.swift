@@ -997,8 +997,9 @@ final class TreeWalk {
        let text = data.value.flatMap({ CFGetTypeID($0) == CFStringGetTypeID() ? ($0 as! String) : nil }) {
       let length = text.utf16.count
       if length > 0 && length <= markdownMaxLength {
-        valueMarkdown = source.markdown(element, length: length)
-        markdownFetches += 1
+        // A field found closed just before the read (#405) comes back with its value dropped, and the node is made from that.
+        valueMarkdown = source.markdown(element, data: &data, length: length)
+        if !data.valueUnread { markdownFetches += 1 }
       }
     }
     let (children, shown, recordable) = choose(element, data, actions, pending)

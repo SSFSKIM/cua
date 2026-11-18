@@ -1,0 +1,121 @@
+name: probe-395-qualification
+on:
+  push:
+    branches: ['probe/395-qual']
+    paths: ['.github/workflows/probe-395-qual.yml']
+  workflow_dispatch:
+    inputs:
+      main:
+        description: 'Main baseline engine commit (full 40-character SHA)'
+        required: true
+        type: string
+      fix:
+        description: 'Candidate engine commit (full 40-character SHA)'
+        required: true
+        type: string
+      mode:
+        description: 'Smoke (1 trial per cell) or full (20 trials per cell)'
+        type: choice
+        options: [smoke, full]
+        default: full
+permissions:
+  contents: read
+concurrency:
+  group: probe-395-qualification
+  cancel-in-progress: false
+jobs:
+  register:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo 'Workflow registered. Native qualification requires two exact engine SHAs by manual dispatch.'
+  qualify:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: macos-latest
+    timeout-minutes: 115
+    env:
+      MAIN_SHA: ${{ inputs.main }}
+      FIX_SHA: ${{ inputs.fix }}
+      REPS: ${{ inputs.mode == 'smoke' && '1' || '20' }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Verify pins and compile the standalone Swift probe
+        run: |
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          [[ "$MAIN_SHA" =~ ^[0-9a-f]{40}$ && "$FIX_SHA" =~ ^[0-9a-f]{40}$ && "$MAIN_SHA" != "$FIX_SHA" ]]
+          git log -1 --format='kit %H %s'
+          sw_vers
+          mkdir -p "$RUNNER_TEMP/probe395-qual-stage" "$RUNNER_TEMP/probe395-qual-evidence"
+          node --test scripts/probe-395-qual/*.test.mjs
+          swiftc -O -o "$RUNNER_TEMP/marker395-qual" scripts/probe-395/marker.swift
+      - name: Build exact stock pins, then separate observational audit copies
+        run: |
+          for phase in stock audit; do
+            for lane in main fix; do
+              sha="$MAIN_SHA"
+              if [ "$lane" = fix ]; then sha="$FIX_SHA"; fi
+              base="$RUNNER_TEMP/p395q-$phase-$lane"
+              git worktree add --detach "$base-src" "$sha"
+              test "$(git -C "$base-src" rev-parse HEAD)" = "$sha"
+              if [ "$phase" = audit ]; then
+                required=walk,poll
+                if [ "$lane" = fix ]; then required=markedField,poll; fi
+                node scripts/probe-395-qual/audit-patch.mjs "$base-src" --require "$required" > "$RUNNER_TEMP/probe395-qual-stage/$lane-audit-patch.json"
+              else
+                test -z "$(git -C "$base-src" status --porcelain)"
+              fi
+              swift build -c release --package-path "$base-src/native/engine" --scratch-path "$base-build"
+              if [ "$phase" = stock ]; then test -z "$(git -C "$base-src" status --porcelain)"; fi
+            done
+          done
+      - name: Run interleaved stock and instrumented trials separately
+        run: |
+          result=0
+          stage="$RUNNER_TEMP/probe395-qual-stage"
+          evidence="$RUNNER_TEMP/probe395-qual-evidence"
+          export PROBE395_AUDIT_PATCH_MAIN="$stage/main-audit-patch.json"
+          export PROBE395_AUDIT_PATCH_FIX="$stage/fix-audit-patch.json"
+          export PROBE395_SECURE_PERMITTED='{"fix.small":{"names":["AXSelectedTextMarkerRange","AXUIElementForTextMarker"]},"fix.large":{"names":["AXSelectedTextMarkerRange","AXUIElementForTextMarker"]}}'
+          for phase in stock audit; do
+            prefix="$RUNNER_TEMP/p395q-$phase"
+            status=0
+            PROBE395_PHASE="$phase" MAIN_REF="$MAIN_SHA" FIX_REF="$FIX_SHA" node scripts/probe-395-qual/run.mjs "$RUNNER_TEMP/marker395-qual" "$stage/$phase" \
+              "$prefix-main-src" "$prefix-main-build/release/cua-engine" \
+              "$prefix-fix-src" "$prefix-fix-build/release/cua-engine" "$REPS" || status=$?
+            if [ "$status" != 0 ]; then result=1; fi
+            if [ -f "$stage/$phase/attestation.json" ] && jq -e '.publishable == true' "$stage/$phase/attestation.json" >/dev/null; then
+              mkdir -p "$evidence/$phase"
+              for name in config.json progress.json rows.jsonl summary.json attestation.json; do
+                if [ -f "$stage/$phase/$name" ]; then cp "$stage/$phase/$name" "$evidence/$phase/$name"; fi
+              done
+              disposition=published
+            else
+              disposition=withheld
+              result=1
+            fi
+            blockers='[]'
+            if [ -f "$stage/$phase/attestation.json" ]; then
+              blockers=$(jq -c '[.blockers[]? | select(. == "leak" or . == "forbidden-key" or . == "long-string" or . == "privacy-violation" or . == "audit-withheld" or . == "capture-incomplete" or . == "audit-privacy")] | unique' "$stage/$phase/attestation.json")
+            fi
+            jq -n --arg phase "$phase" --arg disposition "$disposition" --argjson exitCode "$status" --argjson blockers "$blockers" '{phase:$phase,disposition:$disposition,exitCode:$exitCode,blockers:$blockers}' > "$evidence/$phase-status.json"
+          done
+          exit "$result"
+      - name: Upload only scrubbed rows and qualification results
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: probe-395-qualification
+          path: |
+            ${{ runner.temp }}/probe395-qual-evidence/*/config.json
+            ${{ runner.temp }}/probe395-qual-evidence/*/progress.json
+            ${{ runner.temp }}/probe395-qual-evidence/*/rows.jsonl
+            ${{ runner.temp }}/probe395-qual-evidence/*/summary.json
+            ${{ runner.temp }}/probe395-qual-evidence/*/attestation.json
+            ${{ runner.temp }}/probe395-qual-evidence/*-status.json
+          if-no-files-found: warn

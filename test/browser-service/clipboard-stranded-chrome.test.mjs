@@ -90,3 +90,58 @@ test('a bridge left in a page by a disposal that skipped its detached tab is rem
   assert.equal(state.native, true, 'the page\'s own navigator.clipboard is back');
   assert.notEqual(state.answered, 'pending', 'readText answers (Chrome\'s own answer, resolved or refused)');
 });
+
+// A runtime's controller and clipboard over its own debugger session on the page, restoring stranded page sides.
+function runtimeOn(t, chrome, stranded) {
+  const backend = chromeBackend(chrome.pageSocketUrl);
+  t.after(() => backend.close());
+  const cdp = new CdpController(backend);
+  stranded.restoreOn(cdp);
+  return {backend, cdp, clipboard: new Clipboard({stranded})};
+}
+// The page's own script throws inside the bridge's removal (its cleanup walks the document's frames), and is then fixed.
+const BREAK_PAGE = 'globalThis.__qsa = Document.prototype.querySelectorAll; Document.prototype.querySelectorAll = () => { throw new Error("page broken"); }; 1';
+const FIX_PAGE = 'Document.prototype.querySelectorAll = globalThis.__qsa; 1';
+const bridgeInPage = chrome => chrome.evaluate('globalThis.__browserUseClipboardBridge !== undefined');
+
+test('a recovery the page\'s script fails (exceptionDetails) keeps the record, and a later attach removes the override', async t => {
+  const chrome = await realChrome(t, {'/page.html': '<!doctype html><title>page</title><p>page</p>'});
+  if (chrome == null) return t.skip('no Chrome on this machine');
+  await chrome.load('/page.html');
+  const stranded = new StrandedPageClipboards();
+  const first = runtimeOn(t, chrome, stranded);
+  await first.clipboard.ensurePageClipboard(first.cdp, {tabId: TAB});
+  await waitFor(() => first.backend.idle(), 'the installation acknowledged', 5000);
+  first.backend.chromeDetaches(TAB);
+  await first.clipboard.dispose();
+  await chrome.evaluate(BREAK_PAGE);
+  const second = runtimeOn(t, chrome, stranded);
+  await second.cdp.call(TAB, 'Runtime.evaluate', {expression: '1', returnByValue: true});
+  await new Promise(resolve => setTimeout(resolve, 300));
+  await waitFor(() => second.backend.idle(), 'the recovery answered', 5000);
+  assert.equal(await bridgeInPage(chrome), true, 'the page threw: the override is still there');
+  await chrome.evaluate(FIX_PAGE);
+  second.backend.chromeDetaches(TAB);
+  await second.cdp.call(TAB, 'Runtime.evaluate', {expression: '1', returnByValue: true});
+  await waitFor(async () => !(await bridgeInPage(chrome)), 'the override removed at the next attach', 5000);
+  assert.equal((await chrome.evaluate(PAGE_STATE)).native, true);
+});
+
+test('a disposal whose removal the page\'s script fails (exceptionDetails) records the override for the next runtime', async t => {
+  const chrome = await realChrome(t, {'/page.html': '<!doctype html><title>page</title><p>page</p>'});
+  if (chrome == null) return t.skip('no Chrome on this machine');
+  await chrome.load('/page.html');
+  const stranded = new StrandedPageClipboards();
+  const first = runtimeOn(t, chrome, stranded);
+  await first.clipboard.ensurePageClipboard(first.cdp, {tabId: TAB});
+  await waitFor(() => first.backend.idle(), 'the installation acknowledged', 5000);
+  await chrome.evaluate(BREAK_PAGE);
+  await first.clipboard.dispose();              // the tab is attached: the removal is sent, and the page throws
+  assert.equal(await bridgeInPage(chrome), true);
+  await chrome.evaluate(FIX_PAGE);
+  first.backend.close();
+  const second = runtimeOn(t, chrome, stranded);
+  await second.cdp.call(TAB, 'Runtime.evaluate', {expression: '1', returnByValue: true});
+  await waitFor(async () => !(await bridgeInPage(chrome)), 'the override removed by the next runtime', 5000);
+  assert.equal((await chrome.evaluate(PAGE_STATE)).native, true);
+});

@@ -19,10 +19,10 @@
 // it, and the backend connection that closes after it ends the debugger sessions, and the binding and script with them.
 // Ending a session does not undo the page side's JavaScript, though, and the page cannot tell its bridge is gone (the
 // binding function stays, and calling it throws nothing), so its navigator.clipboard calls would wait until a reload. A
-// removal that did not remove the page side (disposal skipped the tab, ran out of its budget, or the page did not answer)
-// therefore leaves the installation in its backend's StrandedPageClipboards, which outlive the runtime: the next
-// controller to attach the tab, this runtime's or a later one's, removes it in the background (cua's own; the vendor
-// does no removal when its worker is replaced). Only a tab's own document is recorded, not a frame's.
+// removal that did not remove the page side (disposal skipped the tab or ran out of its budget, the page did not answer,
+// or its script threw) therefore leaves the installation in its backend's StrandedPageClipboards, which outlive the
+// runtime: the next controller to attach the tab, this runtime's or a later one's, removes it in the background (cua's
+// own; the vendor does no removal when its worker is replaced). Only a tab's own document is recorded, not a frame's.
 import {Deadline, DEFAULT_ACTION_MS} from './budgets.mjs';
 import {isDeadlineError} from './errors.mjs';
 
@@ -187,6 +187,9 @@ const installSource = bindingName => `(() => {
     installPageClipboardBridge(${JSON.stringify(bindingName)});
   })()`;
 const removeSource = bindingName => `globalThis.__browserUseClipboardBridge?.bindingName === ${JSON.stringify(bindingName)} && globalThis.__browserUseClipboardBridge.cleanup()`;
+// Whether a removal's evaluation removed the page side, or found none of it: Runtime.evaluate answers a page script that
+// threw with a successful reply carrying exceptionDetails, which is a failure.
+const pageSideRemoved = reply => reply?.exceptionDetails == null;
 const answerSource = answer => `globalThis.__browserUseClipboardBridge?.respond(${JSON.stringify(JSON.stringify(answer))})`;
 
 const targetKey = target => (target.sessionId != null ? `${target.tabId}:session:${target.sessionId}`                // aN
@@ -210,7 +213,7 @@ export class StrandedPageClipboards {
       for (const bindingName of this.#tabs.get(tabId) ?? []) {
         cdp.callTarget({tabId}, 'Runtime.evaluate', {expression: removeSource(bindingName), returnByValue: true},
           {deadline: new Deadline(DEFAULT_ACTION_MS), preserveOnTimeout: true})
-          .then(() => this.#forget(tabId, bindingName), () => {});
+          .then(reply => { if (pageSideRemoved(reply)) this.#forget(tabId, bindingName); }, () => {});
       }
     });
   }
@@ -370,7 +373,7 @@ export class PageClipboardBridge {                                              
   async cleanupTarget({bindingName, identifier, target}, {deadline = new Deadline(DEFAULT_ACTION_MS), attach} = {}) {
     const options = attach === false ? {deadline, attach} : {deadline};
     const removed = await this.cdp.callTarget(target, 'Runtime.evaluate', {expression: removeSource(bindingName), returnByValue: true}, options)
-      .then(() => true, () => false);
+      .then(pageSideRemoved, () => false);
     if (identifier != null) await this.cdp.callTarget(target, 'Page.removeScriptToEvaluateOnNewDocument', {identifier}, options).catch(() => {});
     await this.cdp.callTarget(target, 'Runtime.removeBinding', {name: bindingName}, options).catch(() => {});
     return removed;

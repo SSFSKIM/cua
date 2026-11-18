@@ -63,16 +63,27 @@ function stepOf(src) {
 }
 
 /**
- * What the step's own record fails beside its run, as gate.mjs sets its exit (the run's exit 0 and the private display's
- * watchdog clean): the watchdog, or an exit its run's does not explain. The end check and the unclean end are findings
- * there, never failures (gate.mjs `stepEndCheck`, `stepUnclean`), and are left as stored.
+ * The exits a step's records must show for its terminal outcome, as the runner and gate.mjs set them (task 102's
+ * re-review): the run exits 0 on a complete outcome and 1 on a judged failure (2 is a refusal: the run judged nothing),
+ * and the step exits 0 only on the run's 0 with the private display's watchdog clean, else 1. The watchdog's verdict
+ * must be recorded: a missing one is no evidence of a clean end. Answers why the records cannot stand, or null.
  */
-function stepFailures(step) {
-  const out = [];
-  if ('display_watchdog' in step && step.display_watchdog !== 'clean') out.push(`the private display's watchdog: ${step.display_watchdog}`);
-  else if (step.exit !== step.child_exit) out.push(`the step exited ${step.exit}, its run ${step.child_exit}`);
-  return out;
+function exitsUnproved(step, summary) {
+  if (typeof step.display_watchdog !== 'string') return "no watchdog verdict recorded: the display's clean end is unproved";
+  if (!Number.isInteger(step.child_exit) || !Number.isInteger(step.exit)) return `no exit recorded (the run's ${step.child_exit}, the step's ${step.exit})`;
+  const child = summary.complete ? 0 : 1;
+  if (step.child_exit !== child) return `the run exited ${step.child_exit}, where its ${summary.complete ? 'complete' : 'judged-failed'} terminal outcome gives ${child}`;
+  const exit = child === 0 && step.display_watchdog === 'clean' ? 0 : 1;
+  if (step.exit !== exit) return `the step exited ${step.exit}, where its run's ${step.child_exit} and the watchdog's ${step.display_watchdog} give ${exit}`;
+  return null;
 }
+
+/**
+ * What the step's own record fails beside its run, as gate.mjs sets its exit: the private display's watchdog not clean.
+ * The end check and the unclean end are findings there, never failures (gate.mjs `stepEndCheck`, `stepUnclean`), and
+ * are left as stored.
+ */
+const stepFailures = (step) => (step.display_watchdog === 'clean' ? [] : [`the private display's watchdog: ${step.display_watchdog}`]);
 
 /**
  * A step re-judged from its records: `{stored, replay, result, ...}`. `stored` is its recorded pass; `result` the pass
@@ -98,7 +109,8 @@ function rejudgeStep({ rows, step }) {
   if (!isDeepStrictEqual(then.failed, verdicts[0].failed)) return { ...base, stored, refused: "H's judge does not reproduce the stored judge verdict" };
   if (!then.failed.every((f) => summary.failed.includes(f))) return { ...base, stored, refused: "the terminal outcome does not carry the judge's failures" };
   if (summary.complete !== (summary.failed.length === 0)) return { ...base, stored, refused: 'the terminal outcome is incomplete with no failure named' };
-  if ((step.child_exit === 0) !== summary.complete) return { ...base, stored, refused: `the run exited ${step.child_exit} on a terminal outcome ${summary.complete ? 'complete' : 'incomplete'}` };
+  const unproved = exitsUnproved(step, summary);
+  if (unproved) return { ...base, stored, refused: unproved };
   const cleared = then.failed.filter((f) => !v.failed.includes(f));
   const added = v.failed.filter((f) => !then.failed.includes(f));
   const kept = summary.failed.filter((f) => !then.failed.includes(f));
@@ -189,6 +201,9 @@ if (!base) {
     ["the residue row's dragend another source's (foreign)", onResidue((r) => { r.after.last.src = 'inzone'; })],
     ["the residue row's dragend a drop", onResidue((r) => { r.after.last.effect = 1; })],
     ["the residue row's zone counters unread", onResidue((r) => { r.after.dnd = {}; })],
+    ["the residue row's before-press stamp missing", onResidue((r) => { delete r.before.press.seq; })],
+    ["the residue row's after-press stamp missing", onResidue((r) => { delete r.after.press.seq; })],
+    ["the residue row's dragend stamp missing", onResidue((r) => { delete r.after.last.seq; })],
     ['the same rows at idle', rowEdit((rows) => {
       for (const r of rows) if (r.kind === 'drop-signal') r.load = 'idle';
     })],
@@ -233,6 +248,28 @@ if (!base) {
       rec.step.exit = 0;
       return rec;
     }],
+    ['a refused run: the run and the step exited 2', () => {
+      const rec = clone();
+      rec.step.child_exit = 2;
+      rec.step.exit = 2;
+      return rec;
+    }],
+    ['no exits recorded', () => {
+      const rec = clone();
+      delete rec.step.child_exit;
+      delete rec.step.exit;
+      return rec;
+    }],
+    ['no watchdog verdict recorded', () => {
+      const rec = clone();
+      delete rec.step.display_watchdog;
+      return rec;
+    }],
+    ['a step exit its run and watchdog do not give', () => {
+      const rec = clone();
+      rec.step.exit = 2;
+      return rec;
+    }],
   ];
   console.log(`## negative controls on ${base.label} (${cell.lane} ${cell.cell}: ${cell.count} of ${cell.drags}, bound ${cell.bound})`);
   let held = 0;
@@ -255,14 +292,19 @@ if (!base) {
   // ruling 830's detector on the same stored rows: a cua left drag answered unconfirmed, made an ok on its own copy
   // dragend outside the zone (task 101's shape), is listed and passes; the same ok on a dragend of none is a false ok
   const leftRow = (rows) => rows.find((r) => r.kind === 'drop-signal' && r.lane === 'cua' && r.cell === 'left' && !r.outcome?.landed && r.after?.last?.src === 'plain');
-  const asOk = (effect) => rowEdit((rows) => {
+  const asOk = (effect, strip = () => {}) => rowEdit((rows) => {
     const r = leftRow(rows);
     Object.assign(r, { notice: null, next: { ok: true, error: null, late_dnd: null } });
     r.after.last.effect = effect;
+    strip(r);
   });
+  const unlisted = (j) => !j.refused && j.v.counts.zone_mismatch.every((x) => x.count === 0);
   const shapes = [
     ['an ok on a copy dragend, the zone unchanged: listed, not a fail', asOk(1), (j) => !j.refused && j.result === true && j.v.counts.zone_mismatch.find((x) => x.lane === 'cua' && x.cell === 'left')?.count === 1],
     ['an ok on a dragend of none, no landing: a false ok, not listed', asOk(0), (j) => !j.refused && j.result === false && j.v.counts.false_ok === 1 && j.v.counts.zone_mismatch.every((x) => x.count === 0)],
+    ['the copy ok with its before-press stamp missing: not listed', asOk(1, (r) => { delete r.before.press.seq; }), unlisted],
+    ['the copy ok with its after-press stamp missing: not listed', asOk(1, (r) => { delete r.after.press.seq; }), unlisted],
+    ['the copy ok with its dragend stamp missing: not listed', asOk(1, (r) => { delete r.after.last.seq; }), unlisted],
   ];
   let shown = 0;
   console.log(`## ruling 830's controls on ${base.label}`);

@@ -103,6 +103,9 @@ zone-truth mismatches (ruling 830): none in 320 drags of the window's cells
 - the residue row's dragend another source's (foreign): FAIL, as it must (cua:handle plain: the drop did not land on 1 of 100, in a cell that expects it (#0))
 - the residue row's dragend a drop: FAIL, as it must (cua:handle plain: the drop did not land on 1 of 100, in a cell that expects it (#0))
 - the residue row's zone counters unread: FAIL, as it must (cua:handle plain: the drop did not land on 1 of 100, in a cell that expects it (#0))
+- the residue row's before-press stamp missing: FAIL, as it must (cua:handle plain: the drop did not land on 1 of 100, in a cell that expects it (#0))
+- the residue row's after-press stamp missing: FAIL, as it must (cua:handle plain: the drop did not land on 1 of 100, in a cell that expects it (#0))
+- the residue row's dragend stamp missing: FAIL, as it must (cua:handle plain: the drop did not land on 1 of 100, in a cell that expects it (#0))
 - the same rows at idle: FAIL, as it must (cua:handle plain: the drop did not land on 1 of 100, in a cell that expects it (#0))
 - the same rows under another judged plan at twice the load (t17-fix2): FAIL, as it must (cua:handle plain: the drop did not land on 1 of 100, in a cell that expects it (#0))
 - a false ok added in the same series (another landed drop answered ok, nothing dropped): FAIL, as it must (cua:handle plain: answered ok with no drop and nothing pending on 1 of 100 (#1) | cua:handle plain: the drop did not land on 1 of 100, in a cell that expects it (#1))
@@ -112,9 +115,16 @@ zone-truth mismatches (ruling 830): none in 320 drags of the window's cells
 - no step.json: replay refused, as it must (no step.json: the step has no terminal record); the step keeps its stored result
 - a stored judge verdict H's judge does not reproduce: replay refused, as it must (H's judge does not reproduce the stored judge verdict); the step keeps its stored result
 - a terminal outcome without the judge's failures: replay refused, as it must (the terminal outcome does not carry the judge's failures); the step keeps its stored result
-- a run exit its terminal outcome does not explain: replay refused, as it must (the run exited 0 on a terminal outcome incomplete); the step keeps its stored result
-controls: 19 of 19 failed
+- a run exit its terminal outcome does not explain: replay refused, as it must (the run exited 0, where its judged-failed terminal outcome gives 1); the step keeps its stored result
+- a refused run: the run and the step exited 2: replay refused, as it must (the run exited 2, where its judged-failed terminal outcome gives 1); the step keeps its stored result
+- no exits recorded: replay refused, as it must (no exit recorded (the run's undefined, the step's undefined)); the step keeps its stored result
+- no watchdog verdict recorded: replay refused, as it must (no watchdog verdict recorded: the display's clean end is unproved); the step keeps its stored result
+- a step exit its run and watchdog do not give: replay refused, as it must (the step exited 2, where its run's 1 and the watchdog's clean give 1); the step keeps its stored result
+controls: 26 of 26 failed
 ## ruling 830's controls on task 98 L4a on the prototype (arm64, b74961ca, pilot 100)
 - an ok on a copy dragend, the zone unchanged: listed, not a fail: as it must (result pass; mismatches cua left 1 of 30)
 - an ok on a dragend of none, no landing: a false ok, not listed: as it must (result FAIL; mismatches none in 320 drags of the window's cells; cua left: answered ok with no drop and nothing pending on 1 of 30 (#0))
-ruling 830's controls: 2 of 2 as they must
+- the copy ok with its before-press stamp missing: not listed: as it must (result pass; mismatches none in 320 drags of the window's cells)
+- the copy ok with its after-press stamp missing: not listed: as it must (result FAIL; mismatches none in 320 drags of the window's cells; cua left: answered ok with no drop and nothing pending on 1 of 30 (#0))
+- the copy ok with its dragend stamp missing: not listed: as it must (result pass; mismatches none in 320 drags of the window's cells)
+ruling 830's controls: 5 of 5 as they must

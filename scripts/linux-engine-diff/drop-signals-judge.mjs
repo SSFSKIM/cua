@@ -98,6 +98,17 @@ export function ownDragend(r) {
   return last.effect;
 }
 
+/**
+ * `ownDragend` on stamped evidence only, for the classifiers that excuse or list an answer by it (L4a's residue,
+ * ruling 830's mismatch; task 102's re-review): the page's press stamp read before and after the drag, and the dragend
+ * stamped with the after-press. A record with any stamp missing is null here, whatever the legacy verdict makes of it.
+ */
+export function stampedDragend(r) {
+  const [before, after] = [r.before?.press?.seq, r.after?.press?.seq];
+  if (!Number.isInteger(before) || !Number.isInteger(after) || r.after?.last?.seq !== after) return null;
+  return ownDragend(r);
+}
+
 export const ZONE_CELLS = ['freeze-230', 'freeze-240', 'freeze-250', 'freeze-255', 'freeze-260', 'freeze-280', 'freeze-330', 'plain', 'nested', 'nested-late', 'slider', 'dragstart-150', 'press-150', 'dragstart-400', 'press-400', 'link', 'image', 'plain-long', 'canvas-drag', 'move'];
 
 /** The range runs' end values: even runs drag up to about 10, odd runs back to 0 (drop-signals.mjs `CELLS.range`). */
@@ -533,8 +544,9 @@ const droppedOf = (r) => Boolean(r.outcome?.landed) || (!OFF_WINDOW_CELLS.includ
  * A non-landing L4a's residue may hold, on its whole evidence (task 102's review): the dispatch answered ok, no handle
  * step failed before its end and the harness did not end the drag and drop with its own Escape; the unconfirmed notice
  * was on the read, kept by the next acting request's refusal; the zone's drop counter was read before and after and did
- * not move; and this trial's own completed dragend reports no drop (`ownDragend` 0, never a missing, stale, foreign or
- * unfinished record). Anything less is not residue, and is judged as any non-landing is.
+ * not move; and this trial's own completed dragend, stamped with its press, reports no drop (`stampedDragend` 0, never
+ * a missing, unstamped, stale, foreign or unfinished record). Anything less is not residue, and is judged as any
+ * non-landing is.
  */
 export function honestNonLanding(r) {
   if (r.ok !== true || r.error != null || r.handle?.end !== undefined || r.escaped === true) return false;
@@ -542,7 +554,7 @@ export function honestNonLanding(r) {
   const src = CELL_SOURCE[r.base ?? r.cell];
   const [b, a] = [r.before?.dnd?.[src], r.after?.dnd?.[src]];
   if (!src || !Number.isInteger(b?.drops) || !Number.isInteger(a?.drops) || a.drops !== b.drops) return false;
-  return ownDragend(r) === 0;
+  return stampedDragend(r) === 0;
 }
 
 /** The page's dragend `dropEffect` code for copy (pages/drop-signals.html `EFFECTS`). */
@@ -550,9 +562,9 @@ const COPY = 1;
 
 /**
  * A zone-truth mismatch (the design session's ruling 830, 2026-11-18): an ok answer, nothing honestly pending, in a cell
- * in the window, whose own completed dragend reported copy while the zone's drop counter, read before and after, did not
- * move. Electron's own word agrees with the ok, so the dragend rule stands (`droppedOf`): never a fail, never a false
- * ok, but a declared app-level limit every run of the judge lists apart (task 101's candidate on arm64 at twice the
+ * in the window, whose own completed dragend, stamped with its press (`stampedDragend`), reported copy while the zone's
+ * drop counter, read before and after, did not move. Electron's own word agrees with the ok, so the dragend rule stands
+ * (`droppedOf`): never a fail by itself, never a false ok, but a declared app-level limit every run of the judge lists apart (task 101's candidate on arm64 at twice the
  * load: 2 of 30 plain-left drags dropped 50 px outside the zone). Off the window the dragend rule excuses nothing, so
  * there such an ok is a false ok, never a mismatch.
  */
@@ -562,7 +574,7 @@ export function zoneMismatch(r) {
   const src = T14_SOURCE[cell] ?? CELL_SOURCE[cell];
   const [b, a] = [r.before?.dnd?.[src], r.after?.dnd?.[src]];
   if (!src || !Number.isInteger(b?.drops) || !Number.isInteger(a?.drops) || a.drops !== b.drops) return false;
-  return ownDragend(r) === COPY;
+  return stampedDragend(r) === COPY;
 }
 
 /**

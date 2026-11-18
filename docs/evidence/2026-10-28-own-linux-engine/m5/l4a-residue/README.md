@@ -16,7 +16,9 @@ and `electronDropVerdict`'s `plan`.
     own Escape;
   - the unconfirmed notice was on the read, and the next acting request was refused with it;
   - the zone's drop counter was read before and after the drag, and did not move;
-  - this trial's own completed dragend reports no drop. A missing, stale, foreign or unfinished record does not count.
+  - this trial's own completed dragend reports no drop, on stamped evidence (`stampedDragend`): the press stamp read
+    before and after the drag, and the dragend stamped with the after-press. A missing, unstamped, stale, foreign or
+    unfinished record does not count. The legacy dragend verdict keeps reading the stored unstamped records as before.
 - **Anything less is not residue.** It is judged as any non-landing is, and fails as a missing landing. A false ok
   (an ok with nothing pending and no landing, ruling 650) always fails.
 - **Reporting:** each covered cell's count and bound are printed in the verdict's findings, apart from the passes, as
@@ -36,7 +38,9 @@ steps are read from their own commit (85886a76). The output is `rejudge-l4a-resi
   - H's judge reproduces the step's stored judge verdict exactly;
   - the run's terminal outcome (`experiment-summary`) carries that verdict's failures;
   - its completeness matches its failures;
-  - the run's exit in `step.json` matches its completeness.
+  - the exits are exactly the ones the outcome gives: the run 0 when complete and 1 on a judged failure (2 is a
+    refusal), and the step 0 only on the run's 0 with the watchdog clean, else 1;
+  - the private display's watchdog verdict is recorded. A missing one is no evidence of a clean end.
 
   Otherwise the step keeps its stored result.
 - **The new result starts from the stored terminal outcome.** Only the judge failures the residue clears come out;
@@ -53,9 +57,9 @@ steps are read from their own commit (85886a76). The output is `rejudge-l4a-resi
 | task 98's L4a on the prototype (arm64, b74961ca, pilot 100) | FAIL (exit 1) | **pass: the result moves.** Its terminal outcome's one failure, the missed landing (#0), is residue; the watchdog was clean | 1 of 100, bound 2 / 0 of 100, bound 2 |
 | H1 and H2: x64 T5 (counted), x64 pilot, arm64 pilot, arm64 H1 rate run, task 98's prototype H1 | pass | pass, unchanged | not covered |
 
-**Negative controls**, 19 of 19 failing. They use the prototype's L4a records, and each control edits one thing.
+**Negative controls**, 26 of 26 failing. They use the prototype's L4a records, and each control edits one thing.
 
-Fourteen are judged by the residue. A row edit's records are first made whole again as H's judge would have recorded
+Seventeen are judged by the residue. A row edit's records are first made whole again as H's judge would have recorded
 them, so the replay stands and the residue's own judgement is what is tested:
 
 - one more honest non-landing than the bound;
@@ -67,19 +71,26 @@ them, so the replay stands and the residue's own judgement is what is tested:
 - its dragend foreign;
 - its dragend a drop;
 - its zone counters unread;
+- its before-press stamp missing;
+- its after-press stamp missing;
+- its dragend stamp missing;
 - the same rows at idle;
 - the same rows under `t17-fix2` at twice the load;
 - a false ok added to the same series;
 - a failure outside this judge in the terminal outcome;
 - the watchdog not clean.
 
-The other five check the replay's own guards; each must refuse the replay:
+The other nine check the replay's own guards; each must refuse the replay:
 
 - no terminal outcome;
 - no `step.json`;
 - a stored verdict that H's judge does not reproduce;
 - a terminal outcome without the judge's failures;
-- a run exit that the outcome does not explain.
+- a run exit that the outcome does not explain;
+- a refused run: the run and the step exited 2;
+- no exits recorded;
+- no watchdog verdict recorded;
+- a step exit its run and watchdog do not give.
 
 ## Ruling 830: zone-truth mismatches, a declared app-level limit
 
@@ -87,12 +98,13 @@ The other five check the replay's own guards; each must refuse the replay:
 
 - an ok answer, with nothing honestly pending;
 - a cell in the window;
-- this trial's own completed dragend reported copy;
+- this trial's own completed dragend reported copy, on stamped evidence (`stampedDragend`);
 - the zone's drop counter was read before and after, and did not move.
 
 What follows from that:
 
-- **Never a fail.** The dragend rule stands, so a mismatch is never a fail and never a false ok.
+- **Never a fail by itself.** The dragend rule stands, so a mismatch is never counted as a false ok. In the `plain`
+  cell the same row is listed and also fails as a missing landing, under the landing rule.
 - **Always listed.** `electronDropVerdict` lists mismatches apart, per lane and cell, in its findings (and so in the
   summary), and in `counts.zone_mismatch`. With none, the line says the check ran.
 - **Everywhere.** It runs in every run, at every load and in every plan: H1, H2 and L4a.
@@ -106,7 +118,8 @@ in each 100-a-cell sitting, and 12 in each pilot.
 **Controls on the prototype's L4a rows:**
 
 - a `cua left` drag made an ok on its own copy dragend, outside the zone, is listed (1 of 30) and passes;
-- the same ok on a dragend of none is a false ok and fails.
+- the same ok on a dragend of none is a false ok and fails;
+- the copy ok with its before-press, after-press or dragend stamp missing is not listed.
 
 ## The reach under §8.1
 

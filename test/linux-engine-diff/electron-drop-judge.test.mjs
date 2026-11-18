@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { SLOW_CELL_MODE, dropSignalsVerdict, electronDropVerdict, honestNonLanding, judgedElectronPlan, unconfirmedClass } from '../../scripts/linux-engine-diff/drop-signals-judge.mjs';
+import { SLOW_CELL_MODE, dropSignalsVerdict, electronDropVerdict, honestNonLanding, judgedElectronPlan, unconfirmedClass, zoneMismatch } from '../../scripts/linux-engine-diff/drop-signals-judge.mjs';
 import { dropRow } from './drop-rows.mjs';
 
 const UNCONFIRMED = 'unconfirmed';
@@ -431,4 +431,47 @@ test('off the window the dragend rule excuses nothing: an ok on a copy dragend t
   const v = electronDropVerdict([drag({ lane: 'cua:handle', cell: 'xterm', load: 'load2', landed: false, effect: 1, verified: true })], { specs: specs(['cua:handle', 'xterm', 1]) });
   assert.deepEqual(v.failed, ['cua:handle xterm: answered ok with no drop and nothing pending on 1 of 1 (#0)']);
   assert.deepEqual(v.counts.zone_mismatch, []);
+});
+
+test('in the plain cell a mismatch never fails by itself: the same row is listed and fails as a missing landing', () => {
+  const rows = many(5, (i) => drag({ load: 'load2', i }));
+  rows[0] = drag({ load: 'load2', i: 0, landed: false, effect: 1 });
+  assert.equal(zoneMismatch(rows[0]), true);
+  const v = electronDropVerdict(rows, { specs: specs(['cua', 'plain', 5]) });
+  assert.deepEqual(v.failed, ['cua plain: the drop did not land on 1 of 5, in a cell that expects it (#0)']);
+  assert.equal(v.counts.false_ok, 0);
+  assert.deepEqual(v.counts.zone_mismatch, [{ lane: 'cua', cell: 'plain', drags: 5, count: 1 }]);
+  assert.ok(v.findings.some((f) => /^zone-truth mismatches .*: cua plain 1 of 5; not a fail and no false ok$/.test(f)), v.findings.join('\n'));
+});
+
+// fix wave 2 (task 102's re-review): the residue and the mismatch take only stamped evidence, the before-press and
+// after-press stamps both read and the dragend stamped with this trial's press; the legacy dragend verdict is unchanged
+
+test('the residue and the mismatch refuse a dragend whose press stamps are missing, each stamp apart; the legacy verdict still reads it', () => {
+  const stamps = [
+    ['the before-press stamp', (r) => { delete r.before.press.seq; }],
+    ['the before-press record', (r) => { delete r.before.press; }],
+    ['the after-press stamp', (r) => { delete r.after.press.seq; }],
+    ["the dragend's own stamp", (r) => { delete r.after.last.seq; }],
+  ];
+  for (const [name, strip] of stamps) {
+    const residueRow = drag({ lane: 'cua:handle', load: 'load2', landed: false, notice: UNCONFIRMED });
+    const copyRow = drag({ cell: 'left', load: 'load2', landed: false, effect: 1 });
+    assert.equal(honestNonLanding(residueRow), true, `${name}: the stamped residue row`);
+    assert.equal(zoneMismatch(copyRow), true, `${name}: the stamped copy row`);
+    strip(residueRow);
+    strip(copyRow);
+    assert.equal(honestNonLanding(residueRow), false, `residue, ${name} missing`);
+    assert.equal(zoneMismatch(copyRow), false, `mismatch, ${name} missing`);
+    const rows = residueCell(100, 0);
+    rows[0] = residueRow;
+    const v = fix3(rows, { specs: specs(['cua:handle', 'plain', 100]) });
+    assert.ok(v.failed.includes('cua:handle plain: the drop did not land on 1 of 100, in a cell that expects it (#0)'), `${name}: ${v.failed.join('\n')}`);
+    assert.equal(v.counts.residue[0].count, 0, name);
+    assert.equal(electronDropVerdict([copyRow], { specs: specs(['cua', 'left', 1]) }).counts.zone_mismatch[0].count, 0, name);
+  }
+  // the legacy dragend verdict reads the stored sittings' unstamped records as before (the harness-fix wave)
+  const legacy = drag({ cell: 'left', landed: false, effect: 1, stamp: false, lat: 0 });
+  assert.deepEqual(electronDropVerdict([legacy], { specs: specs(['cua', 'left', 1]) }).failed, []);
+  assert.equal(zoneMismatch(legacy), false, 'an unstamped copy dragend is no mismatch');
 });

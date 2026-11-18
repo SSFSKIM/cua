@@ -509,25 +509,26 @@ if CommandLine.arguments.contains("--cover") {
 // Requests are read off the main thread and handled at the top level of the main thread's own run loop (as #354's tool
 // does). Running a request inside DispatchQueue.main.sync would hold the main queue for its whole duration, and the
 // workspace's activation and frontmost updates are delivered through that queue, so an activation could never complete.
+enum Item { case empty, eof, line(String) }
 final class Inbox: @unchecked Sendable {
   private let lock = NSLock()
-  private var lines: [String?] = []
-  func push(_ l: String?) { lock.lock(); lines.append(l); lock.unlock() }
-  // nil: nothing queued; .some(nil): end of input.
-  func pop() -> String?? { lock.lock(); defer { lock.unlock() }; return lines.isEmpty ? nil : lines.removeFirst() }
+  private var items: [Item] = []
+  func push(_ i: Item) { lock.lock(); items.append(i); lock.unlock() }
+  // An explicit enum: a String?? popped through a ternary wraps a nil line as .some(nil), so an empty queue read as end of input.
+  func pop() -> Item { lock.lock(); defer { lock.unlock() }; return items.isEmpty ? .empty : items.removeFirst() }
 }
 let inbox = Inbox()
 Thread.detachNewThread {
-  while let line = readLine() { inbox.push(line) }
-  inbox.push(nil)  // end of input: the main thread drains what is queued, then exits
+  while let line = readLine() { inbox.push(.line(line)) }
+  inbox.push(.eof)  // end of input: the main thread drains what is queued, then exits
 }
-RunLoop.main.add(Port(), forMode: .default)  // keeps run(until:) waiting instead of returning at once
+RunLoop.main.add(NSMachPort(), forMode: .default)  // keeps run(until:) waiting instead of returning at once
 while true {
-  if let item = inbox.pop() {
-    guard let line = item else { exit(0) }
+  switch inbox.pop() {
+  case .line(let line):
     print(handle(line))
     fflush(stdout)
-  } else {
-    RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.01))
+  case .eof: exit(0)
+  case .empty: RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.01))
   }
 }

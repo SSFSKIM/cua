@@ -6,7 +6,7 @@
 //
 // Privacy: only synthetic values exist, all generated in memory at run time. Records hold only design parameters, booleans,
 // counts, timings, stage names and the probe's scrubbed whitelist result: never field text, typed text, a stored secret, a
-// seed, a raw engine reply, an engine or probe log, or an error message. Engine and probe stderr are discarded.
+// seed, a raw engine reply, an engine or probe log, or an error message. Engine stderr is discarded; the probe's and the cover's boot stderr is reduced to a line count and fixed matched labels, never kept as text.
 import {spawn,spawnSync} from 'node:child_process';
 import {createConnection} from 'node:net';
 import {mkdirSync,mkdtempSync,writeFileSync,appendFileSync,rmSync,statSync,copyFileSync,chmodSync} from 'node:fs';
@@ -38,6 +38,11 @@ const sh=(c,a)=>spawnSync(c,a,{encoding:'utf8',timeout:20000});
 // Failures carry a stage, never a message: an engine or fixture message could carry a typed or compared value.
 class Fail extends Error {}
 class Abort extends Error {}
+// Startup diagnostics are fixed labels: an allowlisted error class and code, a child's exit signal and status, never a message.
+const ERROR_NAMES=['Fail','Abort','FixtureLost','Error','TypeError','RangeError','SyntaxError','ReferenceError'];
+const errorName=e=>{const n=e?.constructor?.name;return ERROR_NAMES.includes(n)?n:'other'};
+const errorCode=e=>typeof e?.code==='string'&&/^E[A-Z0-9]{2,20}$/.test(e.code)?e.code:null;
+const exitLabel=(code,signal)=>({exitCode:Number.isSafeInteger(code)?code:null,signal:typeof signal==='string'&&/^SIG[A-Z0-9]{2,10}$/.test(signal)?signal:null});
 
 // ---- synthetic values and the leak detector -------------------------------------------------------------------------
 // Every synthetic value is registered as its 8-character windows (hex windows must hold a letter, so a run of digits cannot
@@ -126,8 +131,14 @@ async function main(){
  // ---- owned children ----------------------------------------------------------------------------------------------
  const engine=spawn(enginePath,[],{env:{...process.env,CUA_ENGINE_SOCKET:socket},stdio:['ignore','ignore','ignore']});
  engine.on('error',()=>{});
- const side=spawn(swiftPath,[],{stdio:['pipe','pipe','ignore']}),waiters=[];
+ const side=spawn(swiftPath,[],{stdio:['pipe','pipe','pipe']}),waiters=[];
  side.on('error',()=>{});
+ // Startup only: the probe's and the cover's stderr from boot to the end of the startup stages, before any synthetic value
+ // exists; collection stops there and only its shape is kept.
+ const startup={},boot={marker:'',cover:''};let bootOpen=true;
+ const collect=(stream,key)=>{stream.on('data',d=>{if(bootOpen&&boot[key].length<4000)boot[key]+=d});stream.on('error',()=>{})};
+ collect(side.stderr,'marker');
+ side.on('exit',(code,signal)=>{startup.marker=exitLabel(code,signal)});
  let sideBroken=false;
  function breakSide(){sideBroken=true;for(const w of waiters.splice(0)){clearTimeout(w.timer);w.reject(new Abort())}}
  createInterface({input:side.stdout}).on('line',l=>{let r;try{r=JSON.parse(l)}catch{r={error:true}}const w=waiters.shift();if(w){clearTimeout(w.timer);w.resolve(r)}});
@@ -350,30 +361,52 @@ async function main(){
  }
 
  // ---- run ---------------------------------------------------------------------------------------------------------
- let stage='start';
+ let stage='fixture';
+ // Boot stderr is never kept as text: only the line count and which fixed labels matched, so nothing from the host is published.
+ const BOOT_LABELS={exception:/exception|uncaught/i,abort:/abort|fatal|assert/i,windowServer:/window ?server|CGS|connection/i,appKit:/appkit|NSApplication|nswindow/i,permission:/permission|not permitted|denied|trust/i,signature:/signature|code ?sign|quarantine|gatekeeper/i};
+ const bootShape=t=>({lines:t.split('\n').filter(l=>l.trim()).length,matched:Object.keys(BOOT_LABELS).filter(k=>BOOT_LABELS[k].test(t))});
  try{
   fixture=await createFixture(page());
   meta.version=version('safari');
+  stage='browser-launch';
   browser=await launch('safari',fixture.url,join(tmp,'profile'),WIN);pid=browser.pid;
-  await fixture.waitReady(30000);await sleep(1500);placePid(pid,WIN);
+  stage='ready';
+  await fixture.waitReady(30000);await sleep(1500);
+  stage='placement';
+  placePid(pid,WIN);
   // Owned AppKit cover: a disposable .app bundle holding a copy of the probe binary, run in its own --cover mode. Its
   // visual ownership is checked at the witness; no AX title is required of it.
-  {const bundle=join(tmp,'Probe395 Cover.app'),macos=join(bundle,'Contents','MacOS'),exe=join(macos,'cover395');
-   mkdirSync(macos,{recursive:true});
-   writeFileSync(join(bundle,'Contents','Info.plist'),COVER_PLIST);
-   copyFileSync(swiftPath,exe);chmodSync(exe,0o755);
-   coverProc=spawn(exe,['--cover'],{stdio:['ignore','pipe','ignore']});coverProc.on('error',()=>{});
-   let text='';coverProc.stdout.on('data',d=>{text+=d});
-   for(let i=0;i<60&&!coverPid;i++){
-    try{const v=JSON.parse(text.split('\n')[0]);if(v.pid===coverProc.pid)coverPid=v.pid}catch{}
-    if(!coverPid)await sleep(250);
-   }
-   if(!coverPid)throw new Fail();
-   let ok=false;for(let i=0;i<20&&!ok;i++){const r=await ask({op:'cover',pid:coverPid});ok=r.bundleOk===true&&r.onScreen===true;if(!ok)await sleep(250)}
-   meta.coverWindow=ok;if(!ok)throw new Fail()}
+  stage='cover-build';
+  const bundle=join(tmp,'Probe395 Cover.app'),macos=join(bundle,'Contents','MacOS'),exe=join(macos,'cover395');
+  mkdirSync(macos,{recursive:true});
+  writeFileSync(join(bundle,'Contents','Info.plist'),COVER_PLIST);
+  copyFileSync(swiftPath,exe);chmodSync(exe,0o755);
+  stage='cover-launch';
+  coverProc=spawn(exe,['--cover'],{stdio:['ignore','pipe','pipe']});coverProc.on('error',e=>{startup.coverSpawnError=errorCode(e)??errorName(e)});
+  collect(coverProc.stderr,'cover');coverProc.on('exit',(code,signal)=>{startup.cover=exitLabel(code,signal)});
+  let text='';coverProc.stdout.on('data',d=>{text+=d});
+  stage='cover-hello';
+  for(let i=0;i<60&&!coverPid&&coverProc.exitCode===null&&coverProc.signalCode===null;i++){
+   try{const v=JSON.parse(text.split('\n')[0]);if(v.pid===coverProc.pid)coverPid=v.pid}catch{}
+   if(!coverPid)await sleep(250);
+  }
+  startup.coverHello=coverPid>0;
+  if(!coverPid)throw new Fail();
+  // bundleOk and onScreen are kept apart; the cover is ready only when both hold.
+  stage='cover-state';
+  let state=null;
+  for(let i=0;i<20;i++){
+   state=await ask({op:'cover',pid:coverPid});
+   if(state.bundleOk===true&&state.onScreen===true)break;
+   await sleep(250);
+  }
+  stage='cover-check';
+  startup.bundleOk=typeof state?.bundleOk==='boolean'?state.bundleOk:null;startup.onScreen=typeof state?.onScreen==='boolean'?state.onScreen:null;
+  meta.coverWindow=startup.bundleOk===true&&startup.onScreen===true;
+  if(!meta.coverWindow)throw new Fail();
   stage='bind';
   await front(pid);await fixture.bindVisible(()=>titles(pid),15000);
-  stage='preflight';
+  stage='preflight';bootOpen=false;
   const w=await connect();
   try{
    const resolved=await resolveBrowserTarget({execute:(method,a)=>w.execute(method,a),pid,bundle:'com.apple.Safari'});
@@ -386,9 +419,16 @@ async function main(){
   for(const c of WARMUPS)await cell(c,{warmup:true});
   stage='cells';
   for(const roundCells of rounds)for(const c of roundCells)await cell(c);
- }catch{aborted=stage}
+ }catch(e){aborted=stage;startup.stage=stage;startup.errorName=errorName(e);startup.errorCode=errorCode(e)}
  finally{
+  bootOpen=false;
   meta.finishedAt=Date.now();
+  if(aborted!==null&&startup.stage){
+   // A startup stop keeps the children's fixed exit labels and the boot stderr shape (line counts and fixed labels).
+   startup.marker??=exitLabel(side.exitCode,side.signalCode);startup.cover??=coverProc?exitLabel(coverProc.exitCode,coverProc.signalCode):null;
+   startup.sideBroken=sideBroken;startup.boot={marker:bootShape(boot.marker),cover:bootShape(boot.cover)};
+   meta.startup=startup;
+  }
   // Harness validity and probe validity are summarized apart; full coverage needs every planned cell valid in both.
   meta.coverage={planned,done,valid,
    harness:{valid:harnessValid,invalid,setupFailures,failureStages},

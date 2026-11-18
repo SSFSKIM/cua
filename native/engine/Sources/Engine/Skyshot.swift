@@ -381,7 +381,10 @@ extension Engine {
       }
       let element = prepare(value as! AXUIElement)
       if let token = walk.token(of: element) { focused = token } else { focusRead = "outsideTheWalk" }
-      if let text = stringAttribute(element, kAXSelectedTextAttribute), !text.isEmpty { selectedText = bounded(text) }
+      if let text = focusedSelectedText(role: { stringAttribute(element, kAXRoleAttribute) }, subrole: { subroleRead(element) },
+                                        selectedText: { stringAttribute(element, kAXSelectedTextAttribute) }) {
+        selectedText = text
+      }
       // The selected elements the trailer names: the focused element's selected children, else its selected rows.
       for name in [kAXSelectedChildrenAttribute, kAXSelectedRowsAttribute] {
         let selected = elementList(attribute(element, name)).compactMap { walk.token(of: $0) }
@@ -461,6 +464,13 @@ extension Engine {
                        desktopLevel: server.desktopLevel, ownerIsFinder: ownerIsFinder)
   }
 
+}
+
+/// The focused element's selected text the trailer prints, bounded; nil when it has none, and, with no read of it, for a
+/// password field or one whose role or subrole cannot be read, classified just before (#405, `writtenValueFieldClosed`).
+func focusedSelectedText(role: () -> String?, subrole: () -> SubroleRead, selectedText: () -> String?) -> String? {
+  guard !writtenValueFieldClosed(role: role(), subrole: subrole()), let text = selectedText(), !text.isEmpty else { return nil }
+  return bounded(text)
 }
 
 /// The primary window, polled every 50 ms until `deadline` (Unix ms); past it, `timeoutReached` for an app the

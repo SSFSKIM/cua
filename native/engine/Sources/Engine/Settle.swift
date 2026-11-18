@@ -187,7 +187,8 @@ func busyWalk(_ window: AXUIElement, source: ElementSource, visibleFrame: CGRect
   var seen = Set<ElementKey>()
   while let (element, depth) = stack.popLast(), seen.count < maxObservedNodes {
     guard monotonicMilliseconds() < deadline else { return reading }
-    guard seen.insert(ElementKey(element: element)).inserted, let data = source.data(element) else { continue }
+    // No value is read here (#405, `ElementSource.structure`); the observation that reuses the source adds it.
+    guard seen.insert(ElementKey(element: element)).inserted, let data = source.structure(element) else { continue }
     if data.role == "AXBusyIndicator" || data.elementBusy == true || data.domClassList?.contains(busyMarkerClass) == true {
       reading.busy = true
       return reading

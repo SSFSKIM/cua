@@ -70,9 +70,10 @@ let markdownMaxLength = 2_000
 private let markdownRoles: Set<String> = [kAXTextAreaRole, kAXTextFieldRole]
 
 /// Whether a walk reads an element's value settability: whenever it has a value (the vendor's value branch of
-/// FUN_10074cb90 runs only for a value it holds) and the role's settability counts in the window (Derivations.swift).
+/// FUN_10074cb90 runs only for a value it holds; a password field, whose value is never read, counts as holding one, as
+/// every app answers it one, #405) and the role's settability counts in the window (Derivations.swift).
 func readsValueSettable(_ data: ElementData, parentRole: String?, chromium: Bool) -> Bool {
-  data.value != nil && readsValueSettability(role: data.role, subrole: data.subrole, parentRole: parentRole, chromium: chromium)
+  (data.value != nil || data.secure) && readsValueSettability(role: data.role, subrole: data.subrole, parentRole: parentRole, chromium: chromium)
 }
 
 /// A node's flags as the walk derives them (FUN_10074cb90; Derivations.swift).
@@ -1186,6 +1187,8 @@ func nodeWire(token: String, depth: Int, pid: pid_t, data: ElementData, actions:
   if let columns = data.columnIndexRange { node["columnIndexRange"] = columns }
   if let domClassList = data.domClassList { node["domClassList"] = domClassList }
   if let shown { node["shown"] = shown.wire }
+  // #405: a password field's value was never read; the node says so, with no value, length or Markdown.
+  if data.secure { node["secure"] = true }
   return node
 }
 

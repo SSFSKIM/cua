@@ -100,7 +100,8 @@ struct ElementIdentity {
   let help: String?
   let identifier: String?
   let url: String?
-  /// #390: the value was not read (a sensitive set_value's re-read), so the match leaves it out.
+  /// #390: the value was not read (a sensitive set_value's re-read), so the match leaves it out. #405: so is a password
+  /// field's, or one that could not be classified, whose identity keeps no value: it is matched by its other ten.
   let valueUnread: Bool
   fileprivate(set) var pid: pid_t
 
@@ -592,11 +593,17 @@ private func matching(_ identity: ElementIdentity, ignoringValue: Bool, window: 
       push(resumed.children, depth: resumed.depth, path: resumed.path, clip: resumed.clip)
       continue
     }
+    // A window element is matched first without its value (#405, `ElementSource.structure`), whose request is made only
+    // for an element the rest matches, when the match counts the value.
     guard seen.insert(ElementKey(element: next.element)).inserted,
-          let data = next.descend ? source.data(next.element) : source.listedData(next.element) else { continue }
+          let data = next.descend ? source.structure(next.element) : source.listedData(next.element) else { continue }
     if !next.descend, data.role != kAXMenuBarRole, isDebugMenuItem(data) { continue }
     visited += 1
-    if ElementIdentity(data, pid: identity.pid).matches(identity, ignoringValue: ignoringValue) { found.append(next.element) }
+    if ElementIdentity(data, pid: identity.pid).matches(identity, ignoringValue: ignoringValue),
+       !data.valueUnread || ignoringValue || identity.valueUnread
+        || source.data(next.element).map({ ElementIdentity($0, pid: identity.pid).matches(identity) }) == true {
+      found.append(next.element)
+    }
     guard next.descend && next.depth < maxDepth else { continue }
     // What it leaves showing to its children: the walk's clipping rule (`childrenClip`), which the width rule judges in.
     let clip = childrenClip(next.clip, frame: data.frame, role: data.role, actions: source.actions(next.element))

@@ -33,9 +33,9 @@ for (const op of PREMISE_OPS) {
   const label = evidenceLabel(rows);
   const own = lines.filter((l) => l.op === op);
   const reads = own.flatMap((l) => ['before', 'after'].map((side) => l.page?.[side]));
-  const timed = bindTimed(rows, { lines, seriesLength: 1 + (DEVICE_OPS[op].warmSamples ?? 0) });
+  const timed = bindTimed(rows, { lines });
   const bound = bindAudit(audit, lines, { run, scene: auditRow.scene, op, expect: DEVICE_OPS[op].device, window, label });
-  const verdict = judgeDevice(op, rows, audit, { lines, window });
+  const verdict = judgeDevice(op, rows, audit, { lines, window, plan: { blocks: rowsAll[0].blocks, audit: true } });
   out.cells.push({
     op,
     label,

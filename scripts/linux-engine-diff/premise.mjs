@@ -192,12 +192,11 @@ export const adjacency = (entries) => (e) => {
 export function bindAudit(audit, lines, { run, scene, op, expect = null, window = null, label = null } = {}) {
   const answered = audit?.answered ?? [];
   const lifecycles = audit?.lifecycles ?? 1;
-  const bare = answered.map((a, i) => ({ ...a, i, run, block: 'audit', lifecycle: lifecycles === 1 ? `${run}|audit` : null }));
+  // the runner's four reply fields alone: nothing else an answer carries ever stands for evidence (review 5, finding 1)
+  const bare = answered.map((a, i) => ({ ok: a.ok, error: a.error ?? null, expected_error: a.expected_error ?? null, late_error: a.late_error ?? null, i, run, block: 'audit', lifecycle: lifecycles === 1 ? `${run}|audit` : null }));
   if (lines == null) return { entries: bare, problems: [] };
   const problems = [];
   if (!(expect in FOLLOW_UPS)) problems.push(`no premise case's follow-ups for the expectation ${expect}`);
-  // a planned audit's requests, every one: a lifecycle that recorded fewer excludes nothing
-  if (answered.length !== AUDIT_PLAN) problems.push(`the audit recorded ${answered.length} request${answered.length === 1 ? '' : 's'}, its plan ${AUDIT_PLAN}`);
   // what the lines are bound to: the audited window (its XID) and the run's own fixture, whose label carries the run's
   // name and its Desktop's nonce, so a line of a prior run of the same name, even on a reused XID, never binds
   if (!Number.isInteger(window)) problems.push('no audited window to bind the lines to');
@@ -286,17 +285,15 @@ export function evidenceLabel(rows) {
 
 /**
  * A run's timed rows of one case bound to their evidence, which only then may exclude: `lines` the run's own sidecar (null
- * where it has none: then no row keeps its evidence, and nothing fails for it), `seriesLength` the case's planned series
- * (its cold request and its warm ones). Each row's evidence must name the row's own run, scene, case, block and request,
- * the run's fixture, and cua's reply whole, which must be the row's own answer (its ok, error and notice); it must be
- * exactly one line of the sidecar, equal to it, and every timed line of the case a row's; the rows must be the plan's
- * slots (whole series from block 0, each request once, the cold one first); and the rows of the run one window and page.
- * Answers the problems; with any, no row keeps its evidence (judged as before).
+ * where it has none: then no row keeps its evidence, and nothing fails for it). One to one, both ways: each row's
+ * evidence must name the row's own run, scene, case, block and request, the run's fixture, and cua's reply whole, which
+ * must be the row's own answer (its ok, error and notice), and be exactly one line of the sidecar, equal to it; every
+ * timed line of the case must be the evidence its row carries; and the rows of the run one window and page. Answers the
+ * problems; with any, no row keeps its evidence (judged as before).
  */
-export function bindTimed(rows, { lines = null, seriesLength = null } = {}) {
-  const strip = () => rows.map(({ premise_evidence, ...rest }) => rest);
-  if (!rows.some((r) => r.premise_evidence != null)) return { rows, problems: [] };
-  if (lines == null) return { rows: strip(), problems: [] };
+export function bindTimed(rows, { lines = null } = {}) {
+  const strip = () => rows.map((r) => (r.premise_evidence == null ? r : (({ premise_evidence, ...rest }) => rest)(r)));
+  if (lines == null || !rows.length) return { rows: strip(), problems: [] };
   const problems = [];
   const run = rows[0].run;
   const op = rows[0].op;
@@ -304,7 +301,11 @@ export function bindTimed(rows, { lines = null, seriesLength = null } = {}) {
   for (const r of rows) {
     const e = r.premise_evidence;
     const at = `${r.block}/${r.i}`;
-    if (e == null) continue;
+    // a line counts only as the evidence its own row carries (review 5, finding 2)
+    if (e == null) {
+      if (timedLines.some((l) => l.block === r.block && l.i === r.i)) problems.push(`a sidecar line for ${at}, whose row carries no evidence`);
+      continue;
+    }
     const wrong = e.run !== r.run || e.scene !== r.scene || e.op !== r.op || e.block !== r.block || e.i !== r.i;
     if (wrong) {
       problems.push(`${at}'s evidence names another sample (${e.run} ${e.scene} ${e.op} ${e.block}/${e.i})`);
@@ -325,7 +326,6 @@ export function bindTimed(rows, { lines = null, seriesLength = null } = {}) {
     else if (JSON.stringify(found[0]) !== JSON.stringify(e)) problems.push(`${at}'s sidecar line is not its evidence`);
   }
   for (const l of timedLines) if (!rows.some((r) => r.block === l.block && r.i === l.i)) problems.push(`a sidecar line for no row (${l.block}/${l.i})`);
-  if (Number.isInteger(seriesLength)) problems.push(...slotProblems(rows, seriesLength));
   // one window and page for a scene in each run
   const windows = new Set(rows.filter((r) => r.premise_evidence).map((r) => `${r.premise_evidence.window}|${r.premise_evidence.fixture?.label}`));
   if (windows.size > 1) problems.push(`the evidence names ${windows.size} windows or pages for one scene in run ${run}`);
@@ -333,10 +333,11 @@ export function bindTimed(rows, { lines = null, seriesLength = null } = {}) {
 }
 
 /**
- * Whether a case's timed rows are its plan's slots, nothing collapsed: whole series from block 0, each request of each
- * series once, the cold one first and the rest warm (run.mjs's blocks). Answers the problems.
+ * Whether a case's timed rows are its recorded plan's slots, nothing collapsed: `blocks` series (the run's meta), each of
+ * `seriesLength` requests (the cold one, then the case's warm ones), each slot once, the cold one first and the rest warm
+ * (run.mjs's blocks). Answers the problems.
  */
-function slotProblems(rows, seriesLength) {
+export function slotProblems(rows, { blocks, seriesLength }) {
   const problems = [];
   const count = new Map();
   for (const r of rows) {
@@ -345,7 +346,7 @@ function slotProblems(rows, seriesLength) {
     const want = r.i === 0 ? 'cold' : 'warm';
     if (Number.isInteger(r.i) && r.series !== want) problems.push(`${r.block}/${r.i} is the ${want} slot of its series, its row says ${r.series ?? 'none'}`);
   }
-  const blocks = Math.max(-1, ...rows.map((r) => (Number.isInteger(r.block) ? r.block : -1))) + 1;
+  for (const r of rows) if (Number.isInteger(r.block) && r.block >= blocks) problems.push(`a row past the plan's ${blocks} blocks (${r.block}/${r.i})`);
   for (let b = 0; b < blocks; b++) {
     for (let i = 0; i < seriesLength; i++) {
       const n = count.get(`${b}/${i}`) ?? 0;

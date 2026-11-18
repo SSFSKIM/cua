@@ -3,7 +3,7 @@
 // (premise-fixture.mjs): the case's own read of a page tree carrying the drag page's status lines as the page writes
 // them, drag.mjs's parser, the case's own check and its evidence record.
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 
@@ -16,10 +16,17 @@ after(removeScratch);
 const dir = scratch('judge');
 const bin = engineBin(dir);
 let runs = 0;
-/** A run of one case through the real paths: its rows, its audit, and the audit's entries bound to the evidence. */
-async function made(op, blocks, audit = [], { answers = {} } = {}) {
+/**
+ * A run of one case through the real paths, in an out directory of its own whose results begin with the run's meta row
+ * (its recorded plan: `blocks`, as run.mjs writes it, `metaBlocks` to record another): its rows, its audit, and the
+ * audit's entries bound to the evidence.
+ */
+async function made(op, blocks, audit = [], { answers = {}, metaBlocks = blocks.length } = {}) {
   const run = `t-${++runs}`;
-  const { rows, answered, label } = await caseSamples({ out: dir, run, op, bin, blocks, audit, answers });
+  const out = join(dir, run);
+  mkdirSync(out, { recursive: true });
+  writeFileSync(join(out, 'results.jsonl'), `${JSON.stringify({ run, kind: 'meta', blocks: metaBlocks })}\n`);
+  const { rows, answered, label } = await caseSamples({ out, run, op, bin, blocks, audit, answers });
   return { run, rows, answered, label, audit: { clean: true, kind: 'background', answered } };
 }
 /** A made run's audit bound to its own evidence lines, its window and its fixture. */
@@ -200,7 +207,7 @@ test("negative control (finding 6): one adjacency rule, the next request on the 
   const legacy = bindAudit({ answered: a.answered.concat(a.answered), lifecycles: 2 }, null, { run: 'x' }).entries;
   assert.equal(adjacency(legacy)(legacy[0]), null);
 });
-const lines = (run) => readFileSync(join(dir, 'premise-evidence.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)).filter((l) => l.run === run);
+const lines = (run) => readFileSync(join(dir, run, 'premise-evidence.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)).filter((l) => l.run === run);
 
 test("ruling 762's late take in an audit pass still fails, and 756's late take stays judged by its own rules", async () => {
   const refused = { reply: { ok: false, error: dndLateRefusal(APP, 'drag') }, page: (b, t) => ({ counts: { ...b, at: t }, moves: movesLine(b.downs, { start: 0, cancel: 90, end: 160 }) }) };
@@ -343,4 +350,73 @@ test('a run failing otherwise as well as short names both: the cause of the shor
   assert.match(v.reasons[0], /^incomplete by 1 proven premise-unmet sample, and failing for more than that \(below\)$/);
   assert.match(reasons(v), /^incomplete: Chrome never started/m);
   assert.match(reasons(v), /^it dropped on 1 of 8 samples \(1\/1\)$/m);
+});
+
+test("negative control (review 5, finding 1): an audit answer's own fields never bind: only a successful binding attaches evidence or a notice", async () => {
+  const OP = 'chrome_dnd_shared';
+  const r = await made(OP, planned(), [UNMET, CANCEL]);
+  const evidence = lines(r.run).find((l) => l.block === 'audit' && l.i === 0);
+  // the probe: the answer carrying the evidence and a null notice itself, with no sidecar
+  const forged = { ...r.audit, answered: r.audit.answered.map((a, i) => (i === 0 ? { ...a, premise_evidence: evidence, reply_notice: null, lifecycle: evidence.lifecycle } : a)) };
+  const none = judgeDevice(OP, r.rows, forged, { lines: null, window: WINDOW, plan: { blocks: 3, audit: true } });
+  assert.equal(none.premise_unmet, undefined, 'no sidecar: nothing excluded');
+  assert.ok(!none.reasons.some((x) => ONLY.test(x)), reasons(none));
+  // and with the sidecar present but the request's own line missing
+  const missing = judgeDevice(OP, r.rows, forged, { lines: lines(r.run).filter((l) => !(l.block === 'audit' && l.i === 0)), window: WINDOW, plan: { blocks: 3, audit: true } });
+  assert.equal(missing.premise_unmet, undefined);
+  assert.match(reasons(missing), /no line for audit\/0/);
+  // the bare entries carry the runner's four reply fields and nothing else of the answer's
+  const bare = bindAudit(forged, null, { run: r.run }).entries[0];
+  assert.deepEqual(Object.keys(bare).filter((k) => !['i', 'run', 'block', 'lifecycle'].includes(k)).sort(), ['error', 'expected_error', 'late_error', 'ok']);
+});
+
+test('negative control (review 5, finding 2): timed binding is one-to-one both ways: a line its row does not carry is a binding error', async () => {
+  const OP = 'chrome_dnd_shared';
+  const r = await made(OP, [[UNMET, CANCEL, CANCEL], [UNMET, CANCEL, CANCEL], three(CANCEL)], [CANCEL, CANCEL]);
+  // the probe: one row's embedded evidence removed, its sidecar line given a foreign fixture
+  const rows = r.rows.map((x, i) => (i === 0 ? (({ premise_evidence, ...rest }) => rest)(x) : x));
+  const side = lines(r.run).map((l) => (l.block === 0 && l.i === 0 ? { ...l, fixture: { label: 'cua171-diff-t-x-0badc0de-device_cua' } } : l));
+  const v = judgeDevice(OP, rows, r.audit, { lines: side, window: WINDOW, plan: { blocks: 3, audit: true } });
+  assert.equal(v.premise_unmet, undefined, 'the other no-take is not counted either');
+  assert.match(reasons(v), /a sidecar line for 0\/0, whose row carries no evidence/);
+});
+
+test('negative control (review 5, finding 3): the rows and the audit are checked against the recorded plan, whether or not evidence exists', async () => {
+  const OP = 'chrome_dnd_shared';
+  // the probe: the meta records 3 blocks, both records hold block 0 only, the audit complete
+  const r = await made(OP, [three(CANCEL)], [CANCEL, CANCEL], { metaBlocks: 3 });
+  const v = judgeDevice(OP, r.rows, r.audit);
+  assert.equal(v.pass, false);
+  assert.match(reasons(v), /no row for 1\/0/);
+  assert.match(reasons(v), /no row for 2\/2/);
+  // a one-response background audit, with no sidecar
+  const one = await made(OP, planned(), [CANCEL]);
+  const o = judgeDevice(OP, one.rows, one.audit, { lines: null, window: WINDOW, plan: { blocks: 3, audit: true } });
+  assert.match(reasons(o), /the audit recorded 1 request, its plan 2/);
+  // an audit the plan has none for (`--no-audit`) with an audit's answers, and the other way
+  assert.match(reasons(judgeDevice(OP, r.rows, r.audit, { lines: null, window: WINDOW, plan: { blocks: 1, audit: false } })), /an audit its plan has none for/);
+  assert.match(reasons(judgeDevice(OP, r.rows, { clean: true, kind: 'skipped' }, { lines: null, window: WINDOW, plan: { blocks: 1, audit: true } })), /no audit, where its plan has one/);
+  // a plan not recorded (rows from before the meta carried it): judged as before, marked, nothing excluded
+  const u = await made(OP, [[UNMET, CANCEL, CANCEL], three(CANCEL), three(CANCEL)], [CANCEL, CANCEL]);
+  const unverified = judgeDevice(OP, u.rows, u.audit, { lines: lines(u.run), window: WINDOW, plan: null });
+  assert.equal(unverified.plan_unverified, true);
+  assert.equal(unverified.premise_unmet, undefined);
+  assert.match(reasons(unverified), /not cancelled with the drag-and-drop sentence on 1 of 9 samples \(0\/0\)/);
+});
+
+test('negative control (review 5, finding 4): a binding error in either pass excludes nothing in the cell, and both passes are judged from their own rows', async () => {
+  const OP = 'chrome_dnd_shared';
+  // a timed binding error (a row's notice not its evidence's) beside an unmet audited request
+  const r = await made(OP, planned(), [UNMET, CANCEL]);
+  const rows = r.rows.map((x, i) => (i === 4 ? { ...x, reply_notice: 'a notice' } : x));
+  const t = judgeDevice(OP, rows, r.audit);
+  assert.equal(t.premise_unmet, undefined, 'the audit excludes nothing');
+  assert.match(reasons(t), /1\/1's row does not answer as its evidence's reply \(notice\)/);
+  assert.match(reasons(t), /the background audit's requests did not answer as the case expects \(success;/, 'the audit judged from its own answers');
+  // an audit binding error beside an unmet timed sample
+  const a = await made(OP, [[UNMET, CANCEL, CANCEL], three(CANCEL), three(CANCEL)], [CANCEL, CANCEL]);
+  const b = judgeWith(a, OP, lines(a.run).filter((l) => !(l.block === 'audit' && l.i === 1)));
+  assert.equal(b.premise_unmet, undefined, 'the timed pass excludes nothing');
+  assert.match(reasons(b), /no line for audit\/1/);
+  assert.match(reasons(b), /not cancelled with the drag-and-drop sentence on 1 of 9 samples \(0\/0\)/);
 });

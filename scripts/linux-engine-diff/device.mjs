@@ -55,7 +55,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { pendingOf } from './drop-signals-judge.mjs';
-import { FOLLOW_UP_FIELDS, TIMED_QUOTAS, bindAudit, bindTimed, evidenceLabel, isShortage, judgePremise } from './premise.mjs';
+import { AUDIT_PLAN, FOLLOW_UP_FIELDS, TIMED_QUOTAS, bindAudit, bindTimed, evidenceLabel, isShortage, judgePremise, slotProblems } from './premise.mjs';
 import { preorder } from './normalize.mjs';
 import { readGtk4Status } from './families.mjs';
 import { IDENTITY_OPS, IDENTITY_SCENE_OPS, judgeIdentity } from './identity.mjs';
@@ -689,6 +689,8 @@ const loadOf = (results) => {
   try {
     const meta = JSON.parse(readFileSync(results, 'utf8').split('\n')[0]);
     if (meta.kind !== 'meta') return null;
+    // and the run's recorded plan, its blocks, for the in-run judge (`premiseBinding`)
+    if (Number.isInteger(meta.blocks) && typeof meta.run === 'string') PLANS.set(meta.run, meta.blocks);
     return once.set(`load|${results}`, { ballast: meta.ballast ?? null, occlusion: meta.occlusion ?? null }).get(`load|${results}`);
   } catch {
     // not read yet: nothing kept, so the next sample reads it again
@@ -702,6 +704,8 @@ const loadOf = (results) => {
  * same records from the run's `premise-evidence.jsonl` (rejudge-device.mjs).
  */
 const RECORDED = [];
+/** Each run's recorded plan (its meta's `blocks`), by run, as this process's recorder read it. */
+const PLANS = new Map();
 
 /**
  * A premise case's sample as its evidence (premise.mjs): the sample named (its run, scene, case, block and request
@@ -751,6 +755,45 @@ function recordedPremise(samples) {
   const run = samples[0]?.run;
   const ofRun = RECORDED.filter((r) => r.run === run);
   return { lines: ofRun.length ? ofRun : null, window: samples.find((r) => r.premise_evidence)?.premise_evidence.window ?? null };
+}
+
+/**
+ * A premise cell's two passes bound to the run's sidecar and checked against its recorded plan, both before either is
+ * classified (review 5, finding 4). `premise`: the re-judge's `{lines, window, plan}`; without it (or without `plan`) the
+ * in-run judge's, from this process's records and the run's meta. The plan (`{blocks, audit}`) checks the timed slots
+ * and the audit's cardinality whether or not evidence exists; with none recorded, nothing is excluded and the cell is
+ * marked `unverified`. With any problem in either pass, neither keeps evidence: both are judged from their own rows and
+ * answers. Answers `{plan, problems: {plan, timed, audit}, rows, entries, unverified}`.
+ */
+export function premiseBinding(op, samples, audit, premise = undefined) {
+  const run = samples[0]?.run;
+  const source = premise?.lines !== undefined ? premise : recordedPremise(samples);
+  const plan = premise && 'plan' in premise ? premise.plan : Number.isInteger(PLANS.get(run)) ? { blocks: PLANS.get(run), audit: audit?.kind !== 'skipped' } : null;
+  const answered = audit && audit.kind !== 'skipped' ? audit.answered ?? [] : [];
+  const bare = bindAudit({ ...audit, answered }, null, { run }).entries;
+  const strip = () => samples.map((r) => (r.premise_evidence == null ? r : (({ premise_evidence, ...rest }) => rest)(r)));
+  const problems = { plan: [], timed: [], audit: [] };
+  const lines = source.lines ?? null;
+  const evidenced = samples.some((r) => r.premise_evidence) || (lines ?? []).some((l) => l?.op === op && l?.run === run);
+  if (!plan) return { plan, problems, rows: strip(), entries: bare, unverified: evidenced };
+  problems.plan.push(...slotProblems(samples, { blocks: plan.blocks, seriesLength: 1 + (DEVICE_OPS[op].warmSamples ?? 0) }));
+  if (plan.audit && (!audit || audit.kind === 'skipped')) problems.plan.push('no audit, where its plan has one');
+  else if (plan.audit && answered.length !== AUDIT_PLAN) problems.plan.push(`the audit recorded ${answered.length} request${answered.length === 1 ? '' : 's'}, its plan ${AUDIT_PLAN}`);
+  else if (!plan.audit && audit && audit.kind !== 'skipped') problems.plan.push('an audit its plan has none for (--no-audit)');
+  const timed = bindTimed(samples, { lines });
+  problems.timed.push(...timed.problems);
+  let entries = bare;
+  if (audit?.kind === 'skipped') {
+    // the runner's skipped-audit sentinel (`--no-audit`): no audit, so no audit evidence either
+    const stray = (lines ?? []).filter((l) => l?.block === 'audit' && l?.op === op && l?.run === run);
+    if (stray.length) problems.audit.push(`${stray.length} audit evidence lines for an audit the run skipped`);
+  } else if (audit) {
+    const bound = bindAudit(audit, lines, { run, scene: samples[0]?.scene, op, expect: DEVICE_OPS[op].device, window: source.window, label: evidenceLabel(samples) });
+    problems.audit.push(...bound.problems);
+    entries = bound.entries;
+  }
+  const any = problems.plan.length + problems.timed.length + problems.audit.length > 0;
+  return { plan, problems, rows: any ? strip() : timed.rows, entries: any ? bare : entries, unverified: false };
 }
 
 /** The cells ruling 823's unmet premise can occur in (`PREMISE_KINDS`): V5's cancel, late and late-take cells. */
@@ -812,11 +855,14 @@ export function judgeDevice(op, samples, audit, premise = undefined) {
   const unmet = {};
   let rows = samples;
   let excluded = 0;
-  const source = PREMISE_OPS.has(op) ? (premise ?? recordedPremise(samples)) : null;
+  let binding = null;
   if (PREMISE_OPS.has(op)) {
-    const timed = bindTimed(samples, { lines: source.lines, seriesLength: 1 + (DEVICE_OPS[op].warmSamples ?? 0) });
-    for (const p of timed.problems) reasons.push(`the premise evidence of the timed samples does not fit them (ruling 823, never excluded on): ${p}`);
-    const judged = judgePremise(timed.rows, { name: (r) => `${r.block}/${r.i}`, quotas: TIMED_QUOTAS });
+    // both passes bound and checked against the plan before either is classified
+    binding = premiseBinding(op, samples, audit, premise);
+    for (const p of binding.problems.plan) reasons.push(`the run's rows do not fit its recorded plan (ruling 823, never excluded on): ${p}`);
+    for (const p of binding.problems.timed) reasons.push(`the premise evidence of the timed samples does not fit them (ruling 823, never excluded on): ${p}`);
+    for (const p of binding.problems.audit) reasons.push(`the premise evidence of the ${audit?.kind ?? ''} audit does not fit it (ruling 823, never excluded on): ${p}`);
+    const judged = judgePremise(binding.rows, { name: (r) => `${r.block}/${r.i}`, quotas: TIMED_QUOTAS });
     reasons.push(...judged.reasons);
     if (judged.record) unmet.timed = judged.record;
     rows = judged.judged;
@@ -843,7 +889,9 @@ export function judgeDevice(op, samples, audit, premise = undefined) {
     bad('the window changed', (r) => r.unchanged === true);
   }
   // a take after the release is judged by the late-take rules (ruling 756, `lateTakes`)
-  const late = expect === 'cancel' ? lateTakes(samples) : new Set();
+  // keyed by slot: the judged rows may be copies of the samples (their evidence stripped by the binding)
+  const lateSlots = new Set([...(expect === 'cancel' ? lateTakes(samples) : [])].map((r) => `${r.block}/${r.i}`));
+  const late = { has: (r) => lateSlots.has(`${r.block}/${r.i}`) };
   if (expect === 'cancel') {
     bad('not cancelled with the drag-and-drop sentence', (r) => (!r.ok && r.error === r.expected_error) || late.has(r));
     bad('it dropped', (r) => r.dropped === false);
@@ -921,21 +969,14 @@ export function judgeDevice(op, samples, audit, premise = undefined) {
   if (expect !== 'answer') {
     if (!audit) reasons.push('the audit did not run');
     else if (!audit.clean) reasons.push(`the ${audit.kind} audit found ${audit.forbidden?.join(', ') || 'no traced requests'}`);
-    // the runner's skipped-audit sentinel (`--no-audit`): no audit, so no audit evidence either
-    if (PREMISE_OPS.has(op) && audit?.kind === 'skipped') {
-      const stray = (source.lines ?? []).filter((l) => l?.block === 'audit' && l?.op === op && l?.run === samples[0]?.run);
-      if (stray.length) reasons.push(`the premise evidence of the audit does not fit it (ruling 823, never excluded on): ${stray.length} audit evidence lines for an audit the run skipped`);
-    }
     if (audit && audit.kind !== 'skipped') {
       // the audit counts only where its requests did what the case measures: answered as the case expects
       const audited = audit.answered ?? [];
       let answered = audited;
-      // the audit's own requests, bound to the evidence their samples recorded, those whose premise was unmet excluded
-      // (ruling 823); a binding error binds none, so none is excluded
+      // the audit's own requests as the binding left them (`premiseBinding`), those whose premise was unmet excluded
+      // (ruling 823); a binding error in either pass binds none, so none is excluded
       if (PREMISE_OPS.has(op)) {
-        const bound = bindAudit(audit, source.lines, { run: samples[0]?.run, scene: samples[0]?.scene, op, expect, window: source.window, label: evidenceLabel(samples) });
-        for (const p of bound.problems) reasons.push(`the premise evidence of the ${audit.kind} audit does not fit it (ruling 823, never excluded on): ${p}`);
-        const judged = judgePremise(bound.entries, { name: (e) => `audit/${e.i}`, what: 'audited requests', prefix: `the ${audit.kind} audit is incomplete` });
+        const judged = judgePremise(binding.entries, { name: (e) => `audit/${e.i}`, what: 'audited requests', prefix: `the ${audit.kind} audit is incomplete` });
         reasons.push(...judged.reasons);
         if (judged.record) unmet.audit = judged.record;
         answered = judged.judged;
@@ -956,5 +997,5 @@ export function judgeDevice(op, samples, audit, premise = undefined) {
     const n = `${excluded} proven premise-unmet sample${excluded === 1 ? '' : 's'}`;
     reasons.unshift(reasons.every(isShortage) ? `incomplete only by ${n} (a whole V5 rerun under §8.2, the controller's call)` : `incomplete by ${n}, and failing for more than that (below)`);
   }
-  return { pass: reasons.length === 0, reasons, ...(drops ? { drops } : {}), ...(Object.keys(unmet).length ? { premise_unmet: unmet } : {}) };
+  return { pass: reasons.length === 0, reasons, ...(drops ? { drops } : {}), ...(Object.keys(unmet).length ? { premise_unmet: unmet } : {}), ...(binding?.unverified ? { plan_unverified: true } : {}) };
 }

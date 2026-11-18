@@ -917,8 +917,13 @@ variants included; their evidence is written either way. The run's `end` row kee
     whole (its ok, error and notice, each present).
   - Only evidence bound to the run's own sidecar excludes. The in-run judge binds to this process's records of the run,
     a re-judge to the step's `premise-evidence.jsonl`.
-    - A timed row binds to exactly one line, its ok, error and notice the line's reply, and the rows must be the plan's
-      slots: whole series from block 0, each request once, the cold one first.
+    - A timed row binds to exactly one line, its ok, error and notice the line's reply, one to one both ways: a line
+      its row does not carry is a binding error.
+    - The rows and the audit are checked against the run's recorded plan, whether or not evidence exists: the meta's
+      blocks, the case's warm count, and the audit, or `--no-audit` (the runner's sentinel). A run whose meta records
+      no plan is judged as before, marked `plan_unverified`, and nothing in it is excluded.
+    - A binding or plan error in either pass excludes nothing in the cell: both passes are judged from their own rows
+      and answers. Bare audit answers carry only the runner's four reply fields.
     - A planned audit binds only with both its requests bound. An audit the run skipped (`--no-audit`, the runner's
       sentinel) must have no audit lines.
     - A binding error never excludes, and fails its cell. Without a sidecar, nothing is excluded.

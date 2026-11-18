@@ -51,3 +51,11 @@ test("the re-judge states how each sample of ruling 823's cells reads under it, 
   assert.deepEqual(p.premise[0].audit, { unshown: 1, 'not-plain-ok': 1 });
   assert.equal(p.premise[0].verdict, 'fail', 'judged as before');
 });
+
+test("the stored replay rebuilds the no-audit sentinel only from positive evidence that the audit was disabled", () => {
+  const noAuditRows = rows.filter((r) => r.kind !== 'audit');
+  const withSentinel = rejudgeDevice(noAuditRows, { noAudit: true })[0].verdicts.find((v) => v.name === 'device-chrome-dnd chrome_dnd_shared cua');
+  assert.ok(!withSentinel.now.reasons.some((r) => /the audit did not run/.test(r)), withSentinel.now.reasons.join('\n'));
+  const without = rejudgeDevice(noAuditRows)[0].verdicts.find((v) => v.name === 'device-chrome-dnd chrome_dnd_shared cua');
+  assert.ok(without.now.reasons.some((r) => /the audit did not run/.test(r)), 'no positive evidence: no sentinel');
+});

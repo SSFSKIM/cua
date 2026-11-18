@@ -14,8 +14,8 @@ import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { gunzipSync } from 'node:zlib';
 
-import { DEVICE_OPS, PREMISE_OPS, judgeDevice } from './device.mjs';
-import { adjacency, bindAudit, classifyPremise, evidenceLabel } from './premise.mjs';
+import { PREMISE_OPS, judgeDevice, premiseBinding } from './device.mjs';
+import { adjacency, classifyPremise } from './premise.mjs';
 
 /** A step's results file: the path given, or its `run/results.jsonl` (or `.gz`), or its own `results.jsonl`. */
 function resultsOf(path) {
@@ -39,6 +39,13 @@ export function evidenceOf(path) {
   return file ? rowsOf(file) : null;
 }
 
+/** Whether a step's own record shows its audit disabled: its step.json's command carries `--no-audit`. */
+function noAuditOf(path) {
+  const file = join(statSync(path).isDirectory() ? path : dirname(path), 'step.json');
+  if (!existsSync(file)) return false;
+  return String(JSON.parse(readFileSync(file, 'utf8')).command ?? '').split(' ').includes('--no-audit');
+}
+
 const outcome = (judged) => ({ verdict: judged.pass ? 'pass' : 'fail', reasons: judged.reasons });
 const same = (a, b) => a.verdict === b.verdict && JSON.stringify(a.reasons) === JSON.stringify(b.reasons);
 
@@ -53,26 +60,35 @@ const classes = (entries) => {
   return out;
 };
 
-/** Every device verdict of the rows' runs, re-judged: `[{run, verdicts: [...], moved, failing, unreproduced, others}]`. */
-export function rejudgeDevice(rows, { judge = judgeDevice, old = null, lines = null } = {}) {
+/**
+ * Every device verdict of the rows' runs, re-judged: `[{run, verdicts: [...], moved, failing, unreproduced, others}]`.
+ * `lines`: the step's sidecar (null where it kept none). `noAudit`: positive evidence that the run's audit was disabled
+ * (its step's command carried `--no-audit`), the only ground on which the runner's skipped-audit sentinel is rebuilt.
+ */
+export function rejudgeDevice(rows, { judge = judgeDevice, old = null, lines = null, noAudit = false } = {}) {
   const out = [];
   for (const run of [...new Set(rows.map((r) => r.run))]) {
     const own = rows.filter((r) => r.run === run);
     const samples = own.filter((r) => r.kind === 'sample' && r.engine === 'cua');
+    // the run's recorded plan: its meta's blocks, and its audit unless positively disabled; none from a meta without blocks
+    const meta = own.find((r) => r.kind === 'meta');
+    const plan = Number.isInteger(meta?.blocks) ? { blocks: meta.blocks, audit: !noAudit } : null;
     const verdicts = [];
     for (const v of own.filter((r) => r.kind === 'verdict' && r.device && r.candidate === 'cua')) {
       const opRows = samples.filter((r) => r.scene === v.scene && r.op === v.op);
-      const audit = auditOf(own.find((r) => r.kind === 'audit' && r.engine === 'cua' && r.scene === v.scene && r.op === v.op));
+      const audit = auditOf(own.find((r) => r.kind === 'audit' && r.engine === 'cua' && r.scene === v.scene && r.op === v.op)) ?? (noAudit ? { clean: true, kind: 'skipped' } : undefined);
       const stored = { verdict: v.verdict ?? (v.pass ? 'pass' : 'fail'), reasons: v.reasons ?? [] };
       // a cell of ruling 823's: its audit bound to the run's evidence, where the step kept it (premise.mjs)
       const auditRow = own.find((r) => r.kind === 'audit' && r.engine === 'cua' && r.scene === v.scene && r.op === v.op);
       const window = Array.isArray(auditRow?.ancestry) && Number.isInteger(auditRow.ancestry[0]) ? auditRow.ancestry[0] : null;
-      const bound = PREMISE_OPS.has(v.op) && audit ? bindAudit(audit, lines, { run, scene: v.scene, op: v.op, expect: DEVICE_OPS[v.op].device, window, label: evidenceLabel(opRows) }) : null;
-      // judged from the step's own sidecar (none for a run from before the fix: then nothing is excluded)
-      const now = outcome(PREMISE_OPS.has(v.op) ? judge(v.op, opRows, audit, { lines, window }) : judge(v.op, opRows, audit));
+      // judged from the step's own sidecar and recorded plan (none for a run from before the fix: then nothing is
+      // excluded), and its classes read off the same binding the verdict used
+      const premiseArgs = { lines, window, plan };
+      const now = outcome(PREMISE_OPS.has(v.op) ? judge(v.op, opRows, audit, premiseArgs) : judge(v.op, opRows, audit));
+      const bound = PREMISE_OPS.has(v.op) ? premiseBinding(v.op, opRows, audit, premiseArgs) : null;
       const then = old ? outcome(old(v.op, opRows, audit)) : null;
       // and how its timed samples and its audited requests read under it
-      const premise = PREMISE_OPS.has(v.op) ? { timed: classes(opRows), audit: bound ? classes(bound.entries) : null } : null;
+      const premise = bound ? { timed: classes(bound.rows), audit: audit && audit.kind !== 'skipped' ? classes(bound.entries) : null } : null;
       verdicts.push({ name: `${v.scene} ${v.op} cua`, samples: opRows.length, stored, ...(then ? { then, reproduced: same(then, stored) } : {}), now, moved: !same(now, stored), ...(premise ? { premise } : {}) });
     }
     const names = new Set(verdicts.map((v) => v.name));
@@ -98,7 +114,7 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const old = oldPath ? (await import(pathToFileURL(resolve(oldPath)).href)).judgeDevice : null;
   let failed = false;
   for (const path of argv) {
-    for (const r of rejudgeDevice(rowsOf(resultsOf(path)), { old, lines: evidenceOf(path) })) {
+    for (const r of rejudgeDevice(rowsOf(resultsOf(path)), { old, lines: evidenceOf(path), noAudit: noAuditOf(path) })) {
       for (const v of r.verdicts.filter((x) => x.moved || x.now.verdict !== 'pass' || x.reproduced === false)) process.stdout.write(`${JSON.stringify({ path, run: r.run, ...v })}\n`);
       const { verdicts, ...summary } = r;
       process.stdout.write(`${JSON.stringify({ path, ...summary, device_verdicts: verdicts.length })}\n`);

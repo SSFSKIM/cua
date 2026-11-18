@@ -152,13 +152,14 @@ func selectionSettableAfterFocus(_ element: AXUIElement, ax: AXOps, due: Bool) t
 }
 
 let selectTextSecure = EngineError(name: "selectionNotSettable",
-  "Cannot select text in a password field, whose text is never read")
+  "Cannot select text in a password field, or in a field whose kind cannot be read: its text is not read")
 
 /// The text select_text searches: the element's plain value and, for a text field or area (by `observedRole`) within
 /// the walk's bound, the Markdown the observation would render (`attributed`). #405: the value is read only through
 /// `guardedRead` (classified first, then read beside its role and subrole again), and the attributed read only after a
-/// classification just before it; a password field, or one whose role or subrole cannot be read, at either point is
-/// refused with nothing more of it read, so no search can tell what it holds. A value read that fails searches nothing.
+/// classification just before it; a password field, or one whose role or subrole cannot be read, at either point, or a
+/// classification that fails before the attributed read, is refused with nothing more of it read and nothing searched,
+/// so no search can tell what it holds. A value read that fails searches nothing.
 func selectionSearchText(_ element: AXUIElement, observedRole: String, ax: AXOps,
                          attributed: (AXUIElement, Int) -> NSAttributedString?) throws -> (plain: String?, markdown: (text: String, offsets: [Int?])?) {
   let plain: String?
@@ -169,8 +170,7 @@ func selectionSearchText(_ element: AXUIElement, observedRole: String, ax: AXOps
   }
   let length = plain?.utf16.count ?? 0
   guard [kAXTextAreaRole, kAXTextFieldRole].contains(observedRole), length > 0, length <= markdownMaxLength else { return (plain, nil) }
-  guard let classification = ax.batch(element, classifyingAttributes) else { return (plain, nil) }
-  if valueReadClosed(classification).closed { throw selectTextSecure }
+  guard let classification = ax.batch(element, classifyingAttributes), !valueReadClosed(classification).closed else { throw selectTextSecure }
   return (plain, attributed(element, length).flatMap(markdownMapped))
 }
 

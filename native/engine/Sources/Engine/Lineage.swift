@@ -104,8 +104,11 @@ struct ElementIdentity {
   /// description with it. #405: so is a password field's, or one that could not be classified, whose identity keeps
   /// neither: it is matched by its other nine.
   let valueUnread: Bool
-  /// #405: the value was asked for and could not be read (`ElementData.valueFailed`): a match that needs it fails.
+  /// #405: the value was wanted and could not be read (`ElementData.valueFailed`): it matches only another such.
   let valueFailed: Bool
+  /// #405: the value description's own marks (`ElementData.descriptionUnread`, `descriptionFailed`), as the value's.
+  let descriptionUnread: Bool
+  let descriptionFailed: Bool
   fileprivate(set) var pid: pid_t
 
   init(_ data: ElementData, pid: pid_t) {
@@ -122,16 +125,21 @@ struct ElementIdentity {
     url = data.url
     valueUnread = data.valueUnread
     valueFailed = data.valueFailed
+    descriptionUnread = data.descriptionUnread
+    descriptionFailed = data.descriptionFailed
     self.pid = pid
   }
 
-  /// The vendor's match (FUN_100221838); `ignoringValue` leaves the value and its description out, as the re-check after
-  /// set_value's write does (F §3.6, §16.4), and so does an identity whose value was deliberately not read (#390, #405:
-  /// `valueUnread`). Where the value counts, a side whose value read failed matches nothing (#405, `valueFailed`).
+  /// The vendor's match (FUN_100221838); `ignoringValue` leaves the value out, as the re-check after set_value's write
+  /// does (F §3.6, §16.4), and so does an identity whose value was deliberately not read (#390, #405: `valueUnread`); the
+  /// value description is left out only when it was not read (`descriptionUnread`). Where either counts, a value that
+  /// could not be read matches only another that could not (#405, `valueFailed`, `descriptionFailed`).
   func matches(_ other: ElementIdentity, ignoringValue: Bool = false) -> Bool {
     let valueCounts = !ignoringValue && !valueUnread && !other.valueUnread
+    let descriptionCounts = !descriptionUnread && !other.descriptionUnread
     return role == other.role && subrole == other.subrole && roleDescription == other.roleDescription && title == other.title
-      && (!valueCounts || (!valueFailed && !other.valueFailed && value == other.value && valueDescription == other.valueDescription))
+      && (!valueCounts || (valueFailed == other.valueFailed && value == other.value))
+      && (!descriptionCounts || (descriptionFailed == other.descriptionFailed && valueDescription == other.valueDescription))
       && description == other.description && placeholder == other.placeholder && help == other.help && identifier == other.identifier
       && url == other.url
   }
@@ -600,15 +608,14 @@ private func matching(_ identity: ElementIdentity, ignoringValue: Bool, window: 
       push(resumed.children, depth: resumed.depth, path: resumed.path, clip: resumed.clip)
       continue
     }
-    // A window element is matched first without its value (#405, `ElementSource.structure`), whose request is made only
-    // for an element the rest matches, when the match counts the value.
+    // A window element is matched first without its value (#405, `ElementSource.structure`); its value is read only for
+    // an element the rest matches, and that full read decides.
     guard seen.insert(ElementKey(element: next.element)).inserted,
           let data = next.descend ? source.structure(next.element) : source.listedData(next.element) else { continue }
     if !next.descend, data.role != kAXMenuBarRole, isDebugMenuItem(data) { continue }
     visited += 1
     if ElementIdentity(data, pid: identity.pid).matches(identity, ignoringValue: ignoringValue),
-       !data.valueUnread || ignoringValue || identity.valueUnread
-        || source.data(next.element).map({ ElementIdentity($0, pid: identity.pid).matches(identity) }) == true {
+       (next.descend ? source.data(next.element) : data).map({ ElementIdentity($0, pid: identity.pid).matches(identity, ignoringValue: ignoringValue) }) == true {
       found.append(next.element)
     }
     guard next.descend && next.depth < maxDepth else { continue }

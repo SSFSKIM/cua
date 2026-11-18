@@ -1510,6 +1510,24 @@ final class PasteOperationTests: XCTestCase {
       XCTAssertFalse(answer.contains("9") || answer.contains("\(after)"), answer)
     }
   }
+
+  /// #405: a markup paste into a password field is judged against the plain text it delivers, not the markup's length.
+  func testAMarkupPasteIntoAPasswordFieldIsJudgedByItsPlainText() throws {
+    let pasteboard = TestPasteboard()
+    pasteboard.userCopies("the owner's")
+    var characters = 0
+    var entered = 0
+    var meta = meta()
+    let markup = "<b>hunter</b>"
+    let representations = [PasteRepresentation(type: .html, data: Data(markup.utf8)), PasteRepresentation(type: .string, data: Data("hunter".utf8))]
+    try run([.content(representations, units: markup.utf16.count)], pasteboard, effect: effect { EffectReading(range: [characters, 0], characters: characters, secure: true) },
+            postPaste: {
+              _ = pasteboard.appReads()
+              characters = 6
+              return true
+            }, entered: &entered, meta: &meta)
+    XCTAssertEqual(meta.paste?.confirmed, true)
+  }
 }
 
 

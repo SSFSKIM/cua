@@ -896,17 +896,34 @@ variants included; their evidence is written either way. The run's `end` row kee
   in the zone (`dnd-linger`), so Chrome takes before the release, and a sample Chrome took nothing for by its release is
   unexercised, a failure of its case, unless Chrome never started a drag session for it at all (ruling 823, below). A development run (`--dev --trace-engine`) puts each cua series's engine behind
   an xtrace proxy of its own, its trace under `xtrace/` and each sample's span in it on the row (`xtrace`).
-  The design session's ruling 823 (`premise.mjs`): in the cancel, late and late-take cells, a sample whose premise was
-  unmet is excluded, counted and refilled. That is a plain-drag ok with no notice on its reply (`reply_notice`), where
-  the page's record of the sample's own press shows Chrome never started a drag session: the press ended in a
-  pointerup, with no dragstart, pointercancel or dragend in its log, and no drag start, end or drop counted. Chrome
-  fires dragstart before it starts the X session, and a started drag ends the press in pointercancel and dragend, never
-  a pointerup. A sample that any record contradicts (the engine's take, a late take or pending notice, a drop, a
-  changed desktop), or whose records can't show it either way, is judged as before. The audit pass keeps the same
-  fields on each audited request (`answered`). Each pass refills within itself, the timed pass by more series of the
-  case's length numbered on from the blocks, the audit by more audited requests, each marked `fill`, up to as many as
-  the pass planned. A cell that still judges fewer than it planned fails as incomplete. The summary lists each cell's
-  rate.
+  The design session's rulings 823 and 825 (`premise.mjs`, and `scripts/linux-engine-gate/premise-refill.mjs`).
+  - In the cancel, late and late-take cells, a sample whose premise was unmet is excluded and counted: a plain-drag ok
+    with no notice on its reply (`reply_notice`), where the page proves Chrome never started a drag session.
+  - The proof is the drag page's own status lines, kept as the page wrote them (`drop_status.raw`) and parsed strictly.
+    The press must be the sample's own: its count up by one, the log numbered with it, its time inside the sample's
+    attempt. Its log must carry an explicit pointerup time and an explicit `-1` for dragstart, pointercancel and
+    dragend, and no drag start, end or drop may be counted. Each line must be the one distinct line of its kind, in a
+    tree that carries the scene's page title.
+  - Chrome fires dragstart before it starts the X session, and a started drag ends the press in pointercancel and
+    dragend, never a pointerup.
+  - Anything missing, truncated or foreign proves nothing: the sample is judged as before. So is a sample the engine's
+    own take records contradict (its drag, press and late-take records), or one that dropped or changed the desktop.
+  - A reply or notice that claims or implies a drop, where the page proves no session, fails its cell. An excluded
+    sample whose own reads failed still fails its cell.
+  - Each premise sample's evidence is on its row (`premise_evidence`). It is also in the run's
+    `premise-evidence.jsonl`, the only record of the audit's samples. Each line is bound to its run, scene, case,
+    block, request number, engine lifecycle (one id per engine process), request id, window and page, with the run's
+    head, engine sha256 and load.
+  - The next request on an engine, for every rule, is the one on the same lifecycle (`adjacency`).
+  - A run's own verdict that excluded a sample is `provisional`. `premise-refill.mjs <V5 step dir>` gives the final one.
+    It refills by more runs of the unchanged runner, V5's own command from step.json, through the sitting launcher:
+    timed blocks for timed samples, the audit pass for audited ones.
+  - Each refill run must match the main run's head, engine bytes and load. Its evidence must fit its rows, and its other
+    checks must pass.
+  - The timed pass keeps its cold and warm quotas apart, under a bound of as many extra samples asked for as the pass
+    planned. A cell still short fails as incomplete.
+  - The record is `premise-refill.jsonl` and `premise.md` in the step's directory, with the refill's samples listed
+    apart, cold and warm. `--print` prints the next refill run without launching it.
 - **Minimized windows** (M4's T4, `minimized.mjs`, the scenes `minimized` (gedit), `minimized-xterm` and
   `minimized-recorder`): cua alone, each sample's window minimized with `xprobe minimize` (the harness's front window
   takes the focus first, so the window manager's focus fallback lands on a harness window; the active window afterwards
@@ -1331,7 +1348,7 @@ Two shared helpers came out of T16's fix wave (the design session, 2026-11-10), 
 | `kinds.mjs`, `dnd.mjs`, `device.mjs`, `xprobe/src/dnd.rs`, `pages/gtk4-input.py`, `pages/qt-input.py` | M3.1's kinds and drag-and-drop experiments, Acceptance 8's device cases, the `XdndSelection` watch, the GTK 4 and Qt scenes |
 | `rejudge.mjs` | a recorded run's speed verdicts judged again under the revised rule |
 | `rejudge-device.mjs` | a stored verdict run's device verdicts judged again by this checkout's `judgeDevice`, beside the stored ones and a former judge's (`--old`), with how each sample of ruling 823's cells reads under it, read-only (the M5 pre-flight's §8.1, point 4) |
-| `premise.mjs` | ruling 823's unmet premise in V5's cancel, late and late-take cells: the page's evidence that Chrome never started a drag session, the exclusion, the bounded refill, and the summary's rate |
+| `premise.mjs`, `../linux-engine-gate/premise-refill.mjs` | rulings 823 and 825: the unmet premise in V5's cancel, late and late-take cells (the page's strict proof that Chrome never started a drag session, the evidence's binding, the exclusion and its quotas), and V5's refill of it from more runs of the unchanged runner |
 | `vcl-aim.mjs`, `writer-drag.mjs`, `vcl-probe.mjs`, `pages/point-gtk3.py` | M4 T16's LibreOffice offset as the harness reads it, the Writer drag probe, the point probes and their GTK 3 control scene |
 | `park.mjs`, `xprobe/src/pointer.rs`, `app-identity.mjs` | the verified pointer park (`xprobe pointer-chain`) and the application's identity, shared by any runner (T16's fix wave) |
 | `atspi-probe.mjs`, `atspi-cache.mjs`, `pages/atspi-gtk4.py`, `pages/atspi-qt.py` | M4 T6's AT-SPI probe on its own private display: `Cache.GetItems` over the matrix and GTK 4's `EditableText`, the answers' reading and comparison, and its GTK 4 and Qt scenes |

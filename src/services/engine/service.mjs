@@ -92,8 +92,9 @@
 // - Typed text's read-back (#354): a keyed type_text answers success only once the focused field reads its text in
 //   place of the selection, else `typeUnconfirmed`, an input error with the meta whose sentence (a mismatch's bounded
 //   excerpt included) reaches the model as the engine wrote it; the record rides as cua/typeReadback. A password field
-//   is confirmed by its length alone (#414): its record says `secure: true, confirmation: "length"`, and its success's
-//   note, which says what a length proves and what it cannot, reaches the tool result's text. A press_key that posted
+//   is confirmed by its length alone (#414): its record says `secure: true`, with `confirmation: "length"` once a length
+//   check confirmed (keys alone confirm none), and that success's note, which says what a length proves and what it
+//   cannot, reaches the tool result's text. A press_key that posted
 //   carries cua/keyEffect "unconfirmed": it answers once its keys are sent.
 // - The Show Menu's confirmation (#374): perform_secondary_action "Show Menu" answers success only once a menu was seen
 //   to open within 1 s, else `menuUnconfirmed`, an input error with the meta; the confirmation's record rides as cua/menu.

@@ -175,25 +175,29 @@ enum ReadbackFinalBatch: Equatable {
 }
 
 /// What one length batch of a password field's poll found, against its held match: closed, a held match that has held
-/// for the window, a reply that left it, a reply past any genuine field's, or none of these.
-enum ReadbackLengthStep { case closed(TypeReadbackReason), holds, changed, overshoots, goesOn }
+/// for the window, a reply that left it, a reply past any genuine field's, or none of these; or no batch, since less
+/// than T was left of the budget when it would have started (`ended`).
+enum ReadbackLengthStep { case closed(TypeReadbackReason), holds, changed, overshoots, goesOn, ended }
 
-/// A concealed failure's reason (#414; the review of 1f69470e..f217f062): a function of the poll's last batch and the
-/// focus read after it alone. A last batch closed `noLongerSecure` gives that, whatever the focus read found, so the
-/// warning that the field may show the secret is never lost (the review of f217f062..45172367, 3); one closed
-/// `fieldUnreadable` gives that, whose remedy for a password field warns the same (`typeUnconfirmed`; the review of
-/// 4a005a8c..a1939d2f, P1-4), and neither needs the focus read. Otherwise a focus read that found the focus moved is
-/// `fieldChanged`; one whose answer is unknown (`ReadbackFocus.unknown`) is no evidence either way, and the last batch
-/// decides: a closed one gives its own reason, an unreadable one (or none) `lengthUnreadable`, and any other
-/// `lengthMismatch`. Nothing earlier (a held match, a taint, a focus check at a match) chooses it.
+/// A concealed failure's reason (#414; the review of 1f69470e..f217f062): a function of the final batch, read once the
+/// poll ended without a success (the review of a1939d2f..e8e2702e, 2), and the focus read after it alone. A last batch
+/// closed `noLongerSecure` gives that, whatever the focus read found, so the warning that the field may show the secret
+/// is never lost (the review of f217f062..45172367, 3); one closed `fieldUnreadable` gives that, whose remedy for a
+/// password field warns the same (`typeUnconfirmed`; the review of 4a005a8c..a1939d2f, P1-4), and neither needs the
+/// focus read. Otherwise a focus read that found the focus moved is `fieldChanged`; one whose answer is unknown
+/// (`ReadbackFocus.unknown`) is no evidence either way, and the last batch decides: a closed one gives its own reason,
+/// an unreadable one `lengthUnreadable`, and any other `lengthMismatch`. No batch at all is `fieldUnreadable` too,
+/// before a moved focus: the field was never classified after typing (the review of a1939d2f..e8e2702e, 5). Nothing
+/// earlier (a held match, a taint, a focus check at a match, a batch closed mid-poll) chooses it.
 func readbackConcealedReason(finalBatch: ReadbackFinalBatch?, focus: ReadbackFocus) -> TypeReadbackReason {
   if case .closed(.noLongerSecure)? = finalBatch { return .noLongerSecure }
-  if case .closed(.fieldUnreadable)? = finalBatch { return .fieldUnreadable }
+  guard let finalBatch else { return .fieldUnreadable }
+  if case .closed(.fieldUnreadable) = finalBatch { return .fieldUnreadable }
   if focus == .moved { return .fieldChanged }
   switch finalBatch {
-  case .closed(let why)?: return why
-  case .read(.unreadable)?, nil: return .lengthUnreadable
-  case .read?: return .lengthMismatch
+  case .closed(let why): return why
+  case .read(.unreadable): return .lengthUnreadable
+  case .read: return .lengthMismatch
   }
 }
 

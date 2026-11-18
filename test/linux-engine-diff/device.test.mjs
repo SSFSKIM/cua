@@ -2,10 +2,10 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { auditNothingSent, parseXtrace } from '../../scripts/linux-engine-diff/audit.mjs';
-import { DEVICE_OPS, DEVICE_SCENE_OPS, capabilitiesAnswer, scalePath, deviceSentence, dndCancelledSentence, dndLateNotice, dndLateRefusal, dndMayHaveDroppedSentence, dndUnconfirmedNotice, dndUnconfirmedRefusal, judgeDevice, strayNotice } from '../../scripts/linux-engine-diff/device.mjs';
+import { DEVICE_OPS, DEVICE_SCENE_OPS, capabilitiesAnswer, scalePath, deviceSentence, dndCancelledSentence, dndLateNotice, dndLateRefusal, dndMayHaveDroppedSentence, dndUnconfirmedNotice, dndUnansweredNotice, dndUnansweredRefusal, dndUnconfirmedRefusal, judgeDevice, strayNotice } from '../../scripts/linux-engine-diff/device.mjs';
 import { allowPointer } from '../../scripts/linux-engine-diff/safety.mjs';
 import { OPS, SCENE_OPS } from '../../scripts/linux-engine-diff/ops.mjs';
-import { DEVIATIONS, DEVICE_REFUSAL, DND_REFUSAL, GECKO_POINTER_LEFT, GECKO_POINTER_REFUSALS, declaredRefusal } from '../../scripts/linux-engine-diff/deviations.mjs';
+import { DEVIATIONS, DEVICE_REFUSAL, DND_REFUSAL, GECKO_POINTER_LEFT, GECKO_POINTER_REFUSALS, PENDING_REFUSAL, declaredRefusal } from '../../scripts/linux-engine-diff/deviations.mjs';
 import { pagePath } from '../../scripts/linux-engine-diff/drag.mjs';
 import { planOps, routeOf, runsOp } from '../../scripts/linux-engine-diff/run.mjs';
 import { dropCounts, runOutcome, verdictLine } from '../../scripts/linux-engine-diff/stats.mjs';
@@ -311,6 +311,18 @@ test("an unconfirmed drop's refusal is dnd.rs's, naming the request not run", ()
     dndUnconfirmedRefusal('Google-chrome', 'click'),
     'Pending from your last drag, an unconfirmed drop: your drag into Google-chrome began a drag and drop, and Google-chrome did not confirm a drop after the release, so the drop may not have landed as the drag answered; this click request was not run, so read the window before sending it again',
   );
+});
+
+test("an unanswered drop's notice and refusal are dnd.rs's, under the unconfirmed drop's kind (M5's ruling 827)", () => {
+  assert.equal(
+    dndUnansweredNotice('Electron'),
+    'Pending from your last drag, an unconfirmed drop: your drag into Electron began a drag and drop, and Electron did not answer in time for its drop to be confirmed, so the drop may not have landed as the drag answered. Read the window before sending input again: your next input request will not be run',
+  );
+  assert.equal(
+    dndUnansweredRefusal('Electron', 'click'),
+    'Pending from your last drag, an unconfirmed drop: your drag into Electron began a drag and drop, and Electron did not answer in time for its drop to be confirmed, so the drop may not have landed as the drag answered; this click request was not run, so read the window before sending it again',
+  );
+  assert.match(dndUnansweredRefusal('Electron', 'click'), PENDING_REFUSAL);
 });
 
 test("a drop case's notice holds only with the next acting request refused with it (the harness-fix wave): without the refusal it excuses nothing", () => {

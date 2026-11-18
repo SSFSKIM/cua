@@ -72,12 +72,17 @@ const lateCause = (app) =>
   `Pending from your last drag, a late drag and drop: ${app} started a drag and drop after your drag into it ended, so the drag did not end as it answered; it may have dropped and changed the desktop`;
 const unconfirmedCause = (app) =>
   `Pending from your last drag, an unconfirmed drop: your drag into ${app} began a drag and drop, and ${app} did not confirm a drop after the release, so the drop may not have landed as the drag answered`;
+/** The same kind for an Electron drop whose application did not answer the engine's syncs in time (M5's ruling 827). */
+const unansweredCause = (app) =>
+  `Pending from your last drag, an unconfirmed drop: your drag into ${app} began a drag and drop, and ${app} did not answer in time for its drop to be confirmed, so the drop may not have landed as the drag answered`;
 const pendingNotice = (cause) => `${cause}. Read the window before sending input again: your next input request will not be run`;
 const pendingRefusal = (cause, command) => `${cause}; this ${command} request was not run, so read the window before sending it again`;
 export const dndLateNotice = (app) => pendingNotice(lateCause(app));
 export const dndLateRefusal = (app, command) => pendingRefusal(lateCause(app), command);
 export const dndUnconfirmedNotice = (app) => pendingNotice(unconfirmedCause(app));
 export const dndUnconfirmedRefusal = (app, command) => pendingRefusal(unconfirmedCause(app), command);
+export const dndUnansweredNotice = (app) => pendingNotice(unansweredCause(app));
+export const dndUnansweredRefusal = (app, command) => pendingRefusal(unansweredCause(app), command);
 export const dndMayHaveDroppedSentence = (app) =>
   `${app} began a drag and drop, which changes the desktop, and it could not be cancelled in time: the drop may have happened and the desktop changed. Use a dedicated desktop, or activate the window first`;
 

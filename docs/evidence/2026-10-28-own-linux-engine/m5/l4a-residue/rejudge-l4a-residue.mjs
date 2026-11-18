@@ -1,5 +1,6 @@
 // L4a's residue (the design session's ruling 827, 3b) over the stored T17 Electron steps, read-only (the M5 pre-flight's
-// §8.1, point 4: a fix to a judge alone re-judges the stored rows of the steps it reaches).
+// §8.1, point 4: a fix to a judge alone re-judges the stored rows of the steps it reaches), with ruling 830's zone-truth
+// mismatches counted in the same rows (a declared app-level limit, never a fail).
 //
 // Each step is judged from its own rows twice, through drop-signals-judge.mjs `dropSignalsVerdict`: by H's judge (read
 // from git at `--old-rev`, unchanged from H to H‴) and by this checkout's, with the residue. The replay stands only when
@@ -106,6 +107,12 @@ function rejudgeStep({ rows, step }) {
 }
 
 const word = (pass) => (pass ? 'pass' : 'FAIL');
+/** Ruling 830's zone-truth mismatches in the stored rows, per lane and cell in the window (a declared limit, never a fail). */
+const mismatchesOf = (v) => {
+  const cells = v.counts.zone_mismatch ?? [];
+  const seen = cells.filter((x) => x.count > 0);
+  return seen.length ? seen.map((x) => `${x.lane} ${x.cell} ${x.count} of ${x.drags}`).join('; ') : `none in ${cells.reduce((s, x) => s + x.drags, 0)} drags of the window's cells`;
+};
 const residueOf = (v) => (v.counts.residue?.length ? v.counts.residue.map((x) => `${x.lane} ${x.cell} ${x.count} of ${x.drags}, bound ${x.bound}${x.over ? ' (OVER)' : ''}`).join('; ') : 'not covered');
 
 const judged = [];
@@ -123,6 +130,7 @@ for (const a of argv) {
   } else {
     console.log(`stored: ${word(j.stored)} (H's judge reproduces the stored verdict: ${word(!j.then.failed.length)}); with the residue: ${word(j.result)}; ${j.stored === j.result ? 'result unchanged' : 'RESULT MOVED'}`);
     console.log(`residue: ${residueOf(j.v)}`);
+    console.log(`zone-truth mismatches (ruling 830): ${mismatchesOf(j.v)}`);
     if (j.cleared.length) console.log(`judge failures the residue cleared: ${j.cleared.join(' | ')}`);
     if (j.added.length) console.log(`judge failures the residue added: ${j.added.join(' | ')}`);
     if (j.kept.length || j.stepFails.length) console.log(`other failures, kept: ${[...j.kept, ...j.stepFails].join(' | ')}`);
@@ -243,4 +251,26 @@ if (!base) {
   controls.push(...refusals);
   console.log(`controls: ${held} of ${controls.length} failed`);
   if (held !== controls.length) process.exitCode = 1;
+
+  // ruling 830's detector on the same stored rows: a cua left drag answered unconfirmed, made an ok on its own copy
+  // dragend outside the zone (task 101's shape), is listed and passes; the same ok on a dragend of none is a false ok
+  const leftRow = (rows) => rows.find((r) => r.kind === 'drop-signal' && r.lane === 'cua' && r.cell === 'left' && !r.outcome?.landed && r.after?.last?.src === 'plain');
+  const asOk = (effect) => rowEdit((rows) => {
+    const r = leftRow(rows);
+    Object.assign(r, { notice: null, next: { ok: true, error: null, late_dnd: null } });
+    r.after.last.effect = effect;
+  });
+  const shapes = [
+    ['an ok on a copy dragend, the zone unchanged: listed, not a fail', asOk(1), (j) => !j.refused && j.result === true && j.v.counts.zone_mismatch.find((x) => x.lane === 'cua' && x.cell === 'left')?.count === 1],
+    ['an ok on a dragend of none, no landing: a false ok, not listed', asOk(0), (j) => !j.refused && j.result === false && j.v.counts.false_ok === 1 && j.v.counts.zone_mismatch.every((x) => x.count === 0)],
+  ];
+  let shown = 0;
+  console.log(`## ruling 830's controls on ${base.label}`);
+  for (const [name, edit, holds] of shapes) {
+    const j = rejudgeStep(edit());
+    shown += holds(j) ? 1 : 0;
+    console.log(`- ${name}: ${holds(j) ? 'as it must' : 'NOT AS IT MUST'} (result ${word(j.result)}; mismatches ${mismatchesOf(j.v)}${j.failed?.length ? `; ${j.failed.join(' | ')}` : ''})`);
+  }
+  console.log(`ruling 830's controls: ${shown} of ${shapes.length} as they must`);
+  if (shown !== shapes.length) process.exitCode = 1;
 }

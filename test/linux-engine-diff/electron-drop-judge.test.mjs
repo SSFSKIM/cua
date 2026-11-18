@@ -368,3 +368,67 @@ test("the residue is L4a's plan's alone: the dispatcher opts t17-fix3 in, and an
   // the judge called with no plan grants none either
   assert.deepEqual(electronDropVerdict(residueCell(100, 1), { specs: specs(['cua:handle', 'plain', 100]) }).counts.residue, []);
 });
+
+// ruling 830 (2026-11-18): a zone-truth mismatch, an ok answer whose own dragend reported copy while the zone's drop
+// counter did not move, is a declared app-level limit: the dragend rule stands (never a fail, never a false ok), and
+// every run of the judge lists it apart, per lane and cell, at every load and in every plan
+
+/** The plain-left control's drags: `copies` of them answered ok on a dragend that reported copy outside the zone, the rest honest. */
+const leftCell = (n, copies, { lane = 'cua', load = 'load2' } = {}) =>
+  many(n, (i) => (i < copies ? drag({ lane, cell: 'left', load, i, landed: false, effect: 1 }) : drag({ lane, cell: 'left', load, i, landed: false, notice: UNCONFIRMED })));
+
+test('a zone-truth mismatch is reported apart, per lane and cell, and fails nothing: at every load, with no plan named', () => {
+  for (const load of ['idle', 'gate-windows', 'load2']) {
+    const rows = [...leftCell(30, 2, { load }), ...leftCell(30, 1, { lane: 'cua:handle', load }), ...many(5, (i) => drag({ load, i }))];
+    const v = electronDropVerdict(rows, { specs: specs(['cua', 'left', 30], ['cua:handle', 'left', 30], ['cua', 'plain', 5]) });
+    assert.deepEqual(v.failed, [], load);
+    assert.equal(v.counts.false_ok, 0, load);
+    assert.deepEqual(v.counts.zone_mismatch, [
+      { lane: 'cua', cell: 'left', drags: 30, count: 2 },
+      { lane: 'cua:handle', cell: 'left', drags: 30, count: 1 },
+      { lane: 'cua', cell: 'plain', drags: 5, count: 0 },
+    ], load);
+    assert.ok(v.findings.includes(`zone-truth mismatches (ruling 830, a declared app-level limit: an ok answer whose own dragend reported copy while the zone's drop counter did not move), load ${load}: cua left 2 of 30; cua:handle left 1 of 30; not a fail and no false ok`), v.findings.join('\n'));
+    assert.match(v.md.join('\n'), /Findings \(counted, not fails\): .*zone-truth mismatches/);
+  }
+  // L4a's plan and another judged plan, through the dispatcher, report it the same
+  for (const plan of ['t17-fix3', 't17-floor']) {
+    const v = dropSignalsVerdict({ families: ['electron'], plan }, [{ kind: 'drop-signal-scene', specs: [{ lane: 'cua', cell: 'left', n: 30 }] }, ...leftCell(30, 2)]);
+    assert.deepEqual(v.failed, [], plan);
+    assert.equal(v.counts.zone_mismatch[0].count, 2, plan);
+  }
+});
+
+test('with none, the verdict still says the check ran', () => {
+  const v = electronDropVerdict(leftCell(30, 0), { specs: specs(['cua', 'left', 30]) });
+  assert.ok(v.findings.includes("zone-truth mismatches (ruling 830, a declared app-level limit: an ok answer whose own dragend reported copy while the zone's drop counter did not move), load load2: none in 30 drags of the window's cells"), v.findings.join('\n'));
+});
+
+test('an ok on a dragend that reported none, with no landing, is still a false ok and fails; it is no mismatch', () => {
+  const rows = leftCell(30, 0);
+  rows[0] = drag({ cell: 'left', load: 'load2', i: 0, landed: false, effect: 0 });
+  const v = electronDropVerdict(rows, { specs: specs(['cua', 'left', 30]) });
+  assert.deepEqual(v.failed, ['cua left: answered ok with no drop and nothing pending on 1 of 30 (#0)']);
+  assert.equal(v.counts.zone_mismatch[0].count, 0);
+});
+
+test("an ok whose zone counter moved is no mismatch, nor is a copy dragend without the drag's own evidence or answered unconfirmed", () => {
+  // the zone counted the drop: the app's own truth agrees
+  const landed = electronDropVerdict(many(3, (i) => drag({ load: 'load2', i, effect: 1 })), { specs: specs(['cua', 'plain', 3]) });
+  assert.equal(landed.counts.zone_mismatch[0].count, 0);
+  const shapes = [
+    ['answered unconfirmed, its notice kept', drag({ cell: 'left', load: 'load2', landed: false, effect: 1, notice: UNCONFIRMED })],
+    ["an earlier press's dragend (stale)", (() => { const r = drag({ cell: 'left', load: 'load2', landed: false, effect: 1 }); r.after.last.seq = 9; return r; })()],
+    ["the zone's counters unread", (() => { const r = drag({ cell: 'left', load: 'load2', landed: false, effect: 1 }); r.after.dnd = {}; return r; })()],
+  ];
+  for (const [name, row] of shapes) {
+    const v = electronDropVerdict([row], { specs: specs(['cua', 'left', 1]) });
+    assert.equal(v.counts.zone_mismatch[0].count, 0, name);
+  }
+});
+
+test('off the window the dragend rule excuses nothing: an ok on a copy dragend there is a false ok, never a mismatch', () => {
+  const v = electronDropVerdict([drag({ lane: 'cua:handle', cell: 'xterm', load: 'load2', landed: false, effect: 1, verified: true })], { specs: specs(['cua:handle', 'xterm', 1]) });
+  assert.deepEqual(v.failed, ['cua:handle xterm: answered ok with no drop and nothing pending on 1 of 1 (#0)']);
+  assert.deepEqual(v.counts.zone_mismatch, []);
+});

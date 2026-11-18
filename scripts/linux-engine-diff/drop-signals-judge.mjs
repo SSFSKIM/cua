@@ -545,6 +545,26 @@ export function honestNonLanding(r) {
   return ownDragend(r) === 0;
 }
 
+/** The page's dragend `dropEffect` code for copy (pages/drop-signals.html `EFFECTS`). */
+const COPY = 1;
+
+/**
+ * A zone-truth mismatch (the design session's ruling 830, 2026-11-18): an ok answer, nothing honestly pending, in a cell
+ * in the window, whose own completed dragend reported copy while the zone's drop counter, read before and after, did not
+ * move. Electron's own word agrees with the ok, so the dragend rule stands (`droppedOf`): never a fail, never a false
+ * ok, but a declared app-level limit every run of the judge lists apart (task 101's candidate on arm64 at twice the
+ * load: 2 of 30 plain-left drags dropped 50 px outside the zone). Off the window the dragend rule excuses nothing, so
+ * there such an ok is a false ok, never a mismatch.
+ */
+export function zoneMismatch(r) {
+  const cell = r.base ?? r.cell;
+  if (r.ok !== true || honest(r) !== null || OFF_WINDOW_CELLS.includes(cell)) return false;
+  const src = T14_SOURCE[cell] ?? CELL_SOURCE[cell];
+  const [b, a] = [r.before?.dnd?.[src], r.after?.dnd?.[src]];
+  if (!src || !Number.isInteger(b?.drops) || !Number.isInteger(a?.drops) || a.drops !== b.drops) return false;
+  return ownDragend(r) === COPY;
+}
+
 /**
  * Why a landed drop answered unconfirmed, as the gate counts it (Decision Log, T17 as built: none fails the gate):
  * `move-link`, a drop that only moves or links (this trial's own dragend), whose accept breeze_cursors draws as no drop
@@ -570,7 +590,9 @@ export function unconfirmedClass(r) {
  * drags the plan does not name (a missing case fails, as a missing operation does). Findings, counted and never a fail:
  * landed drops answered unconfirmed (by `unconfirmedClass`); T14's share of them against 5% of the landed drops; a cell
  * whose every end was not verified (the bare root under the gate's ballast: unmeasured). An off-window drag whose end
- * was not verified is left out of its cell and counted apart. Answers `{md, failed, findings, counts}`.
+ * was not verified is left out of its cell and counted apart; and, per lane and cell in the window, at every load and in
+ * every plan, the zone-truth mismatches (`zoneMismatch`, ruling 830), a declared app-level limit. Answers
+ * `{md, failed, findings, counts}`.
  */
 export function electronDropVerdict(rows, { specs = [], share = 0.05, slowMode = SLOW_CELL_MODE, plan = null } = {}) {
   if (!['hard', 'declared-race'].includes(slowMode)) throw new Error(`the slow cell's mode is hard or declared-race, not ${slowMode}`);
@@ -579,6 +601,8 @@ export function electronDropVerdict(rows, { specs = [], share = 0.05, slowMode =
   const race = { lanes: [], false_ok: 0, drags: 0 };
   // L4a's residue: each plain cell at twice the load, with its count and bound
   const residue = [];
+  // ruling 830's zone-truth mismatches: each cell in the window, with its count
+  const mismatches = [];
   const findings = [];
   const cells = planCells(rows, specs, failed);
   const load = [...new Set(rows.map((r) => r.load))].join(', ') || 'none';
@@ -613,6 +637,8 @@ export function electronDropVerdict(rows, { specs = [], share = 0.05, slowMode =
       residue.push({ lane: c.lane, cell: c.cell, drags: list.length, count: residual.length, bound, over: residual.length > bound });
       if (residual.length > bound) failed.push(`${name}: ${residual.length} honest unconfirmed non-landings of ${list.length}, over L4a's residue of ${bound} (ruling 827 3b: floor(${RESIDUE.allowed} × ${list.length} / ${RESIDUE.per}), never rounded up) (${which(residual)})`);
     }
+    // ruling 830's zone-truth mismatches, every cell in the window, whatever the plan or load: listed, never a fail
+    if (!OFF_WINDOW_CELLS.includes(base)) mismatches.push({ lane: c.lane, cell: c.cell, drags: list.length, count: count(zoneMismatch) });
     const raced = slowMode === 'declared-race' && base === RACE_CELL;
     if (raced) {
       race.lanes.push(`${c.lane} ${falseOk.length} of ${list.length}`);
@@ -638,6 +664,11 @@ export function electronDropVerdict(rows, { specs = [], share = 0.05, slowMode =
   if (race.drags) findings.push(`#365's declared race, load ${load}: the hung sink answered ok with no drop and nothing pending on ${race.false_ok} of ${race.drags} drags (${race.lanes.join(', ')}), a finding, not a fail`);
   const within = residue.filter((x) => !x.over);
   if (within.length) findings.push(`L4a's residue (ruling 827 3b), load ${load}: ${within.map((x, k) => `${x.lane} ${x.cell} ${x.count} of ${x.drags}${k ? '' : ' honest unconfirmed non-landings'}, bound ${x.bound}`).join('; ')} (floor(${RESIDUE.allowed} × n / ${RESIDUE.per}), never rounded up), not a fail`);
+  if (mismatches.length) {
+    const seen = mismatches.filter((x) => x.count > 0);
+    const what = "zone-truth mismatches (ruling 830, a declared app-level limit: an ok answer whose own dragend reported copy while the zone's drop counter did not move)";
+    findings.push(seen.length ? `${what}, load ${load}: ${seen.map((x) => `${x.lane} ${x.cell} ${x.count} of ${x.drags}`).join('; ')}; not a fail and no false ok` : `${what}, load ${load}: none in ${mismatches.reduce((s, x) => s + x.drags, 0)} drags of the window's cells`);
+  }
   if (total.by_class['move-link']) findings.push(`${total.by_class['move-link']} landed move or link drops answered unconfirmed: under breeze_cursors their accept is drawn as no drop, or not at all (#364)`);
   if (total.by_class['cold-load']) findings.push(`${total.by_class['cold-load']} cold handle drops at load landed while Electron's cursor still showed no drop, answered unconfirmed (#364)`);
   if (total.by_class.other) findings.push(`${total.by_class.other} other landed drops answered unconfirmed`);
@@ -645,7 +676,7 @@ export function electronDropVerdict(rows, { specs = [], share = 0.05, slowMode =
   findings.push(`T14's share, reported and not a fail for these cells: ${total.unconfirmed_landed} of ${total.landed} landed drops answered unconfirmed, ${over ? 'over' : 'within'} ${share * 100}%`);
   const residual = residue.some((x) => x.count > 0) ? " beyond L4a's residue" : '';
   md.push('', failed.length ? `**Fails:** ${failed.join('; ')}.` : `No false ok, no missing landing${residual}, no false error, every notice refused once; every cell of the plan ran.`, '', `Findings (counted, not fails): ${findings.join('; ')}.`, '');
-  return { md, failed, findings, counts: { load, ...total, over_share: over, residue } };
+  return { md, failed, findings, counts: { load, ...total, over_share: over, residue, zone_mismatch: mismatches } };
 }
 
 // ---------------------------------------------------------------------------------------------------------------

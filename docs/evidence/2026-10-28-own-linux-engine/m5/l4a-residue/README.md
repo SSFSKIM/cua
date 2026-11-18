@@ -81,6 +81,33 @@ The other five check the replay's own guards; each must refuse the replay:
 - a terminal outcome without the judge's failures;
 - a run exit that the outcome does not explain.
 
+## Ruling 830: zone-truth mismatches, a declared app-level limit
+
+`zoneMismatch` in the same judge flags a zone-truth mismatch. Every one of these must hold:
+
+- an ok answer, with nothing honestly pending;
+- a cell in the window;
+- this trial's own completed dragend reported copy;
+- the zone's drop counter was read before and after, and did not move.
+
+What follows from that:
+
+- **Never a fail.** The dragend rule stands, so a mismatch is never a fail and never a false ok.
+- **Always listed.** `electronDropVerdict` lists mismatches apart, per lane and cell, in its findings (and so in the
+  summary), and in `counts.zone_mismatch`. With none, the line says the check ran.
+- **Everywhere.** It runs in every run, at every load and in every plan: H1, H2 and L4a.
+- **Off the window it doesn't apply.** There the dragend rule excuses nothing, so such an ok is a false ok and fails.
+- **The motivating case:** task 101's candidate, on arm64 at twice the load. 2 of 30 plain-left drags were answered
+  ok; Electron's dragend said copy and the drop landed 50 px outside the zone.
+
+**The stored rows:** the replay finds no mismatch in any of the 13 steps above. That is 320 drags of the window's cells
+in each 100-a-cell sitting, and 12 in each pilot.
+
+**Controls on the prototype's L4a rows:**
+
+- a `cua left` drag made an ok on its own copy dragend, outside the zone, is listed (1 of 30) and passes;
+- the same ok on a dragend of none is a false ok and fails.
+
 ## The reach under §8.1
 
 - `electronDropVerdict` is shared by H1, H2 and L4a, the gate's three T17 Electron steps (`t17-fix3`).

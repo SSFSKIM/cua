@@ -6136,6 +6136,12 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
        - **The residuals.** A read that overruns its 100 ms slot pushes the next one later; the reply is flagged
          `lateReply` once it passes D + 10 ms. A walk-found field's walk that cannot finish within its own bounds
          (40 ms, 200 nodes, depth 12) or meets a read that times out is unknown.
+       - **Live result** (run 44386516599 on 405b63b3, all five lanes;
+         `docs/evidence/2026-11-18-secure-type-confirm/README.md`). On the exact controls, `fieldUnreadable` and
+         `fieldChanged` were 0 of 150, false adds 0 of 150, and privacy 0. Positives were 100 of 100, and short and
+         long secrets answered the same reasons. `lateReply` was still on 137 of 155 failures, arriving 1111–1186 ms
+         after the last post. Reply time reaches only `_meta`, so it stays informational (the residuals, below). Which
+         read overruns live, and whether to re-time the slots or drop the uniform time, is #423.
        - **Tests.** A second property run, `testExactControlsAnswerLengthMismatchOnTimeAtLiveCosts` (seed 0x414F218,
          2000 cases, two secrets of different lengths into one field each): batch reads cost 20 to 90 ms and focus reads
          10 to 90 ms, within T, each a function of the read's time; a genuine field confirms, and an exact add or drop

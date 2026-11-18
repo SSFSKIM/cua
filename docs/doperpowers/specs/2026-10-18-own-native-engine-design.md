@@ -5877,7 +5877,8 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      the subrole-in-the-batch mutation, first caught by a test's trap, now fails an assertion. Six more, of the guards a
      high review of the branch added, were caught too: the web area search's ownership, its classification removed or
      any open role taken, an ancestor's ownership, the marker on a failed focus read, the live read folding a failure
-     into an absence.
+     into an absence. Three positive controls show ruling 824's test can see a leak: the start marker's offset, decoded
+     from its bytes and written in turn to stderr, into the error sentence and into the read-back's record, each fails it.
   Date/Author: 2026-11-18, cursor235's implementer for #395 (ruling 1ea561bc:824).
 
 ## Outcomes & Retrospective

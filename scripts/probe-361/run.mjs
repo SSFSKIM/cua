@@ -16,10 +16,10 @@ const setupLabel=e=>typeof e?.setupStep==='string'?e.setupStep:'other';
 
 async function startEngine({name,src,bin,root,platform,ax}){
   const home=join(root,'e-'+name);mkdirSync(home,{mode:0o700});const socket=join(home,'e.sock');
-  const env=environment(home),traces=new Map();let output=null;
-  const child=owned(bin,[],{...env,CUA_ENGINE_SOCKET:socket},{stdout:l=>output?.push(l),stderr:l=>{
+  const env=environment(home),traces=new Map();let output=[];
+  const child=owned(bin,[],{...env,CUA_ENGINE_SOCKET:socket},{stdout:l=>output.push(l),stderr:l=>{
     if(ax){try{const d=JSON.parse(l)?.probe361Ax;if(d&&typeof d.id==='string'){traces.set(d.id,d);return;}}catch{}}
-    output?.push(l);
+    output.push(l);
   }});
   let w,identity;
   async function attach(){
@@ -81,7 +81,7 @@ async function startEngine({name,src,bin,root,platform,ax}){
     // Prime AX access before the first scored field; then no connection is held between trials.
     await w.execute('get_app_state',{pid:platform.pid,includeScreenshot:false,disableDiff:true});
     await disconnect();
-    return {type,attach,disconnect,traces,listen:()=>{output=[];},collect:()=>{const o=output??[];output=null;return o;},close:async()=>{await disconnect();return stop(child);}};
+    return {type,attach,disconnect,traces,collect:()=>{const o=output;output=[];return o;},close:async()=>{await disconnect();return stop(child);}};
   }catch(e){w?.close();await stop(child);throw e;}
 }
 
@@ -115,7 +115,12 @@ async function main(){
   const config={kit:process.env.GITHUB_SHA,refs:{main:process.env.MAIN_SHA,fix:process.env.FIX_SHA||null},image:process.env.ImageVersion,
     os:execFileSync('sw_vers',['-productVersion'],{encoding:'utf8',stdio:['ignore','pipe','ignore']}).trim(),lane,mode,phase,heads:headNames,sources};
   const rows=[],sourceStatus={},engines={},planned={};let platform,helper,stage='helper',abort=null,abortStep=null,inventory=null;
-  const fresh=()=>{try{return JSON.parse(execFileSync(helperBin,['--source-current'],{env:helperEnv(),encoding:'utf8',stdio:['ignore','pipe','ignore'],timeout:10000}));}catch{return null;}};
+  const last={};
+  const lateScan=(head,e)=>{
+    const late=e.collect(),prior=last[head];
+    if(late.length&&prior)for(const f of scan({engineOutput:late},{...prior.ctx,mismatch:false}))if(!prior.row.privacy.includes('late-'+f))prior.row.privacy.push('late-'+f);
+  };
+  const fresh=(env=helperEnv())=>{try{return JSON.parse(execFileSync(helperBin,['--source-current'],{env,encoding:'utf8',stdio:['ignore','pipe','ignore'],timeout:10000}));}catch{return null;}};
   try{
     helper=startHelper(helperBin);
     inventory=await helper.ask({op:'sources'},15000);
@@ -147,15 +152,17 @@ async function main(){
         const m=inputs.get(key),e=engines[c.head],id=`${source}-${c.head}-${c.cell}-${c.rep}`;
         const setupText=ascii(12),clipText='Q361CLIP'+ascii(16);
         let s='engine-attach',attested=false,armed=false,receipt=null,answer=null,delivery=null,settled=null,clip=null,witness=null,trace=null,invalid=null;
-        e.listen();
+        // The engine's output since that head's last trial was collected (an after-action watch outlives the connection):
+        // scanned against that trial's own values, its flags kept on that row.
+        lateScan(c.head,e);
         try{
           await e.attach();
           s='clip-set';if((await helper.ask({op:'clip-set',text:clipText})).ok!==true)throw stepError('clip-set');
           await platform.arm(++trial,{...m,setupText,rewriteChar:REWRITE_CHAR},x=>{s=x;});armed=true;
           // The source at the action boundary, after every setup transition: the helper's and a fresh process's reading.
           s='source-check';
-          const cur=await helper.ask({op:'source-current'}),f=fresh();
-          if(cur.id!==SOURCES[source].id||cur.perContext!==false||f?.id!==SOURCES[source].id||f?.keyboardLayout!==false)throw stepError('source-drift');
+          const cur=await helper.ask({op:'source-current'}),f=fresh(environment(home));
+          if(cur.id!==SOURCES[source].id||cur.perContext!==false||f?.id!==SOURCES[source].id||f?.keyboardLayout!==false||f?.perContext!==false)throw stepError('source-drift');
           attested=true;
           s='action';receipt=await e.type(m,id);
           // At the answer, then until the expected state (or 2.5 s), then once more after 300 ms: the settled content.
@@ -185,15 +192,17 @@ async function main(){
         if(invalid){row.valid=false;row.invalid=invalid;}
         const count=x=>Number.isSafeInteger(x)?x:null;
         Object.assign(row,{note:typeof native?.result?.note==='string',
-          exactAtAnswer:answer?.exact===true,settledChanged:delivery!=null&&settled!=null&&(delivery.exact!==settled.exact||delivery.controlExact!==settled.controlExact),
+          exactFirstPostReply:answer?.exact===true,settledChanged:delivery!=null&&settled!=null&&(delivery.exact!==settled.exact||delivery.controlExact!==settled.controlExact),
           setupUnchanged:settled?.setupExact??null,hitVia:CODES.hitVia(settled?.hitVia||null),
           pasteEvents:count(settled?.pastes),pasteInputs:count(settled?.pasteInputs),
           engineRestore:CODES.restore(meta?.paste?.restore),notificationSource:CODES.source(meta?.paste?.notificationSource),entered:count(meta?.entered),
           clipboardChangeDelta:count(clip?.changeCountDelta),presentationHeld:witness?.held??null,witnessReason:CODES.witness(witness?.reason),
           serviceMs:Number.isFinite(receipt?.forwarded?.['cua/serviceMs'])?receipt.forwarded['cua/serviceMs']:null});
-        row.privacy=receipt?scan({native,rendered:receipt.rendered,skyError:receipt.error,forwarded:receipt.forwarded,content:receipt.content,console:receipt.logged,engineOutput:output},
-          {setupText,clipText,initial:m.initial,text:m.text,expected:m.expected,control:m.control,canaries:m.canaries,
-           mismatch:meta?.typeReadback?.reason==='valueMismatch'}):[];
+        const ctx={setupText,clipText,initial:m.initial,text:m.text,expected:m.expected,control:m.control,canaries:m.canaries,
+          mismatch:meta?.typeReadback?.reason==='valueMismatch',realized:row.realized===true};
+        row.privacy=receipt?scan({native,rendered:receipt.rendered,skyError:receipt.error,forwarded:receipt.forwarded,content:receipt.content,console:receipt.logged,engineOutput:output},ctx):
+          scan({engineOutput:output},ctx);
+        last[c.head]={row,ctx};
         if(ax)row.ax=axFacts(trace,meta);
         rows.push(row);
         streak=row.attested?0:streak+1;
@@ -202,7 +211,8 @@ async function main(){
     }
   }catch(e){abort=stage;abortStep=setupLabel(e);}
   finally{
-    for(const e of Object.values(engines))await e.close();
+    await pause(1500);
+    for(const [name,e] of Object.entries(engines)){lateScan(name,e);await e.close();lateScan(name,e);}
     await platform?.dispose();
     // The runner's original source back, so a later job step types as before.
     const initial=inventory?.current?.id;
@@ -226,7 +236,7 @@ async function main(){
     privacyFlags:tally(rows.flatMap(r=>r.privacy.map(f=>r.head+'/'+f))),gates:gate};
   // Measurement passes when every usable source ran all its rows without an abort (unusable sources are reported, not
   // faked); qualification when every gate passes, coverage included.
-  const measured=abort===null&&usable.length>0&&cov.complete;
+  const measured=abort===null&&usable.length>0&&cov.complete&&cov.covered;
   const pass=gate?measured&&Object.entries(gate).every(([k,g])=>k==='perCell'||g.pass):measured;
   status.pass=pass;
   status.coverageDetail=cov.per;

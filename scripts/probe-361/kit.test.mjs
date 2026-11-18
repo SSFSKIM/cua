@@ -68,7 +68,7 @@ test('outcomes: main by its paste stage, the fix by its read-back', () => {
 
 const fixture = () => {
   const m = materialize('rewrite', 'ko');
-  return {m, ctx: {setupText: 'MNBVCXQWRTYP', clipText: 'Q361CLIPKJHGFDSXPLKJHGFD', initial: m.initial, text: m.text, expected: m.expected, control: m.control, canaries: m.canaries}};
+  return {m, ctx: {setupText: 'MNBVCXQWRTYP', clipText: 'Q361CLIPKJHGFDSXPLKJHGFD', initial: m.initial, text: m.text, expected: m.expected, control: m.control, canaries: m.canaries, realized: true}};
 };
 test('privacy: other fields, the clipboard, unbounded excerpts and content off a mismatch are flagged', () => {
   const {m, ctx} = fixture();
@@ -85,6 +85,13 @@ test('privacy: other fields, the clipboard, unbounded excerpts and content off a
   assert.deepEqual(scan(mismatch, {...ctx, mismatch: false}), ['content-without-mismatch']);
   // One unit beyond the radius on either side: unbounded.
   assert.deepEqual(scan(mismatchOf(say(cut(m.expected, first - 101), cut(m.control))), {...ctx, mismatch: true}), ['excerpt-unbounded']);
+  // A legal-length excerpt shifted one unit before the radius: unbounded when the first difference is known, not otherwise.
+  const shifted = mismatchOf(say(cut(m.expected), cut(m.control)).replace(`From character ${first - 99}`, `From character ${first - 100}`));
+  assert.deepEqual(scan(shifted, {...ctx, mismatch: true}), ['excerpt-unbounded']);
+  assert.deepEqual(scan(shifted, {...ctx, mismatch: true, realized: false}), []);
+  // A second sentence echoing the pasted text beside a legal excerpt: outside the excerpt.
+  const echo = mismatchOf(say(cut(m.expected), cut(m.control)) + ` You typed ${m.text}.`);
+  assert.deepEqual(scan(echo, {...ctx, mismatch: true}), ['content-outside-excerpt']);
   // The whole field reaches the far ends: unbounded.
   assert.ok(scan({...mismatch, skyError: {message: `the field reads "${m.control}"`}}, {...ctx, mismatch: true}).includes('excerpt-unbounded'));
   // Content in a meta field or an emitted content item, even on a mismatch: outside the message.
@@ -108,7 +115,7 @@ test('scores and gates', () => {
   const good = [row({head: 'main', confirmed: false, reason: 'paste:effect:reading'}), row({}),
     row({cell: 'stale', outcome: 'typeUnconfirmed', domExact: false, controlExact: true, hit: true, confirmed: false}),
     row({cell: 'stale', head: 'main', outcome: 'success', domExact: false, controlExact: true, hit: true, confirmed: false})];
-  const cov = {complete: true, allValid: true};
+  const cov = {complete: true, covered: true, allValid: true};
   const g = gates(good, {coverage: cov});
   assert.ok(Object.entries(g).every(([k, x]) => k === 'perCell' || x.pass), JSON.stringify(g));
   assert.equal(g.wrongSuccess.main, 1);
@@ -127,7 +134,11 @@ test('scores and gates', () => {
   const s = summarize(good);
   assert.equal(s.find(x => x.head === 'main' && x.cell === 'stale').wrongSuccess, 1);
   const c = coverage(good, {planned: {'ko/fix/empty-cjk': 1, 'ko/fix/stale': 1, 'ko/main/empty-cjk': 1, 'ko/main/stale': 1}, sources: ['ko'], heads: ['main', 'fix'], cells: ['empty-cjk', 'stale']});
-  assert.equal(c.complete, true);
+  assert.equal(c.complete, true); assert.equal(c.covered, true);
+  // Attempted but never valid (an unrealized control) is no coverage.
+  const unrealized = [row({cell: 'rewrite', outcome: 'typeUnconfirmed', domExact: false, controlExact: false, hit: false})];
+  const u = coverage(unrealized, {planned: {'ko/fix/rewrite': 1}, sources: ['ko'], heads: ['fix'], cells: ['rewrite']});
+  assert.equal(u.complete, true); assert.equal(u.covered, false); assert.deepEqual(u.uncovered, ['ko/fix/rewrite']);
   assert.equal(coverage(good.slice(1), {planned: {'ko/main/empty-cjk': 1}, sources: ['ko'], heads: ['main'], cells: ['empty-cjk']}).complete, false);
   assert.equal(coverage([], {planned: {}, sources: [], heads: ['main'], cells: ['empty-cjk']}).complete, false);
   assert.equal(percentile([5, 1, 3, 2, 4], 50), 3); assert.equal(percentile([], 95), null);

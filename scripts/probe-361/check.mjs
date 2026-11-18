@@ -67,7 +67,7 @@ export function strings(value,out=[]){
 const contains=(list,needle)=>typeof needle==='string'&&needle.length>0&&list.some(s=>s.includes(needle));
 // 6-unit windows of a value, so a partial disclosure is caught too.
 const windows=(v,n=6)=>v.length<=n?[v]:Array.from({length:v.length-n+1},(_,i)=>v.slice(i,i+n));
-export const EXCERPT_RADIUS=100;
+export const EXCERPT_RADIUS=100, VALID_BAR=0.8;
 // #354's excerpt in a message: `From character N, expected "…"; the field reads "…"`, quoted as JSON-like strings.
 const EXCERPT=/From character (\d+), expected ("(?:[^"\\]|\\.)*"); the field reads ("(?:[^"\\]|\\.)*")/;
 const unquote=q=>{try{return JSON.parse(q);}catch{return null;}};
@@ -78,12 +78,15 @@ const unquote=q=>{try{return JSON.parse(q);}catch{return null;}};
 // - the field's content appears only on a `valueMismatch`, and then only inside the native or sky error message;
 // - the excerpt stays bounded: in the long rewrite cell nothing of the prefill farther than the radius from the first
 //   difference appears, and a parsed excerpt is at most 2 × radius units of each side.
-export function scan(surfaces,{setupText,clipText,initial,text,expected,control,canaries=[],mismatch}){
+// `realized`: the rewrite control's perturbation landed exactly, so the first difference is known (the caret, LONG_SIDE)
+// and the excerpt's start and far ends can be checked; otherwise the bounds are unknown and only the lengths are.
+export function scan(surfaces,{setupText,clipText,initial,text,expected,control,canaries=[],mismatch,realized=false}){
   const all=strings(surfaces),flags=new Set();
   if(windows(setupText).some(w=>contains(all,w)))flags.add('other-field');
   if(windows(clipText).some(w=>contains(all,w)))flags.add('clipboard');
-  if(canaries.length&&typeof expected==='string'){
-    // Outside [first − radius, first + radius) of the expected value (the first difference is at the caret, LONG_SIDE).
+  const known=canaries.length>0&&realized&&typeof expected==='string';
+  if(known){
+    // Outside [first − radius, first + radius) of the expected value.
     const far=[...windows(expected.slice(0,LONG_SIDE-EXCERPT_RADIUS)),...windows(expected.slice(LONG_SIDE+EXCERPT_RADIUS))];
     if(far.some(w=>w.length===6&&contains(all,w)))flags.add('excerpt-unbounded');
   }
@@ -95,13 +98,17 @@ export function scan(surfaces,{setupText,clipText,initial,text,expected,control,
   const outside=strings({...surfaces,native:{...surfaces?.native,error:{...surfaces?.native?.error,message:undefined}},
     skyError:surfaces?.skyError?{meta:surfaces.skyError.meta,code:surfaces.skyError.code,errorName:surfaces.skyError.errorName}:null});
   if(probes.some(w=>contains(outside,w)))flags.add('content-outside-message');
-  if(!mismatch&&probes.some(w=>contains(messageList,w)))flags.add('content-without-mismatch');
+  // On a mismatch only the two quoted excerpt spans are exempt; the rest of each message is scanned as any surface.
+  const rest=[];
   for(const m of messageList){
-    const x=EXCERPT.exec(m);
-    if(!x)continue;
-    const e=unquote(x[2]),a=unquote(x[3]);
+    const x=mismatch?EXCERPT.exec(m):null;
+    if(!x){rest.push(m);continue;}
+    rest.push(m.slice(0,x.index)+'From character '+x[1]+m.slice(x.index+x[0].length));
+    const e=unquote(x[2]),a=unquote(x[3]),start=Number(x[1])-1;
     if(e===null||a===null||e.length>2*EXCERPT_RADIUS||a.length>2*EXCERPT_RADIUS)flags.add('excerpt-unbounded');
+    if(known&&start!==LONG_SIDE-EXCERPT_RADIUS)flags.add('excerpt-unbounded');
   }
+  if(probes.some(w=>contains(rest,w)))flags.add(mismatch?'content-outside-excerpt':'content-without-mismatch');
   return [...flags].sort();
 }
 
@@ -138,7 +145,7 @@ export function summarize(rows){
   return [...groups].map(([k,list])=>{
     const [source,head,cell]=k.split('|'),v=list.filter(r=>r.valid);
     return {source,head,cell,planned:list.length,valid:v.length,invalid:tally(list.filter(r=>!r.valid).map(r=>r.invalid)),
-      success:v.filter(r=>r.success).length,exact:v.filter(r=>r.domExact).length,exactAtAnswer:v.filter(r=>r.exactAtAnswer).length,
+      success:v.filter(r=>r.success).length,exact:v.filter(r=>r.domExact).length,exactFirstPostReply:v.filter(r=>r.exactFirstPostReply).length,
       wrongSuccess:v.filter(r=>r.wrongSuccess).length,wrongSuccessInvalid:list.filter(r=>!r.valid&&r.wrongSuccess).length,
       readbackConfirmed:v.filter(r=>r.readbackConfirmed).length,clipboardRestored:v.filter(r=>r.clipboardRestored).length,
       presentationHeld:v.filter(r=>r.presentationHeld).length,outcomes:tally(v.map(r=>r.outcome)),reasons:tally(v.map(r=>r.reason)),
@@ -153,9 +160,11 @@ export function coverage(rows,{planned,sources,heads,cells}){
     const list=rows.filter(r=>r.source===s&&r.head===h&&r.cell===c);
     per[`${s}/${h}/${c}`]={planned:planned[`${s}/${h}/${c}`]??0,ran:list.length,valid:list.filter(r=>r.valid).length};
   }
-  const entries=Object.values(per);
-  return {complete:entries.length>0&&entries.every(e=>e.ran===e.planned&&e.planned>0),
-    allValid:entries.length>0&&entries.every(e=>e.valid===e.planned),per};
+  const entries=Object.entries(per);
+  // Valid evidence, not attempts: at least VALID_BAR of each source, head and cell's planned rows valid.
+  const uncovered=entries.filter(([,e])=>e.valid<Math.ceil(VALID_BAR*e.planned)||e.planned===0).map(([k])=>k);
+  return {complete:entries.length>0&&entries.every(([,e])=>e.ran===e.planned&&e.planned>0),
+    covered:entries.length>0&&uncovered.length===0,uncovered,allValid:entries.length>0&&entries.every(([,e])=>e.valid===e.planned),per};
 }
 
 // Phase 2's gates on the fix's rows (main's are the comparison), per source and cell:
@@ -178,7 +187,7 @@ export function gates(rows,{fixHead='fix',coverage:cov=null}={}){
       exact:list.filter(r=>r.domExact).length,wrong:list.filter(r=>r.wrongSuccess).length}];
   }));
   return {
-    coverage:{pass:cov?.complete===true,allValid:cov?.allValid??null},
+    coverage:{pass:cov?.complete===true&&cov?.covered===true,uncovered:cov?.uncovered??null,allValid:cov?.allValid??null},
     exactConfirmed:{pass:owed.length>0&&missed.length===0,n:owed.length,missed:missed.length,
       lostDelivery:missed.filter(r=>!r.domExact).length,missedOutcomes:tally(missed.map(r=>r.outcome+'/'+r.reason))},
     controlsUnconfirmed:{pass:controls.length>0&&controls.every(r=>r.outcome==='typeUnconfirmed'),n:controls.length,

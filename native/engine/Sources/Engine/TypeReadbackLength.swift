@@ -146,6 +146,26 @@ func readbackLengthJudged(count: ReadbackWalkRead<Int>, range: NSRange?, basis: 
   return .confirmed
 }
 
+/// Whether a read is past where a genuine field can ever be, so the poll ends at it (#414, the hosted qualification's
+/// fix): a caret whose location is past the text's end, since a genuine caret rises from the selection's start to
+/// location + typed and never beyond; or, from a basis with nothing selected (an empty range, or an empty field read
+/// without one), a count past the expected one. Over a non-empty selection a count past the expected one is no
+/// overshoot: until the app takes the first key a genuine field's count is the snapshot's own, past the expected count
+/// whenever the selection is longer than the text, and ending on it would fail a genuine field and tell, by the reply's
+/// time, whether a secret is shorter than the selection. Only a literal request's poll ends on an overshoot
+/// (`confirmLength`): each form compares with a value that depends on the text's length.
+func readbackLengthOvershoots(count: ReadbackWalkRead<Int>, range: NSRange?, basis: ReadbackLengthBasis, typed: Int) -> Bool {
+  switch basis {
+  case .count(let before, let selection):
+    if let selection, let range, range.location > selection.location + typed { return true }
+    guard (selection?.length ?? 0) == 0, case .value(let now) = count else { return false }
+    return now > before - (selection?.length ?? 0) + typed
+  case .caret(let start):
+    guard let range else { return false }
+    return range.location > start.location + typed
+  }
+}
+
 /// A password field's snapshot, after its role and subrole: #359's wait for a stable range and the settle, as a text
 /// field takes them, each read the length batch; then the starting point (`readbackLengthBasis`).
 ///

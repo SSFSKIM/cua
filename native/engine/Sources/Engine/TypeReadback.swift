@@ -57,7 +57,12 @@ import Foundation
 //   no field's. The expected count is the start's less the selection plus the typed text's UTF-16 units, as AX counts
 //   both; whenever the range was read, the caret must also sit right after the text, {location + typed, 0}, in the
 //   same reply, whatever the selection held, and a concealed request answers a wrong caret as it answers a wrong count
-//   (`lengthMismatch`), so no answer depends on whether a secret is as long as the selection it replaced. A success
+//   (`lengthMismatch`), so no answer depends on whether a secret is as long as the selection it replaced. A match counts
+//   only once the same reply has held for the quiet window (`typeReadbackLengthDwellMs`, ruling 1ea561bc:842): a reply
+//   read between an app's last two keys can match when a character was added, and a genuine field never moves away
+//   from a final match. The window is read at the poll's interval and lies inside the budget. A literal request's poll
+//   ends at a reply that leaves a held match, or one past any genuine field's (`readbackLengthOvershoots`); a concealed
+//   request's failure always polls the whole budget, so its timing never depends on its secret's length. A success
 //   that a length check confirmed names its strength (`confirmation: "length"`) and its note says what a length proves
 //   (`readbackLengthNote`); a literal request of keys alone confirms no length and claims none; a failure carries its
 //   reason alone. A count cannot tell a wrong character from a right one.
@@ -68,6 +73,10 @@ import Foundation
 /// every read: the spike's soft 1000 ms, 5 ms polls and 100 ms AX timeout, whose confirmed reads took p50 26 to 34 ms.
 let typeReadbackBudgetMs: Double = 1_000
 let typeReadbackPollIntervalMs: Double = 5
+/// A password field's quiet window (#414; the design session's ruling 1ea561bc:842): a length read that matches confirms
+/// only once the same read has held unchanged this long, read at `typeReadbackPollIntervalMs` within the budget. One
+/// constant for every lane, never one per lane; raise it if a lane's measured drain p99, times three, passes it.
+let typeReadbackLengthDwellMs: Double = 50
 let typeReadbackMessagingTimeout: Float = 0.1
 /// Chromium cuts a text field's AXValue at 10,000 (#290's hosted measurement: a 20,499-character ASCII field read back
 /// 10,000 long; #350): a read at that length may be cut, and so may compare equal to an expected value that is not the
@@ -293,6 +302,9 @@ enum ReadbackWalkRead<Value> {
   case absent
   case failed
 }
+
+/// Two reads are the same when both are the same value, both absent or both failed (#414's quiet window compares them).
+extension ReadbackWalkRead: Equatable where Value: Equatable {}
 
 /// The reads of the walk, live or faked: an element's children, its AXFocused, its role, the clock.
 struct ReadbackFocusWalk<Element> {
@@ -727,25 +739,71 @@ final class TypeReadback<Element> {
   /// field that ignored a secret typed over a selection keeps its count and range, so the count would match exactly when
   /// the secret is as long as the selection, and the reason would tell its length; its caret is `lengthMismatch`, as its
   /// count is. A literal request keeps the two reasons apart.
+  ///
+  /// A reply that matches confirms only once the same reply (the same count and range; with the caret's basis, still no
+  /// count and the same range) has held for the quiet window, `typeReadbackLengthDwellMs` (ruling 1ea561bc:842), read
+  /// at the poll's own interval. The hosted qualification found an app whose extra character, put in before the first
+  /// key, made a reply between its last two keys match. A genuine field never moves away from a final match: once it has
+  /// taken every key nothing changes it, and before that none of its readings equals the expected one, because its caret
+  /// has not yet reached the end of the text (and, from an empty field read without a range, its count is still short of
+  /// the text's length). So a reading that matches and then changes means a character was added or dropped. The window
+  /// lies inside the budget, so a genuine field must have taken the text within the budget less the window.
+  ///
+  /// A literal request ends its poll at a reply that leaves a held match, judged for its reason as any reply, and at a
+  /// reply past where a genuine field can be (`readbackLengthOvershoots`). A concealed request does neither: whether a
+  /// match comes and goes, and whether a reply overshoots, can depend on the secret's length in some field (one that
+  /// collapses a selection to its end, or jumps its caret to its text's end, without taking the text), so ending on
+  /// either would make the reply's time tell it. A concealed request that leaves a held match never confirms after it and
+  /// polls on; its failure always takes the whole budget, at one cadence, and its reason is the last reply's. A closed
+  /// reply ends the poll at once for both, as it does not depend on the secret.
   private func confirmLength(through end: Int, beforeKey: Bool) throws {
     guard case .expectLength(let field, let role, let basis, _, let found) = plan else { return }
     let typed = units[0..<end].reduce(0) { leaves($1) ? $0 : $0 + readbackLengthUnits($1) }  // a key that can leave adds nothing
     let started = reads.now()
     defer { record.pollMs += reads.now() - started }
     var last: ReadbackLengthRead?
-    while true {
+    // The held match: its reply, and the end of the read that took it. A later read that starts at least the window
+    // after it and still finds the same reply shows the reply held that long.
+    var held: (count: ReadbackWalkRead<Int>, range: NSRange?, since: Double)?
+    var tainted = false  // a concealed request whose reply left a held match: it never confirms
+    var confirmed = false
+    poll: while true {
+      let at = reads.now()
       switch readbackLength(field, role: role, reads: reads) {
       case .closed(let why): throw unconfirmed(why, beforeKey)
-      case .read(let count, let range): last = readbackLengthJudged(count: count, range: range, basis: basis, typed: typed)
+      case .read(let count, let range):
+        let judged = readbackLengthJudged(count: count, range: range, basis: basis, typed: typed)
+        record.reads += 1
+        last = judged
+        if let match = held {
+          if count == match.count, range == match.range {
+            if at - match.since >= typeReadbackLengthDwellMs { confirmed = true; break poll }
+          } else {
+            // A changed reply that still judges confirmed differs only by a range its basis (an empty field read without
+            // one) never checks: its caret moved.
+            if judged == .confirmed { last = .caretElsewhere }
+            guard concealed else { break poll }
+            tainted = true
+            held = nil
+          }
+        } else if judged == .confirmed {
+          if !tainted { held = (count, range, reads.now()) }
+        } else if !concealed, judged != .unreadable, readbackLengthOvershoots(count: count, range: range, basis: basis, typed: typed) {
+          // A failed count read is no evidence either way; a readable reply past any genuine field's is.
+          break poll
+        }
       }
-      record.reads += 1
-      if last == .confirmed || reads.now() - started >= typeReadbackBudgetMs { break }
+      if reads.now() - started >= typeReadbackBudgetMs { break }
       reads.sleep(typeReadbackPollIntervalMs)
     }
     guard reads.stillFocused(field, found) else { throw unconfirmed(.fieldChanged, beforeKey) }
+    if confirmed {
+      record.lengthConfirmed = true
+      return
+    }
     switch last {
-    case .confirmed?: record.lengthConfirmed = true
-    case .differs?: throw unconfirmed(.lengthMismatch, beforeKey)
+    // A match that never held for the window: too late before the budget, or after a concealed request's reply left one.
+    case .confirmed?, .differs?: throw unconfirmed(.lengthMismatch, beforeKey)
     case .caretElsewhere?: throw unconfirmed(concealed ? .lengthMismatch : .caretMismatch, beforeKey)
     case .unreadable?, nil: throw unconfirmed(.lengthUnreadable, beforeKey)
     }

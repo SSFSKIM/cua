@@ -437,8 +437,8 @@ final class TypeReadbackMarkerTests: XCTestCase {
           continue
         }
         XCTAssertEqual(Array(safari.log[(classified + 1)...]),
-                       ["AXFocused@7", "AXParent@7", "AXParent@6", "AXRole@7", "AXSubrole@7", batch, "post", "post", "post", "post", batch,
-                        "AXFocused@7"], name)
+                       ["AXFocused@7", "AXParent@7", "AXParent@6", "AXRole@7", "AXSubrole@7", batch, "post", "post", "post", "post"]
+                         + Array(repeating: batch, count: 1 + 10) + ["AXFocused@7"], "\(name): the match, then the quiet window's ten reads")
       }
     }
   }

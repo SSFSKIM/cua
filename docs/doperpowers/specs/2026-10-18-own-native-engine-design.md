@@ -5964,8 +5964,11 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
        (Input.swift, the vendor's gap), so the poll begins while the app is still working through its event queue. The
        app answers an AX batch on its main run loop between two queued keys. That reply held "z" and every key but the
        last, its caret exactly at location + typed: the expected count and caret. It confirmed (`confirmation:
-       "length"`). Both bases were open to it, the count with its range and ruling 839's caret alone. The value path is
-       not: no in-between value equals the expected full value.
+       "length"`). Both bases were open to it, the count with its range and ruling 839's caret alone. The fixture cannot
+       fool the plain path, because its in-between value differs from the expected one. A plain field whose inserted
+       text coincides with the typed text can: literal `zz` typed into an empty plain field that prepends `z` reads
+       exactly `zz` before the last key lands, and #354's poll accepts it (the review of f35a42b8..cbce12e2, P3). That
+       is #354's, outside #414.
      - **The window.** A reply that matches confirms only once the same reply has held for `typeReadbackLengthDwellMs`
        (50 ms). The same means the same count and range; for the caret's basis, still no count and the same range. The
        window is timed from the end of the matching read to the start of a later read that finds the same reply.
@@ -5994,13 +5997,23 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
        selection.
      - **A concealed request's failure never ends before the budget, and its schedule never depends on the secret.**
        Every overshoot form compares a reply with an expected count or caret that depends on the secret's length, and
-       whether a match comes and goes at all can depend on it too. Some fields would then end early for one length and
-       not another: one that collapses a selection to its end without taking the text, or jumps its caret to the end
-       of its text. So a concealed request never ends on an overshoot. A reply that leaves a held match taints it: it
-       never confirms for the rest of the poll and polls on to the budget, its reason the last reply's (one that judges
-       confirmed answers `lengthMismatch`). A failed count inside a window taints it the same way. A concealed failure
-       is always 1 + 201 batches and 1000 ms. A closed reply ends the poll at once for both kinds, as before, since it
-       does not depend on the secret.
+       whether a match comes and goes at all can depend on it too. Some fields would then fail early for one length
+       and not another: one that collapses a selection to its end without taking the text, or jumps its caret to the
+       end of its text. So a concealed request never ends on an overshoot. A reply that leaves a held match taints it:
+       it never confirms for the rest of the poll and polls on to the budget, its reason the last reply's (one that
+       judges confirmed answers `lengthMismatch`). A failed count inside a window taints it the same way.
+     - **Every concealed failure is answered at the budget** (the review of f35a42b8..cbce12e2, P1). A held match left
+       the loop, and a focus check that then failed threw `fieldChanged` at about 50 ms, where a tainted run threw it
+       at 1000 ms; a closed read ended the poll at once, and when that happens can depend on the secret in some field.
+       Now a concealed request stops reading where the rule says (a closed field is read no further; the focus check
+       is unchanged), sleeps through the rest of `typeReadbackBudgetMs` from the poll's start, and then throws. Only a
+       concealed success ends early. A literal request is unchanged.
+     - **The deadline** (same review, P2). A read confirms only if it starts within the budget. A match taken off the
+       5 ms grid (a read ending at 951 ms) or a late wake could otherwise confirm at 1001 ms; such a match is now
+       unconfirmed (`lengthMismatch`), as a match too late to hold is.
+     - **An unavailable caret is no overshoot** (same review, P2). A range whose location is past `readbackLengthLimit`
+       (an app's `{NSNotFound, 0}`) is never evidence of a read past the text, on either basis: it is judged as any
+       read, and the poll goes on.
      - **The schedule.** The window has a fixed length and starts only on a match, so in a given field the reads, their
        order and their timing stay the same whatever the secret's length or content (item 9). It applies to every
        password-field confirmation, a literal request's checkpoints included.
@@ -6008,8 +6021,8 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
        a matching in-between reply for the whole window. No read-back sees a change made after it returns, the same
        limit the plain path has for a value changed after its confirmation.
      - **The cost.** Each password-field confirmation, and each literal checkpoint, takes 50 ms and about ten batches
-       more. A failure costs nothing extra: a concealed one polls the budget as before, and a literal one ends sooner
-       on a change or an overshoot.
+       more. A literal failure ends sooner on a change or an overshoot. A concealed failure always takes the budget: a
+       mismatch did already, and a closed read or a moved focus now waits out the rest of it.
      - **Tests** (SecureTypeReadbackTests). `StubPasswordApp`'s drains-late mode (`extraFirst`, `lateUnits`) reproduces
        the fixture: the "z" goes in before the first unit, the last `lateUnits` units are held, and they land when the
        second batch after typing is answered.
@@ -6019,17 +6032,25 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
        - The control, a field that takes only its last key late, confirms after the window on both bases.
        - A change at each of the window's ten reads, the last included, is caught, and one after it is not, so the
          window spans at least 50 ms. A literal request ends at the change; a concealed one polls the budget, and a
-         change that comes back still never confirms. A closed reply in the window ends either kind at once; a failed
-         count ends a literal request's.
+         change that comes back still never confirms. A closed reply in the window ends either kind's reads at once (a
+         concealed request answers at the budget); a failed count ends a literal request's.
        - A match at 950 ms confirms at the budget's last read; one 5 ms later, or at the last read, is unconfirmed at
          the budget, plain and concealed.
        - Overshoot ends a literal request's poll at the read past the text, by caret on both bases and by count from
          nothing selected; concealed, the same fields poll the budget, and over a selection such a count polls it too.
-       - The concealed pins answer with the same reads, number of reads, time, reason, message and record whatever the
-         secret's length: a field that ignores a secret in place, one that collapses its selection to its end, and one
-         that jumps its caret to its text's end, each with the secret shorter and longer than what it moves over; and
-         a field ("zz" put in first, the last two keys late) where "pass" makes a match come and go and "p" makes none.
-         The last two fields' pins, and the transient-match pin, failed before their gates.
+       - The concealed pins fail alike, with the same reads, number of reads, time, reason, message and record: a
+         field that ignores a secret in place, one that collapses its selection to its end, and one that jumps its
+         caret to its text's end, each with the secret shorter and longer than what it moves over; and a field ("zz"
+         put in first, the last two keys late) where "pass" makes a match come and go and "p" makes none. The last two
+         fields' pins, and the transient-match pin, failed before their gates. The collapsing field's schedule is not
+         independent of the secret: a secret exactly as long as the selection reads as a real replacement and confirms
+         (item 10's limit), and the test asserts it.
+       - From the review of f35a42b8..cbce12e2 (each failed before its fix): the reviewer's field, which takes the whole
+         text, cuts it to four units 10 ms later and moves its focus, answers `fieldChanged` at 1000 ms for a short and
+         a long secret; a concealed closed read mid-poll and a concealed focus failure after a held match each end at
+         1000 ms, while a literal request's still end at once; an off-grid match (its read ending at 951 ms) and a
+         late last wake are each unconfirmed, plain and concealed; and an `NSNotFound` caret beside the right count,
+         then a right reply, confirms a literal request on both bases.
        - The schedule-identity test now also compares the uncollapsed number of reads and the poll's time, the
          window's included, and a drains-late run joins ruling 826's leak test.
        - Mutants: the count's overshoot unnarrowed fails the selection test; a window one read short fails the
@@ -6085,7 +6106,11 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
        `secretMayShow`): "The password field stopped being one while the secret was typed and may now show it: do
        not take a screenshot of it or call getAXState(); put it right with setValue." It reads the reason alone and
        compares it with that literal; nothing of the engine's text, nor the reason, is forwarded. The README's
-       secrets paragraph says the diagnostic warns.
+       secrets paragraph says the diagnostic warns. With a `userIntervened` whose app the user changed, the wrapper's
+       re-query sentence ("re-query its state (getAXState) before sending more actions") contradicted that warning,
+       and the intervention gate wants a fresh observation before a setValue. When the warning applies, one fixed
+       instruction replaces it: "the user changed the app; ask the user to hide or clear the password field before
+       re-querying the app's state, and before any setValue" (the review of f35a42b8..cbce12e2, P1).
      - **A concealed request never answers `caretMismatch`**: its caret elsewhere is `lengthMismatch`, whose sentence
        says the length or the caret is wrong (the same review, P1; the design session approved). Take a field that
        ignores input, with a non-empty selection. Its count stays the snapshot's, which equals the expected count
@@ -6102,12 +6127,15 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
       a page that rewrites input. The note, agent-cursor.md's typing paragraph and the README say so. Also not
       guarded:
       - Chromium's 10,000 value cap (#350): a count shows no cut, so a password past the cut is the residual.
+      - A field that collapses a selection to its end without inserting is indistinguishable from one that took text
+        exactly as long as the selection: its count and caret are the expected ones, and they hold (the review of
+        f35a42b8..cbce12e2, P2).
       - Firefox: #405's lane found the page, not the field, named as focused, so its password field answers
         `notTextField` as before. This is a documented limit, not worked around.
   11. **The model's document**: agent-cursor.md's typing paragraph, the surface inventory's "Table 3 amendment
       (2026-11-18, #414, …)", the docs oracle and the core-documentation test byte for byte, and the README's secrets
       paragraph. The MCP surface names no password confirmation, so no pinned digest moves.
-  12. **Proof**: SecureTypeReadbackTests (32) run the live reads over a stub app whose password field holds plaintext,
+  12. **Proof**: SecureTypeReadbackTests (35) run the live reads over a stub app whose password field holds plaintext,
       answers it to any request, and reports distinctive counts and ranges. Ruling 826's leak test covers fifteen runs:
       - confirmations, plain, concealed and by the caret alone;
       - a dropped and an extra character, a caret elsewhere concealed and plain, a field that ignores a secret (its
@@ -6139,7 +6167,9 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
         that the settle then reads as absent is `lengthUnreadable` before the settle (the first two are new tests in
         TypeReadbackMarkerTests, the count cases extend SecureTypeReadbackTests' test of a count no field has); and
         services-sky's wrapper test adds the shown-secret sentence for
-        `noLongerSecure` alone, and only once something was typed, with nothing of the engine's text or the reason.
+        `noLongerSecure` alone, and only once something was typed, with nothing of the engine's text or the reason;
+        with a changed app it also has the hide-or-clear instruction in place of the re-query one, and the re-query
+        one stays where no warning applies (the review of f35a42b8..cbce12e2, P1).
       TypeReadbackTests' secure tests are rewritten to confirm by length. TypeReadbackMarkerTests now has #395's
       password fields confirming by length, plain and concealed, with nothing but the batch read; its leak test's
       password run now confirms. The service test carries cua/typeReadback's strength and the note in the tool

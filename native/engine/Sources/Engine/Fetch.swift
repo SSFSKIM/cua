@@ -65,10 +65,15 @@ struct ElementData {
   /// (as `valueFailed`). A source that leaves out only AXValue (#390) still reads it.
   var descriptionUnread = false
   var descriptionFailed = false
-  /// #405: a password field, or an element whose role or subrole could not be read (treated as one, design ruling
-  /// 1ea561bc:811), as the read classified it: its value, value description, length, Markdown and selection are dropped
-  /// from the reply that carried them and never kept, and its node says `secure` in place of a value.
+  /// #405: a password field as the read classified it (its role or subrole AXSecureTextField), or presumed one (its role
+  /// unreadable, or a text-entry role with its subrole unreadable; rulings 1ea561bc:811, 813): its value, value
+  /// description, length, Markdown and selection are dropped from the reply that carried them and never kept, and its
+  /// node says `secure` in place of a value.
   var secure = false
+  /// #405: the value attributes were dropped because the classification failed (`secure` presumed, or another role whose
+  /// subrole is unreadable, whose node says `valueUnread`), not because it found a password field: an identity made from
+  /// it matches only another such, for the same handle.
+  var classificationFailed = false
 
   /// Decodes one element's attribute values, keyed by attribute name, and the names whose read failed.
   init(values: [String: CFTypeRef], unreadable: Set<String> = []) {
@@ -193,10 +198,20 @@ struct AttributeRead {
   var unreadable: Set<String> = []
 }
 
-/// #405: whether a reply classifies its element closed, its value attributes dropped, by the rule every value read of a
-/// field follows (`writtenValueFieldClosed`): a password field by role or subrole, or a role or subrole it could not
-/// read, which is treated as one (design ruling 1ea561bc:811).
-func valueReadClosed(_ read: AttributeRead) -> Bool {
+/// The roles a password field can have when its subrole cannot be read (ruling 1ea561bc:813): a text-entry role.
+let presumedSecureRoles: Set<String> = [kAXTextFieldRole, kAXTextAreaRole, kAXComboBoxRole]
+
+/// How a reply classifies its element (#405, rulings 1ea561bc:811 and 813): `closed`, its value attributes dropped,
+/// for a password field by role or subrole and whenever the role or subrole could not be read (`failed`); `secure`, the
+/// node said to be a password field, for one by role or subrole, an unreadable role, and a text-entry role with an
+/// unreadable subrole, never another readable role, which cannot be one.
+struct ValueClassification: Equatable {
+  var closed = false
+  var secure = false
+  var failed = false
+}
+
+func valueClassification(_ read: AttributeRead) -> ValueClassification {
   // A slot reported failed is failed, whatever else the reply put beside it.
   let role = read.unreadable.contains(kAXRoleAttribute) ? nil
     : read.values[kAXRoleAttribute].flatMap { CFGetTypeID($0) == CFStringGetTypeID() ? ($0 as! String) : nil }
@@ -208,8 +223,15 @@ func valueReadClosed(_ read: AttributeRead) -> Bool {
   } else {
     subrole = .none
   }
-  return writtenValueFieldClosed(role: role, subrole: subrole)
+  guard let role else { return ValueClassification(closed: true, secure: true, failed: true) }
+  if role == "AXSecureTextField" || subrole == .subrole("AXSecureTextField") { return ValueClassification(closed: true, secure: true) }
+  guard subrole == .failed else { return ValueClassification() }
+  return ValueClassification(closed: true, secure: presumedSecureRoles.contains(role), failed: true)
 }
+
+/// #405: whether a reply classifies its element closed (`valueClassification`), its value attributes dropped, by the rule
+/// every value read of a field follows (`writtenValueFieldClosed`).
+func valueReadClosed(_ read: AttributeRead) -> Bool { valueClassification(read).closed }
 
 /// Where a walk reads elements from, for one observation: what it read is kept, so the settle's busy walk and the
 /// observation's walk that follows it read each element once (F §8.5). `fetch` and `attributeNames` are the uncached
@@ -257,10 +279,11 @@ class ElementSource: @unchecked Sendable {
   /// anything else reads or formats it, so they reach no data, cache, identity, node or log. The data keeps `names` alone.
   private func classifiedData(_ element: AXUIElement, names: [String]) -> ElementData? {
     guard let read = request(element, names + classifyingAttributes.filter { !names.contains($0) }) else { return nil }
-    let closed = valueReadClosed(read)
-    let kept = Set(names)
+    let classified = valueClassification(read)
+    // A closed element's value attributes never reach the decoding (which would keep, convert or bound them).
+    let kept = Set(names).subtracting(classified.closed ? valueAttributes : [])
     var data = ElementData(values: read.values.filter { kept.contains($0.key) }, unreadable: read.unreadable.intersection(kept))
-    if closed { ElementSource.markSecure(&data) } else {
+    if classified.closed { ElementSource.markClosed(&data, classified) } else {
       data.valueUnread = !readsValue
       data.valueFailed = readsValue && read.unreadable.contains(kAXValueAttribute)
       data.descriptionFailed = read.unreadable.contains(kAXValueDescriptionAttribute)
@@ -268,23 +291,26 @@ class ElementSource: @unchecked Sendable {
     return data
   }
 
-  /// `data` as a closed element's: its value attributes gone, and marked so (`secure`, its value and description unread).
-  private static func markSecure(_ data: inout ElementData) {
+  /// `data` as a closed element's (`classified`): its value attributes gone and their reads marked deliberate, `secure`
+  /// as the classification says, and `classificationFailed` when it was the failure that closed it.
+  private static func markClosed(_ data: inout ElementData, _ classified: ValueClassification) {
     data.value = nil
     data.valueDescription = nil
     data.numberOfCharacters = nil
-    data.secure = true
+    data.secure = classified.secure
+    data.classificationFailed = classified.failed
     data.valueUnread = true
     data.valueFailed = false
     data.descriptionUnread = true
     data.descriptionFailed = false
   }
 
-  /// The element's data as the Markdown's classification found it closed or could not make it (#405): its value
-  /// attributes dropped, here and in the cache, so the node, the identity and every later read of this source carry none.
-  private func close(_ element: AXUIElement, _ data: ElementData) -> ElementData {
+  /// The element's data as the Markdown's classification found it closed or could not make it (#405, `classified`): its
+  /// value attributes dropped, here and in the cache, so the node, the identity and every later read of this source carry
+  /// none.
+  private func close(_ element: AXUIElement, _ data: ElementData, _ classified: ValueClassification) -> ElementData {
     var closed = data
-    ElementSource.markSecure(&closed)
+    ElementSource.markClosed(&closed, classified)
     dataCache[ElementKey(element: element)] = closed
     return closed
   }
@@ -382,9 +408,11 @@ class ElementSource: @unchecked Sendable {
   /// subrole are requested again just before (#405): when that request fails or finds the field closed, nil with no
   /// read, and `data` closed too (here and in the cache), so nothing read of it earlier reaches its node or identity.
   final func markdown(_ element: AXUIElement, data: inout ElementData, length: Int) -> String? {
-    // Fails closed: an element that cannot be classified now keeps nothing read of it before.
-    guard let read = request(element, classifyingAttributes), !valueReadClosed(read) else {
-      data = close(element, data)
+    // Fails closed: an element that cannot be classified now (a request that fails reads as its role unreadable) keeps
+    // nothing read of it before.
+    let classified = request(element, classifyingAttributes).map(valueClassification) ?? ValueClassification(closed: true, secure: true, failed: true)
+    if classified.closed {
+      data = close(element, data, classified)
       return nil
     }
     return costs.time("markdown") { readMarkdown(element, length: length) }

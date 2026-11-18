@@ -113,6 +113,9 @@ struct ElementIdentity {
   /// #405: a password field as a read classified it (`ElementData.secure`), whatever role and subrole it kept: a match
   /// needs both sides to agree.
   let secure: Bool
+  /// #405: the value was dropped because the classification failed (`ElementData.classificationFailed`): it matches only
+  /// another such, and only for the same handle.
+  let classificationFailed: Bool
   fileprivate(set) var pid: pid_t
 
   init(_ data: ElementData, pid: pid_t) {
@@ -132,6 +135,7 @@ struct ElementIdentity {
     descriptionUnread = data.descriptionUnread
     descriptionFailed = data.descriptionFailed
     secure = data.secure
+    classificationFailed = data.classificationFailed
     self.pid = pid
   }
 
@@ -145,7 +149,7 @@ struct ElementIdentity {
     let valueCounts = !ignoringValue && !valueUnread && !other.valueUnread
     let descriptionCounts = !descriptionUnread && !other.descriptionUnread
     func failedAlike(_ mine: Bool, _ theirs: Bool) -> Bool { mine == theirs && (!mine || sameElement) }
-    return secure == other.secure
+    return secure == other.secure && failedAlike(classificationFailed, other.classificationFailed)
       && role == other.role && subrole == other.subrole && roleDescription == other.roleDescription && title == other.title
       && (!valueCounts || (failedAlike(valueFailed, other.valueFailed) && value == other.value))
       && (!descriptionCounts || (failedAlike(descriptionFailed, other.descriptionFailed) && valueDescription == other.valueDescription))

@@ -12,7 +12,8 @@ import XCTest
 /// observation that reuses its reads, the menu bar's listed reads, the focused element's selected text, a token's
 /// re-resolution, select_text's search, and the paste's effect reading.
 final class SecureFieldTests: XCTestCase {
-  private let plaintext = "PLAINTEXT-hunter2-secret"
+  /// The fixture password: 41 UTF-16 units, a length no other text in these tests carries (#405's checks look for it).
+  private let plaintext = "PLAINTEXT-hunter2-secret-" + String(repeating: "z", count: 16)
   private func el(_ id: Int) -> AXUIElement { Engine.element(id) }
 
   /// A window (0) holding a password field (1), a plain text field (2) and a button (3); the stub answers everything.
@@ -76,18 +77,23 @@ final class SecureFieldTests: XCTestCase {
     XCTAssertNil(secure["numberOfCharacters"], label, file: file, line: line)
   }
 
-  /// The cached read and the identity of `id` keep nothing of its value, and the identity is a password field's.
+  /// The cached read and the identity of `id` keep nothing of its value, and are a password field's (`secure`) or, for
+  /// another role whose classification failed, not.
   private func assertNothingRetained(_ walk: TreeWalk, _ lineage: Lineage, _ source: FakeSource, _ id: Int, _ label: String,
-                                     file: StaticString = #filePath, line: UInt = #line) throws {
+                                     secure: Bool = true, file: StaticString = #filePath, line: UInt = #line) throws {
     let cached = try XCTUnwrap(source.data(el(id)), file: file, line: line)
     XCTAssertNil(cached.value, label, file: file, line: line)
     XCTAssertNil(cached.valueDescription, label, file: file, line: line)
     XCTAssertNil(cached.numberOfCharacters, label, file: file, line: line)
-    XCTAssertTrue(cached.secure && cached.valueUnread, label, file: file, line: line)
+    XCTAssertTrue(cached.valueUnread, label, file: file, line: line)
+    XCTAssertTrue(cached.unreadable.isDisjoint(with: valueAttributes), "the value attributes never reached the decoding: \(label)",
+                  file: file, line: line)
+    XCTAssertEqual(cached.secure, secure, label, file: file, line: line)
     let identity = try identity(walk, lineage, id)
     XCTAssertNil(identity.value, label, file: file, line: line)
     XCTAssertNil(identity.valueDescription, label, file: file, line: line)
-    XCTAssertTrue(identity.valueUnread && identity.secure, label, file: file, line: line)
+    XCTAssertTrue(identity.valueUnread, label, file: file, line: line)
+    XCTAssertEqual(identity.secure, secure, label, file: file, line: line)
     XCTAssertNil(walk.screenshotReads.first { CFEqual($0.element, el(id)) }?.value, label, file: file, line: line)
   }
 
@@ -95,10 +101,14 @@ final class SecureFieldTests: XCTestCase {
   /// identity keep nothing of its value, description or length; the node says `secure` and stays settable, and its
   /// Markdown is never read. A plain field beside it reads as before, and its node carries no `secure`.
   func testTheWalkKeepsNothingOfAPasswordFieldAndItsNodeSaysSecure() throws {
-    for (role, subrole) in [(kAXTextFieldRole, "AXSecureTextField" as String?), ("AXSecureTextField", nil)] {
-      let label = "role \(role), subrole \(subrole ?? "none")"
+    for (role, subrole, masked) in [(kAXTextFieldRole, "AXSecureTextField" as String?, false), ("AXSecureTextField", nil, false),
+                                    (kAXTextFieldRole, "AXSecureTextField", true)] {
+      let label = "role \(role), subrole \(subrole ?? "none"), masks \(masked)"
       let lineage = Lineage()
-      let (walk, source) = observe(tree(subrole: subrole, role: role), lineage)
+      let stub = tree(subrole: subrole, role: role)
+      if masked { stub.extra[1]?["AXValue"] = String(repeating: "\u{2022}", count: plaintext.utf16.count) as CFString }
+      let (walk, source) = observe(stub, lineage)
+      XCTAssertFalse(json(walk.nodes).contains(String(repeating: "\u{2022}", count: plaintext.utf16.count)), "no masks: \(label)")
 
       XCTAssertEqual(source.requests.filter { $0.id == 1 }.count, 1, "one batch: \(label)")
       assertEveryValueRequestClassifies(source)
@@ -132,20 +142,67 @@ final class SecureFieldTests: XCTestCase {
     XCTAssertEqual(source.requests.filter { $0.id == 3 }.count, 1)
   }
 
-  /// An element whose role or subrole cannot be read is treated as a password field (ruling 811): nothing of its value is
-  /// kept, even beside plaintext the app put in the reply; and a password field whose AXValue slot reports a failure
-  /// beside plaintext keeps none of it either.
+  /// An element whose classification fails keeps nothing of its value, even beside plaintext the app put in the reply
+  /// (rulings 811, 813): a text field whose subrole cannot be read, or any element whose role cannot be read, is
+  /// presumed a password field (`secure text`); a button whose subrole cannot be read cannot be one, so its node says
+  /// only `valueUnread`. A password field whose AXValue slot reports a failure beside plaintext keeps none of it either.
   func testAnUnclassifiableElementOrAFailedSlotKeepsNothing() throws {
-    for (label, unreadable, subrole) in [("subrole unreadable", "AXSubrole", nil as String?), ("role unreadable", "AXRole", nil),
-                                         ("secure, value slot failed", kAXValueAttribute, "AXSecureTextField")] {
+    for (label, id, unreadable, subrole) in [("text field, subrole unreadable", 1, "AXSubrole", nil as String?),
+                                             ("role unreadable", 1, "AXRole", nil),
+                                             ("secure, value slot failed", 1, kAXValueAttribute, "AXSecureTextField"),
+                                             ("button, subrole unreadable", 3, "AXSubrole", "AXSecureTextField")] {
       let stub = tree(subrole: subrole)
-      stub.unreadableAttributes = [1: [unreadable]]
+      if id == 3 { stub.extra[3]?["AXValue"] = plaintext as CFString }
+      stub.unreadableAttributes = [id: [unreadable]]
       let lineage = Lineage()
       let (walk, source) = observe(stub, lineage)
-      XCTAssertEqual(source.markdownCalls, 1, label)
-      assertSecureNode(node(walk, 1), label)
+      if id == 3 {
+        let button = node(walk, 3)
+        XCTAssertEqual(button["valueUnread"] as? Bool, true, label)
+        XCTAssertNil(button["secure"], label)
+        XCTAssertTrue(button["value"] is NSNull, label)
+        try assertNothingRetained(walk, lineage, source, 3, label, secure: false)
+      } else {
+        XCTAssertEqual(source.markdownCalls, 1, label)
+        assertSecureNode(node(walk, 1), label)
+        XCTAssertNil(node(walk, 1)["valueUnread"], label)
+        try assertNothingRetained(walk, lineage, source, 1, label)
+      }
       assertNothingOfThePassword(json(walk.nodes), label)
-      try assertNothingRetained(walk, lineage, source, 1, label)
+    }
+  }
+
+  /// Two same-labelled fields whose classifications both failed are redacted alike, but neither is taken for the other:
+  /// a closure by failure matches only another such, for the same handle; a closure by a password field's own subrole
+  /// matches across handles as any identity does.
+  func testAClosureByFailureMatchesOnlyTheSameHandle() throws {
+    func identity(failed: Bool) -> ElementIdentity {
+      var data = ElementData(values: ["AXRole": kAXTextFieldRole as CFString, "AXTitle": "Field" as CFString])
+      data.secure = true
+      data.classificationFailed = failed
+      data.valueUnread = true
+      data.descriptionUnread = true
+      return ElementIdentity(data, pid: 1)
+    }
+    XCTAssertFalse(identity(failed: true).matches(identity(failed: true)), "another handle")
+    XCTAssertTrue(identity(failed: true).matches(identity(failed: true), sameElement: true))
+    XCTAssertFalse(identity(failed: true).matches(identity(failed: false), sameElement: true), "a failure is not a password field read")
+    XCTAssertTrue(identity(failed: false).matches(identity(failed: false)))
+
+    let stub = tree(subrole: nil)
+    stub.unreadableAttributes = [1: ["AXSubrole"]]
+    let lineage = Lineage()
+    let (walk, _) = observe(stub, lineage)
+    let token = try XCTUnwrap(walk.token(of: el(1)))
+    let resolver = ElementResolver(invalidated: { _ in true }, stillValid: { _ in true }, source: { FakeSource(stub) },
+                                   tree: { _ in (Engine.element(0), []) })
+    XCTAssertTrue(CFEqual(try lineage.resolve(token, resolver: resolver).element, el(1)), "its own handle")
+    stub.unreadable = [1]
+    stub.extra[11] = stub.extra[1]
+    stub.unreadableAttributes = [11: ["AXSubrole"]]
+    stub.children = [0: [11, 2, 3]]
+    XCTAssertThrowsError(try lineage.resolve(token, resolver: resolver, refetch: .always)) {
+      XCTAssertEqual(($0 as? EngineError)?.errorName, "elementNoLongerValid")
     }
   }
 
@@ -323,6 +380,11 @@ final class SecureFieldTests: XCTestCase {
   /// select_text's refusal run with the engine's stderr captured.
   func testNoErrorOrStderrLineCarriesThePassword() throws {
     var errors: [String] = []
+    func record(_ error: Error) {
+      // The error as the wire carries it, and as anything printing it would.
+      errors.append("\(error)")
+      if let error = error as? EngineError { errors.append(json(error.wire)) }
+    }
     let captured = try capturingStderr {
       let stub = tree()
       let lineage = Lineage()
@@ -336,31 +398,42 @@ final class SecureFieldTests: XCTestCase {
       stub.extra[6] = stub.extra[1]
       stub.extra[6]?["AXSubrole"] = nil
       stub.children = [0: [6, 2, 3]]
-      do { _ = try lineage.resolve(fieldToken, resolver: resolver, refetch: .always) } catch { errors.append("\(error)") }
+      do { _ = try lineage.resolve(fieldToken, resolver: resolver, refetch: .always) } catch { record(error) }
       var ops = FakeAX().ops
       ops.batch = { _, _ in AttributeRead(values: ["AXRole": "AXSecureTextField" as CFString, kAXValueAttribute: self.plaintext as CFString]) }
-      do { _ = try selectionSearchText(el(1), observedRole: kAXTextFieldRole, ax: ops, attributed: { _, _ in nil }) } catch { errors.append("\(error)") }
+      do { _ = try selectionSearchText(el(1), observedRole: kAXTextFieldRole, ax: ops, attributed: { _, _ in nil }) } catch { record(error) }
     }
-    XCTAssertEqual(errors.count, 2)
-    for text in errors + [captured] { assertNothingOfThePassword(text) }
+    XCTAssertEqual(errors.count, 4)
+    let length = plaintext.utf16.count
+    for text in errors + [captured] {
+      assertNothingOfThePassword(text)
+      XCTAssertFalse(text.contains("\(length)"), "the length in any form: \(text)")
+      for mask in ["\u{2022}", "\u{F79A}"] { XCTAssertFalse(text.contains(String(repeating: mask, count: length)), "its masks: \(text)") }
+    }
   }
 
   /// Runs `body` with the process's stderr sent to a file, and answers what it wrote.
   private func capturingStderr(_ body: () throws -> Void) throws -> String {
     let url = FileManager.default.temporaryDirectory.appendingPathComponent("secure-field-stderr-\(UUID().uuidString)")
     FileManager.default.createFile(atPath: url.path, contents: nil)
+    guard FileManager.default.fileExists(atPath: url.path) else { throw CaptureFailed() }
     let file = try FileHandle(forWritingTo: url)
-    let saved = dup(STDERR_FILENO)
-    dup2(file.fileDescriptor, STDERR_FILENO)
     defer {
-      dup2(saved, STDERR_FILENO)
-      close(saved)
       try? file.close()
       try? FileManager.default.removeItem(at: url)
     }
+    let saved = dup(STDERR_FILENO)
+    guard saved >= 0, dup2(file.fileDescriptor, STDERR_FILENO) >= 0 else { throw CaptureFailed() }
+    defer {
+      dup2(saved, STDERR_FILENO)
+      close(saved)
+    }
     try body()
-    return (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+    fflush(stderr)
+    guard let text = String(data: try Data(contentsOf: url), encoding: .utf8) else { throw CaptureFailed() }
+    return text
   }
+  private struct CaptureFailed: Error {}
 
   /// The paste's effect reading of a password field: its numbers never leave the engine (the meta's records say only that
   /// it is one), and inside it a reading confirms only a count moved by exactly the paste, less the selection it replaced.

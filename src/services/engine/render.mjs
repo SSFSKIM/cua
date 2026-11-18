@@ -190,7 +190,8 @@ function presentUncached(skyshot) {
   const resolve = token => inTree.get(token) ?? (raw.has(token) ? {...element(raw.get(token), context), children: []} : null);
   const selected = (skyshot.selectedElements ?? []).map(resolve).filter(Boolean);
   // The selected text is the focused element's: never printed for a password field (#405).
-  const focusedSecure = skyshot.focused != null && raw.has(skyshot.focused) && secureNode(raw.get(skyshot.focused));
+  const focusedRaw = skyshot.focused != null ? raw.get(skyshot.focused) : undefined;
+  const focusedSecure = focusedRaw !== undefined && (secureNode(focusedRaw) || focusedRaw.valueUnread === true);
   return {
     title: skyshot.window?.title ?? 'Unknown', appName: skyshot.app?.displayName ?? 'Unknown', roots,
     selectedText: !focusedSecure && typeof skyshot.selectedText === 'string' && skyshot.selectedText !== '' ? skyshot.selectedText : null,
@@ -222,22 +223,26 @@ function forest(nodes, context) {
 // subrole is AXSecureTextField counts too, whatever value it carries, so none of it is ever printed.
 const SECURE_TEXT = 'secure text';
 const secureNode = raw => raw.secure === true || raw.role === 'AXSecureTextField' || raw.subrole === 'AXSecureTextField';
+// Another element whose value the engine dropped because its classification failed (ruling 1ea561bc:813): its Value part
+// prints `value unread`, so the value reads as missing, not empty.
+const VALUE_UNREAD = 'value unread';
 
 // A working copy of one Skyshot node. A text area's value is its Markdown rendering when the engine fetched one
 // (retrieveAttributedTextFromTextAreas [B §5]); actions pass filterActions and keep the descriptions the engine read.
-// A password field keeps no value, value description or Markdown: its Value part prints `secure text` (#405).
+// A password field keeps no value, value description or Markdown: its Value part prints `secure text`, and another
+// element whose value the engine left unread prints `value unread` (#405).
 function element(raw, context) {
-  const secure = secureNode(raw);
-  const markdown = !secure && raw.role === 'AXTextArea' && typeof raw.valueMarkdown === 'string' ? raw.valueMarkdown : null;
+  const dropped = secureNode(raw) || raw.valueUnread === true;
+  const markdown = !dropped && raw.role === 'AXTextArea' && typeof raw.valueMarkdown === 'string' ? raw.valueMarkdown : null;
   return {
     token: raw.token, role: raw.role, subrole: raw.subrole ?? null, roleDescription: raw.roleDescription ?? null,
-    title: raw.title ?? null, description: raw.description ?? null, value: secure ? null : markdown ?? raw.value ?? null,
-    valueType: secure ? null : markdown != null ? 'string' : raw.valueType ?? null, identifier: raw.identifier ?? null,
-    valueDescription: secure ? null : raw.valueDescription ?? null, placeholder: raw.placeholder ?? null, help: raw.help ?? null,
+    title: raw.title ?? null, description: raw.description ?? null, value: dropped ? null : markdown ?? raw.value ?? null,
+    valueType: dropped ? null : markdown != null ? 'string' : raw.valueType ?? null, identifier: raw.identifier ?? null,
+    valueDescription: dropped ? null : raw.valueDescription ?? null, placeholder: raw.placeholder ?? null, help: raw.help ?? null,
     url: raw.url ?? null, rowIndexRange: raw.rowIndexRange ?? null, columnIndexRange: raw.columnIndexRange ?? null,
     domClassList: raw.domClassList ?? null, servesAsTitleFor: raw.servesAsTitleFor ?? null, shown: raw.shown ?? null,
     flags: {...raw.flags}, actions: filterActions(raw, context), descriptions: actionDescriptions(raw), children: [],
-    ...(secure ? {secure} : {}),
+    ...(dropped ? (secureNode(raw) ? {secure: true} : {valueUnread: true}) : {}),
   };
 }
 
@@ -509,7 +514,7 @@ const LONG_PART = 100;   // characters; a part this long, or with a newline, pri
 function parts(node, urls) {
   const candidates = [
     [null, node.title], ['Description', node.description], ['Rows', range(node.rowIndexRange)], ['Columns', range(node.columnIndexRange)],
-    ['URL', nonEmpty(node.url) ? shortenUrl(node.url, urls) : null], ['Help', node.help], ['Value', node.secure ? SECURE_TEXT : valueText(node.value, urls)],
+    ['URL', nonEmpty(node.url) ? shortenUrl(node.url, urls) : null], ['Help', node.help], ['Value', node.secure ? SECURE_TEXT : node.valueUnread ? VALUE_UNREAD : valueText(node.value, urls)],
     ['Details', node.valueDescription], ['Placeholder', node.placeholder],
     ['ID', typeof node.identifier === 'string' && !/^(_|NS)/.test(node.identifier) ? node.identifier : null],
     ['Secondary Actions', secondaryActions(node).join(', ')],

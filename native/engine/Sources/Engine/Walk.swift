@@ -1188,8 +1188,9 @@ func nodeWire(token: String, depth: Int, pid: pid_t, data: ElementData, actions:
   if let columns = data.columnIndexRange { node["columnIndexRange"] = columns }
   if let domClassList = data.domClassList { node["domClassList"] = domClassList }
   if let shown { node["shown"] = shown.wire }
-  // #405: a password field's value was never read; the node says so, with no value, length or Markdown.
-  if data.secure { node["secure"] = true }
+  // #405: a password field's value was never kept; the node says so, with no value, length or Markdown. Another element
+  // whose classification failed says only that its value was not read (ruling 1ea561bc:813).
+  if data.secure { node["secure"] = true } else if data.classificationFailed { node["valueUnread"] = true }
   return node
 }
 

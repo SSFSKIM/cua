@@ -420,6 +420,15 @@ test('#405: a password field prints `secure text` as its value, with no length, 
   assert.doesNotMatch(render(row, advanceNumbering(null, row)), /PLAINTEXT/);
 });
 
+test('#405: an element whose value the engine left unread prints `value unread`, whatever value its node carries', () => {
+  for (const fields of [{valueUnread: true, value: null}, {valueUnread: true, value: 'PLAINTEXT', valueDescription: 'PLAINTEXT details'}]) {
+    const shot = skyshot(win([button('b', 1, 'Go', fields)]), {focused: 'b', selectedText: 'PLAINTEXT'});
+    const text = render(shot, advanceNumbering(null, shot));
+    assert.match(text, /\t1 button Go, Value: value unread\n/);
+    assert.doesNotMatch(text, /PLAINTEXT|secure text|Selected text/);
+  }
+});
+
 test('#405: a plain field and its selected text print as before', () => {
   const shot = skyshot(win([node('f', 1, 'AXTextField', {roleDescription: 'text field', value: 'abc', valueType: 'string', flags: {settable: true}})]),
     {focused: 'f', selectedText: 'b'});

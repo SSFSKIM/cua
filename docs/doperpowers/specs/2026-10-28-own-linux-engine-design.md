@@ -2304,6 +2304,16 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
   - **The engine-linux clipboard test flake** (`clipboard::tests::an_unconfirmed_paste_s_current_time_refusal_covers_the_next_paste_too`) hit ci-gate three times this week. Its fix changes tests under `native/linux-engine/`, which the pinned rule forbids at H, so it rides the next engine release (779). The tracker keeps its tally, and M5's limits name it.
   Date/Author: 2026-11-17, the plan-executor (session linux171), from task 91 and its reviews, on rulings 773, 774 and 779.
 
+- Decision (2026-11-18, M5 arm64 VM, the owner's choice through the design session, sminos 796): **the arm64 VM is GCE `c4a-standard-8` through devcloud's GCE provider** (doperpowers board #187), in place of the pre-flight's Hetzner `cax31`.
+  - **Why.** Hetzner's cax types were unavailable in every location for about three days of retries. The owner chose GCE from the two alternatives (AWS, or arm64 on devcloud's GCE provider), and devcloud's image recipe already supports arm64.
+  - **What differs from the plan.**
+    - 8 vCPU of Google Axion (Neoverse V2) against cax31's Ampere Altra (Neoverse N1), so the core is newer and faster. §8.2's first cut, a timing constant tuned on x64 that a slower arm64 core misses, becomes less likely. The second, the arm64 `:0`, does not.
+    - 32 GB against 16; a Hyperdisk boot disk; us-west1. Twice the load stays 16 workers on both VMs.
+    - A C4A guest has no GPU device, so `cua-provision.sh` gives `:0` Xorg's dummy driver at 1280x800, where the x64 VM's `:0` runs on its `card0`. The pilot records the driver and screen size, and a scene that assumes the x64 VM's size is a pilot finding.
+    - The pre-flight's §7.1 (the type, the request and the price) and §7.2 (the image and the checks) are amended to match.
+  - **Unchanged:** the 5-day lease (F6, F6a); the order (T6's arm64 pilot, then T4's arm64 findings under §8.1 on both architectures, then T7 at the head then frozen); the evidence and the rules. The VM is created at the head the controller names. That is H″ (a5218d94), or a later commit on `feat/171-m5` that moves no file a step runs.
+  Date/Author: 2026-11-18, the plan-executor (session linux171), on the design session's message 796.
+
 ## Outcomes & Retrospective
 
 Written per milestone as each lands; the whole-plan retrospective at finish. The execution record (tasks, reviews, friction) is `docs/doperpowers/specs/2026-10-28-own-linux-engine-report.md`.

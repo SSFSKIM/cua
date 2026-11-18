@@ -426,16 +426,21 @@ Hours are counted from the design session's approval of this pre-flight (hour 0)
 - **How long: about 76 hours with no cut**, a little over three days. One cut adds 24 to 36 hours, to about hour 110.
 - **The lease: 5 days** (F6), which ends at about hour 122 and so covers one cut. A second cut needs `devcloud vm lease`
   before then.
-- **The price**: €0.0336 an hour before VAT. 76 hours cost about €2.60, the whole lease about €4.
+- **The price**: the design session's to state, from devcloud's GCE provider (c4a-standard-8, us-west1). Hetzner's
+  `cax31`, the first choice, was €0.0336 an hour.
 - **The request**, with the flags the devcloud skill names (`devcloud vm --help` has the rest; the location flag was not
   verified):
 
   ```bash
-  devcloud vm up --label linux171arm --project SSFSKIM/cua@feat/171-m5 --type cax31 --ttl 5d --dry-run
-  devcloud vm up --label linux171arm --project SSFSKIM/cua@feat/171-m5 --type cax31 --ttl 5d
+  # GCE through devcloud's provider (doperpowers board #187); the provider and type flags are that provider's,
+  # not verified until it lands. The design session creates the VM at the head the controller names.
+  devcloud vm up --label linux171arm --project SSFSKIM/cua@feat/171-m5 --type c4a-standard-8 --ttl 5d --dry-run
+  devcloud vm up --label linux171arm --project SSFSKIM/cua@feat/171-m5 --type c4a-standard-8 --ttl 5d
   ```
 
-- **The type.** `cax31`: 8 vCPU, 16 GB, 160 GB, the x64 VM's cores and memory, so twice the load is 16 workers on both.
+- **The type** (the Decision Log's "M5 arm64 VM" entry, 2026-11-18): GCE `c4a-standard-8`, 8 vCPU (Google Axion,
+  Neoverse V2), 32 GB, a Hyperdisk boot disk of at least 160 GB, in us-west1. Twice the load stays 16 workers on both
+  VMs. Hetzner's `cax31` (8 vCPU Ampere Altra, 16 GB), planned first, was unavailable in every location for three days.
   - 8 vCPU is at the devcloud cap, not beyond it, so its creation needs no yes from the owner, while fewer than three
     VMs made without one are alive.
   - If Hetzner refuses it (exit 3): another EU location, then an 8 vCPU arm64 type on Google Compute Engine, which
@@ -447,6 +452,13 @@ Hours are counted from the design session's approval of this pre-flight (hour 0)
 
 From this VM's apt history, its conf and M4's lessons (L2295). Everything is installed by T6.
 
+0. **The image** (GCE): Ubuntu 24.04 LTS arm64 from GCE's public image family (`ubuntu-2404-lts-arm64`), on a
+   Hyperdisk Balanced boot disk (C4A takes Hyperdisk only) of at least 160 GB. No nested virtualization is needed.
+   GCE's guest agent manages the login user and its keys: the `:0` guards read the person from the session (T4's
+   static round), so check the uid and home before the pilot rather than assume 501 and `/Users/new`. A C4A guest
+   has no GPU device: with no `/dev/dri/card*`, `cua-provision.sh` writes Xorg's dummy driver at 1280x800, where the
+   x64 VM's `:0` runs on its `card0`. That is §8.2's second cut, a different Xorg driver; the pilot records which
+   driver and size `:0` ran, and a scene that assumes the x64 VM's screen size is a pilot finding.
 1. **The template.** `deploy/cloud-vm/cua-provision.sh` as root, with the x64 VM's conf and the ref changed:
    `CUA_USER=new`, `CUA_REF=feat/171-m5`, `CUA_REPO=https://github.com/SSFSKIM/cua`, `CUA_DEB=pin`,
    `CUA_EXTENSION=hosted`. It gives the desktop on `:0`, Google Chrome with the extension by policy, Node, `/opt/cua`,

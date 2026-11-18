@@ -443,6 +443,33 @@ final class TypeReadbackMarkerTests: XCTestCase {
     }
   }
 
+  /// The route's classification of the field as a password field holds for the snapshot: a page that shows the
+  /// password as text between that classification and the snapshot's own role and subrole read (a show-password
+  /// toggle) has the field refused noLongerSecure, and nothing more is read of it: no value, no range, no length batch.
+  func testAPasswordFieldTheRouteFoundThatIsShownAsTextIsReadNoFurther() {
+    let cases: [(String, [String: CFTypeRef])] = [
+      ("by subrole", [kAXRoleAttribute: "AXTextField" as CFString, kAXSubroleAttribute: "AXSecureTextField" as CFString]),
+      ("by role", [kAXRoleAttribute: "AXSecureTextField" as CFString]),
+    ]
+    for concealed in [false, true] {
+      for (name, classified) in cases {
+        let safari = StubSafari(value: "hunter2", selection: NSRange(location: 7, length: 0))
+        safari.batches[StubSafari.field] = AttributeRead(values: classified)  // the route's classification; the field's own reads show a text field
+        let (error, meta, reply) = type("pass", into: safari, concealed: concealed)
+        XCTAssertEqual(error?.errorName, "typeUnconfirmed", name)
+        XCTAssertEqual(reason(meta), "noLongerSecure", name)
+        XCTAssertTrue(error?.message.hasSuffix("The field may now show its text, so if it holds a secret, do not take a screenshot of it or call getAXState(); put it right with setValue, and do not type the text again.") ?? false, name)
+        XCTAssertFalse(reply.contains("hunter2"), name)
+        XCTAssertEqual(safari.valueReads, [], "\(name): \(safari.log)")
+        guard let snapshot = safari.log.lastIndex(of: "\(kAXSubroleAttribute)@\(StubSafari.field)") else {
+          XCTFail("\(name): the snapshot read the field's subrole: \(safari.log.suffix(12))")
+          continue
+        }
+        XCTAssertEqual(safari.log[(snapshot + 1)...].filter { $0 != "post" }, [], "\(name): nothing read after the snapshot's subrole")
+      }
+    }
+  }
+
   /// A closed element the route finds that is not a password field is refused unread with main's reason: roleUnreadable
   /// for an unreadable role, of the field or of the text the marker names, secure for that text marked secure. Nothing is
   /// read of the closed element after its classification, and no value or range of anything.

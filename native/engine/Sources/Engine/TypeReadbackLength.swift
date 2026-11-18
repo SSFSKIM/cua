@@ -36,7 +36,8 @@ func readbackBatchRole(_ read: AttributeRead) -> String? {
 
 /// What one length read found (`readbackLength`): that the field is read no further, and why; or its count, split as the
 /// walk splits a read (a value; absent, the attribute unsupported or without a value; failed, any other error, or a
-/// value that is not a non-negative number), and its selected range, nil when it could not be read.
+/// value that is not a non-negative integer: a floating-point number, which `intValue` would truncate, is a failed
+/// read), and its selected range, nil when it could not be read.
 enum ReadbackLength {
   case closed(TypeReadbackReason)
   case read(count: ReadbackWalkRead<Int>, range: NSRange?)
@@ -54,7 +55,7 @@ func readbackLength<Element>(_ field: Element, role: String, reads: ReadbackRead
   if read.unreadable.contains(kAXNumberOfCharactersAttribute) {
     count = .failed
   } else if let raw = read.values[kAXNumberOfCharactersAttribute] {
-    let number = CFGetTypeID(raw) == CFNumberGetTypeID() ? (raw as! NSNumber).intValue : -1
+    let number = CFGetTypeID(raw) == CFNumberGetTypeID() && !CFNumberIsFloatType((raw as! CFNumber)) ? (raw as! NSNumber).intValue : -1
     count = number >= 0 ? .value(number) : .failed
   } else {
     count = .absent
@@ -79,18 +80,25 @@ enum ReadbackLengthStart: Equatable {
   case refused(TypeReadbackReason)
 }
 
+/// The largest count, and caret location of the caret's basis, a field is taken to have: Int32's maximum, far past any
+/// field's text. Past it the read is no field's (`NSNotFound` is Int.max), and under it the sums the confirmation makes
+/// of the basis and the typed text (`readbackLengthJudged`), the text bounded by the request, cannot overflow.
+let readbackLengthLimit = Int(Int32.max)
+
 /// The one decision of what a password field's starting point allows. A count read that failed allows nothing
-/// (`lengthUnreadable`). A count allows its own confirmation, with a range that lies inside it, and with no range only
-/// from an empty field, where nothing can be replaced and the caret can only sit at 0 (else `selectionUnreadable`). No
-/// count at all (absent: the attribute unsupported, never a read that failed) allows the caret alone (ruling 839), from
-/// a selection that was read and is empty; anything else stays `lengthUnreadable`.
+/// (`lengthUnreadable`), nor does a count past `readbackLengthLimit`. A count allows its own confirmation, with a range
+/// that lies inside it, and with no range only from an empty field, where nothing can be replaced and the caret can only
+/// sit at 0 (else `selectionUnreadable`). No count at all (absent: the attribute unsupported, never a read that failed)
+/// allows the caret alone (ruling 839), from a selection that was read, is empty and lies within the limit; anything
+/// else stays `lengthUnreadable`.
 func readbackLengthBasis(count: ReadbackWalkRead<Int>, range: NSRange?) -> ReadbackLengthStart {
   switch count {
   case .failed: return .refused(.lengthUnreadable)
   case .absent:
-    guard let range, range.location >= 0, range.length == 0 else { return .refused(.lengthUnreadable) }
+    guard let range, range.location >= 0, range.location <= readbackLengthLimit, range.length == 0 else { return .refused(.lengthUnreadable) }
     return .basis(.caret(range))
   case .value(let before):
+    guard before <= readbackLengthLimit else { return .refused(.lengthUnreadable) }
     guard let range else { return before == 0 ? .basis(.count(0, range: nil)) : .refused(.selectionUnreadable) }
     guard range.location >= 0, range.length >= 0, range.location <= before, range.length <= before - range.location else {
       return .refused(.selectionUnreadable)
@@ -118,7 +126,8 @@ enum ReadbackLengthRead: Equatable {
 /// Confirmed when the count is exactly the basis's less its selection plus `typed` and, whenever the snapshot read a
 /// range, the caret reads {location + typed, 0} in the same reply, whatever the selection held: a lagging caret then
 /// answers the same whether or not a secret is as long as the selection it replaced. With the caret's basis (ruling
-/// 839), the caret alone, the count still absent.
+/// 839), the caret alone, the count still absent. The basis lies within `readbackLengthLimit`, so neither sum overflows;
+/// the read itself is only compared.
 func readbackLengthJudged(count: ReadbackWalkRead<Int>, range: NSRange?, basis: ReadbackLengthBasis, typed: Int) -> ReadbackLengthRead {
   let caret: NSRange?
   switch basis {
@@ -134,38 +143,38 @@ func readbackLengthJudged(count: ReadbackWalkRead<Int>, range: NSRange?, basis: 
   return .confirmed
 }
 
-/// A password field's snapshot, after its role and subrole: #359's wait and the settle, as a text field takes them, each
-/// read the length batch; then the starting point (`readbackLengthBasis`), which must still be select_text's range when
-/// the wait was for it.
+/// A password field's snapshot, after its role and subrole: #359's wait for a stable range and the settle, as a text
+/// field takes them, each read the length batch; then the starting point (`readbackLengthBasis`).
+///
+/// A wait for select_text's range is refused `selectionChanged` before any read, so nothing is typed: under #359's rule
+/// type_text right after select_text types only over select_text's selection, and a password field never holds one,
+/// since select_text refuses it (`selectTextSecure`) and the range ClickOrdering keeps per process is then another
+/// field's. A count read that fails at the snapshot is refused `lengthUnreadable` before the settle, whose next read
+/// could otherwise agree with it as no count at all and leave the caret alone to confirm (ruling 839 takes only an
+/// absent count for that).
 func readbackLengthSnapshot<Element>(field: Element, role: String, returnIsText: Bool, found: ReadbackLookup, reads: ReadbackReads<Element>,
                                      settle: inout ReadbackSettle?, baseline: BaselineWait?, waited: inout RangeWait?) -> ReadbackPlan<Element> {
-  if let baseline {
+  if case .selection? = baseline { return .refused(.selectionChanged) }
+  if baseline == .stable {
     var closed: TypeReadbackReason?
-    let goal: RangeGoal<NSRange>
-    switch baseline {
-    case .stable: goal = .stable
-    case .selection(let written): goal = .equals(written)
-    }
-    let wait = awaitRange(goal, read: {
+    waited = awaitRange(RangeGoal<NSRange>.stable, read: {
       switch readbackLength(field, role: role, reads: reads) {
       case .closed(let why): closed = why; return .closed
       case .read(_, let range): return range.map { .sample($0) } ?? .unread
       }
     }, now: reads.now, sleep: reads.sleep)
-    waited = wait
     if let closed { return .refused(closed) }
-    if case .selection = baseline, !wait.met { return .refused(.selectionChanged) }
   }
   var count: ReadbackWalkRead<Int>, range: NSRange?
   switch readbackLength(field, role: role, reads: reads) {
   case .closed(let why): return .refused(why)
   case .read(let read, let selection): (count, range) = (read, selection)
   }
+  if case .failed = count { return .refused(.lengthUnreadable) }
   if var settled = settle {
     defer { settle = settled }
     if let closed = readbackLengthSettle(field, role: role, reads: reads, count: &count, range: &range, record: &settled) { return .refused(closed) }
   }
-  if case .selection(let written) = baseline, range != written { return .refused(.selectionChanged) }
   switch readbackLengthBasis(count: count, range: range) {
   case .refused(let why): return .refused(why)
   case .basis(let basis): return .expectLength(field: field, role: role, basis: basis, returnIsText: returnIsText, found: found)
@@ -174,7 +183,8 @@ func readbackLengthSnapshot<Element>(field: Element, role: String, returnIsText:
 
 /// The settle (ruling 1ea561bc:754) of a password field's snapshot: its length batch read again every interval until a
 /// read agrees with the one before it, or the cap allows no further interval; `count` and `range` end as the last read.
-/// A count read that fails is `lengthUnreadable`, as at the snapshot.
+/// A count read that fails is `lengthUnreadable` at that read, as at the snapshot, so no read agrees with a failure:
+/// `number` compares a count or no count, never a failed read.
 func readbackLengthSettle<Element>(_ field: Element, role: String, reads: ReadbackReads<Element>, count: inout ReadbackWalkRead<Int>,
                                    range: inout NSRange?, record: inout ReadbackSettle) -> TypeReadbackReason? {
   func number(_ read: ReadbackWalkRead<Int>) -> Int? {

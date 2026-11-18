@@ -491,7 +491,7 @@ final class TypeReadbackTests: XCTestCase {
                                      },
                                      primaryWindow: { node in log.append("window"); return node.focusedWindow ?? node.mainWindow },
                                      walk: walkReads({ log.append($0) }, clock: { clock }, tick: { clock += msPerNode }))
-    guard case .field(let field, .focus)? = found else { return nil }
+    guard case .field(let field, .focus, _)? = found else { return nil }
     return field
   }
 
@@ -711,6 +711,39 @@ final class TypeReadbackTests: XCTestCase {
     XCTAssertTrue(field === secure)
     XCTAssertEqual(basis, .count(7, range: NSRange(location: 7, length: 0)))
     XCTAssertEqual(valueReads, 0)
+  }
+
+  /// The walk claims a field by its role, so one claimed as AXSecureTextField is a password field to the snapshot: shown
+  /// as a text field by the snapshot's own role and subrole read (a show-password toggle in between), it is refused
+  /// noLongerSecure, and nothing more is read of it, its length batch included. A text field the walk claims is taken by
+  /// the snapshot's reads alone.
+  func testAPasswordFieldTheWalkFoundThatIsShownAsTextIsReadNoFurther() {
+    for claimed in ["AXSecureTextField", "AXTextField"] {
+      let found = Node("field", role: claimed)
+      found.focusedFlag = true
+      found.value = "hunter2"
+      let app = Node("app")
+      app.mainWindow = Node("window", role: "AXWindow", children: [Node("web", role: "AXWebArea", children: [found])])
+      var valueReads = 0, batches = 0
+      let walk = walkReads({ _ in })
+      let reads = ReadbackReads<Node>(
+        focused: { readbackFocusedField(application: app, focused: { $0.focused.map { .value($0) } ?? .absent },
+                                        primaryWindow: { $0.focusedWindow ?? $0.mainWindow }, walk: walk) },
+        stillFocused: { _, _ in true },
+        role: { _ in "AXTextField" }, subrole: { _ in .absent }, value: { valueReads += 1; return $0.value },
+        valueUnits: { valueReads += 1; return $0.value.map { Array($0.utf16) } },
+        range: { _ in valueReads += 1; return NSRange(location: 7, length: 0) }, batch: { _, _ in batches += 1; return nil },
+        now: { 0 }, sleep: { _ in })
+      var settle: ReadbackSettle?
+      let plan = readbackSnapshot(reads: reads, settle: &settle)
+      if claimed == "AXSecureTextField" {
+        guard case .refused(.noLongerSecure) = plan else { return XCTFail("refused noLongerSecure: \(plan)") }
+        XCTAssertEqual(valueReads, 0)
+        XCTAssertEqual(batches, 0)
+      } else {
+        guard case .expect = plan else { return XCTFail("a text field: \(plan)") }
+      }
+    }
   }
 
   func testAConcealedTextIntoASecureFieldIsNeverRead() {
@@ -1478,17 +1511,18 @@ final class TypeReadbackTests: XCTestCase {
 
   /// The wait comes after the secure check and checks the field before every read: a password field's range is never
   /// read but in its length batch (#414), whose own classification decides each read, and one turning secure is read no
-  /// further.
+  /// further. A wait for select_text's range at a password field, which select_text never selects in, is refused before
+  /// any read.
   func testTheWaitNeverReadsASecureField() {
     let field = FakeField(value: "hunter2", range: NSRange(location: 7, length: 0))
     field.role = "AXSecureTextField"
     let (refused, refusedMeta) = type("pass", into: FakeApp(field), baseline: .selection(whole))
-    XCTAssertEqual(record(refusedMeta)["reason"] as? String, "selectionChanged", "select_text's range never showed")
+    XCTAssertEqual(record(refusedMeta)["reason"] as? String, "selectionChanged", "select_text's range is another field's")
     XCTAssertEqual(refused?.errorName, "typeUnconfirmed")
     XCTAssertEqual(field.value, "hunter2", "nothing typed")
     XCTAssertNil(record(refusedMeta)["baselineWait"], "a password field's record counts nothing")
     XCTAssertFalse(field.calls.contains("range") || field.calls.contains("value"))
-    XCTAssertGreaterThan(field.calls.filter { $0 == "batch" }.count, 1, "the wait read the length batch")
+    XCTAssertEqual(field.calls.filter { $0 == "batch" }.count, 0, "refused before any batch")
     // A pending click's stable wait, then the length: confirmed.
     let clicked = FakeField(value: "hunter2", range: NSRange(location: 7, length: 0))
     clicked.role = "AXSecureTextField"

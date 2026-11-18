@@ -18,13 +18,16 @@ private final class StubPasswordApp {
   var subroleFails = false
   var value: String
   var selection: NSRange
-  /// What the length batch's count and range slots answer: their value, nothing (absent), or a failure.
-  enum Slot { case answers, absent, fails, wrongType }
+  /// What the length batch's count and range slots answer: their value, nothing (absent), a failure, a value of the
+  /// wrong type, or exactly this reply.
+  enum Slot { case answers, absent, fails, wrongType, reply(CFTypeRef) }
   var countSlot = Slot.answers
   var rangeSlot = Slot.answers
   var batchFails = false
   /// The element the application names as its focus.
   var focus = StubPasswordApp.field
+  /// Whether the field ignores every delivered unit: its count and range stay as they were.
+  var ignoresInput = false
   /// Whether a Return inserts a newline (a field that takes it as text) or does nothing (a single-line field).
   var returnInserts = false
   /// What the app does with each delivered unit's text.
@@ -84,6 +87,7 @@ private final class StubPasswordApp {
         case .absent: break
         case .fails: read.unreadable.insert(name)
         case .wrongType: read.values[name] = kCFBooleanTrue
+        case .reply(let reply): read.values[name] = reply
         }
       case kAXSelectedTextRangeAttribute:
         switch rangeSlot {
@@ -91,6 +95,7 @@ private final class StubPasswordApp {
         case .absent: break
         case .fails: read.unreadable.insert(name)
         case .wrongType: read.values[name] = "range" as CFString
+        case .reply(let reply): read.values[name] = reply
         }
       // Anything else a batch could ask for, the plaintext among it, is answered too: none may be asked.
       default: read.values[name] = value as CFString
@@ -108,6 +113,7 @@ private final class StubPasswordApp {
 
   func deliver(_ text: [UInt16]) {
     log.append("post")
+    if ignoresInput { return }
     if text == [0x09] { return }  // a Tab: nothing in the field
     if text == [0x0D], !returnInserts { return }  // a Return in a single-line field
     guard NSMaxRange(selection) <= (value as NSString).length else { return }
@@ -169,6 +175,16 @@ final class SecureTypeReadbackTests: XCTestCase {
     }
     var wire: [String: Any] = failure.map { withMeta($0, meta).wire } ?? ["meta": meta.wire]
     if failure == nil, let note = meta.note { wire["note"] = note }
+    // The posting's own times (`InputMeta.posting`, real Unix milliseconds) are no field's numbers, but could hold a
+    // distinctive number's digits by chance: checked to be timestamps (or null, nothing posted), then fixed before any
+    // scan of the reply.
+    if var times = wire["meta"] as? [String: Any] {
+      for key in ["startedAt", "endedAt"] {
+        XCTAssertTrue(times[key] is NSNull || (times[key] as? Int).map { $0 > 1_600_000_000_000 } == true, "\(key) is a time or null")
+        times[key] = "<time>"
+      }
+      wire["meta"] = times
+    }
     let reply = String(data: try! JSONSerialization.data(withJSONObject: wire, options: [.sortedKeys]), encoding: .utf8)!
     return (failure, meta, reply)
   }
@@ -198,9 +214,10 @@ final class SecureTypeReadbackTests: XCTestCase {
   /// them (the expected count, the caret after the text, the selection's end, the change, off-by-one reads), reaches the
   /// reply's JSON, the meta, the read-back's record (its wire, and the struct as printed), the note, an error sentence or
   /// the stderr captured over the runs, in any form. The runs: a confirmation plain and concealed, a dropped and an extra
-  /// character, a caret elsewhere, a count read that fails, an unreadable range in a field that holds text, the caret
-  /// alone (ruling 839) confirmed and off by one, and a checkpoint before a Return. Then the positive controls: each
-  /// path, given a leak, is caught.
+  /// character, a caret elsewhere concealed and plain, a field that ignores the text (its selection as long as the
+  /// secret, and not), one shown as text while it is polled, a count read that fails, an unreadable range in a field that
+  /// holds text, the caret alone (ruling 839) confirmed and off by one, and a checkpoint before a Return. Then the
+  /// positive controls: each path, given a leak, is caught.
   func testNoCountRangeOrCaretReachesTheReplyRecordNoteErrorsOrStderr() throws {
     let caretBasis = { (app: StubPasswordApp) in
       app.countSlot = .absent
@@ -212,7 +229,14 @@ final class SecureTypeReadbackTests: XCTestCase {
       ("concealed", "pass", true, { _ in }, nil),
       ("dropped", "pass", true, { app in app.transform = { dropped += 1; return dropped == 2 ? "" : $0 } }, "lengthMismatch"),
       ("extra", "pass", false, { app in app.transform = { doubled += 1; return doubled == 2 ? $0 + $0 : $0 } }, "lengthMismatch"),
-      ("caret elsewhere", "pass", true, { $0.caretShift = 1 }, "caretMismatch"),
+      ("caret elsewhere", "pass", true, { $0.caretShift = 1 }, "lengthMismatch"),
+      ("caret elsewhere, literal", "pass", false, { $0.caretShift = 1 }, "caretMismatch"),
+      ("ignored", "pass", true, { $0.ignoresInput = true }, "lengthMismatch"),
+      ("ignored, as long as the selection", "pass", true, { app in
+        app.ignoresInput = true
+        app.selection = NSRange(location: self.location, length: 4)
+      }, "lengthMismatch"),
+      ("shown as text", "pass", true, { app in app.beforeBatch = { if $0 == 1 { app.subrole = nil } } }, "noLongerSecure"),
       ("count fails", "pass", false, { $0.countSlot = .fails }, "lengthUnreadable"),
       ("no range", "pass", true, { $0.rangeSlot = .absent }, "selectionUnreadable"),
       ("caret alone", "pass", true, caretBasis, nil),
@@ -321,7 +345,7 @@ final class SecureTypeReadbackTests: XCTestCase {
       let (error, meta, _) = type("hunter2", into: app, concealed: true)
       XCTAssertEqual(error?.errorName, "typeUnconfirmed", label)
       XCTAssertEqual(reason(meta), "lengthMismatch", label)
-      XCTAssertTrue(error?.message.contains("the password field's length is not what the text should have made it, so a character may have been dropped or added") ?? false, label)
+      XCTAssertTrue(error?.message.contains("the password field's length or caret is not what the text should have made it, so a character may have been dropped or added, or the text gone in elsewhere") ?? false, label)
       XCTAssertTrue(error?.message.contains("a screenshot shows its masked characters; getAXState() shows only that it is a password field") ?? false, label)
       XCTAssertFalse(error?.message.contains { $0.isNumber } ?? true, label)
       XCTAssertEqual(app.batches, 1 + 201, "\(label): the snapshot, then the whole budget polled")
@@ -338,21 +362,25 @@ final class SecureTypeReadbackTests: XCTestCase {
   }
 
   /// A selection as long as the text: the count is the snapshot's own, so it proves nothing alone; the caret right after
-  /// the text, in the same reply, is required, and without it the answer is caretMismatch. The same caret is required of
-  /// every confirmation whatever the selection held, so a lagging caret answers alike either way (no answer tells
-  /// whether a secret is as long as the selection).
+  /// the text, in the same reply, is required, and without it a literal request's answer is caretMismatch, a concealed
+  /// one's lengthMismatch. The same caret is required of every confirmation whatever the selection held, so a lagging
+  /// caret answers alike either way (no answer tells whether a secret is as long as the selection).
   func testTheCaretIsRequiredOfEveryConfirmationWithARange() {
     let unconsumed = field(count: 10, selection: NSRange(location: 2, length: 4))
     unconsumed.transform = { _ in "" }  // the selection deleted, nothing typed: the count drops by four
     XCTAssertEqual(reason(type("abcd", into: unconsumed).meta), "lengthMismatch")
     // Typed over in place, but the caret reads where it was: the count is as before, which alone would confirm.
     for (label, length) in [("as long as the text", 4), ("shorter than the text", 2)] {
-      let stuck = field(count: 10, selection: NSRange(location: 2, length: length))
-      stuck.caretShift = -4
-      let (error, meta, _) = type("abcd", into: stuck, concealed: true)
-      XCTAssertEqual(error?.errorName, "typeUnconfirmed", label)
-      XCTAssertEqual(reason(meta), "caretMismatch", label)
-      XCTAssertTrue(error?.message.contains("its caret is not right after the text, so the text may have gone in elsewhere") ?? false, label)
+      for concealed in [false, true] {
+        let stuck = field(count: 10, selection: NSRange(location: 2, length: length))
+        stuck.caretShift = -4
+        let (error, meta, _) = type("abcd", into: stuck, concealed: concealed)
+        XCTAssertEqual(error?.errorName, "typeUnconfirmed", label)
+        XCTAssertEqual(reason(meta), concealed ? "lengthMismatch" : "caretMismatch", "\(label), concealed \(concealed)")
+        XCTAssertTrue(error?.message.contains(concealed ? "the password field's length or caret is not what the text should have made it"
+          : "The text was typed, but the password field's caret is not right after the text, so the text may have gone in elsewhere, so it is")
+          ?? false, "\(label): \(error?.message ?? "")")
+      }
     }
     let right = field(count: 10, selection: NSRange(location: 2, length: 4))
     XCTAssertNil(type("abcd", into: right).error, "the caret after the text confirms")
@@ -488,7 +516,9 @@ final class SecureTypeReadbackTests: XCTestCase {
     XCTAssertEqual(reason(movedMeta), "fieldChanged", "the length right, the focus elsewhere")
   }
 
-  /// The settle and #359's wait read a password field only through its length batch, and a settled start is typed over.
+  /// The settle and #359's wait for a stable range read a password field only through its length batch, and a settled
+  /// start is typed over. A wait for select_text's range is refused before any batch, since select_text never selects
+  /// in a password field.
   func testTheSettleAndTheWaitReadOnlyTheLengthBatch() {
     let settling = field(count: 7, selection: NSRange(location: 7, length: 0))
     settling.beforeBatch = { if $0 == 1 { settling.selection = NSRange(location: 0, length: 7) } }  // a select-all landing late
@@ -506,6 +536,169 @@ final class SecureTypeReadbackTests: XCTestCase {
     XCTAssertEqual(goneError?.errorName, "typeUnconfirmed")
     XCTAssertEqual(reason(goneMeta), "selectionChanged")
     XCTAssertEqual(gone.value.count, 7, "nothing typed")
+    XCTAssertEqual(gone.batches, 0, "refused before any batch")
+  }
+
+  /// #359's rule at a password field: type_text right after select_text types only over select_text's selection, and
+  /// select_text refuses a password field (`selectTextSecure`), so a selection baseline that reaches one is another
+  /// field's. It is refused selectionChanged before any batch, even when it reads as the field's own range: nothing is
+  /// typed, a literal request enters nothing, and nothing of the field is read but its role and subrole.
+  func testASelectTextBaselineAtAPasswordFieldTypesNothing() {
+    for concealed in [false, true] {
+      let app = field(count: 7, selection: NSRange(location: 2, length: 3))
+      let (error, meta, _) = type("pass", into: app, concealed: concealed, baseline: .selection(NSRange(location: 2, length: 3)))
+      XCTAssertEqual(error?.errorName, "typeUnconfirmed")
+      XCTAssertTrue(error?.message.hasPrefix("Nothing was typed") ?? false)
+      XCTAssertEqual(reason(meta), "selectionChanged")
+      XCTAssertEqual(app.batches, 0)
+      XCTAssertFalse(app.log.contains("post"), "nothing typed")
+      XCTAssertEqual(app.value.count, 7)
+      XCTAssertEqual(app.reads, ["AXFocusedUIElement@0", "AXRole@1", "AXSubrole@1"])
+      XCTAssertEqual(meta.entered, concealed ? nil : 0)
+      XCTAssertEqual(record(meta)["secure"] as? Bool, true)
+      XCTAssertNil(record(meta)["baselineWait"])
+    }
+  }
+
+  // MARK: A secret's length is never the reason
+
+  /// A field that ignores the text keeps its count and range. A literal request's stuck caret is caretMismatch, but a
+  /// concealed one answers lengthMismatch whether or not the secret is as long as the selection, with the same message
+  /// and record: otherwise the reason would tell the secret's length.
+  func testAConcealedRequestIntoAFieldThatIgnoresItAnswersAlikeWhateverTheSecretsLength() {
+    func ignoring(_ text: String, concealed: Bool) -> (error: EngineError?, meta: InputMeta) {
+      let app = field(count: 10, selection: NSRange(location: 2, length: 4))
+      app.ignoresInput = true
+      let (error, meta, _) = type(text, into: app, concealed: concealed)
+      XCTAssertEqual(app.value.count, 10, text)
+      return (error, meta)
+    }
+    let same = ignoring("abcd", concealed: true), other = ignoring("abcdef", concealed: true)
+    XCTAssertEqual(reason(same.meta), "lengthMismatch")
+    XCTAssertEqual(reason(other.meta), "lengthMismatch")
+    XCTAssertEqual(same.error?.message, other.error?.message)
+    XCTAssertEqual(record(same.meta) as NSDictionary, record(other.meta) as NSDictionary)
+    XCTAssertEqual(same.meta.typeReadback?.reason, other.meta.typeReadback?.reason)
+    XCTAssertEqual(reason(ignoring("abcd", concealed: false).meta), "caretMismatch", "a literal request keeps the two reasons apart")
+    XCTAssertEqual(reason(ignoring("abcdef", concealed: false).meta), "lengthMismatch")
+  }
+
+  /// A caretMismatch claims nothing of the count, which the caret basis (ruling 839) never checked; lengthMismatch is
+  /// true of a length or a caret.
+  func testTheMismatchSentences() {
+    XCTAssertEqual(typeUnconfirmed(.caretMismatch).message,
+                   "The text was typed, but the password field's caret is not right after the text, so the text may have gone in elsewhere, so it is not confirmed and some or all of it may have gone in. Observe the field before going on (a screenshot shows its masked characters; getAXState() shows only that it is a password field), then use setValue to put it right; do not type the text again.")
+    XCTAssertEqual(typeUnconfirmed(.lengthMismatch).message,
+                   "The text was typed, but the password field's length or caret is not what the text should have made it, so a character may have been dropped or added, or the text gone in elsewhere, so it is not confirmed and some or all of it may have gone in. Observe the field before going on (a screenshot shows its masked characters; getAXState() shows only that it is a password field), then use setValue to put it right; do not type the text again.")
+  }
+
+  /// A field that stops being a password field may show its text (a show-password toggle): the advice is not to look at
+  /// it if it holds a secret, never that a screenshot shows only masked characters. No digits.
+  func testNoLongerSecureAdvisesNotToObserveTheShownText() {
+    let message = typeUnconfirmed(.noLongerSecure).message
+    XCTAssertEqual(message, "The text was typed, but the password field turned into another kind of field while the text was typed, so it was read no further, so it is not confirmed and some or all of it may have gone in. The field may now show its text, so if it holds a secret, do not take a screenshot of it or call getAXState(); put it right with setValue, and do not type the text again.")
+    XCTAssertFalse(message.contains { $0.isNumber })
+    XCTAssertFalse(message.contains("masked"))
+    let before = typeUnconfirmed(.noLongerSecure, beforeKey: true).message
+    XCTAssertTrue(before.hasSuffix("Some of the text may have gone in. The field may now show its text, so if it holds a secret, do not take a screenshot of it or call getAXState(); put it right with setValue, and do not type the text again."), before)
+  }
+
+  // MARK: A length confirmation that never ran
+
+  /// A literal request of keys alone (a Tab, a Return in a single-line field) makes no length check: it is confirmed as
+  /// a plain field's keys-only request is, its keys unconfirmed, with no `confirmation` and no note. Text still carries
+  /// both.
+  func testKeysAloneIntoAPasswordFieldClaimNoLengthConfirmation() {
+    for keys in ["\t", "\n"] {
+      let app = field(count: 0, selection: NSRange(location: 0, length: 0))
+      let (error, meta, reply) = type(keys, into: app)
+      XCTAssertNil(error, keys)
+      XCTAssertEqual(record(meta) as NSDictionary, ["confirmed": true, "secure": true, "keysUnconfirmed": 1, "snapshotMs": 0.0] as NSDictionary, keys)
+      XCTAssertNil(meta.note, keys)
+      XCTAssertFalse(reply.contains("confirmed by its length"), keys)
+      XCTAssertEqual(app.batches, 1, "\(keys): the snapshot alone")
+    }
+    let (_, meta, _) = type("pass", into: field(count: 0, selection: NSRange(location: 0, length: 0)))
+    XCTAssertEqual(record(meta)["confirmation"] as? String, "length")
+    XCTAssertEqual(meta.note, readbackLengthNote)
+    let (_, secret, _) = type("\t", into: field(count: 0, selection: NSRange(location: 0, length: 0)), concealed: true)
+    XCTAssertEqual(record(secret)["confirmation"] as? String, "length", "a secret is always read back once")
+  }
+
+  // MARK: The count's read
+
+  /// A count that fails at the snapshot is lengthUnreadable before the settle, so a settle read that then finds no count
+  /// cannot turn it into the caret's basis (ruling 839). A count that fails at a settle read is lengthUnreadable at that
+  /// read, though the next would answer: no batch follows it before typing, and the text is typed all the same.
+  func testAFailedCountIsNeverSettledAway() {
+    let snapshot = field(selection: NSRange(location: 31_337, length: 0))
+    snapshot.countSlot = .fails
+    snapshot.beforeBatch = { if $0 == 1 { snapshot.countSlot = .absent } }
+    XCTAssertEqual(reason(type("pass", into: snapshot, settle: true).meta), "lengthUnreadable")
+    XCTAssertEqual(snapshot.batches, 1, "refused before the settle")
+    XCTAssertEqual(snapshot.value.count, before + 4, "typed all the same")
+
+    let settling = field()
+    settling.beforeBatch = { settling.countSlot = $0 == 1 ? .fails : .answers }
+    XCTAssertEqual(reason(type("pass", into: settling, settle: true).meta), "lengthUnreadable")
+    XCTAssertEqual(settling.batches, 2, "no batch after the failed one")
+    XCTAssertEqual(settling.value.count, after, "typed all the same")
+  }
+
+  /// The settle reads until two reads agree: a select-all that lands in two steps (the caret to the start, then the
+  /// whole text selected) is taken at its end.
+  func testTheSettleReadsUntilTwoReadsAgree() {
+    let app = field(count: 7, selection: NSRange(location: 7, length: 0))
+    app.beforeBatch = { index in
+      if index == 1 { app.selection = NSRange(location: 0, length: 0) }
+      if index == 2 { app.selection = NSRange(location: 0, length: 7) }
+    }
+    XCTAssertNil(type("pass", into: app, settle: true).error)
+    XCTAssertEqual(app.value, "pass")
+    XCTAssertEqual(app.batches, 1 + 3 + 1, "the snapshot, three settle reads, one poll")
+  }
+
+  /// A count or caret no field has (`NSNotFound` is Int.max; a count past Int32's range) is unreadable at the basis, so
+  /// no arithmetic on it can trap: an unconfirmed reason, the text typed all the same.
+  func testACountOrCaretNoFieldHasIsUnreadableWithoutATrap() {
+    let notFound = axRangeValue(CFRange(location: NSNotFound, length: 0))
+    let caret = field()
+    caret.countSlot = .absent
+    caret.rangeSlot = .reply(notFound)
+    XCTAssertEqual(reason(type("pass", into: caret).meta), "lengthUnreadable", "the caret's basis at NSNotFound")
+    XCTAssertEqual(caret.batches, 1)
+    let huge = field(selection: NSRange(location: 5, length: 0))
+    huge.countSlot = .reply(Int.max as CFNumber)
+    XCTAssertEqual(reason(type("pass", into: huge).meta), "lengthUnreadable", "a count of Int.max")
+    let counted = field()
+    counted.rangeSlot = .reply(notFound)
+    XCTAssertEqual(reason(type("pass", into: counted).meta), "selectionUnreadable", "a range at NSNotFound beside a count")
+    let polled = field()
+    polled.beforeBatch = { if $0 == 1 { polled.countSlot = .reply(Int.max as CFNumber); polled.rangeSlot = .reply(notFound) } }
+    XCTAssertEqual(reason(type("pass", into: polled).meta), "lengthMismatch", "such a read after typing only differs")
+
+    let bound = Int(Int32.max)
+    XCTAssertEqual(readbackLengthBasis(count: .value(bound), range: NSRange(location: bound, length: 0)), .basis(.count(bound, range: NSRange(location: bound, length: 0))))
+    XCTAssertEqual(readbackLengthBasis(count: .value(bound + 1), range: NSRange(location: 0, length: 0)), .refused(.lengthUnreadable))
+    XCTAssertEqual(readbackLengthBasis(count: .value(Int.max), range: nil), .refused(.lengthUnreadable))
+    XCTAssertEqual(readbackLengthBasis(count: .absent, range: NSRange(location: bound, length: 0)), .basis(.caret(NSRange(location: bound, length: 0))))
+    XCTAssertEqual(readbackLengthBasis(count: .absent, range: NSRange(location: bound + 1, length: 0)), .refused(.lengthUnreadable))
+    XCTAssertEqual(readbackLengthBasis(count: .absent, range: NSRange(location: NSNotFound, length: 0)), .refused(.lengthUnreadable))
+    XCTAssertEqual(readbackLengthJudged(count: .value(Int.max), range: NSRange(location: NSNotFound, length: 0),
+                                        basis: .count(bound, range: NSRange(location: bound, length: 0)), typed: 1), .differs)
+    XCTAssertEqual(readbackLengthJudged(count: .absent, range: NSRange(location: NSNotFound, length: 0),
+                                        basis: .caret(NSRange(location: bound, length: 0)), typed: 1), .caretElsewhere)
+  }
+
+  /// A count that is a floating-point number is a failed read, never truncated to an integer (−0.5 is not 0).
+  func testAFloatCountIsAFailedRead() {
+    for number in [-0.5, 0.0, 4.0] {
+      let app = field(count: 0, selection: NSRange(location: 0, length: 0))
+      app.countSlot = .reply(NSNumber(value: number))
+      app.beforeBatch = { if $0 == 1 { app.countSlot = .answers } }
+      XCTAssertEqual(reason(type("pass", into: app).meta), "lengthUnreadable", "\(number)")
+      XCTAssertEqual(app.batches, 1, "\(number): refused at the snapshot")
+    }
   }
 
   // MARK: Checkpoints and keys

@@ -19,18 +19,22 @@ struct Probe395AuditCheck {
     audit.record(api: Probe395Audit.apiSingle, name: "AXRole", element: a, error: .success, started: t(), ended: t(), roleResult: "AXTextField" as CFString)
     audit.record(api: Probe395Audit.apiSingle, name: "AXSubrole", element: a, error: .success, started: t(), ended: t(), roleResult: "not a role constant!" as CFString)
     audit.record(api: Probe395Audit.apiBatch, name: ["AXRole", "AXValue"].joined(separator: "+"), element: b, error: .success, started: t(), ended: t())
+    // Only AXRole and AXSubrole answers are ever looked at: another attribute's answer, even a role-shaped string, is not kept.
+    audit.record(api: Probe395Audit.apiSingle, name: "AXValue", element: b, error: .success, started: t(), ended: t(), roleResult: "AXSecureTextField" as CFString)
     // The same element again (CFEqual) keeps its alias; a name that is not a constant is not recorded as itself.
     audit.record(api: Probe395Audit.apiParam, name: "AXStringForTextMarkerRange", element: a2, error: .noValue, started: t(), ended: t())
     audit.record(api: Probe395Audit.apiSingle, name: "secret value 123", element: a, error: .failure, started: t(), ended: t())
     let began = audit.phaseBegin("walk")
     audit.record(api: Probe395Audit.apiSingle, name: "AXChildren", element: b, error: .success, started: t(), ended: t())
     audit.phaseEnd("walk", began)
-    if let key = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: true) { audit.eventPosted(key) }
+    // Only the first posted event is recorded: the keys after it would show how much was typed.
+    for virtualKey in [0, 1, 2] as [CGKeyCode] { if let key = CGEvent(keyboardEventSource: nil, virtualKey: virtualKey, keyDown: true) { audit.eventPosted(key) } }
     audit.record(api: Probe395Audit.apiWrite, name: "AXFocused", element: b, error: .success, started: t(), ended: t())
     // Another thread's traffic is counted by name, not scheduled.
     let done = DispatchSemaphore(value: 0)
     Thread.detachNewThread {
       audit.record(api: Probe395Audit.apiSingle, name: "AXValue", element: a, error: .success, started: t(), ended: t())
+      if let key = CGEvent(keyboardEventSource: nil, virtualKey: 3, keyDown: true) { audit.eventPosted(key) }
       done.signal()
     }
     done.wait()

@@ -1,13 +1,35 @@
 // Pure: cross-row audit gates and distributions for the #395 qualification. Input is persisted rows from audit-capture end().
+// Names are made of [A-Za-z0-9_.:-] only (run.mjs's scrub drops any other key): head.page, never head/page.
 // Gates are a flat object {name: 'pass'|'fail'|'unknown'}; `unknown` means the evidence needed to decide is missing (a row
 // without a complete schedule, a build without the pre-input boundary, a kind not run), and is never a pass.
 // Everything labelled informational is reported and never gated. Counts are exact; nothing is normalized beyond what a named key
-// defines (collapsed poll cycles in `shape`, nothing in `exactHash`/`strictHash`).
+// defines (a poll phase reduced to its terminal path in `shape`; nothing in `exactHash`/`strictHash`, and the pre-input reads
+// are always compared exactly). Keyboard events are never compared: only the first one is recorded, as the pre-input boundary.
 import {VALUE_BEARING} from './audit-schedule.mjs';
 const median=a=>{if(!a.length)return null;const s=[...a].sort((x,y)=>x-y),m=s.length>>1;return s.length%2?s[m]:(s[m-1]+s[m])/2};
 const dist=a=>a.length?{n:a.length,min:Math.min(...a),p50:median(a),max:Math.max(...a)}:{n:0,min:null,p50:null,max:null};
+// Nearest-rank percentiles, for the route durations (no adjustment: the audit's own recording time is inside every duration).
+const pct=(a,q)=>{const s=[...a].sort((x,y)=>x-y);return s[Math.max(0,Math.ceil(q*s.length)-1)]};
+const pdist=a=>a.length?{n:a.length,min:Math.min(...a),p50:pct(a,0.5),p95:pct(a,0.95),max:Math.max(...a)}:{n:0,min:null,p50:null,p95:null,max:null};
+const phaseMs=(r,name)=>{const w=r.schedule.timeline.phases?.[name];return w?.length?round(w.reduce((t,x)=>t+x.durMs,0)):null};
+const phaseDist=(rows,name)=>pdist(rows.map(r=>phaseMs(r,name)).filter(Number.isFinite));
 const round=x=>x===null||x===undefined?null:Math.round(x*1000)/1000;
 const GATE_KINDS=['plain','secretShort','secretLong'];
+const BASELINE_HEAD='main',CANDIDATE_HEAD='fix';
+export const MARKER_PAIR=Object.freeze(['AXSelectedTextMarkerRange','AXUIElementForTextMarker']);
+// What a row's schedule does with text markers: `none`, the one allowed `pair`, or `invalid` with the reasons.
+function routingOf(r){
+ const t=r.schedule.timeline,m=t.markerAttempts??[],reasons=[];
+ if(t.markerAttemptsTruncated)reasons.push('truncated');
+ if(Object.keys(r.schedule.offThreadCounts??{}).some(n=>/TextMarker/.test(n)))reasons.push('off-thread-marker');
+ if(m.some(a=>!a.preInput))reasons.push('after-input');
+ const [first,second]=m;
+ if(m.length){
+  const pair=m.length===2&&first.api==='r'&&second.api==='p'&&first.names?.length===1&&second.names?.length===1&&first.names[0]===MARKER_PAIR[0]&&second.names[0]===MARKER_PAIR[1]&&first.alias>=0&&first.alias===second.alias;
+  if(!pair)reasons.push(m.length!==2?'not-one-pair':'not-the-allowed-pair');
+ }
+ return reasons.length?{shape:'invalid',reasons}:{shape:m.length?'pair':'none',reasons};
+}
 // A comparable form of a row's (or an in-memory built) schedule.
 function norm(x){
  const s=x?.schedule!==undefined&&x?.tag!==undefined?x.schedule:x;
@@ -30,7 +52,6 @@ export function compareAudits(a,b){
   full:{attemptsEqual:x.counters.attempts===y.counters.attempts,diff:diffCounts(x.counters.byName,y.counters.byName),total:[x.counters.attempts,y.counters.attempts]},
   pollCycleReps:[x.pollCycleReps,y.pollCycleReps]};
 }
-const keyOf=r=>r.head+'/'+r.page;
 function setCompare(aRows,bRows,pickA=r=>r.schedule?.shape,pickB=pickA){
  const A=new Map(),B=new Map();
  for(const r of aRows)A.set(pickA(r),(A.get(pickA(r))??0)+1);for(const r of bRows)B.set(pickB(r),(B.get(pickB(r))??0)+1);
@@ -38,13 +59,13 @@ function setCompare(aRows,bRows,pickA=r=>r.schedule?.shape,pickB=pickA){
  return {equalSets:keysA.length===keysB.length&&keysA.every((k,i)=>k===keysB[i]),distinctA:keysA.length,distinctB:keysB.length};
 }
 function repPairs(aRows,bRows,full){
- const byRep=new Map(bRows.map(r=>[r.rep,r]));let pairs=0,shapeEqual=0,preEqual=0,markerEqual=0,fullAttemptsEqual=0,example=null;
+ const byRep=new Map(bRows.map(r=>[r.rep,r]));const unpairedA=aRows.filter(a=>!byRep.has(a.rep)).length,unpairedB=bRows.filter(b=>!aRows.some(a=>a.rep===b.rep)).length;let pairs=0,shapeEqual=0,preEqual=0,markerEqual=0,fullAttemptsEqual=0,example=null;
  for(const a of aRows){const b=byRep.get(a.rep);if(!b)continue;pairs++;
   const c=compareAudits(full(a.tag)??a,full(b.tag)??b);
   if(c.whole?.shapeEqual)shapeEqual++;if(c.preInput?.exactEqual===true)preEqual++;if(c.marker?.countsEqual)markerEqual++;if(c.full?.attemptsEqual)fullAttemptsEqual++;
   if(example===null&&(!c.whole?.shapeEqual||c.preInput?.exactEqual===false))example={a:a.tag,b:b.tag,preEqual:c.preInput?.exactEqual,shapeEqual:c.whole?.shapeEqual,firstDivergence:c.whole?.firstDivergence,preNamesDiff:c.preInput?.countsDiff,markerDiff:c.marker?.diff};
  }
- return {pairs,shapeEqual,preInputExactEqual:preEqual,markerCountsEqual:markerEqual,fullAttemptsEqual,example};
+ return {pairs,unpairedA,unpairedB,shapeEqual,preInputExactEqual:preEqual,markerCountsEqual:markerEqual,fullAttemptsEqual,example};
 }
 export function summarizeRows(allRows,{full=()=>null,stray={},securePermitted={}}={}){
  const rows=allRows.filter(r=>r&&typeof r.tag==='string'&&r.rep!==0);
@@ -65,29 +86,36 @@ export function summarizeRows(allRows,{full=()=>null,stray={},securePermitted={}
   const shapes=new Map();for(const r of g)shapes.set(r.schedule.shape,(shapes.get(r.schedule.shape)??0)+1);
   const marker=g.map(r=>r.schedule.counters.byClass.marker),attempts=g.map(r=>r.schedule.counters.attempts);
   const mw=g.map(r=>r.schedule.timeline.classWindows.marker),markerWindowMs=mw.filter(w=>w.firstStartMs!==null).map(w=>round(w.lastEndMs-w.firstStartMs));
-  out.groups[head+'/'+page+'/'+kind]={rows:g.length,distinctShapes:shapes.size,shapeCounts:[...shapes.values()].sort((a,b)=>b-a),preInputHashes:[...new Set(g.map(r=>r.schedule.preInput.exactHash))].length,
+  out.groups[head+'.'+page+'.'+kind]={rows:g.length,distinctShapes:shapes.size,shapeCounts:[...shapes.values()].sort((a,b)=>b-a),preInputHashes:[...new Set(g.map(r=>r.schedule.preInput.exactHash))].length,
+   // Phase structure (where the build's phase markers fell) apart from the call schedule: reported, never compared.
+   phaseStructures:[...new Set(g.map(r=>r.schedule.phaseHash))].length,
    // Marker counts apart from the full attempt counts, as the comparison requires.
    markerAttempts:dist(marker),fullAttempts:dist(attempts),pollCycleReps:dist(g.flatMap(r=>r.schedule.pollCycleReps)),
    byClassMedian:Object.fromEntries(Object.keys(g[0].schedule.counters.byClass).map(c=>[c,median(g.map(r=>r.schedule.counters.byClass[c]))])),
    timing:{auditSpanMs:dist(g.map(r=>r.clocks?.auditSpanMs).filter(Number.isFinite)),rpcMs:dist(g.map(r=>r.clocks?.rpcMs).filter(Number.isFinite)),markerWindowMs:dist(markerWindowMs),
-    markerCallMs:dist(mw.map(w=>w.callMs)),snapshotMs:dist(g.map(r=>r.routeTimings?.snapshotMs).filter(Number.isFinite)),auditOverheadMs:dist(g.map(r=>r.schedule.timeline.overheadMs))}};
+    markerCallMs:dist(mw.map(w=>w.callMs)),markerRouteMs:phaseDist(g,'markedField'),walkMs:phaseDist(g,'walk'),snapshotMs:dist(g.map(r=>r.routeTimings?.snapshotMs).filter(Number.isFinite)),auditOverheadMs:dist(g.map(r=>r.schedule.timeline.overheadMs))}};
  }
  // Gate 1: discovery, every read through classification of the resolved field, identical across plain, short and long concealed.
- // Gate 2: the concealed short and long whole-schedule shapes (poll cycles collapsed) are the same set.
+ // Gate 2: the concealed short and long whole-schedule shapes (each poll phase reduced to its terminal path) are equal rep by rep;
+ // the sets of shapes are reported beside it, and a set that matches does not excuse a rep that does not.
  for(const head of heads)for(const page of pages){
-  const k=head+'/'+page;
+  const k=head+'.'+page;
   const kinds=GATE_KINDS.map(kind=>sel(head,page,kind)),all=kinds.flat();
   if(all.length){
-   const missing=kinds.some(g=>!g.length),weak=all.some(r=>!r.schedule.complete||!r.schedule.preInput.available);
+   // A typed row needs its head's pre-input boundary (both event hooks, per that head's provenance) and an actual first posted event.
+   const missing=kinds.some(g=>!g.length),weak=all.some(r=>!r.schedule.complete||!r.schedule.preInput.available),noInput=all.some(r=>r.schedule.preInput.boundary!=='event');
    const hashes=new Set(all.map(r=>r.schedule.preInput.exactHash));
-   out.gates['preInputIdentical:'+k]=missing||weak?'unknown':hashes.size===1?'pass':'fail';
+   out.gates['preInputIdentical:'+k]=missing||weak?'unknown':noInput||hashes.size!==1?'fail':'pass';
    const [,s,l]=kinds,sl=s.concat(l);
-   const weak2=sl.some(r=>!r.schedule.complete);
-   const cmp=s.length&&l.length?setCompare(s,l):null;
-   out.gates['concealShortLong:'+k]=!s.length||!l.length||weak2?'unknown':cmp.equalSets?'pass':'fail';
+   // The poll phase is what normalizes the schedule: without its hook in the build the shapes are not comparable.
+   const weak2=sl.some(r=>!r.schedule.complete||!r.schedule.preInput.available||!r.schedule.phasesApplied?.includes('poll'));
+   const cmp=s.length&&l.length?setCompare(s,l):null,pairs=s.length&&l.length?repPairs(s,l,full):null;
+   out.gates['concealShortLong:'+k]=!s.length||!l.length||weak2?'unknown'
+    :sl.some(r=>r.schedule.preInput.boundary!=='event')||!cmp.equalSets||pairs.shapeEqual!==pairs.pairs?'fail'
+    :pairs.pairs===0||pairs.unpairedA+pairs.unpairedB>0?'unknown':'pass';
    out.informational['preInputIdentical:'+k]={distinctPreInputs:hashes.size,perKind:Object.fromEntries(GATE_KINDS.map((kind,i)=>[kind,[...new Set(kinds[i].map(r=>r.schedule.preInput.exactHash))].length])),
     ...(hashes.size>1?{example:(()=>{const base=all[0],other=all.find(r=>r.schedule.preInput.exactHash!==base.schedule.preInput.exactHash),c=compareAudits(full(base.tag)??base,full(other.tag)??other);return {a:base.tag,b:other.tag,preNamesDiff:c.preInput.countsDiff}})()}:{})};
-   out.informational['concealShortLong:'+k]={...(cmp??{}),...repPairs(s,l,full)};
+   out.informational['concealShortLong:'+k]={...(cmp??{}),...(pairs??{})};
    // Plain against concealed: informational only, since #354's plain and concealed caret confirmation schedules differ by design.
    out.informational['plainVsConcealed:'+k]=Object.fromEntries([['secretShort',s],['secretLong',l]].map(([name,g])=>[name,g.length&&kinds[0].length?{...setCompare(kinds[0],g),...repPairs(kinds[0],g,full)}:null]));
   }
@@ -112,10 +140,27 @@ export function summarizeRows(allRows,{full=()=>null,stray={},securePermitted={}
     attemptsByClass:Object.fromEntries(VALUE_BEARING.map(c=>[c,sec.map(r=>r.schedule.counters.byClass[c])])),audit354:sec.map(r=>r.audit354)};
   }
  }
+ // Marker routing, over every kind of a head and page (a secure row among them). The baseline head makes no marker operation. The
+ // candidate makes, on any page, only the one allowed pair before its first event: the web area's selected-range read, then the
+ // element lookup for that range's marker on the same receiver. On the large page every row makes it (the route is what finds the
+ // field there); on the small page a row may skip it. Any other marker operation, any after the first event, and any from another
+ // thread fails the head and page. Outcomes are not consulted, so what an answer was cannot excuse an extra call.
+ for(const head of heads)for(const page of pages){
+  const role=head===BASELINE_HEAD?'baseline':head===CANDIDATE_HEAD?'candidate':null;
+  const rowsHere=audited.filter(r=>r.head===head&&r.page===page&&r.schedule);
+  if(!role||!rowsHere.length)continue;
+  const k=head+'.'+page,required=role==='candidate'&&page==='large',verdicts=rowsHere.map(r=>({tag:r.tag,kind:r.kind,...routingOf(r)}));
+  const bad=verdicts.filter(v=>role==='baseline'?v.shape!=='none':v.shape==='invalid'||(required&&v.shape==='none'));
+  const kindsHere=new Set(rowsHere.map(r=>r.kind)),lacking=required?['plain','secretShort','secretLong','secure'].filter(kind=>!kindsHere.has(kind)):[];
+  out.gates['markerRouting:'+k]=rowsHere.some(r=>!r.schedule.complete||!r.schedule.preInput.available)||lacking.length?'unknown':bad.length?'fail':'pass';
+  out.informational['markerRouting:'+k]={role,rows:rowsHere.length,withPair:verdicts.filter(v=>v.shape==='pair').length,withoutMarker:verdicts.filter(v=>v.shape==='none').length,
+   invalid:verdicts.filter(v=>v.shape==='invalid').length,missingKinds:lacking,failing:bad.slice(0,10).map(v=>({tag:v.tag,kind:v.kind,shape:v.shape,reasons:v.reasons})),
+   routeMs:{markerRoute:phaseDist(rowsHere,'markedField'),walk:phaseDist(rowsHere,'walk')}};
+ }
  // Head against head, per page and kind: informational.
  if(heads.length>=2)for(const page of pages)for(const kind of ['plain','secretShort','secretLong','secure']){
   const [h1,h2]=heads,a=sel(h1,page,kind),b=sel(h2,page,kind);
-  if(a.length&&b.length)out.informational['headDiff:'+h1+'-'+h2+'/'+page+'/'+kind]={...setCompare(a,b),markerAttempts:[dist(a.map(r=>r.schedule.counters.byClass.marker)),dist(b.map(r=>r.schedule.counters.byClass.marker))],fullAttempts:[dist(a.map(r=>r.schedule.counters.attempts)),dist(b.map(r=>r.schedule.counters.attempts))],...repPairs(a,b,full)};
+  if(a.length&&b.length)out.informational['headDiff:'+h1+'-'+h2+'.'+page+'.'+kind]={...setCompare(a,b),markerAttempts:[dist(a.map(r=>r.schedule.counters.byClass.marker)),dist(b.map(r=>r.schedule.counters.byClass.marker))],fullAttempts:[dist(a.map(r=>r.schedule.counters.attempts)),dist(b.map(r=>r.schedule.counters.attempts))],...repPairs(a,b,full)};
  }
  out.ok=Object.values(out.gates).every(s=>s==='pass')&&out.rows>0;
  return out;

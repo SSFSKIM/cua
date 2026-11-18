@@ -1,8 +1,10 @@
 // Hosted scratch-build audit for the #395 qualification. Records the ORDER and TIMING of the Accessibility calls a tagged
 // type_text issues (reads, writes, actions, posted events, named phases) so plain and concealed schedules can be compared.
 // It makes no AX request of its own, never looks at a returned value (the one exception: the string of an AXRole or AXSubrole
-// answer, kept only when it is a public AX role constant), keeps no value, text, range, marker, byte or length, and does not
+// answer, kept only when it is a public AX role constant; the wrapper hands over no other answer, and the recorder checks the
+// attribute name before it casts or inspects anything), keeps no value, text, range, marker, byte or length, and does not
 // alter any return or error. Counts of calls, attribute NAMES, element aliases, outcomes and clocks are all it holds.
+// Of the posted events only the first is recorded (the pre-input boundary): a count of the rest would show how much was typed.
 // Complements the #354 audit (Probe354Audit.swift, text and range read counts), which stays in place beneath it.
 import ApplicationServices
 import CoreGraphics
@@ -25,6 +27,7 @@ final class Probe395Audit: @unchecked Sendable {
   private var subroles: [Int: String] = [:]
   private var dropped = 0
   private var aliasOverflow = 0
+  private var eventSeen = false
   private var offThread = 0
   private var offThreadCounts: [String: Int] = [:]
   private var overheadNs: UInt64 = 0
@@ -39,7 +42,7 @@ final class Probe395Audit: @unchecked Sendable {
     if id != nil { overlaps += 1; return nil }
     id = tag; owner = pthread_self(); startNs = Probe395Audit.now()
     entries = []; names = []; nameIndex = [:]; aliases = []; roles = [:]; subroles = [:]
-    dropped = 0; aliasOverflow = 0; offThread = 0; offThreadCounts = [:]; overheadNs = 0
+    dropped = 0; aliasOverflow = 0; eventSeen = false; offThread = 0; offThreadCounts = [:]; overheadNs = 0
     return tag
   }
 
@@ -81,13 +84,20 @@ final class Probe395Audit: @unchecked Sendable {
     guard id != nil else { return }
     let mine = owner.map { pthread_equal($0, pthread_self()) != 0 } ?? false
     let label = clean(name)
+    if api == Probe395Audit.apiEvent {
+      // The first event on the request's own thread is the boundary; every later one, and any from another thread, is not counted.
+      if !mine || eventSeen { return }
+      eventSeen = true
+    }
     if !mine { offThread += 1; offThreadCounts[label, default: 0] += 1; return }
     if entries.count >= entryCap { dropped += 1 } else {
       let a = alias(element)
       entries.append([api, nameRef(label), a, outcome(error), Int(started &- startNs) / 1000, Int(ended &- started) / 1000])
-      if api == Probe395Audit.apiSingle, a >= 0, error == .success, let roleResult, CFGetTypeID(roleResult) == CFStringGetTypeID() {
+      // The attribute name decides before the answer is touched: no other attribute's answer is cast, compared or looked at.
+      if api == Probe395Audit.apiSingle, a >= 0, error == .success, label == "AXRole" || label == "AXSubrole",
+         let roleResult, CFGetTypeID(roleResult) == CFStringGetTypeID() {
         let s = roleResult as! String
-        if isRoleConstant(s) { if label == "AXRole" { roles[a] = s } else if label == "AXSubrole" { subroles[a] = s } }
+        if isRoleConstant(s) { if label == "AXRole" { roles[a] = s } else { subroles[a] = s } }
       }
     }
     overheadNs &+= Probe395Audit.now() &- t0
@@ -129,7 +139,7 @@ final class Probe395Audit: @unchecked Sendable {
       "dropped": dropped, "aliasOverflow": aliasOverflow, "aliases": aliases.count, "offThread": offThread, "offThreadCounts": offThreadCounts,
       "overlaps": overlaps, "roles": Dictionary(uniqueKeysWithValues: roles.map { (String($0.key), $0.value) }),
       "subroles": Dictionary(uniqueKeysWithValues: subroles.map { (String($0.key), $0.value) })]
-    id = nil; owner = nil; entries = []; names = []; nameIndex = [:]; aliases = []; roles = [:]; subroles = [:]; overlaps = 0
+    id = nil; owner = nil; entries = []; names = []; nameIndex = [:]; aliases = []; roles = [:]; subroles = [:]; overlaps = 0; eventSeen = false
     lock.unlock()
     if let data = try? JSONSerialization.data(withJSONObject: ["probe395Audit": record], options: [.sortedKeys]) {
       FileHandle.standardError.write(data + Data([10]))
@@ -141,8 +151,10 @@ final class Probe395Audit: @unchecked Sendable {
 func probe395CopyAttributeValue(_ element: AXUIElement, _ name: CFString, _ out: UnsafeMutablePointer<CFTypeRef?>) -> AXError {
   let t0 = Probe395Audit.now()
   let code = probe354CopyAttributeValue(element, name, out)
+  // Only a role or subrole answer is handed to the recorder; the answer to any other attribute (AXValue among them) never leaves this call.
+  let roleAnswer = code == .success && ((name as String) == "AXRole" || (name as String) == "AXSubrole")
   Probe395Audit.shared.record(api: Probe395Audit.apiSingle, name: name as String, element: element, error: code, started: t0, ended: Probe395Audit.now(),
-                              roleResult: code == .success ? out.pointee : nil)
+                              roleResult: roleAnswer ? out.pointee : nil)
   return code
 }
 func probe395CopyMultipleAttributeValues(_ element: AXUIElement, _ names: CFArray, _ options: AXCopyMultipleAttributeOptions, _ out: UnsafeMutablePointer<CFArray?>) -> AXError {

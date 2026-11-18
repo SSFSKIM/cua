@@ -44,6 +44,8 @@ export function decodeRecord(rec){
   const api=x[0],raw=rec.names[x[1]];
   return {api,names:api===API.batch?raw.split('+').filter(Boolean):[raw],alias:x[2],outcome:x[3],atMs:x[4]/1000,durMs:x[5]/1000};
  });
+ // The recorder keeps only the first posted event; a record with more would carry a count of what was typed.
+ if(entries.filter(e=>e.api===API.event).length>1)throw new AuditError('audit-record-malformed');
  const labels=o=>Object.fromEntries(Object.entries(o??{}).filter(([k,v])=>/^\d{1,5}$/.test(k)&&typeof v==='string'&&/^AX[A-Za-z]{1,40}$/.test(v)));
  const offThreadCounts=Object.fromEntries(Object.entries(rec.offThreadCounts??{}).filter(([k,v])=>NAME.test(k)&&int(v,0,1e9)));
  return {id:rec.id,spanMs:rec.spanNs/1e6,overheadMs:rec.overheadNs/1e6,entries,dropped:rec.dropped,aliasOverflow:rec.aliasOverflow,aliases:rec.aliases,offThread:rec.offThread,offThreadCounts,overlaps:rec.overlaps,roles:labels(rec.roles),subroles:labels(rec.subroles)};
@@ -54,23 +56,6 @@ export function token(e){
  const alias=e.alias>=0?'@e'+e.alias:e.alias===-2?'@overflow':'';
  return API_LABEL[e.api]+':'+e.names.join('+')+alias+OUTCOME[e.outcome];
 }
-const shapeEntries=entries=>entries.filter(e=>e.api!==API.phaseBegin&&e.api!==API.phaseEnd);
-// Collapse contiguous repeated blocks (a poll cycle repeated any number of times) to one block with a repetition count.
-// Greedy and deterministic: at each position take the period (1..maxPeriod) that covers the most entries, smaller period on a tie.
-export function collapse(tokens,maxPeriod=24){
- const out=[];let i=0;
- while(i<tokens.length){
-  let best={p:1,reps:1,cover:1};
-  for(let p=1;p<=maxPeriod&&i+p<=tokens.length;p++){
-   let reps=1;
-   outer:for(;i+(reps+1)*p<=tokens.length;reps++){for(let k=0;k<p;k++)if(tokens[i+k]!==tokens[i+reps*p+k])break outer}
-   if(reps>1&&reps*p>best.cover)best={p,reps,cover:reps*p}; // only a block that actually repeats is a cycle
-  }
-  out.push({block:tokens.slice(i,i+best.p),reps:best.reps});i+=best.cover;
- }
- return out;
-}
-export const shapeOf=runs=>runs.map(r=>'['+r.block.join(' ')+']').join('');
 const round=x=>Math.round(x*1000)/1000;
 function counters(entries){
  const byName={},byClass=Object.fromEntries(CLASSES.map(c=>[c,0])),markerByName={},markerByKind={},byApi={},writes={},actions={},events={};
@@ -93,18 +78,63 @@ function counters(entries){
 const stats=list=>({calls:list.length,callMs:round(list.reduce((s,e)=>s+e.durMs,0)),maxCallMs:round(list.reduce((m,e)=>Math.max(m,e.durMs),0)),
  firstStartMs:list.length?round(Math.min(...list.map(e=>e.atMs))):null,lastEndMs:list.length?round(Math.max(...list.map(e=>e.atMs+e.durMs))):null});
 const isRead=e=>[API.single,API.batch,API.param,API.names,API.actionNames,API.hit].includes(e.api);
-// Build everything a row keeps of one engine record. `boundary` names the pre-input boundary: the first posted event, or none when
-// the build has no event hook (provenance `eventPost:false`), in which case pre-input is reported unavailable, not empty.
-export function buildSchedule(rec,{preInputAvailable=true,markerAttemptCap=256,maxPeriod=24}={}){
+// A poll phase is the only place a schedule is normalized. readbackPoll repeats one iteration (role, subrole, value read; a
+// caret read joins an iteration that sees the expected value) until the value is confirmed, so how many iterations ran depends on
+// timing, not on what was typed. The canonical form keeps the terminal path: from the first caret-bearing iteration (the last
+// iteration when none has a caret read), adjacent identical iterations folded. Of what precedes it, only a leading run of
+// iterations identical to the terminal iteration without its caret read (the plain role, subrole, value loop) is dropped;
+// any other earlier iteration is a different set of calls and stays, in order. So ABC, ABCABC and ABCABCABC all read as ABC;
+// ABCDABC and ABCABCDABC both read as ABCD ABC (D being the caret read); ABXABCDABC does not.
+// Reads outside the phase and their order are left exactly as recorded. The phase markers carry no weight in a comparison.
+const isCall=e=>e.api!==API.phaseBegin&&e.api!==API.phaseEnd&&e.api!==API.event;
+const readsRange=e=>[API.single,API.batch,API.param].includes(e.api)&&e.names.some(n=>classOf(n)==='range');
+function pollEnd(items,begin){
+ let depth=0;
+ for(let k=begin+1;k<items.length;k++){
+  const e=items[k];
+  if((e.api!==API.phaseBegin&&e.api!==API.phaseEnd)||e.names[0]!==items[begin].names[0])continue;
+  if(e.api===API.phaseBegin)depth++;
+  else if(e.api===API.phaseEnd){if(depth===0)return k;depth--}
+ }
+ return -1;
+}
+export function canonicalPoll(body){
+ if(!body.length)return {entries:[],iterations:0};
+ const first=token(body[0]),iterations=[];
+ for(const e of body){if(token(e)===first||!iterations.length)iterations.push([]);iterations.at(-1).push(e)}
+ const key=it=>it.map(token).join('|'),caretAt=iterations.findIndex(it=>it.some(readsRange)),terminal=caretAt>=0?caretAt:iterations.length-1;
+ const loop=key(iterations[terminal].filter(e=>!readsRange(e)));
+ let start=0;while(start<terminal&&key(iterations[start])===loop)start++;
+ const kept=[];
+ for(const it of iterations.slice(start))if(!kept.length||key(kept.at(-1))!==key(it))kept.push(it);
+ return {entries:kept.flat(),iterations:iterations.length};
+}
+// The ordered AX schedule (calls and phase markers; never keyboard events) with each `poll` phase canonical: its entries, and the
+// raw iteration count of each poll phase.
+export function canonicalEntries(items,poll='poll'){
+ const entries=[],iterations=[];
+ for(let i=0;i<items.length;i++){
+  const e=items[i];
+  if(e.api===API.phaseBegin&&e.names[0]===poll){
+   const j=pollEnd(items,i);
+   if(j>i){const c=canonicalPoll(items.slice(i+1,j));entries.push(e,...c.entries,items[j]);iterations.push(c.iterations);i=j;continue}
+  }
+  entries.push(e);
+ }
+ return {entries,iterations};
+}
+// The comparable keys of a list of entries: the calls alone (what a comparison uses) and, apart, with the phase markers.
+const keysOf=entries=>({calls:entries.filter(isCall).map(token).join('|'),phased:entries.map(token).join('|')});
+// Build everything a row keeps of one engine record. `preInputAvailable` is false when the build lacks an event hook (that
+// head's provenance), in which case pre-input is reported unavailable, not empty. The boundary is the first posted event (the
+// only one the recorder keeps); a refusal with no event is all pre-input.
+export function buildSchedule(rec,{preInputAvailable=true,markerAttemptCap=256}={}){
  const d=typeof rec?.entries==='object'&&rec.id!==undefined&&rec.spanMs!==undefined?rec:decodeRecord(rec);
- const shaped=shapeEntries(d.entries),tokens=shaped.map(token);
- const firstEvent=shaped.findIndex(e=>e.api===API.event),split=firstEvent<0?shaped.length:firstEvent;
- const pre=shaped.slice(0,split),post=shaped.slice(split),preTokens=tokens.slice(0,split);
- const whole=collapse(tokens,maxPeriod),preRuns=collapse(preTokens,maxPeriod),postRuns=collapse(tokens.slice(split),maxPeriod);
- const repeats=whole.filter(r=>r.reps>1).map(r=>({cycle:r.block.length,reps:r.reps}));
- // Cycle windows: the entry index range each collapsed run covers, mapped to the clocks of its first and last entry.
- let at=0;const cycles=[];
- for(const r of whole){const n=r.block.length*r.reps,a=shaped[at],b=shaped[at+n-1];if(r.reps>1)cycles.push({cycle:r.block.length,reps:r.reps,startMs:round(a.atMs),endMs:round(b.atMs+b.durMs)});at+=n}
+ const firstEvent=d.entries.findIndex(e=>e.api===API.event),split=firstEvent<0?d.entries.length:firstEvent;
+ const preItems=d.entries.slice(0,split),postAll=d.entries.slice(split),postItems=postAll.filter(e=>e.api!==API.event);
+ const items=[...preItems,...postItems],calls=d.entries.filter(isCall);
+ const whole=canonicalEntries(items),preCanon=canonicalEntries(preItems),postCanon=canonicalEntries(postItems),wholeKeys=keysOf(whole.entries);
+ const pre=preItems.filter(isCall),post=postAll.filter(isCall);
  const phases={},open=[];
  for(const e of d.entries){
   if(e.api===API.phaseBegin)open.push(e);
@@ -112,25 +142,28 @@ export function buildSchedule(rec,{preInputAvailable=true,markerAttemptCap=256,m
    const i=open.findLastIndex(o=>o.names[0]===e.names[0]);
    if(i>=0){const [b]=open.splice(i,1),p=phases[e.names[0]]??=[];
     // Entries between begin and end by clock, owner thread only: the phase's own calls.
-    const inside=shaped.filter(x=>x.api!==API.event&&x.atMs>=b.atMs&&x.atMs+x.durMs<=e.atMs+e.durMs);
+    const inside=calls.filter(x=>x.atMs>=b.atMs&&x.atMs+x.durMs<=e.atMs+e.durMs);
     p.push({startMs:round(b.atMs),endMs:round(e.atMs+e.durMs),durMs:round(e.atMs+e.durMs-b.atMs),calls:inside.length,callMs:round(inside.reduce((s,x)=>s+x.durMs,0))})}
   }
  }
- const markerEntries=shaped.filter(e=>isRead(e)&&e.names.some(n=>classOf(n)==='marker'));
- const classWindows=Object.fromEntries(CLASSES.map(c=>[c,stats(shaped.filter(e=>isRead(e)&&e.names.some(n=>classOf(n)===c)))]));
- const events=shaped.filter(e=>e.api===API.event);
+ const at=new Map(d.entries.map((e,i)=>[e,i]));
+ const markerEntries=calls.filter(e=>isRead(e)&&e.names.some(n=>classOf(n)==='marker'));
+ const classWindows=Object.fromEntries(CLASSES.map(c=>[c,stats(calls.filter(e=>isRead(e)&&e.names.some(n=>classOf(n)===c)))]));
+ const event=firstEvent<0?null:d.entries[firstEvent];
  return {
   id:d.id,
   complete:d.dropped===0&&d.aliasOverflow===0&&d.overlaps===0,dropped:d.dropped,aliasOverflow:d.aliasOverflow,overlaps:d.overlaps,
   offThread:d.offThread,offThreadCounts:d.offThreadCounts,aliases:d.aliases,roles:d.roles,subroles:d.subroles,
-  preInput:{available:preInputAvailable,boundary:firstEvent<0?'none':'event',entries:pre.length,exactKey:preTokens.join('|'),shape:shapeOf(preRuns),...counters(pre),timing:stats(pre)},
-  postInput:{entries:post.length,shape:shapeOf(postRuns),...counters(post),timing:stats(post)},
-  shape:shapeOf(whole),runs:whole.length,strictKey:tokens.join('|'),repeats,pollCycleReps:repeats.map(r=>r.reps),
-  counters:counters(shaped),
+  preInput:{available:preInputAvailable,boundary:event?'event':'none',entries:pre.length,exactKey:keysOf(preItems).calls,shape:keysOf(preCanon.entries).calls,...counters(pre),timing:stats(pre)},
+  postInput:{entries:post.length,shape:keysOf(postCanon.entries).calls,...counters(postAll),timing:stats(post)},
+  shape:wholeKeys.calls,phaseKey:wholeKeys.phased,strictKey:keysOf(items).calls,
+  // Raw iteration count of each poll phase: informational, never part of a shape.
+  pollCycleReps:whole.iterations,
+  counters:counters(d.entries),
   // Clocks are the engine's monotonic clock, relative to the tagged request's begin; they are NOT comparable to any other clock.
-  timeline:{spanMs:round(d.spanMs),overheadMs:round(d.overheadMs),firstEntryMs:shaped.length?round(shaped[0].atMs):null,firstEventMs:events.length?round(events[0].atMs):null,lastEventMs:events.length?round(events.at(-1).atMs):null,
-   preInputMs:events.length?round(events[0].atMs):null,classWindows,phases,cycles,
-   markerAttempts:markerEntries.slice(0,markerAttemptCap).map(e=>({atMs:round(e.atMs),durMs:round(e.durMs),names:e.names.filter(n=>classOf(n)==='marker'),outcome:e.outcome,preInput:shaped.indexOf(e)<split})),markerAttemptsTruncated:markerEntries.length>markerAttemptCap},
+  timeline:{spanMs:round(d.spanMs),overheadMs:round(d.overheadMs),firstEntryMs:calls.length?round(calls[0].atMs):null,firstEventMs:event?round(event.atMs):null,
+   preInputMs:event?round(event.atMs):null,classWindows,phases,
+   markerAttempts:markerEntries.slice(0,markerAttemptCap).map(e=>({atMs:round(e.atMs),durMs:round(e.durMs),api:API_LABEL[e.api],alias:e.alias,names:e.names.filter(n=>classOf(n)==='marker'),outcome:e.outcome,preInput:at.get(e)<split})),markerAttemptsTruncated:markerEntries.length>markerAttemptCap},
  };
 }
 const diffCounts=(a,b)=>{const out={};for(const k of new Set([...Object.keys(a),...Object.keys(b)]))if((a[k]??0)!==(b[k]??0))out[k]=[a[k]??0,b[k]??0];return out};

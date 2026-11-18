@@ -28,6 +28,7 @@ import {launch,placePid,version} from '../probe-316/browser.mjs';
 import {createFixture,FixtureLost} from '../probe-354-fences/fixture.mjs';
 import {resolveBrowserTarget} from '../probe-354-fences/ab-secret.mjs';
 import {createAuditCapture} from './audit-capture.mjs';
+import {digest} from './audit-scan.mjs';
 import {page} from './fixture.mjs';
 
 // ---- the matrix (pure) ----------------------------------------------------------------------------------------------
@@ -94,15 +95,20 @@ export function reasonOf(record,depth=0){
  for(const v of Object.values(record)){const r=reasonOf(v,depth+1);if(r)return r}
  return null;
 }
-// Strict row score. `domEqual` is the page's own exact content, caret and input-event check; a wrong success is an engine
-// success over a page that does not hold the typed text.
-export function scoreRow({expected,outcome,reason,confirmed=null,domEqual,domKnown=true,harnessValid}){
+// Strict row score. `domEqual` is the page's own exact content, caret and input-event check; a wrong success is a success claim
+// over a page that does not hold the typed text. `confirmed` is the engine's own (raw) readback, `forwarded` the one sky
+// forwarded in the response meta, `sky` whether sky returned ('ok') or threw. A positive needs a successful sky and both
+// confirmations true; a refusal needs both explicitly false. Two that disagree, an error with a confirmation true, or any
+// other `conflict` the caller found (a reason that differs) is never strict, and over a mismatching page is a wrong success.
+export function scoreRow({expected,outcome,reason,confirmed=null,forwarded=null,sky=null,conflict=false,domEqual,domKnown=true,harnessValid}){
  const outcomeMatches=outcome===expected.outcome,reasonMatches=expected.reason===null||reason===expected.reason;
+ const claimsSuccess=outcome==='ok'||confirmed===true||forwarded===true;
+ const disagree=conflict===true||(confirmed!==null&&forwarded!==null&&confirmed!==forwarded)||(outcome!=='ok'&&claimsSuccess);
  // A page that was never read cannot make a success wrong; the row is simply not strict.
- // Any success claim (an ok outcome or a confirmed readback) over a page without the text is wrong.
- const wrongSuccess=domKnown&&(outcome==='ok'||confirmed===true)&&!domEqual,falseUnconfirmed=outcome==='unconfirmed'&&expected.outcome==='ok',falseConfirm=outcome==='ok'&&expected.outcome==='unconfirmed';
- return {outcomeMatches,reasonMatches,domEqual,wrongSuccess,falseUnconfirmed,falseConfirm,
-  strict:harnessValid===true&&domKnown&&outcomeMatches&&reasonMatches&&(domEqual===true||expected.domRequired===false)&&!wrongSuccess};
+ const wrongSuccess=domKnown&&claimsSuccess&&!domEqual,falseUnconfirmed=outcome==='unconfirmed'&&expected.outcome==='ok',falseConfirm=outcome==='ok'&&expected.outcome==='unconfirmed';
+ const confirmationOk=expected.outcome==='ok'?sky==='ok'&&confirmed===true&&forwarded===true:confirmed===false&&forwarded===false;
+ return {outcomeMatches,reasonMatches,domEqual,wrongSuccess,falseUnconfirmed,falseConfirm,confirmationOk,conflict:disagree,
+  strict:harnessValid===true&&domKnown&&outcomeMatches&&reasonMatches&&confirmationOk&&!disagree&&(domEqual===true||expected.domRequired===false)&&!wrongSuccess};
 }
 const median=a=>{const s=a.filter(Number.isFinite).sort((x,y)=>x-y);return s.length?s[s.length>>1]:null};
 export function summarize(rows,{phase=null,planned=null}={}){
@@ -141,17 +147,19 @@ export function gateVerdicts(a){
  }
  return out;
 }
-// The qualification contracts, apart from coverage. Stock rows carry the outcome contracts; audit rows the schedule gates.
-export function contractsOf(summary,{phase,auditFailures=0}){
+// The qualification contracts, apart from coverage. Stock rows carry the outcome contracts; audit rows the schedule gates; both
+// phases need every harness-valid cell's raw privacy capture (`captureMissing` counts those without one), the audit rows ok and
+// the capture's cross-row privacy gate (which includes stderr that arrived after the last cell) clean.
+export function contractsOf(summary,{phase,auditFailures=0,captureMissing=0}){
  const secure=summary.groups.filter(g=>g.kind==='secure'),c={wrongSuccessZero:summary.wrongSuccess===0};
+ const gates=gateVerdicts(summary.audit),gate=name=>gates.find(([k])=>k===name)?.[1];
  if(phase==='stock'){
   c.firmAllStrict=summary.firmCells>0&&summary.firmStrict===summary.firmCells;
   c.secureAllStrict=secure.length>0&&secure.every(g=>!g.expected.firm||g.strict===g.n);
- }else{
-  const gates=gateVerdicts(summary.audit);
-  c.auditRowsOk=auditFailures===0;
-  c.auditGatesPass=gates.length>0&&gates.every(([,v])=>v==='pass');
- }
+ }else c.auditGatesPass=gates.length>0&&gates.every(([,v])=>v==='pass');
+ c.rawCaptureComplete=captureMissing===0&&summary.audit!==undefined&&summary.audit?.error!==true;
+ c.auditRowsOk=auditFailures===0&&gate('rowsOk')==='pass';
+ c.auditPrivacyClean=gate('privacyClean')==='pass';
  return {...c,ok:Object.values(c).every(Boolean)};
 }
 export function parseCli(argv,env){
@@ -178,8 +186,11 @@ function valueFor(kind,rep){
  return memo.get(key);
 }
 function leaks(s){for(let i=0;i+8<=s.length;i++)if(windows.has(s.slice(i,i+8)))return true;return false}
-const STATE_KEYS=['at','exact','selectionOk','kindOk','focused','sameNode','keydowns','inputs','fillerNodes','domNodes','fillerAboveField','inViewport','secureType','secureLoaded','typeMutations','visibleFields'];
-const pick=s=>Object.fromEntries(STATE_KEYS.map(k=>{const v=s?.[k];return [k,typeof v==='boolean'||Number.isSafeInteger(v)?v:null]}));
+// A stored fixture state holds booleans and the filler's DOM counts only. Keydown, input-event and mutation counts stay in
+// memory (the cell's checks read the raw state) and are stored as their comparisons.
+const STATE_BOOLEANS=['exact','selectionOk','kindOk','focused','sameNode','fillerAboveField','inViewport','secureType','secureLoaded'],STATE_COUNTS=['fillerNodes','domNodes'];
+const pick=s=>({...Object.fromEntries(STATE_BOOLEANS.map(k=>[k,typeof s?.[k]==='boolean'?s[k]:null])),...Object.fromEntries(STATE_COUNTS.map(k=>[k,Number.isSafeInteger(s?.[k])?s[k]:null])),
+ noKeydowns:s?.keydowns===0,inputSeen:Number.isSafeInteger(s?.inputs)&&s.inputs>0,noTypeMutations:s?.typeMutations===0});
 const TEXTLIKE=/^(text|value|values|selectedText|selected|excerpt|actual|expected|before|after|content|characters|string|raw|reply|stderr|message)$/i;
 // Booleans, finite numbers, null and short printable strings pass; anything text-like or matching a synthetic value is withheld.
 function scrub(v,tally,depth=0){
@@ -216,6 +227,122 @@ function supplementalOf(answer,tally){
  out.axValid=keep.valid;
  return out;
 }
+// ---- the published audit row ----------------------------------------------------------------------------------------
+// A fixed projection of the audit capture's row: only what is named here is ever written. Never the engine reply, the sky
+// raw copies, the surfaces, a string of free text, a secret length, a key, input or event count, or an opaque byte run.
+// The type-readback is published whole (the scanner already sanitized it; a concealed or secure record is cut to its allowed
+// keys). A value that does not fit its slot is dropped and marks the row `withheld`, never published.
+const TOKEN_STR=/^[A-Za-z][A-Za-z0-9_.:+@!\/-]{0,63}$/,SHAPE_STR=/^[A-Za-z0-9_+:@!| .\/-]*$/,CODE=/^[a-z][a-z0-9-]{0,39}$/,KEY_NAME=/^[A-Za-z0-9_.:+-]{1,64}$/;
+const num=x=>Number.isFinite(x)?x:null,int=x=>Number.isSafeInteger(x)&&x>=0?x:null;
+const bool=x=>typeof x==='boolean'?x:null;
+const renameKey=k=>FORBIDDEN_KEY.test(k)||FORBIDDEN_UNLESS_FLAG.test(k)?k+'Field':k;
+const SECRET_READBACK={confirmed:'bool',reason:'reason',snapshotMs:'number',concealed:'true',secure:'true',keysUnconfirmed:'bool',stoppedBeforeKey:'bool'};
+// Plain readbacks only: scalars of the fixed shapes, nested objects and complete arrays; anything else is dropped.
+function publicTree(v,state,depth=0){
+ if(v===null||v===undefined)return null;
+ if(typeof v==='boolean')return v;
+ if(typeof v==='number')return Number.isFinite(v)?v:null;
+ if(typeof v==='string'){
+  if(v==='[plain quote withheld]')return v;
+  if(TOKEN_STR.test(v)&&!leaks(v))return v;
+  state.dirty=true;return null;
+ }
+ if(depth>=6){state.dirty=true;return null}
+ if(Array.isArray(v))return v.map(x=>publicTree(x,state,depth+1));
+ if(typeof v==='object'){
+  const out={};
+  for(const [k,x] of Object.entries(v)){
+   if(!/^[A-Za-z][A-Za-z0-9_]{0,31}$/.test(k)||leaks(k)){state.dirty=true;continue}
+   out[renameKey(k)]=publicTree(x,state,depth+1);
+  }
+  return out;
+ }
+ state.dirty=true;return null;
+}
+function readbackOf(rec,lane,state){
+ if(rec===null||rec===undefined)return null;
+ if(typeof rec!=='object'||Array.isArray(rec)){state.dirty=true;return null}
+ if(lane==='plain')return publicTree(rec,state);
+ const out={};
+ for(const [k,x] of Object.entries(rec)){
+  const rule=SECRET_READBACK[k];
+  const ok=rule==='bool'?typeof x==='boolean':rule==='true'?x===true:rule==='number'?Number.isFinite(x):rule==='reason'?typeof x==='string'&&REASON.test(x)&&!leaks(x):false;
+  if(ok)out[k]=x;else state.dirty=true;
+ }
+ return out;
+}
+function countMap(o,state,classes=false){
+ const out={};
+ for(const [k,v] of Object.entries(o??{})){
+  if(KEY_NAME.test(k)&&!leaks(k)&&int(v)!==null)out[classes?k+'Reads':renameKey(k)]=v;else state.dirty=true;
+ }
+ return out;
+}
+// AX-only counts: calls, attempts and the attribute, class and marker tallies; never the event, write or action tallies.
+const countersOf=(c,state)=>({calls:int(c?.calls),attempts:int(c?.attempts),byName:countMap(c?.byName,state),byClass:countMap(c?.byClass,state,true),markerByName:countMap(c?.markerByName,state),markerByKind:countMap(c?.markerByKind,state)});
+const windowOf=w=>({calls:int(w?.calls),callMs:num(w?.callMs),maxCallMs:num(w?.maxCallMs),firstStartMs:num(w?.firstStartMs),lastEndMs:num(w?.lastEndMs)});
+// An ordered shape (tokens of attribute names, aliases and outcomes joined by `|`) is published in full when short, and always
+// as its hash; a longer one (a large page's walk) is published as the hash alone. Anything outside the token alphabet is withheld.
+const SHAPE_FULL_MAX=1500;
+const shapeFields=(v,state)=>{
+ if(v===null||v===undefined)return {text:null,hash:null};
+ if(typeof v!=='string'||!SHAPE_STR.test(v)||leaks(v)){state.dirty=true;return {text:null,hash:null}}
+ return {text:v.length<=SHAPE_FULL_MAX?v:null,hash:digest(v)};
+};
+const nameList=(a,state)=>(Array.isArray(a)?a:[]).filter(n=>{const ok=typeof n==='string'&&KEY_NAME.test(n)&&!leaks(n);if(!ok)state.dirty=true;return ok});
+const hash16=h=>typeof h==='string'&&/^[0-9a-f]{16}$/.test(h)?h:null;
+function scheduleOf(sc,state){
+ if(sc===null||sc===undefined)return null;
+ if(typeof sc!=='object'){state.dirty=true;return null}
+ const t=sc.timeline??{},pre=sc.preInput??{},post=sc.postInput??{};
+ const phases={};
+ for(const [name,list] of Object.entries(t.phases??{})){
+  if(!KEY_NAME.test(name)||leaks(name)||!Array.isArray(list)){state.dirty=true;continue}
+  phases[name]=list.map(p=>({startMs:num(p?.startMs),endMs:num(p?.endMs),durMs:num(p?.durMs),calls:int(p?.calls),callMs:num(p?.callMs)}));
+ }
+ const preShape=shapeFields(pre.shape,state),postShape=shapeFields(post.shape,state),wholeShape=shapeFields(sc.shape,state);
+ return {complete:sc.complete===true,dropped:int(sc.dropped),aliasOverflow:int(sc.aliasOverflow),overlaps:int(sc.overlaps),boundaryProvenance:sc.boundaryProvenance==='known'?'known':'unknown',
+  preInput:{available:pre.available===true,boundary:pre.boundary==='event'?'event':'none',shape:preShape.text,shapeHash:preShape.hash,hash:hash16(pre.exactHash),...countersOf(pre,state),timing:windowOf(pre.timing)},
+  postInput:{shape:postShape.text,shapeHash:postShape.hash,...countersOf(post,state),timing:windowOf(post.timing)},
+  shape:wholeShape.text,shapeHash:wholeShape.hash,strictHash:hash16(sc.strictHash),
+  counters:countersOf(sc.counters,state),
+  // Raw iteration count of each poll phase, in order (the audit module already keeps keyboard events out of the trace).
+  pollCycleReps:(Array.isArray(sc.pollCycleReps)?sc.pollCycleReps:[]).map(n=>{const v=int(n);if(v===null)state.dirty=true;return v}),
+  timeline:{spanMs:num(t.spanMs),overheadMs:num(t.overheadMs),firstEntryMs:num(t.firstEntryMs),preInputMs:num(t.preInputMs),
+   classWindows:Object.fromEntries(Object.entries(t.classWindows??{}).filter(([k])=>KEY_NAME.test(k)).map(([k,w])=>[k+'Reads',windowOf(w)])),phases,
+   markerAttempts:(Array.isArray(t.markerAttempts)?t.markerAttempts:[]).map(m=>({atMs:num(m?.atMs),durMs:num(m?.durMs),api:typeof m?.api==='string'&&/^[a-z+-]{1,4}$/.test(m.api)?m.api:null,alias:Number.isSafeInteger(m?.alias)?m.alias:null,names:nameList(m?.names,state),outcome:int(m?.outcome),preInput:bool(m?.preInput)})),markerAttemptsTruncated:t.markerAttemptsTruncated===true}};
+}
+// -> {row, publishable, withheld}.
+export function publicAuditRow(a){
+ const state={dirty:false};
+ if(!a||typeof a!=='object'||typeof a.tag!=='string')return {row:{ok:false,privacy:{ok:false,codes:[]}},publishable:false,withheld:true};
+ const priv=a.privacy??{},privacyOk=priv.ok===true&&!(Number(priv.violations)>0),stripped=a.engine===null||a.engine===undefined;
+ const lane=['plain','secret','secure'].includes(a.lane)?a.lane:'secret',code=v=>typeof v==='string'&&CODE.test(v)?v:'other';
+ const e=a.engine??{},token=v=>typeof v==='string'&&TOKEN_STR.test(v)&&!leaks(v)?v:null;
+ const rt=a.routeTimings&&typeof a.routeTimings==='object'?Object.fromEntries(Object.entries(a.routeTimings).filter(([k,v])=>(/^[A-Za-z]{1,30}Ms$/.test(k)&&Number.isFinite(v))||((k==='inputRoute'||k==='route')&&token(v)!==null)).map(([k,v])=>[k,typeof v==='string'?v:v])):null;
+ const row={mode:a.mode==='stock'?'stock':'audit',lane,ok:a.ok===true,failures:(Array.isArray(a.failures)?a.failures:[]).map(code),
+  privacy:{ok:privacyOk,codes:Object.keys(priv.codes??{}).map(code)},
+  engine:stripped?null:{outcome:['success','error'].includes(e.outcome)?e.outcome:null,errorName:token(e.errorName),errorCode:Number.isSafeInteger(e.errorCode)?e.errorCode:null},
+  typeReadback:readbackOf(a.typeReadback,lane,state),skyTypeReadback:readbackOf(a.skyTypeReadback,lane,state),concealed:bool(a.typeReadbackConcealed),
+  schedule:scheduleOf(a.schedule,state),
+  audit354:a.audit354?{textReadAttempts:int(a.audit354.textReadAttempts),rangeReadAttempts:int(a.audit354.rangeReadAttempts),byAttribute:countMap(a.audit354.byAttribute,state)}:null,
+  clocks:a.clocks?{rpcMs:num(a.clocks.rpcMs),routeWallMs:num(a.clocks.routeWallMs),auditSpanMs:num(a.clocks.auditSpanMs),checks:{auditWithinRpc:bool(a.clocks.checks?.auditWithinRpc),routeWithinRpc:bool(a.clocks.checks?.routeWithinRpc)}}:null,
+  routeTimings:rt,typeTextOnce:a.requests?.typeText===1};
+ const withheld=state.dirty||stripped;
+ return {row,publishable:privacyOk&&!withheld,withheld};
+}
+// Keys the attestation forbids by name (a class of reads called `text`) are renamed in the cross-row summary.
+export function renameKeys(v){
+ if(Array.isArray(v))return v.map(renameKeys);
+ if(v&&typeof v==='object')return Object.fromEntries(Object.entries(v).map(([k,x])=>[renameKey(k),renameKeys(x)]));
+ return v;
+}
+// The labelled actual of a cell: the engine's raw readback is canonical; the forwarded one (sky's response meta) must agree.
+export function actualOf({outcome,engineRecord,forwarded}){
+ const rawReason=label(reasonOf(engineRecord),REASON),fwdReason=label(reasonOf(forwarded),REASON);
+ return {outcome:outcome??null,reason:rawReason??fwdReason,confirmed:confirmedOf(engineRecord),forwarded:confirmedOf(forwarded),conflict:rawReason!==null&&fwdReason!==null&&rawReason!==fwdReason};
+}
+
 const FORBIDDEN_KEY=/^(raw|reply|rawReply|stderr|stdout|seed|text|value|values|excerpt|offset|offsets|bytes|markerBytes)$/i,FORBIDDEN_UNLESS_FLAG=/^(secret|secrets|password)$/i;
 // Output attestation: no synthetic-value window in any file, no forbidden key, no long string.
 export function attestText(text){
@@ -227,6 +354,20 @@ export function attestText(text){
  };
  for(const line of text.split('\n')){if(!line.trim())continue;try{walk(JSON.parse(line))}catch{if(leaks(line))leakHits++}}
  return {leakHits,forbidden,long};
+}
+// The fixed publication verdict, written into attestation.json: `publishable` only if the scan found no leak, forbidden key or
+// long string, no row recorded a privacy violation or withheld a value, and the raw capture's own privacy gate is clean and
+// complete. `blockers` are fixed codes, so an unpublishable phase still exports a diagnostic with no raw content.
+export function publication(scan,{privacyViolations=0,auditWithheld=0,contracts={}}={}){
+ const blockers=[];
+ if(scan.leakHits>0)blockers.push('leak');
+ if(scan.forbidden>0)blockers.push('forbidden-key');
+ if(scan.long>0)blockers.push('long-string');
+ if(privacyViolations>0)blockers.push('privacy-violation');
+ if(auditWithheld>0)blockers.push('audit-withheld');
+ if(contracts.rawCaptureComplete!==true)blockers.push('capture-incomplete');
+ if(contracts.auditPrivacyClean!==true)blockers.push('audit-privacy');
+ return {...scan,publishable:blockers.length===0&&scan.ok===true,blockers};
 }
 export function attestDir(dir){
  const files=readdirSync(dir).filter(f=>/\.(json|jsonl|md|txt)$/.test(f)&&f!=='attestation.json'),total={leakHits:0,forbidden:0,long:0};
@@ -256,6 +397,15 @@ const errorName=e=>{const n=e?.constructor?.name;return ERROR_NAMES.includes(n)?
 const errorCode=e=>typeof e?.code==='string'&&/^E[A-Z0-9]{2,20}$/.test(e.code)?e.code:null;
 const exitLabel=(code,signal)=>({exitCode:Number.isSafeInteger(code)?code:null,signal:typeof signal==='string'&&/^SIG[A-Z0-9]{2,10}$/.test(signal)?signal:null});
 const label=(v,re)=>typeof v==='string'&&re.test(v)&&!leaks(v)?v:null;
+// A sky-level error is stored by one of the names sky admits, else `other`: never a free-form name or message.
+const SKY_ERRORS=new Set(['typeUnconfirmed','concealedInputUnavailable','inputFailed','inputFailedUnentered','userIntervened','inputSourceChanged','activationFailed','windowMinimized','secretUnavailable','secretUnusable','unknownError']);
+const skyErrorLabel=e=>{const n=e?.errorName??e?.code??e?.name;return SKY_ERRORS.has(n)?n:'other'};
+
+// The engine child's whole environment: the head's temporary HOME and TMPDIR, its socket and a fixed minimum.
+export function engineEnv({home,tmpdir:tmpDir,socket,from=process.env}){
+ const keep={};for(const k of ['PATH','LANG','LC_ALL','USER','LOGNAME','__CF_USER_TEXT_ENCODING'])if(typeof from[k]==='string')keep[k]=from[k];
+ return {...keep,HOME:home,TMPDIR:tmpDir,CUA_ENGINE_SOCKET:socket};
+}
 
 class Wire{
  static connect(path){return new Promise((ok,no)=>{const s=createConnection(path);s.once('connect',()=>ok(new Wire(s)));s.once('error',e=>{s.destroy();no(e)})})}
@@ -278,20 +428,32 @@ async function main(){
  mkdirSync(outDir,{recursive:true});
  const tmp=mkdtempSync(join(process.env.RUNNER_TEMP||tmpdir(),'q395-'));
  const audit=createAuditCapture({mode:phase});
+ // Audit phase: each head's build provenance (the stdout JSON of audit-patch.mjs, which hooks applied) goes to the capture
+ // before its first tag, from PROBE395_AUDIT_PATCH_MAIN / _FIX (paths). PROBE395_SECURE_PERMITTED, when set, is the JSON of
+ // summarize's securePermitted option (marker attribute names permitted before input on a secure row); default none.
+ if(phase==='audit')for(const name of HEADS){
+  const file=process.env['PROBE395_AUDIT_PATCH_'+name.toUpperCase()];
+  if(file)audit.setProvenance(name,JSON.parse(readFileSync(file,'utf8')));
+ }
+ const securePermitted=process.env.PROBE395_SECURE_PERMITTED?JSON.parse(process.env.PROBE395_SECURE_PERMITTED):null;
 
  // ---- one head: its own source modules, HOME, secret store and engine process ----------------------------------------
  const heads={};
  for(const name of HEADS){
   const {source,engine:enginePath}=args.heads[name],load=p=>import(pathToFileURL(join(source,p)).href);
   const [skyModule,serviceModule,storeModule,protocolModule]=await Promise.all([load('src/services/sky.mjs'),load('src/services/engine/service.mjs'),load('src/secrets/store.mjs'),load('src/services/engine/protocol.mjs')]);
-  const home=join(tmp,name,'home'),socket=join(tmp,name+'.sock'),env={HOME:home};
-  mkdirSync(home,{recursive:true,mode:0o700});
+  // The native engine takes an exclusive lock `engine.lock` in its socket's parent directory, so each head has its own short
+  // socket directory (never the shared temp root). Each engine gets only the temporary HOME, a head-local TMPDIR and the
+  // minimum of the runner's environment: nothing of the runner's secrets, tokens or configuration is inherited.
+  const home=join(tmp,name,'home'),sockDir=join(tmp,name[0]),socket=join(sockDir,'e.sock'),env={HOME:home};
+  mkdirSync(home,{recursive:true,mode:0o700});mkdirSync(sockDir,{recursive:true,mode:0o700});
   if(Buffer.byteLength(socket)>=103)throw new Error('socket path too long');
   const store=storeModule.fileStore({dir:storeModule.storeDir(env)});
   // stderr is piped and always drained, into the audit capture only; it is never kept here.
-  const child=spawn(enginePath,[],{env:{...process.env,CUA_ENGINE_SOCKET:socket},stdio:['ignore','ignore','pipe']});
+  const child=spawn(enginePath,[],{env:engineEnv({home,tmpdir:sockDir,socket}),cwd:sockDir,stdio:['ignore','ignore','pipe']});
+  const closed=new Promise(ok=>child.once('close',()=>ok(true)));
   child.on('error',()=>{});child.stderr.on('data',d=>audit.stderr(name,d));child.stderr.on('error',()=>{});
-  heads[name]={name,home,socket,env,store,child,skyModule,serviceModule,protocolModule,target:null};
+  heads[name]={name,home,socket,env,store,child,closed,skyModule,serviceModule,protocolModule,target:null};
  }
 
  // ---- owned side processes ---------------------------------------------------------------------------------------
@@ -331,7 +493,7 @@ async function main(){
  }
 
  const planSeed=randomBytes(4).readUInt32LE(),rounds=plan({reps,seed:planSeed}),planned=rounds.reduce((n,r)=>n+r.length,0);
- let order=0,done=0,harnessValid=0,strict=0,invalid=0,setupFailures=0,consecutiveInvalid=0,privacyViolations=0,auditFailures=0,storeCleanupFailures=0,aborted=null;
+ let order=0,done=0,harnessValid=0,strict=0,invalid=0,setupFailures=0,consecutiveInvalid=0,privacyViolations=0,auditFailures=0,auditWithheld=0,storeCleanupFailures=0,aborted=null;
  const failureStages={},rows=[],auditRaw=[];
  const meta={kit:process.env.GITHUB_SHA??null,image:process.env.ImageVersion??null,phase,startedAt:start,reps,planSeed,planned,heads:HEADS,pages:PAGES,kinds:KINDS,
   units:UNITS.map(u=>u.join('/')),sources:{main:process.env.MAIN_REF??null,fix:process.env.FIX_REF??null},
@@ -341,12 +503,12 @@ async function main(){
    order:'each repetition holds every unit once in a seeded order; within a unit the two heads run back to back and their order alternates by repetition and unit, so each head leads half of every unit\'s repetitions; the two heads of a pair type the same synthetic value',
    cell:'browser forward, DOM setup (secure cell: a plain setup input focused), cover forward (up to 4 activations), 250ms settle, DOM re-read, witness arm; secure cell only: under the verified cover the already-password-typed input takes its seed and focus; one real type_text (plain: the literal text; secretShort and secretLong: the secret handle with the value in the head\'s temporary fileStore; secure: the handle); cover check; DOM confirmation and exact scoring; then, for public plain rows only, the independent marker walk as supplemental evidence (never on a secret or secure row); DOM re-read; witness disarm. The AX identity of a concealed or secure row rests on the DOM node checks, the continuous foreground witness and, for secure, the engine own reason. The harness presses no key.',
    expected:'main small confirms, main large is typeUnconfirmed, fix confirms on both pages, secure is typeUnconfirmed with reason secure on both heads, except main\'s large secure control (reason noFocusedElement, DOM content recorded but not required)',
-   scoring:'strict = harness valid, engine outcome as expected (a success needs the engine\'s typeReadback confirmed, and any confirmed readback over a mismatching page is a wrong success), reason as expected (secure), DOM exactly the expected content with the expected caret and input events, no wrong success (engine success over a page without the text)',
+   scoring:'strict = harness valid, engine outcome as expected (a success needs a successful sky call and both the engine\'s raw and sky\'s forwarded typeReadback confirmed true, a refusal both explicitly false, a disagreement or an error with a confirmation is never strict, and any confirmed readback over a mismatching page is a wrong success), reason as expected (secure), DOM exactly the expected content with the expected caret and input events, no wrong success (engine success over a page without the text)',
    evidence:'stock rows are the outcome and privacy evidence; audit rows (scratch builds) are schedule evidence only',
-   privacy:'synthetic values only, in memory; rows hold labels, booleans, counts, timings and the audit module\'s scrubbed row; no raw reply, typed value, secret length or offset, marker bytes or stderr; an attestation scans the output',
+   privacy:'synthetic values only, in memory; rows hold labels, booleans, counts, timings and a fixed projection of the audit row (publicAuditRow: the sanitized typeReadbacks, coded findings and the schedule, never the reply, surfaces, event or input counts or opaque bytes); each engine has its own socket directory and an environment of only a temporary HOME and TMPDIR; an attestation scans the output and sets publishable',
    abort:CONSECUTIVE_CAP+' consecutive harness-invalid cells, '+SETUP_FAILURE_CAP+' setup failures, a failed secret cleanup or witness cleanup, a stuck tool, or the 120 minute budget'}};
  const budget=()=>{if(Date.now()-start>BUDGET_MS)throw new Abort()};
- const progress=last=>writeFileSync(join(outDir,'progress.json'),JSON.stringify({phase,planned,done,harnessValid,strict,invalid,setupFailures,consecutiveInvalid,privacyViolations,auditFailures,storeCleanupFailures,failureStages,aborted:aborted!==null,elapsedMs:Date.now()-start,last},null,2));
+ const progress=last=>writeFileSync(join(outDir,'progress.json'),JSON.stringify({phase,planned,done,harnessValid,strict,invalid,setupFailures,consecutiveInvalid,privacyViolations,auditFailures,auditWithheld,storeCleanupFailures,failureStages,aborted:aborted!==null,elapsedMs:Date.now()-start,last},null,2));
  // Final defence: nothing is written that contains a synthetic value.
  function save(row){
   let line=JSON.stringify(row);
@@ -377,12 +539,12 @@ async function main(){
  }
  const contentOk=s=>s.exact===true&&s.selectionOk===true;
  const readState=expected=>fixture.command({op:'read',expected},6000);
- const SAFE_NAME=/^[A-Za-z][A-Za-z0-9]{2,40}$/;
  // Types the cell's text through the head's own production path. `rec` carries labels only.
  async function typeThrough(head,c,m,rec){
   const concealed=c.kind!=='plain';
-  const respMeta={};
-  const nodeRepl={env:head.env,setResponseMeta:x=>{if(x&&typeof x==='object')Object.assign(respMeta,x)},emitContentItem:()=>{},createElicitation:async q=>{if(q.meta?.tool_params?.app!==head.target.bundleIdentifier)throw new Fail();return {action:'accept'}}};
+  const respMeta={},content=[],logged=[];
+  // Content items and console output are captured for the audit's privacy scan, never kept or written.
+  const nodeRepl={env:head.env,setResponseMeta:x=>{if(x&&typeof x==='object')Object.assign(respMeta,x)},emitContentItem:item=>{content.push(item)},createElicitation:async q=>{if(q.meta?.tool_params?.app!==head.target.bundleIdentifier)throw new Fail();return {action:'accept'}}};
   const w=await connect(head);
   try{
    const client={identity:w.identity,async execute(method,a){
@@ -403,7 +565,7 @@ async function main(){
    try{
     if(concealed){await head.store.write(SECRET_LABEL,m.text);wrote=true}
     const originalHome=process.env.HOME,originalConsole={};process.env.HOME=head.home;
-    for(const k of ['log','warn','error','info','debug']){originalConsole[k]=console[k];console[k]=()=>{}}
+    for(const k of ['log','warn','error','info','debug']){originalConsole[k]=console[k];console[k]=(...a)=>{logged.push(a)}}
     const startedAt=Date.now(),t0=performance.now();
     let rendered,error=null;
     try{rendered=await sky.handleRpc({type:'execute',method:'type_text',args:[{app:head.target.appPath,text:concealed?'{{secret:'+SECRET_LABEL+'}}':m.text}]})}
@@ -412,10 +574,10 @@ async function main(){
     const durationMs=performance.now()-t0;
     // Labels of the sky-level end: threw or not, and the error's admitted name or code.
     rec.sky=error?'threw':'ok';
-    if(error){rec.skyError=label(error.errorName,SAFE_NAME)??label(error.code,/^[a-z][a-z0-9_]{2,40}$/)??label(error.name,SAFE_NAME)}
+    if(error)rec.skyError=skyErrorLabel(error);
     audit.sky(c.tag,{rendered,error,meta:respMeta});
-    rec.readback=respMeta['cua/typeReadback']??rec.engineRecord;
-    if(rec.outcome==='okUnconfirmedMeta'&&confirmedOf(respMeta['cua/typeReadback'])===true)rec.outcome='ok';
+    audit.surface(c.tag,'content',content);audit.surface(c.tag,'console',logged);
+    rec.forwarded=respMeta['cua/typeReadback']??null;
     return {startedAt,endedAt:Date.now(),durationMs};
    }finally{
     if(wrote){try{await head.store.remove(SECRET_LABEL);rec.cleanup='removed'}catch{rec.cleanup='failed'}}
@@ -428,7 +590,7 @@ async function main(){
   const row={recordKind:warmup?'warmup':'cell',id:c.id,tag:c.tag,part:c.part,rep:c.rep,order:warmup?null:++order,head:c.head,page:c.page,kind:c.kind,unit:c.unit??null,pairKey:c.pairKey??null,position:c.position??null,
    expected:c.expected,large:c.page==='large',fixture:{},foreground:{},startedAt:Date.now()};
   let stage='setup',lost=false,abortErr=null,armed=false,cleanupFailed=false,auditOpen=false,auditRow=null;
-  const rec={sent:0,replied:0,outcome:null,sky:null,skyError:null,cleanup:null,readback:null,engineRecord:null};
+  const rec={sent:0,replied:0,outcome:null,sky:null,skyError:null,cleanup:null,forwarded:null,engineRecord:null};
   try{
    await front(pid);row.foreground.browserForPreparation=true;
    const first=m.secure?m.prep:m.initial;
@@ -482,8 +644,7 @@ async function main(){
    row.dom={known:true,exact:s2.exact===true,caret:s2.selectionOk===true,inputEvents:s2.inputs>0,equal:contentOk(s2)&&s2.inputs>0};
    if(!shapeOk(s2,c))throw new Fail();
    row.engine={sent:rec.sent,replied:rec.replied,sky:rec.sky,skyError:rec.skyError,cleanup:rec.cleanup};
-   const reason=reasonOf(rec.readback);
-   row.actual={outcome:rec.outcome,reason:label(reason,REASON),confirmed:confirmedOf(rec.readback)};
+   row.actual=actualOf(rec);
    // A harness-valid row is scored below once the disarm has confirmed the background; the score is set provisionally here.
    // Supplemental only, after the exact scoring: the independent marker walk, reduced to labels.
    stage='measure';
@@ -513,7 +674,7 @@ async function main(){
    row.harnessValid=false;row.failureStage=stage;row.failureKind=e instanceof Abort?'abort':lost?'fixture':e instanceof Fail?'check':'error';row.fixtureLost=lost;
    row.setupFailure=stage==='setup'||stage==='settle'||stage==='arm'||lost;
    row.engine??={sent:rec.sent,replied:rec.replied,sky:rec.sky,skyError:rec.skyError,cleanup:rec.cleanup};
-   row.actual??={outcome:rec.outcome,reason:label(reasonOf(rec.readback),REASON),confirmed:confirmedOf(rec.readback)};
+   row.actual??=actualOf(rec);
   }finally{
    if(armed){
     // Never leave the witness armed for the next attempt; a disarm that cannot be confirmed ends the run.
@@ -525,18 +686,19 @@ async function main(){
     try{
      auditRow=await audit.end(c.tag);
      if(!warmup)auditRaw.push(auditRow);
-     try{audit.assertClean(auditRow)}catch{privacyViolations++;row.privacyViolation=true}
-     const tally={leaks:0,withheld:0};
-     row.audit=scrub(auditRow,tally);
-     row.auditOk=auditRow?.ok===true;
-     const violations=Number(auditRow?.privacy?.violations);
-     if(tally.leaks||(Number.isFinite(violations)&&violations>0)||auditRow?.privacy?.ok===false){privacyViolations++;row.privacyViolation=true}
+     let bad=false;
+     try{audit.assertClean(auditRow)}catch{bad=true}
+     const pub=publicAuditRow(auditRow);
+     row.audit=pub.row;row.auditOk=auditRow?.ok===true;
+     if(!pub.publishable&&!pub.withheld)bad=true;
+     if(pub.withheld){row.auditWithheld=true;auditWithheld++}
+     if(bad){privacyViolations++;row.privacyViolation=true}
      if(!row.auditOk)auditFailures++;
     }catch{row.auditOk=false;row.auditError=true;auditFailures++}
    }
    row.dom??={known:false,exact:false,caret:false,inputEvents:false,equal:false};
    row.actual??={outcome:null,reason:null,confirmed:null};
-   row.score=scoreRow({expected:c.expected,outcome:row.actual.outcome,reason:row.actual.reason,confirmed:row.actual.confirmed,domEqual:row.dom.equal,domKnown:row.dom.known,harnessValid:row.harnessValid===true});
+   row.score=scoreRow({expected:c.expected,outcome:row.actual.outcome,reason:row.actual.reason,confirmed:row.actual.confirmed,forwarded:row.actual.forwarded,conflict:row.actual.conflict,sky:rec.sky,domEqual:row.dom.equal,domKnown:row.dom.known,harnessValid:row.harnessValid===true});
    row.valid=row.harnessValid===true;row.endedAt=Date.now();
    if(lost){try{await fixture.bindVisible(()=>titles(pid),8000);row.rebound=true}catch{row.rebound=false}}
    save(row);if(!warmup)rows.push(row);
@@ -626,32 +788,37 @@ async function main(){
    startup.sideBroken=sideBroken;startup.boot={marker:bootShape(boot.marker),cover:bootShape(boot.cover)};
    meta.startup=startup;
   }
+  // The engines stop first and their stderr drains to close; only then is the capture flushed and summarized, so a late stray
+  // line is in the final privacy verdict.
+  const stopped={main:await stopChild(heads.main.child),fix:await stopChild(heads.fix.child)};
+  for(const h of HEADS)stopped[h+'Drained']=await Promise.race([heads[h].closed,sleep(3000).then(()=>false)]);
   for(const h of HEADS){try{audit.stderr(h,null)}catch{}}
   const summary=summarize(rows,{phase,planned});
   // The audit module's cross-row gates (schedule shape, pre-input discovery) over the audit rows it produced.
   try{
-   if(auditRaw.length){const tally={leaks:0,withheld:0};summary.audit=scrub(audit.summarize(auditRaw),tally);if(tally.leaks)privacyViolations++}
+   if(auditRaw.length){const tally={leaks:0,withheld:0};summary.audit=renameKeys(scrub(audit.summarize(auditRaw,securePermitted?{securePermitted}:undefined),tally));if(tally.leaks)privacyViolations++}
   }catch{summary.audit={error:true}}
-  summary.contracts=contractsOf(summary,{phase,auditFailures});
-  meta.coverage={planned,done,harnessValid,strict,invalid,setupFailures,failureStages,privacyViolations,auditFailures,storeCleanupFailures,
-   complete:aborted===null&&done===planned&&harnessValid===planned&&privacyViolations===0&&storeCleanupFailures===0&&(phase==='stock'||auditFailures===0),abortedAt:aborted};
+  const captureMissing=rows.filter(r=>r.harnessValid&&r.auditOk!==true).length;
+  summary.contracts=contractsOf(summary,{phase,auditFailures,captureMissing});
+  meta.coverage={planned,done,harnessValid,strict,invalid,setupFailures,failureStages,privacyViolations,auditFailures,auditWithheld,storeCleanupFailures,
+   complete:aborted===null&&done===planned&&harnessValid===planned&&privacyViolations===0&&storeCleanupFailures===0&&auditFailures===0&&auditWithheld===0,abortedAt:aborted};
   fixture?.close();
   try{audit.close()}catch{}
-  const stopped={main:await stopChild(heads.main.child),fix:await stopChild(heads.fix.child),probe:await stopChild(side),cover:await stopChild(coverProc)};
+  stopped.probe=await stopChild(side);stopped.cover=await stopChild(coverProc);
   if(browser){try{browser.kill()}catch{}}
   let homeRemoved=true;try{rmSync(tmp,{recursive:true,force:true})}catch{homeRemoved=false}
   meta.cleanup={...stopped,tempRemoved:homeRemoved};
   writeFileSync(join(outDir,'summary.json'),JSON.stringify(summary,null,2));
   writeFileSync(join(outDir,'config.json'),JSON.stringify(meta,null,2));progress(null);
   // The output is attested last, after every file is written; a failed attestation fails the run.
-  const attestation=attestDir(outDir);
+  const attestation=publication(attestDir(outDir),{privacyViolations,auditWithheld,contracts:summary.contracts});
   writeFileSync(join(outDir,'attestation.json'),JSON.stringify(attestation,null,2));
   console.log('395q coverage',JSON.stringify(meta.coverage));
   for(const g of summary.groups)console.log('395q',g.head,g.page,g.kind,'n',g.n,'strict',g.strict,'outcomes',JSON.stringify(g.outcomes),'wrongSuccess',g.wrongSuccess);
   console.log('395q attestation',JSON.stringify(attestation));
   console.log('395q contracts',JSON.stringify(summary.contracts));
   // Coverage, the qualification contracts and the output attestation each fail the run on their own.
-  if(!meta.coverage.complete||!summary.contracts.ok||!attestation.ok||!Object.values(stopped).every(Boolean))process.exitCode=1;
+  if(!meta.coverage.complete||!summary.contracts.ok||!attestation.publishable||!Object.values(stopped).every(Boolean))process.exitCode=1;
  }
 }
 // Run only when invoked as the script, so the pure helpers can be imported.

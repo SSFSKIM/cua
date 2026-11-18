@@ -10,8 +10,11 @@ function engineRecord(id,rows,extra={}){
  return {v:1,id,spanNs:8e6,overheadNs:1e5,names,e:rows.map(([api,name,alias=0,outcome=0,at=0,dur=10])=>[api,ref(name),alias,outcome,at,dur]),dropped:0,aliasOverflow:0,aliases:2,offThread:0,offThreadCounts:{},overlaps:0,roles:{},subroles:{},...extra};
 }
 const discovery=[[API.hit,'ElementAtPosition',-1],[API.single,'AXFocusedUIElement',0,0,20],[API.single,'AXRole',1,0,40],[API.single,'AXSubrole',1,0,50]];
-const poll=(n,range=false)=>Array.from({length:n},(_,i)=>[[API.single,'AXRole',1,0,1000+i*40],[API.single,'AXSubrole',1,0,1010+i*40],[API.single,'AXValue',1,0,1020+i*40],...(range?[[API.single,'AXSelectedTextRange',1,0,1030+i*40]]:[])]).flat();
-const rows=(polls,range=true)=>[...discovery,[API.event,'keyDown',-1,0,900],...poll(polls),...(range?poll(1,true):[])];
+// One readbackPoll iteration, role/subrole/value (a caret read joins the iteration that sees the expected value), and a poll phase:
+// `n` plain retries, then (when `caret`) the caret iteration, then the confirming one. Its raw length varies; its shape does not.
+const iter=(at,caret=false)=>[[API.phaseBegin,'fieldClosed',-1,0,at],[API.single,'AXRole',1,0,at+1],[API.single,'AXSubrole',1,0,at+2],[API.phaseEnd,'fieldClosed',-1,0,at+3],[API.single,'AXValue',1,0,at+4],...(caret?[[API.single,'AXSelectedTextRange',1,0,at+5]]:[])];
+const poll=(n,caret=false)=>[[API.phaseBegin,'poll',-1,0,1000],...Array.from({length:n},(_,i)=>iter(1010+i*40)).flat(),...(caret?iter(5000,true):[]),...iter(5100),[API.phaseEnd,'poll',-1,0,1000,4000]];
+const rows=(polls,caret=true)=>[...discovery,[API.event,'keyDown',-1,0,900],...poll(polls,caret)];
 const line=(tag,rs,extra)=>JSON.stringify({[AUDIT_KEY]:engineRecord(tag,rs,extra)})+'\n';
 const line354=(tag,text=0,range=0)=>JSON.stringify({[AUDIT354_KEY]:{id:tag,textReadAttempts:text,rangeReadAttempts:range,byAttribute:{}}})+'\n';
 const okRb={confirmed:true,snapshotMs:11.5,concealed:true};
@@ -25,7 +28,7 @@ async function cell(audit,{tag,head='main',page='small',kind='secretShort',lengt
  audit.sky(tag,{rendered,error,meta});
  return {sent,row:await audit.end(tag,{timeoutMs:200,graceMs:5})};
 }
-function fresh(mode='audit'){const a=createAuditCapture({mode});a.registerSecret(SECRET_S,'secret');a.registerSecret(SECRET_L,'secret');a.registerSecret(PLAIN,'plain');a.registerSecret('Old draft sentence goes here.','seed');a.setProvenance('main',{boundaries:{eventPost:true}});a.setProvenance('fix',{boundaries:{eventPost:true},phases:{applied:['walk'],skipped:[]}});return a}
+function fresh(mode='audit'){const a=createAuditCapture({mode});a.registerSecret(SECRET_S,'secret');a.registerSecret(SECRET_L,'secret');a.registerSecret(PLAIN,'plain');a.registerSecret('Old draft sentence goes here.','seed');const hooks={boundaries:{eventPost:true,eventHid:true},phases:{applied:['walk','poll','fieldClosed'],skipped:[]}};a.setProvenance('main',hooks);a.setProvenance('fix',{...hooks,phases:{applied:['markedField','poll','fieldClosed'],skipped:[]}});return a}
 
 test('audit mode tags only type_text at the wire and the row carries a decoded, classified schedule',async()=>{
  const a=fresh();
@@ -35,7 +38,7 @@ test('audit mode tags only type_text at the wire and the row carries a decoded, 
  const resolve=a.engineArgs('main-small-plain-r01','resolve_app',{pid:1});assert.deepEqual(resolve,{pid:1});
  assert.equal(row.ok,true,JSON.stringify(row.failures));assert.equal(row.lane,'secret');assert.equal(row.rep,1);
  assert.equal(row.schedule.preInput.available,true);assert.equal(row.schedule.preInput.entries,4);assert.equal(row.schedule.counters.byClass.range,1);
- assert.equal(row.schedule.counters.byClass.marker,0);assert.deepEqual(row.schedule.pollCycleReps,[4]); // the terminal range cycle starts like the poll before it; its range read stays single
+ assert.equal(row.schedule.counters.byClass.marker,0);assert.deepEqual(row.schedule.pollCycleReps,[5]); // raw iterations: three retries, the caret read, the confirming one
  assert.deepEqual(row.audit354,{textReadAttempts:0,rangeReadAttempts:0,byAttribute:{}});
  assert.deepEqual(row.typeReadback,okRb);assert.equal(row.clocks.routeWallMs,40);assert.ok(row.clocks.auditSpanMs===8);
  assert.equal(row.schedule.strictKey,undefined);assert.match(row.schedule.strictHash,/^[0-9a-f]{16}$/);
@@ -112,9 +115,9 @@ test('secure rows: a canonical typeReadback passes, extra meta fails; summarize 
  const leaky=await secure('main-large-secure-r01','large',refusal,{range:[0,3]});assert.equal(leaky.row.ok,false);
  const reading=await secure('fix-small-secure-r01','small',[...refusal,[API.single,'AXSelectedTextMarkerRange',1,0,70]]);
  const g=a.summarize([good.row,reading.row]).gates;
- assert.equal(g['secureNoValueReads:main/small'],'pass');assert.equal(g['secureNoValueReads:fix/small'],'fail');
- const permitted=a.summarize([good.row,reading.row],{securePermitted:{'fix/small':{names:['AXSelectedTextMarkerRange']}}}).gates;
- assert.equal(permitted['secureNoValueReads:fix/small'],'pass');
+ assert.equal(g['secureNoValueReads:main.small'],'pass');assert.equal(g['secureNoValueReads:fix.small'],'fail');
+ const permitted=a.summarize([good.row,reading.row],{securePermitted:{'fix.small':{names:['AXSelectedTextMarkerRange']}}}).gates;
+ assert.equal(permitted['secureNoValueReads:fix.small'],'pass');
 });
 test('summarize: pre-input and short/long gates pass on equal shapes, fail on divergence, unknown without evidence; plain vs concealed is informational',async()=>{
  const a=fresh();
@@ -127,29 +130,129 @@ test('summarize: pre-input and short/long gates pass on equal shapes, fail on di
   }
  }
  let s=a.summarize(out);
- assert.equal(s.gates['preInputIdentical:main/small'],'pass');assert.equal(s.gates['concealShortLong:main/small'],'pass');
- assert.equal(s.gates['concealShortLong:fix/small'],'pass');assert.equal(s.ok,true,JSON.stringify(s.gates));
- assert.equal(s.informational['plainVsConcealed:main/small'].secretShort.equalSets,false); // by design, reported not gated
- assert.ok('headDiff:fix-main/small/secretShort' in s.informational);
- assert.equal(s.groups['main/small/secretLong'].markerAttempts.max,0);
+ assert.equal(s.gates['preInputIdentical:main.small'],'pass');assert.equal(s.gates['concealShortLong:main.small'],'pass');
+ assert.equal(s.gates['concealShortLong:fix.small'],'pass');assert.equal(s.ok,true,JSON.stringify(s.gates));
+ assert.equal(s.informational['plainVsConcealed:main.small'].secretShort.equalSets,false); // by design, reported not gated
+ assert.ok('headDiff:fix-main.small.secretShort' in s.informational);
+ assert.equal(s.groups['main.small.secretLong'].markerAttempts.max,0);
  // Divergent discovery for the long secret.
  const odd=(await cell(a,{tag:'main-small-secretLong-r09',kind:'secretLong',length:128,schedule:[...discovery,[API.single,'AXChildren',0,0,60],[API.event,'keyDown',-1,0,900],...poll(3)]})).row;
- s=a.summarize([...out,odd]);assert.equal(s.gates['preInputIdentical:main/small'],'fail');assert.equal(s.gates['concealShortLong:main/small'],'fail');assert.equal(s.ok,false);
- assert.ok(s.informational['preInputIdentical:main/small'].example.preNamesDiff.AXChildren);
+ s=a.summarize([...out,odd]);assert.equal(s.gates['preInputIdentical:main.small'],'fail');assert.equal(s.gates['concealShortLong:main.small'],'fail');assert.equal(s.ok,false);
+ assert.ok(s.informational['preInputIdentical:main.small'].example.preNamesDiff.AXChildren);
  // A kind not run is unknown, never a pass.
- s=a.summarize(out.filter(r=>r.kind!=='secretLong'));assert.equal(s.gates['preInputIdentical:main/small'],'unknown');assert.equal(s.gates['concealShortLong:main/small'],'unknown');assert.equal(s.ok,false);
+ s=a.summarize(out.filter(r=>r.kind!=='secretLong'));assert.equal(s.gates['preInputIdentical:main.small'],'unknown');assert.equal(s.gates['concealShortLong:main.small'],'unknown');assert.equal(s.ok,false);
  // Warmups (rep 0) are never summarized.
  const warm={...out[0],tag:'warmup-main-small',rep:0};assert.equal(a.summarize([warm]).rows,0);
 });
 test('a build without the pre-input boundary makes the discovery gate unknown, not pass',async()=>{
  const a=fresh();a.setProvenance('main',{boundaries:{eventPost:false}});
  const out=[];for(const kind of ['plain','secretShort','secretLong'])out.push((await cell(a,{tag:'main-small-'+kind+'-r01',kind,length:kind==='secretLong'?128:32})).row);
- assert.equal(a.summarize(out).gates['preInputIdentical:main/small'],'unknown');
+ assert.equal(a.summarize(out).gates['preInputIdentical:main.small'],'unknown');
 });
 test('marker counts and timing are carried beside the full counts',async()=>{
  const a=fresh();
  const m=(await cell(a,{tag:'fix-large-plain-r01',head:'fix',page:'large',kind:'plain',length:32,concealed:false,schedule:[...discovery,[API.single,'AXSelectedTextMarkerRange',1,0,70,400],[API.param,'AXStringForTextMarkerRange',1,0,500,900],[API.event,'keyDown',-1,0,2000],...poll(2)]})).row;
  assert.equal(m.schedule.counters.byClass.marker,2);assert.equal(m.schedule.timeline.markerAttempts.length,2);assert.equal(m.schedule.timeline.classWindows.marker.calls,2);
  assert.equal(m.schedule.timeline.markerAttempts[0].preInput,true);
- const s=a.summarize([m]);assert.equal(s.groups['fix/large/plain'].markerAttempts.max,2);assert.ok(s.groups['fix/large/plain'].fullAttempts.max>2);
+ const s=a.summarize([m]);assert.equal(s.groups['fix.large.plain'].markerAttempts.max,2);assert.ok(s.groups['fix.large.plain'].fullAttempts.max>2);
+});
+test('a head needs both event hooks in its own provenance, and a typed row an actual first event; the hooks are kept per head on the row',async()=>{
+ const a=fresh();a.setProvenance('main',{boundaries:{eventPost:true,eventHid:false},phases:{applied:['poll'],skipped:[]}});
+ const mk=async(head,tag,kind,sched)=>(await cell(a,{tag,head,page:'small',kind,length:kind==='secretLong'?128:32,schedule:sched})).row;
+ const kinds=['plain','secretShort','secretLong'];
+ const half=[];for(const kind of kinds)half.push(await mk('main','main-small-'+kind+'-r01',kind));
+ assert.deepEqual(half[0].schedule.eventHooks,{post:true,hid:false});assert.equal(half[0].schedule.preInput.available,false);
+ assert.equal(a.summarize(half).gates['preInputIdentical:main.small'],'unknown');assert.equal(a.summarize(half).gates['concealShortLong:main.small'],'unknown');
+ const whole=[];for(const kind of kinds)whole.push(await mk('fix','fix-small-'+kind+'-r01',kind));
+ assert.deepEqual(whole[0].schedule.eventHooks,{post:true,hid:true});
+ let s=a.summarize(whole);assert.equal(s.gates['preInputIdentical:fix.small'],'pass');assert.equal(s.gates['concealShortLong:fix.small'],'pass');
+ // No provenance at all is no boundary, never an assumed one.
+ const b=createAuditCapture({mode:'audit'});b.registerSecret(SECRET_S,'secret');
+ const none=(await cell(b,{tag:'main-small-plain-r01',kind:'plain',length:32,concealed:false})).row;assert.equal(none.schedule.preInput.available,false);assert.equal(none.schedule.boundaryProvenance,'unknown');
+ // A typed row that never posted an event fails the pre-input gate (the refusal control is the secure kind, which is not required to).
+ const silent=[];for(const kind of kinds)silent.push(await mk('fix','fix-small-'+kind+'-r02',kind,[...discovery,...poll(1,true)]));
+ assert.equal(silent[0].schedule.preInput.boundary,'none');
+ s=a.summarize(silent);assert.equal(s.gates['preInputIdentical:fix.small'],'fail');assert.equal(s.gates['concealShortLong:fix.small'],'fail');
+});
+test('short and long concealed shapes agree rep by rep after poll retries are removed; equal sets do not hide a rep that differs',async()=>{
+ const a=fresh();
+ const mk=async(kind,rep,sched)=>(await cell(a,{tag:'main-small-'+kind+'-r0'+rep,kind,length:kind==='secretLong'?128:32,schedule:sched})).row;
+ const plain=async rep=>(await cell(a,{tag:'main-small-plain-r0'+rep,kind:'plain',length:32,concealed:false,schedule:rows(rep)})).row;
+ // Different numbers of retries in short and long reps: one shape.
+ let out=[await plain(1),await plain(2)];
+ for(const rep of [1,2]){out.push(await mk('secretShort',rep,rows(rep*2)));out.push(await mk('secretLong',rep,rows(9-rep,true)))}
+ let s=a.summarize(out);assert.equal(s.gates['concealShortLong:main.small'],'pass',JSON.stringify(s.informational['concealShortLong:main.small']));
+ assert.equal(s.informational['concealShortLong:main.small'].shapeEqual,2);
+ // Short rep 3 and long rep 4 take one shape, short rep 4 and long rep 3 the other: both kinds show both shapes, no rep agrees.
+ const A=rows(2,true),B=[...discovery,[API.event,'keyDown',-1,0,900],...poll(2,true),[API.single,'AXChildren',1,0,6000]];
+ out=[await plain(3),await plain(4),await mk('secretShort',3,A),await mk('secretShort',4,B),await mk('secretLong',3,B),await mk('secretLong',4,A)];
+ s=a.summarize(out);const info=s.informational['concealShortLong:main.small'];
+ assert.equal(info.equalSets,true);assert.equal(info.shapeEqual,0);assert.equal(s.gates['concealShortLong:main.small'],'fail');
+ // A short rep with no long partner is not evidence.
+ out=[await plain(5),await mk('secretShort',5,rows(1,true)),await mk('secretShort',6,rows(1,true)),await mk('secretLong',5,rows(4,true))];
+ assert.equal(a.summarize(out).gates['concealShortLong:main.small'],'unknown');
+ // A head built without the poll hook cannot be normalized: unknown.
+ a.setProvenance('main',{boundaries:{eventPost:true,eventHid:true},phases:{applied:['walk'],skipped:[]}});
+ const lone=[await plain(7),await mk('secretShort',7,rows(1,true)),await mk('secretLong',7,rows(1,true))];
+ assert.equal(a.summarize(lone).gates['concealShortLong:main.small'],'unknown');
+});
+const MARKER_NAMES=['AXSelectedTextMarkerRange','AXUIElementForTextMarker'];
+const PAIR=[[API.single,'AXSelectedTextMarkerRange',2,0,60,200],[API.param,'AXUIElementForTextMarker',2,0,300,200]];
+const SECURE_REPLY={error:{errorName:'typeUnconfirmed',message:'Secret text is not confirmed.',meta:{startedAt:1,endedAt:2,typeReadback:{confirmed:false,reason:'secure',snapshotMs:2,concealed:true,secure:true}}}};
+async function kindRows(_a,head,page,{typed,secure,skip=[]}){
+ const a=fresh(); // tags are single-use per capture
+ const out=[];
+ for(const kind of ['plain','secretShort','secretLong','secure'].filter(k=>!skip.includes(k))){
+  const isSecure=kind==='secure',tag=head+'-'+page+'-'+kind+'-r01';
+  out.push((await cell(a,{tag,head,page,kind,length:kind==='secretLong'?128:32,secureField:isSecure||undefined,concealed:kind!=='plain',schedule:isSecure?secure:typed,reply:isSecure?SECURE_REPLY:undefined})).row);
+ }
+ return out;
+}
+const gate=(a,rows,k)=>a.summarize(rows,{securePermitted:{'fix.small':{names:MARKER_NAMES},'fix.large':{names:MARKER_NAMES}}}).gates['markerRouting:'+k];
+test('marker routing: the baseline makes none; the candidate makes exactly one allowed pair before input, on every large-page row, secure included',async()=>{
+ const a=fresh();
+ const typedPair=[...discovery,...PAIR,[API.event,'keyDown',-1,0,900],...poll(1,true)],securePair=[...discovery,...PAIR],typedNone=rows(1,true),secureNone=[...discovery];
+ // Baseline.
+ assert.equal(gate(a,await kindRows(a,'main','large',{typed:typedNone,secure:secureNone}),'main.large'),'pass');
+ assert.equal(gate(a,await kindRows(a,'main','large',{typed:typedPair,secure:secureNone}),'main.large'),'fail');
+ // Candidate, large page: all four kinds carry the pair.
+ assert.equal(gate(a,await kindRows(a,'fix','large',{typed:typedPair,secure:securePair}),'fix.large'),'pass');
+ // The secure row is required to carry it too, and so is every typed row.
+ assert.equal(gate(a,await kindRows(a,'fix','large',{typed:typedPair,secure:secureNone}),'fix.large'),'fail');
+ assert.equal(gate(a,await kindRows(a,'fix','large',{typed:typedNone,secure:securePair}),'fix.large'),'fail');
+ // A missing kind is not evidence of a pass.
+ assert.equal(gate(a,await kindRows(a,'fix','large',{typed:typedPair,secure:securePair,skip:['secure']}),'fix.large'),'unknown');
+ // Small page: the pair is allowed, its absence too.
+ assert.equal(gate(a,await kindRows(a,'fix','small',{typed:typedNone,secure:secureNone}),'fix.small'),'pass');
+ assert.equal(gate(a,await kindRows(a,'fix','small',{typed:typedPair,secure:securePair}),'fix.small'),'pass');
+});
+test('marker routing: any other, repeated, post-input, other-receiver or other-thread marker operation fails, whatever its answer',async()=>{
+ const a=fresh();
+ const bad=async typed=>gate(a,await kindRows(a,'fix','large',{typed,secure:[...discovery,...PAIR]}),'fix.large');
+ const tail=[[API.event,'keyDown',-1,0,900],...poll(1,true)];
+ assert.equal(await bad([...discovery,...PAIR,...PAIR,...tail]),'fail'); // a second pair
+ assert.equal(await bad([...discovery,...PAIR,...tail,[API.single,'AXSelectedTextMarkerRange',2,0,7000]]),'fail'); // after input
+ assert.equal(await bad([...discovery,...PAIR,...tail,...PAIR]),'fail');
+ assert.equal(await bad([...discovery,[API.single,'AXSelectedTextMarkerRange',2,0,60],[API.param,'AXUIElementForTextMarker',1,0,300],...tail]),'fail'); // another receiver
+ assert.equal(await bad([...discovery,PAIR[1],PAIR[0],...tail]),'fail'); // lookup before range
+ assert.equal(await bad([...discovery,PAIR[0],PAIR[1],[API.param,'AXStringForTextMarkerRange',2,0,400],...tail]),'fail'); // a different marker read
+ assert.equal(await bad([...discovery,[API.batch,'AXSelectedTextMarkerRange+AXRole',2,0,60],PAIR[1],...tail]),'fail'); // batched
+ assert.equal(await bad([...discovery,[API.single,'AXSelectedTextMarkerRange',2,2,60],PAIR[1],...tail]),'pass'); // an answer neither excuses nor accuses
+ // Another thread's marker traffic is counted by name by the recorder and fails here.
+ const rest=await kindRows(a,'fix','large',{typed:[...discovery,...PAIR,...tail],secure:[...discovery,...PAIR],skip:['plain']});
+ const plainRow=(await cell(a,{tag:'fix-large-plain-r09',head:'fix',page:'large',kind:'plain',length:32,concealed:false,schedule:[...discovery,...PAIR,...tail]})).row;
+ assert.equal(gate(a,[plainRow,...rest],'fix.large'),'pass');
+ assert.equal(gate(a,[{...plainRow,schedule:{...plainRow.schedule,offThreadCounts:{AXSelectedTextMarkerRange:1}}},...rest],'fix.large'),'fail');
+ // An incomplete schedule is unknown.
+ assert.equal(gate(a,[{...plainRow,schedule:{...plainRow.schedule,complete:false}},...rest],'fix.large'),'unknown');
+});
+test('route durations: the marker route and the walk are reported apart with p50 and p95, unadjusted',async()=>{
+ const a=fresh();
+ const withPhase=(name,ms)=>[[API.phaseBegin,name,-1,0,100,0],[API.phaseEnd,name,-1,0,100,ms*1000]];
+ const rowsOf=[];
+ for(const [i,ms] of [[1,5],[2,10],[3,20]])rowsOf.push((await cell(a,{tag:'fix-large-plain-r0'+i,head:'fix',page:'large',kind:'plain',length:32,concealed:false,schedule:[...discovery,...withPhase('markedField',ms),...withPhase('walk',ms*2),[API.event,'keyDown',-1,0,9000],...poll(1)]})).row);
+ const s=a.summarize(rowsOf),t=s.groups['fix.large.plain'].timing;
+ assert.deepEqual([t.markerRouteMs.n,t.markerRouteMs.p50,t.markerRouteMs.p95],[3,10,20]);assert.deepEqual([t.walkMs.p50,t.walkMs.p95],[20,40]);
+ assert.equal(s.informational['markerRouting:fix.large'].routeMs.markerRoute.p95,20);
+ assert.equal(JSON.stringify(s).includes('ev:'),false); // no keyboard event is named or counted in the output
 });

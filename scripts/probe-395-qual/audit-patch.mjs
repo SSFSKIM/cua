@@ -27,8 +27,11 @@ const REQUIRED_REDIRECTS=['probe354CopyAttributeValue','probe354CopyMultipleAttr
 export const EVENT_HOOKS=Object.freeze([
  {name:'post',from:'{ event.postToPid(pid) }',to:'{ /* probe395-audit */ Probe395Audit.shared.eventPosted(event); event.postToPid(pid) }'},
  {name:'hid',from:'{ event.post(tap: .cghidEventTap) }',to:'{ /* probe395-audit */ Probe395Audit.shared.eventPosted(event); event.post(tap: .cghidEventTap) }'}]);
-// Signature lines of production functions with statement bodies, pinned at main 4291f3ba (TypeReadback.swift). Optional.
+// Signature lines of production functions with statement bodies, pinned at main 4291f3ba (TypeReadback.swift) and, for
+// markedField (the whole text-marker route: web area search, marker calls and classification), at the candidate 60327d46
+// (TypeReadbackMarker.swift). Optional here; a lane requires the ones its head must carry with `--require`.
 export const DEFAULT_PHASE_HOOKS=Object.freeze([
+ {name:'markedField',signature:'func readbackMarkedField<Element>(window: Element, walk: ReadbackFocusWalk<Element>, marker: ReadbackMarkerReads<Element>) -> ReadbackFound<Element>? {'},
  {name:'walk',signature:'func readbackFocusedByWalk<Element>(_ window: Element, _ walk: ReadbackFocusWalk<Element>) -> Element? {'},
  {name:'poll',signature:'func readbackPoll<Element>(_ field: Element, role: String, reads: ReadbackReads<Element>, compare: (Element) -> ReadbackRead) -> ReadbackPoll {'},
  {name:'fieldClosed',signature:'func readbackFieldClosed<Element>(_ field: Element, role: String, reads: ReadbackReads<Element>) -> TypeReadbackReason? {'}]);

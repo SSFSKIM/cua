@@ -52,14 +52,16 @@ test('an absent or ambiguous phase anchor is skipped and reported, and a require
  const a=stage(FILES);
  try{
   const report=patchQualAudit(a.root);
-  assert.deepEqual(report.phases.applied,[]);assert.deepEqual(report.phases.skipped.map(s=>s.reason),['anchor-absent','anchor-absent','anchor-absent']);
+  assert.deepEqual(report.phases.applied,[]);assert.deepEqual(report.phases.skipped.map(s=>s.reason),['anchor-absent','anchor-absent','anchor-absent','anchor-absent']);
  }finally{rmSync(a.root,{recursive:true,force:true})}
- const b=stage(FILES,{'TypeReadback.swift':FIXTURE+'\n'+DEFAULT_PHASE_HOOKS[0].signature+'\n}\n'});
+ const b=stage(FILES,{'TypeReadback.swift':FIXTURE+'\n'+DEFAULT_PHASE_HOOKS.find(h=>h.name==='walk').signature+'\n}\n'});
  try{
   const report=patchQualAudit(b.root);assert.deepEqual(report.phases.skipped.filter(s=>s.reason==='anchor-ambiguous').map(s=>s.name),['walk']);
  }finally{rmSync(b.root,{recursive:true,force:true})}
  const c=stage(FILES);
  try{assert.throws(()=>patchQualAudit(c.root,{require:['walk']}),/required phase hook anchor missing/)}finally{rmSync(c.root,{recursive:true,force:true})}
+ const c2=stage(FILES);
+ try{assert.throws(()=>patchQualAudit(c2.root,{require:['markedField']}),/required phase hook anchor missing/)}finally{rmSync(c2.root,{recursive:true,force:true})}
  const d=stage(FILES);
  try{assert.throws(()=>patchQualAudit(d.root,{require:['nope']}),/not configured/);assert.throws(()=>patchQualAudit(d.root,{phaseHooks:[{name:'bad name',signature:'func x() {'}]}),/invalid phase hook name/)}finally{rmSync(d.root,{recursive:true,force:true})}
 });

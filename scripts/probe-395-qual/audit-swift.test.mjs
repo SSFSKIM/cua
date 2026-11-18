@@ -26,10 +26,11 @@ test('the accumulator compiles in Swift 6 mode and its stderr decodes to the sch
   const one=decodeRecord(lines[0]),sched=buildSchedule(one);
   // Untagged traffic and other threads never enter the schedule; a second begin is refused and counted.
   assert.equal(one.overlaps,1);assert.equal(one.offThread,1);assert.deepEqual(one.offThreadCounts,{AXValue:1});
-  assert.deepEqual(sched.strictKey.split('|'),['r:AXRole@e0','r:AXSubrole@e0','b:AXRole+AXValue@e1','p:AXStringForTextMarkerRange@e0!absent','r:unnamed@e0!fail','r:AXChildren@e1','ev:keyDown','w:AXFocused@e1']);
-  // A system-wide element seen twice (CFEqual) is one alias; a non-constant name is not recorded as itself; only a public role constant is kept.
+  assert.deepEqual(sched.strictKey.split('|'),['r:AXRole@e0','r:AXSubrole@e0','b:AXRole+AXValue@e1','r:AXValue@e1','p:AXStringForTextMarkerRange@e0!absent','r:unnamed@e0!fail','r:AXChildren@e1','w:AXFocused@e1']);
+  // A system-wide element seen twice (CFEqual) is one alias; a non-constant name is not recorded as itself; only a public role constant of an AXRole or AXSubrole answer is kept (an AXValue answer shaped like one is not).
   assert.equal(one.aliases,2);assert.deepEqual(one.roles,{0:'AXTextField'});assert.deepEqual(one.subroles,{});
-  assert.equal(sched.preInput.entries,6);assert.equal(sched.counters.byClass.marker,1);assert.equal(sched.counters.events.keyDown,1);assert.deepEqual(sched.counters.writes,{AXFocused:1});
+  assert.equal(sched.preInput.entries,7);assert.equal(one.entries.filter(e=>e.api===5).length,1);assert.equal(lines[0].e.filter(e=>e[0]===5).length,1); // three events were posted, one is kept; another thread's is not counted
+  assert.equal(sched.counters.byClass.marker,1);assert.equal(sched.counters.events.keyDown,1);assert.deepEqual(sched.counters.writes,{AXFocused:1});
   assert.equal(sched.timeline.phases.walk.length,1);assert.equal(sched.complete,false); // overlaps>0: the overlapping request marks the record incomplete
   assert.equal(decodeRecord(lines[1]).entries.length,0); // a fresh request starts clean
   assert.ok(run.stderr.length<4000&&!/secret value|123/.test(run.stderr)); // names are sanitized, nothing else is written

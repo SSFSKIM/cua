@@ -113,11 +113,13 @@ export function createAuditCapture({mode='audit',sink=null,clock=()=>performance
     if(list.length>=1){
      try{
       const prov=provenance.get(t.head),decoded=decodeRecord(list[0]);
-      const built=buildSchedule(decoded,{preInputAvailable:prov?prov.boundaries?.eventPost===true:true});
+      // The pre-input boundary exists only where this head's build carries both event hooks (its own provenance); none known is none.
+      const eventHooks={post:prov?.boundaries?.eventPost===true,hid:prov?.boundaries?.eventHid===true};
+      const built=buildSchedule(decoded,{preInputAvailable:eventHooks.post&&eventHooks.hid});
       if(!built.complete)failures.push('audit-incomplete');
-      const {strictKey,...kept}=built;
+      const {strictKey,phaseKey,...kept}=built;
       fullSchedules.set(tag,built);
-      schedule={...kept,strictHash:digest(strictKey),entriesTotal:strictKey?strictKey.split('|').length:0,preInput:{...built.preInput,exactHash:digest(built.preInput.exactKey),exactKey:undefined},boundaryProvenance:prov?'known':'unknown',phasesApplied:prov?.phases?.applied??null};
+      schedule={...kept,strictHash:digest(strictKey),phaseHash:digest(phaseKey),entriesTotal:strictKey?strictKey.split('|').length:0,preInput:{...built.preInput,exactHash:digest(built.preInput.exactKey),exactKey:undefined},boundaryProvenance:prov?'known':'unknown',eventHooks,phasesApplied:prov?.phases?.applied??null};
       auditClock=decoded.spanMs;
      }catch(e){failures.push(e instanceof AuditError?e.code:'audit-record-malformed')}
     }

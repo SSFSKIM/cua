@@ -66,6 +66,10 @@ The five cells below show how each sample reads under the rule. The classes are:
 | arm64 z1 | chrome_dnd_obscured_in_front_late_shared | pass | 3 started | 2 not-plain-ok |
 | arm64 z1 | chrome_dnd_late_take_shared | fail, 680's witness span | 3 started | 2 unshown |
 
+V4's device cases (the GTK 4, xterm and Qt scenes) are judged by the same `judgeDevice` and `check`, on paths the
+diff leaves inert. So the same comparison ran over V4's stored rows (`agree-823-V4.out`): x64's
+`out/V4.pinned-release` and the arm64 pilot's `out-zero-r1/V4…` each had 19 device verdicts, with 0 differing.
+
 No stored sample reads premise unmet, and no stored verdict moves. The shape the ruling answers is the arm64 pilot's
 `chrome_dnd_shared` audit pass, and its stored rows cannot show (ii): its first audited request, a plain-drag ok, kept no
 page record. So it is judged as before and still fails. Only V5's rerun after 0.4.1, with the evidence, can tell

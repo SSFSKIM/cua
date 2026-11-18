@@ -1205,7 +1205,13 @@ export class Desktop {
           }
         }
         else if (scene.group) process.kill(-scene.pid, 'SIGTERM');
-        else process.kill(scene.pid, 'SIGTERM');
+        else {
+          // its own process, keyed on its pid and start (M5's T4, arm64 round, item (c)): a scene whose application
+          // ended (a vendor lane's crash) may have given its pid to another process by its close
+          const own = this.ownProcess(scene);
+          if (['live', 'unrecorded'].includes(own.state)) process.kill(scene.pid, 'SIGTERM');
+          else if (own.state !== 'ended') this.skip('signal', scene.id ?? null, `pid ${scene.pid}: ${own.why}`);
+        }
       } catch (error) {
         // already gone; anything else is kept for the run's end (an unclean end, never swallowed)
         if (error?.code !== 'ESRCH') this.closeErrors.push(`closing ${scene.label ?? scene.id ?? scene.pid}: ${error?.message ?? error}`);
@@ -1221,6 +1227,30 @@ export class Desktop {
         // the group ended on SIGTERM
       }
     }
+  }
+
+  /**
+   * The process a scene's close signals by pid, as the run spawned it (`spawnApp`'s record: its pid and start time):
+   * `{state: 'live'}` while that pid is still it, `ended` once it has exited, `other` (another process under the pid
+   * now) or `unknown` (its state cannot be read), each with `why`. A scene the run did not spawn has no record:
+   * `unrecorded`, signalled by its pid as before.
+   */
+  ownProcess(scene) {
+    const entry = this.spawned.findLast((e) => e.pid === scene.pid);
+    if (!entry) return { state: 'unrecorded' };
+    if (entry.exited) return { state: 'ended' };
+    const now = processState(scene.pid, { proc: this.ownProc() });
+    if (now.state === 'absent') return { state: 'ended' };
+    if (now.state === 'unknown') return { state: 'unknown', why: `whether it is the scene's process cannot be read (${now.reason})` };
+    return now.start === entry.start ? { state: 'live' } : { state: 'other', why: `another process now (started at tick ${now.start}; the scene's at ${entry.start})` };
+  }
+
+  /**
+   * Whether a scene's own process still runs (`ownProcess`), for its restore's wait: a recorded one that is live, or
+   * whose state cannot be read (never taken for gone).
+   */
+  sceneProcessAlive(scene) {
+    return Boolean(scene.pid) && ['live', 'unknown'].includes(this.ownProcess(scene).state);
   }
 
   /** Everything the harness opened closed, once: the end of the run and a stop that interrupts it share one cleanup. */

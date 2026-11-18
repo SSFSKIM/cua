@@ -111,3 +111,52 @@ test("a scene's close signals its pidfile's pid only while it is the scene's pro
     rmSync(desktop.dir, { recursive: true, force: true });
   }
 });
+
+// #171 M5, T4's arm64 round, item (c): a scene the run spawned and closes by its pid (gedit, whose vendor lanes end it on
+// arm64) is signalled only while that pid is still the process the run spawned (spawnApp's record: pid and start); an
+// ended one is not signalled, and a pid another process holds now is left alone, recorded.
+test("a spawned scene's close signals its pid only while it is the process the run spawned", { skip }, async () => {
+  const desktop = new Desktop({ cua: 'unused', run: 'pidtest', reader: { async close() {} }, startActive: 0, nonce: 'n1' });
+  // this test's processes are real: the checks of the run's own read the real /proc
+  desktop.leftoverOptions = { proc: '/proc' };
+  try {
+    const scene = (child, start, exited = false) => {
+      desktop.spawned.push({ pid: child.pid, label: 'gedit', start, exited });
+      const s = { kind: 'gedit', id: 0, pid: child.pid, label: `scene-${child.pid}` };
+      desktop.windows.push(s);
+      return s;
+    };
+    const startOf = (child) => processIdentity(child.pid).start;
+    // another process under the recorded pid (its start is not the one the run recorded): left running, recorded
+    const reused = sleeper();
+    await until(() => processIdentity(reused.pid) !== null);
+    await desktop.close([scene(reused, String(Number(startOf(reused)) - 1))]);
+    assert.equal(running(reused), true, 'a pid that is not the scene process is never signalled');
+    assert.equal(desktop.skips.at(-1).what, 'signal');
+    assert.match(desktop.skips.at(-1).reason, new RegExp(`pid ${reused.pid}: another process now`));
+    // the run's record says the process exited: nothing is signalled, nothing recorded
+    const skips = desktop.skips.length;
+    const ended = sleeper();
+    await until(() => processIdentity(ended.pid) !== null);
+    await desktop.close([scene(ended, startOf(ended), true)]);
+    assert.equal(running(ended), true, 'an exited scene process is never signalled by its old pid');
+    assert.equal(desktop.skips.length, skips);
+    // the scene's own process: signalled
+    const own = sleeper();
+    await until(() => processIdentity(own.pid) !== null);
+    await desktop.close([scene(own, startOf(own))]);
+    assert.ok(await until(() => !running(own)), 'its own process ended');
+    // the restore's wait reads the same record: alive while it is that process, not once it has ended
+    const waited = sleeper();
+    await until(() => processIdentity(waited.pid) !== null);
+    const w = scene(waited, startOf(waited));
+    assert.equal(desktop.sceneProcessAlive(w), true);
+    assert.equal(desktop.sceneProcessAlive({ ...w, pid: reused.pid }), false, "another process under a recorded scene's pid is not it");
+    waited.kill('SIGKILL');
+    await until(() => !running(waited) && processIdentity(waited.pid) === null);
+    assert.equal(desktop.sceneProcessAlive(w), false);
+  } finally {
+    desktop.unhookStop();
+    rmSync(desktop.dir, { recursive: true, force: true });
+  }
+});

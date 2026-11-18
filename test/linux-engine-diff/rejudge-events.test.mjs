@@ -20,7 +20,7 @@ const motion = (x) => ev('MotionNotify', 'child', x, x - 100, { state: 260 });
 const WHOLE = [...POINTS.map(motion), ev('ButtonRelease', 'child', 560, 460, { detail: 1, state: 260 })];
 let seq = 0x10;
 const sendTo = (event, x, y) => `001:<:${(seq++).toString(16).padStart(4, '0')}: 44: Request(25): SendEvent propagate=false(0x00) destination=0x01800064 event-mask=0 ${event} time=0x00000000 root=0x000003c5 event=0x01800064 child=None(0x00000000) root-x=${x} root-y=${y} event-x=0 event-y=0 state=Button1 same-screen=true(0x01)`;
-const SENT = sentDrag(parseXtrace([sendTo('ButtonPress(4) button=0x01', 550, 450), ...POINTS.map((x) => sendTo('MotionNotify(6) detail=Normal(0x00)', x, x - 100)), sendTo('ButtonRelease(5) button=0x01', 560, 460)].join('\n')), CHILD);
+const SENT = sentDrag(parseXtrace([sendTo('ButtonPress(4) button=left button(0x01)', 550, 450), ...POINTS.map((x) => sendTo('MotionNotify(6) detail=Normal(0x00)', x, x - 100)), sendTo('ButtonRelease(5) button=left button(0x01)', 560, 460)].join('\n')), CHILD);
 const ok = { ok: true, output: null };
 const bad = { ok: false, error: `X11 error X11Error { error_kind: Window, error_code: 3, sequence: 9, bad_value: ${CHILD}, request_name: Some("SendEvent") }` };
 const step = (answer) => ({ command: 'key_down', answer, events: [] });

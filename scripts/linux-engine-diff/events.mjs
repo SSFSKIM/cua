@@ -390,6 +390,8 @@ const rootOf = (text) => {
   return m ? { root_x: Number(m[1]), root_y: Number(m[2]) } : {};
 };
 const POINTER = ['ButtonPress', 'ButtonRelease', 'MotionNotify', 'EnterNotify', 'LeaveNotify'];
+/** A button event's button in an xtrace SendEvent line: xtrace names it, `button=left button(0x01)`, with its number. */
+const buttonOf = (e, text) => (e.type === 'ButtonPress' || e.type === 'ButtonRelease' ? Number.parseInt(String(text).match(/\bbutton=[^(=]*\(0x([0-9a-f]+)\)/)?.[1] ?? 'NaN', 16) : e.detail);
 
 /**
  * What the engine sent the fragile recorder's child during one interrupted step (#171 M5, T4's arm64 round, fix wave 1:
@@ -403,7 +405,7 @@ const POINTER = ['ButtonPress', 'ButtonRelease', 'MotionNotify', 'EnterNotify', 
  * span are not this drag's.
  */
 export function sentDrag({ requests, extensions }, child) {
-  const sent = requests.map((r) => ({ r, e: inputEvent(r, extensions) })).filter((x) => x.e);
+  const sent = requests.map((r) => ({ r, e: inputEvent(r, extensions) })).filter((x) => x.e).map((x) => ({ ...x, e: { ...x.e, detail: buttonOf(x.e, x.r.text) } }));
   const xtest = sent.some((x) => x.e.via === 'xtest' && POINTER.includes(x.e.type));
   const at = sent.findIndex((x) => x.e.via === 'send' && x.e.type === 'ButtonPress' && x.e.detail === 1 && x.e.destination === child);
   if (at < 0) return { traced: requests.length > 0, conn: null, press: null, after: [], released: false, xtest };

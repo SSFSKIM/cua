@@ -237,9 +237,9 @@ const keyDown = { answer: ok, events: [{ type: 'KeyPress', send: true, detail: 3
 // the engine's trace, as xtrace writes it: its SendEvents to the child, on its connection `conn`
 let seq = 0x100;
 const sendTo = (event, x, y, { conn = 1, destination = CHILD } = {}) => `00${conn}:<:${(seq++).toString(16).padStart(4, '0')}: 44: Request(25): SendEvent propagate=false(0x00) destination=0x${destination.toString(16).padStart(8, '0')} event-mask=0 ${event} time=0x00000000 root=0x000003c5 event=0x${destination.toString(16).padStart(8, '0')} child=None(0x00000000) root-x=${x} root-y=${y} event-x=${x - 500} event-y=${y - 400} state=Button1,Control same-screen=true(0x01)`;
-const press = (o) => sendTo('ButtonPress(4) button=0x01', 550, 450, o);
+const press = (o) => sendTo('ButtonPress(4) button=left button(0x01)', 550, 450, o);
 const motion = ([x, y], o) => sendTo('MotionNotify(6) detail=Normal(0x00)', x, y, o);
-const release = (o) => sendTo('ButtonRelease(5) button=0x01', 560, 460, o);
+const release = (o) => sendTo('ButtonRelease(5) button=left button(0x01)', 560, 460, o);
 const traceOf = (lines) => sentDrag(parseXtrace(lines.join('\n')), CHILD);
 const SENT = () => traceOf([press(), ...MOTIONS.map((m) => motion(m)), release()]);
 
@@ -323,4 +323,22 @@ test('E1: only the fragile scenarios run through the proxy, and their times are 
   const fragile = scenarios().filter((s) => traced(s)).map((s) => s.name);
   assert.deepEqual(fragile, ['an interrupted drag under a held key, then a move', 'an interrupted click under a held key, then a move']);
   assert.equal(traced(scenarios().find((s) => s.fragile), 'vendor-js'), false);
+});
+
+// the x64 cua engine's own trace of this scenario (a development probe on a private display, task 97 fix wave 1):
+// its press to the child, four motions and two releases, in xtrace's own words
+const REAL = [
+  "000:<:004d: 44: Request(25): SendEvent propagate=false(0x00) destination=0x00400001 event-mask=0 ButtonPress(4) button=left button(0x01) time=0x6c6ab986 root=0x000001ff event=0x00400001 child=None(0x00000000) root-x=550 root-y=450 event-x=50 event-y=50 state=Control same-screen=true(0x01)",
+  "000:<:0050: 44: Request(25): SendEvent propagate=false(0x00) destination=0x00400001 event-mask=0 MotionNotify(6) detail=Normal(0x00) time=0x6c6ab986 root=0x000001ff event=0x00400001 child=None(0x00000000) root-x=550 root-y=450 event-x=50 event-y=50 state=Control,Button1 same-screen=true(0x01)",
+  "000:<:0053: 44: Request(25): SendEvent propagate=false(0x00) destination=0x00400001 event-mask=0 MotionNotify(6) detail=Normal(0x00) time=0x6c6ab986 root=0x000001ff event=0x00400001 child=None(0x00000000) root-x=550 root-y=450 event-x=50 event-y=50 state=Control,Button1 same-screen=true(0x01)",
+  "000:<:0056: 44: Request(25): SendEvent propagate=false(0x00) destination=0x00400001 event-mask=0 MotionNotify(6) detail=Normal(0x00) time=0x6c6ab987 root=0x000001ff event=0x00400001 child=None(0x00000000) root-x=551 root-y=451 event-x=51 event-y=51 state=Control,Button1 same-screen=true(0x01)",
+  "000:<:0059: 44: Request(25): SendEvent propagate=false(0x00) destination=0x00400001 event-mask=0 MotionNotify(6) detail=Normal(0x00) time=0x6c6ab987 root=0x000001ff event=0x00400001 child=None(0x00000000) root-x=552 root-y=452 event-x=52 event-y=52 state=Control,Button1 same-screen=true(0x01)",
+  "000:<:005b: 44: Request(25): SendEvent propagate=false(0x00) destination=0x00400001 event-mask=0 ButtonRelease(5) button=left button(0x01) time=0x6c6ab987 root=0x000001ff event=0x00400001 child=None(0x00000000) root-x=551 root-y=451 event-x=51 event-y=51 state=Control,Button1 same-screen=true(0x01)",
+  "000:<:0061: 44: Request(25): SendEvent propagate=false(0x00) destination=0x00400001 event-mask=0 ButtonRelease(5) button=left button(0x01) time=0x6c6ab987 root=0x000001ff event=0x00400001 child=None(0x00000000) root-x=551 root-y=451 event-x=51 event-y=51 state=Control,Button1 same-screen=true(0x01)",
+];
+test("E1: the trace's real form: xtrace names the button, and the engine's drag reads as its press, motions and release", () => {
+  const sent = sentDrag(parseXtrace(REAL.join('\n')), 0x00400001);
+  assert.deepEqual([sent.traced, sent.conn, sent.press, sent.released, sent.after.length], [true, 0, { root_x: 550, root_y: 450 }, true, 5]);
+  assert.deepEqual(sent.after.map((e) => `${e.type} ${e.root_x},${e.root_y}`), ['MotionNotify 550,450', 'MotionNotify 550,450', 'MotionNotify 551,451', 'MotionNotify 552,452', 'ButtonRelease 551,451']);
+  assert.equal(sentDrag(parseXtrace(REAL.join('\n')), 0x00400002).press, null, "another window's trace holds no press to this child");
 });

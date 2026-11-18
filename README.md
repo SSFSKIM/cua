@@ -720,6 +720,11 @@ and identity calls. No launch runs that service since #79.
   but keeps the visible-DOM listing's caps (20,000 characters, 200 elements): neither REPL client can ask for more, and
   #116 preserves that API rather than adding a configurable cap. A navigation to a document whose response arrives
   while a JavaScript dialog is open stays paused until the tab is detached, as on the vendor's service.
+- Under near-saturating CPU load, a tab the agent drives in the background (not the active tab of a visible window)
+  can stall: Chrome lowers a hidden renderer's priority, and page reads and `evaluate` then wait 3–15 s before they
+  answer, or time out. Clicks and other input are not affected. Measured with one CPU burner per core: no stall at
+  25% or 50% load (0/18 runs), 3/4 at 75%, 9/10 at 100%. A stalled command costs one timeout and the tab recovers on
+  the next call (#384). Under heavy load, give a slow read its own `timeoutMs`, or keep the agent's tab in front.
 - Any process of your user that can open `$CUA_HOME/chrome/b` (0700) can talk to the host. The ChatGPT extension's host
   checks its peer's code signature; cua's does not, the same trust cua gives your user's processes elsewhere
   (allow-all approvals, a 0600 secret store).

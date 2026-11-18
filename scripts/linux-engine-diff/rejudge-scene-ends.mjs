@@ -25,18 +25,28 @@ const rowsOf = (file) => {
   return (file.endsWith('.gz') ? gunzipSync(bytes) : bytes).toString('utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
 };
 
-/** Each run of the rows that counted its text windows' ends, re-judged: `[{run, stored, now, stands}]`. */
+/**
+ * Each run of the rows re-judged: `[{run, stored, now, stands}]` for a run that counted its text windows' ends, and
+ * `{run, incomplete, now, stands: null}` for one with ends but no count (it stopped before its end: the arm64 pilot's
+ * V1), judged from its own rows, never taken as standing. A run with neither is not listed.
+ */
 export function rejudgeSceneEnds(rows) {
   const out = [];
   for (const run of [...new Set(rows.map((r) => r.run))]) {
     const own = rows.filter((r) => r.run === run);
     const stored = own.findLast((r) => r.kind === 'text-scene-ends');
-    if (!stored) continue;
+    const ends = own.some((r) => r.kind === 'scene-ended' || r.kind === 'scene-lost');
+    if (!stored && !ends) continue;
     const meta = own.find((r) => r.kind === 'meta');
     const builds = Object.fromEntries((meta?.engines ?? []).map((e) => [e.label, e.sha256]));
-    const lanes = Object.keys(stored.lanes);
-    const vendors = (meta?.engines ?? []).map((e) => e.label).filter((l) => ['pinned', 'newest'].includes(l));
+    const engines = (meta?.engines ?? []).map((e) => e.label);
+    const lanes = stored ? Object.keys(stored.lanes) : engines;
+    const vendors = engines.filter((l) => ['pinned', 'newest'].includes(l));
     const now = judgeSceneEnds(own, lanes, vendors, { builds });
+    if (!stored) {
+      out.push({ run, incomplete: 'no text-scene-ends row: the run stopped before it counted its ends, so nothing stored is re-judged; its ends are judged from its own rows', now: { lanes: now.lanes, pass: now.pass, vendor: now.vendor }, stands: null });
+      continue;
+    }
     const stands = JSON.stringify(now.lanes) === JSON.stringify(stored.lanes) && now.pass === stored.pass && JSON.stringify(now.reasons) === JSON.stringify(stored.reasons);
     out.push({ run, stored: { lanes: stored.lanes, pass: stored.pass }, now: { lanes: now.lanes, pass: now.pass, vendor: now.vendor }, stands });
   }
@@ -44,12 +54,17 @@ export function rejudgeSceneEnds(rows) {
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+  // exit 0 only when at least one run was checked and every one stands; an incomplete run is never a pass
   let moved = false;
+  let checked = 0;
   for (const path of process.argv.slice(2)) {
-    for (const r of rejudgeSceneEnds(rowsOf(resultsOf(path)))) {
+    const runs = rejudgeSceneEnds(rowsOf(resultsOf(path)));
+    if (!runs.length) process.stdout.write(`${JSON.stringify({ path, incomplete: 'no run here counted or recorded its text windows\' ends: nothing was checked' })}\n`);
+    for (const r of runs) {
       process.stdout.write(`${JSON.stringify({ path, ...r })}\n`);
-      moved ||= !r.stands;
+      checked += 1;
+      moved ||= r.stands !== true;
     }
   }
-  process.exitCode = moved ? 1 : 0;
+  process.exitCode = moved || checked === 0 ? 1 : 0;
 }

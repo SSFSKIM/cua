@@ -373,3 +373,34 @@ test('a vendor sample that ended its own window, ok or not, sets no bar; its row
   // without the text rule too: an ok reply that ended its window is still no bar sample
   assert.equal(judgeOperation(marked, { ...options, text: false }).bar.warm, 100);
 });
+
+// Fix wave 1, minor: a run with ends but no count (the arm64 pilot's V1 stopped before its end) is reported incomplete,
+// judged from its own rows and never taken as standing; and the command exits 1 when it checked nothing.
+test('the re-judge reports a run that stopped before its count as incomplete, and the command fails when nothing was checked', async () => {
+  const { rejudgeSceneEnds } = await import('../../scripts/linux-engine-diff/rejudge-scene-ends.mjs');
+  const { spawnSync } = await import('node:child_process');
+  const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const meta = { run: 'r', kind: 'meta', engines: [{ label: 'pinned', sha256: PINNED_ARM64 }, { label: 'newest', sha256: NEWEST_ARM64 }, { label: 'cua', sha256: 'c' }] };
+  const [run] = rejudgeSceneEnds([meta, { run: 'r', ...end('pinned', 'type_text') }]);
+  assert.equal(run.stands, null);
+  assert.match(run.incomplete, /stopped before it counted its ends/);
+  assert.deepEqual(run.now.vendor.declared.map((g) => g.id), ['arm64-pinned-gedit-type_text']);
+  const dir = mkdtempSync(join(tmpdir(), 'cua171-rejudge-ends-'));
+  try {
+    const cli = new URL('../../scripts/linux-engine-diff/rejudge-scene-ends.mjs', import.meta.url).pathname;
+    const empty = join(dir, 'empty.jsonl');
+    writeFileSync(empty, `${JSON.stringify(meta)}\n`);
+    const none = spawnSync(process.execPath, [cli, empty], { encoding: 'utf8' });
+    assert.equal(none.status, 1);
+    assert.match(none.stdout, /nothing was checked/);
+    const stopped = join(dir, 'stopped.jsonl');
+    writeFileSync(stopped, `${JSON.stringify(meta)}\n${JSON.stringify({ run: 'r', ...end('pinned', 'type_text') })}\n`);
+    const incomplete = spawnSync(process.execPath, [cli, stopped], { encoding: 'utf8' });
+    assert.equal(incomplete.status, 1, 'an incomplete run is never a pass');
+    assert.match(incomplete.stdout, /"incomplete"/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

@@ -40,3 +40,14 @@ test("a device verdict's stored rows re-judged: what moved, what fails now, and 
   const dropped = rows.map((r) => (r.kind === 'sample' && r.i === 0 ? { ...r, dropped: true } : r));
   assert.deepEqual(rejudgeDevice(dropped)[0].failing, ['device-chrome-dnd chrome_dnd_shared cua']);
 });
+
+test("the re-judge states how each sample of ruling 823's cells reads under it, the stored audit's plain ok unshown", () => {
+  const [run] = rejudgeDevice(rows);
+  // 0/0's late take is shown by the refusal after it; the rest answered refusals
+  assert.deepEqual(run.premise, [{ name: 'device-chrome-dnd chrome_dnd_shared cua', verdict: 'pass', moved: true, timed: { started: 1, 'not-plain-ok': 2 }, audit: { 'not-plain-ok': 1 } }]);
+  // the arm64 pilot's audit as stored: its plain-drag ok keeps no page record, so it cannot show the premise either way
+  const pilot = rows.map((r) => (r.kind === 'audit' ? { ...r, answered: [{ ok: true, error: null, expected_error: cancelled, late_error: null }, r.answered[0]] } : r));
+  const [p] = rejudgeDevice(pilot);
+  assert.deepEqual(p.premise[0].audit, { unshown: 1, 'not-plain-ok': 1 });
+  assert.equal(p.premise[0].verdict, 'fail', 'judged as before');
+});

@@ -3,8 +3,9 @@
 // by this checkout's judge (device.mjs `judgeDevice`) over the cua samples and the audit the run recorded for it,
 // beside the stored verdict, and beside a former judge's where one is named (`--old`, a device.mjs of the head the run
 // ran at, which must reproduce every stored verdict for the replay to stand). Read-only. One JSON line per verdict that
-// moved or failed, then one per run with its counts, the verdicts that moved, those failing now, and the run's end
-// record's other failures (which stand as stored).
+// moved or failed, then one per run with its counts, the verdicts that moved, those failing now, the run's end record's
+// other failures (which stand as stored), and how each sample of ruling 823's cells reads under it (premise.mjs
+// `classifyPremise`, by class: `unmet` the excluded, `unshown` those whose records cannot show it either way).
 //
 //   node scripts/linux-engine-diff/rejudge-device.mjs [--old <device.mjs>] <step dir or results.jsonl[.gz]>...
 
@@ -13,7 +14,8 @@ import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { gunzipSync } from 'node:zlib';
 
-import { judgeDevice } from './device.mjs';
+import { PREMISE_OPS, judgeDevice } from './device.mjs';
+import { classifyPremise } from './premise.mjs';
 
 /** A step's results file: the path given, or its `run/results.jsonl` (or `.gz`), or its own `results.jsonl`. */
 function resultsOf(path) {
@@ -33,6 +35,16 @@ const auditOf = (a) => a && { clean: a.clean, kind: a.audit, oks: a.oks, answere
 const outcome = (judged) => ({ verdict: judged.pass ? 'pass' : 'fail', reasons: judged.reasons });
 const same = (a, b) => a.verdict === b.verdict && JSON.stringify(a.reasons) === JSON.stringify(b.reasons);
 
+/** How many of `entries` read as each of ruling 823's classes, `nextOf(entry, index)` the next request on its engine. */
+const classes = (entries, nextOf) => {
+  const out = {};
+  entries.forEach((e, i) => {
+    const c = classifyPremise(e, nextOf(e, i) ?? null);
+    out[c] = (out[c] ?? 0) + 1;
+  });
+  return out;
+};
+
 /** Every device verdict of the rows' runs, re-judged: `[{run, verdicts: [...], moved, failing, unreproduced, others}]`. */
 export function rejudgeDevice(rows, { judge = judgeDevice, old = null } = {}) {
   const out = [];
@@ -46,7 +58,11 @@ export function rejudgeDevice(rows, { judge = judgeDevice, old = null } = {}) {
       const stored = { verdict: v.verdict ?? (v.pass ? 'pass' : 'fail'), reasons: v.reasons ?? [] };
       const now = outcome(judge(v.op, opRows, audit));
       const then = old ? outcome(old(v.op, opRows, audit)) : null;
-      verdicts.push({ name: `${v.scene} ${v.op} cua`, samples: opRows.length, stored, ...(then ? { then, reproduced: same(then, stored) } : {}), now, moved: !same(now, stored) });
+      // a cell of ruling 823's: how its timed samples and its audited requests read under it
+      const premise = PREMISE_OPS.has(v.op)
+        ? { timed: classes(opRows, (r) => opRows.find((x) => x.block === r.block && x.i === r.i + 1)), audit: audit?.answered ? classes(audit.answered, (a, i) => audit.answered[i + 1]) : null }
+        : null;
+      verdicts.push({ name: `${v.scene} ${v.op} cua`, samples: opRows.length, stored, ...(then ? { then, reproduced: same(then, stored) } : {}), now, moved: !same(now, stored), ...(premise ? { premise } : {}) });
     }
     const names = new Set(verdicts.map((v) => v.name));
     const end = own.find((r) => r.kind === 'end');
@@ -58,6 +74,7 @@ export function rejudgeDevice(rows, { judge = judgeDevice, old = null } = {}) {
       unreproduced: old ? verdicts.filter((v) => !v.reproduced).map((v) => v.name) : null,
       // the run's terminal failures this re-judge does not reach: they stand as stored
       others: (end?.failed ?? []).filter((f) => !names.has(f)),
+      premise: verdicts.filter((v) => v.premise).map((v) => ({ name: v.name, verdict: v.now.verdict, moved: v.moved, ...v.premise })),
     });
   }
   return out;

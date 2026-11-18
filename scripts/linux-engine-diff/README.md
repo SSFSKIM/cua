@@ -894,8 +894,19 @@ variants included; their evidence is written either way. The run's `end` row kee
   next acting request's answer (`preflight`, run whatever the read carried) with the engine's raw record of the watch
   (`late_watch`: the read's `notice`, the refused request's `late_dnd`). The late cases drag along a path that lingers
   in the zone (`dnd-linger`), so Chrome takes before the release, and a sample Chrome took nothing for by its release is
-  unexercised, a failure of its case. A development run (`--dev --trace-engine`) puts each cua series's engine behind
+  unexercised, a failure of its case, unless Chrome never started a drag session for it at all (ruling 823, below). A development run (`--dev --trace-engine`) puts each cua series's engine behind
   an xtrace proxy of its own, its trace under `xtrace/` and each sample's span in it on the row (`xtrace`).
+  The design session's ruling 823 (`premise.mjs`): in the cancel, late and late-take cells, a sample whose premise was
+  unmet is excluded, counted and refilled. That is a plain-drag ok with no notice on its reply (`reply_notice`), where
+  the page's record of the sample's own press shows Chrome never started a drag session: the press ended in a
+  pointerup, with no dragstart, pointercancel or dragend in its log, and no drag start, end or drop counted. Chrome
+  fires dragstart before it starts the X session, and a started drag ends the press in pointercancel and dragend, never
+  a pointerup. A sample that any record contradicts (the engine's take, a late take or pending notice, a drop, a
+  changed desktop), or whose records can't show it either way, is judged as before. The audit pass keeps the same
+  fields on each audited request (`answered`). Each pass refills within itself, the timed pass by more series of the
+  case's length numbered on from the blocks, the audit by more audited requests, each marked `fill`, up to as many as
+  the pass planned. A cell that still judges fewer than it planned fails as incomplete. The summary lists each cell's
+  rate.
 - **Minimized windows** (M4's T4, `minimized.mjs`, the scenes `minimized` (gedit), `minimized-xterm` and
   `minimized-recorder`): cua alone, each sample's window minimized with `xprobe minimize` (the harness's front window
   takes the focus first, so the window manager's focus fallback lands on a harness window; the active window afterwards
@@ -1319,7 +1330,8 @@ Two shared helpers came out of T16's fix wave (the design session, 2026-11-10), 
 | `text.mjs`, `safety.mjs`, `safety-judge.mjs`, `clip.mjs`, `xprobe/src/clip.rs`, `pages/paste-target.py` | M2's text operations, the paste safety cases and their judges, the clipboard owner and reader, the paste-target window |
 | `kinds.mjs`, `dnd.mjs`, `device.mjs`, `xprobe/src/dnd.rs`, `pages/gtk4-input.py`, `pages/qt-input.py` | M3.1's kinds and drag-and-drop experiments, Acceptance 8's device cases, the `XdndSelection` watch, the GTK 4 and Qt scenes |
 | `rejudge.mjs` | a recorded run's speed verdicts judged again under the revised rule |
-| `rejudge-device.mjs` | a stored verdict run's device verdicts judged again by this checkout's `judgeDevice`, beside the stored ones and a former judge's (`--old`), read-only (the M5 pre-flight's §8.1, point 4) |
+| `rejudge-device.mjs` | a stored verdict run's device verdicts judged again by this checkout's `judgeDevice`, beside the stored ones and a former judge's (`--old`), with how each sample of ruling 823's cells reads under it, read-only (the M5 pre-flight's §8.1, point 4) |
+| `premise.mjs` | ruling 823's unmet premise in V5's cancel, late and late-take cells: the page's evidence that Chrome never started a drag session, the exclusion, the bounded refill, and the summary's rate |
 | `vcl-aim.mjs`, `writer-drag.mjs`, `vcl-probe.mjs`, `pages/point-gtk3.py` | M4 T16's LibreOffice offset as the harness reads it, the Writer drag probe, the point probes and their GTK 3 control scene |
 | `park.mjs`, `xprobe/src/pointer.rs`, `app-identity.mjs` | the verified pointer park (`xprobe pointer-chain`) and the application's identity, shared by any runner (T16's fix wave) |
 | `atspi-probe.mjs`, `atspi-cache.mjs`, `pages/atspi-gtk4.py`, `pages/atspi-qt.py` | M4 T6's AT-SPI probe on its own private display: `Cache.GetItems` over the matrix and GTK 4's `EditableText`, the answers' reading and comparison, and its GTK 4 and Qt scenes |

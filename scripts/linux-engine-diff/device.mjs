@@ -21,6 +21,8 @@
 //   background audit is clean, and every sample is on the branch: a drag Chrome took nothing for by its release is
 //   unexercised, a failure of the case, whatever it answered; every sample's notice is read with the next acting
 //   request's answer and held to T14's contract;
+// - in the cancel, late and late-take cases, a plain-drag ok for a drag Chrome never started a drag session for at all
+//   is no sample of the case (ruling 823, premise.mjs): excluded, counted and refilled within its pass;
 // - `late-take` (the take left unseen until after the release, `--dnd-defer-take`): the drag answers as a plain drag at
 //   its release, a read on the same engine runs, the first acting request answers the late drag-and-drop notice (not
 //   run), and wherever the drop landed the witness shows the change the notice reports;
@@ -48,6 +50,7 @@
 import { readFileSync } from 'node:fs';
 
 import { pendingOf } from './drop-signals-judge.mjs';
+import { judgePremise } from './premise.mjs';
 import { readGtk4Status } from './families.mjs';
 import { IDENTITY_OPS, IDENTITY_SCENE_OPS, judgeIdentity } from './identity.mjs';
 import { MINIMIZED_OPS, MINIMIZED_SCENE_OPS, judgeMinimized } from './minimized.mjs';
@@ -92,6 +95,12 @@ export function desktopState() {
 }
 
 const DEDICATED = ['--desktop', 'dedicated'];
+/**
+ * The expectations whose cells measure what cua does once Chrome turns the drag into a drag and drop, so a drag Chrome
+ * never took leaves their premise unmet (ruling 823, premise.mjs): the cancel, the late cancel and the late take. A drop
+ * case's plain ok with no drop is ruling 650's false ok instead, and a stray case expects no drag and drop at all.
+ */
+const PREMISE_KINDS = ['cancel', 'late', 'late-take'];
 const LATE = ['--dnd-cancel-after-release'];
 /** The measurement option that leaves a take during the drag unseen until after the release (dnd.rs `LateWatch`). */
 const DEFER = ['--dnd-defer-take'];
@@ -373,6 +382,9 @@ function device({ device: expect, condition = covered, park, read, request, effe
     effect: ['refusal', 'cancel', 'late', 'late-take', 'stray'].includes(expect) ? undefined : effect,
     check: async (ctx, response) => {
       const out = {};
+      // the reply's own notice, for ruling 823's plain-drag ok (premise.mjs): one that claims or implies a drop is never
+      // an unmet premise
+      if (PREMISE_KINDS.includes(expect)) out.reply_notice = response.notice ?? null;
       // past the drop's window: a confirmed drop leaves nothing pending, an unconfirmed one its notice; a late case's
       // drag, whatever it answered, may leave the after-release watch's report of a late take
       if ((confirm && response.ok) || expect === 'late') Object.assign(out, await readPending(ctx));
@@ -630,6 +642,9 @@ for (const op of Object.values(DEVICE_OPS)) {
   }
 }
 
+/** The cells ruling 823's unmet premise can occur in (`PREMISE_KINDS`): V5's cancel, late and late-take cells. */
+export const PREMISE_OPS = new Set(Object.keys(DEVICE_OPS).filter((op) => PREMISE_KINDS.includes(DEVICE_OPS[op].device)));
+
 export const DEVICE_SCENE_OPS = {
   'device-gtk4': ['gtk4_click_shared', 'gtk4_click_dedicated', 'gtk4_key_shared', 'gtk4_key_dedicated', 'gtk4_key_down_shared', 'gtk4_right_click_shared', 'gtk4_element_click', 'gtk4_scroll_shared', 'gtk4_scroll_dedicated', 'gtk4_move_shared', 'gtk4_move_dedicated', 'gtk4_drag_shared', 'gtk4_drag_dedicated'],
   // the scroll last: its series ends with the page put back at its top (`reset`)
@@ -667,16 +682,27 @@ export function capabilitiesAnswer(output, version) {
  * A device case's verdict from its samples and its audit (`{clean, kind, answered}`, the audit kind its expectation
  * needs): every sample as its expectation says (module header), and the audit clean over at least one audited request
  * that answered as the case expects (a refusal or a cancel its sentence, a late case an honest one, the others
- * success), so a trace of requests that never did what the case measures proves nothing. Returns `{pass, reasons}`.
+ * success), so a trace of requests that never did what the case measures proves nothing. In ruling 823's cells
+ * (`PREMISE_OPS`) a sample or audited request whose premise was unmet is excluded first (premise.mjs). Returns `{pass,
+ * reasons}`, with `drops` for a drop case and `premise_unmet` (each pass's record) where anything was excluded or refilled.
  */
-export function judgeDevice(op, rows, audit) {
+export function judgeDevice(op, samples, audit) {
   // the minimized cases have expectations of their own (minimized.mjs)
-  if (op in MINIMIZED_OPS) return judgeMinimized(op, rows, audit);
+  if (op in MINIMIZED_OPS) return judgeMinimized(op, samples, audit);
   // and so do the identity cases (identity.mjs)
-  if (op in IDENTITY_OPS) return judgeIdentity(op, rows, audit);
+  if (op in IDENTITY_OPS) return judgeIdentity(op, samples, audit);
   const expect = DEVICE_OPS[op].device;
   const reasons = [];
-  if (!rows.length) return { pass: false, reasons: ['no samples'] };
+  if (!samples.length) return { pass: false, reasons: ['no samples'] };
+  // ruling 823 (premise.mjs): a sample whose premise was unmet is excluded, counted and refilled, and every rule below
+  // judges the rest; a cell that judged fewer than it planned fails closed as incomplete
+  const premise = PREMISE_OPS.has(op) ? judgePremise(samples, (r) => samples.find((x) => x.block === r.block && x.i === r.i + 1), { name: (r) => `${r.block}/${r.i}` }) : null;
+  const rows = premise ? premise.judged : samples;
+  const unmet = {};
+  if (premise) {
+    reasons.push(...premise.reasons);
+    if (premise.record) unmet.timed = premise.record;
+  }
   const bad = (what, pred) => {
     const failed = rows.filter((r) => !pred(r));
     if (failed.length) reasons.push(`${what} on ${failed.length} of ${rows.length} samples (${failed.slice(0, 3).map((r) => `${r.block}/${r.i}`).join(', ')})`);
@@ -687,7 +713,7 @@ export function judgeDevice(op, rows, audit) {
     bad('the window changed', (r) => r.unchanged === true);
   }
   // a take after the release is judged by the late-take rules (ruling 756, `lateTakes`)
-  const late = expect === 'cancel' ? lateTakes(rows) : new Set();
+  const late = expect === 'cancel' ? lateTakes(samples) : new Set();
   if (expect === 'cancel') {
     bad('not cancelled with the drag-and-drop sentence', (r) => (!r.ok && r.error === r.expected_error) || late.has(r));
     bad('it dropped', (r) => r.dropped === false);
@@ -731,7 +757,8 @@ export function judgeDevice(op, rows, audit) {
   }
   if (expect === 'late') {
     // the case measures a cancel that comes after the release, so only a drag Chrome took by its release is on its
-    // branch; one it took nothing for answers as a plain drag and proves nothing, whatever it answered (V5's line 266)
+    // branch; one it took nothing for answers as a plain drag and proves nothing, whatever it answered (V5's line 266),
+    // and one it never started a drag session for at all was excluded above (ruling 823)
     bad('unexercised: Chrome took no drag and drop by the release, so the late branch was not reached,', lateBranch);
     bad('a request answered success', (r) => !lateBranch(r) || !r.ok);
     // "nothing was dropped" only where nothing dropped and the desktop is as it was; off the branch, a plain drag's ok
@@ -766,15 +793,22 @@ export function judgeDevice(op, rows, audit) {
     else if (!audit.clean) reasons.push(`the ${audit.kind} audit found ${audit.forbidden?.join(', ') || 'no traced requests'}`);
     if (audit && audit.kind !== 'skipped') {
       // the audit counts only where its requests did what the case measures: answered as the case expects
-      const answered = audit.answered ?? [];
+      const audited = audit.answered ?? [];
+      // the audit's own requests whose premise was unmet, refilled within the audit pass (ruling 823)
+      const auditPremise = PREMISE_OPS.has(op) ? judgePremise(audited, (a, i) => audited[i + 1], { name: (a, i) => `audit/${i}`, what: 'audited requests', prefix: `the ${audit.kind} audit is incomplete` }) : null;
+      const answered = auditPremise ? auditPremise.judged : audited;
+      if (auditPremise) {
+        reasons.push(...auditPremise.reasons);
+        if (auditPremise.record) unmet.audit = auditPremise.record;
+      }
       const expected = (a) => {
         if (expect === 'refusal' || expect === 'cancel' || expect === 'stray') return !a.ok && a.error === a.expected_error;
         if (expect === 'late') return !a.ok && (a.error === a.late_error || a.error === a.expected_error);
         return a.ok;
       };
-      if (!answered.length) reasons.push(`the ${audit.kind} audit audited no request`);
+      if (!audited.length) reasons.push(`the ${audit.kind} audit audited no request`);
       else if (!answered.every(expected)) reasons.push(`the ${audit.kind} audit's requests did not answer as the case expects (${answered.map((a) => (a.ok ? 'success' : a.error)).join('; ').slice(0, 200)})`);
     }
   }
-  return { pass: reasons.length === 0, reasons, ...(drops ? { drops } : {}) };
+  return { pass: reasons.length === 0, reasons, ...(drops ? { drops } : {}), ...(Object.keys(unmet).length ? { premise_unmet: unmet } : {}) };
 }

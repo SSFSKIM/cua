@@ -17,11 +17,14 @@ import Foundation
 // - Every element the route meets is classified before anything else is read from it, by role and subrole in one
 //   request, failing closed as #405's `valueClassification` does: a closed one ends the lookup, refused unread with the
 //   reason main's snapshot gives such a focused element (`.refused(.secure)` for a password field by role or subrole or
-//   an unreadable subrole, `.refused(.roleUnreadable)` for an unreadable role), nothing more read from it.
+//   an unreadable subrole, `.refused(.roleUnreadable)` for an unreadable role), nothing more read from it. The web area
+//   is checked to be the app's and must classify open as an AXWebArea before its marker is read (else no claim: it is
+//   not the field), and each ancestor the claim's scope climb passes is checked to be the app's.
 // - The route resolves the field before the first event, and no marker call follows any delivered text: after typing,
 //   the field it found is asked itself (`readbackStillFocused`), the same element reading AXFocused true.
 // - It runs only for Safari (`readbackMarkerRoute`), and only once the application's AXFocusedUIElement has answered no
-//   focused element; the walk still runs when it claims nothing.
+//   focused element (noValue or attributeUnsupported); a read of it that failed goes to the walk alone, as on main. The
+//   walk still runs when the route claims nothing.
 
 /// The bundle the route runs for: Safari, the provider whose marker answers the probe measured (Safari 27.2).
 let typeReadbackMarkerBundle = "com.apple.Safari"
@@ -71,7 +74,6 @@ struct ReadbackAX {
   var batch: (AXUIElement, [String]) -> AttributeRead? = fetchAttributesAsTimed
   var pid: (AXUIElement) -> pid_t = { ownerPid(of: $0, fallback: 0) }
   var markers: ReadbackMarkerSymbols? = .live
-
 }
 
 /// The element WebKit's text marker names on `webArea`: the web area's AXSelectedTextMarkerRange, checked to be a range;
@@ -117,13 +119,15 @@ struct ReadbackMarkerReads<Element> {
 }
 
 /// The field the marker route finds in `window`, or nil for no claim (the walk then runs). Its web area is the first
-/// one the walk's reads find (`readbackWebArea`). From the element its marker names, each element is checked to be the
-/// app's, then classified: closed ends the lookup, refused unread with main's reason (`.closed`); a text-entry role is
-/// the field; the web area, reached first, is no field; any other role (the AXStaticText) is climbed by one AXParent, at
-/// most `typeReadbackMarkerFieldHops`. The field is claimed only when it reads AXFocused true and lies under that web area
-/// (`readbackUnder`).
+/// one the walk's reads find (`readbackWebArea`), and its marker is read only once it is checked to be the app's and
+/// classifies open as an AXWebArea; else no claim, since the web area is not the field. From the element its marker
+/// names, each element is checked to be the app's, then classified: closed ends the lookup, refused unread with main's
+/// reason (`.closed`); a text-entry role is the field; the web area, reached first, is no field; any other role (the
+/// AXStaticText) is climbed by one AXParent, at most `typeReadbackMarkerFieldHops`. The field is claimed only when it
+/// reads AXFocused true and lies under that web area (`readbackUnder`).
 func readbackMarkedField<Element>(window: Element, walk: ReadbackFocusWalk<Element>, marker: ReadbackMarkerReads<Element>) -> ReadbackFound<Element>? {
-  guard let webArea = readbackWebArea(window, walk), var element = marker.marked(webArea) else { return nil }
+  guard let webArea = readbackWebArea(window, walk), marker.owned(webArea), marker.classify(webArea) == .open("AXWebArea"),
+        var element = marker.marked(webArea) else { return nil }
   var hops = 0
   while true {
     guard marker.owned(element) else { return nil }
@@ -141,12 +145,12 @@ func readbackMarkedField<Element>(window: Element, walk: ReadbackFocusWalk<Eleme
   }
 }
 
-/// Whether `element`'s AXParent chain reaches `webArea` within `typeReadbackMarkerScopeHops`; a failed or absent parent
-/// before it is no.
+/// Whether `element`'s AXParent chain reaches `webArea` within `typeReadbackMarkerScopeHops`, each parent checked to be
+/// the app's before it is compared or climbed; a failed or absent parent, or another process's, before it is no.
 func readbackUnder<Element>(_ element: Element, _ webArea: Element, _ marker: ReadbackMarkerReads<Element>) -> Bool {
   var current = element
   for _ in 0..<typeReadbackMarkerScopeHops {
-    guard case .value(let parent) = marker.parent(current) else { return false }
+    guard case .value(let parent) = marker.parent(current), marker.owned(parent) else { return false }
     if marker.same(parent, webArea) { return true }
     current = parent
   }

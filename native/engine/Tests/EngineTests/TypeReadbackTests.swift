@@ -424,7 +424,10 @@ final class TypeReadbackTests: XCTestCase {
   private func lookup(_ app: Node, reads: inout [String], msPerNode: Double = 0) -> Node? {
     var log: [String] = [], clock = 0.0
     defer { reads = log }
-    let found = readbackFocusedField(application: app, focused: { log.append("focused@\($0.name)"); return $0.focused },
+    let found = readbackFocusedField(application: app, focused: { node in
+                                       log.append("focused@\(node.name)")
+                                       return node.focused.map { .value($0) } ?? .absent
+                                     },
                                      primaryWindow: { node in log.append("window"); return node.focusedWindow ?? node.mainWindow },
                                      walk: walkReads({ log.append($0) }, clock: { clock }, tick: { clock += msPerNode }))
     guard case .field(let field, .focus)? = found else { return nil }
@@ -626,7 +629,8 @@ final class TypeReadbackTests: XCTestCase {
     var valueReads = 0
     let walk = walkReads({ _ in })
     let reads = ReadbackReads<Node>(
-      focused: { readbackFocusedField(application: app, focused: { $0.focused }, primaryWindow: { $0.focusedWindow ?? $0.mainWindow }, walk: walk) },
+      focused: { readbackFocusedField(application: app, focused: { $0.focused.map { .value($0) } ?? .absent },
+                                      primaryWindow: { $0.focusedWindow ?? $0.mainWindow }, walk: walk) },
       stillFocused: { _, _ in true },
       role: { $0.role }, subrole: { _ in .absent }, value: { valueReads += 1; return $0.value },
       valueUnits: { valueReads += 1; return $0.value.map { Array($0.utf16) } },

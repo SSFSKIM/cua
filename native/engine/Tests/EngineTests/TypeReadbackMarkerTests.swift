@@ -14,6 +14,11 @@ private enum TestMarkers {
   typealias Create = @convention(c) (CFAllocator?, UnsafePointer<UInt8>, CFIndex) -> Unmanaged<CFTypeRef>?
   typealias RangeCreate = @convention(c) (CFAllocator?, CFTypeRef, CFTypeRef) -> Unmanaged<CFTypeRef>?
 
+  /// Whether both constructors resolve, and the engine's own symbols with them: the tests that build a stub skip
+  /// without them rather than trap.
+  static let available = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "AXTextMarkerCreate") != nil
+    && dlsym(UnsafeMutableRawPointer(bitPattern: -2), "AXTextMarkerRangeCreate") != nil && ReadbackMarkerSymbols.live != nil
+
   static func marker(offset: UInt32) -> CFTypeRef {
     var bytes = [UInt8](repeating: 0xA5, count: 28)
     for at in [8, 20] { for byte in 0..<4 { bytes[at + byte] = UInt8((offset >> (8 * UInt32(byte))) & 0xFF) } }
@@ -42,6 +47,10 @@ private final class StubSafari {
   var parents: [Int: Int] = [field: form, form: web, text: field, filler: web, address: toolbar, toolbar: window, web: window]
   /// Reads that answer this error instead, by element and attribute.
   var errors: [Int: [String: AXError]] = [:]
+  /// Reads that answer this value instead, with success, by element and attribute (a reply of the wrong type).
+  var replies: [Int: [String: CFTypeRef]] = [:]
+  /// What a classification request answers instead, by element, its attribute reads left as they are.
+  var batches: [Int: AttributeRead] = [:]
   var foreign: Set<Int> = []
   var appFocus: Int?
   var focused: Set<Int> = [field]
@@ -81,6 +90,7 @@ private final class StubSafari {
     let id = id(element)
     log.append("\(name)@\(id)")
     if let error = errors[id]?[name] { return (nil, error) }
+    if let reply = replies[id]?[name] { return (reply, .success) }
     switch name {
     case kAXFocusedUIElementAttribute where id == Self.app: return appFocus.map { (el($0), .success) } ?? (nil, .noValue)
     case kAXFocusedWindowAttribute where id == Self.app: return (el(Self.window), .success)
@@ -107,6 +117,7 @@ private final class StubSafari {
   /// One batched request, as AXUIElementCopyMultipleAttributeValues answers it: absences left out, failures marked.
   func batch(_ element: AXUIElement, _ names: [String]) -> AttributeRead? {
     log.append("batch(\(names.joined(separator: ",")))@\(id(element))")
+    if let read = batches[id(element)] { return read }
     var read = AttributeRead()
     for name in names {
       let id = id(element)
@@ -143,6 +154,13 @@ private final class StubSafari {
 }
 
 final class TypeReadbackMarkerTests: XCTestCase {
+  /// Every test but the bundle's gating builds a stub, whose markers need HIServices' private constructors.
+  override func setUpWithError() throws {
+    try super.setUpWithError()
+    if name.contains("testOnlySafarisBundleTakesTheRoute") { return }
+    try XCTSkipUnless(TestMarkers.available, "HIServices' text-marker functions did not resolve")
+  }
+
   private func meta() -> InputMeta {
     InputMeta(ExecutionContext(connection: ConnectionState(id: 1, fd: -1), receivedAt: 1, hidIdleMs: 0, deadline: 2, lineage: nil))
   }
@@ -297,10 +315,11 @@ final class TypeReadbackMarkerTests: XCTestCase {
       XCTAssertEqual(safari.value, "abcxyz")
       let lookup = Array(safari.log.prefix(upTo: safari.log.firstIndex(of: "\(kAXRoleAttribute)@7") ?? 0))
       XCTAssertEqual(lookup.first, "AXFocusedUIElement@0", "the application's focus first")
-      XCTAssertEqual(lookup.suffix(8), ["AXSelectedTextMarkerRange@5", "AXUIElementForTextMarker@5",
+      XCTAssertEqual(lookup.suffix(9), ["batch(AXRole,AXSubrole)@5", "AXSelectedTextMarkerRange@5", "AXUIElementForTextMarker@5",
                                         "batch(AXRole,AXSubrole)@8", "AXParent@8", "batch(AXRole,AXSubrole)@7", "AXFocused@7",
                                         "AXParent@7", "AXParent@6"],
-                     "classified before anything else is read of it, then focus, then under the web area: \(lookup)")
+                     "the web area classified before its marker is read, each element before anything else is read of it, "
+                       + "then focus, then under the web area: \(lookup)")
       XCTAssertFalse(lookup.contains("AXChildren@3"), "nothing inside the address field is read")
       XCTAssertFalse(lookup.contains { $0.hasPrefix("AXRole@10") }, "the web area's content is not walked")
     }
@@ -348,6 +367,36 @@ final class TypeReadbackMarkerTests: XCTestCase {
     XCTAssertTrue(lost.markerCalls.isEmpty, "\(lost.markerCalls)")
   }
 
+  /// The route runs only on an absent answer at the application (noValue, attributeUnsupported): a focus read that
+  /// failed (cannotComplete, or a reply that is not an element) goes to the walk alone, as on main, so the large page
+  /// answers noFocusedElement with no marker call, and a small one is found by the walk and confirmed.
+  func testAFailedApplicationFocusReadTakesTheWalkAlone() {
+    let failures: [(String, (StubSafari) -> Void)] = [
+      ("cannotComplete", { $0.errors[StubSafari.app] = [kAXFocusedUIElementAttribute: .cannotComplete] }),
+      ("a string for the element", { $0.replies[StubSafari.app] = [kAXFocusedUIElementAttribute: "field" as CFString] }),
+    ]
+    for (name, setUp) in failures {
+      let large = StubSafari()
+      setUp(large)
+      XCTAssertEqual(reason(type("xyz", into: large).meta), "noFocusedElement", name)
+      XCTAssertEqual(large.markerCalls, [], name)
+      XCTAssertTrue(large.log.contains("AXRole@1000"), "\(name): the walk ran")
+
+      let small = StubSafari(filler: 3)
+      setUp(small)
+      let (error, meta, _) = type("xyz", into: small)
+      XCTAssertNil(error, name)
+      XCTAssertEqual(record(meta)["confirmed"] as? Bool, true, name)
+      XCTAssertEqual(small.value, "abcxyz", name)
+      XCTAssertEqual(small.markerCalls, [], name)
+    }
+    // attributeUnsupported is an absence, as noValue is: the route runs and finds the field.
+    let unsupported = StubSafari()
+    unsupported.errors[StubSafari.app] = [kAXFocusedUIElementAttribute: .attributeUnsupported]
+    XCTAssertNil(type("xyz", into: unsupported).error)
+    XCTAssertEqual(unsupported.markerCalls, ["AXSelectedTextMarkerRange@5", "AXUIElementForTextMarker@5"])
+  }
+
   // MARK: Password fields
 
   /// A field the route finds closed is refused unread with main's reason: secure for a password field by role or
@@ -387,8 +436,8 @@ final class TypeReadbackMarkerTests: XCTestCase {
 
   /// A marker reply of any other shape claims nothing: the walk runs, and on the large page answers noFocusedElement;
   /// nothing is ever confirmed, and no value is read.
-  func testAnOddMarkerReplyClaimsNothing() {
-    let symbols = ReadbackMarkerSymbols.live!
+  func testAnOddMarkerReplyClaimsNothing() throws {
+    let symbols = try XCTUnwrap(ReadbackMarkerSymbols.live)
     let cases: [(String, (StubSafari) -> Void)] = [
       ("no range", { $0.markerRange = nil; $0.markerRangeError = .noValue }),
       ("a failed range read beside a range", { $0.markerRangeError = .cannotComplete }),
@@ -465,6 +514,7 @@ final class TypeReadbackMarkerTests: XCTestCase {
       ("no focus attribute", { $0.errors[StubSafari.field] = [kAXFocusedAttribute: .noValue] }),
       ("no parent", { $0.parents[StubSafari.field] = nil }),
       ("a failed parent", { $0.errors[StubSafari.form] = [kAXParentAttribute: .cannotComplete] }),
+      ("an ancestor another process's", { $0.foreign = [StubSafari.form] }),
       ("under another web area", { safari in
         safari.roles[40] = "AXWebArea"
         safari.parents[StubSafari.form] = 40
@@ -476,6 +526,10 @@ final class TypeReadbackMarkerTests: XCTestCase {
       XCTAssertEqual(reason(type("xyz", into: safari).meta), "noFocusedElement", name)
       XCTAssertEqual(safari.valueReads, [], name)
     }
+    let foreignForm = StubSafari()
+    foreignForm.foreign = [StubSafari.form]
+    type("xyz", into: foreignForm)
+    XCTAssertFalse(foreignForm.log.contains("AXParent@6"), "another process's ancestor is not climbed")
     // An iframe's web area between the field and the page's: under it all the same.
     let framed = StubSafari()
     framed.roles[40] = "AXWebArea"
@@ -550,6 +604,32 @@ final class TypeReadbackMarkerTests: XCTestCase {
   }
 
   // MARK: The web area
+
+  /// The web area's marker is read only once it is checked to be the app's and classifies open as an AXWebArea: one that
+  /// is another process's, whose subrole or (in the classification request) role cannot be read, that the request reads
+  /// as another role, or that reads as a password field makes no marker call at all, and claims nothing, not even a
+  /// refusal: the large page answers noFocusedElement. Another process's is not classified.
+  func testTheWebAreaIsTheAppsAndClassifiedBeforeItsMarkerIsRead() {
+    let cases: [(String, (StubSafari) -> Void)] = [
+      ("another process's", { $0.foreign = [StubSafari.web] }),
+      ("its subrole unreadable", { $0.errors[StubSafari.web] = [kAXSubroleAttribute: .cannotComplete] }),
+      ("its role unreadable in the classification", { $0.batches[StubSafari.web] = AttributeRead(unreadable: [kAXRoleAttribute]) }),
+      ("another role in the classification", { $0.batches[StubSafari.web] = AttributeRead(values: [kAXRoleAttribute: "AXGroup" as CFString]) }),
+      ("a password field's subrole", { $0.subroles[StubSafari.web] = "AXSecureTextField" }),
+    ]
+    for (name, setUp) in cases {
+      let safari = StubSafari()
+      setUp(safari)
+      XCTAssertEqual(reason(type("xyz", into: safari).meta), "noFocusedElement", name)
+      XCTAssertEqual(safari.markerCalls, [], name)
+      XCTAssertEqual(safari.valueReads, [], name)
+      XCTAssertTrue(safari.log.contains("AXRole@1000"), "\(name): the walk ran after the route claimed nothing")
+    }
+    let foreign = StubSafari()
+    foreign.foreign = [StubSafari.web]
+    type("xyz", into: foreign)
+    XCTAssertFalse(foreign.log.contains("batch(AXRole,AXSubrole)@5"), "another process's web area is not classified")
+  }
 
   /// The window's web area is the first breadth first, within the walk's bounds; a text-entry element is a leaf; a
   /// failed read, or a search past a bound, finds none.

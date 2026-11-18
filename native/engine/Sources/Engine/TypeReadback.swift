@@ -219,7 +219,7 @@ extension ReadbackReads where Element == AXUIElement {
                                                   isFocused: walk.isFocused, owned: { ax.pid($0) == pid }, same: { CFEqual($0, $1) })
     let takesMarker = markerRoute && ax.markers != nil
     func lookup(marker: ReadbackMarkerReads<AXUIElement>?) -> ReadbackFound<AXUIElement>? {
-      readbackFocusedField(application: timed(AXUIElementCreateApplication(pid)), focused: { element($0, kAXFocusedUIElementAttribute) },
+      readbackFocusedField(application: timed(AXUIElementCreateApplication(pid)), focused: { read($0, kAXFocusedUIElementAttribute, asElement) },
                            primaryWindow: { element($0, kAXFocusedWindowAttribute) ?? element($0, kAXMainWindowAttribute) },
                            walk: walk, marker: marker)
     }
@@ -277,18 +277,20 @@ func readbackWalkRead<Value>(_ raw: CFTypeRef?, _ error: AXError, _ convert: (CF
 }
 
 /// The field typed keys reach: the application's AXFocusedUIElement, else, in its primary window (AXFocusedWindow, else
-/// AXMainWindow), the one `marker`'s text-marker route finds when it is given (Safari, #395: `readbackMarkedField`), else
-/// the one the walk finds (`readbackFocusedByWalk`). An app that is not active can answer no focused element at the
-/// application (#354's A/B, run 43752829833: background Safari, 120 of 120 cells with no route 3 hold first). Run
-/// 44022892172 showed what answers then: the application's AXFocusedUIElement no value (-25212), the windows' focus
-/// attributes unsupported (-25205), the web area's AXFocusedUIElement no value; a walk of the window for the element that
-/// reads AXFocused true found the text field 10 of 10, on a page within its bounds. Only AX attributes are read; nothing
-/// is activated.
-func readbackFocusedField<Element>(application: Element, focused: (Element) -> Element?, primaryWindow: (Element) -> Element?,
+/// AXMainWindow), the one `marker`'s text-marker route finds when it is given and the application answered no focused
+/// element (Safari, #395: `readbackMarkedField`), else the one the walk finds (`readbackFocusedByWalk`). A focus read
+/// that failed goes to the walk alone, never the marker (ruling 1ea561bc:824). An app that is not active can answer no
+/// focused element at the application (#354's A/B, run 43752829833: background Safari, 120 of 120 cells with no route 3
+/// hold first). Run 44022892172 showed what answers then: the application's AXFocusedUIElement no value (-25212), the
+/// windows' focus attributes unsupported (-25205), the web area's AXFocusedUIElement no value; a walk of the window for
+/// the element that reads AXFocused true found the text field 10 of 10, on a page within its bounds. Only AX attributes
+/// are read; nothing is activated.
+func readbackFocusedField<Element>(application: Element, focused: (Element) -> ReadbackWalkRead<Element>, primaryWindow: (Element) -> Element?,
                                    walk: ReadbackFocusWalk<Element>, marker: ReadbackMarkerReads<Element>? = nil) -> ReadbackFound<Element>? {
-  if let field = focused(application) { return .field(field, by: .focus) }
+  let answer = focused(application)
+  if case .value(let field) = answer { return .field(field, by: .focus) }
   guard let window = primaryWindow(application) else { return nil }
-  if let marker, let found = readbackMarkedField(window: window, walk: walk, marker: marker) { return found }
+  if case .absent = answer, let marker, let found = readbackMarkedField(window: window, walk: walk, marker: marker) { return found }
   return readbackFocusedByWalk(window, walk).map { .field($0, by: .focus) }
 }
 

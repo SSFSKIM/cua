@@ -56,9 +56,9 @@
 
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { appendFileSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
-import { join, relative, resolve } from 'node:path';
+import { basename, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { PINNED_DEVELOPMENT, REPO_ROOT, candidateLine, gateLabel, isPinnedRule, prepareCandidate } from '../linux-engine-diff/candidate.mjs';
@@ -125,6 +125,20 @@ export function zeroStepProblems({ run, dir }) {
     if (bytes > UNIX_PATH_MAX) problems.push(`the ${name} decoy bus ${path} is ${bytes} bytes, past the ${UNIX_PATH_MAX} a Unix socket's path can take: give the step a shorter --out`);
   }
   return problems;
+}
+
+/**
+ * A step directory as run71.sh takes it (`realpath -m`): its deepest existing ancestor resolved through its symlinks,
+ * the rest of the path as given. The decoys lie under this path, so print measures them there (fix wave 1).
+ */
+export function resolvedAsRun71(dir) {
+  const parts = [];
+  let at = resolve(dir);
+  while (!existsSync(at) && dirname(at) !== at) {
+    parts.unshift(basename(at));
+    at = dirname(at);
+  }
+  return join(realpathSync(at), ...parts);
 }
 
 /** The :0 sitting's outer launcher, relative to the checkout. */
@@ -314,7 +328,7 @@ export function printStep(a, { root = REPO_ROOT, git } = {}) {
   const dir = stepDir(step, a);
   // a :0 step the guard would stop mid-step, or run unguarded, for its command alone: refused before launch
   if (step.display === ':0') {
-    const problems = zeroStepProblems({ run: runName(step, a), dir: resolve(dir) });
+    const problems = zeroStepProblems({ run: runName(step, a), dir: resolvedAsRun71(dir) });
     if (problems.length) throw new GateRefused(`${step.name} on :0 would not run whole under its guard: ${problems.join('; ')}`);
   }
   mkdirSync(dir, { recursive: true });

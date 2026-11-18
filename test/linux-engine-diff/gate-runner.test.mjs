@@ -644,3 +644,18 @@ test('a :0 command whose scratch would leave its TMPDIR, or whose decoy bus coul
   // a private step takes no such check
   assert.doesNotThrow(() => printStep(parseGateArgs(['print', 'D1', '--candidate', PATHS.candidate, '--out', deep, '--dev']), { root: ROOT, git: cleanGit() }));
 });
+
+// Fix wave 1, minor: run71.sh takes the step directory through `realpath -m`, so the decoys lie under the resolved path.
+// A short symlink to a long out root passes a lexical check and is then refused by the wrapper mid-sitting: print reads
+// the path run71 will use.
+test("a :0 step's decoy paths are measured where run71.sh puts them: through the out root's symlinks", async () => {
+  const { symlinkSync } = await import('node:fs');
+  const base = fresh('link');
+  const long = join(base, 'a-long-out-root-for-the-decoys-of-the-sitting-to-pass-their-limit-after-resolution');
+  mkdirSync(long, { recursive: true });
+  const short = join(base, 's');
+  symlinkSync(long, short);
+  const a = parseGateArgs(['print', 'V5', '--candidate', PATHS.candidate, '--out', short, '--dev']);
+  assert.ok(Buffer.byteLength(join(short, 'V5.development-run', 'decoy', 'session.sock')) <= 107, 'the lexical path fits');
+  assert.throws(() => printStep(a, { root: ROOT, git: cleanGit() }), (e) => e instanceof GateRefused && /decoy bus/.test(e.message) && e.message.includes(long));
+});

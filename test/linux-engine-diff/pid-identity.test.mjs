@@ -112,52 +112,51 @@ test("a scene's close signals its pidfile's pid only while it is the scene's pro
   }
 });
 
-// #171 M5, T4's arm64 round, item (c): a scene the run spawned and closes by its pid (gedit, whose vendor lanes end it on
-// arm64) is signalled only while that pid is still the process the run spawned (spawnApp's record: pid and start); an
-// ended one is not signalled, and a pid another process holds now is left alone, recorded.
-test("a spawned scene's close signals its pid only while it is the process the run spawned", { skip }, async () => {
+// #171 M5, T4's arm64 round, item (c), fix wave 1: a lane's restore (run.mjs `restoreLaneScene`, the only caller of
+// `closeLaneScene` and `laneSceneRunning`) closes and waits on the scene's own spawn, kept with the scene: its exit
+// checked first, a live one signalled through its own child handle, never looked up by pid. Every other close is
+// as it was at da306cc6.
+test("a lane's restore closes the scene's own spawn and never another process under its pid", { skip }, async () => {
   const desktop = new Desktop({ cua: 'unused', run: 'pidtest', reader: { async close() {} }, startActive: 0, nonce: 'n1' });
   try {
-    const scene = (child, start, exited = false) => {
-      desktop.spawned.push({ pid: child.pid, label: 'gedit', start, exited });
+    const lane = (child, record) => {
       const s = { kind: 'gedit', id: 0, pid: child.pid, label: `scene-${child.pid}` };
       desktop.windows.push(s);
+      desktop.keepLaneSpawn(s, child, record);
       return s;
     };
-    const startOf = (child) => processIdentity(child.pid).start;
-    // another process under the recorded pid (its start is not the one the run recorded): left running, recorded
-    const reused = sleeper();
-    await until(() => processIdentity(reused.pid) !== null);
-    await desktop.close([scene(reused, String(Number(startOf(reused)) - 1))]);
-    assert.equal(running(reused), true, 'a pid that is not the scene process is never signalled');
-    assert.equal(desktop.skips.at(-1).what, 'signal');
-    assert.match(desktop.skips.at(-1).reason, new RegExp(`pid ${reused.pid}: another process now`));
-    // the run's record says the process exited: nothing is signalled, nothing recorded
-    const skips = desktop.skips.length;
-    const ended = sleeper();
-    await until(() => processIdentity(ended.pid) !== null);
-    await desktop.close([scene(ended, startOf(ended), true)]);
-    assert.equal(running(ended), true, 'an exited scene process is never signalled by its old pid');
-    assert.equal(desktop.skips.length, skips);
-    // the scene's own process: signalled
+    // the scene's own spawn, live: signalled through its handle, and running until it ends
     const own = sleeper();
-    await until(() => processIdentity(own.pid) !== null);
-    await desktop.close([scene(own, startOf(own))]);
+    const ownRecord = { pid: own.pid, label: 'gedit', start: '1', exited: false };
+    own.once('exit', () => (ownRecord.exited = true));
+    const ownScene = lane(own, ownRecord);
+    assert.equal(desktop.laneSceneRunning(ownScene), true);
+    await desktop.closeLaneScene(ownScene);
     assert.ok(await until(() => !running(own)), 'its own process ended');
-    // a spawn whose start could not be read (no /proc, as on the macOS test runner) is signalled by its pid as before
+    assert.ok(await until(() => !desktop.laneSceneRunning(ownScene)), 'and the wait sees it gone');
+    assert.equal(desktop.windows.includes(ownScene), false);
+    // two spawn generations sharing a pid: the old scene's spawn exited, and its pid now names a later child. Its close
+    // checks its own exit first and signals nothing; the later child runs on
+    const later = sleeper();
+    const oldHandle = { kill: () => assert.fail('an exited spawn is never signalled') };
+    const oldScene = lane(later, { pid: later.pid, label: 'gedit', start: '1', exited: true });
+    desktop.keepLaneSpawn(oldScene, oldHandle, { pid: later.pid, label: 'gedit', start: '1', exited: true });
+    desktop.spawned.push({ pid: later.pid, label: 'gedit', start: '2', exited: false });
+    assert.equal(desktop.laneSceneRunning(oldScene), false, 'an exited spawn is not waited on, whatever runs under its pid');
+    await desktop.closeLaneScene(oldScene);
+    assert.equal(running(later), true, 'the later child under the same pid was never signalled');
+    // an unreadable start (no /proc at the spawn): still the original child, through its own handle
     const unread = sleeper();
-    await until(() => processIdentity(unread.pid) !== null);
-    await desktop.close([scene(unread, null)]);
-    assert.ok(await until(() => !running(unread)), 'signalled as before');
-    // the restore's wait reads the same record: alive while it is that process, not once it has ended
-    const waited = sleeper();
-    await until(() => processIdentity(waited.pid) !== null);
-    const w = scene(waited, startOf(waited));
-    assert.equal(desktop.sceneProcessAlive(w), true);
-    assert.equal(desktop.sceneProcessAlive({ ...w, pid: reused.pid }), false, "another process under a recorded scene's pid is not it");
-    waited.kill('SIGKILL');
-    await until(() => !running(waited) && processIdentity(waited.pid) === null);
-    assert.equal(desktop.sceneProcessAlive(w), false);
+    const unreadRecord = { pid: unread.pid, label: 'gedit', start: null, exited: false };
+    unread.once('exit', () => (unreadRecord.exited = true));
+    await desktop.closeLaneScene(lane(unread, unreadRecord));
+    assert.ok(await until(() => !running(unread)), 'signalled through its own handle');
+    // a scene with no spawn of its own (a Chrome window) is closed as `close` closes it, and only its window is waited on
+    const chrome = { kind: 'chrome', id: 0, label: 'chrome-scene' };
+    desktop.windows.push(chrome);
+    assert.equal(desktop.laneSceneRunning(chrome), false);
+    await desktop.closeLaneScene(chrome);
+    assert.equal(desktop.windows.includes(chrome), false);
   } finally {
     desktop.unhookStop();
     rmSync(desktop.dir, { recursive: true, force: true });

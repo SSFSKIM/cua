@@ -363,9 +363,10 @@ function fakeDesktop({ lingers = 0, application = 'gedit', others = [], alive = 
     log,
     // the harness's own bus reader, as the fresh window's identity is verified through it (app-identity.mjs)
     oracle: { name: () => application, toolkit: () => ({ toolkit: 'gtk', toolkit_version: '3.24.41' }) },
-    async close(scenes) {
-      closed = scenes[0];
-      log.push(`close ${scenes.map((s) => s.id).join(',')}`);
+    // the restore's own close (`Desktop.closeLaneScene`); nothing else here closes
+    async closeLaneScene(scene) {
+      closed = scene;
+      log.push(`close ${scene.id}`);
     },
     // the closed window still listed `lingers` times after its close, under its own title; `others`, windows of other
     // lanes, listed throughout (one may hold the closed window's id, which X gave it again)
@@ -377,8 +378,8 @@ function fakeDesktop({ lingers = 0, application = 'gedit', others = [], alive = 
       }
       return others;
     },
-    // the closed window's process still running `alive` times after its close (`Desktop.sceneProcessAlive`)
-    sceneProcessAlive(scene) {
+    // the closed window's process still running `alive` times after its close (`Desktop.laneSceneRunning`)
+    laneSceneRunning(scene) {
       if (scene !== closed || living <= 0) return false;
       living--;
       log.push('process alive');

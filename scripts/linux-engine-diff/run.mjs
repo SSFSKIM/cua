@@ -852,12 +852,12 @@ async function openSceneWindow(desktop, scene, role, { text = false } = {}) {
 export async function restoreLaneScene({ desktop, windows, sceneName, label, occlusion, warmUp }) {
   const started = performance.now();
   const old = windows[sceneName].text[label];
-  await desktop.close([old]);
+  await desktop.closeLaneScene(old);
   // the old window gone before its successor is looked for: the fresh one is found by its file's name, as the old was.
-  // Gone is keyed on the old window itself, its id and its label (lane and nonce), and on its process, its pid and start
-  // (M5's T4, arm64 round, item (c)): X gives a freed id again, across lanes, so a window of another lane's may hold the
-  // old one's id and must never be waited on, nor closed
-  const oldStill = async () => (await desktop.listWindows()).some((w) => w.id === old.id && (!old.label || String(w.title ?? '').includes(old.label))) || desktop.sceneProcessAlive(old);
+  // Gone is keyed on the old window itself, its id and its label (lane and nonce), and on its own spawn's exit (M5's T4,
+  // arm64 round, item (c), fix wave 1): X gives a freed id again, across lanes, so a window of another lane's may hold
+  // the old one's id and must never be waited on, nor closed
+  const oldStill = async () => (await desktop.listWindows()).some((w) => w.id === old.id && (!old.label || String(w.title ?? '').includes(old.label))) || desktop.laneSceneRunning(old);
   for (const deadline = Date.now() + 10000; await oldStill(); await sleep(250)) {
     if (Date.now() > deadline) throw new Error(`${old.label} did not close for its scene's restore`);
   }

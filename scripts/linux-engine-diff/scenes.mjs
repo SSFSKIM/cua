@@ -221,6 +221,10 @@ export function scratchRoot(run, tmp = tmpdir()) {
   return geditTitle(join(tmp, `${SCRATCH_PREFIX}XXXXXX`, longest)).ellipsized ? '/tmp' : tmp;
 }
 
+/** Each spawned child's own record (`spawnApp`), and each lane scene's own spawn (`openGedit`), held by object, never by pid. */
+const ownSpawns = new WeakMap();
+const laneSpawns = new WeakMap();
+
 export class Desktop {
   /**
    * `reader`, `startActive` and `nonce`: the display-free tests' own (stop.test.mjs); a run's are the defaults. `logs`: the
@@ -660,6 +664,8 @@ export class Desktop {
       const entry = { pid: child.pid, label, start: processState(child.pid).start ?? null, exited: false };
       child.once('exit', () => (entry.exited = true));
       this.spawned.push(entry);
+      // this spawn's own record, for a scene to keep (M5's T4 arm64 round: a lane's restore closes and waits on it)
+      ownSpawns.set(child, entry);
       return child;
     } finally {
       // the child holds its own copy
@@ -808,6 +814,7 @@ export class Desktop {
       const child = this.spawnApp(label, 'gedit', ['--standalone', file]);
       // registered with its process at once: a stop or a window that never comes ends the process
       const scene = { kind: 'gedit', role, label, file, content, pid: child.pid, id: null };
+      this.keepLaneSpawn(scene, child);
       this.windows.push(scene);
       const name = basename(file);
       const info = await this.waitForWindow((w) => w.app === 'org.gnome.gedit' && w.title.includes(name), label);
@@ -1205,13 +1212,7 @@ export class Desktop {
           }
         }
         else if (scene.group) process.kill(-scene.pid, 'SIGTERM');
-        else {
-          // its own process, keyed on its pid and start (M5's T4, arm64 round, item (c)): a scene whose application
-          // ended (a vendor lane's crash) may have given its pid to another process by its close
-          const own = this.ownProcess(scene);
-          if (['live', 'unrecorded'].includes(own.state)) process.kill(scene.pid, 'SIGTERM');
-          else if (own.state !== 'ended') this.skip('signal', scene.id ?? null, `pid ${scene.pid}: ${own.why}`);
-        }
+        else process.kill(scene.pid, 'SIGTERM');
       } catch (error) {
         // already gone; anything else is kept for the run's end (an unclean end, never swallowed)
         if (error?.code !== 'ESRCH') this.closeErrors.push(`closing ${scene.label ?? scene.id ?? scene.pid}: ${error?.message ?? error}`);
@@ -1230,29 +1231,40 @@ export class Desktop {
   }
 
   /**
-   * The process a scene's close signals by pid, as the run spawned it (`spawnApp`'s record: its pid and start time):
-   * `{state: 'live'}` while that pid is still it, `ended` once it has exited, `other` (another process under the pid
-   * now) or `unknown` (its state cannot be read), each with `why`. A scene the run did not spawn has no record, and one
-   * whose start the spawn could not read has no identity to key on: `unrecorded`, signalled by its pid as before.
+   * A lane scene's own spawn kept with it, never looked up by pid again (`closeLaneScene`, `laneSceneRunning`): the
+   * child's handle and the record `spawnApp` made of it (`record`, the display-free tests' own).
    */
-  ownProcess(scene) {
-    const entry = this.spawned.findLast((e) => e.pid === scene.pid);
-    // no record, or one whose start could not be read at the spawn (no /proc: the macOS test runner): signalled as before
-    if (!entry || entry.start == null) return { state: 'unrecorded' };
-    if (entry.exited) return { state: 'ended' };
-    // the real /proc whatever scope the run's checks read: a signal goes to a real process
-    const now = processState(scene.pid);
-    if (now.state === 'absent') return { state: 'ended' };
-    if (now.state === 'unknown') return { state: 'unknown', why: `whether it is the scene's process cannot be read (${now.reason})` };
-    return now.start === entry.start ? { state: 'live' } : { state: 'other', why: `another process now (started at tick ${now.start}; the scene's at ${entry.start})` };
+  keepLaneSpawn(scene, child, record = ownSpawns.get(child)) {
+    laneSpawns.set(scene, { record, child });
   }
 
   /**
-   * Whether a scene's own process still runs (`ownProcess`), for its restore's wait: a recorded one that is live, or
-   * whose state cannot be read (never taken for gone).
+   * A lane's text window closed for its restore (run.mjs `restoreLaneScene`, its only caller; M5's T4 arm64 round, item
+   * (c), and its fix wave 1). The vendor lanes on arm64 kept ending gedit, and X gave a freed window id to another
+   * lane's fresh window. A scene the run spawned itself (gedit) is closed through its own spawn: its exit is checked
+   * first, and a live one is signalled through the child's own handle, which never reaches another process however its
+   * pid is given out, with or without /proc. Any other scene (a Chrome window, a terminal's pidfile, a group) is closed
+   * as `close` closes it. Every other caller's close is unchanged.
    */
-  sceneProcessAlive(scene) {
-    return Boolean(scene.pid) && ['live', 'unknown'].includes(this.ownProcess(scene).state);
+  async closeLaneScene(scene) {
+    const own = laneSpawns.get(scene);
+    if (!own) return this.close([scene]);
+    try {
+      if (!own.record.exited) own.child.kill('SIGTERM');
+    } catch (error) {
+      this.closeErrors.push(`closing ${scene.label ?? scene.id}: ${error?.message ?? error}`);
+    }
+    this.windows = this.windows.filter((w) => w !== scene);
+    if (!this.closed.includes(scene)) this.closed.push(scene);
+  }
+
+  /**
+   * Whether the process a lane's scene was spawned as still runs, by its own spawn record (its exit, never a lookup by
+   * pid), for its restore's wait: false for a scene with no spawn of its own (the window alone is waited on then).
+   */
+  laneSceneRunning(scene) {
+    const own = laneSpawns.get(scene);
+    return Boolean(own) && !own.record.exited;
   }
 
   /** Everything the harness opened closed, once: the end of the run and a stop that interrupts it share one cleanup. */

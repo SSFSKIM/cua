@@ -171,12 +171,17 @@ launch_chrome() {
   [ -z "$CHROME_FLAGS" ] || say "chrome flags: ${PARITY_CHROME_FLAGS}"
   [ -z "$FG" ] || say "diag384: fg experiment $FG"
   if [ "$FG" = policy ]; then
+    # Chrome's ForceForegroundPriorityForUrls (mandatory only: a managed preference), for the fixture's host. Each step's
+    # exit status is said; nothing else.
     bid=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "/Applications/Google Chrome for Testing.app/Contents/Info.plist" 2> /dev/null)
-    sudo -n mkdir -p "/Library/Managed Preferences" 2> /dev/null
-    sudo -n defaults write "/Library/Managed Preferences/$bid" ForceForegroundPriorityForUrls -array "127.0.0.1" 2> /dev/null
+    mp="/Library/Managed Preferences"
+    sudo -n mkdir -p "$mp" 2> /dev/null; p_mkdir=$?
+    printf '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><dict><key>ForceForegroundPriorityForUrls</key><array><string>127.0.0.1</string></array></dict></plist>\n' \
+      | sudo -n tee "$mp/$bid.plist" > /dev/null 2>&1; p_write=$?
+    sudo -n chown root:wheel "$mp/$bid.plist" 2> /dev/null; sudo -n chmod 644 "$mp/$bid.plist" 2> /dev/null; p_mode=$?
     sudo -n killall cfprefsd 2> /dev/null
-    sudo -n chmod 644 "/Library/Managed Preferences/$bid.plist" 2> /dev/null
-    say "diag384: policy written $(sudo -n defaults read "/Library/Managed Preferences/$bid" ForceForegroundPriorityForUrls > /dev/null 2>&1 && echo yes || echo no), readable by the user $(defaults read "/Library/Managed Preferences/$bid" ForceForegroundPriorityForUrls > /dev/null 2>&1 && echo yes || echo no), bundle $( [ -n "$bid" ] && echo found || echo missing)"
+    plutil -lint "$mp/$bid.plist" > /dev/null 2>&1; p_lint=$?
+    say "diag384: policy mkdir $p_mkdir write $p_write mode $p_mode lint $p_lint, bundle $( [ -n "$bid" ] && echo found || echo missing), sudo $(sudo -n true 2> /dev/null && echo yes || echo no)"
   fi
   # $CHROME_FLAGS is unquoted on purpose: one of the fixed sets above, split into its flags.
   "$CFT" --user-data-dir="$UDD" --profile-directory=Default --no-first-run --no-default-browser-check \

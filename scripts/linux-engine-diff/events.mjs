@@ -399,7 +399,8 @@ const buttonOf = (e, text) => (e.type === 'ButtonPress' || e.type === 'ButtonRel
  * proxy's; `requests` its parsed requests between the step's marks): the button-1 press SendEvent whose destination is
  * `child` (the recorder's child XID, from its own `ready` line, so a trace of another run or another recorder never
  * matches), then every pointer event the same connection sent to `child` after it, up to and including button 1's
- * release when there is one. `{traced, conn, press, after: [{type, detail, root_x, root_y}], released, xtest}`;
+ * release when there is one (`released` true only for button 1's: another button's release is one more event sent the
+ * child). `{traced, conn, press, after: [{type, detail, root_x, root_y}], released, xtest}`;
  * `traced` false for an empty trace. Input through XTEST (`xtest`) names no destination to tie it to the child and is
  * reported apart, never paired. Only the connection that sent the press counts: another connection's requests in the
  * span are not this drag's.
@@ -411,12 +412,42 @@ export function sentDrag({ requests, extensions }, child) {
   if (at < 0) return { traced: requests.length > 0, conn: null, press: null, after: [], released: false, xtest };
   const conn = sent[at].r.conn;
   const after = [];
+  let released = false;
   for (const x of sent.slice(at + 1)) {
     if (x.r.conn !== conn || x.e.via !== 'send' || x.e.destination !== child || !POINTER.includes(x.e.type)) continue;
     after.push({ type: x.e.type, detail: x.e.detail, ...rootOf(x.r.text) });
-    if (x.e.type === 'ButtonRelease' && x.e.detail === 1) break;
+    // button 1's release ends the drag; another button's release is only one more event the child is owed
+    if (x.e.type === 'ButtonRelease' && x.e.detail === 1) {
+      released = true;
+      break;
+    }
   }
-  return { traced: true, conn, press: rootOf(sent[at].r.text), after, released: after.at(-1)?.type === 'ButtonRelease', xtest };
+  return { traced: true, conn, press: rootOf(sent[at].r.text), after, released, xtest };
+}
+
+/**
+ * Why the recorder's events on the child (`events`, the step's whole record) are not the whole drag the step requested
+ * (`step.input.path`, in the recorder's coordinates), or null: button 1's press at the path's start, then only motions
+ * on the child with button 1 held (Button1Mask) visiting every point of the path in order and ending at its last, then
+ * button 1's release on the child there, the last event. Judged from the recorder alone (#171 M5, T4's arm64 round,
+ * fix wave 2: ruling 818's "the press, every motion, the release"), so a truncated drag that the trace and the recorder
+ * agree on still fails. No path to judge against fails closed.
+ */
+export function wholeDragFault(events, step) {
+  const path = step?.command === 'drag' ? step.input?.path : null;
+  if (!Array.isArray(path) || path.length < 2) return "no requested path to judge the drag's whole against";
+  const at = (e, point) => e.root_x === RECORDER.x + point.x && e.root_y === RECORDER.y + point.y;
+  const press = events.findIndex(childPress);
+  if (press < 0 || !at(events[press], path[0])) return "button 1's press is not at the requested path's start";
+  const tail = events.slice(press + 1);
+  const release = tail.at(-1);
+  const motions = tail.slice(0, -1);
+  if (!release || release.type !== 'ButtonRelease' || release.window !== 'child' || release.detail !== 1 || !at(release, path.at(-1))) return "the drag does not end with button 1's release on the child at the requested path's end, the last event";
+  if (!motions.length || motions.some((e) => e.type !== 'MotionNotify' || e.window !== 'child' || !(e.state & 256))) return 'between the press and the release, an event other than a motion on the child with button 1 held, or no motion at all';
+  let next = 1;
+  for (const e of motions) if (next < path.length && at(e, path[next])) next++;
+  if (next < path.length || !at(motions.at(-1), path.at(-1))) return 'the motions do not reach every point of the requested path in order, ending at its last';
+  return null;
 }
 
 /**
@@ -426,17 +457,22 @@ export function sentDrag({ requests, extensions }, child) {
  * first (ok). So:
  * - ok:false passes only as the interruption whose error names the destroyed child: an X Window error (BadWindow) whose
  *   bad value, read before the answer is masked (`bad_value`), is the recorder's own child XID (`child`);
- * - ok:true passes only when the recorder shows every pointer event the engine's trace says it sent the child between
- *   its press and its release (`sent`, `sentDrag`), paired one by one in order, each the same type at the same root
- *   position, the release last, and nothing else on the recorder after the press. Each reached the child before it was
- *   destroyed, since no event reaches a destroyed window and the recorder lists them in the server's order.
+ * - ok:true passes only when both hold:
+ *   - the recorder shows every pointer event the engine's trace says it sent the child between its press and its
+ *     release (`sent`, `sentDrag`), paired one by one in order, each the same type at the same root position, the
+ *     release last, and nothing else on the recorder after the press;
+ *   - the recorder, on its own, shows the whole requested drag (`wholeDragFault`, fix wave 2: two records agreeing on a
+ *     truncated drag do not make it whole): button 1 pressed at the path's start, motions with button 1 held visiting
+ *     every point of the path in order and ending at its last, and button 1 released there.
+ *   Each reached the child before it was destroyed, since no event reaches a destroyed window and the recorder lists them
+ *   in the server's order.
  * The drag is sent by SendEvent to the child itself, so the judge does not rely on the implicit grab after the press:
  * every event the trace shows is owed, a motion to the pointer's own position included, since a SendEvent is delivered
  * whatever the pointer's position. Only an XTEST motion that moves the pointer nowhere delivers nothing; XTEST input
  * names no window, so it is never paired, and a sample that shows any fails closed. A missing or empty trace, or one
  * with no press to this run's child, fails closed.
  */
-export function interruptedDragFault(record) {
+export function interruptedDragFault(record, step) {
   const answer = record.answer;
   if (answer.ok === false) {
     if (JSON.stringify(answer) !== JSON.stringify(INTERRUPTED)) return 'not an interruption after the press of the child';
@@ -450,6 +486,8 @@ export function interruptedDragFault(record) {
   if (!sent.press) return "the trace holds no button-1 press to this run's child";
   if (!sent.released) return 'the trace holds no release of button 1 to the child after its press';
   const all = [...record.events, ...(record.suffix ?? [])];
+  const whole = wholeDragFault(all, step);
+  if (whole) return whole;
   const tail = all.slice(all.findIndex(childPress) + 1);
   if (tail.length !== sent.after.length) return `the recorder shows ${tail.length} events on the child after the press, the trace ${sent.after.length} sent to it`;
   for (const [i, e] of tail.entries()) {
@@ -461,9 +499,10 @@ export function interruptedDragFault(record) {
 
 /**
  * The first difference between two scenario records (`{answers, events}` per step), or null. An interrupted drag is
- * judged by its own record (`interruptedDragFault`): its child, its error's window and its trace.
+ * judged by its own record (`interruptedDragFault`): its child, its error's window and its trace, and against its own
+ * step (`steps`, the scenario's; without them an ok drag fails closed).
  */
-export function firstDifference(reference, candidate) {
+export function firstDifference(reference, candidate, steps = null) {
   for (let i = 0; i < reference.length; i++) {
     const [a, b] = [reference[i], candidate[i]];
     if (!b) return { step: i, what: 'missing step' };
@@ -471,7 +510,7 @@ export function firstDifference(reference, candidate) {
     if (a.interrupted && JSON.stringify(a.answer) !== JSON.stringify(INTERRUPTED)) return { step: i, what: 'reference not interrupted', reference: a.answer };
     if (a.interrupted && b.interrupted && b.command === 'drag') {
       // ruling 818: an interrupted drag passes as the interruption or as the whole drag, never otherwise
-      const why = interruptedDragFault(b);
+      const why = interruptedDragFault(b, steps?.[i]);
       if (why) return { step: i, what: 'answer', reference: a.answer, candidate: b.answer, why };
     } else if (JSON.stringify(a.answer) !== JSON.stringify(b.answer)) return { step: i, what: 'answer', reference: a.answer, candidate: b.answer };
     const n = Math.max(a.events.length, b.events.length);
@@ -905,13 +944,13 @@ export function judgeScenario(scenario, records, labels, { first = firstDifferen
   const declared = {};
   const reference = scenario.reference ?? 'pinned';
   for (const label of labels.filter((l) => l !== reference && !(reference === 'newest' && l === 'pinned'))) {
-    let difference = first(records[reference], records[label]);
+    let difference = first(records[reference], records[label], scenario.steps);
     // a declared deviation excuses its own step's answer, and only when the candidate answered as declared
     if (difference?.what === 'answer' && scenario.deviation) {
       const deviation = declaredDeviation({ op: scenario.deviation, scene: 'events', field: 'answer', candidate: difference.candidate });
       if (deviation) {
         const excused = records[label].map((step, i) => (i === difference.step ? { ...step, answer: records[reference][i].answer } : step));
-        difference = first(records[reference], excused);
+        difference = first(records[reference], excused, scenario.steps);
         if (!difference) declared[label] = deviation.op;
       }
     }

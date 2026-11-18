@@ -62,6 +62,20 @@ test('a former judge that does not reproduce the stored verdict is reported', ()
   assert.deepEqual(run.unreproduced, [DRAG]);
 });
 
+// fix wave 2 (review 2's minor): a former judge is handed the scenario's steps, as the run's own judge is, so one that
+// reads the requested path (570ff0bd's) replays as it judged
+test("a former judge is given the scenario's steps", () => {
+  const seen = [];
+  const old = (a, b, steps) => {
+    seen.push(steps);
+    return firstDifference(a, b, steps);
+  };
+  const { steps } = scenarios().find((x) => x.name === DRAG);
+  const [run] = rejudgeEvents([row(lane(ok, [...PRESSED, ...WHOLE]), (a, b) => firstDifference(a, b, steps))], { old });
+  assert.deepEqual(seen, [steps, steps], 'newest and cua, each judged with the steps');
+  assert.deepEqual(run.unreproduced, []);
+});
+
 test('a stored scenario this checkout does not know is refused, not skipped', () => {
   assert.throws(() => rejudgeEvents([{ ...row(lane(bad, PRESSED), firstDifference), scenario: 'gone' }]), /no scenario named "gone"/);
 });

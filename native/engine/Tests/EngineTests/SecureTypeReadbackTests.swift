@@ -658,8 +658,10 @@ final class SecureTypeReadbackTests: XCTestCase {
     XCTAssertEqual(app.batches, 1 + 3 + 1, "the snapshot, three settle reads, one poll")
   }
 
-  /// A count or caret no field has (`NSNotFound` is Int.max; a count past Int32's range) is unreadable at the basis, so
-  /// no arithmetic on it can trap: an unconfirmed reason, the text typed all the same.
+  /// A count or caret no field has (`NSNotFound` is Int.max; a count past Int32's range) is unreadable, so no arithmetic
+  /// on it can trap: an unconfirmed reason, the text typed all the same. A count past the limit is a failed read
+  /// (`readbackLength`; the review of 81a1aebc..52f0109a, P2), refused at the snapshot before any settle and unreadable
+  /// to the poll until its budget, as a failed count is; a caret past it is unreadable at the basis.
   func testACountOrCaretNoFieldHasIsUnreadableWithoutATrap() {
     let notFound = axRangeValue(CFRange(location: NSNotFound, length: 0))
     let caret = field()
@@ -667,15 +669,32 @@ final class SecureTypeReadbackTests: XCTestCase {
     caret.rangeSlot = .reply(notFound)
     XCTAssertEqual(reason(type("pass", into: caret).meta), "lengthUnreadable", "the caret's basis at NSNotFound")
     XCTAssertEqual(caret.batches, 1)
-    let huge = field(selection: NSRange(location: 5, length: 0))
-    huge.countSlot = .reply(Int.max as CFNumber)
-    XCTAssertEqual(reason(type("pass", into: huge).meta), "lengthUnreadable", "a count of Int.max")
+    for count in [Int.max, Int(Int32.max) + 1] {
+      let huge = field(selection: NSRange(location: 5, length: 0))
+      huge.countSlot = .reply(count as CFNumber)
+      XCTAssertEqual(reason(type("pass", into: huge).meta), "lengthUnreadable", "a count of \(count)")
+      XCTAssertEqual(huge.batches, 1, "\(count): refused at the snapshot")
+    }
     let counted = field()
     counted.rangeSlot = .reply(notFound)
     XCTAssertEqual(reason(type("pass", into: counted).meta), "selectionUnreadable", "a range at NSNotFound beside a count")
     let polled = field()
     polled.beforeBatch = { if $0 == 1 { polled.countSlot = .reply(Int.max as CFNumber); polled.rangeSlot = .reply(notFound) } }
-    XCTAssertEqual(reason(type("pass", into: polled).meta), "lengthMismatch", "such a read after typing only differs")
+    let (_, polledMeta, _) = type("pass", into: polled)
+    XCTAssertEqual(reason(polledMeta), "lengthUnreadable", "such a read after typing is a failed read")
+    XCTAssertEqual(polledMeta.typeReadback?.reads, polled.batches - 1, "polled to the budget, every read unreadable")
+    XCTAssertGreaterThan(polled.batches, 2, "polled to the budget, every read unreadable")
+    XCTAssertEqual(polled.value.count, after, "typed all the same")
+
+    // The settle cannot turn such a count into the caret's basis: a snapshot count of Int.max, then no count at all
+    // beside a stable empty selection, is lengthUnreadable at the snapshot, never confirmed by the caret.
+    let settled = field(selection: NSRange(location: 5, length: 0))
+    settled.countSlot = .reply(Int.max as CFNumber)
+    settled.beforeBatch = { if $0 >= 1 { settled.countSlot = .absent } }
+    let (settledError, settledMeta, _) = type("pass", into: settled, settle: true)
+    XCTAssertEqual(settledError?.errorName, "typeUnconfirmed")
+    XCTAssertEqual(reason(settledMeta), "lengthUnreadable")
+    XCTAssertEqual(settled.batches, 1, "refused before the settle")
 
     let bound = Int(Int32.max)
     XCTAssertEqual(readbackLengthBasis(count: .value(bound), range: NSRange(location: bound, length: 0)), .basis(.count(bound, range: NSRange(location: bound, length: 0))))

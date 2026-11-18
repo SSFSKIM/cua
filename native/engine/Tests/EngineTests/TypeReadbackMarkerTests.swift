@@ -180,7 +180,7 @@ final class TypeReadbackMarkerTests: XCTestCase {
   /// Types `text` into the stub through keyTextReadBack over the live reads; the error, the meta and the reply as the
   /// wire would carry it.
   @discardableResult
-  private func type(_ text: String, into safari: StubSafari, concealed: Bool = false, markerRoute: Bool = true)
+  private func type(_ text: String, into safari: StubSafari, concealed: Bool = false, markerRoute: Bool = true, baseline: BaselineWait? = nil)
     -> (error: EngineError?, meta: InputMeta, reply: String) {
     var reads = ReadbackReads.live(pid: StubSafari.pid, markerRoute: markerRoute, ax: safari.ax)
     var clock = 0.0
@@ -189,7 +189,7 @@ final class TypeReadbackMarkerTests: XCTestCase {
     var meta = meta()
     var failure: EngineError?
     do {
-      try keyTextReadBack(units(text), concealed: concealed, reads: reads, checkSource: { _, _ in }, checkIntervention: {},
+      try keyTextReadBack(units(text), concealed: concealed, baseline: baseline, reads: reads, checkSource: { _, _ in }, checkIntervention: {},
                           post: { event in
                             if event.kind == .down, let text = event.text { safari.deliver(text) }
                             return true
@@ -469,6 +469,64 @@ final class TypeReadbackMarkerTests: XCTestCase {
         }
         XCTAssertEqual(safari.log[(snapshot + 1)...].filter { $0 != "post" }, [], "\(name): nothing read after the snapshot's subrole")
       }
+    }
+  }
+
+  /// The review of 81a1aebc..52f0109a (P1): a select_text baseline at a field the route found to be a password field is
+  /// refused selectionChanged before any read of the field, its role included, whether its own reads would show a
+  /// password field or one shown as text: nothing is typed, since a password field never holds select_text's selection.
+  /// A stable baseline keeps the snapshot's own rule: one shown as text is noLongerSecure, the text typed.
+  func testASelectTextBaselineAtAFieldTheRouteFoundToBeAPasswordFieldTypesNothing() {
+    for concealed in [false, true] {
+      for shownAsText in [false, true] {
+        let name = "\(concealed ? "concealed" : "literal"), \(shownAsText ? "shown as text" : "still a password field")"
+        let safari = StubSafari(value: "hunter2", selection: NSRange(location: 7, length: 0))
+        if shownAsText {
+          safari.batches[StubSafari.field] = AttributeRead(values: [kAXRoleAttribute: "AXSecureTextField" as CFString])
+        } else {
+          safari.subroles[StubSafari.field] = "AXSecureTextField"
+        }
+        let (error, meta, _) = type("pass", into: safari, concealed: concealed, baseline: .selection(NSRange(location: 7, length: 0)))
+        XCTAssertEqual(error?.errorName, "typeUnconfirmed", name)
+        XCTAssertTrue(error?.message.hasPrefix("Nothing was typed") ?? false, name)
+        XCTAssertEqual(reason(meta), "selectionChanged", name)
+        XCTAssertEqual(record(meta)["secure"] as? Bool, true, name)
+        XCTAssertNil(record(meta)["reads"], name)
+        XCTAssertEqual(meta.entered, concealed ? nil : 0, name)
+        XCTAssertFalse(safari.log.contains("post"), "\(name): nothing typed")
+        XCTAssertEqual(safari.value, "hunter2", name)
+        guard let classified = safari.log.lastIndex(of: "batch(AXRole,AXSubrole)@\(StubSafari.field)") else {
+          XCTFail("\(name): classified by role and subrole in one request: \(safari.log.suffix(12))")
+          continue
+        }
+        XCTAssertEqual(Array(safari.log[(classified + 1)...]), ["AXFocused@7", "AXParent@7", "AXParent@6"],
+                       "\(name): the route's own reads, then nothing")
+      }
+    }
+    let stable = StubSafari(value: "hunter2", selection: NSRange(location: 7, length: 0))
+    stable.batches[StubSafari.field] = AttributeRead(values: [kAXRoleAttribute: "AXSecureTextField" as CFString])
+    let (error, meta, _) = type("pass", into: stable, baseline: .stable)
+    XCTAssertEqual(error?.errorName, "typeUnconfirmed")
+    XCTAssertEqual(reason(meta), "noLongerSecure")
+    XCTAssertEqual(stable.value, "hunter2pass", "a stable baseline types, as before")
+  }
+
+  /// The review of 81a1aebc..52f0109a (P2): a field the route found to be a password field keeps a password field's
+  /// record whatever the snapshot's own reads then find: its role read failing is roleUnreadable with `secure: true`,
+  /// and no reads or poll time.
+  func testAPasswordFieldTheRouteFoundWhoseRoleThenFailsKeepsAPasswordFieldsRecord() {
+    for concealed in [false, true] {
+      let safari = StubSafari(value: "hunter2", selection: NSRange(location: 7, length: 0))
+      safari.batches[StubSafari.field] = AttributeRead(values: [kAXRoleAttribute: "AXSecureTextField" as CFString])
+      safari.errors[StubSafari.field] = [kAXRoleAttribute: .cannotComplete]
+      let (error, meta, reply) = type("pass", into: safari, concealed: concealed)
+      XCTAssertEqual(error?.errorName, "typeUnconfirmed")
+      XCTAssertEqual(reason(meta), "roleUnreadable")
+      XCTAssertEqual(record(meta)["secure"] as? Bool, true)
+      XCTAssertNil(record(meta)["reads"])
+      XCTAssertNil(record(meta)["pollMs"])
+      XCTAssertFalse(reply.contains("hunter2"))
+      XCTAssertEqual(safari.valueReads, [], "\(safari.log)")
     }
   }
 

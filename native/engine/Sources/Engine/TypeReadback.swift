@@ -49,7 +49,8 @@ import Foundation
 //   subrole, selected range and character count (`readbackLengthAttributes`), classified from that same reply
 //   (`readbackLength`): a reply that is no longer such a field ends it. The count and range stay here, compared and
 //   never formatted, kept on the record or emitted. A wait for select_text's range is refused `selectionChanged` before
-//   any batch, nothing typed, since select_text never selects in a password field; a count read that fails at the
+//   any batch (at a field the lookup took for one, before any read of it, its role included), nothing typed, since
+//   select_text never selects in a password field; a count read that fails at the
 //   snapshot is refused before the settle. The starting point (`readbackLengthBasis`): the count with the range; the
 //   count alone in an empty field whose range cannot be read; or, where the field has no count at all (absent, never a
 //   read that failed), the caret alone from an empty selection; a count or such a caret past `readbackLengthLimit` is
@@ -432,10 +433,12 @@ func readbackSnapshot<Element>(reads: ReadbackReads<Element>, settle: inout Read
 }
 
 /// #414: `secure` is set once the field is found to be a password field (`readbackPasswordField`), which the snapshot
-/// then takes by its length (`readbackLengthSnapshot`), whether or not it then refuses it, or once the lookup took it for
-/// one (`ReadbackFound.field`'s `password`). A field the lookup took for a password field whose own role and subrole now
-/// read as none (a page's show-password toggle in between) is refused `noLongerSecure`, as the poll refuses it, and
-/// nothing more is read: it may now show its text.
+/// then takes by its length (`readbackLengthSnapshot`), whether or not it then refuses it, or as soon as the lookup took
+/// it for one (`ReadbackFound.field`'s `password`), whatever the snapshot's own reads then find. A field the lookup took
+/// for a password field is refused `selectionChanged` under a select_text baseline before any read of it, its role
+/// included, so nothing is typed (`readbackLengthSnapshot` says why); one whose own role and subrole now read as none (a
+/// page's show-password toggle in between) is refused `noLongerSecure`, as the poll refuses it, and nothing more is
+/// read: it may now show its text.
 func readbackSnapshot<Element>(reads: ReadbackReads<Element>, settle: inout ReadbackSettle?, baseline: BaselineWait?,
                                waited: inout RangeWait?, secure: inout Bool) -> ReadbackPlan<Element> {
   let field: Element, found: ReadbackLookup, classified: Bool
@@ -444,12 +447,13 @@ func readbackSnapshot<Element>(reads: ReadbackReads<Element>, settle: inout Read
   case .closed(let reason)?: return .refused(reason)  // the marker route's classification: nothing more is read
   case .field(let element, let by, let password)?: (field, found, classified) = (element, by, password)
   }
+  if classified {
+    secure = true
+    if case .selection? = baseline { return .refused(.selectionChanged) }
+  }
   guard let role = reads.role(field) else { return .refused(.roleUnreadable) }
   let subrole = reads.subrole(field)
-  if classified, !readbackPasswordField(role: role, subrole: subrole) {
-    secure = true
-    return .refused(.noLongerSecure)
-  }
+  if classified, !readbackPasswordField(role: role, subrole: subrole) { return .refused(.noLongerSecure) }
   if readbackSecure(role: role, subrole: subrole) {
     // #414: a password field is confirmed by its length; any other element closed is refused unread, as before.
     guard readbackPasswordField(role: role, subrole: subrole) else { return .refused(.secure) }

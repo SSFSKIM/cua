@@ -1,0 +1,119 @@
+name: probe-405
+on:
+  push:
+    branches: ['probe/405-qual']
+    paths: ['.github/workflows/probe-405.yml']
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Smoke uses CfT and AppKit; full uses all six lanes'
+        type: choice
+        options: [smoke, full]
+        default: smoke
+      fix_ref:
+        description: 'Exact approved 40-hex fix SHA; required for full, optional for smoke'
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: probe-405
+  cancel-in-progress: false
+env:
+  MAIN_REF: 11f1ff68135a72b345880aea1e19a01b3e366996
+  SMOKE_REF: 6a1c7658e4d48d7bcaa6ce25aba760b712148687
+  FIX_INPUT: ${{ inputs.fix_ref }}
+  MODE: ${{ inputs.mode || 'smoke' }}
+jobs:
+  qualify:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: ${{ fromJSON(inputs.mode == 'full' && '["cft","electron","electron-parity","safari","firefox","appkit"]' || '["cft","appkit"]') }}
+    env:
+      BROWSER: ${{ matrix.browser }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Pin and build both exact unmodified engines
+        shell: bash
+        run: |
+          set -euo pipefail
+          fix_ref="$FIX_INPUT"
+          if [[ "$MODE" == smoke && -z "$fix_ref" ]]; then fix_ref="$SMOKE_REF"; fi
+          [[ "$fix_ref" =~ ^[0-9a-f]{40}$ ]] || { echo 'Explicit exact fix_ref required for full'; exit 1; }
+          test "$(git rev-parse "$fix_ref^{commit}")" = "$fix_ref"
+          test "$(git rev-parse "$MAIN_REF^{commit}")" = "$MAIN_REF"
+          git merge-base --is-ancestor "$MAIN_REF" "$fix_ref"
+          printf 'FIX_REF=%s\n' "$fix_ref" >> "$GITHUB_ENV"
+          for head in main fix; do
+            pin="$MAIN_REF"
+            if [[ "$head" == fix ]]; then pin="$fix_ref"; fi
+            git worktree add --detach "$RUNNER_TEMP/q405-$head" "$pin"
+            swift build -c release --package-path "$RUNNER_TEMP/q405-$head/native/engine" --scratch-path "$RUNNER_TEMP/q405-build-$head"
+            test -z "$(git -C "$RUNNER_TEMP/q405-$head" status --porcelain)"
+          done
+      - name: Build owned fixture and independent AX helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test scripts/probe-405/check.test.mjs
+          if [[ "$BROWSER" == electron* ]]; then npm ci --prefix scripts/probe-390/fixture --no-audit --no-fund; fi
+          swiftc -O -o "$RUNNER_TEMP/q405-ax" scripts/probe-pw-walk/ax.swift
+          if [[ "$BROWSER" == appkit ]]; then
+            fixture_app="$RUNNER_TEMP/PWWalkFixture.app"
+            mkdir -p "$fixture_app/Contents/MacOS"
+            swiftc -O -o "$fixture_app/Contents/MacOS/pw-fixture" scripts/probe-405/fixture.swift
+            cat > "$fixture_app/Contents/Info.plist" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+          <key>CFBundleExecutable</key><string>pw-fixture</string>
+          <key>CFBundleIdentifier</key><string>dev.cua.probe.pwwalk.fixture</string>
+          <key>CFBundleName</key><string>PWWalkFixture</string>
+          <key>CFBundlePackageType</key><string>APPL</string>
+          <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+          <key>CFBundleVersion</key><string>1</string>
+          <key>CFBundleShortVersionString</key><string>1</string>
+          <key>LSMinimumSystemVersion</key><string>13.0</string>
+          </dict></plist>
+          PLIST
+            plutil -lint "$fixture_app/Contents/Info.plist"
+            codesign --force --sign - "$fixture_app"
+          elif [[ "$BROWSER" == firefox ]]; then
+            if [[ ! -d /Applications/Firefox.app ]]; then brew install --cask firefox; fi
+            mkdir -p /Applications/Firefox.app/Contents/Resources/distribution
+            printf '%s\n' '{"policies":{"DisableAppUpdate":true}}' > /Applications/Firefox.app/Contents/Resources/distribution/policies.json
+          fi
+      - name: Capture live redacted observation, action and timing evidence
+        run: |
+          node scripts/probe-405/measure.mjs --browser "$BROWSER" --mode "$MODE" \
+            --main-ref "$MAIN_REF" --fix-ref "$FIX_REF" \
+            --main-engine "$RUNNER_TEMP/q405-build-main/release/cua-engine" --fix-engine "$RUNNER_TEMP/q405-build-fix/release/cua-engine" \
+            --main-source "$RUNNER_TEMP/q405-main" --fix-source "$RUNNER_TEMP/q405-fix" \
+            --tool "$RUNNER_TEMP/q405-ax" --fixture "$RUNNER_TEMP/PWWalkFixture.app/Contents/MacOS/pw-fixture" --out "$RUNNER_TEMP/q405-evidence"
+      - name: Run the fix's stub-provider and rendering proofs
+        if: ${{ !cancelled() && matrix.browser == 'cft' && env.FIX_REF != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/q405-evidence"
+          cd "$RUNNER_TEMP/q405-fix"
+          swift test -c release --package-path native/engine --scratch-path "$RUNNER_TEMP/q405-build-fix" --filter SecureFieldTests 2>&1 | tee "$RUNNER_TEMP/q405-evidence/stub-provider.txt"
+          grep -Eq 'Executed [1-9][0-9]* tests?' "$RUNNER_TEMP/q405-evidence/stub-provider.txt"
+          node --test test/services-engine-render.test.mjs test/services-engine-diff.test.mjs test/services-engine-observations.test.mjs 2>&1 | tee "$RUNNER_TEMP/q405-evidence/renderer-tests.txt"
+          test -z "$(git status --porcelain)"
+      - name: Upload evidence, never profiles or temporary homes
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: probe-405-${{ matrix.browser }}-${{ env.MODE }}
+          path: ${{ runner.temp }}/q405-evidence/*
+          retention-days: 30
+          if-no-files-found: warn

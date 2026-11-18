@@ -120,8 +120,8 @@ export async function startPlatform({lane,home,helper,cover,appkit,stage}){
     active=coverApp.pid;
     async function arm(trial,m,onStage=()=>{}){
       onStage('prepare');await ensureFront(pid);
-      const prep=await command({op:'prepare',trial,expected:''});
-      if(prep.trial!==trial||!prep.shape||!prep.plainFocused||!prep.exact)throw Error('prepare fixture');
+      const prep=await command({op:'prepare',trial,expected:'',setupText:m.setupText});
+      if(prep.trial!==trial||!prep.shape||!prep.plainFocused||!prep.exact||(m.setupText&&prep.setupExact!==true))throw Error('prepare fixture');
       if(presentation==='background'){
         onStage('cover');await ensureFront(active);await pause(250);
       }

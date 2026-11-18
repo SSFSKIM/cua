@@ -31,10 +31,12 @@ const reveal=el=>{if(FILLER>0)el.scrollIntoView({block:'nearest'});};
 function state(c){return {trial,focused:document.activeElement===field,plainFocused:document.activeElement===setup,
   shape:field===document.getElementById('password')&&field.type==='password'&&field.isConnected&&filler(),
   exact:field.value===c.expected, controlExact:c.control!=null&&field.value===c.control,
+  setupExact:typeof c.setupText==='string'?setup.value===c.setupText:null,
   selection:c.end!=null&&field.selectionStart===c.start&&field.selectionEnd===c.end,key,input,hit};}
 function run(c){
   if(c.op==='prepare'){
-    setup.focus();reveal(setup);trial=c.trial;field.value='';effect='none';first='';key=input=hit=false;
+    setup.value=c.setupText??'';setup.focus();setup.setSelectionRange(setup.value.length,setup.value.length);
+    reveal(setup);trial=c.trial;field.value='';effect='none';first='';key=input=hit=false;
   }else if(c.op==='seed'){
     if(c.trial!==trial)throw Error('generation');
     effect=c.effect;first=c.first;field.value=c.expected;field.focus();reveal(field);field.setSelectionRange(c.start,c.end);

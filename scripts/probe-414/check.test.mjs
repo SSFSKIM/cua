@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {plan, score, inspect, auditSchedule, auditPairs, summarize, coded, noteAttested, NOTE_PREFIX} from './check.mjs';
+import {plan, score, inspect, auditSchedule, auditPairs, summarize, coded, noteAttested, NOTE_PREFIX, firefoxDisclosure} from './check.mjs';
 
 const success={confirmed:true,secure:true,confirmation:'length',snapshotMs:4};
 const old={confirmed:false,concealed:true,reason:'secure',snapshotMs:3};
@@ -266,4 +266,15 @@ test('JSON-facing arrays do not disclose their JavaScript implementation length'
   assert.deepEqual(inspect(observation,[]),[]);
   assert.notDeepEqual(inspect([{length:8}],[]),[]);
   assert.notDeepEqual(inspect(['cua-engine: {"actualLength":8}'],[]),[]);
+});
+
+test('Firefox diagnostic reports excerpt, expected/actual, masks and lengths as booleans only',()=>{
+  const normal={meta:{typeReadback:{confirmed:false,reason:'secure',snapshotMs:3}},message:'the field is a password field'};
+  assert.deepEqual(firefoxDisclosure(normal),{excerpt:false,expected:false,actual:false,masks:false,lengths:false,actualClass:'unknown'});
+  const mismatch={meta:{typeReadback:{confirmed:false,reason:'valueMismatch',expectedLength:13,actualLength:4}},
+    message:'From character 4, expected "vptbgw"; the field reads "••••". The expected text is 13 characters long, the field\'s 4.'};
+  assert.deepEqual(firefoxDisclosure(mismatch),{excerpt:true,expected:true,actual:true,masks:true,lengths:true,actualClass:'password'});
+  assert.deepEqual(firefoxDisclosure({meta:{typeReadback:{actual:''}}}),{excerpt:false,expected:false,actual:true,masks:true,lengths:false,actualClass:'password'});
+  assert.equal(firefoxDisclosure({message:'From character 5, expected "stqbot"; the field reads "wqpjuz".'},
+    {setupText:'qwqpjuzq',passwordText:'stqbotcv'}).actualClass,'setup');
 });

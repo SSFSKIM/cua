@@ -104,6 +104,26 @@ export function inspect(input,values,{literal=false,stringsOnly=false,surface=nu
   return [...findings].sort();
 }
 
+// Only the Firefox diagnostic uses this projection. The sealed observation is of the *surface*, not the field's identity.
+export function firefoxDisclosure(surface,{setupText,passwordText}={}){
+  const diagnostics=surface?.error??surface?.result??surface;
+  const r=diagnostics?.meta?.typeReadback??surface?.['cua/typeReadback']??{};
+  const text=typeof surface==='string'?surface:typeof diagnostics?.message==='string'?diagnostics.message:'';
+  const present=k=>r[k]!==null&&r[k]!==undefined;
+  // Only the actual excerpt can identify a field. Expected normally repeats the literal request even on a wrong target.
+  const quoted=text.match(/\bthe field reads ("(?:[^"\\]|\\.)*")/);
+  let actual=typeof r.actual==='string'?r.actual:'';
+  if(!actual&&quoted)try{actual=JSON.parse(quoted[1]);}catch{}
+  const matches=value=>typeof value==='string'&&value.length>=6&&Array.from({length:value.length-5},(_,i)=>value.slice(i,i+6)).some(part=>actual.includes(part));
+  const setup=matches(setupText),password=matches(passwordText)||/[•]/.test(actual);
+  const actualClass=setup===password?'unknown':setup?'setup':'password';
+  return {excerpt:present('excerpt')||/\bFrom character \d+, expected /.test(text),
+    expected:present('expected')||/\bexpected ["']/.test(text),
+    actual:present('actual')||/\bthe field reads ["']/.test(text),
+    masks:/[•]/.test(text)||/[•]/.test(JSON.stringify(r)),
+    lengths:present('expectedLength')||present('actualLength')||/\b\d+ characters long\b/.test(text),actualClass};
+}
+
 const forbiddenAX=new Set(['AXValue','AXValueDescription','AXSelectedText']);
 const countRead=(api,name,id,secure)=>api==='b'&&secure.has(id)&&name==='AXRole+AXSubrole+AXSelectedTextRange+AXNumberOfCharacters';
 // Trace entries are attribute names, first-seen element aliases and a closed classification ('secure' or 'webArea'), never AX data.

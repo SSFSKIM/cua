@@ -21,7 +21,7 @@ import {resolveBrowserTarget} from '../probe-354-fences/ab-secret.mjs';
 import {plan,WARMUPS,LARGE_NODES,CONTROL_REPS,PASSWORD_RANGE_REPS,PASSWORD_RANGE,PASSWORD_RANGE_LENGTHS,CONTROLS,PAIRS,LENGTHS,KINDS,PAGES} from './plan.mjs';
 import {page} from './page.mjs';
 
-const SEED='Old draft sentence goes here.',SECRET_LABEL='PROBE395',BUDGET_MS=100*60000,WIN={x:400,y:30,w:620,h:720};
+const SEED='Old draft sentence goes here.',SECRET_LABEL='PROBE395',BUDGET_MS=100*60000,SETUP_FAILURE_CAP=20,WIN={x:400,y:30,w:620,h:720};
 const sleep=ms=>new Promise(r=>setTimeout(r,Math.max(0,ms)));
 const COVER_PLIST=`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -158,7 +158,7 @@ async function main(){
    targetTerminated:typeof r.targetTerminated==='boolean'?r.targetTerminated:null};
   if(r.error||r.frontmostPid!==target)throw new Fail();
  }
- // Password cells only: activation can be accepted yet leave the browser front, so retry a bounded number of times.
+ // Activation can be accepted yet leave the browser front (seen on password and nonpassword cells), so retry a bounded number of times.
  async function frontCover(){for(let i=1;;i++){try{await front(coverPid);return i}catch(e){if(!(e instanceof Fail)||i>=4)throw e;await sleep(300)}}}
  const titles=async target=>{const r=await ask({op:'titles',pid:target});return Array.isArray(r.titles)?r.titles.filter(t=>typeof t==='string'):[]};
  async function connect(){
@@ -182,11 +182,11 @@ async function main(){
    fixture:'one document and one input node (#probe395-target, class probe395-field) for the whole run; conditions change type, value and selection in place and add or remove the large-before-editor group before it; the page answers booleans and counts only',
    path:'every typed text goes through the real createSkyService and createService over the engine socket in a fresh temporary HOME; secret cells type the literal handle with the value in the temporary fileStore (removed after each call); plain cells type the literal text; password cells are never typed into: the DOM node is prepared as a focused empty text input while the browser is front, and only after the cover is front and the witness armed does the same node become a password field with the seed value and selection (no focus call unless the type change drops the active element, which is recorded). A Sky rejection is allowed to proceed only when the engine answered type_text with errorName typeUnconfirmed; the DOM gate below decides validity independently',
    order:'each round holds every unit once, shuffled with a seeded generator; a unit is one cell or a matched pair that is measured back to back (plain and secret of one page, length and repetition; unchanged, content and prefix plain pairs); the matched equal-length content variants (a, b) alternate by repetition',
-   cell:'browser forward, DOM setup (password cells: empty text input), cover forward (password cells: up to 4 activations), 250ms settle, DOM re-read, cover frontmost check without activation, witness arm, password conversion with cover checks and a second settled read (password cells only), type (plain and secret only), cover check, DOM confirmation of content, caret and active element, a script selection for non-collapsed plain cells, one probe measure, DOM re-read, cover check, witness disarm; no key is pressed by the harness; the page counts key and input events (zero before typing, unchanged by the select and the probe)',
-   retries:'none: no measured text or probe request is retried',
+   cell:'browser forward, DOM setup (password cells: empty text input), cover forward (up to 4 activations), 250ms settle, DOM re-read, cover frontmost check without activation, witness arm, password conversion with cover checks and a second settled read (password cells only), type (plain and secret only), cover check, DOM confirmation of content, caret and active element, a script selection for non-collapsed plain cells, one probe measure, DOM re-read, cover check, witness disarm; no key is pressed by the harness; the page counts key and input events (zero before typing, unchanged by the select and the probe)',
+   retries:'no measured text or probe request is retried; only cover activation before arming (up to 4) and an arm invalid for cover-not-front or owner-not-cover with no witnessed activation (up to 3 arms, before any typing) are repeated',
    validity:'harnessValid = every DOM, foreground and event-count check plus a valid arm and disarm witness; probeValid = the probe says valid (a clean route miss is probe-valid); valid = both. Coverage is complete when every planned cell is harnessValid and probeValid, summarized separately',
    privacy:'synthetic values only, kept in memory; rows carry no text, seed, secret, engine reply, log or error message; engine and probe stderr discarded; strings from the probe are scrubbed and checked against every synthetic value',
-   abort:'3 consecutive harness-invalid cells, 6 setup failures, a failed secret cleanup, a failed witness cleanup, a stuck probe, or the 100 minute budget'}};
+   abort:'3 consecutive harness-invalid cells, 20 setup failures (setup, settle and arm stages), a failed secret cleanup, a failed witness cleanup, a stuck probe, or the 100 minute budget'}};
  const budget=()=>{if(Date.now()-start>BUDGET_MS)throw new Abort()};
  const progress=last=>writeFileSync(join(outDir,'progress.json'),JSON.stringify({planned,done,harnessValid,probeValid,valid,invalid,setupFailures,consecutiveInvalid,privacyViolations,storeCleanupFailures,failureStages,probeReasons,aborted:aborted!==null,elapsedMs:Date.now()-start,last},null,2));
  // Final defence: nothing is written that contains a synthetic value.
@@ -280,14 +280,20 @@ async function main(){
    row.fixture.setup=pick(s0);
    if(!stateOk(s0,c,{typed:false}))throw new Fail();
    stage='settle';
-   if(secure)row.passwordSetup.coverAttempts=await frontCover();else await front(coverPid);
+   row.foreground.coverAttempts=await frontCover();if(secure)row.passwordSetup.coverAttempts=row.foreground.coverAttempts;
    row.foreground.coverForward=true;row.settleMs=250;await sleep(250);
    const s1=await readState(first);row.fixture[secure?'prepared':'settled']=pick(s1);
    if(!stateOk(s1,c,{typed:false}))throw new Fail();
    await front(coverPid,false);row.foreground.coverBeforeType=true;
    // The witness covers everything from here to the final checks; it is always disarmed again, below or in the cleanup.
    stage='arm';
-   armed=true;row.witness={arm:await witness('arm')};
+   // An invalid arm has already removed its observer, so it is retried only when the boundary itself lagged (cover not yet
+   // front or owner, no activation seen); the retry re-fronts the cover first and happens before any typing.
+   armed=true;row.witness={arm:await witness('arm'),armAttempts:1};
+   while(!row.witness.arm.valid&&row.witness.armAttempts<3&&/^(cover-not-front|owner-not-cover)-at-arm$/.test(row.witness.arm.reason??'')&&row.witness.arm.result?.witnesses===0){
+    await sleep(300);await frontCover();await front(coverPid,false);
+    row.witness.armAttempts++;row.witness.arm=await witness('arm');
+   }
    if(!row.witness.arm.valid)throw new Fail();
    if(secure){
     // Browser already in the background under the armed witness: the same node becomes the password field.
@@ -351,7 +357,7 @@ async function main(){
    if(e instanceof Abort)abortErr=e;
    if(e instanceof Fail&&stage==='settle')row.foregroundDiag=lastFront;
    row.harnessValid=false;row.failureStage=stage;row.failureKind=e instanceof Abort?'abort':lost?'fixture':e instanceof Fail?'check':'error';row.fixtureLost=lost;
-   row.setupFailure=stage==='setup'||stage==='settle'||lost;
+   row.setupFailure=stage==='setup'||stage==='settle'||stage==='arm'||lost;
   }finally{
    w?.close();
    if(armed){
@@ -376,7 +382,7 @@ async function main(){
    progress(row.id);
   }
   if(abortErr)throw abortErr;
-  if(consecutiveInvalid>=3||(!warmup&&setupFailures>=6))throw new Abort();
+  if(consecutiveInvalid>=3||(!warmup&&setupFailures>=SETUP_FAILURE_CAP))throw new Abort();
  }
 
  // ---- run ---------------------------------------------------------------------------------------------------------

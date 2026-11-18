@@ -5880,6 +5880,162 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      into an absence. Three positive controls show ruling 824's test can see a leak: the start marker's offset, decoded
      from its bytes and written in turn to stderr, into the error sentence and into the read-back's record, each fails it.
   Date/Author: 2026-11-18, cursor235's implementer for #395 (ruling 1ea561bc:824).
+- Decision (#414, design rulings 1ea561bc:826, 833 and 839, 2026-11-18, `fix/414-secure-type-confirm`; ruling 808's paste
+  rule ("#405's review", item 8) applied to type_text; amends "#354", whose snapshot refused a password field unread
+  (`secure`), and "#395" item 2(c), whose route refused one): **type_text into a password field is confirmed by its
+  length, never its value, and its success says that is all it proves.** The read-back refused a secure field, so a
+  `{{secret:…}}` typed into a login form, the main use of secrets, answered `typeUnconfirmed` whether or not every
+  character landed. TypeReadbackLength.swift holds the rule; TypeReadback.swift takes the snapshot and confirms.
+  1. **What a password field is** (`readbackPasswordField`): a field #405's classification (`valueClassification`)
+     finds secure, with its role read and a field's role: AXSecureTextField by role or subrole, or a text-entry role
+     whose subrole cannot be read (ruling 813's presumption). An unreadable role still refuses `roleUnreadable`. Any
+     other element the classification closes is refused unread as before (`secure`, its sentence now "a secure element
+     that is not a text field"); `becameSecure` keeps a text field that turns secure. Safari's marker route (#395)
+     classifies such an element `.password` and claims it as it claims a text field, after its own AXFocused and its
+     place under the web area; a closed element that is not a field still ends the lookup unread. #354's walk already
+     claimed AXSecureTextField. The lookup's finding is carried to the snapshot (the review of 517ab543..bdfbcfb2,
+     P1). A field that the marker route, or the walk by its role, found to be a password field, and that the snapshot's
+     own role and subrole then find is not one (a show-password toggle landing between them), is refused
+     `noLongerSecure` and read no further, as the poll refuses one. Its value is never read as a text field's.
+  2. **What is read.** After the role and subrole that classify it, a password field is read only by one batch of
+     AXRole, AXSubrole, AXSelectedTextRange and AXNumberOfCharacters (`readbackLengthAttributes`, the list paste's
+     effect reading takes), classified from that same reply (ruling 811's batch rule, `readbackLength`): before the
+     first event, at every poll, in the settle and in #359's wait. Never AXValue, AXValueDescription, AXSelectedText or
+     any parameterized attribute. The count and range stay in the plan (`ReadbackLengthBasis`) and the reads that
+     compare them: never formatted, logged, cached, kept on the record or emitted. The app answers a batch in one turn
+     of its accessibility server, so the caret comes from the same state as the count it qualifies. The plain path's
+     "a value read after the caret read" (the review of dad56362..af1860ef, P1) is met by the same reply, with no
+     second read.
+  3. **Units**: UTF-16 code units. AXNumberOfCharacters is an NSString's length on every provider's Cocoa side, and
+     the expected count mixes it with AXSelectedTextRange, which #354 measured in UTF-16. It is also paste's unit
+     (`deliveredUnits`). A typed unit counts its UTF-16 units (`readbackLengthUnits`). A Return's unit is one CR (a CR
+     LF too), which a field that takes it as text counts as one newline; in a single-line field it is a key that adds
+     nothing. Not measured: non-BMP text in a masked field. A provider that counted a masked surrogate pair as one
+     would answer `lengthMismatch`, which fails closed. The qualification carries an emoji row.
+  4. **The starting point**, one decision (`readbackLengthBasis`):
+     - A count read that failed allows nothing (`lengthUnreadable`). That includes the snapshot's own read before any
+       settle (the review of 517ab543..bdfbcfb2, P2): a failed read followed by an absent one compared as agreeing,
+       and the confirmation then stood on the caret alone, which ruling 839 forbids. A float CFNumber is a failure,
+       since `-0.5` would truncate to 0 (same review, P2).
+     - A count, or a caret basis's location, above `Int32.max` is no field's and allows nothing (same review, P2). An
+       `{NSNotFound, 0}` range would otherwise trap the engine on adding the typed units.
+     - A count allows its own confirmation with a range that lies inside it.
+     - A count with no range confirms only from an empty field, where nothing can be replaced and the caret can only
+       sit at 0. Otherwise the snapshot answers `selectionUnreadable`, as does a range outside the count. A snapshot
+       refusal still sends the keys, as every refusal does.
+     - **Ruling 839**: a field with no count at all is confirmed by its caret alone. That needs a selection read and
+       empty, and the caret must move from {location, 0} to exactly {location + typed, 0}. It keeps the same strength
+       (`confirmation: "length"`), the same batch and the same schedule, and each read must still answer no count. No
+       count means absent, split as the walk splits a read: the batch slot's error is noValue or attributeUnsupported
+       (`fetchAttributes`' `failedSlot`). A slot that failed, or holds anything but a non-negative CFNumber, is a
+       failure. No count with a non-empty selection, or with no range, stays `lengthUnreadable`. The ruling answers
+       #405's matrix: AppKit's NSSecureTextField answered no AXNumberOfCharacters there (probe/405-qual,
+       `scripts/probe-405/README-evidence.md`).
+  5. **The confirmation** (`readbackLengthJudged`). The count must be exactly the start's, less the selection, plus
+     the typed units. Whenever the snapshot read a range, the caret must also read {location + typed, 0} in the same
+     reply, whatever the selection held. That is stricter than the brief's rule, which asked for the caret only when
+     the selection spans the typed length (#354's `equalUnconsumed`). The design session approved it at the
+     checkpoint of 2026-11-18 because it closes an oracle. Under the conditional rule, a provider whose caret lags
+     would answer differently depending on whether a secret is as long as the selection the caller chose. The
+     concealed path took one schedule for the same reason (the review of a8e55870..8f465bf9, P2). The stricter rule
+     also catches text typed somewhere else in the field, as a late click can make it. Its cost: a provider whose
+     password-field caret does not track typing fails closed.
+     The poll is the value's own: `typeReadbackBudgetMs` and its interval. A count read that fails mid-poll is no
+     confirmation, and the poll goes on, as a failed value read's does: a later exact read confirms, and at the budget
+     the answer is `lengthUnreadable`. Each of these ends the poll at that read:
+     - a reply that is no longer a password field (a page's show-password toggle): `noLongerSecure`;
+     - a request that failed or a role that cannot be read: `fieldUnreadable`;
+     - another password role: `fieldChanged`.
+     After the poll, the "still the focused field" check is unchanged. A field the application's focus or the walk
+     found is looked up again that way. One #395's marker found is asked for its own AXFocused, with no marker call.
+  6. **The settle and the wait.** The settle after a recent press_key (ruling 754) and #359's wait for a stable range
+     after a pending click (ruling 785) both run for a password field, on its batch; the settle waits for two readings
+     that agree. A select_text range is never a password field's. select_text refuses one (#405), and ClickOrdering
+     keeps its range per process, not per field, so a `.selection` baseline that reaches a password field is another
+     field's, a username field's say, and an equal range there would have confirmed text typed into the wrong field
+     (the review of 517ab543..bdfbcfb2, P2). It is refused `selectionChanged` before any read, and nothing is typed:
+     #359's contract, that type_text right after select_text types only over select_text's own selection (the design
+     session approved, 2026-11-18). Before #414 such a type_text typed and answered `secure`; now it types nothing, and
+     agent-cursor.md says so. A select-all key then typing is the only way to replace a password.
+  7. **Keys.** A Tab, or a Return in a single-line password field, of a plain request is posted only once the text
+     before it confirms by length (a checkpoint), and is counted `keysUnconfirmed`. A mismatch there stops the key and
+     what follows (`stoppedBeforeKey`). A concealed request makes no checkpoint (ruling 593): it is read back once, and
+     its key is a flag.
+  8. **What the reply carries.**
+     - Ruling 833 fixes what a success carries. The record holds {confirmed, snapshotMs, secure: true, confirmation:
+       "length"} and the request's own key fields: `concealed: true` and the `keysUnconfirmed` flag for a secret,
+       `checkpoints` and `keysUnconfirmed` counts for plain text. Never the reads, the poll time, lengths, or the
+       settle or wait record. A plain field's record is unchanged, and a confirmed record without `confirmation` is
+       the exact read-back of a value. `confirmation` and the note come only once a length read confirmed (the review
+       of 517ab543..bdfbcfb2, P2; approved). A plain request of only a Tab, or of a Return in a single-line field,
+       reads no length: it is confirmed with its key `keysUnconfirmed`, as a text field's is, and it claims no length.
+     - The success's result `note`, which the service puts in the tool result's text (NOTED_METHODS), is fixed text,
+       the same for a secret (`readbackLengthNote`): "Typed into a password field, confirmed by its length only: the
+       field took exactly as many characters as were typed, in place of any selected text, so none was dropped or
+       added. A password field's characters are never read, so whether they are the right ones is not confirmed: a
+       keyboard layout, an input method or the page itself can change what goes in."
+     - A failure carries a reason alone: `lengthUnreadable`, `selectionUnreadable`, `lengthMismatch`, `caretMismatch`
+       or `noLongerSecure`, beside the shared `fieldUnreadable`, `fieldChanged` and `selectionChanged`. Its sentence
+       has no number, and says that a screenshot shows the field's masks while an observation shows only that it is a
+       password field. The exception is `noLongerSecure`: a field that stopped being a password field may now show its
+       text, so its sentence warns against a screenshot or getAXState() of a secret, rather than recommending them (the
+       review of 517ab543..bdfbcfb2, P1). `caretMismatch` says only that the caret is not right after the text,
+       because under ruling 839 no count was checked.
+     - **A concealed request never answers `caretMismatch`**: its caret elsewhere is `lengthMismatch`, whose sentence
+       says the length or the caret is wrong (the same review, P1; the design session approved). Take a field that
+       ignores input, with a non-empty selection. Its count stays the snapshot's, which equals the expected count
+       exactly when the secret is as long as the selection, so the two reasons would have told the secret's length
+       against a selection the caller chose. Item 5's caret rule closed that oracle on success; this closes it on
+       failure. Both answers poll the whole budget, so their schedule was already the same. A plain request keeps the
+       two apart, since its caller knows its text.
+  9. **The same reads whatever the secret.** The schedule (attributes, elements, order, repeated polls collapsed) and
+     the record are the same for secrets of different lengths, for a secret as long as the selection, and for plain
+     and concealed text. That holds even under a lagging caret. With a leaving key, plain text checkpoints (item 7)
+     and a secret does not (ruling 593). A secret's failure also answers the same reason whatever its length (item 8).
+  10. **The known limit**: a count cannot tell a wrong character from a right one. A password field that takes the
+      right number of other characters confirms: a keyboard layout or an input method that is not the one assumed, or
+      a page that rewrites input. The note, agent-cursor.md's typing paragraph and the README say so. Also not
+      guarded:
+      - Chromium's 10,000 value cap (#350): a count shows no cut, so a password past the cut is the residual.
+      - Firefox: #405's lane found the page, not the field, named as focused, so its password field answers
+        `notTextField` as before. This is a documented limit, not worked around.
+  11. **The model's document**: agent-cursor.md's typing paragraph, the surface inventory's "Table 3 amendment
+      (2026-11-18, #414, …)", the docs oracle and the core-documentation test byte for byte, and the README's secrets
+      paragraph. The MCP surface names no password confirmation, so no pinned digest moves.
+  12. **Proof**: SecureTypeReadbackTests (25) run the live reads over a stub app whose password field holds plaintext,
+      answers it to any request, and reports distinctive counts and ranges. Ruling 826's leak test covers fifteen runs:
+      - confirmations, plain, concealed and by the caret alone;
+      - a dropped and an extra character, a caret elsewhere concealed and plain, a field that ignores a secret (its
+        selection as long as the secret, and not), one shown as text mid-poll, a count that fails, no range, the caret
+        alone off by one;
+      - a checkpoint.
+      The posting's own times (`startedAt`, `endedAt`, real Unix milliseconds) are checked to be times and fixed before
+      the scan, so a timestamp that holds a distinctive number's digits by chance cannot fail it.
+      Across them, none of the count, caret location or selection length, nor anything typing makes of them, reaches
+      the reply's JSON, the meta, the record (wire and printed struct), the note, an error sentence or the stderr
+      captured over the runs, in any form (decimal, grouped, hex either case, its LE bytes, base64). Positive
+      controls (the reply, an error sentence, the record, stderr, the bytes' base64) show that each would be caught.
+      Also tested:
+      - the reads in order, the count units, the range rules, the ruling-839 branch and its failed-versus-absent
+        split;
+      - a count or range of the wrong type, a field that changes mid-poll, the settle and the wait;
+      - checkpoints, a password text area's Return, the schedule identity and the classification matrix;
+      - from the review's fixes: a concealed field that ignores input answers alike whatever the secret's length; a
+        select_text baseline at a password field types nothing and reads no batch; a failed count is never settled
+        away; the settle reads until two reads agree; `NSNotFound` locations and an `Int.max` count are unreadable
+        without a trap; a float count is a failed read; keys alone claim no length; and a password field that the
+        marker route or the walk found, then shown as text, is read no further.
+      TypeReadbackTests' secure tests are rewritten to confirm by length. TypeReadbackMarkerTests now has #395's
+      password fields confirming by length, plain and concealed, with nothing but the batch read; its leak test's
+      password run now confirms. The service test carries cua/typeReadback's strength and the note in the tool
+      result's text, and a plain confirmation emits none. Mutation testing ran each guard removed or weakened in turn against
+      the three read-back suites: 40 mutants of the first range, then 14 of the review's fixes. Of the 40, 38 failed a
+      test. The two survivors were the settle reading on past a failed count, now tested (item 4), and the password
+      path's check, after the wait, that its range was still select_text's, a check item 6 removed. Of the 14, 13
+      failed, two of them by the overflow trap that item 4's test provokes once its bound is gone. The survivor, a held
+      field's `noLongerSecure` refusal recorded as a plain field's, is now asserted by the marker route's test. The hosted qualification of the six
+      lanes (probe/414-qual) is the design session's.
+  Date/Author: 2026-11-18, cursor235's implementer for #414 (rulings 1ea561bc:826, 833 and 839).
 
 ## Outcomes & Retrospective
 

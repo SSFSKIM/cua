@@ -19,7 +19,7 @@ func summary(_ v:CFTypeRef?,_ pw:String)->[String:Any] {
 while let line=readLine(){do {
  let q=try JSONSerialization.jsonObject(with:Data(line.utf8)) as! [String:Any],op=q["op"] as? String ?? "",pid=(q["pid"] as? NSNumber)?.int32Value ?? 0
  let app=AXUIElementCreateApplication(pid);AXUIElementSetMessagingTimeout(app,0.5)
- if op == "lookup" {emit(["pid":NSRunningApplication.runningApplications(withBundleIdentifier:q["bundle"] as! String).first?.processIdentifier ?? 0]);continue}
+ if op == "lookup" {let apps=NSRunningApplication.runningApplications(withBundleIdentifier:q["bundle"] as! String);emit(["pid":apps.first?.processIdentifier ?? 0,"pids":apps.map {$0.processIdentifier}]);continue}
  if op == "front" {let accepted=NSRunningApplication(processIdentifier:pid)?.activate(options:[]) ?? false;let end=Date().addingTimeInterval(5);while NSWorkspace.shared.frontmostApplication?.processIdentifier != pid && Date()<end {RunLoop.current.run(until:Date().addingTimeInterval(0.01))};emit(["accepted":accepted,"frontmostPid":NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0]);continue}
  if op == "enable" {emit(["manual":AXUIElementSetAttributeValue(app,"AXManualAccessibility" as CFString,kCFBooleanTrue).rawValue,"enhanced":AXUIElementSetAttributeValue(app,"AXEnhancedUserInterface" as CFString,kCFBooleanTrue).rawValue]);continue}
  guard op == "scan" else {emit(["error":"unknown operation"]);continue}

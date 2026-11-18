@@ -32,7 +32,7 @@ let seen=-1;async function tick(){try{const q=await(await fetch('/seed',{cache:'
 const server=createServer((req,res)=>{res.setHeader('Cache-Control','no-store');const u=new URL(req.url,'http://fixture');requests[u.pathname]=(requests[u.pathname]??0)+1;if(u.pathname==='/seed'){seedRequests++;res.setHeader('Content-Type','application/json');res.end(JSON.stringify({trial,value:passwords[trial]}));}else if(u.pathname==='/ack'){if(Number(u.searchParams.get('trial'))===trial&&Number(u.searchParams.get('length'))===passwords[trial].length)ack=trial;res.end('{}');}else{res.setHeader('Content-Type','text/html');res.end(html);}});
 await new Promise(ok=>server.listen(0,'127.0.0.1',ok));const url='http://127.0.0.1:'+server.address().port+'/';
 const config={browser,engineRef:arg('engine-ref'),kit:process.env.GITHUB_SHA,image:process.env.ImageVersion,os:execFileSync('sw_vers',['-productVersion'],{encoding:'utf8'}).trim(),lengths:passwords.map(s=>s.length),selectedLength:7,home:'temporary runner HOME; Chromium/Firefox/Electron also use explicit temporary profiles',rawProbe:'AXUIElementCopyAttributeValue independently of cua; secure or owned-label fields, with per-attribute error/length/match flags',accessibility:'helper sets app AXManualAccessibility and AXEnhancedUserInterface before raw reads, as needed by Chromium; engine source/binary unmodified'};save('config.json',config);
-let app,pid,engine,w,safariOwned=false;const rows=[];
+let app,pid,engine,w,safariOwned=false,cftOwned=false;const rows=[];
 try{
  const require=createRequire(join(fixture,'package.json'));
  if(browser==='appkit'){
@@ -47,10 +47,10 @@ try{
   const profile=firefoxProfile(join(home,'profile'));
   const bin='/Applications/Firefox.app/Contents/MacOS/firefox';app=child(bin,['-no-remote','-profile',profile,url]);pid=app.pid;config.version=execFileSync('/usr/libexec/PlistBuddy',['-c','Print :CFBundleShortVersionString','/Applications/Firefox.app/Contents/Info.plist'],{encoding:'utf8'}).trim();
  }else{
-  const bin='/Applications/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing';if(!existsSync(bin))throw Error('CfT missing');config.version=execFileSync('/usr/libexec/PlistBuddy',['-c','Print :CFBundleShortVersionString','/Applications/Google Chrome for Testing.app/Contents/Info.plist'],{encoding:'utf8'}).trim();app=child(bin,['--user-data-dir='+join(home,'profile'),'--no-first-run','--no-default-browser-check','--disable-search-engine-choice-screen','--disable-features=Translate','--lang=en-US','--window-position=0,25','--window-size=650,700',url]);pid=app.pid;
+  const bundle='/Applications/Google Chrome for Testing.app',bin=bundle+'/Contents/MacOS/Google Chrome for Testing';if(!existsSync(bin))throw Error('CfT missing');config.version=execFileSync('/usr/libexec/PlistBuddy',['-c','Print :CFBundleShortVersionString',bundle+'/Contents/Info.plist'],{encoding:'utf8'}).trim();const bundleIdentifier=execFileSync('/usr/libexec/PlistBuddy',['-c','Print :CFBundleIdentifier',bundle+'/Contents/Info.plist'],{encoding:'utf8'}).trim();config.bundleIdentifier=bundleIdentifier;config.launch='LaunchServices new instance, temporary HOME/profile, foreground before fixture readiness';const prior=(await ask({op:'lookup',bundle:bundleIdentifier})).pids;execFileSync('/usr/bin/open',['-n','-a',bundle,'--env','HOME='+home,url,'--args','--user-data-dir='+join(home,'profile'),'--no-first-run','--no-default-browser-check','--disable-search-engine-choice-screen','--disable-features=Translate','--lang=en-US','--window-position=0,25','--window-size=650,700']);pid=await until(async()=> (await ask({op:'lookup',bundle:bundleIdentifier})).pids.find(p=>!prior.includes(p)));cftOwned=true;
  }
  config.pid=pid;save('config.json',config);
- if(browser!=='appkit')await until(()=>ack===0,45000);
+ if(browser!=='appkit'){await front(pid);await until(()=>ack===0,45000);}
  await front(pid);config.enablement=await ask({op:'enable',pid});config.pid=pid;save('config.json',config);
  const socket=join(root,'pw-'+browser+'.sock');rmSync(socket,{force:true});engine=child(arg('engine'),[],{CUA_ENGINE_SOCKET:socket});w=await Wire.connect(socket);const ping=await w.call('ping',{clientApiVersion:'cua-engine-1',desktop:'shared'});if(ping.error)throw Error('engine ping error');
  const {createObservations}=await import(pathToFileURL(join(source,'src/services/engine/observations.mjs')));
@@ -72,7 +72,7 @@ try{
 finally{
  if(w){try{await w.call('endTask',{});}catch{}w.close();}
  for(const p of children.reverse())await stop(p);
- if(safariOwned&&pid!==app?.pid){try{process.kill(pid,'SIGTERM');}catch{}}
+ if((safariOwned||cftOwned)&&pid!==app?.pid){try{process.kill(pid,'SIGTERM');}catch{}}
  for(const [p,log]of logs){const name=p===helper?'helper':p===engine?'engine':'app';save(name+'-stdout.txt',log.stdout);save(name+'-stderr.txt',log.stderr);}
  server.closeAllConnections();server.close();rmSync(home,{recursive:true,force:true});
 }

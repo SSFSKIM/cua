@@ -324,7 +324,7 @@ impl DropCursor {
 
     /// The application asked where it has got to, and its answer waited for, at most `bound`: a `_NET_WM_PING` to its
     /// window with a token of this sync's own, which a client that lists the protocol sends on to the root unchanged
-    /// (EWMH; Chromium does it in `X11Window::OnEvent`, on the thread that runs its drag loop). The server gives a
+    /// (EWMH; Chromium does it in `X11Window::HandleEvent`, on the thread that runs its drag loop). The server gives a
     /// client its events in order, so the answer says that the application has handled every event sent to it before
     /// the question: every motion the engine's requests had made by then, and what its drag loop did for them, whose
     /// cursor changes reach this watch before the answer does (its requests run in the order it made them). The answer

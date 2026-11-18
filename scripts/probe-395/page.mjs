@@ -13,14 +13,14 @@ const DOC=(self.crypto&&crypto.randomUUID)?crypto.randomUUID():Date.now().toStri
 const NAV=(performance.getEntriesByType&&performance.getEntriesByType('navigation')[0]||{}).type||null,NONCE=DOC.replace(/-/g,'').slice(0,12);
 document.title='probe395 '+NONCE;
 const host=document.querySelector('#host'),e=document.getElementById(TARGET);
-let keydowns=0,inputs=0;
+let keydowns=0,inputs=0,refocused=false;
 // Counts only: no key, data or value is ever recorded.
 document.addEventListener('keydown',()=>{keydowns++},true);
 document.addEventListener('input',()=>{inputs++},true);
 function state(x){
  const f=document.getElementById(FILLER),r=e.getBoundingClientRect(),v=e.value;
  return {doc:DOC,at:Date.now(),
-  exact:x?v===x.value:null,selectionOk:x?e.selectionStart===x.start&&e.selectionEnd===x.end:null,kindOk:x?e.type===x.type:null,
+  exact:x?v===x.value:null,selectionOk:x?e.selectionStart===x.start&&e.selectionEnd===x.end:null,kindOk:x?e.type===x.type:null,secureType:e.type==='password',refocused,
   focused:document.activeElement===e,sameNode:document.getElementById(TARGET)===e&&e.isConnected&&e.classList.contains(${JSON.stringify(TARGET_CLASS)}),
   keydowns,inputs,fillerNodes:f?f.childElementCount:0,domNodes:document.getElementsByTagName('*').length,
   fieldAfterFiller:f?f.nextElementSibling===e:null,fillerAboveField:f?f.getBoundingClientRect().bottom<=r.top+1:null,
@@ -35,9 +35,20 @@ async function run(c){
    if(!old||old.childElementCount!==c.nodes){if(old)old.remove();const t=document.createElement('template');t.innerHTML=largePagePrefix(c.nodes);host.insertBefore(t.content.firstElementChild,e)}
   }else if(old)old.remove();
   if(e.type!==c.type)e.type=c.type;
-  e.value=c.seed;e.focus();e.setSelectionRange(c.start,c.end,'forward');
+  e.value=c.seed;e.focus();e.setSelectionRange(c.start,c.end,'forward');refocused=false;
   if(c.nodes>0)e.scrollIntoView({block:'nearest'});
   keydowns=0;inputs=0;
+  await send({n:c.n,op:c.op,...state(c.expected)});return;
+ }
+ // Password cells only: the same node, already focused as a text input (set up while the browser was front, so no secure
+ // input was ever active during activation), becomes a password field here with the browser in the background. No focus
+ // call unless the type change dropped the active element, which is recorded.
+ if(c.op==='secure'){
+  e.type='password';
+  const lost=document.activeElement!==e;
+  e.value=c.seed;
+  if(lost)e.focus();
+  e.setSelectionRange(c.start,c.end,'forward');refocused=lost;
   await send({n:c.n,op:c.op,...state(c.expected)});return;
  }
  // A script selection only: no focus call, so a background window is never activated by it.

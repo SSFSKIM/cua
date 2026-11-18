@@ -64,7 +64,7 @@ function valueFor(role,length,variant){
 function leaks(s){for(let i=0;i+8<=s.length;i++)if(windows.has(s.slice(i,i+8)))return true;return false}
 
 // ---- scrubbing ------------------------------------------------------------------------------------------------------
-const STATE_KEYS=['at','exact','selectionOk','kindOk','focused','sameNode','keydowns','inputs','fillerNodes','domNodes','fieldAfterFiller','fillerAboveField','inViewport'];
+const STATE_KEYS=['at','exact','selectionOk','kindOk','focused','sameNode','keydowns','inputs','fillerNodes','domNodes','fieldAfterFiller','fillerAboveField','inViewport','secureType','refocused'];
 const pick=s=>Object.fromEntries(STATE_KEYS.map(k=>{const v=s?.[k];return [k,typeof v==='boolean'||Number.isSafeInteger(v)?v:null]}));
 const TEXTLIKE=/^(text|value|values|selectedText|selected|excerpt|actual|expected|before|after|content|characters|string)$/i;
 // The probe's own whitelist is trusted, not relied on: only booleans, finite numbers, null and short printable strings pass.
@@ -158,6 +158,8 @@ async function main(){
    targetTerminated:typeof r.targetTerminated==='boolean'?r.targetTerminated:null};
   if(r.error||r.frontmostPid!==target)throw new Fail();
  }
+ // Password cells only: activation can be accepted yet leave the browser front, so retry a bounded number of times.
+ async function frontCover(){for(let i=1;;i++){try{await front(coverPid);return i}catch(e){if(!(e instanceof Fail)||i>=4)throw e;await sleep(300)}}}
  const titles=async target=>{const r=await ask({op:'titles',pid:target});return Array.isArray(r.titles)?r.titles.filter(t=>typeof t==='string'):[]};
  async function connect(){
   for(let i=0;i<200;i++){
@@ -173,14 +175,14 @@ async function main(){
  let browser=null,coverProc=null,pid=0,coverPid=0,target=null,order=0,done=0,harnessValid=0,probeValid=0,valid=0,invalid=0,setupFailures=0,consecutiveInvalid=0,privacyViolations=0,storeCleanupFailures=0,aborted=null;
  const failureStages={},probeReasons={},parts={};
  const meta={kit:process.env.GITHUB_SHA??null,engine:process.env.ENGINE_REF??null,source:process.env.SOURCE_REF??null,image:process.env.ImageVersion??null,startedAt:start,reps,planSeed,planned,controlReps:Math.min(reps,CONTROL_REPS),passwordRangeReps:Math.min(reps,PASSWORD_RANGE_REPS),
-  design:{pages:PAGES,kinds:KINDS,lengths:LENGTHS,largeNodes:LARGE_NODES,
+  design:{passwordSetup:'text-prepare-then-convert-under-cover',passwordSetupHistory:'the earlier ordinary setup (password type and value set with the browser front, cover activation after it) failed all cover activations in run 44295383179 (6/6); it is not rerun here',pages:PAGES,kinds:KINDS,lengths:LENGTHS,largeNodes:LARGE_NODES,
    controls:CONTROLS.map(c=>({name:c[0],selStart:c[1],selLength:c[2],typedLength:c[3],finalRange:c[4]})),
    pairs:PAIRS.map(p=>({role:p.role,a:p.a,b:p.b})),passwordRange:{lengths:PASSWORD_RANGE_LENGTHS,range:PASSWORD_RANGE}},
   protocol:{
    fixture:'one document and one input node (#probe395-target, class probe395-field) for the whole run; conditions change type, value and selection in place and add or remove the large-before-editor group before it; the page answers booleans and counts only',
-   path:'every typed text goes through the real createSkyService and createService over the engine socket in a fresh temporary HOME; secret cells type the literal handle with the value in the temporary fileStore (removed after each call); plain cells type the literal text; password cells are seeded in the DOM and never typed into. A Sky rejection is allowed to proceed only when the engine answered type_text with errorName typeUnconfirmed; the DOM gate below decides validity independently',
+   path:'every typed text goes through the real createSkyService and createService over the engine socket in a fresh temporary HOME; secret cells type the literal handle with the value in the temporary fileStore (removed after each call); plain cells type the literal text; password cells are never typed into: the DOM node is prepared as a focused empty text input while the browser is front, and only after the cover is front and the witness armed does the same node become a password field with the seed value and selection (no focus call unless the type change drops the active element, which is recorded). A Sky rejection is allowed to proceed only when the engine answered type_text with errorName typeUnconfirmed; the DOM gate below decides validity independently',
    order:'each round holds every unit once, shuffled with a seeded generator; a unit is one cell or a matched pair that is measured back to back (plain and secret of one page, length and repetition; unchanged, content and prefix plain pairs); the matched equal-length content variants (a, b) alternate by repetition',
-   cell:'browser forward, DOM setup, cover forward, 250ms settle, DOM re-read, cover frontmost check without activation, witness arm, type (plain and secret only), cover check, DOM confirmation of content, caret and active element, a script selection for non-collapsed plain cells, one probe measure, DOM re-read, cover check, witness disarm; no key is pressed by the harness; the page counts key and input events (zero before typing, unchanged by the select and the probe)',
+   cell:'browser forward, DOM setup (password cells: empty text input), cover forward (password cells: up to 4 activations), 250ms settle, DOM re-read, cover frontmost check without activation, witness arm, password conversion with cover checks and a second settled read (password cells only), type (plain and secret only), cover check, DOM confirmation of content, caret and active element, a script selection for non-collapsed plain cells, one probe measure, DOM re-read, cover check, witness disarm; no key is pressed by the harness; the page counts key and input events (zero before typing, unchanged by the select and the probe)',
    retries:'none: no measured text or probe request is retried',
    validity:'harnessValid = every DOM, foreground and event-count check plus a valid arm and disarm witness; probeValid = the probe says valid (a clean route miss is probe-valid); valid = both. Coverage is complete when every planned cell is harnessValid and probeValid, summarized separately',
    privacy:'synthetic values only, kept in memory; rows carry no text, seed, secret, engine reply, log or error message; engine and probe stderr discarded; strings from the probe are scrubbed and checked against every synthetic value',
@@ -215,7 +217,9 @@ async function main(){
   if(!ok)throw new Fail();
   const type=typed?'text':'password';
   return {typed,range:typed&&c.finalRange>0,seed,text,type,
-   initial:{value:seed,start:c.selStart,end:c.selStart+c.selLength,type},typedState:{value:final,start:caret,end:caret,type},final:{value:final,start:caret,end,type}};
+   initial:{value:seed,start:c.selStart,end:c.selStart+c.selLength,type},typedState:{value:final,start:caret,end:caret,type},final:{value:final,start:caret,end,type},
+   // A password cell is first a focused, empty text input (no secure input while Safari is activated or deactivated).
+   prep:{value:'',start:0,end:0,type:'text'}};
  }
  // The DOM state is right when content, selection, input kind and the active element all match, the node is the original one,
  // and the page is the size the cell names.
@@ -270,18 +274,33 @@ async function main(){
    const m=materialize(c);
    if(m.typed)row.typeCall=rec;
    await front(pid);row.foreground.browserForPreparation=true;
-   const s0=await fixture.command({op:'setup',nodes:c.page==='large'?LARGE_NODES:0,type:m.type,seed:m.seed,start:m.initial.start,end:m.initial.end,expected:m.initial},8000);
+   const secure=!m.typed,first=secure?m.prep:m.initial;
+   if(secure)row.passwordSetup={path:'text-prepare-then-convert-under-cover',coverAttempts:null};
+   const s0=await fixture.command({op:'setup',nodes:c.page==='large'?LARGE_NODES:0,type:first.type,seed:first.value,start:first.start,end:first.end,expected:first},8000);
    row.fixture.setup=pick(s0);
    if(!stateOk(s0,c,{typed:false}))throw new Fail();
    stage='settle';
-   await front(coverPid);row.foreground.coverForward=true;row.settleMs=250;await sleep(250);
-   const s1=await readState(m.initial);row.fixture.settled=pick(s1);
+   if(secure)row.passwordSetup.coverAttempts=await frontCover();else await front(coverPid);
+   row.foreground.coverForward=true;row.settleMs=250;await sleep(250);
+   const s1=await readState(first);row.fixture[secure?'prepared':'settled']=pick(s1);
    if(!stateOk(s1,c,{typed:false}))throw new Fail();
    await front(coverPid,false);row.foreground.coverBeforeType=true;
    // The witness covers everything from here to the final checks; it is always disarmed again, below or in the cleanup.
    stage='arm';
    armed=true;row.witness={arm:await witness('arm')};
    if(!row.witness.arm.valid)throw new Fail();
+   if(secure){
+    // Browser already in the background under the armed witness: the same node becomes the password field.
+    stage='secure';
+    const sc=await fixture.command({op:'secure',seed:m.seed,start:m.initial.start,end:m.initial.end,expected:m.initial},8000);row.fixture.secure=pick(sc);
+    row.passwordSetup.refocused=sc.refocused===true;
+    if(!stateOk(sc,c,{typed:false})||sc.secureType!==true)throw new Fail();
+    await front(coverPid,false);row.foreground.coverAfterSecure=true;
+    await sleep(250);
+    const s1b=await readState(m.initial);row.fixture.settled=pick(s1b);
+    if(!stateOk(s1b,c,{typed:false})||s1b.secureType!==true)throw new Fail();
+    await front(coverPid,false);row.foreground.coverAfterSecureSettle=true;
+   }
    if(m.typed){
     stage='type';
     w=await connect();

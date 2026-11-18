@@ -275,6 +275,31 @@ fn own_route_read(
     }
 }
 
+/// A `--stats` line no request wrote (an idle handle's release): `record`'s fields, with the engine's settles over its
+/// life (`drop_settles`, every count), so a run's records tell whether a settle ran there too.
+pub(crate) fn standalone_stats_line(
+    mut record: serde_json::Map<String, Value>,
+    settles: &crate::drop_settle::SettleCounts,
+) -> Value {
+    record.insert("id".into(), Value::Null);
+    record.insert("drop_settles".into(), settles.record());
+    json!({ "stats": record })
+}
+
+/// The exit's `--stats` line, written after any release the shutdown made (a held handle ended at EOF can settle; the
+/// review of task 103): the exit settle's wait when there was one, what the shutdown's requests recorded (`extra`) and
+/// the engine's settles over its life.
+pub(crate) fn exit_stats_line(
+    waited_ms: Option<f64>,
+    mut extra: serde_json::Map<String, Value>,
+    settles: &crate::drop_settle::SettleCounts,
+) -> Value {
+    if let Some(waited) = waited_ms {
+        extra.insert("exit_settle".into(), json!({ "waited_ms": waited }));
+    }
+    standalone_stats_line(extra, settles)
+}
+
 /// The `--stats` line's record of a reported after-release watch.
 fn late_stats(app: &str, end: &crate::dnd::WatchEnd) -> Value {
     match end {
@@ -913,17 +938,65 @@ impl Engine {
         let until = self.inputs.exit_settle_until(&self.x);
         let started = Instant::now();
         crate::settle::wait(until);
-        if self.cfg.stats && until.is_some() {
-            let waited = started.elapsed().as_secs_f64() * 1000.0;
+        if self.cfg.stats {
+            let waited = until.map(|_| (started.elapsed().as_secs_f64() * 1000.0 * 1000.0).round() / 1000.0);
             eprintln!(
                 "{}",
-                json!({ "stats": { "id": null, "exit_settle": { "waited_ms": (waited * 1000.0).round() / 1000.0 } } })
+                exit_stats_line(waited, std::mem::take(&mut self.extra), &self.drop_settles)
             );
         }
         self.clipboard = None;
         if let Some(dir) = self.shot_dir.take() {
             let _ = std::fs::remove_dir_all(dir);
         }
+    }
+}
+
+#[cfg(test)]
+mod stats_line_tests {
+    use super::{exit_stats_line, standalone_stats_line};
+    use crate::drop_settle::{SecondRest, Settle, SettleCounts, Sync};
+    use serde_json::json;
+
+    fn counts() -> SettleCounts {
+        let mut counts = SettleCounts::default();
+        counts.count(&Settle::interrupted(Sync::Unasked, SecondRest::Needless), false);
+        counts.activation_confirmed_a_failed_settle();
+        counts
+    }
+
+    const SNAPSHOT: &str =
+        r#"{"entered":1,"second_rest":0,"settle_failed_activation_confirmed":1,"skipped":0,"unsettled":1}"#;
+
+    #[test]
+    fn the_exit_line_carries_the_settles_snapshot_after_any_shutdown_release() {
+        // the review of task 103: a held handle ended at the exit can settle, so the exit's own line says what the
+        // engine's settles came to, all of the counts, with the exit settle's wait when there was one and whatever the
+        // shutdown's release recorded
+        let mut extra = serde_json::Map::new();
+        extra.insert("handle".into(), json!({ "pressed": true }));
+        let line = exit_stats_line(Some(2.5), extra, &counts());
+        assert_eq!(line["stats"]["id"], json!(null));
+        assert_eq!(line["stats"]["drop_settles"].to_string(), SNAPSHOT);
+        assert_eq!(line["stats"]["exit_settle"], json!({ "waited_ms": 2.5 }));
+        assert_eq!(line["stats"]["handle"], json!({ "pressed": true }));
+        let quiet = exit_stats_line(None, serde_json::Map::new(), &SettleCounts::default());
+        assert_eq!(quiet["stats"].get("exit_settle"), None, "no settle waited");
+        assert_eq!(
+            quiet["stats"]["drop_settles"],
+            json!({ "entered": 0, "second_rest": 0, "skipped": 0, "unsettled": 0, "settle_failed_activation_confirmed": 0 }),
+            "a run whose engine never settled says so at its exit too"
+        );
+    }
+
+    #[test]
+    fn the_idle_release_line_carries_the_settles_snapshot() {
+        let mut record = serde_json::Map::new();
+        record.insert("idle_handle".into(), json!({ "app": "Electron" }));
+        let line = standalone_stats_line(record, &counts());
+        assert_eq!(line["stats"]["id"], json!(null));
+        assert_eq!(line["stats"]["idle_handle"], json!({ "app": "Electron" }));
+        assert_eq!(line["stats"]["drop_settles"].to_string(), SNAPSHOT);
     }
 }
 

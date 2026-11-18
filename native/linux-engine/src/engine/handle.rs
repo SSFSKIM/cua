@@ -339,8 +339,6 @@ impl Engine {
         };
         if self.cfg.stats {
             let mut record = serde_json::Map::new();
-            record.insert("id".into(), Value::Null);
-            record.insert("drop_settles".into(), self.drop_settles.record());
             record.insert("idle_handle".into(), super::late_stats(&released.app, &end));
             record.insert(
                 "answer".into(),
@@ -349,7 +347,7 @@ impl Engine {
             for (key, value) in std::mem::take(&mut self.extra) {
                 record.insert(key, value);
             }
-            eprintln!("{}", json!({ "stats": record }));
+            eprintln!("{}", super::standalone_stats_line(record, &self.drop_settles));
         }
         self.extra = request_extra;
         self.expired_handle = Some((released.app.clone(), released.at));
@@ -406,15 +404,13 @@ impl Engine {
         };
         if self.cfg.stats {
             let mut record = serde_json::Map::new();
-            record.insert("id".into(), Value::Null);
-            record.insert("drop_settles".into(), self.drop_settles.record());
             record.insert("idle_handle".into(), super::late_stats(&app, &end));
             record.insert("by".into(), json!("watchdog"));
             record.insert("taken".into(), json!(taken));
             for (key, value) in std::mem::take(&mut self.extra) {
                 record.insert(key, value);
             }
-            eprintln!("{}", json!({ "stats": record }));
+            eprintln!("{}", super::standalone_stats_line(record, &self.drop_settles));
         }
         self.extra = request_extra;
         self.expired_handle = Some((app.clone(), fired.pointer));

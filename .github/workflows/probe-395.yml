@@ -1,0 +1,57 @@
+name: probe-395-marker
+on:
+  push:
+    branches: ['probe/395-marker']
+    paths: ['.github/workflows/probe-395.yml']
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Smoke or 20 repetitions per primary cell'
+        type: choice
+        options: [smoke, full]
+        default: full
+permissions:
+  contents: read
+concurrency:
+  group: probe-395-marker
+  cancel-in-progress: false
+env:
+  ENGINE_REF: '2e5b3059c6fe09d2240fe11a6d952cd3f06c3274'
+  SOURCE_REF: '2e5b3059c6fe09d2240fe11a6d952cd3f06c3274'
+jobs:
+  measure:
+    runs-on: macos-latest
+    timeout-minutes: 115
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Build the read-only probe and unmodified input engine
+        run: |
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          mkdir -p "$RUNNER_TEMP/probe395-evidence"
+          git log -1 --format='kit %H %s'
+          sw_vers
+          git worktree add --detach "$RUNNER_TEMP/source395" "$ENGINE_REF"
+          swiftc -O -o "$RUNNER_TEMP/marker395" scripts/probe-395/marker.swift
+          swift build -c release --package-path "$RUNNER_TEMP/source395/native/engine" --scratch-path "$RUNNER_TEMP/build395"
+          git -C "$RUNNER_TEMP/source395" diff --exit-code
+      - name: Measure background Safari on the hosted desktop
+        env:
+          REPS: ${{ github.event_name == 'push' && '1' || inputs.mode == 'smoke' && '1' || '20' }}
+        run: |
+          node scripts/probe-395/run.mjs "$RUNNER_TEMP/build395/release/cua-engine" "$RUNNER_TEMP/marker395" "$RUNNER_TEMP/source395" "$RUNNER_TEMP/probe395-evidence" "$REPS"
+      - name: Upload redacted measurements only
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: probe-395-marker-${{ github.event_name == 'push' && 'smoke' || inputs.mode }}
+          path: |
+            ${{ runner.temp }}/probe395-evidence/rows.jsonl
+            ${{ runner.temp }}/probe395-evidence/config.json
+            ${{ runner.temp }}/probe395-evidence/progress.json
+          if-no-files-found: warn

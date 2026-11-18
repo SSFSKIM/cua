@@ -26,6 +26,10 @@
 //! (XInput 2 raw motion, which reaches every client that selects it whoever holds the grab) on the same connection as
 //! the cursor's changes, so the server orders the two, and the accept counts only when the change that put it up
 //! follows the motion that brought the pointer into the top-level under the release, never on a guess.
+//!
+//! And only one the application had settled on before the release: the watch asks it where it has got to
+//! ([`DropCursor::sync`]) and reads its answers in the server's order with the motions and the cursor's changes, which
+//! `drop_settle.rs`'s rule judges (M5's ruling 827).
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -36,24 +40,31 @@ use anyhow::{Context, Result};
 use serde_json::{Value, json};
 use x11rb::connection::Connection;
 use x11rb::protocol::Event;
-use x11rb::protocol::xfixes::{ConnectionExt as _, CursorNotifyMask};
+use x11rb::protocol::xfixes::{ConnectionExt as _, CursorNotifyMask, SelectionEventMask};
 use x11rb::protocol::xinput::{self, ConnectionExt as _};
-use x11rb::protocol::xproto::ConnectionExt as _;
+use x11rb::protocol::xproto::{
+    Atom, AtomEnum, ChangeWindowAttributesAux, ClientMessageEvent, ConnectionExt as _, EventMask, Window,
+};
 use x11rb::rust_connection::RustConnection;
 
 use crate::accept::{CursorChange, Image, fingerprint};
 use crate::drag_cursors::DragImages;
+use crate::drop_settle::{SYNC_BOUND, SecondRest, Sync, next_token, second_rest};
 
 /// How often the watch's thread reads the changes that have come.
 const POLL: Duration = Duration::from_millis(1);
 
+/// How often a sync looks for its answer.
+const SYNC_POLL: Duration = Duration::from_micros(200);
+
 /// One thing the watch read, in the server's order: a motion of the real pointer, with where it went (None when that
-/// cannot be told: a device whose motion is relative, such as a person's mouse, or a motion missing an axis), or a
-/// change of the displayed cursor, by its serial.
+/// cannot be told: a device whose motion is relative, such as a person's mouse, or a motion missing an axis), a
+/// change of the displayed cursor, by its serial, or the application's answer to a sync, by its token.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Step {
     Motion(Option<(i16, i16)>),
     Cursor(u32),
+    Answer(u32),
 }
 
 /// What the thread has seen: every change, every step in order, and the image of each cursor it fetched while shown,
@@ -62,10 +73,16 @@ pub enum Step {
 struct Seen {
     changes: Vec<CursorChange>,
     steps: Vec<Step>,
+    /// Each step's time on the server's clock, beside it (an answer carries none: zero).
+    times: Vec<u32>,
     images: HashMap<u32, Image>,
     failed: Option<String>,
     /// The XTEST pointer device, whose raw motions place the pointer.
     xtest: Option<u16>,
+    /// The application's window a sync asks, with the atoms of its question (`WM_PROTOCOLS`, `_NET_WM_PING`).
+    ping: Option<(Window, Atom, Atom)>,
+    /// Whether any client took `XdndSelection` since the watch began: a drag and drop began.
+    taken: bool,
 }
 
 /// The displayed cursor, and the real pointer's motions, watched from before a drag's press to its release, for its
@@ -100,8 +117,10 @@ pub struct AtRelease {
     pub error: Option<String>,
     /// The take the accept was judged against, the server's time.
     pub take: Option<u32>,
-    /// Every motion and cursor change the watch read, in the server's order ([`set_since_entry`]).
+    /// Every motion, cursor change and answer the watch read, in the server's order ([`set_since_entry`], [`settled`]).
     pub steps: Vec<Step>,
+    /// Each step's time on the server's clock (zero for an answer, which carries none).
+    pub times: Vec<u32>,
     /// Where the real pointer was when the watch began.
     pub start: Option<(i16, i16)>,
 }
@@ -115,10 +134,23 @@ impl AtRelease {
             .iter()
             .filter_map(|step| match step {
                 Step::Motion(place) => Some(place),
-                Step::Cursor(_) => None,
+                Step::Cursor(_) | Step::Answer(_) => None,
+            })
+            .collect();
+        // the whole of what the watch read, in the server's order with its clock: a motion `["m", time, x, y]` (no
+        // place: nulls), a cursor change `["c", time, serial]`, an answer `["a", token]`
+        let steps: Vec<_> = self
+            .steps
+            .iter()
+            .zip(&self.times)
+            .map(|(step, &time)| match *step {
+                Step::Motion(place) => json!(["m", time, place.map(|p| p.0), place.map(|p| p.1)]),
+                Step::Cursor(serial) => json!(["c", time, serial]),
+                Step::Answer(token) => json!(["a", token]),
             })
             .collect();
         json!({
+            "steps": steps,
             "accepted": self.accepted,
             "shown": self.shown.map(|(serial, image, named)| json!({ "serial": serial, "image": hex(image), "named": named })),
             "initial": hex(self.initial),
@@ -177,9 +209,79 @@ pub fn set_since_entry(
 }
 
 impl DropCursor {
+    /// [`DropCursor::start_for`] with no application to ask.
+    #[cfg(test)]
+    pub fn start() -> Result<DropCursor> {
+        Self::start_for(None)
+    }
+
+    /// Whether any client took `XdndSelection` since the watch began, from what has been read so far: a drag and drop
+    /// began, so the release is worth a sync.
+    pub fn take_seen(&self) -> bool {
+        self.seen.lock().expect("the engine never panics holding it").taken
+    }
+
+    /// The application asked where it has got to, and its answer waited for, at most `bound`: a `_NET_WM_PING` to its
+    /// window with a token of this sync's own, which a client that lists the protocol sends on to the root unchanged
+    /// (EWMH; Chromium does it in `X11Window::HandleEvent`, on the thread that runs its drag loop). The server gives a
+    /// client its events in order, so the answer says that the application has handled every event sent to it before
+    /// the question: every motion the engine's requests had made by then, and what its drag loop did for them, whose
+    /// cursor changes reach this watch before the answer does (its requests run in the order it made them). The answer
+    /// is a step of the watch, in the server's order with the motions and the cursor's changes ([`settled`]).
+    pub fn sync(&mut self, bound: Duration) -> Sync {
+        let Some((window, protocols, ping)) = self.seen.lock().expect("the engine never panics holding it").ping else {
+            return Sync::Unasked;
+        };
+        let token = next_token();
+        let asked = Instant::now();
+        let question = ClientMessageEvent::new(32, window, protocols, [ping, token, window, 0, 0]);
+        let sent = self
+            .conn
+            .send_event(false, window, EventMask::NO_EVENT, question)
+            .map_err(anyhow::Error::from)
+            .and_then(|_| Ok(self.conn.flush()?));
+        if sent.is_err() {
+            return Sync::Unasked;
+        }
+        loop {
+            // once the thread is stopped the caller reads the connection itself
+            if self.thread.is_none() && read_changes(&self.conn, &self.seen).is_err() {
+                return Sync::Unanswered { token };
+            }
+            let (answered, failed) = {
+                let seen = self.seen.lock().expect("the engine never panics holding it");
+                (seen.steps.contains(&Step::Answer(token)), seen.failed.is_some())
+            };
+            // a watch that failed reads nothing more, and an answer it read before it failed counts for nothing
+            if answered && !failed {
+                return Sync::Answered {
+                    token,
+                    waited: asked.elapsed(),
+                };
+            }
+            if failed || asked.elapsed() >= bound {
+                return Sync::Unanswered { token };
+            }
+            std::thread::sleep(SYNC_POLL);
+        }
+    }
+
+    /// The settle's first half ([`Settle`]): the application asked where it has got to, then the rest its family takes
+    /// before the pointer's last place is visited again, twice when [`second_rest`] says so. The caller visits the
+    /// place, then asks again ([`DropCursor::sync`]).
+    pub fn sync_and_rest(&mut self, rest: Duration) -> (Sync, SecondRest) {
+        let before = self.sync(SYNC_BOUND);
+        let second = second_rest(before, rest);
+        std::thread::sleep(second.rests(rest));
+        (before, second)
+    }
+
     /// Connected and subscribed to the root's displayed-cursor changes and to the real pointer's raw motion (XInput 2.1
     /// or later, so a grab does not hide it), the image shown now and the pointer's place kept, and the thread begun.
-    pub fn start() -> Result<DropCursor> {
+    /// `app` is the window of the application whose drag loop shows the cursor, the one a [`DropCursor::sync`] asks: it
+    /// is asked only when it lists `_NET_WM_PING` in its `WM_PROTOCOLS`, and its answers, sent to the root, are read
+    /// with the cursor's changes (the root's `SubstructureNotify`). Takes of `XdndSelection` are read too.
+    pub fn start_for(app: Option<Window>) -> Result<DropCursor> {
         let (conn, screen) = x11rb::connect(None).context("the drop's cursor watch could not connect")?;
         let root = conn.setup().roots[screen].root;
         conn.xfixes_query_version(5, 0)?
@@ -214,6 +316,32 @@ impl DropCursor {
             }],
         )?
         .check()?;
+        // a drag and drop's start, for whether the release is worth a sync
+        let selection = conn.intern_atom(false, b"XdndSelection")?.reply()?.atom;
+        conn.xfixes_select_selection_input(root, selection, SelectionEventMask::SET_SELECTION_OWNER)?
+            .check()?;
+        // the application's window to ask, when it answers pings: its answers come to the root
+        let ping = match app {
+            Some(window) => {
+                let protocols = conn.intern_atom(false, b"WM_PROTOCOLS")?.reply()?.atom;
+                let ping = conn.intern_atom(false, b"_NET_WM_PING")?.reply()?.atom;
+                let listed = conn
+                    .get_property(false, window, protocols, AtomEnum::ATOM, 0, 64)?
+                    .reply()
+                    .ok()
+                    .and_then(|reply| reply.value32().map(|mut atoms| atoms.any(|atom| atom == ping)))
+                    .unwrap_or(false);
+                if listed {
+                    conn.change_window_attributes(
+                        root,
+                        &ChangeWindowAttributesAux::new().event_mask(EventMask::SUBSTRUCTURE_NOTIFY),
+                    )?
+                    .check()?;
+                }
+                listed.then_some((window, protocols, ping))
+            }
+            None => None,
+        };
         let pointer = conn.query_pointer(root)?.reply()?;
         let start = pointer.same_screen.then_some((pointer.root_x, pointer.root_y));
         let now = conn.xfixes_get_cursor_image()?.reply()?;
@@ -221,6 +349,7 @@ impl DropCursor {
         let conn = Arc::new(conn);
         let seen = Arc::new(Mutex::new(Seen {
             xtest,
+            ping,
             ..Seen::default()
         }));
         seen.lock()
@@ -295,6 +424,7 @@ impl DropCursor {
             error,
             take,
             steps: std::mem::take(&mut seen.steps),
+            times: std::mem::take(&mut seen.times),
             start: self.start,
         }
     }
@@ -322,11 +452,17 @@ fn read_changes(conn: &RustConnection, seen: &Mutex<Seen>) -> Result<()> {
     let mut unknown = false;
     let mut changes = Vec::new();
     let mut steps = Vec::new();
-    let xtest = seen.lock().expect("the engine never panics holding it").xtest;
+    let mut times = Vec::new();
+    let mut taken = false;
+    let (xtest, ping) = {
+        let seen = seen.lock().expect("the engine never panics holding it");
+        (seen.xtest, seen.ping)
+    };
     while let Some(event) = conn.poll_for_event()? {
         match event {
             Event::XfixesCursorNotify(e) => {
                 steps.push(Step::Cursor(e.cursor_serial));
+                times.push(e.timestamp);
                 changes.push(CursorChange {
                     serial: e.cursor_serial,
                     time: e.timestamp,
@@ -334,7 +470,24 @@ fn read_changes(conn: &RustConnection, seen: &Mutex<Seen>) -> Result<()> {
                     seen: Instant::now(),
                 });
             }
-            Event::XinputRawMotion(e) => steps.push(Step::Motion(raw_place(&e, xtest))),
+            Event::XinputRawMotion(e) => {
+                steps.push(Step::Motion(raw_place(&e, xtest)));
+                times.push(e.time);
+            }
+            Event::XfixesSelectionNotify(e) => taken |= e.owner != x11rb::NONE,
+            // the application's answer to a sync: the question itself, sent on to the root
+            Event::ClientMessage(e) => {
+                if let Some((window, protocols, question)) = ping
+                    && e.format == 32
+                    && e.type_ == protocols
+                {
+                    let data = e.data.as_data32();
+                    if data[0] == question && data[2] == window {
+                        steps.push(Step::Answer(data[1]));
+                        times.push(0);
+                    }
+                }
+            }
             _ => {}
         }
     }
@@ -345,6 +498,8 @@ fn read_changes(conn: &RustConnection, seen: &Mutex<Seen>) -> Result<()> {
         }
         seen.changes.extend(changes);
         seen.steps.extend(steps);
+        seen.times.extend(times);
+        seen.taken |= taken;
     }
     if unknown {
         let reply = conn.xfixes_get_cursor_image()?.reply()?;
@@ -562,6 +717,93 @@ mod tests {
             None,
             "every accepting image drawn as no drop"
         );
+    }
+
+    #[test]
+    #[cfg_attr(not(feature = "live"), ignore = "needs an X display (--features live)")]
+    fn a_sync_is_answered_by_a_window_that_answers_pings_and_not_by_one_that_does_not() {
+        use x11rb::protocol::xproto::{CreateWindowAux, PropMode, WindowClass};
+        use x11rb::wrapper::ConnectionExt as _;
+        // an application's window that answers `_NET_WM_PING` as the window managers' protocol asks: the same message
+        // sent on to the root
+        let (app, screen) = x11rb::connect(None).unwrap();
+        let root = app.setup().roots[screen].root;
+        let make = || {
+            let window = app.generate_id().unwrap();
+            let (class, parent) = (WindowClass::INPUT_OUTPUT, x11rb::COPY_FROM_PARENT);
+            app.create_window(0, window, root, 0, 0, 10, 10, 0, class, parent, &CreateWindowAux::new())
+                .unwrap();
+            window
+        };
+        let window = make();
+        let protocols = app.intern_atom(false, b"WM_PROTOCOLS").unwrap().reply().unwrap().atom;
+        let ping = app.intern_atom(false, b"_NET_WM_PING").unwrap().reply().unwrap().atom;
+        app.change_property32(PropMode::REPLACE, window, protocols, AtomEnum::ATOM, &[ping])
+            .unwrap();
+        // and one that lists no ping
+        let mute = make();
+        app.get_input_focus().unwrap().reply().unwrap();
+        let answering = Arc::new(AtomicBool::new(true));
+        let answerer = {
+            let answering = answering.clone();
+            std::thread::spawn(move || {
+                let mask = EventMask::SUBSTRUCTURE_NOTIFY | EventMask::SUBSTRUCTURE_REDIRECT;
+                loop {
+                    match app.wait_for_event() {
+                        Ok(Event::ClientMessage(e)) if e.type_ == protocols && e.data.as_data32()[0] == ping => {
+                            // the test's own end: a ping with no token
+                            if e.data.as_data32()[1] == 0 {
+                                return;
+                            }
+                            if answering.load(Ordering::SeqCst) {
+                                let answer = ClientMessageEvent::new(32, root, protocols, e.data.as_data32());
+                                app.send_event(false, root, mask, answer).unwrap();
+                                app.flush().unwrap();
+                            }
+                        }
+                        Ok(_) => {}
+                        Err(_) => return,
+                    }
+                }
+            })
+        };
+        let mut watch = DropCursor::start_for(Some(window)).unwrap();
+        let first = watch.sync(Duration::from_secs(2));
+        let second = watch.sync(Duration::from_secs(2));
+        let (Sync::Answered { token: a, .. }, Sync::Answered { token: b, .. }) = (first, second) else {
+            panic!("both answered: {first:?} {second:?}");
+        };
+        assert_ne!(a, b, "each sync has a token of its own");
+        // an application that stops answering: no answer inside the bound
+        answering.store(false, Ordering::SeqCst);
+        assert!(matches!(
+            watch.sync(Duration::from_millis(100)),
+            Sync::Unanswered { .. }
+        ));
+        let read = watch.at_release(None);
+        let answers: Vec<_> = read
+            .steps
+            .iter()
+            .filter(|step| matches!(step, Step::Answer(_)))
+            .copied()
+            .collect();
+        assert_eq!(
+            answers,
+            vec![Step::Answer(a), Step::Answer(b)],
+            "the answers the watch read, in order"
+        );
+        // a window that lists no ping is not asked, and a watch with no window asks nobody
+        let mut unlisted = DropCursor::start_for(Some(mute)).unwrap();
+        assert_eq!(unlisted.sync(Duration::from_millis(100)), Sync::Unasked);
+        assert_eq!(
+            DropCursor::start().unwrap().sync(Duration::from_millis(100)),
+            Sync::Unasked
+        );
+        let (conn, _) = x11rb::connect(None).unwrap();
+        let stop = ClientMessageEvent::new(32, window, protocols, [ping, 0, window, 0, 0]);
+        conn.send_event(false, window, EventMask::NO_EVENT, stop).unwrap();
+        conn.flush().unwrap();
+        answerer.join().unwrap();
     }
 
     #[test]

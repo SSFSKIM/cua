@@ -106,6 +106,11 @@ pub struct Config {
     /// How long a held `drag_handle` may go with no request of its own before the engine releases it where it is
     /// (`handle::HANDLE_IDLE`; `--drag-handle-idle-ms` sets another, for the live tests).
     pub handle_idle: std::time::Duration,
+    /// Whether an Electron source's drop is settled before its release (`drop_settle::settled`, M5's task 98): the
+    /// application asked where it has got to before the release's last rest and after its last motion, and its accept
+    /// counted only when it answered both. Off (`--drop-no-settle`, measurement only) the release goes out unasked and
+    /// the accept is judged as `linux-engine-v0.4.0` judged it, which answered ok for releases outside the drop zone.
+    pub drop_settle: bool,
 }
 
 pub struct Engine {
@@ -148,6 +153,8 @@ pub struct Engine {
     stray_watch: Option<crate::stray::StrayWatch>,
     /// A held handle's idle bound while another request runs (`idle_watchdog.rs`), its thread started by the first.
     idle_watchdog: Option<idle_watchdog::IdleWatchdog>,
+    /// The Electron drops' settles over the engine's life, on every `--stats` line (`drop_settles`).
+    drop_settles: crate::drop_settle::SettleCounts,
 }
 
 /// Whether a request sends input or changes state, and so is refused while a late drag and drop, an unconfirmed drop
@@ -279,6 +286,7 @@ fn late_stats(app: &str, end: &crate::dnd::WatchEnd) -> Value {
         }),
         crate::dnd::WatchEnd::Failed(why) => json!({ "app": app, "failed": why }),
         crate::dnd::WatchEnd::Unconfirmed => json!({ "app": app, "unconfirmed": true }),
+        crate::dnd::WatchEnd::Unanswered => json!({ "app": app, "unconfirmed": true, "unanswered": true }),
         crate::dnd::WatchEnd::IdleHandle { idle, at } => {
             json!({ "app": app, "idle_handle": { "idle_ms": idle.as_secs_f64() * 1000.0, "at": at } })
         }
@@ -323,6 +331,7 @@ impl Engine {
             late_pending: None,
             stray_watch: None,
             idle_watchdog: None,
+            drop_settles: Default::default(),
         })
     }
 
@@ -549,6 +558,8 @@ impl Engine {
                 "paste_settle_ms": self.cfg.pacing.paste_settle.as_millis() as u64,
                 "key_pace_ms": self.cfg.pacing.key.as_millis() as u64,
             },
+            // ruling 827's condition: whether this engine has run the settle's branch, and how it ended
+            "drop_settles": self.drop_settles.record(),
             "bus": {
                 "calls": bus.calls,
                 "waits": bus.waits,

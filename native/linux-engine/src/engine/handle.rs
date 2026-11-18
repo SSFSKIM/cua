@@ -492,7 +492,7 @@ impl Engine {
                         .family_of(window)
                         .is_some_and(|f| crate::families::confirms_drop_by_cursor(f.name))
                     {
-                        handle.cursor = Some(DropCursor::start().map_err(|e| format!("{e:#}")));
+                        handle.cursor = Some(DropCursor::start_for(Some(window)).map_err(|e| format!("{e:#}")));
                     }
                 }
             }
@@ -566,9 +566,22 @@ impl Engine {
     /// request put it, else success.
     fn release_handle(&mut self, mut handle: Handle) -> Released {
         let pacing = handle.pacing;
-        if !pacing.held_rest.is_zero() {
-            std::thread::sleep(pacing.held_rest);
-        }
+        // an Electron source whose drag and drop has begun: its application asked where it has got to before the rest,
+        // and again after the visit that follows it (`drop_settle::Settle`), each waited for at most
+        // `drop_settle::SYNC_BOUND`, with a second rest when the first answer came late (ruling 3a). A drag loop that
+        // runs behind the pointer is waited for here, so the rest is the page's to answer the pointer's last place, and
+        // the release reaches a loop that holds that answer
+        let settling = self.cfg.drop_settle
+            && handle.pressed
+            && !pacing.held_rest.is_zero()
+            && matches!(&handle.cursor, Some(Ok(cursor)) if cursor.take_seen());
+        let before_rest = match handle.cursor.as_mut() {
+            Some(Ok(cursor)) if settling => Some(cursor.sync_and_rest(pacing.held_rest)),
+            _ => {
+                std::thread::sleep(pacing.held_rest);
+                None
+            }
+        };
         let pointer = self.query_pointer();
         // with the pointer on another screen the reply's place is on that screen's root: a motion to it on the engine's
         // own root would carry the held pointer back across before the release
@@ -580,6 +593,14 @@ impl Engine {
         };
         crate::desktop::handle_hooks::during_dwell();
         std::thread::sleep(pacing.release);
+        let settle = match (before_rest, handle.cursor.as_mut()) {
+            (Some((before, second_rest)), Some(Ok(cursor))) => Some(crate::drop_settle::Settle {
+                before,
+                second_rest,
+                after: cursor.sync(crate::drop_settle::SYNC_BOUND),
+            }),
+            _ => None,
+        };
         let held = handle
             .holding
             .as_mut()
@@ -650,11 +671,26 @@ impl Engine {
         // the pointer came into it: Chromium keeps its last status's accept when the path leaves for one that does not
         // (the bare root, an xterm), or for one that has not answered yet, and drops nowhere (the design session's
         // ruling, 2026-11-11; the third review, P2)
+        // and only one the application had settled on: it answered before the rest and after the last motion, the
+        // pointer at rest between (M5's ruling 827: an accept read while the drag loop ran behind the pointer answered
+        // ok for a release outside the zone)
+        let settled = settle.map(|settle| {
+            let steps = cursor_read.as_ref().map_or(&[][..], |read| &read.steps[..]);
+            let settled = settle.settled(steps, true);
+            self.drop_settles.count(&settle, settled);
+            if let Some(Value::Object(record)) = cursor_record.as_mut() {
+                record.insert("settle".into(), settle.record(steps, true));
+            }
+            settled
+        });
         if let (Some(Confirming::Cursor(true)), Some(read)) = (confirmed, &cursor_read) {
             let (held, over) = self.accept_held_to_release(read, at);
-            confirmed = Some(Confirming::Cursor(held));
+            let counted = held && (settled == Some(true) || !self.cfg.drop_settle);
+            confirmed = Some(Confirming::Cursor(counted));
             if let Some(Value::Object(record)) = cursor_record.as_mut() {
                 record.insert("release_over".into(), over);
+                // what `linux-engine-v0.4.0` answered on this read, beside what the settle left of it
+                record.insert("accept_unsettled".into(), json!(held));
             }
         }
         let app = self.app_of_handle(handle.target);
@@ -695,7 +731,7 @@ impl Engine {
                 (Some(true), Some(confirming)) if confirming.unconfirmed() => {
                     after.done();
                     self.collect_late_watch(true);
-                    self.late_pending = Some((app.clone(), WatchEnd::Unconfirmed));
+                    self.late_pending = Some((app.clone(), crate::drop_settle::unconfirmed_end(settle.as_ref())));
                 }
                 _ => after.done(),
             }

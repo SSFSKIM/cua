@@ -99,9 +99,10 @@ func readbackLengthBasis(count: ReadbackWalkRead<Int>, range: NSRange?) -> Readb
   }
 }
 
-/// What a password field's length takes from a typed unit: a Return (in a field that takes it as text: one that does
-/// not is a key that adds nothing) one newline; anything else its UTF-16 units, as AX counts characters and ranges.
-func readbackLengthUnits(_ unit: TypedUnit) -> Int { unit.text == [0x0D] ? 1 : unit.text.count }
+/// What a password field's length takes from a typed unit: its UTF-16 units, as AX counts characters and ranges. A
+/// Return's unit is its one CR (a CR LF too), which a field that takes it as text takes as one newline; in one that
+/// does not, it is a key that adds nothing and is never counted.
+func readbackLengthUnits(_ unit: TypedUnit) -> Int { unit.text.count }
 
 /// What one length read shows against the basis, `typed` units typed over its selection.
 enum ReadbackLengthRead: Equatable {

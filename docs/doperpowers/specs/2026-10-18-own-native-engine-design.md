@@ -6276,9 +6276,59 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
            - batches started until E;
            - a concealed moved focus at a hold not answered at once;
            - a literal request skipping its poll-end focus read.
-     - **What differs between concealed failures.** *Superseded by wave 9 (ruling 1ea561bc:851): kept as the record.* Under wave 9 a held match whose focus check finds
-       the focus moved answers `fieldChanged` at once, and one whose check is unknown polls on, the next hold checking
-       again. A held match whose focus read fails goes on as a tainted one.
+     - **Wave 10: a concealed reason from one final batch** (the review of a1939d2f..e8e2702e, 2026-11-18; six
+       findings verified). Each was a way the secret could still choose a concealed reason, or a literal one could
+       misjudge.
+       - **1, a reason from a hold.** In a field that ignores input but collapses a 4-character selection to its end, a
+         4-character secret matches and an 8-character one does not; with the focus away from 220 to 300 ms the first
+         answered `fieldChanged` at its hold check and the second `lengthMismatch`. A concealed request's hold check now
+         only gates its success: focused by E confirms, and moved, unknown or late means only "not confirmed now"; the
+         poll goes on and the next hold checks again. A literal request keeps moved as `fieldChanged` at once.
+       - **2, exposure displaced by hold checks.** Unknown 100 ms checks from 220 to 850 ms left the matching secret no
+         batch after the field turned visible at 870 ms (`lengthMismatch`, no warning), where a non-matching one read it
+         (`noLongerSecure`). A concealed request that ends without a success now always reads **one final length
+         batch**, however its poll ended (at the budget, or right after a closed batch, which still ends the poll), and
+         outside the start limit; it never confirms. That batch and one focus read alone decide the reason through
+         `readbackConcealedReason`, in wave 9's order, the focus read skipped when the batch closes `noLongerSecure` or
+         `fieldUnreadable`. A failure takes about T more (#423).
+       - **No latch.** Nothing seen mid-poll is kept for the reason: which batches a poll reads depends on its hold
+         checks, which depend on whether the secret matches, so a latch would let the secret choose the reason again.
+         The residual is accepted: a field toggled visible and then secure again before the final batch loses its
+         warning. That warning only shapes what the agent does next, and a field secure again at the final batch reads
+         `secure text` to getAXState() from then on, so letting the final batch and the focus read alone decide never
+         loses a warning that still matters.
+       - **3, an overshoot.** A concealed overshoot now taints the poll, as a change does: one that recovers (a caret
+         past the text, or from nothing selected a count past it, then the right reply held past 220 ms) never
+         confirms, and polls on for exposure.
+       - **4, a secure `roleUnreadable`.** A field the lookup classified as a password field (the marker route or the
+         walk, so `secure: true`) whose snapshot role read then fails now takes the may-show treatment natively, like
+         `fieldUnreadable`: "the password field could not be read, so it may no longer hide its text" and the may-show
+         remedy, not the getAXState() advice. The wrapper's `secretMayShow` warns for `noLongerSecure`, or for
+         `fieldUnreadable` or `roleUnreadable` with `secure === true`, each compared with a literal. A field never
+         classified (the marker's own `.closed(.roleUnreadable)`, `secure` false) is unchanged.
+       - **5, a poll with no batch.** A literal request whose poll took no batch after typing (the engine delayed past
+         E − T) answered `lengthUnreadable`; it now answers `fieldUnreadable`, the unclassified field's result, with no
+         focus read first, since `fieldUnreadable` comes before `fieldChanged`. `readbackConcealedReason`'s no-batch case
+         is `fieldUnreadable` too, before a moved focus; with the final batch a concealed request always has one.
+       - **6, two timestamps.** The loop checked E − now ≥ T, and the batch took its own start: a deschedule between them
+         let a read started 95 ms before E close a window. `step()` now takes its start once, makes no read and ends the
+         poll when less than T is left, and judges the hold on that same start. The allowance stays 680 ms.
+       - **Tests.** SecureTypeReadbackTests has 55. New: the reviewer's pair (the matching secret confirms at the next
+         hold once the focus is back, never `fieldChanged`; the other `lengthMismatch`), the focus away to the end (both
+         `fieldChanged`) and every focus read unknown (both `lengthMismatch`); the reviewer's exposure case (both secrets
+         `noLongerSecure` with the warning); an overshoot that recovers, by caret and by count (`lengthMismatch`, polled
+         to the end); a literal request delayed past E − T (`fieldUnreadable`, no batch, no focus read, the may-show
+         remedy) beside a concealed one (its final batch alone, `lengthMismatch`); and a match at 685 ms with a 5 ms
+         deschedule at 900 ms (unconfirmed, plain and concealed; the stub's `nowJump`). TypeReadbackMarkerTests checks a
+         classified field's `roleUnreadable` warns and an unclassified one's does not; services-sky has both sides. Each
+         failed before its fix, and five mutants (one per engine finding) each fail a test. Moved: every concealed
+         failure reads one batch more (183 for a full poll, 6 for a closed read), and a concealed held match whose checks
+         find the focus moved polls to the end (62 batches, 975 ms, `fieldChanged`). The property runs are unchanged:
+         seed 0x414F217, 2000 cases, 4000 runs, 1902 successes, 2098 failures, 47 overrun cases; seed 0x414F218, 2000
+         cases, 4000 runs, 1332 genuine (all confirmed) and 2668 controls (all `lengthMismatch`).
+     - **What differs between concealed failures.** *Superseded by wave 9 (ruling 1ea561bc:851): kept as the record.* Under wave 10 a concealed held match whose focus
+       check is moved, unknown or late polls on, the next hold checking again, and its failure's reason comes from the
+       final batch and the focus read after it. A held match whose focus read fails goes on as a tainted one.
        Since C is absolute, the time of that focus read displaces the polls it overlaps (8 of them for a 40 ms read)
        rather than extending the poll; then come the final focus read at C and the wait for D, as for every failure.
        Its AX trace is a lost match's with the focus read at the match in and the displaced polls out. That traffic
@@ -6470,7 +6520,7 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   11. **The model's document**: agent-cursor.md's typing paragraph, the surface inventory's "Table 3 amendment
       (2026-11-18, #414, …)", the docs oracle and the core-documentation test byte for byte, and the README's secrets
       paragraph. The MCP surface names no password confirmation, so no pinned digest moves.
-  12. **Proof**: SecureTypeReadbackTests (50) run the live reads over a stub app whose password field holds plaintext,
+  12. **Proof**: SecureTypeReadbackTests (55) run the live reads over a stub app whose password field holds plaintext,
       answers it to any request, and reports distinctive counts and ranges. Ruling 826's leak test covers fifteen runs:
       - confirmations, plain, concealed and by the caret alone;
       - a dropped and an extra character, a caret elsewhere concealed and plain, a field that ignores a secret (its

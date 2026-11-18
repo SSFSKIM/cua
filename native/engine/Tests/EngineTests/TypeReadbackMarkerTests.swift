@@ -557,6 +557,10 @@ final class TypeReadbackMarkerTests: XCTestCase {
       XCTAssertEqual(error?.errorName, "typeUnconfirmed")
       XCTAssertEqual(reason(meta), "roleUnreadable")
       XCTAssertEqual(record(meta)["secure"] as? Bool, true)
+      // A password field that could not be classified may have stopped being one (the review of a1939d2f..e8e2702e, 4).
+      XCTAssertTrue(error?.message.contains("the password field could not be read, so it may no longer hide its text") ?? false)
+      XCTAssertTrue(error?.message.contains("may now show its text") ?? false)
+      XCTAssertFalse(error?.message.contains("Observe the field with getAXState()") ?? true)
       // A refusal after posting answers at once (ruling 1ea561bc:851), concealed or not.
       XCTAssertEqual(meta.typeReadback?.pollMs, 0)
       XCTAssertNil(record(meta)["reads"])
@@ -583,6 +587,9 @@ final class TypeReadbackMarkerTests: XCTestCase {
         let (error, meta, _) = type("pass", into: safari, concealed: concealed)
         XCTAssertEqual(error?.errorName, "typeUnconfirmed", name)
         XCTAssertEqual(reason(meta), expected, name)
+        // Never classified a password field: its roleUnreadable keeps the usual advice (the review of a1939d2f..e8e2702e, 4).
+        XCTAssertNotEqual(record(meta)["secure"] as? Bool, true, name)
+        XCTAssertFalse(error?.message.contains("may now show its text") ?? true, name)
         XCTAssertEqual(safari.valueReads, [], "\(name): \(safari.log)")
         guard let classified = safari.log.lastIndex(of: "batch(AXRole,AXSubrole)@\(closed)") else {
           XCTFail("\(name): classified by role and subrole in one request: \(safari.log.suffix(12))")

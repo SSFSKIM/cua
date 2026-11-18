@@ -188,6 +188,10 @@ test('#414: a concealed type_text whose password field stopped being one warns, 
     {label: 'fieldUnreadable, a password field', name: 'typeUnconfirmed', meta: {...posted, typeReadback: record('fieldUnreadable')}, warned: true},
     {label: 'fieldUnreadable, a plain field', name: 'typeUnconfirmed', meta: {...posted, typeReadback: {...record('fieldUnreadable'), secure: false}}, warned: false},
     {label: 'fieldUnreadable, secure not the literal true', name: 'typeUnconfirmed', meta: {...posted, typeReadback: {...record('fieldUnreadable'), secure: 'true'}}, warned: false},
+    // The review of a1939d2f..e8e2702e (4): a field classified a password field whose role read then failed warns too; one
+    // never classified one does not.
+    {label: 'roleUnreadable, a password field', name: 'typeUnconfirmed', meta: {...posted, typeReadback: record('roleUnreadable')}, warned: true},
+    {label: 'roleUnreadable, a plain field', name: 'typeUnconfirmed', meta: {...posted, typeReadback: {...record('roleUnreadable'), secure: false}}, warned: false},
     {label: 'a reason that only contains it', name: 'typeUnconfirmed', meta: {...posted, typeReadback: record('noLongerSecure ')}, warned: false},
     {label: 'a reason not a string', name: 'typeUnconfirmed', meta: {...posted, typeReadback: record(['noLongerSecure'])}, warned: false},
     {label: 'no record', name: 'typeUnconfirmed', meta: {...posted, typeReadback: null}, warned: false},

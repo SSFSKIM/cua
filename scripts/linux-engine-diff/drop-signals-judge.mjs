@@ -442,6 +442,18 @@ export const OFF_WINDOW_CELLS = ['root', 'xterm', 'other', 'slow', 'moved'];
 export const SLOW_CELL_MODE = 'declared-race';
 const RACE_CELL = 'slow';
 
+/**
+ * L4a's residue (the design session's ruling 827, 3b, 2026-11-18). In the plain cell at twice the load (the row's load
+ * `load2`, `--load-factor 2`), an honest unconfirmed non-landing is allowed at most `allowed` times per `per` plain drops;
+ * one more fails. Honest: the drag answered the unconfirmed notice, kept by the next acting request's refusal, and the
+ * page shows no drop. A cell of n drops other than 100 is allowed floor(allowed × n / per), never rounded up. Each
+ * lane's plain cell carries its own bound. A false ok is never residue, and no other load or cell has one.
+ */
+export const RESIDUE = { load: 'load2', cell: 'plain', allowed: 2, per: 100 };
+
+/** The residue's bound for a plain cell of `n` drops: floor(2 × n / 100). */
+export const residueBound = (n) => Math.floor((RESIDUE.allowed * n) / RESIDUE.per);
+
 /** The page's dragend `dropEffect` codes (pages/drop-signals.html `EFFECTS`) of a drop whose accept breeze_cursors cannot show. */
 const MOVE_OR_LINK = [2, 3];
 
@@ -534,7 +546,9 @@ export function unconfirmedClass(r) {
  * (`{lane, cell, n}`). Fails, each named: a false ok (answered ok on a drag that dropped nowhere, with nothing honestly
  * pending: a notice counts only with the next acting request refused with it, `pendingOf`); T14's pending contract
  * broken (a notice without its refusal, or a refusal without its notice);
- * a missing landing in a cell that expects one (honesty excuses an unconfirmed answer, not a missing effect); an error
+ * a missing landing in a cell that expects one (honesty excuses an unconfirmed answer, not a missing effect), save L4a's
+ * residue: in the plain cell at twice the load, up to floor(2 × n / 100) honest unconfirmed non-landings in its n drops,
+ * reported with the count and the bound, and one more fails (`RESIDUE`, ruling 827 3b); an error
  * answered for a drop that landed (T17's proof: no false error undisturbed); a cell with fewer drags than its plan, or
  * drags the plan does not name (a missing case fails, as a missing operation does). Findings, counted and never a fail:
  * landed drops answered unconfirmed (by `unconfirmedClass`); T14's share of them against 5% of the landed drops; a cell
@@ -546,6 +560,8 @@ export function electronDropVerdict(rows, { specs = [], share = 0.05, slowMode =
   const failed = [];
   // #365's declared race: the hung sink's false oks per lane, and its drags
   const race = { lanes: [], false_ok: 0, drags: 0 };
+  // L4a's residue: each plain cell at twice the load, with its count and bound
+  const residue = [];
   const findings = [];
   const cells = planCells(rows, specs, failed);
   const load = [...new Set(rows.map((r) => r.load))].join(', ') || 'none';
@@ -564,12 +580,22 @@ export function electronDropVerdict(rows, { specs = [], share = 0.05, slowMode =
     const count = (f) => list.filter(f).length;
     const falseOk = list.filter((r) => r.ok === true && honest(r) === null && !droppedOf(r));
     const landing = LANDING_CELLS.includes(base);
-    const missing = landing ? list.filter((r) => !r.outcome?.landed) : [];
+    const nonLanding = landing ? list.filter((r) => !r.outcome?.landed) : [];
+    // L4a's residue (ruling 827 3b, `RESIDUE`): the plain cell at twice the load only; its honest non-landings are
+    // counted against the cell's bound, and every other non-landing is still a missing landing
+    const residueApplies = base === RESIDUE.cell && list.length > 0 && list.every((r) => r.load === RESIDUE.load);
+    const residual = residueApplies ? nonLanding.filter((r) => honest(r) === 'unconfirmed' && !droppedOf(r)) : [];
+    const missing = nonLanding.filter((r) => !residual.includes(r));
     const falseError = landing ? list.filter((r) => r.outcome?.landed && r.ok !== true) : [];
     const landedUnconfirmed = list.filter((r) => r.outcome?.landed && honest(r) === 'unconfirmed');
     const byClass = { 'move-link': 0, 'cold-load': 0, other: 0 };
     for (const r of landedUnconfirmed) byClass[unconfirmedClass(r)] += 1;
     const which = (rs) => rs.slice(0, 3).map((r) => `#${r.i}`).join(', ');
+    if (residueApplies) {
+      const bound = residueBound(list.length);
+      residue.push({ lane: c.lane, cell: c.cell, drags: list.length, count: residual.length, bound, over: residual.length > bound });
+      if (residual.length > bound) failed.push(`${name}: ${residual.length} honest unconfirmed non-landings of ${list.length}, over L4a's residue of ${bound} (ruling 827 3b: floor(${RESIDUE.allowed} × ${list.length} / ${RESIDUE.per}), never rounded up) (${which(residual)})`);
+    }
     const raced = slowMode === 'declared-race' && base === RACE_CELL;
     if (raced) {
       race.lanes.push(`${c.lane} ${falseOk.length} of ${list.length}`);
@@ -593,13 +619,16 @@ export function electronDropVerdict(rows, { specs = [], share = 0.05, slowMode =
   total.race_false_ok = race.false_ok;
   total.race_drags = race.drags;
   if (race.drags) findings.push(`#365's declared race, load ${load}: the hung sink answered ok with no drop and nothing pending on ${race.false_ok} of ${race.drags} drags (${race.lanes.join(', ')}), a finding, not a fail`);
+  const within = residue.filter((x) => !x.over);
+  if (within.length) findings.push(`L4a's residue (ruling 827 3b), load ${load}: ${within.map((x, k) => `${x.lane} ${x.cell} ${x.count} of ${x.drags}${k ? '' : ' honest unconfirmed non-landings'}, bound ${x.bound}`).join('; ')} (floor(${RESIDUE.allowed} × n / ${RESIDUE.per}), never rounded up), not a fail`);
   if (total.by_class['move-link']) findings.push(`${total.by_class['move-link']} landed move or link drops answered unconfirmed: under breeze_cursors their accept is drawn as no drop, or not at all (#364)`);
   if (total.by_class['cold-load']) findings.push(`${total.by_class['cold-load']} cold handle drops at load landed while Electron's cursor still showed no drop, answered unconfirmed (#364)`);
   if (total.by_class.other) findings.push(`${total.by_class.other} other landed drops answered unconfirmed`);
   const over = total.landed > 0 && total.unconfirmed_landed > share * total.landed;
   findings.push(`T14's share, reported and not a fail for these cells: ${total.unconfirmed_landed} of ${total.landed} landed drops answered unconfirmed, ${over ? 'over' : 'within'} ${share * 100}%`);
-  md.push('', failed.length ? `**Fails:** ${failed.join('; ')}.` : 'No false ok, no missing landing, no false error, every notice refused once; every cell of the plan ran.', '', `Findings (counted, not fails): ${findings.join('; ')}.`, '');
-  return { md, failed, findings, counts: { load, ...total, over_share: over } };
+  const residual = residue.some((x) => x.count > 0) ? " beyond L4a's residue" : '';
+  md.push('', failed.length ? `**Fails:** ${failed.join('; ')}.` : `No false ok, no missing landing${residual}, no false error, every notice refused once; every cell of the plan ran.`, '', `Findings (counted, not fails): ${findings.join('; ')}.`, '');
+  return { md, failed, findings, counts: { load, ...total, over_share: over, residue } };
 }
 
 // ---------------------------------------------------------------------------------------------------------------

@@ -210,3 +210,110 @@ test("a landed move is classed by this trial's own dragend, never by an earlier 
   open.after.last.dur = -1;
   assert.equal(unconfirmedClass(open), 'other');
 });
+
+// L4a's residue (ruling 827, 3b; 2026-11-18): in the plain cell at twice the load, an honest unconfirmed non-landing (the
+// unconfirmed notice, kept by its refusal, and no drop on the page) is allowed up to floor(2 × n / 100) times in a cell
+// of n plain drops; one more fails. A false ok is never part of it, and the rule covers no other load or cell.
+
+/** A cell at twice the load: `n` drops, the first `honest` of them honest unconfirmed non-landings, the rest landed and ok. */
+const residueCell = (n, honest, { lane = 'cua:handle', load = 'load2', cell = 'plain' } = {}) =>
+  many(n, (i) => (i < honest ? drag({ lane, cell, load, i, landed: false, notice: UNCONFIRMED }) : drag({ lane, cell, load, i, landed: true })));
+
+test("L4a's residue: 3 honest unconfirmed non-landings in 100 plain drops at twice the load fail, the count and the bound named", () => {
+  const v = electronDropVerdict(residueCell(100, 3), { specs: specs(['cua:handle', 'plain', 100]) });
+  assert.deepEqual(v.failed, ["cua:handle plain: 3 honest unconfirmed non-landings of 100, over L4a's residue of 2 (ruling 827 3b: floor(2 × 100 / 100), never rounded up) (#0, #1, #2)"]);
+  assert.deepEqual(v.counts.residue, [{ lane: 'cua:handle', cell: 'plain', drags: 100, count: 3, bound: 2, over: true }]);
+  assert.equal(v.counts.missing_landing, 0, 'the residue is counted apart from the hard misses');
+});
+
+test("L4a's residue: 2 in 100 pass, with the count and the bound reported apart from the passes", () => {
+  const v = electronDropVerdict(residueCell(100, 2), { specs: specs(['cua:handle', 'plain', 100]) });
+  assert.deepEqual(v.failed, []);
+  assert.deepEqual(v.counts.residue, [{ lane: 'cua:handle', cell: 'plain', drags: 100, count: 2, bound: 2, over: false }]);
+  assert.ok(v.findings.includes("L4a's residue (ruling 827 3b), load load2: cua:handle plain 2 of 100 honest unconfirmed non-landings, bound 2 (floor(2 × n / 100), never rounded up), not a fail"), v.findings.join('\n'));
+  const md = v.md.join('\n');
+  assert.match(md, /no missing landing beyond L4a's residue/);
+  assert.match(md, /Findings \(counted, not fails\): .*cua:handle plain 2 of 100 honest unconfirmed non-landings, bound 2/);
+});
+
+test("L4a's residue is per plain cell and printed for each, 0 included: each lane's 100 drops carry their own bound", () => {
+  const v = electronDropVerdict([...residueCell(100, 2), ...residueCell(100, 0, { lane: 'cua' })], { specs: specs(['cua:handle', 'plain', 100], ['cua', 'plain', 100]) });
+  assert.deepEqual(v.failed, []);
+  assert.ok(v.findings.includes("L4a's residue (ruling 827 3b), load load2: cua:handle plain 2 of 100 honest unconfirmed non-landings, bound 2; cua plain 0 of 100, bound 2 (floor(2 × n / 100), never rounded up), not a fail"), v.findings.join('\n'));
+  // 3 in one lane's cell fail though the two cells' 200 drops would allow 4
+  const over = electronDropVerdict([...residueCell(100, 3), ...residueCell(100, 0, { lane: 'cua' })], { specs: specs(['cua:handle', 'plain', 100], ['cua', 'plain', 100]) });
+  assert.equal(over.failed.length, 1);
+  assert.match(over.failed[0], /^cua:handle plain: 3 honest unconfirmed non-landings of 100, over L4a's residue of 2/);
+});
+
+test('a false ok in the same series fails, whatever the residue', () => {
+  const rows = residueCell(100, 1);
+  // an ok with nothing pending on a drag that dropped nowhere
+  rows[99] = drag({ lane: 'cua:handle', load: 'load2', i: 99, landed: false });
+  const v = electronDropVerdict(rows, { specs: specs(['cua:handle', 'plain', 100]) });
+  assert.ok(v.failed.includes('cua:handle plain: answered ok with no drop and nothing pending on 1 of 100 (#99)'), v.failed.join('\n'));
+  assert.ok(v.failed.includes('cua:handle plain: the drop did not land on 1 of 100, in a cell that expects it (#99)'), v.failed.join('\n'));
+  assert.equal(v.counts.false_ok, 1);
+  assert.deepEqual(v.counts.residue, [{ lane: 'cua:handle', cell: 'plain', drags: 100, count: 1, bound: 2, over: false }], 'the false ok is no part of the residue');
+});
+
+test("a non-landing answered ok is a false ok and fails, never residue: no drop at all, or a drop on another of the page's elements", () => {
+  const nowhere = residueCell(100, 0);
+  nowhere[5] = drag({ lane: 'cua:handle', load: 'load2', i: 5, landed: false });
+  const a = electronDropVerdict(nowhere, { specs: specs(['cua:handle', 'plain', 100]) });
+  assert.ok(a.failed.includes('cua:handle plain: answered ok with no drop and nothing pending on 1 of 100 (#5)'), a.failed.join('\n'));
+  assert.equal(a.counts.residue[0].count, 0);
+  // the page's own dragend says it dropped, outside the zone: its effect landed on another target (ruling 650)
+  const elsewhere = residueCell(100, 0);
+  elsewhere[5] = drag({ lane: 'cua:handle', load: 'load2', i: 5, landed: false, effect: 1 });
+  const b = electronDropVerdict(elsewhere, { specs: specs(['cua:handle', 'plain', 100]) });
+  assert.deepEqual(b.failed, ['cua:handle plain: the drop did not land on 1 of 100, in a cell that expects it (#5)']);
+  assert.equal(b.counts.residue[0].count, 0);
+});
+
+test('only an honest non-landing is residue: a notice its refusal did not keep, another cause, an error, or a drop elsewhere answered unconfirmed all fail', () => {
+  const run = { ok: true, error: null, late_dnd: null };
+  const shapes = [
+    ['unkept', drag({ lane: 'cua:handle', load: 'load2', i: 0, landed: false, notice: UNCONFIRMED, next: run })],
+    ['failed watch', drag({ lane: 'cua:handle', load: 'load2', i: 0, landed: false, notice: 'failed' })],
+    ['error', drag({ lane: 'cua:handle', load: 'load2', i: 0, landed: false, ok: false })],
+    ['dropped elsewhere', drag({ lane: 'cua:handle', load: 'load2', i: 0, landed: false, effect: 1, notice: UNCONFIRMED })],
+  ];
+  for (const [name, row] of shapes) {
+    const rows = residueCell(100, 0);
+    rows[0] = row;
+    const v = electronDropVerdict(rows, { specs: specs(['cua:handle', 'plain', 100]) });
+    assert.ok(v.failed.includes('cua:handle plain: the drop did not land on 1 of 100, in a cell that expects it (#0)'), `${name}: ${v.failed.join('\n')}`);
+    assert.equal(v.counts.residue[0].count, 0, name);
+  }
+});
+
+test("the same rows at idle, or at the gate's window load, are not covered: every non-landing there fails as before", () => {
+  for (const load of ['idle', 'gate-windows']) {
+    const v = electronDropVerdict(residueCell(100, 2, { load }), { specs: specs(['cua:handle', 'plain', 100]) });
+    assert.deepEqual(v.failed, ['cua:handle plain: the drop did not land on 2 of 100, in a cell that expects it (#0, #1)'], load);
+    assert.deepEqual(v.counts.residue, [], load);
+    assert.ok(!v.findings.some((f) => /residue/.test(f)), load);
+  }
+});
+
+test('the residue covers the plain cell alone: another landing cell at twice the load fails on any non-landing', () => {
+  const v = electronDropVerdict(residueCell(30, 1, { lane: 'cua', cell: 'move' }), { specs: specs(['cua', 'move', 30]) });
+  assert.deepEqual(v.failed, ['cua move: the drop did not land on 1 of 30, in a cell that expects it (#0)']);
+  assert.deepEqual(v.counts.residue, []);
+});
+
+test("a short series' bound rounds down, never up: floor(2 × n / 100)", () => {
+  // 99 drops: 1.98 allows 1, so 2 fail
+  const a = electronDropVerdict(residueCell(99, 2), { specs: specs(['cua:handle', 'plain', 99]) });
+  assert.deepEqual(a.failed, ["cua:handle plain: 2 honest unconfirmed non-landings of 99, over L4a's residue of 1 (ruling 827 3b: floor(2 × 99 / 100), never rounded up) (#0, #1)"]);
+  // 50 drops allow 1
+  assert.deepEqual(electronDropVerdict(residueCell(50, 1), { specs: specs(['cua:handle', 'plain', 50]) }).failed, []);
+  // 49 drops, and a pilot's 2, allow none
+  for (const n of [49, 2]) {
+    const v = electronDropVerdict(residueCell(n, 1), { specs: specs(['cua:handle', 'plain', n]) });
+    assert.deepEqual(v.failed, [`cua:handle plain: 1 honest unconfirmed non-landings of ${n}, over L4a's residue of 0 (ruling 827 3b: floor(2 × ${n} / 100), never rounded up) (#0)`], String(n));
+  }
+  // 150 drops allow 3
+  assert.deepEqual(electronDropVerdict(residueCell(150, 3), { specs: specs(['cua:handle', 'plain', 150]) }).counts.residue[0], { lane: 'cua:handle', cell: 'plain', drags: 150, count: 3, bound: 3, over: false });
+});

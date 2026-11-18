@@ -2335,6 +2335,41 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
   - The vendor index now lists 26.1111.71025, whose engine binary is byte-identical to 26.1111.21308, F3's third build. F3's build was fetched by name.
   Date/Author: 2026-11-18, the plan-executor (session linux171), from task 96's report.
 
+- Decision (2026-11-18, M5 T4's second round, the arm64 part, as built, and the frozen head H‴): task 97, branch `m5-t4arm` (da306cc6..b66fe663), with two fix waves after reviews 1 and 2. Merged into `feat/171-m5` as **H‴ = f6275fb6**. ci-gate is GREEN on b66fe663 (run 44274140041). The controller made every decision below while the design session was away, within its rulings.
+  - **(a) The arm64 vendor declarations.**
+    - **R1:** three vendor defects for `26.928.40906-linux-arm64`, in repl-parity's per-architecture form, each with counts and evidence:
+      - typeText ends gedit, 4 runs, with two exact error texts admitted. The D-Bus unique name `:1.<n>` is masked, and only that.
+      - paste ends its own gedit, 4 of 4.
+      - minimized is x64's defect.
+    - **V1–V5:** the vendor builds' gedit ends are declared per build by binary sha256: type_text, type_text_selection and clipboard_write on the pinned build, and clipboard_write on the newest. Declared and undeclared ends are both listed apart and never scored (the controller's (B), the pre-flight T4 row's "never scored against cua").
+    - A vendor sample that ended its own window sets no speed bar and no answer reference, whether it answered ok or not.
+    - Where every vendor sample of a block ended its window, cua's answers there are counted as `unreferenced` and not compared, while every other obligation still holds. On arm64 this covers clipboard_write.
+    - **R2** (`compare --engines`): on the Linux vendor side only, a sample with `target: exited` sets no timing. It is listed apart per method, and a method with no vendor sample left reads "not judged: the vendor never completed it". cua's text obligations are unchanged. macOS is unchanged.
+  - **(b)** The pinned pilot's run name is `m5-pdev-<step>-pilot`. `gate.mjs print` refuses, before launch, a `:0` step whose scratch would leave run71's TMPDIR, or whose decoy path, resolved as run71 resolves it, is over 107 bytes.
+  - **(c) The lane restore.** It closes and waits on the lane's own spawned process, through the spawn's handle, with exit checked first: gedit in V1, gnome-text-editor's process group in V4. Where ownership can't be shown, the restore refuses and records it. `Desktop.close` is unchanged for every other caller. The controller reversed the executor's widening, because pid_max is 4194304 on both VMs and the widening would have reached every Desktop step.
+  - **(d), (e) wrap71, M5's copy.**
+    - Decoys are bound before the step, or the step is refused and recorded.
+    - 773's rule is extended narrowly to the run Chrome's own crashpad and autobind connections. A not-yet-accepted connection to an autobind abstract address counts only when, in the same snapshot, its listener is held by a run process whose comm is chrome or chrome_crashpad, identity-checked by start time.
+    - Absent, ownerless, foreign and recycled holders still flag.
+  - **(f) E1's judge (ruling 818).**
+    - ok:false passes only when the error's unmasked bad value equals the recorder's own child XID.
+    - ok:true passes only when two conditions hold:
+      - the audit trace, recorded in the judged run through the existing proxy, pairs every motion the engine sent to this run's child with a recorder event, in order;
+      - the recorder shows the whole requested path with button 1 held, from press to release, before the child's DestroyNotify.
+    - No stored E1 row keeps those fields: x64's lack the XID, arm64's lack the trace. So E1 reruns at H‴ on both architectures, and its stored rows read unproved.
+  - **Reach under §8.1**, read by the functions each step calls:
+    - **Rerun at H‴ on both:** E1, V1–V5 and Z0.
+    - **Re-judged under point 4:** R1, R2 and the V steps' scene ends. No stored verdict moved on x64. On arm64, R1 now passes, and R2's typeText and paste vendor bars read not judged.
+    - **x64's cross-check:** R3, which executes none of the diff.
+    - **Pending, the design session's or the owner's ruling:** a waiver for x64's V1–V5 and Z0, which would otherwise rerun in a `:0` sitting of about 3.5 hours on the owner's display. Its basis on x64's stored records:
+      - every decoy fits (76–92 bytes);
+      - no guard flag that the new rule removes;
+      - 0 vendor ends and 0 restores;
+      - unchanged run names.
+    - arm64 runs every step at H‴ (T7).
+  - **Reviews:** round 1 found two E1 false passes, a wrong-process restore lookup, vendor-end samples still scored, and a reach list that did not follow §8.1. Round 2 found E1 still passing on agreement alone, the vendor-end exclusion wired to sample-only rows, and V4's process group unbound. Round 3 approved it, with one test-only Minor deferred to the ledger (pid-identity.test.mjs quotes a TMPDIR path in shell source).
+  Date/Author: 2026-11-18, the plan-executor (session linux171), from task 97's report and its three reviews.
+
 ## Outcomes & Retrospective
 
 Written per milestone as each lands; the whole-plan retrospective at finish. The execution record (tasks, reviews, friction) is `docs/doperpowers/specs/2026-10-28-own-linux-engine-report.md`.

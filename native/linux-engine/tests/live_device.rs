@@ -3911,6 +3911,102 @@ fn idle_cause(app: &str, seconds: &str, at: (i16, i16)) -> String {
     )
 }
 
+/// The engine's settle counts in its `--stats` lines with no request of their own (task 103's review): an idle handle's
+/// release carries the cumulative `drop_settles` mid-run, and the orderly exit's line, written after the shutdown's own
+/// release of a handle still held at EOF (whose record it carries), carries the same counts with `settle_final` and
+/// `exit_settle`, which no other line has.
+#[test]
+fn the_exit_s_stats_line_is_the_settles_final_snapshot_after_the_shutdown_s_release_and_no_other_line_is() {
+    use std::io::{BufRead, BufReader, Read, Write};
+    use std::process::{Command, Stdio};
+    let probe = Probe::open("XTerm", (0, 0, 400, 300));
+    managed(probe.id);
+    support::clear_display_record();
+    let mut child = Command::new(support::engine_bin())
+        .args(["server", "--stats", "--drag-handle-idle-ms", "300"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    let mut stdout = BufReader::new(child.stdout.take().unwrap());
+    let mut stderr = child.stderr.take().unwrap();
+    let errors = std::thread::spawn(move || {
+        let mut text = String::new();
+        stderr.read_to_string(&mut text).unwrap();
+        text
+    });
+    let mut ask = |id: u64, command: &str, input: Value| -> Value {
+        writeln!(stdin, "{}", json!({"id": id, "command": command, "input": input})).unwrap();
+        let mut line = String::new();
+        stdout.read_line(&mut line).unwrap();
+        serde_json::from_str(&line).unwrap()
+    };
+    // a handle the idle bound releases, with no request come
+    assert_eq!(
+        ask(1, "drag_handle", json!({"action": "start", "x": 150, "y": 150}))["ok"],
+        json!(true)
+    );
+    sleep(Duration::from_millis(700));
+    assert!(!button1_down(), "released by the idle bound");
+    // its pending refusal answered, then a handle held at EOF
+    assert_eq!(
+        ask(2, "drag_handle", json!({"action": "start", "x": 160, "y": 160}))["ok"],
+        json!(false)
+    );
+    assert_eq!(
+        ask(3, "drag_handle", json!({"action": "start", "x": 170, "y": 170}))["ok"],
+        json!(true)
+    );
+    assert!(button1_down(), "held at EOF");
+    // EOF: the closure's borrow of the engine's stdin ended with its last call
+    drop(stdin);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let status = loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            break status;
+        }
+        if Instant::now() > deadline {
+            let _ = child.kill();
+            panic!("the engine did not exit at EOF");
+        }
+        sleep(Duration::from_millis(20));
+    };
+    assert!(status.success());
+    assert!(!button1_down(), "the shutdown released it");
+    let lines: Vec<Value> = errors
+        .join()
+        .unwrap()
+        .lines()
+        .filter(|line| line.starts_with(r#"{"stats""#))
+        .map(|line| serde_json::from_str::<Value>(line).unwrap()["stats"].clone())
+        .collect();
+    let idle: Vec<_> = lines.iter().filter(|line| line.get("idle_handle").is_some()).collect();
+    assert_eq!(idle.len(), 1, "{lines:?}");
+    assert!(
+        idle[0]["drop_settles"]["entered"].is_u64(),
+        "the idle line's snapshot: {}",
+        idle[0]
+    );
+    assert_eq!(idle[0].get("settle_final"), None);
+    let exit = lines.last().unwrap();
+    assert_eq!(exit["id"], json!(null));
+    assert_eq!(exit["settle_final"], json!(true), "the last line is the exit's: {exit}");
+    assert!(exit["exit_settle"].is_object(), "{exit}");
+    assert!(exit["drop_settles"]["entered"].is_u64(), "{exit}");
+    assert_eq!(
+        exit["handle"]["pressed"],
+        json!(true),
+        "written after the shutdown's release: {exit}"
+    );
+    assert_eq!(
+        lines.iter().filter(|line| line.get("settle_final").is_some()).count(),
+        1,
+        "no other line carries settle_final"
+    );
+}
+
 /// A handle whose cell lost it (an agent's cell that threw between `start` and `end`) gets no request again, and every
 /// desktop pointer request was refused for good with button 1 held (task 73's review, P1). A handle that gets no request
 /// for the idle bound (30 s; `--drag-handle-idle-ms` sets another, here 300 ms) is released by the engine where the

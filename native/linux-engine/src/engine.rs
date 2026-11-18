@@ -286,17 +286,17 @@ pub(crate) fn standalone_stats_line(
     json!({ "stats": record })
 }
 
-/// The exit's `--stats` line, written after any release the shutdown made (a held handle ended at EOF can settle; the
-/// review of task 103): the exit settle's wait when there was one, what the shutdown's requests recorded (`extra`) and
-/// the engine's settles over its life.
+/// The exit's `--stats` line, written after every release the shutdown made (a held handle ended at EOF can settle; the
+/// review of task 103): the exit settle's wait (null when the exit had nothing to settle), what the shutdown's requests
+/// recorded (`extra`), and the engine's settles over its life marked `settle_final`, which no other line carries, so a
+/// reader tells the final snapshot from an idle release's.
 pub(crate) fn exit_stats_line(
     waited_ms: Option<f64>,
     mut extra: serde_json::Map<String, Value>,
     settles: &crate::drop_settle::SettleCounts,
 ) -> Value {
-    if let Some(waited) = waited_ms {
-        extra.insert("exit_settle".into(), json!({ "waited_ms": waited }));
-    }
+    extra.insert("exit_settle".into(), json!({ "waited_ms": waited_ms }));
+    extra.insert("settle_final".into(), json!(true));
     standalone_stats_line(extra, settles)
 }
 
@@ -978,10 +978,18 @@ mod stats_line_tests {
         let line = exit_stats_line(Some(2.5), extra, &counts());
         assert_eq!(line["stats"]["id"], json!(null));
         assert_eq!(line["stats"]["drop_settles"].to_string(), SNAPSHOT);
+        // the line that is the snapshot's last: only the exit's carries `settle_final` (task 103's review)
+        assert_eq!(line["stats"]["settle_final"], json!(true));
         assert_eq!(line["stats"]["exit_settle"], json!({ "waited_ms": 2.5 }));
         assert_eq!(line["stats"]["handle"], json!({ "pressed": true }));
+        // `exit_settle` is always there: a null wait when the exit had nothing to settle
         let quiet = exit_stats_line(None, serde_json::Map::new(), &SettleCounts::default());
-        assert_eq!(quiet["stats"].get("exit_settle"), None, "no settle waited");
+        assert_eq!(
+            quiet["stats"]["exit_settle"],
+            json!({ "waited_ms": null }),
+            "no settle waited"
+        );
+        assert_eq!(quiet["stats"]["settle_final"], json!(true));
         assert_eq!(
             quiet["stats"]["drop_settles"],
             json!({ "entered": 0, "second_rest": 0, "skipped": 0, "unsettled": 0, "settle_failed_activation_confirmed": 0 }),
@@ -997,6 +1005,11 @@ mod stats_line_tests {
         assert_eq!(line["stats"]["id"], json!(null));
         assert_eq!(line["stats"]["idle_handle"], json!({ "app": "Electron" }));
         assert_eq!(line["stats"]["drop_settles"].to_string(), SNAPSHOT);
+        assert_eq!(
+            line["stats"].get("settle_final"),
+            None,
+            "a line mid-run is no final snapshot"
+        );
     }
 }
 

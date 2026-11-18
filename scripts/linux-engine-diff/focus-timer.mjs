@@ -391,7 +391,8 @@ function collectFocusOuts(engine) {
 export function readStatsLine(line) {
   if (!line.startsWith('{"stats"')) return null;
   const { stats } = JSON.parse(line);
-  return { focusOuts: focusOutsOf([stats]), settle: stats.exit_settle ?? null };
+  // the exit's line names a wait of null when it had nothing to settle (0.4.1's exit line is written either way)
+  return { focusOuts: focusOutsOf([stats]), settle: typeof stats.exit_settle?.waited_ms === 'number' ? stats.exit_settle : null };
 }
 
 /** The FocusOuts of a run's `--stats` records, in order, each with the id of the request whose line carried it. */

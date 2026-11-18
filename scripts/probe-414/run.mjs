@@ -92,12 +92,19 @@ async function startEngine({name,src,bin,root,platform,audit,focus,drain,globalP
     async function observe(){
       const r=await w.execute('get_app_state',{pid:platform.pid,includeScreenshot:false,disableDiff:true});
       const shot=r.result;
-      if(!shot||shot.app?.pid!==platform.pid||!Array.isArray(shot.nodes))return false;
+      if(!shot||shot.app?.pid!==platform.pid||!Array.isArray(shot.nodes)){
+        note('observation-error',r.error??r);
+        return false;
+      }
       if(!audit){
         const nodes=[...shot.nodes,...(shot.menuBar??[])].filter(n=>n.role==='AXSecureTextField'||n.subrole==='AXSecureTextField'||n.secure===true||[n.title,n.description,n.identifier].includes('PW walk test'));
         note('observation-native',nodes);
         note('observation-focus',{selectedText:shot.selectedText,selectedTextRange:shot.selectedTextRange});
-        note('observation-text',renderer.render(shot,renderer.advanceNumbering(null,shot)),{names:false});
+        const text=renderer.render(shot,renderer.advanceNumbering(null,shot));
+        note('observation-text',text,{names:false});
+        // A Value label is normal elsewhere; on our password line only the fixed secure marker is legitimate.
+        for(const line of text.split('\n').filter(s=>s.includes('PW walk test')))
+          note('observation-secure-text',line.replace(/\bValue: secure text(?=,|$)/g,'secure text'));
         // Scan all serialized text for a value/mask that escaped the node or was misclassified; ordinary AX values are legitimate.
         for(const code of inspect(r,[...registry],{stringsOnly:true,names:false}))active.flags.add('observation-native/'+code);
         return nodes.length>0;
@@ -164,7 +171,7 @@ async function startEngine({name,src,bin,root,platform,audit,focus,drain,globalP
 async function main(){
   const [lane,mode,phase,root,out,helper,cover,appkit,mainSrc,mainBin,fixSrc,fixBin]=process.argv.slice(2);
   if(process.env.RUNNER_ENVIRONMENT!=='github-hosted')throw Error('hosted runners only');
-  if(!['cft','electron','electron-parity','safari','firefox','appkit'].includes(lane)||!['smoke','full','firefox-focus','firefox-single','appkit-race','drain'].includes(mode)||!['stock','audit','focus','drain'].includes(phase))throw Error('invalid lane');
+  if(!['cft','electron','electron-parity','safari','firefox','appkit'].includes(lane)||!['smoke','full','firefox-focus','firefox-single','appkit-race','drain','unicode'].includes(mode)||!['stock','audit','focus','drain'].includes(phase))throw Error('invalid lane');
   const audit=phase==='audit',smoke=mode==='smoke',focus=phase==='focus',drain=phase==='drain',race=mode==='appkit-race',diagnostic=mode.startsWith('firefox-');
   const {singlePassword,setupCanary,requireBackground}=runShape(lane,mode);
   // The focus scratch job of smoke runs the same short/literal pairs as the diagnostics, on the password-only page, without a canary.
@@ -175,8 +182,9 @@ async function main(){
   const additions=Array.from({length:20},(_,rep)=>({head:'fix',kind:'add',rep,literal:rep%2===1}));
   const timingCells=Array.from({length:20},(_,i)=>[{head:'fix',kind:'short',rep:i*2},{head:'fix',kind:'short',rep:i*2+1},
     {head:'fix',kind:'long',rep:i*2},{head:'fix',kind:'long',rep:i*2+1},additions[i]]).flat();
-  const cells=race?additions:drain?timingCells:miniPlan?Array.from({length:3},(_,rep)=>['literal','short'].flatMap((kind,i)=>
-    ((rep+i)%2?['fix','main']:['main','fix']).map(head=>({head,kind,rep})))).flat():plan(smoke,{audit});
+  const cells=race?additions:drain?timingCells:mode==='unicode'?plan(false).filter(r=>r.kind==='unicode'&&r.rep<5):
+    miniPlan?Array.from({length:3},(_,rep)=>['literal','short'].flatMap((kind,i)=>
+      ((rep+i)%2?['fix','main']:['main','fix']).map(head=>({head,kind,rep})))).flat():plan(smoke,{audit});
   // Paired primary rows receive the exact same disposable text, not independently generated treatments.
   const inputs=new Map();
   for(const c of cells){
@@ -212,7 +220,7 @@ async function main(){
         const end=performance.now()+2500;
         do{
           const d=await platform.command({op:'read',trial,expected:m.expected,control:m.control,setupText:m.seed.setupText,
-            requestedCaret:m.requestedCaret,controlCaret:m.controlCaret});
+            requestedCaret:m.requestedCaret,controlCaret:m.controlCaret,unicode:c.kind==='unicode'});
           if(d.trial!==trial||!d.shape||!d.focused)throw Error('fixture no longer focused');
           delivery=d;
           if(m.control!==null?d.controlExact&&d.hit&&d.key:d.exact&&d.key)break;
@@ -255,6 +263,10 @@ async function main(){
       row.snapshotMs=Number.isFinite(receipt?.raw?.snapshotMs)?receipt.raw.snapshotMs:null;
       row.serviceMs=receipt?.serviceMs??null;
       row.concealedFailure=receipt?.budget??null;
+      if(c.kind==='unicode'&&row.valid){
+        const labels=['exact','empty','missing','question-mark','replacement-character','ascii-substitution','split-or-unpaired','surrounding-mismatch','other-substitution'];
+        row.unicodeShape=row.domExact?'exact':labels.includes(delivery?.unicodeShape)?delivery.unicodeShape:'unclassified';
+      }
       row.privacy=[...scope.flags];
       rows.push(row);
       if(drain){
@@ -280,9 +292,12 @@ async function main(){
   const summary=summarize(rows),auditGate=audit?auditPairs(schedules,smoke?1:5):null;
   const privacyViolations=summary.privacyViolations+(globalPrivacy.size?1:0);
   // Findings carry only the harness's surface label and scanner's fixed code, never the offending text or key.
-  const privacyCodes=Object.create(null),actionCodes={main:Object.create(null),fix:Object.create(null)};
+  const privacyCodes=Object.create(null),actionCodes={main:Object.create(null),fix:Object.create(null)},unicodeShapes={main:Object.create(null),fix:Object.create(null)};
   for(const code of [...globalPrivacy,...rows.flatMap(r=>r.privacy)])privacyCodes[code]=(privacyCodes[code]??0)+1;
-  for(const row of rows)if(row.action){const tally=actionCodes[row.head];tally[row.action]=(tally[row.action]??0)+1;}
+  for(const row of rows){
+    if(row.action){const tally=actionCodes[row.head];tally[row.action]=(tally[row.action]??0)+1;}
+    if(row.unicodeShape){const tally=unicodeShapes[row.head];tally[row.unicodeShape]=(tally[row.unicodeShape]??0)+1;}
+  }
   const needed=cells.filter(c=>c.kind!=='rewrite').length;
   const failureTimes=rows.filter(r=>r.valid&&r.concealedFailure).map(r=>r.concealedFailure);
   const postFailures=failureTimes.filter(t=>t.phase==='after-input'),snapshotRefusals=failureTimes.filter(t=>t.phase==='snapshot-refused');
@@ -291,14 +306,14 @@ async function main(){
     fromLastPostMs:drainStats(postFailures.map(t=>t.fromLastPostMs)),fromFirstPostMs:drainStats(postFailures.map(t=>t.fromFirstPostMs)),
     snapshotRefusals:snapshotRefusals.length,snapshotRefusedFromLastPostMs:drainStats(snapshotRefusals.map(t=>t.fromLastPostMs))};
   const gates={coverage:rows.filter(r=>r.valid&&!r.informational).length===needed&&abort===null,
-    privacy:privacyViolations===0, outcome:audit||drain||focus||mode==='firefox-focus'?null:summary.scored.passed===needed&&summary.wrongSuccesses===0&&rows.every(r=>r.informational||!r.observationMissing&&!r.evidenceFailure),
+    privacy:privacyViolations===0, outcome:audit||drain||focus||mode==='firefox-focus'||mode==='unicode'?null:summary.scored.passed===needed&&summary.wrongSuccesses===0&&rows.every(r=>r.informational||!r.observationMissing&&!r.evidenceFailure),
     schedule:auditGate?.pass??null, focus:focus?firefoxFacts.length===needed&&firefoxFacts.every(r=>r.valid&&r.focus!==null):null,
     concealedBudget:mode==='full'&&phase==='stock'&&postFailures.length>0?budgetMisses===0:null,
     // The race run only collects evidence rows; sizing is judged by the drain run alone.
     timing:drain&&!race?drainSizingOk(drainSummary(timings,needed),timings.length):null};
   const publishable=gates.privacy;
   const status={lane,phase,kit:config.kit,refs:config.refs,abort,abortStep,setupSteps:rows.reduce((o,r)=>r.setupStep?{...o,[r.setupStep]:(o[r.setupStep]??0)+1}:o,{}),planned:cells.length,completed:rows.length,invalid:summary.invalid,
-    unattempted:cells.length-rows.length,privacyViolations,privacyCodes,actionCodes,observationsMissing:rows.filter(r=>r.observationMissing).length,
+    unattempted:cells.length-rows.length,privacyViolations,privacyCodes,actionCodes,unicodeShapes,observationsMissing:rows.filter(r=>r.observationMissing).length,
     gates,concealedBudget,publishable,presentation:config.presentation??null,foregroundFallback:config.foregroundFallback??null};
   writeFileSync(join(out,'status.json'),JSON.stringify(status,null,2)+'\n');
   // Counts and timings rebuilt from closed codes may leave even a privacy-failed run; rows, hashes and traces never do.

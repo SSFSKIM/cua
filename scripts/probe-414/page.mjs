@@ -2,6 +2,22 @@
 // `filler` buttons precede both inputs (the large page of #395: its 1,600 buttons, inert, in one labelled group), and each focus
 // scrolls its input into view; shape then also asserts the filler's size and that it lies above the field. The default page has none.
 export const FILLER=1600;
+// Profile one known non-BMP scalar with unchanged ASCII surrounds. Only an outcome label leaves the DOM.
+export function nonBmpShape(expected,actual){
+  const chars=[...expected],at=chars.findIndex(c=>c.length===2);
+  if(at<0)return null;
+  if(actual===expected)return 'exact';
+  if(!actual)return 'empty';
+  const before=chars.slice(0,at).join(''),after=chars.slice(at+1).join('');
+  if(actual===before+after)return 'missing';
+  if(actual.length<before.length+after.length||!actual.startsWith(before)||!actual.endsWith(after))return 'surrounding-mismatch';
+  const inside=actual.slice(before.length,actual.length-after.length);
+  if(inside==='?')return 'question-mark';
+  if(inside==='�')return 'replacement-character';
+  if(/^[\x20-\x7e]$/.test(inside))return 'ascii-substitution';
+  if([...inside].some(c=>c.length===1&&/[\ud800-\udfff]/.test(c)))return 'split-or-unpaired';
+  return 'other-substitution';
+}
 const group=n=>n?'<div id="large-before-editor" role="group" aria-label="Filler controls">'+Array.from({length:n},(_,i)=>`<button type="button" tabindex="-1" id="large-node-${i}">Filler ${i}</button>`).join('')+'</div>':'';
 export const page=(filler=0,singlePassword=false)=>`<!doctype html><meta charset="utf-8"><title>Qualification</title>
 <style>body{font: 18px sans-serif; margin: 28px} input{display:block; width:340px; margin:16px; padding:6px}</style>
@@ -9,6 +25,7 @@ ${group(filler)}${singlePassword?'':'<input id="setup" type="text" aria-label="S
 <input id="password" type="password" aria-label="PW walk test" autocomplete="off">
 <script>
 const FILLER=${filler};
+const nonBmpShape=${nonBmpShape.toString()};
 const setup=document.getElementById('setup'), field=document.getElementById('password');
 const doc=self.crypto.randomUUID(), nonce=doc.split('-')[0];
 document.title='Qualification '+nonce;
@@ -37,6 +54,7 @@ function state(c){return {trial,focused:document.activeElement===field,plainFocu
   shape:field===document.getElementById('password')&&field.type==='password'&&field.isConnected&&filler(),
   exact:field.value===c.expected, controlExact:c.control!=null&&field.value===c.control,
   setupExact:setup&&typeof c.setupText==='string'?setup.value===c.setupText:null,
+  unicodeShape:c.unicode===true?nonBmpShape(c.expected,field.value):null,
   selection:c.end!=null&&field.selectionStart===c.start&&field.selectionEnd===c.end,key,input,hit,lastInputAtMs};}
 function run(c){
   if(c.op==='prepare'){

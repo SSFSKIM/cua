@@ -16,7 +16,7 @@ on:
       mode:
         description: Stock qualification, scratch drain timing, or a targeted provider diagnostic
         type: choice
-        options: [smoke, full, drain, firefox-focus, firefox-single, appkit-race]
+        options: [smoke, full, drain, firefox-focus, firefox-single, appkit-race, unicode]
         default: smoke
       firefox:
         description: Coverage selection for full/drain; omit Firefox if its one background setup retry fails
@@ -46,7 +46,8 @@ jobs:
       fail-fast: false
       matrix:
         include: >-
-          ${{ fromJSON((inputs.mode == 'firefox-focus' || inputs.mode == 'firefox-single') &&
+          ${{ fromJSON(inputs.mode == 'unicode' && '[{"lane":"cft","phase":"stock"}]' ||
+          (inputs.mode == 'firefox-focus' || inputs.mode == 'firefox-single') &&
           '[{"lane":"firefox","phase":"stock"},{"lane":"firefox","phase":"focus"}]' ||
           inputs.mode == 'appkit-race' && '[{"lane":"appkit","phase":"stock"},{"lane":"appkit","phase":"drain"}]' ||
           inputs.mode == 'drain' && (inputs.firefox == 'only' && '[{"lane":"firefox","phase":"drain"}]' ||

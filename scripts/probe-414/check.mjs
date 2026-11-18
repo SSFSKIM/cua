@@ -50,7 +50,7 @@ export function score({head,kind,lane,literal=false,preliminary=false,raw,forwar
 }
 
 // Private names, as keys of a structure and as `name:` / `name=` in text. AX attribute names are private wherever they appear.
-const forbidden=/^(?:(?:cua\/)?(?:entered|checkpoints)|(?:ax)?(?:value|valueDescription|numberOfCharacters|selectedText|selectedTextRange)|selection(?:Start|End|Length)?|start|end|before|after|actual|expected|caret|range|location|offset|.*excerpt|.*(?:Length|Count)|length|count|characters|reads|pollMs|settleReads)$/i;
+const forbidden=/^(?:(?:cua\/)?(?:entered|checkpoints)|(?:ax)?(?:value|valueDescription|valueMarkdown|numberOfCharacters|selectedText|selectedTextRange)|selection(?:Start|End|Length)?|start|end|before|after|actual|expected|caret|range|location|offset|.*excerpt|.*(?:Length|Count)|length|count|characters|reads|pollMs|settleReads)$/i;
 const textEvidence=/[•●◦\uf79a]|\*{3,}|\b\d+\s*(?:characters?|chars?|code units?|bytes?)\b|\b(?:AXNumberOfCharacters|AXSelectedTextRange|length|count|numberOfCharacters|selectedText(?:Range)?|selection|range|offset|characters|(?:cua\/)?entered)\b["']?\s*(?:is\b|of\b|[=:])?\s*[[(]?\s*\d/i;
 const axNames=/\bAX(?:Value|ValueDescription|SelectedText|SelectedTextRange|NumberOfCharacters)\b/;
 const textName=/(?<![A-Za-z0-9_])(?:cua\/)?(?:entered|checkpoints|reads|pollMs|settleReads|expectedLength|actualLength|selectionStart|selectionEnd|selectionLength|selectedTextRange|selectedText|numberOfCharacters|valueDescription|value|length|count|characters|caret|range|location|offset|actual|expected|excerpt)["']?\s*[:=]/i;

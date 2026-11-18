@@ -79,7 +79,8 @@ test('settingsFrom names the in-app browser in the notes only when told a backen
 // The no-backend texts are pinned: a digest of every hint, rule block, description and host-notes text for each
 // platform, surface set and devices choice, recorded before #368 (the older tests compare these texts with themselves),
 // re-recorded when secrets_list's description gained the masked-field rule (ruling 1ea561bc:795, 798), and again when
-// #405 made the macOS observation read a masked field as `secure text`, with no length.
+// #405 narrowed its length sentence to what the screen shows, on every platform (the macOS observation reads such a
+// field as `secure text`, with no length).
 function noBackendTexts() {
   const texts = [];
   for (const platform of PLATFORMS) for (const surfaces of SURFACE_SETS) for (const devices of [false, true]) {
@@ -91,5 +92,5 @@ function noBackendTexts() {
   return texts;
 }
 test('without a MAWS backend every hint, js rule block and host note is byte for byte what it was before #368', () => {
-  assert.equal(createHash('sha256').update(JSON.stringify(noBackendTexts())).digest('hex'), '483bde53106dd98c094e36143d119d2ea72686e2fefd438f4042910e9c0a53e9');
+  assert.equal(createHash('sha256').update(JSON.stringify(noBackendTexts())).digest('hex'), '32526b74c1e8fbbd76ed1ab30c244bf30bffd90cb76ddf418eb465063ef5f3ca');
 });

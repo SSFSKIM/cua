@@ -4,6 +4,11 @@ on:
     branches: ['probe/pw-walk']
     paths: ['.github/workflows/probe-pw-walk.yml']
   workflow_dispatch:
+    inputs:
+      group:
+        type: choice
+        options: [all, retry]
+        default: all
 permissions:
   contents: read
 concurrency:
@@ -19,7 +24,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        browser: [cft, electron, electron-parity, safari, firefox, appkit]
+        browser: ${{ fromJSON(inputs.group == 'retry' && '["cft","appkit","safari"]' || '["cft","electron","electron-parity","safari","firefox","appkit"]') }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:

@@ -9,8 +9,8 @@ func summary(_ v:CFTypeRef?,_ pw:String)->[String:Any] {
  guard let v=v else {return ["kind":"nil"]}
  let s: String? = (v as? NSAttributedString)?.string ?? (v as? String)
  if let s=s {
-  let mask = !s.isEmpty && s.allSatisfy { "•●*◦∙▪︎".contains($0) }
-  return ["kind":"string","length":s.utf16.count,"empty":s.isEmpty,"exactMatch":!pw.isEmpty && s == pw,"syntheticSubstring":!s.isEmpty && !pw.isEmpty && pw.contains(s),"allMaskCharacters":mask,"text":s.isEmpty ? "" : (mask ? s : ((!pw.isEmpty && pw.contains(s)) ? "[TEST_PW]" : "[OTHER_TEXT]"))]
+  let mask = !s.isEmpty && s.allSatisfy { "•●*◦∙▪︎\u{F79A}".contains($0) }
+  return ["kind":"string","length":s.utf16.count,"empty":s.isEmpty,"exactMatch":!pw.isEmpty && s == pw,"syntheticSubstring":!s.isEmpty && !pw.isEmpty && pw.contains(s),"containsFullPassword":!pw.isEmpty && s.contains(pw),"containsSelectedSubstring":!pw.isEmpty && s.contains(String(pw.prefix(7))),"allMaskCharacters":mask,"text":s.isEmpty ? "" : (mask ? s : ((!pw.isEmpty && pw.contains(s)) ? "[TEST_PW]" : "[OTHER_TEXT]"))]
  }
  if let n=v as? NSNumber {return ["kind":"number","value":n]}
  if CFGetTypeID(v) == AXValueGetTypeID(),AXValueGetType(v as! AXValue) == .cfRange {var r=CFRange();AXValueGetValue(v as! AXValue,.cfRange,&r);return ["kind":"range","location":r.location,"length":r.length]}
@@ -39,6 +39,6 @@ while let line=readLine(){do {
   }
   pending.append(contentsOf:attr(e,"AXChildren") as? [AXUIElement] ?? [])
  }
- emit(["pid":pid,"visited":count,"fields":rows])
+ emit(["pid":pid,"visited":count,"fields":rows,"windowTitles":(attr(app,"AXWindows") as? [AXUIElement] ?? []).map {attr($0,"AXTitle") as? String ?? ""}])
  } catch {emit(["error":"helper JSON failure"])}
 }

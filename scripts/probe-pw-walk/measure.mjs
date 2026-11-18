@@ -26,20 +26,20 @@ const helper=child(arg('tool'),[]),waiters=[];
 createInterface({input:helper.stdout}).on('line',line=>{const w=waiters.shift();if(!w)return;clearTimeout(w.timer);try{const r=JSON.parse(line);if(r.error)throw Error(r.error);w.ok(r);}catch(e){w.no(e);}});
 function ask(q){return new Promise((ok,no)=>{const w={ok,no,timer:setTimeout(()=>no(Error('helper timeout')),20000)};waiters.push(w);helper.stdin.write(JSON.stringify(q)+'\n');});}
 async function front(pid){const r=await ask({op:'front',pid});if(r.frontmostPid!==pid)throw Error('frontmost mismatch');}
-let trial=0,ack=-1,seedRequests=0;
+let trial=0,ack=-1,seedRequests=0;const requests={};
 const html=`<!doctype html><meta charset="utf-8"><title>PW walk owned fixture</title><h1>Owned password field</h1><label>Public control<input aria-label="Public control" value="public-control"></label><label>Password<input id="pw" type="password" aria-label="PW walk test" autocomplete="off"></label><script>
 let seen=-1;async function tick(){try{const q=await(await fetch('/seed',{cache:'no-store'})).json();if(q.trial!==seen){seen=q.trial;const f=document.getElementById('pw');f.value=q.value;f.focus();f.setSelectionRange(0,Math.min(7,q.value.length));await fetch('/ack?trial='+seen+'&length='+f.value.length);}}catch{}setTimeout(tick,100)}tick();</script>`;
-const server=createServer((req,res)=>{res.setHeader('Cache-Control','no-store');const u=new URL(req.url,'http://fixture');if(u.pathname==='/seed'){seedRequests++;res.setHeader('Content-Type','application/json');res.end(JSON.stringify({trial,value:passwords[trial]}));}else if(u.pathname==='/ack'){if(Number(u.searchParams.get('trial'))===trial&&Number(u.searchParams.get('length'))===passwords[trial].length)ack=trial;res.end('{}');}else{res.setHeader('Content-Type','text/html');res.end(html);}});
+const server=createServer((req,res)=>{res.setHeader('Cache-Control','no-store');const u=new URL(req.url,'http://fixture');requests[u.pathname]=(requests[u.pathname]??0)+1;if(u.pathname==='/seed'){seedRequests++;res.setHeader('Content-Type','application/json');res.end(JSON.stringify({trial,value:passwords[trial]}));}else if(u.pathname==='/ack'){if(Number(u.searchParams.get('trial'))===trial&&Number(u.searchParams.get('length'))===passwords[trial].length)ack=trial;res.end('{}');}else{res.setHeader('Content-Type','text/html');res.end(html);}});
 await new Promise(ok=>server.listen(0,'127.0.0.1',ok));const url='http://127.0.0.1:'+server.address().port+'/';
 const config={browser,engineRef:arg('engine-ref'),kit:process.env.GITHUB_SHA,image:process.env.ImageVersion,os:execFileSync('sw_vers',['-productVersion'],{encoding:'utf8'}).trim(),lengths:passwords.map(s=>s.length),selectedLength:7,home:'temporary runner HOME; Chromium/Firefox/Electron also use explicit temporary profiles',rawProbe:'AXUIElementCopyAttributeValue independently of cua; secure or owned-label fields, with per-attribute error/length/match flags',accessibility:'helper sets app AXManualAccessibility and AXEnhancedUserInterface before raw reads, as needed by Chromium; engine source/binary unmodified'};save('config.json',config);
 let app,pid,engine,w,safariOwned=false;const rows=[];
 try{
  const require=createRequire(join(fixture,'package.json'));
  if(browser==='appkit'){
-  app=child(arg('fixture'),[]);pid=app.pid;await until(()=>logs.get(app).stdout.includes('"ready":true'));if((await ask({op:'lookup',bundle:'dev.cua.probe.pwwalk.fixture'})).pid!==pid)throw Error('AppKit fixture is not a registered bundle app');
+  config.version='standard NSSecureTextField, AppKit on macOS '+config.os;app=child(arg('fixture'),[]);pid=app.pid;await until(()=>logs.get(app).stdout.includes('"ready":true'));if((await ask({op:'lookup',bundle:'dev.cua.probe.pwwalk.fixture'})).pid!==pid)throw Error('AppKit fixture is not a registered bundle app');
  }else if(browser==='safari'){
   if((await ask({op:'lookup',bundle:'com.apple.Safari'})).pid)throw Error('Safari already running, not adopting it');
-  app=child('/Applications/Safari.app/Contents/MacOS/Safari',[]);pid=await until(async()=> (await ask({op:'lookup',bundle:'com.apple.Safari'})).pid);if(pid!==app.pid)throw Error('Safari process is not the owned launch, not adopting it');safariOwned=true;execFileSync('/usr/bin/open',['-a','/Applications/Safari.app',url]);
+  execFileSync('/usr/bin/open',['-a','/Applications/Safari.app','--env','HOME='+home,url]);pid=await until(async()=> (await ask({op:'lookup',bundle:'com.apple.Safari'})).pid);safariOwned=true;
   config.version=execFileSync('/usr/libexec/PlistBuddy',['-c','Print :CFBundleShortVersionString','/Applications/Safari.app/Contents/Info.plist'],{encoding:'utf8'}).trim();
  }else if(browser.startsWith('electron')){
   app=child(require('electron'),[fixture],{PROBE366_URL:url,PROBE366_PROFILE:join(home,'profile'),PROBE366_WINDOW_STYLE:browser==='electron-parity'?'maws':'default'});pid=app.pid;await until(()=>logs.get(app).stdout.includes('fixture-ready'));config.version=logs.get(app).stdout.split('\n').map(l=>{try{return JSON.parse(l);}catch{return null;}}).find(q=>q?.kind==='fixture-ready');
@@ -47,8 +47,9 @@ try{
   const profile=firefoxProfile(join(home,'profile'));
   const bin='/Applications/Firefox.app/Contents/MacOS/firefox';app=child(bin,['-no-remote','-profile',profile,url]);pid=app.pid;config.version=execFileSync('/usr/libexec/PlistBuddy',['-c','Print :CFBundleShortVersionString','/Applications/Firefox.app/Contents/Info.plist'],{encoding:'utf8'}).trim();
  }else{
-  const bin='/Applications/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing';if(!existsSync(bin))throw Error('CfT missing');app=child(bin,['--user-data-dir='+join(home,'profile'),'--no-first-run','--no-default-browser-check','--disable-search-engine-choice-screen',url]);pid=app.pid;config.version=execFileSync(bin,['--version'],{encoding:'utf8'}).trim();
+  const bin='/Applications/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing';if(!existsSync(bin))throw Error('CfT missing');config.version=execFileSync('/usr/libexec/PlistBuddy',['-c','Print :CFBundleShortVersionString','/Applications/Google Chrome for Testing.app/Contents/Info.plist'],{encoding:'utf8'}).trim();app=child(bin,['--user-data-dir='+join(home,'profile'),'--no-first-run','--no-default-browser-check','--disable-search-engine-choice-screen','--disable-features=Translate','--lang=en-US','--window-position=0,25','--window-size=650,700',url]);pid=app.pid;
  }
+ config.pid=pid;save('config.json',config);
  if(browser!=='appkit')await until(()=>ack===0,45000);
  await front(pid);config.enablement=await ask({op:'enable',pid});config.pid=pid;save('config.json',config);
  const socket=join(root,'pw-'+browser+'.sock');rmSync(socket,{force:true});engine=child(arg('engine'),[],{CUA_ENGINE_SOCKET:socket});w=await Wire.connect(socket);const ping=await w.call('ping',{clientApiVersion:'cua-engine-1',desktop:'shared'});if(ping.error)throw Error('engine ping error');
@@ -67,7 +68,7 @@ try{
   rows.push(row);save('rows.json',rows);
  }
  save('summary.json',{complete:true,rows:rows.length,seedRequests});
-}catch(e){save('fatal.json',{error:String(e.stack??e),rows:rows.length});process.exitCode=1;}
+}catch(e){let diagnostic;try{if(pid)diagnostic=await ask({op:'scan',pid,pw:passwords[trial]??''});}catch{}save('fatal.json',{error:String(e.stack??e),rows:rows.length,trial,ack,seedRequests,requests,appPid:app?.pid,appExitCode:app?.exitCode,appSignal:app?.signalCode,diagnostic});process.exitCode=1;}
 finally{
  if(w){try{await w.call('endTask',{});}catch{}w.close();}
  for(const p of children.reverse())await stop(p);

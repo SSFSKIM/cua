@@ -5841,15 +5841,16 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      error, or a reply that is not an element) goes to the walk alone, as on main.
   3. **The choices the ruling left.** Order: the application's focus, then the route (only on its absent answer), then
      the walk, so the walk still claims a field the route does not (no selection, the symbols absent, a failed focus
-     read) on a page within its bounds. The web area: the primary window's first AXWebArea breadth first, under the
-     walk's own bounds (200 nodes, depth 12, 40 ms; the probe's path took 28 nodes at depth 6), text-entry elements
-     leaves as in the walk, any failed read none; an iframe's web area lies inside the page's, so the outer one is found
-     first. The climb to the field: at most `typeReadbackMarkerFieldHops` (4) AXParent hops (the probe's 20 of 20 took
-     one); a text-entry role is the field; the web area, reached first, is no field. The claim: the field reads
-     AXFocused true, and its AXParent chain reaches that same web area within `typeReadbackMarkerScopeHops` (24);
-     otherwise no claim, and the walk runs. Testability: `ReadbackAX` carries every Accessibility call of the live reads
-     (attribute, parameterized, batch, pid, and the dlsym'd symbols), so `ReadbackReads.live` runs whole in the tests
-     over a stub.
+     read) on a page within its bounds. The web area: the primary window's first AXWebArea breadth first among the app's
+     own elements (another process's, the window included, is skipped: its role unread, never a candidate, its children
+     never followed, as the probe's `tree()` visited only the app's), under the walk's own bounds (200 nodes, depth 12,
+     40 ms; the probe's path took 28 nodes at depth 6), text-entry elements leaves as in the walk, any failed read none;
+     an iframe's web area lies inside the page's, so the outer one is found first. The climb to the field: at most
+     `typeReadbackMarkerFieldHops` (4) AXParent hops (the probe's 20 of 20 took one); a text-entry role is the field;
+     the web area, reached first, is no field. The claim: the field reads AXFocused true, and its AXParent chain reaches
+     that same web area within `typeReadbackMarkerScopeHops` (24); otherwise no claim, and the walk runs. Testability:
+     `ReadbackAX` carries every Accessibility call of the live reads (attribute, parameterized, batch, pid, and the
+     dlsym'd symbols), so `ReadbackReads.live` runs whole in the tests over a stub.
   4. **Noted, not changed:** a later type_text's pre-input marker can carry a caret that depends on an earlier secret
      typed into the same field. For a plain field, main's snapshot already reads that field's whole value; for a secure
      field, the answer is refused regardless. So it adds no exposure beyond main. Also not measured: a Safari window
@@ -5867,15 +5868,16 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      or after; a failed or wrong-typed application focus read taking the walk alone, attributeUnsupported the route); a
      closed field or text (seven classifications, plain and concealed) refused with main's reason, nothing read of it
      after its classification and no value or range of anything; fifteen odd marker replies claiming nothing, then the
-     walk; a web area another process's, unreadable or classified otherwise (five cases), with no marker call; the
-     climb's and the scope's bounds; a field not focused, not under the web area (or under another, or below an ancestor
-     another process's), or under an iframe's (claimed); no marker call after the first event, a checkpoint's check
-     included; focus lost after typing answering fieldChanged; the same reads whatever the secret. Each of 31 mutations,
-     every guard removed or weakened, was caught: the web area's failed-children guard survived the first round and has
-     its own case now, and the subrole-in-the-batch mutation, first caught by a test's trap, now fails an assertion. Six
-     more, of the guards a high review of the branch added, were caught too: the web area's ownership, its
-     classification removed or any open role taken, an ancestor's ownership, the marker on a failed focus read, the live
-     read folding a failure into an absence.
+     walk; a web area another process's or under another process's group (skipped unread, the search going on past a
+     foreign sibling), unreadable or classified otherwise (six cases), with no marker call; the climb's and the scope's
+     bounds; a field not focused, not under the web area (or under another, or below an ancestor another process's), or
+     under an iframe's (claimed); no marker call after the first event, a checkpoint's check included; focus lost after
+     typing answering fieldChanged; the same reads whatever the secret. Each of 31 mutations, every guard removed or
+     weakened, was caught: the web area's failed-children guard survived the first round and has its own case now, and
+     the subrole-in-the-batch mutation, first caught by a test's trap, now fails an assertion. Six more, of the guards a
+     high review of the branch added, were caught too: the web area search's ownership, its classification removed or
+     any open role taken, an ancestor's ownership, the marker on a failed focus read, the live read folding a failure
+     into an absence.
   Date/Author: 2026-11-18, cursor235's implementer for #395 (ruling 1ea561bc:824).
 
 ## Outcomes & Retrospective

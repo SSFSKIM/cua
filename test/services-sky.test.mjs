@@ -166,6 +166,40 @@ test('#354: a concealed type_text that keyed and did not match repeats typeUncon
   assertValueFree(error);
 });
 
+test('#414: a concealed type_text whose password field stopped being one warns, in a fixed sentence, that the field may show the secret; no other reason does', async () => {
+  const value = VALUES['WORK_PASSWORD'];
+  const warning = 'The password field stopped being one while the secret was typed and may now show it: do not take a screenshot of it or call getAXState(); put it right with setValue.';
+  const native = `The text was typed, but the password field turned into another kind of field (native-only-sentence) ${value}`;
+  const posted = {...NOTHING_POSTED, inputRoute: "2'", startedAt: 1000, endedAt: 1042};
+  const record = reason => ({confirmed: false, reason, secure: true, concealed: true, snapshotMs: 1.5});
+  const changed = 'Computer Use server error -10016: The user changed \'/Applications/Safari.app\'. Re-query the latest state with `get_app_state` before sending more actions.';
+  const cases = [
+    {label: 'noLongerSecure', name: 'typeUnconfirmed', meta: {...posted, typeReadback: record('noLongerSecure')}, warned: true},
+    {label: 'noLongerSecure, then the user changed the app', name: 'userIntervened', message: changed, meta: {...posted, typeReadback: record('noLongerSecure')}, warned: true},
+    {label: 'noLongerSecure, nothing posted', name: 'userIntervened', message: changed, meta: {...NOTHING_POSTED, typeReadback: record('noLongerSecure')}, warned: false},
+    {label: 'lengthMismatch', name: 'typeUnconfirmed', meta: {...posted, typeReadback: record('lengthMismatch')}, warned: false},
+    {label: 'lengthUnreadable', name: 'typeUnconfirmed', meta: {...posted, typeReadback: record('lengthUnreadable')}, warned: false},
+    {label: 'a reason that only contains it', name: 'typeUnconfirmed', meta: {...posted, typeReadback: record('noLongerSecure ')}, warned: false},
+    {label: 'a reason not a string', name: 'typeUnconfirmed', meta: {...posted, typeReadback: record(['noLongerSecure'])}, warned: false},
+    {label: 'no record', name: 'typeUnconfirmed', meta: {...posted, typeReadback: null}, warned: false},
+    {label: 'no meta', name: 'typeUnconfirmed', meta: null, warned: false},
+  ];
+  for (const {label, name, message = native, meta, warned} of cases) {
+    const {service} = harness({answer: () => { throw new EngineError(name, message, meta); }});
+    const error = await rejection(service.handleRpc(typeText(REF('WORK_PASSWORD'))));
+    assert.equal(error.code, 'secret_input_failed', label);
+    assert.match(error.message, new RegExp(`failed \\(${name}\\)`), label);
+    assert.equal(error.message.includes(warning), warned, label);
+    assert.doesNotMatch(error.message, /native-only-sentence|turned into|Safari|noLongerSecure|lengthMismatch|lengthUnreadable/, `${label}: nothing of the native error or the reason`);
+    assert.match(error.message, /The runtime's error is withheld because it can contain the secret \[secret_input_failed\]$/, label);
+    assertValueFree(error);
+  }
+  // A set_value carries no read-back: the same meta warns of nothing there.
+  const {service} = harness({answer: () => { throw new EngineError('actionFailed', native, {...posted, typeReadback: record('noLongerSecure')}); }});
+  const set = await rejection(service.handleRpc(setValue(REF('WORK_PASSWORD'))));
+  assert.equal(set.message.includes(warning), false);
+});
+
 test('userIntervened after substitution says which of its two sentences the model must act on, value-free, on both engines', async () => {
   const value = VALUES['WORK_PASSWORD'];
   const app = '/System/Applications/TextEdit.app';

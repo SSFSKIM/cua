@@ -1,4 +1,4 @@
-# The settle counter of every step (#171 M5, task 103; rulings 827, 832, 834; fix wave 1)
+# The settle counter of every step (#171 M5, task 103; rulings 827, 832, 834, 843; fix waves 1 and 2)
 
 These are development runs and were never counted. Host dc-linux171-1e68 (x86_64), on private displays under gate.mjs, holding
 `locked.sh m5-settle-stats`. The candidate is linux-engine 0.4.1 from `m5-engine-041`: `cua-engine 0.4.1 (2d8f6ad96296)`,
@@ -22,8 +22,9 @@ records and the judge and report outputs are unchanged by it. The first round's 
   - **The requests sent**, by command.
   - **The last `drop_settles`**, whole, from the `--stats` lines the run already reads. That includes 0.4.1's
     `settle_failed_activation_confirmed`.
-  - **Whether that last line is the engine's own post-shutdown snapshot** (`final`): an untied line (`"id": null`)
-    carrying `drop_settles`, the engine's last.
+  - **Whether that last line is the engine's orderly exit's** (`settle_final`). That is the line task 101 marks
+    `"settle_final": true` after the exit's releases, and no other line. It has to be the engine's last line, with the
+    marker exactly `true` (fix wave 2).
   - A lane with no stats is recorded as `no stats: not recorded`, never as zero.
 - **`--engine-stats`**, a development run's opt-in, accepted by gate.mjs and the harness CLI.
   - It gives `--stats` to every engine whose build answers `cua-engine …` to `--version`. The probe runs once per path,
@@ -40,9 +41,14 @@ records and the judge and report outputs are unchanged by it. The first round's 
 - **`scripts/linux-engine-gate/settle-check.mjs <step dir>…`** prints, per step: `not taken`, `TAKEN` (the step reruns
   as class A), or `unknown`. It exits 0 only when every step shows `not taken`.
   - A positive count (entered, or a second rest taken) always means taken.
-  - A zero counts only from a post-shutdown snapshot. The exit can end a held handle and settle it.
-  - Each of these is unknown: a missing record or counter, a zero read before the exit, an engine still running at the
-    harness's exit, an unparsable stats line.
+  - A zero counts only from the exit's `settle_final` line, since the exit can end a held handle and settle it. Every
+    other last line leaves the zero unknown:
+    - a request's line;
+    - an idle release's untied line, which carries the counter mid-run;
+    - no line at all, as from a killed engine.
+  - Fix wave 1's records keep the old shape rule's `final` field. They are never read as final.
+  - Each of these is also unknown: a missing record or counter, an engine still running at the harness's exit, an
+    unparsable stats line.
   - A step's counts are the sum, over its engines, of each engine's last value.
   - An engine with no counter that the harness sent no `drag` and no `drag_handle` is listed apart as "not a measured
     zero". Those are the only requests the settle runs inside (below).
@@ -104,15 +110,17 @@ judge and report: BYTE-IDENTICAL
 - The drag-run rows have the same key set as the switch-off run's.
 
 **The checker on the opt-in run reads unknown.**
-- Every cua engine's last counter is all zeros, but none is final. 0.4.1's exit writes no line that carries
-  `drop_settles`: its exit lines (`exit_settle`, `focus_out`) carry no counter. So no zero can be told from one read
-  before a shutdown settle (fix wave 1, finding 1).
-- Once task 101 adds `drop_settles` to the exit line, the same run reads not taken with nothing else changed.
+- Every cua engine's last counter is all zeros, but none is final. 0.4.1 at ac8d86a6 marks no line
+  `settle_final`: its exit lines (`exit_settle`, `focus_out`) carry no counter. So no zero can be told from one read
+  before a shutdown settle (finding 1).
+- Once task 101's exit line carries `"settle_final": true` with `drop_settles`, a run like this one reads not taken.
+  This run was made at fix wave 1's shape rule and was not rerun for wave 2. Its records carry `final`, which wave 2
+  never accepts. Under either rule it reads unknown.
 - D1 drags Chrome, whose class `Google-chrome` is the Chrome family, so its counters are `entered 0` throughout.
 
 ```
 …/out-on/D1.development-run.pilot: unknown: 11 of 12 cua engines (1 unidentified, held to the counter as cua lanes) not recorded; 1 of them with no counter were sent no drag or drag_handle; the recorded: entered 0, second_rest 0, skipped 0, unsettled 0
-  reader …: no post-shutdown snapshot carried its counter: the zero was read before its exit, which can end a held handle and settle it
+  reader …: no post-shutdown snapshot carried its counter: …   (fix wave 1's wording; wave 2's: no settle_final exit line carried its counter: …)
   …
   stub-activating …: no counter; sent no drag or drag_handle (not a measured zero)
 ```
@@ -126,13 +134,17 @@ counted run cannot take the opt-in. The text bus pass (`stats: false`) and the r
 
 From `scripts/audit-drags.mjs` (`out/audit-drags.txt`), the audited operations whose request is a drag:
 - **V1, V2:** none.
-- **V3:** `chrome-input/drag`, `minimized/minimized_drag`.
+- **V3:** `chrome-input/drag`, and `minimized/minimized_drag`. That second one targets the minimized scene's gedit
+  window and expects the minimized refusal, "Window <id> is minimized; activate it first", with nothing sent
+  (minimized.mjs; run.mjs's `minimized: 'gedit'`). The `minimized-recorder` scene's only case is
+  `minimized_key_up_background`, which is not a drag.
 - **V4:** `device-gtk4/gtk4_drag_shared`, `device-gtk4/gtk4_drag_dedicated`.
 - **V5:** 20 operations: Firefox's three device drags, Chrome's three, and fourteen of device-chrome-dnd's, including
   `chrome_select_nudged_shared`.
 
-Every source window there is Chrome (class `Google-chrome`), Gecko, GTK 4 or the minimized recorder, so none is of the
-settle's family. But that is the static reading. The counter itself stays unknown, and the checker says so.
+Every target there is Chrome (class `Google-chrome`), Gecko, GTK 4, or a minimized gedit that refuses the drag, so none
+is of the settle's family. That is the static reading. The design session accepted it as these lanes' exclusion under
+ruling 843. The counter itself stays unknown, and the checker says so.
 
 ## Where the settle can run, in 0.4.1 (origin/m5-engine-041 ac8d86a6)
 
@@ -165,15 +177,20 @@ The counter moves only when the settle runs. Line numbers are at origin/m5-engin
   - **the shutdown:** `Engine::shutdown` calls `end_drag_handle()` for a handle still held at the exit
     (engine.rs:895). That is after the last request's line;
   - **the idle bound:** `release_idle_handle` (handle.rs:324), from `Engine::handle` at the start of a request
-    (engine.rs:344) and from `Engine::tick` between requests (engine.rs:523). The tick's release writes an untied line
-    of its own, which carries no counter;
+    (engine.rs:344) and from `Engine::tick` between requests (engine.rs:523).
+    - Its release writes an untied line of its own: `{"stats": {"id": null, "idle_handle": …, "drop_settles": …}}`,
+      through `standalone_stats_line(record, &self.drop_settles)` (handle.rs:350 and 413).
+    - So an untied line with the counter does not mark the exit. A later request can still drag, and a kill can end
+      the engine after it;
   - **the reset:** `release_lost_handle` (handle.rs:441), for the `release_handle` request (engine.rs:420), sent after
     a kernel reset or a cell's timeout.
 - **So a counter is final only when it is read after the exit.** The shutdown, and a tick after the last request, can
-  settle with no per-request line after them. The record therefore takes a zero as final only from the engine's own
-  last line, an untied one (`"id": null`) carrying `drop_settles` (fix wave 1). 0.4.1 writes no such line yet: its
-  exit lines (`exit_settle`, `focus_out`) carry no counter. Until task 101 adds `drop_settles` to the exit line, every
-  0.4.1 zero reads unknown. A positive count always counts.
+  settle with no per-request line after them.
+  - Fix wave 1 took any last untied line carrying `drop_settles` as final. A review probe broke it: an idle zero, a
+    later settle, then a kill, read not taken.
+  - Fix wave 2 takes a zero as final only when the engine's last line carries exactly `"settle_final": true`.
+    Task 101 puts that on every orderly exit's stats line, after the shutdown's releases, and on no other line.
+  - Until it does, every 0.4.1 zero reads unknown. A positive count always counts.
 
 **The family.** `confirms_drop_by_cursor(family) == (family == "Chromium")` (families.rs:499). A window's family is
 found by its WM_CLASS class first, then by its AT-SPI toolkit (`families::family`).

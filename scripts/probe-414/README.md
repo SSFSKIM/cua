@@ -91,4 +91,45 @@ The worst observed *sampled inter-change* p99 was **55.946 ms** (parity Electron
 
 ## Final qualification
 
-[Full W=180 stock and scratch](https://github.com/SSFSKIM/cua/actions/runs/44356891906): kit `ced9002d`, baseline `517ab5430a3a81718910b030488ba8d855087b21`, fix `1f69470e0a5e9f94d8417a964d749bf07682d848`. Five supported stock lanes, two schedule-only scratch jobs, and five drain-only scratch jobs. Each stock lane plans 195 rows: 80 per head, 30 negative controls and five informational rewrites. The gate results and final p99s will be recorded here after the jobs finish.
+[Full W=180 stock and scratch](https://github.com/SSFSKIM/cua/actions/runs/44356891906): kit `ced9002d`, baseline `517ab5430a3a81718910b030488ba8d855087b21`, fix `1f69470e0a5e9f94d8417a964d749bf07682d848`. Five supported stock lanes, two schedule-only scratch jobs, and five drain-only scratch jobs. Each stock lane plans 195 rows: 80 per head, 30 negative controls and five informational rewrites. All **100 stock synchronous adds** and all **50 stock drops** were realized and refused without a wrong confirmation; every one of **135** measured post-input concealed failures met the timing gate. The fix had **zero privacy flags** across stock or scratch. Overall the workflow was **red**: all three Chromium stock lanes missed the same non-BMP delivery on both heads, default Electron had one strict baseline-only readback-shape flag, and CfT and AppKit fell short of the separate scratch AX timing coverage gate. There were zero setup-invalid rows in the full run. All jobs ran on hosted macOS 26.7.2: CfT 157.0.8103.78, both Electron lanes 44.4.5 / Chromium 152.0.7977.130, Safari 27.2, and AppKit `NSSecureTextField`. AppKit alone was frontmost; the others held the cover witness.
+
+### Stock outcomes and privacy
+
+`C/U/E` means length-confirmed / unconfirmed / exact fixture content across the 80 primary plus non-BMP trials per head. Main is expected to refuse while still delivering exactly. The ASCII columns are fix length confirmations, split by kind; AppKit's selection is an expected provider refusal. Add is number confirmed, drop is number rejected by length. The same-length rewrite is informational and is deliberately excluded from wrong successes. All counts are independent of scratch outcomes.
+
+| Lane | Main C/U/E (reason) | Fix C/U/E (reason) | Short; long | Selection; literal | Non-BMP exact main → fix | Add confirmed; drop rejected | Wrong successes; rewrite confirmed | Strict privacy flags; invalid setup |
+|---|---|---|---|---|---|---|---|---|
+| CfT | 0/80/60 (`secure`×80) | 60/20/60 (`lengthMismatch`×20) | 20/20; 20/20 | 10/10; 10/10 | 0/20 → 0/20 | **0/20**; 10/10 | 0; 5/5 | 0; 0 |
+| Electron default | 0/80/60 (`secure`×79, `noFocusedElement`×1) | 60/20/60 (`lengthMismatch`×20) | 20/20; 20/20 | 10/10; 10/10 | 0/20 → 0/20 | **0/20**; 10/10 | 0; 5/5 | 1 baseline shape flag; 0 |
+| Electron parity | 0/80/60 (`secure`×80) | 60/20/60 (`lengthMismatch`×20) | 20/20; 20/20 | 10/10; 10/10 | 0/20 → 0/20 | **0/20**; 10/10 | 0; 5/5 | 0; 0 |
+| Safari large | 0/80/80 (`secure`×80) | 80/0/80 | 20/20; 20/20 | 10/10; 10/10 | 20/20 → 20/20 | **0/20**; 10/10 | 0; 5/5 | 0; 0 |
+| AppKit | 0/80/80 (`secure`×80) | 70/10/80 (`lengthUnreadable`×10) | 20/20; 20/20 | 0/10; 10/10 | 20/20 → 20/20 | **0/20**; 10/10 | 0; 5/5 | 0; 0 |
+| Firefox | Uncovered, confirmed AXWebArea in wave-three diagnostic | Uncovered | — | — | — | — | — |
+
+The default Electron strict flag was a baseline literal row that typed exactly and answered `noFocusedElement`: the strict scanner flagged private-key/readback shape on raw IPC, sky error and forwarded metadata; no synthetic value, mask or private-text code was flagged. The baseline protocol emits legacy literal zero `reads` and `pollMs` even for snapshot refusals; the kit exempts those only for `secure`. Detailed raw surfaces were withheld, not captured for later inspection. The fix had zero privacy flags in that lane. The Unicode classifier reported `missing` with exact surrounding ASCII on both heads in the affected rows.
+
+### Native failure timing and stock latency
+
+All times in milliseconds. Snapshot and service are nearest-rank p50/p95 for primary plus non-BMP. The secure concealed failure budget starts after the final native post; first-post duration includes input delivery, so it is not a budget failure when above 1100 ms. `n` means post-input secure concealed refusals with a budget; AppKit's ten pre-decided snapshot refusals are reported apart: receipt minus last post was 2 ms in all ten at this pin.
+
+| Lane | Snapshot p50/p95 main → fix | Service p50/p95 main → fix | Budget n; misses | Last post → reply p50/p95/p99/max | First post → reply p50/p95/p99/max | Snapshot refusals |
+|---|---|---|---|---|---|---|
+| CfT | 0.300/0.500 → 0.600/0.900 | 69.852/238.928 → 358.856/1101.753 | 35; 0 | 1016/1031/1031/1031 | 1072/1097/1143/1143 | 0 |
+| Electron default | 3.500/5.400 → 3.500/5.300 | 74.484/249.922 → 319.568/1100.283 | 35; 0 | 1019/1042/1042/1042 | 1074/1095/1098/1098 | 0 |
+| Electron parity | 3.200/6.900 → 3.600/7.000 | 78.977/246.375 → 425.122/1105.403 | 35; 0 | 1016/1036/1052/1052 | 1073/1095/1114/1114 | 0 |
+| Safari large | 7.100/11.500 → 6.900/11.000 | 79.508/256.030 → 292.801/471.266 | 15; 0 | 1013/1027/1027/1027 | 1070/1153/1153/1153 | 0 |
+| AppKit | 0.200/3.200 → 0.400/3.500 | 73.173/240.442 → 280.560/474.728 | 15; 0 | 1012/1021/1021/1021 | 1063/1176/1176/1176 | 10 |
+
+### Separate scratch gates
+
+CfT and large Safari each matched **10/10 schedule pairs** (15/15 audit traces), with zero forbidden reads, zero privacy flags and zero setup-invalid rows. The Safari traces witnessed the marker pair on one classified web area before input. Each lane's separate timing job realized all 100 perturbation/delivery rows; no scratch add length-confirmed and privacy stayed green.
+
+| Lane | Final AX timing coverage | Direct fixture straddling gap n; p50/p95/p99/max ms | AX inter-change n; p50/p95/p99/max ms | Last post → true final edit p50/p95/p99/max ms | Adds confirmed |
+|---|---|---|---|---|---|
+| CfT | 98/100; **coverage red** | 226; 8/18/**29**/35 | 12; 23.481/45.215/45.215/45.215 | 12.416/25.259/40.313/303.666 | 0/20 |
+| Electron default | 100/100 | 212; 8/20/**29**/69 | 11; 24.162/35.193/35.193/35.193 | 12.377/20.574/62.236/173.680 | 0/20 |
+| Electron parity | 100/100 | 217; 8/18/**25**/57 | 22; 18.320/34.534/69.042/69.042 | 12.010/18.154/48.559/88.403 | 0/20 |
+| Safari large | 100/100 | 224; 6/18/**24**/51 | 1; 18.753/18.753/18.753/18.753 | 11.724/17.638/23.143/24.435 | 0/20 |
+| AppKit | 94/100; **coverage red** | 269; 3.802/18.654/**72.593**/448.502 | 0; no pair observed | 13.508/24.277/59.162/542.371 | 0/20 |
+
+The timing red rows were not setup-invalid: their final production AX sample began before the independently verified final edit (2 CfT and 6 AppKit). They cannot size the AX inter-change estimate, but their direct fixture timestamps remain valid. Direct gap scope here is only adjacent edits whose later edit is at/after the last post; earlier typing-cadence gaps were not stored and cannot be recovered. The worst direct p99 is **72.593 ms** (AppKit n=269), and **3× is 217.779 ms**, above 180 ms even though the tested stock and scratch adds never confirmed. The 448.502 ms max was an AppKit ordinary short row whose AX read closed `fieldUnreadable`; omitting that trial would produce p99 46.763 ms (n=262), but the declared direct scope includes it. AppKit's adds alone gave p99/max 64.854 ms (n=55), also above 180 ms at 3×. This is a sizing finding, not an observed false confirmation on W=180.

@@ -378,7 +378,9 @@ app's accessibility text or the app itself, and `paste` uses the system clipboar
 restores the previous contents; a clipboard manager may record it). `typeText` enters the value as keystrokes, so an
 ordinary text view's own substitutions (autocorrect, automatic capitalization, smart dashes) can change it, and even
 text typed before it, as they would for a person typing; password fields do not do this. Only authorize secrets for
-apps you would type them into yourself. In Chrome the same rules apply to the two browser rows above, only on the
+apps you would type them into yourself, and only into fields that mask their input, such as password fields: in a field
+that does not, the value itself is in the agent's later screenshots and observations, as it is on the screen. In Chrome
+the same rules apply to the two browser rows above, only on the
 pinned version of cua's browser service (`src/browser-service/VERSION`; `unsupported_browser_runtime` otherwise);
 script evaluation, CDP commands and every other browser command are never scanned. A failed `locator.fill` makes the
 REPL client read back diagnostics of the matched elements (tag, role, type, label, text; not the input's value).

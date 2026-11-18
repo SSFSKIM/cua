@@ -4,7 +4,8 @@
 // controller (cdp.mjs), the document responses its tabs pause and the downloads over them (downloads.mjs), its tabs
 // (tabs.mjs), the locator engine over the controller (the injected script's installation, injected.mjs, and selector
 // resolution, selectors.mjs), the page's evaluate (evaluate.mjs), the visible-DOM listing with its node ids
-// (visible-dom.mjs), the agent's cursor (cursor.mjs), the virtual clipboard with its page bridges (clipboard.mjs), the
+// (visible-dom.mjs), the agent's cursor (cursor.mjs), the virtual clipboard with its page bridges (clipboard.mjs; the
+// page sides an earlier removal left, `strandedClipboards`, are removed as the controller attaches their tabs), the
 // pointer and key input the actions dispatch through (input.mjs), on this machine's platform (keys: ControlOrMeta,
 // the macOS editing commands), each tab's console log (devlogs.mjs), the page asset inventories (assets.mjs), each
 // tab's WebMCP tools (webmcp.mjs), and the filesystem the files a command returns are written to (filesystem.mjs);
@@ -32,7 +33,7 @@ import {WebMcp} from './webmcp.mjs';
 
 export class BrowserSession {
   // `api` the backend's BackendApi, `browserId` the id the service lists it under, `clientInfo` its getInfo answer.
-  constructor(api, browserId, clientInfo, {preferredWindowId, platform = PLATFORM, capabilities = clientInfo.capabilities, filesystem = LOCAL_FILESYSTEM, requestMeta = () => undefined} = {}) {
+  constructor(api, browserId, clientInfo, {preferredWindowId, platform = PLATFORM, capabilities = clientInfo.capabilities, filesystem = LOCAL_FILESYSTEM, requestMeta = () => undefined, strandedClipboards} = {}) {
     this.api = api;
     this.browserId = browserId;
     this.clientInfo = clientInfo;
@@ -50,7 +51,8 @@ export class BrowserSession {
     this.visibleDom = new VisibleDom(this.cdp);
     this.platform = platform;
     this.cursor = new Cursor(api);
-    this.clipboard = new Clipboard();
+    this.clipboard = new Clipboard({stranded: strandedClipboards});
+    this.removeStrandedRestore = strandedClipboards?.restoreOn(this.cdp) ?? (() => {});
     this.input = new CuaInput(this.cdp, this.cursor, this.visibleDom, {platform});
     this.pageAssets = new PageAssets(this.cdp, filesystem);
     this.webmcp = new WebMcp(this);
@@ -86,6 +88,7 @@ export class BrowserSession {
   pageAssets;
   webmcp;
   removeCloseListener;
+  removeStrandedRestore;
   transportClosed = false;
   disposePromise;
 
@@ -94,6 +97,7 @@ export class BrowserSession {
   async dispose() {
     this.disposePromise ??= (async () => {
       this.removeCloseListener();
+      this.removeStrandedRestore();
       this.api.detachTurn = undefined;
       await this.clipboard.dispose();
       await this.cdp.detachAllTabs();

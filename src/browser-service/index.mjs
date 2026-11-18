@@ -13,9 +13,11 @@
 // BrowserServiceError carrying it. Only the message crosses node_repl's trusted RPC boundary to the REPL client.
 //
 // A setup makes a fresh runtime and disposes the previous one (its backend connections close, its turn-ended hook is
-// removed). Commands dispatch through COMMAND_HANDLERS, the map from wire type to the function execute runs (the
-// inventory's handler gate reads it): the selection and documentation commands with the runtime, every other command
-// with the BrowserSession of the backend its browser_id names. A type without a handler rejects unsupported_command.
+// removed); the page clipboard bridges a runtime could not remove from their pages are left, per backend, to the next
+// runtime that attaches their tabs (clipboard-bridge.mjs StrandedPageClipboards). Commands dispatch through
+// COMMAND_HANDLERS, the map from wire type to the function execute runs (the inventory's handler gate reads it): the
+// selection and documentation commands with the runtime, every other command with the BrowserSession of the backend
+// its browser_id names. A type without a handler rejects unsupported_command.
 // After each submitted cell, the sessions that ran commands in it report their WebMCP tool changes as one "Browser
 // notifications" content item (webmcp.mjs), through the runtime's after-submitted-code hook, as the vendor's do.
 // Dropped from VN: telemetry, Sentry, the identity fetch, site status and the security wrapper, the credential
@@ -28,6 +30,7 @@ import {AUTH_HANDOFF_HANDLERS} from './authhandoff.mjs';
 import {BOT_DETECTION_HANDLERS} from './botdetect.mjs';
 import {BrowserContext, SELECTION_HANDLERS} from './browsers.mjs';
 import {CHOOSER_HANDLERS} from './chooser.mjs';
+import {StrandedPageClipboards} from './clipboard-bridge.mjs';
 import {CLIPBOARD_HANDLERS} from './clipboard.mjs';
 import {DEVLOG_HANDLERS} from './devlogs.mjs';
 import {DIALOG_HANDLERS} from './dialogs.mjs';
@@ -106,8 +109,10 @@ export const COMMAND_HANDLERS = new Map([
 
 // What one setup made: the backends, the documentation and a session per backend connection.
 class ServiceRuntime {
-  constructor(runtime, {undocumentedApiMembers, excludedDocumentation}) {
+  // `strandedClipboards(path)` is the StrandedPageClipboards of the backend at socket `path`, kept across setups.
+  constructor(runtime, {undocumentedApiMembers, excludedDocumentation}, strandedClipboards = () => undefined) {
     this.nodeRepl = runtime;
+    this.strandedClipboards = strandedClipboards;
     this.env = runtime.env ?? {};
     this.disabledMemberIds = disabledMemberIds(this.env);
     this.context = new BrowserContext(runtime);
@@ -118,6 +123,7 @@ class ServiceRuntime {
   }
 
   nodeRepl;
+  strandedClipboards;
   env;
   disabledMemberIds;
   context;
@@ -132,7 +138,7 @@ class ServiceRuntime {
     if (session == null) {
       session = new BrowserSession(browser.api, browser.id, browser.info, {
         preferredWindowId: this.context.preferredWindowIdFor(browser.info), capabilities: browserCapabilities(this.env, browser.info.capabilities),
-        requestMeta: () => this.nodeRepl.requestMeta,
+        requestMeta: () => this.nodeRepl.requestMeta, strandedClipboards: this.strandedClipboards(browser.path),
       });
       this.sessions.set(browser.api, session);
       browser.api.addCloseListener(() => {
@@ -174,6 +180,11 @@ class ServiceRuntime {
 // default the global one, read at each setup.
 export function createBrowserService({runtime} = {}) {
   let current = null;            // the promise of the last setup's ServiceRuntime (the vendor's ig)
+  const stranded = new Map();    // backend socket path -> StrandedPageClipboards, outliving each runtime
+  const strandedClipboards = path => {
+    if (!stranded.has(path)) stranded.set(path, new StrandedPageClipboards());
+    return stranded.get(path);
+  };
   let notifying = false;         // the after-cell hook is registered (the vendor's GN)
 
   // After every submitted cell, the browser notifications of the last setup's runtime as a content item (the vendor's
@@ -200,7 +211,7 @@ export function createBrowserService({runtime} = {}) {
       const previous = current;
       current = (async () => {
         await (await previous?.catch(() => null))?.dispose();
-        return new ServiceRuntime(runtime ?? globalThis.nodeRepl, {undocumentedApiMembers, excludedDocumentation});
+        return new ServiceRuntime(runtime ?? globalThis.nodeRepl, {undocumentedApiMembers, excludedDocumentation}, strandedClipboards);
       })();
       const made = await current;
       return {apiManifest: API_MANIFEST, disabledMemberIds: [...made.disabledMemberIds]};

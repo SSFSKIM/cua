@@ -14,8 +14,9 @@ const CANDIDATES = [process.env.CUA_TEST_CHROME, '/Applications/Google Chrome fo
 export const chromePath = () => CANDIDATES.find(p => existsSync(p)) ?? null;
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-// -> {cdp, load(path, {origin}), evaluate(expression), url(path, origin), requests}; `pages` maps a path to its HTML, read
-// at each request, and `requests` lists what the pages asked for ({host, path, found}).
+// -> {cdp, load(path, {origin}), evaluate(expression), url(path, origin), requests, pageSocketUrl}; `pages` maps a path to
+// its HTML, read at each request, and `requests` lists what the pages asked for ({host, path, found}). `pageSocketUrl`
+// is the page's DevTools WebSocket, for a test that opens debugger sessions of its own beside the helper's.
 export async function realChrome(t, pages = {}) {
   const path = chromePath();
   if (path == null) return null;
@@ -92,5 +93,5 @@ export async function realChrome(t, pages = {}) {
     await Promise.race([loaded, sleep(20_000).then(() => { throw new Error(`real Chrome did not load ${pathname} in 20 s`); })]);
     sent.length = 0;
   };
-  return {cdp, load, evaluate, url, requests};
+  return {cdp, load, evaluate, url, requests, pageSocketUrl: target.webSocketDebuggerUrl};
 }

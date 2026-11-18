@@ -79,6 +79,6 @@ record.
   `launcher_shim.rs` (it reads the comm before the exec). The rerun passed, and the flake is logged in the tracker.
 - The live suite as the gate runs it (`CUA171_GTK_TESTS=required xvfb-run -a dbus-run-session -- cargo test --release
   --locked --features live -- --test-threads 1`, x64): 632 passed, 0 failed, 1 ignored.
-- `tests/two-screens.sh`: 3 of 3 on x64 (Xorg on :100 and :101), and on arm64 from this branch's own checkout, with no
-  target override (see the task report).
+- `tests/two-screens.sh`: 3 of 3 on x64 and 3 of 3 on arm64 (aarch64-unknown-linux-musl, from the host), each on Xorg
+  :100 and :101, from this branch's own checkouts, with no target override.
 - `ci-gate --gates engine-linux,test` on 2d8f6ad9: GREEN, run 44301764159.

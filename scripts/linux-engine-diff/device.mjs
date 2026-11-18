@@ -47,10 +47,15 @@
 // mode unless Chrome is already in front) and gnome-text-editor's text refusal on the `gnome-text-editor` scene.
 // M3.1's listings beyond M0's (scroll and move for GTK 4 and Gecko, scroll for Qt) join the cases as M0's did.
 
-import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { createHash, randomUUID } from 'node:crypto';
+import { appendFileSync, existsSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { pendingOf } from './drop-signals-judge.mjs';
-import { judgePremise } from './premise.mjs';
+import { TIMED_QUOTAS, bindAudit, bindTimed, judgePremise } from './premise.mjs';
+import { preorder } from './normalize.mjs';
 import { readGtk4Status } from './families.mjs';
 import { IDENTITY_OPS, IDENTITY_SCENE_OPS, judgeIdentity } from './identity.mjs';
 import { MINIMIZED_OPS, MINIMIZED_SCENE_OPS, judgeMinimized } from './minimized.mjs';
@@ -120,12 +125,22 @@ const scrollBar = (ctx) => {
     return null;
   }
 };
-/** The drag page's drag-and-drop status (pages/drag.html): `{drops, ...}`. */
+/**
+ * The drag page's drag-and-drop status (pages/drag.html): `{drops, ...}`, as drag.mjs `readEffect` reads a page's, with
+ * the page's own status lines kept as written beside it (`raw`: each distinct `dnd` and `moves` line the tree carried,
+ * and whether it carried the scene's page title), the evidence ruling 823's unmet premise is shown by (premise.mjs).
+ * The read's time goes on the sample (`premiseReadAt`), never into the read, which `settledRead` compares.
+ */
 const dropStatus = async (ctx) => {
   try {
     // drag.mjs imports run.mjs, which imports this module
-    const { readEffect } = await import('./drag.mjs');
-    return await readEffect({ desktop: ctx.desktop, oracle: ctx.desktop.oracle }, ctx.scene, ctx.scene.dndAt, 'dnd');
+    const { parseDragStatus } = await import('./drag.mjs');
+    const nodes = preorder((await ctx.desktop.state(ctx.scene)).ax_tree);
+    const texts = nodes.flatMap((n) => [n.name, n.value, n.text].filter((t) => typeof t === 'string'));
+    const status = parseDragStatus(texts);
+    const lines = (prefix) => [...new Set(texts.filter((t) => t.startsWith(prefix)))];
+    ctx.premiseReadAt = Date.now();
+    return { ...status.dnd, log: status.moves, received: status.received, raw: { dnd: lines('dnd '), moves: lines('moves '), titled: typeof ctx.scene.label === 'string' && texts.some((t) => t.includes(ctx.scene.label)) } };
   } catch {
     return null;
   }
@@ -382,6 +397,8 @@ function device({ device: expect, condition = covered, park, read, request, effe
     effect: ['refusal', 'cancel', 'late', 'late-take', 'stray'].includes(expect) ? undefined : effect,
     check: async (ctx, response) => {
       const out = {};
+      // the sample's attempt, for ruling 823's evidence: from the page's last read before the request
+      const attemptFrom = ctx.premiseReadAt;
       // the reply's own notice, for ruling 823's plain-drag ok (premise.mjs): one that claims or implies a drop is never
       // an unmet premise
       if (PREMISE_KINDS.includes(expect)) out.reply_notice = response.notice ?? null;
@@ -406,7 +423,10 @@ function device({ device: expect, condition = covered, park, read, request, effe
         out.expected_notice = dndLateRefusal(ctx.scene.app, 'move');
         const listed = await ctx.engine.request('list_windows', {});
         out.read_ok = listed.response.ok === true;
+        if (!out.read_ok) out.read_error = String(listed.response.error);
         out.read_notice = listed.response.notice === dndLateNotice(ctx.scene.app);
+        // whatever notice the read carried, the late one or another (ruling 823: a notice implies a drop)
+        out.read_notice_text = listed.response.notice ?? null;
         const next = await ctx.engine.request('move', { window: { id: ctx.scene.id }, x: 10, y: 10 });
         out.next_ok = next.response.ok === true;
         out.next_error = next.response.ok ? null : String(next.response.error);
@@ -434,6 +454,8 @@ function device({ device: expect, condition = covered, park, read, request, effe
       if (inFront) out.desktop_same = JSON.stringify(desktopState()) === JSON.stringify(ctx.desktopBefore);
       // a drag-and-drop case's page counts, before and after, for the record
       if (read === dropStatus) out.drop_status = { before: ctx.before, after: await read(ctx) };
+      // ruling 823's evidence of the sample, on its row and in the run's own record of it (premise.mjs)
+      if (PREMISE_KINDS.includes(expect)) out.premise_evidence = recordPremise(ctx, response, out, { from: attemptFrom, to: Date.now() });
       return out;
     },
     // the foreground route leaves its window active: the front window takes the focus back, outside every span (a
@@ -454,6 +476,7 @@ async function readPending(ctx) {
   const state = await ctx.engine.request('get_window_state', { window: { id: ctx.scene.id }, include_screenshot: false });
   const next = await ctx.engine.request('preflight', {});
   return {
+    state_ok: state.response.ok === true,
     state_notice: state.response.notice ?? null,
     next_ok: next.response.ok === true,
     next_error: next.response.ok ? null : String(next.response.error),
@@ -642,6 +665,98 @@ for (const op of Object.values(DEVICE_OPS)) {
   }
 }
 
+// ---------------------------------------------------------------------------------------------------------------
+// ruling 823's evidence of each sample (premise.mjs)
+
+const here = dirname(fileURLToPath(import.meta.url));
+const once = new Map();
+const cached = (key, make) => (once.has(key) ? once.get(key) : once.set(key, make()).get(key));
+/** The checkout's head, as run.mjs's meta row records it. */
+const head = () =>
+  cached('head', () => {
+    try {
+      return execFileSync('git', ['rev-parse', 'HEAD'], { cwd: here, encoding: 'utf8' }).trim();
+    } catch {
+      return null;
+    }
+  });
+/** The sha256 of the engine binary a sample's engine runs. */
+const engineSha = (bin) => (typeof bin === 'string' && existsSync(bin) ? cached(`sha|${bin}`, () => createHash('sha256').update(readFileSync(bin)).digest('hex')) : null);
+/** The run's load profile, from its own meta row (run.mjs writes it first): its ballast and occlusion. */
+const loadOf = (results) => {
+  if (once.has(`load|${results}`)) return once.get(`load|${results}`);
+  try {
+    const meta = JSON.parse(readFileSync(results, 'utf8').split('\n')[0]);
+    if (meta.kind !== 'meta') return null;
+    return once.set(`load|${results}`, { ballast: meta.ballast ?? null, occlusion: meta.occlusion ?? null }).get(`load|${results}`);
+  } catch {
+    // not read yet: nothing kept, so the next sample reads it again
+    return null;
+  }
+};
+
+/**
+ * Every evidence record this process made, by run (`recordedPremise`): the in-run judge's own, for the audit's samples,
+ * whose rows run.mjs does not keep. premise-refill.mjs reads the same records from the run's `premise-evidence.jsonl`.
+ */
+const RECORDED = [];
+
+/**
+ * A premise case's sample as its evidence (premise.mjs): the sample named (its run, scene, case, block and request
+ * number, its engine's lifecycle, the engine's request id, the window and the page's title), the run's head, engine
+ * bytes and load, its attempt (from the page's last read before the request to the check's end, epoch ms), cua's
+ * reply, the page's status lines before and after as the page wrote them, and the case's own reads. Kept in memory and
+ * appended to the run's `premise-evidence.jsonl` beside its results.
+ */
+function recordPremise(ctx, response, out, attempt) {
+  ctx.engine.premiseLifecycle ??= randomUUID();
+  const outDir = ctx.desktop.logs ? dirname(ctx.desktop.logs) : null;
+  const reads = Object.fromEntries(['state_ok', 'state_notice', 'next_ok', 'next_error', 'read_ok', 'read_error', 'read_notice', 'read_notice_text'].filter((k) => k in out).map((k) => [k, out[k]]));
+  const { op, block, i } = ctx.scene.lastRequest ?? {};
+  const record = {
+    kind: 'premise-evidence',
+    run: ctx.desktop.run ?? null,
+    head: head(),
+    engine_sha256: engineSha(ctx.engine.bin),
+    load: outDir ? loadOf(join(outDir, 'results.jsonl')) : null,
+    scene: ctx.sceneName,
+    op,
+    block,
+    i,
+    series: i === 0 ? 'cold' : 'warm',
+    lifecycle: ctx.engine.premiseLifecycle,
+    request: Number.isInteger(response.id) ? response.id : null,
+    window: ctx.scene.id,
+    fixture: { label: ctx.scene.label ?? null },
+    attempt,
+    reply: { ok: response.ok === true, error: response.ok ? null : String(response.error).slice(0, 300), notice: response.notice ?? null },
+    page: { before: ctx.before?.raw ?? null, after: out.drop_status?.after?.raw ?? null },
+    dropped: out.dropped,
+    reads,
+  };
+  RECORDED.push(record);
+  if (outDir) appendFileSync(join(outDir, 'premise-evidence.jsonl'), `${JSON.stringify(record)}\n`);
+  return record;
+}
+
+/**
+ * The evidence this process recorded for an operation's audit, for the in-run judge: the run's records (null where the
+ * process recorded none for the run, as a re-judge of stored rows), and the audited window, the run's timed evidence's.
+ */
+function recordedPremise(op, samples) {
+  const run = samples[0]?.run;
+  const scene = samples[0]?.scene;
+  const ofRun = RECORDED.filter((r) => r.run === run);
+  if (!ofRun.length) return null;
+  return { lines: ofRun.filter((r) => r.op === op && r.scene === scene && r.block === 'audit'), window: samples.find((r) => r.premise_evidence)?.premise_evidence.window ?? null };
+}
+
+/** The in-run judge's audit entries: the audit bound to the evidence this process recorded for it (premise.mjs). */
+function inRunAudit(op, samples, audit) {
+  const recorded = recordedPremise(op, samples);
+  return bindAudit(audit, recorded?.lines ?? null, { run: samples[0]?.run, scene: samples[0]?.scene, op, window: recorded?.window ?? null });
+}
+
 /** The cells ruling 823's unmet premise can occur in (`PREMISE_KINDS`): V5's cancel, late and late-take cells. */
 export const PREMISE_OPS = new Set(Object.keys(DEVICE_OPS).filter((op) => PREMISE_KINDS.includes(DEVICE_OPS[op].device)));
 
@@ -686,7 +801,7 @@ export function capabilitiesAnswer(output, version) {
  * (`PREMISE_OPS`) a sample or audited request whose premise was unmet is excluded first (premise.mjs). Returns `{pass,
  * reasons}`, with `drops` for a drop case and `premise_unmet` (each pass's record) where anything was excluded or refilled.
  */
-export function judgeDevice(op, samples, audit) {
+export function judgeDevice(op, samples, audit, premiseAudit = undefined) {
   // the minimized cases have expectations of their own (minimized.mjs)
   if (op in MINIMIZED_OPS) return judgeMinimized(op, samples, audit);
   // and so do the identity cases (identity.mjs)
@@ -694,14 +809,22 @@ export function judgeDevice(op, samples, audit) {
   const expect = DEVICE_OPS[op].device;
   const reasons = [];
   if (!samples.length) return { pass: false, reasons: ['no samples'] };
-  // ruling 823 (premise.mjs): a sample whose premise was unmet is excluded, counted and refilled, and every rule below
-  // judges the rest; a cell that judged fewer than it planned fails closed as incomplete
-  const premise = PREMISE_OPS.has(op) ? judgePremise(samples, (r) => samples.find((x) => x.block === r.block && x.i === r.i + 1), { name: (r) => `${r.block}/${r.i}` }) : null;
-  const rows = premise ? premise.judged : samples;
+  // ruling 823 (premise.mjs): a sample whose premise was unmet is excluded and counted, and every rule below judges the
+  // rest; a cell short of its planned cold or warm samples fails closed as incomplete, which premise-refill.mjs refills
+  // from another run (ruling 825). Evidence that does not fit its samples is never excluded on, and fails the cell.
   const unmet = {};
-  if (premise) {
-    reasons.push(...premise.reasons);
-    if (premise.record) unmet.timed = premise.record;
+  let rows = samples;
+  let excluded = 0;
+  let refilled = false;
+  if (PREMISE_OPS.has(op)) {
+    const timed = bindTimed(samples);
+    for (const p of timed.problems) reasons.push(`the premise evidence of the timed samples does not fit them (ruling 823, never excluded on): ${p}`);
+    const judged = judgePremise(timed.rows, { name: (r) => `${r.block}/${r.i}`, quotas: TIMED_QUOTAS });
+    reasons.push(...judged.reasons);
+    if (judged.record) unmet.timed = judged.record;
+    rows = judged.judged;
+    excluded += judged.excluded;
+    refilled ||= samples.some((r) => r.fill);
   }
   const bad = (what, pred) => {
     const failed = rows.filter((r) => !pred(r));
@@ -794,12 +917,18 @@ export function judgeDevice(op, samples, audit) {
     if (audit && audit.kind !== 'skipped') {
       // the audit counts only where its requests did what the case measures: answered as the case expects
       const audited = audit.answered ?? [];
-      // the audit's own requests whose premise was unmet, refilled within the audit pass (ruling 823)
-      const auditPremise = PREMISE_OPS.has(op) ? judgePremise(audited, (a, i) => audited[i + 1], { name: (a, i) => `audit/${i}`, what: 'audited requests', prefix: `the ${audit.kind} audit is incomplete` }) : null;
-      const answered = auditPremise ? auditPremise.judged : audited;
-      if (auditPremise) {
-        reasons.push(...auditPremise.reasons);
-        if (auditPremise.record) unmet.audit = auditPremise.record;
+      let answered = audited;
+      // the audit's own requests, bound to the evidence their samples recorded (the in-run judge's from this process,
+      // premise-refill.mjs's from the runs it combined), those whose premise was unmet excluded (ruling 823)
+      if (PREMISE_OPS.has(op)) {
+        const bound = premiseAudit ?? inRunAudit(op, samples, audit);
+        for (const p of bound.problems) reasons.push(`the premise evidence of the ${audit.kind} audit does not fit it (ruling 823, never excluded on): ${p}`);
+        const judged = judgePremise(bound.entries, { name: (e) => `${e.fill ? `${e.run}/` : ''}audit/${e.i}`, what: 'audited requests', prefix: `the ${audit.kind} audit is incomplete` });
+        reasons.push(...judged.reasons);
+        if (judged.record) unmet.audit = judged.record;
+        answered = judged.judged;
+        excluded += judged.excluded;
+        refilled ||= bound.entries.some((e) => e.fill);
       }
       const expected = (a) => {
         if (expect === 'refusal' || expect === 'cancel' || expect === 'stray') return !a.ok && a.error === a.expected_error;
@@ -810,5 +939,9 @@ export function judgeDevice(op, samples, audit) {
       else if (!answered.every(expected)) reasons.push(`the ${audit.kind} audit's requests did not answer as the case expects (${answered.map((a) => (a.ok ? 'success' : a.error)).join('; ').slice(0, 200)})`);
     }
   }
-  return { pass: reasons.length === 0, reasons, ...(drops ? { drops } : {}), ...(Object.keys(unmet).length ? { premise_unmet: unmet } : {}) };
+  // a run's own verdict that excluded a sample and was not refilled is provisional: premise-refill.mjs gives the final
+  // one, from this run and its refill runs (ruling 825); one that excluded nothing is final as it stands
+  const provisional = excluded > 0 && !refilled;
+  if (provisional) reasons.push('provisional: premise-refill.mjs refills this cell from another run of the same head, engine and load (rulings 823, 825)');
+  return { pass: reasons.length === 0, reasons, ...(drops ? { drops } : {}), ...(Object.keys(unmet).length ? { premise_unmet: unmet } : {}), ...(provisional ? { provisional } : {}) };
 }

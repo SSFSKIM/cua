@@ -1,37 +1,30 @@
-// The design session's ruling 823: in a V5 Chrome drag-and-drop cell, a sample whose premise was unmet (cua answered a
-// plain drag, and the run's own records show Chrome never started a drag session) is excluded, counted, reported as a
-// rate, and refilled within its pass up to a bound; anything else is judged as before. Its negative controls first.
+// The design session's ruling 823 in V5's judge: a plain-drag ok whose page shows Chrome never started a drag session is
+// excluded, counted and refilled; anything else is judged as before. Every sample here is made through the real paths
+// (premise-fixture.mjs): the case's own read of a page tree carrying the drag page's status lines as the page writes
+// them, drag.mjs's parser, the case's own check and its evidence record.
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { after, test } from 'node:test';
 
-import { DEVICE_OPS, PREMISE_OPS, dndCancelledSentence, dndLateNotice, dndLateRefusal, dndMayHaveDroppedSentence, dndUnconfirmedNotice, judgeDevice } from '../../scripts/linux-engine-diff/device.mjs';
-import { classifyPremise, fillNeed, noDragSession, premiseFields, premiseMarkdown, refill, splitPremise } from '../../scripts/linux-engine-diff/premise.mjs';
+import { DEVICE_OPS, PREMISE_OPS, dndLateNotice, dndLateRefusal, dndMayHaveDroppedSentence, dndUnconfirmedNotice, judgeDevice } from '../../scripts/linux-engine-diff/device.mjs';
+import { adjacency, bindAudit, classifyPremise, noDragSession, parsePageRead } from '../../scripts/linux-engine-diff/premise.mjs';
+import { APP, CANCEL, UNMET, caseSamples, dndLine, engineBin, movesLine, removeScratch, scratch } from './premise-fixture.mjs';
 
-const app = 'Google-chrome';
-const cancelled = dndCancelledSentence(app);
+after(removeScratch);
 
-// the drag page's counts (pages/drag.html) and its pointer log of the last press, as drag.mjs parses them
-const log = (seq, { start = null, up = null, cancel = null, end = null } = {}) => ({ seq, n: 2, start, up, cancel, end, moves: [], past: 1 });
-const at = (t) => ({ t, h: t + 0.5 });
-const BEFORE = { starts: 3, ends: 3, drops: 0, downs: 3, ups: 1, log: log(3, { start: at(0), cancel: at(90), end: at(160) }) };
-// the sample's own press, ended by a pointerup with no drag start, no pointercancel and no dragend: no drag session
-const PLAIN = { starts: 3, ends: 3, drops: 0, downs: 4, ups: 2, log: log(4, { up: at(158) }) };
-// the sample's own press taken by a drag and drop: dragstart, Chrome's pointercancel, the dragend (V5 x64 0/0's shape)
-const TOOK = { starts: 4, ends: 4, drops: 0, downs: 4, ups: 1, log: log(4, { start: at(0), cancel: at(95), end: at(165) }) };
-
-const row = (fields) => ({ engine: 'cua', block: 0, i: 0, witness: true, ...fields });
-const noTake = { outcome: 'no_start', started: false, in_front: false, held_at_start: false };
-// a plain-drag ok whose records show Chrome never started a drag session: the premise unmet
-const unmet = (fields = {}) => row({ ok: true, reply_notice: null, expected_error: cancelled, dropped: false, dnd: noTake, press: { taken: false }, drop_status: { before: BEFORE, after: PLAIN }, ...fields });
-const inTime = (fields = {}) => row({ ok: false, error: cancelled, expected_error: cancelled, dropped: false, reply_notice: null, dnd: { outcome: 'in_time', started: true, in_front: false, held_at_start: false }, drop_status: { before: BEFORE, after: TOOK }, ...fields });
-const block = (b, samples, extra = {}) => samples.map((s, i) => ({ ...s, block: b, i, series: i === 0 ? 'cold' : 'warm', ...extra }));
-const audit = (answered) => ({ clean: true, kind: 'background', answered });
-const cancelledEntry = { ok: false, error: cancelled, expected_error: cancelled, late_error: null, reply_notice: null, drop_status: { before: BEFORE, after: TOOK } };
-const unmetEntry = { ok: true, error: null, expected_error: cancelled, late_error: null, reply_notice: null, drop_status: { before: BEFORE, after: PLAIN } };
-const CLEAN = audit([cancelledEntry, cancelledEntry]);
-
-// three blocks of three, every sample cancelled in time: the cell as V5 plans it
-const planned = () => [0, 1, 2].flatMap((b) => block(b, [inTime(), inTime(), inTime()]));
+const dir = scratch('judge');
+const bin = engineBin(dir);
+let runs = 0;
+/** A run of one case through the real paths: its rows, its audit, and the audit's entries bound to the evidence. */
+async function made(op, blocks, audit = [], { answers = {} } = {}) {
+  const run = `t-${++runs}`;
+  const { rows, answered } = await caseSamples({ out: dir, run, op, bin, blocks, audit, answers });
+  return { run, rows, answered, audit: { clean: true, kind: 'background', answered } };
+}
+const three = (spec) => [spec, spec, spec];
+const planned = (spec = CANCEL) => [three(spec), three(spec), three(spec)];
+const reasons = (v) => v.reasons.join('\n');
 
 test('the cells where the unmet premise can occur are the cancel, late and late-take cells of the drag page, no others', () => {
   assert.deepEqual([...PREMISE_OPS].sort(), ['chrome_dnd_late_shared', 'chrome_dnd_late_take_shared', 'chrome_dnd_obscured_in_front_late_shared', 'chrome_dnd_obscured_in_front_shared', 'chrome_dnd_shared']);
@@ -39,276 +32,169 @@ test('the cells where the unmet premise can occur are the cancel, late and late-
   for (const op of PREMISE_OPS) assert.ok(!DEVICE_OPS[op].confirm, op);
 });
 
-test("the page's own record of the sample's press shows no drag session only when it is that press's, read on both sides, ended by a pointerup with nothing of a drag", () => {
-  assert.equal(noDragSession({ before: BEFORE, after: PLAIN }), true);
-  assert.equal(noDragSession({ before: BEFORE, after: TOOK }), false, 'a dragstart');
+test("a plain-drag ok the page saw released with no drag is unmet; one Chrome took is not; the in-run verdict that excluded it is provisional", async () => {
+  const r = await made('chrome_dnd_shared', [[UNMET, CANCEL, CANCEL], three(CANCEL), three(CANCEL)], [CANCEL, CANCEL]);
+  const next = adjacency(r.rows);
+  assert.equal(classifyPremise(r.rows[0], next(r.rows[0])), 'unmet');
+  assert.equal(classifyPremise(r.rows[1], next(r.rows[1])), 'started', "the engine's take, and the page's");
+  assert.equal(noDragSession(r.rows[0].premise_evidence), true);
+  const v = judgeDevice('chrome_dnd_shared', r.rows, r.audit);
+  assert.equal(v.pass, false);
+  assert.equal(v.provisional, true, 'the run excluded a sample: its verdict waits for premise-refill.mjs');
+  assert.match(reasons(v), /incomplete: Chrome never started a drag and drop on 1 of 9 samples .* so 2 cold were judged of the 3 planned, with 0 refilled of a bound of 9/);
+  assert.deepEqual(v.premise_unmet.timed.unmet_samples, ['0/0']);
+  // nothing excluded: final as it stands, and a pass
+  const clean = await made('chrome_dnd_shared', planned(), [CANCEL, CANCEL]);
+  assert.deepEqual(judgeDevice('chrome_dnd_shared', clean.rows, clean.audit), { pass: true, reasons: [] });
+});
+
+test('negative control (finding 1): only explicit, whole status lines of this page and this attempt prove it; anything else is judged as now', async () => {
+  const cut = (b, t) => [dndLine({ ...b, downs: b.downs + 1, ups: b.ups + 1, at: t }), movesLine(b.downs + 1, { up: 158 }).replace(/ cancel .*$/, '')];
+  const noCancel = (b, t) => [dndLine({ ...b, downs: b.downs + 1, ups: b.ups + 1, at: t }), movesLine(b.downs + 1, { up: 158 }).replace(' cancel -1', '')];
+  const shortMoves = (b, t) => [dndLine({ ...b, downs: b.downs + 1, ups: b.ups + 1, at: t }), movesLine(b.downs + 1, { up: 158 }).replace(/ m .*$/, ' m 0.0/0.4/0/0/1/1')];
+  const twoLines = (b, t) => [dndLine({ ...b, downs: b.downs + 1, ups: b.ups + 1, at: t }), dndLine({ ...b, downs: b.downs + 2, ups: b.ups + 1, at: t }), movesLine(b.downs + 1, { up: 158 })];
+  const stale = (b) => [dndLine({ ...b, downs: b.downs + 1, ups: b.ups + 1, at: (Date.now() - 60000) % 1e9 }), movesLine(b.downs + 1, { up: 158 })];
+  const otherPress = (b, t) => [dndLine({ ...b, downs: b.downs + 1, ups: b.ups + 1, at: t }), movesLine(b.downs, { up: 158 })];
   const variants = [
-    ['no page read', undefined],
-    ['the after read missing', { before: BEFORE, after: null }],
-    ['the before read missing', { before: null, after: PLAIN }],
-    ['no press reached a source', { before: BEFORE, after: { ...PLAIN, downs: 3 } }],
-    ['two presses', { before: BEFORE, after: { ...PLAIN, downs: 5, log: log(5, { up: at(158) }) } }],
-    ["the log another press's", { before: BEFORE, after: { ...PLAIN, log: log(3, { up: at(158) }) } }],
-    ['the log unread', { before: BEFORE, after: { ...PLAIN, log: null } }],
-    ['no pointerup', { before: BEFORE, after: { ...PLAIN, log: log(4) } }],
-    ['a dragstart in the log', { before: BEFORE, after: { ...PLAIN, log: log(4, { up: at(158), start: at(0) }) } }],
-    ["Chrome's pointercancel", { before: BEFORE, after: { ...PLAIN, log: log(4, { up: at(158), cancel: at(90) }) } }],
-    ['a dragend in the log', { before: BEFORE, after: { ...PLAIN, log: log(4, { up: at(158), end: at(160) }) } }],
-    ['a log field unrecorded', { before: BEFORE, after: { ...PLAIN, log: { seq: 4, up: at(158) } } }],
-    ['a drag start counted', { before: BEFORE, after: { ...PLAIN, starts: 4 } }],
-    ['a dragend counted', { before: BEFORE, after: { ...PLAIN, ends: 4 } }],
-    ['a drop counted', { before: BEFORE, after: { ...PLAIN, drops: 1 } }],
-    ['a count unread', { before: { ...BEFORE, starts: undefined }, after: PLAIN }],
+    ['a log truncated after its pointerup', { lines: cut }],
+    ['a log missing its pointercancel token', { lines: noCancel }],
+    ['fewer moves than the log says', { lines: shortMoves }],
+    ['two different status lines of one kind', { lines: twoLines }],
+    ["a press outside the sample's attempt", { lines: stale }],
+    ["the log of another press", { lines: otherPress }],
+    ["a tree that does not carry the scene's page title", { titled: false }],
   ];
-  for (const [what, status] of variants) assert.equal(noDragSession(status), false, what);
-});
-
-test('a sample reads premise unmet only on a plain-drag ok with no notice whose every record agrees Chrome never started a drag session', () => {
-  assert.equal(classifyPremise(unmet()), 'unmet');
-  assert.equal(classifyPremise(inTime()), 'not-plain-ok');
-  // what cua's reply claimed: a refusal, a may-have-dropped answer, or an ok carrying a notice is not a plain-drag ok
-  assert.equal(classifyPremise(unmet({ ok: false, error: dndMayHaveDroppedSentence(app) })), 'not-plain-ok');
-  assert.equal(classifyPremise(unmet({ reply_notice: dndUnconfirmedNotice(app) })), 'claims');
-  // the records that show Chrome started one
-  const started = [
-    ['the page', { drop_status: { before: BEFORE, after: TOOK } }],
-    ['the engine took by the release', { dnd: { ...noTake, started: true } }],
-    ["the engine's outcome", { dnd: { ...noTake, outcome: 'in_time' } }],
-    ["the engine's press record", { press: { taken: true } }],
-    ["the engine's stats", { engine_stats: { dnd: { ...noTake, started: true } } }],
-    ["the late case's read carried a notice", { state_notice: dndLateNotice(app), next_ok: false, next_error: dndLateRefusal(app, 'preflight') }],
-    ["the late case's next acting request refused for it", { state_notice: null, next_ok: false, next_error: dndLateRefusal(app, 'preflight') }],
-    ["the late-take case's read carried the notice", { read_notice: true }],
-    ["the late-take case's next acting request refused for it", { read_notice: false, next_ok: false, next_error: dndLateRefusal(app, 'move') }],
-  ];
-  for (const [what, fields] of started) assert.equal(classifyPremise(unmet(fields)), 'started', what);
-  // the next request on the same engine refused for something this drag left pending, or the late take recorded on it
-  assert.equal(classifyPremise(unmet(), row({ i: 1, ok: false, error: dndLateRefusal(app, 'drag') })), 'started');
-  assert.equal(classifyPremise(unmet(), row({ i: 1, ok: false, error: cancelled, engine_stats: { late_dnd: { after_release_ms: 2.3, app, escaped: true } } })), 'started');
-  // a drop or a changed desktop is never an unmet premise
-  assert.equal(classifyPremise(unmet({ dropped: true })), 'changed');
-  assert.equal(classifyPremise(unmet({ witness: false })), 'changed');
-  // records that cannot show it either way: judged as before
-  assert.equal(classifyPremise(unmet({ drop_status: undefined })), 'unshown', 'no page read (the audit rows before 823)');
-  assert.equal(classifyPremise(unmet({ drop_status: { before: BEFORE, after: null } })), 'unshown');
-  assert.equal(classifyPremise(unmet({ drop_status: { before: BEFORE, after: { ...PLAIN, log: log(3, { up: at(158) }) } } })), 'unshown', "the log another press's");
-  const { reply_notice, ...noReplyRecord } = unmet();
-  assert.equal(classifyPremise(noReplyRecord), 'unshown', "the reply's notice unrecorded (the stored rows before 823)");
-});
-
-test('negative control: a plain-drag ok where Chrome did start a drag session fails as now', () => {
-  const tookRows = planned();
-  tookRows[0] = { ...unmet({ drop_status: { before: BEFORE, after: TOOK } }), block: 0, i: 0 };
-  const r = judgeDevice('chrome_dnd_shared', tookRows, CLEAN);
-  assert.equal(r.pass, false);
-  assert.match(r.reasons.join('\n'), /not cancelled with the drag-and-drop sentence on 1 of 9 samples \(0\/0\)/);
-  assert.equal(r.premise_unmet, undefined, 'nothing excluded');
-  // and in the audit pass
-  const a = judgeDevice('chrome_dnd_shared', planned(), audit([{ ...unmetEntry, drop_status: { before: BEFORE, after: TOOK } }, cancelledEntry]));
-  assert.equal(a.pass, false);
-  assert.match(a.reasons.join('\n'), /the background audit's requests did not answer as the case expects/);
-});
-
-test('negative control: a reply that claims or implies a drop, with no drag session, fails', () => {
-  for (const [what, sample] of [
-    ['a may-have-dropped answer', unmet({ ok: false, error: dndMayHaveDroppedSentence(app) })],
-    ['an ok carrying a notice', unmet({ reply_notice: dndUnconfirmedNotice(app) })],
-  ]) {
-    const rows = planned();
-    rows[0] = { ...sample, block: 0, i: 0 };
-    const r = judgeDevice('chrome_dnd_shared', rows, CLEAN);
-    assert.equal(r.pass, false, what);
-    assert.match(r.reasons.join('\n'), /not cancelled with the drag-and-drop sentence on 1 of 9 samples \(0\/0\)/, what);
+  for (const [what, spec] of variants) {
+    const r = await made('chrome_dnd_shared', [[{ ...UNMET, ...spec }, CANCEL, CANCEL], three(CANCEL), three(CANCEL)], [CANCEL, CANCEL]);
+    assert.equal(classifyPremise(r.rows[0]), 'unshown', what);
+    const v = judgeDevice('chrome_dnd_shared', r.rows, r.audit);
+    assert.match(reasons(v), /not cancelled with the drag-and-drop sentence on 1 of 9 samples \(0\/0\)/, what);
+    assert.equal(v.premise_unmet, undefined, what);
+    assert.equal(v.provisional, undefined, what);
   }
-  // the late-take case's reply implies a drop with its notice: judged by its own rules, never excluded
-  const lt = judgeDevice('chrome_dnd_late_take_shared', [unmet({ read_ok: true, read_notice: true, next_ok: false, next_error: dndLateRefusal(app, 'move'), expected_notice: dndLateRefusal(app, 'move') })], audit([{ ...unmetEntry, drop_status: { before: BEFORE, after: TOOK } }]));
-  assert.equal(lt.pass, false);
-  assert.equal(lt.premise_unmet, undefined);
+  // the parser itself: a whole line in the page's form, every token explicit
+  const whole = { dnd: [dndLine({ starts: 1, drops: 0, downs: 2, ends: 1, ups: 1, at: 5 })], moves: [movesLine(2, { up: 158 })], titled: true };
+  assert.equal(parsePageRead(whole).log.up, '158.0/158.4');
+  assert.equal(parsePageRead({ ...whole, moves: [movesLine(2, { up: 158 }).replace(' end -1', '')] }), null, 'a token missing');
+  assert.equal(parsePageRead({ ...whole, titled: false }), null, 'another page');
+  // an explicit null page record, and evidence of none: unshown, never a throw
+  const [row] = (await caseSamples({ out: dir, run: 't-nulls', op: 'chrome_dnd_shared', bin, blocks: [[UNMET]] })).rows;
+  for (const nulls of [{ drop_status: null }, { premise_evidence: null }, { drop_status: null, premise_evidence: null }]) assert.equal(classifyPremise({ ...row, ...nulls }), 'unshown');
 });
 
-test("negative control: a sample whose records can't show Chrome never started is judged as now", () => {
-  const { reply_notice, ...noReplyRecord } = unmet();
-  for (const [what, sample] of [
-    ['no page read', unmet({ drop_status: undefined })],
-    ['the page unread after', unmet({ drop_status: { before: BEFORE, after: null } })],
-    ["the log another press's", unmet({ drop_status: { before: BEFORE, after: { ...PLAIN, log: log(3, { up: at(158) }) } } })],
-    ["the reply's notice unrecorded", noReplyRecord],
-  ]) {
-    const rows = planned();
-    rows[0] = { ...sample, block: 0, i: 0 };
-    const r = judgeDevice('chrome_dnd_shared', rows, CLEAN);
-    assert.equal(r.pass, false, what);
-    assert.match(r.reasons.join('\n'), /not cancelled with the drag-and-drop sentence on 1 of 9 samples \(0\/0\)/, what);
-    assert.equal(r.premise_unmet, undefined, what);
-  }
-  // the arm64 pilot's audit pass as stored: a plain-drag ok whose entry keeps no page record
-  const stored = judgeDevice('chrome_dnd_shared', planned(), audit([{ ok: true, error: null, expected_error: cancelled, late_error: null }, { ok: false, error: cancelled, expected_error: cancelled, late_error: null }]));
-  assert.equal(stored.pass, false);
-  assert.match(stored.reasons.join('\n'), /the background audit's requests did not answer as the case expects \(success; /);
+test('negative control (finding 2): an excluded sample whose own reads failed still fails its cell; a clean read with no notice does not', async () => {
+  const notice = dndLateRefusal(APP, 'move');
+  const landed = { reply: { ok: true }, page: 'took' };
+  // the late-take case's plain drag Chrome never started, its read refused
+  const failedRead = await made('chrome_dnd_late_take_shared', [[UNMET, landed, landed]], [], { answers: { list_windows: { ok: false, error: 'the bus did not answer' } } });
+  const v = judgeDevice('chrome_dnd_late_take_shared', [...failedRead.rows, ...fillOf(failedRead.rows.slice(1, 2))], { clean: true, kind: 'skipped' });
+  assert.match(reasons(v), /a sample excluded for its unmet premise failed its own reads on 1 of \d+ samples \(0\/0: the read after the drag failed \(the bus did not answer\)\)/);
+  // the next acting request refused for something other than a pending drag
+  const failedNext = await made('chrome_dnd_late_take_shared', [[UNMET]], [], { answers: { move: { ok: false, error: 'Window 1 is minimized; activate it first' } } });
+  assert.match(reasons(judgeDevice('chrome_dnd_late_take_shared', failedNext.rows, { clean: true, kind: 'skipped' })), /failed its own reads .*the next acting request failed \(Window 1 is minimized/);
+  // the late case's window read refused
+  const lateRead = await made('chrome_dnd_late_shared', [[UNMET]], [], { answers: { get_window_state: { ok: false, error: 'no such window' } } });
+  assert.match(reasons(judgeDevice('chrome_dnd_late_shared', lateRead.rows, { clean: true, kind: 'skipped' })), /the window read after the drag failed/);
+  // a clean read with no notice is no failure: the sample is excluded and nothing else is said of it
+  const clean = await made('chrome_dnd_late_take_shared', [[UNMET]]);
+  assert.equal(clean.rows[0].read_ok, true);
+  assert.equal(clean.rows[0].read_notice, false);
+  assert.ok(!reasons(judgeDevice('chrome_dnd_late_take_shared', clean.rows, { clean: true, kind: 'skipped' })).includes('failed its own reads'));
 });
 
-test('an unmet premise is excluded and refilled within its pass: the cell judged on its planned count, the rate reported', () => {
-  const rows = planned();
-  rows[4] = { ...unmet(), block: 1, i: 1 };
-  const filled = [...rows, ...block(3, [inTime(), inTime(), inTime()], { fill: true })];
-  const r = judgeDevice('chrome_dnd_shared', filled, CLEAN);
-  assert.deepEqual(r.reasons, []);
-  assert.equal(r.pass, true);
-  assert.deepEqual(r.premise_unmet, { timed: { samples: 12, unmet: 1, rate: 0.083, planned: 9, refilled: 3, judged: 11, unmet_samples: ['1/1'] } });
-  // in the audit pass: the unmet request refilled by one more audited request
-  const a = judgeDevice('chrome_dnd_shared', planned(), audit([unmetEntry, cancelledEntry, { ...cancelledEntry, fill: true }]));
-  assert.deepEqual(a.reasons, []);
-  assert.deepEqual(a.premise_unmet, { audit: { samples: 3, unmet: 1, rate: 0.333, planned: 2, refilled: 1, judged: 2, unmet_samples: ['audit/0'] } });
-  // the same in every premise cell: the late case's plain drag Chrome never started is excluded, not unexercised
-  const late = dndMayHaveDroppedSentence(app);
-  const quiet = { state_notice: null, next_ok: true, next_error: null };
-  const mayHave = row({ ok: false, error: late, expected_error: cancelled, late_error: late, reply_notice: null, dropped: true, witness: false, dnd: { in_front: false, outcome: 'late' }, drop_status: { before: BEFORE, after: TOOK }, ...quiet });
-  const lateAudit = audit([{ ...cancelledEntry, error: late, late_error: late }]);
-  const lateCell = judgeDevice('chrome_dnd_late_shared', [mayHave, { ...unmet(quiet), i: 1, late_error: late }, { ...mayHave, block: 1, fill: true }], lateAudit);
-  assert.deepEqual(lateCell.reasons, []);
-  assert.equal(lateCell.premise_unmet.timed.unmet, 1);
+/** Rows as premise-refill.mjs combines a refill run's: marked `fill`, their block named by their run. */
+const fillOf = (rows) => rows.map((r) => ({ ...r, fill: true, fill_block: r.block, block: `refill:${r.block}` }));
+
+test('negative control (finding 3): warm refills never stand in for cold ones; each quota is judged on its own', async () => {
+  // the probe's shape: every cold drag excluded, three planned and two refilled, and warm ones in plenty
+  const main = await made('chrome_dnd_shared', [[UNMET, CANCEL, CANCEL], [UNMET, CANCEL, CANCEL], [UNMET, CANCEL, CANCEL]]);
+  const refill = await made('chrome_dnd_shared', [[UNMET, CANCEL, CANCEL], [UNMET, CANCEL, CANCEL]]);
+  const v = judgeDevice('chrome_dnd_shared', [...main.rows, ...fillOf(refill.rows)], { clean: true, kind: 'skipped' });
+  assert.equal(v.pass, false);
+  assert.match(reasons(v), /so 0 cold were judged of the 3 planned, with 6 refilled of a bound of 9/);
+  assert.ok(!/warm were judged/.test(reasons(v)), 'the warm quota is met');
+  assert.deepEqual(v.premise_unmet.timed.need, { cold: 3, warm: 0 });
+  // and filled: three cold refills judged, the cell passes on its quotas
+  const good = await made('chrome_dnd_shared', [three(CANCEL), three(CANCEL), three(CANCEL)]);
+  const filled = judgeDevice('chrome_dnd_shared', [...main.rows, ...fillOf(good.rows)], { clean: true, kind: 'skipped' });
+  assert.deepEqual(filled.reasons, []);
+  assert.equal(filled.provisional, undefined, 'refilled: final');
 });
 
-test('negative control: the bound hit fails the cell closed as incomplete, its rate reported', () => {
-  const rows = planned();
-  rows[0] = { ...unmet(), block: 0, i: 0 };
-  // every refill unmet too, as many as the pass planned
-  const exhausted = [...rows, ...[3, 4, 5].flatMap((b) => block(b, [unmet(), unmet(), unmet()], { fill: true }))];
-  const r = judgeDevice('chrome_dnd_shared', exhausted, CLEAN);
-  assert.equal(r.pass, false);
-  assert.ok(r.reasons.some((x) => x === 'incomplete: Chrome never started a drag and drop on 10 of 18 samples (the premise unmet, ruling 823), so 8 were judged of the 9 planned, with 9 refilled of a bound of 9'), r.reasons.join('\n'));
-  assert.equal(r.premise_unmet.timed.rate, 0.556);
-  // stored rows that were never refilled are incomplete too
-  const unfilled = judgeDevice('chrome_dnd_shared', rows, CLEAN);
-  assert.equal(unfilled.pass, false);
-  assert.ok(unfilled.reasons.some((x) => /^incomplete: .* on 1 of 9 samples .* so 8 were judged of the 9 planned, with 0 refilled of a bound of 9$/.test(x)), unfilled.reasons.join('\n'));
-  // and the audit pass
-  const a = judgeDevice('chrome_dnd_shared', planned(), audit([unmetEntry, cancelledEntry, { ...unmetEntry, fill: true }, { ...unmetEntry, fill: true }]));
-  assert.equal(a.pass, false);
-  assert.ok(a.reasons.includes('the background audit is incomplete: Chrome never started a drag and drop on 3 of 4 audited requests (the premise unmet, ruling 823), so 1 was judged of the 2 planned, with 2 refilled of a bound of 2'), a.reasons.join('\n'));
-  // a refill past the bound is the runner's fault, and fails
-  const over = judgeDevice('chrome_dnd_shared', [...planned(), ...[3, 4, 5, 6].flatMap((b) => block(b, [inTime(), inTime(), inTime()], { fill: true }))], CLEAN);
-  assert.ok(over.reasons.includes('12 samples refilled past the bound of 9'), over.reasons.join('\n'));
+test('negative control (finding 4): a reply that claims or implies a drop where the page proves no session fails; stored rows that cannot show it keep the old judgment', async () => {
+  const landed = { reply: { ok: true }, page: 'took' };
+  const notice = dndLateRefusal(APP, 'move');
+  // the late-take case's audited drag answered ok with an unconfirmed-drop notice, and the page proves no session
+  const r = await made('chrome_dnd_late_take_shared', [[landed]], [{ ...UNMET, reply: { ok: true, notice: dndUnconfirmedNotice(APP) } }]);
+  const v = judgeDevice('chrome_dnd_late_take_shared', r.rows, r.audit);
+  assert.match(reasons(v), /answered as if it dropped where the page shows Chrome never started a drag and drop \(ruling 823\) on 1 of 1 audited requests \(audit\/0\)/);
+  // the same with the read after the drag carrying the late notice, timed
+  const read = await made('chrome_dnd_late_take_shared', [[UNMET]], [], { answers: { list_windows: { notice: dndLateNotice(APP) }, move: { ok: false, error: notice } } });
+  assert.match(reasons(judgeDevice('chrome_dnd_late_take_shared', read.rows, { clean: true, kind: 'skipped' })), /answered as if it dropped .* on 1 of 1 samples \(0\/0\)/);
+  // the cancel case's may-have-dropped answer for a drag Chrome never started
+  const may = await made('chrome_dnd_shared', [[{ ...UNMET, reply: { ok: false, error: dndMayHaveDroppedSentence(APP) } }]]);
+  assert.match(reasons(judgeDevice('chrome_dnd_shared', may.rows, { clean: true, kind: 'skipped' })), /answered as if it dropped/);
+  // the stored form (no evidence): the late-take audit's ok passes as before
+  const stored = judgeDevice('chrome_dnd_late_take_shared', r.rows, { clean: true, kind: 'background', answered: r.answered }, { entries: bindAudit({ answered: r.answered }, null, { run: r.run }).entries, problems: [] });
+  assert.ok(!reasons(stored).includes('answered as if it dropped'), reasons(stored));
 });
 
-test('negative control: an excluded sample is never counted as a pass', () => {
-  // every sample unmet, the bound spent: nothing judged, never a vacuous pass
-  const all = [...[0, 1, 2].flatMap((b) => block(b, [unmet(), unmet(), unmet()])), ...[3, 4, 5].flatMap((b) => block(b, [unmet(), unmet(), unmet()], { fill: true }))];
-  const r = judgeDevice('chrome_dnd_shared', all, audit([unmetEntry, unmetEntry, { ...unmetEntry, fill: true }, { ...unmetEntry, fill: true }]));
-  assert.equal(r.pass, false);
-  assert.ok(r.reasons.some((x) => /^incomplete: .* on 18 of 18 samples/.test(x)), r.reasons.join('\n'));
-  assert.ok(r.reasons.some((x) => /^the background audit is incomplete: .* on 4 of 4 audited requests/.test(x)), r.reasons.join('\n'));
-  // an unmet sample does not stand in for the late-take case's landed drop, nor the late case's late answer
-  const notice = dndLateRefusal(app, 'move');
-  const noDrop = row({ ok: true, reply_notice: null, read_ok: true, read_notice: true, next_ok: false, next_error: notice, expected_notice: notice, dropped: false, witness: true, drop_status: { before: BEFORE, after: TOOK } });
-  const lt = judgeDevice('chrome_dnd_late_take_shared', [noDrop, { ...unmet({ read_ok: true, read_notice: false, next_ok: true, next_error: null, expected_notice: notice }), i: 1 }, { ...noDrop, block: 1, fill: true }], audit([unmetEntry, { ...unmetEntry, ok: true, drop_status: { before: BEFORE, after: TOOK } }, { ...unmetEntry, fill: true, drop_status: { before: BEFORE, after: TOOK } }]));
-  assert.equal(lt.pass, false);
-  assert.ok(lt.reasons.includes('no drop landed: the case showed no change for the notice to report'), lt.reasons.join('\n'));
-  const quiet = { state_notice: null, next_ok: true, next_error: null };
-  const late = dndMayHaveDroppedSentence(app);
-  const nothing = row({ ok: false, error: cancelled, expected_error: cancelled, late_error: late, reply_notice: null, dropped: false, witness: true, dnd: { in_front: false, outcome: 'in_time' }, drop_status: { before: BEFORE, after: TOOK }, ...quiet });
-  const lateCell = judgeDevice('chrome_dnd_late_shared', [nothing, { ...unmet(quiet), i: 1, late_error: late }, { ...nothing, block: 1, fill: true }], audit([{ ...cancelledEntry, late_error: late }]));
-  assert.ok(lateCell.reasons.includes('no answer said the drop may have happened: no cancel came too late'), lateCell.reasons.join('\n'));
+test("negative control (finding 6): one adjacency rule, the next request on the same engine lifecycle, never across lifecycles", async () => {
+  // a plain ok in one audit lifecycle, and another lifecycle's request refused with the late notice right after it
+  const a = await made('chrome_dnd_shared', [], [UNMET]);
+  const b = await made('chrome_dnd_shared', [], [{ reply: { ok: false, error: dndLateRefusal(APP, 'drag') }, page: 'took' }, CANCEL]);
+  const entries = [...bindAudit(a.audit, lines(a.run), { run: a.run, scene: 'device-chrome-dnd', op: 'chrome_dnd_shared' }).entries, ...bindAudit(b.audit, lines(b.run), { run: b.run, scene: 'device-chrome-dnd', op: 'chrome_dnd_shared' }).entries.map((e) => ({ ...e, fill: true }))];
+  const next = adjacency(entries);
+  assert.equal(next(entries[0]), null, "the first lifecycle's last request has no next");
+  assert.equal(next(entries[1]), entries[2], 'within a lifecycle, the next request');
+  assert.equal(classifyPremise(entries[0], next(entries[0])), 'unmet');
+  // in a stored audit of more than one lifecycle the boundary is unknown: no adjacency at all
+  const legacy = bindAudit({ answered: a.answered.concat(a.answered), lifecycles: 2 }, null, { run: 'x' }).entries;
+  assert.equal(adjacency(legacy)(legacy[0]), null);
+});
+const lines = (run) => readFileSync(join(dir, 'premise-evidence.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)).filter((l) => l.run === run);
+
+test("ruling 762's late take in an audit pass still fails, and 756's late take stays judged by its own rules", async () => {
+  const refused = { reply: { ok: false, error: dndLateRefusal(APP, 'drag') }, page: (b, t) => ({ counts: { ...b, at: t }, moves: movesLine(b.downs, { start: 0, cancel: 90, end: 160 }) }) };
+  const late = { reply: { ok: true }, page: 'took', row: { dnd: { outcome: 'no_start', started: false, in_front: false, held_at_start: false }, press: { taken: false } } };
+  const r = await made('chrome_dnd_shared', planned(), [late, refused]);
+  const v = judgeDevice('chrome_dnd_shared', r.rows, r.audit);
+  assert.match(reasons(v), /the background audit's requests did not answer as the case expects \(success; Pending from your last drag/);
+  assert.equal(v.premise_unmet, undefined);
 });
 
-test("negative control: ruling 762's late take during an audit pass still fails", () => {
-  // the first audited drag answered ok, Chrome's take after its release, the second refused with the late notice
-  const lateTook = { ...unmetEntry, drop_status: { before: BEFORE, after: TOOK } };
-  const refused = { ok: false, error: dndLateRefusal(app, 'drag'), expected_error: cancelled, late_error: null, reply_notice: null, drop_status: { before: TOOK, after: TOOK } };
-  const r = judgeDevice('chrome_dnd_shared', planned(), audit([lateTook, refused]));
-  assert.equal(r.pass, false);
-  assert.match(r.reasons.join('\n'), /the background audit's requests did not answer as the case expects \(success; Pending from your last drag/);
-  // and where the page could not show the take, the late refusal after it still shows Chrome took
-  const r2 = judgeDevice('chrome_dnd_shared', planned(), audit([unmetEntry, refused]));
-  assert.equal(r2.pass, false);
-  assert.match(r2.reasons.join('\n'), /did not answer as the case expects \(success; /);
-  assert.equal(r2.premise_unmet, undefined);
+test('a drop cell keeps ruling 650: a plain ok with no drop where Chrome never started is a false ok, never excluded', async () => {
+  // the drop cells' own checks need a display (in front, or dedicated): the sample is a premise case's, its evidence on it
+  const [row] = (await made('chrome_dnd_shared', [[UNMET]])).rows;
+  const v = judgeDevice('chrome_dnd_in_front_shared', [{ ...row, effect: false, route: 'background', dnd: { in_front: true }, desktop_same: true, state_notice: null }], { clean: true, kind: 'background', answered: [{ ok: true }] });
+  assert.match(reasons(v), /a drag answered ok with no drop and nothing pending on 1 of 1 samples/);
+  assert.equal(v.premise_unmet, undefined);
+  // outside the premise cells a check keeps no evidence (a refusal case's, display-free)
+  const desktop = { run: 't-none', logs: join(dir, 'apps'), oracle: { text: () => 'cua171' } };
+  const out = await DEVICE_OPS.gte_type_text_shared.check({ desktop, scene: { id: 1, app: 'org.gnome.TextEditor', field: 'f', lastRequest: {} }, before: 'cua171' }, { id: 1, ok: false, error: 'x' });
+  assert.equal('premise_evidence' in out || 'reply_notice' in out, false);
 });
 
-test('the late takes of ruling 756 stay judged by their own rules beside an excluded sample', () => {
-  const late = { after_release_ms: 2.353375, app, escape_after_release_ms: 4.46738, escaped: true };
-  const page = { ...TOOK };
-  const plain = unmet({ drop_status: { before: BEFORE, after: TOOK } });
-  const refusedRow = row({ ok: false, error: dndLateRefusal(app, 'drag'), expected_error: cancelled, dropped: false, drop_status: { before: page, after: page }, engine_stats: { command: 'drag', late_dnd: late } });
-  const rows = [plain, { ...refusedRow, i: 1 }, { ...inTime(), i: 2 }, ...block(1, [unmet(), inTime(), inTime()]), ...block(2, [inTime(), inTime(), inTime()]), ...block(3, [inTime(), inTime(), inTime()], { fill: true })];
-  const r = judgeDevice('chrome_dnd_shared', rows, CLEAN);
-  assert.deepEqual(r.reasons, []);
-  assert.equal(r.premise_unmet.timed.unmet, 1, "756's late take is not an unmet premise");
-  assert.deepEqual(r.premise_unmet.timed.unmet_samples, ['1/0']);
+test('negative control: an excluded sample is never counted as a pass, and the bound spent leaves the cell incomplete', async () => {
+  const all = await made('chrome_dnd_shared', planned(UNMET), [UNMET, UNMET]);
+  const fills = await made('chrome_dnd_shared', planned(UNMET), [UNMET, UNMET]);
+  const fillAudit = bindAudit(fills.audit, lines(fills.run), { run: fills.run, scene: 'device-chrome-dnd', op: 'chrome_dnd_shared' }).entries.map((e) => ({ ...e, fill: true }));
+  const mainAudit = bindAudit(all.audit, lines(all.run), { run: all.run, scene: 'device-chrome-dnd', op: 'chrome_dnd_shared' }).entries;
+  const v = judgeDevice('chrome_dnd_shared', [...all.rows, ...fillOf(fills.rows)], { clean: true, kind: 'background', answered: [...all.answered, ...fills.answered] }, { entries: [...mainAudit, ...fillAudit], problems: [] });
+  assert.equal(v.pass, false);
+  assert.match(reasons(v), /incomplete: .* on 18 of 18 samples .* so 0 cold were judged of the 3 planned, with 9 refilled of a bound of 9/);
+  assert.match(reasons(v), /the background audit is incomplete: .* on 4 of 4 audited requests .* so 0 were judged of the 2 planned, with 2 refilled of a bound of 2/);
 });
 
-test('a drop cell keeps ruling 650: a plain ok with no drop and no session is a false ok, never excluded', () => {
-  const op = 'chrome_dnd_in_front_shared';
-  const r = judgeDevice(op, [row({ ok: true, effect: false, route: 'background', dnd: { in_front: true }, desktop_same: true, state_notice: null, reply_notice: null, drop_status: { before: BEFORE, after: PLAIN } })], audit([{ ok: true }]));
-  assert.equal(r.pass, false);
-  assert.match(r.reasons.join('\n'), /a drag answered ok with no drop and nothing pending on 1 of 1 samples/);
-  assert.equal(r.premise_unmet, undefined);
-});
-
-test("the fill: how many more samples a pass needs, never past as many as it planned", () => {
-  const nextInBlock = (rows) => (r) => rows.find((x) => x.block === r.block && x.i === r.i + 1);
-  const rows = planned();
-  assert.deepEqual(fillNeed(splitPremise(rows, nextInBlock(rows))), { need: 0, room: 9 });
-  rows[0] = { ...unmet(), block: 0, i: 0 };
-  rows[5] = { ...unmet(), block: 1, i: 2 };
-  assert.deepEqual(fillNeed(splitPremise(rows, nextInBlock(rows))), { need: 2, room: 9 });
-  const enough = [...rows, ...block(3, [unmet(), inTime(), inTime()], { fill: true })];
-  assert.deepEqual(fillNeed(splitPremise(enough, nextInBlock(enough))), { need: 0, room: 6 }, 'nine judged again');
-  const short = [...rows, ...block(3, [unmet(), unmet(), inTime()], { fill: true })];
-  assert.deepEqual(fillNeed(splitPremise(short, nextInBlock(short))), { need: 1, room: 6 });
-  const spent = [...rows, ...[3, 4, 5].flatMap((b) => block(b, [unmet(), unmet(), unmet()], { fill: true }))];
-  assert.deepEqual(fillNeed(splitPremise(spent, nextInBlock(spent))), { need: 0, room: 0 }, 'the bound hit: no more');
-});
-
-test('refill runs more samples until the planned count is judged or the bound is spent, and stops when a round adds none', async () => {
-  const seq = (entries) => (e, i) => entries[i + 1];
-  // one unmet audited request, refilled by one good one
-  const entries = [unmetEntry, cancelledEntry];
-  const asked = [];
-  await refill(entries, seq(entries), async ({ need, room }) => {
-    asked.push({ need, room });
-    entries.push({ ...cancelledEntry, fill: true });
-  });
-  assert.deepEqual(asked, [{ need: 1, room: 2 }]);
-  assert.equal(entries.length, 3);
-  // every refill unmet: two rounds, then the bound
-  const bad = [unmetEntry, cancelledEntry];
-  const rounds = [];
-  await refill(bad, seq(bad), async ({ need, room }) => {
-    rounds.push({ need, room });
-    bad.push({ ...unmetEntry, fill: true });
-  });
-  assert.deepEqual(rounds, [{ need: 1, room: 2 }, { need: 1, room: 1 }]);
-  // a round that adds nothing (its samples not taken) spends the bound it asked for, and never loops
-  const stuck = [unmetEntry, cancelledEntry];
-  let calls = 0;
-  await refill(stuck, seq(stuck), async () => {
-    calls++;
-  });
-  assert.equal(calls, 2);
-  // nothing unmet: nothing run
-  const fine = [cancelledEntry, cancelledEntry];
-  await refill(fine, seq(fine), async () => assert.fail('nothing to refill'));
-});
-
-test("an audited request keeps what the ruling reads of its sample, so the audit pass's premise can be shown", () => {
-  const sample = unmet({ state_notice: null, next_ok: true, next_error: null, witness: null, route: 'background' });
-  assert.deepEqual(premiseFields(sample), { reply_notice: null, drop_status: { before: BEFORE, after: PLAIN }, dropped: false, state_notice: null, next_ok: true, next_error: null });
-  // the kept entry, beside the audit's own fields, reads as its sample does
-  const entry = { ok: true, error: null, expected_error: cancelled, late_error: null, ...premiseFields(sample) };
-  assert.equal(classifyPremise(entry), 'unmet');
-  assert.deepEqual(premiseFields({ ok: true }), {}, 'a row with none of them keeps nothing');
-});
-
-test("a run's summary reports each cell's unmet premise as a rate, the timed pass and the audit apart", () => {
-  assert.deepEqual(premiseMarkdown([{ kind: 'verdict', scene: 'device-chrome-dnd', op: 'chrome_dnd_shared', pass: true }]), [], 'nothing excluded or refilled: no table');
-  const timed = { samples: 12, unmet: 1, rate: 0.083, planned: 9, refilled: 3, judged: 11, unmet_samples: ['1/1'] };
-  const audited = { samples: 4, unmet: 3, rate: 0.75, planned: 2, refilled: 2, judged: 1, unmet_samples: ['audit/0', 'audit/2', 'audit/3'] };
-  const lines = premiseMarkdown([
-    { kind: 'verdict', scene: 'device-chrome-dnd', op: 'chrome_dnd_shared', pass: true, premise_unmet: { timed } },
-    { kind: 'verdict', scene: 'device-chrome-dnd', op: 'chrome_dnd_late_take_shared', pass: false, premise_unmet: { audit: audited } },
-  ]);
-  assert.match(lines.join('\n'), /ruling 823/);
-  assert.ok(lines.includes('| device-chrome-dnd | chrome_dnd_shared | timed | 1 of 12 (8.3%) | 3 of 9 | 11 of 9 | 1/1 |'), lines.join('\n'));
-  assert.ok(lines.includes('| device-chrome-dnd | chrome_dnd_late_take_shared | audit | 3 of 4 (75%) | 2 of 2 | **1 of 2** | audit/0, audit/2, audit/3 |'), lines.join('\n'));
+test('evidence that does not fit its samples is never excluded on, and fails the cell closed', async () => {
+  const r = await made('chrome_dnd_shared', planned(), [UNMET, CANCEL]);
+  const own = lines(r.run).filter((l) => l.block === 'audit');
+  const bind = (ls) => judgeDevice('chrome_dnd_shared', r.rows, r.audit, bindAudit(r.audit, ls, { run: r.run, scene: 'device-chrome-dnd', op: 'chrome_dnd_shared', window: own[0].window }));
+  assert.match(reasons(bind(own.slice(1))), /does not fit it .*no line for audit\/0/);
+  assert.match(reasons(bind([...own, own[0]])), /2 lines for audit\/0/);
+  assert.match(reasons(bind([...own, { ...own[0], run: 'another' }])), /a line of another run \(another\)/);
+  assert.match(reasons(bind(own.map((l) => ({ ...l, window: 7 })))), /a line on another window/);
+  // and a timed row whose evidence names another sample
+  const moved = r.rows.map((x, i) => (i === 0 ? { ...x, premise_evidence: { ...x.premise_evidence, i: 5 } } : x));
+  assert.match(reasons(judgeDevice('chrome_dnd_shared', moved, r.audit)), /the premise evidence of the timed samples does not fit them .*0\/0's evidence names another sample/);
 });

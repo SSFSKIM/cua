@@ -371,7 +371,10 @@ final class TypeReadbackMarkerTests: XCTestCase {
         XCTAssertEqual(error?.errorName, "typeUnconfirmed", name)
         XCTAssertEqual(reason(meta), expected, name)
         XCTAssertEqual(safari.valueReads, [], "\(name): \(safari.log)")
-        let classified = safari.log.lastIndex(of: "batch(AXRole,AXSubrole)@\(closed)")!
+        guard let classified = safari.log.lastIndex(of: "batch(AXRole,AXSubrole)@\(closed)") else {
+          XCTFail("\(name): classified by role and subrole in one request: \(safari.log.suffix(12))")
+          continue
+        }
         let afterClassification = safari.log[(classified + 1)...]
         XCTAssertFalse(afterClassification.contains { $0.hasSuffix("@\(closed)") || $0.hasSuffix("@\(StubSafari.field)") },
                        "\(name): nothing more read: \(afterClassification)")
@@ -447,7 +450,8 @@ final class TypeReadbackMarkerTests: XCTestCase {
     outside.named = { _ in (outside.el(StubSafari.filler), .success) }  // a group straight under the web area
     type("xyz", into: outside)
     XCTAssertTrue(outside.log.contains("AXParent@9"))
-    XCTAssertFalse(outside.log.prefix(upTo: outside.log.firstIndex(of: "post")!).contains("AXParent@5"), "nothing above the web area")
+    XCTAssertFalse(outside.log.prefix(upTo: outside.log.firstIndex(of: "post") ?? 0).contains("AXParent@5"), "nothing above the web area")
+    XCTAssertTrue(outside.log.contains("post"))
   }
 
   // MARK: The claim
@@ -504,7 +508,7 @@ final class TypeReadbackMarkerTests: XCTestCase {
       let safari = StubSafari()
       safari.roles[StubSafari.field] = "AXTextField"
       let (_, meta, _) = type("ab\tcd", into: safari, concealed: concealed)
-      let first = safari.log.firstIndex(of: "post")!
+      guard let first = safari.log.firstIndex(of: "post") else { return XCTFail("nothing was typed") }
       XCTAssertEqual(safari.log[..<first].filter { $0.contains("TextMarker") }.count, 2)
       XCTAssertTrue(safari.log[first...].allSatisfy { !$0.contains("TextMarker") }, "\(safari.log[first...])")
       XCTAssertFalse(safari.log[first...].contains { $0.hasPrefix("AXFocusedUIElement") || $0.hasPrefix("AXChildren") },
@@ -571,7 +575,11 @@ final class TypeReadbackMarkerTests: XCTestCase {
     XCTAssertNil(search(), "a failed read finds none")
     failing = ["children@2"]
     XCTAssertNil(search())
+    children[0] = [2, 4]  // a web area after the element whose children failed: what failed could hold the page's
+    XCTAssertNil(search(), "a failed children read finds none, though another web area follows")
     failing = []
+    XCTAssertEqual(search(), 4, "without the failure, that one, the shallower")
+    children[0] = [1, 2]
 
     // The node bound: the web area after more nodes than the walk reads.
     let filler = Array(100..<(100 + typeReadbackFocusWalkNodes))

@@ -2370,6 +2370,28 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
   - **Reviews:** round 1 found two E1 false passes, a wrong-process restore lookup, vendor-end samples still scored, and a reach list that did not follow §8.1. Round 2 found E1 still passing on agreement alone, the vendor-end exclusion wired to sample-only rows, and V4's process group unbound. Round 3 approved it, with one test-only Minor deferred to the ledger (pid-identity.test.mjs quotes a TMPDIR path in shell source).
   Date/Author: 2026-11-18, the plan-executor (session linux171), from task 97's report and its three reviews.
 
+- Decision (2026-11-18, M5, the design session's ruling 823, on the controller's note 704): the rulings that waited for the design session's return.
+  - **Its absence.** Every decision the controller made while the design session was away is accepted as recorded:
+    - (B) and its R2 counterpart;
+    - the lane restore's scope;
+    - E1's audit trace;
+    - the three clearances of the arm VM's hold under 730(b);
+    - T7's two local-proof exceptions.
+  - **0.4.1, in principle.** L4a's false ok is a false ok under 650: the reply says the drag ended where the application hadn't received it. So 0.4.0 can't be the default with it.
+    - The mechanism is picked after task 98's note.
+    - The ping barrier leads, on two conditions:
+      - an application that doesn't answer gets a bounded wait, then the engine answers what it knows, never a silent ok;
+      - the window manager's side effects are shown.
+    - Under §8.2 the cut reruns every step whose path it touches, on both architectures.
+  - **V5's Chrome drag-and-drop audit sample that Chrome never took.** The premise is unmet only when both hold:
+    - cua's reply claims no drop effect (a plain-drag ok);
+    - the trace shows Chrome never started a drag session.
+
+    Such a sample is excluded, counted, reported as a rate, and rerun to fill the sample count. A reply that claims or implies a drop is a fail.
+  - **No waiver for x64's V1–V5 and Z0.** After 0.4.1 is cut, one x64 sitting on `:0` folds together V1–V5, Z0 and the drag steps 0.4.1 reaches. The plan goes to the design session 45 minutes ahead; it sends the GO and sets the holds.
+  - **The arm VM's lease is not extended yet.** About 111 hours remain, against roughly 50 hours of planned arm work. The design session extends it once the controller's remaining estimate plus 24 hours passes the time left, so the controller reports once the 0.4.1 reruns are sized.
+  Date/Author: 2026-11-18, the plan-executor (session linux171), recording the design session's message 823.
+
 ## Outcomes & Retrospective
 
 Written per milestone as each lands; the whole-plan retrospective at finish. The execution record (tasks, reviews, friction) is `docs/doperpowers/specs/2026-10-28-own-linux-engine-report.md`.

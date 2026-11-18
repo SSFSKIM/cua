@@ -427,6 +427,9 @@ test('#405: an element whose value the engine left unread prints `value unread`,
     assert.match(text, /\t1 button Go, Value: value unread\n/);
     assert.doesNotMatch(text, /PLAINTEXT|secure text|Selected text/);
   }
+  // An unlabelled one is not pruned as saying nothing: it keeps its line and its index.
+  const bare = skyshot(win([group('g', 1, {valueUnread: true, value: null})]));
+  assert.deepEqual(lines(bare), ['0 standard window W, Secondary Actions: Raise', '\t1 container value unread']);
 });
 
 test('#405: a plain field and its selected text print as before', () => {

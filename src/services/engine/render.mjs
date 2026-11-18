@@ -302,7 +302,7 @@ function pipeline(node, context) {
 }
 
 const nonEmpty = value => value !== null && value !== undefined && value !== '';
-const descriptive = node => nonEmpty(node.description) || nonEmpty(node.value) || nonEmpty(node.title) || nonEmpty(node.placeholder) || node.role === 'AXImage' || node.secure === true;
+const descriptive = node => nonEmpty(node.description) || nonEmpty(node.value) || nonEmpty(node.title) || nonEmpty(node.placeholder) || node.role === 'AXImage' || node.secure === true || node.valueUnread === true;
 const descendants = node => node.children.flatMap(child => [child, ...descendants(child)]);
 const interesting = node => node.actions.some(action => action !== 'AXScrollToVisible' && action !== 'AXShowMenu');
 const userInteractive = node => (node.role === 'AXStaticText' ? node.flags.focusable || node.flags.selectable

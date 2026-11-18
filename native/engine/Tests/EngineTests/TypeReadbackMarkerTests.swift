@@ -147,6 +147,9 @@ private final class StubSafari {
 
   /// The calls made to anything marker-shaped.
   var markerCalls: [String] { log.filter { $0.contains("TextMarker") } }
+  /// The window's AXChildren reads: one each for the web area's search and the walk, both of which read it first
+  /// whatever their bounds then allow.
+  var windowChildrenReads: Int { log.filter { $0 == "\(kAXChildrenAttribute)@\(Self.window)" }.count }
   /// The value-bearing reads of any element.
   var valueReads: [String] {
     log.filter { ["AXValue@", "AXSelectedTextRange@", "AXNumberOfCharacters@", "AXSelectedText@", "AXValueDescription@"].contains(where: $0.hasPrefix) }
@@ -380,7 +383,7 @@ final class TypeReadbackMarkerTests: XCTestCase {
       setUp(large)
       XCTAssertEqual(reason(type("xyz", into: large).meta), "noFocusedElement", name)
       XCTAssertEqual(large.markerCalls, [], name)
-      XCTAssertTrue(large.log.contains("AXRole@1000"), "\(name): the walk ran")
+      XCTAssertEqual(large.windowChildrenReads, 1, "\(name): the walk ran, and no web area's search")
 
       let small = StubSafari(filler: 3)
       setUp(small)
@@ -469,7 +472,7 @@ final class TypeReadbackMarkerTests: XCTestCase {
       XCTAssertEqual(error?.errorName, "typeUnconfirmed", name)
       XCTAssertEqual(reason(meta), "noFocusedElement", name)
       XCTAssertEqual(safari.valueReads, [], "\(name): \(safari.valueReads)")
-      XCTAssertTrue(safari.log.contains("AXRole@1000"), "\(name): the walk ran after the route claimed nothing")
+      XCTAssertEqual(safari.windowChildrenReads, 2, "\(name): the web area's search, then the walk after the route claimed nothing")
     }
     // On a page the walk can read, it finds the field the route could not.
     let small = StubSafari(filler: 3)
@@ -605,13 +608,22 @@ final class TypeReadbackMarkerTests: XCTestCase {
 
   // MARK: The web area
 
-  /// The web area's marker is read only once it is checked to be the app's and classifies open as an AXWebArea: one that
-  /// is another process's, whose subrole or (in the classification request) role cannot be read, that the request reads
-  /// as another role, or that reads as a password field makes no marker call at all, and claims nothing, not even a
-  /// refusal: the large page answers noFocusedElement. Another process's is not classified.
+  /// The web area's marker is read only once it is found among the app's elements and classifies open as an AXWebArea:
+  /// one that is another process's or lies under another process's group, whose subrole or (in the classification
+  /// request) role cannot be read, that the request reads as another role, or that reads as a password field makes no
+  /// marker call at all, and claims nothing, not even a refusal: the large page answers noFocusedElement. Another
+  /// process's is not classified.
   func testTheWebAreaIsTheAppsAndClassifiedBeforeItsMarkerIsRead() {
     let cases: [(String, (StubSafari) -> Void)] = [
       ("another process's", { $0.foreign = [StubSafari.web] }),
+      ("under another process's group", { safari in
+        safari.roles[41] = "AXGroup"
+        safari.children[StubSafari.window] = [StubSafari.toolbar, 41]
+        safari.children[41] = [StubSafari.web]
+        safari.parents[41] = StubSafari.window
+        safari.parents[StubSafari.web] = 41
+        safari.foreign = [41]
+      }),
       ("its subrole unreadable", { $0.errors[StubSafari.web] = [kAXSubroleAttribute: .cannotComplete] }),
       ("its role unreadable in the classification", { $0.batches[StubSafari.web] = AttributeRead(unreadable: [kAXRoleAttribute]) }),
       ("another role in the classification", { $0.batches[StubSafari.web] = AttributeRead(values: [kAXRoleAttribute: "AXGroup" as CFString]) }),
@@ -623,7 +635,7 @@ final class TypeReadbackMarkerTests: XCTestCase {
       XCTAssertEqual(reason(type("xyz", into: safari).meta), "noFocusedElement", name)
       XCTAssertEqual(safari.markerCalls, [], name)
       XCTAssertEqual(safari.valueReads, [], name)
-      XCTAssertTrue(safari.log.contains("AXRole@1000"), "\(name): the walk ran after the route claimed nothing")
+      XCTAssertEqual(safari.windowChildrenReads, 2, "\(name): the web area's search, then the walk after the route claimed nothing")
     }
     let foreign = StubSafari()
     foreign.foreign = [StubSafari.web]
@@ -631,10 +643,11 @@ final class TypeReadbackMarkerTests: XCTestCase {
     XCTAssertFalse(foreign.log.contains("batch(AXRole,AXSubrole)@5"), "another process's web area is not classified")
   }
 
-  /// The window's web area is the first breadth first, within the walk's bounds; a text-entry element is a leaf; a
-  /// failed read, or a search past a bound, finds none.
+  /// The window's web area is the first breadth first among the app's elements, within the walk's bounds; another
+  /// process's element is skipped unread; a text-entry element is a leaf; a failed read, or a search past a bound, finds
+  /// none.
   func testTheWebAreaIsFoundWithinTheWalksBounds() {
-    var roles: [Int: String] = [:], children: [Int: [Int]] = [:], failing: Set<String> = []
+    var roles: [Int: String] = [:], children: [Int: [Int]] = [:], failing: Set<String> = [], foreign: Set<Int> = []
     var log: [String] = [], clock = 0.0, msPerNode = 0.0
     let walk = ReadbackFocusWalk<Int>(children: { node in
       log.append("children@\(node)")
@@ -644,7 +657,7 @@ final class TypeReadbackMarkerTests: XCTestCase {
       log.append("role@\(node)")
       return failing.contains("role@\(node)") ? .failed : roles[node].map { .value($0) } ?? .absent
     }, now: { clock })
-    func search() -> Int? { log = []; clock = 0; return readbackWebArea(0, walk) }
+    func search() -> Int? { log = []; clock = 0; return readbackWebArea(0, walk, owned: { !foreign.contains($0) }) }
 
     roles = [0: "AXWindow", 1: "AXTextField", 2: "AXGroup", 3: "AXWebArea", 4: "AXWebArea"]
     children = [0: [1, 2], 1: [10], 2: [3], 3: [4]]
@@ -659,6 +672,26 @@ final class TypeReadbackMarkerTests: XCTestCase {
     XCTAssertNil(search(), "a failed children read finds none, though another web area follows")
     failing = []
     XCTAssertEqual(search(), 4, "without the failure, that one, the shallower")
+    children[0] = [1, 2]
+
+    // Another process's element is skipped, its role and children never read: one between the window and a web area
+    // hides it; a sibling before the web area, even one that reads as a web area, is no candidate and does not stop the
+    // search; the window itself is checked too.
+    roles[5] = "AXGroup"
+    roles[6] = "AXWebArea"
+    children[0] = [5]
+    children[5] = [3]
+    foreign = [5]
+    XCTAssertNil(search(), "a web area under another process's group is not found")
+    XCTAssertFalse(log.contains("role@5") || log.contains("children@5"), "another process's element is not read: \(log)")
+    children[0] = [6, 2]
+    foreign = [6]
+    XCTAssertEqual(search(), 3, "another process's sibling is skipped, and the search goes on")
+    XCTAssertFalse(log.contains("role@6"))
+    foreign = [0]
+    XCTAssertNil(search())
+    XCTAssertEqual(log, [], "another process's window is not read")
+    foreign = []
     children[0] = [1, 2]
 
     // The node bound: the web area after more nodes than the walk reads.

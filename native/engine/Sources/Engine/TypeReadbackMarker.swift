@@ -18,8 +18,9 @@ import Foundation
 //   request, failing closed as #405's `valueClassification` does: a closed one ends the lookup, refused unread with the
 //   reason main's snapshot gives such a focused element (`.refused(.secure)` for a password field by role or subrole or
 //   an unreadable subrole, `.refused(.roleUnreadable)` for an unreadable role), nothing more read from it. The web area
-//   is checked to be the app's and must classify open as an AXWebArea before its marker is read (else no claim: it is
-//   not the field), and each ancestor the claim's scope climb passes is checked to be the app's.
+//   is searched for among the app's own elements alone, another process's skipped unread, and must classify open as an
+//   AXWebArea before its marker is read (else no claim: it is not the field); each ancestor the claim's scope climb
+//   passes is checked to be the app's.
 // - The route resolves the field before the first event, and no marker call follows any delivered text: after typing,
 //   the field it found is asked itself (`readbackStillFocused`), the same element reading AXFocused true.
 // - It runs only for Safari (`readbackMarkerRoute`), and only once the application's AXFocusedUIElement has answered no
@@ -119,14 +120,14 @@ struct ReadbackMarkerReads<Element> {
 }
 
 /// The field the marker route finds in `window`, or nil for no claim (the walk then runs). Its web area is the first
-/// one the walk's reads find (`readbackWebArea`), and its marker is read only once it is checked to be the app's and
-/// classifies open as an AXWebArea; else no claim, since the web area is not the field. From the element its marker
-/// names, each element is checked to be the app's, then classified: closed ends the lookup, refused unread with main's
-/// reason (`.closed`); a text-entry role is the field; the web area, reached first, is no field; any other role (the
-/// AXStaticText) is climbed by one AXParent, at most `typeReadbackMarkerFieldHops`. The field is claimed only when it
-/// reads AXFocused true and lies under that web area (`readbackUnder`).
+/// one the walk's reads find among the app's own elements (`readbackWebArea`, which checks each, the web area too), and
+/// its marker is read only once it classifies open as an AXWebArea; else no claim, since the web area is not the field.
+/// From the element its marker names, each element is checked to be the app's, then classified: closed ends the lookup,
+/// refused unread with main's reason (`.closed`); a text-entry role is the field; the web area, reached first, is no
+/// field; any other role (the AXStaticText) is climbed by one AXParent, at most `typeReadbackMarkerFieldHops`. The field
+/// is claimed only when it reads AXFocused true and lies under that web area (`readbackUnder`).
 func readbackMarkedField<Element>(window: Element, walk: ReadbackFocusWalk<Element>, marker: ReadbackMarkerReads<Element>) -> ReadbackFound<Element>? {
-  guard let webArea = readbackWebArea(window, walk), marker.owned(webArea), marker.classify(webArea) == .open("AXWebArea"),
+  guard let webArea = readbackWebArea(window, walk, owned: marker.owned), marker.classify(webArea) == .open("AXWebArea"),
         var element = marker.marked(webArea) else { return nil }
   var hops = 0
   while true {
@@ -157,10 +158,13 @@ func readbackUnder<Element>(_ element: Element, _ webArea: Element, _ marker: Re
   return false
 }
 
-/// The primary window's web area: the first AXWebArea breadth first, within the walk's bounds (the probe's path took 28
-/// nodes at depth 6). An element with a text-entry role is a leaf, its children never read, as in the walk; a read that
-/// fails, or a search past the node or time bound, finds none.
-func readbackWebArea<Element>(_ window: Element, _ walk: ReadbackFocusWalk<Element>) -> Element? {
+/// The primary window's web area: the first AXWebArea breadth first among the app's own elements, within the walk's
+/// bounds (the probe's path took 28 nodes at depth 6). An element `owned` rejects, the window included, is skipped: its
+/// role is not read, it is never the web area and its children are never followed, so another process cannot choose the
+/// page whose marker is read (the probe's `tree()` visited only the app's elements). An element with a text-entry role
+/// is a leaf, its children never read, as in the walk; a read that fails, or a search past the node or time bound, finds
+/// none.
+func readbackWebArea<Element>(_ window: Element, _ walk: ReadbackFocusWalk<Element>, owned: (Element) -> Bool) -> Element? {
   let started = walk.now()
   var queue: [(element: Element, depth: Int)] = [(window, 0)]
   var index = 0
@@ -168,6 +172,7 @@ func readbackWebArea<Element>(_ window: Element, _ walk: ReadbackFocusWalk<Eleme
     if index >= typeReadbackFocusWalkNodes || walk.now() - started > typeReadbackFocusWalkMs { return nil }
     let (element, depth) = queue[index]
     index += 1
+    guard owned(element) else { continue }
     switch walk.role(element) {
     case .failed: return nil
     case .value(let role) where role == "AXWebArea": return element

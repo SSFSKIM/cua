@@ -454,9 +454,16 @@ func dispatch(_ q: [String: Any]) -> [String: Any] {
   switch q["op"] as? String {
   case "front":
     if q["activate"] as? Bool == true {
-      _ = NSRunningApplication(processIdentifier: pid)?.activate(options: [])
+      let app = NSRunningApplication(processIdentifier: pid)
+      let accepted = app?.activate(options: []) ?? false
       let deadline = ms() + 2000
       while frontPID() != pid && ms() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.01)) }
+      // Fixed-label diagnostic, never a pid: whether the request was accepted and where the workspace ended up.
+      let now = frontPID(), safari = (q["safariPid"] as? NSNumber)?.int32Value
+      let where_ = now == pid ? "target" : now == nil ? "none" : now == safari ? "safari" : "other"
+      return ["frontmostPid": now.map { $0 as Any } ?? NSNull(), "activationAccepted": accepted,
+              "targetBundle": app?.bundleIdentifier == "com.apple.TextEdit" ? "TextEdit" : app?.bundleIdentifier == "com.apple.Safari" ? "Safari" : app == nil ? "none" : "other",
+              "targetTerminated": app?.isTerminated ?? true, "workspaceFront": where_]
     }
     return ["frontmostPid": frontPID().map { $0 as Any } ?? NSNull()]
   case "titles":
@@ -476,14 +483,28 @@ func handle(_ line: String) -> String {
 }
 
 guard ProcessInfo.processInfo.environment["RUNNER_ENVIRONMENT"] == "github-hosted" else { exit(2) }
-// Requests are read off the main thread and run on it synchronously, so the main run loop keeps delivering workspace
-// activation notifications to the continuous witness while this process waits for the next request.
-Thread.detachNewThread {
-  while let line = readLine() {
-    let out = DispatchQueue.main.sync { handle(line) }
-    print(out)
-    fflush(stdout)
-  }
-  exit(0)
+// Requests are read off the main thread and handled at the top level of the main thread's own run loop (as #354's tool
+// does). Running a request inside DispatchQueue.main.sync would hold the main queue for its whole duration, and the
+// workspace's activation and frontmost updates are delivered through that queue, so an activation could never complete.
+final class Inbox: @unchecked Sendable {
+  private let lock = NSLock()
+  private var lines: [String?] = []
+  func push(_ l: String?) { lock.lock(); lines.append(l); lock.unlock() }
+  // nil: nothing queued; .some(nil): end of input.
+  func pop() -> String?? { lock.lock(); defer { lock.unlock() }; return lines.isEmpty ? nil : lines.removeFirst() }
 }
-dispatchMain()
+let inbox = Inbox()
+Thread.detachNewThread {
+  while let line = readLine() { inbox.push(line) }
+  inbox.push(nil)  // end of input: the main thread drains what is queued, then exits
+}
+RunLoop.main.add(Port(), forMode: .default)  // keeps run(until:) waiting instead of returning at once
+while true {
+  if let item = inbox.pop() {
+    guard let line = item else { exit(0) }
+    print(handle(line))
+    fflush(stdout)
+  } else {
+    RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.01))
+  }
+}

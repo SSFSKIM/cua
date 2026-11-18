@@ -126,7 +126,16 @@ async function main(){
   if(sideBroken){reject(new Abort());return}
   const w={resolve:resolveAsk,reject,timer:setTimeout(breakSide,ms)};waiters.push(w);side.stdin.write(JSON.stringify(q)+'\n');
  });
- async function front(target,activate=true){const r=await ask({op:'front',pid:target,activate});if(r.error||r.frontmostPid!==target)throw new Fail()}
+ // Fixed-label foreground diagnostic of the last request (never a pid), kept on a failed row.
+ let lastFront=null;
+ async function front(target,activate=true){
+  const r=await ask({op:'front',pid:target,activate,safariPid:pid});
+  const label=(v,set)=>set.includes(v)?v:'invalid';
+  lastFront={target:target===coverPid?'cover':target===pid?'safari':'other',activate,accepted:typeof r.activationAccepted==='boolean'?r.activationAccepted:null,
+   workspaceFront:label(r.workspaceFront,['target','none','safari','other']),targetBundle:label(r.targetBundle,['TextEdit','Safari','other','none']),
+   targetTerminated:typeof r.targetTerminated==='boolean'?r.targetTerminated:null};
+  if(r.error||r.frontmostPid!==target)throw new Fail();
+ }
  const titles=async target=>{const r=await ask({op:'titles',pid:target});return Array.isArray(r.titles)?r.titles.filter(t=>typeof t==='string'):[]};
  async function connect(){
   for(let i=0;i<200;i++){
@@ -299,6 +308,7 @@ async function main(){
   }catch(e){
    lost=e instanceof FixtureLost;
    if(e instanceof Abort)abortErr=e;
+   if(e instanceof Fail&&stage==='settle')row.foregroundDiag=lastFront;
    row.harnessValid=false;row.failureStage=stage;row.failureKind=e instanceof Abort?'abort':lost?'fixture':e instanceof Fail?'check':'error';row.fixtureLost=lost;
    row.setupFailure=stage==='setup'||stage==='settle'||lost;
   }finally{
@@ -336,6 +346,9 @@ async function main(){
   await fixture.waitReady(30000);await sleep(1500);placePid(pid,WIN);
   const cover=join(tmp,'cover.txt');writeFileSync(cover,'The probe cover.');sh('open',['-a','TextEdit',cover]);await sleep(1000);
   coverPid=+(sh('pgrep',['-x','TextEdit']).stdout.trim().split('\n')[0]);if(!coverPid)throw new Fail();placePid(coverPid,{x:0,y:40,w:380,h:300});
+  // The cover must be a live TextEdit with the cover document's window before anything depends on it.
+  {let ok=false;for(let i=0;i<20&&!ok;i++){ok=(await titles(coverPid)).some(t=>t.includes('cover'));if(!ok)await sleep(250)}
+   meta.coverWindow=ok;if(!ok)throw new Fail()}
   stage='bind';
   await front(pid);await fixture.bindVisible(()=>titles(pid),15000);
   stage='preflight';

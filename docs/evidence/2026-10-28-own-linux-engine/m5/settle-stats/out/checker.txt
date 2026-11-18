@@ -1,0 +1,16 @@
+== settle-check, switch off
+/Users/new/.local/share/cua-171/task103/out-off/D1.development-run.pilot: unknown: 10 of 11 cua engines not recorded; 1 of them with no counter were sent no drag or drag_handle
+  cua 3700292: no stats: not recorded
+  cua:0ms 3700354: no stats: not recorded
+  cua 3700562: no stats: not recorded
+  cua:0ms 3700588: no stats: not recorded
+  cua 3700797: no stats: not recorded
+  cua:0ms 3700972: no stats: not recorded
+  cua:0ms 3701261: no stats: not recorded
+  cua 3701852: no stats: not recorded
+  cua 3702251: no stats: not recorded
+  cua:0ms 3702379: no stats: not recorded
+exit 1
+== settle-check, opt-in
+/Users/new/.local/share/cua-171/task103/out-on/D1.development-run.pilot: not taken (entered 0, second_rest 0, skipped 0, unsettled 0; 11 cua engines)
+exit 0

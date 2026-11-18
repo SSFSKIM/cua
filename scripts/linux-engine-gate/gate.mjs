@@ -66,7 +66,7 @@ import { defaultScope, leftoverCheck, leftoverLines, removeLeftover, scratchDirs
 // a test process reaches no real display (hermetic.mjs); the leftover checks' scope is never switched by it
 import '../linux-engine-diff/hermetic.mjs';
 import { pinnedEngine } from '../linux-engine-diff/pinned-home.mjs';
-import { scratchRoot } from '../linux-engine-diff/scenes.mjs';
+import { scratchRoot } from '../linux-engine-diff/scratch-root.mjs';
 import { linuxEnginePath } from '../../src/runtime/linux-engine.mjs';
 import { MAX_STEP_MINUTES, STEPS, runName, stepArgs, stepLabel, stepNamed, stepScript, suiteEnv, totals } from './steps.mjs';
 

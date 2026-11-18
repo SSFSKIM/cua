@@ -45,6 +45,7 @@ import { CHROME_ENV, ChromeInstance, isChromeCommand } from './chrome.mjs';
 import { Engine, runEngines, watchOperations } from './engine.mjs';
 import { auditForeign, auditRecord, auditRecordFile, foreignKeep, foreignLine } from './foreign.mjs';
 import { geditTitle } from './gedit-title.mjs';
+import { scratchRoot } from './scratch-root.mjs';
 import { preorder } from './normalize.mjs';
 import { startRunSession } from './session-bus.mjs';
 import { cleanupOnFatal, cleanupOnStop } from './stop.mjs';
@@ -204,22 +205,8 @@ export function desktopEnding(ending) {
 // the run's scratch directory's name before mkdtemp's six characters (leftovers.mjs, whose end check lists others')
 export { SCRATCH_PREFIX };
 
-/**
- * The longest label tail the scenes give a gedit window (`openGedit`): the minimized scene's text window of a vendor
- * lane (run.mjs `openScene`; gedit-title.test.mjs lists every one).
- */
-const LONGEST_GEDIT_TAIL = ['minimized', 'text_pinned'];
-
-/**
- * Where the run's scratch directory goes (task 51; the design session's ruling, sminos 336): the harness's TMPDIR when
- * the longest gedit title the scenes build for `run` stays whole under it, else /tmp. gedit middle-truncates a title's
- * directory to what is left of 100 characters (gedit-title.mjs), and each lane's window is on a file of its own label,
- * so a shortened title differs between lanes: task 49's session TMPDIR failed `gedit tree_shot` on the title alone.
- */
-export function scratchRoot(run, tmp = tmpdir()) {
-  const longest = `${['cua171-diff', run, 'n'.repeat(8), ...LONGEST_GEDIT_TAIL].join('-')}.txt`;
-  return geditTitle(join(tmp, `${SCRATCH_PREFIX}XXXXXX`, longest)).ellipsized ? '/tmp' : tmp;
-}
+// where the run's scratch directory goes (scratch-root.mjs)
+export { scratchRoot };
 
 /** Each spawned child's own record (`spawnApp`), and each lane scene's own spawn (`openGedit`), held by object, never by pid. */
 const ownSpawns = new WeakMap();

@@ -189,7 +189,7 @@ jobs:
           test "$(git -C "$dir" rev-parse HEAD)" = "$FIX_SHA"
           test -z "$(git -C "$dir" status --porcelain)"
           if [[ "$MODE" == deadline* ]]; then
-            tests=(testConcealedTimingAndReasonsHoldOverRandomCases)
+            tests=(testConcealedTimingAndReasonsHoldOverRandomCases testExactControlsAnswerLengthMismatchOnTimeAtLiveCosts)
           else
             tests=(testAHeldMatchWhoseFocusFailsReadsAsALostMatchWithOneFocusReadMore testEveryConcealedFailureAfterPostingAnswersAtOneDeadline)
           fi

@@ -54,6 +54,9 @@ struct ElementData {
   /// The attributes whose read failed with an error other than their absence (`failedSlot`): each decodes as none, as
   /// an absent one does, and #298's stale-point record tells the two apart for the label's attributes.
   var unreadable: Set<String> = []
+  /// #390: read by a source that does not read AXValue (`ElementSource.readsValue` false), so `value` says nothing of the
+  /// element's value; an identity made from it leaves the value out of its match.
+  var valueUnread = false
 
   /// Decodes one element's attribute values, keyed by attribute name, and the names whose read failed.
   init(values: [String: CFTypeRef], unreadable: Set<String> = []) {
@@ -134,6 +137,10 @@ final class FetchCosts {
 /// reads (the unit tests' fake tree overrides them).
 class ElementSource: @unchecked Sendable {
   let costs = FetchCosts()
+  /// #390: false for a set_value of a concealed value or into a password field, whose re-reads and re-fetch walk must
+  /// not read AXValue: the reads leave it out of the attributes they request, and what they answer is marked
+  /// `valueUnread`, any value dropped.
+  var readsValue = true
   private var dataCache: [ElementKey: ElementData] = [:]
   private var visibleCache: [ElementKey: [AXUIElement]?] = [:]
   private var frameCache: [ElementKey: CGRect?] = [:]
@@ -143,12 +150,23 @@ class ElementSource: @unchecked Sendable {
   final func data(_ element: AXUIElement) -> ElementData? {
     let key = ElementKey(element: element)
     if let known = dataCache[key] { return known }
-    let read = read(element)
+    let read = withoutValue(read(element))
     if let read { dataCache[key] = read }
     return read
   }
 
-  func read(_ element: AXUIElement) -> ElementData? { publicData(element) }
+  /// `data` as `readsValue` allows: unchanged when it reads values, else with its value dropped and marked unread.
+  private func withoutValue(_ data: ElementData?) -> ElementData? {
+    guard !readsValue, var data else { return data }
+    data.value = nil
+    data.valueUnread = true
+    return data
+  }
+
+  /// The attributes a read requests: `observedAttributes`, without AXValue when the source does not read values.
+  final var requestedAttributes: [String] { readsValue ? observedAttributes : observedAttributes.filter { $0 != kAXValueAttribute } }
+
+  func read(_ element: AXUIElement) -> ElementData? { publicData(element, attributes: requestedAttributes) }
 
   /// The element's attributes read through only those it lists, the vendor's read of an element outside the subtree
   /// its prefetch covered (FUN_1007542cc: AXUIElementCopyAttributeNames intersected with the attribute set, then one
@@ -156,7 +174,7 @@ class ElementSource: @unchecked Sendable {
   final func listedData(_ element: AXUIElement) -> ElementData? {
     let key = ElementKey(element: element)
     if let known = dataCache[key] { return known }
-    let read = readListed(element)
+    let read = withoutValue(readListed(element))
     if let read { dataCache[key] = read }
     return read
   }
@@ -169,7 +187,7 @@ class ElementSource: @unchecked Sendable {
     }
     guard let listed else { return nil }
     let names = Set(listed)
-    return publicData(element, attributes: observedAttributes.filter(names.contains))
+    return publicData(element, attributes: requestedAttributes.filter(names.contains))
   }
 
   func publicData(_ element: AXUIElement, attributes: [String] = observedAttributes) -> ElementData? {

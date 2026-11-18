@@ -370,8 +370,11 @@ Exactly one trailing newline is dropped from a file's contents, so a file writte
 (`secret_input_failed`, with the runtime's error name when it is one of its fixed codes); the runtime's own message is
 withheld because it can contain the value, and the input may have been partly entered. On macOS cua's engine reads a
 keyed `typeText` of a secret back by equality alone (#354): a field that does not match ends `secret_input_failed` with
-`typeUnconfirmed`, and so does a password field, which is never read. The keys were sent, so the field is observed, not
-retyped.
+`typeUnconfirmed`. A password field's text is never read, so it is confirmed by its length alone (#414): it must take
+exactly as many characters as the secret has, in place of any selection, which shows that none was dropped or added
+but not that the right ones went in (another keyboard layout, an input method or a page that rewrites what is typed can
+put in the same number of other characters), and the result's text says so; one that does not, or whose length cannot
+be read, ends the same way. The keys were sent, so the field is observed, not retyped.
 
 This is input substitution, not a vault around the value: once entered, a secret can be seen in screenshots, the
 app's accessibility text or the app itself, and `paste` uses the system clipboard as the runtime always does (it

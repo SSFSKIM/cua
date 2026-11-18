@@ -193,7 +193,7 @@ The false oks to remove, at twice the load: on arm64, 38 from 0.4.0's rule on th
 
 - **The sync** (`drop_cursor.rs`, `DropCursor::sync`). A `ClientMessage` of type `WM_PROTOCOLS`, `_NET_WM_PING`, to the
   source's top-level, with a token of the sync's own. A client that lists the protocol sends the same message on to
-  the root (EWMH); Chromium does it in `X11Window::OnEvent`, on its UI thread. The X server gives a client its events
+  the root (EWMH); Chromium does it in `X11Window::HandleEvent`, on its UI thread. The X server gives a client its events
   in order, so the answer says the application has handled every event sent before the question. Its cursor changes
   for those events reach the watch before the answer does, on the same connection.
 - **A handle's end** (`engine/handle.rs`), when its source confirms by cursor and a take was seen:

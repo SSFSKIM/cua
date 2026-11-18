@@ -513,6 +513,9 @@ pub struct LateWatch {
     released_at: std::cell::Cell<Option<(Instant, bool)>>,
     /// The window whose activation request confirms the drop (`NONE`: none yet), read by the watch's thread.
     confirm: std::sync::Arc<std::sync::atomic::AtomicU32>,
+    /// Whether the drop it waits to see confirmed is an Electron source's whose settle failed (ruling 835 keeps the
+    /// activation's precedence; 837 counts the case in `drop_settles.settle_failed_activation_confirmed`).
+    pub settle_failed: bool,
 }
 
 impl LateWatch {
@@ -539,6 +542,7 @@ impl LateWatch {
                     EscapeRoute::Xtest => None,
                 },
                 released_at: std::cell::Cell::new(None),
+                settle_failed: false,
                 confirm: cell,
             }),
             Ok(Err(error)) => Err(anyhow::anyhow!("the drag-and-drop watch could not start: {error}")),
@@ -637,6 +641,7 @@ impl LateWatch {
             app: "app".into(),
             target: Some(0),
             released_at: std::cell::Cell::new(None),
+            settle_failed: false,
             confirm: Default::default(),
         }
     }

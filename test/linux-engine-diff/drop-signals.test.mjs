@@ -480,6 +480,17 @@ test("V5's motion-loss cells: the run's browser stopped from the drag's send, a 
   assert.deepEqual(PLANS['v5-loss'].map(([lane, cell]) => `${lane} ${cell}`), ['cua plain', 'cua prefreeze-150', 'cua prefreeze-linger-150']);
 });
 
+test("0.4.1's failed settle, end to end (task 101's review): Electron's browser stopped across the end of a plain drop, so neither of the settle's pings is answered in time", async () => {
+  const { CELLS, PLANS, T14_SOURCE, freezeOf, STALL } = await import('../../scripts/linux-engine-diff/drop-signals.mjs');
+  assert.deepEqual(CELLS.stall(0), CELLS.plain(0), 'the plain short drop');
+  assert.equal(T14_SOURCE.stall, 'plain');
+  // the floor ends about 350 ms after the take, which comes some 30 ms after the press: the stop covers the first ping
+  // (asked near the floor's end), its 150 ms, the rest, the revisit and the second ping's 150 ms
+  assert.deepEqual(freezeOf('stall'), STALL);
+  assert.ok(STALL.from <= 300 && STALL.to - STALL.from >= 600, JSON.stringify(STALL));
+  assert.deepEqual(PLANS['t101-stall'].map(([lane, cell, n]) => `${lane} ${cell} ${n}`), ['cua stall 10']);
+});
+
 test("the lost motion's bound and the guarded route: a sweep of stops past the hold's refresh, and the same stops on a drag the engine watches", async () => {
   const { CELLS, LANES, PLANS, PREFREEZE_ENDS, T14_SOURCE, freezeOf } = await import('../../scripts/linux-engine-diff/drop-signals.mjs');
   assert.deepEqual(PREFREEZE_ENDS, [30, 40, 150, 200, 215, 230, 260, 300]);

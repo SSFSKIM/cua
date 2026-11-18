@@ -486,8 +486,11 @@ impl Engine {
             return;
         }
         let watch = self.late_watch.take().expect("checked");
-        let (app, target) = (watch.app.clone(), watch.target);
+        let (app, target, settle_failed) = (watch.app.clone(), watch.target, watch.settle_failed);
         match watch.stop() {
+            // a drop handed over for Chrome's activation that came: when its Electron source's settle had failed, the
+            // case ruling 837 records
+            crate::dnd::WatchEnd::Quiet if settle_failed => self.drop_settles.activation_confirmed_a_failed_settle(),
             crate::dnd::WatchEnd::Quiet => {}
             end => {
                 // a synthetic Escape is a key to the window's redirected session; one through XTEST is the desktop's

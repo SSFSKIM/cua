@@ -59,13 +59,15 @@ impl Sync {
 
 /// Whether the application's cursor at the release is its answer for where the pointer rests: `steps` what the watch
 /// read, in the server's order; `before` the sync asked before the release's last rest, `after` the one asked after its
-/// last motion. Both must have been answered, in that order; the pointer must have been at one place from the first
-/// answer on, and visited again there before the second, on a route that moves the real pointer (`placed`: XTEST, whose
-/// motions the watch reads): every motion after the first answer placed, and at the same place, at least one of them,
-/// and none after the second answer. A person's motion, or one that cannot be placed, is not that. Then the application
-/// had handled the pointer's arrival before the rest, the page had the rest to answer it, and the cursor shown after the
-/// second answer is what the drag loop holds for that place when the release reaches it. On the background route the
-/// drag's motions are synthetic and the watch reads none of them, so the two answers alone decide.
+/// last motion. Both must have been answered, in that order. On a route that moves the real pointer (`placed`: XTEST,
+/// whose motions the watch reads) the pointer must also have rested where it was when the application gave the first
+/// answer, the place of the last motion before it (the review of task 101, 4: a place taken from the first motion after
+/// that answer let one motion elsewhere pass), and been visited again there before the second: every motion between the
+/// answers at that place, at least one of them, and none after the second answer. A place that cannot be told (a
+/// person's motion, or none before the first answer) is not that, and settles nothing. Then the application had handled
+/// the pointer's arrival before the rest, the page had the rest to answer it, and the cursor shown after the second
+/// answer is what the drag loop holds for that place when the release reaches it. On the background route the drag's
+/// motions are synthetic and the watch reads none of them, so the two answers alone decide.
 pub fn settled(steps: &[Step], before: Sync, after: Sync, placed: bool) -> bool {
     let (Some(before), Some(after)) = (before.token(), after.token()) else {
         return false;
@@ -80,19 +82,24 @@ pub fn settled(steps: &[Step], before: Sync, after: Sync, placed: bool) -> bool 
     if !placed {
         return true;
     }
-    let mut rest = None;
+    // where the pointer was when the application answered first
+    let Some(Some(rest)) = steps[..first].iter().rev().find_map(|step| match *step {
+        Step::Motion(place) => Some(place),
+        _ => None,
+    }) else {
+        return false;
+    };
+    let mut revisited = false;
     for (k, step) in steps.iter().enumerate().skip(first) {
         let Step::Motion(place) = *step else {
             continue;
         };
-        let (Some(place), true) = (place, k < second) else {
-            return false;
-        };
-        if *rest.get_or_insert(place) != place {
+        if k > second || place != Some(rest) {
             return false;
         }
+        revisited = true;
     }
-    rest.is_some()
+    revisited
 }
 
 /// How long the settle's whole wait before its second sync may run, from the first ping, for a second rest to be taken
@@ -110,22 +117,14 @@ pub const SETTLE_WITHIN: Duration = SYNC_BOUND;
 pub enum SecondRest {
     /// The first sync was answered inside the rest, or the application could not be asked, or the family has no rest.
     Needless,
-    /// Taken: the first sync waited past the rest, and both rests ended inside [`SETTLE_WITHIN`].
+    /// Taken: the first sync waited past the rest, and a whole second rest still ended inside [`SETTLE_WITHIN`].
     Taken,
-    /// Needed but skipped, since the rests would end past [`SETTLE_WITHIN`] (a first sync that got no answer reached
-    /// the bound already): the drop is judged as the settle alone judges it.
+    /// Needed but skipped, since a whole second rest, begun when the first ended, would end past [`SETTLE_WITHIN`] (a
+    /// first sync that got no answer reached the bound already): the drop is judged as the settle alone judges it.
     Skipped,
 }
 
 impl SecondRest {
-    /// How long the end rests after its first sync.
-    pub fn rests(self, rest: Duration) -> Duration {
-        match self {
-            SecondRest::Taken => rest * 2,
-            SecondRest::Needless | SecondRest::Skipped => rest,
-        }
-    }
-
     fn name(self) -> &'static str {
         match self {
             SecondRest::Needless => "needless",
@@ -135,18 +134,20 @@ impl SecondRest {
     }
 }
 
-/// Whether the end rests a second time after the first sync `before`, its family resting `rest` (ruling 3a).
-pub fn second_rest(before: Sync, rest: Duration) -> SecondRest {
-    let waited = match before {
-        _ if rest.is_zero() => return SecondRest::Needless,
-        Sync::Answered { waited, .. } => waited,
-        Sync::Unanswered { .. } => SYNC_BOUND,
-        Sync::Unasked => return SecondRest::Needless,
+/// Whether the end rests a second time after the first sync `before`, its family resting `rest` (ruling 3a), decided
+/// when the base rest has ended, `since_first_ping` after the first ping: on the live clock, not the nominal one (the
+/// review of task 101, 5), so a base rest that ended late never starts a second rest that cannot end inside the bound.
+pub fn second_rest(before: Sync, rest: Duration, since_first_ping: Duration) -> SecondRest {
+    let needed = match before {
+        _ if rest.is_zero() => false,
+        Sync::Answered { waited, .. } => waited > rest,
+        Sync::Unanswered { .. } => true,
+        Sync::Unasked => false,
     };
-    match waited {
-        waited if waited <= rest => SecondRest::Needless,
-        waited if waited + rest * 2 <= SETTLE_WITHIN => SecondRest::Taken,
-        _ => SecondRest::Skipped,
+    match needed {
+        false => SecondRest::Needless,
+        true if since_first_ping + rest <= SETTLE_WITHIN => SecondRest::Taken,
+        true => SecondRest::Skipped,
     }
 }
 
@@ -160,6 +161,16 @@ pub struct Settle {
 }
 
 impl Settle {
+    /// A settle cut short after its first sync and rest, by a revisit that failed: it entered the branch, with its rest
+    /// choice, and settles nothing (the review of task 101, 6).
+    pub fn interrupted(before: Sync, second_rest: SecondRest) -> Settle {
+        Settle {
+            before,
+            second_rest,
+            after: Sync::Unasked,
+        }
+    }
+
     /// Whether the application answered both syncs inside the bound. When it did not, an unconfirmed drop says so.
     pub fn answered(&self) -> bool {
         matches!(
@@ -194,14 +205,17 @@ pub fn unconfirmed_end(settle: Option<&Settle>) -> crate::dnd::WatchEnd {
 }
 
 /// The engine's settles over its life, on every `--stats` line (`drop_settles`, ruling 827's condition): how many drags
-/// and handles entered the settle, took its second rest, skipped one that did not fit, and ended unsettled. A run whose
-/// counts stay at zero never ran the settle's code.
+/// and handles entered the settle, took its second rest, skipped one that did not fit, and ended unsettled, and how many
+/// of the unsettled went to a Chrome destination whose activation then confirmed the drop (ruling 835 keeps the
+/// activation's precedence, and 837 records the case here alone). A run whose counts stay at zero never ran the
+/// settle's code.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct SettleCounts {
     entered: u64,
     second_rest: u64,
     skipped: u64,
     unsettled: u64,
+    settle_failed_activation_confirmed: u64,
 }
 
 impl SettleCounts {
@@ -217,32 +231,50 @@ impl SettleCounts {
         }
     }
 
+    /// A drop whose settle failed and whose Chrome destination's activation confirmed it.
+    pub fn activation_confirmed_a_failed_settle(&mut self) {
+        self.settle_failed_activation_confirmed += 1;
+    }
+
     pub fn record(&self) -> Value {
         json!({
             "entered": self.entered,
             "second_rest": self.second_rest,
             "skipped": self.skipped,
             "unsettled": self.unsettled,
+            "settle_failed_activation_confirmed": self.settle_failed_activation_confirmed,
         })
     }
 }
 
-/// A sync's token, its own among this engine's syncs ([`token`]).
+/// A sync's token, its own among this engine's syncs ([`token`]): the engine's random base, drawn once, and its count.
 pub fn next_token() -> u32 {
+    use std::sync::OnceLock;
     use std::sync::atomic::AtomicU32;
+    static BASE: OnceLock<u32> = OnceLock::new();
     static NEXT: AtomicU32 = AtomicU32::new(0);
-    token(std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed))
+    token(*BASE.get_or_init(random_base), NEXT.fetch_add(1, Ordering::Relaxed))
 }
 
-/// The token of an engine process's `count`-th sync. The answers go to the root, where the window manager reads its
-/// own pings' and every watch reads them all, so a token must not be one the window manager is waiting for, nor
-/// another engine's. Its top bit is set: Openbox numbers its pings from 1 (`openbox/ping.c`, `ping_next_id`), and a
+/// 32 bits from the operating system's random source (the standard library's `RandomState` keys, which it draws
+/// through `getrandom`): an engine's own, whatever process-id namespace it runs in.
+pub fn random_base() -> u32 {
+    use std::hash::{BuildHasher, Hasher};
+    let mut hasher = std::collections::hash_map::RandomState::new().build_hasher();
+    hasher.write_u8(0);
+    hasher.finish() as u32
+}
+
+/// The token of an engine's `count`-th sync from its random `base`. The answers go to the root, where the window
+/// manager reads its own pings' and every watch reads them all, so a token must not be one the window manager is
+/// waiting for, nor another engine's: an engine's base is random (the review of task 101, 2: sandboxed engines share
+/// process ids across PID namespaces), and a watch keeps only the pong of its one outstanding sync
+/// (`drop_cursor::ours`). Its top bit is set: Openbox numbers its pings from 1 (`openbox/ping.c`, `ping_next_id`), and a
 /// window manager that sends the server's time (mutter, KWin, xfwm4) reaches that half of the range only on a server up
-/// for more than 24 days, and then matches one token in 2^31 by chance. Below it the process id's low 15 bits, then
-/// the count's low 16. Were a token ever a window manager's, the worst it reads is that an application which has just
-/// answered a ping is alive.
-pub fn token(pid: u32, count: u32) -> u32 {
-    0x8000_0000 | (pid & 0x7fff) << 16 | (count & 0xffff)
+/// for more than 24 days, and then matches one token in 2^31 by chance. Were a token ever a window manager's, the worst
+/// it reads is that an application which has just answered a ping is alive.
+pub fn token(base: u32, count: u32) -> u32 {
+    0x8000_0000 | (base.wrapping_add(count) & 0x7fff_ffff)
 }
 
 #[cfg(test)]
@@ -308,6 +340,7 @@ mod tests {
         use Step::{Answer, Cursor, Motion};
         // the pointer still on its way after the first answer: the page has not had the rest for where it ends
         let moving = [
+            Motion(Some((500, 128))),
             Answer(41),
             Motion(Some((516, 128))),
             Motion(Some((500, 128))),
@@ -316,10 +349,17 @@ mod tests {
         ];
         assert!(!settled(&moving, BEFORE, AFTER, true));
         // a person's mouse during the rest: a motion with no place
-        let person = [Answer(41), Motion(None), Motion(Some((500, 128))), Answer(42)];
+        let person = [
+            Motion(Some((500, 128))),
+            Answer(41),
+            Motion(None),
+            Motion(Some((500, 128))),
+            Answer(42),
+        ];
         assert!(!settled(&person, BEFORE, AFTER, true));
         // a motion after the second answer: the cursor read may not be the application's answer to it
         let after = [
+            Motion(Some((500, 128))),
             Answer(41),
             Motion(Some((500, 128))),
             Answer(42),
@@ -335,6 +375,7 @@ mod tests {
         ));
         // cursor changes anywhere do not unsettle it
         let changes = [
+            Motion(Some((500, 128))),
             Answer(41),
             Cursor(9),
             Motion(Some((500, 128))),
@@ -346,6 +387,44 @@ mod tests {
         assert!(settled(&changes, BEFORE, AFTER, true));
     }
 
+    #[test]
+    fn the_rest_is_held_to_where_the_pointer_was_at_the_first_answer() {
+        use Step::{Answer, Motion};
+        // the review of task 101 (4): the pointer at A when the application answered, then one motion to B, then the
+        // second answer: the page never had the rest for B, and B is not where the loop had caught up to
+        let moved = [
+            Motion(Some((500, 128))),
+            Answer(41),
+            Motion(Some((520, 128))),
+            Answer(42),
+        ];
+        assert!(!settled(&moved, BEFORE, AFTER, true));
+        let stayed = [
+            Motion(Some((500, 128))),
+            Answer(41),
+            Motion(Some((500, 128))),
+            Answer(42),
+        ];
+        assert!(settled(&stayed, BEFORE, AFTER, true));
+        // where the pointer was at the first answer cannot be told: fails closed
+        let unplaced = [Motion(None), Answer(41), Motion(Some((500, 128))), Answer(42)];
+        assert!(!settled(&unplaced, BEFORE, AFTER, true));
+        let unseen = [Answer(41), Motion(Some((500, 128))), Answer(42)];
+        assert!(
+            !settled(&unseen, BEFORE, AFTER, true),
+            "no motion before the first answer"
+        );
+        // the anchor is the last motion before it, not the first
+        let arrived = [
+            Motion(Some((640, 128))),
+            Motion(Some((500, 128))),
+            Answer(41),
+            Motion(Some((500, 128))),
+            Answer(42),
+        ];
+        assert!(settled(&arrived, BEFORE, AFTER, true));
+    }
+
     const REST: Duration = Duration::from_millis(30);
 
     fn answered(ms: u64) -> Sync {
@@ -355,36 +434,58 @@ mod tests {
         }
     }
 
+    /// [`second_rest`] at the nominal time the base rest ends: the first sync's wait and the rest.
+    fn nominal(before: Sync, rest: Duration) -> SecondRest {
+        let waited = match before {
+            Sync::Answered { waited, .. } => waited,
+            Sync::Unanswered { .. } => SYNC_BOUND,
+            Sync::Unasked => Duration::ZERO,
+        };
+        second_rest(before, rest, waited + rest)
+    }
+
     #[test]
     fn a_second_rest_is_taken_only_when_the_first_sync_ran_past_the_rest_and_it_fits_inside_the_bound() {
         // ruling 3a, the design session's 829: the whole wait runs from the first ping, both rests inside the bound
         assert_eq!(SETTLE_WITHIN, SYNC_BOUND, "the bound is the sync's own");
         // a first sync inside the rest: the page has had the rest after the loop caught up
-        assert_eq!(second_rest(answered(1), REST), SecondRest::Needless);
-        assert_eq!(
-            second_rest(answered(30), REST),
-            SecondRest::Needless,
-            "at the rest itself"
-        );
+        assert_eq!(nominal(answered(1), REST), SecondRest::Needless);
+        assert_eq!(nominal(answered(30), REST), SecondRest::Needless, "at the rest itself");
         // one past it: the loop was behind, and the page may be too
-        assert_eq!(second_rest(answered(31), REST), SecondRest::Taken);
+        assert_eq!(nominal(answered(31), REST), SecondRest::Taken);
         assert_eq!(
-            second_rest(answered(90), REST),
+            nominal(answered(90), REST),
             SecondRest::Taken,
             "90 + 30 + 30 ends at the bound itself"
         );
         // one where the second rest would end past the bound: skipped, never cut short
-        assert_eq!(second_rest(answered(91), REST), SecondRest::Skipped);
-        assert_eq!(second_rest(answered(149), REST), SecondRest::Skipped);
+        assert_eq!(nominal(answered(91), REST), SecondRest::Skipped);
+        assert_eq!(nominal(answered(149), REST), SecondRest::Skipped);
         // no answer: the wait already reached the bound; an application that cannot be asked has nothing to rest for
-        assert_eq!(second_rest(Sync::Unanswered { token: 41 }, REST), SecondRest::Skipped);
-        assert_eq!(second_rest(Sync::Unasked, REST), SecondRest::Needless);
+        assert_eq!(nominal(Sync::Unanswered { token: 41 }, REST), SecondRest::Skipped);
+        assert_eq!(nominal(Sync::Unasked, REST), SecondRest::Needless);
         // a family with no rest takes none
-        assert_eq!(second_rest(answered(40), Duration::ZERO), SecondRest::Needless);
-        // the rest the end sleeps after its first sync
-        assert_eq!(SecondRest::Needless.rests(REST), REST);
-        assert_eq!(SecondRest::Skipped.rests(REST), REST);
-        assert_eq!(SecondRest::Taken.rests(REST), REST * 2);
+        assert_eq!(nominal(answered(40), Duration::ZERO), SecondRest::Needless);
+    }
+
+    #[test]
+    fn a_second_rest_is_judged_against_the_time_the_base_rest_really_ended() {
+        // the review of task 101 (5): a first sync of 60 ms fits on paper (60 + 30 + 30), but a base rest that ends late
+        // (the engine preempted) leaves too little of the bound for a whole second rest, which is then skipped
+        assert_eq!(second_rest(answered(60), REST, ms(90)), SecondRest::Taken);
+        assert_eq!(
+            second_rest(answered(60), REST, ms(120)),
+            SecondRest::Taken,
+            "it ends at the bound"
+        );
+        assert_eq!(second_rest(answered(60), REST, ms(121)), SecondRest::Skipped);
+        assert_eq!(second_rest(answered(60), REST, ms(400)), SecondRest::Skipped);
+        // the need is the first sync's alone: a fast answer takes none however late the rest ended
+        assert_eq!(second_rest(answered(10), REST, ms(400)), SecondRest::Needless);
+    }
+
+    fn ms(ms: u64) -> Duration {
+        Duration::from_millis(ms)
     }
 
     #[test]
@@ -477,7 +578,7 @@ mod tests {
         let mut counts = SettleCounts::default();
         assert_eq!(
             counts.record(),
-            json!({ "entered": 0, "second_rest": 0, "skipped": 0, "unsettled": 0 }),
+            json!({ "entered": 0, "second_rest": 0, "skipped": 0, "unsettled": 0, "settle_failed_activation_confirmed": 0 }),
             "a run whose drags never entered the branch says so"
         );
         counts.count(&taken, true);
@@ -499,19 +600,49 @@ mod tests {
         );
         assert_eq!(
             counts.record(),
-            json!({ "entered": 3, "second_rest": 1, "skipped": 1, "unsettled": 1 })
+            json!({ "entered": 3, "second_rest": 1, "skipped": 1, "unsettled": 1, "settle_failed_activation_confirmed": 0 })
+        );
+        // the review of task 101 (6): a revisit that failed after the first ping and the rest still entered the branch,
+        // with its rest choice, and ended unsettled
+        let interrupted = Settle::interrupted(answered(50), SecondRest::Taken);
+        assert_eq!(interrupted.after, Sync::Unasked);
+        assert!(!interrupted.settled(&steps, true));
+        counts.count(&interrupted, interrupted.settled(&steps, true));
+        // ruling 835: a failed settle whose drop Chrome's activation confirmed, counted apart
+        counts.activation_confirmed_a_failed_settle();
+        assert_eq!(
+            counts.record(),
+            json!({ "entered": 4, "second_rest": 2, "skipped": 1, "unsettled": 2, "settle_failed_activation_confirmed": 1 })
         );
     }
 
     #[test]
     fn a_sync_s_token_is_never_a_small_number_a_window_manager_counts_its_pings_by() {
-        // Openbox numbers its pings from 1; the engine's tokens keep to the top half of the range, whatever the
-        // process id and however many syncs came before
-        for (pid, count) in [(0, 0), (1, 1), (0x8000, 0), (0xffff_ffff, 0xffff_ffff), (65536, 70000)] {
-            assert!(token(pid, count) >= 0x8000_0000, "{pid} {count}");
+        // Openbox numbers its pings from 1; the engine's tokens keep to the top half of the range, whatever the base
+        // and however many syncs came before
+        for (base, count) in [
+            (0, 0),
+            (1, 1),
+            (0x7fff_ffff, 1),
+            (0xffff_ffff, 0xffff_ffff),
+            (65536, 70000),
+        ] {
+            assert!(token(base, count) >= 0x8000_0000, "{base} {count}");
         }
         assert_ne!(token(7, 1), token(7, 2), "each sync its own");
-        assert_ne!(token(7, 1), token(8, 1), "each engine its own");
+    }
+
+    #[test]
+    fn two_engines_tokens_do_not_meet_whatever_their_process_ids() {
+        // the review of task 101 (2): engines in PID namespaces share process ids, so a token is the engine's own
+        // random base and its count, never the process id
+        let (one, other) = (random_base(), random_base());
+        assert_ne!(one, other, "each engine draws its own base (2^-32 to fail by chance)");
+        let ours: std::collections::HashSet<_> = (0..1000).map(|count| token(one, count)).collect();
+        assert_eq!(ours.len(), 1000, "an engine's tokens are distinct");
+        // two engines whose bases are far apart never meet in the counts a session reaches
+        let theirs: std::collections::HashSet<_> = (0..1000).map(|count| token(one ^ 0x4000_0000, count)).collect();
+        assert!(ours.is_disjoint(&theirs));
     }
 
     #[test]

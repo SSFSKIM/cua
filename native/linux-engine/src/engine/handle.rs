@@ -151,6 +151,12 @@ pub fn confirming(destination: Option<Window>, supported: bool, cursor: Option<O
     }
 }
 
+/// Whether a drop handed to Chrome's activation is an Electron source's whose settle failed (`settled`: None with no
+/// settle): ruling 835 keeps the activation's precedence, and 837 records the case in `--stats` alone.
+pub fn activation_over_failed_settle(confirming: Confirming, settled: Option<bool>) -> bool {
+    matches!(confirming, Confirming::Activation(_)) && settled == Some(false)
+}
+
 /// A `drag_handle` between its start (or a move with no start in this engine) and its end.
 pub(super) struct Handle {
     /// The drag's waits, by the start's family.
@@ -334,6 +340,7 @@ impl Engine {
         if self.cfg.stats {
             let mut record = serde_json::Map::new();
             record.insert("id".into(), Value::Null);
+            record.insert("drop_settles".into(), self.drop_settles.record());
             record.insert("idle_handle".into(), super::late_stats(&released.app, &end));
             record.insert(
                 "answer".into(),
@@ -400,6 +407,7 @@ impl Engine {
         if self.cfg.stats {
             let mut record = serde_json::Map::new();
             record.insert("id".into(), Value::Null);
+            record.insert("drop_settles".into(), self.drop_settles.record());
             record.insert("idle_handle".into(), super::late_stats(&app, &end));
             record.insert("by".into(), json!("watchdog"));
             record.insert("taken".into(), json!(taken));
@@ -713,6 +721,9 @@ impl Engine {
                 "moved": moved.is_some(),
                 "confirming": matches!(confirmed, Some(Confirming::Activation(_))),
                 "confirmed_by": confirmed.map(|c| format!("{c:?}")),
+                // ruling 837: handed to Chrome's activation though the Electron source's settle failed (counted in
+                // `drop_settles` once the activation comes)
+                "settle_failed_activation": confirmed.is_some_and(|c| activation_over_failed_settle(c, settled)),
                 "drop_cursor": cursor_record,
                 // the harness lines the release up with its own watchers (`--stats` only)
                 "release_wall_ms": release_wall,
@@ -726,7 +737,9 @@ impl Engine {
                 (Some(false), _) | (Some(true), Some(Confirming::Activation(_))) => {
                     // an earlier drag's watch, armed during the hold, is collected first
                     self.collect_late_watch(true);
-                    self.late_watch = Some(after.handed_over(app.clone()));
+                    let mut after = after.handed_over(app.clone());
+                    after.settle_failed = confirmed.is_some_and(|c| activation_over_failed_settle(c, settled));
+                    self.late_watch = Some(after);
                 }
                 (Some(true), Some(confirming)) if confirming.unconfirmed() => {
                     after.done();
@@ -851,6 +864,28 @@ mod tests {
              s is released where it is)"
         );
         assert!(handle_held(Duration::from_millis(300)).contains("no request for 0.3 s"));
+    }
+
+    #[test]
+    fn a_chrome_destination_s_activation_outranks_an_electron_source_s_failed_settle() {
+        // ruling 835 (A): Chrome's activation is the destination's own word that it took the drop, so it outranks a
+        // timing check on the source. An Electron source whose settle failed shows no counted accept
+        // (`Some(Some(false))`), and over a Chrome window that takes the request the activation still decides
+        assert_eq!(confirming(Some(7), true, Some(Some(false))), Confirming::Activation(7));
+        // the case is told apart for `--stats` (ruling 837: `settle_failed_activation_confirmed`, the reply unchanged)
+        assert!(activation_over_failed_settle(Confirming::Activation(7), Some(false)));
+        assert!(
+            !activation_over_failed_settle(Confirming::Activation(7), Some(true)),
+            "a settled drop"
+        );
+        assert!(
+            !activation_over_failed_settle(Confirming::Activation(7), None),
+            "no settle: not an Electron source"
+        );
+        assert!(
+            !activation_over_failed_settle(Confirming::Cursor(false), Some(false)),
+            "unconfirmed: the notice"
+        );
     }
 
     #[test]

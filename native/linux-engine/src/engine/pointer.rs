@@ -572,12 +572,10 @@ fn drag_along(
                 && let (Some(slot), Some(cursor)) = (measure.settle, measure.drop_cursor.as_deref_mut())
             {
                 let (before, second_rest) = cursor.sync_and_rest(pacing.rest);
+                // kept before the revisit, so a revisit that fails still counts as entered, and unsettled
+                let settle = slot.insert(crate::drop_settle::Settle::interrupted(before, second_rest));
                 route.place_again(x, last.0, last.1)?;
-                *slot = Some(crate::drop_settle::Settle {
-                    before,
-                    second_rest,
-                    after: cursor.sync(crate::drop_settle::SYNC_BOUND),
-                });
+                settle.after = cursor.sync(crate::drop_settle::SYNC_BOUND);
             }
             // one shape for every drag the hold watched (`--stats` `hold`)
             *held_for_take = Some(json!({
@@ -1243,6 +1241,14 @@ impl Engine {
                     cursor = Some(Some(held && (settled == Some(true) || !drop_settle)));
                 }
                 let confirming = super::handle::confirming(confirm, supported, cursor);
+                // ruling 837: a drop handed to Chrome's activation though its Electron source's settle failed
+                let settle_failed_activation = super::handle::activation_over_failed_settle(
+                    confirming,
+                    settle.map(|settle| {
+                        let steps = at_release.as_ref().map_or(&[][..], |read| &read.steps[..]);
+                        settle.settled(steps, xtest_route)
+                    }),
+                );
                 let by_cursor = cursor.map(|accepted| accepted == Some(true));
                 if let Some(watch) = &drop_cursor {
                     let mut record = match (watch, &at_release) {
@@ -1268,6 +1274,7 @@ impl Engine {
                         "confirmed_by": format!("{confirming:?}"),
                         "drop_window": drop_window,
                         "release_over": over_aware,
+                        "settle_failed_activation": settle_failed_activation,
                     }),
                 );
                 let window = watched.expect("a watched drag has its window");
@@ -1277,7 +1284,9 @@ impl Engine {
                 };
                 match (released, confirming) {
                     (Some(false), _) | (Some(true), super::handle::Confirming::Activation(_)) => {
-                        self.late_watch = Some(after.handed_over(app(&mut self.x)));
+                        let mut after = after.handed_over(app(&mut self.x));
+                        after.settle_failed = settle_failed_activation;
+                        self.late_watch = Some(after);
                     }
                     (Some(true), confirming) if confirming.unconfirmed() => {
                         after.done();

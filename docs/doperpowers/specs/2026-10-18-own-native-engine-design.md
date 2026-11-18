@@ -5634,6 +5634,61 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      the next observation, so a later re-fetch of it matches on the other ten attributes. A field whose subrole changed
      still fails the re-check, which answers `valueUnconfirmed` as before.
   Date/Author: 2026-11-17, cursor235's implementer for #390 (the review of 2532a1b5).
+- Decision (#405, 2026-11-17, `fix/405-secure-field-unread`; the issue's intent, from the audit at 290303c1 and probe
+  kit probe/pw-walk 0d77eba7, runs 44203155183, 44206136831 and 44211615666): **the observation classifies an element
+  before it reads its value, and never reads a password field's value, length, Markdown or selection, whatever the app
+  would answer.** Every tested app masked the value before cua saw it (Chromium, Electron, Safari, Firefox: U+2022 at
+  the exact length; AppKit's NSSecureTextField: U+F79A), so the walk printed the mask at the password's length, and
+  Chromium and Electron answered seven bullets for AXSelectedText, which the trailer printed. That protection was the
+  app's alone: the walk requested AXValue and AXNumberOfCharacters in the same batch as AXRole and AXSubrole, the
+  Markdown read and the focused element's AXSelectedText were unguarded, and the lineage identity kept the value as
+  `s:<text>`. "Not changed" in "#390's review", item 3, is reversed.
+  1. **Classify, then read** (Fetch.swift `ElementSource`). Each element is read in two requests: every observed
+     attribute but the value's (`valueAttributes`: AXValue, AXNumberOfCharacters) first; then those two, beside AXRole
+     and AXSubrole read again, only when the first classified the element as neither a password field (role or subrole
+     AXSecureTextField) nor unclassifiable (a role or subrole it could not read), by the rule every value read of a
+     field already follows (`writtenValueFieldClosed`, through `valueReadClosed`). A field the second request finds
+     closed, because it turned secure in between, keeps nothing of that answer; and a request keeps only the
+     attributes it asked for, whatever else an app puts beside them. The Markdown read (AXAttributedStringForRange) asks
+     the role and subrole again just before it; the focused element's AXSelectedText is read only once its role and
+     subrole, read just before, leave it open (Skyshot.swift `focusedSelectedText`); select_text refuses a password
+     field before reading its value or its attributed text (`selectionSearchText`, `selectionNotSettable`), since a
+     search's answer would tell what the field holds. AXValueDescription stays in the first request (AppKit's "contains
+     secure text"). The vendor batches everything in one request; reading the role and subrole in the same batch as the
+     value was the alternative (one request, and the classification atomic with the value), not taken because it reads
+     the plaintext into the engine from any app that would answer it.
+  2. **What a password field's node carries**: `secure: true`, no value, value type, length or Markdown, and still its
+     settable flag (counted as holding a value, as every app answers it one). Its identity keeps no value
+     (`ElementIdentity.valueUnread`, #390's mark), so a re-fetch matches it by the other ten attributes. The issue named
+     role, path and frame for that identity; the lineage's identity has never held a path or frame (tokens follow the
+     sibling rule, and a frame changes with every scroll), so it keeps the vendor's non-value attributes instead, none
+     of which is the field's text. A field that cannot be classified carries no value and no `secure`, since it is not
+     known to be one.
+  3. **Every entry point.** The walk (`data`, `listedData`); the settle's busy walk, which now reads no value attribute at
+     all (`structure`: the busy signs need none), the observation that reuses its reads adding only the value's request;
+     the focused element's selected text; and a token's re-resolution after an action (its re-read from the handle and
+     the re-fetch walk, which matches each element first without its value and asks for the value only of one the rest
+     already matches, when the match counts it).
+  4. **The renderer** (render.mjs): a node marked `secure`, or whose role or subrole is AXSecureTextField whatever value it
+     carries, keeps no value or Markdown, prints `secure text` as its Value part (bare when it is the line's only part),
+     and drops the trailer's selected text when it is the focused element; so the diff never sees what it holds change.
+     Every other node prints byte for byte as before.
+  5. **The cost**: one more request per element whose value may be read, per observation (not per busy walk), and one
+     per Markdown read. Not measured live.
+  6. **The model's document**: the typing paragraph of agent-cursor.md gains a sentence after its password-field
+     sentence: an observation never shows a password field's text or length, its value reads `secure text`, selectText
+     cannot select in it, and a screenshot shows what the field displays (the surface inventory's "Table 3 addition
+     (2026-11-17, #405)", the docs oracle and the core-documentation test byte for byte).
+  7. **Not covered**: the paste's effect reading (Paste.swift `effectReading`) still reads the focused field's
+     AXSelectedTextRange and AXNumberOfCharacters to see a paste land, and its per-line diagnostics carry the count;
+     unguarding it would leave a paste into a password field unconfirmable, so it is left to its own ticket. A
+     service-side filter of substituted secrets (#406) and the Linux engine (#407) are their own tickets.
+  8. **Proof**: unit tests over a stub app that holds PLAINTEXT as a password field's value and answers it to any
+     request (SecureFieldTests: the walk, the settle's busy walk and its reuse, a field turning secure between requests,
+     the focused selected text, re-resolution by handle and by re-fetch, select_text; the renderer and diff tests), each
+     guard mutated away and caught. The live run of the pw-walk kit across its six lanes, and the run typing a
+     `{{secret:…}}` into a password field, wait on a hosted run.
+  Date/Author: 2026-11-17, cursor235's implementer for #405.
 
 ## Outcomes & Retrospective
 

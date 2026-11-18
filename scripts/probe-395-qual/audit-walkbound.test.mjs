@@ -14,13 +14,13 @@ function engineRecord(id,rows){
 const discovery=[[API.single,'AXFocusedUIElement',0,1,20],[API.single,'AXFocusedWindow',0,0,30],[API.single,'AXMinimized',1,0,40]];
 const iter=at=>[[API.phaseBegin,'fieldClosed',-1,0,at],[API.single,'AXRole',1,0,at+1],[API.single,'AXSubrole',1,0,at+2],[API.phaseEnd,'fieldClosed',-1,0,at+3],[API.single,'AXValue',1,0,at+4]];
 const poll=[[API.phaseBegin,'poll',-1,0,5000],...iter(5010),...iter(5100),[API.phaseEnd,'poll',-1,0,5000,400]];
-// A walk of `nodes` visited elements (an AXRole then an AXChildren read each), then the bound marker when `cap` names one, in a
-// phase of `durUs` microseconds. `deviate` makes one children read an absent value; `more` appends reads still inside the walk.
+// A walk of `nodes` visited elements (an AXRole then an AXChildren read each), then the bound marker when `cap` names one, as the
+// patch writes it (its pair the last thing in the walk), in a phase of `durUs` microseconds. `deviate` makes one children read an absent value; `more` appends reads still inside the walk.
 const walk=(nodes,{cap=null,durUs=5000,deviate=null,more=[]}={})=>[
  [API.phaseBegin,'walk',-1,0,1000,0],
  ...Array.from({length:nodes},(_,i)=>[[API.single,'AXRole',i+2,0,1010+i,5],[API.single,'AXChildren',i+2,i===deviate?1:0,1010+i,5]]).flat(),
  ...more,
- ...(cap?[[API.phaseBegin,cap==='nodes'?'walkCapNodes':'walkCapTime',-1,0,1500,0],[API.phaseEnd,cap==='nodes'?'walkCapNodes':'walkCapTime',-1,0,1500,1]]:[]),
+ ...(cap?[[API.phaseBegin,cap==='nodes'?'walkCapNodes':'walkCapTime',-1,0,1000+durUs-2,0],[API.phaseEnd,cap==='nodes'?'walkCapNodes':'walkCapTime',-1,0,1000+durUs-2,1]]:[]),
  [API.phaseEnd,'walk',-1,0,1000,durUs]];
 const typed=(w,after=[])=>[...discovery,...w,...after,[API.event,'keyDown',-1,0,9000],...poll];
 const NODES=typed(walk(200,{cap:'nodes',durUs:38000})),TIME=n=>typed(walk(n,{cap:'time',durUs:40136}));
@@ -51,7 +51,7 @@ test('the walk phase reports the bound that ended it, with the reads that corrob
  assert.equal(t.walk.whole.invalid,false);assert.equal(t.counters.calls,3+346+6); // the bound markers are phases, never calls
  assert.equal(t.strictKey,buildSchedule(engineRecord('t2',typed(walk(173,{durUs:40136})))).strictKey);
  const row=await cell(fresh(),{tag:'main-large-plain-r01',kind:'plain',schedule:TIME(173)});
- assert.equal(row.schedule.walks.invalid,false);assert.deepEqual(row.schedule.walks.segments,[{reason:'time',calls:346,roles:173,children:173,durMs:40.136,demonstrated:true,side:'pre'}]);
+ assert.equal(row.schedule.walks.invalid,false);assert.deepEqual(row.schedule.walks.segments,[{reason:'time',calls:346,roles:173,children:173,durMs:40.136,capMs:40.134,demonstrated:true,side:'pre'}]);
  assert.equal(JSON.stringify(row.schedule.walks).includes('AXRole'),false);assert.deepEqual(Object.keys(row.schedule.timeline.phases).includes('walkCapTime'),true);
  // Not demonstrated: a clock bound in a short phase, a node bound short of the bound, a bound with no walk around it, two in one walk.
  const seg=s=>buildSchedule(engineRecord('x',s)).walk.pre;
@@ -116,4 +116,77 @@ test('walkBoundDivergence: exact ordered prefix of one walk, every other read eq
  assert.equal(walkBoundDivergence(a,sched([...discovery,[API.event,'keyDown',-1,0,9000]]),'pre').why,'walk-phases-differ');
  assert.equal(walkBoundDivergence(a,sched(typed(walk(200,{cap:'nodes',durUs:38000,deviate:3}))),'pre').why,'walks-differ-before-the-stop');
  assert.equal(WALK_CAP.nodes,200);assert.equal(WALK_CAP.ms,40);
+});
+// Several repetitions per kind, summarized in the order given: {plain,short,long} each a list of [rep, schedule].
+async function reps(spec,{head='main',page='large'}={}){
+ const a=fresh(),out=[];
+ for(const [kind,list] of [['plain',spec.plain],['secretShort',spec.short],['secretLong',spec.long]])
+  for(const [rep,schedule] of list)out.push(await cell(a,{tag:`${head}-${page}-${kind}-r${String(rep).padStart(2,'0')}`,head,page,kind,schedule}));
+ const s=a.summarize(out),k=`${head}.${page}`;
+ return {pre:s.gates['preInputIdentical:'+k],conceal:s.gates['concealShortLong:'+k],info:s.informational};
+}
+// The same 173 reads, one stop corroborated and one not (a clock bound in a phase shorter than the clock bound): rows with the same
+// reads that differ only in the proof of their stop.
+const GOOD=TIME(173),BAD=typed(walk(173,{cap:'time',durUs:30000}));
+test('rows with the same reads but a different proof of the stop are each held: no twin stands for another, in either order',async()=>{
+ // Across kinds: the pre-input gate compares every distinct (reads, proof), not the first row of each reads.
+ for(const [plain,short] of [[GOOD,BAD],[BAD,GOOD],[GOOD,GOOD]]){
+  const r=await reps({plain:[[1,plain]],short:[[1,short]],long:[[1,NODES]]});
+  const bad=plain===BAD||short===BAD;
+  assert.equal(r.pre,bad?'fail':'pass');
+  if(bad)assert.equal(r.info['preInputIdentical:main.large'].walkBound.pairs[0].why,'stop-not-a-demonstrated-time-bound');
+ }
+ // Within a kind, repetition by repetition.
+ for(const order of [[GOOD,BAD],[BAD,GOOD]]){
+  const r=await reps({plain:[[1,NODES]],short:[[1,order[0]],[2,order[1]]],long:[[1,NODES],[2,NODES]]});
+  assert.equal(r.pre,'fail');assert.equal(r.conceal,'fail');
+  assert.equal(r.info['preInputIdentical:main.large'].walkBound.ok,false);
+ }
+ // The failing pair is published first, not behind the excused ones.
+ const w=(await reps({plain:[[1,GOOD]],short:[[1,BAD],[2,BAD]],long:[[1,NODES],[2,NODES]]})).info['preInputIdentical:main.large'].walkBound;
+ assert.equal(w.pairs[0].excused,false);
+ // Every row corroborated: all agree, however many twins.
+ const ok=await reps({plain:[[1,NODES]],short:[[1,GOOD],[2,TIME(173)]],long:[[1,NODES],[2,NODES]]});
+ assert.equal(ok.pre,'pass');assert.equal(ok.conceal,'pass');
+});
+test('the sets of shapes keep every proof too: a short row unpaired with a long one cannot hide behind its corroborated twin',async()=>{
+ // r03 has no long counterpart, so only the sets can speak for it: the verdict may not depend on which twin came first.
+ for(const short of [[[1,GOOD],[3,BAD]],[[3,BAD],[1,GOOD]]]){
+  const r=await reps({plain:[[1,NODES]],short,long:[[1,NODES]]});
+  assert.equal(r.conceal,'fail');
+ }
+ const ok=await reps({plain:[[1,NODES]],short:[[3,GOOD],[1,GOOD]],long:[[1,NODES]]});
+ assert.equal(ok.conceal,'unknown'); // sets agree, one repetition is unpaired: unknown, not fail, and not pass
+});
+// A bound is the walk's tail, as the patch writes it: its own pair adjacent, then the walk's end, with no read after it.
+const inner=n=>walk(n).slice(1,-1);
+const walked=(parts,end=40136)=>typed([[API.phaseBegin,'walk',-1,0,1000,0],...parts,[API.phaseEnd,'walk',-1,0,1000,end]]);
+const pair=(name='walkCapTime',at=41000)=>[[API.phaseBegin,name,-1,0,at,0],[API.phaseEnd,name,-1,0,at,1]];
+test('a bound is excused only as the walk\'s tail: a matched adjacent pair, then the walk\'s end, with nothing after it',()=>{
+ const sched=s=>buildSchedule(engineRecord('x',s)),pre=s=>sched(s).walk.pre;
+ const ok=pre(walked([...inner(173),...pair()]));
+ assert.equal(ok.invalid,false);assert.deepEqual([ok.segments[0].reason,ok.segments[0].roles,ok.segments[0].capMs,ok.segments[0].demonstrated],['time',173,40,true]);
+ assert.equal(walkBoundDivergence(sched(walked([...inner(173),...pair()])),sched(NODES),'pre').excused,true);
+ const [begin,end]=pair();
+ const refused={
+  'begin with no end':[...inner(173),begin],
+  'end with no begin':[...inner(173),end],
+  'a read between the pair':[...inner(173),begin,[API.single,'AXRole',1,0,40001],end],
+  'a read after the pair':[...inner(173),...pair(),[API.single,'AXRole',1,0,40002]],
+  'another phase after the pair':[...inner(173),...pair(),[API.phaseBegin,'fieldClosed',-1,0,40002,0]],
+  'a pair that is not its own':[...inner(173),begin,[API.phaseEnd,'walkCapNodes',-1,0,40000,1]],
+  'a bound with the walk going on':[...inner(100),...pair(),...inner(73)],
+  'two pairs':[...inner(173),...pair(),...pair('walkCapNodes')]};
+ for(const [what,parts] of Object.entries(refused)){
+  const s=pre(walked(parts));
+  assert.equal(s.invalid,true,what);
+  assert.equal(walkBoundDivergence(sched(walked(parts)),sched(NODES),'pre').why,'no-walk-evidence',what);
+  assert.equal(walkBoundDivergence(sched(NODES),sched(walked(parts)),'whole').excused,false,what);
+ }
+ // Corroborated at the marker, not at the walk's end: a marker written before the clock bound had run does not count, whatever came after.
+ const early=sched(walked([...inner(173),...pair('walkCapTime',20000)]));
+ assert.equal(early.walk.pre.invalid,false);assert.equal(early.walk.pre.segments[0].demonstrated,false);
+ assert.equal(walkBoundDivergence(early,sched(NODES),'pre').why,'stop-not-a-demonstrated-time-bound');
+ // Nor does a node bound with a read after it: the 200 are counted at the marker.
+ assert.equal(pre(walked([...inner(200),...pair('walkCapNodes'),[API.single,'AXRole',1,0,40002]])).invalid,true);
 });

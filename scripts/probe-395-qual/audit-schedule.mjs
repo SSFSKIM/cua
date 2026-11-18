@@ -125,32 +125,39 @@ export function canonicalEntries(items,poll='poll'){
 }
 // The focused-field walk's two bounds, as the pinned sources set them (typeReadbackFocusWalkNodes and typeReadbackFocusWalkMs in
 // TypeReadback.swift at main f2c30fc5 and fix 60327d46). The audit patch records which one ended a walk (audit.swift `walkCap`:
-// a zero-length `walkCapNodes` or `walkCapTime` phase inside the walk phase, written in the bound's own branch after the engine
-// has decided, with no clock read of its own). A bound is DEMONSTRATED only when the walk's own reads agree with the marker:
-// one AXRole read per visited node, so exactly `nodes` of them for the node bound; for the time bound fewer than that, in a
-// phase at least `ms` long (the phase opens before the engine's clock starts and closes after its last check).
+// a zero-length `walkCapNodes` or `walkCapTime` phase, its begin and end adjacent, written in the bound's own branch after the
+// engine has decided, with no clock read of its own, and followed at once by the walk's return: the walk's last act). A bound is
+// DEMONSTRATED only when the walk's own reads, as of the marker, agree with it: one AXRole read per visited node, so exactly
+// `nodes` of them for the node bound; for the time bound fewer than that, the marker `ms` or more after the walk phase opened (the
+// phase opens before the engine's clock starts, and the marker is written after the engine's check of it).
 export const WALK_CAP=Object.freeze({nodes:200,ms:40,phase:'walk',markers:Object.freeze({walkCapNodes:'nodes',walkCapTime:'time'})});
 const readsOf=(tokens,name)=>tokens.reduce((n,t)=>n+(t.split(':')[1]?.split(/[@!]/)[0].split('+').includes(name)?1:0),0);
 // Walk phases of an ordered entry list: the call tokens, and each walk phase as a [start,end) range of them with the bound that
-// ended it. `invalid` when the phases do not nest as the patch writes them (a walk inside a walk, an unclosed one, a bound marker
-// outside a walk or two inside one): such a schedule is never excused.
+// ended it. A bound counts only as the walk's tail: its begin, then its own end, then the walk's end, nothing between and no read
+// after, so the reads counted at the marker are all of the walk's. `invalid` when the phases do not nest as the patch writes them
+// (a walk inside a walk, an unclosed one, a bound marker outside a walk, unmatched, twice in one, or followed by anything but the
+// walk's end): such a schedule is never excused.
 export function walkParts(entries){
  const tokens=[],segments=[];let open=null,invalid=false;
  for(const e of entries){
-  const name=e.names[0];
-  if(e.api===API.phaseBegin&&name===WALK_CAP.phase){if(open)invalid=true;open={start:tokens.length,at:e.atMs,reason:null};continue}
-  if(e.api===API.phaseEnd&&name===WALK_CAP.phase){
+  const name=e.names[0],bound=WALK_CAP.markers[name],isWalk=name===WALK_CAP.phase;
+  if(open?.cap){
+   if(!open.cap.ended&&e.api===API.phaseEnd&&name===open.cap.name){open.cap.ended=true;continue}
+   if(!open.cap.ended||e.api!==API.phaseEnd||!isWalk)invalid=true;
+  }
+  if(e.api===API.phaseBegin&&isWalk){if(open)invalid=true;open={start:tokens.length,at:e.atMs,cap:null};continue}
+  if(e.api===API.phaseEnd&&isWalk){
    if(!open){invalid=true;continue}
-   const body=tokens.slice(open.start);
-   segments.push({start:open.start,end:tokens.length,reason:open.reason,calls:body.length,roles:readsOf(body,'AXRole'),children:readsOf(body,'AXChildren'),durMs:round(e.atMs+e.durMs-open.at)});
+   const body=tokens.slice(open.start),c=open.cap?.ended?open.cap:null;
+   segments.push({start:open.start,end:tokens.length,reason:c?c.reason:null,calls:body.length,roles:readsOf(body,'AXRole'),children:readsOf(body,'AXChildren'),durMs:round(e.atMs+e.durMs-open.at),capMs:c?round(c.at-open.at):null});
    open=null;continue;
   }
-  if(e.api===API.phaseBegin&&WALK_CAP.markers[name]!==undefined){if(!open||open.reason)invalid=true;else open.reason=WALK_CAP.markers[name];continue}
-  if(e.api===API.phaseEnd&&WALK_CAP.markers[name]!==undefined)continue;
+  if(e.api===API.phaseBegin&&bound!==undefined){if(!open||open.cap)invalid=true;else open.cap={name,reason:bound,at:e.atMs,ended:false};continue}
+  if(e.api===API.phaseEnd&&bound!==undefined){invalid=true;continue}
   if(isCall(e))tokens.push(token(e));
  }
  if(open)invalid=true;
- for(const g of segments)g.demonstrated=g.reason==='nodes'?g.roles===WALK_CAP.nodes:g.reason==='time'?g.roles<WALK_CAP.nodes&&g.durMs>=WALK_CAP.ms:false;
+ for(const g of segments)g.demonstrated=g.reason==='nodes'?g.roles===WALK_CAP.nodes:g.reason==='time'?g.roles<WALK_CAP.nodes&&g.capMs>=WALK_CAP.ms:false;
  return {tokens,segments,invalid};
 }
 // The comparable keys of a list of entries: the calls alone (what a comparison uses) and, apart, with the phase markers.

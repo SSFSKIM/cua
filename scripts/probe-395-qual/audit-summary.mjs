@@ -81,15 +81,22 @@ export function walkBoundDivergence(a,b,scope){
  }
  return walks.length?{excused:true,walks}:{excused:false,why:'identical-walks'};
 }
-// Pairwise over one representative per distinct schedule: every pair must be equal up to the bound.
-function reconcile(reps,scope,full){
- const pairs=[];let ok=reps.length>0;
+// What walkBoundDivergence reads of a schedule besides its reads: its walk phases and the proof of each stop. Rows with the same
+// reads are interchangeable only if they also agree on this, since a row with one stop undemonstrated is not excused where its
+// twin is; so a group of rows is represented by one row per (reads, proof), never per reads alone.
+const proofOf=(f,scope)=>{const w=f?.walk?.[scope];return w?JSON.stringify([w.invalid,w.segments.map(g=>[g.start,g.end,g.reason,g.demonstrated])]):'-'};
+const distinctBy=(rows,key)=>[...new Map(rows.map(r=>[key(r),r])).values()];
+// Pairwise over one row per distinct (reads, proof): every pair with different reads must be equal up to the bound. Pairs with the
+// same reads have nothing to excuse. Failing pairs are listed first, since only some are published.
+function reconcile(rows,scope,full,reads){
+ const reps=distinctBy(rows,r=>reads(r)+'/'+proofOf(full(r.tag),scope)),pairs=[];let ok=reps.length>0;
  for(let i=0;i<reps.length;i++)for(let j=i+1;j<reps.length;j++){
+  if(reads(reps[i])===reads(reps[j]))continue;
   const x=walkBoundDivergence(full(reps[i].tag),full(reps[j].tag),scope);
   if(!x.excused)ok=false;
   pairs.push({a:reps[i].tag,b:reps[j].tag,...x});
  }
- return {ok,pairs};
+ return {ok,pairs:[...pairs.filter(p=>!p.excused),...pairs.filter(p=>p.excused)]};
 }
 function setCompare(aRows,bRows,pickA=r=>r.schedule?.shape,pickB=pickA){
  const A=new Map(),B=new Map();
@@ -145,15 +152,16 @@ export function summarizeRows(allRows,{full=()=>null,stray={},securePermitted={}
    const missing=kinds.some(g=>!g.length),weak=all.some(r=>!r.schedule.complete||!r.schedule.preInput.available),noInput=all.some(r=>r.schedule.preInput.boundary!=='event');
    const hashes=new Set(all.map(r=>r.schedule.preInput.exactHash));
    // Distinct pre-input reads are excused only as one walk that a time bound ended where another went on (walkBoundDivergence).
-   const reps=[...new Map(all.map(r=>[r.schedule.preInput.exactHash,r])).values()],bound=!missing&&!weak&&!noInput&&hashes.size>1?reconcile(reps,'pre',full):null;
+   const bound=!missing&&!weak&&!noInput&&hashes.size>1?reconcile(all,'pre',full,r=>r.schedule.preInput.exactHash):null;
    out.gates['preInputIdentical:'+k]=missing||weak?'unknown':noInput?'fail':hashes.size===1||bound.ok?'pass':'fail';
    const [,s,l]=kinds,sl=s.concat(l);
    // The poll phase is what normalizes the schedule: without its hook in the build the shapes are not comparable.
    const weak2=sl.some(r=>!r.schedule.complete||!r.schedule.preInput.available||!r.schedule.phasesApplied?.includes('poll'));
    const excuse=(x,y)=>walkBoundDivergence(full(x.tag),full(y.tag),'whole');
    const cmp=s.length&&l.length?setCompare(s,l):null,pairs=s.length&&l.length?repPairs(s,l,full,excuse):null;
-   // The sets of shapes match when each shape of one is equal, or equal up to the walk bound, to a shape of the other.
-   const setsMatch=()=>{const uniq=rs=>[...new Map(rs.map(r=>[r.schedule.shape,r])).values()],A=uniq(s),B=uniq(l),eq=(x,y)=>x.schedule.shape===y.schedule.shape||excuse(x,y).excused;return A.every(x=>B.some(y=>eq(x,y)))&&B.every(y=>A.some(x=>eq(x,y)))};
+   // The sets of shapes match when each shape of one is equal, or equal up to the walk bound, to a shape of the other; a shape is
+   // represented by a row of each distinct proof of its stops, so no row's missing proof is hidden behind a twin's.
+   const setsMatch=()=>{const uniq=rs=>distinctBy(rs,r=>r.schedule.shape+'/'+proofOf(full(r.tag),'whole')),A=uniq(s),B=uniq(l),eq=(x,y)=>x.schedule.shape===y.schedule.shape||excuse(x,y).excused;return A.every(x=>B.some(y=>eq(x,y)))&&B.every(y=>A.some(x=>eq(x,y)))};
    out.gates['concealShortLong:'+k]=!s.length||!l.length||weak2?'unknown'
     :sl.some(r=>r.schedule.preInput.boundary!=='event')||!(cmp.equalSets||setsMatch())||pairs.shapeEqual+pairs.walkBoundEqual!==pairs.pairs?'fail'
     :pairs.pairs===0||pairs.unpairedA+pairs.unpairedB>0?'unknown':'pass';

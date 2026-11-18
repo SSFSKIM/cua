@@ -121,7 +121,7 @@ export function createAuditCapture({mode='audit',sink=null,clock=()=>performance
       fullSchedules.set(tag,built);
       schedule={...kept,strictHash:digest(strictKey),phaseHash:digest(phaseKey),entriesTotal:strictKey?strictKey.split('|').length:0,preInput:{...built.preInput,exactHash:digest(built.preInput.exactKey),exactKey:undefined},boundaryProvenance:prov?'known':'unknown',eventHooks,phasesApplied:prov?.phases?.applied??null,
        // What ended each walk phase (the bound it hit, with the reads that corroborate it), without the tokens; the summary compares the in-memory tokens.
-       walks:{invalid:walk.whole.invalid||walk.pre.invalid,segments:walk.whole.segments.map(({reason,calls,roles,children,durMs,demonstrated},i)=>({reason,calls,roles,children,durMs,demonstrated,side:i<walk.pre.segments.length?'pre':'post'}))}};
+       walks:{invalid:walk.whole.invalid||walk.pre.invalid,segments:walk.whole.segments.map(({reason,calls,roles,children,durMs,capMs,demonstrated},i)=>({reason,calls,roles,children,durMs,capMs,demonstrated,side:i<walk.pre.segments.length?'pre':'post'}))}};
       auditClock=decoded.spanMs;
      }catch(e){failures.push(e instanceof AuditError?e.code:'audit-record-malformed')}
     }

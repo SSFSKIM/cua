@@ -5827,46 +5827,55 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      `valueClassification`) before anything else is read of it. A closed one ends the lookup at once with main's
      reason for such a focused element, nothing more read of it: `.refused(.secure)` for a password field by role or
      subrole or an unreadable subrole, `.refused(.roleUnreadable)` for an unreadable role (the design session's note on
-     the checkpoint of 2026-11-18). type_text still never reads a secure field and adds no confirmation for one. (d)
-     Resolve before input: the lookup is the snapshot's, before the first event. After any delivered text, a field the
-     route found is asked itself, the same handle reading AXFocused true (`readbackStillFocused`), at the final poll and
-     at every checkpoint: no marker call, no re-discovery, no application focus or parent climb. A field the
-     application's focus or the walk found keeps main's check, looked up again without the marker, even in Safari. The
-     check's reads do not depend on the request being concealed or on the secret. (e) Safari only: the bundle
+     the checkpoint of 2026-11-18). The web area itself is checked to be the app's and classified before its marker is
+     read, and must classify open as an AXWebArea, else no claim (it is not the field); each ancestor the claim's scope
+     climb passes is checked to be the app's. type_text still never reads a secure field and adds no confirmation for
+     one. (d) Resolve before input: the lookup is the snapshot's, before the first event. After any delivered text, a
+     field the route found is asked itself, the same handle reading AXFocused true (`readbackStillFocused`), at the
+     final poll and at every checkpoint: no marker call, no re-discovery, no application focus or parent climb. A field
+     the application's focus or the walk found keeps main's check, looked up again without the marker, even in Safari.
+     The check's reads do not depend on the request being concealed or on the secret. (e) Safari only: the bundle
      identifier of the process read (`NSRunningApplication(processIdentifier:)`) equal to `com.apple.Safari`, the
      provider the probe measured; Technology Preview and other WebKit apps do not take it. Only after the application's
-     AXFocusedUIElement answered no element.
-  3. **The choices the ruling left.** Order: the application's focus, then the route, then the walk, so the walk still
-     claims a field the route does not (no selection, the symbols absent) on a page within its bounds. The web area:
-     the primary window's first AXWebArea breadth first, under the walk's own bounds (200 nodes, depth 12, 40 ms; the
-     probe's path took 28 nodes at depth 6), text-entry elements leaves as in the walk, any failed read none; an
-     iframe's web area lies inside the page's, so the outer one is found first. The climb to the field: at most
-     `typeReadbackMarkerFieldHops` (4) AXParent hops (the probe's 20 of 20 took one); a text-entry role is the field;
-     the web area, reached first, is no field. The claim: the field reads AXFocused true, and its AXParent chain reaches
-     that same web area within `typeReadbackMarkerScopeHops` (24); otherwise no claim, and the walk runs. Testability:
-     `ReadbackAX` carries every Accessibility call of the live reads (attribute, parameterized, batch, pid, and the
-     dlsym'd symbols), so `ReadbackReads.live` runs whole in the tests over a stub.
+     AXFocusedUIElement answered no element (noValue or attributeUnsupported); a read of it that failed (any other
+     error, or a reply that is not an element) goes to the walk alone, as on main.
+  3. **The choices the ruling left.** Order: the application's focus, then the route (only on its absent answer), then
+     the walk, so the walk still claims a field the route does not (no selection, the symbols absent, a failed focus
+     read) on a page within its bounds. The web area: the primary window's first AXWebArea breadth first, under the
+     walk's own bounds (200 nodes, depth 12, 40 ms; the probe's path took 28 nodes at depth 6), text-entry elements
+     leaves as in the walk, any failed read none; an iframe's web area lies inside the page's, so the outer one is found
+     first. The climb to the field: at most `typeReadbackMarkerFieldHops` (4) AXParent hops (the probe's 20 of 20 took
+     one); a text-entry role is the field; the web area, reached first, is no field. The claim: the field reads
+     AXFocused true, and its AXParent chain reaches that same web area within `typeReadbackMarkerScopeHops` (24);
+     otherwise no claim, and the walk runs. Testability: `ReadbackAX` carries every Accessibility call of the live reads
+     (attribute, parameterized, batch, pid, and the dlsym'd symbols), so `ReadbackReads.live` runs whole in the tests
+     over a stub.
   4. **Noted, not changed:** a later type_text's pre-input marker can carry a caret that depends on an earlier secret
      typed into the same field. For a plain field, main's snapshot already reads that field's whole value; for a secure
      field, the answer is refused regardless. So it adds no exposure beyond main. Also not measured: a Safari window
      whose chrome before the web area exceeds the walk's bounds (many tabs) finds no web area and falls back to the walk;
      a docked Web Inspector is a second web area, and the first breadth first is taken.
-  5. **Proof**: TypeReadbackMarkerTests (12) run the live reads over a stub Safari whose web area answers a real
-     AXTextMarkerRange, made with HIServices' constructors in the test alone, its markers holding known offsets at
-     bytes 8 and 20. Ruling 824's test: across a confirmed plain text, a plain mismatch with its excerpt, a concealed
-     confirmation and mismatch, and a password field's refusal, neither offset in any form (decimal, hex, its bytes,
-     base64) reaches the reply's JSON, the read-back's record, an error sentence or the stderr captured over the runs;
-     exactly one AXUIElementForTextMarker is asked, with the start marker (CFEqual), never the end marker or the range;
-     the range's and the copied marker's retain counts show nothing keeps them; a second lookup reads the range again;
-     after the first event the identity check is the field's own AXFocused. Also: the gating (another app, absent
-     symbols, a Safari whose application names its field, before typing or after); a closed field or text (seven
-     classifications, plain and concealed) refused with main's reason, nothing read of it after its classification and
-     no value or range of anything; fifteen odd marker replies claiming nothing, then the walk; the climb's and the
-     scope's bounds; a field not focused, not under the web area (or under another), or under an iframe's (claimed);
-     no marker call after the first event, a checkpoint's check included; focus lost after typing answering
-     fieldChanged; the same reads whatever the secret. Each of 31 mutations, every guard removed or weakened, was
-     caught: the web area's failed-children guard survived the first round and has its own case now, and the
-     subrole-in-the-batch mutation, first caught by a test's trap, now fails an assertion.
+  5. **Proof**: TypeReadbackMarkerTests (14) run the live reads over a stub Safari whose web area answers a real
+     AXTextMarkerRange, made with HIServices' constructors in the test alone (where they do not resolve, the tests that
+     need them skip), its markers holding known offsets at bytes 8 and 20. Ruling 824's test: across a confirmed plain
+     text, a plain mismatch with its excerpt, a concealed confirmation and mismatch, and a password field's refusal,
+     neither offset in any form (decimal, hex, its bytes, base64) reaches the reply's JSON, the read-back's record, an
+     error sentence or the stderr captured over the runs; exactly one AXUIElementForTextMarker is asked, with the start
+     marker (CFEqual), never the end marker or the range; the range's and the copied marker's retain counts show nothing
+     keeps them; a second lookup reads the range again; after the first event the identity check is the field's own
+     AXFocused. Also: the gating (another app, absent symbols, a Safari whose application names its field, before typing
+     or after; a failed or wrong-typed application focus read taking the walk alone, attributeUnsupported the route); a
+     closed field or text (seven classifications, plain and concealed) refused with main's reason, nothing read of it
+     after its classification and no value or range of anything; fifteen odd marker replies claiming nothing, then the
+     walk; a web area another process's, unreadable or classified otherwise (five cases), with no marker call; the
+     climb's and the scope's bounds; a field not focused, not under the web area (or under another, or below an ancestor
+     another process's), or under an iframe's (claimed); no marker call after the first event, a checkpoint's check
+     included; focus lost after typing answering fieldChanged; the same reads whatever the secret. Each of 31 mutations,
+     every guard removed or weakened, was caught: the web area's failed-children guard survived the first round and has
+     its own case now, and the subrole-in-the-batch mutation, first caught by a test's trap, now fails an assertion. Six
+     more, of the guards a high review of the branch added, were caught too: the web area's ownership, its
+     classification removed or any open role taken, an ancestor's ownership, the marker on a failed focus read, the live
+     read folding a failure into an absence.
   Date/Author: 2026-11-18, cursor235's implementer for #395 (ruling 1ea561bc:824).
 
 ## Outcomes & Retrospective

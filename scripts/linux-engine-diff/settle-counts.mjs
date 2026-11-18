@@ -55,7 +55,7 @@ export function engineEntry(engine) {
     lines: engine.lines,
     unparsable: engine.unparsable,
     ended: engine.ended,
-    final: engine.final,
+    settle_final: engine.settleFinal,
     sent: engine.sent,
     drop_settles: engine.dropSettles,
     recorded,
@@ -101,11 +101,12 @@ const taken = (c) => c.entered > 0 || c.second_rest > 0;
  * A step's settle, from its record: `{state, counts, engines, undragged, noDrag, unknown}`, over every engine that is no
  * vendor build the run named (a cua lane, or an unidentified one that may be). `state` is `taken` when any engine's
  * last counter shows the branch run (entered, or a second rest taken), whatever else is missing. It is `not taken` only
- * when every such engine either recorded a zero counter in its own post-shutdown snapshot (its last stats line, `"id":
- * null`, after the exit that can end a held handle and settle it), read whole, or was sent no request the settle runs
- * in (`noDrag`: proved by the harness's record of what it sent, listed apart, never a measured zero). Anything else is
- * `unknown`: no record, no counter, a zero read before the exit, an engine still running when its harness ended (a
- * line may be unread), or a stats line that did not parse (it may have been the last). Each counter is its own
+ * when every such engine either recorded a zero counter on its orderly exit's line (its last stats line, marked exactly
+ * `"settle_final": true` after the exit's releases, which can end a held handle and settle it), read whole, or was sent
+ * no request the settle runs in (`noDrag`: proved by the harness's record of what it sent, listed apart, never a
+ * measured zero). Anything else is `unknown`: no record, no counter, a zero on any other last line (a request's, an
+ * idle release's, or none from a killed engine), a record of an older rule, an engine still running when its harness
+ * ended (a line may be unread), or a stats line that did not parse (it may have been the last). Each counter is its own
  * process's, cumulative, so the step's counts are the sum of each engine's last value, every count of the snapshot.
  */
 export function settleVerdict(record) {
@@ -129,8 +130,8 @@ export function settleVerdict(record) {
         ? 'still running when its harness ended: a line may be unread'
         : e.unparsable > 0
           ? `${e.unparsable} stats line(s) did not parse`
-          : !e.final
-            ? 'no post-shutdown snapshot carried its counter: the zero was read before its exit, which can end a held handle and settle it'
+          : e.settle_final !== true
+            ? 'no settle_final exit line carried its counter: the zero was read before its exit, which can end a held handle and settle it'
             : null;
     if (c) read.push(c);
     if (why) unknown.push(`${e.lane} ${e.pid}: ${why}`);

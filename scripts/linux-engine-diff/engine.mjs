@@ -163,9 +163,10 @@ export class Engine {
     this.lines = 0;
     this.unparsable = 0;
     this.dropSettles = null;
-    // whether the engine's last stats line was its own snapshot after the requests (`"id": null`, with drop_settles):
-    // only that one follows what its exit did, and the exit can end a held handle, which can settle
-    this.final = false;
+    // whether the engine's last stats line was its orderly exit's, marked `"settle_final": true` after the exit's
+    // releases (task 101): only that counter follows what the exit did, which can end a held handle and settle it; an
+    // idle release's untied line carries the counter mid-run, and a killed engine writes none
+    this.settleFinal = false;
     this.ended = false;
     // the requests sent, by command: the settle runs only inside a drag or a drag_handle
     this.sent = {};
@@ -260,7 +261,7 @@ export class Engine {
     if (stats === undefined) this.unparsable += 1;
     const counts = settleCounts(stats?.drop_settles);
     if (counts) this.dropSettles = counts;
-    this.final = Boolean(counts) && stats?.id === null;
+    this.settleFinal = Boolean(counts) && stats?.settle_final === true;
     if (this.statsFile) {
       mkdirSync(join(this.statsFile.out, ENGINE_STATS_DIR), { recursive: true });
       appendFileSync(join(this.statsFile.out, this.statsFile.path), `${line}\n`);

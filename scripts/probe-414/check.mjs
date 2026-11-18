@@ -173,9 +173,21 @@ export function drainSummary(rows,planned){
   const metric=k=>drainStats(sizing.map(r=>r.elapsed[k]));
   return {planned,sampled:rows.filter(r=>r.sampled).length,elapsed:rows.filter(r=>r.elapsed).length,realized:rows.filter(r=>r.valid&&r.realized).length,
     eligible:sizing.length,reasons,minimum:Math.ceil(planned*SIZING_MIN_RATIO),
-    stats:{changeGapsMs:drainStats(sizing.flatMap(r=>r.elapsed.changeGapsMs)),drainMs:metric('drainMs'),finalReadMs:metric('finalReadMs')}};
+    stats:{changeGapsMs:drainStats(sizing.flatMap(r=>r.elapsed.changeGapsMs)),drainMs:metric('drainMs'),editAfterPostMs:metric('editAfterPostMs'),finalReadMs:metric('finalReadMs')}};
 }
 export const drainSizingOk=(summary,recorded)=>recorded===summary.planned&&summary.eligible>=summary.minimum;
+
+// Stock IPC supplies first/last native post timestamps, but not the snapshot end. The budget starts after typing.
+export function concealedFailureTiming({head,lane,kind,literal,action,raw,startedAt,endedAt,replyAt}){
+  if(head!=='fix'||literal||action!=='typeUnconfirmed'||raw?.confirmed!==false||raw?.concealed!==true||raw?.secure!==true)return null;
+  const posted=Number.isFinite(startedAt);
+  const snapshot=raw.reason==='selectionUnreadable'||raw.reason==='lengthUnreadable'&&lane==='appkit'&&kind==='selection';
+  const phase=!posted?'before-input':snapshot?'snapshot-refused':'after-input';
+  const interval=t=>Number.isFinite(t)&&Number.isFinite(replyAt)?replyAt-t:null;
+  const fromLastPostMs=interval(endedAt),fromFirstPostMs=interval(startedAt);
+  return {phase,fromLastPostMs,fromFirstPostMs,
+    withinBudget:phase==='after-input'?(fromLastPostMs!==null&&fromLastPostMs>=999&&fromLastPostMs<=1100):null};
+}
 
 const forbiddenAX=new Set(['AXValue','AXValueDescription','AXSelectedText']);
 const countRead=(api,name,id,secure)=>api==='b'&&secure.has(id)&&name==='AXRole+AXSubrole+AXSelectedTextRange+AXNumberOfCharacters';

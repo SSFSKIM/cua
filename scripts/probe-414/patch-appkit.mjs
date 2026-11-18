@@ -10,7 +10,8 @@ import {pathToFileURL} from 'node:url';
 const dispatchBinding='    let args = params["args"] as? [String: Any] ?? [:]\n';
 const methodBinding='guard let method = params["method"] as? String';
 const judged='case .read(let count, let range): last = readbackLengthJudged(count: count, range: range, basis: basis, typed: typed)\n';
-const dwell='if at - match.since >= typeReadbackLengthDwellMs { confirmed = true; break poll }';
+const dwells=['if at - match.since >= typeReadbackLengthDwellMs { confirmed = true; break poll }',
+  'if at - match.since >= typeReadbackLengthDwellMs, at - started <= typeReadbackBudgetMs { confirmed = true; break poll }'];
 const lengthRead='func readbackLength<Element>(_ field: Element, role: String, reads: ReadbackReads<Element>) -> ReadbackLength {\n';
 const posts=['event.postToPid(pid)','event.post(tap: .cghidEventTap)'];
 const count=(text,part)=>text.split(part).length-1;
@@ -33,12 +34,13 @@ export function patchAppKit(root){
   });
   // The gated posts: the mark follows the post call inside the gate's own branch, so a refused post is never marked.
   for(const call of posts)one(`{ ${call} }`,t=>t.replace(`{ ${call} }`,()=>`{ ${call}; Probe414AppKit.shared.posted(event) }`));
-  // The length poll's confirmation, inside confirmLength only. Current form (cbce12e2): the dwell branch that sets `confirmed`,
+  // The length poll's confirmation, inside confirmLength only. Current forms (cbce12e2; 4a005a8c adds the budget bound): the dwell branch that sets `confirmed`,
   // marked once its condition held, never the provisional judged read. Older form (52f0109a): the judged line, marked only when
   // that batch is `.confirmed`. Exactly one of the two must occur, once.
-  const found=[...source.values()].reduce((n,t)=>n+count(t,judged)+count(t,dwell),0);
+  const found=[...source.values()].reduce((n,t)=>n+count(t,judged)+dwells.reduce((m,d)=>m+count(t,d),0),0);
   if(found!==1)throw Error('required anchor missing or ambiguous');
-  const [anchor,mark]=[...source.values()].some(t=>t.includes(dwell))
+  const dwell=dwells.find(d=>[...source.values()].some(t=>t.includes(d)));
+  const [anchor,mark]=dwell
     ?[dwell,dwell.replace('confirmed = true; ','confirmed = true; Probe414AppKit.shared.confirmed(); ')]
     :[judged,judged.trimEnd()+'; if last == .confirmed { Probe414AppKit.shared.confirmed() }\n'];
   one(anchor,t=>{

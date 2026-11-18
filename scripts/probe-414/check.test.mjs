@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {plan, score, inspect, auditSchedule, auditPairs, summarize, coded, noteAttested, NOTE_PREFIX, firefoxDisclosure, drainIntervals, drainStats, terminalEditAtMs, drainIneligible, drainSummary, drainSizingOk, runShape, setupLabel, focusAllowed} from './check.mjs';
+import {plan, score, inspect, auditSchedule, auditPairs, summarize, coded, noteAttested, NOTE_PREFIX, firefoxDisclosure, drainIntervals, drainStats, terminalEditAtMs, drainIneligible, drainSummary, drainSizingOk, runShape, setupLabel, focusAllowed, concealedFailureTiming} from './check.mjs';
 
 const success={confirmed:true,secure:true,confirmation:'length',snapshotMs:4};
 const old={confirmed:false,concealed:true,reason:'secure',snapshotMs:3};
@@ -365,6 +365,22 @@ test('Firefox smoke is password-only and only the focus diagnostic carries a set
   assert.deepEqual(runShape('firefox','firefox-single'),{singlePassword:true,setupCanary:false,requireBackground:true});
   assert.deepEqual(runShape('firefox','firefox-focus'),{singlePassword:false,setupCanary:true,requireBackground:false});
   for(const lane of ['cft','safari','appkit'])assert.deepEqual(runShape(lane,'smoke'),{singlePassword:false,setupCanary:false,requireBackground:false});
+});
+test('every post-input secure concealed failure has a native one-second budget, regardless of readback reason',()=>{
+  const s={head:'fix',lane:'cft',kind:'add',literal:false,action:'typeUnconfirmed',startedAt:1000,endedAt:1040,replyAt:2048};
+  for(const reason of ['lengthMismatch','lengthUnreadable','noLongerSecure','fieldChanged','fieldUnreadable']){
+    const raw={confirmed:false,concealed:true,secure:true,reason};
+    assert.deepEqual(concealedFailureTiming({...s,raw}),{phase:'after-input',fromLastPostMs:1008,fromFirstPostMs:1048,withinBudget:true});
+    assert.equal(concealedFailureTiming({...s,raw,replyAt:1148}).withinBudget,false);
+    assert.equal(concealedFailureTiming({...s,raw,replyAt:2200}).withinBudget,false);
+  }
+  const basisRefused={confirmed:false,concealed:true,secure:true,reason:'lengthUnreadable'};
+  assert.equal(concealedFailureTiming({...s,raw:basisRefused,lane:'appkit',kind:'selection'}).phase,'snapshot-refused');
+  assert.equal(concealedFailureTiming({...s,raw:basisRefused,lane:'appkit',kind:'add'}).phase,'after-input');
+  assert.equal(concealedFailureTiming({...s,raw:basisRefused,startedAt:null,endedAt:null}).phase,'before-input');
+  assert.equal(concealedFailureTiming({...s,raw:basisRefused,literal:true}),null);
+  assert.equal(concealedFailureTiming({...s,raw:basisRefused,head:'main'}),null);
+  assert.equal(concealedFailureTiming({...s,raw:{...basisRefused,secure:false}}),null);
 });
 test('the smoke focus scratch job is allowed for Firefox only and setup failures project fixed labels', ()=>{
   assert.equal(focusAllowed('firefox','smoke','focus'),true);

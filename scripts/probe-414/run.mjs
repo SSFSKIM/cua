@@ -6,7 +6,7 @@ import {pathToFileURL} from 'node:url';
 import {execFileSync} from 'node:child_process';
 import {Wire} from '../probe-366/wire.mjs';
 import {owned,stop,startPlatform,pause,environment} from './platform.mjs';
-import {plan,score,inspect,auditSchedule,auditPairs,summarize,coded,noteAttested,firefoxDisclosure,drainIntervals,terminalEditAtMs,drainIneligible,drainSummary,drainSizingOk,runShape,setupLabel,focusAllowed} from './check.mjs';
+import {plan,score,inspect,auditSchedule,auditPairs,summarize,coded,noteAttested,firefoxDisclosure,drainIntervals,terminalEditAtMs,drainIneligible,drainSummary,drainSizingOk,runShape,setupLabel,focusAllowed,concealedFailureTiming,drainStats} from './check.mjs';
 
 const SLOT='PROBE414', safeReasons=new Set(['secure','noFocusedElement','roleUnreadable','notTextField','valueUnreadable','rangeUnreadable',
   'fieldUnreadable','fieldChanged','becameSecure','selectionChanged','concealedMismatch','valueMismatch','unchanged','possiblyTruncated',
@@ -104,7 +104,7 @@ async function startEngine({name,src,bin,root,platform,audit,focus,drain,globalP
       }
       return true;
     }
-    async function type(m,id,literal,head){
+    async function type(m,id,literal,head,kind){
       const meta={}, content=[], logged=[], original={};let native=null,sent=0,guarded=true,replyAtMs=null;
       const nodeRepl={env,setResponseMeta:x=>Object.assign(meta,x),emitContentItem:x=>content.push(x),createElicitation:async q=>{
         if(q.meta?.tool_params?.app!==target.bundleIdentifier)throw Error('unexpected approval');
@@ -140,14 +140,16 @@ async function startEngine({name,src,bin,root,platform,audit,focus,drain,globalP
       }
       const seen={literal,baseline:head==='main'};
       note('sky-result',rendered);note('sky-error',error,{...seen,surface:'sky-error'});note('forwarded',meta,{...seen,surface:'forwarded'});note('rendered-content',content);note('console',logged);
-      const raw=native?.error?.meta?.typeReadback??native?.result?.meta?.typeReadback;
+      const nativeMeta=native?.error?.meta??native?.result?.meta;
+      const raw=nativeMeta?.typeReadback;
       const engineReason=native?.error?.errorName, expectedWrap=literal?error?.errorName==='typeUnconfirmed':error?.code==='secret_input_failed';
       const skyClass=error?(engineReason==='typeUnconfirmed'&&expectedWrap?'typeUnconfirmed':'unexpected-error'):'ok';
       const action=actionCode(native,error,guarded),serviceMs=Number.isFinite(meta['cua/serviceMs'])?meta['cua/serviceMs']:null;
       if(!guarded||sent!==1||!native) return {reply:false,raw:null,forwarded:null,sky:'missing',serviceMs,action};
       const disclosureOf=surface=>firefoxDisclosure(surface,{setupText:m.seed.setupText,passwordText:m.expected});
       const disclosure=lane==='firefox'?{ipc:disclosureOf(native),forwarded:disclosureOf(meta),skyError:disclosureOf(error),rendered:disclosureOf(rendered)}:null;
-      return {reply:true,raw,forwarded:meta['cua/typeReadback'],sky:skyClass,noted:noteAttested(native?.result?.note,content),serviceMs,action,disclosure,replyAtMs};
+      const budget=concealedFailureTiming({head,lane,kind,literal,action,raw,startedAt:nativeMeta?.startedAt,endedAt:nativeMeta?.endedAt,replyAt:replyAtMs});
+      return {reply:true,raw,forwarded:meta['cua/typeReadback'],sky:skyClass,noted:noteAttested(native?.result?.note,content),serviceMs,action,disclosure,replyAtMs,budget};
     }
     // Prime AX access before the first scored field. No action and no instrumented audit tag are sent.
     await w.execute('get_app_state',{pid:platform.pid,includeScreenshot:false,disableDiff:true});
@@ -205,7 +207,7 @@ async function main(){
       try{
         s='engine-attach';await e.attach();
         await platform.arm(++trial,m.seed,x=>{s=x;});armed=true;
-        s='action';receipt=await e.type(m,id,c.kind==='literal'||c.literal===true,c.head);
+        s='action';receipt=await e.type(m,id,c.kind==='literal'||c.literal===true,c.head,c.kind);
         s='delivery';
         const end=performance.now()+2500;
         do{
@@ -252,6 +254,7 @@ async function main(){
       row.reason=pickReason(receipt?.raw?.reason);
       row.snapshotMs=Number.isFinite(receipt?.raw?.snapshotMs)?receipt.raw.snapshotMs:null;
       row.serviceMs=receipt?.serviceMs??null;
+      row.concealedFailure=receipt?.budget??null;
       row.privacy=[...scope.flags];
       rows.push(row);
       if(drain){
@@ -281,15 +284,22 @@ async function main(){
   for(const code of [...globalPrivacy,...rows.flatMap(r=>r.privacy)])privacyCodes[code]=(privacyCodes[code]??0)+1;
   for(const row of rows)if(row.action){const tally=actionCodes[row.head];tally[row.action]=(tally[row.action]??0)+1;}
   const needed=cells.filter(c=>c.kind!=='rewrite').length;
+  const failureTimes=rows.filter(r=>r.valid&&r.concealedFailure).map(r=>r.concealedFailure);
+  const postFailures=failureTimes.filter(t=>t.phase==='after-input'),snapshotRefusals=failureTimes.filter(t=>t.phase==='snapshot-refused');
+  const budgetMisses=postFailures.filter(t=>!t.withinBudget).length;
+  const concealedBudget={postFailures:postFailures.length,misses:budgetMisses,beforeInput:failureTimes.filter(t=>t.phase==='before-input').length,
+    fromLastPostMs:drainStats(postFailures.map(t=>t.fromLastPostMs)),fromFirstPostMs:drainStats(postFailures.map(t=>t.fromFirstPostMs)),
+    snapshotRefusals:snapshotRefusals.length,snapshotRefusedFromLastPostMs:drainStats(snapshotRefusals.map(t=>t.fromLastPostMs))};
   const gates={coverage:rows.filter(r=>r.valid&&!r.informational).length===needed&&abort===null,
-    privacy:privacyViolations===0, outcome:audit||drain||focus||mode==='firefox-focus'?null:summary.scored.passed===needed&&summary.wrongSuccesses===0&&rows.every(r=>!r.observationMissing&&!r.evidenceFailure),
+    privacy:privacyViolations===0, outcome:audit||drain||focus||mode==='firefox-focus'?null:summary.scored.passed===needed&&summary.wrongSuccesses===0&&rows.every(r=>r.informational||!r.observationMissing&&!r.evidenceFailure),
     schedule:auditGate?.pass??null, focus:focus?firefoxFacts.length===needed&&firefoxFacts.every(r=>r.valid&&r.focus!==null):null,
+    concealedBudget:mode==='full'&&phase==='stock'&&postFailures.length>0?budgetMisses===0:null,
     // The race run only collects evidence rows; sizing is judged by the drain run alone.
     timing:drain&&!race?drainSizingOk(drainSummary(timings,needed),timings.length):null};
   const publishable=gates.privacy;
   const status={lane,phase,kit:config.kit,refs:config.refs,abort,abortStep,setupSteps:rows.reduce((o,r)=>r.setupStep?{...o,[r.setupStep]:(o[r.setupStep]??0)+1}:o,{}),planned:cells.length,completed:rows.length,invalid:summary.invalid,
     unattempted:cells.length-rows.length,privacyViolations,privacyCodes,actionCodes,observationsMissing:rows.filter(r=>r.observationMissing).length,
-    gates,publishable,presentation:config.presentation??null,foregroundFallback:config.foregroundFallback??null};
+    gates,concealedBudget,publishable,presentation:config.presentation??null,foregroundFallback:config.foregroundFallback??null};
   writeFileSync(join(out,'status.json'),JSON.stringify(status,null,2)+'\n');
   // Counts and timings rebuilt from closed codes may leave even a privacy-failed run; rows, hashes and traces never do.
   writeFileSync(join(out,'coded.json'),JSON.stringify(coded(summary,auditGate),null,2)+'\n');

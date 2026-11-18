@@ -101,6 +101,19 @@ test('the dwell form marks the true confirmation inside its branch, never the pr
   };
   for(const [name,text] of Object.entries(drift))assert.throws(()=>patched({'TypeReadback.swift':text}),undefined,name);
 });
+test('the budget-bounded dwell form (4a005a8c) is marked inside its branch too',()=>{
+  const bounded=dwellReadback.replace('typeReadbackLengthDwellMs {','typeReadbackLengthDwellMs, at - started <= typeReadbackBudgetMs {')
+    .replace('    var confirmed','    func fail(_ r: Int) -> Int {\n      reads.sleep(left)\n      return r\n    }\n    var confirmed');
+  const {root,dir}=tree({'TypeReadback.swift':bounded});
+  try{
+    assert.equal(patchAppKit(root).seams,5);
+    const r=readFileSync(join(dir,'TypeReadback.swift'),'utf8');
+    assert.ok(r.includes('typeReadbackLengthDwellMs, at - started <= typeReadbackBudgetMs { confirmed = true; Probe414AppKit.shared.confirmed(); break poll }'));
+    assert.equal((r.match(/Probe414AppKit/g)??[]).length,1);
+  }finally{rmSync(root,{recursive:true,force:true});}
+  assert.throws(()=>patched({'TypeReadback.swift':bounded.replace('at - started <= typeReadbackBudgetMs','at - started < typeReadbackBudgetMs')}),undefined,'bound changed');
+  assert.throws(()=>patched({'TypeReadback.swift':bounded+dwellReadback}),undefined,'both dwell forms');
+});
 test('the patch fails closed on any drift of a required seam',()=>{
   const drift={
     'args binding gone':{'Methods.swift':methods.replace('let args =','let argv =')},

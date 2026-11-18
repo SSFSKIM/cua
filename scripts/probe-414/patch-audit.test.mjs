@@ -111,4 +111,15 @@ test('a labelled poll loop is bracketed as the unnamed one, and the labelled for
   }finally{rmSync(root,{recursive:true,force:true});}
   assert.throws(()=>patched({'TypeReadback.swift':named.replace('    guard reads.stillFocused','    while true { break }\n    guard reads.stillFocused')}),undefined,'second loop');
   assert.throws(()=>patched({'TypeReadback.swift':named.replace('poll: while true {','poll: if true {')}),undefined,'no loop');
+  // 4a005a8c: a nested failure helper sleeps once before the loop; only the production loop's own sleep is counted.
+  const helper=named.replace('    var last','    func fail(_ r: Int) -> Int {\n      reads.sleep(left)\n      return r\n    }\n    var last');
+  const t=tree({'TypeReadback.swift':helper});
+  try{
+    patchAudit(t.root);
+    const r=readFileSync(join(t.dir,'TypeReadback.swift'),'utf8');
+    assert.equal((r.match(/phaseBegin\("securePoll"\)/g)??[]).length,1);
+    assert.ok(r.indexOf('reads.sleep(left)')<r.indexOf('poll: while true'));
+  }finally{rmSync(t.root,{recursive:true,force:true});}
+  assert.throws(()=>patched({'TypeReadback.swift':helper.replace('reads.sleep(typeReadbackPollIntervalMs)','reads.sleep(left)')}),undefined,'no production sleep');
+  assert.throws(()=>patched({'TypeReadback.swift':helper.replace('      if last == .confirmed { break }','      reads.sleep(typeReadbackPollIntervalMs)\n      if last == .confirmed { break }')}),undefined,'second production sleep');
 });

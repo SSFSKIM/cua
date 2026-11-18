@@ -44,6 +44,12 @@ for i in 0..<216 {
     bench.addSubview(cell)
 }
 
+// Use the spare strip below the bench so the marker cannot move any control.
+let generation = NSTextField(labelWithString: "")
+generation.frame = NSRect(x: 30, y: 0, width: 540, height: 12)
+generation.font = .systemFont(ofSize: 9)
+content.addSubview(generation)
+
 window.makeKeyAndOrderFront(nil)
 app.activate(ignoringOtherApps: true)
 window.makeFirstResponder(field)
@@ -57,7 +63,7 @@ DispatchQueue.global().async {
               let large = request["large"] as? Bool else { continue }
         DispatchQueue.main.async {
             if large && bench.superview == nil {
-                content.addSubview(bench)
+                content.addSubview(bench, positioned: .below, relativeTo: generation)
             } else if !large {
                 bench.removeFromSuperview()
             }
@@ -71,8 +77,11 @@ DispatchQueue.global().async {
             editor?.selectedRange = NSRange(location: 0, length: min(7, length))
             let range = editor?.selectedRange
             let selection = range.flatMap { $0.location == NSNotFound ? nil : $0 }
+            let marker = "pw-fixture-generation-\(trial)-0"
+            generation.stringValue = marker
             emit([
                 "trial": trial,
+                "marker": marker,
                 "length": length,
                 "focused": app.isActive && window.isKeyWindow && editor != nil && window.firstResponder === editor,
                 "selectionStart": selection.map { $0.location as Any } ?? NSNull(),

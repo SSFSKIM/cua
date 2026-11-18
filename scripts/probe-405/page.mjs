@@ -5,9 +5,10 @@ export const fixtureHTML = `<!doctype html>
   body { max-width: 600px; }
   label { display: block; margin-bottom: 4px; }
   textarea { vertical-align: middle; }
+  #generation { height: 1.25em; line-height: 1.25; white-space: nowrap; }
   #bench:not([hidden]) {
     display: grid;
-    grid-template-columns: repeat(12, minmax(0, 1fr));
+    grid-template-columns: repeat(18, minmax(0, 1fr));
     gap: 2px;
   }
   #bench input { box-sizing: border-box; width: 100%; min-width: 0; height: 20px; }
@@ -16,10 +17,12 @@ export const fixtureHTML = `<!doctype html>
 <label>Public control <input aria-label="Public control" value="public-control"></label>
 <label>Password <input id="pw" type="password" aria-label="PW walk test" autocomplete="off"></label>
 <label>Public notes <textarea aria-label="Public notes" rows="2">public-textarea</textarea></label>
+<div id="generation"></div>
 <div id="bench" hidden></div>
 <script>
 const pw = document.getElementById('pw');
 const bench = document.getElementById('bench');
+const generation = document.getElementById('generation');
 for (let i = 0; i < 216; i++) {
   const field = document.createElement('input');
   field.value = 'bench-value-' + i;
@@ -28,6 +31,16 @@ for (let i = 0; i < 216; i++) {
 const pageId = crypto.randomUUID();
 let seen;
 
+function updateGeneration(revision) {
+  generation.textContent = 'pw-fixture-generation-' + seen + '-' + revision;
+}
+
+pw.addEventListener('input', () => {
+  if (seen === undefined) return;
+  // Distinguish input generations without exposing an event count in AX.
+  updateGeneration(crypto.randomUUID());
+});
+
 function applySeed({trial, value, large}) {
   if (trial === seen) return false;
   bench.hidden = !large;
@@ -35,6 +48,7 @@ function applySeed({trial, value, large}) {
   pw.focus();
   pw.setSelectionRange(0, Math.min(7, pw.value.length));
   seen = trial;
+  updateGeneration(0);
   return true;
 }
 
@@ -52,7 +66,7 @@ async function tick() {
     const seeded = applySeed(await response.json());
     // Read the live field and its metadata together, before any asynchronous digest work.
     const state = {
-      trial: seen, pageId,
+      trial: seen, pageId, marker: generation.textContent,
       focused: document.hasFocus() && document.activeElement === pw,
       selectionStart: pw.selectionStart,
       selectionEnd: pw.selectionEnd,

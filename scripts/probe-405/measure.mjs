@@ -10,7 +10,7 @@ import {pathToFileURL} from 'node:url';
 import {Wire} from '../probe-366/wire.mjs';
 import {firefoxProfile} from '../probe-pw-walk/firefox-profile.mjs';
 import {fixtureHTML} from './page.mjs';
-import {judgeControls,judgePassword,passwordNodes,pasteDisclosures,syntheticFragments,timingStats} from './check.mjs';
+import {containsSynthetic,judgeControls,judgePassword,passwordNodes,pasteDisclosures,syntheticFragments,timingStats} from './check.mjs';
 
 if (process.env.RUNNER_ENVIRONMENT !== 'github-hosted') throw Error('GitHub-hosted runners only');
 const cli = Object.fromEntries(process.argv.slice(2).reduce((a,v,i,args)=>i%2 ? a : [...a,[v.slice(2),args[i+1]]],[]));
@@ -18,6 +18,7 @@ const out = resolve(cli.out), browser = cli.browser, smoke = cli.mode === 'smoke
 const repCount = smoke ? 1 : 5, headNames = ['main','fix'], timingBlocks = smoke ? 1 : 4, blockSamples = smoke ? 2 : 5;
 const lengthCases = [0,23,31], benchFields = 216;
 const benchLane = ['cft','appkit'].includes(browser), isAppKit = browser === 'appkit';
+const timingArms=['small','large','large-reused-settle'];
 const root = process.env.RUNNER_TEMP, home = mkdtempSync(join(root,'q405-home-'));
 const fixture = resolve('scripts/probe-390/fixture');
 mkdirSync(out,{recursive:true});
@@ -102,7 +103,7 @@ const url='http://127.0.0.1:'+server.address().port+'/';
 const config={browser,mode:cli.mode,kit:process.env.GITHUB_SHA,refs:Object.fromEntries(headNames.map(h=>[h,cli[h+'-ref']])),
   image:process.env.ImageVersion,os:execFileSync('sw_vers',['-productVersion'],{encoding:'utf8'}).trim(),
   product:'Unmodified release engines and matching production renderer/cache and secret wrapper modules; screenshots disabled',
-  reps:repCount,lengths:lengthCases,plannedSelection:7,timingSamplesPerHead:benchLane?timingBlocks*blockSamples:0,benchFields,
+  reps:repCount,lengths:lengthCases,plannedSelection:7,timingSamplesPerHead:benchLane?timingBlocks*blockSamples:0,benchFields,timingArms:benchLane?timingArms:[],
   home:browser==='cft'?'CfT uses disposable hosted runner HOME with explicit isolated profile; helper and engine have temporary HOME':'Temporary HOME and isolated fixture profiles'};
 const coverage={password:{main:[],fix:[]},controls:[],secret:{main:[],fix:[]},paste:{main:[],fix:[]},invalid:[],timing:{}};
 let app, pid, safariOwned=false, currentEngine=null;
@@ -142,32 +143,52 @@ async function launch() {
   if (!isAppKit) await until('initial owned page',()=>ack && state?.focused,45000);
   config.enablement=await ask({op:'enable',pid});
 }
+const markerPrefix = trial => `pw-fixture-generation-${trial}-`;
+const checkpointKeys = ['trial','pageId','marker','focused','selectionStart','selectionEnd','large'];
+const matchesCheckpoint = (actual,expected,hash) => actual?.digest===hash && checkpointKeys.every(k=>actual[k]===expected[k]);
+const checkpointEvidence = actual => ({...Object.fromEntries(checkpointKeys.map(k=>[k,actual[k]])),serial:actual.serial,exact:true});
 async function setup(value,large=false) {
   await front(pid);
-  const trial=seed.trial+1, end=Math.min(7,value.length);
+  const trial=seed.trial+1, end=Math.min(7,value.length), hash=digest(value);
+  const expected={trial,marker:markerPrefix(trial)+'0',focused:true,selectionStart:0,selectionEnd:end,large};
   seed={trial,value,large};ack=null;state=null;
   if(isAppKit) app.stdin.write(JSON.stringify(seed)+'\n');
-  const evidence=await until(`trial ${trial} fixture setup`,()=>{
+  return until(`trial ${trial} fixture setup`,()=>{
     const a=isAppKit ? parseLines(children.get(app)).find(q=>q.trial===trial) : ack;
-    if(!a || a.length!==value.length || a.selectionStart!==0 || a.selectionEnd!==end || a.large!==large) return null;
-    if(isAppKit) return a.focused ? a : null;
-    if(state?.trial===trial && state.digest===digest(value) && state.focused && state.selectionStart===0 && state.selectionEnd===end && state.large===large) {
-      return {trial,length:a.length,focused:true,selectionStart:state.selectionStart,selectionEnd:state.selectionEnd,large,pageId,serial:state.serial};
-    }
+    if(!a || a.length!==value.length || a.marker!==expected.marker) return null;
+    if(isAppKit) return Object.entries(expected).every(([k,v])=>a[k]===v) ? a : null;
+    if(matchesCheckpoint(state,{...expected,pageId:a.pageId},hash)) return {...checkpointEvidence(state),length:a.length};
     return null;
   });
-  return evidence;
 }
-async function rawVerify(value, selectionEnd=Math.min(7,value.length)) {
+const rawPasswordFields = q => q.fields.filter(n=>(n.titleIsFixture||n.descriptionIsFixture) && (n.role==='AXSecureTextField'||n.subrole==='AXSecureTextField'));
+async function rawVerify(value, expected) {
   return until('raw AX fixture role, value length and available selection range',async()=>{
-    const q=await ask({op:'scan',pid,pw:value});
-    const n=q.fields.filter(n=>(n.titleIsFixture||n.descriptionIsFixture) && (n.role==='AXSecureTextField'||n.subrole==='AXSecureTextField'));
-    if(n.length!==1) return null;
-    const a=n[0].attributes.AXValue.result, selection=n[0].attributes.AXSelectedTextRange.result;
+    const q=await ask({op:'scan',pid,pw:value}), [n,...extra]=rawPasswordFields(q);
+    if(!n || extra.length) return null;
+    const a=n.attributes.AXValue.result, selection=n.attributes.AXSelectedTextRange.result;
     if(a.kind!=='string'||a.length!==value.length) return null;
-    if (selection.kind==='range' && (selection.location!==0||selection.length!==selectionEnd)) return null;
+    if (selection.kind==='range' && (selection.location!==expected.selectionStart||selection.length!==expected.selectionEnd-expected.selectionStart)) return null;
     return q;
   });
+}
+function judgeOptions(raw,changed) {
+  const selected=rawPasswordFields(raw)[0].attributes.AXSelectedText.result;
+  return {changed,requireFocus:browser!=='firefox',selectedMaskLength:selected.allMaskCharacters ? selected.length : null,knownValues:[...keys.keys()]};
+}
+async function attest(native,expected,value) {
+  const {nodes,lineage,revision}=native.result;
+  // The polling page serializes ticks. Only the first checkpoint received after the RPC can have been in flight before it returned.
+  const after=checkpoints;
+  if(native.result.app?.pid!==pid) throw Error('native observation did not belong to the owned process');
+  if(!nodes.some(n=>n.role==='AXStaticText'&&[n.value,n.title,n.description].includes(expected.marker))) {
+    throw Error('native fixture generation marker missing: '+expected.marker);
+  }
+  if(typeof lineage!=='string'||!lineage||!Number.isSafeInteger(revision)||revision<1) throw Error('native observation lacks lineage or revision');
+  if(isAppKit) return {marker:expected.marker};
+  const fresh=await until('fresh fixture checkpoint after native read',()=>state?.serial>=after+2 && state,5000);
+  if(!matchesCheckpoint(fresh,expected,digest(value))) throw Error('fixture state changed across native read (generation, focus, selection or exact value)');
+  return checkpointEvidence(fresh);
 }
 const importFrom = (source,file) => import(pathToFileURL(join(source,'src',file)).href);
 async function useEngine(head,run) {
@@ -183,27 +204,51 @@ async function useEngine(head,run) {
     const {createObservations}=await importFrom(source,'services/engine/observations.mjs');
     const {advanceNumbering,render}=await importFrom(source,'services/engine/render.mjs');
     const observations=createObservations(), key='probe405-owned';
-    async function observe(disableDiff=false) {
+    let numbering=null, previous=null;
+    async function read(fixture,value,disableDiff=false,settle=false) {
       const start=performance.now();
-      const native=await w.execute('get_app_state',{pid,includeScreenshot:false,disableDiff});
+      const native=await w.execute('get_app_state',{pid,includeScreenshot:false,disableDiff,...(settle && {settle:true})});
       const wallMs=performance.now()-start;
       if(native.error||!native.result)throw Error('native observation refused: '+JSON.stringify(native.error));
-      return {native,wallMs};
+      const checkpoint=await attest(native,fixture,value);
+      return {native,wallMs,checkpoint};
     }
-    await run({source,w,observe,asDiff:(shot,disableDiff=false)=>observations.observe(key,shot,{disableDiff}),
-      asFull:shot=>render(shot,advanceNumbering(null,shot))});
+    async function observe(fixture,disableDiff=false,value='') {
+      const result=await read(fixture,value,disableDiff), shot=result.native.result;
+      if(previous && (disableDiff ? shot.lineage===previous.lineage : shot.lineage!==previous.lineage || shot.revision<=previous.revision)) {
+        throw Error(disableDiff ? 'native disableDiff did not reset observation lineage' : 'native diff did not advance revision in the same observation lineage');
+      }
+      // The production cache does not expose its numbering; advance the same production numbering over the same shots.
+      numbering=advanceNumbering(numbering,shot);
+      const text=render(shot,numbering), rendered=observations.observe(key,shot,{disableDiff});
+      const previousText=previous?.text;
+      previous={lineage:shot.lineage,revision:shot.revision,text};
+      return {...result,text,rendered,previousText};
+    }
+    await run({source,w,read,observe});
   } finally {
     if (w) {try{await w.call('endTask',{});}catch{}w.close();}
     await stop(engine);currentEngine=null;
   }
 }
-async function surface(engine, initial=false) {
-  const {native}=await engine.observe(initial);
-  const diff=engine.asDiff(native.result,initial);
-  const text=initial ? diff : engine.asFull(native.result);
-  const repeated=await engine.observe();
-  if(native.result.lineage!==repeated.native.result.lineage) throw Error('repeat changed observation lineage');
-  return {native,text,diff,repeatNative:repeated.native,repeated:engine.asDiff(repeated.native.result)};
+function nativeFocus(native) {
+  const {focused,nodes,menuBar}=native.result;
+  const target=[...nodes,...(menuBar??[])].find(n=>n.token===focused);
+  return {token:focused??null,role:target?.role??null,subrole:target?.subrole??null,ownedPassword:passwordNodes(native).some(n=>n.token===focused)};
+}
+async function surface(engine,row,fixture,initial=false,value='') {
+  const current=await engine.observe(fixture,initial,value);
+  Object.assign(row,{native:current.native,diff:current.rendered,previousText:current.previousText,sequencedText:current.text,
+    checkpoints:{native:current.checkpoint},nativeFocus:{native:nativeFocus(current.native)}});
+  const repeated=await engine.observe(fixture,false,value);
+  Object.assign(row,{repeatNative:repeated.native,repeated:repeated.rendered});
+  row.checkpoints.repeatNative=repeated.checkpoint;
+  row.nativeFocus.repeatNative=nativeFocus(repeated.native);
+  // A real full RPC starts a new lineage, so it goes last and serves as the next transition's baseline.
+  const full=initial ? current : await engine.observe(fixture,true,value);
+  Object.assign(row,{fullNative:full.native,text:full.rendered});
+  row.checkpoints.fullNative=full.checkpoint;
+  row.nativeFocus.fullNative=nativeFocus(full.native);
 }
 const order = index => index%2 ? [...headNames].reverse() : headNames;
 function invalid(cell,head,error,extra={}) {
@@ -218,16 +263,20 @@ async function seeded() {
     for(const head of order(rep)) {
       try {
         await useEngine(head,async engine=>{
-          let lineage;
           for(const [idx,value] of values.entries()) {
-            const fixture=await setup(value), raw=await rawVerify(value);
-            const row={kind:'seeded',rep,head,length:value.length,fixture,raw,...await surface(engine,idx===0)};
-            if(idx>0&&lineage!==row.native.result.lineage)throw Error('transition changed observation lineage');
-            lineage=row.native.result.lineage;
-            row.failures=judgePassword(head,row,value,{changed:idx!==0});
-            record('observations.jsonl',row);
-            coverage.password[head].push({rep,length:value.length,failures:row.failures});
-            paired[head].set(value.length,row);
+            const row={kind:'seeded',rep,head,length:value.length};
+            try {
+              row.fixture=await setup(value);
+              row.raw=await rawVerify(value,row.fixture);
+              await surface(engine,row,row.fixture,idx===0,value);
+              if(isAppKit) row.rawAfter=await rawVerify(value,row.fixture);
+              const opts=judgeOptions(row.raw,idx!==0);
+              row.failures=judgePassword(head,row,value,opts);
+              coverage.password[head].push({rep,length:value.length,failures:row.failures,nativeFocus:row.nativeFocus,
+                selectedMaskLength:opts.selectedMaskLength});
+              paired[head].set(value.length,row);
+            } catch(e) {row.invalid=String(e.stack??e);throw e;}
+            finally {record('observations.jsonl',row);}
           }
         });
       } catch (e) {invalid('seeded',head,e,{rep,completed:[...paired[head].keys()]});}
@@ -238,11 +287,35 @@ async function seeded() {
     save('summary.json',coverage);
   }
 }
-async function waitForDelivery(fixture,value) {
-  return until('one input delivered exact value to focused password field',()=>{
-    if(state?.trial!==fixture.trial||state.serial<=fixture.serial||state.digest!==digest(value)||!state.focused)return null;
-    return {trial:state.trial,serial:state.serial,focused:state.focused,selectionStart:state.selectionStart,selectionEnd:state.selectionEnd,exact:true};
+async function waitForDelivery(fixture,value,after) {
+  const hash=digest(value), end=value.length, prefix=markerPrefix(fixture.trial);
+  return until('one input delivered exact value and caret to focused password field',()=>{
+    const fresh=state, marker=fresh?.marker;
+    if(fresh?.serial<after+2||!marker?.startsWith(prefix)||marker===fixture.marker)return null;
+    if(!matchesCheckpoint(fresh,{...fixture,marker,selectionStart:end,selectionEnd:end},hash))return null;
+    return checkpointEvidence(fresh);
   },5000);
+}
+async function actionBaseline(engine,row,value) {
+  row.fixture=await setup(value);
+  row.beforeRaw=await rawVerify(value,row.fixture);
+  const before=await engine.observe(row.fixture,true,value);
+  Object.assign(row,{before:before.native,beforeText:before.rendered,beforeCheckpoint:before.checkpoint});
+  const [field,...extra]=passwordNodes(row.before);
+  if(extra.length||!field?.token||row.before.result.focused!==field.token)throw Error('AX pre-observation did not focus the owned password field');
+  return containsSynthetic(JSON.stringify(row.before),keys.keys()) || containsSynthetic(row.beforeText,keys.keys())
+    ? ['action pre-observation exposes a synthetic password or fragment'] : [];
+}
+function actionDisclosures(reply) {
+  const found=new Set();
+  for(const value of keys.keys()) for(const path of pasteDisclosures(reply,value)) found.add(path);
+  if(containsSynthetic(JSON.stringify(reply),keys.keys())) found.add('synthetic value or fragment');
+  return [...found];
+}
+async function actionSurface(engine,row,value,after) {
+  row.delivery=await waitForDelivery(row.fixture,value,after);
+  row.raw=await rawVerify(value,row.delivery);
+  await surface(engine,row,row.delivery,false,value);
 }
 async function secrets() {
   if(browser!=='cft')return;
@@ -252,17 +325,13 @@ async function secrets() {
       let row={kind:'secret',rep,head};
       try {
         await useEngine(head,async engine=>{
-          const placeholder='{{secret:PROBE405_PASSWORD}}';
-          const fixture=await setup('');
-          const {native:before}=await engine.observe(true);
-          const [field]=passwordNodes(before);
-          if(!field?.token || before.result.focused!==field.token)throw Error('AX pre-observation did not focus the owned password field');
-          row={...row,fixture,before,beforeText:engine.asDiff(before.result,true)};
+          const label='PROBE405_PASSWORD', placeholder=`{{secret:${label}}}`;
+          const failures=await actionBaseline(engine,row,'');
           const secretHome=mkdtempSync(join(home,'secret-')),store=join(secretHome,'.config','claude-secrets');
-          mkdirSync(store,{recursive:true,mode:0o700});writeFileSync(join(store,'PROBE405_PASSWORD'),value,{mode:0o600});
+          mkdirSync(store,{recursive:true,mode:0o700});writeFileSync(join(store,label),value,{mode:0o600});
           try {
             const [{createSkyService},{secretsFromEnv},{serverError}]=await Promise.all(['services/sky.mjs','services/secret-input.mjs','services/engine/protocol.mjs'].map(f=>importFrom(engine.source,f)));
-            const sky=createSkyService({...secretsFromEnv({HOME:secretHome,CUA_SECRETS_DIR:store}),platform:'darwin',setResponseMeta:()=>{},loadVendor:async()=>({
+            const sky=createSkyService({...secretsFromEnv({HOME:secretHome,CUA_SECRETS_DIR:store}),platform:'darwin',setResponseMeta:meta=>{row.wrapperMeta=meta;},loadVendor:async()=>({
               async handleRpc({method,args:[a]}) {
                 row.boundary={method,placeholder,concealed:a.concealed===true,valueMatches:a.text===value};
                 if(method!=='type_text'||!row.boundary.concealed||!row.boundary.valueMatches)throw Error('incorrect secret boundary');
@@ -271,18 +340,23 @@ async function secrets() {
                 return row.action.result;
               },
             })});
-            try {await sky.handleRpc({type:'execute',method:'type_text',args:[{app:'probe405-owned',text:placeholder}]});}
-            catch(e){row.wrapperError={name:e.name,code:e.code,message:e.message};}
+            try {row.wrapperResult=await sky.handleRpc({type:'execute',method:'type_text',args:[{app:'probe405-owned',text:placeholder}]});}
+            catch(e){row.wrapperError={...e,name:e.name,code:e.code,message:e.message};}
           } finally {rmSync(secretHome,{force:true,recursive:true});}
-          try {
-            row.delivery=await waitForDelivery(fixture,value);
-          } finally {
-            // Even when typing or delivery is invalid, retain the attempted follow-up and diff if available.
-            Object.assign(row,await surface(engine));
-          }
+          const after=checkpoints;
           if(!row.boundary?.valueMatches||!row.boundary?.concealed||!row.action)throw Error('production substitution did not reach the native IPC');
-          if(before.result.lineage!==row.native.result.lineage)throw Error('post-type observation changed lineage');
-          row.failures=judgePassword(head,row,value,{changed:true});
+          const meta=row.action.error?.meta??row.action.result?.meta, readback=meta?.typeReadback;
+          if(meta?.inputRoute!=="2'" || !Number.isFinite(meta.startedAt) || readback?.concealed!==true ||
+             !['secure','becameSecure'].includes(readback.reason) || row.action.error?.errorName!=='typeUnconfirmed' ||
+             row.wrapperError?.code!=='secret_input_failed') throw Error('concealed keyed action or secure readback refusal not proven');
+          row.actionDisclosures=actionDisclosures(row.action);
+          row.wrapperDisclosures=actionDisclosures({result:row.wrapperResult,error:row.wrapperError,meta:row.wrapperMeta});
+          const readingFields=['concealed','confirmed','reason','snapshotMs','keysUnconfirmed','stoppedBeforeKey'];
+          if(row.actionDisclosures.length || Object.keys(readback).some(k=>!readingFields.includes(k)) ||
+             ['keysUnconfirmed','stoppedBeforeKey'].some(k=>k in readback && typeof readback[k]!=='boolean')) failures.push('concealed native type reply exposes private input metadata or value');
+          if(row.wrapperDisclosures.length) failures.push('concealed wrapper reply exposes private input metadata or value');
+          await actionSurface(engine,row,value,after);
+          row.failures=[...failures,...judgePassword(head,row,value,judgeOptions(row.raw,true))];
           coverage.secret[head].push({rep,failures:row.failures,actionError:row.action.error?.errorName??null});
         });
       } catch(e) {row.invalid=String(e.stack??e);invalid('secret',head,e,{rep});}
@@ -291,29 +365,44 @@ async function secrets() {
     save('summary.json',coverage);
   }
 }
+function pasteStatus(reply) {
+  const {note,meta}=reply.result??{}, p=meta?.paste, line=p?.perLine?.[0];
+  if(reply.error||meta?.inputRoute!=='paste'||p?.stage!=='effect'||p.perLine?.length!==1||line?.confirmed!==p.confirmed) return null;
+  if(p.confirmed===true && ['notification','reading'].includes(p.effectWait) && note==null) return 'confirmed';
+  if(p.confirmed===false && p.effectWait==='noChannel' && p.unconfirmedLines===1 && Number.isFinite(p.firstReadAfterPostMs) &&
+     typeof note==='string' && note.startsWith('Pasted, unconfirmed:')) return 'unconfirmed';
+  return null;
+}
+function matchingReading(reading,characters,location,length) {
+  return reading?.characters===characters || (reading?.range?.length===2 && reading.range[0]===location && reading.range[1]===length);
+}
+const secureReading = r => r?.secure===true && Object.keys(r).length===1;
 async function paste() {
   if (browser!=='cft') return;
-  const value=synthetic(23,'[TEST_SECRET]');
+  const prior=synthetic(7), value=synthetic(23,'[TEST_SECRET]');
   for (const head of headNames) {
     const row={kind:'paste',head};
     try {
       await useEngine(head,async engine=>{
-        row.fixture=await setup('');
-        ({native:row.before}=await engine.observe(true));
-        const [field]=passwordNodes(row.before);
-        if(!field?.token||row.before.result.focused!==field.token)throw Error('AX pre-observation did not focus the owned password field');
-        row.beforeText=engine.asDiff(row.before.result,true);
+        const failures=await actionBaseline(engine,row,prior);
         // This is a disposable synthetic string, not a secret-store reference. The real wrapper deliberately forbids
         // pasting a concealed value into the system clipboard, and the type cell above proves that production path.
         row.action=await engine.w.execute('paste',{pid,text:value,format:'text'});
-        row.metaDisclosures=pasteDisclosures(row.action,value);
-        try {row.delivery=await waitForDelivery(row.fixture,value);}
-        finally {Object.assign(row,await surface(engine));}
-        if(row.before.result.lineage!==row.native.result.lineage)throw Error('post-paste observation changed lineage');
-        row.failures=judgePassword(head,row,value,{changed:true});
-        // Paste hardening is not in the requested smoke pin. Its metadata is recorded but doesn't gate smoke.
-        if(!smoke&&head==='fix'&&row.metaDisclosures.length)row.failures.push('paste reply leaks length/selection/value');
-        coverage.paste[head].push({failures:row.failures,metaDisclosures:row.metaDisclosures,actionError:row.action.error?.errorName??null});
+        const after=checkpoints, p=row.action.result?.meta?.paste, line=p?.perLine?.[0];
+        row.metaDisclosures=actionDisclosures(row.action);
+        row.status=pasteStatus(row.action);
+        row.rawCountOrRange=matchingReading(line?.baseline,prior.length,0,prior.length) || matchingReading(line?.confirming,value.length,value.length,0);
+        if(!row.status) failures.push('paste did not report confirmed or affirmative unconfirmed success');
+        if(head==='main' && row.metaDisclosures.includes('synthetic value or fragment')) failures.push('main paste reply exposes the synthetic value');
+        if(head==='main' && !smoke && !row.rawCountOrRange) failures.push('main paste reply did not expose the expected raw count or range');
+        if(head==='fix' && (row.metaDisclosures.length || Object.keys(row.action.result??{}).some(k=>k!=='meta'&&k!=='note') ||
+           !secureReading(line?.baseline) || ('confirming' in (line??{}) && !secureReading(line.confirming)))) {
+          failures.push('paste reply did not keep secure readings value-free');
+        }
+        await actionSurface(engine,row,value,after);
+        row.failures=[...failures,...judgePassword(head,row,value,judgeOptions(row.raw,true))];
+        coverage.paste[head].push({failures:row.failures,metaDisclosures:row.metaDisclosures,status:row.status,
+          rawCountOrRange:row.rawCountOrRange,actionError:row.action.error?.errorName??null});
       });
     } catch(e) {row.invalid=String(e.stack??e);invalid('paste',head,e);}
     finally {record('paste.jsonl',row);}
@@ -322,37 +411,43 @@ async function paste() {
 }
 async function timings() {
   if(!benchLane)return;
-  for(const large of [false,true]) {
-    const size=large?'large':'small';
-    const timing={main:[],fix:[]};
-    await setup('',large);
-    for(let block=0;block<timingBlocks;block++)for(const head of order(block+(large?1:0))) {
+  for(const [arm,size] of timingArms.entries()) {
+    const large=size!=='small', reuse=size==='large-reused-settle';
+    const timing={main:[],fix:[]}, fixture=await setup('',large);
+    for(let block=0;block<timingBlocks;block++)for(const head of order(block+arm)) {
       try {
         await useEngine(head,async engine=>{
-          const check=({native,wallMs})=>{
+          const pending=[];
+          const rawBefore=isAppKit ? await rawVerify('',fixture) : undefined;
+          const check=({native,wallMs,checkpoint},settled=false)=>{
             const {nodes,timings,truncated}=native.result;
             const markers=new Set(nodes.map(n=>n.value).filter(v=>typeof v==='string'&&/^bench-value-\d+$/.test(v)));
-            const observed=markers.size;
+            const observed=markers.size, {walkMs,settleBusyWalkMs}=timings;
             const validTree=!timings.deadlineHit&&!timings.budgetHit&&!timings.nodeCapHit&&!(truncated?.count>0)&&passwordNodes(native).length===1
-              && observed===(large?benchFields:0);
-            return {validTree,wallMs,walkMs:timings.walkMs,nodeCount:nodes.length,benchValues:observed,truncated,timings};
+              && observed===(large?benchFields:0) && Number.isFinite(walkMs) && walkMs>=0;
+            const validSettle=!settled || (timings.settleTreeReused===true && Number.isFinite(settleBusyWalkMs) && settleBusyWalkMs>=0);
+            return {validTree,validSettle,wallMs,walkMs,settleBusyWalkMs,checkpoint,nodeCount:nodes.length,benchValues:observed,truncated,timings};
           };
-          const warm=check(await engine.observe(true));
-          record('timing.jsonl',{size,head,block,warmup:true,...warm});
+          const warm=check(await engine.read(fixture,'',true));
+          record('timing.jsonl',{size,head,block,warmup:true,rawBefore,...warm});
           if(!warm.validTree) throw Error(`warm-up did not observe owned ${size} tree (${warm.benchValues} benchmark controls)`);
           for(let sample=0;sample<blockSamples;sample++) {
-            const row=check(await engine.observe(true));
+            const row=check(await engine.read(fixture,'',true,reuse),reuse);
             record('timing.jsonl',{size,head,block,sample,...row});
             if(!row.validTree) throw Error(`timed sample did not observe owned ${size} tree (${row.benchValues} benchmark controls)`);
-            timing[head].push(row);
+            if(!row.validSettle) throw Error('timed settled sample did not reuse its tree or report its busy walk');
+            pending.push(row);
           }
+          if(isAppKit) record('timing.jsonl',{size,head,block,rawAfter:await rawVerify('',fixture)});
+          timing[head].push(...pending);
         });
       } catch(e) {invalid('timing',head,e,{size,block,n:timing[head].length});}
     }
     coverage.timing[size]={};
     for(const head of headNames) {
       const rows=timing[head];
-      coverage.timing[size][head]=rows.length ? {...timingStats(rows),nodes:[Math.min(...rows.map(r=>r.nodeCount)),Math.max(...rows.map(r=>r.nodeCount))],benchValues:rows[0].benchValues} : {n:0};
+      coverage.timing[size][head]=rows.length ? {...timingStats(rows),nodes:[Math.min(...rows.map(r=>r.nodeCount)),Math.max(...rows.map(r=>r.nodeCount))],
+        benchValues:rows[0].benchValues,...(reuse && {settleBusyWalkMs:timingStats(rows.map(r=>({...r,walkMs:r.settleBusyWalkMs}))).walkMs})} : {n:0};
     }
     save('summary.json',coverage);
   }
@@ -369,7 +464,7 @@ function complete() {
       check(coverage.secret[head],repCount,`${head} secret`);
       check(coverage.paste[head],1,`${head} paste`);
     }
-    if(benchLane)for(const size of ['small','large'])if(coverage.timing[size]?.[head]?.n!==timingBlocks*blockSamples) failures.push(`${head} ${size} timings incomplete`);
+    if(benchLane)for(const size of timingArms)if(coverage.timing[size]?.[head]?.n!==timingBlocks*blockSamples) failures.push(`${head} ${size} timings incomplete`);
   }
   check(coverage.controls,repCount*lengthCases.length,'paired ordinary controls');
   if(coverage.invalid.length)failures.push(`${coverage.invalid.length} invalid setups/observations`);

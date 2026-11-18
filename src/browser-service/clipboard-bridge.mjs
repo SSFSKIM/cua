@@ -17,6 +17,12 @@
 // budget sends nothing more, so no later step attaches it again only to time out once more (#384). Disposal removes
 // the bridge only from tabs still attached, never attaching one, within DISPOSE_CLEANUP_MS: the next setup waits on
 // it, and the backend connection that closes after it ends the debugger sessions, and the binding and script with them.
+// Ending a session does not undo the page side's JavaScript, though, and the page cannot tell its bridge is gone (the
+// binding function stays, and calling it throws nothing), so its navigator.clipboard calls would wait until a reload. A
+// removal that did not remove the page side (disposal skipped the tab, ran out of its budget, or the page did not answer)
+// therefore leaves the installation in its backend's StrandedPageClipboards, which outlive the runtime: the next
+// controller to attach the tab, this runtime's or a later one's, removes it in the background (cua's own; the vendor
+// does no removal when its worker is replaced). Only a tab's own document is recorded, not a frame's.
 import {Deadline, DEFAULT_ACTION_MS} from './budgets.mjs';
 import {isDeadlineError} from './errors.mjs';
 
@@ -187,6 +193,35 @@ const targetKey = target => (target.sessionId != null ? `${target.tabId}:session
   : target.targetId != null ? `${target.tabId}:target:${target.targetId}` : `${target.tabId}:`);
 const keyOfTab = (key, tabId) => key.startsWith(`${tabId}:`);                                                        // lN
 
+// The page sides of one backend's bridges that a removal left in their pages, by tab: Map(tabId -> Set(bindingName)).
+export class StrandedPageClipboards {
+  #tabs = new Map();
+
+  add(tabId, bindingName) {
+    if (!this.#tabs.has(tabId)) this.#tabs.set(tabId, new Set());
+    this.#tabs.get(tabId).add(bindingName);
+  }
+
+  // Each time `cdp` attaches a tab with page sides left in it, removes them in the background, each on its own budget
+  // with the debugger kept on a timeout, so neither the attach nor the command behind it waits or loses the tab; one
+  // whose removal fails is tried again at the next attach. -> remove.
+  restoreOn(cdp) {
+    return cdp.addTabAttachHandler(tabId => {
+      for (const bindingName of this.#tabs.get(tabId) ?? []) {
+        cdp.callTarget({tabId}, 'Runtime.evaluate', {expression: removeSource(bindingName), returnByValue: true},
+          {deadline: new Deadline(DEFAULT_ACTION_MS), preserveOnTimeout: true})
+          .then(() => this.#forget(tabId, bindingName), () => {});
+      }
+    });
+  }
+
+  #forget(tabId, bindingName) {
+    const names = this.#tabs.get(tabId);
+    names?.delete(bindingName);
+    if (names?.size === 0) this.#tabs.delete(tabId);
+  }
+}
+
 export class PageClipboardBridge {                                                                                    // Xf
   // `cdp` the session's CdpController, `clipboard` the virtual clipboard whose items the page reads and writes.
   constructor(cdp, clipboard) {
@@ -199,7 +234,7 @@ export class PageClipboardBridge {                                              
 
   cdp;
   clipboard;
-  installations = new Map();          // target key -> {bindingName, invalidated, failed, installation, cleanup?}
+  installations = new Map();          // target key -> {bindingName, target, invalidated, failed, installation, cleanup?}
   removeTabCleanupHandler;
   disposal;
 
@@ -212,7 +247,7 @@ export class PageClipboardBridge {                                              
     if (entry == null) {
       deadline?.check();
       const bindingName = `__browserUseClipboard_${crypto.randomUUID().replaceAll('-', '')}`;
-      entry = {bindingName, invalidated: false, failed: false, installation: this.install(target, bindingName, deadline)};
+      entry = {bindingName, target, invalidated: false, failed: false, installation: this.install(target, bindingName, deadline)};
       const made = entry;
       made.installation.catch(() => { made.failed = true; });
       this.installations.set(key, entry);
@@ -316,21 +351,28 @@ export class PageClipboardBridge {                                              
     await Promise.all([...this.installations.entries()].filter(([key]) => keyOfTab(key, tabId)).map(([key, entry]) => this.cleanupInstallation(key, entry)));
   }
 
-  // `removal` ({deadline?, attach?}) is cleanupTarget's, for a removal this call starts.
+  // `removal` ({deadline?, attach?}) is cleanupTarget's, for a removal this call starts. A tab's own page side the
+  // removal did not remove is left to the clipboard's stranded record.
   cleanupInstallation(key, entry, removal) {
     entry.cleanup ??= entry.installation
-      .then(installed => this.cleanupTarget(installed, removal), () => {})
+      .then(installed => this.cleanupTarget(installed, removal), () => true)
+      .then(removed => {
+        const tabOwn = entry.target.sessionId == null && entry.target.targetId == null;
+        if (!removed && tabOwn) this.clipboard.stranded?.add(entry.target.tabId, entry.bindingName);
+      })
       .finally(() => { if (this.installations.get(key) === entry) this.installations.delete(key); });
     return entry.cleanup;
   }
 
   // Removes the page side, the script and the binding, all three within one budget (`deadline`, by default one action's
   // from now), any failure ignored (the tab may be gone, or a dialog may hold it). With `attach: false` only a tab still
-  // attached is sent to.
+  // attached is sent to. -> whether the page side was removed.
   async cleanupTarget({bindingName, identifier, target}, {deadline = new Deadline(DEFAULT_ACTION_MS), attach} = {}) {
     const options = attach === false ? {deadline, attach} : {deadline};
-    await this.cdp.callTarget(target, 'Runtime.evaluate', {expression: removeSource(bindingName), returnByValue: true}, options).catch(() => {});
+    const removed = await this.cdp.callTarget(target, 'Runtime.evaluate', {expression: removeSource(bindingName), returnByValue: true}, options)
+      .then(() => true, () => false);
     if (identifier != null) await this.cdp.callTarget(target, 'Page.removeScriptToEvaluateOnNewDocument', {identifier}, options).catch(() => {});
     await this.cdp.callTarget(target, 'Runtime.removeBinding', {name: bindingName}, options).catch(() => {});
+    return removed;
   }
 }

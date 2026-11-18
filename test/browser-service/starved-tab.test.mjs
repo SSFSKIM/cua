@@ -4,13 +4,15 @@
 // service must spend one command's budget on it at most when it tidies up afterwards: the turn's end removes the page
 // clipboard bridge with one budget for the whole removal, and a later setup disposes the previous runtime without ever
 // attaching the tab again and within its own short budget. Before #384's fix each removal step had a budget of its own
-// and re-attached the detached tab, so one stall cost two more timeouts, the second inside the next setup.
+// and re-attached the detached tab, so one stall cost two more timeouts, the second inside the next setup. A page side
+// the dispose left is removed by the next runtime when it attaches the tab (clipboard-stranded-chrome.test.mjs shows
+// the page itself in real Chrome).
 // Through the real host and the fake extension (test/browser-service/support/service-on-host.mjs).
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {DEFAULT_ACTION_MS} from '../../src/browser-service/budgets.mjs';
 import {DISPOSE_CLEANUP_MS} from '../../src/browser-service/clipboard-bridge.mjs';
-import {execute, readyBrowser, scriptedPages, serviceOnHost} from './support/service-on-host.mjs';
+import {execute, readyBrowser, scriptedPages, serviceOnHost, waitFor} from './support/service-on-host.mjs';
 
 // The commands a starved renderer never answers: the page's own and the ones an attach sends it.
 const RENDERER_METHODS = ['Runtime.evaluate', 'Runtime.removeBinding', 'Page.removeScriptToEvaluateOnNewDocument',
@@ -80,4 +82,22 @@ test('a tab detached during the turn whose page answers again is attached once t
   assert.equal(attaches, 1);
   const removal = ['Runtime.evaluate', 'Page.removeScriptToEvaluateOnNewDocument', 'Runtime.removeBinding'];
   assert.deepEqual(commands.filter(m => removal.includes(m)), removal, 'after the attach\'s own setup commands');
+});
+
+test('a bridge the dispose skipped (its tab detached) is removed from the page when the next runtime attaches the tab', async t => {
+  const env = await starvedTabWithBridge(t, {starve: false});
+  const {ext, service, tabId} = env;
+  const bindingName = ext.calls.filter(c => c.method === 'debugger.sendCommand' && c.params.method === 'Runtime.addBinding').at(-1).params.params.name;
+  const browserId = (await execute(service, {type: 'list_browsers'}))[0].id;
+  await execute(service, {type: 'mark_tab', browser_id: browserId, tab_id: String(tabId), status: 'deliverable'});   // released open
+  ext.addForeignFrame(tabId);                   // Chrome detaches the tab during the turn
+  await new Promise(resolve => setTimeout(resolve, 20));
+  await service.handleRpc({method: 'setup', params: {environment: 'codex-app'}});
+  const removals = () => ext.calls.filter(c => c.method === 'debugger.sendCommand' && c.params.method === 'Runtime.evaluate'
+    && c.params.params.expression.includes(JSON.stringify(bindingName)) && c.params.params.expression.includes('cleanup()'));
+  assert.equal(removals().length, 0, 'the dispose did not attach the tab');
+  const next = (await execute(service, {type: 'list_browsers'}))[0].id;
+  await execute(service, {type: 'browser_user_claim_tab', browser_id: next, tab_id: String(tabId)});
+  await execute(service, {type: 'navigate_tab_reload', browser_id: next, tab_id: String(tabId)});
+  await waitFor(() => removals().length === 1, 'the stranded page side removed by the next runtime', 5000);
 });

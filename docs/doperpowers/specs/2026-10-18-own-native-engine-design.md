@@ -6197,7 +6197,8 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
        - **The documented limit.** A failure's time can depend on the text typed. agent-cursor.md, the docs oracle, the
          core-documentation test and the surface inventory's #414 quote now say so after the 680 sentence, byte for
          byte: "When it fails, how long it took can depend on the text typed, a `{{secret:…}}` included." Reply time
-         reaches only `_meta`, and its limit is tracked as #423.
+         reaches only `_meta`, and its limit is tracked as #423. Wave 11 (ruling 1ea561bc:856) extends the sentence to
+         the failure's reason as well (below).
        - **The findings.**
          - P1-1, a hold completed across the unsampled final slot, and P1-3, a passing focus check finishing after the
            deadline, are fixed by the rule change. There is no unsampled slot, and a success's focus check must
@@ -6326,6 +6327,39 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
          find the focus moved polls to the end (62 batches, 975 ms, `fieldChanged`). The property runs are unchanged:
          seed 0x414F217, 2000 cases, 4000 runs, 1902 successes, 2098 failures, 47 overrun cases; seed 0x414F218, 2000
          cases, 4000 runs, 1332 genuine (all confirmed) and 2668 controls (all `lengthMismatch`).
+     - **Wave 11: the classifying read last** (the review of e8e2702e..3b67bf4d, 2026-11-18; ruling 1ea561bc:856).
+       - **1, a failed subrole in the final batch.** `valueClassification` presumes a text-entry role secure when its
+         `AXSubrole` slot fails, so a field seen shown as text mid-poll whose final batch then read its role but failed
+         its subrole answered `lengthMismatch`, and the warning was lost. A concealed request's final batch
+         (`readbackLength(…, presumeSecure: false)`) now answers `.closed(.fieldUnreadable)` for a reply secure only by a
+         failed subrole, so the secure record's may-show remedy and the wrapper's warning apply. A role of
+         AXSecureTextField stays secure whatever its subrole did, and the poll's own batches still presume secure and go
+         on.
+       - **2, the focus read first.** A concealed request that ends without a success now reads its focus once, then
+         the final batch, so the read that classifies the field is the last before the reply: a show-password toggle
+         during the focus read is seen. The batch alone decides `noLongerSecure` or `fieldUnreadable`; the focus read
+         before it decides `fieldChanged`; wave 9's order stands. The focus read is always made now (wave 10 skipped it
+         after a closed batch).
+       - **3, a residual, not a fix.** In a field whose state matches one secret's length, that secret's poll makes hold
+         checks the other's does not, and their AX traffic, its timing, or a busy app's timeouts can change that secret's
+         failure reason, as they can its failure time. That reveals only what the outcome already reveals for such a
+         field: whether its length matched this secret, item 10's collapse-to-equal-length limit, so it adds nothing.
+         Ruling 856 accepts it and the docs' limit sentence now covers both, in all four copies byte for byte: "When it
+         fails, how long it took can depend on the text typed, a `{{secret:…}}` included, and so can its reason where
+         the field read as having taken exactly as many characters as were typed, in place of any selection." A reason
+         varies only where a hold check ran, that is where the field read as a held match and did not confirm; "in place
+         of any selection" is the paragraph's own phrase, so the sentence holds for a field with text or a selection.
+         #423 tracks both forms, the timing and the reason.
+       - **Tests.** SecureTypeReadbackTests has 57. New: a field shown as text mid-poll whose final batch fails only its
+         subrole answers `fieldUnreadable` with the warning, a role of AXSecureTextField with a failed subrole is still
+         secure, and poll batches with a failed subrole still go on; and the collapsing fixture with every focus check a
+         failing 100 ms one and a toggle at 925 ms, where both secrets answer `noLongerSecure` with the warning (the
+         8-character one answered `lengthMismatch` before). Each failed before its fix, and the two mutants (the final
+         batch presuming secure, the focus read after it) each fail a test. Moved: every concealed failure ends on a
+         focus read and then the final batch, a closed one included (one focus read more after a closed batch, its
+         `pollMs` 50 ms, not 10, for a 40 ms focus read); the property run's failure check reads the reason from those
+         two. The property runs are unchanged: seed 0x414F217, 2000 cases, 4000 runs, 1902 successes, 2098 failures, 47
+         overrun cases; seed 0x414F218, 2000 cases, 4000 runs, 1332 genuine and 2668 controls.
      - **What differs between concealed failures.** *Superseded by wave 9 (ruling 1ea561bc:851): kept as the record.* Under wave 10 a concealed held match whose focus
        check is moved, unknown or late polls on, the next hold checking again, and its failure's reason comes from the
        final batch and the focus read after it. A held match whose focus read fails goes on as a tainted one.
@@ -6520,7 +6554,7 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   11. **The model's document**: agent-cursor.md's typing paragraph, the surface inventory's "Table 3 amendment
       (2026-11-18, #414, …)", the docs oracle and the core-documentation test byte for byte, and the README's secrets
       paragraph. The MCP surface names no password confirmation, so no pinned digest moves.
-  12. **Proof**: SecureTypeReadbackTests (55) run the live reads over a stub app whose password field holds plaintext,
+  12. **Proof**: SecureTypeReadbackTests (57) run the live reads over a stub app whose password field holds plaintext,
       answers it to any request, and reports distinctive counts and ranges. Ruling 826's leak test covers fifteen runs:
       - confirmations, plain, concealed and by the caret alone;
       - a dropped and an extra character, a caret elsewhere concealed and plain, a field that ignores a secret (its

@@ -785,19 +785,21 @@ final class TypeReadback<Element> {
   ///
   /// One poll, literal and concealed (ruling 1ea561bc:851): a batch starts only while E − at ≥ T, the messaging timeout
   /// (`typeReadbackMessagingTimeoutMs`), every `typeReadbackPollIntervalMs`; E is `cutoff`, and `at` the batch's own
-  /// start, which also judges the hold (the review of a1939d2f..e8e2702e, 6). A hold completes by a read that starts the
-  /// window after the matching read's end and itself ends by E. At a hold, one focus check (`fieldFocused`, one AX
+  /// start, which also judges the hold (the review of a1939d2f..e8e2702e, 6). A hold completes by a read that starts
+  /// the window after the matching read's end and itself ends by E. At a hold, one focus check (`fieldFocused`, one AX
   /// call): focused, completed by E, confirms. Otherwise a literal request's moved is `fieldChanged` at once, and its
   /// unknown or late answer confirms nothing; a concealed request's check only gates its success (the same review, 1):
-  /// whether a hold comes at all can depend on the secret, so its answer never ends the poll or sets the reason, and the
-  /// next hold checks again. So a field must take the text by E − T less the window: 680 ms of B. A closed reply ends
-  /// the poll. A reply that leaves a held match, or one past where a genuine field can be (`readbackLengthOvershoots`),
-  /// ends a literal poll; a concealed one only taints (the same review, 3), so it never confirms, and polls on to E.
-  /// After a poll with no success a literal request that took no batch answers `fieldUnreadable` (the same review, 5);
-  /// one that did reads its focus once (moved is `fieldChanged`) and otherwise answers its last batch's reason. A
-  /// concealed one reads one final batch, however its poll ended and outside the start limit, which never confirms, and
-  /// answers `readbackConcealedReason` of it and, unless it decides alone, one focus read (the same review, 2). Nothing
-  /// seen mid-poll is latched: which batches a poll reads depends on its hold checks, so on the secret.
+  /// whether a hold comes at all can depend on the secret, so its answer never ends the poll or sets the reason, and
+  /// the next hold checks again. So a field must take the text by E − T less the window: 680 ms of B. A closed reply
+  /// ends the poll. A reply that leaves a held match, or one past where a genuine field can be
+  /// (`readbackLengthOvershoots`), ends a literal poll; a concealed one only taints (the same review, 3), so it never
+  /// confirms, and polls on to E. After a poll with no success a literal request that took no batch answers
+  /// `fieldUnreadable` (the same review, 5); one that did reads its focus once (moved is `fieldChanged`) and otherwise
+  /// answers its last batch's reason. A concealed one reads its focus once, then one final batch, however its poll
+  /// ended and outside the start limit, which never confirms, and answers `readbackConcealedReason` of the two (the
+  /// same review, 2): the classifying read is the last before the reply, and one secure only by a failed subrole is
+  /// `fieldUnreadable` there (the review of e8e2702e..3b67bf4d, 1 and 2). Nothing seen mid-poll is latched: which
+  /// batches a poll reads depends on its hold checks, so on the secret.
   private func confirmLength(through end: Int, beforeKey: Bool, cutoff: Double) throws {
     guard case .expectLength(let field, let role, let basis, _, let found) = plan else { return }
     let typed = units[0..<end].reduce(0) { leaves($1) ? $0 : $0 + readbackLengthUnits($1) }  // a key that can leave adds nothing
@@ -876,17 +878,14 @@ final class TypeReadback<Element> {
       case .read(.unreadable), .closed: throw unconfirmed(.lengthUnreadable, beforeKey)
       }
     }
-    // The final batch, then the focus read, decide alone; one closed noLongerSecure or fieldUnreadable needs no focus.
-    switch readbackLength(field, role: role, reads: reads) {
+    // The focus read, then the final batch, decide alone; the batch is the last read before the reply (the review of
+    // e8e2702e..3b67bf4d, 2), and one closed noLongerSecure or fieldUnreadable decides whatever the focus read found.
+    let focus = reads.fieldFocused(field, found)
+    switch readbackLength(field, role: role, reads: reads, presumeSecure: false) {
     case .closed(let why): final = .closed(why)
     case .read(let count, let range):
       record.reads += 1
       final = .read(readbackLengthJudged(count: count, range: range, basis: basis, typed: typed))
-    }
-    let focus: ReadbackFocus
-    switch final {
-    case .closed(.noLongerSecure)?, .closed(.fieldUnreadable)?: focus = .unknown
-    default: focus = reads.fieldFocused(field, found)
     }
     throw unconfirmed(readbackConcealedReason(finalBatch: final, focus: focus), beforeKey)
   }

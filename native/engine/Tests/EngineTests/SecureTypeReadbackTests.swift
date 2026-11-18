@@ -657,7 +657,7 @@ final class SecureTypeReadbackTests: XCTestCase {
       ("a lost match", { app in app.beforeBatch = { [unowned app] in if $0 == 3 { app.value += "y" } } }, false, "lengthMismatch",
        concealedFailureBatches, lastBatchStart + 40),
       ("a closed read", { app in app.beforeBatch = { [unowned app] in if $0 == 3 { app.subrole = nil } } }, false, "noLongerSecure",
-       4 + 1, 2 * typeReadbackPollIntervalMs),
+       4 + 1, 2 * typeReadbackPollIntervalMs + 40),
       ("a failed count", { app in app.beforeBatch = { [unowned app] in if $0 >= 1 { app.countSlot = .fails } } }, false, "lengthUnreadable",
        concealedFailureBatches, lastBatchStart + 40),
       ("refused: lengthUnreadable", { $0.countSlot = .fails }, false, "lengthUnreadable", 1, 0),
@@ -837,7 +837,8 @@ final class SecureTypeReadbackTests: XCTestCase {
   /// (3) The exposure warning wins: a last batch closed `noLongerSecure` answers `noLongerSecure` though the focus moved
   /// too, so the wrapper's may-show warning and the native advice are kept; one closed `fieldUnreadable` answers that,
   /// with the same warning for a password field (the review of 4a005a8c..a1939d2f, P1-4). Any other last batch with a
-  /// moved focus answers `fieldChanged`. A batch shown as text ends the poll at once, with no focus read after it.
+  /// moved focus answers `fieldChanged`. A batch shown as text ends the poll at once; then the focus read and the final
+  /// batch, which decides whatever the focus read found (the review of e8e2702e..3b67bf4d, 2).
   func testAFieldThatStoppedBeingSecureAnswersSoWhenTheFocusMovedToo() {
     XCTAssertEqual(readbackConcealedReason(finalBatch: .closed(.noLongerSecure), focus: .moved), .noLongerSecure)
     XCTAssertEqual(readbackConcealedReason(finalBatch: .closed(.fieldUnreadable), focus: .moved), .fieldUnreadable)
@@ -851,7 +852,8 @@ final class SecureTypeReadbackTests: XCTestCase {
     XCTAssertEqual(reason(meta), "noLongerSecure")
     XCTAssertTrue(error?.message.contains("may now show its text") ?? false)
     XCTAssertEqual(app.clock - app.postedAt, 100, "at the batch that saw it")
-    XCTAssertEqual(app.callsAfterPost, [], "no focus read after it")
+    XCTAssertEqual(app.callsAfterPost, ["AXFocusedUIElement@0"], "the focus read, then the final batch")
+    XCTAssertTrue(app.answers.last?.isBatch ?? false, "the final batch last")
   }
 
   /// A focus read that cannot finish (one slower than its timeout, or answering cannotComplete as a timed-out call does) is
@@ -902,7 +904,7 @@ final class SecureTypeReadbackTests: XCTestCase {
       }
       let (_, meta, _) = type("pass", into: app, concealed: true)
       XCTAssertEqual(reason(meta), "lengthMismatch", label)
-      let focus = app.answers[app.answersAtPost...].last!
+      let focus = app.answers[app.answersAtPost...].last { !$0.isBatch }!  // the final batch comes after it
       XCTAssertEqual(focus.outcome, .focus(true), "\(label): the focus read was made and found the field")
       XCTAssertGreaterThanOrEqual(focus.start - app.postedAt, 850 + overrun, label)
     }
@@ -930,7 +932,7 @@ final class SecureTypeReadbackTests: XCTestCase {
           let (error, meta, _) = type("pass", into: app, concealed: concealed)
           XCTAssertNotNil(error, label)
           XCTAssertEqual(reason(meta), "lengthMismatch", label)
-          XCTAssertEqual(app.answers[app.answersAtPost...].last?.outcome, .focus(true), "\(label): the focus read was made and found the field")
+          XCTAssertEqual(app.answers[app.answersAtPost...].last { !$0.isBatch }?.outcome, .focus(true), "\(label): the focus read was made and found the field")
           XCTAssertGreaterThanOrEqual(app.clock - app.postedAt, lastBatchStart + overrun, "\(label): the overrun was reached")
         }
       }
@@ -1035,7 +1037,8 @@ final class SecureTypeReadbackTests: XCTestCase {
       let (unreadError, unreadMeta, _) = type("pass", into: unread, concealed: concealed)
       XCTAssertEqual(reason(unreadMeta), "fieldUnreadable", "concealed \(concealed): before the moved focus")
       XCTAssertEqual(record(unreadMeta)["secure"] as? Bool, true)
-      XCTAssertEqual(unread.callsAfterPost, [], "concealed \(concealed): no focus read")
+      // A literal request answers the closed batch at once; a concealed one reads its focus, then the final batch.
+      XCTAssertEqual(unread.callsAfterPost, concealed ? ["AXFocusedUIElement@0"] : [], "concealed \(concealed)")
       XCTAssertTrue(unreadError?.message.contains("the password field could not be read, so it may no longer hide its text") ?? false)
       XCTAssertTrue(unreadError?.message.contains("may now show its text") ?? false, "concealed \(concealed): the may-show remedy")
       XCTAssertFalse(unreadError?.message.contains("Observe the field with getAXState()") ?? true)
@@ -1154,6 +1157,65 @@ final class SecureTypeReadbackTests: XCTestCase {
     }
   }
 
+  // MARK: The review of e8e2702e..3b67bf4d
+
+  /// 1: a concealed request's final batch that is secure only because its subrole could not be read answers
+  /// `fieldUnreadable`, so a password field's may-show remedy and the wrapper's warning apply: a batch mid-poll saw the
+  /// field shown as text, and the final batch reads its text-field role but fails its subrole. A final batch whose role
+  /// is AXSecureTextField is secure whatever its subrole did. The poll's own batches still presume a failed subrole
+  /// secure, and the poll goes on.
+  func testAConcealedFinalBatchWithAFailedSubroleIsUnreadable() {
+    let shown = field()
+    shown.beforeBatch = { [unowned shown] index in
+      if index == 3 { shown.subrole = nil }  // shown as text: the poll ends
+      if index == 4 { shown.subrole = "AXSecureTextField"; shown.subroleFails = true }  // the final batch
+    }
+    let (shownError, shownMeta, _) = type("pass", into: shown, concealed: true)
+    XCTAssertEqual(reason(shownMeta), "fieldUnreadable")
+    XCTAssertTrue(shownError?.message.contains("may now show its text") ?? false)
+    XCTAssertEqual(shown.batches, 5, "the snapshot, three poll batches, the final batch")
+
+    let secureRole = field()
+    secureRole.role = "AXSecureTextField"
+    secureRole.subrole = nil
+    secureRole.beforeBatch = { [unowned secureRole] index in
+      if index == 3 { secureRole.value += "y" }  // a lost match
+      secureRole.subroleFails = index > 1  // every batch after the first poll's
+    }
+    let (_, secureMeta, _) = type("pass", into: secureRole, concealed: true)
+    XCTAssertEqual(reason(secureMeta), "lengthMismatch", "AXSecureTextField is secure whatever its subrole did")
+    XCTAssertEqual(secureRole.batches, concealedFailureBatches, "the poll went on")
+
+    let presumed = field()
+    presumed.beforeBatch = { [unowned presumed] index in
+      if index == 3 { presumed.value += "y" }  // a lost match
+      presumed.subroleFails = index >= 2 && index < 20  // poll batches only
+    }
+    let (_, presumedMeta, _) = type("pass", into: presumed, concealed: true)
+    XCTAssertEqual(reason(presumedMeta), "lengthMismatch", "a poll batch presumes a failed subrole secure")
+    XCTAssertEqual(presumed.batches, concealedFailureBatches, "the poll went on")
+  }
+
+  /// 2: the classifying read is the last before the reply. A concealed request that ends without a success reads its
+  /// focus first, then the final batch, so a show-password toggle during that focus read is still seen. The collapsing
+  /// fixture, every focus check a failing 100 ms one, the field shown as text at 925 ms: the 8-character secret's poll
+  /// ends at its 900 ms batch, before the toggle, and both secrets answer `noLongerSecure` with the warning.
+  func testAConcealedFailuresFinalBatchComesAfterItsFocusRead() {
+    let toggled = { (app: StubPasswordApp, t: Double) in
+      app.focusCostMs = 100
+      app.focusFails = true
+      if t >= 925 { app.subrole = nil }
+    }
+    for secret in ["abcd", "abcdefgh"] {
+      let run = collapsing(secret, toggled)
+      XCTAssertEqual(reason(run.meta), "noLongerSecure", "a secret of \(secret.count)")
+      XCTAssertTrue(run.error?.message.contains("may now show its text") ?? false, "a secret of \(secret.count)")
+      let posted = run.app.answers[run.app.answersAtPost...]
+      XCTAssertTrue(posted.last?.isBatch ?? false, "a secret of \(secret.count): the batch last")
+      XCTAssertFalse(posted.dropLast().last?.isBatch ?? true, "a secret of \(secret.count): the focus read just before it")
+    }
+  }
+
   /// The property, seeded and deterministic over 2000 cases, each typed with two secrets of different lengths into one
   /// field timeline. A case draws a field (one that takes the text, one that takes none of it, one whose last key lands
   /// late at a drawn time), up to three changes at drawn times after the last post (its focus away or back, its focus
@@ -1161,9 +1223,9 @@ final class SecureTypeReadbackTests: XCTestCase {
   /// a character added), and every read's cost as a function of its time, within the timeout; about 1 case in 40 lets
   /// reads from 800 ms overrun it. Posting and the pause after each post cost a drawn amount per event. The two secrets
   /// answer alike: the same outcome and reason. Every success held for the window between two sampled reads, its closing
-  /// read started with T left and its closing read and focus check ended by the cutoff; every failure's reason is its
-  /// last batch's and the focus read after it. A password field's only call after posting but its batch is the
-  /// application's focus.
+  /// read started with T left and its closing read and focus check ended by the cutoff; every failure ends on a focus
+  /// read and then the final batch, and its reason is theirs. A password field's only call after posting but its batch
+  /// is the application's focus.
   func testConcealedTimingAndReasonsHoldOverRandomCases() {
     let seed: UInt64 = 0x414_F217, cases = 2000
     var rng = SplitMix(seed)
@@ -1254,17 +1316,15 @@ final class SecureTypeReadbackTests: XCTestCase {
           continue
         }
         failures += 1
-        guard let last = batches.last else { XCTFail("\(label): a failure after posting reads a batch"); continue }
-        // The reason, from the last batch and the focus read after it alone.
+        // The reason, from the focus read and the final batch after it alone (the review of e8e2702e..3b67bf4d, 2).
+        guard let last = answers.last, last.isBatch, let focus = answers.dropLast().last, case .focus(let found) = focus.outcome else {
+          XCTFail("\(label): a failure ends on a focus read, then the final batch"); continue
+        }
         switch last.outcome {
         case .noLongerSecure, .failed:
           XCTAssertEqual(reason(meta), last.outcome == .noLongerSecure ? "noLongerSecure" : "fieldUnreadable", label)
-          XCTAssertTrue(answers.last!.isBatch, "\(label): decided by the batch alone, no focus read after it")
         case .countFailed, .read:
           let byBatch = last.outcome == .countFailed ? "lengthUnreadable" : "lengthMismatch"
-          guard let focus = answers.last, case .focus(let found) = focus.outcome else {
-            XCTFail("\(label): a failure that is not closed ends on a focus read"); continue
-          }
           // A focus read that found the field gives the batch's reason; one that did not is moved or unknown.
           XCTAssertTrue(found ? reason(meta) == byBatch : [byBatch, "fieldChanged"].contains(reason(meta)), "\(label): \(reason(meta) ?? "nil")")
         case .focus: XCTFail(label)

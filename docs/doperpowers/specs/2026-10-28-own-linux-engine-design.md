@@ -2314,6 +2314,27 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
   - **Unchanged:** the 5-day lease (F6, F6a); the order (T6's arm64 pilot, then T4's arm64 findings under §8.1 on both architectures, then T7 at the head then frozen); the evidence and the rules. The VM is created at the head the controller names. That is H″ (a5218d94), or a later commit on `feat/171-m5` that moves no file a step runs.
   Date/Author: 2026-11-18, the plan-executor (session linux171), on the design session's message 796.
 
+- Decision (2026-11-18, M5 T6 on arm64, the pilot as run): task 96, on the GCE arm64 VM at da306cc6. It used `linux-engine-v0.4.0`'s arm64 asset (0cbde8f0…, attested) from the pilot's own run home. Development runs, never counted. Evidence: `docs/evidence/2026-10-28-own-linux-engine/m5/arm64/pilot/` (894587c9, 4d2acf97).
+  - **The VM** checks as the GCE entry expected: aarch64, uid 501, home /Users/new, and `:0` on Xorg's dummy driver at 1280x800, the x64 VM's size, so no scene needed a size change. No snap browser. Node 24.22.1 runs from a run-owned prefix, because the image's Node is 26. devcloud rewrites `authorized_keys` on every reconcile, so the controller's key is in `authorized_keys2`.
+  - **What ran.** All 28 private idle steps (`--pilot 2`): 26 exited 0, and R1 and E1 exited 1. On `:0`, through the sitting launcher, with no GO needed (803): V2, V3, V4 and Z0 passed. V5 failed two Chrome drag-and-drop cells. V1 is not shown. At twice the load, 16 steps ran; 15 exited 0 and L4a exited 1. Timing: no gross miss on the arm64 core.
+  - **Findings, to T4's arm64 part (task 97) under §8.1 on both architectures:**
+    - Three R1 vendor outcomes, rerun 4x each (810): typeText ends gedit, stably, with two error texts; paste ends its own fresh gedit; getAXState minimized is x64's defect. On arm64 the vendor builds also end gedit on `clipboard_write`, so it has no arm64 vendor bar.
+    - E1: on arm64, cua answers the interrupted drag ok:true (4/4), its recorder showing the drag before the child's DestroyNotify. Ruling 818 makes this a pass when the whole drag is shown.
+    - The pinned pilot's run name was too long for `scratchRoot` to keep the scratch under run71's TMPDIR, and wrap71 stopped V1.
+    - `restoreLaneScene` closed and waited by X window id alone. Under cross-lane id reuse, which comes when vendor lanes keep ending gedit, it closed another lane's window, and V1 crashed.
+    - wrap71 stopped V5 on an outside-peer connection to an autobind abstract address with no peer pid, most likely the run Chrome's own crashpad socket. It also ran on when its session-bus decoy could not bind (`AF_UNIX path too long`, under out-zero-r1 only).
+  - **Findings that wait for a ruling:**
+    - V5's `chrome_dnd_shared` audit pass: its first audited request was a plain-drag ok with no late notice, so Chrome likely never took the drag. Is that an unmet premise, or a fail? The late-take cell failed on the witness span, as under ruling 680.
+    - **L4a's false ok (ruling 650's class), from the shipped engine.** In the cua:handle left cell at twice the load, the engine answered ok with no drop.
+      - The rate run (`--pilot 100`, the whole t17-fix3 plan, with H1 at idle as the control) found 1 in 30 at load, and 0 in 30 at idle. With the pilot's sample, that is 2 of 4 cold samples at load against 0 of 28 warm.
+      - The confirming signal was Electron's accept cursor, from the in-zone part of the path, still shown about 90 ms after the pointer left, at the off-zone release (Cursor(true)).
+      - `accept_indeterminate` does not separate the false oks: 162 correct answers carry it too.
+      - So the 2026-11-10 claim above, that a stale accept's worst case is "a faster honest no, not a wrong ok", does not hold for Electron on arm64 cold under load.
+      - The same block also held one missed landing in the plain cell (1 of 100).
+      - §8.2: an engine fault cuts the release. The fix's design is the design session's ruling.
+  - The vendor index now lists 26.1111.71025, whose engine binary is byte-identical to 26.1111.21308, F3's third build. F3's build was fetched by name.
+  Date/Author: 2026-11-18, the plan-executor (session linux171), from task 96's report.
+
 ## Outcomes & Retrospective
 
 Written per milestone as each lands; the whole-plan retrospective at finish. The execution record (tasks, reviews, friction) is `docs/doperpowers/specs/2026-10-28-own-linux-engine-report.md`.

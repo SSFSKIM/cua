@@ -13,7 +13,7 @@
 // record, never to the runner: its answers' `stats` and `untied` and the stderr tail an exit's error quotes are what
 // they are without it.
 
-import { closeSync, mkdirSync, openSync, readSync, appendFileSync } from 'node:fs';
+import { appendFileSync, closeSync, mkdirSync, openSync, readSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 
@@ -88,8 +88,10 @@ let recording = null;
  * did not start with `--stats`, gets `--stats` too, its lines written to a stats file of its own. Answers the function
  * that writes the record, also called at the process's exit; nothing is written when no engine started.
  */
-export function recordEngines({ out, run = null, vendors = [], optIn = false, isCuaBuild = cuaBuild, isEngineFile = isElfFile }) {
-  const state = { out, optIn, isCuaBuild, engines: [], written: false };
+export function recordEngines({ out, run = null, vendors = [], optIn = false, isCuaBuild = cuaBuild }) {
+  // the vendor builds by the paths the run named and what they resolve to now, while they exist
+  const vendorPaths = new Set(vendors.filter(Boolean).flatMap((v) => [v, real(v)]));
+  const state = { out, optIn, isCuaBuild, vendorPaths, engines: [], written: false };
   const started = new Date().toISOString();
   recording = state;
   const finish = () => {
@@ -99,12 +101,20 @@ export function recordEngines({ out, run = null, vendors = [], optIn = false, is
     if (recording === state) recording = null;
     if (!state.engines.length) return;
     mkdirSync(out, { recursive: true });
-    const engines = state.engines.map((engine) => engineEntry(engine, { vendors, isEngineFile }));
+    const engines = state.engines.map(engineEntry);
     writeSettleCounts(out, { harness_pid: process.pid, run, opt_in: optIn, started, finished: new Date().toISOString(), engines });
   };
   process.on('exit', finish);
   return finish;
 }
+
+const real = (path) => {
+  try {
+    return realpathSync(path);
+  } catch {
+    return path;
+  }
+};
 
 /** Whether a `--version` answer is cua-engine's (`cua-engine <version> (<commit>)`, candidate.mjs reads the same). */
 export const isCuaVersion = (text) => /^cua-engine \S+/.test(String(text ?? ''));
@@ -153,6 +163,9 @@ export class Engine {
     this.lines = 0;
     this.unparsable = 0;
     this.dropSettles = null;
+    // whether the engine's last stats line was its own snapshot after the requests (`"id": null`, with drop_settles):
+    // only that one follows what its exit did, and the exit can end a held handle, which can settle
+    this.final = false;
     this.ended = false;
     // the requests sent, by command: the settle runs only inside a drag or a drag_handle
     this.sent = {};
@@ -175,11 +188,17 @@ export class Engine {
   start() {
     const rec = recording;
     const env = engineEnvironment(this.env ?? process.env, openRun);
-    // the opt-in's --stats, for a cua build its runner started without (asked once per build, before the timed spawn)
-    if (rec?.optIn && !this.statsWanted) this.probed = rec.isCuaBuild(this.bin, env);
-    this.stats = this.statsWanted ? 'asked' : this.probed ? 'opt-in' : null;
+    // --stats its runner gave it (asked, or in its own args), parsed as ever; else the opt-in's, for a cua build alone
+    // (asked once per build), never a second flag; all of it before the timed spawn
+    const own = this.statsWanted || this.args.includes('--stats');
+    if (rec?.optIn && !own) this.probed = rec.isCuaBuild(this.bin, env);
+    this.stats = own ? 'asked' : this.probed ? 'opt-in' : null;
+    // the engine's identity from what the run started, at its launch: a build the run named as the vendor's, a cua lane
+    // (it took cua's --stats), or unidentified, which the record holds to the counter as a cua lane (the candidate's
+    // copy may be gone by the harness's end)
+    if (rec) this.build = rec.vendorPaths.has(this.bin) || rec.vendorPaths.has(real(this.bin)) ? 'vendor' : this.stats ? 'cua' : 'unidentified';
     this.spawnedAt = now();
-    const args = ['server', ...this.args, ...(this.stats ? ['--stats'] : [])];
+    const args = ['server', ...this.args, ...(this.statsWanted || this.stats === 'opt-in' ? ['--stats'] : [])];
     this.argv = args;
     this.child = xSpawn(this.bin, args, { stdio: ['pipe', 'pipe', 'pipe'], env });
     this.pid = this.child.pid;
@@ -214,12 +233,12 @@ export class Engine {
           ({ stats } = JSON.parse(line));
         } catch {
           this.noteStats(line, undefined);
-          if (this.statsWanted) this.stderrTail = `${this.stderrTail}unparsable --stats line: ${line.slice(0, 200)}\n`.slice(-4000);
+          if (this.stats !== 'opt-in') this.stderrTail = `${this.stderrTail}unparsable --stats line: ${line.slice(0, 200)}\n`.slice(-4000);
           return;
         }
         this.noteStats(line, stats);
         // the opt-in's lines are the record's alone: its runner asked for none
-        if (!this.statsWanted) return;
+        if (this.stats === 'opt-in') return;
         if (stats?.id === null) this.untied.push(stats);
         else this.statsById.set(stats?.id, stats);
       } else {
@@ -241,6 +260,7 @@ export class Engine {
     if (stats === undefined) this.unparsable += 1;
     const counts = settleCounts(stats?.drop_settles);
     if (counts) this.dropSettles = counts;
+    this.final = Boolean(counts) && stats?.id === null;
     if (this.statsFile) {
       mkdirSync(join(this.statsFile.out, ENGINE_STATS_DIR), { recursive: true });
       appendFileSync(join(this.statsFile.out, this.statsFile.path), `${line}\n`);

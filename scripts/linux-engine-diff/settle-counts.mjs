@@ -10,7 +10,7 @@
 // recorded, never as zero. Nothing a judge, a report or a parser reads comes from here: the record and the stats files
 // (`engine-stats/`) are written beside the run's records, and read only by settle-check.mjs.
 
-import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 /** The record's file name, in the harness's out directory. */
@@ -26,29 +26,23 @@ export const NO_STATS = 'no stats: not recorded';
 export const NO_COUNTER = 'stats without drop_settles: not recorded';
 export const NO_LINE = 'no stats line: not recorded';
 
-/** A `drop_settles` record as the engine prints it, or null for anything else. */
+/**
+ * A `drop_settles` record as the engine prints it, whole (0.4.1 adds `settle_failed_activation_confirmed`), or null for
+ * anything without the four counts.
+ */
 export function settleCounts(value) {
-  if (!value || typeof value !== 'object') return null;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   if (!COUNTS.every((k) => Number.isInteger(value[k]) && value[k] >= 0)) return null;
-  return Object.fromEntries(COUNTS.map((k) => [k, value[k]]));
+  return { ...value };
 }
 
-const real = (path) => {
-  try {
-    return realpathSync(path);
-  } catch {
-    return path;
-  }
-};
-
 /**
- * An engine's entry: which build it is (`vendor`, a build the run named as the vendor's; `cua`, one started with
- * `--stats` or, unprobed, any other engine build; `other`, a stand-in that is no engine build or a build the opt-in's
- * probe found not cua's), and its counter or why there is none.
+ * An engine's entry: its build as identified at its launch (engine.mjs: `vendor`, a build the run named as the
+ * vendor's; `cua`, one that took cua's `--stats`; `unidentified`, any other, held to the counter as a cua lane), and its
+ * counter or why there is none.
  */
-export function engineEntry(engine, { vendors, isEngineFile }) {
-  const vendor = new Set(vendors.filter(Boolean).map(real)).has(real(engine.bin));
-  const build = vendor ? 'vendor' : engine.stats ? 'cua' : engine.probed === false ? 'other' : isEngineFile(engine.bin) ? 'cua' : 'other';
+export function engineEntry(engine) {
+  const build = engine.build ?? 'unidentified';
   const recorded = engine.dropSettles ? RECORDED : !engine.stats ? NO_STATS : engine.lines > 0 ? NO_COUNTER : NO_LINE;
   return {
     lane: engine.label,
@@ -61,6 +55,7 @@ export function engineEntry(engine, { vendors, isEngineFile }) {
     lines: engine.lines,
     unparsable: engine.unparsable,
     ended: engine.ended,
+    final: engine.final,
     sent: engine.sent,
     drop_settles: engine.dropSettles,
     recorded,
@@ -95,39 +90,56 @@ export const SETTLE_REQUESTS = ['drag', 'drag_handle'];
 /** Whether an engine may have run the settle by what it was sent: any drag, or a record that does not say. */
 const mayDrag = (e) => !e.sent || SETTLE_REQUESTS.some((c) => e.sent[c] > 0);
 
-const sum = (records) => Object.fromEntries(COUNTS.map((k) => [k, records.reduce((n, r) => n + r[k], 0)]));
+/** Each count summed over the engines, every field of the snapshot that is a count. */
+const sum = (records) => {
+  const keys = [...new Set(records.flatMap((r) => Object.keys(r).filter((k) => Number.isInteger(r[k]))))];
+  return Object.fromEntries(keys.map((k) => [k, records.reduce((n, r) => n + (Number.isInteger(r[k]) ? r[k] : 0), 0)]));
+};
 const taken = (c) => c.entered > 0 || c.second_rest > 0;
 
 /**
- * A step's settle, from its record: `{state, counts, engines, undragged, unknown}`. `state` is `taken` when any cua
- * engine's last counter shows the branch run (entered, or a second rest taken), `not taken` only when every cua engine
- * recorded its counter, read whole, at zeros, or was sent no request the settle runs in (`undragged`, the harness's own
- * record of what it sent), and `unknown` otherwise: no record, no counter in it, or any cua engine sent a drag whose
- * counter is missing, that was still running when its harness ended (a line may be unread), or that wrote a stats
- * line that did not parse (it may have been the last). Each engine's counter is its own process's, cumulative, so the
- * step's counts are the sum of each engine's last value.
+ * A step's settle, from its record: `{state, counts, engines, undragged, noDrag, unknown}`, over every engine that is no
+ * vendor build the run named (a cua lane, or an unidentified one that may be). `state` is `taken` when any engine's
+ * last counter shows the branch run (entered, or a second rest taken), whatever else is missing. It is `not taken` only
+ * when every such engine either recorded a zero counter in its own post-shutdown snapshot (its last stats line, `"id":
+ * null`, after the exit that can end a held handle and settle it), read whole, or was sent no request the settle runs
+ * in (`noDrag`: proved by the harness's record of what it sent, listed apart, never a measured zero). Anything else is
+ * `unknown`: no record, no counter, a zero read before the exit, an engine still running when its harness ended (a
+ * line may be unread), or a stats line that did not parse (it may have been the last). Each counter is its own
+ * process's, cumulative, so the step's counts are the sum of each engine's last value, every count of the snapshot.
  */
 export function settleVerdict(record) {
-  if (!record) return { state: 'unknown', counts: null, engines: 0, undragged: 0, unknown: [`no ${SETTLE_COUNTS}`] };
-  const engines = record.processes.flatMap((p) => p.engines ?? []).filter((e) => e.build === 'cua');
-  if (!engines.length) return { state: 'unknown', counts: null, engines: 0, undragged: 0, unknown: ['no cua engine recorded'] };
+  if (!record) return { state: 'unknown', counts: null, engines: 0, undragged: 0, noDrag: [], unknown: [`no ${SETTLE_COUNTS}`] };
+  // every engine that is not a vendor build the run named: a cua lane, or one that may be
+  const engines = record.processes.flatMap((p) => p.engines ?? []).filter((e) => e.build !== 'vendor');
+  if (!engines.length) return { state: 'unknown', counts: null, engines: 0, undragged: 0, noDrag: [], unknown: ['no cua engine recorded'] };
   const unknown = [];
   const read = [];
-  let undragged = 0;
+  const noDrag = [];
   for (const e of engines) {
     const c = settleCounts(e.drop_settles);
+    // no counter, and no request the settle runs in: proved by what the harness sent it, never a measured zero
     if (!c && !mayDrag(e)) {
-      undragged += 1;
+      noDrag.push(`${e.lane} ${e.pid}: no counter; sent no drag or drag_handle (not a measured zero)`);
       continue;
     }
-    const why = !c ? e.recorded ?? NO_STATS : !e.ended ? 'still running when its harness ended: a line may be unread' : e.unparsable > 0 ? `${e.unparsable} stats line(s) did not parse` : null;
+    const why = !c
+      ? e.recorded ?? NO_STATS
+      : !e.ended
+        ? 'still running when its harness ended: a line may be unread'
+        : e.unparsable > 0
+          ? `${e.unparsable} stats line(s) did not parse`
+          : !e.final
+            ? 'no post-shutdown snapshot carried its counter: the zero was read before its exit, which can end a held handle and settle it'
+            : null;
     if (c) read.push(c);
     if (why) unknown.push(`${e.lane} ${e.pid}: ${why}`);
   }
   const counts = read.length ? sum(read) : null;
-  if (!counts) return { state: 'unknown', counts: null, engines: engines.length, undragged, unknown: unknown.length ? unknown : ['no cua engine recorded its counter'] };
+  const undragged = noDrag.length;
+  if (!counts) return { state: 'unknown', counts: null, engines: engines.length, undragged, noDrag, unknown: unknown.length ? unknown : ['no cua engine recorded its counter'] };
   const state = taken(counts) ? 'taken' : unknown.length ? 'unknown' : 'not taken';
-  return { state, counts, engines: engines.length, undragged, unknown };
+  return { state, counts, engines: engines.length, undragged, noDrag, unknown };
 }
 
 /** A step directory's record: its own `settle-counts.json`, or its harness out's (`run/`, gate.mjs). */
@@ -138,7 +150,7 @@ export function stepRecord(dir) {
   return null;
 }
 
-const countsText = (c) => COUNTS.map((k) => `${k} ${c[k]}`).join(', ');
+const countsText = (c) => [...COUNTS, ...Object.keys(c).filter((k) => !COUNTS.includes(k))].map((k) => `${k} ${c[k]}`).join(', ');
 
 /** settle-check.mjs: one line per step (and its unknown engines), and the exit code: 0 only when none was taken or unknown. */
 export function checkSteps(dirs) {
@@ -152,7 +164,7 @@ export function checkSteps(dirs) {
     else if (v.state === 'taken') lines.push(`${dir}: TAKEN (${countsText(v.counts)}; ${of}${undragged}): reruns as class A`);
     else if (!v.engines) lines.push(`${dir}: unknown: ${v.unknown[0]}`);
     else lines.push(`${dir}: unknown: ${v.unknown.length} of ${of} not recorded${undragged}${v.counts ? `; the recorded: ${countsText(v.counts)}` : ''}`);
-    for (const u of v.engines ? v.unknown : []) lines.push(`  ${u}`);
+    for (const u of v.engines ? [...v.unknown, ...v.noDrag] : []) lines.push(`  ${u}`);
     if (v.state !== 'not taken') code = 1;
   }
   return { lines, code };

@@ -214,6 +214,9 @@ export function parseArgs(argv) {
   // a counted run: a verdict run unless --dev or a pilot on the pinned release, an experiment with --gate or --pinned
   const counted = a.mode === 'run' ? !a.dev && a.gate !== PINNED_DEVELOPMENT : isCounted(a.gate);
   if (a.engineStats && (!['run', 'experiment'].includes(a.mode) || counted)) throw new Error("--engine-stats is a development run's or a pilot's: --stats adds reads to a paste and a line after every request, so a counted run never takes it");
+  // the vendor client starts its engine with no flags of ours, and cua's service or cua serve starts the settle's and
+  // the engine stop's: the opt-in would instrument none of the measured engines
+  if (a.engineStats && (a.via === 'vendor-js' || ['settle', 'engine-stop'].includes(a.experiment))) throw new Error(`--engine-stats cannot reach the measured engine ${a.via === 'vendor-js' ? 'through the vendor client (--via vendor-js)' : `of the ${a.experiment} experiment (cua's service or cua serve starts it)`}`);
   const require = (...keys) => {
     for (const key of keys) {
       const flag = Object.entries({ ...VALUE_FLAGS }).find(([, k]) => k === key)?.[0] ?? `--${key}`;

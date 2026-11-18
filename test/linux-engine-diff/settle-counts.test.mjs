@@ -23,6 +23,7 @@ const CHECKER = fileURLToPath(new URL('../../scripts/linux-engine-gate/settle-ch
 // A stand-in engine speaking the wire. It keeps its argv beside itself, writes a log line to stderr for every request,
 // and only under `--stats` writes the engine's lines: an untied one (`"id": null`) before request 2's answer, and each
 // request's own after its answer, carrying `drop_settles` from FAKE_SETTLES (one record per request; none when unset).
+// At its stdin's end (the engine's shutdown) it writes FAKE_EXIT's lines under `--stats`, then exits.
 const FAKE = `#!${process.execPath}
 const { appendFileSync } = require('node:fs');
 const { createInterface } = require('node:readline');
@@ -36,6 +37,9 @@ createInterface({ input: process.stdin }).on('line', (line) => {
   if (stats && id === 2) process.stderr.write(JSON.stringify({ stats: { id: null, focus_out: [{ window: 7 }] } }) + '\\n');
   process.stdout.write(JSON.stringify({ id, ok: true, output: { command } }) + '\\n');
   if (stats) process.stderr.write(JSON.stringify({ stats: { id, command, ...(settles ? { drop_settles: settles[id - 1] } : {}) } }) + '\\n');
+}).on('close', () => {
+  const exit = stats && process.env.FAKE_EXIT ? JSON.parse(process.env.FAKE_EXIT) : [];
+  process.stderr.write(exit.map((l) => JSON.stringify(l) + '\\n').join(''), () => process.exit(0));
 });
 `;
 
@@ -130,8 +134,7 @@ test("settle-counts.json keeps each engine's last drop_settles by lane and pid, 
     const cua = fakeEngine(dir, 'cua-engine.cjs');
     const vendor = fakeEngine(dir, 'sky.cjs');
     const out = join(dir, 'out');
-    // the stand-ins are scripts: taken here for engine builds, as an ELF file is (`isEngineFile`)
-    const finish = recordEngines({ out, run: 'm5-dev-D1', vendors: [vendor], optIn: false, isEngineFile: () => true });
+    const finish = recordEngines({ out, run: 'm5-dev-D1', vendors: [vendor], optIn: false });
     let pid;
     try {
       // the counter is cumulative per engine process: 1, then 2, then 2
@@ -140,6 +143,9 @@ test("settle-counts.json keeps each engine's last drop_settles by lane and pid, 
       pid = engine.pid;
       await drive(new Engine({ label: 'cua:0ms', bin: cua }));
       await drive(new Engine({ label: 'pinned', bin: vendor }));
+      // a run's candidate copy is removed before the harness ends (runDiff): the engines are identified at launch
+      rmSync(cua);
+      rmSync(vendor);
     } finally {
       finish();
     }
@@ -149,8 +155,10 @@ test("settle-counts.json keeps each engine's last drop_settles by lane and pid, 
     const byLane = Object.fromEntries(proc.engines.map((e) => [e.lane, e]));
     assert.equal(byLane.cua.pid, pid);
     assert.equal(byLane.cua.build, 'cua');
+    assert.equal(byLane.cua.final, false, 'this stand-in writes no snapshot after its shutdown');
     assert.deepEqual(byLane.cua.drop_settles, counts(2, 1), 'the last line of the engine, not a sum of its lines');
     assert.equal(byLane['cua:0ms'].drop_settles, null);
+    assert.equal(byLane['cua:0ms'].build, 'unidentified', 'an engine with no stats that is no vendor build the run named may be a cua lane');
     assert.equal(byLane['cua:0ms'].recorded, 'no stats: not recorded');
     assert.deepEqual(byLane['cua:0ms'].sent, { drag: 2, get_window_state: 1 }, 'what the harness sent it, by command');
     assert.equal(byLane.pinned.build, 'vendor');
@@ -162,9 +170,9 @@ test("settle-counts.json keeps each engine's last drop_settles by lane and pid, 
 });
 
 test('the checker: not taken only when every cua engine recorded zeros; a taken branch flagged; anything missing unknown', () => {
-  const engine = (lane, pid, dropSettles, extra = {}) => ({ lane, pid, build: 'cua', drop_settles: dropSettles, recorded: dropSettles ? 'recorded' : 'no stats: not recorded', ended: true, unparsable: 0, ...extra });
+  const engine = (lane, pid, dropSettles, extra = {}) => ({ lane, pid, build: 'cua', drop_settles: dropSettles, recorded: dropSettles ? 'recorded' : 'no stats: not recorded', ended: true, final: Boolean(dropSettles), unparsable: 0, ...extra });
   const record = (...engines) => ({ processes: [{ run: 'r', engines }] });
-  const vendorOnly = { lane: 'pinned', pid: 9, build: 'vendor', drop_settles: null, recorded: 'no stats: not recorded', ended: true, unparsable: 0 };
+  const vendorOnly = { lane: 'pinned', pid: 9, build: 'vendor', drop_settles: null, recorded: 'no stats: not recorded', ended: true, final: false, unparsable: 0 };
   assert.equal(settleVerdict(record(engine('cua', 1, counts(0)), engine('cua:0ms', 2, counts(0)), vendorOnly)).state, 'not taken', 'a vendor lane has no counter and asks for none');
   const taken = settleVerdict(record(engine('cua', 1, counts(0)), engine('cua', 2, counts(3, 1, 0, 1))));
   assert.equal(taken.state, 'taken');
@@ -187,6 +195,17 @@ test('the checker: not taken only when every cua engine recorded zeros; a taken 
   assert.equal(settleVerdict(record(engine('cua', 1, counts(0)), engine('restore', 4, null, { sent: { drag_handle: 1 } }))).state, 'unknown');
   assert.equal(settleVerdict(record(engine('cua', 1, counts(0)), engine('old', 5, null))).state, 'unknown', 'a record without what was sent is never read as no drag');
   assert.equal(settleVerdict(record(reader)).state, 'unknown', 'no cua engine recorded its counter');
+  // fix wave 1, finding 1: a zero is final only when the engine's own post-shutdown snapshot carried it (its exit can
+  // end a held handle, which can settle); a positive count always wins
+  assert.equal(settleVerdict(record(engine('cua', 1, counts(0), { final: false }))).state, 'unknown', 'a zero read before the shutdown');
+  assert.match(settleVerdict(record(engine('cua', 1, counts(0), { final: false }))).unknown[0], /no post-shutdown snapshot/);
+  assert.equal(settleVerdict(record(engine('cua', 1, counts(1), { final: false }))).state, 'taken');
+  // finding 2: an engine the run could not identify as a vendor build is held to the counter as a cua lane is
+  assert.equal(settleVerdict(record(engine('cua', 1, counts(0)), engine('lane', 6, null, { build: 'unidentified', sent: { drag: 1 } }))).state, 'unknown');
+  // finding 5: the whole snapshot is kept and summed; reach is still entered and second_rest
+  const whole = settleVerdict(record(engine('cua', 1, { ...counts(0), settle_failed_activation_confirmed: 1 }), engine('cua', 2, { ...counts(0), settle_failed_activation_confirmed: 2 })));
+  assert.equal(whole.state, 'not taken');
+  assert.equal(whole.counts.settle_failed_activation_confirmed, 3);
   // a taken branch wins over an unknown one: the step reruns as class A whatever else it left unrecorded
   assert.equal(settleVerdict(record(engine('cua', 1, counts(1)), engine('reset', 2, null))).state, 'taken');
 });
@@ -199,7 +218,7 @@ test('settle-check.mjs prints each step and exits 0 only when every named step s
       if (engines) writeFileSync(join(run, SETTLE_COUNTS), JSON.stringify({ processes: [{ run: name, engines }] }));
       return join(dir, name);
     };
-    const cua = (pid, c) => ({ lane: 'cua', pid, build: 'cua', drop_settles: c, recorded: c ? 'recorded' : 'no stats: not recorded', ended: true, unparsable: 0 });
+    const cua = (pid, c) => ({ lane: 'cua', pid, build: 'cua', drop_settles: c, recorded: c ? 'recorded' : 'no stats: not recorded', ended: true, final: Boolean(c), unparsable: 0 });
     const clear = step('D1.development-run.pilot', [cua(1, counts(0)), cua(2, counts(0))]);
     const taken = step('D2.development-run.pilot', [cua(3, counts(2, 1))]);
     const missing = step('D3.development-run.pilot', null);
@@ -257,8 +276,66 @@ test('checkSteps reads a step directory or the harness out inside it', async () 
   await withDir('cua171-settle-dirs-', async (dir) => {
     const run = join(dir, 'D1', 'run');
     mkdirSync(run, { recursive: true });
-    writeFileSync(join(run, SETTLE_COUNTS), JSON.stringify({ processes: [{ run: 'r', engines: [{ lane: 'cua', pid: 1, build: 'cua', drop_settles: counts(0), recorded: 'recorded', ended: true, unparsable: 0 }] }] }));
+    writeFileSync(join(run, SETTLE_COUNTS), JSON.stringify({ processes: [{ run: 'r', engines: [{ lane: 'cua', pid: 1, build: 'cua', drop_settles: counts(0), recorded: 'recorded', ended: true, final: true, unparsable: 0 }] }] }));
     assert.equal(checkSteps([join(dir, 'D1')]).code, 0);
     assert.equal(checkSteps([run]).code, 0);
   });
+});
+
+test('a zero counts only from the post-shutdown snapshot the engine writes last; its whole record is kept', async () => {
+  await withDir('cua171-settle-final-', async (dir) => {
+    const bin = fakeEngine(dir, 'cua-engine.cjs');
+    const out = join(dir, 'out');
+    const zeros = [counts(0), counts(0), counts(0)];
+    const run = async (label, exit) => {
+      const engine = new Engine({ label, bin, stats: true, env: { ...process.env, FAKE_SETTLES: JSON.stringify(zeros), FAKE_EXIT: JSON.stringify(exit) } });
+      await drive(engine);
+      return engine.pid;
+    };
+    const finish = recordEngines({ out, run: 'r', vendors: [], optIn: false });
+    try {
+      // 0.4.1 today: its exit's line carries no counter, and a held handle the exit ends can settle after the last one
+      await run('no-snapshot', [{ stats: { id: null, exit_settle: { waited_ms: 1 } } }]);
+      await run('snapshot', [{ stats: { id: null, focus_out: [] } }, { stats: { id: null, exit: true, drop_settles: { ...counts(0), settle_failed_activation_confirmed: 0 } } }]);
+      await run('settled-at-exit', [{ stats: { id: null, exit: true, drop_settles: { ...counts(1), settle_failed_activation_confirmed: 0 } } }]);
+    } finally {
+      finish();
+    }
+    const record = JSON.parse(readFileSync(join(out, SETTLE_COUNTS), 'utf8'));
+    const byLane = Object.fromEntries(record.processes[0].engines.map((e) => [e.lane, e]));
+    assert.equal(byLane['no-snapshot'].final, false);
+    assert.equal(byLane.snapshot.final, true);
+    assert.deepEqual(byLane.snapshot.drop_settles, { ...counts(0), settle_failed_activation_confirmed: 0 }, 'the whole snapshot');
+    assert.equal(settleVerdict({ processes: [{ engines: [byLane['no-snapshot']] }] }).state, 'unknown');
+    assert.equal(settleVerdict({ processes: [{ engines: [byLane.snapshot] }] }).state, 'not taken');
+    assert.equal(settleVerdict({ processes: [{ engines: [byLane['settled-at-exit']] }] }).state, 'taken', 'the handle the exit ended settled');
+  });
+});
+
+test("a --stats a lane's own args carry is parsed as today, opt-in or not, and never given twice", async () => {
+  await withDir('cua171-settle-args-', async (dir) => {
+    const bin = fakeEngine(dir, 'cua-engine.cjs');
+    const run = async (optIn) => {
+      const finish = recordEngines({ out: join(dir, optIn ? 'on' : 'off'), run: 'r', vendors: [], optIn, isCuaBuild: () => true });
+      try {
+        return await drive(new Engine({ label: 'cua:variant', bin, args: ['--stats'] }));
+      } finally {
+        finish();
+      }
+    };
+    const off = await run(false);
+    const on = await run(true);
+    assert.deepEqual(argvOf(bin), [['server', '--stats'], ['server', '--stats']]);
+    assert.deepEqual(on, off);
+    assert.deepEqual(off.answers[1].untied, [{ id: null, focus_out: [{ window: 7 }] }], "today's parsing: the lane's lines reach its runner");
+  });
+});
+
+test('--engine-stats is refused where it cannot reach the measured engine: the vendor client and the service-backed experiments', () => {
+  const run = ['--vendor', '/v', '--newest', '/n', '--cua', '/c', '--scene', 'gedit', '--ops', 'type_text', '--out', '/o', '--dev'];
+  assert.throws(() => parseArgs([...run, '--via', 'vendor-js', '--vendor-js', '/js', '--engine-stats']), /--engine-stats cannot reach/);
+  assert.throws(() => parseArgs(['--experiment', 'events', '--vendor', '/v', '--newest', '/n', '--cua', '/c', '--out', '/o', '--via', 'vendor-js', '--vendor-js', '/js', '--engine-stats']), /--engine-stats cannot reach/);
+  for (const experiment of ['settle', 'engine-stop']) {
+    assert.throws(() => parseArgs(['--experiment', experiment, '--cua', '/c', '--out', '/o', '--engine-stats']), /--engine-stats cannot reach/, experiment);
+  }
 });

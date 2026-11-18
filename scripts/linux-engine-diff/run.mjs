@@ -852,12 +852,16 @@ async function openSceneWindow(desktop, scene, role, { text = false } = {}) {
 export async function restoreLaneScene({ desktop, windows, sceneName, label, occlusion, warmUp }) {
   const started = performance.now();
   const old = windows[sceneName].text[label];
-  await desktop.closeLaneScene(old);
+  // a close that could not show the old scene's process to be its own signalled nothing (fix wave 2): a window of it
+  // still there is then nobody's to close, and the restore refuses, rather than wait on it or open a second beside it
+  const closed = await desktop.closeLaneScene(old);
   // the old window gone before its successor is looked for: the fresh one is found by its file's name, as the old was.
   // Gone is keyed on the old window itself, its id and its label (lane and nonce), and on its own spawn's exit (M5's T4,
   // arm64 round, item (c), fix wave 1): X gives a freed id again, across lanes, so a window of another lane's may hold
   // the old one's id and must never be waited on, nor closed
-  const oldStill = async () => (await desktop.listWindows()).some((w) => w.id === old.id && (!old.label || String(w.title ?? '').includes(old.label))) || desktop.laneSceneRunning(old);
+  const oldListed = async () => (await desktop.listWindows()).some((w) => w.id === old.id && (!old.label || String(w.title ?? '').includes(old.label)));
+  if (closed?.refused && (await oldListed())) throw new Error(`${old.label}'s restore refused: ${closed.refused}`);
+  const oldStill = async () => (await oldListed()) || desktop.laneSceneRunning(old);
   for (const deadline = Date.now() + 10000; await oldStill(); await sleep(250)) {
     if (Date.now() > deadline) throw new Error(`${old.label} did not close for its scene's restore`);
   }
@@ -867,7 +871,7 @@ export async function restoreLaneScene({ desktop, windows, sceneName, label, occ
   else desktop.focusFront();
   const warm_up = warmUp ? await warmUp(fresh) : null;
   // the X server may give the fresh window the old one's id (a freed client's id range is reused): the processes tell them apart
-  const record = { old_id: old.id, new_id: fresh.id, old_pid: old.pid, new_pid: fresh.pid, warm_up, ms: Math.round(performance.now() - started) };
+  const record = { old_id: old.id, new_id: fresh.id, old_pid: old.pid, new_pid: fresh.pid, warm_up, ms: Math.round(performance.now() - started), ...(closed?.refused ? { close_refused: closed.refused } : {}) };
   if (warm_up?.refused) record.invalid = `the warm-up's preparation was refused: ${warm_up.refused}`;
   return record;
 }

@@ -532,6 +532,8 @@ export async function openFamily(desktop, oracle, name, role, { env = {}, geomet
     if (family.qt && bridge) desktop.assertQtBridge(label, own);
     const child = desktop.spawnApp(label, spec.cmd, spec.args, { env: own, home: family.home ?? 'run', app: name });
     scene = { kind: 'family', family: name, kindOf: family.kind, role, label, pid: child.pid, group: true, record: spec.record ?? null, pidfile: spec.pidfile ?? null, dir: ctx.dir, pixels: Boolean(family.pixels) };
+    // the scene's own spawn kept with it: a text lane's restore closes this group and no other (scenes.mjs `closeLaneScene`)
+    desktop.keepLaneSpawn(scene, child);
     desktop.windows.push(scene);
     const match = spec.byPid ? byPid(child.pid) : spec.match;
     const info = await desktop.waitForWindow(match, label, 60000);

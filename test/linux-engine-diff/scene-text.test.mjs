@@ -353,7 +353,7 @@ test("the engine's own failure restores no scene: it is never resampled", async 
 // ---------------------------------------------------------------------------------------------------------------
 // the backstop's scene restore in run.mjs: a fresh window for the lane, the cover back, a warm engine warmed again
 
-function fakeDesktop({ lingers = 0, application = 'gedit', others = [], alive = 0 } = {}) {
+function fakeDesktop({ lingers = 0, application = 'gedit', others = [], alive = 0, refused = null } = {}) {
   const log = [];
   let next = 100;
   let closed = null;
@@ -367,6 +367,8 @@ function fakeDesktop({ lingers = 0, application = 'gedit', others = [], alive = 
     async closeLaneScene(scene) {
       closed = scene;
       log.push(`close ${scene.id}`);
+      // a close that could not show the scene's process is still its own (`refused`) signals nothing
+      return refused ? { refused } : {};
     },
     // the closed window still listed `lingers` times after its close, under its own title; `others`, windows of other
     // lanes, listed throughout (one may hold the closed window's id, which X gave it again)
@@ -461,6 +463,23 @@ test("a restore waits for the ended window's own process too, keyed on its pid a
   const windows = { gedit: { text: { pinned: { kind: 'gedit', role: 'text_pinned', id: 42, pid: 10, label: 'cua171-diff-run-n0-gedit-text_pinned' } } } };
   await restoreLaneScene({ desktop, windows, sceneName: 'gedit', label: 'pinned', occlusion: 'covered', warmUp: null });
   assert.deepEqual(desktop.log, ['close 42', 'process alive', 'process alive', 'open text_pinned', 'focus front']);
+});
+
+// fix wave 2 (review 2's finding 3): a close refused because the scene's process cannot be shown to be its own
+// (`Desktop.closeLaneScene`) leaves a window that is still there to nobody: the restore refuses at once, with the
+// reason, rather than wait on it or open a second window beside it; a window already gone needed no signal
+test('a restore whose close was refused stops at once while the old window is still there, and goes on when it is gone', async () => {
+  const lane = () => ({ gedit: { text: { pinned: { kind: 'gedit', role: 'text_pinned', id: 42, pid: 10, label: 'cua171-diff-run-n0-gedit-text_pinned' } } } });
+  const still = fakeDesktop({ lingers: 50, refused: 'its leader exited' });
+  const started = Date.now();
+  await assert.rejects(restoreLaneScene({ desktop: still, windows: lane(), sceneName: 'gedit', label: 'pinned', occlusion: 'covered', warmUp: null }), /restore refused: its leader exited/);
+  assert.ok(Date.now() - started < 2000, 'no wait');
+  assert.equal(still.log.includes('open text_pinned'), false, 'no fresh window beside it');
+  const gone = fakeDesktop({ refused: 'its leader exited' });
+  const windows = lane();
+  const record = await restoreLaneScene({ desktop: gone, windows, sceneName: 'gedit', label: 'pinned', occlusion: 'covered', warmUp: null });
+  assert.equal(record.new_id, 100);
+  assert.equal(record.close_refused, 'its leader exited', 'recorded on the restore');
 });
 
 test("the restored window is verified as the scene's application before it stands in, and refused otherwise", async () => {

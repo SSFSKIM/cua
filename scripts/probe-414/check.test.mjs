@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {plan, score, inspect, auditSchedule, auditPairs, summarize, coded, noteAttested, NOTE_PREFIX, firefoxDisclosure, drainIntervals, drainStats, terminalEditAtMs, drainIneligible, drainSummary, drainSizingOk, runShape, setupLabel, focusAllowed, concealedFailureTiming, appliedEditGaps, reducedPlan, REDUCED_LANES, SNAPSHOT_REFUSAL_LABEL, budgetProfile, REDUCED_PAD_MS, REDUCED_OVERHEAD_MS, readbackProfile, legacyBaselineCase, legacyBaselineTally, reducedBudgetCoverage, lateReplyPresent, failureDistributions} from './check.mjs';
+import {plan, score, inspect, auditSchedule, auditPairs, summarize, coded, noteAttested, NOTE_PREFIX, firefoxDisclosure, drainIntervals, drainStats, terminalEditAtMs, drainIneligible, drainSummary, drainSizingOk, runShape, setupLabel, focusAllowed, concealedFailureTiming, appliedEditGaps, reducedPlan, REDUCED_LANES, SNAPSHOT_REFUSAL_LABEL, budgetProfile, REDUCED_PAD_MS, REDUCED_OVERHEAD_MS, readbackProfile, legacyBaselineCase, legacyBaselineTally, reducedBudgetCoverage, lateReplyPresent, failureDistributions, failureReasonParity} from './check.mjs';
 
 const success={confirmed:true,secure:true,confirmation:'length',snapshotMs:4};
 const old={confirmed:false,concealed:true,reason:'secure',snapshotMs:3};
@@ -566,6 +566,24 @@ test('deadline distributions fail on missing cohorts, disjoint ranges, or separa
   assert.equal(separated.spreadMs,14);
   assert.equal(separated.pass,false);
   assert.equal(failureDistributions([],'deadline').pass,false);
+});
+test('concealed refusal reasons compare equal-sized short and long distributions for each mutation',()=>{
+  const control=(kind,inputClass,reason)=>({valid:true,head:'fix',kind,inputClass,literal:false,reason});
+  const groups=(kind,n)=>['short','long'].flatMap(inputClass=>Array.from({length:n},(_,i)=>
+    control(kind,inputClass,i===0?'fieldChanged':'lengthMismatch')));
+  const rows=[...groups('add',10),...groups('drop',5)];
+  const extras=[{...rows[0],literal:true},{...rows[0],valid:false},{...rows[0],head:'main'},
+    {...rows[0],kind:'selection',label:SNAPSHOT_REFUSAL_LABEL,reason:'lengthUnreadable'}];
+  const report=failureReasonParity([...rows,...extras]);
+  assert.equal(report.pass,true);
+  assert.deepEqual(report.groups['add-short'],{fieldChanged:1,lengthMismatch:9});
+  assert.deepEqual(report.groups['drop-long'],{fieldChanged:1,lengthMismatch:4});
+  const uneven=failureReasonParity([{...rows[1],reason:'fieldChanged'},...rows.filter((_,i)=>i!==1)]);
+  assert.equal(uneven.pass,false,'the same codes at different rates are not identical');
+  assert.equal(uneven.pairs.add,false);
+  assert.equal(uneven.pairs.drop,true);
+  assert.equal(failureReasonParity(rows.slice(1)).pass,false,'missing coverage cannot pass');
+  assert.equal(failureReasonParity([{...rows[0],reason:'other'},{...rows[10],reason:'other'},...rows.filter((_,i)=>i!==0&&i!==10)]).pass,false,'unknown reasons cannot pass by matching');
 });
 const zero={confirmed:false,reason:'noFocusedElement',snapshotMs:3,pollMs:0,reads:0};
 const surfaces=(r=zero)=>({ipc:readbackProfile(r),wrapper:readbackProfile(r),forwarded:readbackProfile(r)});

@@ -272,6 +272,25 @@ export function failureDistributions(rows,mode){
   return {groups,pairs,spreadMs,pass:isDeadlineMode(mode)?pass:null};
 }
 
+// The live mix is measured separately from elapsed time; equal code sets can still hide different refusal frequencies.
+// Row reasons are closed codes projected from IPC, while the outcome gate also requires exact agreement on the forwarded wire.
+export function failureReasonParity(rows){
+  const groups={},pairs={};
+  for(const kind of negative){
+    const bySize=['short','long'].map(size=>{
+      const matches=rows.filter(r=>r.valid&&r.head==='fix'&&r.kind===kind&&r.literal===false&&r.inputClass===size);
+      const tally=new Map();
+      for(const r of matches){const code=r.reason??'missing';tally.set(code,(tally.get(code)??0)+1);}
+      groups[`${kind}-${size}`]=Object.fromEntries(tally);
+      return {n:matches.length,tally};
+    });
+    const [a,b]=bySize,n=kind==='add'?10:5;
+    pairs[kind]=bySize.every(g=>g.n===n&&!g.tally.has('missing')&&!g.tally.has('other'))&&a.tally.size===b.tally.size&&
+      [...a.tally].every(([reason,count])=>b.tally.get(reason)===count);
+  }
+  return {groups,pairs,pass:Object.values(pairs).every(Boolean)};
+}
+
 // Output-only diagnosis of a baseline readback that the strict privacy scan flags (zero pollMs/reads counters). It grants no
 // exemption: from the raw record held in memory it reports closed booleans about one surface's readback, never a key or a value.
 const legacyKeys=new Set([...readbackKeys,'pollMs','reads']);

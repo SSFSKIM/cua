@@ -6,7 +6,7 @@ import {pathToFileURL} from 'node:url';
 import {execFileSync} from 'node:child_process';
 import {Wire} from '../probe-366/wire.mjs';
 import {owned,stop,startPlatform,pause,environment} from './platform.mjs';
-import {plan,score,inspect,auditSchedule,auditPairs,summarize,coded,noteAttested,firefoxDisclosure,drainIntervals,terminalEditAtMs,drainIneligible,drainSummary,drainSizingOk,runShape,setupLabel,focusAllowed,concealedFailureTiming,drainStats,reducedPlan,REDUCED_LANES,SNAPSHOT_REFUSAL_LABEL,budgetProfile,readbackProfile,legacyBaselineCase,legacyBaselineTally,reducedBudgetCoverage,lateReplyPresent,failureDistributions,isDeadlineMode} from './check.mjs';
+import {plan,score,inspect,auditSchedule,auditPairs,summarize,coded,noteAttested,firefoxDisclosure,drainIntervals,terminalEditAtMs,drainIneligible,drainSummary,drainSizingOk,runShape,setupLabel,focusAllowed,concealedFailureTiming,drainStats,reducedPlan,REDUCED_LANES,SNAPSHOT_REFUSAL_LABEL,budgetProfile,readbackProfile,legacyBaselineCase,legacyBaselineTally,reducedBudgetCoverage,lateReplyPresent,failureDistributions,isDeadlineMode,failureReasonParity} from './check.mjs';
 
 const SLOT='PROBE414', safeReasons=new Set(['secure','noFocusedElement','roleUnreadable','notTextField','valueUnreadable','rangeUnreadable',
   'fieldUnreadable','fieldChanged','becameSecure','selectionChanged','concealedMismatch','valueMismatch','unchanged','possiblyTruncated',
@@ -315,6 +315,16 @@ async function main(){
   const profile=budgetProfile(mode),budgeted=failureTimes.filter(t=>t.withinBudget!==null);
   const budgetMisses=budgeted.filter(t=>!t.withinBudget).length;
   const budgetCoverage=reducedBudgetCoverage(lane,rows,mode),distributions=reduced?failureDistributions(rows,mode):null;
+  const reasons=deadline?failureReasonParity(rows):null;
+  // The host can compare both signals, but IPC arrival is not the native deadline clock; the exact Swift property gates flag correctness.
+  const ipcFlags=deadline?{aboveBand:0,belowBand:0,aboveBandUnflagged:0,inBandFlagged:0,missingTime:0}:null;
+  if(ipcFlags)for(const row of rows.filter(r=>r.valid&&r.concealedFailure?.withinBudget!=null)){
+    const ms=row.concealedFailure.fromLastPostMs;
+    if(!Number.isFinite(ms)){ipcFlags.missingTime++;continue;}
+    if(ms>profile.maxMs){ipcFlags.aboveBand++;if(!row.lateReply)ipcFlags.aboveBandUnflagged++;}
+    else if(ms<profile.minMs)ipcFlags.belowBand++;
+    else if(row.lateReply)ipcFlags.inBandFlagged++;
+  }
   const concealedBudget={profile:profile.name,coverage:reduced?budgetCoverage:null,windowMs:[profile.minMs,profile.maxMs],budgeted:budgeted.length,postFailures:postFailures.length,misses:budgetMisses,
     postMisses:postFailures.filter(t=>!t.withinBudget).length,beforeInput:failureTimes.filter(t=>t.phase==='before-input').length,
     fromLastPostMs:drainStats(postFailures.map(t=>t.fromLastPostMs)),fromFirstPostMs:drainStats(postFailures.map(t=>t.fromFirstPostMs)),
@@ -329,16 +339,15 @@ async function main(){
   const gates={coverage:rows.filter(r=>r.valid&&!r.informational).length===needed&&abort===null,
     privacy:privacyViolations===0, outcome:audit||drain||focus||mode==='firefox-focus'||mode==='unicode'?null:summary.scored.passed===needed&&summary.wrongSuccesses===0&&rows.every(r=>r.informational||!r.observationMissing&&!r.evidenceFailure),
     schedule:auditGate?.pass??null, focus:focus?firefoxFacts.length===needed&&firefoxFacts.every(r=>r.valid&&r.focus!==null):null,
-    // Legacy full run: judged only when a failure occurred. Reduced: never vacuous; the expected timing rows must all be seen.
-    concealedBudget:reduced&&phase==='stock'?budgetCoverage.ok&&budgetMisses===0:mode==='full'&&phase==='stock'&&budgeted.length>0?budgetMisses===0:null,
-    lateReply:deadline&&phase==='stock'?rows.every(r=>!r.lateReply):null,
-    failureDistributions:deadline&&phase==='stock'?distributions.pass:null,
+    // Historical full and reduced profiles keep their timing gates. In deadline modes, IPC timings are descriptive.
+    concealedBudget:mode==='reduced'&&phase==='stock'?budgetCoverage.ok&&budgetMisses===0:mode==='full'&&phase==='stock'&&budgeted.length>0?budgetMisses===0:null,
+    failureReasons:reasons?.pass??null,
     // The race run only collects evidence rows; sizing is judged by the drain run alone.
     timing:drain&&!race?drainSizingOk(drainSummary(timings,needed),timings.length):null};
   const publishable=gates.privacy;
   const status={lane,phase,kit:config.kit,refs:config.refs,abort,abortStep,setupSteps:rows.reduce((o,r)=>r.setupStep?{...o,[r.setupStep]:(o[r.setupStep]??0)+1}:o,{}),planned:cells.length,completed:rows.length,invalid:summary.invalid,
     unattempted:cells.length-rows.length,privacyViolations,privacyCodes,actionCodes,unicodeShapes,observationsMissing:rows.filter(r=>r.observationMissing).length,
-    gates,concealedBudget,distributions,lateReplies:deadline?rows.filter(r=>r.lateReply).length:null,reduced:reducedReport,legacyBaseline,publishable,presentation:config.presentation??null,foregroundFallback:config.foregroundFallback??null};
+    gates,concealedBudget,distributions,reasons,ipcFlags,lateReplies:deadline?rows.filter(r=>r.lateReply).length:null,reduced:reducedReport,legacyBaseline,publishable,presentation:config.presentation??null,foregroundFallback:config.foregroundFallback??null};
   writeFileSync(join(out,'status.json'),JSON.stringify(status,null,2)+'\n');
   // Counts and timings rebuilt from closed codes may leave even a privacy-failed run; rows, hashes and traces never do.
   writeFileSync(join(out,'coded.json'),JSON.stringify(coded(summary,auditGate),null,2)+'\n');

@@ -37,6 +37,13 @@ function state(x){
   fillerAboveField:f?f.getBoundingClientRect().bottom<=r.top+1:null,
   inViewport:r.top>=0&&r.left>=0&&r.bottom<=innerHeight&&r.right<=innerWidth};
 }
+// Only the explicit literal-synthetic diagnostic asks for this. No DOM value, substring, index or absolute length leaves the page.
+function mismatch(v,x){
+ if(v===x)return null;
+ const sizeDelta=v.length-x.length;
+ const shape=sizeDelta<0?'shorter':sizeDelta>0?'longer':[...v].sort().join('')===[...x].sort().join('')?'reordered':'same-size-different';
+ return {shape,sizeDelta};
+}
 const send=o=>fetch('/answer',{method:'POST',body:JSON.stringify(o)}).catch(()=>{});
 async function run(c){
  if(c.op==='setup'){
@@ -58,7 +65,10 @@ async function run(c){
   aim(P);P.value=c.seed;P.focus();P.setSelectionRange(c.start,c.end,'forward');
   await send({n:c.n,op:c.op,...state(c.expected)});return;
  }
- if(c.op==='read'){await send({n:c.n,op:c.op,...state(c.expected)});return}
+ if(c.op==='read'){
+  const diagnostic=c.diagnose===true&&cur===P?{mismatch:mismatch(P.value,c.expected.value)}:{};
+  await send({n:c.n,op:c.op,...state(c.expected),...diagnostic});return;
+ }
  throw Error('unknown op');
 }
 async function loop(){for(;;){let c;try{const r=await fetch('/cmd?doc='+encodeURIComponent(DOC));c=await r.json()}catch{await new Promise(r=>setTimeout(r,100));continue}

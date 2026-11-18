@@ -46,16 +46,19 @@ export const cellId=(rep,head,page,kind)=>[head,page,kind,'r'+String(rep).padSta
 // The audit tag is the id with `/` as `-`; audit-capture reads the repetition from a trailing `-rNN`/`/rNN`.
 export const tagOf=id=>id.replaceAll('/','-');
 // One round per repetition: the units in a seeded order; within a unit the two heads alternate (balanced over repetitions).
-export function plan({reps,seed}){
- if(!Number.isInteger(reps)||reps<1||reps>20)throw Error('invalid repetitions');
+export function plan({reps,seed,passwordLiteral=false}){
+ if(!Number.isInteger(reps)||reps<1||reps>(passwordLiteral?40:20))throw Error('invalid repetitions');
  const random=mulberry32(seed),ids=new Set();
+ const units=UNITS.map((_,i)=>i).filter(i=>!passwordLiteral||UNITS[i].join('/')==='large/secure');
  const rounds=Array.from({length:reps},(_,i)=>{
   const rep=i+1,out=[];
-  for(const ui of shuffle(UNITS.map((_,k)=>k),random)){
-   const [pg,kind]=UNITS[ui],order=(rep+ui)%2?[...HEADS]:[...HEADS].reverse();
+  for(const ui of shuffle(units,random)){
+   const [pg,kind]=UNITS[ui],order=(rep+(passwordLiteral?0:ui))%2?[...HEADS]:[...HEADS].reverse();
    order.forEach((head,position)=>{
     const id=cellId(rep,head,pg,kind);if(ids.has(id))throw Error('duplicate cell');ids.add(id);
-    out.push({id,tag:tagOf(id),part:'main',rep,head,page:pg,kind,unit:pg+'/'+kind,pairKey:rep+'/'+pg+'/'+kind,position,expected:expectationFor(head,pg,kind)});
+    const expected=expectationFor(head,pg,kind);
+    if(passwordLiteral)expected.domRequired=true;
+    out.push({id,tag:tagOf(id),part:'main',rep,head,page:pg,kind,unit:pg+'/'+kind,pairKey:rep+'/'+pg+'/'+kind,position,expected});
    });
   }
   return out;
@@ -165,11 +168,12 @@ export function contractsOf(summary,{phase,auditFailures=0,captureMissing=0}){
 export function parseCli(argv,env){
  const [tool,out,mainSource,mainEngine,fixSource,fixEngine,repsArg]=argv;
  if(!tool||!out||!mainSource||!mainEngine||!fixSource||!fixEngine)throw new Error('usage: run.mjs tool out mainSource mainEngine fixSource fixEngine [reps]');
- const reps=repsArg===undefined?20:Number(repsArg);
- if(!Number.isInteger(reps)||reps<1||reps>20)throw new Error('reps must be 1..20');
+ const reps=repsArg===undefined?20:Number(repsArg),passwordLiteral=env.PROBE395_PASSWORD_LITERAL==='1';
+ if(!Number.isInteger(reps)||reps<1||reps>(passwordLiteral?40:20))throw new Error('invalid repetitions');
  const phase=env.PROBE395_PHASE??'stock';
  if(phase!=='stock'&&phase!=='audit')throw new Error('PROBE395_PHASE must be stock or audit');
- return {tool:resolve(tool),outDir:resolve(out),heads:{main:{source:resolve(mainSource),engine:resolve(mainEngine)},fix:{source:resolve(fixSource),engine:resolve(fixEngine)}},reps,phase};
+ if(passwordLiteral&&phase!=='stock')throw new Error('literal password diagnostic requires stock engines');
+ return {tool:resolve(tool),outDir:resolve(out),heads:{main:{source:resolve(mainSource),engine:resolve(mainEngine)},fix:{source:resolve(fixSource),engine:resolve(fixEngine)}},reps,phase,passwordLiteral};
 }
 
 // ---- synthetic values, the leak detector and scrubbing --------------------------------------------------------------
@@ -424,7 +428,7 @@ async function main(){
  if(process.env.RUNNER_ENVIRONMENT!=='github-hosted')throw new Error('hosted runners only');
  for(const p of [args.tool,args.heads.main.engine,args.heads.fix.engine])if(!statSync(p).isFile())throw new Error('missing executable');
  for(const h of HEADS)if(!statSync(args.heads[h].source).isDirectory())throw new Error('missing source root');
- const {tool,outDir,reps,phase}=args,start=Date.now();
+ const {tool,outDir,reps,phase,passwordLiteral}=args,start=Date.now();
  mkdirSync(outDir,{recursive:true});
  const tmp=mkdtempSync(join(process.env.RUNNER_TEMP||tmpdir(),'q395-'));
  const audit=createAuditCapture({mode:phase});
@@ -492,11 +496,12 @@ async function main(){
   throw new Fail();
  }
 
- const planSeed=randomBytes(4).readUInt32LE(),rounds=plan({reps,seed:planSeed}),planned=rounds.reduce((n,r)=>n+r.length,0);
+ const planSeed=randomBytes(4).readUInt32LE(),rounds=plan({reps,seed:planSeed,passwordLiteral}),planned=rounds.reduce((n,r)=>n+r.length,0);
  let order=0,done=0,harnessValid=0,strict=0,invalid=0,setupFailures=0,consecutiveInvalid=0,privacyViolations=0,auditFailures=0,auditWithheld=0,storeCleanupFailures=0,aborted=null;
  const failureStages={},rows=[],auditRaw=[];
- const meta={kit:process.env.GITHUB_SHA??null,image:process.env.ImageVersion??null,phase,startedAt:start,reps,planSeed,planned,heads:HEADS,pages:PAGES,kinds:KINDS,
-  units:UNITS.map(u=>u.join('/')),sources:{main:process.env.MAIN_REF??null,fix:process.env.FIX_REF??null},
+ const meta={kit:process.env.GITHUB_SHA??null,image:process.env.ImageVersion??null,phase,startedAt:start,reps,planSeed,planned,heads:HEADS,
+  ...(passwordLiteral?{diagnostic:'literal-large-password',pages:['large'],kinds:['secure']}:{pages:PAGES,kinds:KINDS}),
+  units:[...new Set(rounds[0].map(c=>c.unit))],sources:{main:process.env.MAIN_REF??null,fix:process.env.FIX_REF??null},
   design:{
    fixture:'one document, three inputs parsed in the markup: a plain text input (the normal field), a plain setup input and an input parsed as type=password; no input is type-switched (the page counts writes to the password input\'s type attribute)',
    heads:'each head has its own engine process, socket, temporary HOME and fileStore, and types through its own source\'s real createSkyService, createService and fileStore; both heads drive the same Safari, page and owned cover',
@@ -538,10 +543,11 @@ async function main(){
   return s.kindOk===true&&s.focused===true&&s.sameNode===true&&sized&&secureOk;
  }
  const contentOk=s=>s.exact===true&&s.selectionOk===true;
- const readState=expected=>fixture.command({op:'read',expected},6000);
+ const readState=(expected,diagnose=false)=>fixture.command({op:'read',expected,diagnose},6000);
+ const conceal=c=>!passwordLiteral&&c.kind!=='plain';
  // Types the cell's text through the head's own production path. `rec` carries labels only.
  async function typeThrough(head,c,m,rec){
-  const concealed=c.kind!=='plain';
+  const concealed=conceal(c);
   const respMeta={},content=[],logged=[];
   // Content items and console output are captured for the audit's privacy scan, never kept or written.
   const nodeRepl={env:head.env,setResponseMeta:x=>{if(x&&typeof x==='object')Object.assign(respMeta,x)},emitContentItem:item=>{content.push(item)},createElicitation:async q=>{if(q.meta?.tool_params?.app!==head.target.bundleIdentifier)throw new Fail();return {action:'accept'}}};
@@ -625,7 +631,7 @@ async function main(){
    // Every secret-lane value is known to the audit capture before anything is typed.
    audit.registerSecret(SEED,'seed');
    audit.registerSecret(m.text,c.kind==='plain'?'plain':'secret');
-   audit.begin(c.tag,{head:c.head,page:c.page,kind:c.kind,length:m.text.length,rep:c.rep,secureField:m.secure,fieldLengths:[m.length]});auditOpen=true;
+   audit.begin(c.tag,{head:c.head,page:c.page,kind:c.kind,length:m.text.length,rep:c.rep,secureField:m.secure,fieldLengths:[m.length],expectConcealed:conceal(c)});auditOpen=true;
    try{row.typeTiming=await typeThrough(head,c,m,rec)}finally{if(rec.cleanup==='failed')cleanupFailed=true}
    if(cleanupFailed)throw new Fail();
    if(rec.sent!==1||rec.replied!==1)throw new Fail();
@@ -660,8 +666,11 @@ async function main(){
    }else row.supplemental={skipped:'concealed'};
    stage='after-measure';
    // The tool must leave the page as it found it: same content and caret, no key or input event of its own.
-   const s3=await readState(m.final);row.fixture.afterMeasure=pick(s3);
+   const s3=await readState(m.final,passwordLiteral&&s2.exact!==true);row.fixture.afterMeasure=pick(s3);
    if(!shapeOk(s3,c)||contentOk(s3)!==contentOk(s2)||s3.keydowns!==s2.keydowns||s3.inputs!==s2.inputs)throw new Fail();
+   if(passwordLiteral&&s3.exact!==true&&Number.isSafeInteger(s3.mismatch?.sizeDelta)&&['shorter','longer','reordered','same-size-different'].includes(s3.mismatch.shape)){
+    row.dom.mismatch={shape:s3.mismatch.shape,sizeDelta:s3.mismatch.sizeDelta};
+   }
    await front(coverPid,false);row.foreground.coverAfterMeasure=true;
    stage='disarm';
    const closing=await witness('disarm');armed=false;row.witness.disarm=closing;
@@ -772,10 +781,10 @@ async function main(){
   }
   meta.pid=pid;meta.coverPid=coverPid;writeFileSync(join(outDir,'config.json'),JSON.stringify(meta,null,2));progress(null);
   stage='warmup';
-  // One unscored plain cell per head and page, through the same path (a throwaway repetition-0 value).
-  for(const h of HEADS)for(const pg of PAGES){
-   const id=['warmup',h,pg].join('/');
-   await cell({id,tag:tagOf(id),part:'warmup',rep:0,head:h,page:pg,kind:'plain',expected:expectationFor(h,pg,'plain')},{warmup:true});
+  // Unscored repetition-0 warmups. The password-only diagnostic does not visit an ordinary field or the small page.
+  for(const h of HEADS)for(const pg of meta.pages){
+   const id=['warmup',h,pg].join('/'),kind=passwordLiteral?'secure':'plain';
+   await cell({id,tag:tagOf(id),part:'warmup',rep:0,head:h,page:pg,kind,expected:expectationFor(h,pg,kind)},{warmup:true});
   }
   stage='cells';
   for(const r of rounds)for(const c of r)await cell(c);

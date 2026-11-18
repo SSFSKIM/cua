@@ -4,6 +4,31 @@ import {page} from './fixture.mjs';
 import {plan, expectationFor, outcomeOf, scoreRow, publicAuditRow, actualOf, contractsOf, publication, attestText, engineEnv, renameKeys} from './run.mjs';
 import {createAuditCapture} from './audit-capture.mjs';
 
+test('literal password diagnostic runs only balanced large password pairs and compares DOM on both heads',()=>{
+ const rounds=plan({reps:40,seed:395,passwordLiteral:true});
+ assert.equal(rounds.length,40);
+ for(const [i,r] of rounds.entries()){
+  assert.equal(r.length,2);
+  assert.deepEqual(r.map(c=>[c.page,c.kind,c.rep]),[['large','secure',i+1],['large','secure',i+1]]);
+  assert.deepEqual(r.map(c=>c.head),i%2?['fix','main']:['main','fix']);
+  assert.ok(r.every(c=>c.expected.domRequired===true));
+ }
+});
+
+test('literal password audits require literal arguments while keeping secure metadata rules',async()=>{
+ const capture=createAuditCapture({mode:'stock'}),tag='fix-large-secure-r01';
+ capture.begin(tag,{head:'fix',page:'large',kind:'secure',expectConcealed:false});
+ capture.engineArgs(tag,'type_text',{});
+ const readback={confirmed:false,reason:'secure',snapshotMs:5};
+ capture.engineReply(tag,'type_text',{error:{errorName:'typeUnconfirmed',meta:{typeReadback:readback}}});
+ capture.sky(tag,{meta:{'cua/typeReadback':readback}});
+ const r=publicAuditRow(await capture.end(tag));
+ assert.equal(r.publishable,true);
+ assert.equal(r.row.ok,true);
+ assert.deepEqual(r.row.typeReadback,readback);
+ assert.equal(r.row.lane,'secure');
+});
+
 test('twenty trials per cell and head, balanced interleaving with independent A/B pairs',()=>{
  const rounds=plan({reps:20,seed:395});
  assert.equal(rounds.flat().length,320);

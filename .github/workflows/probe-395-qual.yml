@@ -14,9 +14,9 @@ on:
         required: true
         type: string
       mode:
-        description: 'Smoke (1 trial per cell) or full (20 trials per cell)'
+        description: 'Smoke (1/cell), full (20/cell), or literal large password diagnostic (40/head)'
         type: choice
-        options: [smoke, full]
+        options: [smoke, full, password-literal]
         default: full
 permissions:
   contents: read
@@ -36,7 +36,9 @@ jobs:
     env:
       MAIN_SHA: ${{ inputs.main }}
       FIX_SHA: ${{ inputs.fix }}
-      REPS: ${{ inputs.mode == 'smoke' && '1' || '20' }}
+      REPS: ${{ inputs.mode == 'smoke' && '1' || inputs.mode == 'password-literal' && '40' || '20' }}
+      PHASES: ${{ inputs.mode == 'password-literal' && 'stock' || 'stock audit' }}
+      PROBE395_PASSWORD_LITERAL: ${{ inputs.mode == 'password-literal' && '1' || '0' }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
@@ -56,7 +58,8 @@ jobs:
           swiftc -O -o "$RUNNER_TEMP/marker395-qual" scripts/probe-395/marker.swift
       - name: Build exact stock pins, then separate observational audit copies
         run: |
-          for phase in stock audit; do
+          read -r -a phases <<< "$PHASES"
+          for phase in "${phases[@]}"; do
             for lane in main fix; do
               sha="$MAIN_SHA"
               if [ "$lane" = fix ]; then sha="$FIX_SHA"; fi
@@ -82,7 +85,8 @@ jobs:
           export PROBE395_AUDIT_PATCH_MAIN="$stage/main-audit-patch.json"
           export PROBE395_AUDIT_PATCH_FIX="$stage/fix-audit-patch.json"
           export PROBE395_SECURE_PERMITTED='{"fix.small":{"names":["AXSelectedTextMarkerRange","AXUIElementForTextMarker"]},"fix.large":{"names":["AXSelectedTextMarkerRange","AXUIElementForTextMarker"]}}'
-          for phase in stock audit; do
+          read -r -a phases <<< "$PHASES"
+          for phase in "${phases[@]}"; do
             prefix="$RUNNER_TEMP/p395q-$phase"
             status=0
             PROBE395_PHASE="$phase" MAIN_REF="$MAIN_SHA" FIX_REF="$FIX_SHA" node scripts/probe-395-qual/run.mjs "$RUNNER_TEMP/marker395-qual" "$stage/$phase" \

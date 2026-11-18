@@ -53,7 +53,7 @@ export function createAuditCapture({mode='audit',sink=null,clock=()=>performance
   registerSecret(value,kind='secret'){if(!['secret','plain','seed'].includes(kind))throw Error('invalid value kind');scanner.register(value,kind)},
   // The patch's stdout JSON for a head, so the pre-input boundary is known to exist (or not) in that build.
   setProvenance(head,patch){provenance.set(head,patch)},
-  begin(tag,{head,page,kind,length,rep,secret,secureField,fieldLengths=[],route=null}={}){
+  begin(tag,{head,page,kind,length,rep,secret,secureField,fieldLengths=[],route=null,expectConcealed}={}){
    if(typeof tag!=='string'||!TAG.test(tag))throw Error('invalid audit tag');
    if(scanner.carries(tag).size)throw Error('audit tag carries a registered value');
    if(!KINDS.includes(kind)||!LABEL.test(String(head))||!LABEL.test(String(page)))throw Error('invalid audit labels');
@@ -63,7 +63,7 @@ export function createAuditCapture({mode='audit',sink=null,clock=()=>performance
    const lane=laneOf(kind,secureField),typed=Number.isSafeInteger(length)?length:(typeof secret==='string'?secret.length:null);
    const lengths=lane==='plain'?[]:[typed,...fieldLengths].filter(Number.isSafeInteger);
    const t={tag,head,page,kind,lane,rep:repOf(tag,rep),length:typed,route:typeof route==='string'&&LABEL.test(route)?route:null,lengths,openedAt:clock(),
-    requests:0,methods:{},concealedOk:null,sentAt:null,recvAt:null,engine:null,sky:{rendered:null,error:null,meta:null},extra:{},findings:[],codes:{},stats:{withheld:0,plainQuotes:0,novelKeys:new Set()},stderrLines:0,ended:false,hasReply:false};
+    requests:0,methods:{},expectConcealed:expectConcealed??(lane!=='plain'),concealedOk:null,sentAt:null,recvAt:null,engine:null,sky:{rendered:null,error:null,meta:null},extra:{},findings:[],codes:{},stats:{withheld:0,plainQuotes:0,novelKeys:new Set()},stderrLines:0,ended:false,hasReply:false};
    tags.set(tag,t);openByHead.set(head,tag);return {tag};
   },
   engineArgs(tag,method,args){
@@ -71,7 +71,7 @@ export function createAuditCapture({mode='audit',sink=null,clock=()=>performance
    if(method!=='type_text')return args;
    t.requests++;t.sentAt=clock();
    const concealed=args?.concealed===true;
-   t.concealedOk=t.lane==='plain'?!concealed:concealed;
+   t.concealedOk=concealed===t.expectConcealed;
    return mode==='audit'?{...args,[AUDIT_KEY]:tag,[AUDIT354_KEY]:tag}:args;
   },
   engineReply(tag,method,raw){

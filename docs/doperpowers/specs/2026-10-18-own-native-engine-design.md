@@ -5540,6 +5540,100 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      with the new reason `fieldClosed`, since an accepted write that can no longer be checked is "sent, effect not
      seen".
   Date/Author: 2026-11-17, cursor235's implementer for #359 (the review of ef998db6).
+- Decision (#390, 2026-11-17, `fix/390-value-without-focus`; the issue's intent, spawned by #366's probe, smoke
+  44016387589): **set_value on a background Chromium page's text field that needs focus is written without the focus
+  preparation main would have refused, and read back: ok only on a read as written.** Main's order there was route 3's
+  focus hold (a fake activation and its inert click), focusFieldIfNeeded's AXFocused write, which Chromium applies but
+  reads back only 65 to 142 ms later (#283), so the immediate re-read is false, then the fallback click, which shared mode
+  refuses in a Chromium web area (#282): `backgroundClickRefused` before any write. #366's probe wrote the value into such
+  a field already focused (the preparation a no-op) and it delivered, 2 of 2 at 121 to 130 ms.
+  1. **The route** (ValueWithoutFocus.swift `valueFocusPlan`, decided in ValueSetting.swift before any hold): a field
+     that needs focus (`fieldNeedingFocus`), inside an AXWebArea by its parents (`webAreaAncestry`), in a Chromium-family
+     process (Chrome, Electron), by route 3 (the app does not believe it has focus), in shared mode and with no route-4
+     override. There `prepareValueFocus` runs focusFieldIfNeeded's AXFocused write alone, route 1, with no fallback;
+     never the focus hold (no activation, no inert click) and never the fallback click (no pointer event). Every other
+     field, app, route and device mode keeps main's preparation unchanged: the foreground, AppKit and WebKit fields,
+     Firefox (#315's press), dedicated mode and the override (whose fallback click is delivered), a field already
+     focused, and a Chromium field outside every web area or whose ancestry cannot be read.
+  2. **Why the AXFocused write stays.** It is #283's carrier for this very field class (a field focused with no pointer
+     event, no raise and the person's app frontmost, 102 hosted cells), not a click; it leaves the field focused as every
+     other set_value does, for a Return or typing after it, and it brings the write nearer the one the probe measured
+     (into a focused field), if Chromium's renderer takes the two actions in the order sent (an inference, not
+     measured). Its outcome is neither waited for nor required: the read-back alone decides.
+  3. **The read-back** (`unfocusedValueReadback`): after an accepted write, the field classified before every read (a
+     password field by role or subrole, or one whose role or subrole cannot be read, is read no further) and its value
+     read every 5 ms within type_text's 1 s budget (Chromium applies the write to its tree asynchronously) until it reads
+     as written. The match (`writtenValueMatches`) is exact: a string by #359's own rule (ClickOrdering.swift
+     `writtenValueRead`: UTF-16 equal, or at Chromium's 10,000 cap a strict prefix of it); any other value by CFEqual.
+     The record rides in
+     the engine meta as `unfocusedValue` {result, reads, ms}, never the value or its length; the service does not
+     forward it (as `fieldFocus`).
+  4. **The answers, from what was sent.** A write the field does not accept: nothing landed, so main's own refusal,
+     `backgroundClickRefused`, unchanged. An accepted write that reads back as written: ok. One accepted but read other
+     than written for the whole budget, or never readable: `valueUnconfirmed` (sent and accepted, effect not seen),
+     thrown after the re-fetch that keeps the token resolvable (ruling 772's failure there still answers first). No
+     sentence carries the value.
+  5. **Secrets.** A concealed request is written and never read back, not even once: `valueUnconfirmed`, saying a
+     concealed value is never read back, never ok, and so is a password field's write. Refusing before the write, as
+     main did, was the alternative; it was not taken because the write delivers and the agent can still observe the
+     field (a password field's dots), as type_text's secret in a background Firefox already answers unconfirmed when
+     it went in.
+  6. **With #359's wait and watch** (ruling 785, above), both kept as they are around the write: the wait before it
+     still runs on this route, and the watch after it still runs when a pointer press to the app is pending. This
+     route posts no pointer of its own, so only an earlier click arms that window here. The read-back runs first, after
+     the accepted write and before the watch; a refused write runs neither, as before. After the re-fetch the watch's
+     drift answers first (its sentence names the late click), then this route's unconfirmed answer, so ok needs both.
+  7. **The model's document**: the fourth paragraph of agent-cursor.md gains a closing sentence (the surface inventory's
+     "Table 3 addition (2026-11-17, #390)", the docs oracle and the core-documentation test byte for byte).
+  8. **Not proven live.** Unit tests on fakes (ValueWithoutFocusTests) cover the plan, the preparation, the read-back,
+     the answers and main's unchanged paths. The issue's check, background set_value into a Chrome for Testing and an
+     Electron text field confirming 20/20 by read-back with 0 false ok, and its measurement with a page that listens for
+     focus, wait on a hosted run. A minimized Chromium window's web field also takes this route, where main skipped the
+     fallback and answered ok unread.
+  Date/Author: 2026-11-17, cursor235's implementer for #390.
+- Decision (#390's review, 2026-11-17, `fix/390-value-without-focus`; the review of c236f268, two P2 findings, both
+  accepted; amends "#390" above, items 3 and 5): **the read-back confirms only an exact read, and a sensitive set_value
+  reads no AXValue anywhere on its path, on every route.**
+  1. **A cut read never confirms** (`writtenValueMatches`). Item 3 took #359's rule, under which a read at Chromium's
+     10,000 cap that is a strict prefix of the write counts. There it only means no drift was seen, the write proven
+     otherwise; here the read-back is the only proof the write landed, and a cut read cannot show its end did. So a
+     string matches only when equal in UTF-16 units; a read at the cap shorter than the write is its own result,
+     `possiblyTruncated`, and answers `valueUnconfirmed` ("the field holds more text than accessibility reports in
+     full"). #359's watch keeps its rule.
+  2. **No AXValue read for a secret or a password field** (`setValueReadsValue`, ValueSetting.swift). Main read it on
+     every route, the foreground's included, in three places: the token's re-reads before the write (an invalidated
+     re-read, the scroll's `.always`, #366's refresh from the handle), the coercion's read of the current value, and the
+     `.ignoringValue` re-check after the write, whose `ElementSource.publicData` requested AXValue and whose walk
+     (`matching`) read it of every element when the handle no longer matched. Now, for a concealed request, or a field
+     whose recorded identity is a password field (role or subrole AXSecureTextField), every one of those resolutions
+     takes a source that requests no AXValue (`ElementSource.readsValue`, `ElementResolver.live`'s `readsValue`), which
+     also drops any value a read answers and marks the data `valueUnread`; the coercion takes the string type without a
+     read; and a field that reads secure once resolved, or cannot be classified, takes the same for the coercion and the
+     re-check. The renewed identity keeps no value (`ElementIdentity.valueUnread`), and a match leaves the value out
+     when either side has none, so the token still resolves for a later action that re-reads the field with its value.
+     A concealed value is thereby always written as a string.
+  3. **Not changed:** the observation itself still reads every element's AXValue as it walks, a password field's
+     included (outside set_value; its value is what the app exposes there).
+  Date/Author: 2026-11-17, cursor235's implementer for #390 (the review of c236f268).
+- Decision (#390's re-review, 2026-11-17, `fix/390-value-without-focus`; the review of 2532a1b5, two P2 findings, both
+  accepted; amends "#390's review" above): **no read at Chromium's cap confirms, and set_value's token re-reads never
+  read AXValue, on any route.**
+  1. **Equality at the cap.** A write of exactly 10,000 characters read back equal may sit in a field holding that and
+     more. Any read whose length is at the cap (`readbackMayBeTruncated`, type_text's own test) now confirms nothing,
+     shorter or equal, and answers `valueUnconfirmed` (`possiblyTruncated`).
+  2. **The classification no longer runs ahead of the reads.** The previous fix decided from the recorded identity
+     and once after the scroll, so a field that turned secure since the observation, or in the focus step, could still
+     be read. The simpler shape: set_value's resolutions (the invalidated re-read, the scroll's `.always`, the
+     `.ignoringValue` re-check after the write, its walk included) always take the valueless source, the value left out
+     of their match; set_value replaces the value, so it was weak evidence of the element there. The coercion is the
+     one remaining read before the write, and `setValueClosed` classifies the field in that same step, after the focus
+     and just before the read (concealed, a password field by role or subrole, or a role or subrole that cannot be
+     read: no read, the value written as a string). The unfocused read-back already re-checks before every read.
+     Re-classifying at each step was the alternative; it was not taken because it keeps a decision per read site,
+     where these sites need no value at all. The cost: after any set_value the token's identity keeps no value until
+     the next observation, so a later re-fetch of it matches on the other ten attributes. A field whose subrole changed
+     still fails the re-check, which answers `valueUnconfirmed` as before.
+  Date/Author: 2026-11-17, cursor235's implementer for #390 (the review of 2532a1b5).
 
 ## Outcomes & Retrospective
 

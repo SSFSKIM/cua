@@ -57,6 +57,41 @@ private final class StubPasswordApp {
   var wake: (Double, Double) -> Double = { asked, _ in asked }
   /// How long a read of the application's focus takes on the clock.
   var focusCostMs = 0.0
+  /// What each read costs beyond that, given its name and the messaging timeout the engine set on its element (ms).
+  var cost: (_ name: String, _ timeoutMs: Double) -> Double = { _, _ in 0 }
+  /// Whether a read whose cost passes its timeout answers cannotComplete at the timeout; false forces an overrun.
+  var honoursTimeouts = true
+  /// The messaging timeout the engine last set on each element, in seconds (none set: the 1 s default).
+  private(set) var timeouts: [Int: Float] = [:]
+  /// The clock when the last event was posted: B.
+  private(set) var postedAt = 0.0
+  /// What posting an event, and the pause after it, cost on the clock.
+  var postCost: () -> Double = { 0 }
+  var pauseCost: () -> Double = { 0 }
+  /// After each posted event: the boundary moves to it.
+  func posted() {
+    clock += postCost()
+    postedAt = clock
+    answersAtPost = answers.count
+  }
+  /// What each batch and focus read answered, with its times: the property test's own observations.
+  struct Answer {
+    enum Outcome: Equatable { case failed, noLongerSecure, countFailed, read(count: Int?, range: NSRange?), focus(Bool) }
+    let start: Double, end: Double
+    let outcome: Outcome
+    var isBatch: Bool { if case .focus = outcome { return false }; return true }
+  }
+  private(set) var answers: [Answer] = []
+  /// How many answers came before the last unit was posted.
+  private(set) var answersAtPost = 0
+  /// A read's cost on the clock: true when it ran into its timeout and failed there.
+  private func spend(_ id: Int, _ name: String, extra: Double = 0) -> Bool {
+    let timeout = (Double(timeouts[id] ?? 1) * 1_000_000).rounded() / 1000  // to the microsecond: a Float's seconds
+    let spent = extra + cost(name, timeout)
+    if honoursTimeouts, spent > timeout { clock += timeout; return true }
+    clock += spent
+    return false
+  }
   var log: [String] = []
 
   init(value: String, selection: NSRange) {
@@ -76,8 +111,10 @@ private final class StubPasswordApp {
     log.append("\(name)@\(id)")
     switch name {
     case kAXFocusedUIElementAttribute where id == Self.app:
-      clock += focusCostMs
-      return (el(focus), .success)
+      let start = clock
+      let failed = spend(id, name, extra: focusCostMs)
+      answers.append(Answer(start: start, end: clock, outcome: .focus(!failed && focus == Self.field)))
+      return failed ? (nil, .cannotComplete) : (el(focus), .success)
     case kAXRoleAttribute where id == Self.field: return role.map { ($0 as CFString, .success) } ?? (nil, .noValue)
     case kAXSubroleAttribute where id == Self.field:
       if subroleFails { return (nil, .cannotComplete) }
@@ -99,7 +136,18 @@ private final class StubPasswordApp {
     }
     beforeBatch(batches)
     batches += 1
-    if batchFails || id != Self.field { return nil }
+    let start = clock
+    if spend(id, "batch") || batchFails || id != Self.field {
+      answers.append(Answer(start: start, end: clock, outcome: .failed))
+      return nil
+    }
+    defer {
+      let outcome: Answer.Outcome
+      if subrole == nil, role == "AXTextField" { outcome = .noLongerSecure } else if case .fails = countSlot { outcome = .countFailed } else {
+        outcome = .read(count: (value as NSString).length, range: reportedSelection)
+      }
+      answers.append(Answer(start: start, end: clock, outcome: outcome))
+    }
     var read = AttributeRead()
     for name in names {
       switch name {
@@ -133,7 +181,8 @@ private final class StubPasswordApp {
     ReadbackAX(copy: { self.copy($0, $1) }, copyParameterized: { element, name, _ in
       self.log.append("\(name)@\(self.id(element))")
       return (self.value as CFString, .success)
-    }, batch: { self.batch($0, $1) }, pid: { _ in Self.pid }, markers: nil)
+    }, batch: { self.batch($0, $1) }, pid: { _ in Self.pid }, markers: nil,
+       setTimeout: { self.timeouts[self.id($0)] = $1 })
   }
 
   func deliver(_ text: [UInt16]) {
@@ -179,6 +228,19 @@ private final class StubPasswordApp {
   }
 }
 
+/// A seeded generator (SplitMix64) for the property test: the same seed, the same cases.
+private struct SplitMix {
+  var state: UInt64
+  init(_ seed: UInt64) { state = seed }
+  mutating func next() -> UInt64 {
+    state &+= 0x9E37_79B9_7F4A_7C15
+    var z = state
+    z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE4_E5B9
+    z = (z ^ (z >> 27)) &* 0x94D0_49BB_1331_11EB
+    return z ^ (z >> 31)
+  }
+}
+
 final class SecureTypeReadbackTests: XCTestCase {
   // The distinctive numbers: the field's count before typing, its selection, and what typing "pass" over it makes.
   private let before = 48_611, location = 31_337, selected = 2_777
@@ -211,8 +273,9 @@ final class SecureTypeReadbackTests: XCTestCase {
       try keyTextReadBack(units(text), concealed: concealed, settle: settle, baseline: baseline, reads: reads, checkSource: { _, _ in },
                           checkIntervention: {}, post: { event in
                             if event.kind == .down, let text = event.text { app.deliver(text) }
+                            app.posted()
                             return true
-                          }, pause: {}, meta: &meta)
+                          }, pause: { app.clock += app.pauseCost() }, meta: &meta)
     } catch {
       failure = error as? EngineError
     }
@@ -395,7 +458,7 @@ final class SecureTypeReadbackTests: XCTestCase {
       XCTAssertTrue(error?.message.contains("a screenshot shows its masked characters; getAXState() shows only that it is a password field") ?? false, label)
       XCTAssertFalse(error?.message.contains { $0.isNumber } ?? true, label)
       // A concealed request never ends early on a read past the text: the extra character polls the budget as well.
-      XCTAssertEqual(app.batches, 1 + 201, "\(label): the snapshot, then the whole budget polled")
+      XCTAssertEqual(app.batches, 1 + budgetPolls, "\(label): the snapshot, then the whole budget polled")
     }
   }
 
@@ -431,7 +494,7 @@ final class SecureTypeReadbackTests: XCTestCase {
         XCTAssertNil(meta.note, label)
         XCTAssertFalse(reply.contains("confirmed by its length"), label)
         XCTAssertEqual((app.value as NSString).length, before - basis.selection.length + 5, "\(label): the z and every key")
-        XCTAssertEqual(app.batches, concealed ? 1 + 201 : 1 + 2, "\(label): the budget, or the read that left the match")
+        XCTAssertEqual(app.batches, concealed ? 1 + budgetPolls : 1 + 2, "\(label): the budget, or the read that left the match")
       }
     }
   }
@@ -473,14 +536,14 @@ final class SecureTypeReadbackTests: XCTestCase {
         let (error, meta, _) = type("pass", into: added, concealed: concealed)
         XCTAssertEqual(reason(meta), inside ? "lengthMismatch" : nil, label)
         XCTAssertEqual(error == nil, !inside, label)
-        XCTAssertEqual(added.batches, !inside ? 2 + windowReads : concealed ? 1 + 201 : index + 1, label)
+        XCTAssertEqual(added.batches, !inside ? 2 + windowReads : concealed ? 1 + budgetPolls : index + 1, label)
 
         let caret = field(selection: NSRange(location: location, length: 0))
         caret.countSlot = .absent
         caret.beforeBatch = { if $0 == index { caret.selection.location += 1 } }
         XCTAssertEqual(reason(type("pass", into: caret, concealed: concealed).meta), inside ? (concealed ? "lengthMismatch" : "caretMismatch") : nil,
                        "the caret alone: \(label)")
-        XCTAssertEqual(caret.batches, !inside ? 2 + windowReads : concealed ? 1 + 201 : index + 1, "the caret alone: \(label)")
+        XCTAssertEqual(caret.batches, !inside ? 2 + windowReads : concealed ? 1 + budgetPolls : index + 1, "the caret alone: \(label)")
       }
     }
     // A change that comes back: a concealed request never confirms after it, though the match holds again for longer.
@@ -490,7 +553,7 @@ final class SecureTypeReadbackTests: XCTestCase {
       if index == 4 { returning.value.removeLast() }
     }
     XCTAssertEqual(reason(type("pass", into: returning, concealed: true).meta), "lengthMismatch", "the last read matches, never held")
-    XCTAssertEqual(returning.batches, 1 + 201)
+    XCTAssertEqual(returning.batches, 1 + budgetPolls)
 
     let clean = field()
     let (_, meta, _) = type("pass", into: clean)
@@ -508,7 +571,7 @@ final class SecureTypeReadbackTests: XCTestCase {
         let app = field()
         app.beforeBatch = { if $0 == 4 { change(app) } }
         XCTAssertEqual(reason(type("pass", into: app, concealed: concealed).meta), expected, "\(label), concealed \(concealed)")
-        XCTAssertEqual(app.batches, closes || !concealed ? 5 : 1 + 201, "\(label), concealed \(concealed)")
+        XCTAssertEqual(app.batches, closes || !concealed ? 5 : 1 + budgetPolls, "\(label), concealed \(concealed)")
       }
     }
   }
@@ -530,7 +593,7 @@ final class SecureTypeReadbackTests: XCTestCase {
     // "pass": "zz" and "pa" match before the last two keys land; "p": "zz" alone is past the text, and "zzp" never matches.
     let matched = failing("pass"), never = failing("p")
     XCTAssertEqual(matched.reads, never.reads)
-    XCTAssertEqual(matched.batches, 1 + 201)
+    XCTAssertEqual(matched.batches, 1 + budgetPolls)
     XCTAssertEqual(matched.batches, never.batches)
     XCTAssertEqual(matched.meta.typeReadback?.pollMs, deadline, "the budget, then the deadline every concealed failure answers at")
     XCTAssertEqual(matched.meta.typeReadback?.pollMs, never.meta.typeReadback?.pollMs)
@@ -542,22 +605,23 @@ final class SecureTypeReadbackTests: XCTestCase {
 
   // MARK: The review of f35a42b8..cbce12e2
 
-  /// The fixed deadline every concealed failure after posting answers at: the post-typing boundary, the budget, and the
+  /// The fixed deadline every concealed failure after posting answers at: the last post, the budget, and the
   /// cap on the final focus read.
   private var deadline: Double { typeReadbackBudgetMs + typeReadbackFocusReadCapMs }
 
   /// The review of cbce12e2..1f69470e (P1, P2): every concealed failure after posting answers at one fixed deadline,
-  /// measured from the post-typing boundary, whatever its cause and however long its focus read takes within the cap:
+  /// measured from the last post, whatever its cause and however long its focus read takes within the cap:
   /// a held match whose focus read fails, a lost match, a closed read, a failed count, and each snapshot refusal that
   /// still posted the keys. Nothing more is read after a refusal or a closed read. A concealed success still ends early,
   /// and a literal request still ends when it fails.
   func testEveryConcealedFailureAfterPostingAnswersAtOneDeadline() {
     XCTAssertEqual(typeReadbackFocusReadCapMs, 100)
     let cases: [(label: String, setUp: (StubPasswordApp) -> Void, settle: Bool, reason: String, batches: Int?)] = [
-      ("a held match, then the focus moved", { app in app.beforeBatch = { if $0 == 1 { app.focus = 2 } } }, false, "fieldChanged", 1 + 201),
-      ("a lost match", { app in app.beforeBatch = { if $0 == 3 { app.value += "y" } } }, false, "lengthMismatch", 1 + 201),
+      ("a held match, then the focus moved", { app in app.beforeBatch = { if $0 == 1 { app.focus = 2 } } }, false, "fieldChanged",
+       1 + budgetPolls - Int(40 / typeReadbackPollIntervalMs)),
+      ("a lost match", { app in app.beforeBatch = { if $0 == 3 { app.value += "y" } } }, false, "lengthMismatch", 1 + budgetPolls),
       ("a closed read", { app in app.beforeBatch = { if $0 == 3 { app.subrole = nil } } }, false, "noLongerSecure", 4),
-      ("a failed count", { app in app.beforeBatch = { if $0 >= 1 { app.countSlot = .fails } } }, false, "lengthUnreadable", 1 + 201),
+      ("a failed count", { app in app.beforeBatch = { if $0 >= 1 { app.countSlot = .fails } } }, false, "lengthUnreadable", 1 + budgetPolls),
       ("refused: lengthUnreadable", { $0.countSlot = .fails }, false, "lengthUnreadable", 1),
       ("refused: selectionUnreadable", { $0.rangeSlot = .absent }, false, "selectionUnreadable", 1),
       ("refused: fieldUnreadable", { $0.batchFails = true }, false, "fieldUnreadable", 1),
@@ -592,10 +656,10 @@ final class SecureTypeReadbackTests: XCTestCase {
     XCTAssertEqual(moved.batches, 1 + 1 + windowReads)
   }
 
-  /// The one difference between a held match whose focus read fails and a lost match, both concealed: the focus read at
-  /// the match. The rest of the trace (every batch, in order, and the final focus read) is the same, since that focus
-  /// read pauses the budget; both answer at the deadline. This AX traffic reaches only the target app, which holds the
-  /// secret already; the caller sees the same reply at the same time.
+  /// What differs between a held match whose focus read fails and a lost match, both concealed: the focus read at the
+  /// match, and the polls its time displaced, since the cutoff is absolute. The rest of the trace (every other batch, in
+  /// order, and the final focus read at the cutoff) is the same, and both answer at the deadline. This AX traffic reaches
+  /// only the target app, which holds the secret already; the caller sees the same reply at the same time.
   func testAHeldMatchWhoseFocusFailsReadsAsALostMatchWithOneFocusReadMore() {
     func trace(_ setUp: (StubPasswordApp) -> Void) -> (log: [String], meta: InputMeta) {
       let app = field()
@@ -609,16 +673,21 @@ final class SecureTypeReadbackTests: XCTestCase {
     let batch = "batch(\(readbackLengthAttributes.joined(separator: ",")))@1"
     // The match is the first read after typing; it holds at the read the window's length after it.
     let firstPoll = lost.log.firstIndex(of: batch).map { lost.log[($0 + 1)...].firstIndex(of: batch)! }!
+    // The polls the focus read's time displaced: the cutoff is absolute, so they are not read later (the review of
+    // 1f69470e..f217f062, (i)); the final focus read and the reply come at the same times.
+    let displaced = Int(40 / typeReadbackPollIntervalMs)
     var expected = lost.log
     expected.insert("AXFocusedUIElement@0", at: firstPoll + windowReads + 1)
+    expected.removeSubrange((firstPoll + windowReads + 2)..<(firstPoll + windowReads + 2 + displaced))
     XCTAssertEqual(held.log, expected)
     XCTAssertEqual(held.meta.typeReadback?.pollMs, deadline)
     XCTAssertEqual(lost.meta.typeReadback?.pollMs, deadline)
     XCTAssertEqual(reason(held.meta), "fieldChanged")
   }
 
-  /// P2: the padding waits against the clock until the deadline, however early each sleep wakes; and a final focus read
-  /// slower than the cap is the residual: the reply comes when it returns, past the deadline.
+  /// P2: the padding waits against the clock until the deadline, however early each sleep wakes. A final focus read
+  /// slower than the cap runs into its bound there: a failed focus read, answered at the deadline (an overrun past it
+  /// is the residual, `testAReplyAfterTheDeadlineIsFlaggedLate`).
   func testTheDeadlineIsWaitedForAgainstTheClock() {
     for (label, setUp) in [("a lost match", { (app: StubPasswordApp) in app.beforeBatch = { if $0 == 3 { app.value += "y" } } }),
                            ("a refusal", { (app: StubPasswordApp) in app.countSlot = .fails })] {
@@ -630,35 +699,36 @@ final class SecureTypeReadbackTests: XCTestCase {
     let slow = field()
     slow.focusCostMs = typeReadbackFocusReadCapMs + 50
     slow.beforeBatch = { if $0 == 3 { slow.value += "y" } }
-    XCTAssertEqual(type("pass", into: slow, concealed: true).meta.typeReadback?.pollMs, typeReadbackBudgetMs + typeReadbackFocusReadCapMs + 50,
-                   "the residual: a focus read slower than the cap")
+    let (_, slowMeta, _) = type("pass", into: slow, concealed: true)
+    XCTAssertEqual(slowMeta.typeReadback?.pollMs, deadline, "a focus read slower than the cap fails at its bound")
+    XCTAssertEqual(reason(slowMeta), "fieldChanged")
   }
 
   /// P2: a read confirms only if it completes within the budget, its dwell timed from its start. A confirming read that
   /// starts at the budget's last moment and returns after it is a too-late match, plain and concealed.
   func testAReadThatReturnsAfterTheBudgetCannotConfirm() {
-    let lastHolding = Int((typeReadbackBudgetMs - typeReadbackLengthDwellMs) / typeReadbackPollIntervalMs) + 1
     for concealed in [false, true] {
       let app = field()
       app.beforeBatch = { index in
-        app.caretShift = index < lastHolding ? -1 : 0
-        if index == 201 { app.clock += 3 }  // the read at 1000 ms returns at 1003 ms
+        app.caretShift = index < self.lastHolding ? -1 : 0
+        // The last batch, started at 950 ms, returns at 1001 ms: past the cutoff, though it started within it.
+        if index == self.budgetPolls { app.clock += messagingTimeoutFloorMs + 1 }
       }
       let (error, meta, _) = type("pass", into: app, concealed: concealed)
       XCTAssertNotNil(error, "concealed \(concealed)")
       XCTAssertEqual(reason(meta), "lengthMismatch", "concealed \(concealed)")
       let control = field()
-      control.beforeBatch = { control.caretShift = $0 < lastHolding ? -1 : 0 }
+      control.beforeBatch = { control.caretShift = $0 < self.lastHolding ? -1 : 0 }
       XCTAssertNil(type("pass", into: control, concealed: concealed).error, "returned within the budget, concealed \(concealed)")
     }
   }
 
-  /// P2: a read confirms only if it starts within the budget. A match taken off the poll's grid (its read ending 1 ms
-  /// past the last read that could hold for the window) and one whose last wake comes late would each hold for the
-  /// window only at a read past 1000 ms: both are unconfirmed, a too-late match, plain and concealed.
+  /// P2: a read confirms only if it finished by the cutoff, and no batch starts with less than the floor left. A match
+  /// taken off the poll's grid (its read ending 1 ms past the last read that could hold for the window) and one whose
+  /// last wake comes late would each hold for the window only at a read that never starts: both are unconfirmed, a
+  /// too-late match, plain and concealed.
   func testAMatchConfirmsOnlyByAReadThatStartsWithinTheBudget() {
-    let lastHolding = Int((typeReadbackBudgetMs - typeReadbackLengthDwellMs) / typeReadbackPollIntervalMs) + 1  // its read at 780 ms
-    let budgetReads = Int(typeReadbackBudgetMs / typeReadbackPollIntervalMs)
+    let lastHolding = self.lastHolding  // its read at 730 ms
     for concealed in [false, true] {
       let offGrid = field()
       offGrid.beforeBatch = { index in
@@ -669,15 +739,15 @@ final class SecureTypeReadbackTests: XCTestCase {
       let (offError, offMeta, _) = type("pass", into: offGrid, concealed: concealed)
       XCTAssertNotNil(offError, "off the grid, concealed \(concealed)")
       XCTAssertEqual(reason(offMeta), "lengthMismatch", "off the grid, concealed \(concealed)")
-      XCTAssertEqual(offGrid.batches, 1 + budgetReads, "the read at 1001 ms is the last")
+      XCTAssertLessThanOrEqual(offGrid.answers.filter(\.isBatch).last!.start - offGrid.postedAt, lastBatchStart, "no batch after the floor")
 
       let late = field()
       late.beforeBatch = { late.caretShift = $0 < lastHolding ? -1 : 0 }  // the last match that holds, on the grid
-      late.wake = { asked, now in now >= typeReadbackBudgetMs - typeReadbackPollIntervalMs ? asked + 3 : asked }  // the last wake 3 ms late
+      late.wake = { asked, now in now >= self.lastBatchStart - typeReadbackPollIntervalMs ? asked + 3 : asked }  // the last wake 3 ms late
       let (lateError, lateMeta, _) = type("pass", into: late, concealed: concealed)
       XCTAssertNotNil(lateError, "a late wake, concealed \(concealed)")
       XCTAssertEqual(reason(lateMeta), "lengthMismatch", "a late wake, concealed \(concealed)")
-      XCTAssertEqual(late.batches, 1 + budgetReads + 1)
+      XCTAssertEqual(late.batches, 1 + budgetPolls - 1, "the read the late wake would have made never starts")
     }
   }
 
@@ -699,21 +769,207 @@ final class SecureTypeReadbackTests: XCTestCase {
     XCTAssertTrue(readbackLengthOvershoots(count: .value(after), range: NSRange(location: location + 5, length: 0), basis: .count(before, range: selection), typed: 4))
   }
 
+  // MARK: The review of 1f69470e..f217f062: concealed timing and reasons by construction
+
+  /// The poll's last batch may start this long after B, at most: none starts with less than the floor left to C.
+  private var lastBatchStart: Double { typeReadbackBudgetMs - messagingTimeoutFloorMs }
+  /// The batches a poll that never confirms reads: one every interval up to `lastBatchStart`.
+  private var budgetPolls: Int { Int(lastBatchStart / typeReadbackPollIntervalMs) + 1 }
+  /// The read of the last match that can still hold for the window before the last batch.
+  private var lastHolding: Int { Int((lastBatchStart - typeReadbackLengthDwellMs) / typeReadbackPollIntervalMs) + 1 }
+
+  /// (i) A focus read at a held match moved the poll's budget, so a held match whose focus failed read its batches, and
+  /// its final focus read, later than a lost match did. Now every time is absolute from the last post: the
+  /// batches stop by the cutoff less the floor, and the final focus read starts at the cutoff.
+  func testAFocusReadAtAMatchDoesNotMoveTheCutoff() {
+    let app = field()
+    app.focusCostMs = 40
+    app.beforeBatch = { if $0 == 1 { app.focus = 2 } }
+    let (_, meta, _) = type("pass", into: app, concealed: true)
+    XCTAssertEqual(reason(meta), "fieldChanged")
+    let batches = app.answers.filter(\.isBatch), focuses = app.answers.filter { !$0.isBatch }
+    XCTAssertLessThanOrEqual(batches.last!.start - app.postedAt, lastBatchStart)
+    XCTAssertEqual(focuses.last!.start - app.postedAt, typeReadbackBudgetMs, "the final focus read at the cutoff")
+    XCTAssertEqual(app.clock - app.postedAt, deadline)
+  }
+
+  /// (ii) A focus that moved at the match and came back before the cutoff answered fieldChanged, where a lost match
+  /// answers lengthMismatch: the reason latched from a read only one of them made. Now the reason comes only from the
+  /// final batch and the final focus read, so both answer lengthMismatch at the deadline.
+  func testATransientFocusFailureDoesNotChooseTheReason() {
+    let regained = field()
+    regained.focusCostMs = 40
+    regained.beforeBatch = { index in
+      if index == 1 { regained.focus = 2 }
+      if index == 100 { regained.focus = StubPasswordApp.field }
+    }
+    let (_, meta, _) = type("pass", into: regained, concealed: true)
+    XCTAssertEqual(reason(meta), "lengthMismatch")
+    XCTAssertEqual(regained.clock - regained.postedAt, deadline)
+    let lost = field()
+    lost.beforeBatch = { if $0 == 3 { lost.value += "y" } }
+    XCTAssertEqual(reason(type("pass", into: lost, concealed: true).meta), "lengthMismatch")
+  }
+
+  /// (iii) A slow last batch pushed the final focus read past the deadline. Now no batch starts with less than the
+  /// floor left, each runs under a timeout of the time left to the cutoff, and the final focus read starts at the
+  /// cutoff under one of the time left to the deadline: slow reads near the end still answer at the deadline.
+  func testASlowLastBatchCannotPushTheReplyPastTheDeadline() {
+    let app = field()
+    app.beforeBatch = { if $0 == 3 { app.value += "y" } }
+    app.cost = { name, _ in name == "batch" && app.clock - app.postedAt >= 940 ? 80 : 0 }
+    app.focusCostMs = 90
+    let (_, meta, reply) = type("pass", into: app, concealed: true)
+    XCTAssertEqual(app.clock - app.postedAt, deadline)
+    XCTAssertFalse(reply.contains("lateReply"))
+    XCTAssertLessThanOrEqual(app.answers.filter(\.isBatch).last!.end - app.postedAt, typeReadbackBudgetMs, "every batch finished by the cutoff")
+    XCTAssertEqual(reason(meta), "fieldUnreadable", "the last batch ran into its bound: the final batch failed")
+  }
+
+  /// (iv) The success cutoff and the failure padding share one origin, the last post: a confirming read that
+  /// finishes exactly at the cutoff succeeds; one that would finish a millisecond later runs into its bound and fails,
+  /// answering at the deadline from the same boundary.
+  func testTheSuccessCutoffAndTheFailureDeadlineShareTheBoundary() {
+    let lastMatch = Int((lastBatchStart - typeReadbackLengthDwellMs) / typeReadbackPollIntervalMs) + 1  // its read at 730 ms
+    for (extra, succeeds) in [(messagingTimeoutFloorMs, true), (messagingTimeoutFloorMs + 1, false)] {
+      let app = field()
+      app.beforeBatch = { app.caretShift = $0 < lastMatch ? -1 : 0 }
+      app.cost = { name, _ in name == "batch" && app.clock - app.postedAt >= self.lastBatchStart ? extra : 0 }
+      let (error, _, _) = type("pass", into: app, concealed: true)
+      XCTAssertEqual(error == nil, succeeds, "the confirming read costing \(extra) ms")
+      XCTAssertEqual(app.clock - app.postedAt, succeeds ? typeReadbackBudgetMs : deadline)
+    }
+  }
+
+  /// B is the last post, the instant `endedAt` stamps, not the read-back's own start: whatever runs after the last post
+  /// (its key-up's pause, a settle, `finish`'s own work) never moves it. With posts and the pause after each costing
+  /// time, a concealed failure answers at the last post + 1100 ms, and no batch starts past the last post + 950 ms.
+  func testTheDeadlineCountsFromTheLastPost() {
+    for pause in [0.0, 17, 60] {
+      let app = field()
+      app.postCost = { 3 }
+      app.pauseCost = { pause }
+      app.beforeBatch = { if $0 == 3 { app.value += "y" } }
+      let (_, meta, _) = type("pass", into: app, concealed: true)
+      XCTAssertEqual(reason(meta), "lengthMismatch", "pause \(pause)")
+      XCTAssertEqual(app.clock - app.postedAt, deadline, "pause \(pause): the deadline from the last post")
+      XCTAssertLessThanOrEqual(app.answers.filter(\.isBatch).last!.start - app.postedAt, lastBatchStart, "pause \(pause)")
+    }
+  }
+
+  /// The forced overrun: a final focus read that runs past its timeout makes the reply come after the deadline, and the
+  /// secure wire records `lateReply`, a fixed flag with no duration.
+  func testAReplyAfterTheDeadlineIsFlaggedLate() {
+    let app = field()
+    app.beforeBatch = { if $0 == 3 { app.value += "y" } }
+    app.honoursTimeouts = false
+    app.focusCostMs = typeReadbackFocusReadCapMs + 30
+    let (_, meta, reply) = type("pass", into: app, concealed: true)
+    XCTAssertGreaterThan(app.clock - app.postedAt, deadline)
+    XCTAssertEqual(record(meta)["lateReply"] as? Bool, true)
+    XCTAssertTrue(reply.contains("\"lateReply\":true"))
+    XCTAssertEqual(Set(record(meta).keys), ["confirmed", "snapshotMs", "reason", "secure", "concealed", "lateReply"], "no duration added")
+  }
+
+  /// The property, seeded and deterministic over 2000 cases: a field's behaviour (no match, a held match, a match that
+  /// comes and goes, a focus lost and regained, a focus lost, a read that closes at a random poll), a secret's length,
+  /// and every read's cost drawn within the timeout the engine set on it, with a few cases forced to overrun. Every
+  /// concealed failure answers at the deadline from the last post (or later, flagged `lateReply`, only when
+  /// a read overran), with the reason the final batch and the final focus read make; every success held for the window,
+  /// its confirming read finished by the cutoff, and its focus read passed.
+  func testConcealedTimingAndReasonsHoldOverRandomCases() {
+    let seed: UInt64 = 0x414_F217, cases = 2000
+    var rng = SplitMix(seed)
+    var successes = 0, failures = 0, late = 0
+    for index in 0..<cases {
+      let label = "seed \(String(seed, radix: 16)), case \(index) of \(cases)"
+      let length = 1 + Int(rng.next() % 12)
+      let secret = String((0..<length).map { _ in Character(UnicodeScalar(UInt8(97 + rng.next() % 26))) })
+      let count = Int(rng.next() % 12), selected = count == 0 ? 0 : Int(rng.next() % UInt64(count + 1))
+      let app = field(count: count, selection: NSRange(location: count - selected, length: selected))
+      let behaviour = rng.next() % 6
+      let first = 1 + Int(rng.next() % 120), second = first + 1 + Int(rng.next() % 120)
+      switch behaviour {
+      case 0: app.transform = { _ in "" }  // no match: nothing goes in
+      case 1: break  // a held match
+      case 2: app.extraFirst = "z"; app.lateUnits = 1  // a match that comes and goes
+      case 3: app.beforeBatch = { i in if i == first { app.focus = 2 }; if i == second { app.focus = StubPasswordApp.field } }
+      case 4: app.beforeBatch = { i in if i == first { app.focus = 2 } }
+      default: app.beforeBatch = { i in if i == first { app.subrole = nil } }
+      }
+      let overruns = rng.next() % 40 == 0
+      app.honoursTimeouts = !overruns
+      var costs = SplitMix(rng.next())
+      app.cost = { _, timeout in
+        let roll = costs.next() % 100
+        if overruns, roll < 3 { return timeout + Double(costs.next() % 200) }
+        return roll < 90 ? Double(costs.next() % 4) : Double(costs.next() % UInt64(max(1, min(timeout, 150))))
+      }
+      app.focusCostMs = Double(rng.next() % 30)
+      var posting = SplitMix(rng.next())
+      app.postCost = { Double(posting.next() % 4) }
+      app.pauseCost = { Double(posting.next() % 3) }
+      let (error, meta, reply) = type(secret, into: app, concealed: true)
+      let answers = Array(app.answers[app.answersAtPost...])
+      let replied = app.clock - app.postedAt
+      if error == nil {
+        successes += 1
+        guard let focus = answers.last, case .focus(true) = focus.outcome,
+              let confirming = answers.dropLast().last, confirming.isBatch,
+              case .read(let seen, let range) = confirming.outcome else {
+          XCTFail("\(label): a success must end on a passing focus read after a batch"); continue
+        }
+        XCTAssertEqual(seen, count - selected + length, label)
+        XCTAssertEqual(range, NSRange(location: count - selected + length, length: 0), label)
+        XCTAssertLessThanOrEqual(confirming.end - app.postedAt, typeReadbackBudgetMs, "\(label): finished by the cutoff")
+        let batches = answers.filter(\.isBatch)
+        var held = batches.count - 1
+        while held > 0, batches[held - 1].outcome == confirming.outcome { held -= 1 }
+        XCTAssertGreaterThanOrEqual(confirming.start - batches[held].end, typeReadbackLengthDwellMs, "\(label): held for the window")
+      } else {
+        failures += 1
+        let wasLate = record(meta)["lateReply"] as? Bool == true
+        if wasLate { late += 1 }
+        XCTAssertEqual(wasLate, replied > deadline, "\(label): lateReply exactly when the reply came after the deadline")
+        if !overruns { XCTAssertEqual(replied, deadline, "\(label): at the deadline") }
+        XCTAssertGreaterThanOrEqual(replied, deadline, label)
+        // The reason, from the stub's own final batch and final focus read.
+        let lastBatch = answers.last(where: \.isBatch)
+        let lastFocus = answers.last { !$0.isBatch && $0.start >= (lastBatch?.end ?? 0) }
+        let expected: String
+        if case .focus(true)? = lastFocus?.outcome {
+          switch lastBatch?.outcome {
+          case .failed?: expected = "fieldUnreadable"
+          case .noLongerSecure?: expected = "noLongerSecure"
+          case .countFailed?, nil: expected = "lengthUnreadable"
+          default: expected = "lengthMismatch"
+          }
+        } else {
+          expected = "fieldChanged"
+        }
+        XCTAssertEqual(reason(meta), expected, label)
+        XCTAssertEqual(reply.contains("lateReply"), wasLate, label)
+      }
+    }
+    XCTAssertGreaterThan(successes, cases / 10, "seed \(String(seed, radix: 16)): enough successes to matter")
+    XCTAssertGreaterThan(failures, cases / 4, "seed \(String(seed, radix: 16)): enough failures to matter")
+    XCTAssertGreaterThan(late, 0, "seed \(String(seed, radix: 16)): some forced overruns came late")
+  }
+
   /// The window does not run past the budget: a genuine field must have taken the text within the budget less the
-  /// window (780 ms of the poll's start). A match there holds until the budget's last read and confirms; one a read
-  /// later cannot hold for the window and is unconfirmed at the budget, plain and concealed, answering lengthMismatch.
+  /// window and the floor (730 ms of the last post). A match there holds until the last batch and confirms; one a read
+  /// later cannot hold for the window and is unconfirmed, plain and concealed, answering lengthMismatch.
   func testAMatchTooLateToHoldBeforeTheBudgetIsUnconfirmed() {
-    let lastHolding = Int((typeReadbackBudgetMs - typeReadbackLengthDwellMs) / typeReadbackPollIntervalMs) + 1  // its read at 780 ms
     for concealed in [false, true] {
-      for (matchAt, confirms) in [(lastHolding, true), (lastHolding + 1, false), (201, false)] {
+      for (matchAt, confirms) in [(lastHolding, true), (lastHolding + 1, false), (budgetPolls, false)] {
         let label = "a match at batch \(matchAt), concealed \(concealed)"
         let app = field()
         app.beforeBatch = { app.caretShift = $0 < matchAt ? -1 : 0 }  // a caret that reaches the end only then
         let (error, meta, _) = type("pass", into: app, concealed: concealed)
         XCTAssertEqual(error == nil, confirms, label)
         XCTAssertEqual(reason(meta), confirms ? nil : "lengthMismatch", label)
-        XCTAssertEqual(app.batches, 1 + 201, label)
-        XCTAssertEqual(meta.typeReadback?.pollMs, concealed && !confirms ? deadline : typeReadbackBudgetMs, label)
+        XCTAssertEqual(app.batches, 1 + budgetPolls, label)
+        XCTAssertEqual(meta.typeReadback?.pollMs, concealed && !confirms ? deadline : lastBatchStart, label)
       }
     }
   }
@@ -726,7 +982,7 @@ final class SecureTypeReadbackTests: XCTestCase {
   /// such a read: it polls the budget, as any mismatch does.
   func testAReadPastTheTextEndsALiteralRequestsPollAtOnce() {
     for concealed in [false, true] {
-      let polled = concealed ? 1 + 201 : 1 + 1
+      let polled = concealed ? 1 + budgetPolls : 1 + 1
       let past = field()
       past.caretShift = 1
       XCTAssertEqual(reason(type("pass", into: past, concealed: concealed).meta), concealed ? "lengthMismatch" : "caretMismatch")
@@ -754,7 +1010,7 @@ final class SecureTypeReadbackTests: XCTestCase {
     selected.transform = { over += 1; return over == 1 ? $0 + $0 : $0 }
     selected.caretShift = -1
     XCTAssertEqual(reason(type("ab", into: selected).meta), "lengthMismatch")
-    XCTAssertEqual(selected.batches, 1 + 201, "over a selection a count past the expected one polls the budget")
+    XCTAssertEqual(selected.batches, 1 + budgetPolls, "over a selection a count past the expected one polls the budget")
   }
 
   /// A concealed request's failure takes the same time whatever its secret's length: every read past the text compares
@@ -782,7 +1038,7 @@ final class SecureTypeReadbackTests: XCTestCase {
       }
       let shorter = ignoring(field.shorter), longer = ignoring(field.longer)
       XCTAssertEqual(shorter.log, longer.log, field.label)
-      XCTAssertEqual(shorter.batches, 1 + 201, field.label)
+      XCTAssertEqual(shorter.batches, 1 + budgetPolls, field.label)
       XCTAssertEqual(shorter.batches, longer.batches, field.label)
       XCTAssertEqual(shorter.meta.typeReadback?.pollMs, longer.meta.typeReadback?.pollMs, field.label)
       XCTAssertEqual(reason(shorter.meta), "lengthMismatch", field.label)
@@ -927,7 +1183,7 @@ final class SecureTypeReadbackTests: XCTestCase {
     let later = field()
     later.beforeBatch = { if $0 == 1 { later.countSlot = .fails } }
     XCTAssertEqual(reason(type("pass", into: later).meta), "lengthUnreadable")
-    XCTAssertEqual(later.batches, 1 + 201)
+    XCTAssertEqual(later.batches, 1 + budgetPolls)
     // A read that fails, then one that answers the expected count: confirmed by that one.
     let recovering = field()
     recovering.beforeBatch = { recovering.countSlot = $0 == 1 ? .fails : .answers }

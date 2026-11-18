@@ -168,6 +168,25 @@ func readbackLengthOvershoots(count: ReadbackWalkRead<Int>, range: NSRange?, bas
   }
 }
 
+/// What a password field's last length batch answered: closed, with its reason, or a reading as judged.
+enum ReadbackFinalBatch: Equatable {
+  case closed(TypeReadbackReason)
+  case read(ReadbackLengthRead)
+}
+
+/// A concealed failure's reason (#414; the review of 1f69470e..f217f062): a function of the final batch and the final
+/// focus read alone, the two observations every concealed failure makes. A focus read that failed is `fieldChanged`;
+/// otherwise a closed final batch gives its own reason, an unreadable one (or none) `lengthUnreadable`, and any other
+/// `lengthMismatch`. Nothing earlier (a held match, a taint, a focus read at a match) chooses it.
+func readbackConcealedReason(finalBatch: ReadbackFinalBatch?, focused: Bool) -> TypeReadbackReason {
+  guard focused else { return .fieldChanged }
+  switch finalBatch {
+  case .closed(let why)?: return why
+  case .read(.unreadable)?, nil: return .lengthUnreadable
+  case .read?: return .lengthMismatch
+  }
+}
+
 /// A password field's snapshot, after its role and subrole: #359's wait for a stable range and the settle, as a text
 /// field takes them, each read the length batch; then the starting point (`readbackLengthBasis`).
 ///

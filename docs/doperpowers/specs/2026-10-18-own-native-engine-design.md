@@ -5976,8 +5976,9 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
        loop. The design session first approved a 50 ms window sampled every 10 ms; the 5 ms poll replaces the 10 ms
        sample so a concealed request's schedule has one shape, whether or not a match came.
      - **Inside the budget.** The window no longer runs past the 1 s budget. A match that cannot hold for the window
-       before the budget is unconfirmed at the budget, answering `lengthMismatch`. A genuine field must therefore
-       finish taking the text within 780 ms of the poll's start: the budget less the window. agent-cursor.md says so.
+       before the budget is unconfirmed, answering `lengthMismatch`. A genuine field must therefore finish taking the
+       text within 730 ms of the last post: the budget less the window and the 50 ms floor (below).
+       agent-cursor.md says so.
      - **Ruling 842: one constant, sized from the qualification.** The window is one value for every lane, never one
        per lane, and it is one line to change. The design session set it at 220 ms, three times AppKit's gap p99 of
        72.6 ms (218 ms), from the hosted qualification's full run. Direct fixture edit gaps, scope "gaps ending after
@@ -6014,34 +6015,51 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
        end of its text. So a concealed request never ends on an overshoot. A reply that leaves a held match taints it:
        it never confirms for the rest of the poll and polls on to the budget, its reason the last reply's (one that
        judges confirmed answers `lengthMismatch`). A failed count inside a window taints it the same way.
-     - **Every concealed failure after posting answers at one fixed deadline** (the review of f35a42b8..cbce12e2, P1;
-       then the review of cbce12e2..1f69470e, P1 and P2). The deadline is `finish()`'s start, the post-typing boundary
-       where the poll starts, plus `typeReadbackBudgetMs` plus `typeReadbackFocusReadCapMs` (100 ms, the bound on the
-       final focus read): 1100 ms. It is measured from that one boundary, never from the last read, so a focus read
-       within the cap changes nothing. It covers:
-       - a held match whose focus read fails;
-       - a lost or tainted match;
-       - a closed read, which still stops the reads (the field is read no further) and takes no focus read;
-       - a failed count;
-       - every snapshot refusal after the keys were posted (`lengthUnreadable`, `selectionUnreadable`,
-         `noLongerSecure`, a held field's `roleUnreadable` and the rest). `selectionChanged` posts nothing and stays
-         immediate.
-       The first round slept out only the budget, from the poll's start; the second found that the reply still came
-       about 40 ms apart when the focus read was slow, and that a refusal still answered at once. The wait now loops
-       against the monotonic clock until the deadline, sleeping the remainder, so a sleep that wakes early cannot end
-       it. A concealed success is unchanged: it ends once the match has held and its focus read passes, since
-       deferring every secret would slow every login to buy nothing the caller can see. A plain field's concealed
-       request is #354's and is not deferred. A literal request is unchanged.
-     - **What differs between concealed failures.** A held match whose focus read fails goes on as a tainted one: it
-       polls its batch to the budget, the time of that focus read added to the budget, then takes the final focus read
-       every failure takes, then waits for the deadline. Its AX trace is a lost match's with exactly one focus read
-       more, the one at the match. That is the one difference between those two failure kinds, and it is traffic
-       only the target app sees, which holds the secret already. The caller sees the same reason, content and time.
-     - **The deadline on a confirmation** (the review of f35a42b8..cbce12e2, P2; the review of cbce12e2..1f69470e, P2).
-       A read confirms only if it completes within the budget, and its window is timed from its start. A match taken
-       off the 5 ms grid, a late wake, or a reply that starts before the budget and returns after it, could otherwise
-       confirm past the budget; each is now unconfirmed (`lengthMismatch`), as a match too late to hold is, plain and
-       concealed.
+     - **The concealed timing, by construction** (the review of 1f69470e..f217f062, which found four ways the earlier
+       rounds' padding still leaked: (i) a focus read at a match moved the poll's start, (ii) a transient focus failure
+       latched the reason, (iii) a slow last batch pushed the final focus read past the deadline, (iv) the success
+       cutoff used a later origin than the padding). The earlier rounds (the review of f35a42b8..cbce12e2, P1; the
+       review of cbce12e2..1f69470e, P1 and P2) padded the reply to a deadline; this one makes the property hold by
+       construction, in five parts.
+       - **One origin, B: the last post.** Every time of the read-back counts from B, the instant the last key event
+         was posted successfully, the one `endedAt` stamps, taken on the read-back's monotonic clock in the post
+         closure `keyTextReadBack` passes. Nothing after it moves B: key-ups, the pauses, a settle, `finish()`'s own
+         work. Chrome for Testing's concealed negatives (all `lengthMismatch`) had answered 1105–1178 ms after the
+         last native post against a nominal 1100 ms (p50 1163 ms, 8 of 15 past 1150), because the deadline counted
+         from `finish()`'s start. From B, the poll's cutoff C = B + `typeReadbackBudgetMs` (1000 ms), which is also the
+         final focus read's start, and the reply deadline D = C + `typeReadbackFocusReadCapMs` (100 ms): 1100 ms.
+         `finish` takes B once and passes C and D down; nothing below takes its own start, so a focus read at a match
+         moves nothing (i), and success and failure share B (iv). A literal checkpoint keeps its own C from its start.
+       - **Bounded work** (iii). The timeout fact, corrected: every element has a 1 s AX messaging timeout
+         (`elementMessagingTimeout`), the read-back's own elements 100 ms (`typeReadbackMessagingTimeout`), and
+         neither bounds a read by a deadline. The read-back now bounds its own reads as paste does
+         (`boundedMessagingTimeout`, `effectReading`): under `ReadbackReads.bound`, an AX call is sent only with at
+         least `messagingTimeoutFloorMs` (50 ms) left to its limit, under a messaging timeout of the time left (100 ms
+         at most), the usual one put back after; a call not sent fails as a timeout does. A batch's limit is C, and
+         none starts with less than the floor left, so the last starts by 950 ms and finishes by C. The final focus
+         read starts at C, each AX call in it bounded by the time left to D; a focus check that cannot finish is
+         failed. A literal request's batches stop at the floor too: its failure ends at 950 ms.
+       - **The reason, from observations every failure makes** (ii; `readbackConcealedReason`). Every concealed path
+         ends in the same two observations: its final batch, and the final focus read at C, a closed read's path
+         included. A failed final focus read answers `fieldChanged`; otherwise a closed final batch gives its own
+         reason, an unreadable one (or none) `lengthUnreadable`, and any other `lengthMismatch`. A focus failure at a
+         match only taints the request. A snapshot refusal after posting keeps its own reason (`lengthUnreadable`,
+         `selectionUnreadable`, `noLongerSecure`, a held field's `roleUnreadable` and the rest) and answers at D.
+         `selectionChanged` posts nothing and stays immediate.
+       - **A fixed reply time, and `lateReply`.** Every concealed failure after posting waits until D against the
+         monotonic clock, sleeping the remainder, so an early wake cannot end it. If D has already passed when the
+         wait begins, a read overran its own timeout: the reply goes at once, and the secure record carries
+         `lateReply: true`, a fixed flag with no duration. A concealed success still ends early, once its match has
+         held and its focus read passes: deferring every secret would slow every login to buy nothing the caller can
+         see. A plain field's concealed request is #354's and is not deferred.
+       - **Success eligibility uses C.** A read counts toward a success only if it finished by C; its window is timed
+         from read starts. A match off the 5 ms grid, a late wake, or a batch that starts by 950 ms and returns after
+         C, is unconfirmed (`lengthMismatch`), as a match too late to hold is, plain and concealed.
+     - **What differs between concealed failures.** A held match whose focus read fails goes on as a tainted one.
+       Since C is absolute, the time of that focus read displaces the polls it overlaps (8 of them for a 40 ms read)
+       rather than extending the poll; then come the final focus read at C and the wait for D, as for every failure.
+       Its AX trace is a lost match's with the focus read at the match in and the displaced polls out. That traffic
+       reaches only the target app, which holds the secret already; the caller sees the same reason, content and time.
      - **An unavailable caret is no overshoot** (same review, P2). A range whose location is past `readbackLengthLimit`
        (an app's `{NSNotFound, 0}`) is never evidence of a read past the text, on either basis: it is judged as any
        read, and the poll goes on.
@@ -6051,8 +6069,8 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      - **The residuals.** An app that stalls longer than 220 ms between consuming its last two keys can still show a
        matching in-between reply for the whole window; AppKit's max gap of 448.5 ms shows such stalls exist. No
        read-back sees a change made after it returns, the same limit the plain path has for a value changed after its
-       confirmation. A concealed failure's final focus read slower than the 100 ms cap makes its reply come when the
-       read returns, past the deadline.
+       confirmation. An AX call that overruns its own messaging timeout can still bring a concealed failure's reply past
+       D; it is sent at once, flagged `lateReply`.
      - **The cost.** Each password-field confirmation, and each literal checkpoint, takes 220 ms and about 44 batches
        more. A literal failure ends sooner on a change or an overshoot. Every concealed failure into a password field
        takes about 1.1 s (the budget and the focus read's cap), a refusal included; its success does not wait.
@@ -6067,7 +6085,7 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
          window spans at least 220 ms. A literal request ends at the change; a concealed one polls the budget, and a
          change that comes back still never confirms. A closed reply in the window ends either kind's reads at once (a
          concealed request answers at the deadline); a failed count ends a literal request's.
-       - A match at 780 ms confirms at the budget's last read; one 5 ms later, or at the last read, is unconfirmed,
+       - A match at 730 ms confirms at the last batch (950 ms); one 5 ms later, or at the last batch, is unconfirmed,
          plain and concealed.
        - Overshoot ends a literal request's poll at the read past the text, by caret on both bases and by count from
          nothing selected; concealed, the same fields poll the budget, and over a selection such a count polls it too.
@@ -6081,18 +6099,32 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
        - From the review of f35a42b8..cbce12e2 (each failed before its fix): the reviewer's field, which takes the whole
          text, cuts it to four units 10 ms later and moves its focus, answers `fieldChanged` at the same time for a
          short and a long secret (then the budget, now the deadline); a concealed closed read mid-poll and a concealed
-         focus failure after a held match each end there, while a literal request's still end at once; an off-grid match (its read ending 1 ms past the last that holds) and a
-         late last wake are each unconfirmed, plain and concealed; and an `NSNotFound` caret beside the right count,
+         focus failure after a held match each end there, while a literal request's still end at once; an off-grid
+         match (its read ending 1 ms past the last that holds) and a late last wake are each unconfirmed, plain and concealed; and an `NSNotFound` caret beside the right count,
          then a right reply, confirms a literal request on both bases.
        - From the review of cbce12e2..1f69470e (each failed before its fix), with a focus read that takes 40 ms:
          every concealed failure kind (a held match then a moved focus, a lost match, a closed read, a failed count,
          and the refusals `lengthUnreadable`, `selectionUnreadable`, `fieldUnreadable` and a settle's `noLongerSecure`)
          answers at 1100 ms, with nothing read after a refusal or a closed read; TypeReadbackMarkerTests' held field's
-         `roleUnreadable` does too. The full ordered trace of a held match then a moved focus equals a lost match's with
-         one focus read inserted at the match. Every sleep woken early (at most 30 ms each) still waits to the deadline,
-         and a focus read 50 ms past the cap answers 50 ms past it. A confirming read that starts at 1000 ms and returns
-         at 1003 ms is unconfirmed, plain and concealed. A concealed success still ends at the window plus its focus
-         read. A mutant that waits with one sleep fails the early-wake test.
+         `roleUnreadable` does too. Every sleep woken early (at most 30 ms each) still waits to the deadline. A
+         concealed success still ends at the window plus its focus read. A mutant that waits with one sleep fails the
+         early-wake test. Wave 6 restated three of these: the held match's trace is a lost match's with the focus read
+         at the match in and the 8 polls it displaced out; a focus read slower than the cap now fails at its bound, at
+         the deadline, `fieldChanged`; and the confirming read past the cutoff starts at 950 ms and returns at 1001 ms.
+       - From the review of 1f69470e..f217f062 (each failed before its fix): one test per finding,
+         `testAFocusReadAtAMatchDoesNotMoveTheCutoff` (i), `testATransientFocusFailureDoesNotChooseTheReason` (ii),
+         `testASlowLastBatchCannotPushTheReplyPastTheDeadline` (iii), and
+         `testTheSuccessCutoffAndTheFailureDeadlineShareTheBoundary` (iv), which passes on the old code too, because
+         the stub spends no time between the old origins; `testTheDeadlineCountsFromTheLastPost` (posts costing 3 ms,
+         pauses after them of 0, 17 and 60 ms: a failure at the last post + 1100 ms, no batch past + 950 ms; it fails
+         with B taken at `finish()`'s start); and `testAReplyAfterTheDeadlineIsFlaggedLate`. The property test,
+         `testConcealedTimingAndReasonsHoldOverRandomCases`, seeded (0x414F217) and deterministic over 2000 cases,
+         draws a field's behaviour (no match, a held match, a match that comes and goes, a focus lost and regained or
+         lost, a read that closes), a secret's length, a selection, every read's cost within the timeout the engine
+         set on it (with forced overruns in about 1 case in 40), and each post's and pause's cost. Every failure
+         answers at the last post + 1100 ms, or later only with `lateReply` and only after an overrun; its reason is
+         the rule applied to the stub's own final batch and final focus read; every success held for the window, its
+         confirming read finished by C. A failure prints the seed and the case.
        - The schedule-identity test now also compares the uncollapsed number of reads and the poll's time, the
          window's included, and a drains-late run joins ruling 826's leak test.
        - Mutants: the count's overshoot unnarrowed fails the selection test; a window one read short fails the
@@ -6177,7 +6209,7 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   11. **The model's document**: agent-cursor.md's typing paragraph, the surface inventory's "Table 3 amendment
       (2026-11-18, #414, …)", the docs oracle and the core-documentation test byte for byte, and the README's secrets
       paragraph. The MCP surface names no password confirmation, so no pinned digest moves.
-  12. **Proof**: SecureTypeReadbackTests (38) run the live reads over a stub app whose password field holds plaintext,
+  12. **Proof**: SecureTypeReadbackTests (45) run the live reads over a stub app whose password field holds plaintext,
       answers it to any request, and reports distinctive counts and ranges. Ruling 826's leak test covers fifteen runs:
       - confirmations, plain, concealed and by the caret alone;
       - a dropped and an extra character, a caret elsewhere concealed and plain, a field that ignores a secret (its

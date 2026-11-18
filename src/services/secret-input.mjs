@@ -93,6 +93,10 @@ export const inputFailedUnentered = (what, label, kind) => new SecretInputError(
 const INTERVENED = {
   stillInteracting: 'the user is still interacting with the app; wait 5 seconds and retry',
   userChanged: 'the user changed the app; re-query its state (getAXState) before sending more actions',
+  // A changed app whose password field may now show the secret (secretMayShow): re-querying it would read the secret,
+  // and the intervention gate wants a fresh observation before a setValue, so the one instruction is the user's first
+  // (the review of f35a42b8..cbce12e2, P1).
+  userChangedMayShow: 'the user changed the app; ask the user to hide or clear the password field before re-querying the app\'s state, and before any setValue',
 };
 // Which of the two a runtime's message is, read from the sentence's fixed opening only; null for anything else.
 export function interventionKind(message) {
@@ -103,7 +107,9 @@ export function interventionKind(message) {
 }
 export function userIntervened(what, label, kind, unentered, mayShow = false) {
   const entered = kind !== 'stillInteracting' && !unentered;
-  return new SecretInputError('secret_input_failed', `${what} with secret "${label}" failed (userIntervened) after the secret was read: ${INTERVENED[kind]}; ${entered ? 'it may have been partly entered' : NOTHING_ENTERED}. ${entered && mayShow ? MAY_SHOW : ''}The runtime's error is withheld because it can contain the secret`);
+  const shows = entered && mayShow;
+  const instruction = shows && kind === 'userChanged' ? INTERVENED.userChangedMayShow : INTERVENED[kind];
+  return new SecretInputError('secret_input_failed', `${what} with secret "${label}" failed (userIntervened) after the secret was read: ${instruction}; ${entered ? 'it may have been partly entered' : NOTHING_ENTERED}. ${shows ? MAY_SHOW : ''}The runtime's error is withheld because it can contain the secret`);
 }
 
 // cua's native engine refused a concealed request before entering anything (its concealedInputUnavailable): a secret is

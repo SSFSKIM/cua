@@ -173,6 +173,7 @@ test('#414: a concealed type_text whose password field stopped being one warns, 
   const posted = {...NOTHING_POSTED, inputRoute: "2'", startedAt: 1000, endedAt: 1042};
   const record = reason => ({confirmed: false, reason, secure: true, concealed: true, snapshotMs: 1.5});
   const changed = 'Computer Use server error -10016: The user changed \'/Applications/Safari.app\'. Re-query the latest state with `get_app_state` before sending more actions.';
+  const hideFirst = 'the user changed the app; ask the user to hide or clear the password field before re-querying the app\'s state, and before any setValue;';
   const cases = [
     {label: 'noLongerSecure', name: 'typeUnconfirmed', meta: {...posted, typeReadback: record('noLongerSecure')}, warned: true},
     {label: 'noLongerSecure, then the user changed the app', name: 'userIntervened', message: changed, meta: {...posted, typeReadback: record('noLongerSecure')}, warned: true},
@@ -190,6 +191,12 @@ test('#414: a concealed type_text whose password field stopped being one warns, 
     assert.equal(error.code, 'secret_input_failed', label);
     assert.match(error.message, new RegExp(`failed \\(${name}\\)`), label);
     assert.equal(error.message.includes(warning), warned, label);
+    if (name === 'userIntervened') {
+      // The review of f35a42b8..cbce12e2 (P1): a field that may show the secret is never re-queried first; the one
+      // instruction is to have the user hide or clear it. Without the warning, the re-query instruction stays.
+      assert.equal(error.message.includes('re-query its state (getAXState)'), !warned, label);
+      assert.equal(error.message.includes(hideFirst), warned, label);
+    }
     assert.doesNotMatch(error.message, /native-only-sentence|turned into|Safari|noLongerSecure|lengthMismatch|lengthUnreadable/, `${label}: nothing of the native error or the reason`);
     assert.match(error.message, /The runtime's error is withheld because it can contain the secret \[secret_input_failed\]$/, label);
     assertValueFree(error);

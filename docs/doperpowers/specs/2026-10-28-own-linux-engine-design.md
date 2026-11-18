@@ -2414,6 +2414,35 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
   - **The lease.** Not extended yet: about 40–53 hours of arm work are left, against about 108 hours.
   Date/Author: 2026-11-18, the plan-executor (session linux171), recording the design session's message 827 on task 98's note.
 
+- Decision (2026-11-18, M5, the engine cut to 0.4.1 and the frozen head H⁗ = 3b5c0441, with the design session's rulings 825 and 828–847): the head on which the arm64 run's remaining steps and x64's reruns run. ci-gate on H⁗: GREEN 8/8, run 44394454677.
+  - **linux-engine-v0.4.1 (task 101; rulings 827, 829, 835, 837, 845, 846).**
+    - The settle (option B) is released from the reviewed head 7522dcb8. Run 44380699966. The SHA256SUMS are x64 `c432c8c2bc4f905b32a171f439bd5e500724b8ff7f8f961f64a34437d9241626` and arm64 `8850abcb00d6ee47c72ff102e71cac1578bc7c5bccf7249104493a17242efaa0`, the same as the publish=false build of that commit. The design session checked the tag, the digests and the attestation (846).
+    - Ruling 829, the second rest: the 150 ms bound runs from the first ping. When a full second rest doesn't fit, it is skipped and the answer is B's.
+    - Ruling 835: Chrome's activation keeps its precedence over an Electron source's failed settle. That case is recorded only in `--stats` (837): per drag as `settle_failed_activation_confirmed`, and cumulatively. A note the model sees is #418.
+    - Every orderly exit stats line carries `settle_final: true` and `drop_settles`, after shutdown releases. `exit_settle` appears only when an exit settle ran. The fix waves after the measured candidate ac8d86a6 change only telemetry, shown by the review and by 845's wire proof (592 X request lines byte-identical).
+    - Measured on ac8d86a6, `--pilot 100`, 560 drags each: arm64 L4a at twice the load, arm64 H1, and x64 L4a. 0 false oks, 0 plain non-landings, no unanswered sync. The sync waits were p50/p95/max 2.6/8.6/90.0 ms, 1.1/1.5/14.5 and 2.5/7.7/70.3. In the stalled-app case (t101-stall), 10 of 10 drags on each VM were unanswered, with the notice and the refusal, and none answered ok.
+    - Pinned with `MIN_ENGINE_VERSION` 0.4.1 (task 104, a4d88faf). A 0.4.0 engine is refused before anything is sent.
+  - **L4a's residue (task 102; rulings 827 3b, 830, 838).**
+    - In t17-fix3's plain cell at twice the load only, up to floor(2·n/100) honest unconfirmed non-landings are allowed per lane. Honest means stamped evidence, a successful dispatch with the kept notice, unchanged zone counters, and this trial's dragend reporting no drop.
+    - Zero false oks is absolute.
+    - Ruling 830: zone-truth mismatches (an ok, dragend copy, the zone unchanged) are listed apart per cell in every run, as an app-level limit. In the plain cell, a mismatch still fails as a missing landing.
+    - Ruling 838: H2's root cells count their unverified ends by answer. A nonzero ok count is a finding for the design session.
+  - **The settle counter (task 103; rulings 832, 834, 843).**
+    - `--stats` changes engine behaviour, so it stays off wherever it is off today. The opt-in `--engine-stats` is refused on counted runs.
+    - `settle-counts.json` and `settle-check.mjs` read whatever stats a run already has. A zero is final only on the engine's `settle_final` exit line. Anything else reads unknown, never "not taken".
+    - Static exclusions are argued from both ends, the engine's settle condition and each step's plan. They cover the steps outside engine.mjs and V3–V5's audit drags (843).
+  - **V5's no-take sample (task 100; rulings 823, 825, 831, 836, 841, 844, 847).**
+    - The automated refill is gone (route D, 841). The judge alone excludes a proven premise-unmet sample, counts it and reports its rate. Each exclusion is bound one to one to its run's evidence and checked against the recorded plan. A short cell reads `incomplete`, which is a FAIL.
+    - A V5 short only by proven no-takes is rerun whole under §8.2, at most twice. The controller decides, after checking each excluded sample's row, sidecar line and page record by hand, and records the cause read and sends it to the design session. Every run's verdict stands alone and is reported side by side (836).
+    - Ruling 844 ended the review loop: a finding blocks only if it can turn a FAIL into a PASS.
+    - Ruling 847: **replays of V5's premise cells are diagnostic only and are never cited as a pass.** V5's release verdict at H⁗ comes only from a live run on each architecture.
+  - **The reach under §8.2 (827, 828).**
+    - Class A reruns at H⁗ on both architectures: H1, H2, L4a, D2, L2b, L1, S1, L3b, with D1 as the cross-check.
+    - Class-B steps stand; their next runs record the settle counter. A class-B idle step that ran on 0.4.0 gets its counter from an uncounted pilot-form run at its counted load on both architectures (828c). A step whose counter shows the branch ran reruns as class A.
+    - x64: one `:0` sitting folds together V1–V5, Z0 and the class-B `:0` steps, with a conditional V5 slot of 2 × 60 min (823.3, 831). E1 also reruns, because H‴ reached it.
+    - arm64: T7's private idle steps stand at H‴ on 0.4.0, apart from class A. Its sitting, the twice-load block and the unjudged passes run at H⁗.
+  Date/Author: 2026-11-18, the plan-executor (session linux171), from tasks 100–104 and the design session's rulings 825–847.
+
 ## Outcomes & Retrospective
 
 Written per milestone as each lands; the whole-plan retrospective at finish. The execution record (tasks, reviews, friction) is `docs/doperpowers/specs/2026-10-28-own-linux-engine-report.md`.

@@ -77,7 +77,7 @@ function ask(q) {
 }
 async function front(pid) {
   const r=await ask({op:'front',pid});
-  if (r.frontmostPid!==pid) throw Error('frontmost owned app not verified');
+  if (r.frontmostPid!==pid) throw Error(`frontmost owned app not verified (${pid}, ${JSON.stringify(r)})`);
 }
 let seed={trial:0,value:'',large:false}, pageId, ack, state, checkpoints=0;
 const requests={};
@@ -137,10 +137,17 @@ async function launch() {
     config.version=plistVersion(bundle);
     app=spawnOwned(bin,['--user-data-dir='+join(home,'profile'),'--no-first-run','--no-default-browser-check','--disable-search-engine-choice-screen','--disable-features=Translate','--lang=en-US','--window-position=0,25','--window-size=650,700',url],{HOME:process.env.HOME});
     pid=app.pid;
-    config.startup={polls:0};
-    await until('CfT owned window ready',async()=>{const r=await ask({op:'status',pid});config.startup={polls:config.startup.polls+1,last:r};return r.registered&&r.finishedLaunching&&r.windowCount>0;},60000);
   } else throw Error('unknown lane');
   config.pid=pid;
+  if (browser==='cft'||browser==='firefox') {
+    config.startup={polls:0};
+    await until(`${browser} owned window ready`,async()=>{
+      const r=await ask({op:'status',pid});
+      config.startup={polls:config.startup.polls+1,last:r,ownedPageAck:ack?.trial===0};
+      // Direct Firefox launch can return before NSRunningApplication accepts activation, even while the page loads.
+      return r.registered&&r.finishedLaunching&&r.windowCount>0&&(browser!=='firefox'||config.startup.ownedPageAck);
+    },60000);
+  }
   await front(pid);
   if (!isAppKit) await until('initial owned page',()=>ack && state?.focused,45000);
   config.enablement=await ask({op:'enable',pid});

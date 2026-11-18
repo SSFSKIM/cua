@@ -6,12 +6,12 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'Smoke uses CfT and AppKit; full uses all six lanes; settle-tail repeats only the AppKit reused settle'
+        description: 'Choose the smoke, six-lane full matrix, AppKit settle tail, or Firefox-only follow-up'
         type: choice
-        options: [smoke, full, settle-tail]
+        options: [smoke, full, settle-tail, firefox]
         default: smoke
       fix_ref:
-        description: 'Exact approved 40-hex fix SHA; required for full and settle-tail'
+        description: 'Exact approved 40-hex fix SHA; required outside smoke'
         type: string
 permissions:
   contents: read
@@ -30,7 +30,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        browser: ${{ fromJSON(inputs.mode == 'settle-tail' && '["appkit"]' || inputs.mode == 'full' && '["cft","electron","electron-parity","safari","firefox","appkit"]' || '["cft","appkit"]') }}
+        browser: ${{ fromJSON(inputs.mode == 'settle-tail' && '["appkit"]' || inputs.mode == 'firefox' && '["firefox"]' || inputs.mode == 'full' && '["cft","electron","electron-parity","safari","firefox","appkit"]' || '["cft","appkit"]') }}
     env:
       BROWSER: ${{ matrix.browser }}
     steps:
@@ -47,7 +47,7 @@ jobs:
           set -euo pipefail
           fix_ref="$FIX_INPUT"
           if [[ "$MODE" == smoke && -z "$fix_ref" ]]; then fix_ref="$SMOKE_REF"; fi
-          [[ "$fix_ref" =~ ^[0-9a-f]{40}$ ]] || { echo 'Explicit exact fix_ref required for full and settle-tail'; exit 1; }
+          [[ "$fix_ref" =~ ^[0-9a-f]{40}$ ]] || { echo 'Explicit exact fix_ref required outside smoke'; exit 1; }
           test "$(git rev-parse "$fix_ref^{commit}")" = "$fix_ref"
           test "$(git rev-parse "$MAIN_REF^{commit}")" = "$MAIN_REF"
           git merge-base --is-ancestor "$MAIN_REF" "$fix_ref"

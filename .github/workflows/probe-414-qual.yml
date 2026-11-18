@@ -16,7 +16,7 @@ on:
       mode:
         description: Stock qualification, scratch drain timing, or a targeted provider diagnostic
         type: choice
-        options: [smoke, full, reduced, deadline, drain, firefox-focus, firefox-single, appkit-race, unicode]
+        options: [smoke, full, reduced, deadline, deadline-controls, drain, firefox-focus, firefox-single, appkit-race, unicode]
         default: smoke
       firefox:
         description: Coverage selection for full/drain; omit Firefox if its one background setup retry fails
@@ -46,7 +46,7 @@ jobs:
       fail-fast: false
       matrix:
         include: >-
-          ${{ fromJSON(inputs.mode == 'deadline' && '[{"lane":"cft","phase":"stock"},{"lane":"electron","phase":"stock"},{"lane":"electron-parity","phase":"stock"},{"lane":"safari","phase":"stock"},{"lane":"appkit","phase":"stock"}]' ||
+          ${{ fromJSON(startsWith(inputs.mode, 'deadline') && '[{"lane":"cft","phase":"stock"},{"lane":"electron","phase":"stock"},{"lane":"electron-parity","phase":"stock"},{"lane":"safari","phase":"stock"},{"lane":"appkit","phase":"stock"}]' ||
           inputs.mode == 'reduced' && '[{"lane":"cft","phase":"stock"},{"lane":"electron","phase":"stock"},{"lane":"electron-parity","phase":"stock"},{"lane":"safari","phase":"stock"},{"lane":"appkit","phase":"stock"},{"lane":"cft","phase":"audit"},{"lane":"appkit","phase":"audit"}]' ||
           inputs.mode == 'unicode' && '[{"lane":"cft","phase":"stock"}]' ||
           (inputs.mode == 'firefox-focus' || inputs.mode == 'firefox-single') &&
@@ -88,7 +88,7 @@ jobs:
           sw_vers
           node --test scripts/probe-414/*.test.mjs
           heads=(main fix)
-          if [[ "$PHASE" == audit || "$PHASE" == drain || "$MODE" == appkit-race ]]; then heads=(fix); fi
+          if [[ "$PHASE" == audit || "$PHASE" == drain || "$MODE" == appkit-race || "$MODE" == deadline-controls ]]; then heads=(fix); fi
           for head in "${heads[@]}"; do
             pin="$MAIN_SHA"
             if [[ "$head" == fix ]]; then pin="$FIX_SHA"; fi
@@ -176,7 +176,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/q414-evidence"
           printf '%s\n' '{"publishable":false,"abort":"build-or-provisioning-setup"}' > "$RUNNER_TEMP/q414-evidence/status.json"
       - name: Check the concealment timing proof in the exact candidate stub
-        if: ${{ !cancelled() && matrix.lane == 'cft' && ((inputs.mode == 'reduced' && matrix.phase == 'audit') || (inputs.mode == 'deadline' && matrix.phase == 'stock')) }}
+        if: ${{ !cancelled() && matrix.lane == 'cft' && ((inputs.mode == 'reduced' && matrix.phase == 'audit') || (startsWith(inputs.mode, 'deadline') && matrix.phase == 'stock')) }}
         shell: bash
         run: |
           set -euo pipefail
@@ -188,7 +188,7 @@ jobs:
           git worktree add --detach "$dir" "$FIX_SHA"
           test "$(git -C "$dir" rev-parse HEAD)" = "$FIX_SHA"
           test -z "$(git -C "$dir" status --porcelain)"
-          if [[ "$MODE" == deadline ]]; then
+          if [[ "$MODE" == deadline* ]]; then
             tests=(testConcealedTimingAndReasonsHoldOverRandomCases)
           else
             tests=(testAHeldMatchWhoseFocusFailsReadsAsALostMatchWithOneFocusReadMore testEveryConcealedFailureAfterPostingAnswersAtOneDeadline)

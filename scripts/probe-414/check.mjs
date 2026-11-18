@@ -32,8 +32,9 @@ export function plan(smoke,{selection=true,audit=false}={}){
 // splits concealed controls by input class. Both keep 10 literal adds and 5 literal drops. No rewrite or Unicode.
 export const REDUCED_LANES=['cft','electron','electron-parity','safari','appkit'];
 export const SNAPSHOT_REFUSAL_LABEL='appkit-selection-snapshot-refusal';
+export const isDeadlineMode=mode=>mode==='deadline'||mode==='deadline-controls';
 export function reducedPlan(lane,{mode='reduced'}={}){
-  const rows=[],deadline=mode==='deadline';
+  const rows=[],deadline=isDeadlineMode(mode);
   for(let rep=0;rep<20;rep++){
     [['short',0,10],['long',1,10],['literal',3,deadline?0:5]].forEach(([kind,i,n])=>{
       if(rep>=n)return;
@@ -51,7 +52,7 @@ export function reducedPlan(lane,{mode='reduced'}={}){
       if(rep<10)rows.push({head:'fix',kind:'add',rep:20+rep,literal:true});
     }
   }
-  return rows;
+  return mode==='deadline-controls'?rows.filter(r=>r.literal===false||r.label===SNAPSHOT_REFUSAL_LABEL):rows;
 }
 
 // The reduced AppKit selection row is an explicit snapshot-refusal test, never an optional success: both readbacks must agree on an
@@ -222,7 +223,7 @@ export const drainSizingOk=(summary,recorded)=>recorded===summary.planned&&summa
 // profile used 999..1100 ms and excluded snapshot refusals. Both reduced profiles include posted snapshot refusals and
 // allow 50 ms for IPC after a nominal 1100 ms deadline. The deadline profile separately rejects any lateReply flag.
 export const REDUCED_PAD_MS=1100, REDUCED_OVERHEAD_MS=50;
-export const budgetProfile=mode=>['reduced','deadline'].includes(mode)?{name:mode,minMs:REDUCED_PAD_MS-1,maxMs:REDUCED_PAD_MS+REDUCED_OVERHEAD_MS,snapshotBudgeted:true}:
+export const budgetProfile=mode=>mode==='reduced'||isDeadlineMode(mode)?{name:mode,minMs:REDUCED_PAD_MS-1,maxMs:REDUCED_PAD_MS+REDUCED_OVERHEAD_MS,snapshotBudgeted:true}:
   {name:'legacy',minMs:999,maxMs:1100,snapshotBudgeted:false};
 export function concealedFailureTiming({head,lane,kind,literal,action,raw,startedAt,endedAt,replyAt,mode='full',lateReply=lateReplyPresent(raw)}){
   if(head!=='fix'||literal||action!=='typeUnconfirmed'||raw?.confirmed!==false||raw?.concealed!==true||raw?.secure!==true)return null;
@@ -233,7 +234,7 @@ export function concealedFailureTiming({head,lane,kind,literal,action,raw,starte
   const fromLastPostMs=interval(endedAt),fromFirstPostMs=interval(startedAt);
   const budgeted=phase==='after-input'||phase==='snapshot-refused'&&profile.snapshotBudgeted;
   return {phase,fromLastPostMs,fromFirstPostMs,
-    withinBudget:budgeted?(fromLastPostMs!==null&&fromLastPostMs>=profile.minMs&&fromLastPostMs<=profile.maxMs&&!(mode==='deadline'&&lateReply)):null};
+    withinBudget:budgeted?(fromLastPostMs!==null&&fromLastPostMs>=profile.minMs&&fromLastPostMs<=profile.maxMs&&!(isDeadlineMode(mode)&&lateReply)):null};
 }
 // A lateReply flag is a public deadline diagnostic, not a field value; the deadline gate still rejects its presence.
 export function lateReplyPresent(...surfaces){
@@ -247,7 +248,7 @@ export function reducedBudgetCoverage(lane,rows,mode='reduced'){
   const timed=rows.filter(r=>r.valid&&r.head==='fix'&&r.concealedFailure);
   const afterInput=timed.filter(r=>['add','drop'].includes(r.kind)&&r.literal!==true&&r.concealedFailure.phase==='after-input').length;
   const snapshot=timed.filter(r=>r.label===SNAPSHOT_REFUSAL_LABEL&&r.concealedFailure.phase==='snapshot-refused').length;
-  const expected={afterInput:mode==='deadline'?30:REDUCED_EXPECTED.afterInput,snapshot:REDUCED_EXPECTED.snapshot(lane)};
+  const expected={afterInput:isDeadlineMode(mode)?30:REDUCED_EXPECTED.afterInput,snapshot:REDUCED_EXPECTED.snapshot(lane)};
   return {expected,afterInput,snapshot,ok:afterInput===expected.afterInput&&snapshot===expected.snapshot};
 }
 // Fixed cohorts: measure concealed negatives from their shared post-typing origin, never include literal or snapshot controls.
@@ -255,7 +256,7 @@ export function failureDistributions(rows,mode){
   const groups={};
   for(const kind of negative)for(const size of ['short','long']){
     const values=rows.filter(r=>r.valid&&r.head==='fix'&&r.kind===kind&&r.literal!==true&&
-      (mode==='deadline'?r.inputClass:r.inputClass??'short')===size&&r.concealedFailure?.phase==='after-input')
+      (isDeadlineMode(mode)?r.inputClass:r.inputClass??'short')===size&&r.concealedFailure?.phase==='after-input')
       .map(r=>r.concealedFailure.fromLastPostMs).filter(Number.isFinite).sort((a,b)=>a-b);
     const n=values.length,mid=Math.floor(n/2);
     groups[`${kind}-${size}`]={n,min:values[0]??null,p50:n===0?null:n%2===1?values[mid]:(values[mid-1]+values[mid])/2,
@@ -268,7 +269,7 @@ export function failureDistributions(rows,mode){
   }));
   const medians=Object.values(groups).map(g=>g.p50),spreadMs=medians.every(Number.isFinite)?Math.max(...medians)-Math.min(...medians):null;
   const pass=Object.values(pairs).every(p=>p.complete&&p.overlap)&&spreadMs!==null&&spreadMs<=10;
-  return {groups,pairs,spreadMs,pass:mode==='deadline'?pass:null};
+  return {groups,pairs,spreadMs,pass:isDeadlineMode(mode)?pass:null};
 }
 
 // Output-only diagnosis of a baseline readback that the strict privacy scan flags (zero pollMs/reads counters). It grants no

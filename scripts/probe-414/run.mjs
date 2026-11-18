@@ -6,7 +6,7 @@ import {pathToFileURL} from 'node:url';
 import {execFileSync} from 'node:child_process';
 import {Wire} from '../probe-366/wire.mjs';
 import {owned,stop,startPlatform,pause,environment} from './platform.mjs';
-import {plan,score,inspect,auditSchedule,auditPairs,summarize,coded,noteAttested,firefoxDisclosure,drainIntervals,terminalEditAtMs,drainIneligible,drainSummary,drainSizingOk,runShape,setupLabel,focusAllowed,concealedFailureTiming,drainStats,reducedPlan,REDUCED_LANES,SNAPSHOT_REFUSAL_LABEL,budgetProfile,readbackProfile,legacyBaselineCase,legacyBaselineTally,reducedBudgetCoverage,lateReplyPresent,failureDistributions} from './check.mjs';
+import {plan,score,inspect,auditSchedule,auditPairs,summarize,coded,noteAttested,firefoxDisclosure,drainIntervals,terminalEditAtMs,drainIneligible,drainSummary,drainSizingOk,runShape,setupLabel,focusAllowed,concealedFailureTiming,drainStats,reducedPlan,REDUCED_LANES,SNAPSHOT_REFUSAL_LABEL,budgetProfile,readbackProfile,legacyBaselineCase,legacyBaselineTally,reducedBudgetCoverage,lateReplyPresent,failureDistributions,isDeadlineMode} from './check.mjs';
 
 const SLOT='PROBE414', safeReasons=new Set(['secure','noFocusedElement','roleUnreadable','notTextField','valueUnreadable','rangeUnreadable',
   'fieldUnreadable','fieldChanged','becameSecure','selectionChanged','concealedMismatch','valueMismatch','unchanged','possiblyTruncated',
@@ -174,13 +174,14 @@ async function startEngine({name,src,bin,root,platform,audit,focus,drain,globalP
 async function main(){
   const [lane,mode,phase,root,out,helper,cover,appkit,mainSrc,mainBin,fixSrc,fixBin]=process.argv.slice(2);
   if(process.env.RUNNER_ENVIRONMENT!=='github-hosted')throw Error('hosted runners only');
-  if(!['cft','electron','electron-parity','safari','firefox','appkit'].includes(lane)||!['smoke','full','firefox-focus','firefox-single','appkit-race','drain','unicode','reduced','deadline'].includes(mode)||!['stock','audit','focus','drain'].includes(phase))throw Error('invalid lane');
-  const audit=phase==='audit',smoke=mode==='smoke',focus=phase==='focus',drain=phase==='drain',race=mode==='appkit-race',deadline=mode==='deadline',reduced=mode==='reduced'||deadline,diagnostic=mode.startsWith('firefox-');
+  const deadline=isDeadlineMode(mode),controlsOnly=mode==='deadline-controls';
+  if(!['cft','electron','electron-parity','safari','firefox','appkit'].includes(lane)||!deadline&&!['smoke','full','firefox-focus','firefox-single','appkit-race','drain','unicode','reduced'].includes(mode)||!['stock','audit','focus','drain'].includes(phase))throw Error('invalid lane');
+  const audit=phase==='audit',smoke=mode==='smoke',focus=phase==='focus',drain=phase==='drain',race=mode==='appkit-race',reduced=mode==='reduced'||deadline,diagnostic=mode.startsWith('firefox-');
   const {singlePassword,setupCanary,requireBackground}=runShape(lane,mode);
   // The focus scratch job of smoke runs the same short/literal pairs as the diagnostics, on the password-only page, without a canary.
   const miniPlan=diagnostic||smoke&&focusAllowed(lane,mode,phase);
   if(diagnostic?(lane!=='firefox'||audit||drain):focus&&!miniPlan)throw Error('invalid focus lane');
-  if(reduced&&(!REDUCED_LANES.includes(lane)||focus||drain))throw Error('invalid reduced lane');
+  if(reduced&&(!REDUCED_LANES.includes(lane)||focus||drain||deadline&&phase!=='stock'))throw Error('invalid reduced lane');
   mkdirSync(out,{recursive:true});const tmp=mkdtempSync(join(root,'q414-')),home=join(tmp,'platform');mkdirSync(home);
   const rows=[],legacyCases=[],schedules=[],firefoxFacts=[],timings=[],globalPrivacy=new Set(),engines={};let platform,capabilities=null,stage='launch',abort=null,abortStep=null,streak=0;
   const additions=Array.from({length:20},(_,rep)=>({head:'fix',kind:'add',rep,literal:rep%2===1}));
@@ -210,7 +211,7 @@ async function main(){
     Object.assign(config,{version:platform.version,presentation:platform.presentation,foregroundFallback:platform.fallback});
     if(lane==='appkit')capabilities=await platform.appkitCapabilities();
     stage='engine-start';
-    const sources=audit||drain||race?{fix:[fixSrc,fixBin]}:{main:[mainSrc,mainBin],fix:[fixSrc,fixBin]};
+    const sources=audit||drain||race||controlsOnly?{fix:[fixSrc,fixBin]}:{main:[mainSrc,mainBin],fix:[fixSrc,fixBin]};
     for(const [name,[src,bin]] of Object.entries(sources))engines[name]=await startEngine({name,src,bin,root:tmp,platform,audit,focus,drain,globalPrivacy,lane,mode});
     let trial=0;
     for(const c of cells){

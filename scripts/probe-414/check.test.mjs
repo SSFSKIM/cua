@@ -452,6 +452,23 @@ test('deadline plan retains paired concealed positives and independent short/lon
     assert.equal(rows.filter(r=>r.head==='fix'&&r.kind==='selection'&&r.label===SNAPSHOT_REFUSAL_LABEL).length,lane==='appkit'?5:0);
   }
 });
+test('deadline-controls runs only the balanced concealed controls and keeps the deadline gates',()=>{
+  const mode='deadline-controls';
+  for(const lane of REDUCED_LANES){
+    const rows=reducedPlan(lane,{mode});
+    assert.equal(rows.length,lane==='appkit'?35:30);
+    assert.deepEqual(rows,reducedPlan(lane,{mode:'deadline'}).filter(r=>r.literal===false||r.label===SNAPSHOT_REFUSAL_LABEL));
+    const timed=rows.map(r=>({...r,valid:true,concealedFailure:{phase:r.label?'snapshot-refused':'after-input',fromLastPostMs:1101}}));
+    assert.equal(reducedBudgetCoverage(lane,timed,mode).ok,true);
+    assert.equal(reducedBudgetCoverage(lane,timed.slice(1),mode).ok,false);
+    assert.equal(failureDistributions(timed,mode).pass,true);
+  }
+  const raw={confirmed:false,concealed:true,secure:true,reason:'lengthMismatch'};
+  const wait={head:'fix',lane:'cft',kind:'add',literal:false,action:'typeUnconfirmed',startedAt:1000,endedAt:1040,replyAt:2141,mode,raw};
+  assert.equal(concealedFailureTiming(wait).withinBudget,true);
+  assert.equal(concealedFailureTiming({...wait,lateReply:true}).withinBudget,false);
+  assert.equal(concealedFailureTiming({...wait,replyAt:2140-2}).withinBudget,false);
+});
 test('selection control is excluded from the head comparison but scored like any row',()=>{
   const sel={...row({kind:'selection',lane:'appkit',raw:{confirmed:false,secure:true,reason:'lengthUnreadable',snapshotMs:2}}),head:'fix',kind:'selection',label:SNAPSHOT_REFUSAL_LABEL};
   const s=summarize([sel,{...row(),head:'fix',kind:'short'}]);

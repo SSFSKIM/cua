@@ -246,6 +246,10 @@ export const LANES = {
   // each drag as a drag_handle on the desktop route: a start at the path's first point, a move to each later one, the
   // end (M4's T17 fix wave: Electron's drop confirmed by its drag loop's accept cursor at the release)
   'cua:handle': { args: [], handle: true },
+  // M5's task 98 (L4a's false ok): the same handle with the release unsettled, as linux-engine-v0.4.0 judged it
+  // (`--drop-no-settle`, measurement only), and the plain drag likewise, beside the settled engine in one sitting
+  'cua:handle-unsettled': { args: ['--drop-no-settle'], handle: true },
+  'cua:unsettled': { args: ['--drop-no-settle'] },
   // each drag on the desktop route: no window named, the path in screen coordinates (T17's second fix wave: the drag
   // loop's cursor watched by the source's family, wherever the path ends)
   'cua:desktop': { args: [], desktop: true },
@@ -364,6 +368,29 @@ export const PLANS = {
   't17-moved': [['cua:desktop', 'moved', 30]],
   // 60 cold first-handle drags into the hung sink, each a fresh engine's first: the design session's count for #365 (2026-11-12)
   't17-slow-cold': Array.from({ length: 60 }, () => ['cua:handle', 'slow', 1]),
+  // M5's task 98 (L4a's false ok on arm64: 2 of 4 cold handles at twice the load answered ok outside the zone): every
+  // drag a fresh engine's first (`cold`), the settled engine and the unsettled one taking turns, so both meet the same
+  // load: the accepted-then-left control and the short drop 100 each a lane, the press inside the zone 50.
+  // `t98-cold-shipped`: the same cells on one lane, for an engine without the flag (linux-engine-v0.4.0 itself).
+  // `t98-cold-drag`: the plain drag's cells the same way, behind the floor
+  't98-cold': Array.from({ length: 100 }, (_, k) => [
+    ['cua:handle', 'left', 1], ['cua:handle-unsettled', 'left', 1], ['cua:handle', 'plain', 1], ['cua:handle-unsettled', 'plain', 1],
+    ...(k % 2 === 0 ? [['cua:handle', 'inzone-out', 1], ['cua:handle-unsettled', 'inzone-out', 1]] : []),
+  ]).flat(),
+  't98-cold-shipped': Array.from({ length: 100 }, (_, k) => [
+    ['cua:handle', 'left', 1], ['cua:handle', 'plain', 1], ...(k % 2 === 0 ? [['cua:handle', 'inzone-out', 1]] : []),
+  ]).flat(),
+  't98-cold-drag': Array.from({ length: 60 }, () => [
+    ['cua', 'left', 1], ['cua:unsettled', 'left', 1], ['cua', 'plain', 1], ['cua:unsettled', 'plain', 1],
+  ]).flat(),
+  // the gate's own plan with the unsettled lanes beside the settled ones (`t17-fix3` is L4a's and H1's)
+  't98-fix3': [
+    ['cua', 'plain', 100], ['cua', 'left', 30], ['cua', 'inzone-out', 30],
+    ...['root', 'xterm', 'other', 'slow'].map((cell) => ['cua:desktop', cell, 30]),
+    ['cua:handle', 'plain', 100], ['cua:handle', 'left', 30], ['cua:handle', 'inzone-out', 30],
+    ...['root', 'xterm', 'other', 'slow'].map((cell) => ['cua:handle', cell, 30]),
+    ['cua:handle-unsettled', 'plain', 100], ['cua:handle-unsettled', 'left', 30], ['cua:handle-unsettled', 'inzone-out', 30],
+  ],
   pilot: [
     ...['plain', 'nozone', 'nested', 'slider', 'dragstart-150', 'press-150', 'dragstart-400', 'press-400', 'freeze-250', 'link', 'image', 'seltext', 'select', 'range', 'scroller', 'canvas', 'inert'].map((cell) => ['cua', cell, 2]),
     ['cua:accept', 'plain', 5],

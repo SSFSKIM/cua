@@ -106,6 +106,11 @@ pub struct Config {
     /// How long a held `drag_handle` may go with no request of its own before the engine releases it where it is
     /// (`handle::HANDLE_IDLE`; `--drag-handle-idle-ms` sets another, for the live tests).
     pub handle_idle: std::time::Duration,
+    /// Whether an Electron source's drop is settled before its release (`drop_cursor::settled`, M5's task 98): the
+    /// application asked where it has got to before the release's last rest and after its last motion, and its accept
+    /// counted only when it answered both. Off (`--drop-no-settle`, measurement only) the release goes out unasked and
+    /// the accept is judged as `linux-engine-v0.4.0` judged it, which answered ok for releases outside the drop zone.
+    pub drop_settle: bool,
 }
 
 pub struct Engine {

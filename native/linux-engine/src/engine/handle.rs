@@ -492,7 +492,7 @@ impl Engine {
                         .family_of(window)
                         .is_some_and(|f| crate::families::confirms_drop_by_cursor(f.name))
                     {
-                        handle.cursor = Some(DropCursor::start().map_err(|e| format!("{e:#}")));
+                        handle.cursor = Some(DropCursor::start_for(Some(window)).map_err(|e| format!("{e:#}")));
                     }
                 }
             }
@@ -566,6 +566,17 @@ impl Engine {
     /// request put it, else success.
     fn release_handle(&mut self, mut handle: Handle) -> Released {
         let pacing = handle.pacing;
+        // an Electron source whose drag and drop has begun: its application asked where it has got to before the rest,
+        // and again after the visit that follows it (`drop_cursor::settled`), each waited for at most
+        // `drop_cursor::SYNC_BOUND`. A drag loop that runs behind the pointer is waited for here, so the rest is the
+        // page's to answer the pointer's last place, and the release reaches a loop that holds that answer
+        let settling =
+            self.cfg.drop_settle && handle.pressed && matches!(&handle.cursor, Some(Ok(cursor)) if cursor.take_seen());
+        let sync = |handle: &mut Handle| match (settling, handle.cursor.as_mut()) {
+            (true, Some(Ok(cursor))) => Some(cursor.sync(crate::drop_cursor::SYNC_BOUND)),
+            _ => None,
+        };
+        let before_rest = sync(&mut handle);
         if !pacing.held_rest.is_zero() {
             std::thread::sleep(pacing.held_rest);
         }
@@ -580,6 +591,7 @@ impl Engine {
         };
         crate::desktop::handle_hooks::during_dwell();
         std::thread::sleep(pacing.release);
+        let after_motion = sync(&mut handle);
         let held = handle
             .holding
             .as_mut()
@@ -650,11 +662,34 @@ impl Engine {
         // the pointer came into it: Chromium keeps its last status's accept when the path leaves for one that does not
         // (the bare root, an xterm), or for one that has not answered yet, and drops nowhere (the design session's
         // ruling, 2026-11-11; the third review, P2)
+        // and only one the application had settled on: it answered before the rest and after the last motion, the
+        // pointer at rest between (M5's task 98: an accept read while the drag loop ran behind the pointer answered ok
+        // for a release outside the zone)
+        let settled = match (&cursor_read, before_rest, after_motion) {
+            (Some(read), Some(before), Some(after)) => {
+                Some(crate::drop_cursor::settled(&read.steps, before, after, true))
+            }
+            _ => None,
+        };
+        if let Some(Value::Object(record)) = cursor_record.as_mut() {
+            record.insert(
+                "settle".into(),
+                json!({
+                    "asked": settling,
+                    "before_rest": before_rest.map(crate::drop_cursor::Sync::record),
+                    "after_motion": after_motion.map(crate::drop_cursor::Sync::record),
+                    "settled": settled,
+                }),
+            );
+        }
         if let (Some(Confirming::Cursor(true)), Some(read)) = (confirmed, &cursor_read) {
             let (held, over) = self.accept_held_to_release(read, at);
-            confirmed = Some(Confirming::Cursor(held));
+            let counted = held && (settled == Some(true) || !self.cfg.drop_settle);
+            confirmed = Some(Confirming::Cursor(counted));
             if let Some(Value::Object(record)) = cursor_record.as_mut() {
                 record.insert("release_over".into(), over);
+                // what `linux-engine-v0.4.0` answered on this read, beside what the settle left of it
+                record.insert("accept_unsettled".into(), json!(held));
             }
         }
         let app = self.app_of_handle(handle.target);

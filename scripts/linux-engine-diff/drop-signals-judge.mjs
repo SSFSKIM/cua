@@ -422,7 +422,7 @@ export function blockPlan(specs, { size = 10 } = {}) {
 // T17's Electron cells in the gate (#364; the T18 executor's ruling on the design session's T14 gate rule, 2026-11-12)
 
 /** The drop-signals plans whose Electron cells the gate judges (drop-signals.mjs PLANS); `t17-moved` needs a live build's hook. */
-export const ELECTRON_JUDGED_PLANS = ['t17-floor', 't17-handle', 't17-fix2', 't17-fix3', 't17-slow-cold'];
+export const ELECTRON_JUDGED_PLANS = ['t17-floor', 't17-handle', 't17-fix2', 't17-fix3', 't17-slow-cold', 't98-cold', 't98-cold-shipped', 't98-cold-drag', 't98-fix3'];
 
 /** Whether a drop-signals run's rows are T17's Electron cells, judged by `electronDropVerdict`. */
 export const judgedElectronPlan = (args) => args.families?.[0] === 'electron' && ELECTRON_JUDGED_PLANS.includes(args.plan);

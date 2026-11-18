@@ -323,6 +323,10 @@ pub(super) struct DragMeasure<'a> {
     /// `XdndSelection`, and what it read there.
     pub(super) drop_cursor: Option<&'a mut crate::drop_cursor::DropCursor>,
     pub(super) at_release: &'a mut Option<crate::drop_cursor::AtRelease>,
+    /// The Electron drop's settle (`drop_cursor::settled`, M5's task 98), when the engine settles drops
+    /// (`Config::drop_settle`): the slot gets the application's two answers, asked before the last rest and after the
+    /// last motion of a drag whose source took `XdndSelection`.
+    pub(super) settle: Option<&'a mut Option<(crate::drop_cursor::Sync, crate::drop_cursor::Sync)>>,
     /// On a route whose input is XTEST's (the desktop and foreground routes): where the real pointer was, read with the
     /// cursor just before the release (None: on another screen, or not read), which is where the release goes and so
     /// the window the drop's confirmation is held to (the third review of task 73, P3).
@@ -390,7 +394,7 @@ fn drag_along(
     pressing: PressAck,
     mut accept: Option<&mut crate::accept::CursorWatch>,
     after: Option<&LateWatch>,
-    measure: DragMeasure<'_>,
+    mut measure: DragMeasure<'_>,
 ) -> Result<()> {
     let held = route.acquire(x, keycodes)?;
     let mut pressed = false;
@@ -546,13 +550,30 @@ fn drag_along(
                         }));
                         sent
                     }
+                    // a drop that is settled next gives the settle's rest out of the floor, not on top of it
                     _ => crate::dnd::keepalive(
                         |(px, py)| route.place_again(x, px, py),
                         before_last,
                         last,
-                        at + after_take,
+                        match (&measure.settle, &measure.drop_cursor) {
+                            (Some(_), Some(_)) => (at + after_take).checked_sub(pacing.rest).unwrap_or(at),
+                            _ => at + after_take,
+                        },
                     )?,
                 };
+            }
+            // an Electron source's drop, settled (`drop_cursor::settled`): its application asked where it has got to
+            // once every motion of the path, the hold and the floor is out, then the rest (the page's, to answer the
+            // pointer's last place), the last sample visited once more, and the application asked again, so the cursor
+            // read at the release is what its drag loop holds for that place. Each answer is waited for at most
+            // `drop_cursor::SYNC_BOUND`: a loop that runs behind the pointer is waited for here
+            if taken.is_some()
+                && let (Some(slot), Some(cursor)) = (measure.settle, measure.drop_cursor.as_deref_mut())
+            {
+                let before_rest = cursor.sync(crate::drop_cursor::SYNC_BOUND);
+                std::thread::sleep(pacing.rest);
+                route.place_again(x, last.0, last.1)?;
+                *slot = Some((before_rest, cursor.sync(crate::drop_cursor::SYNC_BOUND)));
             }
             // one shape for every drag the hold watched (`--stats` `hold`)
             *held_for_take = Some(json!({
@@ -1010,7 +1031,7 @@ impl Engine {
                     .family_of(source)
                     .is_some_and(|f| crate::families::confirms_drop_by_cursor(f.name)) =>
             {
-                Some(crate::drop_cursor::DropCursor::start().map_err(|e| format!("{e:#}")))
+                Some(crate::drop_cursor::DropCursor::start_for(Some(source)).map_err(|e| format!("{e:#}")))
             }
             _ => None,
         };
@@ -1022,6 +1043,8 @@ impl Engine {
             _ => false,
         };
         let mut at_release = None;
+        let mut settle = None;
+        let drop_settle = self.cfg.drop_settle;
         // where the real pointer was at the release, read on the routes whose input is XTEST's: the background route's
         // input is synthetic and leaves the real pointer where it is, so its release is the path's end
         let xtest_route = !matches!(target, Target::Window(_));
@@ -1092,6 +1115,7 @@ impl Engine {
                     accept_record: &mut accept_record,
                     drop_cursor: drop_cursor.as_mut().and_then(|c| c.as_mut().ok()),
                     at_release: &mut at_release,
+                    settle: drop_settle.then_some(&mut settle),
                     release_point: xtest_route.then_some(&mut release_point),
                     drop_window_at_release: resolve_at_release.then_some((&mut drop_at_release, supported)),
                 },
@@ -1207,8 +1231,18 @@ impl Engine {
                     };
                     let (held, mut over) = self.accept_held_to_release(read, release);
                     over["read"] = json!(if xtest_route { "pointer" } else { "path_end" });
+                    // and only one the application had settled on, as a handle's (M5's task 98)
+                    let settled = settle
+                        .map(|(before, after)| crate::drop_cursor::settled(&read.steps, before, after, xtest_route));
+                    over["settle"] = json!({
+                        "asked": drop_settle,
+                        "before_rest": settle.map(|(before, _)| before.record()),
+                        "after_motion": settle.map(|(_, after)| after.record()),
+                        "settled": settled,
+                        "accept_unsettled": held,
+                    });
                     over_aware = Some(over);
-                    cursor = Some(Some(held));
+                    cursor = Some(Some(held && (settled == Some(true) || !drop_settle)));
                 }
                 let confirming = super::handle::confirming(confirm, supported, cursor);
                 let by_cursor = cursor.map(|accepted| accepted == Some(true));

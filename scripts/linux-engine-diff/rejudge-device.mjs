@@ -5,10 +5,14 @@
 // ran at, which must reproduce every stored verdict for the replay to stand). Read-only. One JSON line per verdict that
 // moved or failed, then one per run with its counts, the verdicts that moved, those failing now, the run's end record's
 // other failures (which stand as stored), and how each sample of ruling 823's cells reads under it (premise.mjs
-// `classifyPremise`, by class: `unmet` the excluded, `unshown` those whose records cannot show it either way). A cell
-// of ruling 823's whose run recorded no plan passes no further than "replayed, plan unverified: not a release pass".
+// `classifyPremise`, by class: `unmet` the excluded, `unshown` those whose records cannot show it either way).
 //
-//   node scripts/linux-engine-diff/rejudge-device.mjs [--old <device.mjs>] <step dir or results.jsonl[.gz]>...
+// The replay is never release evidence for ruling 823's cells (wave 8): V5's premise cells pass only in a live run, on
+// both architectures. A replayed pass of one reads `DIAGNOSTIC_PASS`, whatever its plan or evidence, and the CLI exits 1.
+// With `--diagnostic` the exit says only whether the replay reproduced the stored verdicts: none moved, and the former
+// judge (`--old`, where named) reproduced each. Other cells (V4's device cases) are replayed as release evidence.
+//
+//   node scripts/linux-engine-diff/rejudge-device.mjs [--diagnostic] [--old <device.mjs>] <step dir or results.jsonl[.gz]>...
 
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -47,18 +51,22 @@ function noAuditOf(path) {
   return String(JSON.parse(readFileSync(file, 'utf8')).command ?? '').split(' ').includes('--no-audit');
 }
 
+/** How a current replay reports a pass of ruling 823's cells (wave 8): never a release pass. */
+export const DIAGNOSTIC_PASS = "replayed pass: diagnostic only; V5's premise cells pass only in a live run";
+
 /**
- * A judge's verdict as the replay reports it. A premise cell whose run recorded no plan (`plan_unverified`, a meta with
- * no `blocks`), with premise evidence or without, keeps the marker, and its pass is never reported as one (task 100's
- * review 6, wave 7). The former judge's (`--old`) is reported as it judged.
+ * A judge's verdict as the replay reports it: `premise`, a current replay of ruling 823's cells, reports a pass as
+ * `DIAGNOSTIC_PASS`; a run that recorded no plan keeps the marker (`plan_unverified`). The former judge's (`--old`) and
+ * the other cells' are reported as judged.
  */
-const UNVERIFIED_PASS = 'replayed, plan unverified: not a release pass';
-const outcome = (judged) => ({
-  verdict: judged.pass ? (judged.plan_unverified ? UNVERIFIED_PASS : 'pass') : 'fail',
+const outcome = (judged, premise = false) => ({
+  verdict: judged.pass ? (premise ? DIAGNOSTIC_PASS : 'pass') : 'fail',
   reasons: judged.reasons,
   ...(judged.plan_unverified ? { plan_unverified: true } : {}),
 });
-const same = (a, b) => a.verdict === b.verdict && JSON.stringify(a.reasons) === JSON.stringify(b.reasons);
+/** A reported verdict as its judge gave it, `pass` or `fail`: what a stored verdict, or another judge's, is compared by. */
+export const judgedVerdict = (o) => (o.verdict === DIAGNOSTIC_PASS ? 'pass' : o.verdict);
+const same = (a, b) => judgedVerdict(a) === judgedVerdict(b) && JSON.stringify(a.reasons) === JSON.stringify(b.reasons);
 
 /** How many of `entries` read as each of ruling 823's classes, by its one adjacency rule (premise.mjs `adjacency`). */
 const classes = (entries) => {
@@ -96,9 +104,8 @@ export function rejudgeDevice(rows, { judge = judgeDevice, old = null, lines = n
       // excluded), and its classes read off the same binding the verdict used
       const premiseArgs = { lines, window, plan };
       const judged = PREMISE_OPS.has(v.op) ? judge(v.op, opRows, audit, premiseArgs) : judge(v.op, opRows, audit);
-      // with no recorded plan the replay cannot check the cell's slots or its audit's count, evidence or none: no
-      // release pass (wave 7)
-      const now = outcome(PREMISE_OPS.has(v.op) && !plan ? { ...judged, plan_unverified: true } : judged);
+      // a premise cell's replay is diagnostic only (wave 8); with no recorded plan it is marked so, evidence or none (wave 7)
+      const now = PREMISE_OPS.has(v.op) ? outcome(plan ? judged : { ...judged, plan_unverified: true }, true) : outcome(judged);
       const bound = PREMISE_OPS.has(v.op) ? premiseBinding(v.op, opRows, audit, premiseArgs) : null;
       const then = old ? outcome(old(v.op, opRows, audit)) : null;
       // and how its timed samples and its audited requests read under it
@@ -111,7 +118,7 @@ export function rejudgeDevice(rows, { judge = judgeDevice, old = null, lines = n
       run,
       verdicts,
       moved: verdicts.filter((v) => v.moved).map((v) => `${v.name}: ${v.stored.verdict} -> ${v.now.verdict}`),
-      failing: verdicts.filter((v) => v.now.verdict !== 'pass').map((v) => v.name),
+      failing: verdicts.filter((v) => v.now.verdict === 'fail').map((v) => v.name),
       unreproduced: old ? verdicts.filter((v) => !v.reproduced).map((v) => v.name) : null,
       // the run's terminal failures this re-judge does not reach: they stand as stored
       others: (end?.failed ?? []).filter((f) => !names.has(f)),
@@ -126,13 +133,19 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const at = argv.indexOf('--old');
   const oldPath = at >= 0 ? argv.splice(at, 2)[1] : null;
   const old = oldPath ? (await import(pathToFileURL(resolve(oldPath)).href)).judgeDevice : null;
+  const flag = argv.indexOf('--diagnostic');
+  const diagnostic = flag >= 0 && argv.splice(flag, 1).length > 0;
   let failed = false;
   for (const path of argv) {
     for (const r of rejudgeDevice(rowsOf(resultsOf(path)), { old, lines: evidenceOf(path), noAudit: noAuditOf(path) })) {
-      for (const v of r.verdicts.filter((x) => x.moved || x.now.verdict !== 'pass' || x.reproduced === false)) process.stdout.write(`${JSON.stringify({ path, run: r.run, ...v })}\n`);
+      for (const v of r.verdicts.filter((x) => x.moved || x.now.verdict === 'fail' || x.reproduced === false)) process.stdout.write(`${JSON.stringify({ path, run: r.run, ...v })}\n`);
       const { verdicts, ...summary } = r;
       process.stdout.write(`${JSON.stringify({ path, ...summary, device_verdicts: verdicts.length })}\n`);
-      failed ||= r.failing.length > 0 || r.others.length > 0 || (r.unreproduced?.length ?? 0) > 0;
+      const unreproduced = (r.unreproduced?.length ?? 0) > 0;
+      // a diagnostic replay is judged by its agreement alone; else a premise cell's replayed pass is no release pass
+      failed ||= diagnostic
+        ? r.moved.length > 0 || unreproduced
+        : r.failing.length > 0 || r.others.length > 0 || unreproduced || verdicts.some((v) => v.now.verdict === DIAGNOSTIC_PASS);
     }
   }
   process.exitCode = failed ? 1 : 0;

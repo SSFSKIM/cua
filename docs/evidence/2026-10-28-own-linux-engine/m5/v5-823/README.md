@@ -58,9 +58,13 @@ rows. So each sample's evidence also goes into the run's own `premise-evidence.j
 
 ## The re-judge
 
-- `rejudge-823.sh <base device.mjs>` runs `rejudge-device.mjs --old` over each stored V5 step. Its output is
+- `rejudge-823.sh <base device.mjs>` runs `rejudge-device.mjs --diagnostic --old` over each stored V5 step. Its output is
   `rejudge-823.jsonl`. The re-judge reads a step's `premise-evidence.jsonl` where it has one; none of these do.
-- `agree-823.mjs` compares the base judge with this one on every device verdict. Its output is `agree-823.out`.
+- The replay is never release evidence for ruling 823's cells (task 100's fix wave 8): V5's premise cells pass only in
+  a live run, on both architectures. A replayed pass of one reads "replayed pass: diagnostic only; V5's premise cells
+  pass only in a live run", and each step's `exit` says only whether the replay reproduced its stored verdicts.
+- `agree-823.mjs` compares the base judge with this one on every device verdict, as each judged. Its output is
+  `agree-823.out`.
 - The base judge is `git show dec76845:scripts/linux-engine-diff/device.mjs`, placed beside `device.mjs` and removed
   after.
 

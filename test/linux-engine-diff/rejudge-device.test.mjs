@@ -1,15 +1,18 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { dndCancelledSentence, dndLateRefusal } from '../../scripts/linux-engine-diff/device.mjs';
+import { dndCancelledSentence, dndLateRefusal, dndMayHaveDroppedSentence, deviceSentence } from '../../scripts/linux-engine-diff/device.mjs';
 import { rejudgeDevice } from '../../scripts/linux-engine-diff/rejudge-device.mjs';
-import { CANCEL, LATE_DRAG, LATE_REFUSED, WINDOW, caseSamples, engineBin, removeScratch, scratch } from './premise-fixture.mjs';
+import { APP, CANCEL, LATE, LATE_DRAG, LATE_REFUSED, UNMET, WINDOW, caseSamples, engineBin, removeScratch, scratch } from './premise-fixture.mjs';
 
 after(removeScratch);
+
+/** How a current replay reports a premise cell its judge passes (wave 8): never a release pass. */
+const DIAGNOSTIC = "replayed pass: diagnostic only; V5's premise cells pass only in a live run";
 
 const app = 'Google-chrome';
 const cancelled = dndCancelledSentence(app);
@@ -28,6 +31,16 @@ const rows = [
   { run: 'pinned-V5', kind: 'end', valid: true, failed: ['device-chrome-dnd chrome_dnd_shared cua', 'device-chrome-dnd chrome_dnd_late_take_shared cua'] },
 ];
 
+/** A stored step of `rows` in a scratch directory (`sidecar`: a premise-evidence.jsonl to keep beside them), through the real CLI. */
+function cli(stepRows, { sidecar = null, flags = [] } = {}) {
+  const dir = scratch('cli-step');
+  writeFileSync(join(dir, 'results.jsonl'), stepRows.map((r) => `${JSON.stringify(r)}\n`).join(''));
+  if (sidecar) copyFileSync(sidecar, join(dir, 'premise-evidence.jsonl'));
+  const run = spawnSync(process.execPath, [fileURLToPath(new URL('../../scripts/linux-engine-diff/rejudge-device.mjs', import.meta.url)), ...flags, dir], { encoding: 'utf8' });
+  const out = run.stdout.split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  return { status: run.status, stderr: run.stderr, verdicts: out.filter((l) => l.name), summary: out.find((l) => !l.name) };
+}
+
 test("a device verdict's stored rows re-judged: what moved, what fails now, and the run's other failures standing as stored", () => {
   // the former judge, as H's: the sentence alone
   const old = (op, samples) => {
@@ -36,7 +49,7 @@ test("a device verdict's stored rows re-judged: what moved, what fails now, and 
   };
   const [run] = rejudgeDevice(rows, { old });
   assert.equal(run.run, 'pinned-V5');
-  assert.deepEqual(run.moved, ['device-chrome-dnd chrome_dnd_shared cua: fail -> pass']);
+  assert.deepEqual(run.moved, [`device-chrome-dnd chrome_dnd_shared cua: fail -> ${DIAGNOSTIC}`]);
   assert.deepEqual(run.failing, []);
   assert.deepEqual(run.unreproduced, [], "the former judge reproduces the stored verdict, so the replay of the rows stands");
   assert.deepEqual(run.others, ['device-chrome-dnd chrome_dnd_late_take_shared cua'], 'a failure this re-judge does not reach stands');
@@ -53,7 +66,7 @@ test("a device verdict's stored rows re-judged: what moved, what fails now, and 
 test("the re-judge states how each sample of ruling 823's cells reads under it, the stored audit's plain ok unshown", () => {
   const [run] = rejudgeDevice(rows);
   // 0/0's late take is shown by the engine's record of it on the next request, 0/2's in-time take by its own; 0/1 refused
-  assert.deepEqual(run.premise, [{ name: 'device-chrome-dnd chrome_dnd_shared cua', verdict: 'pass', moved: true, timed: { started: 2, 'not-plain-ok': 1 }, audit: { 'not-plain-ok': 2 } }]);
+  assert.deepEqual(run.premise, [{ name: 'device-chrome-dnd chrome_dnd_shared cua', verdict: DIAGNOSTIC, moved: true, timed: { started: 2, 'not-plain-ok': 1 }, audit: { 'not-plain-ok': 2 } }]);
   // the arm64 pilot's audit as stored: its plain-drag ok keeps no page record, so it cannot show the premise either way
   const pilot = rows.map((r) => (r.kind === 'audit' ? { ...r, answered: [{ ok: true, error: null, expected_error: cancelled, late_error: null }, r.answered[0]] } : r));
   const [p] = rejudgeDevice(pilot);
@@ -69,8 +82,8 @@ test("the stored replay rebuilds the no-audit sentinel only from positive eviden
   assert.ok(without.now.reasons.some((r) => /the audit did not run/.test(r)), 'no positive evidence: no sentinel');
 });
 
-test('a replay whose plan is not recorded never reports a premise cell as a pass: the judge passes it, the replay keeps the marker', async () => {
-  // a run through the real collector whose stored meta keeps no blocks, its late pair passing under the judge
+test('a replay of a premise cell is never a release pass, its plan recorded or not; a run that recorded none keeps the marker', async () => {
+  // a run through the real collector, its late pair passing under the judge
   const out = scratch('unverified');
   const run = 'stored-unverified';
   const three = [CANCEL, CANCEL, CANCEL];
@@ -85,15 +98,14 @@ test('a replay whose plan is not recorded never reports a premise cell as a pass
   ];
   const [r] = rejudgeDevice(stepRows, { lines });
   const [v] = r.verdicts;
-  assert.equal(v.now.verdict, 'replayed, plan unverified: not a release pass');
-  assert.equal(v.now.plan_unverified, true);
+  assert.equal(v.now.verdict, DIAGNOSTIC);
+  assert.equal(v.now.plan_unverified, true, 'its meta keeps no blocks');
   assert.deepEqual(v.stored, stored, 'its stored verdict beside');
-  assert.deepEqual(r.failing, ['device-chrome-dnd chrome_dnd_shared cua'], 'not a pass');
-  assert.deepEqual(r.moved, ['device-chrome-dnd chrome_dnd_shared cua: fail -> replayed, plan unverified: not a release pass']);
-  assert.equal(r.premise[0].verdict, 'replayed, plan unverified: not a release pass');
-  // with the plan recorded, the same rows replay as a pass
+  assert.deepEqual(r.moved, [`device-chrome-dnd chrome_dnd_shared cua: fail -> ${DIAGNOSTIC}`]);
+  assert.equal(r.premise[0].verdict, DIAGNOSTIC);
+  // with the plan recorded: still diagnostic only, with no marker
   const [p] = rejudgeDevice(stepRows.map((x) => (x.kind === 'meta' ? { ...x, blocks: 3 } : x)), { lines });
-  assert.equal(p.verdicts[0].now.verdict, 'pass');
+  assert.equal(p.verdicts[0].now.verdict, DIAGNOSTIC);
   assert.equal(p.verdicts[0].now.plan_unverified, undefined);
 });
 
@@ -103,30 +115,81 @@ test('the CLI never replays a premise cell as a release pass where its run recor
   const run = 'probe-V5';
   const at = (i) => ({ ...sample({ i, series: i === 0 ? 'cold' : 'warm', ok: false, error: cancelled, dnd: { outcome: 'in_time' } }), run });
   const stored = { verdict: 'fail', reasons: ["the run's rows do not fit its recorded plan (ruling 823, never excluded on): no row for 1/0"] };
-  const step = (meta) => {
-    const dir = scratch('cli-probe');
-    const stepRows = [
-      { run, kind: 'meta', ...meta },
-      at(0),
-      at(1),
-      at(2),
-      { run, kind: 'audit', engine: 'cua', scene: 'device-chrome-dnd', op: 'chrome_dnd_shared', clean: true, audit: 'background', answered: [auditAnswer, auditAnswer], forbidden: [] },
-      { run, kind: 'verdict', scene: 'device-chrome-dnd', op: 'chrome_dnd_shared', candidate: 'cua', device: 'cancel', pass: false, ...stored },
-    ];
-    writeFileSync(join(dir, 'results.jsonl'), stepRows.map((r) => `${JSON.stringify(r)}\n`).join(''));
-    const cli = spawnSync(process.execPath, [fileURLToPath(new URL('../../scripts/linux-engine-diff/rejudge-device.mjs', import.meta.url)), dir], { encoding: 'utf8' });
-    const [verdict] = cli.stdout.split('\n').filter(Boolean).map((l) => JSON.parse(l)).filter((l) => l.name);
-    return { status: cli.status, stderr: cli.stderr, verdict };
-  };
+  const step = (meta) => [
+    { run, kind: 'meta', ...meta },
+    at(0),
+    at(1),
+    at(2),
+    { run, kind: 'audit', engine: 'cua', scene: 'device-chrome-dnd', op: 'chrome_dnd_shared', clean: true, audit: 'background', answered: [auditAnswer, auditAnswer], forbidden: [] },
+    { run, kind: 'verdict', scene: 'device-chrome-dnd', op: 'chrome_dnd_shared', candidate: 'cua', device: 'cancel', pass: false, ...stored },
+  ];
   // its plan recorded: the missing blocks fail it, as stored
-  const planned = step({ blocks: 3 });
-  assert.equal(planned.verdict.now.verdict, 'fail');
+  const planned = cli(step({ blocks: 3 }));
+  assert.equal(planned.verdicts[0].now.verdict, 'fail');
   assert.equal(planned.status, 1);
   // only the plan's blocks removed: the judge passes it, and the replay never reports that as a pass
-  const unplanned = step({});
+  const unplanned = cli(step({}));
   assert.equal(unplanned.stderr, '');
-  assert.equal(unplanned.verdict.now.verdict, 'replayed, plan unverified: not a release pass');
-  assert.equal(unplanned.verdict.now.plan_unverified, true);
-  assert.deepEqual(unplanned.verdict.stored, stored);
+  assert.equal(unplanned.verdicts[0].now.verdict, DIAGNOSTIC);
+  assert.equal(unplanned.verdicts[0].now.plan_unverified, true);
+  assert.deepEqual(unplanned.verdicts[0].stored, stored);
   assert.equal(unplanned.status, 1, 'the CLI exits 1');
+});
+
+test("the CLI's replay is diagnostic only for V5's premise cells, whatever its plan or evidence; --diagnostic exits on agreement alone (wave 8)", async () => {
+  // the reviewer's probe: a current run, its plan recorded, its audit's first request a false claim (it answered that
+  // the drop may have happened where the page proves Chrome never started one), its sidecar omitted from the step
+  const OP = 'chrome_dnd_late_shared';
+  const out = scratch('false-claim');
+  const run = 'probe-false-claim';
+  const block = [LATE, LATE, LATE];
+  const made = await caseSamples({ out, run, op: OP, bin: engineBin(out), blocks: [block, block, block], audit: [{ ...UNMET, reply: { ok: false, error: dndMayHaveDroppedSentence(APP) } }, LATE] });
+  const sidecar = join(out, 'premise-evidence.jsonl');
+  const step = (stored) => [
+    { run, kind: 'meta', blocks: 3 },
+    ...made.rows,
+    { run, kind: 'audit', engine: 'cua', scene: 'device-chrome-dnd', op: OP, clean: true, audit: 'background', answered: made.answered, forbidden: [], ancestry: [WINDOW] },
+    { run, kind: 'verdict', scene: 'device-chrome-dnd', op: OP, candidate: 'cua', device: 'late', ...stored },
+  ];
+  // the step as recorded, its sidecar beside it: the false claim fails, as stored
+  const withSidecar = cli(step({ pass: false, verdict: 'fail', reasons: [] }), { sidecar });
+  assert.equal(withSidecar.verdicts[0].now.verdict, 'fail');
+  assert.match(withSidecar.verdicts[0].now.reasons.join('\n'), /answered as if it dropped where the page shows Chrome never started a drag and drop/);
+  const storedFail = { pass: false, verdict: 'fail', reasons: withSidecar.verdicts[0].now.reasons };
+  assert.equal(cli(step(storedFail), { sidecar }).status, 1, 'a fail exits 1');
+  assert.equal(cli(step(storedFail), { sidecar, flags: ['--diagnostic'] }).status, 0, '--diagnostic: the replay agrees with the stored fail');
+
+  // the probe: the sidecar omitted, so the audit's replies are bare and the judge passes the cell
+  const probe = cli(step(storedFail));
+  assert.equal(probe.stderr, '');
+  assert.equal(probe.verdicts[0].now.verdict, DIAGNOSTIC);
+  assert.deepEqual(probe.summary.moved, [`device-chrome-dnd ${OP} cua: fail -> ${DIAGNOSTIC}`]);
+  assert.equal(probe.status, 1, 'never a release pass: exit 1');
+  assert.equal(cli(step(storedFail), { flags: ['--diagnostic'] }).status, 1, '--diagnostic: the replay disagrees with the stored fail');
+  // a stored pass the replay agrees with: still diagnostic only, exit 1 unless --diagnostic
+  const storedPass = { pass: true, verdict: 'pass', reasons: [] };
+  const agreeing = cli(step(storedPass));
+  assert.equal(agreeing.verdicts.length, 0, 'nothing moved or failing: no verdict line');
+  assert.deepEqual(agreeing.summary.premise.map((p) => p.verdict), [DIAGNOSTIC]);
+  assert.equal(agreeing.status, 1);
+  assert.equal(cli(step(storedPass), { flags: ['--diagnostic'] }).status, 0);
+});
+
+test("V4's device cells are replayed as before: a release pass, exit 0", () => {
+  const run = 'pinned-V4';
+  const expected = deviceSentence('org.gnome.TextEditor');
+  const refused = (i) => ({ run, kind: 'sample', engine: 'cua', scene: 'device-gtk4', op: 'gtk4_click_shared', block: 0, i, ok: false, error: expected, expected_error: expected, unchanged: true, witness: true });
+  const stepRows = [
+    { run, kind: 'meta', blocks: 1 },
+    refused(0),
+    refused(1),
+    { run, kind: 'audit', engine: 'cua', scene: 'device-gtk4', op: 'gtk4_click_shared', clean: true, audit: 'background', answered: [{ ok: false, error: expected, expected_error: expected }], forbidden: [] },
+    { run, kind: 'verdict', scene: 'device-gtk4', op: 'gtk4_click_shared', candidate: 'cua', device: 'refusal', pass: true, verdict: 'pass', reasons: [] },
+  ];
+  const [r] = rejudgeDevice(stepRows);
+  assert.deepEqual(r.verdicts[0].now, { verdict: 'pass', reasons: [] });
+  assert.deepEqual(r.moved, []);
+  const replayed = cli(stepRows);
+  assert.equal(replayed.status, 0);
+  assert.deepEqual(replayed.summary.premise, []);
 });

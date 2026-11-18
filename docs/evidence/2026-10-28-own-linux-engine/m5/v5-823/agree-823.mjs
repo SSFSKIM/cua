@@ -6,7 +6,7 @@
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { rejudgeDevice } from '../../../../../scripts/linux-engine-diff/rejudge-device.mjs';
+import { judgedVerdict, rejudgeDevice } from '../../../../../scripts/linux-engine-diff/rejudge-device.mjs';
 import { readFileSync, existsSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
 import { join } from 'node:path';
@@ -20,7 +20,8 @@ const rowsOf = (dir) => {
 };
 for (const dir of dirs) {
   for (const run of rejudgeDevice(rowsOf(dir), { old })) {
-    const differ = run.verdicts.filter((v) => v.then.verdict !== v.now.verdict || JSON.stringify(v.then.reasons) !== JSON.stringify(v.now.reasons)).map((v) => v.name);
+    // the two judges compared as they judged (a premise cell's replayed pass is diagnostic only, wave 8)
+    const differ = run.verdicts.filter((v) => v.then.verdict !== judgedVerdict(v.now) ||JSON.stringify(v.then.reasons) !== JSON.stringify(v.now.reasons)).map((v) => v.name);
     console.log(JSON.stringify({ dir, run: run.run, device_verdicts: run.verdicts.length, base_vs_823_differ: differ }));
   }
 }

@@ -117,8 +117,6 @@ test("a scene's close signals its pidfile's pid only while it is the scene's pro
 // ended one is not signalled, and a pid another process holds now is left alone, recorded.
 test("a spawned scene's close signals its pid only while it is the process the run spawned", { skip }, async () => {
   const desktop = new Desktop({ cua: 'unused', run: 'pidtest', reader: { async close() {} }, startActive: 0, nonce: 'n1' });
-  // this test's processes are real: the checks of the run's own read the real /proc
-  desktop.leftoverOptions = { proc: '/proc' };
   try {
     const scene = (child, start, exited = false) => {
       desktop.spawned.push({ pid: child.pid, label: 'gedit', start, exited });

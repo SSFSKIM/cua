@@ -1239,7 +1239,8 @@ export class Desktop {
     const entry = this.spawned.findLast((e) => e.pid === scene.pid);
     if (!entry) return { state: 'unrecorded' };
     if (entry.exited) return { state: 'ended' };
-    const now = processState(scene.pid, { proc: this.ownProc() });
+    // the real /proc whatever scope the run's checks read: a signal goes to a real process
+    const now = processState(scene.pid);
     if (now.state === 'absent') return { state: 'ended' };
     if (now.state === 'unknown') return { state: 'unknown', why: `whether it is the scene's process cannot be read (${now.reason})` };
     return now.start === entry.start ? { state: 'live' } : { state: 'other', why: `another process now (started at tick ${now.start}; the scene's at ${entry.start})` };

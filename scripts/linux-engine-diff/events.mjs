@@ -409,7 +409,7 @@ export function interruptedDragFault(record, step) {
   const tail = all.slice(press + 1);
   const release = tail.at(-1);
   const motions = tail.slice(0, -1);
-  if (!at(all[press], path[0])) return "the press is not at the path's start";
+  if (press < 0 || !at(all[press], path[0])) return "the press is not at the path's start";
   if (!release || release.type !== 'ButtonRelease' || release.window !== 'child' || release.detail !== 1 || !at(release, path.at(-1))) return "the drag does not end with button 1's release on the child at the path's end, the last event";
   if (!motions.length || motions.some((e) => e.type !== 'MotionNotify' || e.window !== 'child' || !(e.state & 256))) return 'between the press and the release, an event other than a motion on the child with button 1 held';
   let next = 1;

@@ -48,10 +48,16 @@ enum ReadbackLength {
 /// One length read of a password field: the batch, classified from its own reply. A failed request or an unreadable
 /// role is `fieldUnreadable`; a reply that is no longer a password field (`readbackPasswordField`'s rule) is
 /// `noLongerSecure`; one with another role is `fieldChanged`. The count's slot keeps its error as the batch reported it
-/// (`fetchAttributes`: a slot whose error is not the attribute's absence is unreadable).
-func readbackLength<Element>(_ field: Element, role: String, reads: ReadbackReads<Element>) -> ReadbackLength {
+/// (`fetchAttributes`: a slot whose error is not the attribute's absence is unreadable). A reply secure only because
+/// its subrole could not be read (`valueClassification` presumes a text-entry role secure then; AXSecureTextField is
+/// secure whatever its subrole did) is a password field to the poll's own batches, which go on, but not to a concealed
+/// request's final batch (`presumeSecure` false), which decides the reason: there it is `fieldUnreadable`, so a
+/// password field's may-show remedy applies (the review of e8e2702e..3b67bf4d, 1).
+func readbackLength<Element>(_ field: Element, role: String, reads: ReadbackReads<Element>, presumeSecure: Bool = true) -> ReadbackLength {
   guard let read = reads.batch(field, readbackLengthAttributes), let seenRole = readbackBatchRole(read) else { return .closed(.fieldUnreadable) }
-  guard typeReadbackFocusWalkRoles.contains(seenRole), valueClassification(read).secure else { return .closed(.noLongerSecure) }
+  let classified = valueClassification(read)
+  guard typeReadbackFocusWalkRoles.contains(seenRole), classified.secure else { return .closed(.noLongerSecure) }
+  if !presumeSecure, classified.failed { return .closed(.fieldUnreadable) }
   guard seenRole == role else { return .closed(.fieldChanged) }
   let count: ReadbackWalkRead<Int>
   if read.unreadable.contains(kAXNumberOfCharactersAttribute) {

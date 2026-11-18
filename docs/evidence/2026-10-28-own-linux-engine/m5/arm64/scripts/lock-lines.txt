@@ -1,0 +1,114 @@
+2026-11-18T09:47:39Z wait t7-arm64 load=16.68 15.82 14.75 render-host=none :: /Users/new/.local/share/cua-171/task99/setup.sh t7-arm64 f6275fb600ae719f29cf32b206676e1a70a02e26
+2026-11-18T09:58:54Z acquire t7-arm64 load=16.80 16.47 15.68 render-host=none :: /Users/new/.local/share/cua-171/task99/setup.sh t7-arm64 f6275fb600ae719f29cf32b206676e1a70a02e26
+2026-11-18T09:59:22Z release t7-arm64 status=0 load=10.94 15.08 15.24 render-host=none :: /Users/new/.local/share/cua-171/task99/setup.sh t7-arm64 f6275fb600ae719f29cf32b206676e1a70a02e26
+2026-11-18T09:59:22Z wait t7-arm64 load=10.94 15.08 15.24 render-host=none :: env NO_XPROBE=1 /Users/new/.local/share/cua-171/task99/setup.sh t7-main origin/main
+2026-11-18T09:59:22Z acquire t7-arm64 load=10.94 15.08 15.24 render-host=none :: env NO_XPROBE=1 /Users/new/.local/share/cua-171/task99/setup.sh t7-main origin/main
+2026-11-18T09:59:25Z release t7-arm64 status=0 load=10.14 14.85 15.17 render-host=none :: env NO_XPROBE=1 /Users/new/.local/share/cua-171/task99/setup.sh t7-main origin/main
+2026-11-18T09:59:25Z wait t7-arm64 load=10.14 14.85 15.17 render-host=none :: /Users/new/.local/share/cua-171/task99/install-home.sh
+2026-11-18T09:59:25Z acquire t7-arm64 load=10.14 14.85 15.17 render-host=none :: /Users/new/.local/share/cua-171/task99/install-home.sh
+2026-11-18T09:59:50Z release t7-arm64 status=0 load=7.61 13.97 14.87 render-host=none :: /Users/new/.local/share/cua-171/task99/install-home.sh
+2026-11-18T10:00:12Z wait t7-arm64 load=5.01 12.84 14.47 render-host=none :: timeout -s TERM -k 120 30m /Users/new/Developer/GitHub/cua/.claude/worktrees/t7-arm64/scripts/linux-engine-gate/local-proof.sh --part npm-test /Users/new/Developer/GitHub/cua/.claude/worktrees/t7-arm64
+2026-11-18T10:00:12Z acquire t7-arm64 load=5.01 12.84 14.47 render-host=none :: timeout -s TERM -k 120 30m /Users/new/Developer/GitHub/cua/.claude/worktrees/t7-arm64/scripts/linux-engine-gate/local-proof.sh --part npm-test /Users/new/Developer/GitHub/cua/.claude/worktrees/t7-arm64
+2026-11-18T10:02:54Z release t7-arm64 status=1 load=2.10 8.46 12.54 render-host=none :: timeout -s TERM -k 120 30m /Users/new/Developer/GitHub/cua/.claude/worktrees/t7-arm64/scripts/linux-engine-gate/local-proof.sh --part npm-test /Users/new/Developer/GitHub/cua/.claude/worktrees/t7-arm64
+2026-11-18T10:02:54Z wait t7-arm64 load=2.10 8.46 12.54 render-host=none :: timeout -s TERM -k 120 30m /Users/new/Developer/GitHub/cua/.claude/worktrees/t7-arm64/scripts/linux-engine-gate/local-proof.sh --part npm-test-compare /Users/new/Developer/GitHub/cua/.claude/worktrees/t7-main
+2026-11-18T10:02:54Z acquire t7-arm64 load=2.10 8.46 12.54 render-host=none :: timeout -s TERM -k 120 30m /Users/new/Developer/GitHub/cua/.claude/worktrees/t7-arm64/scripts/linux-engine-gate/local-proof.sh --part npm-test-compare /Users/new/Developer/GitHub/cua/.claude/worktrees/t7-main
+2026-11-18T10:05:27Z release t7-arm64 status=1 load=1.90 6.11 11.04 render-host=none :: timeout -s TERM -k 120 30m /Users/new/Developer/GitHub/cua/.claude/worktrees/t7-arm64/scripts/linux-engine-gate/local-proof.sh --part npm-test-compare /Users/new/Developer/GitHub/cua/.claude/worktrees/t7-main
+2026-11-18T10:05:27Z wait t7-arm64 load=1.90 6.11 11.04 render-host=none :: timeout -s TERM -k 120 45m /Users/new/Developer/GitHub/cua/.claude/worktrees/t7-arm64/scripts/linux-engine-gate/local-proof.sh --part harness /Users/new/Developer/GitHub/cua/.claude/worktrees/t7-arm64
+2026-11-18T10:05:27Z acquire t7-arm64 load=1.90 6.11 11.04 render-host=none :: timeout -s TERM -k 120 45m /Users/new/Developer/GitHub/cua/.claude/worktrees/t7-arm64/scripts/linux-engine-gate/local-proof.sh --part harness /Users/new/Developer/GitHub/cua/.claude/worktrees/t7-arm64
+2026-11-18T10:06:06Z release t7-arm64 status=0 load=2.38 5.72 10.70 render-host=none :: timeout -s TERM -k 120 45m /Users/new/Developer/GitHub/cua/.claude/worktrees/t7-arm64/scripts/linux-engine-gate/local-proof.sh --part harness /Users/new/Developer/GitHub/cua/.claude/worktrees/t7-arm64
+2026-11-18T10:06:06Z wait t7-arm64 load=2.38 5.72 10.70 render-host=none :: timeout -s TERM -k 120 15m /Users/new/Developer/GitHub/cua/.claude/worktrees/t7-arm64/scripts/linux-engine-gate/local-proof.sh --part harness-dbus /Users/new/Developer/GitHub/cua/.claude/worktrees/t7-arm64
+2026-11-18T10:06:06Z acquire t7-arm64 load=2.38 5.72 10.70 render-host=none :: timeout -s TERM -k 120 15m /Users/new/Developer/GitHub/cua/.claude/worktrees/t7-arm64/scripts/linux-engine-gate/local-proof.sh --part harness-dbus /Users/new/Developer/GitHub/cua/.claude/worktrees/t7-arm64
+2026-11-18T10:06:30Z release t7-arm64 status=0 load=2.04 5.43 10.50 render-host=none :: timeout -s TERM -k 120 15m /Users/new/Developer/GitHub/cua/.claude/worktrees/t7-arm64/scripts/linux-engine-gate/local-proof.sh --part harness-dbus /Users/new/Developer/GitHub/cua/.claude/worktrees/t7-arm64
+2026-11-18T10:06:30Z wait t7-arm64 load=2.04 5.43 10.50 render-host=none :: timeout -s TERM -k 120 45m /Users/new/Developer/GitHub/cua/.claude/worktrees/t7-arm64/scripts/linux-engine-gate/local-proof.sh --part engine-static /Users/new/Developer/GitHub/cua/.claude/worktrees/t7-arm64
+2026-11-18T10:06:30Z acquire t7-arm64 load=2.04 5.43 10.50 render-host=none :: timeout -s TERM -k 120 45m /Users/new/Developer/GitHub/cua/.claude/worktrees/t7-arm64/scripts/linux-engine-gate/local-proof.sh --part engine-static /Users/new/Developer/GitHub/cua/.claude/worktrees/t7-arm64
+2026-11-18T10:07:31Z release t7-arm64 status=0 load=1.75 4.72 9.91 render-host=none :: timeout -s TERM -k 120 45m /Users/new/Developer/GitHub/cua/.claude/worktrees/t7-arm64/scripts/linux-engine-gate/local-proof.sh --part engine-static /Users/new/Developer/GitHub/cua/.claude/worktrees/t7-arm64
+2026-11-18T10:07:31Z wait t7-arm64 load=1.75 4.72 9.91 render-host=none :: timeout -s TERM -k 120 45m /Users/new/Developer/GitHub/cua/.claude/worktrees/t7-arm64/scripts/linux-engine-gate/local-proof.sh --part engine-live /Users/new/Developer/GitHub/cua/.claude/worktrees/t7-arm64
+2026-11-18T10:07:31Z acquire t7-arm64 load=1.75 4.72 9.91 render-host=none :: timeout -s TERM -k 120 45m /Users/new/Developer/GitHub/cua/.claude/worktrees/t7-arm64/scripts/linux-engine-gate/local-proof.sh --part engine-live /Users/new/Developer/GitHub/cua/.claude/worktrees/t7-arm64
+2026-11-18T10:15:44Z release t7-arm64 status=0 load=0.06 1.11 6.00 render-host=none :: timeout -s TERM -k 120 45m /Users/new/Developer/GitHub/cua/.claude/worktrees/t7-arm64/scripts/linux-engine-gate/local-proof.sh --part engine-live /Users/new/Developer/GitHub/cua/.claude/worktrees/t7-arm64
+2026-11-18T10:15:44Z wait t7-arm64 load=0.06 1.11 6.00 render-host=none :: timeout -s TERM -k 120 30m /Users/new/Developer/GitHub/cua/.claude/worktrees/t7-arm64/scripts/linux-engine-gate/local-proof.sh --part two-screens /Users/new/Developer/GitHub/cua/.claude/worktrees/t7-arm64
+2026-11-18T10:37:51Z acquire t7-arm64 load=16.25 16.32 14.13 render-host=none :: timeout -s TERM -k 120 30m /Users/new/Developer/GitHub/cua/.claude/worktrees/t7-arm64/scripts/linux-engine-gate/local-proof.sh --part two-screens /Users/new/Developer/GitHub/cua/.claude/worktrees/t7-arm64
+2026-11-18T10:37:51Z release t7-arm64 status=1 load=14.95 16.05 14.06 render-host=none :: timeout -s TERM -k 120 30m /Users/new/Developer/GitHub/cua/.claude/worktrees/t7-arm64/scripts/linux-engine-gate/local-proof.sh --part two-screens /Users/new/Developer/GitHub/cua/.claude/worktrees/t7-arm64
+2026-11-18T10:39:54Z wait t7-arm64 load=2.01 10.74 12.35 render-host=none :: timeout -s TERM -k 120 30m /Users/new/.local/share/cua-171/task99/two-screens-aarch64.sh
+2026-11-18T10:39:54Z acquire t7-arm64 load=2.01 10.74 12.35 render-host=none :: timeout -s TERM -k 120 30m /Users/new/.local/share/cua-171/task99/two-screens-aarch64.sh
+2026-11-18T10:39:55Z release t7-arm64 status=0 load=2.01 10.74 12.35 render-host=none :: timeout -s TERM -k 120 30m /Users/new/.local/share/cua-171/task99/two-screens-aarch64.sh
+2026-11-18T10:39:55Z wait t7-arm64 load=2.01 10.74 12.35 render-host=none :: timeout -s TERM -k 120 40m bash -c flake
+2026-11-18T10:39:55Z acquire t7-arm64 load=2.01 10.74 12.35 render-host=none :: timeout -s TERM -k 120 40m bash -c flake
+2026-11-18T10:44:04Z release t7-arm64 status=0 load=0.08 4.68 9.44 render-host=none :: timeout -s TERM -k 120 40m bash -c flake
+2026-11-18T10:45:52Z wait t7-arm64 load=14.37 8.43 10.27 render-host=none :: timeout -s TERM -k 120 20m ./item9.sh
+2026-11-18T11:05:12Z acquire t7-arm64 load=15.19 16.19 14.80 render-host=none :: timeout -s TERM -k 120 20m ./item9.sh
+2026-11-18T11:05:33Z release t7-arm64 status=0 load=11.08 15.19 14.50 render-host=none :: timeout -s TERM -k 120 20m ./item9.sh
+2026-11-18T11:06:19Z wait t7-arm64 load=5.23 13.06 13.81 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh D1 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T11:06:19Z acquire t7-arm64 load=5.23 13.06 13.81 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh D1 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T11:30:32Z release t7-arm64 status=0 load=0.77 0.83 3.32 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh D1 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T11:30:32Z wait t7-arm64 load=0.77 0.83 3.32 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh D2 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T11:47:53Z acquire t7-arm64 load=0.22 0.20 1.19 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh D2 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T12:06:06Z release t7-arm64 status=0 load=0.04 0.09 0.43 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh D2 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T12:06:12Z wait t7-arm64 load=0.04 0.09 0.43 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh D3 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T12:06:12Z acquire t7-arm64 load=0.04 0.09 0.43 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh D3 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T12:24:25Z release t7-arm64 status=0 load=0.33 0.32 0.36 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh D3 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T12:24:25Z wait t7-arm64 load=0.33 0.32 0.36 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh D4 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T12:25:33Z acquire t7-arm64 load=1.53 0.74 0.51 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh D4 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T12:51:32Z release t7-arm64 status=0 load=0.08 0.08 0.14 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh D4 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T12:51:32Z wait t7-arm64 load=0.08 0.08 0.14 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh D5 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T13:12:46Z acquire t7-arm64 load=16.56 16.38 12.51 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh D5 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T13:34:05Z release t7-arm64 status=0 load=0.09 0.30 3.17 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh D5 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T13:34:05Z wait t7-arm64 load=0.09 0.30 3.17 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh R1 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T13:51:30Z acquire t7-arm64 load=0.13 0.17 1.12 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh R1 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T14:17:36Z release t7-arm64 status=0 load=1.09 1.07 1.05 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh R1 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T14:17:36Z wait t7-arm64 load=1.09 1.07 1.05 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh R2 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T14:18:21Z acquire t7-arm64 load=1.98 1.36 1.15 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh R2 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T14:37:48Z release t7-arm64 status=0 load=0.19 0.25 0.50 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh R2 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T14:37:48Z wait t7-arm64 load=0.19 0.25 0.50 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh R3 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T14:37:48Z acquire t7-arm64 load=0.19 0.25 0.50 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh R3 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T14:41:06Z release t7-arm64 status=0 load=0.44 0.38 0.50 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh R3 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T14:41:06Z wait t7-arm64 load=0.44 0.38 0.50 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh R4 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T14:41:06Z acquire t7-arm64 load=0.44 0.38 0.50 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh R4 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T14:42:03Z release t7-arm64 status=0 load=0.69 0.45 0.52 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh R4 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T14:42:03Z wait t7-arm64 load=0.69 0.45 0.52 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh FB /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T14:42:03Z acquire t7-arm64 load=0.69 0.45 0.52 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh FB /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T14:42:33Z release t7-arm64 status=0 load=1.07 0.56 0.56 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh FB /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T14:42:33Z wait t7-arm64 load=1.07 0.56 0.56 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh E1 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T14:42:33Z acquire t7-arm64 load=1.07 0.56 0.56 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh E1 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T14:50:29Z release t7-arm64 status=0 load=0.09 0.14 0.33 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh E1 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T14:50:29Z wait t7-arm64 load=0.09 0.14 0.33 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh S2 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T14:50:29Z acquire t7-arm64 load=0.09 0.14 0.33 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh S2 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T15:15:41Z release t7-arm64 status=0 load=0.28 0.24 0.23 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh S2 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T15:15:41Z wait t7-arm64 load=0.28 0.24 0.23 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh S3 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T15:16:12Z acquire t7-arm64 load=0.56 0.31 0.26 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh S3 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T15:39:59Z release t7-arm64 status=0 load=0.05 0.14 0.27 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh S3 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T15:39:59Z wait t7-arm64 load=0.05 0.14 0.27 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh S4 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T15:40:41Z acquire t7-arm64 load=0.02 0.12 0.26 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh S4 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T16:14:52Z release t7-arm64 status=0 load=0.18 0.16 0.14 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh S4 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T16:14:52Z wait t7-arm64 load=0.18 0.16 0.14 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh F1a /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T16:15:22Z acquire t7-arm64 load=0.51 0.25 0.17 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh F1a /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T16:30:28Z release t7-arm64 status=0 load=0.33 0.57 0.39 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh F1a /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T16:30:28Z wait t7-arm64 load=0.33 0.57 0.39 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh F1b /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T16:31:10Z acquire t7-arm64 load=0.17 0.50 0.37 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh F1b /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T16:40:58Z release t7-arm64 status=0 load=0.59 0.48 0.39 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh F1b /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T16:40:58Z wait t7-arm64 load=0.59 0.48 0.39 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh F2 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T17:02:14Z acquire t7-arm64 load=16.47 16.35 12.58 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh F2 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T17:08:59Z release t7-arm64 status=0 load=0.22 4.33 8.17 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh F2 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T17:08:59Z wait t7-arm64 load=0.22 4.33 8.17 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh ES /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T17:26:21Z acquire t7-arm64 load=0.28 0.27 2.73 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh ES /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T17:37:55Z release t7-arm64 status=0 load=0.18 0.29 1.47 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh ES /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T17:37:55Z wait t7-arm64 load=0.18 0.29 1.47 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh P1 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T17:37:55Z acquire t7-arm64 load=0.18 0.29 1.47 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh P1 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T18:05:39Z release t7-arm64 status=0 load=0.25 0.14 0.33 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh P1 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T18:05:39Z wait t7-arm64 load=0.25 0.14 0.33 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh P2 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T18:05:39Z acquire t7-arm64 load=0.25 0.14 0.33 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh P2 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T18:31:44Z release t7-arm64 status=0 load=0.26 0.18 0.19 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh P2 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T18:31:44Z wait t7-arm64 load=0.26 0.18 0.19 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh P3 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T18:31:44Z acquire t7-arm64 load=0.26 0.18 0.19 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh P3 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T18:57:38Z release t7-arm64 status=0 load=0.33 0.19 0.19 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh P3 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T18:57:38Z wait t7-arm64 load=0.33 0.19 0.19 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh P4 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T18:57:38Z acquire t7-arm64 load=0.33 0.19 0.19 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh P4 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T19:25:41Z release t7-arm64 status=0 load=0.18 0.17 0.18 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh P4 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T19:25:41Z wait t7-arm64 load=0.18 0.17 0.18 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh P6 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T19:25:41Z acquire t7-arm64 load=0.18 0.17 0.18 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh P6 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T19:53:39Z release t7-arm64 status=0 load=6.89 1.68 0.67 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh P6 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T19:53:39Z wait t7-arm64 load=6.89 1.68 0.67 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh P5 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T19:53:39Z acquire t7-arm64 load=6.89 1.68 0.67 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh P5 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T20:14:02Z release t7-arm64 status=0 load=0.23 0.27 0.36 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh P5 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T20:14:02Z wait t7-arm64 load=0.23 0.27 0.36 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh C1 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T20:14:02Z acquire t7-arm64 load=0.23 0.27 0.36 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh C1 /Users/new/.local/share/cua-171/m5/out-arm64
+2026-11-18T20:15:39Z release t7-arm64 status=0 load=0.28 0.28 0.36 render-host=none :: /Users/new/.local/share/cua-171/task99/step.sh C1 /Users/new/.local/share/cua-171/m5/out-arm64

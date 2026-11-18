@@ -12,6 +12,12 @@ const SLOT='PROBE414', safeReasons=new Set(['secure','noFocusedElement','roleUnr
   'fieldUnreadable','fieldChanged','becameSecure','selectionChanged','concealedMismatch','valueMismatch','unchanged','possiblyTruncated',
   'secureCountUnavailable','secureCountMismatch','secureRangeUnavailable','secureCountUnreadable','secureRangeUnreadable','secureMismatch','lengthUnreadable','lengthMismatch','caretMismatch','selectionUnreadable','noLongerSecure']);
 const pickReason=x=>safeReasons.has(x)?x:x==null?null:'other';
+const nativeCodes=new Set(['typeUnconfirmed','concealedInputUnavailable','inputSourceChanged','keyboardLayoutUnavailable','userIntervened',
+  'timeoutReached','windowMinimized','accessibilityError','permissionsNotGranted','runningApplicationNotFound','screenLocked','invalidArguments','unknownError','jsonRPCError']);
+const wrapperCodes=new Set(['secret_input_failed','secret_unavailable','secret_not_found','secret_unreadable','secret_input_unavailable','user_intervened']);
+const actionCode=(native,error,guarded)=>!guarded?'request-shape':native?.error?
+  nativeCodes.has(native.error.errorName)?native.error.errorName:'native-other':error?
+  wrapperCodes.has(error.code)?error.code:'wrapper-other':native?.result?'success':'missing';
 const ascii=n=>Array.from({length:n},()=> 'abcdefghijklmnopqrstuvwxy'[randomInt(25)]).join('');
 function materialize({kind}){
   const initial=kind==='selection'?ascii(19):'', start=kind==='selection'?4:0, end=kind==='selection'?11:0;
@@ -114,8 +120,9 @@ async function startEngine({name,src,bin,root,platform,audit,globalPrivacy,lane}
       const raw=native?.error?.meta?.typeReadback??native?.result?.meta?.typeReadback;
       const engineReason=native?.error?.errorName, expectedWrap=literal?error?.errorName==='typeUnconfirmed':error?.code==='secret_input_failed';
       const skyClass=error?(engineReason==='typeUnconfirmed'&&expectedWrap?'typeUnconfirmed':'unexpected-error'):'ok';
-      if(!guarded||sent!==1||!native) return {reply:false,raw:null,forwarded:null,sky:'missing',serviceMs:null};
-      return {reply:true,raw,forwarded:meta['cua/typeReadback'],sky:skyClass,noted:noteAttested(native?.result?.note,content),serviceMs:Number.isFinite(meta['cua/serviceMs'])?meta['cua/serviceMs']:null};
+      const action=actionCode(native,error,guarded),serviceMs=Number.isFinite(meta['cua/serviceMs'])?meta['cua/serviceMs']:null;
+      if(!guarded||sent!==1||!native) return {reply:false,raw:null,forwarded:null,sky:'missing',serviceMs,action};
+      return {reply:true,raw,forwarded:meta['cua/typeReadback'],sky:skyClass,noted:noteAttested(native?.result?.note,content),serviceMs,action};
     }
     // Prime AX access before the first scored field. No action and no instrumented audit tag are sent.
     await w.execute('get_app_state',{pid:platform.pid,includeScreenshot:false,disableDiff:true});
@@ -182,6 +189,7 @@ async function main(){
         domExact:delivery?.exact,controlExact:controlOK}));
       if(!row.valid&&!row.invalid)row.invalid='control-not-realized';
       row.typeRequest=receipt?.reply===true;
+      row.action=receipt?.action??null;
       row.keyEvent=delivery?.key===true;
       row.controlRealized=m.control===null?null:controlOK;
       row.reason=pickReason(receipt?.raw?.reason);
@@ -195,20 +203,25 @@ async function main(){
   }catch{abort=stage;}
   finally{
     for(const e of Object.values(engines))if(!await e.close())globalPrivacy.add('engine-drain-incomplete');
-    await platform?.dispose();rmSync(tmp,{recursive:true,force:true});
+    await platform?.dispose();
+    // The hosted job, not this probe, releases live browser profiles. Delete only engine homes in those lanes.
+    const disposable=['cft','safari'].includes(lane)?['m','f'].map(name=>join(tmp,name)):[tmp];
+    for(const path of disposable)rmSync(path,{recursive:true,force:true,maxRetries:2});
   }
   const summary=summarize(rows),auditGate=audit?auditPairs(schedules,smoke?1:5):null;
   const privacyViolations=summary.privacyViolations+(globalPrivacy.size?1:0);
   // Findings carry only the harness's surface label and scanner's fixed code, never the offending text or key.
-  const privacyCodes=Object.create(null);
+  const privacyCodes=Object.create(null),actionCodes={main:Object.create(null),fix:Object.create(null)};
   for(const code of [...globalPrivacy,...rows.flatMap(r=>r.privacy)])privacyCodes[code]=(privacyCodes[code]??0)+1;
+  for(const row of rows)if(row.action){const tally=actionCodes[row.head];tally[row.action]=(tally[row.action]??0)+1;}
   const needed=cells.filter(c=>c.kind!=='rewrite').length;
   const gates={coverage:rows.filter(r=>r.valid&&!r.informational).length===needed&&abort===null,
     privacy:privacyViolations===0, outcome:audit?null:summary.scored.passed===needed&&summary.wrongSuccesses===0&&rows.every(r=>!r.observationMissing&&!r.evidenceFailure),
     schedule:auditGate?.pass??null};
   const publishable=gates.privacy;
   const status={lane,phase,kit:config.kit,refs:config.refs,abort,planned:cells.length,completed:rows.length,invalid:summary.invalid,
-    unattempted:cells.length-rows.length,privacyViolations,privacyCodes,gates,publishable,presentation:config.presentation??null,foregroundFallback:config.foregroundFallback??null};
+    unattempted:cells.length-rows.length,privacyViolations,privacyCodes,actionCodes,observationsMissing:rows.filter(r=>r.observationMissing).length,
+    gates,publishable,presentation:config.presentation??null,foregroundFallback:config.foregroundFallback??null};
   writeFileSync(join(out,'status.json'),JSON.stringify(status,null,2)+'\n');
   // Counts and timings rebuilt from closed codes may leave even a privacy-failed run; rows, hashes and traces never do.
   writeFileSync(join(out,'coded.json'),JSON.stringify(coded(summary,auditGate),null,2)+'\n');

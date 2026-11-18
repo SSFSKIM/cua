@@ -70,9 +70,10 @@ function embedded(s){
 }
 export function inspect(input,values,{literal=false,stringsOnly=false,surface=null,baseline=false,names=true}={}){
   const findings=new Set(),seen=new WeakSet();
-  const needles=values.flatMap(v=>[v,Buffer.from(v).toString('hex'),Buffer.from(v).toString('base64').replace(/=+$/,''),...Array.from({length:Math.max(0,v.length-7)},(_,i)=>v.slice(i,i+8))]);
+  const needles=[...new Set(values.flatMap(v=>[v,Buffer.from(v).toString('hex'),Buffer.from(v).toString('base64').replace(/=+$/,''),...Array.from({length:Math.max(0,v.length-7)},(_,i)=>v.slice(i,i+8))]).map(x=>x.toLowerCase()))].filter(Boolean);
   function string(s,depth){
-    if(needles.some(n=>s.toLowerCase().includes(n.toLowerCase())))findings.add('synthetic-value');
+    const lower=s.toLowerCase();
+    if(needles.some(n=>n.length<=lower.length&&lower.includes(n)))findings.add('synthetic-value');
     if(textEvidence.test(s))findings.add('private-text');
     if(names&&(axNames.test(s)||textName.test(s)))findings.add('private-name');
     // JSON inside a string is structure too, without any exemption.

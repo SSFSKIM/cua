@@ -8,7 +8,7 @@
 
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, describe, it } from 'node:test';
@@ -57,5 +57,16 @@ describe("wrap71's decoys fail closed (M5's T4, arm64 round, item (d))", { skip:
     assert.equal(g.ran, false, 'the guarded command never ran');
     assert.deepEqual(g.flags.map((f) => [f.kind, f.decoy]), [['decoy-refused', 'a11y']]);
     assert.match(g.flags[0].why, /could not be bound/);
+  });
+
+  // fix wave 1: the decoy directory itself is part of the recorded refusal, never a traceback
+  it('refuses the step before it starts when the decoy directory cannot be made, recorded', () => {
+    const g = guard({ prepare: (out) => { mkdirSync(out, { recursive: true }); writeFileSync(join(out, 'decoy'), 'not a directory'); } });
+    assert.notEqual(g.run.status, 0);
+    assert.equal(g.ran, false, 'the guarded command never ran');
+    assert.doesNotMatch(g.run.stderr, /Traceback/);
+    assert.deepEqual(g.flags.map((f) => [f.kind, f.decoy]), [['decoy-refused', 'session']]);
+    assert.match(g.flags[0].why, /decoy directory .* could not be made/);
+    assert.equal(g.summary.refused, g.flags[0].why);
   });
 });

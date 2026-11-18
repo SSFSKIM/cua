@@ -479,12 +479,16 @@ def sampler(done):
 
 env = dict(os.environ)
 decoys = os.path.join(out, 'decoy')
-os.makedirs(decoys, exist_ok=True)
 # M5's T4, arm64 round, item (d): every decoy bound here, before the step starts, or the step never starts. The arm64
 # pilot's session decoy failed to bind in its own thread ("AF_UNIX path too long") and the guard ran on without it.
+# Fix wave 1: the decoys' directory is part of it, so a non-directory there is a recorded refusal, not a traceback.
 bound = {}
 for name in ['session', 'a11y']:
     try:
+        try:
+            os.makedirs(decoys, exist_ok=True)
+        except OSError as e:
+            raise ValueError(f'directory {decoys} could not be made: {e}') from e
         bound[name] = bind_decoy(os.path.join(decoys, f'{name}.sock'))
     except ValueError as e:
         why = f'the {name} decoy {e}: the step is refused before it starts, since a run process could reach the person\'s bus unseen'

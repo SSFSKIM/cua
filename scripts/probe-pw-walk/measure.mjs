@@ -25,7 +25,7 @@ async function stop(p){if(!p||p.exitCode!==null||p.signalCode!==null)return;p.ki
 const helper=child(arg('tool'),[]),waiters=[];
 createInterface({input:helper.stdout}).on('line',line=>{const w=waiters.shift();if(!w)return;clearTimeout(w.timer);try{const r=JSON.parse(line);if(r.error)throw Error(r.error);w.ok(r);}catch(e){w.no(e);}});
 function ask(q){return new Promise((ok,no)=>{const w={ok,no,timer:setTimeout(()=>no(Error('helper timeout')),20000)};waiters.push(w);helper.stdin.write(JSON.stringify(q)+'\n');});}
-async function front(pid){const r=await ask({op:'front',pid});if(r.frontmostPid!==pid)throw Error('frontmost mismatch');}
+async function front(pid){const r=await ask({op:'front',pid});if(r.frontmostPid!==pid)throw Error('frontmost mismatch '+JSON.stringify(r));}
 let trial=0,ack=-1,seedRequests=0;const requests={};
 const html=`<!doctype html><meta charset="utf-8"><title>PW walk owned fixture</title><h1>Owned password field</h1><label>Public control<input aria-label="Public control" value="public-control"></label><label>Password<input id="pw" type="password" aria-label="PW walk test" autocomplete="off"></label><script>
 let seen=-1;async function tick(){try{const q=await(await fetch('/seed',{cache:'no-store'})).json();if(q.trial!==seen){seen=q.trial;const f=document.getElementById('pw');f.value=q.value;f.focus();f.setSelectionRange(0,Math.min(7,q.value.length));await fetch('/ack?trial='+seen+'&length='+f.value.length);}}catch{}setTimeout(tick,100)}tick();</script>`;
@@ -50,6 +50,7 @@ try{
   const bundle='/Applications/Google Chrome for Testing.app',bin=bundle+'/Contents/MacOS/Google Chrome for Testing';if(!existsSync(bin))throw Error('CfT missing');config.version=execFileSync('/usr/libexec/PlistBuddy',['-c','Print :CFBundleShortVersionString',bundle+'/Contents/Info.plist'],{encoding:'utf8'}).trim();config.launch='probe-390 direct executable route, disposable runner HOME, explicit temporary profile, foreground before readiness';app=child(bin,['--user-data-dir='+join(home,'profile'),'--no-first-run','--no-default-browser-check','--disable-search-engine-choice-screen','--disable-features=Translate','--lang=en-US','--window-position=0,25','--window-size=650,700',url],{HOME:process.env.HOME});pid=app.pid;
  }
  config.pid=pid;save('config.json',config);
+ if(browser==='cft'){config.startup={startedAt:Date.now(),polls:0,last:null};await until(async()=>{config.startup.polls++;config.startup.last=await ask({op:'status',pid});const s=config.startup.last;return s.registered&&s.finishedLaunching&&s.windowCount>0;},60000);config.startup.endedAt=Date.now();save('config.json',config);}
  if(browser!=='appkit'){await front(pid);await until(()=>ack===0,45000);}
  await front(pid);config.enablement=await ask({op:'enable',pid});config.pid=pid;save('config.json',config);
  const socket=join(root,'pw-'+browser+'.sock');rmSync(socket,{force:true});engine=child(arg('engine'),[],{CUA_ENGINE_SOCKET:socket});w=await Wire.connect(socket);const ping=await w.call('ping',{clientApiVersion:'cua-engine-1',desktop:'shared'});if(ping.error)throw Error('engine ping error');
@@ -68,7 +69,7 @@ try{
   rows.push(row);save('rows.json',rows);
  }
  save('summary.json',{complete:true,rows:rows.length,seedRequests});
-}catch(e){let diagnostic;try{if(pid)diagnostic=await ask({op:'scan',pid,pw:passwords[trial]??'',diagnostic:browser==='cft'&&trial===0&&ack<0});}catch{}save('fatal.json',{error:String(e.stack??e),rows:rows.length,trial,ack,seedRequests,requests,appPid:app?.pid,appExitCode:app?.exitCode,appSignal:app?.signalCode,diagnostic});process.exitCode=1;}
+}catch(e){let diagnostic;try{if(pid)diagnostic=await ask({op:'scan',pid,pw:passwords[trial]??'',diagnostic:browser==='cft'&&trial===0&&ack<0});}catch{}save('fatal.json',{error:String(e.stack??e),rows:rows.length,trial,ack,seedRequests,requests,startup:config.startup,appPid:app?.pid,appExitCode:app?.exitCode,appSignal:app?.signalCode,diagnostic});process.exitCode=1;}
 finally{
  if(w){try{await w.call('endTask',{});}catch{}w.close();}
  for(const p of children.reverse())await stop(p);

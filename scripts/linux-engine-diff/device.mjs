@@ -22,7 +22,8 @@
 //   unexercised, a failure of the case, whatever it answered; every sample's notice is read with the next acting
 //   request's answer and held to T14's contract;
 // - in the cancel, late and late-take cases, a plain-drag ok for a drag Chrome never started a drag session for at all
-//   is no sample of the case (ruling 823, premise.mjs): excluded, counted and refilled within its pass;
+//   is no sample of the case (ruling 823, premise.mjs): excluded and counted within its run, whose cell, short of its
+//   plan by that alone, premise-refill.mjs answers by rerunning V5 whole;
 // - `late-take` (the take left unseen until after the release, `--dnd-defer-take`): the drag answers as a plain drag at
 //   its release, a read on the same engine runs, the first acting request answers the late drag-and-drop notice (not
 //   run), and wherever the drop landed the witness shows the change the notice reports;
@@ -54,7 +55,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { pendingOf } from './drop-signals-judge.mjs';
-import { TIMED_QUOTAS, bindAudit, bindTimed, evidenceLabel, judgePremise } from './premise.mjs';
+import { FOLLOW_UP_FIELDS, TIMED_QUOTAS, bindAudit, bindTimed, evidenceLabel, judgePremise } from './premise.mjs';
 import { preorder } from './normalize.mjs';
 import { readGtk4Status } from './families.mjs';
 import { IDENTITY_OPS, IDENTITY_SCENE_OPS, judgeIdentity } from './identity.mjs';
@@ -711,7 +712,8 @@ const RECORDED = [];
 function recordPremise(ctx, response, out, attempt) {
   ctx.engine.premiseLifecycle ??= randomUUID();
   const outDir = ctx.desktop.logs ? dirname(ctx.desktop.logs) : null;
-  const reads = Object.fromEntries(['state_ok', 'state_notice', 'next_ok', 'next_error', 'read_ok', 'read_error', 'read_notice', 'read_notice_text'].filter((k) => k in out).map((k) => [k, out[k]]));
+  // the case's follow-up reads, by the one allowlist the binding reads them by (premise.mjs `FOLLOW_UPS`)
+  const reads = Object.fromEntries(FOLLOW_UP_FIELDS.filter((k) => k in out).map((k) => [k, out[k]]));
   const { op, block, i } = ctx.scene.lastRequest ?? {};
   const record = {
     kind: 'premise-evidence',
@@ -744,7 +746,7 @@ function recordPremise(ctx, response, out, attempt) {
  * process recorded none for the run, as a re-judge of stored rows), and what they are bound to, the run's timed
  * evidence's window and fixture label. A process records one run; records of another run of the same name in the same
  * process (a test's) are another fixture's, told by the label's nonce, and are not this run's. premise-refill.mjs
- * validates the run's whole sidecar instead.
+ * validates the run's whole sidecar against its plan instead.
  */
 function recordedPremise(op, samples) {
   const run = samples[0]?.run;
@@ -758,7 +760,7 @@ function recordedPremise(op, samples) {
 /** The in-run judge's audit entries: the audit bound to the evidence this process recorded for it (premise.mjs). */
 function inRunAudit(op, samples, audit) {
   const recorded = recordedPremise(op, samples);
-  return bindAudit(audit, recorded?.lines ?? null, { run: samples[0]?.run, scene: samples[0]?.scene, op, window: recorded?.window ?? null, label: recorded?.label ?? null });
+  return bindAudit(audit, recorded?.lines ?? null, { run: samples[0]?.run, scene: samples[0]?.scene, op, expect: DEVICE_OPS[op].device, window: recorded?.window ?? null, label: recorded?.label ?? null });
 }
 
 /** The cells ruling 823's unmet premise can occur in (`PREMISE_KINDS`): V5's cancel, late and late-take cells. */
@@ -803,7 +805,7 @@ export function capabilitiesAnswer(output, version) {
  * that answered as the case expects (a refusal or a cancel its sentence, a late case an honest one, the others
  * success), so a trace of requests that never did what the case measures proves nothing. In ruling 823's cells
  * (`PREMISE_OPS`) a sample or audited request whose premise was unmet is excluded first (premise.mjs). Returns `{pass,
- * reasons}`, with `drops` for a drop case and `premise_unmet` (each pass's record) where anything was excluded or refilled.
+ * reasons}`, with `drops` for a drop case and `premise_unmet` (each pass's record) where anything was excluded.
  */
 export function judgeDevice(op, samples, audit, premiseAudit = undefined) {
   // the minimized cases have expectations of their own (minimized.mjs)
@@ -814,12 +816,12 @@ export function judgeDevice(op, samples, audit, premiseAudit = undefined) {
   const reasons = [];
   if (!samples.length) return { pass: false, reasons: ['no samples'] };
   // ruling 823 (premise.mjs): a sample whose premise was unmet is excluded and counted, and every rule below judges the
-  // rest; a cell short of its planned cold or warm samples fails closed as incomplete, which premise-refill.mjs refills
-  // from another run (ruling 825). Evidence that does not fit its samples is never excluded on, and fails the cell.
+  // rest; a cell short of its planned cold or warm samples fails closed as incomplete, which premise-refill.mjs answers
+  // by rerunning V5 whole, each run judged alone (route C, ruling 836). Evidence that does not fit its samples is never
+  // excluded on, and fails the cell.
   const unmet = {};
   let rows = samples;
   let excluded = 0;
-  let refilled = false;
   if (PREMISE_OPS.has(op)) {
     const timed = bindTimed(samples);
     for (const p of timed.problems) reasons.push(`the premise evidence of the timed samples does not fit them (ruling 823, never excluded on): ${p}`);
@@ -828,8 +830,14 @@ export function judgeDevice(op, samples, audit, premiseAudit = undefined) {
     if (judged.record) unmet.timed = judged.record;
     rows = judged.judged;
     excluded += judged.excluded;
-    refilled ||= samples.some((r) => r.fill);
   }
+  // a condition that some judged sample shows something, where every sample was excluded for its unmet premise: untested,
+  // not failed, since the cell is short of its plan already (review 3, finding 2)
+  const exists = (what, pred) => {
+    if (!rows.length) reasons.push(`untested: every sample was excluded for its unmet premise, so whether ${what} is untested`);
+    else if (!rows.some(pred)) return false;
+    return true;
+  };
   const badOf = (list) => (what, pred) => {
     const failed = list.filter((r) => !pred(r));
     if (failed.length) reasons.push(`${what} on ${failed.length} of ${list.length} samples (${failed.slice(0, 3).map((r) => `${r.block}/${r.i}`).join(', ')})`);
@@ -860,7 +868,7 @@ export function judgeDevice(op, samples, audit, premiseAudit = undefined) {
     bad('the next acting request did not carry the late drag and drop', (r) => r.next_ok === false && r.next_error === r.expected_notice);
     // the notice says the desktop may have changed: where the drop landed, the witness must show it
     bad('a drop the witness did not record', (r) => !r.dropped || r.witness === false);
-    if (!rows.some((r) => r.dropped && r.witness === false)) reasons.push('no drop landed: the case showed no change for the notice to report');
+    if (!exists('a drop landed', (r) => r.dropped && r.witness === false)) reasons.push('no drop landed: the case showed no change for the notice to report');
   }
   // the drops the engine confirms or reports, counted (the design session, 2026-11-10): a drop that landed and was
   // reported unconfirmed is honest, counted for the run (stats.mjs `dropCounts`, a finding only over 5% of a load's
@@ -900,7 +908,7 @@ export function judgeDevice(op, samples, audit, premiseAudit = undefined) {
     );
     // every drag's pending read, on the branch or off it, held to T14's contract
     bad("the read's notice and the next acting request's refusal did not agree", (r) => r.state_notice !== undefined && r.next_ok !== undefined && pendingKept(r));
-    if (!rows.some((r) => r.error === r.late_error)) reasons.push('no answer said the drop may have happened: no cancel came too late');
+    if (!exists('an answer said the drop may have happened', (r) => r.error === r.late_error)) reasons.push('no answer said the drop may have happened: no cancel came too late');
   }
   if (expect === 'foreground' || expect === 'background') {
     bad('a request failed', (r) => r.ok);
@@ -927,16 +935,15 @@ export function judgeDevice(op, samples, audit, premiseAudit = undefined) {
       const audited = audit.answered ?? [];
       let answered = audited;
       // the audit's own requests, bound to the evidence their samples recorded (the in-run judge's from this process,
-      // premise-refill.mjs's from the runs it combined), those whose premise was unmet excluded (ruling 823)
+      // premise-refill.mjs's from the run's sidecar), those whose premise was unmet excluded (ruling 823)
       if (PREMISE_OPS.has(op)) {
         const bound = premiseAudit ?? inRunAudit(op, samples, audit);
         for (const p of bound.problems) reasons.push(`the premise evidence of the ${audit.kind} audit does not fit it (ruling 823, never excluded on): ${p}`);
-        const judged = judgePremise(bound.entries, { name: (e) => `${e.fill ? `${e.origin ?? e.run}/` : ''}audit/${e.i}`, what: 'audited requests', prefix: `the ${audit.kind} audit is incomplete` });
+        const judged = judgePremise(bound.entries, { name: (e) => `audit/${e.i}`, what: 'audited requests', prefix: `the ${audit.kind} audit is incomplete` });
         reasons.push(...judged.reasons);
         if (judged.record) unmet.audit = judged.record;
         answered = judged.judged;
         excluded += judged.excluded;
-        refilled ||= bound.entries.some((e) => e.fill);
       }
       const expected = (a) => {
         if (expect === 'refusal' || expect === 'cancel' || expect === 'stray') return !a.ok && a.error === a.expected_error;
@@ -947,9 +954,9 @@ export function judgeDevice(op, samples, audit, premiseAudit = undefined) {
       else if (!answered.every(expected)) reasons.push(`the ${audit.kind} audit's requests did not answer as the case expects (${answered.map((a) => (a.ok ? 'success' : a.error)).join('; ').slice(0, 200)})`);
     }
   }
-  // a run's own verdict that excluded a sample and was not refilled is provisional: premise-refill.mjs gives the final
-  // one, from this run and its refill runs (ruling 825); one that excluded nothing is final as it stands
-  const provisional = excluded > 0 && !refilled;
-  if (provisional) reasons.push('provisional: premise-refill.mjs refills this cell from another run of the same head, engine and load (rulings 823, 825)');
+  // a run's own verdict that excluded a sample is provisional: premise-refill.mjs gives V5's final one, rerunning V5 whole
+  // where the shortage is the run's only failure (route C, ruling 836); one that excluded nothing is final as it stands
+  const provisional = excluded > 0;
+  if (provisional) reasons.push('provisional: premise-refill.mjs reruns V5 whole where this shortage is the run\'s only failure, each run judged alone (rulings 823, 836)');
   return { pass: reasons.length === 0, reasons, ...(drops ? { drops } : {}), ...(Object.keys(unmet).length ? { premise_unmet: unmet } : {}), ...(provisional ? { provisional } : {}) };
 }

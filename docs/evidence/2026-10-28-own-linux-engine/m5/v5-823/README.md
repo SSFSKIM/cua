@@ -1,9 +1,9 @@
 # V5's unmet premise (the design session's rulings 823 and 825), re-judged read-only
 
-Task 100, branch `m5-v5-823` from `feat/171-m5` at dec76845, with fix waves 1 and 2. The pieces:
+Task 100, branch `m5-v5-823` from `feat/171-m5` at dec76845, with fix waves 1, 2 and 3. The pieces:
 - the rule: `scripts/linux-engine-diff/premise.mjs`;
 - the judge that applies it: `device.mjs` `judgeDevice`, which also records the evidence;
-- the refill, by at most two whole reruns of V5 (the controller's route B'): `scripts/linux-engine-gate/premise-refill.mjs`;
+- the refill, by at most two whole reruns of V5, each run judged alone (the controller's route C, ruling 836): `scripts/linux-engine-gate/premise-refill.mjs`;
 - the negative controls, made through the real paths: `test/linux-engine-diff/premise.test.mjs` and
   `premise-refill.test.mjs`, with `premise-fixture.mjs`.
 
@@ -102,3 +102,7 @@ a clean display watchdog (`session.jsonl`, `stdout.log`).
 - **What it does not show.** Chrome took every drag in this run, so the records show the shape of a started drag:
   pointercancel and dragend, no pointerup, and the page's `ups` count up by one. A genuine no-take is still unseen
   live. Its lines are the same page's, in the same form, with the other tokens explicit. No refill has run live either.
+- **Fix wave 3, route C.** `live-check.mjs` ran at 82925197 and calls exports that route C removed. `live-check-c.mjs`
+  reads the same records with route C's code (output `live-check-c.json`): the run judged alone passes. All five
+  cells pass. Each planned slot (1 block of 1 cold and 2 warm requests, and 2 audited requests) is there exactly once,
+  every sidecar line binds, and every late and late-take line's follow-ups fit their case's allowlist.

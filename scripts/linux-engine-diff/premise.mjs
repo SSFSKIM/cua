@@ -21,14 +21,12 @@
 // dropped answer, the drag's own reads carrying a notice, the next request refused for something pending) is a claim of
 // cua's: where the page proves Chrome never started a drag session, it is a false claim and fails its cell.
 //
-// Such a sample is excluded from its cell's judgment and counted. A cell short of its planned count, of its cold or warm
-// quota or of its audit's, is refilled by premise-refill.mjs from whole reruns of V5, at most `MAX_REFILL_RUNS` of them
-// (the controller's route B', on rulings 823 and 825); one still short after them fails closed as incomplete. A
-// separate failure of the excluded sample's own reads still fails its cell.
-//
-// Each rerun of V5 carries the main run's name, so a refill run's samples are tagged with their run (`origin`,
-// premise-refill.mjs's `r1`, `r2`), and every evidence line is bound to its run's own fixture label, which carries the
-// harness's per-run nonce (scenes.mjs `label`), as well as to its window's XID.
+// Such a sample is excluded from its cell's judgment and counted, inside its own run. A cell short of its planned count,
+// of its cold or warm quota or of its audit's, fails as incomplete; where that shortage is a run's only failure,
+// premise-refill.mjs reruns V5 whole, and each rerun is judged alone (the controller's route C, the design session's
+// ruling 836). A separate failure of the excluded sample's own reads still fails its cell. Every evidence line is bound
+// to its run's own fixture label, which carries the harness's per-run nonce (scenes.mjs `label`), and to its window's
+// XID.
 
 /** The start of every refusal or notice a drag's after-release watch leaves pending (dnd.rs `pending_notice`). */
 const PENDING = 'Pending from your last drag';
@@ -171,7 +169,7 @@ export function followUpFailure(r) {
 export function lifecycleOf(r) {
   if (typeof r.premise_evidence?.lifecycle === 'string') return r.premise_evidence.lifecycle;
   if (r.lifecycle !== undefined) return r.lifecycle;
-  return r.block === 'audit' ? null : `${r.origin ?? r.run ?? ''}|${r.block}`;
+  return r.block === 'audit' ? null : `${r.run ?? ''}|${r.block}`;
 }
 
 /** The one adjacency rule, for the verdict, the refill and the replay: the next request on the same engine lifecycle. */
@@ -187,13 +185,13 @@ export const adjacency = (entries) => (e) => {
  * request did, on the audited window; any line missing, doubled or foreign is a problem, and its entries keep no
  * evidence (judged as before). With no lines at all (a run from before the fix) the entries keep none.
  */
-export function bindAudit(audit, lines, { run, scene, op, window = null, label = null, origin = undefined } = {}) {
+export function bindAudit(audit, lines, { run, scene, op, expect = null, window = null, label = null } = {}) {
   const answered = audit?.answered ?? [];
   const lifecycles = audit?.lifecycles ?? 1;
-  const tag = origin === undefined ? {} : { origin };
-  const bare = answered.map((a, i) => ({ ...a, i, run, ...tag, block: 'audit', lifecycle: lifecycles === 1 ? `${origin ?? run}|audit` : null }));
+  const bare = answered.map((a, i) => ({ ...a, i, run, block: 'audit', lifecycle: lifecycles === 1 ? `${run}|audit` : null }));
   if (lines == null) return { entries: bare, problems: [] };
   const problems = [];
+  if (!(expect in FOLLOW_UPS)) problems.push(`no premise case's follow-ups for the expectation ${expect}`);
   // what the lines are bound to: the audited window (its XID) and the run's own fixture, whose label carries the run's
   // name and its Desktop's nonce, so a line of a prior run of the same name, even on a reused XID, never binds
   if (!Number.isInteger(window)) problems.push('no audited window to bind the lines to');
@@ -204,6 +202,8 @@ export function bindAudit(audit, lines, { run, scene, op, window = null, label =
   for (const l of own.filter((x) => x.fixture?.label !== label)) problems.push(`audit/${l.i}'s line is of another fixture (${l.fixture?.label ?? 'none'})`);
   // the reply as recorded, every field present: an absent notice is never read as none
   for (const l of own.filter((x) => !hasReply(x))) problems.push(`audit/${l.i}'s line does not record the reply's ok, error and notice`);
+  // the case's own reads after the drag, exactly as its recorder keeps them
+  if (expect in FOLLOW_UPS) for (const l of own) for (const p of followUpProblems(l.reads, expect)) problems.push(`audit/${l.i}'s line: ${p}`);
   const at = (i) => own.filter((l) => l.i === i);
   answered.forEach((a, i) => {
     const found = at(i);
@@ -221,10 +221,46 @@ export function bindAudit(audit, lines, { run, scene, op, window = null, label =
   return {
     entries: answered.map((a, i) => {
       const l = at(i)[0];
-      return { ...a, i, run, ...tag, block: 'audit', lifecycle: l.lifecycle, reply_notice: l.reply.notice, dropped: l.dropped, witness: null, ...l.reads, premise_evidence: l };
+      // the case's follow-ups first, from the allowlist alone: nothing they carry replaces a field the binding set
+      const reads = Object.fromEntries(FOLLOW_UPS[expect].fields.filter((k) => k in l.reads).map((k) => [k, l.reads[k]]));
+      return { ok: a.ok, error: a.error ?? null, expected_error: a.expected_error ?? null, late_error: a.late_error ?? null, ...reads, i, run, block: 'audit', lifecycle: l.lifecycle, reply_notice: l.reply.notice, dropped: l.dropped, witness: null, premise_evidence: l };
     }),
     problems: [],
   };
+}
+
+const bool = (v) => typeof v === 'boolean';
+const text = (v) => typeof v === 'string';
+const textOrNull = (v) => v === null || typeof v === 'string';
+/** Each follow-up read a premise case's recorder keeps (device.mjs `recordPremise`), and its shape. */
+const FOLLOW_UP_SHAPES = { state_ok: bool, state_notice: textOrNull, next_ok: bool, next_error: textOrNull, read_ok: bool, read_error: text, read_notice: bool, read_notice_text: textOrNull };
+/**
+ * The follow-up reads each premise case's check makes after its drag (device.mjs `check`), the only ones its evidence
+ * keeps: the cancel case none, the late case `readPending`'s, the late take its read and its next acting request.
+ * `required` are always present; `when` names a field present only under a condition of the others.
+ */
+export const FOLLOW_UPS = {
+  cancel: { fields: [], required: [] },
+  late: { fields: ['state_ok', 'state_notice', 'next_ok', 'next_error'], required: ['state_ok', 'state_notice', 'next_ok', 'next_error'] },
+  'late-take': { fields: ['read_ok', 'read_error', 'read_notice', 'read_notice_text', 'next_ok', 'next_error'], required: ['read_ok', 'read_notice', 'read_notice_text', 'next_ok', 'next_error'], when: { read_error: (r) => r.read_ok === false } },
+};
+/** Every follow-up field any case's recorder keeps. */
+export const FOLLOW_UP_FIELDS = Object.keys(FOLLOW_UP_SHAPES);
+
+/** Whether a line's follow-up reads are its case's, field for field: none unknown, each required one present, each of its shape. */
+export function followUpProblems(reads, expect) {
+  const spec = FOLLOW_UPS[expect];
+  if (reads == null || typeof reads !== 'object' || Array.isArray(reads)) return ['its follow-up reads are not recorded'];
+  const problems = [];
+  for (const k of Object.keys(reads)) if (!spec.fields.includes(k)) problems.push(`a follow-up field the ${expect} case does not record (${k})`);
+  for (const k of spec.fields) {
+    const needed = spec.required.includes(k) || spec.when?.[k]?.(reads) === true;
+    if (!(k in reads)) {
+      if (needed) problems.push(`its follow-up ${k} is missing`);
+    } else if (!FOLLOW_UP_SHAPES[k](reads[k])) problems.push(`its follow-up ${k} is not of its shape (${JSON.stringify(reads[k])})`);
+    else if (!needed && spec.when?.[k]) problems.push(`its follow-up ${k} is recorded where it cannot be`);
+  }
+  return problems;
 }
 
 /** Whether an evidence line records cua's reply whole: its ok, its error and its notice, each present (null or not). */
@@ -249,8 +285,7 @@ export function bindTimed(rows) {
   const bound = rows.map((r) => {
     const e = r.premise_evidence;
     if (e == null) return r;
-    // a refill's row keeps its own run's block (`fill_block`, premise-refill.mjs) under the name it is combined by
-    const wrong = e.run !== r.run || e.scene !== r.scene || e.op !== r.op || e.block !== (r.fill_block ?? r.block) || e.i !== r.i;
+    const wrong = e.run !== r.run || e.scene !== r.scene || e.op !== r.op || e.block !== r.block || e.i !== r.i;
     if (wrong) problems.push(`${r.block}/${r.i}'s evidence names another sample (${e.run} ${e.scene} ${e.op} ${e.block}/${e.i})`);
     else if (!ownLabel(e.fixture?.label, r.run)) problems.push(`${r.block}/${r.i}'s evidence names a fixture not of run ${r.run} (${e.fixture?.label ?? 'none'})`);
     else if (!hasReply(e)) problems.push(`${r.block}/${r.i}'s evidence does not record the reply's ok, error and notice`);
@@ -258,10 +293,9 @@ export function bindTimed(rows) {
     const { premise_evidence, ...rest } = r;
     return rest;
   });
-  // one window and page for a scene in each run (a refill run opens its own; every rerun of V5 carries the main run's
-  // name, so a run is told by its origin, premise-refill.mjs's)
-  for (const run of new Set(bound.map((r) => r.origin ?? r.run))) {
-    const windows = new Set(bound.filter((r) => (r.origin ?? r.run) === run && r.premise_evidence).map((r) => `${r.premise_evidence.window}|${r.premise_evidence.fixture?.label}`));
+  // one window and page for a scene in each run
+  for (const run of new Set(bound.map((r) => r.run))) {
+    const windows = new Set(bound.filter((r) => r.run === run && r.premise_evidence).map((r) => `${r.premise_evidence.window}|${r.premise_evidence.fixture?.label}`));
     if (windows.size > 1) problems.push(`the evidence names ${windows.size} windows or pages for one scene in run ${run}`);
   }
   return { rows: problems.length ? rows.map(({ premise_evidence, ...rest }) => rest) : bound, problems };
@@ -270,21 +304,15 @@ export function bindTimed(rows) {
 // ---------------------------------------------------------------------------------------------------------------
 // a pass under the ruling
 
-/**
- * The whole reruns of V5 a short cell may be refilled from (the controller's route B'): each brings the pass's planned
- * samples again, so a pass's bound is this many times its planned count.
- */
-export const MAX_REFILL_RUNS = 2;
-
 const rate = (n, of) => (of ? Math.round((n / of) * 1000) / 1000 : 0);
 const was = (n) => (n === 1 ? 'was' : 'were');
 const QUOTAS = { cold: (e) => e.series === 'cold', warm: (e) => e.series !== 'cold' };
 
 /**
- * A pass's samples (`entries`, refill samples marked `fill`) under the ruling: the entries judged (the excluded taken
+ * A pass's samples (`entries`, one run's) under the ruling: the entries judged (the excluded taken
  * out), its record, its reasons, and what it still needs. `quotas`: the timed pass keeps its cold and warm quotas apart;
  * the audit is one quota. `name(entry)` names a sample, `what` the pass's samples, `prefix` the pass in a reason.
- * A pass with nothing excluded and nothing refilled keeps no record.
+ * A pass with nothing excluded and no false claim keeps no record.
  */
 export function judgePremise(entries, { name, what = 'samples', prefix = 'incomplete', quotas = { all: () => true } } = {}) {
   const next = adjacency(entries);
@@ -297,9 +325,7 @@ export function judgePremise(entries, { name, what = 'samples', prefix = 'incomp
   if (falseClaims.length) reasons.push(`answered as if it dropped where the page shows Chrome never started a drag and drop (ruling 823) on ${falseClaims.length} of ${entries.length} ${what} (${falseClaims.slice(0, 3).join(', ')})`);
   const failed = entries.flatMap((e, i) => (unmet[i] && followUpFailure(e) ? [`${name(e, i)}: ${followUpFailure(e)}`] : []));
   if (failed.length) reasons.push(`a sample excluded for its unmet premise failed its own reads on ${failed.length} of ${entries.length} ${what} (${failed.slice(0, 3).join('; ')})`);
-  const planned = entries.filter((e) => !e.fill);
-  const refilled = entries.length - planned.length;
-  const bound = MAX_REFILL_RUNS * planned.length;
+  const planned = entries;
   const excluded = unmet.filter(Boolean).length;
   const need = {};
   for (const [q, inQuota] of Object.entries(quotas)) {
@@ -308,11 +334,10 @@ export function judgePremise(entries, { name, what = 'samples', prefix = 'incomp
     need[q] = Math.max(0, want - have);
     if (excluded && have < want) {
       const which = Object.keys(quotas).length > 1 ? ` ${q}` : '';
-      reasons.push(`${prefix}: Chrome never started a drag and drop on ${excluded} of ${entries.length} ${what} (the premise unmet, ruling 823), so ${have}${which} ${was(have)} judged of the ${want} planned, with ${refilled} refilled of a bound of ${bound}`);
+      reasons.push(`${prefix}: Chrome never started a drag and drop on ${excluded} of ${entries.length} ${what} (the premise unmet, ruling 823), so ${have}${which} ${was(have)} judged of the ${want} planned`);
     }
   }
-  if (refilled > bound) reasons.push(`${refilled} ${what} refilled past the bound of ${bound}`);
-  const record = excluded || refilled || falseClaims.length ? { samples: entries.length, unmet: excluded, rate: rate(excluded, entries.length), planned: planned.length, refilled, judged: judged.length, unmet_samples: names((e, i) => unmet[i]), ...(falseClaims.length ? { false_claims: falseClaims } : {}), need } : null;
+  const record = excluded || falseClaims.length ? { samples: entries.length, unmet: excluded, rate: rate(excluded, entries.length), judged: judged.length, unmet_samples: names((e, i) => unmet[i]), ...(falseClaims.length ? { false_claims: falseClaims } : {}), need } : null;
   return { judged, record, reasons, need, excluded, classes };
 }
 

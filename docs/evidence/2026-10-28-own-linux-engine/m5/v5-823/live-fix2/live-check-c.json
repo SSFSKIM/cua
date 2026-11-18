@@ -1,0 +1,119 @@
+{
+ "run": "v5pl",
+ "head": "8292519764159c5e07b95fbaa748873827367f70",
+ "pass": true,
+ "failures": [],
+ "short": [],
+ "cells": [
+  {
+   "op": "chrome_dnd_shared",
+   "status": "pass",
+   "slot_problems": [],
+   "counts": {
+    "cold": {
+     "samples": 1,
+     "excluded": 0,
+     "judged": 1
+    },
+    "warm": {
+     "samples": 2,
+     "excluded": 0,
+     "judged": 2
+    },
+    "audit": {
+     "samples": 2,
+     "excluded": 0,
+     "judged": 2
+    }
+   }
+  },
+  {
+   "op": "chrome_dnd_late_shared",
+   "status": "pass",
+   "slot_problems": [],
+   "counts": {
+    "cold": {
+     "samples": 1,
+     "excluded": 0,
+     "judged": 1
+    },
+    "warm": {
+     "samples": 2,
+     "excluded": 0,
+     "judged": 2
+    },
+    "audit": {
+     "samples": 2,
+     "excluded": 0,
+     "judged": 2
+    }
+   }
+  },
+  {
+   "op": "chrome_dnd_obscured_in_front_shared",
+   "status": "pass",
+   "slot_problems": [],
+   "counts": {
+    "cold": {
+     "samples": 1,
+     "excluded": 0,
+     "judged": 1
+    },
+    "warm": {
+     "samples": 2,
+     "excluded": 0,
+     "judged": 2
+    },
+    "audit": {
+     "samples": 2,
+     "excluded": 0,
+     "judged": 2
+    }
+   }
+  },
+  {
+   "op": "chrome_dnd_late_take_shared",
+   "status": "pass",
+   "slot_problems": [],
+   "counts": {
+    "cold": {
+     "samples": 1,
+     "excluded": 0,
+     "judged": 1
+    },
+    "warm": {
+     "samples": 2,
+     "excluded": 0,
+     "judged": 2
+    },
+    "audit": {
+     "samples": 2,
+     "excluded": 0,
+     "judged": 2
+    }
+   }
+  },
+  {
+   "op": "chrome_dnd_obscured_in_front_late_shared",
+   "status": "pass",
+   "slot_problems": [],
+   "counts": {
+    "cold": {
+     "samples": 1,
+     "excluded": 0,
+     "judged": 1
+    },
+    "warm": {
+     "samples": 2,
+     "excluded": 0,
+     "judged": 2
+    },
+    "audit": {
+     "samples": 2,
+     "excluded": 0,
+     "judged": 2
+    }
+   }
+  }
+ ]
+}

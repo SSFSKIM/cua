@@ -5,7 +5,7 @@
 // stays and calling it throws nothing). The override is recorded as stranded, and the next controller that attaches the
 // tab, a later runtime's, removes it. Real headless Chrome (support/real-chrome.mjs; skipped without one), driven by the
 // service's own CdpController, Clipboard and bridge over a backend that is a DevTools WebSocket per attach.
-import {test} from 'node:test';
+import {after, test} from 'node:test';
 import assert from 'node:assert/strict';
 import {CdpController} from '../../src/browser-service/cdp.mjs';
 import {Clipboard} from '../../src/browser-service/clipboard.mjs';
@@ -51,6 +51,18 @@ function chromeBackend(socketUrl) {
   };
 }
 
+// One Chrome for the file, its page loaded afresh for each test (a navigation drops whatever the last one left in it):
+// Chrome's start-up is slow on a loaded runner, and other real-Chrome tests run beside this file.
+const cleanups = [];
+after(async () => { for (const cleanup of cleanups.reverse()) await cleanup(); });
+let started;
+async function freshPage() {
+  started ??= realChrome({after: cleanup => cleanups.push(cleanup)}, {'/page.html': '<!doctype html><title>page</title><p>page</p>'});
+  const chrome = await started;
+  await chrome?.load('/page.html');
+  return chrome;
+}
+
 const TAB = 1;
 const PAGE_STATE = `(async () => {
   const bridge = globalThis.__browserUseClipboardBridge !== undefined;
@@ -60,9 +72,8 @@ const PAGE_STATE = `(async () => {
 })()`;
 
 test('a bridge left in a page by a disposal that skipped its detached tab is removed when the next runtime attaches the tab', async t => {
-  const chrome = await realChrome(t, {'/page.html': '<!doctype html><title>page</title><p>page</p>'});
+  const chrome = await freshPage();
   if (chrome == null) return t.skip('no Chrome on this machine');
-  await chrome.load('/page.html');
   const stranded = new StrandedPageClipboards();
 
   // The first runtime installs the bridge, then Chrome detaches the tab and the next setup disposes the runtime.
@@ -105,9 +116,8 @@ const FIX_PAGE = 'Document.prototype.querySelectorAll = globalThis.__qsa; 1';
 const bridgeInPage = chrome => chrome.evaluate('globalThis.__browserUseClipboardBridge !== undefined');
 
 test('a recovery the page\'s script fails (exceptionDetails) keeps the record, and a later attach removes the override', async t => {
-  const chrome = await realChrome(t, {'/page.html': '<!doctype html><title>page</title><p>page</p>'});
+  const chrome = await freshPage();
   if (chrome == null) return t.skip('no Chrome on this machine');
-  await chrome.load('/page.html');
   const stranded = new StrandedPageClipboards();
   const first = runtimeOn(t, chrome, stranded);
   await first.clipboard.ensurePageClipboard(first.cdp, {tabId: TAB});
@@ -128,9 +138,8 @@ test('a recovery the page\'s script fails (exceptionDetails) keeps the record, a
 });
 
 test('a disposal whose removal the page\'s script fails (exceptionDetails) records the override for the next runtime', async t => {
-  const chrome = await realChrome(t, {'/page.html': '<!doctype html><title>page</title><p>page</p>'});
+  const chrome = await freshPage();
   if (chrome == null) return t.skip('no Chrome on this machine');
-  await chrome.load('/page.html');
   const stranded = new StrandedPageClipboards();
   const first = runtimeOn(t, chrome, stranded);
   await first.clipboard.ensurePageClipboard(first.cdp, {tabId: TAB});

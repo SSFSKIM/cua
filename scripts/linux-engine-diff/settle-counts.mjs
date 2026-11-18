@@ -137,9 +137,10 @@ export function settleVerdict(record) {
   }
   const counts = read.length ? sum(read) : null;
   const undragged = noDrag.length;
-  if (!counts) return { state: 'unknown', counts: null, engines: engines.length, undragged, noDrag, unknown: unknown.length ? unknown : ['no cua engine recorded its counter'] };
+  const unidentified = engines.filter((e) => e.build !== 'cua').length;
+  if (!counts) return { state: 'unknown', counts: null, engines: engines.length, unidentified, undragged, noDrag, unknown: unknown.length ? unknown : ['no cua engine recorded its counter'] };
   const state = taken(counts) ? 'taken' : unknown.length ? 'unknown' : 'not taken';
-  return { state, counts, engines: engines.length, undragged, noDrag, unknown };
+  return { state, counts, engines: engines.length, unidentified, undragged, noDrag, unknown };
 }
 
 /** A step directory's record: its own `settle-counts.json`, or its harness out's (`run/`, gate.mjs). */
@@ -158,7 +159,7 @@ export function checkSteps(dirs) {
   let code = 0;
   for (const dir of dirs) {
     const v = settleVerdict(stepRecord(dir));
-    const of = `${v.engines} cua engine${v.engines === 1 ? '' : 's'}`;
+    const of = `${v.engines} cua engine${v.engines === 1 ? '' : 's'}${v.unidentified ? ` (${v.unidentified} unidentified, held to the counter as cua lanes)` : ''}`;
     const undragged = v.undragged ? `; ${v.undragged} of them with no counter were sent no drag or drag_handle` : '';
     if (v.state === 'not taken') lines.push(`${dir}: not taken (${countsText(v.counts)}; ${of}${undragged})`);
     else if (v.state === 'taken') lines.push(`${dir}: TAKEN (${countsText(v.counts)}; ${of}${undragged}): reruns as class A`);

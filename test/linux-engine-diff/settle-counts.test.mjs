@@ -326,8 +326,13 @@ test("a --stats a lane's own args carry is parsed as today, opt-in or not, and n
     const off = await run(false);
     const on = await run(true);
     assert.deepEqual(argvOf(bin), [['server', '--stats'], ['server', '--stats']]);
-    assert.deepEqual(on, off);
-    assert.deepEqual(off.answers[1].untied, [{ id: null, focus_out: [{ window: 7 }] }], "today's parsing: the lane's lines reach its runner");
+    // today's parsing: the lane's untied line reaches its runner, with whichever answer comes after it (no stats line
+    // is waited for, so which one is the stream's order, opt-in or not)
+    for (const side of [off, on]) {
+      assert.deepEqual(side.answers.flatMap((a) => a.untied), [{ id: null, focus_out: [{ window: 7 }] }]);
+      assert.deepEqual(side.answers.map((a) => [a.id, a.response, a.stats]), off.answers.map((a) => [a.id, a.response, a.stats]));
+      assert.equal(side.tail, off.tail);
+    }
   });
 });
 

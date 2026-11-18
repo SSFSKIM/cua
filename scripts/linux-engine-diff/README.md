@@ -912,18 +912,27 @@ variants included; their evidence is written either way. The run's `end` row kee
     sample whose own reads failed still fails its cell.
   - Each premise sample's evidence is on its row (`premise_evidence`). It is also in the run's
     `premise-evidence.jsonl`, the only record of the audit's samples. Each line is bound to its run, scene, case,
-    block, request number, engine lifecycle (one id per engine process), request id, window and page, with the run's
-    head, engine sha256 and load.
+    block, request number, engine lifecycle (one id per engine process), request id, window (its XID) and fixture (the
+    scene's label, which carries the run's nonce), with the run's head, engine sha256 and load, and cua's reply recorded
+    whole (its ok, error and notice, each present). A line that does not fit is never excluded on, and fails its cell.
   - The next request on an engine, for every rule, is the one on the same lifecycle (`adjacency`).
-  - A run's own verdict that excluded a sample is `provisional`. `premise-refill.mjs <V5 step dir>` gives the final one.
-    It refills by more runs of the unchanged runner, V5's own command from step.json, through the sitting launcher:
-    timed blocks for timed samples, the audit pass for audited ones.
-  - Each refill run must match the main run's head, engine bytes and load. Its evidence must fit its rows, and its other
-    checks must pass.
-  - The timed pass keeps its cold and warm quotas apart, under a bound of as many extra samples asked for as the pass
-    planned. A cell still short fails as incomplete.
-  - The record is `premise-refill.jsonl` and `premise.md` in the step's directory, with the refill's samples listed
-    apart, cold and warm. `--print` prints the next refill run without launching it.
+  - An obscured case's engine guard (the drag watched with the signature already held, not in front) is checked on every
+    sample, the excluded ones too.
+  - A run's own verdict that excluded a sample is `provisional`. `premise-refill.mjs <V5 step dir>` gives V5's final
+    verdict. It validates each run's whole sidecar against the run's rows and audits first.
+  - When a premise cell is short of its planned count, of its cold or warm quota or of its audit's, it reruns V5 whole:
+    V5's own command from step.json, as the gate printed it, with only the step's directory changed, to one under a
+    fresh out root (`<out>.r<n>`, which must not exist). At most two reruns; a cell still short after them fails as
+    incomplete. `--print` prints the rerun's command, in `gate.mjs print`'s form, without launching it or writing.
+  - Each rerun must load its command's run name, and match the main run's head, engine bytes and arguments, load and
+    plan by positive equality (a field missing on either side fails). Its launcher's exit must agree with its terminal
+    record (0 a passing run, 1 a recorded failing one), and its sitting must be all-clear.
+  - Every failure of every run counts: its other cells', its guard and launcher failures, and its premise cells' own
+    failures beyond their shortage. Only samples proven premise-unmet are excluded. A run's unclean end is listed and
+    fails nothing (ruling 730 (a)). When V5 already fails for anything but the shortage, no rerun is launched, and the
+    record names every such failure.
+  - The premise cells' judged samples are pooled across the runs, each tagged with its run, its engine lifecycle and
+    its series. The record is `premise-refill.jsonl` and `premise.md` in the main step's directory.
 - **Minimized windows** (M4's T4, `minimized.mjs`, the scenes `minimized` (gedit), `minimized-xterm` and
   `minimized-recorder`): cua alone, each sample's window minimized with `xprobe minimize` (the harness's front window
   takes the focus first, so the window manager's focus fallback lands on a harness window; the active window afterwards
@@ -1348,7 +1357,7 @@ Two shared helpers came out of T16's fix wave (the design session, 2026-11-10), 
 | `kinds.mjs`, `dnd.mjs`, `device.mjs`, `xprobe/src/dnd.rs`, `pages/gtk4-input.py`, `pages/qt-input.py` | M3.1's kinds and drag-and-drop experiments, Acceptance 8's device cases, the `XdndSelection` watch, the GTK 4 and Qt scenes |
 | `rejudge.mjs` | a recorded run's speed verdicts judged again under the revised rule |
 | `rejudge-device.mjs` | a stored verdict run's device verdicts judged again by this checkout's `judgeDevice`, beside the stored ones and a former judge's (`--old`), with how each sample of ruling 823's cells reads under it, read-only (the M5 pre-flight's §8.1, point 4) |
-| `premise.mjs`, `../linux-engine-gate/premise-refill.mjs` | rulings 823 and 825: the unmet premise in V5's cancel, late and late-take cells (the page's strict proof that Chrome never started a drag session, the evidence's binding, the exclusion and its quotas), and V5's refill of it from more runs of the unchanged runner |
+| `premise.mjs`, `../linux-engine-gate/premise-refill.mjs` | rulings 823 and 825: the unmet premise in V5's cancel, late and late-take cells (the page's strict proof that Chrome never started a drag session, the evidence's binding, the exclusion and its quotas), and V5's refill of it by whole reruns of V5 |
 | `vcl-aim.mjs`, `writer-drag.mjs`, `vcl-probe.mjs`, `pages/point-gtk3.py` | M4 T16's LibreOffice offset as the harness reads it, the Writer drag probe, the point probes and their GTK 3 control scene |
 | `park.mjs`, `xprobe/src/pointer.rs`, `app-identity.mjs` | the verified pointer park (`xprobe pointer-chain`) and the application's identity, shared by any runner (T16's fix wave) |
 | `atspi-probe.mjs`, `atspi-cache.mjs`, `pages/atspi-gtk4.py`, `pages/atspi-qt.py` | M4 T6's AT-SPI probe on its own private display: `Cache.GetItems` over the matrix and GTK 4's `EditableText`, the answers' reading and comparison, and its GTK 4 and Qt scenes |

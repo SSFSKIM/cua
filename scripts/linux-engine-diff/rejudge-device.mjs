@@ -15,7 +15,7 @@ import { pathToFileURL } from 'node:url';
 import { gunzipSync } from 'node:zlib';
 
 import { PREMISE_OPS, judgeDevice } from './device.mjs';
-import { adjacency, bindAudit, classifyPremise } from './premise.mjs';
+import { adjacency, bindAudit, classifyPremise, evidenceLabel } from './premise.mjs';
 
 /** A step's results file: the path given, or its `run/results.jsonl` (or `.gz`), or its own `results.jsonl`. */
 function resultsOf(path) {
@@ -67,7 +67,7 @@ export function rejudgeDevice(rows, { judge = judgeDevice, old = null, lines = n
       // a cell of ruling 823's: its audit bound to the run's evidence, where the step kept it (premise.mjs)
       const auditRow = own.find((r) => r.kind === 'audit' && r.engine === 'cua' && r.scene === v.scene && r.op === v.op);
       const window = Array.isArray(auditRow?.ancestry) && Number.isInteger(auditRow.ancestry[0]) ? auditRow.ancestry[0] : null;
-      const bound = PREMISE_OPS.has(v.op) && audit ? bindAudit(audit, lines, { run, scene: v.scene, op: v.op, window }) : null;
+      const bound = PREMISE_OPS.has(v.op) && audit ? bindAudit(audit, lines, { run, scene: v.scene, op: v.op, window, label: evidenceLabel(opRows) }) : null;
       const now = outcome(bound ? judge(v.op, opRows, audit, bound) : judge(v.op, opRows, audit));
       const then = old ? outcome(old(v.op, opRows, audit)) : null;
       // and how its timed samples and its audited requests read under it

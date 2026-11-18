@@ -54,7 +54,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { pendingOf } from './drop-signals-judge.mjs';
-import { TIMED_QUOTAS, bindAudit, bindTimed, judgePremise } from './premise.mjs';
+import { TIMED_QUOTAS, bindAudit, bindTimed, evidenceLabel, judgePremise } from './premise.mjs';
 import { preorder } from './normalize.mjs';
 import { readGtk4Status } from './families.mjs';
 import { IDENTITY_OPS, IDENTITY_SCENE_OPS, judgeIdentity } from './identity.mjs';
@@ -741,20 +741,24 @@ function recordPremise(ctx, response, out, attempt) {
 
 /**
  * The evidence this process recorded for an operation's audit, for the in-run judge: the run's records (null where the
- * process recorded none for the run, as a re-judge of stored rows), and the audited window, the run's timed evidence's.
+ * process recorded none for the run, as a re-judge of stored rows), and what they are bound to, the run's timed
+ * evidence's window and fixture label. A process records one run; records of another run of the same name in the same
+ * process (a test's) are another fixture's, told by the label's nonce, and are not this run's. premise-refill.mjs
+ * validates the run's whole sidecar instead.
  */
 function recordedPremise(op, samples) {
   const run = samples[0]?.run;
   const scene = samples[0]?.scene;
-  const ofRun = RECORDED.filter((r) => r.run === run);
+  const label = evidenceLabel(samples);
+  const ofRun = RECORDED.filter((r) => r.run === run && r.fixture?.label === label);
   if (!ofRun.length) return null;
-  return { lines: ofRun.filter((r) => r.op === op && r.scene === scene && r.block === 'audit'), window: samples.find((r) => r.premise_evidence)?.premise_evidence.window ?? null };
+  return { lines: ofRun.filter((r) => r.op === op && r.scene === scene && r.block === 'audit'), window: samples.find((r) => r.premise_evidence)?.premise_evidence.window ?? null, label };
 }
 
 /** The in-run judge's audit entries: the audit bound to the evidence this process recorded for it (premise.mjs). */
 function inRunAudit(op, samples, audit) {
   const recorded = recordedPremise(op, samples);
-  return bindAudit(audit, recorded?.lines ?? null, { run: samples[0]?.run, scene: samples[0]?.scene, op, window: recorded?.window ?? null });
+  return bindAudit(audit, recorded?.lines ?? null, { run: samples[0]?.run, scene: samples[0]?.scene, op, window: recorded?.window ?? null, label: recorded?.label ?? null });
 }
 
 /** The cells ruling 823's unmet premise can occur in (`PREMISE_KINDS`): V5's cancel, late and late-take cells. */
@@ -826,10 +830,14 @@ export function judgeDevice(op, samples, audit, premiseAudit = undefined) {
     excluded += judged.excluded;
     refilled ||= samples.some((r) => r.fill);
   }
-  const bad = (what, pred) => {
-    const failed = rows.filter((r) => !pred(r));
-    if (failed.length) reasons.push(`${what} on ${failed.length} of ${rows.length} samples (${failed.slice(0, 3).map((r) => `${r.block}/${r.i}`).join(', ')})`);
+  const badOf = (list) => (what, pred) => {
+    const failed = list.filter((r) => !pred(r));
+    if (failed.length) reasons.push(`${what} on ${failed.length} of ${list.length} samples (${failed.slice(0, 3).map((r) => `${r.block}/${r.i}`).join(', ')})`);
   };
+  const bad = badOf(rows);
+  // a check of the engine's own guard, which holds whether or not Chrome took the drag: over every sample, the excluded
+  // ones too, so an exclusion never excuses it (task 100's review 2, finding 5)
+  const badAll = badOf(samples);
   if (expect === 'answer') bad('the answer was not the report', (r) => r.ok && r.answer_ok === true);
   if (expect === 'refusal') {
     bad('not refused with the Device mode sentence', (r) => !r.ok && r.error === r.expected_error);
@@ -900,7 +908,7 @@ export function judgeDevice(op, samples, audit, premiseAudit = undefined) {
   }
   // a request refused for a late take did not run, so there is no drag of its own to have watched
   const ran = (r) => !(late.has(r) && r.ok === false);
-  if (DEVICE_OPS[op].heldAtStart) bad('the engine did not watch the drag with the signature already held', (r) => !ran(r) || (r.dnd?.in_front === false && r.dnd?.held_at_start === true));
+  if (DEVICE_OPS[op].heldAtStart) badAll('the engine did not watch the drag with the signature already held', (r) => !ran(r) || (r.dnd?.in_front === false && r.dnd?.held_at_start === true));
   if (DEVICE_OPS[op].inFront) {
     bad('the engine did not record the window as in front', (r) => r.dnd?.in_front === true);
     bad('the desktop at the end was not as at the start', (r) => r.desktop_same === true);
@@ -923,7 +931,7 @@ export function judgeDevice(op, samples, audit, premiseAudit = undefined) {
       if (PREMISE_OPS.has(op)) {
         const bound = premiseAudit ?? inRunAudit(op, samples, audit);
         for (const p of bound.problems) reasons.push(`the premise evidence of the ${audit.kind} audit does not fit it (ruling 823, never excluded on): ${p}`);
-        const judged = judgePremise(bound.entries, { name: (e) => `${e.fill ? `${e.run}/` : ''}audit/${e.i}`, what: 'audited requests', prefix: `the ${audit.kind} audit is incomplete` });
+        const judged = judgePremise(bound.entries, { name: (e) => `${e.fill ? `${e.origin ?? e.run}/` : ''}audit/${e.i}`, what: 'audited requests', prefix: `the ${audit.kind} audit is incomplete` });
         reasons.push(...judged.reasons);
         if (judged.record) unmet.audit = judged.record;
         answered = judged.judged;

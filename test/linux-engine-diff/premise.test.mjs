@@ -9,7 +9,7 @@ import { after, test } from 'node:test';
 
 import { DEVICE_OPS, PREMISE_OPS, dndLateNotice, dndLateRefusal, dndMayHaveDroppedSentence, dndUnconfirmedNotice, judgeDevice } from '../../scripts/linux-engine-diff/device.mjs';
 import { adjacency, bindAudit, classifyPremise, noDragSession, parsePageRead } from '../../scripts/linux-engine-diff/premise.mjs';
-import { APP, CANCEL, UNMET, caseSamples, dndLine, engineBin, movesLine, removeScratch, scratch } from './premise-fixture.mjs';
+import { APP, CANCEL, HELD_CANCEL, HELD_UNMET, UNMET, WINDOW, caseSamples, dndLine, engineBin, movesLine, removeScratch, scratch } from './premise-fixture.mjs';
 
 after(removeScratch);
 
@@ -19,9 +19,11 @@ let runs = 0;
 /** A run of one case through the real paths: its rows, its audit, and the audit's entries bound to the evidence. */
 async function made(op, blocks, audit = [], { answers = {} } = {}) {
   const run = `t-${++runs}`;
-  const { rows, answered } = await caseSamples({ out: dir, run, op, bin, blocks, audit, answers });
-  return { run, rows, answered, audit: { clean: true, kind: 'background', answered } };
+  const { rows, answered, label } = await caseSamples({ out: dir, run, op, bin, blocks, audit, answers });
+  return { run, rows, answered, label, audit: { clean: true, kind: 'background', answered } };
 }
+/** A made run's audit bound to its own evidence lines, its window and its fixture. */
+const bound = (r, op = 'chrome_dnd_shared', ls = lines(r.run)) => bindAudit(r.audit, ls, { run: r.run, scene: 'device-chrome-dnd', op, window: WINDOW, label: r.label });
 const three = (spec) => [spec, spec, spec];
 const planned = (spec = CANCEL) => [three(spec), three(spec), three(spec)];
 const reasons = (v) => v.reasons.join('\n');
@@ -41,7 +43,7 @@ test("a plain-drag ok the page saw released with no drag is unmet; one Chrome to
   const v = judgeDevice('chrome_dnd_shared', r.rows, r.audit);
   assert.equal(v.pass, false);
   assert.equal(v.provisional, true, 'the run excluded a sample: its verdict waits for premise-refill.mjs');
-  assert.match(reasons(v), /incomplete: Chrome never started a drag and drop on 1 of 9 samples .* so 2 cold were judged of the 3 planned, with 0 refilled of a bound of 9/);
+  assert.match(reasons(v), /incomplete: Chrome never started a drag and drop on 1 of 9 samples .* so 2 cold were judged of the 3 planned, with 0 refilled of a bound of 18/);
   assert.deepEqual(v.premise_unmet.timed.unmet_samples, ['0/0']);
   // nothing excluded: final as it stands, and a pass
   const clean = await made('chrome_dnd_shared', planned(), [CANCEL, CANCEL]);
@@ -111,7 +113,7 @@ test('negative control (finding 3): warm refills never stand in for cold ones; e
   const refill = await made('chrome_dnd_shared', [[UNMET, CANCEL, CANCEL], [UNMET, CANCEL, CANCEL]]);
   const v = judgeDevice('chrome_dnd_shared', [...main.rows, ...fillOf(refill.rows)], { clean: true, kind: 'skipped' });
   assert.equal(v.pass, false);
-  assert.match(reasons(v), /so 0 cold were judged of the 3 planned, with 6 refilled of a bound of 9/);
+  assert.match(reasons(v), /so 0 cold were judged of the 3 planned, with 6 refilled of a bound of 18/);
   assert.ok(!/warm were judged/.test(reasons(v)), 'the warm quota is met');
   assert.deepEqual(v.premise_unmet.timed.need, { cold: 3, warm: 0 });
   // and filled: three cold refills judged, the cell passes on its quotas
@@ -143,7 +145,7 @@ test("negative control (finding 6): one adjacency rule, the next request on the 
   // a plain ok in one audit lifecycle, and another lifecycle's request refused with the late notice right after it
   const a = await made('chrome_dnd_shared', [], [UNMET]);
   const b = await made('chrome_dnd_shared', [], [{ reply: { ok: false, error: dndLateRefusal(APP, 'drag') }, page: 'took' }, CANCEL]);
-  const entries = [...bindAudit(a.audit, lines(a.run), { run: a.run, scene: 'device-chrome-dnd', op: 'chrome_dnd_shared' }).entries, ...bindAudit(b.audit, lines(b.run), { run: b.run, scene: 'device-chrome-dnd', op: 'chrome_dnd_shared' }).entries.map((e) => ({ ...e, fill: true }))];
+  const entries = [...bound(a).entries, ...bound(b).entries.map((e) => ({ ...e, fill: true }))];
   const next = adjacency(entries);
   assert.equal(next(entries[0]), null, "the first lifecycle's last request has no next");
   assert.equal(next(entries[1]), entries[2], 'within a lifecycle, the next request');
@@ -178,18 +180,18 @@ test('a drop cell keeps ruling 650: a plain ok with no drop where Chrome never s
 test('negative control: an excluded sample is never counted as a pass, and the bound spent leaves the cell incomplete', async () => {
   const all = await made('chrome_dnd_shared', planned(UNMET), [UNMET, UNMET]);
   const fills = await made('chrome_dnd_shared', planned(UNMET), [UNMET, UNMET]);
-  const fillAudit = bindAudit(fills.audit, lines(fills.run), { run: fills.run, scene: 'device-chrome-dnd', op: 'chrome_dnd_shared' }).entries.map((e) => ({ ...e, fill: true }));
-  const mainAudit = bindAudit(all.audit, lines(all.run), { run: all.run, scene: 'device-chrome-dnd', op: 'chrome_dnd_shared' }).entries;
+  const fillAudit = bound(fills).entries.map((e) => ({ ...e, fill: true }));
+  const mainAudit = bound(all).entries;
   const v = judgeDevice('chrome_dnd_shared', [...all.rows, ...fillOf(fills.rows)], { clean: true, kind: 'background', answered: [...all.answered, ...fills.answered] }, { entries: [...mainAudit, ...fillAudit], problems: [] });
   assert.equal(v.pass, false);
-  assert.match(reasons(v), /incomplete: .* on 18 of 18 samples .* so 0 cold were judged of the 3 planned, with 9 refilled of a bound of 9/);
-  assert.match(reasons(v), /the background audit is incomplete: .* on 4 of 4 audited requests .* so 0 were judged of the 2 planned, with 2 refilled of a bound of 2/);
+  assert.match(reasons(v), /incomplete: .* on 18 of 18 samples .* so 0 cold were judged of the 3 planned, with 9 refilled of a bound of 18/);
+  assert.match(reasons(v), /the background audit is incomplete: .* on 4 of 4 audited requests .* so 0 were judged of the 2 planned, with 2 refilled of a bound of 4/);
 });
 
 test('evidence that does not fit its samples is never excluded on, and fails the cell closed', async () => {
   const r = await made('chrome_dnd_shared', planned(), [UNMET, CANCEL]);
   const own = lines(r.run).filter((l) => l.block === 'audit');
-  const bind = (ls) => judgeDevice('chrome_dnd_shared', r.rows, r.audit, bindAudit(r.audit, ls, { run: r.run, scene: 'device-chrome-dnd', op: 'chrome_dnd_shared', window: own[0].window }));
+  const bind = (ls) => judgeDevice('chrome_dnd_shared', r.rows, r.audit, bound(r, 'chrome_dnd_shared', ls));
   assert.match(reasons(bind(own.slice(1))), /does not fit it .*no line for audit\/0/);
   assert.match(reasons(bind([...own, own[0]])), /2 lines for audit\/0/);
   assert.match(reasons(bind([...own, { ...own[0], run: 'another' }])), /a line of another run \(another\)/);
@@ -197,4 +199,42 @@ test('evidence that does not fit its samples is never excluded on, and fails the
   // and a timed row whose evidence names another sample
   const moved = r.rows.map((x, i) => (i === 0 ? { ...x, premise_evidence: { ...x.premise_evidence, i: 5 } } : x));
   assert.match(reasons(judgeDevice('chrome_dnd_shared', moved, r.audit)), /the premise evidence of the timed samples does not fit them .*0\/0's evidence names another sample/);
+});
+
+test("negative control (review 2, finding 3): an audit line of a foreign fixture, or with no notice field, is never excluded on and fails the cell", async () => {
+  const r = await made('chrome_dnd_shared', planned(), [UNMET, CANCEL]);
+  assert.equal(classifyPremise(bound(r).entries[0]), 'unmet', 'bound to its own fixture, the unmet premise reads');
+  const own = lines(r.run).filter((l) => l.block === 'audit');
+  // a prior run of the same name, on the same XID, its own nonce
+  const foreign = own.map((l) => (l.i === 0 ? { ...l, fixture: { label: l.fixture.label.replace(/-[0-9a-f]{8}-/, '-0badc0de-') } } : l));
+  const f = bound(r, 'chrome_dnd_shared', foreign);
+  assert.match(f.problems.join('\n'), /audit\/0's line is of another fixture/);
+  assert.ok(f.entries.every((e) => !e.premise_evidence), 'no entry keeps evidence: judged as before');
+  assert.match(reasons(judgeDevice('chrome_dnd_shared', r.rows, r.audit, f)), /does not fit it .*another fixture/);
+  // the reply's notice field absent: never read as none
+  const noNotice = own.map((l) => (l.i === 0 ? { ...l, reply: { ok: l.reply.ok, error: l.reply.error } } : l));
+  assert.match(bound(r, 'chrome_dnd_shared', noNotice).problems.join('\n'), /audit\/0's line does not record the reply's ok, error and notice/);
+  // no fixture or window to bind to: nothing binds
+  assert.match(bindAudit(r.audit, own, { run: r.run, scene: 'device-chrome-dnd', op: 'chrome_dnd_shared', window: WINDOW }).problems.join('\n'), /no fixture label of run/);
+  assert.match(bindAudit(r.audit, own, { run: r.run, scene: 'device-chrome-dnd', op: 'chrome_dnd_shared', label: r.label }).problems.join('\n'), /no audited window/);
+  // and a timed row whose evidence names another run's fixture, or lacks the notice field
+  const moved = r.rows.map((x, i) => (i === 0 ? { ...x, premise_evidence: { ...x.premise_evidence, fixture: { label: 'cua171-diff-other-0badc0de-device_cua' } } } : x));
+  assert.match(reasons(judgeDevice('chrome_dnd_shared', moved, r.audit)), /0\/0's evidence names a fixture not of run/);
+});
+
+test("negative control (review 2, finding 5): an obscured case's no-session sample whose engine guard was not held still fails on that guard", async () => {
+  const OBS = 'chrome_dnd_obscured_in_front_shared';
+  const unheld = { ...HELD_UNMET, row: { ...HELD_UNMET.row, dnd: { ...HELD_UNMET.row.dnd, in_front: true, held_at_start: false } } };
+  const main = await made(OBS, [[unheld, HELD_CANCEL, HELD_CANCEL], [HELD_CANCEL, HELD_CANCEL, HELD_CANCEL], [HELD_CANCEL, HELD_CANCEL, HELD_CANCEL]]);
+  const next = adjacency(main.rows);
+  assert.equal(classifyPremise(main.rows[0], next(main.rows[0])), 'unmet', 'the drag is unmet');
+  // filled with a good series: the shortage is met, the guard's failure stays
+  const fill = await made(OBS, [[HELD_CANCEL, HELD_CANCEL, HELD_CANCEL]]);
+  const v = judgeDevice(OBS, [...main.rows, ...fillOf(fill.rows)], { clean: true, kind: 'skipped' });
+  assert.equal(v.pass, false);
+  assert.match(reasons(v), /the engine did not watch the drag with the signature already held on 1 of 12 samples \(0\/0\)/);
+  assert.ok(!/incomplete/.test(reasons(v)), 'the quota is met');
+  // with the guard held, the same filled cell passes
+  const held = await made(OBS, [[HELD_UNMET, HELD_CANCEL, HELD_CANCEL], [HELD_CANCEL, HELD_CANCEL, HELD_CANCEL], [HELD_CANCEL, HELD_CANCEL, HELD_CANCEL]]);
+  assert.deepEqual(judgeDevice(OBS, [...held.rows, ...fillOf(fill.rows)], { clean: true, kind: 'skipped' }).reasons, []);
 });

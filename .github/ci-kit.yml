@@ -206,7 +206,8 @@ gates:
       - ".github/ci-kit.yml"
   # #168, diagnosis only: gate parity-browser's run with the hosted Mac loaded while suite api runs (PARITY_STRESS, two
   # CPU burners per core; scripts/repl-parity/hosted/hosted.sh's header), to expose a race an idle runner hides; the
-  # harness Chrome's anti-throttling flags (PARITY_CHROME_FLAGS) are added to its run line only for a diagnosis. Dispatch
+  # harness Chrome's flag sets (PARITY_CHROME_FLAGS: anti-throttling, or renderer-backgrounding alone to tell #383's
+  # failures from #384's hidden-tab starvation) are added to its run line only for a diagnosis, never here. Dispatch
   # only, so no ci/** ref's run selects it on its own: `ci-gate --gates parity-browser-stress`. Its verdict is evidence,
   # never a gate on a change.
   - name: parity-browser-stress

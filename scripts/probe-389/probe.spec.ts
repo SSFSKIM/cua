@@ -98,11 +98,11 @@ test('MAWS Add project: ordinary background element press and search set_value',
     if(sequence==='panel-roundtrip'){
      // Setup only: with the e2e pick seam off for this one pick, Choose folder... raises the real native chooser, which is cancelled through its own Cancel button. No engine call is made here.
      const panel:any=row.panel={};
-     const panelStatus=async()=>(await ask({op:'panel-status'})).panels as any[];
-     const candidates=async()=>(panel.lastStatus=await panelStatus()).filter(p=>p.cancelEnabled>0);
+     const panelStatus=async()=>{const r=await ask({op:'panel-status',rootPid:pid});if(r.error)throw Error('setup-invalid: panel-status '+r.error);return r;};
+     const candidates=async()=>(panel.lastStatus=await panelStatus()).panels.filter((p:any)=>p.cancelEnabled>0);
      const invalid=(why:string)=>Error('setup-invalid: '+why);
      const before=await panelStatus();panel.preexisting=before;
-     if(before.some(p=>p.cancelEnabled>0))throw invalid('a native panel already exists before opening');
+     if(before.panels.some((p:any)=>p.cancelEnabled>0))throw invalid('a native panel already exists before opening');
      await page.evaluate(()=> (window as any).__probe389.mark('before-panel'));
      await app.evaluate(()=>{delete process.env.MAWS_E2E;});
      try {
@@ -111,7 +111,7 @@ test('MAWS Add project: ordinary background element press and search set_value',
       for(const end=Date.now()+10000;Date.now()<end&&found.length===0;){found=await candidates();if(found.length===0)await sleep(200);}
       panel.candidates=found;
       if(found.length!==1)throw invalid('expected one native panel, found '+found.length);
-      panel.cancel=await ask({op:'cancel-panel',pid:found[0].pid});
+      panel.cancel=await ask({op:'cancel-panel',rootPid:pid,pid:found[0].pid});
       if(panel.cancel.error||panel.cancel.pressError!==0)throw invalid('panel Cancel press failed '+JSON.stringify(panel.cancel));
       let gone=false;
       for(const end=Date.now()+10000;Date.now()<end&&!gone;){gone=(await candidates()).length===0;if(!gone)await sleep(200);}

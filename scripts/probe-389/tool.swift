@@ -17,26 +17,46 @@ func panelServicePids() -> [Int32] {
 func axString(_ e: AXUIElement, _ attribute: String) -> String? { var v: CFTypeRef?; return AXUIElementCopyAttributeValue(e,attribute as CFString,&v) == .success ? v as? String : nil }
 func axChildren(_ e: AXUIElement) -> [AXUIElement] { var v: CFTypeRef?; return AXUIElementCopyAttributeValue(e,kAXChildrenAttribute as CFString,&v) == .success ? (v as? [AXUIElement] ?? []) : [] }
 func axEnabled(_ e: AXUIElement) -> Bool { var v: CFTypeRef?; return AXUIElementCopyAttributeValue(e,kAXEnabledAttribute as CFString,&v) == .success ? (v as? Bool ?? false) : false }
-// Every AXButton titled Cancel under the service's windows, with whether it is enabled.
-func cancelButtons(_ pid: Int32) -> (axWindows: [[String:Any]], buttons: [(element: AXUIElement, enabled: Bool)]) {
-  let app = AXUIElementCreateApplication(pid); AXUIElementSetMessagingTimeout(app, 2)
+// The chooser's accessibility tree is served by the panel service but hangs under the requesting app's window, so it is read from that
+// app's own AX windows (read only). AXWebArea subtrees are skipped. A Cancel button counts only when its owning process is a strictly
+// validated panel service. Bounded by depth and node count; visited elements are not walked twice.
+func rootScan(_ rootPid: Int32) -> (windows: [[String:Any]], nodes: Int, cancels: [(element: AXUIElement, owner: Int32, enabled: Bool)], otherCancels: Int) {
+  let app = AXUIElementCreateApplication(rootPid); AXUIElementSetMessagingTimeout(app, 2)
   var v: CFTypeRef?; var wins: [AXUIElement] = []
   if AXUIElementCopyAttributeValue(app,kAXWindowsAttribute as CFString,&v) == .success { wins = v as? [AXUIElement] ?? [] }
-  var found: [(element: AXUIElement, enabled: Bool)] = []
+  var nodes = 0, other = 0; var seen = Set<CFHashCode>()
+  var cancels: [(element: AXUIElement, owner: Int32, enabled: Bool)] = []
   func walk(_ e: AXUIElement, _ depth: Int) {
-    if axString(e,kAXRoleAttribute as String) == "AXButton" && axString(e,kAXTitleAttribute as String) == "Cancel" { found.append((e, axEnabled(e))) }
-    if depth < 12 { for c in axChildren(e) { walk(c, depth+1) } }
+    guard nodes < 4000, seen.insert(CFHash(e)).inserted else { return }
+    nodes += 1
+    let role = axString(e,kAXRoleAttribute as String)
+    if role == "AXWebArea" { return }
+    if role == "AXButton" && axString(e,kAXTitleAttribute as String) == "Cancel" {
+      var owner: pid_t = 0
+      if AXUIElementGetPid(e,&owner) == .success, isPanelService(owner) { cancels.append((e, owner, axEnabled(e))) } else { other += 1 }
+    }
+    if depth < 14 { for c in axChildren(e) { walk(c, depth+1) } }
   }
   for w in wins { walk(w, 0) }
-  return (wins.map { ["role":axString($0,kAXRoleAttribute as String) ?? "","subrole":axString($0,kAXSubroleAttribute as String) ?? "","title":axString($0,kAXTitleAttribute as String) ?? ""] }, found)
+  return (wins.map { ["role":axString($0,kAXRoleAttribute as String) ?? "","subrole":axString($0,kAXSubroleAttribute as String) ?? "","title":axString($0,kAXTitleAttribute as String) ?? ""] }, nodes, cancels, other)
 }
-func panelStatus() -> [[String:Any]] {
+// Diagnostics only, never acted on: the panel service processes found by path and their own windows.
+func serviceDiagnostics() -> [[String:Any]] {
   let all = CGWindowListCopyWindowInfo([.optionAll],kCGNullWindowID) as? [[String:Any]] ?? []
   return panelServicePids().map { pid in
-    let scan = cancelButtons(pid)
+    let app = AXUIElementCreateApplication(pid); AXUIElementSetMessagingTimeout(app, 2)
+    var v: CFTypeRef?; var wins: [AXUIElement] = []
+    if AXUIElementCopyAttributeValue(app,kAXWindowsAttribute as CFString,&v) == .success { wins = v as? [AXUIElement] ?? [] }
     let cg = all.filter { ($0[kCGWindowOwnerPID as String] as? Int) == Int(pid) }.map { ["id":$0[kCGWindowNumber as String] ?? 0,"name":$0[kCGWindowName as String] ?? "","layer":$0[kCGWindowLayer as String] ?? 0,"onscreen":$0[kCGWindowIsOnscreen as String] ?? false,"bounds":$0[kCGWindowBounds as String] ?? [:]] as [String:Any] }
-    return ["pid":pid,"executable":executablePath(pid) ?? "","cgWindows":cg,"axWindows":scan.axWindows,"cancelButtons":scan.buttons.count,"cancelEnabled":scan.buttons.filter { $0.enabled }.count] as [String:Any]
+    return ["pid":pid,"executable":executablePath(pid) ?? "","cgWindows":cg,"ownAXWindows":wins.count] as [String:Any]
   }
+}
+func panelStatus(_ rootPid: Int32) -> [String:Any] {
+  let scan = rootScan(rootPid)
+  var byOwner: [Int32:(total: Int, enabled: Int)] = [:]
+  for c in scan.cancels { var t = byOwner[c.owner] ?? (0,0); t.total += 1; if c.enabled { t.enabled += 1 }; byOwner[c.owner] = t }
+  let panels = byOwner.keys.sorted().map { ["pid":$0,"executable":executablePath($0) ?? "","cancelButtons":byOwner[$0]!.total,"cancelEnabled":byOwner[$0]!.enabled] as [String:Any] }
+  return ["at":Date().timeIntervalSince1970*1000,"rootPid":rootPid,"panels":panels,"walkedNodes":scan.nodes,"rootWindows":scan.windows,"cancelNotOwnedByPanelService":scan.otherCancels,"services":serviceDiagnostics()]
 }
 
 guard ProcessInfo.processInfo.environment["RUNNER_ENVIRONMENT"] == "github-hosted" else { fatalError("hosted only") }
@@ -48,11 +68,12 @@ if CommandLine.arguments.contains("--cover") {
 } else {
  while let line=readLine() { do {
   let q=try JSONSerialization.jsonObject(with:Data(line.utf8)) as! [String:Any], pid=(q["pid"] as? NSNumber)?.int32Value ?? 0
-  if q["op"] as? String == "panel-status" { emit(["at":Date().timeIntervalSince1970*1000,"panels":panelStatus()]); continue }
+  let rootPid = (q["rootPid"] as? NSNumber)?.int32Value ?? 0
+  if q["op"] as? String == "panel-status" { guard rootPid > 0 else { emit(["error":"rootPid required"]); continue }; emit(panelStatus(rootPid)); continue }
   if q["op"] as? String == "cancel-panel" {
-   // Acts only on the one validated panel service the caller names, and only on its single enabled Cancel button.
-   guard isPanelService(pid) else { emit(["error":"pid \(pid) is not the AppKit open/save panel service"]); continue }
-   let enabled = cancelButtons(pid).buttons.filter { $0.enabled }
+   // Acts only on the single enabled Cancel button, found under the root app's windows, whose owning process is the named validated panel service.
+   guard rootPid > 0, isPanelService(pid) else { emit(["error":"rootPid required and pid \(pid) must be the AppKit open/save panel service"]); continue }
+   let enabled = rootScan(rootPid).cancels.filter { $0.enabled && $0.owner == pid }
    guard enabled.count == 1 else { emit(["error":"expected exactly one enabled Cancel, found \(enabled.count)"]); continue }
    let result = AXUIElementPerformAction(enabled[0].element, kAXPressAction as CFString)
    emit(["at":Date().timeIntervalSince1970*1000,"pid":pid,"pressError":result.rawValue]); continue

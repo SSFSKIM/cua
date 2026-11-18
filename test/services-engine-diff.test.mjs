@@ -105,3 +105,16 @@ test('a selection trailer follows the diff lines', () => {
   const second = observe(skyshot(rows(true), {revision: 2, selectedElements: ['r']}), first);
   assert.equal(diff(first, second), `${HEADER}\n~\t\t2 row (selected)\nSelected:\n\t2 row (selected)\n\n${NOTE}`);
 });
+
+// #405: a password field's value never reaches the diff: a change of what it holds is no change, and its line says
+// `secure text`, whatever value its node carries.
+test('#405: a password field\'s changing value is no change, and an added one prints `secure text`', () => {
+  const pw = (token, value, fields = {}) => node(token, 1, 'AXTextField', {roleDescription: 'secure text field', subrole: 'AXSecureTextField', value, flags: {settable: true}, ...fields});
+  const first = observe(skyshot([win(), pw('p', 'PLAINTEXT-1')]));
+  const second = observe(skyshot([win(), pw('p', 'PLAINTEXT-22', {numberOfCharacters: 12})], {revision: 2}), first);
+  assert.equal(diff(first, second), 'There has been no change in the accessibility tree for Window: "W".');
+  const third = observe(skyshot([win(), pw('p', null, {secure: true}), pw('q', 'PLAINTEXT-3')], {revision: 3}), second);
+  // Its only part, so printed bare.
+  assert.equal(diff(second, third), `${HEADER}\n+\t2 secure text field (settable) secure text`);
+  assert.doesNotMatch(render(third.skyshot, third.numbering), /PLAINTEXT|12/);
+});

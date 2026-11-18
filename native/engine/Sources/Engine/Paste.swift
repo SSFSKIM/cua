@@ -98,17 +98,44 @@ func pasteParts(typing text: String) -> [PastePart] {
 struct EffectReading: Equatable {
   var range: [Int]? = nil
   var characters: Int? = nil
+  /// #405: the focused element is a password field, or one whose role or subrole could not be read: its numbers judge the
+  /// paste inside the engine (`pasteEffectSeen`) and never leave it.
+  var secure = false
 
   var isEmpty: Bool { range == nil && characters == nil }
 
-  /// Its numbers for the per-line records (`PasteDiagnostics.perLine`): counts and offsets, never text.
+  /// Whether its numbers differ from `other`'s: what movement is decided on, never the `secure` mark (#405). For a password
+  /// field (either side `secure`) only a number this reading has counts: a number lost since is no movement.
+  func moved(from other: EffectReading) -> Bool {
+    guard secure || other.secure else { return range != other.range || characters != other.characters }
+    return (range != nil && range != other.range) || (characters != nil && characters != other.characters)
+  }
+
+  /// Its numbers for the per-line records (`PasteDiagnostics.perLine`): counts and offsets, never text; for a password
+  /// field only that it is one.
   var wire: [String: Any] {
+    if secure { return ["secure": true] }
     var wire: [String: Any] = [:]
     if let range { wire["range"] = range }
     if let characters { wire["characters"] = characters }
     return wire
   }
 }
+
+/// Whether `reading` shows the paste of `units` UTF-16 units over `baseline`: any change, as F §7.5 judges it; but for a
+/// password field (#405, either reading `secure`) with both counts known, only a count that moved by exactly the paste,
+/// less the selection it replaced, since that count is all the engine sees of the field. `units` nil (a Return's settle)
+/// keeps the change rule.
+func pasteEffectSeen(_ reading: EffectReading, baseline: EffectReading, units: Int?) -> Bool {
+  guard reading.moved(from: baseline) else { return false }
+  guard let units, reading.secure || baseline.secure, let before = baseline.characters else { return true }
+  guard let after = reading.characters else { return false }
+  return after == before - (baseline.range?[1] ?? 0) + units
+}
+
+/// Whether a password field's paste is judged by its count alone (#405): a secure baseline with a count, and the line's
+/// length known. A notification then only prompts a reading; it confirms nothing by itself.
+func pasteJudgedByCount(baseline: EffectReading, units: Int?) -> Bool { units != nil && baseline.secure && baseline.characters != nil }
 
 /// The paste's notification source for the effect wait (#187): none (no observer registered), one whose notifications
 /// count (`trusted`), or one registered on an app that may never post them (`untrusted`, a Chromium or Electron process
@@ -227,17 +254,20 @@ final class PasteEffect: @unchecked Sendable {
   /// Polls for the effect until `timeoutMs` passes. With neither a trusted source nor a baseline there is nothing that
   /// could show one, and it answers `noChannel` at once. Each read is given the time left, and a changed reading that
   /// came back after the time ran out is not accepted (#187 review: a slow target's late reply must not confirm a line).
-  func wait(timeoutMs: Double = pasteEffectTimeoutMs, intervalMs: Double = pasteEffectIntervalMs) -> EffectOutcome {
+  /// `units`, the length of the text the field takes, judges a password field's reading (`pasteEffectSeen`), and where
+  /// its count decides (`pasteJudgedByCount`) a notification does not confirm by itself.
+  func wait(timeoutMs: Double = pasteEffectTimeoutMs, intervalMs: Double = pasteEffectIntervalMs, units: Int? = nil) -> EffectOutcome {
     let (baseline, trusted) = locked { (self.baseline, source == .trusted) }
     guard trusted || !baseline.isEmpty else { return .noChannel }
+    let byCount = pasteJudgedByCount(baseline: baseline, units: units)
     let start = now()
     while true {
-      if locked({ seen }) { return .notification }
+      if !byCount, locked({ seen }) { return .notification }
       let left = timeoutMs - (now() - start)
       if left <= 0 { return .timeout }
       let reading = baseline.isEmpty ? nil : read(left)
       if now() - start >= timeoutMs { return .timeout }
-      if let reading, reading != baseline {
+      if let reading, pasteEffectSeen(reading, baseline: baseline, units: units) {
         locked { confirming = reading }
         return .reading
       }
@@ -262,8 +292,8 @@ final class PasteEffect: @unchecked Sendable {
       if left <= 0 { return .timeout }
       let reading = read(left)
       if now() - start >= timeoutMs { return .timeout }
-      if let reading, reading != baseline {
-        if reading == moved { return .reading }
+      if let reading, reading.moved(from: baseline) {
+        if let moved, !reading.moved(from: moved) { return .reading }
         moved = reading
       }
       sleep(max(0, min(intervalMs, timeoutMs - (now() - start))))
@@ -572,7 +602,8 @@ func runPaste(_ parts: [PastePart], pasteboard: PasteboardAccess, effect: PasteE
         meta.paste?.stage = "effect"
         let effectBudget = min(pasteEffectTimeoutMs, max(0, remainingMs()))
         let effectStart = effect.now()
-        let seen = effect.wait(timeoutMs: effectBudget)
+        // A password field's count is judged against the text it takes: the plain text, not a markup source (#405).
+        let seen = effect.wait(timeoutMs: effectBudget, units: deliveredUnits(representations) ?? units)
         meta.paste?.effectWaitMs = effect.now() - effectStart
         meta.paste?.effectAfterPostMs = effect.now() - postAt
         meta.paste?.confirming = effect.confirmingReading
@@ -857,12 +888,29 @@ func effectReading(of application: AXUIElement, withinMs budget: Double = .infin
   defer { if budget.isFinite { AXUIElementSetMessagingTimeout(application, elementMessagingTimeout) } }
   guard bound(application) else { return nil }
   guard let focused = elementAttribute(application, kAXFocusedUIElementAttribute) else { return EffectReading() }
-  var reading = EffectReading()
+  // The batch keeps the timeout `bound` set: `fetchAttributes` would put back the usual one.
+  return focusedEffectReading(focused, bound: bound) { fetchAttributesAsTimed($0, $1) }
+}
+
+/// The focused element's reading, its request `bound` first (nil once the budget is spent). #405: its role, subrole,
+/// range and count are read in one batch, and a reading whose classification in that batch is closed (a password field,
+/// or a role or subrole that cannot be read) is marked `secure`: its numbers judge the paste here and never leave the
+/// engine. A batch that fails is no reading (nil), as a poll the budget stopped is, never one that lost its numbers.
+func focusedEffectReading<Element>(_ focused: Element, bound: (Element) -> Bool,
+                                   batch: (Element, [String]) -> AttributeRead?) -> EffectReading? {
   guard bound(focused) else { return nil }
-  if let range = rangeWire(attribute(focused, kAXSelectedTextRangeAttribute)), let location = range["location"], let length = range["length"] {
+  guard let read = batch(focused, classifyingAttributes + [kAXSelectedTextRangeAttribute, kAXNumberOfCharactersAttribute]) else { return nil }
+  var reading = EffectReading()
+  reading.secure = valueReadClosed(read)
+  if let range = rangeWire(read.values[kAXSelectedTextRangeAttribute]), let location = range["location"], let length = range["length"] {
     reading.range = [location, length]
   }
-  guard bound(focused) else { return nil }
-  reading.characters = (attribute(focused, kAXNumberOfCharactersAttribute) as? NSNumber)?.intValue
+  reading.characters = (read.values[kAXNumberOfCharactersAttribute] as? NSNumber)?.intValue
   return reading
+}
+
+/// The UTF-16 length of the plain text a paste delivers (its `.string` representation), which a field that takes only
+/// plain text, a password field, receives; nil without one.
+func deliveredUnits(_ representations: [PasteRepresentation]) -> Int? {
+  representations.first { $0.type == .string }.flatMap { String(data: $0.data, encoding: .utf8) }.map { $0.utf16.count }
 }

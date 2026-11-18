@@ -5634,6 +5634,172 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      the next observation, so a later re-fetch of it matches on the other ten attributes. A field whose subrole changed
      still fails the re-check, which answers `valueUnconfirmed` as before.
   Date/Author: 2026-11-17, cursor235's implementer for #390 (the review of 2532a1b5).
+- Decision (#405, 2026-11-17, `fix/405-secure-field-unread`; the issue's intent, from the audit at 290303c1 and probe
+  kit probe/pw-walk 0d77eba7, runs 44203155183, 44206136831 and 44211615666): **the observation classifies an element
+  before it reads its value, and never reads a password field's value, length, Markdown or selection, whatever the app
+  would answer.** Every tested app masked the value before cua saw it (Chromium, Electron, Safari, Firefox: U+2022 at
+  the exact length; AppKit's NSSecureTextField: U+F79A), so the walk printed the mask at the password's length, and
+  Chromium and Electron answered seven bullets for AXSelectedText, which the trailer printed. That protection was the
+  app's alone: the walk requested AXValue and AXNumberOfCharacters in the same batch as AXRole and AXSubrole, the
+  Markdown read and the focused element's AXSelectedText were unguarded, and the lineage identity kept the value as
+  `s:<text>`. "Not changed" in "#390's review", item 3, is reversed.
+  1. **Classify, then read** (Fetch.swift `ElementSource`). Each element is read in two requests: every observed
+     attribute but the value's (`valueAttributes`: AXValue, AXNumberOfCharacters) first; then those two, beside AXRole
+     and AXSubrole read again, only when the first classified the element as neither a password field (role or subrole
+     AXSecureTextField) nor unclassifiable (a role or subrole it could not read), by the rule every value read of a
+     field already follows (`writtenValueFieldClosed`, through `valueReadClosed`). A field the second request finds
+     closed, because it turned secure in between, keeps nothing of that answer; and a request keeps only the
+     attributes it asked for, whatever else an app puts beside them. The Markdown read (AXAttributedStringForRange) asks
+     the role and subrole again just before it; the focused element's AXSelectedText is read only once its role and
+     subrole, read just before, leave it open (Skyshot.swift `focusedSelectedText`); select_text refuses a password
+     field before reading its value or its attributed text (`selectionSearchText`, `selectionNotSettable`), since a
+     search's answer would tell what the field holds. AXValueDescription stays in the first request (AppKit's "contains
+     secure text"). The vendor batches everything in one request; reading the role and subrole in the same batch as the
+     value was the alternative (one request, and the classification atomic with the value), not taken because it reads
+     the plaintext into the engine from any app that would answer it.
+  2. **What a password field's node carries**: `secure: true`, no value, value type, length or Markdown, and still its
+     settable flag (counted as holding a value, as every app answers it one). Its identity keeps no value
+     (`ElementIdentity.valueUnread`, #390's mark), so a re-fetch matches it by the other ten attributes. The issue named
+     role, path and frame for that identity; the lineage's identity has never held a path or frame (tokens follow the
+     sibling rule, and a frame changes with every scroll), so it keeps the vendor's non-value attributes instead, none
+     of which is the field's text. A field that cannot be classified carries no value and no `secure`, since it is not
+     known to be one.
+  3. **Every entry point.** The walk (`data`, `listedData`); the settle's busy walk, which now reads no value attribute at
+     all (`structure`: the busy signs need none), the observation that reuses its reads adding only the value's request;
+     the focused element's selected text; and a token's re-resolution after an action (its re-read from the handle and
+     the re-fetch walk, which matches each element first without its value and asks for the value only of one the rest
+     already matches, when the match counts it).
+  4. **The renderer** (render.mjs): a node marked `secure`, or whose role or subrole is AXSecureTextField whatever value it
+     carries, keeps no value or Markdown, prints `secure text` as its Value part (bare when it is the line's only part),
+     and drops the trailer's selected text when it is the focused element; so the diff never sees what it holds change.
+     Every other node prints byte for byte as before.
+  5. **The cost**: one more request per element whose value may be read, per observation (not per busy walk), and one
+     per Markdown read. Not measured live.
+  6. **The model's document**: the typing paragraph of agent-cursor.md gains a sentence after its password-field
+     sentence: an observation never shows a password field's text or length, its value reads `secure text`, selectText
+     cannot select in it, and a screenshot shows what the field displays (the surface inventory's "Table 3 addition
+     (2026-11-17, #405)", the docs oracle and the core-documentation test byte for byte).
+  7. **Not covered**: the paste's effect reading (Paste.swift `effectReading`) still reads the focused field's
+     AXSelectedTextRange and AXNumberOfCharacters to see a paste land, and its per-line diagnostics carry the count;
+     unguarding it would leave a paste into a password field unconfirmable, so it is left to its own ticket. A
+     service-side filter of substituted secrets (#406) and the Linux engine (#407) are their own tickets.
+  8. **Proof**: unit tests over a stub app that holds PLAINTEXT as a password field's value and answers it to any
+     request (SecureFieldTests: the walk, the settle's busy walk and its reuse, a field turning secure between requests,
+     the focused selected text, re-resolution by handle and by re-fetch, select_text; the renderer and diff tests), each
+     guard mutated away and caught. The live run of the pw-walk kit across its six lanes, and the run typing a
+     `{{secret:…}}` into a password field, wait on a hosted run.
+  Date/Author: 2026-11-17, cursor235's implementer for #405.
+- Decision (#405's review, 2026-11-17, `fix/405-secure-field-unread`; the review of 2e5b3059..6dc4bcd0, five P1 and two
+  P2 findings, all accepted, and ruling 1ea561bc:808 on the paste; amends "#405" above, items 1, 2, 3 and 7): **a
+  value-bearing attribute is only ever requested in a batch that reads the role and subrole again, its whole answer
+  dropped when that classification is closed, and only after a classification made just before it** (`guardedRead`,
+  #390's principle made one function). A classification older than the read does not authorise it.
+  1. **AXValueDescription is value-bearing** (P1): it moves into the guarded batch (`valueAttributes`), a password field's
+     node and identity carry none, and the renderer drops Details on a secure node. The identity now matches the value
+     description together with the value: both are left out when either is (`ignoringValue`, `valueUnread`).
+  2. **A field the Markdown's classification finds closed** (P1) closes the walk's data too, and the source's cache: the
+     node becomes `secure` with no value or length, and its identity `valueUnread`.
+  3. **The settle's reads reused** (P1): a structure read by the busy walk is classified again (a classification-only
+     request) before the value's batch. The cost is one more request per element on an observation that reuses a
+     settled tree, three in all where main made one.
+  4. **The focused selected text** (P1): a classification-only request, then AXSelectedText in one batch with the role
+     and subrole, dropped when closed (`focusedSelectedText`).
+  5. **select_text** (P1): its value read goes through `guardedRead`; the attributed read is preceded by a
+     classification of its own, and a field closed by then is refused, nothing more read.
+  6. **A failed value read is not an omission** (P2): `ElementData.valueFailed` (the value's request failed, or AXValue's
+     slot) is kept apart from `valueUnread` (deliberately not read), and a match that needs the value fails on a side
+     whose value read failed, so a timed-out read no longer matches a different control as a wildcard.
+  7. **A listed read** (P2): the role and subrole are requested for the classification whether or not the element lists
+     them, and kept in its data only when it does.
+  8. **The paste** (ruling 1ea561bc:808, in #405's scope; item 7 above withdrawn, its debt entry removed): the ticket
+     limits what leaves the engine, not what it uses. The effect reading classifies the focused element first
+     (`focusedEffectReading`) and still reads a password field's range and count, marked `secure`; such a reading
+     confirms only a count moved by exactly the pasted line less the selection it replaced (`pasteEffectSeen`; any
+     change, as before, when a count is missing or for any other field), and the meta's records say only `secure: true`
+     for it, no range or count.
+  9. **Proof**: SecureFieldTests (10) and a paste operation test over the stub; each new guard mutated away and caught.
+     The request filter at the source's boundary (`request` keeping only what it asked for) is now covered twice (the
+     structure read keeps only its own names), so its mutation alone is not caught.
+  Date/Author: 2026-11-17, cursor235's implementer for #405 (the review of 2e5b3059..6dc4bcd0).
+- Decision (#405's re-review, 2026-11-17, `fix/405-secure-field-unread`; the review of 6dc4bcd0..6a1c7658, eight
+  findings, seven accepted and one dismissed by the design session; amends "#405's review" above, items 1, 2, 5, 6 and
+  8): **every closure fails closed, a failed or unverifiable value read never matches as a wildcard, and a paste is
+  judged on its numbers alone.**
+  1. **The paste reading** (P1): role, subrole, range and count are read in one batch (`focusedEffectReading`), the
+     numbers marked `secure` by that batch's own classification, or when the batch fails, so none of them reaches the
+     wire after a field turned secure between requests.
+  2. **Failing closed** (P1): a Markdown classification that fails as a whole closes the field as an unreadable role
+     does (its cached and emitted value dropped); select_text refuses when its classification before the attributed
+     read fails, searching nothing.
+  3. **An unverifiable value** (P2): a value batch that cannot classify the element, or that fails, marks it unverified
+     (`valueFailed`, `descriptionFailed`), never a deliberate omission, and a failed value matches only another failed
+     one, so a replacement that could not be verified never inherits a token whose value counts. A value batch that
+     finds the field secure, or reads its role and subrole at all, gives the data those fresher role and subrole
+     (`reclassified`), so no match is made across a known change on stale structural ones. The re-fetch walk now
+     decides every structural match by the element's full read.
+  4. **The value description apart** (P2): `descriptionUnread` and `descriptionFailed` mark it separately from the value;
+     #390's valueless source still reads and compares it, and `ignoringValue` compares it again, as main did.
+  5. **Movement is the numbers'** (P2): `EffectReading.moved` compares range and count only, in the wait and the Return's
+     settle; `secure` only chooses the privacy and confirmation rules.
+  6. **A notification and the count** (P2): where a password field's count decides (`pasteJudgedByCount`), a trusted
+     notification no longer confirms by itself; the reading must show the count moved by the paste.
+  7. **The delivered length** (P2): the count is judged against the plain text the paste delivers (`deliveredUnits`, its
+     `.string` representation), not an html or Markdown source; the request's progress accounting keeps the source's.
+  8. **Dismissed, a deliberate boundary**: a value read while a field was plain is kept when the field turns secure later
+     in the same observation (the focus trailer finding it secure leaves the node the walk already collected), as a
+     screenshot taken then keeps what the screen showed. The guard never reads a value while the field is secure; it
+     does not revise what was read before.
+  9. **Proof**: SecureFieldTests (14) and two paste operation tests over the stub; each new guard mutated away and caught.
+  Date/Author: 2026-11-17, cursor235's implementer for #405 (the review of 6dc4bcd0..6a1c7658).
+- Decision (#405, design ruling 1ea561bc:811, 2026-11-17, `fix/405-secure-field-unread`; with the review of
+  6a1c7658..bc52384a's four findings; supersedes "#405" item 1, "#405's review" items 3 and 4 and the preflights of its
+  items 4 and 5, and "#405's re-review" item 3's structure-first match): **one AX batch per element carries its role,
+  subrole and value-bearing attributes together; the element is classified from that same reply, and a closed one's
+  value attributes are dropped as the reply is decoded.** The ticket guards what leaves the engine or stays in it (IPC,
+  the cache, identity, render, logs); a value inside the engine's process only for the life of one AX reply is the same
+  trust domain, ruling 808's line.
+  1. **A, the separate classification request, rejected**: on smoke 44224481847 (CfT 157, p50 of 2) its second request
+     per element cost +44–61% walk time on every page: a 69-node fixture 53→77 ms wall; a 286-node page with 216 inputs
+     279→436 ms, attributesMs 88→180; a reused settle tree's final walk 150→230 ms; AppKit's large fixture 123→147 ms.
+  2. **The read** (`ElementSource.classifiedData`): `observedAttributes` (the listed read's names, with the role and
+     subrole always) in one request, `valueReadClosed` over that reply, and a closed element's value, value
+     description and length dropped in the same function, before anything reads or formats the reply; nothing logs an
+     element's attributes. An element whose role or subrole is missing or fails is treated as a password field (`secure`
+     in its node and identity, `secure text` rendered). The busy walk, the reuse of its reads and the re-fetch walk go
+     back to main's one read per element; the structure-only read, the reuse's reclassification and its cache are gone.
+  3. **Other value-bearing reads** (`classifiedRead`): the focused element's AXSelectedText and select_text's AXValue
+     each ride in one batch with the role and subrole, dropped when it is closed. The parameterized reads no batch can
+     carry keep a classification request just before them, failing closed: the walk's Markdown read (a failed or closed
+     classification closes the data and its cache entry as secure) and select_text's attributed read (refused).
+  4. **Kept from the third review**: a failed paste poll is no reading (nil), and a password field's reading moves only
+     on a number it read (a number lost since is no movement, and a lost count confirms nothing); the paste's batch
+     keeps the budget's messaging timeout (`fetchAttributesAsTimed`); the identity records `secure` and compares it, so
+     a same-labelled plain field never inherits a password field's token, whatever role and subrole each kept; and two
+     failed reads match only for the same handle (`sameElement`), never another element. Moot under one batch: the
+     closure's stale role and subrole (a single reply has no older ones).
+  5. **Proof**: SecureFieldTests (16) over a stub that answers plaintext to every request, also beside a slot it reports
+     failed, asserting no emission and no retention: node and reply, cache, identity, screenshot record, error sentences
+     and the stderr captured over an observation, resolutions and a refusal; one case reads a plain field's value and
+     then has the Markdown's classification fail. Each guard mutated away and caught.
+  Date/Author: 2026-11-17, cursor235's implementer for #405 (ruling 1ea561bc:811 and the review of 6a1c7658..bc52384a).
+- Decision (#405, design ruling 1ea561bc:813, 2026-11-17, `fix/405-secure-field-unread`; with the review of
+  bc52384a..cd7a2f6d's three findings; narrows "#405, ruling 811" item 2): **a failed classification presumes a
+  password field only where one can be; elsewhere the value is dropped and said to be unread.**
+  1. **Which closures say `secure`** (`valueClassification`): a role or subrole AXSecureTextField, an unreadable role, and
+     a text-entry role (AXTextField, AXTextArea, AXComboBox, `presumedSecureRoles`) with an unreadable subrole: the node
+     says `secure`, rendered `secure text`. Another readable role with an unreadable subrole cannot be a password field:
+     its value attributes are dropped all the same, and its node says `valueUnread` instead, rendered `value unread`, so
+     the model reads the value as missing rather than empty.
+  2. **Dropped before the decoding** (P1): a closed reply's value attributes are left out of the names the data is
+     decoded from, so no plaintext is kept, converted or bounded on the way to being cleared.
+  3. **A closure by failure is unverifiable** (P2): `classificationFailed` on the data and the identity, apart from
+     `secure`; such an identity matches only another such, and only for the same handle, so two same-labelled fields
+     whose subroles cannot be read are redacted alike and never taken for each other. A closure by a password field's
+     own role or subrole matches across handles as before.
+  4. **The checks' reach** (P2): the fixture password has a length (41) no other text carries; the error sentences and
+     their wire, and the stderr captured over an observation, resolutions and a refusal, are searched for that number in
+     any form and for its run of either mask glyph, and a capture that fails fails the test.
+  Date/Author: 2026-11-17, cursor235's implementer for #405 (ruling 1ea561bc:813 and the review of bc52384a..cd7a2f6d).
 
 ## Outcomes & Retrospective
 

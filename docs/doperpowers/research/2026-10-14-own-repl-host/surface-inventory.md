@@ -1024,3 +1024,13 @@ answering success only on a read as written and `valueUnconfirmed` otherwise, a 
 since neither is read. Two sentences close the fourth paragraph; the second, on focus events, is ruling 1ea561bc:793 after the hosted qualification found the page gets none:
 
 > Unless this Mac is a dedicated desktop, a `setValue` on a text field of a web page in a Chromium-based app in the background, when the field does not already have keyboard focus, sets the value without a click and then reads it back: it succeeds only once the field reads the new value, and otherwise fails with `valueUnconfirmed`, as it always does there for a `{{secret:…}}` or a password field, whose value is never read back, so observe the field before any retry. The field becomes the focused element of the page, but the page gets no focus or blur event for it, so anything a page does only on focus, such as opening a list of suggestions, does not happen.
+
+### Table 3 addition (2026-11-17, #405)
+
+#405 (the native engine spec's Decision Log, "#405") stops the observation reading a password field: its value, length,
+Markdown and selected text are never read, whatever the app would answer, and its line prints `secure text` as its
+value; select_text refuses such a field. An observation could then no longer tell the model whether a secret typed into
+one went in, which the typing paragraph sends it to find out, so one sentence follows that paragraph's password-field
+sentence:
+
+> An observation never shows the text of a password field or its length: its value reads `secure text`, and `selectText` cannot select in it; a screenshot shows what the field displays.

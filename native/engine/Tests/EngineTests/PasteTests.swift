@@ -1481,6 +1481,53 @@ final class PasteOperationTests: XCTestCase {
     slow.keyPosted(at: 0)
     XCTAssertEqual(slow.settle(timeoutMs: 100, intervalMs: 25), .timeout)
   }
+
+  /// #405: a paste into a password field (9 characters, 2 selected) confirms only once its count moved by exactly the
+  /// paste less the selection, and neither answer nor meta carries any of the field's numbers.
+  func testAPasteIntoAPasswordFieldIsJudgedInsideTheEngineAndReportsNoCount() throws {
+    for (after, confirmed) in [(13, true), (12, false)] {
+      let pasteboard = TestPasteboard()
+      pasteboard.userCopies("the owner's")
+      var characters = 9
+      var entered = 0
+      var meta = meta()
+      let watch = effect { EffectReading(range: [characters - 2, 2], characters: characters, secure: true) }
+      var answer = ""
+      do {
+        try run([.content(plain("hunter"), units: 6)], pasteboard, effect: watch, postPaste: {
+          _ = pasteboard.appReads()
+          characters = after
+          return true
+        }, entered: &entered, meta: &meta)
+      } catch let error as EngineError {
+        answer = error.message
+      }
+      XCTAssertEqual(answer.isEmpty, confirmed, "count \(after)")
+      XCTAssertEqual(meta.paste?.confirmed, confirmed, "count \(after)")
+      let text = String(data: try JSONSerialization.data(withJSONObject: diagnostics(meta), options: [.sortedKeys]), encoding: .utf8)!
+      XCTAssertFalse(text.contains("\"characters\"") || text.contains("\"range\""), text)
+      XCTAssertTrue(text.contains("\"secure\":true"), text)
+      XCTAssertFalse(answer.contains("9") || answer.contains("\(after)"), answer)
+    }
+  }
+
+  /// #405: a markup paste into a password field is judged against the plain text it delivers, not the markup's length.
+  func testAMarkupPasteIntoAPasswordFieldIsJudgedByItsPlainText() throws {
+    let pasteboard = TestPasteboard()
+    pasteboard.userCopies("the owner's")
+    var characters = 0
+    var entered = 0
+    var meta = meta()
+    let markup = "<b>hunter</b>"
+    let representations = [PasteRepresentation(type: .html, data: Data(markup.utf8)), PasteRepresentation(type: .string, data: Data("hunter".utf8))]
+    try run([.content(representations, units: markup.utf16.count)], pasteboard, effect: effect { EffectReading(range: [characters, 0], characters: characters, secure: true) },
+            postPaste: {
+              _ = pasteboard.appReads()
+              characters = 6
+              return true
+            }, entered: &entered, meta: &meta)
+    XCTAssertEqual(meta.paste?.confirmed, true)
+  }
 }
 
 

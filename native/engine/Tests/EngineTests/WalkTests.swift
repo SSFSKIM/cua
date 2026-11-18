@@ -42,6 +42,12 @@ final class FakeTree {
   var childrenUnread: Set<Int> = []
   /// Attributes whose read fails with an error other than absence, by id (their slots decode as none).
   var unreadableAttributes: [Int: Set<String>] = [:]
+  /// Every request answers all an element carries, asked for or not (#405's stub of a careless app).
+  var answersEverything = false
+  /// Elements whose classification-only requests (role and subrole alone) fail as a whole (#405).
+  var classificationRequestsFail: Set<Int> = []
+  /// Called after each request is answered, by id and names (a test's change to the tree between requests).
+  var answered: ((Int, [String]) -> Void)?
 
   func id(_ element: AXUIElement) -> Int { Int(pid(of: element)) - 60_000 }
 }
@@ -59,12 +65,33 @@ final class FakeSource: ElementSource, @unchecked Sendable {
   var scrollBarReads: [Int: Int] = [:]
   init(_ tree: FakeTree) { self.tree = tree }
 
-  override func read(_ element: AXUIElement) -> ElementData? {
+  /// One request, as the live one: the attributes asked for, each failed one listed as such. An element's read (its
+  /// request with AXChildren) is counted in `reads` and takes `tree.slow`; every request is logged in `requests`.
+  override func fetch(_ element: AXUIElement, _ names: [String]) -> AttributeRead? {
     let id = tree.id(element)
-    reads[id, default: 0] += 1
-    readOrder.append(id)
-    if let delay = tree.slow[id] { usleep(delay) }
+    requests.append((id, names))
+    let structural = names.contains(kAXChildrenAttribute)
+    if structural {
+      reads[id, default: 0] += 1
+      readOrder.append(id)
+      if let delay = tree.slow[id] { usleep(delay) }
+    }
     if tree.unreadable.contains(id) { return nil }
+    if tree.classificationRequestsFail.contains(id), names == classifyingAttributes { return nil }
+    // Each request that asked for AXValue counted (#390).
+    if names.contains(kAXValueAttribute) { valueReads[id, default: 0] += 1 }
+    var values = answers(id)
+    let unreadable = (tree.unreadableAttributes[id] ?? []).intersection(names)
+    // A careless app (`answersEverything`) still puts a value in the reply beside its slot's failure.
+    if !tree.answersEverything { for name in tree.unreadableAttributes[id] ?? [] { values.removeValue(forKey: name) } }
+    // `answersEverything`: the app's answer carries what it holds, asked for or not (the source must keep only what it asked).
+    if !tree.answersEverything { values = values.filter { names.contains($0.key) } }
+    tree.answered?(id, names)
+    return AttributeRead(values: values, unreadable: unreadable)
+  }
+
+  /// Everything the fake element carries.
+  private func answers(_ id: Int) -> [String: CFTypeRef] {
     var values: [String: CFTypeRef] = ["AXRole": "AXGroup" as CFString, "AXTitle": "node \(id)" as CFString,
                                        "AXChildren": (tree.children[id] ?? []).map(Engine.element) as CFArray]
     for (name, value) in tree.extra[id] ?? [:] { values[name] = value }
@@ -74,14 +101,11 @@ final class FakeSource: ElementSource, @unchecked Sendable {
       values["AXPosition"] = AXValueCreate(.cgPoint, &origin)!
       values["AXSize"] = AXValueCreate(.cgSize, &extent)!
     }
-    let unreadable = tree.unreadableAttributes[id] ?? []
-    for name in unreadable { values.removeValue(forKey: name) }
-    // As the live read: AXValue answered only when requested (#390), and each read that requested it counted.
-    if requestedAttributes.contains(kAXValueAttribute) { valueReads[id, default: 0] += 1 } else { values.removeValue(forKey: kAXValueAttribute) }
-    return ElementData(values: values, unreadable: unreadable)
+    return values
   }
-  /// Reads that requested AXValue, by id (#390).
+  /// Requests that asked for AXValue, by id (#390); every request made, by id, in order (#405).
   var valueReads: [Int: Int] = [:]
+  var requests: [(id: Int, names: [String])] = []
 
   override func owner(_ element: AXUIElement) -> pid_t { tree.owners[tree.id(element)] ?? 4242 }
   /// Gone checks by id.
@@ -97,7 +121,7 @@ final class FakeSource: ElementSource, @unchecked Sendable {
     settableCalls[attribute, default: 0] += 1
     return tree.settable[tree.id(element)]?.contains(attribute) ?? false
   }
-  override func markdown(_ element: AXUIElement, length: Int) -> String? {
+  override func readMarkdown(_ element: AXUIElement, length: Int) -> String? {
     markdownCalls += 1
     return tree.markdown[tree.id(element)]
   }
@@ -107,12 +131,10 @@ final class FakeSource: ElementSource, @unchecked Sendable {
     tree.onDescription?(tree.id(element), action)
     return tree.elementDescriptions[tree.id(element)]?[action] ?? tree.descriptions[action]
   }
-  override func readListed(_ element: AXUIElement) -> ElementData? {
+  override func attributeNames(_ element: AXUIElement) -> [String]? {
     let id = tree.id(element)
     listedReads[id, default: 0] += 1
-    guard var data = read(element) else { return nil }
-    if let listed = tree.listed[id], !listed.contains("AXRoleDescription") { data.roleDescription = nil }
-    return data
+    return tree.listed[id].map(Array.init) ?? observedAttributes
   }
   override func readVisibleChildren(_ element: AXUIElement) -> [AXUIElement]? { tree.visible[tree.id(element)].map { $0.map(Engine.element) } }
   /// Frame reads (AXPosition and AXSize, with AXRole) by id.

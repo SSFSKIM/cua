@@ -72,8 +72,8 @@ export const SECRETS_LIST_TOOL = {
     + 'as the whole text of typeText or paste, or the whole value of setValue: the stored value is substituted outside '
     + 'your code and never returned. Anywhere else the marker is not expanded. Once entered, the value is in the app like '
     + 'any typed text: a field that does not mask its input shows it in your later screenshots and observations, so enter '
-    + 'a secret only into a field that masks it, such as a password field, which still shows its length (one mask '
-    + 'character per character).',
+    + 'a secret only into a field that masks it, such as a password field, which still shows its length on screen (one '
+    + 'mask character per character).',
   inputSchema: NO_ARGUMENTS,
   annotations: {readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false},
   _meta: {'anthropic/searchHint': 'list stored secret credential labels for computer-use typing'},

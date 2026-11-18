@@ -100,8 +100,22 @@ struct ElementIdentity {
   let help: String?
   let identifier: String?
   let url: String?
-  /// #390: the value was not read (a sensitive set_value's re-read), so the match leaves it out.
+  /// #390: the value was not read (a sensitive set_value's re-read), so the match leaves it out, and (#405) its value
+  /// description with it. #405: so is a password field's, or one that could not be classified, whose identity keeps
+  /// neither: it is matched by its other nine.
   let valueUnread: Bool
+  /// #405: the value was wanted and could not be read (`ElementData.valueFailed`): it matches only another such, and
+  /// only for the same handle.
+  let valueFailed: Bool
+  /// #405: the value description's own marks (`ElementData.descriptionUnread`, `descriptionFailed`), as the value's.
+  let descriptionUnread: Bool
+  let descriptionFailed: Bool
+  /// #405: a password field as a read classified it (`ElementData.secure`), whatever role and subrole it kept: a match
+  /// needs both sides to agree.
+  let secure: Bool
+  /// #405: the value was dropped because the classification failed (`ElementData.classificationFailed`): it matches only
+  /// another such, and only for the same handle.
+  let classificationFailed: Bool
   fileprivate(set) var pid: pid_t
 
   init(_ data: ElementData, pid: pid_t) {
@@ -117,15 +131,30 @@ struct ElementIdentity {
     identifier = data.identifier
     url = data.url
     valueUnread = data.valueUnread
+    valueFailed = data.valueFailed
+    descriptionUnread = data.descriptionUnread
+    descriptionFailed = data.descriptionFailed
+    secure = data.secure
+    classificationFailed = data.classificationFailed
     self.pid = pid
   }
 
   /// The vendor's match (FUN_100221838); `ignoringValue` leaves the value out, as the re-check after set_value's write
-  /// does (F §3.6, §16.4), and so does an identity whose value was not read (#390, `valueUnread`).
-  func matches(_ other: ElementIdentity, ignoringValue: Bool = false) -> Bool {
-    role == other.role && subrole == other.subrole && roleDescription == other.roleDescription && title == other.title
-      && (ignoringValue || valueUnread || other.valueUnread || value == other.value) && valueDescription == other.valueDescription && description == other.description
-      && placeholder == other.placeholder && help == other.help && identifier == other.identifier && url == other.url
+  /// does (F §3.6, §16.4), and so does an identity whose value was deliberately not read (#390, #405: `valueUnread`); the
+  /// value description is left out only when it was not read (`descriptionUnread`). Where either counts, a value that
+  /// could not be read matches only another that could not, and only for the same handle (`sameElement`): two failed
+  /// reads never make another element this one (#405, `valueFailed`, `descriptionFailed`). A password field matches only
+  /// a password field (`secure`).
+  func matches(_ other: ElementIdentity, ignoringValue: Bool = false, sameElement: Bool = false) -> Bool {
+    let valueCounts = !ignoringValue && !valueUnread && !other.valueUnread
+    let descriptionCounts = !descriptionUnread && !other.descriptionUnread
+    func failedAlike(_ mine: Bool, _ theirs: Bool) -> Bool { mine == theirs && (!mine || sameElement) }
+    return secure == other.secure && failedAlike(classificationFailed, other.classificationFailed)
+      && role == other.role && subrole == other.subrole && roleDescription == other.roleDescription && title == other.title
+      && (!valueCounts || (failedAlike(valueFailed, other.valueFailed) && value == other.value))
+      && (!descriptionCounts || (failedAlike(descriptionFailed, other.descriptionFailed) && valueDescription == other.valueDescription))
+      && description == other.description && placeholder == other.placeholder && help == other.help && identifier == other.identifier
+      && url == other.url
   }
 }
 
@@ -326,10 +355,13 @@ final class Lineage {
       }
       return self.entry(number)!
     }
-    if let live = read(entry.element), ElementIdentity(live, pid: entry.identity.pid).matches(entry.identity, ignoringValue: ignoringValue) {
+    if let live = read(entry.element),
+       ElementIdentity(live, pid: entry.identity.pid).matches(entry.identity, ignoringValue: ignoringValue, sameElement: true) {
       return refetch == .ifNeeded ? entry : try settle(on: entry.element, owner: entry.identity.pid, data: live)
     }
-    let before = observed.entries.values.filter { $0.identity.matches(entry.identity, ignoringValue: ignoringValue) }.count
+    let before = observed.entries.values.filter {
+      $0.identity.matches(entry.identity, ignoringValue: ignoringValue, sameElement: CFEqual($0.element, entry.element))
+    }.count
     var found: [AXUIElement] = []
     if before == 1 {
       let tree = resolver.tree(observed.menuRoot)

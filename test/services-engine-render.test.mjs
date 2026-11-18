@@ -394,3 +394,47 @@ test('over the tree\'s 4,000 URL characters, fragments go, then queries, then ea
   // 40 URLs at the limit of 100 are exactly 4,000 characters: the first limit that fits.
   assert.equal(lines(long)[2], `\t\t2 link L0, Value: ${`example.com/0/${'p'.repeat(200)}`.slice(0, 99)}…`);
 });
+
+// ---- #405: a password field ----
+
+const password = (token, depth, fields = {}) => node(token, depth, 'AXTextField', {
+  roleDescription: 'secure text field', subrole: 'AXSecureTextField', description: 'PW', flags: {settable: true, focusable: true}, ...fields,
+});
+
+test('#405: a password field prints `secure text` as its value, with no length, mask, value description or selected text', () => {
+  // As the engine sends it: no value, marked secure.
+  assert.deepEqual(lines(skyshot(win([password('p', 1, {secure: true, value: null})]))),
+    ['0 standard window W, Secondary Actions: Raise', '\t1 secure text field (settable) Description: PW, Value: secure text']);
+  // Whatever value a node of that role or subrole carries (an engine that read it), none of it is printed.
+  for (const fields of [{value: 'PLAINTEXT', numberOfCharacters: 9, valueMarkdown: '**PLAINTEXT**', valueDescription: 'PLAINTEXT of length 9'}, {value: '•••••••••', valueType: 'string'},
+    {role: 'AXSecureTextField', subrole: null, value: 'PLAINTEXT'}]) {
+    const shot = skyshot(win([password('p', 1, fields)]), {focused: 'p', selectedText: 'PLAINTEXT'});
+    const text = render(shot, advanceNumbering(null, shot));
+    assert.match(text, /\t1 secure text field \(settable\) Description: PW, Value: secure text\n/);
+    assert.doesNotMatch(text, /PLAINTEXT|•|9|Selected text/);
+    assert.match(text, /\nThe focused UI element is 1 secure text field \(settable\) Description: PW, Value: secure text$/);
+  }
+  // Nor through a transformation that takes its descendants' values: a selectable row's join (1).
+  const row = skyshot(win([node('r', 1, 'AXRow', {roleDescription: 'row', flags: {selectable: true}}),
+    password('p', 2, {value: 'PLAINTEXT', flags: {}})]));
+  assert.doesNotMatch(render(row, advanceNumbering(null, row)), /PLAINTEXT/);
+});
+
+test('#405: an element whose value the engine left unread prints `value unread`, whatever value its node carries', () => {
+  for (const fields of [{valueUnread: true, value: null}, {valueUnread: true, value: 'PLAINTEXT', valueDescription: 'PLAINTEXT details'}]) {
+    const shot = skyshot(win([button('b', 1, 'Go', fields)]), {focused: 'b', selectedText: 'PLAINTEXT'});
+    const text = render(shot, advanceNumbering(null, shot));
+    assert.match(text, /\t1 button Go, Value: value unread\n/);
+    assert.doesNotMatch(text, /PLAINTEXT|secure text|Selected text/);
+  }
+  // An unlabelled one is not pruned as saying nothing: it keeps its line and its index.
+  const bare = skyshot(win([group('g', 1, {valueUnread: true, value: null})]));
+  assert.deepEqual(lines(bare), ['0 standard window W, Secondary Actions: Raise', '\t1 container value unread']);
+});
+
+test('#405: a plain field and its selected text print as before', () => {
+  const shot = skyshot(win([node('f', 1, 'AXTextField', {roleDescription: 'text field', value: 'abc', valueType: 'string', flags: {settable: true}})]),
+    {focused: 'f', selectedText: 'b'});
+  assert.equal(render(shot, advanceNumbering(null, shot)).split('\n').slice(1).join('\n'),
+    `0 standard window W, Secondary Actions: Raise\n\t1 text field (settable) abc\n\nSelected text: \`\`\`\nb\n\`\`\`\n\n${NOTE}`);
+});

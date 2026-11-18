@@ -70,9 +70,10 @@ let markdownMaxLength = 2_000
 private let markdownRoles: Set<String> = [kAXTextAreaRole, kAXTextFieldRole]
 
 /// Whether a walk reads an element's value settability: whenever it has a value (the vendor's value branch of
-/// FUN_10074cb90 runs only for a value it holds) and the role's settability counts in the window (Derivations.swift).
+/// FUN_10074cb90 runs only for a value it holds; a password field, whose value is never read, counts as holding one, as
+/// every app answers it one, #405) and the role's settability counts in the window (Derivations.swift).
 func readsValueSettable(_ data: ElementData, parentRole: String?, chromium: Bool) -> Bool {
-  data.value != nil && readsValueSettability(role: data.role, subrole: data.subrole, parentRole: parentRole, chromium: chromium)
+  (data.value != nil || data.secure) && readsValueSettability(role: data.role, subrole: data.subrole, parentRole: parentRole, chromium: chromium)
 }
 
 /// A node's flags as the walk derives them (FUN_10074cb90; Derivations.swift).
@@ -996,8 +997,9 @@ final class TreeWalk {
        let text = data.value.flatMap({ CFGetTypeID($0) == CFStringGetTypeID() ? ($0 as! String) : nil }) {
       let length = text.utf16.count
       if length > 0 && length <= markdownMaxLength {
-        valueMarkdown = source.markdown(element, length: length)
-        markdownFetches += 1
+        // A field found closed just before the read (#405) comes back with its value dropped, and the node is made from that.
+        valueMarkdown = source.markdown(element, data: &data, length: length)
+        if !data.secure { markdownFetches += 1 }
       }
     }
     let (children, shown, recordable) = choose(element, data, actions, pending)
@@ -1186,6 +1188,9 @@ func nodeWire(token: String, depth: Int, pid: pid_t, data: ElementData, actions:
   if let columns = data.columnIndexRange { node["columnIndexRange"] = columns }
   if let domClassList = data.domClassList { node["domClassList"] = domClassList }
   if let shown { node["shown"] = shown.wire }
+  // #405: a password field's value was never kept; the node says so, with no value, length or Markdown. Another element
+  // whose classification failed says only that its value was not read (ruling 1ea561bc:813).
+  if data.secure { node["secure"] = true } else if data.classificationFailed { node["valueUnread"] = true }
   return node
 }
 

@@ -31,8 +31,8 @@ const html=`<!doctype html><meta charset="utf-8"><title>PW walk owned fixture</t
 let seen=-1;async function tick(){try{const q=await(await fetch('/seed',{cache:'no-store'})).json();if(q.trial!==seen){seen=q.trial;const f=document.getElementById('pw');f.value=q.value;f.focus();f.setSelectionRange(0,Math.min(7,q.value.length));await fetch('/ack?trial='+seen+'&length='+f.value.length);}}catch{}setTimeout(tick,100)}tick();</script>`;
 const server=createServer((req,res)=>{res.setHeader('Cache-Control','no-store');const u=new URL(req.url,'http://fixture');requests[u.pathname]=(requests[u.pathname]??0)+1;if(u.pathname==='/seed'){seedRequests++;res.setHeader('Content-Type','application/json');res.end(JSON.stringify({trial,value:passwords[trial]}));}else if(u.pathname==='/ack'){if(Number(u.searchParams.get('trial'))===trial&&Number(u.searchParams.get('length'))===passwords[trial].length)ack=trial;res.end('{}');}else{res.setHeader('Content-Type','text/html');res.end(html);}});
 await new Promise(ok=>server.listen(0,'127.0.0.1',ok));const url='http://127.0.0.1:'+server.address().port+'/';
-const config={browser,engineRef:arg('engine-ref'),kit:process.env.GITHUB_SHA,image:process.env.ImageVersion,os:execFileSync('sw_vers',['-productVersion'],{encoding:'utf8'}).trim(),lengths:passwords.map(s=>s.length),selectedLength:7,home:'temporary runner HOME; Chromium/Firefox/Electron also use explicit temporary profiles',rawProbe:'AXUIElementCopyAttributeValue independently of cua; secure or owned-label fields, with per-attribute error/length/match flags',accessibility:'helper sets app AXManualAccessibility and AXEnhancedUserInterface before raw reads, as needed by Chromium; engine source/binary unmodified'};save('config.json',config);
-let app,pid,engine,w,safariOwned=false,cftOwned=false;const rows=[];
+const config={browser,engineRef:arg('engine-ref'),kit:process.env.GITHUB_SHA,image:process.env.ImageVersion,os:execFileSync('sw_vers',['-productVersion'],{encoding:'utf8'}).trim(),lengths:passwords.map(s=>s.length),selectedLength:7,home:browser==='cft'?'Engine/raw probe use empty temporary HOME; Chrome uses disposable hosted runner HOME and a fresh explicit temporary user-data-dir, as probe-390':'Empty temporary HOME; Firefox/Electron also use explicit temporary profiles',rawProbe:'AXUIElementCopyAttributeValue independently of cua; secure or owned-label fields, with per-attribute error/length/match flags',accessibility:'helper sets app AXManualAccessibility and AXEnhancedUserInterface before raw reads, as needed by Chromium; engine source/binary unmodified'};save('config.json',config);
+let app,pid,engine,w,safariOwned=false;const rows=[];
 try{
  const require=createRequire(join(fixture,'package.json'));
  if(browser==='appkit'){
@@ -47,7 +47,7 @@ try{
   const profile=firefoxProfile(join(home,'profile'));
   const bin='/Applications/Firefox.app/Contents/MacOS/firefox';app=child(bin,['-no-remote','-profile',profile,url]);pid=app.pid;config.version=execFileSync('/usr/libexec/PlistBuddy',['-c','Print :CFBundleShortVersionString','/Applications/Firefox.app/Contents/Info.plist'],{encoding:'utf8'}).trim();
  }else{
-  const bundle='/Applications/Google Chrome for Testing.app',bin=bundle+'/Contents/MacOS/Google Chrome for Testing';if(!existsSync(bin))throw Error('CfT missing');config.version=execFileSync('/usr/libexec/PlistBuddy',['-c','Print :CFBundleShortVersionString',bundle+'/Contents/Info.plist'],{encoding:'utf8'}).trim();const bundleIdentifier=execFileSync('/usr/libexec/PlistBuddy',['-c','Print :CFBundleIdentifier',bundle+'/Contents/Info.plist'],{encoding:'utf8'}).trim();config.bundleIdentifier=bundleIdentifier;config.launch='LaunchServices new instance, temporary HOME/profile, foreground before fixture readiness';const prior=(await ask({op:'lookup',bundle:bundleIdentifier})).pids;execFileSync('/usr/bin/open',['-n','-a',bundle,'--env','HOME='+home,url,'--args','--user-data-dir='+join(home,'profile'),'--no-first-run','--no-default-browser-check','--disable-search-engine-choice-screen','--disable-features=Translate','--lang=en-US','--window-position=0,25','--window-size=650,700']);pid=await until(async()=> (await ask({op:'lookup',bundle:bundleIdentifier})).pids.find(p=>!prior.includes(p)));cftOwned=true;
+  const bundle='/Applications/Google Chrome for Testing.app',bin=bundle+'/Contents/MacOS/Google Chrome for Testing';if(!existsSync(bin))throw Error('CfT missing');config.version=execFileSync('/usr/libexec/PlistBuddy',['-c','Print :CFBundleShortVersionString',bundle+'/Contents/Info.plist'],{encoding:'utf8'}).trim();config.launch='probe-390 direct executable route, disposable runner HOME, explicit temporary profile, foreground before readiness';app=child(bin,['--user-data-dir='+join(home,'profile'),'--no-first-run','--no-default-browser-check','--disable-search-engine-choice-screen','--disable-features=Translate','--lang=en-US','--window-position=0,25','--window-size=650,700',url],{HOME:process.env.HOME});pid=app.pid;
  }
  config.pid=pid;save('config.json',config);
  if(browser!=='appkit'){await front(pid);await until(()=>ack===0,45000);}
@@ -68,11 +68,11 @@ try{
   rows.push(row);save('rows.json',rows);
  }
  save('summary.json',{complete:true,rows:rows.length,seedRequests});
-}catch(e){let diagnostic;try{if(pid)diagnostic=await ask({op:'scan',pid,pw:passwords[trial]??''});}catch{}save('fatal.json',{error:String(e.stack??e),rows:rows.length,trial,ack,seedRequests,requests,appPid:app?.pid,appExitCode:app?.exitCode,appSignal:app?.signalCode,diagnostic});process.exitCode=1;}
+}catch(e){let diagnostic;try{if(pid)diagnostic=await ask({op:'scan',pid,pw:passwords[trial]??'',diagnostic:browser==='cft'&&trial===0&&ack<0});}catch{}save('fatal.json',{error:String(e.stack??e),rows:rows.length,trial,ack,seedRequests,requests,appPid:app?.pid,appExitCode:app?.exitCode,appSignal:app?.signalCode,diagnostic});process.exitCode=1;}
 finally{
  if(w){try{await w.call('endTask',{});}catch{}w.close();}
  for(const p of children.reverse())await stop(p);
- if((safariOwned||cftOwned)&&pid!==app?.pid){try{process.kill(pid,'SIGTERM');}catch{}}
+ if(safariOwned&&pid!==app?.pid){try{process.kill(pid,'SIGTERM');}catch{}}
  for(const [p,log]of logs){const name=p===helper?'helper':p===engine?'engine':'app';save(name+'-stdout.txt',log.stdout);save(name+'-stderr.txt',log.stderr);}
  server.closeAllConnections();server.close();rmSync(home,{recursive:true,force:true});
 }

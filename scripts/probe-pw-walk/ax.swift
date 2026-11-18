@@ -23,10 +23,12 @@ while let line=readLine(){do {
  if op == "front" {let accepted=NSRunningApplication(processIdentifier:pid)?.activate(options:[]) ?? false;let end=Date().addingTimeInterval(5);while NSWorkspace.shared.frontmostApplication?.processIdentifier != pid && Date()<end {RunLoop.current.run(until:Date().addingTimeInterval(0.01))};emit(["accepted":accepted,"frontmostPid":NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0]);continue}
  if op == "enable" {emit(["manual":AXUIElementSetAttributeValue(app,"AXManualAccessibility" as CFString,kCFBooleanTrue).rawValue,"enhanced":AXUIElementSetAttributeValue(app,"AXEnhancedUserInterface" as CFString,kCFBooleanTrue).rawValue]);continue}
  guard op == "scan" else {emit(["error":"unknown operation"]);continue}
- let pw=q["pw"] as? String ?? "";var pending=[app],seen=Set<AXUIElement>(),rows=[[String:Any]](),count=0
+ let pw=q["pw"] as? String ?? "";let diagnostic=q["diagnostic"] as? Bool == true && pw.isEmpty;var pending=[app],seen=Set<AXUIElement>(),rows=[[String:Any]](),labels=[[String:Any]](),count=0
  while let e=pending.popLast(),count<6000 {
   if seen.contains(e){continue};seen.insert(e);count+=1
   let role=attr(e,"AXRole") as? String ?? "",subrole=attr(e,"AXSubrole") as? String ?? "",title=attr(e,"AXTitle") as? String ?? "",desc=attr(e,"AXDescription") as? String ?? ""
+  // Only on the owned browser's failed empty baseline: expose startup UI, never a filled-password diagnostic.
+  if diagnostic && labels.count<1000 {let value=subrole.contains("Secure") ? "[SECURE OMITTED]" : (attr(e,"AXValue") as? String ?? "");if !title.isEmpty || !desc.isEmpty || !value.isEmpty {labels.append(["role":role,"subrole":subrole,"title":String(title.prefix(400)),"description":String(desc.prefix(400)),"value":String(value.prefix(400))])}}
   if subrole.contains("Secure") || [title,desc].contains("PW walk test") {
    var row:[String:Any] = ["role":role,"subrole":subrole,"titleIsFixture":title == "PW walk test","descriptionIsFixture":desc == "PW walk test"]
    var attrs=[String:Any]()
@@ -39,6 +41,6 @@ while let line=readLine(){do {
   }
   pending.append(contentsOf:attr(e,"AXChildren") as? [AXUIElement] ?? [])
  }
- emit(["pid":pid,"visited":count,"fields":rows,"windowTitles":(attr(app,"AXWindows") as? [AXUIElement] ?? []).map {attr($0,"AXTitle") as? String ?? ""}])
+ emit(["pid":pid,"visited":count,"fields":rows,"initialEmptyBaselineUI":labels,"windowTitles":(attr(app,"AXWindows") as? [AXUIElement] ?? []).map {attr($0,"AXTitle") as? String ?? ""}])
  } catch {emit(["error":"helper JSON failure"])}
 }

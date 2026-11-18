@@ -1,4 +1,5 @@
 name: probe-361-qualification
+# Disposable #361 kit (scripts/probe-361/README.md). A push of this file only registers the workflow on its branch.
 on:
   push:
     branches: ['probe/361-qual']

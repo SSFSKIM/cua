@@ -141,17 +141,26 @@ func runFor(_ seconds: Double, until done: () -> Bool) {
 func sourceSelect(_ q: [String: Any]) -> [String: Any] {
   guard let id = q["id"] as? String, let source = installed(id) else { return ["found": false, "current": currentSource()] }
   var out: [String: Any] = ["found": true, "before": sourceFacts(source)]
+  // An input mode is selectable only under an enabled method: the nearest installed ancestor id (Kotoeri's Japanese modes
+  // read enabled on the hosted image while their method does not, and their selection then fails with paramErr).
+  var parts = id.split(separator: ".").dropLast()
+  while !parts.isEmpty, installed(parts.joined(separator: ".")) == nil { parts = parts.dropLast() }
+  if !parts.isEmpty, let parent = installed(parts.joined(separator: ".")), !tisBool(parent, kTISPropertyInputSourceIsEnabled) {
+    out["parentEnableStatus"] = Int(TISEnableInputSource(parent))
+    runFor(2) { installed(parts.joined(separator: ".")).map { tisBool($0, kTISPropertyInputSourceIsEnabled) } ?? false }
+  }
   if !tisBool(source, kTISPropertyInputSourceIsEnabled) {
-    // An input mode is enabled under its method: the parent id is the mode's without its last component.
-    let parentID = id.split(separator: ".").dropLast().joined(separator: ".")
-    if let parent = installed(parentID), !tisBool(parent, kTISPropertyInputSourceIsEnabled) {
-      out["parentEnableStatus"] = Int(TISEnableInputSource(parent))
-    }
     out["enableStatus"] = Int(TISEnableInputSource(source))
     runFor(2) { installed(id).map { tisBool($0, kTISPropertyInputSourceIsEnabled) } ?? false }
   }
   let fresh = installed(id) ?? source
-  out["selectStatus"] = Int(TISSelectInputSource(fresh))
+  let status = TISSelectInputSource(fresh)
+  out["selectStatus"] = Int(status)
+  if status != noErr {
+    // One retry after the system has had a second to register the enablement.
+    runFor(1) { false }
+    out["selectRetryStatus"] = Int(TISSelectInputSource(installed(id) ?? fresh))
+  }
   runFor(3) { (currentSource()["id"] as? String) == id }
   out["after"] = sourceFacts(installed(id) ?? fresh)
   out["current"] = currentSource()

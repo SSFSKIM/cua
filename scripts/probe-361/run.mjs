@@ -128,7 +128,7 @@ async function main(){
     for(const s of sources){
       const sel=await helper.ask({op:'source-select',id:SOURCES[s].id},15000),f=fresh();
       sourceStatus[s]={id:SOURCES[s].id,found:sel.found===true,enabledBefore:sel.before?.enabled??null,enableStatus:sel.enableStatus??null,
-        parentEnableStatus:sel.parentEnableStatus??null,selectStatus:sel.selectStatus??null,selected:sel.selected===true,
+        parentEnableStatus:sel.parentEnableStatus??null,selectStatus:sel.selectStatus??null,selectRetryStatus:sel.selectRetryStatus??null,selected:sel.selected===true,
         freshReadsIt:f?.id===SOURCES[s].id,keyboardLayout:f?.keyboardLayout??null,perContext:f?.perContext??null,
         enabledAfter:sel.after?.enabled??null,selectCapable:sel.after?.selectCapable??sel.before?.selectCapable??null};
       sourceStatus[s].usable=sourceStatus[s].selected&&sourceStatus[s].freshReadsIt&&sourceStatus[s].keyboardLayout===false&&sourceStatus[s].perContext===false;

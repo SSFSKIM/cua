@@ -127,6 +127,11 @@ private final class StubSafari {
       }
       let answer: String? = name == kAXRoleAttribute ? roles[id] : name == kAXSubroleAttribute ? subroles[id] : nil
       if let answer { read.values[name] = answer as CFString }
+      // #414: the field's length batch answers its count and range, as Safari's password field does.
+      if id == Self.field, name == kAXNumberOfCharactersAttribute { read.values[name] = (value as NSString).length as CFNumber }
+      if id == Self.field, name == kAXSelectedTextRangeAttribute {
+        read.values[name] = axRangeValue(CFRange(location: selection.location, length: selection.length))
+      }
     }
     return read
   }
@@ -204,7 +209,8 @@ final class TypeReadbackMarkerTests: XCTestCase {
 
   /// The marker's bytes, and the offset they hold, reach no reply, no cache, no identity, no render, no error sentence
   /// and no stderr line: across a confirmed plain text, a plain mismatch (whose sentence carries an excerpt and
-  /// lengths), a concealed confirmation and mismatch, and a password field's refusal. Only the start marker is passed,
+  /// lengths), a concealed confirmation and mismatch, and a password field's confirmation by its length (#414). Only the
+  /// start marker is passed,
   /// once, to AXUIElementForTextMarker alone, and nothing keeps it or the range once the lookup returns.
   func testTheMarkersBytesAndOffsetReachNoReplyCacheIdentityRenderErrorOrStderr() throws {
     struct Run {
@@ -228,7 +234,7 @@ final class TypeReadbackMarkerTests: XCTestCase {
         var control: [(name: String, argument: CFTypeRef)] = []
         if let copy = ReadbackMarkerSymbols.live?.copyStart(range) { control.append(("control", copy)) }
         runs.append(Run(label: "\(text) concealed \(concealed) upper \(upper) secure \(secure)", safari: safari, meta: meta,
-                        expected: secure ? "secure" : upper ? (concealed ? "concealedMismatch" : "valueMismatch") : nil,
+                        expected: upper ? (concealed ? "concealedMismatch" : "valueMismatch") : nil,
                         rangeKept: CFGetRetainCount(range) != rangeRetains,
                         markerRetains: safari.parameterized.first.map { _ in CFGetRetainCount(safari.parameterized[0].argument) } ?? -1,
                         controlRetains: control.first.map { _ in CFGetRetainCount(control[0].argument) } ?? -2))
@@ -264,7 +270,8 @@ final class TypeReadbackMarkerTests: XCTestCase {
       }
     }
     // The render: the read-back's record carries only its own fields.
-    let keys: Set<String> = ["confirmed", "snapshotMs", "reason", "concealed", "pollMs", "reads", "expectedLength", "actualLength"]
+    let keys: Set<String> = ["confirmed", "snapshotMs", "reason", "concealed", "pollMs", "reads", "expectedLength", "actualLength",
+                             "secure", "confirmation"]
     for reply in replies {
       let wire = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(reply.utf8)) as? [String: Any])
       let meta = try XCTUnwrap(wire["meta"] as? [String: Any], reply)
@@ -272,7 +279,7 @@ final class TypeReadbackMarkerTests: XCTestCase {
       XCTAssertTrue(Set(readback.keys).isSubset(of: keys), "\(readback.keys)")
     }
     // The identity the read-back holds is the field's element, asked after typing by its own AXFocused.
-    for safari in runs.prefix(4).map(\.safari) {
+    for safari in runs.map(\.safari) {
       let after = safari.log.suffix(from: try XCTUnwrap(safari.log.firstIndex(of: "post")))
       XCTAssertEqual(after.filter { $0.hasPrefix("AXFocused@") }, ["AXFocused@7"])
     }
@@ -402,14 +409,45 @@ final class TypeReadbackMarkerTests: XCTestCase {
 
   // MARK: Password fields
 
-  /// A field the route finds closed is refused unread with main's reason: secure for a password field by role or
-  /// subrole or an unreadable subrole, roleUnreadable for an unreadable role, of the field or of the text the marker
-  /// names. Nothing is read of the closed element after its classification, and no value or range of anything.
+  /// #414: a password field the route finds (by role or subrole, or a text field whose subrole cannot be read) is claimed
+  /// as a text field is, its AXFocused and its place under the web area checked, and is confirmed by its length: after
+  /// its classification nothing is read of it but its length batch and, after typing, its own AXFocused; no value, range
+  /// or count is read alone, and no marker call follows the first event.
+  func testAPasswordFieldTheRouteFindsIsConfirmedByItsLength() {
+    let cases: [(String, (StubSafari) -> Void)] = [
+      ("secure subrole", { $0.subroles[StubSafari.field] = "AXSecureTextField" }),
+      ("secure role", { $0.roles[StubSafari.field] = "AXSecureTextField" }),
+      ("unreadable subrole", { $0.errors[StubSafari.field] = [kAXSubroleAttribute: .cannotComplete] }),
+    ]
+    let batch = "batch(\(readbackLengthAttributes.joined(separator: ",")))@\(StubSafari.field)"
+    for concealed in [false, true] {
+      for (name, setUp) in cases {
+        let safari = StubSafari(value: "hunter2", selection: NSRange(location: 7, length: 0))
+        setUp(safari)
+        let (error, meta, reply) = type("pass", into: safari, concealed: concealed)
+        XCTAssertNil(error, name)
+        XCTAssertEqual(safari.value, "hunter2pass", name)
+        XCTAssertEqual(record(meta)["confirmation"] as? String, "length", name)
+        XCTAssertEqual(record(meta)["secure"] as? Bool, true, name)
+        XCTAssertEqual(meta.note, readbackLengthNote, name)
+        XCTAssertFalse(reply.contains("hunter2"), name)
+        XCTAssertEqual(safari.valueReads, [], "\(name): \(safari.log)")
+        guard let classified = safari.log.lastIndex(of: "batch(AXRole,AXSubrole)@\(StubSafari.field)") else {
+          XCTFail("\(name): classified by role and subrole in one request: \(safari.log.suffix(12))")
+          continue
+        }
+        XCTAssertEqual(Array(safari.log[(classified + 1)...]),
+                       ["AXFocused@7", "AXParent@7", "AXParent@6", "AXRole@7", "AXSubrole@7", batch, "post", "post", "post", "post", batch,
+                        "AXFocused@7"], name)
+      }
+    }
+  }
+
+  /// A closed element the route finds that is not a password field is refused unread with main's reason: roleUnreadable
+  /// for an unreadable role, of the field or of the text the marker names, secure for that text marked secure. Nothing is
+  /// read of the closed element after its classification, and no value or range of anything.
   func testAClosedFieldTheRouteFindsIsRefusedUnread() {
     let cases: [(String, Int, (StubSafari) -> Void, String)] = [
-      ("secure subrole", StubSafari.field, { $0.subroles[StubSafari.field] = "AXSecureTextField" }, "secure"),
-      ("secure role", StubSafari.field, { $0.roles[StubSafari.field] = "AXSecureTextField" }, "secure"),
-      ("unreadable subrole", StubSafari.field, { $0.errors[StubSafari.field] = [kAXSubroleAttribute: .cannotComplete] }, "secure"),
       ("unreadable role", StubSafari.field, { $0.errors[StubSafari.field] = [kAXRoleAttribute: .cannotComplete] }, "roleUnreadable"),
       ("no role", StubSafari.field, { $0.roles[StubSafari.field] = nil }, "roleUnreadable"),
       ("the text's role unreadable", StubSafari.text, { $0.errors[StubSafari.text] = [kAXRoleAttribute: .cannotComplete] }, "roleUnreadable"),

@@ -92,6 +92,43 @@ private final class FakeField {
     defer { if rangeReads == changeAfterRangeReads { changeAtRange(self) } }
     return reportedRange
   }
+
+  /// #414: what the length batch's count slot answers: the value's UTF-16 length, nothing (unsupported), or a failure.
+  enum Count { case length, absent, failed }
+  var count = Count.length
+  /// Whether the batch's range slot answers (else absent), and whether the whole request fails.
+  var rangeInBatch = true
+  var batchFails = false
+
+  /// #414: the length batch (role, subrole, range, count), as AXUIElementCopyMultipleAttributeValues answers it: logged as
+  /// "batch", never as a value or range read, its count the value as shown (late like a value read), its range the
+  /// reported one; the states before typing and the change after reads count it as a value read.
+  func readLength() -> AttributeRead? {
+    calls.append("batch")
+    valueReads += 1
+    if !delivered, !statesBeforeTyping.isEmpty { (value, range) = statesBeforeTyping.removeFirst(); shown = value }
+    if !delivered, !rangesBeforeTyping.isEmpty { range = rangesBeforeTyping.removeFirst() }
+    defer { if valueReads == changeAfterReads { change(self) } }
+    if batchFails { return nil }
+    var read = AttributeRead()
+    if let role { read.values[kAXRoleAttribute] = role as CFString }
+    switch subrole {
+    case .value(let found): read.values[kAXSubroleAttribute] = found as CFString
+    case .absent: break
+    case .failed: read.unreadable.insert(kAXSubroleAttribute)
+    }
+    let text: String?
+    if lagLeft > 0 { lagLeft -= 1; text = shown } else { shown = value; text = value }
+    switch count {
+    case .length: if let text { read.values[kAXNumberOfCharactersAttribute] = (text as NSString).length as CFNumber }
+    case .absent: break
+    case .failed: read.unreadable.insert(kAXNumberOfCharactersAttribute)
+    }
+    if rangeInBatch, let shownRange = reportedRange {
+      read.values[kAXSelectedTextRangeAttribute] = axRangeValue(CFRange(location: shownRange.location, length: shownRange.length))
+    }
+    return read
+  }
 }
 
 /// The fake app: its focused field, a clock that advances only by the poll's sleeps, and the reads over both.
@@ -111,6 +148,7 @@ private final class FakeApp {
                   value: { $0.readValue() },
                   valueUnits: { field in field.readValue().map { Array($0.utf16) } },
                   range: { $0.readRange() },
+                  batch: { field, _ in field.readLength() },
                   now: { self.clock },
                   sleep: { self.clock += $0; self.sleeps += 1 })
   }
@@ -239,21 +277,44 @@ final class TypeReadbackTests: XCTestCase {
 
   // MARK: Fields it cannot read
 
-  func testASecureFieldIsUnconfirmedAndItsValueIsNeverRead() {
+  /// #414: a password field (by role, by subrole, or a text-entry role whose subrole cannot be read) is confirmed by its
+  /// length, its value and its range never read but in the length batch; its record says only that it is one and how
+  /// it was confirmed, and its success carries the note. Any other element the classification closes is refused
+  /// unread, as before.
+  func testASecureFieldIsConfirmedByItsLengthAndItsValueIsNeverRead() {
     for (name, role, subrole) in [("secure role", "AXSecureTextField", ReadbackSubrole.absent),
                                   ("secure subrole", "AXTextField", .value("AXSecureTextField")),
-                                  ("unreadable subrole", "AXTextField", .failed)] {
+                                  ("unreadable subrole", "AXTextField", .failed),
+                                  ("a text area's unreadable subrole", "AXTextArea", .failed)] {
+      let field = FakeField(value: "hunter2", range: NSRange(location: 7, length: 0))
+      field.role = role
+      field.subrole = subrole
+      let (error, meta) = type("pass", into: FakeApp(field))
+      XCTAssertNil(error, name)
+      XCTAssertEqual(field.value, "hunter2pass", name)
+      XCTAssertEqual(record(meta) as NSDictionary, ["confirmed": true, "secure": true, "confirmation": "length", "snapshotMs": 0.0] as NSDictionary, name)
+      XCTAssertEqual(meta.note, readbackLengthNote, name)
+      XCTAssertEqual(field.calls, ["focused", "role", "subrole", "batch", "batch", "focused"], "\(name): no value or range read")
+    }
+    for (name, role, subrole) in [("a group's unreadable subrole", "AXGroup", ReadbackSubrole.failed),
+                                  ("a static text marked secure", "AXStaticText", .value("AXSecureTextField"))] {
       let field = FakeField(value: "hunter2", range: NSRange(location: 7, length: 0))
       field.role = role
       field.subrole = subrole
       let (error, meta) = type("pass", into: FakeApp(field))
       XCTAssertEqual(error?.errorName, "typeUnconfirmed", name)
       XCTAssertEqual(record(meta)["reason"] as? String, "secure", name)
-      XCTAssertFalse(field.calls.contains("value") || field.calls.contains("range"), "\(name): \(field.calls)")
-      XCTAssertFalse(error?.message.contains("hunter2") ?? true, name)
-      XCTAssertNil(record(meta)["expectedLength"], name)
-      XCTAssertTrue(error?.message.contains("the field is a password field, which is never read back") ?? false, name)
+      XCTAssertNil(record(meta)["secure"], name)
+      XCTAssertEqual(field.calls, ["focused", "role", "subrole"], "\(name): nothing read")
+      XCTAssertTrue(error?.message.contains("a secure element that is not a text field, which is never read back") ?? false, name)
     }
+    // A plain field's success carries no note and no strength: the exact read-back.
+    let plain = FakeField(value: "user", range: NSRange(location: 4, length: 0))
+    let (error, meta) = type("name", into: FakeApp(plain))
+    XCTAssertNil(error)
+    XCTAssertNil(meta.note)
+    XCTAssertNil(record(meta)["confirmation"])
+    XCTAssertNil(record(meta)["secure"])
   }
 
   // MARK: Concealed (a {{secret:…}} substitution, ruling 1ea561bc:589)
@@ -619,7 +680,8 @@ final class TypeReadbackTests: XCTestCase {
     }
   }
 
-  /// A secure field the walk finds is handled as any secure field: refused, its value and range never read.
+  /// A secure field the walk finds is handled as any secure field (#414): taken by its length, its value and range never
+  /// read but in the length batch.
   func testASecureFieldFoundByTheWalkIsNeverRead() {
     let secure = Node("password", role: "AXSecureTextField")
     secure.focusedFlag = true
@@ -634,10 +696,20 @@ final class TypeReadbackTests: XCTestCase {
       stillFocused: { _, _ in true },
       role: { $0.role }, subrole: { _ in .absent }, value: { valueReads += 1; return $0.value },
       valueUnits: { valueReads += 1; return $0.value.map { Array($0.utf16) } },
-      range: { _ in valueReads += 1; return NSRange(location: 0, length: 0) }, now: { 0 }, sleep: { _ in })
+      range: { _ in valueReads += 1; return NSRange(location: 0, length: 0) }, batch: { node, names in
+        XCTAssertEqual(names, readbackLengthAttributes)
+        var read = AttributeRead()
+        read.values[kAXRoleAttribute] = (node.role ?? "") as CFString
+        read.values[kAXNumberOfCharactersAttribute] = 7 as CFNumber
+        read.values[kAXSelectedTextRangeAttribute] = axRangeValue(CFRange(location: 7, length: 0))
+        return read
+      }, now: { 0 }, sleep: { _ in })
     var settle: ReadbackSettle?
-    guard case .refused(let reason) = readbackSnapshot(reads: reads, settle: &settle) else { return XCTFail("a secure field is refused") }
-    XCTAssertEqual(reason, .secure)
+    guard case .expectLength(let field, _, let basis, _, _) = readbackSnapshot(reads: reads, settle: &settle) else {
+      return XCTFail("a secure field is taken by its length")
+    }
+    XCTAssertTrue(field === secure)
+    XCTAssertEqual(basis, .count(7, range: NSRange(location: 7, length: 0)))
     XCTAssertEqual(valueReads, 0)
   }
 
@@ -645,8 +717,9 @@ final class TypeReadbackTests: XCTestCase {
     let field = FakeField(value: "", range: NSRange(location: 0, length: 0))
     field.role = "AXSecureTextField"
     let (error, meta) = type("s3cr3t", into: FakeApp(field), concealed: true)
-    XCTAssertEqual(error?.errorName, "typeUnconfirmed")
-    XCTAssertEqual(record(meta)["reason"] as? String, "secure")
+    XCTAssertNil(error)
+    XCTAssertEqual(record(meta) as NSDictionary, ["confirmed": true, "secure": true, "confirmation": "length", "concealed": true,
+                                                  "snapshotMs": 0.0] as NSDictionary)
     XCTAssertFalse(field.calls.contains("value") || field.calls.contains("range"), "\(field.calls)")
   }
 
@@ -1222,14 +1295,29 @@ final class TypeReadbackTests: XCTestCase {
     XCTAssertLessThanOrEqual(Double(reads) * typeReadbackSettleIntervalMs, typeReadbackSettleCapMs)
   }
 
-  /// The settle comes after the secure check: a password field's value and range are never read, settle or not.
+  /// The settle comes after the secure check: a password field's value and range are never read, settle or not; it
+  /// settles on its length batch instead (#414), whose last read is the starting point, so a select-all that lands late
+  /// is typed over as the field then holds it.
   func testTheSettleNeverReadsASecureField() {
     let field = FakeField(value: "hunter2", range: NSRange(location: 7, length: 0))
     field.role = "AXSecureTextField"
+    field.statesBeforeTyping = [("hunter2", NSRange(location: 7, length: 0)), ("hunter2", NSRange(location: 0, length: 7)),
+                                ("hunter2", NSRange(location: 0, length: 7))]
     let app = FakeApp(field)
-    XCTAssertEqual(record(type("pass", into: app, settle: true).1)["reason"] as? String, "secure")
+    let (error, meta) = type("pass", into: app, settle: true)
+    XCTAssertNil(error)
+    XCTAssertEqual(field.value, "pass")
+    XCTAssertEqual(record(meta)["confirmation"] as? String, "length")
+    XCTAssertNil(record(meta)["settleReads"], "a password field's record counts nothing")
     XCTAssertFalse(field.calls.contains("value") || field.calls.contains("range"), "\(field.calls)")
-    XCTAssertEqual(app.sleeps, 0)
+    XCTAssertEqual(app.sleeps, 2, "two settle intervals, until two reads agreed")
+    // A select-all landing after the snapshot: the starting point is the caret before it, and the length cannot match.
+    let unsettled = FakeField(value: "hunter2", range: NSRange(location: 7, length: 0))
+    unsettled.role = "AXSecureTextField"
+    unsettled.changeAfterReads = 1
+    unsettled.change = { $0.range = NSRange(location: 0, length: 7) }
+    XCTAssertEqual(record(type("pass", into: FakeApp(unsettled)).1)["reason"] as? String, "lengthMismatch")
+    XCTAssertEqual(unsettled.value, "pass")
 
     // A field that turns secure while the snapshot settles is read no further.
     let turning = FakeField(value: "user", range: NSRange(location: 4, length: 0))
@@ -1389,12 +1477,36 @@ final class TypeReadbackTests: XCTestCase {
   }
 
   /// The wait comes after the secure check and checks the field before every read: a password field's range is never
-  /// read, and one turning secure is read no further.
+  /// read but in its length batch (#414), whose own classification decides each read, and one turning secure is read no
+  /// further.
   func testTheWaitNeverReadsASecureField() {
     let field = FakeField(value: "hunter2", range: NSRange(location: 7, length: 0))
     field.role = "AXSecureTextField"
-    XCTAssertEqual(record(type("pass", into: FakeApp(field), baseline: .selection(whole)).1)["reason"] as? String, "secure")
-    XCTAssertFalse(field.calls.contains("range"))
+    let (refused, refusedMeta) = type("pass", into: FakeApp(field), baseline: .selection(whole))
+    XCTAssertEqual(record(refusedMeta)["reason"] as? String, "selectionChanged", "select_text's range never showed")
+    XCTAssertEqual(refused?.errorName, "typeUnconfirmed")
+    XCTAssertEqual(field.value, "hunter2", "nothing typed")
+    XCTAssertNil(record(refusedMeta)["baselineWait"], "a password field's record counts nothing")
+    XCTAssertFalse(field.calls.contains("range") || field.calls.contains("value"))
+    XCTAssertGreaterThan(field.calls.filter { $0 == "batch" }.count, 1, "the wait read the length batch")
+    // A pending click's stable wait, then the length: confirmed.
+    let clicked = FakeField(value: "hunter2", range: NSRange(location: 7, length: 0))
+    clicked.role = "AXSecureTextField"
+    clicked.rangesBeforeTyping = [NSRange(location: 0, length: 0), NSRange(location: 7, length: 0)]
+    let (clickedError, clickedMeta) = type("pass", into: FakeApp(clicked), baseline: .stable)
+    XCTAssertNil(clickedError)
+    XCTAssertEqual(record(clickedMeta)["confirmation"] as? String, "length")
+    XCTAssertFalse(clicked.calls.contains("range") || clicked.calls.contains("value"))
+    // A password field turning into a text field while the wait reads it is read no further.
+    let showing = FakeField(value: "hunter2", range: NSRange(location: 7, length: 0))
+    showing.role = "AXSecureTextField"
+    showing.changeAfterReads = 1
+    showing.change = { $0.role = "AXTextField" }
+    let (shown, shownMeta) = type("pass", into: FakeApp(showing), baseline: .stable)
+    XCTAssertEqual(shown?.errorName, "typeUnconfirmed")
+    XCTAssertEqual(record(shownMeta)["reason"] as? String, "noLongerSecure")
+    XCTAssertEqual(showing.calls.filter { $0 == "batch" }.count, 2, "the wait's first read, then the one that found it changed")
+    XCTAssertFalse(showing.calls.contains("value"))
     let turning = FakeField(value: "user", range: clickCaret)
     turning.role = "AXTextField"
     turning.changeAfterRangeReads = 1

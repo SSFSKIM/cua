@@ -8,6 +8,12 @@ import AppKit
 import Foundation
 
 guard ProcessInfo.processInfo.environment["RUNNER_ENVIRONMENT"] == "github-hosted" else { exit(2) }
+/// Equality by UTF-16 units, as the browser fixture and #354's read-back compare (Swift's `==` accepts canonical
+/// equivalents, such as precomposed and decomposed Hangul).
+func same(_ a: String?, _ b: Any?) -> Bool {
+  guard let a, let b = b as? String else { return false }
+  return Array(a.utf16) == Array(b.utf16)
+}
 func emit(_ q: [String: Any]) {
   let d = try! JSONSerialization.data(withJSONObject: q)
   print(String(decoding: d, as: UTF8.self)); fflush(stdout)
@@ -68,6 +74,8 @@ final class Fixture: NSObject {
       guard let self, !self.applying, let view = self.view, n.object as AnyObject === view else { return }
       self.changes += 1
       guard !self.hit, self.effect == "rewrite" || self.effect == "add", let storage = view.textStorage else { return }
+      // A delivery that left no character at the rewrite's offset cannot take the control: it stays unrealized.
+      if self.effect == "rewrite" && self.start >= storage.length { return }
       self.hit = true; self.hitVia = "change"
       self.applying = true; defer { self.applying = false }
       let caret = view.selectedRange()
@@ -122,11 +130,11 @@ final class Fixture: NSObject {
     var out: [String: Any] = ["trial": trial, "target": target, "shape": shape,
       "focused": v != nil && window.firstResponder === v,
       "setupFocused": setup.currentEditor() != nil && window.firstResponder === setup.currentEditor(),
-      "exact": content != nil && content == (q["expected"] as? String),
-      "controlExact": content != nil && q["control"] is String && content == (q["control"] as? String),
+      "exact": same(content, q["expected"]),
+      "controlExact": same(content, q["control"]),
       "selection": range?.location == (q["start"] as? Int) && range.map(NSMaxRange) == (q["end"] as? Int),
       "hit": hit, "hitVia": hitVia, "pastes": pastes, "pasteInputs": changes, "keys": keys, "request": q["request"] ?? 0]
-    if let s = q["setupText"] as? String { out["setupExact"] = setup.stringValue == s } else { out["setupExact"] = NSNull() }
+    if let s = q["setupText"] as? String { out["setupExact"] = same(setup.stringValue, s) } else { out["setupExact"] = NSNull() }
     emit(out)
   }
 }

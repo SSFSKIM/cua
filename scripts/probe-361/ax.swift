@@ -39,6 +39,7 @@ final class Probe361Ax: @unchecked Sendable {
     var firstEqualAt: Double?, firstTargetAt: Double?, lastSampleAt: Double?
     var equalAtFinish: Bool?, focusAtFinish: String?, lastEqual = false, lastFocus = "none"
     var focus: [String: Int] = [:], roles = Set<String>()
+    let expectedUnits = Array(expected.utf16)  // compared by UTF-16 units, as #354's read-back compares
     while true {
       let t = Probe361Ax.now()
       lock.lock(); let finished = finishedAt; lock.unlock()
@@ -55,17 +56,18 @@ final class Probe361Ax: @unchecked Sendable {
         roles.insert(role.map { $0.range(of: "^AX[A-Za-z]{1,40}$", options: .regularExpression) != nil ? $0 : "other" } ?? "unreadable")
         let names = [string(element, kAXDescriptionAttribute), string(element, kAXTitleAttribute)]
         kind = names.contains(label) ? "target" : names.contains(setupLabel) ? "setup" : "other"
-        if role != "AXSecureTextField", let value = string(element, kAXValueAttribute) { equal = value == expected }
+        if role != "AXSecureTextField", let value = string(element, kAXValueAttribute) { equal = Array(value.utf16) == expectedUnits }
       }
+      let readAt = Probe361Ax.now()  // when the sample's last read (its AXValue) returned
       focus[kind, default: 0] += 1
-      if kind == "target" && firstTargetAt == nil { firstTargetAt = t }
+      if kind == "target" && firstTargetAt == nil { firstTargetAt = readAt }
       if equal {
         equalSamples += 1
         if kind == "target" { targetEqualSamples += 1 }
-        if firstEqualAt == nil { firstEqualAt = t }
+        if firstEqualAt == nil { firstEqualAt = readAt }
       } else if lastEqual { flipsBack += 1 }
       if finished != nil && equalAtFinish == nil { equalAtFinish = equal; focusAtFinish = kind }
-      lastEqual = equal; lastFocus = kind; lastSampleAt = t
+      lastEqual = equal; lastFocus = kind; lastSampleAt = readAt
       usleep(5_000)
     }
     lock.lock(); let finished = finishedAt; lock.unlock()

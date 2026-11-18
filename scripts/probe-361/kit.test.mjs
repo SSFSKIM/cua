@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {SOURCES,CELLS,PLAIN,CONTROLS,LONG_SIDE,CANARY,REWRITE_CHAR,materialize,plan,landed} from './cells.mjs';
-import {outcomeOf,routeOf,readbackConfirmed,scan,score,summarize,gates,percentile} from './check.mjs';
+import {CODES,outcomeOf,routeOf,readbackConfirmed,scan,score,summarize,coverage,gates,percentile} from './check.mjs';
 import {page,LABELS} from './page.mjs';
 import {patchInput,SEAM,PATCHED} from './patch-ax.mjs';
 
@@ -43,72 +43,96 @@ test('plans: ten per cell to measure, twenty per head interleaved to qualify', (
   assert.deepEqual(plan({mode: 'smoke', heads: ['main']}).map(r => r.cell), CELLS);
 });
 
+
 const pasteMeta = (extra = {}) => ({inputRoute: 'paste', startedAt: 1, endedAt: 2, paste: {stage: 'effect', effectWait: 'reading', restore: 'restored', lines: 1}, ...extra});
 test('outcomes: main by its paste stage, the fix by its read-back', () => {
   assert.deepEqual(outcomeOf({native: {result: {meta: pasteMeta()}}, guarded: true}), {outcome: 'success', reason: 'paste:effect:reading'});
-  assert.deepEqual(outcomeOf({native: {error: {errorName: 'pasteUnconfirmed', meta: pasteMeta({paste: {stage: 'returnEffect', openingReturn: {settle: 'timeout'}}})}}, skyError: {}, guarded: true}),
+  // The opening Return's settle rides in the last perLine record, as the pinned engine wires it.
+  const returnTimeout = pasteMeta({paste: {stage: 'returnEffect', perLine: [{line: 1, stage: 'effect'}, {line: 2, stage: 'returnEffect', openingReturn: {settle: 'timeout'}}]}});
+  assert.deepEqual(outcomeOf({native: {error: {errorName: 'pasteUnconfirmed', meta: returnTimeout}}, skyError: {}, guarded: true}),
     {outcome: 'pasteUnconfirmed', reason: 'paste:returnEffect:return-timeout'});
+  assert.deepEqual(outcomeOf({native: {error: {errorName: 'clipboardReadTimedOut', meta: pasteMeta({paste: {stage: 'read', readWait: 'timeout'}})}}, skyError: {}, guarded: true}),
+    {outcome: 'clipboardReadTimedOut', reason: 'paste:read:read-timeout'});
   assert.deepEqual(outcomeOf({native: {error: {errorName: 'typeUnconfirmed', meta: pasteMeta({typeReadback: {confirmed: false, reason: 'valueMismatch'}})}}, skyError: {}, guarded: true}),
     {outcome: 'typeUnconfirmed', reason: 'readback:valueMismatch'});
+  // A diagnostic outside the closed vocabulary is never republished.
+  assert.equal(outcomeOf({native: {result: {meta: pasteMeta({paste: {stage: 'Q361CLIPBCDF', effectWait: 'reading'}})}}, guarded: true}).reason, 'paste:other:reading');
+  assert.equal(CODES.restore('Q361CLIPBCDF'), 'other');
   assert.equal(outcomeOf({native: {error: {errorName: 'weird'}}, guarded: true}).outcome, 'native-other');
   assert.equal(outcomeOf({guarded: false}).outcome, 'request-shape');
   assert.equal(routeOf({result: {meta: {inputRoute: 'paste'}}}), 'paste');
-  assert.equal(routeOf({error: {meta: {inputRoute: '2\''}}}), 'other');
+  assert.equal(routeOf({error: {meta: {inputRoute: '2\''}}}), 'keyed');
   assert.ok(readbackConfirmed({result: {meta: {typeReadback: {confirmed: true}}}}, {'cua/typeReadback': {confirmed: true}}));
   assert.ok(!readbackConfirmed({result: {meta: {typeReadback: {confirmed: true}}}}, {}));
 });
 
 const fixture = () => {
   const m = materialize('rewrite', 'ko');
-  return {m, ctx: {setupText: 'mnbvcxqwerty', clipText: 'q361clipkjhgfdsapoiuytre', initial: m.initial, text: m.text, expected: m.expected, control: m.control, canaries: m.canaries}};
+  return {m, ctx: {setupText: 'MNBVCXQWRTYP', clipText: 'Q361CLIPKJHGFDSXPLKJHGFD', initial: m.initial, text: m.text, expected: m.expected, control: m.control, canaries: m.canaries}};
 };
 test('privacy: other fields, the clipboard, unbounded excerpts and content off a mismatch are flagged', () => {
   const {m, ctx} = fixture();
   const clean = {native: {result: {meta: pasteMeta({entered: 6})}}, forwarded: {'cua/paste': pasteMeta().paste}, content: [], console: [], engineOutput: []};
   assert.deepEqual(scan(clean, {...ctx, mismatch: false}), []);
-  assert.deepEqual(scan({...clean, engineOutput: ['log vcxqwer']}, {...ctx, mismatch: false}), ['other-field']);
-  assert.deepEqual(scan({...clean, forwarded: {x: 'zzq361clipkjhgfdsap'}}, {...ctx, mismatch: false}), ['clipboard']);
+  assert.deepEqual(scan({...clean, engineOutput: ['log VCXQWR']}, {...ctx, mismatch: false}), ['other-field']);
+  assert.deepEqual(scan({...clean, forwarded: {x: 'zzQ361CLIPKJHG'}}, {...ctx, mismatch: false}), ['clipboard']);
   // A bounded excerpt on a mismatch, in the message only: allowed.
-  const first = LONG_SIDE, excerpt = (v) => v.slice(first - 100, first + 100);
-  const message = `The text could not be confirmed. From character ${first - 99}, expected "${excerpt(m.expected)}"; the field reads "${excerpt(m.control)}".`;
-  const mismatch = {...clean, native: {error: {errorName: 'typeUnconfirmed', message, meta: pasteMeta({typeReadback: {reason: 'valueMismatch'}})}}, skyError: {message, meta: {}}};
+  const first = LONG_SIDE, cut = (v, a = first - 100, b = first + 100) => v.slice(a, b);
+  const say = (e, a) => `The text could not be confirmed. From character ${first - 99}, expected ${JSON.stringify(e)}; the field reads ${JSON.stringify(a)}.`;
+  const mismatchOf = message => ({...clean, native: {error: {errorName: 'typeUnconfirmed', message, meta: pasteMeta({typeReadback: {reason: 'valueMismatch'}})}}, skyError: {message, meta: {}}});
+  const mismatch = mismatchOf(say(cut(m.expected), cut(m.control)));
   assert.deepEqual(scan(mismatch, {...ctx, mismatch: true}), []);
   assert.deepEqual(scan(mismatch, {...ctx, mismatch: false}), ['content-without-mismatch']);
-  // The whole field in the message reaches the far ends: unbounded.
-  const whole = {...mismatch, skyError: {message: `the field reads "${m.control}"`}};
-  assert.ok(scan(whole, {...ctx, mismatch: true}).includes('excerpt-unbounded'));
-  // Content in a meta field, even on a mismatch: outside the message.
-  const inMeta = {...mismatch, forwarded: {'cua/typeReadback': {actual: m.text.slice(0, 4)}}};
-  assert.ok(scan(inMeta, {...ctx, mismatch: true}).includes('content-outside-message'));
-  // English words in a message never read as field content.
-  assert.deepEqual(scan({...clean, skyError: {message: 'the field may hold the text abc'}}, {...ctx, text: 'abc가나', mismatch: false}), []);
+  // One unit beyond the radius on either side: unbounded.
+  assert.deepEqual(scan(mismatchOf(say(cut(m.expected, first - 101), cut(m.control))), {...ctx, mismatch: true}), ['excerpt-unbounded']);
+  // The whole field reaches the far ends: unbounded.
+  assert.ok(scan({...mismatch, skyError: {message: `the field reads "${m.control}"`}}, {...ctx, mismatch: true}).includes('excerpt-unbounded'));
+  // Content in a meta field or an emitted content item, even on a mismatch: outside the message.
+  assert.ok(scan({...mismatch, forwarded: {'cua/typeReadback': {actual: m.text.slice(0, 4)}}}, {...ctx, mismatch: true}).includes('content-outside-message'));
+  assert.ok(scan({...mismatch, content: [{type: 'data', data: {actual: m.text}}]}, {...ctx, mismatch: true}).includes('content-outside-message'));
+  // Protocol words and English sentences never read as field content or canaries.
+  assert.deepEqual(scan({...clean, forwarded: {confirmed: true, 'cua/typeReadback': {confirmed: false}}, skyError: {message: 'the field may hold the text abc'}},
+    {...ctx, text: 'abc가나', mismatch: false}), []);
 });
 
-const row = (over) => ({source: 'ko', cell: 'empty-cjk', head: 'fix', attested: true, route: 'paste', privacy: [], serviceMs: 10, presentationHeld: true,
-  ...score({cell: over.cell ?? 'empty-cjk', head: over.head ?? 'fix', attested: true, route: 'paste', outcome: 'success', reason: 'readback:confirmed',
+const row = (over) => ({source: 'ko', cell: 'empty-cjk', head: 'fix', rep: 0, attested: true, route: 'paste', privacy: [], serviceMs: 10, presentationHeld: true,
+  ...score({cell: over.cell ?? 'empty-cjk', attested: true, route: 'paste', outcome: 'success', reason: 'readback:confirmed',
     domExact: true, confirmed: true, clip: {stringEqual: true, typesEqual: true}, ...over}), ...over});
 test('scores and gates', () => {
-  const wrong = score({cell: 'add', head: 'main', attested: true, route: 'paste', outcome: 'success', domExact: false, controlExact: true, hit: true, clip: {stringEqual: true, typesEqual: true}});
+  const wrong = score({cell: 'add', attested: true, route: 'paste', outcome: 'success', domExact: false, controlExact: true, hit: true, clip: {stringEqual: true, typesEqual: true}});
   assert.equal(wrong.valid, true); assert.equal(wrong.wrongSuccess, true); assert.equal(wrong.clipboardRestored, true);
   assert.equal(score({cell: 'add', attested: true, route: 'paste', outcome: 'success', domExact: false, controlExact: false, hit: true}).invalid, 'control-not-realized');
-  assert.equal(score({cell: 'empty-cjk', attested: true, route: '2\'', outcome: 'success', domExact: true}).invalid, 'route-not-paste');
+  const keyed = score({cell: 'empty-cjk', attested: true, route: 'keyed', outcome: 'success', domExact: false});
+  assert.equal(keyed.invalid, 'route-not-paste'); assert.equal(keyed.wrongSuccess, false, 'a keyed row is no paste wrong success');
   assert.equal(score({cell: 'empty-cjk', attested: false, route: null, outcome: 'missing'}).invalid, 'setup');
   const good = [row({head: 'main', confirmed: false, reason: 'paste:effect:reading'}), row({}),
     row({cell: 'stale', outcome: 'typeUnconfirmed', domExact: false, controlExact: true, hit: true, confirmed: false}),
     row({cell: 'stale', head: 'main', outcome: 'success', domExact: false, controlExact: true, hit: true, confirmed: false})];
-  const g = gates(good);
-  assert.ok(Object.values(g).every(x => x.pass), JSON.stringify(g));
+  const cov = {complete: true, allValid: true};
+  const g = gates(good, {coverage: cov});
+  assert.ok(Object.entries(g).every(([k, x]) => k === 'perCell' || x.pass), JSON.stringify(g));
   assert.equal(g.wrongSuccess.main, 1);
-  const bad = gates([...good, row({cell: 'add', outcome: 'success', domExact: false, controlExact: true, hit: true, confirmed: true})]);
+  assert.equal(gates(good, {coverage: {complete: false}}).coverage.pass, false);
+  const bad = gates([...good, row({cell: 'add', outcome: 'success', domExact: false, controlExact: true, hit: true, confirmed: true})], {coverage: cov});
   assert.equal(bad.controlsUnconfirmed.pass, false); assert.equal(bad.wrongSuccess.pass, false);
-  assert.equal(gates([...good, row({clip: {stringEqual: false, typesEqual: true}})]).clipboard.pass, false);
-  assert.equal(gates([...good, row({confirmed: false})]).exactConfirmed.pass, false);
-  assert.equal(gates([...good, {...row({}), route: 'other'}]).route.pass, false);
-  assert.equal(gates([...good, row({privacy: ['other-field']})]).privacy.pass, false);
+  // A realized control refused by another error is not the ticket's typeUnconfirmed.
+  assert.equal(gates([...good, row({cell: 'add', outcome: 'pasteUnconfirmed', domExact: false, controlExact: true, hit: true, confirmed: false})], {coverage: cov}).controlsUnconfirmed.pass, false);
+  // The baseline delivered exactly and the fix lost the delivery: the exact gate fails.
+  const lost = gates([...good, row({head: 'main', rep: 1, confirmed: false}), row({rep: 1, outcome: 'pasteUnconfirmed', domExact: false, confirmed: false})], {coverage: cov});
+  assert.equal(lost.exactConfirmed.pass, false); assert.equal(lost.exactConfirmed.lostDelivery, 1);
+  assert.equal(gates([...good, row({clip: {stringEqual: false, typesEqual: true}})], {coverage: cov}).clipboard.pass, false);
+  assert.equal(gates([...good, row({confirmed: false})], {coverage: cov}).exactConfirmed.pass, false);
+  assert.equal(gates([...good, {...row({}), route: 'keyed'}], {coverage: cov}).route.pass, false);
+  assert.equal(gates([...good, row({privacy: ['other-field']})], {coverage: cov}).privacy.pass, false);
   const s = summarize(good);
   assert.equal(s.find(x => x.head === 'main' && x.cell === 'stale').wrongSuccess, 1);
+  const c = coverage(good, {planned: {'ko/fix/empty-cjk': 1, 'ko/fix/stale': 1, 'ko/main/empty-cjk': 1, 'ko/main/stale': 1}, sources: ['ko'], heads: ['main', 'fix'], cells: ['empty-cjk', 'stale']});
+  assert.equal(c.complete, true);
+  assert.equal(coverage(good.slice(1), {planned: {'ko/main/empty-cjk': 1}, sources: ['ko'], heads: ['main'], cells: ['empty-cjk']}).complete, false);
+  assert.equal(coverage([], {planned: {}, sources: [], heads: ['main'], cells: ['empty-cjk']}).complete, false);
   assert.equal(percentile([5, 1, 3, 2, 4], 50), 3); assert.equal(percentile([], 95), null);
 });
+
 
 test('the page script parses and labels its fields', () => {
   const html = page(), script = html.slice(html.indexOf('<script>') + 8, html.lastIndexOf('</script>'));

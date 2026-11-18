@@ -104,6 +104,9 @@ export async function startPlatform({lane,home,helper,cover,appkit,stage}){
         if(!seeded(await command({op:'seed',...q})))throw setupFail('seed');
         if(presentation==='background')await pause(250);
         if(!seeded(await command({op:'read',...q})))throw setupFail('seed-unstable');
+        // The presentation still the one armed, at the seed's end: a loss here is setup, not the paste's activation.
+        onStage('witness-before-action');
+        if((await ask({op:'witness'})).valid!==true)throw setupFail('witness-before-action');
       }catch(e){await ask({op:'disarm'});throw e;}
     }
     // The witness's verdict over the action: whether anything other than the cover activated (the paste route's own

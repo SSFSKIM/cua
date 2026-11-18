@@ -20,8 +20,10 @@ export const LONG_SIDE=150, CANARY=30;
 export const REWRITE_CHAR='※';
 
 const pick=(lo,hi)=>String.fromCharCode(lo+randomInt(hi-lo+1));
-// ASCII never contains 'z' (the add control's character) and the CJK ranges never contain REWRITE_CHAR.
-export const ascii=n=>Array.from({length:n},()=>'abcdefghijklmnopqrstuvwxy'[randomInt(25)]).join('');
+// Synthetic ASCII is upper-case consonants: never 'z' (the add control's character), and never a run of six that ordinary
+// protocol keys or English sentences could contain, so the privacy scan's 6-unit windows cannot collide with boilerplate.
+// The CJK ranges never contain REWRITE_CHAR.
+export const ascii=n=>Array.from({length:n},()=>'BCDFGHJKLMNPQRSTVWXY'[randomInt(20)]).join('');
 const digits=n=>Array.from({length:n},()=>String(randomInt(10))).join('');
 const scripts={
   hangul:()=>pick(0xac00,0xd7a3),

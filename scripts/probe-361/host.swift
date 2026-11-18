@@ -162,6 +162,15 @@ func dispatch(_ q: [String: Any]) -> [String: Any] {
   switch q["op"] as? String {
   case "arm": return arm(q)
   case "disarm": return disarm()
+  case "witness":
+    // The witness so far, still armed: whether the presentation the arm established holds at the action's start.
+    guard let a = armed else { return ["valid": false, "reason": "not-armed"] }
+    RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+    let b = boundary(a)
+    var w = b.wire
+    w["valid"] = b.reason == nil
+    if let reason = b.reason { w["reason"] = reason + "-before-action" }
+    return w
   default: break
   }
   switch q["op"] as? String {

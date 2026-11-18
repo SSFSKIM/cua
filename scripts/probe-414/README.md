@@ -223,3 +223,43 @@ AppKit's five posted selection refusals had p50/p95/max **1116/1173/1173 ms** (o
 | AppKit | 4 / 5 | 2 / 5 | 16/30 | 0/15 |
 
 Every lane's reason histogram differs by length for at least one kind, but shifts run both ways and the spurious code affects both lengths. This fails the expected `lengthMismatch` outcome even without evidence of a systematic length effect. Stock replies do not expose the lookup that selected each field: the engine groups direct app focus and the window walk into `.focus`, and tracks `.marker` separately; neither is on the wire. The four non-Safari lanes do not enable the Safari marker route. The earlier instrumented Safari run proved marker lookup in that run, not in any particular wave-six refusal. No row-level lookup attribution is available without a new scratch trace.
+
+## Final fixed-slot confirmation at 220 ms
+
+[Wave-seven hosted run](https://github.com/SSFSKIM/cua/actions/runs/44381626238), workflow `422774845`, kit `97618a58b146dcd4548a9c9b6d20433e4788d3eb`, baseline `517ab5430a3a81718910b030488ba8d855087b21`, fix `2e011dbff145df9e7d3d0f2c56d7ffbeaa87764e`, mode `deadline`. It repeats the wave-six five-lane stock matrix, including the paired positives because the focus change also affects confirmation; a match near the last batch can now use the final focus read. No scratch jobs were requested.
+
+The fix schedules a final length batch at last post + 950 ms and its final focus check at +1000 ms. A late prior read cannot consume the final focus check's own allowance. Focus now distinguishes moved from unknown; the final batch supplies the reason when focus is unknown, and `noLongerSecure` takes priority. The engine decides `lateReply` after padding, strictly more than **10 ms** past the native 1100 ms deadline. The exact hosted `testConcealedTimingAndReasonsHoldOverRandomCases` compares two different-length synthetic inputs against each of 2,000 seeded field timelines. It checks paired outcomes, reasons, native reply time and flags, the fixed slots, and the success hold.
+
+The live gates are zero wrong confirmations, exact positive delivery and length attestations, the expected control refusals (including no spurious `fieldChanged` on the owned concealed controls), short/long refusal-code parity per mutation, and privacy. The hosted property separately gates native deadline and `lateReply` correctness. Stock IPC times, overlap, median spread, and flag comparisons to the old 1099–1150 ms IPC band are informational: IPC arrival is not the native clock.
+
+**Result: not qualified.** The `fieldChanged` regression gate passed in all lanes, from 78/150 concealed controls in wave six to **0/150**. However, **62/150** concealed controls now refused `fieldUnreadable` instead of `lengthMismatch`. That fails strict outcome and both length-parity comparisons in every lane. The other 88 concealed controls and all 75 literal controls got their expected length/caret rejection. Every control realized the mutation and refused; none confirmed. All 100 fix primaries delivered exactly and length-confirmed; all 100 baseline primaries delivered exactly and refused `secure`. All five AppKit selection controls posted, delivered exactly and refused `lengthUnreadable`. Privacy and setup coverage passed in all lanes. The exact hosted extended property passed (one named XCTest, 2,000 paired cases).
+
+| Lane | `fieldChanged` wave six → seven (of 30) | `fieldUnreadable` short / long adds (of 10 each) | `fieldUnreadable` short / long drops (of 5 each) | Add / drop length-caret rejections | Outcome | Reason parity (add/drop) | Privacy / invalid |
+| --- | ---: | ---: | ---: | ---: | --- | --- | --- |
+| CfT | 11 → 0 | 1 / 4 | 0 / 4 | 25/30; 11/15 | Fail | Fail / fail | 0 / 0 |
+| Electron default | 15 → 0 | 5 / 2 | 2 / 4 | 23/30; 9/15 | Fail | Fail / fail | 0 / 0 |
+| Electron parity | 18 → 0 | 4 / 2 | 3 / 1 | 24/30; 11/15 | Fail | Fail / fail | 0 / 0 |
+| Safari large | 18 → 0 | 7 / 5 | 4 / 1 | 18/30; 10/15 | Fail | Fail / fail | 0 / 0 |
+| AppKit | 16 → 0 | 4 / 3 | 4 / 2 | 23/30; 9/15 | Fail | Fail / fail | 0 / 0 |
+
+The unreadable counts differ in both directions by lane and kind; they fail empirical reason parity without establishing a systematic length effect. A final batch that cannot be started before its bound or that returns an unreadable field can both produce `fieldUnreadable`; stock does not expose which happened. Sixty of the 62 `fieldUnreadable` rows were flagged late, but stock IPC cannot establish the cause. As before, AppKit selection refusal phase is inferred from the owned selection, field capability and reason, not directly traced. Hosted macOS was 26.7.2; CfT was 156.0.8078.80 (wave six used 157.0.8103.78), both Electron lanes 44.4.5 / Chromium 152.0.7977.130, Safari 27.2. AppKit alone was frontmost.
+
+`lateReply` was present on **138/155** measured stock failures. All 155 flag decisions matched the side of the 1110 ms boundary predicted by IPC arrival: the earliest flagged arrival was 1111 ms and the latest unflagged arrival was 1110 ms. This is live consistency, not a measurement of the exact native flag instant. All 71 arrivals over the old 1150 ms limit had flags; 67 flagged arrivals were inside the old band. The native tolerance and exact flag equivalence passed independently in the hosted property.
+
+| Lane | `lateReply` / measured | Above old IPC band (1150 ms) | Short add p50/p95/max (n) | Long add p50/p95/max (n) | Short drop p50/p95/max (n) | Long drop p50/p95/max (n) |
+| --- | ---: | ---: | --- | --- | --- | --- |
+| CfT | 26/30 | 15/30 | 1158/1177/1177 (10) | 1131.5/1176/1176 (10) | 1152/1174/1174 (5) | 1165/1189/1189 (5) |
+| Electron default | 26/30 | 14/30 | 1134/1173/1173 (10) | 1156/1175/1175 (10) | 1136/1176/1176 (5) | 1139/1178/1178 (5) |
+| Electron parity | 22/30 | 8/30 | 1121/1175/1175 (10) | 1116/1168/1168 (10) | 1146/1161/1161 (5) | 1132/1176/1176 (5) |
+| Safari large | 30/30 | 16/30 | 1142/1166/1166 (10) | 1155/1176/1176 (10) | 1159/1169/1169 (5) | 1170/1173/1173 (5) |
+| AppKit | 34/35 | 18/35 | 1150.5/1177/1177 (10) | 1161.5/1178/1178 (10) | 1127/1169/1169 (5) | 1167/1203/1203 (5) |
+
+Last-post IPC times are in ms. Both mutation ranges overlap by length in all lanes. The four-median spreads are 33.5, 22, 30, 28 and 40 ms in table order. Direction remains mixed across lanes. AppKit selection timing p50/p95/max was **1161/1176/1176 ms** (n=5; all five flagged, three above the old band).
+
+| Lane | Primary snapshot p50/p95 ms (main → fix) | Primary service p50/p95 ms (main → fix) |
+| --- | --- | --- |
+| CfT | 0.3/0.4 → 0.4/1.2 | 210.814/304.801 → 443.890/596.751 |
+| Electron default | 4.6/14.6 → 4.3/7.9 | 226.692/268.434 → 394.766/544.007 |
+| Electron parity | 3.3/6.4 → 3.0/5.6 | 135.902/269.523 → 386.738/546.501 |
+| Safari large | 6.0/9.0 → 8.2/11.7 | 129.161/412.317 → 469.679/542.052 |
+| AppKit | 0.5/1.1 → 0.7/1.3 | 212.190/378.646 → 397.424/560.666 |

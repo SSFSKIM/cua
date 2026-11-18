@@ -482,8 +482,8 @@ final class SecureFieldTests: XCTestCase {
     }
   }
 
-  /// Movement is the numbers': a reading whose `secure` mark alone flipped moved nothing, in the wait and in a Return's
-  /// settle. A trusted notification does not confirm a password field's paste when its count decides: it can only
+  /// Movement is the numbers': a reading whose `secure` mark alone flipped moved nothing in the wait (a Return's settle,
+  /// which also judged it, went with #361's read-back). A trusted notification does not confirm a password field's paste when its count decides: it can only
   /// prompt the reading, which must show the count moved by the paste. The count is judged against the plain text the
   /// field takes, not a markup source.
   func testAPasswordFieldsPasteIsJudgedByItsNumbersAlone() {
@@ -498,8 +498,7 @@ final class SecureFieldTests: XCTestCase {
     let flipped = effect(.none)
     flipped.begin()
     reading.secure = false
-    XCTAssertEqual(flipped.settle(timeoutMs: 100, intervalMs: 25), .timeout, "only the mark changed")
-    XCTAssertEqual(flipped.wait(timeoutMs: 100, intervalMs: 25), .timeout)
+    XCTAssertEqual(flipped.wait(timeoutMs: 100, intervalMs: 25), .timeout, "only the mark changed")
 
     for (after, outcome) in [(3, EffectOutcome.timeout), (6, .reading)] {
       reading = EffectReading(range: [0, 0], characters: 0, secure: true)
@@ -608,7 +607,7 @@ final class SecureFieldTests: XCTestCase {
   }
 
   /// A password field's paste is confirmed only by a count it read: a failed poll is no reading, and a reading that lost
-  /// its count, or both numbers, is no movement, in the wait and in a Return's settle.
+  /// its count, or both numbers, is no movement in the wait.
   func testAPasswordFieldsPasteNeedsANumberItRead() {
     let baseline = EffectReading(range: [8, 0], characters: 8, secure: true)
     XCTAssertFalse(EffectReading(secure: true).moved(from: baseline))
@@ -627,10 +626,5 @@ final class SecureFieldTests: XCTestCase {
     XCTAssertEqual(effect.baselineReading, baseline)
     failing = true   // the baseline read, then every poll's batch fails
     XCTAssertEqual(effect.wait(timeoutMs: 100, intervalMs: 25, units: 5), .timeout)
-    failing = false
-    effect.begin()
-    failing = true
-    effect.keyPosted(at: clock)
-    XCTAssertEqual(effect.settle(timeoutMs: 100, intervalMs: 25), .timeout)
   }
 }

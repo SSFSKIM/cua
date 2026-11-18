@@ -89,8 +89,8 @@
 //   screenshot its coordinates came from is refused, nothing posted (`pointOutsideScreenshot`); a scroll answers success
 //   only when the content under the point was seen to move, or with a note when it was already at its end, else
 //   `scrollUnconfirmed`. Both are input errors with the meta; the scroll's record rides as cua/scroll.
-// - Typed text's read-back (#354): a keyed type_text answers success only once the focused field reads its text in
-//   place of the selection, else `typeUnconfirmed`, an input error with the meta whose sentence (a mismatch's bounded
+// - Typed text's read-back (#354): a type_text, keyed or pasted (#361), answers success only once the focused field
+//   reads its text in place of the selection, else `typeUnconfirmed`, an input error with the meta whose sentence (a mismatch's bounded
 //   excerpt included) reaches the model as the engine wrote it; the record rides as cua/typeReadback. A password field
 //   is confirmed by its length alone (#414): its record says `secure: true`, with `confirmation: "length"` once a length
 //   check confirmed (keys alone confirm none), and that success's note, which says what a length proves and what it
@@ -143,8 +143,8 @@ const NOTE_CHARS = 500;
 // `pointerEstablish`: a left click's establishment of a Chromium page tree not yet seen, {ms, webAreaFound, rehits}, #288;
 // `stalePoint`: the stale-point guard's verdict at a coordinate pointer's point, #296; `scroll`: a scroll's confirmation,
 // the container under the point read before and after the wheel, the move seen, the end, the fallback's bar write, #328;
-// `typeReadback`: a keyed type_text's read-back of the focused field, confirmed or why not, its cost, and on a mismatch
-// both lengths, value-free, #354; `keyEffect`: "unconfirmed" on a press_key that posted, whose keys' effect is not
+// `typeReadback`: a type_text's read-back of the focused field (keyed or, #361, pasted), confirmed or why not, its
+// cost, and on a mismatch both lengths, value-free, #354; `keyEffect`: "unconfirmed" on a press_key that posted, whose keys' effect is not
 // confirmed, #354; `menu`: a Show Menu's confirmation, where the new menu was seen or that none was, and the wait, #374).
 const OPTIONAL_INPUT_META = ['activationGuardMs', 'activationClick', 'activationClickKind', 'activationJoin', 'pointUnconfirmed', 'intervention', 'entered', 'routeAdvice', 'delivery', 'afterActionRepairs', 'paste',
   'elementClick', 'coordinateClick', 'pointerEstablish', 'stalePoint', 'scroll', 'typeReadback', 'keyEffect', 'menu'];

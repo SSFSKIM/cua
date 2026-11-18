@@ -70,8 +70,10 @@ import Foundation
 //   that a length check confirmed names its strength (`confirmation: "length"`) and its note says what a length proves
 //   (`readbackLengthNote`); a literal request of keys alone confirms no length and claims none; a failure carries its
 //   reason alone. A count cannot tell a wrong character from a right one.
-// The paste route (Paste.swift, a non-Latin input source) keeps #187's effect check and is not read back here; its
-// read-back is #361.
+// The paste route (Paste.swift, an input method or a background app's unknown source) is read back by this same
+// machinery (#361, `typeTextByPaste`): each pasted line a unit with no key, each newline a Return, so a Return the field
+// does not take as text is the same checkpoint; its snapshot is taken after the paste's activation, its final poll once
+// the paste answered. Its requests are never concealed.
 
 /// The poll's budget after the last event (or before a checkpoint's key), its interval, and the messaging timeout of
 /// every read: the spike's soft 1000 ms, 5 ms polls and 100 ms AX timeout, whose confirmed reads took p50 26 to 34 ms.

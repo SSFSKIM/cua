@@ -9,7 +9,7 @@ import XCTest
 // gets is logged by name and element, never by value.
 
 /// The stub: the application (0) whose focused element is the password field (1).
-private final class StubPasswordApp {
+final class StubPasswordApp {
   static let pid: pid_t = 63_000
   static let app = 0, field = 1
 

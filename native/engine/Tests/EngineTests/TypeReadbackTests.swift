@@ -6,7 +6,7 @@ import XCTest
 // the order the engine runs them, every read recorded.
 
 /// A fake field: what its reads answer, and what a posted unit does to it.
-private final class FakeField {
+final class FakeField {
   var role: String? = "AXTextArea"
   var subrole: ReadbackSubrole = .absent
   var value: String?
@@ -132,7 +132,7 @@ private final class FakeField {
 }
 
 /// The fake app: its focused field, a clock that advances only by the poll's sleeps, and the reads over both.
-private final class FakeApp {
+final class FakeApp {
   var focused: FakeField?
   var clock: Double = 0
   var sleeps = 0

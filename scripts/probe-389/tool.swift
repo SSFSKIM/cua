@@ -7,10 +7,12 @@ func windows(_ pid: Int32) -> [[String:Any]] { (CGWindowListCopyWindowInfo([.opt
 let panelServiceName = "com.apple.appkit.xpc.openAndSavePanelService"
 func executablePath(_ pid: Int32) -> String? { var buf = [CChar](repeating: 0, count: 4096); return proc_pidpath(pid, &buf, UInt32(buf.count)) > 0 ? String(cString: buf) : nil }
 func isPanelService(_ pid: Int32) -> Bool { if let path = executablePath(pid) { return path.hasPrefix("/System/") && path.contains(panelServiceName) }; return false }
+// Every process is enumerated and filtered by its executable path; no app or window naming is trusted.
 func panelServicePids() -> [Int32] {
-  var pids = Set(NSWorkspace.shared.runningApplications.filter { $0.bundleIdentifier == panelServiceName }.map { $0.processIdentifier })
-  for w in (CGWindowListCopyWindowInfo([.optionAll],kCGNullWindowID) as? [[String:Any]] ?? []) where ((w[kCGWindowOwnerName as String] as? String) ?? "").lowercased().contains("open and save panel") { if let p = w[kCGWindowOwnerPID as String] as? Int { pids.insert(Int32(p)) } }
-  return pids.filter(isPanelService).sorted()
+  let n = proc_listallpids(nil, 0); guard n > 0 else { return [] }
+  var all = [Int32](repeating: 0, count: Int(n) + 64)
+  let got = proc_listallpids(&all, Int32(all.count * MemoryLayout<Int32>.size)); guard got > 0 else { return [] }
+  return all.prefix(Int(got)).filter { $0 > 0 && isPanelService($0) }.sorted()
 }
 func axString(_ e: AXUIElement, _ attribute: String) -> String? { var v: CFTypeRef?; return AXUIElementCopyAttributeValue(e,attribute as CFString,&v) == .success ? v as? String : nil }
 func axChildren(_ e: AXUIElement) -> [AXUIElement] { var v: CFTypeRef?; return AXUIElementCopyAttributeValue(e,kAXChildrenAttribute as CFString,&v) == .success ? (v as? [AXUIElement] ?? []) : [] }

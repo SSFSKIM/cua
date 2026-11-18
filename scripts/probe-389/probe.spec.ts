@@ -97,10 +97,10 @@ test('MAWS Add project: ordinary background element press and search set_value',
     if(sequence!=='earlier-click')await open.click();
     if(sequence==='panel-roundtrip'){
      // Setup only: with the e2e pick seam off for this one pick, Choose folder... raises the real native chooser, which is cancelled through its own Cancel button. No engine call is made here.
-     const panelStatus=async()=>(await ask({op:'panel-status'})).panels as any[];
-     const candidates=async()=>(await panelStatus()).filter(p=>p.cancelEnabled>0);
-     const invalid=(why:string)=>Error('setup-invalid: '+why);
      const panel:any=row.panel={};
+     const panelStatus=async()=>(await ask({op:'panel-status'})).panels as any[];
+     const candidates=async()=>(panel.lastStatus=await panelStatus()).filter(p=>p.cancelEnabled>0);
+     const invalid=(why:string)=>Error('setup-invalid: '+why);
      const before=await panelStatus();panel.preexisting=before;
      if(before.some(p=>p.cancelEnabled>0))throw invalid('a native panel already exists before opening');
      await page.evaluate(()=> (window as any).__probe389.mark('before-panel'));
@@ -118,6 +118,9 @@ test('MAWS Add project: ordinary background element press and search set_value',
       panel.gone=gone;
       if(!gone)throw invalid('native panel did not go after Cancel');
       await page.evaluate(()=> (window as any).__probe389.mark('after-panel-cancel'));
+     } catch(e:any){
+      await page.screenshot({path:join(OUT,row.id+'-panel-setup.png')}).catch(()=>{});
+      throw e;
      } finally {
       await app.evaluate(()=>{process.env.MAWS_E2E='1';});
      }

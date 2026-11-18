@@ -204,12 +204,25 @@ func readbackWebArea<Element>(_ window: Element, _ walk: ReadbackFocusWalk<Eleme
 /// a field the application's focus or the walk found is looked up again that way (`again`, which takes no marker route)
 /// and must be the same element; one the marker route found is asked itself, the same element, and must read AXFocused
 /// true. Neither reads anything that depends on what was typed, so a concealed request makes the same reads.
+///
+/// Only a positive answer is a moved focus (#414; the review of f217f062..45172367, from the hosted runs on 45172367):
+/// another element named, no element found by a lookup that finished, or AXFocused false or absent. A check that could
+/// not finish (`unfinished`: a call not sent for lack of time, one that timed out, a walk left unfinished) is unknown.
 func readbackStillFocused<Element>(_ field: Element, found lookup: ReadbackLookup, again: () -> Element?,
-                                   isFocused: (Element) -> ReadbackWalkRead<Bool>, same: (Element, Element) -> Bool) -> Bool {
+                                   isFocused: (Element) -> ReadbackWalkRead<Bool>, same: (Element, Element) -> Bool,
+                                   unfinished: () -> Bool) -> ReadbackFocus {
   switch lookup {
-  case .focus: return again().map { same($0, field) } ?? false
+  case .focus:
+    if let again = again() { return same(again, field) ? .focused : .moved }
+    return unfinished() ? .unknown : .moved
   case .marker:
-    if case .value(true) = isFocused(field) { return true }
-    return false
+    switch isFocused(field) {
+    case .value(true): return .focused
+    case .failed where unfinished(): return .unknown
+    case .value(false), .absent, .failed: return .moved
+    }
   }
 }
+
+/// What a focus check found (`readbackStillFocused`): the field still the focus, the focus moved, or not known.
+enum ReadbackFocus: Equatable { case focused, moved, unknown }

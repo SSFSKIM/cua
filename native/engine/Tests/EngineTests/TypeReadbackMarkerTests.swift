@@ -413,6 +413,33 @@ final class TypeReadbackMarkerTests: XCTestCase {
   /// as a text field is, its AXFocused and its place under the web area checked, and is confirmed by its length: after
   /// its classification nothing is read of it but its length batch and, after typing, its own AXFocused; no value, range
   /// or count is read alone, and no marker call follows the first event.
+  /// #414 (the hosted runs on 45172367): a password field's focus check that times out after typing is unknown, not a
+  /// moved focus, on both of its paths: the marker route's (the field's own AXFocused, its one read) and the walk's
+  /// (the window walked again, left unfinished by a read that timed out). It never confirms, and the reply's length
+  /// reason stands, plain and concealed; a focus that did move is still fieldChanged.
+  func testAPasswordFieldsFocusCheckThatTimesOutIsUnknown() {
+    let paths: [(label: String, marker: Bool, timesOut: (StubSafari) -> Void)] = [
+      ("the marker route", true, { $0.errors[StubSafari.field] = [kAXFocusedAttribute: .cannotComplete] }),
+      ("the walk", false, { $0.errors[StubSafari.form] = [kAXRoleAttribute: .cannotComplete] }),
+    ]
+    for (label, marker, timesOut) in paths {
+      for concealed in [false, true] {
+        let label = "\(label), concealed \(concealed)"
+        let safari = StubSafari(filler: marker ? 1_600 : 1)
+        safari.subroles[StubSafari.field] = "AXSecureTextField"
+        safari.transform = { timesOut(safari); return $0 }  // from the first key on
+        let (error, meta, _) = type("pass", into: safari, concealed: concealed, markerRoute: marker)
+        XCTAssertEqual(record(meta)["secure"] as? Bool, true, label)
+        XCTAssertNotNil(error, "\(label): an unknown focus never confirms")
+        XCTAssertEqual(reason(meta), "lengthMismatch", label)
+        let moved = StubSafari(filler: marker ? 1_600 : 1)
+        moved.subroles[StubSafari.field] = "AXSecureTextField"
+        moved.transform = { moved.focused = [StubSafari.address]; return $0 }
+        XCTAssertEqual(reason(type("pass", into: moved, concealed: concealed, markerRoute: marker).meta), "fieldChanged", "\(label): moved")
+      }
+    }
+  }
+
   func testAPasswordFieldTheRouteFindsIsConfirmedByItsLength() {
     let cases: [(String, (StubSafari) -> Void)] = [
       ("secure subrole", { $0.subroles[StubSafari.field] = "AXSecureTextField" }),

@@ -178,6 +178,9 @@ test('#414: a concealed type_text whose password field stopped being one warns, 
     {label: 'noLongerSecure', name: 'typeUnconfirmed', meta: {...posted, typeReadback: record('noLongerSecure')}, warned: true},
     {label: 'noLongerSecure, then the user changed the app', name: 'userIntervened', message: changed, meta: {...posted, typeReadback: record('noLongerSecure')}, warned: true},
     {label: 'noLongerSecure, nothing posted', name: 'userIntervened', message: changed, meta: {...NOTHING_POSTED, typeReadback: record('noLongerSecure')}, warned: false},
+    // The engine answers noLongerSecure before a moved focus (the review of f217f062..45172367, 3), and its record can
+    // carry `lateReply`: the warning still comes.
+    {label: 'noLongerSecure, the focus also moved, a late reply', name: 'typeUnconfirmed', meta: {...posted, typeReadback: {...record('noLongerSecure'), lateReply: true}}, warned: true},
     {label: 'lengthMismatch', name: 'typeUnconfirmed', meta: {...posted, typeReadback: record('lengthMismatch')}, warned: false},
     {label: 'lengthUnreadable', name: 'typeUnconfirmed', meta: {...posted, typeReadback: record('lengthUnreadable')}, warned: false},
     {label: 'a reason that only contains it', name: 'typeUnconfirmed', meta: {...posted, typeReadback: record('noLongerSecure ')}, warned: false},

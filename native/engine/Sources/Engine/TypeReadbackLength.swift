@@ -174,12 +174,20 @@ enum ReadbackFinalBatch: Equatable {
   case read(ReadbackLengthRead)
 }
 
+/// What one length batch of a password field's poll found, against its held match: closed, a held match that has held
+/// for the window, a reply that left it, a reply past any genuine field's, or none of these.
+enum ReadbackLengthStep { case closed(TypeReadbackReason), holds, changed, overshoots, goesOn }
+
 /// A concealed failure's reason (#414; the review of 1f69470e..f217f062): a function of the final batch and the final
-/// focus read alone, the two observations every concealed failure makes. A focus read that failed is `fieldChanged`;
-/// otherwise a closed final batch gives its own reason, an unreadable one (or none) `lengthUnreadable`, and any other
-/// `lengthMismatch`. Nothing earlier (a held match, a taint, a focus read at a match) chooses it.
-func readbackConcealedReason(finalBatch: ReadbackFinalBatch?, focused: Bool) -> TypeReadbackReason {
-  guard focused else { return .fieldChanged }
+/// focus read alone, the two observations every concealed failure makes. A final batch closed `noLongerSecure` gives
+/// that, whatever the focus read found, so the warning that the field may show the secret is never lost (the review of
+/// f217f062..45172367, 3). Otherwise a focus read that found the focus moved is `fieldChanged`; one whose answer is
+/// unknown (`ReadbackFocus.unknown`) is no evidence either way, and the final batch decides: a closed one gives its own
+/// reason, an unreadable one (or none) `lengthUnreadable`, and any other `lengthMismatch`. Nothing earlier (a held
+/// match, a taint, a focus read at a match) chooses it.
+func readbackConcealedReason(finalBatch: ReadbackFinalBatch?, focus: ReadbackFocus) -> TypeReadbackReason {
+  if case .closed(.noLongerSecure)? = finalBatch { return .noLongerSecure }
+  if focus == .moved { return .fieldChanged }
   switch finalBatch {
   case .closed(let why)?: return why
   case .read(.unreadable)?, nil: return .lengthUnreadable

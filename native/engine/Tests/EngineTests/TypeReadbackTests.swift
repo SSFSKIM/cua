@@ -142,7 +142,7 @@ private final class FakeApp {
   var reads: ReadbackReads<FakeField> {
     // The application's own focus, read again after typing (`stillFocused`) as main's lookup reads it.
     ReadbackReads(focused: { self.focused?.calls.append("focused"); return self.focused.map { .field($0, by: .focus) } },
-                  stillFocused: { field, _ in self.focused?.calls.append("focused"); return self.focused === field },
+                  stillFocused: { field, _ in self.focused?.calls.append("focused"); return self.focused === field ? .focused : .moved },
                   role: { $0.calls.append("role"); return $0.role },
                   subrole: { $0.calls.append("subrole"); return $0.subrole },
                   value: { $0.readValue() },
@@ -694,7 +694,7 @@ final class TypeReadbackTests: XCTestCase {
     let reads = ReadbackReads<Node>(
       focused: { readbackFocusedField(application: app, focused: { $0.focused.map { .value($0) } ?? .absent },
                                       primaryWindow: { $0.focusedWindow ?? $0.mainWindow }, walk: walk) },
-      stillFocused: { _, _ in true },
+      stillFocused: { _, _ in .focused },
       role: { $0.role }, subrole: { _ in .absent }, value: { valueReads += 1; return $0.value },
       valueUnits: { valueReads += 1; return $0.value.map { Array($0.utf16) } },
       range: { _ in valueReads += 1; return NSRange(location: 0, length: 0) }, batch: { node, names in
@@ -730,7 +730,7 @@ final class TypeReadbackTests: XCTestCase {
       let reads = ReadbackReads<Node>(
         focused: { readbackFocusedField(application: app, focused: { $0.focused.map { .value($0) } ?? .absent },
                                         primaryWindow: { $0.focusedWindow ?? $0.mainWindow }, walk: walk) },
-        stillFocused: { _, _ in true },
+        stillFocused: { _, _ in .focused },
         role: { _ in "AXTextField" }, subrole: { _ in .absent }, value: { valueReads += 1; return $0.value },
         valueUnits: { valueReads += 1; return $0.value.map { Array($0.utf16) } },
         range: { _ in valueReads += 1; return NSRange(location: 7, length: 0) }, batch: { _, _ in batches += 1; return nil },

@@ -999,7 +999,7 @@ final class TreeWalk {
       if length > 0 && length <= markdownMaxLength {
         // A field found closed just before the read (#405) comes back with its value dropped, and the node is made from that.
         valueMarkdown = source.markdown(element, data: &data, length: length)
-        if !data.valueUnread && !data.valueFailed { markdownFetches += 1 }
+        if !data.secure { markdownFetches += 1 }
       }
     }
     let (children, shown, recordable) = choose(element, data, actions, pending)

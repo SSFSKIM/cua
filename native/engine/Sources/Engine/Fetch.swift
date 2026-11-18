@@ -10,7 +10,7 @@ import Foundation
 /// children. Not AXEditableAncestor: #298's walk cost (the design session's ruling 1ea561bc:565) keeps it to the click.
 /// One list for the settle's busy walk and the observation's walk, so the observation can read the tree the
 /// settle fetched. The scroll bars are not on it: they are read only for an element with a page scroll (scrollBars).
-/// The value's attributes (`valueAttributes`) are requested apart from the rest, once the element is classified (#405).
+/// The same reply classifies each element by its role and subrole (#405): a closed one keeps none of `valueAttributes`.
 let observedAttributes: [String] = [
   "AXRole", "AXSubrole", "AXRoleDescription", "AXTitle", "AXDescription", "AXValue", "AXValueDescription",
   "AXPlaceholderValue", "AXNumberOfCharacters", "AXHelp", "AXIdentifier", "AXSelected", "AXFocused", "AXEnabled",
@@ -56,25 +56,19 @@ struct ElementData {
   /// an absent one does, and #298's stale-point record tells the two apart for the label's attributes.
   var unreadable: Set<String> = []
   /// #390: read by a source that does not read AXValue (`ElementSource.readsValue` false), so `value` says nothing of the
-  /// element's value; an identity made from it leaves the value out of its match. #405: so is an element whose value
-  /// attributes (`valueAttributes`) were deliberately not read: a password field, one that could not be classified, or
-  /// one read without them (`ElementSource.structure`).
+  /// element's value; an identity made from it leaves the value out of its match. #405: so is a password field's.
   var valueUnread = false
-  /// #405: the value could not be read where it was wanted (its request or its slot failed, or the element could not be
-  /// classified to read it), which is not its omission: an identity made from it matches only another that could not
-  /// read it either, never one with a value.
+  /// #405: AXValue's slot failed, which is not its omission: an identity made from it matches only another such, and
+  /// only for the same handle.
   var valueFailed = false
-  /// #405: AXValueDescription, kept apart from the value: deliberately not read (a password field, or one read without
-  /// its value attributes), or wanted and not read (as `valueFailed`). A source that leaves out only AXValue (#390)
-  /// still reads it.
+  /// #405: AXValueDescription's marks, kept apart from the value's: not kept (a password field's), or its slot failed
+  /// (as `valueFailed`). A source that leaves out only AXValue (#390) still reads it.
   var descriptionUnread = false
   var descriptionFailed = false
-  /// #405: a password field (role or subrole AXSecureTextField, as a read classified it): its value, value description,
-  /// length, Markdown and selection are never read, and its node says `secure` in place of a value.
+  /// #405: a password field, or an element whose role or subrole could not be read (treated as one, design ruling
+  /// 1ea561bc:811), as the read classified it: its value, value description, length, Markdown and selection are dropped
+  /// from the reply that carried them and never kept, and its node says `secure` in place of a value.
   var secure = false
-  /// #405: the read of the other attributes classified the element as one whose value attributes may be read
-  /// (`valueReadClosed` false); `ElementSource` reads them only then.
-  fileprivate var valueOpen = false
 
   /// Decodes one element's attribute values, keyed by attribute name, and the names whose read failed.
   init(values: [String: CFTypeRef], unreadable: Set<String> = []) {
@@ -150,49 +144,40 @@ final class FetchCosts {
   }
 }
 
-/// The attributes that carry an element's value (#405): the value, its description and its length. Read only through
-/// `guardedRead`.
+/// The attributes that carry an element's value (#405): the value, its description and its length. Requested with the
+/// role and subrole in the element's one batch, and dropped from that reply as it is decoded when it classifies the
+/// element closed (`valueReadClosed`).
 let valueAttributes: Set<String> = [kAXValueAttribute, kAXValueDescriptionAttribute, kAXNumberOfCharactersAttribute]
 
-/// The attributes every value-bearing request carries beside what it reads, and a classification-only request reads.
+/// The attributes every value-bearing request carries, which classify the element, and a classification-only request
+/// (before a parameterized read, which no batch can carry) reads alone.
 let classifyingAttributes = [kAXRoleAttribute, kAXSubroleAttribute]
 
-/// What a guarded read of value-bearing attributes found (#405).
+/// What a classified read of value-bearing attributes found (#405).
 enum GuardedRead {
-  /// The element is closed, a password field when `secure`, else one whose role or subrole could not be read: nothing
-  /// of its value was asked for, or what came back beside a closed classification was dropped. `classification` is the
-  /// role and subrole that request answered, nothing else of it.
-  case closed(secure: Bool, classification: AttributeRead)
-  /// A request failed: nothing read.
+  /// The element is closed (`valueReadClosed`): what came back of the value-bearing attributes was dropped.
+  case closed
+  /// The request failed: nothing read.
   case failed
   case read(AttributeRead)
 }
 
-/// #405's rule for every value-bearing read (#390's, for set_value): `names` are requested only in a batch that reads
-/// the role and subrole again, and its whole answer is dropped when that classification is closed (`valueReadClosed`);
-/// that batch is sent only once a classification made just before leaves the element open: a classification-only
-/// request, unless the caller's own request just now classified it open (`classifiedOpen`). A classification older than
-/// the read does not authorise it.
-func guardedRead(_ names: [String], classifiedOpen: Bool = false, request: ([String]) -> AttributeRead?) -> GuardedRead {
-  func closed(_ read: AttributeRead) -> GuardedRead? {
-    let classified = valueReadClosed(read)
-    guard classified.closed else { return nil }
-    let kept = Set(classifyingAttributes)
-    return .closed(secure: classified.secure, classification: AttributeRead(values: read.values.filter { kept.contains($0.key) },
-                                                                            unreadable: read.unreadable.intersection(kept)))
-  }
-  if !classifiedOpen {
-    guard let preflight = request(classifyingAttributes) else { return .failed }
-    if let closed = closed(preflight) { return closed }
-  }
-  guard let read = request(classifyingAttributes + names) else { return .failed }
-  return closed(read) ?? .read(read)
+/// #405's rule for every value-bearing read outside the walk's own (design ruling 1ea561bc:811): `names` are requested in
+/// one batch with the role and subrole, the element classified from that same reply, and the reply dropped whole before
+/// it leaves this function when the classification is closed. Nothing formats the reply before then.
+func classifiedRead(_ names: [String], request: ([String]) -> AttributeRead?) -> GuardedRead {
+  guard let read = request(classifyingAttributes + names.filter { !classifyingAttributes.contains($0) }) else { return .failed }
+  return valueReadClosed(read) ? .closed : .read(read)
 }
 
-/// One AXUIElementCopyMultipleAttributeValues of `names`; nil when the element cannot be read.
-func fetchAttributes(_ element: AXUIElement, _ names: [String]) -> AttributeRead? {
+/// One AXUIElementCopyMultipleAttributeValues of `names`, the element given the usual messaging timeout first; nil when
+/// the element cannot be read.
+func fetchAttributes(_ element: AXUIElement, _ names: [String]) -> AttributeRead? { fetchAttributesAsTimed(prepare(element), names) }
+
+/// `fetchAttributes` under whatever messaging timeout the element already has (a reading bounded by a budget, #405).
+func fetchAttributesAsTimed(_ element: AXUIElement, _ names: [String]) -> AttributeRead? {
   var values: CFArray?
-  let error = AXUIElementCopyMultipleAttributeValues(prepare(element), names as CFArray, AXCopyMultipleAttributeOptions(rawValue: 0), &values)
+  let error = AXUIElementCopyMultipleAttributeValues(element, names as CFArray, AXCopyMultipleAttributeOptions(rawValue: 0), &values)
   guard error == .success, let slots = values as? [Any], slots.count == names.count else { return nil }
   var read = AttributeRead()
   for (name, slot) in zip(names, slots) {
@@ -208,25 +193,28 @@ struct AttributeRead {
   var unreadable: Set<String> = []
 }
 
-/// #405: whether a request's answer leaves the element's value unread, by the rule every value read of a field follows
-/// (`writtenValueFieldClosed`): a password field by role or subrole, or a role or subrole it could not read; and whether
-/// it is the first, a field known to be a password field.
-func valueReadClosed(_ read: AttributeRead) -> (closed: Bool, secure: Bool) {
-  let role = read.values[kAXRoleAttribute].flatMap { CFGetTypeID($0) == CFStringGetTypeID() ? ($0 as! String) : nil }
+/// #405: whether a reply classifies its element closed, its value attributes dropped, by the rule every value read of a
+/// field follows (`writtenValueFieldClosed`): a password field by role or subrole, or a role or subrole it could not
+/// read, which is treated as one (design ruling 1ea561bc:811).
+func valueReadClosed(_ read: AttributeRead) -> Bool {
+  // A slot reported failed is failed, whatever else the reply put beside it.
+  let role = read.unreadable.contains(kAXRoleAttribute) ? nil
+    : read.values[kAXRoleAttribute].flatMap { CFGetTypeID($0) == CFStringGetTypeID() ? ($0 as! String) : nil }
   let subrole: SubroleRead
-  if let value = read.values[kAXSubroleAttribute] {
+  if read.unreadable.contains(kAXSubroleAttribute) {
+    subrole = .failed
+  } else if let value = read.values[kAXSubroleAttribute] {
     subrole = CFGetTypeID(value) == CFStringGetTypeID() ? .subrole(value as! String) : .failed
   } else {
-    subrole = read.unreadable.contains(kAXSubroleAttribute) ? .failed : .none
+    subrole = .none
   }
-  let secure = role == "AXSecureTextField" || subrole == .subrole("AXSecureTextField")
-  return (writtenValueFieldClosed(role: role, subrole: subrole), secure)
+  return writtenValueFieldClosed(role: role, subrole: subrole)
 }
 
 /// Where a walk reads elements from, for one observation: what it read is kept, so the settle's busy walk and the
 /// observation's walk that follows it read each element once (F §8.5). `fetch` and `attributeNames` are the uncached
 /// requests to the app, and the `read…` methods the other uncached reads (the unit tests' fake tree overrides them);
-/// every read above them classifies an element before it reads its value (#405).
+/// every reply above them is classified, and a closed element's value attributes dropped, as it is decoded (#405).
 class ElementSource: @unchecked Sendable {
   let costs = FetchCosts()
   /// #390: false for a set_value of a concealed value or into a password field, whose re-reads and re-fetch walk must
@@ -234,72 +222,17 @@ class ElementSource: @unchecked Sendable {
   /// `valueUnread`.
   var readsValue = true
   private var dataCache: [ElementKey: ElementData] = [:]
-  /// #405: elements read without their value attributes (`structure`), which `data` completes with one request.
-  private var structureCache: [ElementKey: ElementData] = [:]
   private var visibleCache: [ElementKey: [AXUIElement]?] = [:]
   private var frameCache: [ElementKey: CGRect?] = [:]
   private var roleWithFrame: [ElementKey: String] = [:]
 
-  /// The element's attributes, its value's only as its classification allows (`classifiedRead`); nil when the element
-  /// cannot be read.
+  /// The element's attributes, read in one batch (`classifiedData`); nil when the element cannot be read.
   final func data(_ element: AXUIElement) -> ElementData? {
     let key = ElementKey(element: element)
     if let known = dataCache[key] { return known }
-    // A structure read earlier (the settle's busy walk) classified the element too long ago to authorise a value read:
-    // `completed` classifies it again first.
-    let read = structureCache[key].map { completed($0, element, names: requestedAttributes, classifiedOpenNow: false) }
-      ?? classifiedRead(element, names: requestedAttributes)
+    let read = classifiedData(element, names: requestedAttributes)
     if let read { dataCache[key] = read }
     return read
-  }
-
-  /// The element's attributes but its value's (#405), marked `valueUnread`: what the settle's busy walk needs, and what a
-  /// re-fetch first matches by. A `data` after it classifies it again, then reads its value.
-  final func structure(_ element: AXUIElement) -> ElementData? {
-    let key = ElementKey(element: element)
-    if let known = dataCache[key] ?? structureCache[key] { return known }
-    let read = structuralRead(element, names: requestedAttributes)
-    if let read { structureCache[key] = read }
-    return read
-  }
-
-  /// The element's data as a later read found it closed (#405, the Markdown's classification, failed or closed): its
-  /// value attributes dropped, here and in the cache, so the node, the identity and every later read of this source
-  /// carry none.
-  private func close(_ element: AXUIElement, _ data: ElementData, secure: Bool) -> ElementData {
-    let closed = closed(data, secure: secure)
-    dataCache[ElementKey(element: element)] = closed
-    return closed
-  }
-
-  /// `data` with its value attributes dropped: a password field's (`secure`) deliberately unread, an unclassifiable
-  /// element's `unverified`.
-  private func closed(_ data: ElementData, secure: Bool) -> ElementData {
-    var closed = data
-    closed.value = nil
-    closed.valueDescription = nil
-    closed.numberOfCharacters = nil
-    closed.valueOpen = false
-    closed.secure = secure
-    if secure {
-      closed.valueUnread = true
-      closed.valueFailed = false
-      closed.descriptionUnread = true
-      closed.descriptionFailed = false
-    } else {
-      unverified(&closed)
-    }
-    return closed
-  }
-
-  /// An element whose value attributes were wanted and not read (a failed request, or no classification to read them
-  /// by): an identity made from it cannot be matched to one with a value (`valueFailed`), unless the source leaves the
-  /// value out anyway (#390).
-  private func unverified(_ data: inout ElementData) {
-    data.valueUnread = !readsValue
-    data.valueFailed = readsValue
-    data.descriptionUnread = false
-    data.descriptionFailed = true
   }
 
   /// The attributes a read requests: `observedAttributes`, without AXValue when the source does not read values.
@@ -308,91 +241,56 @@ class ElementSource: @unchecked Sendable {
   /// The element's attributes read through only those it lists, the vendor's read of an element outside the subtree
   /// its prefetch covered (FUN_1007542cc: AXUIElementCopyAttributeNames intersected with the attribute set, then one
   /// AXUIElementCopyMultipleAttributeValues; F §1.3): the menu bar's. Cached with the other reads, and classified as
-  /// they are: the role and subrole are requested for the classification whether or not the element lists them, and
-  /// kept in its data only when it does.
+  /// they are: the role and subrole are requested whether or not the element lists them, and kept only when it does.
   final func listedData(_ element: AXUIElement) -> ElementData? {
     let key = ElementKey(element: element)
     if let known = dataCache[key] { return known }
     guard let listed = costs.time("attributes", { attributeNames(element) }) else { return nil }
     let names = Set(listed)
-    let read = classifiedRead(element, names: requestedAttributes.filter(names.contains))
+    let read = classifiedData(element, names: requestedAttributes.filter(names.contains))
     if let read { dataCache[key] = read }
     return read
   }
 
-  /// `names` in two requests (#405): all but the value's first, which classifies the element, then the value's through
-  /// `guardedRead`, its classification just made standing as the preflight.
-  private func classifiedRead(_ element: AXUIElement, names: [String]) -> ElementData? {
-    structuralRead(element, names: names).map { completed($0, element, names: names, classifiedOpenNow: true) }
-  }
-
-  /// `names` but the value's, in one request with the role and subrole (asked for whatever `names` holds, the
-  /// classification's), classified (`valueReadClosed`) and marked `valueUnread`; the data keeps only `names`.
-  private func structuralRead(_ element: AXUIElement, names: [String]) -> ElementData? {
-    let kept = names.filter { !valueAttributes.contains($0) }
-    guard let read = request(element, kept + classifyingAttributes.filter { !kept.contains($0) }) else { return nil }
-    let classified = valueReadClosed(read)
-    let asked = Set(kept)
-    var data = ElementData(values: read.values.filter { asked.contains($0.key) }, unreadable: read.unreadable.intersection(asked))
-    data.secure = classified.secure
-    data.valueOpen = !classified.closed
-    if classified.closed && !classified.secure {
-      unverified(&data)
-    } else {
-      data.valueUnread = true
-      data.descriptionUnread = true
+  /// `names` in one batch with the role and subrole (design ruling 1ea561bc:811): the element classified from that reply,
+  /// and, when it is closed (`valueReadClosed`), its value attributes dropped as the reply is decoded, here, before
+  /// anything else reads or formats it, so they reach no data, cache, identity, node or log. The data keeps `names` alone.
+  private func classifiedData(_ element: AXUIElement, names: [String]) -> ElementData? {
+    guard let read = request(element, names + classifyingAttributes.filter { !names.contains($0) }) else { return nil }
+    let closed = valueReadClosed(read)
+    let kept = Set(names)
+    var data = ElementData(values: read.values.filter { kept.contains($0.key) }, unreadable: read.unreadable.intersection(kept))
+    if closed { ElementSource.markSecure(&data) } else {
+      data.valueUnread = !readsValue
+      data.valueFailed = readsValue && read.unreadable.contains(kAXValueAttribute)
+      data.descriptionFailed = read.unreadable.contains(kAXValueDescriptionAttribute)
     }
     return data
   }
 
-  /// `structure` with the value's attributes among `names`, read through `guardedRead` only when its classification
-  /// left them open: `classifiedOpenNow` when that classification was made just now, else it is made again first. A
-  /// field found closed keeps none of them (`closed`); a failed read is `valueFailed`, not an omission.
-  private func completed(_ structure: ElementData, _ element: AXUIElement, names: [String], classifiedOpenNow: Bool) -> ElementData {
-    var data = structure
-    guard data.valueOpen else { return data }
-    data.valueUnread = !readsValue
-    data.descriptionUnread = false
-    let wanted = names.filter(valueAttributes.contains)
-    guard !wanted.isEmpty else { return data }
-    switch guardedRead(wanted, classifiedOpen: classifiedOpenNow, request: { request(element, $0) }) {
-    case .closed(let secure, let classification):
-      // A password field now: its role and subrole as that request read them, so its identity matches nothing recorded
-      // under the structure's older ones.
-      if secure { reclassified(&data, by: classification, names: names) }
-      return closed(data, secure: secure)
-    case .failed:
-      data.unreadable.formUnion(wanted)
-      unverified(&data)
-      return data
-    case .read(let read):
-      reclassified(&data, by: read, names: names)
-      let values = ElementData(values: read.values)
-      data.value = values.value
-      data.valueDescription = values.valueDescription
-      data.numberOfCharacters = values.numberOfCharacters
-      data.unreadable.formUnion(read.unreadable.intersection(wanted))
-      data.valueFailed = readsValue && read.unreadable.contains(kAXValueAttribute)
-      data.descriptionFailed = read.unreadable.contains(kAXValueDescriptionAttribute)
-      return data
-    }
+  /// `data` as a closed element's: its value attributes gone, and marked so (`secure`, its value and description unread).
+  private static func markSecure(_ data: inout ElementData) {
+    data.value = nil
+    data.valueDescription = nil
+    data.numberOfCharacters = nil
+    data.secure = true
+    data.valueUnread = true
+    data.valueFailed = false
+    data.descriptionUnread = true
+    data.descriptionFailed = false
   }
 
-  /// `data`'s role and subrole as a later request of the value's read them, where `names` keeps them: the fresher read.
-  private func reclassified(_ data: inout ElementData, by read: AttributeRead, names: [String]) {
-    let fresh = ElementData(values: read.values)
-    if names.contains(kAXRoleAttribute), read.values[kAXRoleAttribute] != nil { data.role = fresh.role }
-    if names.contains(kAXSubroleAttribute), !read.unreadable.contains(kAXSubroleAttribute) { data.subrole = fresh.subrole }
+  /// The element's data as the Markdown's classification found it closed or could not make it (#405): its value
+  /// attributes dropped, here and in the cache, so the node, the identity and every later read of this source carry none.
+  private func close(_ element: AXUIElement, _ data: ElementData) -> ElementData {
+    var closed = data
+    ElementSource.markSecure(&closed)
+    dataCache[ElementKey(element: element)] = closed
+    return closed
   }
 
-  /// One request for `names`, keeping only what it asked for whatever else the app answered, timed.
-  private func request(_ element: AXUIElement, _ names: [String]) -> AttributeRead? {
-    guard var read = costs.time("attributes", { fetch(element, names) }) else { return nil }
-    let asked = Set(names)
-    read.values = read.values.filter { asked.contains($0.key) }
-    read.unreadable.formIntersection(asked)
-    return read
-  }
+  /// One request for `names`, timed.
+  private func request(_ element: AXUIElement, _ names: [String]) -> AttributeRead? { costs.time("attributes") { fetch(element, names) } }
 
   /// One AXUIElementCopyMultipleAttributeValues of `names` (`fetchAttributes`); nil when the element cannot be read.
   func fetch(_ element: AXUIElement, _ names: [String]) -> AttributeRead? { fetchAttributes(element, names) }
@@ -484,14 +382,9 @@ class ElementSource: @unchecked Sendable {
   /// subrole are requested again just before (#405): when that request fails or finds the field closed, nil with no
   /// read, and `data` closed too (here and in the cache), so nothing read of it earlier reaches its node or identity.
   final func markdown(_ element: AXUIElement, data: inout ElementData, length: Int) -> String? {
-    guard let read = request(element, classifyingAttributes) else {
-      // Fails closed: an element that cannot be classified now keeps nothing read of it before.
-      data = close(element, data, secure: false)
-      return nil
-    }
-    let classified = valueReadClosed(read)
-    if classified.closed {
-      data = close(element, data, secure: classified.secure)
+    // Fails closed: an element that cannot be classified now keeps nothing read of it before.
+    guard let read = request(element, classifyingAttributes), !valueReadClosed(read) else {
+      data = close(element, data)
       return nil
     }
     return costs.time("markdown") { readMarkdown(element, length: length) }

@@ -464,10 +464,10 @@ extension Engine {
 }
 
 /// The focused element's selected text the trailer prints, bounded; nil when it has none, and for a password field or
-/// one whose role or subrole cannot be read: read only through `guardedRead` (#405), a classification-only request
-/// first, then AXSelectedText beside the role and subrole again, dropped when that classification is closed.
+/// one whose role or subrole cannot be read: AXSelectedText is read in one batch with the role and subrole and dropped
+/// when that reply classifies the element closed (#405, `classifiedRead`).
 func focusedSelectedText(request: ([String]) -> AttributeRead?) -> String? {
-  guard case .read(let read) = guardedRead([kAXSelectedTextAttribute], request: request),
+  guard case .read(let read) = classifiedRead([kAXSelectedTextAttribute], request: request),
         let value = read.values[kAXSelectedTextAttribute], CFGetTypeID(value) == CFStringGetTypeID() else { return nil }
   let text = value as! String
   return text.isEmpty ? nil : bounded(text)

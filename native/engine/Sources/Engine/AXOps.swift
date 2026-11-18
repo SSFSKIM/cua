@@ -8,7 +8,7 @@ import Foundation
 struct AXOps {
   var role: (AXUIElement) -> String? = { stringAttribute($0, kAXRoleAttribute) }
   var subrole: (AXUIElement) -> String? = { stringAttribute($0, kAXSubroleAttribute) }
-  /// One batched read of the named attributes (`fetchAttributes`), what `guardedRead` requests through (#405).
+  /// One batched read of the named attributes (`fetchAttributes`), what `classifiedRead` requests through (#405).
   var batch: (AXUIElement, [String]) -> AttributeRead? = { fetchAttributes($0, $1) }
   /// The element's frame read now (never the observed one).
   var frame: (AXUIElement) -> CGRect? = liveFrame

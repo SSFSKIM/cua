@@ -104,8 +104,12 @@ struct EffectReading: Equatable {
 
   var isEmpty: Bool { range == nil && characters == nil }
 
-  /// Whether its numbers differ from `other`'s: what movement is decided on, never the `secure` mark (#405).
-  func moved(from other: EffectReading) -> Bool { range != other.range || characters != other.characters }
+  /// Whether its numbers differ from `other`'s: what movement is decided on, never the `secure` mark (#405). For a password
+  /// field (either side `secure`) only a number this reading has counts: a number lost since is no movement.
+  func moved(from other: EffectReading) -> Bool {
+    guard secure || other.secure else { return range != other.range || characters != other.characters }
+    return (range != nil && range != other.range) || (characters != nil && characters != other.characters)
+  }
 
   /// Its numbers for the per-line records (`PasteDiagnostics.perLine`): counts and offsets, never text; for a password
   /// field only that it is one.
@@ -124,7 +128,8 @@ struct EffectReading: Equatable {
 /// keeps the change rule.
 func pasteEffectSeen(_ reading: EffectReading, baseline: EffectReading, units: Int?) -> Bool {
   guard reading.moved(from: baseline) else { return false }
-  guard let units, reading.secure || baseline.secure, let before = baseline.characters, let after = reading.characters else { return true }
+  guard let units, reading.secure || baseline.secure, let before = baseline.characters else { return true }
+  guard let after = reading.characters else { return false }
   return after == before - (baseline.range?[1] ?? 0) + units
 }
 
@@ -883,21 +888,20 @@ func effectReading(of application: AXUIElement, withinMs budget: Double = .infin
   defer { if budget.isFinite { AXUIElementSetMessagingTimeout(application, elementMessagingTimeout) } }
   guard bound(application) else { return nil }
   guard let focused = elementAttribute(application, kAXFocusedUIElementAttribute) else { return EffectReading() }
-  return focusedEffectReading(focused, bound: bound) { fetchAttributes($0, $1) }
+  // The batch keeps the timeout `bound` set: `fetchAttributes` would put back the usual one.
+  return focusedEffectReading(focused, bound: bound) { fetchAttributesAsTimed($0, $1) }
 }
 
 /// The focused element's reading, its request `bound` first (nil once the budget is spent). #405: its role, subrole,
 /// range and count are read in one batch, and a reading whose classification in that batch is closed (a password field,
-/// or a role or subrole that cannot be read), or whose batch failed, is marked `secure`: its numbers judge the paste here
-/// and never leave the engine.
+/// or a role or subrole that cannot be read) is marked `secure`: its numbers judge the paste here and never leave the
+/// engine. A batch that fails is no reading (nil), as a poll the budget stopped is, never one that lost its numbers.
 func focusedEffectReading<Element>(_ focused: Element, bound: (Element) -> Bool,
                                    batch: (Element, [String]) -> AttributeRead?) -> EffectReading? {
   guard bound(focused) else { return nil }
-  guard let read = batch(focused, classifyingAttributes + [kAXSelectedTextRangeAttribute, kAXNumberOfCharactersAttribute]) else {
-    return EffectReading(secure: true)
-  }
+  guard let read = batch(focused, classifyingAttributes + [kAXSelectedTextRangeAttribute, kAXNumberOfCharactersAttribute]) else { return nil }
   var reading = EffectReading()
-  reading.secure = valueReadClosed(read).closed
+  reading.secure = valueReadClosed(read)
   if let range = rangeWire(read.values[kAXSelectedTextRangeAttribute]), let location = range["location"], let length = range["length"] {
     reading.range = [location, length]
   }

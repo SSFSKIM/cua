@@ -301,3 +301,21 @@ Last-post IPC times are in ms. Short and long ranges overlapped for both mutatio
 | Electron parity | 2.5/5.5 → 2.7/5.4 | 138.994/246.349 → 379.910/520.502 |
 | Safari large | 4.7/8.9 → 5.4/8.8 | 169.676/247.104 → 393.709/516.649 |
 | AppKit | 0.3/0.7 → 0.5/3.0 | 162.339/246.016 → 364.469/545.739 |
+
+## Sampled hold and immediate failure
+
+[Wave-nine hosted run](https://github.com/SSFSKIM/cua/actions/runs/44411274771), workflow `422774845`, kit `7d75b0732dd77f5fc0d94068696eaa73614676f5`, baseline `517ab5430a3a81718910b030488ba8d855087b21`, fix `e8e2702e960900532a8af68d18b8e866c0e00781`, mode `sampled-hold`. The five stock lanes repeat the wave-eight manifest: paired positives, 30 concealed mutations and 15 literal mutations per lane, plus five AppKit selections. No scratch or historical fixed-deadline stub gate ran.
+
+Ruling `1ea561bc:851` removes fixed failure padding, fixed AX slots and the `lateReply` key. A length match has to hold between samples at least 220 ms apart inside the 1000 ms budget; failure replies when known. Timing may vary with the input (#423), so timing and old-key presence are observations, not acceptance gates. The per-length figure pools ten adds and five drops on the candidate, from the last native post to IPC arrival; AppKit prefilled selections are separate. The old-key scan checks structured engine replies, forwarded metadata, wrappers and emitted result items on both heads.
+
+**All five stock lanes passed.** All 100 fix primaries delivered exactly and length-confirmed; all 100 main primaries delivered exactly and refused `secure`. All 150 adds and 75 drops realized their mutations and refused. Every concealed control answered `lengthMismatch`, with no `fieldUnreadable` or `fieldChanged`; literal AppKit controls answered `caretMismatch`. Five AppKit selection controls posted, delivered exactly and refused `lengthUnreadable`. Zero privacy flags, setup-invalid trials, or `lateReply` keys were observed. All 430 trials produced an action reply; no wrapper target-resolution failure bypassed the key check.
+
+| Lane | Fix positives exact & confirmed | False adds | Drops refused | `fieldUnreadable` / `fieldChanged` | Reason parity | Privacy / invalid | Short p50/p95 ms (n) | Long p50/p95 ms (n) |
+| --- | ---: | ---: | ---: | ---: | --- | ---: | ---: | ---: |
+| CfT | 20/20 | 0/30 | 15/15 | 0 / 0 | Pass | 0 / 0 | 908/913 (15) | 908/919 (15) |
+| Electron default | 20/20 | 0/30 | 15/15 | 0 / 0 | Pass | 0 / 0 | 911/929 (15) | 907/928 (15) |
+| Electron parity | 20/20 | 0/30 | 15/15 | 0 / 0 | Pass | 0 / 0 | 911/926 (15) | 913/930 (15) |
+| Safari large | 20/20 | 0/30 | 15/15 | 0 / 0 | Pass | 0 / 0 | 907/933 (15) | 905/915 (15) |
+| AppKit | 20/20 | 0/30 | 15/15 | 0 / 0 | Pass | 0 / 0 | 910/918 (15) | 905/919 (15) |
+
+AppKit’s five selection refusals had p50/p95 **2/45 ms** (n=5); the snapshot phase is inferred, not traced. None of the 150 concealed mutation replies arrived more than 1100 ms after the last post. Within each lane, the short and long medians were at most 5 ms apart, with mixed direction; that does not rule out input-dependent timing under #423. AppKit ran frontmost and the other four lanes were background.

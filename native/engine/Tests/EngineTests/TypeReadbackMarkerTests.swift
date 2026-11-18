@@ -523,6 +523,8 @@ final class TypeReadbackMarkerTests: XCTestCase {
       XCTAssertEqual(error?.errorName, "typeUnconfirmed")
       XCTAssertEqual(reason(meta), "roleUnreadable")
       XCTAssertEqual(record(meta)["secure"] as? Bool, true)
+      // The review of cbce12e2..1f69470e (P2): a concealed request's refusal after posting answers at the deadline.
+      XCTAssertEqual(meta.typeReadback?.pollMs, concealed ? typeReadbackBudgetMs + typeReadbackFocusReadCapMs : 0)
       XCTAssertNil(record(meta)["reads"])
       XCTAssertNil(record(meta)["pollMs"])
       XCTAssertFalse(reply.contains("hunter2"))

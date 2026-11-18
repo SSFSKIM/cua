@@ -61,8 +61,10 @@ import Foundation
 //   only once the same reply has held for the quiet window (`typeReadbackLengthDwellMs`, ruling 1ea561bc:842): a reply
 //   read between an app's last two keys can match when a character was added, and a genuine field never moves away
 //   from a final match. The window is read at the poll's interval and lies inside the budget. A literal request's poll
-//   ends at a reply that leaves a held match, or one past any genuine field's (`readbackLengthOvershoots`); a concealed
-//   request's failure always polls the whole budget, so its timing never depends on its secret's length. A success
+//   ends at a reply that leaves a held match, or one past any genuine field's (`readbackLengthOvershoots`). A concealed
+//   request's success ends as a literal one's does; every concealed failure after posting, a snapshot refusal
+//   included, answers at one deadline from the post-typing boundary (`typeReadbackBudgetMs` +
+//   `typeReadbackFocusReadCapMs`, `finish`), so its timing never depends on its secret. A success
 //   that a length check confirmed names its strength (`confirmation: "length"`) and its note says what a length proves
 //   (`readbackLengthNote`); a literal request of keys alone confirms no length and claims none; a failure carries its
 //   reason alone. A count cannot tell a wrong character from a right one.
@@ -75,11 +77,15 @@ let typeReadbackBudgetMs: Double = 1_000
 let typeReadbackPollIntervalMs: Double = 5
 /// A password field's quiet window (#414; the design session's ruling 1ea561bc:842): a length read that matches confirms
 /// only once the same read has held unchanged this long, read at `typeReadbackPollIntervalMs` within the budget, so a
-/// field must take the text within the budget less this (820 ms). One constant for every lane, never one per lane,
-/// sized at three times the slowest drain the hosted qualification measured: AppKit's worst post-to-edit lag of 59.9 ms
-/// (179.7 ms), above the parity Electron lane's inter-change gap p99 of 55.9 ms (168 ms; n=16) and Safari's last-change
-/// bound of 107 ms at three times. Raise it if a lane's measured drain p99, times three, passes it.
-let typeReadbackLengthDwellMs: Double = 180
+/// field must take the text within the budget less this (780 ms). One constant for every lane, never one per lane,
+/// sized at three times the slowest lane's drain in the hosted qualification's full run: AppKit's gap p99 of 72.6 ms
+/// (218 ms; direct fixture edit gaps ending after the last post, n=269), above Chrome for Testing's 29 ms, Safari's
+/// 24 ms and the parity Electron lane's 25 ms. Raise it if a lane's measured drain p99, times three, passes it.
+let typeReadbackLengthDwellMs: Double = 220
+/// The cap on a concealed password-field read-back's final focus read (#414; the review of cbce12e2..1f69470e, P1):
+/// every concealed failure after posting answers at the post-typing boundary + `typeReadbackBudgetMs` + this. A focus
+/// read slower than it is the residual: the reply then comes when it returns.
+let typeReadbackFocusReadCapMs: Double = 100
 let typeReadbackMessagingTimeout: Float = 0.1
 /// Chromium cuts a text field's AXValue at 10,000 (#290's hosted measurement: a 20,499-character ASCII field read back
 /// 10,000 long; #350): a read at that length may be cut, and so may compare equal to an expected value that is not the
@@ -717,11 +723,27 @@ final class TypeReadback<Element> {
     return false
   }
 
-  /// After the last event: success, or `typeUnconfirmed`.
+  /// After the last event: success, or `typeUnconfirmed`. A concealed request into a password field (a secure record)
+  /// answers every failure, a snapshot refusal included, at one deadline measured from here, the post-typing boundary
+  /// where its poll starts: `typeReadbackBudgetMs` + `typeReadbackFocusReadCapMs` (the review of cbce12e2..1f69470e, P1
+  /// and P2). Whether and when a field closes, refuses or loses its match can depend on the secret in some field, so no
+  /// failure's time may. The wait is against the clock, so a sleep that wakes early cannot end it (same review, P2). A
+  /// final focus read slower than the cap is the residual. Its success, and a plain field's concealed request (#354's),
+  /// answer as before.
   func finish() throws {
-    guard plan.expects else { throw typeUnconfirmed(record.reason ?? .valueUnreadable) }
-    // A concealed request is always read back once, whatever its keys, so its number of waits is always one.
-    if unchecked || concealed { try confirm(through: units.count, beforeKey: false) }
+    let boundary = reads.now()
+    do {
+      guard plan.expects else { throw typeUnconfirmed(record.reason ?? .valueUnreadable) }
+      // A concealed request is always read back once, whatever its keys, so its number of waits is always one.
+      if unchecked || concealed { try confirm(through: units.count, beforeKey: false) }
+    } catch {
+      if concealed, record.secure {
+        let deadline = boundary + typeReadbackBudgetMs + typeReadbackFocusReadCapMs
+        while reads.now() < deadline { reads.sleep(deadline - reads.now()) }
+        record.pollMs = reads.now() - boundary
+      }
+      throw error
+    }
     record.keysUnconfirmed = units.filter(leaves).count
     record.confirmed = true
     record.reason = nil
@@ -757,43 +779,48 @@ final class TypeReadback<Element> {
   /// match comes and goes, and whether a reply overshoots, can depend on the secret's length in some field (one that
   /// collapses a selection to its end, or jumps its caret to its text's end, without taking the text), so ending on
   /// either would make the reply's time tell it. A concealed request that leaves a held match never confirms after it and
-  /// polls on; its failure always takes the whole budget, at one cadence, and its reason is the last reply's. A closed
-  /// reply ends the reads at once for both, and a match that held is still checked for the focus.
+  /// polls on to the budget, its reason the last reply's. A closed reply ends the reads at once for both.
   ///
-  /// A concealed request's failure, whatever its cause (a mismatch, a closed reply, the focus check), is answered only
-  /// once the budget is spent (the review of f35a42b8..cbce12e2, P1): when a field closes or a match holds can depend on
-  /// the secret's length, so the reads stop where the rule says and the rest of the budget is slept through. Only its
-  /// success ends early. A read confirms only if it starts within the budget (same review, P2): a match taken off the
-  /// poll's grid, or a late wake, cannot confirm past it.
+  /// A concealed success ends as a literal one does, once its match has held and its focus read passes. Every concealed
+  /// failure is answered at one deadline that `finish` keeps (the review of cbce12e2..1f69470e, P1): this function only
+  /// throws. A concealed match whose focus read fails polls on as a tainted one, with that focus read's time added to its
+  /// budget, then takes the final focus read every failure takes: its AX trace is a lost match's with that one focus read
+  /// more, which only the target app sees. A read confirms only if it completes within the budget, its window timed from
+  /// its start (same review, P2; the review of f35a42b8..cbce12e2, P2): a match off the poll's grid, a late wake or a
+  /// slow reply cannot confirm past the budget.
   private func confirmLength(through end: Int, beforeKey: Bool) throws {
     guard case .expectLength(let field, let role, let basis, _, let found) = plan else { return }
     let typed = units[0..<end].reduce(0) { leaves($1) ? $0 : $0 + readbackLengthUnits($1) }  // a key that can leave adds nothing
     let started = reads.now()
     defer { record.pollMs += reads.now() - started }
-    func fail(_ reason: TypeReadbackReason) -> EngineError {
-      if concealed {
-        let left = typeReadbackBudgetMs - (reads.now() - started)
-        if left > 0 { reads.sleep(left) }
-      }
-      return unconfirmed(reason, beforeKey)
-    }
+    var budgetStart = started  // later by a concealed match's focus read, so its reads after it are a lost match's
     var last: ReadbackLengthRead?
     // The held match: its reply, and the end of the read that took it. A later read that starts at least the window
     // after it and still finds the same reply shows the reply held that long.
     var held: (count: ReadbackWalkRead<Int>, range: NSRange?, since: Double)?
     var tainted = false  // a concealed request whose reply left a held match: it never confirms
+    var focusLost = false  // a concealed match whose focus read failed
     var confirmed = false
     poll: while true {
       let at = reads.now()
       switch readbackLength(field, role: role, reads: reads) {
-      case .closed(let why): throw fail(why)
+      case .closed(let why): throw unconfirmed(why, beforeKey)
       case .read(let count, let range):
+        let done = reads.now()
         let judged = readbackLengthJudged(count: count, range: range, basis: basis, typed: typed)
         record.reads += 1
         last = judged
         if let match = held {
           if count == match.count, range == match.range {
-            if at - match.since >= typeReadbackLengthDwellMs, at - started <= typeReadbackBudgetMs { confirmed = true; break poll }
+            if at - match.since >= typeReadbackLengthDwellMs, done - budgetStart <= typeReadbackBudgetMs {
+              guard concealed else { confirmed = true; break poll }
+              let asked = reads.now()
+              if reads.stillFocused(field, found) { confirmed = true; break poll }
+              focusLost = true
+              tainted = true
+              held = nil
+              budgetStart += reads.now() - asked
+            }
           } else {
             // A changed reply that still judges confirmed differs only by a range its basis (an empty field read without
             // one) never checks: its caret moved.
@@ -803,25 +830,29 @@ final class TypeReadback<Element> {
             held = nil
           }
         } else if judged == .confirmed {
-          if !tainted { held = (count, range, reads.now()) }
+          if !tainted { held = (count, range, done) }
         } else if !concealed, judged != .unreadable, readbackLengthOvershoots(count: count, range: range, basis: basis, typed: typed) {
           // A failed count read is no evidence either way; a readable reply past any genuine field's is.
           break poll
         }
       }
-      if reads.now() - started >= typeReadbackBudgetMs { break }
+      if reads.now() - budgetStart >= typeReadbackBudgetMs { break }
       reads.sleep(typeReadbackPollIntervalMs)
     }
-    guard reads.stillFocused(field, found) else { throw fail(.fieldChanged) }
+    if confirmed, concealed {  // its focus read passed at the match
+      record.lengthConfirmed = true
+      return
+    }
+    guard reads.stillFocused(field, found), !focusLost else { throw unconfirmed(.fieldChanged, beforeKey) }
     if confirmed {
       record.lengthConfirmed = true
       return
     }
     switch last {
     // A match that never held for the window: too late before the budget, or after a concealed request's reply left one.
-    case .confirmed?, .differs?: throw fail(.lengthMismatch)
-    case .caretElsewhere?: throw fail(concealed ? .lengthMismatch : .caretMismatch)
-    case .unreadable?, nil: throw fail(.lengthUnreadable)
+    case .confirmed?, .differs?: throw unconfirmed(.lengthMismatch, beforeKey)
+    case .caretElsewhere?: throw unconfirmed(concealed ? .lengthMismatch : .caretMismatch, beforeKey)
+    case .unreadable?, nil: throw unconfirmed(.lengthUnreadable, beforeKey)
     }
   }
 

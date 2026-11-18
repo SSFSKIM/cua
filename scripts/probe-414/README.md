@@ -319,3 +319,21 @@ Ruling `1ea561bc:851` removes fixed failure padding, fixed AX slots and the `lat
 | AppKit | 20/20 | 0/30 | 15/15 | 0 / 0 | Pass | 0 / 0 | 910/918 (15) | 905/919 (15) |
 
 AppKit’s five selection refusals had p50/p95 **2/45 ms** (n=5); the snapshot phase is inferred, not traced. None of the 150 concealed mutation replies arrived more than 1100 ms after the last post. Within each lane, the short and long medians were at most 5 ms apart, with mixed direction; that does not rule out input-dependent timing under #423. AppKit ran frontmost and the other four lanes were background.
+
+## Merge qualification: sampled hold with overshoot taint
+
+[Wave-ten hosted run](https://github.com/SSFSKIM/cua/actions/runs/44420183099), workflow `422774845`, fix `3b67bf4d2e3e5e69f47c3251bbcf8d771f3378fe`, main `517ab5430a3a81718910b030488ba8d855087b21`, kit `53e9185e0fffdeafb5499f659a05a533afdd340e` (executable kit unchanged from `7d75b073`). Mode `sampled-hold` repeats the wave-nine five stock lanes, paired positives, balanced concealed adds/drops, literal mutations and AppKit selections. Positives remain in scope because the candidate taints a concealed overshoot and checks the poll start limit against the actual sample's start. A failed concealed poll takes its own final batch for the reason. Timing stays informational under #423.
+
+**The strict workflow was red on one Electron parity snapshot refusal.** One long concealed drop realized the intended mutation and refused `noFocusedElement`; the pre-typing AX snapshot took **246.8 ms** and named no focused element. The refusal was decided before any key was posted, even though the action then delivered the keys. The same provider behavior occurred on baseline default Electron in the 180 ms full run. The historical strict outcome and parity checks both counted this row, but a refusal chosen before input is not evidence about post-input reason parity. All **149** concealed mutation refusals with a post-input reason answered `lengthMismatch`. The snapshot row stays valid and separate; it was not rerun.
+
+All 100 candidate positives typed exactly and length-confirmed; all 100 baseline positives typed exactly and refused `secure`. Zero of 150 adds falsely confirmed and all 75 drops refused. No `fieldUnreadable`, `fieldChanged`, privacy flag, setup-invalid row or `lateReply` key was observed. All five AppKit prefilled selections posted, typed exactly and refused `lengthUnreadable` (p50/p95 **1/2 ms**, n=5).
+
+| Lane | Fix positives exact & confirmed | False adds | Drops refused | Strict outcome / post-input parity | Privacy / invalid | Short p50/p95 ms (n) | Long p50/p95 ms (n) |
+| --- | ---: | ---: | ---: | --- | ---: | ---: | ---: |
+| CfT | 20/20 | 0/30 | 15/15 | Pass / pass | 0 / 0 | 905/922 (15) | 908/931 (15) |
+| Electron default | 20/20 | 0/30 | 15/15 | Pass / pass | 0 / 0 | 908/926 (15) | 910/932 (15) |
+| Electron parity | 20/20 | 0/30 | 15/15 | Red on snapshot row / all measured post-input reasons match | 0 / 0 | 901/922 (15) | 909/924 (14) |
+| Safari large | 20/20 | 0/30 | 15/15 | Pass / pass | 0 / 0 | 908/920 (15) | 906/1204 (15) |
+| AppKit | 20/20 | 0/30 | 15/15 | Pass / pass | 0 / 0 | 907/920 (15) | 905/945 (15) |
+
+Timings are last native post to IPC arrival for concealed mutation refusals. The Electron parity pre-input snapshot refusal is not in the long timing sample. Safari's long p95 is one **1204 ms** long drop that refused `lengthMismatch`; it is informational, not a gate or evidence of a consistent length effect. AppKit ran frontmost; the other four lanes were background. CfT was 156.0.8078.80 (wave nine used 157.0.8103.78).

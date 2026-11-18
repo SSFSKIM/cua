@@ -30,35 +30,35 @@
     }
    },
    "ms": {
-    "pinned": 462.4,
-    "newest": 320.6,
-    "cua": 129.4,
-    "cua:0ms": 25.7
+    "pinned": 449.2,
+    "newest": 322.1,
+    "cua": 129.3,
+    "cua:0ms": 24.1
    },
    "received": {
     "pinned": {
-     "raw": 184.5,
-     "moves": 184.5,
+     "raw": 183,
+     "moves": 183,
      "raw_events": 182.5,
-     "move_events": 16.5
+     "move_events": 15
     },
     "newest": {
      "raw": 53,
      "moves": 53,
      "raw_events": 53,
-     "move_events": 7
+     "move_events": 8
     },
     "cua": {
-     "raw": 198,
-     "moves": 198,
-     "raw_events": 190.5,
+     "raw": 200,
+     "moves": 200,
+     "raw_events": 191,
      "move_events": 8
     },
     "cua:0ms": {
-     "raw": 170.5,
-     "moves": 170.5,
-     "raw_events": 152,
-     "move_events": 2.5
+     "raw": 166.5,
+     "moves": 166.5,
+     "raw_events": 143.5,
+     "move_events": 2
     }
    }
   },
@@ -91,16 +91,16 @@
     }
    },
    "ms": {
-    "pinned": 441.2,
-    "newest": 329.9,
-    "cua": 127.7,
-    "cua:0ms": 22.8
+    "pinned": 441.1,
+    "newest": 318.7,
+    "cua": 128.5,
+    "cua:0ms": 23.4
    },
    "received": {
     "pinned": {
      "raw": 240,
      "moves": 240,
-     "raw_events": 240,
+     "raw_events": 239.5,
      "move_events": 19
     },
     "newest": {
@@ -110,16 +110,16 @@
      "move_events": 8
     },
     "cua": {
-     "raw": 234.5,
-     "moves": 234.5,
-     "raw_events": 230.5,
+     "raw": 235,
+     "moves": 235,
+     "raw_events": 229.5,
      "move_events": 9.5
     },
     "cua:0ms": {
-     "raw": 203,
-     "moves": 203,
-     "raw_events": 185,
-     "move_events": 2
+     "raw": 211.5,
+     "moves": 211.5,
+     "raw_events": 186,
+     "move_events": 2.5
     }
    }
   },
@@ -130,10 +130,10 @@
    "route": "background",
    "expected": {
     "0": {
-     "moved": 122
+     "moved": 134
     },
     "1": {
-     "moved": 129
+     "moved": 144
     }
    },
    "pinned_took": 2,
@@ -159,33 +159,33 @@
     }
    },
    "ms": {
-    "pinned": 284.9,
-    "newest": 262.1,
-    "cua": 63.5,
-    "cua:0ms": 9
+    "pinned": 280.4,
+    "newest": 261.9,
+    "cua": 62.5,
+    "cua:0ms": 8.7
    },
    "reach": {
-    "pinned_mean": 125.5,
+    "pinned_mean": 139,
     "lanes": {
      "cua": {
       "reached": 2,
       "n": 2,
       "shortest": 146,
-      "mean": 146
+      "mean": 146.5
      },
      "cua:0ms": {
       "reached": 0,
       "n": 2,
-      "shortest": 24,
-      "mean": 33
+      "shortest": 0,
+      "mean": 18.5
      }
     }
    },
    "received": {
     "pinned": {
-     "raw": 59.5,
+     "raw": 60,
      "moves": 0,
-     "raw_events": 59.5,
+     "raw_events": 60,
      "move_events": 0
     },
     "newest": {
@@ -195,15 +195,15 @@
      "move_events": 0
     },
     "cua": {
-     "raw": 55,
+     "raw": 55.5,
      "moves": 0,
-     "raw_events": 54.5,
+     "raw_events": 54,
      "move_events": 0
     },
     "cua:0ms": {
-     "raw": 29.5,
+     "raw": 36,
      "moves": 0,
-     "raw_events": 20.5,
+     "raw_events": 34,
      "move_events": 0
     }
    }
@@ -234,17 +234,17 @@
     }
    },
    "ms": {
-    "pinned": 531.6,
-    "newest": 342.5,
-    "cua": 361.9,
-    "cua:0ms": 368.4
+    "pinned": 516.3,
+    "newest": 344.8,
+    "cua": 374.7,
+    "cua:0ms": 357.6
    },
    "speed": {
     "cua": {
      "verdict": "undetermined",
      "against": null,
      "bar": null,
-     "candidate": 361.9,
+     "candidate": 374.7,
      "interval": null,
      "bound": null,
      "label": null,
@@ -267,7 +267,7 @@
      "verdict": "undetermined",
      "against": null,
      "bar": null,
-     "candidate": 368.4,
+     "candidate": 357.6,
      "interval": null,
      "bound": null,
      "label": null,
@@ -289,27 +289,27 @@
    },
    "received": {
     "pinned": {
-     "raw": 12.5,
-     "moves": 12.5,
-     "raw_events": 12.5,
+     "raw": 12,
+     "moves": 12,
+     "raw_events": 11.5,
      "move_events": 2
     },
     "newest": {
-     "raw": 7,
-     "moves": 7,
-     "raw_events": 7,
+     "raw": 6.5,
+     "moves": 6.5,
+     "raw_events": 6.5,
      "move_events": 1
     },
     "cua": {
-     "raw": 5,
-     "moves": 5,
-     "raw_events": 5,
-     "move_events": 1.5
+     "raw": 17,
+     "moves": 17,
+     "raw_events": 16.5,
+     "move_events": 1
     },
     "cua:0ms": {
-     "raw": 48,
-     "moves": 49,
-     "raw_events": 37,
+     "raw": 5.5,
+     "moves": 7,
+     "raw_events": 1,
      "move_events": 1
     }
    }
@@ -343,17 +343,17 @@
     }
    },
    "ms": {
-    "pinned": 1177.8,
-    "newest": 515.6,
-    "cua": 476.6,
-    "cua:0ms": 91.5
+    "pinned": 1194.3,
+    "newest": 513.4,
+    "cua": 476.1,
+    "cua:0ms": 78.6
    },
    "speed": {
     "cua": {
      "verdict": "undetermined",
      "against": null,
      "bar": null,
-     "candidate": 476.6,
+     "candidate": 476.1,
      "interval": null,
      "bound": null,
      "label": null,
@@ -363,7 +363,7 @@
      ],
      "usable": {
       "pinned": 1,
-      "newest": 0,
+      "newest": 1,
       "cua": 1
      },
      "sampled": {
@@ -386,7 +386,7 @@
      ],
      "usable": {
       "pinned": 1,
-      "newest": 0,
+      "newest": 1,
       "cua:0ms": 0
      },
      "sampled": {
@@ -400,26 +400,26 @@
     "pinned": {
      "raw": 768,
      "moves": 768,
-     "raw_events": 768,
-     "move_events": 59
+     "raw_events": 767,
+     "move_events": 59.5
     },
     "newest": {
-     "raw": 196,
-     "moves": 196,
-     "raw_events": 196,
-     "move_events": 19
+     "raw": 195.5,
+     "moves": 195.5,
+     "raw_events": 195.5,
+     "move_events": 20
     },
     "cua": {
      "raw": 763,
      "moves": 763,
-     "raw_events": 753,
-     "move_events": 29
+     "raw_events": 756.5,
+     "move_events": 28.5
     },
     "cua:0ms": {
-     "raw": 739.5,
-     "moves": 739.5,
-     "raw_events": 644,
-     "move_events": 6
+     "raw": 743,
+     "moves": 743,
+     "raw_events": 659.5,
+     "move_events": 5.5
     }
    }
   }
@@ -456,11 +456,11 @@ The judges (T10), for the shipped lane `cua`: every run takes effect; Chrome's a
 
 | family | kind | pinned took | newest took | cua took | cua:0ms took | newest warm ms | cua warm ms | cua:0ms warm ms | pinned warm ms | witness | judges | verdict |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---|---|
-| Chrome | select | 2/2 | 2/2 | 2/2 | 2/2 | 320.6 | 129.4 | 25.7 | 462.4 | clean | received, coalesced samples (events), raw/moves, median: pinned 184.5 (182.5)/184.5 (16.5), newest 53 (53)/53 (7), cua 198 (190.5)/198 (8), cua:0ms 170.5 (152)/170.5 (2.5) | cua PASS, cua:0ms PASS |
-| Chrome | range | 2/2 | 2/2 | 2/2 | 2/2 | 329.9 | 127.7 | 22.8 | 441.2 | clean | received, coalesced samples (events), raw/moves, median: pinned 240 (240)/240 (19), newest 62 (62)/62 (8), cua 234.5 (230.5)/234.5 (9.5), cua:0ms 203 (185)/203 (2) | cua PASS, cua:0ms PASS |
-| Chrome | scroller | 2/2 | 2/2 | 2/2 | 0/2 | 262.1 | 63.5 | 9 | 284.9 | clean | reach (pinned mean 125.5 px): cua 2/2 (shortest 146, mean 146), cua:0ms 0/2 (shortest 24, mean 33); received, coalesced samples (events), raw/moves, median: pinned 59.5 (59.5)/0 (0), newest 17 (17)/0 (0), cua 55 (54.5)/0 (0), cua:0ms 29.5 (20.5)/0 (0) | cua PASS, cua:0ms **FAIL** |
-| Chrome | dnd | 2/2 | 2/2 | 2/2 | 2/2 | 342.5 | 361.9 | 368.4 | 531.6 | **changed** | speed (warm): cua **undetermined**: cua: 1 usable samples of 2, fewer than 20; cua:0ms **undetermined**: cua:0ms: 1 usable samples of 2, fewer than 20; received, coalesced samples (events), raw/moves, median: pinned 12.5 (12.5)/12.5 (2), newest 7 (7)/7 (1), cua 5 (5)/5 (1.5), cua:0ms 48 (37)/49 (1) | cua speed unjudged (a pilot), cua:0ms speed unjudged (a pilot) |
-| Chrome | canvas | 2/2 | 0/2 | 2/2 | 0/2 | 515.6 | 476.6 | 91.5 | 1177.8 | clean | speed (warm): cua **undetermined**: cua: 1 usable samples of 2, fewer than 20; cua:0ms **undetermined**: cua:0ms: 0 usable samples of 2, fewer than 20; received, coalesced samples (events), raw/moves, median: pinned 768 (768)/768 (59), newest 196 (196)/196 (19), cua 763 (753)/763 (29), cua:0ms 739.5 (644)/739.5 (6) | cua speed unjudged (a pilot), cua:0ms **FAIL** |
+| Chrome | select | 2/2 | 2/2 | 2/2 | 2/2 | 322.1 | 129.3 | 24.1 | 449.2 | clean | received, coalesced samples (events), raw/moves, median: pinned 183 (182.5)/183 (15), newest 53 (53)/53 (8), cua 200 (191)/200 (8), cua:0ms 166.5 (143.5)/166.5 (2) | cua PASS, cua:0ms PASS |
+| Chrome | range | 2/2 | 2/2 | 2/2 | 2/2 | 318.7 | 128.5 | 23.4 | 441.1 | clean | received, coalesced samples (events), raw/moves, median: pinned 240 (239.5)/240 (19), newest 62 (62)/62 (8), cua 235 (229.5)/235 (9.5), cua:0ms 211.5 (186)/211.5 (2.5) | cua PASS, cua:0ms PASS |
+| Chrome | scroller | 2/2 | 2/2 | 2/2 | 0/2 | 261.9 | 62.5 | 8.7 | 280.4 | clean | reach (pinned mean 139 px): cua 2/2 (shortest 146, mean 146.5), cua:0ms 0/2 (shortest 0, mean 18.5); received, coalesced samples (events), raw/moves, median: pinned 60 (60)/0 (0), newest 17 (17)/0 (0), cua 55.5 (54)/0 (0), cua:0ms 36 (34)/0 (0) | cua PASS, cua:0ms **FAIL** |
+| Chrome | dnd | 2/2 | 2/2 | 2/2 | 2/2 | 344.8 | 374.7 | 357.6 | 516.3 | **changed** | speed (warm): cua **undetermined**: cua: 1 usable samples of 2, fewer than 20; cua:0ms **undetermined**: cua:0ms: 1 usable samples of 2, fewer than 20; received, coalesced samples (events), raw/moves, median: pinned 12 (11.5)/12 (2), newest 6.5 (6.5)/6.5 (1), cua 17 (16.5)/17 (1), cua:0ms 5.5 (1)/7 (1) | cua speed unjudged (a pilot), cua:0ms speed unjudged (a pilot) |
+| Chrome | canvas | 2/2 | 1/2 | 2/2 | 0/2 | 513.4 | 476.1 | 78.6 | 1194.3 | clean | speed (warm): cua **undetermined**: cua: 1 usable samples of 2, fewer than 20; cua:0ms **undetermined**: cua:0ms: 0 usable samples of 2, fewer than 20; received, coalesced samples (events), raw/moves, median: pinned 768 (767)/768 (59.5), newest 195.5 (195.5)/195.5 (20), cua 763 (756.5)/763 (28.5), cua:0ms 743 (659.5)/743 (5.5) | cua speed unjudged (a pilot), cua:0ms **FAIL** |
 
 Cells where a cua lane missed a run the pinned build took: chrome scroller (cua:0ms); chrome canvas (cua:0ms).
 
@@ -468,5 +468,5 @@ The judges' verdict for `cua`: no FAIL; unjudged in this pilot (not a pass): 2 s
 
 Unjudged in this pilot (no top-up; not passes): chrome dnd: cua speed unjudged (a pilot takes no top-up): cua: 1 usable samples of 2, fewer than 20; chrome canvas: cua speed unjudged (a pilot takes no top-up): cua: 1 usable samples of 2, fewer than 20.
 
-desktop: started with 0x0080000c active (foreign), ended with 0x0080000c active (foreign), neither acted on; holder 0x00c0000c; the harness's own trace: 1182 requests, 225 changes of a window, every one of its own; the run's record: not run (the display is a private one, and the run's caller declined to start the whole-run RECORD on it)
+desktop: started with 0x0080000c active (foreign), ended with 0x0080000c active (foreign), neither acted on; holder 0x00c0000c; the harness's own trace: 1180 requests, 225 changes of a window, every one of its own; the run's record: not run (the display is a private one, and the run's caller declined to start the whole-run RECORD on it)
 

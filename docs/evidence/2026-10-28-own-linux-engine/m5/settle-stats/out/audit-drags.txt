@@ -1,0 +1,7 @@
+V1: 6 audited operations; with a drag: none
+V2: 10 audited operations; with a drag: none
+  (V3: request not read for scroll, minimized_click_element, minimized_secondary_action; counted by name where it says drag)
+V3: 41 audited operations; with a drag: chrome-input/drag, minimized/minimized_drag
+V4: 22 audited operations; with a drag: device-gtk4/gtk4_drag_shared, device-gtk4/gtk4_drag_dedicated
+  (V5: request not read for identity_click_element, identity_secondary_action; counted by name where it says drag)
+V5: 52 audited operations; with a drag: device-firefox/firefox_drag_pointer_out_shared, device-firefox/firefox_drag_overlap_pointer_in_shared, device-firefox/firefox_drag_covered_dedicated, device-chrome/chrome_drag_visible_path_shared, device-chrome/chrome_drag_covered_path_shared, device-chrome/chrome_drag_covered_dedicated, device-chrome-dnd/chrome_dnd_shared, device-chrome-dnd/chrome_dnd_in_front_shared, device-chrome-dnd/chrome_dnd_late_shared, device-chrome-dnd/chrome_dnd_covered_dedicated, device-chrome-dnd/chrome_dnd_short_in_front_shared, device-chrome-dnd/chrome_dnd_short_covered_dedicated, device-chrome-dnd/chrome_dnd_obscured_in_front_shared, device-chrome-dnd/chrome_dnd_obscured_in_front_late_shared, device-chrome-dnd/chrome_dnd_late_take_shared, device-chrome-dnd/chrome_dnd_short_pointer_outside_shared, device-chrome-dnd/chrome_dnd_short_pointer_outside_dedicated, device-chrome-dnd/chrome_select_nudged_shared, device-chrome-dnd/chrome_dnd_inzone_out_in_front_shared, device-chrome-dnd/chrome_dnd_long_left_in_front_shared

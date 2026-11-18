@@ -39,6 +39,7 @@ const LANES = [
   { label: 'cua', args: [] },
   { label: 'cua:0ms', args: ['--drag-step-ms', '0', '--drag-press-dwell-ms', '0', '--drag-release-dwell-ms', '0'] },
   { label: 'cua', args: [], stats: true },
+  { label: 'cua:variant', args: ['--stats'] },
   { label: 'pinned', args: [] },
 ];
 

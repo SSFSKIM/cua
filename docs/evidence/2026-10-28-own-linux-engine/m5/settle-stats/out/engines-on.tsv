@@ -1,22 +1,22 @@
-reader	3706829	cua	["--stats"]	opt-in	262	{"entered":0,"second_rest":0,"skipped":0,"unsettled":0}	recorded	true	{"list_windows":16,"get_window_state":246}
-stub-activating	3707695	other	[]		0	null	no stats: not recorded	true	{"press_key":1}
-pinned	3708486	vendor	[]		0	null	no stats: not recorded	true	{"drag":2}
-newest	3708571	vendor	[]		0	null	no stats: not recorded	true	{"drag":2}
-cua	3708802	cua	["--stats"]	opt-in	5	{"entered":0,"second_rest":0,"skipped":0,"unsettled":0}	recorded	true	{"drag":2}
-cua:0ms	3708918	cua	["--drag-step-ms","0","--drag-press-dwell-ms","0","--drag-release-dwell-ms","0","--stats"]	opt-in	5	{"entered":0,"second_rest":0,"skipped":0,"unsettled":0}	recorded	true	{"drag":2}
-newest	3708997	vendor	[]		0	null	no stats: not recorded	true	{"drag":2}
-cua	3709273	cua	["--stats"]	opt-in	5	{"entered":0,"second_rest":0,"skipped":0,"unsettled":0}	recorded	true	{"drag":2}
-cua:0ms	3709361	cua	["--drag-step-ms","0","--drag-press-dwell-ms","0","--drag-release-dwell-ms","0","--stats"]	opt-in	5	{"entered":0,"second_rest":0,"skipped":0,"unsettled":0}	recorded	true	{"drag":2}
-pinned	3709445	vendor	[]		0	null	no stats: not recorded	true	{"drag":2}
-cua	3709765	cua	["--stats"]	opt-in	5	{"entered":0,"second_rest":0,"skipped":0,"unsettled":0}	recorded	true	{"drag":2}
-cua:0ms	3709848	cua	["--drag-step-ms","0","--drag-press-dwell-ms","0","--drag-release-dwell-ms","0","--stats"]	opt-in	5	{"entered":0,"second_rest":0,"skipped":0,"unsettled":0}	recorded	true	{"drag":2}
-pinned	3710124	vendor	[]		0	null	no stats: not recorded	true	{"drag":2}
-newest	3710263	vendor	[]		0	null	no stats: not recorded	true	{"drag":2}
-cua:0ms	3710554	cua	["--drag-step-ms","0","--drag-press-dwell-ms","0","--drag-release-dwell-ms","0","--stats"]	opt-in	5	{"entered":0,"second_rest":0,"skipped":0,"unsettled":0}	recorded	true	{"drag":2}
-pinned	3710949	vendor	[]		0	null	no stats: not recorded	true	{"drag":2}
-newest	3711197	vendor	[]		0	null	no stats: not recorded	true	{"drag":2}
-cua	3711570	cua	["--stats"]	opt-in	3	{"entered":0,"second_rest":0,"skipped":0,"unsettled":0}	recorded	true	{"drag":2}
-pinned	3711754	vendor	[]		0	null	no stats: not recorded	true	{"drag":2}
-newest	3712030	vendor	[]		0	null	no stats: not recorded	true	{"drag":2}
-cua	3712226	cua	["--stats"]	opt-in	5	{"entered":0,"second_rest":0,"skipped":0,"unsettled":0}	recorded	true	{"drag":2}
-cua:0ms	3712456	cua	["--drag-step-ms","0","--drag-press-dwell-ms","0","--drag-release-dwell-ms","0","--stats"]	opt-in	5	{"entered":0,"second_rest":0,"skipped":0,"unsettled":0}	recorded	true	{"drag":2}
+reader	3863188	cua	["--stats"]	opt-in	266	{"entered":0,"second_rest":0,"skipped":0,"unsettled":0}	recorded	ended=true	final=false	{"list_windows":16,"get_window_state":250}
+stub-activating	3864180	unidentified	[]		0	null	no stats: not recorded	ended=true	final=false	{"press_key":1}
+pinned	3864856	vendor	[]		0	null	no stats: not recorded	ended=true	final=false	{"drag":2}
+newest	3864920	vendor	[]		0	null	no stats: not recorded	ended=true	final=false	{"drag":2}
+cua	3865117	cua	["--stats"]	opt-in	5	{"entered":0,"second_rest":0,"skipped":0,"unsettled":0}	recorded	ended=true	final=false	{"drag":2}
+cua:0ms	3865147	cua	["--drag-step-ms","0","--drag-press-dwell-ms","0","--drag-release-dwell-ms","0","--stats"]	opt-in	5	{"entered":0,"second_rest":0,"skipped":0,"unsettled":0}	recorded	ended=true	final=false	{"drag":2}
+newest	3865250	vendor	[]		0	null	no stats: not recorded	ended=true	final=false	{"drag":2}
+cua	3865351	cua	["--stats"]	opt-in	5	{"entered":0,"second_rest":0,"skipped":0,"unsettled":0}	recorded	ended=true	final=false	{"drag":2}
+cua:0ms	3865382	cua	["--drag-step-ms","0","--drag-press-dwell-ms","0","--drag-release-dwell-ms","0","--stats"]	opt-in	5	{"entered":0,"second_rest":0,"skipped":0,"unsettled":0}	recorded	ended=true	final=false	{"drag":2}
+pinned	3865416	vendor	[]		0	null	no stats: not recorded	ended=true	final=false	{"drag":2}
+cua	3865523	cua	["--stats"]	opt-in	5	{"entered":0,"second_rest":0,"skipped":0,"unsettled":0}	recorded	ended=true	final=false	{"drag":2}
+cua:0ms	3865560	cua	["--drag-step-ms","0","--drag-press-dwell-ms","0","--drag-release-dwell-ms","0","--stats"]	opt-in	5	{"entered":0,"second_rest":0,"skipped":0,"unsettled":0}	recorded	ended=true	final=false	{"drag":2}
+pinned	3865667	vendor	[]		0	null	no stats: not recorded	ended=true	final=false	{"drag":2}
+newest	3865691	vendor	[]		0	null	no stats: not recorded	ended=true	final=false	{"drag":2}
+cua:0ms	3865722	cua	["--drag-step-ms","0","--drag-press-dwell-ms","0","--drag-release-dwell-ms","0","--stats"]	opt-in	5	{"entered":0,"second_rest":0,"skipped":0,"unsettled":0}	recorded	ended=true	final=false	{"drag":2}
+pinned	3865985	vendor	[]		0	null	no stats: not recorded	ended=true	final=false	{"drag":2}
+newest	3866137	vendor	[]		0	null	no stats: not recorded	ended=true	final=false	{"drag":2}
+cua	3866317	cua	["--stats"]	opt-in	4	{"entered":0,"second_rest":0,"skipped":0,"unsettled":0}	recorded	ended=true	final=false	{"drag":2}
+pinned	3866357	vendor	[]		0	null	no stats: not recorded	ended=true	final=false	{"drag":2}
+newest	3866460	vendor	[]		0	null	no stats: not recorded	ended=true	final=false	{"drag":2}
+cua	3866483	cua	["--stats"]	opt-in	5	{"entered":0,"second_rest":0,"skipped":0,"unsettled":0}	recorded	ended=true	final=false	{"drag":2}
+cua:0ms	3866594	cua	["--drag-step-ms","0","--drag-press-dwell-ms","0","--drag-release-dwell-ms","0","--stats"]	opt-in	5	{"entered":0,"second_rest":0,"skipped":0,"unsettled":0}	recorded	ended=true	final=false	{"drag":2}

@@ -9,8 +9,8 @@
   "run_name": "m5-dev-D1-pilot",
   "checkout": {
     "root": "/Users/new/Developer/GitHub/cua/.claude/worktrees/agent-aedde8bc900100980/",
-    "commit": "d89a8a960462cc15bc26adb7cafbd6b092c4bda2",
-    "clean": true
+    "commit": "5ceb6b0f3c253545498225c3f981735b0b5147e1",
+    "clean": false
   },
   "candidate": {
     "path": "/Users/new/.local/share/cua-171/task103/cua-engine-0.4.1",
@@ -41,14 +41,14 @@
     "--out",
     "/Users/new/.local/share/cua-171/task103/out-on/D1.development-run.pilot/run"
   ],
-  "started": "2026-11-18T15:08:30.154Z",
+  "started": "2026-11-18T16:18:19.877Z",
   "end_check": {
     "left_by_step": [],
     "foreign": [],
     "buses": [],
     "clear": true
   },
-  "finished": "2026-11-18T15:10:13.608Z",
+  "finished": "2026-11-18T16:20:04.052Z",
   "exit": 0,
   "child_exit": 0,
   "display_watchdog": "clean",

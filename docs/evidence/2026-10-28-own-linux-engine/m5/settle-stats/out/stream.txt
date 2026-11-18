@@ -3,17 +3,17 @@
 /Users/new/.local/share/cua-171/task103/out-on/D1.development-run.pilot/stderr.log: lines 1, drop_settles 0, '{"stats"' 0, engine_stats 0, untied_stats 0
 /Users/new/.local/share/cua-171/task103/out-off/D1.development-run.pilot/run/results.jsonl: lines 48, drop_settles 0, '{"stats"' 0, engine_stats 0, untied_stats 0
 == the opt-in run's stats files
-3706796.cua.3708802.jsonl: 5 lines, last drop_settles "drop_settles":{"entered":0,"second_rest":0,"skipped":0,"unsettled":0}
-3706796.cua.3709273.jsonl: 5 lines, last drop_settles "drop_settles":{"entered":0,"second_rest":0,"skipped":0,"unsettled":0}
-3706796.cua.3709765.jsonl: 5 lines, last drop_settles "drop_settles":{"entered":0,"second_rest":0,"skipped":0,"unsettled":0}
-3706796.cua.3711570.jsonl: 3 lines, last drop_settles "drop_settles":{"entered":0,"second_rest":0,"skipped":0,"unsettled":0}
-3706796.cua.3712226.jsonl: 5 lines, last drop_settles "drop_settles":{"entered":0,"second_rest":0,"skipped":0,"unsettled":0}
-3706796.cua_0ms.3708918.jsonl: 5 lines, last drop_settles "drop_settles":{"entered":0,"second_rest":0,"skipped":0,"unsettled":0}
-3706796.cua_0ms.3709361.jsonl: 5 lines, last drop_settles "drop_settles":{"entered":0,"second_rest":0,"skipped":0,"unsettled":0}
-3706796.cua_0ms.3709848.jsonl: 5 lines, last drop_settles "drop_settles":{"entered":0,"second_rest":0,"skipped":0,"unsettled":0}
-3706796.cua_0ms.3710554.jsonl: 5 lines, last drop_settles "drop_settles":{"entered":0,"second_rest":0,"skipped":0,"unsettled":0}
-3706796.cua_0ms.3712456.jsonl: 5 lines, last drop_settles "drop_settles":{"entered":0,"second_rest":0,"skipped":0,"unsettled":0}
-3706796.reader.3706829.jsonl: 262 lines, last drop_settles "drop_settles":{"entered":0,"second_rest":0,"skipped":0,"unsettled":0}
+3863144.cua.3865117.jsonl: 5 lines, last drop_settles "drop_settles":{"entered":0,"second_rest":0,"skipped":0,"unsettled":0}
+3863144.cua.3865351.jsonl: 5 lines, last drop_settles "drop_settles":{"entered":0,"second_rest":0,"skipped":0,"unsettled":0}
+3863144.cua.3865523.jsonl: 5 lines, last drop_settles "drop_settles":{"entered":0,"second_rest":0,"skipped":0,"unsettled":0}
+3863144.cua.3866317.jsonl: 4 lines, last drop_settles "drop_settles":{"entered":0,"second_rest":0,"skipped":0,"unsettled":0}
+3863144.cua.3866483.jsonl: 5 lines, last drop_settles "drop_settles":{"entered":0,"second_rest":0,"skipped":0,"unsettled":0}
+3863144.cua_0ms.3865147.jsonl: 5 lines, last drop_settles "drop_settles":{"entered":0,"second_rest":0,"skipped":0,"unsettled":0}
+3863144.cua_0ms.3865382.jsonl: 5 lines, last drop_settles "drop_settles":{"entered":0,"second_rest":0,"skipped":0,"unsettled":0}
+3863144.cua_0ms.3865560.jsonl: 5 lines, last drop_settles "drop_settles":{"entered":0,"second_rest":0,"skipped":0,"unsettled":0}
+3863144.cua_0ms.3865722.jsonl: 5 lines, last drop_settles "drop_settles":{"entered":0,"second_rest":0,"skipped":0,"unsettled":0}
+3863144.cua_0ms.3866594.jsonl: 5 lines, last drop_settles "drop_settles":{"entered":0,"second_rest":0,"skipped":0,"unsettled":0}
+3863144.reader.3863188.jsonl: 266 lines, last drop_settles "drop_settles":{"entered":0,"second_rest":0,"skipped":0,"unsettled":0}
 == row keys of drag-run rows, off vs on (the same set)
 after,before,drag,engine,family,first_request,i,in_front,kind,ms,no_effect,occlusion,ok,path,reach,received,received_read,run,took,witness,witness_fields,wrong_target
 after,before,drag,engine,family,first_request,i,in_front,kind,ms,no_effect,occlusion,ok,path,reach,received,received_read,run,took,witness,witness_fields,wrong_target

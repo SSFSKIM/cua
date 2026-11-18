@@ -48,7 +48,7 @@ HEAD_HARNESS=scripts/linux-engine-diff RUN_DIR=$P/copyB node "$P/judge-report.mj
 for m in off on; do
   node -e '
     const r = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
-    for (const p of r.processes) for (const e of p.engines) console.log([e.lane, e.pid, e.build, JSON.stringify(e.argv.slice(1)), e.stats, e.lines, JSON.stringify(e.drop_settles), e.recorded, e.ended, JSON.stringify(e.sent)].join("\t"));
+    for (const p of r.processes) for (const e of p.engines) console.log([e.lane, e.pid, e.build, JSON.stringify(e.argv.slice(1)), e.stats, e.lines, JSON.stringify(e.drop_settles), e.recorded, "ended=" + e.ended, "final=" + e.final, JSON.stringify(e.sent)].join("\t"));
   ' "$T/out-$m/D1.development-run.pilot/run/settle-counts.json" > "$O/engines-$m.tsv"
 done
 cat "$O/checker.txt" "$O/identity.txt"

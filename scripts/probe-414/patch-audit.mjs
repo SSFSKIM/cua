@@ -37,7 +37,7 @@ export function patchAudit(root,poll=DEFAULT_POLL){
   one(new RegExp(`\\bfunc ${poll}(?=[<(])[^{}]*\\{\\n`,'g'),(t,m)=>{
     const head=m.index+m[0].length, end=t.indexOf('\n  }\n',head);
     if(end<0)throw Error('poll boundary drift');
-    const body=t.slice(head,end), loop='    while true {\n', at=body.indexOf(loop), focus=body.indexOf('reads.stillFocused('), batch=body.indexOf('readbackLength(');
+    const body=t.slice(head,end), loop=['    poll: while true {\n','    while true {\n'].find(x=>body.includes(x)), at=body.indexOf(loop), focus=body.indexOf('reads.stillFocused('), batch=body.indexOf('readbackLength(');
     if(count(body,'while true {')!==1||at<0||count(body,'reads.stillFocused(')!==1||count(body,'readbackLength(')!==1||count(body,'reads.sleep(')!==1||
        !(at<batch&&batch<focus))throw Error('poll boundary drift');
     const open='      let probeIteration = Probe395Audit.shared.phaseBegin("securePoll")\n      defer { Probe395Audit.shared.phaseEnd("securePoll", probeIteration) }\n';

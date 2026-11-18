@@ -100,3 +100,15 @@ test('a separately reviewed anchor can replace the poll function name',()=>{
   assert.equal(patched(other,'confirmElsewhere').poll,'confirmElsewhere');
   assert.throws(()=>patched(other));
 });
+test('a labelled poll loop is bracketed as the unnamed one, and the labelled forms of the drift cases still fail closed',()=>{
+  const named=readback.replace('    while true {\n','    poll: while true {\n');
+  const {root,dir}=tree({'TypeReadback.swift':named});
+  try{
+    patchAudit(root);
+    const r=readFileSync(join(dir,'TypeReadback.swift'),'utf8');
+    assert.ok(r.indexOf('poll: while true {\n      let probeIteration')>0&&r.indexOf('phaseEnd("securePoll", probeIteration) }')<r.indexOf('switch readbackLength('));
+    assert.equal((r.match(/phaseBegin\("securePoll"\)/g)??[]).length,1);
+  }finally{rmSync(root,{recursive:true,force:true});}
+  assert.throws(()=>patched({'TypeReadback.swift':named.replace('    guard reads.stillFocused','    while true { break }\n    guard reads.stillFocused')}),undefined,'second loop');
+  assert.throws(()=>patched({'TypeReadback.swift':named.replace('poll: while true {','poll: if true {')}),undefined,'no loop');
+});

@@ -6,7 +6,7 @@ import {pathToFileURL} from 'node:url';
 import {execFileSync} from 'node:child_process';
 import {Wire} from '../probe-366/wire.mjs';
 import {owned,stop,startPlatform,pause,environment} from './platform.mjs';
-import {plan,score,inspect,auditSchedule,auditPairs,summarize,coded,noteAttested,firefoxDisclosure,drainIntervals,drainStats} from './check.mjs';
+import {plan,score,inspect,auditSchedule,auditPairs,summarize,coded,noteAttested,firefoxDisclosure,drainIntervals,terminalEditAtMs,drainIneligible,drainSummary,drainSizingOk,runShape,setupLabel,focusAllowed} from './check.mjs';
 
 const SLOT='PROBE414', safeReasons=new Set(['secure','noFocusedElement','roleUnreadable','notTextField','valueUnreadable','rangeUnreadable',
   'fieldUnreadable','fieldChanged','becameSecure','selectionChanged','concealedMismatch','valueMismatch','unchanged','possiblyTruncated',
@@ -164,14 +164,16 @@ async function main(){
   if(process.env.RUNNER_ENVIRONMENT!=='github-hosted')throw Error('hosted runners only');
   if(!['cft','electron','electron-parity','safari','firefox','appkit'].includes(lane)||!['smoke','full','firefox-focus','firefox-single','appkit-race','drain'].includes(mode)||!['stock','audit','focus','drain'].includes(phase))throw Error('invalid lane');
   const audit=phase==='audit',smoke=mode==='smoke',focus=phase==='focus',drain=phase==='drain',race=mode==='appkit-race',diagnostic=mode.startsWith('firefox-');
-  const singlePassword=lane==='firefox'&&mode!=='firefox-focus'&&mode!=='smoke';
-  if(diagnostic?(lane!=='firefox'||audit||drain):focus)throw Error('invalid focus lane');
+  const {singlePassword,setupCanary,requireBackground}=runShape(lane,mode);
+  // The focus scratch job of smoke runs the same short/literal pairs as the diagnostics, on the password-only page, without a canary.
+  const miniPlan=diagnostic||smoke&&focusAllowed(lane,mode,phase);
+  if(diagnostic?(lane!=='firefox'||audit||drain):focus&&!miniPlan)throw Error('invalid focus lane');
   mkdirSync(out,{recursive:true});const tmp=mkdtempSync(join(root,'q414-')),home=join(tmp,'platform');mkdirSync(home);
-  const rows=[],schedules=[],firefoxFacts=[],timings=[],globalPrivacy=new Set(),engines={};let platform,capabilities=null,stage='launch',abort=null,streak=0;
+  const rows=[],schedules=[],firefoxFacts=[],timings=[],globalPrivacy=new Set(),engines={};let platform,capabilities=null,stage='launch',abort=null,abortStep=null,streak=0;
   const additions=Array.from({length:20},(_,rep)=>({head:'fix',kind:'add',rep,literal:rep%2===1}));
   const timingCells=Array.from({length:20},(_,i)=>[{head:'fix',kind:'short',rep:i*2},{head:'fix',kind:'short',rep:i*2+1},
     {head:'fix',kind:'long',rep:i*2},{head:'fix',kind:'long',rep:i*2+1},additions[i]]).flat();
-  const cells=race?additions:drain?timingCells:diagnostic?Array.from({length:3},(_,rep)=>['literal','short'].flatMap((kind,i)=>
+  const cells=race?additions:drain?timingCells:miniPlan?Array.from({length:3},(_,rep)=>['literal','short'].flatMap((kind,i)=>
     ((rep+i)%2?['fix','main']:['main','fix']).map(head=>({head,kind,rep})))).flat():plan(smoke,{audit});
   // Paired primary rows receive the exact same disposable text, not independently generated treatments.
   const inputs=new Map();
@@ -179,7 +181,7 @@ async function main(){
     const k=`${c.kind}/${c.rep}`;
     if(!inputs.has(k)){
       const m=materialize(c);
-      if(diagnostic)m.seed.setupText=ascii(11);
+      if(setupCanary)m.seed.setupText=ascii(11);
       inputs.set(k,m);
     }
   }
@@ -188,6 +190,8 @@ async function main(){
     fixtureShape:singlePassword?'password-only':lane==='safari'?'large-with-setup':'with-setup'};
   try{
     platform=await startPlatform({lane,home,helper,cover,appkit,singlePassword,stage:x=>{stage=x;}});
+    // The one permitted Firefox retry is only meaningful under a real background cover; a frontmost fallback is not that experiment.
+    if(requireBackground&&platform.presentation!=='background'){stage='presentation-probe';throw Error('background cover required');}
     Object.assign(config,{version:platform.version,presentation:platform.presentation,foregroundFallback:platform.fallback});
     if(lane==='appkit')capabilities=await platform.appkitCapabilities();
     stage='engine-start';
@@ -231,14 +235,14 @@ async function main(){
           const trace=e.traces.get(id);e.traces.delete(id);
           schedules.push({...c,lane,valid:attested&&receipt?.reply&&delivery?.exact===true,...(trace??{pass:false})});
         }
-      }catch{if(!attested)row.invalid=s;else row.evidenceFailure=s;}
+      }catch(e){if(!attested)row.invalid=s;else row.evidenceFailure=s;row.setupStep=setupLabel(e);}
       finally{
         if(armed){try{await platform.disarm();}catch{row.witnessCleanup=false;}}
         await e.disconnect();
         e.scope(null);
       }
       const controlOK=delivery?.controlExact===true&&delivery.hit===true&&delivery.key===true;
-      Object.assign(row,score({...c,lane,preliminary:smoke||race,raw:receipt?.raw,forwarded:receipt?.forwarded,sky:receipt?.sky,noted:receipt?.noted,fixture:attested,
+      Object.assign(row,score({...c,lane,preliminary:false,raw:receipt?.raw,forwarded:receipt?.forwarded,sky:receipt?.sky,noted:receipt?.noted,fixture:attested,
         domExact:delivery?.exact,controlExact:controlOK}));
       if(!row.valid&&!row.invalid)row.invalid='control-not-realized';
       row.typeRequest=receipt?.reply===true;
@@ -250,14 +254,19 @@ async function main(){
       row.serviceMs=receipt?.serviceMs??null;
       row.privacy=[...scope.flags];
       rows.push(row);
-      if(drain)timings.push({kind:c.kind,rep:c.rep,literal:c.literal===true,valid:row.valid,reason:row.reason,lengthConfirmed:row.lengthConfirmed,wrongSuccess:row.wrongSuccess,
-        sampled:timingTrace!==null,elapsed:drainIntervals(timingTrace,{replyAtMs:receipt?.replyAtMs,confirmed:row.lengthConfirmed,app:lane==='appkit'?delivery:null})});
+      if(drain){
+        // Realized terminal content, judged by the independent fixture: an ordinary row's exact text or a control's exact altered text.
+        const realized=m.control===null?row.domExact===true:controlOK;
+        const elapsed=drainIntervals(timingTrace,{replyAtMs:receipt?.replyAtMs,confirmed:row.lengthConfirmed,app:lane==='appkit'?delivery:null,editAtMs:terminalEditAtMs(delivery)});
+        timings.push({kind:c.kind,rep:c.rep,literal:c.literal===true,valid:row.valid,reason:row.reason,lengthConfirmed:row.lengthConfirmed,wrongSuccess:row.wrongSuccess,
+          sampled:timingTrace!==null,realized,elapsed,ineligible:drainIneligible({valid:row.valid,realized,elapsed})});
+      }
       if(lane==='firefox')firefoxFacts.push({head:c.head,kind:c.kind,rep:c.rep,valid:row.valid,domExact:row.domExact,setupUnchanged:delivery?.setupExact??null,action:row.action,
         reason:row.reason,disclosure:receipt?.disclosure??null,focus:focusFacts});
       streak=attested?0:streak+1;
       if(streak>=4){abort='consecutive-invalid';break;}
     }
-  }catch{abort=stage;}
+  }catch(e){abort=stage;abortStep=setupLabel(e);}
   finally{
     for(const e of Object.values(engines))if(!await e.close())globalPrivacy.add('engine-drain-incomplete');
     await platform?.dispose();
@@ -275,9 +284,10 @@ async function main(){
   const gates={coverage:rows.filter(r=>r.valid&&!r.informational).length===needed&&abort===null,
     privacy:privacyViolations===0, outcome:audit||drain||focus||mode==='firefox-focus'?null:summary.scored.passed===needed&&summary.wrongSuccesses===0&&rows.every(r=>!r.observationMissing&&!r.evidenceFailure),
     schedule:auditGate?.pass??null, focus:focus?firefoxFacts.length===needed&&firefoxFacts.every(r=>r.valid&&r.focus!==null):null,
-    timing:drain?timings.length===needed&&timings.every(r=>r.sampled):null};
+    // The race run only collects evidence rows; sizing is judged by the drain run alone.
+    timing:drain&&!race?drainSizingOk(drainSummary(timings,needed),timings.length):null};
   const publishable=gates.privacy;
-  const status={lane,phase,kit:config.kit,refs:config.refs,abort,planned:cells.length,completed:rows.length,invalid:summary.invalid,
+  const status={lane,phase,kit:config.kit,refs:config.refs,abort,abortStep,setupSteps:rows.reduce((o,r)=>r.setupStep?{...o,[r.setupStep]:(o[r.setupStep]??0)+1}:o,{}),planned:cells.length,completed:rows.length,invalid:summary.invalid,
     unattempted:cells.length-rows.length,privacyViolations,privacyCodes,actionCodes,observationsMissing:rows.filter(r=>r.observationMissing).length,
     gates,publishable,presentation:config.presentation??null,foregroundFallback:config.foregroundFallback??null};
   writeFileSync(join(out,'status.json'),JSON.stringify(status,null,2)+'\n');
@@ -286,9 +296,7 @@ async function main(){
   if(lane==='firefox')writeFileSync(join(out,'focus.json'),JSON.stringify({phase,fixtureShape:config.fixtureShape,presentation:config.presentation??null,rows:firefoxFacts},null,2)+'\n');
   if(capabilities)writeFileSync(join(out,'appkit-capabilities.json'),JSON.stringify(capabilities,null,2)+'\n');
   if(drain){
-    const valid=timings.filter(r=>r.valid&&r.elapsed),metric=k=>drainStats(valid.map(r=>r.elapsed[k]));
-    const stats={changeGapsMs:drainStats(valid.flatMap(r=>r.elapsed.changeGapsMs)),drainMs:metric('drainMs'),finalReadMs:metric('finalReadMs')};
-    writeFileSync(join(out,'timing.json'),JSON.stringify({lane,mode,planned:needed,covered:valid.length,stats,rows:timings},null,2)+'\n');
+    writeFileSync(join(out,'timing.json'),JSON.stringify({lane,mode,sizing:!race,...drainSummary(timings,needed),rows:timings},null,2)+'\n');
   }
   if(publishable){
     for(const [name,value] of Object.entries({config,summary,rows,...(audit?{schedules,auditGate}:{})}))writeFileSync(join(out,`${name}.json`),JSON.stringify(value,null,2)+'\n');

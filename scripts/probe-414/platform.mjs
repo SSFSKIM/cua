@@ -64,10 +64,27 @@ export async function startPlatform({lane,home,helper,cover,appkit,stage,singleP
     // The owned Safari process belongs to the disposable hosted job; do not signal a browser or browser host.
     await stop(side);
   };
+  let lastFront=null,coverActivation=null,coverEstablished=false;
   const front=async(target,activate=false)=>{
-    return (await ask({op:'front',pid:target,activate,safariPid:pid})).frontmostPid===target;
+    const r=await ask({op:'front',pid:target,activate,safariPid:pid});
+    // Fixed-label host diagnostics only, never a pid.
+    if(activate)lastFront={activationAccepted:r.activationAccepted??null,workspaceFront:r.workspaceFront??null,targetBundle:r.targetBundle??null,targetTerminated:r.targetTerminated??null};
+    return r.frontmostPid===target;
   };
   const ensureFront=target=>until(()=>front(target,true),9000);
+  // A setup failure names the fixed step that failed, so a cover failure is never confused with a seed or focus failure.
+  const setupFail=(step,extra={})=>Object.assign(Error('setup '+step),{setupStep:step,...extra});
+  // The owned cover only: normal verified activation, then at most one `open -a` of its own bundle. Only the cover's own pid
+  // ever counts as frontmost, and nothing here touches the target.
+  const raiseCover=async()=>{
+    try{await ensureFront(coverApp.pid);coverActivation='ns';return;}catch{}
+    const normal=lastFront;
+    const bundlePath=/^(.*?\.app)\//.exec(cover)?.[1];
+    let opened=false;
+    if(bundlePath){try{execFileSync('/usr/bin/open',['-a',bundlePath],{env,stdio:'ignore',timeout:10000});opened=true;}catch{}}
+    if(opened){try{await until(()=>front(coverApp.pid),6000);coverActivation='open';return;}catch{}}
+    throw setupFail('cover-activation',{coverDiagnostic:{normal,openAttempted:opened,final:lastFront}});
+  };
   const command=(q,ms=8000)=>fx?fx.command(q,ms):app.ask({...q,request:++appkitRequest},r=>r.request===appkitRequest,ms);
   try{
     stage('launch');
@@ -124,24 +141,36 @@ export async function startPlatform({lane,home,helper,cover,appkit,stage,singleP
       active=coverApp.pid;
     }
     async function arm(trial,m,onStage=()=>{}){
-      onStage('prepare');await ensureFront(pid);
-      const prep=await command({op:'prepare',trial,expected:'',setupText:m.setupText});
-      if(prep.trial!==trial||!prep.shape||!(singlePassword?prep.focused:prep.plainFocused)||!prep.exact||(m.setupText&&prep.setupExact!==true))throw Error('prepare fixture');
       const q={op:'seed',trial,...m};
       const seeded=s=>s.trial===trial&&s.shape&&s.focused&&s.exact&&s.selection&&!s.key&&!s.hit;
-      // The password-only Firefox cell never changes focus after the cover. That distinguishes stale setup focus from a provider gap.
-      if(singlePassword&&!seeded(await command(q)))throw Error('foreground password seed');
+      // The password-only Firefox cell has no setup input. The one first trial focuses and seeds the password while Firefox is
+      // frontmost and then raises the owned cover; every later trial keeps that same focused node and never raises Firefox or
+      // focuses the page again. If the background cannot be verified the setup is invalid; there is no frontmost fallback.
+      const keep=singlePassword&&coverEstablished;
+      onStage('prepare');
+      if(keep){if(!await front(active))throw setupFail('cover-lost');}
+      else{try{await ensureFront(pid);}catch{throw setupFail('foreground-activation');}}
+      const prep=await command({op:'prepare',trial,expected:'',setupText:m.setupText,keepFocus:keep||undefined});
+      if(prep.trial!==trial||!prep.shape||!(singlePassword?prep.focused:prep.plainFocused)||!prep.exact||(m.setupText&&prep.setupExact!==true))
+        throw singlePassword?setupFail(keep?'password-focus-lost':'foreground-focus'):Error('prepare fixture');
+      if(singlePassword&&!keep){
+        onStage('foreground-seed');
+        if(!seeded(await command(q)))throw setupFail('foreground-seed');
+      }
       if(presentation==='background'){
-        onStage('cover');await ensureFront(active);await pause(250);
+        onStage('cover');
+        if(singlePassword){if(!keep){await raiseCover();coverEstablished=true;await pause(250);}}
+        else{await ensureFront(active);await pause(250);}
       }
       onStage('witness');
       const a=await ask({op:'arm',pid,coverPid:active});
-      if(!a.valid)throw Error('arm witness');
+      if(!a.valid)throw singlePassword?setupFail('witness',{reason:typeof a.reason==='string'?a.reason:null}):Error('arm witness');
       try{
         onStage('seed');
         if(!singlePassword&&!seeded(await command(q)))throw Error('seed fixture');
+        if(keep&&!seeded(await command({...q,keepFocus:true})))throw setupFail('background-seed');
         if(presentation==='background')await pause(250);
-        if(!seeded(await command({...q,op:'read'})))throw Error('seed unstable');
+        if(!seeded(await command({...q,op:'read'})))throw singlePassword?setupFail('seed-unstable'):Error('seed unstable');
       }catch(e){await ask({op:'disarm'});throw e;}
     }
     const disarm=async()=> (await ask({op:'disarm'})).valid===true;
@@ -151,6 +180,8 @@ export async function startPlatform({lane,home,helper,cover,appkit,stage,singleP
     const empty={expected:'',start:0,end:0,effect:'none',first:''};
     try{await arm(-1,empty,x=>{probeStage=x;});if(!await disarm())throw Error('presentation witness');}
     catch(e){
+      // Password-only Firefox gets exactly one background attempt: a failure names its step and is setup-invalid, never frontmost.
+      if(singlePassword){stage('presentation-'+probeStage);throw e;}
       if(lane==='safari'||probeStage==='prepare')throw e;
       fallback=probeStage;presentation='frontmost';active=pid;
       await arm(-2,empty);if(!await disarm())throw Error('frontmost witness');
@@ -168,6 +199,6 @@ export async function startPlatform({lane,home,helper,cover,appkit,stage,singleP
           visibleRange:{readable:bool(answer.visibleRange?.readable),atZero:bool(answer.visibleRange?.atZero),matchesFixture:bool(answer.visibleRange?.matchesFixture)}};
       }catch{try{await disarm();}catch{}return {unavailable:true};}
     }
-    return {pid,bundle,version,presentation,fallback,arm,disarm,command,dispose,appkitCapabilities};
+    return {pid,bundle,version,presentation,fallback,get coverActivation(){return coverActivation;},arm,disarm,command,dispose,appkitCapabilities};
   }catch(e){await dispose();throw e;}
 }

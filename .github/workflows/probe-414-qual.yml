@@ -18,6 +18,11 @@ on:
         type: choice
         options: [smoke, full, drain, firefox-focus, firefox-single, appkit-race]
         default: smoke
+      firefox:
+        description: Coverage selection for full/drain; omit Firefox if its one background setup retry fails
+        type: choice
+        options: [include, omit, only]
+        default: include
       secure_poll:
         description: Candidate Swift function whose own loop polls the secure length (default is the reviewed confirmLength anchor)
         type: string
@@ -44,8 +49,12 @@ jobs:
           ${{ fromJSON((inputs.mode == 'firefox-focus' || inputs.mode == 'firefox-single') &&
           '[{"lane":"firefox","phase":"stock"},{"lane":"firefox","phase":"focus"}]' ||
           inputs.mode == 'appkit-race' && '[{"lane":"appkit","phase":"stock"},{"lane":"appkit","phase":"drain"}]' ||
-          inputs.mode == 'drain' && '[{"lane":"cft","phase":"drain"},{"lane":"electron","phase":"drain"},{"lane":"electron-parity","phase":"drain"},{"lane":"safari","phase":"drain"},{"lane":"firefox","phase":"drain"},{"lane":"appkit","phase":"drain"}]' ||
-          '[{"lane":"cft","phase":"stock"},{"lane":"electron","phase":"stock"},{"lane":"electron-parity","phase":"stock"},{"lane":"safari","phase":"stock"},{"lane":"firefox","phase":"stock"},{"lane":"appkit","phase":"stock"},{"lane":"cft","phase":"audit"},{"lane":"safari","phase":"audit"}]') }}
+          inputs.mode == 'drain' && (inputs.firefox == 'only' && '[{"lane":"firefox","phase":"drain"}]' ||
+          format('[{{"lane":"cft","phase":"drain"}},{{"lane":"electron","phase":"drain"}},{{"lane":"electron-parity","phase":"drain"}},{{"lane":"safari","phase":"drain"}},{{"lane":"appkit","phase":"drain"}}{0}]',
+          inputs.firefox == 'omit' && '' || inputs.firefox == 'include' && ',{"lane":"firefox","phase":"drain"}' || '')) ||
+          inputs.firefox == 'only' && '[{"lane":"firefox","phase":"stock"}]' ||
+          format('[{{"lane":"cft","phase":"stock"}},{{"lane":"electron","phase":"stock"}},{{"lane":"electron-parity","phase":"stock"}},{{"lane":"safari","phase":"stock"}},{{"lane":"appkit","phase":"stock"}},{{"lane":"cft","phase":"audit"}},{{"lane":"safari","phase":"audit"}}{0}]',
+          inputs.firefox == 'include' && (inputs.mode == 'smoke' && ',{"lane":"firefox","phase":"stock"},{"lane":"firefox","phase":"focus"}' || ',{"lane":"firefox","phase":"stock"}') || '')) }}
     name: ${{ matrix.lane }} / ${{ matrix.phase }}
     env:
       MAIN_SHA: ${{ inputs.main }}

@@ -26,6 +26,24 @@ const readback=`final class TypeReadback<Element> {
   }
 }
 `;
+const dwellReadback=`final class TypeReadback<Element> {
+  private func confirmLength(through end: Int, beforeKey: Bool) throws {
+    var confirmed = false
+    poll: while true {
+      switch readbackLength(field, role: role, reads: reads) {
+      case .closed(let why): throw unconfirmed(why, beforeKey)
+      case .read(let count, let range):
+        let judged = readbackLengthJudged(count: count, range: range, basis: basis, typed: typed)
+        if let match = held {
+          if count == match.count, range == match.range {
+            if at - match.since >= typeReadbackLengthDwellMs { confirmed = true; break poll }
+          }
+        } else if judged == .confirmed { held = (count, range, reads.now()) }
+      }
+    }
+  }
+}
+`;
 const gate=`func gatedPost(_ event: CGEvent, _ pid: pid_t) {
   if DesktopGate.allows("CGEvent.postToPid") { event.postToPid(pid) }
 }
@@ -61,9 +79,27 @@ test('the scope, both posts and the judged confirmation are marked in place, onc
     assert.ok(r.indexOf('confirmed() }')<r.indexOf('if last == .confirmed { break }'));
     const l=readFileSync(join(dir,'TypeReadbackLength.swift'),'utf8');
     assert.ok(l.startsWith('func readbackLengthUninstrumented<Element>(_ field: Element, role: String, reads: ReadbackReads<Element>) -> ReadbackLength {\n'));
+    const own=readFileSync(join(dir,'Probe414AppKit.swift'),'utf8');
+    assert.ok(own.indexOf('let started = Probe414AppKit.nowMs()')<own.indexOf('readbackLengthUninstrumented(field')&&own.includes('finalReadStartedAtMs'));
     assert.ok(existsSync(join(dir,'Probe414AppKit.swift')));
     assert.throws(()=>patchAppKit(root),/already instrumented/);
   }finally{rmSync(root,{recursive:true,force:true});}
+});
+test('the dwell form marks the true confirmation inside its branch, never the provisional judged read',()=>{
+  const {root,dir}=tree({'TypeReadback.swift':dwellReadback});
+  try{
+    assert.equal(patchAppKit(root).seams,5);
+    const r=readFileSync(join(dir,'TypeReadback.swift'),'utf8');
+    assert.ok(r.includes('if at - match.since >= typeReadbackLengthDwellMs { confirmed = true; Probe414AppKit.shared.confirmed(); break poll }'));
+    assert.equal((r.match(/Probe414AppKit/g)??[]).length,1);
+  }finally{rmSync(root,{recursive:true,force:true});}
+  const drift={
+    'dwell line changed':dwellReadback.replace('>= typeReadbackLengthDwellMs','> typeReadbackLengthDwellMs'),
+    'dwell line twice':dwellReadback.replace('    var confirmed','  private func other(){\n    poll: while true {\n      if at - match.since >= typeReadbackLengthDwellMs { confirmed = true; break poll }\n    }\n  }\n    var confirmed'),
+    'both forms':dwellReadback.replace('    var confirmed','    case .read(let count, let range): last = readbackLengthJudged(count: count, range: range, basis: basis, typed: typed)\n    var confirmed'),
+    'dwell outside the poll':dwellReadback.replace('private func confirmLength','private func confirmElsewhere'),
+  };
+  for(const [name,text] of Object.entries(drift))assert.throws(()=>patched({'TypeReadback.swift':text}),undefined,name);
 });
 test('the patch fails closed on any drift of a required seam',()=>{
   const drift={

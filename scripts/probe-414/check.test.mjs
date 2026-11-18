@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {plan, score, inspect, auditSchedule, auditPairs, summarize, coded, noteAttested, NOTE_PREFIX, firefoxDisclosure, drainIntervals, drainStats} from './check.mjs';
+import {plan, score, inspect, auditSchedule, auditPairs, summarize, coded, noteAttested, NOTE_PREFIX, firefoxDisclosure, drainIntervals, drainStats, terminalEditAtMs, drainIneligible, drainSummary, drainSizingOk, runShape, setupLabel, focusAllowed} from './check.mjs';
 
 const success={confirmed:true,secure:true,confirmation:'length',snapshotMs:4};
 const old={confirmed:false,concealed:true,reason:'secure',snapshotMs:3};
@@ -10,11 +10,11 @@ function row({head='fix',kind='short',lane='cft',literal=false,preliminary=false
 }
 test('plan balances each cell and interleaves product pins',()=>{
   const rows=plan(false);
-  assert.equal(rows.length,115);
-  for(const kind of ['short','long','selection','literal']){
+  assert.equal(rows.length,195);
+  for(const [kind,n] of Object.entries({short:20,long:20,selection:10,literal:10,unicode:20})){
     const paired=rows.filter(r=>r.kind===kind);
-    assert.equal(paired.length,10);
-    for(let i=0;i<10;i+=2){assert.equal(paired[i].rep,paired[i+1].rep);assert.notEqual(paired[i].head,paired[i+1].head);}
+    assert.equal(paired.length,2*n);
+    for(let i=0;i<2*n;i+=2){assert.equal(paired[i].rep,paired[i+1].rep);assert.notEqual(paired[i].head,paired[i+1].head);}
   }
   assert.equal(rows.filter(r=>r.kind==='drop'&&r.head==='fix').length,10);
   assert.equal(rows.filter(r=>r.kind==='add'&&r.head==='fix').length,20);
@@ -282,7 +282,7 @@ test('Firefox diagnostic reports excerpt, expected/actual, masks and lengths as 
 });
 
 test('drain projections exclude pre-final-post samples and distinguish the final read from the change bound',()=>{
-  const trace={lastPostAtMs:1000,firstReadAtMs:980,sampledAtMs:[991,1012,1034],finalReadAtMs:1086,confirmReadAtMs:1085,sampledDropped:0};
+  const trace={lastPostAtMs:1000,firstReadAtMs:980,sampledAtMs:[991,1012,1034],finalReadStartedAtMs:1080,finalReadAtMs:1086,confirmReadAtMs:1085,sampledDropped:0};
   const x=drainIntervals(trace,{replyAtMs:1090,confirmed:true,app:{lastKeyAtMs:1001,lastKeyAppliedAtMs:1002,addedAtMs:994,addAdvancedCaret:true,controlCaretOk:true}});
   assert.deepEqual(x.changeGapsMs,[22]);
   assert.equal(x.drainMs,34);
@@ -295,6 +295,85 @@ test('drain projections exclude pre-final-post samples and distinguish the final
   assert.equal(drainIntervals({...trace,sampledDropped:1},{}),null);
   assert.equal(drainIntervals({...trace,firstReadAtMs:1003,sampledAtMs:[]},{}).drainMs,3);
   assert.equal(drainIntervals({...trace,finalReadAtMs:990},{}),null);
+  // The final read must have a start no later than its return. A single-read trace may start it before the first read's recorded return.
+  assert.equal(drainIntervals({...trace,finalReadStartedAtMs:undefined},{}),null);
+  assert.equal(drainIntervals({...trace,finalReadStartedAtMs:1090},{}),null);
+  const single={...trace,sampledAtMs:[],firstReadAtMs:1086,finalReadStartedAtMs:1040};
+  assert.equal(drainIntervals(single,{editAtMs:1030}).finalStartAfterEditMs,10);
+  assert.equal(drainIntervals({...single,firstReadAtMs:1090},{}),null);
   assert.deepEqual(drainStats([1,2,3,4,5]),{n:5,p50:3,p95:5,p99:5,max:5});
   assert.deepEqual(drainStats([]),{n:0,p50:null,p95:null,p99:null,max:null});
+});
+
+const sample={lastPostAtMs:1000,firstReadAtMs:980,sampledAtMs:[1012,1034],finalReadStartedAtMs:1080,finalReadAtMs:1086,sampledDropped:0};
+const entry=(over={},edit=1050,t=sample)=>{
+  const elapsed=drainIntervals(t,{editAtMs:edit});
+  const r={valid:true,realized:true,sampled:t!==null,elapsed,...over};
+  return {...r,ineligible:drainIneligible(r)};
+};
+test('a final sample is sizing-eligible only when it started after the fixture\'s own terminal edit', ()=>{
+  assert.equal(terminalEditAtMs({lastInputAtMs:1050}),1050);
+  assert.equal(terminalEditAtMs({lastKeyAppliedAtMs:1040,addedAtMs:1060}),1060);
+  assert.equal(terminalEditAtMs({lastKeyAppliedAtMs:null}),null);
+  assert.equal(terminalEditAtMs(undefined),null);
+  assert.equal(drainIntervals(sample,{editAtMs:1050}).finalStartAfterEditMs,30);
+  assert.equal(entry().ineligible,null);
+  // A final read that began before (or at) the edit is a truncated race, never a sizing sample; its projection is still kept.
+  const race=entry({},1083);
+  assert.equal(race.ineligible,'final-before-edit');
+  assert.equal(race.elapsed.finalStartAfterEditMs,-3);
+  assert.equal(entry({},1080).ineligible,'final-before-edit');
+  // A trace envelope with no independent edit timestamp cannot size, whatever it carries.
+  assert.equal(entry({},null).ineligible,'no-edit-time');
+  assert.equal(entry({valid:false}).ineligible,'invalid');
+  assert.equal(entry({realized:false}).ineligible,'content-unrealized');
+  assert.equal(entry({},1050,{...sample,sampledDropped:1}).ineligible,'no-elapsed');
+  assert.equal(entry({},1050,null).ineligible,'no-elapsed');
+});
+test('drain summary sizes only the eligible subset and reports coverage and fixed reasons separately', ()=>{
+  const good=Array.from({length:8},()=>entry());
+  const rows=[...good,entry({},1083),entry({},null),entry({realized:false}),entry({},1050,null)];
+  const s=drainSummary(rows,12);
+  assert.equal(s.sampled,11);
+  assert.equal(s.elapsed,11);
+  assert.equal(s.realized,11);
+  assert.equal(s.eligible,8);
+  assert.deepEqual(s.reasons,{'final-before-edit':1,'no-edit-time':1,'content-unrealized':1,'no-elapsed':1});
+  // The truncated race (final read begun before a late edit) does not move the sizing statistics.
+  assert.deepEqual(s.stats.finalReadMs,{n:8,p50:86,p95:86,p99:86,max:86});
+  assert.deepEqual(s.stats.drainMs,{n:8,p50:34,p95:34,p99:34,max:34});
+  assert.equal(s.stats.changeGapsMs.n,8);
+  // A run of envelopes with no edit timestamp has traces but no sizing samples, so it cannot pass the gate.
+  const bare=drainSummary(Array.from({length:12},()=>entry({},null)),12);
+  assert.equal(bare.sampled,12);
+  assert.equal(bare.eligible,0);
+  assert.deepEqual(bare.stats.finalReadMs,{n:0,p50:null,p95:null,p99:null,max:null});
+  assert.equal(drainSizingOk(bare,12),false);
+  assert.equal(drainSizingOk(s,12),false);
+  // 99 of 100 qualify; fewer are descriptive only.
+  const hundred=Array.from({length:100},(_,i)=>entry({},i<1?1083:1050));
+  assert.equal(drainSizingOk(drainSummary(hundred,100),100),true);
+  assert.equal(drainSizingOk(drainSummary([entry({},1083),...hundred.slice(0,1)].concat(hundred.slice(1,99)),100),100),false);
+  assert.equal(drainSummary(hundred,100).minimum,99);
+  assert.equal(drainSizingOk(drainSummary(good,10),9),false);
+  // The listed reasons are only fixed labels.
+  assert.deepEqual(inspect(JSON.stringify(s),words,{names:false}),[]);
+});
+test('Firefox smoke is password-only and only the focus diagnostic carries a setup canary', ()=>{
+  assert.deepEqual(runShape('firefox','smoke'),{singlePassword:true,setupCanary:false,requireBackground:false});
+  assert.deepEqual(runShape('firefox','full'),{singlePassword:true,setupCanary:false,requireBackground:false});
+  assert.deepEqual(runShape('firefox','firefox-single'),{singlePassword:true,setupCanary:false,requireBackground:true});
+  assert.deepEqual(runShape('firefox','firefox-focus'),{singlePassword:false,setupCanary:true,requireBackground:false});
+  for(const lane of ['cft','safari','appkit'])assert.deepEqual(runShape(lane,'smoke'),{singlePassword:false,setupCanary:false,requireBackground:false});
+});
+test('the smoke focus scratch job is allowed for Firefox only and setup failures project fixed labels', ()=>{
+  assert.equal(focusAllowed('firefox','smoke','focus'),true);
+  assert.equal(focusAllowed('firefox','firefox-focus','focus'),true);
+  assert.equal(focusAllowed('cft','smoke','focus'),false);
+  assert.equal(focusAllowed('firefox','smoke','stock'),false);
+  assert.equal(focusAllowed('firefox','full','focus'),false);
+  assert.equal(setupLabel(Object.assign(Error('x'),{setupStep:'cover-activation'})),'cover-activation');
+  assert.equal(setupLabel(Object.assign(Error('x'),{setupStep:words[0]})),null);
+  assert.equal(setupLabel(Error('x')),null);
+  assert.equal(setupLabel(undefined),null);
 });

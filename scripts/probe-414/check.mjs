@@ -10,22 +10,19 @@ export const lengthSuccess=r=>r?.confirmed===true&&r.secure===true&&r[markerKey]
 export const noteAttested=(note,items)=>typeof note==='string'&&note.startsWith(NOTE_PREFIX)&&Array.isArray(items)&&items.length===1&&
   typeof items[0]==='string'&&items[0].startsWith(NOTE_PREFIX)&&note.startsWith(items[0]);
 export function plan(smoke,{selection=true,audit=false}={}){
-  const rows=[],rounds=smoke?1:5;
+  const rows=[];
   if(audit){
-    for(let rep=0;rep<rounds;rep++)for(const kind of ['short','long','literal'])rows.push({head:'fix',kind,rep});
+    for(let rep=0;rep<(smoke?1:5);rep++)for(const kind of ['short','long','literal'])rows.push({head:'fix',kind,rep});
     return rows;
   }
-  for(let rep=0;rep<rounds;rep++){
-    primary.slice(0,-1).forEach((kind,i)=>{
-      if(kind==='selection'&&!selection)return;
+  for(let rep=0;rep<(smoke?1:20);rep++){
+    primary.forEach((kind,i)=>{
+      if(kind==='selection'&&!selection||rep>=10&&['selection','literal'].includes(kind))return;
       for(const head of (rep+i)%2===0?['main','fix']:['fix','main'])rows.push({head,kind,rep});
     });
-    for(const kind of negative){
-      const perRound=smoke?1:kind==='add'?4:2;
-      for(let i=0;i<perRound;i++)rows.push({head:'fix',kind,rep:perRound*rep+i,literal:i%2===1});
-    }
-    rows.push({head:'fix',kind:'rewrite',rep});
-    for(let i=0;i<(smoke?1:4);i++)for(const head of (rep+i)%2===0?['main','fix']:['fix','main'])rows.push({head,kind:'unicode',rep:(smoke?1:4)*rep+i});
+    if(rep<10)rows.push({head:'fix',kind:'drop',rep,literal:rep%2===1});
+    rows.push({head:'fix',kind:'add',rep,literal:rep%2===1});
+    if(rep<5)rows.push({head:'fix',kind:'rewrite',rep});
   }
   return rows;
 }
@@ -128,14 +125,26 @@ export function firefoxDisclosure(surface,{setupText,passwordText}={}){
 }
 
 // Only same-machine elapsed times leave the scratch timing lane. The p99 sizing metric excludes intentional quiet sampling.
-export function drainIntervals(trace,{replyAtMs,confirmed=false,app}={}){
-  const {lastPostAtMs:post,firstReadAtMs:first,sampledAtMs:changes,finalReadAtMs:final,confirmReadAtMs:confirmation,sampledDropped:dropped}=trace??{};
-  if(dropped!==0||![post,first,final].every(Number.isFinite)||!Array.isArray(changes)||!changes.every(Number.isFinite)||
-    final<post||first>final||changes.some((x,i)=>x<first||x>final||i>0&&x<changes[i-1]))return null;
+// What shape a run takes follows from its lane and mode alone: only the focus diagnostic has (and verifies) a setup field,
+// and only the single-cell Firefox retry insists on real background cover rather than a frontmost fallback.
+export const runShape=(lane,mode)=>({singlePassword:lane==='firefox'&&mode!=='firefox-focus',setupCanary:lane==='firefox'&&mode==='firefox-focus',
+  requireBackground:lane==='firefox'&&mode==='firefox-single'});
+// A password-only setup failure names the platform step that failed; only these fixed labels leave the run.
+const setupSteps=new Set(['foreground-activation','foreground-focus','foreground-seed','cover-activation','cover-lost','password-focus-lost','witness','background-seed','seed-unstable']);
+export const setupLabel=e=>setupSteps.has(e?.setupStep)?e.setupStep:null;
+// The Firefox focus identity probe runs as the smoke mode's scratch job as well as in the dedicated diagnostic modes.
+export const focusAllowed=(lane,mode,phase)=>phase==='focus'&&lane==='firefox'&&(mode==='smoke'||mode.startsWith('firefox-'));
+// The owned fixture's own timestamp of the last edit to its content (web: lastInputAtMs; AppKit: key applied, or a control's insertion).
+export const terminalEditAtMs=d=>{const t=[d?.lastInputAtMs,d?.lastKeyAppliedAtMs,d?.addedAtMs].filter(Number.isFinite);return t.length?Math.max(...t):null;};
+export function drainIntervals(trace,{replyAtMs,confirmed=false,app,editAtMs}={}){
+  const {lastPostAtMs:post,firstReadAtMs:first,sampledAtMs:changes,finalReadStartedAtMs:started,finalReadAtMs:final,confirmReadAtMs:confirmation,sampledDropped:dropped}=trace??{};
+  if(dropped!==0||![post,first,started,final].every(Number.isFinite)||!Array.isArray(changes)||!changes.every(Number.isFinite)||
+    final<post||first>final||started>final||changes.some((x,i)=>x<first||x>final||i>0&&x<changes[i-1]))return null;
   const observed=changes.filter(t=>t>post),last=observed.at(-1)??Math.max(first,post);
   const delta=(a,b)=>Number.isFinite(a)&&Number.isFinite(b)?Math.round((a-b)*1000)/1000:null;
   const bool=x=>typeof x==='boolean'?x:null;
   return {changeGapsMs:observed.slice(1).map((x,i)=>delta(x,observed[i])),drainMs:delta(last,post),finalReadMs:delta(final,post),
+    finalStartAfterEditMs:delta(started,editAtMs),editAfterPostMs:delta(editAtMs,post),
     confirmReadMs:confirmed&&confirmation>=post?delta(confirmation,post):null,replyMs:delta(replyAtMs,post),
     consumptionAfterPostMs:delta(app?.lastKeyAppliedAtMs,post),arrivalAfterPostMs:delta(app?.lastKeyAtMs,post),
     insertionRelativeToLastKeyMs:delta(app?.addedAtMs,app?.lastKeyAppliedAtMs),replyAfterLastKeyMs:delta(replyAtMs,app?.lastKeyAppliedAtMs),
@@ -145,6 +154,28 @@ export function drainStats(values){
   const sorted=values.filter(Number.isFinite).sort((a,b)=>a-b),p=q=>sorted[Math.ceil(sorted.length*q)-1]??null;
   return {n:sorted.length,p50:p(.5),p95:p(.95),p99:p(.99),max:sorted.at(-1)??null};
 }
+// A row sizes the drain only when its terminal content is realized and the production final sample began strictly after the
+// fixture's own last edit; a sample that began earlier raced the edit (a truncated read) and stays evidence only. Labels are fixed.
+export function drainIneligible({valid,realized,elapsed}){
+  if(valid!==true)return 'invalid';
+  if(realized!==true)return 'content-unrealized';
+  if(!elapsed)return 'no-elapsed';
+  if(!Number.isFinite(elapsed.finalStartAfterEditMs))return 'no-edit-time';
+  if(elapsed.finalStartAfterEditMs<=0)return 'final-before-edit';
+  return null;
+}
+// Fewer eligible samples than this still describe the run, but do not qualify it.
+export const SIZING_MIN_RATIO=0.99;
+// Usable elapsed projections and independent final-delivery coverage are reported apart; only the sizing subset feeds the statistics.
+export function drainSummary(rows,planned){
+  const sizing=rows.filter(r=>r.ineligible===null&&r.elapsed),reasons={};
+  for(const r of rows)if(r.ineligible)reasons[r.ineligible]=(reasons[r.ineligible]??0)+1;
+  const metric=k=>drainStats(sizing.map(r=>r.elapsed[k]));
+  return {planned,sampled:rows.filter(r=>r.sampled).length,elapsed:rows.filter(r=>r.elapsed).length,realized:rows.filter(r=>r.valid&&r.realized).length,
+    eligible:sizing.length,reasons,minimum:Math.ceil(planned*SIZING_MIN_RATIO),
+    stats:{changeGapsMs:drainStats(sizing.flatMap(r=>r.elapsed.changeGapsMs)),drainMs:metric('drainMs'),finalReadMs:metric('finalReadMs')}};
+}
+export const drainSizingOk=(summary,recorded)=>recorded===summary.planned&&summary.eligible>=summary.minimum;
 
 const forbiddenAX=new Set(['AXValue','AXValueDescription','AXSelectedText']);
 const countRead=(api,name,id,secure)=>api==='b'&&secure.has(id)&&name==='AXRole+AXSubrole+AXSelectedTextRange+AXNumberOfCharacters';

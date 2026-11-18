@@ -1,6 +1,6 @@
 // Scratch checkouts only: the #414 AppKit timing probe (appkit-timing.swift). Each seam is required exactly once and fails
 // closed on drift: the request scope (armed for type_text alone, finished by a defer), the actual gated posts (marked after the
-// post call), the secure length poll's own judged line (marked only when that batch is `.confirmed`), and the production
+// post call), the secure length poll's true confirmation (the dwell branch; or, on the older candidate, the judged `.confirmed` line), and the production
 // `readbackLength` itself (renamed behind the probe's same-signature wrapper, so every caller is sampled). Not for combination
 // with the AX schedule audit or the Firefox diagnostic: each owns the request scope.
 import {copyFileSync,readdirSync,readFileSync,writeFileSync} from 'node:fs';
@@ -10,6 +10,7 @@ import {pathToFileURL} from 'node:url';
 const dispatchBinding='    let args = params["args"] as? [String: Any] ?? [:]\n';
 const methodBinding='guard let method = params["method"] as? String';
 const judged='case .read(let count, let range): last = readbackLengthJudged(count: count, range: range, basis: basis, typed: typed)\n';
+const dwell='if at - match.since >= typeReadbackLengthDwellMs { confirmed = true; break poll }';
 const lengthRead='func readbackLength<Element>(_ field: Element, role: String, reads: ReadbackReads<Element>) -> ReadbackLength {\n';
 const posts=['event.postToPid(pid)','event.post(tap: .cghidEventTap)'];
 const count=(text,part)=>text.split(part).length-1;
@@ -32,11 +33,18 @@ export function patchAppKit(root){
   });
   // The gated posts: the mark follows the post call inside the gate's own branch, so a refused post is never marked.
   for(const call of posts)one(`{ ${call} }`,t=>t.replace(`{ ${call} }`,()=>`{ ${call}; Probe414AppKit.shared.posted(event) }`));
-  // The length poll's judged batch: marked right after the product's own judgement, only when it is `.confirmed`.
-  one(judged,t=>{
-    const at=t.indexOf(judged), head=t.lastIndexOf('private func confirmLength(',at), loop=t.lastIndexOf('    while true {\n',at);
+  // The length poll's confirmation, inside confirmLength only. Current form (cbce12e2): the dwell branch that sets `confirmed`,
+  // marked once its condition held, never the provisional judged read. Older form (52f0109a): the judged line, marked only when
+  // that batch is `.confirmed`. Exactly one of the two must occur, once.
+  const found=[...source.values()].reduce((n,t)=>n+count(t,judged)+count(t,dwell),0);
+  if(found!==1)throw Error('required anchor missing or ambiguous');
+  const [anchor,mark]=[...source.values()].some(t=>t.includes(dwell))
+    ?[dwell,dwell.replace('confirmed = true; ','confirmed = true; Probe414AppKit.shared.confirmed(); ')]
+    :[judged,judged.trimEnd()+'; if last == .confirmed { Probe414AppKit.shared.confirmed() }\n'];
+  one(anchor,t=>{
+    const at=t.indexOf(anchor), head=t.lastIndexOf('private func confirmLength(',at), loop=Math.max(t.lastIndexOf('    while true {\n',at),t.lastIndexOf('    poll: while true {\n',at));
     if(head<0||loop<head||t.slice(head,at).includes('\n  }\n'))throw Error('poll drift');
-    return t.replace(judged,()=>judged.trimEnd()+'; if last == .confirmed { Probe414AppKit.shared.confirmed() }\n');
+    return t.replace(anchor,()=>mark);
   });
   // The production length read keeps its body under another name; the probe file's wrapper takes the old name for every caller.
   one(lengthRead,t=>t.replace(lengthRead,()=>lengthRead.replace('readbackLength<','readbackLengthUninstrumented<')));

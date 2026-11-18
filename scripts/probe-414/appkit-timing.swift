@@ -2,15 +2,15 @@
 // machine's Unix millisecond clock (`Date().timeIntervalSince1970 * 1000`, the same clock the harness reads):
 //   * lastPostAtMs: right after the last CGEvent `keyDown` the production code actually posted (the post call returned; a post
 //     the desktop gate refused never reaches the mark);
-//   * confirmReadAtMs: right after the last secure-length batch the product judged `.confirmed`, taken from the poll's own
-//     read (no read of this file's own exists);
+//   * confirmReadAtMs: the instant the product's length poll declared its confirmation (the dwell branch that sets `confirmed`,
+//     after its condition held; on the older candidate, the batch it judged `.confirmed`), last one of the request;
 //   * the product's own `readbackLength` reads after the first posted keyDown, through a wrapper of the same signature (the
 //     patch renames the production function): firstReadAtMs, the first such read; sampledAtMs, every later read whose
 //     outcome (closed reason, count kind and value, range) differed from the read before it, compared in memory only;
-//     finalReadAtMs, the last such read; sampledDropped counts changes past the 4096 cap. Nothing is filtered by time here:
+//     finalReadAtMs, the return of the last such read, and finalReadStartedAtMs, the clock just before that read began; sampledDropped counts changes past the 4096 cap. Nothing is filtered by time here:
 //     the runner drops samples at or before lastPostAtMs.
 // Armed for one request carrying the `probe414AppKit` string in its args; the request's scope exit emits ONE stderr JSON line
-// `{"probe414AppKit":{"id","lastPostAtMs","confirmReadAtMs","firstReadAtMs","sampledAtMs","finalReadAtMs","sampledDropped"}}`, each
+// `{"probe414AppKit":{"id","lastPostAtMs","confirmReadAtMs","firstReadAtMs","sampledAtMs","finalReadStartedAtMs","finalReadAtMs","sampledDropped"}}`, each
 // instant null when its event never happened. The native reply and the app's consuming key or insertion are measured
 // elsewhere. No event count, key, value, count or range is kept past the comparison or emitted, and nothing is read from the system.
 import CoreGraphics
@@ -29,10 +29,11 @@ final class Probe414AppKit: @unchecked Sendable {
   private var previous: [Int]?
   private var firstReadAtMs: Double?
   private var finalReadAtMs: Double?
+  private var finalReadStartedAtMs: Double?
   private var sampledAtMs: [Double] = []
   private var sampledDropped = 0
 
-  private static func nowMs() -> Double { Date().timeIntervalSince1970 * 1000 }
+  static func nowMs() -> Double { Date().timeIntervalSince1970 * 1000 }
 
   /// Arms the recorder for one request that carries a well-formed tag; any other request is untouched.
   func begin(_ args: [String: Any]) -> String? {
@@ -42,7 +43,7 @@ final class Probe414AppKit: @unchecked Sendable {
     lock.lock(); defer { lock.unlock() }
     guard id == nil else { return nil }
     id = tag; owner = pthread_self(); lastPostAtMs = nil; confirmReadAtMs = nil
-    posted = false; previous = nil; firstReadAtMs = nil; finalReadAtMs = nil; sampledAtMs = []; sampledDropped = 0
+    posted = false; previous = nil; firstReadAtMs = nil; finalReadAtMs = nil; finalReadStartedAtMs = nil; sampledAtMs = []; sampledDropped = 0
     return tag
   }
 
@@ -66,7 +67,7 @@ final class Probe414AppKit: @unchecked Sendable {
 
   /// Called with each `readbackLength` result the instant it returned. After the first posted keyDown the outcome is compared
   /// with the previous one in memory, and only the time of a change is kept.
-  func length(_ result: ReadbackLength) {
+  func length(_ result: ReadbackLength, startedAtMs: Double) {
     let at = Probe414AppKit.nowMs()
     let outcome: [Int]
     switch result {
@@ -82,7 +83,7 @@ final class Probe414AppKit: @unchecked Sendable {
     }
     lock.lock(); defer { lock.unlock() }
     guard id != nil, posted, let owner, pthread_equal(owner, pthread_self()) != 0 else { return }
-    finalReadAtMs = at
+    finalReadAtMs = at; finalReadStartedAtMs = startedAtMs
     if let before = previous {
       if before != outcome {
         if sampledAtMs.count < Probe414AppKit.sampleCap { sampledAtMs.append(at) } else { sampledDropped += 1 }
@@ -96,15 +97,15 @@ final class Probe414AppKit: @unchecked Sendable {
   func finish(_ tag: String?) {
     guard let tag else { return }
     lock.lock()
-    let post = lastPostAtMs, confirm = confirmReadAtMs, first = firstReadAtMs, final = finalReadAtMs
+    let post = lastPostAtMs, confirm = confirmReadAtMs, first = firstReadAtMs, final = finalReadAtMs, finalStarted = finalReadStartedAtMs
     let samples = sampledAtMs, dropped = sampledDropped
     id = nil; owner = nil; lastPostAtMs = nil; confirmReadAtMs = nil; posted = false; previous = nil
-    firstReadAtMs = nil; finalReadAtMs = nil; sampledAtMs = []; sampledDropped = 0
+    firstReadAtMs = nil; finalReadAtMs = nil; finalReadStartedAtMs = nil; sampledAtMs = []; sampledDropped = 0
     lock.unlock()
     func number(_ v: Double?) -> String { v.map { String(format: "%.3f", $0) } ?? "null" }
     let list = samples.map { String(format: "%.3f", $0) }.joined(separator: ",")
     let line = "{\"probe414AppKit\":{\"confirmReadAtMs\":\(number(confirm)),\"finalReadAtMs\":\(number(final)),"
-      + "\"firstReadAtMs\":\(number(first)),\"id\":\"\(tag)\",\"lastPostAtMs\":\(number(post)),\"sampledAtMs\":[\(list)],"
+      + "\"finalReadStartedAtMs\":\(number(finalStarted)),\"firstReadAtMs\":\(number(first)),\"id\":\"\(tag)\",\"lastPostAtMs\":\(number(post)),\"sampledAtMs\":[\(list)],"
       + "\"sampledDropped\":\(dropped)}}\n"
     FileHandle.standardError.write(Data(line.utf8))
   }
@@ -112,7 +113,8 @@ final class Probe414AppKit: @unchecked Sendable {
 
 /// The production `readbackLength` (renamed `readbackLengthUninstrumented` by the patch), unchanged in what it reads and returns.
 func readbackLength<Element>(_ field: Element, role: String, reads: ReadbackReads<Element>) -> ReadbackLength {
+  let started = Probe414AppKit.nowMs()
   let result = readbackLengthUninstrumented(field, role: role, reads: reads)
-  Probe414AppKit.shared.length(result)
+  Probe414AppKit.shared.length(result, startedAtMs: started)
   return result
 }

@@ -13,9 +13,11 @@ const validScope=d=>engineScoped(d)?d.host==='cua'&&d.engine==='vendor'&&d.platf
 // engine last asked, `:1.<n>`, whose number counts the bus's earlier connections. Only that name is masked, as
 // `:<unique-name>`; every other byte compares exactly. `counts` ({runs, outcomes}, one count an admitted content) and
 // `evidence` state what was measured, and where.
-const MASKS={'dbus-unique-name':t=>t.replace(/(The name ):\d+\.\d+( was not provided)/g,'$1:<unique-name>$2')};
+// A mask takes only what it names (fix wave 1): a session bus unique name, `:1.<decimal>`; a text that already reads the
+// placeholder is never admitted, so the mask must take a real name, not pass the declared text through.
+const MASKS={'dbus-unique-name':{name:/(The name ):1\.\d+( was not provided)/g,placeholder:':<unique-name>'}};
 const admitted=d=>d.result.contents??[d.result.content];
-const masked=(d,content)=>(d.masks??[]).reduce((c,m)=>c.map(x=>x?.type==='text'?{...x,text:MASKS[m](x.text)}:x),content);
+const masked=(d,content)=>(d.masks??[]).reduce((c,m)=>c&&(c.some(x=>x?.type==='text'&&x.text.includes(MASKS[m].placeholder))?null:c.map(x=>x?.type==='text'?{...x,text:x.text.replace(MASKS[m].name,`$1${MASKS[m].placeholder}$2`)}:x)),content);
 const validResult=d=>!d.result.contents||(engineScoped(d)&&d.result.content===undefined&&Array.isArray(d.result.contents)&&d.result.contents.length>1&&d.result.contents.every(Array.isArray));
 const validMasks=d=>d.masks===undefined||(engineScoped(d)&&Array.isArray(d.masks)&&d.masks.every(m=>Object.hasOwn(MASKS,m)));
 const validCounts=d=>d.counts===undefined||(Number.isInteger(d.counts.runs)&&d.counts.runs>0&&Array.isArray(d.counts.outcomes)&&d.counts.outcomes.length===admitted(d).length&&d.counts.outcomes.every(n=>Number.isInteger(n)&&n>0)&&d.counts.outcomes.reduce((a,b)=>a+b,0)===d.counts.runs&&typeof d.evidence==='string'&&d.evidence.length>0);

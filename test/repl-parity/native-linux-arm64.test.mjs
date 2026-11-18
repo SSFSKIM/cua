@@ -68,6 +68,10 @@ test("an arm64 vendor outcome other than the declared one is an unexpected failu
     ['typeText that left gedit alive', { [TYPE]: [unknown(':1.63'), 0, false] }, TYPE],
     ['typeText whose marker landed', { [TYPE]: [EAGAIN, 1, true] }, TYPE],
     ['a ServiceUnknown naming a well-known name, not a unique one', { [TYPE]: [unknown('org.a11y.Bus'), null, true] }, TYPE],
+    // fix wave 1: the mask takes only a session bus unique name, `:1.<decimal>`, and must take a real one
+    ['a ServiceUnknown naming another namespace', { [TYPE]: [unknown(':2.63'), null, true] }, TYPE],
+    ['a ServiceUnknown already reading the placeholder', { [TYPE]: [unknown(':<unique-name>'), null, true] }, TYPE],
+    ['paste with the placeholder itself', { [PASTE]: [...FORMAT, unknown(':<unique-name>'), null, true] }, PASTE],
     ["paste with typeText's other text, never seen on paste", { [PASTE]: [...FORMAT, EAGAIN, null, true] }, PASTE],
     ['paste that left gedit alive', { [PASTE]: [...FORMAT, unknown(':1.66'), null, false] }, PASTE],
     ['the minimized window listed', { [MIN]: [{ ...MIN_VENDOR[0], listed: true }, ...MIN_VENDOR.slice(1)] }, MIN],

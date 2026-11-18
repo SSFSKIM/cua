@@ -20,7 +20,9 @@ export const cancelled = dndCancelledSentence(APP);
 /** A scratch directory of the test's own. */
 const made = [];
 export const scratch = (name) => {
-  const dir = mkdtempSync(join(tmpdir(), `premise-${name}-`));
+  // a short root, as a :0 step's out is: a refill run's decoy buses lie under it (gate.mjs `zeroStepProblems`), and macOS's
+  // own temporary directory is too long for them
+  const dir = mkdtempSync(join(tmpdir().length <= 32 ? tmpdir() : '/tmp', `p-${name.slice(0, 12)}-`));
   made.push(dir);
   return dir;
 };

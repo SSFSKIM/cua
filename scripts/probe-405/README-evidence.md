@@ -1,54 +1,120 @@
-# #405 hosted macOS qualification
+# #405: hosted macOS qualification
 
-The initial hosted smoke passed on Chrome for Testing and an AppKit `NSSecureTextField`. The six-lane qualification is held for a reviewed final engine pin; the smoke is not the full matrix.
+The final single-batch fix removed most of the Chrome for Testing (CfT) slowdown seen in the earlier two-request smoke. In the full run, CfT's regular 286-node fixture rose from **176.12 to 178.20 ms p50 wall**; its reused-settle fixture rose from **466.48 to 484.33 ms p50 wall**. The reused final walk was slower in all four CfT blocks. AppKit's **+254.91 ms p95** reused-settle spike did not reproduce in the 40-per-head follow-up; its wall p95 delta fell to **+23.00 ms** and the maximum favored the fix. A smaller final-walk cost did reproduce, tied to the extra classification before Markdown reads.
 
-## Runs and pins
+## Final single-batch latency
 
-| Run | Kit | Main | Fix | Coverage |
-|---|---|---|---|---|
-| [Smoke 44224481847](https://github.com/SSFSKIM/cua/actions/runs/44224481847) | `1641a24b51f450329a280af9de780ef606fa0de4` | `11f1ff68135a72b345880aea1e19a01b3e366996` | `6a1c7658e4d48d7bcaa6ce25aba760b712148687` | CfT and AppKit; both jobs green |
+[Full matrix 44228841099](https://github.com/SSFSKIM/cua/actions/runs/44228841099) used kit `65c00994a559ca02ba26bd75cbf60daee234f4b5` and unmodified release builds of main `11f1ff68135a72b345880aea1e19a01b3e366996` and fix `5f2926134d3340ff27e52c9fb278eb0e6e471d77` (0.28.12). Each arm has **20 warm observations per head** in one hosted job per app: four blocks of five samples per head, alternating the head order by block. Each block starts both engines in turn, each with an uncounted warm-up. Wall is native `get_app_state` RPC time with screenshots disabled, excluding the renderer and independent fixture attestations. `walkMs` is the observation's final walk; the forced settle arm requires `settleTreeReused:true` and separately reports its preceding busy walk.
 
-Run artifacts are named `probe-405-<lane>-<mode>`. They contain redacted native replies, production full and diff text, the independent AX provider comparison, timing samples, and the scored and invalid rows. Both engines were unmodified release builds; their matching production Node modules supplied render, cache/diff, and secret substitution. Both smoke jobs used GitHub-hosted macOS `26.7.2`, image `20261112.0504.1`.
+All numbers are milliseconds. Triples are nearest-rank p50 / p95 / max. Delta is fix minus main. Counts below are window-tree nodes, excluding the menu bar; both large fixtures add 216 visible editable fields. That is a stress case, not a representative settings or content page.
 
-## Smoke: observation and ordinary controls
-
-The synthetic fixture used lengths 0, 23 and 31, selecting seven characters when nonempty. Each row checked a native reply, a same-lineage repeat, a genuine full request, and the matching production text. The populated cases also exercised the diff from a preceding length. The fix left the field in the diff's tree when its password changed; the fixture's independent freshness marker could change without a password update line.
-
-| Lane | Main native, full and diff | Fix native, full and diff | Ordinary text field and textarea |
-|---|---|---|---|
-| CfT `157.0.8103.78` | 3/3. Nonempty full and transition display 23/31 bullets; `numberOfCharacters` 0/23/31; selected-text trailer contains seven bullets on populated full, transition and repeat. | 3/3. `secure:true`, no value/Markdown/count/selected text; full and the focused-field trailer say `Value: secure text`; no password update on length changes. | 3/3 paired rows byte-identical, `public-control` and `public-textarea` retained. |
-| AppKit `NSSecureTextField` | 3/3. Nonempty full and transition display 23/31 U+F79A mask characters, still visible in the repeated focus trailer; no explicit native count or selected text from this provider. Independently selected range was seven. | 3/3. `secure:true`, no value/Markdown/count/selected text; full and focused-field trailer say `Value: secure text`; no password update on length changes. | 3/3 paired rows byte-identical; both public values retained. |
-
-## Smoke: CfT secret typing and paste
-
-| Action | Main | Fix |
-|---|---|---|
-| `type_text` with a synthetic `{{secret:…}}` label | 1/1 exact DOM delivery. Native returned `typeUnconfirmed`; follow-up native/full/diff exposed the provider's 23 bullets and native count. | 1/1 exact DOM delivery with the same intentional `typeUnconfirmed`. Native/full/diff exposed neither value nor length; rendered field says `secure text`. |
-| `paste` of a disposable synthetic string | 1/1 exact replacement of a fully selected synthetic password; confirmed, with count and range in the baseline and confirming reads. Follow-up exposed masked length. | 1/1 exact replacement; confirmed by notification, with baseline reduced to `{secure:true}` and no confirming-read record. Follow-up native/full/diff exposed neither value nor length. |
-
-The type cell used the production sky wrapper and file-store reader with a fresh temporary `HOME`, then a thin IPC adapter to the native engine. Exact delivery was verified from the owned page, not inferred from the action response. The paste cell intentionally did **not** use a secret-store placeholder: the production wrapper never allows a concealed value onto the clipboard. No real secrets, profiles, tokens or keys were read.
-
-## Smoke: latency (not the 20-sample qualification)
-
-Triples are nearest-rank p50 / p95 / max in milliseconds, **two warm observations per arm and head**. With two samples p50 is the lower observation and p95 is the maximum. Wall time is the native `get_app_state` RPC from the Node harness, with screenshots disabled; it excludes rendering and independent fixture checks. `walkMs` is the engine's final tree walk. The reused-settle arm explicitly requested settle and kept only replies that recorded `settleTreeReused:true`; busy-walk timings are separate and wall time also includes the settle wait.
-
-| Lane / tree (emitted nodes) | Metric | Main | Fix | Fix − main |
+| App / arm (nodes) | Phase | Main | Fix | Delta |
 |---|---|---:|---:|---:|
-| CfT small (69) | Wall | 53.19 / 65.73 / 65.73 | 76.55 / 87.61 / 87.61 | +23.36 / +21.87 / +21.87 |
-| | Walk | 43.61 / 52.15 / 52.15 | 65.05 / 72.89 / 72.89 | +21.44 / +20.74 / +20.74 |
-| CfT large (286) | Wall | 278.58 / 363.60 / 363.60 | 435.62 / 458.77 / 458.77 | +157.05 / +95.17 / +95.17 |
-| | Walk | 254.54 / 341.38 / 341.38 | 408.79 / 437.93 / 437.93 | +154.25 / +96.55 / +96.55 |
-| CfT large, reused settle (286) | Wall | 590.60 / 649.61 / 649.61 | 659.13 / 705.18 / 705.18 | +68.53 / +55.57 / +55.57 |
-| | Walk | 150.44 / 205.45 / 205.45 | 229.73 / 296.71 / 296.71 | +79.29 / +91.25 / +91.25 |
-| | Settle busy walk | 92.21 / 98.55 / 98.55 | 80.23 / 121.74 / 121.74 | −11.98 / +23.19 / +23.19 |
-| AppKit small (11) | Wall | 9.56 / 10.07 / 10.07 | 9.66 / 10.18 / 10.18 | +0.10 / +0.12 / +0.12 |
-| | Walk | 6.26 / 6.78 / 6.78 | 6.54 / 6.63 / 6.63 | +0.28 / −0.15 / −0.15 |
-| AppKit large (227) | Wall | 122.53 / 125.58 / 125.58 | 146.90 / 149.71 / 149.71 | +24.37 / +24.14 / +24.14 |
-| | Walk | 114.26 / 114.85 / 114.85 | 139.28 / 141.78 / 141.78 | +25.02 / +26.94 / +26.94 |
-| AppKit large, reused settle (227) | Wall | 521.49 / 611.02 / 611.02 | 600.60 / 678.54 / 678.54 | +79.11 / +67.52 / +67.52 |
-| | Walk | 51.70 / 61.55 / 61.55 | 97.96 / 108.11 / 108.11 | +46.26 / +46.57 / +46.57 |
-| | Settle busy walk | 70.43 / 99.69 / 99.69 | 80.47 / 105.10 / 105.10 | +10.04 / +5.41 / +5.41 |
+| CfT small (69) | Wall | 55.65 / 64.82 / 66.03 | 56.07 / 68.96 / 70.15 | +0.42 / +4.14 / +4.12 |
+| | Walk | 42.81 / 51.27 / 53.12 | 42.65 / 53.88 / 57.07 | −0.16 / +2.60 / +3.95 |
+| CfT large (286) | Wall | 176.12 / 185.74 / 291.22 | 178.20 / 188.13 / 190.43 | +2.09 / +2.39 / −100.80 |
+| | Walk | 156.51 / 169.05 / 175.68 | 162.06 / 169.70 / 173.63 | +5.55 / +0.65 / −2.05 |
+| CfT large, reused settle (286) | Wall | 466.48 / 511.01 / 514.18 | 484.33 / 535.73 / 557.67 | +17.85 / +24.72 / +43.49 |
+| | Walk | 100.11 / 118.98 / 158.43 | 115.96 / 144.31 / 166.24 | +15.84 / +25.32 / +7.82 |
+| | Settle busy walk | 66.11 / 84.59 / 85.44 | 67.53 / 71.32 / 71.47 | +1.42 / −13.27 / −13.97 |
+| AppKit small (11) | Wall | 17.27 / 65.68 / 76.18 | 15.90 / 26.07 / 29.95 | −1.37 / −39.61 / −46.23 |
+| | Walk | 11.19 / 58.14 / 62.50 | 10.66 / 17.19 / 18.27 | −0.53 / −40.95 / −44.23 |
+| AppKit large (227) | Wall | 229.53 / 302.98 / 588.45 | 237.69 / 360.35 / 375.93 | +8.16 / +57.37 / −212.51 |
+| | Walk | 211.41 / 291.03 / 570.83 | 223.20 / 347.27 / 349.94 | +11.79 / +56.24 / −220.89 |
+| AppKit large, reused settle (227) | Wall | 617.51 / 730.88 / 744.95 | 585.35 / 985.79 / 1494.41 | −32.16 / +254.91 / +749.47 |
+| | Walk | 98.59 / 154.94 / 162.59 | 111.14 / 179.87 / 193.62 | +12.55 / +24.93 / +31.04 |
+| | Settle busy walk | 95.24 / 188.01 / 202.06 | 102.78 / 343.93 / 904.35 | +7.54 / +155.91 / +702.29 |
 
-Both large trees added exactly **216 visible editable fields**. This is a dense editor stress case, not a representative page. A mixed-content or settings page with a few hundred AX nodes and a handful of editable fields would make a useful intermediate benchmark; we did not measure it. Guarded attribute batches also run on non-editable nodes, so the overhead cannot be extrapolated from editable-field count alone.
+**Paired block medians, fix minus main.** Each vector is in block execution order; medians subtract the two sets of five, not individual observations. The small regular wall differences are near zero; the large CfT final walk has a small positive delta in every block, and reuse has a larger positive final-walk delta in every block. AppKit shows larger block-to-block swings. This is not a formal equivalence claim.
 
-The smoke also passed 10 native `SecureFieldTests` (including a provider stub that returns plaintext, settle, focus, re-resolution, `select_text`, and paste coverage) and 62 production renderer/diff/cache tests. Live providers mask the value independently; the live test demonstrates what reaches IPC/render/diff. The stub is the check for what is requested and for a provider that returns plaintext. No screenshot, owner GUI, Mac mini, or full vendor REPL was involved.
+| App / arm | Wall Δ (blocks 1–4) | Final walk Δ (blocks 1–4) | Busy walk Δ (blocks 1–4) |
+|---|---:|---:|---:|
+| CfT small | −3.50 / +12.68 / +1.20 / +9.84 | −2.51 / +8.12 / −2.67 / +6.74 | — |
+| CfT large | +6.77 / −2.35 / +13.36 / +2.09 | +4.91 / +5.24 / +12.23 / +4.67 | — |
+| CfT large, reused | +9.70 / −13.97 / +16.57 / +31.74 | +23.52 / +1.57 / +8.74 / +23.35 | −14.53 / +2.58 / +0.71 / +1.10 |
+| AppKit small | +0.72 / −2.16 / +7.89 / −35.79 | +0.32 / −0.43 / +3.76 / −27.78 | — |
+| AppKit large | −54.70 / +42.23 / +4.81 / +56.76 | −54.43 / +51.17 / +4.35 / +57.52 | — |
+| AppKit large, reused | −30.12 / −111.86 / +105.99 / +70.03 | +18.26 / −24.38 / +46.36 / +89.41 | +3.78 / −39.51 / +41.87 / +30.72 |
+
+**CfT reused final walk: the added Markdown classification fits the measured delta.** Both heads logged `markdownFetches=219` in every sample. Main calls the attributed-string request directly; the fix sends a [role/subrole batch](https://github.com/SSFSKIM/cua/blob/5f2926134d3340ff27e52c9fb278eb0e6e471d77/native/engine/Sources/Engine/Fetch.swift#L407-L417) immediately before each counted open Markdown fetch. These are the nonempty eligible text values of at most 2,000 UTF-16 units; the grid accounts for 216 of them. The new requests are charged to `attributesMs`, not `markdownMs`. The p50 of the final walk's attribute bucket was **2.32→13.13 ms** (paired blocks **+10.62 / +10.58 / +11.07 / +11.20 ms**); attributed Markdown itself was **24.34→25.53 ms**, and the reused busy walk's attribute bucket was **63.82→61.97 ms**. The artifact counts Markdown fetches and records aggregate phase times; it does not time individual AX batches or isolate exactly how much of the +10.81 ms attribute delta belongs to these preflights.
+
+## Secure-field observations
+
+Each scored lane used three lengths (0, 23, 31), five repetitions per length and head, with seven characters selected when nonempty. The independent AX helper corroborated the field and available selection; a fixture generation marker and increasing native revisions prevented stale snapshots from passing. The kit exercised genuine full requests, transition diffs, and same-lineage repeat replies on matching production render/cache code.
+
+In each completed fix lane, native replies carried `secure:true`, with no value, value description, Markdown, `numberOfCharacters` or selected text. The full text said `Value: secure text`. A changed password did not produce a password update in the transition diff; the repeated output and focus trailer did not disclose value or length. The field stayed visible in the diff's resulting tree. Any test length or selection reported in the independent AX evidence belongs to the **fixture control**, not to the fix's production observation.
+
+| Lane / provider | Main: native, full and repeated/diff | Fix: native, full and repeated/diff |
+|---|---|---|
+| Chrome for Testing 157.0.8103.78 | 15/15 expected baseline. Explicit count 0/23/31, nonempty full and transition 23/31 bullets, selected-text trailer seven bullets on populated repeats. | 15/15, `secure text`, no count or selection. |
+| Default Electron 44.4.5 / Chromium 152.0.7977.130 | 15/15; same count, value masks and seven-bullet selection contrast. | 15/15, `secure text`, no count or selection. |
+| MAWS-parity Electron 44.4.5 / Chromium 152.0.7977.130 | 15/15; same count, value masks and seven-bullet selection contrast. | 15/15, `secure text`, no count or selection. |
+| Safari 27.2 | 15/15; explicit count 0/23/31 and masks in full, transition and repeated focus text. Independent range was seven; the provider did not expose selected text. | 15/15, `secure text`, no count or selection. |
+| Firefox 159.0, original matrix | Setup-invalid, no samples. The loopback page loaded, but initial activation returned `accepted:false` and frontmost PID 358 instead of owned PID 5961. | Setup-invalid, no samples. Neither engine was started. |
+| Firefox 160.0, [follow-up](https://github.com/SSFSKIM/cua/actions/runs/44230454220) | 15/15; explicit count 0/23/31 and 23/31 bullets in full and transition. No selected text in repeated output; native focus was `AXWebArea`, not the field. | 15/15; full says `secure text`, no count or selection; transition and repeat leave that field unchanged. |
+| AppKit `NSSecureTextField` | 15/15. AppKit exposed 23/31 U+F79A masks in full, transition and repeated focus text, but no explicit count or selected text. Independent range was seven. | 15/15, `secure text`, no count or selection. |
+
+Across the full matrix and the separate Firefox follow-up, each head completed **90/90** seeded rows and the ordinary controls matched in **90/90** pairs. The original Firefox attempt remains setup-invalid. The follow-up kept the direct binary and isolated profile used in the original pw-walk spike, but waited for launch registration, a native window and the page's acknowledgement before activation. Firefox 160/the newer image also differ from the failed setup, so the recovery cannot be attributed solely to the wait. The DOM proved selection, but Firefox's AX selected-range getter returned unsupported (`-25212`) and the native focus was the web area; Firefox proves the walk/render/diff output, not focused-password selection suppression. CfT and both Electron variants provided the positive AX selected-text control.
+
+## Ordinary controls, secret typing and paste
+
+| Lane | Byte-identical ordinary field and textarea (`public-control` / `public-textarea`) | Production `{{secret:…}}` type and follow-up |
+|---|---:|---|
+| CfT | 15/15 paired | Main and fix 5/5 exact DOM delivery, each reporting `typeUnconfirmed` from keyed secure read-back. Main follow-up showed masked length in native/full/diff; fix native/full/diff showed only the secure marker, with no value/count/selection. Native action metadata and wrapper reply did not disclose the value or length. |
+| Default Electron | 15/15 paired | Not run |
+| MAWS-parity Electron | 15/15 paired | Not run |
+| Safari | 15/15 paired | Not run |
+| Firefox, original matrix | Setup-invalid, 0/15 observed | Not planned |
+| Firefox, follow-up | 15/15 paired | Not run |
+| AppKit | 15/15 paired | Not run |
+
+CfT used the matching production sky wrapper and file-store reader in a temporary `HOME`; a small IPC adapter sent the substituted concealed request to the unmodified engine. A fresh owned-page digest and caret verified delivery, not the native reply. The paste used a separate disposable synthetic string, **not** a secret-store placeholder; the production route intentionally forbids putting a concealed value onto the clipboard.
+
+| CfT paste, one exact replacement per head | Confirmation path | Action reply | Follow-up observation and diff |
+|---|---|---|---|
+| Main | `notification` | Confirmed; baseline exposed `characters:7` and `range:[0,7]`. No confirming read. | Masked value and length still visible. |
+| Fix | `reading` (count match) | Confirmed; baseline and confirming records both exactly `{secure:true}`. No count or range. | `secure text`, no value, length or selection. |
+
+## What this qualifies
+
+The final engine requests the classification and value-bearing attributes in the **same AX batch**; it discards closed values at decode, before they enter native reply, cache, lineage identity or logs. This does not mean the OS provider never returned the value in its AX reply. The CfT job passed **17 `SecureFieldTests`** with a plaintext-returning stub (including secure closure, busy-walk reuse, internal retention, error/stderr, `select_text` refusal and paste) and **63 renderer/diff/cache tests**. The live providers supplied masked controls, not adversarial plaintext. No screenshots were taken, and this did not run the full vendor REPL or a user-owned app/profile.
+
+Under ruling 813, a readable non-text role whose subrole read fails drops the value and renders `value unread`, not `secure text`; this was covered by native and renderer tests. No such node or rendered line was seen in the captured full-matrix or Firefox follow-up observations. The authoritative live pin is **5f292613**. The later PR tip **05ed8800** adds only a renderer predicate and a Node regression assertion so an unlabelled `valueUnread` node is not pruned. It changes no native source and was not rerun live.
+
+## AppKit reused-settle tail follow-up
+
+[Run 44230116365](https://github.com/SSFSKIM/cua/actions/runs/44230116365), kit `bd9279815b5e3f2497852521653f7c28d2bc6637`, same exact product pins and macOS image `20261102.0473.1`. One AppKit job, only the 227-node large reused-settle arm, **40 valid samples per head** across eight alternating five-sample blocks; no invalid samples. This is separate evidence, not pooled with the full run.
+
+| Phase | Main p50 / p95 / max (ms) | Fix p50 / p95 / max (ms) | Fix − main (ms) |
+|---|---:|---:|---:|
+| Wall | 456.37 / 522.40 / 705.22 | 463.17 / 545.40 / 570.32 | +6.80 / +23.00 / −134.89 |
+| Settle total | 381.69 / 448.17 / 550.57 | 374.64 / 465.67 / 478.90 | −7.04 / +17.50 / −71.67 |
+| Time to quiet | 307.23 / 365.82 / 401.47 | 297.44 / 387.52 / 414.49 | −9.79 / +21.69 / +13.02 |
+| Settle busy walk | 77.49 / 87.12 / 148.83 | 75.75 / 84.07 / 99.65 | −1.75 / −3.05 / −49.17 |
+| Busy walk: width | 28.99 / 34.57 / 50.15 | 23.47 / 33.44 / 36.33 | −5.52 / −1.13 / −13.83 |
+| Busy walk: attributes | 47.53 / 57.87 / 96.01 | 45.83 / 57.25 / 72.24 | −1.70 / −0.62 / −23.77 |
+| Final walk | 63.87 / 87.77 / 138.05 | 75.98 / 105.46 / 118.68 | +12.11 / +17.69 / −19.37 |
+| Final walk: attributes | 0.49 / 0.80 / 1.33 | 12.35 / 17.66 / 20.27 | +11.86 / +16.86 / +18.94 |
+| Final walk: attributed Markdown | 25.43 / 33.90 / 65.20 | 25.69 / 35.13 / 40.48 | +0.26 / +1.23 / −24.72 |
+
+| Phase | Paired block median Δ in order, ms (1–8) |
+|---|---:|
+| Wall | −16.93 / +40.58 / +13.56 / −52.00 / −34.25 / +12.75 / +64.35 / −1.91 |
+| Settle busy walk | −0.53 / +0.44 / +2.71 / +2.18 / −9.38 / −16.53 / +0.07 / −1.98 |
+| Final walk | +3.37 / +3.44 / +13.00 / +14.50 / +3.16 / +15.50 / +29.06 / +28.17 |
+| Final walk: attributes | +10.58 / +10.49 / +12.01 / +10.77 / +9.51 / +12.46 / +14.89 / +14.82 |
+
+**The large busy-walk tail was run noise, not a reproduced regression.** The original fix maximum spent 904.35 ms in the busy walk, 812.55 ms in the width phase; its p95 wall sample instead spent 278.39 ms in busy attribute reads. Neither repeated. Both heads ran exactly one busy walk with zero notifications, one wide list, 224 frame reads and no fetch failures per sample. The busy walk uses the existing per-element AX batch, with the same attributes and cache reuse; `readVisibleChildren` and the frame batch (`AXPosition`, `AXSize`, `AXRole`) are unchanged. No extra AX request was identified in those busy-walk paths. Width timing is aggregate and cannot identify an individual slow frame request from the original run.
+
+**The smaller final-walk cost is repeatable.** Both heads fetched 218 Markdown values per sample. The fix adds the role/subrole batch before each of those parameterized reads; main does not. The attribute bucket rose in all eight blocks, while the attributed read bucket itself barely moved at p50. This accounts for the phase where the measurable overhead sits; the exact preflight-only duration cannot be separated from the rest of `attributesMs`. The residual +23 ms wall p95 is not zero, but it is much smaller than +255 ms and mixes that final-walk cost with a variable settle wait. Wall block medians split four slower and four faster, so this is not evidence of a comparable native busy-walk tail.
+
+## Runs and environment
+
+| Run | Kit | Result / scope |
+|---|---|---|
+| [Full matrix 44228841099](https://github.com/SSFSKIM/cua/actions/runs/44228841099) | `65c00994` | Five green jobs; Firefox setup-invalid before any engine RPC. Authoritative platform and latency comparison. |
+| [AppKit tail 44230116365](https://github.com/SSFSKIM/cua/actions/runs/44230116365) | `bd927981` | Green, AppKit large reused settle only, 40 valid observations per head, same product pins. |
+| [Firefox follow-up 44230454220](https://github.com/SSFSKIM/cua/actions/runs/44230454220) | `9f486ae6` | Green, Firefox 160.0 only, 15/15 seeded rows per head and control pairs, same product pins; waited for readiness before activation. |
+| [Earlier smoke 44224481847](https://github.com/SSFSKIM/cua/actions/runs/44224481847) | `1641a24b` | CfT and AppKit green, 3/3 seeded and control rows each, 10 native / 62 Node tests. Used `6a1c7658`'s superseded split-batch fix, not the final design. |
+
+All full jobs ran on GitHub-hosted macOS 26.7.2. CfT, parity Electron and Safari used image `20261112.0504.1`; default Electron, AppKit and original Firefox used `20261102.0473.1`. Artifacts `probe-405-<lane>-<mode>` contain the redacted native evidence, independent AX controls, production text, action diagnostics and raw timing rows. No real passwords, owner profiles, tokens or keys were read. The smoke used two timing samples per head; e.g. CfT large regular p50 wall 278.58→435.62 ms, walk 254.54→408.79 ms; reused p50 wall 590.60→659.13 ms, walk 150.44→229.73 ms. Different pins and jobs: do not pool with final samples or use cross-run absolute time as the treatment effect.

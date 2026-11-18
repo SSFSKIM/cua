@@ -1,8 +1,13 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { after, test } from 'node:test';
 
 import { dndCancelledSentence, dndLateRefusal } from '../../scripts/linux-engine-diff/device.mjs';
 import { rejudgeDevice } from '../../scripts/linux-engine-diff/rejudge-device.mjs';
+import { CANCEL, LATE_DRAG, LATE_REFUSED, WINDOW, caseSamples, engineBin, removeScratch, scratch } from './premise-fixture.mjs';
+
+after(removeScratch);
 
 const app = 'Google-chrome';
 const cancelled = dndCancelledSentence(app);
@@ -58,4 +63,32 @@ test("the stored replay rebuilds the no-audit sentinel only from positive eviden
   assert.ok(!withSentinel.now.reasons.some((r) => /the audit did not run/.test(r)), withSentinel.now.reasons.join('\n'));
   const without = rejudgeDevice(noAuditRows)[0].verdicts.find((v) => v.name === 'device-chrome-dnd chrome_dnd_shared cua');
   assert.ok(without.now.reasons.some((r) => /the audit did not run/.test(r)), 'no positive evidence: no sentinel');
+});
+
+test('a replay whose plan is not recorded never reports a premise cell as a pass: the judge passes it, the replay keeps the marker', async () => {
+  // a run through the real collector whose stored meta keeps no blocks, its late pair passing under the judge
+  const out = scratch('unverified');
+  const run = 'stored-unverified';
+  const three = [CANCEL, CANCEL, CANCEL];
+  const made = await caseSamples({ out, run, op: 'chrome_dnd_shared', bin: engineBin(out), blocks: [[LATE_DRAG, LATE_REFUSED, CANCEL], three, three], audit: [CANCEL, CANCEL] });
+  const lines = readFileSync(join(out, 'premise-evidence.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  const stored = { verdict: 'fail', reasons: ['stored as failing'] };
+  const stepRows = [
+    { run, kind: 'meta' },
+    ...made.rows,
+    { run, kind: 'audit', engine: 'cua', scene: 'device-chrome-dnd', op: 'chrome_dnd_shared', clean: true, audit: 'background', answered: made.answered, forbidden: [], ancestry: [WINDOW] },
+    { run, kind: 'verdict', scene: 'device-chrome-dnd', op: 'chrome_dnd_shared', candidate: 'cua', device: 'cancel', pass: false, ...stored },
+  ];
+  const [r] = rejudgeDevice(stepRows, { lines });
+  const [v] = r.verdicts;
+  assert.equal(v.now.verdict, 'replayed, plan unverified: not a release pass');
+  assert.equal(v.now.plan_unverified, true);
+  assert.deepEqual(v.stored, stored, 'its stored verdict beside');
+  assert.deepEqual(r.failing, ['device-chrome-dnd chrome_dnd_shared cua'], 'not a pass');
+  assert.deepEqual(r.moved, ['device-chrome-dnd chrome_dnd_shared cua: fail -> replayed, plan unverified: not a release pass']);
+  assert.equal(r.premise[0].verdict, 'replayed, plan unverified: not a release pass');
+  // with the plan recorded, the same rows replay as a pass
+  const [p] = rejudgeDevice(stepRows.map((x) => (x.kind === 'meta' ? { ...x, blocks: 3 } : x)), { lines });
+  assert.equal(p.verdicts[0].now.verdict, 'pass');
+  assert.equal(p.verdicts[0].now.plan_unverified, undefined);
 });

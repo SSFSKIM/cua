@@ -5,7 +5,8 @@
 // ran at, which must reproduce every stored verdict for the replay to stand). Read-only. One JSON line per verdict that
 // moved or failed, then one per run with its counts, the verdicts that moved, those failing now, the run's end record's
 // other failures (which stand as stored), and how each sample of ruling 823's cells reads under it (premise.mjs
-// `classifyPremise`, by class: `unmet` the excluded, `unshown` those whose records cannot show it either way).
+// `classifyPremise`, by class: `unmet` the excluded, `unshown` those whose records cannot show it either way). A cell
+// of ruling 823's whose run recorded no plan passes no further than "replayed, plan unverified: not a release pass".
 //
 //   node scripts/linux-engine-diff/rejudge-device.mjs [--old <device.mjs>] <step dir or results.jsonl[.gz]>...
 
@@ -46,7 +47,16 @@ function noAuditOf(path) {
   return String(JSON.parse(readFileSync(file, 'utf8')).command ?? '').split(' ').includes('--no-audit');
 }
 
-const outcome = (judged) => ({ verdict: judged.pass ? 'pass' : 'fail', reasons: judged.reasons });
+/**
+ * A judge's verdict as the replay reports it. A premise cell judged without its recorded plan (`plan_unverified`, a meta
+ * with no `blocks`) keeps the marker, and its pass is never reported as one (task 100's review 6).
+ */
+export const UNVERIFIED_PASS = 'replayed, plan unverified: not a release pass';
+const outcome = (judged) => ({
+  verdict: judged.pass ? (judged.plan_unverified ? UNVERIFIED_PASS : 'pass') : 'fail',
+  reasons: judged.reasons,
+  ...(judged.plan_unverified ? { plan_unverified: true } : {}),
+});
 const same = (a, b) => a.verdict === b.verdict && JSON.stringify(a.reasons) === JSON.stringify(b.reasons);
 
 /** How many of `entries` read as each of ruling 823's classes, by its one adjacency rule (premise.mjs `adjacency`). */

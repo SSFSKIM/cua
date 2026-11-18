@@ -333,26 +333,32 @@ export function bindTimed(rows, { lines = null } = {}) {
 }
 
 /**
+ * A case's timed slots recorded more than once (`block/i`), whatever its plan: a slot names one sample, so a second row
+ * for it is a failure of the cell on its own, known plan or not (task 100's review 6). Answers the problems.
+ */
+export function repeatedSlots(rows) {
+  const count = new Map();
+  for (const r of rows) count.set(`${r.block}/${r.i}`, (count.get(`${r.block}/${r.i}`) ?? 0) + 1);
+  return [...count].filter(([, n]) => n > 1).map(([slot, n]) => `${n} rows for ${slot}`);
+}
+
+/**
  * Whether a case's timed rows are its recorded plan's slots, nothing collapsed: `blocks` series (the run's meta), each of
- * `seriesLength` requests (the cold one, then the case's warm ones), each slot once, the cold one first and the rest warm
- * (run.mjs's blocks). Answers the problems.
+ * `seriesLength` requests (the cold one, then the case's warm ones), every slot present, the cold one first and the
+ * rest warm (run.mjs's blocks). A slot recorded twice is `repeatedSlots`', plan or not. Answers the problems.
  */
 export function slotProblems(rows, { blocks, seriesLength }) {
   const problems = [];
-  const count = new Map();
+  const present = new Set();
   for (const r of rows) {
     if (!Number.isInteger(r.block) || !Number.isInteger(r.i) || r.block < 0 || r.i < 0 || r.i >= seriesLength) problems.push(`a row for no planned slot (${r.block}/${r.i})`);
-    else count.set(`${r.block}/${r.i}`, (count.get(`${r.block}/${r.i}`) ?? 0) + 1);
+    else present.add(`${r.block}/${r.i}`);
     const want = r.i === 0 ? 'cold' : 'warm';
     if (Number.isInteger(r.i) && r.series !== want) problems.push(`${r.block}/${r.i} is the ${want} slot of its series, its row says ${r.series ?? 'none'}`);
   }
   for (const r of rows) if (Number.isInteger(r.block) && r.block >= blocks) problems.push(`a row past the plan's ${blocks} blocks (${r.block}/${r.i})`);
   for (let b = 0; b < blocks; b++) {
-    for (let i = 0; i < seriesLength; i++) {
-      const n = count.get(`${b}/${i}`) ?? 0;
-      if (n === 0) problems.push(`no row for ${b}/${i}`);
-      else if (n > 1) problems.push(`${n} rows for ${b}/${i}`);
-    }
+    for (let i = 0; i < seriesLength; i++) if (!present.has(`${b}/${i}`)) problems.push(`no row for ${b}/${i}`);
   }
   return problems;
 }

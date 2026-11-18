@@ -55,7 +55,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { pendingOf } from './drop-signals-judge.mjs';
-import { AUDIT_PLAN, FOLLOW_UP_FIELDS, TIMED_QUOTAS, bindAudit, bindTimed, evidenceLabel, isShortage, judgePremise, slotProblems } from './premise.mjs';
+import { AUDIT_PLAN, FOLLOW_UP_FIELDS, TIMED_QUOTAS, bindAudit, bindTimed, evidenceLabel, isShortage, judgePremise, repeatedSlots, slotProblems } from './premise.mjs';
 import { preorder } from './normalize.mjs';
 import { readGtk4Status } from './families.mjs';
 import { IDENTITY_OPS, IDENTITY_SCENE_OPS, judgeIdentity } from './identity.mjs';
@@ -762,8 +762,9 @@ function recordedPremise(samples) {
  * classified (review 5, finding 4). `premise`: the re-judge's `{lines, window, plan}`; without it (or without `plan`) the
  * in-run judge's, from this process's records and the run's meta. The plan (`{blocks, audit}`) checks the timed slots
  * and the audit's cardinality whether or not evidence exists; with none recorded, nothing is excluded and the cell is
- * marked `unverified`. With any problem in either pass, neither keeps evidence: both are judged from their own rows and
- * answers. Answers `{plan, problems: {plan, timed, audit}, rows, entries, unverified}`.
+ * marked `unverified`. A slot recorded twice is a problem with or without a plan (review 6). With any problem in either
+ * pass, neither keeps evidence: both are judged from their own rows and answers. Answers `{plan, problems: {slots, plan,
+ * timed, audit}, rows, entries, unverified}`, `rows` the samples or their copies, index for index.
  */
 export function premiseBinding(op, samples, audit, premise = undefined) {
   const run = samples[0]?.run;
@@ -772,7 +773,7 @@ export function premiseBinding(op, samples, audit, premise = undefined) {
   const answered = audit && audit.kind !== 'skipped' ? audit.answered ?? [] : [];
   const bare = bindAudit({ ...audit, answered }, null, { run }).entries;
   const strip = () => samples.map((r) => (r.premise_evidence == null ? r : (({ premise_evidence, ...rest }) => rest)(r)));
-  const problems = { plan: [], timed: [], audit: [] };
+  const problems = { slots: repeatedSlots(samples), plan: [], timed: [], audit: [] };
   const lines = source.lines ?? null;
   const evidenced = samples.some((r) => r.premise_evidence) || (lines ?? []).some((l) => l?.op === op && l?.run === run);
   if (!plan) return { plan, problems, rows: strip(), entries: bare, unverified: evidenced };
@@ -792,7 +793,7 @@ export function premiseBinding(op, samples, audit, premise = undefined) {
     problems.audit.push(...bound.problems);
     entries = bound.entries;
   }
-  const any = problems.plan.length + problems.timed.length + problems.audit.length > 0;
+  const any = Object.values(problems).some((p) => p.length > 0);
   return { plan, problems, rows: any ? strip() : timed.rows, entries: any ? bare : entries, unverified: false };
 }
 
@@ -859,6 +860,7 @@ export function judgeDevice(op, samples, audit, premise = undefined) {
   if (PREMISE_OPS.has(op)) {
     // both passes bound and checked against the plan before either is classified
     binding = premiseBinding(op, samples, audit, premise);
+    for (const p of binding.problems.slots) reasons.push(`the run's rows record a slot twice (ruling 823, never excluded on): ${p}`);
     for (const p of binding.problems.plan) reasons.push(`the run's rows do not fit its recorded plan (ruling 823, never excluded on): ${p}`);
     for (const p of binding.problems.timed) reasons.push(`the premise evidence of the timed samples does not fit them (ruling 823, never excluded on): ${p}`);
     for (const p of binding.problems.audit) reasons.push(`the premise evidence of the ${audit?.kind ?? ''} audit does not fit it (ruling 823, never excluded on): ${p}`);
@@ -888,10 +890,11 @@ export function judgeDevice(op, samples, audit, premise = undefined) {
     bad('not refused with the Device mode sentence', (r) => !r.ok && r.error === r.expected_error);
     bad('the window changed', (r) => r.unchanged === true);
   }
-  // a take after the release is judged by the late-take rules (ruling 756, `lateTakes`)
-  // keyed by slot: the judged rows may be copies of the samples (their evidence stripped by the binding)
-  const lateSlots = new Set([...(expect === 'cancel' ? lateTakes(samples) : [])].map((r) => `${r.block}/${r.i}`));
-  const late = { has: (r) => lateSlots.has(`${r.block}/${r.i}`) };
+  // a take after the release is judged by the late-take rules (ruling 756, `lateTakes`): the very rows it was found on,
+  // and their copies the binding judges (their evidence stripped, index for index), never another row of their slot
+  // (task 100's review 6)
+  const late = new Set(expect === 'cancel' ? lateTakes(samples) : []);
+  binding?.rows.forEach((r, k) => late.has(samples[k]) && late.add(r));
   if (expect === 'cancel') {
     bad('not cancelled with the drag-and-drop sentence', (r) => (!r.ok && r.error === r.expected_error) || late.has(r));
     bad('it dropped', (r) => r.dropped === false);

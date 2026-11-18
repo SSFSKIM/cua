@@ -9,7 +9,7 @@ import { after, test } from 'node:test';
 
 import { DEVICE_OPS, PREMISE_OPS, dndLateNotice, dndLateRefusal, dndMayHaveDroppedSentence, dndUnconfirmedNotice, judgeDevice } from '../../scripts/linux-engine-diff/device.mjs';
 import { adjacency, bindAudit, classifyPremise, noDragSession, parsePageRead } from '../../scripts/linux-engine-diff/premise.mjs';
-import { APP, CANCEL, cancelled, HELD_CANCEL, HELD_UNMET, UNMET, WINDOW, caseSamples, dndLine, engineBin, movesLine, removeScratch, scratch } from './premise-fixture.mjs';
+import { APP, CANCEL, cancelled, HELD_CANCEL, HELD_UNMET, IN_TIME_OK, LATE_DRAG, LATE_REFUSED, UNMET, WINDOW, baseFor, caseSamples, dndLine, engineBin, movesLine, removeScratch, sample, scratch, scriptedEngine } from './premise-fixture.mjs';
 
 after(removeScratch);
 
@@ -419,4 +419,44 @@ test('negative control (review 5, finding 4): a binding error in either pass exc
   assert.equal(b.premise_unmet, undefined, 'the timed pass excludes nothing');
   assert.match(reasons(b), /no line for audit\/1/);
   assert.match(reasons(b), /not cancelled with the drag-and-drop sentence on 1 of 9 samples \(0\/0\)/);
+});
+
+test("negative control (review 6): ruling 756's late take excuses only the rows it was found on, and a slot recorded twice fails the cell, its plan recorded or not", async () => {
+  const OP = 'chrome_dnd_shared';
+  const PLAN = { blocks: 3, audit: true };
+  const r = await made(OP, [[LATE_DRAG, LATE_REFUSED, CANCEL], three(CANCEL), three(CANCEL)], [CANCEL, CANCEL]);
+  // the positive control: the late pair passes in-run, from its sidecar, and with its rows copied by the binding (no
+  // sidecar, or no plan, strips their evidence)
+  const passed = { pass: true, reasons: [] };
+  assert.deepEqual(judgeDevice(OP, r.rows, r.audit), passed, 'in-run');
+  assert.deepEqual(judgeDevice(OP, r.rows, r.audit, { lines: lines(r.run), window: WINDOW, plan: PLAN }), passed, 'from its sidecar');
+  assert.deepEqual(judgeDevice(OP, r.rows, r.audit, { lines: null, window: WINDOW, plan: PLAN }), passed, 'its rows copied, no sidecar');
+  assert.deepEqual(judgeDevice(OP, r.rows, r.audit, { lines: lines(r.run), window: WINDOW, plan: null }), { ...passed, plan_unverified: true }, 'its rows copied, no plan');
+
+  // the probe: an in-time drag that wrongly answered ok, recorded at the late drag's slot 0/0 in the same run
+  const dup = await sample({ out: join(dir, r.run), run: r.run, op: OP, block: 0, i: 0, engine: scriptedEngine(bin), base: baseFor(90), label: r.label, ...IN_TIME_OK });
+  const probe = [...r.rows, dup];
+  for (const [what, premise] of [
+    ['in-run, the plan from the meta', undefined],
+    ['the plan given', { lines: lines(r.run), window: WINDOW, plan: PLAN }],
+    ['no plan', { lines: lines(r.run), window: WINDOW, plan: null }],
+    ['no plan, no sidecar', { lines: null, window: WINDOW, plan: null }],
+  ]) {
+    const v = judgeDevice(OP, probe, r.audit, premise);
+    assert.equal(v.pass, false, what);
+    assert.match(reasons(v), /2 rows for 0\/0/, what);
+    assert.match(reasons(v), /not cancelled with the drag-and-drop sentence on 1 of 10 samples \(0\/0\)/, `${what}: the duplicate borrows no late take`);
+    assert.equal(v.premise_unmet, undefined, what);
+  }
+
+  // an in-time take answered ok, alone or beside a valid late pair, still fails, its plan recorded or not
+  const alone = await made(OP, [[IN_TIME_OK, CANCEL, CANCEL], three(CANCEL), three(CANCEL)], [CANCEL, CANCEL]);
+  const beside = await made(OP, [[LATE_DRAG, LATE_REFUSED, IN_TIME_OK], three(CANCEL), three(CANCEL)], [CANCEL, CANCEL]);
+  for (const [m, slot] of [[alone, '0/0'], [beside, '0/2']]) {
+    for (const plan of [PLAN, null]) {
+      const v = judgeDevice(OP, m.rows, m.audit, { lines: lines(m.run), window: WINDOW, plan });
+      assert.equal(v.pass, false, `${slot}, plan ${plan ? 'given' : 'none'}`);
+      assert.match(reasons(v), new RegExp(`not cancelled with the drag-and-drop sentence on 1 of 9 samples \\(${slot}\\)`));
+    }
+  }
 });

@@ -128,6 +128,19 @@ export const HELD_CANCEL = { ...CANCEL, row: took({ held_at_start: true }) };
 /** A late cancel, honestly answered that the drop may have happened. */
 export const LATE = { reply: { ok: false, error: dndMayHaveDroppedSentence(APP) }, page: 'took', row: took() };
 export const HELD_LATE = { ...LATE, row: took({ held_at_start: true }) };
+/** A drag Chrome took in time that answered ok: no cancel's sentence, a cancel case's failure. */
+export const IN_TIME_OK = { reply: { ok: true }, page: 'took', row: took() };
+/**
+ * The design session's ruling 756 (V5's rerun at H, chrome_dnd_shared 0/0 and 0/1): the drag Chrome took nothing for by
+ * its release, answered as a plain drag, its page showing the take after it, nothing dropped (`LATE_DRAG`); and the
+ * next request refused with the late notice, not run, the page's counts unmoved, the late take recorded (`LATE_REFUSED`).
+ */
+export const LATE_DRAG = { reply: { ok: true }, page: 'took', row: { dnd: { outcome: 'no_start', started: false, in_front: false, held_at_start: false }, press: { taken: false } } };
+export const LATE_REFUSED = {
+  reply: { ok: false, error: dndLateRefusal(APP, 'drag') },
+  page: (b, t) => ({ counts: { ...b, at: t }, moves: movesLine(b.downs, { start: 0, cancel: 90, end: 160 }) }),
+  row: { engine_stats: { command: 'drag', late_dnd: { after_release_ms: 2.353375, app: APP, escape_after_release_ms: 4.46738, escaped: true } } },
+};
 /** The late take: a plain drag at the release whose drop landed, the witness showing it. */
 export const LANDED = { reply: { ok: true }, page: 'landed', row: { witness: false, dnd: { outcome: 'no_start', started: false, in_front: false, held_at_start: false } } };
 /** The late take's reads: the read carries the late notice, the next acting request is refused with it. */

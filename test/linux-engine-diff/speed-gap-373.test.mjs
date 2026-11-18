@@ -155,7 +155,8 @@ test("the run's end carries both: T2's declared losses and planned verdicts besi
   assert.deepEqual(outcome.declared['declared gap'], ['chrome-input activate_window cua']);
   assert.deepEqual(outcome.sceneEnds, { pinned: 1, newest: 0, cua: 0 });
   const line = verdictLine(outcome);
-  assert.match(line, /declared gap \(a loss, not a pass\): chrome-input activate_window cua; .*text windows a lane ended \(a vendor's restarted, never scored\): pinned 1, newest 0, cua 0$/);
+  // M5's T4 arm64 round: the vendor's end, of a build the fixture names none for, is listed apart as undeclared
+  assert.match(line, /declared gap \(a loss, not a pass\): chrome-input activate_window cua; .*text windows a lane ended \(a vendor's restarted, never scored\): pinned 1, newest 0, cua 0; vendor ends undeclared \(never scored, for a look\): gedit type_text pinned \(an unnamed build\) 1$/);
   // the summary reads the end row as run.mjs writes it: `declared` and `scene_ends` together
   const end = { kind: 'end', run: 'r', valid: true, pass: outcome.pass, failed: outcome.failed, parity: outcome.parity, refused: outcome.refused, declared: outcome.declared, restores: { pinned: 0, newest: 0, cua: 0 }, scene_ends: outcome.sceneEnds };
   const summary = renderSummary([{ kind: 'meta', run: 'r', engines: [] }, end]);

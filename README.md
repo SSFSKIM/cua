@@ -1070,7 +1070,7 @@ The Linux computer surface runs on one of two native engines, selected per sessi
 - **cua's own engine, `cua-engine`** (#171; `docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md`): a
   static binary built from `native/linux-engine/` for x86-64 and arm64, with no shared libraries. The release workflow
   `.github/workflows/linux-engine.yml` builds it, tests it and attests its build provenance, and
-  `runtime/engine/linux-engine.json` pins its version (0.4.0), URLs and SHA-256s. `cua install` fetches the asset for
+  `runtime/engine/linux-engine.json` pins its version (0.4.1), URLs and SHA-256s. `cua install` fetches the asset for
   this machine into `$CUA_HOME/engine/linux/cua-engine` and checks its hash; `cua install --engine` installs or
   replaces it on its own. cua's own Linux service (`src/services/engine/linux/`) drives it, so no OpenAI JavaScript
   runs for the computer surface.
@@ -1255,7 +1255,7 @@ variable wins over the file. `vendor` in either selects the vendor engine. With 
 which is the vendor engine. A connection resolves its engine once, when it opens, and keeps it for every launch after.
 An explicit selection of cua's engine with none installed is refused (`engine_not_installed`, naming `cua install
 --engine`). cua's service checks the engine's version before a session's first request: one older than this cua needs
-is refused there, with `cua-engine <found> is older than 0.4.0, which this cua needs; run cua install --engine`, and `cua install
+is refused there, with `cua-engine <found> is older than 0.4.1, which this cua needs; run cua install --engine`, and `cua install
 --engine` fixes it. `CUA_LINUX_ENGINE_BIN` names another engine file in place of the installed one, for the
 development harnesses only.
 

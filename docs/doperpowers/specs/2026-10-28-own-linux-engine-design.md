@@ -2392,6 +2392,28 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
   - **The arm VM's lease is not extended yet.** About 111 hours remain, against roughly 50 hours of planned arm work. The design session extends it once the controller's remaining estimate plus 24 hours passes the time left, so the controller reports once the 0.4.1 reruns are sized.
   Date/Author: 2026-11-18, the plan-executor (session linux171), recording the design session's message 823.
 
+- Decision (2026-11-18, M5, the design session's ruling 827 on task 98's note): **0.4.1 settles before the release.** The evidence is on branch `m5-l4a-fix` (85886a76), in `docs/evidence/2026-10-28-own-linux-engine/m5/l4a-fix/README.md`.
+  - **The fault, in both architectures' 0.4.0.** For an Electron handle or plain drop, 0.4.0 reads Electron's drag cursor at the moment it sends the release. Electron's drag loop can run 30–100 ms behind the pointer on particular drags, so the accept it shows is its answer for a place the pointer has already left.
+    - At twice the load, on those drags: arm64 62 false oks in 128, x64 15 in 128.
+    - x64's judged L4a passed only because its plan has about 3 such left drags a sitting.
+    - The plain cell's missed landing has the same cause: the loop handled the release before any accept.
+  - **The rule (option B).** Before the last 30 ms rest, and again after the last motion, the engine sends a `_NET_WM_PING` to the source. Chromium answers it on its drag loop's thread, in event order. The accept counts only if both pings were answered with the pointer at rest between them.
+    - Each wait is bounded at 150 ms. An unanswered or unasked ping is never an ok: the answer is the unconfirmed notice, with the reason in its text (accepted under the same "an unconfirmed drop:" kind).
+    - Ruling 3a: a second rest is taken only when the first sync ran past the rest, with the whole wait still inside 150 ms.
+    - Chrome's path, confirmed by activation, is unchanged.
+    - Openbox (checked live) and mutter (checked from source) drop a pong they were not waiting for.
+  - **Measured on the prototype.** False oks: arm64 0 in 177 drags of that kind at load (below 1.7% at 95%), x64 0 in 110. No true ok became unconfirmed. No sync reached the bound in more than 1,700 drags.
+    - Cost: at idle, a median of 1.3 ms. At load with the loop behind, a median of 34–68 ms and a p95 of 64–101 ms. A plain drag to the floor's end pays 30 ms more.
+    - The rejected options and what they left: A (the loop's own word) 12 of 100; A′ unsafe; C (accept put up after the last move) 33 of 38.
+  - **3b: L4a's residue.** In the plain cell at twice the load, at most 2 honest unconfirmed non-landings per 100 plain drops are allowed; a third fails. Zero false oks stays absolute and is part of no residue.
+  - **The reach under §8.2.** "Path" means behaviour that can change.
+    - **Class A**, where the new code runs: H1, H2, L4a, D2, L2b, L1, S1 and L3b. These rerun on both architectures, with D1 as the cross-check.
+    - **Class B**, a changed function entered with no new branch taken: sends the same bytes on the wire.
+    - The condition: every class-B step's next run records the settle branch's counter in `--stats`. A class-B step whose run shows the branch taken reruns as class A.
+  - **The release.** The controller runs the release workflow once task 101's review is clean. Before the pin and the `MIN_ENGINE_VERSION` bump, the design session checks the tag's commit, both assets' digests against SHA256SUMS, and the release notes.
+  - **The lease.** Not extended yet: about 40–53 hours of arm work are left, against about 108 hours.
+  Date/Author: 2026-11-18, the plan-executor (session linux171), recording the design session's message 827 on task 98's note.
+
 ## Outcomes & Retrospective
 
 Written per milestone as each lands; the whole-plan retrospective at finish. The execution record (tasks, reviews, friction) is `docs/doperpowers/specs/2026-10-28-own-linux-engine-report.md`.

@@ -404,3 +404,95 @@ test('the re-judge reports a run that stopped before its count as incomplete, an
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// ---------------------------------------------------------------------------------------------------------------
+// Fix wave 2 (review 2's finding 2; the controller's ruling): the final verdict marks a vendor's ended samples against
+// the run's whole written rows, where its `scene-ended` rows are (the sample rows alone hold none); the marked samples
+// supply no answer reference either; and a series' speed is decided only once every pending end of its lanes' windows
+// is resolved, since a sample's end is found only at its lane's next request.
+
+/** The run's written rows: each pinned warm sample fast (10 ms) and ending its window, its end recorded after it. */
+function endingRun({ lastEndRecorded = true, digests = {} } = {}) {
+  const written = [{ kind: 'meta' }];
+  const sample = (engine, i, ms) => ({ kind: 'sample', engine, scene: 'gedit', op: 'type_text', block: 0, i, series: 'warm', ok: true, ms, witness: true, digest: digests[engine] ?? 'typed' });
+  for (let i = 1; i <= 21; i++) {
+    written.push(sample('pinned', i, 10));
+    // the end of sample i is found before the lane's next request, sample i + 1's
+    if (i < 21 || lastEndRecorded) written.push({ ...end('pinned', 'type_text'), i: i + 1, series: 'warm', last: { op: 'type_text', block: 0, i } });
+    written.push(sample('newest', i, 100), sample('cua', i, 90));
+  }
+  return written;
+}
+
+const ANSWERS = { op: 'type_text', sceneName: 'gedit', text: true, vendors: VENDORS };
+
+test("the final verdict marks a vendor's ended samples against the run's written rows, so they set no bar", async () => {
+  const { operationRows, judgeAnswers, judgeWithDecisions } = await import('../../scripts/linux-engine-diff/run.mjs');
+  const { medianDifferenceInterval } = await import('../../scripts/linux-engine-diff/events.mjs');
+  const { endedTarget } = await import('../../scripts/linux-engine-diff/scene-ended.mjs');
+  const written = endingRun();
+  const opRows = operationRows(written, { sceneName: 'gedit', op: 'type_text', vendors: VENDORS });
+  assert.equal(opRows.length, 63, 'every sample row of the operation, the ended ones kept');
+  assert.equal(opRows.filter((r) => r.ended_target).length, 21);
+  assert.ok(opRows.every((r) => written.includes(r)), 'the rows are the written ones, marked in place, as the run reads them after');
+  judgeAnswers(opRows, { ...ANSWERS, imageOf: new Map(), answers: new Map() });
+  const options = { vendors: VENDORS, candidate: 'cua', judgeSpeed: true, text: true, noise: medianDifferenceInterval, parity: [] };
+  const verdict = judgeWithDecisions(opRows, options);
+  assert.equal(verdict.bar.warm, 100, "the bar is the newest build's: the ended pinned samples set none of it");
+  assert.equal(verdict.verdict, 'pass');
+  // the review's reproduction: marked against the sample rows alone, the matcher sees no end, and a 10 ms bar stands
+  const samplesOnly = endingRun().filter((r) => r.kind === 'sample');
+  assert.equal(samplesOnly.filter(endedTarget(samplesOnly, VENDORS)).length, 0);
+});
+
+test('a vendor sample that ended its window is no answer reference; a block whose vendor samples all ended has none', async () => {
+  const { operationRows, judgeAnswers } = await import('../../scripts/linux-engine-diff/run.mjs');
+  const judged = (written) => {
+    const rows = operationRows(written, { sceneName: 'gedit', op: 'type_text', vendors: VENDORS });
+    judgeAnswers(rows, { ...ANSWERS, imageOf: new Map(), answers: new Map() });
+    return rows.filter((r) => r.engine === 'cua');
+  };
+  // the pinned build's ended replies answered ok, but otherwise than cua; the newest build's, alive, as cua did
+  assert.ok(judged(endingRun({ digests: { pinned: 'crashed', newest: 'typed', cua: 'typed' } })).every((r) => r.equal === true), "cua's answers equal the reference, which no ended sample supplied");
+  // a control: the newest build's replies unended but unlike cua's are the reference, and cua's differ
+  assert.ok(judged(endingRun({ digests: { pinned: 'crashed', newest: 'other', cua: 'typed' } })).every((r) => r.equal === false));
+  // every vendor sample of the block ended its window: no reference, so cua's answers there are not compared, and say so
+  const allEnded = endingRun({ digests: { pinned: 'crashed', newest: 'other', cua: 'typed' } });
+  for (let i = 1; i <= 21; i++) allEnded.push({ ...end('newest', 'type_text'), i: i + 1, last: { op: 'type_text', block: 0, i } });
+  assert.ok(judged(allEnded).every((r) => r.equal === undefined && r.unreferenced === true), 'not compared, and marked as such');
+});
+
+test("a series' speed is decided only after every pending end of its lanes' windows is resolved", async () => {
+  const { lookAtSeries } = await import('../../scripts/linux-engine-diff/run.mjs');
+  const look = async (resolves) => {
+    // the last pinned sample's end is found only at its lane's next request: here, the look's own resolution
+    const written = endingRun({ lastEndRecorded: false });
+    const order = [];
+    const looked = await lookAtSeries({
+      resolveEnds: async () => {
+        order.push('resolve');
+        if (resolves) written.push({ ...end('pinned', 'type_text'), pass: 'speed-look', last: { op: 'type_text', block: 0, i: 21 } });
+      },
+      readRows: () => {
+        order.push('read');
+        return written;
+      },
+      sceneName: 'gedit',
+      op: 'type_text',
+      vendors: VENDORS,
+      candidates: ['cua'],
+      text: true,
+      parity: [],
+    });
+    return { looked, order };
+  };
+  const { looked, order } = await look(true);
+  assert.deepEqual(order, ['resolve', 'read'], 'the ends are resolved before the rows are read');
+  assert.deepEqual(looked.open, []);
+  assert.deepEqual(looked.fresh.map((d) => `${d.series} ${d.verdict}`), ['warm faster'], "decided against the newest build's bar");
+  assert.equal(looked.opRows.filter((r) => r.ended_target).length, 21);
+  // the control: left unresolved, the last ended sample alone sets a 10 ms bar and holds the series open
+  const unresolved = await look(false);
+  assert.equal(unresolved.looked.fresh.length, 0);
+  assert.deepEqual(unresolved.looked.open.map((u) => `${u.series} ${u.samples}`), ['warm 1']);
+});

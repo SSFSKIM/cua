@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { parseArgs } from '../../scripts/linux-engine-diff/cli.mjs';
-import { bindStep, firstDifference, interruptedStep, normalizeAnswer, normalizeEvent, scenarios } from '../../scripts/linux-engine-diff/events.mjs';
+import { bindStep, firstDifference, interruptedStep, normalizeAnswer, normalizeEvent, scenarios, sentDrag, traced } from '../../scripts/linux-engine-diff/events.mjs';
+import { parseXtrace } from '../../scripts/linux-engine-diff/audit.mjs';
 
 const key = (type, detail, state) => ({ type, send: true, detail, state, window: 'top', x: 0, y: 0, root_x: 0, root_y: 0 });
 
@@ -219,64 +220,107 @@ test("each scenario's pointer is parked at its start on the experiment's own dis
 });
 
 // ---------------------------------------------------------------------------------------------------------------
-// #171 M5, T4's arm64 round, item (f): E1's judge for "an interrupted drag under a held key, then a move" (the design
-// session's ruling 818, applied to what E1 records). On the arm64 VM cua's drag finished in 0.8 ms, before the fragile
-// recorder destroyed its child, and answered ok. That passes only when the recorder shows the whole drag on the child
-// (the press, every motion along the path, the release), all of it delivered before the child was destroyed, since no
-// event reaches a destroyed window; an ok:false passes only when the error names the destroyed window (an X Window
-// error with its bad value). Anything else fails.
+// #171 M5, T4's arm64 round, item (f), and its fix wave 1: E1's judge for "an interrupted drag under a held key, then a
+// move" (the design session's ruling 818). On the arm64 VM cua's drag finished in 0.8 ms, before the fragile recorder
+// destroyed its child, and answered ok; on x64 the destruction cut it, an X Window error. Fix wave 1 binds both to what
+// the run recorded: an ok passes only when the recorder shows every pointer event the engine's own trace (the audit
+// proxy's, in the judged run) says it sent the child between its press and its release; an ok:false only when the
+// error's bad value, read before masking, is the recorder's own child XID. Anything else fails.
 
-const DRAG = 'an interrupted drag under a held key, then a move';
-const dragSteps = scenarios().find((s) => s.name === DRAG).steps;
+const CHILD = 0x01800064;
 const held = (x, y) => pointer('MotionNotify', 'child', { state: 260, x: x - 500, y: y - 400, root_x: x, root_y: y });
 // root coordinates: the recorder at (100, 100), the path (450, 350) to (460, 360), the child at (400, 300)
-const WHOLE = [held(550, 450), held(551, 451), held(553, 453), held(556, 456), held(559, 459), held(560, 460), { ...held(560, 460), type: 'ButtonRelease', detail: 1 }];
+const MOTIONS = [[550, 450], [551, 451], [553, 453], [556, 456], [559, 459], [560, 460]];
+const WHOLE = [...MOTIONS.map(([x, y]) => held(x, y)), { ...held(560, 460), type: 'ButtonRelease', detail: 1 }];
 const keyDown = { answer: ok, events: [{ type: 'KeyPress', send: true, detail: 37, state: 0, window: 'top', x: 0, y: 0, root_x: 0, root_y: 0 }] };
-const dragLane = (response, events) => [keyDown, { command: 'drag', ...interrupted(response, events), raw: normalizeAnswer(response) }, after, keyDown];
-const namedWindow = { ok: false, error: 'X11 error X11Error { error_kind: Window, error_code: 3, sequence: 22, bad_value: 25165924, minor_opcode: 0, major_opcode: 25, extension_name: None, request_name: Some("SendEvent") }' };
-const REFERENCE = () => dragLane(namedWindow, [...PRESSED, held(550, 450)]);
 
-test('E1: an ok drag passes only with the whole drag on the child before its destruction', () => {
-  assert.equal(firstDifference(REFERENCE(), dragLane(ok, [...PRESSED, ...WHOLE]), dragSteps), null, 'the whole drag, then the release');
-  // the controls: a partial drag answered ok fails
-  for (const [what, tail] of [
-    ['no release', WHOLE.slice(0, -1)],
-    ["the tail cut before the path's end", [...WHOLE.slice(0, 4), { ...WHOLE.at(-1), root_x: 556, root_y: 456, x: 56, y: 56 }]],
-    ['nothing after the press', []],
-    ['motions without the button held', [...WHOLE.slice(0, -1).map((e) => ({ ...e, state: 4 })), WHOLE.at(-1)]],
-    ['a motion on the top-level in the drag', [...WHOLE.slice(0, 3), { ...WHOLE[3], window: 'top' }, ...WHOLE.slice(4)]],
+// the engine's trace, as xtrace writes it: its SendEvents to the child, on its connection `conn`
+let seq = 0x100;
+const sendTo = (event, x, y, { conn = 1, destination = CHILD } = {}) => `00${conn}:<:${(seq++).toString(16).padStart(4, '0')}: 44: Request(25): SendEvent propagate=false(0x00) destination=0x${destination.toString(16).padStart(8, '0')} event-mask=0 ${event} time=0x00000000 root=0x000003c5 event=0x${destination.toString(16).padStart(8, '0')} child=None(0x00000000) root-x=${x} root-y=${y} event-x=${x - 500} event-y=${y - 400} state=Button1,Control same-screen=true(0x01)`;
+const press = (o) => sendTo('ButtonPress(4) button=0x01', 550, 450, o);
+const motion = ([x, y], o) => sendTo('MotionNotify(6) detail=Normal(0x00)', x, y, o);
+const release = (o) => sendTo('ButtonRelease(5) button=0x01', 560, 460, o);
+const traceOf = (lines) => sentDrag(parseXtrace(lines.join('\n')), CHILD);
+const SENT = () => traceOf([press(), ...MOTIONS.map((m) => motion(m)), release()]);
+
+const dragLane = (response, events, { child = CHILD, sent = SENT() } = {}) => {
+  const step = { command: 'drag', interrupted: true, ...interruptedStep(response, events, { child }), raw: normalizeAnswer(response) };
+  return [keyDown, response.ok ? { ...step, sent } : step, after, keyDown];
+};
+const namedWindow = (bad = CHILD) => ({ ok: false, error: `X11 error X11Error { error_kind: Window, error_code: 3, sequence: 22, bad_value: ${bad}, minor_opcode: 0, major_opcode: 25, extension_name: None, request_name: Some("SendEvent") }` });
+const REFERENCE = () => dragLane(namedWindow(), [...PRESSED, held(550, 450)]);
+
+test("E1: the trace's drag is the press to this run's child on its connection, then every pointer event to it through the release", () => {
+  const sent = SENT();
+  assert.deepEqual([sent.traced, sent.conn, sent.released, sent.xtest, sent.after.length], [true, 1, true, false, 7]);
+  assert.deepEqual(sent.after.at(-1), { type: 'ButtonRelease', detail: 1, root_x: 560, root_y: 460 });
+  // another connection's motions in the span are not this drag's; nor is a press to another run's child
+  assert.equal(traceOf([press(), motion([551, 451], { conn: 2 }), ...MOTIONS.map((m) => motion(m)), release()]).after.length, 7);
+  assert.equal(traceOf([press({ destination: 0x02a00064 }), ...MOTIONS.map((m) => motion(m)), release()]).press, null);
+  assert.equal(traceOf([]).traced, false);
+});
+
+test('E1: an ok drag passes only when the recorder shows every event the trace says was sent the child', () => {
+  assert.equal(firstDifference(REFERENCE(), dragLane(ok, [...PRESSED, ...WHOLE])), null, 'the whole drag, then the release');
+  for (const [what, tail, sent] of [
+    // the review's control: an interior motion dropped, both endpoints and the release kept
+    ['an interior motion dropped from the recorder', [...WHOLE.slice(0, 2), ...WHOLE.slice(3)]],
+    ['the recorder reduced to the last motion and the release', WHOLE.slice(-2)],
+    ['a trace motion the recorder lacks', WHOLE, traceOf([press(), ...MOTIONS.map((m) => motion(m)), motion([560, 460]), release()])],
+    ['a missing trace', WHOLE, undefined],
+    ['an empty trace', WHOLE, traceOf([])],
+    ["a trace from another run's recorder", WHOLE, sentDrag(parseXtrace([press({ destination: 0x02a00064 }), ...MOTIONS.map((m) => motion(m, { destination: 0x02a00064 })), release({ destination: 0x02a00064 })].join('\n')), CHILD)],
+    ['a trace whose motions came on another connection', WHOLE, traceOf([press(), ...MOTIONS.map((m) => motion(m, { conn: 2 })), release({ conn: 2 })])],
+    ['a trace with no release', WHOLE.slice(0, -1), traceOf([press(), ...MOTIONS.map((m) => motion(m))])],
+    ['a motion at another position', [...WHOLE.slice(0, 3), held(554, 454), ...WHOLE.slice(4)]],
     ['an event after the release', [...WHOLE, held(560, 460)]],
-    ['the release by another button', [...WHOLE.slice(0, -1), { ...WHOLE.at(-1), detail: 3 }]],
   ]) {
-    const difference = firstDifference(REFERENCE(), dragLane(ok, [...PRESSED, ...tail]), dragSteps);
+    const lane = dragLane(ok, [...PRESSED, ...tail], { sent });
+    if (sent === undefined) delete lane[1].sent;
+    const difference = firstDifference(REFERENCE(), lane);
     assert.equal(difference?.what, 'answer', what);
     assert.equal(difference.step, 1, what);
   }
+  // XTEST pointer input names no window to pair: a sample that shows it fails closed
+  const xtest = { ...SENT(), xtest: true };
+  assert.equal(firstDifference(REFERENCE(), dragLane(ok, [...PRESSED, ...WHOLE], { sent: xtest }))?.what, 'answer');
   // the child never pressed: no drag reached it at all
-  assert.equal(firstDifference(REFERENCE(), dragLane(ok, PRESSED.slice(0, 2)), dragSteps)?.what, 'answer');
+  assert.equal(firstDifference(REFERENCE(), dragLane(ok, PRESSED.slice(0, 2)))?.what, 'answer');
   // the events up to the press are still compared exactly
-  assert.equal(firstDifference(REFERENCE(), dragLane(ok, [...PRESSED.slice(1), ...WHOLE]), dragSteps)?.what, 'event');
-  // without the scenario's path an ok cannot be judged whole, so it fails as before
-  assert.equal(firstDifference(REFERENCE(), dragLane(ok, [...PRESSED, ...WHOLE]))?.what, 'answer');
+  assert.equal(firstDifference(REFERENCE(), dragLane(ok, [...PRESSED.slice(1), ...WHOLE]))?.what, 'event');
 });
 
-test('E1: an interrupted drag answered ok:false passes only when its error names the destroyed window', () => {
-  assert.equal(firstDifference(REFERENCE(), dragLane(namedWindow, [...PRESSED, held(550, 450)]), dragSteps), null);
-  for (const [what, error] of [
-    ['a Window error with no bad value', 'X11 error X11Error { error_kind: Window, error_code: 3, request_name: Some("SendEvent") }'],
-    ['an error of another kind', 'X11 error X11Error { error_kind: Match, error_code: 8, sequence: 22, bad_value: 25165924 }'],
-    ["an error that is not X's", 'drag failed: the window is gone'],
+test('E1: an interrupted drag answered ok:false passes only when its error names the destroyed child', () => {
+  assert.equal(firstDifference(REFERENCE(), dragLane(namedWindow(), [...PRESSED, held(550, 450)])), null);
+  for (const [what, response, child] of [
+    // the review's control: a wrong XID in the error
+    ['an error naming another window', namedWindow(1), CHILD],
+    ["an error naming another run's child", namedWindow(0x02a00064), CHILD],
+    ['a Window error with no bad value', { ok: false, error: 'X11 error X11Error { error_kind: Window, error_code: 3, request_name: Some("SendEvent") }' }, CHILD],
+    ['an error of another kind', { ok: false, error: `X11 error X11Error { error_kind: Match, error_code: 8, sequence: 22, bad_value: ${CHILD} }` }, CHILD],
+    ["an error that is not X's", { ok: false, error: 'drag failed: the window is gone' }, CHILD],
+    ["no child recorded (a row from before the fix: the error's value masked)", namedWindow(), null],
   ]) {
-    const difference = firstDifference(REFERENCE(), dragLane({ ok: false, error }, [...PRESSED, held(550, 450)]), dragSteps);
+    const difference = firstDifference(REFERENCE(), dragLane(response, [...PRESSED, held(550, 450)], { child }));
     assert.equal(difference?.what, 'answer', what);
   }
   // the reference must still have been interrupted as planned
-  assert.equal(firstDifference(dragLane(ok, [...PRESSED, ...WHOLE]), dragLane(ok, [...PRESSED, ...WHOLE]), dragSteps)?.what, 'reference not interrupted');
+  assert.equal(firstDifference(dragLane(ok, [...PRESSED, ...WHOLE]), dragLane(ok, [...PRESSED, ...WHOLE]))?.what, 'reference not interrupted');
+  // the stored form, `<id>` masked and no `bad_value`, is not enough
+  const stored = REFERENCE();
+  const masked = { ...stored[1] };
+  delete masked.bad_value;
+  assert.equal(firstDifference(REFERENCE(), [stored[0], masked, ...stored.slice(2)])?.what, 'answer');
 });
 
 test("E1: the click scenario keeps the interruption rule: a click answered ok still fails", () => {
-  const click = scenarios().find((s) => s.name === 'an interrupted click under a held key, then a move').steps;
-  const lane = (response, events) => [keyDown, { command: 'click', ...interrupted(response, events), raw: normalizeAnswer(response) }, after, keyDown, keyDown];
+  const lane = (response, events) => [keyDown, { command: 'click', interrupted: true, ...interruptedStep(response, events, { child: CHILD }), raw: normalizeAnswer(response) }, after, keyDown, keyDown];
   const done = [{ ...held(550, 450), type: 'ButtonRelease', detail: 1 }];
-  assert.equal(firstDifference(lane(namedWindow, PRESSED), lane(ok, [...PRESSED, ...done]), click)?.what, 'answer');
+  assert.equal(firstDifference(lane(namedWindow(), PRESSED), lane(ok, [...PRESSED, ...done]))?.what, 'answer');
+});
+
+test('E1: only the fragile scenarios run through the proxy, and their times are never counted', () => {
+  const fragile = scenarios().filter((s) => traced(s)).map((s) => s.name);
+  assert.deepEqual(fragile, ['an interrupted drag under a held key, then a move', 'an interrupted click under a held key, then a move']);
+  assert.equal(traced(scenarios().find((s) => s.fragile), 'vendor-js'), false);
 });

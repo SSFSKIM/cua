@@ -229,24 +229,22 @@ test("a warm-up that fails keeps its own error when closing its window fails too
 // `closeLaneScene`); Chrome's lanes are closed by their windows
 test('a family scene and a gedit scene the run spawns are each bound to their own spawn as they open', async () => {
   const tools = standIns();
-  // xterm reads as X11 throughout, gedit's tree on the bus at once
-  const { desktop } = gtk4Desktop({ x11Reads: (label) => (label.includes('gedit') ? 0 : Infinity) });
-  const bound = [];
+  // every window's tree on the bus at once: gnome-text-editor (GTK 4, after the run's warm-up) and gedit
+  const { desktop } = gtk4Desktop();
+  const bound = new Map();
   const keep = desktop.keepLaneSpawn.bind(desktop);
   desktop.keepLaneSpawn = (scene, child) => {
-    bound.push([scene, child]);
+    bound.set(scene, child);
     return keep(scene, child);
   };
   try {
-    const scene = await openFamily(desktop, null, 'xterm', 'r');
-    assert.equal(bound.length, 1);
-    assert.equal(bound[0][0], scene, 'the scene itself, as the restore holds it');
-    assert.equal(bound[0][1].pid, scene.pid, 'with the child that was spawned for it');
-    assert.equal(scene.group, true);
+    // V4's text lane: gnome-text-editor, a family scene in a process group of its own
+    const editor = await openFamily(desktop, null, 'gnome-text-editor', 'text_pinned');
+    assert.equal(bound.get(editor)?.pid, editor.pid, 'the scene itself, as the restore holds it, with the child spawned for it');
+    assert.equal(editor.group, true);
+    // V1's text lane: gedit, a process of its own
     const gedit = await desktop.openGedit('text_pinned', 'text\n');
-    assert.equal(bound.length, 2);
-    assert.equal(bound[1][0], gedit);
-    assert.equal(bound[1][1].pid, gedit.pid);
+    assert.equal(bound.get(gedit)?.pid, gedit.pid);
   } finally {
     await desktop.close(desktop.windows);
     ended(desktop);

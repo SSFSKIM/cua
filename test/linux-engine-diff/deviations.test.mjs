@@ -27,6 +27,8 @@ test("the refusal of the request after a drag that left something pending is dec
   for (const cause of [
     'a late drag and drop: Google-chrome started a drag and drop after your drag into it ended, so the drag did not end as it answered; it may have dropped and changed the desktop',
     'a failed watch: the drag-and-drop watch after your drag into Google-chrome failed (no reply), so a drop may have happened unseen and changed the desktop',
+    // an Electron drop whose application did not answer the settle's syncs in time (M5's ruling 827)
+    'an unconfirmed drop: your drag into Electron began a drag and drop, and Electron did not answer in time for its drop to be confirmed, so the drop may not have landed as the drag answered',
     // a handle the engine released for its idle bound (M4's T17 fix wave)
     'a drag handle released by timeout: your drag handle in XTerm got no request for 30 s, so it was released where the pointer was, at (250, 200); the release may have dropped what it held and changed the desktop',
   ])

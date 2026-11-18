@@ -17,6 +17,7 @@ mod desktop;
 mod dnd;
 mod drag_cursors;
 mod drop_cursor;
+mod drop_settle;
 mod engine;
 mod families;
 #[cfg(test)]
@@ -54,7 +55,7 @@ const USAGE: &str = "usage: cua-engine server [--mouse-size-px <n>] [--desktop s
        [--retention per-request|session|none] [--settle-ms <ms>] [--capture-wait damage|fixed|quiet]
        [--teardown-ms <ms>] [--exit-settle-ms <ms>] [--paste-settle-ms <ms>] [--key-pace-ms <ms>] [--path-step-ms <ms>] [--drag-step-ms <ms> | --drag-step-us <µs>] [--drag-press-dwell-ms <ms>]
        [--drag-release-dwell-ms <ms>] [--drag-dnd-hold-ms <ms>] [--drag-dnd-after-take-ms <ms>] [--drag-handle-idle-ms <ms>] [--dnd-cancel-after-release] [--dnd-defer-take]
-       [--drag-dnd-release-at-accept] [--drag-ignore-cover] [--ignore-cover] [--ignore-pointer]
+       [--drag-dnd-release-at-accept] [--drag-ignore-cover] [--ignore-cover] [--ignore-pointer] [--drop-no-settle]
        [--targets-wait-ms <ms>] [--focus-ack-ms <ms>] [--stats]
        cua-engine launcher-shim <parent pid> <program> [args...]
        cua-engine --version";
@@ -100,6 +101,7 @@ fn default_config() -> Config {
         ignore_cover: false,
         ignore_pointer: false,
         handle_idle: engine::HANDLE_IDLE,
+        drop_settle: true,
     }
 }
 
@@ -190,6 +192,10 @@ fn parse_args(args: &[String]) -> Result<Command, String> {
             }
             "--ignore-pointer" => {
                 cfg.ignore_pointer = true;
+                takes_value = false;
+            }
+            "--drop-no-settle" => {
+                cfg.drop_settle = false;
                 takes_value = false;
             }
             "--mouse-size-px" => cfg.mouse_size_px = number(value, arg)? as u32,
@@ -575,6 +581,24 @@ mod tests {
             panic!()
         };
         assert!(cfg.drag_ignore_cover && !cfg.dnd_release_at_accept);
+    }
+
+    #[test]
+    fn an_electron_drop_is_settled_before_its_release_unless_the_measurement_flag_turns_that_off() {
+        let Ok(Command::Server(cfg)) = parse_args(&args(&["server"])) else {
+            panic!()
+        };
+        assert!(
+            cfg.drop_settle,
+            "the shipped rule: the application asked before the accept counts"
+        );
+        let Ok(Command::Server(cfg)) = parse_args(&args(&["server", "--drop-no-settle"])) else {
+            panic!()
+        };
+        assert!(
+            !cfg.drop_settle,
+            "measurement only: the release as linux-engine-v0.4.0 judged it"
+        );
     }
 
     #[test]

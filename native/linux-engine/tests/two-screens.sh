@@ -6,7 +6,8 @@
 # - the resize test (`CUA_LIVE_RESIZABLE`), on a server whose one screen grows through RandR from 640x480 to 1280x800
 #   (tests/xorg-resizable.conf); Xvfb's RandR never grows a screen past the size it started with.
 # Each server takes the first free display from :100 up, never :0, and is terminated at the end, its socket and lock
-# gone. Exits nonzero when a test fails or does not run.
+# gone. Exits nonzero when a test fails or does not run. The tests build for the host's musl target (`uname -m`:
+# x86_64 or aarch64), or for CUA_TWO_SCREENS_TARGET when it is set.
 #
 # Needs xserver-xorg-core and xserver-xorg-video-dummy, run as an ordinary user: /usr/lib/xorg/Xorg directly (not the
 # Xorg wrapper), on a seat of its own, sharing the VT, with no devices to open.
@@ -14,6 +15,7 @@
 #   cd native/linux-engine && tests/two-screens.sh
 set -u
 cd "$(dirname "$0")/.."
+target=${CUA_TWO_SCREENS_TARGET:-$(uname -m)-unknown-linux-musl}
 dir=$(mktemp -d "${TMPDIR:-/tmp}/cua-two-screens.XXXXXX")
 servers=()
 displays=()
@@ -75,7 +77,7 @@ resizable=$display
 out="$dir/test.out"
 CUA_LIVE_TWO_SCREENS=":$two" CUA_LIVE_RESIZABLE=":$resizable" \
   dbus-run-session --dbus-daemon="$PWD/tests/dbus-daemon-quiet" -- \
-  cargo test --release --locked --target x86_64-unknown-linux-musl --features live --test live_device -- \
+  cargo test --release --locked --target "$target" --features live --test live_device -- \
   --test-threads 1 --exact \
   a_drag_handle_ended_with_the_pointer_on_another_screen_releases_there_and_moves_nothing \
   an_exit_with_a_drag_handle_held_and_the_pointer_on_another_screen_releases_there_and_moves_nothing \

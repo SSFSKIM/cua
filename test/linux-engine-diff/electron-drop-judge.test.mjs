@@ -36,6 +36,13 @@ test('clean cells pass: landed drops ok, the off-window releases unconfirmed, ev
   assert.match(v.md.join('\n'), /every cell of the plan ran/);
 });
 
+test("an application that did not answer the settle's syncs in time is the same honest kind (M5's ruling 827): never a false ok", () => {
+  const rows = [drag({ cell: 'left', i: 0, notice: 'unanswered' }), drag({ lane: 'cua:handle', cell: 'left', i: 0, notice: 'unanswered' })];
+  const v = electronDropVerdict(rows, { specs: specs(['cua', 'left', 1], ['cua:handle', 'left', 1]) });
+  assert.deepEqual(v.failed, []);
+  assert.equal(v.counts.false_ok, 0);
+});
+
 test('a false ok fails the gate: ok with nothing pending on a drag that dropped nowhere, off the window or in it', () => {
   const rows = [drag({ lane: 'cua:desktop', cell: 'root', i: 0, verified: true }), drag({ cell: 'left', i: 1 })];
   const v = electronDropVerdict(rows, { specs: specs(['cua:desktop', 'root', 1], ['cua', 'left', 1]) });

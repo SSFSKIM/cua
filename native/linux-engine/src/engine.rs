@@ -106,6 +106,11 @@ pub struct Config {
     /// How long a held `drag_handle` may go with no request of its own before the engine releases it where it is
     /// (`handle::HANDLE_IDLE`; `--drag-handle-idle-ms` sets another, for the live tests).
     pub handle_idle: std::time::Duration,
+    /// Whether an Electron source's drop is settled before its release (`drop_settle::settled`, M5's task 98): the
+    /// application asked where it has got to before the release's last rest and after its last motion, and its accept
+    /// counted only when it answered both. Off (`--drop-no-settle`, measurement only) the release goes out unasked and
+    /// the accept is judged as `linux-engine-v0.4.0` judged it, which answered ok for releases outside the drop zone.
+    pub drop_settle: bool,
 }
 
 pub struct Engine {
@@ -148,6 +153,8 @@ pub struct Engine {
     stray_watch: Option<crate::stray::StrayWatch>,
     /// A held handle's idle bound while another request runs (`idle_watchdog.rs`), its thread started by the first.
     idle_watchdog: Option<idle_watchdog::IdleWatchdog>,
+    /// The Electron drops' settles over the engine's life, on every `--stats` line (`drop_settles`).
+    drop_settles: crate::drop_settle::SettleCounts,
 }
 
 /// Whether a request sends input or changes state, and so is refused while a late drag and drop, an unconfirmed drop
@@ -268,6 +275,35 @@ fn own_route_read(
     }
 }
 
+/// A `--stats` line no request wrote (an idle handle's release): `record`'s fields, with the engine's settles over its
+/// life (`drop_settles`, every count), so a run's records tell whether a settle ran there too.
+pub(crate) fn standalone_stats_line(
+    mut record: serde_json::Map<String, Value>,
+    settles: &crate::drop_settle::SettleCounts,
+) -> Value {
+    record.insert("id".into(), Value::Null);
+    record.insert("drop_settles".into(), settles.record());
+    json!({ "stats": record })
+}
+
+/// The exit's `--stats` line, written after every release the shutdown made (a held handle ended at EOF can settle; the
+/// review of task 103): the exit settle's wait (only when one ran), what the shutdown's requests
+/// recorded (`extra`), and the engine's settles over its life marked `settle_final`, which no other line carries, so a
+/// reader tells the final snapshot from an idle release's.
+pub(crate) fn exit_stats_line(
+    waited_ms: Option<f64>,
+    mut extra: serde_json::Map<String, Value>,
+    settles: &crate::drop_settle::SettleCounts,
+) -> Value {
+    // the exit settle's wait only when one ran: a reader takes the field as proof that it ran (focus-timer's stop
+    // judge; task 103's review)
+    if let Some(waited) = waited_ms {
+        extra.insert("exit_settle".into(), json!({ "waited_ms": waited }));
+    }
+    extra.insert("settle_final".into(), json!(true));
+    standalone_stats_line(extra, settles)
+}
+
 /// The `--stats` line's record of a reported after-release watch.
 fn late_stats(app: &str, end: &crate::dnd::WatchEnd) -> Value {
     match end {
@@ -279,6 +315,7 @@ fn late_stats(app: &str, end: &crate::dnd::WatchEnd) -> Value {
         }),
         crate::dnd::WatchEnd::Failed(why) => json!({ "app": app, "failed": why }),
         crate::dnd::WatchEnd::Unconfirmed => json!({ "app": app, "unconfirmed": true }),
+        crate::dnd::WatchEnd::Unanswered => json!({ "app": app, "unconfirmed": true, "unanswered": true }),
         crate::dnd::WatchEnd::IdleHandle { idle, at } => {
             json!({ "app": app, "idle_handle": { "idle_ms": idle.as_secs_f64() * 1000.0, "at": at } })
         }
@@ -323,6 +360,7 @@ impl Engine {
             late_pending: None,
             stray_watch: None,
             idle_watchdog: None,
+            drop_settles: Default::default(),
         })
     }
 
@@ -477,8 +515,17 @@ impl Engine {
             return;
         }
         let watch = self.late_watch.take().expect("checked");
-        let (app, target) = (watch.app.clone(), watch.target);
+        let (app, target, settle_failed) = (watch.app.clone(), watch.target, watch.settle_failed);
         match watch.stop() {
+            // a drop handed over for Chrome's activation that came: when its Electron source's settle had failed, the
+            // case ruling 837 records, counted and marked in its drag's own record here, whichever path collects the
+            // watch. Under `--stats` that record is the one in `extra` now: the watch is collected before its drag's
+            // line is written (the request's own collect, the line's wait in `request_stats_line`, or the idle
+            // release's and the exit's, which write the release's record themselves)
+            crate::dnd::WatchEnd::Quiet if settle_failed => {
+                self.drop_settles.activation_confirmed_a_failed_settle();
+                crate::drop_settle::mark_activation_confirmed(&mut self.extra);
+            }
             crate::dnd::WatchEnd::Quiet => {}
             end => {
                 // a synthetic Escape is a key to the window's redirected session; one through XTEST is the desktop's
@@ -549,6 +596,8 @@ impl Engine {
                 "paste_settle_ms": self.cfg.pacing.paste_settle.as_millis() as u64,
                 "key_pace_ms": self.cfg.pacing.key.as_millis() as u64,
             },
+            // ruling 827's condition: whether this engine has run the settle's branch, and how it ended
+            "drop_settles": self.drop_settles.record(),
             "bus": {
                 "calls": bus.calls,
                 "waits": bus.waits,
@@ -569,11 +618,27 @@ impl Engine {
     /// Once a response is out: the request's `--stats` line written, and work that can wait for the answer done
     /// (the desktop screenshot's MIT-SHM segment for the next one).
     pub fn after_response(&mut self) {
-        if let Some((id, command, elapsed, ok)) = self.pending_stats.take() {
-            let line = self.stats_line(id, command, elapsed, ok);
+        if let Some(line) = self.request_stats_line() {
             eprintln!("{line}");
         }
         self.x.prepare_desktop();
+    }
+
+    /// The `--stats` line of the request just answered, None without `--stats`.
+    fn request_stats_line(&mut self) -> Option<String> {
+        // under `--stats`, a drop handed to Chrome's activation though its Electron source's settle failed: its watch
+        // ends by itself within `dnd::DROP_CONFIRM` of the release, so the line waits for it and says whether the
+        // activation came, in the drag's own record (ruling 837, placed by 838; off the request path, which has
+        // answered). The watch is collected as `tick` would collect it once ended, which marks the record
+        if self.cfg.stats
+            && self.pending_stats.is_some()
+            && let Some(watch) = self.late_watch.as_ref().filter(|watch| watch.settle_failed)
+        {
+            watch.run_out();
+            self.collect_late_watch(false);
+        }
+        let (id, command, elapsed, ok) = self.pending_stats.take()?;
+        Some(self.stats_line(id, command, elapsed, ok))
     }
 
     fn drop_bus(&mut self) {
@@ -884,17 +949,149 @@ impl Engine {
         let until = self.inputs.exit_settle_until(&self.x);
         let started = Instant::now();
         crate::settle::wait(until);
-        if self.cfg.stats && until.is_some() {
-            let waited = started.elapsed().as_secs_f64() * 1000.0;
+        if self.cfg.stats {
+            let waited = until.map(|_| (started.elapsed().as_secs_f64() * 1000.0 * 1000.0).round() / 1000.0);
             eprintln!(
                 "{}",
-                json!({ "stats": { "id": null, "exit_settle": { "waited_ms": (waited * 1000.0).round() / 1000.0 } } })
+                exit_stats_line(waited, std::mem::take(&mut self.extra), &self.drop_settles)
             );
         }
         self.clipboard = None;
         if let Some(dir) = self.shot_dir.take() {
             let _ = std::fs::remove_dir_all(dir);
         }
+    }
+}
+
+#[cfg(test)]
+mod stats_line_tests {
+    use super::{exit_stats_line, standalone_stats_line};
+    use crate::drop_settle::{SecondRest, Settle, SettleCounts, Sync};
+    use serde_json::json;
+
+    fn counts() -> SettleCounts {
+        let mut counts = SettleCounts::default();
+        counts.count(&Settle::interrupted(Sync::Unasked, SecondRest::Needless), false);
+        counts.activation_confirmed_a_failed_settle();
+        counts
+    }
+
+    const SNAPSHOT: &str =
+        r#"{"entered":1,"second_rest":0,"settle_failed_activation_confirmed":1,"skipped":0,"unsettled":1}"#;
+
+    #[test]
+    fn the_exit_line_carries_the_settles_snapshot_after_any_shutdown_release() {
+        // the review of task 103: a held handle ended at the exit can settle, so the exit's own line says what the
+        // engine's settles came to, all of the counts, with the exit settle's wait when there was one and whatever the
+        // shutdown's release recorded
+        let mut extra = serde_json::Map::new();
+        extra.insert("handle".into(), json!({ "pressed": true }));
+        let line = exit_stats_line(Some(2.5), extra, &counts());
+        assert_eq!(line["stats"]["id"], json!(null));
+        assert_eq!(line["stats"]["drop_settles"].to_string(), SNAPSHOT);
+        // the line that is the snapshot's last: only the exit's carries `settle_final` (task 103's review)
+        assert_eq!(line["stats"]["settle_final"], json!(true));
+        assert_eq!(line["stats"]["exit_settle"], json!({ "waited_ms": 2.5 }));
+        assert_eq!(line["stats"]["handle"], json!({ "pressed": true }));
+        // no exit settle ran: no `exit_settle`, which a reader takes as proof that one did; the final snapshot still
+        let quiet = exit_stats_line(None, serde_json::Map::new(), &SettleCounts::default());
+        assert_eq!(quiet["stats"].get("exit_settle"), None, "no settle waited");
+        assert_eq!(quiet["stats"]["settle_final"], json!(true));
+        assert_eq!(
+            quiet["stats"]["drop_settles"],
+            json!({ "entered": 0, "second_rest": 0, "skipped": 0, "unsettled": 0, "settle_failed_activation_confirmed": 0 }),
+            "a run whose engine never settled says so at its exit too"
+        );
+    }
+
+    #[test]
+    fn the_idle_release_line_carries_the_settles_snapshot() {
+        let mut record = serde_json::Map::new();
+        record.insert("idle_handle".into(), json!({ "app": "Electron" }));
+        let line = standalone_stats_line(record, &counts());
+        assert_eq!(line["stats"]["id"], json!(null));
+        assert_eq!(line["stats"]["idle_handle"], json!({ "app": "Electron" }));
+        assert_eq!(line["stats"]["drop_settles"].to_string(), SNAPSHOT);
+        assert_eq!(
+            line["stats"].get("settle_final"),
+            None,
+            "a line mid-run is no final snapshot"
+        );
+    }
+}
+
+#[cfg(test)]
+mod settle_mark_tests {
+    //! Ruling 837's per-drag marker (`settle_failed_activation_confirmed`), bound to the drag whose watch saw Chrome's
+    //! activation confirm its failed settle, whichever path collects that watch (task 101's review, after d5c4a737).
+    //! The drag itself needs an Electron source and a Chrome destination, which the live suite cannot make; each test
+    //! leaves the engine as such a drag leaves it, its record built and its watch handed over with the activation
+    //! already seen, and then runs the path that collects it.
+    use super::Engine;
+    use crate::dnd::{LateWatch, WatchEnd};
+    use crate::wire::Request;
+    use serde_json::{Value, json};
+
+    const FIELD: &str = "settle_failed_activation_confirmed";
+
+    /// An engine under `--stats` as a failed settle's drag leaves it: `record` its own, and its watch handed over and
+    /// already ended, the activation come (`Quiet`).
+    fn after_the_drag(record: (&str, Value)) -> Engine {
+        let mut engine = Engine::new(super::Config {
+            stats: true,
+            ..crate::default_config()
+        })
+        .unwrap();
+        engine.extra.insert(record.0.into(), record.1);
+        let mut watch = LateWatch::around(std::thread::spawn(|| WatchEnd::Quiet));
+        watch.settle_failed = true;
+        while !watch.finished() {
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        engine.late_watch = Some(watch);
+        engine
+    }
+
+    fn drag_record() -> (&'static str, Value) {
+        ("drop_cursor", json!({ "settle": { "settled": false, FIELD: false } }))
+    }
+
+    fn handle_record() -> (&'static str, Value) {
+        (
+            "handle",
+            json!({ FIELD: false, "drop_cursor": { "settle": { "settled": false, FIELD: false } } }),
+        )
+    }
+
+    #[test]
+    #[cfg_attr(not(feature = "live"), ignore = "needs an X display (--features live)")]
+    fn an_activation_seen_before_the_reply_is_assembled_marks_the_drag_s_own_line() {
+        // the watch ended before the reply was composed, so the request collects it, not the line's wait
+        let mut engine = after_the_drag(drag_record());
+        let response = engine.handle(Request {
+            id: json!(1),
+            command: "capabilities".into(),
+            input: None,
+        });
+        assert!(response.ok, "{:?}", response.error);
+        let line: Value = serde_json::from_str(&engine.request_stats_line().expect("--stats")).unwrap();
+        assert_eq!(line["stats"]["drop_settles"][FIELD], json!(1), "counted: {line}");
+        assert_eq!(
+            line["stats"]["drop_cursor"]["settle"][FIELD],
+            json!(true),
+            "marked: {line}"
+        );
+    }
+
+    #[test]
+    #[cfg_attr(not(feature = "live"), ignore = "needs an X display (--features live)")]
+    fn a_watch_stopped_by_an_idle_release_or_the_exit_marks_the_release_s_own_record() {
+        // the idle release and the exit stop the watch of the release they made, and write that record themselves
+        let mut engine = after_the_drag(handle_record());
+        engine.collect_late_watch(true);
+        assert_eq!(engine.drop_settles.record()[FIELD], json!(1));
+        assert_eq!(engine.extra["handle"][FIELD], json!(true));
+        assert_eq!(engine.extra["handle"]["drop_cursor"]["settle"][FIELD], json!(true));
     }
 }
 

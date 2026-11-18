@@ -323,6 +323,10 @@ pub(super) struct DragMeasure<'a> {
     /// `XdndSelection`, and what it read there.
     pub(super) drop_cursor: Option<&'a mut crate::drop_cursor::DropCursor>,
     pub(super) at_release: &'a mut Option<crate::drop_cursor::AtRelease>,
+    /// The Electron drop's settle (`drop_settle::Settle`, M5's ruling 827), when the engine settles drops
+    /// (`Config::drop_settle`): the slot gets the application's two answers, asked before the last rest and after the
+    /// last motion of a drag whose source took `XdndSelection`, and whether it rested twice between them.
+    pub(super) settle: Option<&'a mut Option<crate::drop_settle::Settle>>,
     /// On a route whose input is XTEST's (the desktop and foreground routes): where the real pointer was, read with the
     /// cursor just before the release (None: on another screen, or not read), which is where the release goes and so
     /// the window the drop's confirmation is held to (the third review of task 73, P3).
@@ -390,7 +394,7 @@ fn drag_along(
     pressing: PressAck,
     mut accept: Option<&mut crate::accept::CursorWatch>,
     after: Option<&LateWatch>,
-    measure: DragMeasure<'_>,
+    mut measure: DragMeasure<'_>,
 ) -> Result<()> {
     let held = route.acquire(x, keycodes)?;
     let mut pressed = false;
@@ -546,13 +550,32 @@ fn drag_along(
                         }));
                         sent
                     }
+                    // a drop that is settled next gives the settle's rest out of the floor, not on top of it
                     _ => crate::dnd::keepalive(
                         |(px, py)| route.place_again(x, px, py),
                         before_last,
                         last,
-                        at + after_take,
+                        match (&measure.settle, &measure.drop_cursor) {
+                            (Some(_), Some(_)) => (at + after_take).checked_sub(pacing.rest).unwrap_or(at),
+                            _ => at + after_take,
+                        },
                     )?,
                 };
+            }
+            // an Electron source's drop, settled (`drop_settle::Settle`): its application asked where it has got to
+            // once every motion of the path, the hold and the floor is out, then the rest (the page's, to answer the
+            // pointer's last place; twice when the answer came late and both fit, ruling 3a), the last sample visited
+            // once more, and the application asked again, so the cursor read at the release is what its drag loop holds
+            // for that place. Each answer is waited for at most `drop_settle::SYNC_BOUND`: a loop that runs behind the
+            // pointer is waited for here
+            if taken.is_some()
+                && let (Some(slot), Some(cursor)) = (measure.settle, measure.drop_cursor.as_deref_mut())
+            {
+                let (before, second_rest) = cursor.sync_and_rest(pacing.rest);
+                // kept before the revisit, so a revisit that fails still counts as entered, and unsettled
+                let settle = slot.insert(crate::drop_settle::Settle::interrupted(before, second_rest));
+                route.place_again(x, last.0, last.1)?;
+                settle.after = cursor.sync(crate::drop_settle::SYNC_BOUND);
             }
             // one shape for every drag the hold watched (`--stats` `hold`)
             *held_for_take = Some(json!({
@@ -1010,7 +1033,7 @@ impl Engine {
                     .family_of(source)
                     .is_some_and(|f| crate::families::confirms_drop_by_cursor(f.name)) =>
             {
-                Some(crate::drop_cursor::DropCursor::start().map_err(|e| format!("{e:#}")))
+                Some(crate::drop_cursor::DropCursor::start_for(Some(source)).map_err(|e| format!("{e:#}")))
             }
             _ => None,
         };
@@ -1022,6 +1045,8 @@ impl Engine {
             _ => false,
         };
         let mut at_release = None;
+        let mut settle = None;
+        let drop_settle = self.cfg.drop_settle;
         // where the real pointer was at the release, read on the routes whose input is XTEST's: the background route's
         // input is synthetic and leaves the real pointer where it is, so its release is the path's end
         let xtest_route = !matches!(target, Target::Window(_));
@@ -1092,6 +1117,7 @@ impl Engine {
                     accept_record: &mut accept_record,
                     drop_cursor: drop_cursor.as_mut().and_then(|c| c.as_mut().ok()),
                     at_release: &mut at_release,
+                    settle: drop_settle.then_some(&mut settle),
                     release_point: xtest_route.then_some(&mut release_point),
                     drop_window_at_release: resolve_at_release.then_some((&mut drop_at_release, supported)),
                 },
@@ -1207,20 +1233,37 @@ impl Engine {
                     };
                     let (held, mut over) = self.accept_held_to_release(read, release);
                     over["read"] = json!(if xtest_route { "pointer" } else { "path_end" });
+                    // and only one the application had settled on, as a handle's (M5's ruling 827)
+                    let settled = settle.map(|settle| settle.settled(&read.steps, xtest_route));
+                    // what `linux-engine-v0.4.0` answered on this read, beside what the settle left of it
+                    over["accept_unsettled"] = json!(held);
                     over_aware = Some(over);
-                    cursor = Some(Some(held));
+                    cursor = Some(Some(held && (settled == Some(true) || !drop_settle)));
                 }
                 let confirming = super::handle::confirming(confirm, supported, cursor);
+                // ruling 837: a drop handed to Chrome's activation though its Electron source's settle failed
+                let settle_failed_activation = super::handle::activation_over_failed_settle(
+                    confirming,
+                    settle.map(|settle| {
+                        let steps = at_release.as_ref().map_or(&[][..], |read| &read.steps[..]);
+                        settle.settled(steps, xtest_route)
+                    }),
+                );
                 let by_cursor = cursor.map(|accepted| accepted == Some(true));
                 if let Some(watch) = &drop_cursor {
-                    self.extra.insert(
-                        "drop_cursor".into(),
-                        match (watch, &at_release) {
-                            (Ok(_), Some(read)) => read.record(),
-                            (Ok(_), None) => json!({ "read": false }),
-                            (Err(error), _) => json!({ "accepted": null, "error": error }),
-                        },
-                    );
+                    let mut record = match (watch, &at_release) {
+                        (Ok(_), Some(read)) => read.record(),
+                        (Ok(_), None) => json!({ "read": false }),
+                        (Err(error), _) => json!({ "accepted": null, "error": error }),
+                    };
+                    // the settle, whatever the cursor showed (a handle's record carries the same), and the engine's
+                    // count of it
+                    if let Some(settle) = &settle {
+                        let steps = at_release.as_ref().map_or(&[][..], |read| &read.steps[..]);
+                        record["settle"] = settle.record(steps, xtest_route);
+                        self.drop_settles.count(settle, settle.settled(steps, xtest_route));
+                    }
+                    self.extra.insert("drop_cursor".into(), record);
                 }
                 self.extra.insert(
                     "after_release".into(),
@@ -1240,12 +1283,15 @@ impl Engine {
                 };
                 match (released, confirming) {
                     (Some(false), _) | (Some(true), super::handle::Confirming::Activation(_)) => {
-                        self.late_watch = Some(after.handed_over(app(&mut self.x)));
+                        let mut after = after.handed_over(app(&mut self.x));
+                        after.settle_failed = settle_failed_activation;
+                        self.late_watch = Some(after);
                     }
                     (Some(true), confirming) if confirming.unconfirmed() => {
                         after.done();
                         self.inputs.end_watched(&mut self.x);
-                        self.late_pending = Some((app(&mut self.x), crate::dnd::WatchEnd::Unconfirmed));
+                        let end = crate::drop_settle::unconfirmed_end(settle.as_ref());
+                        self.late_pending = Some((app(&mut self.x), end));
                     }
                     _ => {
                         after.done();

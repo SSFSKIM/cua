@@ -260,12 +260,17 @@ export const scenarios = [
       const notice = 'Pending from your last drag, an unconfirmed drop: your drag into Google-chrome began a drag and drop, and Google-chrome did not confirm a drop after the release, so the drop may not have landed as the drag answered. Read the window before sending input again: your next input request will not be run';
       const app = f.bind_linux_app(linuxSky(ctx, f, {notice}), linuxWindow);
       const both = f.bind_linux_app(linuxSky(ctx, f, {notice, truncated: {nodes: 1200, depth: 0, failed: 0}}), {...linuxWindow, id: 8});
-      return [notice, await app.getAXState(), await app.getAXStateAndScreenshot(), await app.getAXState({emit: false}), await both.getAXState({emit: false})];
+      // the same kind with its reason, an Electron drop whose application did not answer in time (#171 M5, ruling 827)
+      const unanswered = 'Pending from your last drag, an unconfirmed drop: your drag into Electron began a drag and drop, and Electron did not answer in time for its drop to be confirmed, so the drop may not have landed as the drag answered. Read the window before sending input again: your next input request will not be run';
+      const electron = f.bind_linux_app(linuxSky(ctx, f, {notice: unanswered}), {...linuxWindow, id: 9});
+      return [notice, await app.getAXState(), await app.getAXStateAndScreenshot(), await app.getAXState({emit: false}), await both.getAXState({emit: false}),
+        unanswered, await electron.getAXState({emit: false})];
     }, check(record, assert) {
       const [notice] = record.result;
       const state = `${notice}\n${RENDERED}`;
-      assert.deepEqual(record.result.slice(1), [state, {state, screenshot: {uint8: [5, 6]}}, state,
+      assert.deepEqual(record.result.slice(1, 5), [state, {state, screenshot: {uint8: [5, 6]}}, state,
         `${state}\nAccessibility tree truncated: at least 1200 elements not shown (over the element limit)`]);
+      assert.deepEqual(record.result.slice(6), [`${record.result[5]}\n${RENDERED}`], 'the reason\'s notice renders the same way');
       assert.deepEqual(writes(record), [['cua.state', state], ['cua.state', state]], 'the emitted state carries the notice too');
     }},
   {name: 'linux app: a state with no notice, or an empty one, renders byte for byte as before', run: async (f, ctx) => {

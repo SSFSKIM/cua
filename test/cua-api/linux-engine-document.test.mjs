@@ -38,6 +38,9 @@ const QUOTED = [
     '{app} began a drag and drop, which changes the desktop; it was cancelled before the drop, so nothing was dropped.'],
   ['Pending from your last drag,', [LINUX_DOCUMENT], 'native/linux-engine/src/dnd.rs',
     'Pending from your last drag, {}. Read the window before sending input again: your next input request will not be run'],
+  // An Electron drop whose application did not answer the engine's syncs before the release (#171 M5, ruling 827).
+  ['did not answer in time for its drop to be confirmed', [LINUX_DOCUMENT], 'native/linux-engine/src/dnd.rs',
+    'an unconfirmed drop: your drag into {app} began a drag and drop, and {app} did not answer in time for its drop to be confirmed, so the drop may not have landed as the drag answered'],
   ['Accessibility tree truncated: at least <n> elements not shown (<reason>)', [LINUX_DOCUMENT, README], 'src/cua-api/bind-linux-app.mjs',
     'Accessibility tree truncated: at least ${total} elements not shown (${reason})'],
   ['clipboard update timed out', [README], 'native/linux-engine/src/copy.rs', 'CopyRoute::Text => "clipboard update timed out",'],

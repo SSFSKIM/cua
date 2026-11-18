@@ -333,6 +333,10 @@ fn pending_cause(app: &str, end: &WatchEnd) -> String {
             "an unconfirmed drop: your drag into {app} began a drag and drop, and {app} did not confirm a drop after \
              the release, so the drop may not have landed as the drag answered"
         ),
+        WatchEnd::Unanswered => format!(
+            "an unconfirmed drop: your drag into {app} began a drag and drop, and {app} did not answer in time for its \
+             drop to be confirmed, so the drop may not have landed as the drag answered"
+        ),
         WatchEnd::Failed(why) => format!(
             "a failed watch: the drag-and-drop watch after your drag into {app} failed ({why}), so a drop may have \
              happened unseen and changed the desktop"
@@ -438,6 +442,10 @@ pub enum WatchEnd {
     /// A drag and drop under way at the release whose target sent no activation request for its window within
     /// [`DROP_CONFIRM`] after it: the drop may not have landed, though the drag answered as if it had.
     Unconfirmed,
+    /// An Electron drop under way at the release whose application did not answer the engine's syncs in time
+    /// (`drop_settle::Settle`, M5's ruling 827): its drag cursor at the release cannot be told to be its answer for where
+    /// the pointer rests, so the drop is unconfirmed, with that reason.
+    Unanswered,
     /// The watch could not keep watching (its connection failed, a round trip failed, the thread panicked): whether a
     /// drag and drop began cannot be told.
     Failed(String),
@@ -505,6 +513,9 @@ pub struct LateWatch {
     released_at: std::cell::Cell<Option<(Instant, bool)>>,
     /// The window whose activation request confirms the drop (`NONE`: none yet), read by the watch's thread.
     confirm: std::sync::Arc<std::sync::atomic::AtomicU32>,
+    /// Whether the drop it waits to see confirmed is an Electron source's whose settle failed (ruling 835 keeps the
+    /// activation's precedence; 837 counts the case in `drop_settles.settle_failed_activation_confirmed`).
+    pub settle_failed: bool,
 }
 
 impl LateWatch {
@@ -531,6 +542,7 @@ impl LateWatch {
                     EscapeRoute::Xtest => None,
                 },
                 released_at: std::cell::Cell::new(None),
+                settle_failed: false,
                 confirm: cell,
             }),
             Ok(Err(error)) => Err(anyhow::anyhow!("the drag-and-drop watch could not start: {error}")),
@@ -620,15 +632,16 @@ impl LateWatch {
         }
     }
 
-    /// A watch around a thread of the caller's (unit tests of the join).
+    /// A watch around a thread of the caller's (unit tests of the join, and the engine's of how it is collected).
     #[cfg(test)]
-    fn around(thread: std::thread::JoinHandle<WatchEnd>) -> LateWatch {
+    pub(crate) fn around(thread: std::thread::JoinHandle<WatchEnd>) -> LateWatch {
         LateWatch {
             notes: std::sync::mpsc::channel().0,
             thread: Some(thread),
             app: "app".into(),
             target: Some(0),
             released_at: std::cell::Cell::new(None),
+            settle_failed: false,
             confirm: Default::default(),
         }
     }
@@ -1448,6 +1461,20 @@ mod tests {
             "Pending from your last drag, an unconfirmed drop: your drag into Google-chrome began a drag and drop, and \
              Google-chrome did not confirm a drop after the release, so the drop may not have landed as the drag \
              answered. Read the window before sending input again: your next input request will not be run"
+        );
+        // an Electron drop whose application did not answer the settle's syncs in time (M5's ruling 827): the same
+        // kind, with its reason
+        assert_eq!(
+            pending_notice("Electron", &WatchEnd::Unanswered),
+            "Pending from your last drag, an unconfirmed drop: your drag into Electron began a drag and drop, and \
+             Electron did not answer in time for its drop to be confirmed, so the drop may not have landed as the drag \
+             answered. Read the window before sending input again: your next input request will not be run"
+        );
+        assert_eq!(
+            pending_refusal("Electron", &WatchEnd::Unanswered, "click"),
+            "Pending from your last drag, an unconfirmed drop: your drag into Electron began a drag and drop, and \
+             Electron did not answer in time for its drop to be confirmed, so the drop may not have landed as the drag \
+             answered; this click request was not run, so read the window before sending it again"
         );
         assert_eq!(
             pending_refusal(app, &WatchEnd::Failed("connection lost".into()), "drag"),

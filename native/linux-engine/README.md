@@ -322,6 +322,16 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   on task 73's review, adopted on 0 drags answered ok without a drop in 720 a load, plain drags and handles, at idle,
   at the gate's window load and at twice the load, evidence `m4/drag-handle/fix/`). Every other window keeps the floor
   with nothing to confirm.
+  Since 0.4.1 that accept counts only on a settled drop (`drop_settle.rs`; the design session's ruling 827, evidence
+  `m5/l4a-fix/`): Electron's drag loop can run tens of milliseconds behind the pointer, and the accept it shows at the
+  release is then its answer for a place the pointer has left. So before the end's last rest and again after its last
+  motion the engine sends the source a `_NET_WM_PING`, which Chromium answers on its drag loop's thread in event
+  order, each answer waited for at most 150 ms; the accept counts only when both were answered with the pointer at rest
+  between them. When the first answer came after the rest, the end rests a second time if both rests still end within
+  150 ms of the first ping (ruling 3a), and otherwise judges the drop as it would have without it. An application that
+  does not answer, or lists no ping, leaves the drop unconfirmed with that reason ("… did not answer in time for its drop
+  to be confirmed …"). `--stats` records each drop's `drop_cursor.settle` and the engine's `drop_settles` counts;
+  `--drop-no-settle` (measurement only) releases and judges as 0.4.0 did.
   With no request (or no accept) in time the drop is unconfirmed, never ok: `Pending from
   your last drag, an unconfirmed drop: …`, on every reply until the first acting request, refused with it. An acting
   request that comes before the 150 ms are over waits for the rest of them. The release at Chrome's accept cursor

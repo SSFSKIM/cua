@@ -1,0 +1,25 @@
+{
+  "label": "development run, not a release gate (task 101)",
+  "name": "stall",
+  "checkout": "/Users/new/Developer/GitHub/cua/.claude/worktrees/t101-041",
+  "commit": "ac8d86a62f9a80bb543e5459f6c42a34be267bb7",
+  "argv": [
+    "--experiment",
+    "drop-signals",
+    "--family",
+    "electron",
+    "--plan",
+    "t101-stall",
+    "--cua",
+    "/Users/new/Developer/GitHub/cua/.claude/worktrees/t101-041/native/linux-engine/target/release/cua-engine",
+    "--run",
+    "stall",
+    "--out",
+    "/Users/new/.local/share/cua-171/task101/out3/stall/run"
+  ],
+  "started": "2026-11-18T16:30:28.437Z",
+  "finished": "2026-11-18T16:31:10.170Z",
+  "exit": 0,
+  "child_exit": 0,
+  "display_watchdog": "clean"
+}

@@ -66,6 +66,9 @@ export const CELLS = {
   // stop ends, so the steps sent once the browser reads again come one by one (`freezeOf`)
   ...Object.fromEntries(PREFREEZE_ENDS.map((to) => [`prefreeze-${to}`, () => [[530, 128], [570, 128]]])),
   'prefreeze-linger-150': () => [[530, 128], [570, 128], [700, 128], [570, 160], [700, 160], [575, 128]],
+  // 0.4.1's failed settle (task 101's review): the plain short drop with the run's browser stopped across the drop's
+  // end (`STALL`), so neither of the settle's pings is answered in time and the drop answers the unanswered notice
+  stall: () => [[530, 128], [570, 128]],
   'dragstart-400': () => [[530, 358], [570, 358]],
   'press-400': () => [[530, 404], [570, 404]],
   link: () => [[530, 450], [570, 450]],
@@ -192,12 +195,20 @@ export function t14Outcome(cell, before, after) {
  * the release only when the browser itself lags behind the X stream; a stopped browser lags by construction.
  */
 export const freezeOf = (cell) => {
+  if (cell === 'stall') return STALL;
   const m = /^freeze-(\d+)$/.exec(cell);
   if (m) return { from: 60, to: Number(m[1]) };
   // stopped from the send, before the engine's press goes out (V5's lost motion)
   const pre = /^prefreeze(?:-linger)?-(\d+)$/.exec(cell);
   return pre ? { from: 0, to: Number(pre[1]) } : null;
 };
+
+/**
+ * The `stall` cell's browser stop, in ms after the drag is sent: the floor ends about 350 ms after the take, which comes
+ * some 30 ms after the press, so the stop covers the first ping (asked near the floor's end) and its 150 ms, the rest,
+ * the revisit and the second ping's 150 ms, and ends after the release.
+ */
+export const STALL = { from: 300, to: 950 };
 
 /** The covered-path cells' paths: long enough that a cover of the middle touches neither end. */
 export const COVER_CELLS = {
@@ -331,6 +342,9 @@ export const PLANS = {
   // stopped from 60 ms after the request to 250 ms (its late takes came there), on a drag the engine lets drop; run on
   // the engine before T14 too, its failing first
   't14-late': [['cua', 'freeze-250', 40]],
+  // 0.4.1's failed settle end to end (task 101's review; `--family electron`): plain drops whose Electron browser stops
+  // across their end, so the settle's pings go unanswered; a development plan, never judged by the gate
+  't101-stall': [['cua', 'stall', 10]],
   // M4's T17 fix wave (the design session's ruling on task 73's review, 2026-11-11): Electron's drop confirmed by its
   // drag loop's accept cursor at the release, for plain drops behind the floor and for handles (`--family electron`):
   // 300 short drops, the accepted-then-left control and the press inside the zone, 30 each. The short drop, not
@@ -683,7 +697,8 @@ export async function runDropSignals(args, { desktop, emit }) {
     const at = await locate({ desktop, oracle }, scene, ['dnd']);
     watch = await startDropWatch(scene.id);
     // the run's own browser process (the freeze cell's), never one found by name
-    const browser = family === 'chrome' && desktop.chrome ? runBrowser(desktop.chrome.profile) : null;
+    // (Electron's: the scene's own process, the browser process the harness spawned, whose UI thread runs the drag loop)
+    const browser = family === 'chrome' && desktop.chrome ? runBrowser(desktop.chrome.profile) : family === 'electron' ? scene.pid ?? null : null;
     // the `moved` cell's hook point: the root cell's end, the bare root beside the window, on the screen
     const moved = specs.some((s) => splitCell(s.cell).base === 'moved') ? screenOf(scene, windowPath(at, 'root', 0, scene.window).at(-1)) : null;
     const ends = offWindowEnds({ front: frontPoint(desktop), other: other && { id: other.id, ...clientOrigin(other.id) }, sink: sink && { id: sink.id, ...clientOrigin(sink.id) }, moved });

@@ -151,6 +151,12 @@ pub fn confirming(destination: Option<Window>, supported: bool, cursor: Option<O
     }
 }
 
+/// Whether a drop handed to Chrome's activation is an Electron source's whose settle failed (`settled`: None with no
+/// settle): ruling 835 keeps the activation's precedence, and 837 records the case in `--stats` alone.
+pub fn activation_over_failed_settle(confirming: Confirming, settled: Option<bool>) -> bool {
+    matches!(confirming, Confirming::Activation(_)) && settled == Some(false)
+}
+
 /// A `drag_handle` between its start (or a move with no start in this engine) and its end.
 pub(super) struct Handle {
     /// The drag's waits, by the start's family.
@@ -333,7 +339,6 @@ impl Engine {
         };
         if self.cfg.stats {
             let mut record = serde_json::Map::new();
-            record.insert("id".into(), Value::Null);
             record.insert("idle_handle".into(), super::late_stats(&released.app, &end));
             record.insert(
                 "answer".into(),
@@ -342,7 +347,7 @@ impl Engine {
             for (key, value) in std::mem::take(&mut self.extra) {
                 record.insert(key, value);
             }
-            eprintln!("{}", json!({ "stats": record }));
+            eprintln!("{}", super::standalone_stats_line(record, &self.drop_settles));
         }
         self.extra = request_extra;
         self.expired_handle = Some((released.app.clone(), released.at));
@@ -399,14 +404,13 @@ impl Engine {
         };
         if self.cfg.stats {
             let mut record = serde_json::Map::new();
-            record.insert("id".into(), Value::Null);
             record.insert("idle_handle".into(), super::late_stats(&app, &end));
             record.insert("by".into(), json!("watchdog"));
             record.insert("taken".into(), json!(taken));
             for (key, value) in std::mem::take(&mut self.extra) {
                 record.insert(key, value);
             }
-            eprintln!("{}", json!({ "stats": record }));
+            eprintln!("{}", super::standalone_stats_line(record, &self.drop_settles));
         }
         self.extra = request_extra;
         self.expired_handle = Some((app.clone(), fired.pointer));
@@ -492,7 +496,7 @@ impl Engine {
                         .family_of(window)
                         .is_some_and(|f| crate::families::confirms_drop_by_cursor(f.name))
                     {
-                        handle.cursor = Some(DropCursor::start().map_err(|e| format!("{e:#}")));
+                        handle.cursor = Some(DropCursor::start_for(Some(window)).map_err(|e| format!("{e:#}")));
                     }
                 }
             }
@@ -566,9 +570,22 @@ impl Engine {
     /// request put it, else success.
     fn release_handle(&mut self, mut handle: Handle) -> Released {
         let pacing = handle.pacing;
-        if !pacing.held_rest.is_zero() {
-            std::thread::sleep(pacing.held_rest);
-        }
+        // an Electron source whose drag and drop has begun: its application asked where it has got to before the rest,
+        // and again after the visit that follows it (`drop_settle::Settle`), each waited for at most
+        // `drop_settle::SYNC_BOUND`, with a second rest when the first answer came late (ruling 3a). A drag loop that
+        // runs behind the pointer is waited for here, so the rest is the page's to answer the pointer's last place, and
+        // the release reaches a loop that holds that answer
+        let settling = self.cfg.drop_settle
+            && handle.pressed
+            && !pacing.held_rest.is_zero()
+            && matches!(&handle.cursor, Some(Ok(cursor)) if cursor.take_seen());
+        let before_rest = match handle.cursor.as_mut() {
+            Some(Ok(cursor)) if settling => Some(cursor.sync_and_rest(pacing.held_rest)),
+            _ => {
+                std::thread::sleep(pacing.held_rest);
+                None
+            }
+        };
         let pointer = self.query_pointer();
         // with the pointer on another screen the reply's place is on that screen's root: a motion to it on the engine's
         // own root would carry the held pointer back across before the release
@@ -580,6 +597,14 @@ impl Engine {
         };
         crate::desktop::handle_hooks::during_dwell();
         std::thread::sleep(pacing.release);
+        let settle = match (before_rest, handle.cursor.as_mut()) {
+            (Some((before, second_rest)), Some(Ok(cursor))) => Some(crate::drop_settle::Settle {
+                before,
+                second_rest,
+                after: cursor.sync(crate::drop_settle::SYNC_BOUND),
+            }),
+            _ => None,
+        };
         let held = handle
             .holding
             .as_mut()
@@ -650,11 +675,26 @@ impl Engine {
         // the pointer came into it: Chromium keeps its last status's accept when the path leaves for one that does not
         // (the bare root, an xterm), or for one that has not answered yet, and drops nowhere (the design session's
         // ruling, 2026-11-11; the third review, P2)
+        // and only one the application had settled on: it answered before the rest and after the last motion, the
+        // pointer at rest between (M5's ruling 827: an accept read while the drag loop ran behind the pointer answered
+        // ok for a release outside the zone)
+        let settled = settle.map(|settle| {
+            let steps = cursor_read.as_ref().map_or(&[][..], |read| &read.steps[..]);
+            let settled = settle.settled(steps, true);
+            self.drop_settles.count(&settle, settled);
+            if let Some(Value::Object(record)) = cursor_record.as_mut() {
+                record.insert("settle".into(), settle.record(steps, true));
+            }
+            settled
+        });
         if let (Some(Confirming::Cursor(true)), Some(read)) = (confirmed, &cursor_read) {
             let (held, over) = self.accept_held_to_release(read, at);
-            confirmed = Some(Confirming::Cursor(held));
+            let counted = held && (settled == Some(true) || !self.cfg.drop_settle);
+            confirmed = Some(Confirming::Cursor(counted));
             if let Some(Value::Object(record)) = cursor_record.as_mut() {
                 record.insert("release_over".into(), over);
+                // what `linux-engine-v0.4.0` answered on this read, beside what the settle left of it
+                record.insert("accept_unsettled".into(), json!(held));
             }
         }
         let app = self.app_of_handle(handle.target);
@@ -677,6 +717,10 @@ impl Engine {
                 "moved": moved.is_some(),
                 "confirming": matches!(confirmed, Some(Confirming::Activation(_))),
                 "confirmed_by": confirmed.map(|c| format!("{c:?}")),
+                // ruling 837, placed by 838: true once Chrome's activation confirmed a drop whose Electron source's
+                // settle failed (set when its watch is collected, which the line waits for under `--stats`), and
+                // counted in `drop_settles`
+                "settle_failed_activation_confirmed": false,
                 "drop_cursor": cursor_record,
                 // the harness lines the release up with its own watchers (`--stats` only)
                 "release_wall_ms": release_wall,
@@ -690,12 +734,14 @@ impl Engine {
                 (Some(false), _) | (Some(true), Some(Confirming::Activation(_))) => {
                     // an earlier drag's watch, armed during the hold, is collected first
                     self.collect_late_watch(true);
-                    self.late_watch = Some(after.handed_over(app.clone()));
+                    let mut after = after.handed_over(app.clone());
+                    after.settle_failed = confirmed.is_some_and(|c| activation_over_failed_settle(c, settled));
+                    self.late_watch = Some(after);
                 }
                 (Some(true), Some(confirming)) if confirming.unconfirmed() => {
                     after.done();
                     self.collect_late_watch(true);
-                    self.late_pending = Some((app.clone(), WatchEnd::Unconfirmed));
+                    self.late_pending = Some((app.clone(), crate::drop_settle::unconfirmed_end(settle.as_ref())));
                 }
                 _ => after.done(),
             }
@@ -815,6 +861,28 @@ mod tests {
              s is released where it is)"
         );
         assert!(handle_held(Duration::from_millis(300)).contains("no request for 0.3 s"));
+    }
+
+    #[test]
+    fn a_chrome_destination_s_activation_outranks_an_electron_source_s_failed_settle() {
+        // ruling 835 (A): Chrome's activation is the destination's own word that it took the drop, so it outranks a
+        // timing check on the source. An Electron source whose settle failed shows no counted accept
+        // (`Some(Some(false))`), and over a Chrome window that takes the request the activation still decides
+        assert_eq!(confirming(Some(7), true, Some(Some(false))), Confirming::Activation(7));
+        // the case is told apart for `--stats` (ruling 837: `settle_failed_activation_confirmed`, the reply unchanged)
+        assert!(activation_over_failed_settle(Confirming::Activation(7), Some(false)));
+        assert!(
+            !activation_over_failed_settle(Confirming::Activation(7), Some(true)),
+            "a settled drop"
+        );
+        assert!(
+            !activation_over_failed_settle(Confirming::Activation(7), None),
+            "no settle: not an Electron source"
+        );
+        assert!(
+            !activation_over_failed_settle(Confirming::Cursor(false), Some(false)),
+            "unconfirmed: the notice"
+        );
     }
 
     #[test]

@@ -146,10 +146,12 @@ export function checkSteps(dirs) {
   let code = 0;
   for (const dir of dirs) {
     const v = settleVerdict(stepRecord(dir));
-    const of = `${v.engines} cua engine${v.engines === 1 ? '' : 's'}${v.undragged ? `, ${v.undragged} of them with no counter and sent no drag or drag_handle` : ''}`;
-    if (v.state === 'not taken') lines.push(`${dir}: not taken (${countsText(v.counts)}; ${of})`);
-    else if (v.state === 'taken') lines.push(`${dir}: TAKEN (${countsText(v.counts)}; ${of}): reruns as class A`);
-    else lines.push(`${dir}: unknown: ${v.unknown.length === 1 && !v.engines ? v.unknown[0] : `${v.unknown.length} of ${of} not recorded${v.counts ? ` (the others: ${countsText(v.counts)})` : ''}`}`);
+    const of = `${v.engines} cua engine${v.engines === 1 ? '' : 's'}`;
+    const undragged = v.undragged ? `; ${v.undragged} of them with no counter were sent no drag or drag_handle` : '';
+    if (v.state === 'not taken') lines.push(`${dir}: not taken (${countsText(v.counts)}; ${of}${undragged})`);
+    else if (v.state === 'taken') lines.push(`${dir}: TAKEN (${countsText(v.counts)}; ${of}${undragged}): reruns as class A`);
+    else if (!v.engines) lines.push(`${dir}: unknown: ${v.unknown[0]}`);
+    else lines.push(`${dir}: unknown: ${v.unknown.length} of ${of} not recorded${undragged}${v.counts ? `; the recorded: ${countsText(v.counts)}` : ''}`);
     for (const u of v.engines ? v.unknown : []) lines.push(`  ${u}`);
     if (v.state !== 'not taken') code = 1;
   }

@@ -5782,6 +5782,24 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      and the stderr captured over an observation, resolutions and a refusal; one case reads a plain field's value and
      then has the Markdown's classification fail. Each guard mutated away and caught.
   Date/Author: 2026-11-17, cursor235's implementer for #405 (ruling 1ea561bc:811 and the review of 6a1c7658..bc52384a).
+- Decision (#405, design ruling 1ea561bc:813, 2026-11-17, `fix/405-secure-field-unread`; with the review of
+  bc52384a..cd7a2f6d's three findings; narrows "#405, ruling 811" item 2): **a failed classification presumes a
+  password field only where one can be; elsewhere the value is dropped and said to be unread.**
+  1. **Which closures say `secure`** (`valueClassification`): a role or subrole AXSecureTextField, an unreadable role, and
+     a text-entry role (AXTextField, AXTextArea, AXComboBox, `presumedSecureRoles`) with an unreadable subrole: the node
+     says `secure`, rendered `secure text`. Another readable role with an unreadable subrole cannot be a password field:
+     its value attributes are dropped all the same, and its node says `valueUnread` instead, rendered `value unread`, so
+     the model reads the value as missing rather than empty.
+  2. **Dropped before the decoding** (P1): a closed reply's value attributes are left out of the names the data is
+     decoded from, so no plaintext is kept, converted or bounded on the way to being cleared.
+  3. **A closure by failure is unverifiable** (P2): `classificationFailed` on the data and the identity, apart from
+     `secure`; such an identity matches only another such, and only for the same handle, so two same-labelled fields
+     whose subroles cannot be read are redacted alike and never taken for each other. A closure by a password field's
+     own role or subrole matches across handles as before.
+  4. **The checks' reach** (P2): the fixture password has a length (41) no other text carries; the error sentences and
+     their wire, and the stderr captured over an observation, resolutions and a refusal, are searched for that number in
+     any form and for its run of either mask glyph, and a capture that fails fails the test.
+  Date/Author: 2026-11-17, cursor235's implementer for #405 (ruling 1ea561bc:813 and the review of bc52384a..cd7a2f6d).
 
 ## Outcomes & Retrospective
 

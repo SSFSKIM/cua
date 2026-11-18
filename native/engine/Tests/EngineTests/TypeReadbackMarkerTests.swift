@@ -458,6 +458,8 @@ final class TypeReadbackMarkerTests: XCTestCase {
         let (error, meta, reply) = type("pass", into: safari, concealed: concealed)
         XCTAssertEqual(error?.errorName, "typeUnconfirmed", name)
         XCTAssertEqual(reason(meta), "noLongerSecure", name)
+        XCTAssertEqual(record(meta)["secure"] as? Bool, true, "\(name): a password field's record, with no reads or poll time")
+        XCTAssertNil(record(meta)["reads"], name)
         XCTAssertTrue(error?.message.hasSuffix("The field may now show its text, so if it holds a secret, do not take a screenshot of it or call getAXState(); put it right with setValue, and do not type the text again.") ?? false, name)
         XCTAssertFalse(reply.contains("hunter2"), name)
         XCTAssertEqual(safari.valueReads, [], "\(name): \(safari.log)")

@@ -287,7 +287,7 @@ pub(crate) fn standalone_stats_line(
 }
 
 /// The exit's `--stats` line, written after every release the shutdown made (a held handle ended at EOF can settle; the
-/// review of task 103): the exit settle's wait (null when the exit had nothing to settle), what the shutdown's requests
+/// review of task 103): the exit settle's wait (only when one ran), what the shutdown's requests
 /// recorded (`extra`), and the engine's settles over its life marked `settle_final`, which no other line carries, so a
 /// reader tells the final snapshot from an idle release's.
 pub(crate) fn exit_stats_line(
@@ -295,7 +295,11 @@ pub(crate) fn exit_stats_line(
     mut extra: serde_json::Map<String, Value>,
     settles: &crate::drop_settle::SettleCounts,
 ) -> Value {
-    extra.insert("exit_settle".into(), json!({ "waited_ms": waited_ms }));
+    // the exit settle's wait only when one ran: a reader takes the field as proof that it ran (focus-timer's stop
+    // judge; task 103's review)
+    if let Some(waited) = waited_ms {
+        extra.insert("exit_settle".into(), json!({ "waited_ms": waited }));
+    }
     extra.insert("settle_final".into(), json!(true));
     standalone_stats_line(extra, settles)
 }
@@ -982,13 +986,9 @@ mod stats_line_tests {
         assert_eq!(line["stats"]["settle_final"], json!(true));
         assert_eq!(line["stats"]["exit_settle"], json!({ "waited_ms": 2.5 }));
         assert_eq!(line["stats"]["handle"], json!({ "pressed": true }));
-        // `exit_settle` is always there: a null wait when the exit had nothing to settle
+        // no exit settle ran: no `exit_settle`, which a reader takes as proof that one did; the final snapshot still
         let quiet = exit_stats_line(None, serde_json::Map::new(), &SettleCounts::default());
-        assert_eq!(
-            quiet["stats"]["exit_settle"],
-            json!({ "waited_ms": null }),
-            "no settle waited"
-        );
+        assert_eq!(quiet["stats"].get("exit_settle"), None, "no settle waited");
         assert_eq!(quiet["stats"]["settle_final"], json!(true));
         assert_eq!(
             quiet["stats"]["drop_settles"],

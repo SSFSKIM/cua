@@ -3993,7 +3993,8 @@ fn the_exit_s_stats_line_is_the_settles_final_snapshot_after_the_shutdown_s_rele
     let exit = lines.last().unwrap();
     assert_eq!(exit["id"], json!(null));
     assert_eq!(exit["settle_final"], json!(true), "the last line is the exit's: {exit}");
-    assert!(exit["exit_settle"].is_object(), "{exit}");
+    // no key went to a covered window, so no exit settle ran: no `exit_settle`, the final snapshot all the same
+    assert_eq!(exit.get("exit_settle"), None, "{exit}");
     assert!(exit["drop_settles"]["entered"].is_u64(), "{exit}");
     assert_eq!(
         exit["handle"]["pressed"],

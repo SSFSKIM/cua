@@ -5977,8 +5977,8 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
        sample so a concealed request's schedule has one shape, whether or not a match came.
      - **Inside the budget.** The window no longer runs past the 1 s budget. A match that cannot hold for the window
        before the budget is unconfirmed, answering `lengthMismatch`. A genuine field must therefore finish taking the
-       text within 730 ms of the last post: the budget less the window and the 50 ms floor (below).
-       agent-cursor.md says so.
+       text within 730 ms of the last post: the budget less the window and the 50 ms floor (below); wave 8 made it
+       680 ms, the budget less the window and one 100 ms slot. agent-cursor.md says so.
      - **Ruling 842: one constant, sized from the qualification.** The window is one value for every lane, never one
        per lane, and it is one line to change. The design session set it at 220 ms, three times AppKit's gap p99 of
        72.6 ms (218 ms), from the hosted qualification's full run. Direct fixture edit gaps, scope "gaps ending after
@@ -6030,7 +6030,8 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
          final focus read's start, and the reply deadline D = C + `typeReadbackFocusReadCapMs` (100 ms): 1100 ms.
          `finish` takes B once and passes C and D down; nothing below takes its own start, so a focus read at a match
          moves nothing (i), and success and failure share B (iv). A literal checkpoint keeps its own C from its start.
-       - **Bounded work** (iii). The timeout fact, corrected: every element has a 1 s AX messaging timeout
+       - **Bounded work** (iii). *Superseded by wave 8, which removed the bound: kept as the record.*
+         The timeout fact, corrected: every element has a 1 s AX messaging timeout
          (`elementMessagingTimeout`), the read-back's own elements 100 ms (`typeReadbackMessagingTimeout`), and
          neither bounds a read by a deadline. The read-back now bounds its own reads as paste does
          (`boundedMessagingTimeout`, `effectReading`): under `ReadbackReads.bound`, an AX call is sent only while
@@ -6057,7 +6058,8 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
          monotonic clock, sleeping the remainder, so an early wake cannot end it. A reply sent more than
          `typeReadbackWakeToleranceMs` (10 ms, the scheduler jitter allowed) past D, after a read that overran its own
          timeout or a padding sleep that woke late, carries `lateReply: true` in the secure record, a fixed flag with
-         no duration (wave 7: the flag was first decided only on arrival, so an oversleep went unflagged). A concealed success still ends early, once its match has
+         no duration (wave 7: the flag was first decided only on arrival, so an oversleep went unflagged). A concealed
+         success still ends early, once its match has
          held and its focus read passes: deferring every secret would slow every login to buy nothing the caller can
          see. A plain field's concealed request is #354's and is not deferred.
        - **Success eligibility uses C.** A read counts toward a success only if it finished by its limit; its window
@@ -6076,7 +6078,8 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
          final batch and the final focus read then decide the early success as well. No other read takes either slot.
          A closed regular reply ends the regular batches and taints the request; the final batch is still read at its
          slot. The allowance is unchanged: a match taken by 730 ms holds by the final batch.
-       - **The final focus read's own budget.** It starts at C with the cap, 100 ms, which nothing before C can take:
+       - **The final focus read's own budget.** *Superseded by wave 8's slots: kept as the record.*
+         It starts at C with the cap, 100 ms, which nothing before C can take:
          its calls are bounded by D, or, if a read before it overran past C, by its own start + the cap, the reply then
          late and flagged. A call in a slot is sent while any time is left, so a sleep that wakes a little late never
          suppresses it; the floor gives way, not the read.
@@ -6104,6 +6107,50 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
          AXChildren, within 200 nodes, depth 12 and 40 ms: a walk-found field makes this whole walk again, up to a few
          hundred calls. A field the marker route found (`.marker`): the field's own AXFocused, one call, nothing
          before it. Each call's messaging timeout is the time left to the bound, 100 ms at most.
+     - **Wave 8: fixed 100 ms slots** (the hosted runs on 2e011dbf, all five lanes). Wave 7 took `fieldChanged` from 78
+       of 150 concealed controls to 0 of 150, and kept positives at 100 of 100, false adds at 0 and privacy at 0; but
+       `fieldUnreadable` came on 62 of 150 concealed controls and `lateReply` on 138 of 155 replies.
+       - **The diagnosis.** (a) The final batch started at C − 50 ms with its messaging timeout shrunk to the time left,
+         50 ms at most; a batch in a background app takes tens of milliseconds live, so it timed out, and a failed batch
+         is `.closed(.fieldUnreadable)`. (b) A messaging timeout is the caller's: the app goes on with the request, so
+         the next one, the final focus read, waits behind it; wave 7 gave that read its own start + the cap, so once the
+         final batch returned after C the reply passed D + 10 ms. Shrunk timeouts make reads time out, and reads that
+         timed out make the next ones slow. The stub now models (b): a request that times out leaves the app the rest of
+         its work, which the next request waits behind.
+       - **The simplification.** No timeout is shrunk and nothing is bounded: every read runs under the read-back's
+         standard element timeout, `typeReadbackMessagingTimeout`, T = 100 ms, as on f217f062. The live wrapper's
+         per-call timeouts, its floor refusal and its `until` bound are gone, with `ReadbackReads.bound` and
+         `ReadbackAX.setTimeout`; `messagingTimeoutFloorMs` and `boundedMessagingTimeout` stay in AX.swift for paste
+         alone. What three-state focus needs stays: a call answering `cannotComplete`, or a walk left unfinished, makes
+         the focus check unknown.
+       - **The slots,** sized to T so a read that takes all of its timeout still ends in its slot: no regular batch, and
+         no focus check at a match, starts after C − 2T (800 ms), so each ends by C − T; the final batch starts at
+         C − T (900 ms) and the final focus read, the success path's own unbounded check, at C; D = C + T, so
+         `typeReadbackFocusReadCapMs` is 100 and must equal T (a test pins it). The reply waits until D on the
+         monotonic clock, and `lateReply` is decided after that sleep with the 10 ms tolerance. A literal request's
+         batches start by C − T, then its unbounded focus check, as before; its full poll now ends at 900 ms.
+       - **The allowance is 680 ms**: the final batch's slot less the window (900 − 220), since a match taken by then
+         holds by the final batch, which decides a success with the final focus read; a literal request's last batch is
+         at 900 ms as well. agent-cursor.md says so. (The brief's 580 ms, C − 2T − the window, would hold only if the
+         final batch could not confirm.)
+       - **The residuals.** A read that overruns its 100 ms slot pushes the next one later; the reply is flagged
+         `lateReply` once it passes D + 10 ms. A walk-found field's walk that cannot finish within its own bounds
+         (40 ms, 200 nodes, depth 12) or meets a read that times out is unknown.
+       - **Tests.** A second property run, `testExactControlsAnswerLengthMismatchOnTimeAtLiveCosts` (seed 0x414F218,
+         2000 cases, two secrets of different lengths into one field each): batch reads cost 20 to 90 ms and focus reads
+         10 to 90 ms, within T, each a function of the read's time; a genuine field confirms, and an exact add or drop
+         answers `lengthMismatch` at D, never `fieldUnreadable`, `fieldChanged` or `lateReply`; both secrets answer
+         alike. On 2e011dbf every one of its exact controls answered `fieldUnreadable`. The first property run (seed
+         0x414F217) is kept. Restated for the slots, since they assumed wave 6's and wave 7's shrunk timeouts or bound:
+         (iii) `testASlowLastBatchCannotPushTheReplyPastTheDeadline` (90 ms batches from 760 ms and a 90 ms focus read
+         now answer the lost match's `lengthMismatch` at D, where the bound had cut the final batch to
+         `fieldUnreadable`); (iv) `testTheSuccessCutoffAndTheFailureDeadlineShareTheBoundary` (a final batch taking
+         100 ms confirms at C, one taking 101 ms times out);
+         `testTheFinalBatchAndFocusReadKeepTheirSlotsWhateverAMatchDoes` (matches at 580, 600 and 590 ms, a change at
+         850 ms); wave 7's budget test, renamed
+         `testAReadThatOverrunsItsSlotPushesTheNextLater` (a final batch taking 100, 150 or 230 ms: on time, on time,
+         late); a slow focus read now set only after posting, since the snapshot's lookup has the same timeout; and the
+         unknown-focus test's timed-out read now covers literal requests too. The read past the cutoff starts at 900 ms.
      - **What differs between concealed failures.** A held match whose focus read fails goes on as a tainted one.
        Since C is absolute, the time of that focus read displaces the polls it overlaps (8 of them for a 40 ms read)
        rather than extending the poll; then come the final focus read at C and the wait for D, as for every failure.
@@ -6155,7 +6202,8 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
          text, cuts it to four units 10 ms later and moves its focus, answers `fieldChanged` at the same time for a
          short and a long secret (then the budget, now the deadline); a concealed closed read mid-poll and a concealed
          focus failure after a held match each end there, while a literal request's still end at once; an off-grid
-         match (its read ending 1 ms past the last that holds) and a late last wake are each unconfirmed, plain and concealed; and an `NSNotFound` caret beside the right count,
+         match (its read ending 1 ms past the last that holds) and a late last wake are each unconfirmed, plain and
+         concealed; and an `NSNotFound` caret beside the right count,
          then a right reply, confirms a literal request on both bases.
        - From the review of cbce12e2..1f69470e (each failed before its fix), with a focus read that takes 40 ms:
          every concealed failure kind (a held match then a moved focus, a lost match, a closed read, a failed count,
@@ -6292,7 +6340,7 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   11. **The model's document**: agent-cursor.md's typing paragraph, the surface inventory's "Table 3 amendment
       (2026-11-18, #414, …)", the docs oracle and the core-documentation test byte for byte, and the README's secrets
       paragraph. The MCP surface names no password confirmation, so no pinned digest moves.
-  12. **Proof**: SecureTypeReadbackTests (51) run the live reads over a stub app whose password field holds plaintext,
+  12. **Proof**: SecureTypeReadbackTests (52) run the live reads over a stub app whose password field holds plaintext,
       answers it to any request, and reports distinctive counts and ranges. Ruling 826's leak test covers fifteen runs:
       - confirmations, plain, concealed and by the caret alone;
       - a dropped and an extra character, a caret elsewhere concealed and plain, a field that ignores a secret (its

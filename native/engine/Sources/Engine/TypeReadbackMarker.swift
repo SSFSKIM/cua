@@ -79,8 +79,6 @@ struct ReadbackAX {
   var batch: (AXUIElement, [String]) -> AttributeRead? = fetchAttributesAsTimed
   var pid: (AXUIElement) -> pid_t = { ownerPid(of: $0, fallback: 0) }
   var markers: ReadbackMarkerSymbols? = .live
-  /// An element's messaging timeout, in seconds, as a bounded read sets it (#414; the review of 1f69470e..f217f062).
-  var setTimeout: (AXUIElement, Float) -> Void = { AXUIElementSetMessagingTimeout($0, $1) }
 }
 
 /// The element WebKit's text marker names on `webArea`: the web area's AXSelectedTextMarkerRange, checked to be a range;

@@ -65,7 +65,7 @@ import Foundation
 //   request's success ends as a literal one's does; every concealed failure after posting, a snapshot refusal
 //   included, answers at one deadline from the last post (`typeReadbackBudgetMs` + `typeReadbackFocusReadCapMs`,
 //   `finish`), its reason from the final batch and the final focus read alone, each at a fixed slot from that post,
-//   so neither its timing nor its reason depends on its secret. Every read is bounded by the time left to its limit,
+//   so neither its timing nor its reason depends on its secret. Every read is scheduled in a slot of its timeout,
 //   and a focus check that cannot finish is unknown, never a moved focus. A success
 //   that a length check confirmed names its strength (`confirmation: "length"`) and its note says what a length proves
 //   (`readbackLengthNote`); a literal request of keys alone confirms no length and claims none; a failure carries its
@@ -79,17 +79,17 @@ let typeReadbackBudgetMs: Double = 1_000
 let typeReadbackPollIntervalMs: Double = 5
 /// A password field's quiet window (#414; the design session's ruling 1ea561bc:842): a length read that matches confirms
 /// only once the same read has held unchanged this long, read at `typeReadbackPollIntervalMs` within the budget, so a
-/// field must take the text within the budget less this and `messagingTimeoutFloorMs` (730 ms). One constant for every
-/// lane, never one per lane, sized at three times the slowest lane's drain in the hosted qualification's full run:
-/// AppKit's gap p99 of 72.6 ms (218 ms; direct fixture edit gaps ending after the last post, n=269), above Chrome for
+/// field must take the text within the budget less this and one messaging timeout's slot (680 ms). One constant for
+/// every lane, never one per lane, sized at three times the slowest lane's drain in the hosted qualification's full
+/// run: AppKit's gap p99 of 72.6 ms (218 ms; direct fixture edit gaps ending after the last post, n=269), above Chrome for
 /// Testing's 29 ms, Safari's 24 ms and the parity Electron lane's 25 ms. Raise it if a lane's measured drain p99, times
 /// three, passes it.
 let typeReadbackLengthDwellMs: Double = 220
-/// The cap on a concealed password-field read-back's final focus read (#414; the review of cbce12e2..1f69470e, P1):
-/// every concealed failure after posting answers at the last post + `typeReadbackBudgetMs` + this. The read starts at
-/// the cutoff with this budget of its own, which nothing before it can take (the review of f217f062..45172367): its AX
-/// calls are bounded by that deadline, or by its own start + this if a read before it overran past the cutoff. A read
-/// that overruns its timeout is the residual, flagged `lateReply`.
+/// The slot of a concealed password-field read-back's final focus read (#414; the review of cbce12e2..1f69470e, P1):
+/// every concealed failure after posting answers at the last post + `typeReadbackBudgetMs` + this. It is the read-back's
+/// standard messaging timeout, T, and must stay equal to `typeReadbackMessagingTimeout` (wave 8; a test pins it): every
+/// read is scheduled in slots of it, and the final focus read starts at the cutoff and, under that timeout, ends by the
+/// deadline. A read that overruns its slot is the residual, flagged `lateReply`.
 let typeReadbackFocusReadCapMs: Double = 100
 /// The scheduler jitter a concealed failure's reply may show past its deadline and still count as on time (#414; the
 /// review of f217f062..45172367, 5): one that leaves more than this after the deadline, from a read that overran or a
@@ -248,41 +248,23 @@ struct ReadbackReads<Element> {
   var batch: (Element, [String]) -> AttributeRead? = { _, _ in nil }
   var now: () -> Double = monotonicMilliseconds
   var sleep: (Double) -> Void = { usleep(UInt32(max(0, $0) * 1000)) }
-  /// Bounds every read until it is called again by the absolute time `until` on `clock` (the read-back's `now`), or
-  /// lifts the bound (nil): each AX call is sent only while time is left, under a messaging timeout of the time left at
-  /// most, and the usual timeout is put back after (paste's `effectReading` pattern). A call not sent fails. The poll
-  /// itself starts a read only with `messagingTimeoutFloorMs` left.
-  var bound: (_ until: Double?, _ clock: @escaping () -> Double) -> Void = { _, _ in }
 }
 
 extension ReadbackReads where Element == AXUIElement {
   /// The live reads of `pid`'s focused field through `ax`, each element given the read-back's messaging timeout; the
   /// text-marker route only when `markerRoute` (`readbackMarkerRoute`, Safari) and its symbols resolved.
   static func live(pid: pid_t, markerRoute: Bool, ax base: ReadbackAX = ReadbackAX()) -> ReadbackReads<AXUIElement> {
-    // Every AX call goes through `bounded`: under a bound (`ReadbackReads.bound`), a call is sent only while time is
-    // left, its element's messaging timeout the time left at most, and the read-back's usual timeout put back after, as
-    // paste's `effectReading` bounds its reads; a call not sent fails as a timeout does. A slot's read whose sleep woke
-    // a little late is still sent, under what is left.
-    // A call not sent, or one that answered cannotComplete (a messaging timeout's error), marks the reads `starved`: a
-    // focus check that saw one and named no field is unknown, not moved.
-    let limit = ReadbackBound()
-    func bounded<Answer>(_ element: AXUIElement, failed: Answer, _ call: () -> Answer) -> Answer {
-      guard let until = limit.until else { return call() }
-      let left = until - limit.clock()
-      guard left > 0 else { limit.starved = true; return failed }
-      base.setTimeout(element, Float(min(Double(typeReadbackMessagingTimeout), left / 1000)))
-      defer { base.setTimeout(element, typeReadbackMessagingTimeout) }
-      return call()
-    }
+    // Every read runs under its element's standard messaging timeout, `typeReadbackMessagingTimeout` (wave 8: no
+    // timeout is shrunk, since a timed-out request keeps the app busy and the next one waits behind it). A call that
+    // answers cannotComplete (a messaging timeout's error) marks the reads `starved`: a focus check that saw one and
+    // named no field is unknown, not moved.
+    let starved = ReadbackStarved()
     func noting(_ answer: (value: CFTypeRef?, error: AXError)) -> (value: CFTypeRef?, error: AXError) {
-      if answer.error == .cannotComplete { limit.starved = true }
+      if answer.error == .cannotComplete { starved.flag = true }
       return answer
     }
-    let ax = ReadbackAX(copy: { element, name in noting(bounded(element, failed: (nil, .cannotComplete)) { base.copy(element, name) }) },
-                        copyParameterized: { element, name, parameter in
-                          noting(bounded(element, failed: (nil, .cannotComplete)) { base.copyParameterized(element, name, parameter) })
-                        }, batch: { element, names in bounded(element, failed: nil) { base.batch(element, names) } },
-                        pid: base.pid, markers: base.markers, setTimeout: base.setTimeout)
+    let ax = ReadbackAX(copy: { noting(base.copy($0, $1)) }, copyParameterized: { noting(base.copyParameterized($0, $1, $2)) },
+                        batch: base.batch, pid: base.pid, markers: base.markers)
     func timed(_ element: AXUIElement) -> AXUIElement {
       AXUIElementSetMessagingTimeout(element, typeReadbackMessagingTimeout)
       return element
@@ -312,14 +294,14 @@ extension ReadbackReads where Element == AXUIElement {
     func lookup(marker: ReadbackMarkerReads<AXUIElement>?) -> ReadbackFound<AXUIElement>? {
       readbackFocusedField(application: timed(AXUIElementCreateApplication(pid)), focused: { read($0, kAXFocusedUIElementAttribute, asElement) },
                            primaryWindow: { element($0, kAXFocusedWindowAttribute) ?? element($0, kAXMainWindowAttribute) },
-                           walk: walk, marker: marker, unfinished: { limit.starved = true })
+                           walk: walk, marker: marker, unfinished: { starved.flag = true })
     }
     return ReadbackReads(focused: { lookup(marker: takesMarker ? marker : nil) }, stillFocused: { field, found in
-      limit.starved = false
+      starved.flag = false
       return readbackStillFocused(field, found: found, again: {
         if case .field(let again, _, _)? = lookup(marker: nil) { return again }
         return nil
-      }, isFocused: walk.isFocused, same: { CFEqual($0, $1) }, unfinished: { limit.starved })
+      }, isFocused: walk.isFocused, same: { CFEqual($0, $1) }, unfinished: { starved.flag })
     }, role: { string($0, kAXRoleAttribute) }, subrole: { field in
       let (raw, error) = ax.copy(field, kAXSubroleAttribute)
       return readbackSubrole(raw, error)
@@ -327,16 +309,14 @@ extension ReadbackReads where Element == AXUIElement {
       guard let range = rangeWire(ax.copy(element, kAXSelectedTextRangeAttribute).value), let location = range["location"],
             let length = range["length"] else { return nil }
       return NSRange(location: location, length: length)
-    }, batch: { ax.batch($0, $1) }, bound: { limit.until = $0; limit.clock = $1 })
+    }, batch: { ax.batch($0, $1) })
   }
 }
 
-/// The live reads' bound (`ReadbackReads.bound`): the absolute time every AX call must finish by, or none.
-private final class ReadbackBound {
-  var until: Double?
-  var clock: () -> Double = monotonicMilliseconds
-  /// Whether a call since the last focus check began was not sent, or timed out, or a walk was left unfinished.
-  var starved = false
+/// Whether a read since the last focus check began timed out (cannotComplete), or a walk was left unfinished: the
+/// check's answer is then unknown unless it named a field.
+private final class ReadbackStarved {
+  var flag = false
 }
 
 /// The bounds of the walk for the focused field (`readbackFocusedByWalk`), sized from run 44022892172 (Safari 27.2, 10
@@ -797,7 +777,7 @@ final class TypeReadback<Element> {
     do {
       guard plan.expects else { throw typeUnconfirmed(record.reason ?? .valueUnreadable) }
       // A concealed request is always read back once, whatever its keys, so its number of waits is always one.
-      if unchecked || concealed { try confirm(through: units.count, beforeKey: false, cutoff: cutoff, deadline: deadline) }
+      if unchecked || concealed { try confirm(through: units.count, beforeKey: false, cutoff: cutoff) }
     } catch {
       if concealed, record.secure {
         while reads.now() < deadline { reads.sleep(deadline - reads.now()) }
@@ -823,12 +803,12 @@ final class TypeReadback<Element> {
 
   /// #414: polls a password field's length batch until one reply confirms units `0..<end` typed over its snapshot
   /// (`readbackLengthJudged`), then checks the field is still the focus. Every time is absolute, passed in: `cutoff`
-  /// (C) ends the batches, and `deadline` (D) bounds a concealed request's final focus read; `finish` takes both from
-  /// B, the last post (the review of 1f69470e..f217f062), and a literal checkpoint takes its own C from its start. The
-  /// count and range never leave this function: only the reason does. A concealed request never answers `caretMismatch`:
-  /// a field that ignored a secret typed over a selection keeps its count and range, so the count would match exactly
-  /// when the secret is as long as the selection, and the reason would tell its length; its caret is `lengthMismatch`,
-  /// as its count is. A literal request keeps the two reasons apart.
+  /// (C) ends the batches; `finish` takes it, and D, from B, the last post (the review of 1f69470e..f217f062), and a
+  /// literal checkpoint takes its own C from its start. The count and range never leave this function: only the reason
+  /// does. A concealed request never answers `caretMismatch`: a field that ignored a secret typed over a selection keeps
+  /// its count and range, so the count would match exactly when the secret is as long as the selection, and the reason
+  /// would tell its length; its caret is `lengthMismatch`, as its count is. A literal request keeps the two reasons
+  /// apart.
   ///
   /// A reply that matches confirms only once the same reply (the same count and range; with the caret's basis, still no
   /// count and the same range) has held for the quiet window, `typeReadbackLengthDwellMs` (ruling 1ea561bc:842), read
@@ -838,44 +818,39 @@ final class TypeReadback<Element> {
   /// has not yet reached the end of the text (and, from an empty field read without a range, its count is still short of
   /// the text's length). So a reading that matches and then changes means a character was added or dropped.
   ///
-  /// Bounded work: each read runs under a messaging timeout of the time left to its limit (`ReadbackReads.bound`), and
-  /// none starts with less than `messagingTimeoutFloorMs` left to it. A reply counts toward a success only if it
-  /// finished by its limit, its window timed from read starts.
+  /// Slots of the read-back's messaging timeout (wave 8): every read runs under the standard
+  /// `typeReadbackMessagingTimeout`, T (100 ms), and starts only where a read that takes all of it still ends in its
+  /// slot. A reply counts toward a success only if it finished by its limit, its window timed from read starts.
   ///
-  /// A literal request's batches run to C and it ends early on success, on a reply that leaves a held match, on a reply
-  /// past where a genuine field can be (`readbackLengthOvershoots`), and on a closed reply; then its focus is checked,
-  /// as before. A concealed request's two final observations have fixed slots from B, whatever a match did (the review
-  /// of f217f062..45172367, 1 and 2): the final batch at C − the floor, bounded by C, and the final focus read at C,
-  /// bounded by D. Its regular batches, and a focus check at a match, end by the final batch's slot, and no other read
-  /// takes either slot. So a field must take the text within the final slot less the window: 730 ms of B. A concealed
-  /// request ends early only on success: held for the window by a regular batch, and a focus check there passing. A
-  /// check that cannot start with the floor left before the final slot is not made: the final batch and the final
-  /// focus read then decide the success as well. A reply that leaves a held match, a focus check that fails, or a
-  /// closed reply (which ends the regular batches) taints it, so it never confirms. Every concealed failure's reason is
-  /// a function only of the final batch and the final focus read (`readbackConcealedReason`); `finish` answers it at D.
-  private func confirmLength(through end: Int, beforeKey: Bool, cutoff: Double, deadline: Double) throws {
+  /// A literal request's batches start by C − T, and it ends early on success, on a reply that leaves a held match, on
+  /// a reply past where a genuine field can be (`readbackLengthOvershoots`), and on a closed reply; then its focus is
+  /// checked, as before. A concealed request's two final observations have fixed slots from B, whatever a match did (the
+  /// review of f217f062..45172367, 1 and 2): the final batch at C − T, and the final focus read at C, so D = C + T. Its
+  /// regular batches, and a focus check at a match, start by C − 2T, so they end by the final batch's slot, and no other
+  /// read takes either slot. So a field must take the text within the final batch's slot less the window: 680 ms of B.
+  /// A concealed request ends early only on success: held for the window by a regular batch, and a focus check there
+  /// passing. A check that cannot start by C − 2T is not made: the final batch and the final focus read then decide the
+  /// success as well. A reply that leaves a held match, a focus check that does not find the field, or a closed reply
+  /// (which ends the regular batches) taints it, so it never confirms. Every concealed failure's reason is a function
+  /// only of the final batch and the final focus read (`readbackConcealedReason`); `finish` answers it at D. A read
+  /// that overruns its slot pushes the next one later: the residual, flagged `lateReply` once the reply passes D.
+  private func confirmLength(through end: Int, beforeKey: Bool, cutoff: Double) throws {
     guard case .expectLength(let field, let role, let basis, _, let found) = plan else { return }
     let typed = units[0..<end].reduce(0) { leaves($1) ? $0 : $0 + readbackLengthUnits($1) }  // a key that can leave adds nothing
     let entered = reads.now()
     defer { record.pollMs += reads.now() - entered }
-    func focused(within until: Double) -> ReadbackFocus {
-      reads.bound(until, reads.now)
-      defer { reads.bound(nil, reads.now) }
-      return reads.stillFocused(field, found)
-    }
-    let finalSlot = cutoff - messagingTimeoutFloorMs
-    let limit = concealed ? finalSlot : cutoff  // where the regular batches end
+    let slot = typeReadbackFocusReadCapMs  // T, the standard messaging timeout
+    let finalSlot = cutoff - slot
+    let limit = concealed ? finalSlot : cutoff  // where the regular batches end; each starts a slot before it at the latest
     var final: ReadbackFinalBatch?
     // The held match: its reply, and the end of the read that took it. A later read that starts at least the window
     // after it and still finds the same reply shows the reply held that long.
     var held: (count: ReadbackWalkRead<Int>, range: NSRange?, since: Double)?
     var tainted = false  // a concealed request whose reply left a held match, or whose focus failed at one: it never confirms
-    // One length batch, bounded by `until`, judged against the held match.
+    // One length batch, judged against the held match: it confirms only if it finished by `until`.
     func step(until: Double) -> ReadbackLengthStep {
       let at = reads.now()
-      reads.bound(until, reads.now)
       let answer = readbackLength(field, role: role, reads: reads)
-      reads.bound(nil, reads.now)
       let done = reads.now()
       switch answer {
       case .closed(let why):
@@ -906,7 +881,7 @@ final class TypeReadback<Element> {
       }
     }
     var confirmed = false
-    poll: while limit - reads.now() >= messagingTimeoutFloorMs {
+    poll: while limit - reads.now() >= slot {
       switch step(until: limit) {
       case .closed(let why):
         guard concealed else { throw unconfirmed(why, beforeKey) }
@@ -916,8 +891,8 @@ final class TypeReadback<Element> {
       case .holds:
         guard concealed else { confirmed = true; break poll }
         // A focus check at the match only if it can end before the final slot; else the final focus read decides.
-        if finalSlot - reads.now() >= messagingTimeoutFloorMs {
-          if focused(within: finalSlot) == .focused {
+        if finalSlot - reads.now() >= slot {
+          if reads.stillFocused(field, found) == .focused {
             record.lengthConfirmed = true
             return
           }
@@ -928,8 +903,8 @@ final class TypeReadback<Element> {
         if !concealed { break poll }  // a concealed request never ends on one: its schedule would tell the secret
       case .goesOn: break
       }
-      // No sleep after the last batch: the next could not start with the floor left.
-      if limit - (reads.now() + typeReadbackPollIntervalMs) < messagingTimeoutFloorMs { break }
+      // No sleep after the last batch: the next could not start a slot before the limit.
+      if limit - (reads.now() + typeReadbackPollIntervalMs) < slot { break }
       reads.sleep(typeReadbackPollIntervalMs)
     }
     guard concealed else {
@@ -947,15 +922,13 @@ final class TypeReadback<Element> {
       case .read(.unreadable)?, .closed?, nil: throw unconfirmed(.lengthUnreadable, beforeKey)
       }
     }
-    // The final batch at its slot, bounded by C; then the final focus read at C, with its own budget, the cap: bounded
-    // by D, or, if a read before it overran past C, by its own start + the cap, so nothing before it eats its time (the
-    // reply is then late, flagged by `finish`). It reads the app's focus, never the field. Each waits against the clock
-    // for its slot.
+    // The final batch at C − T, then the final focus read at C, the success path's own check: it reads the app's focus,
+    // never the field. Each waits against the clock for its slot.
     while reads.now() < finalSlot { reads.sleep(finalSlot - reads.now()) }
     var holds = false
     if case .holds = step(until: cutoff) { holds = true }
     while reads.now() < cutoff { reads.sleep(cutoff - reads.now()) }
-    let focus = focused(within: max(deadline, reads.now() + typeReadbackFocusReadCapMs))
+    let focus = reads.stillFocused(field, found)
     if holds, focus == .focused {
       record.lengthConfirmed = true
       return
@@ -964,12 +937,11 @@ final class TypeReadback<Element> {
   }
 
   /// Polls for the snapshot with its selection replaced by units `0..<end`, then checks the field is still the focus. A
-  /// password field's length confirmation takes `cutoff` and `deadline` from `finish`, or (a literal checkpoint) its own
-  /// cutoff from its start.
-  private func confirm(through end: Int, beforeKey: Bool, cutoff: Double? = nil, deadline: Double? = nil) throws {
+  /// password field's length confirmation takes `cutoff` from `finish`, or (a literal checkpoint) its own from its start.
+  private func confirm(through end: Int, beforeKey: Bool, cutoff: Double? = nil) throws {
     if case .expectLength = plan {
       let cutoff = cutoff ?? reads.now() + typeReadbackBudgetMs
-      return try confirmLength(through: end, beforeKey: beforeKey, cutoff: cutoff, deadline: deadline ?? cutoff + typeReadbackFocusReadCapMs)
+      return try confirmLength(through: end, beforeKey: beforeKey, cutoff: cutoff)
     }
     guard case .expect(let field, let role, let before, let range, let returnIsText, let found) = plan else { return }
     let typedUnits = units[0..<end].filter { !leaves($0) }  // a key that can leave adds nothing to the field

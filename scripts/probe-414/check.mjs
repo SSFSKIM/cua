@@ -134,8 +134,8 @@ const setupSteps=new Set(['foreground-activation','foreground-focus','foreground
 export const setupLabel=e=>setupSteps.has(e?.setupStep)?e.setupStep:null;
 // The Firefox focus identity probe runs as the smoke mode's scratch job as well as in the dedicated diagnostic modes.
 export const focusAllowed=(lane,mode,phase)=>phase==='focus'&&lane==='firefox'&&(mode==='smoke'||mode.startsWith('firefox-'));
-// The owned fixture's own timestamp of the last edit to its content (web: lastInputAtMs; AppKit: key applied, or a control's insertion).
-export const terminalEditAtMs=d=>{const t=[d?.lastInputAtMs,d?.lastKeyAppliedAtMs,d?.addedAtMs].filter(Number.isFinite);return t.length?Math.max(...t):null;};
+// Require a genuine edit. The independently injected prefix precedes the last regular key and cannot stand in for it.
+export const terminalEditAtMs=d=>Number.isFinite(d?.lastInputAtMs)?d.lastInputAtMs:Number.isFinite(d?.lastKeyAppliedAtMs)?d.lastKeyAppliedAtMs:null;
 export function drainIntervals(trace,{replyAtMs,confirmed=false,app,editAtMs}={}){
   const {lastPostAtMs:post,firstReadAtMs:first,sampledAtMs:changes,finalReadStartedAtMs:started,finalReadAtMs:final,confirmReadAtMs:confirmation,sampledDropped:dropped}=trace??{};
   if(dropped!==0||![post,first,started,final].every(Number.isFinite)||!Array.isArray(changes)||!changes.every(Number.isFinite)||

@@ -313,8 +313,8 @@ const entry=(over={},edit=1050,t=sample)=>{
 };
 test('a final sample is sizing-eligible only when it started after the fixture\'s own terminal edit', ()=>{
   assert.equal(terminalEditAtMs({lastInputAtMs:1050}),1050);
-  assert.equal(terminalEditAtMs({lastKeyAppliedAtMs:1040,addedAtMs:1060}),1060);
-  assert.equal(terminalEditAtMs({lastKeyAppliedAtMs:null}),null);
+  assert.equal(terminalEditAtMs({lastKeyAppliedAtMs:1040,addedAtMs:1000}),1040);
+  assert.equal(terminalEditAtMs({lastKeyAppliedAtMs:null,addedAtMs:1000}),null);
   assert.equal(terminalEditAtMs(undefined),null);
   assert.equal(drainIntervals(sample,{editAtMs:1050}).finalStartAfterEditMs,30);
   assert.equal(entry().ineligible,null);

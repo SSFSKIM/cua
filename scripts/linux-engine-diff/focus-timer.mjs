@@ -391,7 +391,8 @@ function collectFocusOuts(engine) {
 export function readStatsLine(line) {
   if (!line.startsWith('{"stats"')) return null;
   const { stats } = JSON.parse(line);
-  // the exit's line names a wait of null when it had nothing to settle (0.4.1's exit line is written either way)
+  // 0.4.1 writes the exit's line either way and names `exit_settle` only when an exit settle ran; only a numeric wait
+  // counts, so a line with no settle, or a candidate's null wait (25800860), never reads as one that ran
   return { focusOuts: focusOutsOf([stats]), settle: typeof stats.exit_settle?.waited_ms === 'number' ? stats.exit_settle : null };
 }
 

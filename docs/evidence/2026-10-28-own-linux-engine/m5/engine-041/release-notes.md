@@ -37,12 +37,14 @@ cua's own Linux engine, cua-engine 0.4.1, built from <commit> for x86-64 and arm
   `needless`, `after_motion`, `settled`, `settle_failed_activation_confirmed`), a handle's record's
   `settle_failed_activation_confirmed`, and on every line the engine's `drop_settles` counts (`entered`,
   `second_rest`, `skipped`, `unsettled`, `settle_failed_activation_confirmed`). The exit's line carries the final
-  counts with `settle_final: true` and `exit_settle`, which no other line has. `--drop-no-settle` is measurement only.
+  counts with `settle_final: true`, which no other line has, and `exit_settle` only when an exit settle ran.
+  `--drop-no-settle` is measurement only.
 
 ## Measured on the candidate (development runs, never counted; `m5/engine-041/`)
 
-The runs are of ac8d86a6, whose engine differs from this release's only in `--stats` lines written with no request (the
-exit's and the idle release's). Each run is L4a's or H1's whole plan through `gate.mjs --dev --pilot 100`, 560 drags
+The runs are of ac8d86a6, whose engine differs from this release's only in what its `--stats` lines record: the lines
+written with no request (the exit's and the idle release's), and 837's per-drag marker set by whichever path collects
+the drag's watch. Each run is L4a's or H1's whole plan through `gate.mjs --dev --pilot 100`, 560 drags
 each, from a clean checkout.
 
 | | arm64 L4a, twice the load | arm64 H1, idle | x64 L4a, twice the load |

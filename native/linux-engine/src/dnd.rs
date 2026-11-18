@@ -632,9 +632,9 @@ impl LateWatch {
         }
     }
 
-    /// A watch around a thread of the caller's (unit tests of the join).
+    /// A watch around a thread of the caller's (unit tests of the join, and the engine's of how it is collected).
     #[cfg(test)]
-    fn around(thread: std::thread::JoinHandle<WatchEnd>) -> LateWatch {
+    pub(crate) fn around(thread: std::thread::JoinHandle<WatchEnd>) -> LateWatch {
         LateWatch {
             notes: std::sync::mpsc::channel().0,
             thread: Some(thread),

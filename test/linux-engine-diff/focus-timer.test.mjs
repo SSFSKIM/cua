@@ -505,7 +505,9 @@ test("a --stats line's FocusOuts are read apart from the exit's settle, which is
   assert.deepEqual(readStatsLine(JSON.stringify({ stats: { id: null, focus_out: [out] } })), { focusOuts: [{ ...out, reported_on: null }], settle: null });
   assert.deepEqual(readStatsLine(JSON.stringify({ stats: { id: null, exit_settle: { waited_ms: 151.2 } } })), { focusOuts: [], settle: { waited_ms: 151.2 } });
   assert.deepEqual(readStatsLine(JSON.stringify({ stats: { id: 3, command: 'press_key' } })), { focusOuts: [], settle: null });
-  // since 0.4.1 the exit's line is written whatever it waited (task 101): a null wait is no settle
+  // since 0.4.1 the exit's line is written whatever it waited, with no `exit_settle` when none ran (task 101); a null
+  // wait, which a pre-release candidate wrote, is no settle either
+  assert.deepEqual(readStatsLine(JSON.stringify({ stats: { id: null, settle_final: true } })), { focusOuts: [], settle: null });
   assert.deepEqual(readStatsLine(JSON.stringify({ stats: { id: null, exit_settle: { waited_ms: null }, settle_final: true } })), { focusOuts: [], settle: null });
   assert.equal(readStatsLine('not stats'), null);
 });

@@ -94,7 +94,9 @@ below are of **ac8d86a6**, each from a clean checkout at that commit (`step.json
 and the arm64 worktree `t101-041`, each VM's own release build (`cua-engine 0.4.1 (ac8d86a62f9a)`; x64 sha256 in
 `fix1/x64/L4a/README.md`). The head after them, 5710996e and its follow-up, changes only `--stats` lines written with
 no request (the exit's and the idle release's: `drop_settles`, `settle_final`, `exit_settle`): no input, wait or
-answer moves, so the runs stand for it. Totals are reconstructed from each drag's `drop_cursor.settle` record.
+answer moves, so the runs stand for it. So does fix wave 2's, which sets 837's per-drag
+`settle_failed_activation_confirmed` wherever the drag's watch is collected: a recording change, whose X requests and
+replies match d5c4a737's on the same drag. Totals are reconstructed from each drag's `drop_cursor.settle` record.
 
 | | arm64 L4a, twice the load | arm64 H1, idle | x64 L4a, twice the load |
 |---|---:|---:|---:|

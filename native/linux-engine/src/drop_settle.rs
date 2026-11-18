@@ -259,11 +259,6 @@ impl SettleCounts {
         self.settle_failed_activation_confirmed += 1;
     }
 
-    /// How many such drops there have been.
-    pub fn activations_after_failed_settles(&self) -> u64 {
-        self.settle_failed_activation_confirmed
-    }
-
     pub fn record(&self) -> Value {
         json!({
             "entered": self.entered,

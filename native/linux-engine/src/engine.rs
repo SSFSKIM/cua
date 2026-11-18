@@ -518,8 +518,14 @@ impl Engine {
         let (app, target, settle_failed) = (watch.app.clone(), watch.target, watch.settle_failed);
         match watch.stop() {
             // a drop handed over for Chrome's activation that came: when its Electron source's settle had failed, the
-            // case ruling 837 records
-            crate::dnd::WatchEnd::Quiet if settle_failed => self.drop_settles.activation_confirmed_a_failed_settle(),
+            // case ruling 837 records, counted and marked in its drag's own record here, whichever path collects the
+            // watch. Under `--stats` that record is the one in `extra` now: the watch is collected before its drag's
+            // line is written (the request's own collect, the line's wait in `request_stats_line`, or the idle
+            // release's and the exit's, which write the release's record themselves)
+            crate::dnd::WatchEnd::Quiet if settle_failed => {
+                self.drop_settles.activation_confirmed_a_failed_settle();
+                crate::drop_settle::mark_activation_confirmed(&mut self.extra);
+            }
             crate::dnd::WatchEnd::Quiet => {}
             end => {
                 // a synthetic Escape is a key to the window's redirected session; one through XTEST is the desktop's
@@ -612,26 +618,27 @@ impl Engine {
     /// Once a response is out: the request's `--stats` line written, and work that can wait for the answer done
     /// (the desktop screenshot's MIT-SHM segment for the next one).
     pub fn after_response(&mut self) {
+        if let Some(line) = self.request_stats_line() {
+            eprintln!("{line}");
+        }
+        self.x.prepare_desktop();
+    }
+
+    /// The `--stats` line of the request just answered, None without `--stats`.
+    fn request_stats_line(&mut self) -> Option<String> {
         // under `--stats`, a drop handed to Chrome's activation though its Electron source's settle failed: its watch
         // ends by itself within `dnd::DROP_CONFIRM` of the release, so the line waits for it and says whether the
         // activation came, in the drag's own record (ruling 837, placed by 838; off the request path, which has
-        // answered). The watch is collected as `tick` would collect it once ended
+        // answered). The watch is collected as `tick` would collect it once ended, which marks the record
         if self.cfg.stats
             && self.pending_stats.is_some()
             && let Some(watch) = self.late_watch.as_ref().filter(|watch| watch.settle_failed)
         {
             watch.run_out();
-            let before = self.drop_settles.activations_after_failed_settles();
             self.collect_late_watch(false);
-            if self.drop_settles.activations_after_failed_settles() > before {
-                crate::drop_settle::mark_activation_confirmed(&mut self.extra);
-            }
         }
-        if let Some((id, command, elapsed, ok)) = self.pending_stats.take() {
-            let line = self.stats_line(id, command, elapsed, ok);
-            eprintln!("{line}");
-        }
-        self.x.prepare_desktop();
+        let (id, command, elapsed, ok) = self.pending_stats.take()?;
+        Some(self.stats_line(id, command, elapsed, ok))
     }
 
     fn drop_bus(&mut self) {
@@ -1010,6 +1017,81 @@ mod stats_line_tests {
             None,
             "a line mid-run is no final snapshot"
         );
+    }
+}
+
+#[cfg(test)]
+mod settle_mark_tests {
+    //! Ruling 837's per-drag marker (`settle_failed_activation_confirmed`), bound to the drag whose watch saw Chrome's
+    //! activation confirm its failed settle, whichever path collects that watch (task 101's review, after d5c4a737).
+    //! The drag itself needs an Electron source and a Chrome destination, which the live suite cannot make; each test
+    //! leaves the engine as such a drag leaves it, its record built and its watch handed over with the activation
+    //! already seen, and then runs the path that collects it.
+    use super::Engine;
+    use crate::dnd::{LateWatch, WatchEnd};
+    use crate::wire::Request;
+    use serde_json::{Value, json};
+
+    const FIELD: &str = "settle_failed_activation_confirmed";
+
+    /// An engine under `--stats` as a failed settle's drag leaves it: `record` its own, and its watch handed over and
+    /// already ended, the activation come (`Quiet`).
+    fn after_the_drag(record: (&str, Value)) -> Engine {
+        let mut engine = Engine::new(super::Config {
+            stats: true,
+            ..crate::default_config()
+        })
+        .unwrap();
+        engine.extra.insert(record.0.into(), record.1);
+        let mut watch = LateWatch::around(std::thread::spawn(|| WatchEnd::Quiet));
+        watch.settle_failed = true;
+        while !watch.finished() {
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        engine.late_watch = Some(watch);
+        engine
+    }
+
+    fn drag_record() -> (&'static str, Value) {
+        ("drop_cursor", json!({ "settle": { "settled": false, FIELD: false } }))
+    }
+
+    fn handle_record() -> (&'static str, Value) {
+        (
+            "handle",
+            json!({ FIELD: false, "drop_cursor": { "settle": { "settled": false, FIELD: false } } }),
+        )
+    }
+
+    #[test]
+    #[cfg_attr(not(feature = "live"), ignore = "needs an X display (--features live)")]
+    fn an_activation_seen_before_the_reply_is_assembled_marks_the_drag_s_own_line() {
+        // the watch ended before the reply was composed, so the request collects it, not the line's wait
+        let mut engine = after_the_drag(drag_record());
+        let response = engine.handle(Request {
+            id: json!(1),
+            command: "capabilities".into(),
+            input: None,
+        });
+        assert!(response.ok, "{:?}", response.error);
+        let line: Value = serde_json::from_str(&engine.request_stats_line().expect("--stats")).unwrap();
+        assert_eq!(line["stats"]["drop_settles"][FIELD], json!(1), "counted: {line}");
+        assert_eq!(
+            line["stats"]["drop_cursor"]["settle"][FIELD],
+            json!(true),
+            "marked: {line}"
+        );
+    }
+
+    #[test]
+    #[cfg_attr(not(feature = "live"), ignore = "needs an X display (--features live)")]
+    fn a_watch_stopped_by_an_idle_release_or_the_exit_marks_the_release_s_own_record() {
+        // the idle release and the exit stop the watch of the release they made, and write that record themselves
+        let mut engine = after_the_drag(handle_record());
+        engine.collect_late_watch(true);
+        assert_eq!(engine.drop_settles.record()[FIELD], json!(1));
+        assert_eq!(engine.extra["handle"][FIELD], json!(true));
+        assert_eq!(engine.extra["handle"]["drop_cursor"]["settle"][FIELD], json!(true));
     }
 }
 

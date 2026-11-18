@@ -140,4 +140,36 @@ The timing red rows were not setup-invalid: their final production AX sample beg
 
 Wave five uses a nominal **1100 ms** concealed-failure deadline from the post-typing boundary (1000 ms read-back budget + 100 ms final-focus allowance), with a stock IPC window of **1099–1150 ms** after the last native post. Unlike wave four, a concealed snapshot refusal is also padded if it posted. Success still waits for a **220 ms** stable match, leaving 780 ms to find one. First-post duration, which includes keying, remains informational.
 
-CfT and AppKit scratch audit the successful short/long/literal AX schedules only. The hosted fixture does not reliably produce an AX-only focus loss at exactly a held match or a separate observed held-then-lost match without making the witness invalid. The exact, unmodified candidate's two hosted stub tests cover the deadline for both kinds and ordered failure traces: a held match whose focus read fails is expected to have one extra focus read at that match; the rest of the trace equals a lost match's. Only fixed pass/fail and number of named tests are exported from that step. An optional coded baseline-shape projection still grants no privacy exception if Electron's earlier no-focus flag recurs.
+CfT and AppKit scratch audit the successful short/long/literal AX schedules only. The hosted fixture does not reliably produce an AX-only focus loss at exactly a held match or a separate observed held-then-lost match without making the witness invalid. The exact, unmodified candidate's two hosted stub tests cover the deadline for both kinds and ordered failure traces: a held match whose focus read fails is expected to have one extra focus read at that match; the rest of the trace equals a lost match's. Both named tests passed in the hosted run, from the exact unmodified fix pin. Only fixed pass/fail and number of named tests are exported from that step. An optional coded baseline-shape projection still grants no privacy exception if Electron's earlier no-focus flag recurs.
+
+**Result: red.** All 125 fix primaries delivered exactly and length-confirmed; all 125 main primaries delivered exactly and refused `secure`. Zero of 100 synchronous adds confirmed. All 50 drops refused, but one Electron parity concealed drop was a valid `fieldChanged` refusal rather than a length rejection. Privacy and setup coverage passed in every stock job. The earlier default Electron baseline shape flag did not recur. Every stock lane missed the fixed IPC timing window; all 80 required control timings were measured, and **36/80 exceeded 1150 ms**. Hosted macOS and provider versions were the same as the 180 ms run; AppKit alone ran frontmost.
+
+| Stock lane | Main / fix primaries: C/U/exact | Wrong add confirmations | Drops with length/caret rejection | Exact posted snapshot refusals | Privacy flags / setup-invalid | Deadline misses / measured |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| CfT | 0/25/25 → 25/0/25 | 0/20 | 10/10 | — | 0 / 0 | 8/15 |
+| Electron default | 0/25/25 → 25/0/25 | 0/20 | 10/10 | — | 0 / 0 | 3/15 |
+| Electron parity | 0/25/25 → 25/0/25 | 0/20 | 9/10 | — | 0 / 0 | 6/15 |
+| Safari large | 0/25/25 → 25/0/25 | 0/20 | 10/10 | — | 0 / 0 | 9/15 |
+| AppKit | 0/25/25 → 25/0/25 | 0/20 | 10/10 | 5/5 `lengthUnreadable` | 0 / 0 | 10/20 |
+
+All adds refused `lengthMismatch` except ten AppKit literal adds that refused `caretMismatch`. Five AppKit literal drops likewise refused `caretMismatch`; the other drops refused `lengthMismatch` apart from the single parity `fieldChanged`. No scored trial confirmed incorrectly. Snapshot and service distributions below describe each head's primary rows only.
+
+| Lane | Snapshot p50/p95 ms: main → fix | Service p50/p95 ms: main → fix | Post-typing failures, first native post p50/p95/max ms (informational) |
+| --- | --- | --- | --- |
+| CfT | 0.4/0.6 → 0.5/1.3 | 79.292/273.670 → 349.388/553.680 | 1208/1255/1255 |
+| Electron default | 3.5/6.8 → 3.2/6.9 | 103.391/416.053 → 353.755/569.477 | 1179/1244/1244 |
+| Electron parity | 3.5/5.7 → 3.5/6.6 | 94.058/245.947 → 359.489/509.025 | 1203/1248/1248 |
+| Safari large | 4.1/10.8 → 4.2/5.9 | 77.213/219.564 → 327.138/479.413 | 1208/1241/1241 |
+| AppKit | 0.3/1.2 → 0.7/4.3 | 168.531/390.549 → 421.854/601.517 | 1208/1313/1313 |
+
+These stock controls use **only the short concealed input class**; timing variation at one length does not show a length channel. Durations from the last native post, in ms (historical nearest-rank p50/p95; parentheses give the sample count):
+
+| Lane | Short adds: min/p50/p95/max (n) | Short drops: min/p50/p95/max (n) | AppKit posted snapshot controls: min/p50/p95/max (n) |
+| --- | --- | --- | --- |
+| CfT | 1105/1130/1178/1178 (10) | 1105/1165/1176/1176 (5) | — |
+| Electron default | 1109/1115/1177/1177 (10) | 1106/1142/1185/1185 (5) | — |
+| Electron parity | 1107/1148/1180/1180 (10) | 1107/1136/1178/1178 (5) | — |
+| Safari large | 1116/1155/1187/1187 (10) | 1133/1152/1177/1177 (5) | — |
+| AppKit | 1106/1148/1174/1174 (10) | 1104/1161/1177/1177 (5) | 1142/1170/1178/1178 (5; 3 misses) |
+
+CfT scratch passed **10/10** pairs with 15/15 structurally valid traces and zero forbidden secure AX calls. AppKit scratch passed **9/10** pairs: 14 exact-delivery successes had the same normalized schedule, and one exact-delivery long trial closed `fieldUnreadable` at 1114 ms after the last post. The failed-provider path had a distinct trace; all 15 traces passed structural, identity and forbidden-call checks. Neither scratch job had a privacy flag or an invalid fixture. The exact stock stub passed separately (two tests); it does not substitute for the failed stock IPC deadline or AppKit's live schedule coverage.

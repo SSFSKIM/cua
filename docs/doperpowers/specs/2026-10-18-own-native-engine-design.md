@@ -5721,6 +5721,36 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      The request filter at the source's boundary (`request` keeping only what it asked for) is now covered twice (the
      structure read keeps only its own names), so its mutation alone is not caught.
   Date/Author: 2026-11-17, cursor235's implementer for #405 (the review of 2e5b3059..6dc4bcd0).
+- Decision (#405's re-review, 2026-11-17, `fix/405-secure-field-unread`; the review of 6dc4bcd0..6a1c7658, eight
+  findings, seven accepted and one dismissed by the design session; amends "#405's review" above, items 1, 2, 5, 6 and
+  8): **every closure fails closed, a failed or unverifiable value read never matches as a wildcard, and a paste is
+  judged on its numbers alone.**
+  1. **The paste reading** (P1): role, subrole, range and count are read in one batch (`focusedEffectReading`), the
+     numbers marked `secure` by that batch's own classification, or when the batch fails, so none of them reaches the
+     wire after a field turned secure between requests.
+  2. **Failing closed** (P1): a Markdown classification that fails as a whole closes the field as an unreadable role
+     does (its cached and emitted value dropped); select_text refuses when its classification before the attributed
+     read fails, searching nothing.
+  3. **An unverifiable value** (P2): a value batch that cannot classify the element, or that fails, marks it unverified
+     (`valueFailed`, `descriptionFailed`), never a deliberate omission, and a failed value matches only another failed
+     one, so a replacement that could not be verified never inherits a token whose value counts. A value batch that
+     finds the field secure, or reads its role and subrole at all, gives the data those fresher role and subrole
+     (`reclassified`), so no match is made across a known change on stale structural ones. The re-fetch walk now
+     decides every structural match by the element's full read.
+  4. **The value description apart** (P2): `descriptionUnread` and `descriptionFailed` mark it separately from the value;
+     #390's valueless source still reads and compares it, and `ignoringValue` compares it again, as main did.
+  5. **Movement is the numbers'** (P2): `EffectReading.moved` compares range and count only, in the wait and the Return's
+     settle; `secure` only chooses the privacy and confirmation rules.
+  6. **A notification and the count** (P2): where a password field's count decides (`pasteJudgedByCount`), a trusted
+     notification no longer confirms by itself; the reading must show the count moved by the paste.
+  7. **The delivered length** (P2): the count is judged against the plain text the paste delivers (`deliveredUnits`, its
+     `.string` representation), not an html or Markdown source; the request's progress accounting keeps the source's.
+  8. **Dismissed, a deliberate boundary**: a value read while a field was plain is kept when the field turns secure later
+     in the same observation (the focus trailer finding it secure leaves the node the walk already collected), as a
+     screenshot taken then keeps what the screen showed. The guard never reads a value while the field is secure; it
+     does not revise what was read before.
+  9. **Proof**: SecureFieldTests (14) and two paste operation tests over the stub; each new guard mutated away and caught.
+  Date/Author: 2026-11-17, cursor235's implementer for #405 (the review of 6dc4bcd0..6a1c7658).
 
 ## Outcomes & Retrospective
 

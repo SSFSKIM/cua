@@ -148,14 +148,22 @@ pub fn settled(steps: &[Step], before: Sync, after: Sync, placed: bool) -> bool 
     rest.is_some()
 }
 
-/// A sync's token, never zero and its own among this engine's syncs, begun from the engine's process id so that an
-/// answer another engine's question drew late (the answers go to the root, where every watch reads them) is not taken
-/// for this one's.
+/// A sync's token, its own among this engine's syncs ([`token`]).
 fn next_token() -> u32 {
     use std::sync::atomic::AtomicU32;
     static NEXT: AtomicU32 = AtomicU32::new(0);
-    let count = NEXT.fetch_add(1, Ordering::Relaxed);
-    ((std::process::id() & 0xffff) << 16 | (count & 0xffff)).max(1)
+    token(std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed))
+}
+
+/// The token of an engine process's `count`-th sync. The answers go to the root, where the window manager reads its
+/// own pings' and every watch reads them all, so a token must not be one the window manager is waiting for, nor
+/// another engine's. Its top bit is set: Openbox numbers its pings from 1 (`openbox/ping.c`, `ping_next_id`), and a
+/// window manager that sends the server's time (mutter, KWin, xfwm4) reaches that half of the range only on a server up
+/// for more than 24 days, and then matches one token in 2^31 by chance. Below it the process id's low 15 bits, then
+/// the count's low 16. Were a token ever a window manager's, the worst it reads is that an application which has just
+/// answered a ping is alive.
+pub fn token(pid: u32, count: u32) -> u32 {
+    0x8000_0000 | (pid & 0x7fff) << 16 | (count & 0xffff)
 }
 
 /// What the thread has seen: every change, every step in order, and the image of each cursor it fetched while shown,
@@ -895,6 +903,17 @@ mod tests {
             Cursor(9),
         ];
         assert!(settled(&changes, BEFORE, AFTER, true));
+    }
+
+    #[test]
+    fn a_sync_s_token_is_never_a_small_number_a_window_manager_counts_its_pings_by() {
+        // Openbox numbers its pings from 1; the engine's tokens keep to the top half of the range, whatever the
+        // process id and however many syncs came before
+        for (pid, count) in [(0, 0), (1, 1), (0x8000, 0), (0xffff_ffff, 0xffff_ffff), (65536, 70000)] {
+            assert!(token(pid, count) >= 0x8000_0000, "{pid} {count}");
+        }
+        assert_ne!(token(7, 1), token(7, 2), "each sync its own");
+        assert_ne!(token(7, 1), token(8, 1), "each engine its own");
     }
 
     #[test]

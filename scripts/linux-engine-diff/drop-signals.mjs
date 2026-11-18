@@ -370,18 +370,24 @@ export const PLANS = {
   't17-slow-cold': Array.from({ length: 60 }, () => ['cua:handle', 'slow', 1]),
   // M5's task 98 (L4a's false ok on arm64: 2 of 4 cold handles at twice the load answered ok outside the zone): every
   // drag a fresh engine's first (`cold`), the settled engine and the unsettled one taking turns, so both meet the same
-  // load: the accepted-then-left control and the short drop 100 each a lane, the press inside the zone 50.
+  // load: the accepted-then-left control and the short drop 50 each a lane, the press inside the zone 25 (a sitting of
+  // about 260 fresh engines, about 25 minutes at load; run twice for 100). L4a's scene stands as it found the false
+  // oks: one `other` and one `slow` drag every tenth round open the second Electron window and the sink (without them
+  // the drag loop ran about half as far behind the pointer: the first sitting, stopped, `cold1`).
   // `t98-cold-shipped`: the same cells on one lane, for an engine without the flag (linux-engine-v0.4.0 itself).
   // `t98-cold-drag`: the plain drag's cells the same way, behind the floor
-  't98-cold': Array.from({ length: 100 }, (_, k) => [
+  't98-cold': Array.from({ length: 50 }, (_, k) => [
     ['cua:handle', 'left', 1], ['cua:handle-unsettled', 'left', 1], ['cua:handle', 'plain', 1], ['cua:handle-unsettled', 'plain', 1],
     ...(k % 2 === 0 ? [['cua:handle', 'inzone-out', 1], ['cua:handle-unsettled', 'inzone-out', 1]] : []),
+    ...(k % 10 === 0 ? [['cua:handle', 'other', 1], ['cua:handle', 'slow', 1]] : []),
   ]).flat(),
-  't98-cold-shipped': Array.from({ length: 100 }, (_, k) => [
+  't98-cold-shipped': Array.from({ length: 50 }, (_, k) => [
     ['cua:handle', 'left', 1], ['cua:handle', 'plain', 1], ...(k % 2 === 0 ? [['cua:handle', 'inzone-out', 1]] : []),
+    ...(k % 10 === 0 ? [['cua:handle', 'other', 1], ['cua:handle', 'slow', 1]] : []),
   ]).flat(),
-  't98-cold-drag': Array.from({ length: 60 }, () => [
+  't98-cold-drag': Array.from({ length: 30 }, (_, k) => [
     ['cua', 'left', 1], ['cua:unsettled', 'left', 1], ['cua', 'plain', 1], ['cua:unsettled', 'plain', 1],
+    ...(k % 10 === 0 ? [['cua:desktop', 'other', 1], ['cua:desktop', 'slow', 1]] : []),
   ]).flat(),
   // the gate's own plan with the unsettled lanes beside the settled ones (`t17-fix3` is L4a's and H1's)
   't98-fix3': [

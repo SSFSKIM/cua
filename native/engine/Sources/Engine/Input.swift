@@ -121,6 +121,9 @@ struct InputMeta {
   /// #359's wait for a posted click before an accessibility action on the text, and set_value's watch after its write
   /// (ClickOrdering.swift); nil when no pointer press to the app was pending.
   var pendingClick: PendingClickRecord?
+  /// #390's read-back of a set_value written without the focus fallback (ValueWithoutFocus.swift): its result, reads and
+  /// time, never the value.
+  var unfocusedValue: UnfocusedValueReadback?
   /// With detection on, the milliseconds from the app's last attributed user event to the request's receipt (null when
   /// none was attributed while the app was driven); with detection off, the machine-wide HID idle time at receipt.
   var hidIdleMs: Int?
@@ -188,6 +191,7 @@ struct InputMeta {
     if keyEffectUnconfirmed { wire["keyEffect"] = "unconfirmed" }
     if let menu { wire["menu"] = menu.wire }
     if let pendingClick { wire["pendingClick"] = pendingClick.wire }
+    if let unfocusedValue { wire["unfocusedValue"] = unfocusedValue.wire }
     if let afterActionRepairs = context.connection.afterAction.wire { wire["afterActionRepairs"] = afterActionRepairs }
     return wire
   }

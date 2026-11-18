@@ -76,8 +76,12 @@ final class FakeSource: ElementSource, @unchecked Sendable {
     }
     let unreadable = tree.unreadableAttributes[id] ?? []
     for name in unreadable { values.removeValue(forKey: name) }
+    // As the live read: AXValue answered only when requested (#390), and each read that requested it counted.
+    if requestedAttributes.contains(kAXValueAttribute) { valueReads[id, default: 0] += 1 } else { values.removeValue(forKey: kAXValueAttribute) }
     return ElementData(values: values, unreadable: unreadable)
   }
+  /// Reads that requested AXValue, by id (#390).
+  var valueReads: [Int: Int] = [:]
 
   override func owner(_ element: AXUIElement) -> pid_t { tree.owners[tree.id(element)] ?? 4242 }
   /// Gone checks by id.

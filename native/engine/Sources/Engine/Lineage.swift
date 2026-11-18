@@ -100,6 +100,8 @@ struct ElementIdentity {
   let help: String?
   let identifier: String?
   let url: String?
+  /// #390: the value was not read (a sensitive set_value's re-read), so the match leaves it out.
+  let valueUnread: Bool
   fileprivate(set) var pid: pid_t
 
   init(_ data: ElementData, pid: pid_t) {
@@ -114,14 +116,15 @@ struct ElementIdentity {
     help = data.help
     identifier = data.identifier
     url = data.url
+    valueUnread = data.valueUnread
     self.pid = pid
   }
 
   /// The vendor's match (FUN_100221838); `ignoringValue` leaves the value out, as the re-check after set_value's write
-  /// does (F §3.6, §16.4).
+  /// does (F §3.6, §16.4), and so does an identity whose value was not read (#390, `valueUnread`).
   func matches(_ other: ElementIdentity, ignoringValue: Bool = false) -> Bool {
     role == other.role && subrole == other.subrole && roleDescription == other.roleDescription && title == other.title
-      && (ignoringValue || value == other.value) && valueDescription == other.valueDescription && description == other.description
+      && (ignoringValue || valueUnread || other.valueUnread || value == other.value) && valueDescription == other.valueDescription && description == other.description
       && placeholder == other.placeholder && help == other.help && identifier == other.identifier && url == other.url
   }
 }
@@ -364,11 +367,16 @@ struct ElementResolver {
   var refetchDeadlineMs = Double(observationDeadlineMs)
 
   /// The engine's: `lineage`'s watches, the live handle, and `pid`'s application element.
-  static func live(_ lineage: Lineage, pid: pid_t) -> ElementResolver {
+  /// `readsValue` false (#390): its sources read no AXValue (`ElementSource.readsValue`).
+  static func live(_ lineage: Lineage, pid: pid_t, readsValue: Bool = true) -> ElementResolver {
     ElementResolver(
       invalidated: { lineage.invalidates($0.element, owner: $0.identity.pid) },
       stillValid: { copyAttribute($0, kAXRoleAttribute).error != .invalidUIElement },
-      source: { ElementSource() },
+      source: {
+        let source = ElementSource()
+        source.readsValue = readsValue
+        return source
+      },
       tree: { menuRoot in
         if let menuRoot { return (prepare(menuRoot), []) }
         let application = prepare(AXUIElementCreateApplication(pid))

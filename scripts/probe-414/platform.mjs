@@ -113,11 +113,16 @@ export async function startPlatform({lane,home,helper,cover,appkit,stage,singleP
       // Keep the same visible, nonoverlapping frames as the #395 proof; only address our owned Safari PID.
       try{execFileSync('/usr/bin/osascript',['-e',`tell application "System Events"\ntell (first process whose unix id is ${pid})\nset position of window 1 to {400, 30}\nset size of window 1 to {620, 720}\nend tell\nend tell`],{env,stdio:'ignore',timeout:15000});}catch{stage('safari-placement');throw Error('owned Safari placement');}
     }
-    stage('cover-launch');
-    coverApp=owned(cover,['--cover'],env,{stdout:l=>{try{if(JSON.parse(l).pid===coverApp.pid)coverReady=true;}catch{}}});
-    await until(()=>coverReady);
-    await until(async()=>{const r=await ask({op:'cover',pid:coverApp.pid});return r.bundleOk&&r.onScreen;});
-    active=coverApp.pid;
+    if(lane==='appkit'){
+      // Its secure editor has activated the fixture during background input, even after a clean empty preflight.
+      presentation='frontmost';fallback='background-secure-editor';active=pid;
+    }else{
+      stage('cover-launch');
+      coverApp=owned(cover,['--cover'],env,{stdout:l=>{try{if(JSON.parse(l).pid===coverApp.pid)coverReady=true;}catch{}}});
+      await until(()=>coverReady);
+      await until(async()=>{const r=await ask({op:'cover',pid:coverApp.pid});return r.bundleOk&&r.onScreen;});
+      active=coverApp.pid;
+    }
     async function arm(trial,m,onStage=()=>{}){
       onStage('prepare');await ensureFront(pid);
       const prep=await command({op:'prepare',trial,expected:'',setupText:m.setupText});

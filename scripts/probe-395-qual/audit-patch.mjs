@@ -35,6 +35,13 @@ export const DEFAULT_PHASE_HOOKS=Object.freeze([
  {name:'walk',signature:'func readbackFocusedByWalk<Element>(_ window: Element, _ walk: ReadbackFocusWalk<Element>) -> Element? {'},
  {name:'poll',signature:'func readbackPoll<Element>(_ field: Element, role: String, reads: ReadbackReads<Element>, compare: (Element) -> ReadbackRead) -> ReadbackPoll {'},
  {name:'fieldClosed',signature:'func readbackFieldClosed<Element>(_ field: Element, role: String, reads: ReadbackReads<Element>) -> TypeReadbackReason? {'}]);
+// The walk's own bound branch (`readbackFocusedByWalk`, identical at main f2c30fc5 and fix 60327d46). The audit records which bound
+// ended the walk from inside the branch, after the engine's condition has been evaluated unchanged: `index >= ...` is an integer
+// comparison, so no clock is read for it and none is added; it tells the node bound from the time bound (the condition's second
+// operand, reached only when the first is false). Applied to the one such branch in the function the `walk` hook marks.
+export const WALK_CAP_HOOK=Object.freeze({
+ from:'if index >= typeReadbackFocusWalkNodes || walk.now() - started > typeReadbackFocusWalkMs { return nil }',
+ to:'if index >= typeReadbackFocusWalkNodes || walk.now() - started > typeReadbackFocusWalkMs { /* probe395-audit */ Probe395Audit.shared.walkCap(nodes: index >= typeReadbackFocusWalkNodes); return nil }'});
 const sha=s=>createHash('sha256').update(s).digest('hex').slice(0,16);
 function swiftSources(dir){const out=[];(function walk(d){for(const e of readdirSync(d,{withFileTypes:true})){const p=join(d,e.name);if(e.isDirectory())walk(p);else if(e.name.endsWith('.swift'))out.push(p)}})(dir);return out.sort()}
 const occurrences=(text,needle)=>text.split(needle).length-1;
@@ -48,7 +55,7 @@ for(const hook of phaseHooks){
   if(!/^[a-z][A-Za-z0-9]{0,20}$/.test(hook.name??''))throw Error('invalid phase hook name');
   if(!hook.signature||hook.signature.includes('\n')||!hook.signature.endsWith('{'))throw Error('phase hook signature must be one line ending in {: '+hook.name);
  }
- for(const name of require)if(!phaseHooks.some(h=>h.name===name))throw Error('required phase hook is not configured: '+name);
+ for(const name of require)if(name!=='walkCap'&&!phaseHooks.some(h=>h.name===name))throw Error('required phase hook is not configured: '+name);
  // Validate everything the 354 patch does not before it writes: its own anchors fail on their own, ours fail before any 395 write.
  const base=readFileSync(input,'utf8');
  if(base.includes('Probe395Audit'))throw Error('source already audited for the schedule');
@@ -79,11 +86,20 @@ for(const hook of phaseHooks){
   else if(require.includes(hook.name))throw Error('required phase hook anchor missing or ambiguous: '+hook.name);
   else phases.skipped.push({name:hook.name,reason:holders.length===0?'anchor-absent':'anchor-ambiguous'});
  }
+ // The walk's bound branch, inside the walk function the `walk` hook marked and nowhere else (the function's own body, to its closing brace).
+ const caps={applied:false,reason:phases.applied.includes('walk')?null:'walk-hook-not-applied'};
+ if(caps.reason===null){
+  const walkHook=phaseHooks.find(h=>h.name==='walk'),[holder,text]=[...texts].find(([,t])=>t.includes(walkHook.signature));
+  const at=text.indexOf(walkHook.signature),close=text.indexOf('\n}\n',at),end=close<0?text.length:close,body=text.slice(at,end),n=occurrences(body,WALK_CAP_HOOK.from);
+  if(n===1){texts.set(holder,text.slice(0,at)+body.replace(WALK_CAP_HOOK.from,()=>WALK_CAP_HOOK.to)+text.slice(end));caps.applied=true;caps.reason=null}
+  else caps.reason=n===0?'branch-absent':'branch-ambiguous';
+ }
+ if(!caps.applied&&(require.includes('walkCap')||require.includes('walk')))throw Error('walk bound branch missing or ambiguous: '+caps.reason);
  for(const [p,t] of texts)writeFileSync(p,t);
  const swift=readFileSync(new URL('./audit.swift',import.meta.url),'utf8');
  writeFileSync(own,swift);
  return {audit:'schedule audit (order, names, element aliases, outcomes, clocks) layered over the #354 text/range counts; no AX requests added; response semantics unchanged; no value, range, marker, byte or length is read or kept',
-  base354:report354,redirects,boundaries:{typeText:true,eventPost:events.post===true,eventHid:events.hid===true},phases,source:{audit:sha(swift)}};
+  base354:report354,redirects,boundaries:{typeText:true,eventPost:events.post===true,eventHid:events.hid===true},phases,walkBounds:caps,source:{audit:sha(swift)}};
 }
 if(process.argv[1]&&realpathSync(process.argv[1])===fileURLToPath(import.meta.url)){
  const [root,...rest]=process.argv.slice(2);

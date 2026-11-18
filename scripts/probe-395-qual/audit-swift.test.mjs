@@ -31,7 +31,7 @@ test('the accumulator compiles in Swift 6 mode and its stderr decodes to the sch
   assert.equal(one.aliases,2);assert.deepEqual(one.roles,{0:'AXTextField'});assert.deepEqual(one.subroles,{});
   assert.equal(sched.preInput.entries,7);assert.equal(one.entries.filter(e=>e.api===5).length,1);assert.equal(lines[0].e.filter(e=>e[0]===5).length,1); // three events were posted, one is kept; another thread's is not counted
   assert.equal(sched.counters.byClass.marker,1);assert.equal(sched.counters.events.keyDown,1);assert.deepEqual(sched.counters.writes,{AXFocused:1});
-  assert.equal(sched.timeline.phases.walk.length,1);assert.equal(sched.complete,false); // overlaps>0: the overlapping request marks the record incomplete
+  assert.equal(sched.timeline.phases.walk.length,1);assert.deepEqual(sched.walk.whole.segments.map(g=>[g.reason,g.calls]),[['time',1]]);assert.equal(sched.walk.whole.invalid,false);assert.equal(sched.complete,false); // overlaps>0: the overlapping request marks the record incomplete
   assert.equal(decodeRecord(lines[1]).entries.length,0); // a fresh request starts clean
   assert.ok(run.stderr.length<4000&&!/secret value|123/.test(run.stderr)); // names are sanitized, nothing else is written
  }finally{rmSync(dir,{recursive:true,force:true})}

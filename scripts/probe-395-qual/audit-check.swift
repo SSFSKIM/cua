@@ -26,6 +26,7 @@ struct Probe395AuditCheck {
     audit.record(api: Probe395Audit.apiSingle, name: "secret value 123", element: a, error: .failure, started: t(), ended: t())
     let began = audit.phaseBegin("walk")
     audit.record(api: Probe395Audit.apiSingle, name: "AXChildren", element: b, error: .success, started: t(), ended: t())
+    audit.walkCap(nodes: false)  // the time bound ended this walk: a zero-length phase inside it
     audit.phaseEnd("walk", began)
     // Only the first posted event is recorded: the keys after it would show how much was typed.
     for virtualKey in [0, 1, 2] as [CGKeyCode] { if let key = CGEvent(keyboardEventSource: nil, virtualKey: virtualKey, keyDown: true) { audit.eventPosted(key) } }

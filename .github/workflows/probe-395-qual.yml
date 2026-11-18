@@ -65,7 +65,7 @@ jobs:
               test "$(git -C "$base-src" rev-parse HEAD)" = "$sha"
               if [ "$phase" = audit ]; then
                 required=walk,poll
-                if [ "$lane" = fix ]; then required=markedField,poll; fi
+                if [ "$lane" = fix ]; then required=markedField,poll,walkCap; fi
                 node scripts/probe-395-qual/audit-patch.mjs "$base-src" --require "$required" > "$RUNNER_TEMP/probe395-qual-stage/$lane-audit-patch.json"
               else
                 test -z "$(git -C "$base-src" status --porcelain)"

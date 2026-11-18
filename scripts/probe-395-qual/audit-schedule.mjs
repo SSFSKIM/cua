@@ -123,6 +123,36 @@ export function canonicalEntries(items,poll='poll'){
  }
  return {entries,iterations};
 }
+// The focused-field walk's two bounds, as the pinned sources set them (typeReadbackFocusWalkNodes and typeReadbackFocusWalkMs in
+// TypeReadback.swift at main f2c30fc5 and fix 60327d46). The audit patch records which one ended a walk (audit.swift `walkCap`:
+// a zero-length `walkCapNodes` or `walkCapTime` phase inside the walk phase, written in the bound's own branch after the engine
+// has decided, with no clock read of its own). A bound is DEMONSTRATED only when the walk's own reads agree with the marker:
+// one AXRole read per visited node, so exactly `nodes` of them for the node bound; for the time bound fewer than that, in a
+// phase at least `ms` long (the phase opens before the engine's clock starts and closes after its last check).
+export const WALK_CAP=Object.freeze({nodes:200,ms:40,phase:'walk',markers:Object.freeze({walkCapNodes:'nodes',walkCapTime:'time'})});
+const readsOf=(tokens,name)=>tokens.reduce((n,t)=>n+(t.split(':')[1]?.split(/[@!]/)[0].split('+').includes(name)?1:0),0);
+// Walk phases of an ordered entry list: the call tokens, and each walk phase as a [start,end) range of them with the bound that
+// ended it. `invalid` when the phases do not nest as the patch writes them (a walk inside a walk, an unclosed one, a bound marker
+// outside a walk or two inside one): such a schedule is never excused.
+export function walkParts(entries){
+ const tokens=[],segments=[];let open=null,invalid=false;
+ for(const e of entries){
+  const name=e.names[0];
+  if(e.api===API.phaseBegin&&name===WALK_CAP.phase){if(open)invalid=true;open={start:tokens.length,at:e.atMs,reason:null};continue}
+  if(e.api===API.phaseEnd&&name===WALK_CAP.phase){
+   if(!open){invalid=true;continue}
+   const body=tokens.slice(open.start);
+   segments.push({start:open.start,end:tokens.length,reason:open.reason,calls:body.length,roles:readsOf(body,'AXRole'),children:readsOf(body,'AXChildren'),durMs:round(e.atMs+e.durMs-open.at)});
+   open=null;continue;
+  }
+  if(e.api===API.phaseBegin&&WALK_CAP.markers[name]!==undefined){if(!open||open.reason)invalid=true;else open.reason=WALK_CAP.markers[name];continue}
+  if(e.api===API.phaseEnd&&WALK_CAP.markers[name]!==undefined)continue;
+  if(isCall(e))tokens.push(token(e));
+ }
+ if(open)invalid=true;
+ for(const g of segments)g.demonstrated=g.reason==='nodes'?g.roles===WALK_CAP.nodes:g.reason==='time'?g.roles<WALK_CAP.nodes&&g.durMs>=WALK_CAP.ms:false;
+ return {tokens,segments,invalid};
+}
 // The comparable keys of a list of entries: the calls alone (what a comparison uses) and, apart, with the phase markers.
 const keysOf=entries=>({calls:entries.filter(isCall).map(token).join('|'),phased:entries.map(token).join('|')});
 // Build everything a row keeps of one engine record. `preInputAvailable` is false when the build lacks an event hook (that
@@ -157,6 +187,8 @@ export function buildSchedule(rec,{preInputAvailable=true,markerAttemptCap=256}=
   preInput:{available:preInputAvailable,boundary:event?'event':'none',entries:pre.length,exactKey:keysOf(preItems).calls,shape:keysOf(preCanon.entries).calls,...counters(pre),timing:stats(pre)},
   postInput:{entries:post.length,shape:keysOf(postCanon.entries).calls,...counters(postAll),timing:stats(post)},
   shape:wholeKeys.calls,phaseKey:wholeKeys.phased,strictKey:keysOf(items).calls,
+  // The walk phases and what ended each, over the pre-input reads (compared exactly) and the canonical whole (compared as the shape). In memory only: tokens are not persisted.
+  walk:{pre:walkParts(preItems),whole:walkParts(whole.entries)},
   // Raw iteration count of each poll phase: informational, never part of a shape.
   pollCycleReps:whole.iterations,
   counters:counters(d.entries),

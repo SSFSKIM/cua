@@ -131,6 +131,14 @@ final class Probe395Audit: @unchecked Sendable {
     record(api: Probe395Audit.apiPhaseEnd, name: name, element: nil, error: nil, started: began, ended: Probe395Audit.now())
   }
 
+  /// The focused-field walk stopped at its node bound (`nodes`) or its time bound: a zero-length phase named for the bound, inside the
+  /// walk phase. audit-patch.mjs calls it from the bound's own branch after the engine has decided, so it reads no clock to decide
+  /// (the engine's own check runs first and unchanged) and records only which bound it was.
+  func walkCap(nodes: Bool) {
+    let name = nodes ? "walkCapNodes" : "walkCapTime"
+    phaseEnd(name, phaseBegin(name))
+  }
+
   func finish(_ tag: String?) {
     guard let tag else { return }
     lock.lock()

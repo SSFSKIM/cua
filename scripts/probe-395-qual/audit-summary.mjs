@@ -5,7 +5,7 @@
 // Everything labelled informational is reported and never gated. Counts are exact; nothing is normalized beyond what a named key
 // defines (a poll phase reduced to its terminal path in `shape`; nothing in `exactHash`/`strictHash`, and the pre-input reads
 // are always compared exactly). Keyboard events are never compared: only the first one is recorded, as the pre-input boundary.
-import {VALUE_BEARING} from './audit-schedule.mjs';
+import {VALUE_BEARING,WALK_CAP} from './audit-schedule.mjs';
 const median=a=>{if(!a.length)return null;const s=[...a].sort((x,y)=>x-y),m=s.length>>1;return s.length%2?s[m]:(s[m-1]+s[m])/2};
 const dist=a=>a.length?{n:a.length,min:Math.min(...a),p50:median(a),max:Math.max(...a)}:{n:0,min:null,p50:null,max:null};
 // Nearest-rank percentiles, for the route durations (no adjustment: the audit's own recording time is inside every duration).
@@ -52,20 +52,59 @@ export function compareAudits(a,b){
   full:{attemptsEqual:x.counters.attempts===y.counters.attempts,diff:diffCounts(x.counters.byName,y.counters.byName),total:[x.counters.attempts,y.counters.attempts]},
   pollCycleReps:[x.pollCycleReps,y.pollCycleReps]};
 }
+// The one excused divergence: the engine's focused-field walk stops at a node or time bound (typeReadbackFocusWalkNodes 200,
+// typeReadbackFocusWalkMs 40), so on a page larger than that its length follows the clock, not the page. Two schedules are
+// equal up to that bound when, over `scope` ('pre': the reads before the first event; 'whole': the canonical schedule), they have the
+// same walk phases and every read outside the walk phases is equal, in order and with its element alias; and in each walk the
+// reads of one are exactly a prefix of the other's, the shorter being the one a TIME bound ended, corroborated by its own reads
+// (WALK_CAP; the node bound is deterministic for a page, so a walk it ended is never the shorter), the longer held to the bounds too. A difference before the stop,
+// after it, in another phase, or with no recorded bound is not excused. Needs the in-memory schedules (`full`).
+export function walkBoundDivergence(a,b,scope){
+ const A=a?.walk?.[scope],B=b?.walk?.[scope];
+ if(!A||!B||A.invalid||B.invalid)return {excused:false,why:'no-walk-evidence'};
+ if(!A.segments.length||A.segments.length!==B.segments.length)return {excused:false,why:'walk-phases-differ'};
+ const outside=P=>{const out=[];let at=0;for(const g of P.segments){out.push(P.tokens.slice(at,g.start).join('|'));at=g.end}out.push(P.tokens.slice(at).join('|'));return out};
+ const oa=outside(A),ob=outside(B),chunk=oa.findIndex((x,i)=>x!==ob[i]);
+ if(chunk>=0)return {excused:false,why:'non-walk-reads-differ',chunk};
+ const desc=(g,t)=>({bound:g.reason,calls:g.calls,roles:g.roles,children:g.children,durMs:g.durMs,demonstrated:g.demonstrated,next:t??null});
+ const walks=[];
+ for(let i=0;i<A.segments.length;i++){
+  const ga=A.segments[i],gb=B.segments[i],ta=A.tokens.slice(ga.start,ga.end),tb=B.tokens.slice(gb.start,gb.end),n=Math.min(ta.length,tb.length);
+  let d=0;while(d<n&&ta[d]===tb[d])d++;
+  if(d===ta.length&&d===tb.length)continue;
+  if(d<n)return {excused:false,why:'walks-differ-before-the-stop',walk:i,index:d};
+  const [shorter,longer]=ta.length<tb.length?[ga,gb]:[gb,ga];
+  if(shorter.reason!=='time'||shorter.demonstrated!==true)return {excused:false,why:'stop-not-a-demonstrated-time-bound',walk:i,index:d};
+  // The walk that went on is held to the same bounds: no more nodes than the node bound allows, and any bound it recorded corroborated.
+  if(longer.roles>WALK_CAP.nodes||(longer.reason!==null&&longer.demonstrated!==true))return {excused:false,why:'longer-walk-not-within-the-bounds',walk:i,index:d};
+  walks.push({walk:i,index:d,a:desc(ga,ta[d]),b:desc(gb,tb[d])});
+ }
+ return walks.length?{excused:true,walks}:{excused:false,why:'identical-walks'};
+}
+// Pairwise over one representative per distinct schedule: every pair must be equal up to the bound.
+function reconcile(reps,scope,full){
+ const pairs=[];let ok=reps.length>0;
+ for(let i=0;i<reps.length;i++)for(let j=i+1;j<reps.length;j++){
+  const x=walkBoundDivergence(full(reps[i].tag),full(reps[j].tag),scope);
+  if(!x.excused)ok=false;
+  pairs.push({a:reps[i].tag,b:reps[j].tag,...x});
+ }
+ return {ok,pairs};
+}
 function setCompare(aRows,bRows,pickA=r=>r.schedule?.shape,pickB=pickA){
  const A=new Map(),B=new Map();
  for(const r of aRows)A.set(pickA(r),(A.get(pickA(r))??0)+1);for(const r of bRows)B.set(pickB(r),(B.get(pickB(r))??0)+1);
  const keysA=[...A.keys()].sort(),keysB=[...B.keys()].sort();
  return {equalSets:keysA.length===keysB.length&&keysA.every((k,i)=>k===keysB[i]),distinctA:keysA.length,distinctB:keysB.length};
 }
-function repPairs(aRows,bRows,full){
- const byRep=new Map(bRows.map(r=>[r.rep,r]));const unpairedA=aRows.filter(a=>!byRep.has(a.rep)).length,unpairedB=bRows.filter(b=>!aRows.some(a=>a.rep===b.rep)).length;let pairs=0,shapeEqual=0,preEqual=0,markerEqual=0,fullAttemptsEqual=0,example=null;
+function repPairs(aRows,bRows,full,excuse=null){
+ const byRep=new Map(bRows.map(r=>[r.rep,r]));const unpairedA=aRows.filter(a=>!byRep.has(a.rep)).length,unpairedB=bRows.filter(b=>!aRows.some(a=>a.rep===b.rep)).length;let pairs=0,shapeEqual=0,preEqual=0,markerEqual=0,fullAttemptsEqual=0,example=null,capped=0,cappedExample=null;
  for(const a of aRows){const b=byRep.get(a.rep);if(!b)continue;pairs++;
   const c=compareAudits(full(a.tag)??a,full(b.tag)??b);
-  if(c.whole?.shapeEqual)shapeEqual++;if(c.preInput?.exactEqual===true)preEqual++;if(c.marker?.countsEqual)markerEqual++;if(c.full?.attemptsEqual)fullAttemptsEqual++;
+  if(c.whole?.shapeEqual)shapeEqual++;else if(excuse){const x=excuse(a,b);if(x.excused){capped++;cappedExample??={a:a.tag,b:b.tag,walks:x.walks}}}if(c.preInput?.exactEqual===true)preEqual++;if(c.marker?.countsEqual)markerEqual++;if(c.full?.attemptsEqual)fullAttemptsEqual++;
   if(example===null&&(!c.whole?.shapeEqual||c.preInput?.exactEqual===false))example={a:a.tag,b:b.tag,preEqual:c.preInput?.exactEqual,shapeEqual:c.whole?.shapeEqual,firstDivergence:c.whole?.firstDivergence,preNamesDiff:c.preInput?.countsDiff,markerDiff:c.marker?.diff};
  }
- return {pairs,unpairedA,unpairedB,shapeEqual,preInputExactEqual:preEqual,markerCountsEqual:markerEqual,fullAttemptsEqual,example};
+ return {pairs,unpairedA,unpairedB,shapeEqual,preInputExactEqual:preEqual,markerCountsEqual:markerEqual,fullAttemptsEqual,example,...(excuse?{walkBoundEqual:capped,walkBoundExample:cappedExample}:{})};
 }
 export function summarizeRows(allRows,{full=()=>null,stray={},securePermitted={}}={}){
  const rows=allRows.filter(r=>r&&typeof r.tag==='string'&&r.rep!==0);
@@ -105,20 +144,29 @@ export function summarizeRows(allRows,{full=()=>null,stray={},securePermitted={}
    // A typed row needs its head's pre-input boundary (both event hooks, per that head's provenance) and an actual first posted event.
    const missing=kinds.some(g=>!g.length),weak=all.some(r=>!r.schedule.complete||!r.schedule.preInput.available),noInput=all.some(r=>r.schedule.preInput.boundary!=='event');
    const hashes=new Set(all.map(r=>r.schedule.preInput.exactHash));
-   out.gates['preInputIdentical:'+k]=missing||weak?'unknown':noInput||hashes.size!==1?'fail':'pass';
+   // Distinct pre-input reads are excused only as one walk that a time bound ended where another went on (walkBoundDivergence).
+   const reps=[...new Map(all.map(r=>[r.schedule.preInput.exactHash,r])).values()],bound=!missing&&!weak&&!noInput&&hashes.size>1?reconcile(reps,'pre',full):null;
+   out.gates['preInputIdentical:'+k]=missing||weak?'unknown':noInput?'fail':hashes.size===1||bound.ok?'pass':'fail';
    const [,s,l]=kinds,sl=s.concat(l);
    // The poll phase is what normalizes the schedule: without its hook in the build the shapes are not comparable.
    const weak2=sl.some(r=>!r.schedule.complete||!r.schedule.preInput.available||!r.schedule.phasesApplied?.includes('poll'));
-   const cmp=s.length&&l.length?setCompare(s,l):null,pairs=s.length&&l.length?repPairs(s,l,full):null;
+   const excuse=(x,y)=>walkBoundDivergence(full(x.tag),full(y.tag),'whole');
+   const cmp=s.length&&l.length?setCompare(s,l):null,pairs=s.length&&l.length?repPairs(s,l,full,excuse):null;
+   // The sets of shapes match when each shape of one is equal, or equal up to the walk bound, to a shape of the other.
+   const setsMatch=()=>{const uniq=rs=>[...new Map(rs.map(r=>[r.schedule.shape,r])).values()],A=uniq(s),B=uniq(l),eq=(x,y)=>x.schedule.shape===y.schedule.shape||excuse(x,y).excused;return A.every(x=>B.some(y=>eq(x,y)))&&B.every(y=>A.some(x=>eq(x,y)))};
    out.gates['concealShortLong:'+k]=!s.length||!l.length||weak2?'unknown'
-    :sl.some(r=>r.schedule.preInput.boundary!=='event')||!cmp.equalSets||pairs.shapeEqual!==pairs.pairs?'fail'
+    :sl.some(r=>r.schedule.preInput.boundary!=='event')||!(cmp.equalSets||setsMatch())||pairs.shapeEqual+pairs.walkBoundEqual!==pairs.pairs?'fail'
     :pairs.pairs===0||pairs.unpairedA+pairs.unpairedB>0?'unknown':'pass';
-   out.informational['preInputIdentical:'+k]={distinctPreInputs:hashes.size,perKind:Object.fromEntries(GATE_KINDS.map((kind,i)=>[kind,[...new Set(kinds[i].map(r=>r.schedule.preInput.exactHash))].length])),
+   out.informational['preInputIdentical:'+k]={distinctPreInputs:hashes.size,...(bound?{walkBound:{ok:bound.ok,pairs:bound.pairs.slice(0,12)}}:{}),perKind:Object.fromEntries(GATE_KINDS.map((kind,i)=>[kind,[...new Set(kinds[i].map(r=>r.schedule.preInput.exactHash))].length])),
     ...(hashes.size>1?{example:(()=>{const base=all[0],other=all.find(r=>r.schedule.preInput.exactHash!==base.schedule.preInput.exactHash),c=compareAudits(full(base.tag)??base,full(other.tag)??other);return {a:base.tag,b:other.tag,preNamesDiff:c.preInput.countsDiff}})()}:{})};
    out.informational['concealShortLong:'+k]={...(cmp??{}),...(pairs??{})};
    // Plain against concealed: informational only, since #354's plain and concealed caret confirmation schedules differ by design.
    out.informational['plainVsConcealed:'+k]=Object.fromEntries([['secretShort',s],['secretLong',l]].map(([name,g])=>[name,g.length&&kinds[0].length?{...setCompare(kinds[0],g),...repPairs(kinds[0],g,full)}:null]));
   }
+  // Which bound ended each walk, per row, with the reads that corroborate it (informational; the equality gates above use it).
+  const bounded=audited.filter(r=>r.head===head&&r.page===page&&r.schedule?.walks?.segments?.some(g=>g.reason!==null));
+  if(bounded.length)out.informational['walkBounds:'+k]={rows:bounded.length,undemonstrated:bounded.filter(r=>r.schedule.walks.segments.some(g=>g.reason!==null&&!g.demonstrated)).length,
+   perRow:bounded.slice(0,60).map(r=>({tag:r.tag,kind:r.kind,walks:r.schedule.walks.segments.filter(g=>g.reason!==null)}))};
   // A password field: no text, range, length or marker read is attempted, except marker names the caller permits for this
   // head and page and only before the first input event (the fix's pre-input route on a large page). Every secure row is checked.
   const sec=sel(head,page,'secure');

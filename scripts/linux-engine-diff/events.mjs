@@ -380,14 +380,59 @@ export function normalizeAnswer(response) {
   return { ok: false, error: String(response.error).replace(/sequence: \d+/g, 'sequence: N').replace(/\b\d{5,}\b/g, '<id>') };
 }
 
-/** The first difference between two scenario records (`{answers, events}` per step), or null. */
-export function firstDifference(reference, candidate) {
+/** An X Window error that names the window it failed on (its bad value, masked or not, as `normalizeAnswer` keeps it). */
+const NAMES_WINDOW = /\berror_kind: Window, error_code: 3\b.*\bbad_value: (<id>|\d+)/;
+
+/**
+ * Why an interrupted drag's answer does not pass (the design session's ruling 818, applied to what E1 records; #171
+ * M5, T4's arm64 round), or null when it does. Which of the drag and the recorder's destruction of its child comes first
+ * is a race: on x64 the destruction cut the drag (an X Window error), on arm64 the drag finished first (ok). So:
+ * - ok:false passes only as the interruption, its error naming the destroyed window (`NAMES_WINDOW`);
+ * - ok:true passes only when the recorder shows the whole drag on the child: the press at the path's start, then only
+ *   motions with button 1 held, visiting every point of the path in order and ending at its last, then the release of
+ *   button 1 there, and nothing after it. Every one of them was delivered before the child was destroyed, since no
+ *   event reaches a destroyed window, and the recorder lists them in the server's order. `step` is the scenario's own
+ *   step, whose path the drag followed; without it an ok cannot be judged whole and fails.
+ */
+export function interruptedDragFault(record, step) {
+  const answer = record.answer;
+  if (answer.ok === false) {
+    if (JSON.stringify(answer) !== JSON.stringify(INTERRUPTED)) return 'not an interruption after the press of the child';
+    return NAMES_WINDOW.test(String(record.raw?.error)) ? null : 'its error does not name the destroyed window';
+  }
+  if (answer.ok !== true || !answer.child_pressed) return 'neither an interruption nor a drag that pressed the child';
+  const path = step?.command === 'drag' ? step.input?.path : null;
+  if (!Array.isArray(path) || path.length < 2) return "no path to judge the drag's whole against";
+  const at = (e, point) => e.root_x === RECORDER.x + point.x && e.root_y === RECORDER.y + point.y;
+  const all = [...record.events, ...(record.suffix ?? [])];
+  const press = all.findIndex(childPress);
+  const tail = all.slice(press + 1);
+  const release = tail.at(-1);
+  const motions = tail.slice(0, -1);
+  if (!at(all[press], path[0])) return "the press is not at the path's start";
+  if (!release || release.type !== 'ButtonRelease' || release.window !== 'child' || release.detail !== 1 || !at(release, path.at(-1))) return "the drag does not end with button 1's release on the child at the path's end, the last event";
+  if (!motions.length || motions.some((e) => e.type !== 'MotionNotify' || e.window !== 'child' || !(e.state & 256))) return 'between the press and the release, an event other than a motion on the child with button 1 held';
+  let next = 1;
+  for (const e of motions) if (next < path.length && at(e, path[next])) next++;
+  if (next < path.length || !at(motions.at(-1), path.at(-1))) return "the motions do not reach every point of the path in order, ending at its last";
+  return null;
+}
+
+/**
+ * The first difference between two scenario records (`{answers, events}` per step), or null. `steps`: the scenario's
+ * own steps, which an interrupted drag is judged against (`interruptedDragFault`).
+ */
+export function firstDifference(reference, candidate, steps = null) {
   for (let i = 0; i < reference.length; i++) {
     const [a, b] = [reference[i], candidate[i]];
     if (!b) return { step: i, what: 'missing step' };
     // an interruption scenario proves nothing unless the reference was interrupted as planned
     if (a.interrupted && JSON.stringify(a.answer) !== JSON.stringify(INTERRUPTED)) return { step: i, what: 'reference not interrupted', reference: a.answer };
-    if (JSON.stringify(a.answer) !== JSON.stringify(b.answer)) return { step: i, what: 'answer', reference: a.answer, candidate: b.answer };
+    if (a.interrupted && b.interrupted && b.command === 'drag') {
+      // ruling 818: an interrupted drag passes as the interruption or as the whole drag, never otherwise
+      const why = interruptedDragFault(b, steps?.[i]);
+      if (why) return { step: i, what: 'answer', reference: a.answer, candidate: b.answer, why };
+    } else if (JSON.stringify(a.answer) !== JSON.stringify(b.answer)) return { step: i, what: 'answer', reference: a.answer, candidate: b.answer };
     const n = Math.max(a.events.length, b.events.length);
     for (let j = 0; j < n; j++) {
       const [ea, eb] = [a.events[j], b.events[j]];
@@ -787,6 +832,32 @@ export function eventEngines(args) {
   ];
 }
 
+/**
+ * One scenario's records judged (`records` by engine label, `labels` the engines that ran it): each engine's first
+ * difference from the build the scenario is judged against (the pinned one, or the newest for its own command), and the
+ * declared deviations that excused an answer. `{verdicts, declared}`, as the `events` row records them; a cua engine
+ * with a difference fails the run. Shared with the re-judge of stored rows (rejudge-events.mjs).
+ */
+export function judgeScenario(scenario, records, labels, { first = firstDifference } = {}) {
+  const verdicts = {};
+  const declared = {};
+  const reference = scenario.reference ?? 'pinned';
+  for (const label of labels.filter((l) => l !== reference && !(reference === 'newest' && l === 'pinned'))) {
+    let difference = first(records[reference], records[label], scenario.steps);
+    // a declared deviation excuses its own step's answer, and only when the candidate answered as declared
+    if (difference?.what === 'answer' && scenario.deviation) {
+      const deviation = declaredDeviation({ op: scenario.deviation, scene: 'events', field: 'answer', candidate: difference.candidate });
+      if (deviation) {
+        const excused = records[label].map((step, i) => (i === difference.step ? { ...step, answer: records[reference][i].answer } : step));
+        difference = first(records[reference], excused, scenario.steps);
+        if (!difference) declared[label] = deviation.op;
+      }
+    }
+    verdicts[label] = difference;
+  }
+  return { verdicts, declared };
+}
+
 /** `--experiment events`: every scenario on every engine; whether cua matched the pinned build everywhere, and its speed. */
 export async function runEvents(args, emit) {
   // the harness's own private server, watched from its first client on, before anything probes or drives it (task 44)
@@ -814,24 +885,9 @@ export async function runEvents(args, emit) {
     for (const scenario of via === 'vendor-js' ? VENDOR_JS_SCENARIOS : scenarios()) {
       const records = {};
       for (const engine of engines) records[engine.label] = await runScenario(scenario, engine, env, { via, skyDir: args.vendorJs });
-      const verdicts = {};
-      const declared = {};
-      // the build the scenario is judged against: the pinned one, or the newest for its own command
       const reference = scenario.reference ?? 'pinned';
-      for (const engine of engines.filter((e) => e.label !== reference && !(reference === 'newest' && e.label === 'pinned'))) {
-        let difference = firstDifference(records[reference], records[engine.label]);
-        // a declared deviation excuses its own step's answer, and only when the candidate answered as declared
-        if (difference?.what === 'answer' && scenario.deviation) {
-          const deviation = declaredDeviation({ op: scenario.deviation, scene: 'events', field: 'answer', candidate: difference.candidate });
-          if (deviation) {
-            const excused = records[engine.label].map((step, i) => (i === difference.step ? { ...step, answer: records[reference][i].answer } : step));
-            difference = firstDifference(records[reference], excused);
-            if (!difference) declared[engine.label] = deviation.op;
-          }
-        }
-        verdicts[engine.label] = difference;
-        if (difference && engine.label.startsWith('cua')) pass = false;
-      }
+      const { verdicts, declared } = judgeScenario(scenario, records, engines.map((e) => e.label));
+      if (Object.entries(verdicts).some(([label, difference]) => difference && label.startsWith('cua'))) pass = false;
       // effects, where a scenario reads them: every effect-bearing step must take effect in cua's engines
       let misses = {};
       const judged = scenario.steps.some((s) => s.effect);

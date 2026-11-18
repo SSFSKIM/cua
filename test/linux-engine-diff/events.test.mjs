@@ -217,3 +217,66 @@ test("each scenario's pointer is parked at its start on the experiment's own dis
   assert.throws(() => parkAtStart({ DISPLAY: ':93' }, { move: () => {}, read: () => ({ x, y, same_screen: true, chain: [0x600003] }) }), ParkRefused);
   assert.throws(() => parkAtStart({ DISPLAY: ':93' }, { move: () => {}, read: () => ({ x: x + 1, y, chain: [] }), pause: () => {} }), /not at \(300, 300\)/);
 });
+
+// ---------------------------------------------------------------------------------------------------------------
+// #171 M5, T4's arm64 round, item (f): E1's judge for "an interrupted drag under a held key, then a move" (the design
+// session's ruling 818, applied to what E1 records). On the arm64 VM cua's drag finished in 0.8 ms, before the fragile
+// recorder destroyed its child, and answered ok. That passes only when the recorder shows the whole drag on the child
+// (the press, every motion along the path, the release), all of it delivered before the child was destroyed, since no
+// event reaches a destroyed window; an ok:false passes only when the error names the destroyed window (an X Window
+// error with its bad value). Anything else fails.
+
+const DRAG = 'an interrupted drag under a held key, then a move';
+const dragSteps = scenarios().find((s) => s.name === DRAG).steps;
+const held = (x, y) => pointer('MotionNotify', 'child', { state: 260, x: x - 500, y: y - 400, root_x: x, root_y: y });
+// root coordinates: the recorder at (100, 100), the path (450, 350) to (460, 360), the child at (400, 300)
+const WHOLE = [held(550, 450), held(551, 451), held(553, 453), held(556, 456), held(559, 459), held(560, 460), { ...held(560, 460), type: 'ButtonRelease', detail: 1 }];
+const keyDown = { answer: ok, events: [{ type: 'KeyPress', send: true, detail: 37, state: 0, window: 'top', x: 0, y: 0, root_x: 0, root_y: 0 }] };
+const dragLane = (response, events) => [keyDown, { command: 'drag', ...interrupted(response, events), raw: normalizeAnswer(response) }, after, keyDown];
+const namedWindow = { ok: false, error: 'X11 error X11Error { error_kind: Window, error_code: 3, sequence: 22, bad_value: 25165924, minor_opcode: 0, major_opcode: 25, extension_name: None, request_name: Some("SendEvent") }' };
+const REFERENCE = () => dragLane(namedWindow, [...PRESSED, held(550, 450)]);
+
+test('E1: an ok drag passes only with the whole drag on the child before its destruction', () => {
+  assert.equal(firstDifference(REFERENCE(), dragLane(ok, [...PRESSED, ...WHOLE]), dragSteps), null, 'the whole drag, then the release');
+  // the controls: a partial drag answered ok fails
+  for (const [what, tail] of [
+    ['no release', WHOLE.slice(0, -1)],
+    ["the tail cut before the path's end", [...WHOLE.slice(0, 4), { ...WHOLE.at(-1), root_x: 556, root_y: 456, x: 56, y: 56 }]],
+    ['nothing after the press', []],
+    ['motions without the button held', [...WHOLE.slice(0, -1).map((e) => ({ ...e, state: 4 })), WHOLE.at(-1)]],
+    ['a motion on the top-level in the drag', [...WHOLE.slice(0, 3), { ...WHOLE[3], window: 'top' }, ...WHOLE.slice(4)]],
+    ['an event after the release', [...WHOLE, held(560, 460)]],
+    ['the release by another button', [...WHOLE.slice(0, -1), { ...WHOLE.at(-1), detail: 3 }]],
+  ]) {
+    const difference = firstDifference(REFERENCE(), dragLane(ok, [...PRESSED, ...tail]), dragSteps);
+    assert.equal(difference?.what, 'answer', what);
+    assert.equal(difference.step, 1, what);
+  }
+  // the child never pressed: no drag reached it at all
+  assert.equal(firstDifference(REFERENCE(), dragLane(ok, PRESSED.slice(0, 2)), dragSteps)?.what, 'answer');
+  // the events up to the press are still compared exactly
+  assert.equal(firstDifference(REFERENCE(), dragLane(ok, [...PRESSED.slice(1), ...WHOLE]), dragSteps)?.what, 'event');
+  // without the scenario's path an ok cannot be judged whole, so it fails as before
+  assert.equal(firstDifference(REFERENCE(), dragLane(ok, [...PRESSED, ...WHOLE]))?.what, 'answer');
+});
+
+test('E1: an interrupted drag answered ok:false passes only when its error names the destroyed window', () => {
+  assert.equal(firstDifference(REFERENCE(), dragLane(namedWindow, [...PRESSED, held(550, 450)]), dragSteps), null);
+  for (const [what, error] of [
+    ['a Window error with no bad value', 'X11 error X11Error { error_kind: Window, error_code: 3, request_name: Some("SendEvent") }'],
+    ['an error of another kind', 'X11 error X11Error { error_kind: Match, error_code: 8, sequence: 22, bad_value: 25165924 }'],
+    ["an error that is not X's", 'drag failed: the window is gone'],
+  ]) {
+    const difference = firstDifference(REFERENCE(), dragLane({ ok: false, error }, [...PRESSED, held(550, 450)]), dragSteps);
+    assert.equal(difference?.what, 'answer', what);
+  }
+  // the reference must still have been interrupted as planned
+  assert.equal(firstDifference(dragLane(ok, [...PRESSED, ...WHOLE]), dragLane(ok, [...PRESSED, ...WHOLE]), dragSteps)?.what, 'reference not interrupted');
+});
+
+test("E1: the click scenario keeps the interruption rule: a click answered ok still fails", () => {
+  const click = scenarios().find((s) => s.name === 'an interrupted click under a held key, then a move').steps;
+  const lane = (response, events) => [keyDown, { command: 'click', ...interrupted(response, events), raw: normalizeAnswer(response) }, after, keyDown, keyDown];
+  const done = [{ ...held(550, 450), type: 'ButtonRelease', detail: 1 }];
+  assert.equal(firstDifference(lane(namedWindow, PRESSED), lane(ok, [...PRESSED, ...done]), click)?.what, 'answer');
+});

@@ -1,0 +1,114 @@
+{
+  "label": "development run on the pinned release, not acceptance, never counted",
+  "step": "R4",
+  "pilot": true,
+  "what": "scripts/accept/linux-device-mode.mjs on the candidate",
+  "display": "own",
+  "load": "idle",
+  "minutes": 3,
+  "run_name": null,
+  "checkout": {
+    "root": "/Users/new/Developer/GitHub/cua/.claude/worktrees/t96-arm64/",
+    "commit": "da306cc6319e7e9da282812402308c074b872dee",
+    "clean": true
+  },
+  "candidate": {
+    "path": "/Users/new/.local/share/cua-171/m5/pilot-arm64/home/engine/linux/cua-engine",
+    "sha256": "0cbde8f06ca2f70a1ea962fd49452591a2ca16961c746f5d90bfccf53e890d42",
+    "record": {
+      "gate": "pinned-dev",
+      "sha256": "0cbde8f06ca2f70a1ea962fd49452591a2ca16961c746f5d90bfccf53e890d42",
+      "target": "aarch64-unknown-linux-musl",
+      "linkage": "static",
+      "version": "cua-engine 0.4.0 (c55c8e08d9cb)",
+      "commit": "da306cc6319e7e9da282812402308c074b872dee",
+      "clean": true,
+      "attestation": {
+        "verified": true,
+        "signer_workflow": "SSFSKIM/cua/.github/workflows/linux-engine.yml",
+        "attestations": [
+          {
+            "subjects": [
+              {
+                "name": "cua-engine-0.4.0-linux-x64",
+                "sha256": "751ec9be45e1f5b8e10fc3aa0a4695f785ecb12a44acd5b069374926ba383cca"
+              },
+              {
+                "name": "cua-engine-0.4.0-linux-arm64",
+                "sha256": "0cbde8f06ca2f70a1ea962fd49452591a2ca16961c746f5d90bfccf53e890d42"
+              }
+            ],
+            "predicate": "https://slsa.dev/provenance/v1",
+            "source_commit": "c55c8e08d9cbbb057b8b95434787b1e45d41184c",
+            "source_ref": "refs/heads/release/linux-engine-v0.4.0",
+            "signer": "https://github.com/SSFSKIM/cua/.github/workflows/linux-engine.yml@refs/heads/release/linux-engine-v0.4.0",
+            "run": "https://github.com/SSFSKIM/cua/actions/runs/43637317960/attempts/1",
+            "runner": "github-hosted"
+          },
+          {
+            "subjects": [
+              {
+                "name": "cua-engine-0.4.0-linux-x64",
+                "sha256": "751ec9be45e1f5b8e10fc3aa0a4695f785ecb12a44acd5b069374926ba383cca"
+              },
+              {
+                "name": "cua-engine-0.4.0-linux-arm64",
+                "sha256": "0cbde8f06ca2f70a1ea962fd49452591a2ca16961c746f5d90bfccf53e890d42"
+              }
+            ],
+            "predicate": "https://slsa.dev/provenance/v1",
+            "source_commit": "c55c8e08d9cbbb057b8b95434787b1e45d41184c",
+            "source_ref": "refs/heads/feat/171-m4",
+            "signer": "https://github.com/SSFSKIM/cua/.github/workflows/linux-engine.yml@refs/heads/feat/171-m4",
+            "run": "https://github.com/SSFSKIM/cua/actions/runs/43608161213/attempts/1",
+            "runner": "github-hosted"
+          }
+        ]
+      },
+      "pin": {
+        "arch": "arm64",
+        "version": "0.4.0",
+        "release": "linux-engine-v0.4.0",
+        "sha256": "0cbde8f06ca2f70a1ea962fd49452591a2ca16961c746f5d90bfccf53e890d42"
+      },
+      "installed": {
+        "path": "/Users/new/.local/share/cua-171/m5/pilot-arm64/home/engine/linux/install.json",
+        "build": "pinned",
+        "release": "linux-engine-v0.4.0",
+        "version": "0.4.0",
+        "installedAt": "2026-11-18T01:15:24.686Z"
+      },
+      "engine_tree": {
+        "path": "native/linux-engine",
+        "commit": "c55c8e08d9cbbb057b8b95434787b1e45d41184c",
+        "equal": true
+      }
+    }
+  },
+  "pinned_home": "/Users/new/.local/share/cua-171/m5/pilot-arm64/home",
+  "command": "/Users/new/.local/share/cua-171/locked.sh t96-arm64 /Users/new/.local/share/cua-171/node24/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/t96-arm64/scripts/linux-engine-gate/gate.mjs run R4 --pinned /Users/new/.local/share/cua-171/m5/pilot-arm64/home --out /Users/new/.local/share/cua-171/m5/pilot-arm64/out --pilot 2",
+  "argv": [
+    "scripts/linux-engine-gate/suites.sh",
+    "device"
+  ],
+  "env": {
+    "ENGINE": "installed",
+    "OUT": "/Users/new/.local/share/cua-171/m5/pilot-arm64/out/R4.development-run.pinned.pilot/run",
+    "LOGS": "/tmp/cua171-gl-tM4q6M",
+    "LABEL": "pilot",
+    "PINNED_RULE": "enforce",
+    "DEVICE": "cua-171-arm64"
+  },
+  "started": "2026-11-18T02:18:08.803Z",
+  "end_check": {
+    "left_by_step": [],
+    "foreign": [],
+    "buses": [],
+    "clear": true
+  },
+  "finished": "2026-11-18T02:19:01.326Z",
+  "exit": 0,
+  "child_exit": 0,
+  "unjudged": [],
+  "unclean": []
+}

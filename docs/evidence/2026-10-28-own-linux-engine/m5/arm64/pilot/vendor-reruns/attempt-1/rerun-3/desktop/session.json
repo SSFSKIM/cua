@@ -1,0 +1,19 @@
+{
+  "mode": "session",
+  "harness": "/Users/new/Developer/GitHub/cua/.claude/worktrees/t96-arm64",
+  "command": [
+    "/Users/new/.local/share/cua-171/task96/vendor-reruns.sh",
+    "inner",
+    "/Users/new/.local/share/cua-171/m5/pilot-arm64/vendor-reruns/rerun-3"
+  ],
+  "started": "2026-11-18T03:46:14.308Z",
+  "display": ":1",
+  "server": 240048,
+  "setupError": "the run's session bus exited before it listened (1): dbus-daemon[240055]: Failed to start message bus: Socket name too long",
+  "watchdog": {
+    "clean": true,
+    "reason": null
+  },
+  "finished": "2026-11-18T03:46:14.376Z",
+  "ended": []
+}

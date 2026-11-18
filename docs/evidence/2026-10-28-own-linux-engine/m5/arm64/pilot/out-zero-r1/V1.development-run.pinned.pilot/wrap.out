@@ -1,0 +1,1127 @@
+Exception in thread Thread-1 (decoy):
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/threading.py", line 1073, in _bootstrap_inner
+    self.run()
+  File "/usr/lib/python3.12/threading.py", line 1010, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/new/Developer/GitHub/cua/.claude/worktrees/t96-arm64/docs/evidence/2026-10-28-own-linux-engine/m5/guards/wrap71.py", line 140, in decoy
+    s.bind(path)
+OSError: AF_UNIX path too long
+development run on the pinned release, not acceptance, never counted; candidate: sha256 0cbde8f06ca2f70a1ea962fd49452591a2ca16961c746f5d90bfccf53e890d42, aarch64-unknown-linux-musl static, cua-engine 0.4.0 (c55c8e08d9cb); the pin's arm64 asset of linux-engine-v0.4.0; native/linux-engine as at c55c8e08d9cbbb057b8b95434787b1e45d41184c, the checkout at da306cc6319e7e9da282812402308c074b872dee; attestation verified: .github/workflows/linux-engine.yml run https://github.com/SSFSKIM/cua/actions/runs/43637317960/attempts/1, built from c55c8e08d9cbbb057b8b95434787b1e45d41184c (refs/heads/release/linux-engine-v0.4.0) on a github-hosted runner; .github/workflows/linux-engine.yml run https://github.com/SSFSKIM/cua/actions/runs/43608161213/attempts/1, built from c55c8e08d9cbbb057b8b95434787b1e45d41184c (refs/heads/feat/171-m4) on a github-hosted runner
+negative check: the witness failed the activating stub (stacking, active, focus); the audit failed it (_NET_ACTIVE_WINDOW ClientMessage, XTEST FakeInput)
+in-front checks: held (the target activated again: clean; another window activated and the target again: stacking, active, focus; another raised and the target raised back under one server grab: stacking; another client's override-redirect window raised across the target's frame and back under one server grab: stacking)
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x2c00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1a00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1a00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1a00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1a00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1a00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1a00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1a00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1a00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1a00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1a00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1a00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1a00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1a00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1a00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1a00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1a00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1a00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1a00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1a00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1a00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1a00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1a00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1a00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1a00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1a00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1a00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1a00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1a00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1a00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1a00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1a00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1a00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1a00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1a00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1a00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1a00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1a00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1a00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1a00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1a00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1a00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1a00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1a00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1a00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1a00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1a00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1a00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1a00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1a00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1a00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1a00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1a00064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+X Error of failed request:  BadWindow (invalid Window parameter)
+  Major opcode of failed request:  20 (X_GetProperty)
+  Resource id in failed request:  0x1800064
+  Serial number of failed request:  22
+  Current serial number in output stream:  22
+file:///Users/new/Developer/GitHub/cua/.claude/worktrees/t96-arm64/scripts/linux-engine-diff/run.mjs:858
+    if (Date.now() > deadline) throw new Error(`${old.label} did not close for its scene's restore`);
+                                     ^
+
+Error: cua171-diff-pdev-V1-48f5eb25-gedit-text_newest did not close for its scene's restore
+    at restoreLaneScene (file:///Users/new/Developer/GitHub/cua/.claude/worktrees/t96-arm64/scripts/linux-engine-diff/run.mjs:858:38)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async restartLaneScene (file:///Users/new/Developer/GitHub/cua/.claude/worktrees/t96-arm64/scripts/linux-engine-diff/scene-ended.mjs:52:18)
+    at async keepLaneScene (file:///Users/new/Developer/GitHub/cua/.claude/worktrees/t96-arm64/scripts/linux-engine-diff/scene-ended.mjs:38:31)
+    at async diffRun (file:///Users/new/Developer/GitHub/cua/.claude/worktrees/t96-arm64/scripts/linux-engine-diff/run.mjs:1415:27)
+    at async runDiff (file:///Users/new/Developer/GitHub/cua/.claude/worktrees/t96-arm64/scripts/linux-engine-diff/run.mjs:1084:12)
+    at async file:///Users/new/Developer/GitHub/cua/.claude/worktrees/t96-arm64/scripts/linux-engine-diff.mjs:53:19
+
+Node.js v24.22.1
+{"exit": 1, "samples": 2728, "maps_samples": 910, "flags": 0, "decoy_connections": 0, "leftovers": [], "processes": 374, "browsers": 28}

@@ -1,0 +1,19 @@
+{
+  "device": "cua-171-arm64",
+  "home": "/Users/new/.local/share/cua-native-baseline/run-4lNMbi",
+  "userHome": "/Users/new/.local/share/cua-native-baseline/run-4lNMbi.home",
+  "token": "47dda1f8-8013-4f3e-8a14-82820eda9e2b",
+  "xSession": {
+    "DISPLAY": ":1",
+    "XAUTHORITY": "/tmp/cua171-no-xauthority-60024-7865d2adbfb7",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/cua171-gl-NUTZsi/baseline/desktop/session/bus/dbus-MwsrSDOTT1,guid=8043f4a42c5cd827295a7df46afd05ce",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "XDG_DATA_DIRS": "/usr/share/openbox:/usr/local/share:/usr/share:/var/lib/snapd/desktop"
+  },
+  "nodeMode": "managed",
+  "nodeOverride": null,
+  "ownNode": {
+    "path": "/Users/new/.local/share/cua-native-baseline/run-4lNMbi/node/24.22.0/bin/node",
+    "version": "v24.22.0"
+  }
+}

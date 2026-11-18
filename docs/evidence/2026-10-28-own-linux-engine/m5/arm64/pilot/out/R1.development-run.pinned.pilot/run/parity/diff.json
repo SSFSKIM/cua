@@ -1,0 +1,212 @@
+{
+  "engines": [
+    "vendor",
+    "cua"
+  ],
+  "ok": false,
+  "differences": [
+    {
+      "kind": "assertion",
+      "side": "a",
+      "case": "native/target-app-decorated-tab/getaxstate/minimized",
+      "message": "case assertion failed"
+    },
+    {
+      "kind": "assertion",
+      "side": "a",
+      "case": "native/app/typetext",
+      "message": "case assertion failed"
+    },
+    {
+      "kind": "assertion",
+      "side": "a",
+      "case": "native/app/paste",
+      "message": "case assertion failed"
+    },
+    {
+      "case": "native/target-app-decorated-tab/getaxstate/minimized",
+      "cell": "exercise",
+      "kind": "semantic",
+      "a": {
+        "ok": true,
+        "content": [
+          {
+            "type": "text",
+            "text": "NATIVE:[{\"listed\":false,\"others\":true,\"focusedFront\":true},{\"error\":\"Window <id> is unavailable.\"},{\"error\":\"Window <id> is unavailable.\"},{\"error\":\"Window <id> is unavailable.\"},{\"error\":\"Window <id> is unavailable.\"},{\"restored\":false},{\"error\":\"Window <id> is unavailable.\"}]"
+          }
+        ],
+        "isError": false,
+        "meta": {
+          "cua/replHost": {
+            "host": "cua",
+            "version": "0.5.0"
+          },
+          "cua/taskId": "<task:1>"
+        },
+        "proof": "native-live"
+      },
+      "b": {
+        "ok": true,
+        "content": [
+          {
+            "type": "text",
+            "text": "NATIVE:[{\"listed\":true,\"others\":true,\"focusedFront\":true},{\"full\":true,\"source\":true,\"owned\":true},{\"error\":\"Screenshot unavailable for window <id>.\"},{\"error\":\"Window <id> is minimized; activate it first\"},\"undefined\",{\"restored\":true},{\"bytes\":true}]"
+          }
+        ],
+        "isError": false,
+        "meta": {
+          "cua/replHost": {
+            "host": "cua",
+            "version": "0.5.0"
+          },
+          "cua/taskId": "<task:1>"
+        },
+        "proof": "native-live"
+      }
+    },
+    {
+      "case": "native/target-app-decorated-tab/getaxstate/minimized",
+      "kind": "assertion",
+      "a": {
+        "assertion": {
+          "ok": false,
+          "reason": "the minimized window must be listed with minimized: true, no other window with the field, and the focus on the fixture's own window"
+        },
+        "proof": "native-live"
+      },
+      "b": {
+        "assertion": {
+          "ok": true
+        },
+        "proof": "native-live"
+      }
+    },
+    {
+      "case": "native/app/typetext",
+      "cell": "exercise",
+      "kind": "semantic",
+      "a": {
+        "ok": true,
+        "content": [
+          {
+            "type": "text",
+            "text": "NATIVE:[{\"error\":\"Resource temporarily unavailable (os error 11)\"},null,true]"
+          }
+        ],
+        "isError": false,
+        "meta": {
+          "cua/replHost": {
+            "host": "cua",
+            "version": "0.5.0"
+          },
+          "cua/taskId": "<task:1>"
+        },
+        "proof": "native-live"
+      },
+      "b": {
+        "ok": true,
+        "content": [
+          {
+            "type": "text",
+            "text": "NATIVE:[\"undefined\",1,false]"
+          }
+        ],
+        "isError": false,
+        "meta": {
+          "cua/replHost": {
+            "host": "cua",
+            "version": "0.5.0"
+          },
+          "cua/taskId": "<task:1>"
+        },
+        "proof": "native-live"
+      }
+    },
+    {
+      "case": "native/app/typetext",
+      "kind": "assertion",
+      "a": {
+        "assertion": {
+          "ok": false,
+          "reason": "native text input must return without an error"
+        },
+        "proof": "native-live"
+      },
+      "b": {
+        "assertion": {
+          "ok": true
+        },
+        "proof": "native-live"
+      }
+    },
+    {
+      "case": "native/app/paste",
+      "cell": "exercise",
+      "kind": "semantic",
+      "a": {
+        "ok": true,
+        "content": [
+          {
+            "type": "text",
+            "text": "NATIVE:[{\"error\":\"Linux paste supports only text format.\"},{\"error\":\"Linux paste supports only text format.\"},{\"error\":\"D-Bus org.freedesktop.DBus.Properties.Get failed: org.freedesktop.DBus.Error.ServiceUnknown: The name :1.66 was not provided by any .service files\"},null,true]"
+          }
+        ],
+        "isError": false,
+        "meta": {
+          "cua/replHost": {
+            "host": "cua",
+            "version": "0.5.0"
+          },
+          "cua/taskId": "<task:1>"
+        },
+        "proof": "native-live"
+      },
+      "b": {
+        "ok": true,
+        "content": [
+          {
+            "type": "text",
+            "text": "NATIVE:[{\"error\":\"Linux paste supports only text format.\"},{\"error\":\"Linux paste supports only text format.\"},\"undefined\",1,false]"
+          }
+        ],
+        "isError": false,
+        "meta": {
+          "cua/replHost": {
+            "host": "cua",
+            "version": "0.5.0"
+          },
+          "cua/taskId": "<task:1>"
+        },
+        "proof": "native-live"
+      }
+    },
+    {
+      "case": "native/app/paste",
+      "kind": "assertion",
+      "a": {
+        "assertion": {
+          "ok": false,
+          "reason": "native text input must return without an error"
+        },
+        "proof": "native-live"
+      },
+      "b": {
+        "assertion": {
+          "ok": true
+        },
+        "proof": "native-live"
+      }
+    }
+  ],
+  "expected": [],
+  "cases": 0,
+  "cells": 68,
+  "recordedCases": 0,
+  "vendorDefects": [],
+  "pendingCells": [],
+  "pendingObligations": [],
+  "pendingUnexpectedPasses": [],
+  "provisionalCells": [],
+  "allAssertionsPassed": false,
+  "doubleCases": 0
+}

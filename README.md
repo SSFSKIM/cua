@@ -376,7 +376,8 @@ but not that the right ones went in (another keyboard layout, an input method or
 put in the same number of other characters), and the result's text says so; one that does not, or whose length cannot
 be read, ends the same way. The keys were sent, so the field is observed, not retyped; but one that stopped being a
 password field while the secret was typed (a page's show-password button) is read no further and may show the secret,
-so it is put right with `setValue` without a screenshot or an observation of it.
+which the diagnostic then says in a fixed sentence of its own, so it is put right with `setValue` without a screenshot
+or an observation of it.
 
 This is input substitution, not a vault around the value: once entered, a secret can be seen in screenshots, the
 app's accessibility text or the app itself, and `paste` uses the system clipboard as the runtime always does (it

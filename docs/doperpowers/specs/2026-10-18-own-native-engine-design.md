@@ -5896,7 +5896,10 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      claimed AXSecureTextField. The lookup's finding is carried to the snapshot (the review of 517ab543..bdfbcfb2,
      P1). A field that the marker route, or the walk by its role, found to be a password field, and that the snapshot's
      own role and subrole then find is not one (a show-password toggle landing between them), is refused
-     `noLongerSecure` and read no further, as the poll refuses one. Its value is never read as a text field's.
+     `noLongerSecure` and read no further, as the poll refuses one. Its value is never read as a text field's. The
+     lookup's finding makes the record a password field's at once, whatever the snapshot's own reads then find (the
+     review of 81a1aebc..52f0109a, P2): a role read that then fails is `roleUnreadable` with `secure: true`, never the
+     plain record with its reads and poll time.
   2. **What is read.** After the role and subrole that classify it, a password field is read only by one batch of
      AXRole, AXSubrole, AXSelectedTextRange and AXNumberOfCharacters (`readbackLengthAttributes`, the list paste's
      effect reading takes), classified from that same reply (ruling 811's batch rule, `readbackLength`): before the
@@ -5919,6 +5922,12 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
        since `-0.5` would truncate to 0 (same review, P2).
      - A count, or a caret basis's location, above `Int32.max` is no field's and allows nothing (same review, P2). An
        `{NSNotFound, 0}` range would otherwise trap the engine on adding the typed units.
+     - A count above that limit is a failed read in `readbackLength` itself, as a negative or float count is (the
+       review of 81a1aebc..52f0109a, P2). Checked only at the basis, an `NSNotFound` count at the snapshot, then absent
+       counts in the settle beside a stable empty selection, ended on the caret's basis and could confirm, while the
+       same read without the settle was `lengthUnreadable`. The snapshot's refusal of a failed count, the settle's and
+       the poll's now all take it as one. The basis keeps its count guard as a stated invariant, and its bound on a
+       caret's location.
      - A count allows its own confirmation with a range that lies inside it.
      - A count with no range confirms only from an empty field, where nothing can be replaced and the caret can only
        sit at 0. Otherwise the snapshot answers `selectionUnreadable`, as does a range outside the count. A snapshot
@@ -5957,6 +5966,12 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      #359's contract, that type_text right after select_text types only over select_text's own selection (the design
      session approved, 2026-11-18). Before #414 such a type_text typed and answered `secure`; now it types nothing, and
      agent-cursor.md says so. A select-all key then typing is the only way to replace a password.
+     - A field the lookup found to be a password field (item 1) is refused `selectionChanged` under a `.selection`
+       baseline as soon as the lookup's result is taken, before any read of the field, its role included (the review
+       of 81a1aebc..52f0109a, P1). Before, one shown as text was refused `noLongerSecure` first, and since every
+       refusal but `selectionChanged` still types, the text went into a field that cannot hold select_text's
+       selection. A `.stable` baseline is unchanged.
+     - The settle's failure rule takes a count past the limit as a failed read (item 4).
   7. **Keys.** A Tab, or a Return in a single-line password field, of a plain request is posted only once the text
      before it confirms by length (a checkpoint), and is counted `keysUnconfirmed`. A mismatch there stops the key and
      what follows (`stoppedBeforeKey`). A concealed request makes no checkpoint (ruling 593): it is read back once, and
@@ -5969,6 +5984,7 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
        the exact read-back of a value. `confirmation` and the note come only once a length read confirmed (the review
        of 517ab543..bdfbcfb2, P2; approved). A plain request of only a Tab, or of a Return in a single-line field,
        reads no length: it is confirmed with its key `keysUnconfirmed`, as a text field's is, and it claims no length.
+       agent-cursor.md's typing paragraph now says so too (the review of 81a1aebc..52f0109a, P3).
      - The success's result `note`, which the service puts in the tool result's text (NOTED_METHODS), is fixed text,
        the same for a secret (`readbackLengthNote`): "Typed into a password field, confirmed by its length only: the
        field took exactly as many characters as were typed, in place of any selected text, so none was dropped or
@@ -5981,6 +5997,14 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
        text, so its sentence warns against a screenshot or getAXState() of a secret, rather than recommending them (the
        review of 517ab543..bdfbcfb2, P1). `caretMismatch` says only that the caret is not right after the text,
        because under ruling 839 no count was checked.
+     - A secret's failure reaches the model only as the wrapper's `secret_input_failed`, which withholds the engine's
+       sentence, so `noLongerSecure`'s warning never reached it and a screenshot could then show the secret (the
+       review of 81a1aebc..52f0109a, P1). When a type_text's error carries the read-back record's reason
+       `noLongerSecure` and something was typed, the wrapper adds one fixed sentence of its own (secret-input.mjs,
+       `secretMayShow`): "The password field stopped being one while the secret was typed and may now show it: do
+       not take a screenshot of it or call getAXState(); put it right with setValue." It reads the reason alone and
+       compares it with that literal; nothing of the engine's text, nor the reason, is forwarded. The README's
+       secrets paragraph says the diagnostic warns.
      - **A concealed request never answers `caretMismatch`**: its caret elsewhere is `lengthMismatch`, whose sentence
        says the length or the caret is wrong (the same review, P1; the design session approved). Take a field that
        ignores input, with a non-empty selection. Its count stays the snapshot's, which equals the expected count
@@ -6025,6 +6049,15 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
         away; the settle reads until two reads agree; `NSNotFound` locations and an `Int.max` count are unreadable
         without a trap; a float count is a failed read; keys alone claim no length; and a password field that the
         marker route or the walk found, then shown as text, is read no further.
+      - from the second review's (81a1aebc..52f0109a): a select_text baseline at a field the marker route found to be
+        a password field, shown as text or not, is `selectionChanged` with nothing typed and nothing read of the field
+        after the route's own reads, while a `.stable` one is still `noLongerSecure` and types; such a field whose
+        role read then fails keeps a password field's record; a count of `Int.max` or just past `Int32.max` is refused
+        at the snapshot, one read after typing is `lengthUnreadable` at the budget, and an `Int.max` snapshot count
+        that the settle then reads as absent is `lengthUnreadable` before the settle (the first two are new tests in
+        TypeReadbackMarkerTests, the count cases extend SecureTypeReadbackTests' test of a count no field has); and
+        services-sky's wrapper test adds the shown-secret sentence for
+        `noLongerSecure` alone, and only once something was typed, with nothing of the engine's text or the reason.
       TypeReadbackTests' secure tests are rewritten to confirm by length. TypeReadbackMarkerTests now has #395's
       password fields confirming by length, plain and concealed, with nothing but the batch read; its leak test's
       password run now confirms. The service test carries cua/typeReadback's strength and the note in the tool

@@ -6339,12 +6339,18 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
          checks the other's does not, and their AX traffic, its timing, or a busy app's timeouts can change that secret's
          failure reason, as they can its failure time. That reveals only what the outcome already reveals for such a
          field: whether its length matched this secret, item 10's collapse-to-equal-length limit, so it adds nothing.
-         Ruling 856 accepts it and the docs' limit sentence now covers both, in all four copies byte for byte: "When it
-         fails, how long it took can depend on the text typed, a `{{secret:…}}` included, and so can its reason where
-         the field read as having taken exactly as many characters as were typed, in place of any selection." A reason
-         varies only where a hold check ran, that is where the field read as a held match and did not confirm; "in place
-         of any selection" is the paragraph's own phrase, so the sentence holds for a field with text or a selection.
-         #423 tracks both forms, the timing and the reason.
+         Ruling 856 accepts it. A second form needs no match (the review of 3b67bf4d..8bc291f1, P2): in a field that
+         ignores input and unmasks on a timer, a longer secret finishes posting later, so its final batch can land
+         after the toggle (`noLongerSecure`, with the warning) where a shorter one's lands before it (`lengthMismatch`,
+         the field still masked); the reason varies with the text through posting time. In both forms the reply reflects
+         the field's real state at the final read. The docs' limit sentence first named only the hold-check form ("…and
+         so can its reason where the field read as having taken exactly as many characters as were typed, in place of
+         any selection"); that review widened it, in all four copies byte for byte, to: "When it fails, how long it
+         took can depend on the text typed, a `{{secret:…}}` included, and so can its reason." #423 tracks both forms,
+         and the timing. A test pins the second form
+         (`testAToggleTimedFromTheRequestCanGiveTwoSecretsDifferentReasons`: posts at 10 ms each, the field unmasked at
+         1000 ms of the request's clock; a 2-character secret answers `lengthMismatch`, a 12-character one
+         `noLongerSecure`), so SecureTypeReadbackTests has 58.
        - **Tests.** SecureTypeReadbackTests has 57. New: a field shown as text mid-poll whose final batch fails only its
          subrole answers `fieldUnreadable` with the warning, a role of AXSecureTextField with a failed subrole is still
          secure, and poll batches with a failed subrole still go on; and the collapsing fixture with every focus check a
@@ -6549,7 +6555,7 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   11. **The model's document**: agent-cursor.md's typing paragraph, the surface inventory's "Table 3 amendment
       (2026-11-18, #414, …)", the docs oracle and the core-documentation test byte for byte, and the README's secrets
       paragraph. The MCP surface names no password confirmation, so no pinned digest moves.
-  12. **Proof**: SecureTypeReadbackTests (57) run the live reads over a stub app whose password field holds plaintext,
+  12. **Proof**: SecureTypeReadbackTests (58) run the live reads over a stub app whose password field holds plaintext,
       answers it to any request, and reports distinctive counts and ranges. Ruling 826's leak test covers fifteen runs:
       - confirmations, plain, concealed and by the caret alone;
       - a dropped and an extra character, a caret elsewhere concealed and plain, a field that ignores a secret (its

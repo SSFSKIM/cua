@@ -1216,6 +1216,28 @@ final class SecureTypeReadbackTests: XCTestCase {
     }
   }
 
+  /// The residual's second form (the review of 3b67bf4d..8bc291f1, P2; #423): a field that ignores input and unmasks at
+  /// a fixed time from the request's start. Each post costs 10 ms, so a longer secret's last post, and its final batch,
+  /// come later: the 2-character secret's final batch reads the field still masked (`lengthMismatch`), the
+  /// 12-character one's reads it shown as text (`noLongerSecure`, with the warning). Neither matched; the reason varies
+  /// with the text through posting time, and each reply is the field's real state at its final read.
+  func testAToggleTimedFromTheRequestCanGiveTwoSecretsDifferentReasons() {
+    func run(_ secret: String) -> (error: EngineError?, meta: InputMeta, app: StubPasswordApp) {
+      let app = field()
+      app.ignoresInput = true
+      app.postCost = { 10 }
+      app.timeline = { [unowned app] _ in if app.clock >= 1_000 { app.subrole = nil } }  // the request's own clock
+      let (error, meta, _) = type(secret, into: app, concealed: true)
+      return (error, meta, app)
+    }
+    let short = run("ab"), long = run("abcdefghijkl")
+    XCTAssertLessThan(short.app.answers.last!.start, 1_000, "the short secret's final batch before the toggle")
+    XCTAssertGreaterThanOrEqual(long.app.answers.last!.start, 1_000, "the long secret's after it")
+    XCTAssertEqual(reason(short.meta), "lengthMismatch")
+    XCTAssertEqual(reason(long.meta), "noLongerSecure")
+    XCTAssertTrue(long.error?.message.contains("may now show its text") ?? false)
+  }
+
   /// The property, seeded and deterministic over 2000 cases, each typed with two secrets of different lengths into one
   /// field timeline. A case draws a field (one that takes the text, one that takes none of it, one whose last key lands
   /// late at a drawn time), up to three changes at drawn times after the last post (its focus away or back, its focus

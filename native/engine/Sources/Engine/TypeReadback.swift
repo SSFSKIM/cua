@@ -876,8 +876,9 @@ final class TypeReadback<Element> {
       case .read(.unreadable), .closed: throw unconfirmed(.lengthUnreadable, beforeKey)
       }
     }
-    // The focus read, then the final batch, decide alone; the batch is the last read before the reply (the review of
-    // e8e2702e..3b67bf4d, 2), and one closed noLongerSecure or fieldUnreadable decides whatever the focus read found.
+    // Read order: the focus read, then the final batch, the last read before the reply (the review of
+    // e8e2702e..3b67bf4d, 2). Result precedence: a batch closed noLongerSecure or fieldUnreadable decides whatever the
+    // focus read found, though that read is still made (the review of 3b67bf4d..8bc291f1, P3).
     let focus = reads.fieldFocused(field, found)
     switch readbackLength(field, role: role, reads: reads, presumeSecure: false) {
     case .closed(let why): final = .closed(why)

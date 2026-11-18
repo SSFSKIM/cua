@@ -1274,7 +1274,6 @@ impl Engine {
                         "confirmed_by": format!("{confirming:?}"),
                         "drop_window": drop_window,
                         "release_over": over_aware,
-                        "settle_failed_activation": settle_failed_activation,
                     }),
                 );
                 let window = watched.expect("a watched drag has its window");

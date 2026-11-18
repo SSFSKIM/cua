@@ -184,13 +184,16 @@ impl Settle {
         settled(steps, self.before, self.after, placed)
     }
 
-    /// The `--stats` record, beside the cursor's (`drop_cursor.settle`).
+    /// The `--stats` record, beside the cursor's (`drop_cursor.settle`). `settle_failed_activation_confirmed` starts
+    /// false; the engine turns it true once the activation of a Chrome destination confirmed an unsettled drop
+    /// ([`mark_activation_confirmed`]).
     pub fn record(&self, steps: &[Step], placed: bool) -> Value {
         json!({
             "before_rest": self.before.record(),
             "second_rest": self.second_rest.name(),
             "after_motion": self.after.record(),
             "settled": self.settled(steps, placed),
+            "settle_failed_activation_confirmed": false,
         })
     }
 }
@@ -201,6 +204,26 @@ pub fn unconfirmed_end(settle: Option<&Settle>) -> crate::dnd::WatchEnd {
     match settle {
         Some(settle) if !settle.answered() => crate::dnd::WatchEnd::Unanswered,
         _ => crate::dnd::WatchEnd::Unconfirmed,
+    }
+}
+
+/// A drag's `--stats` record (`extra`, the line's own fields) marked for an unsettled drop that Chrome's activation then
+/// confirmed (ruling 837, placed by 838): `settle_failed_activation_confirmed` set true in its settle record, a drag's
+/// (`drop_cursor.settle`) or a handle's (`handle.drop_cursor.settle`), and in the handle's record. A harness row keeps
+/// those records for both lanes, so the case is read from the drag's own row.
+pub fn mark_activation_confirmed(extra: &mut serde_json::Map<String, Value>) {
+    const FIELD: &str = "settle_failed_activation_confirmed";
+    let mark = |record: Option<&mut Value>| {
+        if let Some(Value::Object(record)) = record
+            && record.contains_key(FIELD)
+        {
+            record.insert(FIELD.into(), json!(true));
+        }
+    };
+    mark(extra.get_mut("drop_cursor").and_then(|c| c.get_mut("settle")));
+    if let Some(handle) = extra.get_mut("handle") {
+        mark(handle.get_mut("drop_cursor").and_then(|c| c.get_mut("settle")));
+        mark(Some(handle));
     }
 }
 
@@ -234,6 +257,11 @@ impl SettleCounts {
     /// A drop whose settle failed and whose Chrome destination's activation confirmed it.
     pub fn activation_confirmed_a_failed_settle(&mut self) {
         self.settle_failed_activation_confirmed += 1;
+    }
+
+    /// How many such drops there have been.
+    pub fn activations_after_failed_settles(&self) -> u64 {
+        self.settle_failed_activation_confirmed
     }
 
     pub fn record(&self) -> Value {
@@ -573,6 +601,7 @@ mod tests {
                 "second_rest": "taken",
                 "after_motion": { "answered": true, "ms": 1.0 },
                 "settled": true,
+                "settle_failed_activation_confirmed": false,
             })
         );
         let mut counts = SettleCounts::default();
@@ -614,6 +643,39 @@ mod tests {
             counts.record(),
             json!({ "entered": 4, "second_rest": 2, "skipped": 1, "unsettled": 2, "settle_failed_activation_confirmed": 1 })
         );
+    }
+
+    #[test]
+    fn a_failed_settle_whose_activation_came_is_marked_in_the_drag_s_own_record() {
+        // ruling 837, placed by 838: the per-drag record a harness row keeps, beside `settled`, for both lanes, and the
+        // handle's record; the field starts false in every record and is turned true once Chrome's activation came
+        let settle = json!({ "settled": false, "settle_failed_activation_confirmed": false });
+        let mut drag = serde_json::Map::new();
+        drag.insert(
+            "drop_cursor".into(),
+            json!({ "accepted": false, "settle": settle.clone() }),
+        );
+        mark_activation_confirmed(&mut drag);
+        assert_eq!(
+            drag["drop_cursor"]["settle"]["settle_failed_activation_confirmed"],
+            json!(true)
+        );
+        let mut handle = serde_json::Map::new();
+        handle.insert(
+            "handle".into(),
+            json!({ "settle_failed_activation_confirmed": false, "drop_cursor": { "settle": settle } }),
+        );
+        mark_activation_confirmed(&mut handle);
+        assert_eq!(handle["handle"]["settle_failed_activation_confirmed"], json!(true));
+        assert_eq!(
+            handle["handle"]["drop_cursor"]["settle"]["settle_failed_activation_confirmed"],
+            json!(true)
+        );
+        // a record with no settle gains nothing
+        let mut other = serde_json::Map::new();
+        other.insert("drop_cursor".into(), json!({ "read": false }));
+        mark_activation_confirmed(&mut other);
+        assert_eq!(other["drop_cursor"], json!({ "read": false }));
     }
 
     #[test]

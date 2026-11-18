@@ -721,9 +721,9 @@ impl Engine {
                 "moved": moved.is_some(),
                 "confirming": matches!(confirmed, Some(Confirming::Activation(_))),
                 "confirmed_by": confirmed.map(|c| format!("{c:?}")),
-                // ruling 837: handed to Chrome's activation though the Electron source's settle failed (counted in
-                // `drop_settles` once the activation comes)
-                "settle_failed_activation": confirmed.is_some_and(|c| activation_over_failed_settle(c, settled)),
+                // ruling 837, placed by 838: true once Chrome's activation confirmed a drop whose Electron source's
+                // settle failed (`Engine::after_response` waits for it under `--stats`), and counted in `drop_settles`
+                "settle_failed_activation_confirmed": false,
                 "drop_cursor": cursor_record,
                 // the harness lines the release up with its own watchers (`--stats` only)
                 "release_wall_ms": release_wall,

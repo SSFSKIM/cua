@@ -583,6 +583,21 @@ impl Engine {
     /// Once a response is out: the request's `--stats` line written, and work that can wait for the answer done
     /// (the desktop screenshot's MIT-SHM segment for the next one).
     pub fn after_response(&mut self) {
+        // under `--stats`, a drop handed to Chrome's activation though its Electron source's settle failed: its watch
+        // ends by itself within `dnd::DROP_CONFIRM` of the release, so the line waits for it and says whether the
+        // activation came, in the drag's own record (ruling 837, placed by 838; off the request path, which has
+        // answered). The watch is collected as `tick` would collect it once ended
+        if self.cfg.stats
+            && self.pending_stats.is_some()
+            && let Some(watch) = self.late_watch.as_ref().filter(|watch| watch.settle_failed)
+        {
+            watch.run_out();
+            let before = self.drop_settles.activations_after_failed_settles();
+            self.collect_late_watch(false);
+            if self.drop_settles.activations_after_failed_settles() > before {
+                crate::drop_settle::mark_activation_confirmed(&mut self.extra);
+            }
+        }
         if let Some((id, command, elapsed, ok)) = self.pending_stats.take() {
             let line = self.stats_line(id, command, elapsed, ok);
             eprintln!("{line}");

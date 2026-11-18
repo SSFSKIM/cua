@@ -103,13 +103,14 @@ private final class FakeApp {
   init(_ field: FakeField?) { focused = field }
 
   var reads: ReadbackReads<FakeField> {
-    ReadbackReads(focused: { self.focused?.calls.append("focused"); return self.focused },
+    // The application's own focus, read again after typing (`stillFocused`) as main's lookup reads it.
+    ReadbackReads(focused: { self.focused?.calls.append("focused"); return self.focused.map { .field($0, by: .focus) } },
+                  stillFocused: { field, _ in self.focused?.calls.append("focused"); return self.focused === field },
                   role: { $0.calls.append("role"); return $0.role },
                   subrole: { $0.calls.append("subrole"); return $0.subrole },
                   value: { $0.readValue() },
                   valueUnits: { field in field.readValue().map { Array($0.utf16) } },
                   range: { $0.readRange() },
-                  same: { $0 === $1 },
                   now: { self.clock },
                   sleep: { self.clock += $0; self.sleeps += 1 })
   }
@@ -423,9 +424,11 @@ final class TypeReadbackTests: XCTestCase {
   private func lookup(_ app: Node, reads: inout [String], msPerNode: Double = 0) -> Node? {
     var log: [String] = [], clock = 0.0
     defer { reads = log }
-    return readbackFocusedField(application: app, focused: { log.append("focused@\($0.name)"); return $0.focused },
-                                primaryWindow: { node in log.append("window"); return node.focusedWindow ?? node.mainWindow },
-                                walk: walkReads({ log.append($0) }, clock: { clock }, tick: { clock += msPerNode }))
+    let found = readbackFocusedField(application: app, focused: { log.append("focused@\($0.name)"); return $0.focused },
+                                     primaryWindow: { node in log.append("window"); return node.focusedWindow ?? node.mainWindow },
+                                     walk: walkReads({ log.append($0) }, clock: { clock }, tick: { clock += msPerNode }))
+    guard case .field(let field, .focus)? = found else { return nil }
+    return field
   }
 
   /// Run 44022892172 (Safari 27.2, no key first): the application's AXFocusedUIElement answered no value, the windows'
@@ -624,9 +627,10 @@ final class TypeReadbackTests: XCTestCase {
     let walk = walkReads({ _ in })
     let reads = ReadbackReads<Node>(
       focused: { readbackFocusedField(application: app, focused: { $0.focused }, primaryWindow: { $0.focusedWindow ?? $0.mainWindow }, walk: walk) },
+      stillFocused: { _, _ in true },
       role: { $0.role }, subrole: { _ in .absent }, value: { valueReads += 1; return $0.value },
       valueUnits: { valueReads += 1; return $0.value.map { Array($0.utf16) } },
-      range: { _ in valueReads += 1; return NSRange(location: 0, length: 0) }, same: { $0 === $1 }, now: { 0 }, sleep: { _ in })
+      range: { _ in valueReads += 1; return NSRange(location: 0, length: 0) }, now: { 0 }, sleep: { _ in })
     var settle: ReadbackSettle?
     guard case .refused(let reason) = readbackSnapshot(reads: reads, settle: &settle) else { return XCTFail("a secure field is refused") }
     XCTAssertEqual(reason, .secure)

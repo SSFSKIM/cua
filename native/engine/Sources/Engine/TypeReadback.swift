@@ -16,7 +16,8 @@ import Foundation
 // - The expected value is the snapshot's with the selected range replaced by the typed text.
 // - After the last event, the same field is polled until its value equals the expected one, at most
 //   `typeReadbackBudgetMs`, its role and subrole read again before every value read: a field that turns secure or
-//   unreadable is read no further. Equal, and the field still the app's focused element: success, `confirmed` in the
+//   unreadable is read no further. Equal, and the field still the app's focused element (one that Safari's text-marker
+//   route found, #395, still reading AXFocused true itself: `readbackStillFocused`): success, `confirmed` in the
 //   meta. Anything else is `typeUnconfirmed`, never retried; only a mismatch on a field that stayed readable carries
 //   values, a bounded excerpt around the first difference (`readbackExcerpt`) and both lengths.
 // - Equality proves nothing when the expected value is the snapshot's own (the selection already held the typed text:
@@ -155,50 +156,86 @@ func readbackInsertion(_ unit: TypedUnit) -> String {
   unit.text == [0x0D] ? "\n" : String(utf16CodeUnits: unit.text, count: unit.text.count)
 }
 
+/// How the snapshot's field was found (#395), which is how it is asked for again after typing (`readbackStillFocused`).
+enum ReadbackLookup: Equatable {
+  /// The application's AXFocusedUIElement, or #354's walk of its primary window: looked up again the same way.
+  case focus
+  /// Safari's text-marker route (TypeReadbackMarker.swift): the field itself is asked, never the marker again.
+  case marker
+}
+
+/// What the lookup before the first event found: the field and how, or (the marker route's) an element classified closed,
+/// refused unread with main's reason for it.
+enum ReadbackFound<Element> {
+  case field(Element, by: ReadbackLookup)
+  case closed(TypeReadbackReason)
+}
+
 /// The reads the read-back makes, live or faked.
 struct ReadbackReads<Element> {
-  var focused: () -> Element?
+  /// Before the first event: the field typed keys reach (`readbackFocusedField`).
+  var focused: () -> ReadbackFound<Element>?
+  /// After an event (the final poll's and each checkpoint's): whether the snapshot's field is still that field
+  /// (`readbackStillFocused`), never through the marker.
+  var stillFocused: (Element, ReadbackLookup) -> Bool
   var role: (Element) -> String?
   var subrole: (Element) -> ReadbackSubrole
   var value: (Element) -> String?
   /// The value as UTF-16 units in a buffer of its own, for a concealed comparison that zeroes it after use.
   var valueUnits: (Element) -> [UInt16]?
   var range: (Element) -> NSRange?
-  var same: (Element, Element) -> Bool
   var now: () -> Double = monotonicMilliseconds
   var sleep: (Double) -> Void = { usleep(UInt32(max(0, $0) * 1000)) }
 }
 
 extension ReadbackReads where Element == AXUIElement {
-  /// The live reads of `pid`'s focused field, each element given the read-back's messaging timeout.
-  static func live(pid: pid_t) -> ReadbackReads<AXUIElement> {
-    ReadbackReads(focused: {
-      let application = AXUIElementCreateApplication(pid)
-      AXUIElementSetMessagingTimeout(application, typeReadbackMessagingTimeout)
-      func element(_ of: AXUIElement, _ name: String) -> AXUIElement? {
-        guard let raw = attribute(of, name), CFGetTypeID(raw) == AXUIElementGetTypeID() else { return nil }
-        let found = raw as! AXUIElement
-        AXUIElementSetMessagingTimeout(found, typeReadbackMessagingTimeout)
-        return found
+  /// The live reads of `pid`'s focused field through `ax`, each element given the read-back's messaging timeout; the
+  /// text-marker route only when `markerRoute` (`readbackMarkerRoute`, Safari) and its symbols resolved.
+  static func live(pid: pid_t, markerRoute: Bool, ax: ReadbackAX = ReadbackAX()) -> ReadbackReads<AXUIElement> {
+    func timed(_ element: AXUIElement) -> AXUIElement {
+      AXUIElementSetMessagingTimeout(element, typeReadbackMessagingTimeout)
+      return element
+    }
+    func read<Value>(_ element: AXUIElement, _ name: String, _ convert: (CFTypeRef) -> Value?) -> ReadbackWalkRead<Value> {
+      let (raw, error) = ax.copy(element, name)
+      return readbackWalkRead(raw, error, convert)
+    }
+    func asElement(_ raw: CFTypeRef) -> AXUIElement? { CFGetTypeID(raw) == AXUIElementGetTypeID() ? timed(raw as! AXUIElement) : nil }
+    func element(_ of: AXUIElement, _ name: String) -> AXUIElement? { ax.copy(of, name).value.flatMap(asElement) }
+    func string(_ of: AXUIElement, _ name: String) -> String? {
+      guard let raw = ax.copy(of, name).value, CFGetTypeID(raw) == CFStringGetTypeID() else { return nil }
+      return (raw as! String)
+    }
+    let walk = ReadbackFocusWalk<AXUIElement>(children: { node in
+      read(node, kAXChildrenAttribute) { raw in
+        guard CFGetTypeID(raw) == CFArrayGetTypeID() else { return nil }
+        return elementList(raw).map(timed)
       }
-      return readbackFocusedField(application: application, focused: { element($0, kAXFocusedUIElementAttribute) },
-                                  primaryWindow: { element($0, kAXFocusedWindowAttribute) ?? element($0, kAXMainWindowAttribute) },
-                                  walk: ReadbackFocusWalk(children: { node in
-                                    liveWalkRead(node, kAXChildrenAttribute) { raw in
-                                      guard CFGetTypeID(raw) == CFArrayGetTypeID() else { return nil }
-                                      return elementList(raw).map { child in
-                                        AXUIElementSetMessagingTimeout(child, typeReadbackMessagingTimeout)
-                                        return child
-                                      }
-                                    }
-                                  }, isFocused: { liveWalkRead($0, kAXFocusedAttribute, bool) },
-                                  role: { liveWalkRead($0, kAXRoleAttribute) { CFGetTypeID($0) == CFStringGetTypeID() ? ($0 as! String) : nil } }))
-    }, role: { stringAttribute($0, kAXRoleAttribute) }, subrole: liveReadbackSubrole,
-       value: { stringAttribute($0, kAXValueAttribute) }, valueUnits: liveReadbackValueUnits, range: { element in
-      guard let range = rangeWire(attribute(element, kAXSelectedTextRangeAttribute)), let location = range["location"],
+    }, isFocused: { read($0, kAXFocusedAttribute, bool) },
+       role: { read($0, kAXRoleAttribute) { CFGetTypeID($0) == CFStringGetTypeID() ? ($0 as! String) : nil } })
+    let marker = ReadbackMarkerReads<AXUIElement>(marked: { readbackMarkedElement($0, ax: ax).map(timed) },
+                                                  classify: { readbackClass(ax.batch($0, classifyingAttributes)) },
+                                                  parent: { read($0, kAXParentAttribute, asElement) },
+                                                  isFocused: walk.isFocused, owned: { ax.pid($0) == pid }, same: { CFEqual($0, $1) })
+    let takesMarker = markerRoute && ax.markers != nil
+    func lookup(marker: ReadbackMarkerReads<AXUIElement>?) -> ReadbackFound<AXUIElement>? {
+      readbackFocusedField(application: timed(AXUIElementCreateApplication(pid)), focused: { element($0, kAXFocusedUIElementAttribute) },
+                           primaryWindow: { element($0, kAXFocusedWindowAttribute) ?? element($0, kAXMainWindowAttribute) },
+                           walk: walk, marker: marker)
+    }
+    return ReadbackReads(focused: { lookup(marker: takesMarker ? marker : nil) }, stillFocused: { field, found in
+      readbackStillFocused(field, found: found, again: {
+        if case .field(let again, _)? = lookup(marker: nil) { return again }
+        return nil
+      }, isFocused: walk.isFocused, same: { CFEqual($0, $1) })
+    }, role: { string($0, kAXRoleAttribute) }, subrole: { field in
+      let (raw, error) = ax.copy(field, kAXSubroleAttribute)
+      return readbackSubrole(raw, error)
+    }, value: { string($0, kAXValueAttribute) }, valueUnits: { readbackValueUnits(ax.copy($0, kAXValueAttribute).value) }, range: { element in
+      guard let range = rangeWire(ax.copy(element, kAXSelectedTextRangeAttribute).value), let location = range["location"],
             let length = range["length"] else { return nil }
       return NSRange(location: location, length: length)
-    }, same: { CFEqual($0, $1) })
+    })
   }
 }
 
@@ -229,14 +266,8 @@ struct ReadbackFocusWalk<Element> {
   var now: () -> Double = monotonicMilliseconds
 }
 
-/// A live attribute read for the walk, its error kept (the review of 1bac4017..45e5a5ed, P2: a failed read read as an
-/// absence could hide a second focused field).
-func liveWalkRead<Value>(_ element: AXUIElement, _ name: String, _ convert: (CFTypeRef) -> Value?) -> ReadbackWalkRead<Value> {
-  let (raw, error) = copyAttribute(element, name)
-  return readbackWalkRead(raw, error, convert)
-}
-
-/// What one attribute read answered, as the walk counts it.
+/// What one attribute read answered, as the walk counts it, its error kept (the review of 1bac4017..45e5a5ed, P2: a failed
+/// read read as an absence could hide a second focused field).
 func readbackWalkRead<Value>(_ raw: CFTypeRef?, _ error: AXError, _ convert: (CFTypeRef) -> Value?) -> ReadbackWalkRead<Value> {
   switch error {
   case .success: return raw.flatMap(convert).map { .value($0) } ?? .failed
@@ -245,16 +276,20 @@ func readbackWalkRead<Value>(_ raw: CFTypeRef?, _ error: AXError, _ convert: (CF
   }
 }
 
-/// The field typed keys reach: the application's AXFocusedUIElement, else the one its primary window's walk finds
-/// (`readbackFocusedByWalk`; AXFocusedWindow, else AXMainWindow). An app that is not active can answer no focused element
-/// at the application (#354's A/B, run 43752829833: background Safari, 120 of 120 cells with no route 3 hold first).
-/// Run 44022892172 showed what answers then: the application's AXFocusedUIElement no value (-25212), the windows' focus
-/// attributes unsupported (-25205), the web area's AXFocusedUIElement no value; a walk of the window for the element
-/// that reads AXFocused true found the text field 10 of 10. Only AX attributes are read; nothing is activated.
+/// The field typed keys reach: the application's AXFocusedUIElement, else, in its primary window (AXFocusedWindow, else
+/// AXMainWindow), the one `marker`'s text-marker route finds when it is given (Safari, #395: `readbackMarkedField`), else
+/// the one the walk finds (`readbackFocusedByWalk`). An app that is not active can answer no focused element at the
+/// application (#354's A/B, run 43752829833: background Safari, 120 of 120 cells with no route 3 hold first). Run
+/// 44022892172 showed what answers then: the application's AXFocusedUIElement no value (-25212), the windows' focus
+/// attributes unsupported (-25205), the web area's AXFocusedUIElement no value; a walk of the window for the element that
+/// reads AXFocused true found the text field 10 of 10, on a page within its bounds. Only AX attributes are read; nothing
+/// is activated.
 func readbackFocusedField<Element>(application: Element, focused: (Element) -> Element?, primaryWindow: (Element) -> Element?,
-                                   walk: ReadbackFocusWalk<Element>) -> Element? {
-  if let field = focused(application) { return field }
-  return primaryWindow(application).flatMap { readbackFocusedByWalk($0, walk) }
+                                   walk: ReadbackFocusWalk<Element>, marker: ReadbackMarkerReads<Element>? = nil) -> ReadbackFound<Element>? {
+  if let field = focused(application) { return .field(field, by: .focus) }
+  guard let window = primaryWindow(application) else { return nil }
+  if let marker, let found = readbackMarkedField(window: window, walk: walk, marker: marker) { return found }
+  return readbackFocusedByWalk(window, walk).map { .field($0, by: .focus) }
 }
 
 /// The window walked breadth first, each element's role read: an element with a role the walk claims
@@ -302,8 +337,8 @@ func readbackFocusedByWalk<Element>(_ window: Element, _ walk: ReadbackFocusWalk
 
 /// AXValue copied straight from its CFString into a buffer the caller owns and zeroes (no Swift String is made of it).
 /// The CFString the app's reply was decoded into is released, not overwritten: it is immutable and the process's own.
-func liveReadbackValueUnits(_ field: AXUIElement) -> [UInt16]? {
-  guard let raw = attribute(field, kAXValueAttribute), CFGetTypeID(raw) == CFStringGetTypeID() else { return nil }
+func readbackValueUnits(_ raw: CFTypeRef?) -> [UInt16]? {
+  guard let raw, CFGetTypeID(raw) == CFStringGetTypeID() else { return nil }
   let string = raw as! CFString
   let length = CFStringGetLength(string)
   var units = [UInt16](repeating: 0, count: length)
@@ -313,8 +348,7 @@ func liveReadbackValueUnits(_ field: AXUIElement) -> [UInt16]? {
 
 /// AXSubrole with its error: absent for kAXErrorNoValue and kAXErrorAttributeUnsupported, failed for any other error or
 /// a value that is not a string.
-func liveReadbackSubrole(_ field: AXUIElement) -> ReadbackSubrole {
-  let (raw, error) = copyAttribute(field, kAXSubroleAttribute)
+func readbackSubrole(_ raw: CFTypeRef?, _ error: AXError) -> ReadbackSubrole {
   if error == .success {
     if let raw, CFGetTypeID(raw) == CFStringGetTypeID() { return .value(raw as! String) }
     return .failed
@@ -325,7 +359,7 @@ func liveReadbackSubrole(_ field: AXUIElement) -> ReadbackSubrole {
 /// The snapshot before the first event: the field and what may be expected of it, or why nothing can be.
 enum ReadbackPlan<Element> {
   case refused(TypeReadbackReason)
-  case expect(field: Element, role: String, before: String, range: NSRange, returnIsText: Bool)
+  case expect(field: Element, role: String, before: String, range: NSRange, returnIsText: Bool, found: ReadbackLookup)
 }
 
 /// The snapshot; `settle`, when not nil, settles it first (`readbackSettle`) and records what that did. The settle comes
@@ -343,7 +377,12 @@ func readbackSnapshot<Element>(reads: ReadbackReads<Element>, settle: inout Read
 
 func readbackSnapshot<Element>(reads: ReadbackReads<Element>, settle: inout ReadbackSettle?, baseline: BaselineWait?,
                                waited: inout RangeWait?) -> ReadbackPlan<Element> {
-  guard let field = reads.focused() else { return .refused(.noFocusedElement) }
+  let field: Element, found: ReadbackLookup
+  switch reads.focused() {
+  case nil: return .refused(.noFocusedElement)
+  case .closed(let reason)?: return .refused(reason)  // the marker route's classification: nothing more is read
+  case .field(let element, let by)?: (field, found) = (element, by)
+  }
   guard let role = reads.role(field) else { return .refused(.roleUnreadable) }
   let subrole = reads.subrole(field)
   if readbackSecure(role: role, subrole: subrole) { return .refused(.secure) }
@@ -375,7 +414,8 @@ func readbackSnapshot<Element>(reads: ReadbackReads<Element>, settle: inout Read
   // The starting point itself, after any settle, must still be select_text's range: a click landing after the wait's
   // read would otherwise be adopted, and the read-back would confirm text typed at its caret.
   if case .selection(let written) = baseline, range != written { return .refused(.selectionChanged) }
-  return .expect(field: field, role: role, before: before, range: range, returnIsText: readbackReturnIsText(role: role, subrole: subrole))
+  return .expect(field: field, role: role, before: before, range: range, returnIsText: readbackReturnIsText(role: role, subrole: subrole),
+                 found: found)
 }
 
 /// Why a snapshotted field is read no further, its role and subrole read again: unreadable, secure, or another role.
@@ -581,13 +621,13 @@ final class TypeReadback<Element> {
   /// takes it as text.
   private func leaves(_ unit: TypedUnit) -> Bool {
     guard readbackKey(unit) else { return false }
-    if unit.text == [0x0D], case .expect(_, _, _, _, true) = plan { return false }
+    if unit.text == [0x0D], case .expect(_, _, _, _, true, _) = plan { return false }
     return true
   }
 
   /// Polls for the snapshot with its selection replaced by units `0..<end`, then checks the field is still the focus.
   private func confirm(through end: Int, beforeKey: Bool) throws {
-    guard case .expect(let field, let role, let before, let range, let returnIsText) = plan else { return }
+    guard case .expect(let field, let role, let before, let range, let returnIsText, let found) = plan else { return }
     let typedUnits = units[0..<end].filter { !leaves($0) }  // a key that can leave adds nothing to the field
     let placeholder = readbackPlaceholderLine(returnIsText: returnIsText, typedEndsInReturn: typedUnits.last?.text == [0x0D],
                                               suffixEmpty: range.location + range.length == (before as NSString).length)
@@ -676,7 +716,9 @@ final class TypeReadback<Element> {
     }
     record.reads += poll.reads
     if let closed = poll.closed { throw unconfirmed(closed, beforeKey) }
-    guard let focused = reads.focused(), reads.same(focused, field) else { throw unconfirmed(.fieldChanged, beforeKey) }
+    // Still the field, asked as it was found and never through the marker (#395, ruling 1ea561bc:824): no marker call
+    // follows delivered text, whose offset it would carry.
+    guard reads.stillFocused(field, found) else { throw unconfirmed(.fieldChanged, beforeKey) }
     switch poll.last {
     case .equal?: return
     case .equalUnconsumed?: throw unconfirmed(.unchanged, beforeKey)

@@ -685,11 +685,14 @@ extension Engine {
       defer { context.connection.markActed(app) }  // text stopped midway changed the app too
       // #354: the focused field snapshotted here, the last thing before the first event, and read back after the last;
       // settled first when press_key posted to the app within the window (ruling 1ea561bc:754); before that, #359's wait
-      // for select_text's range or, within a posted click's window, a stable range (ruling 1ea561bc:785).
+      // for select_text's range or, within a posted click's window, a stable range (ruling 1ea561bc:785). In Safari, by
+      // the bundle identifier of the process read, a field no focus attribute names is found by WebKit's text-marker
+      // route before the walk (#395, ruling 1ea561bc:824).
       try keyTextReadBack(typedUnits(text, press: layout.press(for:)), concealed: concealed,
                           settle: recentKeys.settles(pid: pid),
                           baseline: baselineWait(selection: selection, pointerPending: clickOrdering.pointerPending(pids: [pid, target])),
-                          reads: .live(pid: pid),
+                          reads: .live(pid: pid, markerRoute: readbackMarkerRoute(
+                            bundleIdentifier: NSRunningApplication(processIdentifier: pid)?.bundleIdentifier)),
                           checkSource: { try self.checkInputSource(initialSource, entered: $0, total: $1) },
                           checkIntervention: guarding.checkInFlight, post: { poster.post($0) },
                           pause: { usleep(250) },  // the vendor's gap between typed-text events (F §12)

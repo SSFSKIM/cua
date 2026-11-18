@@ -67,3 +67,14 @@ Milliseconds, nearest-rank p50 / p95, 80 valid trials per head/page for each col
 | Large / fix (marker) | **8.181 / 13.733** | **7.6 / 15.6** | 324.7 / 1,169.4 |
 
 The large-page native route is about 4.9× faster at the median and 3.0× at p95. This is a discovery improvement, not an end-to-end typing speedup. The audit raw poll attempts differed across some short/long pairs; only repeated polling was normalized.
+
+### Targeted password delivery rerun
+
+[Run 44322575578](https://github.com/SSFSKIM/cua/actions/runs/44322575578) passed. Its [attested artifact](https://github.com/SSFSKIM/cua/actions/runs/44322575578/artifacts/14437175723) records kit `b7989f278fb08e1c9cd0a9a23db0584f6567524c`, the same two stock engine pins as above, and Safari 27.2 on hosted image `20261112.0504.1`. There were 40 interleaved pairs, only on the large password-from-load fixture, with each head going first 20 times. The diagnostic used literal synthetic text and verified the keyed route on all 80 trials; it did not repeat secret substitution. It would publish only a browser-side mismatch category and signed UTF-16 size delta, not the value, its absolute size, or a position.
+
+| Head | Exact DOM and caret with input events | Native and forwarded reply | Wrong successes / privacy violations |
+| --- | ---: | --- | ---: |
+| Main | 40/40 | 40/40 unconfirmed, `noFocusedElement` | 0 / 0 |
+| Fix | 40/40 | 40/40 unconfirmed, `secure` | 0 / 0 |
+
+All 80 trials were witnessed and valid, with no delivery mismatch on either head. We treat the original r03 as a **background Safari delivery flake**: it did not recur in the targeted keyed test, and there is no reproduced fix-only delivery problem to send to the builder. This does not prove the marker route has no effect on delivery, nor retroactively turn the original 319/320 stock gate green.

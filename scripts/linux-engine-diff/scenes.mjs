@@ -1232,12 +1232,13 @@ export class Desktop {
   /**
    * The process a scene's close signals by pid, as the run spawned it (`spawnApp`'s record: its pid and start time):
    * `{state: 'live'}` while that pid is still it, `ended` once it has exited, `other` (another process under the pid
-   * now) or `unknown` (its state cannot be read), each with `why`. A scene the run did not spawn has no record:
-   * `unrecorded`, signalled by its pid as before.
+   * now) or `unknown` (its state cannot be read), each with `why`. A scene the run did not spawn has no record, and one
+   * whose start the spawn could not read has no identity to key on: `unrecorded`, signalled by its pid as before.
    */
   ownProcess(scene) {
     const entry = this.spawned.findLast((e) => e.pid === scene.pid);
-    if (!entry) return { state: 'unrecorded' };
+    // no record, or one whose start could not be read at the spawn (no /proc: the macOS test runner): signalled as before
+    if (!entry || entry.start == null) return { state: 'unrecorded' };
     if (entry.exited) return { state: 'ended' };
     // the real /proc whatever scope the run's checks read: a signal goes to a real process
     const now = processState(scene.pid);

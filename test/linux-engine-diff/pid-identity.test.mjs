@@ -144,6 +144,11 @@ test("a spawned scene's close signals its pid only while it is the process the r
     await until(() => processIdentity(own.pid) !== null);
     await desktop.close([scene(own, startOf(own))]);
     assert.ok(await until(() => !running(own)), 'its own process ended');
+    // a spawn whose start could not be read (no /proc, as on the macOS test runner) is signalled by its pid as before
+    const unread = sleeper();
+    await until(() => processIdentity(unread.pid) !== null);
+    await desktop.close([scene(unread, null)]);
+    assert.ok(await until(() => !running(unread)), 'signalled as before');
     // the restore's wait reads the same record: alive while it is that process, not once it has ended
     const waited = sleeper();
     await until(() => processIdentity(waited.pid) !== null);

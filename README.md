@@ -379,7 +379,9 @@ restores the previous contents; a clipboard manager may record it). `typeText` e
 ordinary text view's own substitutions (autocorrect, automatic capitalization, smart dashes) can change it, and even
 text typed before it, as they would for a person typing; password fields do not do this. Only authorize secrets for
 apps you would type them into yourself, and only into fields that mask their input, such as password fields: in a field
-that does not, the value itself is in the agent's later screenshots and observations, as it is on the screen. In Chrome
+that does not, the value itself is in the agent's later screenshots and observations, as it is on the screen. A masked
+field still shows the value's length: in the apps tested (Electron, Safari, Firefox, AppKit) it reads as one mask
+character per character. In Chrome
 the same rules apply to the two browser rows above, only on the
 pinned version of cua's browser service (`src/browser-service/VERSION`; `unsupported_browser_runtime` otherwise);
 script evaluation, CDP commands and every other browser command are never scanned. A failed `locator.fill` makes the

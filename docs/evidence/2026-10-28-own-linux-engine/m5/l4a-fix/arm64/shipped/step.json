@@ -1,0 +1,27 @@
+{
+  "label": "development run, not a release gate (task 98)",
+  "name": "shipped",
+  "checkout": "/Users/new/Developer/GitHub/cua/.claude/worktrees/t98-l4a",
+  "commit": "b74961ca7cf262220440f69f6d160f71ab422410",
+  "argv": [
+    "--experiment",
+    "drop-signals",
+    "--family",
+    "electron",
+    "--plan",
+    "t98-cold-shipped",
+    "--load-factor",
+    "2",
+    "--cua",
+    "/Users/new/.local/share/cua-171/task98/pinned/cua-engine",
+    "--run",
+    "shipped",
+    "--out",
+    "/Users/new/.local/share/cua-171/task98/out/shipped/run"
+  ],
+  "started": "2026-11-18T10:15:44.225Z",
+  "finished": "2026-11-18T10:37:51.117Z",
+  "exit": 1,
+  "child_exit": 1,
+  "display_watchdog": "clean"
+}

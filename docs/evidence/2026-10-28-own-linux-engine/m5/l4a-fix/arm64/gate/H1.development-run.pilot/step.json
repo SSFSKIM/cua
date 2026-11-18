@@ -1,0 +1,52 @@
+{
+  "label": "development run, not a release gate",
+  "step": "H1",
+  "pilot": true,
+  "what": "T17's Electron cells: plain drags and handles, the controls, the four releases off the window",
+  "display": "private",
+  "load": "idle",
+  "minutes": 22,
+  "run_name": "m5-dev-H1-pilot",
+  "checkout": {
+    "root": "/Users/new/Developer/GitHub/cua/.claude/worktrees/t98-l4a/",
+    "commit": "b74961ca7cf262220440f69f6d160f71ab422410",
+    "clean": true
+  },
+  "candidate": {
+    "path": "/Users/new/Developer/GitHub/cua/.claude/worktrees/t98-l4a/native/linux-engine/target/release/cua-engine",
+    "sha256": "9ae1fbc134c171a3632f981c01542ffc35156ae77465394f26cd70c8ebaf3f83"
+  },
+  "pinned_home": null,
+  "command": "/Users/new/.local/share/cua-171/locked.sh m5-l4a /Users/new/.local/share/cua-171/node24/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/t98-l4a/scripts/linux-engine-gate/gate.mjs run H1 --candidate /Users/new/Developer/GitHub/cua/.claude/worktrees/t98-l4a/native/linux-engine/target/release/cua-engine --out /Users/new/.local/share/cua-171/task98/out/gate --dev --pilot 100",
+  "argv": [
+    "scripts/linux-engine-diff.mjs",
+    "--experiment",
+    "drop-signals",
+    "--family",
+    "electron",
+    "--plan",
+    "t17-fix3",
+    "--trials",
+    "100",
+    "--cua",
+    "/Users/new/Developer/GitHub/cua/.claude/worktrees/t98-l4a/native/linux-engine/target/release/cua-engine",
+    "--run",
+    "m5-dev-H1-pilot",
+    "--pilot",
+    "--out",
+    "/Users/new/.local/share/cua-171/task98/out/gate/H1.development-run.pilot/run"
+  ],
+  "started": "2026-11-18T11:30:32.651Z",
+  "end_check": {
+    "left_by_step": [],
+    "foreign": [],
+    "buses": [],
+    "clear": true
+  },
+  "finished": "2026-11-18T11:47:53.280Z",
+  "exit": 0,
+  "child_exit": 0,
+  "display_watchdog": "clean",
+  "unjudged": [],
+  "unclean": []
+}

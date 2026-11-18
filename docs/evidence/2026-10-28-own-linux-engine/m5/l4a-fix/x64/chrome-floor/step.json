@@ -1,0 +1,27 @@
+{
+  "label": "development run, not a release gate (task 98)",
+  "name": "chrome-floor",
+  "checkout": "/Users/new/Developer/GitHub/cua/.claude/worktrees/agent-a8036331f3e034d27",
+  "commit": "b74961ca7cf262220440f69f6d160f71ab422410",
+  "argv": [
+    "--experiment",
+    "drop-signals",
+    "--family",
+    "chrome",
+    "--plan",
+    "t14-floor",
+    "--cua",
+    "/Users/new/Developer/GitHub/cua/.claude/worktrees/agent-a8036331f3e034d27/native/linux-engine/target/release/cua-engine",
+    "--trials",
+    "10",
+    "--run",
+    "chrome-floor",
+    "--out",
+    "/Users/new/.local/share/cua-171/task98/out/chrome-floor/run"
+  ],
+  "started": "2026-11-18T09:39:49.887Z",
+  "finished": "2026-11-18T09:41:08.769Z",
+  "exit": 0,
+  "child_exit": 0,
+  "display_watchdog": "clean"
+}

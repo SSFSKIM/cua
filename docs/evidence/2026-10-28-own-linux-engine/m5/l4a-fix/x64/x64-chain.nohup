@@ -1,0 +1,12 @@
+2026-11-18T09:06:49Z checkout /Users/new/Developer/GitHub/cua/.claude/worktrees/agent-a8036331f3e034d27 at b74961ca7cf262220440f69f6d160f71ab422410, engine cua-engine 0.4.0 (78d6cbda5473)
+2026-11-18T09:06:49Z no run x64-cold3
+2026-11-18T09:06:49Z pinned copy sha256 751ec9be45e1f5b8e10fc3aa0a4695f785ecb12a44acd5b069374926ba383cca (the pin's x64: 751ec9be45e1f5b8e10fc3aa0a4695f785ecb12a44acd5b069374926ba383cca)
+2026-11-18T09:12:39Z start shipped plan=t98-cold-shipped load=load2 engine=/Users/new/.local/share/cua-171/task98/pinned/cua-engine (cua-engine 0.4.0 (c55c8e08d9cb)) loadavg=0.96 8.44 11.08
+2026-11-18T09:35:49Z end shipped exit 1 loadavg=17.65 17.38 15.58 development run, not a release gate (task 98): shipped exit 1 (harness 1, display clean)
+2026-11-18T09:39:49Z start chrome-floor plan=t14-floor load=idle engine=/Users/new/Developer/GitHub/cua/.claude/worktrees/agent-a8036331f3e034d27/native/linux-engine/target/release/cua-engine (cua-engine 0.4.0 (78d6cbda5473)) loadavg=0.95 8.26 12.24
+2026-11-18T09:41:08Z end chrome-floor exit 0 loadavg=0.86 6.53 11.30 development run, not a release gate (task 98): chrome-floor exit 0 (harness 0, display clean)
+2026-11-18T09:41:08Z chain done: x64-cold3 shipped chrome
+2026-11-18T09:41:20Z checkout /Users/new/Developer/GitHub/cua/.claude/worktrees/agent-a8036331f3e034d27 at b74961ca7cf262220440f69f6d160f71ab422410, engine cua-engine 0.4.0 (78d6cbda5473)
+2026-11-18T09:41:20Z start cold3 plan=t98-cold load=load2 engine=/Users/new/Developer/GitHub/cua/.claude/worktrees/agent-a8036331f3e034d27/native/linux-engine/target/release/cua-engine (cua-engine 0.4.0 (78d6cbda5473)) loadavg=0.80 6.33 11.18
+2026-11-18T10:02:32Z end cold3 exit 1 loadavg=15.89 16.86 15.84 development run, not a release gate (task 98): cold3 exit 1 (harness 1, display clean)
+2026-11-18T10:02:32Z chain done: cold3

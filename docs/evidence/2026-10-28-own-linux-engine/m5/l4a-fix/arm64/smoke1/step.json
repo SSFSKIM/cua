@@ -1,0 +1,27 @@
+{
+  "label": "development run, not a release gate (task 98)",
+  "name": "smoke1",
+  "checkout": "/Users/new/Developer/GitHub/cua/.claude/worktrees/t98-l4a",
+  "commit": "c12f5f06842aa1d66269df278f1c2f2682a46b91",
+  "argv": [
+    "--experiment",
+    "drop-signals",
+    "--family",
+    "electron",
+    "--plan",
+    "t17-fix3",
+    "--cua",
+    "/Users/new/Developer/GitHub/cua/.claude/worktrees/t98-l4a/native/linux-engine/target/release/cua-engine",
+    "--trials",
+    "1",
+    "--run",
+    "smoke1",
+    "--out",
+    "/Users/new/.local/share/cua-171/task98/out/smoke1/run"
+  ],
+  "started": "2026-11-18T08:33:15.520Z",
+  "finished": "2026-11-18T08:34:40.253Z",
+  "exit": 0,
+  "child_exit": 0,
+  "display_watchdog": "clean"
+}

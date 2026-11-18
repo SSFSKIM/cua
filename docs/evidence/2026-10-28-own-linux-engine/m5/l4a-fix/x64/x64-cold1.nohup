@@ -1,0 +1,2 @@
+2026-11-18T08:39:00Z start x64-cold1 plan=t98-cold load=load2 engine=/Users/new/Developer/GitHub/cua/.claude/worktrees/agent-a8036331f3e034d27/native/linux-engine/target/release/cua-engine (cua-engine 0.4.0 (7f192f9980bd)) loadavg=0.77 1.13 1.19
+2026-11-18T08:43:11Z end x64-cold1 exit 1 loadavg=16.97 9.11 4.35 development run, not a release gate (task 98): x64-cold1 exit 1 (harness 143, display clean)

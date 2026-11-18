@@ -1,0 +1,13 @@
+2026-11-18T09:09:18Z checkout /Users/new/Developer/GitHub/cua/.claude/worktrees/t98-l4a at b74961ca7cf262220440f69f6d160f71ab422410, engine cua-engine 0.4.0 (b74961ca7cf2)
+2026-11-18T09:11:49Z start cold3 plan=t98-cold load=load2 engine=/Users/new/Developer/GitHub/cua/.claude/worktrees/t98-l4a/native/linux-engine/target/release/cua-engine (cua-engine 0.4.0 (b74961ca7cf2)) loadavg=0.89 9.13 11.27
+2026-11-18T09:33:55Z end cold3 exit 1 loadavg=15.17 16.27 15.32 development run, not a release gate (task 98): cold3 exit 1 (harness 1, display clean)
+2026-11-18T09:36:46Z start cold4 plan=t98-cold load=load2 engine=/Users/new/Developer/GitHub/cua/.claude/worktrees/t98-l4a/native/linux-engine/target/release/cua-engine (cua-engine 0.4.0 (b74961ca7cf2)) loadavg=0.90 9.21 12.75
+2026-11-18T09:58:54Z end cold4 exit 1 loadavg=16.80 16.47 15.68 development run, not a release gate (task 98): cold4 exit 1 (harness 1, display clean)
+2026-11-18T09:58:54Z pinned copy sha256 0cbde8f06ca2f70a1ea962fd49452591a2ca16961c746f5d90bfccf53e890d42 (the pin's arm64: 0cbde8f06ca2f70a1ea962fd49452591a2ca16961c746f5d90bfccf53e890d42)
+2026-11-18T10:09:45Z start shipped plan=t98-cold-shipped load=load2 engine=/Users/new/.local/share/cua-171/task98/pinned/cua-engine (cua-engine 0.4.0 (c55c8e08d9cb)) loadavg=0.88 3.57 8.82
+2026-11-18T10:37:51Z end shipped exit 1 loadavg=16.25 16.32 14.13 development run, not a release gate (task 98): shipped exit 1 (harness 1, display clean)
+2026-11-18T10:40:51Z start gate L4a --candidate /Users/new/Developer/GitHub/cua/.claude/worktrees/t98-l4a/native/linux-engine/target/release/cua-engine --dev --pilot 100 loadavg=0.93 8.97 11.65
+2026-11-18T11:05:12Z end gate L4a exit 1 loadavg=15.19 16.19 14.80 
+2026-11-18T11:08:02Z start gate H1 --candidate /Users/new/Developer/GitHub/cua/.claude/worktrees/t98-l4a/native/linux-engine/target/release/cua-engine --dev --pilot 100 loadavg=0.90 9.18 12.33
+2026-11-18T11:47:53Z end gate H1 exit 0 loadavg=0.22 0.20 1.19 
+2026-11-18T11:47:53Z STOP file present: stopping before drag1

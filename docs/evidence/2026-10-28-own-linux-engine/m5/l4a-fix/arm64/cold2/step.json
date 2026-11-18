@@ -1,0 +1,27 @@
+{
+  "label": "development run, not a release gate (task 98)",
+  "name": "cold2",
+  "checkout": "/Users/new/Developer/GitHub/cua/.claude/worktrees/t98-l4a",
+  "commit": "78d6cbda547346214ebf3b6b780fd1e17a355dca",
+  "argv": [
+    "--experiment",
+    "drop-signals",
+    "--family",
+    "electron",
+    "--plan",
+    "t98-cold",
+    "--load-factor",
+    "2",
+    "--cua",
+    "/Users/new/Developer/GitHub/cua/.claude/worktrees/t98-l4a/native/linux-engine/target/release/cua-engine",
+    "--run",
+    "cold2",
+    "--out",
+    "/Users/new/.local/share/cua-171/task98/out/cold2/run"
+  ],
+  "started": "2026-11-18T08:46:35.728Z",
+  "finished": "2026-11-18T09:08:49.942Z",
+  "exit": 0,
+  "child_exit": 0,
+  "display_watchdog": "clean"
+}

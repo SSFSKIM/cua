@@ -1,0 +1,9 @@
+A: the new code runs (an Electron source): 8 steps, 209 min (3.5 h) an architecture; on :0: none
+  H1 22, H2 25 [gate-windows], L4a 25 [load2], D2 30, L2b 22 [load2], L1 22 [load2], S1 39, L3b 24 [load2]
+the cross-check (Chrome's drag cells): 1 steps, 35 min (0.6 h) an architecture; on :0: none
+  D1 35
+B: a changed function is entered, no new branch taken: 30 steps, 788 min (13.1 h) an architecture; on :0: V2, V3, V4, V5, Z0 (171 min)
+  V2 39 (:0), V3 35 (:0), V4 34 (:0), V5 38 (:0), Z0 25 (:0), D1 35, D3 30, D4 25, D5 25, R1 40, R2 45, R3 5, R4 3, E1 8, S2 25, S3 26, S4 30, ES 15, P4 30, P6 30, P5 20, C1 4, L2a 25 [load2], L2c 40 [load2], L3a 26 [load2], L3c 31 [load2], L3d 32 [load2], L3e 38 [load2], L4b 25 [load2], L4c 4 [load2]
+C: no drag and no handle at all: 12 steps, 234 min (3.9 h) an architecture; on :0: V1 (40 min)
+  V1 40 (:0), FB 5, F1a 20, F1b 12, F2 8, F3a 30 [load2], F3b 15 [load2], F4 10 [load2], L5 4 [load2], P1 30, P2 30, P3 30
+the whole gate: 50 steps, 1231 min

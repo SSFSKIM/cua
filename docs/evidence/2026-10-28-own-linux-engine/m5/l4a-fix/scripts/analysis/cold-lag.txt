@@ -1,0 +1,98 @@
+
+# arm64-L4a-rate (load2; 280 handle drags)
+plain      cold  10 | first status after take: n=10 min 2 med 36 max 53 | accept: n=9 min 20 med 87 max 107 | release: n=10 min 59.9 med 66.9 max 90.4
+                    | accept put up after the release 5; shown at the release 4; withdrawn before it, margin ms: n=0 | landed 9, of them unconfirmed 5; ok with no drop and nothing pending 0
+plain      warm  90 | first status after take: n=90 min 2 med 4 max 73 | accept: n=90 min 0 med 22 max 73 | release: n=90 min 47.8 med 64.7 max 90.5
+                    | accept put up after the release 0; shown at the release 90; withdrawn before it, margin ms: n=0 | landed 90, of them unconfirmed 0; ok with no drop and nothing pending 0
+left       cold   3 | first status after take: n=3 min 26 med 33 max 36 | accept: n=3 min 39 med 69 max 97 | release: n=3 min 89.2 med 92.2 max 135.1
+                    | accept put up after the release 1; shown at the release 1; withdrawn before it, margin ms: n=1 min 2.2 med 2.2 max 2.2 | landed 0, of them unconfirmed 0; ok with no drop and nothing pending 1
+left       warm  27 | first status after take: n=27 min 2 med 3 max 32 | accept: n=27 min 0 med 24 max 37 | release: n=27 min 97 med 119.8 max 166.8
+                    | accept put up after the release 0; shown at the release 0; withdrawn before it, margin ms: n=27 min 43 med 76 max 99.8 | landed 0, of them unconfirmed 0; ok with no drop and nothing pending 0
+inzone-out cold   3 | first status after take: n=3 min 3 med 6 max 27 | accept: n=0 | release: n=3 min 55.7 med 64.4 max 72.2
+                    | accept put up after the release 0; shown at the release 0; withdrawn before it, margin ms: n=0 | landed 0, of them unconfirmed 0; ok with no drop and nothing pending 0
+inzone-out warm  27 | first status after take: n=27 min 2 med 5 max 79 | accept: n=2 min 0 med 8 max 8 | release: n=27 min 44.6 med 65.2 max 81.3
+                    | accept put up after the release 0; shown at the release 0; withdrawn before it, margin ms: n=2 min 45.7 med 48.3 max 48.3 | landed 0, of them unconfirmed 0; ok with no drop and nothing pending 0
+
+# arm64-H1-rate (idle; 280 handle drags)
+plain      cold  10 | first status after take: n=10 min 2 med 13 max 14 | accept: n=10 min 14 med 33 max 36 | release: n=10 min 46.9 med 56.3 max 62
+                    | accept put up after the release 0; shown at the release 10; withdrawn before it, margin ms: n=0 | landed 10, of them unconfirmed 0; ok with no drop and nothing pending 0
+plain      warm  90 | first status after take: n=90 min 2 med 2 max 29 | accept: n=90 min 13 med 21 max 30 | release: n=90 min 45.1 med 54.1 max 63.6
+                    | accept put up after the release 0; shown at the release 90; withdrawn before it, margin ms: n=0 | landed 90, of them unconfirmed 0; ok with no drop and nothing pending 0
+left       cold   3 | first status after take: n=3 min 2 med 2 max 22 | accept: n=3 min 21 med 22 max 23 | release: n=3 min 91.5 med 91.7 max 92.6
+                    | accept put up after the release 0; shown at the release 0; withdrawn before it, margin ms: n=3 min 63.6 med 64.5 max 64.7 | landed 0, of them unconfirmed 0; ok with no drop and nothing pending 0
+left       warm  27 | first status after take: n=27 min 2 med 2 max 28 | accept: n=27 min 2 med 20 max 29 | release: n=27 min 86.3 med 93.8 max 102.2
+                    | accept put up after the release 0; shown at the release 0; withdrawn before it, margin ms: n=27 min 63.4 med 64.4 max 65.1 | landed 0, of them unconfirmed 0; ok with no drop and nothing pending 0
+inzone-out cold   3 | first status after take: n=3 min 13 med 13 max 14 | accept: n=0 | release: n=3 min 49.3 med 57.1 max 59.7
+                    | accept put up after the release 0; shown at the release 0; withdrawn before it, margin ms: n=0 | landed 0, of them unconfirmed 0; ok with no drop and nothing pending 0
+inzone-out warm  27 | first status after take: n=27 min 2 med 47 max 62 | accept: n=0 | release: n=27 min 46.1 med 53.3 max 63.3
+                    | accept put up after the release 0; shown at the release 0; withdrawn before it, margin ms: n=0 | landed 0, of them unconfirmed 0; ok with no drop and nothing pending 0
+
+# x64-L4a-judged (load2; 280 handle drags)
+plain      cold  10 | first status after take: n=10 min 2 med 36 max 56 | accept: n=10 min 27 med 57 max 74 | release: n=10 min 44.8 med 59.6 max 65.9
+                    | accept put up after the release 4; shown at the release 6; withdrawn before it, margin ms: n=0 | landed 10, of them unconfirmed 4; ok with no drop and nothing pending 0
+plain      warm  90 | first status after take: n=90 min 2 med 4 max 27 | accept: n=90 min 2 med 20 max 59 | release: n=90 min 39.4 med 54.9 max 66.5
+                    | accept put up after the release 1; shown at the release 89; withdrawn before it, margin ms: n=0 | landed 90, of them unconfirmed 0; ok with no drop and nothing pending 0
+left       cold   3 | first status after take: n=3 min 4 med 38 max 58 | accept: n=3 min 20 med 57 max 61 | release: n=3 min 99 med 101.1 max 104.3
+                    | accept put up after the release 0; shown at the release 0; withdrawn before it, margin ms: n=3 min 20.3 med 36 max 60.1 | landed 0, of them unconfirmed 0; ok with no drop and nothing pending 0
+left       warm  27 | first status after take: n=27 min 2 med 5 max 27 | accept: n=27 min 4 med 23 max 32 | release: n=27 min 88.2 med 101.2 max 114.4
+                    | accept put up after the release 0; shown at the release 0; withdrawn before it, margin ms: n=27 min 30.6 med 63.8 max 68.2 | landed 0, of them unconfirmed 0; ok with no drop and nothing pending 0
+inzone-out cold   3 | first status after take: n=3 min 30 med 37 max 41 | accept: n=0 | release: n=3 min 55.9 med 57.9 max 58.7
+                    | accept put up after the release 0; shown at the release 0; withdrawn before it, margin ms: n=0 | landed 0, of them unconfirmed 0; ok with no drop and nothing pending 0
+inzone-out warm  27 | first status after take: n=27 min 2 med 5 max 65 | accept: n=0 | release: n=27 min 43.9 med 52.8 max 75.5
+                    | accept put up after the release 0; shown at the release 0; withdrawn before it, margin ms: n=0 | landed 0, of them unconfirmed 0; ok with no drop and nothing pending 0
+
+# x64-H1-judged (idle; 280 handle drags)
+plain      cold  10 | first status after take: n=10 min 2 med 20 max 27 | accept: n=10 min 16 med 30 max 49 | release: n=10 min 47.6 med 56.3 max 63.6
+                    | accept put up after the release 0; shown at the release 10; withdrawn before it, margin ms: n=0 | landed 10, of them unconfirmed 0; ok with no drop and nothing pending 0
+plain      warm  90 | first status after take: n=90 min 2 med 2 max 31 | accept: n=90 min 13 med 21 max 62 | release: n=90 min 45.6 med 54.8 max 63.9
+                    | accept put up after the release 0; shown at the release 90; withdrawn before it, margin ms: n=0 | landed 90, of them unconfirmed 0; ok with no drop and nothing pending 0
+left       cold   3 | first status after take: n=3 min 3 med 26 max 27 | accept: n=3 min 20 med 26 max 47 | release: n=3 min 92.4 med 99.7 max 102.2
+                    | accept put up after the release 0; shown at the release 0; withdrawn before it, margin ms: n=3 min 33.2 med 65.4 max 65.7 | landed 0, of them unconfirmed 0; ok with no drop and nothing pending 0
+left       warm  27 | first status after take: n=27 min 2 med 2 max 30 | accept: n=27 min 2 med 21 max 30 | release: n=27 min 89 med 94.2 max 107.1
+                    | accept put up after the release 0; shown at the release 0; withdrawn before it, margin ms: n=27 min 64 med 65.4 max 67.5 | landed 0, of them unconfirmed 0; ok with no drop and nothing pending 0
+inzone-out cold   3 | first status after take: n=3 min 2 med 3 max 29 | accept: n=0 | release: n=3 min 52.1 med 53.8 max 54.2
+                    | accept put up after the release 0; shown at the release 0; withdrawn before it, margin ms: n=0 | landed 0, of them unconfirmed 0; ok with no drop and nothing pending 0
+inzone-out warm  27 | first status after take: n=27 min 2 med 2 max 65 | accept: n=0 | release: n=27 min 47.4 med 53.5 max 64.1
+                    | accept put up after the release 0; shown at the release 0; withdrawn before it, margin ms: n=0 | landed 0, of them unconfirmed 0; ok with no drop and nothing pending 0
+
+# x64-m4-load3 (load2; 280 handle drags)
+plain      cold  10 | first status after take: n=10 min 30 med 42 max 73 | accept: n=9 min 47 med 60 max 75 | release: n=10 min 49.3 med 61.2 max 71
+                    | accept put up after the release 5; shown at the release 4; withdrawn before it, margin ms: n=0 | landed 10, of them unconfirmed 6; ok with no drop and nothing pending 0
+plain      warm  90 | first status after take: n=90 min 2 med 4 max 30 | accept: n=90 min 8 med 21 max 62 | release: n=90 min 45.3 med 55.8 max 78.4
+                    | accept put up after the release 0; shown at the release 90; withdrawn before it, margin ms: n=0 | landed 90, of them unconfirmed 0; ok with no drop and nothing pending 0
+left       cold   3 | first status after take: n=3 min 26 med 31 max 32 | accept: n=3 min 36 med 49 max 51 | release: n=3 min 92 med 98.9 max 111
+                    | accept put up after the release 0; shown at the release 0; withdrawn before it, margin ms: n=3 min 32 med 34.9 max 35 | landed 0, of them unconfirmed 0; ok with no drop and nothing pending 0
+left       warm  27 | first status after take: n=27 min 2 med 4 max 26 | accept: n=27 min 4 med 18 max 31 | release: n=27 min 83.6 med 101.2 max 121
+                    | accept put up after the release 0; shown at the release 0; withdrawn before it, margin ms: n=27 min 29.3 med 63.7 max 70.9 | landed 0, of them unconfirmed 0; ok with no drop and nothing pending 0
+inzone-out cold   3 | first status after take: n=3 min 30 med 31 max 41 | accept: n=0 | release: n=3 min 49.8 med 58.6 max 62.8
+                    | accept put up after the release 0; shown at the release 0; withdrawn before it, margin ms: n=0 | landed 0, of them unconfirmed 0; ok with no drop and nothing pending 0
+inzone-out warm  27 | first status after take: n=27 min 2 med 4 max 60 | accept: n=0 | release: n=27 min 43.2 med 54.8 max 77.9
+                    | accept put up after the release 0; shown at the release 0; withdrawn before it, margin ms: n=0 | landed 0, of them unconfirmed 0; ok with no drop and nothing pending 0
+
+# x64-m4-gate3 (gate-windows; 280 handle drags)
+plain      cold  10 | first status after take: n=10 min 2 med 56 max 73 | accept: n=10 min 14 med 69 max 84 | release: n=10 min 47.5 med 58.6 max 63.3
+                    | accept put up after the release 6; shown at the release 4; withdrawn before it, margin ms: n=0 | landed 10, of them unconfirmed 6; ok with no drop and nothing pending 0
+plain      warm  90 | first status after take: n=90 min 2 med 2 max 29 | accept: n=90 min 13 med 22 max 63 | release: n=90 min 46.6 med 56.2 max 64.5
+                    | accept put up after the release 0; shown at the release 90; withdrawn before it, margin ms: n=0 | landed 90, of them unconfirmed 0; ok with no drop and nothing pending 0
+left       cold   3 | first status after take: n=3 min 2 med 3 max 16 | accept: n=3 min 16 med 18 max 25 | release: n=3 min 87.9 med 91.8 max 96.6
+                    | accept put up after the release 0; shown at the release 0; withdrawn before it, margin ms: n=3 min 64.6 med 64.9 max 65.8 | landed 0, of them unconfirmed 0; ok with no drop and nothing pending 0
+left       warm  27 | first status after take: n=27 min 2 med 3 max 30 | accept: n=27 min 3 med 22 max 32 | release: n=27 min 88.6 med 96.9 max 107.6
+                    | accept put up after the release 0; shown at the release 0; withdrawn before it, margin ms: n=27 min 63.1 med 65.6 max 68.6 | landed 0, of them unconfirmed 0; ok with no drop and nothing pending 0
+inzone-out cold   3 | first status after take: n=3 min 2 med 2 max 2 | accept: n=0 | release: n=3 min 51.5 med 61.8 max 62
+                    | accept put up after the release 0; shown at the release 0; withdrawn before it, margin ms: n=0 | landed 0, of them unconfirmed 0; ok with no drop and nothing pending 0
+inzone-out warm  27 | first status after take: n=27 min 2 med 3 max 66 | accept: n=0 | release: n=27 min 47.2 med 55.2 max 65
+                    | accept put up after the release 0; shown at the release 0; withdrawn before it, margin ms: n=0 | landed 0, of them unconfirmed 0; ok with no drop and nothing pending 0
+
+# x64-m4-idle3 (idle; 280 handle drags)
+plain      cold  10 | first status after take: n=10 min 2 med 3 max 21 | accept: n=10 min 21 med 26 max 33 | release: n=10 min 49.9 med 56.7 max 61.6
+                    | accept put up after the release 0; shown at the release 10; withdrawn before it, margin ms: n=0 | landed 10, of them unconfirmed 0; ok with no drop and nothing pending 0
+plain      warm  90 | first status after take: n=90 min 2 med 2 max 30 | accept: n=90 min 13 med 22 max 63 | release: n=90 min 46.1 med 55.8 max 64.1
+                    | accept put up after the release 0; shown at the release 90; withdrawn before it, margin ms: n=0 | landed 90, of them unconfirmed 0; ok with no drop and nothing pending 0
+left       cold   3 | first status after take: n=3 min 2 med 16 max 16 | accept: n=3 min 16 med 19 max 28 | release: n=3 min 88.1 med 89.8 max 90.2
+                    | accept put up after the release 0; shown at the release 0; withdrawn before it, margin ms: n=3 min 35.8 med 65.1 max 65.2 | landed 0, of them unconfirmed 0; ok with no drop and nothing pending 0
+left       warm  27 | first status after take: n=27 min 2 med 2 max 29 | accept: n=27 min 3 med 24 max 32 | release: n=27 min 87.4 med 97 max 105
+                    | accept put up after the release 0; shown at the release 0; withdrawn before it, margin ms: n=27 min 63.6 med 65.3 max 67.1 | landed 0, of them unconfirmed 0; ok with no drop and nothing pending 0
+inzone-out cold   3 | first status after take: n=3 min 2 med 2 max 30 | accept: n=0 | release: n=3 min 50.2 med 51.7 max 58.7
+                    | accept put up after the release 0; shown at the release 0; withdrawn before it, margin ms: n=0 | landed 0, of them unconfirmed 0; ok with no drop and nothing pending 0
+inzone-out warm  27 | first status after take: n=27 min 2 med 2 max 64 | accept: n=0 | release: n=27 min 47.9 med 58.1 max 64.2
+                    | accept put up after the release 0; shown at the release 0; withdrawn before it, margin ms: n=0 | landed 0, of them unconfirmed 0; ok with no drop and nothing pending 0

@@ -1,0 +1,2 @@
+2026-11-18T08:46:35Z start cold2 plan=t98-cold load=load2 engine=/Users/new/Developer/GitHub/cua/.claude/worktrees/t98-l4a/native/linux-engine/target/release/cua-engine (cua-engine 0.4.0 (78d6cbda5473)) loadavg=0.88 5.52 3.95
+bin/drive98.sh: line 32: unexpected EOF while looking for matching `"'

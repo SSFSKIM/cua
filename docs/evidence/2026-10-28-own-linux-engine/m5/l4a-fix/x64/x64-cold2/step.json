@@ -1,0 +1,27 @@
+{
+  "label": "development run, not a release gate (task 98)",
+  "name": "x64-cold2",
+  "checkout": "/Users/new/Developer/GitHub/cua/.claude/worktrees/agent-a8036331f3e034d27",
+  "commit": "78d6cbda547346214ebf3b6b780fd1e17a355dca",
+  "argv": [
+    "--experiment",
+    "drop-signals",
+    "--family",
+    "electron",
+    "--plan",
+    "t98-cold",
+    "--load-factor",
+    "2",
+    "--cua",
+    "/Users/new/Developer/GitHub/cua/.claude/worktrees/agent-a8036331f3e034d27/native/linux-engine/target/release/cua-engine",
+    "--run",
+    "x64-cold2",
+    "--out",
+    "/Users/new/.local/share/cua-171/task98/out/x64-cold2/run"
+  ],
+  "started": "2026-11-18T08:47:33.125Z",
+  "finished": "2026-11-18T09:08:50.871Z",
+  "exit": 0,
+  "child_exit": 0,
+  "display_watchdog": "clean"
+}

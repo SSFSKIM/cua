@@ -1,0 +1,27 @@
+{
+  "label": "development run, not a release gate (task 98)",
+  "name": "cold3",
+  "checkout": "/Users/new/Developer/GitHub/cua/.claude/worktrees/agent-a8036331f3e034d27",
+  "commit": "b74961ca7cf262220440f69f6d160f71ab422410",
+  "argv": [
+    "--experiment",
+    "drop-signals",
+    "--family",
+    "electron",
+    "--plan",
+    "t98-cold",
+    "--load-factor",
+    "2",
+    "--cua",
+    "/Users/new/Developer/GitHub/cua/.claude/worktrees/agent-a8036331f3e034d27/native/linux-engine/target/release/cua-engine",
+    "--run",
+    "cold3",
+    "--out",
+    "/Users/new/.local/share/cua-171/task98/out/cold3/run"
+  ],
+  "started": "2026-11-18T09:41:20.271Z",
+  "finished": "2026-11-18T10:02:32.441Z",
+  "exit": 1,
+  "child_exit": 1,
+  "display_watchdog": "clean"
+}

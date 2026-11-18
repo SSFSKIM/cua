@@ -178,15 +178,17 @@ enum ReadbackFinalBatch: Equatable {
 /// for the window, a reply that left it, a reply past any genuine field's, or none of these.
 enum ReadbackLengthStep { case closed(TypeReadbackReason), holds, changed, overshoots, goesOn }
 
-/// A concealed failure's reason (#414; the review of 1f69470e..f217f062): a function of the final batch and the final
-/// focus read alone, the two observations every concealed failure makes. A final batch closed `noLongerSecure` gives
-/// that, whatever the focus read found, so the warning that the field may show the secret is never lost (the review of
-/// f217f062..45172367, 3). Otherwise a focus read that found the focus moved is `fieldChanged`; one whose answer is
-/// unknown (`ReadbackFocus.unknown`) is no evidence either way, and the final batch decides: a closed one gives its own
-/// reason, an unreadable one (or none) `lengthUnreadable`, and any other `lengthMismatch`. Nothing earlier (a held
-/// match, a taint, a focus read at a match) chooses it.
+/// A concealed failure's reason (#414; the review of 1f69470e..f217f062): a function of the poll's last batch and the
+/// focus read after it alone. A last batch closed `noLongerSecure` gives that, whatever the focus read found, so the
+/// warning that the field may show the secret is never lost (the review of f217f062..45172367, 3); one closed
+/// `fieldUnreadable` gives that, whose remedy for a password field warns the same (`typeUnconfirmed`; the review of
+/// 4a005a8c..a1939d2f, P1-4), and neither needs the focus read. Otherwise a focus read that found the focus moved is
+/// `fieldChanged`; one whose answer is unknown (`ReadbackFocus.unknown`) is no evidence either way, and the last batch
+/// decides: a closed one gives its own reason, an unreadable one (or none) `lengthUnreadable`, and any other
+/// `lengthMismatch`. Nothing earlier (a held match, a taint, a focus check at a match) chooses it.
 func readbackConcealedReason(finalBatch: ReadbackFinalBatch?, focus: ReadbackFocus) -> TypeReadbackReason {
   if case .closed(.noLongerSecure)? = finalBatch { return .noLongerSecure }
+  if case .closed(.fieldUnreadable)? = finalBatch { return .fieldUnreadable }
   if focus == .moved { return .fieldChanged }
   switch finalBatch {
   case .closed(let why)?: return why

@@ -143,6 +143,7 @@ private final class FakeApp {
     // The application's own focus, read again after typing (`stillFocused`) as main's lookup reads it.
     ReadbackReads(focused: { self.focused?.calls.append("focused"); return self.focused.map { .field($0, by: .focus) } },
                   stillFocused: { field, _ in self.focused?.calls.append("focused"); return self.focused === field ? .focused : .moved },
+                  fieldFocused: { field, _ in self.focused?.calls.append("focused"); return self.focused === field ? .focused : .moved },
                   role: { $0.calls.append("role"); return $0.role },
                   subrole: { $0.calls.append("subrole"); return $0.subrole },
                   value: { $0.readValue() },
@@ -492,7 +493,8 @@ final class TypeReadbackTests: XCTestCase {
                                      },
                                      primaryWindow: { node in log.append("window"); return node.focusedWindow ?? node.mainWindow },
                                      walk: walkReads({ log.append($0) }, clock: { clock }, tick: { clock += msPerNode }))
-    guard case .field(let field, .focus, _)? = found else { return nil }
+    // The application's focus names a field `.focus`; the walk's claim is `.walk` (#414's P1-2).
+    guard case .field(let field, let by, _)? = found, by != .marker else { return nil }
     return field
   }
 
@@ -694,7 +696,7 @@ final class TypeReadbackTests: XCTestCase {
     let reads = ReadbackReads<Node>(
       focused: { readbackFocusedField(application: app, focused: { $0.focused.map { .value($0) } ?? .absent },
                                       primaryWindow: { $0.focusedWindow ?? $0.mainWindow }, walk: walk) },
-      stillFocused: { _, _ in .focused },
+      stillFocused: { _, _ in .focused }, fieldFocused: { _, _ in .focused },
       role: { $0.role }, subrole: { _ in .absent }, value: { valueReads += 1; return $0.value },
       valueUnits: { valueReads += 1; return $0.value.map { Array($0.utf16) } },
       range: { _ in valueReads += 1; return NSRange(location: 0, length: 0) }, batch: { node, names in
@@ -730,7 +732,7 @@ final class TypeReadbackTests: XCTestCase {
       let reads = ReadbackReads<Node>(
         focused: { readbackFocusedField(application: app, focused: { $0.focused.map { .value($0) } ?? .absent },
                                         primaryWindow: { $0.focusedWindow ?? $0.mainWindow }, walk: walk) },
-        stillFocused: { _, _ in .focused },
+        stillFocused: { _, _ in .focused }, fieldFocused: { _, _ in .focused },
         role: { _ in "AXTextField" }, subrole: { _ in .absent }, value: { valueReads += 1; return $0.value },
         valueUnits: { valueReads += 1; return $0.value.map { Array($0.utf16) } },
         range: { _ in valueReads += 1; return NSRange(location: 7, length: 0) }, batch: { _, _ in batches += 1; return nil },

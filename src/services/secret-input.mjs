@@ -75,9 +75,12 @@ export function readFailure(error, label) {
 // #414: cua's engine typed a secret into a password field that stopped being one meanwhile (a show-password toggle), so
 // the field may now show it; the engine's sentence that says so is withheld with the rest. Read from the read-back
 // record's reason alone, compared with the one literal, never from or with the runtime's text; the caller passes it only
-// when something was typed, since a field nothing was typed into holds none of the secret.
-const MAY_SHOW = 'The password field stopped being one while the secret was typed and may now show it: do not take a screenshot of it or call getAXState(); put it right with setValue. ';
-export const secretMayShow = meta => isPlainObject(meta) && isPlainObject(meta.typeReadback) && meta.typeReadback.reason === 'noLongerSecure';
+// when something was typed, since a field nothing was typed into holds none of the secret. A password field's record
+// (`secure` true) whose reason is fieldUnreadable warns too: the engine could not classify the field, so it cannot tell
+// that it is still one (#414, the review of 4a005a8c..a1939d2f, P1-4).
+const MAY_SHOW = 'The password field may have stopped being one while the secret was typed, and may now show it: do not take a screenshot of it or call getAXState(); put it right with setValue. ';
+export const secretMayShow = meta => isPlainObject(meta) && isPlainObject(meta.typeReadback)
+  && (meta.typeReadback.reason === 'noLongerSecure' || (meta.typeReadback.reason === 'fieldUnreadable' && meta.typeReadback.secure === true));
 
 // After the value was read and handed to the vendor: a fixed classification of what went wrong, never its text.
 export const inputFailed = (what, label, kind, mayShow = false) => new SecretInputError('secret_input_failed', `${what} with secret "${label}" failed (${kind}) after the secret was read; it may have been partly entered. ${mayShow ? MAY_SHOW : ''}The runtime's error is withheld because it can contain the secret`);

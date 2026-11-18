@@ -168,7 +168,7 @@ test('#354: a concealed type_text that keyed and did not match repeats typeUncon
 
 test('#414: a concealed type_text whose password field stopped being one warns, in a fixed sentence, that the field may show the secret; no other reason does', async () => {
   const value = VALUES['WORK_PASSWORD'];
-  const warning = 'The password field stopped being one while the secret was typed and may now show it: do not take a screenshot of it or call getAXState(); put it right with setValue.';
+  const warning = 'The password field may have stopped being one while the secret was typed, and may now show it: do not take a screenshot of it or call getAXState(); put it right with setValue.';
   const native = `The text was typed, but the password field turned into another kind of field (native-only-sentence) ${value}`;
   const posted = {...NOTHING_POSTED, inputRoute: "2'", startedAt: 1000, endedAt: 1042};
   const record = reason => ({confirmed: false, reason, secure: true, concealed: true, snapshotMs: 1.5});
@@ -178,11 +178,16 @@ test('#414: a concealed type_text whose password field stopped being one warns, 
     {label: 'noLongerSecure', name: 'typeUnconfirmed', meta: {...posted, typeReadback: record('noLongerSecure')}, warned: true},
     {label: 'noLongerSecure, then the user changed the app', name: 'userIntervened', message: changed, meta: {...posted, typeReadback: record('noLongerSecure')}, warned: true},
     {label: 'noLongerSecure, nothing posted', name: 'userIntervened', message: changed, meta: {...NOTHING_POSTED, typeReadback: record('noLongerSecure')}, warned: false},
-    // The engine answers noLongerSecure before a moved focus (the review of f217f062..45172367, 3), and its record can
-    // carry `lateReply`: the warning still comes.
-    {label: 'noLongerSecure, the focus also moved, a late reply', name: 'typeUnconfirmed', meta: {...posted, typeReadback: {...record('noLongerSecure'), lateReply: true}}, warned: true},
+    // A regular batch the engine saw shown as text ends its poll at once, noLongerSecure before a moved focus (the
+    // review of f217f062..45172367, 3; ruling 1ea561bc:851): the warning comes.
+    {label: 'noLongerSecure, the focus also moved', name: 'typeUnconfirmed', meta: {...posted, typeReadback: record('noLongerSecure')}, warned: true},
     {label: 'lengthMismatch', name: 'typeUnconfirmed', meta: {...posted, typeReadback: record('lengthMismatch')}, warned: false},
     {label: 'lengthUnreadable', name: 'typeUnconfirmed', meta: {...posted, typeReadback: record('lengthUnreadable')}, warned: false},
+    // The review of 4a005a8c..a1939d2f (P1-4): a password field the engine could not classify may show the secret too; a
+    // plain field's fieldUnreadable (no `secure`, or not true) does not warn.
+    {label: 'fieldUnreadable, a password field', name: 'typeUnconfirmed', meta: {...posted, typeReadback: record('fieldUnreadable')}, warned: true},
+    {label: 'fieldUnreadable, a plain field', name: 'typeUnconfirmed', meta: {...posted, typeReadback: {...record('fieldUnreadable'), secure: false}}, warned: false},
+    {label: 'fieldUnreadable, secure not the literal true', name: 'typeUnconfirmed', meta: {...posted, typeReadback: {...record('fieldUnreadable'), secure: 'true'}}, warned: false},
     {label: 'a reason that only contains it', name: 'typeUnconfirmed', meta: {...posted, typeReadback: record('noLongerSecure ')}, warned: false},
     {label: 'a reason not a string', name: 'typeUnconfirmed', meta: {...posted, typeReadback: record(['noLongerSecure'])}, warned: false},
     {label: 'no record', name: 'typeUnconfirmed', meta: {...posted, typeReadback: null}, warned: false},

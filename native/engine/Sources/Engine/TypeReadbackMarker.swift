@@ -201,24 +201,39 @@ func readbackWebArea<Element>(_ window: Element, _ walk: ReadbackFocusWalk<Eleme
 /// After an event, whether `field` is still the field typed keys reach, never through the marker (ruling 1ea561bc:824):
 /// a field the application's focus or the walk found is looked up again that way (`again`, which takes no marker route)
 /// and must be the same element; one the marker route found is asked itself, the same element, and must read AXFocused
-/// true. Neither reads anything that depends on what was typed, so a concealed request makes the same reads.
-///
-/// Only a positive answer is a moved focus (#414; the review of f217f062..45172367, from the hosted runs on 45172367):
-/// another element named, no element found by a lookup that finished, or AXFocused false or absent. A check that could
-/// not finish (`unfinished`: a call not sent for lack of time, one that timed out, a walk left unfinished) is unknown.
+/// true. Neither reads anything that depends on what was typed, so a concealed request makes the same reads. #354's
+/// plain path takes anything but focused as a changed field. The marker's AXFocused read that failed (another AX error,
+/// or a reply of the wrong type) is unknown, not moved (#414; the review of 4a005a8c..a1939d2f, P2).
 func readbackStillFocused<Element>(_ field: Element, found lookup: ReadbackLookup, again: () -> Element?,
-                                   isFocused: (Element) -> ReadbackWalkRead<Bool>, same: (Element, Element) -> Bool,
-                                   unfinished: () -> Bool) -> ReadbackFocus {
+                                   isFocused: (Element) -> ReadbackWalkRead<Bool>, same: (Element, Element) -> Bool) -> ReadbackFocus {
+  switch lookup {
+  case .focus, .walk: return again().map { same($0, field) ? .focused : .moved } ?? .moved
+  case .marker: return readbackFieldsAXFocused(isFocused(field))
+  }
+}
+
+/// #414 (the review of 4a005a8c..a1939d2f, P1-2): a password field's focus check after typing, early or final, literal
+/// or concealed: one AX call, chosen by how the snapshot found the field, so no secret can buy a slower lookup. One the
+/// application's AXFocusedUIElement named is asked that again and compared (`same`): an element is focused or moved,
+/// and an absent, failed or timed-out answer is unknown, with no fallback to the window or a walk. One the walk or the
+/// marker route found is asked its own AXFocused: the walk found it by that attribute's true, so it is there.
+func readbackFieldFocused<Element>(_ field: Element, found lookup: ReadbackLookup, applicationFocus: () -> ReadbackWalkRead<Element>,
+                                   isFocused: (Element) -> ReadbackWalkRead<Bool>, same: (Element, Element) -> Bool) -> ReadbackFocus {
   switch lookup {
   case .focus:
-    if let again = again() { return same(again, field) ? .focused : .moved }
-    return unfinished() ? .unknown : .moved
-  case .marker:
-    switch isFocused(field) {
-    case .value(true): return .focused
-    case .failed where unfinished(): return .unknown
-    case .value(false), .absent, .failed: return .moved
-    }
+    guard case .value(let focused) = applicationFocus() else { return .unknown }
+    return same(focused, field) ? .focused : .moved
+  case .walk, .marker: return readbackFieldsAXFocused(isFocused(field))
+  }
+}
+
+/// A field's own AXFocused: true is focused, false moved, and anything else (absent, failed, the wrong type, timed out)
+/// unknown.
+func readbackFieldsAXFocused(_ read: ReadbackWalkRead<Bool>) -> ReadbackFocus {
+  switch read {
+  case .value(true): return .focused
+  case .value(false): return .moved
+  case .absent, .failed: return .unknown
   }
 }
 

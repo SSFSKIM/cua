@@ -409,37 +409,44 @@ final class TypeReadbackMarkerTests: XCTestCase {
 
   // MARK: Password fields
 
-  /// #414: a password field the route finds (by role or subrole, or a text field whose subrole cannot be read) is claimed
-  /// as a text field is, its AXFocused and its place under the web area checked, and is confirmed by its length: after
-  /// its classification nothing is read of it but its length batch and, after typing, its own AXFocused; no value, range
-  /// or count is read alone, and no marker call follows the first event.
-  /// #414 (the hosted runs on 45172367): a password field's focus check that times out after typing is unknown, not a
-  /// moved focus, on both of its paths: the marker route's (the field's own AXFocused, its one read) and the walk's
-  /// (the window walked again, left unfinished by a read that timed out). It never confirms, and the reply's length
-  /// reason stands, plain and concealed; a focus that did move is still fieldChanged.
-  func testAPasswordFieldsFocusCheckThatTimesOutIsUnknown() {
-    let paths: [(label: String, marker: Bool, timesOut: (StubSafari) -> Void)] = [
-      ("the marker route", true, { $0.errors[StubSafari.field] = [kAXFocusedAttribute: .cannotComplete] }),
-      ("the walk", false, { $0.errors[StubSafari.form] = [kAXRoleAttribute: .cannotComplete] }),
+  /// #414: a password field's focus check after typing is one AX call, the field's own AXFocused, on both of the paths
+  /// that find it so (the review of 4a005a8c..a1939d2f, P1-2): the marker route's, and the walk's, whose lookup found it
+  /// by that attribute's true. Only false is a moved focus, fieldChanged. Anything else is unknown (P2): a read that times
+  /// out (cannotComplete), fails with another AX error, or answers the wrong type; it never confirms, and the reply's
+  /// length reason stands, plain and concealed.
+  func testAPasswordFieldsFocusCheckIsItsOwnAXFocusedAlone() {
+    let answers: [(label: String, set: (StubSafari) -> Void, reason: String)] = [
+      ("timed out", { $0.errors[StubSafari.field] = [kAXFocusedAttribute: .cannotComplete] }, "lengthMismatch"),
+      ("another AX error", { $0.errors[StubSafari.field] = [kAXFocusedAttribute: .failure] }, "lengthMismatch"),
+      ("the wrong type", { $0.replies[StubSafari.field] = [kAXFocusedAttribute: "yes" as CFString] }, "lengthMismatch"),
+      ("false", { $0.focused = [StubSafari.address] }, "fieldChanged"),
     ]
-    for (label, marker, timesOut) in paths {
-      for concealed in [false, true] {
-        let label = "\(label), concealed \(concealed)"
-        let safari = StubSafari(filler: marker ? 1_600 : 1)
-        safari.subroles[StubSafari.field] = "AXSecureTextField"
-        safari.transform = { timesOut(safari); return $0 }  // from the first key on
-        let (error, meta, _) = type("pass", into: safari, concealed: concealed, markerRoute: marker)
-        XCTAssertEqual(record(meta)["secure"] as? Bool, true, label)
-        XCTAssertNotNil(error, "\(label): an unknown focus never confirms")
-        XCTAssertEqual(reason(meta), "lengthMismatch", label)
-        let moved = StubSafari(filler: marker ? 1_600 : 1)
-        moved.subroles[StubSafari.field] = "AXSecureTextField"
-        moved.transform = { moved.focused = [StubSafari.address]; return $0 }
-        XCTAssertEqual(reason(type("pass", into: moved, concealed: concealed, markerRoute: marker).meta), "fieldChanged", "\(label): moved")
+    for marker in [true, false] {
+      for (answer, set, expected) in answers {
+        for concealed in [false, true] {
+          let label = "\(marker ? "the marker route" : "the walk"), \(answer), concealed \(concealed)"
+          let safari = StubSafari(filler: marker ? 1_600 : 1)
+          safari.subroles[StubSafari.field] = "AXSecureTextField"
+          var typed = false
+          safari.transform = { [unowned safari] text in
+            if !typed { set(safari); typed = true; safari.log.append("typed") }  // from the first key on
+            return text
+          }
+          let (error, meta, _) = type("pass", into: safari, concealed: concealed, markerRoute: marker)
+          XCTAssertEqual(record(meta)["secure"] as? Bool, true, label)
+          XCTAssertNotNil(error, "\(label): never confirmed")
+          XCTAssertEqual(reason(meta), expected, label)
+          let after = safari.log[(safari.log.firstIndex(of: "typed") ?? 0)...].filter { $0 != "post" && $0 != "typed" && !$0.hasPrefix("batch(") }
+          XCTAssertEqual(Set(after), ["\(kAXFocusedAttribute)@\(StubSafari.field)"], "\(label): one call per check")
+        }
       }
     }
   }
 
+  /// #414: a password field the route finds (by role or subrole, or a text field whose subrole cannot be read) is claimed
+  /// as a text field is, its AXFocused and its place under the web area checked, and is confirmed by its length: after
+  /// its classification nothing is read of it but its length batch and, after typing, its own AXFocused; no value, range
+  /// or count is read alone, and no marker call follows the first event.
   func testAPasswordFieldTheRouteFindsIsConfirmedByItsLength() {
     let cases: [(String, (StubSafari) -> Void)] = [
       ("secure subrole", { $0.subroles[StubSafari.field] = "AXSecureTextField" }),
@@ -550,8 +557,8 @@ final class TypeReadbackMarkerTests: XCTestCase {
       XCTAssertEqual(error?.errorName, "typeUnconfirmed")
       XCTAssertEqual(reason(meta), "roleUnreadable")
       XCTAssertEqual(record(meta)["secure"] as? Bool, true)
-      // The review of cbce12e2..1f69470e (P2): a concealed request's refusal after posting answers at the deadline.
-      XCTAssertEqual(meta.typeReadback?.pollMs, concealed ? typeReadbackBudgetMs + typeReadbackFocusReadCapMs : 0)
+      // A refusal after posting answers at once (ruling 1ea561bc:851), concealed or not.
+      XCTAssertEqual(meta.typeReadback?.pollMs, 0)
       XCTAssertNil(record(meta)["reads"])
       XCTAssertNil(record(meta)["pollMs"])
       XCTAssertFalse(reply.contains("hunter2"))

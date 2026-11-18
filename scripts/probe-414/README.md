@@ -173,3 +173,53 @@ These stock controls use **only the short concealed input class**; timing variat
 | AppKit | 1106/1148/1174/1174 (10) | 1104/1161/1177/1177 (5) | 1142/1170/1178/1178 (5; 3 misses) |
 
 CfT scratch passed **10/10** pairs with 15/15 structurally valid traces and zero forbidden secure AX calls. AppKit scratch passed **9/10** pairs: 14 exact-delivery successes had the same normalized schedule, and one exact-delivery long trial closed `fieldUnreadable` at 1114 ms after the last post. The failed-provider path had a distinct trace; all 15 traces passed structural, identity and forbidden-call checks. Neither scratch job had a privacy flag or an invalid fixture. The exact stock stub passed separately (two tests); it does not substitute for the failed stock IPC deadline or AppKit's live schedule coverage.
+
+## Shared last-post deadline at 220 ms
+
+[Wave-six hosted run](https://github.com/SSFSKIM/cua/actions/runs/44375463208), kit `ad1f2f1c654341b130a3c41ac4c530251b273b49`, baseline `517ab5430a3a81718910b030488ba8d855087b21`, fix `451723675f234c4cc0c9643321d7b58094a1ef30`, mode `deadline`. It reruns the five supported stock lanes: ten short and ten long concealed primaries per head; on the fix, ten short and ten long concealed adds, five short and five long concealed drops, ten literal adds and five literal drops. AppKit alone again adds five posted prefilled-selection snapshot refusals. The product diff bounds the polls but preserves the secure batch attributes and field identity, so this run has no scratch audits. CfT also runs the exact, unmodified candidate's `testConcealedTimingAndReasonsHoldOverRandomCases` (2,000 seeded cases), with only pass/fail and test count published.
+
+The candidate counts from `endedAt` (last native post): poll until 1000 ms, with no new batch in the final 50 ms and a 220 ms hold, leaving about 730 ms for the field to drain. A concealed failure goes back at 1100 ms; the stock IPC gate admits 1099–1150 ms, including posted snapshot refusals, and independently rejects any `lateReply` flag. Each lane must produce all 30 concealed add/drop timings; AppKit must produce all five additional snapshot timings. For the controlled length comparison, literal and snapshot trials are excluded. Each mutation kind's short/long observed ranges must overlap, and the four cohort medians must be within 10 ms of each other. The median averages the middle pair for an even sample; p95 is nearest-ranked. This is an empirical small-sample check, not proof that timing is indistinguishable.
+
+For AppKit, the owned fixture verifies the prefilled selection before typing, and the separate capability probe found `AXSelectedTextRange` advertised and `AXNumberOfCharacters` not advertised on the password field. `lengthUnreadable` alone cannot prove that the snapshot, rather than a final length read, refused. These stock rows test the deadline in the selection setup expected to trigger the snapshot refusal; they do not trace that internal branch.
+
+**Result: red on outcomes, even excluding the live timing gates.** All 100 fix primaries delivered exactly and length-confirmed; all 100 main primaries delivered exactly and refused `secure`. All **150 synchronous adds and 75 drops** were realized and refused, with no false confirmation. `fieldChanged`, not a length rejection, accounted for 78/150 concealed add/drop refusals across the five lanes. None of the 75 literal controls returned it. All five AppKit selection controls posted, delivered exactly and refused `lengthUnreadable`. All stock trials were valid with zero privacy flags. The exact candidate's hosted randomized property passed (one XCTest, 2,000 seeded cases). AppKit ran frontmost; CfT, both Electron lanes, and Safari were background.
+
+| Lane | Add length/caret rejections / valid | Drop length/caret rejections / valid | Outside old IPC band 1099–1150 ms | `lateReply` flags | Old four-median spread |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| CfT | 23/30 | 11/15 | 16/30 | 0 | 17 ms |
+| Electron default | 21/30 | 9/15 | 14/30 | 0 | 40.5 ms |
+| Electron parity | 17/30 | 10/15 | 9/30 | 0 | 19 ms |
+| Safari large | 17/30 | 10/15 | 13/30 | 1 | 17.5 ms |
+| AppKit | 21/30 | 8/15 | 18/35 | 1 | 37 ms |
+
+The IPC-arrival bands and median comparisons are **informational going forward**, not product acceptance gates. Timing remains in tool `_meta`, not model-visible text; hosted scheduling and transport contribute to IPC arrival. The exact hosted stub is the deadline contract. Outcome (including zero false adds), privacy, length-invariant caller-visible reasons, and correct late-flag semantics still gate. The workflow's historical red conclusions above are unchanged. In particular, 70/155 IPC arrivals were outside the original band, all above it; the historical combined budget counted 71 misses because the 1119 ms AppKit flagged row was inside it. The 1328 ms Safari flagged row was a **short concealed add** (`fieldChanged`); the 1119 ms AppKit flagged row was a **long concealed drop** (`fieldChanged`). The two flags and the 69 unflagged IPC arrivals above 1150 ms do not by themselves establish the native time at which the flag was decided. At this pin the flag is decided before padding, not after it.
+
+Last-post-to-IPC timings below are p50/p95/max in ms, with n in parentheses. `Δ` is long minus short, shown as p50/max for each mutation (positive means long arrived later). Short and long ranges overlapped for both mutations in every lane. Which group was later changed by lane and by mutation, consistent with scheduling jitter rather than a consistent length effect; these small live samples cannot prove timing indistinguishability.
+
+| Lane | Short add | Long add | Add Δ | Short drop | Long drop | Drop Δ |
+| --- | --- | --- | ---: | --- | --- | ---: |
+| CfT | 1150/1177/1177 (10) | 1161/1180/1180 (10) | +11/+3 | 1144/1175/1175 (5) | 1160/1172/1172 (5) | +16/−3 |
+| Electron default | 1162.5/1175/1175 (10) | 1140.5/1172/1172 (10) | −22/−3 | 1122/1129/1129 (5) | 1154/1172/1172 (5) | +32/+43 |
+| Electron parity | 1139/1172/1172 (10) | 1127/1167/1167 (10) | −12/−5 | 1120/1176/1176 (5) | 1129/1177/1177 (5) | +9/+1 |
+| Safari large | 1160.5/1328/1328 (10) | 1143/1175/1175 (10) | −17.5/−153 | 1143/1167/1167 (5) | 1147/1178/1178 (5) | +4/+11 |
+| AppKit | 1135/1176/1176 (10) | 1158/1176/1176 (10) | +23/0 | 1172/1177/1177 (5) | 1160/1170/1170 (5) | −12/−7 |
+
+AppKit's five posted selection refusals had p50/p95/max **1116/1173/1173 ms** (one outside the old band, no late flags).
+
+| Lane | Primary snapshot p50/p95 ms (main → fix) | Primary service p50/p95 ms (main → fix) |
+| --- | --- | --- |
+| CfT | 0.4/1.3 → 0.6/5.2 | 133.600/310.808 → 390.172/545.402 |
+| Electron default | 4.1/7.1 → 3.8/8.6 | 150.700/284.200 → 354.213/572.812 |
+| Electron parity | 4.0/6.8 → 3.0/5.7 | 212.765/278.693 → 391.821/528.086 |
+| Safari large | 5.8/12.9 → 6.4/9.0 | 128.045/278.875 → 345.228/542.431 |
+| AppKit | 0.3/0.7 → 0.4/2.4 | 167.480/243.553 → 456.649/678.546 |
+
+| Lane | `fieldChanged`: short / long adds (of 10 each) | `fieldChanged`: short / long drops (of 5 each) | All concealed controls | Wave-five `f217f062` (short only) |
+| --- | ---: | ---: | ---: | ---: |
+| CfT | 3 / 4 | 1 / 3 | 11/30 | 0/15 |
+| Electron default | 4 / 5 | 4 / 2 | 15/30 | 0/15 |
+| Electron parity | 5 / 8 | 3 / 2 | 18/30 | 1/15 |
+| Safari large | 8 / 5 | 3 / 2 | 18/30 | 0/15 |
+| AppKit | 4 / 5 | 2 / 5 | 16/30 | 0/15 |
+
+Every lane's reason histogram differs by length for at least one kind, but shifts run both ways and the spurious code affects both lengths. This fails the expected `lengthMismatch` outcome even without evidence of a systematic length effect. Stock replies do not expose the lookup that selected each field: the engine groups direct app focus and the window walk into `.focus`, and tracks `.marker` separately; neither is on the wire. The four non-Safari lanes do not enable the Safari marker route. The earlier instrumented Safari run proved marker lookup in that run, not in any particular wave-six refusal. No row-level lookup attribution is available without a new scratch trace.

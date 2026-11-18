@@ -121,6 +121,39 @@ in each 100-a-cell sitting, and 12 in each pilot.
 - the same ok on a dragend of none is a false ok and fails;
 - the copy ok with its before-press, after-press or dragend stamp missing is not listed.
 
+## Ruling 838: H2's root cells, counted by answer
+
+No judged cell drags from Electron into Chrome. The one place an Electron drag ends over Chrome is H2's `root` cells
+(`cua:desktop`, `cua:handle`), where the gate's Chrome ballast covers the bare root. There every end is unverified, so
+the judge leaves them out of its verdict and the cell stays "unmeasured" for position.
+
+`electronDropVerdict` now counts a root cell's unverified ends by their answer, in `counts.root_unverified` and a
+findings line:
+
+- **ok answers** are listed per lane, each with its settle outcome: `settle_failed_activation_confirmed` (`settleOutcomeOf`)
+  where the row carries it in itself, its drop cursor's record or settle, or its handle record. Otherwise it reads
+  "unknown".
+- **unconfirmed answers** are counted as before.
+
+It never fails the step. A nonzero ok count is added to the verdict line, and so to the summary: "N ok answers on the
+root cells' unverified ends (…): a finding for the design session (ruling 838), not a fail."
+
+**The stored rows:**
+
+- x64 T5's counted H2: `cua:desktop root` 0 ok and 30 unconfirmed of 30; `cua:handle root` 0 ok and 30 unconfirmed of
+  30;
+- the x64 and arm64 pilots' H2: 0 ok and 2 unconfirmed of 2 in each lane.
+
+These are 0.4.0's answers, as expected.
+
+**Controls**, 5 of 5 on x64 T5's H2 rows:
+
+- an unverified root end made an ok is listed (outcome "unknown"), and the step's result is unchanged;
+- with its drop cursor's settle carrying the outcome, that outcome is shown;
+- the unconfirmed answers are unchanged;
+- the cell is still unmeasured;
+- the judge's failures are unchanged.
+
 ## The reach under §8.1
 
 - `electronDropVerdict` is shared by H1, H2 and L4a, the gate's three T17 Electron steps (`t17-fix3`).

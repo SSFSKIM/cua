@@ -557,6 +557,19 @@ export function honestNonLanding(r) {
   return stampedDragend(r) === 0;
 }
 
+/** The settle outcome the engine's `--stats` reports for an Electron drop confirmed by Chrome's activation (ruling 835, task 101). */
+const SETTLE_OUTCOME = 'settle_failed_activation_confirmed';
+
+/**
+ * A drag's settle outcome (`SETTLE_OUTCOME`) where its row carries the engine's stats for it: the row itself, its drop
+ * cursor record and that record's settle (the drag's and the handle's), or its handle record; `'unknown'` where none
+ * does (every engine before 0.4.1, and any stats that do not carry it).
+ */
+export function settleOutcomeOf(r) {
+  for (const o of [r, r.drop_cursor, r.drop_cursor?.settle, r.handle, r.handle?.drop_cursor?.settle]) if (typeof o?.[SETTLE_OUTCOME] === 'boolean') return o[SETTLE_OUTCOME];
+  return 'unknown';
+}
+
 /** The page's dragend `dropEffect` code for copy (pages/drop-signals.html `EFFECTS`). */
 const COPY = 1;
 
@@ -603,7 +616,9 @@ export function unconfirmedClass(r) {
  * landed drops answered unconfirmed (by `unconfirmedClass`); T14's share of them against 5% of the landed drops; a cell
  * whose every end was not verified (the bare root under the gate's ballast: unmeasured). An off-window drag whose end
  * was not verified is left out of its cell and counted apart; and, per lane and cell in the window, at every load and in
- * every plan, the zone-truth mismatches (`zoneMismatch`, ruling 830), a declared app-level limit. Answers
+ * every plan, the zone-truth mismatches (`zoneMismatch`, ruling 830), a declared app-level limit; and a root cell's
+ * unverified ends by their answer (ruling 838: at the gate's window load the release lands on the Chrome ballast), the
+ * oks listed with their settle outcome (`settleOutcomeOf`), a finding for the design session, never a fail. Answers
  * `{md, failed, findings, counts}`.
  */
 export function electronDropVerdict(rows, { specs = [], share = 0.05, slowMode = SLOW_CELL_MODE, plan = null } = {}) {
@@ -615,6 +630,8 @@ export function electronDropVerdict(rows, { specs = [], share = 0.05, slowMode =
   const residue = [];
   // ruling 830's zone-truth mismatches: each cell in the window, with its count
   const mismatches = [];
+  // ruling 838: each root cell with unverified ends, those ends counted by their answer
+  const rootUnverified = [];
   const findings = [];
   const cells = planCells(rows, specs, failed);
   const load = [...new Set(rows.map((r) => r.load))].join(', ') || 'none';
@@ -651,6 +668,12 @@ export function electronDropVerdict(rows, { specs = [], share = 0.05, slowMode =
     }
     // ruling 830's zone-truth mismatches, every cell in the window, whatever the plan or load: listed, never a fail
     if (!OFF_WINDOW_CELLS.includes(base)) mismatches.push({ lane: c.lane, cell: c.cell, drags: list.length, count: count(zoneMismatch) });
+    // ruling 838: a root cell's unverified ends (released over another window: at the gate's window load, the Chrome
+    // ballast) stay out of its verdict, and are counted by their answer
+    if (base === 'root' && unverified.length) {
+      const oks = unverified.filter((r) => r.ok === true && honest(r) === null);
+      rootUnverified.push({ lane: c.lane, cell: c.cell, unverified: unverified.length, ok: oks.length, unconfirmed: unverified.filter((r) => honest(r) === 'unconfirmed').length, oks: oks.map((r) => ({ i: r.i, [SETTLE_OUTCOME]: settleOutcomeOf(r) })) });
+    }
     const raced = slowMode === 'declared-race' && base === RACE_CELL;
     if (raced) {
       race.lanes.push(`${c.lane} ${falseOk.length} of ${list.length}`);
@@ -676,6 +699,10 @@ export function electronDropVerdict(rows, { specs = [], share = 0.05, slowMode =
   if (race.drags) findings.push(`#365's declared race, load ${load}: the hung sink answered ok with no drop and nothing pending on ${race.false_ok} of ${race.drags} drags (${race.lanes.join(', ')}), a finding, not a fail`);
   const within = residue.filter((x) => !x.over);
   if (within.length) findings.push(`L4a's residue (ruling 827 3b), load ${load}: ${within.map((x, k) => `${x.lane} ${x.cell} ${x.count} of ${x.drags}${k ? '' : ' honest unconfirmed non-landings'}, bound ${x.bound}`).join('; ')} (floor(${RESIDUE.allowed} × n / ${RESIDUE.per}), never rounded up), not a fail`);
+  if (rootUnverified.length) {
+    const each = (x) => `${x.lane} ${x.cell} ${x.ok} ok${x.ok ? ` (${x.oks.map((o) => `#${o.i} settle failed, activation confirmed: ${o[SETTLE_OUTCOME]}`).join('; ')})` : ''} and ${x.unconfirmed} unconfirmed of ${x.unverified}`;
+    findings.push(`the root cells' unverified ends by answer (ruling 838: released over another window, at the gate's window load the Chrome ballast; their position unmeasured), load ${load}: ${rootUnverified.map(each).join('; ')}`);
+  }
   if (mismatches.length) {
     const seen = mismatches.filter((x) => x.count > 0);
     const what = "zone-truth mismatches (ruling 830, a declared app-level limit: an ok answer whose own dragend reported copy while the zone's drop counter did not move)";
@@ -687,8 +714,10 @@ export function electronDropVerdict(rows, { specs = [], share = 0.05, slowMode =
   const over = total.landed > 0 && total.unconfirmed_landed > share * total.landed;
   findings.push(`T14's share, reported and not a fail for these cells: ${total.unconfirmed_landed} of ${total.landed} landed drops answered unconfirmed, ${over ? 'over' : 'within'} ${share * 100}%`);
   const residual = residue.some((x) => x.count > 0) ? " beyond L4a's residue" : '';
-  md.push('', failed.length ? `**Fails:** ${failed.join('; ')}.` : `No false ok, no missing landing${residual}, no false error, every notice refused once; every cell of the plan ran.`, '', `Findings (counted, not fails): ${findings.join('; ')}.`, '');
-  return { md, failed, findings, counts: { load, ...total, over_share: over, residue, zone_mismatch: mismatches } };
+  const rootOks = rootUnverified.filter((x) => x.ok > 0);
+  const rootOkLine = rootOks.length ? ` ${rootOks.reduce((n, x) => n + x.ok, 0)} ok answers on the root cells' unverified ends (${rootOks.map((x) => `${x.lane} ${x.cell} ${x.ok}`).join(', ')}): a finding for the design session (ruling 838), not a fail.` : '';
+  md.push('', `${failed.length ? `**Fails:** ${failed.join('; ')}.` : `No false ok, no missing landing${residual}, no false error, every notice refused once; every cell of the plan ran.`}${rootOkLine}`, '', `Findings (counted, not fails): ${findings.join('; ')}.`, '');
+  return { md, failed, findings, counts: { load, ...total, over_share: over, residue, zone_mismatch: mismatches, root_unverified: rootUnverified } };
 }
 
 // ---------------------------------------------------------------------------------------------------------------

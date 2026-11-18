@@ -475,3 +475,53 @@ test('the residue and the mismatch refuse a dragend whose press stamps are missi
   assert.deepEqual(electronDropVerdict([legacy], { specs: specs(['cua', 'left', 1]) }).failed, []);
   assert.equal(zoneMismatch(legacy), false, 'an unstamped copy dragend is no mismatch');
 });
+
+// ruling 838 (2026-11-18): H2's root cells, whose releases land on the gate's Chrome ballast (an Electron source, a
+// Chrome destination), count their unverified ends by answer: the oks listed apart per lane, each with its settle
+// outcome where the stats carry it, a finding for the design session and never a fail; the cell stays unmeasured
+
+/** A root cell's drags at the gate's window load, every end on a ballast window: the first `oks` answered ok, the rest unconfirmed. */
+const coveredRoot = (lane, n, oks, extra = () => ({})) =>
+  many(n, (i) => drag({ lane, cell: 'root', load: 'gate-windows', i, landed: false, verified: false, ...(i < oks ? extra(i) : { notice: UNCONFIRMED }) }));
+
+test("H2's root: every unverified end answered unconfirmed is counted as before, with no ok, and the cell stays unmeasured", () => {
+  const rows = [...coveredRoot('cua:desktop', 30, 0), ...coveredRoot('cua:handle', 30, 0)];
+  const v = electronDropVerdict(rows, { specs: specs(['cua:desktop', 'root', 30], ['cua:handle', 'root', 30]) });
+  assert.deepEqual(v.failed, []);
+  assert.equal(v.counts.unverified, 60);
+  assert.deepEqual(v.counts.root_unverified, [
+    { lane: 'cua:desktop', cell: 'root', unverified: 30, ok: 0, unconfirmed: 30, oks: [] },
+    { lane: 'cua:handle', cell: 'root', unverified: 30, ok: 0, unconfirmed: 30, oks: [] },
+  ]);
+  assert.ok(v.findings.includes('cua:desktop root unmeasured: every end (30) was not verified where the drag left the pointer'));
+  assert.ok(v.findings.includes("the root cells' unverified ends by answer (ruling 838: released over another window, at the gate's window load the Chrome ballast; their position unmeasured), load gate-windows: cua:desktop root 0 ok and 30 unconfirmed of 30; cua:handle root 0 ok and 30 unconfirmed of 30"), v.findings.join('\n'));
+  assert.doesNotMatch(v.md.join('\n'), /for the design session/);
+});
+
+test("H2's root: an ok on an unverified end is listed per lane with its settle outcome, never fails, and the verdict line says so", () => {
+  const settle = (i) => (i === 0 ? { drop_cursor: { settle: { settled: false, settle_failed_activation_confirmed: true } } } : {});
+  const rows = [...coveredRoot('cua:desktop', 30, 0), ...coveredRoot('cua:handle', 30, 2, (i) => settle(i))];
+  for (const r of rows.filter((x) => x.lane === 'cua:handle' && x.i === 0)) Object.assign(r, settle(0));
+  const v = electronDropVerdict(rows, { specs: specs(['cua:desktop', 'root', 30], ['cua:handle', 'root', 30]) });
+  assert.deepEqual(v.failed, [], 'never a fail');
+  assert.equal(v.counts.false_ok, 0);
+  assert.deepEqual(v.counts.root_unverified[1], { lane: 'cua:handle', cell: 'root', unverified: 30, ok: 2, unconfirmed: 28, oks: [{ i: 0, settle_failed_activation_confirmed: true }, { i: 1, settle_failed_activation_confirmed: 'unknown' }] });
+  assert.ok(v.findings.includes("the root cells' unverified ends by answer (ruling 838: released over another window, at the gate's window load the Chrome ballast; their position unmeasured), load gate-windows: cua:desktop root 0 ok and 30 unconfirmed of 30; cua:handle root 2 ok (#0 settle failed, activation confirmed: true; #1 settle failed, activation confirmed: unknown) and 28 unconfirmed of 30"), v.findings.join('\n'));
+  const md = v.md.join('\n');
+  assert.match(md, /No false ok, .*every cell of the plan ran\. 2 ok answers on the root cells' unverified ends \(cua:handle root 2\): a finding for the design session \(ruling 838\), not a fail\./);
+  assert.ok(v.findings.includes('cua:handle root unmeasured: every end (30) was not verified where the drag left the pointer'), 'position stays unmeasured');
+});
+
+test("ruling 838 leaves the other cells as they were: an unverified end elsewhere is not counted, and a verified root's false ok still fails", () => {
+  // an unverified xterm end answered ok: left out of its cell as before, and not counted by answer
+  const xterm = electronDropVerdict([drag({ lane: 'cua:handle', cell: 'xterm', load: 'gate-windows', landed: false, verified: false })], { specs: specs(['cua:handle', 'xterm', 1]) });
+  assert.deepEqual(xterm.failed, []);
+  assert.deepEqual(xterm.counts.root_unverified, []);
+  assert.ok(!xterm.findings.some((f) => /ruling 838/.test(f)));
+  // a verified root end answered ok with no drop is a false ok, as before
+  const root = electronDropVerdict([drag({ lane: 'cua:desktop', cell: 'root', load: 'idle', landed: false, verified: true })], { specs: specs(['cua:desktop', 'root', 1]) });
+  assert.deepEqual(root.failed, ['cua:desktop root: answered ok with no drop and nothing pending on 1 of 1 (#0)']);
+  assert.deepEqual(root.counts.root_unverified, []);
+  // a plain cell is untouched
+  assert.deepEqual(electronDropVerdict(many(3, (i) => drag({ i })), { specs: specs(['cua', 'plain', 3]) }).counts.root_unverified, []);
+});

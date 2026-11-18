@@ -125,6 +125,8 @@ const mismatchesOf = (v) => {
   const seen = cells.filter((x) => x.count > 0);
   return seen.length ? seen.map((x) => `${x.lane} ${x.cell} ${x.count} of ${x.drags}`).join('; ') : `none in ${cells.reduce((s, x) => s + x.drags, 0)} drags of the window's cells`;
 };
+/** Ruling 838: a root cell's unverified ends by answer, each ok with its settle outcome. */
+const rootOf = (v) => v.counts.root_unverified.map((x) => `${x.lane} ${x.cell} ${x.ok} ok${x.ok ? ` (${x.oks.map((o) => `#${o.i} settle failed, activation confirmed: ${o.settle_failed_activation_confirmed}`).join('; ')})` : ''} and ${x.unconfirmed} unconfirmed of ${x.unverified}`).join('; ');
 const residueOf = (v) => (v.counts.residue?.length ? v.counts.residue.map((x) => `${x.lane} ${x.cell} ${x.count} of ${x.drags}, bound ${x.bound}${x.over ? ' (OVER)' : ''}`).join('; ') : 'not covered');
 
 const judged = [];
@@ -143,6 +145,7 @@ for (const a of argv) {
     console.log(`stored: ${word(j.stored)} (H's judge reproduces the stored verdict: ${word(!j.then.failed.length)}); with the residue: ${word(j.result)}; ${j.stored === j.result ? 'result unchanged' : 'RESULT MOVED'}`);
     console.log(`residue: ${residueOf(j.v)}`);
     console.log(`zone-truth mismatches (ruling 830): ${mismatchesOf(j.v)}`);
+    if (j.v.counts.root_unverified?.length) console.log(`the root cells' unverified ends by answer (ruling 838): ${rootOf(j.v)}`);
     if (j.cleared.length) console.log(`judge failures the residue cleared: ${j.cleared.join(' | ')}`);
     if (j.added.length) console.log(`judge failures the residue added: ${j.added.join(' | ')}`);
     if (j.kept.length || j.stepFails.length) console.log(`other failures, kept: ${[...j.kept, ...j.stepFails].join(' | ')}`);
@@ -314,5 +317,41 @@ if (!base) {
     console.log(`- ${name}: ${holds(j) ? 'as it must' : 'NOT AS IT MUST'} (result ${word(j.result)}; mismatches ${mismatchesOf(j.v)}${j.failed?.length ? `; ${j.failed.join(' | ')}` : ''})`);
   }
   console.log(`ruling 830's controls: ${shown} of ${shapes.length} as they must`);
+  if (shown !== shapes.length) process.exitCode = 1;
+}
+
+// ---- ruling 838's controls: a stored H2 whose root ends lie on the Chrome ballast. Its unverified ends are outside
+// every verdict, H's included, so an edit there leaves the stored verdict standing and only the count can move
+const h2 = judged.find(({ j }) => !j.refused && j.v.counts.root_unverified?.some((x) => x.unverified > 0));
+if (!h2) {
+  console.log("ruling 838's controls: no stored step has a root cell's unverified ends, none run");
+} else {
+  const cellOf = h2.j.v.counts.root_unverified.find((x) => x.unverified > 0);
+  const ends = (rows) => rows.filter((r) => r.kind === 'drop-signal' && r.lane === cellOf.lane && r.cell === cellOf.cell && r.end_park?.verified === false);
+  const edited = (edit) => {
+    const rec = structuredClone(h2.records);
+    edit(ends(rec.rows));
+    return rejudgeStep(rec);
+  };
+  const okEnd = (r) => Object.assign(r, { notice: null, next: { ok: true, error: null, late_dnd: null } });
+  const laneOf = (j) => j.v.counts.root_unverified.find((x) => x.lane === cellOf.lane);
+  const shapes = [
+    ['an unverified root end answered ok: listed with an unknown settle outcome, and the step not failed', edited((rs) => okEnd(rs[0])), (j) => j.result === h2.j.result && laneOf(j).ok === 1 && laneOf(j).oks[0].settle_failed_activation_confirmed === 'unknown'],
+    ["the same, its drop cursor's settle carrying the outcome: shown", edited((rs) => {
+      okEnd(rs[0]);
+      rs[0].drop_cursor = { ...(rs[0].drop_cursor ?? {}), settle: { ...(rs[0].drop_cursor?.settle ?? {}), settle_failed_activation_confirmed: true } };
+    }), (j) => laneOf(j).oks[0]?.settle_failed_activation_confirmed === true],
+    ['the unconfirmed answers unchanged', edited(() => {}), (j) => j.v.counts.root_unverified.every((x) => x.ok === 0 && x.unconfirmed === x.unverified)],
+    ['the cell still unmeasured for position', edited((rs) => okEnd(rs[0])), (j) => j.v.findings.some((f) => f.startsWith(`${cellOf.lane} root unmeasured:`))],
+    ['the other cells unaffected: the judge failures the same as without the edit', edited((rs) => okEnd(rs[0])), (j) => isDeepStrictEqual(j.v.failed, h2.j.v.failed)],
+  ];
+  let shown = 0;
+  console.log(`## ruling 838's controls on ${h2.label} (${cellOf.lane} root, ${cellOf.unverified} unverified ends)`);
+  for (const [name, j, holds] of shapes) {
+    const ok = !j.refused && holds(j);
+    shown += ok ? 1 : 0;
+    console.log(`- ${name}: ${ok ? 'as it must' : 'NOT AS IT MUST'} (result ${word(j.result)}; ${rootOf(j.v)})`);
+  }
+  console.log(`ruling 838's controls: ${shown} of ${shapes.length} as they must`);
   if (shown !== shapes.length) process.exitCode = 1;
 }

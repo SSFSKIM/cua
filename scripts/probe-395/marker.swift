@@ -325,11 +325,12 @@ func boundary(_ a: Armed) -> (reason: String?, wire: [String: Any]) {
     : owner.map { $0 != Int(a.cover) } == true ? "owner-not-cover" : w.count > 0 ? "cover-changed" : nil
   return (reason, wire)
 }
+let coverBundle = "org.cua.probe395.cover"
 func validPair(_ q: [String: Any]) -> (pid: pid_t, cover: pid_t)? {
   guard let pid = (q["pid"] as? NSNumber)?.int32Value, let cover = (q["coverPid"] as? NSNumber)?.int32Value,
         pid > 0, cover > 0, pid != cover,
         NSRunningApplication(processIdentifier: pid)?.bundleIdentifier == "com.apple.Safari",
-        NSRunningApplication(processIdentifier: cover)?.bundleIdentifier == "com.apple.TextEdit" else { return nil }
+        NSRunningApplication(processIdentifier: cover)?.bundleIdentifier == coverBundle else { return nil }
   return (pid, cover)
 }
 func disarmObserver() {
@@ -462,10 +463,15 @@ func dispatch(_ q: [String: Any]) -> [String: Any] {
       let now = frontPID(), safari = (q["safariPid"] as? NSNumber)?.int32Value
       let where_ = now == pid ? "target" : now == nil ? "none" : now == safari ? "safari" : "other"
       return ["frontmostPid": now.map { $0 as Any } ?? NSNull(), "activationAccepted": accepted,
-              "targetBundle": app?.bundleIdentifier == "com.apple.TextEdit" ? "TextEdit" : app?.bundleIdentifier == "com.apple.Safari" ? "Safari" : app == nil ? "none" : "other",
+              "targetBundle": app?.bundleIdentifier == coverBundle ? "Cover" : app?.bundleIdentifier == "com.apple.Safari" ? "Safari" : app == nil ? "none" : "other",
               "targetTerminated": app?.isTerminated ?? true, "workspaceFront": where_]
     }
     return ["frontmostPid": frontPID().map { $0 as Any } ?? NSNull()]
+  case "cover":
+    // Fixed-label readiness of the owned cover: its known bundle, and a normal-layer window on screen owned by it.
+    let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
+    let shown = windows.contains { ($0[kCGWindowLayer as String] as? Int) == 0 && ($0[kCGWindowOwnerPID as String] as? Int) == Int(pid) }
+    return ["bundleOk": NSRunningApplication(processIdentifier: pid)?.bundleIdentifier == coverBundle, "onScreen": shown]
   case "titles":
     let app = AXUIElementCreateApplication(pid)
     AXUIElementSetMessagingTimeout(app, 0.5)
@@ -483,6 +489,23 @@ func handle(_ line: String) -> String {
 }
 
 guard ProcessInfo.processInfo.environment["RUNNER_ENVIRONMENT"] == "github-hosted" else { exit(2) }
+// Owned AppKit cover (as #390): a regular app with one visible titled window, side by side with the Safari fixture and
+// never overlapping it. AppKit runs on this original main thread. Prints only its pid.
+if CommandLine.arguments.contains("--cover") {
+  let app = NSApplication.shared
+  app.setActivationPolicy(.regular)
+  let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 380, height: 300), styleMask: [.titled], backing: .buffered, defer: false)
+  window.title = "probe395 owned cover"
+  if let screen = NSScreen.main {
+    window.setFrame(NSRect(x: screen.frame.minX, y: screen.frame.maxY - 40 - 300, width: 380, height: 300), display: true)
+  }
+  window.makeKeyAndOrderFront(nil)
+  app.activate(ignoringOtherApps: true)
+  print("{\"pid\":\(ProcessInfo.processInfo.processIdentifier)}")
+  fflush(stdout)
+  app.run()
+  exit(0)
+}
 // Requests are read off the main thread and handled at the top level of the main thread's own run loop (as #354's tool
 // does). Running a request inside DispatchQueue.main.sync would hold the main queue for its whole duration, and the
 // workspace's activation and frontmost updates are delivered through that queue, so an activation could never complete.

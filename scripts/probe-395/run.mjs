@@ -9,7 +9,7 @@
 // seed, a raw engine reply, an engine or probe log, or an error message. Engine and probe stderr are discarded.
 import {spawn,spawnSync} from 'node:child_process';
 import {createConnection} from 'node:net';
-import {mkdirSync,mkdtempSync,writeFileSync,appendFileSync,rmSync,statSync} from 'node:fs';
+import {mkdirSync,mkdtempSync,writeFileSync,appendFileSync,rmSync,statSync,copyFileSync,chmodSync} from 'node:fs';
 import {join,resolve} from 'node:path';
 import {tmpdir} from 'node:os';
 import {pathToFileURL} from 'node:url';
@@ -23,6 +23,17 @@ import {page} from './page.mjs';
 
 const SEED='Old draft sentence goes here.',SECRET_LABEL='PROBE395',BUDGET_MS=100*60000,WIN={x:400,y:30,w:620,h:720};
 const sleep=ms=>new Promise(r=>setTimeout(r,Math.max(0,ms)));
+const COVER_PLIST=`<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleIdentifier</key><string>org.cua.probe395.cover</string>
+<key>CFBundleName</key><string>Probe395 Cover</string>
+<key>CFBundleExecutable</key><string>cover395</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleVersion</key><string>1</string>
+<key>NSHighResolutionCapable</key><true/>
+</dict></plist>
+`;
 const sh=(c,a)=>spawnSync(c,a,{encoding:'utf8',timeout:20000});
 // Failures carry a stage, never a message: an engine or fixture message could carry a typed or compared value.
 class Fail extends Error {}
@@ -132,7 +143,7 @@ async function main(){
   const r=await ask({op:'front',pid:target,activate,safariPid:pid});
   const label=(v,set)=>set.includes(v)?v:'invalid';
   lastFront={target:target===coverPid?'cover':target===pid?'safari':'other',activate,accepted:typeof r.activationAccepted==='boolean'?r.activationAccepted:null,
-   workspaceFront:label(r.workspaceFront,['target','none','safari','other']),targetBundle:label(r.targetBundle,['TextEdit','Safari','other','none']),
+   workspaceFront:label(r.workspaceFront,['target','none','safari','other']),targetBundle:label(r.targetBundle,['Cover','Safari','other','none']),
    targetTerminated:typeof r.targetTerminated==='boolean'?r.targetTerminated:null};
   if(r.error||r.frontmostPid!==target)throw new Fail();
  }
@@ -148,7 +159,7 @@ async function main(){
  let fixture=null;
  const planSeed=randomBytes(4).readUInt32LE(),rounds=plan({reps,seed:planSeed,controlReps:Math.min(reps,CONTROL_REPS),passwordRangeReps:Math.min(reps,PASSWORD_RANGE_REPS)});
  const planned=rounds.reduce((n,r)=>n+r.length,0);
- let browser=null,pid=0,coverPid=0,target=null,order=0,done=0,harnessValid=0,probeValid=0,valid=0,invalid=0,setupFailures=0,consecutiveInvalid=0,privacyViolations=0,storeCleanupFailures=0,aborted=null;
+ let browser=null,coverProc=null,pid=0,coverPid=0,target=null,order=0,done=0,harnessValid=0,probeValid=0,valid=0,invalid=0,setupFailures=0,consecutiveInvalid=0,privacyViolations=0,storeCleanupFailures=0,aborted=null;
  const failureStages={},probeReasons={},parts={};
  const meta={kit:process.env.GITHUB_SHA??null,engine:process.env.ENGINE_REF??null,source:process.env.SOURCE_REF??null,image:process.env.ImageVersion??null,startedAt:start,reps,planSeed,planned,controlReps:Math.min(reps,CONTROL_REPS),passwordRangeReps:Math.min(reps,PASSWORD_RANGE_REPS),
   design:{pages:PAGES,kinds:KINDS,lengths:LENGTHS,largeNodes:LARGE_NODES,
@@ -324,17 +335,18 @@ async function main(){
    save(row);
    console.log('395',row.id,row.harnessValid?'ok':'stage '+row.failureStage,'probe',row.probeValid);
   }
+  consecutiveInvalid=row.valid?0:consecutiveInvalid+1;
   if(!warmup){
    // Counted before any abort is raised, so an aborted row is part of the totals.
    done++;
    const part=parts[c.part]??={done:0,harnessValid:0,probeValid:0,valid:0};part.done++;
-   if(row.harnessValid){harnessValid++;part.harnessValid++;consecutiveInvalid=0}else{invalid++;consecutiveInvalid++;if(row.setupFailure)setupFailures++;failureStages[row.failureStage]=(failureStages[row.failureStage]??0)+1}
+   if(row.harnessValid){harnessValid++;part.harnessValid++}else{invalid++;if(row.setupFailure)setupFailures++;failureStages[row.failureStage]=(failureStages[row.failureStage]??0)+1}
    if(row.probeValid){probeValid++;part.probeValid++}else probeReasons[row.probeReason]=(probeReasons[row.probeReason]??0)+1;
    if(row.valid){valid++;part.valid++}
    progress(row.id);
   }
   if(abortErr)throw abortErr;
-  if(!warmup&&(consecutiveInvalid>=3||setupFailures>=6))throw new Abort();
+  if(consecutiveInvalid>=3||(!warmup&&setupFailures>=6))throw new Abort();
  }
 
  // ---- run ---------------------------------------------------------------------------------------------------------
@@ -344,10 +356,20 @@ async function main(){
   meta.version=version('safari');
   browser=await launch('safari',fixture.url,join(tmp,'profile'),WIN);pid=browser.pid;
   await fixture.waitReady(30000);await sleep(1500);placePid(pid,WIN);
-  const cover=join(tmp,'cover.txt');writeFileSync(cover,'The probe cover.');sh('open',['-a','TextEdit',cover]);await sleep(1000);
-  coverPid=+(sh('pgrep',['-x','TextEdit']).stdout.trim().split('\n')[0]);if(!coverPid)throw new Fail();placePid(coverPid,{x:0,y:40,w:380,h:300});
-  // The cover must be a live TextEdit with the cover document's window before anything depends on it.
-  {let ok=false;for(let i=0;i<20&&!ok;i++){ok=(await titles(coverPid)).some(t=>t.includes('cover'));if(!ok)await sleep(250)}
+  // Owned AppKit cover: a disposable .app bundle holding a copy of the probe binary, run in its own --cover mode. Its
+  // visual ownership is checked at the witness; no AX title is required of it.
+  {const bundle=join(tmp,'Probe395 Cover.app'),macos=join(bundle,'Contents','MacOS'),exe=join(macos,'cover395');
+   mkdirSync(macos,{recursive:true});
+   writeFileSync(join(bundle,'Contents','Info.plist'),COVER_PLIST);
+   copyFileSync(swiftPath,exe);chmodSync(exe,0o755);
+   coverProc=spawn(exe,['--cover'],{stdio:['ignore','pipe','ignore']});coverProc.on('error',()=>{});
+   let text='';coverProc.stdout.on('data',d=>{text+=d});
+   for(let i=0;i<60&&!coverPid;i++){
+    try{const v=JSON.parse(text.split('\n')[0]);if(v.pid===coverProc.pid)coverPid=v.pid}catch{}
+    if(!coverPid)await sleep(250);
+   }
+   if(!coverPid)throw new Fail();
+   let ok=false;for(let i=0;i<20&&!ok;i++){const r=await ask({op:'cover',pid:coverPid});ok=r.bundleOk===true&&r.onScreen===true;if(!ok)await sleep(250)}
    meta.coverWindow=ok;if(!ok)throw new Fail()}
   stage='bind';
   await front(pid);await fixture.bindVisible(()=>titles(pid),15000);
@@ -374,13 +396,13 @@ async function main(){
    parts,privacyViolations,storeCleanupFailures,
    complete:aborted===null&&done===planned&&harnessValid===planned&&probeValid===planned&&valid===planned&&privacyViolations===0&&storeCleanupFailures===0,abortedAt:aborted};
   fixture?.close();
-  const stopped={engine:await stopChild(engine),probe:await stopChild(side)};
+  const stopped={engine:await stopChild(engine),probe:await stopChild(side),cover:await stopChild(coverProc)};
   if(browser){try{browser.kill()}catch{}}
   let homeRemoved=true;try{rmSync(tmp,{recursive:true,force:true})}catch{homeRemoved=false}
   meta.cleanup={...stopped,tempRemoved:homeRemoved};
   writeFileSync(join(outDir,'config.json'),JSON.stringify(meta,null,2));progress(null);
   console.log('395 coverage',JSON.stringify(meta.coverage));
-  if(!meta.coverage.complete||privacyViolations||storeCleanupFailures||!stopped.engine||!stopped.probe)process.exitCode=1;
+  if(!meta.coverage.complete||privacyViolations||storeCleanupFailures||!stopped.engine||!stopped.probe||!stopped.cover)process.exitCode=1;
  }
 }
 process.on('unhandledRejection',()=>{console.error('395 unexpected failure');process.exit(1)});

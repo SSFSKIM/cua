@@ -6716,6 +6716,45 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   deactivation; a password field confirmed by its length with nothing but the length batch read; the clipboard restored
   on every path. PasteTests keeps #187's tests as on main.
   Date/Author: 2026-11-18, cursor235's implementer for #361.
+- Decision (#398, 2026-11-18, `fix/398-placeholder-identity`; spawned by #366, whose ruling 1ea561bc:772 handled the
+  complete mode's placeholder with the observation's wait, the same-handle refresh and `valueUnconfirmed`, and left the
+  fragility): **the placeholder never makes the same field another element, and in the re-fetch's walk it only breaks
+  a tie** (cua's departure from the vendor's eleven-attribute match, F §3.6). A page changes a placeholder on focus, with
+  input, with a mode or filter and when Chromium's complete mode arrives, so any focus-then-act sequence re-checked
+  against a stale one: set_value could write and then answer `valueUnconfirmed`, and a click on a field whose placeholder
+  had changed after an invalidation answered `elementNoLongerValid`. `Lineage.resolve`:
+  1. **The same handle** read again matches on everything but the placeholder (`matches(ignoringPlaceholder:)`), for
+     every refetch mode. Under `.ifNeeded`, which renews nothing, the entry still takes the placeholder it read, so a
+     later walk breaks ties by what the field shows now.
+  2. **The observed tree's count** ("couldn't be started") counts the entries alike on everything but the placeholder,
+     and of several only those with the stored placeholder. Since the entry is one of them, this equals the strict count:
+     unchanged.
+  3. **The walk** keeps the elements alike on everything but the placeholder, and `placeholderVerdict` decides: the stored
+     handle among them is the element, whatever its placeholder; one alone is adopted only when the observed tree also
+     held one alone; otherwise only the one with the stored placeholder is. Several left undecided are "couldn't be
+     finished"; one left that the placeholder does not confirm is no longer valid.
+  The dispatched design's "exactly one candidate: adopt it" is narrowed in item 3. When the observation told two fields apart by the
+  placeholder alone and one is then removed, the other is the only candidate, and adopting it for the removed one's
+  token would act on another field. That holds whatever placeholder it shows: main refused it too.
+  Every other attribute still counts on every path. Left strict, with the reason:
+  - `keepRecreated` (#303): it gives a token to another handle without a tie-break, and covers only AXColumn and a
+    table's AXGroup, which show no placeholder.
+  - The tree diff (`diff.mjs`) and token inheritance (`matchSiblings`): the diff compares rendered lines, so a changed
+    placeholder still shows as a changed element, which is correct. Inheritance goes by handle.
+  - type_text's read-back, the stale-point check and the marker route compare handles (`CFEqual`), never identity.
+  - A text field's value still counts outside set_value's `.ignoringValue` and #390's unread value, as the vendor's rule
+    has it. So a click on a field's token after type_text changed its value, under an invalidation, is still no longer
+    valid. That is not the placeholder's doing.
+  Proven offline (`PlaceholderIdentityTests`): click then set_value, type_text after a click, the post-write re-check
+  and a stale handle's walk, each over a changed placeholder, answer neither `elementNoLongerValid` nor
+  `valueUnconfirmed`. Of two fields alike but for their placeholders, a stale handle resolves to the one whose
+  placeholder matches; with none or both it is ambiguous; with one left that it does not confirm, no longer valid. A
+  field that differs in its label or its identifier is rejected. Four mutations (the same-handle rule, the
+  observed-alone rule, the stored-handle rule in the walk, `.ifNeeded`'s placeholder update) each fail a test. #366's
+  `testAnAcceptedWriteWhoseReFetchFailsIsValueUnconfirmed` now changes the field's label to make the re-fetch fail; its
+  passing half carries run 44068144650's placeholder. Not measured live: how often a placeholder alone separates two
+  fields on real pages (#398's measurement, run separately).
+  Date/Author: 2026-11-18, cursor235's implementer for #398.
 
 ## Outcomes & Retrospective
 

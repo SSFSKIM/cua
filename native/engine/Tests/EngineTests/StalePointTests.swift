@@ -2583,6 +2583,25 @@ final class ResizedTextGuardTests: XCTestCase {
       let again = page.replace("Inbox (3)", at: grown(by: 20))
       XCTAssertEqual(verdict(nodes, at: onText, hit: again).reason, .nodeGone, "the value unreadable at the observation")
     }
+    // A title on one side only leaves #296's label check silent; the words, read title first, still decide.
+    do {
+      var page = Page("Inbox", text: textFrame)
+      page.text.title = "Inbox"
+      let nodes = recorded(page.window)
+      let again = page.replace("Archive (3)", at: grown(by: 20))
+      XCTAssertEqual(verdict(nodes, at: onText, hit: again).reason, .nodeGone, "the title gone, the value's words another")
+    }
+    // A text's titles keep #296's exact equality on the re-created path, as at the same width.
+    do {
+      var page = Page("x", text: textFrame)
+      page.text.title = "Inbox"
+      let nodes = recorded(page.window)
+      let again = page.replace("x", at: grown(by: 20))
+      again.title = "Inbox (3)"
+      XCTAssertEqual(verdict(nodes, at: onText, hit: again).reason, .nodeGone, "the titles' words agree, the titles do not")
+      again.title = "Inbox"
+      XCTAssertEqual(verdict(nodes, at: onText, hit: again).identity, .recreated, "the same title")
+    }
     // The same width keeps #298's match as it was: other words refused (linkmono), a count kept (linklike).
     XCTAssertEqual(replaced("Save", "Send", at: textFrame).reason, .nodeGone, "linkmono")
     XCTAssertEqual(replaced("Like (12)", "Like (13)", at: textFrame).identity, .recreated, "linklike")
@@ -2592,7 +2611,8 @@ final class ResizedTextGuardTests: XCTestCase {
   /// height changed (a wrap onto a second line).
   func testAResizedTextWhoseOriginOrHeightMovedIsRefused() {
     for frame in [CGRect(x: 35, y: 110, width: 60, height: 20), CGRect(x: 30, y: 115, width: 60, height: 20),
-                  CGRect(x: 25, y: 110, width: 60, height: 20), CGRect(x: 30, y: 110, width: 60, height: 40)] {
+                  CGRect(x: 25, y: 110, width: 60, height: 20), CGRect(x: 30, y: 110, width: 60, height: 40),
+                  CGRect(x: 30, y: 105, width: 60, height: 25)] {
       XCTAssertEqual(replaced("Inbox", "Inbox (3)", at: frame).reason, .nodeGone, "\(frame)")
     }
   }

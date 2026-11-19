@@ -6812,10 +6812,13 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   text or the link; the same within the tolerance at the origin, and in a window moved since the screenshot; the
   record holding the link, its own handle grown, with and without a title; "Inbox (12)" -> "Inbox" with the point on what
   remains; a right-aligned time grown leftward. Refused: the point on the dropped count (`frameMoved`); a centred text;
-  other words (linksave and the rest, with both hits); a value absent now, or unreadable now or at the observation; the
-  origin moved past the tolerance across or down, or the height changed; a re-created link grown with its title the same
-  or not. The ranking prefers a match in place to a resized one, and the nearer resized one. #296's, #298's, #305's,
-  #316's and #330's suites pass unchanged; 1,452 engine tests pass, 1 skipped as before.
+  other words (linksave and the rest, with both hits); a value absent now, or unreadable now or at the observation; a
+  title on one side only with the value's words another; a text's titles differing by a count; the origin moved past
+  the tolerance across or down, the top alone moved, or the height changed; a re-created link grown with its title the
+  same or not. The ranking prefers a match in place to a resized one, and the nearer resized one. #296's, #298's,
+  #305's, #316's and #330's suites pass unchanged; 1,452 engine tests pass, 1 skipped as before. Each of 8 parts of the
+  rule removed in turn (the role, each edge, the top, the bottom, the words, the title check, the constant's value;
+  `~/.claude/jobs/b93055dd/tmp/mutate-340.sh`) fails a test.
   **Measured live:** pending. The hosted A/B is `probe/340-measure` with #298's `inbox` and `reltime` cells and #330's
   "replaced link text" cells, both record positions, on Chrome for Testing and Safari. Expected on the branch: `inbox`
   and `reltime` kept and landing; `linksave` and `linkmono` still refused; #296's final set and #298's cells unchanged;

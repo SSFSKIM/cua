@@ -1,6 +1,6 @@
 # #414: hosted macOS evidence for type_text's length confirmation in password fields
 
-Every run happened only on GitHub-hosted macOS, in kit `probe/414-qual` (workflow `422774845`). The engines under test were built unmodified from clean checkouts of exact SHAs. The kit's README, `scripts/probe-414/README.md` at `9570cc6bb710fd7e785f729ea2a043967902dbf8`, has every run, with:
+Every run happened only on GitHub-hosted macOS, in kit `probe/414-qual` (workflow `422774845`). The engines under test were built unmodified from clean checkouts of exact SHAs. The kit's README, `scripts/probe-414/README.md` at `b7aebd311c0c0edffd113a710425aad2c4c12bad`, has every run, with:
 - the scoring rules and gates;
 - the drain timing data behind the 220 ms quiet window;
 - the full latency distributions.
@@ -34,34 +34,36 @@ This file covers what the merge rests on. The baseline throughout is main `517ab
 
   It also requires that no `AXValue`, `AXValueDescription`, `AXSelectedText` or parameterized read is made on the password element.
 
-## The final pin: 405b63b3 (wave 8)
+## The final pin: 8bc291f1 (wave 11)
 
-[Run 44386516599](https://github.com/SSFSKIM/cua/actions/runs/44386516599), kit `f82dd4e8`, fix `405b63b333683669ac8d441daab31eb9d019d8cb`, mode `deadline`. Per lane:
+The PR head is `84562002`. It differs from the pin only in docs and comments: the limit sentence and the read-order comments.
+
+[Run 44423869307](https://github.com/SSFSKIM/cua/actions/runs/44423869307): kit `7dad9a9c`, fix `8bc291f1eb2a9297c28636b1c97122619719904f`, main `517ab543`. Per lane, it ran:
 - 20 paired positives;
 - 30 concealed and 15 literal mutations;
 - on AppKit, 5 selection controls.
 
-The hosted workflow was green. Both seeded property tests passed on the exact pin: 2,000 paired different-length cases each, seeds `0x414F217` and `0x414F218`, the second with simulated live read costs.
+The hosted workflow was green on all five lanes. Both seeded property tests passed on the pin: 2,000 paired different-length cases each, seeds `0x414F217` and `0x414F218`, the second with simulated live read costs. They gate outcomes and reasons, and no longer gate timing.
 
-| Lane | Positives exact and length-confirmed | False adds | Drops refused | Reason parity, short vs. long | `fieldUnreadable` / `fieldChanged` on exact controls | Privacy / setup-invalid | `lateReply` (informational) |
+| Lane | Positives exact and length-confirmed | False adds | Drops refused | Reason parity, short vs. long | `fieldUnreadable` / `fieldChanged` on exact controls | Privacy / setup-invalid | Concealed failure reply, short / long p50 (ms, informational) |
 |---|---:|---:|---:|---|---:|---:|---:|
-| CfT | 20/20 | 0/30 | 15/15 | pass | 0 / 0 | 0 / 0 | 26/30 |
-| Electron default | 20/20 | 0/30 | 15/15 | pass | 0 / 0 | 0 / 0 | 24/30 |
-| Electron parity | 20/20 | 0/30 | 15/15 | pass | 0 / 0 | 0 / 0 | 23/30 |
-| Safari large | 20/20 | 0/30 | 15/15 | pass | 0 / 0 | 0 / 0 | 30/30 |
-| AppKit | 20/20 | 0/30 | 15/15 | pass | 0 / 0 | 0 / 0 | 34/35 |
+| CfT | 20/20 | 0/30 | 15/15 | pass | 0 / 0 | 0 / 0 | 904 / 905 |
+| Electron default | 20/20 | 0/30 | 15/15 | pass | 0 / 0 | 0 / 0 | 904 / 902 |
+| Electron parity | 20/20 | 0/30 | 15/15 | pass | 0 / 0 | 0 / 0 | 912 / 906 |
+| Safari large | 20/20 | 0/30 | 15/15 | pass | 0 / 0 | 0 / 0 | 910 / 907 |
+| AppKit | 20/20 | 0/30 | 15/15 | pass | 0 / 0 | 0 / 0 | 906 / 903 |
 
 What the table shows:
 - **Main's baseline.** All 100 of main's positives typed exactly and answered unconfirmed `secure`, as expected.
-- **Mutations.** Every concealed add and drop answered `lengthMismatch` at both lengths. The literal controls answered `lengthMismatch` or, on AppKit, `caretMismatch`.
+- **Mutations.** Every concealed add and drop answered `lengthMismatch` at both lengths. The literal controls answered `lengthMismatch`, or `caretMismatch` on AppKit.
 - **AppKit selection controls.** All five delivered exactly and answered `lengthUnreadable`.
+- **`lateReply`.** The key appears nowhere.
 
-**Reply time.** The fixed failure time, last post + 1100 ms, is not held live:
-- 137 of 155 concealed failures carry `lateReply`.
-- IPC arrivals were 1111–1186 ms after the last post.
-- The short- and long-secret medians differ by 17–50 ms per lane, with no consistent direction.
+The kit's README (`scripts/probe-414/README.md` at `b7aebd31`) has the full tables, including p95 times.
 
-Reply time reaches only `_meta`, never the model's text, so this PR treats live timing as informational and the stub property as the contract. Measuring which read overruns, and either re-timing the slots or dropping the uniform-time claim, is #423.
+**Reply time.** Waves 6–8 answered every concealed failure at one fixed time, last post + 1100 ms. Live, that time was missed on 137 of 155 failures (wave 8, [run 44386516599](https://github.com/SSFSKIM/cua/actions/runs/44386516599)), and the exact schedule produced false confirmations under review. Ruling 1ea561bc:851 dropped it. A failure now answers when it is known. That moment, and in some fields the reason, can depend on the text typed: #423, a documented P3 limit. On the pin, short- and long-secret medians differ by at most 6 ms in every lane.
+
+**The wave-10 run.** [Run 44420183099](https://github.com/SSFSKIM/cua/actions/runs/44420183099) on `3b67bf4d` gave the same results, with one exception. One Electron-parity long drop answered `noFocusedElement`: the AX snapshot named no focused element, a refusal decided before any key is posted, which main also shows. The strict workflow counted that row red. It did not recur on the pin.
 
 ## How the design got here
 
@@ -73,10 +75,13 @@ Reply time reaches only `_meta`, never the model's text, so this PR treats live 
 | `f217f062` (W = 220 ms) | [44370419752](https://github.com/SSFSKIM/cua/actions/runs/44370419752) | 125/125 positives, 0/100 adds confirmed, privacy 0. A narrow review found the failure time and reason still depended on the poll's history, which led to waves 6–8. |
 | `45172367` (wave 6) | [44375463208](https://github.com/SSFSKIM/cua/actions/runs/44375463208) | **Regression:** `fieldChanged` on 78/150 concealed controls, because a bounded wrapper refused the final focus read. |
 | `2e011dbf` (wave 7) | [44381626238](https://github.com/SSFSKIM/cua/actions/runs/44381626238) | **Regression:** `fieldUnreadable` on 62/150, because shrunk timeouts timed out live and the next reads queued behind them. |
-| `405b63b3` (wave 8) | [44386516599](https://github.com/SSFSKIM/cua/actions/runs/44386516599) | Standard 100 ms reads in fixed slots. The table above. |
+| `405b63b3` (wave 8) | [44386516599](https://github.com/SSFSKIM/cua/actions/runs/44386516599) | Standard 100 ms reads in fixed slots fixed the regressions, but `lateReply` was set on 137/155 failures. Independent review then found false confirmations in the slot schedule. |
+| `e8e2702e` (wave 9) | [44411274771](https://github.com/SSFSKIM/cua/actions/runs/44411274771) | **Ruling 851:** the fixed deadline, slots and `lateReply` are gone. A hold confirms only between two sampled reads, and a failure answers when it is known. Green on all five lanes. |
+| `3b67bf4d` (wave 10) | [44420183099](https://github.com/SSFSKIM/cua/actions/runs/44420183099) | A concealed failure's reason and its may-show warning now come from one final batch and one focus read. An overshoot taints a concealed poll. |
+| `8bc291f1` (wave 11) | [44423869307](https://github.com/SSFSKIM/cua/actions/runs/44423869307) | The classifying batch is the last read. A failed subrole read answers `fieldUnreadable` with the warning. The table above. |
 
-**What the wave-8 run did not repeat.**
-- **The schedule audit** last ran on `1f69470e`. Waves 6–8 change when the final reads happen, not which attributes they read: one batch of role, subrole, range and count. The seeded property tests pin the short-against-long schedule on the stub.
+**What the later runs did not repeat.**
+- **The schedule audit** last ran on `1f69470e`. Waves 6–11 change when the reads happen, not which attributes they read: one batch of role, subrole, range and count. The seeded property tests pin the short-against-long schedule on the stub.
 - **Non-BMP text.** It is lost in Chromium on both heads (#420). It lands exactly in Safari and AppKit.
 
 ## Limits
@@ -88,4 +93,4 @@ Reply time reaches only `_meta`, never the model's text, so this PR treats live 
 - **Chromium non-BMP:** #420.
 - **The plain path has no window yet:** #421.
 - **Delivery-time concealed failures** answer at once: #422.
-- **The fixed reply time is missed live:** #423.
+- **A failure's reply time, and in some fields its reason, can depend on the text typed:** #423.

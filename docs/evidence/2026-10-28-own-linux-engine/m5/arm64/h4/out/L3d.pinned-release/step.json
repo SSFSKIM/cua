@@ -1,0 +1,52 @@
+{
+  "label": "acceptance on the pinned release",
+  "step": "L3d",
+  "pilot": false,
+  "what": "the settle's observations: kate, Qt Creator, Writer, gnome-terminal",
+  "display": "own",
+  "load": "load2",
+  "minutes": 32,
+  "run_name": "pinned-L3d",
+  "checkout": {
+    "root": "/Users/new/Developer/GitHub/cua/.claude/worktrees/t7-h4/",
+    "commit": "3b5c0441b41e67ab87dd1265d2ca74325f93dec3",
+    "clean": true
+  },
+  "candidate": {
+    "path": "/Users/new/.local/share/cua-171/m5/home-arm64-041/engine/linux/cua-engine",
+    "sha256": "8850abcb00d6ee47c72ff102e71cac1578bc7c5bccf7249104493a17242efaa0"
+  },
+  "pinned_home": "/Users/new/.local/share/cua-171/m5/home-arm64-041",
+  "command": "/Users/new/.local/share/cua-171/locked.sh t7-arm64 /Users/new/.local/share/cua-171/node24/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/t7-h4/scripts/linux-engine-gate/gate.mjs run L3d --pinned /Users/new/.local/share/cua-171/m5/home-arm64-041 --out /Users/new/.local/share/cua-171/m5/out-arm64-h4",
+  "argv": [
+    "scripts/linux-engine-diff.mjs",
+    "--experiment",
+    "settle",
+    "--lanes",
+    "shipped",
+    "--family",
+    "kate,qtcreator,writer,gnome-terminal",
+    "--load-factor",
+    "2",
+    "--cua",
+    "/Users/new/.local/share/cua-171/m5/home-arm64-041/engine/linux/cua-engine",
+    "--run",
+    "pinned-L3d",
+    "--pinned",
+    "--out",
+    "/Users/new/.local/share/cua-171/m5/out-arm64-h4/L3d.pinned-release/run"
+  ],
+  "started": "2026-11-19T03:23:22.127Z",
+  "end_check": {
+    "left_by_step": [],
+    "foreign": [],
+    "buses": [],
+    "clear": true
+  },
+  "finished": "2026-11-19T04:07:49.432Z",
+  "exit": 1,
+  "child_exit": 1,
+  "unclean": [
+    "a process it spawned still runs: pid 1673631 openbox"
+  ]
+}

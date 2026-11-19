@@ -1,0 +1,2 @@
+step.sh 2026-11-19T02:42:20Z start L3c after 180 s quiet wait: load=0.85 9.16 13.23 stress-ng=none flags=[]
+step.sh 2026-11-19T03:20:21Z end L3c exit 1 load=17.17 16.97 16.66

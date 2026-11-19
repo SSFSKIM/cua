@@ -1,0 +1,43 @@
+# L3b at H'''' (0.4.1), electron-input key_up desktop (shipped): the five late misses against #302's conditions
+# (spec ~L2030; the code's lateKeyUpMiss in scripts/linux-engine-diff/action-settle-cells.mjs). Read-only from
+# m5/out-arm64-h4/L3b.pinned-release/run/results.jsonl (settle-run rows 515-547; one service and engine for the series,
+# so trial 0 alone is cold). kd/ku = key_downs/key_ups, the page's cumulative counters.
+
+How a key_up run works (action-settle.mjs oneRun): a key_down of "x" (desktop route) is sent and awaited through its own
+settle (key_down 25 ms), then the before-read, then the timed key_up, answered, then the key_up settle (50 ms,
+src/services/engine/linux/settle.mjs:36), then the after-read, and the late bound. The page counts every key-down
+event, X autorepeat's included, so kd runs ahead of ku by the repeats of earlier holds: at trial 0 the before-read is
+201/200 (the held press), and by trial 32 it is 449/232.
+
+| trial | class | press before the key_up (prev after kd -> this before kd) | this run: before -> after kd/ku | late_ms | answer ms | next same-page before-read | ku caught up (+1) | kd==ku at next before | desktop_clean | front_active | cold |
+|---|---|---|---|---:|---:|---|---|---|---|---|---|
+| 7  | late | 231 -> 248 (+17: the press and 16 repeats) | 248/207 -> 252/207 (+4 kd after the answer) | 186.8 | 0.3 | t8: 253/208 | yes (207 -> 208; kd 252 -> 253 is t8's own press) | no (253 != 208) | true | null | no (trial 7) |
+| 12 | late | 256 -> 257 (+1: the press) | 257/212 -> 258/212 (+1 kd after) | 251.4 | 3.5 | t13: 259/213 | yes | no (259 != 213) | true | null | no |
+| 15 | late | 261 -> 290 (+29) | 290/215 -> 294/215 (+4 kd after) | 212.4 | 0.3 | t16: 295/216 | yes | no | true | null | no |
+| 25 | late | 303 -> 351 (+48) | 351/225 -> 355/225 (+4 kd after) | 188.1 | 2.0 | t26: 356/226 | yes | no | true | null | no |
+| 32 | late | 448 -> 449 (+1) | 449/232 -> 450/232 (+1 kd after) | 263.9 | 0.2 | the next cell on the page, click desktop t0: 450/233 | yes (232 -> 233, kd unchanged) | no (450 != 233) | true | null | no |
+
+Per condition:
+1. class `late`: holds for all five (answers [{ok:true}], late_ms set; the series reads 5 late, 0 never, 0 refused, 0 invalid).
+2. key-down and key-up apart: key_up sends no key-down of its own. The held key's press (the run's preceding key_down)
+   landed before the before-read in every trial (kd rose by 1, or by the press and its repeats). The key-up was NOT the
+   only thing late: in all five, key-downs (autorepeats) also reached the tree after the answer (+4, +1, +4, +4, +1).
+   For comparison, 4 of the 28 passing runs also had key-downs arrive after the answer (t3 +1, t4 +3, t13 +1, t29 +4),
+   with their key-up in time.
+3. key-ups equal key-downs at the next before-read: false as stated in all five, and in every run of this cell, because
+   the page's kd counts autorepeat events with no matching ku (offset 1 at t0, 217 by t32). What does hold in all five:
+   the next before-read's ku is this run's +1 (the release caught up), and its kd is this run's after-kd plus only the
+   next run's own press, so nothing else was lost or added.
+4. desktop_clean === true and front_active !== false (null, the desktop route): holds for all five.
+
+Also:
+- answer times: the five 0.3, 3.5, 0.3, 2.0, 0.2 ms; the cell's answered median 2 ms (33 runs), read median 96.2 ms.
+- the settle constant for key_up: 50 ms (settle.mjs:36, "Chrome's page on the desktop route at twice the load"); the
+  key-ups came 186.8-263.9 ms after the answer.
+- cold: none. One service and engine run the whole series, and trial 0 is its only cold request; the five are trials
+  7, 12, 15, 25, 32.
+- the long holds before t7, t15 and t25 (16, 28 and 47 repeats, i.e. the press-to-key_up gap stretched well past X's
+  autorepeat delay under load) precede three of the five; t12 and t32 had no repeat before them.
+- the judge: judgesLateKeyUp takes #302 only for input === 'press_key', so key_up cells are never read for #302; and its
+  criterion 1 (kd exactly +1 between before and after) and criterion 3 (ku === kd at the next before-read) would not
+  hold here as coded, the first because the after-read saw extra repeats, the third because of the repeat offset.

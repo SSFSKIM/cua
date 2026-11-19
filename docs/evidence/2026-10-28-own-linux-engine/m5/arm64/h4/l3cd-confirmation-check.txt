@@ -1,0 +1,58 @@
+# L3c / L3d at H'''' (0.4.1, twice the load): the late runs' confirmation timing, and L4b's cua:accept gating.
+# Read-only from m5/out-arm64-h4/{L3c,L3d}.pinned-release/run/results.jsonl (settle-run rows, ok:false) and the
+# H'''' checkout's code (t7-h4, 3b5c0441; native/linux-engine as released at 7522dcb8).
+
+## What the engine's activate_window confirms (native/linux-engine/src/engine/windows.rs:21-47)
+It sends _NET_ACTIVE_WINDOW (source 1), a raise and SetInputFocus together, checks each request's reply, then
+`wait_until(|| self.x.on_top(window), ON_TOP_WAIT, ON_TOP_POLL)`: it waits only until no normal-layer window covers the
+window's visible area (stacking), at most 1000 ms, and answers. It never reads _NET_ACTIVE_WINDOW back, and focus_ack is
+not on this path. The wait's length goes to `extra["activation"].on_top_wait_ms`, which reaches only a `--stats` line;
+these counted runs had no --stats, so the rows carry no engine-side confirmation time.
+
+## What the rows do carry, per late run
+answered = answered_ms (the request's own time, harness side); request seen = the witness's sighting of the engine's
+_NET_ACTIVE_WINDOW ClientMessage (`activations[].t_ms`, from the span's start; this is the request, not a confirmation);
+after-read = the harness's reading after the answer and the 10 ms settle (waited_ms), read_ms long: the application's
+AT-SPI ACTIVE state (`active`) and the root's _NET_ACTIVE_WINDOW (`wm`, true when it names the target); late_ms = when the
+harness's 50 ms poll first saw wm true, from the answer.
+
+| step | cell | trial | answered ms | request seen t_ms | settle waited ms | after-read: active / wm | WM's _NET_ACTIVE_WINDOW seen (late_ms after the answer) |
+|---|---|---:|---:|---:|---:|---|---:|
+| L3c | gedit activate_window background | 19 | 10.0 | 5.1 | 10.2 | true / false | 95.0 |
+| L3c | gedit | 23 | 8.0 | 11.9 | 10.2 | true / false | 85.2 |
+| L3c | gedit | 25 | 11.1 | 5.3 | 10.2 | true / false | 93.1 |
+| L3c | gedit | 38 | 10.8 | 5.0 | 10.2 | true / false | 92.9 |
+| L3d | kate activate_window background | 10 | 7.5 | 5.0 | 10.2 | true / false | 90.6 |
+| L3d | kate | 15 | 12.1 | 17.0 | 10.2 | true / false | 93.9 |
+| L3d | kate | 32 | 17.0 | 11.9 | 10.2 | true / false | 89.0 |
+| L3d | qtcreator activate_window background | 7 | 6.5 | 5.0 | 10.3 | true / false | 92.3 |
+| L3d | qtcreator | 29 | 11.1 | 17.0 | 10.2 | true / false | 98.0 |
+| L3d | qtcreator | 50 | 6.7 | 5.4 | 10.2 | true / false | 88.7 |
+| L3d | writer activate_window background | 26 | 9.1 | 17.0 | 10.2 | true / false | 100.0 |
+| L3d | writer | 38 | 8.8 | 17.0 | 10.2 | true / false | 108.3 |
+| L3d | gnome-terminal activate_window background | 20 | 13.0 | 15.1 | 10.2 | true / false | 91.0 |
+| L3d | gnome-terminal | 39 | 10.1 | 17.0 | 10.2 | true / false | 90.0 |
+
+In every one of the 14: at the harness's after-read, later than the answer, the application already reported itself
+ACTIVE, and the root's _NET_ACTIVE_WINDOW did not yet name the target; it named it 85-108 ms after the answer.
+
+## gnome-terminal click desktop (L3d), 2 late runs
+| trial | answered ms | settle waited ms | after-read | effect seen (late_ms after the answer) |
+|---:|---:|---:|---|---:|
+| 29 | 33.9 | 25.2 | text unchanged | 111.2 (" F*" printed) |
+| 30 | 30.8 | 25.2 | text unchanged | 107.1 (" B*" printed) |
+The desktop route with no window sends XTEST input to the desktop as it is and waits for nothing
+(native/linux-engine/src/route.rs:441-449: "Every other route sends to the window itself, or to the desktop as it is:
+nothing to wait for"); the engine confirms only its X requests' replies. No engine-side effect confirmation exists or is
+recorded for these runs.
+
+## L4b: cua:accept
+- The flag: native/linux-engine/src/main.rs:181-182 (`"--drag-dnd-release-at-accept" => { cfg.dnd_release_at_accept = true; ... }`);
+  default false at main.rs:99. Documented "Measurement only ... Not shipped" at engine.rs:89-94. Used only at
+  engine/pointer.rs:1059-1062 (`match (confirm, self.cfg.dnd_release_at_accept)`). No other write of the field in the
+  engine source, and no environment variable sets it.
+- The lane: scripts/linux-engine-diff/drop-signals.mjs:248 (`'cua:accept': { args: ['--drag-dnd-release-at-accept'] }`);
+  drop-signals-judge.mjs:743 ("a measurement flag, not what ships (T14's ruling 2, reverted)").
+- The shipped service: src/services/engine/linux/client.mjs:108 spawns `spawn(path, ['server', '--desktop', desktop], ...)`
+  and nothing else in src/ passes engine arguments or names the flag (grep of src/, bin/, runtime/, docs/cua-api: no
+  match for release-at-accept).

@@ -1,0 +1,49 @@
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA256
+
+Origin: Google LLC
+Label: Google
+Suite: stable
+Codename: stable
+Version: 1.0
+Date: Wed, 18 Nov 2026 18:08:05 UTC
+Architectures: amd64 arm64
+Components: main
+Description: Google chrome-linux software repository
+MD5Sum:
+ 27eda7d286a251841d131cb51c79024f 6207 main/binary-amd64/Packages
+ aa6abf1ab394888d335b3f43ac19a99f 1407 main/binary-amd64/Packages.gz
+ 156e5ea7a0c6bed5973a68a45e546dc9 151 main/binary-amd64/Release
+ d6c475d92344b1dbdefe851eec32d220 6207 main/binary-arm64/Packages
+ 935629a55029f14c4df5ed4054305d5c 1400 main/binary-arm64/Packages.gz
+ fa9332f7f48fabf2a9015ece5b110dd6 151 main/binary-arm64/Release
+SHA1:
+ 16a7a9940466b85ee9dc3a0da7af3b7916809a39 6207 main/binary-amd64/Packages
+ 632c0121b6d3f3118f9b929a95619371db5b84e7 1407 main/binary-amd64/Packages.gz
+ 0f4348c2d4d7cc1f8e59b5934d87f1ca872f6e34 151 main/binary-amd64/Release
+ 5923e884122ce13f905a812dafd77a059cccd9f9 6207 main/binary-arm64/Packages
+ d3df1cdda072552491a07093c37b50ac0136519c 1400 main/binary-arm64/Packages.gz
+ 1192bce6bc4c2f641a0287ad41c6bd47e7b2e81d 151 main/binary-arm64/Release
+SHA256:
+ e2e8c63178e84209458889a428e790ce2e514f2c97d9b9c013d2f407dee3c3c5 6207 main/binary-amd64/Packages
+ 47d7ced1292ebac74518a4efa57ddc0eb95273fa25b07dc3ed771e8476c1ad0b 1407 main/binary-amd64/Packages.gz
+ c1e3c9318381862306adcdc4fd4fe2d85be8aa4c4f3dcbb40fce80413f588286 151 main/binary-amd64/Release
+ 06dc34633589cfaf3691a94b180021bef8250f21b0650da86f6dc47cd579604a 6207 main/binary-arm64/Packages
+ 1e71354e1120cc437763e84909cca69837a003f0a5191a9b7baa1c2575a5c925 1400 main/binary-arm64/Packages.gz
+ 0146ffd3e2f8867413c78a453f9fdf691a39b0c205f8d3f152c555cb2040c7da 151 main/binary-arm64/Release
+-----BEGIN PGP SIGNATURE-----
+
+iQIzBAEBCAAdFiEEDiJZF0FGcPRELCUN/VM8B8JkZI8FAmr96ZkACgkQ/VM8B8Jk
+ZI9t7g//biQhbDSiRtJ0jRdfT4ZM1HkAEexXfcRVCqFhCR9FO14l1iaRkozHESGM
+4I1VVZmDxHdDUhSCYd8uDpkaranA6yVBWZhKWq3q9tx40usdHyqWFOERSLOrleae
+LFqU0W4EAiLb2TEqKR4SvFwistCBqkHTjsrPqxqr7QbB8Ve/Z3xgBFZgqUwtnLZD
+XO40mxOgePZzo+icAgW0eBQ5TcuEoO4QyS306FpkVkl0Hc6fDRLVZIEgzCQA1/Z5
+v48jVTskVTfR4kzoqOdp3nzrZKK+aboVPR1LgS99lATheZlR5tUToS0cuAnk9TcB
+0CKSDnuqarXenrk/ngv1gTDqHNi3GM/Y2sSFmNwEzDbHO1t5I4lDbwC8NhLyJlAp
+bj+92ByYceO/ndkxJ/UcDIaKw9OE289AX2qhKhjIbKXeNKkelJOATf+yUTdPNf8u
+4RZSSIuFrOpLi3jwksoV8WTiVPRSdKuWlpX/a2aEoe1LMfOQUgZAeADe114WdegI
+8E324XSLTGj4mRhwCSetnXzt+tLFb4nyU9n5oz0QSo9VQP9rqkV9vcs+IijNgYSh
+LNoNppz4RiL1v+dxq7Ry3I+YWyGvKq5EFtgw1MAsnUPA4v8164AOHdc/pIWuytQZ
+3TXGbajlAi0SApPrP5QU51EpvcW2+PYXtSXrLRg41LVQBYxY05E=
+=ok54
+-----END PGP SIGNATURE-----

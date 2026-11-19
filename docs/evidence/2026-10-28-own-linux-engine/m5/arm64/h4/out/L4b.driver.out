@@ -1,0 +1,2 @@
+step.sh 2026-11-19T05:15:34Z start L4b after 170 s quiet wait: load=0.88 9.17 13.16 stress-ng=none flags=[]
+step.sh 2026-11-19T05:31:40Z end L4b exit 1 load=15.70 16.57 15.68

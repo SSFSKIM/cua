@@ -1,6 +1,6 @@
 // Task 99 (T7; from task 89's step-table.mjs): the arm64 step table. For every gate step with a record in the out root
 // (`<step>.<label dir>/step.json`): the SHA it ran at, the lock lines (acquire and release, UTC, with the load at each,
-// from host-lock.log, holder t7-arm64, matched by the driver's own command, `task99/step.sh <step> <out root>`), the
+// from host-lock.log, holder t7-arm64, matched by the driver's own command, `task99/step.sh` or, at H'''', `step-h4.sh <step> <out root>`), the
 // step's own start after the quiet wait inside the hold (step.sh's line in <step>.driver.out, with its load), the
 // measured minutes, the exit, the run's unclean end and the step's end check, and the verdict lines of its output.
 // :0 steps have no lock line of their own (the sitting holds one lock across them): their times are from zero.log.
@@ -27,7 +27,7 @@ for (const s of STEPS) {
     rel = zero.find((l) => l.includes(` end ${s.name} `));
     start = acq;
   } else {
-    const mine = (l) => l.includes(`task99/step.sh ${s.name} ${out}`);
+    const mine = (l) => l.includes(`task99/step.sh ${s.name} ${out}`) || l.includes(`task99/step-h4.sh ${s.name} ${out}`);
     acq = lock.filter((l) => / acquire /.test(l) && mine(l)).at(-1);
     rel = lock.filter((l) => / release /.test(l) && mine(l)).at(-1);
     const drv = join(out, `${s.name}.driver.out`);

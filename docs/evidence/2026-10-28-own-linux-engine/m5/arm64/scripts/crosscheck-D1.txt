@@ -1,0 +1,16 @@
+# the drag cross-check: /Users/new/.local/share/cua-171/m5/out-arm64/D1.pinned-release/run/summary.md against /Users/new/.local/share/cua-171/m5/out-arm64-h4/D1.pinned-release/run/summary.md
+
+| family | kind | cua took | witness | verdict | differs |
+|---|---|---|---|---|---|
+| Chrome | select | 30/30 → 30/30 | clean → clean | cua PASS, cua:0ms **FAIL** → cua PASS, cua:0ms **FAIL** | – |
+| Chrome | range | 30/30 → 30/30 | clean → clean | cua PASS, cua:0ms **FAIL** → cua PASS, cua:0ms PASS | verdict |
+| Chrome | scroller | 30/30 → 30/30 | clean → clean | cua PASS, cua:0ms **FAIL** → cua PASS, cua:0ms **FAIL** | – |
+| Chrome | dnd | 30/30 → 30/30 | **changed** → **changed** | cua declared speed gap (#358), cua:0ms declared speed gap (#358) → cua declared speed gap (#358), cua:0ms declared speed gap (#358) | – |
+| Chrome | canvas | 40/40 → 40/40 | clean → clean | cua PASS, cua:0ms **FAIL** → cua PASS, cua:0ms **FAIL** | – |
+
+the judges' verdict for cua: earlier PASS.; later PASS.
+declared speed gaps: earlier Declared speed gaps (listed apart, not passes): chrome dnd: cua declared speed gap (#358): cua <n> ms against newest's <n> ms, the interval [<n>, <n>] within the declared <n> ms.; later Declared speed gaps (listed apart, not passes): chrome dnd: cua declared speed gap (#358): cua <n> ms against newest's <n> ms, the interval [<n>, <n>] within the declared <n> ms.
+cells a cua lane missed: earlier Cells where a cua lane missed a run the pinned build took: chrome select (cua:0ms); chrome range (cua:0ms); chrome scroller (cua:0ms); chrome canvas (cua:0ms).; later Cells where a cua lane missed a run the pinned build took: chrome select (cua:0ms); chrome scroller (cua:0ms); chrome canvas (cua:0ms).
+the other lanes' take counts that moved (noise, read them): Chrome | range cua:0ms took 29/30 → 30/30; Chrome | scroller cua:0ms took 7/30 → 3/30; Chrome | canvas newest took 21/40 → 24/40
+cells: 5 and 5; verdicts differing 1, cells in one only 0, witnesses differing 0, cua misses differing 0
+CROSS-CHECK: DIFFERS

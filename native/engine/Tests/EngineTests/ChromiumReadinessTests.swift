@@ -602,13 +602,13 @@ final class ChromiumMetadataTests: XCTestCase {
   }
 
   func testAnAcceptedWriteWhoseReFetchFailsIsValueUnconfirmed() throws {
-    // The field read after readiness (unmarked), then its metadata changes between the write and the re-fetch: the
-    // placeholder appears, so nothing matches the stored identity any more.
+    // The field read after readiness (unmarked), then its metadata changes between the write and the re-fetch: its
+    // label changes, so nothing matches the stored identity any more. (Before #398 the placeholder's arrival did this.)
     let tree = basicMode()
     let lineage = Lineage()
     observe(tree, lineage, at: 13_000)
     tree.extra[2]?["AXValue"] = "cua" as CFString
-    tree.extra[2]?["AXPlaceholderValue"] = "Search" as CFString
+    tree.extra[2]?["AXTitle"] = "Filter" as CFString
     let fake = FakeResolving(tree)
     XCTAssertThrowsError(try confirmingWrittenValue(app: "Electron") {
       _ = try lineage.resolve(elementToken(2), resolver: fake.resolver, refetch: .ignoringValue)
@@ -619,11 +619,13 @@ final class ChromiumMetadataTests: XCTestCase {
     }
     XCTAssertEqual(fake.treeReads, 1, "the re-fetch was tried")
 
-    // A re-fetch that finds the field passes through.
+    // A re-fetch that finds the field passes through, the complete mode's placeholder arriving with the write (#398:
+    // run 44068144650's case, which answered elementNoLongerValid before #366 and valueUnconfirmed after it).
     let found = basicMode()
     let observed = Lineage()
     observe(found, observed, at: 13_000)
     found.extra[2]?["AXValue"] = "cua" as CFString
+    found.extra[2]?["AXPlaceholderValue"] = "Search" as CFString
     XCTAssertNoThrow(try confirmingWrittenValue(app: "Electron") {
       _ = try observed.resolve(elementToken(2), resolver: FakeResolving(found).resolver, refetch: .ignoringValue)
     })

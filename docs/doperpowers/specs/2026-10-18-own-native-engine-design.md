@@ -6716,6 +6716,54 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   deactivation; a password field confirmed by its length with nothing but the length batch read; the clipboard restored
   on every path. PasteTests keeps #187's tests as on main.
   Date/Author: 2026-11-18, cursor235's implementer for #361.
+- Decision (#398, 2026-11-18, `fix/398-placeholder-identity`; spawned by #366, whose ruling 1ea561bc:772 handled the
+  complete mode's placeholder with the observation's wait, the same-handle refresh and `valueUnconfirmed`, and left the
+  fragility): **the placeholder leaves the strict comparison for the stored handle alone** (cua's departure from the
+  vendor's eleven-attribute match, F §3.6). A page changes a placeholder on focus, with input, with a mode or filter and
+  when Chromium's complete mode arrives. So any focus-then-act sequence re-checked the field against a stale
+  placeholder: set_value could write and then answer `valueUnconfirmed`, and a click on a field whose placeholder had
+  changed answered `elementNoLongerValid` after an invalidation.
+  1. **The same handle.** `Lineage.resolve`'s re-read of the stored handle matches on everything but the placeholder
+     (`matches(ignoringPlaceholder:)`). This holds in every refetch mode, set_value's post-write re-check included, and
+     covers focus-clear, rotation, input-switch and #366's re-fetch. A match that holds only because the placeholder is
+     left out renews nothing: the stored entry stays exactly as observed, and the action alone gets what the handle
+     reads now (its identity and actions). A strict match renews as on main.
+  2. **Everything beyond the same handle is main's.** That covers the observed count ("couldn't be started"), the walk
+     ("no longer valid", "couldn't be finished") and `keepRecreated`. They match strictly, placeholder included, against
+     the observation's identity. Once the handle is gone, the placeholder is evidence of which field this was, so a
+     stale handle whose field's placeholder changed answers `elementNoLongerValid`, and the agent observes again.
+  The first build (46309856) also relaxed the placeholder in the walk, as a tie-break among candidates alike in
+  everything else. The review of main..46309856 (doperpowers:reviewer-high) found it incorrect, and reproduced four
+  resolutions to another handle on fake trees, each of which main refused:
+  - A step with one unlabeled "Email" field advanced to one with an unlabeled "Phone" field. The Email token resolved to
+    Phone: one candidate alone was adopted.
+  - The observed count was taken without the placeholder. Under set_value's unread value, a sibling with another
+    placeholder was adopted.
+  - `.ifNeeded`'s placeholder refresh rewrote the revision the observed count reads. A twin's token then resolved to the
+    refreshed field.
+  - A replacement the walk adopted kept the old placeholder as its hint.
+  All four are tests now, each refused as on main. The refresh, the tie-break and the observed-alone rule are gone.
+  The second build (8ed0e07a) renewed the entry on a placeholder-only match while keeping the observation's
+  placeholder. The review of main..8ed0e07a (doperpowers:reviewer-medium) found that set_value's renewal stored an
+  identity with its value unread. After that handle went, a click on the old token walked without the value, and
+  adopted a sibling that showed the old placeholder and another value; main refuses that. A placeholder-only match
+  now renews nothing, and the sequence is a test that refuses.
+  Left as main's, with the reason:
+  - The tree diff (`diff.mjs`) compares rendered lines, so a changed placeholder still shows as a changed element.
+  - Token inheritance (`matchSiblings`) goes by handle.
+  - type_text's read-back, the stale-point check and the marker route compare handles (`CFEqual`), never identity.
+  - A text field's value still counts outside `.ignoringValue` and #390's unread value, as the vendor's rule has it. So
+    a click on a field's token after type_text changed its value, under an invalidation, is no longer valid. That is
+    not the placeholder's doing.
+  Proven offline (`PlaceholderIdentityTests`): on the same handle, click then set_value, type_text after a click and the
+  post-write re-check, each over a changed placeholder, answer neither `elementNoLongerValid` nor `valueUnconfirmed`. A
+  field that differs in its label or its identifier is still rejected. Mutations that remove the same-handle rule, or
+  renew the entry on a placeholder-only match, each fail tests. #366's
+  `testAnAcceptedWriteWhoseReFetchFailsIsValueUnconfirmed` now changes the field's label to make the re-fetch fail; its
+  passing half carries run 44068144650's placeholder. Not measured live: how often a placeholder alone separates two
+  fields on real pages (#398's measurement, run separately). The rule needs no such number, since a gone handle is
+  matched strictly whatever it finds.
+  Date/Author: 2026-11-18, cursor235's implementer for #398.
 
 ## Outcomes & Retrospective
 

@@ -144,8 +144,9 @@ struct ElementIdentity {
   /// value description is left out only when it was not read (`descriptionUnread`). Where either counts, a value that
   /// could not be read matches only another that could not, and only for the same handle (`sameElement`): two failed
   /// reads never make another element this one (#405, `valueFailed`, `descriptionFailed`). A password field matches only
-  /// a password field (`secure`).
-  func matches(_ other: ElementIdentity, ignoringValue: Bool = false, sameElement: Bool = false) -> Bool {
+  /// a password field (`secure`). `ignoringPlaceholder` (#398) leaves the placeholder out, for the stored handle's own
+  /// re-read alone.
+  func matches(_ other: ElementIdentity, ignoringValue: Bool = false, sameElement: Bool = false, ignoringPlaceholder: Bool = false) -> Bool {
     let valueCounts = !ignoringValue && !valueUnread && !other.valueUnread
     let descriptionCounts = !descriptionUnread && !other.descriptionUnread
     func failedAlike(_ mine: Bool, _ theirs: Bool) -> Bool { mine == theirs && (!mine || sameElement) }
@@ -153,7 +154,8 @@ struct ElementIdentity {
       && role == other.role && subrole == other.subrole && roleDescription == other.roleDescription && title == other.title
       && (!valueCounts || (failedAlike(valueFailed, other.valueFailed) && value == other.value))
       && (!descriptionCounts || (failedAlike(descriptionFailed, other.descriptionFailed) && valueDescription == other.valueDescription))
-      && description == other.description && placeholder == other.placeholder && help == other.help && identifier == other.identifier
+      && description == other.description && (ignoringPlaceholder || placeholder == other.placeholder) && help == other.help
+      && identifier == other.identifier
       && url == other.url
   }
 }
@@ -355,9 +357,22 @@ final class Lineage {
       }
       return self.entry(number)!
     }
-    if let live = read(entry.element),
-       ElementIdentity(live, pid: entry.identity.pid).matches(entry.identity, ignoringValue: ignoringValue, sameElement: true) {
-      return refetch == .ifNeeded ? entry : try settle(on: entry.element, owner: entry.identity.pid, data: live)
+    if let live = read(entry.element) {
+      let now = ElementIdentity(live, pid: entry.identity.pid)
+      if now.matches(entry.identity, ignoringValue: ignoringValue, sameElement: true) {
+        return refetch == .ifNeeded ? entry : try settle(on: entry.element, owner: entry.identity.pid, data: live)
+      }
+      // #398: the same handle is the same element whatever its placeholder now (focus, input, a mode, Chromium's
+      // complete mode). The stored entry stays exactly as observed: once the handle is gone, the walk below and the
+      // observed count match strictly, the placeholder and the observed value included, since the placeholder is then
+      // evidence of which field this was. The action alone gets what the handle reads now.
+      if now.matches(entry.identity, ignoringValue: ignoringValue, sameElement: true, ignoringPlaceholder: true) {
+        guard refetch != .ifNeeded else { return entry }
+        var acting = entry
+        acting.identity = now
+        acting.actions = source.actions(entry.element)
+        return acting
+      }
     }
     let before = observed.entries.values.filter {
       $0.identity.matches(entry.identity, ignoringValue: ignoringValue, sameElement: CFEqual($0.element, entry.element))

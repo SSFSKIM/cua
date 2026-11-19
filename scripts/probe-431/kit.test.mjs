@@ -35,7 +35,7 @@ test('plans: ten per unit to measure, twenty per head interleaved to qualify', (
   const q = plan({mode: 'qualify', heads: ['main', 'fix']});
   assert.equal(q.length, 2 * 20 * UNITS.length);
   assert.deepEqual([...new Set(q.filter((_, i) => i % 2 === 0).map(r => r.head))].sort(), ['fix', 'main']);
-  for (const c of Object.values(CELLS)) assert.ok(['twin', 'keep', 'asMain'].includes(c.kind));
+  for (const c of Object.values(CELLS)) assert.ok(['twin', 'keep', 'big', 'asMain'].includes(c.kind));
   // A twin carries the target's label, so the topmost of those reading it is the target.
   for (const c of Object.values(CELLS)) if (c.kind === 'twin') assert.ok(c.before === c.after && ['move', 'list', 'cap', 'deep'].includes(c.twin));
   // Every cell's text before and after is distinct from the other links', so the observation finds it alone.
@@ -269,6 +269,21 @@ test('a wrong event on a fix row a later step invalidated still fails noWrongTar
   assert.equal(g.noWrongTarget.pass, false); assert.equal(g.noWrongTarget.invalidRowsWithWrongEvents, 1);
   const quiet = ok.map(r => r.head === 'fix' && r.cell === 'twin' && r.rep === 19 ? {...r, valid: false, invalid: 'prepare', clickEvents: null} : r);
   assert.equal(gates(quiet, {coverage: cov}).noWrongTarget.pass, true);
+});
+
+test('a big page\'s re-creation refused by the fix is reported, never failed; its cut must show', () => {
+  const cov = {complete: true, covered: true}, ok = rows(good);
+  assert.equal(gates(ok, {coverage: cov}).bigPage.fixNotKept, 0);
+  const refused = rows(r => r.head === 'fix' && CELLS[r.cell].kind === 'big' ? 'refused' : good(r));
+  const g = gates(refused, {coverage: cov});
+  assert.equal(g.bigPage.informational, true); assert.equal(g.bigPage.pass, false);
+  assert.equal(g.bigPage.refusedWhereMainKept, 4 * 20); assert.equal(g.keptAsMain.pass, true);
+  assert.equal(judge(refused, {mode: 'qualify', abort: null, coverage: cov}).pass, true);
+  const found = {text: null, link: null};
+  assert.equal(uncoveredBy({nodes: [{role: 'AXGroup', shown: {count: 30, of: 151}}]}, CELLS.wideremount, found), null);
+  assert.equal(uncoveredBy({nodes: [{role: 'AXGroup', shown: {count: 151, of: 151}}]}, CELLS.wideremount, found), 'cut');
+  assert.equal(uncoveredBy({nodes: [], timings: {nodeCapHit: true}}, CELLS.capremount, found), null);
+  assert.equal(uncoveredBy({nodes: [], timings: {deadlineHit: true}}, CELLS.capremount, found), 'cut');
 });
 
 test('a run of some cells is judged on those cells alone', () => {

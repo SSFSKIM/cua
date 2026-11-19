@@ -14,7 +14,13 @@ export const LANES=['cft','safari','electron'];
 //   record, so a rule that only refuses a control the record holds elsewhere cannot tell it from the target re-created.
 // - keep: genuine re-creation of the same control, which must stay kept and land as on main: the link re-rendered whole
 //   with the same label at the same place (`remount`, a React-style key remount), its text element re-created in place
-//   (`retext`), the same text re-created (`plain`) and a same-width count (`like`);
+//   (`retext`), the same text re-created (`plain`), a same-width count (`like`, #298's), and a button re-rendered whole
+//   (`btnremount`, #296's re-created button);
+// - big: the link re-rendered whole where the observation's record does not hold every child of its container, so the
+//   fix (which takes a re-created handle only where the record covered where it lies) may refuse a genuine re-creation:
+//   the target first in a container of 150 more links running past the window (`wideremount`: the width rule keeps the
+//   visible subset), or of 59 shown groups of 100 small texts each (`capremount`: the node cap ends the walk inside the
+//   container). Reported (`bigPage`), never part of the pass: how often a large page costs a re-creation its click.
 // - asMain: every other cell answers as main does (#340's: the text that grows, shrinks or changes meaning, the moved
 //   link; refusals on main at the text where the text's width changes).
 // `style` gives the link a width the change keeps (`tabular`: a fixed width with tabular digits; `mono`: monospace;
@@ -31,6 +37,9 @@ export const CELLS={
   retext:{kind:'keep',before:'Inbox',after:'Inbox',remount:'text'},
   like:{kind:'keep',before:'Like (12)',after:'Like (13)',style:'tabular'},
   plain:{kind:'keep',before:'Inbox',after:'Inbox'},
+  btnremount:{kind:'keep',before:'Again',after:'Again',remount:'link',control:'button',at:['link']},
+  wideremount:{kind:'big',before:'Inbox',after:'Inbox',remount:'link',big:'wide'},
+  capremount:{kind:'big',before:'Inbox',after:'Inbox',remount:'link',big:'cap'},
   inbox:{kind:'asMain',before:'Inbox',after:'Inbox (3)'},
   reltime:{kind:'asMain',before:'1 minute ago',after:'2 minutes ago'},
   shrink:{kind:'asMain',before:'Inbox (12)',after:'Inbox'},
@@ -46,6 +55,10 @@ export const FILLER={groups:60,each:100};
 // How deep `twindeep`'s twin lies under the target's sibling row: past the walk's 200 levels (Walk.swift `maxDepth`),
 // within the guard's 300-level ancestor walk (StalePoint.swift `stalePointAncestorLevels`).
 export const DEEP=220;
+// The big cells' containers: `wide`, 150 links of 20 px after the target (past the width rule's 100 children, and past the
+// window, so only the visible subset is read); `cap`, 59 groups of 100 inline texts, all shown, so the walk spends its
+// 4,000-node budget inside the container before reading every child.
+export const BIG={wide:150,groups:59,each:100};
 // Where the click is placed in the observation, and so which node #296's record takes at the point: `text`, inside the
 // control's AXStaticText near its start; `link`, in the control's left padding, outside its text (the record takes the
 // control itself).

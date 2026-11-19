@@ -43,9 +43,13 @@ export const LABELLED={move:2,list:3,cap:1,deep:1};
 // The controls counted are those not above the target's row: the browser's own controls over the page (Chrome for
 // Testing's infobar link, smoke run 44518499843) are never the twin, which lies in or below the target's row.
 // `uncoveredBy` names the first condition that failed (a closed code), null when the observation is the one needed.
+// A big cell's observation must show the cut it names: the width rule's subset (a node `shown` fewer of its children
+// than it has) for `wide`, the node cap itself for `cap`.
 export function uncoveredBy(sky,spec,found,{role='AXLink'}={}){
-  if(!spec.twin)return null;
   const nodes=Array.isArray(sky?.nodes)?sky.nodes:[];
+  if(spec.big==='wide')return nodes.some(n=>Number.isInteger(n?.shown?.count)&&n.shown.count<n.shown.of)?null:'cut';
+  if(spec.big==='cap')return sky?.timings?.nodeCapHit===true?null:'cut';
+  if(!spec.twin)return null;
   const carrier=role==='AXLink'?'AXStaticText':role;
   if(nodes.filter(n=>framed(n)&&n.role===carrier&&reads(n,spec.before)).length!==LABELLED[spec.twin])return 'count';
   if(spec.twin!=='cap'&&spec.twin!=='deep')return null;
@@ -243,6 +247,9 @@ export function gates(rows,{coverage:cov,units=UNITS}){
     twinUnrecorded:twinGate(c=>UNRECORDED.has(c)),
     keptAsMain:asMainGate(c=>CELLS[c].kind==='keep',{mustKeep:true}),
     othersAsMain:asMainGate(c=>CELLS[c].kind==='asMain'),
+    // Genuine re-creations where the record could not hold the container whole (the builder's question): reported with
+    // the keep cells' measure (kept and landed, as main), never part of the pass.
+    bigPage:{informational:true,...asMainGate(c=>CELLS[c].kind==='big',{mustKeep:true})},
     noWrongTarget:{pass:wrong.length===0&&invalidWrong.length===0,fixRows:fix.length,wrong:wrong.length,
       invalidRowsWithWrongEvents:invalidWrong.length,invalidExamples:invalidWrong.slice(0,20).map(r=>({unit:unitKey(r),rep:r.rep,invalid:r.invalid})),mainWrong:main.filter(r=>r.verdict==='wrong-target').length,
       perUnit:Object.fromEntries(units.map(u=>[unitKey(u),{fix:of(wrong,u).length,main:of(main,u).filter(r=>r.verdict==='wrong-target').length}])

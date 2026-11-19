@@ -5,16 +5,17 @@
 // the click, applies the cell's change (cells.mjs). Every pointer event the page receives is logged with the control it
 // reached (`target`, `archive`, `drafts`, `twin`, `other` or `none`): for the twin cells, every control with the
 // target's label that is not the target is `twin`.
-import {CELLS,OTHERS,FILLER,DEEP} from './cells.mjs';
+import {CELLS,OTHERS,FILLER,DEEP,BIG} from './cells.mjs';
 
 export const page=()=>`<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Links</title>
 <style>body{font:16px sans-serif;margin:20px} .row{height:64px} .l{display:inline-block;padding:14px 32px;font:20px/28px sans-serif;color:#00c;white-space:nowrap}
 button.l{border:0;margin:0;background:none;cursor:pointer;text-align:left} #far.on{margin-top:1600px} #far div{font:4px/5px sans-serif}
 a.tabular{width:180px;font-variant-numeric:tabular-nums} a.mono{font-family:monospace}
-a.right{width:260px;text-align:right} a.centre{width:260px;text-align:center}</style></head><body>
+a.right{width:260px;text-align:right} a.centre{width:260px;text-align:center}
+a.item{display:block;font:14px/20px sans-serif} div.tiny{font:3px/4px sans-serif;white-space:nowrap} div.tiny span{display:inline-block;margin-right:1px}</style></head><body>
 <nav id="nav"></nav><div id="far"></div>
 <script>
-const CELLS=${JSON.stringify(CELLS)}, OTHERS=${JSON.stringify(OTHERS)}, FILLER=${JSON.stringify(FILLER)}, DEEP=${DEEP};
+const CELLS=${JSON.stringify(CELLS)}, OTHERS=${JSON.stringify(OTHERS)}, FILLER=${JSON.stringify(FILLER)}, DEEP=${DEEP}, BIG=${JSON.stringify(BIG)};
 const nav=document.getElementById('nav'), far=document.getElementById('far');
 const doc=self.crypto.randomUUID(), nonce=doc.split('-')[0];
 document.title='Links '+nonce;
@@ -70,6 +71,17 @@ function run(c){
       twins=[control('twin',spec.before,spec)];let inner=twins[0];
       for(let i=0;i<DEEP;i++){const d=document.createElement('div');d.setAttribute('role','group');d.append(inner);inner=d;}
       mover=inner;slots[1].append(mover);slots[2].append(archive);
+    }else if(spec.big){
+      // The target first in a container the record cannot hold whole: 150 more links running past the window (the width
+      // rule's visible subset), or 59 shown groups of 100 small texts (the node cap inside it). The other rows stay empty.
+      const box=document.createElement('div');box.setAttribute('role','group');box.append(target);archive=null;
+      if(spec.big==='wide')for(let i=0;i<BIG.wide;i++){const a=document.createElement('a');a.href='#i'+i;a.className='item';a.textContent='Item '+i;box.append(a);}
+      else for(let g=0;g<BIG.groups;g++){
+        const group=document.createElement('div');group.setAttribute('role','group');group.className='tiny';
+        for(let i=0;i<BIG.each;i++){const s=document.createElement('span');s.textContent='x';group.append(s);}
+        box.append(group);
+      }
+      slots[0].replaceChildren(box);
     }else{drafts=control('drafts',OTHERS.drafts);slots[1].append(archive);slots[2].append(drafts);}
     if(document.activeElement&&document.activeElement!==document.body)document.activeElement.blur();
     clicks=[];

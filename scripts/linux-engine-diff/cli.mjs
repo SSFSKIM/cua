@@ -9,13 +9,14 @@
 // M5's T1: `--pinned`, either kind run as acceptance on the pinned release (candidate.mjs's pinned rule); and M5's T4
 // round 2: `--pilot`, a development run's smallest form with no top-up, `--pinned --pilot` one on the pinned release.
 
+import { DEFAULT_AUDIT_TRACE_MB, parseAuditTraceCap } from './audit-traces.mjs';
 import { PINNED_DEVELOPMENT, isCounted } from './candidate.mjs';
 
 export const USAGE = `usage:
   linux-engine-diff.mjs --check-wire --vendor-js <@oai/sky directory>
   linux-engine-diff.mjs --vendor <bin> --newest <bin> --cua <artifact> --scene <list> --ops <list|all> --out <dir>
       [--dev | --pinned] [--pilot] [--ballast gate] [--blocks 3] [--samples-tree 7] [--samples-input 5] [--variant <label>=<cua flags>]... [--run <name>]
-      [--occlusion covered|visible|partial (drag, kinds)] [--no-counts] [--no-audit] [--via wire|vendor-js --vendor-js <@oai/sky directory>] [--trace-engine (with --dev)] [--engine-stats (with --dev)]
+      [--occlusion covered|visible|partial (drag, kinds)] [--no-counts] [--no-audit] [--audit-traces <MB>|off] [--via wire|vendor-js --vendor-js <@oai/sky directory>] [--trace-engine (with --dev)] [--engine-stats (with --dev)]
   linux-engine-diff.mjs --experiment capture-readiness|key-pace|matrix|qt-bridge|element-click|partial-cover|events|engine-readiness|drag|kinds|dnd|atspi|focus-timer|engine-stop|qt-activation|settle|drop-signals|predicates|pointer-route|writer-drag --cua <bin> --out <dir> [--run <name>] [--gate | --pinned] [--pilot] [--engine-stats (not with --gate or --pinned alone)]
       [--vendor <bin> --newest <bin>] [--family <list>] [--load | --load-factor <workers per core>] [--no-grabs] [--dnd-short | --dnd-select] [--stops-only] [--exit-settle-ms <ms>] [--scenarios <list>] [--lanes <list>] [--trace] (focus-timer) [--dnd-cold [--cover-ms N] [--prelude dedicated] [--ballast gate] [--stray nudge|popup:N] [--park-pointer X,Y]] (dnd) [--samples-input 5] [--samples-text 2] [--trials 12] [--geometry WxH]
       [--via vendor-js --vendor-js <@oai/sky directory>] (events only) [--lanes <labels>] (drag, kinds, dnd, engine-stop, qt-activation)
@@ -66,6 +67,7 @@ export function parseArgs(argv) {
     occlusion: 'covered',
     counts: true,
     audit: true,
+    auditTraces: DEFAULT_AUDIT_TRACE_MB,
   };
   for (let i = 0; i < argv.length; i++) {
     const flag = argv[i];
@@ -92,6 +94,8 @@ export function parseArgs(argv) {
     else if (flag === '--pilot') a.pilot = true;
     else if (flag === '--no-counts') a.counts = false;
     else if (flag === '--no-audit') a.audit = false;
+    // the route audits' raw traces kept beside the results, compressed, up to a cap in MB a run, or none (audit-traces.mjs)
+    else if (flag === '--audit-traces') a.auditTraces = parseAuditTraceCap(need());
     // the dnd experiment without its 100 ms grab sampler, whose own grabs can fail Chrome's drag-start grab (M3.1)
     else if (flag === '--no-grabs') a.grabs = false;
     // the dnd experiment on the page's short drop (40 px from the near source), every lane's window activated first

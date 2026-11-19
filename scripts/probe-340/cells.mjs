@@ -14,7 +14,9 @@ export const REFUSED_GONE=['nodeGone','frameMoved'];
 //   match makes, filed as #431 and outside #340; its wrong-target count is reported apart and `noWrongTarget` leaves
 //   it out);
 // - expect: a named answer at the text point, gated (`expectedAnswers`); at the link, as main: a count badge in an
-//   AXPress chip inside the link (`badge`: "3" to "12" in a clickable span; refused);
+//   AXPress chip inside the link (`badge`: "3" to "12" in a clickable span; refused), and two changes of content that
+//   #298's word rule passes (a count with other words, `content`; a symbol with a count, `arrow`), which the narrowed
+//   rule ("only a count or time changed") must refuse;
 // - limit: reported apart from the gates (`statedLimits`, the coordinator's ruling): a right-aligned relative time that
 //   grows (`right`: expected kept at the text) and a centred label that grows (`centre`: expected nodeGone at the text,
 //   as on main); at the link, as main.
@@ -37,6 +39,8 @@ export const CELLS={
   linkmono:{kind:'asMain',before:'Save',after:'Send',style:'mono'},
   right:{kind:'limit',before:'1 minute ago',after:'2 minutes ago',style:'right',expect:{verdict:'kept-landed'}},
   centre:{kind:'limit',before:'Inbox',after:'Inbox (3)',style:'centre',expect:{verdict:'refused',reasons:REFUSED_GONE}},
+  content:{kind:'expect',before:'3 drafts to review',after:'12 invoices to pay',expect:{verdict:'refused'}},
+  arrow:{kind:'expect',before:'Move ↑',after:'Move ↓ (12)',expect:{verdict:'refused'}},
   badge:{kind:'expect',before:'3',after:'12',badge:true,label:'Inbox',expect:{verdict:'refused'}},
 };
 // Where the click is placed in the observation, and so which node #296's record takes at the point: `text`, inside the

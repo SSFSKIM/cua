@@ -999,7 +999,7 @@ func focusedEffectReading<Element>(_ focused: Element, bound: (Element) -> Bool,
 /// The UTF-16 length of the plain text a paste delivers (its `.string` representation), which a field that takes only
 /// plain text, a password field, receives; nil without one.
 func deliveredUnits(_ representations: [PasteRepresentation]) -> Int? {
-  representations.first { $0.type == .string }.map { String(decoding: $0.data, as: UTF8.self).utf16.count }
+  representations.first { $0.type == .string }.flatMap { String(data: $0.data, encoding: .utf8) }.map { $0.utf16.count }
 }
 
 // MARK: type_text's read-back on the paste route (#361)

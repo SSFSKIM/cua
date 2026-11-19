@@ -385,7 +385,10 @@ final class PasteReadbackTests: XCTestCase {
     XCTAssertEqual(pasteReadbackUnits(typing: "\u{FEFF}hello").map(\.text), [Array("\u{FEFF}hello".utf16)])
     XCTAssertEqual(pasteReadbackUnits(typing: "a\n\u{FEFF}b").map(\.text), [[0x61], [0x0D], Array("\u{FEFF}b".utf16)])
     XCTAssertEqual(pasteReadbackUnits(typing: "a\r\n\nb").map(\.consumed), [1, 2, 1, 1], "a CR LF counts its two units")
-    XCTAssertEqual(deliveredUnits([PasteRepresentation(type: .string, data: Data("\u{FEFF}hello".utf8))]), 6)
+    // #187's delivered count stays main's, which Foundation's decoding gives: 5, a leading U+FEFF read as a byte order mark. The
+    // read-back alone expects it (the review of 7897cdeb..81fee7a1, P1: a count of 6 would let an unrelated 6-unit change satisfy
+    // a password field's effect wait, and the restore land under a pending ⌘V).
+    XCTAssertEqual(deliveredUnits([PasteRepresentation(type: .string, data: Data("\u{FEFF}hello".utf8))]), 5)
     for text in ["\u{FEFF}hello", "a\n\u{FEFF}b"] {
       let field = FakeField(value: "", range: NSRange(location: 0, length: 0))
       let pasted = typeByPaste(text, into: field)  // the fake app decodes the pasteboard as Foundation does, dropping it

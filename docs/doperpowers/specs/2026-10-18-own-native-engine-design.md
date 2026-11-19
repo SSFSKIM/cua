@@ -6710,8 +6710,9 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   Proven offline: PasteReadbackTests drives the engine's own path (the paste lock, route 3's activation on GuardSeam, a
   test pasteboard, ⌘V and Return through the seam, #187's effect watch reading a fake field through the engine's new
   `pasteEffectReading` seam): exact pastes confirm; rewritten, added and stale-selection pastes answer
-  `typeUnconfirmed` with no excerpt or lengths, a delayed ⌘V after an unrelated effect included; a leading U+FEFF is expected; a late target
-  never pastes the person's clipboard; the checkpoint and the deadline; the snapshot point; the final poll before the
+  `typeUnconfirmed` with no excerpt or lengths; a leading U+FEFF is expected by the read-back, while #187's delivered
+  count stays main's; a late target whose own paste the effect wait sees never pastes the person's clipboard, and where
+  an unrelated effect satisfies the wait first, the clipboard can land in the field but never in the reply; the checkpoint and the deadline; the snapshot point; the final poll before the
   deactivation; a password field confirmed by its length with nothing but the length batch read; the clipboard restored
   on every path. PasteTests keeps #187's tests as on main.
   Date/Author: 2026-11-18, cursor235's implementer for #361.

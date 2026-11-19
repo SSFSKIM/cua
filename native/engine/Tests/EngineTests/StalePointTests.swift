@@ -25,6 +25,9 @@ private final class Node {
   /// Label attributes whose read fails, at the observation (for the walk's record) and now (the review of
   /// 7f6eb3dc..b2f00ad5, P2 2): an error, not an attribute the element lacks.
   var unreadable: Set<StalePointLabelPart> = []
+  /// Label attributes whose next read alone fails (#340's review, P2 2: a read that fails once, then answers).
+  var unreadableOnce: Set<StalePointLabelPart> = []
+  func failsOnce(_ part: StalePointLabelPart) -> Bool { unreadableOnce.remove(part) != nil }
   /// Its role or its action names fail to read now (the review of b2f00ad5..25b23fbb, P2 2).
   var roleUnread = false
   var actionsUnread = false
@@ -63,12 +66,12 @@ private final class Node {
 private var reads: StalePointReads<Node> {
   StalePointReads<Node>(role: { $0.roleUnread ? nil : $0.role }, frame: { $0.frame }, parent: { $0.parent }, children: { $0.children },
                                           // A failed read answers none, as the live seam's `attribute` does.
-                                          title: { $0.unreadable.contains(.title) ? nil : $0.title },
-                                          description: { $0.unreadable.contains(.description) ? nil : $0.description },
-                                          value: { $0.unreadable.contains(.value) ? nil : $0.value },
+                                          title: { $0.unreadable.contains(.title) || $0.failsOnce(.title) ? nil : $0.title },
+                                          description: { $0.unreadable.contains(.description) || $0.failsOnce(.description) ? nil : $0.description },
+                                          value: { $0.unreadable.contains(.value) || $0.failsOnce(.value) ? nil : $0.value },
                                           editableAncestor: { $0.editableAncestor }, actions: { $0.frame == nil || $0.actionsUnread ? nil : $0.actions },
                                           label: { node, part in
-                                            if node.unreadable.contains(part) { return .unreadable }
+                                            if node.unreadable.contains(part) || node.failsOnce(part) { return .unreadable }
                                             switch part {
                                             case .title: return .text(node.title)
                                             case .description: return .text(node.description)
@@ -2618,16 +2621,18 @@ final class ResizedTextGuardTests: XCTestCase {
   }
 
   /// Only a text is matched resized: a re-created control of another role whose frame grew is not the node, its label
-  /// the same or not (#296's limit (i) for the label).
+  /// the same or not (#296's limit (i) for the label), even inside the same plain group (a nav list).
   func testAResizedControlOfAnotherRoleIsRefused() {
     for now in ["Inbox", "Inbox (3)"] {
       let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 600, height: 400))
+      let nav = Node("AXGroup", CGRect(x: 10, y: 90, width: 200, height: 60))
       let link = Node("AXLink", CGRect(x: 20, y: 100, width: 60, height: 40), title: "Inbox")
-      window.add(link)
+      window.add(nav)
+      nav.add(link)
       let nodes = recorded(window)
       link.destroy()
       let again = Node("AXLink", CGRect(x: 20, y: 100, width: 80, height: 40), title: now)
-      window.add(again)
+      nav.add(again)
       XCTAssertEqual(verdict(nodes, at: CGPoint(x: 40, y: 120), hit: again).reason, .nodeGone, now)
     }
   }
@@ -2644,5 +2649,140 @@ final class ResizedTextGuardTests: XCTestCase {
     let farther = Node("AXStaticText", grown(by: 40), value: "Inbox (30)")
     page.link.add(farther)
     XCTAssertTrue(verdict(nodes, at: onText, hit: page.link).current === resized)
+  }
+
+  /// The review of main..700c80cd, P1: two links to different places, each labelled Inbox. The first goes and the second
+  /// slides into its place, wider. Its text lies in another link than the one the record held the text in, so it is not
+  /// the node: refused, recorded or not, as main refused it for its width.
+  func testAnotherLinksTextThatSlidIntoPlaceIsRefused() {
+    for recordsSecond in [true, false] {
+      let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 600, height: 400))
+      let first = Node("AXLink", CGRect(x: 20, y: 100, width: 60, height: 40), description: "/inbox")
+      let firstText = Node("AXStaticText", textFrame, value: "Inbox")
+      first.add(firstText)
+      let second = Node("AXLink", CGRect(x: 20, y: 200, width: 80, height: 40), description: "/team/inbox")
+      let secondText = Node("AXStaticText", CGRect(x: 30, y: 210, width: 60, height: 20), value: "Inbox (3)")
+      second.add(secondText)
+      window.add(first)
+      window.add(second)
+      let nodes = recorded(window, skipping: recordsSecond ? [] : [ObjectIdentifier(second)])
+      firstText.destroy()
+      first.destroy()
+      second.frame = CGRect(x: 20, y: 100, width: 80, height: 40)
+      secondText.frame = grown(by: 20)
+      for hit in [secondText, second] {
+        let refused = verdict(nodes, at: onText, hit: hit)
+        XCTAssertEqual(refused.reason, .nodeGone, "recorded: \(recordsSecond), hit \(hit.role)")
+        XCTAssertNil(refused.identity)
+      }
+    }
+  }
+
+  /// The text's owner as the record held it, read live: the new text reaches the recorded link through plain wrappers;
+  /// not through another control inside it, nor a wrapper whose role cannot be read, nor when the record held the text
+  /// under no control (a page or a window). A text the record already held in that link is not a re-creation.
+  func testAResizedTextMustLieInTheControlTheRecordHeldItIn() {
+    do {
+      var page = Page("Inbox", text: textFrame)
+      let nodes = recorded(page.window)
+      let again = page.replace("Inbox (3)", at: grown(by: 20))
+      let wrapper = Node("AXGroup", nil)
+      again.parent?.children.removeAll { $0 === again }
+      wrapper.add(again)
+      page.link.add(wrapper)
+      XCTAssertEqual(verdict(nodes, at: onText, hit: page.link).identity, .recreated, "through a plain wrapper")
+      let button = Node("AXButton", grown(by: 20))
+      wrapper.children.removeAll { $0 === again }
+      button.add(again)
+      wrapper.add(button)
+      XCTAssertEqual(verdict(nodes, at: onText, hit: page.link).reason, .nodeGone, "through another control")
+      button.children.removeAll { $0 === again }
+      wrapper.add(again)
+      wrapper.roleUnread = true
+      XCTAssertEqual(verdict(nodes, at: onText, hit: page.link).reason, .nodeGone, "a wrapper whose role cannot be read")
+    }
+    for area in ["AXWebArea", "AXWindow"] {
+      let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 600, height: 400))
+      let holder = area == "AXWindow" ? window : Node(area, CGRect(x: 0, y: 50, width: 600, height: 350))
+      if holder !== window { window.add(holder) }
+      let text = Node("AXStaticText", textFrame, value: "Inbox")
+      holder.add(text)
+      let nodes = recorded(window)
+      text.destroy()
+      let again = Node("AXStaticText", grown(by: 20), value: "Inbox (3)")
+      holder.add(again)
+      XCTAssertEqual(verdict(nodes, at: onText, hit: again).reason, .nodeGone, "a text under \(area), in no control")
+    }
+    do {
+      // A second text the screenshot showed in the same link, under the one at the point.
+      let page = Page("Inbox", text: textFrame)
+      let other = Node("AXStaticText", textFrame, value: "Inbox")
+      page.link.children.insert(other, at: 0)
+      other.parent = page.link
+      let nodes = recorded(page.window)
+      XCTAssertTrue(deepestScreenshotNode(at: onText, in: nodes)?.element === page.text)
+      page.text.destroy()
+      other.value = "Inbox (3)"
+      other.frame = grown(by: 20)
+      XCTAssertEqual(verdict(nodes, at: onText, hit: other).reason, .nodeGone, "a text the record already held")
+    }
+  }
+
+  /// The review's P2 1: labels with no words at all ("♡" to "🗑", each re-rendered at its own width) have the same words,
+  /// which cannot tell them apart. They must be the same label, or differ by a number with the same symbols outside it.
+  func testResizedLabelsWithNoWordsMustAgreeBeyondTheirNumbers() {
+    XCTAssertEqual(stalePointLabelTokens("Inbox (3)"), StalePointLabelTokens(words: ["inbox"], symbols: ["(", ")"], hasNumber: true))
+    XCTAssertEqual(stalePointLabelTokens("2 minutes ago"), StalePointLabelTokens(words: [], symbols: [], hasNumber: true))
+    XCTAssertEqual(stalePointLabelTokens("♡"), StalePointLabelTokens(words: [], symbols: ["♡"], hasNumber: false))
+    for (was, now) in [("♡", "🗑"), ("♡ 3", "🗑 4"), ("→", "←"), ("…", "×"), ("♡", "♡ "), ("♡ 3", "3")] {
+      XCTAssertEqual(replaced(was, now, at: grown(by: 12)).reason, .nodeGone, "\(was) -> \(now)")
+    }
+    for (was, now) in [("1 minute ago", "2 minutes ago"), ("3:21 PM", "11:02 PM"), ("(3)", "(12)"), ("♡ 9", "♡ 10"), ("♡", "♡ 3"),
+                       ("♡", "♡")] {
+      XCTAssertEqual(replaced(was, now, at: grown(by: 12)).identity, .recreated, "\(was) -> \(now)")
+    }
+  }
+
+  /// The review's P2 2: each label attribute is read once. A title read that fails once, then answers "Inbox (3)", used
+  /// to count as absent for the exact title check and as present for the words. Now the one failed read leaves the text
+  /// unmatched, and read cleanly the titles disagree.
+  func testAResizedTextsLabelIsReadOnce() {
+    var page = Page("x", text: textFrame)
+    page.text.title = "Inbox"
+    let nodes = recorded(page.window)
+    let again = page.replace("x", at: grown(by: 20))
+    again.title = "Inbox (3)"
+    again.unreadableOnce = [.title]
+    XCTAssertEqual(verdict(nodes, at: onText, hit: again).reason, .nodeGone, "the title's one read failed")
+    XCTAssertTrue(again.unreadableOnce.isEmpty, "the failing read was the one made")
+    XCTAssertEqual(verdict(nodes, at: onText, hit: again).reason, .nodeGone, "read cleanly, the titles disagree")
+    // The value too: one failed read of it leaves the text unmatched, a clean one keeps it.
+    var counted = Page("Inbox", text: textFrame)
+    let countedNodes = recorded(counted.window)
+    let text = counted.replace("Inbox (3)", at: grown(by: 20))
+    text.unreadableOnce = [.value]
+    XCTAssertEqual(verdict(countedNodes, at: onText, hit: text).reason, .nodeGone, "the value's one read failed")
+    XCTAssertEqual(verdict(countedNodes, at: onText, hit: text).identity, .recreated, "read cleanly")
+    // A label never falls past a failed read. At the observation: the title unread, the value "Inbox" was compared with
+    // the title now, though the value became "Delete".
+    do {
+      var page = Page("Inbox", text: textFrame)
+      page.text.title = "Inbox"
+      page.text.unreadable = [.title]
+      let nodes = recorded(page.window)
+      let again = page.replace("Delete", at: grown(by: 20))
+      again.title = "Inbox"
+      XCTAssertEqual(verdict(nodes, at: onText, hit: again).reason, .nodeGone, "the title unread at the observation")
+    }
+    // And now: a title the text gained, unread, would leave its value to be compared.
+    do {
+      var page = Page("Inbox", text: textFrame)
+      let nodes = recorded(page.window)
+      let again = page.replace("Inbox (3)", at: grown(by: 20))
+      again.title = "Archive"
+      XCTAssertEqual(verdict(nodes, at: onText, hit: again).reason, .nodeGone, "a title on one side, read")
+      again.unreadable = [.title]
+      XCTAssertEqual(verdict(nodes, at: onText, hit: again).reason, .nodeGone, "a title on one side, unread now")
+    }
   }
 }

@@ -2,7 +2,9 @@
 ok   the stored rows: pass (expected pass)
 ok   the notice missing on the span-limited sample: fail (expected fail): the witness span's limit (ruling 680) does not cover 1 of 9 samples (2/0: the read did not run with the notice); the read did not carry the notice on 1 of 9 samples (2/0); a drop the witness did not record on 1 of 9 samples (2/0)
 ok   its next acting request not refused: fail (expected fail): the witness span's limit (ruling 680) does not cover 1 of 9 samples (2/0: the next acting request was not refused with the notice); the next acting request did not carry the late drag and drop on 1 of 9 samples (2/0); a drop the witness did not record on 1 of 9 samples (2/0)
-ok   its drop early: a clean witness on a drop that ended inside the span: fail (expected fail): the witness span's limit (ruling 680) does not cover 1 of 9 samples (2/0: the dragend (164 ms after the press) came before the span closed (answer 164.02 + 20 ms)); a drop the witness did not record on 1 of 9 samples (2/0)
+ok   its drop early: a clean witness on a drop that ended inside the span: fail (expected fail): the witness span's limit (ruling 680) does not cover 1 of 9 samples (2/0: the dragend (164 ms after its dragstart) came before the span closed (answer 164.02 + 20 ms)); a drop the witness did not record on 1 of 9 samples (2/0)
+ok   stale end timing: the previous drag's dragend left on the span-limited sample: fail (expected fail): the witness span's limit (ruling 680) does not cover 1 of 9 samples (2/0: the page did not count this press's own drag start and dragend, so its dragend time is not this drag's); a drop the witness did not record on 1 of 9 samples (2/0)
+ok   an unread drop counter on the span-limited sample: fail (expected fail): the witness span's limit (ruling 680) does not cover 1 of 9 samples (2/0: the page's drop counter was not read rising: no drop seen); a drop the witness did not record on 1 of 9 samples (2/0)
 ok   no drop in the case the witness recorded: fail (expected fail): no drop landed: the case showed no change for the notice to report
 controls: every one as expected
 == exit 0
@@ -10,7 +12,9 @@ controls: every one as expected
 ok   the stored rows: pass (expected pass)
 ok   the notice missing on the span-limited sample: fail (expected fail): the witness span's limit (ruling 680) does not cover 1 of 9 samples (0/0: the read did not run with the notice); the read did not carry the notice on 1 of 9 samples (0/0); a drop the witness did not record on 1 of 9 samples (0/0)
 ok   its next acting request not refused: fail (expected fail): the witness span's limit (ruling 680) does not cover 1 of 9 samples (0/0: the next acting request was not refused with the notice); the next acting request did not carry the late drag and drop on 1 of 9 samples (0/0); a drop the witness did not record on 1 of 9 samples (0/0)
-ok   its drop early: a clean witness on a drop that ended inside the span: fail (expected fail): the witness span's limit (ruling 680) does not cover 1 of 9 samples (0/0: the dragend (162 ms after the press) came before the span closed (answer 162.14 + 20 ms)); a drop the witness did not record on 1 of 9 samples (0/0)
+ok   its drop early: a clean witness on a drop that ended inside the span: fail (expected fail): the witness span's limit (ruling 680) does not cover 1 of 9 samples (0/0: the dragend (162 ms after its dragstart) came before the span closed (answer 162.14 + 20 ms)); a drop the witness did not record on 1 of 9 samples (0/0)
+ok   stale end timing: the previous drag's dragend left on the span-limited sample: fail (expected fail): the witness span's limit (ruling 680) does not cover 1 of 9 samples (0/0: the page did not count this press's own drag start and dragend, so its dragend time is not this drag's); a drop the witness did not record on 1 of 9 samples (0/0)
+ok   an unread drop counter on the span-limited sample: fail (expected fail): the witness span's limit (ruling 680) does not cover 1 of 9 samples (0/0: the page's drop counter was not read rising: no drop seen); a drop the witness did not record on 1 of 9 samples (0/0)
 ok   no drop in the case the witness recorded: fail (expected fail): no drop landed: the case showed no change for the notice to report
 controls: every one as expected
 == exit 0

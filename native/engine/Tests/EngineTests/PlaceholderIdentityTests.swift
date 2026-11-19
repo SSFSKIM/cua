@@ -3,11 +3,12 @@ import XCTest
 @testable import Engine
 
 // #398: a field's placeholder changes on focus, with input, with a mode and when Chromium's complete mode arrives
-// (#366), so it never makes the same handle another element, and in the re-fetch's walk it only breaks a tie among
-// elements alike in everything else. Each action's resolutions are driven as the engine makes them: click's `.ifNeeded`
-// then `.always` (`positionedTarget`), set_value's the same then `.ignoringValue` after the write. type_text resolves no
-// token: it types into the focused field and reads that handle back, so its exposure is the click before it and any
-// action on the token after it.
+// (#366), so it never makes the stored handle another element. Once the handle is gone it is evidence of which field
+// this was, so the re-fetch's walk and the observed count match it strictly, as the vendor does, against the
+// observation's identity. Each action's resolutions are driven as the engine makes them: click's `.ifNeeded` then
+// `.always` (`positionedTarget`), set_value's the same with no value read (#390) then `.ignoringValue` after the write.
+// type_text resolves no token: it types into the focused field and reads that handle back, so its exposure is the click
+// before it and any action on the token after it.
 
 private final class Resolving {
   let tree: FakeTree
@@ -46,7 +47,7 @@ private func errorName(_ body: () throws -> Any) -> String? {
 }
 
 final class PlaceholderIdentityTests: XCTestCase {
-  /// A window (0) with one field (1, t1) whose placeholder is "Search" and a button (2).
+  /// A window (0) with one field (1) whose placeholder is "Search" and a button (2); the field's token.
   private func oneField() throws -> (FakeTree, Lineage, String) {
     let tree = FakeTree()
     tree.children = [0: [1, 2]]
@@ -57,42 +58,40 @@ final class PlaceholderIdentityTests: XCTestCase {
     return (tree, lineage, token)
   }
 
-  /// A window (0) with two fields alike but for their placeholders (1, "First name"; 2, "Last name").
-  private func twoFields() throws -> (FakeTree, Lineage, first: String, last: String) {
+  /// A window (0) with two fields alike but for what `first` and `second` give them; their tokens.
+  private func twoFields(_ first: [String: CFTypeRef], _ second: [String: CFTypeRef]) throws -> (FakeTree, Lineage, String, String) {
     let tree = FakeTree()
     tree.children = [0: [1, 2]]
-    tree.extra = [1: field("", placeholder: "First name"), 2: field("", placeholder: "Last name")]
+    tree.extra = [1: first, 2: second]
     let lineage = Lineage()
     let observation = walk(tree, lineage)
     return (tree, lineage, try XCTUnwrap(observation.token(of: Engine.element(1))), try XCTUnwrap(observation.token(of: Engine.element(2))))
   }
 
-  // MARK: The same field, its placeholder changed
+  // MARK: The same handle, its placeholder changed
 
   func testClickThenSetValueOnAFieldWhosePlaceholderClearsOnFocus() throws {
     let (tree, lineage, token) = try oneField()
     let fake = Resolving(tree)
     // The click focuses the field, which clears its placeholder (a floating label).
+    tree.extra[1]?["AXPlaceholderValue"] = nil
     for refetch in [Refetch.ifNeeded, .always] {
-      tree.extra[1]?["AXPlaceholderValue"] = nil
       XCTAssertTrue(CFEqual(try lineage.resolve(token, resolver: fake.resolver, refetch: refetch).element, Engine.element(1)), "click \(refetch)")
     }
-    XCTAssertNil(lineage.entry(1)?.identity.placeholder, "the identity follows the field")
-    // set_value's resolutions, the placeholder now set from state ("Type to search"), then its write and re-check.
+    // set_value's resolutions, the placeholder now set from state, then its write and the re-check.
     tree.extra[1]?["AXPlaceholderValue"] = "Type to search" as CFString
+    fake.readsValue = false
     for refetch in [Refetch.ifNeeded, .always] {
       XCTAssertTrue(CFEqual(try lineage.resolve(token, resolver: fake.resolver, refetch: refetch).element, Engine.element(1)), "set_value \(refetch)")
     }
     tree.extra[1]?["AXValue"] = "cua" as CFString
     tree.extra[1]?["AXPlaceholderValue"] = nil
-    XCTAssertNoThrow(try confirmingWrittenValue(app: "Fake") {
-      _ = try lineage.resolve(token, resolver: fake.resolver, refetch: .ignoringValue)
-    })
+    XCTAssertNil(errorName { try confirmingWrittenValue(app: "Fake") { _ = try lineage.resolve(token, resolver: fake.resolver, refetch: .ignoringValue) } })
     XCTAssertEqual(fake.treeReads, 0, "the same handle every time: no walk")
-    XCTAssertEqual(lineage.entry(1)?.identity.value, "s:cua")
+    XCTAssertEqual(lineage.entry(1)?.identity.placeholder, "Search", "the identity keeps the observation's placeholder")
   }
 
-  func testTypeTextAfterAClickKeepsTheTokenResolvableWhenThePlaceholderChangesWithInput() throws {
+  func testTypeTextAfterAClickKeepsTheSameFieldResolvableWhenItsPlaceholderChangesWithInput() throws {
     let (tree, lineage, token) = try oneField()
     let fake = Resolving(tree)
     tree.extra[1]?["AXPlaceholderValue"] = "Search people…" as CFString   // the click picked a filter
@@ -108,110 +107,111 @@ final class PlaceholderIdentityTests: XCTestCase {
       XCTAssertNil(errorName { try lineage.resolve(token, resolver: fake.resolver, refetch: refetch) }, "\(refetch)")
     }
     XCTAssertEqual(fake.treeReads, 0)
-    // The page re-rendered the field as it typed (a React re-mount): a new handle, its placeholder another again.
-    tree.unreadable = [1]
-    tree.children[0] = [9, 2]
-    tree.extra[9] = field("Query", placeholder: "Search files…", value: "ada", identifier: "q")
-    XCTAssertTrue(CFEqual(try lineage.resolve(token, resolver: fake.resolver, refetch: .always).element, Engine.element(9)))
-    XCTAssertEqual(fake.treeReads, 1)
   }
 
-  func testThePostWriteReCheckIsNotValueUnconfirmedOverAChangedPlaceholder() throws {
+  func testThePostWriteReCheckOnTheSameHandleIsNotValueUnconfirmedOverAChangedPlaceholder() throws {
     let (tree, lineage, token) = try oneField()
     tree.extra[1]?["AXValue"] = "sent" as CFString
     tree.extra[1]?["AXPlaceholderValue"] = nil
     let fake = Resolving(tree)
     fake.invalidated = false
+    fake.readsValue = false
     XCTAssertNil(errorName { try confirmingWrittenValue(app: "Fake") { _ = try lineage.resolve(token, resolver: fake.resolver, refetch: .ignoringValue) } })
-    XCTAssertNil(lineage.entry(1)?.identity.placeholder, "the re-check renews the identity it read")
-    // A field the write rebuilt, its placeholder gone with it: re-found by the walk.
-    let (rebuilt, again, rebuiltToken) = try oneField()
-    rebuilt.unreadable = [1]
-    rebuilt.children[0] = [9, 2]
-    rebuilt.extra[9] = field("Query", placeholder: nil, value: "sent", identifier: "q")
-    let walked = Resolving(rebuilt)
-    XCTAssertNil(errorName { try confirmingWrittenValue(app: "Fake") { _ = try again.resolve(rebuiltToken, resolver: walked.resolver, refetch: .ignoringValue) } })
-    XCTAssertTrue(CFEqual(try XCTUnwrap(again.entry(1)).element, Engine.element(9)))
+    XCTAssertEqual(lineage.entry(1)?.identity.placeholder, "Search")
+    XCTAssertEqual(fake.treeReads, 0)
   }
 
-  func testAStaleHandleIsReFoundByTheWalkWhateverItsPlaceholderNow() throws {
+  // MARK: A gone handle: the placeholder is evidence (the review of main..46309856)
+
+  func testAStaleHandleWhoseOnlyLikeFieldShowsAnotherPlaceholderIsNoLongerValid() throws {
+    // The review's case 1: a step with one unlabeled "Email" field advances to one with an unlabeled "Phone" field.
+    let tree = FakeTree()
+    tree.children = [0: [1]]
+    tree.extra = [1: field("", placeholder: "Email")]
+    let lineage = Lineage()
+    let token = try XCTUnwrap(walk(tree, lineage).token(of: Engine.element(1)))
+    tree.unreadable = [1]
+    tree.children[0] = [5]
+    tree.extra[5] = field("", placeholder: "Phone")
+    for refetch in [Refetch.ifNeeded, .always] {
+      XCTAssertEqual(errorName { try lineage.resolve(token, resolver: Resolving(tree).resolver, refetch: refetch) }, "elementNoLongerValid", "\(refetch)")
+    }
+    let unread = Resolving(tree)
+    unread.readsValue = false
+    XCTAssertEqual(errorName { try confirmingWrittenValue(app: "Fake") { _ = try lineage.resolve(token, resolver: unread.resolver, refetch: .ignoringValue) } },
+                   "valueUnconfirmed")
+    XCTAssertTrue(CFEqual(try XCTUnwrap(lineage.entry(1)).element, Engine.element(1)), "the token keeps its handle")
+  }
+
+  func testUnderSetValuesUnreadValueASiblingWithAnotherPlaceholderIsNotAdopted() throws {
+    // The review's case 2: two fields told apart by placeholder and value; the first's handle goes, the second stays.
+    let (tree, lineage, first, _) = try twoFields(field("", placeholder: "First name", value: "Ada"),
+                                                  field("", placeholder: "Last name", value: "Lovelace"))
+    tree.unreadable = [1]
+    tree.children[0] = [2]
+    let fake = Resolving(tree)
+    fake.readsValue = false
+    for refetch in [Refetch.ifNeeded, .always, .ignoringValue] {
+      XCTAssertEqual(errorName { try lineage.resolve(first, resolver: fake.resolver, refetch: refetch) }, "elementNoLongerValid", "\(refetch)")
+      XCTAssertTrue(CFEqual(try XCTUnwrap(lineage.entry(1)).element, Engine.element(1)), "\(refetch): not the sibling")
+    }
+  }
+
+  func testTheSameHandlesChangedPlaceholderNeverRewritesWhatTheObservedCountUses() throws {
+    // The review's case 3: two twins (the observed count says ambiguous for either). The first's handle shows another
+    // placeholder and resolves as itself; then the second's handle goes while the first shows the old one again. The
+    // second's token is still ambiguous before the walk, never the first.
+    let (tree, lineage, first, second) = try twoFields(field("", placeholder: "Name"), field("", placeholder: "Name"))
+    let fake = Resolving(tree)
+    tree.extra[1]?["AXPlaceholderValue"] = "Search" as CFString
+    for refetch in [Refetch.ifNeeded, .always] {
+      XCTAssertTrue(CFEqual(try lineage.resolve(first, resolver: fake.resolver, refetch: refetch).element, Engine.element(1)))
+      XCTAssertEqual(lineage.entry(1)?.identity.placeholder, "Name", "\(refetch): the revision keeps the observation's placeholder")
+    }
+    tree.extra[1]?["AXPlaceholderValue"] = "Name" as CFString
+    tree.unreadable = [2]
+    tree.children[0] = [1]
+    XCTAssertEqual(errorName { try lineage.resolve(second, resolver: fake.resolver) }, "elementAmbiguousBeforeRefetch")
+    XCTAssertTrue(CFEqual(try XCTUnwrap(lineage.entry(2)).element, Engine.element(2)))
+  }
+
+  func testAReplacementShowingAnotherPlaceholderIsNotAdoptedSoNoStaleHintRemains() throws {
+    // The review's case 4: a replaced field whose new handle shows another placeholder. Not adopted in any mode, so the
+    // token never names a handle while carrying another field's placeholder; one showing the observed placeholder is.
     for refetch in [Refetch.ifNeeded, .always, .ignoringValue] {
       let (tree, lineage, token) = try oneField()
       tree.unreadable = [1]
       tree.children[0] = [9, 2]
       tree.extra[9] = field("Query", placeholder: "Search…", identifier: "q")
-      let fake = Resolving(tree)
-      XCTAssertTrue(CFEqual(try lineage.resolve(token, resolver: fake.resolver, refetch: refetch).element, Engine.element(9)), "\(refetch)")
+      XCTAssertEqual(errorName { try lineage.resolve(token, resolver: Resolving(tree).resolver, refetch: refetch) }, "elementNoLongerValid", "\(refetch)")
+      tree.extra[9] = field("Query", placeholder: "Search", identifier: "q")
+      let entry = try lineage.resolve(token, resolver: Resolving(tree).resolver, refetch: refetch)
+      XCTAssertTrue(CFEqual(entry.element, Engine.element(9)), "\(refetch)")
+      XCTAssertEqual(entry.identity.placeholder, "Search")
     }
   }
 
-  // MARK: Two fields alike but for their placeholders
-
-  func testAStaleHandleResolvesToTheFieldWhosePlaceholderMatches() throws {
-    let (tree, lineage, first, last) = try twoFields()
+  func testOfTwoFieldsAlikeButTheirPlaceholdersAStaleHandleResolvesStrictly() throws {
+    let (tree, lineage, first, last) = try twoFields(field("", placeholder: "First name"), field("", placeholder: "Last name"))
     tree.unreadable = [1, 2]
     tree.children[0] = [11, 12]
     tree.extra[11] = field("", placeholder: "First name")
     tree.extra[12] = field("", placeholder: "Last name")
-    let fake = Resolving(tree)
-    XCTAssertTrue(CFEqual(try lineage.resolve(first, resolver: fake.resolver).element, Engine.element(11)))
-    XCTAssertTrue(CFEqual(try lineage.resolve(last, resolver: fake.resolver).element, Engine.element(12)))
+    XCTAssertTrue(CFEqual(try lineage.resolve(first, resolver: Resolving(tree).resolver).element, Engine.element(11)))
+    XCTAssertTrue(CFEqual(try lineage.resolve(last, resolver: Resolving(tree).resolver).element, Engine.element(12)))
+    // Neither shows its placeholder: no longer valid; both show the first's: ambiguous.
+    let (other, otherLineage, otherFirst, _) = try twoFields(field("", placeholder: "First name"), field("", placeholder: "Last name"))
+    other.unreadable = [1, 2]
+    other.children[0] = [11, 12]
+    other.extra[11] = field("", placeholder: "Name")
+    other.extra[12] = field("", placeholder: "Name")
+    XCTAssertEqual(errorName { try otherLineage.resolve(otherFirst, resolver: Resolving(other).resolver) }, "elementNoLongerValid")
+    other.extra[11] = field("", placeholder: "First name")
+    other.extra[12] = field("", placeholder: "First name")
+    XCTAssertEqual(errorName { try otherLineage.resolve(otherFirst, resolver: Resolving(other).resolver) }, "elementAmbiguousAfterRefetch")
   }
 
-  func testWhenNoPlaceholderDecidesTheWalkRefusesAsAmbiguous() throws {
-    let (tree, lineage, first, _) = try twoFields()
-    tree.unreadable = [1, 2]
-    tree.children[0] = [11, 12]
-    tree.extra[11] = field("", placeholder: "Name")
-    tree.extra[12] = field("", placeholder: "Name")
-    XCTAssertEqual(errorName { try lineage.resolve(first, resolver: Resolving(tree).resolver) }, "elementAmbiguousAfterRefetch")
-    // Both now with the old placeholder: still no one field.
-    tree.extra[12] = field("", placeholder: "First name")
-    tree.extra[11] = field("", placeholder: "First name")
-    XCTAssertEqual(errorName { try lineage.resolve(first, resolver: Resolving(tree).resolver) }, "elementAmbiguousAfterRefetch")
-  }
-
-  func testOneFieldLeftThatThePlaceholderDoesNotConfirmIsNotAdopted() throws {
-    // The observation told the two apart by the placeholder alone. The first field is gone and the last remains: the
-    // one candidate left is not adopted for the first's token, whatever placeholder it shows.
-    for remaining in ["Last name", "Name"] {
-      let (tree, lineage, first, _) = try twoFields()
-      tree.unreadable = [1, 2]
-      tree.children[0] = [12]
-      tree.extra[12] = field("", placeholder: remaining)
-      XCTAssertEqual(errorName { try lineage.resolve(first, resolver: Resolving(tree).resolver) }, "elementNoLongerValid", remaining)
-      XCTAssertTrue(CFEqual(try XCTUnwrap(lineage.entry(1)).element, Engine.element(1)), "\(remaining): the token keeps its handle")
-    }
-  }
-
-  func testTheTieBreakUsesThePlaceholderTheSameHandleLastShowed() throws {
-    let (tree, lineage, first, _) = try twoFields()
-    let fake = Resolving(tree)
-    tree.extra[1]?["AXPlaceholderValue"] = nil       // focused: the first field's placeholder clears
-    XCTAssertTrue(CFEqual(try lineage.resolve(first, resolver: fake.resolver).element, Engine.element(1)))
-    // Both re-rendered, the first still without its placeholder.
-    tree.unreadable = [1, 2]
-    tree.children[0] = [11, 12]
-    tree.extra[11] = field("", placeholder: nil)
-    tree.extra[12] = field("", placeholder: "Last name")
-    XCTAssertTrue(CFEqual(try lineage.resolve(first, resolver: fake.resolver).element, Engine.element(11)))
-  }
-
-  func testTheStoredHandleFoundByTheWalkIsTheElementWhateverItsPlaceholder() throws {
-    // The stored handle's own re-read fails once, so the walk runs; it reads the handle again, its placeholder now
-    // another's, while a new element shows the old one. The same handle is the element.
-    let (tree, lineage, first, _) = try twoFields()
-    tree.unreadable = [1, 2]
-    tree.children[0] = [1, 9]
-    tree.extra[1]?["AXPlaceholderValue"] = "Last name" as CFString
-    tree.extra[9] = field("", placeholder: "First name")
-    tree.answered = { id, _ in if id == 0 { tree.unreadable.remove(1) } }
-    let fake = Resolving(tree)
-    XCTAssertTrue(CFEqual(try lineage.resolve(first, resolver: fake.resolver).element, Engine.element(1)))
-    XCTAssertEqual(fake.treeReads, 1, "found by the walk, not by the re-read")
-  }
-
-  // MARK: A real difference still counts
+  // MARK: A real difference still counts, on the same handle too
 
   func testAFieldThatDiffersInItsLabelOrIdentifierIsStillRejected() throws {
     for (attribute, changed) in [("AXTitle", "Filter"), ("AXIdentifier", "other")] {
@@ -230,28 +230,5 @@ final class PlaceholderIdentityTests: XCTestCase {
       stale.extra[9]?[attribute] = changed as CFString
       XCTAssertEqual(errorName { try staleLineage.resolve(staleToken, resolver: Resolving(stale).resolver) }, "elementNoLongerValid", attribute)
     }
-    // Of two fields alike, a replacement with the old placeholder but another label is not adopted either.
-    let (tree, lineage, first, _) = try twoFields()
-    tree.unreadable = [1, 2]
-    tree.children[0] = [11, 12]
-    tree.extra[11] = field("Given name", placeholder: "First name")
-    tree.extra[12] = field("", placeholder: "Last name")
-    XCTAssertEqual(errorName { try lineage.resolve(first, resolver: Resolving(tree).resolver) }, "elementNoLongerValid")
-  }
-
-  func testTheVerdictsRules() {
-    func verdict(_ candidates: [(Int, String?)], stored: Int = 0, placeholder: String? = "a", alike: Int) -> [Int] {
-      placeholderVerdict(candidates.map { (element: $0.0, placeholder: $0.1) }, stored: stored, placeholder: placeholder,
-                         observedAlike: alike, same: ==)
-    }
-    XCTAssertEqual(verdict([(1, "b")], alike: 1), [1], "one alone, the observation held one alone: whatever its placeholder")
-    XCTAssertEqual(verdict([(1, "b")], alike: 2), [], "one alone that the placeholder told apart: not confirmed")
-    XCTAssertEqual(verdict([(1, "a")], alike: 2), [1])
-    XCTAssertEqual(verdict([(1, "a"), (2, "b")], alike: 2), [1], "several: the placeholder breaks the tie")
-    XCTAssertEqual(verdict([(1, "b"), (2, "c")], alike: 1), [1, 2], "several, none with it: ambiguous")
-    XCTAssertEqual(verdict([(1, "a"), (2, "a")], alike: 2), [1, 2], "several with it: ambiguous")
-    XCTAssertEqual(verdict([(1, "a"), (0, "b")], alike: 2), [0], "the stored handle is the element")
-    XCTAssertEqual(verdict([], alike: 1), [])
-    XCTAssertEqual(verdict([(1, nil), (2, "b")], placeholder: nil, alike: 2), [1], "no placeholder is a placeholder to match")
   }
 }

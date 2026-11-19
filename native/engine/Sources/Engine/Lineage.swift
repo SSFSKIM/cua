@@ -87,9 +87,7 @@ final class ConnectionState: @unchecked Sendable {
 
 /// What a re-fetch matches an element by: the vendor's eleven attributes (F §3.6; exact equality, nil equal to nil),
 /// plus the owning pid input is posted to (not part of the match: a panel's elements are matched whichever process
-/// serves them now). cua's departure (#398): the placeholder, which a page changes on focus, with input, with a mode
-/// and when Chromium's complete mode arrives (#366), never makes the same handle another element, and in the re-fetch's
-/// walk only breaks a tie (`Lineage.resolve`).
+/// serves them now).
 struct ElementIdentity {
   let role: String
   let subrole: String?
@@ -98,7 +96,7 @@ struct ElementIdentity {
   let value: String?
   let valueDescription: String?
   let description: String?
-  fileprivate(set) var placeholder: String?
+  let placeholder: String?
   let help: String?
   let identifier: String?
   let url: String?
@@ -146,8 +144,8 @@ struct ElementIdentity {
   /// value description is left out only when it was not read (`descriptionUnread`). Where either counts, a value that
   /// could not be read matches only another that could not, and only for the same handle (`sameElement`): two failed
   /// reads never make another element this one (#405, `valueFailed`, `descriptionFailed`). A password field matches only
-  /// a password field (`secure`). `ignoringPlaceholder` (#398) leaves the placeholder out, for the same handle's re-read
-  /// and for the re-fetch's candidates, among which it then breaks a tie (`placeholderVerdict`).
+  /// a password field (`secure`). `ignoringPlaceholder` (#398) leaves the placeholder out, for the stored handle's own
+  /// re-read alone.
   func matches(_ other: ElementIdentity, ignoringValue: Bool = false, sameElement: Bool = false, ignoringPlaceholder: Bool = false) -> Bool {
     let valueCounts = !ignoringValue && !valueUnread && !other.valueUnread
     let descriptionCounts = !descriptionUnread && !other.descriptionUnread
@@ -194,13 +192,6 @@ extension ElementIdentity {
     var moved = self
     moved.pid = owner
     return moved
-  }
-
-  /// The same identity with the placeholder its handle reads now (#398).
-  func placeholding(_ placeholder: String?) -> ElementIdentity {
-    var changed = self
-    changed.placeholder = placeholder
-    return changed
   }
 }
 
@@ -337,11 +328,6 @@ final class Lineage {
   /// stored attributes matched by more or fewer than one element of the observed tree → "couldn't be started"; none now
   /// → no longer valid; several now → "couldn't be finished".
   ///
-  /// The placeholder (#398, cua's departure): the stored handle read again matches without it, and its identity then
-  /// takes the placeholder it reads now. The walk keeps the elements that match on everything else, and
-  /// `placeholderVerdict` decides among them, never by a guess. The observed tree's count takes the placeholder into
-  /// account only when the tree held several such elements.
-  ///
   /// `readiness` (ruling 772, ChromiumReadiness.swift): an entry recorded before its process's readiness is first read
   /// again from its own handle, its identity and actions taking what the handle reads now, and its read time now; never
   /// re-found by identity, so no other handle is adopted for it. That resolution stays pinned to the handle: it never
@@ -371,28 +357,23 @@ final class Lineage {
       }
       return self.entry(number)!
     }
-    if let live = read(entry.element),
+    // #398: the same handle is the same element whatever its placeholder now (focus, input, a mode, Chromium's complete
+    // mode). Its identity keeps the observation's placeholder: once a handle is gone, the walk below and the observed
+    // count match it strictly, the placeholder included, since it is then evidence of which field this was.
+    if var live = read(entry.element),
        ElementIdentity(live, pid: entry.identity.pid).matches(entry.identity, ignoringValue: ignoringValue, sameElement: true,
                                                               ignoringPlaceholder: true) {
-      guard refetch == .ifNeeded else { return try settle(on: entry.element, owner: entry.identity.pid, data: live) }
-      // #398: the vendor's check renews nothing, but a later walk's tie-break needs the placeholder the field shows now.
-      guard live.placeholder != entry.identity.placeholder else { return entry }
-      current?.entries[number]?.identity = entry.identity.placeholding(live.placeholder)
-      return self.entry(number)!
+      live.placeholder = entry.identity.placeholder
+      return refetch == .ifNeeded ? entry : try settle(on: entry.element, owner: entry.identity.pid, data: live)
     }
-    // #398: the observed elements that match on everything but the placeholder; of several, the placeholder counts.
-    let alike = observed.entries.values.filter {
-      $0.identity.matches(entry.identity, ignoringValue: ignoringValue, sameElement: CFEqual($0.element, entry.element),
-                          ignoringPlaceholder: true)
-    }
-    let before = alike.count == 1 ? 1 : alike.filter { $0.identity.placeholder == entry.identity.placeholder }.count
+    let before = observed.entries.values.filter {
+      $0.identity.matches(entry.identity, ignoringValue: ignoringValue, sameElement: CFEqual($0.element, entry.element))
+    }.count
     var found: [AXUIElement] = []
     if before == 1 {
       let tree = resolver.tree(observed.menuRoot)
-      let candidates = matching(entry.identity, ignoringValue: ignoringValue, window: tree.window, menuItems: tree.menuItems,
-                                source: source, deadlineMs: resolver.refetchDeadlineMs)
-      found = placeholderVerdict(candidates, stored: entry.element, placeholder: entry.identity.placeholder,
-                                 observedAlike: alike.count, same: { CFEqual($0, $1) })
+      found = matching(entry.identity, ignoringValue: ignoringValue, window: tree.window, menuItems: tree.menuItems, source: source,
+                       deadlineMs: resolver.refetchDeadlineMs)
     }
     switch RefetchVerdict.of(before: before, after: found.count) {
     case .ambiguousBefore: throw ElementErrors.ambiguousBeforeRefetch
@@ -401,21 +382,6 @@ final class Lineage {
     case .found: return try settle(on: found[0], owner: source.owner(found[0]), data: read(found[0]))
     }
   }
-}
-
-/// The re-fetch's walk decided by the placeholder (#398). `candidates` match the stored identity on everything but the
-/// placeholder, each with the one it reads now. The stored handle among them is the element, whatever its placeholder.
-/// One alone is the element when the observed tree also held one alone (`observedAlike`), so the placeholder never told
-/// it from another. Otherwise only the one whose placeholder is the stored one is. The answer is what `RefetchVerdict`
-/// counts: that one; all of them when several are left undecided (ambiguous); none when the one left is not confirmed
-/// by the placeholder that alone told it from another in the observation.
-func placeholderVerdict<Element>(_ candidates: [(element: Element, placeholder: String?)], stored: Element, placeholder: String?,
-                                 observedAlike: Int, same: (Element, Element) -> Bool) -> [Element] {
-  if let own = candidates.first(where: { same($0.element, stored) }) { return [own.element] }
-  if candidates.count == 1, observedAlike == 1 { return [candidates[0].element] }
-  let kept = candidates.filter { $0.placeholder == placeholder }
-  if kept.count == 1 { return [kept[0].element] }
-  return candidates.count > 1 ? candidates.map(\.element) : []
 }
 
 /// When resolving a token re-reads its element: `.ifNeeded` only after an invalidation (F §3.5); `.always` whatever the
@@ -639,12 +605,12 @@ extension ConnectionState {
 /// what the window shows first as the walk spends its budget (#301, `TreeWalk.select`: a subtree that shows
 /// beyond a strip in what its clipping ancestors leave of the window is walked first, the rest in the document's order),
 /// then the menu-bar elements, read through the
-/// attributes they list and without a Debug item, as the walk reads them) whose eleven attributes but the placeholder
-/// equal the identity's, whichever process serves them, each with the placeholder it reads (#398, `placeholderVerdict`).
+/// attributes they list and without a Debug item, as the walk reads them) whose eleven attributes equal the identity's,
+/// whichever process serves them.
 private func matching(_ identity: ElementIdentity, ignoringValue: Bool, window: AXUIElement?, menuItems: [AXUIElement],
-                      source: ElementSource, deadlineMs: Double) -> [(element: AXUIElement, placeholder: String?)] {
+                      source: ElementSource, deadlineMs: Double) -> [AXUIElement] {
   struct Pending { let element: AXUIElement; let depth: Int; let descend: Bool; let path: [Int]; var clip: CGRect? = nil }
-  var found: [(element: AXUIElement, placeholder: String?)] = []
+  var found: [AXUIElement] = []
   // Menu-bar elements are matched but never walked into, as the observation does.
   var stack: [Pending] = menuItems.reversed().map { Pending(element: prepare($0), depth: 0, descend: false, path: []) }
   let windowFrame = window.flatMap { source.frame($0) }
@@ -669,9 +635,7 @@ private func matching(_ identity: ElementIdentity, ignoringValue: Bool, window: 
           let data = next.descend ? source.data(next.element) : source.listedData(next.element) else { continue }
     if !next.descend, data.role != kAXMenuBarRole, isDebugMenuItem(data) { continue }
     visited += 1
-    if ElementIdentity(data, pid: identity.pid).matches(identity, ignoringValue: ignoringValue, ignoringPlaceholder: true) {
-      found.append((next.element, data.placeholder))
-    }
+    if ElementIdentity(data, pid: identity.pid).matches(identity, ignoringValue: ignoringValue) { found.append(next.element) }
     guard next.descend && next.depth < maxDepth else { continue }
     // What it leaves showing to its children: the walk's clipping rule (`childrenClip`), which the width rule judges in.
     let clip = childrenClip(next.clip, frame: data.frame, role: data.role, actions: source.actions(next.element))

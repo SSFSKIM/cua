@@ -118,8 +118,9 @@ func setValueClosed(concealed: Bool, role: () -> String?, subrole: () -> Subrole
 }
 
 /// set_value's re-check after an accepted write (`refetch`): a re-fetch that fails, whatever its refusal (the element
-/// gone, or its metadata changed since it was read; since #398 a changed placeholder alone, as a Chromium field's when
-/// the complete mode arrives, no longer fails it), is `valueUnconfirmed` (ruling 772), never a refusal: the value was sent.
+/// gone, or its metadata changed since it was read; since #398 a placeholder changed on the same handle, as a Chromium
+/// field's when the complete mode arrives, no longer fails it), is `valueUnconfirmed` (ruling 772), never a refusal: the
+/// value was sent.
 func confirmingWrittenValue(app: String, _ refetch: () throws -> Void) throws {
   do {
     try refetch()

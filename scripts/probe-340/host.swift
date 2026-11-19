@@ -1,5 +1,7 @@
 // The owned cover and activation witness (#395), with lane readiness and AX enablement (#405), copied unchanged from
-// ../probe-398/host.swift (probe/398-qual), itself from probe/361-qual. No AXValue reads.
+// ../probe-398/host.swift (probe/398-qual), itself from probe/361-qual, plus #340's `axtext`. The only AXValue read is
+// that op's count of the owned page's static texts reading the cell's text before and after its change; only the two
+// counts leave the helper.
 import AppKit
 import ApplicationServices
 import Darwin
@@ -129,6 +131,26 @@ func dispatch(_ q: [String: Any]) -> [String: Any] {
     AXUIElementSetMessagingTimeout(app, 0.5)
     let windows = attr(app, "AXWindows") as? [AXUIElement] ?? []
     return ["titles": windows.compactMap { attr($0, "AXTitle") as? String }]
+  case "axtext":
+    // Breadth-first from the owned app's windows (depth at most 60, at most 6000 elements): how many AXStaticTexts
+    // read `before` and how many read `after` (AXValue, trimmed). Counts only.
+    guard let before = q["before"] as? String, let after = q["after"] as? String else { return [:] }
+    let app = AXUIElementCreateApplication(pid)
+    AXUIElementSetMessagingTimeout(app, 0.5)
+    var queue: [(element: AXUIElement, depth: Int)] = (attr(app, "AXWindows") as? [AXUIElement] ?? []).map { ($0, 0) }
+    var next = 0, nBefore = 0, nAfter = 0
+    while next < queue.count && next < 6000 {
+      let (e, depth) = queue[next]
+      next += 1
+      AXUIElementSetMessagingTimeout(e, 0.5)
+      if attr(e, "AXRole") as? String == "AXStaticText", let value = attr(e, "AXValue") as? String {
+        let text = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if text == before { nBefore += 1 }
+        if text == after { nAfter += 1 }
+      }
+      if depth < 60, let children = attr(e, "AXChildren") as? [AXUIElement] { queue += children.map { ($0, depth + 1) } }
+    }
+    return ["before": nBefore, "after": nAfter]
   default: return [:]
   }
 }

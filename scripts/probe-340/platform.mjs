@@ -92,6 +92,12 @@ export async function startPlatform({lane,home,helper,cover,stage}){
     const witness=async()=>(await ask({op:'witness'})).valid===true;
     // The witness's verdict over the actions: whether anything other than the cover activated. A measurement, once armed.
     const disarm=async()=>{const r=await ask({op:'disarm'});return {held:r.valid===true,reason:typeof r.reason==='string'?r.reason:null};};
+    // How many of the owned app's AXStaticTexts read the cell's text before and after its change (counts only): whether
+    // the change reached the accessibility tree before the click.
+    const axText=async(before,after)=>{
+      const r=await helper.ask({op:'axtext',pid,before,after},5000);
+      return Number.isInteger(r?.before)&&Number.isInteger(r?.after)?{before:r.before,after:r.after}:null;
+    };
     stage('presentation-probe');
     const probe={cell:'plain'};
     try{await arm(-1,probe);if(!(await disarm()).held)throw setupFail('presentation-witness');}
@@ -100,6 +106,6 @@ export async function startPlatform({lane,home,helper,cover,stage}){
       fallback=e.setupStep??'presentation';presentation='frontmost';active=pid;
       await arm(-2,probe);if(!(await disarm()).held)throw Error('frontmost witness');
     }
-    return {pid,bundle,version,get presentation(){return presentation;},get fallback(){return fallback;},arm,witness,disarm,command,dispose};
+    return {pid,bundle,version,get presentation(){return presentation;},get fallback(){return fallback;},arm,witness,disarm,command,axText,dispose};
   }catch(e){await dispose();throw e;}
 }

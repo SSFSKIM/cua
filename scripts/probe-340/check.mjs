@@ -53,20 +53,32 @@ export function landingOf(clicks){
     nowhere:list.some(c=>c.link==='none'),events:list.length};
 }
 
-// One row's verdict, from the guard's record (`stale`, required: a row without one is invalid in run.mjs), the click's
-// outcome and the page's log:
-// `wrong-target` (any pointer event on another link), `refused` (the guard refused, nothing reached the target),
-// `refused-delivered` (refused, yet an event reached it), `kept-landed` (kept, the click landed on the target, the
-// click answered success), `kept-landed-error` (landed, but the click answered an error), `kept-missed` (kept, no click
-// on the target), `observe-failed` (after a valid prepare, the head's observation or the link in it missing).
-export function score({attested,observeFailed=false,click,stale,clicks}){
+// The node an observation puts at a screen point: the deepest framed node whose frame holds it (by the nodes' `depth`
+// when every hit carries one, the smaller frame breaking ties; else the smallest frame).
+export function nodeAt(nodes,p){
+  const hit=(Array.isArray(nodes)?nodes:[]).filter(n=>framed(n)&&holds(n.frame,p));
+  const deep=hit.every(n=>Number.isInteger(n.depth)),area=n=>n.frame.width*n.frame.height;
+  return hit.sort((a,b)=>(deep?b.depth-a.depth:0)||area(a)-area(b))[0]??null;
+}
+
+// One row's verdict, from the click's outcome, the guard's record (`stale`), the unit's point (`at`) and the page's log:
+// `wrong-target` (any pointer event on another link, whatever the record says); `no-guard` (the click carried no guard
+// record); `misplaced` (the record took another role than the unit aims at, though the observation put that role at the
+// point); `refused` (the guard refused, the click answered screenChangedSinceScreenshot, nothing reached the target);
+// `refused-delivered` (refused, yet an event reached it); `refused-unreported` (refused, nothing reached the target,
+// but the click answered something else); `kept-landed` (kept, the click landed on the target and answered success);
+// `kept-landed-error` (landed, but the click answered an error); `kept-missed` (kept, no click on the target);
+// `observe-failed` (after a valid prepare, re-attested, the head's observation or the link in it missing).
+export function score({attested,observeFailed=false,at,click,stale,clicks}){
   if(!attested)return {verdict:'invalid'};
   if(observeFailed)return {verdict:'observe-failed'};
   const l=landingOf(clicks);
   let verdict;
   if(l.wrong.length)verdict='wrong-target';
-  else if(stale?.verdict==='refused')verdict=l.reached?'refused-delivered':'refused';
-  else if(stale?.verdict==='kept')verdict=l.landed?click==='success'?'kept-landed':'kept-landed-error':'kept-missed';
+  else if(!stale)verdict='no-guard';
+  else if(stale.recordedRole!==RECORDED_ROLE[at])verdict='misplaced';
+  else if(stale.verdict==='refused')verdict=l.reached?'refused-delivered':click==='screenChangedSinceScreenshot'?'refused':'refused-unreported';
+  else if(stale.verdict==='kept')verdict=l.landed?click==='success'?'kept-landed':'kept-landed-error':'kept-missed';
   else verdict='other';
   return {verdict,landed:l.landed,reached:l.reached,wrongLinks:l.wrong,nowhere:l.nowhere};
 }
@@ -109,6 +121,7 @@ export function coverage(rows,{planned,heads,units=UNITS}){
   return {complete:Object.values(per).every(p=>p.ran>=p.planned),covered,per};
 }
 
+export const MIN_PAIRS=10;
 // The qualification gates (two heads). A row pairs with the other head's row of the same unit and repetition.
 export function gates(rows,{coverage:cov,units=UNITS}){
   const fix=rows.filter(r=>r.head==='fix'&&r.valid),main=rows.filter(r=>r.head==='main'&&r.valid);
@@ -121,9 +134,16 @@ export function gates(rows,{coverage:cov,units=UNITS}){
   const refusals=fix.filter(r=>kindOf(r)==='refuse'),notRefused=refusals.filter(r=>r.verdict!=='refused');
   // Every other cell answers as main's paired row: the same verdict (the guard's and the landing).
   const others=fix.filter(r=>kindOf(r)==='asMain'),othersPaired=others.filter(r=>pair.has(`${unitKey(r)}/${r.rep}`));
+  // Per asMain unit, the pairs that can show a difference: both rows valid, neither observation failed.
+  const usable=Object.fromEntries(units.filter(u=>CELLS[u.cell].kind==='asMain').map(u=>[unitKey(u),
+    othersPaired.filter(r=>unitKey(r)===unitKey(u)&&r.verdict!=='observe-failed'&&pair.get(`${unitKey(r)}/${r.rep}`).verdict!=='observe-failed').length]));
+  const thin=Object.entries(usable).filter(([,n])=>n<MIN_PAIRS).map(([k])=>k);
   const differ=othersPaired.filter(r=>pair.get(`${unitKey(r)}/${r.rep}`).verdict!==r.verdict);
   const reasonDiffer=othersPaired.filter(r=>{const m=pair.get(`${unitKey(r)}/${r.rep}`);return m.verdict===r.verdict&&m.guard?.reason!==r.guard?.reason;});
   const wrong=fix.filter(r=>r.verdict==='wrong-target');
+  // The failure the fix answers, reproduced: main refused at least half its valid rows of the growing links' text.
+  const mainGrow=main.filter(r=>kindOf(r)==='grow'&&r.at==='text'),mainRefused=mainGrow.filter(r=>r.verdict==='refused').length;
+  const reproduced=mainGrow.length>0&&2*mainRefused>=mainGrow.length;
   // The claimed presentation: per unit, no more fix rows than main's on which something other than the cover activated.
   const of=(list,u)=>list.filter(r=>r.cell===u.cell&&r.at===u.at);
   const presentation=Object.fromEntries(units.map(u=>[unitKey(u),{fix:of(fix,u).filter(r=>r.presentationHeld===false).length,
@@ -135,7 +155,9 @@ export function gates(rows,{coverage:cov,units=UNITS}){
     keptAndLanded:{pass:kept.length>0&&everyUnit(['grow','shrink'])&&notKept.length===0,rows:kept.length,failed:notKept.length,
       mainKeptLanded:main.filter(r=>['grow','shrink'].includes(kindOf(r))&&r.verdict==='kept-landed').length,examples:brief(notKept)},
     stillRefused:{pass:refusals.length>0&&everyUnit(['refuse'])&&notRefused.length===0,rows:refusals.length,failed:notRefused.length,examples:brief(notRefused)},
-    othersAsMain:{pass:othersPaired.length>0&&everyUnit(['asMain'])&&differ.length===0,rows:others.length,paired:othersPaired.length,differ:differ.length,
+    reproduced:{pass:reproduced,result:reproduced?'reproduced':'not reproduced (inconclusive)',mainRows:mainGrow.length,mainRefused},
+    othersAsMain:{pass:othersPaired.length>0&&everyUnit(['asMain'])&&thin.length===0&&differ.length===0,rows:others.length,
+      paired:othersPaired.length,usablePairs:usable,minPairs:MIN_PAIRS,thin,differ:differ.length,
       reasonDiffer:reasonDiffer.length,examples:brief(differ),reasonExamples:brief(reasonDiffer)},
     noWrongTarget:{pass:wrong.length===0,fixRows:fix.length,wrong:wrong.length,mainWrong:main.filter(r=>r.verdict==='wrong-target').length,examples:brief(wrong)},
     presentation:{pass:presentationWorse.length===0,worse:presentationWorse,
@@ -143,5 +165,9 @@ export function gates(rows,{coverage:cov,units=UNITS}){
   };
 }
 
-// The node the guard should record at the unit's point.
-export const expectedRole=at=>RECORDED_ROLE[at];
+// A run's gates and pass: the qualification gates in mode `qualify` only; smoke and measure pass on coverage alone.
+export function judge(rows,{mode,abort,coverage:cov}){
+  const gate=mode==='qualify'?gates(rows,{coverage:cov}):null;
+  const measured=abort===null&&cov.complete&&cov.covered;
+  return {gates:gate,pass:measured&&(!gate||Object.values(gate).every(g=>g.pass))};
+}

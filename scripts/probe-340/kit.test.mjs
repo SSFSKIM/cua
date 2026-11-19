@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {Script} from 'node:vm';
 import {CELLS,UNITS,AT,RECORDED_ROLE,unitKey,plan,pointFor} from './cells.mjs';
-import {outcomeOf,stalePointOf,routeOf,findLink,landingOf,delta,score,gates,coverage,summarize} from './check.mjs';
+import {outcomeOf,stalePointOf,routeOf,findLink,nodeAt,landingOf,delta,score,gates,coverage,summarize,judge,MIN_PAIRS} from './check.mjs';
 import {page} from './page.mjs';
 import {toPixels} from './run.mjs';
 
@@ -74,19 +74,46 @@ test('replies: outcome, the guard\'s record on a refusal and on a success, the r
   assert.deepEqual(delta({x: 1, y: 2, width: 10, height: 5}, {x: 1, y: 2, width: 19.5, height: 5}), {dx: 0, dy: 0, dw: 9.5, dh: 0});
 });
 
+test('placement: the deepest framed node at the point, by depth, else the smallest frame', () => {
+  const window = {role: 'AXWindow', depth: 0, frame: {x: 400, y: 30, width: 620, height: 700}};
+  const nodes = [window, {...link, depth: 7}, {...text, depth: 8}, {role: 'AXGroup', depth: 9, frame: {x: 0, y: 0, width: 0, height: 0}}];
+  assert.equal(nodeAt(nodes, pointFor('text', text.frame)).role, RECORDED_ROLE.text);
+  assert.equal(nodeAt(nodes, pointFor('link', link.frame)).role, RECORDED_ROLE.link);
+  assert.equal(nodeAt(nodes, {x: 410, y: 40}).role, 'AXWindow');
+  assert.equal(nodeAt(nodes, {x: 10, y: 10}), null);
+  // Without depth, the smallest frame holding the point; a deeper large node wins over a shallower small one.
+  assert.equal(nodeAt([window, link, text], pointFor('text', text.frame)).role, 'AXStaticText');
+  assert.equal(nodeAt([{...text, depth: 3}, {...window, depth: 4}], pointFor('text', text.frame)).role, 'AXWindow');
+  assert.equal(nodeAt(null, {x: 0, y: 0}), null);
+});
+
 const ev = (link, type = 'click') => ({type, link, trusted: true});
-test('verdicts: kept and landed, refused, refused yet delivered, missed, and any event on another link', () => {
-  const kept = {verdict: 'kept', reason: 'sameElement'}, refused = {verdict: 'refused', reason: 'nodeGone'};
-  const base = {attested: true, click: 'success'};
+test('verdicts: kept and landed, refused, refused yet delivered or unreported, missed, unguarded, misplaced, wrong target first', () => {
+  const kept = {verdict: 'kept', reason: 'sameElement', recordedRole: 'AXStaticText'};
+  const refused = {verdict: 'refused', reason: 'nodeGone', recordedRole: 'AXStaticText'};
+  const base = {attested: true, at: 'text', click: 'success'};
+  const refusal = {...base, click: 'screenChangedSinceScreenshot'};
   assert.equal(score({...base, stale: kept, clicks: [ev('target', 'mousedown'), ev('target')]}).verdict, 'kept-landed');
   assert.equal(score({...base, click: 'clickUnconfirmed', stale: kept, clicks: [ev('target')]}).verdict, 'kept-landed-error');
   assert.equal(score({...base, stale: kept, clicks: [ev('none')]}).verdict, 'kept-missed');
   assert.equal(score({...base, stale: kept, clicks: [ev('target', 'mousedown')]}).verdict, 'kept-missed');
-  assert.equal(score({...base, click: 'screenChangedSinceScreenshot', stale: refused, clicks: []}).verdict, 'refused');
+  assert.equal(score({...refusal, stale: refused, clicks: []}).verdict, 'refused');
+  assert.equal(score({...refusal, stale: refused, clicks: [ev('target', 'pointerdown')]}).verdict, 'refused-delivered');
+  // Refused by the guard, nothing delivered, but the click did not say so.
+  assert.equal(score({...base, stale: refused, clicks: []}).verdict, 'refused-unreported');
+  assert.equal(score({...base, click: 'missing', stale: refused, clicks: []}).verdict, 'refused-unreported');
   assert.equal(score({...base, stale: refused, clicks: [ev('target', 'pointerdown')]}).verdict, 'refused-delivered');
+  // A click after a checked placement with no record, or one taken at another role, is the head's own answer.
+  assert.equal(score({...base, stale: null, clicks: [ev('target')]}).verdict, 'no-guard');
+  assert.equal(score({...refusal, stale: {...refused, recordedRole: 'AXLink'}, clicks: []}).verdict, 'misplaced');
+  assert.equal(score({...base, at: 'link', stale: kept, clicks: [ev('target')]}).verdict, 'misplaced');
+  assert.equal(score({...base, at: 'link', stale: {...kept, recordedRole: 'AXLink'}, clicks: [ev('target')]}).verdict, 'kept-landed');
+  // Any event on another link scores wrong-target, whatever the metadata.
   assert.equal(score({...base, stale: kept, clicks: [ev('archive')]}).verdict, 'wrong-target');
-  assert.equal(score({...base, stale: refused, clicks: [ev('drafts', 'mousedown')]}).verdict, 'wrong-target');
+  assert.equal(score({...refusal, stale: refused, clicks: [ev('drafts', 'mousedown')]}).verdict, 'wrong-target');
   assert.equal(score({...base, stale: kept, clicks: [ev('bogus')]}).verdict, 'wrong-target');
+  assert.equal(score({...base, stale: null, clicks: [ev('archive')]}).verdict, 'wrong-target');
+  assert.equal(score({...base, stale: {...kept, recordedRole: 'AXLink'}, clicks: [ev('target'), ev('drafts')]}).verdict, 'wrong-target');
   assert.equal(score({attested: true, observeFailed: true}).verdict, 'observe-failed');
   assert.equal(score({attested: false}).verdict, 'invalid');
   assert.deepEqual(landingOf([ev('target'), ev('none', 'mouseup')]), {landed: true, reached: true, wrong: [], nowhere: true, events: 2});
@@ -131,6 +158,52 @@ test('gates pass a fix that keeps the growing links and still refuses the rest, 
   const gh = gates(hollow, {coverage: coverage(hollow, {planned: planned(ok), heads: ['main', 'fix']})});
   assert.equal(gh.coverage.pass, false); assert.equal(gh.keptAndLanded.pass, false);
   assert.equal(coverage(ok.slice(0, -1), {planned: planned(ok), heads: ['main', 'fix']}).complete, false);
+  // The head's own answers after a checked placement fail the gates they reach.
+  for (const v of ['no-guard', 'misplaced', 'refused-unreported']) {
+    const growing = gates(rows(r => r.head === 'fix' && r.cell === 'inbox' && r.at === 'link' && r.rep === 2 ? v : good(r)), {coverage: cov});
+    assert.equal(growing.keptAndLanded.pass, false, v);
+    const refusing = gates(rows(r => r.head === 'fix' && r.cell === 'moved' && r.rep === 2 ? v : good(r)), {coverage: cov});
+    assert.equal(refusing.stillRefused.pass, false, v);
+    const other = gates(rows(r => r.head === 'fix' && r.cell === 'plain' && r.at === 'text' && r.rep === 2 ? v : good(r)), {coverage: cov});
+    assert.equal(other.othersAsMain.pass, false, v); assert.equal(other.othersAsMain.differ, 1, v);
+  }
+});
+
+test('reproduced: main refused at least half its valid rows of the growing links\' text, else inconclusive', () => {
+  const cov = {complete: true, covered: true};
+  assert.equal(gates(rows(good), {coverage: cov}).reproduced.pass, true);
+  const half = rows(r => r.head === 'main' && CELLS[r.cell].kind === 'grow' && r.at === 'text' && r.rep < 10 ? 'kept-landed' : good(r));
+  assert.deepEqual(gates(half, {coverage: cov}).reproduced, {pass: true, result: 'reproduced', mainRows: 40, mainRefused: 20});
+  const lost = rows(r => r.head === 'main' && CELLS[r.cell].kind === 'grow' && r.at === 'text' && r.rep < 11 ? 'kept-landed' : good(r));
+  const g = gates(lost, {coverage: cov}).reproduced;
+  assert.equal(g.pass, false); assert.equal(g.result, 'not reproduced (inconclusive)');
+  // Shrinking text and the link's padding do not count; nor do invalid rows.
+  const noText = rows(good).filter(r => !(r.head === 'main' && CELLS[r.cell].kind === 'grow' && r.at === 'text'));
+  assert.equal(gates(noText, {coverage: cov}).reproduced.pass, false);
+});
+
+test('othersAsMain needs usable pairs in every unit: both rows valid, neither observation failed', () => {
+  const cov = {complete: true, covered: true};
+  const blind = n => rows(r => r.cell === 'like' && r.at === 'link' && r.rep < n ? 'observe-failed' : good(r));
+  const enough = gates(blind(20 - MIN_PAIRS), {coverage: cov}).othersAsMain;
+  assert.equal(enough.pass, true); assert.equal(enough.usablePairs['like/link'], MIN_PAIRS); assert.equal(enough.usablePairs['plain/text'], 20);
+  const thin = gates(blind(21 - MIN_PAIRS), {coverage: cov}).othersAsMain;
+  assert.equal(thin.pass, false); assert.equal(thin.differ, 0); assert.deepEqual(thin.thin, ['like/link']);
+  // A main row that is invalid leaves its fix row unpaired.
+  const unpaired = rows(good).map(r => r.head === 'main' && r.cell === 'linkmono' && r.at === 'text' && r.rep < 11 ? {...r, valid: false, invalid: 'mark@mark'} : r);
+  const gu = gates(unpaired, {coverage: cov}).othersAsMain;
+  assert.equal(gu.pass, false); assert.equal(gu.usablePairs['linkmono/text'], 9);
+});
+
+test('gates judge a qualification only: smoke and measure pass on coverage alone', () => {
+  const bad = rows(r => r.head === 'fix' ? 'wrong-target' : good(r)), cov = coverage(bad, {planned: planned(bad), heads: ['main', 'fix']});
+  assert.deepEqual(judge(bad, {mode: 'measure', abort: null, coverage: cov}), {gates: null, pass: true});
+  assert.deepEqual(judge(bad, {mode: 'smoke', abort: null, coverage: cov}), {gates: null, pass: true});
+  const q = judge(bad, {mode: 'qualify', abort: null, coverage: cov});
+  assert.equal(q.pass, false); assert.equal(q.gates.noWrongTarget.pass, false);
+  assert.equal(judge(rows(good), {mode: 'qualify', abort: null, coverage: cov}).pass, true);
+  assert.equal(judge(rows(good), {mode: 'qualify', abort: 'engine-start', coverage: cov}).pass, false);
+  assert.equal(judge(bad, {mode: 'measure', abort: null, coverage: {...cov, covered: false}}).pass, false);
 });
 
 test('summaries carry the geometry as median and span', () => {

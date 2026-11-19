@@ -9,7 +9,7 @@ import {execFileSync} from 'node:child_process';
 import {Wire} from './wire.mjs';
 import {owned,stop,pause,environment,startPlatform,startHelper} from './platform.mjs';
 import {LANES,CELLS,RECORDED_ROLE,unitKey,plan,pointFor} from './cells.mjs';
-import {outcomeOf,stalePointOf,routeOf,findLink,landingOf,delta,score,summarize,coverage,gates} from './check.mjs';
+import {outcomeOf,stalePointOf,routeOf,findLink,nodeAt,landingOf,delta,score,summarize,coverage,judge} from './check.mjs';
 
 const setupLabel=e=>typeof e?.setupStep==='string'?e.setupStep:'other';
 const stepError=step=>Object.assign(Error(step),{setupStep:step});
@@ -24,8 +24,9 @@ export function toPixels(sky,p){
   return {px,screen:{x:f.x+px.x/sx,y:f.y+px.y/sy}};
 }
 
-async function startEngine({name,bin,root,platform}){
-  const home=join(root,'e-'+name);mkdirSync(home,{mode:0o700});const socket=join(home,'e.sock');
+async function startEngine({name,bin,root,platform,linkText}){
+  const home=join(root,'e-'+name);mkdirSync(home,{mode:0o700});const socket=join(home,'e.sock'),prime=join(home,'prime');
+  mkdirSync(prime,{mode:0o700});
   const child=owned(bin,[],{...environment(home),CUA_ENGINE_SOCKET:socket});
   let w;
   async function attach(){
@@ -47,8 +48,16 @@ async function startEngine({name,bin,root,platform}){
     await attach();
     const target=(await w.execute('resolve_app',{pid:platform.pid})).result;
     if(target?.pid!==platform.pid||target?.bundleIdentifier!==platform.bundle||!target.appPath?.startsWith('/'))throw Error('owned target unresolved');
-    // Prime AX access before the first scored trial; then no connection is held between trials.
-    await w.execute('get_app_state',{pid:platform.pid,includeScreenshot:false,disableDiff:true});
+    // Prime AX access and the screenshot path before the first scored trial, as the trials observe: each priming
+    // observation must answer with a screenshot (else the lane aborts as setup), up to three until it finds the prepared
+    // page's link. Then no connection is held between trials.
+    let primed=false;
+    for(let i=0;i<3&&!primed;i++){
+      if(i)await pause(1000);
+      const r=await w.execute('get_app_state',{pid:platform.pid,includeScreenshot:true,outputDirectory:prime,disableDiff:true});
+      if(r?.error||!r?.result?.screenshot)throw stepError('prime');
+      primed=!!findLink(r.result.nodes,linkText);
+    }
     await disconnect();
     const call=async(method,args)=>{
       const started=performance.now();
@@ -56,7 +65,7 @@ async function startEngine({name,bin,root,platform}){
       try{reply=await w.execute(method,args);}catch{reply=null;}
       return {reply,ms:Math.round(performance.now()-started)};
     };
-    return {appPath:target.appPath,attach,disconnect,call,close:async()=>{await disconnect();return stop(child);}};
+    return {appPath:target.appPath,primed,attach,disconnect,call,close:async()=>{await disconnect();return stop(child);}};
   }catch(e){w?.close();await stop(child);throw e;}
 }
 
@@ -78,14 +87,16 @@ async function main(){
     platform=await startPlatform({lane,home,helper,cover,stage:x=>{stage=x;}});
     Object.assign(config,{version:platform.version,presentation:platform.presentation,foregroundFallback:platform.fallback});
     stage='engine-start';
-    for(const [name,{bin}] of Object.entries(heads))engines[name]=await startEngine({name,bin,root:tmp,platform});
+    // The page holds the presentation probe's prepare (cell `plain`) until the first trial.
+    for(const [name,{bin}] of Object.entries(heads))engines[name]=await startEngine({name,bin,root:tmp,platform,linkText:CELLS.plain.before});
+    config.primed=Object.fromEntries(Object.entries(engines).map(([k,e])=>[k,e.primed]));
     const cells=plan({mode,heads:headNames});
     for(const c of cells)planned[`${c.head}/${unitKey(c)}`]=(planned[`${c.head}/${unitKey(c)}`]??0)+1;
     let trial=0,streak=0;
     for(const c of cells){
       const e=engines[c.head],app=e.appPath,spec=CELLS[c.cell];
       let s='engine-attach',attested=false,armed=false,observeFailed=false,observed=null,found=null,placed=null,mark=null,click=null,read=null,
-        after=null,reobserved=false,witness=null,invalid=null;
+        after=null,reobserved=false,witness=null,invalid=null,exercised=null;
       try{
         const w=await e.attach();
         await platform.arm(++trial,{cell:c.cell},x=>{s=x;});armed=true;
@@ -93,10 +104,13 @@ async function main(){
         observed=await e.call('get_app_state',{app,includeScreenshot:true,outputDirectory:shots});
         const sky=observed.reply?.result;
         // The page is prepared and attested: an observation (or the link in it) missing now is the head's own answer,
-        // a valid row whose verdict says so, never a setup failure.
+        // a valid row whose verdict says so, once the page re-attests that it still holds the prepared link.
         if(sky&&w.lineage)found=findLink(sky.nodes,spec.before);
         if(!found){
           observeFailed=true;
+          s='reattest';
+          const r=await platform.command({op:'read',trial});
+          if(r.error||r.trial!==trial||r.present!==true||r.text!==spec.before)throw stepError('reattest');
           s='witness-before-action';
           if(!await platform.witness())throw stepError('witness-before-action');
           attested=true;
@@ -104,11 +118,26 @@ async function main(){
           s='placement';
           placed=toPixels(sky,pointFor(c.at,found[c.at].frame));
           if(!placed)throw stepError('screenshot');
+          // The observation itself puts the unit's role at the point the engine will post: else the unit is not tested.
+          if(nodeAt(sky.nodes,placed.screen)?.role!==RECORDED_ROLE[c.at])throw stepError('placement');
           // The cell's change, after the observation (and so after the record), before the click.
           s='mark';
           mark=await platform.command({op:'mark',trial});
           if(mark.error||mark.trial!==trial||mark.clicksBeforeMark!==0||mark.after?.text!==spec.after)throw stepError('mark');
-          await pause(500);
+          const marked=performance.now();
+          // A text change must have reached the accessibility tree before the click: the new text read, the old gone.
+          if(spec.before!==spec.after){
+            s='exercise';exercised=false;
+            for(const end=marked+2500;;){
+              const n=await platform.axText(spec.before,spec.after);
+              if(n&&n.after>=1&&n.before===0){exercised=true;break;}
+              if(performance.now()>=end)break;
+              await pause(100);
+            }
+            if(!exercised)throw stepError('unexercised');
+          }
+          const rest=500-(performance.now()-marked);
+          if(rest>0)await pause(rest);
           s='witness-before-action';
           if(!await platform.witness())throw stepError('witness-before-action');
           attested=true;
@@ -133,18 +162,15 @@ async function main(){
         await e.disconnect();
       }
       const clickOutcome=click?outcomeOf(click.reply):null,guard=click?stalePointOf(click.reply):null;
-      // A click the guard never judged, or judged at another node than the unit aims at, did not test the unit.
-      if(!invalid&&attested&&!observeFailed){
-        if(!guard)invalid='no-guard@click';
-        else if(guard.recordedRole!==RECORDED_ROLE[c.at])invalid='placement@click';
-      }
+      // Placement was checked from the observation before the click: a click after it with no guard record, or one
+      // taken at another role, is the head's own answer (`no-guard`, `misplaced`), never an invalid row.
       const ok=attested&&!invalid;
-      const verdicts=score({attested:ok,observeFailed,click:clickOutcome,stale:guard,clicks:read?.clicks});
+      const verdicts=score({attested:ok,observeFailed,at:c.at,click:clickOutcome,stale:guard,clicks:read?.clicks});
       const aim=found?.[c.at];
       const row={lane,...c,valid:ok,invalid:ok?null:invalid??'other',click:clickOutcome,guard,route:click?routeOf(click.reply):null,...verdicts,
         observeError:observeFailed?(observed?.reply?.result?'target-not-found':outcomeOf(observed?.reply)):null,
         clickEvents:read?(read.clicks??[]).map(x=>`${x.type}:${x.link}${x.trusted?'':':untrusted'}`).slice(0,12):null,
-        sameNode:read?.sameNode??null,
+        sameNode:read?.sameNode??null,exercised,
         // Geometry: the recorded node's frame (and both nodes') at the observation against the engine's re-observation
         // after the change, in screen points; and the page's own before and after, in CSS pixels.
         ax:found?{recorded:delta(aim?.frame,after?.[c.at]?.frame),text:delta(found.text.frame,after?.text?.frame),link:delta(found.link.frame,after?.link?.frame),
@@ -164,14 +190,14 @@ async function main(){
     rmSync(join(tmp,'e-main'),{recursive:true,force:true});rmSync(join(tmp,'e-fix'),{recursive:true,force:true});rmSync(shots,{recursive:true,force:true});
   }
   const cov=coverage(rows,{planned,heads:headNames});
-  const gate=headNames.length===2?gates(rows,{coverage:cov}):null;
+  // The qualification gates in mode `qualify` only: smoke and measure, with one head or two, pass on coverage alone.
+  const {gates:gate,pass}=judge(rows,{mode,abort,coverage:cov});
   const tally=list=>list.reduce((o,k)=>(o[k]=(o[k]??0)+1,o),{});
   const status={lane,mode,kit:config.kit,refs:config.refs,version:config.version??null,os:config.os,image:config.image,
     presentation:config.presentation??null,foregroundFallback:config.foregroundFallback??null,abort,abortStep,
     planned:Object.values(planned).reduce((a,b)=>a+b,0),completed:rows.length,coverage:{complete:cov.complete,covered:cov.covered},
     invalid:tally(rows.filter(r=>!r.valid).map(r=>r.invalid)),gates:gate};
-  const measured=abort===null&&cov.complete&&cov.covered;
-  status.pass=gate?measured&&Object.values(gate).every(g=>g.pass):measured;
+  status.pass=pass;
   status.coverageDetail=cov.per;
   writeFileSync(join(out,'status.json'),JSON.stringify(status,null,2)+'\n');
   writeFileSync(join(out,'summary.json'),JSON.stringify(summarize(rows),null,2)+'\n');

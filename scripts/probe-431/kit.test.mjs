@@ -77,15 +77,33 @@ test('the link and its text are found by their label, the link by its frame when
 test('a ruling-881 twin must be absent from the observation, which the walk must have cut', () => {
   const found = {text, link}, archive = {role: 'AXLink', title: 'Archive', frame: {x: 420, y: 200, width: 130, height: 56}};
   const twinText = {...text, frame: {...text.frame, y: 2000}};
-  const cap = CELLS.twincap, deep = CELLS.twindeep;
-  assert.equal(covers({nodes: [text, link, archive], truncated: {count: 2300}}, cap, found), true);
-  assert.equal(covers({nodes: [text, link, archive, twinText], truncated: {count: 2300}}, cap, found), false);
-  assert.equal(covers({nodes: [text, link, archive], truncated: null}, cap, found), false);
+  const cap = CELLS.twincap, deep = CELLS.twindeep, capped = {count: 2300}, nodeCapHit = {nodeCapHit: true};
+  assert.equal(covers({nodes: [text, link, archive], truncated: capped, timings: nodeCapHit}, cap, found), true);
+  assert.equal(covers({nodes: [text, link, archive, twinText], truncated: capped, timings: nodeCapHit}, cap, found), false);
+  assert.equal(covers({nodes: [text, link, archive], truncated: null, timings: nodeCapHit}, cap, found), false);
+  // A cut by the deadline, not the node cap, does not test the cap.
+  assert.equal(covers({nodes: [text, link, archive], truncated: capped, timings: {deadlineHit: true}}, cap, found), false);
   assert.equal(covers({nodes: [text, link, archive], truncated: {depth: 200}}, cap, found), false);
   assert.equal(covers({nodes: [text, link, archive], truncated: {depth: 200}}, deep, found), true);
   assert.equal(covers({nodes: [text, link, {...link, frame: {...link.frame, y: 200}}], truncated: {depth: 200}}, deep, found), false);
   assert.equal(covers({nodes: [text, link], truncated: {count: 10}}, deep, found), false);
-  assert.equal(covers({nodes: []}, CELLS.twin, found), true);
+  // The twin's link read without its label or a usable frame still puts it in the record.
+  const bareTwin = {role: 'AXLink', title: '', frame: {x: 0, y: 0, width: 0, height: 0}};
+  assert.equal(covers({nodes: [text, link, archive, bareTwin], truncated: capped, timings: nodeCapHit}, cap, found), false);
+  assert.equal(covers({nodes: [text, link, archive, {role: 'AXLink'}], truncated: {depth: 200}}, deep, found), false);
+  // A twin cell's observation holds exactly the controls it prepares, so the found one is the target.
+  const text2 = {...text, frame: {...text.frame, y: 214}};
+  assert.equal(covers({nodes: [text, text2]}, CELLS.twin, found), true);
+  assert.equal(covers({nodes: [text2]}, CELLS.twin, {text: text2, link}), false);
+  const del = y => ({...text, value: 'Delete', frame: {...text.frame, y}});
+  assert.equal(covers({nodes: [del(150), del(214), del(278)]}, CELLS.twindel, found), true);
+  assert.equal(covers({nodes: [del(214), del(278)]}, CELLS.twindel, {text: del(214), link}), false);
+  const button = {...link, role: 'AXButton'}, button2 = {...button, frame: {...link.frame, y: 200}};
+  assert.equal(covers({nodes: [button, button2]}, CELLS.twinbtn, {text: null, link: button}, {role: 'AXButton'}), true);
+  assert.equal(covers({nodes: [button2]}, CELLS.twinbtn, {text: null, link: button2}, {role: 'AXButton'}), false);
+  assert.equal(covers({nodes: []}, CELLS.plain, found), true);
+  // A button with no text child leaves the text point unplaceable, never a thrown error.
+  assert.equal(pointFor('text', findLink([button], 'Inbox', {role: 'AXButton'}).text?.frame), null);
 });
 
 test('points: near the text\'s start, or in the link\'s left padding, and back through the screenshot\'s pixels', () => {
@@ -167,6 +185,7 @@ function rows(verdictFor, extra = () => ({}), units = UNITS) {
     return {...r, valid: true, verdict: v, click: v.startsWith('kept') ? 'success' : 'screenChangedSinceScreenshot',
       guard: {verdict: v.startsWith('kept') ? 'kept' : 'refused', reason: v.startsWith('kept') ? 'sameElement' : 'nodeGone',
         recordedRole: recordedRole(r.cell, r.at), ms: r.head === 'fix' ? 4 : 2},
+      clickEvents: v === 'wrong-target' ? ['pointerdown:twin', 'click:twin'] : v.startsWith('kept') ? ['click:target'] : [],
       presentationHeld: true, ...extra(r)};
   });
 }
@@ -201,6 +220,10 @@ test('gates pass a fix that refuses every twin and answers as main elsewhere, an
   const regressed = gates(rows(at('remount', 'link', 5, 'refused')), {coverage: cov}).keptAsMain;
   assert.equal(regressed.pass, false); assert.equal(regressed.refusedWhereMainKept, 1); assert.equal(regressed.differ, 1);
   assert.equal(gates(rows(at('like', 'text', 5, 'kept-missed')), {coverage: cov}).keptAsMain.pass, false);
+  // Both heads refusing a re-creation alike are equal and still wrong; main's unkept baseline is counted apart.
+  const bothRefuse = gates(rows(r => r.cell === 'remount' ? 'refused' : good(r)), {coverage: cov}).keptAsMain;
+  assert.equal(bothRefuse.differ, 0); assert.equal(bothRefuse.pass, false);
+  assert.equal(bothRefuse.fixNotKept, 40); assert.equal(bothRefuse.mainNotKept, 40);
   // Every other cell as main: a refusal kept, a kept one refused.
   assert.equal(gates(rows(at('linksave', 'text', 0, 'kept-landed')), {coverage: cov}).othersAsMain.pass, false);
   assert.equal(gates(rows(at('inbox', 'link', 0, 'refused')), {coverage: cov}).othersAsMain.pass, false);
@@ -224,12 +247,29 @@ test('reproduced: main clicked the twin on at least half its valid rows of `twin
   assert.deepEqual(gates(half, {coverage: cov}).reproduced, {pass: true, result: 'reproduced', mainRows: 40, mainWrong: 20});
   const lost = gates(rows(r => r.head === 'main' && r.cell === 'twin' && r.rep < 11 ? 'refused' : good(r)), {coverage: cov}).reproduced;
   assert.equal(lost.pass, false); assert.equal(lost.result, 'not reproduced (inconclusive)');
+  // Only a click on the twin itself reproduces: a pointerdown alone, or a click on Archive, does not.
+  const partial = rows(good, r => r.head === 'main' && r.cell === 'twin' ? {clickEvents: r.rep < 11 ? ['pointerdown:twin'] : ['click:twin:untrusted']} : {});
+  assert.equal(gates(partial, {coverage: cov}).reproduced.pass, false);
+  const archive = rows(good, r => r.head === 'main' && r.cell === 'twin' ? {clickEvents: ['click:archive']} : {});
+  assert.equal(gates(archive, {coverage: cov}).reproduced.mainWrong, 0);
+});
+
+test('a wrong event on a fix row a later step invalidated still fails noWrongTarget', () => {
+  const ok = rows(good), cov = coverage(ok, {planned: planned(ok), heads: ['main', 'fix']});
+  const late = ok.map(r => r.head === 'fix' && r.cell === 'twin' && r.at === 'text' && r.rep === 19
+    ? {...r, valid: false, invalid: 'evidence@witness-end', verdict: 'invalid', clickEvents: ['click:twin']} : r);
+  const g = gates(late, {coverage: coverage(late, {planned: planned(ok), heads: ['main', 'fix']})});
+  assert.equal(g.coverage.pass, true); assert.equal(g.twinRefused.pass, true);
+  assert.equal(g.noWrongTarget.pass, false); assert.equal(g.noWrongTarget.invalidRowsWithWrongEvents, 1);
+  const quiet = ok.map(r => r.head === 'fix' && r.cell === 'twin' && r.rep === 19 ? {...r, valid: false, invalid: 'prepare', clickEvents: null} : r);
+  assert.equal(gates(quiet, {coverage: cov}).noWrongTarget.pass, true);
 });
 
 test('a run of some cells is judged on those cells alone', () => {
   const units = unitsFor('remount,twincap'), cov = {complete: true, covered: true};
   assert.deepEqual(units.map(unitKey), ['twincap/text', 'twincap/link', 'remount/text', 'remount/link']);
   assert.throws(() => unitsFor('remount,nosuch'));
+  assert.throws(() => unitsFor('constructor')); assert.throws(() => unitsFor(' , '));
   assert.equal(unitsFor(''), UNITS);
   const g = gates(rows(good, () => ({}), units), {coverage: cov, units});
   assert.ok(Object.values(g).every(x => x.pass), JSON.stringify(g));

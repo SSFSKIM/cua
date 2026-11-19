@@ -67,8 +67,10 @@ export function pointFor(at,frame){
 export function unitsFor(filter){
   if(!filter)return UNITS;
   const names=filter.split(',').map(s=>s.trim()).filter(Boolean);
-  if(!names.length||names.some(n=>!CELLS[n]))throw Error('unknown cell');
-  return UNITS.filter(u=>names.includes(u.cell));
+  if(!names.length||names.some(n=>!Object.hasOwn(CELLS,n)))throw Error('unknown cell');
+  const units=UNITS.filter(u=>names.includes(u.cell));
+  if(!units.length)throw Error('no units');
+  return units;
 }
 
 // Rows in run order. A qualification interleaves the heads, alternating which goes first per unit and repetition.

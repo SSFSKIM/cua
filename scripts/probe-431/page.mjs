@@ -50,6 +50,9 @@ function run(c){
     const spec=CELLS[c.cell];if(!spec)throw Error('cell');
     trial=c.trial;cell=c.cell;marked=null;twins=[];mover=null;drafts=null;
     slots=[row(),row(),row()];nav.replaceChildren(...slots);far.replaceChildren();far.className=spec.twin==='cap'?'on':'';
+    // For the cap twin, the region and the twin's row are groups of their own, so neither is flattened into a sibling the walk
+    // reads before the filler.
+    if(spec.twin==='cap')far.setAttribute('role','group');else far.removeAttribute('role');
     target=control('target',spec.before,spec);archive=control('archive',OTHERS.archive);
     slots[0].append(target);
     if(spec.twin==='move'){twins=[control('twin',spec.before,spec)];mover=twins[0];slots[1].append(mover);slots[2].append(archive);}
@@ -61,7 +64,7 @@ function run(c){
         for(let i=0;i<FILLER.each;i++){const d=document.createElement('div');d.textContent='x'+i;group.append(d);}
         far.append(group);
       }
-      twins=[control('twin',spec.before,spec)];mover=row();mover.append(twins[0]);far.append(mover);slots[1].append(archive);
+      twins=[control('twin',spec.before,spec)];mover=row();mover.setAttribute('role','group');mover.append(twins[0]);far.append(mover);slots[1].append(archive);
     }else if(spec.twin==='deep'){
       // The twin under DEEP nested groups in the second row, so the walk stops above it.
       twins=[control('twin',spec.before,spec)];let inner=twins[0];

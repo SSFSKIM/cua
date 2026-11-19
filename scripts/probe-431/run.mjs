@@ -123,8 +123,9 @@ async function main(){
           if(!placed)throw stepError('screenshot');
           // The observation itself puts the unit's role at the point the engine will post: else the unit is not tested.
           if(nodeAt(sky.nodes,placed.screen)?.role!==recordedRole(c.cell,c.at))throw stepError('placement');
-          // A ruling-881 twin must be absent from what the observation read, else the unit is not tested.
-          if(!covers(sky,spec,found))throw stepError('uncovered');
+          // A twin cell's observation must hold every control it prepares (so the target is the one found), and a ruling-881
+          // twin none of its own, else the unit is not tested.
+          if(!covers(sky,spec,found,{role:controlRole(c.cell)}))throw stepError('uncovered');
           // The cell's change, after the observation (and so after the record), before the click.
           s='mark';
           mark=await platform.command({op:'mark',trial});
@@ -178,10 +179,10 @@ async function main(){
         sameNode:read?.sameNode??null,exercised,
         // Geometry: the recorded node's frame (and both nodes') at the observation against the engine's re-observation
         // after the change, in screen points; and the page's own before and after, in CSS pixels.
-        ax:found?{recorded:delta(aim?.frame,after?.[c.at]?.frame),text:delta(found.text.frame,after?.text?.frame),link:delta(found.link.frame,after?.link?.frame),
+        ax:found?{recorded:delta(aim?.frame,after?.[c.at]?.frame),text:delta(found.text?.frame,after?.text?.frame),link:delta(found.link.frame,after?.link?.frame),
           reobserved,foundAfter:!!after}:null,
         dom:mark?{text:delta(mark.before?.textRect,mark.after?.textRect),link:delta(mark.before?.link,mark.after?.link),twin:delta(mark.before?.link,mark.twin)}:null,walk,
-        frames:found?{text:found.text.frame,link:found.link.frame,point:placed?.screen??null}:null,
+        frames:found?{text:found.text?.frame??null,link:found.link.frame,point:placed?.screen??null}:null,
         presentationHeld:witness?.held??null,observeMs:observed?.ms??null,clickMs:click?.ms??null};
       rows.push(row);
       streak=row.valid?0:streak+1;

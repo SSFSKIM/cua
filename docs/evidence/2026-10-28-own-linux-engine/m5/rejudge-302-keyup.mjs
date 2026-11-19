@@ -3,7 +3,7 @@
 // read again through the settle judge with the form, beside the judge before it. A read of stored rows, not a rerun.
 // For each record it prints:
 // - the stored verdict, and whether the judge before the form, over the same rows, reproduces it (the check that the
-//   sitting is rebuilt as it ran);
+//   sitting is rebuilt as it ran: a record it does not reproduce is not re-judged, and the script exits 1);
 // - the verdict under the judge with the form, and whether it moved;
 // - per Electron press_key and key_up cell, its #302 runs (trial, ms), and every run whose class changed, with the reason
 //   a key_up miss is not #302.
@@ -43,8 +43,9 @@ try {
 /**
  * A stored settle record judged by a judge module, as the sitting ran (action-settle.mjs `runSettle`'s end): every series
  * rebuilt from its runs, its next same-page run after the last, then the sitting with the record's audits and skips.
- * A pilot is told by its stored verdict's `unjudged` (ruling 730); the window's watchdog and the desktop's ending are the
- * stored verdict's, which the reproduction check covers.
+ * A pilot is told by its stored verdict's `unjudged` (ruling 730). The rows store neither the private display's watchdog
+ * nor the desktop's ending (a change to a window the run did not open), so the rebuild has neither: a stored failure from
+ * either is one the judge before the form does not reproduce, and the script then fails closed (exit 1).
  */
 function judgeRecord(judge, rows) {
   const runs = rows.filter((r) => r.kind === 'settle-run');
@@ -68,6 +69,7 @@ function judgeRecord(judge, rows) {
 
 const ELECTRON_KEYS = /^electron-\S+ (press_key|key_up) /;
 let moved = 0;
+let unreproduced = 0;
 for (const spec of args) {
   const [label, file] = spec.includes('=') ? spec.split(/=(.*)/s) : [spec, spec];
   const text = readFileSync(file, 'utf8');
@@ -81,6 +83,12 @@ for (const spec of args) {
   console.log(`\n## ${label} (${rows.find((r) => r.kind === 'meta').run}, ${file}, sha256 ${createHash('sha256').update(text).digest('hex')})`);
   console.log(`stored verdict: ${stored.pass ? 'PASS' : 'FAIL'}${stored.failed.length ? ` (${stored.failed.join('; ')})` : ''}`);
   console.log(`the judge before the form (${BEFORE}) over these rows: ${pass(b)}; reproduces the stored failures: ${reproduced ? 'yes' : `NO (${b.failed.join('; ')})`}`);
+  // a sitting not rebuilt as it ran: its re-judge would rest on a baseline that is not the record's, so it is not read
+  if (!reproduced) {
+    unreproduced++;
+    console.log('NOT RE-JUDGED: the rebuild does not reproduce the stored verdict');
+    continue;
+  }
   console.log(`the judge with the form: ${pass(a)}${a.failed.length ? ` (${a.failed.join('; ')})` : ''}; verdict moved: ${pass(a) === pass(b) ? 'no' : 'YES'}`);
   if (pass(a) !== pass(b)) moved++;
   for (const s of a.series.filter((x) => ELECTRON_KEYS.test(`${x.cell} `))) {
@@ -90,4 +98,5 @@ for (const spec of args) {
     console.log(`- ${s.cell} (${s.lane}): ${s.runs} runs, #302 ${s.late_302.length}${s.late_302.length ? ` (${s.late_302.map((l) => `t${l.trial} ${l.late_ms} ms`).join(', ')})` : ''}, reached ${s.reached}${changed.length ? `; changed: ${changed.join(', ')}` : ''}${keyUpMisses.length ? `; key_up misses not #302: ${keyUpMisses.join('; ')}` : ''}`);
   }
 }
-console.log(`\nrecords: ${args.length}; verdicts moved: ${moved}`);
+console.log(`\nrecords: ${args.length}; verdicts moved: ${moved}; not reproduced: ${unreproduced}`);
+if (unreproduced) process.exit(1);

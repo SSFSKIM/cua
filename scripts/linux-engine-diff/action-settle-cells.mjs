@@ -514,17 +514,20 @@ function caughtUpMiss(run, next) {
  * the key_up's settle, and the late bound records when the key-up came (`late_ms`). The page does not record an event's
  * `repeat`, so the key's press and its autorepeats read alike, as key-downs of the key.
  *   2. `prev` is the series' run before this one, on the same page with nothing sent between but this run's key_down.
- *      From its after-read to this run's before-read, key_downs rose (the press, and its repeats while held), key_ups
- *      did not fall, and the last key event was the key. A series' first run has no such reading, so it cannot show 2.
- *   3. `next` is the next timed run on the same page, its counters continuing from this run's. Its before-read has
- *      key_ups this run's after-read's plus one, and key_downs that read's plus the next run's own press: one when the
- *      next run is a key_up, whose key_down comes before its before-read, and none for any other kind.
- *   4. From this run's before-read to its after-read (its answer, then the settle), key_ups are unchanged (the release
- *      is the late event), key_downs are not fewer (only the key's autorepeats may come), the last key event is the
- *      key's, and every other field of the page is unchanged. To `next`'s before-read, the counts are 3's, the last key
- *      event the key's, and no Escape came. Another key's event shows in those counts, in last_key or in the Escapes,
- *      with one exception the page cannot show: a key-down of another key amid the repeats whose key-up has not come
- *      by the next before-read reads as a repeat.
+ *      It must have passed: a run that did not may have kept its hold (a refused release), and then this run's key_down
+ *      answers ok with no press sent while the old hold's repeats raise key_downs as a press would. From its after-read
+ *      to this run's before-read, key_downs rose (the press, and its repeats while held), key_ups did not fall, and the
+ *      last key event was the key. A series' first run has no such reading, so it cannot show 2.
+ *   3. `next` is the same cell's next run on the same page, its counters continuing from this run's. Its before-read
+ *      has key_ups this run's after-read's plus one, and key_downs that read's plus one, the next run's own key_down,
+ *      sent before its before-read.
+ *   4. The late interval runs from the answer to `next`'s before-read. From this run's before-read to its after-read,
+ *      key_ups are unchanged (the release is the late event), key_downs are not fewer (only the key's autorepeats may
+ *      come) and the last key event is the key's; to `next`'s before-read, the counts are 3's and the last key event the
+ *      key's; and through both, every other field of the page is unchanged. Another cell's before-read (the run after a
+ *      series' last, in a stored record) comes after that cell's own preparation, which may change the page, so it
+ *      confirms nothing. Another key's event shows in the counts, in last_key or in the Escapes, with one exception the
+ *      page cannot show: a key-down of another key amid the repeats, the key's own repeat after it, reads as a repeat.
  */
 export function heldKeyUpMiss(run, prev, next) {
   return ownHeldKeyUpMiss(run, prev) ?? heldCaughtUpMiss(run, next);
@@ -541,6 +544,9 @@ function ownHeldKeyUpMiss(run, prev) {
   const { before: b, after: a } = run;
   const key = run.sent?.key;
   if (!counted(b) || !counted(a)) return 'no key counters in the record';
+  // a run that did not pass may have kept its hold (a refused release), so this run's key_down could answer ok with no
+  // press sent while the old hold's repeats raise key_downs: only a passing run's own release ends the hold for certain
+  if (prev && prev.ok !== true) return `condition 2: the previous run did not pass (trial ${prev.trial}, ${runClass(prev)}), so its hold may not have ended`;
   const p = prev?.after;
   if (!counted(p)) return 'condition 2: no previous reading on the same page';
   if (b.key_downs < p.key_downs || b.key_ups < p.key_ups) return `condition 2: the before-read's counters (${b.key_downs}, ${b.key_ups}) are below the previous reading's (${p.key_downs}, ${p.key_ups}): another page`;
@@ -557,11 +563,15 @@ function heldCaughtUpMiss(run, next) {
   const n = next?.before;
   // an error row has no reading; a fresh page's counters start again
   if (!counted(n) || n.key_downs < a.key_downs || n.key_ups < a.key_ups) return 'condition 3: no next before-read on the same page';
-  const press = next.input === 'key_up' ? 1 : 0;
-  if (n.key_ups !== a.key_ups + 1 || n.key_downs !== a.key_downs + press) {
-    return `condition 3: the next before-read (trial ${next.trial}, ${next.input}) has key_ups ${a.key_ups} -> ${n.key_ups}, key_downs ${a.key_downs} -> ${n.key_downs}, its own press ${press}`;
+  // another cell's (or lane's) before-read comes after its own preparation, which may change the page: no confirmation
+  if (next.cell !== run.cell || next.lane !== run.lane) return `condition 4: the next before-read is ${next.cell}${next.lane !== run.lane ? ` (${next.lane})` : ''}'s, after its own preparation`;
+  // the next run's own press: its key_down, sent before its before-read
+  if (n.key_ups !== a.key_ups + 1 || n.key_downs !== a.key_downs + 1) {
+    return `condition 3: the next before-read (trial ${next.trial}) has key_ups ${a.key_ups} -> ${n.key_ups}, key_downs ${a.key_downs} -> ${n.key_downs}, its own press 1`;
   }
-  if (n.last_key !== run.sent?.key || !same(n.escapes, a.escapes)) return `condition 4: the next before-read has last_key ${n.last_key}, escapes ${a.escapes} -> ${n.escapes}`;
+  if (n.last_key !== run.sent?.key) return `condition 4: the next before-read has last_key ${n.last_key}`;
+  const other = Object.keys({ ...a, ...n }).filter((f) => !KEY_FIELDS.includes(f) && !same(a[f], n[f]));
+  if (other.length) return `condition 4: ${other.join(', ')} changed before the next read`;
   return null;
 }
 

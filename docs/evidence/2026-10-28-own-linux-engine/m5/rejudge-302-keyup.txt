@@ -47,6 +47,6 @@ the judge with the form: PASS; verdict moved: YES
 - electron-input key_up background (shipped): 30 runs, #302 0, reached true
 - electron-text press_key background (shipped): 30 runs, #302 0, reached true
 - electron-input press_key desktop (shipped): 30 runs, #302 7 (t6 231.4 ms, t19 249.5 ms, t20 277.2 ms, t22 234.3 ms, t23 256.7 ms, t24 232.8 ms, t28 341.8 ms), reached true
-- electron-input key_up desktop (shipped): 33 runs, #302 5 (t7 186.8 ms, t12 251.4 ms, t15 212.4 ms, t25 188.1 ms, t32 263.9 ms), reached true; changed: trial 7 fail -> #302, trial 12 fail -> #302, trial 15 fail -> #302, trial 25 fail -> #302, trial 32 fail -> #302
+- electron-input key_up desktop (shipped): 33 runs, #302 4 (t7 186.8 ms, t12 251.4 ms, t15 212.4 ms, t25 188.1 ms), reached true; changed: trial 7 fail -> #302, trial 12 fail -> #302, trial 15 fail -> #302, trial 25 fail -> #302; key_up misses not #302: trial 32 fail: condition 4: the next before-read is electron-input click desktop's, after its own preparation
 
-records: 5; verdicts moved: 1
+records: 5; verdicts moved: 1; not reproduced: 0

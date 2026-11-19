@@ -38,13 +38,22 @@ const shape = ([trial, prev, before, after, next, lateMs, nextKind]) => ({
   next: following(nextKind === 'key_up' ? trial + 1 : 0, page(...next), nextKind),
 });
 
-test("the key_up form: arm64's five late runs at twice the load are each #302", () => {
-  for (const s of ARM64) {
+// the four whose next before-read is the same cell's; trial 32's is the next cell's
+const SAME_CELL = ARM64.filter((s) => s[6] === 'key_up');
+
+test("the key_up form: arm64's late runs at twice the load are #302 where the next read is the cell's own, and trial 32 is not", () => {
+  for (const s of SAME_CELL) {
     const { prev, miss, next } = shape(s);
     assert.equal(heldKeyUpMiss(miss, prev, next), null, `trial ${s[0]}`);
+  }
+  for (const s of ARM64) {
+    const { miss, next } = shape(s);
     // press_key's form would refuse each (its key-downs not exactly one more, its key-ups never equal to them)
     assert.notEqual(lateKeyUpMiss({ ...miss, input: 'press_key' }, next), null, `trial ${s[0]}: press_key's form`);
   }
+  // trial 32: its next before-read is click desktop t0's, after that cell's own preparation (fix wave 1): unconfirmed
+  const { prev, miss, next } = shape(ARM64[4]);
+  assert.match(heldKeyUpMiss(miss, prev, next), /condition 4: the next before-read is electron-input click desktop's/);
 });
 
 test('the key_up form refuses a run that is not late, or whose desktop changed (conditions 1 and 5)', () => {
@@ -66,10 +75,17 @@ test("the key_up form's condition 2: the held key's press landed before the run'
   assert.match(heldKeyUpMiss(miss, { ...prev, after: page(300, 212) }, next), /condition 2/, 'counters below the previous reading: another page');
   assert.match(heldKeyUpMiss({ ...miss, before: page(257, 212, 'y') }, prev, next), /condition 2/, 'the last key event before the read was not the key');
   assert.match(heldKeyUpMiss({ ...miss, before: {} }, prev, next), /no key counters/);
+  // the review's probe (fix wave 1): a refused key_up may keep its hold (the engine's keyboard.rs), so the next key_down
+  // answers ok with no press sent, and the old hold's repeats raise key_downs as a press would. Only a passing previous
+  // run, its own release confirmed, ends the hold.
+  const refused = { ...prev, ok: false, landed: false, late_ms: null, answers: [{ ok: false, error: 'the key release failed' }] };
+  assert.match(heldKeyUpMiss(miss, refused, next), /condition 2: the previous run did not pass/, 'a refused predecessor');
+  assert.match(heldKeyUpMiss(miss, { ...prev, ok: false, landed: false, late_ms: 200, after: page(256, 211) }, next), /condition 2: the previous run did not pass/, 'a late predecessor');
+  assert.match(heldKeyUpMiss(miss, { ...prev, ok: false, landed: false, late_ms: null, invalid: 'a reader failed' }, next), /condition 2: the previous run did not pass/, 'an invalid predecessor');
 });
 
 test("the key_up form's condition 3: at the next before-read, one more key-up, and key-downs grown only by the next run's own press", () => {
-  for (const s of ARM64) {
+  for (const s of SAME_CELL) {
     const { prev, miss, next } = shape(s);
     const at = (kd, ku) => ({ ...next, before: page(kd, ku) });
     const [kd, ku] = [next.before.key_downs, next.before.key_ups];
@@ -82,8 +98,9 @@ test("the key_up form's condition 3: at the next before-read, one more key-up, a
   assert.match(heldKeyUpMiss(miss, prev, undefined), /condition 3: no next before-read/);
   assert.match(heldKeyUpMiss(miss, prev, { ...next, before: undefined, error: 'preparation refused' }), /condition 3: no next before-read/);
   assert.match(heldKeyUpMiss(miss, prev, { ...next, before: page(1, 0) }), /condition 3: no next before-read/, 'a fresh page: the counters started again');
-  // a next run that sends no key before its before-read (another cell's): key-downs must not have grown at all
-  assert.match(heldKeyUpMiss(miss, prev, { ...next, input: 'click' }), /condition 3/, "the click's before-read with a key-down more");
+  // another cell's before-read comes after that cell's own preparation, which may change the page: never a confirmation
+  assert.match(heldKeyUpMiss(miss, prev, { ...next, input: 'click', cell: 'electron-input click desktop' }), /condition 4: the next before-read is electron-input click desktop's/);
+  assert.match(heldKeyUpMiss(miss, prev, { ...next, lane: 'settle-100' }), /condition 4: the next before-read is electron-input key_up desktop \(settle-100\)'s/);
 });
 
 test("the key_up form's condition 4: the late events are only that key's release and its autorepeats", () => {
@@ -97,6 +114,18 @@ test("the key_up form's condition 4: the late events are only that key's release
   assert.match(late({ moves: 2327 }), /condition 4/, 'a move after the answer');
   assert.match(heldKeyUpMiss(miss, prev, { ...next, before: { ...next.before, last_key: 'y' } }), /condition 4/, "another key's event the last before the next read");
   assert.match(heldKeyUpMiss(miss, prev, { ...next, before: { ...next.before, escapes: 1 } }), /condition 4/, 'an Escape before the next read');
+  // the late interval runs to the next before-read (fix wave 1): any other change of the page there fails too
+  const gap = (over) => heldKeyUpMiss(miss, prev, { ...next, before: { ...next.before, ...over } });
+  assert.match(gap({ clicks: 36 }), /condition 4: clicks changed before the next read/, 'a click in the gap');
+  assert.match(gap({ moves: 2327, pointer_at: [601, 240] }), /condition 4: moves, pointer_at changed before the next read/, 'a move in the gap');
+  // a stray key-down of another key, then the key's own event over it, so last_key reads the key again. In the gap the
+  // counts are exact, so the stray key-down shows as one too many:
+  assert.match(gap({ key_downs: next.before.key_downs + 1 }), /condition 3/, 'a stray key-down in the gap, an x after it');
+  // amid the repeats, where key_downs may grow by any count, it reads as one more repeat: the page records no key per
+  // event and no repeat flag, so the counters cannot show it (the limit ruling 865 accepted for what this cell observes)
+  const stray = { ...miss, after: { ...miss.after, key_downs: miss.after.key_downs + 1 } };
+  const strayNext = { ...next, before: { ...next.before, key_downs: next.before.key_downs + 1 } };
+  assert.equal(heldKeyUpMiss(stray, prev, strayNext), null, 'a stray key-down amid the repeats, an x repeat after it: not visible');
 });
 
 /** arm64's series as a run of 33: passes between the five late runs, the counters continuing as the record's do. */
@@ -122,15 +151,20 @@ function arm64Series() {
   return rows;
 }
 
-test("arm64's L3b series: the five count toward the streak, listed apart as #302, and its next cell's before-read confirms the last", () => {
+test("arm64's L3b series: four count toward the streak as #302, trial 32 fails on the next cell's read, and the series still reaches 30", () => {
   const rows = arm64Series();
   const last = rows.at(-1);
   const next = following(0, page(last.after.key_downs, last.after.key_ups + 1), 'click');
   const v = judgeSettleSeries(rows, { need: 30, next });
-  assert.equal(v.reached, true);
-  assert.deepEqual(v.late_302.map((l) => l.trial), [7, 12, 15, 25, 32]);
-  assert.deepEqual(v.late_302.map((l) => l.late_ms), [186.8, 251.4, 212.4, 188.1, 263.9]);
+  assert.equal(v.reached, true, 'trials 0-31 make 32 consecutive');
+  assert.deepEqual(v.late_302.map((l) => l.trial), [7, 12, 15, 25]);
+  assert.deepEqual(v.late_302.map((l) => l.late_ms), [186.8, 251.4, 212.4, 188.1]);
+  assert.equal(v.judged.at(-1).cls, 'fail');
+  assert.match(v.judged.at(-1).why, /click desktop's/);
   assert.deepEqual(v.false_ok, []);
+  // the same cell's next run would have confirmed it
+  const own = judgeSettleSeries([...rows, following(33, page(last.after.key_downs + 1, last.after.key_ups + 1))], { need: 30 });
+  assert.deepEqual(own.late_302.map((l) => l.trial), [7, 12, 15, 25, 32]);
   // without the next cell's before-read the last is pending, and the series, its streak broken there, not yet reached
   const open = judgeSettleSeries(rows, { need: 30 });
   assert.deepEqual(open.judged.at(-1), { trial: 32, cls: 'pending', late_ms: 263.9 });
@@ -143,6 +177,9 @@ test("the negative controls in a series: each run no longer #302 is an honest mi
     'a lost release: the next before-read has no key-up more': (rows) => { rows[index(rows, 13)].before.key_ups -= 1; },
     "a stray key-down beyond the next run's own press": (rows) => { rows[index(rows, 13)].before.key_downs += 1; },
     'a late event from another key': (rows) => { rows[index(rows, 12)].after.last_key = 'y'; },
+    'a click in the gap before the next read': (rows) => { rows[index(rows, 13)].before.clicks += 1; },
+    // the review's probe: the run before it refused, so its hold may not have ended
+    'a refused predecessor': (rows) => { Object.assign(rows[index(rows, 11)], { ok: false, landed: false, answers: [{ ok: false, error: 'the key release failed' }] }); },
   };
   for (const [name, edit] of Object.entries(edits)) {
     const rows = arm64Series();

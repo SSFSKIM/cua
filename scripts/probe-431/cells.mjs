@@ -40,7 +40,8 @@ export const CELLS={
   // (`twinrow`); a list of WIDE rows with the twin the first the window does not show (`twinwide`).
   twinswap:{kind:'twin',before:'Inbox',after:'Inbox',twin:'swap',reasons:['nodeGone','frameMoved']},
   twinswapbtn:{kind:'twin',before:'Inbox',after:'Inbox',twin:'swap',swap:'button',reasons:['nodeGone','frameMoved']},
-  twincover:{kind:'twin',before:'Inbox',after:'Inbox',twin:'cover'},
+  // At the link point the record holds the live overlay itself (sameElement), not a re-created match: #433, report only.
+  twincover:{kind:'twin',before:'Inbox',after:'Inbox',twin:'cover',reportOnlyAt:['link']},
   twinrow:{kind:'twin',before:'Inbox',after:'Inbox',twin:'row'},
   // A group of links, the shape whose width cut Safari shows (Chromium reads such a group whole), so Safari only.
   twinwide:{kind:'twin',before:'Delete',after:'Delete',twin:'wide',lanes:['safari']},

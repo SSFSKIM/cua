@@ -181,7 +181,11 @@ export const MIN_PAIRS=10;
 // The ruling-881 twins (absent from the record), gated apart from the twins the record holds so each answer reads alone.
 export const UNRECORDED=new Set(['twincap','twindeep','twinwide']);
 // The qualification gates (two heads). A row pairs with the other head's row of the same unit and repetition.
-export function gates(rows,{coverage:cov,units=UNITS}){
+export function gates(rows,{coverage:cov,units:all=UNITS}){
+  // A unit a cell names report-only (`reportOnlyAt`) is run and reported (`reportOnly`), never gated: twincover at the
+  // link point, where the record holds the live overlay itself, not a re-created match (#433, outside #431).
+  const isReportOnly=u=>(CELLS[u.cell].reportOnlyAt??[]).includes(u.at);
+  const units=all.filter(u=>!isReportOnly(u)),reportUnits=all.filter(isReportOnly);
   const inRun=new Set(units.map(unitKey));
   const fix=rows.filter(r=>r.head==='fix'&&r.valid&&inRun.has(unitKey(r))),main=rows.filter(r=>r.head==='main'&&r.valid&&inRun.has(unitKey(r)));
   const kindOf=r=>CELLS[r.cell].kind;
@@ -263,6 +267,11 @@ export function gates(rows,{coverage:cov,units=UNITS}){
         .filter(([,x])=>x.fix||x.main)),examples:brief(wrong)},
     presentation:{pass:presentationWorse.length===0,worse:presentationWorse,
       fixLost:fix.filter(r=>r.presentationHeld===false).length,mainLost:main.filter(r=>r.presentationHeld===false).length},
+    reportOnly:{informational:true,pass:true,perUnit:Object.fromEntries(reportUnits.map(u=>{
+      const at=h=>rows.filter(r=>r.head===h&&r.valid&&r.cell===u.cell&&r.at===u.at);
+      return [unitKey(u),{fix:verdictTally(at('fix')),main:verdictTally(at('main')),fixWrong:at('fix').filter(r=>r.verdict==='wrong-target').length,
+        mainWrong:at('main').filter(r=>r.verdict==='wrong-target').length}];
+    }))},
     guardMs:{informational:true,pass:true,fix:ms(fix),main:ms(main),fixTwin:ms(fix.filter(r=>isTwin(r.cell))),mainTwin:ms(main.filter(r=>isTwin(r.cell)))},
   };
 }

@@ -209,11 +209,15 @@ test('gates pass a fix that refuses every twin and answers as main elsewhere, an
   const g = gates(ok, {coverage: cov});
   assert.ok(Object.values(g).every(x => x.pass), JSON.stringify(g));
   assert.equal(g.reproduced.result, 'reproduced');
-  assert.equal(g.twinRefused.mainWrong, 20 * 13); assert.equal(g.twinUnrecorded.mainWrong, 20 * 6);
+  assert.equal(g.twinRefused.mainWrong, 20 * 12); assert.equal(g.twinUnrecorded.mainWrong, 20 * 6);
   // A moved target's own handle refuses frameMoved, which the swap cells count with nodeGone; no other twin does.
   const swapMoved = rows(good, r => r.head === 'fix' && r.cell.startsWith('twinswap') ? {guard: {verdict: 'refused', reason: 'frameMoved'}} : {});
   assert.equal(gates(swapMoved, {coverage: cov}).twinRefused.pass, true);
-  assert.equal(g.noWrongTarget.mainWrong, 19 * 20); assert.deepEqual(g.guardMs.fix, {n: ok.length / 2, p50: 4, p95: 4, max: 4});
+  assert.equal(g.noWrongTarget.mainWrong, 18 * 20);
+  // twincover at the link (#433) is reported, never gated: a wrong target there fails nothing.
+  const overlay = gates(rows(at('twincover', 'link', null, 'wrong-target')), {coverage: cov});
+  assert.ok(overlay.twinRefused.pass && overlay.noWrongTarget.pass); assert.equal(overlay.reportOnly.perUnit['twincover/link'].fixWrong, 20);
+  assert.equal(gates(rows(at('twincover', 'text', 0, 'wrong-target')), {coverage: cov}).noWrongTarget.pass, false); assert.deepEqual(g.guardMs.fix, {n: ok.length / 2 - 20, p50: 4, p95: 4, max: 4});
   // A twin kept (on the twin, or anywhere), or refused for another reason, fails its gate; a click on it fails both.
   const landed = gates(rows(at('twindel', 'link', 3, 'wrong-target')), {coverage: cov});
   assert.equal(landed.twinRefused.pass, false); assert.equal(landed.twinRefused.fixWrong, 1); assert.equal(landed.noWrongTarget.pass, false);

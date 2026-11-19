@@ -1,6 +1,6 @@
 // Scoring, summaries and gates for the #431 lanes (on #340's kit). Pure: unit-tested by kit.test.mjs. Link truth is the owned
 // page's pointer-event log; every projected diagnostic is a member of a closed vocabulary, an engine name or a number.
-import {CELLS,UNITS,recordedRole,unitKey} from './cells.mjs';
+import {CELLS,UNITS,recordedRole,unitKey,isReportOnly} from './cells.mjs';
 
 const reads=(n,s)=>[n.title,n.description,n.value].some(v=>typeof v==='string'&&v.trim()===s);
 const centre=f=>({x:f.x+f.width/2,y:f.y+f.height/2});
@@ -52,7 +52,12 @@ export function uncoveredBy(sky,spec,found,{role='AXLink'}={}){
   if(!spec.twin)return null;
   const carrier=role==='AXLink'?'AXStaticText':role;
   if(nodes.filter(n=>framed(n)&&n.role===carrier&&reads(n,spec.before)).length!==LABELLED[spec.twin])return 'count';
-  if(spec.twin==='wide')return nodes.some(n=>Number.isInteger(n?.shown?.count)&&n.shown.count<n.shown.of)?null:'cut';
+  if(spec.twin==='wide'){
+    if(!nodes.some(n=>Number.isInteger(n?.shown?.count)&&n.shown.count<n.shown.of))return 'cut';
+    // The twin and every row after it lie outside the read: no control of the role at or below the target's bottom.
+    const bottom=found.link.frame.y+found.link.frame.height;
+    return nodes.some(n=>n?.role===role&&framed(n)&&n!==found.link&&n.frame.y>=bottom)?'control':null;
+  }
   if(spec.twin!=='cap'&&spec.twin!=='deep')return null;
   const t=sky.truncated;
   if(spec.twin==='cap'?!(t?.count>0&&sky.timings?.nodeCapHit===true):!(t?.depth>0))return 'cut';
@@ -171,10 +176,12 @@ export function coverage(rows,{planned,heads,units=UNITS}){
   for(const h of heads)for(const u of units){
     const list=rows.filter(r=>r.head===h&&r.cell===u.cell&&r.at===u.at),want=planned[`${h}/${unitKey(u)}`]??0;
     const valid=list.filter(r=>r.valid).length;
-    per[`${h}/${unitKey(u)}`]={planned:want,ran:list.length,valid};
-    if(want===0||list.length<want||valid<VALID_BAR*want)covered=false;
+    // A report-only unit is listed, never held to the bar.
+    const reportOnly=isReportOnly(u);
+    per[`${h}/${unitKey(u)}`]={planned:want,ran:list.length,valid,...(reportOnly?{reportOnly}:{})};
+    if(!reportOnly&&(want===0||list.length<want||valid<VALID_BAR*want))covered=false;
   }
-  return {complete:Object.values(per).every(p=>p.ran>=p.planned),covered,per};
+  return {complete:Object.values(per).every(p=>p.reportOnly||p.ran>=p.planned),covered,per};
 }
 
 export const MIN_PAIRS=10;
@@ -184,7 +191,7 @@ export const UNRECORDED=new Set(['twincap','twindeep','twinwide']);
 export function gates(rows,{coverage:cov,units:all=UNITS,minPairs=MIN_PAIRS}){
   // A unit a cell names report-only (`reportOnlyAt`) is run and reported (`reportOnly`), never gated: twincover at the
   // link point, where the record holds the live overlay itself, not a re-created match (#433, outside #431).
-  const isReportOnly=u=>(CELLS[u.cell].reportOnlyAt??[]).includes(u.at);
+
   const units=all.filter(u=>!isReportOnly(u)),reportUnits=all.filter(isReportOnly);
   const inRun=new Set(units.map(unitKey));
   const fix=rows.filter(r=>r.head==='fix'&&r.valid&&inRun.has(unitKey(r))),main=rows.filter(r=>r.head==='main'&&r.valid&&inRun.has(unitKey(r)));
@@ -258,9 +265,10 @@ export function gates(rows,{coverage:cov,units:all=UNITS,minPairs=MIN_PAIRS}){
     bigPage:{informational:true,...asMainGate(c=>CELLS[c].kind==='big',{mustKeep:true})},
     // The strict form's cost (ruling 889): per unit, of the pairs main kept and landed, how many the fix refused.
     cost:{informational:true,pass:true,perUnit:Object.fromEntries(units.map(u=>{
-      const kept=of(fix,u).filter(r=>mate(r)?.verdict==='kept-landed');
-      return [unitKey(u),{mainKept:kept.length,fixRefused:kept.filter(r=>r.verdict.startsWith('refused')).length}];
-    }).filter(([,x])=>x.mainKept>0))},
+      // A fix row whose observation failed ran no guard: unmeasured, never in the denominator.
+      const pairs=of(fix,u).filter(r=>mate(r)?.verdict==='kept-landed'),kept=pairs.filter(r=>r.verdict!=='observe-failed');
+      return [unitKey(u),{mainKept:kept.length,fixRefused:kept.filter(r=>r.verdict.startsWith('refused')).length,unmeasured:pairs.length-kept.length}];
+    }).filter(([,x])=>x.mainKept+x.unmeasured>0))},
     noWrongTarget:{pass:wrong.length===0&&invalidWrong.length===0,fixRows:fix.length,wrong:wrong.length,
       invalidRowsWithWrongEvents:invalidWrong.length,invalidExamples:invalidWrong.slice(0,20).map(r=>({unit:unitKey(r),rep:r.rep,invalid:r.invalid})),mainWrong:main.filter(r=>r.verdict==='wrong-target').length,
       perUnit:Object.fromEntries(units.map(u=>[unitKey(u),{fix:of(wrong,u).length,main:of(main,u).filter(r=>r.verdict==='wrong-target').length}])

@@ -8,7 +8,7 @@ import {join} from 'node:path';
 import {execFileSync} from 'node:child_process';
 import {Wire} from './wire.mjs';
 import {owned,stop,pause,environment,startPlatform,startHelper} from './platform.mjs';
-import {LANES,CELLS,recordedRole,controlRole,unitKey,unitsFor,plan,pointFor} from './cells.mjs';
+import {LANES,CELLS,recordedRole,controlRole,unitKey,unitsForLane,isReportOnly,repsOf,plan,pointFor} from './cells.mjs';
 import {outcomeOf,stalePointOf,routeOf,findLink,uncoveredBy,nodeAt,landingOf,delta,score,summarize,coverage,judge} from './check.mjs';
 
 const setupLabel=e=>typeof e?.setupStep==='string'?e.setupStep:'other';
@@ -75,9 +75,9 @@ async function main(){
   if(!LANES.includes(lane)||!['smoke','measure','qualify'].includes(mode))throw Error('invalid lane');
   const heads=Object.fromEntries(headSpecs.map(s=>{const [name,bin]=s.split('::');return [name,{bin}];}));
   // Repetitions per unit and head, when the dispatch names them (`reps`); else the mode's.
-  const reps=/^[1-9][0-9]?$/.test(process.env.PROBE_REPS||'')?Number(process.env.PROBE_REPS):null;
+  const reps=repsOf(process.env.PROBE_REPS||'');
   // A cell measured on some lanes only (`lanes`) is not planned on the others.
-  const headNames=Object.keys(heads),units=unitsFor(process.env.PROBE_CELLS||'').filter(u=>!CELLS[u.cell].lanes||CELLS[u.cell].lanes.includes(lane));
+  const headNames=Object.keys(heads),units=unitsForLane(process.env.PROBE_CELLS||'',lane);
   if(!headNames.length||headNames.some(h=>!['main','fix'].includes(h))||mode==='qualify'&&headNames.length!==2)throw Error('invalid heads');
   mkdirSync(out,{recursive:true});const tmp=mkdtempSync(join(root,'q431-')),home=join(tmp,'platform'),shots=join(tmp,'shots');
   mkdirSync(home);mkdirSync(shots,{mode:0o700});
@@ -85,6 +85,8 @@ async function main(){
     os:execFileSync('sw_vers',['-productVersion'],{encoding:'utf8',stdio:['ignore','pipe','ignore']}).trim(),lane,mode,heads:headNames,cells:process.env.PROBE_CELLS||null};
   const rows=[],engines={},planned={};let platform,helper,stage='helper',abort=null,abortStep=null;
   try{
+    // A lane with no unit of the dispatch's cells runs nothing and passes nothing (the plan job drops such lanes).
+    if(!units.length){stage='no-units';throw Object.assign(Error('no units'),{setupStep:'no-units'});}
     helper=startHelper(helperBin,environment(home));
     stage='launch';
     platform=await startPlatform({lane,home,helper,cover,stage:x=>{stage=x;}});
@@ -196,7 +198,8 @@ async function main(){
         frames:found?{text:found.text?.frame??null,link:found.link.frame,point:placed?.screen??null}:null,
         presentationHeld:witness?.held??null,observeMs:observed?.ms??null,clickMs:click?.ms??null};
       rows.push(row);
-      streak=row.valid?0:streak+1;
+      // A report-only unit's rows never move the abort streak.
+      if(!isReportOnly(c))streak=row.valid?0:streak+1;
       if(streak>=8){abort='consecutive-invalid';break;}
     }
   }catch(e){abort=stage;abortStep=setupLabel(e);}

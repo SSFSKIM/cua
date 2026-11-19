@@ -161,7 +161,8 @@ function run(c){
     else target.textContent=spec.after;
     marked=target;
     // For a twin cell the target is gone: the geometry after is the twin's that took its place.
-    const t=twins[twins.length-1];
+    // The twin that took the target's place: the first, but for twinrow the one re-rendered in the live row (the last).
+    const t=spec.twin==='row'?twins[twins.length-1]:twins[0];
     const after=spec.twin?{text:t.textContent,link:rect(t.getBoundingClientRect()),textRect:null}:geometry();
     return {trial,clicksBeforeMark,before,after,twin:spec.twin?rect(t.getBoundingClientRect()):null};
   }

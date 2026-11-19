@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {Script} from 'node:vm';
-import {CELLS,UNITS,AT,FILLER,DEEP,recordedRole,unitKey,unitsFor,plan,pointFor} from './cells.mjs';
+import {CELLS,UNITS,AT,FILLER,DEEP,recordedRole,unitKey,unitsFor,unitsForLane,repsOf,plan,pointFor} from './cells.mjs';
 import {quantiles,outcomeOf,stalePointOf,routeOf,findLink,covers,uncoveredBy,nodeAt,landingOf,delta,score,gates,coverage,summarize,judge,MIN_PAIRS} from './check.mjs';
 import {page} from './page.mjs';
 import {toPixels} from './run.mjs';
@@ -287,8 +287,8 @@ test('a big page\'s re-creation refused by the fix is reported, never failed; it
   assert.equal(g.bigPage.refusedWhereMainKept, 4 * 20); assert.equal(g.keptAsMain.pass, true);
   assert.equal(judge(refused, {mode: 'qualify', abort: null, coverage: cov}).pass, true);
   // The strict form's cost: of main's kept-and-landed pairs per unit, those the fix refused.
-  assert.deepEqual(g.cost.perUnit['capremount/text'], {mainKept: 20, fixRefused: 20});
-  assert.deepEqual(g.cost.perUnit['remount/link'], {mainKept: 20, fixRefused: 0});
+  assert.deepEqual(g.cost.perUnit['capremount/text'], {mainKept: 20, fixRefused: 20, unmeasured: 0});
+  assert.deepEqual(g.cost.perUnit['remount/link'], {mainKept: 20, fixRefused: 0, unmeasured: 0});
   assert.equal(g.cost.perUnit['twin/text'], undefined);
   // interactiveHit is a twin refusal ruling 889 accepts; relabelled is not.
   const hit = v => rows(good, r => r.head === 'fix' && r.cell === 'twinrow' ? {guard: {verdict: 'refused', reason: v}} : {});
@@ -299,6 +299,32 @@ test('a big page\'s re-creation refused by the fix is reported, never failed; it
   assert.equal(uncoveredBy({nodes: [{role: 'AXGroup', shown: {count: 151, of: 151}}]}, CELLS.wideremount, found), 'cut');
   assert.equal(uncoveredBy({nodes: [], timings: {nodeCapHit: true}}, CELLS.capremount, found), null);
   assert.equal(uncoveredBy({nodes: [], timings: {deadlineHit: true}}, CELLS.capremount, found), 'cut');
+});
+
+test('the second review: lanes without units, reps, report-only coverage, the wide twin, unmeasured cost', () => {
+  // A Safari-only cell gives a Chromium lane no unit (the plan drops the lane, the runner refuses it).
+  assert.equal(unitsForLane('twinwide', 'cft').length, 0); assert.equal(unitsForLane('twinwide', 'safari').length, 2);
+  assert.equal(unitsForLane('', 'cft').length, UNITS.length - 4);
+  // reps: empty takes the mode's; anything but an integer 1-99 is refused.
+  assert.equal(repsOf(''), null); assert.equal(repsOf('5'), 5);
+  for (const bad of ['2 ', '0', '100', 'x', '-1']) assert.throws(() => repsOf(bad), bad);
+  // A report-only unit's failures never fail coverage.
+  const units = unitsFor('twincover'), list = rows(r => r.at === 'link' && r.rep < 10 ? 'refused' : good(r), () => ({}), units)
+    .map(r => r.at === 'link' && r.rep >= 1 ? {...r, valid: false, invalid: 'placement@placement'} : r);
+  const cov = coverage(list, {planned: planned(list), heads: ['main', 'fix'], units});
+  assert.ok(cov.covered && cov.complete); assert.equal(cov.per['fix/twincover/link'].reportOnly, true);
+  const short = coverage(list.filter(r => r.at === 'text' || r.rep === 0), {planned: planned(list), heads: ['main', 'fix'], units});
+  assert.ok(short.complete);
+  // The wide twin: a control at or below the target's bottom is the twin (or a row after it) in the read.
+  const target = {role: 'AXLink', frame: {x: 20, y: 500, width: 116, height: 56}}, tt = {role: 'AXStaticText', value: 'Delete', frame: {x: 52, y: 514, width: 60, height: 28}};
+  const cut = {role: 'AXGroup', shown: {count: 3, of: 150}}, above = {role: 'AXLink', frame: {x: 20, y: 372, width: 90, height: 56}};
+  const sky = extra => ({nodes: [cut, above, tt, target, ...extra]});
+  assert.equal(uncoveredBy(sky([]), CELLS.twinwide, {text: tt, link: target}), null);
+  assert.equal(uncoveredBy(sky([{role: 'AXLink', title: '', frame: {x: 20, y: 564, width: 116, height: 56}}]), CELLS.twinwide, {text: tt, link: target}), 'control');
+  // Cost: a fix row whose observation failed is unmeasured, never a refusal's denominator.
+  const cu = unitsFor('remount'), cr = rows(r => r.head === 'fix' && r.at === 'link' && r.rep < 4 ? 'observe-failed' : r.head === 'fix' && r.at === 'link' && r.rep === 4 ? 'refused' : good(r), () => ({}), cu);
+  const c = gates(cr, {coverage: {complete: true, covered: true}, units: cu}).cost.perUnit['remount/link'];
+  assert.deepEqual(c, {mainKept: 16, fixRefused: 1, unmeasured: 4});
 });
 
 test('a short qualification plans its repetitions and asks no more pairs than it planned', () => {

@@ -108,6 +108,17 @@ export function unitsFor(filter){
   if(!units.length)throw Error('no units');
   return units;
 }
+// A lane's units: those of the filter whose cell runs on the lane (a cell's `lanes`, when it names some). Empty when the
+// lane has none to run, which the workflow's plan drops from the matrix and the runner refuses.
+export const unitsForLane=(filter,lane)=>unitsFor(filter).filter(u=>!CELLS[u.cell].lanes||CELLS[u.cell].lanes.includes(lane));
+// A unit run and reported, never gated (`reportOnlyAt`): it counts toward no gate, coverage or abort streak.
+export const isReportOnly=u=>(CELLS[u.cell].reportOnlyAt??[]).includes(u.at);
+// A dispatch's `reps`: empty takes the mode's; anything else must be an integer 1-99.
+export function repsOf(input){
+  if(input==null||input==='')return null;
+  if(!/^[1-9][0-9]?$/.test(input))throw Error('reps must be an integer 1-99');
+  return Number(input);
+}
 
 // Rows in run order. A qualification interleaves the heads, alternating which goes first per unit and repetition.
 export function plan({mode,heads,units=UNITS,reps:override=null}){

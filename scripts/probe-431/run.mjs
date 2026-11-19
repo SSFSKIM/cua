@@ -96,12 +96,20 @@ async function main(){
     for(const c of cells){
       const e=engines[c.head],app=e.appPath,spec=CELLS[c.cell];
       let s='engine-attach',attested=false,armed=false,observeFailed=false,observed=null,found=null,placed=null,mark=null,click=null,read=null,
-        after=null,reobserved=false,witness=null,invalid=null,exercised=null,walk=null;
+        after=null,reobserved=false,witness=null,invalid=null,exercised=null,walk=null,observeTries=0;
       try{
         const w=await e.attach();
         await platform.arm(++trial,{cell:c.cell},x=>{s=x;});armed=true;
         s='observe';
         observed=await e.call('get_app_state',{app,includeScreenshot:true,outputDirectory:shots});
+        // A cell whose page fills the node cap is prepared only once the browser's accessibility tree holds the filler
+        // (Chrome for Testing builds it late: smoke run 44519774336 read 65 nodes): until an observation stops at the cap,
+        // up to three more, a second apart. Each replaces the last, record included, and all come before the change.
+        observeTries=1;
+        for(const capCell=spec.twin==='cap'||spec.big==='cap';capCell&&observeTries<4&&observed.reply?.result?.timings?.nodeCapHit!==true;observeTries++){
+          await pause(1000);
+          observed=await e.call('get_app_state',{app,includeScreenshot:true,outputDirectory:shots});
+        }
         const sky=observed.reply?.result;
         // What the walk read: its node count, what it cut (count and depth) and whether the node cap stopped it.
         if(sky)walk={nodes:Array.isArray(sky.nodes)?sky.nodes.length:null,cut:Number.isInteger(sky.truncated?.count)?sky.truncated.count:0,
@@ -181,7 +189,7 @@ async function main(){
         // after the change, in screen points; and the page's own before and after, in CSS pixels.
         ax:found?{recorded:delta(aim?.frame,after?.[c.at]?.frame),text:delta(found.text?.frame,after?.text?.frame),link:delta(found.link.frame,after?.link?.frame),
           reobserved,foundAfter:!!after}:null,
-        dom:mark?{text:delta(mark.before?.textRect,mark.after?.textRect),link:delta(mark.before?.link,mark.after?.link),twin:delta(mark.before?.link,mark.twin)}:null,walk,
+        observeTries,dom:mark?{text:delta(mark.before?.textRect,mark.after?.textRect),link:delta(mark.before?.link,mark.after?.link),twin:delta(mark.before?.link,mark.twin)}:null,walk,
         frames:found?{text:found.text?.frame??null,link:found.link.frame,point:placed?.screen??null}:null,
         presentationHeld:witness?.held??null,observeMs:observed?.ms??null,clickMs:click?.ms??null};
       rows.push(row);

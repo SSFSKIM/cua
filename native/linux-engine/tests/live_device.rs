@@ -1276,6 +1276,23 @@ fn a_take_after_a_short_path_s_end_is_held_for_and_its_floor_filled_with_motions
     }
 }
 
+/// What [`in_front`] set, undone: the root's `_NET_ACTIVE_WINDOW` and `_NET_CLIENT_LIST_STACKING` deleted. A stacking
+/// list left naming a destroyed window names a later test's window once the server hands its client the same resource
+/// ids, and the engine then reads that window as on top.
+fn out_of_front() {
+    set_active_window(None);
+    let (conn, screen) = x11rb::connect(None).expect("an X connection");
+    let root = conn.setup().roots[screen].root;
+    let stacking = conn
+        .intern_atom(false, b"_NET_CLIENT_LIST_STACKING")
+        .unwrap()
+        .reply()
+        .unwrap()
+        .atom;
+    conn.delete_property(root, stacking).unwrap();
+    conn.sync().unwrap();
+}
+
 /// The final hold's bound in the tests (`--drag-dnd-final-hold-ms`, a development option, off by default).
 const FINAL_HOLD: &str = "200";
 
@@ -1316,7 +1333,7 @@ fn a_final_hold_keeps_a_chromium_drag_s_button_down_for_a_take_that_comes_after_
         place(window, windowless);
         let mut engine = Engine::start_with(args);
         let (answer, _) = drag(&mut engine, window, windowless);
-        set_active_window(None);
+        out_of_front();
         assert_eq!(answer, Ok(Value::Null), "{what}: off, a plain drag's answer");
         sleep(SETTLE);
         stop.send(()).unwrap();
@@ -1337,7 +1354,7 @@ fn a_final_hold_keeps_a_chromium_drag_s_button_down_for_a_take_that_comes_after_
         place(window, windowless);
         let mut engine = Engine::start_with(&on);
         let (answer, _) = drag(&mut engine, window, windowless);
-        set_active_window(None);
+        out_of_front();
         assert_eq!(answer, Ok(Value::Null), "{what}: on, a drop answers success");
         sleep(SETTLE);
         stop.send(()).unwrap();
@@ -1363,7 +1380,7 @@ fn a_final_hold_keeps_a_chromium_drag_s_button_down_for_a_take_that_comes_after_
         place(window, windowless);
         let mut engine = Engine::start_with(&on);
         let (answer, answered) = drag(&mut engine, window, windowless);
-        set_active_window(None);
+        out_of_front();
         assert_eq!(answer, Ok(Value::Null), "{what}: on, no take by the bound");
         sleep(SETTLE);
         stop.send(()).unwrap();
@@ -1389,7 +1406,7 @@ fn a_final_hold_keeps_a_chromium_drag_s_button_down_for_a_take_that_comes_after_
         place(window, windowless);
         let mut engine = Engine::start_with(&on);
         let (answer, _) = drag(&mut engine, window, windowless);
-        set_active_window(None);
+        out_of_front();
         assert_eq!(answer, Ok(Value::Null), "{what}: on, an ordinary drag");
         sleep(SETTLE);
         stop.send(()).unwrap();
@@ -1490,7 +1507,7 @@ fn a_final_hold_from_the_press_releases_a_drag_with_no_take_no_sooner_than_the_b
         let mut engine = Engine::start_with(args);
         let answer = engine.request("drag", json!({"window": {"id": window}, "path": path}));
         if in_front_of {
-            set_active_window(None);
+            out_of_front();
         }
         answer
     };

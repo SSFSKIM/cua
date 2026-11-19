@@ -72,9 +72,9 @@ import Foundation
 //   from a right one.
 // The paste route (Paste.swift, an input method or a background app's unknown source) is read back by this same
 // machinery (#361, `typeTextByPaste`): each pasted line a unit with no key, each newline a Return, so a Return the field
-// does not take as text is the same checkpoint; its snapshot is taken after the paste's activation, each line gated
-// before the pasteboard is let go (`confirmLine`), its final poll once the pasteboard is restored, before the
-// activation ends, every poll bounded by the request's deadline (`remainingMs`). Its requests are never concealed.
+// does not take as text is the same checkpoint where no effect showed the text before it land; its snapshot is taken
+// after the paste's activation, its final poll once the pasteboard is restored, before the activation ends, every
+// poll bounded by the request's deadline (`remainingMs`). Its delivery stays #187's. Its requests are never concealed.
 
 /// The poll's budget after the last event (or before a checkpoint's key), its interval, and the messaging timeout of
 /// every read: the spike's soft 1000 ms, 5 ms polls and 100 ms AX timeout, whose confirmed reads took p50 26 to 34 ms.
@@ -749,20 +749,6 @@ final class TypeReadback<Element> {
   var refusesTyping: Bool {
     if case .refused(.selectionChanged) = plan { return true }
     return false
-  }
-
-  /// Whether the snapshot left something to confirm (its field readable by value or by length).
-  var expects: Bool { plan.expects }
-
-  /// #361: the paste route's line gate, units `0..<end` (through a pasted line) confirmed before the pasteboard is let
-  /// go, so the item stays the engine's until the target shows it took it. A checkpoint when unit `end` can leave the
-  /// field; `beforeKey` whenever more units follow, since a failure sends none of them. Nothing when the snapshot
-  /// expects nothing (the paste then keeps #187's effect checks).
-  func confirmLine(through end: Int) throws {
-    guard plan.expects else { return }
-    if end < units.count, leaves(units[end]) { record.checkpoints += 1 }
-    try confirm(through: end, beforeKey: end < units.count)
-    unchecked = false
   }
 
   /// A poll's budget: `typeReadbackBudgetMs`, or less when the request has less time left.

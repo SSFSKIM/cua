@@ -1071,9 +1071,9 @@ reads:
 
 ### Table 3 amendment (2026-11-18, #361)
 
-#361 (the native engine spec's Decision Log, "#361") reads type_text's paste route back as the keyed route is: its
-snapshot taken after the paste's activation, the same expected value and equality, a Return in a single-line field
-pressed only once the text before it reads back, a password field confirmed by its length. The paragraph's last
+#361 (the native engine spec's Decision Log, "#361") reads type_text's paste route back as the keyed route is, after
+#187's delivery, unchanged: its snapshot taken after the paste's activation, the same expected value and equality, a
+password field confirmed by its length. The paragraph's last
 sentence, "Under an input source that is not a Latin keyboard layout, `typeText` pastes its text instead, and this
 read-back does not apply.", now says the paste route pastes a line at a time with a Return between lines and reads the
 field back the same way, and that there a Tab is pasted as text, checked like any other character, so the paragraph's

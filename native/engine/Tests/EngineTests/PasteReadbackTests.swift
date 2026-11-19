@@ -33,20 +33,41 @@ private struct Pasted {
 /// outside), read back over `reads`. At each ⌘V's key down the app reads the pasteboard and hands the text to `deliver`
 /// (unless `readsPaste` is false: it never reads), and at each Return's key down hands it a Return; `onActivation` runs
 /// once the activation's subtype 1 is posted (what the app does on being activated), `onDeactivation` once its subtype 2
-/// is, and `onCommandV` at each ⌘V's key down before the app reads.
+/// is, and `onCommandV` at each ⌘V's key down before the app reads. A `lateTarget` is Chrome's case in the hosted run
+/// 44429799569: at each ⌘V a clipboard manager reads the pasteboard (the hand-over), while the target queues its keys and
+/// handles them only when #187's effect watch next reads the field, or after the answer, pasting what the pasteboard
+/// holds then.
 private func typeByPaste<Element>(_ text: String, reads: ReadbackReads<Element>, deliver: @escaping ([UInt16]) -> Void,
                                   activationPoint: CGPoint? = nil, onActivation: @escaping () -> Void = {},
                                   onDeactivation: @escaping () -> Void = {}, onCommandV: @escaping () -> Void = {}, readsPaste: Bool = true,
-                                  selection: NSRange? = nil, deadlineMs: Int64 = 60_000) -> Pasted {
+                                  selection: NSRange? = nil, deadlineMs: Int64 = 60_000, effectReading: (() -> EffectReading?)? = nil,
+                                  lateTarget: Bool = false) -> Pasted {
   let seam = GuardSeam(frontmost: 990_002)
   seam.activationPoint = activationPoint ?? CGPoint(x: -1, y: 1_441)
   let pasteboard = TestPasteboard()
   pasteboard.userCopies(owner)
   var keys: [String] = []
+  var queued: [CGKeyCode] = []
+  func handleQueued() {
+    for code in queued {
+      if code == 0x09, let pasted = pasteboard.appReads() {
+        keys.append("⌘V " + pasted)
+        deliver(Array(pasted.utf16))
+      } else if code == returnKeyCode {
+        keys.append("Return")
+        deliver([0x0D])
+      }
+    }
+    queued = []
+  }
   var system = seam.system
   let post = system.post
   system.post = { event, pid in
-    if event.type == .keyDown {
+    if event.type == .keyDown, lateTarget {
+      let code = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
+      if code == 0x09 { _ = pasteboard.appReads() }  // the clipboard manager's read: the hand-over
+      if code == 0x09 || code == returnKeyCode { queued.append(code) }
+    } else if event.type == .keyDown {
       let code = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
       if code == 0x09 {
         onCommandV()
@@ -69,7 +90,8 @@ private func typeByPaste<Element>(_ text: String, reads: ReadbackReads<Element>,
   system.windowPlacement = { _, _ in (frame, 41) }
   let engine = Engine(paths: ServerPaths(socket: "/tmp/x.sock", directory: "/tmp", lock: "/tmp/x.lock", usage: "/tmp/cua-engine-test-usage.json"),
                       intervention: InterventionMonitor(listenGranted: { false }), screenLocked: { false },
-                      pasteboard: { pasteboard.access }, pasteActivation: system)
+                      pasteboard: { pasteboard.access }, pasteActivation: system,
+                      pasteEffectReading: effectReading.map { read in { _, _ in if lateTarget { handleQueued() }; return read() } })
   let context = ExecutionContext(connection: ConnectionState(id: 1, fd: -1), receivedAt: 1, hidIdleMs: 0,
                                  deadline: unixMilliseconds() + deadlineMs, lineage: nil)
   let target: pid_t = 990_001
@@ -95,18 +117,24 @@ private func typeByPaste<Element>(_ text: String, reads: ReadbackReads<Element>,
   } catch {
     failure = error as? EngineError
   }
+  handleQueued()  // a late target handles what it still holds, after the answer
   return Pasted(error: failure, meta: meta, keys: keys, atSnapshot: atSnapshot, atLastFocusCheck: atLastFocusCheck,
                 pasteboard: pasteboard.strings())
 }
 
-/// The same over a fake field read through `FakeApp`'s reads (or `app`'s, whose focus a test moves).
+/// The same over a fake field read through `FakeApp`'s reads (or `app`'s, whose focus a test moves). #187's effect
+/// watch reads the field's own numbers (its count and reported range, unlogged), as the engine reads the focused
+/// element's, unless `effectSeen` is false: then it has no channel, as an app it cannot read.
 private func typeByPaste(_ text: String, into field: FakeField, app: FakeApp? = nil, activationPoint: CGPoint? = nil,
                          onActivation: @escaping () -> Void = {}, onDeactivation: @escaping () -> Void = {},
                          onCommandV: @escaping () -> Void = {}, readsPaste: Bool = true, selection: NSRange? = nil,
-                         deadlineMs: Int64 = 60_000, deliver: (([UInt16]) -> Void)? = nil) -> Pasted {
+                         deadlineMs: Int64 = 60_000, effectSeen: Bool = true, lateTarget: Bool = false, deliver: (([UInt16]) -> Void)? = nil) -> Pasted {
   typeByPaste(text, reads: (app ?? FakeApp(field)).reads, deliver: deliver ?? { field.deliver($0) }, activationPoint: activationPoint,
               onActivation: onActivation, onDeactivation: onDeactivation, onCommandV: onCommandV, readsPaste: readsPaste,
-              selection: selection, deadlineMs: deadlineMs)
+              selection: selection, deadlineMs: deadlineMs, effectReading: {
+    guard effectSeen else { return EffectReading() }
+    return EffectReading(range: field.reportedRange.map { [$0.location, $0.length] }, characters: field.value.map { ($0 as NSString).length })
+  }, lateTarget: lateTarget)
 }
 
 final class PasteReadbackTests: XCTestCase {
@@ -147,20 +175,20 @@ final class PasteReadbackTests: XCTestCase {
     XCTAssertNil(pasted.record["keysUnconfirmed"])
     XCTAssertEqual(pasted.meta.entered, "첫 줄\n둘째 줄\n".utf16.count)
     XCTAssertEqual(pasted.pasteboard, [owner])
-    // The paste's diagnostics: one record per line, no effect wait on any (`typeReadback` answers it).
-    let paste = pasted.meta.paste?.wire ?? [:]
-    XCTAssertNil(paste["notificationSource"])
-    XCTAssertNil(paste["effectWait"])
-    XCTAssertEqual((paste["perLine"] as? [[String: Any]])?.count, 2)
+    // The paste's diagnostics: #187's, each line's effect seen and the Return between them settled.
+    let records = pasted.meta.paste?.wire["perLine"] as? [[String: Any]] ?? []
+    XCTAssertEqual(records.map { $0["effectWait"] as? String }, ["reading", "reading"])
+    XCTAssertEqual((records.last?["openingReturn"] as? [String: Any])?["settle"] as? String, "reading")
   }
 
-  /// A single-line field: a Return is pressed only once the text before it reads back, and its effect is not confirmed;
-  /// the text after it is expected in the same field, as the keyed route's.
+  /// A single-line field and a line no effect showed land (an app with no channel): its Return is pressed only once the
+  /// text before it reads back, and its effect is not confirmed; the text after it is expected in the same field, as the
+  /// keyed route's.
   func testASingleLineFieldsReturnIsACheckpoint() {
     let field = FakeField(value: "", range: NSRange(location: 0, length: 0))
     field.role = "AXTextField"
     field.returnInserts = false
-    let pasted = typeByPaste("검색\n어", into: field)
+    let pasted = typeByPaste("검색\n어", into: field, effectSeen: false)
     XCTAssertNil(pasted.error)
     XCTAssertEqual(field.value, "검색어")
     XCTAssertEqual(pasted.keys, ["⌘V 검색", "Return", "⌘V 어"])
@@ -170,14 +198,30 @@ final class PasteReadbackTests: XCTestCase {
     XCTAssertEqual(pasted.pasteboard, [owner])
   }
 
-  /// A single-line field whose text before a Return does not read back: the Return and everything after it are never
-  /// sent, the answer is `typeUnconfirmed` with the excerpt, and the pasteboard is restored.
+  /// Where #187's effect wait saw the line land, its Return goes as on main, with no checkpoint, and #187's settle
+  /// judges it: a single-line field whose Return changes nothing stops the text there as main does (`pasteUnconfirmed`,
+  /// the Return's sentence), the pasteboard restored.
+  func testASeenLinesReturnIsSettledAsOnMain() {
+    let field = FakeField(value: "", range: NSRange(location: 0, length: 0))
+    field.role = "AXTextField"
+    field.returnInserts = false
+    let pasted = typeByPaste("검색\n어", into: field)
+    XCTAssertEqual(pasted.error?.errorName, "pasteUnconfirmed")
+    XCTAssertTrue(pasted.error?.message.hasPrefix(returnUnconfirmed.message) == true, pasted.error?.message ?? "")
+    XCTAssertEqual(pasted.keys, ["⌘V 검색", "Return"], "the next line not pasted")
+    XCTAssertNil(pasted.record["checkpoints"])
+    XCTAssertEqual(pasted.pasteboard, [owner])
+  }
+
+  /// A single-line field whose text before a Return does not read back, no effect having shown it land: the Return and
+  /// everything after it are never sent, the answer is `typeUnconfirmed` with the excerpt (read while the pasteboard held
+  /// the engine's item), and the pasteboard is restored.
   func testATextThatDoesNotReadBackBeforeAReturnStopsThere() {
     let field = FakeField(value: "", range: NSRange(location: 0, length: 0))
     field.role = "AXTextField"
     field.returnInserts = false
     field.transform = { $0.uppercased() }
-    let pasted = typeByPaste("query\nmore", into: field)
+    let pasted = typeByPaste("query\nmore", into: field, effectSeen: false)
     XCTAssertEqual(pasted.error?.errorName, "typeUnconfirmed")
     XCTAssertTrue(pasted.error?.message.hasPrefix("The text before a Return or Tab was typed, but the field does not read as expected, so the key and the text after it were not sent.") == true,
                   pasted.error?.message ?? "")
@@ -232,7 +276,7 @@ final class PasteReadbackTests: XCTestCase {
   /// value reads nothing, and one at Chromium's AXValue cap, whose read may be cut.
   func testAFieldThatCannotBeReadBackIsUnconfirmed() {
     let unreadable = FakeField(value: nil, range: NSRange(location: 0, length: 0))
-    var pasted = typeByPaste("텍스트", into: unreadable)
+    var pasted = typeByPaste("텍스트", into: unreadable, effectSeen: false)  // no channel either
     XCTAssertEqual(pasted.error?.errorName, "typeUnconfirmed")
     XCTAssertEqual(pasted.reason, "valueUnreadable")
     XCTAssertEqual(pasted.keys, ["⌘V 텍스트"], "pasted all the same, as the keyed route types")
@@ -253,7 +297,7 @@ final class PasteReadbackTests: XCTestCase {
     let pasted = typeByPaste("ab\ncd", into: field, readsPaste: false, deadlineMs: 300)
     XCTAssertEqual(pasted.error?.errorName, "clipboardReadTimedOut")
     XCTAssertEqual(pasted.error?.message,
-                   clipboardReadTimedOut.message + " Sent before it: 0 of 5 characters (0 of 2 lines); line 1 is in an unknown state.")
+                   clipboardReadTimedOut.message + " Confirmed entered: 0 of 5 characters (0 of 2 lines complete); line 1 is in an unknown state.")
     XCTAssertEqual(pasted.keys, ["⌘V unread"])
     XCTAssertEqual(pasted.meta.paste?.wire["readWait"] as? String, "deadline")
     XCTAssertEqual(pasted.record["confirmed"] as? Bool, false, "the snapshot's record, no poll")
@@ -311,6 +355,41 @@ final class PasteReadbackTests: XCTestCase {
     XCTAssertEqual(pasted.pasteboard, [owner])
   }
 
+  // MARK: #187's clipboard holding (the hosted run 44429799569, and the review of a1221804..9bfb0b50, P1)
+
+  /// Chrome's case: a clipboard manager reads each line at its ⌘V (the hand-over), and the target handles its ⌘V only
+  /// later. #187's pacing keeps each line's item on the pasteboard until that line's effect is seen, so the target pastes
+  /// the engine's text, never the person's clipboard, and the read-back confirms it. 9bfb0b50, which restored at the
+  /// read, had the person's clipboard in the field and in the excerpt in 108 of 116 such rows.
+  func testATargetThatReadsEachLinesCommandVLateNeverPastesTheOwnersClipboard() {
+    for text in ["첫 줄\n둘째 줄\n셋째 줄", "한 줄"] {
+      let field = FakeField(value: "", range: NSRange(location: 0, length: 0))
+      let pasted = typeByPaste(text, into: field, lateTarget: true)
+      XCTAssertEqual(field.value, text, "the engine's text, line by line")
+      XCTAssertFalse((field.value ?? "").contains(owner))
+      XCTAssertNil(pasted.error, pasted.error?.message ?? "")
+      XCTAssertEqual(pasted.record["confirmed"] as? Bool, true)
+      XCTAssertEqual(pasted.pasteboard, [owner], "restored after the last line's effect")
+    }
+  }
+
+  /// A line pasted with no effect seen (an app with no channel) may have had its ⌘V handled after the restore, so a
+  /// mismatch's excerpt and lengths are withheld: the field could hold the person's clipboard. The answer stays
+  /// `typeUnconfirmed`, never a success.
+  func testAMismatchAfterALineNoEffectShowedShowsNoExcerpt() {
+    let field = FakeField(value: "", range: NSRange(location: 0, length: 0))
+    field.transform = { $0 + "!" }
+    let pasted = typeByPaste("비밀 아님", into: field, effectSeen: false)
+    XCTAssertEqual(field.value, "비밀 아님!")
+    XCTAssertEqual(pasted.error?.errorName, "typeUnconfirmed")
+    XCTAssertEqual(pasted.reason, "valueMismatch")
+    XCTAssertFalse(pasted.error?.message.contains("the field reads") ?? true, pasted.error?.message ?? "")
+    XCTAssertFalse(pasted.error?.message.contains("비밀") ?? true)
+    XCTAssertNil(pasted.record["expectedLength"])
+    XCTAssertNil(pasted.record["actualLength"])
+    XCTAssertEqual(pasted.pasteboard, [owner])
+  }
+
   // MARK: The final poll (#361's hosted probe)
 
   /// The final poll (here of a text that ends in a Return, which the last line's gate does not cover) runs once the
@@ -330,9 +409,9 @@ final class PasteReadbackTests: XCTestCase {
   }
 
   /// The probe's AppKit case: two lines into a single-line field whose Return selects the whole field, so the second
-  /// line replaces the first. #187's effect check answered success (40 of 40); the checkpoint confirms the first line,
-  /// and the final poll finds the field short of the text: `typeUnconfirmed`. The browsers' case, where the Return
-  /// leaves the field and the second line never lands, is unconfirmed too.
+  /// line replaces the first. #187's effect check answered success (40 of 40): each line's effect, and the Return's,
+  /// still shows, but the final poll finds the field short of the text: `typeUnconfirmed`. The browsers' case, where the
+  /// Return changes nothing and the next line is never pasted, keeps main's answer, `pasteUnconfirmed`.
   func testASingleLineFieldThatLosesALineIsUnconfirmed() {
     let selects = FakeField(value: "", range: NSRange(location: 0, length: 0))
     selects.role = "AXTextField"
@@ -342,7 +421,7 @@ final class PasteReadbackTests: XCTestCase {
     })
     XCTAssertEqual(selects.value, "line two")
     XCTAssertEqual(pasted.keys, ["⌘V line one", "Return", "⌘V line two"])
-    XCTAssertEqual(pasted.record["checkpoints"] as? Int, 1, "the first line read back before its Return")
+    XCTAssertNil(pasted.record["checkpoints"], "the first line's effect seen: its Return goes with no checkpoint, as on main")
     XCTAssertEqual(pasted.error?.errorName, "typeUnconfirmed")
     XCTAssertEqual(pasted.reason, "valueMismatch")
     XCTAssertEqual(pasted.pasteboard, [owner])
@@ -354,8 +433,8 @@ final class PasteReadbackTests: XCTestCase {
       if units == [0x0D] { drops.ignoresInput = true } else { drops.deliver(units) }
     })
     XCTAssertEqual(drops.value, "line one")
-    XCTAssertEqual(pasted.error?.errorName, "typeUnconfirmed")
-    XCTAssertEqual(pasted.reason, "valueMismatch")
+    XCTAssertEqual(pasted.error?.errorName, "pasteUnconfirmed", "the Return's settle saw no change: main's answer")
+    XCTAssertEqual(pasted.keys, ["⌘V line one", "Return"])
     XCTAssertEqual(pasted.pasteboard, [owner])
   }
 
@@ -378,14 +457,14 @@ final class PasteReadbackTests: XCTestCase {
 
   // MARK: The request's deadline (#361's review, P2)
 
-  /// A line gate's poll is capped at the request's time left, not a fresh second: a single-line field whose text reads
+  /// A checkpoint's poll is capped at the request's time left, not a fresh second: a single-line field whose text reads
   /// back only after the deadline answers unconfirmed at it, and its Return, which could submit, is never sent.
-  func testALineGateEndsAtTheDeadlineAndItsReturnIsNeverSent() {
+  func testACheckpointEndsAtTheDeadlineAndItsReturnIsNeverSent() {
     let field = FakeField(value: "", range: NSRange(location: 0, length: 0))
     field.role = "AXTextField"
     field.returnInserts = false
     field.lagReads = 1_000  // 5 s of polls: past any deadline here
-    let pasted = typeByPaste("query\nmore", into: field, deadlineMs: 200)
+    let pasted = typeByPaste("query\nmore", into: field, deadlineMs: 200, effectSeen: false)
     XCTAssertEqual(pasted.error?.errorName, "typeUnconfirmed")
     XCTAssertEqual(pasted.record["stoppedBeforeKey"] as? Bool, true)
     XCTAssertEqual(pasted.keys, ["⌘V query"], "no Return after the deadline")
@@ -407,7 +486,7 @@ final class PasteReadbackTests: XCTestCase {
     }
     let pasted = typeByPaste("query\nmore", reads: reads, deliver: { field.deliver($0) }, deadlineMs: 250)
     XCTAssertEqual(pasted.error?.errorName, "timeoutReached")
-    XCTAssertTrue(pasted.error?.message.hasSuffix(" Sent before it: 5 of 10 characters.") == true,
+    XCTAssertTrue(pasted.error?.message.hasSuffix(" Entered before it: 5 of 10 characters.") == true,
                   pasted.error?.message ?? "")
     XCTAssertEqual(pasted.keys, ["⌘V query"], "the Return was not sent")
     XCTAssertEqual(pasted.pasteboard, [owner])
@@ -442,7 +521,7 @@ final class PasteReadbackTests: XCTestCase {
         XCTAssertEqual(pasted.meta.note, readbackLengthNote, label)
       }
       let reply = String(data: try JSONSerialization.data(withJSONObject: pasted.meta.wire, options: [.sortedKeys]), encoding: .utf8)!
-      XCTAssertFalse(reply.contains("\"characters\"") || reply.contains("\"range\"") || reply.contains("\"baseline\""), "\(label): \(reply)")
+      XCTAssertFalse(reply.contains("\"characters\"") || reply.contains("\"range\""), "\(label): \(reply)")
       for count in ["16", "15"] { XCTAssertFalse((pasted.error?.message ?? "").contains(count), label) }
     }
   }

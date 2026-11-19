@@ -6696,9 +6696,17 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   gate (560 of 560 and 480 of 480 exact pastes confirmed, every control unconfirmed, no wrong success, the clipboard
   restored on every row); Chrome leaked the clipboard (item 1); Firefox confirmed nothing (632 `rangeUnreadable`, 168
   `fieldChanged`, #419's focus settling only at the first ⌘V) and its multi-line delivery fell to 59 and 71 of 80, the
-  checkpoint stopping at lines it could not read, which items 2 and 5 now deliver as main. Why Firefox's range reads
-  as unreadable is not established offline (the snapshot of a field focused before, or of the web area, before the
-  focus settles, are the candidates): the qualification of this head's Firefox lane is the measuring session's.
+  checkpoint stopping at lines it could not read, which items 2 and 5 now deliver as main. The qualification of
+  7897cdeb against main 645202db (runs 44442976031 and 44451662130; `docs/evidence/2026-11-18-paste-readback/`):
+  Safari, Chrome for Testing, Electron and AppKit passed every gate (480 of 480 exact pastes confirmed each, 240 of 240
+  controls unconfirmed, no wrong success against main's 240 to 320 a lane, the clipboard restored 800 of 800, its
+  content in no field and no answer, delivery as main's); Firefox delivered as main (multi-line 80 of 80) and never
+  answered a false success, but confirmed none of 480 exact pastes (`rangeUnreadable` 291, `fieldChanged` 189).
+  **Residuals:** background Firefox confirms no paste (#427: the snapshot reads before Firefox's focus settles at the
+  first ⌘V; the docs tell the agent to observe the field); a Tab or a single-line Return goes after text the read-back
+  cannot read, on both routes (#426); the request's deadline is checked too early in the paste loop and too late in the
+  poll, shared with main (tech-debt-tracker.md, 2026-11-18); no contenteditable field and no pasted password field was
+  measured live.
   Proven offline: PasteReadbackTests drives the engine's own path (the paste lock, route 3's activation on GuardSeam, a
   test pasteboard, ⌘V and Return through the seam, #187's effect watch reading a fake field through the engine's new
   `pasteEffectReading` seam): exact pastes confirm; rewritten, added and stale-selection pastes answer

@@ -292,7 +292,7 @@ export function syntheticRelease(events, held) {
     if (e.send === true && e.type === 'FocusOut') continue;
     const k = e.send === true ? owed.indexOf(`${e.type} ${e.detail}`) : -1;
     if (k >= 0) owed.splice(k, 1);
-    else reasons.push(`the window received ${e.send ? 'synthetic' : 'real'} ${e.type} ${e.detail}`);
+    else reasons.push(`the window received ${e.send ? `synthetic ${e.type} ${e.detail}` : `real ${e.type}`}`);
   }
   for (const missing of owed) reasons.push(`the window never received ${missing}`);
   return { ok: reasons.length === 0, reasons };
@@ -302,6 +302,32 @@ export function syntheticRelease(events, held) {
 export function xtestHold(before, after) {
   return (after ?? []).filter((k) => !(before ?? []).includes(k));
 }
+
+/**
+ * A release case's key facts as its row keeps them (task 106, fix wave 5): the server's keymap is the whole display's
+ * and the recorder window can receive real input, so on a person's display a key they hold or type would reach the
+ * row. The engine's own synthetic events (the case's Shift) are kept whole; a real event keeps only its type; the
+ * keymap reads become what the judge reads of them, counts: the keys the hold put down (`keys_held_new`, as
+ * `xtestHold` counts them) and the keys still down after the release (`keys_still_down`, null when unread). Codes stay
+ * in memory. `judgeMinimized` judges this form exactly as the codes (minimized-keys.test.mjs).
+ */
+export function durableKeys(facts) {
+  const out = { ...facts };
+  for (const f of ['hold_events', 'release_events']) if (Array.isArray(facts[f])) out[f] = facts[f].map((e) => (e?.send === true ? e : { type: e?.type ?? null, send: false }));
+  if (['keys_before', 'keys_held', 'keys_down'].some((f) => f in facts)) {
+    delete out.keys_before;
+    delete out.keys_held;
+    delete out.keys_down;
+    out.keys_held_new = xtestHold(facts.keys_before, facts.keys_held).length;
+    out.keys_still_down = Array.isArray(facts.keys_down) ? facts.keys_down.length : null;
+  }
+  return out;
+}
+
+/** The keys a foreground hold put down, from a row of either form: its codes, or the durable count. */
+const heldNew = (r) => ('keys_held_new' in r ? r.keys_held_new : xtestHold(r.keys_before, r.keys_held).length);
+/** Whether a foreground release left every key up, from a row of either form (`xtestRelease`'s verdict). */
+const releasedAll = (r) => ('keys_still_down' in r ? heldNew(r) > 0 && r.keys_still_down === 0 : xtestRelease(r.keys_down, xtestHold(r.keys_before, r.keys_held)).ok);
 
 /** Whether a foreground release left the held keys up, and no key down at all. Returns `{ok, reasons}`. */
 export function xtestRelease(after, held) {
@@ -322,6 +348,8 @@ export function xtestRelease(after, held) {
  */
 function release({ mode, holdRoute }) {
   const background = holdRoute === 'background';
+  // the display's readers, the live ones unless a test's own are given (`ctx.readers`, minimized-keys.test.mjs)
+  const x = (ctx) => ({ ...LIVE_READERS, ...ctx.readers });
   return {
     ...base({ expect: 'release', mode }),
     audit: 'held-release',
@@ -330,14 +358,14 @@ function release({ mode, holdRoute }) {
       ctx.desktop.focusFront();
       const hold = () => ctx.engine.request('key_down', { window: win(ctx), key: 'shift' });
       if (background) await ctx.scene.recorder.mark('before-hold');
-      else ctx.keysBefore = keysDown();
+      else ctx.keysBefore = x(ctx).keysDown();
       await ctx.traceMark?.('hold');
       const down = background ? await ctx.witnessed(hold) : await hold();
       await ctx.traceMark?.('held');
       if (background) ctx.holdEvents = await ctx.scene.recorder.mark('hold');
-      else ctx.keysHeld = keysDown();
+      else ctx.keysHeld = x(ctx).keysDown();
       if (!down.response.ok) throw new Error(`the hold before the minimize failed: ${down.response.error}`);
-      await minimize(ctx);
+      await x(ctx).minimize(ctx);
       // what the minimize itself caused at the window is the minimize's, not the release's
       if (background) await ctx.scene.recorder.mark('minimized');
       await ctx.traceMark?.('release');
@@ -347,13 +375,16 @@ function release({ mode, holdRoute }) {
     check: async (ctx) => {
       await sleep(QUIET_MS);
       await ctx.traceMark?.('released');
-      const after = await contents(ctx);
-      const facts = { still_minimized: after.minimized === true, active_window: activeWindow(), minimized_by: ctx.minimized };
-      if (background) return { ...facts, hold_events: ctx.holdEvents ?? null, release_events: await ctx.scene.recorder.mark('release') };
-      return { ...facts, keys_before: ctx.keysBefore ?? null, keys_held: ctx.keysHeld ?? null, keys_down: keysDown() };
+      const after = await x(ctx).contents(ctx);
+      const facts = { still_minimized: after.minimized === true, active_window: x(ctx).activeWindow(), minimized_by: ctx.minimized };
+      if (background) return durableKeys({ ...facts, hold_events: ctx.holdEvents ?? null, release_events: await ctx.scene.recorder.mark('release') });
+      return durableKeys({ ...facts, keys_before: ctx.keysBefore ?? null, keys_held: ctx.keysHeld ?? null, keys_down: x(ctx).keysDown() });
     },
   };
 }
+
+/** What a release case reads of the display, live. */
+const LIVE_READERS = { keysDown: () => keysDown(), contents: (ctx) => contents(ctx), activeWindow: () => activeWindow(), minimize: (ctx) => minimize(ctx) };
 
 /** The keycodes the X server holds down (`xprobe keys-down`), or null when they could not be read. */
 function keysDown() {
@@ -495,8 +526,8 @@ export function judgeMinimized(op, rows, audit) {
       });
       bad('the window did not receive exactly the release of the held set', (r) => syntheticRelease(r.release_events, syntheticHold(r.hold_events).held).ok);
     } else {
-      bad('the hold was not proven (no key went down at the server)', (r) => xtestHold(r.keys_before, r.keys_held).length > 0);
-      bad('a key is still held at the server', (r) => xtestRelease(r.keys_down, xtestHold(r.keys_before, r.keys_held)).ok);
+      bad('the hold was not proven (no key went down at the server)', (r) => heldNew(r) > 0);
+      bad('a key is still held at the server', releasedAll);
     }
   }
   if (expect === 'activate') {

@@ -220,7 +220,9 @@ test('record: a refusal that cannot be bound to one creation turns the exemption
   assert.deepEqual(seqs(record(lines, [1050])), [40]);
   // bound to one creation (a tick of its own) and placed inside the request capture, the refusal leaves the exemption
   // on: the recycled id's creation refused
-  const one = [created(1000, GEDIT, 10), gone(2000), tick(MINE), refusal, engineFocusOut(3100, 40)];
+  // (a later request of the person's client closes the capture past the refusal's tick, both ends being ambiguous)
+  const later = JSON.stringify({ kind: 'req', ms: 4000, client: OTHER, seq: 99, t: 4000, op: 'MapWindow', window: 0x2400010 });
+  const one = [created(1000, GEDIT, 10), gone(2000), tick(MINE), refusal, engineFocusOut(3100, 40), later];
   assert.equal(record(one, [1050], { t0: 0 }).clean, true);
   // the same record with no capture start (`t0`) cannot place its error: the exemption is off
   assert.deepEqual(seqs(record(one, [1050])), [40]);
@@ -265,6 +267,11 @@ test('record: a refusal the server timed before its request capture began never 
   assert.deepEqual(judge(lines([])), [40], 'the recycled window is not the run\'s');
   const preReady = JSON.stringify({ kind: 'error', ms: 7200, client: GEDIT, seq: 50, major: 1, minor: 0, t: 2 ** 32 - 50 });
   assert.deepEqual(judge(lines([preReady])), [40], 'a pre-ready refusal, its line last, clears nothing');
+  // both ends of the capture are ambiguous (fix wave 5): the errors context starts first, so an error may share the
+  // capture's first tick, or come one tick before it
+  for (const edge of [100, 99]) assert.deepEqual(judge(lines([JSON.stringify({ kind: 'error', ms: 7200, client: GEDIT, seq: 50, major: 1, minor: 0, t: edge })])), [40], `an error at ${edge}`);
+  // and at the last recorded request's own tick
+  assert.deepEqual(judge(lines([JSON.stringify({ kind: 'error', ms: 7200, client: GEDIT, seq: 50, major: 1, minor: 0, t: 2200 })])), [40], 'an error at the last tick');
   // a refusal timed inside the capture, of the one creation that claims it: the recycled creation was refused, and the
   // run's ended window's id held nothing
   const inside = JSON.stringify({ kind: 'error', ms: 7200, client: GEDIT, seq: 50, major: 1, minor: 0, t: 2150 });

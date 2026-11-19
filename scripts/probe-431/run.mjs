@@ -74,7 +74,8 @@ async function main(){
   if(process.env.RUNNER_ENVIRONMENT!=='github-hosted')throw Error('hosted runners only');
   if(!LANES.includes(lane)||!['smoke','measure','qualify'].includes(mode))throw Error('invalid lane');
   const heads=Object.fromEntries(headSpecs.map(s=>{const [name,bin]=s.split('::');return [name,{bin}];}));
-  const headNames=Object.keys(heads),units=unitsFor(process.env.PROBE_CELLS||'');
+  // A cell measured on some lanes only (`lanes`) is not planned on the others.
+  const headNames=Object.keys(heads),units=unitsFor(process.env.PROBE_CELLS||'').filter(u=>!CELLS[u.cell].lanes||CELLS[u.cell].lanes.includes(lane));
   if(!headNames.length||headNames.some(h=>!['main','fix'].includes(h))||mode==='qualify'&&headNames.length!==2)throw Error('invalid heads');
   mkdirSync(out,{recursive:true});const tmp=mkdtempSync(join(root,'q431-')),home=join(tmp,'platform'),shots=join(tmp,'shots');
   mkdirSync(home);mkdirSync(shots,{mode:0o700});

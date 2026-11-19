@@ -48,7 +48,8 @@ export const CELLS={
   like:{kind:'keep',before:'Like (12)',after:'Like (13)',style:'tabular'},
   plain:{kind:'keep',before:'Inbox',after:'Inbox'},
   btnremount:{kind:'keep',before:'Again',after:'Again',remount:'link',control:'button',at:['link']},
-  wideremount:{kind:'big',before:'Inbox',after:'Inbox',remount:'link',big:'wide'},
+  // Chromium reads a 151-child group whole (smoke run 44520748737: no width cut on CfT or Electron), so Safari only.
+  wideremount:{kind:'big',before:'Inbox',after:'Inbox',remount:'link',big:'wide',lanes:['safari']},
   capremount:{kind:'big',before:'Inbox',after:'Inbox',remount:'link',big:'cap'},
   inbox:{kind:'asMain',before:'Inbox',after:'Inbox (3)'},
   reltime:{kind:'asMain',before:'1 minute ago',after:'2 minutes ago'},

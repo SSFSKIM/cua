@@ -89,12 +89,13 @@ function run(c){
       twins=[control('twin',spec.before,spec)];slots[1].append(twins[0]);slots[2].append(archive);
     }else if(spec.twin==='wide'){
       // A list of WIDE rows placed so that the target's row is the last the window shows and the twin's, right after it,
-      // the first it does not (the width rule reads the visible rows only); the other rows carry other labels.
+      // the first it does not (the width rule reads the visible rows only): the target's row is 104 px, so the twin's starts
+      // 40 px past the window and, the target's row removed, moves up exactly into it. The other rows carry other labels.
       const list=document.createElement('div');list.setAttribute('role','list');
       list.style.cssText='position:absolute;left:20px;top:'+(innerHeight-3*64)+'px';
       rows=[];
       for(let i=0;i<WIDE;i++){
-        const r=row();r.setAttribute('role','listitem');
+        const r=row();r.setAttribute('role','listitem');if(i===2)r.style.height='104px';
         const a=i===2?target:i===3?control('twin',spec.before,spec):control('r'+i,'Row '+i);
         if(i===3)twins=[a];r.append(a);rows.push(r);list.append(r);
       }

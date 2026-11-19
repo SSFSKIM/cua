@@ -313,13 +313,14 @@ final class PasteReadbackTests: XCTestCase {
 
   // MARK: The final poll (#361's hosted probe)
 
-  /// The final poll runs once the pasteboard is restored and before the activation ends: a background Safari or
-  /// Electron names no focused element once its activation is released (the probe: Electron 100 of 100, Safari 58 of
-  /// 100), and the poll's identity check asks for it again, so a poll after the release would answer `fieldChanged`.
+  /// The final poll (here of a text that ends in a Return, which the last line's gate does not cover) runs once the
+  /// pasteboard is restored and before the activation ends: a background Safari or Electron names no focused element
+  /// once its activation is released (the probe: Electron 100 of 100, Safari 58 of 100), and the poll's identity check
+  /// asks for it again, so a poll after the release would answer `fieldChanged`.
   func testTheFinalPollRunsWhileTheActivationHolds() throws {
     let field = FakeField(value: "", range: NSRange(location: 0, length: 0))
     let app = FakeApp(field)
-    let pasted = typeByPaste("배경 앱", into: field, app: app, onDeactivation: { app.focused = nil })
+    let pasted = typeByPaste("배경 앱\n", into: field, app: app, onDeactivation: { app.focused = nil })
     XCTAssertNil(pasted.error, pasted.error?.message ?? "")
     XCTAssertEqual(pasted.record["confirmed"] as? Bool, true)
     let at = try XCTUnwrap(pasted.atLastFocusCheck)
@@ -372,6 +373,43 @@ final class PasteReadbackTests: XCTestCase {
     XCTAssertEqual(pasted.reason, "fieldChanged")
     XCTAssertFalse(pasted.error?.message.contains("setup") ?? true, "no excerpt of the other field")
     XCTAssertNil(pasted.record["expectedLength"])
+    XCTAssertEqual(pasted.pasteboard, [owner])
+  }
+
+  // MARK: The request's deadline (#361's review, P2)
+
+  /// A line gate's poll is capped at the request's time left, not a fresh second: a single-line field whose text reads
+  /// back only after the deadline answers unconfirmed at it, and its Return, which could submit, is never sent.
+  func testALineGateEndsAtTheDeadlineAndItsReturnIsNeverSent() {
+    let field = FakeField(value: "", range: NSRange(location: 0, length: 0))
+    field.role = "AXTextField"
+    field.returnInserts = false
+    field.lagReads = 1_000  // 5 s of polls: past any deadline here
+    let pasted = typeByPaste("query\nmore", into: field, deadlineMs: 200)
+    XCTAssertEqual(pasted.error?.errorName, "typeUnconfirmed")
+    XCTAssertEqual(pasted.record["stoppedBeforeKey"] as? Bool, true)
+    XCTAssertEqual(pasted.keys, ["⌘V query"], "no Return after the deadline")
+    XCTAssertLessThan(pasted.record["pollMs"] as? Double ?? .infinity, typeReadbackBudgetMs, "the poll ended at the deadline, not after a second")
+    XCTAssertEqual(pasted.pasteboard, [owner])
+  }
+
+  /// A gate that confirms only after the deadline has passed sends no further part: the Return is withheld, and the
+  /// answer is the deadline's, with what was sent before it.
+  func testNoPartIsSentAfterTheDeadline() {
+    let field = FakeField(value: "", range: NSRange(location: 0, length: 0))
+    field.role = "AXTextField"
+    field.returnInserts = false
+    var reads = FakeApp(field).reads
+    let value = reads.value
+    reads.value = { element in
+      if field.delivered { usleep(400_000) }  // the field answers its read after the deadline
+      return value(element)
+    }
+    let pasted = typeByPaste("query\nmore", reads: reads, deliver: { field.deliver($0) }, deadlineMs: 250)
+    XCTAssertEqual(pasted.error?.errorName, "timeoutReached")
+    XCTAssertTrue(pasted.error?.message.hasSuffix(" Sent before it: 5 of 10 characters.") == true,
+                  pasted.error?.message ?? "")
+    XCTAssertEqual(pasted.keys, ["⌘V query"], "the Return was not sent")
     XCTAssertEqual(pasted.pasteboard, [owner])
   }
 

@@ -37,12 +37,16 @@ import Foundation
 // press posted to the keys' target, one pasteboard snapshot and one restore around the whole, `entered` counting what
 // the app was handed (a line once read, a Return once posted). The focused field is snapshotted once the paste's
 // activation ran and before the pasteboard is touched (`PasteTyping`), after a stable range when that activation
-// clicked inside the window (`activationClickPending`); a Return the field does not take as text is a checkpoint,
-// pressed only once the text before it reads back; and once the pasteboard is restored, the activation still held, the field is
-// polled for the snapshot with its selection replaced by the text: success only when it reads so, else
-// `typeUnconfirmed`. The read-back replaces #187's effect wait and the Return's settle on this route, and only those:
-// the clipboard's snapshot, restore and conflict checks and the read wait are the paste's own; each line's record
-// rides in `meta.paste.perLine`. Every input method's call order holds (the Decision Log's M2a.1 entry, item 5): the
+// clicked inside the window (`activationClickPending`). Where the snapshot reads the field, each line's read is
+// followed by its line gate (`runPaste`'s `lineGate`): the field must read the text through that line before the next
+// part goes or the pasteboard is restored, so the item stays the engine's until the target shows it took it, as #187's
+// effect wait kept it; a gate is a checkpoint before a Return the field does not take as text; and once the pasteboard
+// is restored, the activation still held, the final poll confirms what the last gate did not cover: success only when
+// the field reads the snapshot with its selection replaced by the text, else `typeUnconfirmed`. Where the snapshot
+// cannot read the field, #187's effect wait and Return settle run as for the paste method, and the read-back answers
+// the snapshot's reason. Every poll ends by the request's deadline, and past it no part is sent. The clipboard's
+// snapshot, restore and conflict checks and the read wait are the paste's own on both; each line's record rides in
+// `meta.paste.perLine`. Every input method's call order holds (the Decision Log's M2a.1 entry, item 5): the
 // intervention guard read, its reading put in the meta, the pre-action refusal, then the in-flight check before each
 // ⌘V and each Return. The action interval is the posted events' (`InputMeta.posting`): activation and the pasteboard
 // are not input to the app, so a paste stopped before its ⌘V keeps startedAt and endedAt null.
@@ -61,6 +65,14 @@ let clipboardReadTimedOut = EngineError(name: "clipboardReadTimedOut",
 /// none.
 let pasteUnconfirmed = EngineError(name: "pasteUnconfirmed",
   "The paste could not be confirmed: ⌘V was sent and the pasted text was read from the clipboard, but no change was seen in the field. The text may have arrived: observe the field with get_app_state before any retry, and never retry blindly.")
+/// The Return between two lines showed no effect in time (#187, the slot of 2026-11-01): the next line is not pasted,
+/// since its baseline could not hold the Return's effect and that late effect could then confirm it. The paste stage's
+/// name, its own sentence. Only on type_text's paste route into a field its read-back cannot read (#361).
+let returnUnconfirmed = EngineError(name: "pasteUnconfirmed",
+  "The text could not be confirmed: a Return was sent for a newline between lines, but no change was seen in the field, so the next line was not pasted. The Return may have arrived: observe the field with get_app_state before any retry, and never retry blindly.")
+/// #361: the request's deadline passed between two parts of type_text's paste route, so the rest was not sent.
+let pasteDeadlineReached = EngineError(name: "timeoutReached",
+  "timeoutReached: the request's deadline passed while the text was being pasted, so the rest of it was not sent. Observe the field with get_app_state before any retry, and never retry blindly.")
 let clipboardConflict = EngineError(name: "clipboardConflict",
   "The user may have conflicted with your paste operation. Check the app's state to ensure the user's content did not paste instead of your intended content before continuing.")
 
@@ -228,6 +240,19 @@ final class PasteEffect: @unchecked Sendable {
       postedAt = at
     }
   }
+  /// Waits, on this watch's clock, until `at` (#361: a failed line gate holds the pasteboard to #187's bound).
+  func wait(until at: Double) {
+    while now() < at { sleep(at - now()) }
+  }
+  /// A Return is about to be posted, at `at` on `now`'s clock: a key has no hand-over, so a notification from here on
+  /// counts for its settle (`settle`).
+  func keyPosted(at: Double) {
+    locked {
+      handedOver = true
+      started = true
+      postedAt = at
+    }
+  }
   /// An observed `AXSelectedTextChanged` or `AXValueChanged`.
   func notification() { locked { if source == .trusted && handedOver && started { seen = true } } }
 
@@ -261,6 +286,31 @@ final class PasteEffect: @unchecked Sendable {
       if let reading, pasteEffectSeen(reading, baseline: baseline, units: units) {
         locked { confirming = reading }
         return .reading
+      }
+      sleep(max(0, min(intervalMs, timeoutMs - (now() - start))))
+    }
+  }
+
+  /// The settle of a Return posted between two lines (#187, the slot of 2026-11-01), after `begin` and `keyPosted` before
+  /// the Return, so the next line's baseline holds the Return's effect and only that line's own paste can confirm it.
+  /// With a baseline, the reading must move from it and then hold for one interval (a reading's requests are not atomic,
+  /// and a late half of the Return's effect must not land after the next baseline): `reading`; a reading that moved and
+  /// had not held when the time ran out is `timeout`, never success. With none, a trusted notification after the post (`notification`); with
+  /// neither, `noChannel` at once (the next line can then be confirmed by no reading either). `timeout` when the effect
+  /// never showed; a reading that came back after the time ran out is not accepted, as in `wait`.
+  func settle(timeoutMs: Double = pasteEffectTimeoutMs, intervalMs: Double = pasteEffectIntervalMs) -> EffectOutcome {
+    let baseline = locked { self.baseline }
+    guard !baseline.isEmpty else { return wait(timeoutMs: timeoutMs, intervalMs: intervalMs) }
+    let start = now()
+    var moved: EffectReading?
+    while true {
+      let left = timeoutMs - (now() - start)
+      if left <= 0 { return .timeout }
+      let reading = read(left)
+      if now() - start >= timeoutMs { return .timeout }
+      if let reading, reading.moved(from: baseline) {
+        if let moved, !reading.moved(from: moved) { return .reading }
+        moved = reading
       }
       sleep(max(0, min(intervalMs, timeoutMs - (now() - start))))
     }
@@ -344,16 +394,35 @@ enum RestoreOutcome: String {
   case restored, skippedChanged, notTaken
 }
 
+/// The Return that opened a line (#187, the slot of 2026-11-01), on that line's diagnostics: how its settle ended (an
+/// `EffectOutcome`'s name, or "deadline"), the time from its post to that end, and from its post to the line's ⌘V.
+/// `postedAt` is on the paste's clock and stays off the wire. Only where the effect is watched (not a read-back paste).
+struct OpeningReturn {
+  var postedAt: Double
+  var settle: String? = nil
+  var settleMs: Double? = nil
+  var toCommandVMs: Double? = nil
+
+  var wire: [String: Any] {
+    var wire: [String: Any] = [:]
+    if let settle { wire["settle"] = settle }
+    if let settleMs { wire["settleMs"] = (settleMs * 10).rounded() / 10 }
+    if let toCommandVMs { wire["toCommandVMs"] = (toCommandVMs * 10).rounded() / 10 }
+    return wire
+  }
+}
+
 /// One paste's value-free diagnostics (#187), for the last line the operation pasted or tried to (the one that failed,
 /// or the last on success), carried in the input meta as `paste`: never the clipboard's contents or the field's text.
 /// `perLine` adds one record per line the operation reached (the slot of 2026-11-01): a line is reached when its paste
 /// began (an empty line between two Returns has none), each with its waits, its times against its own ⌘V, and its
-/// baseline and confirming readings as numbers only; the top-level fields stay the last line's. Times are milliseconds
-/// on the engine's monotonic clock; `readAfterPostMs` is signed, negative for a read before ⌘V was posted (a clipboard
-/// manager's, say). The main thread serves the provider's hand-over, so `mainLagMs` is how long a block queued on it at
-/// ⌘V waited to run (`mainLagOpen` while it had not run at the answer: the lag is then at least the value). A paste
-/// type_text's read-back confirms (#361, `readBack`) has no effect wait, so no notification source, baseline or effect
-/// on its records: `meta.typeReadback` holds its answer.
+/// baseline and confirming readings as numbers only, and the Return that opened it; the top-level fields stay the last
+/// line's. Times are milliseconds on the engine's monotonic clock; `readAfterPostMs` is signed, negative for a read
+/// before ⌘V was posted (a clipboard manager's, say). The main thread serves the provider's hand-over, so `mainLagMs`
+/// is how long a block queued on it at ⌘V waited to run (`mainLagOpen` while it had not run at the answer: the lag is
+/// then at least the value). A paste type_text's read-back confirms (#361, `readBack`) has no effect wait, so no
+/// notification source, baseline, effect or opening Return on its records: each line's read-back gate is its stage
+/// "readBack", and `meta.typeReadback` holds the answer.
 struct PasteDiagnostics {
   var line: Int
   var lines: Int
@@ -376,8 +445,9 @@ struct PasteDiagnostics {
   var mainLagMs: Double? = nil
   var mainLagOpen = false
   var restore: RestoreOutcome? = nil
-  /// The wait the line reached: "read" once ⌘V was posted, "effect" once the read wait passed (never on a read-back
-  /// paste, which has no effect wait); nil before either.
+  /// The wait the line reached: "returnEffect" once the Return opening it was posted (its settle), "read" once ⌘V was
+  /// posted, then "effect" once the read wait passed, or on a read-back paste "readBack" (its line gate, #361); nil
+  /// before any.
   var stage: String? = nil
   /// Whether the line's effect was seen, once its effect stage ended (false also for an unconfirmed success).
   var confirmed: Bool? = nil
@@ -388,6 +458,9 @@ struct PasteDiagnostics {
   var confirming: EffectReading? = nil
   /// When the effect wait ended, from ⌘V's post: the confirmation's time when it was confirmed.
   var effectAfterPostMs: Double? = nil
+  /// The Return that opened the line, settled before its baseline (nil for line 1, a line no settled Return opened, and
+  /// a read-back paste's lines).
+  var openingReturn: OpeningReturn? = nil
   /// The operation's earlier lines' records, oldest first.
   var earlier: [PasteDiagnostics] = []
 
@@ -406,6 +479,7 @@ struct PasteDiagnostics {
     if let effectAfterPostMs { wire["effectAfterPostMs"] = rounded(effectAfterPostMs) }
     if let baseline { wire["baseline"] = baseline.wire }
     if let confirming { wire["confirming"] = confirming.wire }
+    if let openingReturn { wire["openingReturn"] = openingReturn.wire }
     return wire
   }
 
@@ -457,20 +531,25 @@ private final class MainLag: @unchecked Sendable {
 /// which posts it and answers the delivery guard's outcome when one ran (#200 on the paste route: the engine's runs it
 /// on the first event alone), kept as `meta.delivery`.
 ///
-/// `beforePart`, type_text's read-back (#361, `PasteTyping`), runs before each part and replaces the effect wait, and
-/// only it: a line is done once the app was handed it and the pasteboard is still the engine's, and the read-back
-/// confirms the text once the operation restored the pasteboard. Nothing waits for a Return's effect: only type_text's text has
-/// newlines, and its read-back checks them.
+/// `lineGate`, type_text's read-back (#361, `PasteTyping`), replaces the effect wait and the Return's settle, and only
+/// them, with the same role: each line read, the item stays on the pasteboard until the field reads back the text
+/// through that line, so neither the next line's write nor the restore can take it from under a ⌘V the target has not
+/// handled yet (a clipboard manager's read before ⌘V is a hand-over too, and names no reader). A gate that fails keeps
+/// the item until #187's own bound from that line's ⌘V (`pasteEffectTimeoutMs`, or the request's deadline) before the
+/// restore, so a slow target is held to as long as the effect wait held it; its answer, the read-back's, was read while
+/// only the engine's item was on the pasteboard, so no excerpt can show the person's clipboard. `beforePart` runs before
+/// each part (a checkpoint the gate has not already made), and past the request's deadline no further part is sent
+/// (`pasteDeadlineReached`).
 @discardableResult
 func runPaste(_ parts: [PastePart], pasteboard: PasteboardAccess, effect: PasteEffect, readTimeoutMs: Double = pasteReadTimeoutMs,
               remainingMs: () -> Double = { .infinity }, keyFocusAtPaste: () -> KeyFocusReading? = { nil },
               focusEnforcement: PasteFocusEnforcement? = nil, activationNow: () -> Double = monotonicMilliseconds,
               mainProbe: (@escaping @Sendable () -> Void) -> Void = { DispatchQueue.main.async(execute: $0) },
               deliver: (() -> Void) -> DeliveryGuardOutcome? = { $0(); return nil },
-              beforePart: ((Int) throws -> Void)? = nil,
+              beforePart: ((Int) throws -> Void)? = nil, lineGate: ((_ through: Int) throws -> Void)? = nil,
               checkInFlight: () throws -> Void, postPaste: () -> Bool, postReturn: () -> Bool,
               entered: inout Int, meta: inout InputMeta) throws -> PasteOutcome {
-  let readsBack = beforePart != nil
+  let readsBack = lineGate != nil
   let state = pasteboard.snapshot()
   let snapshot = state.items
   var own: Int?
@@ -489,15 +568,20 @@ func runPaste(_ parts: [PastePart], pasteboard: PasteboardAccess, effect: PasteE
     meta.paste?.restore = restored
   }
   /// The line `number`'s diagnostics, its baseline just taken (none for a read-back paste), made the meta's: the earlier
-  /// lines' records carried on (`perLine`).
+  /// lines' records carried on (`perLine`), and the line's own opening Return when its record was begun at that Return.
   func beginLine(_ number: Int) {
     var record = PasteDiagnostics(line: number, lines: lines, notificationSource: effect.notificationSource, baselineEmpty: effect.baselineEmpty,
                                   readBack: readsBack, focusEnforcement: focusEnforcement, unconfirmedLines: outcome.unconfirmedLines)
     if !readsBack { record.baseline = effect.baselineReading }
     if var current = meta.paste {
-      record.earlier = current.earlier
-      current.earlier = []
-      record.earlier.append(current)
+      if current.line == number {
+        record.openingReturn = current.openingReturn
+        record.earlier = current.earlier
+      } else {
+        record.earlier = current.earlier
+        current.earlier = []
+        record.earlier.append(current)
+      }
     }
     meta.paste = record
   }
@@ -509,10 +593,15 @@ func runPaste(_ parts: [PastePart], pasteboard: PasteboardAccess, effect: PasteE
       return posted
     }
   }
+  // A Return before a later line is settled (its effect waited for) before that line's baseline; one after the last
+  // pasted line is not, since no later baseline depends on it. A read-back paste settles none: its line gates check.
+  let lastContent = parts.lastIndex { if case .content = $0 { return true } else { return false } }
   do {
     for (index, part) in parts.enumerated() {
       // #361: a checkpoint before a Return the field does not take as text, the pasteboard still the engine's.
       try beforePart?(index)
+      // #361: no part goes out past the request's deadline (the effect wait's own bound ends the other path).
+      if readsBack, remainingMs() <= 0 { throw pasteDeadlineReached }
       switch part {
       case .content(let representations, let units):
         let provider = LazyPasteProvider(representations) { effect.providerRead() }
@@ -533,6 +622,7 @@ func runPaste(_ parts: [PastePart], pasteboard: PasteboardAccess, effect: PasteE
         meta.paste?.keyFocusAtPaste = keyFocusAtPaste()
         meta.paste?.focusEnforcement?.commandV(at: activationNow())
         let postAt = effect.now()
+        if let returnAt = meta.paste?.openingReturn?.postedAt { meta.paste?.openingReturn?.toCommandVMs = postAt - returnAt }
         effect.pasteStarted(at: postAt)
         let lag = MainLag()
         mainProbe { [effect] in lag.mark(effect.now()) }
@@ -551,8 +641,20 @@ func runPaste(_ parts: [PastePart], pasteboard: PasteboardAccess, effect: PasteE
         guard handed else { throw clipboardReadTimedOut }
         guard pasteboard.changeCount == written else { throw clipboardConflict }
 
-        // The effect wait, bounded the same way; type_text's read-back confirms its text instead (#361).
-        if !readsBack {
+        if let lineGate {
+          // #361: the line gate. The item stays the engine's until the field reads the text through this line; the line
+          // counts as sent once the app was handed it, whatever the gate finds.
+          entered += units
+          meta.paste?.stage = "readBack"
+          do {
+            try lineGate(index + 1)
+          } catch {
+            // No release before #187's bound from this line's ⌘V: a target slower than the gate may still take the item.
+            effect.wait(until: min(postAt + pasteEffectTimeoutMs, effect.now() + max(0, remainingMs())))
+            throw error
+          }
+        } else {
+          // The effect wait, bounded the same way.
           meta.paste?.stage = "effect"
           let effectBudget = min(pasteEffectTimeoutMs, max(0, remainingMs()))
           let effectStart = effect.now()
@@ -573,19 +675,45 @@ func runPaste(_ parts: [PastePart], pasteboard: PasteboardAccess, effect: PasteE
           }
         }
         outcome.pastedLines += 1
-        entered += units
+        if !readsBack { entered += units }
       case .returnKey(let units):
+        // The Return's settle (#187, the slot of 2026-11-01): its baseline taken before it is posted, on the record of the
+        // line it opens, then its effect waited for, bounded as the effect wait is, so the next line's baseline holds it.
+        let settles = !readsBack && (lastContent.map { index < $0 } ?? false)
+        if settles {
+          effect.begin()
+          beginLine(line + 1)
+        }
         try checkInFlight()
+        let returnAt = effect.now()
+        // The notification gate is armed before the post, as for a ⌘V: a field's only report of the Return may come while
+        // its delivery guard still samples.
+        if settles { effect.keyPosted(at: returnAt) }
         guard posting(postReturn) else { throw EngineError(name: "eventCreationFailed", "A key event could not be created.") }
         line += 1
+        if settles {
+          meta.paste?.stage = "returnEffect"
+          meta.paste?.openingReturn = OpeningReturn(postedAt: returnAt)
+          let budget = min(pasteEffectTimeoutMs, max(0, remainingMs()))
+          let settled = effect.settle(timeoutMs: budget)
+          meta.paste?.openingReturn?.settleMs = effect.now() - returnAt
+          meta.paste?.openingReturn?.settle = settled == .timeout && budget < pasteEffectTimeoutMs ? "deadline" : settled.rawValue
+          if settled == .timeout {
+            // The Return's effect never showed: the line it opens is unconfirmed and not pasted, and the Return not counted.
+            meta.paste?.confirmed = false
+            throw returnUnconfirmed
+          }
+        }
         entered += units
       }
     }
   } catch let error as EngineError {
-    // A read or effect timeout with the count moved is the conflict (F §7.6): the user's copy, not the app's silence.
+    // A read or effect timeout with the count moved is the conflict (F §7.6): the user's copy, not the app's silence. A
+    // Return's settle is no paste of anyone's contents, so its error stays its own.
     let moved = own.map { pasteboard.changeCount != $0 } ?? false
+    let pasting = meta.paste?.stage != "returnEffect"
     finish(restore(snapshot, own: own, on: pasteboard))
-    throw moved && [clipboardReadTimedOut.errorName, pasteUnconfirmed.errorName].contains(error.errorName) ? clipboardConflict : error
+    throw moved && pasting && [clipboardReadTimedOut.errorName, pasteUnconfirmed.errorName].contains(error.errorName) ? clipboardConflict : error
   }
   finish(restore(snapshot, own: own, on: pasteboard))
   return outcome
@@ -621,13 +749,16 @@ private func restore(_ snapshot: PasteboardSnapshot?, own: Int?, on pasteboard: 
   return pasteboard.restore(snapshot, expecting: own) ? .restored : .skippedChanged
 }
 
-/// type_text's paste-route error for a line no app read in time (`clipboardReadTimedOut`), with what was sent before
-/// it: the units the app was handed of the text's (lines read, Returns posted; no final read-back confirmed them, #361),
-/// the lines before the failed one, and that line's state unknown. Any other error is as is.
+/// type_text's paste-route error whose delivery is unknown: a line no app read in time (`clipboardReadTimedOut`), #187's
+/// `pasteUnconfirmed` on a field the read-back cannot read, or the deadline between parts (`timeoutReached`, #361), with
+/// what was sent before it: the units the app was handed of the text's (lines read, Returns posted), the lines before
+/// the failed one, and that line's state unknown. Any other error, the read-back's `typeUnconfirmed` among them, is as is.
 func typedPasteError(_ error: EngineError, entered: Int, total: Int, line: Int?, lines: Int?) -> EngineError {
-  guard error.errorName == clipboardReadTimedOut.errorName else { return error }
+  guard [clipboardReadTimedOut.errorName, pasteUnconfirmed.errorName, pasteDeadlineReached.errorName].contains(error.errorName) else { return error }
   let sent: String
-  if let line, let lines, lines > 1 {
+  if error.errorName == pasteDeadlineReached.errorName {
+    sent = " Sent before it: \(entered) of \(total) characters."  // between parts: nothing of a line is pending
+  } else if let line, let lines, lines > 1 {
     sent = " Sent before it: \(entered) of \(total) characters (\(line - 1) of \(lines) lines); line \(line) is in an unknown state."
   } else {
     sent = " Sent before it: \(entered) of \(total) characters; the line being pasted is in an unknown state."
@@ -689,7 +820,7 @@ extension Engine {
   /// text is (#361, `keyTextReadBack`'s machinery over `pasteReadbackUnits`). The snapshot is taken once the paste's
   /// activation ran, before the pasteboard is touched (`PasteTyping`), with `selection` and `settle` as the keyed route
   /// takes them and a stable range first when a click may still land (`pointerPending`, or the activation's own click
-  /// inside the window); a Return the field does not take as text is a checkpoint; the final poll runs once the
+  /// inside the window); each line is gated before the next part or the restore (`confirmLine`); the final poll runs once the
   /// pasteboard is restored, while the activation still holds (`PasteTyping.finish`). `entered` is what the app was handed, also in the
   /// sentence of a line no app read (`typedPasteError`); the read-back's record rides in the meta whatever the answer.
   /// Answers a password field's length note (`readbackLengthNote`), as the keyed route does. Empty text pastes nothing
@@ -708,11 +839,14 @@ extension Engine {
     let typing = units.isEmpty ? nil : PasteTyping(snapshot: { activationClickPending in
       // The literal text only: a concealed request never reaches the paste route.
       let made = TypeReadback(units: units, concealed: false, settle: settle(),
-                              baseline: baselineWait(selection: selection, pointerPending: activationClickPending || pointerPending()), reads: reads)
+                              baseline: baselineWait(selection: selection, pointerPending: activationClickPending || pointerPending()), reads: reads,
+                              remainingMs: { Double(context.deadline - unixMilliseconds()) })
       readback = made
       // #359: select_text's range gone, nothing is pasted and the pasteboard is never touched.
       if made.refusesTyping { throw typeUnconfirmed(.selectionChanged) }
-    }, beforePart: { try readback?.beforeUnit($0) }, finish: { try readback?.finish() })
+      return made.expects
+    }, beforePart: { try readback?.beforeUnit($0) }, confirmLine: { try readback?.confirmLine(through: $0) },
+       finish: { try readback?.finish() })
     do {
       try pasteOperation(parts, target, context, typing: typing, entered: &entered, meta: &meta)
     } catch let error as EngineError {
@@ -778,33 +912,36 @@ extension Engine {
         }
       }
 
-      // #187's effect watch, for a paste no read-back confirms; type_text's has neither its readings nor its observer.
-      let effect = PasteEffect(readWithin: typing == nil ? { effectReading(of: application, withinMs: $0) } : { _ in nil })
-      let observer = typing != nil ? nil : NotificationObserver(pid: target.pid, names: ["AXSelectedTextChanged", "AXValueChanged"], keep: false) { _ in
+      defer { context.connection.markActed(target.app) }  // a paste stopped midway may have changed the app too
+      // #361: the field as the paste finds it, so after the activation, whose subtype 1 can restore the window's focus
+      // and a page's select-on-focus run, and whose click inside the window can land after a read (`awaitRange`'s stable
+      // wait then runs first), and before the pasteboard is touched, so a refusal leaves it alone. When it can read the
+      // field, its line gates keep each item on the pasteboard until the field shows it; when it cannot, #187's effect
+      // watch does, as for the paste method.
+      let readsBack = try typing?.snapshot(standing.map { activationClickPending($0, now: system.now()) } ?? false) ?? false
+      let effect = PasteEffect(readWithin: readsBack ? { _ in nil } : { effectReading(of: application, withinMs: $0) }, now: system.now, sleep: system.sleep)
+      let observer = readsBack ? nil : NotificationObserver(pid: target.pid, names: ["AXSelectedTextChanged", "AXValueChanged"], keep: false) { _ in
         effect.notification()
       }
       defer { observer?.invalidate() }
       effect.observed(pasteNotificationSource(registered: observer != nil, app: target.app, pid: target.pid))
-      defer { context.connection.markActed(target.app) }  // a paste stopped midway may have changed the app too
       let window = primaryWindow(of: application)
       // A press's four events go back to back, all of them, so its modifiers are always restored; it counts as posted
       // when any of them went. They go to the keys' target through route 3's post, as the activation's own events do.
       let poster = EventPoster(source: CGEventSource(stateID: .hidSystemState)) { system.post($0, target.keyboard) }
       func press(_ key: KeyPress) -> Bool { keyPressEvents(key).map { poster.post($0) }.contains(true) }
-      // #361: the field as the paste finds it, so after the activation, whose subtype 1 can restore the window's focus
-      // and a page's select-on-focus run, and whose click inside the window can land after a read (`awaitRange`'s stable
-      // wait then runs first), and before the pasteboard is touched, so a refusal leaves it alone.
-      try typing?.snapshot(standing.map { activationClickPending($0, now: system.now()) } ?? false)
       let outcome = try runPaste(parts, pasteboard: pasteboardAccess(), effect: effect,
                    remainingMs: { Double(context.deadline - unixMilliseconds()) },
                    keyFocusAtPaste: { keyFocusReading(pid: target.pid, keyboard: target.keyboard, application: application, window: window, system: system) },
-                   focusEnforcement: enforcement, activationNow: system.now, deliver: deliver, beforePart: typing?.beforePart,
+                   focusEnforcement: enforcement, activationNow: system.now, deliver: deliver,
+                   beforePart: readsBack ? typing?.beforePart : nil, lineGate: readsBack ? typing?.confirmLine : nil,
                    checkInFlight: target.guarding.checkInFlight,
                    postPaste: { press(commandV) }, postReturn: { press(KeyPress(keyCode: returnKeyCode, modifiers: [])) },
                    entered: &entered, meta: &meta)
-      // #361: the final poll once the pasteboard is restored, but while the activation still holds: a background Safari
-      // or Electron names no focused element once it is released (the hosted probe: Electron 100 of 100, Safari 58 of
-      // 100), and the read-back's identity check asks for it again.
+      // #361: the final poll (a field the snapshot could not read answers its reason here) once the pasteboard is
+      // restored, but while the activation still holds: a background Safari or Electron names no focused element once it
+      // is released (the hosted probe: Electron 100 of 100, Safari 58 of 100), and the read-back's identity check asks
+      // for it again.
       try typing?.finish()
       return outcome
     }
@@ -881,12 +1018,17 @@ func deliveredUnits(_ representations: [PasteRepresentation]) -> Int? {
 /// type_text's read-back as the paste operation drives it (`TypeReadback`, the keyed route's): `snapshot` once the
 /// paste's activation ran and before the pasteboard is touched, told whether that activation's click inside the window
 /// may still land (`activationClickPending`), throwing when nothing may be pasted; `beforePart` before each part, a
-/// checkpoint ahead of a Return the field does not take as text; `finish`, the final poll, once the pasteboard is
+/// checkpoint ahead of a Return the field does not take as text; `confirmLine` after each line's read, the gate that
+/// keeps the item on the pasteboard until the field shows it (`runPaste`); `finish`, the final poll, once the pasteboard is
 /// restored and before the activation and the lock are released, since a background app can name no focused element
 /// once its activation ends and the poll's identity check asks for it (#361's hosted probe).
 struct PasteTyping {
-  let snapshot: (_ activationClickPending: Bool) throws -> Void
+  /// Answers whether the snapshot can read the field (its line gates then guard the pasteboard; when it cannot, #187's
+  /// effect watch and Return settle do, and `finish` answers the snapshot's reason).
+  let snapshot: (_ activationClickPending: Bool) throws -> Bool
   let beforePart: (_ index: Int) throws -> Void
+  /// The line gate: units through `through` read back (`TypeReadback.confirmLine`).
+  let confirmLine: (_ through: Int) throws -> Void
   let finish: () throws -> Void
 }
 

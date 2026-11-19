@@ -529,20 +529,22 @@ error    {code: number (the vendor's codes where mapped; -10005 otherwise), mess
     each repair is also a `route3.afterAction.repair` signpost event
   paste: the paste route's value-free diagnostics of its last line (#187), on its result and every error after its first
     line began: {line, lines, notificationSource ("trusted" | "untrusted" | "none"), baselineEmpty (both absent on
-    type_text's paste route, which #361's read-back confirms with no effect wait), keyFocusAtPaste?
+    type_text's paste route into a field its read-back reads, which #361's line gates confirm with no effect wait),
+    keyFocusAtPaste?
     {holds, frontmost, keyFocusProcess, focusedInWindow (null: unreadable)}, readWait? ("handedOver" | "released" |
     "timeout" | "deadline"), readWaitMs?, readAfterPostMs? (the first hand-over, signed, negative for a read before ⌘V),
     firstReadAfterPostMs? (the first hand-over at or after ⌘V, which the no-channel answer keys on), effectWait?
     ("notification" | "reading" | "timeout" | "deadline" | "noChannel"), effectWaitMs?, mainLagMs?, mainLagOpen?,
-    stage? ("read" | "effect"; "returnEffect" until #361), confirmed?, unconfirmedLines? (the operation's, when any), restore ("restored" |
+    stage? ("returnEffect" | "read" | "effect" | "readBack", the last a read-back paste's line gate, #361), confirmed?, unconfirmedLines? (the operation's, when any), restore ("restored" |
     "skippedChanged" | "notTaken"), focusEnforcement {activated, point? ("inside" |
     "outside" | "unknownFrame" | "none"), click? (activationClickKind's shape), activationToCommandVMs?,
     clickToCommandVMs?} (what the paste's own activation did, Decision Log #187's inert click, 2026-11-01), perLine [{line, stage?, confirmed?, keyFocusAtPaste?,
     readWait?, readWaitMs?, readAfterPostMs?, firstReadAfterPostMs?, effectWait?, effectWaitMs?, effectAfterPostMs? (the
-    effect wait's end from the line's ⌘V), baseline? and confirming? {range? [location, length], characters?}}]
+    effect wait's end from the line's ⌘V), baseline? and confirming? {range? [location, length], characters?},
+    openingReturn? {settle? ("reading" | "notification" | "noChannel" | "timeout" | "deadline"), settleMs?, toCommandVMs?}}]
     (one per line reached, oldest first; the top-level fields are the last one's; Decision Log, #187's Return settle,
-    2026-11-01, whose openingReturn #361 retired with the settle)}; never the clipboard's contents or the field's text,
-    the readings as numbers only
+    2026-11-01; a read-back paste's lines carry no effect fields and no openingReturn, #361)}; never the clipboard's
+    contents or the field's text, the readings as numbers only
   elementClick: an element click's plan (#188), on its result and its errors: {plan ("action" | "synthesized"), action?
     (AXPick | AXPress), reason ("advertised" | "descendant" | "noAction" | "notPlainLeft" | "forced"), hit? ("element" |
     "descendant" | "ancestor" | "other" | "noAnswer"), hitTest? ("application")}, hit present when a hit-test was taken
@@ -586,9 +588,10 @@ error    {code: number (the vendor's codes where mapped; -10005 otherwise), mess
     openBefore, polls, ms, actionError?: the AXShowMenu's AXError when it was cannotComplete, taken as sent,
     unreadBefore?: the sources the baseline could not read in full, which confirm nothing}
   pasteUnconfirmed (engine-only, not admitted by the wrapper: a concealed request never pastes): a paste's ⌘V was sent
-    and the text read from the clipboard, but no effect was seen, or none could be (Decision Log, #187); since #361 the
-    paste method's alone, type_text's paste route answering typeUnconfirmed from its read-back, and no longer for a
-    Return between lines (the settle and its sentence went with #361)
+    and the text read from the clipboard, but no effect was seen, or none could be (Decision Log, #187); or, at stage
+    "returnEffect", a Return between two of type_text's lines showed no effect, and the next line was not pasted (its own
+    sentence). Since #361 type_text's paste route answers it only into a field its read-back cannot read; one it can
+    read answers typeUnconfirmed from its line gates and final poll
   noScreenshotForCoordinates: a coordinate click, drag or scroll with no usable screenshot on the connection ("Screenshot"); nothing
     posted, the input meta carried with startedAt/endedAt null; the sentence names getScreenshot as the way to get an image to click
     in (c13759a4's "There is no screenshot of the app's window to place the coordinates in. Try to get the on-screen content again
@@ -6648,21 +6651,42 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      checkpoint; in a single-line field (and Gecko's `AXApplicationGroup`) it is a checkpoint, posted only once the text
      before it reads back, with the clipboard still the engine's, its effect unconfirmed (`keysUnconfirmed`); a
      mismatch there stops the text before the Return (`stoppedBeforeKey`) and restores the clipboard.
-  5. **The read-back replaces "some change was seen", and only that.** The per-line effect wait and the Return's settle
-     go from this route, and no effect reading or accessibility observer is taken on it. The settle existed so a late
-     Return could not confirm the next line's effect check (2026-11-01's false success), which an exact read-back
-     cannot be fooled by: a line that never landed leaves the field short. Kept exactly: the pasteboard's snapshot and
-     restore on every path, the write that takes the pasteboard only at the engine's own change count, the conflict
-     check after the read, the conflict mapping of a read or effect timeout, and the read wait with its 2 s and the
-     deadline. A line no app reads keeps `clipboardReadTimedOut`, its count clause now "Sent before it: n of m
-     characters (k of l lines); …": lines are handed over, no longer confirmed one by one. The read-back's
-     `typeUnconfirmed` passes through as is, a moved change count included: the read-back read the field itself.
+  5. **The read-back replaces "some change was seen", and only that.** Where the snapshot can read the field, a line
+     gate (`TypeReadback.confirmLine`) takes the effect wait's place after each line's read wait: the field must read
+     the text through that line before the next part goes or the pasteboard is restored, so the item stays the
+     engine's until the target shows it took it. That is the effect wait's other role, which a hand-over cannot fill
+     (it names no reader: a clipboard manager's read before ⌘V is one), and the review of a1221804..9bfb0b50 (P1)
+     found the first build gave it up, restoring the pasteboard once the read wait ended. A gate that fails holds the
+     item until #187's own bound from that line's ⌘V (`pasteEffectTimeoutMs`, or the request's deadline) before the
+     restore, so a slow target is held to as long as the effect wait held it, and its answer, the read-back's, was read
+     while only the engine's item was on the pasteboard: no excerpt can show the person's clipboard. The Return's
+     settle is not run there: a line gate expects the Returns before it, so a late Return cannot confirm a line, and
+     no effect reading or observer is taken. Where the snapshot cannot read the field (a refused plan: not a text
+     field, unreadable, at Chromium's cap), #187's effect wait and Return settle stay exactly as they were, and the
+     read-back answers the snapshot's reason at the end. Kept exactly on every path: the pasteboard's snapshot and
+     restore, the write that takes it only at the engine's own change count, the conflict check after the read, the
+     conflict mapping, and the read wait. A line no app reads keeps `clipboardReadTimedOut`, its count clause now
+     "Sent before it: n of m characters (k of l lines); …". The read-back's `typeUnconfirmed` passes through as is.
   6. **What becomes of #187's unconfirmed answers.** `pasteUnconfirmed` and `pasteUnconfirmedNote` stay the paste
-     method's (one item; its HTML, RTF and Markdown have no exact plain value to expect); type_text never answers
-     either. With no caller left, the Return's settle (`PasteEffect.settle`, `keyPosted`), `returnUnconfirmed`,
-     `OpeningReturn` and the diagnostics' `openingReturn`, the stage "returnEffect", the multi-line note and
-     `typedPasteError`'s unconfirmed-lines clause are removed: only type_text's text had newlines. `PasteOutcome`'s
-     `unconfirmedLines` and the diagnostics' stay for the paste method, 0 or 1.
+     method's, and `pasteUnconfirmed` (with `returnUnconfirmed`) type_text's into a field its read-back cannot read;
+     a field it reads never answers either. The note keeps its one-item sentence: type_text's success never carries
+     it, so its multi-line form had no caller and is removed, as is `typedPasteError`'s unconfirmed-lines clause.
+     `PasteOutcome`'s `unconfirmedLines` and the diagnostics' stay for the effect path.
+  **The review of a1221804..9bfb0b50.** P1 is item 5's gate. P2: a refused plan (a capped single-line field, a range
+  that cannot be read) confirms nothing, so "query\n" pastes and presses Return; the keyed route does the same
+  (`beforeUnit` returns at once when the plan expects nothing), so the paste route stays consistent with it, and the
+  coordinator files one ticket for both routes. P3: every poll's budget is the lesser of `typeReadbackBudgetMs` and
+  the request's time left (`TypeReadback`'s `remainingMs`, the paste route's own), so a checkpoint or gate, a password
+  field's 220 ms hold included, ends by the deadline, and past it no further part is sent (`pasteDeadlineReached`,
+  `timeoutReached` with "Sent before it: n of m characters."). P4: the cursor-sitting judge (`item-187.mjs`
+  `perLineProblem`) judges a typeText row that carries `typeReadback` by its `confirmed` alone, older rows and the
+  paste method by the per-line rule. P5: agent-cursor.md's paste sentence adds that a Tab is pasted as text there, so
+  the paragraph's pressed-Tab sentences hold for typed keys only; its four copies stay byte-identical. Tests: a
+  clipboard manager's read before ⌘V with a target slower than the gate pastes the engine's text, never the owner's
+  (and pastes the owner's when the hold is removed, the mutation run); each line's gate runs with its item on the
+  pasteboard, before the next part or the restore; a gate and a checkpoint end at the deadline and no Return follows;
+  #187's settle tests are back for the effect path. The final poll (item 3) now confirms only what the last gate did
+  not cover, a trailing Return.
   7. **A password field takes #414's length rule.** It applies cleanly to a paste: the field takes the plain text whole,
      so the expected count is the start's less the selection plus the text's UTF-16 units, the caret right after it,
      confirmed, as #414's wave 9 has it (ruling 1ea561bc:851), only on a hold between two sampled length reads at

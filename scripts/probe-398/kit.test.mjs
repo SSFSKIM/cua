@@ -20,7 +20,7 @@ test('the census patch applies exactly once to this checkout\'s Lineage.swift an
 
 
 test('plans: ten per unit to measure, twenty per head interleaved to qualify', () => {
-  assert.equal(UNITS.length, PLACEHOLDER_CELLS.length * 2 + STALE_CELLS.length);
+  assert.equal(UNITS.length, PLACEHOLDER_CELLS.length * 3 + STALE_CELLS.length);
   assert.ok(UNITS.some(u => u.cell === 'solo-renamed' && u.seq === 'set'));
   assert.equal(plan({mode: 'measure', heads: ['main']}).length, 10 * UNITS.length);
   const q = plan({mode: 'qualify', heads: ['main', 'fix']});
@@ -129,9 +129,12 @@ test('gates pass a fix that succeeds where main refused, and fail each way a fix
   const gr = gates(regressed, {coverage: cov});
   assert.equal(gr.noRegression.pass, false); assert.equal(gr.placeholderFixed.pass, false);
   // Successes on rows whose placeholder never changed prove nothing.
-  const untested = rows(good, r => r.head === 'fix' && r.cell === 'focus' && r.seq === 'set' && r.rep < 11 ? {exercised: false} : {});
-  const gu = gates(untested, {coverage: cov});
-  assert.equal(gu.placeholderFixed.pass, false); assert.deepEqual(gu.placeholderFixed.underExercised, ['focus/set']);
+  // A unit whose change the lane never makes AX-visible is listed, not failed; a lane that exercises none proves nothing.
+  const partly = rows(good, r => r.head === 'fix' && r.cell === 'focus' && r.seq === 'set' && r.rep < 11 ? {exercised: false} : {});
+  const gp1 = gates(partly, {coverage: cov});
+  assert.equal(gp1.placeholderFixed.pass, true); assert.deepEqual(gp1.placeholderFixed.underExercised, ['focus/set']);
+  const untested = rows(good, r => r.head === 'fix' && PLACEHOLDER_CELLS.includes(r.cell) ? {exercised: false} : {});
+  assert.equal(gates(untested, {coverage: cov}).placeholderFixed.pass, false);
   // The narrowed design: a stale handle's walk keeps the placeholder, so the fix answers there exactly as main.
   const adoptedSolo = rows(r => r.head === 'fix' && r.cell === 'solo-renamed' ? 'success-exact' : good(r));
   assert.equal(gates(adoptedSolo, {coverage: cov}).staleAsMain.pass, false);

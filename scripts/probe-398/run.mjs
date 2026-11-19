@@ -74,7 +74,7 @@ async function main(){
     for(const c of cells){
       const m=materialize(c),e=engines[c.head],setupText=ascii(12),app=e.appPath;
       let s='engine-attach',attested=false,armed=false,observeFailed=false,observed=null,targets=null,click=null,act=null,first=null,read=null,settled=null,
-        reobserved=null,after=null,witness=null,invalid=null;
+        reobserved=null,after=null,witness=null,invalid=null,typed=null;
       try{
         const w=await e.attach();
         await platform.arm(++trial,{cell:c.cell,setupText},x=>{s=x;});armed=true;
@@ -101,8 +101,9 @@ async function main(){
           click=await e.call('click',{app,element:targets.target.token});
           s='act';
           if(c.seq==='set')act=await e.call('set_value',{app,element:targets.target.token,value:m.value});
-          else if(outcomeOf(click.reply)==='success')act=await e.call('type_text',{app,text:m.value});
-          else act={reply:'skipped',ms:null};
+          else if(outcomeOf(click.reply)!=='success')act={reply:'skipped',ms:null};
+          else if(c.seq==='type')act=await e.call('type_text',{app,text:m.value});
+          else{typed=await e.call('type_text',{app,text:m.typed});act=await e.call('set_value',{app,element:targets.target.token,value:m.value});}
           // The first read right after the actions (kept), then until the expected state (or 2 s), then once more after 300 ms.
           s='read';
           const readOnce=async()=>{const d=await platform.command({op:'read',trial,expected:m.value,setupText});if(d.error||d.trial!==trial)throw Error('fixture trial lost');return d;};
@@ -129,7 +130,7 @@ async function main(){
       const ok=attested&&!invalid;
       const node=targets?.target,axChanged=axChangedOf(node,after,reobserved);
       const verdicts=score({cell:c.cell,attested:ok,observeFailed,click:clickOutcome,act:actOutcome,actWhy,first,read:settled,axChanged});
-      const row={lane,...c,valid:ok,invalid:ok?null:invalid??'other',click:clickOutcome,act:actOutcome,actWhy,...verdicts,axChanged,
+      const row={lane,...c,valid:ok,invalid:ok?null:invalid??'other',click:clickOutcome,typeAct:typed?outcomeOf(typed.reply):null,act:actOutcome,actWhy,...verdicts,axChanged,
         observeError:observeFailed?(observed?.reply?.result?'target-not-found':outcomeOf(observed?.reply)):null,
         observedPlaceholder:placeholderShape(node),afterPlaceholder:reobserved?placeholderShape(after)??'gone':null,
         observedRole:roleCode(node?.role),observedSubrole:node?.subrole==='AXSearchField'?'AXSearchField':node?.subrole?'other':null,

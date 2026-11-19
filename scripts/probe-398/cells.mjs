@@ -3,7 +3,7 @@
 import {randomInt} from 'node:crypto';
 
 export const LANES=['cft','safari','electron','appkit'];
-// The placeholder changes (and `static`, which never changes: the control). Each runs both sequences.
+// The placeholder changes (and `static`, which never changes: the control). Each runs every sequence.
 export const PLACEHOLDER_CELLS=['static','focus','rotate','input','search'];
 // The stale-handle twins: the first of two fields alike but for their placeholder is recreated alike, recreated with
 // another placeholder, or removed, between the observation and the first action.
@@ -14,7 +14,8 @@ export const SOLO_CELLS=['solo-renamed'];
 // The cells whose observed handle `mark` makes stale.
 export const STALE_CELLS=[...TWIN_CELLS,...SOLO_CELLS];
 // `set`: click the field's element, then set_value on the same element. `type`: click it, then type_text.
-export const SEQUENCES=['set','type'];
+// `typeset` (the builder's suggestion): click it, type_text, then set_value on the same element; the set value is final.
+export const SEQUENCES=['set','type','typeset'];
 export const UNITS=[...PLACEHOLDER_CELLS.flatMap(cell=>SEQUENCES.map(seq=>({cell,seq}))),...STALE_CELLS.map(cell=>({cell,seq:'set'}))];
 export const unitKey=u=>`${u.cell}/${u.seq}`;
 // The label each cell's target is found by in the observation; the twins share one and are told apart by placeholder.
@@ -25,7 +26,7 @@ export const TWIN={label:'Probe398 twin',a:'Probe398 first name',b:'Probe398 las
 
 // Synthetic ASCII: upper-case consonants after a fixed prefix (never a word, never a placeholder's text).
 export const ascii=n=>Array.from({length:n},()=>'BCDFGHJKLMNPQRSTVWXY'[randomInt(20)]).join('');
-export const materialize=u=>({...u,value:'Q398'+ascii(10)});
+export const materialize=u=>({...u,value:'Q398'+ascii(10),typed:'Q398'+ascii(6)});
 
 // Rows in run order. A qualification interleaves the heads, alternating which goes first per unit and repetition.
 export function plan({mode,heads,units=UNITS}){

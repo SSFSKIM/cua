@@ -31,4 +31,43 @@ The guard's own time (`stalePoint.ms`) is reported per unit and head as p50 / p9
 
 ## Runs
 
-Workflow `probe-340-qual.yml`.
+Workflow `probe-340-qual.yml`, id `423661274`, [registration](https://github.com/SSFSKIM/cua/actions/runs/44500975602) (Ubuntu only). Main `1e56ca404f6acac2d76f4e0d32019a63d90b4276` throughout. Hosted macOS images `20261102.0473.1` and `20261112.0504.1`; Chrome for Testing 156.0.8078.80 (157.0.8103.78 in the smoke), Safari 27.2, Electron 44.4.5 / Chromium 152.0.7977.130.
+
+| Run | Kit | Mode | What it established |
+|---|---|---|---|
+| [Smoke](https://github.com/SSFSKIM/cua/actions/runs/44501026254) | `710cdbfb` | one trial per unit | Every lane in the background under the cover, zero invalid rows, every unit's record at the intended role; main reproduces the refusal. |
+| [Phase 1 measurement](https://github.com/SSFSKIM/cua/actions/runs/44507959686) | `8a1fb2a3` | ten per unit, main only | Below. |
+
+## Phase 1: main measured
+
+All three lanes in the background under the cover, the witness held on every row; 220/220 rows valid per lane (22 units × 10), every text change seen in the accessibility tree before the click (160/160 per lane), every record at the intended role. The three lanes answer alike row for row except where noted.
+
+| Unit | Record holds | Main, CfT / Safari / Electron | Guard reason | Identity | Landed on the intended link | Geometry, the recorded node (AX, pt) |
+|---|---|---|---|---|---|---|
+| inbox: "Inbox" → "Inbox (3)" | text | **refused 10/10** each | `nodeGone` | none | 0 | dx 0, dw +30 |
+| | link | kept 10/10 each | `sameElement` | handle | 10/10 | dx 0, dw +30 |
+| reltime: "1 minute ago" → "2 minutes ago" | text | **refused 10/10** each | `nodeGone` | none | 0 | dx 0, dw +10 |
+| | link | kept 10/10 each | `sameElement` | handle | 10/10 | dx 0, dw +10 |
+| shrink: "Inbox (12)" → "Inbox" | text | **refused 10/10** each | `nodeGone` | none | 0 | dx 0, dw −42 |
+| | link | kept 10/10 each | `sameElement` | handle | 10/10 | dx 0, dw −42 (Safari −41) |
+| linksave: "Save" → "Delete" | text | refused 10/10 each | `nodeGone` | none | 0 | dx 0, dw +12 |
+| | link | refused 10/10 each | `relabelled` | handle | 0 | dx 0, dw +12 |
+| moved: the target and Archive swap rows | text | refused 10/10 each | Chromium `frameMoved` (handle kept); Safari `nodeGone` | | 0, no wrong target | dy +64 |
+| | link | refused 10/10 each | likewise | | 0, no wrong target | dy +64 |
+| twin: two "Inbox" links, the first removed, the second slides into its row | text | **kept 10/10 each, every click on the second link** | `sameElement` | recreated | 0; **wrong target 10/10** | dx 0, dw 0 |
+| | link | **kept 10/10 each, every click on the second link** | `sameElement` | recreated | 0; **wrong target 10/10** | dx 0, dw 0 |
+| like: "Like (12)" → "Like (13)", same width | text | kept 10/10 each | `sameElement` | recreated | 10/10 | 0 |
+| | link | kept 10/10 each | `sameElement` | handle | 10/10 | 0 |
+| plain: the same text re-created | text | kept 10/10 each | `sameElement` | recreated (Electron: handle) | 10/10 | 0 |
+| | link | kept 10/10 each | `sameElement` | handle | 10/10 | 0 |
+| linkmono: "Save" → "Send", same width | text | refused 10/10 each | `nodeGone` | none | 0 | 0 |
+| | link | refused 10/10 each | `relabelled` | handle | 0 | 0 |
+| right: right-aligned, "1 minute ago" → "2 minutes ago" | text | refused 10/10 each | `nodeGone` | none | 0 | dx −10, dw +10 (right edge fixed) |
+| | link | kept 10/10 each | `sameElement` | handle | 10/10 | 0 (the link's width is fixed) |
+| centre: centred, "Inbox" → "Inbox (3)" | text | refused 10/10 each | `nodeGone` | none | 0 | dx −15, dw +30 (both edges move) |
+| | link | kept 10/10 each | `sameElement` | handle | 10/10 | 0 |
+
+- **The bug, reproduced exactly.** Wherever the record holds the link's AXStaticText and its width changes (grow, shrink, right-aligned, centred), main refuses `nodeGone` 10/10 on all three lanes; with the record on the AXLink the same changes are kept and land. The page's own geometry agrees with the AX frames to within 1 pt: a left-aligned text keeps its origin and only its width changes (+30, +10, −42 pt), a right-aligned one keeps its right edge, a centred one moves both edges by half the growth.
+- **A wrong target on main today: `twin`.** Two links with the same label: when the first is removed and the second slides into its row, #296's re-created search matches the second (same role, the same frame, the same label) and main clicks it, 10/10 at the text and 10/10 at the link, on all three lanes. This is not #340's regression but a gap of #296's re-created match; as a `refuse` cell it fails `stillRefused` and `noWrongTarget` on any head that answers as main.
+- **Moved.** A link moved away with another taking its place is refused everywhere; Chromium keeps the moved node's handle and refuses `frameMoved`, Safari re-creates it and refuses `nodeGone`. No click reached Archive.
+- **The guard's own time** (`stalePoint.ms`, every valid row): CfT p50 6.0 / p95 18.4 / max 58.7 ms; Safari 3.2 / 9.5 / 47.1; Electron 3.6 / 10.0 / 25.1. A kept re-created match costs the most (CfT `like/text` p50 19.4, `twin/text` 15.9; Safari and Electron 4.5–8.2); a handle that answers costs 1–3 ms on Safari and Electron and 5–7 ms on CfT; `nodeGone` 3–9 ms (p50 per unit). Per-unit quantiles are in the run's tables (`report.mjs`).

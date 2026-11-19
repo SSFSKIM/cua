@@ -70,8 +70,11 @@ import Foundation
 //   (`confirmation: "length"`) and its note says what a length proves (`readbackLengthNote`); a literal request of keys
 //   alone confirms no length and claims none; a failure carries its reason alone. A count cannot tell a wrong character
 //   from a right one.
-// The paste route (Paste.swift, a non-Latin input source) keeps #187's effect check and is not read back here; its
-// read-back is #361.
+// The paste route (Paste.swift, an input method or a background app's unknown source) is read back by this same
+// machinery (#361, `typeTextByPaste`): each pasted line a unit with no key, each newline a Return, so a Return the field
+// does not take as text is the same checkpoint where no effect showed the text before it land; its snapshot is taken
+// after the paste's activation, its final poll once the pasteboard is restored, before the activation ends, every
+// poll bounded by the request's deadline (`remainingMs`). Its delivery stays #187's. Its requests are never concealed.
 
 /// The poll's budget after the last event (or before a checkpoint's key), its interval, and the messaging timeout of
 /// every read: the spike's soft 1000 ms, 5 ms polls and 100 ms AX timeout, whose confirmed reads took p50 26 to 34 ms.
@@ -571,7 +574,8 @@ struct ReadbackPoll: Equatable {
   var closed: TypeReadbackReason?
 }
 
-func readbackPoll<Element>(_ field: Element, role: String, reads: ReadbackReads<Element>, compare: (Element) -> ReadbackRead) -> ReadbackPoll {
+func readbackPoll<Element>(_ field: Element, role: String, reads: ReadbackReads<Element>, budgetMs: Double = typeReadbackBudgetMs,
+                           compare: (Element) -> ReadbackRead) -> ReadbackPoll {
   var poll = ReadbackPoll()
   let started = reads.now()
   repeat {
@@ -579,7 +583,7 @@ func readbackPoll<Element>(_ field: Element, role: String, reads: ReadbackReads<
     poll.reads += 1
     poll.last = compare(field)
     if poll.last == .equal { poll.matched = true; break }
-    if reads.now() - started >= typeReadbackBudgetMs { break }
+    if reads.now() - started >= budgetMs { break }
     reads.sleep(typeReadbackPollIntervalMs)
   } while true
   return poll
@@ -697,12 +701,17 @@ final class TypeReadback<Element> {
   private let concealed: Bool
   /// Units after the last checkpoint (or the start) that put text in, which a checkpoint or the final poll must confirm.
   private var unchecked = false
+  /// The request's time left, in ms (#361: the paste route's; the keyed route's is unbounded): every poll's budget is
+  /// the lesser of `typeReadbackBudgetMs` and this, read when the poll starts.
+  private let remainingMs: () -> Double
   private(set) var record = TypeReadbackRecord()
 
-  init(units: [TypedUnit], concealed: Bool, settle: Bool, baseline: BaselineWait? = nil, reads: ReadbackReads<Element>) {
+  init(units: [TypedUnit], concealed: Bool, settle: Bool, baseline: BaselineWait? = nil, reads: ReadbackReads<Element>,
+       remainingMs: @escaping () -> Double = { .infinity }) {
     self.units = units
     self.reads = reads
     self.concealed = concealed
+    self.remainingMs = remainingMs
     record.concealed = concealed
     let started = reads.now()
     var settled: ReadbackSettle? = settle ? ReadbackSettle() : nil
@@ -742,13 +751,16 @@ final class TypeReadback<Element> {
     return false
   }
 
+  /// A poll's budget: `typeReadbackBudgetMs`, or less when the request has less time left.
+  private func budgetMs() -> Double { min(typeReadbackBudgetMs, max(0, remainingMs())) }
+
   /// After the last event: success, or `typeUnconfirmed`. A password field's poll counts from B, `postedAt`, the last
   /// successful post on the read-back's clock (the review of 1f69470e..f217f062), and ends at its cutoff, E = B +
   /// `typeReadbackBudgetMs`. A failure answers when it is known (ruling 1ea561bc:851), a snapshot refusal after posting
   /// at once; failures found during delivery (an input-source change, an intervention, an event not made) throw before
   /// this, #354's path.
   func finish(postedAt: Double? = nil) throws {
-    let cutoff = (postedAt ?? reads.now()) + typeReadbackBudgetMs
+    let cutoff = min((postedAt ?? reads.now()) + typeReadbackBudgetMs, reads.now() + max(0, remainingMs()))
     guard plan.expects else { throw typeUnconfirmed(record.reason ?? .valueUnreadable, secure: record.secure) }
     // A concealed request is always read back once, whatever its keys, so its number of waits is always one.
     if unchecked || concealed { try confirm(through: units.count, beforeKey: false, cutoff: cutoff) }
@@ -893,7 +905,7 @@ final class TypeReadback<Element> {
   /// password field's length confirmation takes `cutoff` from `finish`, or (a literal checkpoint) its own from its start.
   private func confirm(through end: Int, beforeKey: Bool, cutoff: Double? = nil) throws {
     if case .expectLength = plan {
-      let cutoff = cutoff ?? reads.now() + typeReadbackBudgetMs
+      let cutoff = cutoff ?? reads.now() + budgetMs()
       return try confirmLength(through: end, beforeKey: beforeKey, cutoff: cutoff)
     }
     guard case .expect(let field, let role, let before, let range, let returnIsText, let found) = plan else { return }
@@ -938,7 +950,7 @@ final class TypeReadback<Element> {
       // and waits do not tell whether a secret matches a selection the caller chose.
       let inserted = expected.count - (value.count - range.length)
       let valueUnits = reads.valueUnits
-      poll = readbackPoll(field, role: role, reads: reads) { element in
+      poll = readbackPoll(field, role: role, reads: reads, budgetMs: budgetMs()) { element in
         let seenWith = caretSeenWith
         caretSeenWith = nil
         guard var read = valueUnits(element) else { return .unreadable }
@@ -969,7 +981,7 @@ final class TypeReadback<Element> {
         record.placeholderCaretUnread = caret == nil
         return .equalUnconsumed
       }
-      poll = readbackPoll(field, role: role, reads: reads) { element in
+      poll = readbackPoll(field, role: role, reads: reads, budgetMs: budgetMs()) { element in
         let seenWith = caretSeenWith
         caretSeenWith = nil
         guard let read = value(element) else { return .unreadable }

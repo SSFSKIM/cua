@@ -24,9 +24,9 @@ import Foundation
 // area is refused as backgroundClickRefused with nothing posted, or a plain click there is carried by the hit's own
 // action (`elementClick.reason` webArea); one whose own down consumed the activation's arm in a view not known to accept
 // first mouse answers clickUnconfirmed after its events.
-// A keyed type_text reads the focused field back and answers `typeUnconfirmed` unless it holds the text (#354,
-// TypeReadback.swift, meta `typeReadback`), a password field by its length, its success with a note (#414,
-// TypeReadbackLength.swift); press_key answers once posted, its meta `keyEffect: "unconfirmed"`.
+// A type_text, keyed or pasted (#361, Paste.swift), reads the focused field back and answers `typeUnconfirmed` unless
+// it holds the text (#354, TypeReadback.swift, meta `typeReadback`), a password field by its length, its success with a
+// note (#414, TypeReadbackLength.swift); press_key answers once posted, its meta `keyEffect: "unconfirmed"`.
 // The settle an action arms runs at the next get_app_state (markActed).
 // Spike-only arguments, which the facade never sends: `spikeRoute` ("1"|"2'"|"2"|"3", force one route; route 2, the ⌘
 // post, is reachable only this way), `spikeEventSource` ("private", post keys from a private event source instead of
@@ -636,9 +636,9 @@ extension Engine {
   /// activation, with the source checked before every event and after the last; anything else takes the paste route
   /// (Paste.swift), its newlines pressed as Return. A concealed request never takes the paste route and never keys
   /// under a reading it cannot trust: it fails closed as concealedInputUnavailable before anything is entered. A keyed
-  /// request stops between characters at a user event attributed to the app, reporting what it entered. A keyed request
+  /// request stops between characters at a user event attributed to the app, reporting what it entered. Either route
   /// answers success only once the focused field reads its text in place of the selection, else `typeUnconfirmed`
-  /// (#354, TypeReadback.swift); the paste route keeps its own confirmation.
+  /// (#354, TypeReadback.swift; the paste route's since #361, its snapshot after the paste's activation).
   func typeText(_ args: [String: Any], _ context: ExecutionContext) throws -> Any {
     guard let text = args["text"] as? String else { throw EngineError(name: "invalidArguments", "Missing text to type") }
     let concealed = (args["concealed"] as? NSNumber)?.boolValue ?? false
@@ -670,8 +670,13 @@ extension Engine {
       case .refusedConcealed:
         throw concealedInputUnavailable(sourceID: source.id, perContext: source.keyboardLayout && perContextUnknown)
       case .paste:
+        // #361: read back as the keyed route is, over the same live reads, its snapshot taken after the paste's activation.
         let note = try typeTextByPaste(text, PasteTarget(app: app, pid: pid, application: application, keyboard: target, guarding: guarding),
-                                       context, meta: &meta)
+                                       context, selection: selection, settle: { self.recentKeys.settles(pid: pid) },
+                                       pointerPending: { self.clickOrdering.pointerPending(pids: [pid, target]) },
+                                       reads: .live(pid: pid, markerRoute: readbackMarkerRoute(
+                                         bundleIdentifier: NSRunningApplication(processIdentifier: pid)?.bundleIdentifier)),
+                                       meta: &meta)
         return pasteResult(meta, note: note)
       case .keyed: break
       }

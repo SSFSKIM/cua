@@ -503,7 +503,7 @@ error    {code: number (the vendor's codes where mapped; -10005 otherwise), mess
     unreadable, at Chromium's AXValue cap, or no longer the focused field; its sentence says some text may have gone in
     and asks the model to observe, then use setValue; a concealed mismatch says only that the field does not match
     what was typed; only a plain mismatch on a field that stayed readable carries an excerpt, at most 200 UTF-16 units of each of expected and actual around the first
-    difference, with both lengths
+    difference, with both lengths (never on the paste route, #361, whose mismatch carries its reason alone)
   activationGuardMs: route 3's guard time, present only when a guard ran; activationClick: what the inert-point rule
     decided at the window's AXActivationPoint when an activation ran, "posted" there or the reason it was not ("noPoint",
     "outsideFrame", "spared", "control", "actionsUnknown", "hitTestFailed"); activationClickKind: the click that
@@ -6626,8 +6626,10 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      with the effect wait skipped (the mutation run) it gets the person's.
   2. **The read-back decides success.** `typeTextByPaste` runs `TypeReadback` over `pasteReadbackUnits`: each pasted
      line a unit with no key, so never a checkpoint (a Tab inside a line is pasted text), each newline a Return unit
-     (CR LF one "\n", counting its two units in `entered`), one for one with the paste's parts. The snapshot, the
-     expected value, the equality poll, the excerpt, truncation and an unreadable field answering unconfirmed, the ending
+     (CR LF one "\n", counting its two units in `entered`), one for one with the paste's parts and taken from the text
+     itself, never decoded back from the pasteboard's bytes, which would drop a leading U+FEFF as a byte order mark and
+     let a target that dropped it confirm (the review of main..7897cdeb, P2). The snapshot, the
+     expected value, the equality poll, truncation and an unreadable field answering unconfirmed, the ending
      Return's placeholder line, the settle after a recent press_key and #359's waits are the keyed route's code. The
      request is always literal: a concealed request never reaches the paste route (`textRoute`, tested for every
      combination). A field the snapshot cannot read (Firefox's in the phase-2 run: `rangeUnreadable` 632 of 800) is
@@ -6652,17 +6654,20 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      read back like any character. In a single-line field (and Gecko's `AXApplicationGroup`) the keyed route checks the
      text before the Return and withholds it on a mismatch; on this route the line's effect wait already ran, so the
      checkpoint runs only where it saw no effect (a line with no channel, `noChannel`): there a mismatch withholds the
-     Return and the rest (`stoppedBeforeKey`), its excerpt read while the pasteboard still held the engine's item.
+     Return and the rest (`stoppedBeforeKey`), with no excerpt (item 6).
      Where the effect was seen the Return goes as on main, and #187's settle judges it: a single-line browser field
      whose Return changes nothing stops as main does (`pasteUnconfirmed`, the Return's sentence); AppKit's, whose
      Return selects the field so the second line replaces the first (main's 40 of 40 wrong successes), now answers
      `typeUnconfirmed`. A field the snapshot cannot read gets no checkpoint, and its Return goes, as the keyed route's
      does (`beforeUnit` returns at once when the plan expects nothing; the review's P2: the coordinator tickets both
      routes).
-  6. **No excerpt that could be the person's clipboard.** A line pasted with no effect seen (`unconfirmedLines`) may
-     have had its ⌘V handled after the restore, so a final mismatch then answers `typeUnconfirmed` (`valueMismatch`)
-     with no excerpt and no lengths. A field whose lines' effects were all seen keeps #354's excerpt: each item stayed
-     on the pasteboard until its line showed.
+  6. **No excerpt and no lengths on this route, ever** (the review of main..7897cdeb, P1). Neither the read wait nor
+     the effect wait proves the target took its ⌘V before the restore: a clipboard manager can make the read, and an
+     unrelated change in the field can satisfy the effect wait, so a queued ⌘V can paste the person's clipboard after
+     the restore, into the field the final poll reads. A mismatch, a checkpoint's or the final poll's, answers
+     `typeUnconfirmed` with its reason alone (`valueMismatch`), and the record carries no lengths; the docs tell the
+     agent to observe the field. A stub test has exactly that: a delayed ⌘V after an unrelated effect, the person's
+     clipboard in the field, and nothing of it in the reply. Main never disclosed field text on this path either.
   7. **The request's deadline** (the review's P3). Every poll's budget is the lesser of `typeReadbackBudgetMs` and the
      request's time left (`TypeReadback`'s `remainingMs`, the paste route's), so a checkpoint, a password field's
      220 ms hold included, ends by it, and no part goes out past it (`pasteDeadlineReached`, `timeoutReached` with
@@ -6677,8 +6682,11 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      docs' paste sentence (and its oracle, the docs test and the surface inventory's Table 3 amendment of 2026-11-18,
      byte-identical) says the paste route is read back the same way and that a Tab there is pasted as text, so the
      paragraph's pressed-Tab sentences hold for typed keys only (the review's P3). The cursor-sitting judge
-     (`item-187.mjs` `perLineProblem`) judges a typeText row that carries `typeReadback` by its `confirmed`, older rows
-     and the paste method by the per-line rule (the review's P2).
+     (`item-187.mjs` `perLineProblem`) requires of a typeText row that carries `typeReadback` both its per-line delivery
+     evidence and `confirmed`, and judges older rows and the paste method by the per-line rule alone (the reviews of
+     a1221804..9bfb0b50 and main..7897cdeb, P2). The paste sentence also says that a Return between lines goes once the
+     field shows any change, before the text before it is read back, so on this route a form it submits is not
+     protected by the exact read-back as the keyed route's checkpoint protects it (the review of main..7897cdeb, P2).
   **What the hosted runs measured.** The probe on main 517ab543 (five lanes: Safari 27.2, Chrome for Testing 156/157,
   Firefox 160, Electron 44, an AppKit fixture; Korean 2-Set, Japanese Romaji and Kana, Pinyin, all on the paste route):
   #187's check answered success on 599 of 599 realized controls (a rewritten character, an added one, a stale
@@ -6694,7 +6702,7 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   Proven offline: PasteReadbackTests drives the engine's own path (the paste lock, route 3's activation on GuardSeam, a
   test pasteboard, ⌘V and Return through the seam, #187's effect watch reading a fake field through the engine's new
   `pasteEffectReading` seam): exact pastes confirm; rewritten, added and stale-selection pastes answer
-  `typeUnconfirmed`, with the excerpt where every line's effect showed and without it where one did not; a late target
+  `typeUnconfirmed` with no excerpt or lengths, a delayed ⌘V after an unrelated effect included; a leading U+FEFF is expected; a late target
   never pastes the person's clipboard; the checkpoint and the deadline; the snapshot point; the final poll before the
   deactivation; a password field confirmed by its length with nothing but the length batch read; the clipboard restored
   on every path. PasteTests keeps #187's tests as on main.

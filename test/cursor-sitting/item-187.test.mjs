@@ -1142,21 +1142,24 @@ test('the addendum: `judge --addendum` writes item-187-rejudge.md beside the slo
   assert.notEqual(readFileSync(join(dir, 'item-187.md'), 'utf8'), report);
 });
 
-test('#361: a typeText row whose paste route is read back is judged by its typeReadback, not by per-line effects; the paste method and older records keep the per-line rule', () => {
+test('#361: a typeText row whose paste route is read back needs its per-line delivery evidence and its typeReadback confirmed; the paste method and older records keep the per-line rule alone', () => {
   const lines = ROWS.find(r => r.string.id === 'lines' && r.method === 'typeText');
-  const readBack = (typeReadback, perLine) => record({row: lines, act: {...input({row: lines}).act, meta: {...input({row: lines}).act.meta, typeReadback,
+  const ok = record({row: lines});
+  const delivered = ok.paste.perLine;
+  assert.equal(perLineProblem(ok), null, 'the per-line evidence alone, an older record');
+  const readBack = (typeReadback, perLine = delivered) => record({row: lines, act: {...input({row: lines}).act, meta: {...input({row: lines}).act.meta, typeReadback,
     paste: {...input({row: lines}).act.meta.paste, perLine}}}});
-  // A read-back paste's lines: stage readBack, no effect wait, no opening Return.
-  const gated = [{line: 1, stage: 'readBack', readWait: 'handedOver'}, {line: 2, stage: 'readBack', readWait: 'handedOver'}];
-  assert.equal(perLineProblem(readBack({confirmed: true, snapshotMs: 1, pollMs: 2, reads: 3}, gated)), null, 'confirmed by the whole field');
-  assert.match(perLineProblem(readBack({confirmed: false, reason: 'valueMismatch', snapshotMs: 1, pollMs: 2, reads: 3}, gated)),
-    /not read back as typed \(typeReadback valueMismatch\)/);
-  assert.equal(readBack({confirmed: true}, gated).typeReadback.confirmed, true, 'the row keeps the record');
-  // The same lines with no typeReadback (a build before #361) keep the per-line rule.
-  assert.match(perLineProblem(readBack(undefined, gated)), /line 1 was not confirmed by its own change/);
+  assert.equal(perLineProblem(readBack({confirmed: true, snapshotMs: 1, pollMs: 2, reads: 3})), null, 'both: delivered line by line and read back');
+  assert.equal(readBack({confirmed: true}).typeReadback.confirmed, true, 'the row keeps the record');
+  assert.match(perLineProblem(readBack({confirmed: false, reason: 'valueMismatch', snapshotMs: 1, pollMs: 2, reads: 3})),
+    /not read back as typed \(typeReadback valueMismatch\)/, 'delivered, not read back');
+  // Read back but a line not confirmed by its own change: the delivery evidence is still required.
+  const [l1, l2] = delivered;
+  assert.match(perLineProblem(readBack({confirmed: true}, [l1, {...l2, confirmed: false, effectWait: 'timeout'}])), /line 2 was not confirmed by its own change/);
+  assert.match(perLineProblem(readBack({confirmed: true}, [l1])), /1 per-line record\(s\) for 2 line\(s\)/);
   // The paste method is judged per line whatever it carries.
   const one = ROWS.find(r => r.string.id === 'lines' && r.method === 'paste');
-  const pasted = record({row: one, act: {...input({row: one}).act, meta: {...input({row: one}).act.meta, typeReadback: {confirmed: true}}}});
+  const pasted = record({row: one, act: {...input({row: one}).act, meta: {...input({row: one}).act.meta, typeReadback: {confirmed: false}}}});
   assert.equal(perLineProblem(pasted), null);
   assert.match(perLineProblem({...pasted, paste: {...pasted.paste, perLine: [{line: 1, confirmed: false, effectWait: 'timeout'}]}}), /line 1 was not confirmed/);
 });

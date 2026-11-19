@@ -43,8 +43,8 @@ import Foundation
 // stable range when that activation clicked inside the window (`activationClickPending`); a Return the field does not
 // take as text, after a line no effect showed land, is a checkpoint; and once the pasteboard is restored, the
 // activation still held, the field is polled for the snapshot with its selection replaced by the text: success only
-// when it reads so, else `typeUnconfirmed`, whose excerpt is withheld when a line went in with no effect seen (its
-// field could hold what a late ⌘V took from the restored pasteboard). Every poll ends by the request's deadline, and
+// when it reads so, else `typeUnconfirmed`, never with an excerpt or lengths (a read or an effect
+// does not prove the target took its ⌘V before the restore, so its field could hold the person's clipboard). Every poll ends by the request's deadline, and
 // past it no part is sent. Each line's record rides in `meta.paste.perLine`. Every input method's call order holds (the Decision Log's M2a.1 entry, item 5): the
 // intervention guard read, its reading put in the meta, the pre-action refusal, then the in-flight check before each
 // ⌘V and each Return. The action interval is the posted events' (`InputMeta.posting`): activation and the pasteboard
@@ -799,8 +799,8 @@ extension Engine {
   /// and `settle` as the keyed route takes them and a stable range first when a click may still land (`pointerPending`, or
   /// the activation's own click inside the window); the checkpoint before a Return runs where no effect showed the text
   /// before it land (`runPaste`); the final poll runs once the pasteboard is restored, while the activation still holds
-  /// (`PasteTyping.finish`). A mismatch's excerpt is withheld when a line went in with no effect seen: its ⌘V may have
-  /// been handled after the restore, so the field could hold the person's clipboard. `entered` and the sentence of an
+  /// (`PasteTyping.finish`). A mismatch carries no excerpt and no lengths: no read or effect proves a ⌘V was not
+  /// handled after the restore, so the field could hold the person's clipboard. `entered` and the sentence of an
   /// error whose delivery is unknown are #187's (`typedPasteError`); the read-back's record rides in the meta whatever
   /// the answer. Answers a password field's length note (`readbackLengthNote`), as the keyed route does. Empty text
   /// pastes nothing and reads nothing.
@@ -808,15 +808,16 @@ extension Engine {
                                 settle: @escaping () -> Bool, pointerPending: @escaping () -> Bool, reads: ReadbackReads<Element>,
                                 meta: inout InputMeta) throws -> String? {
     let parts = pasteParts(typing: text)
-    let units = pasteReadbackUnits(parts)
+    let units = pasteReadbackUnits(typing: text)
     var readback: TypeReadback<Element>?
-    var withheld = false
     var entered = 0
     defer {
       meta.entered = entered
       if let readback {
+        // No lengths on this route: they are the field's, which may hold what a late ⌘V took from the restored pasteboard.
         meta.typeReadback = readback.record
-        if withheld { meta.typeReadback?.expectedLength = nil; meta.typeReadback?.actualLength = nil }
+        meta.typeReadback?.expectedLength = nil
+        meta.typeReadback?.actualLength = nil
       }
     }
     let typing = units.isEmpty ? nil : PasteTyping(snapshot: { activationClickPending in
@@ -827,17 +828,16 @@ extension Engine {
       readback = made
       // #359: select_text's range gone, nothing is pasted and the pasteboard is never touched.
       if made.refusesTyping { throw typeUnconfirmed(.selectionChanged) }
-    }, beforePart: { try readback?.beforeUnit($0) }, finish: { deliveryUnseen in
-      do {
-        try readback?.finish()
-      } catch where deliveryUnseen && readback?.record.reason == .valueMismatch {
-        withheld = true
-        throw typeUnconfirmed(.valueMismatch)
-      }
-    })
+    }, beforePart: { try readback?.beforeUnit($0) }, finish: { try readback?.finish() })
     do {
       try pasteOperation(parts, target, context, typing: typing, entered: &entered, meta: &meta)
     } catch let error as EngineError {
+      // No excerpt on this route, a checkpoint's or the final poll's: neither a read nor an effect proves the target took
+      // its ⌘V before the restore (a clipboard manager can make the read, an unrelated change the effect), so the field
+      // may hold the person's clipboard. The reason alone; the agent observes the field.
+      if let record = readback?.record, record.reason == .valueMismatch, error.errorName == "typeUnconfirmed" {
+        throw typeUnconfirmed(.valueMismatch, beforeKey: record.stoppedBeforeKey)
+      }
       throw typedPasteError(error, entered: entered, total: text.utf16.count, line: meta.paste?.line, lines: meta.paste?.lines,
                             unconfirmedLines: meta.paste?.unconfirmedLines ?? 0)
     }
@@ -930,8 +930,8 @@ extension Engine {
       // #361: the final poll (a field the snapshot could not read answers its reason here) once the pasteboard is
       // restored, but while the activation still holds: a background Safari or Electron names no focused element once it
       // is released (the hosted probe: Electron 100 of 100, Safari 58 of 100), and the read-back's identity check asks
-      // for it again. A line pasted with no effect seen leaves its delivery unseen.
-      try typing?.finish(outcome.unconfirmedLines > 0)
+      // for it again.
+      try typing?.finish()
       return outcome
     }
   }
@@ -999,7 +999,7 @@ func focusedEffectReading<Element>(_ focused: Element, bound: (Element) -> Bool,
 /// The UTF-16 length of the plain text a paste delivers (its `.string` representation), which a field that takes only
 /// plain text, a password field, receives; nil without one.
 func deliveredUnits(_ representations: [PasteRepresentation]) -> Int? {
-  representations.first { $0.type == .string }.flatMap { String(data: $0.data, encoding: .utf8) }.map { $0.utf16.count }
+  representations.first { $0.type == .string }.map { String(decoding: $0.data, as: UTF8.self).utf16.count }
 }
 
 // MARK: type_text's read-back on the paste route (#361)
@@ -1010,27 +1010,35 @@ func deliveredUnits(_ representations: [PasteRepresentation]) -> Int? {
 /// before a Return no effect showed the text before it land, a checkpoint ahead of a Return the field does not take as
 /// text (`runPaste`); `finish`, the final poll, once the pasteboard is restored and before the activation and the lock
 /// are released, since a background app can name no focused element once its activation ends and the poll's identity
-/// check asks for it (#361's hosted probe), told whether a line went in with no effect seen (then a mismatch shows no
-/// excerpt).
+/// check asks for it (#361's hosted probe).
 struct PasteTyping {
   let snapshot: (_ activationClickPending: Bool) throws -> Void
   let beforePart: (_ index: Int) throws -> Void
-  let finish: (_ deliveryUnseen: Bool) throws -> Void
+  let finish: () throws -> Void
 }
 
-/// The paste route's parts as the read-back's units, one for one, so a part's index is its unit's: a line is text with
-/// no key (never a checkpoint: a Tab in it is pasted as text), a newline a Return (one "\n" in a field that takes it as
-/// text, a checkpoint in one that does not), each counting the request's units it stands for.
-func pasteReadbackUnits(_ parts: [PastePart]) -> [TypedUnit] {
-  parts.map { part in
-    switch part {
-    case .content(let representations, let units):
-      let line = representations.first { $0.type == .string }.flatMap { String(data: $0.data, encoding: .utf8) } ?? ""
-      return TypedUnit(press: nil, text: Array(line.utf16), consumed: units)
-    case .returnKey(let units):
-      return TypedUnit(press: KeyPress(keyCode: returnKeyCode, modifiers: []), text: [0x0D], consumed: units)
+/// type_text's text as the read-back's units, one for one with `pasteParts(typing:)`'s parts, split the same way, so a
+/// part's index is its unit's: a line is text with no key (never a checkpoint: a Tab in it is pasted as text), a
+/// newline a Return (one "\n" in a field that takes it as text, a checkpoint in one that does not), each counting the
+/// request's units it stands for. Taken from the text itself, never decoded back from the pasteboard's bytes, which
+/// would drop a leading U+FEFF (`String(data:encoding:)` reads it as a byte order mark) and expect what the field lacks.
+func pasteReadbackUnits(typing text: String) -> [TypedUnit] {
+  var units: [TypedUnit] = []
+  var line = ""
+  func flush() {
+    if !line.isEmpty { units.append(TypedUnit(press: nil, text: Array(line.utf16), consumed: line.utf16.count)) }
+    line = ""
+  }
+  for character in text {
+    if character.unicodeScalars.allSatisfy({ $0 == "\n" || $0 == "\r" }) {
+      flush()
+      units.append(TypedUnit(press: KeyPress(keyCode: returnKeyCode, modifiers: []), text: [0x0D], consumed: character.utf16.count))
+    } else {
+      line.append(character)
     }
   }
+  flush()
+  return units
 }
 
 /// Whether the activation the paste goes out under (its own or one it shares) clicked its in-window activation point

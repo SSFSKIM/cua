@@ -41,7 +41,7 @@ private func typeByPaste<Element>(_ text: String, reads: ReadbackReads<Element>,
                                   activationPoint: CGPoint? = nil, onActivation: @escaping () -> Void = {},
                                   onDeactivation: @escaping () -> Void = {}, onCommandV: @escaping () -> Void = {}, readsPaste: Bool = true,
                                   selection: NSRange? = nil, deadlineMs: Int64 = 60_000, effectReading: (() -> EffectReading?)? = nil,
-                                  lateTarget: Bool = false) -> Pasted {
+                                  lateTarget: Bool = false, handlesAtFieldRead: Bool = false) -> Pasted {
   let seam = GuardSeam(frontmost: 990_002)
   seam.activationPoint = activationPoint ?? CGPoint(x: -1, y: 1_441)
   let pasteboard = TestPasteboard()
@@ -91,7 +91,7 @@ private func typeByPaste<Element>(_ text: String, reads: ReadbackReads<Element>,
   let engine = Engine(paths: ServerPaths(socket: "/tmp/x.sock", directory: "/tmp", lock: "/tmp/x.lock", usage: "/tmp/cua-engine-test-usage.json"),
                       intervention: InterventionMonitor(listenGranted: { false }), screenLocked: { false },
                       pasteboard: { pasteboard.access }, pasteActivation: system,
-                      pasteEffectReading: effectReading.map { read in { _, _ in if lateTarget { handleQueued() }; return read() } })
+                      pasteEffectReading: effectReading.map { read in { _, _ in if lateTarget, !handlesAtFieldRead { handleQueued() }; return read() } })
   let context = ExecutionContext(connection: ConnectionState(id: 1, fd: -1), receivedAt: 1, hidIdleMs: 0,
                                  deadline: unixMilliseconds() + deadlineMs, lineage: nil)
   let target: pid_t = 990_001
@@ -105,6 +105,10 @@ private func typeByPaste<Element>(_ text: String, reads: ReadbackReads<Element>,
     return reads.focused()
   }
   var atLastFocusCheck: (posts: [GuardPost.Kind], pasteboard: [String])?
+  if handlesAtFieldRead {
+    let value = reads.value
+    watched.value = { element in handleQueued(); return value(element) }  // the queued ⌘V lands as the read-back reads
+  }
   watched.stillFocused = { field, found in
     atLastFocusCheck = (seam.posts.map(\.kind), pasteboard.strings())
     return reads.stillFocused(field, found)
@@ -234,7 +238,8 @@ final class PasteReadbackTests: XCTestCase {
 
   // MARK: What the field does not hold answers unconfirmed
 
-  /// A page that rewrites one pasted character, or adds one: `typeUnconfirmed` with #354's excerpt, never a success.
+  /// A page that rewrites one pasted character, or adds one: `typeUnconfirmed` with its reason alone, never a success, and
+  /// on this route no excerpt and no lengths (the review of main..7897cdeb, P1).
   func testAPageThatRewritesOrAddsACharacterIsUnconfirmed() {
     let cases: [(label: String, transform: (String) -> String, actual: String)] = [
       ("rewrites one", { $0.replacingOccurrences(of: "ö", with: "o") }, "Schone Grüße"),
@@ -248,9 +253,9 @@ final class PasteReadbackTests: XCTestCase {
       XCTAssertEqual(pasted.error?.errorName, "typeUnconfirmed", label)
       XCTAssertEqual(pasted.reason, "valueMismatch", label)
       let message = pasted.error?.message ?? ""
-      XCTAssertTrue(message.contains("expected \"Schöne Grüße\"; the field reads \(readbackQuoted(actual))."), "\(label): \(message)")
-      XCTAssertEqual(pasted.record["expectedLength"] as? Int, 12, label)
-      XCTAssertEqual(pasted.record["actualLength"] as? Int, (actual as NSString).length, label)
+      XCTAssertFalse(message.contains("the field reads") || message.contains("Sch"), "\(label): no excerpt: \(message)")
+      XCTAssertNil(pasted.record["expectedLength"], label)
+      XCTAssertNil(pasted.record["actualLength"], label)
       XCTAssertEqual(pasted.record["confirmed"] as? Bool, false, label)
       XCTAssertEqual(pasted.pasteboard, [owner], "\(label): restored")
       XCTAssertNil(pasted.meta.note, label)
@@ -268,7 +273,7 @@ final class PasteReadbackTests: XCTestCase {
     XCTAssertEqual(field.value, "Hello¡")
     XCTAssertEqual(pasted.error?.errorName, "typeUnconfirmed")
     XCTAssertEqual(pasted.reason, "valueMismatch")
-    XCTAssertTrue(pasted.error?.message.contains("expected \"¡Hello\"; the field reads \"Hello¡\".") == true, pasted.error?.message ?? "")
+    XCTAssertFalse(pasted.error?.message.contains("Hello") ?? true, "no excerpt on the paste route")
     XCTAssertEqual(pasted.pasteboard, [owner])
   }
 
@@ -371,6 +376,45 @@ final class PasteReadbackTests: XCTestCase {
       XCTAssertEqual(pasted.record["confirmed"] as? Bool, true)
       XCTAssertEqual(pasted.pasteboard, [owner], "restored after the last line's effect")
     }
+  }
+
+  /// The review of main..7897cdeb, P2: the expected value comes from the text, so a leading U+FEFF, which decoding the
+  /// pasteboard's bytes would read as a byte order mark and drop, is expected; a target that drops it is unconfirmed, at
+  /// the start of the text and at the start of a later line.
+  func testALeadingZeroWidthNoBreakSpaceIsExpected() {
+    XCTAssertEqual(pasteReadbackUnits(typing: "\u{FEFF}hello").map(\.text), [Array("\u{FEFF}hello".utf16)])
+    XCTAssertEqual(pasteReadbackUnits(typing: "a\n\u{FEFF}b").map(\.text), [[0x61], [0x0D], Array("\u{FEFF}b".utf16)])
+    XCTAssertEqual(pasteReadbackUnits(typing: "a\r\n\nb").map(\.consumed), [1, 2, 1, 1], "a CR LF counts its two units")
+    XCTAssertEqual(deliveredUnits([PasteRepresentation(type: .string, data: Data("\u{FEFF}hello".utf8))]), 6)
+    for text in ["\u{FEFF}hello", "a\n\u{FEFF}b"] {
+      let field = FakeField(value: "", range: NSRange(location: 0, length: 0))
+      let pasted = typeByPaste(text, into: field)  // the fake app decodes the pasteboard as Foundation does, dropping it
+      XCTAssertFalse(field.value?.unicodeScalars.contains("\u{FEFF}") ?? true, "the target dropped it")
+      XCTAssertEqual(pasted.error?.errorName, "typeUnconfirmed", text.debugDescription)
+      XCTAssertEqual(pasted.reason, "valueMismatch", text.debugDescription)
+    }
+  }
+
+  /// The review of main..7897cdeb, P1: a clipboard manager makes the read, an unrelated change in the field satisfies the
+  /// effect wait, and the target's queued ⌘V lands only after the restore, pasting the person's clipboard as the
+  /// read-back reads. The answer is `typeUnconfirmed` with its reason alone: nothing of the clipboard reaches the reply.
+  func testADelayedCommandVAfterAnUnrelatedEffectLeaksNothingOfTheClipboard() throws {
+    let field = FakeField(value: "", range: NSRange(location: 0, length: 0))
+    var unrelated = 0
+    let pasted = typeByPaste("typed", reads: FakeApp(field).reads, deliver: { field.deliver($0) }, effectReading: {
+      unrelated += 1  // the page moves the caret for its own reasons: a change, but not the paste's
+      return EffectReading(range: [unrelated, 0], characters: 0)
+    }, lateTarget: true, handlesAtFieldRead: true)
+    XCTAssertEqual(field.value, owner, "the scenario: the late ⌘V pasted the person's clipboard")
+    XCTAssertEqual(pasted.error?.errorName, "typeUnconfirmed")
+    XCTAssertEqual(pasted.reason, "valueMismatch")
+    var wire = withMeta(try XCTUnwrap(pasted.error), pasted.meta).wire
+    wire["meta"] = (wire["meta"] as? [String: Any])?.filter { $0.key != "startedAt" && $0.key != "endedAt" }
+    let reply = String(data: try JSONSerialization.data(withJSONObject: wire, options: [.sortedKeys]), encoding: .utf8)!
+    XCTAssertFalse(reply.contains("owner"), "nothing of the clipboard: \(reply)")
+    XCTAssertNil(pasted.record["expectedLength"])
+    XCTAssertNil(pasted.record["actualLength"])
+    XCTAssertEqual(pasted.pasteboard, [owner])
   }
 
   /// A line pasted with no effect seen (an app with no channel) may have had its ⌘V handled after the restore, so a

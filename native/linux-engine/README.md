@@ -386,8 +386,8 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   review of task 115, P1: a setup on the drag's thread could push the look for the take past B).
   `hold.pings` is `{asked: true, round_trips: [{sent_after_press_ms, rtt_ms}]}`, an unanswered ping's `rtt_ms` null
   with `unanswered_ms`, how long it had waited by the hold's end; or `{asked: false, why}`: the window lists no
-  `_NET_WM_PING`, the connection failed, the sampler was still connecting at the hold's end, or no ping fitted in
-  what was left of the hold. Known limits:
+  `_NET_WM_PING`, the connection failed, the sampler was still connecting at the hold's end, no ping fitted in
+  what was left of the hold, or `disabled` (`--drag-dnd-hold-ping off`, measurement only). Known limits:
   - an accept later than 350 ms after the take still misses, unseen (the latest seen was 275 ms), and so does a take
     later than B after the press: the drag answers success (task 113 measured renderers starting their drag up to
     about 580 ms after the press on arm64 at twice the gate's load);
@@ -538,6 +538,7 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
 | `--drag-press-dwell-ms`, `--drag-release-dwell-ms` | by family | the wait after a drag's press and before its release, fixed for every target (measurement only); any drag flag sets the others to 0 |
 | `--drag-dnd-after-take-ms` | 350 | how long after a Chromium drag source's take a drag the engine lets drop is released at the soonest, its remaining steps spaced to it (measurement only; 0 turns the spacing off) |
 | `--drag-dnd-hold-ms` | 450 | B, how long after the press a drag whose source is a Chromium-family window keeps its button down for its source's take when none has come, on a drag the engine lets drop, a guarded drag and a `drag_handle`'s end (measurement only: the design session's runs of other bounds on one build; 0 turns the hold off; `--stats` `hold`) |
+| `--drag-dnd-hold-ping` | on | `off`: a hold with no take sends its source no `_NET_WM_PING`, and `hold.pings` is `{asked: false, why: "disabled"}` (measurement only: the design session's ruling 892, the control that the ping sampler leaves the release where it was) |
 | `--dnd-cancel-after-release` | off | a drag and drop the engine cancels is cancelled only after the release, too late (measurement only: the harness's check of the honest answer) |
 | `--dnd-defer-take` | off | a drag and drop that begins during a watched drag is left unseen until after the release, so the after-release watch finds it and the next request carries the notice (measurement only: Acceptance 8's late-take case) |
 | `--drag-ignore-cover` | off | a drag into a family listed `unless_path_unobscured` (Chromium) goes out on the background route along a covered path (measurement only: T13's covered paths) |

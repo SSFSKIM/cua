@@ -76,6 +76,9 @@ pub struct Config {
     /// source's take when none has come, on every route (`dnd::TAKE_HOLD_AFTER_PRESS`, ruling 888.1;
     /// `--drag-dnd-hold-ms`, measurement only, sets another, 0 none).
     pub dnd_hold: std::time::Duration,
+    /// Whether a hold with no take pings its source (`hold_ping.rs`, ruling 888.2); `--drag-dnd-hold-ping off`,
+    /// measurement only, turns it off (ruling 892: task 116's control that the sampler leaves the release unchanged).
+    pub dnd_hold_ping: bool,
     /// How long after a Chromium drag source's take a drag the engine lets drop is released at the soonest
     /// (`dnd::RELEASE_AFTER_TAKE`; `--drag-dnd-after-take-ms`, measurement only, sets another, 0 none).
     pub dnd_after_take: std::time::Duration,

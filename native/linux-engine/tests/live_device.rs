@@ -1357,6 +1357,11 @@ enum HoldRoute {
 /// The drag on `route` from a fresh source with `on_release`, on an engine with `--stats`: its answer, how long the
 /// request took, when the source saw the release after the press and after its take, and the drag's `--stats` line.
 fn held_drag(route: HoldRoute, on_release: OnRelease, pings: Option<Duration>) -> HeldDrag {
+    held_drag_with(route, on_release, pings, &[])
+}
+
+/// [`held_drag`] on an engine started with `options` too.
+fn held_drag_with(route: HoldRoute, on_release: OnRelease, pings: Option<Duration>, options: &[&str]) -> HeldDrag {
     support::fresh_display();
     let path = json!([{"x": 20, "y": 20}, {"x": 60, "y": 20}]);
     let (window, stop, recorder) = drag_source_answering(on_release, pings);
@@ -1365,10 +1370,12 @@ fn held_drag(route: HoldRoute, on_release: OnRelease, pings: Option<Duration>) -
         HoldRoute::Desktop => managed(window),
         HoldRoute::Guarded => focus_nothing(),
     }
-    let mut engine = Engine::start_with_stats(match route {
-        HoldRoute::Dedicated => &["--desktop", "dedicated"],
-        _ => &[],
-    });
+    let mut args = match route {
+        HoldRoute::Dedicated => vec!["--desktop", "dedicated"],
+        _ => vec![],
+    };
+    args.extend_from_slice(options);
+    let mut engine = Engine::start_with_stats(&args);
     let app = app_of(&mut engine, window);
     let request = match route {
         HoldRoute::Desktop => json!({"path": path}),
@@ -1728,6 +1735,29 @@ fn a_hold_with_no_take_pings_its_source_and_records_each_round_trip_without_chan
         drag.stats["hold"]["pings"],
         json!({"asked": false, "why": "the window lists no _NET_WM_PING"})
     );
+    // the pings turned off (`--drag-dnd-hold-ping off`, measurement only, ruling 892): a source that answers pings is
+    // asked none, the record says so, and the drag holds and answers as with them on
+    for route in [HoldRoute::InFront, HoldRoute::Guarded] {
+        let drag = held_drag_with(
+            route,
+            OnRelease::NeverTakes,
+            Some(Duration::ZERO),
+            &["--drag-dnd-hold-ping", "off"],
+        );
+        assert_eq!(drag.answer, Ok(Value::Null), "{route:?}");
+        assert_eq!(
+            drag.stats["hold"]["pings"],
+            json!({"asked": false, "why": "disabled"}),
+            "{route:?}"
+        );
+        assert_eq!(drag.stats["hold"]["held"], json!(true), "{route:?}");
+        assert!(PINGS_READ.lock().unwrap().is_empty(), "{route:?}: no ping asked");
+        let whole = drag.press_to_release;
+        assert!(
+            whole + Duration::from_millis(5) >= bound && whole < bound + Duration::from_millis(80),
+            "{route:?}: released {whole:?} after the press"
+        );
+    }
 }
 
 /// The late-take watch after a release with no take (ruling 888.3) runs 700 ms after the release, past 0.4.1's 300 ms,

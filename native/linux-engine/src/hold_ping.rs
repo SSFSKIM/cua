@@ -47,6 +47,10 @@ const NO_TIME: &str = "no ping fitted in what was left of the hold";
 /// Why a hold's record asks nothing: the sampler was still setting up when the hold ended.
 const NOT_READY: &str = "the ping's connection was not ready by the hold's end";
 
+/// Why a hold's record asks nothing: the engine runs with the hold's pings off (`--drag-dnd-hold-ping off`, measurement
+/// only: the design session's ruling 892, task 116's control that the sampler leaves the release where it was).
+const DISABLED: &str = "disabled";
+
 /// One ping: when it went out, and when its answer was read (None: not yet).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct RoundTrip {
@@ -73,12 +77,21 @@ struct Sampled {
 
 /// One hold's sampler. Dropped without [`HoldPing::finish`], it stops all the same.
 pub struct HoldPing {
-    /// None: the hold had no time for a ping when it started, and no sampler runs.
-    sampled: Option<Arc<Mutex<Sampled>>>,
+    /// The sampler's record; or, when no sampler runs, why: the hold had no time for a ping when it started, or the
+    /// pings are off.
+    sampled: std::result::Result<Arc<Mutex<Sampled>>, &'static str>,
     stop: Arc<AtomicBool>,
 }
 
 impl HoldPing {
+    /// No sampler, the hold's pings being off (`--drag-dnd-hold-ping off`): its record says so.
+    pub fn off() -> HoldPing {
+        HoldPing {
+            sampled: Err(DISABLED),
+            stop: Arc::new(AtomicBool::new(true)),
+        }
+    }
+
     /// The sampler for a hold that ends with no take at `ends`, started on a thread of its own, which asks `window`;
     /// none when no ping fits in what is left of the hold. Returns at once.
     pub fn start(window: Window, ends: Instant) -> HoldPing {
@@ -95,7 +108,10 @@ impl HoldPing {
     ) -> HoldPing {
         let stop = Arc::new(AtomicBool::new(false));
         if !admitted(None, Instant::now(), ends) {
-            return HoldPing { sampled: None, stop };
+            return HoldPing {
+                sampled: Err(NO_TIME),
+                stop,
+            };
         }
         let sampled = Arc::new(Mutex::new(Sampled {
             phase: Phase::Starting,
@@ -109,7 +125,7 @@ impl HoldPing {
             locked(&sampled).phase = Phase::Failed(format!("the ping's thread could not start: {error}"));
         }
         HoldPing {
-            sampled: Some(sampled),
+            sampled: Ok(sampled),
             stop,
         }
     }
@@ -118,10 +134,10 @@ impl HoldPing {
     /// from the drag's press. Takes a lock the sampler holds only to record; asks X nothing and waits for nothing.
     pub fn finish(self, pressed_at: Instant, ended: Instant) -> Value {
         self.stop.store(true, Ordering::SeqCst);
-        let Some(sampled) = &self.sampled else {
-            return not_asked(NO_TIME);
+        let sampled = match &self.sampled {
+            Ok(sampled) => locked(sampled),
+            Err(why) => return not_asked(why),
         };
-        let sampled = locked(sampled);
         match &sampled.phase {
             Phase::Starting => not_asked(NOT_READY),
             Phase::Failed(why) => not_asked(why),
@@ -379,6 +395,17 @@ mod tests {
             json!({"asked": false, "why": NO_TIME})
         );
         assert!(!connected.load(Ordering::SeqCst), "nothing connected");
+    }
+
+    /// With the hold's pings off, no sampler starts, and the record says they are off.
+    #[test]
+    fn a_hold_with_its_pings_off_asks_nothing_and_says_so() {
+        let pressed = Instant::now();
+        let pings = HoldPing::off();
+        assert_eq!(
+            hold_record(Some(pings), pressed, pressed + Duration::from_millis(450)),
+            json!({"asked": false, "why": "disabled"})
+        );
     }
 
     /// The hold neither waits for a sampler still setting up (a connect stuck, here until the test lets it go) nor

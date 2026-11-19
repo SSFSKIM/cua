@@ -347,6 +347,18 @@ pub(super) struct DragMeasure<'a> {
 pub(super) struct TakeHold {
     pub(super) bound: Duration,
     pub(super) source: Window,
+    /// Whether the hold pings its source (`--drag-dnd-hold-ping`, on unless turned off for measurement).
+    pub(super) ping: bool,
+}
+
+impl TakeHold {
+    /// The hold's sampler for a hold that ends with no take at `deadline`, or none when the pings are off.
+    fn pings(&self, deadline: Instant) -> HoldPing {
+        match self.ping {
+            true => HoldPing::start(self.source, deadline),
+            false => HoldPing::off(),
+        }
+    }
 }
 
 /// Whether a drop on `window` (a managed top-level) is confirmed by its activation request: its family's drop sends one
@@ -508,7 +520,7 @@ fn drag_along(
             if held {
                 let since = Instant::now();
                 let deadline = pressed_at + take_hold.bound;
-                let pings = (since < deadline).then(|| HoldPing::start(take_hold.source, deadline));
+                let pings = (since < deadline).then(|| take_hold.pings(deadline));
                 let looked = if matches!(route, Route::Window(_)) {
                     // the refreshes end a browser's rest before REFRESH_AFTER_PRESS, or before the bound if it is
                     // shorter: the hold past them sends no motion
@@ -623,7 +635,7 @@ fn drag_along(
             let since = Instant::now();
             let deadline = pressed_at + take_hold.bound;
             let held = since < deadline && !guard.watch.started(x);
-            let pings = held.then(|| HoldPing::start(take_hold.source, deadline));
+            let pings = held.then(|| take_hold.pings(deadline));
             let taken = match held {
                 true => crate::dnd::wait_for_take(|| guard.watch.started(x), deadline),
                 false => guard.watch.is_started(),
@@ -1140,6 +1152,7 @@ impl Engine {
         let take_hold = pressing_into.map(|source| TakeHold {
             bound: self.cfg.dnd_hold,
             source,
+            ping: self.cfg.dnd_hold_ping,
         });
         let mut held_for_take = None;
         // measurement only (`--drag-dnd-release-at-accept`, reverted from shipping by the design session's ruling on

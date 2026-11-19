@@ -38,7 +38,8 @@ cua's own Linux engine, cua-engine 0.4.2, built from <commit> for x86-64 and arm
   `--drag-dnd-hold-ms` sets another bound (measurement only).
 - **The ping predictor, measurement only.** While a hold waits with no take, the engine sends the source window
   `_NET_WM_PING`, one at a time, the next 25 ms after the last once it was answered, none in the hold's last 25 ms.
-  It pings from a thread and an X connection of its own, so the drag never waits for it, and it changes no answer. `--stats` `hold.pings` records each round trip
+  It pings from a thread and an X connection of its own, so the drag never waits for it, and it changes no answer;
+  `--drag-dnd-hold-ping off` (measurement only) turns it off, the control that it leaves the release where it was. `--stats` `hold.pings` records each round trip
   (`{asked, round_trips: [{sent_after_press_ms, rtt_ms}]}`, an unanswered one with `unanswered_ms`, or
   `{asked: false, why}`). A handle's record has its `hold` too.
 - **Agent-facing text.** The Linux document says that in a drag from a Chrome or Electron window the button is not

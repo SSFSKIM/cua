@@ -421,7 +421,17 @@ variants included; their evidence is written either way. The run's `end` row kee
   ConfigureWindow with a stack mode, WarpPointer, a `_NET_ACTIVE_WINDOW` ClientMessage and XTEST FakeInput (matched
   by the opcode the server reported for XTEST, minor 2). The verdict needs cua's audit clean wherever a vendor
   build's witness or audit is. The negative check drives the stub through a proxy too, and the run is valid only when
-  the witness and the audit both fail it. `--no-audit` leaves the pass out. A proxy's credentials (task 46's finding
+  the witness and the audit both fail it. `--no-audit` leaves the pass out. Each audited operation's lifecycle traces
+  are kept beside the results (`audit-traces/<run>-<execution id>/`, `audit-traces.mjs`; task 106, rulings 858 and
+  863), never as raw text: as the foreign-window judge's own elements cut to an allowlist of the fields it reads, so no
+  title, property or clipboard text reaches the disk, and judged to the raw trace's findings. The audit row's
+  `kept_traces` names them, their run and execution, and the windows they were judged against. A ClientMessage's type
+  is kept, and named in a finding, only when it is one of the protocol's own atoms (`CLIENT_MESSAGE_TYPES`); any other
+  reads `a ClientMessage`, live and replayed. An operation's files are written into a staging directory and published
+  whole by renaming it, or not at all (a staging the rollback could not remove is recorded, never thrown), every byte
+  charged to `--audit-traces <MB>` a run (256 by default; `off` keeps none), and none once the out directory's
+  filesystem would fall below 2 GB free; the row says why where they were not kept.
+  `rejudge-audit.mjs` re-judges a stored run from them. A proxy's credentials (task 46's finding
   3): on a private display xtrace copies none and reads no authority file (the harness's X server has none); on a
   person's display it reads the person's authority file where it is (xtrace 1.4.0 reads from its `-F` file and writes
   into its `-f` file, the reverse of its help) and writes the proxy's credentials into the proxy's own directory,
@@ -450,8 +460,13 @@ variants included; their evidence is written either way. The run's `end` row kee
     client of a live harness window opens during an engine's operation on that window (`Desktop.operations`, from
     `engine.mjs` `watchOperations`: Chrome's drag image during the drag, a select's list during the click). Chrome
     serves the person's windows from the same client, so a popup opened at any other time is foreign. A life ends at
-    its DestroyNotify, a DestroyWindow, or its creating client's end, so a reused id is foreign again. A window reparented into one of ours
-    keeps the owner it had. Parentage is the trace's own, at request time: no window is resolved on the display after
+    its DestroyNotify, a DestroyWindow, or its creating client's end, so a reused id is foreign again. A request to the
+    id of a registered life that has ended is judged by the life it reaches (task 106; rulings 857 and 858): the record
+    sees every creation, so with no newer life under the id it is the harness's; xtrace sees only our connections, so
+    there it is the harness's only where the server refused it as BadWindow naming that id (the vendor builds'
+    teardown, a FocusOut and an UnredirectWindow, to the gedit they had ended), and foreign where it was accepted. The
+    rule only adds to what is the harness's; which life a finding binds in the record is H''''s (#425). A window
+    reparented into one of ours keeps the owner it had. Parentage is the trace's own, at request time: no window is resolved on the display after
     the run.
   - *Two sources.* The run's own xtrace proxy (`Desktop.begin`), through which every `xdotool` and every acting xprobe
     command connects (`xtools.mjs`; a test keeps it so), and every audit pass's engine trace, the activating stub's
@@ -1372,6 +1387,7 @@ Two shared helpers came out of T16's fix wave (the design session, 2026-11-10), 
 | `kinds.mjs`, `dnd.mjs`, `device.mjs`, `xprobe/src/dnd.rs`, `pages/gtk4-input.py`, `pages/qt-input.py` | M3.1's kinds and drag-and-drop experiments, Acceptance 8's device cases, the `XdndSelection` watch, the GTK 4 and Qt scenes |
 | `rejudge.mjs` | a recorded run's speed verdicts judged again under the revised rule |
 | `rejudge-device.mjs` | a stored verdict run's device verdicts judged again by this checkout's `judgeDevice`, beside the stored ones and a former judge's (`--old`), with how each sample of ruling 823's cells reads under it, read-only (the M5 pre-flight's §8.1, point 4); a replayed pass of ruling 823's cells is diagnostic only, never a release pass (exit 1; `--diagnostic` exits on agreement with the stored verdicts) |
+| `audit-traces.mjs`, `rejudge-audit.mjs` | the route audits' kept projections (the judge's allowlisted elements, never raw text), and a stored run's foreign-window findings judged again from them by this checkout's judge, beside the stored ones, read-only (task 106; exit 1 where an audit kept nothing, or the run is incomplete) |
 | `premise.mjs` | rulings 823, 825 and 841: the unmet premise in V5's cancel, late and late-take cells (the page's strict proof that Chrome never started a drag session, the evidence's binding to the run's sidecar, the exclusion, its quotas and its rate) |
 | `vcl-aim.mjs`, `writer-drag.mjs`, `vcl-probe.mjs`, `pages/point-gtk3.py` | M4 T16's LibreOffice offset as the harness reads it, the Writer drag probe, the point probes and their GTK 3 control scene |
 | `park.mjs`, `xprobe/src/pointer.rs`, `app-identity.mjs` | the verified pointer park (`xprobe pointer-chain`) and the application's identity, shared by any runner (T16's fix wave) |

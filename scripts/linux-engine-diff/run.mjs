@@ -19,6 +19,7 @@ import { fileURLToPath } from 'node:url';
 import { runTmp } from './app-env.mjs';
 import { auditForeground, auditHeldRelease, auditNothingSent, auditRequests, parseXtrace, startProxy, watchAncestry } from './audit.mjs';
 import { verifySceneIdentity } from './app-identity.mjs';
+import { DEFAULT_AUDIT_TRACE_MB, traceKeeper } from './audit-traces.mjs';
 import { auditForeign, foreignLine } from './foreign.mjs';
 import { foregroundStart } from './foreground-start.mjs';
 import { startMonitor } from './busmon.mjs';
@@ -1506,6 +1507,9 @@ async function diffRun(args, candidate, { handoff }) {
     // process for two samples of each window-targeted operation (reads and screenshots too) on the window it is
     // measured on.
     const audits = {};
+    // each audited operation's lifecycle traces kept beside the results as the judge's projection, never their raw
+    // text, for a later judge (audit-traces.mjs), under this execution's own directory
+    const keeper = traceKeeper({ out: args.out, run, limitMb: args.auditTraces ?? DEFAULT_AUDIT_TRACE_MB });
     if (args.audit) {
       for (const { scene: sceneName, op } of auditPlan(plan)) {
         for (const spec of engines.filter((e) => runsOp(e.label, op)).map((e) => engineSpecFor(e, op, sceneName))) {
@@ -1561,9 +1565,12 @@ async function diffRun(args, candidate, { handoff }) {
           // release the hold proven and then exactly its release, attributed by the case's marks in the trace)
           const nothingAudit = OPS[op].device === 'refusal';
           const auditKind = op in MINIMIZED_OPS ? minimizedAuditKind(op) : op in IDENTITY_OPS ? identityAuditKind(op) : foregroundAudit ? 'foreground' : nothingAudit ? 'nothing-sent' : 'background';
-          // each lifecycle's trace judged on its own window, then the judgments as one
-          const judgedSegments = segments.map((seg) => {
-            const trace = parseXtrace(seg.trace);
+          // each lifecycle's trace judged on its own window, then the judgments as one, against the run's windows as they
+          // stand now (kept with the traces, so a later judge reads them against the same)
+          const registered = desktop.registry();
+          const traces = segments.map((seg) => parseXtrace(seg.trace));
+          const judgedSegments = segments.map((seg, i) => {
+            const trace = traces[i];
             const audited = {
               foreground: () => auditForeground(trace, seg.target.id),
               'nothing-sent': () => auditNothingSent(trace),
@@ -1572,8 +1579,9 @@ async function diffRun(args, candidate, { handoff }) {
             }[auditKind]();
             // whatever the operation's route, no request of the engine's may change a window the harness did not open;
             // its XTEST input may land in a window of a live harness window's client (task 53)
-            return { audited, judgedForeign: auditForeign(trace, { registered: desktop.registry(), root: desktop.root, routeAudit: true }), ancestry: seg.ancestry, watch: seg.watcher };
+            return { audited, judgedForeign: auditForeign(trace, { registered, root: desktop.root, routeAudit: true }), ancestry: seg.ancestry, watch: seg.watcher };
           });
+          const keptTraces = keeper.keep({ name: `${spec.label}-${sceneName}-${op}`, traces, registered: registered.keys(), root: desktop.root });
           const { audited, foreign, judged } = lifecycleAudit(judgedSegments);
           const unplaced = judgedSegments.map((j) => j.judgedForeign.unplaced).filter(Boolean);
           const watched = judgedSegments.filter((j) => j.watch);
@@ -1582,7 +1590,7 @@ async function diffRun(args, candidate, { handoff }) {
           // the judge compares these answers with the timed pass's: an operation that failed early is not audited
           audits[`${sceneName}|${op}|${spec.label}`] = { oks, answered, foreground: foregroundAudit, kind: auditKind, ...judged };
           const ancestryOf = (j) => j.ancestry.error ?? j.watch.chain;
-          emit({ kind: 'audit', engine: spec.label, scene: sceneName, op, ok: oks.every(Boolean), oks, answered, ...(restoredText.length ? { text_restores: restoredText } : {}), clean: judged.clean, traced: audited.traced, requests: audited.requests, audit: auditKind, ...(single ? {} : { lifecycles: segments.length }), ...(foregroundAudit ? { route: 'foreground', allowed: audited.allowed } : {}), ...(audited.samples ? { held: audited.samples } : {}), forbidden: audited.forbidden.slice(0, 10), foreign: foreign.slice(0, 10).map(foreignLine), ...(foreign.some((f) => 'parent' in f) ? { foreign_parents: foreign.slice(0, 10).map((f) => f.parent ?? null) } : {}), ...(watched.length ? { ancestry: single ? ancestryOf(watched[0]) : watched.map(ancestryOf) } : {}), ...(unplaced.length ? { xtest_unplaced: single ? unplaced[0] : unplaced } : {}) });
+          emit({ kind: 'audit', engine: spec.label, scene: sceneName, op, ok: oks.every(Boolean), oks, answered, ...(restoredText.length ? { text_restores: restoredText } : {}), clean: judged.clean, traced: audited.traced, requests: audited.requests, audit: auditKind, ...(single ? {} : { lifecycles: segments.length }), ...(foregroundAudit ? { route: 'foreground', allowed: audited.allowed } : {}), ...(audited.samples ? { held: audited.samples } : {}), forbidden: audited.forbidden.slice(0, 10), foreign: foreign.slice(0, 10).map(foreignLine), ...(foreign.some((f) => 'parent' in f) ? { foreign_parents: foreign.slice(0, 10).map((f) => f.parent ?? null) } : {}), ...(watched.length ? { ancestry: single ? ancestryOf(watched[0]) : watched.map(ancestryOf) } : {}), ...(unplaced.length ? { xtest_unplaced: single ? unplaced[0] : unplaced } : {}), kept_traces: keptTraces });
           desktop.focusFront();
         }
       }

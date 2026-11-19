@@ -42,6 +42,20 @@ for(const head of heads){
     return [c,Object.entries(t).sort((a,b)=>b[1]-a[1]).map(([k,n])=>`${k} ×${n}`).join('; ')];
   }));
 }
+if(heads.length===2){
+  out.push('### Service time per lane, main → fix (p50/p95 ms; plain cells, newline-single, controls)','');
+  const st=(v)=>`${q(percentile(v.map(r=>r.serviceMs),50))}/${q(percentile(v.map(r=>r.serviceMs),95))}`;
+  table(['Lane','Plain (6 cells)','newline-single','Controls'],stock.map(j=>{
+    const g=(h,f)=>st(j.rows.filter(r=>r.head===h&&r.valid&&f(r)));
+    const plain=r=>!r.control&&r.cell!=='newline-single',nl=r=>r.cell==='newline-single',ctl=r=>r.control;
+    return [j.status.lane,`${g('main',plain)} → ${g('fix',plain)}`,`${g('main',nl)} → ${g('fix',nl)}`,`${g('main',ctl)} → ${g('fix',ctl)}`];
+  }));
+  out.push('### Fix: plain rows not confirmed by the read-back (lane, source, cell: outcome reason, fixture content)','');
+  const miss=stock.flatMap(j=>j.rows.filter(r=>r.head==='fix'&&r.valid&&!r.control&&!(r.success&&r.readbackConfirmed))
+    .map(r=>`${j.status.lane} ${r.source} ${r.cell}: ${r.outcome} ${r.reason} ${r.domExact?'exact':'differs'}`));
+  const t={};for(const k of miss)t[k]=(t[k]??0)+1;
+  out.push(miss.length?Object.entries(t).map(([k,n])=>`- ${k} ×${n}`).join('\n'):'None.','');
+}
 const flags={};for(const j of [...stock,...ax])for(const r of j.rows)for(const f of r.privacy)flags[`${j.status.lane}/${j.status.phase}/${r.head}/${f}`]=(flags[`${j.status.lane}/${j.status.phase}/${r.head}/${f}`]??0)+1;
 out.push('Privacy flags: '+(Object.keys(flags).length?JSON.stringify(flags):'none'),'');
 const gated=stock.filter(j=>j.status.gates);

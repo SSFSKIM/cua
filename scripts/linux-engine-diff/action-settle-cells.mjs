@@ -454,9 +454,10 @@ export function runClass(row) {
  * Whether the lane's judge reads a run's failure (a settle-run row: its scene, input kind and lane) for #302, a limit
  * declared at T8 (Decision Log, 2026-11-07): an Electron page's key release reaches the tree after press_key's settle in
  * about a third of the runs, at every step, the vendor's 100 included. Only on the shipped lane (#371): a search lane's
- * held step sets the service's constants, which the limit must not lower.
+ * held step sets the service's constants, which the limit must not lower. press_key and key_up each have their own form
+ * (`lateKeyUpMiss`, `heldKeyUpMiss`; the design session's rulings 864 and 865 added key_up's).
  */
-export const judgesLateKeyUp = ({ scene, input, lane }) => input === 'press_key' && /^electron-/.test(scene) && lane === 'shipped';
+export const judgesLateKeyUp = ({ scene, input, lane }) => ['press_key', 'key_up'].includes(input) && /^electron-/.test(scene) && lane === 'shipped';
 
 /**
  * Why a failing run is not #302, or null when it is (the design session's ruling, sminos 659 and 682, encoded by #371).
@@ -495,9 +496,96 @@ function caughtUpMiss(run, next) {
 }
 
 /**
+ * #302's key_up form, separate from press_key's (the design session's rulings 864 and 865): why a failing key_up run is
+ * not #302, or null when it is. A key held across a key_down and a key_up gets X autorepeat under load, as a person's
+ * held key does, so the page's key-downs run ahead of its key-ups, and late repeats arrive along with the late release.
+ * The ruling, word for word: a failing Electron `key_up` run counts as #302 only when all of these hold:
+ *   1. its class is `late`;
+ *   2. the held key's press landed before the run's before-read;
+ *   3. at the next before-read on the same page, key-ups are exactly one more, and key-downs have grown only by the next
+ *      run's own press;
+ *   4. the late events are only that key's release and its autorepeats;
+ *   5. the desktop is clean and the front window was not lost (`desktop_clean === true && front_active !== false`).
+ * A lost, refused or invalid run still fails, and so does a hard failure under ruling 650 (`falseOk`, judged first).
+ *
+ * What the rows record, and how each condition is read from them. The input page (pages/input.html) counts every
+ * keydown and keyup event document-wide (`key_downs`, `key_ups`), names the key of the last of either (`last_key`), and
+ * counts Escapes (`escapes`). A run stores the page's reading before its key_up, which its key_down precedes, and after
+ * the key_up's settle, and the late bound records when the key-up came (`late_ms`). The page does not record an event's
+ * `repeat`, so the key's press and its autorepeats read alike, as key-downs of the key.
+ *   2. `prev` is the series' run before this one, on the same page with nothing sent between but this run's key_down.
+ *      It must have passed: a run that did not may have kept its hold (a refused release), and then this run's key_down
+ *      answers ok with no press sent while the old hold's repeats raise key_downs as a press would. From its after-read
+ *      to this run's before-read, key_downs rose (the press, and its repeats while held), key_ups did not fall, and the
+ *      last key event was the key. A series' first run has no such reading, so it cannot show 2.
+ *   3. `next` is the same cell's next run on the same page, its counters continuing from this run's. Its before-read
+ *      has key_ups this run's after-read's plus one, and key_downs that read's plus one, the next run's own key_down,
+ *      sent before its before-read.
+ *   4. The late interval runs from the answer to `next`'s before-read. From this run's before-read to its after-read,
+ *      key_ups are unchanged (the release is the late event), key_downs are not fewer (only the key's autorepeats may
+ *      come) and the last key event is the key's; to `next`'s before-read, the counts are 3's and the last key event the
+ *      key's; and through both, every other field of the page is unchanged. Another cell's before-read (the run after a
+ *      series' last, in a stored record) comes after that cell's own preparation, which may change the page, so it
+ *      confirms nothing. Another key's event shows in the counts, in last_key or in the Escapes, with one exception the
+ *      page cannot show: a key-down of another key amid the repeats, the key's own repeat after it, reads as a repeat.
+ */
+export function heldKeyUpMiss(run, prev, next) {
+  return ownHeldKeyUpMiss(run, prev) ?? heldCaughtUpMiss(run, next);
+}
+
+const KEY_FIELDS = ['key_downs', 'key_ups', 'last_key'];
+const counted = (reading) => typeof reading?.key_downs === 'number' && typeof reading?.key_ups === 'number';
+
+/** `heldKeyUpMiss` on the run's own record and the reading before it: its class, its desktop, conditions 2 and 4. */
+function ownHeldKeyUpMiss(run, prev) {
+  const cls = runClass(run);
+  if (cls !== 'late') return `class ${cls}`;
+  if (run.desktop_clean !== true || run.front_active === false) return 'the desktop changed';
+  const { before: b, after: a } = run;
+  const key = run.sent?.key;
+  if (!counted(b) || !counted(a)) return 'no key counters in the record';
+  // a run that did not pass may have kept its hold (a refused release), so this run's key_down could answer ok with no
+  // press sent while the old hold's repeats raise key_downs: only a passing run's own release ends the hold for certain
+  if (prev && prev.ok !== true) return `condition 2: the previous run did not pass (trial ${prev.trial}, ${runClass(prev)}), so its hold may not have ended`;
+  const p = prev?.after;
+  if (!counted(p)) return 'condition 2: no previous reading on the same page';
+  if (b.key_downs < p.key_downs || b.key_ups < p.key_ups) return `condition 2: the before-read's counters (${b.key_downs}, ${b.key_ups}) are below the previous reading's (${p.key_downs}, ${p.key_ups}): another page`;
+  if (!(b.key_downs > p.key_downs && b.last_key === key)) return `condition 2: key_downs ${p.key_downs} -> ${b.key_downs} before the read, last_key ${b.last_key}`;
+  if (!(a.key_ups === b.key_ups && a.key_downs >= b.key_downs && a.last_key === key)) return `condition 4: after the answer, key_ups ${b.key_ups} -> ${a.key_ups}, key_downs ${b.key_downs} -> ${a.key_downs}, last_key ${a.last_key}`;
+  const other = Object.keys({ ...b, ...a }).filter((f) => !KEY_FIELDS.includes(f) && !same(b[f], a[f]));
+  if (other.length) return `condition 4: ${other.join(', ')} changed after the answer`;
+  return null;
+}
+
+/** `heldKeyUpMiss`'s condition 3, and 4 to the next before-read on the same page. */
+function heldCaughtUpMiss(run, next) {
+  const { after: a } = run;
+  const n = next?.before;
+  // an error row has no reading; a fresh page's counters start again
+  if (!counted(n) || n.key_downs < a.key_downs || n.key_ups < a.key_ups) return 'condition 3: no next before-read on the same page';
+  // another cell's (or lane's) before-read comes after its own preparation, which may change the page: no confirmation
+  if (next.cell !== run.cell || next.lane !== run.lane) return `condition 4: the next before-read is ${next.cell}${next.lane !== run.lane ? ` (${next.lane})` : ''}'s, after its own preparation`;
+  // the next run's own press: its key_down, sent before its before-read
+  if (n.key_ups !== a.key_ups + 1 || n.key_downs !== a.key_downs + 1) {
+    return `condition 3: the next before-read (trial ${next.trial}) has key_ups ${a.key_ups} -> ${n.key_ups}, key_downs ${a.key_downs} -> ${n.key_downs}, its own press 1`;
+  }
+  if (n.last_key !== run.sent?.key) return `condition 4: the next before-read has last_key ${n.last_key}`;
+  const other = Object.keys({ ...a, ...n }).filter((f) => !KEY_FIELDS.includes(f) && !same(a[f], n[f]));
+  if (other.length) return `condition 4: ${other.join(', ')} changed before the next read`;
+  return null;
+}
+
+/** #302's forms by input kind: the run's own record (with the series' run before it), then the next before-read. */
+const LATE_KEY_UP_FORMS = {
+  press_key: { own: (run) => ownLateKeyUpMiss(run), caughtUp: caughtUpMiss },
+  key_up: { own: ownHeldKeyUpMiss, caughtUp: heldCaughtUpMiss },
+};
+
+/**
  * A series' runs (in order) judged by the lane's rule, with #302 where the cell takes it (`judgesLateKeyUp`). Each run
- * is `pass` (the lane's own rule, `runPasses`), `#302` (`lateKeyUpMiss`, its next before-read the series' next run, or
- * `next` after the last: the run after the series on the same page, where a stored record shows one), `pending` (#302
+ * is `pass` (the lane's own rule, `runPasses`), `#302` (`lateKeyUpMiss`, or `heldKeyUpMiss` for a key_up run, whose
+ * previous reading is the series' run before it; its next before-read the series' next run, or `next` after the last:
+ * the run after the series on the same page, where a stored record shows one), `pending` (#302
  * but for a next before-read not taken yet), `false ok` (`falseOk`) or `fail`. One rule for every cell (the design
  * session's ruling 707): a #302 run counts toward the streak, listed apart in `late_302`; any other miss is honest and
  * breaks the streak, which a later one may cover, the lane's 30 consecutive passes in at most 60 (a pending run counts
@@ -512,12 +600,13 @@ export function judgeSettleSeries(rows, { need = CONSECUTIVE, max = 2 * need, ne
     const hard = falseOk(r);
     if (hard) return { trial: r.trial, cls: 'false ok', why: hard };
     if (!judgesLateKeyUp(r)) return { trial: r.trial, cls: 'fail', why: missWhy(r) };
-    const own = ownLateKeyUpMiss(r);
+    const form = LATE_KEY_UP_FORMS[r.input];
+    const own = form.own(r, rows[i - 1]);
     if (own) return { trial: r.trial, cls: 'fail', why: own };
     const after = rows[i + 1] ?? next;
     // all but its next before-read, which the series has not taken yet
     if (!after) return { trial: r.trial, cls: 'pending', late_ms: r.late_ms };
-    const why = caughtUpMiss(r, after);
+    const why = form.caughtUp(r, after);
     return why === null ? { trial: r.trial, cls: '#302', late_ms: r.late_ms } : { trial: r.trial, cls: 'fail', why };
   });
   const oks = judged.map((j) => j.cls === 'pass' || j.cls === '#302');
@@ -860,7 +949,7 @@ export function sittingVerdict({ series, cells, search, skipped = [], audits = [
   if (audits.length) md.push('', '| cell | audit | requests | runs that ran their input | effects missed |', '|---|---|---:|---:|---:|', ...audits.map((a) => `| ${a.cell} | ${a.pass ? 'clean' : `**${a.failed.join('; ')}**`} | ${a.requests} | ${a.runs.filter((r) => r.class !== 'invalid' && r.class !== 'refused').length} of ${a.runs.length} | ${a.missed} |`));
   const limited = series.filter((s) => s.late_302?.length);
   if (limited.length) {
-    md.push('', "**#302**, a declared limit (an Electron page's key release reached the tree after press_key's settle, the key-down inside it and the release caught up by the next run's reading): counted toward the streak, listed apart.", '');
+    md.push('', "**#302**, a declared limit (an Electron page's key release reached the tree after the settle, the release caught up by the next run's reading: press_key's with its key-down inside the settle, or key_up's with the held key's press before the run and only its autorepeats late beside the release): counted toward the streak, listed apart.", '');
     md.push('| cell | lane | #302 runs | the key-up seen after the answer (ms) |', '|---|---|---:|---|', ...limited.map((s) => `| ${s.cell} | ${s.lane} | ${s.late_302.length} of ${s.runs} | ${s.late_302.map((l) => l.late_ms).join(', ')} |`));
   }
   if (unjudged.length) md.push('', `Unjudged in this pilot (a series shorter than its minimum; not a pass): ${unjudged.join('; ')}.`);

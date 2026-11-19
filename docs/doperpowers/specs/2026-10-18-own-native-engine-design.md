@@ -6765,6 +6765,63 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   matched strictly whatever it finds.
   Date/Author: 2026-11-18, cursor235's implementer for #398.
 
+- Decision (#340, 2026-11-19, `fix/340-growing-link-text`; the issue's intent, spawned by #298's findings' limit 6; amends
+  #296's item 4 and #298's item 2's re-created path): **#296's re-created match takes a text whose frame grew or shrank
+  across from the same edge when its label's words agree by #298's rule, so a link whose text re-renders with a count
+  or a ticking time keeps taking clicks.** Replacing a link's text (`textContent`) re-creates its `AXStaticText`, the
+  deepest node at a point on the text. When only its count or time changed ("Inbox" -> "Inbox (3)", "1 minute ago" ->
+  "2 minutes ago") the new text is 6-20 pt wider, outside the search's 2 pt, so the click was refused `nodeGone`: 12 of 12
+  in #298's runs on Chrome for Testing and Safari, and all 3 cells in #330's gate (run 42585577476) where the record held
+  the text. Where the record held the link, the link's own handle survived and kept every cell, which this leaves as it
+  was.
+  1. **The match** (`recreatedHandle`, `resizedInPlace`, `stalePointResizableRole`, StalePoint.swift). A candidate
+     of the recorded role inside `stalePointFrameTolerance` (2 pt) on every edge is matched as before. Beyond it, a
+     candidate is matched only when the recorded role is `AXStaticText` (`stalePointResizableRole`, the one constant this
+     adds), its top and bottom lie within the same 2 pt, and so does its left edge or its right edge. Its title and
+     description must also agree as #296's amendment 0c0b70f0 has them. Its label, read as #298's rule reads it, must have
+     the same words as the recorded one: the title, else the description, else the value, numbers and the words after
+     them set aside (`stalePointLabels`, factored out of `relabelledLabel`, which now shares it; `stalePointLabelWords`).
+     The nearest frame still wins, so a match inside the tolerance always ranks before a resized one.
+  2. **Either edge.** A text grows away from the edge it is aligned to: the left in a left-to-right line, the right in
+     a right-aligned column (a list's relative times) or a right-to-left line. The leading edge alone would miss the
+     column, and nothing a text's frame reads says which edge leads. Taking either edge cannot match a different text at
+     the same height: two texts sharing a left or a right edge on one line would overlap. A centred text moves both
+     edges by half its growth and is still refused `nodeGone` (limit 1).
+  3. **Shrinking.** "Inbox (12)" -> "Inbox" is matched the same way. The verdict then checks, as it checks every found
+     node, that the frame read now holds the point. A point on what remains is kept; a point on the count that went is
+     refused `frameMoved`, since the click would land past the text.
+  4. **Only on the words' positive agreement.** At the same width an absent or unreadable label never counts against a
+     match (#296's item 4), and #298's edited-text exemption matches a typed-over text without its value. A resized text
+     takes neither: a label either side lacks, or whose read failed at the observation or now, leaves it unmatched. Other
+     words refuse at any width: `linksave` ("Save" -> "Delete"), "Inbox" -> "Outbox (3)", and a time rolling without a
+     number ("just now" -> "1 minute ago", #298's limit 2).
+  5. **Unchanged.** Another role is never matched resized: a re-created link or button keeps #296's 2 pt and exact
+     titles (#296's limit (i)). The match at the same width (linkmono refused, linklike kept), #298's rule on a live
+     handle, #305's re-created identity of a recorded hit (`recordedHitAtPoint`, which requires the hit unmoved), #316's
+     rules and #330's rule dL read as before.
+  6. **The cost.** None where the handle survives or a match lies inside the tolerance. A text candidate beyond it, at
+     the same height and edge, costs 1 to 3 more label reads.
+  7. **Limits.** (1) A centred text that grows is refused, as before. (2) A text that wraps onto another line when it
+     grows changes its height and is refused. (3) As with #298's limit 1, a re-created text whose label differs only by
+     its numbers is matched at any width ("Order #1234" -> "Order #12345"); `docs/cua-api/agent-cursor.md` already states
+     this for labels, so the documents are unchanged. (4) Firefox's typed Gmail-like editor cell, refused `nodeGone` on
+     both heads in #298's editor gate, is not expected to change. If its typed text is re-created wider, its words
+     differ, and the edited-text exemption is not extended to resized texts.
+  Proven offline: `ResizedTextGuardTests` (8) in `StalePointTests.swift`. Kept: "Inbox" -> "Inbox (3)", "1 minute ago"
+  -> "2 minutes ago" and "Like (9)" -> "Like (10)" re-created wider with the record holding the text, the hit the new
+  text or the link; the same within the tolerance at the origin, and in a window moved since the screenshot; the
+  record holding the link, its own handle grown, with and without a title; "Inbox (12)" -> "Inbox" with the point on what
+  remains; a right-aligned time grown leftward. Refused: the point on the dropped count (`frameMoved`); a centred text;
+  other words (linksave and the rest, with both hits); a value absent now, or unreadable now or at the observation; the
+  origin moved past the tolerance across or down, or the height changed; a re-created link grown with its title the same
+  or not. The ranking prefers a match in place to a resized one, and the nearer resized one. #296's, #298's, #305's,
+  #316's and #330's suites pass unchanged; 1,452 engine tests pass, 1 skipped as before.
+  **Measured live:** pending. The hosted A/B is `probe/340-measure` with #298's `inbox` and `reltime` cells and #330's
+  "replaced link text" cells, both record positions, on Chrome for Testing and Safari. Expected on the branch: `inbox`
+  and `reltime` kept and landing; `linksave` and `linkmono` still refused; #296's final set and #298's cells unchanged;
+  `stalePoint.ms` against main.
+  Date/Author: 2026-11-19, cursor235's implementer for #340.
+
 ## Outcomes & Retrospective
 
 Pending for the initiative — written at finish. M1a's interim account (2026-10-20) follows; the full record is `docs/doperpowers/specs/2026-10-18-own-native-engine-m1a-report.md`.

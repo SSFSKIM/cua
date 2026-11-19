@@ -2444,3 +2444,185 @@ final class UnreadableLabelTests: XCTestCase {
     XCTAssertEqual(recording.screenshotReads.first { tree.id($0.element) == 1 }?.labelsUnread, [.title])
   }
 }
+
+/// #340: a link's text re-rendered with its count or its time ("Inbox" to "Inbox (3)", "1 minute ago" to "2 minutes
+/// ago") is a new AXStaticText at another width. #296's re-created match takes it when it grew or shrank across from the
+/// same edge and its words agree by #298's rule; other words, a moved origin, another height or another role are still
+/// refused as before.
+final class ResizedTextGuardTests: XCTestCase {
+  private let textFrame = CGRect(x: 30, y: 110, width: 40, height: 20)
+  private let onText = CGPoint(x: 50, y: 120)
+
+  /// A page whose link at (20, 100) holds one text at `frame`, recorded reading `was`.
+  private struct Page {
+    let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 600, height: 400))
+    let link: Node
+    var text: Node
+    init(_ was: String, link title: String? = nil, text frame: CGRect) {
+      link = Node("AXLink", CGRect(x: 20, y: 100, width: frame.maxX - 20 + 10, height: 40), title: title)
+      text = Node("AXStaticText", frame, value: was)
+      window.add(link)
+      link.add(text)
+    }
+
+    /// The text replaced (`textContent`): the old node destroyed, a new one at `frame` reading `now`; the link resized
+    /// with it.
+    mutating func replace(_ now: String?, at frame: CGRect) -> Node {
+      text.destroy()
+      text = Node("AXStaticText", frame, value: now)
+      link.add(text)
+      link.frame = CGRect(x: 20, y: 100, width: frame.maxX - 20 + 10, height: 40)
+      return text
+    }
+  }
+
+  /// The verdict at `point` after the text recorded as `was` (at `recordedFrame`, else `textFrame`) is replaced by `now`
+  /// at `frame`, the hit-test answering the new text (`hitText`) or the link.
+  private func replaced(_ was: String, _ now: String?, at frame: CGRect, from recordedFrame: CGRect? = nil, point: CGPoint? = nil,
+                        hitText: Bool = true) -> StalePointVerdict<Node> {
+    var page = Page(was, text: recordedFrame ?? textFrame)
+    let nodes = recorded(page.window)
+    let again = page.replace(now, at: frame)
+    return verdict(nodes, at: point ?? onText, hit: hitText ? again : page.link)
+  }
+
+  private func grown(by width: CGFloat) -> CGRect { CGRect(x: 30, y: 110, width: 40 + width, height: 20) }
+
+  /// Where the record holds the link's text: "Inbox" to "Inbox (3)" and "1 minute ago" to "2 minutes ago", re-created
+  /// wider from the same origin, are the node, whether the hit-test answers the new text or the link.
+  func testAGrownTextWhoseWordsAgreeIsTheNodeReCreated() {
+    XCTAssertEqual(stalePointResizableRole, "AXStaticText", "the role this test pins")
+    for (was, now, width) in [("Inbox", "Inbox (3)", 20.0), ("1 minute ago", "2 minutes ago", 6.0), ("Like (9)", "Like (10)", 7.0)] {
+      let onItself = replaced(was, now, at: grown(by: CGFloat(width)))
+      XCTAssertEqual(onItself.identity, .recreated, "\(was) -> \(now)")
+      XCTAssertEqual(onItself.reason, .sameElement, "\(was) -> \(now), the hit the new text")
+      XCTAssertNil(stalePointOutcome(onItself, ms: 0, reads: reads).refusal)
+      let onLink = replaced(was, now, at: grown(by: CGFloat(width)), hitText: false)
+      XCTAssertEqual(onLink.identity, .recreated, "\(was) -> \(now)")
+      XCTAssertEqual(onLink.reason, .hitAboveNode, "\(was) -> \(now), the hit the link")
+    }
+    // Within the search's own tolerance at the origin, and in a window that moved since the screenshot.
+    XCTAssertEqual(replaced("Inbox", "Inbox (3)", at: CGRect(x: 32, y: 111, width: 58, height: 21)).identity, .recreated)
+    var page = Page("Inbox", text: textFrame)
+    let nodes = recorded(page.window)
+    let again = page.replace("Inbox (3)", at: grown(by: 20))
+    let shift = CGVector(dx: 100, dy: 50)
+    move(page.window, by: shift)
+    let moved = verdict(nodes, at: CGPoint(x: onText.x + shift.dx, y: onText.y + shift.dy), shift: shift, hit: again)
+    XCTAssertEqual(moved.identity, .recreated)
+    XCTAssertEqual(moved.reason, .sameElement)
+  }
+
+  /// Where the record holds the link (the point on its padding, outside its text), the link's own handle is the node:
+  /// it grows with its text, still holds the point, and its label's words agree by #298's rule.
+  func testAGrownLinkOnItsOwnHandleIsKept() {
+    for title: String? in [nil, "Inbox"] {
+      var page = Page("Inbox", link: title, text: textFrame)
+      let nodes = recorded(page.window)
+      let padding = CGPoint(x: 24, y: 104)
+      XCTAssertTrue(deepestScreenshotNode(at: padding, in: nodes)?.element === page.link, "the link at its padding")
+      _ = page.replace("Inbox (3)", at: grown(by: 20))
+      if title != nil { page.link.title = "Inbox (3)" }
+      let kept = verdict(nodes, at: padding, hit: page.link)
+      XCTAssertEqual(kept.identity, .handle, title ?? "no title")
+      XCTAssertEqual(kept.reason, .sameElement, title ?? "no title")
+    }
+  }
+
+  /// "Inbox (12)" to "Inbox": a text re-created narrower from the same origin is the node while it still holds the
+  /// point; at a point its old count covered it has moved away from it, and the click is refused.
+  func testAShrunkTextIsTheNodeWhileItStillHoldsThePoint() {
+    let wider = CGRect(x: 30, y: 110, width: 70, height: 20)
+    let narrower = CGRect(x: 30, y: 110, width: 40, height: 20)
+    let kept = replaced("Inbox (12)", "Inbox", at: narrower, from: wider)
+    XCTAssertEqual(kept.identity, .recreated)
+    XCTAssertEqual(kept.reason, .sameElement)
+    XCTAssertEqual(replaced("Inbox (12)", "Inbox", at: narrower, from: wider, hitText: false).reason, .hitAboveNode)
+    let pastIt = replaced("Inbox (12)", "Inbox", at: narrower, from: wider, point: CGPoint(x: 90, y: 120), hitText: false)
+    XCTAssertEqual(pastIt.identity, .recreated)
+    XCTAssertEqual(pastIt.reason, .frameMoved)
+    XCTAssertTrue(pastIt.refused)
+  }
+
+  /// A text aligned to its right edge (a list's time column, a right-to-left line) grows leftward: matched by that edge.
+  /// A centred one moves both edges and is not.
+  func testARightAlignedTextMatchesByItsRightEdge() {
+    let column = CGRect(x: 100, y: 110, width: 60, height: 20)
+    let point = CGPoint(x: 140, y: 120)
+    let leftward = replaced("1 min ago", "12 mins ago", at: CGRect(x: 88, y: 110, width: 72, height: 20), from: column, point: point)
+    XCTAssertEqual(leftward.identity, .recreated)
+    XCTAssertEqual(leftward.reason, .sameElement)
+    let centred = replaced("1 min ago", "12 mins ago", at: CGRect(x: 94, y: 110, width: 72, height: 20), from: column, point: point)
+    XCTAssertEqual(centred.reason, .nodeGone)
+  }
+
+  /// Other words are still another node, at any width (linksave: "Save" to "Delete"); so is a text whose words roll
+  /// without a number (#298's limit 2), and one whose label either side lacks or cannot read, which gives no words to agree.
+  func testAResizedTextWithOtherWordsOrNoneIsRefused() {
+    for (was, now) in [("Save", "Delete"), ("Inbox", "Outbox (3)"), ("Inbox (3)", "Archive (3)"), ("just now", "1 minute ago")] {
+      let refused = replaced(was, now, at: grown(by: 12))
+      XCTAssertEqual(refused.reason, .nodeGone, "\(was) -> \(now)")
+      XCTAssertNil(refused.identity, "\(was) -> \(now)")
+      XCTAssertEqual(replaced(was, now, at: grown(by: 12), hitText: false).reason, .nodeGone, "\(was) -> \(now), the hit the link")
+    }
+    XCTAssertEqual(stalePointOutcome(replaced("Save", "Delete", at: grown(by: 12)), ms: 0, reads: reads).refusal?.message,
+                   "The screen changed since the screenshot: the AXStaticText \"Save\" it showed at this point is gone; AXStaticText is there now. Nothing was sent. Call getScreenshot for a new screenshot, then give the coordinates in its pixels.")
+    XCTAssertEqual(replaced("Inbox", nil, at: grown(by: 20)).reason, .nodeGone, "no value now")
+    do {
+      var page = Page("Inbox", text: textFrame)
+      let nodes = recorded(page.window)
+      let again = page.replace("Inbox (3)", at: grown(by: 20))
+      again.unreadable = [.value]
+      XCTAssertEqual(verdict(nodes, at: onText, hit: again).reason, .nodeGone, "the value unreadable now")
+    }
+    do {
+      var page = Page("Inbox", text: textFrame)
+      page.text.unreadable = [.value]
+      let nodes = recorded(page.window)
+      page.text.unreadable = []
+      let again = page.replace("Inbox (3)", at: grown(by: 20))
+      XCTAssertEqual(verdict(nodes, at: onText, hit: again).reason, .nodeGone, "the value unreadable at the observation")
+    }
+    // The same width keeps #298's match as it was: other words refused (linkmono), a count kept (linklike).
+    XCTAssertEqual(replaced("Save", "Send", at: textFrame).reason, .nodeGone, "linkmono")
+    XCTAssertEqual(replaced("Like (12)", "Like (13)", at: textFrame).identity, .recreated, "linklike")
+  }
+
+  /// A text that moved is not the node, whatever its words: its origin off by more than the tolerance either way, or its
+  /// height changed (a wrap onto a second line).
+  func testAResizedTextWhoseOriginOrHeightMovedIsRefused() {
+    for frame in [CGRect(x: 35, y: 110, width: 60, height: 20), CGRect(x: 30, y: 115, width: 60, height: 20),
+                  CGRect(x: 25, y: 110, width: 60, height: 20), CGRect(x: 30, y: 110, width: 60, height: 40)] {
+      XCTAssertEqual(replaced("Inbox", "Inbox (3)", at: frame).reason, .nodeGone, "\(frame)")
+    }
+  }
+
+  /// Only a text is matched resized: a re-created control of another role whose frame grew is not the node, its label
+  /// the same or not (#296's limit (i) for the label).
+  func testAResizedControlOfAnotherRoleIsRefused() {
+    for now in ["Inbox", "Inbox (3)"] {
+      let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 600, height: 400))
+      let link = Node("AXLink", CGRect(x: 20, y: 100, width: 60, height: 40), title: "Inbox")
+      window.add(link)
+      let nodes = recorded(window)
+      link.destroy()
+      let again = Node("AXLink", CGRect(x: 20, y: 100, width: 80, height: 40), title: now)
+      window.add(again)
+      XCTAssertEqual(verdict(nodes, at: CGPoint(x: 40, y: 120), hit: again).reason, .nodeGone, now)
+    }
+  }
+
+  /// A text re-created in place is preferred to a resized one the search also meets, and among resized ones the nearer.
+  func testAMatchInPlaceRanksBeforeAResizedOne() {
+    var page = Page("Inbox", text: textFrame)
+    let nodes = recorded(page.window)
+    let resized = page.replace("Inbox (3)", at: grown(by: 20))
+    let inPlace = Node("AXStaticText", textFrame, value: "Inbox")
+    page.link.add(inPlace)
+    XCTAssertTrue(verdict(nodes, at: onText, hit: page.link).current === inPlace)
+    inPlace.destroy()
+    let farther = Node("AXStaticText", grown(by: 40), value: "Inbox (30)")
+    page.link.add(farther)
+    XCTAssertTrue(verdict(nodes, at: onText, hit: page.link).current === resized)
+  }
+}

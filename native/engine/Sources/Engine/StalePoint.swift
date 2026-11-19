@@ -27,8 +27,10 @@ import Foundation
 // session's ruling 31a62775): a node found by its own handle, its frame still holding the point, refuses when its label's
 // words changed (`relabelledLabel`, `stalePointLabelWords`: Save to Delete on one element, while a count or a ticking
 // time passes), and the re-created match compares an AXStaticText's value by the same words; the text of an editable
-// region the model types into is exempt (`editedInPlace`, ruling 1ea561bc:553). Everything here reads
-// through closures, so the rule is unit-tested over a fake tree.
+// region the model types into is exempt (`editedInPlace`, ruling 1ea561bc:553). #340 lets the re-created match take a
+// text whose frame grew or shrank across from the same edge when its words agree by that rule (`resizedInPlace`: a
+// link's text re-rendered as "Inbox (3)"). Everything here reads through closures, so the rule is unit-tested over a
+// fake tree.
 
 /// One node of the tree an observation with a screenshot walked, as the screenshot showed it.
 struct ScreenshotNode<Element> {
@@ -262,6 +264,19 @@ let stalePointRehits = 3
 let stalePointRehitMs: Double = 50
 /// How far a re-created handle's frame may lie from the recorded one, each edge, in points.
 let stalePointFrameTolerance: CGFloat = 2
+/// #340: the role whose re-created handle may have grown or shrunk across (`resizedInPlace`) when its label's words agree
+/// (`stalePointLabels`): a text whose count or ticking time re-rendered it at another width ("Inbox" to "Inbox (3)").
+let stalePointResizableRole = "AXStaticText"
+
+/// #340: whether `frame`, read now, is `expected` (the recorded frame moved by the window's shift) grown or shrunk across
+/// only: its top and bottom within `stalePointFrameTolerance`, and its left or its right edge within it. Either edge, since
+/// a text grows away from the edge it is aligned to: the left in a left-to-right line, the right in a right-aligned column
+/// (a list's times) or a right-to-left line. A centred text moves both edges and is not matched.
+func resizedInPlace(_ frame: CGRect, _ expected: CGRect) -> Bool {
+  let tolerance = stalePointFrameTolerance
+  guard abs(frame.minY - expected.minY) <= tolerance, abs(frame.maxY - expected.maxY) <= tolerance else { return false }
+  return abs(frame.minX - expected.minX) <= tolerance || abs(frame.maxX - expected.maxX) <= tolerance
+}
 
 /// Why the guard kept or refused a pointer (the meta's `stalePoint.reason`).
 enum StalePointReason: String, Equatable {
@@ -506,6 +521,19 @@ let relabelUncomparedSubroles: Set<String> = ["AXTabButton"]
 /// read failing on one side, would otherwise compare its description with its title).
 func relabelledLabel<Element>(_ node: ScreenshotNode<Element>, _ reads: StalePointReads<Element>) -> String? {
   guard !relabelUncomparedRoles.contains(node.role), !relabelUncomparedSubroles.contains(node.subrole ?? "") else { return nil }
+  let element = node.element
+  guard let (was, now) = stalePointLabels(of: node, now: element, reads), stalePointLabelWords(was) != stalePointLabelWords(now) else { return nil }
+  // The edited-text exemption (ruling 1ea561bc:553): the text of an editable region, changed by the model's own typing.
+  if let region = node.editableAncestor, editedInPlace(element, region: region, reads) { return nil }
+  return now
+}
+
+/// The recorded node's label and `element`'s read now, as #298's rule takes them (`relabelledLabel`; #340 reads a
+/// re-created text's the same way): the title, then the description, then (for an AXStaticText) the value, the first
+/// non-empty one, each read now cut as the record's was. Nil when either side has none, or when either would depend on
+/// an attribute whose read failed, at the observation (`ScreenshotNode.labelsUnread`) or now (`StalePointReads.readLabel`).
+func stalePointLabels<Element>(of node: ScreenshotNode<Element>, now element: Element,
+                               _ reads: StalePointReads<Element>) -> (was: String, now: String)? {
   let parts: [StalePointLabelPart] = node.role == "AXStaticText" ? [.title, .description, .value] : [.title, .description]
   var was: String?
   for part in parts {
@@ -517,19 +545,11 @@ func relabelledLabel<Element>(_ node: ScreenshotNode<Element>, _ reads: StalePoi
     }
   }
   guard let was else { return nil }
-  let element = node.element
-  var now: String?
   for part in parts {
     guard case .text(let text) = reads.readLabel(element, part) else { return nil }
-    if let text = nonEmpty(text.map(bounded)) {
-      now = text
-      break
-    }
+    if let now = nonEmpty(text.map(bounded)) { return (was, now) }
   }
-  guard let now, stalePointLabelWords(was) != stalePointLabelWords(now) else { return nil }
-  // The edited-text exemption (ruling 1ea561bc:553): the text of an editable region, changed by the model's own typing.
-  if let region = node.editableAncestor, editedInPlace(element, region: region, reads) { return nil }
-  return now
+  return nil
 }
 
 /// The roles of an editable text region for #298's edited-text exemption: a text area or a text field, and a
@@ -702,24 +722,37 @@ private func descendants<Element>(of element: Element, _ reads: StalePointReads<
 
 /// A handle re-created in place of `node` near `hit`: among the hit, its ancestors and its descendants (the bounds above),
 /// the element of the node's role whose frame lies nearest the recorded one moved by `windowShift` (the window's move
-/// since the screenshot), within `stalePointFrameTolerance`, whose label agrees (`stalePointLabelsAgree`).
+/// since the screenshot), within `stalePointFrameTolerance`, whose label agrees (`stalePointLabelsAgree`). Else (#340),
+/// for a text (`stalePointResizableRole`), the nearest whose frame grew or shrank across from the same edge
+/// (`resizedInPlace`) and whose label, read as #298's rule reads it (`stalePointLabels`), has the same words, its title and
+/// description still agreeing as above: a link's text re-rendered with its count or its time ("Inbox" to "Inbox (3)").
 func recreatedHandle<Element>(of node: ScreenshotNode<Element>, near hit: Element, windowShift: CGVector = .zero,
                               _ reads: StalePointReads<Element>) -> (element: Element, frame: CGRect)? {
   let expected = node.frame.offsetBy(dx: windowShift.dx, dy: windowShift.dy)
+  let resizable = node.role == stalePointResizableRole
+  // The nearest wins, so a match in place (within the tolerance) always ranks before a resized one (beyond it).
   var best: (element: Element, frame: CGRect, distance: CGFloat)?
   for candidate in [hit] + ancestors(of: hit, reads) + descendants(of: hit, reads) {
     guard reads.role(candidate) == node.role, let frame = reads.frame(candidate) else { continue }
     let distance = frameDistance(frame, expected)
-    guard distance <= stalePointFrameTolerance, best.map({ distance < $0.distance }) ?? true else { continue }
+    let resized = distance > stalePointFrameTolerance
+    guard !resized || (resizable && resizedInPlace(frame, expected)), best.map({ distance < $0.distance }) ?? true else { continue }
     let (title, description) = (reads.title(candidate), reads.description(candidate))
     func agrees(value: String?) -> Bool {
       stalePointLabelsAgree(recordedTitle: node.title, recordedDescription: node.description, recordedValue: node.value, title: title,
                             description: description, value: value)
     }
-    // #298's edited-text exemption: a text re-created in its recorded editable region (typed over) is matched without
-    // its value, its title and description still compared.
-    guard agrees(value: node.value == nil ? nil : reads.value(candidate))
-            || (node.editableAncestor.map { editedInPlace(candidate, region: $0, reads) } == true && agrees(value: nil)) else { continue }
+    if resized {
+      // Only on the words' positive agreement: a label either side lacks or cannot read leaves a resized text unmatched.
+      guard agrees(value: reads.value(candidate)),
+            let labels = stalePointLabels(of: node, now: candidate, reads),
+            stalePointLabelWords(labels.was) == stalePointLabelWords(labels.now) else { continue }
+    } else {
+      // #298's edited-text exemption: a text re-created in its recorded editable region (typed over) is matched without
+      // its value, its title and description still compared.
+      guard agrees(value: node.value == nil ? nil : reads.value(candidate))
+              || (node.editableAncestor.map { editedInPlace(candidate, region: $0, reads) } == true && agrees(value: nil)) else { continue }
+    }
     best = (candidate, frame, distance)
   }
   return best.map { ($0.element, $0.frame) }

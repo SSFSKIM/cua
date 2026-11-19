@@ -2489,6 +2489,51 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
   Date/Author: 2026-11-19, the plan-executor (session linux171), from tasks 105–108's and T7's reports and their reviews, on the design session's rulings.
   ci-gate on 7d554dea: GREEN 8/8, run 44494920319, its tree equal to 7d554dea's. The design session accepted H⁵ on it (877), and arm64's `:0` sitting started.
 
+- Decision (2026-11-19, M5, linux-engine 0.4.2's design: the Chromium hold, the lengthened late-take watch and the ping measurement, on the design session's rulings 883, 886, 887 and 888): arm64's V5 at H⁵ failed on two cells. That stands until a fix passes them (886). The fix is the 0.4.2 candidate, task 115 on `m5-engine-042`.
+  - **The fault (task 112).** arm64's counted V5 failed on two cells:
+    - `chrome_dnd_short_in_front_shared`, sample 1/2: a judged false ok;
+    - `chrome_dnd_shared`, samples 1/0 and 2/0: ok where the cell expects the drag-and-drop refusal.
+
+    Chrome's renderer fired dragstart after the engine's release: +47.3, +107.9 and +98.8 ms. The browser had already seen the button go up, so it refused the drag (StartDragging and IsMouseButtonDown) and ended it by IPC. The engine saw nothing: its XdndSelection and press watches were empty. 0.4.1's settle runs only for Electron sources, so it didn't apply.
+    - Only in-front 1/2 is a false ok in ruling 650's sense. Both cells stay FAIL under 886, and the fix decides both.
+  - **It isn't arm-only (tasks 112, 113).**
+    - Across every stored x64 V5, the shape (a plain ok where the page counted dragstart and dragend and no drop) appears 1 in 554: M4's gate candidate 1.
+    - On released 0.4.1, the cancel cell's shape is:
+      - x64 at idle: 0/156;
+      - x64 at twice the load: 36/52 cold, 33/104 warm;
+      - arm64 on `:0` at idle: 16/80 cold, 0/160 warm;
+      - arm64 at twice the load on a private display: 50/70 cold, 48/140 warm.
+    - The vendor lanes never run these cells.
+  - **Nothing the engine sees separates it (883, 887).**
+    - AT-SPI exposes nothing that says draggable. A draggable span or a link's text reads `static`, the same as plain text, and Electron's web content isn't in the tree.
+    - Chromium's refusal sends no X request.
+    - An xtrace proxy can't watch it, because the proxy delays Chrome's view of the button-up. Under the proxy Chrome took after the release in all 84 shape samples (median +591–600 ms), and in none of 80 plain select and canvas drags.
+    - So a blanket notice on every Chromium drag with no take is out (887): it would ride on 3,371 stored drags to catch 4.
+  - **The hold (888.1).**
+    - For a drag whose source is a Chromium-family window (Chrome, Chromium, Electron), the engine doesn't release before press + B unless a take comes first; then it releases at once.
+    - The anchor is the press, because the renderer's dragstart follows the threshold motion just after the press. A hold anchored at the final move puts Chrome's canvas past newest's speed (627 against 512 ms at r150).
+    - B is the smallest bound that keeps both counted idle conditions at 0 on both architectures, brings arm64 at twice the load to 1% or less on the cancel cell's shape, and leaves canvas and dnd unchanged.
+    - Measured on task 113's prototype (cancel-cell shape):
+      - p300 and p350: 0/240 at arm64 `:0` idle; x64 at twice the load 2/81 at p300 and 0/81 at p350;
+      - p400 and p450: 0/81 at x64 twice the load;
+      - p350 at arm64 twice the load: 1/70 and 2/140.
+    - At arm64 twice the load the renderer's dragstart reaches press + ~580 ms.
+    - The cost on x64, warm, judged by D1 and D2:
+      - Chrome select and range rise from 129 to ~304 (p300) and ~354 ms (p350), and scroller from 63 to the same;
+      - canvas and dnd are unchanged at every press bound up to 450;
+      - every press-anchored lane passes both steps.
+    - The candidate sets B = 450 as a one-line constant (`dnd::TAKE_HOLD_AFTER_PRESS`), pending the p450/p600 data at arm64 twice the load. Short Chromium drags become slower than newest's, and that cost goes into the default decision's summary.
+  - **The ping (888.2).** During a no-take hold the engine pings the source (`_NET_WM_PING`) and records each round trip in `--stats` (`hold.pings`). It changes no answer.
+    - If a slow round trip separates the late renderer, a Chromium drag with no take whose ping was slow answers ok with the notice, and nothing else carries it.
+    - If it doesn't separate, arm64's residue at twice the load is the owner's product call: a counted, documented residue; a notice on every no-take Chromium drag; or unconfirmed (888.3). Ruling 827 made false oks absolute at twice the load.
+  - **The late-take watch (888.4).** After a release with no take, the watch runs to the later of release + 700 ms and press + B + 300 ms (it was `dnd::SETTLE`, 300 ms). It runs after the answer, so a plain drag doesn't wait for it, and a late take inside it goes the existing late-take way.
+  - **Two fixes in the same wave (888.5, 888.6).**
+    - The live tests' instability was Xvfb resetting whenever its last client disconnected (about 106 resets per `live_device` run). It was already present on the base. The tests now hold one X connection per binary (`support::fresh_display()`).
+    - The sitting launchers exit with a failing step's status.
+  - **Also:** the guard's autobind stops on arm64's `:0` are #432 (P3). The controller may clear a stop of that exact class on its record; any other class goes to the design session (888).
+  Evidence: task-112, task-113 and task-114 reports (local); `m5/hold-042/` on `m5-hold-042` (4da5e197); the candidate `m5-engine-042` (3dd381ec, ci-gate GREEN 44621931235, `linux-engine.yml` publish=false 44621955893).
+  Date/Author: 2026-11-19, the plan-executor (session linux171), on the design session's rulings.
+
 ## Outcomes & Retrospective
 
 Written per milestone as each lands; the whole-plan retrospective at finish. The execution record (tasks, reviews, friction) is `docs/doperpowers/specs/2026-10-28-own-linux-engine-report.md`.

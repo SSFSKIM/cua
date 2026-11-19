@@ -1590,11 +1590,13 @@ fn a_hold_with_no_take_pings_its_source_and_records_each_round_trip_without_chan
             assert!(answered.iter().all(|&ms| ms >= 145.0), "{what}: {pings}");
             assert!(trips.len() <= 4, "{what}: one at a time: {pings}");
         }
-        // every ping went out after the press and before the release
+        // every ping went out inside the hold, none in its last 25 ms, whose answer could not come inside it (the
+        // engine's clock: the source reads the press a little after the engine sent it)
+        let last_ping = bound.as_secs_f64() * 1000.0 - 25.0;
         assert!(
-            trips.iter().all(|t| t["sent_after_press_ms"]
-                .as_f64()
-                .is_some_and(|ms| ms <= whole.as_secs_f64() * 1000.0)),
+            trips
+                .iter()
+                .all(|t| t["sent_after_press_ms"].as_f64().is_some_and(|ms| ms <= last_ping)),
             "{what}: {pings}"
         );
     }

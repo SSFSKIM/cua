@@ -6,8 +6,9 @@
 //! marks the drags whose late drag and drop the hold cannot catch.
 //!
 //! The pings are bounded by the hold: one at a time, the next one [`PING_EVERY`] after the last went out once that one
-//! was answered, and none after the hold ends, which neither waits for an answer nor runs longer for one. A ping still
-//! unanswered then is recorded with how long it had waited. The watch is opened when the hold starts, on an X
+//! was answered, none in the hold's last [`PING_EVERY`] (it could not come back inside the hold) and none after the hold
+//! ends, which neither waits for an answer nor runs longer for one. A ping still unanswered then is recorded with how
+//! long it had waited. The watch is opened when the hold starts, on an X
 //! connection of its own (the answers come to the root, read with its `SubstructureNotify`), and closed with it.
 
 use std::time::{Duration, Instant};
@@ -41,6 +42,8 @@ pub struct HoldPing {
     /// The token of the ping waiting for its answer, if one is.
     outstanding: Option<u32>,
     trips: Vec<RoundTrip>,
+    /// When the hold ends with no take: no ping is asked in its last [`PING_EVERY`].
+    ends: Instant,
 }
 
 /// The hold's pings, or why none was asked: the window lists no `_NET_WM_PING`, or the watch could not start.
@@ -48,12 +51,13 @@ pub type Pings = std::result::Result<HoldPing, String>;
 
 impl HoldPing {
     /// Connected and subscribed to the root's `SubstructureNotify`, where `window`'s answers come, and the first ping
-    /// asked; an error when the window lists no `_NET_WM_PING` in its `WM_PROTOCOLS` or the connection fails.
-    pub fn start(window: Window) -> Pings {
-        Self::connect(window).map_err(|error| format!("{error:#}"))
+    /// asked, for a hold that ends with no take at `ends`; an error when the window lists no `_NET_WM_PING` in its
+    /// `WM_PROTOCOLS` or the connection fails.
+    pub fn start(window: Window, ends: Instant) -> Pings {
+        Self::connect(window, ends).map_err(|error| format!("{error:#}"))
     }
 
-    fn connect(window: Window) -> Result<HoldPing> {
+    fn connect(window: Window, ends: Instant) -> Result<HoldPing> {
         let (conn, screen) = x11rb::connect(None).context("the hold's ping could not connect")?;
         let root = conn.setup().roots[screen].root;
         let protocols = conn.intern_atom(false, b"WM_PROTOCOLS")?.reply()?.atom;
@@ -77,6 +81,7 @@ impl HoldPing {
             ping,
             outstanding: None,
             trips: Vec::new(),
+            ends,
         };
         pings.ask()?;
         Ok(pings)
@@ -104,7 +109,7 @@ impl HoldPing {
             return;
         };
         let last = self.trips.last().copied();
-        if self.outstanding.is_none() && last.is_some_and(|trip| due(trip.sent, Instant::now())) {
+        if self.outstanding.is_none() && last.is_some_and(|trip| due(trip.sent, Instant::now(), self.ends)) {
             let _ = self.ask();
         }
     }
@@ -136,9 +141,10 @@ impl HoldPing {
     }
 }
 
-/// Whether the next ping is due, the last one having gone out at `sent` and been answered.
-fn due(sent: Instant, now: Instant) -> bool {
-    now >= sent + PING_EVERY
+/// Whether the next ping is due, the last one having gone out at `sent` and been answered, in a hold that ends at
+/// `ends`: [`PING_EVERY`] after the last, and not in the hold's last [`PING_EVERY`].
+fn due(sent: Instant, now: Instant, ends: Instant) -> bool {
+    now >= sent + PING_EVERY && now + PING_EVERY <= ends
 }
 
 fn ms(d: Duration) -> f64 {
@@ -193,9 +199,14 @@ mod tests {
     #[test]
     fn the_next_ping_waits_for_the_last_one_s_answer_and_its_interval() {
         let sent = Instant::now();
-        assert!(!due(sent, sent));
-        assert!(!due(sent, sent + PING_EVERY - Duration::from_millis(1)));
-        assert!(due(sent, sent + PING_EVERY));
+        let ends = sent + Duration::from_secs(1);
+        assert!(!due(sent, sent, ends));
+        assert!(!due(sent, sent + PING_EVERY - Duration::from_millis(1), ends));
+        assert!(due(sent, sent + PING_EVERY, ends));
+        // none in the hold's last PING_EVERY: its answer could not come inside the hold
+        let late = ends - PING_EVERY + Duration::from_millis(1);
+        assert!(!due(sent, late, ends));
+        assert!(due(sent, ends - PING_EVERY, ends));
     }
 
     #[test]
@@ -227,6 +238,20 @@ mod tests {
             hold_record(Some(&Err("the window lists no _NET_WM_PING".into())), pressed, at(450)),
             json!({"asked": false, "why": "the window lists no _NET_WM_PING"})
         );
+    }
+
+    /// A connection held through the test, so the display does not reset between its cases (Xvfb resets once its last
+    /// client leaves, and a connect then is closed: `tests/support/mod.rs` `fresh_display`), opened through a reset under
+    /// way.
+    fn display_held() -> RustConnection {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            match x11rb::connect(None).map(|(conn, _)| conn) {
+                Ok(conn) if conn.get_input_focus().is_ok_and(|c| c.reply().is_ok()) => return conn,
+                _ if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(50)),
+                _ => panic!("no X connection within 10 s"),
+            }
+        }
     }
 
     /// A window of the test's own that lists `_NET_WM_PING` and answers each ping after `delay` (None: never), as an
@@ -292,14 +317,21 @@ mod tests {
     #[test]
     #[cfg_attr(not(feature = "live"), ignore = "needs an X display (--features live)")]
     fn a_hold_records_each_ping_s_round_trip_one_at_a_time_and_none_after_it_ends() {
+        let _held = display_held();
         let pressed = Instant::now();
         // an application that answers at once: a ping every PING_EVERY or so through a 200 ms hold
         let (window, answerer) = answering_window(Some(Duration::ZERO));
-        let mut pings = Some(HoldPing::start(window));
+        let mut pings = Some(HoldPing::start(window, pressed + Duration::from_millis(200)));
         let ended = hold(&mut pings, Duration::from_millis(200));
         let record = hold_record(pings.as_ref(), pressed, ended);
         let trips = record["round_trips"].as_array().unwrap().clone();
-        assert!((5..=9).contains(&trips.len()), "{record}");
+        assert!((5..=8).contains(&trips.len()), "{record}");
+        assert!(
+            trips
+                .iter()
+                .all(|t| t["sent_after_press_ms"].as_f64().unwrap() <= 176.0),
+            "none in the hold's last 25 ms: {record}"
+        );
         for pair in trips.windows(2) {
             let gap =
                 pair[1]["sent_after_press_ms"].as_f64().unwrap() - pair[0]["sent_after_press_ms"].as_f64().unwrap();
@@ -317,7 +349,7 @@ mod tests {
         // an application that answers 120 ms late: one ping outstanding at a time, the slow round trip recorded
         let pressed = Instant::now();
         let (window, answerer) = answering_window(Some(Duration::from_millis(120)));
-        let mut pings = Some(HoldPing::start(window));
+        let mut pings = Some(HoldPing::start(window, pressed + Duration::from_millis(200)));
         let ended = hold(&mut pings, Duration::from_millis(200));
         let record = hold_record(pings.as_ref(), pressed, ended);
         let trips = record["round_trips"].as_array().unwrap().clone();
@@ -345,7 +377,7 @@ mod tests {
         // an application that never answers: one ping, unanswered, the hold no longer for it
         let pressed = Instant::now();
         let (window, answerer) = answering_window(None);
-        let mut pings = Some(HoldPing::start(window));
+        let mut pings = Some(HoldPing::start(window, pressed + Duration::from_millis(100)));
         let ended = hold(&mut pings, Duration::from_millis(100));
         assert!(
             ended - pressed < Duration::from_millis(130),
@@ -362,14 +394,14 @@ mod tests {
     #[cfg_attr(not(feature = "live"), ignore = "needs an X display (--features live)")]
     fn a_window_that_lists_no_ping_is_not_asked() {
         use x11rb::protocol::xproto::{CreateWindowAux, WindowClass};
-        let (conn, screen) = x11rb::connect(None).unwrap();
-        let root = conn.setup().roots[screen].root;
+        let conn = display_held();
+        let root = conn.setup().roots[0].root;
         let window = conn.generate_id().unwrap();
         let (class, parent) = (WindowClass::INPUT_OUTPUT, x11rb::COPY_FROM_PARENT);
         conn.create_window(0, window, root, 0, 0, 10, 10, 0, class, parent, &CreateWindowAux::new())
             .unwrap();
         conn.get_input_focus().unwrap().reply().unwrap();
-        let Err(why) = HoldPing::start(window) else {
+        let Err(why) = HoldPing::start(window, Instant::now() + Duration::from_millis(100)) else {
             panic!("asked a window that lists no ping")
         };
         assert_eq!(why, "the window lists no _NET_WM_PING");

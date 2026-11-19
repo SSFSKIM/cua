@@ -508,7 +508,7 @@ fn drag_along(
             if held {
                 let since = Instant::now();
                 let deadline = pressed_at + take_hold.bound;
-                let mut pings = (since < deadline).then(|| HoldPing::start(take_hold.source));
+                let mut pings = (since < deadline).then(|| HoldPing::start(take_hold.source, deadline));
                 let looked = if matches!(route, Route::Window(_)) {
                     // the refreshes end a browser's rest before REFRESH_AFTER_PRESS, or before the bound if it is
                     // shorter: the hold past them sends no motion
@@ -626,7 +626,7 @@ fn drag_along(
             let since = Instant::now();
             let deadline = pressed_at + take_hold.bound;
             let held = since < deadline && !guard.watch.started(x);
-            let mut pings = held.then(|| HoldPing::start(take_hold.source));
+            let mut pings = held.then(|| HoldPing::start(take_hold.source, deadline));
             let taken = match held {
                 true => crate::dnd::wait_for_take(
                     || {

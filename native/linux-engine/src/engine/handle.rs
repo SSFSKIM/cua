@@ -597,7 +597,7 @@ impl Engine {
             let deadline = pressed_at + bound;
             let taken_by_now = watch.before_release(holding).is_ok_and(|held| held.taken);
             let held = since < deadline && !taken_by_now;
-            let mut pings = held.then(|| HoldPing::start(target));
+            let mut pings = held.then(|| HoldPing::start(target, deadline));
             if held {
                 held_take = crate::dnd::wait_for_take(
                     || {

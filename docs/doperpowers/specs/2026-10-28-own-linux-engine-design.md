@@ -2487,6 +2487,7 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
     - F2's private part on Chrome 158.0.8127.36 (development runs): D1 passed and S1 completed. The harness records no browser version, so the claim that it drove 158 rests on the PATH chain the README shows.
   Evidence: task-105, task-106, task-107, task-108 and task-99 reports (local); `m5/x64/`, `m5/arm64/`, `m5/rejudge-302-keyup.txt`, the x64 V5 re-judge and controls (task 108); the design session's rulings (sminos 848–876); ci-gate on 7d554dea (below).
   Date/Author: 2026-11-19, the plan-executor (session linux171), from tasks 105–108's and T7's reports and their reviews, on the design session's rulings.
+  ci-gate on 7d554dea: GREEN 8/8, run 44494920319, its tree equal to 7d554dea's. The design session accepted H⁵ on it (877), and arm64's `:0` sitting started.
 
 ## Outcomes & Retrospective
 

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {Script} from 'node:vm';
 import {CELLS,UNITS,AT,RECORDED_ROLE,unitKey,plan,pointFor} from './cells.mjs';
-import {outcomeOf,stalePointOf,routeOf,findLink,nodeAt,landingOf,delta,score,gates,coverage,summarize,judge,MIN_PAIRS} from './check.mjs';
+import {quantiles,outcomeOf,stalePointOf,routeOf,findLink,nodeAt,landingOf,delta,score,gates,coverage,summarize,judge,MIN_PAIRS} from './check.mjs';
 import {page} from './page.mjs';
 import {toPixels} from './run.mjs';
 
@@ -23,7 +23,7 @@ test('plans: ten per unit to measure, twenty per head interleaved to qualify', (
   const q = plan({mode: 'qualify', heads: ['main', 'fix']});
   assert.equal(q.length, 2 * 20 * UNITS.length);
   assert.deepEqual([...new Set(q.filter((_, i) => i % 2 === 0).map(r => r.head))].sort(), ['fix', 'main']);
-  for (const c of Object.values(CELLS)) assert.ok(['grow', 'shrink', 'refuse', 'asMain'].includes(c.kind));
+  for (const c of Object.values(CELLS)) assert.ok(['grow', 'shrink', 'refuse', 'asMain', 'limit'].includes(c.kind));
   // Every cell's text before and after is distinct from the other links', so the observation finds it alone.
   for (const c of Object.values(CELLS)) for (const t of [c.before, c.after]) assert.ok(!['Archive', 'Drafts'].includes(t));
 });
@@ -130,7 +130,8 @@ function rows(verdictFor, extra = () => ({})) {
 }
 const mainOf = r => ['refuse'].includes(CELLS[r.cell].kind) || r.cell === 'linkmono' ? 'refused'
   : ['grow', 'shrink'].includes(CELLS[r.cell].kind) && r.at === 'text' ? 'refused' : 'kept-landed';
-const good = r => r.head === 'main' ? mainOf(r) : ['grow', 'shrink'].includes(CELLS[r.cell].kind) ? 'kept-landed' : mainOf(r);
+const good = r => r.head === 'main' ? mainOf(r) : ['grow', 'shrink'].includes(CELLS[r.cell].kind) ? 'kept-landed'
+  : CELLS[r.cell].kind === 'limit' && r.at === 'text' ? CELLS[r.cell].expect.verdict : mainOf(r);
 const planned = list => list.reduce((o, r) => (o[`${r.head}/${unitKey(r)}`] = (o[`${r.head}/${unitKey(r)}`] ?? 0) + 1, o), {});
 test('gates pass a fix that keeps the growing links and still refuses the rest, and fail each way it can be wrong', () => {
   const ok = rows(good), cov = coverage(ok, {planned: planned(ok), heads: ['main', 'fix']});
@@ -214,4 +215,16 @@ test('summaries carry the geometry as median and span', () => {
   assert.deepEqual(s.axRecorded, {n: 2, dx: {median: 0, span: [0, 0]}, dy: {median: 0, span: [0, 0]}, dw: {median: 30, span: [30, 32]}});
   assert.equal(s.domText.n, 1);
   assert.deepEqual(s.reason, {'refused/nodeGone': 2});
+});
+
+test('the stated limits are checked apart: reported, never part of the pass', () => {
+  const ok = rows(good), cov = coverage(ok, {planned: planned(ok), heads: ['main', 'fix']});
+  assert.equal(gates(ok, {coverage: cov}).statedLimits.pass, true);
+  const centreKept = rows(r => r.head === 'fix' && r.cell === 'centre' && r.at === 'text' && r.rep === 2 ? 'kept-landed' : good(r));
+  const g = gates(centreKept, {coverage: cov});
+  assert.equal(g.statedLimits.pass, false); assert.equal(g.statedLimits.perUnit['centre/text'].missed, 1);
+  assert.equal(judge(centreKept, {mode: 'qualify', abort: null, coverage: cov}).pass, true);
+  const rightRefused = rows(r => r.head === 'fix' && r.cell === 'right' && r.at === 'text' ? 'refused' : good(r));
+  assert.equal(gates(rightRefused, {coverage: cov}).statedLimits.pass, false);
+  assert.deepEqual(quantiles([3, 1, 2, 10]), {n: 4, p50: 3, p95: 10, max: 10});
 });

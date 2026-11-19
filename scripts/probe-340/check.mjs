@@ -85,6 +85,9 @@ export function score({attested,observeFailed=false,at,click,stale,clicks}){
 
 const tally=list=>list.reduce((o,k)=>(o[k]=(o[k]??0)+1,o),{});
 const median=xs=>{const a=xs.filter(Number.isFinite).sort((p,q)=>p-q);return a.length?a[Math.floor((a.length-1)/2)]:null;};
+// Quantiles of a list (nearest rank, rounded up): p50, p95 and the max; null when empty.
+export const quantiles=xs=>{const a=xs.filter(Number.isFinite).sort((p,q)=>p-q);if(!a.length)return null;
+  const q=f=>a[Math.ceil((a.length-1)*f)];return {n:a.length,p50:q(.5),p95:q(.95),max:a[a.length-1]};};
 const span=xs=>{const a=xs.filter(Number.isFinite);return a.length?[Math.min(...a),Math.max(...a)]:null;};
 const geo=(rows,pick)=>{
   const ds=rows.map(pick).filter(Boolean);
@@ -99,7 +102,7 @@ export function summarize(rows){
       verdicts:tally(v.map(r=>r.verdict)),click:tally(v.map(r=>r.click)),reason:tally(v.map(r=>`${r.guard?.verdict}/${r.guard?.reason}`)),
       identity:tally(v.map(r=>r.guard?.identity??'none')),hitRole:tally(v.map(r=>r.guard?.hitRole??'none')),route:tally(v.map(r=>r.route??'none')),
       landed:v.filter(r=>r.landed).length,wrong:v.filter(r=>r.verdict==='wrong-target').length,
-      presentationLost:v.filter(r=>r.presentationHeld===false).length,guardMs:median(v.map(r=>r.guard?.ms)),
+      presentationLost:v.filter(r=>r.presentationHeld===false).length,guardMs:quantiles(v.map(r=>r.guard?.ms)),
       // The recorded node's frame at the observation against the same role's frame after the change (the engine's own
       // re-observation), and the page's own CSS geometry before and after the change.
       axRecorded:geo(v,r=>r.ax?.recorded),axText:geo(v,r=>r.ax?.text),axLink:geo(v,r=>r.ax?.link),
@@ -150,6 +153,11 @@ export function gates(rows,{coverage:cov,units=UNITS}){
     main:of(main,u).filter(r=>r.presentationHeld===false).length}]));
   const presentationWorse=Object.entries(presentation).filter(([,x])=>x.fix>x.main).map(([k])=>k);
   const everyUnit=kinds=>units.filter(u=>kinds.includes(CELLS[u.cell].kind)).every(u=>of(fix,u).length>0);
+  // The fix's stated limits (kind `limit`), reported apart from the gates: at the text, the cell's expected verdict
+  // (and reason); at the link, main's paired verdict.
+  const limits=fix.filter(r=>kindOf(r)==='limit'),limitMiss=limits.filter(r=>{
+    if(r.at==='link'){const m=pair.get(`${unitKey(r)}/${r.rep}`);return !m||m.verdict!==r.verdict;}
+    const e=CELLS[r.cell].expect;return r.verdict!==e.verdict||e.reason&&r.guard?.reason!==e.reason;});
   return {
     coverage:{pass:cov.complete&&cov.covered},
     keptAndLanded:{pass:kept.length>0&&everyUnit(['grow','shrink'])&&notKept.length===0,rows:kept.length,failed:notKept.length,
@@ -160,6 +168,9 @@ export function gates(rows,{coverage:cov,units=UNITS}){
       paired:othersPaired.length,usablePairs:usable,minPairs:MIN_PAIRS,thin,differ:differ.length,
       reasonDiffer:reasonDiffer.length,examples:brief(differ),reasonExamples:brief(reasonDiffer)},
     noWrongTarget:{pass:wrong.length===0,fixRows:fix.length,wrong:wrong.length,mainWrong:main.filter(r=>r.verdict==='wrong-target').length,examples:brief(wrong)},
+    statedLimits:{informational:true,pass:limits.length>0&&everyUnit(['limit'])&&limitMiss.length===0,rows:limits.length,
+      missed:limitMiss.length,perUnit:Object.fromEntries(units.filter(u=>CELLS[u.cell].kind==='limit').map(u=>[unitKey(u),
+        {rows:of(fix,u).length,missed:limitMiss.filter(r=>unitKey(r)===unitKey(u)).length}])),examples:brief(limitMiss)},
     presentation:{pass:presentationWorse.length===0,worse:presentationWorse,
       fixLost:fix.filter(r=>r.presentationHeld===false).length,mainLost:main.filter(r=>r.presentationHeld===false).length},
   };
@@ -169,5 +180,6 @@ export function gates(rows,{coverage:cov,units=UNITS}){
 export function judge(rows,{mode,abort,coverage:cov}){
   const gate=mode==='qualify'?gates(rows,{coverage:cov}):null;
   const measured=abort===null&&cov.complete&&cov.covered;
-  return {gates:gate,pass:measured&&(!gate||Object.values(gate).every(g=>g.pass))};
+  // An informational check (the fix's stated limits) is reported, never part of the pass.
+  return {gates:gate,pass:measured&&(!gate||Object.values(gate).every(g=>g.informational||g.pass))};
 }

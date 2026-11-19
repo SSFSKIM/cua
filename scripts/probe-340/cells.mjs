@@ -8,8 +8,13 @@ export const LANES=['cft','safari','electron'];
 // - refuse: the true refusals, which must stay refused: words that change meaning (linksave) and a link moved away
 //   from the point while another link takes its place (moved);
 // - asMain: every other cell answers as main does: a same-width count (like), the same text re-created (plain), and a
-//   same-width change of meaning (linkmono, refused on main by #298's re-created label check).
-// `style` gives the link a width the change keeps (`tabular`: a fixed width with tabular digits; `mono`: monospace).
+//   same-width change of meaning (linkmono, refused on main by #298's re-created label check);
+// - limit: the fix's stated limits (its rule: an AXStaticText still matches when its top and bottom are within 2 pt,
+//   its left or right edge within 2 pt, and its words agree), checked apart from the gates: a right-aligned relative
+//   time that grows (`right`: kept at the text) and a centred label that grows (`centre`: nodeGone at the text, as on
+//   main); at the link, both answer as main. `expect` names the text point's expected verdict.
+// `style` gives the link a width the change keeps (`tabular`: a fixed width with tabular digits; `mono`: monospace;
+// `right` and `centre`: a fixed width with the text aligned right or centred, so the text grows leftward or both ways).
 export const CELLS={
   inbox:{kind:'grow',before:'Inbox',after:'Inbox (3)'},
   reltime:{kind:'grow',before:'1 minute ago',after:'2 minutes ago'},
@@ -19,6 +24,8 @@ export const CELLS={
   like:{kind:'asMain',before:'Like (12)',after:'Like (13)',style:'tabular'},
   plain:{kind:'asMain',before:'Inbox',after:'Inbox'},
   linkmono:{kind:'asMain',before:'Save',after:'Send',style:'mono'},
+  right:{kind:'limit',before:'1 minute ago',after:'2 minutes ago',style:'right',expect:{verdict:'kept-landed'}},
+  centre:{kind:'limit',before:'Inbox',after:'Inbox (3)',style:'centre',expect:{verdict:'refused',reason:'nodeGone'}},
 };
 // Where the click is placed in the observation, and so which node #296's record takes at the point: `text`, inside the
 // link's AXStaticText near its start (the failing case: replacing the text re-creates that node); `link`, in the link's

@@ -9,7 +9,8 @@ import {CELLS,OTHERS} from './cells.mjs';
 
 export const page=()=>`<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Links</title>
 <style>body{font:16px sans-serif;margin:20px} .row{height:64px} a.l{display:inline-block;padding:14px 32px;font:20px/28px sans-serif;color:#00c;white-space:nowrap}
-a.tabular{width:180px;font-variant-numeric:tabular-nums} a.mono{font-family:monospace}</style></head><body>
+a.tabular{width:180px;font-variant-numeric:tabular-nums} a.mono{font-family:monospace}
+a.right{width:260px;text-align:right} a.centre{width:260px;text-align:center}</style></head><body>
 <nav id="nav"><div class="row" id="slot0"></div><div class="row" id="slot1"></div><div class="row" id="slot2"></div></nav>
 <script>
 const CELLS=${JSON.stringify(CELLS)}, OTHERS=${JSON.stringify(OTHERS)};

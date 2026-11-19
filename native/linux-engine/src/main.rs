@@ -54,7 +54,7 @@ const USAGE: &str = "usage: cua-engine server [--mouse-size-px <n>] [--desktop s
        [--window-calls <W>] [--window-bytes <R>] [--call-reservation <bytes>] [--slack-nodes <n>]
        [--retention per-request|session|none] [--settle-ms <ms>] [--capture-wait damage|fixed|quiet]
        [--teardown-ms <ms>] [--exit-settle-ms <ms>] [--paste-settle-ms <ms>] [--key-pace-ms <ms>] [--path-step-ms <ms>] [--drag-step-ms <ms> | --drag-step-us <µs>] [--drag-press-dwell-ms <ms>]
-       [--drag-release-dwell-ms <ms>] [--drag-dnd-hold-ms <ms>] [--drag-dnd-after-take-ms <ms>] [--drag-handle-idle-ms <ms>] [--dnd-cancel-after-release] [--dnd-defer-take]
+       [--drag-release-dwell-ms <ms>] [--drag-dnd-hold-ms <ms>] [--drag-dnd-final-hold-ms <ms> [--drag-dnd-final-hold-from press|release]] [--drag-dnd-after-take-ms <ms>] [--drag-handle-idle-ms <ms>] [--dnd-cancel-after-release] [--dnd-defer-take]
        [--drag-dnd-release-at-accept] [--drag-ignore-cover] [--ignore-cover] [--ignore-pointer] [--drop-no-settle]
        [--targets-wait-ms <ms>] [--focus-ack-ms <ms>] [--stats]
        cua-engine launcher-shim <parent pid> <program> [args...]
@@ -93,6 +93,8 @@ fn default_config() -> Config {
         dnd_cancel_late: false,
         dnd_defer_take: false,
         dnd_hold: crate::dnd::TAKE_HOLD_AFTER_PRESS,
+        dnd_final_hold: None,
+        dnd_final_hold_from: dnd::HoldFrom::Release,
         dnd_after_take: crate::dnd::RELEASE_AFTER_TAKE,
         targets_wait: None,
         focus_ack: focus_ack::FOCUS_ACK,
@@ -242,6 +244,16 @@ fn parse_args(args: &[String]) -> Result<Command, String> {
             "--drag-press-dwell-ms" => fixed_drag(&mut cfg).press = Duration::from_millis(number(value, arg)?),
             "--drag-release-dwell-ms" => fixed_drag(&mut cfg).release = Duration::from_millis(number(value, arg)?),
             "--drag-dnd-hold-ms" => cfg.dnd_hold = Duration::from_millis(number(value, arg)?),
+            "--drag-dnd-final-hold-ms" => {
+                cfg.dnd_final_hold = Some(Duration::from_millis(number(value, arg)?)).filter(|bound| !bound.is_zero())
+            }
+            "--drag-dnd-final-hold-from" => {
+                cfg.dnd_final_hold_from = match value.map(String::as_str) {
+                    Some("press") => dnd::HoldFrom::Press,
+                    Some("release") => dnd::HoldFrom::Release,
+                    _ => return Err("--drag-dnd-final-hold-from is press or release".into()),
+                }
+            }
             "--drag-dnd-after-take-ms" => cfg.dnd_after_take = Duration::from_millis(number(value, arg)?),
             "--drag-handle-idle-ms" => cfg.handle_idle = Duration::from_millis(number(value, arg)?),
             "--targets-wait-ms" => cfg.targets_wait = Some(Duration::from_millis(number(value, arg)?)),
@@ -599,6 +611,41 @@ mod tests {
             !cfg.drop_settle,
             "measurement only: the release as linux-engine-v0.4.0 judged it"
         );
+    }
+
+    #[test]
+    fn the_final_hold_is_off_unless_its_development_flag_gives_it_a_bound() {
+        let Ok(Command::Server(cfg)) = parse_args(&args(&["server"])) else {
+            panic!()
+        };
+        assert_eq!(cfg.dnd_final_hold, None, "shipped behaviour unchanged");
+        let Ok(Command::Server(cfg)) = parse_args(&args(&["server", "--drag-dnd-final-hold-ms", "150"])) else {
+            panic!()
+        };
+        assert_eq!(cfg.dnd_final_hold, Some(Duration::from_millis(150)));
+        assert_eq!(
+            cfg.dnd_final_hold_from,
+            dnd::HoldFrom::Release,
+            "counted from where the release would come"
+        );
+        let Ok(Command::Server(cfg)) = parse_args(&args(&["server", "--drag-dnd-final-hold-ms", "0"])) else {
+            panic!()
+        };
+        assert_eq!(cfg.dnd_final_hold, None, "a bound of 0 is no hold");
+        let Ok(Command::Server(cfg)) = parse_args(&args(&[
+            "server",
+            "--drag-dnd-final-hold-from",
+            "press",
+            "--drag-dnd-final-hold-ms",
+            "300",
+        ])) else {
+            panic!()
+        };
+        assert_eq!(
+            (cfg.dnd_final_hold, cfg.dnd_final_hold_from),
+            (Some(Duration::from_millis(300)), dnd::HoldFrom::Press)
+        );
+        assert!(parse_args(&args(&["server", "--drag-dnd-final-hold-from", "path"])).is_err());
     }
 
     #[test]

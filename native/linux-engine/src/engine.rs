@@ -76,6 +76,14 @@ pub struct Config {
     /// none came by the path's end (`dnd::TAKE_HOLD_AFTER_PRESS`; `--drag-dnd-hold-ms`, measurement only, sets another,
     /// 0 none).
     pub dnd_hold: std::time::Duration,
+    /// Development only (`--drag-dnd-final-hold-ms`, M5's candidate for 0.4.2, ruling 886 (i); None, the default, no
+    /// hold): a drag whose source is a Chromium-family window keeps its button down once more where it would be released
+    /// with no take, until this bound after the press or after that point (`dnd_final_hold_from`) or its take, so a
+    /// renderer that starts its drag and drop late finds the button still down (`pointer.rs` `final_hold_for`; a
+    /// handle's end, `handle.rs`).
+    pub dnd_final_hold: Option<std::time::Duration>,
+    /// What the final hold's bound counts from (`--drag-dnd-final-hold-from`): where the release would come, or the press.
+    pub dnd_final_hold_from: crate::dnd::HoldFrom,
     /// How long after a Chromium drag source's take a drag the engine lets drop is released at the soonest
     /// (`dnd::RELEASE_AFTER_TAKE`; `--drag-dnd-after-take-ms`, measurement only, sets another, 0 none).
     pub dnd_after_take: std::time::Duration,

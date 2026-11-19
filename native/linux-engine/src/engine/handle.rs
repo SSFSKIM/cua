@@ -163,6 +163,8 @@ pub(super) struct Handle {
     pacing: DragPacing,
     /// Button 1 went down at the start (false for a move with no start, which presses nothing).
     pressed: bool,
+    /// When it went down: the final hold counted from the press counts from it.
+    pressed_at: Option<Instant>,
     /// The top-level window under the start point.
     target: Option<Window>,
     /// Where the real pointer was last put: the start, then each move's end, on the screen.
@@ -184,6 +186,7 @@ impl Handle {
         Handle {
             pacing,
             pressed: false,
+            pressed_at: None,
             target: None,
             asked: (0, 0),
             holding: None,
@@ -464,6 +467,7 @@ impl Engine {
         let mut handle = Handle {
             pacing,
             pressed: false,
+            pressed_at: None,
             target,
             asked: on_screen((px, py), screen_size(&self.x)),
             holding: None,
@@ -518,6 +522,7 @@ impl Engine {
             }
             Desktop::motion(&self.x, px, py)?;
             handle.pressed = true;
+            handle.pressed_at = Some(Instant::now());
             Desktop::button(&self.x, 1, true)
         })();
         if let Err(error) = started {
@@ -570,6 +575,26 @@ impl Engine {
     /// request put it, else success.
     fn release_handle(&mut self, mut handle: Handle) -> Released {
         let pacing = handle.pacing;
+        // the final hold (ruling 886 (i), `Config::dnd_final_hold`): a Chromium handle whose source has not taken
+        // `XdndSelection` by its end keeps the button down once more for the take, so a renderer that starts its drag
+        // and drop after the last move finds it still down; a take then is a drag and drop under way, settled and judged
+        // below as any take before the end is
+        let mut held_take = false;
+        if let (Some(bound), Some(pressed_at), true) =
+            (self.cfg.dnd_final_hold, handle.pressed_at, handle.after.is_some())
+            && let Some((watch, holding)) = handle.holding.as_mut()
+            && !watch.before_release(holding).is_ok_and(|held| held.taken)
+        {
+            let hold = super::pointer::FinalHold {
+                bound,
+                from: self.cfg.dnd_final_hold_from,
+            };
+            let (seen, record) = hold.wait(pressed_at, || {
+                watch.before_release(holding).is_ok_and(|held| held.taken)
+            });
+            held_take = seen;
+            self.extra.insert("final_hold".into(), record);
+        }
         // an Electron source whose drag and drop has begun: its application asked where it has got to before the rest,
         // and again after the visit that follows it (`drop_settle::Settle`), each waited for at most
         // `drop_settle::SYNC_BOUND`, with a second rest when the first answer came late (ruling 3a). A drag loop that
@@ -578,7 +603,7 @@ impl Engine {
         let settling = self.cfg.drop_settle
             && handle.pressed
             && !pacing.held_rest.is_zero()
-            && matches!(&handle.cursor, Some(Ok(cursor)) if cursor.take_seen());
+            && matches!(&handle.cursor, Some(Ok(cursor)) if held_take || cursor.take_seen());
         let before_rest = match handle.cursor.as_mut() {
             Some(Ok(cursor)) if settling => Some(cursor.sync_and_rest(pacing.held_rest)),
             _ => {

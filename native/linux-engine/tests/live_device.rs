@@ -1276,6 +1276,342 @@ fn a_take_after_a_short_path_s_end_is_held_for_and_its_floor_filled_with_motions
     }
 }
 
+/// The final hold's bound in the tests (`--drag-dnd-final-hold-ms`, a development option, off by default).
+const FINAL_HOLD: &str = "200";
+
+/// The final hold (ruling 886 (i), M5's candidate for 0.4.2): a Chromium renderer that starts its drag and drop only
+/// after the press hold has run out (arm64's V5 at H⁵: dragstart 47-108 ms after the engine's release, which Chrome then
+/// refused, its button already up) finds the button still down when the drag holds once more for its take, the bound
+/// long, after everything that came before its release. A take during it is a drag and drop under way, which gets the
+/// floor after the take as any take does and drops; one after the bound, or none, is released when the bound runs out,
+/// answered as before. Off (the default), the same source's take never comes. On every route that lets a drop land:
+/// the background route in front, the foreground route (dedicated), and the desktop route.
+#[test]
+fn a_final_hold_keeps_a_chromium_drag_s_button_down_for_a_take_that_comes_after_the_press_hold() {
+    // 40 px: the path ends about 20 ms after the press, the press hold at 250 ms
+    let path = json!([{"x": 20, "y": 20}, {"x": 60, "y": 20}]);
+    let routes: [(&[&str], bool); 3] = [(&[], false), (&["--desktop", "dedicated"], false), (&[], true)];
+    let drag = |engine: &mut Engine, window: Window, windowless: bool| {
+        let request = if windowless {
+            json!({"path": path})
+        } else {
+            json!({"window": {"id": window}, "path": path})
+        };
+        let started = Instant::now();
+        let answer = engine.request("drag", request);
+        (answer, started.elapsed())
+    };
+    let place = |window: Window, windowless: bool| {
+        if windowless { managed(window) } else { in_front(window) }
+    };
+    for (args, windowless) in routes {
+        let on: Vec<&str> = args
+            .iter()
+            .copied()
+            .chain(["--drag-dnd-final-hold-ms", FINAL_HOLD])
+            .collect();
+        let what = format!("{args:?}{}", if windowless { " windowless" } else { "" });
+        // off: released at the press hold's end, before the take is due, so the source never takes
+        let (window, stop, recorder) = drag_source(OnRelease::TakesAfter(Duration::from_millis(330)));
+        place(window, windowless);
+        let mut engine = Engine::start_with(args);
+        let (answer, _) = drag(&mut engine, window, windowless);
+        set_active_window(None);
+        assert_eq!(answer, Ok(Value::Null), "{what}: off, a plain drag's answer");
+        sleep(SETTLE);
+        stop.send(()).unwrap();
+        recorder.join().unwrap();
+        let whole = PRESS_TO_RELEASE.lock().unwrap().expect("a press and a release");
+        assert!(
+            whole < Duration::from_millis(320),
+            "{what}: off, released {whole:?} after the press"
+        );
+        assert!(
+            TAKE_TO_RELEASE.lock().unwrap().is_none(),
+            "{what}: off, the button was up when the take was due"
+        );
+        drop(engine);
+
+        // on: the take during the final hold, then the floor after it, ending on the path's last sample
+        let (window, stop, recorder) = drag_source(OnRelease::TakesAfter(Duration::from_millis(330)));
+        place(window, windowless);
+        let mut engine = Engine::start_with(&on);
+        let (answer, _) = drag(&mut engine, window, windowless);
+        set_active_window(None);
+        assert_eq!(answer, Ok(Value::Null), "{what}: on, a drop answers success");
+        sleep(SETTLE);
+        stop.send(()).unwrap();
+        recorder.join().unwrap();
+        let after_take = TAKE_TO_RELEASE
+            .lock()
+            .unwrap()
+            .expect("the source took XdndSelection during the final hold");
+        assert!(
+            after_take >= Duration::from_millis(345) && after_take < Duration::from_millis(600),
+            "{what}: released {after_take:?} after the take"
+        );
+        let motions = AFTER_TAKE_MOTIONS.lock().unwrap().clone();
+        assert!(
+            motions.len() >= 20,
+            "{what}: the floor filled with motions: {motions:?}"
+        );
+        assert_eq!(motions.last(), Some(&(60, 20)), "{what}: ending on the last sample");
+        drop(engine);
+
+        // on, a take due after the bound: released when the bound runs out, the take never comes, a plain drag's answer
+        let (window, stop, recorder) = drag_source(OnRelease::TakesAfter(Duration::from_millis(560)));
+        place(window, windowless);
+        let mut engine = Engine::start_with(&on);
+        let (answer, answered) = drag(&mut engine, window, windowless);
+        set_active_window(None);
+        assert_eq!(answer, Ok(Value::Null), "{what}: on, no take by the bound");
+        sleep(SETTLE);
+        stop.send(()).unwrap();
+        recorder.join().unwrap();
+        let whole = PRESS_TO_RELEASE.lock().unwrap().expect("a press and a release");
+        assert!(
+            whole >= Duration::from_millis(445) && whole < Duration::from_millis(540),
+            "{what}: on, released {whole:?} after the press: the press hold's 250 ms and the final hold's 200"
+        );
+        assert!(
+            answered >= Duration::from_millis(445),
+            "{what}: answered after {answered:?}"
+        );
+        assert!(TAKE_TO_RELEASE.lock().unwrap().is_none());
+        assert!(
+            AFTER_TAKE_MOTIONS.lock().unwrap().is_empty(),
+            "{what}: keepalives only after a take"
+        );
+        drop(engine);
+
+        // on, a source that never takes: the same release, the bound's whole length added
+        let (window, stop, recorder) = drag_source(OnRelease::NeverTakes);
+        place(window, windowless);
+        let mut engine = Engine::start_with(&on);
+        let (answer, _) = drag(&mut engine, window, windowless);
+        set_active_window(None);
+        assert_eq!(answer, Ok(Value::Null), "{what}: on, an ordinary drag");
+        sleep(SETTLE);
+        stop.send(()).unwrap();
+        recorder.join().unwrap();
+        let whole = PRESS_TO_RELEASE.lock().unwrap().expect("a press and a release");
+        assert!(
+            whole >= Duration::from_millis(445) && whole < Duration::from_millis(540),
+            "{what}: on, never taken, released {whole:?} after the press"
+        );
+    }
+}
+
+/// The final hold on a guarded drag (shared mode, Chrome not in front: V5's device cancel cell, whose path has no press
+/// hold): a take during it is seen at the last look and cancelled before the drop, Escape and then the release, and the
+/// drag refused with the drag-and-drop sentence; off, the same source's take never comes and the drag answers as a plain
+/// one; a take due after the bound never comes either, the release once the bound ran out.
+#[test]
+fn a_final_hold_lets_a_guarded_drag_see_a_late_take_and_cancel_it_before_the_drop() {
+    let path = json!([{"x": 20, "y": 20}, {"x": 60, "y": 20}]);
+    let on = ["--drag-dnd-final-hold-ms", FINAL_HOLD];
+    // off: released at the path's end, before the take is due
+    let (window, stop, recorder) = drag_source(OnRelease::TakesAfter(Duration::from_millis(100)));
+    focus_nothing();
+    let mut engine = Engine::start();
+    assert_eq!(
+        engine.request("drag", json!({"window": {"id": window}, "path": path})),
+        Ok(Value::Null)
+    );
+    sleep(SETTLE);
+    stop.send(()).unwrap();
+    assert_eq!(
+        recorder.join().unwrap(),
+        vec![
+            Input::ButtonPress { button: 1, sent: true },
+            Input::ButtonRelease { button: 1, sent: true },
+        ],
+        "off: a plain drag"
+    );
+    assert!(TAKE_TO_RELEASE.lock().unwrap().is_none(), "off: no take");
+    drop(engine);
+
+    // on: the take during the hold, cancelled in time
+    let (window, stop, recorder) = drag_source(OnRelease::TakesAfter(Duration::from_millis(100)));
+    focus_nothing();
+    let mut engine = Engine::start_with(&on);
+    let app = app_of(&mut engine, window);
+    assert_eq!(
+        engine.request("drag", json!({"window": {"id": window}, "path": path})),
+        Err(format!(
+            "{app} began a drag and drop, which changes the desktop; it was cancelled before the drop, so nothing was \
+             dropped. Use a dedicated desktop, or activate the window first"
+        ))
+    );
+    sleep(SETTLE);
+    stop.send(()).unwrap();
+    assert_eq!(
+        recorder.join().unwrap(),
+        vec![
+            Input::ButtonPress { button: 1, sent: true },
+            Input::KeyPress { sent: true },
+            Input::KeyRelease { sent: true },
+            Input::ButtonRelease { button: 1, sent: true },
+        ],
+        "on: Escape before the release"
+    );
+    drop(engine);
+
+    // on, a take due after the bound: released when it runs out, a plain drag's answer
+    let (window, stop, recorder) = drag_source(OnRelease::TakesAfter(Duration::from_millis(320)));
+    focus_nothing();
+    let mut engine = Engine::start_with(&on);
+    assert_eq!(
+        engine.request("drag", json!({"window": {"id": window}, "path": path})),
+        Ok(Value::Null)
+    );
+    sleep(SETTLE);
+    stop.send(()).unwrap();
+    recorder.join().unwrap();
+    let whole = PRESS_TO_RELEASE.lock().unwrap().expect("a press and a release");
+    assert!(
+        whole >= Duration::from_millis(195) && whole < Duration::from_millis(300),
+        "on: released {whole:?} after the press"
+    );
+    assert!(
+        TAKE_TO_RELEASE.lock().unwrap().is_none(),
+        "on: the take after the bound never came"
+    );
+}
+
+/// The final hold counted from the press (`--drag-dnd-final-hold-from press`): a drag with no take is not released
+/// before the bound after its press, a take first ending it as any take does; a drag that already lasts that long, here
+/// the hold after the press with a shorter bound, pays nothing more. On a drag the engine lets drop and on a guarded one.
+#[test]
+fn a_final_hold_from_the_press_releases_a_drag_with_no_take_no_sooner_than_the_bound_after_its_press() {
+    let path = json!([{"x": 20, "y": 20}, {"x": 60, "y": 20}]);
+    let from_press = |bound: &'static str| ["--drag-dnd-final-hold-from", "press", "--drag-dnd-final-hold-ms", bound];
+    let released_after_press = |window: Window, args: &[&str], in_front_of: bool| {
+        let mut engine = Engine::start_with(args);
+        let answer = engine.request("drag", json!({"window": {"id": window}, "path": path}));
+        if in_front_of {
+            set_active_window(None);
+        }
+        answer
+    };
+    // in front: a take at 330 ms is held for and dropped; none, the release at 400 ms after the press
+    let (window, stop, recorder) = drag_source(OnRelease::TakesAfter(Duration::from_millis(330)));
+    in_front(window);
+    assert_eq!(released_after_press(window, &from_press("400"), true), Ok(Value::Null));
+    sleep(SETTLE);
+    stop.send(()).unwrap();
+    recorder.join().unwrap();
+    assert!(
+        TAKE_TO_RELEASE.lock().unwrap().is_some(),
+        "the take came before the release"
+    );
+    for (bound, at_least, below) in [("400", 395, 470), ("100", 245, 320)] {
+        let (window, stop, recorder) = drag_source(OnRelease::NeverTakes);
+        in_front(window);
+        assert_eq!(released_after_press(window, &from_press(bound), true), Ok(Value::Null));
+        sleep(SETTLE);
+        stop.send(()).unwrap();
+        recorder.join().unwrap();
+        let whole = PRESS_TO_RELEASE.lock().unwrap().expect("a press and a release");
+        assert!(
+            whole >= Duration::from_millis(at_least) && whole < Duration::from_millis(below),
+            "bound {bound} from the press: released {whole:?} after it"
+        );
+    }
+    // guarded: a take at 150 ms cancelled before the drop; none, the release at 300 ms after the press
+    let (window, stop, recorder) = drag_source(OnRelease::TakesAfter(Duration::from_millis(150)));
+    focus_nothing();
+    assert!(
+        released_after_press(window, &from_press("300"), false).is_err(),
+        "cancelled and refused"
+    );
+    sleep(SETTLE);
+    stop.send(()).unwrap();
+    assert_eq!(
+        recorder.join().unwrap(),
+        vec![
+            Input::ButtonPress { button: 1, sent: true },
+            Input::KeyPress { sent: true },
+            Input::KeyRelease { sent: true },
+            Input::ButtonRelease { button: 1, sent: true },
+        ],
+        "Escape before the release"
+    );
+    let (window, stop, recorder) = drag_source(OnRelease::NeverTakes);
+    focus_nothing();
+    assert_eq!(released_after_press(window, &from_press("300"), false), Ok(Value::Null));
+    sleep(SETTLE);
+    stop.send(()).unwrap();
+    recorder.join().unwrap();
+    let whole = PRESS_TO_RELEASE.lock().unwrap().expect("a press and a release");
+    assert!(
+        whole >= Duration::from_millis(295) && whole < Duration::from_millis(370),
+        "guarded, from the press: released {whole:?} after it"
+    );
+}
+
+/// The final hold is a Chromium source's alone: a drag over another family's window is released as before.
+#[test]
+fn a_final_hold_leaves_a_drag_whose_source_is_not_chromium_alone() {
+    let mut engine = Engine::start_with(&["--drag-dnd-final-hold-ms", FINAL_HOLD]);
+    let (stop, listening) = held_listener("XTerm", (100, 100, 400, 300));
+    sleep(Duration::from_millis(100));
+    engine
+        .request("drag", json!({"path": [{"x": 150, "y": 150}, {"x": 190, "y": 150}]}))
+        .unwrap();
+    sleep(Duration::from_millis(100));
+    stop.send(()).unwrap();
+    let seen = listening.join().unwrap();
+    let pressed = seen.iter().find_map(|h| match h {
+        Held::Press(t) => Some(*t),
+        _ => None,
+    });
+    let released = seen.iter().find_map(|h| match h {
+        Held::Release(t) => Some(*t),
+        _ => None,
+    });
+    let (Some(pressed), Some(released)) = (pressed, released) else {
+        panic!("a press and a release: {seen:?}")
+    };
+    assert!(
+        released - pressed < 100,
+        "released {} ms after the press",
+        released - pressed
+    );
+}
+
+/// The final hold on a Chromium `drag_handle`'s end: the release waits, the bound long, for a take that has not come,
+/// so a renderer that starts its drag and drop after the last move finds the button still down; off, the release comes
+/// first and the take never does.
+#[test]
+fn a_final_hold_keeps_a_chromium_handle_s_button_down_at_its_end_for_a_late_take() {
+    for on in [false, true] {
+        let (window, stop, recorder) = drag_source(OnRelease::TakesAfter(Duration::from_millis(180)));
+        managed(window);
+        let mut engine = if on {
+            Engine::start_with(&["--drag-dnd-final-hold-ms", FINAL_HOLD])
+        } else {
+            Engine::start()
+        };
+        engine
+            .request("drag_handle", json!({"action": "start", "x": 20, "y": 20}))
+            .unwrap();
+        engine
+            .request("drag_handle", json!({"action": "move_to", "x": 60, "y": 20}))
+            .unwrap();
+        let _ = engine.request("drag_handle", json!({"action": "end"}));
+        sleep(SETTLE);
+        stop.send(()).unwrap();
+        recorder.join().unwrap();
+        assert_eq!(
+            TAKE_TO_RELEASE.lock().unwrap().is_some(),
+            on,
+            "final hold {on}: whether the take came before the release, released {:?} after the press",
+            *PRESS_TO_RELEASE.lock().unwrap()
+        );
+    }
+}
+
 /// What a [`coalescing_source`] dispatched: each motion it handed on (window-relative, with its button state), and when
 /// it took `XdndSelection` after the press (None: never).
 #[derive(Debug, Default)]

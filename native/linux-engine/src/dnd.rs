@@ -161,6 +161,29 @@ pub fn step_due(taken: Instant, after_take: Duration, done: usize, left: usize) 
 /// a shorter one that never takes (a text selection, a range) pays the rest of it. A take after it still misses, unseen.
 pub const TAKE_HOLD_AFTER_PRESS: Duration = Duration::from_millis(250);
 
+/// What the final hold's bound counts from (`--drag-dnd-final-hold-from`; development only, ruling 886 (i)): a
+/// Chromium source with no take where the drag would be released keeps its button down until the bound after this, or
+/// its take.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HoldFrom {
+    /// From where the drag would be released (the path's end, or the hold after the press): every drag with no take
+    /// pays the bound's whole length.
+    Release,
+    /// From the press: the renderer's lag runs from the motion that crosses its drag threshold, just after the press,
+    /// so a drag is not released before the bound after the press; one that already lasts that long pays nothing.
+    Press,
+}
+
+impl HoldFrom {
+    /// When the final hold ends with no take: `bound` after the press, or after `now`, where the release would be.
+    pub fn deadline(self, bound: Duration, pressed_at: Instant, now: Instant) -> Instant {
+        match self {
+            HoldFrom::Release => now + bound,
+            HoldFrom::Press => pressed_at + bound,
+        }
+    }
+}
+
 /// The longest the pointer rests between a take and the release (task 22): Chrome's drag loop sends its target a
 /// position only on a motion, and its target accepts only a position the renderer has answered, so a floor waited out
 /// without motion still drops nothing (a take on the path's last sample, or after it: 2 misses of 7 such drags).
@@ -909,6 +932,19 @@ mod tests {
         );
         let dues: Vec<Instant> = (0..=40).map(|done| step_due(taken, after, done, 40)).collect();
         assert!(dues.windows(2).all(|w| w[0] <= w[1]), "never earlier for a later step");
+    }
+
+    #[test]
+    fn the_final_hold_ends_its_bound_after_the_press_or_after_where_the_release_would_be() {
+        let pressed = Instant::now();
+        let bound = Duration::from_millis(300);
+        // the release would come 250 ms after the press (the hold after the press ran out)
+        let release = pressed + Duration::from_millis(250);
+        assert_eq!(HoldFrom::Release.deadline(bound, pressed, release), release + bound);
+        assert_eq!(HoldFrom::Press.deadline(bound, pressed, release), pressed + bound);
+        // a drag already longer than the bound: counted from the press, no hold is left
+        let long = pressed + Duration::from_millis(476);
+        assert!(HoldFrom::Press.deadline(bound, pressed, long) < long);
     }
 
     #[test]

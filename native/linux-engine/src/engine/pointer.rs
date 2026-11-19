@@ -337,6 +337,38 @@ pub(super) struct DragMeasure<'a> {
     /// watch is told it when the window manager takes that request (the flag), as a handle's release does (the
     /// whole-branch review of M4, P2).
     pub(super) drop_window_at_release: Option<(&'a mut Option<Window>, bool)>,
+    /// The final hold's record (`Config::dnd_final_hold`), when it ran: its bound and what it counts from, when it began
+    /// after the press, how long it waited, and whether the take came during it.
+    pub(super) final_hold: &'a mut Option<Value>,
+}
+
+/// A Chromium-family source's final hold (ruling 886 (i), `Config::dnd_final_hold`): its bound and what it counts from.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct FinalHold {
+    pub(super) bound: Duration,
+    pub(super) from: crate::dnd::HoldFrom,
+}
+
+impl FinalHold {
+    /// The button kept down where the drag would be released with no take, until `seen` answers that the source took
+    /// `XdndSelection` or the bound has passed (`pressed_at` the drag's press). Answers whether the take came, and the
+    /// hold's `--stats` record.
+    pub(super) fn wait(self, pressed_at: Instant, seen: impl FnMut() -> bool) -> (bool, Value) {
+        let ms = |d: Duration| d.as_secs_f64() * 1000.0;
+        let since = Instant::now();
+        let taken = crate::dnd::wait_for_take(seen, self.from.deadline(self.bound, pressed_at, since));
+        let record = json!({
+            "bound_ms": ms(self.bound),
+            "from": match self.from {
+                crate::dnd::HoldFrom::Release => "release",
+                crate::dnd::HoldFrom::Press => "press",
+            },
+            "start_after_press_ms": ms(since.saturating_duration_since(pressed_at)),
+            "waited_ms": ms(since.elapsed()),
+            "taken": taken,
+        });
+        (taken, record)
+    }
 }
 
 /// Whether a drop on `window` (a managed top-level) is confirmed by its activation request: its family's drop sends one
@@ -377,7 +409,10 @@ pub(super) fn wall_ms() -> f64 {
 /// Chromium-family drag), the press and the samples through Blink's drag threshold, at most [`PRESS_SAMPLES_MAX`], go
 /// out under one server grab ([`atomic_press`]), its watch begun just before the grab and ended just after the
 /// release, what it saw kept in `press.strays`. `after`, the drag's after-release watch, is told the instant the
-/// button went up and whether a take came before it.
+/// button went up and whether a take came before it. With `final_hold` (a Chromium-family source's,
+/// `Config::dnd_final_hold`), a drag with no take where it would be released holds its button down once more for one
+/// ([`FinalHold::wait`]): after the hold above, so a take then gets the floor and the settle as any take does; on a
+/// guarded drag, before the release dwell, so the last look sees a take then and cancels it before the drop.
 #[allow(clippy::too_many_arguments)]
 fn drag_along(
     x: &mut X11,
@@ -394,6 +429,7 @@ fn drag_along(
     pressing: PressAck,
     mut accept: Option<&mut crate::accept::CursorWatch>,
     after: Option<&LateWatch>,
+    final_hold: Option<FinalHold>,
     mut measure: DragMeasure<'_>,
 ) -> Result<()> {
     let held = route.acquire(x, keycodes)?;
@@ -525,6 +561,22 @@ fn drag_along(
                 }
                 waited = since.elapsed();
             }
+            // the final hold: still no take where the drag would be released, so the button stays down once more for
+            // one; a take during it is a drag and drop under way, which gets the floor and the settle below
+            if taken.is_none()
+                && let Some(final_hold) = final_hold
+            {
+                let (seen, record) = final_hold.wait(pressed_at, || {
+                    if let Some(cursor) = accept.as_deref_mut() {
+                        let _ = cursor.poll();
+                    }
+                    watch.started(x)
+                });
+                *measure.final_hold = Some(record);
+                if seen {
+                    taken = Some((Instant::now(), 0));
+                }
+            }
             // the floor after a take: what the path's steps left of it filled with motions, ending on the last sample
             let mut keepalives = 0;
             if let Some((at, _)) = taken
@@ -588,6 +640,16 @@ fn drag_along(
                 "keepalives": keepalives,
                 "refreshes": refreshes,
             }));
+        }
+        // the final hold on a guarded drag: no take so far, so the button stays down once more for one, which the last
+        // look then cancels before the drop
+        if let Some(final_hold) = final_hold
+            && let Some(guard) = guard.as_deref_mut()
+            && guard.looks()
+            && !guard.watch.started(x)
+        {
+            let (_, record) = final_hold.wait(pressed_at, || guard.watch.started(x));
+            *measure.final_hold = Some(record);
         }
         std::thread::sleep(pacing.release);
         // the last look before the release
@@ -1072,6 +1134,12 @@ impl Engine {
         };
         let mut wall = None;
         let mut accept_record = None;
+        // the final hold, for a drag whose source is a Chromium-family window (the window pressed into)
+        let final_hold = pressing_into.and(self.cfg.dnd_final_hold).map(|bound| FinalHold {
+            bound,
+            from: self.cfg.dnd_final_hold_from,
+        });
+        let mut final_hold_record = None;
         // the time field the drag's events carried at its end, beside the server's time read just after (M3.1: whether
         // a background event's time can run ahead of the server's)
         let mut times = None;
@@ -1112,6 +1180,7 @@ impl Engine {
                 pressing,
                 cursor.as_mut(),
                 after.as_ref(),
+                final_hold,
                 DragMeasure {
                     wall: &mut wall,
                     accept_record: &mut accept_record,
@@ -1120,6 +1189,7 @@ impl Engine {
                     settle: drop_settle.then_some(&mut settle),
                     release_point: xtest_route.then_some(&mut release_point),
                     drop_window_at_release: resolve_at_release.then_some((&mut drop_at_release, supported)),
+                    final_hold: &mut final_hold_record,
                 },
             );
             if let Some(event) = route.event_time()
@@ -1145,6 +1215,9 @@ impl Engine {
         }
         if let Some(scheduled) = scheduled {
             self.extra.insert("after_take".into(), scheduled);
+        }
+        if let Some(record) = final_hold_record {
+            self.extra.insert("final_hold".into(), record);
         }
         if let Some((press, release)) = wall {
             self.extra

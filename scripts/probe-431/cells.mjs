@@ -53,6 +53,14 @@ export const CELLS={
   // Chromium reads a 151-child group whole (smoke run 44520748737: no width cut on CfT or Electron), so Safari only.
   wideremount:{kind:'big',before:'Inbox',after:'Inbox',remount:'link',big:'wide',lanes:['safari']},
   capremount:{kind:'big',before:'Inbox',after:'Inbox',remount:'link',big:'cap'},
+  // Ruling 891's groups. #330's wide parent: the target first of 151 links in one group, and after the observation a new
+  // child of that group, a text, laid over the target (a page's own suggestion box) and hit at the point: as main
+  // (rule dL, newElementOverPoint, where the record holds the parent with every child). A data table, whose cells
+  // Chromium lists under both its rows and its columns, beside a link re-rendered whole (`tableremount`), or holding it
+  // in its first cell (`tablecellremount`): kept and landed, as main.
+  wideoverlay:{kind:'asMain',before:'Inbox',after:'Inbox',layout:'wide',overlay:true},
+  tableremount:{kind:'keep',before:'Inbox',after:'Inbox',remount:'link',table:'outside'},
+  tablecellremount:{kind:'keep',before:'Inbox',after:'Inbox',remount:'link',table:'cell'},
   inbox:{kind:'asMain',before:'Inbox',after:'Inbox (3)'},
   reltime:{kind:'asMain',before:'1 minute ago',after:'2 minutes ago'},
   shrink:{kind:'asMain',before:'Inbox (12)',after:'Inbox'},

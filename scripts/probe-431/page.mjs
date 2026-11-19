@@ -12,7 +12,7 @@ export const page=()=>`<!doctype html><html lang="en"><head><meta charset="utf-8
 button.l{border:0;margin:0;background:none;cursor:pointer;text-align:left} #far.on{margin-top:1600px} #far div{font:4px/5px sans-serif}
 a.tabular{width:180px;font-variant-numeric:tabular-nums} a.mono{font-family:monospace}
 a.right{width:260px;text-align:right} a.centre{width:260px;text-align:center}
-a.item{display:block;font:14px/20px sans-serif} div.tiny{font:3px/4px sans-serif;white-space:nowrap} div.tiny span{display:inline-block;margin-right:1px}</style></head><body>
+a.item{display:block;font:14px/20px sans-serif} table.grid{border-collapse:collapse} table.grid th,table.grid td{font:12px/16px sans-serif;padding:0 6px;border:1px solid #ccc} div.tiny{font:3px/4px sans-serif;white-space:nowrap} div.tiny span{display:inline-block;margin-right:1px}</style></head><body>
 <nav id="nav"></nav><div id="far"></div>
 <script>
 const CELLS=${JSON.stringify(CELLS)}, OTHERS=${JSON.stringify(OTHERS)}, FILLER=${JSON.stringify(FILLER)}, DEEP=${DEEP}, BIG=${JSON.stringify(BIG)}, WIDE=${WIDE};
@@ -110,11 +110,22 @@ function run(c){
         if(i===3)twins=[a];rows.push(a);list.append(a);
       }
       archive=null;slots[0].replaceChildren(list);
-    }else if(spec.big){
+    }else if(spec.table){
+      // A data table (a header row, so Chromium lists its cells under both its rows and its columns) beside the target
+      // (\`outside\`: the target alone in the first row, the table in the second), or holding it in its first cell.
+      const table=document.createElement('table');table.className='grid';
+      const tr=cells=>{const r=document.createElement('tr');r.append(...cells);return r;};
+      const cellOf=(tag,x)=>{const c=document.createElement(tag);if(typeof x==='string')c.textContent=x;else c.append(x);return c;};
+      table.append(tr(['A','B','C','D'].map(h=>cellOf('th',h))));
+      for(let r=0;r<3;r++)table.append(tr([0,1,2,3].map(k=>cellOf('td',spec.table==='cell'&&r===0&&k===0?target:'Cell '+r+k))));
+      archive=null;
+      if(spec.table==='cell')slots[0].replaceChildren(table);else slots[1].append(table);
+    }else if(spec.big||spec.layout==='wide'){
       // The target first in a container the record cannot hold whole: 150 more links running past the window (the width
       // rule's visible subset), or 59 shown groups of 100 small texts (the node cap inside it). The other rows stay empty.
-      const box=document.createElement('div');box.setAttribute('role','group');box.append(target);archive=null;
-      if(spec.big==='wide')for(let i=0;i<BIG.wide;i++){const a=document.createElement('a');a.href='#i'+i;a.className='item';a.textContent='Item '+i;box.append(a);}
+      // With \`overlay\` (#330's wide parent), the same 150 links, and \`mark\` adds a text over the target as their sibling.
+      const box=document.createElement('div');box.setAttribute('role','group');box.style.position='relative';box.append(target);archive=null;mover=box;
+      if((spec.big||spec.layout)==='wide')for(let i=0;i<BIG.wide;i++){const a=document.createElement('a');a.href='#i'+i;a.className='item';a.textContent='Item '+i;box.append(a);}
       else for(let g=0;g<BIG.groups;g++){
         const group=document.createElement('div');group.setAttribute('role','group');group.className='tiny';
         for(let i=0;i<BIG.each;i++){const s=document.createElement('span');s.textContent='x';group.append(s);}
@@ -131,6 +142,12 @@ function run(c){
     const spec=CELLS[cell],before=geometry(),clicksBeforeMark=clicks.length;
     if(spec.move){slots[0].replaceChildren(archive);slots[1].replaceChildren(target);}
     else if(spec.twin==='list')slots[0].remove();
+    else if(spec.overlay){
+      // A new element of the wide parent, over the target: a text that takes the pointer (a page's own suggestion box).
+      const r=target.getBoundingClientRect(),o=document.createElement('div');o.id='overlay';
+      o.style.cssText='position:absolute;left:0;top:0;width:'+r.width+'px;height:'+r.height+'px;padding:14px 4px;box-sizing:border-box;font:20px/28px sans-serif;background:#fff';
+      o.textContent='Suggestion';mover.append(o);
+    }
     else if(spec.twin==='swap'){
       target.style.cssText='position:absolute;left:0;top:128px';
       const n=control('twin',spec.before,{control:spec.swap});twins=[n];slots[0].prepend(n);

@@ -337,3 +337,19 @@ All 100 candidate positives typed exactly and length-confirmed; all 100 baseline
 | AppKit | 20/20 | 0/30 | 15/15 | Pass / pass | 0 / 0 | 907/920 (15) | 905/945 (15) |
 
 Timings are last native post to IPC arrival for concealed mutation refusals. The Electron parity pre-input snapshot refusal is not in the long timing sample. Safari's long p95 is one **1204 ms** long drop that refused `lengthMismatch`; it is informational, not a gate or evidence of a consistent length effect. AppKit ran frontmost; the other four lanes were background. CfT was 156.0.8078.80 (wave nine used 157.0.8103.78).
+
+## Final failure and privacy rerun
+
+[Wave-eleven hosted run](https://github.com/SSFSKIM/cua/actions/runs/44423869307), workflow `422774845`, fix `8bc291f1eb2a9297c28636b1c97122619719904f`, main `517ab5430a3a81718910b030488ba8d855087b21`, kit `7dad9a9cd3661adce34db82194a4ebc509513feb`. The five `sampled-hold` stock lanes repeat the 30 concealed and 15 literal mutations per lane plus five AppKit selection controls. Wave-ten positives carry over under ruling 856; the unchanged kit repeats them rather than adding a new execution mode. Post-input parity assesses the reason distributions within each mutation, with any pre-input snapshot refusals reported separately. Timing is informational.
+
+**All five jobs passed.** Every one of the 150 concealed mutations refused `lengthMismatch`, so the short and long reason distributions matched within each mutation. All 75 literal mutations refused with the expected length/caret reason. There were no wrong confirmations, unexpected pre-input snapshot refusals, `lateReply` keys, privacy flags or invalid setups. The five separate AppKit selection controls posted, delivered exactly and refused `lengthUnreadable` (p50/p95 **1/3 ms**, n=5). The repeated positive cells also passed: all 100 fix positives delivered exactly and length-confirmed; all 100 baseline positives delivered exactly and refused `secure`.
+
+| Lane | False adds | Drops refused | `fieldUnreadable` / `fieldChanged` | Post-input reason parity | Privacy / invalid | Short p50/p95 ms (n) | Long p50/p95 ms (n) |
+| --- | ---: | ---: | ---: | --- | ---: | ---: | ---: |
+| CfT | 0/30 | 15/15 | 0 / 0 | Pass | 0 / 0 | 904/919 (15) | 905/960 (15) |
+| Electron default | 0/30 | 15/15 | 0 / 0 | Pass | 0 / 0 | 904/922 (15) | 902/923 (15) |
+| Electron parity | 0/30 | 15/15 | 0 / 0 | Pass | 0 / 0 | 912/927 (15) | 906/926 (15) |
+| Safari large | 0/30 | 15/15 | 0 / 0 | Pass | 0 / 0 | 910/920 (15) | 907/919 (15) |
+| AppKit | 0/30 | 15/15 | 0 / 0 | Pass | 0 / 0 | 906/917 (15) | 903/918 (15) |
+
+The timing samples span last native post to IPC arrival; each length cohort combines ten adds and five drops. AppKit ran frontmost; the other lanes ran in the background.

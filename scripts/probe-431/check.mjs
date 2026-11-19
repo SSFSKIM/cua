@@ -31,7 +31,7 @@ export function findLink(nodes,text,{first=false,role='AXLink'}={}){
 
 // How many controls reading the label a twin cell prepares in what the observation can read: the target and its twin
 // (`move`), the three rows (`list`), the target alone where the twin lies outside the walk (`cap`, `deep`).
-export const LABELLED={move:2,list:3,cap:1,deep:1};
+export const LABELLED={move:2,list:3,cap:1,deep:1,swap:1,cover:2,row:2,wide:1};
 // Whether an observation of a twin cell is the one the cell needs (every other cell: true):
 // - the target is the control found: exactly LABELLED of the label's carriers were emitted (AXStaticText for links,
 //   AXButton for buttons), so an observation that missed the target never aims at the next row;
@@ -52,6 +52,7 @@ export function uncoveredBy(sky,spec,found,{role='AXLink'}={}){
   if(!spec.twin)return null;
   const carrier=role==='AXLink'?'AXStaticText':role;
   if(nodes.filter(n=>framed(n)&&n.role===carrier&&reads(n,spec.before)).length!==LABELLED[spec.twin])return 'count';
+  if(spec.twin==='wide')return nodes.some(n=>Number.isInteger(n?.shown?.count)&&n.shown.count<n.shown.of)?null:'cut';
   if(spec.twin!=='cap'&&spec.twin!=='deep')return null;
   const t=sky.truncated;
   if(spec.twin==='cap'?!(t?.count>0&&sky.timings?.nodeCapHit===true):!(t?.depth>0))return 'cut';
@@ -178,7 +179,7 @@ export function coverage(rows,{planned,heads,units=UNITS}){
 
 export const MIN_PAIRS=10;
 // The ruling-881 twins (absent from the record), gated apart from the twins the record holds so each answer reads alone.
-export const UNRECORDED=new Set(['twincap','twindeep']);
+export const UNRECORDED=new Set(['twincap','twindeep','twinwide']);
 // The qualification gates (two heads). A row pairs with the other head's row of the same unit and repetition.
 export function gates(rows,{coverage:cov,units=UNITS}){
   const inRun=new Set(units.map(unitKey));
@@ -195,7 +196,7 @@ export function gates(rows,{coverage:cov,units=UNITS}){
     {fixRows:of(fix,u).length,missed:miss.filter(r=>unitKey(r)===unitKey(u)).length,fix:verdictTally(of(fix,u)),main:verdictTally(of(main,u))}]));
   // A twin cell: refused as nodeGone, nothing reaching the target or any other control (`refused`, which a click on the
   // twin can never be: any event on another control is `wrong-target`).
-  const twinOk=r=>r.verdict==='refused'&&r.guard?.reason==='nodeGone';
+  const twinOk=r=>r.verdict==='refused'&&(CELLS[r.cell].reasons??['nodeGone']).includes(r.guard?.reason);
   const twinGate=pred=>{
     const list=fix.filter(r=>pred(r.cell)),miss=list.filter(r=>!twinOk(r));
     return {pass:!unitsWhere(pred).length||list.length>0&&everyUnit(pred)&&miss.length===0,rows:list.length,failed:miss.length,

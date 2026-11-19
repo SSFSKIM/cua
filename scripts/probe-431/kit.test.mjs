@@ -37,7 +37,7 @@ test('plans: ten per unit to measure, twenty per head interleaved to qualify', (
   assert.deepEqual([...new Set(q.filter((_, i) => i % 2 === 0).map(r => r.head))].sort(), ['fix', 'main']);
   for (const c of Object.values(CELLS)) assert.ok(['twin', 'keep', 'big', 'asMain'].includes(c.kind));
   // A twin carries the target's label, so the topmost of those reading it is the target.
-  for (const c of Object.values(CELLS)) if (c.kind === 'twin') assert.ok(c.before === c.after && ['move', 'list', 'cap', 'deep'].includes(c.twin));
+  for (const c of Object.values(CELLS)) if (c.kind === 'twin') assert.ok(c.before === c.after && ['move', 'list', 'cap', 'deep', 'swap', 'cover', 'row', 'wide'].includes(c.twin));
   // Every cell's text before and after is distinct from the other links', so the observation finds it alone.
   for (const c of Object.values(CELLS)) for (const t of [c.before, c.after]) assert.ok(!['Archive', 'Drafts'].includes(t));
 });
@@ -209,8 +209,11 @@ test('gates pass a fix that refuses every twin and answers as main elsewhere, an
   const g = gates(ok, {coverage: cov});
   assert.ok(Object.values(g).every(x => x.pass), JSON.stringify(g));
   assert.equal(g.reproduced.result, 'reproduced');
-  assert.equal(g.twinRefused.mainWrong, 20 * 5); assert.equal(g.twinUnrecorded.mainWrong, 20 * 4);
-  assert.equal(g.noWrongTarget.mainWrong, 9 * 20); assert.deepEqual(g.guardMs.fix, {n: ok.length / 2, p50: 4, p95: 4, max: 4});
+  assert.equal(g.twinRefused.mainWrong, 20 * 13); assert.equal(g.twinUnrecorded.mainWrong, 20 * 6);
+  // A moved target's own handle refuses frameMoved, which the swap cells count with nodeGone; no other twin does.
+  const swapMoved = rows(good, r => r.head === 'fix' && r.cell.startsWith('twinswap') ? {guard: {verdict: 'refused', reason: 'frameMoved'}} : {});
+  assert.equal(gates(swapMoved, {coverage: cov}).twinRefused.pass, true);
+  assert.equal(g.noWrongTarget.mainWrong, 19 * 20); assert.deepEqual(g.guardMs.fix, {n: ok.length / 2, p50: 4, p95: 4, max: 4});
   // A twin kept (on the twin, or anywhere), or refused for another reason, fails its gate; a click on it fails both.
   const landed = gates(rows(at('twindel', 'link', 3, 'wrong-target')), {coverage: cov});
   assert.equal(landed.twinRefused.pass, false); assert.equal(landed.twinRefused.fixWrong, 1); assert.equal(landed.noWrongTarget.pass, false);

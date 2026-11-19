@@ -5,7 +5,7 @@
 // the click, applies the cell's change (cells.mjs). Every pointer event the page receives is logged with the control it
 // reached (`target`, `archive`, `drafts`, `twin`, `other` or `none`): for the twin cells, every control with the
 // target's label that is not the target is `twin`.
-import {CELLS,OTHERS,FILLER,DEEP,BIG} from './cells.mjs';
+import {CELLS,OTHERS,FILLER,DEEP,BIG,WIDE} from './cells.mjs';
 
 export const page=()=>`<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Links</title>
 <style>body{font:16px sans-serif;margin:20px} .row{height:64px} .l{display:inline-block;padding:14px 32px;font:20px/28px sans-serif;color:#00c;white-space:nowrap}
@@ -15,11 +15,11 @@ a.right{width:260px;text-align:right} a.centre{width:260px;text-align:center}
 a.item{display:block;font:14px/20px sans-serif} div.tiny{font:3px/4px sans-serif;white-space:nowrap} div.tiny span{display:inline-block;margin-right:1px}</style></head><body>
 <nav id="nav"></nav><div id="far"></div>
 <script>
-const CELLS=${JSON.stringify(CELLS)}, OTHERS=${JSON.stringify(OTHERS)}, FILLER=${JSON.stringify(FILLER)}, DEEP=${DEEP}, BIG=${JSON.stringify(BIG)};
+const CELLS=${JSON.stringify(CELLS)}, OTHERS=${JSON.stringify(OTHERS)}, FILLER=${JSON.stringify(FILLER)}, DEEP=${DEEP}, BIG=${JSON.stringify(BIG)}, WIDE=${WIDE};
 const nav=document.getElementById('nav'), far=document.getElementById('far');
 const doc=self.crypto.randomUUID(), nonce=doc.split('-')[0];
 document.title='Links '+nonce;
-let trial=null, cell=null, slots=[], target=null, archive=null, drafts=null, twins=[], marked=null, clicks=[];
+let trial=null, cell=null, slots=[], target=null, archive=null, drafts=null, twins=[], marked=null, clicks=[], rows=[];
 // What a twin cell moves into the target's row (the twin, or the deep chain holding it).
 let mover=null;
 const post=o=>fetch('/answer',{method:'POST',body:JSON.stringify({doc,...o})});
@@ -71,6 +71,34 @@ function run(c){
       twins=[control('twin',spec.before,spec)];let inner=twins[0];
       for(let i=0;i<DEEP;i++){const d=document.createElement('div');d.setAttribute('role','group');d.append(inner);inner=d;}
       mover=inner;slots[1].append(mover);slots[2].append(archive);
+    }else if(spec.twin==='swap'){
+      // The target alone in its row; mark moves it two rows down (absolutely, so its element survives) and puts a new
+      // control with its label, a link or a button, at its old place.
+      slots[0].style.position='relative';slots[1].append(archive);
+    }else if(spec.twin==='cover'){
+      // As move, under a group laid over the target's row that survives the change (a transparent overlay, which lets
+      // the pointer through to what lies under it).
+      twins=[control('twin',spec.before,spec)];mover=twins[0];slots[1].append(mover);slots[2].append(archive);
+      slots[0].style.position='relative';
+      const veil=document.createElement('div');veil.id='veil';veil.setAttribute('role','group');veil.style.cssText='position:absolute;left:0;top:0;width:100%;height:64px;pointer-events:none';
+      slots[0].append(veil);
+    }else if(spec.twin==='row'){
+      // Rows that are groups of their own: the target's row is removed, and the twin's row, alive, moves up into its place
+      // with the twin re-rendered in it.
+      for(const s of slots)s.setAttribute('role','group');
+      twins=[control('twin',spec.before,spec)];slots[1].append(twins[0]);slots[2].append(archive);
+    }else if(spec.twin==='wide'){
+      // A list of WIDE rows placed so that the target's row is the last the window shows and the twin's, right after it,
+      // the first it does not (the width rule reads the visible rows only); the other rows carry other labels.
+      const list=document.createElement('div');list.setAttribute('role','list');
+      list.style.cssText='position:absolute;left:20px;top:'+(innerHeight-3*64)+'px';
+      rows=[];
+      for(let i=0;i<WIDE;i++){
+        const r=row();r.setAttribute('role','listitem');
+        const a=i===2?target:i===3?control('twin',spec.before,spec):control('r'+i,'Row '+i);
+        if(i===3)twins=[a];r.append(a);rows.push(r);list.append(r);
+      }
+      archive=null;slots[0].replaceChildren(list);
     }else if(spec.big){
       // The target first in a container the record cannot hold whole: 150 more links running past the window (the width
       // rule's visible subset), or 59 shown groups of 100 small texts (the node cap inside it). The other rows stay empty.
@@ -92,14 +120,22 @@ function run(c){
     const spec=CELLS[cell],before=geometry(),clicksBeforeMark=clicks.length;
     if(spec.move){slots[0].replaceChildren(archive);slots[1].replaceChildren(target);}
     else if(spec.twin==='list')slots[0].remove();
+    else if(spec.twin==='swap'){
+      target.style.cssText='position:absolute;left:0;top:128px';
+      const n=control('twin',spec.before,{control:spec.swap});twins=[n];slots[0].prepend(n);
+    }
+    else if(spec.twin==='cover'){target.remove();slots[0].prepend(mover);}
+    else if(spec.twin==='row'){slots[0].remove();const n=control('twin',spec.before,spec);twins[0].replaceWith(n);twins.push(n);}
+    else if(spec.twin==='wide')rows[2].remove();
     else if(spec.twin){target.remove();slots[0].replaceChildren(mover);}
     else if(spec.remount==='link'){const n=control('target',spec.after,spec);target.replaceWith(n);target=n;}
     else if(spec.remount==='text'){const s=document.createElement('span');s.textContent=spec.after;target.firstChild.replaceWith(s);}
     else target.textContent=spec.after;
     marked=target;
     // For a twin cell the target is gone: the geometry after is the twin's that took its place.
-    const after=spec.twin?{text:twins[0].textContent,link:rect(twins[0].getBoundingClientRect()),textRect:null}:geometry();
-    return {trial,clicksBeforeMark,before,after,twin:spec.twin?rect(twins[0].getBoundingClientRect()):null};
+    const t=twins[twins.length-1];
+    const after=spec.twin?{text:t.textContent,link:rect(t.getBoundingClientRect()),textRect:null}:geometry();
+    return {trial,clicksBeforeMark,before,after,twin:spec.twin?rect(t.getBoundingClientRect()):null};
   }
   if(c.op==='read')return {trial,clicks:clicks.slice(),present:!!target&&target.isConnected,sameNode:!!target&&target===marked,
     text:target?target.textContent:null};

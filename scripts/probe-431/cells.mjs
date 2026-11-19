@@ -33,6 +33,16 @@ export const CELLS={
   twindel:{kind:'twin',before:'Delete',after:'Delete',twin:'list'},
   twincap:{kind:'twin',before:'Inbox',after:'Inbox',twin:'cap'},
   twindeep:{kind:'twin',before:'Inbox',after:'Inbox',twin:'deep'},
+  // The coordinator's second set (the fix review's six holes), all expected refused on the fix: the target moved away on
+  // its own element while a new link (`twinswap`) or button (`twinswapbtn`) with its label appears at its old place (a
+  // moved handle refuses frameMoved, counted with nodeGone as #340's ruling has it); the twin moved up under a group laid
+  // over the target's row that survives (`twincover`); the twin's row, alive, moving up with the twin re-rendered in it
+  // (`twinrow`); a list of WIDE rows with the twin the first the window does not show (`twinwide`).
+  twinswap:{kind:'twin',before:'Inbox',after:'Inbox',twin:'swap',reasons:['nodeGone','frameMoved']},
+  twinswapbtn:{kind:'twin',before:'Inbox',after:'Inbox',twin:'swap',swap:'button',reasons:['nodeGone','frameMoved']},
+  twincover:{kind:'twin',before:'Inbox',after:'Inbox',twin:'cover'},
+  twinrow:{kind:'twin',before:'Inbox',after:'Inbox',twin:'row'},
+  twinwide:{kind:'twin',before:'Delete',after:'Delete',twin:'wide'},
   remount:{kind:'keep',before:'Inbox',after:'Inbox',remount:'link'},
   retext:{kind:'keep',before:'Inbox',after:'Inbox',remount:'text'},
   like:{kind:'keep',before:'Like (12)',after:'Like (13)',style:'tabular'},
@@ -59,6 +69,8 @@ export const DEEP=220;
 // window, so only the visible subset is read); `cap`, 59 groups of 100 inline texts, all shown, so the walk spends its
 // 4,000-node budget inside the container before reading every child.
 export const BIG={wide:150,groups:59,each:100};
+// `twinwide`'s rows: past the width rule's 100 children, so only those the window shows are read.
+export const WIDE=150;
 // Where the click is placed in the observation, and so which node #296's record takes at the point: `text`, inside the
 // control's AXStaticText near its start; `link`, in the control's left padding, outside its text (the record takes the
 // control itself).

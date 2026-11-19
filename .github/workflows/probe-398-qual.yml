@@ -1,5 +1,6 @@
 name: probe-398-qualification
-# Disposable #398 kit (scripts/probe-398/README.md). A push of this file only registers the workflow on its branch.
+# Disposable #398 kit (scripts/probe-398/README.md). A push of this file only registers the workflow on its branch;
+# hosted macOS runs need explicit main (and fix) SHAs.
 on:
   push:
     branches: ['probe/398-qual']

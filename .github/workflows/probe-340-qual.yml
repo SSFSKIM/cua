@@ -1,6 +1,6 @@
 name: probe-340-qualification
 # Disposable #340 kit (scripts/probe-340/README.md). A push of this file only registers the workflow on its branch;
-# hosted macOS runs need explicit main (and fix) SHAs.
+# hosted macOS runs need explicit main (and fix) SHAs. Registered from kit d94d7d01.
 on:
   push:
     branches: ['probe/340-qual']

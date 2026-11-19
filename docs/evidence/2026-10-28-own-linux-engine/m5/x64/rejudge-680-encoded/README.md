@@ -6,8 +6,13 @@ read-only with it, beside the base judge it replaces (`feat/171-m5` at e6026b56,
 same rows, premise sidecar and recorded plan) and beside the script's output on the same rows. Ruling 870 (fix wave 1)
 tightened the rule: the span-limited sample's page must count this press's own drag start and dragend, so its `dur`
 (ms from that dragstart to that dragend) is this drag's, and its drop counter must be read rising; the case's recorded
-drop needs the counter read rising too. Both stored span-limited samples carry those fields and meet them (H⁗ 2/0:
-starts and ends 96 → 97, drops 65 → 66; H 0/0: 23 → 24, drops 18 → 19). The outputs below are the tightened judge's.
+drop needs the counter read rising too. Fix wave 2 bound the dragend to this press (no drag outstanding at the
+baseline, its starts equal to its ends, and this press's own log carrying its dragstart and dragend) and the witness to
+what it saw (a recorded drop is an observed change, never a `protocol` failure; the limit needs a span the witness
+watched clean). Both stored span-limited samples carry those fields and meet them (H⁗ 2/0: starts/ends 96/96 → 97/97,
+drops 65 → 66, its log's dragend at 220.7 ms; H 0/0: 23/23 → 24/24, drops 18 → 19, 189.9 ms). The outputs below are
+the tightened judge's. `scan-stored.mjs` (output `scan-stored.txt`) is a diagnostic scan of every stored late-take cell
+on this host, each bound as rejudge-device binds it.
 
     node compare.mjs <checkout> <base checkout> <step dir> <the 680 script's output>
     node controls.mjs <checkout> <step dir>

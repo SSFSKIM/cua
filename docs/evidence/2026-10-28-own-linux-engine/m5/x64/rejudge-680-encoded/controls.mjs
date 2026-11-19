@@ -1,11 +1,12 @@
 #!/usr/bin/env node
-// Task 108 (ruling 867; fix wave 1, ruling 870): ruling 680's four case controls
-// (m5/x64/scripts/rejudge-680/rejudge-late-take-controls.mjs, the same edits) and ruling 870's two (the previous drag's
-// dragend timing left on the sample; its drop counter unread) on a stored V5 step's real rows, judged by the live judge
-// with 680 encoded (this checkout's device.mjs, through rejudge-device.mjs `rejudgeDevice`). The stored rows must pass
-// the late-take cell; each edit must fail it. Read-only: the edits are made in memory. The run-wide controls (a foreign
-// change, preparation failures over the cap, a planned operation with no verdict) are not the cell's judge's:
-// test/linux-engine-diff/late-take-span-680.test.mjs proves them through stats.mjs `runOutcome`.
+// Task 108 (ruling 867; fix waves 1 and 2, ruling 870): ruling 680's four case controls
+// (m5/x64/scripts/rejudge-680/rejudge-late-take-controls.mjs, the same edits), ruling 870's two (the previous drag's
+// dragend timing left on the sample; its drop counter unread) and fix wave 2's two (counters crossed by a drag
+// outstanding at the baseline; every witnessed drop a witness protocol failure) on a stored V5 step's real rows, judged
+// by the live judge with 680 encoded (this checkout's device.mjs, through rejudge-device.mjs `rejudgeDevice`). The
+// stored rows must pass the late-take cell; each edit must fail it. Read-only: the edits are made in memory. The
+// run-wide controls (a foreign change, preparation failures over the cap, a planned operation with no verdict) are not
+// the cell's judge's: test/linux-engine-diff/late-take-span-680.test.mjs proves them through stats.mjs `runOutcome`.
 //   node controls.mjs <checkout> <step dir>
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -31,6 +32,10 @@ const controls = [
   // ruling 870's: the previous drag's dragend timing left on the sample (its own end never counted), and the counter unread
   ['stale end timing: the previous drag\'s dragend left on the span-limited sample', edit((r) => (limited(r) ? ((r.drop_status.after.ends = r.drop_status.before.ends), (r.drop_status.after.starts = r.drop_status.before.starts), (r.drop_status.after.dur = r.drop_status.before.dur), r) : r)), 'fail'],
   ['an unread drop counter on the span-limited sample', edit((r) => (limited(r) ? ((r.drop_status.after.drops = undefined), r) : r)), 'fail'],
+  // fix wave 2's: counters crossed by a drag outstanding at the baseline, no end on this press's log, the previous
+  // drag's timing; and every witnessed drop's witness a protocol failure with no change
+  ['crossed counters: a drag outstanding at the baseline supplies the end', edit((r) => (limited(r) ? ((r.drop_status.before.ends = r.drop_status.before.starts - 1), (r.drop_status.after.ends = r.drop_status.before.ends + 1), (r.drop_status.after.log.end = null), (r.drop_status.after.dur = r.drop_status.before.dur), r) : r)), 'fail'],
+  ['every witnessed drop a witness protocol failure', edit((r) => (isCase(r) && r.dropped && r.witness === false ? ((r.witness_fields = ['protocol']), (r.witness_changes = undefined), r) : r)), 'fail'],
   ['no drop in the case the witness recorded', edit((r) => (isCase(r) && r.dropped ? ((r.witness = true), (r.witness_fields = undefined), (r.witness_changes = undefined), (r.drop_status.after.dur = Math.ceil(r.ms + 20)), r) : r)), 'fail'],
 ];
 let ok = true;

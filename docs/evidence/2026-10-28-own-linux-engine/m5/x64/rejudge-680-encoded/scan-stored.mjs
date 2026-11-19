@@ -1,17 +1,31 @@
-// Task 108 fix wave 1 (ruling 870.1): every stored run with Chrome drag-and-drop device cells, the late-take verdicts by
-// the base judge and by this checkout's, and every sample whose `dropped` an unread counter set (the runner's inferred
-// bit). Read-only.  node scan.mjs <checkout> <base checkout> <file listing results paths>
+// Task 108 (rulings 867 and 870, fix waves 1 and 2): a diagnostic scan, never a verdict. Every stored run listed that has
+// Chrome drag-and-drop device cells: its late-take cells re-judged by the base judge and by this checkout's, each bound
+// the way rejudge-device.mjs and compare.mjs bind them (`rejudgeDevice`: the run's rows, its premise sidecar beside the
+// results, its recorded plan from the meta, and its audit's `--no-audit` from step.json); and every device-chrome-dnd
+// sample whose `dropped` an unread counter set (the runner's inferred bit). A premise cell's replayed pass is
+// diagnostic only (wave 8), as everywhere. Read-only.
+//   node scan-stored.mjs <checkout> <base checkout> <file listing results paths>
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { gunzipSync } from 'node:zlib';
 
 const [checkout, base, list] = process.argv.slice(2);
 const files = readFileSync(list, 'utf8').split('\n').filter(Boolean);
-const { judgeDevice } = await import(pathToFileURL(`${checkout}/scripts/linux-engine-diff/device.mjs`).href);
-const { judgeDevice: baseJudge } = await import(pathToFileURL(`${base}/scripts/linux-engine-diff/device.mjs`).href);
-const auditOf = (a) => a && { clean: a.clean, kind: a.audit, oks: a.oks, answered: a.answered, forbidden: (a.forbidden ?? []).map((f) => f?.what ?? f), lifecycles: a.lifecycles ?? 1 };
+const load = (root, file) => import(pathToFileURL(join(root, 'scripts/linux-engine-diff', file)).href);
+const { evidenceOf, judgedVerdict, rejudgeDevice } = await load(checkout, 'rejudge-device.mjs');
+const { judgeDevice } = await load(checkout, 'device.mjs');
+const { judgeDevice: baseJudge } = await load(base, 'device.mjs');
+const OP = 'chrome_dnd_late_take_shared';
 const counted = (r) => typeof r.drop_status?.before?.drops === 'number' && typeof r.drop_status?.after?.drops === 'number';
+
+/** Whether the step's own record shows its audit disabled, its step.json beside the results or one level up. */
+function noAuditOf(file) {
+  const step = [join(dirname(file), 'step.json'), join(dirname(dirname(file)), 'step.json')].find(existsSync);
+  return step ? String(JSON.parse(readFileSync(step, 'utf8')).command ?? '').split(' ').includes('--no-audit') : false;
+}
+
 const seen = new Set();
 let runs = 0;
 let cells = 0;
@@ -37,25 +51,27 @@ for (const f of files) {
       return [];
     }
   });
-  for (const run of new Set(rows.map((r) => r.run))) {
-    const own = rows.filter((r) => r.run === run);
+  for (const r of rows.filter((x) => x.kind === 'sample' && x.engine === 'cua' && x.scene === 'device-chrome-dnd' && x.dropped === true && !counted(x))) {
+    inferred++;
+    console.log(`INFERRED ${f} ${r.run} ${r.op} ${r.block}/${r.i}`);
+  }
+  if (!text.includes(OP)) continue;
+  const args = { lines: evidenceOf(f), noAudit: noAuditOf(f) };
+  // the late-take cell's rows and the run's own (its meta, its end): an old run's other cells may name cases since renamed
+  const cell = rows.filter((r) => !['verdict', 'sample', 'audit'].includes(r.kind) || r.op === OP);
+  const now = rejudgeDevice(cell, { ...args, judge: judgeDevice });
+  const then = rejudgeDevice(cell, { ...args, judge: baseJudge });
+  for (const run of now) {
     runs++;
-    for (const v of own.filter((r) => r.kind === 'verdict' && r.scene === 'device-chrome-dnd' && r.candidate === 'cua')) {
-      const samples = own.filter((r) => r.kind === 'sample' && r.engine === 'cua' && r.scene === v.scene && r.op === v.op);
-      const inf = samples.filter((r) => r.dropped === true && !counted(r));
-      if (inf.length) {
-        inferred += inf.length;
-        console.log(`INFERRED ${f} ${run} ${v.op} (stored ${v.verdict ?? v.pass}): ${inf.map((r) => `${r.block}/${r.i}`).join(',')}`);
-      }
-      if (v.op !== 'chrome_dnd_late_take_shared') continue;
+    const before = new Map(then.find((x) => x.run === run.run).verdicts.map((v) => [v.name, v]));
+    for (const v of run.verdicts.filter((x) => x.name.includes(OP))) {
       cells++;
-      const audit = auditOf(own.find((r) => r.kind === 'audit' && r.engine === 'cua' && r.scene === v.scene && r.op === v.op));
-      const a = baseJudge(v.op, samples, audit);
-      const b = judgeDevice(v.op, samples, audit);
-      const tag = a.pass !== b.pass ? 'MOVED' : JSON.stringify(a.reasons) !== JSON.stringify(b.reasons) ? 'REASONS' : 'same';
+      const b = before.get(v.name).now;
+      const tag = judgedVerdict(b) !== judgedVerdict(v.now) ? 'MOVED' : JSON.stringify(b.reasons) !== JSON.stringify(v.now.reasons) ? 'REASONS' : 'same';
       if (tag !== 'same') differing++;
-      console.log(`${tag} ${f} ${run}: stored ${v.verdict ?? v.pass}, base ${a.pass ? 'pass' : 'fail'}, encoded ${b.pass ? 'pass' : 'fail'}${tag === 'same' ? '' : ` | base ${JSON.stringify(a.reasons)} | encoded ${JSON.stringify(b.reasons)} span_limited ${JSON.stringify(b.span_limited ?? null)}`}`);
+      const plan = v.now.plan_unverified ? 'no recorded plan' : 'plan bound';
+      console.log(`${tag} ${f} ${run.run} (${plan}): stored ${v.stored.verdict}, base ${judgedVerdict(b)}, encoded ${judgedVerdict(v.now)}${tag === 'same' ? '' : ` | base ${JSON.stringify(b.reasons)} | encoded ${JSON.stringify(v.now.reasons)}`}`);
     }
   }
 }
-console.log(`distinct files with device-chrome-dnd ${seen.size}; runs ${runs}; late-take cells ${cells}; differing ${differing}; device-chrome-dnd samples with dropped set on an unread counter ${inferred}`);
+console.log(`diagnostic scan, bound as rejudge-device binds: distinct files with device-chrome-dnd ${seen.size}; runs in files with a late-take cell ${runs}; late-take cells ${cells}; differing ${differing}; device-chrome-dnd samples with dropped set on an unread counter ${inferred}`);

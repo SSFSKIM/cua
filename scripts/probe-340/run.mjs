@@ -105,7 +105,7 @@ async function main(){
         const sky=observed.reply?.result;
         // The page is prepared and attested: an observation (or the link in it) missing now is the head's own answer,
         // a valid row whose verdict says so, once the page re-attests that it still holds the prepared link.
-        if(sky&&w.lineage)found=findLink(sky.nodes,spec.before);
+        if(sky&&w.lineage)found=findLink(sky.nodes,spec.before,{first:!!spec.twin});
         if(!found){
           observeFailed=true;
           s='reattest';
@@ -153,7 +153,7 @@ async function main(){
           // The engine's own frames after the change: one more observation on this connection.
           s='reobserve';
           const re=await e.call('get_app_state',{app,includeScreenshot:false});
-          if(Array.isArray(re.reply?.result?.nodes)){reobserved=true;after=findLink(re.reply.result.nodes,spec.after);}
+          if(Array.isArray(re.reply?.result?.nodes)){reobserved=true;after=findLink(re.reply.result.nodes,spec.after,{first:!!spec.twin});}
         }
         s='witness-end';witness=await platform.disarm();armed=false;
       }catch(err){invalid=(attested?'evidence':setupLabel(err))+'@'+s;}

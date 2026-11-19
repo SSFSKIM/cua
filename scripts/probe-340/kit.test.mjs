@@ -40,6 +40,13 @@ const text = {role: 'AXStaticText', value: 'Inbox', frame: {x: 452, y: 150, widt
 const link = {role: 'AXLink', title: 'Inbox', frame: {x: 420, y: 136, width: 116, height: 56}};
 test('the link and its text are found by their label, the link by its frame when it has none, nothing ambiguous', () => {
   assert.deepEqual(findLink([text, link], 'Inbox'), {text, link});
+  // The twin cell: two same-label links, the topmost taken with the link holding its text.
+  const text2 = {...text, frame: {...text.frame, y: 214}}, link2 = {...link, frame: {...link.frame, y: 200}};
+  assert.equal(findLink([text2, link2, text, link], 'Inbox'), null);
+  assert.deepEqual(findLink([text2, link2, text, link], 'Inbox', {first: true}), {text, link});
+  assert.deepEqual(findLink([text2, link2], 'Inbox', {first: true}), {text: text2, link: link2});
+  assert.equal(score({attested: true, at: 'text', click: 'success', stale: {verdict: 'kept', recordedRole: 'AXStaticText'},
+    clicks: [{type: 'click', link: 'twin'}]}).verdict, 'wrong-target');
   const bare = {...link, title: ''};
   assert.deepEqual(findLink([text, bare, {role: 'AXLink', title: 'Archive', frame: {x: 420, y: 200, width: 130, height: 56}}], 'Inbox'), {text, link: bare});
   assert.equal(findLink([text, link, {...text}], 'Inbox'), null);

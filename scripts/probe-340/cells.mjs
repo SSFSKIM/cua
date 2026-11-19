@@ -6,7 +6,8 @@ export const LANES=['cft','safari','electron'];
 // `kind` names the gate a cell answers to in a qualification (check.mjs `gates`):
 // - grow, shrink: a count or a ticking time on the link's text ("Inbox" to "Inbox (3)"), which must be kept and land;
 // - refuse: the true refusals, which must stay refused: words that change meaning (linksave) and a link moved away
-//   from the point while another link takes its place (moved);
+//   from the point while another link takes its place (moved), and a same-label twin sliding into the removed
+//   target's row (twin);
 // - asMain: every other cell answers as main does: a same-width count (like), the same text re-created (plain), and a
 //   same-width change of meaning (linkmono, refused on main by #298's re-created label check);
 // - limit: the fix's stated limits (its rule: an AXStaticText still matches when its top and bottom are within 2 pt,
@@ -21,6 +22,9 @@ export const CELLS={
   shrink:{kind:'shrink',before:'Inbox (12)',after:'Inbox'},
   linksave:{kind:'refuse',before:'Save',after:'Delete'},
   moved:{kind:'refuse',before:'Inbox',after:'Inbox',move:true},
+  // Two links with the same label and different destinations: the first (the target) is removed and the second slides
+  // into its row. Expected nodeGone; a click must never land on the second link.
+  twin:{kind:'refuse',before:'Inbox',after:'Inbox',twin:true},
   like:{kind:'asMain',before:'Like (12)',after:'Like (13)',style:'tabular'},
   plain:{kind:'asMain',before:'Inbox',after:'Inbox'},
   linkmono:{kind:'asMain',before:'Save',after:'Send',style:'mono'},

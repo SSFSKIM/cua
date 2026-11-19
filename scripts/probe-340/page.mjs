@@ -4,7 +4,9 @@
 // all three afresh with the cell's text, so the observation's handles are fresh; `mark`, after the observation and
 // before the click, applies the cell's change: the target's `textContent` replaced (re-creating its text node), or, for
 // `moved`, the target and Archive swapping rows, so Archive lies where the target was. Every pointer event the page
-// receives is logged with the link it reached (`target`, `archive`, `drafts`, `other` or `none`).
+// receives is logged with the link it reached (`target`, `archive`, `drafts`, `twin`, `other` or `none`). For `twin`, the
+// second row holds a link with the target's label and another destination (and Drafts is left out); `mark` removes the
+// target and moves the twin up into its row.
 import {CELLS,OTHERS} from './cells.mjs';
 
 export const page=()=>`<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Links</title>
@@ -17,9 +19,9 @@ const CELLS=${JSON.stringify(CELLS)}, OTHERS=${JSON.stringify(OTHERS)};
 const slots=[0,1,2].map(i=>document.getElementById('slot'+i));
 const doc=self.crypto.randomUUID(), nonce=doc.split('-')[0];
 document.title='Links '+nonce;
-let trial=null, cell=null, target=null, archive=null, drafts=null, marked=null, clicks=[];
+let trial=null, cell=null, target=null, archive=null, drafts=null, twin=null, marked=null, clicks=[];
 const post=o=>fetch('/answer',{method:'POST',body:JSON.stringify({doc,...o})});
-const nameOf=el=>!el?'none':el===target?'target':el===archive?'archive':el===drafts?'drafts':'other';
+const nameOf=el=>!el?'none':el===target?'target':el===archive?'archive':el===drafts?'drafts':el===twin?'twin':'other';
 for(const type of ['pointerdown','mousedown','mouseup','click'])document.addEventListener(type,e=>{
   const link=e.target&&e.target.closest?e.target.closest('a'):null;
   if(clicks.length<40)clicks.push({type,link:nameOf(link),trusted:e.isTrusted===true});
@@ -40,8 +42,9 @@ function run(c){
   if(c.op==='prepare'){
     const spec=CELLS[c.cell];if(!spec)throw Error('cell');
     trial=c.trial;cell=c.cell;marked=null;
-    target=link('target',spec.before,spec.style);archive=link('archive',OTHERS.archive);drafts=link('drafts',OTHERS.drafts);
-    slots[0].replaceChildren(target);slots[1].replaceChildren(archive);slots[2].replaceChildren(drafts);
+    target=link('target',spec.before,spec.style);archive=link('archive',OTHERS.archive);
+    if(spec.twin){twin=link('twin',spec.before,spec.style);drafts=null;slots[0].replaceChildren(target);slots[1].replaceChildren(twin);slots[2].replaceChildren(archive);}
+    else{twin=null;drafts=link('drafts',OTHERS.drafts);slots[0].replaceChildren(target);slots[1].replaceChildren(archive);slots[2].replaceChildren(drafts);}
     if(document.activeElement&&document.activeElement!==document.body)document.activeElement.blur();
     clicks=[];
     return {trial,cell,present:target.isConnected,text:target.textContent,geometry:geometry()};
@@ -50,6 +53,7 @@ function run(c){
   if(c.op==='mark'){
     const spec=CELLS[cell],before=geometry(),clicksBeforeMark=clicks.length;
     if(spec.move){slots[0].replaceChildren(archive);slots[1].replaceChildren(target);}
+    else if(spec.twin){target.remove();slots[0].replaceChildren(twin);}
     else target.textContent=spec.after;
     marked=target;
     return {trial,clicksBeforeMark,before,after:geometry(),archive:rect(archive.getBoundingClientRect())};

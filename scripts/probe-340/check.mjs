@@ -7,12 +7,14 @@ const centre=f=>({x:f.x+f.width/2,y:f.y+f.height/2});
 const holds=(f,p)=>!!f&&!!p&&p.x>=f.x&&p.x<=f.x+f.width&&p.y>=f.y&&p.y<=f.y+f.height;
 const framed=n=>n&&n.frame&&n.frame.width>0&&n.frame.height>0;
 // The link's AXStaticText and the AXLink around it in an observation, both reading `text` (the link found by its own
-// label, else as the one AXLink whose frame holds the text's centre). Null unless each is exactly one node.
-export function findLink(nodes,text){
+// label, else as the one AXLink whose frame holds the text's centre). Null unless each is exactly one node. With `first`
+// (the twin cell's two same-label links), the topmost text of those reading `text`, and the one AXLink holding it.
+export function findLink(nodes,text,{first=false}={}){
   const list=Array.isArray(nodes)?nodes.filter(framed):[];
-  const texts=list.filter(n=>n.role==='AXStaticText'&&reads(n,text));
+  let texts=list.filter(n=>n.role==='AXStaticText'&&reads(n,text));
+  if(first&&texts.length>1){texts=[...texts].sort((a,b)=>a.frame.y-b.frame.y);if(texts[0].frame.y===texts[1].frame.y)return null;texts=[texts[0]];}
   if(texts.length!==1)return null;
-  let links=list.filter(n=>n.role==='AXLink'&&reads(n,text));
+  let links=first?[]:list.filter(n=>n.role==='AXLink'&&reads(n,text));
   if(!links.length)links=list.filter(n=>n.role==='AXLink'&&holds(n.frame,centre(texts[0].frame)));
   return links.length===1?{text:texts[0],link:links[0]}:null;
 }
@@ -43,7 +45,7 @@ export function delta(a,b){
   return {dx:r2(b.x-a.x),dy:r2(b.y-a.y),dw:r2(b.width-a.width),dh:r2(b.height-a.height)};
 }
 
-const LINKS=new Set(['target','archive','drafts','other','none']);
+const LINKS=new Set(['target','archive','drafts','twin','other','none']);
 // The page's pointer-event log: whether a click reached the target link, any event reached it, and any reached
 // another link (a wrong target).
 export function landingOf(clicks){

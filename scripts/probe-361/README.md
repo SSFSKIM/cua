@@ -96,4 +96,58 @@ What this means for the read-back's design:
 - `Probe.swift` documents a case where the selected IME's id changes but the focused client keeps the previous layout. The paste route posts only ⌘V and Return, and the engine routes by the same TIS reading the kit verifies, so it is recorded as a limit, not checked.
 - Two runner images were in rotation, so Chrome for Testing's version differed between jobs.
 
-Phase 2 (the fix, interleaved with main at twenty per head per cell) is pending its SHA.
+## Phase 2: the fix qualified against main
+
+[Qualification run](https://github.com/SSFSKIM/cua/actions/runs/44429799569): kit `0a1b9aa2`, main `517ab5430a3a81718910b030488ba8d855087b21`, fix `9bfb0b502c858aff8e1468a4c78fbc4ed39cc9d8` (`fix/361-paste-readback`, which also carries the unmerged #414). Twenty per head per cell per source, the heads interleaved, all four sources, all five lanes in the background under the cover (the witness held on every attested row). Images `20261102.0473.1` and `20261112.0504.1`; Chrome for Testing 157.0.8103.78.
+
+**Verdict: Safari, Electron and AppKit pass every gate. Chrome for Testing and Firefox fail.**
+
+| Lane | Coverage | Exact pastes confirmed | Controls `typeUnconfirmed` | Wrong successes fix (main) | Clipboard restored | Route | Privacy (fix) |
+|---|---|---|---|---|---|---|---|
+| Safari | pass, 1,600/1,600 | pass, 560/560 | pass, 240/240 `valueMismatch` | **0** (240) | 800/800 | pass | 0 |
+| Electron | pass, 1,600/1,600 | pass, 560/560 | pass, 240/240 `valueMismatch` | **0** (240) | 800/800 | pass | 0 |
+| AppKit | pass, 1,600/1,600 | pass, 480/480 | pass, 240/240 `valueMismatch` | **0** (320) | 800/800 | pass | 0 |
+| Chrome for Testing | **fail**: 1,168/1,600 ran; the fixture was lost in Kana and Pinyin was never reached | **fail**: 288/348, 60 deliveries lost | pass, 172/172 `valueMismatch` | **0** (172) | 578/578 | pass | **fail: 108 rows show the pre-trial clipboard** |
+| Firefox | pass, 1,600/1,600 | **fail**: 0/551 confirmed; 21 deliveries lost | pass, 240/240 (`rangeUnreadable` 182, `fieldChanged` 58) | **0** (240) | 800/800 | pass | 0 |
+
+Zero wrong successes on the fix in its 3,784 rows, against 1,212 on main in the same run. Main's figures reproduce Phase 1: every realized control was a wrong success on every lane, and so were AppKit's 80 newline-single rows. The fix refuses those 80 with `valueMismatch` (the field holds only the second line), which is correct.
+
+### Chrome for Testing: multi-line pastes lose the text and paste the person's clipboard
+
+- **Multi-line field:** every fix row failed (58/58: `valueMismatch` 51, `fieldUnreadable` 7). Main delivered all of them exactly in the same run.
+- **Two lines into a single-line field:** the fix answered `valueMismatch` on all 58.
+- **Clipboard content in the field and in the answer:** 108 of these 116 rows (every source; ko 36, ja-romaji 37, ja-kana 35) carried the **pre-trial clipboard's synthetic content** in the fix's answer. The excerpt is the only part of a `valueMismatch` answer that carries field text, so the field held what had been on the clipboard before the call. The likely mechanism: a later line's ⌘V is read by Chrome only after the engine has restored the clipboard, so the person's own clipboard is pasted into the field and then quoted back to the model. This is a privacy defect as well as a delivery one.
+- **Single-line cells:** two more lost deliveries (one `selection`, one `prefilled-mixed`, both `valueMismatch`), against none on main.
+- **The clipboard itself was restored on every row.** What leaked is that its content went into the field.
+- **Setup failure, not counted as a product miss:** the fixture page stopped answering at the delivery read right after a fix `add` control (Kana, rep 17). Its next 11 prepares failed, which stopped Kana there and Pinyin at its start. That is the 432 missing rows. Main's rows up to that point match Phase 1.
+
+### Firefox: never confirms
+
+All 800 fix rows answered `typeUnconfirmed`: `rangeUnreadable` on 632, `fieldChanged` on 168. There was no `valueMismatch`, so no excerpt and no privacy flag, and never a false success.
+
+- **Exact pastes go unconfirmed:** of the 551 plain fix rows the gate owed, 530 were exact in the field but answered unconfirmed; the other 21 lost delivery. The builder expected `fieldChanged` (#419); in this run `rangeUnreadable` dominated.
+- **Delivery lost on multi-line text:** the fix delivered 59/80 multi-line and 71/80 newline-single rows exactly, against all of main's. The fix presses a Return only once the text before it reads back, so a read-back that cannot confirm in Firefox stops the paste at the first newline.
+
+### Service time
+
+Sky's `cua/serviceMs`, valid rows, p50/p95 in ms, main → fix:
+
+| Lane | Plain (6 cells) | newline-single | Controls |
+|---|---|---|---|
+| Safari | 129/499 → 240/343 | 2166/2218 → 261/304 | 117/162 → 1237/1288 |
+| Chrome for Testing | 157/661 → 156/1315 | 2176/2225 → 1244/1309 | 155/178 → 1166/1192 |
+| Firefox | 160/665 → 166/1152 | 2178/2231 → 263/1143 | 158/210 → 161/1165 |
+| Electron | 151/645 → 238/450 | 2168/2217 → 331/391 | 148/170 → 1248/1298 |
+| AppKit | 115/469 → 223/449 | 251/314 → 1297/1359 | 113/162 → 1226/1299 |
+
+A confirmed paste costs the fix about 90–110 ms more at p50 in Safari, Electron and AppKit. That is the poll inside the activation and the paste lock, so this is also roughly how much longer the lock and lease are held. A refused control runs the full one-second poll, about 1.2–1.3 s. The browsers' newline-single drops from main's 2.2 s Return timeout to 0.26–0.33 s, except in Chrome for Testing.
+
+### What the builder asked to have measured
+
+- **Firefox (#419):** never a false success and never an excerpt. The reason was mostly `rangeUnreadable` (632) rather than `fieldChanged` (168). Service p50/p95 was 166/1152 ms on plain cells and 161/1165 ms on controls.
+- **Background Safari and Electron:** the identity check passed with the poll inside the activation, 560/560 exact pastes confirmed on each. The lock-and-lease cost is in the service-time table.
+- **Multi-line in Chrome and Firefox:** yes, multi-line fails in both, but not as a false unconfirmed over exact content. The content differs in Chrome for Testing, with the clipboard leak above. In Firefox the paste stops at the first unconfirmed line. The kit cannot say whether a Return landed before its line's text; it sees only the final content and the reason.
+- **Contenteditable normalisation:** not measured, because the kit has no contenteditable field. Every plain-cell row the fix left unconfirmed is listed by `report.mjs`, and none of them came from Safari, Electron or AppKit except AppKit newline-single, whose content really differs.
+- **Pasted password field:** not measured; the kit has no password field. #414's kit covers the keyed route only.
+
+Invalid-setup tally for Phase 2: 432 rows not run, plus 12 invalid (11 `prepare`, 1 delivery read), all in the Chrome for Testing job. No other lane had an invalid row.

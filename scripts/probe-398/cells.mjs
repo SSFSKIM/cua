@@ -8,13 +8,19 @@ export const PLACEHOLDER_CELLS=['static','focus','rotate','input','search'];
 // The stale-handle twins: the first of two fields alike but for their placeholder is recreated alike, recreated with
 // another placeholder, or removed, between the observation and the first action.
 export const TWIN_CELLS=['twin-recreate','twin-renamed','twin-removed'];
+// A unique field (no twin) recreated with another placeholder: the stale handle's only otherwise-matching replacement,
+// which a tiebreak adopts and a strict fallback walk refuses.
+export const SOLO_CELLS=['solo-renamed'];
+// The cells whose observed handle `mark` makes stale.
+export const STALE_CELLS=[...TWIN_CELLS,...SOLO_CELLS];
 // `set`: click the field's element, then set_value on the same element. `type`: click it, then type_text.
 export const SEQUENCES=['set','type'];
-export const UNITS=[...PLACEHOLDER_CELLS.flatMap(cell=>SEQUENCES.map(seq=>({cell,seq}))),...TWIN_CELLS.map(cell=>({cell,seq:'set'}))];
+export const UNITS=[...PLACEHOLDER_CELLS.flatMap(cell=>SEQUENCES.map(seq=>({cell,seq}))),...STALE_CELLS.map(cell=>({cell,seq:'set'}))];
 export const unitKey=u=>`${u.cell}/${u.seq}`;
 // The label each cell's target is found by in the observation; the twins share one and are told apart by placeholder.
 export const TARGET_LABEL={static:'Probe398 static',focus:'Probe398 focus',rotate:'Probe398 rotate',input:'Probe398 input',
-  search:'Probe398 search'};
+  search:'Probe398 search','solo-renamed':'Probe398 solo'};
+export const SOLO={label:'Probe398 solo',placeholder:'Probe398 street address',renamed:'Probe398 street and number'};
 export const TWIN={label:'Probe398 twin',a:'Probe398 first name',b:'Probe398 last name'};
 
 // Synthetic ASCII: upper-case consonants after a fixed prefix (never a word, never a placeholder's text).

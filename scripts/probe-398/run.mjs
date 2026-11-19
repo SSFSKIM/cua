@@ -7,8 +7,8 @@ import {join} from 'node:path';
 import {execFileSync} from 'node:child_process';
 import {Wire} from './wire.mjs';
 import {owned,stop,pause,environment,startPlatform,startHelper} from './platform.mjs';
-import {LANES,TWIN_CELLS,unitKey,materialize,plan,ascii} from './cells.mjs';
-import {outcomeOf,score,summarize,coverage,gates,placeholderShape,roleCode,findTargets} from './check.mjs';
+import {LANES,STALE_CELLS,TARGET_LABEL,unitKey,materialize,plan,ascii} from './cells.mjs';
+import {outcomeOf,whyOf,axChangedOf,score,summarize,coverage,gates,placeholderShape,roleCode,findTargets} from './check.mjs';
 
 const setupLabel=e=>typeof e?.setupStep==='string'?e.setupStep:'other';
 const stepError=step=>Object.assign(Error(step),{setupStep:step});
@@ -73,49 +73,67 @@ async function main(){
     let trial=0,streak=0;
     for(const c of cells){
       const m=materialize(c),e=engines[c.head],setupText=ascii(12),app=e.appPath;
-      let s='engine-attach',attested=false,armed=false,observed=null,targets=null,click=null,act=null,read=null,settled=null,witness=null,invalid=null;
+      let s='engine-attach',attested=false,armed=false,observeFailed=false,observed=null,targets=null,click=null,act=null,first=null,read=null,settled=null,
+        reobserved=null,after=null,witness=null,invalid=null;
       try{
         const w=await e.attach();
         await platform.arm(++trial,{cell:c.cell,setupText},x=>{s=x;});armed=true;
         s='observe';
         observed=await e.call('get_app_state',{app,includeScreenshot:false});
-        if(!observed.reply?.result||!w.lineage)throw stepError('observe');
-        targets=findTargets(observed.reply.result.nodes,c.cell);
-        if(!targets)throw stepError('target-not-found');
-        // The twins' handle made stale (or nothing, for the placeholder cells), after the observation, before any action.
-        s='mark';
-        const mark=await platform.command({op:'mark',trial,setupText});
-        if(mark.error||mark.trial!==trial||mark.othersWritten?.length||!mark.targetEmpty&&mark.present)throw stepError('mark');
-        if(TWIN_CELLS.includes(c.cell))await pause(400);
-        s='witness-before-action';
-        if(!await platform.witness())throw stepError('witness-before-action');
-        attested=true;
-        s='click';
-        click=await e.call('click',{app,element:targets.target.token});
-        s='act';
-        if(c.seq==='set')act=await e.call('set_value',{app,element:targets.target.token,value:m.value});
-        else if(outcomeOf(click.reply)==='success')act=await e.call('type_text',{app,text:m.value});
-        else act={reply:'skipped',ms:null};
-        // The settled field: until the expected state (or 2 s), then once more after 300 ms.
-        s='read';
-        const readOnce=async()=>{const d=await platform.command({op:'read',trial,expected:m.value,setupText});if(d.error||d.trial!==trial)throw Error('fixture trial lost');return d;};
-        read=await readOnce();
-        const end=performance.now()+2000;
-        while(!read.exact&&performance.now()<end){await pause(50);read=await readOnce();}
-        await pause(300);settled=await readOnce();
+        // The fixture is prepared and attested: an observation (or a target in it) missing now is the head's own answer,
+        // a valid row whose verdict says so, never a setup failure.
+        if(observed.reply?.result&&w.lineage)targets=findTargets(observed.reply.result.nodes,c.cell);
+        if(!targets){
+          observeFailed=true;
+          s='witness-before-action';
+          if(!await platform.witness())throw stepError('witness-before-action');
+          attested=true;
+        }else{
+          // The stale cells' handle made stale (nothing, for the placeholder cells), after the observation, before any action.
+          s='mark';
+          const mark=await platform.command({op:'mark',trial,setupText});
+          if(mark.error||mark.trial!==trial||mark.setupExact!==true||mark.othersWritten?.length||!mark.targetEmpty&&mark.present)throw stepError('mark');
+          if(STALE_CELLS.includes(c.cell))await pause(400);
+          s='witness-before-action';
+          if(!await platform.witness())throw stepError('witness-before-action');
+          attested=true;
+          s='click';
+          click=await e.call('click',{app,element:targets.target.token});
+          s='act';
+          if(c.seq==='set')act=await e.call('set_value',{app,element:targets.target.token,value:m.value});
+          else if(outcomeOf(click.reply)==='success')act=await e.call('type_text',{app,text:m.value});
+          else act={reply:'skipped',ms:null};
+          // The first read right after the actions (kept), then until the expected state (or 2 s), then once more after 300 ms.
+          s='read';
+          const readOnce=async()=>{const d=await platform.command({op:'read',trial,expected:m.value,setupText});if(d.error||d.trial!==trial)throw Error('fixture trial lost');return d;};
+          first=read=await readOnce();
+          const end=performance.now()+2000;
+          while(!read.exact&&performance.now()<end){await pause(50);read=await readOnce();}
+          await pause(300);settled=await readOnce();
+          // The engine's own view of the target's placeholder after the actions: one more observation on this connection.
+          s='reobserve';
+          const re=await e.call('get_app_state',{app,includeScreenshot:false});
+          const nodes=Array.isArray(re.reply?.result?.nodes)?re.reply.result.nodes:null;
+          if(nodes&&TARGET_LABEL[c.cell]){
+            const same=nodes.filter(n=>n.description===TARGET_LABEL[c.cell]||n.title===TARGET_LABEL[c.cell]);
+            if(same.length<=1){reobserved=true;after=same[0]??null;}
+          }
+        }
         s='witness-end';witness=await platform.disarm();armed=false;
       }catch(err){invalid=(attested?'evidence':setupLabel(err))+'@'+s;}
       finally{
         if(armed){try{await platform.disarm();}catch{}}
         await e.disconnect();
       }
-      const clickOutcome=click?outcomeOf(click.reply):null,actOutcome=act?outcomeOf(act.reply):null;
+      const clickOutcome=click?outcomeOf(click.reply):null,actOutcome=act?outcomeOf(act.reply):null,actWhy=act?whyOf(act.reply):null;
       const ok=attested&&!invalid;
-      const verdicts=score({cell:c.cell,attested:ok,click:clickOutcome,act:actOutcome,read:settled});
-      const node=targets?.target;
-      const row={lane,...c,valid:ok,invalid:ok?null:invalid??'other',click:clickOutcome,act:actOutcome,...verdicts,
-        observedPlaceholder:placeholderShape(node),observedRole:roleCode(node?.role),observedSubrole:node?.subrole==='AXSearchField'?'AXSearchField':node?.subrole?'other':null,
-        exactAtFirstRead:read?.exact===true,settledChanged:read!=null&&settled!=null&&read.exact!==settled.exact,
+      const node=targets?.target,axChanged=axChangedOf(node,after,reobserved);
+      const verdicts=score({cell:c.cell,attested:ok,observeFailed,click:clickOutcome,act:actOutcome,actWhy,first,read:settled,axChanged});
+      const row={lane,...c,valid:ok,invalid:ok?null:invalid??'other',click:clickOutcome,act:actOutcome,actWhy,...verdicts,axChanged,
+        observeError:observeFailed?(observed?.reply?.result?'target-not-found':outcomeOf(observed?.reply)):null,
+        observedPlaceholder:placeholderShape(node),afterPlaceholder:reobserved?placeholderShape(after)??'gone':null,
+        observedRole:roleCode(node?.role),observedSubrole:node?.subrole==='AXSearchField'?'AXSearchField':node?.subrole?'other':null,
+        exactAtFirstRead:first?.exact===true,settledChanged:first!=null&&settled!=null&&first.exact!==settled.exact,
         focusedAfter:settled?.focused??null,rotating:settled?.rotating??null,
         presentationHeld:witness?.held??null,observeMs:observed?.ms??null,clickMs:click?.ms??null,actMs:act?.ms??null};
       rows.push(row);

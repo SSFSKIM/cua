@@ -54,22 +54,24 @@ export const PAGES=[
 ].map(([kind,url],i)=>({id:'p'+String(i+1).padStart(2,'0'),kind,url}));
 
 // Built-in apps: how each window is opened (a URL or a bundle) and the keys that open its fields, through the census
-// engine's own press_key with the app frontmost.
+// engine's own press_key with the app frontmost. `expectTitle` marks the scene by one of the app's window titles where a
+// title does (a Settings pane's name, a Finder search, a new TextEdit document); a scene without one is verified by its
+// app being ready and its keys accepted. Keychain Access is left out: main's policy refuses it before any observation.
 const pane=id=>'x-apple.systempreferences:'+id;
 export const SCENES=[
-  {id:'settings-about',bundle:'com.apple.systempreferences',url:pane('com.apple.SystemProfiler.AboutExtension'),keys:[]},
-  {id:'settings-sharing',bundle:'com.apple.systempreferences',url:pane('com.apple.Sharing-Settings.extension'),keys:[]},
-  {id:'settings-network',bundle:'com.apple.systempreferences',url:pane('com.apple.Network-Settings.extension'),keys:[]},
-  {id:'settings-users',bundle:'com.apple.systempreferences',url:pane('com.apple.Users-Groups-Settings.extension'),keys:[]},
-  {id:'settings-keyboard',bundle:'com.apple.systempreferences',url:pane('com.apple.Keyboard-Settings.extension'),keys:[]},
-  {id:'contacts-new-card',bundle:'com.apple.AddressBook',keys:['cmd+n']},
-  {id:'calendar-new-event',bundle:'com.apple.iCal',keys:['cmd+n']},
+  {id:'settings-about',bundle:'com.apple.systempreferences',url:pane('com.apple.SystemProfiler.AboutExtension'),keys:[],expectTitle:/About/},
+  {id:'settings-sharing',bundle:'com.apple.systempreferences',url:pane('com.apple.Sharing-Settings.extension'),keys:[],expectTitle:/Sharing/},
+  {id:'settings-network',bundle:'com.apple.systempreferences',url:pane('com.apple.Network-Settings.extension'),keys:[],expectTitle:/Network/},
+  {id:'settings-users',bundle:'com.apple.systempreferences',url:pane('com.apple.Users-Groups-Settings.extension'),keys:[],expectTitle:/Users/},
+  {id:'settings-keyboard',bundle:'com.apple.systempreferences',url:pane('com.apple.Keyboard-Settings.extension'),keys:[],expectTitle:/Keyboard/},
+  {id:'contacts-new-card',bundle:'com.apple.AddressBook',keys:['cmd+n'],expectTitle:/Contacts|All Contacts|Card/},
+  {id:'calendar-new-event',bundle:'com.apple.iCal',keys:['cmd+n'],expectTitle:/Calendar/},
   {id:'mail-first-window',bundle:'com.apple.mail',keys:[]},
-  {id:'finder-search',bundle:'com.apple.finder',keys:['cmd+n','cmd+f']},
-  {id:'textedit-find-replace',bundle:'com.apple.TextEdit',keys:['cmd+n','cmd+alt+f']},
+  {id:'finder-search',bundle:'com.apple.finder',keys:['cmd+n','cmd+f'],expectTitle:/Search/},
+  {id:'textedit-find-replace',bundle:'com.apple.TextEdit',keys:['cmd+n','cmd+alt+f'],expectTitle:/Untitled/},
   {id:'reminders',bundle:'com.apple.reminders',keys:[]},
   {id:'notes',bundle:'com.apple.Notes',keys:[]},
-  {id:'keychain-access',bundle:'com.apple.keychainaccess',keys:[]},
+  {id:'dictionary',bundle:'com.apple.Dictionary',keys:[]},
   {id:'font-book',bundle:'com.apple.FontBook',keys:[]},
   {id:'maps',bundle:'com.apple.Maps',keys:[]},
 ];

@@ -5,6 +5,8 @@
 //   every 150 ms while its cell runs; input: switches on the first text change; search: an NSSearchField whose hint
 //   switches when it becomes first responder and back when editing ends.
 // - twins: rebuilt at every prepare; `mark` recreates the first alike, recreates it with another placeholder, or removes it.
+// - solo: its own label, no twin; `mark` recreates it with another placeholder.
+// Every field but the target, the setup field's canary included, is reported when written (`othersWritten`).
 import AppKit
 import Foundation
 
@@ -18,8 +20,9 @@ let P: [String: [String]] = [
   "rotate": ["Probe398 search people", "Probe398 search files", "Probe398 search messages"],
   "input": ["Probe398 type a name", "Probe398 keep typing"], "search": ["Probe398 search", "Probe398 search this folder"],
   "twinA": ["Probe398 first name"], "twinB": ["Probe398 last name"], "twinRenamed": ["Probe398 given name"],
+  "solo": ["Probe398 street address"], "soloRenamed": ["Probe398 street and number"],
 ]
-let names = ["static", "focus", "rotate", "input", "search", "twinA", "twinB"]
+let names = ["static", "focus", "rotate", "input", "search", "twinA", "twinB", "solo"]
 
 /// A field that reports becoming first responder (its focus event).
 final class Field: NSTextField {
@@ -52,7 +55,7 @@ final class Fixture: NSObject, NSTextFieldDelegate, NSSearchFieldDelegate {
     "static": NSRect(x: 25, y: 330, width: 540, height: 26), "focus": NSRect(x: 25, y: 290, width: 540, height: 26),
     "rotate": NSRect(x: 25, y: 250, width: 540, height: 26), "input": NSRect(x: 25, y: 210, width: 540, height: 26),
     "search": NSRect(x: 25, y: 170, width: 540, height: 26), "twinA": NSRect(x: 25, y: 110, width: 540, height: 26),
-    "twinB": NSRect(x: 25, y: 70, width: 540, height: 26),
+    "twinB": NSRect(x: 25, y: 70, width: 540, height: 26), "solo": NSRect(x: 25, y: 25, width: 540, height: 26),
   ]
 
   func name(of field: NSTextField) -> String? { names.first { f[$0] === field } }
@@ -99,6 +102,9 @@ final class Fixture: NSObject, NSTextFieldDelegate, NSSearchFieldDelegate {
     f["twinA"] = make("twinA", placeholder: P["twinA"]![0], label: "Probe398 twin")
     f["twinB"] = make("twinB", placeholder: P["twinB"]![0], label: "Probe398 twin")
     window.contentView?.addSubview(f["twinA"]!); window.contentView?.addSubview(f["twinB"]!)
+    f["solo"]?.removeFromSuperview()
+    f["solo"] = make("solo", placeholder: P["solo"]![0], label: "Probe398 solo")
+    window.contentView?.addSubview(f["solo"]!)
   }
 
   func menu() {
@@ -148,7 +154,7 @@ final class Fixture: NSObject, NSTextFieldDelegate, NSSearchFieldDelegate {
     if op == "prepare", let n, let c = q["cell"] as? String {
       rotation?.invalidate(); rotation = nil
       trial = n; cell = c; marked = nil
-      target = ["static", "focus", "rotate", "input", "search"].contains(c) ? c : c.hasPrefix("twin") ? "twinA" : ""
+      target = ["static", "focus", "rotate", "input", "search"].contains(c) ? c : c == "solo-renamed" ? "solo" : c.hasPrefix("twin") ? "twinA" : ""
       if target.isEmpty { error = true }
       window.makeFirstResponder(nil)
       for k in ["static", "focus", "rotate", "input", "search"] { f[k]!.stringValue = "" }
@@ -178,6 +184,11 @@ final class Fixture: NSObject, NSTextFieldDelegate, NSSearchFieldDelegate {
         window.contentView?.addSubview(fresh)
       } else if cell == "twin-removed" {
         f["twinA"]?.removeFromSuperview()
+      } else if cell == "solo-renamed", let old = f["solo"] {
+        let fresh = make("solo", placeholder: P["soloRenamed"]![0], label: "Probe398 solo")
+        old.removeFromSuperview()
+        f["solo"] = fresh
+        window.contentView?.addSubview(fresh)
       }
       marked = f[target]
       changes = [:]; focuses = [:]; inputs = [:]
@@ -191,7 +202,9 @@ final class Fixture: NSObject, NSTextFieldDelegate, NSSearchFieldDelegate {
       "sameNode": t != nil && t === marked,
       "exact": t != nil && (q["expected"] as? String).map { Array(value(t!).utf16) == Array($0.utf16) } == true,
       "targetEmpty": t.map { value($0).isEmpty } ?? false,
-      "othersWritten": others.filter { !value(f[$0]!).isEmpty },
+      // The setup field's canary counts as written once it no longer reads as set.
+      "othersWritten": ((q["setupText"] as? String).map { value(setup) != $0 } == true ? ["setup"] : [])
+        + others.filter { !value(f[$0]!).isEmpty },
       "focused": focusedName(), "placeholderChanges": changes[target] ?? 0,
       "focusesSinceMark": Dictionary(uniqueKeysWithValues: names.map { ($0, focuses[$0] ?? 0) }),
       "inputsSinceMark": Dictionary(uniqueKeysWithValues: names.map { ($0, inputs[$0] ?? 0) }),

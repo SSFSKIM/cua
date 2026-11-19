@@ -42,7 +42,8 @@ func probe398Census(_ revision: Revision, number: Int) {
   func chain(_ n: Int) -> [Int] {
     var out: [Int] = []
     var at = parent[n]
-    while let p = at, out.count < 128 { out.append(p); at = parent[p] }
+    // The engine observes to depth 200: the cap only guards a cycle, never a real chain.
+    while let p = at, out.count < 256 { out.append(p); at = parent[p] }
     return out
   }
   let fields = revision.entries.filter { !menu.contains($0.key) && probe398TextRoles.contains($0.value.identity.role) }

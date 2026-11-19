@@ -51,16 +51,26 @@ async function main(){
     };
     if(lane==='census-appkit'){
       for(const scene of SCENES){
+        const base={id:scene.id,kind:'appkit',bundle:scene.bundle};
         try{
           execFileSync('/usr/bin/open',scene.url?[scene.url]:['-b',scene.bundle],{stdio:'ignore',timeout:20000});
           const pid=await until(async()=>(await helper.ask({op:'lookup',bundle:scene.bundle})).pid,30000);
-          await until(async()=>(await helper.ask({op:'status',pid})).ready,20000).catch(()=>false);
+          base.ready=await until(async()=>(await helper.ask({op:'status',pid})).ready,20000).then(()=>true,()=>false);
           await pause(2500);
-          await front(pid);
-          for(const key of scene.keys){await w.execute('press_key',{pid,key});await pause(1500);}
+          base.front=await front(pid)!==false;
+          base.keys=true;
+          for(const key of scene.keys){
+            const r=await w.execute('press_key',{pid,key});
+            if(r.error)base.keys=false;
+            await pause(1500);
+          }
+          // The scene, by a window title where one marks it, else by its app ready and its keys accepted.
+          const titles=(await helper.ask({op:'titles',pid})).titles??[];
+          base.titleMatch=scene.expectTitle?titles.some(t=>typeof t==='string'&&scene.expectTitle.test(t)):null;
+          base.sceneVerified=base.ready&&base.keys&&base.titleMatch!==false;
           const first=await observe(pid);await pause(2000);
-          record({id:scene.id,kind:'appkit',bundle:scene.bundle},first,await observe(pid));
-        }catch{rows.push({id:scene.id,kind:'appkit',bundle:scene.bundle,observed:false,error:'setup'});}
+          record(base,first,await observe(pid));
+        }catch{rows.push({...base,observed:false,sceneVerified:false,error:'setup'});}
       }
     }else{
       const profile=join(home,'profile');let pid,port=null;
@@ -84,7 +94,8 @@ async function main(){
         try{
           if(port){
             const r=await fetch(`http://127.0.0.1:${port}/json/new?${encodeURIComponent(p.url)}`,{method:'PUT'});
-            tab=(await r.json()).id;
+            tab=r.ok?(await r.json().catch(()=>null))?.id:null;
+            if(typeof tab!=='string'||!tab){tab=null;rows.push({id:p.id,kind:p.kind,url:p.url,observed:false,error:'tab-open'});continue;}
           }else execFileSync('/usr/bin/open',['-a','/Applications/Safari.app',p.url],{stdio:'ignore',timeout:20000});
           await pause(8000);
           await front(pid);
@@ -109,10 +120,15 @@ async function main(){
     if(browser){browser.stdin?.destroy();browser.stdout?.destroy();browser.stderr?.destroy();browser.unref();}
     await helper.close();
   }
-  const observed=rows.filter(r=>r.observed);
+  // Totals over reached windows only: a page on its requested site, a verified app scene. Every row stays in census.json.
+  const reached=r=>r.observed&&(r.kind==='appkit'?r.sceneVerified===true:r.hostMatch===true);
+  for(const r of rows)r.reached=reached(r);
+  const observed=rows.filter(r=>r.reached);
   const sum=k=>observed.reduce((a,r)=>a+(r.census?.counts?.[k]??0),0);
+  const tally=list=>list.reduce((o,k)=>(o[k]=(o[k]??0)+1,o),{});
   const status={lane,abort,kit:config.kit,main:config.main,version:config.version??null,os:config.os,image:config.image,
-    sampled:rows.length,observed:observed.length,hostMatch:observed.filter(r=>r.hostMatch!==false).length,
+    sampled:rows.length,observedAny:rows.filter(r=>r.observed).length,reached:observed.length,
+    unreached:rows.length-observed.length,unreachedBy:tally(rows.filter(r=>!reached(r)).map(r=>r.error??(r.observed?'not-reached':'not-observed'))),
     fields:observed.reduce((a,r)=>a+(r.census?.fields??0),0),fieldsWithPlaceholder:observed.reduce((a,r)=>a+(r.census?.fieldsWithPlaceholder??0),0),
     windowsWithTwoFields:observed.filter(r=>(r.census?.fields??0)>=2).length,
     pairs:sum('pairs'),placeholderOnly:sum('placeholderOnly'),identical:sum('identical'),
@@ -120,11 +136,12 @@ async function main(){
     placeholderOnlyAncestryAlike:sum('placeholderOnlyAncestryAlike'),identicalAncestryAlike:sum('identicalAncestryAlike'),
     windowsWithPlaceholderOnly:observed.filter(r=>(r.census?.counts?.placeholderOnly??0)+(r.census?.counts?.placeholderOnlyIgnoringValue??0)>0).length,
     windowsWithIdentical:observed.filter(r=>(r.census?.counts?.identical??0)>0).length};
-  status.pass=abort===null&&observed.length>0;
+  // A census passes when it reached at least half of what it sampled.
+  status.pass=abort===null&&observed.length>0&&observed.length>=rows.length/2;
   writeFileSync(join(out,'status.json'),JSON.stringify(status,null,2)+'\n');
   writeFileSync(join(out,'census.json'),JSON.stringify(rows,null,2)+'\n');
   writeFileSync(join(out,'config.json'),JSON.stringify(config,null,2)+'\n');
-  console.log(JSON.stringify({lane,abort,sampled:rows.length,observed:observed.length,pass:status.pass}));
+  console.log(JSON.stringify({lane,abort,sampled:rows.length,reached:observed.length,pass:status.pass}));
   if(!status.pass)process.exitCode=1;
 }
 if(process.argv[1]?.endsWith('census.mjs'))main().catch(()=>{console.error('Census harness failed before evidence publication');process.exitCode=1;});

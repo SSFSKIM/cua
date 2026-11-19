@@ -554,15 +554,39 @@ function lateTakes(rows) {
 }
 
 /**
+ * Whether a drag-and-drop sample's page shows a drop it read: the drop counter read before and after the sample, and
+ * risen (pages/drag.html `drops`). The runner's `dropped` counts an unread counter as a drop (the checks above), the
+ * safe side for a rule a drop fails; a rule a drop passes reads the counter itself (ruling 870).
+ */
+function dropSeen(r) {
+  const { before, after } = r.drop_status ?? {};
+  return typeof before?.drops === 'number' && typeof after?.drops === 'number' && after.drops > before.drops;
+}
+
+/**
+ * Whether the page's dragend record is this sample's own drag's (ruling 870): one drag start and one dragend counted
+ * between the reads before and after it, so the `dur` read after is that drag's, never the previous drag's left on the
+ * page (pages/drag.html keeps its last `dur` until the next dragend).
+ */
+function ownDragendSeen(r) {
+  const { before, after } = r.drop_status ?? {};
+  const one = (key) => typeof before?.[key] === 'number' && after?.[key] === before[key] + 1;
+  return one('starts') && one('ends');
+}
+
+/**
  * Why a late-take sample's drop the witness did not record is not the witness span's limit (the design session's ruling
- * 680, from M4's V5 on candidate 2; encoded here by ruling 867): an empty list where it is. The witness watches until
- * `WITNESS_TAIL_MS` after the engine's answer (witness.mjs `startWitness`), and a late take's drop goes on after the
- * answer: Chrome activates its window 4 to 8 ms after the page's dragend, so a dragend at or past the answer plus the
- * tail lands its activation after the span closed. It is the limit only when the sample is otherwise as the case
- * expects: the drag answered as a plain drag, the read after it ran and carried the notice, the next acting request was
- * refused with it (T14's contract), the after-release watch escaped the take, and the page's pointer log is the
- * sample's own press, whose dragend (`drop_status.after.dur`, ms after the press) came at or past the answer (`ms`, from
- * the request's send, before the press) plus the tail. The rule of M4's re-judge script, rejudge-late-take-window.mjs.
+ * 680, from M4's V5 on candidate 2; encoded by ruling 867 and tightened by 870): an empty list where it is. The witness
+ * watches until `WITNESS_TAIL_MS` after the engine's answer (witness.mjs `startWitness`), and a late take's drop goes on
+ * after the answer: Chrome activates its window 4 to 8 ms after the page's dragend, so a dragend at or past the answer
+ * plus the tail lands its activation after the span closed. It is the limit only when the sample is otherwise as the
+ * case expects: the drag answered as a plain drag, the read after it ran and carried the notice, the next acting request
+ * was refused with it (T14's contract), the after-release watch escaped the take, the page's pointer log is the sample's
+ * own press, the page counted this press's own drag start and dragend (`ownDragendSeen`) and a drop it read
+ * (`dropSeen`), and that drag's `dur` (pages/drag.html: ms from its dragstart to its dragend) is at least the answer
+ * (`ms`, from the request's send) plus the tail. The press and its dragstart come after the send, so a `dur` that long
+ * puts the dragend at least that long after the send. The rule of M4's re-judge script, rejudge-late-take-window.mjs,
+ * with ruling 870's two observations added.
  */
 function spanLimitMisses(r) {
   const after = r.drop_status?.after;
@@ -571,9 +595,11 @@ function spanLimitMisses(r) {
   if (r.read_ok !== true || r.read_notice !== true) misses.push('the read did not run with the notice');
   if (!(r.next_ok === false && r.next_error === r.expected_notice)) misses.push('the next acting request was not refused with the notice');
   if (r.late_dnd?.escaped !== true) misses.push('the after-release watch did not escape the take');
+  if (!dropSeen(r)) misses.push("the page's drop counter was not read rising: no drop seen");
   if (!(typeof after?.downs === 'number' && after.log?.seq === after.downs)) misses.push("the page's pointer log is not the sample's own press");
+  else if (!ownDragendSeen(r)) misses.push("the page did not count this press's own drag start and dragend, so its dragend time is not this drag's");
   else if (!(typeof after.dur === 'number' && typeof r.ms === 'number')) misses.push(`the page recorded no time for the dragend, or the answer none (dragend ${after.dur}, answer ${r.ms})`);
-  else if (!(after.dur >= r.ms + WITNESS_TAIL_MS)) misses.push(`the dragend (${after.dur} ms after the press) came before the span closed (answer ${r.ms} + ${WITNESS_TAIL_MS} ms)`);
+  else if (!(after.dur >= r.ms + WITNESS_TAIL_MS)) misses.push(`the dragend (${after.dur} ms after its dragstart) came before the span closed (answer ${r.ms} + ${WITNESS_TAIL_MS} ms)`);
   return misses;
 }
 
@@ -956,7 +982,8 @@ export function judgeDevice(op, samples, audit, premise = undefined) {
     bad('the next acting request did not carry the late drag and drop', (r) => r.next_ok === false && r.next_error === r.expected_notice);
     // the notice says the desktop may have changed: where the drop landed, the witness must show it
     bad('a drop the witness did not record', (r) => !r.dropped || r.witness === false);
-    if (!exists('a drop landed', (r) => r.dropped && r.witness === false)) reasons.push('no drop landed: the case showed no change for the notice to report');
+    // a drop the page's counter was read showing, never one inferred from an unread counter (ruling 870)
+    if (!exists('a drop landed', (r) => r.dropped && dropSeen(r) && r.witness === false)) reasons.push('no drop landed: the case showed no change for the notice to report');
   }
   // the drops the engine confirms or reports, counted (the design session, 2026-11-10): a drop that landed and was
   // reported unconfirmed is honest, counted for the run (stats.mjs `dropCounts`, a finding only over 5% of a load's

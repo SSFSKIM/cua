@@ -2,9 +2,11 @@
 // as the witness span's limit. The span closes 20 ms after the engine's answer (witness.mjs `startWitness`), and a late
 // take's drop goes on after it, so a dragend at or past the answer plus the tail lands after the span closed. The
 // fixtures follow V5's records at H'''' (task 105, `chrome_dnd_late_take_shared` block 2: 2/0 the span's limit, its
-// dragend 221 ms after the press with the answer at 164.02 ms; 2/1 and 2/2 drops the witness recorded), and the negative
+// dragend 221 ms after its dragstart with the answer at 164.02 ms; 2/1 and 2/2 drops the witness recorded), and the negative
 // controls are the seven m5/x64/scripts/rejudge-680/rejudge-late-take-controls.mjs held, through the judge a run uses
-// (device.mjs `judgeDevice`) and the run's outcome (stats.mjs `runOutcome`).
+// (device.mjs `judgeDevice`) and the run's outcome (stats.mjs `runOutcome`). Ruling 870 tightened it: the limit needs
+// this press's own dragend observed (its `dur` that end's, never the page's previous value) and the drop counter read
+// rising, never inferred; and the case's recorded drop needs the counter read rising too.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
@@ -18,7 +20,7 @@ const app = 'Google-chrome';
 const notice = dndLateRefusal(app, 'move');
 
 /** A late-take sample as run.mjs records it, its fields as the judge reads them. */
-const sample = (i, { ms, dur, witness, dropped = true, downs = 103 + i, ...rest }) => ({
+const sample = (i, { ms, dur, witness, dropped = true, downs = 103 + i, starts = 97 + i, ...rest }) => ({
   run: 'pinned-V5',
   kind: 'sample',
   engine: 'cua',
@@ -37,7 +39,8 @@ const sample = (i, { ms, dur, witness, dropped = true, downs = 103 + i, ...rest 
   late_dnd: { after_release_ms: 0, app, escape_after_release_ms: 1.88, escaped: true },
   dropped,
   witness,
-  drop_status: { before: { downs: downs - 1, drops: 65 }, after: { downs, log: { seq: downs }, dur, drops: dropped ? 66 : 65 } },
+  // the page's counts (pages/drag.html): this press, its drag start and its dragend, whose `dur` is ms from that start
+  drop_status: { before: { downs: downs - 1, starts: starts - 1, ends: starts - 1, drops: 65, dur: 747 }, after: { downs, starts, ends: starts, log: { seq: downs }, dur, drops: dropped ? 66 : 65 } },
   ...rest,
 });
 // V5 at H'''': 2/0 dropped with the witness unchanged, its dragend past the span; 2/1 and 2/2 recorded drops
@@ -71,7 +74,7 @@ test("ruling 680's controls on the case: each still fails", () => {
   const controls = [
     ['the notice missing on the span-limited sample', edit((s) => ((s.read_notice = false), s)), /the read did not carry the notice on 1 of 3 samples \(0\/0\)/, /the read did not run with the notice/],
     ['its next acting request not refused', edit((s) => ((s.next_ok = true), (s.next_error = null), s)), /the next acting request did not carry the late drag and drop on 1 of 3 samples \(0\/0\)/, /the next acting request was not refused with the notice/],
-    ['its drop early: a clean witness on a drop that ended inside the span', edit((s) => ((s.drop_status.after.dur = Math.floor(s.ms)), s)), /a drop the witness did not record on 1 of 3 samples \(0\/0\)/, /the dragend \(164 ms after the press\) came before the span closed \(answer 164\.02 \+ 20 ms\)/],
+    ['its drop early: a clean witness on a drop that ended inside the span', edit((s) => ((s.drop_status.after.dur = Math.floor(s.ms)), s)), /a drop the witness did not record on 1 of 3 samples \(0\/0\)/, /the dragend \(164 ms after its dragstart\) came before the span closed \(answer 164\.02 \+ 20 ms\)/],
     // every drop of the case unrecorded and late, so each would count as the span's limit: none is left that the witness recorded
     ['no drop in the case the witness recorded', cell.map((s) => ({ ...structuredClone(s), witness: true, drop_status: { ...s.drop_status, after: { ...s.drop_status.after, dur: Math.ceil(s.ms + WITNESS_TAIL_MS) } } })), /no drop landed: the case showed no change for the notice to report/, null],
     // the rule's other conditions (the script's 1 to 3)
@@ -80,6 +83,16 @@ test("ruling 680's controls on the case: each still fails", () => {
     ["the after-release watch's Escape not sent", edit((s) => ((s.late_dnd.escaped = false), s)), /a drop the witness did not record on 1 of 3 samples \(0\/0\)/, /the after-release watch did not escape the take/],
     ["the page's pointer log another press's", edit((s) => ((s.drop_status.after.log.seq = s.drop_status.after.downs - 1), s)), /the page's pointer log was not the sample's own press on 1 of 3 samples \(0\/0\)/, /the page's pointer log is not the sample's own press/],
     ['the dragend unread', edit((s) => ((s.drop_status.after.dur = undefined), s)), /a drop the witness did not record on 1 of 3 samples \(0\/0\)/, /the page recorded no time for the dragend/],
+    // ruling 870 (a): the reviewer's probe, the previous drag's dragend timing (747 ms) left on 2/0, its own end never counted
+    ['stale end timing: no dragend counted for this press, the previous drag\'s 747 ms', edit((s) => ((s.drop_status.after.ends = s.drop_status.before.ends), (s.drop_status.after.dur = s.drop_status.before.dur), s)), /a drop the witness did not record on 1 of 3 samples \(0\/0\)/, /the page did not count this press's own drag start and dragend/],
+    ['its dragend counted, its drag start not (the timing from an earlier start)', edit((s) => ((s.drop_status.after.starts = s.drop_status.before.starts), s)), /a drop the witness did not record on 1 of 3 samples \(0\/0\)/, /the page did not count this press's own drag start and dragend/],
+    ['two dragends counted for one press', edit((s) => ((s.drop_status.after.ends = s.drop_status.before.ends + 2), s)), /a drop the witness did not record on 1 of 3 samples \(0\/0\)/, /the page did not count this press's own drag start and dragend/],
+    // ruling 870 (b): the runner sets `dropped` on an unread counter (device.mjs's check); the limit never infers a drop
+    ['an unread drop counter after', edit((s) => ((s.drop_status.after.drops = undefined), s)), /a drop the witness did not record on 1 of 3 samples \(0\/0\)/, /the page's drop counter was not read rising/],
+    ['an unread drop counter before', edit((s) => ((s.drop_status.before.drops = null), s)), /a drop the witness did not record on 1 of 3 samples \(0\/0\)/, /the page's drop counter was not read rising/],
+    ['a drop counter read unchanged', edit((s) => ((s.drop_status.after.drops = s.drop_status.before.drops), s)), /a drop the witness did not record on 1 of 3 samples \(0\/0\)/, /the page's drop counter was not read rising/],
+    // and the case's own recorded drop (ruling 870.1): a drop the witness recorded, its counter unread, is no drop seen
+    ['the recorded drops on unread counters', [limited, ...recorded.map((s) => ({ ...structuredClone(s), drop_status: { ...s.drop_status, after: { ...s.drop_status.after, drops: undefined } } }))], /no drop landed: the case showed no change for the notice to report/, null],
   ];
   for (const [what, samples, reason, why] of controls) {
     const r = judged(samples);

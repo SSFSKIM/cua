@@ -42,7 +42,8 @@ export const CELLS={
   twinswapbtn:{kind:'twin',before:'Inbox',after:'Inbox',twin:'swap',swap:'button',reasons:['nodeGone','frameMoved']},
   twincover:{kind:'twin',before:'Inbox',after:'Inbox',twin:'cover'},
   twinrow:{kind:'twin',before:'Inbox',after:'Inbox',twin:'row'},
-  twinwide:{kind:'twin',before:'Delete',after:'Delete',twin:'wide'},
+  // A group of links, the shape whose width cut Safari shows (Chromium reads such a group whole), so Safari only.
+  twinwide:{kind:'twin',before:'Delete',after:'Delete',twin:'wide',lanes:['safari']},
   remount:{kind:'keep',before:'Inbox',after:'Inbox',remount:'link'},
   retext:{kind:'keep',before:'Inbox',after:'Inbox',remount:'text'},
   like:{kind:'keep',before:'Like (12)',after:'Like (13)',style:'tabular'},

@@ -196,7 +196,8 @@ export function gates(rows,{coverage:cov,units=UNITS}){
     {fixRows:of(fix,u).length,missed:miss.filter(r=>unitKey(r)===unitKey(u)).length,fix:verdictTally(of(fix,u)),main:verdictTally(of(main,u))}]));
   // A twin cell: refused as nodeGone, nothing reaching the target or any other control (`refused`, which a click on the
   // twin can never be: any event on another control is `wrong-target`).
-  const twinOk=r=>r.verdict==='refused'&&(CELLS[r.cell].reasons??['nodeGone']).includes(r.guard?.reason);
+  // interactiveHit (the hit an interactive element the record does not hold at the point) is a refusal ruling 889 accepts.
+  const twinOk=r=>r.verdict==='refused'&&[...(CELLS[r.cell].reasons??['nodeGone']),'interactiveHit'].includes(r.guard?.reason);
   const twinGate=pred=>{
     const list=fix.filter(r=>pred(r.cell)),miss=list.filter(r=>!twinOk(r));
     return {pass:!unitsWhere(pred).length||list.length>0&&everyUnit(pred)&&miss.length===0,rows:list.length,failed:miss.length,
@@ -251,6 +252,11 @@ export function gates(rows,{coverage:cov,units=UNITS}){
     // Genuine re-creations where the record could not hold the container whole (the builder's question): reported with
     // the keep cells' measure (kept and landed, as main), never part of the pass.
     bigPage:{informational:true,...asMainGate(c=>CELLS[c].kind==='big',{mustKeep:true})},
+    // The strict form's cost (ruling 889): per unit, of the pairs main kept and landed, how many the fix refused.
+    cost:{informational:true,pass:true,perUnit:Object.fromEntries(units.map(u=>{
+      const kept=of(fix,u).filter(r=>mate(r)?.verdict==='kept-landed');
+      return [unitKey(u),{mainKept:kept.length,fixRefused:kept.filter(r=>r.verdict.startsWith('refused')).length}];
+    }).filter(([,x])=>x.mainKept>0))},
     noWrongTarget:{pass:wrong.length===0&&invalidWrong.length===0,fixRows:fix.length,wrong:wrong.length,
       invalidRowsWithWrongEvents:invalidWrong.length,invalidExamples:invalidWrong.slice(0,20).map(r=>({unit:unitKey(r),rep:r.rep,invalid:r.invalid})),mainWrong:main.filter(r=>r.verdict==='wrong-target').length,
       perUnit:Object.fromEntries(units.map(u=>[unitKey(u),{fix:of(wrong,u).length,main:of(main,u).filter(r=>r.verdict==='wrong-target').length}])

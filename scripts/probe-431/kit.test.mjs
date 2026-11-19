@@ -282,6 +282,14 @@ test('a big page\'s re-creation refused by the fix is reported, never failed; it
   assert.equal(g.bigPage.informational, true); assert.equal(g.bigPage.pass, false);
   assert.equal(g.bigPage.refusedWhereMainKept, 4 * 20); assert.equal(g.keptAsMain.pass, true);
   assert.equal(judge(refused, {mode: 'qualify', abort: null, coverage: cov}).pass, true);
+  // The strict form's cost: of main's kept-and-landed pairs per unit, those the fix refused.
+  assert.deepEqual(g.cost.perUnit['capremount/text'], {mainKept: 20, fixRefused: 20});
+  assert.deepEqual(g.cost.perUnit['remount/link'], {mainKept: 20, fixRefused: 0});
+  assert.equal(g.cost.perUnit['twin/text'], undefined);
+  // interactiveHit is a twin refusal ruling 889 accepts; relabelled is not.
+  const hit = v => rows(good, r => r.head === 'fix' && r.cell === 'twinrow' ? {guard: {verdict: 'refused', reason: v}} : {});
+  assert.equal(gates(hit('interactiveHit'), {coverage: cov}).twinRefused.pass, true);
+  assert.equal(gates(hit('relabelled'), {coverage: cov}).twinRefused.pass, false);
   const found = {text: null, link: null};
   assert.equal(uncoveredBy({nodes: [{role: 'AXGroup', shown: {count: 30, of: 151}}]}, CELLS.wideremount, found), null);
   assert.equal(uncoveredBy({nodes: [{role: 'AXGroup', shown: {count: 151, of: 151}}]}, CELLS.wideremount, found), 'cut');

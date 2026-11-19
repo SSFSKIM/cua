@@ -88,16 +88,18 @@ function run(c){
       for(const s of slots)s.setAttribute('role','group');
       twins=[control('twin',spec.before,spec)];slots[1].append(twins[0]);slots[2].append(archive);
     }else if(spec.twin==='wide'){
-      // A list of WIDE rows placed so that the target's row is the last the window shows and the twin's, right after it,
-      // the first it does not (the width rule reads the visible rows only): the target's row is 104 px, so the twin's starts
-      // 40 px past the window and, the target's row removed, moves up exactly into it. The other rows carry other labels.
-      const list=document.createElement('div');list.setAttribute('role','list');
+      // A group of WIDE links (the shape whose width cut Safari shows: a role=list of rows it read whole, smoke run
+      // 44605406784), placed so that the target is the last the window shows and the twin, right after it, the first it
+      // does not (the width rule reads the visible children only): links 56 px high, 8 px apart, the target 48 px, so the
+      // twin starts 40 px past the window and, the target removed, moves up exactly into its place. The others carry
+      // other labels.
+      const list=document.createElement('div');list.setAttribute('role','group');
       list.style.cssText='position:absolute;left:20px;top:'+(innerHeight-3*64)+'px';
       rows=[];
       for(let i=0;i<WIDE;i++){
-        const r=row();r.setAttribute('role','listitem');if(i===2)r.style.height='104px';
         const a=i===2?target:i===3?control('twin',spec.before,spec):control('r'+i,'Row '+i);
-        if(i===3)twins=[a];r.append(a);rows.push(r);list.append(r);
+        a.style.cssText='display:block;width:max-content;margin-bottom:'+(i===2?48:8)+'px';
+        if(i===3)twins=[a];rows.push(a);list.append(a);
       }
       archive=null;slots[0].replaceChildren(list);
     }else if(spec.big){

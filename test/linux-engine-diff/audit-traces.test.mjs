@@ -151,6 +151,26 @@ test('equivalence on the committed private-display traces: the raw trace and its
   assert.ok(badWindow > 0 && destroyed > 0, 'the fixtures hold BadWindow refusals and ended lives');
 });
 
+test("equivalence on recorded private-display route audits of gedit's clipboard_write with an INCR paste: the raw trace and its projection, under the run's registry and others, both forms", () => {
+  // fixtures/audit-incr (its README): the route audits of one gedit clipboard_write a lane on a private display, the
+  // paste 72,826 bytes so each engine answered gedit's conversion by INCR; the pinned build's audit has its gedit's end
+  // and BadWindow refusals too
+  const dir = join(REPO, 'test', 'linux-engine-diff', 'fixtures', 'audit-incr');
+  const counts = { selreq: 0, incr: 0, notify: 0, badWindow: 0, destroyed: 0 };
+  for (const lane of ['cua', 'pinned']) {
+    const text = gunzipSync(readFileSync(join(dir, `${lane}-gedit-clipboard_write-0.xtrace.gz`))).toString('utf8');
+    const { registered, root } = JSON.parse(readFileSync(join(dir, `${lane}-gedit-clipboard_write.registry.json`), 'utf8'));
+    assert.equal(root, ROOT);
+    counts.selreq += (text.match(/ Event SelectionRequest\(/g) ?? []).length;
+    counts.incr += (text.match(/ChangeProperty .*type=0x[0-9a-f]+\("INCR"\)/g) ?? []).length;
+    counts.notify += (text.match(/SendEvent .*SelectionNotify\(31\)/g) ?? []).length;
+    counts.badWindow += (text.match(/:Error 3=Window:/g) ?? []).length;
+    counts.destroyed += (text.match(/ Event (?:\(generated\) )?DestroyNotify\(/g) ?? []).length;
+    assertEquivalent(lane, text, [new Set(registered), ...registriesOf(text)]);
+  }
+  assert.ok(Object.values(counts).every((n) => n > 0), `the fixtures hold selection requests, INCR transfers, notifies, BadWindow refusals and ends: ${JSON.stringify(counts)}`);
+});
+
 test('equivalence on a seeded sweep of selection and INCR sequences, BadWindow refusals and ended lives', () => {
   const OWN = 0x00400040;
   const OWNER = 0x00400050;

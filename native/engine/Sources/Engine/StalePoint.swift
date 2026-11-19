@@ -28,9 +28,10 @@ import Foundation
 // words changed (`relabelledLabel`, `stalePointLabelWords`: Save to Delete on one element, while a count or a ticking
 // time passes), and the re-created match compares an AXStaticText's value by the same words; the text of an editable
 // region the model types into is exempt (`editedInPlace`, ruling 1ea561bc:553). #340 lets the re-created match take a
-// text whose frame grew or shrank across from the same edge when its words agree by that rule (`resizedInPlace`: a
-// link's text re-rendered as "Inbox (3)"). Everything here reads through closures, so the rule is unit-tested over a
-// fake tree.
+// text whose frame grew or shrank across from the same edge (`resizedInPlace`: a link's text re-rendered as "Inbox (3)"),
+// anchored on the control the record held it in, still there on its own handle and holding the point, the new text
+// inside it with nothing actionable between, and its label agreeing by that rule. Everything here reads through
+// closures, so the rule is unit-tested over a fake tree.
 
 /// One node of the tree an observation with a screenshot walked, as the screenshot showed it.
 struct ScreenshotNode<Element> {
@@ -76,6 +77,11 @@ struct ScreenshotNode<Element> {
   /// The nearest AXWebArea at or above it in the record, frameless ones included (#316's rule G): the document the
   /// screenshot showed it in, which a hit at its point must still lie in.
   var webArea: Element?
+  /// For an AXStaticText (`stalePointResizableRole`), the control the record held it in (#340, `stalePointControlRead`):
+  /// its nearest recorded ancestor that is one of `stalePointInteractiveRoles` or advertised AXPress, every element
+  /// between with its role read and inert, below any web area, window, sheet or application. Nil otherwise: a resized
+  /// text is then never matched.
+  var control: Element?
 }
 
 /// One element as the walk emitted it, for the record (`screenshotNodes`): its lineage number and its parent's.
@@ -98,6 +104,23 @@ struct ScreenshotNodeRead<Element> {
   var value: String? = nil
   /// The label's attributes whose read failed at the observation (`screenshotLabelsUnread`): an error, not their absence.
   var labelsUnread: Set<StalePointLabelPart> = []
+}
+
+/// #340: the control an element of the record stands for to a text below it. `.control` when it is one (one of
+/// `stalePointInteractiveRoles`, or its recorded actions hold AXPress, which only a read that succeeded can give);
+/// `.none` when no control lies at or above it (a web area, window, sheet or application, or nothing above), or when its
+/// role is unknown (AXUnknown, which the walk records for a role it failed to read, or lacks), since it might be one;
+/// else, an inert wrapper, whatever its parent stands for.
+/// A wrapper's recorded actions cannot tell none from a failed read, so the click reads them again (`resizedInControl`).
+enum StalePointControlRead<Element> {
+  case control(Element), none, wrapper
+}
+
+func stalePointControlRead<Element>(_ read: ScreenshotNodeRead<Element>) -> StalePointControlRead<Element> {
+  guard read.role != "AXUnknown" else { return .none }  // `ElementData`'s stand-in for a role it could not read
+  if stalePointInteractiveRoles.contains(read.role) || read.actions.contains("AXPress") { return .control(read.element) }
+  if read.role == "AXWebArea" || stalePointWalkStops.contains(read.role) { return .none }
+  return .wrapper
 }
 
 /// The attributes a node's label (#298's `stalePointLabel`) is taken from, in priority order: the title, the
@@ -169,11 +192,18 @@ func screenshotNodes<Element>(_ reads: [ScreenshotNodeRead<Element>]) -> [Screen
   var webAreas: [Int: Element] = [:]
   /// The editable region each read lies in (#298): itself when its role is an editable text role, else its parent's.
   var regions: [Int: Element] = [:]
+  /// The control each read stands for to a text below it (#340, `stalePointControlRead`): itself, its parent's, or none.
+  var controls: [Int: Element] = [:]
   var nodes: [ScreenshotNode<Element>] = []
   nodes.reserveCapacity(reads.count)
   for read in reads {
     let webArea = read.role == "AXWebArea" ? read.element : read.parent.flatMap { webAreas[$0] }
     if let webArea { webAreas[read.number] = webArea }
+    switch stalePointControlRead(read) {
+    case .control(let control): controls[read.number] = control
+    case .none: break
+    case .wrapper: if let control = read.parent.flatMap({ controls[$0] }) { controls[read.number] = control }
+    }
     if let region = stalePointRegion(read.element, role: read.role, editableAncestor: nil) ?? read.parent.flatMap({ regions[$0] }) {
       regions[read.number] = region
     }
@@ -208,7 +238,8 @@ func screenshotNodes<Element>(_ reads: [ScreenshotNodeRead<Element>]) -> [Screen
                                 frame: frame, shown: shown, depth: read.depth,
                                 subtreeRecorded: !incomplete.contains(read.number),
                                 thinGap: thin(frame) && incomplete.contains(read.number), gapsBelow: gapsBelow[read.number] ?? [],
-                                ancestor: ancestor, webArea: webArea))
+                                ancestor: ancestor, webArea: webArea,
+                                control: read.role == stalePointResizableRole ? read.parent.flatMap { controls[$0] } : nil))
   }
   return nodes
 }
@@ -462,12 +493,17 @@ func stalePointLabel(title: String?, description: String?, value: String?) -> St
 /// white space). So a count's or a time's unit and its inflection go with it ("1 item", "Elapsed 11.6 s", "3 new").
 func stalePointLabelWords(_ label: String) -> [String] { stalePointLabelTokens(label).words }
 
-/// One pass of #298's word rule over a label (`stalePointLabelWords`): its words, and for #340 the punctuation and
-/// symbols it holds outside its numbers (each a string, in order: "♡", or "(" and ")") and whether it holds a number.
+/// One pass of #298's word rule over a label (`stalePointLabelWords`): its words, and for #340 its numbers and the marks
+/// outside them, in order (`stalePointWordlessAgree`): "↑ 1 ↓" is ↑, a number, ↓.
 struct StalePointLabelTokens: Equatable {
   var words: [String] = []
-  var symbols: [String] = []
-  var hasNumber = false
+  var sequence: [StalePointLabelToken] = []
+}
+
+/// A number (any one), or one punctuation or symbol character outside a number.
+enum StalePointLabelToken: Equatable {
+  case number
+  case mark(String)
 }
 
 func stalePointLabelTokens(_ label: String) -> StalePointLabelTokens {
@@ -489,7 +525,7 @@ func stalePointLabelTokens(_ label: String) -> StalePointLabelTokens {
   while index < scalars.count {
     let scalar = scalars[index]
     if isDigit(scalar) {
-      tokens.hasNumber = true
+      tokens.sequence.append(.number)
       index += 1
       while index < scalars.count {
         if isDigit(scalars[index]) {
@@ -511,7 +547,7 @@ func stalePointLabelTokens(_ label: String) -> StalePointLabelTokens {
     } else {
       if !isSpace(scalar) {
         afterNumber = false  // punctuation ends a number's words
-        tokens.symbols.append(String(scalar))
+        tokens.sequence.append(.mark(String(scalar)))
       }
       index += 1
     }
@@ -596,12 +632,18 @@ func editedInPlace<Element>(_ text: Element, region: Element, _ reads: StalePoin
     return nil
   }
   guard let now = reads.editableAncestor(text) ?? regionAbove(), reads.same(now, region) else { return false }
-  var current = text
+  return insideThroughInert(text, region, reads)
+}
+
+/// Whether `element` lies inside `container` with nothing actionable between (#298's edited-text exemption; #340's
+/// control): its parents, read up to `container`'s own handle, each with its role and action names read, and none one
+/// of `stalePointInteractiveRoles` or advertising AXPress. A role or action names that cannot be read leave the element
+/// not known to be inert (the review of b2f00ad5..25b23fbb, P2 2), and the answer is no.
+func insideThroughInert<Element>(_ element: Element, _ container: Element, _ reads: StalePointReads<Element>) -> Bool {
+  var current = element
   for _ in 0..<stalePointAncestorLevels {
     guard let next = reads.parent(current) else { return false }
-    if reads.same(next, region) { return true }
-    // A role or action names that cannot be read leave the element not known to be inert (the review of
-    // b2f00ad5..25b23fbb, P2 2): the text stays judged.
+    if reads.same(next, container) { return true }
     guard let role = reads.role(next), let actions = reads.actions(next) else { return false }
     if stalePointInteractiveRoles.contains(role) || actions.contains("AXPress") { return false }
     current = next
@@ -733,22 +775,25 @@ private func descendants<Element>(of element: Element, _ reads: StalePointReads<
 /// the element of the node's role whose frame lies nearest the recorded one moved by `windowShift` (the window's move
 /// since the screenshot), within `stalePointFrameTolerance`, whose label agrees (`stalePointLabelsAgree`). Else (#340),
 /// for a text (`stalePointResizableRole`), the nearest whose frame grew or shrank across from the same edge
-/// (`resizedInPlace`), that lies in the control the record held it in (`resizedTextOwned`), and whose label, each
-/// attribute read once, agrees (`resizedLabelsAgree`): a link's text re-rendered with its count or its time ("Inbox" to
-/// "Inbox (3)"). `nodes` is the record the node is from.
-func recreatedHandle<Element>(of node: ScreenshotNode<Element>, near hit: Element, windowShift: CGVector = .zero,
-                              nodes: [ScreenshotNode<Element>] = [], _ reads: StalePointReads<Element>) -> (element: Element, frame: CGRect)? {
+/// (`resizedInPlace`), in the control the record held the text in (`resizedInControl`), whose label agrees
+/// (`resizedLabelsAgree`): a link's text re-rendered with its count or its time ("Inbox" to "Inbox (3)"). `point` is
+/// where the events are posted; `recorded` answers non-nil for every element of the record (`screenshotChildrenRecorded`).
+func recreatedHandle<Element>(of node: ScreenshotNode<Element>, near hit: Element, windowShift: CGVector = .zero, point: CGPoint? = nil,
+                              recorded: (Element) -> Bool? = { _ in nil }, _ reads: StalePointReads<Element>) -> (element: Element, frame: CGRect)? {
   let expected = node.frame.offsetBy(dx: windowShift.dx, dy: windowShift.dy)
-  let resizable = node.role == stalePointResizableRole
+  // The control's own frame read now, once, at the first resized candidate. Only a text (`stalePointResizableRole`) has a
+  // recorded control, so no other role is ever matched resized.
+  var controlHolds: Bool?
   // The nearest wins, so a match in place (within the tolerance) always ranks before a resized one (beyond it).
   var best: (element: Element, frame: CGRect, distance: CGFloat)?
   for candidate in [hit] + ancestors(of: hit, reads) + descendants(of: hit, reads) {
     guard reads.role(candidate) == node.role, let frame = reads.frame(candidate) else { continue }
     let distance = frameDistance(frame, expected)
     let resized = distance > stalePointFrameTolerance
-    guard !resized || (resizable && resizedInPlace(frame, expected)), best.map({ distance < $0.distance }) ?? true else { continue }
+    guard !resized || resizedInPlace(frame, expected), best.map({ distance < $0.distance }) ?? true else { continue }
     if resized {
-      guard resizedTextOwned(candidate, as: node, in: nodes, reads), resizedLabelsAgree(node, candidate, reads) else { continue }
+      if controlHolds == nil { controlHolds = resizedControlHolds(node, point, reads) }
+      guard controlHolds == true, resizedInControl(candidate, node, recorded: recorded, reads), resizedLabelsAgree(node, candidate, reads) else { continue }
     } else {
       let (title, description) = (reads.title(candidate), reads.description(candidate))
       func agrees(value: String?) -> Bool {
@@ -765,49 +810,55 @@ func recreatedHandle<Element>(of node: ScreenshotNode<Element>, near hit: Elemen
   return best.map { ($0.element, $0.frame) }
 }
 
-/// #340: whether a resized `candidate` is the recorded text's own replacement by where it lies (the review of
-/// main..700c80cd, P1: another link with the same label slid into the place of a link that went). The record holds the
-/// text under its nearest recorded ancestor (`ScreenshotNode.ancestor`), its control (a link, a clickable group), which must
-/// not be an area holding whole regions (`recordedHitAreaRoles`). The candidate's parents, read up to that control's own
-/// handle, must reach it before any interactive element (`stalePointInteractiveRoles`), window or sheet, and with every
-/// role read; and the candidate must not be in the record itself, since then the screenshot already showed it as a text
-/// of its own.
-func resizedTextOwned<Element>(_ candidate: Element, as node: ScreenshotNode<Element>, in nodes: [ScreenshotNode<Element>],
+/// #340, anchored on the control (the review of 700c80cd..7f9fd90a): whether the control the record held the text in
+/// (`ScreenshotNode.control`) is still there on its own handle, never one found again, with its frame read now holding
+/// `point`. So a click on a resized text is a click on the same live control.
+func resizedControlHolds<Element>(_ node: ScreenshotNode<Element>, _ point: CGPoint?, _ reads: StalePointReads<Element>) -> Bool {
+  guard let control = node.control, let point, let frame = reads.frame(control) else { return false }
+  return holdsPoint(frame, point)
+}
+
+/// #340: whether a resized `candidate` is a new text of the recorded text's control: inside the control's own handle with
+/// nothing actionable between (`insideThroughInert`; a link nested in a clickable card is another control), and not in
+/// the record (`recorded`), where the screenshot already showed it as a text of its own.
+func resizedInControl<Element>(_ candidate: Element, _ node: ScreenshotNode<Element>, recorded: (Element) -> Bool?,
                                _ reads: StalePointReads<Element>) -> Bool {
-  guard let index = node.ancestor, nodes.indices.contains(index), !recordedHitAreaRoles.contains(nodes[index].role) else { return false }
-  let owner = nodes[index].element
-  var current = candidate
-  for _ in 0..<stalePointAncestorLevels {
-    guard let next = reads.parent(current) else { return false }
-    if reads.same(next, owner) { return !nodes.contains { reads.same($0.element, candidate) } }
-    guard let role = reads.role(next), !stalePointInteractiveRoles.contains(role), !stalePointWalkStops.contains(role) else { return false }
-    current = next
-  }
-  return false
+  guard let control = node.control, recorded(candidate) == nil else { return false }
+  return insideThroughInert(candidate, control, reads)
 }
 
 /// #340: whether a resized `candidate`'s label agrees with the recorded text's, only on positive evidence. Each label
-/// attribute is read once (`StalePointReads.readLabel`; the review of main..700c80cd, P2 2), and any read failed now or at
-/// the observation (`ScreenshotNode.labelsUnread`) leaves it unmatched. The title and description then agree as #296's
-/// match has them (`stalePointLabelsAgree`, exact), and the labels (`stalePointLabel`), both non-empty, have the same
-/// words by #298's rule. Where both have no words at all, the words cannot tell them apart (P2 1: "♡" to "🗑"): the labels
-/// must then be the same, or differ by a number, one side at least holding one, with the same symbols outside their
-/// numbers ("1 minute ago" to "2 minutes ago", "♡" to "♡ 3", as "Inbox" to "Inbox (3)").
+/// attribute is read once (`StalePointReads.readLabel`), and any read failed now or at the observation
+/// (`ScreenshotNode.labelsUnread`) leaves it unmatched. Those raw reads go to the title and description check
+/// (`stalePointLabelsAgree`, exact, which cuts them by `bounded` as the record's were), and, cut once the same way, make
+/// the label (`stalePointLabel`), which must have the same words as the recorded one by #298's rule. Labels with no
+/// words at all must also agree token by token (`stalePointWordlessAgree`).
 func resizedLabelsAgree<Element>(_ node: ScreenshotNode<Element>, _ candidate: Element, _ reads: StalePointReads<Element>) -> Bool {
   guard node.labelsUnread.isEmpty else { return false }
-  var now: [StalePointLabelPart: String] = [:]
+  var raw: [StalePointLabelPart: String] = [:]
   for part in StalePointLabelPart.allCases {
     guard case .text(let text) = reads.readLabel(candidate, part) else { return false }
-    now[part] = text.map(bounded)
+    raw[part] = text
   }
   guard stalePointLabelsAgree(recordedTitle: node.title, recordedDescription: node.description, recordedValue: node.value,
-                              title: now[.title], description: now[.description], value: now[.value]),
+                              title: raw[.title], description: raw[.description], value: raw[.value]),
         let was = stalePointLabel(title: node.title, description: node.description, value: node.value),
-        let label = stalePointLabel(title: now[.title], description: now[.description], value: now[.value]) else { return false }
-  let (old, new) = (stalePointLabelTokens(was), stalePointLabelTokens(label))
+        let now = stalePointLabel(title: raw[.title].map(bounded), description: raw[.description].map(bounded),
+                                  value: raw[.value].map(bounded)) else { return false }
+  let (old, new) = (stalePointLabelTokens(was), stalePointLabelTokens(now))
   guard old.words == new.words else { return false }
-  guard old.words.isEmpty else { return true }
-  return was == label || ((old.hasNumber || new.hasNumber) && old.symbols == new.symbols)
+  return !old.words.isEmpty || stalePointWordlessAgree(old.sequence, new.sequence)
+}
+
+/// #340: whether two labels with no words agree (the reviews of main..700c80cd, P2 1, and 700c80cd..7f9fd90a: "♡" to "🗑",
+/// and "↑ 1 ↓" to "↑ ↓ 100", have the same empty words). Their tokens (`StalePointLabelToken`: each number, and each mark
+/// outside one) must be the same in order, any number matching any number, or one of them have exactly one number more,
+/// at its start or its end ("♡" to "♡ 3").
+func stalePointWordlessAgree(_ a: [StalePointLabelToken], _ b: [StalePointLabelToken]) -> Bool {
+  if a == b { return true }
+  let (short, long) = a.count < b.count ? (a, b) : (b, a)
+  guard long.count == short.count + 1 else { return false }
+  return (long.first == .number && Array(long.dropFirst()) == short) || (long.last == .number && Array(long.dropLast()) == short)
 }
 
 /// The guard at `point` (#296): the deepest recorded node there (`deepestScreenshotNode`) found now, by its own handle
@@ -848,7 +899,8 @@ func stalePointVerdict<Element>(at point: CGPoint, windowShift: CGVector = .zero
     (verdict.current, verdict.identity, currentFrame) = (node.element, .handle, frame)
   } else if let hit, reads.same(hit, node.element) || isInside(hit, node.element, reads) {
     (verdict.current, verdict.identity) = (node.element, .handle)  // its frame unread, but the point reaches it
-  } else if let hit, let found = recreatedHandle(of: node, near: hit, windowShift: windowShift, nodes: nodes, reads) {
+  } else if let hit, let found = recreatedHandle(of: node, near: hit, windowShift: windowShift, point: point, recorded: recorded,
+                                                                     reads) {
     (verdict.current, verdict.identity, currentFrame) = (found.element, .recreated, found.frame)
   }
   guard let current = verdict.current else { return verdict }

@@ -6767,90 +6767,114 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
 
 - Decision (#340, 2026-11-19, `fix/340-growing-link-text`; the issue's intent, spawned by #298's findings' limit 6; amends
   #296's item 4 and #298's item 2's re-created path): **#296's re-created match takes a text whose frame grew or shrank
-  across from the same edge when its label's words agree by #298's rule, so a link whose text re-renders with a count
-  or a ticking time keeps taking clicks.** Replacing a link's text (`textContent`) re-creates its `AXStaticText`, the
+  across from the same edge, inside the control the record held it in, still there on its own handle and covering the
+  point, when its label's words agree by #298's rule; so a link whose text re-renders with a count or a ticking time
+  keeps taking clicks.** Replacing a link's text (`textContent`) re-creates its `AXStaticText`, the
   deepest node at a point on the text. When only its count or time changed ("Inbox" -> "Inbox (3)", "1 minute ago" ->
   "2 minutes ago") the new text is 6-20 pt wider, outside the search's 2 pt, so the click was refused `nodeGone`: 12 of 12
   in #298's runs on Chrome for Testing and Safari, and all 3 cells in #330's gate (run 42585577476) where the record held
   the text. Where the record held the link, the link's own handle survived and kept every cell, which this leaves as it
   was.
-  1. **The match** (`recreatedHandle`, `resizedInPlace`, `stalePointResizableRole`, StalePoint.swift). A candidate
-     of the recorded role inside `stalePointFrameTolerance` (2 pt) on every edge is matched as before. Beyond it, a
-     candidate is matched only when the recorded role is `AXStaticText` (`stalePointResizableRole`, the one constant this
-     adds), its top and bottom lie within the same 2 pt, and so does its left edge or its right edge. It must lie in the
-     control the record held the text in (item 8). Its title and description must also agree as #296's amendment 0c0b70f0
-     has them. Its label (the title, else the description, else the value) must have the same words as the recorded one
-     by #298's rule, numbers and the words after them set aside (`resizedLabelsAgree`, `stalePointLabelWords`). The
-     nearest frame still wins, so a match inside the tolerance always ranks before a resized one.
+  1. **The match** (`recreatedHandle`, StalePoint.swift). A candidate of the recorded role inside
+     `stalePointFrameTolerance` (2 pt) on every edge is matched as before. Beyond it, only a text is matched, and only
+     when all of these hold:
+     - **Its frame** grew or shrank across from the same edge (`resizedInPlace`): its top and bottom within the same 2 pt,
+       and its left or its right edge too.
+     - **The control the record held it in** (`ScreenshotNode.control`) is still there on its own handle, never one found
+       again, and its frame read now holds the point (`resizedControlHolds`). That control is taken at the observation
+       from what the walk already recorded: the text's nearest recorded ancestor that is one of
+       `stalePointInteractiveRoles` or advertised AXPress, past inert wrappers, below any web area, window, sheet or
+       application. An ancestor the record holds as AXUnknown, the walk's stand-in for a role it failed to read, leaves
+       the text with none (`stalePointControlRead`). Only an `AXStaticText` (`stalePointResizableRole`, the one constant
+       this adds) is given a control.
+     - **The candidate is that control's**: inside its handle, with every element between read now, role and actions,
+       and none interactive or advertising AXPress (`resizedInControl`, through `insideThroughInert`, which #298's
+       edited-text exemption now shares). It is also not in the record: the screenshot already showed such a text as a
+       node of its own, and the verdict's full record (`screenshotChildrenRecorded`) holds frameless texts too.
+     - **Its label agrees** (`resizedLabelsAgree`, item 4).
+     The nearest frame still wins, so a match inside the tolerance always ranks before a resized one. Anchoring on the
+     control makes a click on a resized text a click on the same live control, at a point it still covers.
   2. **Either edge.** A text grows away from the edge it is aligned to: the left in a left-to-right line, the right in
      a right-aligned column (a list's relative times) or a right-to-left line. The leading edge alone would miss the
-     column, and nothing a text's frame reads says which edge leads. Taking either edge cannot match a different text at
-     the same height: two texts sharing a left or a right edge on one line would overlap. A centred text moves both
-     edges by half its growth and is still refused `nodeGone` (limit 1).
-  3. **Shrinking.** "Inbox (12)" -> "Inbox" is matched the same way. The verdict then checks, as it checks every found
-     node, that the frame read now holds the point. A point on what remains is kept; a point on the count that went is
-     refused `frameMoved`, since the click would land past the text.
-  4. **Only on the words' positive agreement.** At the same width an absent or unreadable label never counts against a
+     column, and nothing a text's frame reads says which edge leads. A centred text moves both edges by half its growth
+     and is still refused `nodeGone` (limit 1).
+  3. **Shrinking.** "Inbox (12)" -> "Inbox" is matched the same way. A point on what remains is kept. A point on the count
+     that went is refused: `nodeGone` when the link shrank with its text and no longer holds the point, `frameMoved` when
+     the link kept its width and the text no longer holds it.
+  4. **The label, only on positive agreement.** At the same width an absent or unreadable label never counts against a
      match (#296's item 4), and #298's edited-text exemption matches a typed-over text without its value. A resized text
-     takes neither: a label either side lacks leaves it unmatched, and so does any label attribute whose read failed at
-     the observation or now. Each attribute (title, description, value) is read once, and that one read serves both the
-     exact title check and the words (item 9). Other words refuse at any width: `linksave` ("Save" -> "Delete"), "Inbox"
-     -> "Outbox (3)", and a time rolling without a number ("just now" -> "1 minute ago", #298's limit 2). Labels with no
-     words at all must agree further (item 10).
+     takes neither:
+     - Each label attribute (title, description, value) is read once, with its error (`StalePointReads.readLabel`). An
+       attribute unreadable now or at the observation (`ScreenshotNode.labelsUnread`) leaves the text unmatched.
+     - Those raw reads go to the title and description check (`stalePointLabelsAgree`, exact, which cuts them by `bounded`
+       as the record's were). Cut once the same way, they make the label (`stalePointLabel`: the title, else the
+       description, else the value), which must be non-empty on both sides and have the same words by #298's rule,
+       numbers and the words after them set aside (`stalePointLabelWords`).
+     - **Labels with no words at all** must also agree token by token (`stalePointWordlessAgree`, over
+       `stalePointLabelTokens`, the word rule's one pass, which now also yields each number and each mark outside one, in
+       order). The tokens must be the same, any number matching any number, or one side must have exactly one number more,
+       at its start or its end. So "1 minute ago" -> "2 minutes ago", "3:21 PM" -> "11:02 PM", "(3)" -> "(12)" and "♡"
+       -> "♡ 3" are kept, and "♡" -> "🗑", "♡ 3" -> "🗑 4", "↑ 1 ↓" -> "↑ ↓ 100" and "♡" -> "♡ ♡" are refused.
+     Other words refuse at any width: `linksave` ("Save" -> "Delete"), "Inbox" -> "Outbox (3)", and a time rolling
+     without a number ("just now" -> "1 minute ago", #298's limit 2).
   5. **Unchanged.** Another role is never matched resized: a re-created link or button keeps #296's 2 pt and exact
-     titles (#296's limit (i)). The match at the same width (linkmono refused, linklike kept), #298's rule on a live
-     handle, #305's re-created identity of a recorded hit (`recordedHitAtPoint`, which requires the hit unmoved), #316's
-     rules and #330's rule dL read as before.
-  6. **The cost.** None where the handle survives or a match lies inside the tolerance. A text candidate beyond it, at
-     the same height and edge, costs the parents read up to its recorded control (with each one's role), one pass over the
-     record, and 3 label reads.
+     titles (#296's limit (i)), in a plain group or a clickable card alike. Also unchanged: the match at the same width
+     (linkmono refused, linklike kept), #298's rule on a live handle, #305's re-created identity of a recorded hit
+     (`recordedHitAtPoint`, which requires the hit unmoved), #316's rules and #330's rule dL.
+  6. **The cost.** The observation: one dictionary entry per element walked, for its control. The click: nothing where
+     the handle survives or a match lies inside the tolerance. A text candidate beyond it, at the same height and edge,
+     costs the control's frame (once per search), the role and actions of each element up to the control, a record
+     lookup, and 3 label reads.
   7. **Limits.** (1) A centred text that grows is refused, as before. (2) A text that wraps onto another line when it
      grows changes its height and is refused. (3) As with #298's limit 1, a re-created text whose label differs only by
      its numbers is matched at any width ("Order #1234" -> "Order #12345"); `docs/cua-api/agent-cursor.md` already states
      this for labels, so the documents are unchanged. (4) Firefox's typed Gmail-like editor cell, refused `nodeGone` on
      both heads in #298's editor gate, is not expected to change. If its typed text is re-created wider, its words
      differ, and the edited-text exemption is not extended to resized texts. (5) A link re-rendered whole, its own
-     handle new as well as its text, is refused, as on main: the text's recorded control is gone, so nothing shows the
-     new text is the old one's replacement.
-  The review of main..700c80cd (doperpowers:reviewer-high) found the first build incorrect, with three findings, all
-  fixed in one wave:
-  8. **The owner** (P1). Link A went and link B, with the same label and a destination of its own, slid into its place,
-     an edge within 2 pt and wider. B's text matched A's record as `sameElement`. The point lay inside B, and #330's rule
-     dL is silent because B was already on the page. Main refused B for its width. Now a resized text must lie in its
-     recorded control (`resizedTextOwned`). That control is the text's nearest recorded ancestor (`ScreenshotNode.ancestor`),
-     and it must not be an area that holds whole regions (`recordedHitAreaRoles`), so a text the record held under only a
-     page or a window is not matched resized. The candidate's parents, read live, must reach that control's own handle
-     before any interactive element, window or sheet, with every role read. And the candidate must not be in the record
-     itself: the screenshot already showed such a text as a node of its own.
-  9. **One read per attribute** (P2 2). The exact comparison read the title through one seam and the words through
-     another, so a title read that failed once and then answered was taken as absent by the first read and compared only
-     by its words in the second: "Inbox" -> "Inbox (3)" titles were accepted. Now `resizedLabelsAgree` reads each label
-     attribute once with its error (`StalePointReads.readLabel`). An unreadable attribute leaves the text unmatched, and
-     the same reads serve both comparisons. `relabelledLabel` is main's again.
-  10. **Labels with no words** (P2 1). "♡" -> "🗑" at another width matched, because both labels have no words. Where both
-      have none, the labels must now be the same, or differ by a number: one side at least holds a number, and the
-      symbols outside their numbers are the same (`stalePointLabelTokens`, the word rule's one pass, which now also
-      reports these). So "1 minute ago" -> "2 minutes ago", "3:21 PM" -> "11:02 PM" and "♡" -> "♡ 3" are kept, and "♡" ->
-      "🗑", "♡ 3" -> "🗑 4" and "♡" -> "♡ " are refused.
-  Proven offline: `ResizedTextGuardTests` (12) in `StalePointTests.swift`. Kept: "Inbox" -> "Inbox (3)", "1 minute ago"
-  -> "2 minutes ago" and "Like (9)" -> "Like (10)" re-created wider with the record holding the text, the hit the new
-  text or the link; the same within the tolerance at the origin, and in a window moved since the screenshot; the
-  record holding the link, its own handle grown, with and without a title; "Inbox (12)" -> "Inbox" with the point on what
-  remains; a right-aligned time grown leftward. Refused: the point on the dropped count (`frameMoved`); a centred text;
-  other words (linksave and the rest, with both hits); a value absent now, or unreadable now or at the observation; a
-  title on one side only with the value's words another; a text's titles differing by a count; the origin moved past
-  the tolerance across or down, the top alone moved, or the height changed; a re-created link grown with its title the
-  same or not, also inside a plain group. The ranking prefers a match in place to a resized one, and the nearer resized
-  one. For the review: another link that slid into place, recorded or not, with either hit; a new text reaching its
-  link through a plain wrapper kept, and refused through another control, through a wrapper whose role cannot be read,
-  under only a page or a window, or as a text the record already held; labels with no words, as in item 10, and the
-  tokens themselves; a title read that fails once, a value read that fails once, a title unreadable at the observation,
-  and a title gained on one side and unread now. #296's, #298's, #305's, #316's and #330's suites pass unchanged; 1,456
-  engine tests pass, 1 skipped as before. Each of 20 parts of the rule removed or weakened in turn fails a test
-  (`~/.claude/jobs/b93055dd/tmp/mutate-340.sh`): the role, each edge, the top, the bottom, the constant's value; the
-  owner check, its record check, its interactive stop, its unread role, its area roles, the record passed to it; the
-  no-word clause, its symbols, its number (removed, or required on both sides), the words; the observation's failed
-  reads, a failed read now, the exact title check.
+     handle new as well as its text, is refused, as on main: the anchor is gone. So is a text the record held in no
+     control (under only a page or a window), or under an ancestor whose role it could not read.
+  **Two reviews** found earlier builds incorrect, and the design above is the second wave's:
+  - **main..700c80cd** (doperpowers:reviewer-high). P1: link A went and link B, with the same label and a destination of
+    its own, slid into its place, wider, and B's text matched A's record as `sameElement`; #330's rule dL is silent
+    because B was already on the page, and main refused B for its width. P2: "♡" -> "🗑" matched, having no words on
+    either side. P2: the exact title check and the words read the title separately, so a read that failed once let
+    "Inbox" -> "Inbox (3)" titles through. The first wave checked the text's nearest framed ancestor by a live walk,
+    required the same symbols where labels had no words, and read each attribute once.
+  - **700c80cd..7f9fd90a** (doperpowers:reviewer-medium). P1: the walk stopped at the nearest framed ancestor, which can
+    be a plain group inside the link; that group moved from link A to link B let B through, and a re-created wrapper
+    refused. P2: every group was taken for inert, even one advertising AXPress. P2: the matching handle's role was never
+    read. P2: the record check scanned framed nodes only, missing a frameless recorded text. P2: the wordless rule lost
+    where the numbers sat ("↑ 1 ↓" -> "↑ ↓ 100" passed). P3: live labels were cut by `bounded` twice, so a surrogate pair
+    at the 10,000-unit cut left a stray "[" and refused a legitimate resize. The coordinator proposed anchoring on the
+    control instead of patching the walk, and this wave took it (item 1). One reading of the proposal was adjusted: the
+    record cannot tell a wrapper's empty actions from a failed read (the walk's `actions` answers an empty list for
+    both), and plain containment would pass a link nested in a clickable card. So the elements between the new text
+    and the control are read live and must be inert, rather than merely contain it.
+  Proven offline: `ResizedTextGuardTests` (17) in `StalePointTests.swift`:
+  - **Kept:** "Inbox" -> "Inbox (3)", "1 minute ago" -> "2 minutes ago" and "Like (9)" -> "Like (10)" re-created wider
+    with the record holding the text, the hit the new text or the link; the same within the tolerance at the origin,
+    and in a window moved since the screenshot; the record holding the link, its own handle grown, with and without a
+    title; "Inbox (12)" -> "Inbox" with the point on what remains; a right-aligned time grown leftward; a wrapper
+    re-created inside the same link; a clickable group and a button as the control; a long title cut once.
+  - **Refused:** the point on the dropped count (`nodeGone`, or `frameMoved` with the link's width kept); a centred
+    text; other words (linksave and the rest, with both hits); labels with no words as in item 4; a value absent now; a
+    label attribute unreadable now, once, or at the observation; a title on one side only; a text's titles differing by
+    a count; the origin moved, the top alone moved, or the height changed; another role, in a plain group or a clickable
+    card.
+  - **The control:** another link slid into place, recorded or not, with either hit; a wrapper moved to another link; a
+    link moved off the point, its frame unread, or re-created whole; a group advertising AXPress, a wrapper whose role
+    or actions cannot be read, or a button between; an AXUnknown or unread role, a plain group, a page or a window
+    where the control would be; a text the record already held, frameless.
+  - **The ranking** prefers a match in place to a resized one, and the nearer resized one.
+  #296's, #298's, #305's, #316's and #330's suites pass unchanged; 1,461 engine tests pass, 1 skipped as before. Each
+  of 29 parts of the rule removed or weakened in turn fails a test (`~/.claude/jobs/b93055dd/tmp/mutate-340.sh`):
+  - the geometry: each edge, the top, the bottom, the constant, the role given a control;
+  - the control's hold on the point: its frame, the point, the point passed in;
+  - the candidate's place: the record check and the record passed in, the containment, AXPress and unread actions
+    between;
+  - the record's control: AXUnknown, AXPress, the web-area stop, the wrapper's inheritance;
+  - the labels: the observation's failed reads, a failed read now, the exact title check, cutting twice or not at all,
+    the words, the wordless clause, a non-number dropped at either end, the marks.
   **Measured live:** pending. The hosted A/B is `probe/340-measure` with #298's `inbox` and `reltime` cells and #330's
   "replaced link text" cells, both record positions, on Chrome for Testing and Safari. Expected on the branch: `inbox`
   and `reltime` kept and landing; `linksave` and `linkmono` still refused; #296's final set and #298's cells unchanged;

@@ -90,7 +90,8 @@ private func walked(_ root: Node, skipping skipped: Set<ObjectIdentifier> = []) 
     next += 1
     let children = node.childrenUnread ? [] : node.children  // a failed AXChildren read decodes as none
     func read<T>(_ part: StalePointLabelPart, _ value: T?) -> T? { node.unreadable.contains(part) ? nil : value }  // a failed read decodes as none
-    reads.append(ScreenshotNodeRead(element: node, number: number, parent: parent, depth: depth, role: node.role,
+    // A failed role read records "AXUnknown", as `ElementData` decodes it.
+    reads.append(ScreenshotNodeRead(element: node, number: number, parent: parent, depth: depth, role: node.roleUnread ? "AXUnknown" : node.role,
                                     title: read(.title, node.title).map(bounded), description: read(.description, node.description).map(bounded),
                                     frame: node.frame, actions: node.actions, childCount: children.count,
                                     childrenRead: !node.childrenUnread, subrole: node.subrole,
@@ -2533,7 +2534,8 @@ final class ResizedTextGuardTests: XCTestCase {
   }
 
   /// "Inbox (12)" to "Inbox": a text re-created narrower from the same origin is the node while it still holds the
-  /// point; at a point its old count covered it has moved away from it, and the click is refused.
+  /// point. At a point its old count covered, the link shrank with it and no longer holds the point (`nodeGone`); a link
+  /// that kept its width holds it, but the text has moved away from it (`frameMoved`).
   func testAShrunkTextIsTheNodeWhileItStillHoldsThePoint() {
     let wider = CGRect(x: 30, y: 110, width: 70, height: 20)
     let narrower = CGRect(x: 30, y: 110, width: 40, height: 20)
@@ -2541,7 +2543,15 @@ final class ResizedTextGuardTests: XCTestCase {
     XCTAssertEqual(kept.identity, .recreated)
     XCTAssertEqual(kept.reason, .sameElement)
     XCTAssertEqual(replaced("Inbox (12)", "Inbox", at: narrower, from: wider, hitText: false).reason, .hitAboveNode)
-    let pastIt = replaced("Inbox (12)", "Inbox", at: narrower, from: wider, point: CGPoint(x: 90, y: 120), hitText: false)
+    let past = CGPoint(x: 90, y: 120)
+    let shrunkLink = replaced("Inbox (12)", "Inbox", at: narrower, from: wider, point: past, hitText: false)
+    XCTAssertEqual(shrunkLink.reason, .nodeGone)
+    var page = Page("Inbox (12)", text: wider)
+    let nodes = recorded(page.window)
+    let linkFrame = page.link.frame
+    _ = page.replace("Inbox", at: narrower)
+    page.link.frame = linkFrame
+    let pastIt = verdict(nodes, at: past, hit: page.link)
     XCTAssertEqual(pastIt.identity, .recreated)
     XCTAssertEqual(pastIt.reason, .frameMoved)
     XCTAssertTrue(pastIt.refused)
@@ -2621,19 +2631,23 @@ final class ResizedTextGuardTests: XCTestCase {
   }
 
   /// Only a text is matched resized: a re-created control of another role whose frame grew is not the node, its label
-  /// the same or not (#296's limit (i) for the label), even inside the same plain group (a nav list).
+  /// the same or not (#296's limit (i) for the label), even inside a plain group (a nav list) or a clickable card that is
+  /// still there holding the point.
   func testAResizedControlOfAnotherRoleIsRefused() {
-    for now in ["Inbox", "Inbox (3)"] {
-      let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 600, height: 400))
-      let nav = Node("AXGroup", CGRect(x: 10, y: 90, width: 200, height: 60))
-      let link = Node("AXLink", CGRect(x: 20, y: 100, width: 60, height: 40), title: "Inbox")
-      window.add(nav)
-      nav.add(link)
-      let nodes = recorded(window)
-      link.destroy()
-      let again = Node("AXLink", CGRect(x: 20, y: 100, width: 80, height: 40), title: now)
-      nav.add(again)
-      XCTAssertEqual(verdict(nodes, at: CGPoint(x: 40, y: 120), hit: again).reason, .nodeGone, now)
+    for (holderRole, actions) in [("AXGroup", [String]()), ("AXGroup", ["AXPress"])] {
+      for now in ["Inbox", "Inbox (3)"] {
+        let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 600, height: 400))
+        let holder = Node(holderRole, CGRect(x: 10, y: 90, width: 200, height: 60))
+        holder.actions = actions
+        let button = Node("AXButton", CGRect(x: 20, y: 100, width: 60, height: 40), title: "Inbox")
+        window.add(holder)
+        holder.add(button)
+        let nodes = recorded(window)
+        button.destroy()
+        let again = Node("AXButton", CGRect(x: 20, y: 100, width: 80, height: 40), title: now)
+        holder.add(again)
+        XCTAssertEqual(verdict(nodes, at: CGPoint(x: 40, y: 120), hit: again).reason, .nodeGone, "\(now), holder actions \(actions)")
+      }
     }
   }
 
@@ -2678,69 +2692,196 @@ final class ResizedTextGuardTests: XCTestCase {
     }
   }
 
-  /// The text's owner as the record held it, read live: the new text reaches the recorded link through plain wrappers;
-  /// not through another control inside it, nor a wrapper whose role cannot be read, nor when the record held the text
-  /// under no control (a page or a window). A text the record already held in that link is not a re-creation.
-  func testAResizedTextMustLieInTheControlTheRecordHeldItIn() {
+  /// The review of 700c80cd..7f9fd90a, P1: the anchor is the control the record held the text in, not its nearest framed
+  /// ancestor. A plain wrapper that moves from link A to link B, B now over A's place, takes B's text away from A: refused.
+  /// A wrapper re-created inside A (a new handle) is still A's: kept.
+  func testTheAnchorIsTheRecordedControlNotTheWrapper() {
+    let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 600, height: 400))
+    let first = Node("AXLink", CGRect(x: 20, y: 100, width: 90, height: 40), description: "/inbox")
+    let wrapper = Node("AXGroup", CGRect(x: 30, y: 110, width: 60, height: 20))
+    let text = Node("AXStaticText", textFrame, value: "Inbox")
+    wrapper.add(text)
+    first.add(wrapper)
+    window.add(first)
+    let second = Node("AXLink", CGRect(x: 20, y: 200, width: 90, height: 40), description: "/team/inbox")
+    window.add(second)
+    let nodes = recorded(window)
+    XCTAssertTrue(nodes.last { $0.element === text }?.control === first, "the link, past the framed wrapper")
+    text.destroy()
+    let again = Node("AXStaticText", grown(by: 20), value: "Inbox (3)")
+    wrapper.add(again)
+    // The wrapper moved into the second link, which now lies over the first.
+    first.children.removeAll { $0 === wrapper }
+    second.add(wrapper)
+    second.frame = first.frame
+    XCTAssertEqual(verdict(nodes, at: onText, hit: again).reason, .nodeGone, "the wrapper moved to another link")
+    XCTAssertEqual(verdict(nodes, at: onText, hit: second).reason, .nodeGone, "the hit the other link")
+    // A wrapper re-created inside the first link.
+    second.children.removeAll { $0 === wrapper }
+    let rebuilt = Node("AXGroup", CGRect(x: 30, y: 110, width: 60, height: 20))
+    wrapper.children.removeAll { $0 === again }
+    rebuilt.add(again)
+    first.add(rebuilt)
+    let kept = verdict(nodes, at: onText, hit: again)
+    XCTAssertEqual(kept.identity, .recreated, "the wrapper re-created in the same link")
+    XCTAssertEqual(kept.reason, .sameElement)
+  }
+
+  /// The anchor's own handle must be there with its frame holding the point: a link re-created whole (a new handle in the
+  /// same place) is not found again, and a link that moved off the point refuses.
+  func testTheControlMustBeThereOnItsOwnHandleHoldingThePoint() {
+    var page = Page("Inbox", text: textFrame)
+    let nodes = recorded(page.window)
+    let again = page.replace("Inbox (3)", at: grown(by: 20))
+    let frame = page.link.frame
+    page.link.frame = CGRect(x: 200, y: 100, width: 80, height: 40)
+    XCTAssertEqual(verdict(nodes, at: onText, hit: again).reason, .nodeGone, "the link's frame no longer holds the point")
+    page.link.frame = nil  // a frame read that fails, the link still there
+    XCTAssertEqual(verdict(nodes, at: onText, hit: again).reason, .nodeGone, "the link's frame unread")
+    page.link.frame = frame
+    XCTAssertEqual(verdict(nodes, at: onText, hit: again).identity, .recreated, "back in place")
+    // Re-created whole: the same role, place and label, another handle.
+    let link = page.link
+    link.children.removeAll { $0 === again }
+    link.destroy()
+    let rebuilt = Node("AXLink", frame)
+    rebuilt.add(again)
+    page.window.add(rebuilt)
+    XCTAssertEqual(verdict(nodes, at: onText, hit: again).reason, .nodeGone, "a link re-created whole")
+  }
+
+  /// The review's P2: what lies between the new text and the control is read live, role and actions, and must be inert.
+  /// A group that advertises AXPress is a control of its own (a clickable chip inside the link); a wrapper whose role or
+  /// actions cannot be read is not known to be inert; a framed plain group is.
+  func testWhatLiesBetweenTheTextAndTheControlMustBeInert() {
+    func judged(_ setUp: (Node) -> Void) -> StalePointVerdict<Node> {
+      var page = Page("Inbox", text: textFrame)
+      let nodes = recorded(page.window)
+      let again = page.replace("Inbox (3)", at: grown(by: 20))
+      let wrapper = Node("AXGroup", grown(by: 20))
+      page.link.children.removeAll { $0 === again }
+      wrapper.add(again)
+      page.link.add(wrapper)
+      setUp(wrapper)
+      return verdict(nodes, at: onText, hit: again)
+    }
+    XCTAssertEqual(judged { _ in }.identity, .recreated, "a plain group")
+    XCTAssertEqual(judged { $0.actions = ["AXPress"] }.reason, .nodeGone, "a group that advertises AXPress")
+    XCTAssertEqual(judged { $0.actionsUnread = true }.reason, .nodeGone, "actions unread")
+    XCTAssertEqual(judged { $0.roleUnread = true }.reason, .nodeGone, "role unread")
     do {
       var page = Page("Inbox", text: textFrame)
       let nodes = recorded(page.window)
       let again = page.replace("Inbox (3)", at: grown(by: 20))
-      let wrapper = Node("AXGroup", nil)
-      again.parent?.children.removeAll { $0 === again }
-      wrapper.add(again)
-      page.link.add(wrapper)
-      XCTAssertEqual(verdict(nodes, at: onText, hit: page.link).identity, .recreated, "through a plain wrapper")
       let button = Node("AXButton", grown(by: 20))
-      wrapper.children.removeAll { $0 === again }
+      page.link.children.removeAll { $0 === again }
       button.add(again)
-      wrapper.add(button)
-      XCTAssertEqual(verdict(nodes, at: onText, hit: page.link).reason, .nodeGone, "through another control")
-      button.children.removeAll { $0 === again }
-      wrapper.add(again)
-      wrapper.roleUnread = true
-      XCTAssertEqual(verdict(nodes, at: onText, hit: page.link).reason, .nodeGone, "a wrapper whose role cannot be read")
+      page.link.add(button)
+      XCTAssertEqual(verdict(nodes, at: onText, hit: again).reason, .nodeGone, "another control inside the link")
     }
+  }
+
+  /// The review's P2, the owner's role: the control comes from the record, by its role read there or AXPress advertised
+  /// there, and an element whose role the record could not read (or recorded as AXUnknown) between the text and any
+  /// control leaves the text with none. So does a text under only a page or a window. A clickable group (AXPress) is a
+  /// control.
+  func testTheRecordNamesTheControlByRolesItRead() {
+    func page(between: Node?, control: Node) -> (nodes: [ScreenshotNode<Node>], window: Node, holder: Node) {
+      let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 600, height: 400))
+      control.frame = control.frame ?? CGRect(x: 20, y: 100, width: 90, height: 40)
+      window.add(control)
+      let holder = between ?? control
+      if let between { control.add(between) }
+      holder.add(Node("AXStaticText", textFrame, value: "Inbox"))
+      return (recorded(window), window, holder)
+    }
+    func resized(_ built: (nodes: [ScreenshotNode<Node>], window: Node, holder: Node)) -> StalePointVerdict<Node> {
+      built.holder.children[0].destroy()
+      let again = Node("AXStaticText", grown(by: 20), value: "Inbox (3)")
+      built.holder.add(again)
+      return verdict(built.nodes, at: onText, hit: again)
+    }
+    let clickable = Node("AXGroup", nil)
+    clickable.actions = ["AXPress"]
+    XCTAssertEqual(resized(page(between: nil, control: clickable)).identity, .recreated, "a clickable group")
+    XCTAssertEqual(resized(page(between: nil, control: Node("AXButton", nil))).identity, .recreated, "a button")
+    let unread = Node("AXGroup", CGRect(x: 25, y: 105, width: 80, height: 30))
+    unread.roleUnread = true
+    let unreadPage = page(between: unread, control: Node("AXLink", nil))
+    XCTAssertNil(unreadPage.nodes.last { $0.role == "AXStaticText" }?.control)
+    unread.roleUnread = false
+    XCTAssertEqual(resized(unreadPage).reason, .nodeGone, "a role the record could not read, readable now")
+    let unknown = Node("AXUnknown", CGRect(x: 25, y: 105, width: 80, height: 30))
+    XCTAssertEqual(resized(page(between: unknown, control: Node("AXLink", nil))).reason, .nodeGone, "AXUnknown")
+    XCTAssertEqual(resized(page(between: nil, control: Node("AXGroup", nil))).reason, .nodeGone, "a plain group, no control")
     for area in ["AXWebArea", "AXWindow"] {
       let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 600, height: 400))
       let holder = area == "AXWindow" ? window : Node(area, CGRect(x: 0, y: 50, width: 600, height: 350))
       if holder !== window { window.add(holder) }
+      if area == "AXWebArea" {
+        let outer = Node("AXLink", CGRect(x: 0, y: 0, width: 600, height: 400))
+        window.children.removeAll { $0 === holder }
+        outer.add(holder)
+        window.add(outer)  // a control above the page never stands for the text inside it
+      }
       let text = Node("AXStaticText", textFrame, value: "Inbox")
       holder.add(text)
       let nodes = recorded(window)
+      XCTAssertNil(nodes.last { $0.element === text }?.control, area)
       text.destroy()
       let again = Node("AXStaticText", grown(by: 20), value: "Inbox (3)")
       holder.add(again)
       XCTAssertEqual(verdict(nodes, at: onText, hit: again).reason, .nodeGone, "a text under \(area), in no control")
     }
-    do {
-      // A second text the screenshot showed in the same link, under the one at the point.
-      let page = Page("Inbox", text: textFrame)
-      let other = Node("AXStaticText", textFrame, value: "Inbox")
-      page.link.children.insert(other, at: 0)
-      other.parent = page.link
-      let nodes = recorded(page.window)
-      XCTAssertTrue(deepestScreenshotNode(at: onText, in: nodes)?.element === page.text)
-      page.text.destroy()
-      other.value = "Inbox (3)"
-      other.frame = grown(by: 20)
-      XCTAssertEqual(verdict(nodes, at: onText, hit: other).reason, .nodeGone, "a text the record already held")
-    }
   }
 
-  /// The review's P2 1: labels with no words at all ("♡" to "🗑", each re-rendered at its own width) have the same words,
-  /// which cannot tell them apart. They must be the same label, or differ by a number with the same symbols outside it.
-  func testResizedLabelsWithNoWordsMustAgreeBeyondTheirNumbers() {
-    XCTAssertEqual(stalePointLabelTokens("Inbox (3)"), StalePointLabelTokens(words: ["inbox"], symbols: ["(", ")"], hasNumber: true))
-    XCTAssertEqual(stalePointLabelTokens("2 minutes ago"), StalePointLabelTokens(words: [], symbols: [], hasNumber: true))
-    XCTAssertEqual(stalePointLabelTokens("♡"), StalePointLabelTokens(words: [], symbols: ["♡"], hasNumber: false))
-    for (was, now) in [("♡", "🗑"), ("♡ 3", "🗑 4"), ("→", "←"), ("…", "×"), ("♡", "♡ "), ("♡ 3", "3")] {
+  /// The review's P2, the record: a text the record already held in the same link, even frameless there (so in no
+  /// framed node), is not a re-creation. The verdict's full record (`screenshotChildrenRecorded`) says so.
+  func testATextTheRecordAlreadyHeldIsNotAReCreation() {
+    let page = Page("Inbox", text: textFrame)
+    let other = Node("AXStaticText", nil, value: "Inbox")
+    page.link.add(other)
+    let nodes = recorded(page.window)
+    XCTAssertFalse(nodes.contains { $0.element === other }, "frameless: in no framed node")
+    let members = recordedMembers(page.window)
+    page.text.destroy()
+    other.value = "Inbox (3)"
+    other.frame = grown(by: 20)
+    XCTAssertEqual(stalePointVerdict(at: onText, nodes: nodes, recorded: members, hit: other, reads: reads).reason, .nodeGone)
+    let fresh = Node("AXStaticText", grown(by: 20), value: "Inbox (3)")
+    other.destroy()
+    page.link.add(fresh)
+    XCTAssertEqual(stalePointVerdict(at: onText, nodes: nodes, recorded: members, hit: fresh, reads: reads).identity, .recreated,
+                   "a text the record lacks")
+  }
+
+  /// The reviews' wordless labels ("♡" to "🗑"; "↑ 1 ↓" to "↑ ↓ 100"): their tokens must match in order, any number for any
+  /// number, or one side have exactly one number more at its start or its end.
+  func testResizedLabelsWithNoWordsMustAgreeTokenByToken() {
+    XCTAssertEqual(stalePointLabelTokens("Inbox (3)"), StalePointLabelTokens(words: ["inbox"], sequence: [.mark("("), .number, .mark(")")]))
+    XCTAssertEqual(stalePointLabelTokens("2 minutes ago"), StalePointLabelTokens(words: [], sequence: [.number]))
+    XCTAssertEqual(stalePointLabelTokens("↑ 1 ↓"), StalePointLabelTokens(words: [], sequence: [.mark("↑"), .number, .mark("↓")]))
+    for (was, now) in [("♡", "🗑"), ("♡ 3", "🗑 4"), ("→", "←"), ("…", "×"), ("♡ 3", "3"), ("↑ 1 ↓", "↑ ↓ 100"), ("♡", "♡ 3 4"),
+                       ("♡", "1 ♡ 2"), ("1 ♡", "♡ 1"), ("♡", "♡ ♡"), ("♡", "♡ →"), ("♡", "→ ♡")] {
       XCTAssertEqual(replaced(was, now, at: grown(by: 12)).reason, .nodeGone, "\(was) -> \(now)")
     }
     for (was, now) in [("1 minute ago", "2 minutes ago"), ("3:21 PM", "11:02 PM"), ("(3)", "(12)"), ("♡ 9", "♡ 10"), ("♡", "♡ 3"),
-                       ("♡", "♡")] {
+                       ("♡ 3", "♡"), ("♡", "3 ♡"), ("↑ 1 ↓", "↑ 100 ↓"), ("♡", "♡ ")] {
       XCTAssertEqual(replaced(was, now, at: grown(by: 12)).identity, .recreated, "\(was) -> \(now)")
     }
+  }
+
+  /// The review's P3: each live label is cut by `bounded` once, as the record's was. A title past the 10,000-unit cut,
+  /// with a surrogate pair at the cut, compares equal to the recorded one; cut twice it would gain a stray "[".
+  func testALongLabelIsCutOnce() {
+    let long = String(repeating: "a", count: maxValueLength - 1) + "😀" + " tail"
+    XCTAssertEqual(bounded(bounded(long)) == bounded(long), false, "the case: cutting twice changes it")
+    var page = Page("Inbox", text: textFrame)
+    page.text.title = long
+    let nodes = recorded(page.window)
+    let again = page.replace("Inbox (3)", at: grown(by: 20))
+    again.title = long
+    XCTAssertEqual(verdict(nodes, at: onText, hit: again).identity, .recreated)
   }
 
   /// The review's P2 2: each label attribute is read once. A title read that fails once, then answers "Inbox (3)", used

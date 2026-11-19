@@ -2,7 +2,7 @@
 
 **Acceptance on the pinned release, counted.** Every step ran at the frozen head **H = `fefe306c`** on the run home's
 own `cua install` of **linux-engine-v0.4.0** (`cua-engine` sha256 `751ec9be…`, `cua-engine 0.4.0 (c55c8e08d9cb)`),
-taken by the pinned rule inside each step. **Status: every one of the gate's 50 steps passes on its record, item 9 passes, and H's local proof passed before
+taken by the pinned rule inside each step. **Status: every one of the gate's 50 steps passes, 49 on their stored verdicts and V5 by ruling 680 beside its stored FAIL (below), item 9 passes, and H's local proof passed before
 any counted step.**
 
 - 49 steps passed by their own judge at H: the 28 private idle steps, the 16 at twice the load, V1–V4 and Z0.
@@ -356,9 +356,9 @@ The chrome-input `drag` in shared mode is M3.1's declared refusal (a Chromium dr
 unobscured), so its 4 / 1.2 ms is a refusal's time, not a drag's. Drag speed is judged in the drag experiment, with
 every run's effect:
 
-- D1, Chrome, warm medians newest / cua / pinned: canvas 476.4 / 75 / 1146.7 ms; drag and drop 338.2 / 363.8 / 506.9,
+- D1, Chrome, warm medians newest / cua / pinned: canvas 510.4 / 476.4 / 1146.7 ms (cua:0ms 75, on 1 usable sample); drag and drop 338.2 / 363.8 / 506.9,
   with **#358 declared** (interval [21.9, 28.4], within its 40 ms).
-- D3, Firefox: canvas 354.6 / 77.2 / 1149.2.
+- D3, Firefox: canvas 515.4 / 354.6 / 1149.2 (cua:0ms 77.2, on 0 of 30 taken).
 - Chrome's thumbs (D1) and Electron's (D2) land at or past the pinned build's mean distance on 30 of 30 (the judges'
   line; PASS).
 

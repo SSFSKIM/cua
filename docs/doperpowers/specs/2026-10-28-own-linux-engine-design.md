@@ -2477,7 +2477,7 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
     - The encoding moves exactly four stored cells, each fail → pass by a span-limited sample with every field the rule needs (870.2): x64's V5 at H⁗ and at H (both already passed by 680), M4 c2's gate V5 (680's origin), and the arm64 pilot's development V5 (never counted). On x64's stored V5 rows the encoded judge gives the script's output, 52 of 52 at H⁗. At H only the late-take cell moves; 51 of 52 match the script, and `chrome_dnd_shared` differs as ruling 756 decided. The 7 controls are tests, plus the positive case and the tightening's controls.
     - Under 847, the encoded judge's pass on a stored row is diagnostic. arm64's V5 at H⁵ is judged live by it, with no replay (867a).
   - **arm64's private parts at H⁗ (T7; rulings 854, 871, 872, 876).** Evidence: `m5/arm64/` (a32f3aa4, d05e8896), README "At H⁗ on 0.4.1".
-    - Class A D1, D2, S1, H1 and H2 passed, and D1's cross-check matches on the shipped lane. 838's root ok count is 0, and 830 found no mismatches.
+    - Class A D1, D2, S1, H1 and H2 passed, and D1's cross-check matches on the shipped lane. 838's root ok count is 0, and 830 found no mismatches in them. In the twice-load block, 830 lists L4a's `cua left` 1 of 30 apart.
     - The settle counter read taken only in H1, H2 and L4a, all class A. The 828(c) counter pilot read not taken on all 9 class-B steps.
     - The block at twice the load: 12 steps passed. L4a's residue was cua 0 of 100 and handle 1 of 100, against a bound of 2.
       - L3b passes under #302's key_up form (above).

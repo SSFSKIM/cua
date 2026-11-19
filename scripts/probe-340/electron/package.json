@@ -1,0 +1,9 @@
+{
+  "name": "probe-340-fixture",
+  "private": true,
+  "version": "1.0.0",
+  "main": "main.cjs",
+  "devDependencies": {
+    "electron": "44.4.5"
+  }
+}

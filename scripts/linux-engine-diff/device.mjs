@@ -26,7 +26,8 @@
 //   plan reading incomplete, and saying so when that is all it fails for (route D, ruling 841);
 // - `late-take` (the take left unseen until after the release, `--dnd-defer-take`): the drag answers as a plain drag at
 //   its release, a read on the same engine runs, the first acting request answers the late drag-and-drop notice (not
-//   run), and wherever the drop landed the witness shows the change the notice reports;
+//   run), and wherever the drop landed the witness shows the change the notice reports, but where its dragend came
+//   after the witness's span had closed (ruling 680, `spanLimitMisses`);
 // - `stray` (shared mode, a Chromium drag whose press a pointer event that is not the drag's may have reset, task 20):
 //   the request answers that the drag may not have started, exactly, with nothing dropped, the witness unchanged (the
 //   case's own nudges of the real pointer aside) and the background audit clean: the real pointer parked outside Chrome
@@ -63,6 +64,7 @@ import { MINIMIZED_OPS, MINIMIZED_SCENE_OPS, judgeMinimized } from './minimized.
 import { stacking, startOverlay } from './clip.mjs';
 import { parkAt, restorePointer } from './park.mjs';
 import { activeWindow, configure, xdotool } from './scenes.mjs';
+import { WITNESS_TAIL_MS } from './witness.mjs';
 import { spawnXdotool } from './xtools.mjs';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -551,6 +553,30 @@ function lateTakes(rows) {
   return pairs;
 }
 
+/**
+ * Why a late-take sample's drop the witness did not record is not the witness span's limit (the design session's ruling
+ * 680, from M4's V5 on candidate 2; encoded here by ruling 867): an empty list where it is. The witness watches until
+ * `WITNESS_TAIL_MS` after the engine's answer (witness.mjs `startWitness`), and a late take's drop goes on after the
+ * answer: Chrome activates its window 4 to 8 ms after the page's dragend, so a dragend at or past the answer plus the
+ * tail lands its activation after the span closed. It is the limit only when the sample is otherwise as the case
+ * expects: the drag answered as a plain drag, the read after it ran and carried the notice, the next acting request was
+ * refused with it (T14's contract), the after-release watch escaped the take, and the page's pointer log is the
+ * sample's own press, whose dragend (`drop_status.after.dur`, ms after the press) came at or past the answer (`ms`, from
+ * the request's send, before the press) plus the tail. The rule of M4's re-judge script, rejudge-late-take-window.mjs.
+ */
+function spanLimitMisses(r) {
+  const after = r.drop_status?.after;
+  const misses = [];
+  if (r.ok !== true) misses.push('the drag did not answer as a plain drag');
+  if (r.read_ok !== true || r.read_notice !== true) misses.push('the read did not run with the notice');
+  if (!(r.next_ok === false && r.next_error === r.expected_notice)) misses.push('the next acting request was not refused with the notice');
+  if (r.late_dnd?.escaped !== true) misses.push('the after-release watch did not escape the take');
+  if (!(typeof after?.downs === 'number' && after.log?.seq === after.downs)) misses.push("the page's pointer log is not the sample's own press");
+  else if (!(typeof after.dur === 'number' && typeof r.ms === 'number')) misses.push(`the page recorded no time for the dragend, or the answer none (dragend ${after.dur}, answer ${r.ms})`);
+  else if (!(after.dur >= r.ms + WITNESS_TAIL_MS)) misses.push(`the dragend (${after.dur} ms after the press) came before the span closed (answer ${r.ms} + ${WITNESS_TAIL_MS} ms)`);
+  return misses;
+}
+
 const at = (point) => ({ x: point.x, y: point.y });
 
 export const DEVICE_OPS = {
@@ -875,10 +901,25 @@ export function judgeDevice(op, samples, audit, premise = undefined) {
     rows = judged.judged;
     excluded += judged.excluded;
   }
+  const premiseJudged = rows.length;
+  // ruling 680 (`spanLimitMisses`): a late take's drop the witness did not record, where it is the witness span's limit,
+  // is judged by that rule alone and the case's other rules judge the rest, which still need a drop the witness recorded.
+  // Taken out after the binding, so the plan still counts its slot; a drop the rule does not cover says why.
+  const spanLimited = [];
+  if (expect === 'late-take') {
+    const uncovered = [];
+    for (const r of rows.filter((x) => x.dropped && x.witness !== false)) {
+      const misses = spanLimitMisses(r);
+      if (misses.length) uncovered.push(`${r.block}/${r.i}: ${misses.join('; ')}`);
+      else spanLimited.push(r);
+    }
+    if (uncovered.length) reasons.push(`the witness span's limit (ruling 680) does not cover ${uncovered.length} of ${rows.length} samples (${uncovered.slice(0, 3).join(', ')})`);
+    rows = rows.filter((r) => !spanLimited.includes(r));
+  }
   // a condition that some judged sample shows something, where every sample was excluded for its unmet premise: untested,
   // not failed, since the cell is short of its plan already (review 3, finding 2)
   const exists = (what, pred) => {
-    if (!rows.length) reasons.push(`untested: every sample was excluded for its unmet premise, so whether ${what} is untested`);
+    if (!premiseJudged) reasons.push(`untested: every sample was excluded for its unmet premise, so whether ${what} is untested`);
     else if (!rows.some(pred)) return false;
     return true;
   };
@@ -1005,5 +1046,13 @@ export function judgeDevice(op, samples, audit, premise = undefined) {
     const n = `${excluded} proven premise-unmet sample${excluded === 1 ? '' : 's'}`;
     reasons.unshift(reasons.every(isShortage) ? `incomplete only by ${n} (a whole V5 rerun under §8.2, the controller's call)` : `incomplete by ${n}, and failing for more than that (below)`);
   }
-  return { pass: reasons.length === 0, reasons, ...(drops ? { drops } : {}), ...(Object.keys(unmet).length ? { premise_unmet: unmet } : {}), ...(binding?.unverified ? { plan_unverified: true } : {}) };
+  const limited = spanLimited.map((r) => ({ sample: `${r.block}/${r.i}`, dragend_ms: r.drop_status.after.dur, answer_ms: r.ms }));
+  return {
+    pass: reasons.length === 0,
+    reasons,
+    ...(drops ? { drops } : {}),
+    ...(Object.keys(unmet).length ? { premise_unmet: unmet } : {}),
+    ...(binding?.unverified ? { plan_unverified: true } : {}),
+    ...(limited.length ? { span_limited: limited } : {}),
+  };
 }

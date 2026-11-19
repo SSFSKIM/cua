@@ -30,8 +30,14 @@ export function spanClean(report) {
   return judgeSpan(report).clean && spanActivations(report).length === 0;
 }
 
+/**
+ * How long a span is watched past its function's end by default: the span closes this long after the engine's answer.
+ * A late take's drop that goes on past it is the span's limit (device.mjs `spanLimitMisses`, ruling 680).
+ */
+export const WITNESS_TAIL_MS = 20;
+
 /** A running witness; `span(tag, fn)` runs fn inside a watched span and returns `{value, witness}`. */
-export async function startWitness(xprobe, { tailMs = 20 } = {}) {
+export async function startWitness(xprobe, { tailMs = WITNESS_TAIL_MS } = {}) {
   const child = xSpawn(xprobe, ['witness'], { stdio: ['pipe', 'pipe', 'inherit'] });
   const lines = createInterface({ input: child.stdout });
   const waiting = [];

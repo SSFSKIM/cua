@@ -1,0 +1,113 @@
+// Ruling 680 in the live judge (M5, ruling 867): in the late-take cell, a drop the witness did not record passes only
+// as the witness span's limit. The span closes 20 ms after the engine's answer (witness.mjs `startWitness`), and a late
+// take's drop goes on after it, so a dragend at or past the answer plus the tail lands after the span closed. The
+// fixtures follow V5's records at H'''' (task 105, `chrome_dnd_late_take_shared` block 2: 2/0 the span's limit, its
+// dragend 221 ms after the press with the answer at 164.02 ms; 2/1 and 2/2 drops the witness recorded), and the negative
+// controls are the seven m5/x64/scripts/rejudge-680/rejudge-late-take-controls.mjs held, through the judge a run uses
+// (device.mjs `judgeDevice`) and the run's outcome (stats.mjs `runOutcome`).
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+
+import { dndLateRefusal, judgeDevice } from '../../scripts/linux-engine-diff/device.mjs';
+import { runOutcome } from '../../scripts/linux-engine-diff/stats.mjs';
+import { WITNESS_TAIL_MS } from '../../scripts/linux-engine-diff/witness.mjs';
+
+const OP = 'chrome_dnd_late_take_shared';
+const SCENE = 'device-chrome-dnd';
+const app = 'Google-chrome';
+const notice = dndLateRefusal(app, 'move');
+
+/** A late-take sample as run.mjs records it, its fields as the judge reads them. */
+const sample = (i, { ms, dur, witness, dropped = true, downs = 103 + i, ...rest }) => ({
+  run: 'pinned-V5',
+  kind: 'sample',
+  engine: 'cua',
+  scene: SCENE,
+  op: OP,
+  block: 0,
+  i,
+  series: i === 0 ? 'cold' : 'warm',
+  ms,
+  ok: true,
+  expected_notice: notice,
+  read_ok: true,
+  read_notice: true,
+  next_ok: false,
+  next_error: notice,
+  late_dnd: { after_release_ms: 0, app, escape_after_release_ms: 1.88, escaped: true },
+  dropped,
+  witness,
+  drop_status: { before: { downs: downs - 1, drops: 65 }, after: { downs, log: { seq: downs }, dur, drops: dropped ? 66 : 65 } },
+  ...rest,
+});
+// V5 at H'''': 2/0 dropped with the witness unchanged, its dragend past the span; 2/1 and 2/2 recorded drops
+const limited = sample(0, { ms: 164.02, dur: 221, witness: true });
+const recorded = [sample(1, { ms: 200.18, dur: 199, witness: false }), sample(2, { ms: 160.88, dur: 163, witness: false })];
+const cell = [limited, ...recorded];
+const audit = { clean: true, kind: 'background', answered: [{ ok: true }, { ok: true }] };
+const judged = (samples, premise) => judgeDevice(OP, samples, audit, premise);
+const edit = (fn) => [fn(structuredClone(limited)), ...recorded];
+
+test("a late take's drop the witness did not record passes as the witness span's limit, and the case still needs a recorded drop", () => {
+  const r = judged(cell);
+  assert.equal(r.pass, true, r.reasons.join('; '));
+  assert.deepEqual(r.reasons, []);
+  assert.deepEqual(r.span_limited, [{ sample: '0/0', dragend_ms: 221, answer_ms: 164.02 }], 'the sample judged by the limit, named on the verdict');
+  // the limit's edge: the dragend exactly at the answer plus the tail closes the span, a millisecond before does not
+  assert.equal(judged(edit((s) => ((s.drop_status.after.dur = 164.02 + WITNESS_TAIL_MS), s))).pass, true, 'at the span close');
+  assert.equal(judged(edit((s) => ((s.drop_status.after.dur = 183), s))).pass, false, 'inside the span');
+  // a cell with no limited sample reads as before: no field
+  assert.deepEqual(judged(recorded), { pass: true, reasons: [] });
+});
+
+test('the limited sample stays in the plan: the cell is bound and checked whole, never short by it', () => {
+  // the run's recorded plan, one block of three and the audit's two requests: the limited sample fills its slot
+  const r = judged(cell, { lines: null, window: null, plan: { blocks: 1, audit: true } });
+  assert.equal(r.pass, true, r.reasons.join('; '));
+  assert.equal(r.plan_unverified, undefined);
+});
+
+test("ruling 680's controls on the case: each still fails", () => {
+  const controls = [
+    ['the notice missing on the span-limited sample', edit((s) => ((s.read_notice = false), s)), /the read did not carry the notice on 1 of 3 samples \(0\/0\)/, /the read did not run with the notice/],
+    ['its next acting request not refused', edit((s) => ((s.next_ok = true), (s.next_error = null), s)), /the next acting request did not carry the late drag and drop on 1 of 3 samples \(0\/0\)/, /the next acting request was not refused with the notice/],
+    ['its drop early: a clean witness on a drop that ended inside the span', edit((s) => ((s.drop_status.after.dur = Math.floor(s.ms)), s)), /a drop the witness did not record on 1 of 3 samples \(0\/0\)/, /the dragend \(164 ms after the press\) came before the span closed \(answer 164\.02 \+ 20 ms\)/],
+    // every drop of the case unrecorded and late, so each would count as the span's limit: none is left that the witness recorded
+    ['no drop in the case the witness recorded', cell.map((s) => ({ ...structuredClone(s), witness: true, drop_status: { ...s.drop_status, after: { ...s.drop_status.after, dur: Math.ceil(s.ms + WITNESS_TAIL_MS) } } })), /no drop landed: the case showed no change for the notice to report/, null],
+    // the rule's other conditions (the script's 1 to 3)
+    ['the drag not answered as a plain drag', edit((s) => ((s.ok = false), (s.error = 'x'), s)), /the drag did not answer as a plain drag on 1 of 3 samples \(0\/0\)/, /the drag did not answer as a plain drag/],
+    ['the read refused', edit((s) => ((s.read_ok = false), s)), /the read after the drag did not run on 1 of 3 samples \(0\/0\)/, /the read did not run with the notice/],
+    ["the after-release watch's Escape not sent", edit((s) => ((s.late_dnd.escaped = false), s)), /a drop the witness did not record on 1 of 3 samples \(0\/0\)/, /the after-release watch did not escape the take/],
+    ["the page's pointer log another press's", edit((s) => ((s.drop_status.after.log.seq = s.drop_status.after.downs - 1), s)), /the page's pointer log was not the sample's own press on 1 of 3 samples \(0\/0\)/, /the page's pointer log is not the sample's own press/],
+    ['the dragend unread', edit((s) => ((s.drop_status.after.dur = undefined), s)), /a drop the witness did not record on 1 of 3 samples \(0\/0\)/, /the page recorded no time for the dragend/],
+  ];
+  for (const [what, samples, reason, why] of controls) {
+    const r = judged(samples);
+    assert.equal(r.pass, false, what);
+    assert.match(r.reasons.join('\n'), reason, what);
+    // a drop the rule does not cover says why it is not the span's limit
+    if (why) assert.match(r.reasons.join('\n'), new RegExp(`the witness span's limit \\(ruling 680\\) does not cover 1 of 3 samples \\(0/0: .*${why.source}`), what);
+  }
+});
+
+test("ruling 680's run-wide controls: the case passing by the limit, the run's own failures still fail it", () => {
+  // the verdict row as run.mjs writes it from the judge
+  const verdict = (samples) => {
+    const j = judged(samples);
+    return { kind: 'verdict', scene: SCENE, op: OP, candidate: 'cua', device: 'late-take', ...j, verdict: j.pass ? 'pass' : 'fail' };
+  };
+  const passing = verdict(cell);
+  const other = { kind: 'verdict', scene: 'identity-kate', op: 'identity_kate', candidate: 'cua', device: 'identity', pass: true, reasons: [], verdict: 'pass' };
+  const planned = [`${SCENE} ${OP} cua`, 'identity-kate identity_kate cua'];
+  assert.deepEqual(runOutcome([passing, other], { valid: true, planned }).failed, [], 'the positive control: the run passes');
+  assert.deepEqual(runOutcome([verdict(edit((s) => ((s.read_notice = false), s))), other], { valid: true, planned }).failed, [`${SCENE} ${OP} cua`], 'the case failing fails the run');
+
+  const foreign = runOutcome([passing, other], { valid: true, planned, foreign: ['the harness: 0x00a00003 ConfigureWindow (raised)'] });
+  assert.deepEqual(foreign.failed, ['a window the harness did not open was changed: the harness: 0x00a00003 ConfigureWindow (raised)'], "a change to a window the harness did not open, at the run's cleanup");
+  const OVER = "device-chrome-dnd chrome_dnd_shared: 5 of 18 samples resampled or invalid (5 resampled, 0 invalid), more than the case's cap of 2";
+  const over = runOutcome([passing, other], { valid: true, planned, faults: { pass: false, reasons: [OVER] } });
+  assert.deepEqual(over.failed, [`harness preparation failures over the cap (${OVER})`], 'preparation failures over the cap');
+  const unjudged = runOutcome([passing], { valid: true, planned });
+  assert.deepEqual(unjudged.failed, ['identity-kate identity_kate cua: no verdict'], 'a planned operation with no verdict');
+  for (const o of [foreign, over, unjudged]) assert.equal(o.code, 1);
+});

@@ -162,7 +162,11 @@ const START = [at(0, 'ready', { root: ROOT, xtest: 132, composite: 142 }), clien
 const created = (ms, c, seq) => reqAt(ms, c, seq, 'CreateWindow', { window: MINE, parent: ROOT });
 const gone = (ms) => at(ms, 'destroyed', { window: MINE });
 const engineFocusOut = (ms, seq) => reqAt(ms, ENGINE, seq, 'SendEvent', { destination: MINE, event: 'FocusOut' });
-const record = (lines, found) => auditRecord([...START, ...lines, at(99999, 'end', {})].join('\n'), { registered: new Map([[MINE, found]]), root: ROOT });
+/** A record judged; `t0`, the server time its request capture began (the `ready` line's), its ms the same. */
+const record = (lines, found, { t0 } = {}) => {
+  const start = t0 === undefined ? START : [at(t0, 'ready', { root: ROOT, xtest: 132, composite: 142, t0 }), ...START.slice(1)];
+  return auditRecord([...start, ...lines, at(99999, 'end', {})].join('\n'), { registered: new Map([[MINE, found]]), root: ROOT });
+};
 const seqs = (r) => r.foreign.map((f) => f.seq);
 
 test('record: a request to the run\'s own ended window, no newer life under its id, is the run\'s', () => {
@@ -214,9 +218,12 @@ test('record: a refusal that cannot be bound to one creation turns the exemption
   const refusal = JSON.stringify({ kind: 'error', ms: 3000, client: GEDIT, seq: 50, major: 1, minor: 0, t: 3000 });
   const lines = [created(1000, GEDIT, 10), gone(2000), tick(ELSE), tick(MINE), refusal, engineFocusOut(3100, 40)];
   assert.deepEqual(seqs(record(lines, [1050])), [40]);
-  // bound to one creation (a tick of its own), the refusal leaves the exemption on: the recycled id's creation refused
+  // bound to one creation (a tick of its own) and placed inside the request capture, the refusal leaves the exemption
+  // on: the recycled id's creation refused
   const one = [created(1000, GEDIT, 10), gone(2000), tick(MINE), refusal, engineFocusOut(3100, 40)];
-  assert.equal(record(one, [1050]).clean, true);
+  assert.equal(record(one, [1050], { t0: 0 }).clean, true);
+  // the same record with no capture start (`t0`) cannot place its error: the exemption is off
+  assert.deepEqual(seqs(record(one, [1050])), [40]);
   // distinct ticks: a refused creation of another id at 2900, the recycled id's accepted birth at 3000, and the error
   // read at 3000; both pass `<=`, so either may be the refused one
   const at2 = (window, t) => JSON.stringify({ kind: 'req', ms: t, client: GEDIT, seq: 50, t, op: 'CreateWindow', window, parent: ROOT });
@@ -235,6 +242,36 @@ test('record: a refusal that cannot be bound to one creation turns the exemption
   // an untimed error (a record of one context) binds by the client's latest request alone: never shown to be the creation
   const untimed = JSON.stringify({ kind: 'error', ms: 3000, client: GEDIT, seq: 50, major: 1 });
   assert.deepEqual(seqs(record([created(1000, GEDIT, 10), gone(2000), tick(MINE), untimed, engineFocusOut(3100, 40)], [1050])), [40]);
+});
+
+test('record: a refusal the server timed before its request capture began never excuses a request, however late its line came (fix wave 4)', () => {
+  // the reviewer's probe: the request capture begins at server time 100 (wall 5000); the run's gedit opens (found at
+  // 5150) and ends; a recycled window of gedit's client is accepted under the id and an engine configures it (seq 40).
+  // The errors context, started first, recorded a refusal of seq 50 at server time 2^32 - 50, before the wrap and before
+  // the request capture began, and its line came last: its real claimant was never recorded, and H''''s matcher binds
+  // it to the recycled birth, whose time it passes
+  const t = (time, c, seq, op, fields) => JSON.stringify({ kind: 'req', ms: time + 4900, client: c, seq, t: time, op, ...fields });
+  const ready = JSON.stringify({ kind: 'ready', ms: 5000, root: ROOT, xtest: 132, composite: 142, t0: 100 });
+  const lines = (extra) => [
+    ready, ...START.slice(1),
+    t(200, GEDIT, 10, 'CreateWindow', { window: MINE, parent: ROOT }),
+    gone(6000),
+    t(2100, GEDIT, 50, 'CreateWindow', { window: MINE, parent: ROOT }),
+    t(2200, ENGINE, 40, 'ConfigureWindow', { window: MINE }),
+    ...extra,
+    at(99999, 'end', {}),
+  ].join('\n');
+  const judge = (text) => auditRecord(text, { registered: new Map([[MINE, [5150]]]), root: ROOT }).foreign.map((f) => f.seq);
+  assert.deepEqual(judge(lines([])), [40], 'the recycled window is not the run\'s');
+  const preReady = JSON.stringify({ kind: 'error', ms: 7200, client: GEDIT, seq: 50, major: 1, minor: 0, t: 2 ** 32 - 50 });
+  assert.deepEqual(judge(lines([preReady])), [40], 'a pre-ready refusal, its line last, clears nothing');
+  // a refusal timed inside the capture, of the one creation that claims it: the recycled creation was refused, and the
+  // run's ended window's id held nothing
+  const inside = JSON.stringify({ kind: 'error', ms: 7200, client: GEDIT, seq: 50, major: 1, minor: 0, t: 2150 });
+  assert.deepEqual(judge(lines([inside])), []);
+  // after the last recorded request: not shown to be inside the capture either
+  const after = JSON.stringify({ kind: 'error', ms: 7200, client: GEDIT, seq: 50, major: 1, minor: 0, t: 2300 });
+  assert.deepEqual(judge(lines([after])), [40]);
 });
 
 // ---------------------------------------------------------------------------------------------------------------------

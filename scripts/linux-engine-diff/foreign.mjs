@@ -411,6 +411,11 @@ const MINOR_OF = { FakeInput: 2, RedirectWindow: 1, RedirectSubwindows: 2, Unred
  * time filter and before the requests a judge does not read are dropped (xtrace's `claims`, counted at the parse), its
  * connection sent exactly one request with its 16 sequence bits. Any other error, and every CreateWindow among its
  * claimants, is `ambiguous`'s or outside `sole`: the ended-life rule never rests on it.
+ * A record's error counts only when the server timed it inside the request capture (fix wave 4): the errors context
+ * starts before the requests', so an error timed before the capture began may have a claimant that was never
+ * recorded. Its place is read from the server's times alone, never from the order the two contexts' lines were
+ * written: from the capture's start (the `ready` line's `t0`) to the last recorded request, on the 32-bit clock read
+ * forward from the start. An error outside it, or one with no time or no start to read it against, is ambiguous.
  */
 function refusedRequests(elements) {
   const refused = new Map();
@@ -424,10 +429,16 @@ function refusedRequests(elements) {
     if (!byBits.has(bits)) byBits.set(bits, []);
     byBits.get(bits).push(el);
   }
+  // the record's request capture, on the server's clock: its start, and the last recorded request read forward from it
+  const t0 = elements.find((el) => el.k === 'ready' && typeof el.t0 === 'number')?.t0;
+  const since = (t) => (t - t0) >>> 0;
+  let span = -1;
+  if (t0 !== undefined) for (const el of elements) if (el.k === 'req' && typeof el.t === 'number') span = Math.max(span, since(el.t));
+  const captured = (el) => el.exact === true || (t0 !== undefined && typeof el.t === 'number' && since(el.t) <= span);
   const claim = (el) => {
     const all = byBits.get(`${el.c}|${el.seq & 0xffff}`) ?? [];
     const count = typeof el.claims === 'number' ? el.claims : all.length;
-    if (count === 1) sole.add(el);
+    if (count === 1 && captured(el)) sole.add(el);
     else for (const r of all) if (r.op === 'CreateWindow' && typeof r.window === 'number') ambiguous.add(r.window);
   };
   const bySeq = new Map();
@@ -806,7 +817,7 @@ function recordLine(line, out, meta, root) {
         meta.mask = r.mask;
         for (const el of out) if (el.k === 'client' && el.mask === undefined) el.mask = r.mask;
       }
-      out.push({ k: 'ready' });
+      out.push({ k: 'ready', ...(typeof r.t0 === 'number' ? { t0: r.t0 } : {}) });
       break;
     case 'failed':
       meta.error = r.error ?? 'the record failed';

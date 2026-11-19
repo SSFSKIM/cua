@@ -280,7 +280,12 @@ export function attributeFocusOuts(trace, records, { delayMs }) {
 
 /** A pressed key or button and the release that answers it. */
 const RELEASE_OF = { KeyPress: 'KeyRelease', ButtonPress: 'ButtonRelease' };
-const heldName = ({ type, detail }) => `${type === 'KeyPress' ? 'key' : 'button'} ${detail}`;
+/**
+ * An input event as a finding names it: its class, never its code (task 106, fix wave 4). A key's code names the key
+ * the engine pressed, so a run's findings could spell out what it typed; the audit compares codes in memory and writes
+ * only `key` or `button`.
+ */
+const inputClass = ({ type }) => (/^Key/.test(type) ? 'key' : 'button');
 
 /**
  * The audit of a key or button held, its window then minimized, then released (M4's T4; the design session's proof):
@@ -295,7 +300,8 @@ const heldName = ({ type, detail }) => `${type === 'KeyPress' ? 'key' : 'button'
  *   forbids, anywhere;
  * - outside the samples' spans the engine sends no input and nothing the background route forbids.
  * A trace with no requests, or a sample whose marks are missing or out of order, is not clean. Returns `{clean,
- * traced, requests, samples: [{i, held}], forbidden}`.
+ * traced, requests, samples: [{i, held: {keys, buttons}}], forbidden}`: findings and samples name an input by its class,
+ * never its code.
  */
 export function auditHeldRelease({ requests, extensions }, target, { route, marks }) {
   const found = [];
@@ -321,7 +327,7 @@ export function auditHeldRelease({ requests, extensions }, target, { route, mark
       const e = inputEvent(r, extensions);
       const what = forbidden(r, extensions);
       if (e && viaRoute(e) && RELEASE_OF[e.type]) pressed.push({ type: e.type, detail: e.detail });
-      else if (e && ['KeyRelease', 'ButtonRelease'].includes(e.type)) flag(`sample ${i}: the hold released ${e.type} ${e.detail}`, r);
+      else if (e && ['KeyRelease', 'ButtonRelease'].includes(e.type)) flag(`sample ${i}: the hold released ${e.type} (a ${inputClass(e)})`, r);
       else if (e && e.via === 'send' && e.type === 'FocusIn' && route === 'background' && e.destination === target) continue;
       else if (e && e.via !== 'xtest') flag(`sample ${i}: the hold sent ${e.type}`, r);
       if (what && what !== 'XTEST FakeInput' && !(route === 'foreground' && what !== 'WarpPointer' && namedWindow(r) === target)) flag(`sample ${i}: the hold sent ${what}`, r);
@@ -337,15 +343,16 @@ export function auditHeldRelease({ requests, extensions }, target, { route, mark
       if (e && viaRoute(e) && ['KeyRelease', 'ButtonRelease'].includes(e.type)) {
         const k = owed.indexOf(`${e.type} ${e.detail}`);
         if (k >= 0) owed.splice(k, 1);
-        else flag(`sample ${i}: the release sent ${e.type} ${e.detail}, which was not held or was released already`, r);
+        else flag(`sample ${i}: the release sent ${e.type} (unexpected ${inputClass(e)}), which was not held or was released already`, r);
         continue;
       }
       if (e && e.via === 'send' && e.type === 'FocusOut' && route === 'background' && e.destination === target) continue;
-      if (e) flag(`sample ${i}: the release sent ${e.via === 'xtest' ? 'XTEST ' : ''}${e.type}${e.detail === null ? '' : ` ${e.detail}`}`, r);
+      if (e) flag(`sample ${i}: the release sent ${e.via === 'xtest' ? 'XTEST ' : ''}${e.type}${e.detail === null ? '' : ` (a ${inputClass(e)})`}`, r);
       else if (what) flag(`sample ${i}: the release sent ${what}`, r);
     }
-    for (const missing of owed) flag(`sample ${i}: the release never sent ${missing}`);
-    samples.push({ i: Number(i), held: pressed.map(heldName) });
+    for (const missing of owed) flag(`sample ${i}: the release never sent the release of a held ${/^Key/.test(missing) ? 'key' : 'button'}`);
+    // what the hold pressed, counted by class: its codes stay in this audit
+    samples.push({ i: Number(i), held: { keys: pressed.filter((p) => p.type === 'KeyPress').length, buttons: pressed.filter((p) => p.type !== 'KeyPress').length } });
   }
   if (!samples.length) flag('no sample was marked in the trace');
   for (const r of requests) {

@@ -9,7 +9,7 @@ import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { auditForeground, auditHeldRelease, auditNothingSent, auditRequests, parseXtrace } from '../../scripts/linux-engine-diff/audit.mjs';
+import { auditAnswered, auditForeground, auditHeldRelease, auditNothingSent, auditRequests, parseXtrace } from '../../scripts/linux-engine-diff/audit.mjs';
 
 const hex = (id) => `0x${id.toString(16).padStart(8, '0')}`;
 const W = 0x01800064;
@@ -29,6 +29,7 @@ test("no audit's finding carries its request's text, an atom's name or a payload
     foreground: auditForeground(trace, 0x00600002),
     'nothing-sent': auditNothingSent(trace),
     'held-release': auditHeldRelease(trace, W, { route: 'background', marks: [] }),
+    answered: auditAnswered(trace, [{ tag: 'request:0', at: 0 }, { tag: 'answered:0', at: 10 ** 6 }], [{ refused: true }]),
   };
   for (const [kind, audited] of Object.entries(audits)) {
     assert.ok(audited.forbidden.length > 0, `${kind} finds something`);
@@ -39,6 +40,40 @@ test("no audit's finding carries its request's text, an atom's name or a payload
     }
   }
   assert.ok(!JSON.stringify(audits).includes(SECRET));
+});
+
+// a held-release trace whose keys carry codes 157 (held) and 158 (released though never held): neither code may reach
+// a finding or a sample, and the verdict is the same
+const key = (seq, type, code) => `005:<:${seq}: 44: Request(25): SendEvent propagate=false(0x00) destination=${hex(W)} event-mask=0 ${type}(${type === 'KeyPress' ? 2 : 3}) keycode=0x${code.toString(16)} time=0x00000000 root=0x000001ff event=${hex(W)} child=None(0x00000000) root-x=0 root-y=0 event-x=0 event-y=0 state=0 same-screen=true(0x01)`;
+function heldTrace(release) {
+  const lines = [];
+  const marks = [];
+  let at = 0;
+  const push = (line) => {
+    lines.push(line);
+    at += Buffer.byteLength(line) + 1;
+  };
+  const mark = (tag) => marks.push({ tag, at });
+  mark('hold:0');
+  push(key('0010', 'KeyPress', 157));
+  mark('held:0');
+  mark('release:0');
+  for (const l of release) push(l);
+  mark('released:0');
+  return { trace: parseXtrace(lines.join('\n')), marks };
+}
+
+test('a held-release audit keeps no key code in its findings or its samples, and its verdict is the same', () => {
+  const clean = heldTrace([key('0011', 'KeyRelease', 157)]);
+  const ok = auditHeldRelease(clean.trace, W, { route: 'background', marks: clean.marks });
+  assert.equal(ok.clean, true);
+  assert.deepEqual(ok.samples, [{ i: 0, held: { keys: 1, buttons: 0 } }]);
+  // another key released, and the held one never: the verdict fails, by class, with no code
+  const wrong = heldTrace([key('0011', 'KeyRelease', 158)]);
+  const bad = auditHeldRelease(wrong.trace, W, { route: 'background', marks: wrong.marks });
+  assert.equal(bad.clean, false);
+  assert.deepEqual(bad.forbidden.map((f) => f.what), ['sample 0: the release sent KeyRelease (unexpected key), which was not held or was released already', 'sample 0: the release never sent the release of a held key']);
+  for (const audited of [ok, bad]) assert.ok(!/\b15[78]\b|0x9[de]/.test(JSON.stringify({ forbidden: audited.forbidden, samples: audited.samples })), JSON.stringify(audited));
 });
 
 test("the audit row's findings are written as the audits give them, never the request's text", () => {

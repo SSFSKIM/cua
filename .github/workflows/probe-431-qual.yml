@@ -28,6 +28,10 @@ on:
         description: Comma list of cells (empty runs every cell)
         type: string
         default: ''
+      reps:
+        description: Repetitions per unit and head (empty takes the mode's)
+        type: string
+        default: ''
 permissions:
   contents: read
 concurrency:
@@ -72,6 +76,7 @@ jobs:
       MODE: ${{ inputs.mode }}
       LANE: ${{ matrix.lane }}
       PROBE_CELLS: ${{ inputs.cells }}
+      PROBE_REPS: ${{ inputs.reps }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:

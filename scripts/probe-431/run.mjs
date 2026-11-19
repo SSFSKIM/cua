@@ -74,6 +74,8 @@ async function main(){
   if(process.env.RUNNER_ENVIRONMENT!=='github-hosted')throw Error('hosted runners only');
   if(!LANES.includes(lane)||!['smoke','measure','qualify'].includes(mode))throw Error('invalid lane');
   const heads=Object.fromEntries(headSpecs.map(s=>{const [name,bin]=s.split('::');return [name,{bin}];}));
+  // Repetitions per unit and head, when the dispatch names them (`reps`); else the mode's.
+  const reps=/^[1-9][0-9]?$/.test(process.env.PROBE_REPS||'')?Number(process.env.PROBE_REPS):null;
   // A cell measured on some lanes only (`lanes`) is not planned on the others.
   const headNames=Object.keys(heads),units=unitsFor(process.env.PROBE_CELLS||'').filter(u=>!CELLS[u.cell].lanes||CELLS[u.cell].lanes.includes(lane));
   if(!headNames.length||headNames.some(h=>!['main','fix'].includes(h))||mode==='qualify'&&headNames.length!==2)throw Error('invalid heads');
@@ -91,7 +93,7 @@ async function main(){
     // The page holds the presentation probe's prepare (cell `plain`) until the first trial.
     for(const [name,{bin}] of Object.entries(heads))engines[name]=await startEngine({name,bin,root:tmp,platform,linkText:CELLS.plain.before});
     config.primed=Object.fromEntries(Object.entries(engines).map(([k,e])=>[k,e.primed]));
-    const cells=plan({mode,heads:headNames,units});
+    const cells=plan({mode,heads:headNames,units,reps});
     for(const c of cells)planned[`${c.head}/${unitKey(c)}`]=(planned[`${c.head}/${unitKey(c)}`]??0)+1;
     let trial=0,streak=0;
     for(const c of cells){
@@ -206,7 +208,7 @@ async function main(){
   }
   const cov=coverage(rows,{planned,heads:headNames,units});
   // The qualification gates in mode `qualify` only: smoke and measure, with one head or two, pass on coverage alone.
-  const {gates:gate,pass}=judge(rows,{mode,abort,coverage:cov,units});
+  const {gates:gate,pass}=judge(rows,{mode,abort,coverage:cov,units,reps});
   const tally=list=>list.reduce((o,k)=>(o[k]=(o[k]??0)+1,o),{});
   const status={lane,mode,kit:config.kit,refs:config.refs,version:config.version??null,os:config.os,image:config.image,
     presentation:config.presentation??null,foregroundFallback:config.foregroundFallback??null,abort,abortStep,

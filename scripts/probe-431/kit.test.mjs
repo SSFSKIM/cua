@@ -301,6 +301,16 @@ test('a big page\'s re-creation refused by the fix is reported, never failed; it
   assert.equal(uncoveredBy({nodes: [], timings: {deadlineHit: true}}, CELLS.capremount, found), 'cut');
 });
 
+test('a short qualification plans its repetitions and asks no more pairs than it planned', () => {
+  const units = unitsFor('remount,like'), short = plan({mode: 'qualify', heads: ['main', 'fix'], units, reps: 5});
+  assert.equal(short.length, 2 * 5 * units.length);
+  const list = short.map(r => ({...r, valid: true, verdict: 'kept-landed', click: 'success',
+    guard: {verdict: 'kept', reason: 'sameElement', recordedRole: recordedRole(r.cell, r.at)}, presentationHeld: true}));
+  const cov = coverage(list, {planned: planned(list), heads: ['main', 'fix'], units});
+  assert.equal(judge(list, {mode: 'qualify', abort: null, coverage: cov, units, reps: 5}).pass, true);
+  assert.equal(judge(list, {mode: 'qualify', abort: null, coverage: cov, units}).gates.keptAsMain.pass, false);
+});
+
 test('a run of some cells is judged on those cells alone', () => {
   const units = unitsFor('remount,twincap'), cov = {complete: true, covered: true};
   assert.deepEqual(units.map(unitKey), ['twincap/text', 'twincap/link', 'remount/text', 'remount/link']);

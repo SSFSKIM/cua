@@ -102,8 +102,8 @@ export function unitsFor(filter){
 }
 
 // Rows in run order. A qualification interleaves the heads, alternating which goes first per unit and repetition.
-export function plan({mode,heads,units=UNITS}){
-  const reps=mode==='smoke'?1:mode==='qualify'?20:10;
+export function plan({mode,heads,units=UNITS,reps:override=null}){
+  const reps=Number.isInteger(override)&&override>0?override:mode==='smoke'?1:mode==='qualify'?20:10;
   const rows=[];
   for(let rep=0;rep<reps;rep++)units.forEach((u,i)=>{
     const order=heads.length===2&&(rep+i)%2===1?[heads[1],heads[0]]:heads;

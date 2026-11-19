@@ -181,7 +181,7 @@ export const MIN_PAIRS=10;
 // The ruling-881 twins (absent from the record), gated apart from the twins the record holds so each answer reads alone.
 export const UNRECORDED=new Set(['twincap','twindeep','twinwide']);
 // The qualification gates (two heads). A row pairs with the other head's row of the same unit and repetition.
-export function gates(rows,{coverage:cov,units:all=UNITS}){
+export function gates(rows,{coverage:cov,units:all=UNITS,minPairs=MIN_PAIRS}){
   // A unit a cell names report-only (`reportOnlyAt`) is run and reported (`reportOnly`), never gated: twincover at the
   // link point, where the record holds the live overlay itself, not a re-created match (#433, outside #431).
   const isReportOnly=u=>(CELLS[u.cell].reportOnlyAt??[]).includes(u.at);
@@ -218,13 +218,13 @@ export function gates(rows,{coverage:cov,units:all=UNITS}){
     const list=fix.filter(r=>pred(r.cell)),paired=list.filter(mate);
     const usable=Object.fromEntries(unitsWhere(pred).map(u=>[unitKey(u),
       paired.filter(r=>unitKey(r)===unitKey(u)&&r.verdict!=='observe-failed'&&mate(r).verdict!=='observe-failed').length]));
-    const thin=Object.entries(usable).filter(([,n])=>n<MIN_PAIRS).map(([k])=>k);
+    const thin=Object.entries(usable).filter(([,n])=>n<minPairs).map(([k])=>k);
     const differ=paired.filter(r=>mate(r).verdict!==r.verdict);
     const reasonDiffer=paired.filter(r=>mate(r).verdict===r.verdict&&mate(r).guard?.reason!==r.guard?.reason);
     const notKept=mustKeep?list.filter(r=>r.verdict!=='kept-landed'&&r.verdict!=='observe-failed'):[];
     return {pass:!unitsWhere(pred).length||paired.length>0&&everyUnit(pred)&&thin.length===0&&differ.length===0&&notKept.length===0,
       rows:list.length,paired:paired.length,
-      usablePairs:usable,minPairs:MIN_PAIRS,thin,differ:differ.length,reasonDiffer:reasonDiffer.length,
+      usablePairs:usable,minPairs,thin,differ:differ.length,reasonDiffer:reasonDiffer.length,
       ...(mustKeep?{fixNotKept:notKept.length,mainNotKept:main.filter(r=>pred(r.cell)&&r.verdict!=='kept-landed').length,
         notKeptExamples:brief(notKept)}:{}),
       // A fix row refused where its main row kept and landed: the regression the re-creation cells exist to catch.
@@ -277,8 +277,9 @@ export function gates(rows,{coverage:cov,units:all=UNITS}){
 }
 
 // A run's gates and pass: the qualification gates in mode `qualify` only; smoke and measure pass on coverage alone.
-export function judge(rows,{mode,abort,coverage:cov,units=UNITS}){
-  const gate=mode==='qualify'?gates(rows,{coverage:cov,units}):null;
+export function judge(rows,{mode,abort,coverage:cov,units=UNITS,reps=null}){
+  // A short qualification (fewer repetitions) asks no more usable pairs per unit than it planned.
+  const gate=mode==='qualify'?gates(rows,{coverage:cov,units,minPairs:Math.min(MIN_PAIRS,reps??MIN_PAIRS)}):null;
   const measured=abort===null&&cov.complete&&cov.covered;
   // An informational entry (the guard's time) is reported, never part of the pass.
   return {gates:gate,pass:measured&&(!gate||Object.values(gate).every(g=>g.informational||g.pass))};

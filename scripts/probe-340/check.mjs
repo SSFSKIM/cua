@@ -145,7 +145,14 @@ export function gates(rows,{coverage:cov,units=UNITS}){
   const thin=Object.entries(usable).filter(([,n])=>n<MIN_PAIRS).map(([k])=>k);
   const differ=othersPaired.filter(r=>pair.get(`${unitKey(r)}/${r.rep}`).verdict!==r.verdict);
   const reasonDiffer=othersPaired.filter(r=>{const m=pair.get(`${unitKey(r)}/${r.rep}`);return m.verdict===r.verdict&&m.guard?.reason!==r.guard?.reason;});
-  const wrong=fix.filter(r=>r.verdict==='wrong-target');
+  // No wrong target in any cell but `twin`, whose wrong target is main's own (#431) and which answers as main above.
+  const wrong=fix.filter(r=>r.verdict==='wrong-target'&&r.cell!=='twin');
+  const twinWrong={fix:fix.filter(r=>r.cell==='twin'&&r.verdict==='wrong-target').length,fixRows:fix.filter(r=>r.cell==='twin').length,
+    main:main.filter(r=>r.cell==='twin'&&r.verdict==='wrong-target').length,mainRows:main.filter(r=>r.cell==='twin').length,issue:'#431'};
+  // A named answer at the text point (kind `expect`), and at the link main's paired verdict: gated.
+  const atLinkAsMain=r=>{const m=pair.get(`${unitKey(r)}/${r.rep}`);return !!m&&m.verdict===r.verdict;};
+  const meets=r=>{const e=CELLS[r.cell].expect;return r.verdict===e.verdict&&(!e.reasons||e.reasons.includes(r.guard?.reason));};
+  const expected=fix.filter(r=>kindOf(r)==='expect'),expectMiss=expected.filter(r=>r.at==='link'?!atLinkAsMain(r):!meets(r));
   // The failure the fix answers, reproduced: main refused at least half its valid rows of the growing links' text.
   const mainGrow=main.filter(r=>kindOf(r)==='grow'&&r.at==='text'),mainRefused=mainGrow.filter(r=>r.verdict==='refused').length;
   const reproduced=mainGrow.length>0&&2*mainRefused>=mainGrow.length;
@@ -157,9 +164,9 @@ export function gates(rows,{coverage:cov,units=UNITS}){
   const everyUnit=kinds=>units.filter(u=>kinds.includes(CELLS[u.cell].kind)).every(u=>of(fix,u).length>0);
   // The fix's stated limits (kind `limit`), reported apart from the gates: at the text, the cell's expected verdict
   // (and reason); at the link, main's paired verdict.
-  const limits=fix.filter(r=>kindOf(r)==='limit'),limitMiss=limits.filter(r=>{
-    if(r.at==='link'){const m=pair.get(`${unitKey(r)}/${r.rep}`);return !m||m.verdict!==r.verdict;}
-    const e=CELLS[r.cell].expect;return r.verdict!==e.verdict||e.reason&&r.guard?.reason!==e.reason;});
+  const limits=fix.filter(r=>kindOf(r)==='limit'),limitMiss=limits.filter(r=>r.at==='link'?!atLinkAsMain(r):!meets(r));
+  const perUnit=(kind,miss)=>Object.fromEntries(units.filter(u=>CELLS[u.cell].kind===kind).map(u=>[unitKey(u),
+    {rows:of(fix,u).length,missed:miss.filter(r=>unitKey(r)===unitKey(u)).length,verdicts:tally(of(fix,u).map(r=>`${r.verdict}/${r.guard?.reason??'-'}`))}]));
   return {
     coverage:{pass:cov.complete&&cov.covered},
     keptAndLanded:{pass:kept.length>0&&everyUnit(['grow','shrink'])&&notKept.length===0,rows:kept.length,failed:notKept.length,
@@ -169,10 +176,12 @@ export function gates(rows,{coverage:cov,units=UNITS}){
     othersAsMain:{pass:othersPaired.length>0&&everyUnit(['asMain'])&&thin.length===0&&differ.length===0,rows:others.length,
       paired:othersPaired.length,usablePairs:usable,minPairs:MIN_PAIRS,thin,differ:differ.length,
       reasonDiffer:reasonDiffer.length,examples:brief(differ),reasonExamples:brief(reasonDiffer)},
-    noWrongTarget:{pass:wrong.length===0,fixRows:fix.length,wrong:wrong.length,mainWrong:main.filter(r=>r.verdict==='wrong-target').length,examples:brief(wrong)},
+    noWrongTarget:{pass:wrong.length===0,fixRows:fix.length,wrong:wrong.length,
+      mainWrong:main.filter(r=>r.verdict==='wrong-target'&&r.cell!=='twin').length,twin:twinWrong,examples:brief(wrong)},
+    expectedAnswers:{pass:expected.length>0&&everyUnit(['expect'])&&expectMiss.length===0,rows:expected.length,missed:expectMiss.length,
+      perUnit:perUnit('expect',expectMiss),examples:brief(expectMiss)},
     statedLimits:{informational:true,pass:limits.length>0&&everyUnit(['limit'])&&limitMiss.length===0,rows:limits.length,
-      missed:limitMiss.length,perUnit:Object.fromEntries(units.filter(u=>CELLS[u.cell].kind==='limit').map(u=>[unitKey(u),
-        {rows:of(fix,u).length,missed:limitMiss.filter(r=>unitKey(r)===unitKey(u)).length}])),examples:brief(limitMiss)},
+      missed:limitMiss.length,perUnit:perUnit('limit',limitMiss),examples:brief(limitMiss)},
     presentation:{pass:presentationWorse.length===0,worse:presentationWorse,
       fixLost:fix.filter(r=>r.presentationHeld===false).length,mainLost:main.filter(r=>r.presentationHeld===false).length},
   };

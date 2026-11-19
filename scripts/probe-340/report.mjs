@@ -2,6 +2,7 @@
 import {readdirSync,readFileSync,existsSync} from 'node:fs';
 import {join} from 'node:path';
 import {UNITS,unitKey} from './cells.mjs';
+import {quantiles} from './check.mjs';
 
 const dir=process.argv[2];
 const load=(d,f)=>existsSync(join(dir,d,f))?JSON.parse(readFileSync(join(dir,d,f),'utf8')):null;
@@ -24,6 +25,12 @@ for(const d of arts){
     const x=sum[`${h}|${unitKey(u)}`];if(!x)continue;
     console.log(`| ${unitKey(u)} | ${h} | ${g(x.axRecorded)} | ${g(x.axText)} | ${g(x.axLink)} | ${g(x.domText)} | ${g(x.domLink)} |`);
   }
+  // The guard's own time (stalePoint.ms) per head over every valid row, and split by its verdict.
+  const rows=load(d,'rows.json')??[];
+  const q=list=>{const x=quantiles(list.map(r=>r.guard?.ms));return x?`${x.p50} / ${x.p95} / ${x.max} (n ${x.n})`:'–';};
+  console.log('\n| Head | stalePoint.ms p50 / p95 / max, all | kept | refused |\n|---|---|---|---|');
+  for(const h of ['main','fix']){const v=rows.filter(r=>r.head===h&&r.valid&&r.guard);if(!v.length)continue;
+    console.log(`| ${h} | ${q(v)} | ${q(v.filter(r=>r.guard.verdict==='kept'))} | ${q(v.filter(r=>r.guard.verdict==='refused'))} |`);}
   if(s.gates){
     console.log('\n| Gate | Pass | Detail |\n|---|---|---|');
     for(const [k,v] of Object.entries(s.gates)){const {pass,examples,reasonExamples,...rest}=v;console.log(`| ${k}${v.informational?' (informational)':''} | ${pass?'pass':'**fail**'} | ${JSON.stringify(rest)} |`);}

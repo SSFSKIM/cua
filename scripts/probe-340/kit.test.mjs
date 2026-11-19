@@ -23,7 +23,7 @@ test('plans: ten per unit to measure, twenty per head interleaved to qualify', (
   const q = plan({mode: 'qualify', heads: ['main', 'fix']});
   assert.equal(q.length, 2 * 20 * UNITS.length);
   assert.deepEqual([...new Set(q.filter((_, i) => i % 2 === 0).map(r => r.head))].sort(), ['fix', 'main']);
-  for (const c of Object.values(CELLS)) assert.ok(['grow', 'shrink', 'refuse', 'asMain', 'limit'].includes(c.kind));
+  for (const c of Object.values(CELLS)) assert.ok(['grow', 'shrink', 'refuse', 'asMain', 'expect', 'limit'].includes(c.kind));
   // Every cell's text before and after is distinct from the other links', so the observation finds it alone.
   for (const c of Object.values(CELLS)) for (const t of [c.before, c.after]) assert.ok(!['Archive', 'Drafts'].includes(t));
 });
@@ -138,7 +138,7 @@ function rows(verdictFor, extra = () => ({})) {
 const mainOf = r => ['refuse'].includes(CELLS[r.cell].kind) || r.cell === 'linkmono' ? 'refused'
   : ['grow', 'shrink'].includes(CELLS[r.cell].kind) && r.at === 'text' ? 'refused' : 'kept-landed';
 const good = r => r.head === 'main' ? mainOf(r) : ['grow', 'shrink'].includes(CELLS[r.cell].kind) ? 'kept-landed'
-  : CELLS[r.cell].kind === 'limit' && r.at === 'text' ? CELLS[r.cell].expect.verdict : mainOf(r);
+  : ['limit', 'expect'].includes(CELLS[r.cell].kind) && r.at === 'text' ? CELLS[r.cell].expect.verdict : mainOf(r);
 const planned = list => list.reduce((o, r) => (o[`${r.head}/${unitKey(r)}`] = (o[`${r.head}/${unitKey(r)}`] ?? 0) + 1, o), {});
 test('gates pass a fix that keeps the growing links and still refuses the rest, and fail each way it can be wrong', () => {
   const ok = rows(good), cov = coverage(ok, {planned: planned(ok), heads: ['main', 'fix']});
@@ -222,6 +222,23 @@ test('summaries carry the geometry as median and span', () => {
   assert.deepEqual(s.axRecorded, {n: 2, dx: {median: 0, span: [0, 0]}, dy: {median: 0, span: [0, 0]}, dw: {median: 30, span: [30, 32]}});
   assert.equal(s.domText.n, 1);
   assert.deepEqual(s.reason, {'refused/nodeGone': 2});
+});
+
+test('twin answers as main and its wrong target is reported apart (#431); the badge must refuse; nodeGone and frameMoved are one', () => {
+  const twinAsMain = r => r.cell === 'twin' ? 'wrong-target' : good(r);
+  const ok = rows(twinAsMain), cov = coverage(ok, {planned: planned(ok), heads: ['main', 'fix']});
+  const g = gates(ok, {coverage: cov});
+  assert.ok(Object.entries(g).every(([k, x]) => x.informational || x.pass), JSON.stringify(g));
+  assert.deepEqual(g.noWrongTarget.twin, {fix: 40, fixRows: 40, main: 40, mainRows: 40, issue: '#431'});
+  const worse = rows(r => r.head === 'fix' && r.cell === 'twin' ? 'wrong-target' : r.cell === 'twin' ? 'refused' : good(r));
+  assert.equal(gates(worse, {coverage: cov}).othersAsMain.pass, false);
+  const badgeKept = rows(r => r.head === 'fix' && r.cell === 'badge' && r.at === 'text' && r.rep === 6 ? 'kept-landed' : twinAsMain(r));
+  const gb = gates(badgeKept, {coverage: cov});
+  assert.equal(gb.expectedAnswers.pass, false); assert.equal(gb.expectedAnswers.perUnit['badge/text'].missed, 1);
+  const moved = rows(twinAsMain, r => r.head === 'fix' && r.cell === 'centre' && r.at === 'text' ? {guard: {verdict: 'refused', reason: 'frameMoved'}} : {});
+  assert.equal(gates(moved, {coverage: cov}).statedLimits.pass, true);
+  const odd = rows(twinAsMain, r => r.head === 'fix' && r.cell === 'centre' && r.at === 'text' ? {guard: {verdict: 'refused', reason: 'interactiveHit'}} : {});
+  assert.equal(gates(odd, {coverage: cov}).statedLimits.pass, false);
 });
 
 test('the stated limits are checked apart: reported, never part of the pass', () => {

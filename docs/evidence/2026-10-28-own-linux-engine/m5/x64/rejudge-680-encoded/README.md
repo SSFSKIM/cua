@@ -11,8 +11,11 @@ baseline, its starts equal to its ends, and this press's own log carrying its dr
 what it saw (a recorded drop is an observed change, never a `protocol` failure; the limit needs a span the witness
 watched clean). Both stored span-limited samples carry those fields and meet them (H⁗ 2/0: starts/ends 96/96 → 97/97,
 drops 65 → 66, its log's dragend at 220.7 ms; H 0/0: 23/23 → 24/24, drops 18 → 19, 189.9 ms). The outputs below are
-the tightened judge's. `scan-stored.mjs` (output `scan-stored.txt`) is a diagnostic scan of every stored late-take cell
-on this host, each bound as rejudge-device binds it.
+the tightened judge's. Fix wave 3 required the logged press to be new (`downs` up by one from the read before), and
+lets a rise the page's later read shows trigger every drop rule whatever the earlier read's bit said; both samples have
+`downs` 102 → 103 and 23 → 24. `scan-stored.mjs` (output `scan-stored.txt`) is a diagnostic scan of every stored
+device-chrome-dnd cell on this host (399), each bound as rejudge-device binds it: against fix wave 2 nothing moves,
+against the base only the four span-limited late-take cells.
 
     node compare.mjs <checkout> <base checkout> <step dir> <the 680 script's output>
     node controls.mjs <checkout> <step dir>

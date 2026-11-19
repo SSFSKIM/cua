@@ -1,4 +1,19 @@
-# diagnostic scan (never a verdict), each cell bound as rejudge-device binds it: the run's sidecar, its recorded plan, its --no-audit; the four MOVED rows are diagnostic replays of premise cells (wave 8)
+# diagnostic scan (never a verdict), every device-chrome-dnd cell both judges know, bound as rejudge-device binds it: the run's sidecar, its recorded plan, its --no-audit; MOVED rows of premise cells are diagnostic replays (wave 8)
+## fix wave 3 (this checkout) against fix wave 2 (4584d22c): what wave 3 alone moves
+INFERRED /Users/new/.local/share/cua-171/task16/superseded/diff-m31-verdict-1/results.jsonl m31-verdict chrome_dnd_late_shared 0/1
+INFERRED /Users/new/.local/share/cua-171/task16/superseded/diff-m31-verdict-1/results.jsonl m31-verdict chrome_dnd_late_shared 1/0
+INFERRED /Users/new/.local/share/cua-171/task16/superseded/diff-m31-verdict-1/results.jsonl m31-verdict chrome_dnd_late_shared 1/1
+INFERRED /Users/new/.local/share/cua-171/task16/superseded/diff-m31-verdict-1/results.jsonl m31-verdict chrome_dnd_late_shared 2/0
+INFERRED /Users/new/.local/share/cua-171/task16/superseded/diff-m31-verdict-1/results.jsonl m31-verdict chrome_dnd_late_shared 2/1
+INFERRED /Users/new/.local/share/cua-171/task73b/harness-e8574df3/docs/evidence/2026-10-28-own-linux-engine/m3/diff/results.jsonl m31-verdict chrome_dnd_late_shared 0/0
+INFERRED /Users/new/.local/share/cua-171/task73b/harness-e8574df3/docs/evidence/2026-10-28-own-linux-engine/m3/diff/results.jsonl m31-verdict chrome_dnd_late_shared 0/1
+INFERRED /Users/new/.local/share/cua-171/task73b/harness-e8574df3/docs/evidence/2026-10-28-own-linux-engine/m3/diff/results.jsonl m31-verdict chrome_dnd_late_shared 1/1
+INFERRED /Users/new/.local/share/cua-171/task73b/harness-e8574df3/docs/evidence/2026-10-28-own-linux-engine/m3/diff/results.jsonl m31-verdict chrome_dnd_late_shared 1/2
+INFERRED /Users/new/.local/share/cua-171/task73b/harness-e8574df3/docs/evidence/2026-10-28-own-linux-engine/m3/diff/results.jsonl m31-verdict chrome_dnd_late_shared 2/0
+INFERRED /Users/new/.local/share/cua-171/task73b/harness-e8574df3/docs/evidence/2026-10-28-own-linux-engine/m3/diff/results.jsonl m31-verdict chrome_dnd_late_shared 2/1
+INFERRED /Users/new/.local/share/cua-171/task73b/harness-e8574df3/docs/evidence/2026-10-28-own-linux-engine/m3/diff/results.jsonl m31-verdict chrome_dnd_late_shared 2/2
+diagnostic scan, bound as rejudge-device binds: distinct files with device-chrome-dnd 75; runs 80; device-chrome-dnd cells judged 399; differing 0; device-chrome-dnd samples with dropped set on an unread counter 12
+## this checkout against the base (H⁗'s judge, e6026b56): what the 680 encoding moves in all
 INFERRED /Users/new/.local/share/cua-171/task16/superseded/diff-m31-verdict-1/results.jsonl m31-verdict chrome_dnd_late_shared 0/1
 INFERRED /Users/new/.local/share/cua-171/task16/superseded/diff-m31-verdict-1/results.jsonl m31-verdict chrome_dnd_late_shared 1/0
 INFERRED /Users/new/.local/share/cua-171/task16/superseded/diff-m31-verdict-1/results.jsonl m31-verdict chrome_dnd_late_shared 1/1
@@ -15,4 +30,4 @@ INFERRED /Users/new/.local/share/cua-171/task73b/harness-e8574df3/docs/evidence/
 INFERRED /Users/new/.local/share/cua-171/task73b/harness-e8574df3/docs/evidence/2026-10-28-own-linux-engine/m3/diff/results.jsonl m31-verdict chrome_dnd_late_shared 2/2
 MOVED /Users/new/.local/share/cua-171/task96/vm-copy/pilot-arm64/out-zero-z1/V5.development-run.pinned.pilot/run/results.jsonl pdev-V5 (plan bound): stored fail, base fail, encoded pass | base ["a drop the witness did not record on 1 of 3 samples (0/0)"] | encoded []
 MOVED /Users/new/.local/share/cua-171/gate/out-c2/V5.release-gate/run/results.jsonl m4-gate-V5 (plan bound): stored fail, base fail, encoded pass | base ["a drop the witness did not record on 1 of 9 samples (2/0)"] | encoded []
-diagnostic scan, bound as rejudge-device binds: distinct files with device-chrome-dnd 75; runs in files with a late-take cell 38; late-take cells 26; differing 4; device-chrome-dnd samples with dropped set on an unread counter 12
+diagnostic scan, bound as rejudge-device binds: distinct files with device-chrome-dnd 75; runs 80; device-chrome-dnd cells judged 399; differing 4; device-chrome-dnd samples with dropped set on an unread counter 12

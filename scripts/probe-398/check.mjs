@@ -138,8 +138,9 @@ export function gates(rows,{coverage:cov,units=UNITS}){
   const removed=fix.filter(r=>r.cell==='twin-removed');
   const removedAccepted=removed.filter(r=>!((IDENTITY_REFUSALS.has(r.click)||IDENTITY_REFUSALS.has(r.act))&&!NO_ANSWER.has(r.act)&&!r.exact&&
     r.verdict!=='wrong-adoption'&&r.verdict!=='wrong-success'));
-  const recreate=fix.filter(r=>r.cell==='twin-recreate'),recreateLost=recreate.filter(r=>r.verdict!=='success-exact');
   const pair=new Map(main.map(r=>[`${unitKey(r)}/${r.rep}`,r]));
+  // The alike twin held wherever main held it (Chromium's main never re-finds it: phase 1 and 44480787749).
+  const recreate=fix.filter(r=>r.cell==='twin-recreate'),recreateLost=recreate.filter(r=>pair.get(`${unitKey(r)}/${r.rep}`)?.verdict==='success-exact'&&r.verdict!=='success-exact');
   // The narrowed design (coordinator, phase 2): a stale handle's walk keeps the placeholder, so every stale-handle row of
   // the fix answers exactly as its paired main row: the click's outcome, the write's outcome and the verdict.
   const stale=fix.filter(r=>STALE_CELLS.includes(r.cell)),stalePaired=stale.filter(r=>pair.has(`${unitKey(r)}/${r.rep}`));

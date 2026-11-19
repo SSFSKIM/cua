@@ -815,7 +815,14 @@ func hitTest(application pid: pid_t, at point: CGPoint) -> AXUIElement? {
 /// list or no value, never an error).
 func establishedActionNames(of element: AXUIElement) -> [String]? {
   var names: CFArray?
-  switch AXUIElementCopyActionNames(element, &names) {
+  return decodedActionNames(AXUIElementCopyActionNames(element, &names), names)
+}
+
+/// An AXUIElementCopyActionNames answer as action names: the names on success, none for kAXErrorNoValue (an element
+/// with no actions), nil for any other error (unread). The observation's record and the click read it alike (#431's
+/// review of 849bcdad..38a55469, item 2).
+func decodedActionNames(_ error: AXError, _ names: CFArray?) -> [String]? {
+  switch error {
   case .success: return names as? [String] ?? []
   case .noValue: return []
   default: return nil

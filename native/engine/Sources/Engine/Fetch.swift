@@ -366,11 +366,18 @@ class ElementSource: @unchecked Sendable {
 
   func actions(_ element: AXUIElement) -> [String] {
     costs.time("actions") {
-      var names: CFArray?
-      let read = AXUIElementCopyActionNames(element, &names) == .success
-      if read { unreadActions.remove(ElementKey(element: element)) } else { unreadActions.insert(ElementKey(element: element)) }
-      return read ? (names as? [String] ?? []) : []
+      let answer = copyActionNames(element)
+      let read = decodedActionNames(answer.error, answer.names)
+      if read != nil { unreadActions.remove(ElementKey(element: element)) } else { unreadActions.insert(ElementKey(element: element)) }
+      return read ?? []
     }
+  }
+
+  /// The system's answer for the element's action names (the tests' seam).
+  func copyActionNames(_ element: AXUIElement) -> (error: AXError, names: CFArray?) {
+    var names: CFArray?
+    let error = AXUIElementCopyActionNames(element, &names)
+    return (error, names)
   }
 
   /// Whether the element's last `actions` read failed, so the empty list it answered is not known to be none (the stale

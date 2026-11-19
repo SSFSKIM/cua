@@ -3074,4 +3074,91 @@ final class RecreatedIdentityTests: XCTestCase {
     XCTAssertEqual(nodes.first { $0.element === again || $0.element === thread.aText }?.controlUnknown, true)
     XCTAssertEqual(verdict(nodes, members: members, at: atText, hit: again).reason, .nodeGone)
   }
+
+  // MARK: The review of 849bcdad..38a55469
+
+  /// Item 1: the record holds a candidate frameless at the observation too, by the screenshot's whole handle map: B,
+  /// recorded without a frame as "Archive", gains one at A's place with its title unread now. #296's path and #305's.
+  func testACandidateTheRecordHeldFramelessRefuses() {
+    for viaHit in [false, true] {
+      let thread = Thread(twin: "Archive")
+      let bFrame = thread.b.frame
+      thread.b.frame = nil
+      var overlay: Node?
+      if viaHit {
+        let veil = Node("AXGroup", CGRect(x: 20, y: 100, width: 200, height: 30))
+        thread.list.add(veil)
+        overlay = veil
+      }
+      let nodes = recorded(thread.window), members = recordedMembers(thread.window)
+      XCTAssertNil(nodes.first { $0.element === thread.b }, "B frameless: no framed node")
+      XCTAssertNotNil(members(thread.b), "B in the handle map")
+      thread.b.frame = bFrame
+      thread.slide()
+      thread.b.unreadable = [.title]
+      let judgedNow = verdict(nodes, members: members, at: atLink, hit: thread.b)
+      XCTAssertEqual(judgedNow.reason, viaHit ? .interactiveHit : .nodeGone, viaHit ? "#305's path" : "#296's path")
+      if let overlay {
+        let kept = verdict(nodes, members: members, at: atLink, hit: overlay)
+        XCTAssertEqual(stalePointPressVerdict(thread.b, kept, reads: reads).reason, .pressedOther, "the route pressing B")
+      }
+    }
+  }
+
+  /// Item 3: a re-created match the record refuses is judged on as main judges it, so #330's refusal keeps its reason: B,
+  /// with A's label, slides into A's place and the page adds a text inside it over the point. Kept by every other rule, it
+  /// is refused as gone.
+  func testARefusedReCreatedMatchKeepsAnotherRulesReasonAndNeverCarries() {
+    let added = judged(Thread(), at: atLink) { thread in
+      thread.slide()
+      let over = Node("AXStaticText", CGRect(x: 120, y: 105, width: 80, height: 20), value: "Suggestion")
+      thread.b.add(over)
+      return over
+    }
+    XCTAssertEqual(added.reason, .newElementOverPoint)
+    let gone = judged(Thread(), at: atLink) { $0.slide().link }
+    XCTAssertEqual(gone.reason, .nodeGone, "kept by every other rule: refused")
+    XCTAssertNil(gone.identity)
+    XCTAssertNil(gone.current)
+    XCTAssertEqual(stalePointPressVerdict(gone.hit!, gone, reads: reads).reason, .nodeGone, "the route carries nothing")
+  }
+
+  /// Item 2: the observation reads action names as the click does, kAXErrorNoValue being none, so a text with no actions
+  /// is inert content of its link: one of two "Reply" fragments of a surviving link, re-created, is kept as on main; a
+  /// fragment whose action names failed to read is not known to be inert, and refuses.
+  func testActionNamesReadAtTheObservationAsAtTheClick() {
+    XCTAssertEqual(decodedActionNames(.success, ["AXPress"] as CFArray), ["AXPress"])
+    XCTAssertEqual(decodedActionNames(.success, nil), [])
+    XCTAssertEqual(decodedActionNames(.noValue, nil), [], "no actions")
+    XCTAssertNil(decodedActionNames(.cannotComplete, nil), "unread")
+    XCTAssertNil(decodedActionNames(.failure, nil))
+    // The walk's reader (`ElementSource.actions`) decodes the same way.
+    let source = AnsweringSource()
+    let element = AXUIElementCreateApplication(990_431)
+    for (error, failed) in [(AXError.noValue, false), (.success, false), (.cannotComplete, true)] {
+      source.answer = (error, nil)
+      XCTAssertEqual(source.actions(element), [])
+      XCTAssertEqual(source.actionsFailed(element), failed, "\(error.rawValue)")
+    }
+    for unread in [false, true] {
+      let thread = Thread(twin: "Archive")
+      let second = Node("AXStaticText", CGRect(x: 100, y: 105, width: 60, height: 20), value: "Reply")
+      thread.a.add(second)
+      second.actionsUnread = unread
+      let nodes = recorded(thread.window), members = recordedMembers(thread.window)
+      second.actionsUnread = false
+      thread.aText.destroy()
+      let again = Node("AXStaticText", CGRect(x: 30, y: 105, width: 60, height: 20), value: "Reply")
+      thread.a.children.insert(again, at: 0)
+      again.parent = thread.a
+      XCTAssertEqual(verdict(nodes, members: members, at: atText, hit: again).reason, unread ? .nodeGone : .sameElement,
+                     unread ? "the other fragment's actions unread" : "both fragments inert")
+    }
+  }
+}
+
+/// An element source whose action-name answer a test sets (#431's review of 849bcdad..38a55469, item 2).
+private final class AnsweringSource: ElementSource, @unchecked Sendable {
+  var answer: (error: AXError, names: CFArray?) = (.noValue, nil)
+  override func copyActionNames(_ element: AXUIElement) -> (error: AXError, names: CFArray?) { answer }
 }

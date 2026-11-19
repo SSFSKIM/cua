@@ -6826,6 +6826,13 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   main's verdict over a visible subset. The last mutation pass, 34 mutations over every refusal, its exemptions, the
   label rule, coverage's membership and carrying, the region, the record's classifications, #330's input and the walk's
   three new fields, is caught by these tests, every one.
+  The review of 849bcdad..38a55469 added three things. The record's membership of a candidate, and of a replacement
+  control, reads the screenshot's whole handle map, framed and frameless, on #296's path and #305's (a link recorded
+  without a frame gains one at the node's place). The observation reads action names as the click does
+  (`decodedActionNames`: kAXErrorNoValue is none, not unread), so a text with no actions stays inert content of its
+  link, as on main. And a re-created match the record refuses is judged on as main judges it: a rule that refuses it
+  keeps its reason (#330's `newElementOverPoint` first), and a verdict that would keep it becomes `nodeGone`, so a
+  refused match never carries a pointer.
   Not measured live: `twin`, `twincap`, `twindeep` and `twinbtn` on Safari with this build, and how often real pages lose
   a re-created click to coverage or to a same-label element.
   Date/Author: 2026-11-19, cursor235's implementer for #431.

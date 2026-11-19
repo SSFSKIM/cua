@@ -72,9 +72,9 @@ pub struct Config {
     /// Measurement only (`--dnd-defer-take`): a drag and drop that begins during a watched drag is left unseen until
     /// after the release, so the after-release watch finds it and the next request reports it (Acceptance 8).
     pub dnd_defer_take: bool,
-    /// How long after the press a Chromium drag the engine lets drop keeps its button down for its source's take when
-    /// none came by the path's end (`dnd::TAKE_HOLD_AFTER_PRESS`; `--drag-dnd-hold-ms`, measurement only, sets another,
-    /// 0 none).
+    /// B, how long after the press a drag whose source is a Chromium-family window keeps its button down for the
+    /// source's take when none has come, on every route (`dnd::TAKE_HOLD_AFTER_PRESS`, ruling 888.1;
+    /// `--drag-dnd-hold-ms`, measurement only, sets another, 0 none).
     pub dnd_hold: std::time::Duration,
     /// How long after a Chromium drag source's take a drag the engine lets drop is released at the soonest
     /// (`dnd::RELEASE_AFTER_TAKE`; `--drag-dnd-after-take-ms`, measurement only, sets another, 0 none).
@@ -541,7 +541,7 @@ impl Engine {
         self.inputs.end_watched(&mut self.x);
     }
 
-    /// When the engine must act with no request (`serve.rs`): an armed late-take watch's end, `dnd::SETTLE` after its
+    /// When the engine must act with no request (`serve.rs`): an armed late-take watch's end, `dnd::late_watch_end` after its
     /// drag's release, which its drag's `FocusOut` follows; and a held `drag_handle`'s idle bound (`handle.rs`).
     pub fn next_due(&self) -> Option<Instant> {
         let watch = self.late_watch.as_ref().and_then(crate::dnd::LateWatch::ends_at);
@@ -928,16 +928,16 @@ impl Engine {
         // pointer is, a Chromium handle's after-release watch armed and run out below; then the holds; then whatever
         // the ledger still has down (pressed.rs; normally nothing)
         if self.handle.is_some() {
-            let _ = self.end_drag_handle();
+            let _ = self.end_drag_handle(false);
         }
         self.inputs.release_held(&mut self.x);
         crate::pressed::release_rest(&self.x.conn, self.x.root);
-        // an armed after-release watch then runs out its lifetime (at most `dnd::SETTLE` after its drag's release), so
-        // a late take inside it is still cancelled, its Escape sent before the connections close and before the
-        // FocusOut of its drag's session and of a session the exit released; collected then, the Escape is a key the
-        // settle below follows
+        // an armed after-release watch then runs out its lifetime, but at the exit at most `dnd::SETTLE` after its drag's
+        // release, as 0.4.1's whole watch, so the exit stays inside its backstop; a late take inside it is still
+        // cancelled, its Escape sent before the connections close and before the FocusOut of its drag's session and of
+        // a session the exit released; collected then, the Escape is a key the settle below follows
         if let Some(watch) = &self.late_watch {
-            watch.run_out();
+            watch.run_out_at_exit();
         }
         self.collect_late_watch(true);
         self.inputs.end_watched(&mut self.x);

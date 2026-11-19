@@ -53,6 +53,7 @@ use crate::desktop::Desktop;
 use crate::dnd::{Confirm, EscapeRoute, LateWatch, WatchEnd};
 use crate::drop_cursor::DropCursor;
 use crate::families::DragPacing;
+use crate::hold_ping::HoldPing;
 use crate::input::chord_keycodes;
 use crate::stray::{Held, HoldWatch, Holding};
 use crate::wire::{DragHandleInput, parse_input};
@@ -163,6 +164,8 @@ pub(super) struct Handle {
     pacing: DragPacing,
     /// Button 1 went down at the start (false for a move with no start, which presses nothing).
     pressed: bool,
+    /// When it went down: the hold for a Chromium source's take at the end counts from it (`dnd::TAKE_HOLD_AFTER_PRESS`).
+    pressed_at: Option<Instant>,
     /// The top-level window under the start point.
     target: Option<Window>,
     /// Where the real pointer was last put: the start, then each move's end, on the screen.
@@ -184,6 +187,7 @@ impl Handle {
         Handle {
             pacing,
             pressed: false,
+            pressed_at: None,
             target: None,
             asked: (0, 0),
             holding: None,
@@ -288,7 +292,7 @@ impl Engine {
                     handle.last_request = Instant::now();
                 }
             }
-            DragHandleInput::End => self.end_drag_handle()?,
+            DragHandleInput::End => self.end_drag_handle(true)?,
         }
         Ok(Value::Null)
     }
@@ -328,7 +332,7 @@ impl Engine {
         let handle = self.handle.take().expect("a held handle is due");
         // the request's own record, if one is being built, is kept apart from the release's
         let request_extra = std::mem::take(&mut self.extra);
-        let released = self.release_handle(handle);
+        let released = self.release_handle(handle, false);
         if let Some(watch) = &self.late_watch {
             watch.run_out();
         }
@@ -444,7 +448,7 @@ impl Engine {
             self.drop_handle_watches(handle);
             return Value::Null;
         }
-        let released = self.release_handle(handle);
+        let released = self.release_handle(handle, false);
         self.extra.insert(
             "released_handle".into(),
             json!({ "at": released.at, "answer": released.answer.err().map(|e| format!("{e:#}")) }),
@@ -464,6 +468,7 @@ impl Engine {
         let mut handle = Handle {
             pacing,
             pressed: false,
+            pressed_at: None,
             target,
             asked: on_screen((px, py), screen_size(&self.x)),
             holding: None,
@@ -518,6 +523,7 @@ impl Engine {
             }
             Desktop::motion(&self.x, px, py)?;
             handle.pressed = true;
+            handle.pressed_at = Some(Instant::now());
             Desktop::button(&self.x, 1, true)
         })();
         if let Err(error) = started {
@@ -550,12 +556,13 @@ impl Engine {
     }
 
     /// `drag_handle`'s end (module header): the release, then its answer. An end with no start releases where the
-    /// pointer is, as the vendor's does. The engine's exit ends a handle still held the same way (`Engine::shutdown`).
-    pub(super) fn end_drag_handle(&mut self) -> Result<()> {
+    /// pointer is, as the vendor's does. The engine's exit ends a handle still held the same way (`Engine::shutdown`),
+    /// with no hold for a Chromium source's take (`hold` false; [`Engine::release_handle`]).
+    pub(super) fn end_drag_handle(&mut self, hold: bool) -> Result<()> {
         let Some(handle) = self.handle.take() else {
             return Desktop::button(&self.x, 1, false);
         };
-        self.release_handle(handle).answer
+        self.release_handle(handle, hold).answer
     }
 
     /// A handle's release: for a family that rests at a held move's end (`held_rest`), a rest and the pointer's place
@@ -567,18 +574,60 @@ impl Engine {
     /// then button 1 up where the pointer is, sent whatever came before. A Chromium handle's after-release watch is told
     /// of the release and handed over as a `drag`'s is, or the drop is pending unconfirmed at once. The answer: the
     /// release's error, else the hold's (a cut, or a watch that failed), else the pointer found away from where the last
-    /// request put it, else success.
-    fn release_handle(&mut self, mut handle: Handle) -> Released {
+    /// request put it, else success. With `hold` (the agent's `end`), a Chromium source's handle whose source has not
+    /// taken `XdndSelection` first keeps its button down for the take until the bound after its press
+    /// (`dnd::TAKE_HOLD_AFTER_PRESS`, ruling 888.1), its source pinged meanwhile (`hold_ping.rs`, measurement only).
+    fn release_handle(&mut self, mut handle: Handle, hold: bool) -> Released {
         let pacing = handle.pacing;
+        let bound = self.cfg.dnd_hold;
+        // the hold for a Chromium source's take at the end (ruling 888.1): with no take yet, the button stays down until
+        // the bound after the press for one, with no motion; a take then is a drag and drop under way, settled and
+        // judged below as a take before the end is. Only at the agent's `end`: the exit's, the idle bound's and a lost
+        // handle's releases go at once, as they did, so the exit stays inside its backstop and nobody's drop begins then
+        let mut held_take = false;
+        let mut hold_record = Value::Null;
+        if hold
+            && handle.pressed
+            && handle.after.is_some()
+            && let (Some(pressed_at), Some(target)) = (handle.pressed_at, handle.target)
+            && let Some((watch, holding)) = handle.holding.as_mut()
+        {
+            let ms = |d: Duration| d.as_secs_f64() * 1000.0;
+            let since = Instant::now();
+            let deadline = pressed_at + bound;
+            let taken_by_now = watch.before_release(holding).is_ok_and(|held| held.taken);
+            let held = since < deadline && !taken_by_now;
+            let mut pings = held.then(|| HoldPing::start(target));
+            if held {
+                held_take = crate::dnd::wait_for_take(
+                    || {
+                        crate::hold_ping::polled(&mut pings);
+                        watch.before_release(holding).is_ok_and(|held| held.taken)
+                    },
+                    deadline,
+                );
+            }
+            let ended = Instant::now();
+            hold_record = json!({
+                "bound_ms": ms(bound),
+                "start_after_press_ms": ms(since.saturating_duration_since(pressed_at)),
+                "held": held,
+                "waited_ms": ms(if held { ended - since } else { Duration::ZERO }),
+                "taken": held_take || taken_by_now,
+                "take_after_press_ms": held_take.then(|| ms(ended.saturating_duration_since(pressed_at))),
+                "pings": crate::hold_ping::hold_record(pings.as_ref(), pressed_at, ended),
+            });
+        }
         // an Electron source whose drag and drop has begun: its application asked where it has got to before the rest,
         // and again after the visit that follows it (`drop_settle::Settle`), each waited for at most
         // `drop_settle::SYNC_BOUND`, with a second rest when the first answer came late (ruling 3a). A drag loop that
         // runs behind the pointer is waited for here, so the rest is the page's to answer the pointer's last place, and
-        // the release reaches a loop that holds that answer
+        // the release reaches a loop that holds that answer. A take the hold above saw counts though the cursor's
+        // watch, on its own thread, may not have read it yet
         let settling = self.cfg.drop_settle
             && handle.pressed
             && !pacing.held_rest.is_zero()
-            && matches!(&handle.cursor, Some(Ok(cursor)) if cursor.take_seen());
+            && matches!(&handle.cursor, Some(Ok(cursor)) if held_take || cursor.take_seen());
         let before_rest = match handle.cursor.as_mut() {
             Some(Ok(cursor)) if settling => Some(cursor.sync_and_rest(pacing.held_rest)),
             _ => {
@@ -669,7 +718,7 @@ impl Engine {
         if released.is_ok()
             && let Some(after) = &handle.after
         {
-            after.released(released_at, taken);
+            after.released(released_at, taken, handle.pressed_at.map(|at| at + bound));
         }
         // an Electron accept confirms only a release over a window that takes drag and drop, and only one put up after
         // the pointer came into it: Chromium keeps its last status's accept when the path leaves for one that does not
@@ -724,6 +773,8 @@ impl Engine {
                 "drop_cursor": cursor_record,
                 // the harness lines the release up with its own watchers (`--stats` only)
                 "release_wall_ms": release_wall,
+                // the hold for the take at the end (ruling 888.1), null when none was due: an `end` request's alone
+                "hold": hold_record,
             }),
         );
         // the after-release watch, handed over as a `drag`'s: after a release with no take (the late take is the

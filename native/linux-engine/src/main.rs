@@ -25,6 +25,7 @@ mod fault;
 mod field;
 mod focus_ack;
 mod held;
+mod hold_ping;
 mod identity;
 mod input;
 mod keys;

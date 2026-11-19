@@ -16,6 +16,7 @@ use crate::dnd::{Confirm, DndWatch, EscapeRoute, LateWatch, Outcome, Standing};
 use crate::families::DragPacing;
 use crate::families::Kind;
 use crate::focus_ack::{PressAck, nothing_pressed, press_ack, refused_press};
+use crate::hold_ping::HoldPing;
 use crate::input::chord_keycodes;
 use crate::route::{Route, Target};
 use crate::stray::{StrayWatch, Strays, Watching};
@@ -339,6 +340,15 @@ pub(super) struct DragMeasure<'a> {
     pub(super) drop_window_at_release: Option<(&'a mut Option<Window>, bool)>,
 }
 
+/// The hold for a Chromium-family source's take (`dnd::TAKE_HOLD_AFTER_PRESS`, B, the design session's ruling 888.1;
+/// `--drag-dnd-hold-ms` sets another): its bound after the press, and the source window, the window pressed into, which
+/// the hold's pings ask (`hold_ping.rs`, ruling 888.2, measurement only).
+#[derive(Debug, Clone, Copy)]
+pub(super) struct TakeHold {
+    pub(super) bound: Duration,
+    pub(super) source: Window,
+}
+
 /// Whether a drop on `window` (a managed top-level) is confirmed by its activation request: its family's drop sends one
 /// (Chrome's, known by its X11 class alone, so no accessibility-bus call comes before the release).
 fn confirms_by_activation(x: &X11, window: Window) -> bool {
@@ -362,7 +372,7 @@ pub(super) fn wall_ms() -> f64 {
 /// anything drops ([`Outcome::InTime`]). After the release it is watched through `SETTLE`: a take then (or, with `late`,
 /// measurement only, the take the drag went on past) is answered [`Outcome::Late`], Escape sent to end the drag and drop;
 /// none is [`Outcome::NoStart`], an ordinary drag. A stopped drag answers [`DropCancelled`].
-/// With `hold`, a drag the engine lets drop into Chromium (its watch and the hold's bound after the press,
+/// With `hold`, a drag the engine lets drop into Chromium (its watch; the hold's bound after the press is `take_hold`'s,
 /// `dnd::TAKE_HOLD_AFTER_PRESS`): once the target's client is seen taking `XdndSelection`, the release comes no sooner
 /// than `after_take` after the take (`dnd::RELEASE_AFTER_TAKE`, task 18). The samples still to send are spaced over that
 /// delay, no step shorter than `pacing.step` nor longer than `dnd::KEEPALIVE`, and what they leave of it is filled with
@@ -370,14 +380,18 @@ pub(super) fn wall_ms() -> f64 {
 /// accepts only on a motion (task 22). With no take by the path's end, the button stays down until the bound after the
 /// press for one (task 22), a take then, or one seen at that last look, getting the same floor; no take by then
 /// releases the drag as before. On the background route that hold refreshes the path's end, a motion every
-/// `dnd::KEEPALIVE` until a browser's rest before the bound, so a Chromium busy while the path was queued still gets it
-/// once it reads again (`dnd::wait_for_take_refreshing`; V5's lost motion, 2026-11-13). `scheduled` records a take, `held_for_take` the hold. With `accept` (measurement only,
+/// `dnd::KEEPALIVE` until a browser's rest before `dnd::REFRESH_AFTER_PRESS` (or the bound, if shorter), so a Chromium
+/// busy while the path was queued still gets it once it reads again (`dnd::wait_for_take_refreshing`; V5's lost motion,
+/// 2026-11-13); past it the hold sends no motion (ruling 888.1). A guarded drag of a Chromium source (`take_hold` with a
+/// guard) holds the same way before its release dwell, and a take then is cancelled before the drop at once. While
+/// either hold waits, the source is pinged (`hold_ping.rs`, measurement only). `scheduled` records a take,
+/// `held_for_take` the hold. With `accept` (measurement only,
 /// a Chrome drop the engine can confirm, `accept.rs`), the path after a take keeps its own pacing, and the floor's
 /// motions end at Chrome's accept cursor when it comes first, the release then at once. With `press` (a
 /// Chromium-family drag), the press and the samples through Blink's drag threshold, at most [`PRESS_SAMPLES_MAX`], go
 /// out under one server grab ([`atomic_press`]), its watch begun just before the grab and ended just after the
 /// release, what it saw kept in `press.strays`. `after`, the drag's after-release watch, is told the instant the
-/// button went up and whether a take came before it.
+/// button went up, whether a take came before it, and when the hold for the take ended (`dnd::late_watch_end`).
 #[allow(clippy::too_many_arguments)]
 fn drag_along(
     x: &mut X11,
@@ -386,7 +400,8 @@ fn drag_along(
     points: &[(i16, i16)],
     pacing: &DragPacing,
     mut guard: Option<&mut DropGuard>,
-    mut hold: Option<(&mut DndWatch, Duration)>,
+    mut hold: Option<&mut DndWatch>,
+    take_hold: Option<TakeHold>,
     held_for_take: &mut Option<Value>,
     after_take: Duration,
     scheduled: &mut Option<Value>,
@@ -448,7 +463,7 @@ fn drag_along(
             }
             // when the floor after a take spaces this step to, if it does
             let mut floor = None;
-            if let Some((watch, _)) = hold.as_mut() {
+            if let Some(watch) = hold.as_mut() {
                 match taken {
                     Some((at, left)) if spacing => {
                         since_take += 1;
@@ -477,7 +492,7 @@ fn drag_along(
                 return cancel_in_time(x, route, guard, &mut pressed);
             }
         }
-        if let Some((watch, bound)) = hold.as_mut() {
+        if let (Some(watch), Some(take_hold)) = (hold.as_mut(), take_hold) {
             let ms = |d: Duration| d.as_secs_f64() * 1000.0;
             let path = pressed_at.elapsed();
             // a drag that never took by its path's end keeps its button down for the take until the bound after the
@@ -488,10 +503,16 @@ fn drag_along(
             // the motions the hold sent on the background route: SendEvent's core motion, which a busy Chromium loses
             // but for the first it reads (`dnd::wait_for_take_refreshing`); XTEST's arrives as XI2 and is kept
             let mut refreshes = None;
+            // the source's answers to the hold's pings (ruling 888.2, measurement only)
+            let mut pings_record = Value::Null;
             if held {
                 let since = Instant::now();
-                let deadline = pressed_at + *bound;
+                let deadline = pressed_at + take_hold.bound;
+                let mut pings = (since < deadline).then(|| HoldPing::start(take_hold.source));
                 let looked = if matches!(route, Route::Window(_)) {
+                    // the refreshes end a browser's rest before REFRESH_AFTER_PRESS, or before the bound if it is
+                    // shorter: the hold past them sends no motion
+                    let refreshed = pressed_at + take_hold.bound.min(crate::dnd::REFRESH_AFTER_PRESS);
                     let (looked, sent) = crate::dnd::wait_for_take_refreshing(
                         |motion| {
                             if let Some((px, py)) = motion {
@@ -500,11 +521,12 @@ fn drag_along(
                             if let Some(cursor) = accept.as_deref_mut() {
                                 let _ = cursor.poll();
                             }
+                            crate::hold_ping::polled(&mut pings);
                             Ok(watch.started(x))
                         },
                         before_last,
                         last,
-                        deadline.checked_sub(pacing.rest).unwrap_or(deadline),
+                        refreshed.checked_sub(pacing.rest).unwrap_or(refreshed),
                         deadline,
                     )?;
                     refreshes = Some(sent);
@@ -515,11 +537,14 @@ fn drag_along(
                             if let Some(cursor) = accept.as_deref_mut() {
                                 let _ = cursor.poll();
                             }
+                            crate::hold_ping::polled(&mut pings);
                             watch.started(x)
                         },
                         deadline,
                     )
                 };
+                pings_record = crate::hold_ping::hold_record(pings.as_ref(), pressed_at, Instant::now());
+                drop(pings);
                 if looked {
                     taken = Some((Instant::now(), 0));
                 }
@@ -579,7 +604,7 @@ fn drag_along(
             }
             // one shape for every drag the hold watched (`--stats` `hold`)
             *held_for_take = Some(json!({
-                "bound_ms": ms(*bound),
+                "bound_ms": ms(take_hold.bound),
                 "path_ms": ms(path),
                 "held": held,
                 "waited_ms": ms(waited),
@@ -587,7 +612,47 @@ fn drag_along(
                 "take_after_press_ms": taken.map(|(at, _)| ms(at.saturating_duration_since(pressed_at))),
                 "keepalives": keepalives,
                 "refreshes": refreshes,
+                "pings": pings_record,
             }));
+        }
+        // a guarded drag's hold (ruling 888.1): with no take so far, the button stays down until the bound after the
+        // press for one, with no motion; a take then is cancelled before the drop at once, as one seen along the path
+        // is. Its record has the shape of the hold above
+        if let (Some(guard), Some(take_hold)) = (guard.as_deref_mut(), take_hold)
+            && guard.looks()
+        {
+            let ms = |d: Duration| d.as_secs_f64() * 1000.0;
+            let path = pressed_at.elapsed();
+            let since = Instant::now();
+            let deadline = pressed_at + take_hold.bound;
+            let held = since < deadline && !guard.watch.started(x);
+            let mut pings = held.then(|| HoldPing::start(take_hold.source));
+            let taken = match held {
+                true => crate::dnd::wait_for_take(
+                    || {
+                        crate::hold_ping::polled(&mut pings);
+                        guard.watch.started(x)
+                    },
+                    deadline,
+                ),
+                false => guard.watch.is_started(),
+            };
+            let ended = Instant::now();
+            *held_for_take = Some(json!({
+                "bound_ms": ms(take_hold.bound),
+                "path_ms": ms(path),
+                "held": held,
+                "waited_ms": ms(if held { ended - since } else { Duration::ZERO }),
+                "taken": taken,
+                "take_after_press_ms": taken.then(|| ms(ended.saturating_duration_since(pressed_at))),
+                "keepalives": 0,
+                "refreshes": null,
+                "pings": crate::hold_ping::hold_record(pings.as_ref(), pressed_at, ended),
+            }));
+            drop(pings);
+            if taken {
+                return cancel_in_time(x, route, guard, &mut pressed);
+            }
         }
         std::thread::sleep(pacing.release);
         // the last look before the release
@@ -635,7 +700,7 @@ fn drag_along(
                 }
             }
             if let Some(cursor) = measure.drop_cursor {
-                let take = hold.as_ref().and_then(|(watch, _)| watch.taken_time());
+                let take = hold.as_ref().and_then(|watch| watch.taken_time());
                 *measure.at_release = Some(cursor.at_release(take));
             }
         }
@@ -662,10 +727,15 @@ fn drag_along(
             guard.outcome = Some(Outcome::NoStart);
         }
         // the after-release watch, told the instant the button went up: with no take seen by the release (a plain drag,
-        // answered now) it cancels a late take at once from here on and ends 300 ms after it; after a take it looks for
-        // the drop's confirmation (`dnd::LateWatch`, `drag`)
+        // answered now) it cancels a late take at once from here on and ends at least 700 ms after it, or a settle after
+        // the hold's bound (`dnd::late_watch_end`); after a take it looks for the drop's confirmation (`dnd::LateWatch`,
+        // `drag`)
         if let Some(after) = after {
-            after.released(released_at, taken.is_some());
+            after.released(
+                released_at,
+                taken.is_some(),
+                take_hold.map(|hold| pressed_at + hold.bound),
+            );
         }
         Ok(())
     })();
@@ -1054,7 +1124,11 @@ impl Engine {
         let mut drop_at_release = None;
         let after_take = self.cfg.dnd_after_take;
         let mut scheduled = None;
-        let bound = self.cfg.dnd_hold;
+        // the hold for the take of a drag whose source is a Chromium-family window, guarded or not (ruling 888.1)
+        let take_hold = pressing_into.map(|source| TakeHold {
+            bound: self.cfg.dnd_hold,
+            source,
+        });
         let mut held_for_take = None;
         // measurement only (`--drag-dnd-release-at-accept`, reverted from shipping by the design session's ruling on
         // task 69's counts): a drop the engine can confirm released at Chrome's accept cursor, read from before the
@@ -1104,7 +1178,8 @@ impl Engine {
                 &points,
                 &pacing,
                 guard.as_mut(),
-                hold.as_mut().map(|w| (w, bound)),
+                hold.as_mut(),
+                take_hold,
                 &mut held_for_take,
                 after_take,
                 &mut scheduled,
@@ -1179,9 +1254,9 @@ impl Engine {
         if let Some(mut hold) = hold {
             taken = hold.started(&mut self.x);
             hold.stop(&mut self.x);
-            if let Some(record) = held_for_take {
-                self.extra.insert("hold".into(), record);
-            }
+        }
+        if let Some(record) = held_for_take {
+            self.extra.insert("hold".into(), record);
         }
         if let Some(guard) = guard.as_mut() {
             taken = guard.watch.started(&mut self.x);

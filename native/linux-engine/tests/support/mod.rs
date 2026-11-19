@@ -55,6 +55,9 @@ pub struct Engine {
     next_id: u64,
     /// The engine's stdout, held open and never read ([`Engine::start_unread`]).
     unread: Option<std::process::ChildStdout>,
+    /// Its `--stats` lines as they come ([`Engine::start_with_stats`]), and those read so far.
+    stats: Option<Receiver<Value>>,
+    stats_read: Vec<Value>,
 }
 
 /// Removes the display's record of an unconfirmed paste's window (the root window's `CUA_CLIPBOARD_QUARANTINE`), which
@@ -75,6 +78,84 @@ pub fn clear_display_record() {
     conn.get_input_focus().unwrap().reply().unwrap();
 }
 
+/// The root properties a test of these binaries sets as a window manager would, and the engine's paste record: what
+/// [`fresh_display`] clears.
+const TEST_ROOT_PROPERTIES: [&[u8]; 4] = [
+    b"_NET_ACTIVE_WINDOW",
+    b"_NET_CLIENT_LIST_STACKING",
+    b"_NET_SUPPORTED",
+    b"CUA_CLIPBOARD_QUARANTINE",
+];
+
+/// The connection that keeps the test's X server from resetting while this test binary runs ([`fresh_display`]).
+static HELD: std::sync::OnceLock<x11rb::rust_connection::RustConnection> = std::sync::OnceLock::new();
+
+/// The display as a test starts on it, the same every time (#171 M5, task 115's root cause of `live_device`'s flaky
+/// runs). Xvfb, as `xvfb-run` starts it, resets once its last client disconnects: it closes every connection, drops the
+/// root's properties, puts the focus back on the pointer's root and the pointer in the screen's middle, and compiles its
+/// keymap again. Between two tests every connection may close (the engine exits, the probes drop), so whether a test
+/// started on a reset display depended on timing, and a test whose first connect came while the server was resetting
+/// had it closed under it (`ConnectionReset` at the connect, 4 of 4 runs of the prototype's `live_device` and 1 of 2 of
+/// its base on the x64 host, about 100 resets a run in Xvfb's audit log). So the binary holds one connection for its
+/// whole run, opened through any reset already under way, and the server never resets under it; and each test starts by
+/// clearing what a reset would have cleared that these tests change: the root properties they set (window-manager
+/// state such as a stacking list naming a window long gone, whose resource id a later client is handed again), the
+/// focus, and where the pointer is.
+pub fn fresh_display() {
+    use x11rb::connection::Connection;
+    use x11rb::protocol::xproto::{ConnectionExt, InputFocus};
+    let conn = HELD.get_or_init(connect_through_reset);
+    let screen = &conn.setup().roots[0];
+    let root = screen.root;
+    for name in TEST_ROOT_PROPERTIES {
+        let atom = conn.intern_atom(false, name).unwrap().reply().unwrap().atom;
+        conn.delete_property(root, atom).unwrap();
+    }
+    conn.set_input_focus(
+        InputFocus::POINTER_ROOT,
+        u32::from(InputFocus::POINTER_ROOT),
+        x11rb::CURRENT_TIME,
+    )
+    .unwrap();
+    let middle = |size: u16| (size / 2) as i16;
+    conn.warp_pointer(
+        x11rb::NONE,
+        root,
+        0,
+        0,
+        0,
+        0,
+        middle(screen.width_in_pixels),
+        middle(screen.height_in_pixels),
+    )
+    .unwrap();
+    conn.get_input_focus().unwrap().reply().unwrap();
+}
+
+/// A connection to the display that has made a round trip, waiting out a reset under way: a connect while the server
+/// resets is closed (`ConnectionReset`), and one it accepted just before the reset is closed by it.
+fn connect_through_reset() -> x11rb::rust_connection::RustConnection {
+    use x11rb::protocol::xproto::ConnectionExt;
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let attempt = x11rb::connect(None).map_err(|e| e.to_string()).and_then(|(conn, _)| {
+            conn.get_input_focus()
+                .map_err(|e| e.to_string())?
+                .reply()
+                .map_err(|e| e.to_string())?;
+            Ok(conn)
+        });
+        match attempt {
+            Ok(conn) => return conn,
+            Err(error) if Instant::now() < deadline => {
+                eprintln!("the display is resetting ({error}); connecting again");
+                sleep(Duration::from_millis(50));
+            }
+            Err(error) => panic!("no X connection within 10 s: {error}"),
+        }
+    }
+}
+
 impl Engine {
     /// An engine, on a display with no unconfirmed paste's window open.
     pub fn start() -> Engine {
@@ -92,6 +173,57 @@ impl Engine {
     pub fn start_with(options: &[&str]) -> Engine {
         clear_display_record();
         Engine::spawn_with(&engine_bin(), options, &[])
+    }
+
+    /// [`Engine::start_with`] with `--stats`, its lines read off its stderr ([`Engine::stats_of`]); anything else it
+    /// writes there goes to the test's stderr.
+    pub fn start_with_stats(options: &[&str]) -> Engine {
+        clear_display_record();
+        let mut command = Command::new(engine_bin());
+        command.arg("server").arg("--stats").args(options);
+        let mut child = command
+            .stderr(Stdio::piped())
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap_or_else(|e| panic!("cannot start {}: {e}", engine_bin().display()));
+        let stderr = child.stderr.take().unwrap();
+        let (tx, stats) = channel();
+        std::thread::spawn(move || {
+            for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+                match serde_json::from_str::<Value>(&line) {
+                    Ok(value) if value.get("stats").is_some() => {
+                        let _ = tx.send(value["stats"].clone());
+                    }
+                    _ => eprintln!("{line}"),
+                }
+            }
+        });
+        let mut engine = Engine::spawn_child(child);
+        engine.stats = Some(stats);
+        engine
+    }
+
+    /// The `--stats` line of request `id` ([`Engine::last_id`]), waited for at most 5 s: the engine writes it once the
+    /// answer is out.
+    pub fn stats_of(&mut self, id: u64) -> Value {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            if let Some(line) = self.stats_read.iter().find(|line| line["id"] == json!(id)) {
+                return line.clone();
+            }
+            let left = deadline.saturating_duration_since(Instant::now());
+            let receiver = self.stats.as_ref().expect("an engine started with --stats");
+            match receiver.recv_timeout(left) {
+                Ok(line) => self.stats_read.push(line),
+                Err(_) => panic!("no --stats line for request {id}"),
+            }
+        }
+    }
+
+    /// The id of the request last sent.
+    pub fn last_id(&self) -> u64 {
+        self.next_id - 1
     }
 
     /// [`Engine::start_with`] with this fault injected (`CUA_ENGINE_FAULT`), always on cargo's live build: a shipped
@@ -143,12 +275,16 @@ impl Engine {
     }
 
     fn spawn_command(mut command: Command, what: &str, quiet: bool) -> Engine {
-        let mut child = command
+        let child = command
             .stderr(if quiet { Stdio::null() } else { Stdio::inherit() })
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .spawn()
             .unwrap_or_else(|e| panic!("cannot start {what}: {e}"));
+        Engine::spawn_child(child)
+    }
+
+    fn spawn_child(mut child: Child) -> Engine {
         let stdin = child.stdin.take();
         let stdout = child.stdout.take().unwrap();
         let (tx, lines) = channel();
@@ -165,6 +301,8 @@ impl Engine {
             lines,
             next_id: 1,
             unread: None,
+            stats: None,
+            stats_read: Vec::new(),
         }
     }
 
@@ -188,6 +326,8 @@ impl Engine {
             lines: channel().1,
             next_id: 1,
             unread,
+            stats: None,
+            stats_read: Vec::new(),
         }
     }
 

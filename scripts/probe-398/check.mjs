@@ -138,8 +138,11 @@ export function gates(rows,{coverage:cov,units=UNITS}){
   const removedAccepted=removed.filter(r=>!((IDENTITY_REFUSALS.has(r.click)||IDENTITY_REFUSALS.has(r.act))&&!NO_ANSWER.has(r.act)&&!r.exact&&
     r.verdict!=='wrong-adoption'&&r.verdict!=='wrong-success'));
   const recreate=fix.filter(r=>r.cell==='twin-recreate'),recreateLost=recreate.filter(r=>r.verdict!=='success-exact');
-  const solo=fix.filter(r=>r.cell==='solo-renamed'),soloLost=solo.filter(r=>r.verdict!=='success-exact');
   const pair=new Map(main.map(r=>[`${unitKey(r)}/${r.rep}`,r]));
+  // The narrowed design (coordinator, phase 2): a stale handle's walk keeps the placeholder, so every stale-handle row of
+  // the fix answers exactly as its paired main row: the click's outcome, the write's outcome and the verdict.
+  const stale=fix.filter(r=>STALE_CELLS.includes(r.cell)),stalePaired=stale.filter(r=>pair.has(`${unitKey(r)}/${r.rep}`));
+  const staleDiffer=stalePaired.filter(r=>{const m=pair.get(`${unitKey(r)}/${r.rep}`);return m.click!==r.click||m.act!==r.act||m.verdict!==r.verdict;});
   const regressions=fix.filter(r=>pair.get(`${unitKey(r)}/${r.rep}`)?.verdict==='success-exact'&&r.verdict!=='success-exact');
   // The claimed presentation: per unit, no more fix rows than main's on which something other than the cover activated.
   const presentation=Object.fromEntries(units.map(u=>[unitKey(u),{fix:of(fix,u).filter(r=>r.presentationHeld===false).length,
@@ -153,8 +156,8 @@ export function gates(rows,{coverage:cov,units=UNITS}){
       mainWrong:main.filter(r=>r.verdict==='wrong-adoption'||r.verdict==='wrong-success').length,examples:brief(wrong)},
     twinRemovedRefused:{pass:removed.length>0&&removedAccepted.length===0,rows:removed.length,accepted:removedAccepted.length,examples:brief(removedAccepted)},
     twinRecreateHeld:{pass:recreate.length>0&&recreateLost.length===0,rows:recreate.length,lost:recreateLost.length,examples:brief(recreateLost)},
-    soloAdopted:{pass:solo.length>0&&soloLost.length===0,rows:solo.length,lost:soloLost.length,
-      mainSuccess:main.filter(r=>r.cell==='solo-renamed'&&r.verdict==='success-exact').length,examples:brief(soloLost)},
+    staleAsMain:{pass:stalePaired.length>0&&staleDiffer.length===0,rows:stale.length,paired:stalePaired.length,differ:staleDiffer.length,
+      examples:brief(staleDiffer)},
     noRegression:{pass:regressions.length===0,regressions:regressions.length,examples:brief(regressions)},
     presentation:{pass:presentationWorse.length===0,worse:presentationWorse,
       fixLost:fix.filter(r=>r.presentationHeld===false).length,mainLost:main.filter(r=>r.presentationHeld===false).length},

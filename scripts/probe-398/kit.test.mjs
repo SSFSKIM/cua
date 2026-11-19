@@ -112,7 +112,7 @@ function rows(verdictFor, extra = () => ({})) {
       placeholderCorrelated: r.head === 'main' && changing && v === 'refused', presentationHeld: true, ...extra(r)};
   });
 }
-const good = r => r.cell === 'twin-removed' || r.cell === 'twin-renamed' ? 'refused' :
+const good = r => ['twin-removed', 'twin-renamed', 'solo-renamed'].includes(r.cell) ? 'refused' :
   r.head === 'main' && !['static', 'twin-recreate'].includes(r.cell) ? 'refused' : 'success-exact';
 const planned = list => list.reduce((o, r) => (o[`${r.head}/${unitKey(r)}`] = (o[`${r.head}/${unitKey(r)}`] ?? 0) + 1, o), {});
 test('gates pass a fix that succeeds where main refused, and fail each way a fix can be wrong or untested', () => {
@@ -132,8 +132,9 @@ test('gates pass a fix that succeeds where main refused, and fail each way a fix
   const untested = rows(good, r => r.head === 'fix' && r.cell === 'focus' && r.seq === 'set' && r.rep < 11 ? {exercised: false} : {});
   const gu = gates(untested, {coverage: cov});
   assert.equal(gu.placeholderFixed.pass, false); assert.deepEqual(gu.placeholderFixed.underExercised, ['focus/set']);
-  const strictWalk = rows(r => r.head === 'fix' && r.cell === 'solo-renamed' ? 'refused' : good(r));
-  assert.equal(gates(strictWalk, {coverage: cov}).soloAdopted.pass, false);
+  // The narrowed design: a stale handle's walk keeps the placeholder, so the fix answers there exactly as main.
+  const adoptedSolo = rows(r => r.head === 'fix' && r.cell === 'solo-renamed' ? 'success-exact' : good(r));
+  assert.equal(gates(adoptedSolo, {coverage: cov}).staleAsMain.pass, false);
   const foreground = rows(good, r => r.head === 'fix' && r.cell === 'rotate' && r.seq === 'type' && r.rep === 4 ? {presentationHeld: false} : {});
   const gp = gates(foreground, {coverage: cov});
   assert.equal(gp.presentation.pass, false); assert.deepEqual(gp.presentation.worse, ['rotate/type']);

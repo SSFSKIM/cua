@@ -207,16 +207,23 @@ impl Engine {
     /// The `--stats` line of request `id` ([`Engine::last_id`]), waited for at most 5 s: the engine writes it once the
     /// answer is out.
     pub fn stats_of(&mut self, id: u64) -> Value {
+        self.stats_where(|line| line["id"] == json!(id))
+            .unwrap_or_else(|| panic!("no --stats line for request {id}"))
+    }
+
+    /// The first `--stats` line `matches` takes, waited for at most 5 s: None if none came (the exit's line is the one
+    /// with `settle_final`, written once the orderly exit has settled).
+    pub fn stats_where(&mut self, matches: impl Fn(&Value) -> bool) -> Option<Value> {
         let deadline = Instant::now() + Duration::from_secs(5);
         loop {
-            if let Some(line) = self.stats_read.iter().find(|line| line["id"] == json!(id)) {
-                return line.clone();
+            if let Some(line) = self.stats_read.iter().find(|line| matches(line)) {
+                return Some(line.clone());
             }
             let left = deadline.saturating_duration_since(Instant::now());
             let receiver = self.stats.as_ref().expect("an engine started with --stats");
             match receiver.recv_timeout(left) {
                 Ok(line) => self.stats_read.push(line),
-                Err(_) => panic!("no --stats line for request {id}"),
+                Err(_) => return None,
             }
         }
     }

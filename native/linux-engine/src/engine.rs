@@ -922,7 +922,9 @@ impl Engine {
     /// The orderly exit: a `drag_handle` still held ended, every key still held released, an armed after-release watch
     /// run out, its drag's session and the sessions a hold kept open ended, the exit's settle waited out (`settle::EXIT_SETTLE`), the
     /// clipboard's owner stopped (CLIPBOARD goes with it, as the vendor's does), then the screenshot directory removed.
-    pub fn shutdown(&mut self) {
+    /// With `exit_by` (a stop signal's: `serve::exit_by`), the watch's run-out and the settle end by then at the latest,
+    /// so the exit's last steps come before the signal's backstop ends the process.
+    pub fn shutdown(&mut self, exit_by: Option<Instant>) {
         // first, every key and button still held released, so no wait below keeps one down (the design session's
         // rulings, M4 T7b): a drag_handle between its start and its end ends as its own end would, its drop where the
         // pointer is, a Chromium handle's after-release watch armed and run out below; then the holds; then whatever
@@ -932,12 +934,12 @@ impl Engine {
         }
         self.inputs.release_held(&mut self.x);
         crate::pressed::release_rest(&self.x.conn, self.x.root);
-        // an armed after-release watch then runs out its lifetime, but at the exit at most `dnd::SETTLE` after its drag's
-        // release, as 0.4.1's whole watch, so the exit stays inside its backstop; a late take inside it is still
-        // cancelled, its Escape sent before the connections close and before the FocusOut of its drag's session and of
-        // a session the exit released; collected then, the Escape is a key the settle below follows
+        // an armed after-release watch then runs out its whole lifetime (`dnd::late_watch_end`), by the exit's deadline
+        // at the latest (the review of task 115, P4: 0.4.2's first exit cut it 300 ms after the release); a late take
+        // inside it is still cancelled, its Escape sent before the connections close and before the FocusOut of its
+        // drag's session and of a session the exit released; collected then, the Escape is a key the settle below follows
         if let Some(watch) = &self.late_watch {
-            watch.run_out_at_exit();
+            watch.run_out_by(exit_by);
         }
         self.collect_late_watch(true);
         self.inputs.end_watched(&mut self.x);
@@ -946,7 +948,11 @@ impl Engine {
         let _ = self.x.sync();
         // the exit drops every redirect it holds: input still queued in a covered Chromium window would be cut, so the
         // last input to such a window is given the exit's settle first (`settle::EXIT_SETTLE`)
-        let until = self.inputs.exit_settle_until(&self.x);
+        // a settle that would run past the exit's deadline (an Escape in the watch's last moments) ends there
+        let until = self
+            .inputs
+            .exit_settle_until(&self.x)
+            .map(|until| exit_by.map_or(until, |by| until.min(by)));
         let started = Instant::now();
         crate::settle::wait(until);
         if self.cfg.stats {

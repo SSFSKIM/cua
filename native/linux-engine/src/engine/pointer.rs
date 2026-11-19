@@ -508,7 +508,7 @@ fn drag_along(
             if held {
                 let since = Instant::now();
                 let deadline = pressed_at + take_hold.bound;
-                let mut pings = (since < deadline).then(|| HoldPing::start(take_hold.source, deadline));
+                let pings = (since < deadline).then(|| HoldPing::start(take_hold.source, deadline));
                 let looked = if matches!(route, Route::Window(_)) {
                     // the refreshes end a browser's rest before REFRESH_AFTER_PRESS, or before the bound if it is
                     // shorter: the hold past them sends no motion
@@ -521,7 +521,6 @@ fn drag_along(
                             if let Some(cursor) = accept.as_deref_mut() {
                                 let _ = cursor.poll();
                             }
-                            crate::hold_ping::polled(&mut pings);
                             Ok(watch.started(x))
                         },
                         before_last,
@@ -537,14 +536,12 @@ fn drag_along(
                             if let Some(cursor) = accept.as_deref_mut() {
                                 let _ = cursor.poll();
                             }
-                            crate::hold_ping::polled(&mut pings);
                             watch.started(x)
                         },
                         deadline,
                     )
                 };
-                pings_record = crate::hold_ping::hold_record(pings.as_ref(), pressed_at, Instant::now());
-                drop(pings);
+                pings_record = crate::hold_ping::hold_record(pings, pressed_at, Instant::now());
                 if looked {
                     taken = Some((Instant::now(), 0));
                 }
@@ -626,15 +623,9 @@ fn drag_along(
             let since = Instant::now();
             let deadline = pressed_at + take_hold.bound;
             let held = since < deadline && !guard.watch.started(x);
-            let mut pings = held.then(|| HoldPing::start(take_hold.source, deadline));
+            let pings = held.then(|| HoldPing::start(take_hold.source, deadline));
             let taken = match held {
-                true => crate::dnd::wait_for_take(
-                    || {
-                        crate::hold_ping::polled(&mut pings);
-                        guard.watch.started(x)
-                    },
-                    deadline,
-                ),
+                true => crate::dnd::wait_for_take(|| guard.watch.started(x), deadline),
                 false => guard.watch.is_started(),
             };
             let ended = Instant::now();
@@ -647,9 +638,8 @@ fn drag_along(
                 "take_after_press_ms": taken.then(|| ms(ended.saturating_duration_since(pressed_at))),
                 "keepalives": 0,
                 "refreshes": null,
-                "pings": crate::hold_ping::hold_record(pings.as_ref(), pressed_at, ended),
+                "pings": crate::hold_ping::hold_record(pings, pressed_at, ended),
             }));
-            drop(pings);
             if taken {
                 return cancel_in_time(x, route, guard, &mut pressed);
             }
@@ -917,6 +907,24 @@ impl Engine {
         left.map_or(Ok(Value::Null), Err)
     }
 
+    /// The window a foreground-route drag's press reaches, through XTEST at the path's `start` (window-relative to
+    /// `named`): `named` when the start lies inside it, where the route waits for it to be on top before it sends
+    /// anything (`Route::on_top_at`); otherwise the client under the start, which the route leaves alone (None: no
+    /// client). The input goes where it goes either way; this only says whose drag it is. A start that cannot be
+    /// translated or judged is the window named's, and its own error comes inside the route.
+    fn foreground_press_window(&self, named: Window, start: Option<&crate::wire::Point>) -> Option<Window> {
+        let Some(start) = start else {
+            return Some(named);
+        };
+        let Ok(at) = self.x.desktop_position(named, start.x, start.y) else {
+            return Some(named);
+        };
+        match self.x.holds_point(named, at) {
+            Ok(false) => self.x.client_at(at.0, at.1),
+            Ok(true) | Err(_) => Some(named),
+        }
+    }
+
     /// `drag`: the path translated to the root (inside the window's session, which is opened first), checked, the
     /// pointer placed at its start, then the chord parsed and pressed, the button pressed, the path walked and
     /// everything released (behaviour §10.4; the chord's place traced). On the foreground route the path's length and
@@ -999,8 +1007,12 @@ impl Engine {
         // window under the start) is watched for its take, so its release comes no sooner than the take's delay after
         // it (`dnd::RELEASE_AFTER_TAKE`), so a take late for its path is held for (`dnd::TAKE_HOLD_AFTER_PRESS`), and so
         // the press watch knows whether the drag started
+        // The window the press reaches: the background route sends to the window named; XTEST's press, on the
+        // foreground route, goes to whatever is under the path's start, as on the desktop route (the review of task
+        // 115, P2: a drag named for Chrome that starts over an XTerm beside it is the XTerm's)
         let dropping_into = match target {
-            Target::Window(window) | Target::Foreground(window) => Some(window),
+            Target::Window(window) => Some(window),
+            Target::Foreground(window) => self.foreground_press_window(window, input.path.first()),
             Target::Desktop => window,
         };
         let pressing_into = dropping_into.filter(|&w| self.blink(w));

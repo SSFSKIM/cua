@@ -576,7 +576,9 @@ impl Engine {
     /// release's error, else the hold's (a cut, or a watch that failed), else the pointer found away from where the last
     /// request put it, else success. With `hold` (the agent's `end`), a Chromium source's handle whose source has not
     /// taken `XdndSelection` first keeps its button down for the take until the bound after its press
-    /// (`dnd::TAKE_HOLD_AFTER_PRESS`, ruling 888.1), its source pinged meanwhile (`hold_ping.rs`, measurement only).
+    /// (`dnd::TAKE_HOLD_AFTER_PRESS`, ruling 888.1), its source pinged meanwhile (`hold_ping.rs`, measurement only). A
+    /// take then gets the rest after it, as any take; with none, the hold's motionless wait is the rest, so the visit and
+    /// the release follow it at the bound.
     fn release_handle(&mut self, mut handle: Handle, hold: bool) -> Released {
         let pacing = handle.pacing;
         let bound = self.cfg.dnd_hold;
@@ -586,6 +588,9 @@ impl Engine {
         // handle's releases go at once, as they did, so the exit stays inside its backstop and nobody's drop begins then
         let mut held_take = false;
         let mut hold_record = Value::Null;
+        // how long a hold with no take kept the pointer still up to its end: the rest before the release, which it
+        // serves, so a release with no take comes at the bound and not a rest after it (the review of task 115, P3)
+        let mut still = Duration::ZERO;
         if hold
             && handle.pressed
             && handle.after.is_some()
@@ -597,17 +602,15 @@ impl Engine {
             let deadline = pressed_at + bound;
             let taken_by_now = watch.before_release(holding).is_ok_and(|held| held.taken);
             let held = since < deadline && !taken_by_now;
-            let mut pings = held.then(|| HoldPing::start(target, deadline));
+            let pings = held.then(|| HoldPing::start(target, deadline));
             if held {
-                held_take = crate::dnd::wait_for_take(
-                    || {
-                        crate::hold_ping::polled(&mut pings);
-                        watch.before_release(holding).is_ok_and(|held| held.taken)
-                    },
-                    deadline,
-                );
+                held_take =
+                    crate::dnd::wait_for_take(|| watch.before_release(holding).is_ok_and(|held| held.taken), deadline);
             }
             let ended = Instant::now();
+            if held && !held_take {
+                still = ended - since;
+            }
             hold_record = json!({
                 "bound_ms": ms(bound),
                 "start_after_press_ms": ms(since.saturating_duration_since(pressed_at)),
@@ -615,7 +618,7 @@ impl Engine {
                 "waited_ms": ms(if held { ended - since } else { Duration::ZERO }),
                 "taken": held_take || taken_by_now,
                 "take_after_press_ms": held_take.then(|| ms(ended.saturating_duration_since(pressed_at))),
-                "pings": crate::hold_ping::hold_record(pings.as_ref(), pressed_at, ended),
+                "pings": crate::hold_ping::hold_record(pings, pressed_at, ended),
             });
         }
         // an Electron source whose drag and drop has begun: its application asked where it has got to before the rest,
@@ -631,7 +634,7 @@ impl Engine {
         let before_rest = match handle.cursor.as_mut() {
             Some(Ok(cursor)) if settling => Some(cursor.sync_and_rest(pacing.held_rest)),
             _ => {
-                std::thread::sleep(pacing.held_rest);
+                std::thread::sleep(pacing.held_rest.saturating_sub(still));
                 None
             }
         };

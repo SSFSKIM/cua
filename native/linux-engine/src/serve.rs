@@ -32,12 +32,34 @@ use std::time::{Duration, Instant};
 use rustix::runtime::{How, KernelSigSet, Signal};
 
 /// How long after a stop signal the process may still be running before it ends at once, its forced release first
-/// (`pressed::FORCED_RELEASE_BOUND`, 200 ms). Above the drain's longest, about 600 ms after a watched drag's release
-/// (the engine README, "Exit"); short enough that the release lands before the owned group's SIGKILL when admitted work
+/// (`pressed::FORCED_RELEASE_BOUND`, 200 ms). Above the drain's longest, whose waits end by [`exit_by`], [`EXIT_TEARDOWN`]
+/// before it (the engine README, "Exit"); short enough that the release lands before the owned group's SIGKILL when admitted work
 /// holds cua serve's teardown past upstream's SIGTERM: by(0.4) + the REPL host's freeze + 1000 + 200 ms is under
 /// by(0.7), 1500 ms after by(0.4), for a freeze under 300 ms; and the REPL host's own kill waits 1250 ms
 /// (`src/repl-host/kernel-child.mjs` `ENGINE_EXIT_WAIT_MS`), after the engine's latest end (the design session, M4 T7b).
 pub const EXIT_BACKSTOP: Duration = Duration::from_millis(1000);
+
+/// What the orderly exit keeps of the backstop for its last steps, after the late-take watch's run-out and the exit's
+/// settle, which end by [`exit_by`]: the watch collected, the sessions' `FocusOut`s, the exit's `--stats` line, the
+/// clipboard's owner stopped, the screenshot directory removed (a few milliseconds idle). A stop that comes once a
+/// drag has answered leaves the drag's whole late-take watch inside the backstop (`dnd::LATE_TAKE_WATCH` after its
+/// release, which came before the answer), and the exit's whole settle after a take the watch cancelled unless the take
+/// came in the watch's last 50 ms, whose settle the deadline shortens to no less than 250 ms (the review of task 115,
+/// P4).
+pub const EXIT_TEARDOWN: Duration = Duration::from_millis(50);
+
+/// When the first stop signal came (none: no stop signal yet).
+static STOPPED_AT: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
+
+/// When the orderly exit after a stop signal must be done with its waits ([`EXIT_TEARDOWN`] before the backstop ends the
+/// process); None when no signal came (stdin closed, or a read or write failed), which no backstop bounds.
+pub fn exit_by() -> Option<Instant> {
+    STOPPED_AT.get().map(|&at| exit_by_after(at))
+}
+
+pub(crate) fn exit_by_after(stopped: Instant) -> Instant {
+    stopped + EXIT_BACKSTOP - EXIT_TEARDOWN
+}
 
 /// The signals that stop the engine through its orderly exit.
 const STOP_SIGNALS: [Signal; 3] = [Signal::TERM, Signal::INT, Signal::HUP];
@@ -258,6 +280,7 @@ pub fn watch_stop_signals(inbox: Sender<Next>, release: fn()) {
                 continue;
             }
             first = false;
+            let _ = STOPPED_AT.set(Instant::now());
             STOPPED_BY.store(signal.as_raw(), Ordering::SeqCst);
             let _ = inbox.send(Next::Stop(signal.as_raw()));
             std::thread::spawn(move || {
@@ -541,6 +564,28 @@ mod tests {
             "the REPL host's SIGTERM may follow the owned group's"
         );
         assert!(!ends_the_drain(Signal::HUP));
+    }
+
+    #[test]
+    fn a_stop_after_a_drag_s_answer_leaves_its_whole_late_take_watch_inside_the_backstop() {
+        // the soonest a stop can come after a drag's answer is its release (the review of task 115, P4)
+        let released = Instant::now();
+        let by = exit_by_after(released);
+        assert_eq!(EXIT_TEARDOWN, Duration::from_millis(50));
+        assert!(
+            by < released + EXIT_BACKSTOP,
+            "the exit's last steps before the backstop"
+        );
+        assert!(
+            crate::dnd::late_watch_end(released, Some(released)) < by,
+            "the whole watch, 700 ms after the release"
+        );
+        // a take in the watch's last moment: its Escape's exit settle keeps all but 50 ms of its 300
+        let left = by - (released + crate::dnd::LATE_TAKE_WATCH);
+        assert!(
+            left >= crate::settle::EXIT_SETTLE - Duration::from_millis(50),
+            "{left:?}"
+        );
     }
 
     #[test]

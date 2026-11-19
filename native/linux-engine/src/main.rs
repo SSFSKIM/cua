@@ -308,7 +308,7 @@ fn main() {
     };
     serve::read_stdin(inbox);
     let code = serve::serve(&mut engine, &next, std::io::stdout());
-    engine.shutdown();
+    engine.shutdown(serve::exit_by());
     std::process::exit(code);
 }
 

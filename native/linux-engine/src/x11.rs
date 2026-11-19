@@ -835,6 +835,14 @@ impl X11 {
         Ok(crate::cover::reach(rect, &levels, &points))
     }
 
+    /// Whether the root point lies inside `window` and every ancestor (`cover.rs` `inside`): a point the foreground route
+    /// waits for the window to be on top at, so real pointer input there reaches it.
+    pub fn holds_point(&self, window: Window, (px, py): (i16, i16)) -> Result<bool> {
+        let geometry = self.conn.get_geometry(window)?.reply()?;
+        let (rect, levels) = self.cover(window, &geometry)?;
+        Ok(crate::cover::inside(rect, &levels, (px as i32, py as i32)))
+    }
+
     /// Whether `window` is on top over its visible area now, as `activate_window` waits for it (task 63; the design
     /// session's ruling, 2026-11-06): no window in the window manager's normal layer covers it. Of the windows
     /// `cover::covers` finds, one whose client the window manager keeps in another layer neither holds the wait nor fails

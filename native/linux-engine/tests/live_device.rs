@@ -896,6 +896,7 @@ fn drag_source_answering(
         *PRESS_TO_RELEASE.lock().unwrap() = None;
         AFTER_TAKE_MOTIONS.lock().unwrap().clear();
         ESCAPES_AND_FOCUS_OUTS.lock().unwrap().clear();
+        PINGS_READ.lock().unwrap().clear();
         while stopped.try_recv() == Err(mpsc::TryRecvError::Empty) {
             if let Some(took) = took_at {
                 pending_cursors.retain(|&(after, cursor)| {
@@ -941,6 +942,8 @@ fn drag_source_answering(
                     }
                     Event::KeyRelease(_) => seen.push(Input::KeyRelease { sent }),
                     Event::ClientMessage(e) if e.type_ == protocols && e.data.as_data32()[0] == ping => {
+                        let after_release = seen.iter().any(|i| matches!(i, Input::ButtonRelease { .. }));
+                        PINGS_READ.lock().unwrap().push(after_release);
                         if let Some(delay) = pings {
                             sleep(delay);
                             let answer = x11rb::protocol::xproto::ClientMessageEvent::new(
@@ -1045,6 +1048,10 @@ static ESCAPES_AND_FOCUS_OUTS: std::sync::Mutex<Vec<(&'static str, Instant)>> = 
 /// long after the press: what the release schedule after a take is measured by.
 static TAKE_TO_RELEASE: std::sync::Mutex<Option<Duration>> = std::sync::Mutex::new(None);
 static PRESS_TO_RELEASE: std::sync::Mutex<Option<Duration>> = std::sync::Mutex::new(None);
+
+/// Each `_NET_WM_PING` the last drag's source read, in order: whether it read the button's release before it (the
+/// hold's pings, `hold_ping.rs`, go only inside the hold).
+static PINGS_READ: std::sync::Mutex<Vec<bool>> = std::sync::Mutex::new(Vec::new());
 
 /// The input focus on no window, so a drop's activation shows.
 fn focus_nothing() {
@@ -1513,9 +1520,110 @@ fn a_drag_whose_source_is_not_chromium_is_not_held_for_a_take() {
     );
 }
 
+/// The hold follows the window the drag's press reaches, not the window the drag names (the review of task 115, P2).
+/// The foreground route's press goes through XTEST to whatever is under the path's start, and the route waits only for
+/// the points inside its window: a dedicated-mode drag named for Chrome that starts over an XTerm beside it is the
+/// XTerm's, released at its path's pace, with Chrome neither held for nor pinged.
+#[test]
+fn a_foreground_drag_named_for_chrome_that_starts_over_another_family_s_window_is_not_held() {
+    support::fresh_display();
+    let (chrome, stop, recorder) = drag_source_answering(OnRelease::NeverTakes, Some(Duration::ZERO));
+    managed(chrome);
+    let (xterm_stop, xterm) = held_listener("XTerm", (420, 0, 300, 200));
+    pointer_to(1000, 600);
+    let mut dedicated = Engine::start_with_stats(&["--desktop", "dedicated"]);
+    let answer = dedicated.request(
+        "drag",
+        json!({"window": {"id": chrome}, "path": [{"x": 450, "y": 20}, {"x": 490, "y": 20}]}),
+    );
+    let stats = dedicated.stats_of(dedicated.last_id());
+    sleep(SETTLE);
+    xterm_stop.send(()).unwrap();
+    let seen = xterm.join().unwrap();
+    stop.send(()).unwrap();
+    let inputs = recorder.join().unwrap();
+    assert_eq!(answer, Ok(Value::Null), "{stats}");
+    assert_eq!(stats["route"], json!("foreground"), "{stats}");
+    let held = |seen: &[Held]| {
+        let press = seen.iter().find_map(|h| match h {
+            Held::Press(t) => Some(*t),
+            _ => None,
+        });
+        let release = seen.iter().find_map(|h| match h {
+            Held::Release(t) => Some(*t),
+            _ => None,
+        });
+        match (press, release) {
+            (Some(press), Some(release)) => release - press,
+            _ => panic!("a press and a release: {seen:?}"),
+        }
+    };
+    let xterm_held = held(&seen);
+    assert!(xterm_held < 150, "the XTerm's drag held {xterm_held} ms");
+    assert_eq!(
+        stats["hold"],
+        Value::Null,
+        "no hold for a press into the XTerm: {stats}"
+    );
+    assert!(
+        !inputs.iter().any(|i| matches!(i, Input::ButtonPress { .. })),
+        "nothing pressed in Chrome: {inputs:?}"
+    );
+    assert!(PINGS_READ.lock().unwrap().is_empty(), "Chrome not pinged");
+}
+
+/// The other way round (the review of task 115, P2): a dedicated-mode drag named for another family (Gecko, on the
+/// foreground route with the real pointer outside it) that starts over Chrome is Chrome's, held until B after the
+/// press, Chrome pinged meanwhile, and nothing reaches the window named.
+#[test]
+fn a_foreground_drag_named_for_another_family_that_starts_over_chrome_is_held_for_chrome() {
+    support::fresh_display();
+    let bound = hold_bound();
+    let (chrome, stop, recorder) = drag_source_answering(OnRelease::NeverTakes, Some(Duration::ZERO));
+    managed(chrome);
+    let firefox = Probe::open("firefox", (420, 0, 300, 200));
+    managed(firefox.id);
+    pointer_to(1000, 600);
+    let mut dedicated = Engine::start_with_stats(&["--desktop", "dedicated"]);
+    let answer = dedicated.request(
+        "drag",
+        json!({"window": firefox.target(), "path": [{"x": -400, "y": 20}, {"x": -360, "y": 20}]}),
+    );
+    let stats = dedicated.stats_of(dedicated.last_id());
+    sleep(SETTLE);
+    stop.send(()).unwrap();
+    let inputs = recorder.join().unwrap();
+    assert_eq!(answer, Ok(Value::Null), "{stats}");
+    assert_eq!(stats["route"], json!("foreground"), "{stats}");
+    assert_eq!(
+        inputs,
+        vec![
+            Input::ButtonPress { button: 1, sent: false },
+            Input::ButtonRelease { button: 1, sent: false },
+        ],
+        "the press and the release in Chrome"
+    );
+    let whole = PRESS_TO_RELEASE.lock().unwrap().expect("a press and a release");
+    assert!(
+        whole + Duration::from_millis(5) >= bound && whole < bound + Duration::from_millis(80),
+        "held for Chrome's take: released {whole:?} after the press"
+    );
+    let hold = &stats["hold"];
+    assert_eq!(
+        (&hold["held"], &hold["taken"]),
+        (&json!(true), &json!(false)),
+        "{stats}"
+    );
+    assert_eq!(hold["pings"]["asked"], json!(true), "Chrome pinged: {stats}");
+    assert!(!PINGS_READ.lock().unwrap().is_empty(), "Chrome read its pings");
+    assert_eq!(firefox.inputs(), vec![], "nothing reached the window named");
+}
+
 /// The hold at a Chromium `drag_handle`'s end (ruling 888.1): a source that has not taken by the end finds the button
-/// still down until B after the start's press, so a take inside it is a drag and drop under way; one due after B finds
-/// it up at B. The handle's record carries the hold.
+/// still down until B after the start's press, so a take inside it is a drag and drop under way, settled after the take
+/// as any; one due after B finds it up at B: the family's rest before the release and its revisit fit inside the hold,
+/// whose motionless wait is that rest (the review of task 115, P3). Both answer success. The handle's record carries the
+/// hold.
 #[test]
 fn a_chromium_handle_s_end_holds_its_button_until_b_after_its_press_for_a_take() {
     support::fresh_display();
@@ -1534,24 +1642,33 @@ fn a_chromium_handle_s_end_holds_its_button_until_b_after_its_press_for_a_take()
         engine
             .request("drag_handle", json!({"action": "move_to", "x": 60, "y": 20}))
             .unwrap();
-        let _ = engine.request("drag_handle", json!({"action": "end"}));
+        let ended = engine.request("drag_handle", json!({"action": "end"}));
         let stats = engine.stats_of(engine.last_id());
         sleep(SETTLE);
         stop.send(()).unwrap();
         recorder.join().unwrap();
+        assert_eq!(ended, Ok(Value::Null), "take {take:?}: {stats}");
         let hold = &stats["handle"]["hold"];
         assert_eq!(hold["held"], json!(true), "{hold}");
         assert_eq!(hold["taken"], json!(inside), "{hold}");
+        let after_take = *TAKE_TO_RELEASE.lock().unwrap();
         assert_eq!(
-            TAKE_TO_RELEASE.lock().unwrap().is_some(),
+            after_take.is_some(),
             inside,
             "take {take:?}: the take came before the release"
         );
-        if !inside {
-            let whole = PRESS_TO_RELEASE.lock().unwrap().expect("a press and a release");
+        let whole = PRESS_TO_RELEASE.lock().unwrap().expect("a press and a release");
+        if inside {
+            // the rest after a real take, then the release
+            let rest = after_take.unwrap();
             assert!(
-                whole + Duration::from_millis(5) >= bound && whole < bound + Duration::from_millis(100),
-                "released {whole:?} after the press"
+                rest >= Duration::from_millis(25) && rest < Duration::from_millis(150),
+                "released {rest:?} after the take"
+            );
+        } else {
+            assert!(
+                whole + Duration::from_millis(5) >= bound && whole < bound + Duration::from_millis(25),
+                "released {whole:?} after the press: the rest and the revisit inside B"
             );
         }
     }
@@ -1599,6 +1716,10 @@ fn a_hold_with_no_take_pings_its_source_and_records_each_round_trip_without_chan
                 .all(|t| t["sent_after_press_ms"].as_f64().is_some_and(|ms| ms <= last_ping)),
             "{what}: {pings}"
         );
+        // and the source read every one before the release: no ping went out after the hold
+        let read = PINGS_READ.lock().unwrap().clone();
+        assert_eq!(read.len(), trips.len(), "{what}: {pings}");
+        assert!(read.iter().all(|&after| !after), "{what}: a ping after the release");
     }
     // a source that lists no ping: not asked, and why
     let drag = held_drag(HoldRoute::InFront, OnRelease::NeverTakes, None);
@@ -2368,6 +2489,74 @@ fn an_exit_inside_the_watch_s_lifetime_still_cancels_a_late_drag_and_drop_and_se
         "{:?}",
         exited - answered
     );
+}
+
+/// An engine stopped straight after a Chromium source's plain drag answered runs the drag's whole late-take watch, 700
+/// ms after the release, inside the stop's 1 s backstop (the review of task 115, P4: the exit cut the watch 300 ms after
+/// the release, so a take at +500 ms went uncancelled): the take 500 ms after the release is cancelled, the exit's
+/// settle follows its Escape, and the exit is the orderly one, its `--stats` line written, before the backstop.
+#[test]
+fn an_exit_straight_after_a_drag_s_answer_runs_its_whole_late_take_watch_inside_the_backstop() {
+    support::fresh_display();
+    let late = Duration::from_millis(500);
+    assert!(
+        late > Duration::from_millis(300) && late < WATCH,
+        "past 0.4.1's watch, inside 0.4.2's"
+    );
+    let path = json!([{"x": 20, "y": 20}, {"x": 60, "y": 20}]);
+    let (window, stop, recorder) = drag_source(OnRelease::TakesLateAfter(late));
+    focus_nothing();
+    let mut shared = Engine::start_with_stats(&[]);
+    *TAKE_TO_ESCAPE.lock().unwrap() = None;
+    assert_eq!(
+        shared.request("drag", json!({"window": {"id": window}, "path": path})),
+        Ok(Value::Null),
+        "no take by the release: a plain drag"
+    );
+    let signalled = Instant::now();
+    shared.signal(rustix::process::Signal::TERM);
+    let (status, exited) = shared.exit_within(Duration::from_secs(5)).expect("the engine exits");
+    assert_eq!(status.code(), Some(143));
+    sleep(SETTLE);
+    stop.send(()).unwrap();
+    assert_eq!(
+        recorder.join().unwrap(),
+        vec![
+            Input::ButtonPress { button: 1, sent: true },
+            Input::ButtonRelease { button: 1, sent: true },
+            Input::KeyPress { sent: true },
+            Input::KeyRelease { sent: true },
+        ],
+        "the drag, then the watch's Escape"
+    );
+    let waited = TAKE_TO_ESCAPE
+        .lock()
+        .unwrap()
+        .expect("the watch's Escape reached the source");
+    assert!(
+        waited < Duration::from_millis(50),
+        "the Escape {waited:?} after the take"
+    );
+    let order = ESCAPES_AND_FOCUS_OUTS.lock().unwrap().clone();
+    assert_eq!(
+        order.iter().map(|(what, _)| *what).collect::<Vec<_>>(),
+        vec!["escape", "focus-out"],
+        "the Escape inside the drag's session, then its FocusOut"
+    );
+    assert!(
+        exited >= order[0].1 + EXIT_SETTLE - Duration::from_millis(20),
+        "the exit settled after the Escape: {:?}",
+        exited.saturating_duration_since(order[0].1)
+    );
+    assert!(
+        exited - signalled < Duration::from_millis(990),
+        "inside the 1 s backstop: {:?} after the stop",
+        exited - signalled
+    );
+    let exit_line = shared
+        .stats_where(|line| line["settle_final"] == json!(true))
+        .expect("the orderly exit's --stats line");
+    assert!(exit_line["exit_settle"]["waited_ms"].is_number(), "{exit_line}");
 }
 
 /// The after-release watch's lifetime after a release with no take (`dnd::LATE_TAKE_WATCH`, ruling 888.3; a drag's

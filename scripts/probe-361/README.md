@@ -201,3 +201,23 @@ Sky's `cua/serviceMs`, valid rows, p50/p95 ms. Full run; the Pinyin rerun of Chr
 - **Browser newline-single:** keeps main's 2.2 s Return settle.
 
 Invalid-setup tally: in the full run, 6 Chrome for Testing and 6 Electron rows (fixture hangs at Pinyin rep 13), plus 121 and 118 rows not run; all were replaced by the rerun. No other lane, and no rerun row, was invalid.
+
+## Pre-merge check: fix 6e159e34 against main 645202db
+
+- [Run 44463935687](https://github.com/SSFSKIM/cua/actions/runs/44463935687): kit `c46a4c00`, main `645202db7e1ecb5425c1f79e84bfb7463c78ba4d`, fix `6e159e343089fe5414dbae6dc983101f01a3c3a7`.
+- What changed since `7897cdeb`: the read-back's expected text now comes from the request, and a mismatch carries no excerpt and no lengths. Delivery is unchanged.
+- Scope: the four lanes that passed before (Firefox skipped), Korean 2-Set only, ten per head per cell, heads interleaved, all in the background with the witness held. Chrome for Testing was 156.0.8078.80.
+- New in this kit: every row records whether its reply carries #354's excerpt sentence, or its lengths (in the message or the read-back record).
+
+**All four lanes pass every gate. 200/200 rows per lane, none invalid.**
+
+| Lane | Exact pastes confirmed | Controls `typeUnconfirmed` | Wrong successes fix (main) | Clipboard restored | Clipboard content fix/main | Delivery vs main | Privacy | Fix replies with excerpt / lengths |
+|---|---|---|---|---|---|---|---|---|
+| Safari 27.2 | 60/60 | 30/30 | 0 (30) | 100/100 | 0/0 | 90/90 | 0 | 0 / 0 of 100 |
+| Chrome for Testing | 60/60 | 30/30 | 0 (30) | 100/100 | 0/0 | 90/90 | 0 | 0 / 0 of 100 |
+| Electron 44.4.5 | 60/60 | 30/30 | 0 (30) | 100/100 | 0/0 | 90/90 | 0 | 0 / 0 of 100 |
+| AppKit | 60/60 | 30/30 | 0 (40) | 100/100 | 0/0 | 90/90 | 0 | 0 / 0 of 100 |
+
+- **No excerpt or lengths:** none of the 130 fix `valueMismatch` replies (120 controls, 10 AppKit newline-single) carried either.
+- **Two lines into a single-line field:** as with `7897cdeb`. The browsers answer `pasteUnconfirmed` after the first line, as main does. AppKit answers `valueMismatch` where main answered success.
+- **Service time,** main → fix p50, plain cells: Safari 162 → 265, Chrome for Testing 160 → 161, Electron 156 → 246, AppKit 110 → 236 ms. A refused control takes about 1.2 s.

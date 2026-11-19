@@ -166,3 +166,11 @@ test('the AX patch applies at its one seam or fails closed', () => {
   assert.throws(() => patchInput('nothing here'));
   assert.throws(() => patchInput(source + source));
 });
+
+test('disclosure finds #354\'s excerpt and lengths, and nothing in a bare refusal', async () => {
+  const {disclosure} = await import('./check.mjs');
+  const msg = 'The text could not be confirmed. From character 3, expected "ab"; the field reads "ax". The expected text is 9 characters long, the field\'s 9.';
+  assert.deepEqual(disclosure({native: {error: {message: msg, meta: {typeReadback: {reason: 'valueMismatch'}}}}}), {excerpt: true, lengths: true});
+  assert.deepEqual(disclosure({forwarded: {'cua/typeReadback': {expectedLength: 9}}}), {excerpt: false, lengths: true});
+  assert.deepEqual(disclosure({native: {error: {message: 'The text could not be confirmed: the field does not match what was typed.'}}}), {excerpt: false, lengths: false});
+});

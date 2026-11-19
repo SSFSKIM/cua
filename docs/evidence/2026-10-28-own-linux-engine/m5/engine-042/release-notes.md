@@ -23,25 +23,27 @@ cua's own Linux engine, cua-engine 0.4.2, built from <commit> for x86-64 and arm
     released before B after its press unless its source takes `XdndSelection` first; on a take it goes on at once as
     any take does. This holds on every route: a drag the engine lets drop (0.4.1's 250 ms hold, now B), a guarded
     background drag (a take then is cancelled before the drop: Escape, then the release, and the drag-and-drop
-    sentence), and a `drag_handle`'s `end`. The hold sends no pointer motion past 0.4.1's refreshes. A drag whose path
-    already lasts B pays nothing.
+    sentence), and a `drag_handle`'s `end`, whose rest before the release the hold's motionless wait serves. The
+    source is the window the press reaches: on the foreground and desktop routes, the client under the path's start.
+    The hold sends no pointer motion past 0.4.1's refreshes. A drag whose path already lasts B pays nothing.
   - **The late-take watch.** After a release with no take, the watch runs at least 700 ms after the release, or 300 ms
     after the hold's end if that is later. It runs after the answer, so a plain drag does not wait for it. A take inside
     it is cancelled at once and reported as before: the next reply carries `Pending from your last drag, a late drag
-    and drop: …`, and the next acting request is refused with it. The exit still runs the watch out at most 300 ms after
-    the release, so it stays inside its 1 s backstop.
+    and drop: …`, and the next acting request is refused with it. The engine's exit runs the whole watch too when it
+    is stopped after the drag answered, and ends its waits 950 ms after the stop signal at the latest, inside its 1 s
+    backstop.
 - **The bound.** B is 450 ms in this build (`dnd::TAKE_HOLD_AFTER_PRESS`), <B as the design session set it from task
   114's p450 and p600 runs>. A take later than B after the press still misses, and the drag answers as a plain one: at
   twice the gate's load on arm64, task 113 saw renderers start their drag up to about 580 ms after the press.
   `--drag-dnd-hold-ms` sets another bound (measurement only).
 - **The ping predictor, measurement only.** While a hold waits with no take, the engine sends the source window
-  `_NET_WM_PING`, one at a time, the next 25 ms after the last once it was answered, none after the hold. It never
-  waits for an answer, and it changes no answer. `--stats` `hold.pings` records each round trip
+  `_NET_WM_PING`, one at a time, the next 25 ms after the last once it was answered, none in the hold's last 25 ms.
+  It pings from a thread and an X connection of its own, so the drag never waits for it, and it changes no answer. `--stats` `hold.pings` records each round trip
   (`{asked, round_trips: [{sent_after_press_ms, rtt_ms}]}`, an unanswered one with `unanswered_ms`, or
   `{asked: false, why}`). A handle's record has its `hold` too.
-- **Agent-facing text.** The Linux document says that a drag from a Chrome or Electron window can take up to B ms,
-  since the button is held until the page has had time to start a drag and drop, and what a late drag and drop
-  answers.
+- **Agent-facing text.** The Linux document says that in a drag from a Chrome or Electron window the button is not
+  released until B ms after its press unless the page starts a drag and drop sooner, and that a drag and drop the
+  engine sees start within 700 ms after the release is reported at the next reply.
 
 ## Measured on the candidate (development runs, never counted; task 114, `m5/engine-042/`)
 

@@ -90,13 +90,19 @@ test('every behaviour the Linux documents narrow a promise to is the engine\'s',
 });
 
 // How long a Chromium-family source's drag holds its button for the page's drag and drop (#171 M5, ruling 888.1): B,
-// the engine's one line, which the design session sets, and which the documents name in milliseconds.
-test('the documents name the hold of a drag from a Chromium window as the engine\'s bound', () => {
-  const bound = /pub const TAKE_HOLD_AFTER_PRESS: Duration = Duration::from_millis\((\d+)\);/.exec(file('native/linux-engine/src/dnd.rs'));
+// the engine's one line, which the design session sets, counted from the press; and how long after the release the
+// engine watches for a late drag and drop (ruling 888.3). The documents name both in milliseconds.
+test('the documents name the hold of a drag from a Chromium window and its late-take watch as the engine\'s bounds', () => {
+  const dnd = file('native/linux-engine/src/dnd.rs');
+  const bound = /pub const TAKE_HOLD_AFTER_PRESS: Duration = Duration::from_millis\((\d+)\);/.exec(dnd);
   assert.ok(bound, 'dnd.rs names TAKE_HOLD_AFTER_PRESS in milliseconds');
+  const watch = /pub const LATE_TAKE_WATCH: Duration = Duration::from_millis\((\d+)\);/.exec(dnd);
+  assert.ok(watch, 'dnd.rs names LATE_TAKE_WATCH in milliseconds');
   for (const [document, phrase] of [
-    [LINUX_DOCUMENT, `A drag that starts in a Chrome or Electron window can take up to ${bound[1]} ms, however short its path`],
-    [README, `keeps its button down until up to ${bound[1]} ms after its press`],
+    [LINUX_DOCUMENT, `the mouse button is not released until ${bound[1]} ms after its press, however short the path`],
+    [LINUX_DOCUMENT, `while it still watches, for ${watch[1]} ms after the release`],
+    [README, `keeps its button down until ${bound[1]} ms after its press, however short its path`],
+    [README, `within ${watch[1]} ms after the drag's release`],
   ]) assert.ok(flat(file(document)).includes(flat(phrase)), `${document} does not say: ${phrase}`);
 });
 

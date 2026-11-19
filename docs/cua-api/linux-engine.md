@@ -4,6 +4,8 @@ If a call answers `<App> does not accept background input; use a dedicated deskt
 
 If a drag answers with a sentence that begins `<App> began a drag and drop, which changes the desktop`, the drag started a drag and drop in a background window. The rest of the sentence says whether it was cancelled before the drop, or whether the drop may have happened anyway; read the window before you act again.
 
+A key held across a `key_down` and a `key_up` is subject to X autorepeat, as a person's held key is: the longer it is held, the more repeated key presses the window gets before the release. To press a key once, use `pressKey`.
+
 Under heavy load an Electron app's page can miss the last position of a drag and drop, so a drop that Electron reports as made, and the drag answers as done, may have landed where the pointer was just before the end, or nowhere on the page. When you need to be certain, check the target before you go on.
 
 A failure that says nothing was sent sent no input: fix what it names, then you may send the request again. A failure that says a focusing click already reached the window may have moved its focus or caret: read the window before trying again. `Paste was sent once and could not be confirmed; read the field before retrying`, from `typeText` or `paste`, means the text may have arrived, now or a little later: read the field with `getAXState()`, and send the text again only if it is not there.

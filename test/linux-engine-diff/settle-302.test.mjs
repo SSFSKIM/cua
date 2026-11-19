@@ -18,12 +18,14 @@ const run = (trial, { ok = false, before = keys(trial, trial), after = keys(tria
 });
 const passes = (from, n) => Array.from({ length: n }, (_, i) => run(from + i, { ok: true }));
 
-test('#302 judges only Electron press_key in the shipped lane: a search lane sets the service\'s constants, which #302 must not lower', () => {
+test('#302 judges only Electron press_key and key_up in the shipped lane: a search lane sets the service\'s constants, which #302 must not lower', () => {
   assert.equal(judgesLateKeyUp({ scene: 'electron-input', input: 'press_key', lane: 'shipped' }), true);
   assert.equal(judgesLateKeyUp({ scene: 'electron-text', input: 'press_key', lane: 'shipped' }), true);
   assert.equal(judgesLateKeyUp({ scene: 'electron-input', input: 'press_key', lane: 'settle-100' }), false);
   assert.equal(judgesLateKeyUp({ scene: 'chrome-input', input: 'press_key', lane: 'shipped' }), false);
-  assert.equal(judgesLateKeyUp({ scene: 'electron-input', input: 'key_up', lane: 'shipped' }), false);
+  // key_up has its own form (settle-302-key-up.test.mjs); key_down has none
+  assert.equal(judgesLateKeyUp({ scene: 'electron-input', input: 'key_up', lane: 'shipped' }), true);
+  assert.equal(judgesLateKeyUp({ scene: 'electron-input', input: 'key_down', lane: 'shipped' }), false);
 });
 
 test('a late key-up is #302 only with the key-down inside the settle, the key-up late, and the next before-read caught up', () => {

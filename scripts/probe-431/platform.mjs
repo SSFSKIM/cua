@@ -76,7 +76,7 @@ export async function startPlatform({lane,home,helper,cover,stage}){
       onStage('foreground');
       try{await ensureFront(pid);}catch{throw setupFail('foreground-activation');}
       onStage('prepare');
-      const prep=await command({op:'prepare',trial,cell:m.cell});
+      const prep=await command({op:'prepare',trial,cell:m.cell},20000);
       if(prep.error||prep.trial!==trial||prep.present!==true||prep.text!==CELLS[m.cell].before||!prep.geometry?.textRect)throw setupFail('prepare');
       if(presentation==='background'){
         onStage('cover');

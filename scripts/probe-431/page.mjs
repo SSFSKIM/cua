@@ -50,7 +50,12 @@ function run(c){
   if(c.op==='prepare'){
     const spec=CELLS[c.cell];if(!spec)throw Error('cell');
     trial=c.trial;cell=c.cell;marked=null;twins=[];mover=null;drafts=null;
-    slots=[row(),row(),row()];nav.replaceChildren(...slots);far.replaceChildren();far.className=spec.twin==='cap'?'on':'';
+    // The cap filler is kept across consecutive cap trials (only the twin's row is rebuilt): rebuilding 6,000 nodes every
+    // trial left both Chromium lanes' page unanswering after 15 repetitions (run 44611947576).
+    slots=[row(),row(),row()];nav.replaceChildren(...slots);
+    if(spec.twin==='cap'&&far.dataset.filler==='1'){for(const ch of [...far.children])if(!ch.classList.contains('fill'))ch.remove();}
+    else{far.replaceChildren();far.dataset.filler='';}
+    far.className=spec.twin==='cap'?'on':'';
     // For the cap twin, the region and the twin's row are groups of their own, so neither is flattened into a sibling the walk
     // reads before the filler.
     if(spec.twin==='cap')far.setAttribute('role','group');else far.removeAttribute('role');
@@ -60,10 +65,13 @@ function run(c){
     else if(spec.twin==='list'){twins=[control('twin',spec.before,spec),control('twin2',spec.before,spec)];slots[1].append(twins[0]);slots[2].append(twins[1]);archive=null;}
     else if(spec.twin==='cap'){
       // Below the fold, so the walk defers it and reads it in the document's order: the filler, then the twin.
-      for(let g=0;g<FILLER.groups;g++){
-        const group=document.createElement('div');group.setAttribute('role','group');
-        for(let i=0;i<FILLER.each;i++){const d=document.createElement('div');d.textContent='x'+i;group.append(d);}
-        far.append(group);
+      if(far.dataset.filler!=='1'){
+        for(let g=0;g<FILLER.groups;g++){
+          const group=document.createElement('div');group.setAttribute('role','group');group.className='fill';
+          for(let i=0;i<FILLER.each;i++){const d=document.createElement('div');d.textContent='x'+i;group.append(d);}
+          far.append(group);
+        }
+        far.dataset.filler='1';
       }
       twins=[control('twin',spec.before,spec)];mover=row();mover.setAttribute('role','group');mover.append(twins[0]);far.append(mover);slots[1].append(archive);
     }else if(spec.twin==='deep'){

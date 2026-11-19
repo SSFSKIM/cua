@@ -16,8 +16,12 @@ import Foundation
 //   the call, compares, logs or emits it. The end marker is not used: its copy is not even resolved.
 // - Every element the route meets is classified before anything else is read from it, by role and subrole in one
 //   request, failing closed as #405's `valueClassification` does: a closed one ends the lookup, refused unread with the
-//   reason main's snapshot gives such a focused element (`.refused(.secure)` for a password field by role or subrole or
-//   an unreadable subrole, `.refused(.roleUnreadable)` for an unreadable role), nothing more read from it. The web area
+//   reason main's snapshot gives such a focused element (`.refused(.secure)` for a secure element that is not a field,
+//   `.refused(.roleUnreadable)` for an unreadable role), nothing more read from it. A password field (#414,
+//   `readbackPasswordField`'s rule) is a field, claimed as a text field is and carried as a password field, and the
+//   snapshot then reads its length alone, never its value (TypeReadbackLength.swift); one whose own role and subrole
+//   the snapshot then reads as no password field (a show-password toggle in between) is refused `noLongerSecure`,
+//   nothing more read. The web area
 //   is searched for among the app's own elements alone, another process's skipped unread, and must classify open as an
 //   AXWebArea before its marker is read (else no claim: it is not the field); each ancestor the claim's scope climb
 //   passes is checked to be the app's.
@@ -92,20 +96,21 @@ func readbackMarkedElement(_ webArea: AXUIElement, ax: ReadbackAX) -> AXUIElemen
 }
 
 /// An element as one classification-only request reads it (#405's `classifyingAttributes` and `valueClassification`):
-/// closed, with the reason the snapshot gives such a focused element on main (a role that cannot be read
-/// `roleUnreadable`; a password field by role or subrole, or a subrole that cannot be read, `secure`), else its role.
+/// closed, with the reason the snapshot gives such a focused element (a role that cannot be read `roleUnreadable`; any
+/// other closed element that is not a password field `secure`); a password field (#414: secure, with a field's role, as
+/// `readbackPasswordField` has it), by its role; else its role.
 enum ReadbackClass: Equatable {
   case closed(TypeReadbackReason)
+  case password(String)
   case open(String)
 }
 
 /// A classification request's answer as `ReadbackClass`: a failed request reads no role, so it is `roleUnreadable`.
 func readbackClass(_ read: AttributeRead?) -> ReadbackClass {
-  guard let read else { return .closed(.roleUnreadable) }
-  let role = read.unreadable.contains(kAXRoleAttribute) ? nil
-    : read.values[kAXRoleAttribute].flatMap { CFGetTypeID($0) == CFStringGetTypeID() ? ($0 as! String) : nil }
-  guard let role else { return .closed(.roleUnreadable) }
-  return valueClassification(read).closed ? .closed(.secure) : .open(role)
+  guard let read, let role = readbackBatchRole(read) else { return .closed(.roleUnreadable) }
+  let classification = valueClassification(read)
+  guard classification.closed else { return .open(role) }
+  return classification.secure && typeReadbackFocusWalkRoles.contains(role) ? .password(role) : .closed(.secure)
 }
 
 /// The route's reads, live or faked: the element the web area's marker names (`readbackMarkedElement`), an element's
@@ -123,7 +128,8 @@ struct ReadbackMarkerReads<Element> {
 /// one the walk's reads find among the app's own elements (`readbackWebArea`, which checks each, the web area too), and
 /// its marker is read only once it classifies open as an AXWebArea; else no claim, since the web area is not the field.
 /// From the element its marker names, each element is checked to be the app's, then classified: closed ends the lookup,
-/// refused unread with main's reason (`.closed`); a text-entry role is the field; the web area, reached first, is no
+/// refused unread with main's reason (`.closed`); a text-entry role, or a password field (#414, claimed with `password`
+/// set, which the snapshot holds it to), is the field; the web area, reached first, is no
 /// field; any other role (the AXStaticText) is climbed by one AXParent, at most `typeReadbackMarkerFieldHops`. The field
 /// is claimed only when it reads AXFocused true and lies under that web area (`readbackUnder`).
 func readbackMarkedField<Element>(window: Element, walk: ReadbackFocusWalk<Element>, marker: ReadbackMarkerReads<Element>) -> ReadbackFound<Element>? {
@@ -134,6 +140,9 @@ func readbackMarkedField<Element>(window: Element, walk: ReadbackFocusWalk<Eleme
     guard marker.owned(element) else { return nil }
     switch marker.classify(element) {
     case .closed(let reason): return .closed(reason)
+    case .password:
+      guard case .value(true) = marker.isFocused(element), readbackUnder(element, webArea, marker) else { return nil }
+      return .field(element, by: .marker, password: true)
     case .open(let role) where typeReadbackTextRoles.contains(role):
       guard case .value(true) = marker.isFocused(element), readbackUnder(element, webArea, marker) else { return nil }
       return .field(element, by: .marker)
@@ -192,13 +201,41 @@ func readbackWebArea<Element>(_ window: Element, _ walk: ReadbackFocusWalk<Eleme
 /// After an event, whether `field` is still the field typed keys reach, never through the marker (ruling 1ea561bc:824):
 /// a field the application's focus or the walk found is looked up again that way (`again`, which takes no marker route)
 /// and must be the same element; one the marker route found is asked itself, the same element, and must read AXFocused
-/// true. Neither reads anything that depends on what was typed, so a concealed request makes the same reads.
+/// true. Neither reads anything that depends on what was typed, so a concealed request makes the same reads. #354's
+/// plain path takes anything but focused as a changed field. The marker's AXFocused read that failed (another AX error,
+/// or a reply of the wrong type) is unknown, not moved (#414; the review of 4a005a8c..a1939d2f, P2).
 func readbackStillFocused<Element>(_ field: Element, found lookup: ReadbackLookup, again: () -> Element?,
-                                   isFocused: (Element) -> ReadbackWalkRead<Bool>, same: (Element, Element) -> Bool) -> Bool {
+                                   isFocused: (Element) -> ReadbackWalkRead<Bool>, same: (Element, Element) -> Bool) -> ReadbackFocus {
   switch lookup {
-  case .focus: return again().map { same($0, field) } ?? false
-  case .marker:
-    if case .value(true) = isFocused(field) { return true }
-    return false
+  case .focus, .walk: return again().map { same($0, field) ? .focused : .moved } ?? .moved
+  case .marker: return readbackFieldsAXFocused(isFocused(field))
   }
 }
+
+/// #414 (the review of 4a005a8c..a1939d2f, P1-2): a password field's focus check after typing, early or final, literal
+/// or concealed: one AX call, chosen by how the snapshot found the field, so no secret can buy a slower lookup. One the
+/// application's AXFocusedUIElement named is asked that again and compared (`same`): an element is focused or moved,
+/// and an absent, failed or timed-out answer is unknown, with no fallback to the window or a walk. One the walk or the
+/// marker route found is asked its own AXFocused: the walk found it by that attribute's true, so it is there.
+func readbackFieldFocused<Element>(_ field: Element, found lookup: ReadbackLookup, applicationFocus: () -> ReadbackWalkRead<Element>,
+                                   isFocused: (Element) -> ReadbackWalkRead<Bool>, same: (Element, Element) -> Bool) -> ReadbackFocus {
+  switch lookup {
+  case .focus:
+    guard case .value(let focused) = applicationFocus() else { return .unknown }
+    return same(focused, field) ? .focused : .moved
+  case .walk, .marker: return readbackFieldsAXFocused(isFocused(field))
+  }
+}
+
+/// A field's own AXFocused: true is focused, false moved, and anything else (absent, failed, the wrong type, timed out)
+/// unknown.
+func readbackFieldsAXFocused(_ read: ReadbackWalkRead<Bool>) -> ReadbackFocus {
+  switch read {
+  case .value(true): return .focused
+  case .value(false): return .moved
+  case .absent, .failed: return .unknown
+  }
+}
+
+/// What a focus check found (`readbackStillFocused`): the field still the focus, the focus moved, or not known.
+enum ReadbackFocus: Equatable { case focused, moved, unknown }

@@ -25,7 +25,8 @@ import Foundation
 // action (`elementClick.reason` webArea); one whose own down consumed the activation's arm in a view not known to accept
 // first mouse answers clickUnconfirmed after its events.
 // A keyed type_text reads the focused field back and answers `typeUnconfirmed` unless it holds the text (#354,
-// TypeReadback.swift, meta `typeReadback`); press_key answers once posted, its meta `keyEffect: "unconfirmed"`.
+// TypeReadback.swift, meta `typeReadback`), a password field by its length, its success with a note (#414,
+// TypeReadbackLength.swift); press_key answers once posted, its meta `keyEffect: "unconfirmed"`.
 // The settle an action arms runs at the next get_app_state (markActed).
 // Spike-only arguments, which the facade never sends: `spikeRoute` ("1"|"2'"|"2"|"3", force one route; route 2, the ⌘
 // post, is reachable only this way), `spikeEventSource` ("private", post keys from a private event source instead of
@@ -697,7 +698,10 @@ extension Engine {
                           checkIntervention: guarding.checkInFlight, post: { poster.post($0) },
                           pause: { usleep(250) },  // the vendor's gap between typed-text events (F §12)
                           meta: &meta)
-      return ["meta": meta.wire]
+      // #414: a password field's success carries what its length confirmation proves (`readbackLengthNote`).
+      var result: [String: Any] = ["meta": meta.wire]
+      if let note = meta.note { result["note"] = note }
+      return result
     } catch let error as EngineError {
       throw withMeta(error, meta)
     }

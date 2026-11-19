@@ -12,7 +12,7 @@ import Foundation
 // - A concealed request (a `{{secret:…}}` substitution; the design session's ruling 1ea561bc:589) keeps the read-back as
 //   equality only: the expected value is built and compared in buffers the read-back owns, zeroed after each use, and a
 //   mismatch says only that the field does not match what was typed, with no excerpt, values or lengths (a length
-//   tells the secret's). A secure field is never read, concealed or not.
+//   tells the secret's). A secure field's value is never read, concealed or not (#414 confirms it by its length).
 // - The expected value is the snapshot's with the selected range replaced by the typed text.
 // - After the last event, the same field is polled until its value equals the expected one, at most
 //   `typeReadbackBudgetMs`, its role and subrole read again before every value read: a field that turns secure or
@@ -39,6 +39,37 @@ import Foundation
 // - A posted click can land after the snapshot and move the caret back (#359, ruling 1ea561bc:785, ClickOrdering.swift):
 //   within its window the snapshot first waits for the field's range to hold still, and within a second of select_text
 //   for the range select_text wrote, which still missing at the cap means nothing is typed (`selectionChanged`).
+// - A password field (#414; the design session's rulings 1ea561bc:826, which applies paste's ruling 808 to type_text, 833
+//   on what its success says and 839 on a field that has no count; the native engine spec's Decision Log, the #414
+//   entry) is confirmed by its length, never its value. It is a field #405's classification finds secure, with a role
+//   read and a field's role (`readbackPasswordField`: AXSecureTextField by role or subrole, or a text-entry role whose
+//   subrole cannot be read). A field the lookup already took for one (the marker route's classification, the walk's
+//   claim by role) is held to it: the snapshot's own role and subrole reading no password field refuse it
+//   `noLongerSecure`, nothing more read. After its role and subrole, every read of it is one batch of its role,
+//   subrole, selected range and character count (`readbackLengthAttributes`), classified from that same reply
+//   (`readbackLength`): a reply that is no longer such a field ends it. The count and range stay here, compared and
+//   never formatted, kept on the record or emitted. A wait for select_text's range is refused `selectionChanged` before
+//   any batch (at a field the lookup took for one, before any read of it, its role included), nothing typed, since
+//   select_text never selects in a password field; a count read that fails at the
+//   snapshot is refused before the settle. The starting point (`readbackLengthBasis`): the count with the range; the
+//   count alone in an empty field whose range cannot be read; or, where the field has no count at all (absent, never a
+//   read that failed), the caret alone from an empty selection; a count or such a caret past `readbackLengthLimit` is
+//   no field's. The expected count is the start's less the selection plus the typed text's UTF-16 units, as AX counts
+//   both; whenever the range was read, the caret must also sit right after the text, {location + typed, 0}, in the
+//   same reply, whatever the selection held, and a concealed request answers a wrong caret as it answers a wrong count
+//   (`lengthMismatch`), so no answer depends on whether a secret is as long as the selection it replaced. A match counts
+//   only once the same reply has held for the quiet window (`typeReadbackLengthDwellMs`, ruling 1ea561bc:842): a reply
+//   read between an app's last two keys can match when a character was added, and a genuine field never moves away
+//   from a final match. The window is read at the poll's interval, its two reads both inside the budget, and a match
+//   confirms only once a focus check, one AX call, finds the field focused within the budget too (ruling 1ea561bc:851).
+//   A literal request's poll ends at a reply that leaves a held match, or one past any genuine field's
+//   (`readbackLengthOvershoots`); a concealed request's goes on to the budget's end, its hold checks only gating its
+//   success, and its failure's reason is a function of one final batch and the focus read after it alone (the review of
+//   a1939d2f..e8e2702e), so its reason does not depend on its secret, though when it answers can (#423). A focus check
+//   that cannot finish is unknown, never a moved focus. A success that a length check confirmed names its strength
+//   (`confirmation: "length"`) and its note says what a length proves (`readbackLengthNote`); a literal request of keys
+//   alone confirms no length and claims none; a failure carries its reason alone. A count cannot tell a wrong character
+//   from a right one.
 // The paste route (Paste.swift, a non-Latin input source) keeps #187's effect check and is not read back here; its
 // read-back is #361.
 
@@ -46,7 +77,20 @@ import Foundation
 /// every read: the spike's soft 1000 ms, 5 ms polls and 100 ms AX timeout, whose confirmed reads took p50 26 to 34 ms.
 let typeReadbackBudgetMs: Double = 1_000
 let typeReadbackPollIntervalMs: Double = 5
+/// A password field's quiet window (#414; the design session's ruling 1ea561bc:842): a length read that matches confirms
+/// only once the same read has held unchanged this long, read at `typeReadbackPollIntervalMs` within the budget. A batch
+/// starts only while a messaging timeout, T, is left of the budget (ruling 1ea561bc:851), so the read that closes the
+/// window starts by the budget less T, and a field must take the text within that less this: 1000 − 100 − 220 = 680 ms
+/// of the last post. One constant for
+/// every lane, never one per lane, sized at three times the slowest lane's drain in the hosted qualification's full
+/// run: AppKit's gap p99 of 72.6 ms (218 ms; direct fixture edit gaps ending after the last post, n=269), above Chrome for
+/// Testing's 29 ms, Safari's 24 ms and the parity Electron lane's 25 ms. Raise it if a lane's measured drain p99, times
+/// three, passes it.
+let typeReadbackLengthDwellMs: Double = 220
 let typeReadbackMessagingTimeout: Float = 0.1
+/// T, `typeReadbackMessagingTimeout` in milliseconds (100), rounded off its Float: a password field's length batch
+/// starts only while this much is left of the budget, so one that takes all of it still ends inside (#414).
+let typeReadbackMessagingTimeoutMs = (Double(typeReadbackMessagingTimeout) * 1_000).rounded()
 /// Chromium cuts a text field's AXValue at 10,000 (#290's hosted measurement: a 20,499-character ASCII field read back
 /// 10,000 long; #350): a read at that length may be cut, and so may compare equal to an expected value that is not the
 /// field's (`readbackMayBeTruncated`).
@@ -69,12 +113,20 @@ enum ReadbackSubrole: Equatable {
 enum TypeReadbackReason: String, Equatable {
   case noFocusedElement, roleUnreadable, secure, notTextField, valueUnreadable, rangeUnreadable, possiblyTruncated
   case valueMismatch, concealedMismatch, unchanged, becameSecure, fieldUnreadable, fieldChanged
-  /// The field's range was not select_text's within the cap (#359): nothing was typed.
+  /// The field's range was not select_text's within the cap (#359), or the field is a password field, which select_text
+  /// never selects in (#414): nothing was typed.
   case selectionChanged
+  /// A password field's (#414): its count could not be read (a read that failed, none with no empty selection to stand
+  /// on instead, or one past any field's); its range could not be read while it held text, or did not lie inside its
+  /// count; its count was never the expected one, or a concealed request's caret was not right after the text; a literal
+  /// request's caret was not right after the text, with its count, where it has one, as expected; it stopped
+  /// classifying as a password field.
+  case lengthUnreadable, selectionUnreadable, lengthMismatch, caretMismatch, noLongerSecure
 }
 
-/// Whether nothing of a field's value or range may be read: role or subrole AXSecureTextField, or a role or subrole that
-/// cannot be read. Fails closed.
+/// Whether a field's value and range may not be read by themselves: role or subrole AXSecureTextField, or a role or
+/// subrole that cannot be read. Fails closed. Such a field that is a password field (`readbackPasswordField`) is read
+/// only through its length batch (#414); any other is read no further.
 func readbackSecure(role: String?, subrole: ReadbackSubrole) -> Bool {
   guard let role else { return true }
   if role == "AXSecureTextField" { return true }
@@ -158,16 +210,22 @@ func readbackInsertion(_ unit: TypedUnit) -> String {
 
 /// How the snapshot's field was found (#395), which is how it is asked for again after typing (`readbackStillFocused`).
 enum ReadbackLookup: Equatable {
-  /// The application's AXFocusedUIElement, or #354's walk of its primary window: looked up again the same way.
+  /// The application's AXFocusedUIElement: looked up again the same way.
   case focus
+  /// #354's walk of the application's primary window (by AXFocused true): looked up again the same way, though a
+  /// password field's check asks the field's own AXFocused (`readbackFieldFocused`; the review of
+  /// 4a005a8c..a1939d2f, P1-2).
+  case walk
   /// Safari's text-marker route (TypeReadbackMarker.swift): the field itself is asked, never the marker again.
   case marker
 }
 
-/// What the lookup before the first event found: the field and how, or (the marker route's) an element classified closed,
-/// refused unread with main's reason for it.
+/// What the lookup before the first event found: the field and how, and whether the lookup already took it for a
+/// password field (#414: the marker route's classification, or the walk's claim by the role AXSecureTextField), which
+/// the snapshot then holds it to; or (the marker route's) an element classified closed, refused unread with main's
+/// reason for it.
 enum ReadbackFound<Element> {
-  case field(Element, by: ReadbackLookup)
+  case field(Element, by: ReadbackLookup, password: Bool = false)
   case closed(TypeReadbackReason)
 }
 
@@ -176,14 +234,20 @@ struct ReadbackReads<Element> {
   /// Before the first event: the field typed keys reach (`readbackFocusedField`).
   var focused: () -> ReadbackFound<Element>?
   /// After an event (the final poll's and each checkpoint's): whether the snapshot's field is still that field
-  /// (`readbackStillFocused`), never through the marker.
-  var stillFocused: (Element, ReadbackLookup) -> Bool
+  /// (`readbackStillFocused`), never through the marker: focused, moved, or unknown. #354's plain path.
+  var stillFocused: (Element, ReadbackLookup) -> ReadbackFocus
+  /// #414: a password field's focus check after typing, one AX call (`readbackFieldFocused`). A fake that does not say
+  /// answers unknown, which never confirms.
+  var fieldFocused: (Element, ReadbackLookup) -> ReadbackFocus = { _, _ in .unknown }
   var role: (Element) -> String?
   var subrole: (Element) -> ReadbackSubrole
   var value: (Element) -> String?
   /// The value as UTF-16 units in a buffer of its own, for a concealed comparison that zeroes it after use.
   var valueUnits: (Element) -> [UInt16]?
   var range: (Element) -> NSRange?
+  /// #414: one batched request of `names`, a password field's only read after its role and subrole
+  /// (`readbackLengthAttributes`); nil when the request failed.
+  var batch: (Element, [String]) -> AttributeRead? = { _, _ in nil }
   var now: () -> Double = monotonicMilliseconds
   var sleep: (Double) -> Void = { usleep(UInt32(max(0, $0) * 1000)) }
 }
@@ -191,7 +255,10 @@ struct ReadbackReads<Element> {
 extension ReadbackReads where Element == AXUIElement {
   /// The live reads of `pid`'s focused field through `ax`, each element given the read-back's messaging timeout; the
   /// text-marker route only when `markerRoute` (`readbackMarkerRoute`, Safari) and its symbols resolved.
-  static func live(pid: pid_t, markerRoute: Bool, ax: ReadbackAX = ReadbackAX()) -> ReadbackReads<AXUIElement> {
+  static func live(pid: pid_t, markerRoute: Bool, ax base: ReadbackAX = ReadbackAX()) -> ReadbackReads<AXUIElement> {
+    // Every read runs under its element's standard messaging timeout, `typeReadbackMessagingTimeout` (wave 8: no
+    // timeout is shrunk, since a timed-out request keeps the app busy and the next one waits behind it).
+    let ax = base
     func timed(_ element: AXUIElement) -> AXUIElement {
       AXUIElementSetMessagingTimeout(element, typeReadbackMessagingTimeout)
       return element
@@ -225,8 +292,12 @@ extension ReadbackReads where Element == AXUIElement {
     }
     return ReadbackReads(focused: { lookup(marker: takesMarker ? marker : nil) }, stillFocused: { field, found in
       readbackStillFocused(field, found: found, again: {
-        if case .field(let again, _)? = lookup(marker: nil) { return again }
+        if case .field(let again, _, _)? = lookup(marker: nil) { return again }
         return nil
+      }, isFocused: walk.isFocused, same: { CFEqual($0, $1) })
+    }, fieldFocused: { field, found in
+      readbackFieldFocused(field, found: found, applicationFocus: {
+        read(timed(AXUIElementCreateApplication(pid)), kAXFocusedUIElementAttribute, asElement)
       }, isFocused: walk.isFocused, same: { CFEqual($0, $1) })
     }, role: { string($0, kAXRoleAttribute) }, subrole: { field in
       let (raw, error) = ax.copy(field, kAXSubroleAttribute)
@@ -235,9 +306,10 @@ extension ReadbackReads where Element == AXUIElement {
       guard let range = rangeWire(ax.copy(element, kAXSelectedTextRangeAttribute).value), let location = range["location"],
             let length = range["length"] else { return nil }
       return NSRange(location: location, length: length)
-    })
+    }, batch: { ax.batch($0, $1) })
   }
 }
+
 
 /// The bounds of the walk for the focused field (`readbackFocusedByWalk`), sized from run 44022892172 (Safari 27.2, 10
 /// reps): the window to its AXWebArea took 28 nodes at depth 6 in 4.7/10.9 ms p50/p95, the web area to its focused
@@ -247,7 +319,8 @@ extension ReadbackReads where Element == AXUIElement {
 let typeReadbackFocusWalkNodes = 200
 let typeReadbackFocusWalkDepth = 12
 let typeReadbackFocusWalkMs: Double = 40
-/// The roles the walk claims: the text-entry roles, and a secure field's, which the snapshot then refuses unread.
+/// The roles the walk claims: the text-entry roles, and a secure field's, which the snapshot then confirms by its length
+/// alone (#414), never its value.
 let typeReadbackFocusWalkRoles: Set<String> = typeReadbackTextRoles.union(["AXSecureTextField"])
 
 /// One attribute read of the walk: its value, absent (the element has none: noValue, attributeUnsupported), or failed
@@ -257,6 +330,9 @@ enum ReadbackWalkRead<Value> {
   case absent
   case failed
 }
+
+/// Two reads are the same when both are the same value, both absent or both failed (#414's quiet window compares them).
+extension ReadbackWalkRead: Equatable where Value: Equatable {}
 
 /// The reads of the walk, live or faked: an element's children, its AXFocused, its role, the clock.
 struct ReadbackFocusWalk<Element> {
@@ -291,7 +367,8 @@ func readbackFocusedField<Element>(application: Element, focused: (Element) -> R
   if case .value(let field) = answer { return .field(field, by: .focus) }
   guard let window = primaryWindow(application) else { return nil }
   if case .absent = answer, let marker, let found = readbackMarkedField(window: window, walk: walk, marker: marker) { return found }
-  return readbackFocusedByWalk(window, walk).map { .field($0, by: .focus) }
+  // The walk read the role it claimed by, and no subrole: a password field to it is one by its role (#414).
+  return readbackFocusedByWalk(window, walk).map { .field($0.element, by: .walk, password: readbackPasswordField(role: $0.role, subrole: .absent)) }
 }
 
 /// The window walked breadth first, each element's role read: an element with a role the walk claims
@@ -302,12 +379,12 @@ func readbackFocusedField<Element>(application: Element, focused: (Element) -> R
 /// 10). The one focused field is claimed only when the walk finished with nothing left unread: past the node or time
 /// bound, a failed read, or an element at `typeReadbackFocusWalkDepth` (the window is depth 0) that has children (that
 /// review's P1) leave it unfinished, and an unfinished walk, like one that found several, claims nothing, since what
-/// it did not read could be another.
-func readbackFocusedByWalk<Element>(_ window: Element, _ walk: ReadbackFocusWalk<Element>) -> Element? {
+/// it did not read could be another. The claim carries the role the field was claimed by.
+func readbackFocusedByWalk<Element>(_ window: Element, _ walk: ReadbackFocusWalk<Element>) -> (element: Element, role: String)? {
   let started = walk.now()
   var queue: [(element: Element, depth: Int)] = [(window, 0)]
   var index = 0
-  var found: Element?
+  var found: (element: Element, role: String)?
   while index < queue.count {
     if index >= typeReadbackFocusWalkNodes || walk.now() - started > typeReadbackFocusWalkMs { return nil }
     let (element, depth) = queue[index]
@@ -319,7 +396,7 @@ func readbackFocusedByWalk<Element>(_ window: Element, _ walk: ReadbackFocusWalk
       case .failed: return nil
       case .value(true):
         if found != nil { return nil }
-        found = element
+        found = (element, role)
       case .value(false), .absent: break
       }
       continue
@@ -362,6 +439,23 @@ func readbackSubrole(_ raw: CFTypeRef?, _ error: AXError) -> ReadbackSubrole {
 enum ReadbackPlan<Element> {
   case refused(TypeReadbackReason)
   case expect(field: Element, role: String, before: String, range: NSRange, returnIsText: Bool, found: ReadbackLookup)
+  /// #414: a password field, confirmed by its length from `basis`, which holds its count and range and nothing else
+  /// holds them (TypeReadbackLength.swift).
+  case expectLength(field: Element, role: String, basis: ReadbackLengthBasis, returnIsText: Bool, found: ReadbackLookup)
+
+  /// Whether something is expected of the field, by its value or its length.
+  var expects: Bool {
+    if case .refused = self { return false }
+    return true
+  }
+
+  /// Whether the field takes a Return as text (`readbackReturnIsText`).
+  var returnIsText: Bool {
+    switch self {
+    case .refused: return false
+    case .expect(_, _, _, _, let returnIsText, _), .expectLength(_, _, _, let returnIsText, _): return returnIsText
+    }
+  }
 }
 
 /// The snapshot; `settle`, when not nil, settles it first (`readbackSettle`) and records what that did. The settle comes
@@ -374,20 +468,39 @@ enum ReadbackPlan<Element> {
 /// after any settle, is not that range; for a stable range, which at the cap goes on regardless.
 func readbackSnapshot<Element>(reads: ReadbackReads<Element>, settle: inout ReadbackSettle?) -> ReadbackPlan<Element> {
   var waited: RangeWait?
-  return readbackSnapshot(reads: reads, settle: &settle, baseline: nil, waited: &waited)
+  var secure = false
+  return readbackSnapshot(reads: reads, settle: &settle, baseline: nil, waited: &waited, secure: &secure)
 }
 
+/// #414: `secure` is set once the field is found to be a password field (`readbackPasswordField`), which the snapshot
+/// then takes by its length (`readbackLengthSnapshot`), whether or not it then refuses it, or as soon as the lookup took
+/// it for one (`ReadbackFound.field`'s `password`), whatever the snapshot's own reads then find. A field the lookup took
+/// for a password field is refused `selectionChanged` under a select_text baseline before any read of it, its role
+/// included, so nothing is typed (`readbackLengthSnapshot` says why); one whose own role and subrole now read as none (a
+/// page's show-password toggle in between) is refused `noLongerSecure`, as the poll refuses it, and nothing more is
+/// read: it may now show its text.
 func readbackSnapshot<Element>(reads: ReadbackReads<Element>, settle: inout ReadbackSettle?, baseline: BaselineWait?,
-                               waited: inout RangeWait?) -> ReadbackPlan<Element> {
-  let field: Element, found: ReadbackLookup
+                               waited: inout RangeWait?, secure: inout Bool) -> ReadbackPlan<Element> {
+  let field: Element, found: ReadbackLookup, classified: Bool
   switch reads.focused() {
   case nil: return .refused(.noFocusedElement)
   case .closed(let reason)?: return .refused(reason)  // the marker route's classification: nothing more is read
-  case .field(let element, let by)?: (field, found) = (element, by)
+  case .field(let element, let by, let password)?: (field, found, classified) = (element, by, password)
+  }
+  if classified {
+    secure = true
+    if case .selection? = baseline { return .refused(.selectionChanged) }
   }
   guard let role = reads.role(field) else { return .refused(.roleUnreadable) }
   let subrole = reads.subrole(field)
-  if readbackSecure(role: role, subrole: subrole) { return .refused(.secure) }
+  if classified, !readbackPasswordField(role: role, subrole: subrole) { return .refused(.noLongerSecure) }
+  if readbackSecure(role: role, subrole: subrole) {
+    // #414: a password field is confirmed by its length; any other element closed is refused unread, as before.
+    guard readbackPasswordField(role: role, subrole: subrole) else { return .refused(.secure) }
+    secure = true
+    return readbackLengthSnapshot(field: field, role: role, returnIsText: readbackReturnIsText(role: role, subrole: subrole), found: found,
+                                  reads: reads, settle: &settle, baseline: baseline, waited: &waited)
+  }
   guard typeReadbackTextRoles.contains(role) else { return .refused(.notTextField) }
   if let baseline {
     var closed: TypeReadbackReason?
@@ -527,10 +640,28 @@ struct TypeReadbackRecord: Equatable {
   /// checkpoints, the keys and the reads and time of each checkpoint's poll tell how many control characters and
   /// segments the secret holds (a secret of keys alone, its length); a key left unconfirmed is a flag.
   var concealed = false
+  /// A password field's record (#414): `secure: true`, and on a success a length check confirmed the confirmation's
+  /// strength, `confirmation: "length"` (ruling 1ea561bc:833; a confirmed record without it is the exact read-back of a
+  /// field's value, or with `secure`, keys alone), with the request's own keys as above; never its reads, poll time,
+  /// lengths, settle or wait, so nothing on the wire is a count, a range or a time that depends on them.
+  var secure = false
+  /// Whether a length check confirmed (`confirmLength`), which alone puts `confirmation: "length"` on the wire. A literal
+  /// request of keys alone (a Tab, a Return in a single-line field) makes none: it is confirmed as a plain field's
+  /// keys-only request is, its keys unconfirmed. Never on the wire itself.
+  var lengthConfirmed = false
 
   var wire: [String: Any] {
     var wire: [String: Any] = ["confirmed": confirmed, "snapshotMs": (snapshotMs * 10).rounded() / 10]
     if let reason { wire["reason"] = reason.rawValue }
+    if secure {
+      wire["secure"] = true
+      if confirmed, lengthConfirmed { wire["confirmation"] = "length" }
+      if concealed { wire["concealed"] = true }
+      if keysUnconfirmed > 0 { wire["keysUnconfirmed"] = concealed ? true as Any : keysUnconfirmed as Any }
+      if !concealed, checkpoints > 0 { wire["checkpoints"] = checkpoints }
+      if stoppedBeforeKey { wire["stoppedBeforeKey"] = true }
+      return wire
+    }
     if concealed {
       wire["concealed"] = true
       if keysUnconfirmed > 0 { wire["keysUnconfirmed"] = true }
@@ -576,7 +707,9 @@ final class TypeReadback<Element> {
     let started = reads.now()
     var settled: ReadbackSettle? = settle ? ReadbackSettle() : nil
     var waited: RangeWait?
-    plan = readbackSnapshot(reads: reads, settle: &settled, baseline: baseline, waited: &waited)
+    var secure = false
+    plan = readbackSnapshot(reads: reads, settle: &settled, baseline: baseline, waited: &waited, secure: &secure)
+    record.secure = secure
     record.snapshotMs = reads.now() - started
     record.baseline = baseline
     record.baselineWait = waited
@@ -591,7 +724,7 @@ final class TypeReadback<Element> {
   /// wrapper expands a secret only as the whole text of a type_text, so a concealed request is all secret: its keys are
   /// posted with the rest of it, unconfirmed (a flag), and it is read back once, after the last unit.
   func beforeUnit(_ index: Int) throws {
-    guard case .expect = plan else { return }
+    guard plan.expects else { return }
     if leaves(units[index]) {
       if unchecked, !concealed {
         record.checkpoints += 1
@@ -609,11 +742,16 @@ final class TypeReadback<Element> {
     return false
   }
 
-  /// After the last event: success, or `typeUnconfirmed`.
-  func finish() throws {
-    guard case .expect = plan else { throw typeUnconfirmed(record.reason ?? .valueUnreadable) }
+  /// After the last event: success, or `typeUnconfirmed`. A password field's poll counts from B, `postedAt`, the last
+  /// successful post on the read-back's clock (the review of 1f69470e..f217f062), and ends at its cutoff, E = B +
+  /// `typeReadbackBudgetMs`. A failure answers when it is known (ruling 1ea561bc:851), a snapshot refusal after posting
+  /// at once; failures found during delivery (an input-source change, an intervention, an event not made) throw before
+  /// this, #354's path.
+  func finish(postedAt: Double? = nil) throws {
+    let cutoff = (postedAt ?? reads.now()) + typeReadbackBudgetMs
+    guard plan.expects else { throw typeUnconfirmed(record.reason ?? .valueUnreadable, secure: record.secure) }
     // A concealed request is always read back once, whatever its keys, so its number of waits is always one.
-    if unchecked || concealed { try confirm(through: units.count, beforeKey: false) }
+    if unchecked || concealed { try confirm(through: units.count, beforeKey: false, cutoff: cutoff) }
     record.keysUnconfirmed = units.filter(leaves).count
     record.confirmed = true
     record.reason = nil
@@ -623,12 +761,141 @@ final class TypeReadback<Element> {
   /// takes it as text.
   private func leaves(_ unit: TypedUnit) -> Bool {
     guard readbackKey(unit) else { return false }
-    if unit.text == [0x0D], case .expect(_, _, _, _, true, _) = plan { return false }
+    if unit.text == [0x0D], plan.returnIsText { return false }
     return true
   }
 
-  /// Polls for the snapshot with its selection replaced by units `0..<end`, then checks the field is still the focus.
-  private func confirm(through end: Int, beforeKey: Bool) throws {
+  /// #414: polls a password field's length batch until one reply confirms units `0..<end` typed over its snapshot
+  /// (`readbackLengthJudged`), then checks the field is still the focus. Its cutoff, E, is absolute, passed in: `finish`
+  /// takes it from B, the last post (the review of 1f69470e..f217f062), and a literal checkpoint from its own start. The count and range never leave this function: only the reason
+  /// does. A concealed request never answers `caretMismatch`: a field that ignored a secret typed over a selection keeps
+  /// its count and range, so the count would match exactly when the secret is as long as the selection, and the reason
+  /// would tell its length; its caret is `lengthMismatch`, as its count is. A literal request keeps the two reasons
+  /// apart.
+  ///
+  /// A reply that matches confirms only once the same reply (the same count and range; with the caret's basis, still no
+  /// count and the same range) has held for the quiet window, `typeReadbackLengthDwellMs` (ruling 1ea561bc:842), read
+  /// at the poll's own interval. The hosted qualification found an app whose extra character, put in before the first
+  /// key, made a reply between its last two keys match. A genuine field never moves away from a final match: once it has
+  /// taken every key nothing changes it, and before that none of its readings equals the expected one, because its caret
+  /// has not yet reached the end of the text (and, from an empty field read without a range, its count is still short of
+  /// the text's length). So a reading that matches and then changes means a character was added or dropped.
+  ///
+  /// One poll, literal and concealed (ruling 1ea561bc:851): a batch starts only while E − at ≥ T, the messaging timeout
+  /// (`typeReadbackMessagingTimeoutMs`), every `typeReadbackPollIntervalMs`; E is `cutoff`, and `at` the batch's own
+  /// start, which also judges the hold (the review of a1939d2f..e8e2702e, 6). A hold completes by a read that starts
+  /// the window after the matching read's end and itself ends by E. At a hold, one focus check (`fieldFocused`, one AX
+  /// call): focused, completed by E, confirms. Otherwise a literal request's moved is `fieldChanged` at once, and its
+  /// unknown or late answer confirms nothing; a concealed request's check only gates its success (the same review, 1):
+  /// whether a hold comes at all can depend on the secret, so its answer never ends the poll or sets the reason, and
+  /// the next hold checks again. So a field must take the text by E − T less the window: 680 ms of B. A closed reply
+  /// ends the poll. A reply that leaves a held match, or one past where a genuine field can be
+  /// (`readbackLengthOvershoots`), ends a literal poll; a concealed one only taints (the same review, 3), so it never
+  /// confirms, and polls on to E. After a poll with no success a literal request that took no batch answers
+  /// `fieldUnreadable` (the same review, 5); one that did reads its focus once (moved is `fieldChanged`) and otherwise
+  /// answers its last batch's reason. A concealed one reads its focus once, then one final batch, however its poll
+  /// ended and outside the start limit, which never confirms, and answers `readbackConcealedReason` of the two (the
+  /// same review, 2): the classifying read is the last before the reply, and one secure only by a failed subrole is
+  /// `fieldUnreadable` there (the review of e8e2702e..3b67bf4d, 1 and 2). Nothing seen mid-poll is latched: which
+  /// batches a poll reads depends on its hold checks, so on the secret.
+  private func confirmLength(through end: Int, beforeKey: Bool, cutoff: Double) throws {
+    guard case .expectLength(let field, let role, let basis, _, let found) = plan else { return }
+    let typed = units[0..<end].reduce(0) { leaves($1) ? $0 : $0 + readbackLengthUnits($1) }  // a key that can leave adds nothing
+    let entered = reads.now()
+    defer { record.pollMs += reads.now() - entered }
+    var final: ReadbackFinalBatch?
+    // The held match: its reply, and the end of the read that took it. A later read that starts at least the window
+    // after it and still finds the same reply shows the reply held that long.
+    var held: (count: ReadbackWalkRead<Int>, range: NSRange?, since: Double)?
+    var tainted = false  // a concealed request whose reply left a held match or overshot: it never confirms
+    // One length batch, judged against the held match.
+    func step() -> ReadbackLengthStep {
+      let at = reads.now()
+      guard cutoff - at >= typeReadbackMessagingTimeoutMs else { return .ended }
+      let answer = readbackLength(field, role: role, reads: reads)
+      let done = reads.now()
+      switch answer {
+      case .closed(let why):
+        final = .closed(why)
+        return .closed(why)
+      case .read(let count, let range):
+        var judged = readbackLengthJudged(count: count, range: range, basis: basis, typed: typed)
+        record.reads += 1
+        defer { final = .read(judged) }
+        if let match = held {
+          if count == match.count, range == match.range {
+            return at - match.since >= typeReadbackLengthDwellMs && done <= cutoff ? .holds : .goesOn
+          }
+          // A changed reply that still judges confirmed differs only by a range its basis (an empty field read without
+          // one) never checks: its caret moved.
+          if judged == .confirmed { judged = .caretElsewhere }
+          held = nil
+          if concealed { tainted = true }
+          return .changed
+        }
+        if judged == .confirmed {
+          if !tainted { held = (count, range, done) }
+        } else if judged != .unreadable, readbackLengthOvershoots(count: count, range: range, basis: basis, typed: typed) {
+          // A failed count read is no evidence either way; a readable reply past any genuine field's is.
+          if concealed { tainted = true }
+          return .overshoots
+        }
+        return .goesOn
+      }
+    }
+    poll: while true {
+      switch step() {
+      case .ended: break poll
+      case .closed(let why):
+        guard concealed else { throw unconfirmed(why, beforeKey) }
+        break poll
+      case .holds:
+        let focus = reads.fieldFocused(field, found)
+        if focus == .focused, reads.now() <= cutoff {
+          record.lengthConfirmed = true
+          return
+        }
+        // Late, or not known: the next hold may check again. A concealed request's moved focus is no answer either.
+        if focus == .moved, !concealed { throw unconfirmed(.fieldChanged, beforeKey) }
+      case .changed, .overshoots:
+        if !concealed { break poll }
+      case .goesOn: break
+      }
+      // No sleep after the last batch: the next could not start with T left.
+      if cutoff - (reads.now() + typeReadbackPollIntervalMs) < typeReadbackMessagingTimeoutMs { break }
+      reads.sleep(typeReadbackPollIntervalMs)
+    }
+    guard concealed else {
+      // No batch after typing: the field was never classified, which comes before a moved focus.
+      guard let last = final else { throw unconfirmed(.fieldUnreadable, beforeKey) }
+      if reads.fieldFocused(field, found) == .moved { throw unconfirmed(.fieldChanged, beforeKey) }
+      switch last {
+      // A match that never held for the window, or held with its focus unknown or late.
+      case .read(.confirmed), .read(.differs): throw unconfirmed(.lengthMismatch, beforeKey)
+      case .read(.caretElsewhere): throw unconfirmed(.caretMismatch, beforeKey)
+      case .read(.unreadable), .closed: throw unconfirmed(.lengthUnreadable, beforeKey)
+      }
+    }
+    // Read order: the focus read, then the final batch, the last read before the reply (the review of
+    // e8e2702e..3b67bf4d, 2). Result precedence: a batch closed noLongerSecure or fieldUnreadable decides whatever the
+    // focus read found, though that read is still made (the review of 3b67bf4d..8bc291f1, P3).
+    let focus = reads.fieldFocused(field, found)
+    switch readbackLength(field, role: role, reads: reads, presumeSecure: false) {
+    case .closed(let why): final = .closed(why)
+    case .read(let count, let range):
+      record.reads += 1
+      final = .read(readbackLengthJudged(count: count, range: range, basis: basis, typed: typed))
+    }
+    throw unconfirmed(readbackConcealedReason(finalBatch: final, focus: focus), beforeKey)
+  }
+
+  /// Polls for the snapshot with its selection replaced by units `0..<end`, then checks the field is still the focus. A
+  /// password field's length confirmation takes `cutoff` from `finish`, or (a literal checkpoint) its own from its start.
+  private func confirm(through end: Int, beforeKey: Bool, cutoff: Double? = nil) throws {
+    if case .expectLength = plan {
+      let cutoff = cutoff ?? reads.now() + typeReadbackBudgetMs
+      return try confirmLength(through: end, beforeKey: beforeKey, cutoff: cutoff)
+    }
     guard case .expect(let field, let role, let before, let range, let returnIsText, let found) = plan else { return }
     let typedUnits = units[0..<end].filter { !leaves($0) }  // a key that can leave adds nothing to the field
     let placeholder = readbackPlaceholderLine(returnIsText: returnIsText, typedEndsInReturn: typedUnits.last?.text == [0x0D],
@@ -720,7 +987,7 @@ final class TypeReadback<Element> {
     if let closed = poll.closed { throw unconfirmed(closed, beforeKey) }
     // Still the field, asked as it was found and never through the marker (#395, ruling 1ea561bc:824): no marker call
     // follows delivered text, whose offset it would carry.
-    guard reads.stillFocused(field, found) else { throw unconfirmed(.fieldChanged, beforeKey) }
+    guard reads.stillFocused(field, found) == .focused else { throw unconfirmed(.fieldChanged, beforeKey) }  // #354's: an unknown focus, as before
     switch poll.last {
     case .equal?: return
     case .equalUnconsumed?: throw unconfirmed(.unchanged, beforeKey)
@@ -737,7 +1004,7 @@ final class TypeReadback<Element> {
   private func unconfirmed(_ reason: TypeReadbackReason, _ beforeKey: Bool, excerpt: ReadbackExcerpt? = nil) -> EngineError {
     record.reason = reason
     record.stoppedBeforeKey = beforeKey
-    return typeUnconfirmed(reason, excerpt: excerpt, beforeKey: beforeKey)
+    return typeUnconfirmed(reason, excerpt: excerpt, beforeKey: beforeKey, secure: record.secure)
   }
 }
 
@@ -760,9 +1027,20 @@ func keyTextReadBack<Element>(_ units: [TypedUnit], concealed: Bool, settle: Boo
     if !concealed { meta.entered = 0 }
     throw typeUnconfirmed(.selectionChanged)
   }
+  // B, the read-back's origin (#414): the instant the last key event was posted, on the read-back's clock, taken where
+  // the posting stamps `endedAt` (`InputMeta.posting`), so its cutoff counts from what an observer sees; the
+  // key-ups, pauses and work after it never move it.
+  var lastPost: Double?
   try keyText(units, concealed: concealed, checkSource: checkSource, beforeUnit: readback.beforeUnit,
-              checkIntervention: checkIntervention, post: post, pause: pause, meta: &meta)
-  try readback.finish()
+              checkIntervention: checkIntervention, post: { event in
+                guard post(event) else { return false }
+                lastPost = reads.now()
+                return true
+              }, pause: pause, meta: &meta)
+  try readback.finish(postedAt: lastPost)
+  // #414, ruling 833: a password field's success says what its length proves and what it cannot, once a length check
+  // confirmed; keys alone confirm none.
+  if readback.record.secure, readback.record.lengthConfirmed { meta.note = readbackLengthNote }
 }
 
 /// The text the excerpt shows the model: quoted, with its newlines, tabs, quotes and other control characters escaped.
@@ -783,8 +1061,11 @@ func readbackQuoted(_ text: String) -> String {
 }
 
 /// `typeUnconfirmed`: the text was sent, the field does not read as expected or cannot be read, so some of it may have
-/// gone in; the remedy is to observe, then setValue. A mismatch shows the excerpt; nothing else shows a value.
-func typeUnconfirmed(_ reason: TypeReadbackReason, excerpt: ReadbackExcerpt? = nil, beforeKey: Bool = false) -> EngineError {
+/// gone in; the remedy is to observe, then setValue. A mismatch shows the excerpt; nothing else shows a value. `secure`
+/// is a password field's record: one that could not be classified (`fieldUnreadable`, or `roleUnreadable` at its
+/// snapshot) may have stopped being one, so it takes `noLongerSecure`'s remedy (the reviews of 4a005a8c..a1939d2f, P1-4,
+/// and a1939d2f..e8e2702e, 4); a plain field's keeps its own.
+func typeUnconfirmed(_ reason: TypeReadbackReason, excerpt: ReadbackExcerpt? = nil, beforeKey: Bool = false, secure: Bool = false) -> EngineError {
   if reason == .selectionChanged {  // #359: answered before anything is typed
     return EngineError(name: "typeUnconfirmed",
       "Nothing was typed: the field's selection is no longer the one selectText made (a click sent just before can land after it and move the caret), so the text would have gone elsewhere. Observe the app (take a screenshot or call getAXState()) first, then select the text again before typing.")
@@ -794,9 +1075,19 @@ func typeUnconfirmed(_ reason: TypeReadbackReason, excerpt: ReadbackExcerpt? = n
   case .valueMismatch: why = "the field does not read as expected"
   case .concealedMismatch: why = "the field does not match what was typed"
   case .unchanged: why = "nothing shows the field took the text: it reads as expected, but its caret did not move past the text"
-  case .secure, .becameSecure: why = "the field is a password field, which is never read back"
+  case .secure: why = "the focused element is a secure element that is not a text field, which is never read back"
+  case .becameSecure: why = "the field turned into a password field while the text was typed, so it was read no further"
+  case .lengthUnreadable: why = "the password field's length could not be read, and its text never is"
+  case .selectionUnreadable: why = "the password field's selection could not be read while it held text, so its length cannot show what the text replaced"
+  case .lengthMismatch: why = "the password field's length or caret is not what the text should have made it, so a character may have been dropped or added, or the text gone in elsewhere"
+  case .caretMismatch: why = "the password field's caret is not right after the text, so the text may have gone in elsewhere"
+  case .noLongerSecure: why = "the password field turned into another kind of field while the text was typed, so it was read no further"
   case .noFocusedElement: why = "no focused field could be found to read back"
   case .notTextField: why = "the focused element is not a text field"
+  // A password field that could not be classified may have stopped being one (the reviews of 4a005a8c..a1939d2f, P1-4,
+  // and a1939d2f..e8e2702e, 4).
+  case .fieldUnreadable where secure, .roleUnreadable where secure:
+    why = "the password field could not be read, so it may no longer hide its text"
   case .roleUnreadable, .fieldUnreadable, .valueUnreadable, .rangeUnreadable: why = "the field's text could not be read back"
   case .possiblyTruncated: why = "the field holds more text than accessibility reports in full"
   case .fieldChanged: why = "the focused field changed while the text was typed"
@@ -804,7 +1095,17 @@ func typeUnconfirmed(_ reason: TypeReadbackReason, excerpt: ReadbackExcerpt? = n
   }
   let sent = beforeKey ? "The text before a Return or Tab was typed, but \(why), so the key and the text after it were not sent. Some of the text may have gone in"
     : "The text was typed, but \(why), so it is not confirmed and some or all of it may have gone in"
-  var message = "\(sent). Observe the field with getAXState() before going on, then use setValue to put it right; do not type the text again."
+  // A password field's (#414): an observation shows only that it is one, its text never. One that stopped being a
+  // password field (a show-password toggle) may now show its text to either observation.
+  let remedy: String
+  if reason == .noLongerSecure || (secure && (reason == .fieldUnreadable || reason == .roleUnreadable)) {
+    remedy = "The field may now show its text, so if it holds a secret, do not take a screenshot of it or call getAXState(); put it right with setValue, and do not type the text again."
+  } else if [.lengthUnreadable, .selectionUnreadable, .lengthMismatch, .caretMismatch].contains(reason) {
+    remedy = "Observe the field before going on (a screenshot shows its masked characters; getAXState() shows only that it is a password field), then use setValue to put it right; do not type the text again."
+  } else {
+    remedy = "Observe the field with getAXState() before going on, then use setValue to put it right; do not type the text again."
+  }
+  var message = "\(sent). \(remedy)"
   if let excerpt {
     message += " From character \(excerpt.start + 1), expected \(readbackQuoted(excerpt.expected)); the field reads \(readbackQuoted(excerpt.actual)). The expected text is \(excerpt.expectedLength) characters long, the field's \(excerpt.actualLength)."
   }

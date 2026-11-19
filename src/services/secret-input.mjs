@@ -72,8 +72,19 @@ export function readFailure(error, label) {
   return code ? new SecretInputError(code, `${error.message}; ${NOTHING_ENTERED}`) : unavailable(error.code);
 }
 
+// #414: cua's engine typed a secret into a password field that stopped being one meanwhile (a show-password toggle), so
+// the field may now show it; the engine's sentence that says so is withheld with the rest. Read from the read-back
+// record's reason alone, compared with the one literal, never from or with the runtime's text; the caller passes it only
+// when something was typed, since a field nothing was typed into holds none of the secret. A password field's record
+// (`secure` true) whose reason is fieldUnreadable or roleUnreadable warns too: the engine could not classify the field,
+// so it cannot tell that it is still one (#414, the reviews of 4a005a8c..a1939d2f, P1-4, and a1939d2f..e8e2702e, 4).
+const MAY_SHOW = 'The password field may have stopped being one while the secret was typed, and may now show it: do not take a screenshot of it or call getAXState(); put it right with setValue. ';
+export const secretMayShow = meta => isPlainObject(meta) && isPlainObject(meta.typeReadback)
+  && (meta.typeReadback.reason === 'noLongerSecure'
+    || ((meta.typeReadback.reason === 'fieldUnreadable' || meta.typeReadback.reason === 'roleUnreadable') && meta.typeReadback.secure === true));
+
 // After the value was read and handed to the vendor: a fixed classification of what went wrong, never its text.
-export const inputFailed = (what, label, kind) => new SecretInputError('secret_input_failed', `${what} with secret "${label}" failed (${kind}) after the secret was read; it may have been partly entered. The runtime's error is withheld because it can contain the secret`);
+export const inputFailed = (what, label, kind, mayShow = false) => new SecretInputError('secret_input_failed', `${what} with secret "${label}" failed (${kind}) after the secret was read; it may have been partly entered. ${mayShow ? MAY_SHOW : ''}The runtime's error is withheld because it can contain the secret`);
 // The same failure when the runtime reports nothing posted (cua's engine: the error's input meta with startedAt null).
 export const inputFailedUnentered = (what, label, kind) => new SecretInputError('secret_input_failed', `${what} with secret "${label}" failed (${kind}) after the secret was read, and ${NOTHING_ENTERED}. The runtime's error is withheld because it can contain the secret`);
 
@@ -86,6 +97,10 @@ export const inputFailedUnentered = (what, label, kind) => new SecretInputError(
 const INTERVENED = {
   stillInteracting: 'the user is still interacting with the app; wait 5 seconds and retry',
   userChanged: 'the user changed the app; re-query its state (getAXState) before sending more actions',
+  // A changed app whose password field may now show the secret (secretMayShow): re-querying it would read the secret,
+  // and the intervention gate wants a fresh observation before a setValue, so the one instruction is the user's first
+  // (the review of f35a42b8..cbce12e2, P1).
+  userChangedMayShow: 'the user changed the app; ask the user to hide or clear the password field before re-querying the app\'s state, and before any setValue',
 };
 // Which of the two a runtime's message is, read from the sentence's fixed opening only; null for anything else.
 export function interventionKind(message) {
@@ -94,7 +109,12 @@ export function interventionKind(message) {
   if (message.includes('The user changed \'')) return 'userChanged';
   return null;
 }
-export const userIntervened = (what, label, kind, unentered) => new SecretInputError('secret_input_failed', `${what} with secret "${label}" failed (userIntervened) after the secret was read: ${INTERVENED[kind]}; ${kind === 'stillInteracting' || unentered ? NOTHING_ENTERED : 'it may have been partly entered'}. The runtime's error is withheld because it can contain the secret`);
+export function userIntervened(what, label, kind, unentered, mayShow = false) {
+  const entered = kind !== 'stillInteracting' && !unentered;
+  const shows = entered && mayShow;
+  const instruction = shows && kind === 'userChanged' ? INTERVENED.userChangedMayShow : INTERVENED[kind];
+  return new SecretInputError('secret_input_failed', `${what} with secret "${label}" failed (userIntervened) after the secret was read: ${instruction}; ${entered ? 'it may have been partly entered' : NOTHING_ENTERED}. ${shows ? MAY_SHOW : ''}The runtime's error is withheld because it can contain the secret`);
+}
 
 // cua's native engine refused a concealed request before entering anything (its concealedInputUnavailable): a secret is
 // never pasted, so a concealed paste is refused whatever the input source, and a concealed type_text is keyed only under

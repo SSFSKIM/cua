@@ -5880,6 +5880,728 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      into an absence. Three positive controls show ruling 824's test can see a leak: the start marker's offset, decoded
      from its bytes and written in turn to stderr, into the error sentence and into the read-back's record, each fails it.
   Date/Author: 2026-11-18, cursor235's implementer for #395 (ruling 1ea561bc:824).
+- Decision (#414, design rulings 1ea561bc:826, 833, 839 and 842, 2026-11-18, `fix/414-secure-type-confirm`; ruling 808's paste
+  rule ("#405's review", item 8) applied to type_text; amends "#354", whose snapshot refused a password field unread
+  (`secure`), and "#395" item 2(c), whose route refused one): **type_text into a password field is confirmed by its
+  length, never its value, and its success says that is all it proves.** The read-back refused a secure field, so a
+  `{{secret:…}}` typed into a login form, the main use of secrets, answered `typeUnconfirmed` whether or not every
+  character landed. TypeReadbackLength.swift holds the rule; TypeReadback.swift takes the snapshot and confirms.
+  1. **What a password field is** (`readbackPasswordField`): a field #405's classification (`valueClassification`)
+     finds secure, with its role read and a field's role: AXSecureTextField by role or subrole, or a text-entry role
+     whose subrole cannot be read (ruling 813's presumption). An unreadable role still refuses `roleUnreadable`. Any
+     other element the classification closes is refused unread as before (`secure`, its sentence now "a secure element
+     that is not a text field"); `becameSecure` keeps a text field that turns secure. Safari's marker route (#395)
+     classifies such an element `.password` and claims it as it claims a text field, after its own AXFocused and its
+     place under the web area; a closed element that is not a field still ends the lookup unread. #354's walk already
+     claimed AXSecureTextField. The lookup's finding is carried to the snapshot (the review of 517ab543..bdfbcfb2,
+     P1). A field that the marker route, or the walk by its role, found to be a password field, and that the snapshot's
+     own role and subrole then find is not one (a show-password toggle landing between them), is refused
+     `noLongerSecure` and read no further, as the poll refuses one. Its value is never read as a text field's. The
+     lookup's finding makes the record a password field's at once, whatever the snapshot's own reads then find (the
+     review of 81a1aebc..52f0109a, P2): a role read that then fails is `roleUnreadable` with `secure: true`, never the
+     plain record with its reads and poll time.
+  2. **What is read.** After the role and subrole that classify it, a password field is read only by one batch of
+     AXRole, AXSubrole, AXSelectedTextRange and AXNumberOfCharacters (`readbackLengthAttributes`, the list paste's
+     effect reading takes), classified from that same reply (ruling 811's batch rule, `readbackLength`): before the
+     first event, at every poll, in the settle and in #359's wait. Never AXValue, AXValueDescription, AXSelectedText or
+     any parameterized attribute. The count and range stay in the plan (`ReadbackLengthBasis`) and the reads that
+     compare them: never formatted, logged, cached, kept on the record or emitted. The app answers a batch in one turn
+     of its accessibility server, so the caret comes from the same state as the count it qualifies. The plain path's
+     "a value read after the caret read" (the review of dad56362..af1860ef, P1) is met by the same reply, with no
+     second read.
+  3. **Units**: UTF-16 code units. AXNumberOfCharacters is an NSString's length on every provider's Cocoa side, and
+     the expected count mixes it with AXSelectedTextRange, which #354 measured in UTF-16. It is also paste's unit
+     (`deliveredUnits`). A typed unit counts its UTF-16 units (`readbackLengthUnits`). A Return's unit is one CR (a CR
+     LF too), which a field that takes it as text counts as one newline; in a single-line field it is a key that adds
+     nothing. Not measured: non-BMP text in a masked field. A provider that counted a masked surrogate pair as one
+     would answer `lengthMismatch`, which fails closed. The qualification carries an emoji row.
+  4. **The starting point**, one decision (`readbackLengthBasis`):
+     - A count read that failed allows nothing (`lengthUnreadable`). That includes the snapshot's own read before any
+       settle (the review of 517ab543..bdfbcfb2, P2): a failed read followed by an absent one compared as agreeing,
+       and the confirmation then stood on the caret alone, which ruling 839 forbids. A float CFNumber is a failure,
+       since `-0.5` would truncate to 0 (same review, P2).
+     - A count, or a caret basis's location, above `Int32.max` is no field's and allows nothing (same review, P2). An
+       `{NSNotFound, 0}` range would otherwise trap the engine on adding the typed units.
+     - A count above that limit is a failed read in `readbackLength` itself, as a negative or float count is (the
+       review of 81a1aebc..52f0109a, P2). Checked only at the basis, an `NSNotFound` count at the snapshot, then absent
+       counts in the settle beside a stable empty selection, ended on the caret's basis and could confirm, while the
+       same read without the settle was `lengthUnreadable`. The snapshot's refusal of a failed count, the settle's and
+       the poll's now all take it as one. The basis keeps its count guard as a stated invariant, and its bound on a
+       caret's location.
+     - A count allows its own confirmation with a range that lies inside it.
+     - A count with no range confirms only from an empty field, where nothing can be replaced and the caret can only
+       sit at 0. Otherwise the snapshot answers `selectionUnreadable`, as does a range outside the count. A snapshot
+       refusal still sends the keys, as every refusal does.
+     - **Ruling 839**: a field with no count at all is confirmed by its caret alone. That needs a selection read and
+       empty, and the caret must move from {location, 0} to exactly {location + typed, 0}. It keeps the same strength
+       (`confirmation: "length"`), the same batch and the same schedule, and each read must still answer no count. No
+       count means absent, split as the walk splits a read: the batch slot's error is noValue or attributeUnsupported
+       (`fetchAttributes`' `failedSlot`). A slot that failed, or holds anything but a non-negative CFNumber, is a
+       failure. No count with a non-empty selection, or with no range, stays `lengthUnreadable`. The ruling answers
+       #405's matrix: AppKit's NSSecureTextField answered no AXNumberOfCharacters there (probe/405-qual,
+       `scripts/probe-405/README-evidence.md`).
+  5. **The confirmation** (`readbackLengthJudged`). The count must be exactly the start's, less the selection, plus
+     the typed units. Whenever the snapshot read a range, the caret must also read {location + typed, 0} in the same
+     reply, whatever the selection held. That is stricter than the brief's rule, which asked for the caret only when
+     the selection spans the typed length (#354's `equalUnconsumed`). The design session approved it at the
+     checkpoint of 2026-11-18 because it closes an oracle. Under the conditional rule, a provider whose caret lags
+     would answer differently depending on whether a secret is as long as the selection the caller chose. The
+     concealed path took one schedule for the same reason (the review of a8e55870..8f465bf9, P2). The stricter rule
+     also catches text typed somewhere else in the field, as a late click can make it. Its cost: a provider whose
+     password-field caret does not track typing fails closed.
+     The poll is the value's own: `typeReadbackBudgetMs` and its interval. A count read that fails mid-poll is no
+     confirmation, and the poll goes on, as a failed value read's does: a later exact read confirms, and at the budget
+     the answer is `lengthUnreadable`. Each of these ends the poll at that read:
+     - a reply that is no longer a password field (a page's show-password toggle): `noLongerSecure`;
+     - a request that failed or a role that cannot be read: `fieldUnreadable`;
+     - another password role: `fieldChanged`.
+     After the poll, the "still the focused field" check is unchanged. A field the application's focus or the walk
+     found is looked up again that way. One #395's marker found is asked for its own AXFocused, with no marker call.
+     **Amended: the quiet window** (the hosted qualification's finding; ruling 1ea561bc:842, 2026-11-18). The poll
+     confirmed on the first reply that matched, and a reply can match before the field is done.
+     - **The defect.** An AppKit fixture puts an extra "z" in at the caret before the first typed key, so the final
+       field holds "z" and the whole text, its caret one past the text's end. The engine posts keys 250 µs apart
+       (Input.swift, the vendor's gap), so the poll begins while the app is still working through its event queue. The
+       app answers an AX batch on its main run loop between two queued keys. That reply held "z" and every key but the
+       last, its caret exactly at location + typed: the expected count and caret. It confirmed (`confirmation:
+       "length"`). Both bases were open to it, the count with its range and ruling 839's caret alone. The fixture cannot
+       fool the plain path, because its in-between value differs from the expected one. A plain field whose inserted
+       text coincides with the typed text can: literal `zz` typed into an empty plain field that prepends `z` reads
+       exactly `zz` before the last key lands, and #354's poll accepts it (the review of f35a42b8..cbce12e2, P3). That
+       is #354's, outside #414.
+     - **The window.** A reply that matches confirms only once the same reply has held for `typeReadbackLengthDwellMs`
+       (220 ms). The same means the same count and range; for the caret's basis, still no count and the same range. The
+       window is timed from the end of the matching read to the start of a later read that finds the same reply.
+     - **One cadence.** The window is read at the poll's own interval (`typeReadbackPollIntervalMs`, 5 ms), in the same
+       loop. The design session first approved a 50 ms window sampled every 10 ms; the 5 ms poll replaces the 10 ms
+       sample so a concealed request's schedule has one shape, whether or not a match came.
+     - **Inside the budget.** The window no longer runs past the 1 s budget. A match that cannot hold for the window
+       before the budget is unconfirmed, answering `lengthMismatch`. A genuine field must therefore finish taking the
+       text within 730 ms of the last post: the budget less the window and the 50 ms floor (below); wave 8 made it
+       680 ms, the budget less the window and one 100 ms slot. agent-cursor.md says so.
+     - **Ruling 842: one constant, sized from the qualification.** The window is one value for every lane, never one
+       per lane, and it is one line to change. The design session set it at 220 ms, three times AppKit's gap p99 of
+       72.6 ms (218 ms), from the hosted qualification's full run. Direct fixture edit gaps, scope "gaps ending after
+       the last post":
+
+       | Lane | p99 | max | n |
+       |---|---|---|---|
+       | AppKit | 72.6 ms | 448.5 ms | 269 |
+       | Chrome for Testing | 29 ms | 35 ms | 226 |
+       | Safari | 24 ms | 51 ms | 224 |
+       | parity Electron | 25 ms | 57 ms | 217 |
+
+       The default Electron lane was still pending. Every lane rejected 20 of 20 adds at 180 ms. If a lane's gap p99
+       times three exceeds 220 ms, the constant rises. It first stood at 50 ms, then 180 ms, and now 220 ms.
+     - **Why a change means a fault**: "A genuine field never moves away from a final match: once it has taken every
+       key nothing changes it, and before that none of its readings equals the expected one, because its caret has not
+       yet reached the end of the text (and, from an empty field read without a range, its count is still short of the
+       text's length). So a reading that matches and then changes means a character was added or dropped."
+     - **A literal request** ends its poll at a reply that leaves a held match, judged as any reply: `lengthMismatch`,
+       `caretMismatch`, or `lengthUnreadable` for a failed count. A changed reply that still judges confirmed differs
+       only in a range its basis never checks (an empty field read without one), and answers as a caret elsewhere.
+     - **Overshoot** (`readbackLengthOvershoots`) ends a literal request's poll at once, judged as any reply, in two
+       narrow forms. A caret whose location is past location + typed: a genuine caret rises from the selection's start
+       to there and never beyond. From a basis with nothing selected (an empty range, or an empty field read without
+       one), a count past the expected one. A failed count read is no evidence either way, and the poll goes on.
+     - **The count's form is narrowed.** Over a non-empty selection, a genuine field's count is the snapshot's own until
+       the app takes the first key, and that exceeds the expected count whenever the selection is longer than the text.
+       The rule would fail a genuine field there, and its timing would tell whether a secret is shorter than the
+       selection.
+     - **A concealed request's failure never ends before the budget, and its schedule never depends on the secret.**
+       Every overshoot form compares a reply with an expected count or caret that depends on the secret's length, and
+       whether a match comes and goes at all can depend on it too. Some fields would then fail early for one length
+       and not another: one that collapses a selection to its end without taking the text, or jumps its caret to the
+       end of its text. So a concealed request never ends on an overshoot. A reply that leaves a held match taints it:
+       it never confirms for the rest of the poll and polls on to the budget, its reason the last reply's (one that
+       judges confirmed answers `lengthMismatch`). A failed count inside a window taints it the same way.
+     - **The concealed timing, by construction** *(its fixed reply time, D, the padding and `lateReply` superseded by
+       wave 9, ruling 1ea561bc:851; B and the reason rule stay: kept as the record)* (the review of 1f69470e..f217f062, which found four ways the earlier
+       rounds' padding still leaked: (i) a focus read at a match moved the poll's start, (ii) a transient focus failure
+       latched the reason, (iii) a slow last batch pushed the final focus read past the deadline, (iv) the success
+       cutoff used a later origin than the padding). The earlier rounds (the review of f35a42b8..cbce12e2, P1; the
+       review of cbce12e2..1f69470e, P1 and P2) padded the reply to a deadline; this one makes the property hold by
+       construction, in five parts.
+       - **One origin, B: the last post.** Every time of the read-back counts from B, the instant the last key event
+         was posted successfully, the one `endedAt` stamps, taken on the read-back's monotonic clock in the post
+         closure `keyTextReadBack` passes. Nothing after it moves B: key-ups, the pauses, a settle, `finish()`'s own
+         work. Chrome for Testing's concealed negatives (all `lengthMismatch`) had answered 1105–1178 ms after the
+         last native post against a nominal 1100 ms (p50 1163 ms, 8 of 15 past 1150), because the deadline counted
+         from `finish()`'s start. From B, the poll's cutoff C = B + `typeReadbackBudgetMs` (1000 ms), which is also the
+         final focus read's start, and the reply deadline D = C + `typeReadbackFocusReadCapMs` (100 ms): 1100 ms.
+         `finish` takes B once and passes C and D down; nothing below takes its own start, so a focus read at a match
+         moves nothing (i), and success and failure share B (iv). A literal checkpoint keeps its own C from its start.
+       - **Bounded work** (iii). *Superseded by wave 8, which removed the bound: kept as the record.*
+         The timeout fact, corrected: every element has a 1 s AX messaging timeout
+         (`elementMessagingTimeout`), the read-back's own elements 100 ms (`typeReadbackMessagingTimeout`), and
+         neither bounds a read by a deadline. The read-back now bounds its own reads as paste does
+         (`boundedMessagingTimeout`, `effectReading`): under `ReadbackReads.bound`, an AX call is sent only while
+         time is left to its limit, under a messaging timeout of the time left (100 ms at most), the usual one put
+         back after; a call not sent fails as a timeout does. The poll starts a read only with
+         `messagingTimeoutFloorMs` (50 ms) left to its limit; the floor schedules reads and never suppresses a
+         slot's read (wave 7, below). A literal request's batches run to C and stop at the floor: its failure ends at
+         950 ms.
+       - **The reason, from observations every failure makes** (ii; `readbackConcealedReason`). Every concealed path
+         ends in the same two observations: its final batch, and the final focus read at C, a closed read's path
+         included. In order (wave 7's rule): a final batch closed `noLongerSecure` answers `noLongerSecure`, whatever
+         the focus read found, so the wrapper's warning that the field may show the secret, and the native advice, are
+         never lost when the focus moved too; then a focus read that found the focus moved answers `fieldChanged`;
+         otherwise, the focus focused or unknown, a closed final batch gives its own reason, an unreadable one (or
+         none) `lengthUnreadable`, and any other `lengthMismatch`. A focus failure at a match only taints the request.
+         A snapshot refusal after posting keeps its own reason (`lengthUnreadable`, `selectionUnreadable`,
+         `noLongerSecure`, a held field's `roleUnreadable` and the rest) and answers at D. That is intended: the
+         reason is decided at the snapshot, before any key, so it cannot depend on the secret. `selectionChanged`
+         posts nothing and stays immediate. The fixed deadline covers failures found after delivery completed;
+         failures found during delivery (an input-source change, an intervention, an event not made) throw past
+         `finish` and answer at once, #354's delivery-failure path, which predates #414 and is not specific to
+         password fields, so they are excluded here and tracked as their own ticket.
+       - **A fixed reply time, and `lateReply`.** *Superseded by wave 9 (ruling 1ea561bc:851): kept as the record.* Every concealed failure after posting waits until D against the
+         monotonic clock, sleeping the remainder, so an early wake cannot end it. A reply sent more than
+         `typeReadbackWakeToleranceMs` (10 ms, the scheduler jitter allowed) past D, after a read that overran its own
+         timeout or a padding sleep that woke late, carries `lateReply: true` in the secure record, a fixed flag with
+         no duration (wave 7: the flag was first decided only on arrival, so an oversleep went unflagged). A concealed
+         success still ends early, once its match has
+         held and its focus read passes: deferring every secret would slow every login to buy nothing the caller can
+         see. A plain field's concealed request is #354's and is not deferred.
+       - **Success eligibility uses C.** A read counts toward a success only if it finished by its limit; its window
+         is timed from read starts. A match off the 5 ms grid, a late wake (for a literal request), or a batch that
+         starts by 950 ms and returns after C, is unconfirmed (`lengthMismatch`), as a match too late to hold is,
+         plain and concealed.
+     - **Wave 7: fixed final slots and a focus that cannot answer** (the review of f217f062..45172367, findings 1, 2,
+       3 and 5; finding 4 is the delivery-time path above; and the hosted runs on 45172367, where about a third of
+       the concealed exact add and drop controls, on every lane, answered `fieldChanged` in fields that never lost
+       focus, against 0 of 15 per lane on f217f062).
+       - **Fixed final slots** (1, 2). *Superseded by wave 9 (ruling 1ea561bc:851): kept as the record.* A focus check at a match could take the final focus read's time and change
+         which batch was final. A concealed request's two final observations now have fixed slots from B alone,
+         independent of any match: the final batch at C − the floor (950 ms), bounded by C, and the final focus read
+         at C. The regular batches, and a focus check at a match, end by the final batch's slot (the last regular
+         batch starts by 900 ms); a check that cannot start with the floor left before the slot is not made, and the
+         final batch and the final focus read then decide the early success as well. No other read takes either slot.
+         A closed regular reply ends the regular batches and taints the request; the final batch is still read at its
+         slot. The allowance is unchanged: a match taken by 730 ms holds by the final batch.
+       - **The final focus read's own budget.** *Superseded by wave 8's slots: kept as the record.*
+         It starts at C with the cap, 100 ms, which nothing before C can take:
+         its calls are bounded by D, or, if a read before it overran past C, by its own start + the cap, the reply then
+         late and flagged. A call in a slot is sent while any time is left, so a sleep that wakes a little late never
+         suppresses it; the floor gives way, not the read.
+       - **A tri-state focus** (`ReadbackFocus`, `readbackStillFocused`). Only a positive answer is a moved focus:
+         another element named, no element found by a lookup that finished, or the field's AXFocused false or absent.
+         A check that could not finish is unknown: a call not sent for lack of time, a call that answered
+         `cannotComplete` (a messaging timeout's error), or a walk left unfinished (its node, time or depth bound, or
+         a failed read). Unknown is no evidence either way: it bars success (it never confirms) and the reason comes
+         from the final batch, `noLongerSecure` first. A literal password-field request's focus check takes the same
+         rule: unknown is unconfirmed with its length reason, never `fieldChanged`. A plain field's check (#354's) is
+         unchanged: anything but focused is `fieldChanged`.
+       - **The root cause on 45172367.** The final focus read was the success path's own check (`stillFocused`, the
+         same lookup, the same `CFEqual` against the snapshot's handle, the same `found`); what changed was the bound
+         wave 6 put on it. Its calls were sent only with the 50 ms floor left to D, and a call not sent answered as a
+         failed read, which the lookup took for no field and the reason rule for a moved focus. Any read before it that
+         returned past C + 50 ms (the final batch, whose messaging timeout is the shortest, about 50 ms, or a late
+         wake) left it unsent: `fieldChanged`, and on time, since the reply was then padded to D, which fits 45 of the
+         78 such controls answering on time. It also fits 78 of 150 concealed controls against 0 of 75 literal ones on
+         the same fields: both kinds' last batch is bounded alike and returns as late, but the literal check after it
+         is unbounded, so only the concealed read was refused. The final focus read now has its own budget and is never
+         suppressed by the floor, and a read that cannot be made or finished is unknown.
+       - **The focus paths' reads.** A field the application's focus found (`.focus`): AXFocusedUIElement on the
+         application, one call; if that answers no element or fails, AXFocusedWindow, else AXMainWindow, then the walk
+         of that window, breadth first, each node's AXRole, a text-entry leaf's AXFocused, and every other node's
+         AXChildren, within 200 nodes, depth 12 and 40 ms: a walk-found field makes this whole walk again, up to a few
+         hundred calls. A field the marker route found (`.marker`): the field's own AXFocused, one call, nothing
+         before it. Each call's messaging timeout is the time left to the bound, 100 ms at most.
+     - **Wave 8: fixed 100 ms slots** (the hosted runs on 2e011dbf, all five lanes). Wave 7 took `fieldChanged` from 78
+       of 150 concealed controls to 0 of 150, and kept positives at 100 of 100, false adds at 0 and privacy at 0; but
+       `fieldUnreadable` came on 62 of 150 concealed controls and `lateReply` on 138 of 155 replies.
+       - **The diagnosis.** (a) The final batch started at C − 50 ms with its messaging timeout shrunk to the time left,
+         50 ms at most; a batch in a background app takes tens of milliseconds live, so it timed out, and a failed batch
+         is `.closed(.fieldUnreadable)`. (b) A messaging timeout is the caller's: the app goes on with the request, so
+         the next one, the final focus read, waits behind it; wave 7 gave that read its own start + the cap, so once the
+         final batch returned after C the reply passed D + 10 ms. Shrunk timeouts make reads time out, and reads that
+         timed out make the next ones slow. The stub now models (b): a request that times out leaves the app the rest of
+         its work, which the next request waits behind.
+       - **The simplification.** No timeout is shrunk and nothing is bounded: every read runs under the read-back's
+         standard element timeout, `typeReadbackMessagingTimeout`, T = 100 ms, as on f217f062. The live wrapper's
+         per-call timeouts, its floor refusal and its `until` bound are gone, with `ReadbackReads.bound` and
+         `ReadbackAX.setTimeout`; `messagingTimeoutFloorMs` and `boundedMessagingTimeout` stay in AX.swift for paste
+         alone. What three-state focus needs stays: a call answering `cannotComplete`, or a walk left unfinished, makes
+         the focus check unknown.
+       - **The slots,** *Superseded by wave 9 (ruling 1ea561bc:851): kept as the record.* Sized to T so a read that takes all of its timeout still ends in its slot: no regular batch, and
+         no focus check at a match, starts after C − 2T (800 ms), so each ends by C − T; the final batch starts at
+         C − T (900 ms) and the final focus read, the success path's own unbounded check, at C; D = C + T, so
+         `typeReadbackFocusReadCapMs` is 100 and must equal T (a test pins it). The reply waits until D on the
+         monotonic clock, and `lateReply` is decided after that sleep with the 10 ms tolerance. A literal request's
+         batches start by C − T, then its unbounded focus check, as before; its full poll now ends at 900 ms.
+       - **The allowance is 680 ms** *(re-derived by wave 9: E − T − the window)*: the final batch's slot less the window (900 − 220), since a match taken by then
+         holds by the final batch, which decides a success with the final focus read; a literal request's last batch is
+         at 900 ms as well. agent-cursor.md says so. (The brief's 580 ms, C − 2T − the window, would hold only if the
+         final batch could not confirm.)
+       - **The residuals.** *Superseded by wave 9 (ruling 1ea561bc:851): kept as the record.* A read that overruns its 100 ms slot pushes the next one later; the reply is flagged
+         `lateReply` once it passes D + 10 ms. A walk-found field's walk that cannot finish within its own bounds
+         (40 ms, 200 nodes, depth 12) or meets a read that times out is unknown.
+       - **Live result** (run 44386516599 on 405b63b3, all five lanes;
+         `docs/evidence/2026-11-18-secure-type-confirm/README.md`). On the exact controls, `fieldUnreadable` and
+         `fieldChanged` were 0 of 150, false adds 0 of 150, and privacy 0. Positives were 100 of 100, and short and
+         long secrets answered the same reasons. `lateReply` was still on 137 of 155 failures, arriving 1111–1186 ms
+         after the last post. Reply time reaches only `_meta`, so it stays informational (the residuals, below). Which
+         read overruns live, and whether to re-time the slots or drop the uniform time, is #423.
+       - **Tests.** A second property run, `testExactControlsAnswerLengthMismatchOnTimeAtLiveCosts` (seed 0x414F218,
+         2000 cases, two secrets of different lengths into one field each): batch reads cost 20 to 90 ms and focus reads
+         10 to 90 ms, within T, each a function of the read's time; a genuine field confirms, and an exact add or drop
+         answers `lengthMismatch` at D, never `fieldUnreadable`, `fieldChanged` or `lateReply`; both secrets answer
+         alike. On 2e011dbf every one of its exact controls answered `fieldUnreadable`. The first property run (seed
+         0x414F217) is kept. Restated for the slots, since they assumed wave 6's and wave 7's shrunk timeouts or bound:
+         (iii) `testASlowLastBatchCannotPushTheReplyPastTheDeadline` (90 ms batches from 760 ms and a 90 ms focus read
+         now answer the lost match's `lengthMismatch` at D, where the bound had cut the final batch to
+         `fieldUnreadable`); (iv) `testTheSuccessCutoffAndTheFailureDeadlineShareTheBoundary` (a final batch taking
+         100 ms confirms at C, one taking 101 ms times out);
+         `testTheFinalBatchAndFocusReadKeepTheirSlotsWhateverAMatchDoes` (matches at 580, 600 and 590 ms, a change at
+         850 ms); wave 7's budget test, renamed
+         `testAReadThatOverrunsItsSlotPushesTheNextLater` (a final batch taking 100, 150 or 230 ms: on time, on time,
+         late); a slow focus read now set only after posting, since the snapshot's lookup has the same timeout; and the
+         unknown-focus test's timed-out read now covers literal requests too. The read past the cutoff starts at 900 ms.
+     - **Wave 9: one poll, and a failure answers when it is known** (ruling 1ea561bc:851, 2026-11-18; the review of
+       4a005a8c..a1939d2f). Ruling 851 drops the fixed-deadline, fixed-slot schedule. The live runs on 405b63b3 missed
+       the fixed time on 137 of 155 failures, and the review found two false oks it made: a hold completed across the
+       unsampled final slot, and a passing focus check finishing after the deadline.
+       - **Removed**, each needed only to fix a failure's time: D and the padding sleep; `lateReply`, its wire key and its
+         10 ms tolerance (`typeReadbackWakeToleranceMs`); `typeReadbackFocusReadCapMs`; the fixed final batch and final
+         focus read; the regular reads' bound of C − 2T; the focus check's slot condition; a concealed refusal answered
+         at D.
+       - **The rule.** E = B + `typeReadbackBudgetMs` is the cutoff; a literal checkpoint takes its own start + the
+         budget. One poll serves literal and concealed requests alike. A batch starts only while E − now ≥ T, every
+         5 ms. T is `typeReadbackMessagingTimeoutMs`, `typeReadbackMessagingTimeout` in ms rounded off its Float: 100.
+         A match confirms only on a hold whose start and end are both sampled reads, at least 220 ms apart, the closing
+         read ending by E. At a hold the engine makes one focus check (`fieldFocused`):
+         - focused, completed by E: it confirms;
+         - moved: `fieldChanged` at once;
+         - unknown, or completed after E: nothing is confirmed, and the poll goes on, the next hold checking again.
+       - **Exits and reasons.** A closed reply ends the poll. A change or an overshoot ends a literal poll; a concealed
+         one is tainted and polls on to E. That keeps catching a show-password toggle until the end and keeps concealed
+         failure times more uniform, at no extra cost. After a poll with no success, a literal request reads its focus
+         once (moved is `fieldChanged`) and otherwise answers its last batch's reason. A concealed one answers
+         `readbackConcealedReason` of its last batch and one focus read, which it skips when that batch closed
+         `noLongerSecure` or `fieldUnreadable`. A refusal after posting answers at once.
+       - **What stays, none of it depending on timing:**
+         - `noLongerSecure` first, now followed by `fieldUnreadable`;
+         - the three-state focus;
+         - no `caretMismatch` for a concealed request;
+         - the literal-only exits and the taint;
+         - the quiet window.
+       - **The allowance, re-derived.** The closing read starts by E − T, so the match must be read by
+         E − T − 220 = 680 ms of B. agent-cursor.md's "within 680 ms" stands, and a test pins it: a field that takes the
+         text at 680 ms confirms, and one that takes it at 681 ms does not.
+       - **The documented limit.** A failure's time can depend on the text typed. agent-cursor.md, the docs oracle, the
+         core-documentation test and the surface inventory's #414 quote now say so after the 680 sentence, byte for
+         byte: "When it fails, how long it took can depend on the text typed, a `{{secret:…}}` included." Reply time
+         reaches only `_meta`, and its limit is tracked as #423. Wave 11 (ruling 1ea561bc:856) extends the sentence to
+         the failure's reason as well (below).
+       - **The findings.**
+         - P1-1, a hold completed across the unsampled final slot, and P1-3, a passing focus check finishing after the
+           deadline, are fixed by the rule change. There is no unsampled slot, and a success's focus check must
+           complete by E.
+         - P1-2, the focus lookup bounded per call rather than as a whole: a password field's focus check after typing
+           is one AX call (`readbackFieldFocused`), chosen by how the snapshot found the field.
+           - A field the application's AXFocusedUIElement named is asked that again. An absent, failed or timed-out
+             answer is unknown, with no fallback to the window or a walk.
+           - A field the walk found (`ReadbackLookup.walk`, new; it found the field by AXFocused true), or the marker
+             route found, is asked for its own AXFocused.
+           - #354's plain path keeps `stillFocused`. The `ReadbackStarved` flag and the walk's `unfinished` callback
+             are gone.
+         - P1-4, the exposure advice lost when the final classification failed: the reason order above. A password
+           field's `fieldUnreadable` now takes `noLongerSecure`'s may-show remedy natively, its sentence saying "the
+           password field could not be read, so it may no longer hide its text". The wrapper's `secretMayShow` warns
+           for it when the record's `secure` is `true`. A plain field's `fieldUnreadable` keeps its advice. The warning
+           is conservative: a field that could not be classified is treated as one that may show its text. The
+           wrapper's sentence now says the field "may have stopped" being one, since for `fieldUnreadable` that is not
+           known.
+         - P2, a failed marker focus read becoming `.moved`: the field's own AXFocused answering another AX error or
+           the wrong type is now unknown (`readbackFieldsAXFocused`).
+         - P2, the literal overrun test never reaching the overrun: its edit now comes before the first read, so the
+           literal request polls to the overrunning last batch, and the test asserts the clock passed its cost. A new
+           test also has a closing read, or its focus check, end 1 ms past E, which confirms nothing.
+         - P3, the tests' retain cycles: the property runs' closures, and the new tests', capture the stub
+           `unowned`.
+       - **Tests (moved and removed).**
+         - Removed with the schedule: `testEveryConcealedFailureAfterPostingAnswersAtOneDeadline`, which became
+           `testAConcealedFailureAfterPostingAnswersWhenItIsKnown`. Each kind now answers when it is known:
+           - a held match with a moved focus at the window plus its check (260 ms);
+           - a closed read at that read (10 ms);
+           - a lost match or a failed count at the last batch plus its focus read (940 ms);
+           - a refusal at once (0).
+         - Also removed:
+           - `testAHeldMatchWhoseFocusFailsReadsAsALostMatchWithOneFocusReadMore`, since a moved focus at a hold now
+             answers at once;
+           - `testTheDeadlineIsWaitedForAgainstTheClock`;
+           - (i) `testAFocusReadAtAMatchDoesNotMoveTheCutoff`;
+           - (ii) `testATransientFocusFailureDoesNotChooseTheReason`, since a focus moved at a hold is `fieldChanged`
+             at once, where it was `lengthMismatch`;
+           - (iii) `testASlowLastBatchCannotPushTheReplyPastTheDeadline`;
+           - `testAReplyAfterTheDeadlineIsFlaggedLate`, which became `testAnOverrunAddsNoTimeToTheRecord`;
+           - `testTheFinalBatchAndFocusReadKeepTheirSlotsWhateverAMatchDoes`;
+           - `testAPaddingThatWakesLateIsFlaggedLate`.
+         - Rewritten:
+           - (iv) became `testAClosingReadOrFocusCheckThatEndsPastTheCutoffDoesNotConfirm`, literal and concealed. A
+             closing read ending at E confirms; one ending 1 ms past it, or whose check does, does not.
+           - `testTheDeadlineCountsFromTheLastPost` became `testTheCutoffCountsFromTheLastPost`, which keeps only the
+             last batch: by 900 ms, within an interval of it.
+           - `testAReadThatOverrunsItsSlotPushesTheNextLater` became
+             `testASlowOrOverrunningLastBatchStillEndsOnTheFocusRead`.
+         - Unified for concealed and literal: the last batch is at 900 ms, a concealed poll reads 181 batches as a
+           literal one does (162 before), and a concealed closed read ends at that read, 5 batches (6 before). A late
+           wake into the closing read now leaves a concealed request unconfirmed too.
+         - The rule's unit cases: a `fieldUnreadable` last batch with a moved focus is `fieldUnreadable`, where it was
+           `fieldChanged`. TypeReadbackMarkerTests' held field's `roleUnreadable` answers at once.
+         - New:
+           - the reviewer's field (a match at 680 ms, a mismatch 810–885 ms, a match again), unconfirmed both ways;
+           - a hold whose check answers focused at 1130 ms, unconfirmed;
+           - a check that times out, then the next hold's check confirming;
+           - a focus moved mid-typing, which answers `fieldChanged` from the poll-end focus read for both kinds;
+           - P1-4's natively, with services-sky's three cases;
+           - the one-call checks, the application's (`callsAfterPost`) and TypeReadbackMarkerTests' AXFocused on the
+             marker and walk paths.
+         - The property runs drop every timing assertion (reply time, D, `lateReply`). They keep outcome and reason
+           equality between two secrets and add that every call after posting but the batch is the application's
+           focus:
+           - `testConcealedTimingAndReasonsHoldOverRandomCases`, seed 0x414F217, 2000 cases, 4000 runs: 1898
+             successes, 2102 failures, 47 overrun cases. Each success's closing read starts with T left, and it and its
+             check end by E. Each failure's reason follows from its last batch and the focus read after it.
+           - `testExactControlsAnswerLengthMismatchAtLiveCosts`, renamed from `…OnTimeAtLiveCosts`, seed 0x414F218,
+             2000 cases, 4000 runs: 1332 genuine, all confirmed, and 2668 controls, all `lengthMismatch`.
+         - Mutants, each caught:
+           - a focus check after E counted;
+           - a closing read after E counted;
+           - batches started until E;
+           - a concealed moved focus at a hold not answered at once;
+           - a literal request skipping its poll-end focus read.
+     - **Wave 10: a concealed reason from one final batch** (the review of a1939d2f..e8e2702e, 2026-11-18; six
+       findings verified). Each was a way the secret could still choose a concealed reason, or a literal one could
+       misjudge.
+       - **1, a reason from a hold.** In a field that ignores input but collapses a 4-character selection to its end, a
+         4-character secret matches and an 8-character one does not; with the focus away from 220 to 300 ms the first
+         answered `fieldChanged` at its hold check and the second `lengthMismatch`. A concealed request's hold check now
+         only gates its success: focused by E confirms, and moved, unknown or late means only "not confirmed now"; the
+         poll goes on and the next hold checks again. A literal request keeps moved as `fieldChanged` at once.
+       - **2, exposure displaced by hold checks.** Unknown 100 ms checks from 220 to 850 ms left the matching secret no
+         batch after the field turned visible at 870 ms (`lengthMismatch`, no warning), where a non-matching one read it
+         (`noLongerSecure`). A concealed request that ends without a success now always reads **one final length
+         batch**, however its poll ended (at the budget, or right after a closed batch, which still ends the poll), and
+         outside the start limit; it never confirms. That batch and one focus read alone decide the reason through
+         `readbackConcealedReason`, in wave 9's order, the focus read skipped when the batch closes `noLongerSecure` or
+         `fieldUnreadable`. A failure takes about T more (#423).
+       - **No latch.** Nothing seen mid-poll is kept for the reason: which batches a poll reads depends on its hold
+         checks, which depend on whether the secret matches, so a latch would let the secret choose the reason again.
+         The residual is accepted: a field toggled visible and then secure again before the final batch loses its
+         warning. That warning only shapes what the agent does next, and a field secure again at the final batch reads
+         `secure text` to getAXState() from then on, so letting the final batch and the focus read alone decide never
+         loses a warning that still matters.
+       - **3, an overshoot.** A concealed overshoot now taints the poll, as a change does: one that recovers (a caret
+         past the text, or from nothing selected a count past it, then the right reply held past 220 ms) never
+         confirms, and polls on for exposure.
+       - **4, a secure `roleUnreadable`.** A field the lookup classified as a password field (the marker route or the
+         walk, so `secure: true`) whose snapshot role read then fails now takes the may-show treatment natively, like
+         `fieldUnreadable`: "the password field could not be read, so it may no longer hide its text" and the may-show
+         remedy, not the getAXState() advice. The wrapper's `secretMayShow` warns for `noLongerSecure`, or for
+         `fieldUnreadable` or `roleUnreadable` with `secure === true`, each compared with a literal. A field never
+         classified (the marker's own `.closed(.roleUnreadable)`, `secure` false) is unchanged.
+       - **5, a poll with no batch.** A literal request whose poll took no batch after typing (the engine delayed past
+         E − T) answered `lengthUnreadable`; it now answers `fieldUnreadable`, the unclassified field's result, with no
+         focus read first, since `fieldUnreadable` comes before `fieldChanged`. `readbackConcealedReason`'s no-batch case
+         is `fieldUnreadable` too, before a moved focus; with the final batch a concealed request always has one.
+       - **6, two timestamps.** The loop checked E − now ≥ T, and the batch took its own start: a deschedule between them
+         let a read started 95 ms before E close a window. `step()` now takes its start once, makes no read and ends the
+         poll when less than T is left, and judges the hold on that same start. The allowance stays 680 ms.
+       - **Tests.** SecureTypeReadbackTests has 55. New: the reviewer's pair (the matching secret confirms at the next
+         hold once the focus is back, never `fieldChanged`; the other `lengthMismatch`), the focus away to the end (both
+         `fieldChanged`) and every focus read unknown (both `lengthMismatch`); the reviewer's exposure case (both secrets
+         `noLongerSecure` with the warning); an overshoot that recovers, by caret and by count (`lengthMismatch`, polled
+         to the end); a literal request delayed past E − T (`fieldUnreadable`, no batch, no focus read, the may-show
+         remedy) beside a concealed one (its final batch alone, `lengthMismatch`); and a match at 685 ms with a 5 ms
+         deschedule at 900 ms (unconfirmed, plain and concealed; the stub's `nowJump`). TypeReadbackMarkerTests checks a
+         classified field's `roleUnreadable` warns and an unclassified one's does not; services-sky has both sides. Each
+         failed before its fix, and five mutants (one per engine finding) each fail a test. Moved: every concealed
+         failure reads one batch more (183 for a full poll, 6 for a closed read), and a concealed held match whose checks
+         find the focus moved polls to the end (62 batches, 975 ms, `fieldChanged`). The property runs are unchanged:
+         seed 0x414F217, 2000 cases, 4000 runs, 1902 successes, 2098 failures, 47 overrun cases; seed 0x414F218, 2000
+         cases, 4000 runs, 1332 genuine (all confirmed) and 2668 controls (all `lengthMismatch`).
+     - **Wave 11: the classifying read last** (the review of e8e2702e..3b67bf4d, 2026-11-18; ruling 1ea561bc:856).
+       - **1, a failed subrole in the final batch.** `valueClassification` presumes a text-entry role secure when its
+         `AXSubrole` slot fails, so a field seen shown as text mid-poll whose final batch then read its role but failed
+         its subrole answered `lengthMismatch`, and the warning was lost. A concealed request's final batch
+         (`readbackLength(…, presumeSecure: false)`) now answers `.closed(.fieldUnreadable)` for a reply secure only by a
+         failed subrole, so the secure record's may-show remedy and the wrapper's warning apply. A role of
+         AXSecureTextField stays secure whatever its subrole did, and the poll's own batches still presume secure and go
+         on.
+       - **2, the focus read first.** A concealed request that ends without a success now reads its focus once, then
+         the final batch, so the read that classifies the field is the last before the reply: a show-password toggle
+         during the focus read is seen. The batch alone decides `noLongerSecure` or `fieldUnreadable`; the focus read
+         before it decides `fieldChanged`; wave 9's order stands. The focus read is always made now (wave 10 skipped it
+         after a closed batch).
+       - **3, a residual, not a fix.** In a field whose state matches one secret's length, that secret's poll makes hold
+         checks the other's does not, and their AX traffic, its timing, or a busy app's timeouts can change that secret's
+         failure reason, as they can its failure time. That reveals only what the outcome already reveals for such a
+         field: whether its length matched this secret, item 10's collapse-to-equal-length limit, so it adds nothing.
+         Ruling 856 accepts it. A second form needs no match (the review of 3b67bf4d..8bc291f1, P2): in a field that
+         ignores input and unmasks on a timer, a longer secret finishes posting later, so its final batch can land
+         after the toggle (`noLongerSecure`, with the warning) where a shorter one's lands before it (`lengthMismatch`,
+         the field still masked); the reason varies with the text through posting time. In both forms the reply reflects
+         the field's real state at the final read. The docs' limit sentence first named only the hold-check form ("…and
+         so can its reason where the field read as having taken exactly as many characters as were typed, in place of
+         any selection"); that review widened it, in all four copies byte for byte, to: "When it fails, how long it
+         took can depend on the text typed, a `{{secret:…}}` included, and so can its reason." #423 tracks both forms,
+         and the timing. A test pins the second form
+         (`testAToggleTimedFromTheRequestCanGiveTwoSecretsDifferentReasons`: posts at 10 ms each, the field unmasked at
+         1000 ms of the request's clock; a 2-character secret answers `lengthMismatch`, a 12-character one
+         `noLongerSecure`), so SecureTypeReadbackTests has 58.
+       - **Tests.** SecureTypeReadbackTests has 57. New: a field shown as text mid-poll whose final batch fails only its
+         subrole answers `fieldUnreadable` with the warning, a role of AXSecureTextField with a failed subrole is still
+         secure, and poll batches with a failed subrole still go on; and the collapsing fixture with every focus check a
+         failing 100 ms one and a toggle at 925 ms, where both secrets answer `noLongerSecure` with the warning (the
+         8-character one answered `lengthMismatch` before). Each failed before its fix, and the two mutants (the final
+         batch presuming secure, the focus read after it) each fail a test. Moved: every concealed failure ends on a
+         focus read and then the final batch, a closed one included (one focus read more after a closed batch, its
+         `pollMs` 50 ms, not 10, for a 40 ms focus read); the property run's failure check reads the reason from those
+         two. The property runs are unchanged: seed 0x414F217, 2000 cases, 4000 runs, 1902 successes, 2098 failures, 47
+         overrun cases; seed 0x414F218, 2000 cases, 4000 runs, 1332 genuine and 2668 controls.
+     - **What differs between concealed failures.** *Superseded by wave 9 (ruling 1ea561bc:851): kept as the record.* Under wave 10 a concealed held match whose focus
+       check is moved, unknown or late polls on, the next hold checking again, and its failure's reason comes from the
+       final batch and the focus read after it. A held match whose focus read fails goes on as a tainted one.
+       Since C is absolute, the time of that focus read displaces the polls it overlaps (8 of them for a 40 ms read)
+       rather than extending the poll; then come the final focus read at C and the wait for D, as for every failure.
+       Its AX trace is a lost match's with the focus read at the match in and the displaced polls out. That traffic
+       reaches only the target app, which holds the secret already; the caller sees the same reason, content and time.
+     - **An unavailable caret is no overshoot** (same review, P2). A range whose location is past `readbackLengthLimit`
+       (an app's `{NSNotFound, 0}`) is never evidence of a read past the text, on either basis: it is judged as any
+       read, and the poll goes on.
+     - **The schedule.** The window has a fixed length and starts only on a match, so in a given field the reads, their
+       order and their timing stay the same whatever the secret's length or content (item 9). It applies to every
+       password-field confirmation, a literal request's checkpoints included.
+     - **The residuals.** An app that stalls longer than 220 ms between consuming its last two keys can still show a
+       matching in-between reply for the whole window; AppKit's max gap of 448.5 ms shows such stalls exist. No
+       read-back sees a change made after it returns, the same limit the plain path has for a value changed after its
+       confirmation. An AX call that overruns its own messaging timeout can still bring a concealed failure's reply past
+       D; it is sent at once, flagged `lateReply` when more than the tolerance late (superseded by wave 9: no D and no
+       flag; a failure answers when it is known). A focus read can still end
+       unknown on the live paths: its one AXFocusedUIElement or AXFocused call timing out or answering
+       `cannotComplete`; a walk-found field's walk running past 40 ms or 200 nodes, reaching depth 12 with children
+       left, or meeting a failed read; a read before it overrunning so far that its own budget runs out too. Each
+       then answers the final batch's reason, never `fieldChanged`, and never confirms. Live reply times (20–80 ms
+       past D on every lane on 45172367, with no consistent direction by length) are informational; the stub's
+       property is the contract.
+     - **The cost.** Each password-field confirmation, and each literal checkpoint, takes 220 ms and about 44 batches
+       more. A literal failure ends sooner on a change or an overshoot. Every concealed failure into a password field
+       takes about 1.1 s (the budget and the focus read's cap), a refusal included; its success does not wait. (Wave 9:
+       a concealed failure that is not closed polls to the last batch with T left and makes one focus read; a closed
+       reply or a refusal answers at once.)
+     - **Tests** (SecureTypeReadbackTests). `StubPasswordApp`'s drains-late mode (`extraFirst`, `lateUnits`) reproduces
+       the fixture: the "z" goes in before the first unit, the last `lateUnits` units are held, and they land when the
+       second batch after typing is answered.
+       - The defect, on three bases (a count over a selection, a count at a caret, the caret alone), plain and
+         concealed: it confirmed before the fix. Now it is unconfirmed with no confirmation and no note, a literal
+         request at the read that left the match, a concealed one at the deadline.
+       - The control, a field that takes only its last key late, confirms after the window on both bases.
+       - A change at each of the window's 44 reads, the last included, is caught, and one after it is not, so the
+         window spans at least 220 ms. A literal request ends at the change; a concealed one polls the budget, and a
+         change that comes back still never confirms. A closed reply in the window ends either kind's reads at once (a
+         concealed request answers at the deadline); a failed count ends a literal request's.
+       - A match at 730 ms confirms at the last batch (950 ms); one 5 ms later, or at the last batch, is unconfirmed,
+         plain and concealed.
+       - Overshoot ends a literal request's poll at the read past the text, by caret on both bases and by count from
+         nothing selected; concealed, the same fields poll the budget, and over a selection such a count polls it too.
+       - The concealed pins fail alike, with the same reads, number of reads, time, reason, message and record: a
+         field that ignores a secret in place, one that collapses its selection to its end, and one that jumps its
+         caret to its text's end, each with the secret shorter and longer than what it moves over; and a field ("zz"
+         put in first, the last two keys late) where "pass" makes a match come and go and "p" makes none. The last two
+         fields' pins, and the transient-match pin, failed before their gates. The collapsing field's schedule is not
+         independent of the secret: a secret exactly as long as the selection reads as a real replacement and confirms
+         (item 10's limit), and the test asserts it.
+       - From the review of f35a42b8..cbce12e2 (each failed before its fix): the reviewer's field, which takes the whole
+         text, cuts it to four units 10 ms later and moves its focus, answers `fieldChanged` at the same time for a
+         short and a long secret (then the budget, now the deadline); a concealed closed read mid-poll and a concealed
+         focus failure after a held match each end there, while a literal request's still end at once; an off-grid
+         match (its read ending 1 ms past the last that holds) and a late last wake are each unconfirmed, plain and
+         concealed; and an `NSNotFound` caret beside the right count,
+         then a right reply, confirms a literal request on both bases.
+       - From the review of cbce12e2..1f69470e (each failed before its fix), with a focus read that takes 40 ms:
+         every concealed failure kind (a held match then a moved focus, a lost match, a closed read, a failed count,
+         and the refusals `lengthUnreadable`, `selectionUnreadable`, `fieldUnreadable` and a settle's `noLongerSecure`)
+         answers at 1100 ms, with nothing read after a refusal or a closed read; TypeReadbackMarkerTests' held field's
+         `roleUnreadable` does too. Every sleep woken early (at most 30 ms each) still waits to the deadline. A
+         concealed success still ends at the window plus its focus read. A mutant that waits with one sleep fails the
+         early-wake test. Wave 6 restated three of these: the held match's trace is a lost match's with the focus read
+         at the match in and the 8 polls it displaced out; a focus read slower than the cap now fails at its bound, at
+         the deadline, `fieldChanged`; and the confirming read past the cutoff starts at 950 ms and returns at 1001 ms.
+       - From the review of 1f69470e..f217f062 (each failed before its fix): one test per finding,
+         `testAFocusReadAtAMatchDoesNotMoveTheCutoff` (i), `testATransientFocusFailureDoesNotChooseTheReason` (ii),
+         `testASlowLastBatchCannotPushTheReplyPastTheDeadline` (iii), and
+         `testTheSuccessCutoffAndTheFailureDeadlineShareTheBoundary` (iv), which passes on the old code too, because
+         the stub spends no time between the old origins; `testTheDeadlineCountsFromTheLastPost` (posts costing 3 ms,
+         pauses after them of 0, 17 and 60 ms: a failure at the last post + 1100 ms, no batch past + 950 ms; it fails
+         with B taken at `finish()`'s start); and `testAReplyAfterTheDeadlineIsFlaggedLate`. The property test,
+         `testConcealedTimingAndReasonsHoldOverRandomCases`, seeded (0x414F217) and deterministic over 2000 cases,
+         draws a field's behaviour (no match, a held match, a match that comes and goes, a focus lost and regained or
+         lost, a read that closes), a secret's length, a selection, every read's cost within the timeout the engine
+         set on it (with forced overruns in about 1 case in 40), and each post's and pause's cost. Every failure
+         answers at the last post + 1100 ms, or later only with `lateReply` and only after an overrun; its reason is
+         the rule applied to the stub's own final batch and final focus read; every success held for the window, its
+         confirming read finished by C. A failure prints the seed and the case.
+       - Wave 7 (the review of f217f062..45172367; each failed before its fix, by the old code or a mutant):
+         `testTheFinalBatchAndFocusReadKeepTheirSlotsWhateverAMatchDoes` (a check at the match failing near the end
+         leaves the final batch at 950 ms and the final focus read at 1000 ms; a match held only by the final batch
+         succeeds by the final focus read, at 1000 ms + its read; a match at 690 ms whose check would have run into the
+         final slot makes none, and a change at 930 ms is read by the final batch, where the old poll confirmed);
+         `testAFieldThatStoppedBeingSecureAnswersSoWhenTheFocusMovedToo` (3), with the rule's unit cases;
+         `testAPaddingThatWakesLateIsFlaggedLate` (5: an oversleep 15 ms past D is flagged, 5 ms is not);
+         `testAFocusReadThatCannotFinishIsUnknownNotMoved` (cut by its bound, or `cannotComplete`: an exact add answers
+         `lengthMismatch`, a genuine field never confirms, plain and concealed; another element is still
+         `fieldChanged`); `testTheFinalFocusReadKeepsItsBudgetAfterBatchesThatRanToTheCutoff` (the hosted runs'
+         regression: batches costing 30 ms to the cutoff and a final batch returning 50, 110 or 180 ms after its
+         slot, then a field that kept its focus: the final focus read is made and finds it, `lengthMismatch`, late
+         only past D; with 45172367's bound and floor the read was not made for the overruns; a match held only by
+         such a final batch confirms at 1000 ms; the stub answers a fresh, CFEqual handle for the field on every focus
+         read, as an app does); TypeReadbackMarkerTests'
+         `testAPasswordFieldsFocusCheckThatTimesOutIsUnknown` (the marker route's AXFocused and the walk's failed read,
+         plain and concealed); `testAConcealedFinalFocusReadAnswersAsTheLiteralCheckDoes` (the 78/150 against 0/75
+         reproduced: one field and timeline, an exact add and an exact drop, the last batch returning 110 or 180 ms after
+         950 ms; literal and concealed both answer `lengthMismatch` with the focus read made, where 45172367's bound,
+         floor and rule gave the concealed one `fieldChanged`); and services-sky's case that a `noLongerSecure` record
+         with `lateReply` still warns.
+         The property test now types two secrets of different lengths into one field timeline per case, its changes at
+         clock times after the last post (the focus away or back, the focus read failing or answering again, shown as
+         text or secure again, the count failing or back, a character added, a late key landing), every read's cost a
+         function of its time, overruns only on the final slots' reads, posting and pause costs per case. Both secrets
+         answer with the same outcome, reason, reply time and `lateReply`; every failure has its final batch at 950 ms,
+         nothing else in the slots, and the reason the timeline makes (the field at the final slot, its focus at the
+         cutoff, an unanswerable focus read unknown). Seed 0x414F217, 2000 cases.
+       - The schedule-identity test now also compares the uncollapsed number of reads and the poll's time, the
+         window's included, and a drains-late run joins ruling 826's leak test.
+       - Mutants: the count's overshoot unnarrowed fails the selection test; a window one read short fails the
+         end-of-window case; a concealed request ending on a change fails the transient-match pin.
+     - Exact schedules moved with the window: the read logs and batch counts after a match now carry the window's
+       batches (SecureTypeReadbackTests' reads-in-order, checkpoint and settle tests, TypeReadbackTests' secure-field
+       calls and settle sleeps, TypeReadbackMarkerTests' password route log). An extra character, typed concealed,
+       still polls the budget.
+  6. **The settle and the wait.** The settle after a recent press_key (ruling 754) and #359's wait for a stable range
+     after a pending click (ruling 785) both run for a password field, on its batch; the settle waits for two readings
+     that agree. A select_text range is never a password field's. select_text refuses one (#405), and ClickOrdering
+     keeps its range per process, not per field, so a `.selection` baseline that reaches a password field is another
+     field's, a username field's say, and an equal range there would have confirmed text typed into the wrong field
+     (the review of 517ab543..bdfbcfb2, P2). It is refused `selectionChanged` before any read, and nothing is typed:
+     #359's contract, that type_text right after select_text types only over select_text's own selection (the design
+     session approved, 2026-11-18). Before #414 such a type_text typed and answered `secure`; now it types nothing, and
+     agent-cursor.md says so. A select-all key then typing is the only way to replace a password.
+     - A field the lookup found to be a password field (item 1) is refused `selectionChanged` under a `.selection`
+       baseline as soon as the lookup's result is taken, before any read of the field, its role included (the review
+       of 81a1aebc..52f0109a, P1). Before, one shown as text was refused `noLongerSecure` first, and since every
+       refusal but `selectionChanged` still types, the text went into a field that cannot hold select_text's
+       selection. A `.stable` baseline is unchanged.
+     - The settle's failure rule takes a count past the limit as a failed read (item 4).
+  7. **Keys.** A Tab, or a Return in a single-line password field, of a plain request is posted only once the text
+     before it confirms by length (a checkpoint), and is counted `keysUnconfirmed`. A mismatch there stops the key and
+     what follows (`stoppedBeforeKey`). A concealed request makes no checkpoint (ruling 593): it is read back once, and
+     its key is a flag.
+  8. **What the reply carries.**
+     - Ruling 833 fixes what a success carries. The record holds {confirmed, snapshotMs, secure: true, confirmation:
+       "length"} and the request's own key fields: `concealed: true` and the `keysUnconfirmed` flag for a secret,
+       `checkpoints` and `keysUnconfirmed` counts for plain text. Never the reads, the poll time, lengths, or the
+       settle or wait record. A plain field's record is unchanged, and a confirmed record without `confirmation` is
+       the exact read-back of a value. `confirmation` and the note come only once a length read confirmed (the review
+       of 517ab543..bdfbcfb2, P2; approved). A plain request of only a Tab, or of a Return in a single-line field,
+       reads no length: it is confirmed with its key `keysUnconfirmed`, as a text field's is, and it claims no length.
+       agent-cursor.md's typing paragraph now says so too (the review of 81a1aebc..52f0109a, P3).
+     - The success's result `note`, which the service puts in the tool result's text (NOTED_METHODS), is fixed text,
+       the same for a secret (`readbackLengthNote`): "Typed into a password field, confirmed by its length only: the
+       field took exactly as many characters as were typed, in place of any selected text, so none was dropped or
+       added. A password field's characters are never read, so whether they are the right ones is not confirmed: a
+       keyboard layout, an input method or the page itself can change what goes in."
+     - A failure carries a reason alone: `lengthUnreadable`, `selectionUnreadable`, `lengthMismatch`, `caretMismatch`
+       or `noLongerSecure`, beside the shared `fieldUnreadable`, `fieldChanged` and `selectionChanged`. Its sentence
+       has no number, and says that a screenshot shows the field's masks while an observation shows only that it is a
+       password field. The exception is `noLongerSecure`: a field that stopped being a password field may now show its
+       text, so its sentence warns against a screenshot or getAXState() of a secret, rather than recommending them (the
+       review of 517ab543..bdfbcfb2, P1). `caretMismatch` says only that the caret is not right after the text,
+       because under ruling 839 no count was checked.
+     - A secret's failure reaches the model only as the wrapper's `secret_input_failed`, which withholds the engine's
+       sentence, so `noLongerSecure`'s warning never reached it and a screenshot could then show the secret (the
+       review of 81a1aebc..52f0109a, P1). When a type_text's error carries the read-back record's reason
+       `noLongerSecure` and something was typed, the wrapper adds one fixed sentence of its own (secret-input.mjs,
+       `secretMayShow`): "The password field may have stopped being one while the secret was typed, and may now show it: do
+       not take a screenshot of it or call getAXState(); put it right with setValue." It reads the reason alone and
+       compares it with that literal; nothing of the engine's text, nor the reason, is forwarded. The README's
+       secrets paragraph says the diagnostic warns. With a `userIntervened` whose app the user changed, the wrapper's
+       re-query sentence ("re-query its state (getAXState) before sending more actions") contradicted that warning,
+       and the intervention gate wants a fresh observation before a setValue. When the warning applies, one fixed
+       instruction replaces it: "the user changed the app; ask the user to hide or clear the password field before
+       re-querying the app's state, and before any setValue" (the review of f35a42b8..cbce12e2, P1).
+     - **A concealed request never answers `caretMismatch`**: its caret elsewhere is `lengthMismatch`, whose sentence
+       says the length or the caret is wrong (the same review, P1; the design session approved). Take a field that
+       ignores input, with a non-empty selection. Its count stays the snapshot's, which equals the expected count
+       exactly when the secret is as long as the selection, so the two reasons would have told the secret's length
+       against a selection the caller chose. Item 5's caret rule closed that oracle on success; this closes it on
+       failure. Both answers poll the whole budget, so their schedule was already the same. A plain request keeps the
+       two apart, since its caller knows its text.
+  9. **The same reads whatever the secret.** The schedule (attributes, elements, order, repeated polls collapsed) and
+     the record are the same for secrets of different lengths, for a secret as long as the selection, and for plain
+     and concealed text. That holds even under a lagging caret. With a leaving key, plain text checkpoints (item 7)
+     and a secret does not (ruling 593). A secret's failure also answers the same reason whatever its length (item 8).
+  10. **The known limit**: a count cannot tell a wrong character from a right one. A password field that takes the
+      right number of other characters confirms: a keyboard layout or an input method that is not the one assumed, or
+      a page that rewrites input. The note, agent-cursor.md's typing paragraph and the README say so. Also not
+      guarded:
+      - Chromium's 10,000 value cap (#350): a count shows no cut, so a password past the cut is the residual.
+      - A field that collapses a selection to its end without inserting is indistinguishable from one that took text
+        exactly as long as the selection: its count and caret are the expected ones, and they hold (the review of
+        f35a42b8..cbce12e2, P2).
+      - Firefox: #405's lane found the page, not the field, named as focused, so its password field answers
+        `notTextField` as before. This is a documented limit, not worked around.
+  11. **The model's document**: agent-cursor.md's typing paragraph, the surface inventory's "Table 3 amendment
+      (2026-11-18, #414, …)", the docs oracle and the core-documentation test byte for byte, and the README's secrets
+      paragraph. The MCP surface names no password confirmation, so no pinned digest moves.
+  12. **Proof**: SecureTypeReadbackTests (58) run the live reads over a stub app whose password field holds plaintext,
+      answers it to any request, and reports distinctive counts and ranges. Ruling 826's leak test covers fifteen runs:
+      - confirmations, plain, concealed and by the caret alone;
+      - a dropped and an extra character, a caret elsewhere concealed and plain, a field that ignores a secret (its
+        selection as long as the secret, and not), one shown as text mid-poll, a count that fails, no range, the caret
+        alone off by one;
+      - a checkpoint;
+      - an app whose extra character makes a read between its last two keys match (item 5's amendment).
+      The posting's own times (`startedAt`, `endedAt`, real Unix milliseconds) are checked to be times and fixed before
+      the scan, so a timestamp that holds a distinctive number's digits by chance cannot fail it.
+      Across them, none of the count, caret location or selection length, nor anything typing makes of them, reaches
+      the reply's JSON, the meta, the record (wire and printed struct), the note, an error sentence or the stderr
+      captured over the runs, in any form (decimal, grouped, hex either case, its LE bytes, base64). Positive
+      controls (the reply, an error sentence, the record, stderr, the bytes' base64) show that each would be caught.
+      Also tested:
+      - the reads in order, the count units, the range rules, the ruling-839 branch and its failed-versus-absent
+        split;
+      - a count or range of the wrong type, a field that changes mid-poll, the settle and the wait;
+      - checkpoints, a password text area's Return, the schedule identity and the classification matrix;
+      - from the review's fixes: a concealed field that ignores input answers alike whatever the secret's length; a
+        select_text baseline at a password field types nothing and reads no batch; a failed count is never settled
+        away; the settle reads until two reads agree; `NSNotFound` locations and an `Int.max` count are unreadable
+        without a trap; a float count is a failed read; keys alone claim no length; and a password field that the
+        marker route or the walk found, then shown as text, is read no further.
+      - from the second review's (81a1aebc..52f0109a): a select_text baseline at a field the marker route found to be
+        a password field, shown as text or not, is `selectionChanged` with nothing typed and nothing read of the field
+        after the route's own reads, while a `.stable` one is still `noLongerSecure` and types; such a field whose
+        role read then fails keeps a password field's record; a count of `Int.max` or just past `Int32.max` is refused
+        at the snapshot, one read after typing is `lengthUnreadable` at the budget, and an `Int.max` snapshot count
+        that the settle then reads as absent is `lengthUnreadable` before the settle (the first two are new tests in
+        TypeReadbackMarkerTests, the count cases extend SecureTypeReadbackTests' test of a count no field has); and
+        services-sky's wrapper test adds the shown-secret sentence for
+        `noLongerSecure` alone, and only once something was typed, with nothing of the engine's text or the reason;
+        with a changed app it also has the hide-or-clear instruction in place of the re-query one, and the re-query
+        one stays where no warning applies (the review of f35a42b8..cbce12e2, P1).
+      TypeReadbackTests' secure tests are rewritten to confirm by length. TypeReadbackMarkerTests now has #395's
+      password fields confirming by length, plain and concealed, with nothing but the batch read; its leak test's
+      password run now confirms. The service test carries cua/typeReadback's strength and the note in the tool
+      result's text, and a plain confirmation emits none. Mutation testing ran each guard removed or weakened in turn against
+      the three read-back suites: 40 mutants of the first range, then 14 of the review's fixes. Of the 40, 38 failed a
+      test. The two survivors were the settle reading on past a failed count, now tested (item 4), and the password
+      path's check, after the wait, that its range was still select_text's, a check item 6 removed. Of the 14, 13
+      failed, two of them by the overflow trap that item 4's test provokes once its bound is gone. The survivor, a held
+      field's `noLongerSecure` refusal recorded as a plain field's, is now asserted by the marker route's test. The hosted qualification of the six
+      lanes (probe/414-qual) is the design session's.
+  Date/Author: 2026-11-18, cursor235's implementer for #414 (rulings 1ea561bc:826, 833 and 839; ruling 842's quiet
+  window by its fix wave).
 
 ## Outcomes & Retrospective
 

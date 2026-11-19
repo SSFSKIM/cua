@@ -659,6 +659,26 @@ test('#354: type_text\'s read-back rides as cua/typeReadback, typeUnconfirmed re
   assert.equal(meta['cua/typeReadback'], null, 'reset by the next call');
 });
 
+test('#414: a password field\'s length confirmation rides as cua/typeReadback with its strength and its note reaches the tool result\'s text; a plain confirmation adds no text', async t => {
+  const lengthNote = 'Typed into a password field, confirmed by its length only: the field took exactly as many characters as were typed, in place of any selected text, so none was dropped or added. A password field\'s characters are never read, so whether they are the right ones is not confirmed: a keyboard layout, an input method or the page itself can change what goes in.';
+  const byLength = {confirmed: true, snapshotMs: 0.4, secure: true, confirmation: 'length'};
+  const exact = {confirmed: true, snapshotMs: 1.2, pollMs: 21.4, reads: 3};
+  let field = 'password';
+  const {getApp, call, meta, record} = await session(t, {handlers: {
+    'execute:type_text': () => (field === 'password'
+      ? {meta: {...INPUT_META, inputRoute: "2'", entered: 4, typeReadback: byLength}, note: lengthNote}
+      : {meta: {...INPUT_META, inputRoute: "2'", entered: 3, typeReadback: exact}}),
+  }});
+  const {app} = await getApp('TextEdit');
+  await call(() => app.typeText('pass'));
+  assert.deepEqual(meta['cua/typeReadback'], byLength);
+  assert.deepEqual(record.items, [lengthNote], 'what a length proves, and what it cannot, in the text the model reads');
+  field = 'text';
+  await call(() => app.typeText('abc'));
+  assert.deepEqual(meta['cua/typeReadback'], exact, 'a plain field\'s exact read-back names no strength');
+  assert.deepEqual(record.items, [lengthNote], 'and adds no text');
+});
+
 test('#374: a Show Menu\'s confirmation rides as cua/menu, and menuUnconfirmed reaches the model with its sentence, name and meta', async t => {
   const seen = {seen: 'ancestor', openBefore: 0, polls: 2, ms: 21.4};
   const unseen = {seen: null, openBefore: 1, polls: 51, ms: 1000.2, actionError: -25204};

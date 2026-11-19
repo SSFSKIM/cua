@@ -151,3 +151,53 @@ A confirmed paste costs the fix about 90–110 ms more at p50 in Safari, Electro
 - **Pasted password field:** not measured; the kit has no password field. #414's kit covers the keyed route only.
 
 Invalid-setup tally for Phase 2: 432 rows not run, plus 12 invalid (11 `prepare`, 1 delivery read), all in the Chrome for Testing job. No other lane had an invalid row.
+
+## Phase 2, second candidate: fix 7897cdeb against main 645202db
+
+- [Full run](https://github.com/SSFSKIM/cua/actions/runs/44442976031): kit `e9a10e23`. Main is `645202db7e1ecb5425c1f79e84bfb7463c78ba4d`, which includes #414. Fix is `7897cdebe8d5014cb99986ce9cba297adee883c9`; it keeps #187's delivery as on main, and the read-back only decides success.
+- [Pinyin rerun of Chrome for Testing and Electron](https://github.com/SSFSKIM/cua/actions/runs/44451662130): same kit and pins.
+- Twenty per head per cell per source, heads interleaved, all five lanes in the background, with the witness held on every attested row.
+- Kit `e9a10e23` adds two explicit gates: `clipboardContent` (the pre-trial clipboard in any answer surface, on any row of either head) and `delivery` (every fix row whose paired main row delivered its planned content delivers it too).
+
+**Rerun:** in the full run, the Chrome for Testing and Electron fixture pages stopped answering in the fourth source, Pinyin, at rep 13, about 1,400 trials in. That's 6 invalid rows each (`prepare`/`seed`, setup), and the source stopped there. Only those two lanes' Pinyin was rerun. It ran 400/400 per lane with no invalid row. The tables below combine the full run's Korean and Japanese rows with the rerun's Pinyin rows for those two lanes.
+
+**Verdict: Safari, Chrome for Testing, Electron and AppKit pass every gate. Firefox fails one gate, `exactConfirmed`: it confirms no paste. It passes every other gate, delivery included.**
+
+| Lane | Rows (invalid) | Exact pastes confirmed | Controls `typeUnconfirmed` | Wrong successes fix (main) | Clipboard restored | Clipboard content fix/main | Delivery vs main | Route | Privacy |
+|---|---|---|---|---|---|---|---|---|---|
+| Safari 27.2 | 1,600 (0) | 480/480 | 240/240 | **0** (240) | 800/800 | 0/0 | 720/720 | pass | 0 |
+| Chrome for Testing 156/157 | 1,600 (0) | 480/480 | 240/240 | **0** (240) | 800/800 | 0/0 | 720/720 | pass | 0 |
+| Electron 44.4.5 | 1,600 (0) | 480/480 | 240/240 | **0** (240) | 800/800 | 0/0 | 720/720 | pass | 0 |
+| AppKit | 1,600 (0) | 480/480 | 240/240 | **0** (320) | 800/800 | 0/0 | 720/720 | pass | 0 |
+| Firefox 160 | 1,600 (0) | **0/480** | 240/240 | **0** (240) | 800/800 | 0/0 | 720/720 | pass | 0 |
+
+- **No clipboard content anywhere.** The pre-trial clipboard appeared in no field and no answer, on any row of either head. The first candidate's Chrome for Testing leak is gone.
+- **Delivery matches main everywhere**, Firefox multi-line included: all 80 Firefox multi-line fix rows delivered exactly.
+- **Two lines into a single-line field:**
+  - Browsers: both heads stop after the first line. Main answers `pasteUnconfirmed` at the Return settle; the fix answers `pasteUnconfirmed` with no read-back (Firefox: also `rangeUnreadable`).
+  - AppKit: the field holds only the second line. Main answered success (wrong); the fix answers `valueMismatch` on 80/80.
+  - The delivery gate pairs only rows whose main delivered exactly, so it does not compare these two equally wrong contents.
+
+### Firefox: the reasons over exact pastes
+
+All 480 exact plain Firefox pastes answered `typeUnconfirmed`: `rangeUnreadable` 291 and `fieldChanged` 189. Realized controls: `rangeUnreadable` 148 and `fieldChanged` 92. There was no `valueMismatch`, so no excerpt, and never a success.
+
+### Service time, main → fix
+
+Sky's `cua/serviceMs`, valid rows, p50/p95 ms. Full run; the Pinyin rerun of Chrome for Testing and Electron was in line with it.
+
+| Lane | Plain (6 cells) | newline-single | Controls |
+|---|---|---|---|
+| Safari | 140/521 → 241/605 | 2167/2224 → 2254/2323 | 132/162 → 1247/1293 |
+| Chrome for Testing | 159/656 → 160/659 | 2175/2227 → 2186/2234 | 154/182 → 1166/1209 |
+| Firefox | 153/641 → 202/1561 | 2172/2220 → 2181/2229 | 141/173 → 162/1177 |
+| Electron | 152/632 → 239/731 | 2176/2232 → 2257/2307 | 138/171 → 1242/1300 |
+| AppKit | 129/486 → 233/588 | 271/336 → 1374/1464 | 128/165 → 1233/1298 |
+
+- **Confirmed paste:** the poll adds about 90–100 ms at p50 in Safari, Electron and AppKit, and nothing in Chrome for Testing.
+- **Refused control:** runs the one-second poll, about 1.2 s.
+- **Firefox:** p95 on plain pastes rises from 0.64 to 1.56 s. Its p50 differs a lot by source: 1,109 ms under Korean and 602 ms under Pinyin, against 168–170 ms under the Japanese sources.
+- **AppKit's newline-single:** rises from 0.27 to 1.37 s, the poll's mismatch budget.
+- **Browser newline-single:** keeps main's 2.2 s Return settle.
+
+Invalid-setup tally: in the full run, 6 Chrome for Testing and 6 Electron rows (fixture hangs at Pinyin rep 13), plus 121 and 118 rows not run; all were replaced by the rerun. No other lane, and no rerun row, was invalid.

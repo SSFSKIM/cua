@@ -32,4 +32,56 @@ gh workflow run probe-398-qual.yml --ref probe/398-qual -f main="$MAIN_SHA" -f f
 
 ## Runs
 
-None yet.
+Workflow `probe-398-qual.yml`, id `423477668`, [registration](https://github.com/SSFSKIM/cua/actions/runs/44470552784) (Ubuntu only). Main `44de35271408df6aba90b80f20487f6fe12574d6` throughout. Hosted macOS 26.7.2, images `20261102.0473.1` and `20261112.0504.1`; Chrome for Testing 156.0.8078.80, Safari 27.2, Electron 44.4.5 / Chromium 152.0.7977.130.
+
+| Run | Kit | Mode | What it established |
+|---|---|---|---|
+| [Smoke](https://github.com/SSFSKIM/cua/actions/runs/44470569283) | `67919aba` | one trial per unit | Every lane reached its fixture in the background under the cover, zero invalid rows; every census lane ran. AppKit's focus and search hints never showed in the engine's re-observation (so those units are listed, not gated: `41905046`); the `typeset` unit was added after it. |
+| [Phase 1 measurement](https://github.com/SSFSKIM/cua/actions/runs/44473534613) | `41905046` | ten per unit, main only, plus the census | Below. |
+
+## Phase 1: main measured
+
+### Collisions (the census, instrumented main)
+
+Totals over reached windows (a page whose web area is on the requested site; an app scene whose window title matched). Unreached: CfT p06 (Wikipedia's create-account page left the site); Safari p03, p06, p09 (PyPI, Wikipedia, Dropbox); AppKit's Keyboard pane and Finder search (titles did not match).
+
+| Lane | Windows reached | Text fields | With a placeholder | Field pairs | Placeholder the only difference, value counted / value left out | Windows with such a pair | Identical in all eleven, value counted / left out | Windows with an identical pair |
+|---|---|---|---|---|---|---|---|---|
+| Chrome for Testing | 45 of 46 | 289 | 132 | 7,055 | **8 / 17** | 3 (p15, p18, p22) | 125 / 241 | 7 |
+| Safari | 43 of 46 | 139 | 51 | 389 | **8 / 12** | 2 (p15, p18) | 14 / 14 | 4 |
+| AppKit apps | 13 of 15 | 28 | 23 | 112 | **20 / 20** | 1 (Contacts' new card) | 0 / 0 | 0 |
+
+- **Where the placeholder is the only separator.** Web: unlabeled `<input>`s whose accessible name is empty and whose placeholder carries the meaning: p18 (demoqa's practice form: sibling inputs with alike ancestry), p15 (automationexercise's sign-up and log-in forms, alike but for the placeholder, in different sections), and with the value left out p22 (MUI's text-field demos, where a filled field and an empty one differ by placeholder). AppKit: Contacts' new card, 15 `AXTextField`s with no title or description, told apart only by their placeholders; 20 pairs, every one with alike ancestry (the census records shapes, never the text, so which fields they are is not recorded).
+- **Identical pairs** (no attribute separates them even with the placeholder) are more common than placeholder-only ones: MUI's demo page alone has 105 (215 with the value left out), USPS's address lookup 10, Bootstrap's floating labels 5. These are already ambiguous on main.
+- **Lineage of parents.** Of the placeholder-only pairs, 6 of 8 (CfT), 6 of 8 (Safari) and 20 of 20 (AppKit) also have alike ancestry level by level, so a parent chain does not separate them either: the placeholder is the only thing that tells these fields apart. A rule that drops it on a stale handle would make them ambiguous (or adopt the wrong one when only one survives).
+
+### Placeholder changes, live (owned fixtures, main, 10 per unit)
+
+All four lanes in the background under the cover, the witness held on every row; 190/190 rows valid per lane. "Exercised" means the fixture changed the placeholder and the engine's own re-observation after the actions saw it changed. Second action outcomes, as `valueUnconfirmed`/success; every `valueUnconfirmed` here says "the field could not be found again" (the post-write re-check), and the value was delivered in every one of them (`refused-delivered`).
+
+| Unit (same handle) | Chrome for Testing | Safari | Electron | AppKit |
+|---|---|---|---|---|
+| static: set / type / typeset | 10 / 9 (+1 `typeUnconfirmed`) / 10 success | 10 / 10 / 10 success | 10 / 9 (+1 `typeUnconfirmed`) / 10 success | 10 / 9 (+1 `typeUnconfirmed`) / 10 success |
+| focus-clear: click → set_value | **10/10 `valueUnconfirmed`** | **10/10** | **10/10** | 0/10 (not exercised: no AX-visible change) |
+| focus-clear: click → type_text | 10/10 success | 10/10 success | 10/10 success | 10/10 success |
+| focus-clear: type_text → set_value | **10/10** | **10/10** | **10/10** | 0/10 (not exercised) |
+| rotate: click → set_value | **8/10** | **10/10** | **7/10** | **6/10** |
+| rotate: click → type_text | 10/10 success | 10/10 success | 10/10 success | 10/10 success |
+| rotate: type_text → set_value | **6/10** | **6/10** | **7/10** | **9/10** |
+| input-switch: click → set_value | 0/10: success, though exercised 10/10 (the hint changed after the re-check) | **10/10** | 0/10: success, likewise | **10/10** |
+| input-switch: type_text → set_value | **10/10** | **10/10** | **10/10** | **10/10** |
+| input-switch: click → type_text | 10/10 success | 10/10 success | 10/10 success | 10/10 success |
+| search hint: click → set_value | **10/10** | **10/10** | **10/10** | 0/10 (not exercised) |
+| search hint: type_text → set_value | **10/10** | **10/10** | **10/10** | 0/10 (not exercised) |
+| search hint: click → type_text | 10/10 success | 10/10 success | 10/10 success | 10/10 success |
+
+Main's clicks all succeeded (the click resolves before the placeholder changes), and **type_text after a click never refused** (it re-finds nothing by identity). The failure is set_value's post-write `.ignoringValue` re-check: whenever the placeholder changed between the observation and that re-check, main answered `valueUnconfirmed` with the value in the field. No `elementNoLongerValid` appeared in a same-handle cell: the pre-write resolution never re-read (no invalidation) in these fixtures.
+
+| Unit (stale handle, set) | Chrome for Testing | Safari | Electron | AppKit |
+|---|---|---|---|---|
+| twin recreated alike | `elementNoLongerValid` 10/10 | success 10/10 | `elementNoLongerValid` 10/10 | success 10/10 |
+| twin recreated with another placeholder | `elementNoLongerValid` 10/10 | 10/10 | 10/10 | 10/10 |
+| twin removed | `elementNoLongerValid` 10/10 | 10/10 | 10/10 | 10/10 |
+| solo field recreated with another placeholder | `elementNoLongerValid` 10/10 | 10/10 | 10/10 | 10/10 |
+
+Zero wrong adoptions and zero wrong successes on main in all 760 rows. In Chromium (CfT, Electron) main does not re-find even a field recreated exactly alike: the walk's strict match fails on something other than the placeholder (not identified here), so on those lanes the stale-handle cells cannot tell a strict walk from a looser one; Safari and AppKit can.

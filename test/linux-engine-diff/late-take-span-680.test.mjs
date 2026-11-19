@@ -6,7 +6,9 @@
 // controls are the seven m5/x64/scripts/rejudge-680/rejudge-late-take-controls.mjs held, through the judge a run uses
 // (device.mjs `judgeDevice`) and the run's outcome (stats.mjs `runOutcome`). Ruling 870 tightened it: the limit needs
 // this press's own dragend observed (its `dur` that end's, never the page's previous value) and the drop counter read
-// rising, never inferred; and the case's recorded drop needs the counter read rising too.
+// rising, never inferred; and the case's recorded drop needs the counter read rising too. Fix wave 2 bound the dragend to
+// this press (a baseline with no drag outstanding, and the dragend on this press's own log) and the witness to what it
+// saw: a recorded drop is an observed change, never a witness that could not be read, and the limit needs a clean span.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
@@ -39,8 +41,14 @@ const sample = (i, { ms, dur, witness, dropped = true, downs = 103 + i, starts =
   late_dnd: { after_release_ms: 0, app, escape_after_release_ms: 1.88, escaped: true },
   dropped,
   witness,
-  // the page's counts (pages/drag.html): this press, its drag start and its dragend, whose `dur` is ms from that start
-  drop_status: { before: { downs: downs - 1, starts: starts - 1, ends: starts - 1, drops: 65, dur: 747 }, after: { downs, starts, ends: starts, log: { seq: downs }, dur, drops: dropped ? 66 : 65 } },
+  // what the witness saw where it changed (run.mjs): the drop's activation and restack
+  ...(witness === false ? { witness_fields: ['stacking', 'active', 'focus'], witness_changes: [{ field: 'active' }] } : {}),
+  // the page's counts (pages/drag.html): this press, its drag start and its dragend, whose `dur` is ms from that start,
+  // the baseline with no drag outstanding; and this press's pointer log, its dragstart and dragend logged (ms after it)
+  drop_status: {
+    before: { downs: downs - 1, starts: starts - 1, ends: starts - 1, drops: 65, dur: 747 },
+    after: { downs, starts, ends: starts, log: { seq: downs, start: { t: 0, h: 5 }, up: null, cancel: { t: 10, h: 5.3 }, end: { t: dur, h: dur - 3 } }, dur, drops: dropped ? 66 : 65 },
+  },
   ...rest,
 });
 // V5 at H'''': 2/0 dropped with the witness unchanged, its dragend past the span; 2/1 and 2/2 recorded drops
@@ -91,7 +99,18 @@ test("ruling 680's controls on the case: each still fails", () => {
     ['an unread drop counter after', edit((s) => ((s.drop_status.after.drops = undefined), s)), /a drop the witness did not record on 1 of 3 samples \(0\/0\)/, /the page's drop counter was not read rising/],
     ['an unread drop counter before', edit((s) => ((s.drop_status.before.drops = null), s)), /a drop the witness did not record on 1 of 3 samples \(0\/0\)/, /the page's drop counter was not read rising/],
     ['a drop counter read unchanged', edit((s) => ((s.drop_status.after.drops = s.drop_status.before.drops), s)), /a drop the witness did not record on 1 of 3 samples \(0\/0\)/, /the page's drop counter was not read rising/],
+    // fix wave 2: the re-review's probe, counters crossed by a drag outstanding at the baseline (96/95 -> 97/96), no end
+    // on this press's log and the previous drag's 747 ms
+    ['crossed counters: a drag outstanding at the baseline supplies the end', edit((s) => ((s.drop_status.before.starts = 96), (s.drop_status.before.ends = 95), (s.drop_status.after.starts = 97), (s.drop_status.after.ends = 96), (s.drop_status.after.log.end = null), (s.drop_status.after.dur = 747), s)), /a drop the witness did not record on 1 of 3 samples \(0\/0\)/, /a drag was outstanding before the press, or this press's log has no dragstart and dragend of its own/],
+    ['a baseline with a drag outstanding, the log whole', edit((s) => ((s.drop_status.before.ends = s.drop_status.before.starts - 1), (s.drop_status.after.ends = s.drop_status.before.ends + 1), s)), /a drop the witness did not record on 1 of 3 samples \(0\/0\)/, /a drag was outstanding before the press/],
+    ["no dragend on this press's log", edit((s) => ((s.drop_status.after.log.end = null), s)), /a drop the witness did not record on 1 of 3 samples \(0\/0\)/, /this press's log has no dragstart and dragend of its own/],
+    ["no dragstart on this press's log", edit((s) => ((s.drop_status.after.log.start = null), s)), /a drop the witness did not record on 1 of 3 samples \(0\/0\)/, /this press's log has no dragstart and dragend of its own/],
+    // fix wave 2: a witness that could not be read (witness.mjs `judgeSpan`'s `protocol`) is no clean span to waive on
+    ['the span-limited sample with an unread witness', edit((s) => ((s.witness = false), (s.witness_fields = ['protocol']), s)), /a drop the witness did not record on 1 of 3 samples \(0\/0\)/, /the witness did not watch the span cleanly/],
+    ['the span-limited sample with no witness at all', edit((s) => ((s.witness = undefined), s)), /a drop the witness did not record on 1 of 3 samples \(0\/0\)/, /the witness did not watch the span cleanly/],
     // and the case's own recorded drop (ruling 870.1): a drop the witness recorded, its counter unread, is no drop seen
+    // fix wave 2: the re-review's probe, every witnessed drop's witness a protocol failure with no change: none observed
+    ['the recorded drops on unread witnesses', [limited, ...recorded.map((s) => ({ ...structuredClone(s), witness_fields: ['protocol'], witness_changes: undefined }))], /no drop landed: the case showed no change for the notice to report/, null],
     ['the recorded drops on unread counters', [limited, ...recorded.map((s) => ({ ...structuredClone(s), drop_status: { ...s.drop_status, after: { ...s.drop_status.after, drops: undefined } } }))], /no drop landed: the case showed no change for the notice to report/, null],
   ];
   for (const [what, samples, reason, why] of controls) {

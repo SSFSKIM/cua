@@ -357,14 +357,22 @@ final class Lineage {
       }
       return self.entry(number)!
     }
-    // #398: the same handle is the same element whatever its placeholder now (focus, input, a mode, Chromium's complete
-    // mode). Its identity keeps the observation's placeholder: once a handle is gone, the walk below and the observed
-    // count match it strictly, the placeholder included, since it is then evidence of which field this was.
-    if var live = read(entry.element),
-       ElementIdentity(live, pid: entry.identity.pid).matches(entry.identity, ignoringValue: ignoringValue, sameElement: true,
-                                                              ignoringPlaceholder: true) {
-      live.placeholder = entry.identity.placeholder
-      return refetch == .ifNeeded ? entry : try settle(on: entry.element, owner: entry.identity.pid, data: live)
+    if let live = read(entry.element) {
+      let now = ElementIdentity(live, pid: entry.identity.pid)
+      if now.matches(entry.identity, ignoringValue: ignoringValue, sameElement: true) {
+        return refetch == .ifNeeded ? entry : try settle(on: entry.element, owner: entry.identity.pid, data: live)
+      }
+      // #398: the same handle is the same element whatever its placeholder now (focus, input, a mode, Chromium's
+      // complete mode). The stored entry stays exactly as observed: once the handle is gone, the walk below and the
+      // observed count match strictly, the placeholder and the observed value included, since the placeholder is then
+      // evidence of which field this was. The action alone gets what the handle reads now.
+      if now.matches(entry.identity, ignoringValue: ignoringValue, sameElement: true, ignoringPlaceholder: true) {
+        guard refetch != .ifNeeded else { return entry }
+        var acting = entry
+        acting.identity = now
+        acting.actions = source.actions(entry.element)
+        return acting
+      }
     }
     let before = observed.entries.values.filter {
       $0.identity.matches(entry.identity, ignoringValue: ignoringValue, sameElement: CFEqual($0.element, entry.element))

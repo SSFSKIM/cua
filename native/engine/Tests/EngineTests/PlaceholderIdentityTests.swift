@@ -121,6 +121,37 @@ final class PlaceholderIdentityTests: XCTestCase {
     XCTAssertEqual(fake.treeReads, 0)
   }
 
+  func testASameHandleMatchByThePlaceholderAloneLeavesTheStoredEntryAsObserved() throws {
+    // The review of main..8ed0e07a: set_value's re-check matched the same handle only by ignoring the placeholder, and
+    // renewed the entry with its value unread; the handle then went, and a click's walk adopted a sibling that shows
+    // the old placeholder but another value. The entry stays as observed, so the walk refuses as main does.
+    let (tree, lineage, token) = try oneField()
+    tree.extra[1]?["AXValue"] = "draft" as CFString
+    _ = walk(tree, lineage)                              // observed with its value "draft"
+    let setValue = Resolving(tree)
+    setValue.readsValue = false
+    tree.extra[1]?["AXPlaceholderValue"] = "Type to search" as CFString
+    tree.actions[1] = ["AXConfirm"]
+    for refetch in [Refetch.ifNeeded, .always] {
+      XCTAssertTrue(CFEqual(try lineage.resolve(token, resolver: setValue.resolver, refetch: refetch).element, Engine.element(1)))
+    }
+    tree.extra[1]?["AXValue"] = "sent" as CFString
+    let checked = try lineage.resolve(token, resolver: setValue.resolver, refetch: .ignoringValue)
+    XCTAssertEqual(checked.actions, ["AXConfirm"], "the action gets what the handle reads now")
+    XCTAssertTrue(checked.identity.valueUnread)
+    let stored = try XCTUnwrap(lineage.entry(1))
+    XCTAssertEqual(stored.identity.value, "s:draft", "the stored entry is the observation's")
+    XCTAssertFalse(stored.identity.valueUnread)
+    XCTAssertEqual(stored.identity.placeholder, "Search")
+    XCTAssertEqual(stored.actions, [])
+    // The handle goes; a sibling shows the old placeholder with another value. A click on the old token refuses.
+    tree.unreadable = [1]
+    tree.children[0] = [9, 2]
+    tree.extra[9] = field("Query", placeholder: "Search", value: "other", identifier: "q")
+    XCTAssertEqual(errorName { try lineage.resolve(token, resolver: Resolving(tree).resolver) }, "elementNoLongerValid")
+    XCTAssertTrue(CFEqual(try XCTUnwrap(lineage.entry(1)).element, Engine.element(1)))
+  }
+
   // MARK: A gone handle: the placeholder is evidence (the review of main..46309856)
 
   func testAStaleHandleWhoseOnlyLikeFieldShowsAnotherPlaceholderIsNoLongerValid() throws {

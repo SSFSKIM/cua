@@ -6725,8 +6725,9 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   changed answered `elementNoLongerValid` after an invalidation.
   1. **The same handle.** `Lineage.resolve`'s re-read of the stored handle matches on everything but the placeholder
      (`matches(ignoringPlaceholder:)`). This holds in every refetch mode, set_value's post-write re-check included, and
-     covers focus-clear, rotation, input-switch and #366's re-fetch. The entry's identity keeps the observation's
-     placeholder, even where `.always` and `.ignoringValue` renew the rest from what the handle reads.
+     covers focus-clear, rotation, input-switch and #366's re-fetch. A match that holds only because the placeholder is
+     left out renews nothing: the stored entry stays exactly as observed, and the action alone gets what the handle
+     reads now (its identity and actions). A strict match renews as on main.
   2. **Everything beyond the same handle is main's.** That covers the observed count ("couldn't be started"), the walk
      ("no longer valid", "couldn't be finished") and `keepRecreated`. They match strictly, placeholder included, against
      the observation's identity. Once the handle is gone, the placeholder is evidence of which field this was, so a
@@ -6742,6 +6743,11 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
     refreshed field.
   - A replacement the walk adopted kept the old placeholder as its hint.
   All four are tests now, each refused as on main. The refresh, the tie-break and the observed-alone rule are gone.
+  The second build (8ed0e07a) renewed the entry on a placeholder-only match while keeping the observation's
+  placeholder. The review of main..8ed0e07a (doperpowers:reviewer-medium) found that set_value's renewal stored an
+  identity with its value unread. After that handle went, a click on the old token walked without the value, and
+  adopted a sibling that showed the old placeholder and another value; main refuses that. A placeholder-only match
+  now renews nothing, and the sequence is a test that refuses.
   Left as main's, with the reason:
   - The tree diff (`diff.mjs`) compares rendered lines, so a changed placeholder still shows as a changed element.
   - Token inheritance (`matchSiblings`) goes by handle.
@@ -6751,8 +6757,8 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
     not the placeholder's doing.
   Proven offline (`PlaceholderIdentityTests`): on the same handle, click then set_value, type_text after a click and the
   post-write re-check, each over a changed placeholder, answer neither `elementNoLongerValid` nor `valueUnconfirmed`. A
-  field that differs in its label or its identifier is still rejected. Two mutations each fail tests: the same-handle
-  rule, and the observation's placeholder kept on renewal (without it, the twin case resolves to the other field). #366's
+  field that differs in its label or its identifier is still rejected. Mutations that remove the same-handle rule, or
+  renew the entry on a placeholder-only match, each fail tests. #366's
   `testAnAcceptedWriteWhoseReFetchFailsIsValueUnconfirmed` now changes the field's label to make the re-fetch fail; its
   passing half carries run 44068144650's placeholder. Not measured live: how often a placeholder alone separates two
   fields on real pages (#398's measurement, run separately). The rule needs no such number, since a gone handle is

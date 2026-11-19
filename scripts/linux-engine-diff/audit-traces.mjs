@@ -39,11 +39,12 @@ export const DEFAULT_FREE_FLOOR_BYTES = 2 * 1024 ** 3;
 
 /**
  * The fields of each judge element (foreign.mjs `xtraceElements`) the judge reads, by its kind: the allowlist. Every
- * other field is dropped, the raw request text first among them.
+ * other field is dropped, the raw request text first among them, and an XTEST event's key or button code (`detail`),
+ * which the judge never reads and from which typed text could be read back.
  */
 export const PROJECTION = {
-  req: ['c', 'seq', 'major', 'ours', 'op', 'window', 'parent', 'attributes', 'structure', 'property', 'incr', 'empty', 'delete', 'destination', 'event', 'cmWindow', 'cmType', 'requestor', 'selection', 'target', 'dst', 'focus', 'resource', 'type', 'detail'],
-  error: ['c', 'seq', 'major', 'exact', 'code', 'bad'],
+  req: ['c', 'seq', 'major', 'ours', 'op', 'window', 'parent', 'attributes', 'structure', 'property', 'incr', 'empty', 'delete', 'destination', 'event', 'cmWindow', 'cmType', 'requestor', 'selection', 'target', 'dst', 'focus', 'resource', 'type'],
+  error: ['c', 'seq', 'major', 'minor', 'exact', 'claims', 'code', 'bad'],
   base: ['c', 'base', 'mask'],
   destroyed: ['w'],
   parent: ['w', 'parent'],

@@ -85,6 +85,19 @@ test("a ClientMessage's type is kept and named only from the protocol's own atom
   assert.deepEqual(replayed, live);
 });
 
+test("a FakeInput's key or button code never reaches the kept projection, and its findings are the same", () => {
+  const XTEST = ["005:<:0001: 20: Request(98): QueryExtension name='XTEST'", '005:>:0001:32: Reply to QueryExtension: present=true(0x01) major-opcode=132 first-event=0 first-error=0'];
+  const focus = [`005:<:0002:  4: Request(43): GetInputFocus `, `005:>:0002:32: Reply to GetInputFocus: revert-to=Parent(0x02) focus=${hex(PERSON)}`];
+  const key = (seq, code) => `005:<:${seq}: 36: XTEST-Request(132,2): UNKNOWN opcode=0x84 opcode2=0x02 unparsed-data=0x02,0x${code.toString(16)},0x00,0x00;`;
+  const text = [...XTEST, ...focus, key('0003', 0x9d), key('0004', 0x9e)].join('\n');
+  const projected = projectTrace(parsed(text), ROOT);
+  const inputs = projected.filter((el) => el.op === 'FakeInput');
+  assert.equal(inputs.length, 2);
+  assert.ok(inputs.every((el) => !('detail' in el)));
+  assert.ok(!/157|158|0x9d|0x9e/.test(JSON.stringify(inputs)));
+  assertEquivalent('a typed key', text, [new Set(), new Set([PERSON])]);
+});
+
 test('a kept trace holds no title on disk, and its re-judge gives the live findings', () => {
   const out = outDir();
   const keeper = traceKeeper({ out, run: 'pinned-V1', free: plenty });
@@ -275,8 +288,8 @@ test("a rollback that cannot remove its staging is recorded, never thrown, and n
   // what is left is the staging alone, never a bundle a re-judge would read
   const dir = join(out, AUDIT_TRACES_DIR, `r-${keeper.execution}`);
   assert.ok(readdirSync(dir).every((name) => name.startsWith('.staging-')));
-  // the next audit is kept, published whole
-  const next = traceKeeper({ out, run: 'r', free: plenty }).keep({ name: 'y', traces: [parsed(TEARDOWN)], registered: [], root: ROOT });
+  // the same keeper's next audit is kept, published whole
+  const next = keeper.keep({ name: 'y', traces: [parsed(TEARDOWN)], registered: [], root: ROOT });
   assert.equal(readKeptTraces(out, next, 'r').length, 1);
 });
 

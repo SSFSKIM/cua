@@ -111,6 +111,43 @@ test("route audit: a refused INCR announcement still opens its transfer, so the 
   assert.deepEqual(shown(route(lines)), []);
 });
 
+test('route audit: an error binds to one request only when no other request of its connection shares its sequence bits (fix wave 3)', () => {
+  // after the end, a Composite RedirectWindow the server accepted (a life the trace never saw begin), then one sequence
+  // cycle later a NameWindowPixmap the judge does not read, refused as BadWindow on the now-absent id: H''''s matcher
+  // binds the error to the RedirectWindow, but it cannot be shown to be that request's, so the RedirectWindow stays foreign
+  const redirect = `005:<:0010: 12: Composite-Request(142,1): RedirectWindow window=${hex(MINE)} update=Automatic(0x00)`;
+  const pixmap = `005:<:0010: 12: Composite-Request(142,6): NameWindowPixmap window=${hex(MINE)} pixmap=0x00400099`;
+  const refusal = error('0010', { major: 142, minor: 6 });
+  assert.deepEqual(shown(route([watch(), destroyed(), redirect, pixmap, refusal])), [`RedirectWindow on ${hex(MINE)}`]);
+  // the error's minor opcode is the request's own: a refusal of minor 6 never excuses a minor 1, even alone
+  assert.deepEqual(shown(route([watch(), destroyed(), redirect, refusal])), [`RedirectWindow on ${hex(MINE)}`]);
+  // two requests of the connection with the same 16 bits: neither is excused, whichever the error names
+  const twice = [watch(), destroyed(), unredirect('0011'), unredirect('0011'), error('0011', { major: 142, minor: 3 })];
+  assert.deepEqual(shown(route(twice)), [`UnredirectWindow on ${hex(MINE)}`, `UnredirectWindow on ${hex(MINE)}`]);
+  // a read the judge drops is still a claimant
+  const read = `005:<:0011:  8: Request(15): QueryTree window=${hex(MINE)}`;
+  assert.deepEqual(shown(route([watch(), destroyed(), read, unredirect('0011'), error('0011', { major: 142, minor: 3 })])), [`UnredirectWindow on ${hex(MINE)}`]);
+  // one claimant, its opcodes and its window the error's: the run's
+  assert.equal(route([watch(), destroyed(), unredirect('0011'), error('0011', { major: 142, minor: 3 })]).clean, true);
+});
+
+test("route audit: an error's claimants are counted over the whole trace, before a whole-run parse keeps only what the judge reads", async () => {
+  const { mkdtempSync: mk, writeFileSync: wf, rmSync: rm } = await import('node:fs');
+  const { parseXtraceFile } = await import('../../scripts/linux-engine-diff/audit.mjs');
+  const { foreignKeep } = await import('../../scripts/linux-engine-diff/foreign.mjs');
+  const dir = mk(join(tmpdir(), 'cua171-claims-'));
+  try {
+    const redirect = `005:<:0010: 12: Composite-Request(142,1): RedirectWindow window=${hex(MINE)} update=Automatic(0x00)`;
+    const pixmap = `005:<:0010: 12: Composite-Request(142,6): NameWindowPixmap window=${hex(MINE)} pixmap=0x00400099`;
+    const file = join(dir, 'x11.log');
+    wf(file, [watch(), destroyed(), redirect, pixmap, error('0010', { major: 142, minor: 6 })].join('\n'));
+    const trace = await parseXtraceFile(file, { keep: foreignKeep });
+    assert.deepEqual(shown(auditForeign(trace, { registered: reg, root: ROOT, routeAudit: true })), [`RedirectWindow on ${hex(MINE)}`]);
+  } finally {
+    rm(dir, { recursive: true, force: true });
+  }
+});
+
 // ---------------------------------------------------------------------------------------------------------------------
 // The whole-run RECORD: the exact epoch rule
 
@@ -189,6 +226,12 @@ test('record: a refusal that cannot be bound to one creation turns the exemption
   // tick), and the error, read late on its own context, timed before the wrap; both pass `<=` at different ticks
   const WRAP = 2 ** 32 - 200;
   assert.deepEqual(seqs(record([created(1000, GEDIT, 10), gone(2000), at2(ELSE, WRAP), at2(MINE, 100), err(WRAP + 50), engineFocusOut(3100, 40)], [1050])), [40]);
+  // the error stamped just after the wrap, against a refused creation from before it: H''''s matcher sees only the
+  // recycled id's birth at or before the error's tick, but the full record holds two claimants
+  assert.deepEqual(seqs(record([created(1000, GEDIT, 10), gone(2000), at2(ELSE, WRAP), at2(MINE, 10), err(20), engineFocusOut(3100, 40)], [1050])), [40]);
+  // a request of another opcode with the same sequence bits is a claimant too
+  const other = JSON.stringify({ kind: 'req', ms: 2950, client: GEDIT, seq: 50, t: 2950, op: 'MapWindow', window: ELSE });
+  assert.deepEqual(seqs(record([created(1000, GEDIT, 10), gone(2000), other, at2(MINE, 3000), err(3000), engineFocusOut(3100, 40)], [1050])), [40]);
   // an untimed error (a record of one context) binds by the client's latest request alone: never shown to be the creation
   const untimed = JSON.stringify({ kind: 'error', ms: 3000, client: GEDIT, seq: 50, major: 1 });
   assert.deepEqual(seqs(record([created(1000, GEDIT, 10), gone(2000), tick(MINE), untimed, engineFocusOut(3100, 40)], [1050])), [40]);

@@ -156,7 +156,7 @@ export function judgeForeign(elements, { registered, root, strictBirth = false, 
   const unattributed = { clients: new Set(), mutating: 0 };
   // a creation the server refused, and every refused request, by the request element itself; and the windows whose
   // creation a refusal could not be bound to unambiguously, for which the ended-life rule is off
-  const { refused, ambiguous } = refusedRequests(elements);
+  const { refused, ambiguous, sole } = refusedRequests(elements);
 
   const lifeOf = (w) => {
     let life = lives.get(w);
@@ -241,8 +241,10 @@ export function judgeForeign(elements, { registered, root, strictBirth = false, 
     const life = lives.get(w);
     if (!life || life.alive || !isRegistered(w, life)) return false;
     if (strictBirth) return true;
+    // the error binds to this request alone (its connection sent no other request with its sequence bits, read or
+    // not), names this request's opcodes, and says no window held this id
     const error = refused.get(el);
-    return error?.code === BAD_WINDOW && error.bad === w;
+    return error?.code === BAD_WINDOW && error.bad === w && sole.has(error) && error.major === el.major && (error.minor ?? 0) === (MINOR_OF[el.op] ?? 0);
   };
   // a route audit's XTEST input on a window of a live harness window's client (GTK 4's focus window inside its toplevel,
   // task 50): that client's range is its own while the window lives, and the trace sees the window end only where one
@@ -405,10 +407,29 @@ const MINOR_OF = { FakeInput: 2, RedirectWindow: 1, RedirectSubwindows: 2, Unred
  * error's time from before it): any of them may be the refused one, so none of their lives is certain; and the window
  * of a CreateWindow an untimed record error refused, bound by the client's latest request alone. The binding itself is
  * H''''s, unchanged; `ambiguous` only turns the ended-life rule off (task 106, fix wave 2).
+ * `sole`: the errors that bind to one request unambiguously (task 106, fix wave 3): of the whole stream, before any
+ * time filter and before the requests a judge does not read are dropped (xtrace's `claims`, counted at the parse), its
+ * connection sent exactly one request with its 16 sequence bits. Any other error, and every CreateWindow among its
+ * claimants, is `ambiguous`'s or outside `sole`: the ended-life rule never rests on it.
  */
 function refusedRequests(elements) {
   const refused = new Map();
   const ambiguous = new Set();
+  const sole = new Set();
+  // every request of the stream by its client and low 16 sequence bits, whatever its opcode or time
+  const byBits = new Map();
+  for (const el of elements) {
+    if (el.k !== 'req') continue;
+    const bits = `${el.c}|${el.seq & 0xffff}`;
+    if (!byBits.has(bits)) byBits.set(bits, []);
+    byBits.get(bits).push(el);
+  }
+  const claim = (el) => {
+    const all = byBits.get(`${el.c}|${el.seq & 0xffff}`) ?? [];
+    const count = typeof el.claims === 'number' ? el.claims : all.length;
+    if (count === 1) sole.add(el);
+    else for (const r of all) if (r.op === 'CreateWindow' && typeof r.window === 'number') ambiguous.add(r.window);
+  };
   const bySeq = new Map();
   const last = new Map();
   const timed = new Map();
@@ -424,6 +445,7 @@ function refusedRequests(elements) {
       bySeq.set(`${el.c}|${el.seq & 0xffff}`, el);
       last.set(el.c, el);
     } else if (el.k === 'error' && typeof el.t === 'number') {
+      claim(el);
       const candidates = (timed.get(timedKey(el.c, el.seq, el.major, el.minor)) ?? []).filter((r) => r.t <= el.t);
       if (candidates.length) {
         const chosen = candidates.at(-1);
@@ -431,6 +453,7 @@ function refusedRequests(elements) {
         if (candidates.length > 1) for (const r of candidates) if (r.op === 'CreateWindow' && typeof r.window === 'number') ambiguous.add(r.window);
       }
     } else if (el.k === 'error') {
+      claim(el);
       const request = el.exact ? bySeq.get(`${el.c}|${el.seq & 0xffff}`) : last.get(el.c);
       if (request && (request.seq & 0xffff) === (el.seq & 0xffff) && (request.major === undefined || request.major === el.major)) {
         refused.set(request, el);
@@ -439,7 +462,7 @@ function refusedRequests(elements) {
       }
     }
   }
-  return { refused, ambiguous };
+  return { refused, ambiguous, sole };
 }
 
 /**
@@ -631,8 +654,17 @@ function xtraceRequest(r, extensions) {
  * the latest input focus a request set or a reply read, a button by the latest pointer reply with no motion since, a
  * motion by the first pointer reply after it and before the next input; anything else is left unplaced.
  */
-export function xtraceElements({ elements, extensions }, root) {
+export function xtraceElements({ elements, extensions, claims }, root) {
   const out = [];
+  // each connection's requests by their low 16 sequence bits, over the whole trace: the parse's count (taken before a
+  // whole-run parse keeps only what the judge reads), else this stream's own
+  const claimants = claims ?? new Map();
+  if (!claims)
+    for (const item of elements) {
+      if (item.k !== 'req') continue;
+      const bits = `${item.r.conn}|${item.r.seq & 0xffff}`;
+      claimants.set(bits, (claimants.get(bits) ?? 0) + 1);
+    }
   const bySeq = new Map();
   let focus;
   let pointer;
@@ -673,8 +705,12 @@ export function xtraceElements({ elements, extensions }, root) {
       // `3=Window: major=25, minor=0, bad=0x01800064, seq=0010`: the error's code and the value it names are read too
       const s = text.match(/\bmajor=(\d+),.*\bseq=([0-9a-f]+)/);
       const code = text.match(/^(\d+)=/);
+      const minor = text.match(/\bminor=(\d+)/);
       const bad = text.match(/\bbad=(?:0x([0-9a-f]+)|(\d+))/);
-      if (s) out.push({ k: 'error', c: conn, seq: Number.parseInt(s[2], 16), major: Number(s[1]), exact: true, ...(code ? { code: Number(code[1]) } : {}), ...(bad ? { bad: bad[1] !== undefined ? Number.parseInt(bad[1], 16) : Number(bad[2]) } : {}) });
+      if (s) {
+        const seq = Number.parseInt(s[2], 16);
+        out.push({ k: 'error', c: conn, seq, major: Number(s[1]), exact: true, claims: claimants.get(`${conn}|${seq & 0xffff}`) ?? 0, ...(minor ? { minor: Number(minor[1]) } : {}), ...(code ? { code: Number(code[1]) } : {}), ...(bad ? { bad: bad[1] !== undefined ? Number.parseInt(bad[1], 16) : Number(bad[2]) } : {}) });
+      }
     } else if (what === 'DestroyNotify') {
       // a generated one is read too, deliberately unlike ReparentNotify: an end only makes windows foreign (fails closed)
       const w = field(text, 'window');

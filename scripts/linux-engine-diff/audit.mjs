@@ -26,8 +26,12 @@ const QUERY_REPLY = /^(\d+):>:([0-9a-f]+):.*Reply to QueryExtension: present=tru
  */
 const SERVER = /^(\d+):>:(?:([0-9a-f]+):(?:\d+: Reply to (QueryTree|TranslateCoordinates|GetInputFocus|QueryPointer): |(Error) (?=\d+=\w+: )| Event (?:\(generated\) )?(SelectionRequest|DestroyNotify|ReparentNotify)\(\d+\) )| (Success), )(.*)$/;
 
-/** A parse's state, and one trace line read into it (`parseXtrace`, `parseXtraceFile`). */
-const parseState = () => ({ requests: [], elements: [], extensions: {}, asked: new Map(), offset: 0 });
+/**
+ * A parse's state, and one trace line read into it (`parseXtrace`, `parseXtraceFile`). `claims`: every request's
+ * connection and low 16 sequence bits, counted before a `keep` drops any, so an error's claimants are the whole trace's
+ * (foreign.mjs `xtraceElements`; task 106, fix wave 3).
+ */
+const parseState = () => ({ requests: [], elements: [], extensions: {}, asked: new Map(), offset: 0, claims: new Map() });
 
 function readLine(state, line, keep) {
   const at = state.offset;
@@ -45,6 +49,8 @@ function readLine(state, line, keep) {
   }
   const m = line.match(REQUEST);
   if (!m) return;
+  const bits = `${Number(m[1])}|${Number.parseInt(m[2], 16) & 0xffff}`;
+  state.claims.set(bits, (state.claims.get(bits) ?? 0) + 1);
   const request = {
     conn: Number(m[1]),
     seq: Number.parseInt(m[2], 16),
@@ -60,13 +66,15 @@ function readLine(state, line, keep) {
   state.elements.push({ k: 'req', r: request });
 }
 
-const parsed = ({ requests, extensions, elements }) => ({ requests, extensions, elements });
+const parsed = ({ requests, extensions, elements, claims }) => ({ requests, extensions, elements, claims });
 
 /**
  * A trace's requests `{conn, seq, major, minor, name, text, at}`, the extensions' major opcodes the server reported,
  * and `elements`: in the trace's order, each request (`{k: 'req', r}`) and each server line the foreign-window judge
  * reads (`{k: 'line', conn, seq, what, text}`, `SERVER`). `at` is where the request's line starts in the trace, in
- * bytes, which the proxy's marks are measured in.
+ * bytes, which the proxy's marks are measured in. `claims`: how many requests each connection sent under each value of
+ * the low 16 sequence bits, kept or not. An audit's findings never carry a request's text: it names atoms and
+ * payloads, and the rows outlive the run.
  */
 export function parseXtrace(text) {
   const state = parseState();
@@ -104,7 +112,7 @@ export function auditRequests({ requests, extensions }) {
   const found = [];
   for (const r of requests) {
     const what = forbidden(r, extensions);
-    if (what) found.push({ conn: r.conn, seq: r.seq, what, text: r.text });
+    if (what) found.push({ conn: r.conn, seq: r.seq, what });
   }
   const traced = requests.length > 0;
   return { clean: traced && found.length === 0, traced, requests: requests.length, forbidden: found };
@@ -131,7 +139,7 @@ export function auditForeground({ requests, extensions }, target) {
     if (!what) continue;
     const targeted = what === 'XTEST FakeInput' || (what !== 'WarpPointer' && namedWindow(r) === target);
     if (targeted) allowed++;
-    else found.push({ conn: r.conn, seq: r.seq, what, text: r.text });
+    else found.push({ conn: r.conn, seq: r.seq, what });
   }
   const traced = requests.length > 0;
   return { clean: traced && found.length === 0, traced, requests: requests.length, allowed, forbidden: found };
@@ -145,7 +153,7 @@ export function auditNothingSent({ requests, extensions }) {
   const found = [];
   for (const r of requests) {
     const what = r.major === 25 ? 'SendEvent' : forbidden(r, extensions);
-    if (what) found.push({ conn: r.conn, seq: r.seq, what, text: r.text });
+    if (what) found.push({ conn: r.conn, seq: r.seq, what });
   }
   const traced = requests.length > 0;
   return { clean: traced && found.length === 0, traced, requests: requests.length, forbidden: found };
@@ -172,13 +180,13 @@ export function auditAnswered({ requests, extensions }, marks, answers) {
     for (const r of requests.filter((x) => x.at >= from && x.at < to)) {
       attributed.add(r);
       const what = answer.refused ? (r.major === 25 ? 'SendEvent' : forbidden(r, extensions)) : forbidden(r, extensions);
-      if (what) found.push({ conn: r.conn, seq: r.seq, what: answer.refused ? `${what} with request ${i}'s refusal` : what, text: r.text });
+      if (what) found.push({ conn: r.conn, seq: r.seq, what: answer.refused ? `${what} with request ${i}'s refusal` : what });
     }
   });
   for (const r of requests) {
     if (attributed.has(r)) continue;
     const what = forbidden(r, extensions);
-    if (what) found.push({ conn: r.conn, seq: r.seq, what, text: r.text });
+    if (what) found.push({ conn: r.conn, seq: r.seq, what });
   }
   const traced = requests.length > 0;
   return { clean: traced && found.length === 0, traced, requests: requests.length, forbidden: found };
@@ -291,7 +299,7 @@ const heldName = ({ type, detail }) => `${type === 'KeyPress' ? 'key' : 'button'
  */
 export function auditHeldRelease({ requests, extensions }, target, { route, marks }) {
   const found = [];
-  const flag = (what, r) => found.push({ conn: r?.conn, seq: r?.seq, what, text: r?.text });
+  const flag = (what, r) => found.push({ conn: r?.conn, seq: r?.seq, what });
   const at = new Map(marks.map((m) => [m.tag, m.at]));
   const indices = [...new Set(marks.map((m) => m.tag.split(':')[1]))].sort((a, b) => Number(a) - Number(b));
   const samples = [];

@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {Script} from 'node:vm';
-import {CELLS,UNITS,AT,RECORDED_ROLE,unitKey,plan,pointFor} from './cells.mjs';
-import {quantiles,outcomeOf,stalePointOf,routeOf,findLink,nodeAt,landingOf,delta,score,gates,coverage,summarize,judge,MIN_PAIRS} from './check.mjs';
+import {CELLS,UNITS,AT,FILLER,DEEP,recordedRole,unitKey,unitsFor,plan,pointFor} from './cells.mjs';
+import {quantiles,outcomeOf,stalePointOf,routeOf,findLink,covers,nodeAt,landingOf,delta,score,gates,coverage,summarize,judge,MIN_PAIRS} from './check.mjs';
 import {page} from './page.mjs';
 import {toPixels} from './run.mjs';
 
@@ -17,13 +17,27 @@ test('the guard\'s record is where the harness reads it on this checkout', () =>
   assert.ok(sp.includes('enum Verdict: String { case kept, refused }'));
 });
 
+test('the walk\'s caps the ruling-881 twins rely on are this checkout\'s', () => {
+  const walk = engine('Walk.swift'), num = name => Number(walk.match(new RegExp(`let ${name} = ([0-9_]+)`))[1].replaceAll('_', ''));
+  // Past the node cap: the filler alone outnumbers it, in groups the width rule reads whole.
+  assert.ok(FILLER.groups * FILLER.each > num('maxObservedNodes')); assert.ok(FILLER.each <= num('widthThreshold'));
+  // Below the depth cap, within the guard's ancestor walk (so #316's web-area rule still reaches the web area).
+  const levels = Number(engine('StalePoint.swift').match(/let stalePointAncestorLevels = (\d+)/)[1]);
+  assert.ok(DEEP > num('maxDepth') && DEEP + 20 < levels);
+});
+
 test('plans: ten per unit to measure, twenty per head interleaved to qualify', () => {
-  assert.equal(UNITS.length, Object.keys(CELLS).length * AT.length);
+  assert.equal(UNITS.length, Object.values(CELLS).reduce((n, c) => n + (c.at ?? AT).length, 0));
+  assert.deepEqual(UNITS.filter(u => u.cell === 'twinbtn').map(u => u.at), ['link']);
+  assert.equal(recordedRole('twinbtn', 'link'), 'AXButton'); assert.equal(recordedRole('twin', 'link'), 'AXLink');
+  assert.equal(recordedRole('twinbtn', 'text'), 'AXStaticText');
   assert.equal(plan({mode: 'measure', heads: ['main']}).length, 10 * UNITS.length);
   const q = plan({mode: 'qualify', heads: ['main', 'fix']});
   assert.equal(q.length, 2 * 20 * UNITS.length);
   assert.deepEqual([...new Set(q.filter((_, i) => i % 2 === 0).map(r => r.head))].sort(), ['fix', 'main']);
-  for (const c of Object.values(CELLS)) assert.ok(['grow', 'shrink', 'refuse', 'asMain', 'expect', 'limit'].includes(c.kind));
+  for (const c of Object.values(CELLS)) assert.ok(['twin', 'keep', 'asMain'].includes(c.kind));
+  // A twin carries the target's label, so the topmost of those reading it is the target.
+  for (const c of Object.values(CELLS)) if (c.kind === 'twin') assert.ok(c.before === c.after && ['move', 'list', 'cap', 'deep'].includes(c.twin));
   // Every cell's text before and after is distinct from the other links', so the observation finds it alone.
   for (const c of Object.values(CELLS)) for (const t of [c.before, c.after]) assert.ok(!['Archive', 'Drafts'].includes(t));
 });
@@ -52,6 +66,26 @@ test('the link and its text are found by their label, the link by its frame when
   assert.equal(findLink([text, link, {...text}], 'Inbox'), null);
   assert.equal(findLink([text, link], 'Inbox (3)'), null);
   assert.equal(findLink([{...text, frame: {x: 0, y: 0, width: 0, height: 0}}, link], 'Inbox'), null);
+  // A button, with or without a text child; the topmost of two with `first`.
+  const button = {...link, role: 'AXButton'}, button2 = {...link2, role: 'AXButton'};
+  assert.deepEqual(findLink([button2, button], 'Inbox', {first: true, role: 'AXButton'}), {text: null, link: button});
+  assert.deepEqual(findLink([button, text], 'Inbox', {role: 'AXButton'}), {text, link: button});
+  assert.equal(findLink([button2, button], 'Inbox', {role: 'AXButton'}), null);
+  assert.equal(findLink([text, link], 'Inbox', {role: 'AXButton'}), null);
+});
+
+test('a ruling-881 twin must be absent from the observation, which the walk must have cut', () => {
+  const found = {text, link}, archive = {role: 'AXLink', title: 'Archive', frame: {x: 420, y: 200, width: 130, height: 56}};
+  const twinText = {...text, frame: {...text.frame, y: 2000}};
+  const cap = CELLS.twincap, deep = CELLS.twindeep;
+  assert.equal(covers({nodes: [text, link, archive], truncated: {count: 2300}}, cap, found), true);
+  assert.equal(covers({nodes: [text, link, archive, twinText], truncated: {count: 2300}}, cap, found), false);
+  assert.equal(covers({nodes: [text, link, archive], truncated: null}, cap, found), false);
+  assert.equal(covers({nodes: [text, link, archive], truncated: {depth: 200}}, cap, found), false);
+  assert.equal(covers({nodes: [text, link, archive], truncated: {depth: 200}}, deep, found), true);
+  assert.equal(covers({nodes: [text, link, {...link, frame: {...link.frame, y: 200}}], truncated: {depth: 200}}, deep, found), false);
+  assert.equal(covers({nodes: [text, link], truncated: {count: 10}}, deep, found), false);
+  assert.equal(covers({nodes: []}, CELLS.twin, found), true);
 });
 
 test('points: near the text\'s start, or in the link\'s left padding, and back through the screenshot\'s pixels', () => {
@@ -84,8 +118,8 @@ test('replies: outcome, the guard\'s record on a refusal and on a success, the r
 test('placement: the deepest framed node at the point, by depth, else the smallest frame', () => {
   const window = {role: 'AXWindow', depth: 0, frame: {x: 400, y: 30, width: 620, height: 700}};
   const nodes = [window, {...link, depth: 7}, {...text, depth: 8}, {role: 'AXGroup', depth: 9, frame: {x: 0, y: 0, width: 0, height: 0}}];
-  assert.equal(nodeAt(nodes, pointFor('text', text.frame)).role, RECORDED_ROLE.text);
-  assert.equal(nodeAt(nodes, pointFor('link', link.frame)).role, RECORDED_ROLE.link);
+  assert.equal(nodeAt(nodes, pointFor('text', text.frame)).role, recordedRole('plain', 'text'));
+  assert.equal(nodeAt(nodes, pointFor('link', link.frame)).role, recordedRole('plain', 'link'));
   assert.equal(nodeAt(nodes, {x: 410, y: 40}).role, 'AXWindow');
   assert.equal(nodeAt(nodes, {x: 10, y: 10}), null);
   // Without depth, the smallest frame holding the point; a deeper large node wins over a shallower small one.
@@ -127,77 +161,91 @@ test('verdicts: kept and landed, refused, refused yet delivered or unreported, m
 });
 
 // Synthetic qualification rows: `verdictFor` names each row's verdict.
-function rows(verdictFor, extra = () => ({})) {
-  return plan({mode: 'qualify', heads: ['main', 'fix']}).map(r => {
+function rows(verdictFor, extra = () => ({}), units = UNITS) {
+  return plan({mode: 'qualify', heads: ['main', 'fix'], units}).map(r => {
     const v = verdictFor(r);
     return {...r, valid: true, verdict: v, click: v.startsWith('kept') ? 'success' : 'screenChangedSinceScreenshot',
-      guard: {verdict: v.startsWith('kept') ? 'kept' : 'refused', reason: v.startsWith('kept') ? 'sameElement' : 'nodeGone', recordedRole: RECORDED_ROLE[r.at]},
+      guard: {verdict: v.startsWith('kept') ? 'kept' : 'refused', reason: v.startsWith('kept') ? 'sameElement' : 'nodeGone',
+        recordedRole: recordedRole(r.cell, r.at), ms: r.head === 'fix' ? 4 : 2},
       presentationHeld: true, ...extra(r)};
   });
 }
-const mainOf = r => ['refuse'].includes(CELLS[r.cell].kind) || r.cell === 'linkmono' ? 'refused'
-  : ['grow', 'shrink'].includes(CELLS[r.cell].kind) && r.at === 'text' ? 'refused' : 'kept-landed';
-const good = r => r.head === 'main' ? mainOf(r) : ['grow', 'shrink'].includes(CELLS[r.cell].kind) ? 'kept-landed'
-  : ['limit', 'expect'].includes(CELLS[r.cell].kind) && r.at === 'text' ? CELLS[r.cell].expect.verdict : mainOf(r);
+// Main as phase 1 measured it: the twins clicked, the text that changes width and the changes of meaning refused at the
+// text, the moved link refused at both points, the rest kept and landed.
+const mainOf = r => CELLS[r.cell].kind === 'twin' ? 'wrong-target'
+  : ['linksave', 'moved', 'linkmono'].includes(r.cell) || ['inbox', 'reltime', 'shrink', 'right', 'centre'].includes(r.cell) && r.at === 'text'
+    ? 'refused' : 'kept-landed';
+const good = r => r.head === 'fix' && CELLS[r.cell].kind === 'twin' ? 'refused' : mainOf(r);
 const planned = list => list.reduce((o, r) => (o[`${r.head}/${unitKey(r)}`] = (o[`${r.head}/${unitKey(r)}`] ?? 0) + 1, o), {});
-test('gates pass a fix that keeps the growing links and still refuses the rest, and fail each way it can be wrong', () => {
+const at = (cell, pt, rep, v) => r => r.head === 'fix' && r.cell === cell && (!pt || r.at === pt) && (rep == null || r.rep === rep) ? v : good(r);
+
+test('gates pass a fix that refuses every twin and answers as main elsewhere, and fail each way it can be wrong', () => {
   const ok = rows(good), cov = coverage(ok, {planned: planned(ok), heads: ['main', 'fix']});
   const g = gates(ok, {coverage: cov});
   assert.ok(Object.values(g).every(x => x.pass), JSON.stringify(g));
-  const unfixed = rows(r => r.head === 'fix' && r.cell === 'reltime' && r.at === 'text' && r.rep === 7 ? 'refused' : good(r));
-  assert.equal(gates(unfixed, {coverage: cov}).keptAndLanded.pass, false);
-  const missed = rows(r => r.head === 'fix' && r.cell === 'shrink' && r.rep === 1 ? 'kept-missed' : good(r));
-  assert.equal(gates(missed, {coverage: cov}).keptAndLanded.pass, false);
-  const loose = rows(r => r.head === 'fix' && r.cell === 'moved' && r.at === 'text' && r.rep === 3 ? 'wrong-target' : good(r));
-  const gl = gates(loose, {coverage: cov});
-  assert.equal(gl.stillRefused.pass, false); assert.equal(gl.noWrongTarget.pass, false);
-  const kept = rows(r => r.head === 'fix' && r.cell === 'linksave' && r.rep === 0 ? 'kept-landed' : good(r));
-  assert.equal(gates(kept, {coverage: cov}).stillRefused.pass, false);
-  const changed = rows(r => r.head === 'fix' && r.cell === 'linkmono' && r.at === 'text' && r.rep === 5 ? 'kept-landed' : good(r));
-  assert.equal(gates(changed, {coverage: cov}).othersAsMain.pass, false);
-  // Another refusal reason alone is reported, not failed.
-  const reason = rows(good, r => r.head === 'fix' && r.cell === 'linkmono' ? {guard: {verdict: 'refused', reason: 'relabelled'}} : {});
-  const gr = gates(reason, {coverage: cov});
-  assert.equal(gr.othersAsMain.pass, true); assert.equal(gr.othersAsMain.reasonDiffer, 40);
+  assert.equal(g.reproduced.result, 'reproduced');
+  assert.equal(g.twinRefused.mainWrong, 20 * 5); assert.equal(g.twinUnrecorded.mainWrong, 20 * 4);
+  assert.equal(g.noWrongTarget.mainWrong, 9 * 20); assert.deepEqual(g.guardMs.fix, {n: ok.length / 2, p50: 4, p95: 4, max: 4});
+  // A twin kept (on the twin, or anywhere), or refused for another reason, fails its gate; a click on it fails both.
+  const landed = gates(rows(at('twindel', 'link', 3, 'wrong-target')), {coverage: cov});
+  assert.equal(landed.twinRefused.pass, false); assert.equal(landed.twinRefused.fixWrong, 1); assert.equal(landed.noWrongTarget.pass, false);
+  assert.equal(landed.twinUnrecorded.pass, true);
+  const capped = gates(rows(at('twincap', 'text', 0, 'wrong-target')), {coverage: cov});
+  assert.equal(capped.twinUnrecorded.pass, false); assert.equal(capped.twinRefused.pass, true);
+  assert.equal(capped.twinUnrecorded.perUnit['twincap/text'].missed, 1);
+  const other = rows(good, r => r.head === 'fix' && r.cell === 'twinbtn' ? {guard: {verdict: 'refused', reason: 'frameMoved'}} : {});
+  assert.equal(gates(other, {coverage: cov}).twinRefused.pass, false);
+  for (const v of ['kept-landed', 'kept-missed', 'refused-delivered', 'refused-unreported', 'no-guard', 'misplaced'])
+    assert.equal(gates(rows(at('twin', 'text', 2, v)), {coverage: cov}).twinRefused.pass, false, v);
+  // A re-creation refused where main kept and landed: the regression keptAsMain names.
+  const regressed = gates(rows(at('remount', 'link', 5, 'refused')), {coverage: cov}).keptAsMain;
+  assert.equal(regressed.pass, false); assert.equal(regressed.refusedWhereMainKept, 1); assert.equal(regressed.differ, 1);
+  assert.equal(gates(rows(at('like', 'text', 5, 'kept-missed')), {coverage: cov}).keptAsMain.pass, false);
+  // Every other cell as main: a refusal kept, a kept one refused.
+  assert.equal(gates(rows(at('linksave', 'text', 0, 'kept-landed')), {coverage: cov}).othersAsMain.pass, false);
+  assert.equal(gates(rows(at('inbox', 'link', 0, 'refused')), {coverage: cov}).othersAsMain.pass, false);
+  const moved = gates(rows(at('moved', 'text', 0, 'wrong-target')), {coverage: cov});
+  assert.equal(moved.othersAsMain.pass, false); assert.equal(moved.noWrongTarget.pass, false);
+  // Another refusal reason alone is reported, not failed, outside the twins.
+  const reason = gates(rows(good, r => r.head === 'fix' && r.cell === 'linkmono' ? {guard: {verdict: 'refused', reason: 'relabelled'}} : {}), {coverage: cov});
+  assert.equal(reason.othersAsMain.pass, true); assert.equal(reason.othersAsMain.reasonDiffer, 40);
   const foreground = rows(good, r => r.head === 'fix' && r.cell === 'like' && r.at === 'link' && r.rep === 4 ? {presentationHeld: false} : {});
   assert.deepEqual(gates(foreground, {coverage: cov}).presentation.worse, ['like/link']);
   // A unit with no valid fix row proves nothing.
-  const hollow = ok.map(r => r.head === 'fix' && r.cell === 'inbox' && r.at === 'text' ? {...r, valid: false, invalid: 'prepare'} : r);
+  const hollow = ok.map(r => r.head === 'fix' && r.cell === 'twindeep' && r.at === 'link' ? {...r, valid: false, invalid: 'uncovered@placement'} : r);
   const gh = gates(hollow, {coverage: coverage(hollow, {planned: planned(ok), heads: ['main', 'fix']})});
-  assert.equal(gh.coverage.pass, false); assert.equal(gh.keptAndLanded.pass, false);
+  assert.equal(gh.coverage.pass, false); assert.equal(gh.twinUnrecorded.pass, false);
   assert.equal(coverage(ok.slice(0, -1), {planned: planned(ok), heads: ['main', 'fix']}).complete, false);
-  // The head's own answers after a checked placement fail the gates they reach.
-  for (const v of ['no-guard', 'misplaced', 'refused-unreported']) {
-    const growing = gates(rows(r => r.head === 'fix' && r.cell === 'inbox' && r.at === 'link' && r.rep === 2 ? v : good(r)), {coverage: cov});
-    assert.equal(growing.keptAndLanded.pass, false, v);
-    const refusing = gates(rows(r => r.head === 'fix' && r.cell === 'moved' && r.rep === 2 ? v : good(r)), {coverage: cov});
-    assert.equal(refusing.stillRefused.pass, false, v);
-    const other = gates(rows(r => r.head === 'fix' && r.cell === 'plain' && r.at === 'text' && r.rep === 2 ? v : good(r)), {coverage: cov});
-    assert.equal(other.othersAsMain.pass, false, v); assert.equal(other.othersAsMain.differ, 1, v);
-  }
 });
 
-test('reproduced: main refused at least half its valid rows of the growing links\' text, else inconclusive', () => {
+test('reproduced: main clicked the twin on at least half its valid rows of `twin`, else inconclusive', () => {
   const cov = {complete: true, covered: true};
-  assert.equal(gates(rows(good), {coverage: cov}).reproduced.pass, true);
-  const half = rows(r => r.head === 'main' && CELLS[r.cell].kind === 'grow' && r.at === 'text' && r.rep < 10 ? 'kept-landed' : good(r));
-  assert.deepEqual(gates(half, {coverage: cov}).reproduced, {pass: true, result: 'reproduced', mainRows: 40, mainRefused: 20});
-  const lost = rows(r => r.head === 'main' && CELLS[r.cell].kind === 'grow' && r.at === 'text' && r.rep < 11 ? 'kept-landed' : good(r));
-  const g = gates(lost, {coverage: cov}).reproduced;
-  assert.equal(g.pass, false); assert.equal(g.result, 'not reproduced (inconclusive)');
-  // Shrinking text and the link's padding do not count; nor do invalid rows.
-  const noText = rows(good).filter(r => !(r.head === 'main' && CELLS[r.cell].kind === 'grow' && r.at === 'text'));
-  assert.equal(gates(noText, {coverage: cov}).reproduced.pass, false);
+  const half = rows(r => r.head === 'main' && r.cell === 'twin' && r.rep < 10 ? 'kept-landed' : good(r));
+  assert.deepEqual(gates(half, {coverage: cov}).reproduced, {pass: true, result: 'reproduced', mainRows: 40, mainWrong: 20});
+  const lost = gates(rows(r => r.head === 'main' && r.cell === 'twin' && r.rep < 11 ? 'refused' : good(r)), {coverage: cov}).reproduced;
+  assert.equal(lost.pass, false); assert.equal(lost.result, 'not reproduced (inconclusive)');
 });
 
-test('othersAsMain needs usable pairs in every unit: both rows valid, neither observation failed', () => {
+test('a run of some cells is judged on those cells alone', () => {
+  const units = unitsFor('remount,twincap'), cov = {complete: true, covered: true};
+  assert.deepEqual(units.map(unitKey), ['twincap/text', 'twincap/link', 'remount/text', 'remount/link']);
+  assert.throws(() => unitsFor('remount,nosuch'));
+  assert.equal(unitsFor(''), UNITS);
+  const g = gates(rows(good, () => ({}), units), {coverage: cov, units});
+  assert.ok(Object.values(g).every(x => x.pass), JSON.stringify(g));
+  assert.equal(g.reproduced.result, 'not in this run');
+  assert.equal(gates(rows(at('twincap', 'link', 1, 'kept-landed'), () => ({}), units), {coverage: cov, units}).twinUnrecorded.pass, false);
+  const c = coverage(rows(good, () => ({}), units), {planned: planned(rows(good, () => ({}), units)), heads: ['main', 'fix'], units});
+  assert.equal(Object.keys(c.per).length, 8); assert.ok(c.complete && c.covered);
+});
+
+test('paired gates need usable pairs in every unit: both rows valid, neither observation failed', () => {
   const cov = {complete: true, covered: true};
   const blind = n => rows(r => r.cell === 'like' && r.at === 'link' && r.rep < n ? 'observe-failed' : good(r));
-  const enough = gates(blind(20 - MIN_PAIRS), {coverage: cov}).othersAsMain;
+  const enough = gates(blind(20 - MIN_PAIRS), {coverage: cov}).keptAsMain;
   assert.equal(enough.pass, true); assert.equal(enough.usablePairs['like/link'], MIN_PAIRS); assert.equal(enough.usablePairs['plain/text'], 20);
-  const thin = gates(blind(21 - MIN_PAIRS), {coverage: cov}).othersAsMain;
+  const thin = gates(blind(21 - MIN_PAIRS), {coverage: cov}).keptAsMain;
   assert.equal(thin.pass, false); assert.equal(thin.differ, 0); assert.deepEqual(thin.thin, ['like/link']);
-  // A main row that is invalid leaves its fix row unpaired.
   const unpaired = rows(good).map(r => r.head === 'main' && r.cell === 'linkmono' && r.at === 'text' && r.rep < 11 ? {...r, valid: false, invalid: 'mark@mark'} : r);
   const gu = gates(unpaired, {coverage: cov}).othersAsMain;
   assert.equal(gu.pass, false); assert.equal(gu.usablePairs['linkmono/text'], 9);
@@ -222,33 +270,5 @@ test('summaries carry the geometry as median and span', () => {
   assert.deepEqual(s.axRecorded, {n: 2, dx: {median: 0, span: [0, 0]}, dy: {median: 0, span: [0, 0]}, dw: {median: 30, span: [30, 32]}});
   assert.equal(s.domText.n, 1);
   assert.deepEqual(s.reason, {'refused/nodeGone': 2});
-});
-
-test('twin answers as main and its wrong target is reported apart (#431); the badge must refuse; nodeGone and frameMoved are one', () => {
-  const twinAsMain = r => r.cell === 'twin' ? 'wrong-target' : good(r);
-  const ok = rows(twinAsMain), cov = coverage(ok, {planned: planned(ok), heads: ['main', 'fix']});
-  const g = gates(ok, {coverage: cov});
-  assert.ok(Object.entries(g).every(([k, x]) => x.informational || x.pass), JSON.stringify(g));
-  assert.deepEqual(g.noWrongTarget.twin, {fix: 40, fixRows: 40, main: 40, mainRows: 40, issue: '#431'});
-  const worse = rows(r => r.head === 'fix' && r.cell === 'twin' ? 'wrong-target' : r.cell === 'twin' ? 'refused' : good(r));
-  assert.equal(gates(worse, {coverage: cov}).othersAsMain.pass, false);
-  const badgeKept = rows(r => r.head === 'fix' && r.cell === 'badge' && r.at === 'text' && r.rep === 6 ? 'kept-landed' : twinAsMain(r));
-  const gb = gates(badgeKept, {coverage: cov});
-  assert.equal(gb.expectedAnswers.pass, false); assert.equal(gb.expectedAnswers.perUnit['badge/text'].missed, 1);
-  const moved = rows(twinAsMain, r => r.head === 'fix' && r.cell === 'centre' && r.at === 'text' ? {guard: {verdict: 'refused', reason: 'frameMoved'}} : {});
-  assert.equal(gates(moved, {coverage: cov}).statedLimits.pass, true);
-  const odd = rows(twinAsMain, r => r.head === 'fix' && r.cell === 'centre' && r.at === 'text' ? {guard: {verdict: 'refused', reason: 'interactiveHit'}} : {});
-  assert.equal(gates(odd, {coverage: cov}).statedLimits.pass, false);
-});
-
-test('the stated limits are checked apart: reported, never part of the pass', () => {
-  const ok = rows(good), cov = coverage(ok, {planned: planned(ok), heads: ['main', 'fix']});
-  assert.equal(gates(ok, {coverage: cov}).statedLimits.pass, true);
-  const centreKept = rows(r => r.head === 'fix' && r.cell === 'centre' && r.at === 'text' && r.rep === 2 ? 'kept-landed' : good(r));
-  const g = gates(centreKept, {coverage: cov});
-  assert.equal(g.statedLimits.pass, false); assert.equal(g.statedLimits.perUnit['centre/text'].missed, 1);
-  assert.equal(judge(centreKept, {mode: 'qualify', abort: null, coverage: cov}).pass, true);
-  const rightRefused = rows(r => r.head === 'fix' && r.cell === 'right' && r.at === 'text' ? 'refused' : good(r));
-  assert.equal(gates(rightRefused, {coverage: cov}).statedLimits.pass, false);
   assert.deepEqual(quantiles([3, 1, 2, 10]), {n: 4, p50: 3, p95: 10, max: 10});
 });

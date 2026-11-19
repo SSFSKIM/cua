@@ -1,6 +1,6 @@
-// Scoring, summaries and gates for the #340 link lanes. Pure: unit-tested by kit.test.mjs. Link truth is the owned
+// Scoring, summaries and gates for the #431 lanes (on #340's kit). Pure: unit-tested by kit.test.mjs. Link truth is the owned
 // page's pointer-event log; every projected diagnostic is a member of a closed vocabulary, an engine name or a number.
-import {CELLS,UNITS,RECORDED_ROLE,unitKey} from './cells.mjs';
+import {CELLS,UNITS,recordedRole,unitKey} from './cells.mjs';
 
 const reads=(n,s)=>[n.title,n.description,n.value].some(v=>typeof v==='string'&&v.trim()===s);
 const centre=f=>({x:f.x+f.width/2,y:f.y+f.height/2});
@@ -8,15 +8,37 @@ const holds=(f,p)=>!!f&&!!p&&p.x>=f.x&&p.x<=f.x+f.width&&p.y>=f.y&&p.y<=f.y+f.he
 const framed=n=>n&&n.frame&&n.frame.width>0&&n.frame.height>0;
 // The link's AXStaticText and the AXLink around it in an observation, both reading `text` (the link found by its own
 // label, else as the one AXLink whose frame holds the text's centre). Null unless each is exactly one node. With `first`
-// (the twin cell's two same-label links), the topmost text of those reading `text`, and the one AXLink holding it.
-export function findLink(nodes,text,{first=false}={}){
+// (the twin cells' same-label controls), the topmost text of those reading `text`, and the one AXLink holding it. With
+// `role` another control's (a button, which may expose no text child): the control reading `text` (the topmost with
+// `first`), and the one AXStaticText reading it inside it, else none (`text: null`).
+export function findLink(nodes,text,{first=false,role='AXLink'}={}){
   const list=Array.isArray(nodes)?nodes.filter(framed):[];
-  let texts=list.filter(n=>n.role==='AXStaticText'&&reads(n,text));
-  if(first&&texts.length>1){texts=[...texts].sort((a,b)=>a.frame.y-b.frame.y);if(texts[0].frame.y===texts[1].frame.y)return null;texts=[texts[0]];}
-  if(texts.length!==1)return null;
+  const one=xs=>{
+    if(first&&xs.length>1){xs=[...xs].sort((a,b)=>a.frame.y-b.frame.y);if(xs[0].frame.y===xs[1].frame.y)return null;xs=[xs[0]];}
+    return xs.length===1?xs[0]:null;
+  };
+  if(role!=='AXLink'){
+    const c=one(list.filter(n=>n.role===role&&reads(n,text)));if(!c)return null;
+    const t=list.filter(n=>n.role==='AXStaticText'&&reads(n,text)&&holds(c.frame,centre(n.frame)));
+    return {text:t.length===1?t[0]:null,link:c};
+  }
+  const t=one(list.filter(n=>n.role==='AXStaticText'&&reads(n,text)));
+  if(!t)return null;
   let links=first?[]:list.filter(n=>n.role==='AXLink'&&reads(n,text));
-  if(!links.length)links=list.filter(n=>n.role==='AXLink'&&holds(n.frame,centre(texts[0].frame)));
-  return links.length===1?{text:texts[0],link:links[0]}:null;
+  if(!links.length)links=list.filter(n=>n.role==='AXLink'&&holds(n.frame,centre(t.frame)));
+  return links.length===1?{text:t,link:links[0]}:null;
+}
+
+// Whether an observation left a ruling-881 twin out, as its cell requires: the walk cut (its node cap for `cap`, its
+// depth for `deep`), and no node reading the label outside the target control's frame, so the twin is not in the tree
+// (the guard's record-only reads take only children the window shows, which a twin below the fold is not, and none
+// below the depth cap). Every other cell: true.
+export function covers(sky,spec,found){
+  if(spec.twin!=='cap'&&spec.twin!=='deep')return true;
+  const t=sky?.truncated;
+  if(spec.twin==='cap'?!(t?.count>0):!(t?.depth>0))return false;
+  const inside=n=>holds(found.link.frame,centre(n.frame));
+  return (Array.isArray(sky.nodes)?sky.nodes:[]).filter(framed).filter(n=>reads(n,spec.before)).every(inside);
 }
 
 const name=x=>typeof x==='string'&&/^[A-Za-z][A-Za-z0-9]{0,47}$/.test(x)?x:'other';
@@ -71,14 +93,14 @@ export function nodeAt(nodes,p){
 // but the click answered something else); `kept-landed` (kept, the click landed on the target and answered success);
 // `kept-landed-error` (landed, but the click answered an error); `kept-missed` (kept, no click on the target);
 // `observe-failed` (after a valid prepare, re-attested, the head's observation or the link in it missing).
-export function score({attested,observeFailed=false,at,click,stale,clicks}){
+export function score({attested,observeFailed=false,cell='plain',at,click,stale,clicks}){
   if(!attested)return {verdict:'invalid'};
   if(observeFailed)return {verdict:'observe-failed'};
   const l=landingOf(clicks);
   let verdict;
   if(l.wrong.length)verdict='wrong-target';
   else if(!stale)verdict='no-guard';
-  else if(stale.recordedRole!==RECORDED_ROLE[at])verdict='misplaced';
+  else if(stale.recordedRole!==recordedRole(cell,at))verdict='misplaced';
   else if(stale.verdict==='refused')verdict=l.reached?'refused-delivered':click==='screenChangedSinceScreenshot'?'refused':'refused-unreported';
   else if(stale.verdict==='kept')verdict=l.landed?click==='success'?'kept-landed':'kept-landed-error':'kept-missed';
   else verdict='other';
@@ -108,7 +130,10 @@ export function summarize(rows){
       // The recorded node's frame at the observation against the same role's frame after the change (the engine's own
       // re-observation), and the page's own CSS geometry before and after the change.
       axRecorded:geo(v,r=>r.ax?.recorded),axText:geo(v,r=>r.ax?.text),axLink:geo(v,r=>r.ax?.link),
-      domText:geo(v,r=>r.dom?.text),domLink:geo(v,r=>r.dom?.link)}];
+      domText:geo(v,r=>r.dom?.text),domLink:geo(v,r=>r.dom?.link),
+      // Where the twin ended against the target's place (CSS px), and what the observation's walk read and cut.
+      domTwin:geo(v,r=>r.dom?.twin),walkNodes:quantiles(v.map(r=>r.walk?.nodes)),walkCut:quantiles(v.map(r=>r.walk?.cut)),
+      walkDepthCut:v.filter(r=>r.walk?.depth!=null).length,observeMs:quantiles(v.map(r=>r.observeMs))}];
   }));
 }
 
@@ -127,70 +152,80 @@ export function coverage(rows,{planned,heads,units=UNITS}){
 }
 
 export const MIN_PAIRS=10;
+// The ruling-881 twins (absent from the record), gated apart from the twins the record holds so each answer reads alone.
+export const UNRECORDED=new Set(['twincap','twindeep']);
 // The qualification gates (two heads). A row pairs with the other head's row of the same unit and repetition.
 export function gates(rows,{coverage:cov,units=UNITS}){
-  const fix=rows.filter(r=>r.head==='fix'&&r.valid),main=rows.filter(r=>r.head==='main'&&r.valid);
+  const inRun=new Set(units.map(unitKey));
+  const fix=rows.filter(r=>r.head==='fix'&&r.valid&&inRun.has(unitKey(r))),main=rows.filter(r=>r.head==='main'&&r.valid&&inRun.has(unitKey(r)));
   const kindOf=r=>CELLS[r.cell].kind;
   const brief=list=>list.slice(0,20).map(r=>({unit:unitKey(r),rep:r.rep,click:r.click,guard:r.guard?`${r.guard.verdict}/${r.guard.reason}`:null,verdict:r.verdict}));
   const pair=new Map(main.map(r=>[`${unitKey(r)}/${r.rep}`,r]));
-  // A count or a ticking time on the link's text, growing or shrinking: kept, and the click lands on the target.
-  const kept=fix.filter(r=>['grow','shrink'].includes(kindOf(r))),notKept=kept.filter(r=>r.verdict!=='kept-landed');
-  // The true refusals: refused by the guard, nothing reaching the target or any other link.
-  const refusals=fix.filter(r=>kindOf(r)==='refuse'),notRefused=refusals.filter(r=>r.verdict!=='refused');
-  // Every other cell answers as main's paired row: the same verdict (the guard's and the landing).
-  const others=fix.filter(r=>kindOf(r)==='asMain'),othersPaired=others.filter(r=>pair.has(`${unitKey(r)}/${r.rep}`));
-  // Per asMain unit, the pairs that can show a difference: both rows valid, neither observation failed.
-  const usable=Object.fromEntries(units.filter(u=>CELLS[u.cell].kind==='asMain').map(u=>[unitKey(u),
-    othersPaired.filter(r=>unitKey(r)===unitKey(u)&&r.verdict!=='observe-failed'&&pair.get(`${unitKey(r)}/${r.rep}`).verdict!=='observe-failed').length]));
-  const thin=Object.entries(usable).filter(([,n])=>n<MIN_PAIRS).map(([k])=>k);
-  const differ=othersPaired.filter(r=>pair.get(`${unitKey(r)}/${r.rep}`).verdict!==r.verdict);
-  const reasonDiffer=othersPaired.filter(r=>{const m=pair.get(`${unitKey(r)}/${r.rep}`);return m.verdict===r.verdict&&m.guard?.reason!==r.guard?.reason;});
-  // No wrong target in any cell but `twin`, whose wrong target is main's own (#431) and which answers as main above.
-  const wrong=fix.filter(r=>r.verdict==='wrong-target'&&r.cell!=='twin');
-  const twinWrong={fix:fix.filter(r=>r.cell==='twin'&&r.verdict==='wrong-target').length,fixRows:fix.filter(r=>r.cell==='twin').length,
-    main:main.filter(r=>r.cell==='twin'&&r.verdict==='wrong-target').length,mainRows:main.filter(r=>r.cell==='twin').length,issue:'#431'};
-  // A named answer at the text point (kind `expect`), and at the link main's paired verdict: gated.
-  const atLinkAsMain=r=>{const m=pair.get(`${unitKey(r)}/${r.rep}`);return !!m&&m.verdict===r.verdict;};
-  const meets=r=>{const e=CELLS[r.cell].expect;return r.verdict===e.verdict&&(!e.reasons||e.reasons.includes(r.guard?.reason));};
-  const expected=fix.filter(r=>kindOf(r)==='expect'),expectMiss=expected.filter(r=>r.at==='link'?!atLinkAsMain(r):!meets(r));
-  // The failure the fix answers, reproduced: main refused at least half its valid rows of the growing links' text.
-  const mainGrow=main.filter(r=>kindOf(r)==='grow'&&r.at==='text'),mainRefused=mainGrow.filter(r=>r.verdict==='refused').length;
-  const reproduced=mainGrow.length>0&&2*mainRefused>=mainGrow.length;
-  // The claimed presentation: per unit, no more fix rows than main's on which something other than the cover activated.
+  const mate=r=>pair.get(`${unitKey(r)}/${r.rep}`);
   const of=(list,u)=>list.filter(r=>r.cell===u.cell&&r.at===u.at);
+  const unitsWhere=pred=>units.filter(u=>pred(u.cell));
+  const everyUnit=pred=>unitsWhere(pred).every(u=>of(fix,u).length>0);
+  const verdictTally=list=>tally(list.map(r=>`${r.verdict}/${r.guard?.reason??'-'}`));
+  const perUnit=(pred,miss)=>Object.fromEntries(unitsWhere(pred).map(u=>[unitKey(u),
+    {fixRows:of(fix,u).length,missed:miss.filter(r=>unitKey(r)===unitKey(u)).length,fix:verdictTally(of(fix,u)),main:verdictTally(of(main,u))}]));
+  // A twin cell: refused as nodeGone, nothing reaching the target or any other control (`refused`, which a click on the
+  // twin can never be: any event on another control is `wrong-target`).
+  const twinOk=r=>r.verdict==='refused'&&r.guard?.reason==='nodeGone';
+  const twinGate=pred=>{
+    const list=fix.filter(r=>pred(r.cell)),miss=list.filter(r=>!twinOk(r));
+    return {pass:!unitsWhere(pred).length||list.length>0&&everyUnit(pred)&&miss.length===0,rows:list.length,failed:miss.length,
+      fixWrong:list.filter(r=>r.verdict==='wrong-target').length,mainWrong:main.filter(r=>pred(r.cell)&&r.verdict==='wrong-target').length,
+      perUnit:perUnit(pred,miss),examples:brief(miss)};
+  };
+  const isTwin=c=>CELLS[c].kind==='twin';
+  // A paired gate: every fix row of the cells the verdict of its paired main row, with at least MIN_PAIRS usable pairs
+  // (both rows valid, neither observation failed) in every unit (a different refusal reason alone is counted, not failed).
+  const asMainGate=pred=>{
+    const list=fix.filter(r=>pred(r.cell)),paired=list.filter(mate);
+    const usable=Object.fromEntries(unitsWhere(pred).map(u=>[unitKey(u),
+      paired.filter(r=>unitKey(r)===unitKey(u)&&r.verdict!=='observe-failed'&&mate(r).verdict!=='observe-failed').length]));
+    const thin=Object.entries(usable).filter(([,n])=>n<MIN_PAIRS).map(([k])=>k);
+    const differ=paired.filter(r=>mate(r).verdict!==r.verdict);
+    const reasonDiffer=paired.filter(r=>mate(r).verdict===r.verdict&&mate(r).guard?.reason!==r.guard?.reason);
+    return {pass:!unitsWhere(pred).length||paired.length>0&&everyUnit(pred)&&thin.length===0&&differ.length===0,rows:list.length,paired:paired.length,
+      usablePairs:usable,minPairs:MIN_PAIRS,thin,differ:differ.length,reasonDiffer:reasonDiffer.length,
+      // A fix row refused where its main row kept and landed: the regression the re-creation cells exist to catch.
+      refusedWhereMainKept:paired.filter(r=>r.verdict.startsWith('refused')&&mate(r).verdict==='kept-landed').length,
+      fixKeptLanded:list.filter(r=>r.verdict==='kept-landed').length,mainKeptLanded:main.filter(r=>pred(r.cell)&&r.verdict==='kept-landed').length,
+      examples:brief(differ),reasonExamples:brief(reasonDiffer)};
+  };
+  // The failure the fix answers, reproduced: main clicked the twin on at least half its valid rows of `twin` (a run
+  // without the cell passes it unjudged).
+  const mainTwin=main.filter(r=>r.cell==='twin'),mainTwinWrong=mainTwin.filter(r=>r.verdict==='wrong-target').length;
+  const twinRun=units.some(u=>u.cell==='twin');
+  const reproduced=!twinRun||mainTwin.length>0&&2*mainTwinWrong>=mainTwin.length;
+  const wrong=fix.filter(r=>r.verdict==='wrong-target');
+  // The claimed presentation: per unit, no more fix rows than main's on which something other than the cover activated.
   const presentation=Object.fromEntries(units.map(u=>[unitKey(u),{fix:of(fix,u).filter(r=>r.presentationHeld===false).length,
     main:of(main,u).filter(r=>r.presentationHeld===false).length}]));
   const presentationWorse=Object.entries(presentation).filter(([,x])=>x.fix>x.main).map(([k])=>k);
-  const everyUnit=kinds=>units.filter(u=>kinds.includes(CELLS[u.cell].kind)).every(u=>of(fix,u).length>0);
-  // The fix's stated limits (kind `limit`), reported apart from the gates: at the text, the cell's expected verdict
-  // (and reason); at the link, main's paired verdict.
-  const limits=fix.filter(r=>kindOf(r)==='limit'),limitMiss=limits.filter(r=>r.at==='link'?!atLinkAsMain(r):!meets(r));
-  const perUnit=(kind,miss)=>Object.fromEntries(units.filter(u=>CELLS[u.cell].kind===kind).map(u=>[unitKey(u),
-    {rows:of(fix,u).length,missed:miss.filter(r=>unitKey(r)===unitKey(u)).length,verdicts:tally(of(fix,u).map(r=>`${r.verdict}/${r.guard?.reason??'-'}`))}]));
+  // The guard's own time per head (reported, never gated): over every valid row, and over the twin cells' rows.
+  const ms=list=>quantiles(list.map(r=>r.guard?.ms));
   return {
     coverage:{pass:cov.complete&&cov.covered},
-    keptAndLanded:{pass:kept.length>0&&everyUnit(['grow','shrink'])&&notKept.length===0,rows:kept.length,failed:notKept.length,
-      mainKeptLanded:main.filter(r=>['grow','shrink'].includes(kindOf(r))&&r.verdict==='kept-landed').length,examples:brief(notKept)},
-    stillRefused:{pass:refusals.length>0&&everyUnit(['refuse'])&&notRefused.length===0,rows:refusals.length,failed:notRefused.length,examples:brief(notRefused)},
-    reproduced:{pass:reproduced,result:reproduced?'reproduced':'not reproduced (inconclusive)',mainRows:mainGrow.length,mainRefused},
-    othersAsMain:{pass:othersPaired.length>0&&everyUnit(['asMain'])&&thin.length===0&&differ.length===0,rows:others.length,
-      paired:othersPaired.length,usablePairs:usable,minPairs:MIN_PAIRS,thin,differ:differ.length,
-      reasonDiffer:reasonDiffer.length,examples:brief(differ),reasonExamples:brief(reasonDiffer)},
-    noWrongTarget:{pass:wrong.length===0,fixRows:fix.length,wrong:wrong.length,
-      mainWrong:main.filter(r=>r.verdict==='wrong-target'&&r.cell!=='twin').length,twin:twinWrong,examples:brief(wrong)},
-    expectedAnswers:{pass:expected.length>0&&everyUnit(['expect'])&&expectMiss.length===0,rows:expected.length,missed:expectMiss.length,
-      perUnit:perUnit('expect',expectMiss),examples:brief(expectMiss)},
-    statedLimits:{informational:true,pass:limits.length>0&&everyUnit(['limit'])&&limitMiss.length===0,rows:limits.length,
-      missed:limitMiss.length,perUnit:perUnit('limit',limitMiss),examples:brief(limitMiss)},
+    reproduced:{pass:reproduced,result:!twinRun?'not in this run':reproduced?'reproduced':'not reproduced (inconclusive)',mainRows:mainTwin.length,mainWrong:mainTwinWrong},
+    twinRefused:twinGate(c=>isTwin(c)&&!UNRECORDED.has(c)),
+    twinUnrecorded:twinGate(c=>UNRECORDED.has(c)),
+    keptAsMain:asMainGate(c=>CELLS[c].kind==='keep'),
+    othersAsMain:asMainGate(c=>CELLS[c].kind==='asMain'),
+    noWrongTarget:{pass:wrong.length===0,fixRows:fix.length,wrong:wrong.length,mainWrong:main.filter(r=>r.verdict==='wrong-target').length,
+      perUnit:Object.fromEntries(units.map(u=>[unitKey(u),{fix:of(wrong,u).length,main:of(main,u).filter(r=>r.verdict==='wrong-target').length}])
+        .filter(([,x])=>x.fix||x.main)),examples:brief(wrong)},
     presentation:{pass:presentationWorse.length===0,worse:presentationWorse,
       fixLost:fix.filter(r=>r.presentationHeld===false).length,mainLost:main.filter(r=>r.presentationHeld===false).length},
+    guardMs:{informational:true,pass:true,fix:ms(fix),main:ms(main),fixTwin:ms(fix.filter(r=>isTwin(r.cell))),mainTwin:ms(main.filter(r=>isTwin(r.cell)))},
   };
 }
 
 // A run's gates and pass: the qualification gates in mode `qualify` only; smoke and measure pass on coverage alone.
-export function judge(rows,{mode,abort,coverage:cov}){
-  const gate=mode==='qualify'?gates(rows,{coverage:cov}):null;
+export function judge(rows,{mode,abort,coverage:cov,units=UNITS}){
+  const gate=mode==='qualify'?gates(rows,{coverage:cov,units}):null;
   const measured=abort===null&&cov.complete&&cov.covered;
-  // An informational check (the fix's stated limits) is reported, never part of the pass.
+  // An informational entry (the guard's time) is reported, never part of the pass.
   return {gates:gate,pass:measured&&(!gate||Object.values(gate).every(g=>g.informational||g.pass))};
 }

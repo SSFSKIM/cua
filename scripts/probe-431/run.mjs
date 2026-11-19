@@ -1,4 +1,4 @@
-// #340's hosted measurement and qualification of #296's stale-point guard on a link whose text changes between the
+// #431's hosted measurement and qualification of #296's stale-point guard (on #340's kit): a control removed or changed between the
 // screenshot and a coordinate click. Hosted runners only. Never prints child output or a raw reply; it stages closed
 // codes, booleans, counts, frames of the owned page's links and times. Link truth is the owned page's pointer-event
 // log; cua is driven on the engine's own wire (get_app_state with a screenshot, then click at the screenshot's pixels),
@@ -8,8 +8,8 @@ import {join} from 'node:path';
 import {execFileSync} from 'node:child_process';
 import {Wire} from './wire.mjs';
 import {owned,stop,pause,environment,startPlatform,startHelper} from './platform.mjs';
-import {LANES,CELLS,RECORDED_ROLE,unitKey,plan,pointFor} from './cells.mjs';
-import {outcomeOf,stalePointOf,routeOf,findLink,nodeAt,landingOf,delta,score,summarize,coverage,judge} from './check.mjs';
+import {LANES,CELLS,recordedRole,controlRole,unitKey,unitsFor,plan,pointFor} from './cells.mjs';
+import {outcomeOf,stalePointOf,routeOf,findLink,covers,nodeAt,landingOf,delta,score,summarize,coverage,judge} from './check.mjs';
 
 const setupLabel=e=>typeof e?.setupStep==='string'?e.setupStep:'other';
 const stepError=step=>Object.assign(Error(step),{setupStep:step});
@@ -74,12 +74,12 @@ async function main(){
   if(process.env.RUNNER_ENVIRONMENT!=='github-hosted')throw Error('hosted runners only');
   if(!LANES.includes(lane)||!['smoke','measure','qualify'].includes(mode))throw Error('invalid lane');
   const heads=Object.fromEntries(headSpecs.map(s=>{const [name,bin]=s.split('::');return [name,{bin}];}));
-  const headNames=Object.keys(heads);
+  const headNames=Object.keys(heads),units=unitsFor(process.env.PROBE_CELLS||'');
   if(!headNames.length||headNames.some(h=>!['main','fix'].includes(h))||mode==='qualify'&&headNames.length!==2)throw Error('invalid heads');
-  mkdirSync(out,{recursive:true});const tmp=mkdtempSync(join(root,'q340-')),home=join(tmp,'platform'),shots=join(tmp,'shots');
+  mkdirSync(out,{recursive:true});const tmp=mkdtempSync(join(root,'q431-')),home=join(tmp,'platform'),shots=join(tmp,'shots');
   mkdirSync(home);mkdirSync(shots,{mode:0o700});
   const config={kit:process.env.GITHUB_SHA,refs:{main:process.env.MAIN_SHA,fix:process.env.FIX_SHA||null},image:process.env.ImageVersion,
-    os:execFileSync('sw_vers',['-productVersion'],{encoding:'utf8',stdio:['ignore','pipe','ignore']}).trim(),lane,mode,heads:headNames};
+    os:execFileSync('sw_vers',['-productVersion'],{encoding:'utf8',stdio:['ignore','pipe','ignore']}).trim(),lane,mode,heads:headNames,cells:process.env.PROBE_CELLS||null};
   const rows=[],engines={},planned={};let platform,helper,stage='helper',abort=null,abortStep=null;
   try{
     helper=startHelper(helperBin,environment(home));
@@ -90,22 +90,25 @@ async function main(){
     // The page holds the presentation probe's prepare (cell `plain`) until the first trial.
     for(const [name,{bin}] of Object.entries(heads))engines[name]=await startEngine({name,bin,root:tmp,platform,linkText:CELLS.plain.before});
     config.primed=Object.fromEntries(Object.entries(engines).map(([k,e])=>[k,e.primed]));
-    const cells=plan({mode,heads:headNames});
+    const cells=plan({mode,heads:headNames,units});
     for(const c of cells)planned[`${c.head}/${unitKey(c)}`]=(planned[`${c.head}/${unitKey(c)}`]??0)+1;
     let trial=0,streak=0;
     for(const c of cells){
       const e=engines[c.head],app=e.appPath,spec=CELLS[c.cell];
       let s='engine-attach',attested=false,armed=false,observeFailed=false,observed=null,found=null,placed=null,mark=null,click=null,read=null,
-        after=null,reobserved=false,witness=null,invalid=null,exercised=null;
+        after=null,reobserved=false,witness=null,invalid=null,exercised=null,walk=null;
       try{
         const w=await e.attach();
         await platform.arm(++trial,{cell:c.cell},x=>{s=x;});armed=true;
         s='observe';
         observed=await e.call('get_app_state',{app,includeScreenshot:true,outputDirectory:shots});
         const sky=observed.reply?.result;
+        // What the walk read: its node count, what it cut (count and depth) and whether the node cap stopped it.
+        if(sky)walk={nodes:Array.isArray(sky.nodes)?sky.nodes.length:null,cut:Number.isInteger(sky.truncated?.count)?sky.truncated.count:0,
+          depth:Number.isInteger(sky.truncated?.depth)?sky.truncated.depth:null,nodeCapHit:sky.timings?.nodeCapHit===true};
         // The page is prepared and attested: an observation (or the link in it) missing now is the head's own answer,
         // a valid row whose verdict says so, once the page re-attests that it still holds the prepared link.
-        if(sky&&w.lineage)found=findLink(sky.nodes,spec.before,{first:!!spec.twin});
+        if(sky&&w.lineage)found=findLink(sky.nodes,spec.before,{first:!!spec.twin,role:controlRole(c.cell)});
         if(!found){
           observeFailed=true;
           s='reattest';
@@ -116,10 +119,12 @@ async function main(){
           attested=true;
         }else{
           s='placement';
-          placed=toPixels(sky,pointFor(c.at,found[c.at].frame));
+          placed=toPixels(sky,pointFor(c.at,found[c.at]?.frame));
           if(!placed)throw stepError('screenshot');
           // The observation itself puts the unit's role at the point the engine will post: else the unit is not tested.
-          if(nodeAt(sky.nodes,placed.screen)?.role!==RECORDED_ROLE[c.at])throw stepError('placement');
+          if(nodeAt(sky.nodes,placed.screen)?.role!==recordedRole(c.cell,c.at))throw stepError('placement');
+          // A ruling-881 twin must be absent from what the observation read, else the unit is not tested.
+          if(!covers(sky,spec,found))throw stepError('uncovered');
           // The cell's change, after the observation (and so after the record), before the click.
           s='mark';
           mark=await platform.command({op:'mark',trial});
@@ -153,7 +158,7 @@ async function main(){
           // The engine's own frames after the change: one more observation on this connection.
           s='reobserve';
           const re=await e.call('get_app_state',{app,includeScreenshot:false});
-          if(Array.isArray(re.reply?.result?.nodes)){reobserved=true;after=findLink(re.reply.result.nodes,spec.after,{first:!!spec.twin});}
+          if(Array.isArray(re.reply?.result?.nodes)){reobserved=true;after=findLink(re.reply.result.nodes,spec.after,{first:!!spec.twin,role:controlRole(c.cell)});}
         }
         s='witness-end';witness=await platform.disarm();armed=false;
       }catch(err){invalid=(attested?'evidence':setupLabel(err))+'@'+s;}
@@ -165,7 +170,7 @@ async function main(){
       // Placement was checked from the observation before the click: a click after it with no guard record, or one
       // taken at another role, is the head's own answer (`no-guard`, `misplaced`), never an invalid row.
       const ok=attested&&!invalid;
-      const verdicts=score({attested:ok,observeFailed,at:c.at,click:clickOutcome,stale:guard,clicks:read?.clicks});
+      const verdicts=score({attested:ok,observeFailed,cell:c.cell,at:c.at,click:clickOutcome,stale:guard,clicks:read?.clicks});
       const aim=found?.[c.at];
       const row={lane,...c,valid:ok,invalid:ok?null:invalid??'other',click:clickOutcome,guard,route:click?routeOf(click.reply):null,...verdicts,
         observeError:observeFailed?(observed?.reply?.result?'target-not-found':outcomeOf(observed?.reply)):null,
@@ -175,7 +180,7 @@ async function main(){
         // after the change, in screen points; and the page's own before and after, in CSS pixels.
         ax:found?{recorded:delta(aim?.frame,after?.[c.at]?.frame),text:delta(found.text.frame,after?.text?.frame),link:delta(found.link.frame,after?.link?.frame),
           reobserved,foundAfter:!!after}:null,
-        dom:mark?{text:delta(mark.before?.textRect,mark.after?.textRect),link:delta(mark.before?.link,mark.after?.link)}:null,
+        dom:mark?{text:delta(mark.before?.textRect,mark.after?.textRect),link:delta(mark.before?.link,mark.after?.link),twin:delta(mark.before?.link,mark.twin)}:null,walk,
         frames:found?{text:found.text.frame,link:found.link.frame,point:placed?.screen??null}:null,
         presentationHeld:witness?.held??null,observeMs:observed?.ms??null,clickMs:click?.ms??null};
       rows.push(row);
@@ -189,9 +194,9 @@ async function main(){
     await helper?.close();
     rmSync(join(tmp,'e-main'),{recursive:true,force:true});rmSync(join(tmp,'e-fix'),{recursive:true,force:true});rmSync(shots,{recursive:true,force:true});
   }
-  const cov=coverage(rows,{planned,heads:headNames});
+  const cov=coverage(rows,{planned,heads:headNames,units});
   // The qualification gates in mode `qualify` only: smoke and measure, with one head or two, pass on coverage alone.
-  const {gates:gate,pass}=judge(rows,{mode,abort,coverage:cov});
+  const {gates:gate,pass}=judge(rows,{mode,abort,coverage:cov,units});
   const tally=list=>list.reduce((o,k)=>(o[k]=(o[k]??0)+1,o),{});
   const status={lane,mode,kit:config.kit,refs:config.refs,version:config.version??null,os:config.os,image:config.image,
     presentation:config.presentation??null,foregroundFallback:config.foregroundFallback??null,abort,abortStep,

@@ -1,0 +1,26 @@
+== after-step 2026-11-19T09:59:47Z /Users/new/.local/share/cua-171/m5/out-arm64-h5/V1.pinned-release
+--- kept traces
+audit rows 16, with kept_traces files 16, files 20, missing 0
+kept-traces exit 0
+--- rejudge-audit
+rejudge-audit exit 0
+run pinned-V1: audits 16, moved 0, unkept 0, incomplete no, foreign stored 0, now 0: reproduces
+row lines (moved or unkept): 0
+rejudge: reproduces the stored findings
+--- settle-check
+/Users/new/.local/share/cua-171/m5/out-arm64-h5/V1.pinned-release: not taken (entered 0, second_rest 0, skipped 0, unsettled 0, settle_failed_activation_confirmed 0; 118 cua engines (14 unidentified, held to the counter as cua lanes); 14 of them with no counter were sent no drag or drag_handle)
+  reader 1995995: no counter; sent no drag or drag_handle (not a measured zero)
+  stub-activating 1996828: no counter; sent no drag or drag_handle (not a measured zero)
+  cua 2027744: no counter; sent no drag or drag_handle (not a measured zero)
+  cua 2028075: no counter; sent no drag or drag_handle (not a measured zero)
+  cua 2028134: no counter; sent no drag or drag_handle (not a measured zero)
+  cua 2028381: no counter; sent no drag or drag_handle (not a measured zero)
+  cua 2028749: no counter; sent no drag or drag_handle (not a measured zero)
+  cua 2028902: no counter; sent no drag or drag_handle (not a measured zero)
+  cua 2029060: no counter; sent no drag or drag_handle (not a measured zero)
+  cua 2029178: no counter; sent no drag or drag_handle (not a measured zero)
+  cua 2029206: no counter; sent no drag or drag_handle (not a measured zero)
+  cua 2029396: no counter; sent no drag or drag_handle (not a measured zero)
+  cua 2029465: no counter; sent no drag or drag_handle (not a measured zero)
+  cua 2029643: no counter; sent no drag or drag_handle (not a measured zero)
+settle-check exit 0

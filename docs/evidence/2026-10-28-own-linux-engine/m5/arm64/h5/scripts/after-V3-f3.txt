@@ -1,0 +1,14 @@
+== after-step 2026-11-19T13:47:03Z /Users/new/.local/share/cua-171/m5/f3-arm64-h5/V3.development-run
+--- kept traces
+audit rows 0, with kept_traces files 0, files 0, missing 0
+kept-traces exit 1
+--- rejudge-audit
+rejudge-audit exit 1
+run m5-dev-V3: audits 0, moved 0, unkept 0, incomplete no end row: the run did not finish, so its verdict is unknown, foreign stored 0, now 0: DIFFERS
+row lines (moved or unkept): 0
+rejudge: DIFFERS from the stored findings
+--- settle-check
+/Users/new/.local/share/cua-171/m5/f3-arm64-h5/V3.development-run: unknown: 1 of 1 cua engine (1 unidentified, held to the counter as cua lanes) not recorded; 1 of them with no counter were sent no drag or drag_handle
+  no cua engine recorded its counter
+  reader 2524376: no counter; sent no drag or drag_handle (not a measured zero)
+settle-check exit 1

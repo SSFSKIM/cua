@@ -1,0 +1,36 @@
+owner pid=9512 start=52059
+tmproot left: []
+/tmp/cua171-run-* left: []
+owner side DIFFERS:
+48c48
+< mtime ~/.config/google-chrome 1795088460.278479617
+---
+> mtime ~/.config/google-chrome 1795090855.803485629
+all-clear: clear
+--- V2 exit 0
+--- owner-baseline
+owner pid=9512 start=52059
+tmproot /tmp/c71-Mm7fW8
+args: --vendor /Users/new/.local/share/cua-171/m5/home-arm64-041/runtimes/26.928.40906-linux-arm64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64 --newest /Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64 --cua /Users/new/.local/share/cua-171/m5/home-arm64-041/engine/linux/cua-engine --scene desktop,gedit,chrome,over-budget --ops list_windows,list_apps,get_screenshot,launch_app,capabilities,tree,tree_shot,press_key,click,type_characters --blocks 3 --run m5-dev-V2 --dev
+started 2026-11-19T12:05:23Z finished 2026-11-19T12:20:51Z wrap exit 0
+tmproot left: []
+/tmp/cua171-run-* left: []
+owner side DIFFERS:
+48c48
+< mtime ~/.config/google-chrome 1795088460.278479617
+---
+> mtime ~/.config/google-chrome 1795090855.803485629
+--- pointer
+pointer at start 640 400
+pointer restored to 640 400, reads 640 400 
+--- wrap.out tail
+development run, not a release gate; candidate: sha256 8850abcb00d6ee47c72ff102e71cac1578bc7c5bccf7249104493a17242efaa0, aarch64-unknown-linux-musl static, cua-engine 0.4.1 (7522dcb8fb8c); attestation not checked (a development run)
+negative check: the witness failed the activating stub (stacking, active, focus); the audit failed it (_NET_ACTIVE_WINDOW ClientMessage, XTEST FakeInput)
+in-front checks: held (the target activated again: clean; another window activated and the target again: stacking, active, focus; another raised and the target raised back under one server grab: stacking; another client's override-redirect window raised across the target's frame and back under one server grab: stacking)
+run valid; development run, not a release gate: every verdict PASS; text restores (the first word put back before a sample): pinned 0, newest 0, cua 0; text windows a lane ended (a vendor's restarted, never scored): pinned 0, newest 0, cua 0
+results: /Users/new/.local/share/cua-171/m5/f2-arm64-h5/V2.development-run/run/results.jsonl
+{"exit": 0, "samples": 8027, "maps_samples": 2677, "flags": 0, "decoy_connections": 0, "leftovers": [], "processes": 1028, "browsers": 37}
+--- all-clear
+all-clear: clear
+- the run's own side: clean
+- the sitting's exit: 0

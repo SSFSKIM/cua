@@ -5,20 +5,28 @@ acceptance home's own `cua install` of **linux-engine-v0.4.0**: `cua-engine` sha
 (c55c8e08d9cb)`, the pin's arm64 asset. The pinned rule takes it inside each step. The machine is the GCE arm64 VM
 `dc-linux171arm-996d` (c4a-standard-8, aarch64, uid 501, home /Users/new).
 
-**Status: interim.** Two parts so far.
+**Status: complete.** Three parts.
 - **At H‴ on 0.4.0:** setup, H‴'s local proof (passed, by the controller's two rulings below), item 9 (passes), and the
   private idle block: all 25 steps that ran exited 0 by their own judge. S1, H1 and H2 were skipped as class A
   (ruling 827), and those idle steps that are not class A stand on H‴.
 - **At H⁗ = `3b5c0441` on 0.4.1** (the section "At H⁗ on 0.4.1" below), private parts only:
   - the class-A steps and D1's cross-check: all exited 0, and the cross-check matches on the shipped lane (rulings 854 and the controller's);
-  - the block at twice the load: 12 steps exited 0 and 4 exited 1 (L3b, L3c, L3d and L4b), each with the design session;
+  - the block at twice the load: 12 steps exited 0 and 4 exited 1, each since ruled. L3b passes under #302's key_up
+    form (`m5/rejudge-302-keyup.txt`). L3c and L3d are a declared arm64 twice-load limit (rulings 872, 876; #429). L4b
+    is a finding, not a step failure (rulings 871, 872). Each stored FAIL stays in the table beside its ruling;
   - the 828(c) counter pilot: not taken in all 9 steps;
   - F2's private part on Chrome 158;
   - ruling 872's activation experiment.
-- **Not yet run:** the `:0` sitting. V1 ran at H⁗ and stopped the sitting on a harness fault in the audit's window
-  ownership (hold-sittings at 23:34:28Z, cleared by the controller at 23:36Z). V2–V5 and Z0 wait for the audit fix,
-  and V1 is re-judged or rerun by the fix's form. F2's `:0` parts and the whole of F3 wait with them, so they keep
-  x64's venue.
+- **At H⁵ = `7d554dea` on 0.4.1** (the section "At H⁵" below): the `:0` sitting, F2's `:0` parts and F3.
+  - V1, V2, V3, V4 and Z0 pass, each with its all-clear clear.
+  - **V5 FAILs on two cells**, and the FAIL stands at H⁵ (ruling 886). `chrome_dnd_short_in_front_shared` 1/2 is a
+    judged false ok, and `chrome_dnd_shared` 1/0 and 2/0 were not cancelled. The cause is task 112's: Chrome's
+    renderer fired dragstart after the engine's release, so the browser refused the drag. A fix is being measured for
+    0.4.2.
+  - V5's first attempt was stopped by wrap71 25 s in. It is kept, with its flag record and its clearance.
+  - F2 and F3 are unjudged. F3's V3 was stopped by the guard and stands as stopped (ruling 773).
+- V1 at H⁗ had stopped that sitting on a harness fault in the audit's window ownership (hold-sittings at 23:34:28Z,
+  cleared by the controller at 23:36Z). Task 106's fix is in H⁵, and V1 to V5 and Z0 reran there (857.3).
 
 ## Setup
 
@@ -293,12 +301,12 @@ quiet wait inside the hold). The idle steps not listed here stand on H‴ (`f627
 | L2b | 3b5c0441 | 11-19 00:37:24 | 00:40:24 | 00:59:40 | 19.3 | 0 | 0.86 9.32 13.28 | 16.96 16.88 15.95 | clean; end check clear | **class A**: PASS |
 | L2c | 3b5c0441 | 11-19 00:59:40 | 01:02:30 | 01:35:00 | 32.5 | 0 | 0.99 9.55 13.28 | 18.31 18.25 17.48 | clean; end check clear | PASS |
 | L3a | 3b5c0441 | 11-19 01:35:00 | 01:38:00 | 02:15:38 | 37.6 | 0 | 0.92 10.00 14.40 | 15.55 16.86 16.88 | unclean: pid 1623502 openbox; end check clear | complete, 26 series; chrome-input `key_up desktop` 1 late, then 30 consecutive |
-| L3b | 3b5c0441 | 11-19 02:15:38 | 02:18:28 | 02:39:20 | 20.9 | **1** | 0.91 9.54 14.05 | 17.14 16.75 16.07 | unclean: pid 1634962 openbox; end check clear | **class A, FAIL**: electron-input `key_up desktop`, no 30 consecutive in 33 (5 late); #302 listed apart: press_key background 4 of 30, desktop 7 of 30 (below) |
-| L3c | 3b5c0441 | 11-19 02:39:20 | 02:42:20 | 03:20:21 | 38.0 | **1** | 0.85 9.16 13.23 | 17.17 16.97 16.66 | unclean: pid 1645673 openbox; end check clear | **FAIL**: gedit `activate_window background`, no 30 consecutive in 39 (4 late); firefox-input right_click background 1 refused, then 30 |
-| L3d | 3b5c0441 | 11-19 03:20:21 | 03:23:21 | 04:07:49 | 44.5 | **1** | 0.85 9.28 13.72 | 15.51 16.47 16.61 | unclean: pid 1673631 openbox; end check clear | **FAIL**: `activate_window background` on kate (3 late in 33), qtcreator (3 in 51), writer (2 in 39), gnome-terminal (2 in 40); gnome-terminal `click desktop` (2 in 31); gnome-terminal click background 1 late, then 30 |
+| L3b | 3b5c0441 | 11-19 02:15:38 | 02:18:28 | 02:39:20 | 20.9 | **1** | 0.91 9.54 14.05 | 17.14 16.75 16.07 | unclean: pid 1634962 openbox; end check clear | **class A. Stored: FAIL**, electron-input `key_up desktop`, no 30 consecutive in 33 (5 late); #302 listed apart: press_key background 4 of 30, desktop 7 of 30 (below). **Ruled: PASS under #302's key_up form** (rulings 864, 865, 869; task 107's re-judge, `m5/rejudge-302-keyup.txt`): 4 of 33 runs read the form (186.8–251.4 ms), trial 32 stays an honest miss, and trials 0–31 make the 30 consecutive |
+| L3c | 3b5c0441 | 11-19 02:39:20 | 02:42:20 | 03:20:21 | 38.0 | **1** | 0.85 9.16 13.23 | 17.17 16.97 16.66 | unclean: pid 1645673 openbox; end check clear | **Stored: FAIL**, gedit `activate_window background`, no 30 consecutive in 39 (4 late); firefox-input right_click background 1 refused, then 30. **Ruled: a declared arm64 twice-load limit** (rulings 871, 872, 876; #429): ruling 872's experiment found X focus on the target at the answer in 200/200 and the key landing in 200/200, so typing goes to the right window |
+| L3d | 3b5c0441 | 11-19 03:20:21 | 03:23:21 | 04:07:49 | 44.5 | **1** | 0.85 9.28 13.72 | 15.51 16.47 16.61 | unclean: pid 1673631 openbox; end check clear | **Stored: FAIL**, `activate_window background` on kate (3 late in 33), qtcreator (3 in 51), writer (2 in 39), gnome-terminal (2 in 40); gnome-terminal `click desktop` (2 in 31); gnome-terminal click background 1 late, then 30. **Ruled: a declared arm64 twice-load limit** (rulings 871, 872, 876; #429), as L3c |
 | L3e | 3b5c0441 | 11-19 04:07:49 | 04:10:39 | 04:48:18 | 37.6 | 0 | 0.91 9.31 13.83 | 16.81 16.71 16.39 | unclean: pid 1715907 openbox; end check clear | complete, 37 series, no miss |
 | L4a | 3b5c0441 | 11-19 04:48:18 | 04:51:18 | 05:12:44 | 21.4 | 0 | 0.85 9.16 13.51 | 15.06 16.21 15.82 | clean; end check clear | **class A**: no false ok, no missing landing beyond the residue; **residue (827 3b): cua plain 0 of 100, cua:handle plain 1 of 100, bound 2**; **ruling 830: cua left 1 of 30** (listed apart, not a fail, not a false ok); #365 0 of 60 |
-| L4b | 3b5c0441 | 11-19 05:12:44 | 05:15:34 | 05:31:40 | 16.1 | **1** | 0.88 9.17 13.16 | 15.70 16.57 15.68 | clean; end check clear | **FAIL**: "cua:accept left: answered ok with no drop and nothing pending on 1 of 30 (#18)", the measurement lane `cua:accept`, not shipped (below); 5 false releases at the accept on its inzone-out cell, 2 answered ok |
+| L4b | 3b5c0441 | 11-19 05:12:44 | 05:15:34 | 05:31:40 | 16.1 | **1** | 0.88 9.17 13.16 | 15.70 16.57 15.68 | clean; end check clear | **Stored: FAIL**, "cua:accept left: answered ok with no drop and nothing pending on 1 of 30 (#18)", the measurement lane `cua:accept`, not shipped (below); 5 false releases at the accept on its inzone-out cell, 2 answered ok. **Ruled: a finding, not a step failure** (rulings 871, 872): `cua:accept` sits behind `--drag-dnd-release-at-accept`, which nothing that ships can select; listed as at x64 |
 | L4c | 3b5c0441 | 11-19 05:31:40 | 05:34:31 | 05:36:36 | 2.1 | 0 | 0.92 9.37 13.04 | 15.12 11.81 13.47 | clean; end check clear | every late take reported (5 of 5); 26 drags that never took answered as plain drags |
 | L5 | 3b5c0441 | 11-19 05:36:36 | 05:39:26 | 05:41:04 | 1.6 | 0 | 0.88 6.68 11.21 | 12.96 9.13 11.63 | clean; end check clear | complete |
 | F3a | 3b5c0441 | 11-19 05:41:04 | 05:43:44 | 06:04:40 | 20.9 | 0 | 0.89 5.34 9.79 | 15.53 17.11 15.44 | unclean: pid 1779092 openbox; end check clear | complete |
@@ -421,8 +429,205 @@ These are reported to the controller as they came, with the analysis files besid
 The whole `m5/arm64/` was scanned before the commit (`scripts/scan-evidence.sh`, file names only): 2220 files, 0
 token-shaped hits.
 
+## At H⁵ (2026-11-19 09:20Z to 13:47Z; task 109)
+
+The head is **H⁵ = `7d554dea`**. Its ci-gate is GREEN 8/8 (run 44494920319, on tree b1b92a7d, which equals
+7d554dea's), and it was accepted under ruling 877. Its Decision Log entry is "the frozen head H⁵". The engine is still
+**linux-engine-v0.4.1** (arm64 sha256 `8850abcb…`). The records are in `h5/`. Holder `task109-arm64`; the lock lines
+are `h5/scripts/lock-lines.txt`.
+
+### Setup and local proof
+
+- **The checkout.** `t109-h5` is a fresh worktree detached and clean at `7d554dea` (0 changes before and after). It had
+  `npm ci`, electron 44.9.0 and xprobe (aarch64), under the lock (`h5/scripts/setup-all.sh`, `setup-h5.log`).
+- **The acceptance home.** `home-arm64-041` is reused, since the pin is unchanged (`h5/scripts/home-check.sh`, `.log`).
+  - Its engine's sha256 is `8850abcb00d6ee47c72ff102e71cac1578bc7c5bccf7249104493a17242efaa0`, the brief's and the
+    pin's arm64 asset, and it reads `cua-engine 0.4.1 (7522dcb8fb8c)`, statically linked.
+  - `gate.mjs check --pinned` from the H⁵ checkout exited 0, attested by run 44380699966. The run home's secret store
+    holds 0 entries.
+  - Chrome is still 156.0.8078.73, held (`chrome-check.log`).
+- **The proof** (H⁵ changes only the harness's judges and the audit's recording, and ci-gate covered the rest). Each
+  part ran under the lock (`h5/scripts/proof/`, `proof.log`: "proof: PASS"):
+  - the harness suite: 1368 tests, 1363 pass, 0 fail, 4 skipped, 1 todo (#425, ruling 860's declared gap);
+  - harness-dbus: 91/91.
+
+### The step table at H⁵
+
+The `:0` steps ran through the sitting launcher (`sitting.mjs`) around run71.sh under M5's wrap71, each exactly as
+`gate.mjs print` gave it with only its leading `locked.sh` stripped (`h5/scripts/run-sitting.sh`,
+`sitting-locked.sh`, `sitting.sh`; `zero-commands.txt`).
+- The sitting ran in one hold (CUA_LOCK_MAX 330m). V5's rerun, F2 and F3 each took their own hold
+  (`chain-v5-f2-f3.sh`).
+- Before each step the launcher checked that hold-sittings was absent. After each step `after-step.sh` read the
+  step's kept traces, rejudge-audit and settle-check (`after-<step>[-suffix].txt`).
+- The pre-checks are `zero-precheck*.out`: no hold, no stress-ng, the stand-in session's Chrome (pid 9512) the only
+  `:0` client, the pointer at 640,400, and no leftovers.
+
+Load is the 1-, 5- and 15-minute average. Every row ran at H⁵ on 0.4.1.
+
+| step | stands on | step start (UTC, 11-19) | end | min | exit | load at start | load at end | all-clear | result |
+|---|---|---|---|---:|---:|---|---|---|---|
+| V1 | 7d554dea | 09:41:17 | 09:59:47 | 18.5 | 0 | 0.00 0.00 0.52 | 0.19 0.26 0.35 | clear | every verdict PASS. Text windows a lane ended: pinned 189, newest 63, cua 0, all declared vendor ends |
+| V2 | 7d554dea | 09:59:47 | 10:15:48 | 16.0 | 0 | 0.19 0.26 0.35 | 0.82 0.89 0.72 | clear | every verdict PASS |
+| V3 | 7d554dea | 10:15:48 | 10:49:49 | 34.0 | 0 | 0.82 0.89 0.72 | 0.38 0.73 0.78 | clear | no verdict FAIL. Listed apart: the chrome-input drag cua (declared refusal); right_click_fallback and secondary_action cua (declared unconfirmed); `activate_window` cua within the bound (cold [0.315, 0.405], warm [0.885, 0.955] against 1 ms) |
+| V4 | 7d554dea | 10:49:50 | 11:14:56 | 25.1 | 0 | 0.38 0.73 0.78 | 0.34 0.35 0.43 | clear | every verdict PASS; every paste case |
+| Z0 | 7d554dea | 11:14:56 | 11:24:56 | 10.0 | 0 | 0.34 0.35 0.43 | 0.20 0.39 0.46 | clear | the judges' verdict for `cua`: PASS (firefox dnd `cua:0ms` missed a run, as at x64) |
+| V5, first attempt | 7d554dea | 11:24:57 | 11:25:27 | 0.5 | 1 | 0.20 0.39 0.46 | 0.32 0.40 0.46 | **not clear**: hold-sittings | **stopped by wrap71** 19.5 s into the run, with no verdict (below). Kept as `V5.pinned-release.stopped-1` |
+| V5 | 7d554dea | 11:29:20 | 12:05:21 | 36.0 | 1 | 0.02 0.19 0.36 | 0.47 0.53 0.54 | clear | **FAIL**: `chrome_dnd_shared` cua and `chrome_dnd_short_in_front_shared` cua. 50 other rows pass. **The FAIL stands at H⁵ (ruling 886)** (below) |
+
+| step | wrap71 samples | flags | decoy connections | leftovers | pointer | owner side |
+|---|---:|---:|---:|---|---|---|
+| V1 | 9845 | 0 | 0 | none | restored, reads 640 400 | Chrome profile mtime only |
+| V2 | 8174 | 0 | 0 | none | restored | mtime only |
+| V3 | 17627 | 0 | 0 | none | restored | mtime only |
+| V4 | 12874 | 0 | 0 | none | restored | mtime only |
+| Z0 | 4844 | 0 | 0 | none | restored | no difference |
+| V5, first attempt | 228 | **1** | 0 | none | restored | no difference |
+| V5 | 16783 | 0 | 0 | none | restored | mtime only |
+
+The owner side's one difference is the stand-in session's Chrome writing its own profile's mtime, as in every sitting.
+The harness's Chrome was the judged 156 in every counted step: wrap71's process records name `/opt/google/chrome` or
+`/usr/bin/google-chrome-stable` for every harness Chrome process (V2 33, V3 37, V5 54) and Chrome 158's path for none.
+
+### V5 at H⁵: two cells FAIL, and the FAIL stands (ruling 886)
+
+V5 was judged live, with ruling 680 encoded (867a). Its verdict reads "FAIL: device-chrome-dnd chrome_dnd_shared cua,
+device-chrome-dnd chrome_dnd_short_in_front_shared cua". No cell reads incomplete and no sample was excluded as premise
+unmet, so this is not route D's stop.
+
+| cell | the judge's reason | the samples |
+|---|---|---|
+| `chrome_dnd_short_in_front_shared` cua | "a drag answered ok with no drop and nothing pending on 1 of 9 samples (1/2); the effect was not verified on 1 of 9 samples (1/2)". drops: samples 9, landed 8, ok 9, **false_ok 1**, unconfirmed_landed 0 | 1/2 (warm, 252.67 ms): ok, no notice, `press.taken` false. The page counted one more dragstart and one more dragend, no drop (34 → 34), and effect 1 → 0 |
+| `chrome_dnd_shared` cua | "not cancelled with the drag-and-drop sentence on 2 of 9 samples (1/0, 2/0)" | each block's cold first sample (158.24 and 157.5 ms): a plain-drag ok, `dnd.outcome` no_start, `press.taken` false, no notice. The page counted one more dragstart and dragend and no drop |
+
+- **The cause (task 112's diagnosis; the Decision Log's entry for ruling 886).** In all three samples, Chrome's
+  renderer ran dragstart **after** the engine's release: 47.3 ms after it (in front, 1/2), 107.9 ms (cancel, 1/0)
+  and 98.8 ms (cancel, 2/0). The engine had answered within 2.5 ms of its release.
+  - The browser refused the drag at the IPC level, because dragstart came after the button-up. Nothing the engine
+    could see at the X level separates these drags from a plain drag: its XdndSelection watch and its press watch saw
+    nothing.
+  - The settle did not run and could not have: `drop_settles.entered` is 0 on every stats line.
+  - The mode was already met at M4's gate (candidate 1), so it is not arm64-only.
+- **In-front 1/2 is a judged false ok.** In the cancel cell nothing changed on the desktop at the X level.
+- **A fix is being measured for linux-engine 0.4.2.** V5's stored verdict stands as recorded beside the ruling.
+- `chrome_dnd_late_take_shared` cua passes under the encoded 680 rule. Its span-limited samples are 0/0 (dragend
+  305 ms, answer 157.5), 1/0 (302, 157.43), 1/2 (264, 156.37), 2/0 (310, 157.46) and 2/2 (265, 156.58).
+
+### The stopped first attempt, and its clearance (`h5/out/V5.pinned-release.stopped-1/`)
+
+V5's first attempt read NOT CLEAR 25 s into its run (`flags.jsonl`, `wrap-summary.json`, `all-clear.txt`). The
+controller cleared the hold under ruling 730(b) (`h5/out/hold-sittings-cleared-2026-11-19T11-40Z.txt`).
+- **The findings, by kind:**
+  - 1 outside-peer-connection: t 19.471 s, pid 2181578 (no record: it lived under one ~107 ms sample gap), peer
+    `@37d51` (a Linux autobind address), no peer pid, inode 19820785;
+  - 0 decoy connections, 0 window findings and 0 audit rows. The run reached only its begin row.
+  - The all-clear's second line, the missing end row, follows from wrap71's stop (the harness exited 143).
+- **What the records show.** The flagged process sat between the run's own google-chrome-stable launch (pid 2181571,
+  19.453 s, run-owned profile) and that Chrome's first renderer (19.578 s).
+  - No listener held `@37d51` afterwards. The stand-in session's Chrome and its crashpad handlers were alive and would
+    have shown a live listener.
+  - The extended 773 rule flags an autobind connection whose holder is absent by design, so the guard failed closed.
+    Nothing reached a person: this VM's `:0` is nobody's display.
+- V5 reran whole into a clean directory, under every guard. Its command is identical to the sitting's
+  (`zero-commands-v5r.txt`).
+
+### Kept traces and rejudge-audit (rulings 858(b), 863)
+
+Every audit row of every V step carries `kept_traces` with its files, and `rejudge-audit.mjs` over each step
+directory reproduces the stored findings (`h5/scripts/after-*.txt`, `.rejudge.jsonl`).
+
+| run | audit rows | with kept traces | files | rejudge-audit |
+|---|---:|---:|---:|---|
+| V1 | 16 | 16 | 20 | reproduces: moved 0, unkept 0, foreign 0 stored / 0 now |
+| V2 | 30 | 30 | 30 | reproduces (the same) |
+| V3 | 69 | 69 | 69 | reproduces |
+| V4 | 28 | 28 | 28 | reproduces |
+| V5 | 52 | 52 | 52 | reproduces |
+| F2 V2, V3, V5 | 30, 69, 52 | all | 30, 69, 52 | reproduces in each |
+| F3 V2 | 30 | 30 | 30 | reproduces |
+| Z0; V5's first attempt; F3 V3 | 0 | – | 0 | nothing to re-judge. Z0 is an experiment with no route audit, and the two stopped runs reached no audit |
+
+The traces are not committed. All 380 files are on the x64 host under `~/.local/share/cua-171/m5/arm64-h5-traces/`
+(`out/`, `f2/`, `f3/`, each `<step dir>/run/audit-traces/…`), copied before the VM's lease ends. Each file is listed
+with its sha256 in `h5/scripts/kept-traces.sha256`.
+
+### The settle counter at H⁵ (`h5/scripts/settle-check.txt`)
+
+| reading | steps |
+|---|---|
+| **TAKEN** | none |
+| not taken (every engine's counter at 0) | V1, V2; F2 V2; F3 V2 |
+| unknown (ruling 834; every recorded counter entered 0) | V3 and V4 (2 audit engines each run with `stats: false`), V5 (20 of 218), Z0 (no stats); F2 V3 and V5; and the two stopped runs (one engine each, unrecorded) |
+
+### F2's `:0` parts, unjudged (development runs; `h5/f2/`)
+
+V2, V3 and V5 ran on current stable **Chrome 158.0.8127.36**, in one hold (12:05:22–13:30:31Z), with `--dev`
+(`zero-commands-f2.txt`). It was extracted and never installed, as in F2's private part (`h4/f2/`). The judged 156
+stayed installed and held.
+- **Which Chrome ran.** The sitting put the 158 wrapper first on PATH (`chrome-stable/158.0.8127.36-1/bin`), and each
+  step logged `google-chrome --version`: "Google Chrome 158.0.8127.36" (`h5/f2/zero.log`).
+- The records confirm it. wrap71's process records show every harness Chrome process launched from the 158 tree
+  (V2 34, V3 41, V5 67) and none from `/opt/google/chrome`.
+- **V2:** every verdict PASS; the all-clear is clear (8027 samples, 0 flags).
+- **V3:** no verdict FAIL, with the same listed-apart cells as the counted V3; clear (17486 samples, 0 flags).
+- **V5:** FAIL on `chrome_dnd_shared` cua, 1 of 9 samples (2/0, cold, 157.65 ms, a plain-drag ok with no take). That is
+  the counted run's shape, met once here on Chrome 158. `chrome_dnd_short_in_front_shared` passed: 9 landed, 0 false
+  ok. `chrome_dnd_late_take_shared` passed, with span-limited samples 0/0, 1/0 and 2/0. The all-clear is clear (16688
+  samples, 0 flags).
+
+### F3, the vendor's third build, unjudged (development runs; `h5/f3/`)
+
+V2 and then V3 ran once each with **26.1111.21308** given as `--newest`, against the same pinned home and its engine
+(`gate.mjs print V2|V3 --pinned <home> --dev --newest <its sky_linux_arm64>`; `zero-commands-f3.txt`). They ran in one
+hold, 13:30:31–13:47:03Z. The build was verified by T6 (`pilot/README.md`): the deb's sha256 is `c5c5aa09…` and its own
+`_gpgorigin` gives GOODSIG and VALIDSIG. Its `sky_linux_arm64` sha256 `99c69092dcd74f147c6eb6db818dc6810264d72913513a9ade0354e4125c9eef`
+was read again before the run.
+- **V2:** "development run, not a release gate: every verdict PASS"; clear (8086 samples, 0 flags).
+- **V3:** **stopped by the guard** 6.6 s into the run, with no rows beyond its begin. It stands as stopped, with no
+  rerun (the controller, under ruling 773, as x64's F3 V3).
+  - The flag was 1 outside-peer-connection: t 6.565 s, pid 2524837, the run's own google-chrome-stable launch (seen
+    once at 6.534 s, run-owned profile). Its peer was `@d9dd9` (autobind), peer pid 2524876 with no record, inode
+    22572618.
+  - That pid's number sits among the run zygote's children forked at 6.672–6.674 s.
+  - There were 0 decoy connections and 0 window findings.
+  - The controller cleared the hold under ruling 730(b) (`h5/f3/hold-sittings-cleared-2026-11-19T13-55Z.txt`).
+- So V3's `scroll` and `drag` have no third-build medians on arm64. x64's came from its stopped V3's raw rows, which ran
+  long enough to complete chrome-input; this one stopped before any sample.
+
+The operations from F3's V2, three medians each (cold / warm, ms): the pinned build, the third build, cua. F3's V3 gives
+none.
+
+| scene | op | cold: pinned / 26.1111.21308 / cua (ms) | warm: pinned / 26.1111.21308 / cua (ms) |
+|---|---|---|---|
+| gedit | tree | 197.8 / 193.3 / 54.6 | 191.5 / 187.5 / 49.8 |
+| chrome | tree | 185.4 / 185.1 / 69.8 | 181.6 / 179.9 / 65.7 |
+| gedit | tree_shot | 308.2 / 307.2 / 77 | 297.8 / 298.9 / 59 |
+| chrome | tree_shot | 298.4 / 299.7 / 97.7 | 292.7 / 292.4 / 76.6 |
+| gedit | press_key | 271.7 / 238.7 / 5.4 | 267.4 / 234.3 / 0.5 |
+| chrome | press_key | 271.9 / 238.8 / 4.7 | 267.6 / 234.5 / 0.5 |
+| gedit | click | 217.6 / 218.2 / 17.8 | 213.2 / 213.5 / 12.7 |
+| chrome | click | 217.4 / 218.1 / 16.8 | 213.3 / 213.6 / 12.8 |
+
+### Scans (rulings 863, 874, 875)
+
+- **Token-shaped strings** (`scripts/scan-evidence.sh`, file names only): the whole `m5/arm64/`, 2595 files,
+  0 hits.
+- **No `:0` window title or key code** in the committed `h5/` (`h5/scripts/privacy-scan.mjs`, `privacy-run.sh`):
+  - The check took the titles of every `:0` client window at the time of the scan (`_NET_WM_NAME`, `WM_NAME` and
+    `WM_ICON_NAME` of the stand-in session's Chrome, the only client; the harness's windows were gone). They were
+    piped from the VM straight into the scan, never written or printed, and each was counted in every file.
+  - It also counted rows whose held-release samples or findings name a key or button code (task 106's pattern), and
+    minimized rows whose events carry a raw numeric code or whose key lists hold codes.
+  - The result: 375 files, 3 titles looked for, **0 title hits, 0 held-code rows, 0 raw minimized codes**.
+  - Positive controls: the same scan finds x64's V3 at H (`m5/x64/out/V3.pinned-release`): 2 held-code rows and 27 raw
+    minimized codes, before ruling 874's tokens. A title known to be in those rows is found too.
+
 ## Files
 
+- `h5/`: the H⁵ part (`out/`: the counted sitting, V5's stopped first attempt and its clearance; `f2/`: F2's `:0`
+  parts on Chrome 158; `f3/`: F3, with V3's stop and its clearance; `scripts/`: task 109's launchers and records, the
+  after-step readings, `settle-check.txt`, `kept-traces.sha256` and the scans). The kept route-audit traces are left
+  out (on the x64 host, above).
 - `h4/`: the H⁗ part (`out/`: the counted steps and V1; `counter-pilot/`; `f2/`; `a872/`; the hold's clearance record;
   Chrome 158's index; the L3b and L3c/L3d analyses).
 - `out/`: each idle step's directory as the runner wrote it (`<step>.pinned-release`: `step.json`, `README.md`, `run/`

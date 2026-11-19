@@ -1,0 +1,64 @@
+development run, not a release gate; candidate: sha256 8850abcb00d6ee47c72ff102e71cac1578bc7c5bccf7249104493a17242efaa0, aarch64-unknown-linux-musl static, cua-engine 0.4.1 (7522dcb8fb8c); attestation not checked (a development run)
+negative check: the witness failed the activating stub (stacking, active, focus); the audit failed it (_NET_ACTIVE_WINDOW ClientMessage, XTEST FakeInput)
+in-front checks: held (the target activated again: clean; another window activated and the target again: stacking, active, focus; another raised and the target raised back under one server grab: stacking; another client's override-redirect window raised across the target's frame and back under one server grab: stacking)
+cua171-diff-m5-dev-V3-1518cada-input-newest: the scroll series ended at 290; back to the top
+cua171-diff-m5-dev-V3-1518cada-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-m5-dev-V3-1518cada-input-pinned: the scroll series ended at 276; back to the top
+cua171-diff-m5-dev-V3-1518cada-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-m5-dev-V3-1518cada-input-pinned: the scroll series ended at 288; back to the top
+cua171-diff-m5-dev-V3-1518cada-input-pinned: the scroll series ended at 11; back to the top
+cua171-diff-m5-dev-V3-1518cada-input-newest: the scroll series ended at 275; back to the top
+cua171-diff-m5-dev-V3-1518cada-input-pinned: the scroll series ended at 279; back to the top
+cua171-diff-m5-dev-V3-1518cada-input-newest: the scroll series ended at 279; back to the top
+cua171-diff-m5-dev-V3-1518cada-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-m5-dev-V3-1518cada-input-newest: the scroll series ended at 316; back to the top
+cua171-diff-m5-dev-V3-1518cada-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-m5-dev-V3-1518cada-input-pinned: the scroll series ended at 334; back to the top
+cua171-diff-m5-dev-V3-1518cada-input-pinned: the scroll series ended at 6; back to the top
+cua171-diff-m5-dev-V3-1518cada-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-m5-dev-V3-1518cada-input-pinned: the scroll series ended at 338; back to the top
+cua171-diff-m5-dev-V3-1518cada-input-newest: the scroll series ended at 338; back to the top
+cua171-diff-m5-dev-V3-1518cada-input-pinned: the scroll series ended at 296; back to the top
+cua171-diff-m5-dev-V3-1518cada-input-pinned: the scroll series ended at 8; back to the top
+cua171-diff-m5-dev-V3-1518cada-input-newest: the scroll series ended at 284; back to the top
+cua171-diff-m5-dev-V3-1518cada-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-m5-dev-V3-1518cada-input-newest: the scroll series ended at 282; back to the top
+cua171-diff-m5-dev-V3-1518cada-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-m5-dev-V3-1518cada-input-pinned: the scroll series ended at 337; back to the top
+cua171-diff-m5-dev-V3-1518cada-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-m5-dev-V3-1518cada-input-pinned: the scroll series ended at 277; back to the top
+cua171-diff-m5-dev-V3-1518cada-input-newest: the scroll series ended at 278; back to the top
+cua171-diff-m5-dev-V3-1518cada-input-pinned: the scroll series ended at 283; back to the top
+cua171-diff-m5-dev-V3-1518cada-input-newest: the scroll series ended at 316; back to the top
+cua171-diff-m5-dev-V3-1518cada-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-m5-dev-V3-1518cada-input-newest: the scroll series ended at 333; back to the top
+cua171-diff-m5-dev-V3-1518cada-input-newest: the scroll series ended at 7; back to the top
+cua171-diff-m5-dev-V3-1518cada-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-m5-dev-V3-1518cada-input-pinned: the scroll series ended at 290; back to the top
+cua171-diff-m5-dev-V3-1518cada-input-pinned: the scroll series ended at 10; back to the top
+cua171-diff-m5-dev-V3-1518cada-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-m5-dev-V3-1518cada-input-pinned: the scroll series ended at 347; back to the top
+cua171-diff-m5-dev-V3-1518cada-input-pinned: the scroll series ended at 1; back to the top
+cua171-diff-m5-dev-V3-1518cada-input-newest: the scroll series ended at 276; back to the top
+cua171-diff-m5-dev-V3-1518cada-input-pinned: the scroll series ended at 282; back to the top
+cua171-diff-m5-dev-V3-1518cada-input-newest: the scroll series ended at 282; back to the top
+cua171-diff-m5-dev-V3-1518cada-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-m5-dev-V3-1518cada-input-newest: the scroll series ended at 334; back to the top
+cua171-diff-m5-dev-V3-1518cada-input-newest: the scroll series ended at 6; back to the top
+cua171-diff-m5-dev-V3-1518cada-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-m5-dev-V3-1518cada-input-pinned: the scroll series ended at 288; back to the top
+cua171-diff-m5-dev-V3-1518cada-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-m5-dev-V3-1518cada-input-pinned: the scroll series ended at 276; back to the top
+cua171-diff-m5-dev-V3-1518cada-input-newest: the scroll series ended at 346; back to the top
+cua171-diff-m5-dev-V3-1518cada-input-pinned: the scroll series ended at 334; back to the top
+cua171-diff-m5-dev-V3-1518cada-input-pinned: the scroll series ended at 6; back to the top
+cua171-diff-m5-dev-V3-1518cada-input-newest: the scroll series ended at 275; back to the top
+cua171-diff-m5-dev-V3-1518cada-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-m5-dev-V3-1518cada-input-newest: the scroll series ended at 276; back to the top
+cua171-diff-m5-dev-V3-1518cada-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-m5-dev-V3-1518cada-input-pinned: the scroll series ended at 280; back to the top
+cua171-diff-m5-dev-V3-1518cada-input-pinned: the scroll series ended at 325; back to the top
+cua171-diff-m5-dev-V3-1518cada-input-newest: the scroll series ended at 328; back to the top
+run valid; development run, not a release gate: no verdict FAIL; declared refusal (a loss, not a pass): chrome-input drag cua; declared unconfirmed (a loss, not a pass): chrome-input right_click_fallback cua, chrome-input secondary_action cua; text restores (the first word put back before a sample): pinned 0, newest 0, cua 0
+results: /Users/new/.local/share/cua-171/m5/f2-arm64-h5/V3.development-run/run/results.jsonl
+{"exit": 0, "samples": 17486, "maps_samples": 5830, "flags": 0, "decoy_connections": 0, "leftovers": [], "processes": 1841, "browsers": 52}

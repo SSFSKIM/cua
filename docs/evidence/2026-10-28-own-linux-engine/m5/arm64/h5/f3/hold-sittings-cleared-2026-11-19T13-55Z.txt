@@ -1,0 +1,23 @@
+The controller (session linux171) cleared this hold on dc-linux171arm-996d under ruling 730(b). The design session (cua_repl) is live and has been told.
+
+The hold. Task 109's F3 V3 at H''''' (7d554dea, engine 0.4.1, newest = 26.1111.21308) was a development run, never counted. It read not all-clear 6.6 s in (13:47:03Z). wrap71 flagged one outside-peer-connection:
+- the connecting pid was 2524837 (comm chrome), at t 6.565 s;
+- the peer was the autobind address "@d9dd9" (inode 22572618), and its peer pid was shown as 2524876, though that pid has no record.
+The run reached 5 rows and no end row.
+
+Analysis:
+- The connecting pid is the run's own google-chrome-stable launch. Its parent is the harness (2524284), it was seen once at 6.534 s, and it ran with a run-owned profile.
+- The peer pid 2524876 sits among the run zygote's (2524517) children forked at 6.672-6.674 s. So the listener's holder was a run Chrome process that wrap71 had not yet sampled, and the extended 773 rule could not check its identity by start time. That fails closed by design.
+- It is the same class as V5's stopped attempt earlier today, and as x64's F3 V3, which stood as stopped with no rerun under ruling 773.
+- No listener holds "@d9dd9" now. The stand-in session's Chrome (9512) has been alive since 2026-11-17 17:10:49 and is unchanged.
+
+What reached the person: nothing. This VM's :0 is nobody's display. There were 0 decoys and 0 window findings, and there are no leftovers.
+
+Checked before clearing:
+- no cua-engine, sky_linux, gedit or gnome-text-editor process alive;
+- /tmp/.X11-unix holds X0 only;
+- no /tmp/cua171-run-*.
+
+Next:
+- F3 V3 stands as stopped, as on x64, with no rerun. F3 V2 completed with every verdict passing.
+- The VM goes to task 113, the 0.4.2 measurement.

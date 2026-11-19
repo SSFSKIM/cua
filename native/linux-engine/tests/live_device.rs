@@ -3821,14 +3821,12 @@ enum HandleEnd {
 /// there and releasing it over whatever window is under that point (review of T11, finding 2).
 #[test]
 fn a_drag_handle_ended_with_the_pointer_on_another_screen_releases_there_and_moves_nothing() {
-    support::fresh_display();
     handle_ended_on_another_screen(HandleEnd::End);
 }
 
 /// The engine's exit ends a held `drag_handle` as its `end` does, the pointer on another screen included.
 #[test]
 fn an_exit_with_a_drag_handle_held_and_the_pointer_on_another_screen_releases_there_and_moves_nothing() {
-    support::fresh_display();
     handle_ended_on_another_screen(HandleEnd::Exit);
 }
 
@@ -4597,7 +4595,6 @@ fn screen_mode(conn: &RustConnection, root: Window, (width, height): (u16, u16))
 /// skipped without one.
 #[test]
 fn a_drag_handle_moved_into_screen_area_added_after_the_engine_started_ends_as_asked() {
-    support::fresh_display();
     let Ok(display) = std::env::var("CUA_LIVE_RESIZABLE") else {
         eprintln!("skipped: CUA_LIVE_RESIZABLE names no resizable display (tests/two-screens.sh runs this test)");
         return;

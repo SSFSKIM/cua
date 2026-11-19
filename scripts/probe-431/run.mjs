@@ -9,7 +9,7 @@ import {execFileSync} from 'node:child_process';
 import {Wire} from './wire.mjs';
 import {owned,stop,pause,environment,startPlatform,startHelper} from './platform.mjs';
 import {LANES,CELLS,recordedRole,controlRole,unitKey,unitsFor,plan,pointFor} from './cells.mjs';
-import {outcomeOf,stalePointOf,routeOf,findLink,covers,nodeAt,landingOf,delta,score,summarize,coverage,judge} from './check.mjs';
+import {outcomeOf,stalePointOf,routeOf,findLink,uncoveredBy,nodeAt,landingOf,delta,score,summarize,coverage,judge} from './check.mjs';
 
 const setupLabel=e=>typeof e?.setupStep==='string'?e.setupStep:'other';
 const stepError=step=>Object.assign(Error(step),{setupStep:step});
@@ -125,7 +125,7 @@ async function main(){
           if(nodeAt(sky.nodes,placed.screen)?.role!==recordedRole(c.cell,c.at))throw stepError('placement');
           // A twin cell's observation must hold every control it prepares (so the target is the one found), and a ruling-881
           // twin none of its own, else the unit is not tested.
-          if(!covers(sky,spec,found,{role:controlRole(c.cell)}))throw stepError('uncovered');
+          const gap=uncoveredBy(sky,spec,found,{role:controlRole(c.cell)});if(gap)throw stepError('uncovered-'+gap);
           // The cell's change, after the observation (and so after the record), before the click.
           s='mark';
           mark=await platform.command({op:'mark',trial});

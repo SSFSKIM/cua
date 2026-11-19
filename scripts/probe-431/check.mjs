@@ -40,18 +40,23 @@ export const LABELLED={move:2,list:3,cap:1,deep:1};
 //   control of the cell's role but the target and Archive was emitted, framed or not, so the twin (labelled or not) is
 //   not in the tree (the guard's record-only reads take only children the window shows, which a twin below the fold is
 //   not, and none below the depth cap).
-export function covers(sky,spec,found,{role='AXLink'}={}){
-  if(!spec.twin)return true;
+// The controls counted are those not above the target's row: the browser's own controls over the page (Chrome for
+// Testing's infobar link, smoke run 44518499843) are never the twin, which lies in or below the target's row.
+// `uncoveredBy` names the first condition that failed (a closed code), null when the observation is the one needed.
+export function uncoveredBy(sky,spec,found,{role='AXLink'}={}){
+  if(!spec.twin)return null;
   const nodes=Array.isArray(sky?.nodes)?sky.nodes:[];
   const carrier=role==='AXLink'?'AXStaticText':role;
-  if(nodes.filter(n=>framed(n)&&n.role===carrier&&reads(n,spec.before)).length!==LABELLED[spec.twin])return false;
-  if(spec.twin!=='cap'&&spec.twin!=='deep')return true;
+  if(nodes.filter(n=>framed(n)&&n.role===carrier&&reads(n,spec.before)).length!==LABELLED[spec.twin])return 'count';
+  if(spec.twin!=='cap'&&spec.twin!=='deep')return null;
   const t=sky.truncated;
-  if(spec.twin==='cap'?!(t?.count>0&&sky.timings?.nodeCapHit===true):!(t?.depth>0))return false;
+  if(spec.twin==='cap'?!(t?.count>0&&sky.timings?.nodeCapHit===true):!(t?.depth>0))return 'cut';
   const inside=n=>framed(n)&&holds(found.link.frame,centre(n.frame));
-  if(!nodes.filter(n=>reads(n,spec.before)).every(inside))return false;
-  return nodes.filter(n=>n?.role===role).every(n=>n===found.link||reads(n,'Archive'));
+  if(!nodes.filter(n=>reads(n,spec.before)).every(inside))return 'label';
+  const above=n=>framed(n)&&n.frame.y+n.frame.height<=found.link.frame.y+2;
+  return nodes.filter(n=>n?.role===role&&!above(n)).every(n=>n===found.link||reads(n,'Archive'))?null:'control';
 }
+export const covers=(...a)=>uncoveredBy(...a)===null;
 
 const name=x=>typeof x==='string'&&/^[A-Za-z][A-Za-z0-9]{0,47}$/.test(x)?x:'other';
 const role=x=>typeof x==='string'&&/^AX[A-Za-z]{1,40}$/.test(x)?x:x==null?null:'other';

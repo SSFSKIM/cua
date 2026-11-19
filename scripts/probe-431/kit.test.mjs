@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {Script} from 'node:vm';
 import {CELLS,UNITS,AT,FILLER,DEEP,recordedRole,unitKey,unitsFor,plan,pointFor} from './cells.mjs';
-import {quantiles,outcomeOf,stalePointOf,routeOf,findLink,covers,nodeAt,landingOf,delta,score,gates,coverage,summarize,judge,MIN_PAIRS} from './check.mjs';
+import {quantiles,outcomeOf,stalePointOf,routeOf,findLink,covers,uncoveredBy,nodeAt,landingOf,delta,score,gates,coverage,summarize,judge,MIN_PAIRS} from './check.mjs';
 import {page} from './page.mjs';
 import {toPixels} from './run.mjs';
 
@@ -91,6 +91,12 @@ test('a ruling-881 twin must be absent from the observation, which the walk must
   const bareTwin = {role: 'AXLink', title: '', frame: {x: 0, y: 0, width: 0, height: 0}};
   assert.equal(covers({nodes: [text, link, archive, bareTwin], truncated: capped, timings: nodeCapHit}, cap, found), false);
   assert.equal(covers({nodes: [text, link, archive, {role: 'AXLink'}], truncated: {depth: 200}}, deep, found), false);
+  // The browser's own link over the page (CfT's infobar) is not the twin; one in or below the target's row is.
+  const infobar = {role: 'AXLink', title: 'Learn more', frame: {x: 700, y: 90, width: 80, height: 18}};
+  assert.equal(uncoveredBy({nodes: [infobar, text, link, archive], truncated: {depth: 200}}, deep, found), null);
+  assert.equal(uncoveredBy({nodes: [text, link, archive, {...infobar, frame: {...infobar.frame, y: 150}}], truncated: {depth: 200}}, deep, found), 'control');
+  assert.equal(uncoveredBy({nodes: [text, link, archive], truncated: null, timings: nodeCapHit}, cap, found), 'cut');
+  assert.equal(uncoveredBy({nodes: [text, link, archive, twinText], truncated: capped, timings: nodeCapHit}, cap, found), 'count');
   // A twin cell's observation holds exactly the controls it prepares, so the found one is the target.
   const text2 = {...text, frame: {...text.frame, y: 214}};
   assert.equal(covers({nodes: [text, text2]}, CELLS.twin, found), true);

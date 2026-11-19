@@ -36,6 +36,7 @@ import { runQtActivation } from './qt-activation.mjs';
 import { runSettle } from './action-settle.mjs';
 import { runDnd } from './dnd.mjs';
 import { runDropSignals } from './drop-signals.mjs';
+import { runDragSourceProbe } from './drag-source-probe.mjs';
 import { runWriterDrag } from './writer-drag.mjs';
 import { runKinds } from './kinds.mjs';
 import { runPredicates } from './predicates.mjs';
@@ -485,8 +486,8 @@ async function experimentRun(args, { emit, results }) {
       md = result.md;
       outcome = { complete: result.pass, failed: result.pass ? [] : [`${result.label} (FAIL: a first capture of cua's wrong or unjudged; REFERENCE MISMATCH: the pinned build's capture did not confirm a truth; CONTROL NON-DISCRIMINATING: a control lane captured every first frame right)`] };
     }
-    else if (['drag', 'kinds', 'dnd', 'drop-signals', 'predicates', 'pointer-route', 'writer-drag'].includes(args.experiment)) {
-      const measure = { drag: runDrag, kinds: runKinds, dnd: runDnd, 'drop-signals': runDropSignals, predicates: runPredicates, 'pointer-route': runPointerRoute, 'writer-drag': runWriterDrag }[args.experiment];
+    else if (['drag', 'kinds', 'dnd', 'drop-signals', 'predicates', 'pointer-route', 'writer-drag', 'drag-source-probe'].includes(args.experiment)) {
+      const measure = { drag: runDrag, kinds: runKinds, dnd: runDnd, 'drop-signals': runDropSignals, predicates: runPredicates, 'pointer-route': runPointerRoute, 'writer-drag': runWriterDrag, 'drag-source-probe': runDragSourceProbe }[args.experiment];
       const result = await measure(args, { desktop, emit });
       md = result.md;
       outcome = measuredOutcome(result);

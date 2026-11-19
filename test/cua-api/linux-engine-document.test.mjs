@@ -38,6 +38,9 @@ const QUOTED = [
     '{app} began a drag and drop, which changes the desktop; it was cancelled before the drop, so nothing was dropped.'],
   ['Pending from your last drag,', [LINUX_DOCUMENT], 'native/linux-engine/src/dnd.rs',
     'Pending from your last drag, {}. Read the window before sending input again: your next input request will not be run'],
+  // The cause a late take answers (the after-release watch, 700 ms since 0.4.2; #171 M5, ruling 888.3).
+  ['a late drag and drop:', [LINUX_DOCUMENT], 'native/linux-engine/src/dnd.rs',
+    'a late drag and drop: {app} started a drag and drop after your drag into it ended, so the drag did not end as it answered'],
   // An Electron drop whose application did not answer the engine's syncs before the release (#171 M5, ruling 827).
   ['did not answer in time for its drop to be confirmed', [LINUX_DOCUMENT], 'native/linux-engine/src/dnd.rs',
     'an unconfirmed drop: your drag into {app} began a drag and drop, and {app} did not answer in time for its drop to be confirmed, so the drop may not have landed as the drag answered'],
@@ -84,6 +87,17 @@ test('every behaviour the Linux documents narrow a promise to is the engine\'s',
   // Chrome is the one family whose drop changes the desktop, so Electron's and Firefox's drags are never guarded.
   assert.equal(file('native/linux-engine/src/families.rs').match(/drop_changes_desktop: true/g).length, 1);
   assert.match(flat(file('native/linux-engine/src/families.rs')), /name: "Chrome",(?:(?!name: ")[^])*drop_changes_desktop: true/, 'and it is Chrome\'s entry');
+});
+
+// How long a Chromium-family source's drag holds its button for the page's drag and drop (#171 M5, ruling 888.1): B,
+// the engine's one line, which the design session sets, and which the documents name in milliseconds.
+test('the documents name the hold of a drag from a Chromium window as the engine\'s bound', () => {
+  const bound = /pub const TAKE_HOLD_AFTER_PRESS: Duration = Duration::from_millis\((\d+)\);/.exec(file('native/linux-engine/src/dnd.rs'));
+  assert.ok(bound, 'dnd.rs names TAKE_HOLD_AFTER_PRESS in milliseconds');
+  for (const [document, phrase] of [
+    [LINUX_DOCUMENT, `A drag that starts in a Chrome or Electron window can take up to ${bound[1]} ms, however short its path`],
+    [README, `keeps its button down until up to ${bound[1]} ms after its press`],
+  ]) assert.ok(flat(file(document)).includes(flat(phrase)), `${document} does not say: ${phrase}`);
 });
 
 test('the README\'s Chromium menu line is the engine README\'s, word for word', () => {

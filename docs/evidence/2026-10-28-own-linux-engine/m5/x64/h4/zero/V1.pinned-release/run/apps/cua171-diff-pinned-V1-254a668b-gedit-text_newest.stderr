@@ -1,0 +1,258 @@
+
+(gedit:708163): Gtk-CRITICAL **: 18:34:13.883: gtk_text_buffer_get_iter_at_offset: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 18:34:13.883: gtk_text_buffer_insert: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): GLib-GObject-CRITICAL **: 18:34:13.883: g_object_unref: assertion 'G_IS_OBJECT (object)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 18:34:24.770: gtk_text_buffer_get_iter_at_offset: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 18:34:24.770: gtk_text_buffer_insert: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): GLib-GObject-CRITICAL **: 18:34:24.770: g_object_unref: assertion 'G_IS_OBJECT (object)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 18:34:35.913: gtk_text_buffer_get_iter_at_offset: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 18:34:35.913: gtk_text_buffer_insert: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): GLib-GObject-CRITICAL **: 18:34:35.913: g_object_unref: assertion 'G_IS_OBJECT (object)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 18:34:46.812: gtk_text_buffer_get_iter_at_offset: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 18:34:46.812: gtk_text_buffer_insert: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): GLib-GObject-CRITICAL **: 18:34:46.812: g_object_unref: assertion 'G_IS_OBJECT (object)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 18:34:57.821: gtk_text_buffer_get_iter_at_offset: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 18:34:57.821: gtk_text_buffer_insert: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): GLib-GObject-CRITICAL **: 18:34:57.821: g_object_unref: assertion 'G_IS_OBJECT (object)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 18:35:08.803: gtk_text_buffer_get_iter_at_offset: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 18:35:08.803: gtk_text_buffer_insert: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): GLib-GObject-CRITICAL **: 18:35:08.803: g_object_unref: assertion 'G_IS_OBJECT (object)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 18:38:20.238: gtk_text_buffer_get_iter_at_offset: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 18:38:20.238: gtk_text_buffer_insert: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): GLib-GObject-CRITICAL **: 18:38:20.238: g_object_unref: assertion 'G_IS_OBJECT (object)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 18:38:31.153: gtk_text_buffer_get_iter_at_offset: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 18:38:31.153: gtk_text_buffer_insert: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): GLib-GObject-CRITICAL **: 18:38:31.153: g_object_unref: assertion 'G_IS_OBJECT (object)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 18:38:42.191: gtk_text_buffer_get_iter_at_offset: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 18:38:42.191: gtk_text_buffer_insert: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): GLib-GObject-CRITICAL **: 18:38:42.191: g_object_unref: assertion 'G_IS_OBJECT (object)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 18:38:53.203: gtk_text_buffer_get_iter_at_offset: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 18:38:53.203: gtk_text_buffer_insert: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): GLib-GObject-CRITICAL **: 18:38:53.203: g_object_unref: assertion 'G_IS_OBJECT (object)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 18:39:04.190: gtk_text_buffer_get_iter_at_offset: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 18:39:04.190: gtk_text_buffer_insert: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): GLib-GObject-CRITICAL **: 18:39:04.190: g_object_unref: assertion 'G_IS_OBJECT (object)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 18:39:15.266: gtk_text_buffer_get_iter_at_offset: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 18:39:15.266: gtk_text_buffer_insert: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): GLib-GObject-CRITICAL **: 18:39:15.266: g_object_unref: assertion 'G_IS_OBJECT (object)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 18:44:42.455: gtk_text_buffer_get_iter_at_offset: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 18:44:42.455: gtk_text_buffer_insert: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): GLib-GObject-CRITICAL **: 18:44:42.455: g_object_unref: assertion 'G_IS_OBJECT (object)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 18:44:53.448: gtk_text_buffer_get_iter_at_offset: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 18:44:53.448: gtk_text_buffer_insert: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): GLib-GObject-CRITICAL **: 18:44:53.448: g_object_unref: assertion 'G_IS_OBJECT (object)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 18:45:04.575: gtk_text_buffer_get_iter_at_offset: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 18:45:04.575: gtk_text_buffer_insert: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): GLib-GObject-CRITICAL **: 18:45:04.575: g_object_unref: assertion 'G_IS_OBJECT (object)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 18:45:15.589: gtk_text_buffer_get_iter_at_offset: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 18:45:15.589: gtk_text_buffer_insert: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): GLib-GObject-CRITICAL **: 18:45:15.589: g_object_unref: assertion 'G_IS_OBJECT (object)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 18:45:26.760: gtk_text_buffer_get_iter_at_offset: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 18:45:26.760: gtk_text_buffer_insert: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): GLib-GObject-CRITICAL **: 18:45:26.760: g_object_unref: assertion 'G_IS_OBJECT (object)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 18:45:37.576: gtk_text_buffer_get_iter_at_offset: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 18:45:37.576: gtk_text_buffer_insert: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): GLib-GObject-CRITICAL **: 18:45:37.576: g_object_unref: assertion 'G_IS_OBJECT (object)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 18:56:57.692: gtk_text_buffer_get_iter_at_offset: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 18:56:57.692: gtk_text_buffer_insert: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): GLib-GObject-CRITICAL **: 18:56:57.692: g_object_unref: assertion 'G_IS_OBJECT (object)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 18:57:08.801: gtk_text_buffer_get_iter_at_offset: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 18:57:08.801: gtk_text_buffer_insert: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): GLib-GObject-CRITICAL **: 18:57:08.801: g_object_unref: assertion 'G_IS_OBJECT (object)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 18:57:19.799: gtk_text_buffer_get_iter_at_offset: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 18:57:19.799: gtk_text_buffer_insert: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): GLib-GObject-CRITICAL **: 18:57:19.799: g_object_unref: assertion 'G_IS_OBJECT (object)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 18:57:30.880: gtk_text_buffer_get_iter_at_offset: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 18:57:30.880: gtk_text_buffer_insert: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): GLib-GObject-CRITICAL **: 18:57:30.880: g_object_unref: assertion 'G_IS_OBJECT (object)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 18:57:41.874: gtk_text_buffer_get_iter_at_offset: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 18:57:41.874: gtk_text_buffer_insert: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): GLib-GObject-CRITICAL **: 18:57:41.874: g_object_unref: assertion 'G_IS_OBJECT (object)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 18:57:52.986: gtk_text_buffer_get_iter_at_offset: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 18:57:52.986: gtk_text_buffer_insert: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): GLib-GObject-CRITICAL **: 18:57:52.986: g_object_unref: assertion 'G_IS_OBJECT (object)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 18:58:07.559: gtk_text_buffer_get_iter_at_offset: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 18:58:07.559: gtk_text_buffer_insert: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): GLib-GObject-CRITICAL **: 18:58:07.559: g_object_unref: assertion 'G_IS_OBJECT (object)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 18:58:42.163: gtk_text_buffer_get_iter_at_offset: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 18:58:42.163: gtk_text_buffer_insert: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): GLib-GObject-CRITICAL **: 18:58:42.163: g_object_unref: assertion 'G_IS_OBJECT (object)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 18:59:04.443: gtk_text_buffer_get_iter_at_offset: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 18:59:04.443: gtk_text_buffer_insert: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): GLib-GObject-CRITICAL **: 18:59:04.443: g_object_unref: assertion 'G_IS_OBJECT (object)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 18:59:16.085: gtk_text_buffer_get_iter_at_offset: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 18:59:16.085: gtk_text_buffer_insert: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): GLib-GObject-CRITICAL **: 18:59:16.085: g_object_unref: assertion 'G_IS_OBJECT (object)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 18:59:50.516: gtk_text_buffer_get_iter_at_offset: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 18:59:50.516: gtk_text_buffer_insert: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): GLib-GObject-CRITICAL **: 18:59:50.516: g_object_unref: assertion 'G_IS_OBJECT (object)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 19:00:12.542: gtk_text_buffer_get_iter_at_offset: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 19:00:12.542: gtk_text_buffer_insert: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): GLib-GObject-CRITICAL **: 19:00:12.542: g_object_unref: assertion 'G_IS_OBJECT (object)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 19:00:24.432: gtk_text_buffer_get_iter_at_offset: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 19:00:24.432: gtk_text_buffer_insert: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): GLib-GObject-CRITICAL **: 19:00:24.432: g_object_unref: assertion 'G_IS_OBJECT (object)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 19:00:58.980: gtk_text_buffer_get_iter_at_offset: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 19:00:58.980: gtk_text_buffer_insert: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): GLib-GObject-CRITICAL **: 19:00:58.980: g_object_unref: assertion 'G_IS_OBJECT (object)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 19:01:20.898: gtk_text_buffer_get_iter_at_offset: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 19:01:20.898: gtk_text_buffer_insert: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): GLib-GObject-CRITICAL **: 19:01:20.898: g_object_unref: assertion 'G_IS_OBJECT (object)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 19:01:32.495: gtk_text_buffer_get_iter_at_offset: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 19:01:32.495: gtk_text_buffer_insert: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): GLib-GObject-CRITICAL **: 19:01:32.495: g_object_unref: assertion 'G_IS_OBJECT (object)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 19:02:06.863: gtk_text_buffer_get_iter_at_offset: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 19:02:06.863: gtk_text_buffer_insert: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): GLib-GObject-CRITICAL **: 19:02:06.863: g_object_unref: assertion 'G_IS_OBJECT (object)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 19:02:28.874: gtk_text_buffer_get_iter_at_offset: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 19:02:28.874: gtk_text_buffer_insert: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): GLib-GObject-CRITICAL **: 19:02:28.874: g_object_unref: assertion 'G_IS_OBJECT (object)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 19:02:40.486: gtk_text_buffer_get_iter_at_offset: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 19:02:40.486: gtk_text_buffer_insert: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): GLib-GObject-CRITICAL **: 19:02:40.486: g_object_unref: assertion 'G_IS_OBJECT (object)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 19:03:14.794: gtk_text_buffer_get_iter_at_offset: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 19:03:14.794: gtk_text_buffer_insert: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): GLib-GObject-CRITICAL **: 19:03:14.794: g_object_unref: assertion 'G_IS_OBJECT (object)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 19:03:36.800: gtk_text_buffer_get_iter_at_offset: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 19:03:36.800: gtk_text_buffer_insert: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): GLib-GObject-CRITICAL **: 19:03:36.800: g_object_unref: assertion 'G_IS_OBJECT (object)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 19:03:48.600: gtk_text_buffer_get_iter_at_offset: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 19:03:48.600: gtk_text_buffer_insert: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): GLib-GObject-CRITICAL **: 19:03:48.600: g_object_unref: assertion 'G_IS_OBJECT (object)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 19:05:32.288: gtk_text_buffer_get_iter_at_offset: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 19:05:32.288: gtk_text_buffer_insert: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): GLib-GObject-CRITICAL **: 19:05:32.288: g_object_unref: assertion 'G_IS_OBJECT (object)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 19:05:43.314: gtk_text_buffer_get_iter_at_offset: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 19:05:43.314: gtk_text_buffer_insert: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): GLib-GObject-CRITICAL **: 19:05:43.314: g_object_unref: assertion 'G_IS_OBJECT (object)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 19:06:39.602: gtk_text_buffer_get_iter_at_offset: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): Gtk-CRITICAL **: 19:06:39.602: gtk_text_buffer_insert: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:708163): GLib-GObject-CRITICAL **: 19:06:39.602: g_object_unref: assertion 'G_IS_OBJECT (object)' failed

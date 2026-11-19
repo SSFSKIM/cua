@@ -1,0 +1,5 @@
+{"file":"m5/zero-x64-h4/V1.pinned-release/run/results.jsonl","findings":0,"audits":16,"ends":1,"trace":"clean=true","record":"skipped","restores":{"pinned":43,"newest":0,"cua":0},"scene_ends":{"pinned":0,"newest":0,"cua":0},"scene_ended_rows":0}
+{"file":"m5/zero-x64-h4/V2.pinned-release/run/results.jsonl","findings":0,"audits":30,"ends":1,"trace":"clean=true","record":"skipped","restores":{"pinned":0,"newest":0,"cua":0},"scene_ends":{"pinned":0,"newest":0,"cua":0},"scene_ended_rows":0}
+{"file":"m5/zero-x64-h4/V3.pinned-release/run/results.jsonl","findings":0,"audits":69,"ends":1,"trace":"clean=true","record":"skipped","restores":{"pinned":0,"newest":0,"cua":0},"scene_ends":null,"scene_ended_rows":0}
+{"file":"m5/zero-x64-h4/V4.pinned-release/run/results.jsonl","findings":0,"audits":28,"ends":1,"trace":"clean=true","record":"skipped","restores":{"pinned":0,"newest":0,"cua":0},"scene_ends":{"pinned":0,"newest":0,"cua":0},"scene_ended_rows":0}
+{"file":"m5/zero-x64-h4/V5.pinned-release/run/results.jsonl","findings":0,"audits":52,"ends":1,"trace":"clean=true","record":"skipped","restores":{"pinned":0,"newest":0,"cua":0},"scene_ends":null,"scene_ended_rows":0}

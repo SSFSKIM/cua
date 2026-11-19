@@ -5,12 +5,16 @@
 // What is kept is never the raw trace: on a person's display it carries their windows' titles and their clipboard
 // (GetProperty replies, ChangeProperty data). It is a projection (`projectTrace`): the foreign-window judge's own input
 // (foreign.mjs `xtraceElements`), each element cut to an allowlist of the fields the judge reads (`PROJECTION`), each
-// value checked for its kind; a field or a value nobody listed is dropped. Judged by foreign.mjs `judgeForeign`, the
+// value checked for its kind; a field or a value nobody listed is dropped. A ClientMessage's type, an atom any client
+// may intern, is kept only when it is one of the protocol's own (foreign.mjs `CLIENT_MESSAGE_TYPES`), which the live
+// judge names too, so a replay labels each finding as the run did. Judged by foreign.mjs `judgeForeign`, the
 // projection gives the raw trace's findings (audit-traces.test.mjs). The route audits' other judges (forbidden
 // requests, the foreground route) are not re-judged from it.
 //
 // Each execution keeps its own (`<out>/audit-traces/<run>-<execution id>/`), all of an audited operation's lifecycles
-// or none: each file is written under a temporary name and renamed, and a failure removes every file of that audit.
+// or none: they are written into a staging directory and published by renaming it into place only once every write
+// succeeded. A failure leaves nothing published, and its staging is removed as best it can be: a removal that fails is
+// recorded with the audit (`cleanup`), never thrown.
 // Every byte written is charged to the run's cap (`--audit-traces <MB>`, `off` for none), and nothing is kept once the
 // out directory's filesystem would fall below a floor of free space, so the results always have room. The audit row's
 // `kept_traces` names the files, the run and execution they belong to, and what the judge read them against (the
@@ -22,7 +26,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statfsSync, wr
 import { dirname, join, normalize } from 'node:path';
 import { gunzipSync, gzipSync } from 'node:zlib';
 
-import { xtraceElements } from './foreign.mjs';
+import { CLIENT_MESSAGE_TYPES, xtraceElements } from './foreign.mjs';
 
 /** Where a run keeps its route audits' projections, under its output directory. */
 export const AUDIT_TRACES_DIR = 'audit-traces';
@@ -46,15 +50,18 @@ export const PROJECTION = {
   reparent: ['w', 'parent'],
   selreq: ['c', 'requestor', 'property', 'selection', 'target'],
 };
-/** The string-valued fields, each a protocol name (a request, an event, an atom of a ClientMessage's type), and their form. */
-const NAMES = { op: /^[A-Za-z]{1,40}$/, event: /^[A-Za-z]{1,40}$/, type: /^[A-Za-z0-9 ]{1,40}$/, cmType: /^[A-Za-z0-9_]{1,64}$/ };
+/**
+ * The string-valued fields and the values each may keep: a request's or an event's name and an XTEST event's type are
+ * xtrace's own names for them; a ClientMessage's type only from the protocol's finite list.
+ */
+const NAMES = { op: (v) => /^[A-Za-z]{1,40}$/.test(v), event: (v) => /^[A-Za-z]{1,40}$/.test(v), type: (v) => /^[A-Za-z0-9 ]{1,40}$/.test(v), cmType: (v) => CLIENT_MESSAGE_TYPES.has(v) };
 const ATTRIBUTE = /^[a-z-]{1,32}$/;
 
 /** A listed field's value, if it is of a kind the judge reads (a number, a boolean, null, a named constant, a protocol name), else undefined. */
 function allowed(field, value) {
   if (value === null || typeof value === 'boolean') return value;
   if (typeof value === 'number') return Number.isFinite(value) ? value : undefined;
-  if (typeof value === 'string') return NAMES[field]?.test(value) ? value : undefined;
+  if (typeof value === 'string') return NAMES[field]?.(value) ? value : undefined;
   if (field === 'attributes' && Array.isArray(value)) return value.every((a) => typeof a === 'string' && ATTRIBUTE.test(a)) ? [...value] : undefined;
   if (value && typeof value === 'object' && Object.keys(value).every((k) => k === 'keyword' || k === 'value') && /^[A-Za-z]{1,32}$/.test(value.keyword ?? '') && (value.value === undefined || Number.isFinite(value.value))) return { keyword: value.keyword, ...(value.value !== undefined ? { value: value.value } : {}) };
   return undefined;
@@ -91,10 +98,10 @@ const namespaceOf = (run, execution) => join(AUDIT_TRACES_DIR, `${safe(run)}-${e
 /**
  * The run's keeper (one per execution): `keep({name, traces, registered, root})` writes one audited operation's
  * lifecycle traces (parsed, in order) as projections and answers the audit row's `kept_traces`: `{format, run,
- * execution, files, registered, root}` (files relative to `out`), or `{kept: false, reason}`. `free` and `fs` are the
- * tests' own.
+ * execution, files, registered, root}` (files relative to `out`, all in one bundle directory of the audit's own), or
+ * `{kept: false, reason, cleanup?}`. `free` and `fs` are the tests' own.
  */
-export function traceKeeper({ out, run, limitMb = DEFAULT_AUDIT_TRACE_MB, floorBytes = DEFAULT_FREE_FLOOR_BYTES, execution = randomBytes(6).toString('hex'), free = freeBytes, fs = { writeFileSync, renameSync } }) {
+export function traceKeeper({ out, run, limitMb = DEFAULT_AUDIT_TRACE_MB, floorBytes = DEFAULT_FREE_FLOOR_BYTES, execution = randomBytes(6).toString('hex'), free = freeBytes, fs = { mkdirSync, writeFileSync, renameSync, rmSync } }) {
   let charged = 0;
   let n = 0;
   const namespace = namespaceOf(run, execution);
@@ -117,23 +124,23 @@ export function traceKeeper({ out, run, limitMb = DEFAULT_AUDIT_TRACE_MB, floorB
       n += 1;
       // charged before anything is written: whatever reaches the disk counts, kept or removed
       charged += bytes;
-      const made = [];
+      const bundle = join(namespace, `${String(n).padStart(3, '0')}-${safe(name)}`);
+      const staging = join(out, namespace, `.staging-${String(n).padStart(3, '0')}`);
       try {
-        mkdirSync(join(out, namespace), { recursive: true });
-        const files = packed.map((b, i) => {
-          const file = join(namespace, `${String(n).padStart(3, '0')}-${safe(name)}-${i}.elements.gz`);
-          const temp = `${join(out, file)}.tmp`;
-          made.push(temp);
-          fs.writeFileSync(temp, b);
-          fs.renameSync(temp, join(out, file));
-          made[made.length - 1] = join(out, file);
-          return file;
-        });
-        return { format: AUDIT_TRACE_FORMAT, run, execution, files, registered: [...registered].sort((a, b) => a - b), root };
+        fs.mkdirSync(staging, { recursive: true });
+        packed.forEach((b, i) => fs.writeFileSync(join(staging, `${i}.elements.gz`), b));
+        // published whole, once every write succeeded
+        fs.renameSync(staging, join(out, bundle));
+        return { format: AUDIT_TRACE_FORMAT, run, execution, files: packed.map((_, i) => join(bundle, `${i}.elements.gz`)), registered: [...registered].sort((a, b) => a - b), root };
       } catch (error) {
-        // all or none: every file of this audit goes, and the run goes on; the row says why
-        for (const f of made) rmSync(f, { force: true });
-        return { kept: false, reason: `not kept: ${error.message}` };
+        // nothing of this audit was published; its staging goes as best it can, and the run goes on: the row says why
+        const failed = { kept: false, reason: `not kept: ${error.message}` };
+        try {
+          fs.rmSync(staging, { recursive: true, force: true });
+        } catch (cleanup) {
+          failed.cleanup = `the staging ${staging} was left: ${cleanup.message}`;
+        }
+        return failed;
       }
     },
   };
@@ -142,12 +149,12 @@ export function traceKeeper({ out, run, limitMb = DEFAULT_AUDIT_TRACE_MB, floorB
 /**
  * A kept audit's lifecycle projections (each a list of judge elements, in order), read from the run's output
  * directory `out` for the audit row of run `run`: null where the row's record is not of this form, names another run,
- * or names a file outside its own execution's directory, or where any file is missing.
+ * or names a file outside a published bundle of its own execution's directory, or where any file is missing.
  */
 export function readKeptTraces(out, kept, run) {
   if (kept?.format !== AUDIT_TRACE_FORMAT || !kept.files?.length || kept.run !== run || !/^[0-9a-f]{6,}$/.test(String(kept.execution))) return null;
   const own = `${namespaceOf(kept.run, kept.execution)}/`;
-  if (!kept.files.every((f) => normalize(f) === f && f.startsWith(own) && !f.slice(own.length).includes('/'))) return null;
+  if (!kept.files.every((f) => normalize(f) === f && f.startsWith(own) && /^[^./][^/]*\/[^/]+$/.test(f.slice(own.length)))) return null;
   const paths = kept.files.map((f) => join(out, f));
   if (!paths.every(existsSync)) return null;
   return paths.map((p) =>

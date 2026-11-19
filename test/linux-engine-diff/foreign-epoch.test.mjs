@@ -20,6 +20,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 import { pathToFileURL } from 'node:url';
+import { isDeepStrictEqual } from 'node:util';
 
 import { parseXtrace } from '../../scripts/linux-engine-diff/audit.mjs';
 import { auditForeign, auditRecord } from '../../scripts/linux-engine-diff/foreign.mjs';
@@ -143,14 +144,15 @@ test('record: a request between two of the run\'s lives, in a life another clien
   assert.deepEqual(seqs(record(lines, [1050])), [40, 41], 'the restarted window not found: neither later life is the run\'s');
 });
 
-test(
-  "record: a finding binds only the life alive when it was made, never a foreign life that ended before it (#425)",
-  { todo: "H''''s binding, kept for the superset property (task 106's report): a finding binds any life born before it and after the previous end, so the restart's finding at 3200 binds the foreign life between too" },
-  () => {
-    const lines = [created(1000, GEDIT, 10), gone(2000), created(2500, OTHER, 20), engineFocusOut(2600, 40), gone(2700), created(3000, GEDIT, 11), engineFocusOut(3300, 41)];
-    assert.deepEqual(seqs(record(lines, [1050, 3200])), [40]);
-  },
-);
+test("record: a finding binds only the life alive when it was made, never a foreign life that ended before it (#425)", (t) => {
+  const lines = [created(1000, GEDIT, 10), gone(2000), created(2500, OTHER, 20), engineFocusOut(2600, 40), gone(2700), created(3000, GEDIT, 11), engineFocusOut(3300, 41)];
+  const got = seqs(record(lines, [1050, 3200]));
+  // #425's expectation; until it holds the test reads TODO, never failing, and H''''s binding is pinned, so a change of
+  // it either way is seen
+  if (isDeepStrictEqual(got, [40])) return;
+  t.todo("#425: H''''s binding, kept for the superset property: a finding binds any life born before it and after the previous end, so the restart's finding at 3200 binds the foreign life between too");
+  assert.deepEqual(got, [], "H''''s binding as it stands");
+});
 
 test('record: a foreign client in a new epoch on a recycled id stays foreign', () => {
   const lines = [created(1000, GEDIT, 10), gone(2000), created(5000, OTHER, 20), engineFocusOut(5100, 40)];
@@ -178,6 +180,15 @@ test('record: a refusal that cannot be bound to one creation turns the exemption
   // bound to one creation (a tick of its own), the refusal leaves the exemption on: the recycled id's creation refused
   const one = [created(1000, GEDIT, 10), gone(2000), tick(MINE), refusal, engineFocusOut(3100, 40)];
   assert.equal(record(one, [1050]).clean, true);
+  // distinct ticks: a refused creation of another id at 2900, the recycled id's accepted birth at 3000, and the error
+  // read at 3000; both pass `<=`, so either may be the refused one
+  const at2 = (window, t) => JSON.stringify({ kind: 'req', ms: t, client: GEDIT, seq: 50, t, op: 'CreateWindow', window, parent: ROOT });
+  const err = (t) => JSON.stringify({ kind: 'error', ms: 3000, client: GEDIT, seq: 50, major: 1, minor: 0, t });
+  assert.deepEqual(seqs(record([created(1000, GEDIT, 10), gone(2000), at2(ELSE, 2900), at2(MINE, 3000), err(3000), engineFocusOut(3100, 40)], [1050])), [40]);
+  // the server's 32-bit clock wrapped: the refused creation before the wrap, the recycled id's birth after it (a small
+  // tick), and the error, read late on its own context, timed before the wrap; both pass `<=` at different ticks
+  const WRAP = 2 ** 32 - 200;
+  assert.deepEqual(seqs(record([created(1000, GEDIT, 10), gone(2000), at2(ELSE, WRAP), at2(MINE, 100), err(WRAP + 50), engineFocusOut(3100, 40)], [1050])), [40]);
   // an untimed error (a record of one context) binds by the client's latest request alone: never shown to be the creation
   const untimed = JSON.stringify({ kind: 'error', ms: 3000, client: GEDIT, seq: 50, major: 1 });
   assert.deepEqual(seqs(record([created(1000, GEDIT, 10), gone(2000), tick(MINE), untimed, engineFocusOut(3100, 40)], [1050])), [40]);

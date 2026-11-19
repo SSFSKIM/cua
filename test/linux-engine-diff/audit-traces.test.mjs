@@ -4,7 +4,7 @@
 // all or none, capped, above a floor of free space, with the row saying why where it was not kept. Display-free.
 
 import assert from 'node:assert/strict';
-import { appendFileSync, existsSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { after, test } from 'node:test';
@@ -69,6 +69,20 @@ test('the projection keeps only the allowlisted fields, never a title, a propert
   const odd = projectTrace({ elements: [{ k: 'req', r: { conn: 5, seq: 1, major: 25, minor: null, text: `005:<:0001: 44: Request(25): SendEvent propagate=false(0x00) destination=${hex(MINE)} event-mask=0 ClientMessage(33) format=0x20 window=${hex(MINE)} type=0x1f0("${TITLE}") data=0x00` } }], extensions: {} }, ROOT);
   assert.equal(odd[0].cmType, undefined);
   assert.ok(!JSON.stringify(odd).includes('secret'));
+});
+
+test("a ClientMessage's type is kept and named only from the protocol's own atoms: a private-looking one never reaches the disk, and its finding reads the same live and replayed", () => {
+  // `QuarterlyPlan` looks like an atom name, and any client may intern it: never kept, never named
+  const cm = (seq, type) => `005:<:${seq}: 44: Request(25): SendEvent propagate=false(0x00) destination=${hex(PERSON)} event-mask=0 ClientMessage(33) format=0x20 window=${hex(PERSON)} type=0x1f0("${type}") data=0x00,0x00,0x00,0x00,0x00`;
+  const text = [cm('0001', 'QuarterlyPlan'), cm('0002', '_NET_WM_STATE')].join('\n');
+  const out = outDir();
+  const kept = traceKeeper({ out, run: 'r', free: plenty }).keep({ name: 'x', traces: [parsed(text)], registered: [], root: ROOT });
+  assert.ok(!gunzipSync(readFileSync(join(out, kept.files[0]))).toString('utf8').includes('Quarterly'));
+  const live = auditForeign(parsed(text), { registered: new Set(), root: ROOT, routeAudit: true }).foreign.map((f) => `${f.what} on ${hex(f.window)}`);
+  const replayed = judgeForeign(readKeptTraces(out, kept, 'r')[0], { registered: new Set(), root: ROOT, routeAudit: true }).foreign.map((f) => `${f.what} on ${hex(f.window)}`);
+  // the odd atom to the person's window is still a finding, labelled generically; a protocol atom keeps its name
+  assert.deepEqual(live, [`a ClientMessage on ${hex(PERSON)}`, `_NET_WM_STATE ClientMessage on ${hex(PERSON)}`]);
+  assert.deepEqual(replayed, live);
 });
 
 test('a kept trace holds no title on disk, and its re-judge gives the live findings', () => {
@@ -210,32 +224,60 @@ test('the floor: an audit is not kept when the out directory\'s filesystem would
   assert.match(unreadable.reason, /free space .*statfs failed/);
 });
 
-test('a write that fails on the second file removes every file of that audit, and the run goes on', () => {
-  const out = outDir();
+/** The node:fs the keeper uses, with a write that fails on its `failOn`th call (a partial file first) and a removal that may be denied. */
+const failingFs = ({ failOn = 2, denyRemoval = false } = {}) => {
   let writes = 0;
-  const fs = {
+  return {
+    mkdirSync,
+    renameSync,
     writeFileSync: (path, data) => {
       writes += 1;
-      if (writes === 2) {
+      if (writes === failOn) {
         writeFileSync(path, data.subarray(0, 3));
         throw new Error('ENOSPC: no space left on device');
       }
       writeFileSync(path, data);
     },
-    renameSync,
+    rmSync: (path, options) => {
+      if (denyRemoval) throw Object.assign(new Error(`EACCES: permission denied, rm '${path}'`), { code: 'EACCES' });
+      rmSync(path, options);
+    },
   };
-  const keeper = traceKeeper({ out, run: 'r', free: plenty, fs, limitMb: 1 });
+};
+
+test('a write that fails on the second file publishes nothing of that audit, its staging removed, and the run goes on', () => {
+  const out = outDir();
+  const keeper = traceKeeper({ out, run: 'r', free: plenty, fs: failingFs(), limitMb: 1 });
   const failed = keeper.keep({ name: 'x', traces: [parsed(TEARDOWN), parsed(ACCEPTED), parsed(TEARDOWN)], registered: [], root: ROOT });
   assert.equal(failed.kept, false);
   assert.match(failed.reason, /^not kept: ENOSPC/);
+  assert.equal(failed.cleanup, undefined, 'the rollback succeeded');
   const dir = join(out, AUDIT_TRACES_DIR, `r-${keeper.execution}`);
-  assert.deepEqual(existsSync(dir) ? readdirSync(dir) : [], [], 'neither the renamed first file nor the partial second is left');
+  assert.deepEqual(existsSync(dir) ? readdirSync(dir) : [], [], 'neither the first file nor the partial second, nor the staging, is left');
   // the bytes it wrote were charged: the cap counts them
   assert.ok(keeper.charged() > 0);
   // a blocked directory (a file where the directory goes) is the same
   const blocked = join(scratch, `blocked-${n++}`);
   appendFileSync(blocked, '');
   assert.match(traceKeeper({ out: blocked, run: 'r', free: plenty }).keep({ name: 'x', traces: [parsed(TEARDOWN)], registered: [], root: ROOT }).reason, /^not kept: /);
+});
+
+test("a rollback that cannot remove its staging is recorded, never thrown, and nothing of the audit is published", () => {
+  const out = outDir();
+  const keeper = traceKeeper({ out, run: 'r', free: plenty, fs: failingFs({ denyRemoval: true }), limitMb: 1 });
+  let failed;
+  assert.doesNotThrow(() => {
+    failed = keeper.keep({ name: 'x', traces: [parsed(TEARDOWN), parsed(ACCEPTED)], registered: [], root: ROOT });
+  });
+  assert.equal(failed.kept, false);
+  assert.match(failed.reason, /^not kept: ENOSPC/);
+  assert.match(failed.cleanup, /^the staging .* was left: EACCES/);
+  // what is left is the staging alone, never a bundle a re-judge would read
+  const dir = join(out, AUDIT_TRACES_DIR, `r-${keeper.execution}`);
+  assert.ok(readdirSync(dir).every((name) => name.startsWith('.staging-')));
+  // the next audit is kept, published whole
+  const next = traceKeeper({ out, run: 'r', free: plenty }).keep({ name: 'y', traces: [parsed(TEARDOWN)], registered: [], root: ROOT });
+  assert.equal(readKeptTraces(out, next, 'r').length, 1);
 });
 
 test('--audit-traces: on by default at the default cap, a cap in MB, or off', () => {

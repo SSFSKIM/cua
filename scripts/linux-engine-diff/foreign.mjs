@@ -88,6 +88,24 @@ const FOUND_SLACK_MS = 1000;
  * record's by the server's clock, set against the wall clock once), so this covers only the clocks' drift.
  */
 const SPAN_SLACK_MS = 250;
+/**
+ * The ClientMessage types a finding names (ICCCM, EWMH, XDND, XEMBED, the system tray, startup notification, and the
+ * vendor builds' own clipboard stop): any other atom is any client's to intern, a name that may be private, so its
+ * finding reads `a ClientMessage`, live and in a replay of a kept projection alike (audit-traces.mjs). The type decides
+ * no finding, only its label (task 106, fix wave 2).
+ */
+export const CLIENT_MESSAGE_TYPES = new Set([
+  'WM_PROTOCOLS', 'WM_DELETE_WINDOW', 'WM_TAKE_FOCUS', 'WM_CHANGE_STATE', 'WM_STATE',
+  '_NET_ACTIVE_WINDOW', '_NET_CLOSE_WINDOW', '_NET_WM_STATE', '_NET_WM_DESKTOP', '_NET_CURRENT_DESKTOP', '_NET_NUMBER_OF_DESKTOPS',
+  '_NET_SHOWING_DESKTOP', '_NET_MOVERESIZE_WINDOW', '_NET_WM_MOVERESIZE', '_NET_RESTACK_WINDOW', '_NET_REQUEST_FRAME_EXTENTS',
+  '_NET_WM_PING', '_NET_WM_SYNC_REQUEST', '_NET_WM_FULLSCREEN_MONITORS', '_NET_DESKTOP_VIEWPORT', '_NET_DESKTOP_GEOMETRY',
+  '_NET_STARTUP_INFO_BEGIN', '_NET_STARTUP_INFO', '_NET_SYSTEM_TRAY_OPCODE', '_NET_SYSTEM_TRAY_MESSAGE_DATA', 'MANAGER',
+  'XdndEnter', 'XdndPosition', 'XdndStatus', 'XdndLeave', 'XdndDrop', 'XdndFinished', '_XEMBED', '_GTK_SHOW_WINDOW_MENU',
+  'SKY_CLIPBOARD_STOP',
+]);
+/** A ClientMessage type as a finding names it: a listed protocol atom, else none. */
+export const clientMessageType = (name) => (typeof name === 'string' && CLIENT_MESSAGE_TYPES.has(name) ? name : null);
+
 /** The X protocol's BadWindow: the request named a window id that no window holds. */
 const BAD_WINDOW = 3;
 /** The requests whose windows the epoch rule reads: each names its window, and a missing one is BadWindow. */
@@ -381,10 +399,12 @@ const MINOR_OF = { FakeInput: 2, RedirectWindow: 1, RedirectSubwindows: 2, Unred
  * error's 16 bits and opcodes at or before the error's server time (`t`). An error for an opcode the record does not
  * read refuses nothing. An error without a time (a record of one context) refuses the client's latest recorded request
  * if its opcode and 16 bits match.
- * `ambiguous`: the windows a timed refusal of a CreateWindow could name when another candidate shares the chosen one's
- * server time (the record keys a client by its resource-id base, which a later connection may have, and an error
- * carries no connection generation): either creation may be the refused one, so neither id's lives are certain; and
- * the window of a CreateWindow an untimed record error refused, bound by the client's latest request alone.
+ * `ambiguous`: the windows of every CreateWindow a timed refusal could name when more than one candidate, at any
+ * tick, could claim it (the record keys a client by its resource-id base, which a later connection may have; an error
+ * carries no connection generation; and the server's 32-bit clock wraps, so a creation after the wrap passes `<=` an
+ * error's time from before it): any of them may be the refused one, so none of their lives is certain; and the window
+ * of a CreateWindow an untimed record error refused, bound by the client's latest request alone. The binding itself is
+ * H''''s, unchanged; `ambiguous` only turns the ended-life rule off (task 106, fix wave 2).
  */
 function refusedRequests(elements) {
   const refused = new Map();
@@ -408,8 +428,7 @@ function refusedRequests(elements) {
       if (candidates.length) {
         const chosen = candidates.at(-1);
         refused.set(chosen, el);
-        const tied = candidates.filter((r) => r.t === chosen.t);
-        if (tied.length > 1) for (const r of tied) if (r.op === 'CreateWindow' && typeof r.window === 'number') ambiguous.add(r.window);
+        if (candidates.length > 1) for (const r of candidates) if (r.op === 'CreateWindow' && typeof r.window === 'number') ambiguous.add(r.window);
       }
     } else if (el.k === 'error') {
       const request = el.exact ? bySeq.get(`${el.c}|${el.seq & 0xffff}`) : last.get(el.c);
@@ -479,7 +498,7 @@ export function changeOf(el, root) {
       const windows = el.destination === root ? [] : [el.destination];
       if (el.event === 'ClientMessage') {
         if (el.cmWindow !== root) windows.push(el.cmWindow);
-        return { what: `${el.cmType ?? 'a'} ClientMessage`, windows };
+        return { what: `${clientMessageType(el.cmType) ?? 'a'} ClientMessage`, windows };
       }
       return { what: `SendEvent ${el.event ?? 'event'}`, windows };
     }

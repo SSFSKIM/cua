@@ -425,9 +425,12 @@ variants included; their evidence is written either way. The run's `end` row kee
   are kept beside the results (`audit-traces/<run>-<execution id>/`, `audit-traces.mjs`; task 106, rulings 858 and
   863), never as raw text: as the foreign-window judge's own elements cut to an allowlist of the fields it reads, so no
   title, property or clipboard text reaches the disk, and judged to the raw trace's findings. The audit row's
-  `kept_traces` names them, their run and execution, and the windows they were judged against. An operation's files
-  are written all or none, every byte charged to `--audit-traces <MB>` a run (256 by default; `off` keeps none), and
-  none once the out directory's filesystem would fall below 2 GB free; the row says why where they were not kept.
+  `kept_traces` names them, their run and execution, and the windows they were judged against. A ClientMessage's type
+  is kept, and named in a finding, only when it is one of the protocol's own atoms (`CLIENT_MESSAGE_TYPES`); any other
+  reads `a ClientMessage`, live and replayed. An operation's files are written into a staging directory and published
+  whole by renaming it, or not at all (a staging the rollback could not remove is recorded, never thrown), every byte
+  charged to `--audit-traces <MB>` a run (256 by default; `off` keeps none), and none once the out directory's
+  filesystem would fall below 2 GB free; the row says why where they were not kept.
   `rejudge-audit.mjs` re-judges a stored run from them. A proxy's credentials (task 46's finding
   3): on a private display xtrace copies none and reads no authority file (the harness's X server has none); on a
   person's display it reads the person's authority file where it is (xtrace 1.4.0 reads from its `-F` file and writes

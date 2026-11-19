@@ -2755,6 +2755,28 @@ final class RecreatedIdentityTests: XCTestCase {
     }
   }
 
+  /// The review's finding 1, its role half (`twinbtn`): with the node's control gone, its text re-created under a control
+  /// of another role is another control's, a link's text under a button or a clickable row's under a link; under one of
+  /// the recorded role it is kept. A role or action-name read that fails on the way refuses.
+  func testAReCreatedNodeUnderAControlOfAnotherRoleRefuses() {
+    func replaced(pressable: Bool, role: String, actions: [String] = [], unread: Bool = false) -> StalePointReason {
+      judged(Thread(twin: "Archive", pressable: pressable), at: atText) { thread in
+        thread.aText.destroy()
+        thread.a.destroy()
+        let again = thread.insertAtA(role: role, label: "Reply")
+        again.link.actions = actions
+        again.link.actionsUnread = unread
+        return again.text
+      }.reason
+    }
+    XCTAssertEqual(replaced(pressable: false, role: "AXButton"), .nodeGone, "a link's text under a button")
+    XCTAssertEqual(replaced(pressable: false, role: "AXLink"), .sameElement, "under a link again")
+    XCTAssertEqual(replaced(pressable: false, role: "AXGroup", actions: ["AXPress"]), .nodeGone, "a link's text under a clickable row")
+    XCTAssertEqual(replaced(pressable: true, role: "AXLink"), .nodeGone, "a clickable row's text under a link")
+    XCTAssertEqual(replaced(pressable: true, role: "AXGroup", actions: ["AXPress"]), .sameElement, "under a clickable row again")
+    XCTAssertEqual(replaced(pressable: true, role: "AXGroup", actions: ["AXPress"], unread: true), .nodeGone, "its action names unread")
+  }
+
   /// The review's finding 2: #305's re-created identity of a hit, and the element route's, are refused by the record as
   /// #296's is. A surviving overlay group over A takes the point (a later sibling at A's depth); B slides into A's place.
   func testARecordedHitsReCreatedIdentityIsRefusedByTheRecordToo() {

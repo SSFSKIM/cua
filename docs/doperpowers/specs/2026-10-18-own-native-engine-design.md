@@ -6794,6 +6794,10 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      taken for inert and the outer control inherited).
   4. **Its control still lives and does not hold it** (finding 1, kept as a refusal): while the node's recorded control
      answers (its role read is not kAXErrorInvalidUIElement), a node re-created belongs inside it.
+  5. **Its control is gone and its nearest control now has another role** (finding 1's role half, put back by the
+     coordinator after 714be3b0): a link's text under a button, a clickable row's under a link, or the reverse (`twinbtn`).
+     The recorded control's role is `ScreenshotNode.controlRole`; a parent, role or action-name read that fails on the
+     way refuses. It only adds refusals.
   Findings 3 and 6 of the review are moot: they tightened the candidate-chain walk of the novelty proof, which is gone;
   coverage is judged on the node's side. Finding 2 is applied: #305's re-created identity, and the element route's press
   verdict through it, take the same refusals.
@@ -6808,9 +6812,9 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   stay kept in a whole record with no twin; `capremount` and a gap anywhere in the page refuse, a gap in the browser's
   toolbar does not; the label rule's edges (another title kept; no title, an unread title refused; another document's
   and the node's own control's kept); an unknown control refuses; a living control elsewhere refuses; #305's path and
-  the press verdict refuse as #296's does. A mutation pass of 17 mutations (each refusal, the label rule's scope, the
+  the press verdict refuse as #296's does; a text re-created under a control of another role refuses. A mutation pass of 17 mutations (each refusal, the label rule's scope, the
   coverage's membership, failed reads, its carrying up and region, the unknown classification, #330's lookup and the
-  walk's two new fields) is caught by these tests, every one.
+  walk's two new fields), and 5 more on the role half (each role branch, the half itself, an unread action name, the living-control check), are caught by these tests, every one.
   Not measured live: `twin`, `twincap` and `twindeep` on Safari with this build, and how often real pages lose a
   re-created click to coverage or to a same-label element.
   Date/Author: 2026-11-19, cursor235's implementer for #431.

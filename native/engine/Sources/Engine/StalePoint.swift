@@ -84,6 +84,9 @@ struct ScreenshotNode<Element> {
   /// Whether an ancestor nearer than its control (or than its stop, where it has none) had its action names fail to read
   /// at the observation, so its control is unknown, never taken for inert (the review of main..3ece1a1a, finding 4): no
   /// re-created match is taken for it.
+  /// That control's role (#431's review, finding 1): a node whose control is gone is re-created only under a control of
+  /// the same role, never a link's text under a button.
+  var controlRole: String?
   var controlUnknown = false
   /// Whether the walk recorded its region whole (#431, the design session's ruling 889): every element of the recorded
   /// subtree of its nearest web area (else of the record's root), its AXChildren read and each child it listed in the
@@ -98,6 +101,7 @@ enum ControlOffer<Element> {
   case control(Element, role: String)
   case unknown
   var element: Element? { if case .control(let element, _) = self { return element } else { return nil } }
+  var role: String? { if case .control(_, let role) = self { return role } else { return nil } }
   var unknown: Bool { if case .unknown = self { return true } else { return false } }
 }
 
@@ -265,7 +269,8 @@ func screenshotNodes<Element>(_ reads: [ScreenshotNodeRead<Element>], key: ((Ele
                                 subtreeRecorded: !incomplete.contains(read.number),
                                 thinGap: thin(frame) && incomplete.contains(read.number), gapsBelow: gapsBelow[read.number] ?? [],
                                 ancestor: ancestor, webArea: webArea, control: control?.element,
-                                controlUnknown: control?.unknown ?? false, regionCovered: !broken.contains(regionRoot)))
+                                controlRole: control?.role, controlUnknown: control?.unknown ?? false,
+                                regionCovered: !broken.contains(regionRoot)))
   }
   return nodes
 }
@@ -786,8 +791,11 @@ let stalePointControlStops: Set<String> = ["AXWebArea", "AXWindow", "AXSheet", "
 ///    a label unread at the observation agrees), other than an element under the node's own control or that control;
 /// 3. its control is unknown (an action-name read failed at the observation, `ScreenshotNode.controlUnknown`);
 /// 4. its control still lives (`StalePointReads.isGone` answers no) and the candidate does not lie inside it: the node
-///    re-created belongs to the control the screenshot showed it in.
-/// Reads only the candidate's parents, and its control's role, for 4.
+///    re-created belongs to the control the screenshot showed it in;
+/// 5. its control is gone and the candidate's nearest control (an ancestor of `stalePointInteractiveRoles` or with
+///    AXPress, below `stalePointControlStops`) has another role than the recorded one: a link's text now under a button,
+///    or the reverse, is another control (`twinbtn`). A parent, role or action-name read that fails on the way refuses.
+/// Reads only the candidate's parents, their roles and action names, and its control's role, for 4 and 5.
 func recreatedRefused<Element>(_ candidate: Element, of node: ScreenshotNode<Element>, nodes: [ScreenshotNode<Element>],
                                _ reads: StalePointReads<Element>) -> Bool {
   guard node.regionCovered, !node.controlUnknown else { return true }
@@ -803,8 +811,18 @@ func recreatedRefused<Element>(_ candidate: Element, of node: ScreenshotNode<Ele
                                title: other.title, description: other.description, value: other.value)
   }
   if twin { return true }
-  if let control = node.control, !reads.isGone(control), !isInside(candidate, control, reads) { return true }
-  return false
+  guard let control = node.control else { return false }
+  if !reads.isGone(control) { return !isInside(candidate, control, reads) }
+  var below = candidate
+  for _ in 0..<stalePointAncestorLevels {
+    guard let next = reads.parent(below), let role = reads.role(next) else { return true }
+    if stalePointControlStops.contains(role) { return false }
+    if stalePointInteractiveRoles.contains(role) { return role != node.controlRole }
+    guard let actions = reads.actions(next) else { return true }
+    if actions.contains("AXPress") { return role != node.controlRole }
+    below = next
+  }
+  return true
 }
 
 /// A handle re-created in place of `node` near `hit`: among the hit, its ancestors and its descendants (the bounds above),

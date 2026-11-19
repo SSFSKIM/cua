@@ -131,6 +131,15 @@ test('scores and gates', () => {
   assert.equal(gates([...good, row({confirmed: false})], {coverage: cov}).exactConfirmed.pass, false);
   assert.equal(gates([...good, {...row({}), route: 'keyed'}], {coverage: cov}).route.pass, false);
   assert.equal(gates([...good, row({privacy: ['other-field']})], {coverage: cov}).privacy.pass, false);
+  const leak = gates([...good, row({privacy: ['clipboard']}), row({head: 'main', privacy: ['late-clipboard']})], {coverage: cov});
+  assert.equal(leak.clipboardContent.pass, false); assert.equal(leak.clipboardContent.fix, 1); assert.equal(leak.clipboardContent.main, 1);
+  // Delivery: an unconfirmed but exact fix row is delivered; a lost one, or an unrealized control main realized, is not.
+  const exactUnconfirmed = gates([...good, row({head: 'main', rep: 2, confirmed: false}), row({rep: 2, outcome: 'typeUnconfirmed', confirmed: false})], {coverage: cov});
+  assert.equal(exactUnconfirmed.delivery.pass, true); assert.equal(exactUnconfirmed.exactConfirmed.pass, false);
+  assert.equal(lost.delivery.pass, false); assert.equal(lost.delivery.lost, 1);
+  const unrealizedGate = gates([...good, row({cell: 'add', head: 'main', rep: 3, outcome: 'success', domExact: false, controlExact: true, hit: true, confirmed: false}),
+    row({cell: 'add', rep: 3, outcome: 'typeUnconfirmed', domExact: false, controlExact: false, hit: true, confirmed: false})], {coverage: cov});
+  assert.equal(unrealizedGate.delivery.pass, false); assert.deepEqual(unrealizedGate.delivery.lostCells, {add: 1});
   const s = summarize(good);
   assert.equal(s.find(x => x.head === 'main' && x.cell === 'stale').wrongSuccess, 1);
   const c = coverage(good, {planned: {'ko/fix/empty-cjk': 1, 'ko/fix/stale': 1, 'ko/main/empty-cjk': 1, 'ko/main/stale': 1}, sources: ['ko'], heads: ['main', 'fix'], cells: ['empty-cjk', 'stale']});

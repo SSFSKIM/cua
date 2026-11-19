@@ -50,6 +50,12 @@ if(heads.length===2){
     const plain=r=>!r.control&&r.cell!=='newline-single',nl=r=>r.cell==='newline-single',ctl=r=>r.control;
     return [j.status.lane,`${g('main',plain)} → ${g('fix',plain)}`,`${g('main',nl)} → ${g('fix',nl)}`,`${g('main',ctl)} → ${g('fix',ctl)}`];
   }));
+  out.push('### Fix: answers over exact plain pastes, per lane (outcome reason ×n)','');
+  table(['Lane','Exact plain rows','Answers'],stock.map(j=>{
+    const v=j.rows.filter(r=>r.head==='fix'&&r.valid&&!r.control&&r.domExact),t={};
+    for(const r of v){const k=`${r.outcome} ${r.reason}`;t[k]=(t[k]??0)+1;}
+    return [j.status.lane,v.length,Object.entries(t).sort((a,b)=>b[1]-a[1]).map(([k,n])=>`${k} ×${n}`).join('; ')];
+  }));
   out.push('### Fix: plain rows not confirmed by the read-back (lane, source, cell: outcome reason, fixture content)','');
   const miss=stock.flatMap(j=>j.rows.filter(r=>r.head==='fix'&&r.valid&&!r.control&&!(r.success&&r.readbackConfirmed))
     .map(r=>`${j.status.lane} ${r.source} ${r.cell}: ${r.outcome} ${r.reason} ${r.domExact?'exact':'differs'}`));

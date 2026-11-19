@@ -172,6 +172,7 @@ export function coverage(rows,{planned,sources,heads,cells}){
 //   confirmed by the read-back (a delivery the baseline makes and the fix loses fails here);
 // - every realized control answers `typeUnconfirmed`; no wrong success on the paste route; the clipboard restored on every
 //   attested row; the route unchanged from main's for the cell; no privacy flag; and full coverage.
+const clipFlag=r=>r.privacy.some(f=>f==='clipboard'||f==='late-clipboard');
 export function gates(rows,{fixHead='fix',coverage:cov=null}={}){
   const fix=rows.filter(r=>r.head===fixHead),main=rows.filter(r=>r.head!==fixHead);
   const key=r=>`${r.source}|${r.cell}|${r.rep}`;
@@ -197,6 +198,17 @@ export function gates(rows,{fixHead='fix',coverage:cov=null}={}){
       missed:fix.filter(r=>r.attested&&!r.clipboardRestored).length,mainMissed:main.filter(r=>r.attested&&!r.clipboardRestored).length},
     route:{pass:routeRegressions===0,regressions:routeRegressions},
     privacy:{pass:fix.every(r=>r.privacy.length===0),fix:fix.filter(r=>r.privacy.length).length,main:main.filter(r=>r.privacy.length).length},
+    // The pre-trial clipboard's content in any answer surface (a field's excerpt included), on any row of either head.
+    clipboardContent:{pass:fix.every(r=>!clipFlag(r)),fix:fix.filter(clipFlag).length,main:main.filter(clipFlag).length},
+    // Delivery no worse than main's: every valid fix row whose paired main row (same source, cell and repetition) delivered
+    // its planned content (the expected text, or a control's exact perturbation) delivered it too.
+    delivery:(()=>{
+      const delivered=r=>r.control?r.realized===true:r.domExact;
+      const mainOk=new Set(main.filter(r=>r.valid&&delivered(r)).map(key));
+      const paired=fix.filter(r=>r.attested&&r.route==='paste'&&mainOk.has(key(r)));
+      const lost=paired.filter(r=>!delivered(r));
+      return {pass:paired.length>0&&lost.length===0,n:paired.length,lost:lost.length,lostCells:tally(lost.map(r=>r.cell))};
+    })(),
     perCell,
   };
 }

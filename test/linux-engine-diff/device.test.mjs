@@ -145,6 +145,10 @@ test('a cancelled drag and drop passes only with the cancel sentence, nothing dr
   assert.deepEqual(judgeDevice('chrome_dnd_shared', [good], background), { pass: true, reasons: [] });
   assert.equal(judgeDevice('chrome_dnd_shared', [good], { ...background, answered: [{ ok: true }] }).pass, false, 'the audited drag was not cancelled');
   assert.equal(judgeDevice('chrome_dnd_shared', [{ ...good, dropped: true }], background).pass, false, 'it dropped');
+  // the page's later read (`drop_status`) shows the drop counter risen, whatever the earlier read's bit said (fix wave 3)
+  const rose = { before: { drops: 65 }, after: { drops: 66 } };
+  assert.equal(judgeDevice('chrome_dnd_shared', [{ ...good, drop_status: rose }], background).pass, false, 'a drop the later read shows');
+  assert.deepEqual(judgeDevice('chrome_dnd_shared', [{ ...good, drop_status: { before: { drops: 65 }, after: { drops: 65 } } }], background), { pass: true, reasons: [] }, 'the counter read unchanged');
   assert.equal(judgeDevice('chrome_dnd_shared', [{ ...good, error: deviceSentence('Google-chrome') }], background).pass, false);
   assert.equal(judgeDevice('chrome_dnd_shared', [{ ...good, ok: true, error: undefined }], background).pass, false);
   assert.equal(judgeDevice('chrome_dnd_shared', [{ ...good, witness: false }], background).pass, false);
@@ -163,6 +167,7 @@ test('a cancel forced too late passes only if every answer is honest and the dro
   assert.equal(judgeDevice('chrome_dnd_late_shared', [mayHave], { ...background, answered: [{ ok: true }] }).pass, false, 'the audited drag answered success');
   assert.deepEqual(judgeDevice('chrome_dnd_late_shared', [mayHave, nothing], background), { pass: true, reasons: [] });
   assert.equal(judgeDevice('chrome_dnd_late_shared', [mayHave, { ...nothing, dropped: true }], background).pass, false, '"nothing was dropped" and it dropped');
+  assert.equal(judgeDevice('chrome_dnd_late_shared', [mayHave, { ...nothing, drop_status: { before: { drops: 65 }, after: { drops: 66 } } }], background).pass, false, '"nothing was dropped" and the later read shows a drop (fix wave 3)');
   assert.equal(judgeDevice('chrome_dnd_late_shared', [mayHave, { ...nothing, witness: false }], background).pass, false, '"nothing was dropped" and the desktop changed');
   assert.equal(judgeDevice('chrome_dnd_late_shared', [nothing], background).pass, false, 'never late: the case proved nothing');
   assert.equal(judgeDevice('chrome_dnd_late_shared', [{ ...mayHave, ok: true, error: undefined }], background).pass, false);
@@ -227,7 +232,10 @@ test('the forced late take passes only where the drag answered plainly, the read
   assert.equal(judgeDevice('chrome_dnd_late_take_shared', [{ ...good, read_ok: false }], audit).pass, false, 'the read was refused');
   assert.equal(judgeDevice('chrome_dnd_late_take_shared', [{ ...good, witness: true }], audit).pass, false, 'a drop the witness did not record');
   assert.equal(judgeDevice('chrome_dnd_late_take_shared', [{ ...good, dropped: false, witness: true }], audit).pass, false, 'no drop: nothing shown');
-  assert.equal(judgeDevice('chrome_dnd_late_take_shared', [good, { ...good, i: 1, dropped: false, witness: true }], audit).pass, true, 'a missed drop beside landed ones');
+  // (a sample with no drop: its counter read unchanged, by both reads)
+  const missed = { ...good, i: 1, dropped: false, witness: true, witness_fields: undefined, drop_status: { before: { drops: 1 }, after: { drops: 1 } } };
+  assert.equal(judgeDevice('chrome_dnd_late_take_shared', [good, missed], audit).pass, true, 'a missed drop beside landed ones');
+  assert.equal(judgeDevice('chrome_dnd_late_take_shared', [good, { ...missed, drop_status: { before: { drops: 1 }, after: { drops: 2 } } }], audit).pass, false, 'the later read shows the drop the earlier missed, unrecorded (fix wave 3)');
   assert.equal(judgeDevice('chrome_dnd_late_take_shared', [good, { ...good, dropped: false, witness: true }], audit).pass, false, 'both at one slot (review 6)');
 });
 
@@ -414,6 +422,7 @@ test("a Chromium drag a stray pointer event may have reset passes only with the 
     assert.equal(judgeDevice(op, [{ ...good, ok: true, error: undefined }], background).pass, false, `${op}: answered success`);
     assert.equal(judgeDevice(op, [{ ...good, error: dndCancelledSentence('Google-chrome') }], background).pass, false, `${op}: another answer`);
     assert.equal(judgeDevice(op, [{ ...good, dropped: true }], background).pass, false, `${op}: it dropped`);
+    assert.equal(judgeDevice(op, [{ ...good, drop_status: { before: { drops: 65 }, after: { drops: 66 } } }], background).pass, false, `${op}: the later read shows a drop (fix wave 3)`);
     assert.equal(judgeDevice(op, [{ ...good, witness: false }], background).pass, false, `${op}: the desktop changed`);
     assert.equal(judgeDevice(op, [good], { ...background, answered: [{ ok: true }] }).pass, false, `${op}: the audited drag answered success`);
     assert.equal(judgeDevice(op, [good], { clean: false, kind: 'background', forbidden: ['XTEST FakeInput'] }).pass, false, `${op}: the engine sent XTEST`);

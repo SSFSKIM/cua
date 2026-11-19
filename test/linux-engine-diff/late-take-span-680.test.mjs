@@ -69,6 +69,11 @@ test("a late take's drop the witness did not record passes as the witness span's
   assert.equal(judged(edit((s) => ((s.drop_status.after.dur = 183), s))).pass, false, 'inside the span');
   // a cell with no limited sample reads as before: no field
   assert.deepEqual(judged(recorded), { pass: true, reasons: [] });
+  // the earlier read's bit no drop, the later read the rise: the drop is the later read's, and past the span it is the
+  // limit's as any drop is (fix wave 3)
+  const later = judged(edit((s) => ((s.dropped = false), s)));
+  assert.equal(later.pass, true, later.reasons.join('; '));
+  assert.deepEqual(later.span_limited, [{ sample: '0/0', dragend_ms: 221, answer_ms: 164.02 }]);
 });
 
 test('the limited sample stays in the plan: the cell is bound and checked whole, never short by it', () => {
@@ -89,7 +94,7 @@ test("ruling 680's controls on the case: each still fails", () => {
     ['the drag not answered as a plain drag', edit((s) => ((s.ok = false), (s.error = 'x'), s)), /the drag did not answer as a plain drag on 1 of 3 samples \(0\/0\)/, /the drag did not answer as a plain drag/],
     ['the read refused', edit((s) => ((s.read_ok = false), s)), /the read after the drag did not run on 1 of 3 samples \(0\/0\)/, /the read did not run with the notice/],
     ["the after-release watch's Escape not sent", edit((s) => ((s.late_dnd.escaped = false), s)), /a drop the witness did not record on 1 of 3 samples \(0\/0\)/, /the after-release watch did not escape the take/],
-    ["the page's pointer log another press's", edit((s) => ((s.drop_status.after.log.seq = s.drop_status.after.downs - 1), s)), /the page's pointer log was not the sample's own press on 1 of 3 samples \(0\/0\)/, /the page's pointer log is not the sample's own press/],
+    ["the page's pointer log another press's", edit((s) => ((s.drop_status.after.log.seq = s.drop_status.after.downs - 1), s)), /the page's pointer log was not the sample's own press on 1 of 3 samples \(0\/0\)/, /the page's pointer log is not a new press of the sample's own/],
     ['the dragend unread', edit((s) => ((s.drop_status.after.dur = undefined), s)), /a drop the witness did not record on 1 of 3 samples \(0\/0\)/, /the page recorded no time for the dragend/],
     // ruling 870 (a): the reviewer's probe, the previous drag's dragend timing (747 ms) left on 2/0, its own end never counted
     ['stale end timing: no dragend counted for this press, the previous drag\'s 747 ms', edit((s) => ((s.drop_status.after.ends = s.drop_status.before.ends), (s.drop_status.after.dur = s.drop_status.before.dur), s)), /a drop the witness did not record on 1 of 3 samples \(0\/0\)/, /the page did not count this press's own drag start and dragend/],
@@ -105,6 +110,13 @@ test("ruling 680's controls on the case: each still fails", () => {
     ['a baseline with a drag outstanding, the log whole', edit((s) => ((s.drop_status.before.ends = s.drop_status.before.starts - 1), (s.drop_status.after.ends = s.drop_status.before.ends + 1), s)), /a drop the witness did not record on 1 of 3 samples \(0\/0\)/, /a drag was outstanding before the press/],
     ["no dragend on this press's log", edit((s) => ((s.drop_status.after.log.end = null), s)), /a drop the witness did not record on 1 of 3 samples \(0\/0\)/, /this press's log has no dragstart and dragend of its own/],
     ["no dragstart on this press's log", edit((s) => ((s.drop_status.after.log.start = null), s)), /a drop the witness did not record on 1 of 3 samples \(0\/0\)/, /this press's log has no dragstart and dragend of its own/],
+    // fix wave 3: the re-review's probe, a press already counted at the baseline (downs unchanged at 103), the baseline
+    // balanced and both counters advancing
+    ['the press already counted at the baseline', edit((s) => ((s.drop_status.before.downs = s.drop_status.after.downs), s)), /a drop the witness did not record on 1 of 3 samples \(0\/0\)/, /the page's pointer log is not a new press of the sample's own/],
+    ['two presses counted for the sample', edit((s) => ((s.drop_status.before.downs = s.drop_status.after.downs - 2), s)), /a drop the witness did not record on 1 of 3 samples \(0\/0\)/, /the page's pointer log is not a new press of the sample's own/],
+    // fix wave 3: the re-review's probe, the earlier read's bit `dropped: false` beside a later read that shows the drop
+    // counter risen (65 -> 66), the dragend inside the span: a drop the witness did not record, never skipped
+    ['the earlier bit no drop, the later read a rise, the dragend inside the span', edit((s) => ((s.dropped = false), (s.drop_status.after.dur = 164), (s.drop_status.after.log.end.t = 164), s)), /a drop the witness did not record on 1 of 3 samples \(0\/0\)/, /the dragend \(164 ms after its dragstart\) came before the span closed/],
     // fix wave 2: a witness that could not be read (witness.mjs `judgeSpan`'s `protocol`) is no clean span to waive on
     ['the span-limited sample with an unread witness', edit((s) => ((s.witness = false), (s.witness_fields = ['protocol']), s)), /a drop the witness did not record on 1 of 3 samples \(0\/0\)/, /the witness did not watch the span cleanly/],
     ['the span-limited sample with no witness at all', edit((s) => ((s.witness = undefined), s)), /a drop the witness did not record on 1 of 3 samples \(0\/0\)/, /the witness did not watch the span cleanly/],

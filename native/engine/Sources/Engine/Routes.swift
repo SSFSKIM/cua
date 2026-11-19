@@ -214,13 +214,32 @@ func keyRoute(forced: InputRoute?) -> InputRoute { forced ?? .plainPost }
 /// A press that is a menu key equivalent: a key with ⌘ (a modifier pressed alone is none).
 func isKeyEquivalent(_ press: KeyPress) -> Bool { press.keyCode != nil && press.modifiers.contains(.command) }
 
-/// press_key's route: 3 when the sequence holds a key equivalent and the app does not believe it has focus, since a
-/// background app does not perform one (M2a.5: ⌘A in an inactive window had no effect; it computes its menu items'
-/// enablement as an inactive app), else 2′; the spike's forced route wins. The activation, held (FocusHold.swift), comes
-/// before the sequence's first press.
-func pressKeyRoute(forced: InputRoute?, presses: [KeyPress], believesFocus: Bool) -> InputRoute {
+/// The arrow keys (#360): Left, Right, Down, Up, whatever their modifiers, so a caret move and its Shift-extended
+/// selection take one rule. Home, End, Page Up and Page Down are not among them (ruling 767): they scroll rather than
+/// move the caret, and a background Firefox's rich editor already matched the foreground for them by 2′ (hosted run
+/// 44047809532, 160 of 160).
+private let arrowKeyCodes: Set<CGKeyCode> = [0x7B, 0x7C, 0x7D, 0x7E]
+
+/// A press of an arrow key (`arrowKeyCodes`), with or without modifiers.
+func isArrowKey(_ press: KeyPress) -> Bool { press.keyCode.map(arrowKeyCodes.contains) ?? false }
+
+/// Whether a press needs route 3's held activation in an app that does not believe it has focus: a key equivalent, which
+/// a background app does not perform (M2a.5: ⌘A in an inactive window had no effect; it computes its menu items'
+/// enablement as an inactive app); and on a Gecko page (`PageEngine`) an arrow key, since a background Firefox's rich
+/// editor has its caret disabled until it has focus, so Left, Option+Left and Cmd+Left scroll instead of moving it
+/// (#360's hosted spike, run 44024467862: 0 of 120 posted, 120 of 120 after route 3's prelude; rulings 764 and 767).
+/// No editor role is read: the rule is the key's, in every Firefox field.
+func needsHeldActivation(_ press: KeyPress, engine: PageEngine) -> Bool {
+  isKeyEquivalent(press) || engine == .gecko && isArrowKey(press)
+}
+
+/// press_key's route: 3 when the sequence holds a press that `needsHeldActivation` and the app does not believe it has
+/// focus, else 2′; the spike's forced route wins. The activation, held (FocusHold.swift), comes before the sequence's
+/// first press. Its answer is the posting's, as by 2′: nothing reads the caret back (Firefox's AXSelectedTextRange is
+/// stale, #394).
+func pressKeyRoute(forced: InputRoute?, presses: [KeyPress], believesFocus: Bool, engine: PageEngine) -> InputRoute {
   if let forced { return forced }
-  return !believesFocus && presses.contains(where: isKeyEquivalent) ? .activation : .plainPost
+  return !believesFocus && presses.contains(where: { needsHeldActivation($0, engine: engine) }) ? .activation : .plainPost
 }
 
 /// The route of an element's own action or attribute write (route 1's AXPress or AXPick click, set_value, select_text,

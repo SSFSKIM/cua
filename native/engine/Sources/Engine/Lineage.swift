@@ -100,6 +100,22 @@ struct ElementIdentity {
   let help: String?
   let identifier: String?
   let url: String?
+  /// #390: the value was not read (a sensitive set_value's re-read), so the match leaves it out, and (#405) its value
+  /// description with it. #405: so is a password field's, or one that could not be classified, whose identity keeps
+  /// neither: it is matched by its other nine.
+  let valueUnread: Bool
+  /// #405: the value was wanted and could not be read (`ElementData.valueFailed`): it matches only another such, and
+  /// only for the same handle.
+  let valueFailed: Bool
+  /// #405: the value description's own marks (`ElementData.descriptionUnread`, `descriptionFailed`), as the value's.
+  let descriptionUnread: Bool
+  let descriptionFailed: Bool
+  /// #405: a password field as a read classified it (`ElementData.secure`), whatever role and subrole it kept: a match
+  /// needs both sides to agree.
+  let secure: Bool
+  /// #405: the value was dropped because the classification failed (`ElementData.classificationFailed`): it matches only
+  /// another such, and only for the same handle.
+  let classificationFailed: Bool
   fileprivate(set) var pid: pid_t
 
   init(_ data: ElementData, pid: pid_t) {
@@ -114,15 +130,33 @@ struct ElementIdentity {
     help = data.help
     identifier = data.identifier
     url = data.url
+    valueUnread = data.valueUnread
+    valueFailed = data.valueFailed
+    descriptionUnread = data.descriptionUnread
+    descriptionFailed = data.descriptionFailed
+    secure = data.secure
+    classificationFailed = data.classificationFailed
     self.pid = pid
   }
 
   /// The vendor's match (FUN_100221838); `ignoringValue` leaves the value out, as the re-check after set_value's write
-  /// does (F §3.6, §16.4).
-  func matches(_ other: ElementIdentity, ignoringValue: Bool = false) -> Bool {
-    role == other.role && subrole == other.subrole && roleDescription == other.roleDescription && title == other.title
-      && (ignoringValue || value == other.value) && valueDescription == other.valueDescription && description == other.description
-      && placeholder == other.placeholder && help == other.help && identifier == other.identifier && url == other.url
+  /// does (F §3.6, §16.4), and so does an identity whose value was deliberately not read (#390, #405: `valueUnread`); the
+  /// value description is left out only when it was not read (`descriptionUnread`). Where either counts, a value that
+  /// could not be read matches only another that could not, and only for the same handle (`sameElement`): two failed
+  /// reads never make another element this one (#405, `valueFailed`, `descriptionFailed`). A password field matches only
+  /// a password field (`secure`). `ignoringPlaceholder` (#398) leaves the placeholder out, for the stored handle's own
+  /// re-read alone.
+  func matches(_ other: ElementIdentity, ignoringValue: Bool = false, sameElement: Bool = false, ignoringPlaceholder: Bool = false) -> Bool {
+    let valueCounts = !ignoringValue && !valueUnread && !other.valueUnread
+    let descriptionCounts = !descriptionUnread && !other.descriptionUnread
+    func failedAlike(_ mine: Bool, _ theirs: Bool) -> Bool { mine == theirs && (!mine || sameElement) }
+    return secure == other.secure && failedAlike(classificationFailed, other.classificationFailed)
+      && role == other.role && subrole == other.subrole && roleDescription == other.roleDescription && title == other.title
+      && (!valueCounts || (failedAlike(valueFailed, other.valueFailed) && value == other.value))
+      && (!descriptionCounts || (failedAlike(descriptionFailed, other.descriptionFailed) && valueDescription == other.valueDescription))
+      && description == other.description && (ignoringPlaceholder || placeholder == other.placeholder) && help == other.help
+      && identifier == other.identifier
+      && url == other.url
   }
 }
 
@@ -147,6 +181,9 @@ struct LineageEntry {
   var firstChild: AXUIElement? = nil
   /// How many children it had, before the width rule (#303: its old children are all known only when that many were kept).
   var listed: Int? = nil
+  /// When its identity and actions were read (monotonic ms; ruling 772): the observation's read time, or a backstop's
+  /// refresh. Compared with its process's readiness (`recordedBeforeReadiness`); nil when unknown (the unit tests').
+  var recordedAt: Double? = nil
 }
 
 extension ElementIdentity {
@@ -168,6 +205,9 @@ final class Revision {
   /// The recorded menu-bar item the observation walked from instead of the window (MenuRecord.swift); nil for a walk of
   /// the window and the menu bar. A re-fetch walks the same root.
   var menuRoot: AXUIElement?
+  /// When the observation began reading the tree (monotonic ms; ruling 772), which every entry it emits records as its
+  /// `recordedAt`; an entry carried from an earlier revision keeps its own.
+  var recordedAt: Double?
 
   /// A sibling list of this revision with its handles: the menu bar's items, a node's children, or (no parent) the
   /// window's root.
@@ -229,6 +269,20 @@ final class Lineage {
     current?.entries[number]?.actions = actions
   }
 
+  /// The backstop's refresh (ruling 772): `entry` read again from its own handle, nothing else.
+  /// The handle is validated before the read and again after it, and the entry changes only once both pass: a refusal
+  /// leaves it as recorded, still marked.
+  private func refreshFromHandle(_ number: Int, _ entry: LineageEntry, inMenu: Bool, resolver: ElementResolver, now: Double) throws -> LineageEntry {
+    guard resolver.stillValid(entry.element) else { throw ElementErrors.noLongerValid }
+    let source = resolver.source()
+    guard let data = inMenu ? source.listedData(entry.element) : source.data(entry.element) else { throw ElementErrors.noLongerValid }
+    let actions = source.actions(entry.element)
+    guard resolver.stillValid(entry.element) else { throw ElementErrors.noLongerValid }
+    renew(number, element: entry.element, data: data, owner: entry.identity.pid, actions: actions)
+    current?.entries[number]?.recordedAt = now
+    return self.entry(number)!
+  }
+
   func replace(_ number: Int, element: AXUIElement, owner: pid_t) {
     current?.entries[number]?.element = element
     if let identity = current?.entries[number]?.identity { current?.entries[number]?.identity = identity.owned(by: owner) }
@@ -273,8 +327,18 @@ final class Lineage {
   /// vendor's sentences in the vendor's order: no such token → no longer valid; an invalid handle → no longer valid; the
   /// stored attributes matched by more or fewer than one element of the observed tree → "couldn't be started"; none now
   /// → no longer valid; several now → "couldn't be finished".
-  func resolve(_ token: String, resolver: ElementResolver, refetch: Refetch = .ifNeeded) throws -> LineageEntry {
+  ///
+  /// `readiness` (ruling 772, ChromiumReadiness.swift): an entry recorded before its process's readiness is first read
+  /// again from its own handle, its identity and actions taking what the handle reads now, and its read time now; never
+  /// re-found by identity, so no other handle is adopted for it. That resolution stays pinned to the handle: it never
+  /// enters the re-read or the re-fetch above, and the handle is validated before its read and again after it; a handle
+  /// that no longer validates or reads at any of those points is no longer valid, before anything is written, and the
+  /// entry is left as recorded.
+  func resolve(_ token: String, resolver: ElementResolver, refetch: Refetch = .ifNeeded, readiness: EntryReadiness? = nil) throws -> LineageEntry {
     guard let number = tokenNumber(token), let entry = entry(number), let observed = current else { throw ElementErrors.noLongerValid }
+    if let readiness, recordedBeforeReadiness(entry.recordedAt, readyAt: readiness.readyAt) {
+      return try refreshFromHandle(number, entry, inMenu: observed.menu.contains(number), resolver: resolver, now: readiness.now)
+    }
     if refetch == .ifNeeded, !resolver.invalidated(entry) {
       guard resolver.stillValid(entry.element) else { throw ElementErrors.noLongerValid }
       return entry
@@ -293,10 +357,26 @@ final class Lineage {
       }
       return self.entry(number)!
     }
-    if let live = read(entry.element), ElementIdentity(live, pid: entry.identity.pid).matches(entry.identity, ignoringValue: ignoringValue) {
-      return refetch == .ifNeeded ? entry : try settle(on: entry.element, owner: entry.identity.pid, data: live)
+    if let live = read(entry.element) {
+      let now = ElementIdentity(live, pid: entry.identity.pid)
+      if now.matches(entry.identity, ignoringValue: ignoringValue, sameElement: true) {
+        return refetch == .ifNeeded ? entry : try settle(on: entry.element, owner: entry.identity.pid, data: live)
+      }
+      // #398: the same handle is the same element whatever its placeholder now (focus, input, a mode, Chromium's
+      // complete mode). The stored entry stays exactly as observed: once the handle is gone, the walk below and the
+      // observed count match strictly, the placeholder and the observed value included, since the placeholder is then
+      // evidence of which field this was. The action alone gets what the handle reads now.
+      if now.matches(entry.identity, ignoringValue: ignoringValue, sameElement: true, ignoringPlaceholder: true) {
+        guard refetch != .ifNeeded else { return entry }
+        var acting = entry
+        acting.identity = now
+        acting.actions = source.actions(entry.element)
+        return acting
+      }
     }
-    let before = observed.entries.values.filter { $0.identity.matches(entry.identity, ignoringValue: ignoringValue) }.count
+    let before = observed.entries.values.filter {
+      $0.identity.matches(entry.identity, ignoringValue: ignoringValue, sameElement: CFEqual($0.element, entry.element))
+    }.count
     var found: [AXUIElement] = []
     if before == 1 {
       let tree = resolver.tree(observed.menuRoot)
@@ -334,11 +414,16 @@ struct ElementResolver {
   var refetchDeadlineMs = Double(observationDeadlineMs)
 
   /// The engine's: `lineage`'s watches, the live handle, and `pid`'s application element.
-  static func live(_ lineage: Lineage, pid: pid_t) -> ElementResolver {
+  /// `readsValue` false (#390): its sources read no AXValue (`ElementSource.readsValue`).
+  static func live(_ lineage: Lineage, pid: pid_t, readsValue: Bool = true) -> ElementResolver {
     ElementResolver(
       invalidated: { lineage.invalidates($0.element, owner: $0.identity.pid) },
       stillValid: { copyAttribute($0, kAXRoleAttribute).error != .invalidUIElement },
-      source: { ElementSource() },
+      source: {
+        let source = ElementSource()
+        source.readsValue = readsValue
+        return source
+      },
       tree: { menuRoot in
         if let menuRoot { return (prepare(menuRoot), []) }
         let application = prepare(AXUIElementCreateApplication(pid))
@@ -517,10 +602,10 @@ func elementTokenArg(_ args: [String: Any], lineage: String?) throws -> String? 
 extension ConnectionState {
   /// The element `token` names in the app's current lineage, which must be `wanted` (the lineage guard: a token of
   /// another lineage, or of one that ended with disableDiff, a relaunch or a reconnect, is no longer valid).
-  func element(_ token: String, app: ResolvedApp, lineage wanted: String, refetch: Refetch = .ifNeeded,
+  func element(_ token: String, app: ResolvedApp, lineage wanted: String, refetch: Refetch = .ifNeeded, readiness: EntryReadiness? = nil,
                resolver: (Lineage) -> ElementResolver) throws -> LineageEntry {
     guard let lineage = lineages[app.key], wanted == lineage.id else { throw ElementErrors.noLongerValid }
-    return try lineage.resolve(token, resolver: resolver(lineage), refetch: refetch)
+    return try lineage.resolve(token, resolver: resolver(lineage), refetch: refetch, readiness: readiness)
   }
 }
 

@@ -22,7 +22,7 @@ import os
 // whichever comes first (#292): the end of the task of the last connection that observed or acted on the process
 // (end_task, the `endTask` request), the engine's stop (a shutdown request or a termination signal; an engine killed
 // with SIGKILL, or one that crashes, leaves it on until the next engine's start writes it back from the enablement
-// record, #293, EnablementRecord.swift), or `enablementReleaseGraceMs` (30 s) after cua's last observation of or input to the process, whether or not a
+// record, #293, EnablementRecord.swift), or `enablementReleaseGraceMs` (5 minutes, ruling 775) after cua's last observation of or input to the process, whether or not a
 // connection is still open (a model that never calls end_task keeps its connection until the 15-minute idle stop); a
 // new observation or input within that grace starts it again, and one after it sets the attribute again, owned, an
 // input included (`inputEnablement`). It owns, and so releases, only an attribute it read false and then set: one
@@ -38,14 +38,22 @@ import os
 // what does not read true would leave the page's tree gone (Decision Log 2026-10-22). The first observation after
 // enabling, and every observation of a Chromium window until a web area has been seen in the process, waits 100 ms and
 // then up to 1 s for an AXWebArea to appear. The vendor's Spotify fake activation before enabling is route 3's and is
-// not done here.
+// not done here. Nothing tells when the complete mode arrives, and an element action before it answers success with no
+// handler run, so a request that may carry one into a Chromium-family app waits out the rest of 2.5 s after the
+// engine's last accepted write (#366, ChromiumReadiness.swift); hence the write's place at the first observation, and
+// never again while owned.
 
 private let enablementLog = Logger(subsystem: "io.github.ssfskim.cua.engine", category: "enablement")
 
 /// How long an owned enablement outlives cua's last observation of or input to its process, short of an end_task or the
-/// engine's stop (#292): long enough that a model's pause between steps does not pay Chrome's 2.2 s debounce again; 0
-/// releases at the close of the last connection that observed the process instead.
-let enablementReleaseGraceMs: Double = 30_000
+/// engine's stop (#292), which still release at once: long enough that a model's pause between steps does not pay the
+/// complete mode's arrival again, since a released Chromium attribute reads false, so the next observation writes it
+/// again and waits out #366's 2.5 s readiness window (ruling 775, from 30 s, which the live qualification showed every
+/// pause over 30 s paying). It outlasts the focus hold's 120 s bound (`focusHoldIdleMs`), so an action after a grace
+/// release no longer meets a focus hold left from before it. The trade is #292's own: a Chromium window moves and
+/// resizes with its animation while the enablement is on, now for up to 5 minutes after cua's last step. 0 releases at
+/// the close of the last connection that observed the process instead.
+let enablementReleaseGraceMs: Double = 300_000
 
 let webAreaLeadMs: UInt32 = 100
 let webAreaWaitMs = 1_000.0
@@ -214,6 +222,9 @@ final class WebAccessibility: @unchecked Sendable {
   private var writes: [String: UInt64] = [:]
   /// Per process, its first observation's time, moved to every write attempt's (monotonic ms; `freshSince`).
   private var freshSinceByProcess: [String: Double] = [:]
+  /// Per process, when the engine's last accepted write of its attribute true returned (monotonic ms;
+  /// `lastEnablementWrite`, #366); kept past the entry's retirement, as `writes` is.
+  private var acceptedWriteAt: [String: Double] = [:]
   /// Per process, the token of the grace release armed at its last activity (#292); absent when none is armed. Every
   /// observation and input replaces it, so only the newest armed timer may release.
   private var pendingRelease: [String: Int] = [:]
@@ -225,6 +236,8 @@ final class WebAccessibility: @unchecked Sendable {
   /// of d2568c76..96c6f093: activity landing there must not be reset underneath).
   var beforeGraceRelease: () -> Void = {}
   private let releaseGraceMs: Double
+  /// The monotonic clock (ms) `freshSince` and `lastEnablementWrite` are read on: the engine's, replaced in the unit tests.
+  private let now: () -> Double
   /// Runs `work` after the given milliseconds on another thread (the grace release's timer).
   private let schedule: (Double, @escaping @Sendable () -> Void) -> Void
   /// Told (a bounded, value-free line) when a reset of the attribute the engine set fails; it stays owned.
@@ -239,8 +252,9 @@ final class WebAccessibility: @unchecked Sendable {
          DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + .microseconds(Int(ms * 1000)), execute: work)
        },
        releaseFailed: @escaping (String) -> Void = { enablementLog.error("\($0, privacy: .public)") },
-       record: EnablementRecord? = nil) {
+       record: EnablementRecord? = nil, now: @escaping () -> Double = monotonicMilliseconds) {
     self.releaseGraceMs = releaseGraceMs
+    self.now = now
     self.schedule = schedule
     self.releaseFailed = releaseFailed
     self.record = record
@@ -289,6 +303,17 @@ final class WebAccessibility: @unchecked Sendable {
     lock.lock()
     defer { lock.unlock() }
     return freshSinceByProcess[Self.process(pid, launched)]
+  }
+
+  /// When the engine's last accepted write of the process's attribute true returned (monotonic ms), or nil when it has
+  /// made none (#366): the write that restarts Electron's debounce to its complete mode, and Chrome's, which an element
+  /// action waits out (`chromiumActionWaitMs`). Accepted is what `enableReporting` counts as set (success, or Chrome's
+  /// kAXErrorNotImplemented with the attribute reading true after it). An attribute left alone, owned already, read true
+  /// as another client's, or failing its write, moves nothing.
+  func lastEnablementWrite(pid: pid_t, launched: Date?) -> Double? {
+    lock.lock()
+    defer { lock.unlock() }
+    return acceptedWriteAt[Self.process(pid, launched)]
   }
 
   func hasSeenWebArea(pid: pid_t, launched: Date?) -> Bool {
@@ -396,7 +421,7 @@ final class WebAccessibility: @unchecked Sendable {
     processes[key] = entry
     observers[key, default: []].insert(connection)
     let token = armLocked(key)
-    if freshSinceByProcess[key] == nil { freshSinceByProcess[key] = monotonicMilliseconds() }
+    if freshSinceByProcess[key] == nil { freshSinceByProcess[key] = now() }
     lock.unlock()
     scheduleLapse(key, token)
 
@@ -435,8 +460,9 @@ final class WebAccessibility: @unchecked Sendable {
       }
     }
     let written = entry.access.write(name, true)
+    let writtenAt = now()
     lock.lock()
-    freshSinceByProcess[key] = monotonicMilliseconds()
+    freshSinceByProcess[key] = writtenAt
     lock.unlock()
     let after = written == .success ? true : entry.access.read(name)
     guard written == .success || (written == .notImplemented && after == true) else {
@@ -468,6 +494,7 @@ final class WebAccessibility: @unchecked Sendable {
     entry.on = true
     lock.lock()
     writes[key, default: 0] += 1
+    acceptedWriteAt[key] = writtenAt
     if owning {
       entry.owned = name
       entry.recorded = recorded
@@ -543,7 +570,7 @@ final class WebAccessibility: @unchecked Sendable {
 
   /// A grace release's timer fired, `releaseGraceMs` after the activity that armed it: unless newer activity took the
   /// token since, the process is released whether or not a connection still observes it (the design session's rule:
-  /// 30 s after cua's last action on it). The token is checked again under the entry's lock, where the reset is made:
+  /// `enablementReleaseGraceMs` after cua's last action on it). The token is checked again under the entry's lock, where the reset is made:
   /// activity takes a new token under `lock` before it touches the entry, so activity landing before the reset makes
   /// this timer stale (no reset), and activity after it waits on the entry's lock and reads after the reset, setting
   /// the attribute again, owned, since the write-back is remembered.

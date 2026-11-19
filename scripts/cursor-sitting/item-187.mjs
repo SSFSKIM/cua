@@ -573,6 +573,7 @@ export function rowRecord({spec, prepare = null, act = null, check = null, page 
     activationGuardMs: meta.activationGuardMs ?? null, nativeEngine: act?.nativeEngine ?? null,
     entered: meta.entered ?? null, delivery: meta.delivery ?? null, afterActionRepairs: meta.afterActionRepairs ?? null,
     actMs: act?.value?.actMs ?? null, threw: act?.value?.threw ?? null, error: act?.value?.message ?? null, paste,
+    typeReadback: meta.typeReadback ?? null,
     readBack, page: pageReading, fixtureDeltas: fixture ? deltas(fixture.mid, fixture.after) : null, delivered,
     disagree: readBack !== null && pageReading !== null && readBack.exact !== pageReading.agree, invalid,
     front: front && {...front, changed: front.after !== front.expected || activations.length > 0},
@@ -677,7 +678,16 @@ const sameReading = (a, b) => j(a ?? null) === j(b ?? null);
 // paste has none: one act, one record, confirmed by its own change. The kit had asked a paste for a record per line of its
 // text, which no run on either build could give.
 export const perLineExpected = record => (record?.method === 'paste' ? 1 : record?.lines ?? 1);
+// Amended for #361: a typeText row from a build whose paste route is read back carries `typeReadback`, and must show both
+// the per-line delivery evidence below (the delivery is still #187's) and the whole field read back as expected
+// (`confirmed`). A record without one (a build before #361) and the paste method keep the per-line rule alone.
 export function perLineProblem(record) {
+  const delivery = perLineDeliveryProblem(record);
+  if (delivery !== null || record?.method === 'paste' || !record?.typeReadback || typeof record.typeReadback !== 'object') return delivery;
+  const t = record.typeReadback;
+  return t.confirmed === true ? null : `the text was not read back as typed (typeReadback ${t.reason ?? 'unconfirmed'})`;
+}
+function perLineDeliveryProblem(record) {
   const list = record?.paste?.perLine, expected = perLineExpected(record);
   if (!Array.isArray(list)) return 'no per-line record (cua/paste.perLine)';
   if (list.length !== expected) return record.method === 'paste' ? `${list.length} per-line record(s) for one paste (one act, one record)` : `${list.length} per-line record(s) for ${record.lines} line(s)`;

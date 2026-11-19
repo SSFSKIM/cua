@@ -241,9 +241,17 @@ extension Engine {
   /// sheet or panel is served by another process than the app) and whose attributed events count as the user's on the
   /// app from now on. A re-fetch walks what the lineage's current revision walked: the recorded menu-bar item when the
   /// observation was rooted there, else the window and the menu bar.
-  func targetElement(_ token: String, app: ResolvedApp, appPid: pid_t, context: ExecutionContext, refetch: Refetch = .ifNeeded) throws -> ElementTarget {
+  /// An entry recorded before the app's Chromium readiness is first read again from its own handle (ruling 772,
+  /// `Lineage.resolve`'s `readiness`), its actions and identity those of the complete mode.
+  ///
+  /// `readsValue` false (#390, a sensitive set_value): every re-read and re-fetch here leaves AXValue unread.
+  func targetElement(_ token: String, app: ResolvedApp, appPid: pid_t, context: ExecutionContext, refetch: Refetch = .ifNeeded,
+                     readsValue: Bool = true) throws -> ElementTarget {
     guard let lineage = context.lineage else { throw EngineError.invalidArguments("lineage is required with an element token") }
-    let entry = try context.connection.element(token, app: app, lineage: lineage, refetch: refetch) { ElementResolver.live($0, pid: appPid) }
+    let readiness = entryReadiness(app: app, pid: appPid, launched: processGeneration(launchDate: app.running?.launchDate, pid: appPid))
+    let entry = try context.connection.element(token, app: app, lineage: lineage, refetch: refetch, readiness: readiness) {
+      ElementResolver.live($0, pid: appPid, readsValue: readsValue)
+    }
     let owner = ownerPid(of: entry.element, fallback: appPid)
     try refuseForbiddenOwner(owner)
     actionTargets(owner, app: app, connection: context.connection)
@@ -254,9 +262,9 @@ extension Engine {
   /// every element action that positions passes (click, perform_secondary_action, set_value, an element scroll). The
   /// in-flight intervention check runs before each scroll operation.
   func positionedTarget(_ target: ElementTarget, token: String, app: ResolvedApp, appPid: pid_t, context: ExecutionContext,
-                        guarding: InterventionGuard) throws -> ElementTarget {
+                        guarding: InterventionGuard, readsValue: Bool = true) throws -> ElementTarget {
     try scrolledIntoView(target, ax: .live, beforeMutating: guarding.checkInFlight) {
-      try targetElement(token, app: app, appPid: appPid, context: context, refetch: .always)
+      try targetElement(token, app: app, appPid: appPid, context: context, refetch: .always, readsValue: readsValue)
     }
   }
 
@@ -370,6 +378,7 @@ extension Engine {
                        targetActive: { NSRunningApplication(processIdentifier: owner)?.isActive == true },
                        beforeActivating: guarding.checkInFlight, beforePosting: guarding.checkInFlight,
                        announce: { cursor.act(connection: connection, app: app.key, window: pointing.windowID, .click(point)) },
+                       pointerPosted: { clickOrdering.pointerPosted(pids: [owner, appPid]) },
                        post: gatedPost, meta: &meta)
     }
   }
@@ -562,6 +571,8 @@ extension Engine {
     }
     let field = target.element
     return { [self] meta in
+      // #359: within the window of a pointer press posted to the app, the field's range settles first, before #296's check.
+      awaitPendingClick(on: field, pids: [appPid, ownerPid(of: field, fallback: appPid)], meta: &meta)
       // #296: the field must be the node the screenshot showed at the point or its ancestor, before it is pressed.
       try checkStalePoint(stalePoint, pressing: field, waited: false, meta: &meta)
       let owner = ownerPid(of: field, fallback: appPid)
@@ -620,6 +631,8 @@ extension Engine {
     }
     let field = target.element
     return { [self] meta in
+      // #359: within the window of a pointer press posted to the app, the field's range settles first, before #296's check.
+      awaitPendingClick(on: field, pids: [appPid, ownerPid(of: field, fallback: appPid)], meta: &meta)
       // #296: the field must be the node the screenshot showed at the point or its ancestor, before it is focused.
       try checkStalePoint(stalePoint, pressing: field, waited: false, meta: &meta)
       let owner = ownerPid(of: field, fallback: appPid)

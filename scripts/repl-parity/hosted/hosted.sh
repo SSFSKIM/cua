@@ -43,7 +43,14 @@
 # changes; gate parity-browser-stress sets it, by hand only, and gate parity-browser never does. Beside it, also for
 # diagnosis only, PARITY_CHROME_FLAGS=anti-throttling launches the harness Chrome with
 # --disable-renderer-backgrounding, --disable-backgrounding-occluded-windows and --disable-background-timer-throttling,
-# which tells a CPU-starved renderer from a throttled one (#141, #168).
+# which tells a CPU-starved renderer from a throttled one (#141, #168). PARITY_CHROME_FLAGS=renderer-backgrounding
+# launches it with --disable-renderer-backgrounding alone, and only with PARITY_STRESS: under load Chrome runs a hidden
+# tab's renderer (every agent tab is opened inactive) at background priority and starves it, so its CDP commands stall
+# on both hosts (#384, task 94: that flag alone took most stressed runs to no CDP timeout). Switched on, a stress run
+# separates the download and file-chooser cases' own failures (#383) from that starvation. It hides the product's
+# behaviour, which a person's Chrome cannot be launched out of: never on the product path and never in gate
+# parity-browser, and gate parity-browser-stress stays without it; a diagnosis adds it to that gate's run line on its
+# own branch, as with anti-throttling.
 set -u
 ITEM=${1:-}
 case "$ITEM" in denials|browser) ;; *) echo "usage: sh scripts/repl-parity/hosted/hosted.sh denials|browser" >&2; exit 2 ;; esac
@@ -56,7 +63,10 @@ esac
 case "${PARITY_CHROME_FLAGS:-}" in
   '') CHROME_FLAGS='' ;;
   anti-throttling) CHROME_FLAGS='--disable-renderer-backgrounding --disable-backgrounding-occluded-windows --disable-background-timer-throttling' ;;
-  *) echo "hosted-parity: PARITY_CHROME_FLAGS must be anti-throttling" >&2; exit 2 ;;
+  renderer-backgrounding)
+    [ -n "$STRESS" ] || { echo "hosted-parity: PARITY_CHROME_FLAGS=renderer-backgrounding is for a stress diagnosis (PARITY_STRESS)" >&2; exit 2; }
+    CHROME_FLAGS='--disable-renderer-backgrounding' ;;
+  *) echo "hosted-parity: PARITY_CHROME_FLAGS must be anti-throttling or renderer-backgrounding" >&2; exit 2 ;;
 esac
 if [ "$(uname -s)" != Darwin ] || [ "${RUNNER_ENVIRONMENT:-}" != github-hosted ]; then
   echo "hosted-parity: refused: it edits ~/.ssh, starts an sshd and registers a native host under the real HOME, so it runs only on a GitHub-hosted macOS runner" >&2

@@ -43,6 +43,29 @@
 // The vendor's selection note [E §5.1], the first of its two variants (they print identically).
 export const NOTE = 'Note: Pay special attention to the content selected by the user. If the user asks a question or refers to the content they are looking at on-screen, they might be referring to the selected content (but they might be referring to something else that\'s visible, too).';
 
+// cua's own words for a primary window the engine found off every display or on another Space (#367; the Skyshot's
+// `window.placement`): the observation's line, and the reason the facade's getScreenshot gives (`screenshot`). The
+// remedy asks the user (ruling 1ea561bc:782): the window's Raise action did nothing for a window on another Space in
+// every hosted measurement (run 44122922177) and is unmeasured for one off every display, so the text offers it for
+// neither. The engine's windowOnAnotherSpace refusal (native/engine/Sources/Engine/Placement.swift) gives the same
+// reason and remedy, ANOTHER_SPACE_REMEDY word for word.
+export const ANOTHER_SPACE_REMEDY = 'Ask the user to bring it here or switch to its Space.';
+export const WINDOW_PLACEMENT = Object.freeze({
+  offScreen: Object.freeze({
+    line: '[window off screen: the window lies outside every display, so it may show no content and has no screenshot. Ask the user to move it onto a display.]',
+    screenshot: 'the window is off screen, outside every display. Ask the user to move it onto a display.',
+  }),
+  anotherSpace: Object.freeze({
+    line: `[window on another Space: the window is not on the current Space, so it may show no content and has no screenshot. ${ANOTHER_SPACE_REMEDY}]`,
+    screenshot: `the window is on another Space. ${ANOTHER_SPACE_REMEDY}`,
+  }),
+});
+
+// The placement line of a Skyshot, or null for a window on screen (or a placement this renderer does not know).
+export function placementLine(skyshot) {
+  return Object.hasOwn(WINDOW_PLACEMENT, skyshot.window?.placement ?? '') ? WINDOW_PLACEMENT[skyshot.window.placement].line : null;
+}
+
 // ---------------------------------------------------------------------------------------------------------------------
 // Numbering.
 
@@ -78,7 +101,9 @@ export function render(skyshot, numbering) {
 
 // The numbered, rendered tree of one observation, shared with ./diff.mjs: `roots` are {index, depth, text, detailText,
 // children} (text compared by the diff, detailText never [B §9]), `lines` the element lines in preorder, `nodeCount`
-// their number (the diff's line budget [B §9]), `trailer` the selection or focus trailer (with its leading newline).
+// their number (the diff's line budget [B §9]), `placement` the window's placement line or null, `markers` cua's lines
+// after the tree (the placement line, then the truncation markers), `trailer` the selection or focus trailer (with its
+// leading newline).
 export function layout(skyshot, numbering) {
   const presented = present(skyshot);
   const urls = urlConfiguration(presented);
@@ -97,9 +122,12 @@ export function layout(skyshot, numbering) {
   // A trailer line is the element's own line without the width rule's `(showing …)`, which only the tree's layout gives
   // [golden: Finder, the vendor's focused list view].
   const lineOf = node => elementLine({index: indexOf(node.token), depth: 0, text: lineText(node, urls)});
+  // The placement line (#367) comes first among cua's lines after the tree, and stands alone in a diff with no change.
+  const placement = placementLine(skyshot);
   return {
     title: presented.title, appName: presented.appName, header: `Window: "${presented.title}", App: ${presented.appName}.`,
-    roots, lines, nodeCount: lines.length, markers: truncationMarkers(skyshot), trailer: trailer(presented, lineOf),
+    roots, lines, nodeCount: lines.length, placement, markers: [...(placement ? [placement] : []), ...truncationMarkers(skyshot)],
+    trailer: trailer(presented, lineOf),
   };
 }
 
@@ -161,9 +189,12 @@ function presentUncached(skyshot) {
   // focus-only node].
   const resolve = token => inTree.get(token) ?? (raw.has(token) ? {...element(raw.get(token), context), children: []} : null);
   const selected = (skyshot.selectedElements ?? []).map(resolve).filter(Boolean);
+  // The selected text is the focused element's: never printed for a password field (#405).
+  const focusedRaw = skyshot.focused != null ? raw.get(skyshot.focused) : undefined;
+  const focusedSecure = focusedRaw !== undefined && (secureNode(focusedRaw) || focusedRaw.valueUnread === true);
   return {
     title: skyshot.window?.title ?? 'Unknown', appName: skyshot.app?.displayName ?? 'Unknown', roots,
-    selectedText: typeof skyshot.selectedText === 'string' && skyshot.selectedText !== '' ? skyshot.selectedText : null,
+    selectedText: !focusedSecure && typeof skyshot.selectedText === 'string' && skyshot.selectedText !== '' ? skyshot.selectedText : null,
     selected, focused: skyshot.focused == null ? null : resolve(skyshot.focused),
   };
 }
@@ -188,18 +219,30 @@ function forest(nodes, context) {
   return roots;
 }
 
+// A password field (#405): the engine reads nothing of its value and marks its node `secure`; a node whose role or
+// subrole is AXSecureTextField counts too, whatever value it carries, so none of it is ever printed.
+const SECURE_TEXT = 'secure text';
+const secureNode = raw => raw.secure === true || raw.role === 'AXSecureTextField' || raw.subrole === 'AXSecureTextField';
+// Another element whose value the engine dropped because its classification failed (ruling 1ea561bc:813): its Value part
+// prints `value unread`, so the value reads as missing, not empty.
+const VALUE_UNREAD = 'value unread';
+
 // A working copy of one Skyshot node. A text area's value is its Markdown rendering when the engine fetched one
 // (retrieveAttributedTextFromTextAreas [B §5]); actions pass filterActions and keep the descriptions the engine read.
+// A password field keeps no value, value description or Markdown: its Value part prints `secure text`, and another
+// element whose value the engine left unread prints `value unread` (#405).
 function element(raw, context) {
-  const markdown = raw.role === 'AXTextArea' && typeof raw.valueMarkdown === 'string' ? raw.valueMarkdown : null;
+  const dropped = secureNode(raw) || raw.valueUnread === true;
+  const markdown = !dropped && raw.role === 'AXTextArea' && typeof raw.valueMarkdown === 'string' ? raw.valueMarkdown : null;
   return {
     token: raw.token, role: raw.role, subrole: raw.subrole ?? null, roleDescription: raw.roleDescription ?? null,
-    title: raw.title ?? null, description: raw.description ?? null, value: markdown ?? raw.value ?? null,
-    valueType: markdown != null ? 'string' : raw.valueType ?? null, identifier: raw.identifier ?? null,
-    valueDescription: raw.valueDescription ?? null, placeholder: raw.placeholder ?? null, help: raw.help ?? null,
+    title: raw.title ?? null, description: raw.description ?? null, value: dropped ? null : markdown ?? raw.value ?? null,
+    valueType: dropped ? null : markdown != null ? 'string' : raw.valueType ?? null, identifier: raw.identifier ?? null,
+    valueDescription: dropped ? null : raw.valueDescription ?? null, placeholder: raw.placeholder ?? null, help: raw.help ?? null,
     url: raw.url ?? null, rowIndexRange: raw.rowIndexRange ?? null, columnIndexRange: raw.columnIndexRange ?? null,
     domClassList: raw.domClassList ?? null, servesAsTitleFor: raw.servesAsTitleFor ?? null, shown: raw.shown ?? null,
     flags: {...raw.flags}, actions: filterActions(raw, context), descriptions: actionDescriptions(raw), children: [],
+    ...(dropped ? (secureNode(raw) ? {secure: true} : {valueUnread: true}) : {}),
   };
 }
 
@@ -259,7 +302,7 @@ function pipeline(node, context) {
 }
 
 const nonEmpty = value => value !== null && value !== undefined && value !== '';
-const descriptive = node => nonEmpty(node.description) || nonEmpty(node.value) || nonEmpty(node.title) || nonEmpty(node.placeholder) || node.role === 'AXImage';
+const descriptive = node => nonEmpty(node.description) || nonEmpty(node.value) || nonEmpty(node.title) || nonEmpty(node.placeholder) || node.role === 'AXImage' || node.secure === true || node.valueUnread === true;
 const descendants = node => node.children.flatMap(child => [child, ...descendants(child)]);
 const interesting = node => node.actions.some(action => action !== 'AXScrollToVisible' && action !== 'AXShowMenu');
 const userInteractive = node => (node.role === 'AXStaticText' ? node.flags.focusable || node.flags.selectable
@@ -471,7 +514,7 @@ const LONG_PART = 100;   // characters; a part this long, or with a newline, pri
 function parts(node, urls) {
   const candidates = [
     [null, node.title], ['Description', node.description], ['Rows', range(node.rowIndexRange)], ['Columns', range(node.columnIndexRange)],
-    ['URL', nonEmpty(node.url) ? shortenUrl(node.url, urls) : null], ['Help', node.help], ['Value', valueText(node.value, urls)],
+    ['URL', nonEmpty(node.url) ? shortenUrl(node.url, urls) : null], ['Help', node.help], ['Value', node.secure ? SECURE_TEXT : node.valueUnread ? VALUE_UNREAD : valueText(node.value, urls)],
     ['Details', node.valueDescription], ['Placeholder', node.placeholder],
     ['ID', typeof node.identifier === 'string' && !/^(_|NS)/.test(node.identifier) ? node.identifier : null],
     ['Secondary Actions', secondaryActions(node).join(', ')],

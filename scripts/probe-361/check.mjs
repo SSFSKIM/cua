@@ -112,6 +112,15 @@ export function scan(surfaces,{setupText,clipText,initial,text,expected,control,
   return [...flags].sort();
 }
 
+// Whether an answer carries #354's excerpt or lengths: the excerpt sentence or "N characters long" in the native or sky
+// message, or a length key in the native or forwarded read-back record.
+export function disclosure({native,skyError,forwarded}){
+  const messages=[native?.error?.message,skyError?.message].filter(m=>typeof m==='string');
+  const records=[native?.result?.meta?.typeReadback,native?.error?.meta?.typeReadback,forwarded?.['cua/typeReadback']].filter(r=>r&&typeof r==='object');
+  return {excerpt:messages.some(m=>/From character \d+, expected /.test(m)||/the field reads ["']/.test(m)),
+    lengths:messages.some(m=>/\b\d+ characters long\b/.test(m))||records.some(r=>'expectedLength' in r||'actualLength' in r)};
+}
+
 // One row's verdicts. `valid` needs a witnessed setup through the action's start, the paste route, and for a control its
 // perturbation realized. A wrong success counts only on the paste route (a keyed row is setup-invalid and kept apart).
 export function score({cell,attested,route,outcome,reason,domExact,controlExact,hit,confirmed,clip}){

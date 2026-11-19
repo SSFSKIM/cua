@@ -9,7 +9,7 @@ import {Wire} from '../probe-366/wire.mjs';
 import {owned,stop,pause,environment,startPlatform,startHelper,helperEnv} from './platform.mjs';
 import {SOURCES,LANES,CELLS,PLAIN,REWRITE_CHAR,materialize,plan,ascii} from './cells.mjs';
 import {LABELS} from './page.mjs';
-import {CODES,routeOf,outcomeOf,readbackConfirmed,scan,score,summarize,coverage,gates,percentile} from './check.mjs';
+import {CODES,routeOf,outcomeOf,readbackConfirmed,scan,score,summarize,coverage,gates,percentile,disclosure} from './check.mjs';
 
 const word=x=>typeof x==='string'&&/^[A-Za-z][A-Za-z0-9]{0,40}$/.test(x)?x:x==null?null:'other';
 const setupLabel=e=>typeof e?.setupStep==='string'?e.setupStep:'other';
@@ -203,6 +203,7 @@ async function main(){
         row.privacy=receipt?scan({native,rendered:receipt.rendered,skyError:receipt.error,forwarded:receipt.forwarded,content:receipt.content,console:receipt.logged,engineOutput:output},ctx):
           scan({engineOutput:output},ctx);
         last[c.head]={row,ctx};
+        if(receipt)Object.assign(row,disclosure({native,skyError:receipt.error,forwarded:receipt.forwarded}));
         if(ax)row.ax=axFacts(trace,meta);
         rows.push(row);
         streak=row.attested?0:streak+1;

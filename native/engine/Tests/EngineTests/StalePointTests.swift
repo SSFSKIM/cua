@@ -30,6 +30,8 @@ private final class Node {
   var actionsUnread = false
   /// Its AXChildren read fails (at the observation, for the walk's record).
   var childrenUnread = false
+  /// Its AXChildren read fails now (#431's coverage check).
+  var childrenUnreadNow = false
   weak var parent: Node?
   var children: [Node] = []
 
@@ -61,7 +63,8 @@ private final class Node {
 }
 
 private var reads: StalePointReads<Node> {
-  StalePointReads<Node>(role: { $0.roleUnread ? nil : $0.role }, frame: { $0.frame }, parent: { $0.parent }, children: { $0.children },
+  StalePointReads<Node>(role: { $0.roleUnread ? nil : $0.role }, frame: { $0.frame }, parent: { $0.parent },
+                                          children: { $0.childrenUnreadNow ? nil : $0.children },
                                           // A failed read answers none, as the live seam's `attribute` does.
                                           title: { $0.unreadable.contains(.title) ? nil : $0.title },
                                           description: { $0.unreadable.contains(.description) ? nil : $0.description },
@@ -111,8 +114,11 @@ private func recordedMembers(_ root: Node, skipping skipped: Set<ObjectIdentifie
   return { complete[ObjectIdentifier($0)] }
 }
 
-private func verdict(_ nodes: [ScreenshotNode<Node>], at point: CGPoint, shift: CGVector = .zero, hit: Node?) -> StalePointVerdict<Node> {
-  stalePointVerdict(at: point, windowShift: shift, nodes: nodes, hit: hit, reads: reads)
+/// The guard's verdict over `nodes`, with `members` the same observation's lookup (`recordedMembers`), which a re-created
+/// handle must be new to (#431); without it nothing counts as covered, and no re-created handle is taken.
+private func verdict(_ nodes: [ScreenshotNode<Node>], members: (Node) -> Bool? = { _ in nil }, at point: CGPoint, shift: CGVector = .zero,
+                     hit: Node?) -> StalePointVerdict<Node> {
+  stalePointVerdict(at: point, windowShift: shift, nodes: nodes, recorded: members, hit: hit, reads: reads)
 }
 
 /// Moves `node` and everything below it by `shift` (the window moved, its layout unchanged).
@@ -197,29 +203,29 @@ final class StalePointTests: XCTestCase {
     // The re-created button is the hit's ancestor (Chrome hit-tests its label): found, kept.
     do {
       let chrome = Chrome()
-      let nodes = recorded(chrome.window)
+      let nodes = recorded(chrome.window), members = recordedMembers(chrome.window)
       chrome.button.destroy()
       let again = Node("AXButton", CGRect(x: 101, y: 300, width: 120, height: 31), title: "Save")
       let label = Node("AXStaticText", CGRect(x: 130, y: 306, width: 60, height: 18))
       again.add(label)
       chrome.webArea.add(again)
-      let kept = verdict(nodes, at: CGPoint(x: 160, y: 315), hit: label)
+      let kept = verdict(nodes, members: members, at: CGPoint(x: 160, y: 315), hit: label)
       XCTAssertEqual(kept.identity, .recreated)
       XCTAssertTrue(kept.current === again)
       XCTAssertEqual(kept.reason, .nonInteractiveHit)
       // More than 2 pt off: not the node.
       again.frame = CGRect(x: 103, y: 300, width: 120, height: 30)
-      XCTAssertEqual(verdict(nodes, at: CGPoint(x: 160, y: 315), hit: label).reason, .nodeGone)
+      XCTAssertEqual(verdict(nodes, members: members, at: CGPoint(x: 160, y: 315), hit: label).reason, .nodeGone)
     }
     // The hit is a container (the page): the re-created button among its first 300 descendants is found, past them not.
     for (filler, found) in [(298, true), (300, false)] {
       let chrome = Chrome()
-      let nodes = recorded(chrome.window)
+      let nodes = recorded(chrome.window), members = recordedMembers(chrome.window)
       chrome.button.destroy()
       for index in 0..<filler { chrome.webArea.add(Node("AXGroup", CGRect(x: 0, y: 700 + CGFloat(index), width: 1, height: 1))) }
       let again = Node("AXButton", CGRect(x: 100, y: 300, width: 120, height: 30), title: "Save")
       chrome.webArea.add(again)  // breadth-first position filler + 1
-      let judged = verdict(nodes, at: CGPoint(x: 160, y: 315), hit: chrome.webArea)
+      let judged = verdict(nodes, members: members, at: CGPoint(x: 160, y: 315), hit: chrome.webArea)
       XCTAssertEqual(judged.reason, found ? .nonInteractiveHit : .nodeGone, "after \(filler) other descendants")
       XCTAssertEqual(judged.identity, found ? .recreated : nil)
     }
@@ -233,11 +239,11 @@ final class StalePointTests: XCTestCase {
       let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 400, height: 400))
       let like = Node("AXButton", CGRect(x: 10, y: 10, width: 80, height: 24), title: was.title, description: was.description)
       window.add(like)
-      let nodes = recorded(window)
+      let nodes = recorded(window), members = recordedMembers(window)
       like.destroy()
       let again = Node("AXButton", CGRect(x: 10, y: 10, width: 80, height: 24), title: now.title, description: now.description)
       window.add(again)
-      return verdict(nodes, at: CGPoint(x: 50, y: 22), hit: again)
+      return verdict(nodes, members: members, at: CGPoint(x: 50, y: 22), hit: again)
     }
     let changed = recreate(was: ("Like (12)", nil), now: ("Like (13)", nil))
     XCTAssertEqual(changed.reason, .nodeGone)
@@ -358,12 +364,12 @@ final class StalePointTests: XCTestCase {
     }
     do {
       let (root, a, _) = window()
-      let nodes = recorded(root)
+      let nodes = recorded(root), members = recordedMembers(root)
       move(root, by: shift)
       a.destroy()
       let again = Node("AXButton", CGRect(x: 111, y: 10, width: 80, height: 30), title: "A")  // re-created where the window took it
       root.add(again)
-      let kept = verdict(nodes, at: posted, shift: shift, hit: again)
+      let kept = verdict(nodes, members: members, at: posted, shift: shift, hit: again)
       XCTAssertEqual(kept.identity, .recreated, "matched against the recorded frame moved by the window's shift")
       XCTAssertEqual(kept.reason, .sameElement)
     }
@@ -392,11 +398,11 @@ final class StalePointTests: XCTestCase {
     let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 400, height: 200))
     let accept = Node("AXCheckBox", CGRect(x: 10, y: 10, width: 300, height: 30), title: label)
     window.add(accept)
-    let nodes = recorded(window)
+    let nodes = recorded(window), members = recordedMembers(window)
     accept.destroy()
     let again = Node("AXCheckBox", CGRect(x: 10, y: 10, width: 300, height: 30), title: label)
     window.add(again)
-    let kept = verdict(nodes, at: CGPoint(x: 50, y: 25), hit: again)
+    let kept = verdict(nodes, members: members, at: CGPoint(x: 50, y: 25), hit: again)
     XCTAssertEqual(kept.identity, .recreated)
     XCTAssertEqual(kept.reason, .sameElement)
     XCTAssertEqual(stalePointLabelsAgree(recordedTitle: bounded(label), recordedDescription: nil, title: "Terms", description: nil), false)
@@ -413,12 +419,12 @@ final class StalePointTests: XCTestCase {
     let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 400, height: 200))
     let button = Node("AXButton", CGRect(x: 10, y: 10, width: 80, height: 30), title: "Again")
     window.add(button)
-    let nodes = recorded(window)
+    let nodes = recorded(window), members = recordedMembers(window)
     button.destroy()
     let again = Node("AXButton", CGRect(x: 10, y: 10, width: 80, height: 30), title: "Again")
     var answers: [Node?] = [nil, again]
     var sleeps: [Double] = []
-    let kept = stalePointVerdict(at: CGPoint(x: 50, y: 25), nodes: nodes, hit: nil, rehit: {
+    let kept = stalePointVerdict(at: CGPoint(x: 50, y: 25), nodes: nodes, recorded: members, hit: nil, rehit: {
       let next = answers.removeFirst()
       if next != nil { window.add(again) }
       return next
@@ -521,12 +527,12 @@ final class StalePointTests: XCTestCase {
     let button = Node("AXButton", CGRect(x: 100, y: 100, width: 120, height: 30), title: "Again")
     webArea.add(button)
     window.add(webArea)
-    let nodes = recorded(window)
+    let nodes = recorded(window), members = recordedMembers(window)
     button.destroy()
     let again = Node("AXButton", CGRect(x: 100, y: 100, width: 120, height: 30), title: "Again")
     let point = CGPoint(x: 150, y: 115)
     var answers: [Node?] = [again]
-    let verdict = stalePointVerdict(at: point, nodes: nodes, hit: nil, rehit: {
+    let verdict = stalePointVerdict(at: point, nodes: nodes, recorded: members, hit: nil, rehit: {
       webArea.add(again)
       return answers.removeFirst()
     }, reads: reads)
@@ -646,12 +652,12 @@ final class StalePointTests: XCTestCase {
     // A container re-created with another title: not the node, refused; with the same title it passes.
     for (title, refused) in [("Ads", true), ("Results", false)] {
       let (window, list, row, _) = page()
-      let nodes = recorded(window, skipping: [ObjectIdentifier(row)])
+      let nodes = recorded(window, skipping: [ObjectIdentifier(row)]), members = recordedMembers(window, skipping: [ObjectIdentifier(row)])
       list.destroy()
       let again = Node("AXGroup", CGRect(x: 0, y: 50, width: 600, height: 300), title: title)
       again.add(row)
       window.add(again)
-      let judged = verdict(nodes, at: point, hit: row)
+      let judged = verdict(nodes, members: members, at: point, hit: row)
       XCTAssertEqual(judged.refused, refused, title)
       XCTAssertEqual(judged.reason, refused ? .nodeGone : .unrecordedDescendant, title)
     }
@@ -1975,10 +1981,10 @@ final class RelabelledGuardTests: XCTestCase {
       let window = windowHolding(link)
       let text = Node("AXStaticText", CGRect(x: 30, y: 110, width: 80, height: 20), value: was)
       link.add(text)
-      let nodes = recorded(window)
+      let nodes = recorded(window), members = recordedMembers(window)
       text.destroy()
       link.add(Node("AXStaticText", CGRect(x: 30, y: 110, width: 80, height: 20), value: now))
-      return verdict(nodes, at: point, hit: link)
+      return verdict(nodes, members: members, at: point, hit: link)
     }
     XCTAssertEqual(recreate("Save", "Send").reason, .nodeGone, "linkmono")
     let kept = recreate("Like (12)", "Like (13)")
@@ -2005,12 +2011,12 @@ final class RelabelledGuardTests: XCTestCase {
     func recreate(_ was: String, _ now: String, description: Bool = false) -> StalePointReason {
       let button = description ? Node("AXButton", nil, description: was) : Node("AXButton", nil, title: was)
       let window = windowHolding(button)
-      let nodes = recorded(window)
+      let nodes = recorded(window), members = recordedMembers(window)
       button.destroy()
       let frame = CGRect(x: 20, y: 100, width: 120, height: 40)
       let again = description ? Node("AXButton", frame, description: now) : Node("AXButton", frame, title: now)
       window.add(again)
-      return verdict(nodes, at: point, hit: again).reason
+      return verdict(nodes, members: members, at: point, hit: again).reason
     }
     XCTAssertEqual(recreate("Save", "SAVE"), .nodeGone, "the same words, another title")
     XCTAssertEqual(recreate("Like (12)", "Like (13)"), .nodeGone)
@@ -2165,12 +2171,12 @@ final class RelabelledEditableTests: XCTestCase {
     }
     do {  // Overtyping one character at the same width re-creates the text node.
       let editor = Editor()
-      let nodes = recorded(editor.window)
+      let nodes = recorded(editor.window), members = recordedMembers(editor.window)
       editor.text.destroy()
       let again = Node("AXStaticText", CGRect(x: 40, y: 105, width: 200, height: 20), value: "Jello")
       again.editableAncestor = editor.region
       editor.paragraph.add(again)
-      let verdict = stalePointVerdict(at: point, nodes: nodes, hit: again, reads: reads)
+      let verdict = stalePointVerdict(at: point, nodes: nodes, recorded: members, hit: again, reads: reads)
       XCTAssertEqual(verdict.identity, .recreated)
       XCTAssertEqual(verdict.reason, .sameElement)
     }
@@ -2442,5 +2448,244 @@ final class UnreadableLabelTests: XCTestCase {
     tree.unreadableAttributes[1] = ["AXTitle"]
     let recording = walk(tree, Lineage(), recordsScreenshot: true)
     XCTAssertEqual(recording.screenshotReads.first { tree.id($0.element) == 1 }?.labelsUnread, [.title])
+  }
+}
+
+// MARK: #431: a re-created handle must be new to a record that covered where it lies
+
+/// #431 (the design session's rulings 1ea561bc:880 and :881): #296's re-created match took any element of the node's
+/// role, frame and label, so a same-label link that slid into a removed one's place passed (#340's phase-1 `twin`, 10/10
+/// on CfT, Safari and Electron). It now also requires the handle to be new to the record, in a region the observation
+/// covered, under no recorded control but the node's own (`recreatedIsNew`).
+final class RecreatedIdentityTests: XCTestCase {
+  /// Two same-label links in a list ("Reply" on each row, another destination each), each a link around its text.
+  private final class Thread {
+    let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 600, height: 400))
+    let page = Node("AXWebArea", CGRect(x: 0, y: 50, width: 600, height: 350))
+    let list = Node("AXList", CGRect(x: 0, y: 80, width: 600, height: 200))
+    let a: Node
+    let aText = Node("AXStaticText", CGRect(x: 30, y: 105, width: 60, height: 20), value: "Reply")
+    let b: Node
+    let bText = Node("AXStaticText", CGRect(x: 30, y: 145, width: 60, height: 20), value: "Reply")
+    /// `pressable`: each row a plain group that is a control by its AXPress (a clickable div), not a link.
+    init(pressable: Bool = false) {
+      let role = pressable ? "AXGroup" : "AXLink"
+      a = Node(role, CGRect(x: 20, y: 100, width: 200, height: 30), title: "Reply")
+      b = Node(role, CGRect(x: 20, y: 140, width: 200, height: 30), title: "Reply")
+      if pressable { (a.actions, b.actions) = (["AXPress"], ["AXPress"]) }
+      window.add(page)
+      page.add(list)
+      list.add(a)
+      a.add(aText)
+      list.add(b)
+      b.add(bText)
+    }
+    /// The first row removed: B slides up into A's place, at A's frame.
+    func removeA() {
+      aText.destroy()
+      a.destroy()
+      move(b.parent === list ? b : b.parent!, by: CGVector(dx: 0, dy: -40))
+    }
+    /// A re-rendered whole in place: a new link and a new text, the same label, the same frames.
+    @discardableResult func rerenderA() -> (link: Node, text: Node) {
+      let link = Node("AXLink", CGRect(x: 20, y: 100, width: 200, height: 30), title: "Reply")
+      let text = Node("AXStaticText", CGRect(x: 30, y: 105, width: 60, height: 20), value: "Reply")
+      link.add(text)
+      aText.destroy()
+      a.destroy()
+      list.children.insert(link, at: 0)
+      link.parent = list
+      return (link, text)
+    }
+    /// B moved into a row of its own (a group around it), before the observation.
+    func wrapB() -> Node {
+      let row = Node("AXGroup", CGRect(x: 0, y: 140, width: 600, height: 30))
+      list.children.removeAll { $0 === b }
+      list.add(row)
+      row.add(b)
+      return row
+    }
+  }
+  /// The model's point on A's text, and on A's link outside its text: the record's node there is A's text, and A.
+  private let atText = CGPoint(x: 40, y: 112)
+  private let atLink = CGPoint(x: 150, y: 115)
+
+  /// The verdict at `point` after `change`, the record taken before it (with `skipping` left out of the walk).
+  private func judged(_ thread: Thread, skipping: [Node] = [], at point: CGPoint, change: (Thread) -> Node?) -> StalePointVerdict<Node> {
+    let skipped = Set(skipping.map(ObjectIdentifier.init))
+    let nodes = recorded(thread.window, skipping: skipped), members = recordedMembers(thread.window, skipping: skipped)
+    let hit = change(thread)
+    return verdict(nodes, members: members, at: point, hit: hit)
+  }
+
+  /// #340's `twin`: A removed, B slides into its place. Both B and its text were on the page at the observation, so the
+  /// record holds them, and neither is taken for A re-created, whatever the hit: B's text, B, or the list.
+  func testATwinThatSlidIntoARemovedLinksPlaceRefuses() {
+    let cases: [(name: String, point: CGPoint, role: String)] = [("the record at the text", atText, "AXStaticText"),
+                                                                 ("the record at the link", atLink, "AXLink")]
+    let hits: [(String, (Thread) -> Node)] = [("B's text", { $0.bText }), ("B", { $0.b }), ("the list", { $0.list })]
+    for (name, point, role) in cases {
+      for (hitName, hit) in hits {
+        let judgedNow = judged(Thread(), at: point) { thread in
+          thread.removeA()
+          return hit(thread)
+        }
+        XCTAssertEqual(judgedNow.node?.role, role, name)
+        XCTAssertEqual(judgedNow.reason, .nodeGone, "\(name), the hit \(hitName)")
+        XCTAssertNil(judgedNow.identity, "\(name), the hit \(hitName)")
+      }
+    }
+  }
+
+  /// A control the record holds elsewhere that moves into the node's place is another control, whether its own handle
+  /// comes (the record at the link) or its text is re-created as it moves (the record at the text): under a link, or under
+  /// a row that is a control by its AXPress.
+  func testAControlRecordedElsewhereThatMovesIntoPlaceRefuses() {
+    func slideWithNewText(_ thread: Thread) -> Node {
+      thread.removeA()
+      thread.bText.destroy()
+      let text = Node("AXStaticText", CGRect(x: 30, y: 105, width: 60, height: 20), value: "Reply")
+      thread.b.add(text)
+      return text
+    }
+    XCTAssertEqual(judged(Thread(), at: atText, change: slideWithNewText).reason, .nodeGone, "its text re-created as it moves")
+    XCTAssertEqual(judged(Thread(), at: atText) { slideWithNewText($0).parent }.reason, .nodeGone, "the hit the moved link")
+    XCTAssertEqual(judged(Thread(), at: atLink) { thread in
+      _ = slideWithNewText(thread)
+      return thread.b
+    }.reason, .nodeGone, "the record at the link: B's own handle")
+    // Rows that are controls by their AXPress (a clickable div around its text): the same.
+    XCTAssertEqual(judged(Thread(pressable: true), at: atText, change: slideWithNewText).reason, .nodeGone, "a pressable row")
+    // A text re-created under its own surviving control is kept: the control is the node's.
+    let kept = judged(Thread(pressable: true), at: atText) { thread in
+      thread.aText.destroy()
+      let text = Node("AXStaticText", CGRect(x: 30, y: 105, width: 60, height: 20), value: "Reply")
+      thread.a.add(text)
+      return text
+    }
+    XCTAssertEqual(kept.identity, .recreated, "the node's own pressable row")
+    XCTAssertFalse(kept.refused)
+  }
+
+  /// A genuine re-creation in a region the observation covered whole stays kept: the same text re-created in its link
+  /// (`plain`), a same-width replacement whose count ticks (`like`), and the link re-rendered whole, with the record at
+  /// the text and at the link.
+  func testAGenuineReCreationInACoveredRegionIsKept() {
+    for (name, was, now) in [("plain", "Reply", "Reply"), ("like", "Like (12)", "Like (13)")] {
+      let thread = Thread()
+      thread.aText.value = was
+      var again: Node?
+      let kept = judged(thread, at: atText) { thread in
+        thread.aText.destroy()
+        let text = Node("AXStaticText", CGRect(x: 30, y: 105, width: 60, height: 20), value: now)
+        thread.a.add(text)
+        again = text
+        return text
+      }
+      XCTAssertEqual(kept.identity, .recreated, name)
+      XCTAssertTrue(kept.current === again, name)
+      XCTAssertEqual(kept.reason, .sameElement, name)
+    }
+    for (name, atText) in [("the record at the text", true), ("the record at the link", false)] {
+      var again: (link: Node, text: Node)?
+      let kept = judged(Thread(), at: atText ? self.atText : atLink) { thread in
+        again = thread.rerenderA()
+        return atText ? again?.text : again?.link
+      }
+      XCTAssertEqual(kept.identity, .recreated, name)
+      XCTAssertTrue(kept.current === (atText ? again?.text : again?.link), name)
+      XCTAssertFalse(kept.refused, name)
+    }
+  }
+
+  /// Ruling 1ea561bc:881: new to the record counts only where the observation covered the region. A twin past the
+  /// observation's cap (its list's children not all recorded), one in a subtree the walk did not go into, one under a
+  /// row whose AXChildren read failed at the observation, and one the record never reaches (another window) refuse; so
+  /// does a genuine re-render in a region the record covered only in part, the stated cost.
+  func testATwinTheObservationDidNotCoverRefuses() {
+    for (name, atText) in [("the record at the text", true), ("the record at the link", false)] {
+      let point = atText ? self.atText : atLink
+      let past = Thread()
+      XCTAssertEqual(judged(past, skipping: [past.b], at: point) { thread in
+        thread.removeA()
+        return atText ? thread.bText : thread.b
+      }.reason, .nodeGone, "\(name): B past the cap")
+      // B in a row the walk did not go into, its row recorded.
+      let unwalked = Thread()
+      _ = unwalked.wrapB()
+      XCTAssertEqual(judged(unwalked, skipping: [unwalked.b], at: point) { thread in
+        thread.removeA()
+        return atText ? thread.bText : thread.b
+      }.reason, .nodeGone, "\(name): B in an unwalked subtree")
+      // B's row's AXChildren failed at the observation.
+      let failed = Thread()
+      failed.wrapB().childrenUnread = true
+      XCTAssertEqual(judged(failed, at: point) { thread in
+        thread.removeA()
+        return atText ? thread.bText : thread.b
+      }.reason, .nodeGone, "\(name): B's row read no children")
+      // Another window's twin, reached up to that window: the record never went there.
+      let other = Node("AXWindow", CGRect(x: 0, y: 0, width: 600, height: 400))
+      let otherPage = Node("AXWebArea", CGRect(x: 0, y: 50, width: 600, height: 350))
+      other.add(otherPage)
+      let twin = Node("AXLink", CGRect(x: 20, y: 100, width: 200, height: 30), title: "Reply")
+      let twinText = Node("AXStaticText", CGRect(x: 30, y: 105, width: 60, height: 20), value: "Reply")
+      twin.add(twinText)
+      otherPage.add(twin)
+      XCTAssertEqual(judged(Thread(), at: point) { thread in
+        thread.aText.destroy()
+        thread.a.destroy()
+        return atText ? twinText : twin
+      }.reason, .nodeGone, "\(name): a twin the record never reached")
+      // The genuine re-render, with B left out of the record: refused, a re-observation.
+      let partial = Thread()
+      XCTAssertEqual(judged(partial, skipping: [partial.b], at: point) { thread in
+        let again = thread.rerenderA()
+        return atText ? again.text : again.link
+      }.reason, .nodeGone, "\(name): a re-render the record covered in part")
+    }
+  }
+
+  /// A read that fails on the way refuses the match, never passes it: a parent's role, a plain wrapper's action names,
+  /// the recorded parent's AXChildren now, and a candidate its recorded parent does not list (hit-test only).
+  func testAFailedReadRefusesTheReCreatedMatch() {
+    func rerendered(_ change: @escaping (Thread, (link: Node, text: Node)) -> Void) -> StalePointVerdict<Node> {
+      judged(Thread(), at: atLink) { thread in
+        let again = thread.rerenderA()
+        change(thread, again)
+        return again.link
+      }
+    }
+    XCTAssertEqual(rerendered { _, _ in }.identity, .recreated, "the baseline: kept")
+    XCTAssertEqual(rerendered { thread, _ in thread.list.roleUnread = true }.reason, .nodeGone, "the parent's role")
+    XCTAssertEqual(rerendered { thread, _ in thread.list.childrenUnreadNow = true }.reason, .nodeGone, "the parent's children now")
+    XCTAssertEqual(rerendered { thread, again in thread.list.children.removeAll { $0 === again.link } }.reason, .nodeGone,
+                   "listed by no AXChildren")
+    // A plain wrapper between a re-created text and its link: read, it passes; its action names unread, it refuses.
+    for (unread, reason) in [(false, StalePointReason.sameElement), (true, .nodeGone)] {
+      let judgedNow = judged(Thread(), at: atText) { thread in
+        let again = thread.rerenderA()
+        let wrapper = Node("AXGroup", CGRect(x: 30, y: 105, width: 60, height: 20))
+        again.link.children.removeAll { $0 === again.text }
+        again.link.add(wrapper)
+        wrapper.add(again.text)
+        wrapper.actionsUnread = unread
+        return again.text
+      }
+      XCTAssertEqual(judgedNow.reason, reason, unread ? "the wrapper's actions unread" : "the wrapper read")
+    }
+  }
+
+  /// The record keeps each node's control (`ScreenshotNode.control`): its nearest ancestor by an interactive role or
+  /// AXPress, never past its web area.
+  func testTheRecordKeepsEachNodesControl() {
+    let thread = Thread()
+    XCTAssertTrue(recorded(thread.window).first { $0.element === thread.aText }?.control === thread.a)
+    XCTAssertNil(recorded(thread.window).first { $0.element === thread.a }?.control, "the list is no control")
+    thread.page.actions = ["AXPress"]
+    thread.window.actions = ["AXPress"]
+    XCTAssertNil(recorded(thread.window).first { $0.element === thread.a }?.control, "not past the web area")
+    thread.list.actions = ["AXPress"]
+    XCTAssertTrue(recorded(thread.window).first { $0.element === thread.a }?.control === thread.list, "a control by its AXPress")
   }
 }

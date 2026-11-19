@@ -1507,8 +1507,9 @@ async function diffRun(args, candidate, { handoff }) {
     // process for two samples of each window-targeted operation (reads and screenshots too) on the window it is
     // measured on.
     const audits = {};
-    // each audited operation's raw lifecycle traces kept beside the results, for a later judge (audit-traces.mjs)
-    const keeper = traceKeeper({ out: args.out, limitMb: args.auditTraces ?? DEFAULT_AUDIT_TRACE_MB });
+    // each audited operation's lifecycle traces kept beside the results as the judge's projection, never their raw
+    // text, for a later judge (audit-traces.mjs), under this execution's own directory
+    const keeper = traceKeeper({ out: args.out, run, limitMb: args.auditTraces ?? DEFAULT_AUDIT_TRACE_MB });
     if (args.audit) {
       for (const { scene: sceneName, op } of auditPlan(plan)) {
         for (const spec of engines.filter((e) => runsOp(e.label, op)).map((e) => engineSpecFor(e, op, sceneName))) {
@@ -1567,8 +1568,9 @@ async function diffRun(args, candidate, { handoff }) {
           // each lifecycle's trace judged on its own window, then the judgments as one, against the run's windows as they
           // stand now (kept with the traces, so a later judge reads them against the same)
           const registered = desktop.registry();
-          const judgedSegments = segments.map((seg) => {
-            const trace = parseXtrace(seg.trace);
+          const traces = segments.map((seg) => parseXtrace(seg.trace));
+          const judgedSegments = segments.map((seg, i) => {
+            const trace = traces[i];
             const audited = {
               foreground: () => auditForeground(trace, seg.target.id),
               'nothing-sent': () => auditNothingSent(trace),
@@ -1579,7 +1581,7 @@ async function diffRun(args, candidate, { handoff }) {
             // its XTEST input may land in a window of a live harness window's client (task 53)
             return { audited, judgedForeign: auditForeign(trace, { registered, root: desktop.root, routeAudit: true }), ancestry: seg.ancestry, watch: seg.watcher };
           });
-          const keptTraces = keeper.keep({ name: `${spec.label}-${sceneName}-${op}`, traces: segments.map((seg) => seg.trace), registered: registered.keys(), root: desktop.root });
+          const keptTraces = keeper.keep({ name: `${spec.label}-${sceneName}-${op}`, traces, registered: registered.keys(), root: desktop.root });
           const { audited, foreign, judged } = lifecycleAudit(judgedSegments);
           const unplaced = judgedSegments.map((j) => j.judgedForeign.unplaced).filter(Boolean);
           const watched = judgedSegments.filter((j) => j.watch);

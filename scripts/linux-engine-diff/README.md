@@ -422,9 +422,13 @@ variants included; their evidence is written either way. The run's `end` row kee
   by the opcode the server reported for XTEST, minor 2). The verdict needs cua's audit clean wherever a vendor
   build's witness or audit is. The negative check drives the stub through a proxy too, and the run is valid only when
   the witness and the audit both fail it. `--no-audit` leaves the pass out. Each audited operation's lifecycle traces
-  are kept beside the results, compressed (`audit-traces/`, `audit-traces.mjs`; task 106, ruling 858), with the
-  windows they were judged against in the audit row's `kept_traces`, up to `--audit-traces <MB>` a run (256 by
-  default; `off` keeps none), the row saying why where they were not kept. A proxy's credentials (task 46's finding
+  are kept beside the results (`audit-traces/<run>-<execution id>/`, `audit-traces.mjs`; task 106, rulings 858 and
+  863), never as raw text: as the foreign-window judge's own elements cut to an allowlist of the fields it reads, so no
+  title, property or clipboard text reaches the disk, and judged to the raw trace's findings. The audit row's
+  `kept_traces` names them, their run and execution, and the windows they were judged against. An operation's files
+  are written all or none, every byte charged to `--audit-traces <MB>` a run (256 by default; `off` keeps none), and
+  none once the out directory's filesystem would fall below 2 GB free; the row says why where they were not kept.
+  `rejudge-audit.mjs` re-judges a stored run from them. A proxy's credentials (task 46's finding
   3): on a private display xtrace copies none and reads no authority file (the harness's X server has none); on a
   person's display it reads the person's authority file where it is (xtrace 1.4.0 reads from its `-F` file and writes
   into its `-f` file, the reverse of its help) and writes the proxy's credentials into the proxy's own directory,
@@ -1374,7 +1378,7 @@ Two shared helpers came out of T16's fix wave (the design session, 2026-11-10), 
 | `kinds.mjs`, `dnd.mjs`, `device.mjs`, `xprobe/src/dnd.rs`, `pages/gtk4-input.py`, `pages/qt-input.py` | M3.1's kinds and drag-and-drop experiments, Acceptance 8's device cases, the `XdndSelection` watch, the GTK 4 and Qt scenes |
 | `rejudge.mjs` | a recorded run's speed verdicts judged again under the revised rule |
 | `rejudge-device.mjs` | a stored verdict run's device verdicts judged again by this checkout's `judgeDevice`, beside the stored ones and a former judge's (`--old`), with how each sample of ruling 823's cells reads under it, read-only (the M5 pre-flight's §8.1, point 4); a replayed pass of ruling 823's cells is diagnostic only, never a release pass (exit 1; `--diagnostic` exits on agreement with the stored verdicts) |
-| `audit-traces.mjs`, `rejudge-audit.mjs` | the route audits' kept traces, and a stored run's foreign-window findings judged again from them by this checkout's judge, beside the stored ones, read-only (task 106; exit 1 where an audit kept no traces) |
+| `audit-traces.mjs`, `rejudge-audit.mjs` | the route audits' kept projections (the judge's allowlisted elements, never raw text), and a stored run's foreign-window findings judged again from them by this checkout's judge, beside the stored ones, read-only (task 106; exit 1 where an audit kept nothing, or the run is incomplete) |
 | `premise.mjs` | rulings 823, 825 and 841: the unmet premise in V5's cancel, late and late-take cells (the page's strict proof that Chrome never started a drag session, the evidence's binding to the run's sidecar, the exclusion, its quotas and its rate) |
 | `vcl-aim.mjs`, `writer-drag.mjs`, `vcl-probe.mjs`, `pages/point-gtk3.py` | M4 T16's LibreOffice offset as the harness reads it, the Writer drag probe, the point probes and their GTK 3 control scene |
 | `park.mjs`, `xprobe/src/pointer.rs`, `app-identity.mjs` | the verified pointer park (`xprobe pointer-chain`) and the application's identity, shared by any runner (T16's fix wave) |

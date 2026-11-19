@@ -136,8 +136,9 @@ export function judgeForeign(elements, { registered, root, strictBirth = false, 
   let mutating = 0;
   let unplaced = 0;
   const unattributed = { clients: new Set(), mutating: 0 };
-  // a creation the server refused, and every refused request, by the request element itself
-  const refused = refusedRequests(elements);
+  // a creation the server refused, and every refused request, by the request element itself; and the windows whose
+  // creation a refusal could not be bound to unambiguously, for which the ended-life rule is off
+  const { refused, ambiguous } = refusedRequests(elements);
 
   const lifeOf = (w) => {
     let life = lives.get(w);
@@ -218,7 +219,7 @@ export function judgeForeign(elements, { registered, root, strictBirth = false, 
   // a request to an id whose latest life the stream saw is one the harness registered, now ended: the record saw every
   // creation since, so no window holds the id; xtrace did not, so only the server's BadWindow for that id shows it
   const endedOwn = (el, w) => {
-    if (!NAMING_OPS.has(el.op) || typeof w !== 'number' || w === root) return false;
+    if (!NAMING_OPS.has(el.op) || typeof w !== 'number' || w === root || ambiguous.has(w)) return false;
     const life = lives.get(w);
     if (!life || life.alive || !isRegistered(w, life)) return false;
     if (strictBirth) return true;
@@ -339,9 +340,11 @@ export function judgeForeign(elements, { registered, root, strictBirth = false, 
     const change = changeOf(el, root);
     if (!change) continue;
     mutating++;
-    if (change.selection && !harness(change.windows[0]) && !own(el.c, change.windows[0]) && !endedOwn(el, change.windows[0])) {
-      // a selection owner's answer to a foreign requestor's own request: exempt while that request is served
-      if (!serveSelection(open, el, change.selection)) flag(el, change.what, change.windows[0]);
+    if (change.selection && !harness(change.windows[0]) && !own(el.c, change.windows[0])) {
+      // a selection owner's answer to a foreign requestor's own request: exempt while that request is served. The
+      // answer is served first, whatever the server did with it, so its grant opens, turns INCR or closes as it always
+      // did; the ended-life rule decides only whether this one request is a finding (fix wave 1)
+      if (!serveSelection(open, el, change.selection) && !endedOwn(el, change.windows[0])) flag(el, change.what, change.windows[0]);
       continue;
     }
     if (change.unplaced) {
@@ -378,9 +381,14 @@ const MINOR_OF = { FakeInput: 2, RedirectWindow: 1, RedirectSubwindows: 2, Unred
  * error's 16 bits and opcodes at or before the error's server time (`t`). An error for an opcode the record does not
  * read refuses nothing. An error without a time (a record of one context) refuses the client's latest recorded request
  * if its opcode and 16 bits match.
+ * `ambiguous`: the windows a timed refusal of a CreateWindow could name when another candidate shares the chosen one's
+ * server time (the record keys a client by its resource-id base, which a later connection may have, and an error
+ * carries no connection generation): either creation may be the refused one, so neither id's lives are certain; and
+ * the window of a CreateWindow an untimed record error refused, bound by the client's latest request alone.
  */
 function refusedRequests(elements) {
   const refused = new Map();
+  const ambiguous = new Set();
   const bySeq = new Map();
   const last = new Map();
   const timed = new Map();
@@ -397,13 +405,22 @@ function refusedRequests(elements) {
       last.set(el.c, el);
     } else if (el.k === 'error' && typeof el.t === 'number') {
       const candidates = (timed.get(timedKey(el.c, el.seq, el.major, el.minor)) ?? []).filter((r) => r.t <= el.t);
-      if (candidates.length) refused.set(candidates.at(-1), el);
+      if (candidates.length) {
+        const chosen = candidates.at(-1);
+        refused.set(chosen, el);
+        const tied = candidates.filter((r) => r.t === chosen.t);
+        if (tied.length > 1) for (const r of tied) if (r.op === 'CreateWindow' && typeof r.window === 'number') ambiguous.add(r.window);
+      }
     } else if (el.k === 'error') {
       const request = el.exact ? bySeq.get(`${el.c}|${el.seq & 0xffff}`) : last.get(el.c);
-      if (request && (request.seq & 0xffff) === (el.seq & 0xffff) && (request.major === undefined || request.major === el.major)) refused.set(request, el);
+      if (request && (request.seq & 0xffff) === (el.seq & 0xffff) && (request.major === undefined || request.major === el.major)) {
+        refused.set(request, el);
+        // the record without a time binds by the client's latest request alone, which cannot be shown to be its creation
+        if (!el.exact && request.op === 'CreateWindow' && typeof request.window === 'number') ambiguous.add(request.window);
+      }
     }
   }
-  return refused;
+  return { refused, ambiguous };
 }
 
 /**

@@ -1,0 +1,75 @@
+// The census sample: public pages that need no login (sign-up, checkout and address, search, settings-like) and built-in
+// apps' windows with several text fields. Pages are only loaded and observed: nothing is typed, submitted or signed in.
+export const PAGES=[
+  // Sign-up and account forms.
+  ['signup','https://github.com/signup'],
+  ['signup','https://gitlab.com/users/sign_up'],
+  ['signup','https://pypi.org/account/register/'],
+  ['signup','https://www.npmjs.com/signup'],
+  ['signup','https://stackoverflow.com/users/signup'],
+  ['signup','https://en.wikipedia.org/w/index.php?title=Special:CreateAccount'],
+  ['signup','https://www.reddit.com/register/'],
+  ['signup','https://discord.com/register'],
+  ['signup','https://www.dropbox.com/register'],
+  ['signup','https://vercel.com/signup'],
+  ['signup','https://accounts.google.com/signup'],
+  ['signup','https://www.shopify.com/free-trial'],
+  ['signup','https://www.salesforce.com/form/signup/freetrial-sales/'],
+  ['signup','https://news.ycombinator.com/login'],
+  ['signup','https://automationexercise.com/login'],
+  ['signup','https://www.saucedemo.com/'],
+  ['signup','https://practicesoftwaretesting.com/auth/register'],
+  ['signup','https://demoqa.com/automation-practice-form'],
+  // Checkout, address and tracking forms.
+  ['checkout','https://getbootstrap.com/docs/5.3/examples/checkout/'],
+  ['checkout','https://getbootstrap.com/docs/5.3/forms/floating-labels/'],
+  ['checkout','https://www.w3schools.com/howto/howto_css_checkout_form.asp'],
+  ['checkout','https://mui.com/material-ui/react-text-field/'],
+  ['checkout','https://tools.usps.com/zip-code-lookup.htm?byaddress'],
+  ['checkout','https://www.fedex.com/en-us/tracking.html'],
+  ['checkout','https://www.ups.com/track?loc=en_US'],
+  ['checkout','https://www.dhl.com/us-en/home/tracking.html'],
+  ['checkout','https://checkout.stripe.dev/preview'],
+  // Search pages and search-led sites.
+  ['search','https://duckduckgo.com/'],
+  ['search','https://www.bing.com/'],
+  ['search','https://www.google.com/'],
+  ['search','https://search.brave.com/'],
+  ['search','https://www.wikipedia.org/'],
+  ['search','https://developer.mozilla.org/en-US/'],
+  ['search','https://www.booking.com/'],
+  ['search','https://www.kayak.com/flights'],
+  ['search','https://www.airbnb.com/'],
+  ['search','https://www.ikea.com/us/en/'],
+  ['search','https://www.etsy.com/'],
+  ['search','https://www.ebay.com/'],
+  ['search','https://www.craigslist.org/about/sites'],
+  ['search','https://www.indeed.com/'],
+  ['search','https://www.zillow.com/'],
+  // Settings-like pages.
+  ['settings','https://duckduckgo.com/settings'],
+  ['settings','https://www.google.com/preferences'],
+  ['settings','https://search.brave.com/settings'],
+  ['settings','https://www.bing.com/account/general'],
+].map(([kind,url],i)=>({id:'p'+String(i+1).padStart(2,'0'),kind,url}));
+
+// Built-in apps: how each window is opened (a URL or a bundle) and the keys that open its fields, through the census
+// engine's own press_key with the app frontmost.
+const pane=id=>'x-apple.systempreferences:'+id;
+export const SCENES=[
+  {id:'settings-about',bundle:'com.apple.systempreferences',url:pane('com.apple.SystemProfiler.AboutExtension'),keys:[]},
+  {id:'settings-sharing',bundle:'com.apple.systempreferences',url:pane('com.apple.Sharing-Settings.extension'),keys:[]},
+  {id:'settings-network',bundle:'com.apple.systempreferences',url:pane('com.apple.Network-Settings.extension'),keys:[]},
+  {id:'settings-users',bundle:'com.apple.systempreferences',url:pane('com.apple.Users-Groups-Settings.extension'),keys:[]},
+  {id:'settings-keyboard',bundle:'com.apple.systempreferences',url:pane('com.apple.Keyboard-Settings.extension'),keys:[]},
+  {id:'contacts-new-card',bundle:'com.apple.AddressBook',keys:['cmd+n']},
+  {id:'calendar-new-event',bundle:'com.apple.iCal',keys:['cmd+n']},
+  {id:'mail-first-window',bundle:'com.apple.mail',keys:[]},
+  {id:'finder-search',bundle:'com.apple.finder',keys:['cmd+n','cmd+f']},
+  {id:'textedit-find-replace',bundle:'com.apple.TextEdit',keys:['cmd+n','cmd+alt+f']},
+  {id:'reminders',bundle:'com.apple.reminders',keys:[]},
+  {id:'notes',bundle:'com.apple.Notes',keys:[]},
+  {id:'keychain-access',bundle:'com.apple.keychainaccess',keys:[]},
+  {id:'font-book',bundle:'com.apple.FontBook',keys:[]},
+  {id:'maps',bundle:'com.apple.Maps',keys:[]},
+];

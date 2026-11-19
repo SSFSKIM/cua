@@ -8,9 +8,12 @@
 # does not fit; task 59's Mozilla Firefox first on PATH, a Firefox step refused unless PATH resolves firefox to it; capped
 # at 55 minutes. After each step: its guard records and the all-clear. If hold-sittings exists after a step (the
 # launcher wrote it: the all-clear failed), every later :0 step is stopped.
+# The launcher exits with the first failing step's status once its steps are done (ruling 888.6, #171 M5 task 115:
+# it exited 0 after a failing step, so a chain gated on it ran on past a FAIL), and with its own codes when it stops.
+# CUA171_DIR names another root than ~/.local/share/cua-171 (the launcher's own test, task 115's sitting-test.sh).
 # usage: sitting.sh <suffix> <out root> <label dir suffix> <step:minutes>...
 set -u
-D=/Users/new/.local/share/cua-171
+D=${CUA171_DIR:-/Users/new/.local/share/cua-171}
 T=$D/task105
 suffix=$1; OUTROOT=$2; LABEL=$3; shift 3
 CMDS=$T/zero-commands$suffix.txt
@@ -19,6 +22,7 @@ mkdir -p "$OUTROOT"
 zl() { echo "$(date -u +%FT%TZ) $*" | tee -a "$OUTROOT/zero.log"; }
 export PATH=$D/task59/bin:$PATH
 zl "sitting start ($*), hard stop $(date -u -d @"${HARD_STOP:?}" +%FT%TZ), firefox $(command -v firefox)"
+failed=0
 for item in "$@"; do
   step=${item%%:*}; est=${item#*:}
   [ -e "$D/hold-sittings" ] && { zl "hold-sittings present: $step not started; sitting stopped"; exit 5; }
@@ -36,6 +40,7 @@ for item in "$@"; do
   eval "timeout -s TERM -k 120 55m $cmd" > "$T/zero-$step$suffix.out" 2>&1
   code=$?
   zl "end $step exit $code load=$(cut -d' ' -f1-3 /proc/loadavg)"
+  [ "$code" -ne 0 ] && [ "$failed" -eq 0 ] && failed=$code
   {
     echo "--- $step exit $code"
     echo "--- owner-baseline"; cat "$O/owner-baseline.txt" 2>/dev/null
@@ -45,4 +50,8 @@ for item in "$@"; do
   } >> "$T/zero-$step$suffix.out"
   [ -e "$D/hold-sittings" ] && { zl "hold-sittings written after $step: every later :0 step stopped"; exit 8; }
 done
+if [ "$failed" -ne 0 ]; then
+  zl "sitting done, a step failed: exit $failed"
+  exit "$failed"
+fi
 zl "sitting done"

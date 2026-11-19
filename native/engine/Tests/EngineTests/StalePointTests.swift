@@ -34,6 +34,8 @@ private final class Node {
   var childrenUnreadNow = false
   /// The visible subset the walk's width rule takes in place of its AXChildren (AXVisibleChildren, AXVisibleRows).
   var visibleChildren: [Node]?
+  /// Its frame fails to read now while it lives (#431's review of 849bcdad, finding 3).
+  var frameUnread = false
   weak var parent: Node?
   var children: [Node] = []
 
@@ -65,7 +67,7 @@ private final class Node {
 }
 
 private var reads: StalePointReads<Node> {
-  StalePointReads<Node>(role: { $0.roleUnread ? nil : $0.role }, frame: { $0.frame }, parent: { $0.parent },
+  StalePointReads<Node>(role: { $0.roleUnread ? nil : $0.role }, frame: { $0.frameUnread ? nil : $0.frame }, parent: { $0.parent },
                                           children: { $0.childrenUnreadNow ? nil : $0.children },
                                           // A failed read answers none, as the live seam's `attribute` does.
                                           title: { $0.unreadable.contains(.title) ? nil : $0.title },
@@ -79,7 +81,9 @@ private var reads: StalePointReads<Node> {
                                             case .description: return .text(node.description)
                                             case .value: return .text(node.value)
                                             }
-                                          }, same: { $0 === $1 })
+                                          }, same: { $0 === $1 },
+                                          // Destroyed, not merely a frame unread (#431's review of 849bcdad, finding 3).
+                                          gone: { $0.frame == nil })
 }
 
 /// The reads an observation with a screenshot emits for `root`'s tree, every node walked but `skipped` ones (as `TreeWalk`
@@ -87,15 +91,21 @@ private var reads: StalePointReads<Node> {
 private func walked(_ root: Node, skipping skipped: Set<ObjectIdentifier> = []) -> [ScreenshotNodeRead<Node>] {
   var reads: [ScreenshotNodeRead<Node>] = []
   var next = 0
+  /// Each element is emitted once, at its first place (an element two parents list, Chromium's cell under its row and
+  /// its column, is emitted under the first).
+  var seen: Set<ObjectIdentifier> = []
   func walk(_ node: Node, parent: Int?, depth: Int) {
+    guard seen.insert(ObjectIdentifier(node)).inserted else { return }
     let number = next
     next += 1
     let children = node.childrenUnread ? [] : node.children  // a failed AXChildren read decodes as none
     func read<T>(_ part: StalePointLabelPart, _ value: T?) -> T? { node.unreadable.contains(part) ? nil : value }  // a failed read decodes as none
-    reads.append(ScreenshotNodeRead(element: node, number: number, parent: parent, depth: depth, role: node.role,
+    // A failed AXRole read decodes as AXUnknown (ElementData).
+    reads.append(ScreenshotNodeRead(element: node, number: number, parent: parent, depth: depth, role: node.roleUnread ? "AXUnknown" : node.role,
                                     title: read(.title, node.title).map(bounded), description: read(.description, node.description).map(bounded),
                                     frame: node.frame, actions: node.actionsUnread ? [] : node.actions, childCount: children.count,
-                                    children: children, actionsRead: !node.actionsUnread, childrenRead: !node.childrenUnread, subrole: node.subrole,
+                                    children: children, actionsRead: !node.actionsUnread, roleRead: !node.roleUnread,
+                                    childrenRead: !node.childrenUnread, subrole: node.subrole,
                                     value: screenshotLabelValue(role: node.role, read(.value, node.value).map { $0 as CFString }),
                                     labelsUnread: screenshotLabelsUnread(role: node.role, Set(node.unreadable.map(\.attribute)))))
     // The width rule's visible subset, where the element offers one (#431's review: it may hold elements AXChildren
@@ -1755,18 +1765,24 @@ final class NewElementGuardTests: XCTestCase {
     XCTAssertFalse(ElementData(values: [:]).childrenRead)
   }
 
-  /// #431's review (findings 4 and 5): the walk's record carries each element's AXChildren and whether its action names
-  /// read. A list over the width threshold whose visible subset holds an element AXChildren does not, as many as it
-  /// lists, is not complete; an element whose actions failed leaves its descendants' control unknown.
+  /// #431's reviews: the walk's record carries each element's AXChildren, whether its action names read and whether its
+  /// role read. A list over the width threshold whose visible subset holds an element AXChildren does not, as many as it
+  /// lists, leaves its region uncovered (while #330's count keeps main's answer); an element whose actions or role failed
+  /// leaves its descendants' control unknown.
   func testTheWalkRecordsListedChildrenAndUnreadActions() {
     let tree = FakeTree()
     tree.children = [0: [1], 1: Array(2...102), 2: [200]]
     tree.visible = [1: Array(3...103)]  // 101 listed, 101 visible, element 2 never recorded
+    tree.frames = [0: CGRect(x: 0, y: 0, width: 400, height: 300), 1: CGRect(x: 0, y: 0, width: 400, height: 300),
+                   3: CGRect(x: 0, y: 0, width: 400, height: 10)]
     tree.actionsUnread = [2]
     let recording = walk(tree, Lineage(), recordsScreenshot: true)
     let complete = screenshotChildrenRecorded(recording.screenshotReads) { tree.id($0) }
     XCTAssertNil(complete[2], "listed, not walked")
-    XCTAssertEqual(complete[1], false, "its listed child 2 missing from the record")
+    XCTAssertEqual(complete[1], true, "#330's count: main's answer")
+    XCTAssertEqual(recording.screenshotReads.first { tree.id($0.element) == 1 }?.children?.count, 101)
+    XCTAssertEqual(screenshotNodes(recording.screenshotReads) { AnyHashable(tree.id($0)) }.first { tree.id($0.element) == 3 }?.regionCovered,
+                   false, "its listed child 2 missing from the record")
     tree.visible = [:]
     tree.children = [0: [1], 1: [2], 2: [3]]
     tree.frames = [0: CGRect(x: 0, y: 0, width: 400, height: 300), 1: CGRect(x: 0, y: 0, width: 400, height: 300),
@@ -1777,6 +1793,12 @@ final class NewElementGuardTests: XCTestCase {
     tree.actionsUnread = []
     XCTAssertEqual(screenshotNodes(walk(tree, Lineage(), recordsScreenshot: true).screenshotReads)
                      .first { tree.id($0.element) == 3 }?.controlUnknown, false)
+    tree.unreadableAttributes[2] = [kAXRoleAttribute]
+    let roleUnread = walk(tree, Lineage(), recordsScreenshot: true)
+    XCTAssertEqual(roleUnread.screenshotReads.first { tree.id($0.element) == 2 }?.roleRead, false)
+    let roleNodes = screenshotNodes(roleUnread.screenshotReads)
+    XCTAssertEqual(roleNodes.first { tree.id($0.element) == 2 }?.roleUnknown, true)
+    XCTAssertEqual(roleNodes.first { tree.id($0.element) == 3 }?.controlUnknown, true, "under a role unread")
   }
 
   /// The observed screenshot keeps the record's elements the guard looks the chain up in.
@@ -2615,7 +2637,7 @@ final class RecreatedIdentityTests: XCTestCase {
       let other = Node("AXLink", CGRect(x: 20, y: 180, width: 200, height: 30), title: "More")
       other.parent = visible.list
       visible.list.visibleChildren = [visible.a, other]  // AXChildren [A, B]; the visible subset [A, other], as many
-      XCTAssertEqual(recordedMembers(visible.window)(visible.list), false, "B listed, never recorded")
+      XCTAssertEqual(recorded(visible.window).first { $0.element === visible.aText }?.regionCovered, false, "B listed, never recorded")
       XCTAssertEqual(judged(visible, at: point) { $0.slide(webkit: true).link }.reason, .nodeGone, "\(name): outside the visible subset")
     }
   }
@@ -2819,5 +2841,237 @@ final class RecreatedIdentityTests: XCTestCase {
     XCTAssertNil(recorded(thread.window).first { $0.element === thread.a }?.control, "not past the web area")
     thread.list.actions = ["AXPress"]
     XCTAssertTrue(recorded(thread.window).first { $0.element === thread.a }?.control === thread.list, "a control by its AXPress")
+  }
+
+  // MARK: The review of main..849bcdad
+
+  /// A page of one list holding `children`, recorded; `change` runs after the observation and answers the hit.
+  private func page(_ children: [Node], at point: CGPoint, change: (Node) -> Node?) -> StalePointVerdict<Node> {
+    let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 600, height: 400))
+    let web = Node("AXWebArea", CGRect(x: 0, y: 50, width: 600, height: 350))
+    let list = Node("AXList", CGRect(x: 0, y: 80, width: 600, height: 300))
+    window.add(web)
+    web.add(list)
+    for child in children { list.add(child) }
+    let nodes = recorded(window), members = recordedMembers(window)
+    let hit = change(list)
+    return verdict(nodes, members: members, at: point, hit: hit)
+  }
+
+  /// Finding 1: two "Reply" links inside one clickable group share it as their control, yet each is its own action: the
+  /// other link is a twin. Only inert content of the node's own control is exempt.
+  func testASameLabelSiblingThatActsOnItsOwnIsATwinUnderASharedControl() {
+    let group = Node("AXGroup", CGRect(x: 0, y: 90, width: 600, height: 120))
+    group.actions = ["AXPress"]
+    let first = Node("AXLink", CGRect(x: 20, y: 100, width: 200, height: 30), title: "Reply")
+    let second = Node("AXLink", CGRect(x: 20, y: 140, width: 200, height: 30), title: "Reply")
+    group.add(first)
+    group.add(second)
+    XCTAssertEqual(page([group], at: atLink) { _ in
+      first.destroy()
+      second.destroy()
+      let again = Node("AXLink", CGRect(x: 20, y: 100, width: 200, height: 30), title: "Reply")
+      group.add(again)
+      return again
+    }.reason, .nodeGone)
+  }
+
+  /// Finding 2: the candidate's nearest control must be the recorded one, or none where the record had none: a clickable
+  /// row's text re-created inside a new button in that row, and a plain text re-created inside a new button, refuse.
+  func testTheCandidatesNearestControlMustBeTheRecordedOne() {
+    let row = Node("AXGroup", CGRect(x: 20, y: 100, width: 200, height: 30))
+    row.actions = ["AXPress"]
+    let text = Node("AXStaticText", CGRect(x: 30, y: 105, width: 60, height: 20), value: "Reply")
+    row.add(text)
+    XCTAssertEqual(page([row], at: atText) { _ in
+      text.destroy()
+      let button = Node("AXButton", CGRect(x: 25, y: 102, width: 100, height: 26))
+      let again = Node("AXStaticText", CGRect(x: 30, y: 105, width: 60, height: 20), value: "Reply")
+      button.add(again)
+      row.add(button)
+      return again
+    }.reason, .nodeGone, "a new button inside the surviving row")
+    let plain = Node("AXStaticText", CGRect(x: 30, y: 105, width: 60, height: 20), value: "Reply")
+    XCTAssertEqual(page([plain], at: atText) { list in
+      plain.destroy()
+      let button = Node("AXButton", CGRect(x: 25, y: 102, width: 100, height: 26))
+      let again = Node("AXStaticText", CGRect(x: 30, y: 105, width: 60, height: 20), value: "Reply")
+      button.add(again)
+      list.add(button)
+      return again
+    }.reason, .nodeGone, "a plain text now inside a button")
+    // An ancestor between the text and its control whose action names cannot be read refuses.
+    let link = Node("AXLink", CGRect(x: 20, y: 100, width: 200, height: 30), title: "Reply")
+    let inner = Node("AXStaticText", CGRect(x: 30, y: 105, width: 60, height: 20), value: "Reply")
+    link.add(inner)
+    XCTAssertEqual(page([link], at: atText) { _ in
+      inner.destroy()
+      let wrapper = Node("AXGroup", CGRect(x: 30, y: 105, width: 60, height: 20))
+      wrapper.actionsUnread = true
+      let again = Node("AXStaticText", CGRect(x: 30, y: 105, width: 60, height: 20), value: "Reply")
+      wrapper.add(again)
+      link.add(wrapper)
+      return again
+    }.reason, .nodeGone, "a wrapper's actions unread")
+  }
+
+  /// Finding 3: a node whose own handle still lives (its frame read failing) is not gone, so no re-created handle stands
+  /// in for it: a top-level link, alive, and a new same-label link at its place.
+  func testANodeWhoseHandleLivesIsNeverReCreated() {
+    let thread = Thread(twin: "Archive")
+    XCTAssertEqual(judged(thread, at: atLink) { thread in
+      thread.a.frameUnread = true
+      move(thread.a, by: CGVector(dx: 0, dy: 200))
+      return thread.insertAtA(role: "AXLink", label: "Reply").link
+    }.reason, .nodeGone)
+  }
+
+  /// Finding 4: #330's lookup keeps main's input, the count of the children recorded under each element, so its verdicts
+  /// are main's: a wide list whose visible subset was recorded, and a text the page added over the point under it, is
+  /// `newElementOverPoint`.
+  func testTheNewElementRuleKeepsItsInput() {
+    let thread = Thread(twin: "Archive")
+    let other = Node("AXLink", CGRect(x: 20, y: 180, width: 200, height: 30), title: "More")
+    other.parent = thread.list
+    thread.list.visibleChildren = [thread.a, other]
+    XCTAssertEqual(judged(thread, at: atLink) { thread in
+      let over = Node("AXStaticText", CGRect(x: 20, y: 100, width: 200, height: 30), value: "Suggestion")
+      thread.list.add(over)
+      return over
+    }.reason, .newElementOverPoint)
+  }
+
+  /// Finding 5: past a label read that failed at the observation, on either side, a lower-priority label does not rule a
+  /// twin out: A and B both titled "Reply", their titles unread then, their descriptions differing.
+  func testAnUnreadLabelNeverRulesATwinOut() {
+    let thread = Thread()
+    thread.a.description = "first"
+    thread.b.description = "second"
+    thread.a.unreadable = [.title]
+    thread.b.unreadable = [.title]
+    XCTAssertEqual(judged(thread, at: atLink) { thread in
+      thread.a.unreadable = []
+      let again = thread.rerenderA().link
+      again.description = "first"
+      return again
+    }.reason, .nodeGone)
+  }
+
+  /// Finding 6: an element whose role failed to read at the observation (recorded as AXUnknown) may be of the node's
+  /// role, so it counts as a twin; and as a control of unknown kind, so a node under it is not re-created.
+  func testAnUnreadRoleCountsAsATwinAndAnUnknownControl() {
+    let twin = Thread()
+    twin.b.roleUnread = true
+    let nodes = recorded(twin.window), members = recordedMembers(twin.window)
+    twin.b.roleUnread = false
+    XCTAssertEqual(verdict(nodes, members: members, at: atLink, hit: twin.rerenderA().link).reason, .nodeGone, "a twin")
+    let control = Thread(twin: "Archive")
+    control.a.roleUnread = true
+    let controlNodes = recorded(control.window), controlMembers = recordedMembers(control.window)
+    control.a.roleUnread = false
+    control.aText.destroy()
+    let again = Node("AXStaticText", CGRect(x: 30, y: 105, width: 60, height: 20), value: "Reply")
+    control.a.add(again)
+    XCTAssertEqual(verdict(controlNodes, members: controlMembers, at: atText, hit: again).reason, .nodeGone, "an unknown control")
+  }
+
+  /// Finding 7: the candidate's nearest web area must be the node's: a same-label link in an iframe's document laid at
+  /// A's place is another document's.
+  func testACandidateInAnotherDocumentRefuses() {
+    XCTAssertEqual(judged(Thread(twin: "Archive"), at: atLink) { thread in
+      thread.aText.destroy()
+      thread.a.destroy()
+      let frame = Node("AXWebArea", CGRect(x: 0, y: 90, width: 600, height: 100))
+      let link = Node("AXLink", CGRect(x: 20, y: 100, width: 200, height: 30), title: "Reply")
+      frame.add(link)
+      thread.list.children.insert(frame, at: 0)
+      frame.parent = thread.list
+      return link
+    }.reason, .nodeGone)
+  }
+
+  /// Finding 8: a candidate the record holds as another node is that node, never the gone one re-created: B, recorded as
+  /// "Archive", slides into A's place on its own handle and its title fails to read now.
+  func testACandidateTheRecordHoldsAsAnotherNodeRefuses() {
+    XCTAssertEqual(judged(Thread(twin: "Archive"), at: atLink) { thread in
+      thread.slide()
+      thread.b.unreadable = [.title]
+      return thread.b
+    }.reason, .nodeGone)
+  }
+
+  /// Finding 9: an element two parents list (Chromium's cell, under its row and its column) is recorded once; the column
+  /// that lists it is whole by membership, so a genuine re-creation on that page stays kept.
+  func testCoverageIsByMembershipWhereTheHandlesAreKnown() {
+    let thread = Thread(twin: "Archive")
+    let row = Node("AXRow", CGRect(x: 0, y: 300, width: 600, height: 30))
+    let cell = Node("AXCell", CGRect(x: 0, y: 300, width: 100, height: 30))
+    row.add(cell)
+    let column = Node("AXColumn", CGRect(x: 0, y: 300, width: 100, height: 30))
+    column.children = [cell]
+    thread.page.add(row)
+    thread.page.add(column)
+    XCTAssertEqual(recorded(thread.window).first { $0.element === thread.aText }?.regionCovered, true)
+    XCTAssertEqual(judged(thread, at: atLink) { $0.rerenderA().link }.identity, .recreated)
+  }
+
+  /// Finding 2's other edges: once the node's control is gone, its text re-created with no control at all, or inside
+  /// another link the record holds (B, moved up), is not the node; a parent whose role cannot be read now refuses.
+  func testAGoneControlsTextIsReCreatedOnlyUnderANewControlOfItsRole() {
+    XCTAssertEqual(judged(Thread(twin: "Archive"), at: atText) { thread in
+      thread.aText.destroy()
+      thread.a.destroy()
+      let text = Node("AXStaticText", CGRect(x: 30, y: 105, width: 60, height: 20), value: "Reply")
+      thread.list.children.insert(text, at: 0)
+      text.parent = thread.list
+      return text
+    }.reason, .nodeGone, "no control now")
+    XCTAssertEqual(judged(Thread(twin: "Archive"), at: atText) { thread in
+      thread.slide()
+      thread.bText.destroy()
+      let text = Node("AXStaticText", CGRect(x: 30, y: 105, width: 60, height: 20), value: "Reply")
+      thread.b.add(text)
+      return text
+    }.reason, .nodeGone, "inside a link the record holds")
+    XCTAssertEqual(judged(Thread(twin: "Archive"), at: atText) { thread in
+      let again = thread.rerenderA()
+      again.link.roleUnread = true
+      return again.text
+    }.reason, .nodeGone, "its new link's role unread")
+  }
+
+  /// A node whose own control is of its role and carries a label (a plain group in a clickable row titled "Reply") is not
+  /// its own twin's: the control is exempt, so the group re-created in the row is kept.
+  func testTheNodesOwnControlIsNoTwin() {
+    let row = Node("AXGroup", CGRect(x: 20, y: 100, width: 200, height: 30), title: "Reply")
+    row.actions = ["AXPress"]
+    let inner = Node("AXGroup", CGRect(x: 30, y: 105, width: 60, height: 20))
+    row.add(inner)
+    XCTAssertEqual(page([row], at: atText) { _ in
+      inner.destroy()
+      let again = Node("AXGroup", CGRect(x: 30, y: 105, width: 60, height: 20))
+      row.add(again)
+      return again
+    }.identity, .recreated)
+  }
+
+  /// Finding 4 of the earlier review, at its edge: a wrapper whose action names failed at the observation, though inert,
+  /// leaves the node's control unknown, so its text re-created there refuses even where nothing says otherwise now.
+  func testAnInertWrapperUnreadThenStillRefuses() {
+    let thread = Thread(twin: "Archive")
+    let wrapper = Node("AXGroup", CGRect(x: 30, y: 105, width: 60, height: 20))
+    thread.list.children.removeAll { $0 === thread.a }
+    thread.list.children.insert(wrapper, at: 0)
+    wrapper.parent = thread.list
+    thread.a.children.removeAll { $0 === thread.aText }
+    wrapper.add(thread.aText)
+    wrapper.actionsUnread = true
+    let nodes = recorded(thread.window), members = recordedMembers(thread.window)
+    wrapper.actionsUnread = false
+    thread.aText.destroy()
+    let again = Node("AXStaticText", CGRect(x: 30, y: 105, width: 60, height: 20), value: "Reply")
+    wrapper.add(again)
+    XCTAssertEqual(nodes.first { $0.element === again || $0.element === thread.aText }?.controlUnknown, true)
+    XCTAssertEqual(verdict(nodes, members: members, at: atText, hit: again).reason, .nodeGone)
   }
 }

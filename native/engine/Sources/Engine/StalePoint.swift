@@ -88,6 +88,12 @@ struct ScreenshotNode<Element> {
   /// the same role, never a link's text under a button.
   var controlRole: String?
   var controlUnknown = false
+  /// Whether its role failed to read at the observation (recorded as AXUnknown; #431's review of 849bcdad, finding 6):
+  /// it may be of any role, so it counts as a twin of any node (`recreatedRefused`).
+  var roleUnknown = false
+  /// Whether it acts on its own (an interactive role or AXPress); nil when its role or action names failed to read
+  /// (#431's review of 849bcdad, finding 1): only inert content of a node's own control is exempt from its twins.
+  var actionable: Bool? = false
   /// Whether the walk recorded its region whole (#431, the design session's ruling 889): every element of the recorded
   /// subtree of its nearest web area (else of the record's root), its AXChildren read and each child it listed in the
   /// record by handle (`screenshotNodes`' `key`). Judged on the node's own ancestors at the observation, so a container
@@ -124,6 +130,8 @@ struct ScreenshotNodeRead<Element> {
   /// Whether its action names were read (the review's finding 4): a failed read leaves `actions` empty, and the element
   /// not known to be inert.
   var actionsRead = true
+  /// Whether its AXRole read (#431's review of 849bcdad, finding 6): a failed read decodes as AXUnknown.
+  var roleRead = true
   /// Whether the walk read its AXChildren (`ElementData.childrenRead`): a failed read counts no children, so with it
   /// unread the record cannot say whether it holds them all (#330's rule dL).
   var childrenRead = true
@@ -191,13 +199,20 @@ func screenshotNodes<Element>(_ reads: [ScreenshotNodeRead<Element>], key: ((Ele
   // Children come after their parents, so a backward pass sees a node's whole subtree before the node.
   var incomplete: Set<Int> = []
   /// The reads whose recorded subtree is not whole (#431's `regionCovered`): one of them, or one below, read no
-  /// AXChildren, or lacks in the record a child it listed.
+  /// AXChildren, or lacks in the record a child it listed. Judged by handle where the listed children are known (the
+  /// review of main..849bcdad, finding 9: Chromium lists a cell under its row and its column, and the walk records it
+  /// once), else by their count.
   var broken: Set<Int> = []
   var gapsBelow: [Int: [Element]] = [:]
   func thin(_ frame: CGRect) -> Bool { frame.width <= 1 || frame.height <= 1 }
   for read in reads.reversed() {
-    let listedRecorded = members.map { members in read.children?.allSatisfy { members.contains(key!($0)) } ?? true } ?? true
-    if !read.childrenRead || (recordedChildren[read.number] ?? 0) < read.childCount || !listedRecorded { broken.insert(read.number) }
+    let listedRecorded: Bool
+    if let members, let key, let children = read.children {
+      listedRecorded = children.allSatisfy { members.contains(key($0)) }
+    } else {
+      listedRecorded = (recordedChildren[read.number] ?? 0) >= read.childCount
+    }
+    if !read.childrenRead || !listedRecorded { broken.insert(read.number) }
     if broken.contains(read.number), let parent = read.parent { broken.insert(parent) }
     if (recordedChildren[read.number] ?? 0) < read.childCount { incomplete.insert(read.number) }
     if read.frame == nil, incomplete.contains(read.number), let parent = read.parent { incomplete.insert(parent) }
@@ -226,7 +241,9 @@ func screenshotNodes<Element>(_ reads: [ScreenshotNodeRead<Element>], key: ((Ele
       regions[read.number] = region
     }
     let control = read.parent.flatMap { controls[$0] }
-    if !stalePointControlStops.contains(read.role) {
+    if !read.roleRead {
+      controls[read.number] = .unknown  // its role unread (finding 6): a control of unknown kind, never inert
+    } else if !stalePointControlStops.contains(read.role) {
       if stalePointInteractiveRoles.contains(read.role) || read.actions.contains("AXPress") {
         controls[read.number] = .control(read.element, role: read.role)
       } else if !read.actionsRead {
@@ -269,7 +286,10 @@ func screenshotNodes<Element>(_ reads: [ScreenshotNodeRead<Element>], key: ((Ele
                                 subtreeRecorded: !incomplete.contains(read.number),
                                 thinGap: thin(frame) && incomplete.contains(read.number), gapsBelow: gapsBelow[read.number] ?? [],
                                 ancestor: ancestor, webArea: webArea, control: control?.element,
-                                controlRole: control?.role, controlUnknown: control?.unknown ?? false,
+                                controlRole: control?.role, controlUnknown: control?.unknown ?? false, roleUnknown: !read.roleRead,
+                                actionable: !read.roleRead ? nil
+                                  : stalePointInteractiveRoles.contains(read.role) || read.actions.contains("AXPress") ? true
+                                  : read.actionsRead ? false : nil,
                                 regionCovered: !broken.contains(regionRoot)))
   }
   return nodes
@@ -279,18 +299,14 @@ func screenshotNodes<Element>(_ reads: [ScreenshotNodeRead<Element>], key: ((Ele
 /// recorded every one of its direct children (its AXChildren read, and none left out by a width cut, the depth cap, the
 /// budget or deadline, or a failed read of a child). A child such an element lists now that the record lacks is new since
 /// the screenshot. An element whose AXChildren read failed decodes as having none, so it never counts as complete (the
-/// review of 364e017d..51ce4138). Where the read carries the children its AXChildren listed, each must be in the record
-/// (the review of main..3ece1a1a, finding 5): the width rule may record a visible subset as large that holds others.
+/// review of 364e017d..51ce4138). #431 leaves this input as it was (the review of main..849bcdad, finding 4); its own
+/// coverage is `ScreenshotNode.regionCovered`.
 func screenshotChildrenRecorded<Element, Key: Hashable>(_ reads: [ScreenshotNodeRead<Element>], key: (Element) -> Key) -> [Key: Bool] {
   var recordedChildren: [Int: Int] = [:]
   for read in reads { if let parent = read.parent { recordedChildren[parent, default: 0] += 1 } }
-  let members = Set(reads.map { key($0.element) })
   var complete: [Key: Bool] = [:]
   complete.reserveCapacity(reads.count)
-  for read in reads {
-    complete[key(read.element)] = read.childrenRead && (recordedChildren[read.number] ?? 0) >= read.childCount
-      && (read.children?.allSatisfy { members.contains(key($0)) } ?? true)
-  }
+  for read in reads { complete[key(read.element)] = read.childrenRead && (recordedChildren[read.number] ?? 0) >= read.childCount }
   return complete
 }
 
@@ -786,41 +802,86 @@ let stalePointControlStops: Set<String> = ["AXWebArea", "AXWindow", "AXSheet", "
 /// tree says of it now; what refuses is read from the record, and the label is used only to refuse. It refuses when:
 /// 1. the walk did not record the node's region whole (`ScreenshotNode.regionCovered`): an element like it past the node
 ///    cap, below the depth cap or outside the width rule's visible subset could be what came;
-/// 2. the record holds another element the match could have taken for the node: of its role, in its region (the same web
-///    area, else outside every web area), with a label that agrees by the match's own rule (`stalePointLabelsAgree`, so
-///    a label unread at the observation agrees), other than an element under the node's own control or that control;
-/// 3. its control is unknown (an action-name read failed at the observation, `ScreenshotNode.controlUnknown`);
-/// 4. its control still lives (`StalePointReads.isGone` answers no) and the candidate does not lie inside it: the node
-///    re-created belongs to the control the screenshot showed it in;
-/// 5. its control is gone and the candidate's nearest control (an ancestor of `stalePointInteractiveRoles` or with
-///    AXPress, below `stalePointControlStops`) has another role than the recorded one: a link's text now under a button,
-///    or the reverse, is another control (`twinbtn`). A parent, role or action-name read that fails on the way refuses.
-/// Reads only the candidate's parents, their roles and action names, and its control's role, for 4 and 5.
+/// 2. the record cannot say what the node's control was (`ScreenshotNode.controlUnknown`);
+/// 3. the node's own handle still lives (`StalePointReads.isGone` answers no: its frame read only failed), or the record
+///    holds the candidate as another node (the review of main..849bcdad, findings 3 and 8);
+/// 4. the record holds a twin (`recreatedTwin`): another element the match could have taken for the node;
+/// 5. the candidate's nearest web area is not the node's (finding 7: an iframe's document laid over the node's place);
+/// 6. the candidate's nearest control (an ancestor of `stalePointInteractiveRoles` or with AXPress, below
+///    `stalePointControlStops`) is not the node's: where the record had none, it has one (finding 2); while the node's
+///    control lives, it is another element; once that control is gone, it is none, an element the record holds, or one
+///    of another role than the recorded control's (a link's text under a button, `twinbtn`).
+/// A parent, role or action-name read that fails on the way up refuses.
 func recreatedRefused<Element>(_ candidate: Element, of node: ScreenshotNode<Element>, nodes: [ScreenshotNode<Element>],
                                _ reads: StalePointReads<Element>) -> Bool {
-  guard node.regionCovered, !node.controlUnknown else { return true }
-  func ownControl(_ element: Element?) -> Bool {
-    guard let element, let control = node.control else { return false }
-    return reads.same(element, control)
+  guard node.regionCovered, !node.controlUnknown, reads.isGone(node.element) else { return true }
+  func recordedNode(_ element: Element) -> Bool { nodes.contains { reads.same($0.element, element) } }
+  if recordedNode(candidate) || nodes.contains(where: { recreatedTwin($0, of: node, reads) }) { return true }
+  func controlDiffers(_ control: (element: Element, role: String)?) -> Bool {
+    guard let recorded = node.control else { return control != nil }
+    guard let control else { return true }
+    if !reads.isGone(recorded) { return !reads.same(recorded, control.element) }
+    return recordedNode(control.element) || control.role != node.controlRole
   }
-  let twin = nodes.contains { other in
-    other.role == node.role && !reads.same(other.element, node.element)
-      && (other.webArea.map { area in node.webArea.map { reads.same(area, $0) } ?? false } ?? (node.webArea == nil))
-      && !ownControl(other.element) && !ownControl(other.control)
-      && stalePointLabelsAgree(recordedTitle: node.title, recordedDescription: node.description, recordedValue: node.value,
-                               title: other.title, description: other.description, value: other.value)
-  }
-  if twin { return true }
-  guard let control = node.control else { return false }
-  if !reads.isGone(control) { return !isInside(candidate, control, reads) }
+  var control: (element: Element, role: String)?
+  var controlFound = false
   var below = candidate
   for _ in 0..<stalePointAncestorLevels {
     guard let next = reads.parent(below), let role = reads.role(next) else { return true }
-    if stalePointControlStops.contains(role) { return false }
-    if stalePointInteractiveRoles.contains(role) { return role != node.controlRole }
-    guard let actions = reads.actions(next) else { return true }
-    if actions.contains("AXPress") { return role != node.controlRole }
+    if !controlFound {
+      if stalePointControlStops.contains(role) {
+        controlFound = true
+      } else if stalePointInteractiveRoles.contains(role) {
+        (control, controlFound) = ((next, role), true)
+      } else {
+        guard let actions = reads.actions(next) else { return true }
+        if actions.contains("AXPress") { (control, controlFound) = ((next, role), true) }
+      }
+    }
+    // A web area node (a document re-created) is judged by #316's and #330's rules, not here.
+    if role == "AXWebArea" {
+      guard node.role == "AXWebArea" || node.webArea.map({ reads.same($0, next) }) == true else { return true }
+      return controlDiffers(control)
+    }
+    if stalePointWalkStops.contains(role) {
+      guard node.webArea == nil || node.role == "AXWebArea" else { return true }
+      return controlDiffers(control)
+    }
     below = next
+  }
+  return true
+}
+
+/// #431's twin (ruling 889 (i)): whether `other`, a recorded node, is another element #296's match could have taken for
+/// `node`: of its role (or of a role unread then, which may be it; the review of main..849bcdad, finding 6), in its region
+/// (the same web area, else outside every web area), with a label that agrees (`recreatedLabelsAgree`), and not the
+/// node's own control or that control's inert content (an element acting on its own, a link or anything with AXPress or
+/// whose role or actions did not read, under the same control is another action: finding 1).
+func recreatedTwin<Element>(_ other: ScreenshotNode<Element>, of node: ScreenshotNode<Element>, _ reads: StalePointReads<Element>) -> Bool {
+  guard !reads.same(other.element, node.element), other.roleUnknown || other.role == node.role else { return false }
+  guard other.webArea.map({ area in node.webArea.map { reads.same(area, $0) } ?? false }) ?? (node.webArea == nil) else { return false }
+  if let control = node.control {
+    if reads.same(other.element, control) { return false }
+    if other.actionable == false, let owner = other.control, reads.same(owner, control) { return false }
+  }
+  return recreatedLabelsAgree(node, other)
+}
+
+/// The match's label rule (`stalePointLabelsAgree`) between two recorded nodes, which never falls past a label read that
+/// failed on either side (the review of main..849bcdad, finding 5): the title, then the description, then an
+/// AXStaticText's value by its words; at the first that either side failed to read they agree, at the first both carry
+/// they agree when it is the same, at the first only one carries they agree; carrying none, they agree.
+func recreatedLabelsAgree<Element>(_ a: ScreenshotNode<Element>, _ b: ScreenshotNode<Element>) -> Bool {
+  for part in StalePointLabelPart.allCases {
+    if a.labelsUnread.contains(part) || b.labelsUnread.contains(part) { return true }
+    func text(_ node: ScreenshotNode<Element>) -> String? {
+      nonEmpty(part == .title ? node.title : part == .description ? node.description : node.value)
+    }
+    switch (text(a), text(b)) {
+    case let (x?, y?): return part == .value ? stalePointLabelWords(x) == stalePointLabelWords(y) : x == y
+    case (nil, nil): continue
+    default: return true
+    }
   }
   return true
 }

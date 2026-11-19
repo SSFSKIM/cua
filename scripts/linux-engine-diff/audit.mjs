@@ -20,10 +20,11 @@ const QUERY = /^(\d+):<:([0-9a-f]+):.*Request\(98\): QueryExtension name='([^']+
 const QUERY_REPLY = /^(\d+):>:([0-9a-f]+):.*Reply to QueryExtension: present=true\S* major-opcode=(\d+)/;
 /**
  * The server's lines the foreign-window judge reads (foreign.mjs): the replies that say where a window lies, where the
- * focus and the pointer are, the errors that refuse a request, the events that end a window, move it to another parent
- * or ask for a selection, and each connection's resource-id base.
+ * focus and the pointer are, the errors that refuse a request (their text keeps the error's code, `3=Window: major=…`),
+ * the events that end a window, move it to another parent or ask for a selection, and each connection's resource-id
+ * base.
  */
-const SERVER = /^(\d+):>:(?:([0-9a-f]+):(?:\d+: Reply to (QueryTree|TranslateCoordinates|GetInputFocus|QueryPointer): |(Error) \d+=\w+: | Event (?:\(generated\) )?(SelectionRequest|DestroyNotify|ReparentNotify)\(\d+\) )| (Success), )(.*)$/;
+const SERVER = /^(\d+):>:(?:([0-9a-f]+):(?:\d+: Reply to (QueryTree|TranslateCoordinates|GetInputFocus|QueryPointer): |(Error) (?=\d+=\w+: )| Event (?:\(generated\) )?(SelectionRequest|DestroyNotify|ReparentNotify)\(\d+\) )| (Success), )(.*)$/;
 
 /** A parse's state, and one trace line read into it (`parseXtrace`, `parseXtraceFile`). */
 const parseState = () => ({ requests: [], elements: [], extensions: {}, asked: new Map(), offset: 0 });

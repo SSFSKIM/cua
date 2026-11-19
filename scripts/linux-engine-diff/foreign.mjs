@@ -50,6 +50,19 @@
 // harness's only through a watched harness window: on it, inside it, on its frame or in its client's range; a request
 // naming its window is judged as everywhere. A ReparentNotify another client sent (SendEvent) proves nothing and is not
 // read.
+//
+// A request naming a window whose life the harness registered, and which has ended, is judged by the life of the id it
+// reaches (task 106; the design session's rulings 857 and 858; arm64's V1 at H'''': the vendor builds' teardown, a
+// SendEvent FocusOut and a Composite UnredirectWindow, sent to the run's own gedit window after the vendor had ended
+// that gedit, read as foreign). The record sees every client's creations: an id whose latest life the stream saw is a
+// registered one that ended has no window now, so such a request is the harness's (`endedOwn`); a request in any later
+// life is judged by that life. xtrace sees only our connections, never another client's creation under a freed id, so
+// there such a request is the harness's only where the server refused it as BadWindow naming that id (no window
+// held it, so nothing changed); one it accepted reached a life the trace never saw begin, and is foreign. The gap this
+// leaves in xtrace: another client opening and closing a window under the id between the end and a refused request
+// reads as the harness's, a request that changed nothing. Input placed by where it lands (XTEST, a warp) and
+// KillClient, whose resource need not be a window, are never excused so. The rule only adds to what is the
+// harness's (ruling 858); which life a finding binds in the record is unchanged (#425).
 
 import { createReadStream } from 'node:fs';
 import { createInterface } from 'node:readline';
@@ -75,6 +88,10 @@ const FOUND_SLACK_MS = 1000;
  * record's by the server's clock, set against the wall clock once), so this covers only the clocks' drift.
  */
 const SPAN_SLACK_MS = 250;
+/** The X protocol's BadWindow: the request named a window id that no window holds. */
+const BAD_WINDOW = 3;
+/** The requests whose windows the epoch rule reads: each names its window, and a missing one is BadWindow. */
+const NAMING_OPS = new Set([...WINDOW_OPS, ...PROPERTY_OPS, 'ChangeWindowAttributes', 'ReparentWindow', 'SendEvent', 'SetInputFocus', 'CreateWindow']);
 
 /**
  * The judge. `elements`: the stream (`xtraceElements`, `recordElements`). `registered`: the harness's windows, a Set,
@@ -198,6 +215,16 @@ export function judgeForeign(elements, { registered, root, strictBirth = false, 
     return false;
   };
   const harness = (w, watched = false) => within(w, watched) || holds(w, watched);
+  // a request to an id whose latest life the stream saw is one the harness registered, now ended: the record saw every
+  // creation since, so no window holds the id; xtrace did not, so only the server's BadWindow for that id shows it
+  const endedOwn = (el, w) => {
+    if (!NAMING_OPS.has(el.op) || typeof w !== 'number' || w === root) return false;
+    const life = lives.get(w);
+    if (!life || life.alive || !isRegistered(w, life)) return false;
+    if (strictBirth) return true;
+    const error = refused.get(el);
+    return error?.code === BAD_WINDOW && error.bad === w;
+  };
   // a route audit's XTEST input on a window of a live harness window's client (GTK 4's focus window inside its toplevel,
   // task 50): that client's range is its own while the window lives, and the trace sees the window end only where one
   // of our connections selected its structure (xprobe ancestry, the engine's retention), so only such a window, alive
@@ -280,7 +307,7 @@ export function judgeForeign(elements, { registered, root, strictBirth = false, 
         requests++;
         mutating++;
         const parentOk = el.parent === root || harness(el.parent);
-        if (!parentOk && !own(el.c, el.parent)) flag(el, 'CreateWindow under', el.parent);
+        if (!parentOk && !own(el.c, el.parent) && !endedOwn(el, el.parent)) flag(el, 'CreateWindow under', el.parent);
         if (!rejected) born(el, { owned: parentOk });
       } else if (!rejected) {
         const life = born(el, { inside: el.parent !== root && within(el.parent), or: el.or === true });
@@ -312,7 +339,7 @@ export function judgeForeign(elements, { registered, root, strictBirth = false, 
     const change = changeOf(el, root);
     if (!change) continue;
     mutating++;
-    if (change.selection && !harness(change.windows[0]) && !own(el.c, change.windows[0])) {
+    if (change.selection && !harness(change.windows[0]) && !own(el.c, change.windows[0]) && !endedOwn(el, change.windows[0])) {
       // a selection owner's answer to a foreign requestor's own request: exempt while that request is served
       if (!serveSelection(open, el, change.selection)) flag(el, change.what, change.windows[0]);
       continue;
@@ -325,7 +352,7 @@ export function judgeForeign(elements, { registered, root, strictBirth = false, 
     // window (its frame, a window inside it, its client's range); a request naming its window is judged as ever
     const placed = routeAudit && el.op === 'FakeInput';
     for (const w of new Set(change.windows)) {
-      if (typeof w === 'number' && w !== root && (harness(w, placed) || own(el.c, w) || (placed && inLiveRange(w)))) continue;
+      if (typeof w === 'number' && w !== root && (harness(w, placed) || own(el.c, w) || (placed && inLiveRange(w)) || endedOwn(el, w))) continue;
       flag(el, change.what, w);
     }
     if (rejected) continue;
@@ -343,8 +370,8 @@ export function judgeForeign(elements, { registered, root, strictBirth = false, 
 const MINOR_OF = { FakeInput: 2, RedirectWindow: 1, RedirectSubwindows: 2, UnredirectWindow: 3, UnredirectSubwindows: 4 };
 
 /**
- * The request elements the server refused, as a Set: an error names its request's opcodes and the low 16 bits of its
- * sequence number. xtrace shows every request of its connections, and a reply may come after later requests, so there
+ * The request elements the server refused, as a Map to the error that refused each: an error names its request's
+ * opcodes and the low 16 bits of its sequence number. xtrace shows every request of its connections, and a reply may come after later requests, so there
  * the error is its connection's latest request with those 16 bits (`exact`). The record reads its errors on a context
  * of their own (xprobe `contexts`), so an error may be read before or after later requests of its client; but it
  * records every request of the opcodes it reads, so the refused one is the client's latest recorded request with the
@@ -353,7 +380,7 @@ const MINOR_OF = { FakeInput: 2, RedirectWindow: 1, RedirectSubwindows: 2, Unred
  * if its opcode and 16 bits match.
  */
 function refusedRequests(elements) {
-  const refused = new Set();
+  const refused = new Map();
   const bySeq = new Map();
   const last = new Map();
   const timed = new Map();
@@ -370,10 +397,10 @@ function refusedRequests(elements) {
       last.set(el.c, el);
     } else if (el.k === 'error' && typeof el.t === 'number') {
       const candidates = (timed.get(timedKey(el.c, el.seq, el.major, el.minor)) ?? []).filter((r) => r.t <= el.t);
-      if (candidates.length) refused.add(candidates.at(-1));
+      if (candidates.length) refused.set(candidates.at(-1), el);
     } else if (el.k === 'error') {
       const request = el.exact ? bySeq.get(`${el.c}|${el.seq & 0xffff}`) : last.get(el.c);
-      if (request && (request.seq & 0xffff) === (el.seq & 0xffff) && (request.major === undefined || request.major === el.major)) refused.add(request);
+      if (request && (request.seq & 0xffff) === (el.seq & 0xffff) && (request.major === undefined || request.major === el.major)) refused.set(request, el);
     }
   }
   return refused;
@@ -607,8 +634,11 @@ export function xtraceElements({ elements, extensions }, root) {
       const base = text.match(/resource-id=0x([0-9a-f]+) resource-mask=0x([0-9a-f]+)/);
       if (base) out.push({ k: 'base', c: conn, base: Number.parseInt(base[1], 16), mask: Number.parseInt(base[2], 16) });
     } else if (what === 'Error') {
+      // `3=Window: major=25, minor=0, bad=0x01800064, seq=0010`: the error's code and the value it names are read too
       const s = text.match(/\bmajor=(\d+),.*\bseq=([0-9a-f]+)/);
-      if (s) out.push({ k: 'error', c: conn, seq: Number.parseInt(s[2], 16), major: Number(s[1]), exact: true });
+      const code = text.match(/^(\d+)=/);
+      const bad = text.match(/\bbad=(?:0x([0-9a-f]+)|(\d+))/);
+      if (s) out.push({ k: 'error', c: conn, seq: Number.parseInt(s[2], 16), major: Number(s[1]), exact: true, ...(code ? { code: Number(code[1]) } : {}), ...(bad ? { bad: bad[1] !== undefined ? Number.parseInt(bad[1], 16) : Number(bad[2]) } : {}) });
     } else if (what === 'DestroyNotify') {
       // a generated one is read too, deliberately unlike ReparentNotify: an end only makes windows foreign (fails closed)
       const w = field(text, 'window');

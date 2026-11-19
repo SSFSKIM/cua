@@ -306,14 +306,25 @@ export function xtestHold(before, after) {
 /**
  * A release case's key facts as its row keeps them (task 106, fix wave 5): the server's keymap is the whole display's
  * and the recorder window can receive real input, so on a person's display a key they hold or type would reach the
- * row. The engine's own synthetic events (the case's Shift) are kept whole; a real event keeps only its type; the
- * keymap reads become what the judge reads of them, counts: the keys the hold put down (`keys_held_new`, as
- * `xtestHold` counts them) and the keys still down after the release (`keys_still_down`, null when unread). Codes stay
- * in memory. `judgeMinimized` judges this form exactly as the codes (minimized-keys.test.mjs).
+ * row. A synthetic event (X11's SendEvent bit, which shows neither who sent it nor which key) keeps its key or
+ * button code only as the row's own token, `k1`, `k2`… in order of first sight across the hold and the release, so
+ * a release still matches its press (fix wave 6); a real event keeps only its type; the keymap reads become what the
+ * judge reads of them, counts: the keys the hold put down (`keys_held_new`, as `xtestHold` counts them) and the keys
+ * still down after the release (`keys_still_down`, null when unread). Codes stay in memory. `judgeMinimized` judges
+ * this form exactly as the codes (minimized-keys.test.mjs): it compares codes only for equality, which the tokens keep.
  */
 export function durableKeys(facts) {
   const out = { ...facts };
-  for (const f of ['hold_events', 'release_events']) if (Array.isArray(facts[f])) out[f] = facts[f].map((e) => (e?.send === true ? e : { type: e?.type ?? null, send: false }));
+  const tokens = new Map();
+  const token = (code) => {
+    if (!tokens.has(code)) tokens.set(code, `k${tokens.size + 1}`);
+    return tokens.get(code);
+  };
+  const keep = (e) => {
+    if (e?.send !== true) return { type: e?.type ?? null, send: false };
+    return /^(Key|Button)/.test(e.type ?? '') && e.detail !== undefined && e.detail !== null ? { ...e, detail: token(`${/^Key/.test(e.type) ? 'key' : 'button'} ${e.detail}`) } : e;
+  };
+  for (const f of ['hold_events', 'release_events']) if (Array.isArray(facts[f])) out[f] = facts[f].map(keep);
   if (['keys_before', 'keys_held', 'keys_down'].some((f) => f in facts)) {
     delete out.keys_before;
     delete out.keys_held;

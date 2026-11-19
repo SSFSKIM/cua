@@ -40,6 +40,8 @@ final class FakeTree {
   var onDescription: ((Int, String) -> Void)?
   /// Elements whose AXChildren read fails (its slot an error, so the decoded data has none).
   var childrenUnread: Set<Int> = []
+  /// Elements whose action names fail to read (`ElementSource.actionsFailed`; they answer none).
+  var actionsUnread: Set<Int> = []
   /// Attributes whose read fails with an error other than absence, by id (their slots decode as none).
   var unreadableAttributes: [Int: Set<String>] = [:]
   /// Every request answers all an element carries, asked for or not (#405's stub of a careless app).
@@ -116,7 +118,10 @@ final class FakeSource: ElementSource, @unchecked Sendable {
     return tree.gone.contains(tree.id(element))
   }
   var markdownCalls = 0
-  override func actions(_ element: AXUIElement) -> [String] { tree.actions[tree.id(element)] ?? [] }
+  override func actions(_ element: AXUIElement) -> [String] {
+    tree.actionsUnread.contains(tree.id(element)) ? [] : tree.actions[tree.id(element)] ?? []
+  }
+  override func actionsFailed(_ element: AXUIElement) -> Bool { tree.actionsUnread.contains(tree.id(element)) }
   override func isSettable(_ element: AXUIElement, _ attribute: String, phase: String) -> Bool {
     settableCalls[attribute, default: 0] += 1
     return tree.settable[tree.id(element)]?.contains(attribute) ?? false

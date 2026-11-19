@@ -486,6 +486,8 @@ final class TreeWalk {
     let recordable: Bool
     /// Its node, with a stand-in token the emission replaces (empty for a record-only read).
     var wire: [String: Any] = [:]
+    /// Whether its action names read (`ElementSource.actionsFailed`), for the stale-point record (#431's review, finding 4).
+    var actionsRead = true
   }
 
   private enum Outcome {
@@ -927,7 +929,8 @@ final class TreeWalk {
       let data = item.read.data
       screenshotReads.append(ScreenshotNodeRead(element: item.read.element, number: number, parent: parent, depth: depth, role: data.role,
                                                 title: data.title, description: data.description, frame: data.frame,
-                                                actions: item.read.actions, childCount: data.children.count, childrenRead: data.childrenRead,
+                                                actions: item.read.actions, childCount: data.children.count, children: data.children,
+                                                actionsRead: item.read.actionsRead, childrenRead: data.childrenRead,
                                                 subrole: data.subrole, value: screenshotLabelValue(role: data.role, data.value),
                                                 labelsUnread: screenshotLabelsUnread(role: data.role, data.unreadable)))
       emitRecord(item.read.children + item.recordChildren, parent: number, depth: depth + 1)
@@ -976,6 +979,7 @@ final class TreeWalk {
     if pastDeadline() { return .deadline }
     let owner = source.owner(element)
     let actions = source.actions(element)
+    let actionsRead = !source.actionsFailed(element)
     settleUnplacedClip(element, &data, actions)
     let order = ReadOrder(inMenu: pending.inMenu, path: pending.path)
     let described = actions.map { describe(action: $0, of: element, owner: owner, order: order) }
@@ -1007,6 +1011,7 @@ final class TreeWalk {
     var read = Read(element: element, data: data, owner: owner, actions: actions, actionDescriptions: actionDescriptions,
                     descriptionKeys: described.map(\.key), flags: flags,
                     url: url, valueMarkdown: valueMarkdown, children: children, shown: shown, recordable: recordable)
+    read.actionsRead = actionsRead
     read.wire = wire(read, number: standIn, depth: pending.depth)
     return .read(read)
   }
@@ -1018,11 +1023,14 @@ final class TreeWalk {
     guard var data = source.data(element) else { return .failed }
     if pastDeadline() { return .deadline }
     let actions = source.actions(element)
+    let actionsRead = !source.actionsFailed(element)
     settleUnplacedClip(element, &data, actions)
     let (children, shown, recordable) = choose(element, data, actions, pending)
     if pastDeadline() { return .deadline }
-    return .read(Read(element: element, data: data, owner: 0, actions: actions, actionDescriptions: [], descriptionKeys: [], flags: NodeFlags(), url: nil,
-                      valueMarkdown: nil, children: children, shown: shown, recordable: recordable))
+    var read = Read(element: element, data: data, owner: 0, actions: actions, actionDescriptions: [], descriptionKeys: [], flags: NodeFlags(), url: nil,
+                    valueMarkdown: nil, children: children, shown: shown, recordable: recordable)
+    read.actionsRead = actionsRead
+    return .read(read)
   }
 
   /// A clipping element whose frame read unplaced (`unplacedFrame`, #312): on the observation that enabled the process's
@@ -1116,7 +1124,8 @@ final class TreeWalk {
     if !inMenu {
       screenshotReads.append(ScreenshotNodeRead(element: read.element, number: number, parent: parent, depth: depth, role: read.data.role,
                                                 title: read.data.title, description: read.data.description, frame: read.data.frame,
-                                                actions: read.actions, childCount: read.data.children.count, childrenRead: read.data.childrenRead,
+                                                actions: read.actions, childCount: read.data.children.count, children: read.data.children,
+                                                actionsRead: read.actionsRead, childrenRead: read.data.childrenRead,
                                                 subrole: read.data.subrole, value: screenshotLabelValue(role: read.data.role, read.data.value),
                                                 labelsUnread: screenshotLabelsUnread(role: read.data.role, read.data.unreadable)))
     }

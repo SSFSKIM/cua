@@ -367,9 +367,16 @@ class ElementSource: @unchecked Sendable {
   func actions(_ element: AXUIElement) -> [String] {
     costs.time("actions") {
       var names: CFArray?
-      return AXUIElementCopyActionNames(element, &names) == .success ? (names as? [String] ?? []) : []
+      let read = AXUIElementCopyActionNames(element, &names) == .success
+      if read { unreadActions.remove(ElementKey(element: element)) } else { unreadActions.insert(ElementKey(element: element)) }
+      return read ? (names as? [String] ?? []) : []
     }
   }
+
+  /// Whether the element's last `actions` read failed, so the empty list it answered is not known to be none (the stale
+  /// point record's control, #431's review, finding 4).
+  func actionsFailed(_ element: AXUIElement) -> Bool { unreadActions.contains(ElementKey(element: element)) }
+  private var unreadActions: Set<ElementKey> = []
 
   /// Whether `attribute` is settable on the element (AXValue for `settable`, AXFocused for `focusable`, AXSelected
   /// for `selectable`), timed under `phase`.

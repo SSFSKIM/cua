@@ -10,8 +10,9 @@ import Foundation
 // coordinate pointer action, before anything is posted, takes the deepest recorded node whose shown frame holds the
 // point and checks that it is still there: the same
 // handle, or a handle re-created in place (the same role, a frame within 2 pt, and the same title, or description where
-// neither has a title, whenever both sides can be read; and, #431, new to a record that covered where it lies, under no
-// recorded control but the node's own, `recreatedIsNew`). It refuses, with nothing posted, when that node is gone, when
+// neither has a title, whenever both sides can be read; and, #431, only where the record covered the node's region whole
+// and holds no other element the match could have taken for it, `recreatedRefused`). It refuses, with nothing posted,
+// when that node is gone, when
 // its frame read now no longer holds the point, or when the hit-test at the point now answers another interactive
 // element that is not itself a recorded node the screenshot showed at the point (#305, `recordedHitAtPoint`); any other
 // hit inside a node still in place (its label's text, a group) passes. The vendor posts at the point
@@ -77,8 +78,27 @@ struct ScreenshotNode<Element> {
   var webArea: Element?
   /// Its control in the record (#431): its nearest ancestor, frameless ones included, of `stalePointInteractiveRoles` or
   /// whose actions include AXPress, below its web area, window, sheet or application (`stalePointControlStops`); nil when
-  /// it has none. A re-created handle whose own control the record holds must lie under this one (`recreatedIsNew`).
+  /// it has none (`recreatedRefused`: a recorded element under the same control is no other control, and a re-created
+  /// handle lies inside the control while it lives).
   var control: Element?
+  /// Whether an ancestor nearer than its control (or than its stop, where it has none) had its action names fail to read
+  /// at the observation, so its control is unknown, never taken for inert (the review of main..3ece1a1a, finding 4): no
+  /// re-created match is taken for it.
+  var controlUnknown = false
+  /// Whether the walk recorded its region whole (#431, the design session's ruling 889): every element of the recorded
+  /// subtree of its nearest web area (else of the record's root), its AXChildren read and each child it listed in the
+  /// record by handle (`screenshotNodes`' `key`). Judged on the node's own ancestors at the observation, so a container
+  /// re-created since never moves the judgement to a complete ancestor; a twin from past the node cap, below the depth
+  /// cap or outside the width rule's visible subset leaves it uncovered.
+  var regionCovered = false
+}
+
+/// What an element offers its recorded descendants as their control (`screenshotNodes`, #431).
+enum ControlOffer<Element> {
+  case control(Element, role: String)
+  case unknown
+  var element: Element? { if case .control(let element, _) = self { return element } else { return nil } }
+  var unknown: Bool { if case .unknown = self { return true } else { return false } }
 }
 
 /// One element as the walk emitted it, for the record (`screenshotNodes`): its lineage number and its parent's.
@@ -93,6 +113,13 @@ struct ScreenshotNodeRead<Element> {
   let frame: CGRect?
   let actions: [String]
   let childCount: Int
+  /// The elements its AXChildren listed (`ElementData.children`), whose membership in the record says whether the walk
+  /// recorded them all (the review of main..3ece1a1a, finding 5: the width rule's visible subset can hold others than
+  /// AXChildren lists); nil where only their count is known.
+  var children: [Element]? = nil
+  /// Whether its action names were read (the review's finding 4): a failed read leaves `actions` empty, and the element
+  /// not known to be inert.
+  var actionsRead = true
   /// Whether the walk read its AXChildren (`ElementData.childrenRead`): a failed read counts no children, so with it
   /// unread the record cannot say whether it holds them all (#330's rule dL).
   var childrenRead = true
@@ -150,15 +177,24 @@ func screenshotLabelValue(role: String, _ value: CFTypeRef?) -> String? {
 /// sheet, menu or popover, the window; a window, sheet, menu or popover starts the cut again at its own frame, as the
 /// vendor's visible-frame walk stops there; one whose frame is unplaced, `unplacedFrame`, cuts nothing, #312), whether all its children were recorded (a frameless node's unrecorded
 /// children counting against its nearest framed ancestor), and whether it is a strip whose children the record lacks
-/// (`thinGap`).
-func screenshotNodes<Element>(_ reads: [ScreenshotNodeRead<Element>]) -> [ScreenshotNode<Element>] {
+/// (`thinGap`), and whether the walk recorded its region whole (`regionCovered`, #431): `key` identifies an element's
+/// handle, by which each child an element's AXChildren listed is looked for in the record; without it only their count
+/// is compared.
+func screenshotNodes<Element>(_ reads: [ScreenshotNodeRead<Element>], key: ((Element) -> AnyHashable)? = nil) -> [ScreenshotNode<Element>] {
   var recordedChildren: [Int: Int] = [:]
   for read in reads { if let parent = read.parent { recordedChildren[parent, default: 0] += 1 } }
+  let members = key.map { key in Set(reads.map { key($0.element) }) }
   // Children come after their parents, so a backward pass sees a node's whole subtree before the node.
   var incomplete: Set<Int> = []
+  /// The reads whose recorded subtree is not whole (#431's `regionCovered`): one of them, or one below, read no
+  /// AXChildren, or lacks in the record a child it listed.
+  var broken: Set<Int> = []
   var gapsBelow: [Int: [Element]] = [:]
   func thin(_ frame: CGRect) -> Bool { frame.width <= 1 || frame.height <= 1 }
   for read in reads.reversed() {
+    let listedRecorded = members.map { members in read.children?.allSatisfy { members.contains(key!($0)) } ?? true } ?? true
+    if !read.childrenRead || (recordedChildren[read.number] ?? 0) < read.childCount || !listedRecorded { broken.insert(read.number) }
+    if broken.contains(read.number), let parent = read.parent { broken.insert(parent) }
     if (recordedChildren[read.number] ?? 0) < read.childCount { incomplete.insert(read.number) }
     if read.frame == nil, incomplete.contains(read.number), let parent = read.parent { incomplete.insert(parent) }
     if let frame = read.frame, thin(frame), incomplete.contains(read.number) { gapsBelow[read.number, default: []].append(read.element) }
@@ -172,9 +208,11 @@ func screenshotNodes<Element>(_ reads: [ScreenshotNodeRead<Element>]) -> [Screen
   var webAreas: [Int: Element] = [:]
   /// The editable region each read lies in (#298): itself when its role is an editable text role, else its parent's.
   var regions: [Int: Element] = [:]
-  /// What each read offers its descendants as their control (#431): itself when it is one, else its parent's; nothing
-  /// past a control stop.
-  var controls: [Int: Element] = [:]
+  /// What each read offers its descendants as their control (#431): itself when it is one, unknown when its action names
+  /// did not read, else its parent's offer; nothing past a control stop.
+  var controls: [Int: ControlOffer<Element>] = [:]
+  /// Each read's region (#431): its nearest AXWebArea at or above it, else the record's root, by number.
+  var regionRoots: [Int: Int] = [:]
   var nodes: [ScreenshotNode<Element>] = []
   nodes.reserveCapacity(reads.count)
   for read in reads {
@@ -185,9 +223,16 @@ func screenshotNodes<Element>(_ reads: [ScreenshotNodeRead<Element>]) -> [Screen
     }
     let control = read.parent.flatMap { controls[$0] }
     if !stalePointControlStops.contains(read.role) {
-      if stalePointInteractiveRoles.contains(read.role) || read.actions.contains("AXPress") { controls[read.number] = read.element }
-      else if let control { controls[read.number] = control }
+      if stalePointInteractiveRoles.contains(read.role) || read.actions.contains("AXPress") {
+        controls[read.number] = .control(read.element, role: read.role)
+      } else if !read.actionsRead {
+        controls[read.number] = .unknown
+      } else if let control {
+        controls[read.number] = control
+      }
     }
+    let regionRoot = read.role == "AXWebArea" ? read.number : read.parent.flatMap { regionRoots[$0] } ?? read.number
+    regionRoots[read.number] = regionRoot
     let boundary = clipBoundaryRoles.contains(read.role)
     let inherited: CGRect? = boundary ? nil : read.parent.flatMap { bounds[$0] ?? nil }
     let own = read.frame
@@ -219,7 +264,8 @@ func screenshotNodes<Element>(_ reads: [ScreenshotNodeRead<Element>]) -> [Screen
                                 frame: frame, shown: shown, depth: read.depth,
                                 subtreeRecorded: !incomplete.contains(read.number),
                                 thinGap: thin(frame) && incomplete.contains(read.number), gapsBelow: gapsBelow[read.number] ?? [],
-                                ancestor: ancestor, webArea: webArea, control: control))
+                                ancestor: ancestor, webArea: webArea, control: control?.element,
+                                controlUnknown: control?.unknown ?? false, regionCovered: !broken.contains(regionRoot)))
   }
   return nodes
 }
@@ -228,13 +274,18 @@ func screenshotNodes<Element>(_ reads: [ScreenshotNodeRead<Element>]) -> [Screen
 /// recorded every one of its direct children (its AXChildren read, and none left out by a width cut, the depth cap, the
 /// budget or deadline, or a failed read of a child). A child such an element lists now that the record lacks is new since
 /// the screenshot. An element whose AXChildren read failed decodes as having none, so it never counts as complete (the
-/// review of 364e017d..51ce4138).
+/// review of 364e017d..51ce4138). Where the read carries the children its AXChildren listed, each must be in the record
+/// (the review of main..3ece1a1a, finding 5): the width rule may record a visible subset as large that holds others.
 func screenshotChildrenRecorded<Element, Key: Hashable>(_ reads: [ScreenshotNodeRead<Element>], key: (Element) -> Key) -> [Key: Bool] {
   var recordedChildren: [Int: Int] = [:]
   for read in reads { if let parent = read.parent { recordedChildren[parent, default: 0] += 1 } }
+  let members = Set(reads.map { key($0.element) })
   var complete: [Key: Bool] = [:]
   complete.reserveCapacity(reads.count)
-  for read in reads { complete[key(read.element)] = read.childrenRead && (recordedChildren[read.number] ?? 0) >= read.childCount }
+  for read in reads {
+    complete[key(read.element)] = read.childrenRead && (recordedChildren[read.number] ?? 0) >= read.childCount
+      && (read.children?.allSatisfy { members.contains(key($0)) } ?? true)
+  }
   return complete
 }
 
@@ -385,6 +436,12 @@ struct StalePointReads<Element> {
   /// 7f6eb3dc..b2f00ad5, P2 2). A seam without it reads through `title`, `description` and `value`, whose nil is absence.
   var label: ((Element, StalePointLabelPart) -> StalePointLabelRead)? = nil
   var same: (Element, Element) -> Bool
+  /// Whether the element's handle names a destroyed element (#431's review, finding 1: a new control stands in for the
+  /// recorded one only once that one is gone): live, its AXRole read answering kAXErrorInvalidUIElement, so a read that
+  /// merely fails is not gone. A seam without it takes an element whose frame reads none for gone.
+  var gone: ((Element) -> Bool)? = nil
+
+  func isGone(_ element: Element) -> Bool { gone?(element) ?? (frame(element) == nil) }
 
   func readLabel(_ element: Element, _ part: StalePointLabelPart) -> StalePointLabelRead {
     if let label { return label(element, part) }
@@ -406,7 +463,7 @@ extension StalePointReads where Element == AXUIElement {
                     label: { element, part in
                       let read = copyAttribute(element, part.attribute)
                       return stalePointLabelRead(read.value, read.error)
-                    }, same: { CFEqual($0, $1) })
+                    }, same: { CFEqual($0, $1) }, gone: { copyAttribute($0, kAXRoleAttribute).error == .invalidUIElement })
   }
 }
 
@@ -713,64 +770,49 @@ private func descendants<Element>(of element: Element, _ reads: StalePointReads<
   return Array(queue.prefix(stalePointDescendantBound))
 }
 
-/// Where a control is looked for above an element (#431's `ScreenshotNode.control`, `recreatedIsNew`): never past its web
-/// area, window, sheet or application.
+/// Where a control is looked for above an element (#431's `ScreenshotNode.control`): never past its web area, window,
+/// sheet or application.
 let stalePointControlStops: Set<String> = ["AXWebArea", "AXWindow", "AXSheet", "AXApplication"]
 
-/// #431 (the design session's rulings 1ea561bc:880 and :881): whether `candidate`, a handle of the recorded node's role,
-/// frame and label, is new since the screenshot, as a node re-created in place must be, rather than another element that
-/// slid into the removed one's place (a same-label link of the next row). `recorded` is the record's lookup
-/// (`screenshotChildrenRecorded`: every element the walk recorded, framed or frameless, with whether it recorded all of
-/// its children; nil for one it lacks). All three hold:
-/// 1. the record lacks the candidate: an element the observation recorded, anywhere, was there already;
-/// 2. the observation covered where it lies: its nearest recorded ancestor has every child recorded (no width cut,
-///    depth cap, budget, deadline, unread or off-screen child left out), and lists, now, the element below it on the
-///    candidate's chain (a hit-test-only element, which no AXChildren lists, the walk never records). A candidate with no
-///    recorded ancestor below its window lies where the walk never went;
-/// 3. its control (its nearest ancestor of `stalePointInteractiveRoles` or with AXPress, below `stalePointControlStops`)
-///    is new to the record too, or is the recorded node's own control (`ScreenshotNode.control`): a text re-created in a
-///    link the record holds elsewhere, or under another link, belongs to another control.
-/// A read that fails on the way (a parent, a role, action names, the children) refuses; nothing is taken for new
-/// unproven. A node re-rendered whole (its control and its text both new, under a parent recorded complete) passes, as
-/// does one re-created under its own surviving control.
-func recreatedIsNew<Element>(_ candidate: Element, of node: ScreenshotNode<Element>, recorded: (Element) -> Bool?,
-                             _ reads: StalePointReads<Element>) -> Bool {
-  guard recorded(candidate) == nil else { return false }
-  var covered = false
-  var control: Element?
-  var controlFound = false
-  var below = candidate
-  for _ in 0..<stalePointAncestorLevels {
-    guard let next = reads.parent(below), let role = reads.role(next) else { return false }
-    if !covered, let allChildren = recorded(next) {
-      guard allChildren, reads.children(next)?.contains(where: { reads.same($0, below) }) == true else { return false }
-      covered = true
-    }
-    if !controlFound {
-      if stalePointControlStops.contains(role) {
-        controlFound = true
-      } else if stalePointInteractiveRoles.contains(role) {
-        (control, controlFound) = (next, true)
-      } else {
-        guard let actions = reads.actions(next) else { return false }
-        if actions.contains("AXPress") { (control, controlFound) = (next, true) }
-      }
-    }
-    if covered && controlFound { break }
-    if stalePointWalkStops.contains(role) { break }
-    below = next
+/// #431 (the design session's rulings 1ea561bc:884/885 and 889): whether a handle found in place of `node` by #296's
+/// re-created match (its role, its frame within 2 pt, its label agreeing) or #305's re-created identity of a hit is
+/// refused. Safari gives a link moved in the page new accessibility handles (#431's hosted smoke, run 44520748737), so a
+/// same-label link that slid into the removed node's place cannot be told from the node re-created by anything the
+/// tree says of it now; what refuses is read from the record, and the label is used only to refuse. It refuses when:
+/// 1. the walk did not record the node's region whole (`ScreenshotNode.regionCovered`): an element like it past the node
+///    cap, below the depth cap or outside the width rule's visible subset could be what came;
+/// 2. the record holds another element the match could have taken for the node: of its role, in its region (the same web
+///    area, else outside every web area), with a label that agrees by the match's own rule (`stalePointLabelsAgree`, so
+///    a label unread at the observation agrees), other than an element under the node's own control or that control;
+/// 3. its control is unknown (an action-name read failed at the observation, `ScreenshotNode.controlUnknown`);
+/// 4. its control still lives (`StalePointReads.isGone` answers no) and the candidate does not lie inside it: the node
+///    re-created belongs to the control the screenshot showed it in.
+/// Reads only the candidate's parents, and its control's role, for 4.
+func recreatedRefused<Element>(_ candidate: Element, of node: ScreenshotNode<Element>, nodes: [ScreenshotNode<Element>],
+                               _ reads: StalePointReads<Element>) -> Bool {
+  guard node.regionCovered, !node.controlUnknown else { return true }
+  func ownControl(_ element: Element?) -> Bool {
+    guard let element, let control = node.control else { return false }
+    return reads.same(element, control)
   }
-  guard covered, controlFound else { return false }
-  guard let control, recorded(control) != nil else { return true }
-  return node.control.map { reads.same($0, control) } ?? false
+  let twin = nodes.contains { other in
+    other.role == node.role && !reads.same(other.element, node.element)
+      && (other.webArea.map { area in node.webArea.map { reads.same(area, $0) } ?? false } ?? (node.webArea == nil))
+      && !ownControl(other.element) && !ownControl(other.control)
+      && stalePointLabelsAgree(recordedTitle: node.title, recordedDescription: node.description, recordedValue: node.value,
+                               title: other.title, description: other.description, value: other.value)
+  }
+  if twin { return true }
+  if let control = node.control, !reads.isGone(control), !isInside(candidate, control, reads) { return true }
+  return false
 }
 
 /// A handle re-created in place of `node` near `hit`: among the hit, its ancestors and its descendants (the bounds above),
 /// the element of the node's role whose frame lies nearest the recorded one moved by `windowShift` (the window's move
-/// since the screenshot), within `stalePointFrameTolerance`, whose label agrees (`stalePointLabelsAgree`), and which is
-/// new since the screenshot (`recreatedIsNew` over `recorded`, #431).
+/// since the screenshot), within `stalePointFrameTolerance`, whose label agrees (`stalePointLabelsAgree`); none at all when
+/// the record refuses a re-created match there (`recreatedRefused` over the record, `nodes`, #431).
 func recreatedHandle<Element>(of node: ScreenshotNode<Element>, near hit: Element, windowShift: CGVector = .zero,
-                              recorded: (Element) -> Bool?, _ reads: StalePointReads<Element>) -> (element: Element, frame: CGRect)? {
+                              nodes: [ScreenshotNode<Element>], _ reads: StalePointReads<Element>) -> (element: Element, frame: CGRect)? {
   let expected = node.frame.offsetBy(dx: windowShift.dx, dy: windowShift.dy)
   var best: (element: Element, frame: CGRect, distance: CGFloat)?
   for candidate in [hit] + ancestors(of: hit, reads) + descendants(of: hit, reads) {
@@ -785,11 +827,11 @@ func recreatedHandle<Element>(of node: ScreenshotNode<Element>, near hit: Elemen
     // #298's edited-text exemption: a text re-created in its recorded editable region (typed over) is matched without
     // its value, its title and description still compared.
     guard agrees(value: node.value == nil ? nil : reads.value(candidate))
-            || (node.editableAncestor.map { editedInPlace(candidate, region: $0, reads) } == true && agrees(value: nil)),
-          recreatedIsNew(candidate, of: node, recorded: recorded, reads) else { continue }
+            || (node.editableAncestor.map { editedInPlace(candidate, region: $0, reads) } == true && agrees(value: nil)) else { continue }
     best = (candidate, frame, distance)
   }
-  return best.map { ($0.element, $0.frame) }
+  guard let best, !recreatedRefused(best.element, of: node, nodes: nodes, reads) else { return nil }
+  return (best.element, best.frame)
 }
 
 /// The guard at `point` (#296): the deepest recorded node there (`deepestScreenshotNode`) found now, by its own handle
@@ -806,8 +848,7 @@ func recreatedHandle<Element>(of node: ScreenshotNode<Element>, near hit: Elemen
 /// (`stalePointRehits` times, `sleep` `stalePointRehitMs` before each) until a real hit comes, which the rest judges.
 ///
 /// `recorded` is the record's every element, framed or frameless, with whether its children all were recorded
-/// (`screenshotChildrenRecorded`; nil for an element the record lacks), which #330's rule dL judges the hit's chain by,
-/// and #431 a re-created handle's novelty (`recreatedIsNew`).
+/// (`screenshotChildrenRecorded`; nil for an element the record lacks), which #330's rule dL judges the hit's chain by.
 func stalePointVerdict<Element>(at point: CGPoint, windowShift: CGVector = .zero, nodes: [ScreenshotNode<Element>],
                                 recorded: (Element) -> Bool? = { _ in nil }, hit first: Element?,
                                 rehit: () -> Element? = { nil }, sleep: (Double) -> Void = { _ in },
@@ -831,7 +872,7 @@ func stalePointVerdict<Element>(at point: CGPoint, windowShift: CGVector = .zero
     (verdict.current, verdict.identity, currentFrame) = (node.element, .handle, frame)
   } else if let hit, reads.same(hit, node.element) || isInside(hit, node.element, reads) {
     (verdict.current, verdict.identity) = (node.element, .handle)  // its frame unread, but the point reaches it
-  } else if let hit, let found = recreatedHandle(of: node, near: hit, windowShift: windowShift, recorded: recorded, reads) {
+  } else if let hit, let found = recreatedHandle(of: node, near: hit, windowShift: windowShift, nodes: nodes, reads) {
     (verdict.current, verdict.identity, currentFrame) = (found.element, .recreated, found.frame)
   }
   guard let current = verdict.current else { return verdict }
@@ -916,8 +957,9 @@ let recordedHitAncestorShare: CGFloat = 0.25
 /// point, still there, and which frame carried it. All three hold:
 /// 1. it is a recorded node: its handle `CFEqual` to a recorded one; else, while that node's own handle reads no frame
 ///    (gone, as #296 takes a re-created handle only then), #296's re-created identity: its role, its frame within 2 pt of
-///    the recorded one moved by `windowShift`, and its label agreeing (`stalePointLabelsAgree`). A hit that is a recorded
-///    handle is that node and no other, so a lookalike elsewhere never stands in for it;
+///    the recorded one moved by `windowShift`, and its label agreeing (`stalePointLabelsAgree`), and, as #296's (#431's
+///    ruling 889), not refused by the record (`recreatedRefused`). A hit that is a recorded handle is that node and no
+///    other, so a lookalike elsewhere never stands in for it;
 /// 2. it has not moved: its frame read now lies within 2 pt of the recorded one moved by the shift;
 /// 3. the point the model meant (`point` less the shift) lies in a shown frame (`ScreenshotNode.shown`, what its clipping
 ///    ancestors left in the image), widened by 2 pt: its own (`.hit`), or else its nearest recorded ancestor's
@@ -954,7 +996,7 @@ func recordedHitAtPoint<Element>(_ element: Element, at point: CGPoint, windowSh
   for node in nodes where node.role == role && inPlace(live, node)
     && stalePointLabelsAgree(recordedTitle: node.title, recordedDescription: node.description, recordedValue: node.value, title: title,
                              description: description, value: value)
-    && reads.frame(node.element) == nil {
+    && reads.frame(node.element) == nil && !recreatedRefused(element, of: node, nodes: nodes, reads) {
     if let by = carried(node) { return by }
   }
   return nil

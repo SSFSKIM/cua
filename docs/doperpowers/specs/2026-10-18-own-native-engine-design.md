@@ -6764,51 +6764,55 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   fields on real pages (#398's measurement, run separately). The rule needs no such number, since a gone handle is
   matched strictly whatever it finds.
   Date/Author: 2026-11-18, cursor235's implementer for #398.
-- Decision (#431, design rulings 1ea561bc:880 and :881, 2026-11-19, `fix/431-recreated-identity`, plugin 0.28.19; amends
-  #296's re-created match, StalePoint.swift `recreatedHandle`): **a handle re-created in place must be new to a record
-  that covered where it lies, under no recorded control but the node's own** (`recreatedIsNew`). #340's phase 1 (run
-  44507959686, cell `twin`) measured the gap: link A removed, a same-label link B with another destination slid into
-  its frame, and main kept the click and landed on B, 10/10 on CfT, Safari and Electron, with the record at the text and
-  at the link. Role, a 2 pt frame and an agreeing label cannot tell A re-created from B, and ruling 880 rejects leaning
-  on label likeness (why #340 was parked). So a candidate that passes role, frame and label (#298's value words and
-  edited-text exemption, and #330's rule dL, unchanged) is also judged against the record, by `recorded`, the lookup
-  #330 added (`screenshotChildrenRecorded`):
-  1. **New.** The record lacks the candidate, framed or frameless. In `twin`, B and its text were on the page at the
-     observation, so both are in the record and neither is taken.
-  2. **Covered (ruling 881).** "New" counts only where the observation would have seen it: the candidate's nearest
-     recorded ancestor must have every child recorded, and must list, now, the element below it on the candidate's
-     chain. The coverage signal is `screenshotChildrenRecorded`'s flag: AXChildren read, and as many children recorded as
-     it listed. What the record covers, read from the walk: every element emitted for the screenshot's window
-     (`Walk.screenshotReads`: the tree's nodes and #301's record-only nodes; not the menu bar). It is visible-first, so
-     an off-screen element is recorded when the budget reaches it, and otherwise its parent counts its children
-     incomplete; a width cut, the depth cap, the node and byte budgets, the deadline and a failed child read do the same.
-     So a slid-in element missing from the record is always under an incomplete parent, or outside the walked window,
-     where the chain reaches an unrecorded window, or is a hit-test-only element (Chrome's label text) no AXChildren
-     lists. Each refuses; no extra frame check is needed.
-  3. **Its own control.** The candidate's nearest ancestor of an interactive role or with AXPress, below its web area,
-     window, sheet or application, is new too, or is the recorded node's control (`ScreenshotNode.control`, derived from
-     the walk's reads the same way). A text re-created as link B moves in (B recorded elsewhere) belongs to another
-     control and refuses.
-  Any read that fails on the way (a parent, a role, action names, the children now) refuses the match. Kept as before: a
-  text re-created in its surviving link (`plain`, and the same-width `like`), a control re-rendered whole under a parent
-  the record holds complete, #298's typed-over text in its region, and every handle the record still finds on its own.
-  The cost, accepted by ruling 881 as one re-observation: a genuine re-creation now refuses (`nodeGone`) where the record
-  of its region was partial (a large page cut by the budget or deadline). Left as it was:
-  - A slid-in control re-rendered whole as it moves (new handles for both B and its text) is indistinguishable from A
-    re-created by anything but content, and passes as on main (tech-debt-tracker).
-  - An element unrecorded under an incomplete parent and reparented under a complete one would read as new. Chromium
-    re-creates its accessibility objects on a reparent, so this is not expected in practice.
-  - #305's `recordedHitAtPoint` keeps its own re-created identity for a hit (unchanged; a recorded framed hit there is
-    that node and no other).
-  Proven offline (`RecreatedIdentityTests`): `twin` refuses at the text and at the link, the hit B's text, B or the list;
-  a control recorded elsewhere moving in refuses (its own handle, or its text re-created, under a link or an AXPress
-  row); twins past the cap, in an unwalked row, under a row whose children read failed, and in another window refuse; a
-  genuine re-render the record covered in part refuses; `plain`, `like` and a whole re-render in a covered region stay
-  kept. #296's, #298's, #305's, #316's and #330's suites pass, their re-created cases now given the observation's
-  lookup. A mutation pass of 12 mutations on the new checks (dropping each of novelty, coverage, listing, the control
-  rule, each failed-read refusal, and the record's control derivation) is killed by these tests, every one.
-  Not measured live: `twin` on CfT, Safari and Electron, and how often #296's hosted recreate cells and #298's
-  `linklike` now refuse for want of coverage.
+- Decision (#431, design rulings 1ea561bc:880, 881, 884/885 and 889, 2026-11-19, `fix/431-recreated-identity`, plugin
+  0.28.19; amends #296's re-created match and #305's re-created identity of a hit, StalePoint.swift `recreatedRefused`):
+  **a handle found in place of a gone node by role, a 2 pt frame and an agreeing label is refused where the record could
+  not tell it from another element.** #340's phase 1 (run 44507959686, cell `twin`) measured the gap: link A removed, a
+  same-label link B with another destination slid into its frame, and main kept the click and landed on B, 10/10 on CfT,
+  Safari and Electron, with the record at the text and at the link.
+  The first build (3ece1a1a) proved the candidate new instead: absent from the record, under a complete recorded
+  ancestor, under no recorded control but the node's own. CfT and Electron then refused `twin`, `twincap` and `twindeep`,
+  but Safari kept all three at both points as `sameElement/recreated` and landed on B (hosted smoke, run 44520748737):
+  the kit moves B in the DOM, and WebKit gives a moved element new accessibility handles in A's own, completely recorded
+  row, which is structurally what a re-creation is. So no proof of novelty from the tree holds, and ruling 889 replaced
+  it with refusals read from the record. A re-created candidate, on #296's path and on #305's, is refused when:
+  1. **The region was not recorded whole** (`ScreenshotNode.regionCovered`). The region is the node's nearest web area
+     (else the record's root), taken from the node's own ancestors at the observation, so a container re-created since
+     cannot move the judgement to a complete ancestor. Whole means every element of its recorded subtree read its
+     AXChildren and has each child those listed in the record by handle (`screenshotNodes`' `key`; the review of
+     main..3ece1a1a, finding 5: past 100 children the width rule records AXVisibleChildren, which can hold others than
+     AXChildren lists, so counts compare wrongly). A twin past the node cap (`twincap`), below the depth cap (`twindeep`),
+     outside the visible subset or under a failed children read is then refused on coverage alone. #330's lookup
+     (`screenshotChildrenRecorded`) takes the same membership.
+  2. **The record holds another element the match could have taken for the node**: of its role, in its region, whose
+     recorded label agrees with the node's by the match's own rule (`stalePointLabelsAgree`, so a label absent on one
+     side, or unread at the observation, agrees), other than the node's own control or an element under it. This uses the
+     label only to refuse; nothing passes on it. In `twin` B and its text are recorded with A's label, so it refuses
+     whatever handles B answers now.
+  3. **Its control is unknown**: an ancestor's action names failed to read at the observation (`ElementSource.actionsFailed`,
+     carried as `ScreenshotNodeRead.actionsRead`), so the record cannot say what the node's control was (finding 4: it was
+     taken for inert and the outer control inherited).
+  4. **Its control still lives and does not hold it** (finding 1, kept as a refusal): while the node's recorded control
+     answers (its role read is not kAXErrorInvalidUIElement), a node re-created belongs inside it.
+  Findings 3 and 6 of the review are moot: they tightened the candidate-chain walk of the novelty proof, which is gone;
+  coverage is judged on the node's side. Finding 2 is applied: #305's re-created identity, and the element route's press
+  verdict through it, take the same refusals.
+  Kept as before: position, role and label agreement, #298's edited-text exemption, #330's rule dL and every node found
+  by its own handle. The cost, accepted by ruling 889: a genuine re-creation now refuses (`nodeGone`) wherever the walk did
+  not record the page whole (a large page cut by the cap, the deadline or the width rule; `capremount`, `wideremount`),
+  and wherever the page holds another element of the node's role with an agreeing label (a list of "Reply" links, and
+  links or buttons with no label at all). #296's truncated-container case now refuses with its title unchanged too.
+  Proven offline (`RecreatedIdentityTests`, and the walk's record in `NewElementGuardTests`): `twin` refuses at the text
+  and at the link with B on its own handles and on new ones, as do pressable rows and `twinrow`; `twincap`, `twindeep`, a
+  twin under a failed children read and one outside the visible subset refuse on coverage; `plain`, `like` and `remount`
+  stay kept in a whole record with no twin; `capremount` and a gap anywhere in the page refuse, a gap in the browser's
+  toolbar does not; the label rule's edges (another title kept; no title, an unread title refused; another document's
+  and the node's own control's kept); an unknown control refuses; a living control elsewhere refuses; #305's path and
+  the press verdict refuse as #296's does. A mutation pass of 17 mutations (each refusal, the label rule's scope, the
+  coverage's membership, failed reads, its carrying up and region, the unknown classification, #330's lookup and the
+  walk's two new fields) is caught by these tests, every one.
+  Not measured live: `twin`, `twincap` and `twindeep` on Safari with this build, and how often real pages lose a
+  re-created click to coverage or to a same-label element.
   Date/Author: 2026-11-19, cursor235's implementer for #431.
 
 ## Outcomes & Retrospective

@@ -250,3 +250,115 @@ The analysis scripts are in `~/.local/share/cua-171/task113/scripts/` and here i
   0/20. The final hold caught one take each in p300 and r150 (+222 ms after the press) and cancelled it.
 - In front: every lane 30/30 dropped, no false ok.
 - `v5-zero-2` started at 18:49:10Z. `xtrace-controls-1` was still running on x64 at return, unanalysed.
+
+## Task 114: the finished chains
+
+Task 114 watched task 113's chains to their end and ran task 113's analysis scripts on them. No new measurement was made
+and nothing was restarted. Every run is under `locked.sh m5-hold042`. All numbers are from `analyze_v5.py`,
+`infront_false_oks.py`, `analyze_cost.mjs` and `analyze_xtrace.py` on the runs' own `results.jsonl`.
+
+### arm64 `:0` idle, v5-zero-1 … v5-zero-8 (static musl build 8071fc90; 80 cold and 160 warm per lane per cell)
+
+All eight runs ended with all-clear "clear"; no hold-sittings stop. Zero-1 is the run in the addendum above.
+
+Cancel cell (`chrome_dnd_shared`):
+
+| lane | shape cold / warm | prevented cold / warm | cancelled cold / warm | plain ok, no dragstart |
+|---|---|---|---|---:|
+| cua (off) | 16/80 (all late), 0/160 | – | 64, 160 | 0 |
+| p300 | 0/80, 0/160 | 7, 0 | 80, 160 | 0 |
+| p350 | 0/80, 0/160 | 8, 0 | 80, 160 | 0 |
+| r150 | 0/80, 0/160 | 9, 0 | 80, 160 | 0 |
+
+- The off lane's shape is cold only: 1, 3, 1, 2, 2, 2, 3, 2 samples per run, zero-1 to zero-8.
+- The 16 off-lane shapes' dragstart came +213.6 to +221.3 ms after the press (p50 216.1, p90 221.2), and 28 to 67 ms
+  after the release.
+- The hold lanes' takes came +184.7 to +227.8 ms after the press (p300 188.8–227.8, p350 184.7–223.8,
+  r150 186.7–225.8), and each was cancelled.
+- Cold median ms: off 349.8, p300 326.9, p350 370.2, r150 327.0. Warm about 348 on every lane.
+
+In front (`chrome_dnd_short_in_front_shared`): **0 false oks in every lane**, cold and warm (80/80 and 160/160 dropped
+per lane). The dragstart after the press, over all 240 samples per lane:
+
+| lane | p50 / p90 / p95 / p99 / max (ms) | > 300 | > 350 | > 450 | > 600 |
+|---|---|---:|---:|---:|---:|
+| cua (off) | 143.5 / 150.4 / 181.1 / 217.4 / 223.9 | 0 | 0 | 0 | 0 |
+| p300 | 144.1 / 148.7 / 151.7 / 219.2 / 222.6 | 0 | 0 | 0 | 0 |
+| p350 | 144.4 / 149.5 / 152.9 / 216.5 / 218.7 | 0 | 0 | 0 | 0 |
+| r150 | 144.3 / 151.5 / 186.0 / 218.7 / 221.8 | 0 | 0 | 0 | 0 |
+
+So on `:0` idle the renderer's dragstart sits within press + 224 ms in every sample: no tail in 960 in-front samples.
+
+### arm64 at 2x, private display, v5-load-b1 … b3 (lanes cua-off, p450, p600; 30 cold and 60 warm per lane)
+
+Cancel cell, cold / warm:
+
+| lane | shape (late after the release) | prevented | plain ok, no dragstart | cancelled |
+|---|---|---|---|---|
+| cua (off) | 22/30 (13), 19/60 (11) | – | 1, 2 | 7, 12 |
+| p450 | 0/30, 0/60 | 19, 38 | 1, 5 | 29, 55 |
+| p600 | 0/30, 0/60 | 22, 39 | 2, 3 | 28, 57 |
+
+- The off lane's dragstart after the press: cold p50/p90/max 163.7 / 277.8 / 422.4 ms, warm 184.4 / 276.8 / 399.4.
+- The hold lanes' takes came +156 to +322 ms after the press (p450 156.1–295.8, p600 157.5–321.9).
+- The plain oks with no dragstart began no drag (ruling 823's unmet premise); they are not the shape.
+
+In front, false oks cold / warm: cua 1/30 and 4/60, p450 1/30 and 0/60, p600 0 and 0. The dragstart after the press over
+all 90 samples per lane (so p99 is the max):
+
+| lane | p50 / p90 / p95 / p99 / max (ms) | > 300 | > 350 | > 450 | > 600 |
+|---|---|---:|---:|---:|---:|
+| cua (off) | 9.5 / 299.8 / 388.4 / 463.3 / 463.3 | 8 | 5 | 1 | 0 |
+| p450 | 20.5 / 202.2 / 246.4 / 538.5 / 538.5 | 4 | 4 | 1 | 0 |
+| p600 | 11.5 / 203.2 / 381.3 / 561.0 / 561.0 | 5 | 5 | 2 | 0 |
+
+- The tail ends at press + 561 ms in these 90 samples (+582 over the earlier 7-run set); nothing is past 600.
+- p450's one in-front false ok: dragstart at +538.5, release at +450.1, the final hold waited 200 ms and saw no take.
+- p600's five in-front final-hold takes (warm, +386 to +569 ms) were all caught and dropped.
+
+### arm64 cost cells, idle, warm medians in ms (30 trials; Chrome canvas 40)
+
+Every lane took every sample and passes D1 and D2. Chrome dnd is #358's declared 40 ms gap on every lane, off included
+(interval [26.3, 26.6] against newest).
+
+| cell | pinned / newest | cua (off) | p350 | p450 |
+|---|---|---:|---:|---:|
+| Chrome select | 416.6 / 312.1 | 126.1 | 351.8 | 451.8 |
+| Chrome range | 415.7 / 311.7 | 126.2 | 351.8 | 451.8 |
+| Chrome scroller | 269.2 / 257.9 | 60.0 | 351.8 | 451.7 |
+| Chrome dnd | 480.2 / 328.3 | 354.6 | 354.7 | 354.6 |
+| Chrome canvas | 1046.4 / 486.0 | 473.3 | 473.3 | 473.3 |
+| Electron select | 416.0 / 311.8 | 253.0 | 352.9 | 452.7 |
+| Electron range | 415.4 / 311.5 | 253.2 | 352.9 | 452.8 |
+| Electron scroller | 268.9 / 257.8 | 253.0 | 352.9 | 452.6 |
+| Electron dnd | 480.2 / 328.3 | 396.2 | 396.1 | 400.4 |
+| Electron canvas | 1045.4 / 485.7 | 474.6 | 474.5 | 474.3 |
+
+The hold's cost is on select, range and scroller alone: p350 adds +226 / +226 / +292 ms on Chrome and +100 ms on
+Electron; p450 adds +326 / +326 / +392 and +200. Everything else moves by less than 5 ms. `cost-chrome-a` began with the
+1-minute load average at 17.3, the decay of the previous 2x run's stress-ng; no stress-ng process was left.
+
+### x64 xtrace controls (xtrace-controls-1: D1's select and canvas under the same proxy, 2x, 40 trials)
+
+The controls tell whether the cancel cell's late take is the proxy's doing. They took pinned 40/40 and cua 40/40 on both
+kinds (verdict PASS). Over the cancel cell's 84 shape samples and the 80 control samples, with the analysis window at
+release + 1200 ms (`AFTER_MS` in `analyze_xtrace.py` is 600, which shows these in only half the shape samples, because
+the takes land at +335 to +973 ms):
+
+| key after the release | shape (84) | no-start (3) | controls (80) |
+|---|---|---|---|
+| CreateWindow, XdndAware, XdndActionList, MapWindow | 84 (100%), median +591 to +600 ms | 0 | 0 |
+| SetSelectionOwner[XdndSelection], XIGrabDevice | 84 (100%), +600 | 0 | 0 |
+| DestroyWindow, DeleteProperty[XdndActionList] | 84 (100%), +648 / +650 | 0 | 0 |
+| GetProperty[XdndAware] (a peer probing) | 16 (19%), +688 | 0 | 0 |
+| UngrabPointer | 84 (100%), +591 | 3 (100%), +531 | 44 (55%), +1 |
+
+So the late `XdndSelection` take is in every shape sample and absent from every control: the proxy's delayed
+ButtonRelease alone does not make Chrome take a selection on a select or canvas drag. The take belongs to the draggable
+source. The proxy still delays the release, so the trace does not show what the unproxied refusal emits (task 113's
+caveat stands).
+
+### Cleanup
+
+- `x64/*.xt.jsonl` removed (cancel-1's was 154 MB).
+- The x64 worktree's `native/linux-engine/target` is left for the promotion task.

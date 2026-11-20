@@ -29,8 +29,11 @@ import Foundation
 // session's ruling 31a62775): a node found by its own handle, its frame still holding the point, refuses when its label's
 // words changed (`relabelledLabel`, `stalePointLabelWords`: Save to Delete on one element, while a count or a ticking
 // time passes), and the re-created match compares an AXStaticText's value by the same words; the text of an editable
-// region the model types into is exempt (`editedInPlace`, ruling 1ea561bc:553). Everything here reads
-// through closures, so the rule is unit-tested over a fake tree.
+// region the model types into is exempt (`editedInPlace`, ruling 1ea561bc:553). #433: a point kept at a node that does
+// not act on its own (a transparent overlay), with a hit that names no interactive element, is judged again at the
+// recorded control beneath it (`underlyingTarget`), which a click passes through to: gone with no re-created handle #431
+// accepts, moved off the point, or relabelled, it refuses. Everything here reads through closures, so the rule is
+// unit-tested over a fake tree.
 
 /// One node of the tree an observation with a screenshot walked, as the screenshot showed it.
 struct ScreenshotNode<Element> {
@@ -452,8 +455,12 @@ struct StalePointVerdict<Element> {
   var newElementReads: Int?
   /// #316's rule W: the new window over the screenshot's, for `newWindow`.
   var newWindow: ListedWindow?
-  /// #298: the node's label read now, for `relabelled`'s sentence.
+  /// #298: the node's label read now, for `relabelled`'s sentence (#433: the control beneath's, when it refused).
   var labelNow: String?
+  /// #433: the recorded control beneath a node that does not act on its own (`underlyingTarget`), judged when the verdict
+  /// on the node kept the point, and how it was found; a refusal with it set is that control's, and its sentence names it.
+  var underlying: ScreenshotNode<Element>?
+  var underlyingIdentity: StalePointIdentity?
   var refused: Bool { reason.refuses }
 }
 
@@ -975,11 +982,78 @@ func recreatedHandle<Element>(of node: ScreenshotNode<Element>, near hit: Elemen
 /// `recorded` is the record's every element, framed or frameless, with whether its children all were recorded
 /// (`screenshotChildrenRecorded`; nil for an element the record lacks), which #330's rule dL judges the hit's chain by.
 /// `frameless` is the record's frameless elements (`screenshotRecord`), which #431's twin search reads beside `nodes`.
+///
+/// #433: a point kept at a node that does not act on its own, by a hit that names no interactive element, is judged again
+/// at the recorded control beneath the node (`underlyingTarget`, `underlyingRefusal`), since a click passes through such a
+/// node (a `pointer-events: none` overlay) to whatever lies under it now.
 func stalePointVerdict<Element>(at point: CGPoint, windowShift: CGVector = .zero, nodes: [ScreenshotNode<Element>],
                                 frameless: [ScreenshotNode<Element>] = [],
                                 recorded: @escaping (Element) -> Bool? = { _ in nil }, hit first: Element?,
                                 rehit: () -> Element? = { nil }, sleep: (Double) -> Void = { _ in },
                                 reads: StalePointReads<Element>) -> StalePointVerdict<Element> {
+  var verdict = recordedNodeVerdict(at: point, windowShift: windowShift, nodes: nodes, frameless: frameless, recorded: recorded,
+                                    hit: first, rehit: rehit, sleep: sleep, reads: reads)
+  let shown = CGPoint(x: point.x - windowShift.dx, y: point.y - windowShift.dy)
+  guard !verdict.refused, let node = verdict.node, !(verdict.hitRole.map(stalePointInteractiveRoles.contains) ?? false),
+        let target = underlyingTarget(of: node, at: shown, in: nodes) else { return verdict }
+  let judged = underlyingRefusal(target, at: point, windowShift: windowShift, hit: verdict.hit, nodes: nodes, frameless: frameless,
+                                 recorded: recorded, reads)
+  (verdict.underlying, verdict.underlyingIdentity) = (target, judged.identity)
+  guard let reason = judged.refusal else { return verdict }
+  var refused = StalePointVerdict(reason: reason, node: node, identity: verdict.identity, current: verdict.current, hitRole: verdict.hitRole,
+                                  hit: verdict.hit, gaps: verdict.gaps, point: point, windowShift: windowShift, nodes: nodes,
+                                  frameless: frameless, recorded: recorded, webAreaReads: verdict.webAreaReads,
+                                  newElementReads: verdict.newElementReads)
+  (refused.underlying, refused.underlyingIdentity, refused.labelNow) = (target, judged.identity, judged.labelNow)
+  return refused
+}
+
+/// #433: the recorded control a click at `node`'s point passes through to, when `node` does not act on its own (no
+/// interactive role and no AXPress, or its role or actions unread): the deepest recorded node at the point
+/// (`deepestScreenshotNode`'s pick, the later of two at one depth) that acts on its own and is not one of `node`'s
+/// recorded ancestors (a link's text reaches its link, which the guard already vouches for through the text); nil when
+/// `node` acts on its own or the record holds no such control at the point. `shown` is the point in the screenshot's
+/// space.
+func underlyingTarget<Element>(of node: ScreenshotNode<Element>, at shown: CGPoint, in nodes: [ScreenshotNode<Element>]) -> ScreenshotNode<Element>? {
+  guard node.actionable != true else { return nil }
+  var above: Set<Int> = []
+  var index = node.ancestor
+  while let at = index, above.insert(at).inserted { index = nodes[at].ancestor }
+  let controls = nodes.indices.filter { nodes[$0].actionable == true && !above.contains($0) }.map { nodes[$0] }
+  return deepestScreenshotNode(at: shown, in: controls)
+}
+
+/// #433: whether the control under a kept point (`underlyingTarget`) is still there, as #296 judges a recorded node: its
+/// own handle, its frame read now holding `point` and its label's words unchanged (#298's `relabelledLabel`), or the
+/// point's hit inside it; else a handle re-created in place (`recreatedHandle`, looked for near the hit, then among the
+/// descendants of its nearest recorded ancestor, since a hit on the node over it reaches nothing under it) that #431's
+/// record does not refuse (`recreatedRefused`: a twin in the record, a region not recorded whole, its own handle alive
+/// with only its frame unread). The refusal's reason (nil when kept), how the control was found, and for `relabelled` the
+/// label it reads now.
+func underlyingRefusal<Element>(_ target: ScreenshotNode<Element>, at point: CGPoint, windowShift: CGVector, hit: Element?,
+                                nodes: [ScreenshotNode<Element>], frameless: [ScreenshotNode<Element>], recorded: (Element) -> Bool?,
+                                _ reads: StalePointReads<Element>)
+  -> (refusal: StalePointReason?, identity: StalePointIdentity?, labelNow: String?) {
+  if let frame = reads.frame(target.element) {
+    guard holdsPoint(frame, point) else { return (.frameMoved, .handle, nil) }
+    if let now = relabelledLabel(target, reads) { return (.relabelled, .handle, now) }
+    return (nil, .handle, nil)
+  }
+  if let hit, reads.same(hit, target.element) || isInside(hit, target.element, reads) { return (nil, .handle, nil) }
+  for anchor in [hit, target.ancestor.map { nodes[$0].element }].compactMap({ $0 }) {
+    guard let found = recreatedHandle(of: target, near: anchor, windowShift: windowShift, nodes: nodes, frameless: frameless,
+                                      recorded: recorded, reads) else { continue }
+    if found.refused { return (.nodeGone, nil, nil) }
+    return (holdsPoint(found.frame, point) ? nil : .frameMoved, .recreated, nil)
+  }
+  return (.nodeGone, nil, nil)
+}
+
+/// #296's verdict on the recorded node at the point: `stalePointVerdict` before #433's check of the control beneath it.
+private func recordedNodeVerdict<Element>(at point: CGPoint, windowShift: CGVector, nodes: [ScreenshotNode<Element>],
+                                          frameless: [ScreenshotNode<Element>], recorded: @escaping (Element) -> Bool?, hit first: Element?,
+                                          rehit: () -> Element?, sleep: (Double) -> Void,
+                                          reads: StalePointReads<Element>) -> StalePointVerdict<Element> {
   let shown = CGPoint(x: point.x - windowShift.dx, y: point.y - windowShift.dy)
   guard let node = deepestScreenshotNode(at: shown, in: nodes) else { return StalePointVerdict(reason: .unrecorded, hit: first) }
   var hit = first
@@ -1207,6 +1281,9 @@ struct StalePointRecord: Equatable {
   let newElementReads: Int?
   /// For `newWindow`, the new window's number.
   let newWindow: CGWindowID?
+  /// #433: the role of the recorded control beneath the node that the guard judged too, and how it was found.
+  let underlyingRole: String?
+  let underlyingIdentity: StalePointIdentity?
 
   init<Element>(_ verdict: StalePointVerdict<Element>, ms: Double, rechecked: Bool = false) {
     self.verdict = verdict.refused ? .refused : .kept
@@ -1218,6 +1295,8 @@ struct StalePointRecord: Equatable {
     webAreaReads = verdict.webAreaReads
     newElementReads = verdict.newElementReads
     newWindow = verdict.newWindow?.number
+    underlyingRole = verdict.underlying?.role
+    underlyingIdentity = verdict.underlyingIdentity
     self.ms = ms
     self.rechecked = rechecked
   }
@@ -1232,6 +1311,8 @@ struct StalePointRecord: Equatable {
     if let webAreaReads { wire["webAreaReads"] = webAreaReads }
     if let newElementReads { wire["newElementReads"] = newElementReads }
     if let newWindow { wire["newWindow"] = Int(newWindow) }
+    if let underlyingRole { wire["underlyingRole"] = underlyingRole }
+    if let underlyingIdentity { wire["underlyingIdentity"] = underlyingIdentity.rawValue }
     if rechecked { wire["rechecked"] = true }
     if afterActivation { wire["afterActivation"] = true }
     return wire
@@ -1390,7 +1471,8 @@ func stalePointOutcome<Element>(_ verdict: StalePointVerdict<Element>, ms: Doubl
                                 reads: StalePointReads<Element>) -> (record: StalePointRecord, refusal: EngineError?) {
   let record = StalePointRecord(verdict, ms: ms)
   if verdict.reason == .newWindow { return (record, newWindowOverScreenshot(app: app)) }
-  guard verdict.refused, let node = verdict.node else { return (record, nil) }
+  guard verdict.refused, let recordedNode = verdict.node else { return (record, nil) }
+  let node = verdict.underlying ?? recordedNode  // #433: a refusal of the control beneath names it
   let was = stalePointName(role: node.role, title: node.title, description: node.description, value: node.value)
   var now: String?
   if verdict.reason != .relabelled, let hit = verdict.hit, let role = verdict.hitRole, !(verdict.current.map { reads.same(hit, $0) } ?? false) {

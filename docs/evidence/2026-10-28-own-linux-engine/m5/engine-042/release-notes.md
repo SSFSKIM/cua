@@ -35,13 +35,18 @@ cua's own Linux engine, cua-engine 0.4.2, built from <commit> for x86-64 and arm
     the facade carry to the model. Chrome's browser answers in a few milliseconds while nothing drags and slowly while
     it starts a drag its renderer began. Electron's stays fast while its drag starts, so Electron and every
     unidentified source keep the fixed B, with no extension and no notice. There is no release before B (ruling
-    900): an early release on fast pings lost 24 of 24 drags whose page started them late from a busy handler.
+    900): an early release on fast pings lost 24 of 24 drags whose page started them late from a busy handler. The
+    identification is read again at every drag, before the press, and its whole lookup (the bus's address and a
+    first connection included) is bounded by 200 ms. A drag whose path reaches B before its hold would begin (a path
+    that long, Chrome's canvas, or B 0) holds nothing and never extends. A take only the extension caught, past B,
+    whose drop nothing can confirm (no `_NET_ACTIVE_WINDOW`, no Electron cursor), is reported as an unconfirmed drop,
+    as the late-take watch reported it before the extension, never a plain ok.
   - **The late-take watch.** After a release with no take, the watch runs at least 700 ms after the release, or 300 ms
     after the hold's end if that is later. It runs after the answer, so a plain drag does not wait for it. A take inside
     it is cancelled at once and reported as before: the next reply carries `Pending from your last drag, a late drag
     and drop: …`, and the next acting request is refused with it. At an orderly exit after a stop signal only, the
     watch ends 650 ms after the signal (ruling 893), so a take it cancels keeps its whole 300 ms settle inside the 1 s
-    backstop; a take after that, at such an exit, goes unseen.
+    backstop; a take after that, at such an exit, goes unseen, even one whose read was under way when the stop came.
 - **The bound.** B is 450 ms (`dnd::TAKE_HOLD_AFTER_PRESS`, ruling 892): p350 left arm64 at twice the load at 3/210 on
   the cancel cell's shape (1.4%), above the 1% cap, and p600 would push Chrome's canvas past the newest vendor build's
   speed. The extension is 650 ms (`adaptive_hold::EXTENDED_HOLD_AFTER_PRESS`), past the latest renderer drag start
@@ -97,6 +102,12 @@ idle: arm64's on `:0` and a private display):
   codex-linux-sandbox, on Chrome 156 and on 158: Chrome identified by its class, role and accessible application
   ("executable not visible here"); the Electron fixture not (its class); a stub with Chrome's class and role whose
   accessible application is "Stub Browser" not. The lookup cost 1.1 to 1.7 ms when the bus was asked.
+- **The rule's fix wave (task 117's wave 4, d16614ed, x64 private displays, development runs).** D1's Chrome canvas at
+  idle: 477.5 ms warm (wave 2's 476.5; the newest vendor build 512.4), 40 of 40 took, 0 notices, no hold entered past
+  its 472 ms path, judge PASS. K1 (Chrome 156) and K2 (Chrome 158, its wrapper named to the harness and its running
+  browser read as 158.0.8127.36 under its own tree) PASS: the draggable presses busy on 9 of 9 and 7 of 8 held, slow by
+  the engine's 20 ms on 7 and 2; the select control fast on 9 of 9 each. K3 PASS. The sandboxed identification, its
+  three outcomes required, PASS on both Chromes; the bus lookup cost 0.9 to 4.4 ms.
 - <arm64 twice the load's ≥ 200 in-front samples on the rule as built (ruling 898.3): not run in wave 3, whose arm VM
   use was limited to reading Chrome 158>
 

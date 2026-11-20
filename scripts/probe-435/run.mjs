@@ -78,7 +78,7 @@ async function main(){
   const reps=repsOf(process.env.PROBE_REPS||'');
   // A cell measured on some lanes only (`lanes`) is not planned on the others.
   const headNames=Object.keys(heads),units=unitsForLane(process.env.PROBE_CELLS||'',lane);
-  if(!headNames.length||headNames.some(h=>!['main','fix'].includes(h))||mode==='qualify'&&headNames.length!==2)throw Error('invalid heads');
+  if(!headNames.length||headNames.some(h=>!['main','fix'].includes(h))||mode==='qualify'&&headNames.length!==2||mode==='discover'&&headNames.join()!=='main')throw Error('invalid heads');
   mkdirSync(out,{recursive:true});const tmp=mkdtempSync(join(root,'q435-')),home=join(tmp,'platform'),shots=join(tmp,'shots');
   mkdirSync(home);mkdirSync(shots,{mode:0o700});
   const config={kit:process.env.GITHUB_SHA,refs:{main:process.env.MAIN_SHA,fix:process.env.FIX_SHA||null},image:process.env.ImageVersion,
@@ -140,8 +140,9 @@ async function main(){
           if(nodeAt(sky.nodes,placed.screen)?.role!==recordedRole(c.cell,c.at))throw stepError('placement');
           // A twin cell's observation must hold every control it prepares (so the target is the one found), and a ruling-881
           // twin none of its own, else the unit is not tested.
-          // Mode discover (#435) records the shortfall (`gap`) and runs the row on, so main's answer is read either way.
-          gap=uncoveredBy(sky,spec,found,{role:controlRole(c.cell),at:c.at});if(gap&&mode!=='discover')throw stepError('uncovered-'+gap);
+          // Mode discover (#435) records the shortfall (`gap`) and runs the row on, so main's answer is read either way; but
+          // not when the control found is not the target (`target`), where the click would test nothing.
+          gap=uncoveredBy(sky,spec,found,{role:controlRole(c.cell),at:c.at});if(gap&&(mode!=='discover'||gap==='target'))throw stepError('uncovered-'+gap);
           // The cell's change, after the observation (and so after the record), before the click.
           s='mark';
           mark=await platform.command({op:'mark',trial});

@@ -45,13 +45,22 @@ export const LABELLED={move:2,list:3,cap:1,deep:1,swap:1,cover:2,row:2,wide:1,hi
 // `uncoveredBy` names the first condition that failed (a closed code), null when the observation is the one needed.
 // A big cell's observation must show the cut it names: the width rule's subset (a node `shown` fewer of its children
 // than it has) for `wide`, the node cap itself for `cap`.
-// #435's frameless twins (`hidden`): no node reading the label with any frame (a zero-size one included, which #431's
-// search already reads) outside the target control's frame (`label`), no control of the role with any frame at or below
-// the target's row but the target and Archive (`control`), and a node of the unit's recorded role (`at`) listed with no
-// frame that #431's label rule would take for the target (`frameless`): a text reading the label, a control reading it
-// or carrying no label.
+// #435's frameless twins (`hidden`), judged at the unit's recorded role (`at`): the control found is the target, where
+// the page put it, 128 pt above Archive's (64 for `cv`) (`target`); no other node of that role with any frame (a zero-size
+// one included, which #431's search reads) at or below the target's row whose label agrees with the target's under the
+// engine's rule (`framed`); and one listed with no frame that carries a label agreeing with it (`frameless`; an unlabelled
+// one, which the engine would also take, is not counted, as nothing ties it to the fixture's twin).
 export function uncoveredBy(sky,spec,found,{role='AXLink',at=null}={}){
   const nodes=Array.isArray(sky?.nodes)?sky.nodes:[];
+  if(spec.twin==='hidden'){
+    const archive=nodes.filter(n=>framed(n)&&n.role===role&&reads(n,'Archive'));
+    if(archive.length!==1||Math.abs(archive[0].frame.y-(spec.hide==='cv'?64:128)-found.link.frame.y)>8)return 'target';
+    const want=at==='text'?'AXStaticText':role,mine=at==='text'?found.text:found.link;
+    if(!mine)return 'target';
+    const above=n=>framed(n)&&n.frame.y+n.frame.height<=found.link.frame.y+2;
+    if(nodes.some(n=>n&&n!==mine&&n.role===want&&n.frame!=null&&!above(n)&&labelsAgree(mine,n)))return 'framed';
+    return nodes.some(n=>n&&n.frame==null&&n.role===want&&!unlabelled(n)&&labelsAgree(mine,n))?null:'frameless';
+  }
   if(spec.big==='wide')return nodes.some(n=>Number.isInteger(n?.shown?.count)&&n.shown.count<n.shown.of)?null:'cut';
   if(spec.big==='cap')return sky?.timings?.nodeCapHit===true?null:'cut';
   if(!spec.twin)return null;
@@ -63,14 +72,6 @@ export function uncoveredBy(sky,spec,found,{role='AXLink',at=null}={}){
     const bottom=found.link.frame.y+found.link.frame.height;
     return nodes.some(n=>n?.role===role&&framed(n)&&n!==found.link&&n.frame.y>=bottom)?'control':null;
   }
-  if(spec.twin==='hidden'){
-    const placed=n=>n?.frame!=null;
-    if(!nodes.filter(n=>placed(n)&&reads(n,spec.before)).every(n=>framed(n)&&holds(found.link.frame,centre(n.frame))))return 'label';
-    const above=n=>framed(n)&&n.frame.y+n.frame.height<=found.link.frame.y+2;
-    if(!nodes.filter(n=>n?.role===role&&placed(n)&&!above(n)).every(n=>n===found.link||reads(n,'Archive')))return 'control';
-    const want=at==='text'?'AXStaticText':role;
-    return nodes.some(n=>n&&!placed(n)&&n.role===want&&(reads(n,spec.before)||want!=='AXStaticText'&&unlabelled(n)))?null:'frameless';
-  }
   if(spec.twin!=='cap'&&spec.twin!=='deep')return null;
   const t=sky.truncated;
   if(spec.twin==='cap'?!(t?.count>0&&sky.timings?.nodeCapHit===true):!(t?.depth>0))return 'cut';
@@ -80,7 +81,18 @@ export function uncoveredBy(sky,spec,found,{role='AXLink',at=null}={}){
   return nodes.filter(n=>n?.role===role&&!above(n)).every(n=>n===found.link||reads(n,'Archive'))?null:'control';
 }
 export const covers=(...a)=>uncoveredBy(...a)===null;
-const unlabelled=n=>[n.title,n.description,n.value].every(v=>typeof v!=='string'||!v.trim());
+const unlabelled=n=>[n.title,n.description,n.value].every(v=>typeof v!=='string'||!v);
+// The engine's label rule between two recorded nodes (StalePoint.swift `recreatedLabelsAgree`): the title, then the
+// description, then the value by its words; at the first both carry, the same; at the first only one carries, agreed.
+const words=v=>v.toLowerCase().match(/[\p{L}0-9]+/gu)??[];
+export function labelsAgree(a,b){
+  for(const part of ['title','description','value']){
+    const x=typeof a[part]==='string'&&a[part]?a[part]:null,y=typeof b[part]==='string'&&b[part]?b[part]:null;
+    if(x&&y)return part==='value'?words(x).join(' ')===words(y).join(' '):x===y;
+    if(x||y)return true;
+  }
+  return true;
+}
 
 // #435's discovery: how the observation lists every node reading `text`, by role and frame (`framed`, `zero` for a frame
 // with no area, `frameless` for none: no AXPosition or AXSize), and every frameless node by role. Closed codes and counts.
@@ -239,7 +251,8 @@ export function gates(rows,{coverage:cov,units:all=UNITS,minPairs=MIN_PAIRS}){
   // A twin cell: refused as nodeGone, nothing reaching the target or any other control (`refused`, which a click on the
   // twin can never be: any event on another control is `wrong-target`).
   // interactiveHit (the hit an interactive element the record does not hold at the point) is a refusal ruling 889 accepts.
-  const twinOk=r=>r.verdict==='refused'&&[...(CELLS[r.cell].reasons??['nodeGone']),'interactiveHit'].includes(r.guard?.reason);
+  // #435's frameless twins must refuse nodeGone itself.
+  const twinOk=r=>r.verdict==='refused'&&[...(CELLS[r.cell].reasons??['nodeGone']),...(FRAMELESS.has(r.cell)?[]:['interactiveHit'])].includes(r.guard?.reason);
   const twinGate=pred=>{
     const list=fix.filter(r=>pred(r.cell)),miss=list.filter(r=>!twinOk(r));
     return {pass:!unitsWhere(pred).length||list.length>0&&everyUnit(pred)&&miss.length===0,rows:list.length,failed:miss.length,
@@ -270,11 +283,14 @@ export function gates(rows,{coverage:cov,units:all=UNITS,minPairs=MIN_PAIRS}){
       fixKeptLanded:list.filter(r=>r.verdict==='kept-landed').length,mainKeptLanded:main.filter(r=>pred(r.cell)&&r.verdict==='kept-landed').length,
       examples:brief(differ),reasonExamples:brief(reasonDiffer)};
   };
-  // The failure the fix answers, reproduced: the page logged a click on the twin itself on at least half main's valid
-  // rows of `twin` (a run without the cell passes it unjudged).
-  const mainTwin=main.filter(r=>r.cell==='twin'),mainTwinWrong=mainTwin.filter(r=>eventsOf(r).some(e=>e.type==='click'&&e.link==='twin')).length;
-  const twinRun=units.some(u=>u.cell==='twin');
-  const reproduced=!twinRun||mainTwin.length>0&&2*mainTwinWrong>=mainTwin.length;
+  // The failure the fix answers, reproduced (#435; main carries #431, which refuses the framed twins): in every frameless
+  // twin unit of the run, main kept a re-created match and the page logged a click on the twin itself on at least half
+  // its valid rows (a run without those cells passes it unjudged).
+  const twinClicked=r=>r.guard?.verdict==='kept'&&r.guard?.identity==='recreated'&&eventsOf(r).some(e=>e.type==='click'&&e.link==='twin');
+  const framelessUnits=units.filter(u=>FRAMELESS.has(u.cell)),twinRun=framelessUnits.length>0;
+  const reproPer=Object.fromEntries(framelessUnits.map(u=>[unitKey(u),{mainRows:of(main,u).length,mainTwinClicked:of(main,u).filter(twinClicked).length}]));
+  const reproduced=Object.values(reproPer).every(x=>x.mainRows>0&&2*x.mainTwinClicked>=x.mainRows);
+  const mainTwin=main.filter(r=>FRAMELESS.has(r.cell)),mainTwinWrong=mainTwin.filter(twinClicked).length;
   const wrong=fix.filter(r=>r.verdict==='wrong-target');
   // A fix row that a later step invalidated still carries its page log: any event on another control there fails too.
   const invalidWrong=rows.filter(r=>r.head==='fix'&&!r.valid&&inRun.has(unitKey(r))&&eventsOf(r).some(e=>!['target','none'].includes(e.link)));
@@ -286,7 +302,7 @@ export function gates(rows,{coverage:cov,units:all=UNITS,minPairs=MIN_PAIRS}){
   const ms=list=>quantiles(list.map(r=>r.guard?.ms));
   return {
     coverage:{pass:cov.complete&&cov.covered},
-    reproduced:{pass:reproduced,result:!twinRun?'not in this run':reproduced?'reproduced':'not reproduced (inconclusive)',mainRows:mainTwin.length,mainWrong:mainTwinWrong},
+    reproduced:{pass:reproduced,result:!twinRun?'not in this run':reproduced?'reproduced':'not reproduced (inconclusive)',mainRows:mainTwin.length,mainWrong:mainTwinWrong,perUnit:reproPer},
     twinRefused:twinGate(c=>isTwin(c)&&!UNRECORDED.has(c)&&!FRAMELESS.has(c)),
     twinUnrecorded:twinGate(c=>UNRECORDED.has(c)),
     twinFrameless:twinGate(c=>FRAMELESS.has(c)),
@@ -320,7 +336,11 @@ export function gates(rows,{coverage:cov,units:all=UNITS,minPairs=MIN_PAIRS}){
 export function judge(rows,{mode,abort,coverage:cov,units=UNITS,reps=null}){
   // A short qualification (fewer repetitions) asks no more usable pairs per unit than the valid bar of what it planned.
   const gate=mode==='qualify'?gates(rows,{coverage:cov,units,minPairs:Math.min(MIN_PAIRS,Math.ceil(VALID_BAR*(reps??MIN_PAIRS/VALID_BAR)))}):null;
-  const measured=abort===null&&cov.complete&&cov.covered;
+  // A discovery passes only where the observations themselves ran: in every unit, at least the valid bar of its planned
+  // rows carry the walk's evidence (an observation that failed, re-attested by the page, is a valid row without it).
+  const observed=mode!=='discover'||units.filter(u=>!isReportOnly(u)).every(u=>Object.entries(cov.per).filter(([k])=>k.endsWith('/'+unitKey(u))).every(([k,p])=>
+    rows.filter(r=>`${r.head}/${unitKey(r)}`===k&&r.walk?.labelled).length>=VALID_BAR*p.planned));
+  const measured=abort===null&&cov.complete&&cov.covered&&observed;
   // An informational entry (the guard's time) is reported, never part of the pass.
   return {gates:gate,pass:measured&&(!gate||Object.values(gate).every(g=>g.informational||g.pass))};
 }

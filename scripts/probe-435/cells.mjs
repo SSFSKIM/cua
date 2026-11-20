@@ -48,8 +48,8 @@ export const CELLS={
   // #435's frameless twins: the second "Inbox" link, in the second row, inside a container that may leave the browser
   // listing it with no AXPosition or AXSize (`hide`): a collapsed <details> (`details`), a content-visibility:auto section
   // below the fold (`cv`), a hidden=until-found section (`until`), a 0x0 overflow:hidden box (`zero`), a 64 px
-  // overflow:hidden box the link lies past (`clip`). After the observation the target is removed and the twin moved out
-  // into its row, shown. #431's twin search reads the record's framed nodes only, so main keeps the re-created match and
+  // overflow:hidden box the link lies past (`clip`). After the observation the target and the hidden twin are removed and
+  // a new link with the label rendered in the target's row (new handles: a handle the record holds is refused on main). #431's twin search reads the record's framed nodes only, so main keeps the re-created match and
   // lands on the twin; #435's reads the frameless ones too and must refuse. Gated (`twinFrameless`) only where the
   // observation holds the twin frameless (check.mjs `uncoveredBy`); mode `discover` records what each lane lists.
   twindetails:{kind:'twin',before:'Inbox',after:'Inbox',twin:'hidden',hide:'details'},
@@ -111,12 +111,13 @@ export function pointFor(at,frame){
   return at==='text'?{x:frame.x+Math.min(frame.width/3,12),y:frame.y+frame.height/2}:{x:frame.x+6,y:frame.y+frame.height/2};
 }
 
-// The units of a run: every unit, or those of the named cells (a comma list; unknown names are refused).
+// The units of a run: every unit, or those of the named cells or units (a comma list of `cell` or `cell/at`; unknown
+// names are refused).
 export function unitsFor(filter){
   if(!filter)return UNITS;
-  const names=filter.split(',').map(s=>s.trim()).filter(Boolean);
-  if(!names.length||names.some(n=>!Object.hasOwn(CELLS,n)))throw Error('unknown cell');
-  const units=UNITS.filter(u=>names.includes(u.cell));
+  const names=filter.split(',').map(s=>s.trim()).filter(Boolean),keys=new Set(UNITS.map(unitKey));
+  if(!names.length||names.some(n=>!Object.hasOwn(CELLS,n)&&!keys.has(n)))throw Error('unknown cell');
+  const units=UNITS.filter(u=>names.includes(u.cell)||names.includes(unitKey(u)));
   if(!units.length)throw Error('no units');
   return units;
 }

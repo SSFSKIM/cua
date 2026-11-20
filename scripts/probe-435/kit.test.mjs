@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {Script} from 'node:vm';
 import {CELLS,UNITS,AT,FILLER,DEEP,recordedRole,unitKey,unitsFor,unitsForLane,repsOf,plan,pointFor} from './cells.mjs';
-import {labelledOf,quantiles,outcomeOf,stalePointOf,routeOf,findLink,covers,uncoveredBy,nodeAt,landingOf,delta,score,gates,coverage,summarize,judge,MIN_PAIRS} from './check.mjs';
+import {FRAMELESS,labelledOf,quantiles,outcomeOf,stalePointOf,routeOf,findLink,covers,uncoveredBy,nodeAt,landingOf,delta,score,gates,coverage,summarize,judge,MIN_PAIRS} from './check.mjs';
 import {page} from './page.mjs';
 import {toPixels} from './run.mjs';
 
@@ -187,9 +187,9 @@ test('verdicts: kept and landed, refused, refused yet delivered or unreported, m
 // Synthetic qualification rows: `verdictFor` names each row's verdict.
 function rows(verdictFor, extra = () => ({}), units = UNITS) {
   return plan({mode: 'qualify', heads: ['main', 'fix'], units}).map(r => {
-    const v = verdictFor(r);
-    return {...r, valid: true, verdict: v, click: v.startsWith('kept') ? 'success' : 'screenChangedSinceScreenshot',
-      guard: {verdict: v.startsWith('kept') ? 'kept' : 'refused', reason: v.startsWith('kept') ? 'sameElement' : 'nodeGone',
+    const v = verdictFor(r), kept = v.startsWith('kept') || v === 'wrong-target';
+    return {...r, valid: true, verdict: v, click: kept ? 'success' : 'screenChangedSinceScreenshot',
+      guard: {verdict: kept ? 'kept' : 'refused', reason: kept ? 'sameElement' : 'nodeGone', identity: v === 'wrong-target' ? 'recreated' : null,
         recordedRole: recordedRole(r.cell, r.at), ms: r.head === 'fix' ? 4 : 2},
       clickEvents: v === 'wrong-target' ? ['pointerdown:twin', 'click:twin'] : v.startsWith('kept') ? ['click:target'] : [],
       presentationHeld: true, ...extra(r)};
@@ -256,17 +256,22 @@ test('gates pass a fix that refuses every twin and answers as main elsewhere, an
   assert.equal(coverage(ok.slice(0, -1), {planned: planned(ok), heads: ['main', 'fix']}).complete, false);
 });
 
-test('reproduced: main clicked the twin on at least half its valid rows of `twin`, else inconclusive', () => {
+test('reproduced: main clicked the frameless twin on at least half its valid rows of every frameless unit, else inconclusive', () => {
   const cov = {complete: true, covered: true};
-  const half = rows(r => r.head === 'main' && r.cell === 'twin' && r.rep < 10 ? 'kept-landed' : good(r));
-  assert.deepEqual(gates(half, {coverage: cov}).reproduced, {pass: true, result: 'reproduced', mainRows: 40, mainWrong: 20});
-  const lost = gates(rows(r => r.head === 'main' && r.cell === 'twin' && r.rep < 11 ? 'refused' : good(r)), {coverage: cov}).reproduced;
+  const half = rows(r => r.head === 'main' && r.cell === 'twincv' && r.at === 'text' && r.rep < 10 ? 'kept-landed' : good(r));
+  const h = gates(half, {coverage: cov}).reproduced;
+  assert.equal(h.pass, true); assert.equal(h.mainRows, 200); assert.equal(h.mainWrong, 190);
+  assert.deepEqual(h.perUnit['twincv/text'], {mainRows: 20, mainTwinClicked: 10});
+  const lost = gates(rows(r => r.head === 'main' && r.cell === 'twincv' && r.at === 'link' && r.rep < 11 ? 'refused' : good(r)), {coverage: cov}).reproduced;
   assert.equal(lost.pass, false); assert.equal(lost.result, 'not reproduced (inconclusive)');
   // Only a click on the twin itself reproduces: a pointerdown alone, or a click on Archive, does not.
-  const partial = rows(good, r => r.head === 'main' && r.cell === 'twin' ? {clickEvents: r.rep < 11 ? ['pointerdown:twin'] : ['click:twin:untrusted']} : {});
+  const partial = rows(good, r => r.head === 'main' && r.cell === 'twinzero' ? {clickEvents: r.rep < 11 ? ['pointerdown:twin'] : ['click:twin:untrusted']} : {});
   assert.equal(gates(partial, {coverage: cov}).reproduced.pass, false);
-  const archive = rows(good, r => r.head === 'main' && r.cell === 'twin' ? {clickEvents: ['click:archive']} : {});
+  const archive = rows(good, r => r.head === 'main' && FRAMELESS.has(r.cell) ? {clickEvents: ['click:archive']} : {});
   assert.equal(gates(archive, {coverage: cov}).reproduced.mainWrong, 0);
+  // #431's framed twin, refused on both heads (main carries #431), reproduces nothing and fails nothing.
+  const twinUnits = unitsFor('twin'), framed = rows(r => r.cell === 'twin' ? 'refused' : good(r), () => ({}), twinUnits);
+  assert.equal(gates(framed, {coverage: cov, units: twinUnits}).reproduced.result, 'not in this run');
 });
 
 test('a wrong event on a fix row a later step invalidated still fails noWrongTarget', () => {
@@ -387,28 +392,39 @@ test('summaries carry the geometry as median and span', () => {
   assert.deepEqual(quantiles([3, 1, 2, 10]), {n: 4, p50: 3, p95: 10, max: 10});
 });
 
-test('#435: a frameless twin must be listed without a frame, of the unit\'s role, and nothing reading the label framed elsewhere', () => {
+test('#435: a frameless twin must be listed without a frame at the unit\'s role, the target where the page put it', () => {
   const found = {text, link}, archive = {role: 'AXLink', title: 'Archive', frame: {x: 420, y: 264, width: 130, height: 56}};
   const ftext = {role: 'AXStaticText', value: 'Inbox', frame: null}, flink = {role: 'AXLink', title: 'Inbox', frame: null};
   const spec = CELLS.twindetails, sky = nodes => ({nodes});
   assert.equal(uncoveredBy(sky([text, link, flink, ftext, archive]), spec, found, {at: 'text'}), null);
   assert.equal(uncoveredBy(sky([text, link, flink, ftext, archive]), spec, found, {at: 'link'}), null);
-  // Only the link listed frameless: the link point is tested, the text point is not.
+  // The engine's label rule: the value by its words; a title before a description.
+  assert.equal(uncoveredBy(sky([text, link, {...ftext, value: 'INBOX'}, archive]), spec, found, {at: 'text'}), null);
+  assert.equal(uncoveredBy(sky([text, link, {role: 'AXLink', title: 'Other', description: 'Inbox', frame: null}, archive]), spec, found, {at: 'link'}), 'frameless');
+  // Only the link listed frameless: the link point is tested, the text point is not; a framed twin text fails only the text point.
   assert.equal(uncoveredBy(sky([text, link, flink, archive]), spec, found, {at: 'text'}), 'frameless');
-  assert.equal(uncoveredBy(sky([text, link, {role: 'AXLink', title: '', frame: null}, archive]), spec, found, {at: 'link'}), null);
+  const twinText = {...text, frame: {...text.frame, y: 214}};
+  assert.equal(uncoveredBy(sky([text, link, flink, twinText, archive]), spec, found, {at: 'link'}), null);
+  assert.equal(uncoveredBy(sky([text, link, flink, twinText, ftext, archive]), spec, found, {at: 'text'}), 'framed');
+  // An unlabelled frameless link is not tied to the fixture's twin; one of another label is no twin.
+  assert.equal(uncoveredBy(sky([text, link, {role: 'AXLink', title: '', frame: null}, archive]), spec, found, {at: 'link'}), 'frameless');
   assert.equal(uncoveredBy(sky([text, link, {role: 'AXLink', title: 'Other', frame: null}, archive]), spec, found, {at: 'link'}), 'frameless');
-  // Nothing of the twin listed: not tested.
   assert.equal(uncoveredBy(sky([text, link, archive]), spec, found, {at: 'link'}), 'frameless');
-  // A zero-size twin is framed for #431's search, so the cell does not test the fix.
+  // A zero-size twin, or a zero-size unlabelled link, is framed for #431's search.
   const zero = {x: 420, y: 200, width: 0, height: 0};
-  assert.equal(uncoveredBy(sky([text, link, {...ftext, frame: zero}, flink, archive]), spec, found, {at: 'text'}), 'label');
-  assert.equal(uncoveredBy(sky([text, link, ftext, {role: 'AXLink', title: '', frame: zero}, archive]), spec, found, {at: 'text'}), 'control');
-  // A framed twin is a second carrier.
-  assert.equal(uncoveredBy(sky([text, link, {...text, frame: {...text.frame, y: 214}}, flink, ftext]), spec, found, {at: 'text'}), 'count');
+  assert.equal(uncoveredBy(sky([text, link, {...ftext, frame: zero}, ftext, archive]), spec, found, {at: 'text'}), 'framed');
+  assert.equal(uncoveredBy(sky([text, link, flink, {role: 'AXLink', title: '', frame: zero}, archive]), spec, found, {at: 'link'}), 'framed');
+  // The target where the page put it: 128 pt above Archive (64 for cv), else the control found is not known to be it.
+  assert.equal(uncoveredBy(sky([text, link, flink, archive]), CELLS.twincv, found, {at: 'link'}), 'target');
+  assert.equal(uncoveredBy(sky([text, link, flink, {...archive, frame: {...archive.frame, y: 200}}]), CELLS.twincv, found, {at: 'link'}), null);
+  assert.equal(uncoveredBy(sky([text, link, flink]), spec, found, {at: 'link'}), 'target');
   // The discovery's evidence: the label's carriers by role and frame, every frameless node by role.
   assert.deepEqual(labelledOf([text, link, ftext, flink, {...ftext, frame: zero}, {role: 'AXGroup', frame: null}, archive], 'Inbox'),
     {label: {'AXStaticText:framed': 1, 'AXLink:framed': 1, 'AXStaticText:frameless': 1, 'AXLink:frameless': 1, 'AXStaticText:zero': 1},
       frameless: {AXStaticText: 1, AXLink: 1, AXGroup: 1}});
+  // Units by `cell/at`.
+  assert.deepEqual(unitsFor('twincv/link,remount').map(unitKey), ['twincv/link', 'remount/text', 'remount/link']);
+  assert.throws(() => unitsFor('twincv/middle'));
   // A short qualification asks the valid bar of its repetitions in usable pairs.
   const units = unitsFor('remount'), ten = plan({mode: 'qualify', heads: ['main', 'fix'], units, reps: 10});
   assert.equal(plan({mode: 'discover', heads: ['main'], units}).length, 3 * units.length);
@@ -416,4 +432,25 @@ test('#435: a frameless twin must be listed without a frame, of the unit\'s role
     guard: {verdict: 'kept', reason: 'sameElement', ms: 1}, click: 'success', clickEvents: [], presentationHeld: true}));
   const cov = coverage(kept, {planned: planned(ten), heads: ['main', 'fix'], units});
   assert.equal(judge(kept, {mode: 'qualify', abort: null, coverage: cov, units, reps: 10}).pass, true);
+  // A discovery passes only on rows that carry the walk's evidence.
+  const disc = plan({mode: 'discover', heads: ['main'], units}).map(r => ({...r, lane: 'cft', valid: true, verdict: 'observe-failed'}));
+  const dcov = coverage(disc, {planned: planned(disc), heads: ['main'], units});
+  assert.equal(judge(disc, {mode: 'discover', abort: null, coverage: dcov, units}).pass, false);
+  assert.equal(judge(disc.map(r => ({...r, walk: {labelled: {label: {}, frameless: {}}}})), {mode: 'discover', abort: null, coverage: dcov, units}).pass, true);
+});
+
+test('#435: reproduced is main clicking the frameless twin through a kept re-created match, and the fix must refuse nodeGone', () => {
+  const units = unitsFor('twincv'), list = plan({mode: 'qualify', heads: ['main', 'fix'], units, reps: 10}).map(r => ({...r, lane: 'cft', valid: true,
+    invalid: null, presentationHeld: true, click: r.head === 'main' ? 'success' : 'screenChangedSinceScreenshot',
+    verdict: r.head === 'main' ? 'wrong-target' : 'refused', clickEvents: r.head === 'main' ? ['click:twin'] : [],
+    guard: r.head === 'main' ? {verdict: 'kept', reason: 'sameElement', identity: 'recreated', ms: 1} : {verdict: 'refused', reason: 'nodeGone', ms: 1}}));
+  const cov = coverage(list, {planned: planned(list), heads: ['main', 'fix'], units});
+  const g = gates(list, {coverage: cov, units, minPairs: 8});
+  assert.equal(g.reproduced.pass, true); assert.equal(g.twinFrameless.pass, true);
+  // Both heads refusing: nothing reproduced, the run is inconclusive.
+  const both = list.map(r => r.head === 'main' ? {...r, verdict: 'refused', clickEvents: [], guard: {verdict: 'refused', reason: 'nodeGone'}} : r);
+  assert.equal(gates(both, {coverage: cov, units, minPairs: 8}).reproduced.pass, false);
+  // interactiveHit is not #435's refusal.
+  const ih = list.map(r => r.head === 'fix' ? {...r, guard: {verdict: 'refused', reason: 'interactiveHit'}} : r);
+  assert.equal(gates(ih, {coverage: cov, units, minPairs: 8}).twinFrameless.pass, false);
 });

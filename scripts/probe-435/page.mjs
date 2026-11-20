@@ -80,8 +80,8 @@ function run(c){
       for(let i=0;i<DEEP;i++){const d=document.createElement('div');d.setAttribute('role','group');d.append(inner);inner=d;}
       mover=inner;slots[1].append(mover);slots[2].append(archive);
     }else if(spec.twin==='hidden'){
-      // #435: the twin inside a container that may leave it listed without a frame; mark moves it out into the target's
-      // row, shown. \`cv\` lies below the fold (content-visibility:auto skips only what is off screen), so its row holds
+      // #435: the twin inside a container that may leave it listed without a frame; mark removes it and renders a new one
+      // with its label in the target's row (new handles, so #431's record-membership check cannot refuse it). \`cv\` lies below the fold (content-visibility:auto skips only what is off screen), so its row holds
       // Archive.
       twins=[control('twin',spec.before,spec)];mover=twins[0];
       let box;
@@ -171,6 +171,7 @@ function run(c){
     else if(spec.twin==='cover'){target.remove();slots[0].prepend(mover);}
     else if(spec.twin==='row'){slots[0].remove();const n=control('twin',spec.before,spec);twins[0].replaceWith(n);twins.push(n);}
     else if(spec.twin==='wide')rows[2].remove();
+    else if(spec.twin==='hidden'){target.remove();mover.remove();const n=control('twin',spec.before,spec);twins.push(n);slots[0].replaceChildren(n);}
     else if(spec.twin){target.remove();slots[0].replaceChildren(mover);}
     else if(spec.remount==='link'){const n=control('target',spec.after,spec);target.replaceWith(n);target=n;}
     else if(spec.remount==='text'){const s=document.createElement('span');s.textContent=spec.after;target.firstChild.replaceWith(s);}
@@ -178,7 +179,7 @@ function run(c){
     marked=target;
     // For a twin cell the target is gone: the geometry after is the twin's that took its place.
     // The twin that took the target's place: the first, but for twinrow the one re-rendered in the live row (the last).
-    const t=spec.twin==='row'?twins[twins.length-1]:twins[0];
+    const t=spec.twin==='row'||spec.twin==='hidden'?twins[twins.length-1]:twins[0];
     const after=spec.twin?{text:t.textContent,link:rect(t.getBoundingClientRect()),textRect:null}:geometry();
     return {trial,clicksBeforeMark,before,after,twin:spec.twin?rect(t.getBoundingClientRect()):null};
   }

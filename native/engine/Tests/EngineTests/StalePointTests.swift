@@ -3907,6 +3907,38 @@ final class OverlayTargetTests: XCTestCase {
     XCTAssertNil(recreated.underlying)
   }
 
+  /// The review of 17942ad7, item 1: the hit is a clickable group (AXPress, no listed role) beneath the overlay, in place,
+  /// relabelled "Next" to "Continue". The hit names a control, so the gate stands down and main keeps
+  /// `nonInteractiveHit`; main's classification of the hit is unchanged.
+  func testAHitThatAdvertisesAXPressNamesAControl() {
+    let page = Page(twin: "Archive", pressable: true)
+    page.a.title = "Next"
+    let kept = judged(page) { page in
+      page.a.title = "Continue"
+      return page.a
+    }
+    XCTAssertEqual(kept.reason, .nonInteractiveHit)
+    XCTAssertEqual(kept.hitRole, "AXGroup")
+    XCTAssertNil(kept.underlying)
+  }
+
+  /// Item 2: an overlay whose role did not read at the observation but whose AXPress did, its actions unreadable now:
+  /// the recorded AXPress makes it its own target, never inert, as main keeps it while B slides under it.
+  func testAnOverlayThatRecordedAXPressIsNeverInert() {
+    let page = Page()
+    page.overlay.roleUnread = true
+    page.overlay.actions = ["AXPress"]
+    let nodes = recorded(page.window)
+    XCTAssertNil(nodes.first { $0.element === page.overlay }?.actionable, "#431's unknown role is unchanged")
+    let kept = judged(page) { page in
+      page.overlay.actionsUnread = true
+      page.slide(webkit: false)
+      return page.overlay
+    }
+    XCTAssertEqual(kept.reason, .sameElement)
+    XCTAssertNil(kept.underlying)
+  }
+
   /// (d): a clickable card around an iframe whose overlay (in a wrapper of unknown actions) lies over link A: the card is
   /// outside the overlay's document, so it owns nothing there, and `twincover` in the iframe refuses.
   func testAnOuterCardNeverOwnsAnIframesOverlay() {

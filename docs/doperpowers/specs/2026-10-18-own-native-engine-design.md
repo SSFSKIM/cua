@@ -6906,6 +6906,11 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   press verdict with an overlay that acts on its own. Mutation passes over the new lines, the last of 11 over the
   narrowed gate (the inert node, the acting ancestor and its document stop, the live re-read, the candidates), are
   caught by these tests, every one.
+  The review of 17942ad7 narrowed the gate twice more: a hit that advertises AXPress (a clickable group, no listed role)
+  names a control for this gate, so it stands down there while main's classification of the hit (`nonInteractiveHit`)
+  is unchanged; and a node whose recorded actions included AXPress is never inert, though its role did not read
+  (`ScreenshotNode.pressRecorded`, beside #431's `actionable`, which stays nil for a role unread). Both tested, a
+  mutation pass of 3 caught.
   Not measured live: `twincover` on CfT, Safari and Electron with this build, and how often real pages lose a click to a
   changed control under an inert layer.
   Date/Author: 2026-11-20, cursor235's implementer for #433.

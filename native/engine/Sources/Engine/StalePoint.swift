@@ -107,6 +107,9 @@ struct ScreenshotNode<Element> {
   /// (`stalePointControlStops`, so an iframe's document starts afresh), acts on its own (an interactive role or AXPress,
   /// read): #433 judges the control beneath only a node with none, an inert layer, never content of a control.
   var controlAbove = false
+  /// Whether its action names, read, included AXPress, whatever its role read (#433's review of 17942ad7, item 2:
+  /// `actionable` is nil for a role unread, as #431 needs); a node that recorded AXPress is never an inert layer.
+  var pressRecorded = false
 }
 
 /// What an element offers its recorded descendants as their control (`screenshotNodes`, #431).
@@ -310,7 +313,8 @@ func screenshotRecord<Element>(_ reads: [ScreenshotNodeRead<Element>], key: ((El
                      actionable: !read.roleRead ? nil
                        : stalePointInteractiveRoles.contains(read.role) || read.actions.contains("AXPress") ? true
                        : read.actionsRead ? false : nil,
-                     regionCovered: !broken.contains(regionRoot), controlAbove: controlAbove)
+                     regionCovered: !broken.contains(regionRoot), controlAbove: controlAbove,
+                     pressRecorded: read.actions.contains("AXPress"))
     }
     guard let frame = own else {
       framed[read.number] = ancestor
@@ -1010,7 +1014,9 @@ func stalePointVerdict<Element>(at point: CGPoint, windowShift: CGVector = .zero
                                     hit: first, rehit: rehit, sleep: sleep, reads: reads)
   let shown = CGPoint(x: point.x - windowShift.dx, y: point.y - windowShift.dy)
   // A hit on a control names what the click reaches, judged by #296 and #305.
+  // A hit that advertises AXPress (a clickable group) names a control too, for this gate only.
   guard !verdict.refused, let node = verdict.node, !(verdict.hitRole.map(stalePointInteractiveRoles.contains) ?? false),
+        verdict.hit.flatMap(reads.actions)?.contains("AXPress") != true,
         let target = underlyingTarget(of: node, current: verdict.current ?? node.element, at: shown, in: nodes, reads)
   else { return verdict }
   let judged = underlyingRefusal(target, at: point, windowShift: windowShift, hit: verdict.hit, nodes: nodes, frameless: frameless,
@@ -1035,7 +1041,7 @@ func stalePointVerdict<Element>(at point: CGPoint, windowShift: CGVector = .zero
 /// not in the tree. `shown` is the point in the screenshot's space.
 func underlyingTarget<Element>(of node: ScreenshotNode<Element>, current: Element, at shown: CGPoint,
                                in nodes: [ScreenshotNode<Element>], _ reads: StalePointReads<Element>) -> ScreenshotNode<Element>? {
-  guard node.actionable != true, !node.controlAbove else { return nil }
+  guard node.actionable != true, !node.pressRecorded, !node.controlAbove else { return nil }
   if node.actionable == nil,
      reads.role(current).map(stalePointInteractiveRoles.contains) == true || reads.actions(current)?.contains("AXPress") == true {
     return nil

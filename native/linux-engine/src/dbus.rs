@@ -16,6 +16,7 @@ use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::io::{ErrorKind, Read, Write};
 use std::os::linux::net::SocketAddrExt;
 use std::os::unix::net::UnixStream;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, anyhow, bail};
@@ -24,6 +25,13 @@ use anyhow::{Context, Result, anyhow, bail};
 pub const MAX_MESSAGE: usize = 16 * 1024 * 1024;
 /// The vendor's socket timeouts; here, how long the bus may stay silent while calls are outstanding.
 pub const IO_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// How many connects with a deadline may still wait on a socket that has not accepted them (`Bus::connect`): a
+/// listener whose accept queue stays full keeps their threads, no more than this many.
+const PENDING_CONNECTS: usize = 2;
+
+/// The connects with a deadline waiting now, in this engine.
+static CONNECTING: AtomicUsize = AtomicUsize::new(0);
 
 const METHOD_CALL: u8 = 1;
 pub const METHOD_RETURN: u8 = 2;
@@ -597,12 +605,44 @@ impl Bus {
                 }
             }
         };
-        let stream = match parse_address(address)? {
-            SocketAddr::Path(path) => UnixStream::connect(&path).context("failed to connect to the D-Bus socket")?,
-            SocketAddr::Abstract(name) => {
-                let addr = std::os::unix::net::SocketAddr::from_abstract_name(&name)
-                    .context("failed to connect to the abstract D-Bus socket")?;
-                UnixStream::connect_addr(&addr).context("failed to connect to the abstract D-Bus socket")?
+        let socket = parse_address(address)?;
+        let open = move || -> Result<UnixStream> {
+            Ok(match socket {
+                SocketAddr::Path(path) => {
+                    UnixStream::connect(&path).context("failed to connect to the D-Bus socket")?
+                }
+                SocketAddr::Abstract(name) => {
+                    let addr = std::os::unix::net::SocketAddr::from_abstract_name(&name)
+                        .context("failed to connect to the abstract D-Bus socket")?;
+                    UnixStream::connect_addr(&addr).context("failed to connect to the abstract D-Bus socket")?
+                }
+            })
+        };
+        let stream = match deadline {
+            None => open()?,
+            // a listener whose accept queue is full holds a blocking connect until it accepts, however long (the
+            // re-review of wave 4, I3): with a deadline the connect runs on a thread of its own, waited for no longer
+            // than what is left. One that never returns keeps its thread, and at most PENDING_CONNECTS such threads
+            // wait at once; past them the connect fails at once
+            Some(_) => {
+                if CONNECTING.fetch_add(1, Ordering::SeqCst) >= PENDING_CONNECTS {
+                    CONNECTING.fetch_sub(1, Ordering::SeqCst);
+                    bail!("earlier connections to the D-Bus socket are still waiting to be accepted");
+                }
+                let (opened, receive) = std::sync::mpsc::channel();
+                let spawned = std::thread::Builder::new().name("dbus-connect".into()).spawn(move || {
+                    let stream = open();
+                    CONNECTING.fetch_sub(1, Ordering::SeqCst);
+                    let _ = opened.send(stream);
+                });
+                if let Err(error) = spawned {
+                    CONNECTING.fetch_sub(1, Ordering::SeqCst);
+                    bail!("the D-Bus connection's thread could not start: {error}");
+                }
+                match receive.recv_timeout(left()?) {
+                    Ok(stream) => stream?,
+                    Err(_) => bail!("the D-Bus socket did not accept the connection in time"),
+                }
             }
         };
         let uid = {

@@ -390,7 +390,7 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   AT-SPI bus is named `Google Chrome` or `Chromium`; where `/proc` can see that process (not in service, where the
   engine runs in the sandbox's own PID namespace), its executable must be `chrome`, `chromium` or `chromium-browser`
   too. All of it is read again at every drag, before the press, nothing kept; the bus is asked only once the window's
-  own marks hold, and the whole lookup (the bus's address, a connection when the engine has none yet, the calls) is
+  own marks hold, and the whole lookup (the bus's address, its connect when the engine has none yet, the calls) is
   done within 200 ms (`IDENTIFY_BOUND`); a lookup that fails or runs out leaves the source unidentified (`--stats`
   `browser_identity`: `ms`, `bus`, about 1.5 ms when the bus was asked). A drag whose path reaches B before its hold
   would begin (a path that long, or `--drag-dnd-hold-ms 0`) holds nothing: its last look for a take stays, but it asks

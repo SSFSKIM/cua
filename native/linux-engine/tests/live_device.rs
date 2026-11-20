@@ -2388,6 +2388,61 @@ fn a_silent_accessibility_bus_met_cold_leaves_the_source_unidentified_within_the
         kept
     });
     let silent = RootBusAddress::set(&format!("unix:path={}", socket.display()));
+    a_drag_on_an_unanswering_bus_keeps_the_fixed_hold_within_the_bound("a silent bus");
+    drop(silent);
+    let _ = std::fs::remove_file(&socket);
+    drop(held);
+}
+
+/// The connection itself is bounded too (the re-review of wave 4, I3): an accessibility bus whose listener's accept
+/// queue is full (a live socket that never accepts, its backlog taken) would hold a blocking connect until it accepts,
+/// and 0.4.1 never made a drag wait on the bus. Met cold, it leaves the source unidentified within the bound. The
+/// listener ends by itself after 8 s, so an engine that waits on it fails this test rather than hanging it.
+#[test]
+fn a_saturated_accessibility_bus_met_cold_leaves_the_source_unidentified_within_the_bound() {
+    use std::io::BufRead;
+    support::fresh_display();
+    let socket = std::env::temp_dir().join(format!("cua-live-full-bus-{}", std::process::id()));
+    let _ = std::fs::remove_file(&socket);
+    // a listener with a backlog of none, filled by connections it never accepts until a connect would block
+    const FULL: &str = "import select, socket, sys\n\
+        path = sys.argv[1]\n\
+        l = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM); l.bind(path); l.listen(0)\n\
+        kept = []\n\
+        while True:\n\
+        \x20   c = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM); c.setblocking(False)\n\
+        \x20   try:\n\
+        \x20       c.connect(path); kept.append(c)\n\
+        \x20   except BlockingIOError:\n\
+        \x20       break\n\
+        print(len(kept), flush=True)\n\
+        select.select([sys.stdin], [], [], 8)\n";
+    let mut full = std::process::Command::new("python3")
+        .args(["-I", "-c", FULL])
+        .arg(&socket)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .expect("python3");
+    let mut filled = String::new();
+    std::io::BufReader::new(full.stdout.take().unwrap())
+        .read_line(&mut filled)
+        .unwrap();
+    assert!(
+        filled.trim().parse::<u32>().is_ok_and(|n| n >= 1),
+        "the listener's queue filled: {filled:?}"
+    );
+    let saturated = RootBusAddress::set(&format!("unix:path={}", socket.display()));
+    a_drag_on_an_unanswering_bus_keeps_the_fixed_hold_within_the_bound("a saturated bus");
+    drop(saturated);
+    drop(full.stdin.take());
+    let _ = full.wait();
+    let _ = std::fs::remove_file(&socket);
+}
+
+/// An identified Chrome's drag on a fresh engine whose accessibility bus does not answer (`what`): the lookup ends
+/// within IDENTIFY_BOUND, the source unidentified, and the drag keeps the fixed hold at B.
+fn a_drag_on_an_unanswering_bus_keeps_the_fixed_hold_within_the_bound(what: &str) {
     let bound = hold_bound();
     let identify = adaptive_constant("IDENTIFY_BOUND");
     let drag = identified_drag(
@@ -2402,23 +2457,20 @@ fn a_silent_accessibility_bus_met_cold_leaves_the_source_unidentified_within_the
         false,
     )
     .unwrap();
-    drop(silent);
-    let _ = std::fs::remove_file(&socket);
-    drop(held);
     let identity = &drag.stats["browser_identity"];
     let adaptive = &drag.stats["hold"]["adaptive"];
-    assert_eq!(identity["bus"], json!(true), "{identity}");
+    assert_eq!(identity["bus"], json!(true), "{what}: {identity}");
     let ms = Duration::from_secs_f64(identity["ms"].as_f64().unwrap() / 1000.0);
     assert!(
         ms < identify + Duration::from_millis(50),
-        "the lookup took {ms:?}: {identity}"
+        "{what}: the lookup took {ms:?}: {identity}"
     );
-    assert_eq!(adaptive["source"]["identified"], json!(false), "{adaptive}");
-    assert_eq!(adaptive["way"], json!("fixed"), "{adaptive}");
-    assert_eq!(drag.notice, None);
+    assert_eq!(adaptive["source"]["identified"], json!(false), "{what}: {adaptive}");
+    assert_eq!(adaptive["way"], json!("fixed"), "{what}: {adaptive}");
+    assert_eq!(drag.notice, None, "{what}");
     assert!(
         drag.answered < bound + identify + Duration::from_millis(200),
-        "answered {:?} after the request",
+        "{what}: answered {:?} after the request",
         drag.answered
     );
 }

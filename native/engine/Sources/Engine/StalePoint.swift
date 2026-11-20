@@ -841,8 +841,7 @@ func recreatedRefused<Element>(_ candidate: Element, of node: ScreenshotNode<Ele
   /// Whether the record holds `element`: the screenshot's handle map, framed and frameless (`recorded`), else a framed
   /// node by its handle (the review of 849bcdad..38a55469, item 1).
   func recordedNode(_ element: Element) -> Bool { recorded(element) != nil || nodes.contains { reads.same($0.element, element) } }
-  func twin(_ other: ScreenshotNode<Element>) -> Bool { recreatedTwin(other, of: node, reads) }
-  if recordedNode(candidate) || nodes.contains(where: twin) || frameless.contains(where: twin) { return true }
+  if recordedNode(candidate) || recreatedTwinFound(of: node, among: [nodes, frameless], reads) { return true }
   func controlDiffers(_ control: (element: Element, role: String)?) -> Bool {
     guard let recorded = node.control else { return control != nil }
     guard let control else { return true }
@@ -878,33 +877,52 @@ func recreatedRefused<Element>(_ candidate: Element, of node: ScreenshotNode<Ele
   return true
 }
 
+/// #431's twin search (`recreatedRefused`'s refusal 4): whether `peers` hold a twin of `node` (`recreatedTwin`). The node's
+/// side of the label rule is normalized once per search, on first use, by `nodeLabelWords` (#435's review of 66ae2e8d: a
+/// long text's words were taken again for every peer compared, before delivery, with thousands of peers on a large page).
+func recreatedTwinFound<Element>(of node: ScreenshotNode<Element>, among peers: [[ScreenshotNode<Element>]], _ reads: StalePointReads<Element>,
+                                 nodeLabelWords: (String) -> [String] = stalePointLabelWords) -> Bool {
+  var words: [String]?
+  func nodeWords(_ text: String) -> [String] {
+    if let words { return words }
+    let taken = nodeLabelWords(text)
+    words = taken
+    return taken
+  }
+  return peers.contains { $0.contains { recreatedTwin($0, of: node, reads, nodeWords: nodeWords) } }
+}
+
 /// #431's twin (ruling 889 (i)): whether `other`, a recorded node, is another element #296's match could have taken for
 /// `node`: of its role (or of a role unread then, which may be it; the review of main..849bcdad, finding 6), in its region
 /// (the same web area, else outside every web area), with a label that agrees (`recreatedLabelsAgree`), and not the
 /// node's own control or that control's inert content (an element acting on its own, a link or anything with AXPress or
-/// whose role or actions did not read, under the same control is another action: finding 1).
-func recreatedTwin<Element>(_ other: ScreenshotNode<Element>, of node: ScreenshotNode<Element>, _ reads: StalePointReads<Element>) -> Bool {
+/// whose role or actions did not read, under the same control is another action: finding 1). `nodeWords` gives the words
+/// of the node's own value (`recreatedLabelsAgree`).
+func recreatedTwin<Element>(_ other: ScreenshotNode<Element>, of node: ScreenshotNode<Element>, _ reads: StalePointReads<Element>,
+                            nodeWords: (String) -> [String] = stalePointLabelWords) -> Bool {
   guard !reads.same(other.element, node.element), other.roleUnknown || other.role == node.role else { return false }
   guard other.webArea.map({ area in node.webArea.map { reads.same(area, $0) } ?? false }) ?? (node.webArea == nil) else { return false }
   if let control = node.control {
     if reads.same(other.element, control) { return false }
     if other.actionable == false, let owner = other.control, reads.same(owner, control) { return false }
   }
-  return recreatedLabelsAgree(node, other)
+  return recreatedLabelsAgree(node, other, aWords: nodeWords)
 }
 
 /// The match's label rule (`stalePointLabelsAgree`) between two recorded nodes, which never falls past a label read that
 /// failed on either side (the review of main..849bcdad, finding 5): the title, then the description, then an
 /// AXStaticText's value by its words; at the first that either side failed to read they agree, at the first both carry
-/// they agree when it is the same, at the first only one carries they agree; carrying none, they agree.
-func recreatedLabelsAgree<Element>(_ a: ScreenshotNode<Element>, _ b: ScreenshotNode<Element>) -> Bool {
+/// they agree when it is the same, at the first only one carries they agree; carrying none, they agree. `aWords` gives the
+/// words of `a`'s value (`stalePointLabelWords`; a search over many `b` takes them once, `recreatedTwinFound`).
+func recreatedLabelsAgree<Element>(_ a: ScreenshotNode<Element>, _ b: ScreenshotNode<Element>,
+                                   aWords: (String) -> [String] = stalePointLabelWords) -> Bool {
   for part in StalePointLabelPart.allCases {
     if a.labelsUnread.contains(part) || b.labelsUnread.contains(part) { return true }
     func text(_ node: ScreenshotNode<Element>) -> String? {
       nonEmpty(part == .title ? node.title : part == .description ? node.description : node.value)
     }
     switch (text(a), text(b)) {
-    case let (x?, y?): return part == .value ? stalePointLabelWords(x) == stalePointLabelWords(y) : x == y
+    case let (x?, y?): return part == .value ? aWords(x) == stalePointLabelWords(y) : x == y
     case (nil, nil): continue
     default: return true
     }

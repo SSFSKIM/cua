@@ -3258,6 +3258,62 @@ final class RecreatedIdentityTests: XCTestCase {
     XCTAssertEqual(kept.reason, .sameElement)
     XCTAssertEqual(stalePointPressVerdict(moved, kept, reads: reads).reason, .pressedOther, "the route pressing B")
   }
+
+  /// A page of texts under one web area, each labelled as given (`unread`: its value's read failed), the first `framed`
+  /// framed and the rest frameless, as the record holds them, the framed ones first.
+  private func texts(_ labels: [(value: String?, title: String?, unread: Bool)], framed: Int) -> [ScreenshotNode<Node>] {
+    let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 600, height: 400))
+    let web = Node("AXWebArea", CGRect(x: 0, y: 0, width: 600, height: 400))
+    window.add(web)
+    for (index, label) in labels.enumerated() {
+      let text = Node("AXStaticText", index < framed ? CGRect(x: 0, y: CGFloat(index % 300), width: 50, height: 1) : nil, title: label.title,
+                      value: label.value)
+      if label.unread { text.unreadable = [.value] }
+      web.add(text)
+    }
+    let (nodes, frameless, _) = walkRecord(window)
+    return (nodes + frameless).filter { $0.role == "AXStaticText" }
+  }
+
+  /// #435's review of 66ae2e8d: the search takes the node's words once, and its verdicts are the per-peer rule's. For each
+  /// node, each peer is judged after every peer that is no twin of it, in one search, as the rule judges it alone.
+  func testTheTwinSearchJudgesAsThePerPeerRule() {
+    let labels: [(value: String?, title: String?, unread: Bool)] = [
+      ("Reply", nil, false), ("reply!", nil, false), ("Reply 3", nil, false), ("Archive", nil, false), (nil, nil, false), ("", nil, false),
+      ("Like (12)", nil, false), ("Like (13)", nil, false), ("Reply", "Send", false), (nil, "Send", false), ("Archive", nil, true),
+      ("3:21 PM", nil, false), ("Reply all", nil, false),
+    ]
+    let nodes = texts(labels, framed: labels.count)
+    var twins = 0
+    for node in nodes {
+      let peers = nodes.filter { $0.element !== node.element }
+      let others = peers.filter { !recreatedTwin($0, of: node, reads) }
+      for peer in peers {
+        let alone = recreatedTwin(peer, of: node, reads)
+        twins += alone ? 1 : 0
+        XCTAssertEqual(recreatedTwinFound(of: node, among: [others, [peer]], reads), alone,
+                       "\(node.value ?? "nil")/\(node.title ?? "nil") against \(peer.value ?? "nil")/\(peer.title ?? "nil")")
+      }
+      XCTAssertEqual(recreatedTwinFound(of: node, among: [others], reads), false)
+    }
+    XCTAssertGreaterThan(twins, 0, "the matrix holds twins")
+  }
+
+  /// The same review: thousands of frameless texts that are no twin of a long text take its words once, not once each.
+  func testTheTwinSearchTakesTheNodesWordsOnce() {
+    let long = String(repeating: "lorem ipsum ", count: 1_000)
+    let page = texts([(long, nil, false)] + (0..<3_000).map { ("peer \($0)", nil, false) }, framed: 1)
+    let (node, peers) = (page[0], Array(page.dropFirst()))
+    XCTAssertEqual(peers.count, 3_000)
+    XCTAssertTrue(peers.allSatisfy { $0.frame.isNull }, "frameless")
+    var taken = 0
+    let found = recreatedTwinFound(of: node, among: [[], peers], reads) { text in
+      taken += 1
+      return stalePointLabelWords(text)
+    }
+    XCTAssertFalse(found)
+    XCTAssertEqual(taken, 1)
+  }
 }
 
 /// An element source whose action-name answer a test sets (#431's review of 849bcdad..38a55469, item 2).

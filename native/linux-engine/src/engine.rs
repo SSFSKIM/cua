@@ -690,12 +690,14 @@ impl Engine {
     /// fixed anyway. Read again at every drag, nothing kept (the re-review of wave 3, I3: a kept answer outlived a
     /// window whose role or application changed): the window's own marks first, and the accessibility bus only once
     /// they hold, the whole lookup (the bus's address, its connection when the engine has none yet, and its calls)
-    /// within `adaptive_hold::IDENTIFY_BOUND`; the cost goes on the `--stats` line (`browser_identity`).
+    /// within `adaptive_hold::IDENTIFY_BOUND` of the identification's start (ruling 912); the cost goes on the `--stats`
+    /// line (`browser_identity`).
     pub(super) fn browser_source(&mut self, window: x11rb::protocol::xproto::Window) -> Result<String, String> {
         if !self.cfg.dnd_hold_ping {
             return Err("not asked: the hold's pings are off".into());
         }
         let started = std::time::Instant::now();
+        let deadline = started + crate::adaptive_hold::IDENTIFY_BOUND;
         let class = self.x.wm_class(window);
         let pid = self.x.pid(window);
         let (role, machine) = match class
@@ -718,7 +720,6 @@ impl Engine {
             host.as_deref(),
             |pid| {
                 asked = true;
-                let deadline = std::time::Instant::now() + crate::adaptive_hold::IDENTIFY_BOUND;
                 self.with_bus_by(deadline, |bus| atspi::application_name_of(bus, pid, deadline))
                     .map_err(|error| format!("{error:#}"))
             },

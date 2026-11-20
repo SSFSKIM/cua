@@ -2462,7 +2462,7 @@ fn a_drag_on_an_unanswering_bus_keeps_the_fixed_hold_within_the_bound(what: &str
     assert_eq!(identity["bus"], json!(true), "{what}: {identity}");
     let ms = Duration::from_secs_f64(identity["ms"].as_f64().unwrap() / 1000.0);
     assert!(
-        ms < identify + Duration::from_millis(50),
+        ms < identify + Duration::from_millis(15),
         "{what}: the lookup took {ms:?}: {identity}"
     );
     assert_eq!(adaptive["source"]["identified"], json!(false), "{what}: {adaptive}");

@@ -56,7 +56,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { pendingOf } from './drop-signals-judge.mjs';
-import { AUDIT_PLAN, FOLLOW_UP_FIELDS, TIMED_QUOTAS, bindAudit, bindTimed, evidenceLabel, holdNoticed, isShortage, judgePremise, repeatedSlots, slotProblems } from './premise.mjs';
+import { AUDIT_PLAN, FOLLOW_UP_FIELDS, TIMED_QUOTAS, bindAudit, bindTimed, evidenceLabel, holdNoticed, isShortage, judgePremise, parsePageRead, repeatedSlots, slotProblems } from './premise.mjs';
 import { preorder } from './normalize.mjs';
 import { readGtk4Status } from './families.mjs';
 import { IDENTITY_OPS, IDENTITY_SCENE_OPS, judgeIdentity } from './identity.mjs';
@@ -588,13 +588,26 @@ function mayHaveDropped(r) {
 
 /**
  * Ruling 898.2: an ok with the adaptive hold's notice (premise.mjs `HOLD_NOTICE`, word for word) is honest only when the
- * page shows no drop: the runner's bit read the counter unchanged (`dropped` false: an unread counter counts as a drop),
- * the page's later read shows none, and the case saw no effect (`honestNotice`). One on a drag that did drop
- * (`falseAlarm`: the counter risen, or the case's effect seen) is a false alarm, counted and reported in the verdict.
- * One whose page cannot say either way is neither, and is judged as any ok is.
+ * page shows no drop, on read evidence (`noDropRead`): the page's drop counter read before and after the sample, both
+ * numbers, unchanged; the runner's first read, where the case makes one, unchanged too (`dropped` false: an unread
+ * counter counts as a drop, as `mayHaveDropped` has it); no read risen; and the case saw no effect (`honestNotice`). The
+ * in-front drop cases make no first read, so their later read alone decides (task 118's arm runs: with `dropped`
+ * required, no in-front notice could ever be honest, and an honest one, drops 3 to 3, was judged a false ok). One on a
+ * drag that did drop (`falseAlarm`: the counter risen, or the case's effect seen) is a false alarm, counted and reported
+ * in the verdict. One whose page cannot say either way (an unread counter) is neither, and is judged as any ok is.
  */
 export function honestNotice(r) {
-  return holdNoticed(r) && r.effect !== true && !mayHaveDropped(r);
+  return holdNoticed(r) && r.effect !== true && noDropRead(r);
+}
+
+/**
+ * Whether the sample's page was read showing no drop: both reads of the counter numbers, unchanged (see above). An
+ * audited answer, whose row is the binding's (premise.mjs `bindAudit`), is read from its bound evidence's page lines.
+ */
+function noDropRead(r) {
+  const { before, after } = r.drop_status ?? { before: parsePageRead(r.premise_evidence?.page?.before), after: parsePageRead(r.premise_evidence?.page?.after) };
+  const unchanged = typeof before?.drops === 'number' && typeof after?.drops === 'number' && after.drops === before.drops;
+  return unchanged && (r.dropped === undefined || r.dropped === false) && !dropSeen(r);
 }
 
 export function falseAlarm(r) {

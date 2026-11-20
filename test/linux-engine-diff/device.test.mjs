@@ -213,6 +213,17 @@ test("V5's cells: an ok with the hold's exact notice is honest only where the pa
   const secondReadFailed = { ...honest, ...firstRead, drop_status: { before: { drops: 65 }, after: null } };
   const lost = judgeDevice('chrome_dnd_short_in_front_shared', [landed, secondReadFailed], audit);
   assert.deepEqual(lost.hold_notices, { samples: 2, noticed: 1, honest: 0, false_alarm: 1, false_alarms: ['0/1'] });
+  // task 118's arm runs: the in-front drop case makes no first read (no `dropped`), so its page's read before and after
+  // decides. No drop read: honest. A drop read: a false alarm, counted. An unread counter: not honest
+  const { dropped: _unset, ...inFrontRow } = honest;
+  const inFrontHonest = judgeDevice('chrome_dnd_short_in_front_shared', [landed, inFrontRow], audit);
+  assert.equal(inFrontHonest.pass, true, inFrontHonest.reasons.join('; '));
+  assert.deepEqual(inFrontHonest.hold_notices, { samples: 2, noticed: 1, honest: 1, false_alarm: 0, false_alarms: [] });
+  const inFrontDropped = judgeDevice('chrome_dnd_short_in_front_shared', [landed, { ...inFrontRow, drop_status: rose }], audit);
+  assert.deepEqual(inFrontDropped.hold_notices, { samples: 2, noticed: 1, honest: 0, false_alarm: 1, false_alarms: ['0/1'] });
+  const inFrontUnread = judgeDevice('chrome_dnd_short_in_front_shared', [landed, { ...inFrontRow, drop_status: { before: { drops: 65 }, after: null } }], audit);
+  assert.equal(inFrontUnread.pass, false, 'an unread counter vouches for nothing');
+  assert.deepEqual(inFrontUnread.hold_notices, { samples: 2, noticed: 1, honest: 0, false_alarm: 0, false_alarms: [] });
   // an ok with no notice and no drop: still a false ok
   const bare = judgeDevice('chrome_dnd_short_in_front_shared', [landed, { ...honest, reply_notice: null }], audit);
   assert.equal(bare.pass, false);

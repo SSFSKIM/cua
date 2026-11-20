@@ -33,9 +33,11 @@ pub const FAST_PING: Duration = Duration::from_millis(20);
 /// latest renderer drag start measured at arm64 twice the load (+521 ms).
 pub const EXTENDED_HOLD_AFTER_PRESS: Duration = Duration::from_millis(650);
 
-/// The longest the identification's accessibility-bus lookup may take before the press (ruling 899): one that has not
-/// answered by then leaves the source unidentified, so its drag keeps the fixed hold.
-pub const IDENTIFY_BOUND: Duration = Duration::from_millis(200);
+/// The longest the whole identification may take before the press (rulings 899 and 912), counted from its start: one
+/// that has not answered by then leaves the source unidentified, so its drag keeps the fixed hold, and the press never
+/// waits on the bus longer. Sized from the idle lookups measured in the sandbox (task 117: 0.9 to 4.4 ms with the bus
+/// asked), ten times the slowest and more.
+pub const IDENTIFY_BOUND: Duration = Duration::from_millis(50);
 
 /// What an extended hold with no take answers beside its ok (ruling 897), word for word: the page may have started a
 /// drag and drop that its browser refused once the button was up.

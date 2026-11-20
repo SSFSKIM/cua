@@ -36,9 +36,10 @@ cua's own Linux engine, cua-engine 0.4.2, built from <commit> for x86-64 and arm
     it starts a drag its renderer began. Electron's stays fast while its drag starts, so Electron and every
     unidentified source keep the fixed B, with no extension and no notice. There is no release before B (ruling
     900): an early release on fast pings lost 24 of 24 drags whose page started them late from a busy handler. The
-    identification is read again at every drag, before the press, and its whole lookup (the bus's address and a
-    first connection included) is bounded by 200 ms. A drag whose path reaches B before its hold would begin (a path
-    that long, Chrome's canvas, or B 0) holds nothing and never extends. A take only the extension caught, past B,
+    identification is read again at every drag, before the press, and the whole of it (the bus's address and a
+    first connection, its connect included) is bounded by 50 ms from its start (ruling 912; idle lookups take 1 to
+    5 ms): past it the source is unidentified and keeps the fixed hold. A drag whose path reaches B before its hold
+    would begin (a path that long, Chrome's canvas, or B 0) holds nothing and never extends. A take only the extension caught, past B,
     whose drop nothing can confirm (no `_NET_ACTIVE_WINDOW`, no Electron cursor), is reported as an unconfirmed drop,
     as the late-take watch reported it before the extension, never a plain ok.
   - **The late-take watch.** After a release with no take, the watch runs at least 700 ms after the release, or 300 ms

@@ -28,7 +28,7 @@ import { pinnedEngine } from './pinned-home.mjs';
 import { stacking, startOverlay, toplevel, waitQuarantineOver, within } from './clip.mjs';
 import { desktopEntry } from './desktop-entry.mjs';
 import { DEVICE_REFUSAL, SPEED_GAPS, declaredDeviation, declaredParity, declaredRefusal, declaredSpeedGap, describe, setAsideMinimized, setAsideTruncation, truncationMismatch } from './deviations.mjs';
-import { judgeDevice } from './device.mjs';
+import { canaryPlainControl, judgeDevice } from './device.mjs';
 import { IDENTITY_OPS, identityAuditKind } from './identity.mjs';
 import { MINIMIZED_OPS, minimizedAuditKind } from './minimized.mjs';
 import { Engine } from './engine.mjs';
@@ -1659,10 +1659,13 @@ async function diffRun(args, candidate, { handoff }) {
     // Verdicts: each sample's answer against the pinned build's of its block, a difference excused only by a declared
     // deviation, then the operation judged per candidate.
     const verdicts = [];
+    // the hold canary's criterion (ruling 930): a relative one judges the draggable cell against the plain control's
+    // own waits in this run (device.mjs `canaryPlainControl`)
+    const canary = { criterion: args.holdCanary, plain: canaryPlainControl(rows.filter((r) => r.op === 'chrome_select_nudged_shared' && r.engine === 'cua')) };
     // the device cases (device.mjs): cua alone, each judged by its expectation
     for (const { scene: sceneName, op } of blockPlan.filter((p) => isDevice(p.op))) {
       const opRows = rows.filter((r) => r.scene === sceneName && r.op === op && r.engine === 'cua');
-      const judged = judgeDevice(op, opRows, args.audit ? audits[`${sceneName}|${op}|cua`] : { clean: true, kind: 'skipped' });
+      const judged = judgeDevice(op, opRows, args.audit ? audits[`${sceneName}|${op}|cua`] : { clean: true, kind: 'skipped' }, undefined, { canary });
       const row = { kind: 'verdict', scene: sceneName, op, candidate: 'cua', device: OPS[op].device, ...judged, verdict: judged.pass ? 'pass' : 'fail' };
       verdicts.push(row);
       emit(row);

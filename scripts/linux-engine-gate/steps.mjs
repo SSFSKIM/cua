@@ -78,6 +78,13 @@ const FOCUS_STOPS = ['--experiment', 'focus-timer', '--stops-only', '--family', 
  * the step without it).
  */
 const CANARY_OPS = ['chrome_dnd_short_in_front_shared', 'chrome_select_nudged_shared'];
+/**
+ * The canary's criterion for its draggable cell by architecture (the design session's ruling 930; device.mjs
+ * `holdCanary`): on x64 Chrome 158 often takes its drag before a ping has waited 20 ms (task 119: 0 and then 1 of 9 held
+ * presses reached it, every drop landing), so there a press is judged against the run's own plain control; arm64, where
+ * the extension is meant to fire, keeps the engine's own 20 ms. Any other architecture keeps it too.
+ */
+export const CANARY_CRITERION = { x64: 'relative', arm64: 'absolute' };
 const canary = (name, chrome, what) => ({ name, kind: 'canary', display: 'private', load: 'idle', minutes: 15, scenes: ['device-chrome-dnd'], only: { 'device-chrome-dnd': CANARY_OPS }, ballast: true, chrome, what, pilot: (args) => args });
 
 export const STEPS = [
@@ -193,9 +200,10 @@ export function stepLabel({ gate, pilot }) {
  * acceptance on the pinned release (`gate` 'pinned') gives either kind `--pinned`, candidate.mjs's pinned rule. A
  * pilot (`pilot`, a count) runs the step's smallest form: its `pilot` transform, or `--trials <count>`, and for a
  * verdict one block; and the harness's `--pilot`, so it takes no top-up and reports what it could not decide unjudged
- * (ruling 722). A pilot on the pinned rule (`gate` 'pinned-dev') gives `--pinned --pilot`.
+ * (ruling 722). A pilot on the pinned rule (`gate` 'pinned-dev') gives `--pinned --pilot`. `arch`, the machine the step
+ * runs on, sets a canary's criterion (`CANARY_CRITERION`).
  */
-export function stepArgs(step, { paths, gate, pilot = null, engineStats = false }) {
+export function stepArgs(step, { paths, gate, pilot = null, engineStats = false, arch = process.arch }) {
   const run = runName(step, { gate, pilot });
   // the opt-in --stats of every cua lane (engine.mjs `recordEngines`), a development run's, whose refusal is gate.mjs's
   const stats = engineStats ? ['--engine-stats'] : [];
@@ -210,7 +218,7 @@ export function stepArgs(step, { paths, gate, pilot = null, engineStats = false 
       ...(pilot ? ['--pilot'] : []),
       ...stats,
       // the canary's engines as the service runs them (engine-sandbox.mjs)
-      ...(step.kind === 'canary' ? ['--engine-sandbox'] : []),
+      ...(step.kind === 'canary' ? ['--engine-sandbox', '--hold-canary', CANARY_CRITERION[arch] ?? 'absolute'] : []),
     ];
   }
   if (step.kind === 'facade') return ['--vendor-js', paths.vendorJs, '--engine', paths.candidate, ...step.args];

@@ -183,6 +183,19 @@ export function renderSummary(lines) {
       out.push('| scene | op | samples | noticed | honest | false alarm | false alarms |', '|---|---|---:|---:|---:|---:|---|');
       for (const v of noticed) out.push(`| ${v.scene} | ${v.op} | ${v.hold_notices.samples} | ${v.hold_notices.noticed} | ${v.hold_notices.honest} | ${v.hold_notices.false_alarm} | ${v.hold_notices.false_alarms.join(', ') || '–'} |`);
     }
+    // the hold canary's waits (ruling 930), so drift toward its bar shows before it fails: the draggable cell's presses
+    // that started a drag, their largest and median ping wait, against the plain control's warm largest
+    const canaries = verdicts.filter((v) => v.hold_canary);
+    if (canaries.length) {
+      const ms = (x) => (typeof x === 'number' ? String(x) : '–');
+      out.push('', "The hold canary (device.mjs `holdCanary`): each cell's ping waits in ms. A draggable cell passes on a press that started a drag and read slow by the engine's own 20 ms (`absolute`), or waited 3x the plain control's warm largest and 5 ms at least (`relative`, x64's K1 and K2):", '');
+      out.push('| scene | op | kind | criterion | held | started | largest wait | median wait | plain largest | bar |', '|---|---|---|---|---:|---:|---:|---:|---:|---:|');
+      for (const v of canaries) {
+        const c = v.hold_canary;
+        const draggable = c.kind === 'draggable';
+        out.push(`| ${v.scene} | ${v.op} | ${c.kind} | ${draggable ? (c.criterion ?? 'absolute') : '–'} | ${c.held} | ${draggable ? ms(c.started) : '–'} | ${ms(c.wait_max_ms)} | ${draggable ? ms(c.wait_median_ms) : '–'} | ${draggable ? ms(c.plain_max_ms) : '–'} | ${draggable ? (c.criterion === 'relative' ? ms(c.bar_ms) : '20') : '–'} |`);
+      }
+    }
     // every pass that is a small measured loss inside the bound, in one table (Acceptance 3)
     // a label's `candidate` is the candidate's median; the engine is the verdict's own `candidate`
     const bound = verdicts.flatMap((v) => (v.labels ?? []).filter((l) => l.label === 'within the bound').map((l) => ({ ...l, scene: v.scene, op: v.op, engine: v.candidate })));

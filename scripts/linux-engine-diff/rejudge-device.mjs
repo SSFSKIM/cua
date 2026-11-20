@@ -19,7 +19,7 @@ import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { gunzipSync } from 'node:zlib';
 
-import { PREMISE_OPS, judgeDevice, premiseBinding } from './device.mjs';
+import { PREMISE_OPS, canaryPlainControl, judgeDevice, premiseBinding } from './device.mjs';
 import { adjacency, classifyPremise } from './premise.mjs';
 
 /** A step's results file: the path given, or its `run/results.jsonl` (or `.gz`), or its own `results.jsonl`. */
@@ -103,7 +103,9 @@ export function rejudgeDevice(rows, { judge = judgeDevice, old = null, lines = n
       // judged from the step's own sidecar and recorded plan (none for a run from before the fix: then nothing is
       // excluded), and its classes read off the same binding the verdict used
       const premiseArgs = { lines, window, plan };
-      const judged = PREMISE_OPS.has(v.op) ? judge(v.op, opRows, audit, premiseArgs) : judge(v.op, opRows, audit);
+      // the hold canary judged by the criterion the run was (ruling 930), against the run's own plain control
+      const canary = { criterion: v.hold_canary?.criterion ?? 'absolute', plain: canaryPlainControl(samples.filter((r) => r.op === 'chrome_select_nudged_shared')) };
+      const judged = judge(v.op, opRows, audit, PREMISE_OPS.has(v.op) ? premiseArgs : undefined, { canary });
       // a premise cell's replay is diagnostic only (wave 8); with no recorded plan it is marked so, evidence or none (wave 7)
       const now = PREMISE_OPS.has(v.op) ? outcome(plan ? judged : { ...judged, plan_unverified: true }, true) : outcome(judged);
       const bound = PREMISE_OPS.has(v.op) ? premiseBinding(v.op, opRows, audit, premiseArgs) : null;

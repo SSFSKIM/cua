@@ -267,7 +267,7 @@ test('the hold canary: a draggable press must read slow at least once, a warm pl
   // two of three presses found the browser busy (a ping answered in 8 ms, one unanswered for 34 ms when its take came)
   const good = judgeDevice('chrome_dnd_short_in_front_shared', [press(0, [8]), press(1, [1, -34]), press(2, [2])], audit);
   assert.equal(good.pass, true, good.reasons.join('; '));
-  assert.deepEqual(good.hold_canary, { kind: 'draggable', held: 3, busy: 2, slow: 1, slow_started: 1 });
+  assert.deepEqual(good.hold_canary, { kind: 'draggable', criterion: 'absolute', held: 3, busy: 2, slow: 1, slow_started: 1, started: 3, wait_max_ms: 34, wait_median_ms: 8 });
   // the re-review of wave 4, I1: the slow press must have started a drag, seen apart from the pings: with no take of the
   // engine's watch and no dragstart of its own on the page, its slowness proves nothing, and the canary fails
   const unstarted = (i, waits, drop_status) => {
@@ -278,7 +278,7 @@ test('the hold canary: a draggable press must read slow at least once, a warm pl
   };
   const idleSlow = judgeDevice('chrome_dnd_short_in_front_shared', [press(0, [8]), unstarted(1, [1, -34]), press(2, [6])], audit);
   assert.match(idleSlow.reasons.join('; '), /none of the 1 held presses on a draggable source that read slow by the engine's own threshold started a drag/);
-  assert.deepEqual(idleSlow.hold_canary, { kind: 'draggable', held: 3, busy: 3, slow: 1, slow_started: 0 });
+  assert.deepEqual(idleSlow.hold_canary, { kind: 'draggable', criterion: 'absolute', held: 3, busy: 3, slow: 1, slow_started: 0, started: 2, wait_max_ms: 8, wait_median_ms: 7 });
   const noStart = { before: { starts: 4, drops: 4 }, after: { starts: 4, drops: 4 } };
   assert.equal(judgeDevice('chrome_dnd_short_in_front_shared', [press(0, [8]), unstarted(1, [40], noStart), press(2, [6])], audit).pass, false, 'the page counted no dragstart');
   // the page's own dragstart is evidence enough where the engine's watch saw no take
@@ -291,7 +291,7 @@ test('the hold canary: a draggable press must read slow at least once, a warm pl
   // reads all of them fast, so the canary proves nothing and fails
   const sixes = judgeDevice('chrome_dnd_short_in_front_shared', [press(0, [6]), press(1, [6, 6]), press(2, [6])], audit);
   assert.match(sixes.reasons.join('; '), /none of 3 held presses on a draggable source read slow by the engine's own threshold \(a ping of 20 ms or more\)/);
-  assert.deepEqual(sixes.hold_canary, { kind: 'draggable', held: 3, busy: 3, slow: 0, slow_started: 0 });
+  assert.deepEqual(sixes.hold_canary, { kind: 'draggable', criterion: 'absolute', held: 3, busy: 3, slow: 0, slow_started: 0, started: 3, wait_max_ms: 6, wait_median_ms: 6 });
   // too few holds ran to say: untested, a failure
   assert.match(judgeDevice('chrome_dnd_short_in_front_shared', [press(0, [40])], audit).reasons.join('; '), /the hold canary is untested: 1 of 1/);
   // Chrome not identified: the extension cannot apply
@@ -303,7 +303,7 @@ test('the hold canary: a draggable press must read slow at least once, a warm pl
   const select = (i, waits, way = 'fixed', why = fastWhy) => row({ block: 0, i, ok: true, effect: true, route: 'background', dnd: { in_front: true }, desktop_same: true, engine_stats: { hold: hold(waits, way, why) } });
   const plain = judgeDevice('chrome_select_nudged_shared', [select(0, [58], 'noticed', 'a ping came back in 58 ms; no take by 650 ms after the press'), select(1, [1, 1]), select(2, [2]), select(3, [1])], audit);
   assert.ok(!plain.reasons.some((r) => r.includes('hold canary')), plain.reasons.join('; '));
-  assert.deepEqual(plain.hold_canary, { kind: 'plain', held: 4, slow: 1, cold_slow: 1 });
+  assert.deepEqual(plain.hold_canary, { kind: 'plain', held: 4, slow: 1, cold_slow: 1, warm: 3, wait_max_ms: 2 });
   const warmSlow = judgeDevice('chrome_select_nudged_shared', [select(0, [1]), select(1, [1, 26], 'noticed', 'a ping came back in 26 ms; no take by 650 ms after the press'), select(2, [2]), select(3, [1])], audit);
   assert.match(warmSlow.reasons.join('; '), /the hold canary: a plain drag read slow on 1 of 3 warm samples \(0\/1\)/);
   // the plain control's evidence missing (I5): too few warm holds, or the engine's records carry no hold at all

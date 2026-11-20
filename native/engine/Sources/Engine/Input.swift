@@ -530,23 +530,22 @@ extension Engine {
         // takes the hit's own action when it has one, any other is refused, before anything is posted.
         var pointer = PointerTarget.acceptingFirstMouse
         var pointerHit = hit
+        // #452: the hit-test whose hit the guard judges, #288's last re-hit when it ran (the review of 023a3bee, P1).
+        let latest = LatestHit(hitOutcome) { hitTestOutcome(window: placed.window, pid: appPid, at: placed.point, now: monotonicMilliseconds) }
         if route == .activation, button == .left {
           let established: PointerTarget
           (established, pointerHit) = signposted("click.pointerView") {
-            clickPointerTarget(hit: hit, window: placed.window, rehit: { hitTest(window: placed.window, pid: appPid, at: placed.point) },
-                               app: app, appPid: appPid, meta: &meta)
+            clickPointerTarget(hit: hit, window: placed.window, rehit: latest.rehit, app: app, appPid: appPid, meta: &meta)
           }
           pointer = established
         }
         // #296: what the screenshot showed at the point is checked against what is there now (#316: and the app's windows
-        // above the screenshot's against the screenshot's window list; #452: where the hit-test answered, read as its
-        // signal only while the hit the guard judges is that hit-test's, not #288's re-hit), every button and route; a
-        // refusal is thrown before anything is posted or pressed (deliverPointer), #282's element route included.
-        let place = sameHit(pointerHit, hitOutcome.element, CFEqual) ? hitOutcome.place : .unread
+        // above the screenshot's against the screenshot's window list; #452: where that hit-test answered), every button
+        // and route; a refusal is thrown before anything is posted or pressed (deliverPointer), #282's element route included.
         let stale = signposted("click.stalePoint") {
-          stalePointGuard(at: placed.point, windowOrigin: placed.windowFrame.origin, windowID: windowID, hit: pointerHit, place: place,
-                          hitMs: hitOutcome.ms, rehit: { hitTest(window: placed.window, pid: appPid, at: placed.point) }, app: app,
-                          appPid: appPid, context: context)
+          stalePointGuard(at: placed.point, windowOrigin: placed.windowFrame.origin, windowID: windowID, hit: pointerHit,
+                          place: latest.outcome.place, hitMs: latest.outcome.ms,
+                          rehit: { hitTest(window: placed.window, pid: appPid, at: placed.point) }, app: app, appPid: appPid, context: context)
         }
         meta.stalePoint = stale.record
         pointer.staleRefusal = stale.refusal
@@ -793,12 +792,22 @@ struct WindowHit<Element> {
   var ms: Double?
 }
 
-/// Whether two hits are the same one (both none, or the same element).
-func sameHit<Element>(_ a: Element?, _ b: Element?, _ same: (Element, Element) -> Bool) -> Bool {
-  switch (a, b) {
-  case (nil, nil): return true
-  case let (a?, b?): return same(a, b)
-  default: return false
+/// #452 (the review of 023a3bee, P1): a coordinate's hit-test and the re-hits #288's establishment takes in its place
+/// (`rehit`, handed to it as its re-hit), keeping the outcome of the last, whose hit the action goes on with, so the
+/// guard's signal is that hit-test's own place and time, never one inferred from the hits being alike.
+final class LatestHit<Element> {
+  private(set) var outcome: WindowHit<Element>
+  private let hitTest: () -> WindowHit<Element>
+
+  init(_ first: WindowHit<Element>, hitTest: @escaping () -> WindowHit<Element>) {
+    outcome = first
+    self.hitTest = hitTest
+  }
+
+  /// A re-hit: the hit-test again, its outcome kept as the latest, its hit answered.
+  func rehit() -> Element? {
+    outcome = hitTest()
+    return outcome.element
   }
 }
 
@@ -807,26 +816,38 @@ func sameHit<Element>(_ a: Element?, _ b: Element?, _ same: (Element, Element) -
 /// another window of the app at that point, one whose ancestry cannot be read to a window, or no answer is nil
 /// (`hitTestOutcome` tells them apart).
 func hitTest(window: AXUIElement, pid: pid_t, at point: CGPoint) -> AXUIElement? {
-  hitTestOutcome(window: window, pid: pid, at: point).element
-}
-
-/// `hitTest(window:pid:at:)`'s answer with where it answered and its time (`now`, the engine's clock; nil leaves it
-/// untimed, and then its place never times out).
-func hitTestOutcome(window: AXUIElement, pid: pid_t, at point: CGPoint, now: (() -> Double)? = nil) -> WindowHit<AXUIElement> {
   windowHit(application: prepare(AXUIElementCreateApplication(pid)), window: window, at: point, elementAt: elementAtPosition,
             role: { attribute($0, kAXRoleAttribute) as? String }, parent: { elementAttribute($0, kAXParentAttribute) },
-            same: { CFEqual($0, $1) }, number: { windowNumber(of: $0, pid: pid, frame: frame(of: $0)) }, now: now)
+            same: { CFEqual($0, $1) }).element
+}
+
+/// `hitTest(window:pid:at:)`'s answer with where it answered and its time on the engine's clock (`now`), another
+/// window's number read within what is left of `pointHitSignalDeadlineMs`: the SPI first, and only where it gives none
+/// the window's frame, each of its reads bounded by that time (`boundedMessagingTimeout`).
+func hitTestOutcome(window: AXUIElement, pid: pid_t, at point: CGPoint, now: @escaping () -> Double) -> WindowHit<AXUIElement> {
+  windowHit(application: prepare(AXUIElementCreateApplication(pid)), window: window, at: point, elementAt: elementAtPosition,
+            role: { attribute($0, kAXRoleAttribute) as? String }, parent: { elementAttribute($0, kAXParentAttribute) },
+            same: { CFEqual($0, $1) }, number: { other, leftMs in
+              windowNumber(of: other, pid: pid, readFrame: {
+                guard let timeout = boundedMessagingTimeout(leftMs: leftMs ?? pointHitSignalDeadlineMs) else { return nil }
+                AXUIElementSetMessagingTimeout(other, timeout)
+                defer { AXUIElementSetMessagingTimeout(other, elementMessagingTimeout) }
+                return frame(of: other)
+              })
+            }, now: now)
 }
 
 /// `hitTestOutcome(window:pid:at:)` over its AX calls (the unit tests' seam): the hit-test asked of `application`, never
 /// of `window`; the hit kept when it is `window` or its first AXWindow ancestor (parents walked up to 300 levels) is, its
-/// place noting an AXPopover passed on the way; another AXWindow ancestor answers as that window's place (`number`, read
-/// only within the deadline). The walk is main's, each read bounded by the messaging timeout; past
-/// `pointHitSignalDeadlineMs` (design ruling 940) the place is `unread`, so #452 keeps main's verdict, and the hit is
-/// still main's.
+/// place noting an AXPopover passed on the way. `window` met on the way whatever its role (an AXSheet observed as the
+/// window, the review of 023a3bee, P2) places the hit in it, the hit itself main's (none, its first AXWindow ancestor
+/// not being `window`). Another AXWindow ancestor answers as that window's place, numbered by `number` (given the
+/// milliseconds left of the deadline, nil untimed; none asked for an untimed hit-test's element alone) only within the
+/// deadline. The walk is main's, each read bounded by the messaging timeout; past `pointHitSignalDeadlineMs` (design
+/// ruling 940) the place is `unread`, so #452 keeps main's verdict, and the hit is still main's.
 func windowHit<Element>(application: Element, window: Element, at point: CGPoint, elementAt: (Element, CGPoint) -> (AXError, Element?),
                         role: (Element) -> String?, parent: (Element) -> Element?, same: (Element, Element) -> Bool,
-                        number: (Element) -> CGWindowID? = { _ in nil }, now: (() -> Double)? = nil) -> WindowHit<Element> {
+                        number: ((Element, Double?) -> CGWindowID?)? = nil, now: (() -> Double)? = nil) -> WindowHit<Element> {
   let started = now?()
   func elapsed() -> Double? { now.flatMap { now in started.map { now() - $0 } } }
   func answer(_ element: Element?, _ place: PointHitPlace) -> WindowHit<Element> {
@@ -841,9 +862,11 @@ func windowHit<Element>(application: Element, window: Element, at point: CGPoint
     let currentRole = role(current)
     if currentRole == kAXWindowRole {
       if same(current, window) { return answer(hit, .observedWindow(inPopover: inPopover)) }
-      guard (elapsed() ?? 0) <= pointHitSignalDeadlineMs else { return answer(nil, .unread) }
-      return answer(nil, .otherWindow(number(current)))
+      let left = elapsed().map { pointHitSignalDeadlineMs - $0 }
+      guard (left ?? 1) >= 0 else { return answer(nil, .unread) }
+      return answer(nil, .otherWindow(number.flatMap { $0(current, left) }))
     }
+    if same(current, window) { return answer(nil, .observedWindow(inPopover: inPopover)) }
     if currentRole == kAXPopoverRole { inPopover = true }
     guard let next = parent(current) else { return answer(nil, .unread) }
     current = next

@@ -1321,7 +1321,8 @@ enum PointHitPlace: Equatable {
   /// In the observed window, `inPopover` when its ancestry to the window passed an AXPopover (TextEdit's colour-well
   /// popover, whose own window AX folds into the document window's tree).
   case observedWindow(inPopover: Bool)
-  /// In another of the app's windows (Chrome's omnibox and `<datalist>` popups, a permission bubble), its number when read.
+  /// In another of the app's windows (Chrome's omnibox and `<datalist>` popups, a permission bubble), its number when read
+  /// (only by a timed hit-test, `hitTestOutcome`).
   case otherWindow(CGWindowID?)
   /// No answer, an ancestry that reads to no window, or an answer past `pointHitSignalDeadlineMs`: main's verdict stands.
   case unread
@@ -1360,13 +1361,15 @@ func appWindowOverPoint(_ point: CGPoint, target: CGWindowID, pid: pid_t, list: 
 /// The guard at a coordinate click's or drag start's point (#296, #316, #452), all before anything is posted: rule W from
 /// the window list (`windows`, the on-screen list read at most once, only when there is a target window number: about
 /// 0.3 ms, p95 1 ms, with 30 windows on screen on the MacBook) where there is a recorded list to compare; then #452 from
-/// where the app's hit-test answered (`place`): in another window of the app's, at any layer, it refuses (`axHit`); in a
+/// where the app's hit-test answered (`place`): in another window of the app's that the list holds on screen with alpha
+/// above 0, at any layer, it refuses (`axHit`); in a
 /// popover of the observed window, it refuses when the list holds a window of the app's over the observed one at the
 /// point (`popover`); and only when these keep the point, the tree's verdict (`tree`, `stalePointVerdict`). The
 /// qualification (kit `probe/337-measure` README ac805945) set the signals: the omnibox popup, Chrome's `<datalist>` popup
 /// (layer 999) and a permission bubble answer in their own windows; TextEdit's colour-well popover answers an AXPopover in
 /// the document window's tree; Chrome's status bubble and tab hover card, which pass clicks through, answer the observed
-/// window's own elements and keep, as does a hit unread or too late. Both call sites take this one, so a drag's start is
+/// window's own elements and keep, as does a hit unread or too late, or one in a window of alpha 0, unlisted or
+/// unnumbered. Both call sites take this one, so a drag's start is
 /// guarded as a click is.
 func guardedPointVerdict<Element>(at point: CGPoint, hit: Element?, place: PointHitPlace = .unread, target: CGWindowID?, pid: pid_t,
                                   recorded: Set<CGWindowID>?, windows: () -> [ListedWindow],
@@ -1383,7 +1386,12 @@ func guardedPointVerdict<Element>(at point: CGPoint, hit: Element?, place: Point
   }
   switch place {
   case .otherWindow(let number):
-    return StalePointVerdict(reason: .appWindowOverPoint, hit: hit, point: point, overWindow: number ?? 0, overBy: .axHit)
+    // Only a window the screenshot can have shown: listed on screen and not transparent (the review of 023a3bee, P1: a
+    // window of alpha 0 the hit answered in, with the visible page under it, is main's). One the list does not hold is
+    // not on screen, or the list did not read, and an unread number cannot be looked up: main's verdict either way.
+    if let number, let listed = list().first(where: { $0.number == number }), listed.alpha > 0 {
+      return StalePointVerdict(reason: .appWindowOverPoint, hit: hit, point: point, overWindow: number, overBy: .axHit)
+    }
   case .observedWindow(inPopover: true):
     if let target, let over = appWindowOverPoint(point, target: target, pid: pid, list: list()) {
       return StalePointVerdict(reason: .appWindowOverPoint, hit: hit, point: point, overWindow: over.number, overBy: .popover)
@@ -1537,18 +1545,22 @@ struct StalePointGate<Element> {
   /// The first check's window-list read (#316's rule W, `StalePointRecord.windowsMs`), which the record this gate
   /// answers replaces in the meta: it is kept there, the recheck reading no window list of its own.
   var firstWindowsMs: Double? = nil
+  /// The first check's hit-test time (#452, `StalePointRecord.hitMs`), carried on the same way.
+  var firstHitMs: Double? = nil
   let recheck: () -> StalePointVerdict<Element>
 
   /// The first check's verdict and its record (`Engine.stalePointGuard`'s), whose time and window-list read this gate's
   /// record carries on.
   init(first: StalePointVerdict<Element>, record: StalePointRecord, recheck: @escaping () -> StalePointVerdict<Element>) {
-    self.init(first: first, firstMs: record.ms, firstWindowsMs: record.windowsMs, recheck: recheck)
+    self.init(first: first, firstMs: record.ms, firstWindowsMs: record.windowsMs, firstHitMs: record.hitMs, recheck: recheck)
   }
 
-  init(first: StalePointVerdict<Element>, firstMs: Double, firstWindowsMs: Double? = nil, recheck: @escaping () -> StalePointVerdict<Element>) {
+  init(first: StalePointVerdict<Element>, firstMs: Double, firstWindowsMs: Double? = nil, firstHitMs: Double? = nil,
+       recheck: @escaping () -> StalePointVerdict<Element>) {
     self.first = first
     self.firstMs = firstMs
     self.firstWindowsMs = firstWindowsMs
+    self.firstHitMs = firstHitMs
     self.recheck = recheck
   }
 
@@ -1562,6 +1574,7 @@ struct StalePointGate<Element> {
     let outcome = stalePointOutcome(verdict, ms: firstMs + (now() - started), afterActivation: afterActivation, reads: reads)
     var record = outcome.record
     record.windowsMs = firstWindowsMs
+    record.hitMs = firstHitMs
     record.rechecked = waited
     record.afterActivation = afterActivation
     return (record, outcome.refusal)

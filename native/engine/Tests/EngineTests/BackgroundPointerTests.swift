@@ -619,7 +619,7 @@ final class BackgroundPointerTests: XCTestCase {
   private func outcome(_ application: Node, _ window: Node, _ elementAt: (Node, CGPoint) -> (AXError, Node?),
                        numbers: [ObjectIdentifier: CGWindowID] = [:]) -> WindowHit<Node> {
     windowHit(application: application, window: window, at: point, elementAt: elementAt, role: { $0.role }, parent: { $0.parent },
-              same: { $0 === $1 }, number: { numbers[ObjectIdentifier($0)] })
+              same: { $0 === $1 }, number: { node, _ in numbers[ObjectIdentifier(node)] })
   }
 
   /// The hit-test is asked of the application element, never the window (which answers -25201): a page point in the
@@ -702,11 +702,65 @@ final class BackgroundPointerTests: XCTestCase {
       XCTAssertEqual(own.place, expectedOwn)
       XCTAssertEqual(own.ms, lateMs)
       let other = windowHit(application: application, window: window, at: point, elementAt: late(row), role: { $0.role },
-                            parent: { $0.parent }, same: { $0 === $1 }, number: { _ in numbered += 1; return 49 }, now: { clock })
+                            parent: { $0.parent }, same: { $0 === $1 }, number: { _, _ in numbered += 1; return 49 }, now: { clock })
       XCTAssertNil(other.element)
       XCTAssertEqual(other.place, expectedOther)
       XCTAssertEqual(numbered, expectedOther == .unread ? 0 : 1)
     }
+  }
+
+  /// The review of 023a3bee (P2), run 44816112944: the observed window is a save panel's AXSheet (952), its controls'
+  /// hits walking AXSheet → AXWindow 948. The sheet met on the way places the hit in the observed window, never in "another
+  /// window" over it; main's hit (none: its first AXWindow ancestor is not the sheet) is unchanged.
+  func testAnObservedSheetMetOnTheWalkPlacesTheHitInItWhateverItsRole() {
+    let application = Node("AXApplication")
+    let document = Node("AXWindow", parent: application)
+    let sheet = Node("AXSheet", parent: document)
+    let save = Node("AXButton", parent: Node("AXGroup", parent: sheet))
+    var numbered = 0
+    let found = windowHit(application: application, window: sheet, at: point, elementAt: stub(application, answers: save), role: { $0.role },
+                          parent: { $0.parent }, same: { $0 === $1 }, number: { _, _ in numbered += 1; return 948 }, now: { 0 })
+    XCTAssertEqual(found.place, .observedWindow(inPopover: false))
+    XCTAssertNil(found.element, "main's hit")
+    XCTAssertEqual(numbered, 0, "no other window numbered")
+  }
+
+  /// The review of 023a3bee (P2): another window's number is asked with what is left of the deadline, and its frame is read
+  /// only when the SPI gives no number.
+  func testAnotherWindowsNumberIsAskedWithTheTimeLeftAndItsFrameReadOnlyWithoutTheSPI() {
+    let application = Node("AXApplication")
+    let window = Node("AXWindow", parent: application)
+    let row = Node("AXStaticText", parent: Node("AXWindow", parent: application))
+    var clock = 0.0
+    var given: Double??
+    let found = windowHit(application: application, window: window, at: point, elementAt: { root, at in
+      clock += 120
+      return self.stub(application, answers: row)(root, at)
+    }, role: { $0.role }, parent: { $0.parent }, same: { $0 === $1 }, number: { _, left in given = .some(left); return 49 }, now: { clock })
+    XCTAssertEqual(found.place, .otherWindow(49))
+    XCTAssertEqual(given, .some(pointHitSignalDeadlineMs - 120))
+    var framesRead = 0
+    XCTAssertEqual(resolvedWindowNumber(spi: { 49 }, readFrame: { framesRead += 1; return .zero }, matching: { _ in 50 }), 49)
+    XCTAssertEqual(framesRead, 0, "the SPI answered: no frame read")
+    XCTAssertEqual(resolvedWindowNumber(spi: { nil }, readFrame: { framesRead += 1; return .zero }, matching: { _ in 50 }), 50)
+    XCTAssertEqual(framesRead, 1)
+    XCTAssertNil(resolvedWindowNumber(spi: { nil }, readFrame: { nil }, matching: { _ in 50 }), "no frame within the budget")
+  }
+
+  /// The review of 023a3bee (P1): the guard's signal is the outcome of the hit-test whose hit it judges, #288's last
+  /// re-hit when it ran: a popup the first saw and the re-hit no longer finds gives no refusal, a popup only the re-hit
+  /// finds refuses, though both hits are none.
+  func testTheGuardsSignalIsTheLastHitTestsOwn() {
+    let transient = WindowHit<Node>(element: nil, place: .otherWindow(49), ms: 3)
+    let gone = WindowHit<Node>(element: nil, place: .unread, ms: 4)
+    let staleRefusal = LatestHit(transient) { gone }
+    XCTAssertNil(staleRefusal.rehit())
+    XCTAssertEqual(staleRefusal.outcome.place, .unread)
+    XCTAssertEqual(staleRefusal.outcome.ms, 4)
+    let fresh = LatestHit(gone) { transient }
+    XCTAssertNil(fresh.rehit())
+    XCTAssertEqual(fresh.outcome.place, .otherWindow(49))
+    XCTAssertEqual(LatestHit(transient) { gone }.outcome.place, .otherWindow(49), "no re-hit: the first hit-test's own")
   }
 
   // MARK: The mode reaches the connection through its ping

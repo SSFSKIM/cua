@@ -1368,7 +1368,7 @@ final class AppWindowOverPointTests: XCTestCase {
   private let popup = ListedWindow(number: 49, owner: 990_021, layer: 0, bounds: CGRect(x: 499, y: 56, width: 458, height: 218))
   private let row = CGPoint(x: 728, y: 136)
   /// The screenshot's list held every window here (open at the observation), so #316's rule W passes them.
-  private let recorded: Set<CGWindowID> = [28, 49, 51, 77, 90]
+  private let recorded: Set<CGWindowID> = [28, 44, 49, 51, 77, 90]
 
   private func guarded(_ list: [ListedWindow], place: PointHitPlace, target: CGWindowID? = 28)
     -> (verdict: StalePointVerdict<Node>, treeRead: Bool) {
@@ -1399,18 +1399,34 @@ final class AppWindowOverPointTests: XCTestCase {
                                                          "windowsMs": 0.2, "hitMs": 3.25, "ms": 0.4] as NSDictionary)
   }
 
-  /// (a) at any layer and whatever the window list says: Chrome's `<datalist>` popup at layer 999, a window number that
-  /// did not read, no list read at all, and no number for the observed window.
+  /// (a) at any layer: Chrome's `<datalist>` popup at layer 999 refuses, with no number for the observed window too.
   func testAHitInAnotherWindowRefusesAtAnyLayer() {
     let datalist = ListedWindow(number: 77, owner: app, layer: 999, bounds: popup.bounds)
     let atLayer999 = guarded([datalist, browser], place: .otherWindow(77)).verdict
     XCTAssertEqual(atLayer999.reason, .appWindowOverPoint)
     XCTAssertEqual(atLayer999.overWindow, 77)
     XCTAssertEqual(atLayer999.overBy, .axHit)
-    XCTAssertEqual(guarded([datalist, browser], place: .otherWindow(nil)).verdict.overWindow, 0, "its number unread")
-    XCTAssertEqual(guarded([], place: .otherWindow(77)).verdict.reason, .appWindowOverPoint, "an empty list")
     XCTAssertEqual(guarded([datalist, browser], place: .otherWindow(77), target: nil).verdict.reason, .appWindowOverPoint,
                    "no number for the observed window")
+  }
+
+  /// The review of 023a3bee (P1), run 44822312301: the hit answered in window 44, of alpha 0, with the visible page under
+  /// it, which the screenshot showed and main's click reached. (a) refuses only a window the list holds on screen with
+  /// alpha above 0; a transparent one, one the list does not hold (not on screen, or the list unread) and an unread
+  /// number keep main's verdict.
+  func testAHitInATransparentUnlistedOrUnnumberedWindowKeepsMainsVerdict() {
+    let transparent = ListedWindow(number: 44, owner: app, layer: 0, bounds: popup.bounds, alpha: 0)
+    let cases: [(String, [ListedWindow], PointHitPlace)] = [
+      ("alpha 0", [transparent, browser], .otherWindow(44)),
+      ("not in the list", [browser], .otherWindow(44)),
+      ("an empty list", [], .otherWindow(44)),
+      ("its number unread", [popup, browser], .otherWindow(nil)),
+    ]
+    for (name, list, place) in cases {
+      let (verdict, treeRead) = guarded(list, place: place)
+      XCTAssertEqual(verdict.reason, .noHit, name)
+      XCTAssertTrue(treeRead, name)
+    }
   }
 
   /// (b) TextEdit's colour-well popover: the hit is an AXPopover inside the document window's tree, and the list holds a
@@ -1631,12 +1647,14 @@ final class WebAreaGuardTests: XCTestCase {
     XCTAssertEqual(first.reason, .unrecordedDescendant)
     var firstRecord = StalePointRecord(first, ms: 1.25)
     firstRecord.windowsMs = 0.4
+    firstRecord.hitMs = 2.5  // #452's hit-test time (the review of 023a3bee, P2)
     let gate = StalePointGate(first: first, record: firstRecord) { verdict(partial, at: self.payPoint, hit: browser.pay) }
     for waited in [false, true] {
       let checked = gate.check(browser.pay, waited: waited, now: { 0 }, reads: reads)
       XCTAssertNil(checked.refusal)
       XCTAssertEqual(checked.record.reason, .unrecordedDescendant, "the press verdict rebuilt: the button inside the iframe group")
       XCTAssertEqual(checked.record.wire["windowsMs"] as? Double, 0.4, "waited: \(waited)")
+      XCTAssertEqual(checked.record.wire["hitMs"] as? Double, 2.5, "waited: \(waited)")
       XCTAssertEqual(checked.record.wire["webAreaReads"] as? Int, 3, "waited: \(waited)")
       XCTAssertEqual(checked.record.ms, 1.25)
     }

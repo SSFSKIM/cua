@@ -20,7 +20,7 @@ on:
         type: string
         default: ''
       seqs:
-        description: Comma list of sequences (empty for all; zeroRow, typedRow, outside)
+        description: Comma list of sequences (empty for all; zeroRow, typedRow, outside, outsideTyped)
         type: string
         default: ''
 permissions:

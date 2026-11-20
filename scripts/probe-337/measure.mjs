@@ -197,6 +197,9 @@ const SEQ = {
   zeroRow: {steps: ['key:cmd+l'], target: 'popup'},
   typedRow: {steps: ['key:cmd+l', 'type:URL/results'], target: 'popup'},
   outside: {steps: ['key:cmd+l'], target: 'button'},
+  // Run 1 (44797144792): ⌘L alone left no popup at the re-observation in 47 of 48 rows, so the outside click with the
+  // popup up comes from the typed sequence.
+  outsideTyped: {steps: ['key:cmd+l', 'type:URL/results'], target: 'button'},
 };
 // The cells: Chrome behind TextEdit in shared mode (the ticket's), the same with the keys sent while Chrome was frontmost
 // and the cover raised after (in case the popup does not open in the background), and the two controls.

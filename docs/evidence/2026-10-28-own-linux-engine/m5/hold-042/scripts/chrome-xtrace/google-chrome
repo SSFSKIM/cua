@@ -1,0 +1,20 @@
+#!/bin/bash
+# Task 113 (development only): the run's Chrome on its private display through an xtrace proxy of its own, its trace
+# reduced as it is read (filter.mjs) into $CUA113_XT_OUT. The first open on a display starts the proxy (xtrace -s: it
+# ends when Chrome's last connection closes) and records it in $CUA113_XT_OUT.proxy (pid, fake display), whose socket
+# file the run's chain removes afterwards; every later open, handing its window to the browser, goes through it.
+# Refuses :0.
+set -u
+: "${CUA113_XT_OUT:?}"
+case "${DISPLAY:-}" in ""|:0|:0.*) echo "google-chrome (task 113 trace): refusing display ${DISPLAY:-none}" >&2; exit 2 ;; esac
+n=${DISPLAY#:}; n=${n%%.*}
+fake=$(( n + 600 ))
+rec=$CUA113_XT_OUT.proxy
+pid=$(awk -v f="$fake" '$2 == f {print $1}' "$rec" 2>/dev/null | tail -1)
+if [ -z "$pid" ] || ! kill -0 "$pid" 2>/dev/null; then
+  [ -e "/tmp/.X11-unix/X$fake" ] && { echo "google-chrome (task 113 trace): /tmp/.X11-unix/X$fake exists and is not this run's proxy" >&2; exit 2; }
+  xtrace -d "$DISPLAY" -D ":$fake" -n -s 2> /dev/null > >(/usr/bin/node /Users/new/.local/share/cua-171/task113/chrome-xtrace/filter.mjs >> "$CUA113_XT_OUT") < /dev/null &
+  echo "$! $fake" >> "$rec"
+  for _ in $(seq 1 50); do [ -S "/tmp/.X11-unix/X$fake" ] && break; sleep 0.1; done
+fi
+DISPLAY=":$fake" exec /usr/local/bin/google-chrome "$@"

@@ -4,24 +4,31 @@ A disposable hosted macOS kit, not product code, built from `probe/435-qual` (`d
 
 ```sh
 gh workflow run probe-433-qual.yml --ref probe/433-qual -f main="$MAIN_SHA" -f mode=smoke -f cells=twincover,overcontrol,scrim,nounder
+# The qualification: three batches, one in flight at a time, each lane under 500 rows.
 gh workflow run probe-433-qual.yml --ref probe/433-qual -f main="$MAIN_SHA" -f fix="$FIX_SHA" -f mode=qualify -f reps=20 -f cells=twincover,overcontrol,scrim
+gh workflow run probe-433-qual.yml --ref probe/433-qual -f main="$MAIN_SHA" -f fix="$FIX_SHA" -f mode=qualify -f reps=10 -f cells=nounder,twin,twincap,remount,retext,plain,like,btnremount,tableremount,tablecellremount
+gh workflow run probe-433-qual.yml --ref probe/433-qual -f main="$MAIN_SHA" -f fix="$FIX_SHA" -f mode=qualify -f reps=10 -f cells=inbox,reltime,shrink,linksave,moved,linkmono,right,centre,wideoverlay
 ```
 
+An empty cell filter is not the #433 qualification: it carries #435's frameless twins (which no browser lists frameless, so they cannot be covered) and #431's other cells.
+
 What #433 adds to #435's kit:
-- **The overlay** (`page.mjs` `cover`): a group with role `group`, nested two groups below the target's row (each layer `position: absolute` over the row), so it lies deeper in the accessibility tree than the link's text and the record (StalePoint.swift `deepestScreenshotNode`: the deepest recorded node whose shown frame holds the point) takes it at the text point as well as the link point. #431's `twincover` laid it as the link's sibling, so the record held it at the link point only. Placement (`nodeAt`) must find an AXGroup at the point, else the row is invalid (`placement`); `score`'s `misplaced` compares the guard's `recordedRole` with AXGroup (`cells.mjs` `records`).
+- **The overlay** (`page.mjs` `cover`): a group with role `group`, nested two groups below the target's row (each layer `position: absolute` over the row), so it lies deeper in the accessibility tree than the link's text and the record (StalePoint.swift `deepestScreenshotNode`: the deepest recorded node whose shown frame holds the point) takes it at the text point as well as the link point. #431's `twincover` laid it as the link's sibling, so the record held it at the link point only. Placement must find at the point (`nodeAt`) the fixture's overlay itself (`check.mjs` `overlayAt`: an AXGroup whose frame holds the link's, within 2 pt, for `veil` and `scrim`; one lying wholly past the link's right edge for `beside`), else the row is invalid (`placement`); the overlay's frame is not matched across observations, so `ax.recorded` is unset for these cells; `score`'s `misplaced` compares the guard's `recordedRole` with AXGroup (`cells.mjs` `records`).
   - `veil`: over the row, `pointer-events: none` on every layer, so a click goes through to what lies under it.
   - `scrim` (ruling 903): over the row with no pointer-events rule and no interactive role, so it catches the click.
   - `beside`: a veil 240 px wide laid 20 px past the target's right edge, over nothing interactive.
 - **Cells**:
   - `twincover` (kind twin, `veil`, both points): link A under the veil; after the observation A is removed and a same-label link B, alive in the second row, moves up into its place. Main keeps the live overlay (`sameElement`), and where the click is posted as events it falls through to B.
-  - `overcontrol` (kind keep, `veil`, both points): the veil over link A and nothing changes.
+  - `overcontrol` (kind keep, `veil`, both points): the veil over link A and nothing changes. On Chrome for Testing it may land on neither head: the shared-mode element route presses the accessibility hit, here the overlay group, and refuses (`backgroundClickRefused`); the smoke measures it.
   - `scrim` (kind asMain, `scrim`, both points): the scrim over a live, unchanged link A; on main the scrim eats the click.
   - `nounder` (kind asMain, `beside`, the link point only, aimed 60 pt past the link's right edge): the veil with nothing interactive under it, nothing changing.
 - **Gates** (`check.mjs` `gates`, qualify only):
-  - `overlayTwin`: no valid fix row of `twincover` reaches B or any other control (A is gone). How many refused, and why, is reported beside (`refused`, `perUnit`); a keep that reaches nothing passes the gate and is reported.
+  - `overlayTwin`: no valid fix row of `twincover` reaches B or any other control (A is gone), and none has no guard record or a record at another role (`no-guard`, `misplaced`); each unit needs at least the usable-pairs bar (10, or 80% of a shorter run's repetitions) of rows recording the overlay on each head (fix: refused or kept), else the gate fails as inconclusive (`evidence`, `thin`). How many refused, and why, is reported beside (`refused`, `perUnit`); a keep that reaches nothing passes and is reported.
   - `overlayKept`: `overcontrol` kept and landed on A on every valid fix row, as main row for row, reason included.
-  - `overlayAsMain`: `scrim` and `nounder` as main row for row, reason included.
-  - Every paired gate (`keptAsMain`, `othersAsMain`, the two above) now fails on a different guard reason too (#435's counted it only), and on any fix row whose click reached a control, the target included, that no valid main row of its unit reached (`reachBeyondMain`).
+  - `overlayAsMain`: `scrim` and `nounder` as main row for row, reason included, on a usable baseline: every valid main row kept by the guard (`mainUnkept`).
+  - Both overlay control gates fail on any valid row of either head with no guard record or a record at another role (`unguarded`).
+  - `twinAsMain`: the regression twins (`twin`, `twincap`, every twin but the overlay and frameless ones) as main row for row, reason included, beside `twinRefused` and `twinUnrecorded` (which accept `interactiveHit` without comparing).
+  - Every paired gate (`keptAsMain`, `othersAsMain`, `twinAsMain` and the overlay gates) now fails on a different guard reason too (#435's counted it only), and on any fix row, valid or invalidated (its captured page log), whose click reached a control, the target included, that no valid main row of its unit reached (`reachBeyondMain`).
   - `reproduced` is reported only: per `twincover` unit, main's valid rows that kept the click and logged a click on B. On Chrome for Testing the shared-mode element route presses the overlay itself and posts no event (#431's run 44642664004: `backgroundClickRefused`), so main reaches nothing there.
   - Unchanged: `coverage`, `twinRefused` (now without `twincover`), `twinUnrecorded`, `noWrongTarget`, `presentation`, `guardMs`; #435's `twinFrameless` has no unit in these runs.
 - **Report** (`report.mjs <dir>`, from `gh run download <id> -D <dir>`): per unit and head, what the record held (`recordedRole`), the hit, and the controls the click reached, beside #435's columns; `stalePoint.ms` per head.

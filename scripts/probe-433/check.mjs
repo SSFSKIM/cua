@@ -151,6 +151,15 @@ export function nodeAt(nodes,p){
   return hit.sort((a,b)=>(deep?b.depth-a.depth:0)||area(a)-area(b))[0]??null;
 }
 
+// #433: whether the node at the point is the fixture's overlay, not any group: an AXGroup spanning the row, its frame
+// holding the found link's within 2 pt (`veil`, `scrim`), or lying wholly past the link's right edge (`beside`).
+export function overlayAt(node,spec,found){
+  const f=node?.frame,l=found?.link?.frame;
+  if(node?.role!=='AXGroup'||!framed(node)||!l)return false;
+  if(spec.cover==='beside')return f.x>=l.x+l.width;
+  return f.x<=l.x+2&&f.y<=l.y+2&&f.x+f.width>=l.x+l.width-2&&f.y+f.height>=l.y+l.height-2;
+}
+
 // One row's verdict, from the click's outcome, the guard's record (`stale`), the unit's point (`at`) and the page's log:
 // `wrong-target` (any pointer event on another link, whatever the record says); `no-guard` (the click carried no guard
 // record); `misplaced` (the record took another role than the unit aims at, though the observation put that role at the
@@ -241,6 +250,7 @@ export function gates(rows,{coverage:cov,units:all=UNITS,minPairs=MIN_PAIRS}){
   const units=all.filter(u=>!isReportOnly(u)),reportUnits=all.filter(isReportOnly);
   const inRun=new Set(units.map(unitKey));
   const fix=rows.filter(r=>r.head==='fix'&&r.valid&&inRun.has(unitKey(r))),main=rows.filter(r=>r.head==='main'&&r.valid&&inRun.has(unitKey(r)));
+  const fixAll=rows.filter(r=>r.head==='fix'&&inRun.has(unitKey(r)));
   const kindOf=r=>CELLS[r.cell].kind;
   const brief=list=>list.slice(0,20).map(r=>({unit:unitKey(r),rep:r.rep,click:r.click,guard:r.guard?`${r.guard.verdict}/${r.guard.reason}`:null,verdict:r.verdict}));
   const pair=new Map(main.map(r=>[`${unitKey(r)}/${r.rep}`,r]));
@@ -271,19 +281,25 @@ export function gates(rows,{coverage:cov,units:all=UNITS,minPairs=MIN_PAIRS}){
   // With `mustKeep` (the genuine re-creations), every valid fix row must also be kept and land: two heads refusing alike
   // are equal and still wrong (an observation that failed is the usable-pairs bar's). Main's own rows that were not kept
   // and landed are counted apart (`mainNotKept`), an unusable baseline rather than the fix's regression.
-  const asMainGate=(pred,{mustKeep=false}={})=>{
+  const asMainGate=(pred,{mustKeep=false,overlay=false}={})=>{
     const list=fix.filter(r=>pred(r.cell)),paired=list.filter(mate);
+    // #433's controls: a row with no guard record, or one taken at another role than the overlay, tested nothing (either
+    // head); and where main must keep (`scrim`, `nounder`), a main row the guard did not keep is an unusable baseline.
+    const unguarded=overlay?[...list,...main.filter(r=>pred(r.cell))].filter(r=>['no-guard','misplaced'].includes(r.verdict)):[];
+    const mainUnkept=overlay&&!mustKeep?main.filter(r=>pred(r.cell)&&r.verdict!=='observe-failed'&&r.guard?.verdict!=='kept'):[];
     const usable=Object.fromEntries(unitsWhere(pred).map(u=>[unitKey(u),
       paired.filter(r=>unitKey(r)===unitKey(u)&&r.verdict!=='observe-failed'&&mate(r).verdict!=='observe-failed').length]));
     const thin=Object.entries(usable).filter(([,n])=>n<minPairs).map(([k])=>k);
     const differ=paired.filter(r=>mate(r).verdict!==r.verdict);
     const reasonDiffer=paired.filter(r=>mate(r).verdict===r.verdict&&mate(r).guard?.reason!==r.guard?.reason);
     const notKept=mustKeep?list.filter(r=>r.verdict!=='kept-landed'&&r.verdict!=='observe-failed'):[];
-    // #433: no fix row's click reaches a control (the target included) that no valid main row of its unit reached.
+    // #433: no fix row's click, valid or not (an invalidated row keeps its page log), reaches a control (the target
+    // included) that no valid main row of its unit reached.
     const beyond=unitsWhere(pred).map(u=>{const seen=new Set(of(main,u).flatMap(reached));
-      return [unitKey(u),[...new Set(of(list,u).flatMap(reached))].filter(l=>!seen.has(l))];}).filter(([,l])=>l.length);
+      return [unitKey(u),[...new Set(of(fixAll,u).flatMap(reached))].filter(l=>!seen.has(l))];}).filter(([,l])=>l.length);
     return {pass:!unitsWhere(pred).length||paired.length>0&&everyUnit(pred)&&thin.length===0&&differ.length===0&&reasonDiffer.length===0&&
-      notKept.length===0&&beyond.length===0,reachBeyondMain:Object.fromEntries(beyond),
+      notKept.length===0&&beyond.length===0&&unguarded.length===0&&mainUnkept.length===0,reachBeyondMain:Object.fromEntries(beyond),
+      ...(overlay?{unguarded:unguarded.length,mainUnkept:mainUnkept.length,unguardedExamples:brief(unguarded)}:{}),
       rows:list.length,paired:paired.length,
       usablePairs:usable,minPairs,thin,differ:differ.length,reasonDiffer:reasonDiffer.length,
       ...(mustKeep?{fixNotKept:notKept.length,mainNotKept:main.filter(r=>pred(r.cell)&&r.verdict!=='kept-landed').length,
@@ -316,17 +332,26 @@ export function gates(rows,{coverage:cov,units:all=UNITS,minPairs=MIN_PAIRS}){
     twinRefused:twinGate(c=>isTwin(c)&&!UNRECORDED.has(c)&&!FRAMELESS.has(c)&&!OVERLAY.has(c)),
     // #433: no valid fix row of twincover reaches the twin or any other control, the target included (it is gone); how
     // many refused, and why, is reported beside (`refused`, `perUnit`).
-    overlayTwin:(()=>{const g=twinGate(c=>isTwin(c)&&OVERLAY.has(c)),list=fix.filter(r=>isTwin(r.cell)&&OVERLAY.has(r.cell));
-      const reachedAny=list.filter(r=>reached(r).length);
-      return {...g,pass:!unitsWhere(c=>isTwin(c)&&OVERLAY.has(c)).length||list.length>0&&everyUnit(c=>isTwin(c)&&OVERLAY.has(c))&&reachedAny.length===0,
-        reachedTwin:list.filter(r=>reached(r).includes('twin')).length,reachedAny:reachedAny.length,refused:list.filter(r=>r.verdict==='refused').length};})(),
+    // Only a guard that judged the overlay counts: a fix row with no guard record or another recorded role fails, and each
+    // unit needs minPairs rows per head whose record is the overlay (fix: refused or kept), else the run is inconclusive.
+    overlayTwin:(()=>{const pred=c=>isTwin(c)&&OVERLAY.has(c),g=twinGate(pred),list=fix.filter(r=>pred(r.cell));
+      const reachedAny=list.filter(r=>reached(r).length),unguarded=list.filter(r=>['no-guard','misplaced'].includes(r.verdict));
+      const judgedOverlay=r=>r.guard?.recordedRole==='AXGroup'&&['refused','kept'].includes(r.guard?.verdict);
+      const evidence=Object.fromEntries(unitsWhere(pred).map(u=>[unitKey(u),{fix:of(fix,u).filter(judgedOverlay).length,
+        main:of(main,u).filter(r=>r.guard?.recordedRole==='AXGroup').length}]));
+      const thin=Object.entries(evidence).filter(([,x])=>x.fix<minPairs||x.main<minPairs).map(([k])=>k);
+      return {...g,pass:!unitsWhere(pred).length||list.length>0&&everyUnit(pred)&&reachedAny.length===0&&unguarded.length===0&&thin.length===0,
+        reachedTwin:list.filter(r=>reached(r).includes('twin')).length,reachedAny:reachedAny.length,refused:list.filter(r=>r.verdict==='refused').length,
+        unguarded:unguarded.length,evidence,thin};})(),
     twinUnrecorded:twinGate(c=>UNRECORDED.has(c)),
     twinFrameless:twinGate(c=>FRAMELESS.has(c)),
     keptAsMain:asMainGate(c=>CELLS[c].kind==='keep'&&!OVERLAY.has(c),{mustKeep:true}),
     othersAsMain:asMainGate(c=>CELLS[c].kind==='asMain'&&!OVERLAY.has(c)),
     // #433's controls: the veil over a live link kept and landed (`overcontrol`); the scrim and the veil over nothing as main.
-    overlayKept:asMainGate(c=>CELLS[c].kind==='keep'&&OVERLAY.has(c),{mustKeep:true}),
-    overlayAsMain:asMainGate(c=>CELLS[c].kind==='asMain'&&OVERLAY.has(c)),
+    overlayKept:asMainGate(c=>CELLS[c].kind==='keep'&&OVERLAY.has(c),{mustKeep:true,overlay:true}),
+    overlayAsMain:asMainGate(c=>CELLS[c].kind==='asMain'&&OVERLAY.has(c),{overlay:true}),
+    // #433's regression twins (`twin`, `twincap`, ...) as main row for row, reason included, beside their refusal gates.
+    twinAsMain:asMainGate(c=>isTwin(c)&&!OVERLAY.has(c)&&!FRAMELESS.has(c)),
     // Genuine re-creations where the record could not hold the container whole (the builder's question): reported with
     // the keep cells' measure (kept and landed, as main), never part of the pass.
     bigPage:{informational:true,...asMainGate(c=>CELLS[c].kind==='big',{mustKeep:true})},

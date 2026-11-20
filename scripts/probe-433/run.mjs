@@ -9,7 +9,7 @@ import {execFileSync} from 'node:child_process';
 import {Wire} from './wire.mjs';
 import {owned,stop,pause,environment,startPlatform,startHelper} from './platform.mjs';
 import {LANES,CELLS,recordedRole,controlRole,unitKey,unitsForLane,isReportOnly,repsOf,plan,pointFor} from './cells.mjs';
-import {outcomeOf,stalePointOf,routeOf,findLink,uncoveredBy,labelledOf,nodeAt,landingOf,delta,score,summarize,coverage,judge} from './check.mjs';
+import {outcomeOf,stalePointOf,routeOf,findLink,uncoveredBy,labelledOf,nodeAt,overlayAt,landingOf,delta,score,summarize,coverage,judge} from './check.mjs';
 
 const setupLabel=e=>typeof e?.setupStep==='string'?e.setupStep:'other';
 const stepError=step=>Object.assign(Error(step),{setupStep:step});
@@ -137,7 +137,10 @@ async function main(){
           placed=toPixels(sky,pointFor(c.at,found[c.at]?.frame,spec));
           if(!placed)throw stepError('screenshot');
           // The observation itself puts the unit's role at the point the engine will post: else the unit is not tested.
-          if(nodeAt(sky.nodes,placed.screen)?.role!==recordedRole(c.cell,c.at))throw stepError('placement');
+          const atPoint=nodeAt(sky.nodes,placed.screen);
+          if(atPoint?.role!==recordedRole(c.cell,c.at))throw stepError('placement');
+          // #433: the group at the point must be the fixture's overlay (spanning the row, or past the link), not any group.
+          if(spec.records&&!overlayAt(atPoint,spec,found))throw stepError('placement');
           // A twin cell's observation must hold every control it prepares (so the target is the one found), and a ruling-881
           // twin none of its own, else the unit is not tested.
           // Mode discover (#435) records the shortfall (`gap`) and runs the row on, so main's answer is read either way; but
@@ -196,7 +199,8 @@ async function main(){
         sameNode:read?.sameNode??null,exercised,
         // Geometry: the recorded node's frame (and both nodes') at the observation against the engine's re-observation
         // after the change, in screen points; and the page's own before and after, in CSS pixels.
-        ax:found?{recorded:delta(aim?.frame,after?.[c.at]?.frame),text:delta(found.text?.frame,after?.text?.frame),link:delta(found.link.frame,after?.link?.frame),
+        // An overlay cell's recorded node is the overlay, whose frame is not matched across observations: unset.
+        ax:found?{recorded:spec.records?null:delta(aim?.frame,after?.[c.at]?.frame),text:delta(found.text?.frame,after?.text?.frame),link:delta(found.link.frame,after?.link?.frame),
           reobserved,foundAfter:!!after}:null,
         ...(mode==='discover'&&gap!==undefined?{gap}:{}),observeTries,dom:mark?{text:delta(mark.before?.textRect,mark.after?.textRect),link:delta(mark.before?.link,mark.after?.link),twin:delta(mark.before?.link,mark.twin)}:null,walk,
         frames:found?{text:found.text?.frame??null,link:found.link.frame,point:placed?.screen??null}:null,

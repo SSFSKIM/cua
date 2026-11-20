@@ -524,12 +524,15 @@ final class BackgroundPointerTests: XCTestCase {
   /// successful write never opened and the re-read never ran. The process's first observation opens the fresh window,
   /// and so does every write attempt, failed or not; the observation reports the attempt and its AXError, value-free.
   func testAFailedEnablementWriteStillOpensTheFreshWindowAndIsReported() {
-    let web = WebAccessibility()
+    // The engine's clock is the test's (#408): a real uptime reading plus the window can round below the window in Double
+    // when the sum crosses a power of two, so the boundary asserted below read fresh on a hosted run now and then.
+    var clock: Double = 1_000
+    let web = WebAccessibility(now: { clock })
     var writes = 0
     let access = EnablementAccess(listed: { ["AXManualAccessibility"] }, readRole: {}, read: { _ in false },
                                   write: { _, _ in writes += 1; return .cannotComplete }, current: { true })
     XCTAssertNil(web.freshSince(pid: 7, launched: nil), "never observed")
-    let before = monotonicMilliseconds()
+    clock = 5_000
     var timings = Timings()
     let step = web.observeEnablement(eligible: true, pid: 7, launched: nil, connection: 1, access: access, timings: &timings)
     // The write was attempted; Electron's computed getter cannot confirm that a failed AXManualAccessibility write did
@@ -539,7 +542,7 @@ final class BackgroundPointerTests: XCTestCase {
     XCTAssertEqual(timings.wire["enablementWrite"] as? String, "failed")
     XCTAssertEqual(timings.wire["enablementWriteError"] as? Int, Int(AXError.cannotComplete.rawValue))
     let since = try? XCTUnwrap(web.freshSince(pid: 7, launched: nil))
-    XCTAssertGreaterThanOrEqual(since ?? 0, before)
+    XCTAssertEqual(since, 5_000, "opened at the observation")
     web.noteWebArea(pid: 7, launched: nil)
     XCTAssertTrue(webAreaAccessibilityFresh(freshSince: since, now: (since ?? 0) + 1_000, webAreaSeen: true),
                   "fresh after a failed write, the web area already seen")

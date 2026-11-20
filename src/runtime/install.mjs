@@ -237,9 +237,12 @@ export async function download({url, length, maxLength}, dest, fetchImpl, onProg
   const bound = length === undefined ? `the ${maxLength}-byte bound` : `the pinned ${length} bytes`;
   if (declared && declared > limit) fail('archive_length_mismatch', `${url} declares ${declared} bytes, more than ${bound}`);
   let received = 0;
-  const file = createWriteStream(dest, {mode: 0o600});
+  let file = null;
   try {
-    await pipeline(Readable.fromWeb(response.body), async function* (chunks) {
+    // The body first: a body that cannot be read fails before a file is opened, which nothing would then listen to.
+    const body = Readable.fromWeb(response.body);
+    file = createWriteStream(dest, {mode: 0o600});
+    await pipeline(body, async function* (chunks) {
       for await (const chunk of chunks) {
         received += chunk.length;
         if (received > limit) fail('archive_length_mismatch', `${url} sent more than ${bound}`);
@@ -251,8 +254,10 @@ export async function download({url, length, maxLength}, dest, fetchImpl, onProg
     // The pipeline rejects as soon as a stage fails, possibly before the file has finished opening; its creation would
     // then land in a staging directory the caller is already removing (ENOTEMPTY in place of this error, #441). The
     // failure returns once the file is closed.
-    file.destroy();
-    if (!file.closed) await new Promise(resolve => file.once('close', resolve));
+    if (file) {
+      file.destroy();
+      if (!file.closed) await new Promise(resolve => file.once('close', resolve));
+    }
     if (error instanceof CuaError) throw error;
     fail('download_failed', `download of ${url} failed after ${received} bytes: ${error.message}`, {cause: error});
   }

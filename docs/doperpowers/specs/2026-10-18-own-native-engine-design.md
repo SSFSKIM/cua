@@ -6850,43 +6850,62 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   Date/Author: 2026-11-19, cursor235's implementer for #431.
 - Decision (#433, 2026-11-20, `fix/433-overlay-target`, plugin 0.28.21; amends #296's verdict, StalePoint.swift
   `underlyingTarget` and `underlyingRefusal`): **a point kept at a node that does not act on its own is judged again at
-  the recorded control beneath it.** #431's qualification (cell `twincover`, run 44611947576) found the gap: a
+  the recorded control the click reaches.** #431's qualification (cell `twincover`, run 44611947576) found the gap: a
   transparent overlay lies over link A, the record holds the overlay at the point, A is removed and a same-label link B
   slides into its place. The overlay lives on its own handle, so the guard answered `sameElement`, and the click passed
   through to B (Electron, main and #431's fix alike). Safari's hit answered B, which #431 already refuses; CfT's record
   held another node there.
   The rule: when the verdict on the node keeps the point, the node has no interactive role and no AXPress (or its role
-  or actions did not read), and the hit names no interactive element (the overlay itself, its inert content, nothing),
-  the guard takes the recorded control beneath it, the deepest recorded node at the point that acts on its own and is
-  not one of the node's recorded ancestors. It reuses `deepestScreenshotNode`'s pick, the later of two at one depth, as
-  the browser's hit reaches the innermost control: a link inside a clickable card is the link. Refusing when several
-  disagree was weighed and not taken, since nested controls (a link in a clickable card or row, common with Chromium's
-  AXPress) always overlap and would refuse every click through an overlay onto them. The node's ancestors are left out
-  because the guard already vouches for a link through its text. That control is then judged as #296 judges a recorded
-  node: on its own handle, its frame read now must hold the point and its label's words must be unchanged (#298); a hit
-  inside it keeps it while its frame does not read; otherwise a handle re-created in place, searched near the hit and
-  then among its recorded parent's descendants (a hit on the overlay reaches nothing beneath), must pass #431's
-  refusals. Anything else refuses (`nodeGone`, `frameMoved`, `relabelled`), and the sentence names the control beneath,
-  not the overlay. A hit on a control (#305's `recordedHit`, `hitAboveNode`, an interactive hit inside an incomplete node)
-  is judged by the hit, as before, and so is every verdict at a node that acts on its own. #330's rule, #298's
-  exemption and #431's and #435's refusals are unchanged. The meta's `stalePoint` carries `underlyingRole` and
-  `underlyingIdentity` (`handle` or `recreated`) whenever the check ran.
+  or actions did not read), and the hit names no interactive element (the overlay itself, its inert content, nothing)
+  or is an interactive ancestor of the node (`hitAboveNode`), the guard takes the control the click reaches:
+  - **Content of a recorded control** (a link's text, a decoration in a button): that control vouches for the click
+    only while the node still lies in it now. While it does, nothing more is judged, as on main, whatever lies behind it
+    (the review of 0f79602f, item 1 (b): an unrelated button behind a link's text, removed, must not refuse). Once it
+    does not (item 1 (a): an inert decoration reparented from a replaced A into B), the recorded control is judged.
+  - **Otherwise** (no recorded control, or one the record cannot name): the deepest recorded node at the point that acts
+    on its own, or whose role or actions did not read (unknown, not inert: item 2), and is neither the node nor one of
+    its recorded ancestors: the control under the overlay. It reuses `deepestScreenshotNode`'s pick, the later of two at
+    one depth, as the browser's hit reaches the innermost control: a link inside a clickable card is the link. Refusing
+    when several disagree was weighed and not taken, since nested controls (a link in a clickable card or row, common
+    with Chromium's AXPress) always overlap and would refuse every click through an overlay onto them.
+  That control is then judged as #296 judges a recorded node: on its own handle, its frame read now must hold the point
+  and its label's words must be unchanged (#298); a hit inside it keeps it while its frame does not read; otherwise a
+  handle re-created in place, searched among the descendants of its nearest recorded ancestor that survives (bounded as
+  every search here; item 3: a parent rebuilt in place, the overlay alive in a sibling branch), must pass #431's
+  refusals, and a control of unknown actions is never taken as re-created (item 2). Anything else refuses (`nodeGone`,
+  `frameMoved`, `relabelled`) with a sentence of its own (design ruling 905, condition 1): the point lies on an element
+  that does not act on its own, over the control the screenshot showed there, which a click passes through to; that
+  control is gone or was replaced, moved away or reads another label; aim again from a new screenshot, since the same
+  point would reach whatever lies under the layer now. A hit on a control other than the node's ancestor (#305's
+  `recordedHit`, an interactive hit inside an incomplete node) is judged by the hit, as before, and so is every verdict
+  at a node that acts on its own. #330's rule, #298's exemption and #431's and #435's refusals are unchanged. The meta's
+  `stalePoint` carries `underlyingRole` and `underlyingIdentity` (`handle` or `recreated`) whenever the check ran, the
+  element route's press verdict included (item 4).
+  **The check vouches for the recorded control, not for stacking.** Which of two overlapping elements draws on top is not
+  in the tree, so two wrong clicks main also makes stay out of scope (the coordinator's ticket, design ruling 891's stop
+  rule): B sliding over a live, unchanged A (the review's finding 1), and overlapping siblings ordered by tree order
+  rather than by what draws on top (finding 2).
   The cost: AX cannot tell an overlay that passes the click from one that eats it (design ruling 903), so a modal's scrim,
   a sticky header or any inert layer over a control now refuses whenever that control changed, though the click would
   have reached the layer. Over a live, unchanged control the verdict is main's. Under a layer, a re-rendered control
-  also takes #431's strict form (refused where the record is not whole or holds a same-label twin), and a control the
-  page scrolled off the point under a fixed layer refuses as moved.
-  Proven offline (`OverlayTargetTests`): `twincover` refuses with the overlay or a decorative image inside it recorded
-  at the point, B on its own handle or a new one, and the hit on the overlay, its image or nothing; an unchanged A under
-  the overlay, a window that only moved, and a backdrop over a live link keep main's reasons; nothing interactive
-  beneath, a link's own text and an interactive overlay (a button, a group with AXPress) change nothing, while an
-  overlay whose actions did not read is judged; A's frame unread refuses, moved or relabelled A refuses with its reason;
-  a re-rendered A with no twin is kept as `recreated`, found from its recorded parent or (that parent re-rendered) from
-  the hit, and refused with a twin, past coverage or off the point; the deepest and later control is the target. Three
-  #431 tests that kept an inert overlay's own hit to reach the press verdict now refuse there, and reach the press
-  verdict with an overlay that acts on its own. A mutation pass of 19 mutations over the new lines (the pick, its
-  exemptions, each refusal and keep of the control beneath, both search anchors, the sentence and the meta) is caught by
-  these tests, every one.
+  also takes #431's strict form (refused where the record is not whole or holds a same-label twin; an unlabelled inert
+  group over a clickable row is itself such a twin), and a control the page scrolled off the point under a fixed layer
+  refuses as moved. Every click on a control's inert content now reads its parents up to that control (the
+  reparenting check).
+  Proven offline (`OverlayTargetTests`, 14 tests): `twincover` refuses with the overlay or a decorative image inside it
+  recorded at the point, B on its own handle or a new one, and the hit on the overlay, its image or nothing, with the
+  sentence above; an unchanged A under the overlay, a window that only moved, and a backdrop over a live link keep
+  main's reasons; nothing interactive beneath, a link's own text, an unrelated control behind it removed, and an
+  interactive overlay (a button, a group with AXPress) change nothing, while an overlay whose actions or whose wrapper's
+  actions did not read is judged; a decoration reparented into B refuses on A, framed or frameless, the hit on it or on
+  B; A's frame unread refuses, moved or relabelled A refuses with its reason; a control beneath of unknown actions is
+  judged on its handle and never re-created; a re-rendered A with no twin is kept as `recreated`, found from its
+  recorded parent or, that parent rebuilt, from the web area, and refused with a twin, past coverage or off the point;
+  the deepest and later control is the target; the press verdict carries the check and its own refusal still names the
+  node. Three #431 tests that kept an inert overlay's own hit to reach the press verdict now refuse there, and reach the
+  press verdict with an overlay that acts on its own. Mutation passes over the new lines (19 on the first build, 16 on
+  the review's fixes: the reparenting check, unknown candidates and controls, the surviving-ancestor walk, the press
+  verdict's carry and the sentence) are caught by these tests, every one.
   Not measured live: `twincover` on CfT, Safari and Electron with this build, and how often real pages lose a click to a
   changed control under an inert layer.
   Date/Author: 2026-11-20, cursor235's implementer for #433.

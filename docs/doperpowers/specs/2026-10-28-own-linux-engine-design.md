@@ -2546,7 +2546,12 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
     - Chrome 158 behaves as 156 does.
     - **Electron's browser stays fast (1–6 ms) while its drag starts**, so the ping says nothing about an Electron source.
     - Turning the sampler off (`--drag-dnd-hold-ping off`) moves no release beyond noise (892): x64 at twice the load, take in the hold, p50/p95 534/610 against 535/620 ms.
-  - **The adaptive hold (897, 898).** It applies only to a source positively identified as a Chrome or Chromium browser: WM_CLASS together with the process's executable. WM_CLASS alone isn't enough, because Electron and Chromium-embedding apps carry similar classes.
+  - **The adaptive hold (897, 898, 899).** It applies only to a source positively identified as a Chrome or Chromium browser.
+    - Amended by 899. In service the engine runs inside codex-linux-sandbox's own PID namespace, as the trusted worker. There `/proc/<host pid>/exe` can't be read, so the executable check alone would leave the adaptive hold inert wherever users are.
+    - Positive identification needs all of: WM_CLASS is Google-chrome, Chromium or Chromium-browser; WM_WINDOW_ROLE is "browser" or "pop-up" (Electron sets "browser-window"); WM_CLIENT_MACHINE is this host; and AT-SPI's application name for the pid is "Google Chrome" or "Chromium".
+    - Where /proc can read the executable it must agree, and a readable executable that disagrees disqualifies.
+    - An AT-SPI call that fails, times out or doesn't match means unidentified, so the source gets the fixed 450.
+    - The canary and one identification test run the engine inside the sandbox, as the service does. The test covers Chrome identified, Electron not, and a stub with Chrome's class and role but another application name not.
     - **Early release:** at press + 150 ms, if every ping answered by then came back under T = 20 ms. Only positive evidence counts: an unanswered, in-flight, failed or unsent ping counts as slow, and so does a source that doesn't advertise `_NET_WM_PING`.
     - **Extension:** if any ping was slow, the hold runs past B to press + 650 ms, waiting for the take.
     - **Notice:** a slow drag with no take by then answers ok with the notice "the page may have started a drag that did not complete".

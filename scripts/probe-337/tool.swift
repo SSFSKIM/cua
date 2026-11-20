@@ -220,9 +220,12 @@ func focus(_ q: [String: Any]) -> [String: Any] {
 }
 
 /// The focused window's first text area, breadth-first.
+/// The window a text op names by its frame (`"window":[x,y,w,h]` on textpoint, caret and settext), else the focused one.
+var textWindowFrame: CGRect? = nil
 func textArea(_ pid: pid_t) -> AXUIElement? {
   let app = prepare(AXUIElementCreateApplication(pid))
-  guard let w = element(attr(app, kAXFocusedWindowAttribute)) ?? elements(attr(app, kAXWindowsAttribute)).first else { return nil }
+  let named = textWindowFrame.flatMap { want in elements(attr(app, kAXWindowsAttribute)).first { frameOf($0).map { near($0, want, 6) } ?? false } }
+  guard let w = named ?? element(attr(app, kAXFocusedWindowAttribute)) ?? elements(attr(app, kAXWindowsAttribute)).first else { return nil }
   var queue = [w], head = 0
   while head < queue.count && queue.count < 400 {
     let e = queue[head]; head += 1
@@ -449,6 +452,24 @@ func menu(_ q: [String: Any]) -> [String: Any] {
   }
   return ["result": AXUIElementPerformAction(cur, kAXPressAction as CFString).rawValue, "title": short(str(cur, kAXTitleAttribute))]
 }
+/// {"op":"raise","pid","frame":[x,y,w,h]}: the app's window at that frame (within 6 pt) raised through accessibility
+/// (AXRaise, then AXMain written), no activation. Answers the results, the focused window's frame and the app's layer-0
+/// windows front to back.
+func raise(_ q: [String: Any]) -> [String: Any] {
+  guard let pid = (q["pid"] as? NSNumber)?.int32Value, let f = q["frame"] as? [Double], f.count == 4 else { return ["error": "args"] }
+  let want = CGRect(x: f[0], y: f[1], width: f[2], height: f[3])
+  let app = prepare(AXUIElementCreateApplication(pid))
+  guard let w = elements(attr(app, kAXWindowsAttribute)).first(where: { frameOf($0).map { near($0, want, 6) } ?? false }) else {
+    return ["error": "no window at \(f)", "windows": elements(attr(app, kAXWindowsAttribute)).map { wire(frameOf($0)) }]
+  }
+  let raised = AXUIElementPerformAction(w, kAXRaiseAction as CFString).rawValue
+  let main = AXUIElementSetAttributeValue(w, kAXMainAttribute as CFString, kCFBooleanTrue).rawValue
+  usleep(400_000)
+  let list = (CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]) ?? []
+  let order = list.filter { (($0[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value ?? 0) == pid && (($0[kCGWindowLayer as String] as? NSNumber)?.intValue ?? 0) == 0 }
+    .map { ["n": ($0[kCGWindowNumber as String] as? NSNumber)?.intValue ?? 0, "bounds": wire(rectOf($0))] as [String: Any] }
+  return ["raise": raised, "main": main, "focused": wire(element(attr(app, kAXFocusedWindowAttribute)).flatMap(frameOf)), "order": order]
+}
 /// {"op":"twowin","pid","a":[x,y,w,h],"b":[x,y,w,h]}: the app's two front standard windows placed (the second at `a`, the
 /// observed one; the first at `b`, over it), then the attempt to have `a` focused while `b` stays in front of it: B raised,
 /// then the application's AXFocusedWindow written to A. Answers each step's state: the focused window's frame and the
@@ -495,6 +516,7 @@ func openerNow(_ q: [String: Any]) -> [String: Any] {
 
 while let line = readLine() {
   guard let data = line.data(using: .utf8), let q = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { emit(["error": "bad request"]); continue }
+  textWindowFrame = (q["window"] as? [Double]).flatMap { $0.count == 4 ? CGRect(x: $0[0], y: $0[1], width: $0[2], height: $0[3]) : nil }
   switch q["op"] as? String {
   case "signals": emit(signals(q))
   case "focus": emit(focus(q))
@@ -510,6 +532,7 @@ while let line = readLine() {
   case "hover": emit(hover(q))
   case "menu": emit(menu(q))
   case "twowin": emit(twowin(q))
+  case "raise": emit(raise(q))
   default: emit(["error": "unknown op"])
   }
 }

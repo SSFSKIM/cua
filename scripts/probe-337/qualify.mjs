@@ -11,7 +11,7 @@
 // <input list>'s suggestion popup, opened by focusing the field and typing), permission (a geolocation prompt bubble, a
 // fresh origin per row). TextEdit: menu (the format bar's font-family popup menu, opened by AXPress), popover (the format
 // bar's text colour well, opened by AXPress).
-// Modes: shared-behind (a cover app frontmost: TextEdit for Chrome, Finder for TextEdit), shared-front, dedicated-behind.
+// Modes: shared-behind (a Finder window frontmost as the cover), shared-front, dedicated-behind.
 //
 //   node scripts/probe-337/qualify.mjs --engine <bin> --tool <bin> --out <dir> [--reps n] [--overlays a,b] [--modes a,b]
 //        [--sides inside,outside] [--budget minutes]
@@ -320,8 +320,11 @@ const OVERLAYS = {
     hit: 'landed',
     taken: c => c.clicked(c.pick?.title === 'Card' ? 'card' : '__none__'),
   },
-  // Two Chrome windows, the observed one behind: a second window opened on the page, placed over the first's Beta button,
-  // and the first made the app's focused window (the one get_app_state observes) while the second stays in front.
+  // Two windows of the app, the observed one behind at the click (#452's case 7): a second window placed over the
+  // first's lower part, the first raised and observed (it is the app's focused window, the one get_app_state reads),
+  // then the second raised over it through accessibility, with no new observation. The click is placed in the first
+  // window's screenshot where the second now covers it. (Writing the app's AXFocusedWindow to a back window changes
+  // nothing in Chrome or TextEdit, run 44805302760, so a back window is only ever observed through a stale screenshot.)
   twowin: {
     app: 'chrome',
     open: async c => {
@@ -330,24 +333,30 @@ const OVERLAYS = {
       spawn(STABLE, [`--user-data-dir=${c.profile}`, '--new-window', URL_], {stdio: 'ignore', detached: true}).unref();
       if (!(await newLoad(prev, 15_000))) throw new Error('the second window did not load');
       c.row.loadFront = lastReady()?.load ?? null;
-      await sleep(1500);
-      await c.arrange([WIN.x, WIN.y, WIN.w, WIN.h], [420, 470, 440, 260]);
+      await sleep(1200);
+      placePid(c.pid, {x: 420, y: 380, w: 520, h: 380});
+      await sleep(800);
+      await c.raise(winArr(c.sky0.window.frame));
     },
+    afterObs: async (c, wf) => c.raiseOther(wf),
     inside: (pop, sky) => nodeUnder(sky, pop, ['AXButton'], 'Beta'),
     outside: sky => findNode(sky, ['AXButton'], 'Top'),
     hit: 'landed-observed',
     taken: c => c.clicked('b2', c.row.loadObserved),
     landedOutside: c => c.clicked('top', c.row.loadObserved),
   },
-  // Two TextEdit documents, the observed one behind (as twowin).
   twowinTE: {
     app: 'textedit',
     open: async c => {
       sh('open', ['-a', 'TextEdit', teFileB]);
-      for (let i = 0; i < 30; i++) { await sleep(300); if (osa('tell application "System Events" to count windows of process "TextEdit"').out === '2') break; }
+      for (let i = 0; i < 30; i++) { await sleep(300); if (Number(osa('tell application "System Events" to count windows of process "TextEdit"').out) >= 2) break; }
       await sleep(600);
-      await c.arrange([WIN.x, WIN.y, WIN.w, WIN.h], [430, 330, 520, 330]);
+      osa(`tell application "System Events" to tell process "TextEdit" to set position of window 1 to {430, 330}`);
+      osa(`tell application "System Events" to tell process "TextEdit" to set size of window 1 to {520, 330}`);
+      await sleep(500);
+      await c.raise(winArr(c.sky0.window.frame));
     },
+    afterObs: async (c, wf) => c.raiseOther(wf),
     insideText: true,
     hit: 'landed-observed',
   },
@@ -370,8 +379,11 @@ const OVERLAYS = {
       if (r.error) throw new Error(`menu ${r.error}`);
       await sleep(1500);
     },
+    // On macOS 26 the Save panel is the app's focused window, so get_app_state observes the panel itself (run
+    // 44805302760): its Cancel is a click on the observed window, measured as such (no outside side).
     inside: pop => byLabel(pop, /^Cancel$/, /AXButton/),
-    taken: c => !c.overlayAfter,
+    selfPick: /^Cancel$/,
+    taken: c => c.windowGone(c.row.overlayAtObs?.target?.n),
   },
 };
 /// The observed tree's node of `roles` titled `want` when its centre lies in the overlay, else the first actionable node
@@ -456,7 +468,7 @@ function chromeApp() {
       placePid(b.pid, WIN);
       const left = await ask({op: 'popup', pid: b.pid, window: [WIN.x, WIN.y + 1, WIN.w, WIN.h - 42]});
       if (left.popup) notes.push(`overlay left ${JSON.stringify(left.popup.bounds)}`);
-      if (front) { setFront(b.pid); await sleep(700); } else await raiseTextEditCover();
+      if (front) { setFront(b.pid); await sleep(700); } else await raiseFinderCover();  // Finder, not TextEdit: a TextEdit cover document came back in the TextEdit rows (run 44805302760)
       return notes;
     },
     close: async () => { if (b && b.exitCode === null) { b.kill('SIGTERM'); await sleep(1500); } },
@@ -517,6 +529,18 @@ async function runRow(app, overlayName, mode, side, rep, headLabel) {
       type: async t => { const r = await w.execute('type_text', {pid, text: t}); row.steps.push({step: `type:${t.length}`, answer: brief(r)}); await sleep(800); },
       toolOpen: async (find, action) => { const r = await ask({op: 'open', pid, find, action}, 15_000); row.steps.push({step: `open:${action}`, answer: r}); if (r.error) throw new Error(`opener ${r.error}`); row.openerBefore = {value: r.value}; await sleep(900); },
       hover: async p => { row.steps.push({step: 'hover', answer: await ask({op: 'hover', x: p.x, y: p.y})}); },
+      raise: async frame => {
+        const r = await ask({op: 'raise', pid, frame}, 15_000);
+        row.steps.push({step: 'raise', answer: r});
+        if (r.error) throw Object.assign(new Error(`raise: ${r.error}`), {setup: true});
+        await sleep(500);
+      },
+      raiseOther: async wf => {
+        const all = (await ask({op: 'popup', pid, window: winArr(wf)})).appWindows ?? [];
+        const other = all.find(x => x.layer === 0 && x.bounds[2] > 200 && x.bounds[3] > 150 && !(Math.abs(x.bounds[0] - wf.x) <= 3 && Math.abs(x.bounds[1] - wf.y) <= 3 && Math.abs(x.bounds[2] - wf.width) <= 3));
+        if (!other) throw Object.assign(new Error('no second window'), {setup: true});
+        await c.raise(other.bounds);
+      },
       arrange: async (a, b) => {
         const r = await ask({op: 'twowin', pid, a, b}, 15_000);
         row.arrange = r;
@@ -528,6 +552,7 @@ async function runRow(app, overlayName, mode, side, rep, headLabel) {
     row.frontAtObs = frontmost();
     const sky = await observe(w, pid, `${lab}-reobs`);
     const wf = sky.window.frame;
+    if (ov.afterObs) await ov.afterObs(c, wf);
     row.window = wf;
     row.loadObserved ??= lastReady()?.load ?? null;
     row.screenshot = sky.screenshot?.url?.replace(/^.*\/shots\//, '') ?? null;
@@ -543,7 +568,7 @@ async function runRow(app, overlayName, mode, side, rep, headLabel) {
     row.nodesInOverlay = sky.nodes.filter(n => n.frame && inside(centre(n.frame), pr)).length;
     const textPoint = async want => {
       for (const [phrase, after] of TEXT_PHRASES) {
-        const tp = await ask({op: 'textpoint', pid, phrase, after});
+        const tp = await ask({op: 'textpoint', pid, phrase, after, window: winArr(wf)});
         if (!tp.error && inside(tp, pr) === want && inside(tp, wf)) return {pick: {by: 'text', phrase, frame: tp.bounds}, point: {x: tp.x, y: tp.y}};
       }
       return null;
@@ -576,7 +601,7 @@ async function runRow(app, overlayName, mode, side, rep, headLabel) {
     row.point = {px, screen, inOverlay: inside(screen, pr)};
     const sig = await ask({op: 'signals', pid, x: screen.x, y: screen.y, window: winArr(wf)});
     row.atClick = {holdsPoint: (sig.aboveAtPoint ?? []).some(x => x.n === pop.popup?.n), aboveAtPoint: sig.aboveAtPoint, hit: sig.hit?.chain?.slice(0, 6) ?? null};
-    const caretBefore = ov.app === 'textedit' ? await ask({op: 'caret', pid}) : null;
+    const caretBefore = ov.app === 'textedit' ? await ask({op: 'caret', pid, window: winArr(wf)}) : null;
     sh('screencapture', ['-x', '-t', 'jpg', join(OUT, 'screens', `${fileName(lab)}.jpg`)]);
     const mark = events.length;
     const t0 = Date.now();
@@ -587,7 +612,7 @@ async function runRow(app, overlayName, mode, side, rep, headLabel) {
     const ev = events.slice(mark);
     const after = await ask({op: 'popup', pid, window: winArr(wf)});
     const openerAfter = row.openerBefore ? await ask({op: 'opener'}) : null;
-    const caretAfter = ov.app === 'textedit' ? await ask({op: 'caret', pid, phrase: row.pick?.phrase ?? undefined}) : null;
+    const caretAfter = ov.app === 'textedit' ? await ask({op: 'caret', pid, phrase: row.pick?.phrase ?? undefined, window: winArr(wf)}) : null;
     const where = e => (e.load === row.loadObserved ? '' : '@other');
     row.after = {loads: ev.filter(e => e.type === 'ready').map(e => `${e.origin}${e.path}`),
       page: [...new Set(ev.filter(e => ['click', 'pointerdown', 'mousedown', 'focusin', 'submit'].includes(e.type)).map(e => `${e.type}:${e.id}${where(e)}`))],
@@ -597,6 +622,7 @@ async function runRow(app, overlayName, mode, side, rep, headLabel) {
     const caretAt = () => Boolean(caretAfter?.range && caretAfter.phraseIndex >= 0 && caretAfter.range[0] >= caretAfter.phraseIndex && caretAfter.range[0] <= caretAfter.phraseIndex + 7);
     const ctx = {row, loads: row.after.loads, geo: row.after.geo, openerBefore: row.openerBefore, openerAfter, pick: row.pick, overlayAfter: after.popup ?? null,
       changed: (id, v) => ev.some(e => ['input', 'change'].includes(e.type) && e.id === id && e.value === v),
+      windowGone: n => n != null && !(after.appWindows ?? []).some(x => x.n === n),
       clicked: (id, load) => ev.some(e => e.type === 'click' && e.id === id && (!load || e.load === load))};
     const pageClicks = row.after.page.filter(p => /^(click|mousedown):/.test(p));
     const caretMoved = caretAfter && JSON.stringify(caretAfter.range) !== JSON.stringify(caretBefore?.range);

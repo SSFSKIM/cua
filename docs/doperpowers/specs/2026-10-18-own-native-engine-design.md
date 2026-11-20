@@ -6835,6 +6835,18 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   refused match never carries a pointer.
   Not measured live: `twin`, `twincap`, `twindeep` and `twinbtn` on Safari with this build, and how often real pages lose
   a re-created click to coverage or to a same-label element.
+  #435 (2026-11-19, plugin 0.28.20) widens refusal 4 to twins recorded without a frame. The walk reads a frameless
+  element's role, labels and action names as it reads any other's, so the record keeps each one (`screenshotRecord`'s
+  `frameless`, beside the framed nodes) with its web area and control derived as a framed node's, a null frame and
+  nothing shown, so it is never chosen at a point or matched in place. The twin search reads them under the same filter,
+  on #296's path, #305's and the press verdict's: a twin recorded frameless that gains a frame at A's place refuses at
+  the text and at the link, on its own handles or on new ones; one of another role or label, or frameless inert content
+  of the node's own control, does not (`RecreatedIdentityTests`; a mutation pass over the changed lines caught 9 of 11,
+  the two left only carrying the record on verdicts nothing reads again). The review of 66ae2e8d found the search took
+  the node's value's words again for every peer compared, before delivery (3,000 frameless peers cost about 160 ms for a
+  1,000-unit text, 1.56 s for a 10,000-unit one), so the search (`recreatedTwinFound`) takes them once, on first use;
+  its verdicts are the per-peer rule's (`testTheTwinSearchJudgesAsThePerPeerRule`, `testTheTwinSearchTakesTheNodesWordsOnce`).
+  Not measured live: a frameless twin on a real page.
   Date/Author: 2026-11-19, cursor235's implementer for #431.
 
 ## Outcomes & Retrospective

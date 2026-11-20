@@ -1,6 +1,6 @@
 // #337's side tool, #316's (scripts/probe-316/tool.swift) with a `popup` op added; scripts/probe-337/measure.mjs runs it
-// as a child of the job shell, which holds the runner image's Accessibility and Screen Recording grants. A line server on stdin, one JSON answer per line on stdout. Nothing here
-// posts input. It reads what a narrower detector could read at click time, and the native apps' ground truth.
+// as a child of the job shell, which holds the runner image's Accessibility and Screen Recording grants. A line server on stdin, one JSON answer per line on stdout. Nothing here but
+// `hover` posts input. It reads what a narrower detector could read at click time, and the native apps' ground truth.
 //   {"op":"signals","pid","x","y","window":[x,y,w,h]}  at a point about to be clicked: the on-screen window list front to
 //       back (owner pid and name, layer, bounds, alpha; never a window's title), the target window's place in it and
 //       every window above it that holds the point; the app's focused element, its focused window, its windows and its
@@ -21,6 +21,9 @@
 //   {"op":"open","pid","find":{roles,title,description,value,any},"action"}  the first matching element of the app's
 //       windows, remembered as the opener, and an action taken on it ("focus" or an AX action name)
 //   {"op":"opener"}                          the opener's value, title, frame and focus now
+//   {"op":"hover","x","y"}                   the kit's pointer move for hover setups (the one op here that posts an event)
+//   {"op":"menu","pid","path":[...]}         a menu bar item pressed through accessibility
+//   {"op":"twowin","pid","a","b"}            two windows of the app placed, the back one made focused if the app allows
 import AppKit
 import ApplicationServices
 import Foundation
@@ -333,8 +336,9 @@ func popup(_ q: [String: Any]) -> [String: Any] {
   guard pop != nil else { return out }
   let app = prepare(AXUIElementCreateApplication(pid))
   var roots = elements(attr(app, kAXWindowsAttribute)) + elements(attr(app, kAXChildrenAttribute)).filter { role($0) != "AXMenuBar" }
-  // A popup button's menu hangs under the button that opened it.
+  // A popup button's menu hangs under the button that opened it; a sheet under its window.
   if let opener { roots += elements(attr(opener, kAXChildrenAttribute)).filter { role($0) == "AXMenu" } }
+  for w in elements(attr(app, kAXWindowsAttribute)) { roots += elements(attr(w, kAXChildrenAttribute)).filter { role($0) == "AXSheet" } }
   out["axRoots"] = roots.prefix(12).map { describe($0) }
   let grown = popRect.insetBy(dx: -8, dy: -8)
   if let axPop = roots.first(where: { frameOf($0).map { grown.contains($0) && $0.width * $0.height >= popRect.width * popRect.height * 0.5 } ?? false }) {
@@ -413,6 +417,75 @@ func open(_ q: [String: Any]) -> [String: Any] {
   }
   return out
 }
+/// {"op":"hover","x","y"}: the kit's own pointer move (setup, not the engine's): the cursor warped there and a mouse-moved
+/// event posted at the HID tap, twice, so an app's hover state (a link's status bubble, a tab's hover card) follows it.
+func hover(_ q: [String: Any]) -> [String: Any] {
+  guard let x = (q["x"] as? NSNumber)?.doubleValue, let y = (q["y"] as? NSNumber)?.doubleValue else { return ["error": "args"] }
+  let p = CGPoint(x: x, y: y)
+  let warp = CGWarpMouseCursorPosition(p).rawValue
+  for dx in [-1.0, 0.0] {
+    CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: CGPoint(x: x + dx, y: y), mouseButton: .left)?.post(tap: .cghidEventTap)
+    usleep(60_000)
+  }
+  return ["warp": warp]
+}
+/// {"op":"menu","pid","path":[regex,...]}: the app's menu bar item pressed through accessibility along the path (titles
+/// matched whole by the regexes), the last one with AXPress. No activation, no event.
+func menu(_ q: [String: Any]) -> [String: Any] {
+  guard let pid = (q["pid"] as? NSNumber)?.int32Value, let path = q["path"] as? [String], !path.isEmpty else { return ["error": "args"] }
+  let app = prepare(AXUIElementCreateApplication(pid))
+  guard var cur = element(attr(app, kAXMenuBarAttribute)) else { return ["error": "no menu bar"] }
+  for (i, want) in path.enumerated() {
+    var queue = [cur], head = 0, found: AXUIElement? = nil
+    while head < queue.count && queue.count < 2000 {
+      let e = queue[head]; head += 1
+      if head > 1, ["AXMenuBarItem", "AXMenuItem"].contains(role(e)), let t = str(e, kAXTitleAttribute),
+         t.range(of: "^(\(want))$", options: .regularExpression) != nil { found = e; break }
+      if role(e) == "AXMenuItem" && i < path.count - 1 && head > 1 { continue }
+      queue.append(contentsOf: elements(attr(e, kAXChildrenAttribute)))
+    }
+    guard let found else { return ["error": "no item \(want)"] }
+    cur = found
+  }
+  return ["result": AXUIElementPerformAction(cur, kAXPressAction as CFString).rawValue, "title": short(str(cur, kAXTitleAttribute))]
+}
+/// {"op":"twowin","pid","a":[x,y,w,h],"b":[x,y,w,h]}: the app's two front standard windows placed (the second at `a`, the
+/// observed one; the first at `b`, over it), then the attempt to have `a` focused while `b` stays in front of it: B raised,
+/// then the application's AXFocusedWindow written to A. Answers each step's state: the focused window's frame and the
+/// two windows' order in the on-screen list.
+func twowin(_ q: [String: Any]) -> [String: Any] {
+  guard let pid = (q["pid"] as? NSNumber)?.int32Value, let a = q["a"] as? [Double], let b = q["b"] as? [Double], a.count == 4, b.count == 4 else { return ["error": "args"] }
+  let app = prepare(AXUIElementCreateApplication(pid))
+  let wins = elements(attr(app, kAXWindowsAttribute)).filter { (str($0, kAXSubroleAttribute) ?? "") == "AXStandardWindow" }
+  guard wins.count >= 2 else { return ["error": "windows \(wins.count)"] }
+  let wB = wins[0], wA = wins[1]
+  func place(_ w: AXUIElement, _ f: [Double]) {
+    var p = CGPoint(x: f[0], y: f[1]), s = CGSize(width: f[2], height: f[3])
+    AXUIElementSetAttributeValue(w, kAXPositionAttribute as CFString, AXValueCreate(.cgPoint, &p)!)
+    AXUIElementSetAttributeValue(w, kAXSizeAttribute as CFString, AXValueCreate(.cgSize, &s)!)
+  }
+  place(wA, a); place(wB, b)
+  let fa = CGRect(x: a[0], y: a[1], width: a[2], height: a[3])
+  func state(_ step: String, _ result: Int32) -> [String: Any] {
+    let list = (CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]) ?? []
+    let mine = list.enumerated().filter { ((($0.element[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value) ?? 0) == pid && ((($0.element[kCGWindowLayer as String] as? NSNumber)?.intValue) ?? 0) == 0 }
+    let order = mine.map { ["i": $0.offset, "n": ($0.element[kCGWindowNumber as String] as? NSNumber)?.intValue ?? 0, "bounds": wire(rectOf($0.element))] as [String: Any] }
+    let focused = element(attr(app, kAXFocusedWindowAttribute)).flatMap(frameOf)
+    let aIndex = mine.first { near(rectOf($0.element), fa, 3) }?.offset
+    let behind = mine.contains { $0.offset < (aIndex ?? -1) && rectOf($0.element).intersects(fa) }
+    return ["step": step, "result": result, "focused": wire(focused), "aFocused": focused.map { near($0, fa, 3) } ?? false, "aBehind": behind, "order": order]
+  }
+  var steps: [[String: Any]] = []
+  steps.append(state("placed", 0))
+  steps.append(state("raiseB", AXUIElementPerformAction(wB, kAXRaiseAction as CFString).rawValue))
+  usleep(300_000)
+  steps.append(state("focusedWindowA", AXUIElementSetAttributeValue(app, kAXFocusedWindowAttribute as CFString, wA).rawValue))
+  usleep(300_000)
+  steps.append(state("settled", 0))
+  let last = steps.last!
+  return ["ok": (last["aFocused"] as? Bool) == true && (last["aBehind"] as? Bool) == true, "steps": steps]
+}
+
 /// The opener's value, title, frame and focus now.
 func openerNow(_ q: [String: Any]) -> [String: Any] {
   guard let opener else { return ["error": "no opener"] }
@@ -434,6 +507,9 @@ while let line = readLine() {
   case "open": emit(open(q))
   case "opener": emit(openerNow(q))
   case "forget": opener = nil; emit(["ok": true])
+  case "hover": emit(hover(q))
+  case "menu": emit(menu(q))
+  case "twowin": emit(twowin(q))
   default: emit(["error": "unknown op"])
   }
 }

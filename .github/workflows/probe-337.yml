@@ -12,10 +12,10 @@ on:
         description: Exact 40-character engine SHA
         required: true
         type: string
-      head:
-        description: The head's label in the results (main, fix)
+      fix:
+        description: qualify only, an exact 40-character candidate SHA run interleaved with engine (labelled main and fix); empty runs main alone
         type: string
-        default: main
+        default: ''
       kit:
         description: measure (#337's) or qualify (the overlay qualification)
         type: choice
@@ -59,7 +59,7 @@ jobs:
     timeout-minutes: 170
     env:
       ENGINE_SHA: ${{ inputs.engine }}
-      HEAD_LABEL: ${{ inputs.head }}
+      FIX_SHA: ${{ inputs.fix }}
       KIT: ${{ inputs.kit }}
       REPS: ${{ inputs.reps }}
       CELLS: ${{ inputs.cells }}
@@ -87,20 +87,31 @@ jobs:
           sw_vers
           git log -1 --format='kit %H %s'
           swiftc -O -o "$RUNNER_TEMP/tool337" scripts/probe-337/tool.swift
-          git worktree add --detach "$RUNNER_TEMP/src" "$ENGINE_SHA"
-          git -C "$RUNNER_TEMP/src" log -1 --format='engine %H %s'
-          echo "engine tree status: [$(git -C "$RUNNER_TEMP/src" status --porcelain 2>&1 | head -20)]"
-          swift build -c release --package-path "$RUNNER_TEMP/src/native/engine" --scratch-path "$RUNNER_TEMP/eng"
+          build() {
+            git worktree add --detach "$RUNNER_TEMP/src-$1" "$2"
+            git -C "$RUNNER_TEMP/src-$1" log -1 --format="$1 %H %s"
+            echo "$1 tree status: [$(git -C "$RUNNER_TEMP/src-$1" status --porcelain 2>&1 | head -20)]"
+            swift build -c release --package-path "$RUNNER_TEMP/src-$1/native/engine" --scratch-path "$RUNNER_TEMP/eng-$1"
+          }
+          build main "$ENGINE_SHA"
+          if [[ -n "$FIX_SHA" ]]; then
+            [[ "$FIX_SHA" =~ ^[0-9a-f]{40}$ && "$FIX_SHA" != "$ENGINE_SHA" ]]
+            test "$(git rev-parse "$FIX_SHA^{commit}")" = "$FIX_SHA"
+            build fix "$FIX_SHA"
+          fi
       - name: Measure
         shell: bash
         run: |
           extra=()
-          bin="$RUNNER_TEMP/eng/release/cua-engine"
+          bin="$RUNNER_TEMP/eng-main/release/cua-engine"
+          engines="main=$bin"
+          refs="main=$ENGINE_SHA"
+          if [[ -n "$FIX_SHA" ]]; then engines="$engines,fix=$RUNNER_TEMP/eng-fix/release/cua-engine"; refs="$refs,fix=$FIX_SHA"; fi
           if [ "$KIT" = qualify ]; then
             if [ -n "$OVERLAYS" ]; then extra+=(--overlays "$OVERLAYS"); fi
             if [ -n "$MODES" ]; then extra+=(--modes "$MODES"); fi
             if [ -n "$SIDES" ]; then extra+=(--sides "$SIDES"); fi
-            P337_HEAD="$HEAD_LABEL" P337_ENGINE_REF="$ENGINE_SHA" node scripts/probe-337/qualify.mjs --engine "$bin" \
+            P337_ENGINE_REFS="$refs" node scripts/probe-337/qualify.mjs --engines "$engines" \
               --tool "$RUNNER_TEMP/tool337" --out "$RUNNER_TEMP/probe-337" --reps "${REPS:-5}" --budget 140 "${extra[@]}"
             node scripts/probe-337/qsummary.mjs "$RUNNER_TEMP/probe-337/results.json" | tee "$RUNNER_TEMP/probe-337/summary.txt"
           else
@@ -114,7 +125,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
-          name: probe-337-${{ inputs.kit }}-${{ inputs.head }}
+          name: probe-337-${{ inputs.kit }}
           path: |
             ${{ runner.temp }}/probe-337/*.txt
             ${{ runner.temp }}/probe-316/install.txt

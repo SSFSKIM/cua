@@ -22,12 +22,14 @@ import {createConnection} from 'node:net';
 import {mkdirSync, writeFileSync, rmSync} from 'node:fs';
 import {join} from 'node:path';
 import {createInterface} from 'node:readline';
-import {launch, placePid, version} from '../probe-316/browser.mjs';
+import {launch, placePid, version, STABLE} from '../probe-316/browser.mjs';
 
 if (process.env.RUNNER_ENVIRONMENT !== 'github-hosted') { console.error('probe-337: runs only on a GitHub-hosted runner'); process.exit(2); }
 const arg = name => { const i = process.argv.indexOf(`--${name}`); return i > 0 ? process.argv[i + 1] : undefined; };
 const list = name => arg(name)?.split(',').map(s => s.trim()).filter(Boolean);
-const OUT = arg('out'), ENGINE = arg('engine'), TOOL = arg('tool');
+const OUT = arg('out'), TOOL = arg('tool');
+// The heads: label=binary, comma-separated; each unit runs once per head, the order alternating by rep.
+const HEADS = (arg('engines') ?? `main=${arg('engine')}`).split(',').map(s => { const i = s.indexOf('='); return {label: s.slice(0, i), bin: s.slice(i + 1)}; });
 const REPS = Number(arg('reps') ?? 5);
 const ONLY_OVERLAYS = list('overlays'), ONLY_MODES = list('modes'), SIDES = list('sides') ?? ['inside', 'outside'];
 const BUDGET_MS = Number(arg('budget') ?? 120) * 60_000;
@@ -62,8 +64,10 @@ addEventListener('load', () => { send('ready', {}); if (location.pathname === '/
 const PAGE = `<!doctype html><html lang="en" translate="no"><head><meta charset="utf-8"><meta name="google" content="notranslate"><title>probe337 page</title>
 <style>body{font:15px -apple-system,Helvetica,sans-serif;margin:0} .a{position:absolute;left:16px}</style></head>
 <body id="page"><div id="wrap" style="position:relative;height:560px">
-<h3 class="a" style="top:2px;margin:0">probe337 page</h3>
-<div class="a" style="top:40px"><select id="sel" aria-label="Choice"><option>One</option><option>Two</option><option>Three</option></select></div>
+<h3 class="a" style="top:2px;margin:0">probe337 page</h3><button id="card" type="button" style="position:absolute;left:170px;top:6px">Card</button>
+<div class="a" style="top:40px"><select id="sel" aria-label="Choice"><option>One</option><option>Two</option><option>Three</option></select> <button id="top" type="button" style="margin-left:120px">Top</button></div>
+<div class="a" style="top:300px"><a id="hov" href="/results?a-long-query-string-that-widens-the-status-bubble-over-the-corner-of-the-page=1">Hover link</a></div>
+<button id="under" type="button" style="position:fixed;left:6px;bottom:4px">Under</button>
 <div class="a" style="top:80px"><input id="fruit" list="fruits" aria-label="Fruit" autocomplete="off" size="20"><datalist id="fruits"><option value="apple"></option><option value="apricot"></option><option value="avocado"></option><option value="banana"></option></datalist></div>
 <div class="a" style="top:440px"><button id="b1" type="button">Alpha</button> <button id="b2" type="button">Beta</button> <button id="b3" type="button">Gamma</button></div>
 </div>${SCRIPT}</body></html>`;
@@ -147,11 +151,21 @@ class Wire {
 }
 const SOCK_DIR = join(process.env.RUNNER_TEMP ?? OUT, 's337'); mkdirSync(SOCK_DIR, {recursive: true, mode: 0o700});
 const SOCKET = join(SOCK_DIR, 'e.sock');
-let engine = null, engineErr = '';
+let engine = null, engineErr = '', head = HEADS[0];
 function startEngine() {
   rmSync(SOCKET, {force: true});
-  engine = spawn(ENGINE, [], {env: {...process.env, CUA_ENGINE_SOCKET: SOCKET}, stdio: ['ignore', 'ignore', 'pipe']});
+  engine = spawn(head.bin, [], {env: {...process.env, CUA_ENGINE_SOCKET: SOCKET}, stdio: ['ignore', 'ignore', 'pipe']});
   engine.stderr.on('data', d => { engineErr = (engineErr + d).slice(-20_000); });
+}
+/// One engine process alive at a time: switching heads ends the running one before the next starts on the same socket.
+async function useHead(h) {
+  if (h === head && engine && engine.exitCode === null) return;
+  if (engine && engine.exitCode === null) {
+    engine.kill('SIGTERM');
+    for (let i = 0; i < 40 && engine.exitCode === null; i++) await sleep(50);
+    if (engine.exitCode === null) { engine.kill('SIGKILL'); await sleep(200); }
+  }
+  head = h; engine = null;
 }
 async function connect(mode) {
   if (!engine || engine.exitCode !== null) { log('engine (re)start'); startEngine(); }
@@ -249,6 +263,7 @@ const OVERLAYS = {
       await sleep(1800);
     },
     inside: pop => byLabel(pop, /never allow|^block$|don.?t allow|deny/i, /AXButton/),
+    selfPick: /never allow|^block$|don.?t allow|deny/i,
     taken: c => c.geo.some(g => g.code === 1),
   },
   menu: {
@@ -268,14 +283,106 @@ const OVERLAYS = {
   popover: {
     app: 'textedit',
     open: async c => c.toolOpen({roles: ['AXColorWell']}, 'AXPress'),
-    // A swatch: the middle one of the overlay's small elements.
+    // A swatch (an AXPopover in the document's window, its own window on screen): the smoke run read its swatches only
+    // through the hit scans, as AXButtons described "rgb …"; the middle one of those, not black (the well's value).
     inside: pop => {
-      const small = candidates(pop).filter(c => c.by === 'ax' && !/AXWindow|AXGroup|AXScrollArea|AXList|AXUnknown|AXSplitGroup|AXLayoutArea/.test(c.role) && c.f.width <= 80 && c.f.height <= 80 && c.enabled !== false);
-      return small.length ? pick(small[Math.floor(small.length / 2)], {count: small.length}) : null;
+      const seen = new Set();
+      const swatches = candidates(pop).filter(c => c.role === 'AXButton' && /^rgb /.test(c.description ?? '') && c.description !== 'rgb 0 0 0 1' && !seen.has(c.description) && seen.add(c.description));
+      return swatches.length ? pick(swatches[Math.floor(swatches.length / 2)], {count: swatches.length}) : null;
     },
     taken: c => c.openerBefore?.value != null && c.openerAfter?.value != null && c.openerAfter.value !== c.openerBefore.value,
   },
+  // #452's regression cells: windows of the app over the observed one that a click is meant to pass, or to reach.
+  // A link's status bubble (click-through): the hovered link mid-page, the page's fixed Under button in the bubble's corner.
+  statusbubble: {
+    app: 'chrome',
+    open: async c => {
+      const n = findNode(c.sky0, ['AXLink'], 'Hover link');
+      if (!n) throw new Error('no Hover link');
+      await c.hover(centre(n.frame));
+      await sleep(900);
+    },
+    inside: (pop, sky) => nodeUnder(sky, pop, ['AXButton'], 'Under'),
+    hit: 'landed',
+    taken: c => c.clicked('under'),
+  },
+  // A tab's hover card (click-through): the tab hovered, the page's Card button under the card if it reaches the page.
+  hovercard: {
+    app: 'chrome',
+    open: async c => {
+      const r = await ask({op: 'open', pid: c.pid, find: {roles: ['AXRadioButton', 'AXTab'], any: 'probe337 page'}});
+      c.row.steps.push({step: 'find:tab', answer: r});
+      if (r.error) throw new Error('no tab');
+      await c.hover(centre(rect(r.opener.frame)));
+      await sleep(2200);
+    },
+    inside: (pop, sky) => nodeUnder(sky, pop, ['AXButton'], 'Card'),
+    hit: 'landed',
+    taken: c => c.clicked(c.pick?.title === 'Card' ? 'card' : '__none__'),
+  },
+  // Two Chrome windows, the observed one behind: a second window opened on the page, placed over the first's Beta button,
+  // and the first made the app's focused window (the one get_app_state observes) while the second stays in front.
+  twowin: {
+    app: 'chrome',
+    open: async c => {
+      c.row.loadObserved = lastReady()?.load ?? null;
+      const prev = c.row.loadObserved;
+      spawn(STABLE, [`--user-data-dir=${c.profile}`, '--new-window', URL_], {stdio: 'ignore', detached: true}).unref();
+      if (!(await newLoad(prev, 15_000))) throw new Error('the second window did not load');
+      c.row.loadFront = lastReady()?.load ?? null;
+      await sleep(1500);
+      await c.arrange([WIN.x, WIN.y, WIN.w, WIN.h], [420, 470, 440, 260]);
+    },
+    inside: (pop, sky) => nodeUnder(sky, pop, ['AXButton'], 'Beta'),
+    outside: sky => findNode(sky, ['AXButton'], 'Top'),
+    hit: 'landed-observed',
+    taken: c => c.clicked('b2', c.row.loadObserved),
+    landedOutside: c => c.clicked('top', c.row.loadObserved),
+  },
+  // Two TextEdit documents, the observed one behind (as twowin).
+  twowinTE: {
+    app: 'textedit',
+    open: async c => {
+      sh('open', ['-a', 'TextEdit', teFileB]);
+      for (let i = 0; i < 30; i++) { await sleep(300); if (osa('tell application "System Events" to count windows of process "TextEdit"').out === '2') break; }
+      await sleep(600);
+      await c.arrange([WIN.x, WIN.y, WIN.w, WIN.h], [430, 330, 520, 330]);
+    },
+    insideText: true,
+    hit: 'landed-observed',
+  },
+  // A sheet: an untitled document (File > New, its text written through accessibility) and its Save sheet (File > Save…),
+  // both pressed through accessibility; the sheet's Cancel button.
+  sheet: {
+    app: 'textedit',
+    open: async c => {
+      const n = await ask({op: 'menu', pid: c.pid, path: ['File', 'New']}, 15_000);
+      c.row.steps.push({step: 'menu:New', answer: n});
+      if (n.error) throw new Error(`menu ${n.error}`);
+      for (let i = 0; i < 30; i++) { await sleep(300); if (osa('tell application "System Events" to count windows of process "TextEdit"').out === '2') break; }
+      await sleep(500);
+      c.row.steps.push({step: 'settext', answer: await ask({op: 'settext', pid: c.pid, text: TE_LINES.join('\n')})});
+      osa(`tell application "System Events" to tell process "TextEdit" to set position of window 1 to {${WIN.x}, ${WIN.y}}`);
+      osa(`tell application "System Events" to tell process "TextEdit" to set size of window 1 to {${WIN.w}, ${WIN.h}}`);
+      await sleep(400);
+      const r = await ask({op: 'menu', pid: c.pid, path: ['File', 'Save(…|\\.\\.\\.)?']}, 15_000);
+      c.row.steps.push({step: 'menu:Save', answer: r});
+      if (r.error) throw new Error(`menu ${r.error}`);
+      await sleep(1500);
+    },
+    inside: pop => byLabel(pop, /^Cancel$/, /AXButton/),
+    taken: c => !c.overlayAfter,
+  },
 };
+/// The observed tree's node of `roles` titled `want` when its centre lies in the overlay, else the first actionable node
+/// whose centre does (what a model would click there); its title kept for the landing check.
+function nodeUnder(sky, pop, roles, want) {
+  const pr = rect(pop.popup.bounds);
+  const named = findNode(sky, roles, want);
+  const n = named && inside(centre(named.frame), pr) ? named
+    : sky.nodes.find(n => /AX(Button|Link|TextField|CheckBox|PopUpButton|RadioButton)/.test(n.role) && n.frame && n.frame.width > 4 && inside(centre(n.frame), pr));
+  return n ? {by: 'node', role: n.role, title: n.title ?? n.description ?? null, label: label(n), frame: n.frame, point: centre(n.frame), named: n === named} : null;
+}
 const MODES = [
   {name: 'shared-behind', desktop: 'shared', front: false},
   {name: 'shared-front', desktop: 'shared', front: true},
@@ -288,8 +395,9 @@ writeFileSync(textEditCover, 'The cover: frontmost in the behind rows.\n');
 const finderCover = join(process.env.RUNNER_TEMP ?? OUT, 'p337cover');
 mkdirSync(finderCover, {recursive: true});
 const TE_LINES = Array.from({length: 22}, (_, i) => `Line ${String(i + 1).padStart(2, '0')} words of a plain document ending eol${String(i + 1).padStart(2, '0')}`);
-const teFile = join(OUT, 'p337.rtf');
+const teFile = join(OUT, 'p337.rtf'), teFileB = join(OUT, 'p337-front.rtf');
 writeFileSync(teFile, `{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0 Helvetica;}}\\f0\\fs28\n${TE_LINES.map(l => `${l}\\par`).join('\n')}\n}`);
+writeFileSync(teFileB, `{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0 Helvetica;}}\\f0\\fs28\n${TE_LINES.map(l => `${l.replace('Line', 'Front')}\\par`).join('\n')}\n}`);
 
 async function raiseTextEditCover() {
   sh('open', ['-a', 'TextEdit', textEditCover]);
@@ -326,12 +434,21 @@ function chromeApp() {
     for (let i = 0; i < 2; i++) { await observe(w, b.pid, `warm-${launches}-${i}`).catch(() => {}); await sleep(1200); }
     w.close();
   };
+  const bigWindows = async () => ((await ask({op: 'popup', pid: b.pid, window: [0, 0, 1, 1]})).appWindows ?? [])
+    .filter(x => x.layer === 0 && x.bounds[2] > 200 && x.bounds[3] > 150).length;
   return {
     pid: () => b.pid,
+    profile: () => join(profileRoot, String(launches)),
     reset: async front => {
       const notes = [];
       if (!b || b.exitCode !== null) { await relaunch(); notes.push('launched'); }
+      await ask({op: 'hover', x: 200, y: 600});  // the pointer off Chrome: no hover state carried into the row
       await escapeTwice(b.pid);
+      // A second window a twowin row opened: closed through the menu, the one left placed and re-set below.
+      for (let i = 0; i < 3 && (await bigWindows()) > 1; i++) {
+        notes.push(`closed a window: ${JSON.stringify(await ask({op: 'menu', pid: b.pid, path: ['File', 'Close Window']}))}`);
+        await sleep(900);
+      }
       const prev = lastReady()?.load ?? null;
       sendCmd(`goto:${URL_}`);
       if (!(await newLoad(prev))) { notes.push('no reload: relaunch'); await relaunch(); }
@@ -345,19 +462,22 @@ function chromeApp() {
     close: async () => { if (b && b.exitCode === null) { b.kill('SIGTERM'); await sleep(1500); } },
   };
 }
+/// TextEdit ended, by signal: Apple Events to TextEdit (`close every document`) raise the runner's Automation prompt for
+/// TextEdit (smoke run 44802527126), whose dialog then sits over the window; the persistence defaults keep a relaunch from
+/// restoring anything.
+async function quitTextEdit() {
+  if (!pidOf('TextEdit')) return;
+  sh('pkill', ['-x', 'TextEdit']);
+  for (let i = 0; i < 40 && pidOf('TextEdit'); i++) await sleep(100);
+  if (pidOf('TextEdit')) { sh('pkill', ['-9', '-x', 'TextEdit']); await sleep(500); }
+}
 function textEditApp() {
   const pid = () => pidOf('TextEdit');
   return {
     pid,
     reset: async front => {
       const notes = [];
-      if (pid()) await escapeTwice(pid());
-      osa('tell application "TextEdit" to close every document saving no');
-      await sleep(500);
-      if (pid()) {
-        const left = await ask({op: 'popup', pid: pid(), window: [0, 0, 1, 1]});
-        if (left.popup) { notes.push(`overlay left ${JSON.stringify(left.popup.bounds)}: TextEdit quit`); sh('pkill', ['-x', 'TextEdit']); await sleep(1500); }
-      }
+      await quitTextEdit();
       sh('open', ['-a', 'TextEdit', teFile]);
       for (let i = 0; i < 30; i++) { await sleep(300); if (osa('tell application "System Events" to count windows of process "TextEdit"').out === '1') break; }
       osa(`tell application "System Events" to tell process "TextEdit" to set position of window 1 to {${WIN.x}, ${WIN.y}}`);
@@ -366,20 +486,21 @@ function textEditApp() {
       if (front) { setFront(pid()); await sleep(700); } else await raiseFinderCover();
       return notes;
     },
-    close: async () => { osa('tell application "TextEdit" to close every document saving no'); },
+    close: quitTextEdit,
   };
 }
 
 // ---- one row ------------------------------------------------------------------------------------------------------
 const results = [];
-const config = {kit: 'probe-337 qualify', head: process.env.P337_HEAD ?? null, engineRef: process.env.P337_ENGINE_REF ?? null, reps: REPS,
+const config = {kit: 'probe-337 qualify', heads: HEADS.map(h => h.label), engineRefs: process.env.P337_ENGINE_REFS ?? null, reps: REPS,
   macOS: sh('sw_vers', []).out.replace(/\s+/g, ' '), commit: process.env.GITHUB_SHA ?? null, image: process.env.ImageVersion ?? null, url: URL_};
 const save = () => writeFileSync(join(OUT, 'results.json'), JSON.stringify({config, results}, null, 1));
+const TEXT_PHRASES = [['eol20', 2], ['eol16', 2], ['eol12', 2], ['Line 20', 1], ['Line 16', 1], ['Line 12', 1], ['eol08', 2], ['eol04', 2], ['Line 08', 1], ['Line 04', 1], ['eol02', 2], ['Line 02', 1]];
 
-async function runRow(app, overlayName, mode, side, rep) {
+async function runRow(app, overlayName, mode, side, rep, headLabel) {
   const ov = OVERLAYS[overlayName];
-  const lab = `${overlayName}-${mode.name}-${side}-${rep}`;
-  const row = {label: lab, overlay: overlayName, app: ov.app, mode: mode.name, desktop: mode.desktop, front: mode.front, side, rep, steps: []};
+  const lab = `${overlayName}-${mode.name}-${side}-${rep}-${headLabel}`;
+  const row = {label: lab, head: headLabel, overlay: overlayName, app: ov.app, mode: mode.name, desktop: mode.desktop, front: mode.front, side, rep, steps: []};
   results.push(row);
   let w;
   try {
@@ -391,44 +512,70 @@ async function runRow(app, overlayName, mode, side, rep) {
     const sky0 = await observe(w, pid, `${lab}-obs`);
     row.window0 = sky0.window?.frame;
     const c = {
-      row,
+      row, pid, sky0, profile: app.profile?.(),
       key: async k => { const r = await w.execute('press_key', {pid, key: k}); row.steps.push({step: `key:${k}`, answer: brief(r)}); await sleep(800); },
       type: async t => { const r = await w.execute('type_text', {pid, text: t}); row.steps.push({step: `type:${t.length}`, answer: brief(r)}); await sleep(800); },
       toolOpen: async (find, action) => { const r = await ask({op: 'open', pid, find, action}, 15_000); row.steps.push({step: `open:${action}`, answer: r}); if (r.error) throw new Error(`opener ${r.error}`); row.openerBefore = {value: r.value}; await sleep(900); },
+      hover: async p => { row.steps.push({step: 'hover', answer: await ask({op: 'hover', x: p.x, y: p.y})}); },
+      arrange: async (a, b) => {
+        const r = await ask({op: 'twowin', pid, a, b}, 15_000);
+        row.arrange = r;
+        if (!r.ok) throw Object.assign(new Error('could not have the back window focused'), {setup: true});
+        await sleep(500);
+      },
     };
     await ov.open(c);
     row.frontAtObs = frontmost();
     const sky = await observe(w, pid, `${lab}-reobs`);
     const wf = sky.window.frame;
     row.window = wf;
+    row.loadObserved ??= lastReady()?.load ?? null;
     row.screenshot = sky.screenshot?.url?.replace(/^.*\/shots\//, '') ?? null;
     const pop = await ask({op: 'popup', pid, window: winArr(wf)});
     row.overlayAtObs = {popup: pop.popup ?? null, target: pop.target ?? null, appWindows: pop.appWindows, axPopup: pop.axPopup ?? null, axRoots: pop.axRoots,
       rows: (pop.axRows ?? []).slice(0, 40), scan: pop.scan, systemScan: pop.systemScan};
     const pr = rect(pop.popup?.bounds);
-    if (!pr) { row.problem = 'no overlay at the re-observation'; return; }
+    if (!pop.target) { row.problem = 'the observed window is not on screen'; return; }
+    // With Chrome frontmost the permission bubble is the app's focused window, so get_app_state observes the bubble
+    // itself (smoke run 44802527126): its button is then a click on the observed window, measured as such.
+    if (!pr && ov.selfPick && side === 'inside' && wf.width < 500) row.observedIsOverlay = true;
+    else if (!pr) { row.problem = 'no overlay at the re-observation'; return; }
     row.nodesInOverlay = sky.nodes.filter(n => n.frame && inside(centre(n.frame), pr)).length;
+    const textPoint = async want => {
+      for (const [phrase, after] of TEXT_PHRASES) {
+        const tp = await ask({op: 'textpoint', pid, phrase, after});
+        if (!tp.error && inside(tp, pr) === want && inside(tp, wf)) return {pick: {by: 'text', phrase, frame: tp.bounds}, point: {x: tp.x, y: tp.y}};
+      }
+      return null;
+    };
     let point;
-    if (side === 'inside') {
-      row.pick = ov.inside(pop);
+    if (side === 'inside' && ov.insideText) {
+      const t = await textPoint(true);
+      if (!t) { row.problem = 'no text under the overlay'; return; }
+      row.pick = t.pick; point = t.point;
+    } else if (row.observedIsOverlay) {
+      const n = sky.nodes.find(n => n.role === 'AXButton' && n.frame && ov.selfPick.test(label(n)));
+      if (!n) { row.problem = 'no button in the observed bubble'; return; }
+      row.pick = {by: 'node', role: n.role, label: label(n), frame: n.frame, point: centre(n.frame)};
+      point = row.pick.point;
+    } else if (side === 'inside') {
+      row.pick = ov.inside(pop, sky);
       if (!row.pick) { row.problem = 'no item in the overlay'; return; }
       point = row.pick.point;
     } else if (ov.app === 'chrome') {
-      const n = findNode(sky, ['AXButton'], 'Beta');
-      if (!n) { row.problem = 'no Beta button'; return; }
-      row.pick = {by: 'node', role: n.role, frame: n.frame};
+      const n = ov.outside ? ov.outside(sky) : findNode(sky, ['AXButton'], 'Beta');
+      if (!n) { row.problem = 'no outside button'; return; }
+      row.pick = {by: 'node', role: n.role, title: n.title ?? n.description ?? null, frame: n.frame};
       point = centre(n.frame);
     } else {
-      for (const [phrase, after] of [['eol20', 2], ['eol12', 2], ['Line 20', 1], ['Line 12', 1], ['eol04', 2], ['Line 04', 1]]) {
-        const tp = await ask({op: 'textpoint', pid, phrase, after});
-        if (!tp.error && !inside(tp, pr) && inside(tp, wf)) { row.pick = {by: 'text', phrase, frame: tp.bounds}; point = {x: tp.x, y: tp.y}; break; }
-      }
-      if (!point) { row.problem = 'no text outside the overlay'; return; }
+      const t = await textPoint(false);
+      if (!t) { row.problem = 'no text outside the overlay'; return; }
+      row.pick = t.pick; point = t.point;
     }
     const {px, screen} = toPixels(sky, point);
     row.point = {px, screen, inOverlay: inside(screen, pr)};
     const sig = await ask({op: 'signals', pid, x: screen.x, y: screen.y, window: winArr(wf)});
-    row.atClick = {holdsPoint: (sig.aboveAtPoint ?? []).some(x => x.n === pop.popup.n), aboveAtPoint: sig.aboveAtPoint, hit: sig.hit?.chain?.slice(0, 6) ?? null};
+    row.atClick = {holdsPoint: (sig.aboveAtPoint ?? []).some(x => x.n === pop.popup?.n), aboveAtPoint: sig.aboveAtPoint, hit: sig.hit?.chain?.slice(0, 6) ?? null};
     const caretBefore = ov.app === 'textedit' ? await ask({op: 'caret', pid}) : null;
     sh('screencapture', ['-x', '-t', 'jpg', join(OUT, 'screens', `${fileName(lab)}.jpg`)]);
     const mark = events.length;
@@ -441,30 +588,34 @@ async function runRow(app, overlayName, mode, side, rep) {
     const after = await ask({op: 'popup', pid, window: winArr(wf)});
     const openerAfter = row.openerBefore ? await ask({op: 'opener'}) : null;
     const caretAfter = ov.app === 'textedit' ? await ask({op: 'caret', pid, phrase: row.pick?.phrase ?? undefined}) : null;
-    row.after = {loads: ev.filter(e => e.type === 'ready').map(e => `${e.origin}${e.path}`), page: [...new Set(ev.filter(e => ['click', 'pointerdown', 'mousedown', 'focusin', 'submit'].includes(e.type)).map(e => `${e.type}:${e.id}`))],
+    const where = e => (e.load === row.loadObserved ? '' : '@other');
+    row.after = {loads: ev.filter(e => e.type === 'ready').map(e => `${e.origin}${e.path}`),
+      page: [...new Set(ev.filter(e => ['click', 'pointerdown', 'mousedown', 'focusin', 'submit'].includes(e.type)).map(e => `${e.type}:${e.id}${where(e)}`))],
       changes: ev.filter(e => ['input', 'change'].includes(e.type)).map(e => `${e.type}:${e.id}=${e.value}`), geo: ev.filter(e => e.type === 'geo'),
       overlay: after.popup ? {n: after.popup.n, layer: after.popup.layer, bounds: after.popup.bounds} : null, opener: openerAfter, caretBefore: caretBefore?.range ?? null,
       caret: caretAfter ? {range: caretAfter.range, line: caretAfter.line, phraseIndex: caretAfter.phraseIndex} : null, front: frontmost()};
-    const ctx = {loads: row.after.loads, geo: row.after.geo, openerBefore: row.openerBefore, openerAfter, pick: row.pick,
-      changed: (id, v) => ev.some(e => ['input', 'change'].includes(e.type) && e.id === id && e.value === v)};
+    const caretAt = () => Boolean(caretAfter?.range && caretAfter.phraseIndex >= 0 && caretAfter.range[0] >= caretAfter.phraseIndex && caretAfter.range[0] <= caretAfter.phraseIndex + 7);
+    const ctx = {row, loads: row.after.loads, geo: row.after.geo, openerBefore: row.openerBefore, openerAfter, pick: row.pick, overlayAfter: after.popup ?? null,
+      changed: (id, v) => ev.some(e => ['input', 'change'].includes(e.type) && e.id === id && e.value === v),
+      clicked: (id, load) => ev.some(e => e.type === 'click' && e.id === id && (!load || e.load === load))};
     const pageClicks = row.after.page.filter(p => /^(click|mousedown):/.test(p));
     const caretMoved = caretAfter && JSON.stringify(caretAfter.range) !== JSON.stringify(caretBefore?.range);
     let landing;
     if (row.click.error) landing = `refused:${row.click.error}`;
-    else if (side === 'inside' && ov.taken(ctx)) landing = 'taken';
-    else if (side === 'outside' && ov.app === 'chrome' && row.after.page.some(p => /^click:b2$/.test(p))) landing = 'landed';
-    else if (side === 'outside' && ov.app === 'textedit' && caretAfter?.range && caretAfter.phraseIndex >= 0 && caretAfter.range[0] >= caretAfter.phraseIndex && caretAfter.range[0] <= caretAfter.phraseIndex + 6) landing = 'landed';
+    else if (side === 'inside' && (ov.insideText ? caretAt() : ov.taken(ctx))) landing = ov.hit ?? 'taken';
+    else if (side === 'outside' && ov.app === 'chrome' && (ov.landedOutside ? ov.landedOutside(ctx) : ctx.clicked('b2'))) landing = 'landed';
+    else if (side === 'outside' && ov.app === 'textedit' && caretAt()) landing = 'landed';
     else if (row.after.loads.length) landing = `navigated:${row.after.loads.join(',')}`;
     else if (pageClicks.length) landing = `beneath:${pageClicks.join(',')}`;
     else if (caretMoved) landing = 'beneath:caret';
     else if (!after.popup) landing = 'dismissed';
     else landing = 'nothing';
     row.landing = landing;
-  } catch (e) { row.exception = String(e?.stack || e).slice(0, 1500); }
+  } catch (e) { if (e.setup) row.problem = e.message; else row.exception = String(e?.stack || e).slice(0, 1500); }
   finally {
     w?.close(); save();
     const sp = row.click?.stalePoint, o = row.overlayAtObs?.popup;
-    log(`${lab}: ${row.problem ?? row.exception?.split('\n')[0] ?? `${row.landing} ${sp ? `${sp.verdict}/${sp.reason}` : 'no stalePoint'} posted=${row.click?.posted} overlay=${o ? `${o.n}/L${o.layer}/${JSON.stringify(o.bounds)}` : '-'} holds=${row.atClick?.holdsPoint} pick=${row.pick?.by}:${row.pick?.role ?? ''}:${(row.pick?.label ?? row.pick?.phrase ?? '').slice(0, 30)} front=${row.frontAtObs}->${row.after?.front} msg=${(row.click?.message ?? '').slice(0, 140)}`}`);
+    log(`${lab}: ${row.problem ?? row.exception?.split('\n')[0] ?? `${row.landing} ${sp ? `${sp.verdict}/${sp.reason}` : 'no stalePoint'} posted=${row.click?.posted} overlay=${o ? `${o.n}/L${o.layer}/${JSON.stringify(o.bounds)}` : '-'} in=${row.point?.inOverlay} holds=${row.atClick?.holdsPoint} pick=${row.pick?.by}:${row.pick?.role ?? ''}:${(row.pick?.label ?? row.pick?.title ?? row.pick?.phrase ?? '').slice(0, 30)} front=${row.frontAtObs}->${row.after?.front} msg=${(row.click?.message ?? '').slice(0, 160)}`}`);
   }
 }
 
@@ -476,10 +627,14 @@ async function run() {
     const mine = overlays.filter(o => OVERLAYS[o].app === appName);
     if (!mine.length) continue;
     const app = appName === 'chrome' ? chromeApp() : textEditApp();
-    if (appName === 'textedit') osa('tell application "TextEdit" to close every document saving no');
+    if (appName === 'textedit') await quitTextEdit();  // the Chrome rows' cover
     for (let rep = 1; rep <= REPS; rep++) for (const o of mine) for (const m of modes) for (const side of SIDES) {
-      if (Date.now() - STARTED > BUDGET_MS) { config.budgetStop = true; save(); return; }
-      await runRow(app, o, m, side, rep);
+      // The heads interleaved per unit, their order alternating by rep.
+      for (const h of rep % 2 ? HEADS : [...HEADS].reverse()) {
+        if (Date.now() - STARTED > BUDGET_MS) { config.budgetStop = true; save(); return; }
+        await useHead(h);
+        await runRow(app, o, m, side, rep, h.label);
+      }
     }
     await app.close();
   }

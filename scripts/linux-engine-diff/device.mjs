@@ -673,8 +673,9 @@ const round1 = (x) => (typeof x === 'number' ? Math.round(x * 10) / 10 : null);
  * The plain control's own waits for the relative criterion (ruling 930): V5's select control's warm samples whose hold
  * ran and measured a wait, and the largest of those waits (`holdPingWait`). "The plain control's max" is the warm
  * samples' alone: each block's first sample (`i` 0) is left out, as the plain control's own rule leaves it out, since a
- * fresh page's first ping can be slow (a cold slow one is counted there, never failed), and a bar set from it would let
- * a draggable press that reads no slower than a plain warm drag pass. A held sample whose hold measured no wait (no
+ * fresh page's first ping can be slow (a cold slow one is counted there, never failed): a slow cold ping in the maximum
+ * would raise the bar, and could reject a draggable cell whose presses stand well apart from the warm plain drags they
+ * are compared with. A held sample whose hold measured no wait (no
  * round trip, none unanswered) is no observation and never counts as 0 ms (the review of H6, blocker 1): it is counted
  * apart, and with fewer than `CANARY_HELD` measured the baseline is not established. `{warm, unmeasured, max_ms}`,
  * `warm` the measured samples, `max_ms` null with none.

@@ -789,6 +789,16 @@ function noDropRead(r) {
   return Boolean(src) && Number.isInteger(b?.drops) && Number.isInteger(a?.drops) && a.drops === b.drops;
 }
 
+/**
+ * Whether the page was read before and after the drag with the drag's source's start and drop counters both there:
+ * without them, whether the drag started or dropped is unknown (`dragOutcome` reads both as false), never "no".
+ */
+function countersRead(r) {
+  const src = T14_SOURCE[r.base ?? r.cell] ?? CELL_SOURCE[r.base ?? r.cell];
+  const read = (c) => Number.isInteger(c?.starts) && Number.isInteger(c?.drops);
+  return Boolean(src) && read(r.before?.dnd?.[src]) && read(r.after?.dnd?.[src]);
+}
+
 const BAND_OUTCOMES = {
   // the drop landed after a take the engine saw inside its hold (the review of H6, blocker 2: a late take that landed
   // before its cancel is no in-hold landing)
@@ -852,7 +862,7 @@ export function chromeDropVerdict(rows, { specs = [], plan = null, capped = fals
     '| lane | cell | drags | never took | landed | ok, nothing pending | unconfirmed | late takes | reported | false ok | false releases (answered ok) | harness Escapes |',
     '|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|',
   ];
-  const total = { drags: 0, untaken: 0, landed: 0, late: 0, late_reported: 0, late_notice_without_take: 0, false_ok: 0, missing_landing: 0, pending_broken: 0, unconfirmed_landed: 0, false_releases: 0, false_release_ok: 0, harness_escapes: 0, ...(bands ? { false_alarms: 0 } : {}) };
+  const total = { drags: 0, untaken: 0, landed: 0, late: 0, late_reported: 0, late_notice_without_take: 0, false_ok: 0, missing_landing: 0, pending_broken: 0, unconfirmed_landed: 0, false_releases: 0, false_release_ok: 0, harness_escapes: 0, ...(bands ? { false_alarms: 0, unjudged: 0 } : {}) };
   for (const c of cells.values()) {
     const name = `${c.lane} ${c.cell}`;
     const list = c.rows;
@@ -880,6 +890,12 @@ export function chromeDropVerdict(rows, { specs = [], plan = null, capped = fals
     // hold notice); a plain ok there is a false ok, though no take came. A notice on a drop that landed is a false alarm
     const plainRefused = bands ? list.filter((r) => r.ok === true && !excused(r) && r.reply_notice !== HOLD_NOTICE && r.outcome?.started === true && !landed(r) && !tookOf(r)) : [];
     if (plainRefused.length) failed.push(`${name}: answered ok with no notice and nothing pending on a drag its page started that did not land, on ${plainRefused.length} of ${list.length} (${which(plainRefused)})`);
+    // the re-review of 9a8f32a5: a plain ok with no take seen and nothing that accounts for it, whose page was not read
+    // before or after, cannot be judged honest or not (Chrome may have started the drag): unjudged, and a counted step
+    // fails on it; missing evidence never counts as "no drop" or "did not start"
+    const unjudged = bands ? list.filter((r) => r.ok === true && !excused(r) && r.reply_notice !== HOLD_NOTICE && !tookOf(r) && !countersRead(r)) : [];
+    if (unjudged.length) failed.push(`${name}: answered a plain ok with no take seen and the page's drop counters unread before or after, on ${unjudged.length} of ${list.length} (${which(unjudged)}): unjudged`);
+    if (bands) total.unjudged += unjudged.length;
     if (bands) total.false_alarms += count((r) => r.reply_notice === HOLD_NOTICE && landed(r));
     if (missing.length) failed.push(`${name}: the drop did not land on ${missing.length} of ${list.length}, in a cell that expects it (${which(missing)})`);
     total.pending_broken += pendingBreaks(list, name, failed);

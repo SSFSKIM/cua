@@ -126,6 +126,22 @@ test('the review of H6, blocker 4: on a banded plan only a pending cause that ac
   assert.deepEqual(legacy.failed, []);
 });
 
+test('the re-review of 9a8f32a5: a plain ok with no take and its page unread is unjudged, and fails, in the edge band and in the past band', () => {
+  // Chrome may have started the drag; the page's status line was not read after it, so dragOutcome reads started and
+  // landed false: missing evidence is never "no drop" or "did not start"
+  const unread = (cell, i) => Object.assign(chrome({ cell, i, landed: false, started: false }), { after: { press: { seq: 10, at: 2 } }, signals: { take_after_press_ms: null, late_take: false }, hold: { taken: false } });
+  for (const [cell, i] of [['freeze-650', 9], ['freeze-700', 9]]) {
+    const v = judge(swap(banded(), cell, i, unread(cell, i)));
+    assert.ok(v.failed.includes(`cua ${cell}: answered a plain ok with no take seen and the page's drop counters unread before or after, on 1 of 10 (#${i}): unjudged`), v.failed.join('\n'));
+    assert.equal(v.counts.unjudged, 1);
+  }
+  // unread before the drag fails the same way
+  const before = Object.assign(chrome({ cell: 'freeze-650', i: 9, landed: false }), { before: null, signals: { take_after_press_ms: null, late_take: false }, hold: { taken: false } });
+  assert.ok(judge(swap(banded(), 'freeze-650', 9, before)).failed.some((f) => /freeze-650: answered a plain ok with no take seen and the page's drop counters unread/.test(f)));
+  // a passing sitting has none
+  assert.equal(judge(banded()).counts.unjudged, 0);
+});
+
 test("the per-cell table's false ok column counts the banded plan's refused plain oks, as the total does", () => {
   const plainOk = Object.assign(chrome({ cell: 'freeze-700', i: 9, landed: false }), { signals: { take_after_press_ms: null, late_take: false }, hold: { taken: false } });
   const v = judge(swap(banded(), 'freeze-700', 9, plainOk));

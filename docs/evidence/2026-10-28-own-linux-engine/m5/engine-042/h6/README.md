@@ -186,8 +186,9 @@ So no non-K step differs in how the runner launches it. Under 929.2, none reruns
      `unmeasured`, never as 0 ms.
    - With fewer than 3 measured warm samples, the relative criterion is untested and fails.
    - What ruling 930's "plain control's max" covers: the warm samples alone. Each block's first sample (`i` 0) is left
-     out, the same as the plain control's own rule leaves it out, because a fresh page's first ping can be slow. A bar
-     set from it would let a draggable press that reads no slower than a warm plain drag pass.
+     out, the same as the plain control's own rule leaves it out, because a fresh page's first ping can be slow. A slow
+     cold ping in the maximum would raise the bar, and could reject a draggable cell whose presses stand well apart from
+     the warm plain drags they are compared with.
 2. **The inside band's landing needs a take the engine saw inside its hold** (`hold.taken`) and no late take. A late take
    whose drop landed before its cancel doesn't count.
 3. **The past band needs the page read before and after the drag**, with the source's drop counter present on both
@@ -210,3 +211,13 @@ So no non-K step differs in how the runner launches it. Under 929.2, none reruns
 - The five K2 runs, K1 and V5's canary cells (`rejudge-device.mjs --diagnostic`): 0 moved, 0 failing.
   - Each run's plain control had 6 measured warm samples and 0 unmeasured.
   - Their largest waits were 1.17–1.24 ms on Chrome 158, 2.28 ms on K1 and 1.47 ms on V5's cells.
+
+**The re-review of 9a8f32a5 found one more blocker: a plain ok whose page went unread could pass.**
+- **The gap.** A banded plan's plain ok that no take and no pending cause account for, with the source's counters
+  unread before or after the drag, read as "didn't start, didn't drop". On such a row `dragOutcome` reports
+  `started: false, landed: false`, so its false ok went uncounted.
+- **The fix.** That row is now **unjudged**, and an unjudged row fails the step. Missing evidence never counts as "no
+  drop" or "did not start".
+- **The tests.** One unread plain-ok row was added to an otherwise passing sitting, first in the edge band, then in the
+  past band, then unread before the drag. Each run fails.
+- **The stored development runs still pass.** Every one of their rows has both counters read.

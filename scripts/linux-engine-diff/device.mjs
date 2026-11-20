@@ -671,12 +671,18 @@ const round1 = (x) => (typeof x === 'number' ? Math.round(x * 10) / 10 : null);
 
 /**
  * The plain control's own waits for the relative criterion (ruling 930): V5's select control's warm samples whose hold
- * ran (the cold first one apart, as its own rule has it: a fresh page's first ping can be slow), and their largest wait
- * (`holdPingWait`). `{warm, max_ms}`, `max_ms` null with none.
+ * ran and measured a wait, and the largest of those waits (`holdPingWait`). "The plain control's max" is the warm
+ * samples' alone: each block's first sample (`i` 0) is left out, as the plain control's own rule leaves it out, since a
+ * fresh page's first ping can be slow (a cold slow one is counted there, never failed), and a bar set from it would let
+ * a draggable press that reads no slower than a plain warm drag pass. A held sample whose hold measured no wait (no
+ * round trip, none unanswered) is no observation and never counts as 0 ms (the review of H6, blocker 1): it is counted
+ * apart, and with fewer than `CANARY_HELD` measured the baseline is not established. `{warm, unmeasured, max_ms}`,
+ * `warm` the measured samples, `max_ms` null with none.
  */
 export function canaryPlainControl(rows) {
-  const waits = rows.filter((r) => r.i !== 0 && r.engine_stats?.hold?.held === true).map((r) => holdPingWait(r.engine_stats.hold) ?? 0);
-  return { warm: waits.length, max_ms: waits.length ? Math.max(...waits) : null };
+  const held = rows.filter((r) => r.i !== 0 && r.engine_stats?.hold?.held === true);
+  const waits = held.map((r) => holdPingWait(r.engine_stats.hold)).filter((w) => Number.isFinite(w));
+  return { warm: waits.length, unmeasured: held.length - waits.length, max_ms: waits.length ? Math.max(...waits) : null };
 }
 
 /**
@@ -711,7 +717,7 @@ export function holdCanary(op, rows, { criterion = 'absolute', plain = null } = 
     if (held.length < CANARY_HELD) reasons.push(`the hold canary is untested: ${held.length} of ${recorded.length} presses on a draggable source held for their take, fewer than ${CANARY_HELD}`);
     else if (busy.length * 2 < held.length) reasons.push(`the hold canary: ${held.length - busy.length} of ${held.length} held presses on a draggable source found their browser idle (every ping answered under ${CANARY_BUSY_MS} ms), more than half: Chrome may no longer mark the drag it starts`);
     else if (relative) {
-      if (bar === null) reasons.push(`the hold canary's relative criterion is untested: the run's plain control has ${plain?.warm ?? 0} warm held samples, fewer than ${CANARY_HELD}`);
+      if (bar === null) reasons.push(`the hold canary's relative criterion is untested: the run's plain control has ${plain?.warm ?? 0} warm held samples with a measured wait (${plain?.unmeasured ?? 0} without), fewer than ${CANARY_HELD}`);
       else if (!startedWaits.length) reasons.push(`the hold canary: none of the ${held.length} held presses on a draggable source started a drag (no take of the engine's watch, no dragstart of the sample's own on the page): nothing shows Chrome's drag setup`);
       else if (!startedWaits.some((w) => w >= bar)) reasons.push(`the hold canary: none of the ${startedWaits.length} held presses on a draggable source that started a drag waited ${round1(bar)} ms or more (${CANARY_RELATIVE_FACTOR}x the plain control's ${round1(plain.max_ms)} ms, at least ${CANARY_RELATIVE_FLOOR_MS} ms): the largest waited ${waits.wait_max_ms} ms, so nothing marks the drag apart from a plain one`);
     } else if (!slow.length) reasons.push(`the hold canary: none of ${held.length} held presses on a draggable source read slow by the engine's own threshold (a ping of ${CANARY_SLOW_MS} ms or more): at B the engine would read every one fast, so no busy browser would extend its hold`);
@@ -725,7 +731,7 @@ export function holdCanary(op, rows, { criterion = 'absolute', plain = null } = 
   const unfast = held.filter((r) => r.i !== 0 && !(r.engine_stats.hold.adaptive?.way === 'fixed' && /^every ping answered by B came back under/.test(r.engine_stats.hold.adaptive.why ?? '')));
   if (warmSlow.length || unfast.length) reasons.push(`the hold canary: a plain drag read slow on ${new Set([...warmSlow, ...unfast]).size} of ${warm.length} warm samples (${[...new Set([...warmSlow, ...unfast])].slice(0, 3).map((r) => `${r.block}/${r.i}`).join(', ')})`);
   const own = canaryPlainControl(recorded);
-  return { reasons, record: { kind: 'plain', held: held.length, slow: slow.length, cold_slow: slow.length - warmSlow.length, warm: own.warm, wait_max_ms: round1(own.max_ms) } };
+  return { reasons, record: { kind: 'plain', held: held.length, slow: slow.length, cold_slow: slow.length - warmSlow.length, warm: own.warm, unmeasured: own.unmeasured, wait_max_ms: round1(own.max_ms) } };
 }
 
 /** A cell's hold notices for its verdict, or null when none came: how many, the honest ones and the false alarms. */

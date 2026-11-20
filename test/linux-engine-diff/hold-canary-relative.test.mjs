@@ -36,12 +36,24 @@ const relative = (plain) => ({ canary: { criterion: 'relative', plain: canaryPla
 const judge = (rows, options) => judgeDevice(DRAG, rows, audit, undefined, options);
 
 test("the plain control's own waits: the warm held drags' largest, the cold first one apart", () => {
-  assert.deepEqual(canaryPlainControl(plainRows([30, 1.2, 0.9, 1.5])), { warm: 3, max_ms: 1.5 });
-  assert.deepEqual(canaryPlainControl([]), { warm: 0, max_ms: null });
+  assert.deepEqual(canaryPlainControl(plainRows([30, 1.2, 0.9, 1.5])), { warm: 3, unmeasured: 0, max_ms: 1.5 });
+  assert.deepEqual(canaryPlainControl([]), { warm: 0, unmeasured: 0, max_ms: null });
   // a select drag whose hold never ran says nothing of the browser's idle waits
-  assert.deepEqual(canaryPlainControl([select(0, [1]), { ...select(1, [9]), engine_stats: { route: 'background' } }, select(2, [2])]), { warm: 1, max_ms: 2 });
+  assert.deepEqual(canaryPlainControl([select(0, [1]), { ...select(1, [9]), engine_stats: { route: 'background' } }, select(2, [2])]), { warm: 1, unmeasured: 0, max_ms: 2 });
   assert.equal(CANARY_RELATIVE_FACTOR, 3);
   assert.equal(CANARY_RELATIVE_FLOOR_MS, 5);
+});
+
+test('relative: a plain control whose warm holds measured no wait sets no bar (the review of H6, blocker 1): untested, and fails', () => {
+  // held, read fast at B, but no ping came back or went unanswered: an empty round_trips is no measurement, never 0 ms
+  const unmeasured = [select(0, [1]), select(1, []), select(2, []), select(3, [])];
+  assert.deepEqual(canaryPlainControl(unmeasured), { warm: 0, unmeasured: 3, max_ms: null });
+  const v = judge([press(0, [8]), press(1, [9]), press(2, [30])], relative(unmeasured));
+  assert.equal(v.pass, false);
+  assert.match(v.reasons.join('; '), /the hold canary's relative criterion is untested: the run's plain control has 0 warm held samples with a measured wait \(3 without\), fewer than 3/);
+  assert.equal(v.hold_canary.bar_ms, null);
+  // the measured ones still count, the unmeasured one never as 0 ms
+  assert.deepEqual(canaryPlainControl([...plainRows([1, 2, 2, 3]), select(4, [])]), { warm: 3, unmeasured: 1, max_ms: 3 });
 });
 
 test("relative (x64): a started press waiting 3x the plain control's maximum passes, where the engine's 20 ms would not", () => {
@@ -84,7 +96,7 @@ test('relative: without the plain control in the same run the criterion is untes
   for (const plain of [[], plainRows([1, 1, 1])]) {
     const v = judge(rows, relative(plain));
     assert.equal(v.pass, false);
-    assert.match(v.reasons.join('; '), /the hold canary's relative criterion is untested: the run's plain control has \d warm held samples, fewer than 3/);
+    assert.match(v.reasons.join('; '), /the hold canary's relative criterion is untested: the run's plain control has \d warm held samples with a measured wait \(0 without\), fewer than 3/);
   }
   assert.equal(judge(rows, { canary: { criterion: 'relative', plain: null } }).pass, false);
 });
@@ -92,7 +104,7 @@ test('relative: without the plain control in the same run the criterion is untes
 test("the plain control's own record carries its warm maximum; its rule is unchanged", () => {
   const v = judgeDevice(PLAIN, plainRows([30, 1.2, 0.9, 1.5]), audit);
   assert.ok(!v.reasons.some((r) => r.includes('hold canary')), v.reasons.join('; '));
-  assert.deepEqual(v.hold_canary, { kind: 'plain', held: 4, slow: 1, cold_slow: 1, warm: 3, wait_max_ms: 1.5 });
+  assert.deepEqual(v.hold_canary, { kind: 'plain', held: 4, slow: 1, cold_slow: 1, warm: 3, unmeasured: 0, wait_max_ms: 1.5 });
 });
 
 test('the criterion is a step parameter the gate sets by architecture: relative on x64, absolute on arm64, only for K1 and K2', () => {

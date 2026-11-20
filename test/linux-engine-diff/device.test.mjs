@@ -303,7 +303,7 @@ test('the hold canary: a draggable press must read slow at least once, a warm pl
   const select = (i, waits, way = 'fixed', why = fastWhy) => row({ block: 0, i, ok: true, effect: true, route: 'background', dnd: { in_front: true }, desktop_same: true, engine_stats: { hold: hold(waits, way, why) } });
   const plain = judgeDevice('chrome_select_nudged_shared', [select(0, [58], 'noticed', 'a ping came back in 58 ms; no take by 650 ms after the press'), select(1, [1, 1]), select(2, [2]), select(3, [1])], audit);
   assert.ok(!plain.reasons.some((r) => r.includes('hold canary')), plain.reasons.join('; '));
-  assert.deepEqual(plain.hold_canary, { kind: 'plain', held: 4, slow: 1, cold_slow: 1, warm: 3, wait_max_ms: 2 });
+  assert.deepEqual(plain.hold_canary, { kind: 'plain', held: 4, slow: 1, cold_slow: 1, warm: 3, unmeasured: 0, wait_max_ms: 2 });
   const warmSlow = judgeDevice('chrome_select_nudged_shared', [select(0, [1]), select(1, [1, 26], 'noticed', 'a ping came back in 26 ms; no take by 650 ms after the press'), select(2, [2]), select(3, [1])], audit);
   assert.match(warmSlow.reasons.join('; '), /the hold canary: a plain drag read slow on 1 of 3 warm samples \(0\/1\)/);
   // the plain control's evidence missing (I5): too few warm holds, or the engine's records carry no hold at all

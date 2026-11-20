@@ -41,9 +41,9 @@ came".
 
 | band | cells | drags | its outcome, required | minimum | the sweeps' rate |
 |---|---|---:|---|---:|---|
-| inside | freeze-600 | 10 | landed | 7 | 30/30 at 600–630 idle, 30/30 at twice the load |
+| inside | freeze-600 | 10 | landed after a take the engine saw inside its hold (no late take) | 7 | 30/30 at 600–630 idle, 30/30 at twice the load |
 | edge | freeze-646, -648, -650, -652 | 5 each | none: the late takes are counted, each judged in full | – | idle 18 in 90 (646–654), twice the load 17 in 90 (646–654) |
-| past | freeze-700 | 10 | the hold notice, no drop, nothing sent after it | 7 | 10/10 idle, 10/10 at twice the load (670 and 700 together 40/40) |
+| past | freeze-700 | 10 | the hold notice; the page read before and after, its drop counter unchanged; nothing sent after it | 7 | 10/10 idle, 10/10 at twice the load (670 and 700 together 40/40) |
 
 - **Every answer is judged.** A plain ok on a drag whose page started it, which did not land and was not taken, is a
   false ok, and it fails. A hold notice on a drop that landed is a false alarm, counted and reported (898.2). A late
@@ -178,3 +178,35 @@ So no non-K step differs in how the runner launches it. Under 929.2, none reruns
     1.5 ms, so the bar was 5 ms.
 - **The harness suite at 8e36a54a:** 1397 tests, 1392 pass, 0 fail, 4 skipped (the wire lanes, which need a local engine
   build), 1 todo (`logs/v5canary.log.txt`).
+
+## 7. The review of 04818002: four blockers fixed, and the stored runs judged again
+
+1. **The relative bar uses measured waits only** (`device.mjs` `canaryPlainControl`).
+   - A warm held plain drag whose hold measured no wait (no round trip, none unanswered) is counted apart as
+     `unmeasured`, never as 0 ms.
+   - With fewer than 3 measured warm samples, the relative criterion is untested and fails.
+   - What ruling 930's "plain control's max" covers: the warm samples alone. Each block's first sample (`i` 0) is left
+     out, the same as the plain control's own rule leaves it out, because a fresh page's first ping can be slow. A bar
+     set from it would let a draggable press that reads no slower than a warm plain drag pass.
+2. **The inside band's landing needs a take the engine saw inside its hold** (`hold.taken`) and no late take. A late take
+   whose drop landed before its cancel doesn't count.
+3. **The past band needs the page read before and after the drag**, with the source's drop counter present on both
+   sides and unchanged. A missing status no longer reads as "nothing dropped".
+4. **On a banded plan, only a pending cause that accounts for the outcome excuses an answer.** For a drag that took,
+   that is an unconfirmed drop, a late take (when one came) or a failed watch. For one that never took, it is a failed
+   watch alone. Any other kept pair is a false ok there. The unbanded plans keep T14's rule.
+
+- **Minor:** the per-cell false ok column now counts the banded plan's refused plain oks too, matching the total.
+- **Each blocker has its own regression test:** an empty `round_trips`, a late take that landed, a missing status
+  checked apart from unchanged counters, an `other` pending pair (with its legacy control), and the column.
+
+**Every stored run judged again under the fixed judges: no verdict moves.**
+- C1's and L4c's development runs (`scripts/rejudge-drops.mjs`) pass with the same counts:
+  - inside 10 of 10 expected;
+  - past 10 of 10;
+  - late takes 1 and 3, all reported;
+  - 0 false oks.
+- The two `t14-late-edge` runs pass: 19 and 12 late takes.
+- The five K2 runs, K1 and V5's canary cells (`rejudge-device.mjs --diagnostic`): 0 moved, 0 failing.
+  - Each run's plain control had 6 measured warm samples and 0 unmeasured.
+  - Their largest waits were 1.17–1.24 ms on Chrome 158, 2.28 ms on K1 and 1.47 ms on V5's cells.

@@ -778,14 +778,39 @@ export const LATE_BANDS = [
 ];
 /** The plans judged by bands, and theirs. */
 const BANDED_PLANS = { 't14-late': LATE_BANDS };
+/**
+ * Whether the page was read before and after the drag with the drag's source's counters both there, its drop count
+ * unchanged: positive evidence of no drop (the review of H6, blocker 3). `dragOutcome` reads a missing counter as
+ * `landed: false`, which is no evidence at all.
+ */
+function noDropRead(r) {
+  const src = T14_SOURCE[r.base ?? r.cell] ?? CELL_SOURCE[r.base ?? r.cell];
+  const [b, a] = [r.before?.dnd?.[src], r.after?.dnd?.[src]];
+  return Boolean(src) && Number.isInteger(b?.drops) && Number.isInteger(a?.drops) && a.drops === b.drops;
+}
+
 const BAND_OUTCOMES = {
-  landed: { what: 'landed', holds: (r) => r.outcome?.landed === true },
-  // Chrome refused the drag: the reply's hold notice, no drop and no take, and nothing sent after it (no notice on the
-  // read, the next acting request run, no Escape of the engine's or the harness's)
+  // the drop landed after a take the engine saw inside its hold (the review of H6, blocker 2: a late take that landed
+  // before its cancel is no in-hold landing)
+  landed: { what: 'landed after a take inside the hold', holds: (r) => r.outcome?.landed === true && r.hold?.taken === true && r.signals?.late_take !== true },
+  // Chrome refused the drag: the reply's hold notice, the page read showing no drop, no take, and nothing sent after it
+  // (no notice on the read, the next acting request run, no Escape of the engine's or the harness's)
   refused: {
     what: 'answered the hold notice with no drop and nothing sent after it',
-    holds: (r) => r.ok === true && r.reply_notice === HOLD_NOTICE && r.outcome?.landed !== true && r.signals?.late_take !== true && !r.notice && r.next?.ok === true && !r.next?.late_dnd && r.escaped !== true,
+    holds: (r) => r.ok === true && r.reply_notice === HOLD_NOTICE && noDropRead(r) && r.signals?.late_take !== true && !r.notice && r.next?.ok === true && !r.next?.late_dnd && r.escaped !== true,
   },
+};
+
+/**
+ * On a banded plan, the pending causes that account for a drag that did not land (the review of H6, blocker 4): a drag
+ * that took, a late take (when one came), an unconfirmed drop or a failed watch; a drag that never took, a failed watch
+ * only (its drop may have gone unseen). Any other kept pair (an `other` cause, a handle's idle release) excuses nothing.
+ */
+const accountedFor = (r, took) => {
+  const kind = honest(r);
+  if (kind === 'failed') return true;
+  if (!took) return false;
+  return kind === 'unconfirmed' || (kind === 'late' && r.signals?.late_take === true);
 };
 
 /** T14's controls: a drag and drop that leaves the zone (the accepted-then-left path, the press inside it, the long path). */
@@ -842,7 +867,9 @@ export function chromeDropVerdict(rows, { specs = [], plan = null, capped = fals
     // a drag whose drag and drop never took (no XdndSelection take, the watch's or the hold's) answers as a plain drag:
     // its ok claims no drop. A control needs drags that took, or it proved nothing
     const untaken = list.filter((r) => !tookOf(r));
-    const falseOk = list.filter((r) => r.ok === true && honest(r) === null && !landed(r) && tookOf(r) && !releasedAtAccept(r));
+    // on a banded plan only a cause that accounts for the outcome excuses it; elsewhere T14's kept pair does
+    const excused = (r) => (bands ? accountedFor(r, tookOf(r)) : honest(r) !== null);
+    const falseOk = list.filter((r) => r.ok === true && !excused(r) && !landed(r) && tookOf(r) && !releasedAtAccept(r));
     const missing = base === 'plain-long' ? list.filter((r) => !landed(r) && !releasedAtAccept(r)) : [];
     if (CONTROL_CELLS.includes(base) && list.length && untaken.length === list.length) failed.push(`${name}: no drag and drop took on any of ${list.length}: the control proved nothing`);
     const landedUnconfirmed = list.filter((r) => landed(r) && honest(r) === 'unconfirmed');
@@ -851,7 +878,7 @@ export function chromeDropVerdict(rows, { specs = [], plan = null, capped = fals
     if (falseOk.length) failed.push(`${name}: answered ok with no drop and nothing pending on ${falseOk.length} of ${list.length} (${which(falseOk)})`);
     // a banded plan judges every answer (ruling 931): a drag its page started that Chrome refused must say so (0.4.2's
     // hold notice); a plain ok there is a false ok, though no take came. A notice on a drop that landed is a false alarm
-    const plainRefused = bands ? list.filter((r) => r.ok === true && honest(r) === null && r.reply_notice !== HOLD_NOTICE && r.outcome?.started === true && !landed(r) && !tookOf(r)) : [];
+    const plainRefused = bands ? list.filter((r) => r.ok === true && !excused(r) && r.reply_notice !== HOLD_NOTICE && r.outcome?.started === true && !landed(r) && !tookOf(r)) : [];
     if (plainRefused.length) failed.push(`${name}: answered ok with no notice and nothing pending on a drag its page started that did not land, on ${plainRefused.length} of ${list.length} (${which(plainRefused)})`);
     if (bands) total.false_alarms += count((r) => r.reply_notice === HOLD_NOTICE && landed(r));
     if (missing.length) failed.push(`${name}: the drop did not land on ${missing.length} of ${list.length}, in a cell that expects it (${which(missing)})`);
@@ -868,7 +895,7 @@ export function chromeDropVerdict(rows, { specs = [], plan = null, capped = fals
     total.false_releases += falseReleases.length;
     total.false_release_ok += falseReleases.filter((r) => r.ok === true && honest(r) === null).length;
     total.harness_escapes += count((r) => r.escaped === true);
-    md.push(`| ${c.lane} | ${c.cell} | ${list.length} | ${untaken.length} | ${count(landed)} | ${count((r) => r.ok === true && honest(r) === null)} | ${count((r) => honest(r) === 'unconfirmed')} | ${late.length} | ${late.length - unreported.length} | ${falseOk.length} | ${falseReleases.length} (${falseReleases.filter((r) => r.ok === true && honest(r) === null).length}) | ${count((r) => r.escaped === true)} |`);
+    md.push(`| ${c.lane} | ${c.cell} | ${list.length} | ${untaken.length} | ${count(landed)} | ${count((r) => r.ok === true && honest(r) === null)} | ${count((r) => honest(r) === 'unconfirmed')} | ${late.length} | ${late.length - unreported.length} | ${falseOk.length + plainRefused.length} | ${falseReleases.length} (${falseReleases.filter((r) => r.ok === true && honest(r) === null).length}) | ${count((r) => r.escaped === true)} |`);
   }
   // a sitting capped by --trials (a pilot; a gate step runs its plan whole, `runExperiment`) may well make none
   if (LATE_TAKE_PLANS.includes(plan) && total.late === 0) {

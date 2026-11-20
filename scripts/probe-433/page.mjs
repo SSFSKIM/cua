@@ -46,6 +46,23 @@ function control(id,text,spec={}){
   return el;
 }
 const row=()=>{const d=document.createElement('div');d.className='row';return d;};
+// #433's overlay over the target's row (slot 0), alive through the change: a group nested WRAP groups below the row, so
+// it lies deeper than the link's text and the record takes it at either point. \`veil\` covers the row and lets the
+// pointer through (pointer-events:none, every layer); \`scrim\` covers it and catches the pointer (no pointer-events rule,
+// no interactive role); \`beside\` is a veil laid past the target's right edge, over nothing interactive.
+const WRAP=2;
+function cover(kind){
+  slots[0].style.position='relative';
+  const left=kind==='beside'?(target.offsetLeft+target.offsetWidth+20)+'px':'0',width=kind==='beside'?'240px':'100%';
+  const through=kind==='scrim'?'':';pointer-events:none';
+  let outer=null,inner=null;
+  for(let i=0;i<=WRAP;i++){
+    const d=document.createElement('div');d.setAttribute('role','group');
+    d.style.cssText=(i?'position:absolute;left:0;top:0;width:100%;height:100%':'position:absolute;left:'+left+';top:0;width:'+width+';height:64px')+through;
+    if(inner)inner.append(d);else outer=d;inner=d;
+  }
+  inner.id='veil';slots[0].append(outer);
+}
 function run(c){
   if(c.op==='prepare'){
     const spec=CELLS[c.cell];if(!spec)throw Error('cell');
@@ -103,9 +120,7 @@ function run(c){
       // As move, under a group laid over the target's row that survives the change (a transparent overlay, which lets
       // the pointer through to what lies under it).
       twins=[control('twin',spec.before,spec)];mover=twins[0];slots[1].append(mover);slots[2].append(archive);
-      slots[0].style.position='relative';
-      const veil=document.createElement('div');veil.id='veil';veil.setAttribute('role','group');veil.style.cssText='position:absolute;left:0;top:0;width:100%;height:64px;pointer-events:none';
-      slots[0].append(veil);
+      cover(spec.cover);
     }else if(spec.twin==='row'){
       // Rows that are groups of their own: the target's row is removed, and the twin's row, alive, moves up into its place
       // with the twin re-rendered in it.
@@ -148,7 +163,7 @@ function run(c){
         box.append(group);
       }
       slots[0].replaceChildren(box);
-    }else{drafts=control('drafts',OTHERS.drafts);slots[1].append(archive);slots[2].append(drafts);}
+    }else{drafts=control('drafts',OTHERS.drafts);slots[1].append(archive);slots[2].append(drafts);if(spec.cover)cover(spec.cover);}
     if(document.activeElement&&document.activeElement!==document.body)document.activeElement.blur();
     clicks=[];
     return {trial,cell,present:target.isConnected,text:target.textContent,geometry:geometry()};
@@ -173,6 +188,7 @@ function run(c){
     else if(spec.twin==='wide')rows[2].remove();
     else if(spec.twin==='hidden'){target.remove();mover.remove();const n=control('twin',spec.before,spec);twins.push(n);slots[0].replaceChildren(n);}
     else if(spec.twin){target.remove();slots[0].replaceChildren(mover);}
+    else if(spec.cover){}  // #433's controls: the overlay over a live link, nothing changing
     else if(spec.remount==='link'){const n=control('target',spec.after,spec);target.replaceWith(n);target=n;}
     else if(spec.remount==='text'){const s=document.createElement('span');s.textContent=spec.after;target.firstChild.replaceWith(s);}
     else target.textContent=spec.after;

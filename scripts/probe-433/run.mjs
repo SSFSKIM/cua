@@ -79,7 +79,7 @@ async function main(){
   // A cell measured on some lanes only (`lanes`) is not planned on the others.
   const headNames=Object.keys(heads),units=unitsForLane(process.env.PROBE_CELLS||'',lane);
   if(!headNames.length||headNames.some(h=>!['main','fix'].includes(h))||mode==='qualify'&&headNames.length!==2||mode==='discover'&&headNames.join()!=='main')throw Error('invalid heads');
-  mkdirSync(out,{recursive:true});const tmp=mkdtempSync(join(root,'q435-')),home=join(tmp,'platform'),shots=join(tmp,'shots');
+  mkdirSync(out,{recursive:true});const tmp=mkdtempSync(join(root,'q433-')),home=join(tmp,'platform'),shots=join(tmp,'shots');
   mkdirSync(home);mkdirSync(shots,{mode:0o700});
   const config={kit:process.env.GITHUB_SHA,refs:{main:process.env.MAIN_SHA,fix:process.env.FIX_SHA||null},image:process.env.ImageVersion,
     os:execFileSync('sw_vers',['-productVersion'],{encoding:'utf8',stdio:['ignore','pipe','ignore']}).trim(),lane,mode,heads:headNames,cells:process.env.PROBE_CELLS||null};
@@ -134,7 +134,7 @@ async function main(){
           attested=true;
         }else{
           s='placement';
-          placed=toPixels(sky,pointFor(c.at,found[c.at]?.frame));
+          placed=toPixels(sky,pointFor(c.at,found[c.at]?.frame,spec));
           if(!placed)throw stepError('screenshot');
           // The observation itself puts the unit's role at the point the engine will post: else the unit is not tested.
           if(nodeAt(sky.nodes,placed.screen)?.role!==recordedRole(c.cell,c.at))throw stepError('placement');

@@ -42,8 +42,8 @@ export async function startPlatform({lane,home,helper,cover,stage}){
       pid=await until(async()=>(await ask({op:'lookup',bundle})).pid,30000);
       version=plistVersion(safari);
     }else if(lane==='electron'){
-      const dir=resolve('scripts/probe-435/electron'), require=createRequire(join(dir,'package.json'));
-      app=owned(require('electron'),[dir],{...env,PROBE435_URL:fx.url,PROBE435_PROFILE:profile},{stdout:l=>{
+      const dir=resolve('scripts/probe-433/electron'), require=createRequire(join(dir,'package.json'));
+      app=owned(require('electron'),[dir],{...env,PROBE433_URL:fx.url,PROBE433_PROFILE:profile},{stdout:l=>{
         try{const q=JSON.parse(l);if(q.kind==='fixture-ready'&&q.pid===app.pid)appReady=q;}catch{}
       }});
       pid=app.pid;const r=await until(()=>appReady,60000);version=`Electron ${r.electron} / Chromium ${r.chrome}`;

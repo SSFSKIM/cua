@@ -1,6 +1,6 @@
 // Scoring, summaries and gates for the #431 lanes (on #340's kit). Pure: unit-tested by kit.test.mjs. Link truth is the owned
 // page's pointer-event log; every projected diagnostic is a member of a closed vocabulary, an engine name or a number.
-import {CELLS,UNITS,recordedRole,unitKey,isReportOnly} from './cells.mjs';
+import {CELLS,UNITS,OVERLAY,recordedRole,unitKey,isReportOnly} from './cells.mjs';
 
 const reads=(n,s)=>[n.title,n.description,n.value].some(v=>typeof v==='string'&&v.trim()===s);
 const centre=f=>({x:f.x+f.width/2,y:f.y+f.height/2});
@@ -191,7 +191,10 @@ export function summarize(rows){
     const v=list.filter(r=>r.valid);
     return [k,{rows:list.length,valid:v.length,invalid:tally(list.filter(r=>!r.valid).map(r=>r.invalid)),
       verdicts:tally(v.map(r=>r.verdict)),click:tally(v.map(r=>r.click)),reason:tally(v.map(r=>`${r.guard?.verdict}/${r.guard?.reason}`)),
-      identity:tally(v.map(r=>r.guard?.identity??'none')),hitRole:tally(v.map(r=>r.guard?.hitRole??'none')),route:tally(v.map(r=>r.route??'none')),
+      identity:tally(v.map(r=>r.guard?.identity??'none')),hitRole:tally(v.map(r=>r.guard?.hitRole??'none')),
+      // #433: what the record held at the point, and the controls the click reached (`none` for the page itself).
+      recorded:tally(v.map(r=>r.guard?.recordedRole??'none')),
+      reached:tally(v.map(r=>[...new Set(eventsOf(r).map(e=>e.link))].sort().join('+')||'nothing')),route:tally(v.map(r=>r.route??'none')),
       landed:v.filter(r=>r.landed).length,wrong:v.filter(r=>r.verdict==='wrong-target').length,
       presentationLost:v.filter(r=>r.presentationHeld===false).length,guardMs:quantiles(v.map(r=>r.guard?.ms)),
       // The recorded node's frame at the observation against the same role's frame after the change (the engine's own
@@ -252,7 +255,8 @@ export function gates(rows,{coverage:cov,units:all=UNITS,minPairs=MIN_PAIRS}){
   // twin can never be: any event on another control is `wrong-target`).
   // interactiveHit (the hit an interactive element the record does not hold at the point) is a refusal ruling 889 accepts.
   // #435's frameless twins must refuse nodeGone itself.
-  const twinOk=r=>r.verdict==='refused'&&[...(CELLS[r.cell].reasons??['nodeGone']),...(FRAMELESS.has(r.cell)?[]:['interactiveHit'])].includes(r.guard?.reason);
+  // #433's twincover counts any refusal (its gate is the click never reaching the twin).
+  const twinOk=r=>r.verdict==='refused'&&(OVERLAY.has(r.cell)||[...(CELLS[r.cell].reasons??['nodeGone']),...(FRAMELESS.has(r.cell)?[]:['interactiveHit'])].includes(r.guard?.reason));
   const twinGate=pred=>{
     const list=fix.filter(r=>pred(r.cell)),miss=list.filter(r=>!twinOk(r));
     return {pass:!unitsWhere(pred).length||list.length>0&&everyUnit(pred)&&miss.length===0,rows:list.length,failed:miss.length,
@@ -260,8 +264,10 @@ export function gates(rows,{coverage:cov,units:all=UNITS,minPairs=MIN_PAIRS}){
       perUnit:perUnit(pred,miss),examples:brief(miss)};
   };
   const isTwin=c=>CELLS[c].kind==='twin';
-  // A paired gate: every fix row of the cells the verdict of its paired main row, with at least MIN_PAIRS usable pairs
-  // (both rows valid, neither observation failed) in every unit (a different refusal reason alone is counted, not failed).
+  // The controls a row's click reached (the page's log, `none` aside).
+  const reached=r=>eventsOf(r).map(e=>e.link).filter(l=>l!=='none');
+  // A paired gate: every fix row of the cells the verdict and the guard's reason of its paired main row, with at least
+  // MIN_PAIRS usable pairs (both rows valid, neither observation failed) in every unit.
   // With `mustKeep` (the genuine re-creations), every valid fix row must also be kept and land: two heads refusing alike
   // are equal and still wrong (an observation that failed is the usable-pairs bar's). Main's own rows that were not kept
   // and landed are counted apart (`mainNotKept`), an unusable baseline rather than the fix's regression.
@@ -273,7 +279,11 @@ export function gates(rows,{coverage:cov,units:all=UNITS,minPairs=MIN_PAIRS}){
     const differ=paired.filter(r=>mate(r).verdict!==r.verdict);
     const reasonDiffer=paired.filter(r=>mate(r).verdict===r.verdict&&mate(r).guard?.reason!==r.guard?.reason);
     const notKept=mustKeep?list.filter(r=>r.verdict!=='kept-landed'&&r.verdict!=='observe-failed'):[];
-    return {pass:!unitsWhere(pred).length||paired.length>0&&everyUnit(pred)&&thin.length===0&&differ.length===0&&notKept.length===0,
+    // #433: no fix row's click reaches a control (the target included) that no valid main row of its unit reached.
+    const beyond=unitsWhere(pred).map(u=>{const seen=new Set(of(main,u).flatMap(reached));
+      return [unitKey(u),[...new Set(of(list,u).flatMap(reached))].filter(l=>!seen.has(l))];}).filter(([,l])=>l.length);
+    return {pass:!unitsWhere(pred).length||paired.length>0&&everyUnit(pred)&&thin.length===0&&differ.length===0&&reasonDiffer.length===0&&
+      notKept.length===0&&beyond.length===0,reachBeyondMain:Object.fromEntries(beyond),
       rows:list.length,paired:paired.length,
       usablePairs:usable,minPairs,thin,differ:differ.length,reasonDiffer:reasonDiffer.length,
       ...(mustKeep?{fixNotKept:notKept.length,mainNotKept:main.filter(r=>pred(r.cell)&&r.verdict!=='kept-landed').length,
@@ -283,14 +293,14 @@ export function gates(rows,{coverage:cov,units:all=UNITS,minPairs=MIN_PAIRS}){
       fixKeptLanded:list.filter(r=>r.verdict==='kept-landed').length,mainKeptLanded:main.filter(r=>pred(r.cell)&&r.verdict==='kept-landed').length,
       examples:brief(differ),reasonExamples:brief(reasonDiffer)};
   };
-  // The failure the fix answers, reproduced (#435; main carries #431, which refuses the framed twins): in every frameless
-  // twin unit of the run, main kept a re-created match and the page logged a click on the twin itself on at least half
-  // its valid rows (a run without those cells passes it unjudged).
-  const twinClicked=r=>r.guard?.verdict==='kept'&&r.guard?.identity==='recreated'&&eventsOf(r).some(e=>e.type==='click'&&e.link==='twin');
-  const framelessUnits=units.filter(u=>FRAMELESS.has(u.cell)),twinRun=framelessUnits.length>0;
-  const reproPer=Object.fromEntries(framelessUnits.map(u=>[unitKey(u),{mainRows:of(main,u).length,mainTwinClicked:of(main,u).filter(twinClicked).length}]));
+  // The failure the fix answers, reproduced (#433): per twincover unit, how many of main's valid rows kept the click and
+  // the page logged a click on the twin itself. Reported, never gated: on Chrome for Testing the shared-mode element route
+  // presses the overlay and posts nothing (#431's run 44642664004), so main reaches nothing there.
+  const twinClicked=r=>r.guard?.verdict==='kept'&&eventsOf(r).some(e=>e.type==='click'&&e.link==='twin');
+  const coverUnits=units.filter(u=>CELLS[u.cell].twin==='cover'),twinRun=coverUnits.length>0;
+  const reproPer=Object.fromEntries(coverUnits.map(u=>[unitKey(u),{mainRows:of(main,u).length,mainTwinClicked:of(main,u).filter(twinClicked).length}]));
   const reproduced=Object.values(reproPer).every(x=>x.mainRows>0&&2*x.mainTwinClicked>=x.mainRows);
-  const mainTwin=main.filter(r=>FRAMELESS.has(r.cell)),mainTwinWrong=mainTwin.filter(twinClicked).length;
+  const mainTwin=main.filter(r=>CELLS[r.cell].twin==='cover'),mainTwinWrong=mainTwin.filter(twinClicked).length;
   const wrong=fix.filter(r=>r.verdict==='wrong-target');
   // A fix row that a later step invalidated still carries its page log: any event on another control there fails too.
   const invalidWrong=rows.filter(r=>r.head==='fix'&&!r.valid&&inRun.has(unitKey(r))&&eventsOf(r).some(e=>!['target','none'].includes(e.link)));
@@ -302,12 +312,21 @@ export function gates(rows,{coverage:cov,units:all=UNITS,minPairs=MIN_PAIRS}){
   const ms=list=>quantiles(list.map(r=>r.guard?.ms));
   return {
     coverage:{pass:cov.complete&&cov.covered},
-    reproduced:{pass:reproduced,result:!twinRun?'not in this run':reproduced?'reproduced':'not reproduced (inconclusive)',mainRows:mainTwin.length,mainWrong:mainTwinWrong,perUnit:reproPer},
-    twinRefused:twinGate(c=>isTwin(c)&&!UNRECORDED.has(c)&&!FRAMELESS.has(c)),
+    reproduced:{informational:true,pass:reproduced,result:!twinRun?'not in this run':reproduced?'reproduced':'not reproduced (inconclusive)',mainRows:mainTwin.length,mainWrong:mainTwinWrong,perUnit:reproPer},
+    twinRefused:twinGate(c=>isTwin(c)&&!UNRECORDED.has(c)&&!FRAMELESS.has(c)&&!OVERLAY.has(c)),
+    // #433: no valid fix row of twincover reaches the twin or any other control, the target included (it is gone); how
+    // many refused, and why, is reported beside (`refused`, `perUnit`).
+    overlayTwin:(()=>{const g=twinGate(c=>isTwin(c)&&OVERLAY.has(c)),list=fix.filter(r=>isTwin(r.cell)&&OVERLAY.has(r.cell));
+      const reachedAny=list.filter(r=>reached(r).length);
+      return {...g,pass:!unitsWhere(c=>isTwin(c)&&OVERLAY.has(c)).length||list.length>0&&everyUnit(c=>isTwin(c)&&OVERLAY.has(c))&&reachedAny.length===0,
+        reachedTwin:list.filter(r=>reached(r).includes('twin')).length,reachedAny:reachedAny.length,refused:list.filter(r=>r.verdict==='refused').length};})(),
     twinUnrecorded:twinGate(c=>UNRECORDED.has(c)),
     twinFrameless:twinGate(c=>FRAMELESS.has(c)),
-    keptAsMain:asMainGate(c=>CELLS[c].kind==='keep',{mustKeep:true}),
-    othersAsMain:asMainGate(c=>CELLS[c].kind==='asMain'),
+    keptAsMain:asMainGate(c=>CELLS[c].kind==='keep'&&!OVERLAY.has(c),{mustKeep:true}),
+    othersAsMain:asMainGate(c=>CELLS[c].kind==='asMain'&&!OVERLAY.has(c)),
+    // #433's controls: the veil over a live link kept and landed (`overcontrol`); the scrim and the veil over nothing as main.
+    overlayKept:asMainGate(c=>CELLS[c].kind==='keep'&&OVERLAY.has(c),{mustKeep:true}),
+    overlayAsMain:asMainGate(c=>CELLS[c].kind==='asMain'&&OVERLAY.has(c)),
     // Genuine re-creations where the record could not hold the container whole (the builder's question): reported with
     // the keep cells' measure (kept and landed, as main), never part of the pass.
     bigPage:{informational:true,...asMainGate(c=>CELLS[c].kind==='big',{mustKeep:true})},

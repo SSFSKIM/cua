@@ -40,8 +40,11 @@ export const CELLS={
   // (`twinrow`); a list of WIDE rows with the twin the first the window does not show (`twinwide`).
   twinswap:{kind:'twin',before:'Inbox',after:'Inbox',twin:'swap',reasons:['nodeGone','frameMoved']},
   twinswapbtn:{kind:'twin',before:'Inbox',after:'Inbox',twin:'swap',swap:'button',reasons:['nodeGone','frameMoved']},
-  // At the link point the record holds the live overlay itself (sameElement), not a re-created match: #433, report only.
-  twincover:{kind:'twin',before:'Inbox',after:'Inbox',twin:'cover',reportOnlyAt:['link']},
+  // #433: the twin moved up under a transparent group (`cover: 'veil'`, pointer-events:none) laid over the target's row
+  // that survives the change, nested so the record holds it at both points (`records`). Main keeps the live overlay
+  // (sameElement) and the click falls through to the twin; the fix must refuse, any reason, and never reach the twin
+  // (gate `overlayTwin`).
+  twincover:{kind:'twin',before:'Inbox',after:'Inbox',twin:'cover',cover:'veil',records:'AXGroup'},
   twinrow:{kind:'twin',before:'Inbox',after:'Inbox',twin:'row'},
   // A group of links, the shape whose width cut Safari shows (Chromium reads such a group whole), so Safari only.
   twinwide:{kind:'twin',before:'Delete',after:'Delete',twin:'wide',lanes:['safari']},
@@ -73,6 +76,14 @@ export const CELLS={
   wideoverlay:{kind:'asMain',before:'Inbox',after:'Inbox',layout:'wide',overlay:true},
   tableremount:{kind:'keep',before:'Inbox',after:'Inbox',remount:'link',table:'outside'},
   tablecellremount:{kind:'keep',before:'Inbox',after:'Inbox',remount:'link',table:'cell'},
+  // #433's controls, each under an overlay the record holds at the point and nothing changing: the same transparent veil
+  // over the live link (`overcontrol`: kept and landed on both heads); a click-catching backdrop (`scrim`, ruling 903: a
+  // full-row group with no interactive role and no pointer-events:none, which eats the click on main; the fix no worse,
+  // and reaching nothing main's does not); the veil beside the link, nothing interactive under it, aimed past the link's
+  // right edge (`nounder`, `aim: 'beside'`: kept as on main).
+  overcontrol:{kind:'keep',before:'Inbox',after:'Inbox',cover:'veil',records:'AXGroup'},
+  scrim:{kind:'asMain',before:'Inbox',after:'Inbox',cover:'scrim',records:'AXGroup'},
+  nounder:{kind:'asMain',before:'Inbox',after:'Inbox',cover:'beside',aim:'beside',records:'AXGroup',at:['link']},
   inbox:{kind:'asMain',before:'Inbox',after:'Inbox (3)'},
   reltime:{kind:'asMain',before:'1 minute ago',after:'2 minutes ago'},
   shrink:{kind:'asMain',before:'Inbox (12)',after:'Inbox'},
@@ -99,15 +110,20 @@ export const WIDE=150;
 // control itself).
 export const AT=['text','link'];
 export const controlRole=cell=>CELLS[cell].control==='button'?'AXButton':'AXLink';
-export const recordedRole=(cell,at)=>at==='text'?'AXStaticText':controlRole(cell);
+// The role the record takes at the unit's point: the overlay's for #433's cells (`records`), else the text's or the control's.
+export const recordedRole=(cell,at)=>CELLS[cell].records??(at==='text'?'AXStaticText':controlRole(cell));
+// #433's overlay cells, gated apart.
+export const OVERLAY=new Set(Object.keys(CELLS).filter(c=>CELLS[c].cover));
 export const UNITS=Object.keys(CELLS).flatMap(cell=>(CELLS[cell].at??AT).map(at=>({cell,at})));
 export const unitKey=u=>`${u.cell}/${u.at}`;
 // The other links on the page, never the target: any click that reaches one is a click on a wrong target.
 export const OTHERS={archive:'Archive',drafts:'Drafts'};
 
 // The screen point for a unit, from the observation's frame of the node it aims at (global screen points, top-left).
-export function pointFor(at,frame){
+// `beside` (#433's `nounder`): 60 pt past the control's right edge, under the overlay laid there.
+export function pointFor(at,frame,spec={}){
   if(!frame||!(frame.width>0)||!(frame.height>0))return null;
+  if(spec.aim==='beside')return {x:frame.x+frame.width+60,y:frame.y+frame.height/2};
   return at==='text'?{x:frame.x+Math.min(frame.width/3,12),y:frame.y+frame.height/2}:{x:frame.x+6,y:frame.y+frame.height/2};
 }
 

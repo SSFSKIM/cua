@@ -20,6 +20,7 @@
 //!   cannot see.
 
 use std::path::Path;
+use std::time::Duration;
 
 /// The `WM_CLASS` classes of Chrome and Chromium browsers: Google Chrome (every channel), Chromium as Debian, Arch and
 /// the snap build it, and Chromium as Ubuntu's old deb built it.
@@ -122,9 +123,35 @@ pub fn host_name() -> Option<String> {
         .filter(|name| !name.is_empty())
 }
 
+/// An identification that took `took`, held to `bound`: the X reads and the executable's lookup are synchronous and
+/// bound only by their servers, so one that ended past the bound is none (the final review of wave 5, minor), and its
+/// drag keeps the fixed hold.
+pub fn within_bound(identified: Result<String, String>, took: Duration, bound: Duration) -> Result<String, String> {
+    match identified {
+        Ok(by) if took > bound => Err(format!(
+            "identified ({by}) only after {} ms, past the identification's bound",
+            (took.as_secs_f64() * 1000.0).round()
+        )),
+        other => other,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_identification_that_ends_past_its_bound_counts_as_none() {
+        let bound = Duration::from_millis(50);
+        let chrome = || Ok::<_, String>("Google-chrome, role browser".to_string());
+        assert_eq!(within_bound(chrome(), Duration::from_millis(49), bound), chrome());
+        assert_eq!(
+            within_bound(chrome(), Duration::from_millis(51), bound),
+            Err("identified (Google-chrome, role browser) only after 51 ms, past the identification's bound".into())
+        );
+        let none = Err::<String, _>("its WM_WINDOW_ROLE is not a browser frame's".to_string());
+        assert_eq!(within_bound(none.clone(), Duration::from_millis(80), bound), none);
+    }
 
     fn chrome() -> Marks {
         Marks {

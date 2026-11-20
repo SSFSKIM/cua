@@ -390,10 +390,13 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   AT-SPI bus is named `Google Chrome` or `Chromium`; where `/proc` can see that process (not in service, where the
   engine runs in the sandbox's own PID namespace), its executable must be `chrome`, `chromium` or `chromium-browser`
   too. All of it is read again at every drag, before the press, nothing kept; the bus is asked only once the window's
-  own marks hold, and the whole lookup (the bus's address, its connect when the engine has none yet, the calls) is
-  done within 50 ms of the identification's start (`IDENTIFY_BOUND`, ruling 912; idle lookups take 1 to 5 ms); a
-  lookup that fails or runs out leaves the source unidentified, so its drag keeps the fixed hold (`--stats`
-  `browser_identity`: `ms`, `bus`). A drag whose path reaches B before its hold
+  own marks hold. The bus part (its address, its connect and setup when the engine has none yet, every call's writes
+  and reads) is bounded by 50 ms from the identification's start (`IDENTIFY_BOUND`, ruling 912; idle lookups take 1
+  to 5 ms); a write that runs out drops that connection, and the next drag makes a new one. The X property reads and
+  the executable's lookup are synchronous and take what the X server and `/proc` take, so they have no hard bound;
+  an identification that ends past 50 ms counts as none. A lookup that fails or runs out leaves the source
+  unidentified, so its drag keeps the fixed hold (`--stats` `browser_identity`: `ms`, `bus`). A drag whose path
+  reaches B before its hold
   would begin (a path that long, or `--drag-dnd-hold-ms 0`) holds nothing: its last look for a take stays, but it asks
   no ping and never extends. A take only the extension caught, past B, whose drop nothing can confirm (no
   `_NET_ACTIVE_WINDOW` to ask, no Electron cursor), is reported unconfirmed, as the after-release watch would have

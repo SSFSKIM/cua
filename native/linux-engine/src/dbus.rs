@@ -570,6 +570,9 @@ pub struct Bus {
     skip: usize,
     /// How long the bus may stay silent before every outstanding call fails.
     io_timeout: Duration,
+    /// The instant the next flush's writes must end by, when its caller has one (`calls_until`): None, the I/O timeout
+    /// alone.
+    write_by: Option<Instant>,
     pub unique_name: String,
     pub stats: BusStats,
 }
@@ -693,6 +696,7 @@ impl Bus {
             ready: VecDeque::new(),
             skip: 0,
             io_timeout: timeout,
+            write_by: None,
             unique_name: String::new(),
             stats: BusStats::default(),
         })
@@ -740,13 +744,40 @@ impl Bus {
     }
 
     pub fn flush(&mut self) -> Result<()> {
-        if !self.out.is_empty() {
-            let out = std::mem::take(&mut self.out);
+        if self.out.is_empty() {
+            return Ok(());
+        }
+        let out = std::mem::take(&mut self.out);
+        let Some(by) = self.write_by else {
             self.stream
                 .write_all(&out)
                 .map_err(|e| Broken(format!("failed to write to the accessibility bus: {e}")))?;
-        }
-        Ok(())
+            return Ok(());
+        };
+        // by the caller's deadline: each write waits no longer than what is left of it (a write that blocks returns
+        // what it wrote only at its timeout, so `write_all` could wait that long again), and a write that runs out
+        // leaves a message half sent: the connection is `Broken`, for the caller to drop
+        let mut sent = 0;
+        let written = loop {
+            if sent == out.len() {
+                break Ok(());
+            }
+            let now = Instant::now();
+            if now >= by {
+                break Err("the accessibility bus did not take the calls in time".to_string());
+            }
+            if let Err(e) = self.stream.set_write_timeout(Some((by - now).min(self.io_timeout))) {
+                break Err(e.to_string());
+            }
+            match self.stream.write(&out[sent..]) {
+                Ok(0) => break Err("the accessibility bus closed".to_string()),
+                Ok(n) => sent += n,
+                Err(e) if e.kind() == ErrorKind::Interrupted => {}
+                Err(e) => break Err(e.to_string()),
+            }
+        };
+        self.stream.set_write_timeout(Some(self.io_timeout))?;
+        written.map_err(|e| Broken(format!("failed to write to the accessibility bus: {e}")).into())
     }
 
     /// Calls sent whose replies have not been handed out.
@@ -820,7 +851,13 @@ impl Bus {
             refuse_text_mutator(call)?;
         }
         let serials = calls.iter().map(|c| self.send(c)).collect::<Result<Vec<u32>>>()?;
-        self.flush()?;
+        // the writes wait no later than the deadline either (the final review of wave 5: a bus that stopped reading
+        // held the flush for the whole IO_TIMEOUT). A write that runs out may leave a message half sent, so it fails
+        // as `Broken`, and the caller drops the connection and makes a new one
+        self.write_by = Some(deadline);
+        let flushed = self.flush();
+        self.write_by = None;
+        flushed?;
         loop {
             if serials.iter().all(|s| self.ready.iter().any(|(r, _)| r == s)) {
                 let mut results = Vec::with_capacity(serials.len());
@@ -1494,6 +1531,36 @@ mod tests {
         assert_eq!((first.0, second.0), (a, b));
         assert!(first.1.unwrap_err().contains("os error 11"));
         assert_eq!(bus.in_flight(), 0);
+        drop(theirs);
+    }
+
+    /// The final review of wave 5: a bus that has stopped reading holds a write once its queue is full. With a deadline
+    /// the batch's flush waits no later than it, and fails as `Broken` (a message may be half sent: the caller drops
+    /// the connection), not after the connection's 2 s I/O timeout; the connection's own timeouts are put back.
+    #[test]
+    fn a_batch_with_a_deadline_on_a_bus_that_stopped_reading_fails_broken_at_the_deadline() {
+        let (ours, theirs) = UnixStream::pair().unwrap();
+        let mut bus = Bus::over(ours, IO_TIMEOUT).unwrap();
+        // far more than the socket's buffers hold, so the flush blocks on the peer that never reads
+        let long = "x".repeat(4096);
+        let args = [Arg::Str(&long)];
+        let calls: Vec<MethodCall> = (0..1000)
+            .map(|_| MethodCall {
+                dest: "org.freedesktop.DBus",
+                path: "/org/freedesktop/DBus",
+                iface: "org.freedesktop.DBus",
+                member: "GetConnectionUnixProcessID",
+                args: &args,
+            })
+            .collect();
+        let started = Instant::now();
+        let error = bus
+            .calls_until(&calls, started + Duration::from_millis(50))
+            .unwrap_err();
+        let took = started.elapsed();
+        assert!(error.downcast_ref::<Broken>().is_some(), "{error:#}");
+        assert!(took < Duration::from_millis(250), "the flush waited {took:?}");
+        assert_eq!(bus.stream.write_timeout().unwrap(), Some(IO_TIMEOUT));
         drop(theirs);
     }
 

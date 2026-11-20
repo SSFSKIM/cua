@@ -36,12 +36,13 @@ cua's own Linux engine, cua-engine 0.4.2, built from <commit> for x86-64 and arm
     it starts a drag its renderer began. Electron's stays fast while its drag starts, so Electron and every
     unidentified source keep the fixed B, with no extension and no notice. There is no release before B (ruling
     900): an early release on fast pings lost 24 of 24 drags whose page started them late from a busy handler. The
-    identification is read again at every drag, before the press, and the whole of it (the bus's address and a
-    first connection, its connect included) is bounded by 50 ms from its start (ruling 912; idle lookups take 1 to
-    5 ms): past it the source is unidentified and keeps the fixed hold. A drag whose path reaches B before its hold
-    would begin (a path that long, Chrome's canvas, or B 0) holds nothing and never extends. A take only the extension caught, past B,
-    whose drop nothing can confirm (no `_NET_ACTIVE_WINDOW`, no Electron cursor), is reported as an unconfirmed drop,
-    as the late-take watch reported it before the extension, never a plain ok.
+    identification is read again at every drag, before the press. Its bus part (the bus's address, a first
+    connection and its connect, every call's writes and reads) is bounded by 50 ms from its start, the X reads take
+    what the X server takes, and an identification that ends past 50 ms counts as none (ruling 912; idle lookups take
+    1 to 5 ms): the source is then unidentified and keeps the fixed hold. A drag whose path reaches B before its hold
+    would begin (a path that long, Chrome's canvas, or B 0) holds nothing and never extends. A take only the
+    extension caught, past B, whose drop nothing can confirm (no `_NET_ACTIVE_WINDOW`, no Electron cursor), is
+    reported as an unconfirmed drop, as the late-take watch reported it before the extension, never a plain ok.
   - **The late-take watch.** After a release with no take, the watch runs at least 700 ms after the release, or 300 ms
     after the hold's end if that is later. It runs after the answer, so a plain drag does not wait for it. A take inside
     it is cancelled at once and reported as before: the next reply carries `Pending from your last drag, a late drag

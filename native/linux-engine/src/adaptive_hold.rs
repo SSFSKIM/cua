@@ -34,8 +34,9 @@ pub const FAST_PING: Duration = Duration::from_millis(20);
 pub const EXTENDED_HOLD_AFTER_PRESS: Duration = Duration::from_millis(650);
 
 /// The longest the whole identification may take before the press (rulings 899 and 912), counted from its start: one
-/// that has not answered by then leaves the source unidentified, so its drag keeps the fixed hold, and the press never
-/// waits on the bus longer. Sized from the idle lookups measured in the sandbox (task 117: 0.9 to 4.4 ms with the bus
+/// that has not answered by then, or that ends past it, leaves the source unidentified, so its drag keeps the fixed
+/// hold. The bus's part is bounded by it (its connect, writes and reads); the X reads before it take what the X server
+/// takes. Sized from the idle lookups measured in the sandbox (task 117: 0.9 to 4.4 ms with the bus
 /// asked), ten times the slowest and more.
 pub const IDENTIFY_BOUND: Duration = Duration::from_millis(50);
 

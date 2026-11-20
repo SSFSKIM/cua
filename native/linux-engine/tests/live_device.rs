@@ -2440,6 +2440,126 @@ fn a_saturated_accessibility_bus_met_cold_leaves_the_source_unidentified_within_
     let _ = std::fs::remove_file(&socket);
 }
 
+/// The bus's writes are bounded too, and a stall is not for the connection's life (the final review of wave 5; ruling
+/// 913.2): an engine whose bus connection is warm (its last drag identified Chrome through it) meets a bus that stops
+/// draining (`tests/support/bus-stall-proxy.py`: thousands of children, then nothing read, so the batch that follows
+/// fills the socket). That drag goes ahead on the fixed hold within the bound, the connection is dropped, and once the
+/// bus drains again the next drag connects anew and identifies Chrome.
+#[test]
+fn a_warm_bus_that_stops_draining_costs_one_drag_its_identification_and_the_next_reconnects() {
+    use std::io::{BufRead, Write};
+    support::fresh_display();
+    let Some(app) = BrowserApp::start("Google Chrome", "chrome") else {
+        return;
+    };
+    let upstream = root_bus_address().expect("the display names its accessibility bus");
+    let socket = std::env::temp_dir().join(format!("cua-live-stall-bus-{}", std::process::id()));
+    let mut proxy = std::process::Command::new("python3")
+        .args([
+            "-I",
+            concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/bus-stall-proxy.py"),
+        ])
+        .arg(&socket)
+        .arg(&upstream)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .expect("python3");
+    // the proxy's lines, each waited for at most 10 s, so a proxy that stops answering fails the test, never hangs it
+    let (lines, said) = mpsc::channel();
+    let out = proxy.stdout.take().unwrap();
+    std::thread::spawn(move || {
+        for line in std::io::BufReader::new(out).lines().map_while(Result::ok) {
+            if lines.send(line).is_err() {
+                break;
+            }
+        }
+    });
+    let next = || {
+        said.recv_timeout(Duration::from_secs(10))
+            .expect("the proxy's next line")
+    };
+    let mut tell = proxy.stdin.take().unwrap();
+    assert_eq!(next(), "ready");
+    let proxied = RootBusAddress::set(&format!("unix:path={}", socket.display()));
+    *SOURCE_IDENTITY.lock().unwrap() = Some(Identity {
+        role: "browser",
+        pid: app.pid,
+    });
+    let (window, stop, recorder) = drag_source_answering(OnRelease::NeverTakes, Some(Duration::from_millis(40)));
+    *SOURCE_IDENTITY.lock().unwrap() = None;
+    in_front(window);
+    let mut engine = Engine::start_with_stats(&[]);
+    let bound = hold_bound();
+    let identify = adaptive_constant("IDENTIFY_BOUND");
+    let mut drag = |what: &str| {
+        let started = Instant::now();
+        let answer = engine.exchange(
+            "drag",
+            json!({"window": {"id": window}, "path": [{"x": 20, "y": 20}, {"x": 60, "y": 20}]}),
+        );
+        let answered = started.elapsed();
+        let stats = engine.stats_of(engine.last_id());
+        assert_eq!(answer["ok"], json!(true), "{what}: {answer}");
+        sleep(SETTLE);
+        (stats, answered)
+    };
+    let (warm, _) = drag("warm");
+    assert_eq!(
+        warm["hold"]["adaptive"]["source"]["identified"],
+        json!(true),
+        "warm: {}",
+        warm["hold"]
+    );
+    writeln!(tell, "stall").unwrap();
+    assert_eq!(next(), "ok");
+    let (stalled, answered) = drag("stalled");
+    let adaptive = &stalled["hold"]["adaptive"];
+    let ms = Duration::from_secs_f64(stalled["browser_identity"]["ms"].as_f64().unwrap() / 1000.0);
+    assert_eq!(adaptive["source"]["identified"], json!(false), "stalled: {adaptive}");
+    assert_eq!(adaptive["way"], json!("fixed"), "stalled: {adaptive}");
+    assert!(
+        ms < identify + Duration::from_millis(15),
+        "stalled: the lookup took {ms:?}"
+    );
+    assert!(
+        answered < bound + identify + Duration::from_millis(200),
+        "stalled: answered {answered:?} after the request"
+    );
+    assert_eq!(next(), "stalled", "the bus stalled the drag's connection");
+    writeln!(tell, "forward").unwrap();
+    // a connection the drag made again inside its bound may have stalled too
+    while next() != "ok" {}
+    let (again, _) = drag("drained again");
+    assert_eq!(
+        again["hold"]["adaptive"]["source"]["identified"],
+        json!(true),
+        "drained again: {}",
+        again["hold"]
+    );
+    drop(engine);
+    stop.send(()).unwrap();
+    recorder.join().unwrap();
+    drop(proxied);
+    drop(tell);
+    let _ = proxy.kill();
+    let _ = proxy.wait();
+    let _ = std::fs::remove_file(&socket);
+}
+
+/// The root window's `AT_SPI_BUS`, the accessibility bus's address, when the display names one.
+fn root_bus_address() -> Option<String> {
+    let (conn, screen) = x11rb::connect(None).ok()?;
+    let root = conn.setup().roots[screen].root;
+    let atom = conn.intern_atom(false, b"AT_SPI_BUS").ok()?.reply().ok()?.atom;
+    let reply = conn
+        .get_property(false, root, atom, AtomEnum::ANY, 0, 4096)
+        .ok()?
+        .reply()
+        .ok()?;
+    (reply.type_ != x11rb::NONE).then(|| String::from_utf8_lossy(&reply.value).into_owned())
+}
+
 /// An identified Chrome's drag on a fresh engine whose accessibility bus does not answer (`what`): the lookup ends
 /// within IDENTIFY_BOUND, the source unidentified, and the drag keeps the fixed hold at B.
 fn a_drag_on_an_unanswering_bus_keeps_the_fixed_hold_within_the_bound(what: &str) {

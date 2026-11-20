@@ -725,11 +725,12 @@ impl Engine {
             },
             crate::browser::executable,
         );
+        let took = started.elapsed();
         self.extra.insert(
             "browser_identity".into(),
-            json!({ "ms": started.elapsed().as_secs_f64() * 1000.0, "bus": asked }),
+            json!({ "ms": took.as_secs_f64() * 1000.0, "bus": asked }),
         );
-        identified
+        crate::browser::within_bound(identified, took, crate::adaptive_hold::IDENTIFY_BOUND)
     }
 
     /// Whether `window` is a Qt application's that no listed family names, so one with no accessibility tree on the bus

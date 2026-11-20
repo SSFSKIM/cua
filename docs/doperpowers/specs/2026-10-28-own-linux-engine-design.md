@@ -2569,6 +2569,45 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
   Evidence: task-114 and task-116 reports (local); `m5/hold-042/` (6287b763) and `m5/engine-042/measure/` (62cc7322); the candidate `m5-engine-042` at 313167a9 (ci-gate GREEN 44646308804).
   Date/Author: 2026-11-20, the plan-executor (session linux171), on the design session's rulings.
 
+- Decision (2026-11-21, M5, linux-engine 0.4.2 released and pinned, and the frozen head H6 = 69bd7993, on the design session's rulings 907–937): the head of M5's counted reruns on 0.4.2.
+  - **The release.**
+    - linux-engine-v0.4.2 is tagged at 9371d2348cf84eab35ed4fa8f99cf3bacc40c6da, release run 44796908527.
+    - SHA256SUMS: x64 `a1314106a388167191670d38c0b67292617fe0f7e929f133ff7343b4a8a85a78`, arm64 `25035ca1b4c8f2c4dd42568e570f54f5994da0f894a84c036d59eedc58f1092f`. The attestations verify.
+    - The design session checked it (927). Pinned with `MIN_ENGINE_VERSION` 0.4.2 on m5-pin-042 (task 119): a 0.4.1 engine is refused before anything is sent.
+    - The candidate took six review waves. Waves 4–6 fixed:
+      - an extension-only take answering plain ok where nothing could confirm it, now unconfirmed;
+      - a long plain path getting the notice;
+      - identification caching and its unbounded bus I/O, a regression against 0.4.1 since a Chrome drag could stall on the bus; now bounded at 50 ms with reconnect;
+      - vacuous K-step passes.
+  - **The residue (898.3, 907, 912, 917–919; task 118, arm64 at twice the load):**
+    - At f10946bf, 0 false oks in front on Chrome 156 (75 samples) and on 158 (75). All 8 dragstarts past 450 ms were caught by the extension. The canary passed 20/20 per Chrome.
+    - Wave 6 (9371d234) carried this over by a smoke run (913): no identification exceeded 50 ms (max 27.0 ms).
+    - About 1 in 8 in-front Chrome drags at arm64 twice the load doesn't land, and it says so with the unconfirmed-drop notice (#449). 0.4.1's drag lost 71 in 300, 12 of them behind a plain ok (Chrome 156 only).
+    - "The witness changed" is a stacking notify with an unchanged value. It can't hide a drop.
+  - **The late take under 0.4.2 (931).** A Chrome drag either lands inside the hold or Chrome refuses it; the late-take window is about 3 ms. The late-take path stays covered on every release by two engine live tests that use a fake source, shown by mutation.
+  - **H6 (task 121; 929–932).**
+    - C1 and L4c are recast into three freeze bands:
+      - inside the hold (≥ 7/10 landed after a take in the hold);
+      - the edge (late takes counted, each judged in full);
+      - past the release (≥ 7/10 hold notices, with readable unchanged counters).
+    - A band whose outcome never occurs fails as unexercised. A plain ok with unread counters and no explaining cause is unjudged and fails.
+    - The K canary, and V5's, is relative on x64 (≥ 3× the plain control's warm maximum, floor 5 ms) and absolute 20 ms on arm64. Every K run records its waits.
+    - Every non-K launch is byte-identical to H5 except V5's x64 line (929.2).
+    - Reviewed clean in three rounds. ci-gate GREEN 44824501779.
+  - **The reach (929; task 120).** These rerun on both architectures:
+    - class A: V5, D1, D2, S1, H1, H2, C1, K1–K3, L1, L2a, L2b, L3a, L3b, L4a, L4b, L4c;
+    - S2, as the cross-check for the new-reads-only steps V4, S4, L3c and L3e;
+    - item 9.
+    - R1–R4 rerun with the flip at T10. D1's #358 bound is not widened.
+  - **Declared limit (900.2).** A page whose dragstart handler blocks longer than about 450 ms can lose the drag while the engine answers ok. Measured: 400 ms delays landed 24/24; 500 and 600 ms lost 6/6 each.
+  - **Owner summary items:**
+    - plain Chrome drags cost about 450 ms, against the newest vendor build's ~260–320;
+    - the 450 ms limit;
+    - #449's rate and the 0.4.1 comparison;
+    - the late-take window.
+  Evidence: task-112 to task-121 reports (local); `m5/engine-042/` (measure, tail, h6, reach), `m5/hold-042/`; the release notes of linux-engine-v0.4.2.
+  Date/Author: 2026-11-21, the plan-executor (session linux171), on the design session's rulings.
+
 ## Outcomes & Retrospective
 
 Written per milestone as each lands; the whole-plan retrospective at finish. The execution record (tasks, reviews, friction) is `docs/doperpowers/specs/2026-10-28-own-linux-engine-report.md`.

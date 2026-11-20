@@ -69,11 +69,16 @@ test('with room but no movement within the bound, the no-movement answer; a scro
   assert.equal((await rejection(scroll())).message, scrollUnconfirmed(300), 'a move the other way is not the asked one');
 });
 
+// "At once": nothing is read after the wheel, and no wait of any kind is taken out of the bound (this page answers at
+// once, so the scroll takes a sliver of a bound this long).
 test('with no room, or a point that cannot be observed, the wheel is sent and the scroll answers at once', async () => {
   for (const facts of [{observable: true, room: false}, {observable: false, room: false}]) {
     const {scroll, methods} = page({facts});
-    assert.equal(await scroll(), undefined);
+    const boundMs = 5000, started = Date.now();
+    assert.equal(await scroll({boundMs}), undefined);
+    const ms = Date.now() - started;
     assert.deepEqual(methods(), ['DOM.getNodeForLocation', 'DOM.resolveNode', 'Runtime.callFunctionOn', 'Runtime.callFunctionOn', 'Input.dispatchMouseEvent', 'Runtime.releaseObjectGroup'], JSON.stringify(facts));
+    assert.ok(ms < boundMs / 5, `${JSON.stringify(facts)}: answered within a fifth of the bound (${ms} ms)`);
   }
 });
 

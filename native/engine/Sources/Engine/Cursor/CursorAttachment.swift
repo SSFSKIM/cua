@@ -19,6 +19,8 @@ struct ListedWindow: Equatable, Sendable {
   let layer: Int
   /// Global points, top-left origin.
   let bounds: CGRect
+  /// The window's alpha (kCGWindowAlpha): 0 for one that shows nothing, so a screenshot shows what lies under it.
+  var alpha: Double = 1
 }
 
 /// The on-screen windows, front to back (no window name is read).
@@ -30,7 +32,8 @@ func onScreenWindowList() -> [ListedWindow] {
           let layer = (info[kCGWindowLayer as String] as? NSNumber)?.intValue,
           let dictionary = info[kCGWindowBounds as String] as? NSDictionary,
           let bounds = CGRect(dictionaryRepresentation: dictionary) else { return nil }
-    return ListedWindow(number: number, owner: owner, layer: layer, bounds: bounds)
+    let alpha = (info[kCGWindowAlpha as String] as? NSNumber)?.doubleValue ?? 1
+    return ListedWindow(number: number, owner: owner, layer: layer, bounds: bounds, alpha: alpha)
   }
 }
 

@@ -32,8 +32,12 @@ import Foundation
 // region the model types into is exempt (`editedInPlace`, ruling 1ea561bc:553). #433: a point kept at an inert layer (a
 // node that does not act on its own, with no acting ancestor in its document: a transparent overlay), with a hit that
 // names no interactive element, is judged again at the recorded control beneath it (`underlyingTarget`), which a click
-// passes through to: gone with no re-created handle #431 accepts, moved off the point, or relabelled, it refuses. Everything here reads through closures, so the rule is
-// unit-tested over a fake tree.
+// passes through to: gone with no re-created handle #431 accepts, moved off the point, or relabelled, it refuses. #452
+// (design ruling 928): the pointer's events are posted to the app's process stamped with the observed window
+// (Mouse.swift `stampWindow`), so the app delivers them to that window whatever lies over it; a point on another window of
+// the app's over the observed one at its layer (Chrome's omnibox popup, which the screenshot shows over the page) refuses
+// before the tree is read, wherever that window came from (`appWindowOverPoint`). Everything here reads through closures,
+// so the rule is unit-tested over a fake tree.
 
 /// One node of the tree an observation with a screenshot walked, as the screenshot showed it.
 struct ScreenshotNode<Element> {
@@ -427,10 +431,13 @@ enum StalePointReason: String, Equatable {
   /// Refused (#298, `relabelledLabel`): the node, found by its own handle with its frame still holding the point, reads a
   /// label whose words differ from the recorded one's (Save to Delete on one element).
   case relabelled
+  /// Refused (#452, `appWindowOverPoint`): the app's topmost window at the point is another of its own, over the observed
+  /// one, which the pointer's events are stamped to; nothing of the tree was read.
+  case appWindowOverPoint
 
   var refuses: Bool {
     self == .nodeGone || self == .frameMoved || self == .interactiveHit || self == .pressedOther || self == .newWindow || self == .otherWebArea
-      || self == .newElementOverPoint || self == .relabelled
+      || self == .newElementOverPoint || self == .relabelled || self == .appWindowOverPoint
   }
 }
 
@@ -471,6 +478,8 @@ struct StalePointVerdict<Element> {
   var newElementReads: Int?
   /// #316's rule W: the new window over the screenshot's, for `newWindow`.
   var newWindow: ListedWindow?
+  /// #452: the app's own window over the observed one at the point, for `appWindowOverPoint`.
+  var overWindow: ListedWindow?
   /// #298: the node's label read now, for `relabelled`'s sentence (#433: the control beneath's, when it refused).
   var labelNow: String?
   /// #433: the recorded control beneath a node that does not act on its own (`underlyingTarget`), judged when the verdict
@@ -1305,14 +1314,44 @@ func newWindowAbove(target: CGWindowID, pid: pid_t, recorded: Set<CGWindowID>, l
   return nil
 }
 
-/// The guard at a coordinate click's or drag start's point (#296, #316): rule W from the window list (`windows`, the
-/// on-screen list read once, only when there is a target window number and a recorded list to compare: about 0.3 ms, p95
-/// 1 ms, with 30 windows on screen on the MacBook), and only when it keeps the point, the tree's verdict (`tree`,
-/// `stalePointVerdict`). Both call sites take this one, so a drag's start is guarded as a click is.
+/// #452 (design ruling 928): the app's topmost window at `point` (global, top-left) when it is not `target`, the observed
+/// window the pointer's events are stamped to; nil when that is the target, when no window of the app's above it holds the
+/// point, or when `list` (front to back) does not hold the target. "Topmost at the point" is read among `pid`'s windows
+/// alone, at the target's own layer, that show something (alpha above 0), over the target in the list's order:
+/// - the events are posted to the process, not hit-tested by the window server (Mouse.swift `postToProcess`,
+///   `stampWindow`), so another app's window over the point neither receives them nor shows in the app's screenshot;
+///   that one is the vendor's skip check's and the user's business, not this rule's;
+/// - the screenshot is the target window with the child windows the app attaches to it (ScreenCaptureKit's
+///   desktop-independent window), which AppKit orders at the parent's level: Chrome's omnibox popup, a bubble, a popover,
+///   all at the browser window's layer 0, are what the model aims at and what the stamped click goes under. A pop-up
+///   menu (layer 101) or a floating panel (layer 3) is neither in the screenshot nor this window's child, as #316's rule W
+///   leaves them too;
+/// - a window of alpha 0 shows nothing, so the screenshot showed what lies under it.
+/// The window server's own hit-test skips windows that ignore mouse events (a status bubble, a hover card), which the
+/// window list cannot tell apart: such a window over the point refuses too, a stated limit.
+func appWindowOverPoint(_ point: CGPoint, target: CGWindowID, pid: pid_t, list: [ListedWindow]) -> ListedWindow? {
+  guard let observed = list.first(where: { $0.number == target }) else { return nil }
+  for window in list {
+    if window.number == target { return nil }
+    if window.owner == pid, window.layer == observed.layer, window.alpha > 0, window.bounds.contains(point) { return window }
+  }
+  return nil
+}
+
+/// The guard at a coordinate click's or drag start's point (#296, #316, #452): the window list (`windows`, the on-screen
+/// list read once, only when there is a target window number: about 0.3 ms, p95 1 ms, with 30 windows on screen on the
+/// MacBook), for rule W where there is a recorded list to compare and then #452's window of the app's over the point;
+/// and only when both keep the point, the tree's verdict (`tree`, `stalePointVerdict`). Both call sites take this one,
+/// so a drag's start is guarded as a click is.
 func guardedPointVerdict<Element>(at point: CGPoint, hit: Element?, target: CGWindowID?, pid: pid_t, recorded: Set<CGWindowID>?,
                                   windows: () -> [ListedWindow], tree: () -> StalePointVerdict<Element>) -> StalePointVerdict<Element> {
-  if let target, let recorded, let new = newWindowAbove(target: target, pid: pid, recorded: recorded, list: windows()) {
+  guard let target else { return tree() }
+  let list = windows()
+  if let recorded, let new = newWindowAbove(target: target, pid: pid, recorded: recorded, list: list) {
     return StalePointVerdict(reason: .newWindow, hit: hit, point: point, newWindow: new)
+  }
+  if let over = appWindowOverPoint(point, target: target, pid: pid, list: list) {
+    return StalePointVerdict(reason: .appWindowOverPoint, hit: hit, point: point, overWindow: over)
   }
   return tree()
 }
@@ -1344,6 +1383,11 @@ struct StalePointRecord: Equatable {
   let newElementReads: Int?
   /// For `newWindow`, the new window's number.
   let newWindow: CGWindowID?
+  /// For `appWindowOverPoint` (#452), the number of the app's window over the observed one at the point.
+  let overWindow: CGWindowID?
+  /// #452: the number of the app's other window the hit-test answered in (`WindowHit.otherWindow`), which the action then
+  /// takes as no hit; set by the action, 0 when the window's number could not be read.
+  var hitWindow: CGWindowID?
   /// #433: the role of the recorded control beneath the node that the guard judged too, and how it was found.
   let underlyingRole: String?
   let underlyingIdentity: StalePointIdentity?
@@ -1358,6 +1402,7 @@ struct StalePointRecord: Equatable {
     webAreaReads = verdict.webAreaReads
     newElementReads = verdict.newElementReads
     newWindow = verdict.newWindow?.number
+    overWindow = verdict.overWindow?.number
     underlyingRole = verdict.underlying?.role
     underlyingIdentity = verdict.underlyingIdentity
     self.ms = ms
@@ -1374,6 +1419,8 @@ struct StalePointRecord: Equatable {
     if let webAreaReads { wire["webAreaReads"] = webAreaReads }
     if let newElementReads { wire["newElementReads"] = newElementReads }
     if let newWindow { wire["newWindow"] = Int(newWindow) }
+    if let overWindow { wire["overWindow"] = Int(overWindow) }
+    if let hitWindow { wire["hitWindow"] = Int(hitWindow) }
     if let underlyingRole { wire["underlyingRole"] = underlyingRole }
     if let underlyingIdentity { wire["underlyingIdentity"] = underlyingIdentity.rawValue }
     if rechecked { wire["rechecked"] = true }
@@ -1546,14 +1593,24 @@ func newWindowOverScreenshot(app: String) -> EngineError {
     "The screen changed since the screenshot: \(app) has opened a window over the one the screenshot showed, which can take the click. Nothing was sent. Call getScreenshot for a new screenshot, then give the coordinates in its pixels.")
 }
 
+/// #452's refusal (design ruling 928): a window of the app's own lies over the observed one at the point, and the click,
+/// stamped to the observed window, would reach that window's content under it. The screenshot may well have shown that
+/// window (#337: Chrome's omnibox popup open at the observation), so nothing is said to have changed and no page is
+/// blamed; the sentence names the ways through: keys for the overlay, or an element the tree holds. Nothing was posted.
+func appWindowOverPointRefusal(app: String) -> EngineError {
+  EngineError(name: "appWindowOverPoint",
+    "\(app) has a window of its own over the one the screenshot showed at this point (a suggestion list, popup or panel), and a click here would reach the window under it, not what the screenshot shows. Nothing was sent. Use keys instead (the arrow keys and Return for a suggestion list, Escape to close it), or call getScreenshot for a new screenshot and click an element its tree holds.")
+}
+
 /// The guard's outcome at a point: its meta record, and the refusal to throw (nil when it kept the pointer). The refusal
 /// names what is there now (the verdict's hit; for `pressedOther` the element the route would act on) only when it is
 /// known (its role read) and is not the node itself (Chrome's hit-test may still answer a moved control's handle at its
-/// old point); otherwise it names nothing there. A `newWindow` refusal names the app (`app`).
+/// old point); otherwise it names nothing there. A `newWindow` or `appWindowOverPoint` refusal names the app (`app`).
 func stalePointOutcome<Element>(_ verdict: StalePointVerdict<Element>, ms: Double, afterActivation: Bool = false, app: String = "The app",
                                 reads: StalePointReads<Element>) -> (record: StalePointRecord, refusal: EngineError?) {
   let record = StalePointRecord(verdict, ms: ms)
   if verdict.reason == .newWindow { return (record, newWindowOverScreenshot(app: app)) }
+  if verdict.reason == .appWindowOverPoint { return (record, appWindowOverPointRefusal(app: app)) }
   guard verdict.refused, let node = verdict.node else { return (record, nil) }
   if verdict.underlyingRefused, let control = verdict.underlying {
     return (record, controlUnderInertChanged(

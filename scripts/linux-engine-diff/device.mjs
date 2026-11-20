@@ -56,7 +56,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { pendingOf } from './drop-signals-judge.mjs';
-import { AUDIT_PLAN, FOLLOW_UP_FIELDS, TIMED_QUOTAS, bindAudit, bindTimed, evidenceLabel, isShortage, judgePremise, repeatedSlots, slotProblems } from './premise.mjs';
+import { AUDIT_PLAN, FOLLOW_UP_FIELDS, TIMED_QUOTAS, bindAudit, bindTimed, evidenceLabel, holdNoticed, isShortage, judgePremise, repeatedSlots, slotProblems } from './premise.mjs';
 import { preorder } from './normalize.mjs';
 import { readGtk4Status } from './families.mjs';
 import { IDENTITY_OPS, IDENTITY_SCENE_OPS, judgeIdentity } from './identity.mjs';
@@ -409,7 +409,8 @@ function device({ device: expect, condition = covered, park, read, request, effe
       const attemptFrom = ctx.premiseReadAt;
       // the reply's own notice, for ruling 823's plain-drag ok (premise.mjs): one that claims or implies a drop is never
       // an unmet premise
-      if (PREMISE_KINDS.includes(expect)) out.reply_notice = response.notice ?? null;
+      // and a drop case's, where an ok with the adaptive hold's notice is judged by its page (ruling 898.2)
+      if (PREMISE_KINDS.includes(expect) || confirm) out.reply_notice = response.notice ?? null;
       // past the drop's window: a confirmed drop leaves nothing pending, an unconfirmed one its notice; a late case's
       // drag, whatever it answered, may leave the after-release watch's report of a late take
       if ((confirm && response.ok) || expect === 'late') Object.assign(out, await readPending(ctx));
@@ -571,6 +572,29 @@ function dropSeen(r) {
  */
 function mayHaveDropped(r) {
   return r.dropped !== false || dropSeen(r);
+}
+
+/**
+ * Ruling 898.2: an ok with the adaptive hold's notice (premise.mjs `HOLD_NOTICE`, word for word) is honest only when the
+ * page shows no drop: the runner's bit read the counter unchanged (`dropped` false: an unread counter counts as a drop),
+ * the page's later read shows none, and the case saw no effect (`honestNotice`). One on a drag that did drop
+ * (`falseAlarm`: the counter risen, or the case's effect seen) is a false alarm, counted and reported in the verdict.
+ * One whose page cannot say either way is neither, and is judged as any ok is.
+ */
+export function honestNotice(r) {
+  return holdNoticed(r) && r.effect !== true && !mayHaveDropped(r);
+}
+
+export function falseAlarm(r) {
+  return holdNoticed(r) && (r.effect === true || dropSeen(r));
+}
+
+/** A cell's hold notices for its verdict, or null when none came: how many, the honest ones and the false alarms. */
+function holdNoticeCounts(rows) {
+  const noticed = rows.filter(holdNoticed);
+  if (!noticed.length) return null;
+  const alarms = noticed.filter(falseAlarm);
+  return { samples: rows.length, noticed: noticed.length, honest: noticed.filter(honestNotice).length, false_alarm: alarms.length, false_alarms: alarms.map((r) => `${r.block}/${r.i}`) };
 }
 
 /**
@@ -1005,7 +1029,8 @@ export function judgeDevice(op, samples, audit, premise = undefined) {
   const late = new Set(expect === 'cancel' ? lateTakes(samples) : []);
   binding?.rows.forEach((r, k) => late.has(samples[k]) && late.add(r));
   if (expect === 'cancel') {
-    bad('not cancelled with the drag-and-drop sentence', (r) => (!r.ok && r.error === r.expected_error) || late.has(r));
+    // or an honest hold notice (ruling 898.2): Chrome refused a drag its page started too late, or began none
+    bad('not cancelled with the drag-and-drop sentence', (r) => (!r.ok && r.error === r.expected_error) || late.has(r) || honestNotice(r));
     bad('it dropped', (r) => !mayHaveDropped(r));
   }
   if (expect === 'stray') {
@@ -1032,7 +1057,8 @@ export function judgeDevice(op, samples, audit, premise = undefined) {
     const held = (r) => pendingOf({ notice: r.state_notice, next: r.state_notice == null ? null : { ok: r.next_ok, error: r.next_error } });
     const pending = (r) => r.state_notice != null && held(r).kept;
     const landed = rows.filter((r) => r.effect === true);
-    const falseOk = rows.filter((r) => r.ok && r.effect !== true && !pending(r));
+    // an honest hold notice is no false ok (ruling 898.2); one of another wording, or with no page to vouch for it, is
+    const falseOk = rows.filter((r) => r.ok && r.effect !== true && !pending(r) && !honestNotice(r));
     drops = { samples: rows.length, landed: landed.length, ok: rows.filter((r) => r.ok).length, false_ok: falseOk.length, unconfirmed_landed: landed.filter(pending).length };
     if (falseOk.length) reasons.push(`a drag answered ok with no drop and nothing pending on ${falseOk.length} of ${rows.length} samples (${falseOk.slice(0, 3).map((r) => `${r.block}/${r.i}`).join(', ')})`);
     const unrefused = rows.filter((r) => r.state_notice != null && !held(r).kept);
@@ -1065,7 +1091,8 @@ export function judgeDevice(op, samples, audit, premise = undefined) {
   }
   if (expect === 'foreground' || expect === 'background') {
     bad('a request failed', (r) => r.ok);
-    bad('the effect was not verified', (r) => r.effect === true);
+    // a drop that did not land, honestly noticed (ruling 898.2), is no unverified effect: its answer said so
+    bad('the effect was not verified', (r) => r.effect === true || honestNotice(r));
   }
   // a request refused for a late take did not run, so there is no drag of its own to have watched
   const ran = (r) => !(late.has(r) && r.ok === false);
@@ -1097,7 +1124,8 @@ export function judgeDevice(op, samples, audit, premise = undefined) {
         excluded += judged.excluded;
       }
       const expected = (a) => {
-        if (expect === 'refusal' || expect === 'cancel' || expect === 'stray') return !a.ok && a.error === a.expected_error;
+        if (expect === 'cancel') return (!a.ok && a.error === a.expected_error) || honestNotice(a);
+        if (expect === 'refusal' || expect === 'stray') return !a.ok && a.error === a.expected_error;
         if (expect === 'late') return !a.ok && (a.error === a.late_error || a.error === a.expected_error);
         return a.ok;
       };
@@ -1112,10 +1140,13 @@ export function judgeDevice(op, samples, audit, premise = undefined) {
     reasons.unshift(reasons.every(isShortage) ? `incomplete only by ${n} (a whole V5 rerun under §8.2, the controller's call)` : `incomplete by ${n}, and failing for more than that (below)`);
   }
   const limited = spanLimited.map((r) => ({ sample: `${r.block}/${r.i}`, dragend_ms: r.drop_status.after.dur, answer_ms: r.ms }));
+  // the hold's notices, counted and reported, the false alarms never hidden (ruling 898.2)
+  const holdNotices = holdNoticeCounts(rows);
   return {
     pass: reasons.length === 0,
     reasons,
     ...(drops ? { drops } : {}),
+    ...(holdNotices ? { hold_notices: holdNotices } : {}),
     ...(Object.keys(unmet).length ? { premise_unmet: unmet } : {}),
     ...(binding?.unverified ? { plan_unverified: true } : {}),
     ...(limited.length ? { span_limited: limited } : {}),

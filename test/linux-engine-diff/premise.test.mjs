@@ -9,7 +9,7 @@ import { after, test } from 'node:test';
 
 import { DEVICE_OPS, PREMISE_OPS, dndLateNotice, dndLateRefusal, dndMayHaveDroppedSentence, dndUnconfirmedNotice, judgeDevice } from '../../scripts/linux-engine-diff/device.mjs';
 import { adjacency, bindAudit, classifyPremise, noDragSession, parsePageRead } from '../../scripts/linux-engine-diff/premise.mjs';
-import { APP, CANCEL, cancelled, HELD_CANCEL, HELD_UNMET, IN_TIME_OK, LATE_DRAG, LATE_REFUSED, UNMET, WINDOW, baseFor, caseSamples, dndLine, engineBin, movesLine, removeScratch, sample, scratch, scriptedEngine } from './premise-fixture.mjs';
+import { APP, CANCEL, cancelled, HELD_CANCEL, HELD_UNMET, IN_TIME_OK, LANDED, LATE_DRAG, LATE_REFUSED, UNMET, WINDOW, baseFor, caseSamples, dndLine, engineBin, movesLine, removeScratch, sample, scratch, scriptedEngine } from './premise-fixture.mjs';
 
 after(removeScratch);
 
@@ -228,6 +228,32 @@ test('a drop cell keeps ruling 650: a plain ok with no drop where Chrome never s
   const desktop = { run: 't-none', logs: join(dir, 'apps'), oracle: { text: () => 'cua171' } };
   const out = await DEVICE_OPS.gte_type_text_shared.check({ desktop, scene: { id: 1, app: 'org.gnome.TextEditor', field: 'f', lastRequest: {} }, before: 'cua171' }, { id: 1, ok: false, error: 'x' });
   assert.equal('premise_evidence' in out || 'reply_notice' in out, false);
+});
+
+// Ruling 898.2 through the real paths: the adaptive hold's notice on an ok claims no drop, so a sample carrying it is
+// judged, never excluded and never a false claim: honest where the page shows no drop (Chrome refused a late drag, the
+// tail; or began none), a false alarm, counted, where it dropped; another wording is still a claim.
+test("ruling 898.2: an ok with the hold's exact notice is judged honest where the page shows no drop, counted, and never excluded", async () => {
+  const HOLD = 'the page may have started a drag that did not complete';
+  const tail = { ...LATE_DRAG, reply: { ok: true, notice: HOLD } };
+  const none = { ...UNMET, reply: { ok: true, notice: HOLD } };
+  const r = await made('chrome_dnd_shared', [[tail, CANCEL, none], three(CANCEL), three(CANCEL)], [CANCEL, none]);
+  const v = judgeWith(r, 'chrome_dnd_shared');
+  assert.equal(v.pass, true, reasons(v));
+  assert.equal(v.premise_unmet, undefined, 'nothing excluded');
+  assert.deepEqual(v.hold_notices, { samples: 9, noticed: 2, honest: 2, false_alarm: 0, false_alarms: [] });
+  assert.equal(classifyPremise(r.rows[2]), 'not-plain-ok', 'judged, not unmet');
+  // a notice of another wording on a drag Chrome never started: a claim of a drop, so a false claim that fails
+  const other = await made('chrome_dnd_shared', [[{ ...none, reply: { ok: true, notice: `${HOLD}.` } }, CANCEL, CANCEL], three(CANCEL), three(CANCEL)], [CANCEL, CANCEL]);
+  assert.match(reasons(judgeWith(other, 'chrome_dnd_shared')), /answered as if it dropped where the page shows Chrome never started a drag and drop/);
+  // the hold's notice on a drag that dropped: the cancel cell fails as a drop, and the notice is a counted false alarm
+  const dropped = await made('chrome_dnd_shared', [[{ ...LANDED, reply: { ok: true, notice: HOLD } }, CANCEL, CANCEL], three(CANCEL), three(CANCEL)], [CANCEL, CANCEL]);
+  const d = judgeWith(dropped, 'chrome_dnd_shared');
+  assert.match(reasons(d), /it dropped on 1 of 9 samples/);
+  assert.deepEqual(d.hold_notices, { samples: 9, noticed: 1, honest: 0, false_alarm: 1, false_alarms: ['0/0'] });
+  // a plain ok, no notice, on a drag Chrome took and refused: not cancelled, a failure as before
+  const bare = await made('chrome_dnd_shared', [[LATE_DRAG, CANCEL, CANCEL], three(CANCEL), three(CANCEL)], [CANCEL, CANCEL]);
+  assert.match(reasons(judgeWith(bare, 'chrome_dnd_shared')), /not cancelled with the drag-and-drop sentence on 1 of 9 samples/);
 });
 
 test('negative control: an excluded sample is never counted as a pass: a run of nothing but unmet samples is incomplete', async () => {

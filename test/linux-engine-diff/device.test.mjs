@@ -185,6 +185,56 @@ test('the in-front drop passes only where the engine recorded the window in fron
   assert.equal(judgeDevice('chrome_dnd_in_front_shared', [good], { clean: false, kind: 'background', forbidden: ['_NET_ACTIVE_WINDOW ClientMessage'] }).pass, false, 'the engine sent an activation');
 });
 
+// Ruling 898.2: the adaptive hold's notice on an ok is honest only where the page shows no drop; a notice on a drag that
+// dropped is a false alarm, counted and reported; an ok with no notice and no drop is still a false ok; and a notice of
+// another wording is not the hold's.
+test("V5's cells: an ok with the hold's exact notice is honest only where the page shows no drop, and a false alarm where it dropped", () => {
+  const notice = 'the page may have started a drag that did not complete';
+  const unchanged = { before: { drops: 65 }, after: { drops: 65 } };
+  const rose = { before: { drops: 65 }, after: { drops: 66 } };
+  // in front (the short drop): a landed drop, and a refused one honestly noticed
+  const landed = row({ ok: true, effect: true, route: 'background', dnd: { in_front: true }, desktop_same: true, state_notice: null, reply_notice: null, dropped: true });
+  const honest = row({ i: 1, ok: true, effect: false, route: 'background', dnd: { in_front: true }, desktop_same: true, state_notice: null, reply_notice: notice, dropped: false, drop_status: unchanged });
+  const audit = { clean: true, kind: 'background', answered: [{ ok: true }] };
+  const inFront = judgeDevice('chrome_dnd_short_in_front_shared', [landed, honest], audit);
+  assert.equal(inFront.pass, true, inFront.reasons.join('; '));
+  assert.equal(inFront.drops.false_ok, 0);
+  assert.deepEqual(inFront.hold_notices, { samples: 2, noticed: 1, honest: 1, false_alarm: 0, false_alarms: [] });
+  // a notice on a drag that dropped: a false alarm, counted and named in the verdict, never hidden
+  const alarm = { ...honest, effect: true, dropped: true, drop_status: rose };
+  const alarmed = judgeDevice('chrome_dnd_short_in_front_shared', [landed, alarm], audit);
+  assert.deepEqual(alarmed.hold_notices, { samples: 2, noticed: 1, honest: 0, false_alarm: 1, false_alarms: ['0/1'] });
+  // an ok with no notice and no drop: still a false ok
+  const bare = judgeDevice('chrome_dnd_short_in_front_shared', [landed, { ...honest, reply_notice: null }], audit);
+  assert.equal(bare.pass, false);
+  assert.equal(bare.drops.false_ok, 1);
+  assert.equal(bare.hold_notices, undefined);
+  // a notice whose wording differs: not the hold's, so a false ok
+  for (const other of [`${notice}.`, 'The page may have started a drag that did not complete', 'the page may have started a drag']) {
+    const differs = judgeDevice('chrome_dnd_short_in_front_shared', [landed, { ...honest, reply_notice: other }], audit);
+    assert.equal(differs.pass, false, other);
+    assert.equal(differs.drops.false_ok, 1, other);
+  }
+  // the hold's notice with no page read to vouch for it (an unread counter counts as a drop): not honest
+  const unread = judgeDevice('chrome_dnd_short_in_front_shared', [landed, { ...honest, dropped: true, drop_status: { before: { drops: 65 }, after: null } }], audit);
+  assert.equal(unread.pass, false);
+  // the cancel cell: an honest notice stands where the cancel sentence would; a notice on a drop fails as a drop
+  const sentence = dndCancelledSentence('Google-chrome');
+  const cancelled = row({ ok: false, error: sentence, expected_error: sentence, dropped: false });
+  const noticed = row({ i: 1, ok: true, error: undefined, expected_error: sentence, reply_notice: notice, dropped: false, drop_status: unchanged });
+  const background = { clean: true, kind: 'background', answered: [{ ok: false, error: sentence, expected_error: sentence }] };
+  const cancel = judgeDevice('chrome_dnd_shared', [cancelled, noticed], background);
+  assert.equal(cancel.pass, true, cancel.reasons.join('; '));
+  assert.deepEqual(cancel.hold_notices, { samples: 2, noticed: 1, honest: 1, false_alarm: 0, false_alarms: [] });
+  assert.equal(judgeDevice('chrome_dnd_shared', [cancelled, { ...noticed, dropped: true, drop_status: rose }], background).pass, false, 'it dropped');
+  assert.equal(judgeDevice('chrome_dnd_shared', [cancelled, { ...noticed, reply_notice: null }], background).pass, false, 'a plain ok is no cancel');
+  assert.equal(judgeDevice('chrome_dnd_shared', [cancelled, { ...noticed, reply_notice: `${notice}!` }], background).pass, false, 'another wording');
+  // an audited answer's own fields never bind (review 5, finding 1): with no evidence to carry its notice, an audited ok
+  // is no cancel (the bound form passes: premise.test.mjs, ruling 898.2)
+  const audited = { ...background, answered: [{ ok: true, error: null, expected_error: sentence, reply_notice: notice, dropped: false }] };
+  assert.equal(judgeDevice('chrome_dnd_shared', [cancelled], audited).pass, false);
+});
+
 test("GTK 4's scale is dragged away from where it stands, whichever sample of whichever block", () => {
   const [from, to] = scalePath({ before: { scale: 0 } });
   assert.ok(to.x > from.x, 'up from the start');

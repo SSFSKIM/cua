@@ -116,9 +116,19 @@ function engineTook(r, next) {
   return r.late_dnd != null || r.late_watch?.next?.late_dnd != null || next?.engine_stats?.late_dnd != null;
 }
 
+/**
+ * The notice an identified browser's adaptive hold answers beside its ok when it waited past B for a take that never
+ * came (cua-engine's `adaptive_hold::NOTICE`, the design session's ruling 897), word for word. It claims no drop: it
+ * says the page may have started a drag that did not complete. Another wording is not it.
+ */
+export const HOLD_NOTICE = 'the page may have started a drag that did not complete';
+
+/** Whether a sample answered ok with the hold's notice, word for word (ruling 898.2). */
+export const holdNoticed = (r) => r.ok === true && r.reply_notice === HOLD_NOTICE;
+
 /** cua's claims of a drop around the sample: on its reply, its own reads (device.mjs's), and the next request's answer. */
 function claimsDrop(r, next) {
-  if (r.ok === true && r.reply_notice != null) return true;
+  if (r.ok === true && r.reply_notice != null && !holdNoticed(r)) return true;
   if (mayHaveDropped(r.error)) return true;
   if (r.state_notice != null || r.read_notice === true || r.read_notice_text != null || (r.next_ok === false && pending(r.next_error))) return true;
   return next != null && next.ok === false && pending(next.error);
@@ -145,7 +155,8 @@ export function classifyPremise(r, next = null) {
   if (engineTook(r, next) || pageStarted(r)) return 'started';
   if (r.dropped === true || r.witness === false) return 'changed';
   const proven = 'reply_notice' in r && samePage(r) && noDragSession(r.premise_evidence);
-  const plain = r.ok === true && r.error == null;
+  // an ok with the hold's notice is no plain drag: it is judged, honest only where the page shows no drop (ruling 898.2)
+  const plain = r.ok === true && r.error == null && !holdNoticed(r);
   if (!proven) return plain ? 'unshown' : 'not-plain-ok';
   if (claimsDrop(r, next)) return 'false-claim';
   return plain ? 'unmet' : 'not-plain-ok';

@@ -36,6 +36,8 @@ private final class Node {
   var visibleChildren: [Node]?
   /// Its frame fails to read now while it lives (#431's review of 849bcdad, finding 3).
   var frameUnread = false
+  /// Its AXParent fails to read now while it lives (#433's review of 2a1b0368, item 2).
+  var parentUnread = false
   weak var parent: Node?
   var children: [Node] = []
 
@@ -56,18 +58,26 @@ private final class Node {
     children.append(child)
   }
 
-  /// Destroyed: its handle answers nothing, and it leaves its parent.
+  /// Moved under `parent`, out of the one it was in.
+  func reparent(to parent: Node) {
+    self.parent?.children.removeAll { $0 === self }
+    parent.add(self)
+  }
+
+  /// Destroyed: its handle answers nothing, its parent included, and it leaves its parent.
   func destroy() {
     frame = nil
     title = nil
     description = nil
     value = nil
     parent?.children.removeAll { $0 === self }
+    parent = nil
   }
 }
 
 private var reads: StalePointReads<Node> {
-  StalePointReads<Node>(role: { $0.roleUnread ? nil : $0.role }, frame: { $0.frameUnread ? nil : $0.frame }, parent: { $0.parent },
+  StalePointReads<Node>(role: { $0.roleUnread ? nil : $0.role }, frame: { $0.frameUnread ? nil : $0.frame },
+                                          parent: { $0.parentUnread ? nil : $0.parent },
                                           children: { $0.childrenUnreadNow ? nil : $0.children },
                                           // A failed read answers none, as the live seam's `attribute` does.
                                           title: { $0.unreadable.contains(.title) ? nil : $0.title },
@@ -3521,7 +3531,7 @@ final class OverlayTargetTests: XCTestCase {
     let page = Page()
     let text = deepestScreenshotNode(at: CGPoint(x: 40, y: 112), in: recorded(page.window))
     XCTAssertTrue(text?.element === page.aText)
-    XCTAssertNil(underlyingTarget(of: text!, at: CGPoint(x: 40, y: 112), in: recorded(page.window), reads), "A is the text's own link")
+    XCTAssertNil(underlyingTarget(of: text!, current: page.aText, at: CGPoint(x: 40, y: 112), in: recorded(page.window), reads), "A is the text's own link")
     let atText = judged(Page(), at: CGPoint(x: 40, y: 112)) { $0.aText }
     XCTAssertEqual(atText.reason, .sameElement)
     XCTAssertNil(atText.underlying)
@@ -3635,7 +3645,7 @@ final class OverlayTargetTests: XCTestCase {
       page.a.add(icon)
       let refused = judged(page) { page in
         page.slide(webkit: false)
-        page.b.add(icon)
+        icon.reparent(to: page.b)
         return hitB ? page.b : icon
       }
       XCTAssertTrue(refused.node?.element === icon)
@@ -3651,7 +3661,7 @@ final class OverlayTargetTests: XCTestCase {
     let (nodes, framelessNodes, members) = walkRecord(frameless.window)
     frameless.a.frame = aFrame
     frameless.slide(webkit: false)
-    frameless.b.add(mark)
+    mark.reparent(to: frameless.b)
     let refused = verdict(nodes, frameless: framelessNodes, members: members, at: atLink, hit: mark)
     XCTAssertEqual(refused.reason, .nodeGone, "a frameless control")
     XCTAssertTrue(refused.underlying?.element === frameless.a)
@@ -3756,6 +3766,103 @@ final class OverlayTargetTests: XCTestCase {
     XCTAssertTrue(stalePointOutcome(relabelled, ms: 0, reads: reads).refusal?.message.contains("that control now reads \"Delete\"") == true)
   }
 
+  // MARK: The regression review of 2a1b0368: the check never refuses where the hit is the node, or its own recorded
+  // control, alive and in place; it acts only on an inert layer, or on content confirmed out of its recorded control.
+
+  /// Item 1: only A's text re-created, drawn outside A's own frame (an overflowing label), the point on it. Main finds
+  /// the new text inside the unchanged link and keeps the point; so does the check, judging the text as found now, not
+  /// the destroyed handle.
+  func testAReCreatedTextOutsideItsLinksFrameIsContentOfTheLink() {
+    for hitLink in [true, false] {
+      let page = Page(twin: "Archive", bare: true)
+      page.aText.frame = CGRect(x: 230, y: 105, width: 60, height: 20)
+      let point = CGPoint(x: 250, y: 112)
+      var again: Node?
+      let kept = judged(page, at: point) { page in
+        page.aText.destroy()
+        let text = Node("AXStaticText", CGRect(x: 230, y: 105, width: 60, height: 20), value: "Open")
+        page.a.add(text)
+        again = text
+        return hitLink ? page.a : text
+      }
+      XCTAssertTrue(kept.node?.element === page.aText)
+      XCTAssertEqual(kept.identity, .recreated)
+      XCTAssertTrue(kept.current === again)
+      XCTAssertEqual(kept.reason, hitLink ? .hitAboveNode : .sameElement)
+      XCTAssertNil(kept.underlying, hitLink ? "the hit the link" : "the hit the new text")
+    }
+    // A re-rendered whole, the point on its text: the text as found now lies in the new link, out of the old one, so A is
+    // judged and found re-created in place, as main keeps it.
+    let remount = judged(Page(twin: "Archive", bare: true), at: CGPoint(x: 40, y: 112)) { page in
+      page.rerenderA().children[0]
+    }
+    XCTAssertEqual(remount.identity, .recreated)
+    XCTAssertEqual(remount.reason, .sameElement)
+    XCTAssertEqual(remount.underlying?.role, "AXLink")
+    XCTAssertEqual(remount.underlyingIdentity, .recreated)
+  }
+
+  /// Item 2: the text unchanged and the hit on it, its AXParent and A's frame unreadable now. A walk that cannot finish is
+  /// no proof the text left A: kept as main keeps it, with A listing the text among its children and with that read
+  /// failing too; a walk that reaches the web area without meeting A is (`testAnInertDecorationReparented...`).
+  func testAnInconclusiveContentWalkKeepsAsMain() {
+    for childrenUnread in [false, true] {
+      let page = Page(twin: "Archive", bare: true)
+      let kept = judged(page, at: CGPoint(x: 40, y: 112)) { page in
+        page.aText.parentUnread = true
+        page.a.frameUnread = true
+        page.a.childrenUnreadNow = childrenUnread
+        return page.aText
+      }
+      XCTAssertEqual(kept.reason, .sameElement, childrenUnread ? "A's children unread" : "A lists the text")
+      XCTAssertNil(kept.underlying)
+    }
+    // A decoration reparented into B whose role cannot be read: the walk cannot finish, so nothing is proven.
+    let page = Page(bare: true)
+    let icon = Node("AXImage", CGRect(x: 100, y: 100, width: 120, height: 30))
+    page.a.add(icon)
+    let unproven = judged(page) { page in
+      page.slide(webkit: false)
+      icon.reparent(to: page.b)
+      page.b.roleUnread = true
+      return icon
+    }
+    XCTAssertEqual(unproven.reason, .sameElement)
+    XCTAssertNil(unproven.underlying)
+    // The text's AXParent answers another element, but A, alive, still lists it: inside.
+    let listed = judged(Page(twin: "Archive", bare: true), at: CGPoint(x: 40, y: 112)) { page in
+      page.aText.parent = page.list
+      return page.aText
+    }
+    XCTAssertEqual(listed.reason, .sameElement)
+    XCTAssertNil(listed.underlying)
+    XCTAssertEqual(contentPlace(page.aText, in: page.list, reads), .inconclusive, "a destroyed text's walk")
+  }
+
+  /// Item 3: a group between A and its text whose actions did not read at the observation, so the record cannot name the
+  /// text's control, though it holds A above it; a button behind the text removed since. The hit on A (an interactive
+  /// ancestor) or on the text itself keeps the point as main does: the text is content of A, its nearest recorded control.
+  func testContentUnderAnUnknownWrapperInsideALinkIsTheLinks() {
+    for hitLink in [true, false] {
+      let page = Page(twin: "Archive", bare: true)
+      let wrapper = Node("AXGroup", CGRect(x: 25, y: 102, width: 100, height: 26))
+      wrapper.actionsUnread = true
+      page.a.children = []
+      page.a.add(wrapper)
+      wrapper.add(page.aText)
+      let backdrop = Node("AXButton", CGRect(x: 0, y: 80, width: 600, height: 200), title: "Dismiss")
+      page.page.children.insert(backdrop, at: 0)
+      backdrop.parent = page.page
+      XCTAssertEqual(recorded(page.window).first { $0.element === page.aText }?.controlUnknown, true)
+      let kept = judged(page, at: CGPoint(x: 40, y: 112)) { page in
+        backdrop.destroy()
+        return hitLink ? page.a : page.aText
+      }
+      XCTAssertEqual(kept.reason, hitLink ? .hitAboveNode : .sameElement)
+      XCTAssertNil(kept.underlying, hitLink ? "the hit A" : "the hit the text")
+    }
+  }
+
   /// Several controls under the point: the deepest is the target (`deepestScreenshotNode`'s pick, as the browser's hit
   /// reaches the innermost), the later of two at one depth.
   func testTheDeepestControlBeneathIsTheTarget() {
@@ -3778,10 +3885,10 @@ final class OverlayTargetTests: XCTestCase {
     let point = CGPoint(x: 100, y: 115)
     let top = deepestScreenshotNode(at: point, in: nodes)!
     XCTAssertTrue(top.element === inner)
-    XCTAssertTrue(underlyingTarget(of: top, at: point, in: nodes, reads)?.element === link, "the link, not the card around it")
+    XCTAssertTrue(underlyingTarget(of: top, current: inner, at: point, in: nodes, reads)?.element === link, "the link, not the card around it")
     row.add(early)
     row.add(late)
-    XCTAssertTrue(underlyingTarget(of: top, at: point, in: recorded(window), reads)?.element === late)
+    XCTAssertTrue(underlyingTarget(of: top, current: inner, at: point, in: recorded(window), reads)?.element === late)
   }
 }
 

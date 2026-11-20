@@ -6906,6 +6906,21 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   press verdict with an overlay that acts on its own. Mutation passes over the new lines (19 on the first build, 16 on
   the review's fixes: the reparenting check, unknown candidates and controls, the surviving-ancestor walk, the press
   verdict's carry and the sentence) are caught by these tests, every one.
+  The regression review of 2a1b0368 found three refusals of clicks main keeps, and set the rule they break: the check
+  never refuses where the hit is the node itself or its own recorded control, alive and in place; it acts only on an
+  inert layer, or on content confirmed out of its recorded control. So the content check (`contentPlace`) walks the
+  node as found now (its re-created handle, not the destroyed one: a text re-created outside its link's frame is still
+  the link's), and answers inside (the walk meets the control, or the control's AXChildren list the content), departed
+  (every parent and role read up to the web area, window, sheet or application without meeting it, and not listed) or
+  inconclusive (a parent or role read failed), which keeps the point as main does. Content whose control the record
+  cannot name (an inert wrapper between a link and its text whose actions did not read) takes its nearest recorded
+  ancestor that acts on its own as its control, so a link's text under such a wrapper is the link's, and only content
+  with no known control above it falls back to the control beneath. Tests: a text re-created outside its link's frame,
+  the hit on the link or the new text; a link re-rendered whole, judged and found re-created; the text's parent and the
+  link's frame unreadable, with the link's children listed or unreadable; a decoration in B whose role cannot be read;
+  a text whose AXParent answers another element while its link lists it; a link's text under an unknown wrapper with an
+  unrelated button removed, the hit on the link or the text. The stub fixture's destroyed element now reads no parent,
+  as a destroyed handle does live. A mutation pass of 9 mutations over these lines is caught, every one.
   Not measured live: `twincover` on CfT, Safari and Electron with this build, and how often real pages lose a click to a
   changed control under an inert layer.
   Date/Author: 2026-11-20, cursor235's implementer for #433.

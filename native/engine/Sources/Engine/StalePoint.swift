@@ -1001,7 +1001,8 @@ func stalePointVerdict<Element>(at point: CGPoint, windowShift: CGVector = .zero
   // node vouches for only while it still lies in its recorded control.
   let hitControl = verdict.hitRole.map(stalePointInteractiveRoles.contains) ?? false
   guard !verdict.refused, let node = verdict.node, !hitControl || verdict.reason == .hitAboveNode,
-        let target = underlyingTarget(of: node, at: shown, in: nodes, frameless: frameless, reads)
+        let target = underlyingTarget(of: node, current: verdict.current ?? node.element, at: shown, in: nodes,
+                                      frameless: frameless, reads)
   else { return verdict }
   let judged = underlyingRefusal(target, at: point, windowShift: windowShift, hit: verdict.hit, nodes: nodes, frameless: frameless,
                                  recorded: recorded, reads)
@@ -1016,32 +1017,65 @@ func stalePointVerdict<Element>(at point: CGPoint, windowShift: CGVector = .zero
 }
 
 /// #433: the recorded control a click at `node`'s point reaches, which the guard judges too, when `node` does not act on
-/// its own (no interactive role and no AXPress, or its role or actions unread):
-/// - where the record holds `node` in a control (`ScreenshotNode.control`: a link's text, a decoration in a button), that
-///   control only once `node` no longer lies in it now (the review of 0f79602f, item 1: an inert decoration reparented
-///   into another control vouches for nothing); while it does, nothing, as main (the click reaches that control, which
-///   `node` alive in it vouches for, whatever lies behind it);
-/// - else (no recorded control, or one the record cannot name, `controlUnknown`: unknown, not inert, the review's item
-///   2), the deepest recorded node at the point (`deepestScreenshotNode`'s pick, the later of two at one depth) that acts
-///   on its own or whose role or actions did not read (item 2 again) and is neither `node` nor one of its recorded
-///   ancestors: the control under an overlay.
+/// its own (no interactive role and no AXPress, or its role or actions unread). It never judges a click whose hit is the
+/// node or its own recorded control, alive and in place (the regression review of 2a1b0368); it acts only on an inert
+/// layer, or on content confirmed out of its recorded control (a `hitAboveNode` hit, an interactive ancestor of the
+/// content found now, keeps content inside its control by the same walk):
+/// - where the record holds `node` in a control (`ScreenshotNode.control`: a link's text, a decoration in a button; or,
+///   the control unknown, its nearest recorded ancestor that acts on its own, item 3 of that review), that control only
+///   once `current` (the node as found now: its own handle or the re-created one, item 1) is confirmed out of it
+///   (`contentPlace`; the review of 0f79602f, item 1: an inert decoration reparented into another control vouches for
+///   nothing); while it lies in it, or the reads cannot tell (item 2), nothing, as main;
+/// - else (no recorded control, or one the record cannot name with no known control above it: unknown, not inert, the
+///   review of 0f79602f's item 2), the deepest recorded node at the point (`deepestScreenshotNode`'s pick, the later of
+///   two at one depth) that acts on its own or whose role or actions did not read and is neither `node` nor one of its
+///   recorded ancestors: the control under an overlay.
 /// It vouches for the recorded control, not for stacking: which of two overlapping elements draws on top is not in the
 /// tree. `shown` is the point in the screenshot's space.
-func underlyingTarget<Element>(of node: ScreenshotNode<Element>, at shown: CGPoint, in nodes: [ScreenshotNode<Element>],
-                               frameless: [ScreenshotNode<Element>] = [],
+func underlyingTarget<Element>(of node: ScreenshotNode<Element>, current: Element, at shown: CGPoint,
+                               in nodes: [ScreenshotNode<Element>], frameless: [ScreenshotNode<Element>] = [],
                                _ reads: StalePointReads<Element>) -> ScreenshotNode<Element>? {
   guard node.actionable != true else { return nil }
-  if let control = node.control {
-    if isInside(node.element, control, reads) { return nil }
+  var chain: [Int] = []
+  var index = node.ancestor
+  while let at = index, !chain.contains(at) {
+    chain.append(at)
+    index = nodes[at].ancestor
+  }
+  let control = node.control ?? (node.controlUnknown ? chain.first { nodes[$0].actionable == true }.map { nodes[$0].element } : nil)
+  if let control {
+    guard contentPlace(current, in: control, reads) == .departed else { return nil }
     return nodes.first { reads.same($0.element, control) } ?? frameless.first { reads.same($0.element, control) }
   }
-  var above: Set<Int> = []
-  var index = node.ancestor
-  while let at = index, above.insert(at).inserted { index = nodes[at].ancestor }
+  let above = Set(chain)
   let controls = nodes.indices.filter {
     nodes[$0].actionable != false && !above.contains($0) && !reads.same(nodes[$0].element, node.element)
   }.map { nodes[$0] }
   return deepestScreenshotNode(at: shown, in: controls)
+}
+
+/// Where content lies now against the control the record held it in (#433, the regression review of 2a1b0368, item 2).
+enum ContentPlace: Equatable { case inside, departed, inconclusive }
+
+/// #433: whether `content` lies in `control` now: inside when its parents, walked, meet the control, or the control's
+/// AXChildren list it (live evidence that outweighs a walk that went elsewhere); departed only when the walk reads every
+/// parent and their roles up to its web area, window, sheet or application (`stalePointControlStops`) without meeting it
+/// and the control does not list it; else inconclusive (a parent or role read that failed), which never counts as
+/// reparenting.
+func contentPlace<Element>(_ content: Element, in control: Element, _ reads: StalePointReads<Element>) -> ContentPlace {
+  var walked = ContentPlace.inconclusive
+  var below = content
+  for _ in 0..<stalePointAncestorLevels {
+    guard let next = reads.parent(below) else { break }
+    if reads.same(next, control) { return .inside }
+    guard let role = reads.role(next) else { break }
+    if stalePointControlStops.contains(role) {
+      walked = .departed
+      break
+    }
+    below = next
+  }
+  return reads.children(control)?.contains(where: { reads.same($0, content) }) == true ? .inside : walked
 }
 
 /// #433: whether the control under a kept point (`underlyingTarget`) is still there, as #296 judges a recorded node: its

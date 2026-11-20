@@ -1017,12 +1017,27 @@ func stalePointVerdict<Element>(at point: CGPoint, windowShift: CGVector = .zero
   // A hit that advertises AXPress (a clickable group) names a control too, for this gate only.
   guard !verdict.refused, let node = verdict.node, !(verdict.hitRole.map(stalePointInteractiveRoles.contains) ?? false),
         verdict.hit.flatMap(reads.actions)?.contains("AXPress") != true,
-        let target = underlyingTarget(of: node, current: verdict.current ?? node.element, at: shown, in: nodes, reads)
+        case let targets = underlyingTargets(of: node, current: verdict.current ?? node.element, at: shown, in: nodes, reads),
+        let target = targets.first
   else { return verdict }
-  let judged = underlyingRefusal(target, at: point, windowShift: windowShift, hit: verdict.hit, nodes: nodes, frameless: frameless,
-                                 recorded: recorded, reads)
-  (verdict.underlying, verdict.underlyingIdentity) = (target, judged.identity)
-  guard let reason = judged.refusal else { return verdict }
+  // Kept while any control under the point is still there (hosted batch B, `bgbutton`: an unrelated button behind the
+  // link removed); refused, on the first, only when none is.
+  func judge(_ control: ScreenshotNode<Element>) -> (refusal: StalePointReason?, identity: StalePointIdentity?, labelNow: String?) {
+    underlyingRefusal(control, at: point, windowShift: windowShift, hit: verdict.hit, nodes: nodes, frameless: frameless,
+                      recorded: recorded, reads)
+  }
+  let judged = judge(target)
+  guard let reason = judged.refusal else {
+    (verdict.underlying, verdict.underlyingIdentity) = (target, judged.identity)
+    return verdict
+  }
+  for control in targets.dropFirst() {
+    let answer = judge(control)
+    if answer.refusal == nil {
+      (verdict.underlying, verdict.underlyingIdentity) = (control, answer.identity)
+      return verdict
+    }
+  }
   var refused = StalePointVerdict(reason: reason, node: node, identity: verdict.identity, current: verdict.current, hitRole: verdict.hitRole,
                                   hit: verdict.hit, gaps: verdict.gaps, point: point, windowShift: windowShift, nodes: nodes,
                                   frameless: frameless, recorded: recorded, webAreaReads: verdict.webAreaReads,
@@ -1031,28 +1046,39 @@ func stalePointVerdict<Element>(at point: CGPoint, windowShift: CGVector = .zero
   return refused
 }
 
-/// #433: the recorded control beneath an inert layer at `node`'s point, which a click there passes through to: when
-/// `node` does not act on its own (no interactive role and no AXPress; where its role or actions did not read at the
-/// observation, its handle as found now, `current`, read again, and one that acts now is its own target) and the record
-/// holds no acting ancestor of it below its document (`ScreenshotNode.controlAbove`: content of a control is main's to
-/// judge), the deepest recorded node at the point (`deepestScreenshotNode`'s pick, the later of two at one depth) that
-/// acts on its own, or whose role or actions did not read (unknown, not inert), and is neither `node` nor one of its
-/// recorded ancestors. It vouches for that control, not for stacking: which of two overlapping elements draws on top is
-/// not in the tree. `shown` is the point in the screenshot's space.
-func underlyingTarget<Element>(of node: ScreenshotNode<Element>, current: Element, at shown: CGPoint,
-                               in nodes: [ScreenshotNode<Element>], _ reads: StalePointReads<Element>) -> ScreenshotNode<Element>? {
-  guard node.actionable != true, !node.pressRecorded, !node.controlAbove else { return nil }
+/// #433: the recorded controls beneath an inert layer at `node`'s point, one of which a click there passes through to:
+/// when `node` does not act on its own (no interactive role and no AXPress; where its role or actions did not read at
+/// the observation, its handle as found now, `current`, read again, and one that acts now is its own target) and the
+/// record holds no acting ancestor of it below its document (`ScreenshotNode.controlAbove`: content of a control is
+/// main's to judge), every recorded node whose shown frame holds the point that acts on its own, or whose role or actions
+/// did not read (unknown, not inert), and is neither `node` nor one of its recorded ancestors, the innermost only (a card
+/// around a link is the link), in `deepestScreenshotNode`'s order (deeper first, then the later in the walk). The
+/// verdict keeps the point while any of them is still there (hosted batch B, `bgbutton`): which of two overlapping
+/// siblings draws on top is not in the tree, so the check vouches for the recorded controls, not for stacking. `shown` is
+/// the point in the screenshot's space.
+func underlyingTargets<Element>(of node: ScreenshotNode<Element>, current: Element, at shown: CGPoint,
+                                in nodes: [ScreenshotNode<Element>], _ reads: StalePointReads<Element>) -> [ScreenshotNode<Element>] {
+  guard node.actionable != true, !node.pressRecorded, !node.controlAbove else { return [] }
   if node.actionable == nil,
      reads.role(current).map(stalePointInteractiveRoles.contains) == true || reads.actions(current)?.contains("AXPress") == true {
-    return nil
+    return []
   }
-  var above: Set<Int> = []
-  var index = node.ancestor
-  while let at = index, above.insert(at).inserted { index = nodes[at].ancestor }
+  func ancestors(_ start: Int?) -> Set<Int> {
+    var found: Set<Int> = []
+    var index = start
+    while let at = index, found.insert(at).inserted { index = nodes[at].ancestor }
+    return found
+  }
+  let above = ancestors(node.ancestor)
   let controls = nodes.indices.filter {
     nodes[$0].actionable != false && !above.contains($0) && !reads.same(nodes[$0].element, node.element)
-  }.map { nodes[$0] }
-  return deepestScreenshotNode(at: shown, in: controls)
+      && nodes[$0].shown.map { holdsPoint($0, shown) } == true
+  }
+  // The innermost only: a control holding another under the point (a card around a link) is not its own target.
+  let holders = controls.reduce(into: Set<Int>()) { $0.formUnion(ancestors(nodes[$1].ancestor)) }
+  // `deepestScreenshotNode`'s order: deeper first, then the later in the walk.
+  return controls.filter { !holders.contains($0) }.sorted { nodes[$0].depth != nodes[$1].depth ? nodes[$0].depth > nodes[$1].depth : $0 > $1 }
+    .map { nodes[$0] }
 }
 
 /// #433: whether the control under a kept point (`underlyingTarget`) is still there, as #296 judges a recorded node: its

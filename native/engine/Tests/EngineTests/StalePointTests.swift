@@ -3531,7 +3531,8 @@ final class OverlayTargetTests: XCTestCase {
     let page = Page()
     let text = deepestScreenshotNode(at: CGPoint(x: 40, y: 112), in: recorded(page.window))
     XCTAssertTrue(text?.element === page.aText)
-    XCTAssertNil(underlyingTarget(of: text!, current: page.aText, at: CGPoint(x: 40, y: 112), in: recorded(page.window), reads), "A is the text's own link")
+    XCTAssertTrue(underlyingTargets(of: text!, current: page.aText, at: CGPoint(x: 40, y: 112), in: recorded(page.window), reads).isEmpty,
+                  "A is the text's own link")
     let atText = judged(Page(), at: CGPoint(x: 40, y: 112)) { $0.aText }
     XCTAssertEqual(atText.reason, .sameElement)
     XCTAssertNil(atText.underlying)
@@ -3939,6 +3940,41 @@ final class OverlayTargetTests: XCTestCase {
     XCTAssertNil(kept.underlying)
   }
 
+  /// Hosted batch B on 17942ad7 (run 44733158011), `bgbutton` as it lies live: under the veil, A and an unrelated button
+  /// are siblings in one list, the button later in AXChildren, both frames holding the point. The button removed and A
+  /// unchanged: the click still lands on A, so the point is kept, as main keeps it. Both gone or replaced: refused.
+  func testSiblingControlsUnderTheVeilKeepWhileOneIsUnchanged() {
+    func layout() -> (Page, Node) {
+      let page = Page(twin: "Archive", bare: true)
+      let button = Node("AXButton", CGRect(x: 0, y: 90, width: 600, height: 60), title: "Dismiss")
+      page.list.add(button)
+      page.list.add(page.overlay)
+      return (page, button)
+    }
+    let (shape, shapeButton) = layout()
+    let nodes = recorded(shape.window)
+    XCTAssertTrue(deepestScreenshotNode(at: atLink, in: nodes)?.element === shape.overlay)
+    XCTAssertEqual(underlyingTargets(of: nodes.first { $0.element === shape.overlay }!, current: shape.overlay, at: atLink, in: nodes, reads)
+                     .map { $0.element === shapeButton ? "button" : $0.element === shape.a ? "A" : "other" }, ["button", "A"],
+                   "both siblings, the later first")
+    let (page, button) = layout()
+    let kept = judged(page) { page in
+      button.destroy()
+      return page.overlay
+    }
+    XCTAssertEqual(kept.reason, .sameElement)
+    XCTAssertTrue(kept.underlying?.element === page.a, "the control that answered for the point")
+    XCTAssertEqual(kept.underlyingIdentity, .handle)
+    let (both, bothButton) = layout()
+    let refused = judged(both) { page in
+      bothButton.destroy()
+      page.slide(webkit: false)
+      return page.overlay
+    }
+    XCTAssertEqual(refused.reason, .nodeGone)
+    XCTAssertTrue(refused.underlying?.element === bothButton, "the refusal names the first control under the point")
+  }
+
   /// (d): a clickable card around an iframe whose overlay (in a wrapper of unknown actions) lies over link A: the card is
   /// outside the overlay's document, so it owns nothing there, and `twincover` in the iframe refuses.
   func testAnOuterCardNeverOwnsAnIframesOverlay() {
@@ -3994,9 +4030,9 @@ final class OverlayTargetTests: XCTestCase {
     }
   }
 
-  /// Several controls under the point: the deepest is the target (`deepestScreenshotNode`'s pick, as the browser's hit
-  /// reaches the innermost), the later of two at one depth.
-  func testTheDeepestControlBeneathIsTheTarget() {
+  /// Several controls under the point: the innermost are the targets (a card around a link is the link, as the browser's
+  /// hit reaches the innermost), in `deepestScreenshotNode`'s order, the later of two at one depth first.
+  func testTheInnermostControlsBeneathAreTheTargets() {
     let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 600, height: 400))
     let card = Node("AXGroup", CGRect(x: 0, y: 50, width: 600, height: 300))
     card.actions = ["AXPress"]
@@ -4016,10 +4052,23 @@ final class OverlayTargetTests: XCTestCase {
     let point = CGPoint(x: 100, y: 115)
     let top = deepestScreenshotNode(at: point, in: nodes)!
     XCTAssertTrue(top.element === inner)
-    XCTAssertTrue(underlyingTarget(of: top, current: inner, at: point, in: nodes, reads)?.element === link, "the link, not the card around it")
+    let first = underlyingTargets(of: top, current: inner, at: point, in: nodes, reads)
+    XCTAssertEqual(first.count, 1)
+    XCTAssertTrue(first.first?.element === link, "the link, not the card around it")
     row.add(early)
     row.add(late)
-    XCTAssertTrue(underlyingTarget(of: top, current: inner, at: point, in: recorded(window), reads)?.element === late)
+    let all = underlyingTargets(of: top, current: inner, at: point, in: recorded(window), reads)
+    XCTAssertEqual(all.map { $0.title }, ["Late", "Early", "Open"])
+    // A shallower button in another branch, later in the walk: after the deeper ones.
+    let shallow = Node("AXButton", CGRect(x: 0, y: 90, width: 600, height: 50), title: "Shallow")
+    window.add(shallow)
+    XCTAssertEqual(underlyingTargets(of: top, current: inner, at: point, in: recorded(window), reads).map { $0.title },
+                   ["Late", "Early", "Open", "Shallow"])
+    shallow.destroy()
+    // The card alone, its link moved off the point: the card is the target.
+    link.frame = CGRect(x: 300, y: 300, width: 100, height: 30)
+    (early.frame, late.frame) = (link.frame, link.frame)
+    XCTAssertEqual(underlyingTargets(of: top, current: inner, at: point, in: recorded(window), reads).map { $0.element === card }, [true])
   }
 }
 

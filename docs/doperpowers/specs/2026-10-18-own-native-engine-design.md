@@ -6861,12 +6861,16 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   (`ScreenshotNode.controlAbove`, carried past wrappers whose actions did not read, so an outer card never owns an
   iframe's overlay); and the hit names no interactive element (the overlay itself, its inert content, nothing). That
   is the inert overlay; content of a control (a link's text, a decoration in a button) keeps main's verdict whatever it
-  rests on. The guard then takes the deepest recorded node at the point that acts on its own, or whose role or actions
-  did not read (unknown, not inert), and is neither the node nor one of its recorded ancestors. It reuses
-  `deepestScreenshotNode`'s pick, the later of two at one depth, as the browser's hit reaches the innermost control: a
-  link inside a clickable card is the link. Refusing when several disagree was weighed and not taken, since nested
-  controls always overlap and would refuse every click through an overlay onto them.
-  That control is judged as #296 judges a recorded node: on its own handle, its frame read now must hold the point and
+  rests on. The guard then takes every recorded node at the point that acts on its own, or whose role or actions did
+  not read (unknown, not inert), and is neither the node nor one of its recorded ancestors, the innermost only, as the
+  browser's hit reaches the innermost control: a link inside a clickable card is the link. It keeps the point while any
+  of them is still there, and refuses, naming the first in `deepestScreenshotNode`'s order (deeper, then later in the
+  walk), only when none is. The first build judged only that first one: hosted batch B on 17942ad7 (run 44733158011,
+  `bgbutton`) put an unrelated button beside the link in one list, later in AXChildren, both under the veil and the
+  point, and removed it; the tie took the button, drawn below the link, and refused clicks main lands on the link
+  (Electron 20/20, Safari 10/10 at the text). Which sibling draws on top is not in the tree, so the check stays no worse
+  than main where several controls lie under the point.
+  Each control is judged as #296 judges a recorded node: on its own handle, its frame read now must hold the point and
   its label's words must be unchanged (#298); a hit inside it keeps it while its frame does not read; otherwise a handle
   re-created in place, searched among the descendants of its nearest recorded ancestor that survives (bounded as every
   search here: a parent rebuilt in place, the overlay alive in a sibling branch), must pass #431's refusals, and a

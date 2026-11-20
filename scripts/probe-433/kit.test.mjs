@@ -217,7 +217,7 @@ test('gates pass a fix that refuses every twin and answers as main elsewhere, an
   // A moved target's own handle refuses frameMoved, which the swap cells count with nodeGone; no other twin does.
   const swapMoved = rows(good, r => r.head === 'fix' && r.cell.startsWith('twinswap') ? {guard: {verdict: 'refused', reason: 'frameMoved'}} : {});
   assert.equal(gates(swapMoved, {coverage: cov}).twinRefused.pass, true);
-  assert.equal(g.noWrongTarget.mainWrong, 14 * 20);
+  assert.equal(g.noWrongTarget.mainWrong, 12 * 20);
   const cvKept = gates(rows(at('twincv', 'text', 0, 'kept-landed')), {coverage: cov});
   assert.equal(cvKept.twinFrameless.pass, false); assert.equal(cvKept.twinRefused.pass, true); assert.equal(cvKept.twinFrameless.perUnit['twincv/text'].missed, 1);
   // #433: twincover is gated at both points on the click never reaching the twin; any refusal reason counts, a keep
@@ -226,12 +226,12 @@ test('gates pass a fix that refuses every twin and answers as main elsewhere, an
   assert.equal(overlay.overlayTwin.pass, false); assert.equal(overlay.overlayTwin.reachedTwin, 1); assert.equal(overlay.noWrongTarget.pass, false);
   assert.equal(overlay.twinRefused.pass, true);
   const why = gates(rows(good, r => r.head === 'fix' && r.cell === 'twincover' ? {guard: {verdict: 'refused', reason: 'interactiveHit', recordedRole: 'AXGroup'}} : {}), {coverage: cov});
-  assert.equal(why.overlayTwin.pass, true); assert.equal(why.overlayTwin.refused, 80);
+  assert.equal(why.overlayTwin.pass, true); assert.equal(why.overlayTwin.refused, 40);
   const quietKeep = gates(rows(at('twincover', 'text', 0, 'kept-missed'), r => r.head === 'fix' && r.cell === 'twincover' && r.at === 'text' && r.rep === 0 ? {clickEvents: []} : {}), {coverage: cov});
-  assert.equal(quietKeep.overlayTwin.pass, true); assert.equal(quietKeep.overlayTwin.refused, 79); assert.equal(quietKeep.overlayTwin.failed, 1);
+  assert.equal(quietKeep.overlayTwin.pass, true); assert.equal(quietKeep.overlayTwin.refused, 39); assert.equal(quietKeep.overlayTwin.failed, 1);
   // The builder's cost cells (#433) are reported only, outside the gates' rows.
-  const costRows = ok.filter(r => r.head === 'fix' && ['stickyscroll', 'tipremount', 'twinunder'].includes(r.cell)).length;
-  assert.equal(costRows, 3 * 2 * 20); assert.ok(['stickyscroll', 'tipremount', 'twinunder'].every(c => g.reportOnly.perUnit[c + '/link']));
+  const costRows = ok.filter(r => r.head === 'fix' && ['stickyscroll', 'tipremount', 'twinunder', 'decomove'].includes(r.cell)).length;
+  assert.equal(costRows, 4 * 2 * 20); assert.ok(['stickyscroll', 'tipremount', 'twinunder'].every(c => g.reportOnly.perUnit[c + '/link']));
   assert.deepEqual(g.guardMs.fix, {n: ok.length / 2 - costRows, p50: 4, p95: 4, max: 4});
   // Only a guard that judged the overlay counts: a fix row with no guard record, or another recorded role, fails; too few
   // rows recording the overlay on either head leave the gate inconclusive.

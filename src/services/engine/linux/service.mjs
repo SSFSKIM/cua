@@ -114,10 +114,11 @@ export function createService({env = process.env, settler = new ActionSettler()}
       case 'drag_move':
         return inTurn(storedHandle(message.handle_id), handle => handle.move_to(message.point));
       case 'drag_end':
+        // its answer is the end's: the hold's notice as {notice} when the engine gave one (./methods.mjs), else nothing
         return inTurn(storedHandle(message.handle_id), async handle => {
-          await handle.end();
+          const answered = await handle.end();
           handles.delete(message.handle_id);
-          return undefined;
+          return answered;
         });
       default:
         throw new Error(`Unsupported sky request type: ${String(message.type)}`);

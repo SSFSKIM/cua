@@ -61,6 +61,7 @@ import { homedir, tmpdir } from 'node:os';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { CHROME_COMMAND_VAR } from '../linux-engine-diff/chrome.mjs';
 import { PINNED_DEVELOPMENT, REPO_ROOT, candidateLine, gateLabel, isCounted, isPinnedRule, prepareCandidate } from '../linux-engine-diff/candidate.mjs';
 import { defaultScope, leftoverCheck, leftoverLines, removeLeftover, scratchDirs, startCheck, startRefusalText } from '../linux-engine-diff/leftovers.mjs';
 // a test process reaches no real display (hermetic.mjs); the leftover checks' scope is never switched by it
@@ -89,11 +90,71 @@ export function defaultsFor(arch = process.arch, cuaHome = join(HOME, '.local/sh
     // task 59's Mozilla Firefox, first on PATH in every M4 sitting (its README says why)
     firefoxDir: join(HOME, '.local/share/cua-171/task59/bin'),
     locked: join(HOME, '.local/share/cua-171/locked.sh'),
+    // the current stable Chrome, extracted from Google's signed index into `<version>/root` with a `google-chrome`
+    // wrapper in `<version>/bin`, `current` naming the version (the arm64 VM's T7 copy; task 117's on x64): the hold
+    // canary's second Chrome (steps.mjs `canary`)
+    chromeStable: join(HOME, '.local/share/cua-171/chrome-stable'),
     // the host lock's holder a step's command and record name, unless `--holder` names the executor's own
     holder: 'm5-gate',
     hold: join(HOME, '.local/share/cua-171/hold-sittings'),
   };
 }
+/**
+ * The current stable Chrome's wrapper directory under `root` (`defaultsFor`'s `chromeStable`): `<root>/<current>/bin`,
+ * holding an executable `google-chrome`. A canary on it refuses to start without one, never running on another Chrome.
+ */
+export function currentStableChrome(root) {
+  const current = (() => {
+    try {
+      return readFileSync(join(root, 'current'), 'utf8').trim();
+    } catch {
+      return null;
+    }
+  })();
+  const dir = current ? join(root, current, 'bin') : null;
+  if (!dir || !existsSync(join(dir, 'google-chrome'))) throw new GateRefused(`no current stable Chrome at ${root} (its \`current\` and \`<version>/bin/google-chrome\`): the canary on it does not start`);
+  return dir;
+}
+
+/**
+ * The Chrome a canary step means to run (the re-review of wave 3, I5): on the current stable one (`currentStableChrome`),
+ * its wrapper named to the harness outright (chrome.mjs `CHROME_COMMAND_VAR`), its version the `current` name's (less
+ * the package's revision), and every browser process under its own extracted tree; on the gate's, the installed
+ * `google-chrome`'s version as it reads before the step (`installed`, its `--version` line).
+ */
+export function intendedChrome(step, { chromeStable, installed }) {
+  if (step.chrome === 'current-stable') {
+    const dir = currentStableChrome(chromeStable);
+    const tree = dirname(dir);
+    return { command: join(dir, 'google-chrome'), version: basename(tree).replace(/-\d+$/, ''), under: `${tree}/` };
+  }
+  const version = /\b(\d+\.\d+\.\d+\.\d+)\b/.exec(installed ?? '')?.[1] ?? null;
+  return { command: null, version, under: null };
+}
+
+/**
+ * A canary step's own proof, beside its harness's verdicts (the re-review of wave 3, I5): both cells' verdicts carry the
+ * canary's record (`hold_canary`: an engine run without `--stats` gives none, and proves nothing), and every browser the
+ * run's Chrome ran (the end row's `desktop.chrome.browsers`, read from the running processes) is the intended Chrome:
+ * its version, and on the current stable one its executable under that Chrome's tree. Answers the reasons it fails.
+ */
+export function canaryCheck(rows, intended) {
+  const reasons = [];
+  for (const op of ['chrome_dnd_short_in_front_shared', 'chrome_select_nudged_shared']) {
+    const verdict = rows.find((r) => r.kind === 'verdict' && r.op === op && r.candidate === 'cua');
+    if (!verdict) reasons.push(`no verdict for ${op}`);
+    else if (!verdict.hold_canary) reasons.push(`${op}'s verdict carries no hold canary: its evidence is missing`);
+  }
+  const browsers = rows.find((r) => r.kind === 'end')?.desktop?.chrome?.browsers ?? [];
+  if (!intended.version) reasons.push('the intended Chrome\'s version was not read');
+  if (!browsers.length) reasons.push('no browser process of the run\'s Chrome was read: which Chrome ran is unknown');
+  for (const b of browsers) {
+    if (!b.version || !intended.version || !b.version.includes(intended.version)) reasons.push(`browser ${b.pid} ran ${b.exe ?? 'an unread executable'} at ${b.version ?? 'an unread version'}, not Chrome ${intended.version}`);
+    else if (intended.under && !(b.exe ?? '').startsWith(intended.under)) reasons.push(`browser ${b.pid} ran ${b.exe ?? 'an unread executable'}, outside ${intended.under}`);
+  }
+  return { pass: reasons.length === 0, reasons, browsers };
+}
+
 /** Task 50's guards for a `:0` step, as T19's sitting ran them (pointer-route/scripts): run71.sh and its guards. */
 const GUARDS = 'docs/evidence/2026-10-28-own-linux-engine/m4/pointer-route/scripts';
 /** The outer guard run71.sh runs under: M5's copy of wrap71.py (task 91, ruling 773), M4's left as the record of H. */
@@ -375,7 +436,25 @@ export async function runStep(a, { root = REPO_ROOT, git, held = () => existsSyn
   mkdirSync(join(dir, 'run'), { recursive: true });
   // on the pinned release CUA_HOME is the run home, so nothing a step starts resolves the person's default cua home; a
   // service the harness starts runs in a HOME of the run's too (pinned-home.mjs)
-  const env = { ...process.env, PATH: existsSync(a.firefoxDir) ? `${a.firefoxDir}:${process.env.PATH}` : process.env.PATH, ...(a.pinned ? { CUA_HOME: a.pinned } : {}) };
+  const firefoxPath = existsSync(a.firefoxDir) ? `${a.firefoxDir}:${process.env.PATH}` : process.env.PATH;
+  // a canary on the current stable Chrome: its wrapper's directory first on PATH and its wrapper named to the harness
+  // outright, or the step refuses (steps.mjs `canary`)
+  const chromeDir = step.chrome === 'current-stable' ? currentStableChrome(a.chromeStable) : null;
+  const env = { ...process.env, PATH: chromeDir ? `${chromeDir}:${firefoxPath}` : firefoxPath, ...(a.pinned ? { CUA_HOME: a.pinned } : {}) };
+  let intended = null;
+  if (step.kind === 'canary') {
+    record.chrome = (() => {
+      try {
+        return execFileSync('google-chrome', ['--version'], { env, encoding: 'utf8', timeout: 20000 }).trim();
+      } catch (error) {
+        return `unread: ${error.message.split('\n')[0]}`;
+      }
+    })();
+    intended = intendedChrome(step, { chromeStable: a.chromeStable, installed: record.chrome });
+    if (intended.command) env[CHROME_COMMAND_VAR] = intended.command;
+    record.intended_chrome = intended;
+    writeRecord(dir, record);
+  }
   // the facade step's script has no candidate checks of its own: a gate's runs here, its copy removed at the end; on
   // the pinned release the copy is the check's alone, and the step runs the installed engine cua's selection picks
   let store = null;
@@ -443,7 +522,10 @@ export async function runStep(a, { root = REPO_ROOT, git, held = () => existsSyn
       rmSync(suiteLogs, { recursive: true, force: true });
     }
   }
-  const exit = result.code === 0 && result.clean ? 0 : result.code === 2 ? 2 : 1;
+  // a canary step passes only on its own proof too: its evidence there, on the Chrome it meant (`canaryCheck`)
+  if (intended) record.canary_check = canaryCheck(harnessRows(dir), intended);
+  const canaryFailed = record.canary_check?.pass === false;
+  const exit = result.code === 0 && result.clean && !canaryFailed ? 0 : result.code === 2 ? 2 : 1;
   Object.assign(record, { finished: new Date().toISOString(), exit, child_exit: result.code ?? result.signal, ...(step.display === 'private' ? { display_watchdog: result.clean ? 'clean' : result.reason } : {}) });
   // a series the comparison reports unproved under a declared gap (R2, F8a) is the step's record, never inferred from
   // its exit status: the suites runner writes them, and the step's README and step.json list them

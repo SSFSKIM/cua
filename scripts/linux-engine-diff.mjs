@@ -25,6 +25,11 @@ const args = (() => {
 if (['run', 'experiment'].includes(args.mode)) {
   const { recordEngines } = await import('./linux-engine-diff/engine.mjs');
   recordEngines({ out: args.out, run: args.run ?? null, vendors: [args.vendor, args.newest], optIn: args.engineStats === true });
+  if (args.engineSandbox) {
+    const { sandboxEngines } = await import('./linux-engine-diff/engine.mjs');
+    const { sandboxedEngine } = await import('./linux-engine-diff/engine-sandbox.mjs');
+    sandboxEngines(sandboxedEngine);
+  }
 }
 
 if (args.mode === 'check-wire') {

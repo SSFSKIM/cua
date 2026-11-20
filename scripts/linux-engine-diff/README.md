@@ -1285,8 +1285,8 @@ node scripts/linux-engine-diff.mjs --experiment settle --cua "$CANDIDATE" --out 
 - **#302**, a declared limit: on the shipped lane an Electron page's key release can reach the tree after the
   settle. A late run counts toward the streak, listed apart, only in its input's form: press_key's (`lateKeyUpMiss`)
   or key_up's (`heldKeyUpMiss`, rulings 864 and 865). A key held across a `key_down` and a `key_up` is subject to X
-  autorepeat, as a person's held key is, so on the input page key-downs run ahead of key-ups and, under load, late
-  repeats arrive with the late release; key_up's form allows those repeats and nothing else. The page counts key events
+  autorepeat (`native/linux-engine/README.md`, Keys), so on the input page key-downs run ahead of key-ups and, under
+  load, late repeats arrive with the late release; key_up's form allows those repeats and nothing else. The page counts key events
   and names the last key, but records no repeat flag, so a key's press and its repeats read alike.
 - **The lanes**: every settle at one step (`settle-0`, `-10`, `-25`, `-50`, `-75`, `-100`, and from 100 by 25 ms to 400
   for an animating family's element action, `ANIMATED_STEPS`) or the shipped constants (`shipped`). Without `--lanes` a

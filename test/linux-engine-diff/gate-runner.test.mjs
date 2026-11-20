@@ -117,7 +117,7 @@ test("every drop-signals step is judged: T17's Electron cells by electronDropVer
     const parsed = parseArgs([...stepArgs(s, { paths: PATHS, gate: true }), '--out', '/o']);
     return [s.name, dropSignalsVerdict(parsed, [])?.judge ?? null];
   }));
-  assert.deepEqual(judges, { H1: 'electronDropVerdict', H2: 'electronDropVerdict', C1: 'chromeDropVerdict', L4a: 'electronDropVerdict', L4b: 'chromeDropVerdict', L4c: 'chromeDropVerdict' });
+  assert.deepEqual(judges, { H1: 'electronDropVerdict', H2: 'electronDropVerdict', C1: 'chromeDropVerdict', K3: 'holdRegressionVerdict', L4a: 'electronDropVerdict', L4b: 'chromeDropVerdict', L4c: 'chromeDropVerdict' });
 });
 
 test("T19's predicates manifest is measured whole: every kind in a step of its own, the leave cases of every kind in P5, Firefox's drag and drop in P6", () => {
@@ -658,4 +658,90 @@ test("a :0 step's decoy paths are measured where run71.sh puts them: through the
   const a = parseGateArgs(['print', 'V5', '--candidate', PATHS.candidate, '--out', short, '--dev']);
   assert.ok(Buffer.byteLength(join(short, 'V5.development-run', 'decoy', 'session.sock')) <= 107, 'the lexical path fits');
   assert.throws(() => printStep(a, { root: ROOT, git: cleanGit() }), (e) => e instanceof GateRefused && /decoy bus/.test(e.message) && e.message.includes(long));
+});
+
+// The hold canary and its regression cells in every release gate (task 117; rulings 897.3, 898.4, 899, 900): K1 on the
+// gate's Chrome and K2 on the current stable one run V5's in-front short drop and its select control on a private
+// display under the gate's ballast, every cua engine sandboxed as the service runs it; K3 the late-started drops, also
+// sandboxed, judged by holdRegressionVerdict.
+test('the hold canary runs on both Chromes, sandboxed, beside its regression cells; the current stable one is required', async () => {
+  const [k1, k2, k3] = ['K1', 'K2', 'K3'].map(stepNamed);
+  for (const k of [k1, k2]) {
+    assert.deepEqual([k.kind, k.display, k.scenes, verdictOps(k)], ['canary', 'private', ['device-chrome-dnd'], ['chrome_dnd_short_in_front_shared', 'chrome_select_nudged_shared']]);
+    const args = stepArgs(k, { paths: PATHS, gate: true });
+    assert.ok(args.includes('--engine-sandbox') && args.includes('--ballast'), k.name);
+    assert.equal(parseArgs([...args, '--out', '/o']).engineSandbox, true, k.name);
+  }
+  assert.deepEqual([k1.chrome, k2.chrome], ['installed', 'current-stable']);
+  const parsed = parseArgs([...stepArgs(k3, { paths: PATHS, gate: true }), '--out', '/o']);
+  assert.deepEqual([parsed.plan, parsed.engineSandbox], ['hold-regression', true]);
+  assert.ok(verdicts.every((s) => !stepArgs(s, { paths: PATHS, gate: true }).includes('--engine-sandbox')), "V1-V5 keep their engines as they ran");
+  const { currentStableChrome } = await import('../../scripts/linux-engine-gate/gate.mjs');
+  const root = mkdtempSync(join(tmpdir(), 'cua171-chrome-stable-'));
+  try {
+    assert.throws(() => currentStableChrome(root), GateRefused, 'no current stable Chrome: refused');
+    writeFileSync(join(root, 'current'), '158.0.8127.36-1\n');
+    assert.throws(() => currentStableChrome(root), GateRefused, 'its wrapper missing: refused');
+    mkdirSync(join(root, '158.0.8127.36-1', 'bin'), { recursive: true });
+    writeFileSync(join(root, '158.0.8127.36-1', 'bin', 'google-chrome'), '#!/bin/sh\n');
+    assert.equal(currentStableChrome(root), join(root, '158.0.8127.36-1', 'bin'));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// The re-review of wave 3, I5: a canary step proves itself beside its harness's verdicts: both cells carry the canary's
+// record, and every browser the run's Chrome ran, read from its running process, is the Chrome the step meant (on the
+// current stable one, named to the harness outright, its version and its own tree).
+test('a canary step runs the Chrome it means and passes only with its evidence there and that Chrome read running', async () => {
+  const { canaryCheck, intendedChrome } = await import('../../scripts/linux-engine-gate/gate.mjs');
+  const root = mkdtempSync(join(tmpdir(), 'cua171-chrome-stable-'));
+  try {
+    writeFileSync(join(root, 'current'), '158.0.8127.36-1\n');
+    mkdirSync(join(root, '158.0.8127.36-1', 'bin'), { recursive: true });
+    writeFileSync(join(root, '158.0.8127.36-1', 'bin', 'google-chrome'), '#!/bin/sh\n');
+    const k2 = intendedChrome(stepNamed('K2'), { chromeStable: root, installed: 'Google Chrome 156.0.8078.73' });
+    assert.deepEqual(k2, { command: join(root, '158.0.8127.36-1', 'bin', 'google-chrome'), version: '158.0.8127.36', under: `${join(root, '158.0.8127.36-1')}/` });
+    const k1 = intendedChrome(stepNamed('K1'), { chromeStable: root, installed: 'Google Chrome 156.0.8078.73 ' });
+    assert.deepEqual(k1, { command: null, version: '156.0.8078.73', under: null });
+    const verdicts = ['chrome_dnd_short_in_front_shared', 'chrome_select_nudged_shared'].map((op) => ({ kind: 'verdict', op, candidate: 'cua', verdict: 'pass', hold_canary: { kind: 'x' } }));
+    const exe = join(root, '158.0.8127.36-1', 'root', 'opt', 'google', 'chrome', 'chrome');
+    const end = (browsers) => ({ kind: 'end', desktop: { chrome: { browsers } } });
+    const ran158 = [{ pid: 7, exe, version: 'Google Chrome 158.0.8127.36' }];
+    assert.deepEqual(canaryCheck([...verdicts, end(ran158)], k2), { pass: true, reasons: [], browsers: ran158 });
+    // the installed Chrome ran instead of the named one
+    const ran156 = [{ pid: 7, exe: '/opt/google/chrome/chrome', version: 'Google Chrome 156.0.8078.73' }];
+    assert.match(canaryCheck([...verdicts, end(ran156)], k2).reasons.join('; '), /ran \/opt\/google\/chrome\/chrome at Google Chrome 156.0.8078.73, not Chrome 158.0.8127.36/);
+    assert.equal(canaryCheck([...verdicts, end(ran156)], k1).pass, true, 'K1 on the gate\'s Chrome');
+    // a 158 outside the named tree, no browser read, a verdict with no canary record, a cell with no verdict
+    assert.match(canaryCheck([...verdicts, end([{ ...ran158[0], exe: '/opt/other/chrome' }])], k2).reasons.join('; '), /outside/);
+    assert.match(canaryCheck([...verdicts, end([])], k2).reasons.join('; '), /no browser process of the run's Chrome was read/);
+    assert.match(canaryCheck([{ ...verdicts[0], hold_canary: undefined }, verdicts[1], end(ran158)], k2).reasons.join('; '), /chrome_dnd_short_in_front_shared's verdict carries no hold canary/);
+    assert.match(canaryCheck([verdicts[0], end(ran158)], k2).reasons.join('; '), /no verdict for chrome_select_nudged_shared/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("the hold's regression cells fail on any drop that did not land inside B, any hold not the fixed one, and any Chrome not identified", async () => {
+  const { HOLD_REGRESSION_CELLS, dropSignalsVerdict, holdRegressionVerdict } = await import('../../scripts/linux-engine-diff/drop-signals-judge.mjs');
+  const specs = [{ lane: 'cua', cell: 'dragstart-150', n: 2 }, { lane: 'cua', cell: 'dragstart-400', n: 2 }];
+  const required = specs;
+  const drag = (cell, i, over = {}) => ({ kind: 'drop-signal', lane: 'cua', cell, i, outcome: { started: true, landed: true }, hold: { taken: true, adaptive: { way: 'fixed', source: { identified: true } } }, ...over });
+  const good = ['dragstart-150', 'dragstart-400'].flatMap((cell) => [drag(cell, 0), drag(cell, 1)]);
+  assert.deepEqual(holdRegressionVerdict(good, { specs, required }).failed, []);
+  const lost = [...good.slice(0, 3), drag('dragstart-400', 1, { outcome: { started: true, landed: false }, hold: { taken: false, adaptive: { way: 'fixed', source: { identified: true } } } })];
+  assert.deepEqual(holdRegressionVerdict(lost, { specs, required }).failed, ['dragstart-400: not landed on 1 of 2 (0/1)', 'dragstart-400: no take seen inside the hold on 1 of 2 (0/1)']);
+  const unknown = [...good.slice(0, 3), drag('dragstart-400', 1, { hold: { taken: true, adaptive: { way: 'fixed', source: { identified: false } } } })];
+  assert.deepEqual(holdRegressionVerdict(unknown, { specs, required }).failed, ['dragstart-400: Chrome not identified as a browser on 1 of 2 (0/1)']);
+  assert.deepEqual(holdRegressionVerdict(good.slice(0, 3), { specs, required }).failed, ['dragstart-400: 1 of its 2 drags ran']);
+  // the re-review of wave 4, I2: the required cells and counts are the plan's own, whatever the run's rows say. A run
+  // with no manifest, or one whose manifest and rows lack a cell, fails; and by default each cell needs its 10 drags
+  assert.deepEqual(HOLD_REGRESSION_CELLS, [['cua', 'dragstart-150', 10], ['cua', 'dragstart-400', 10]]);
+  assert.deepEqual(holdRegressionVerdict([], { specs: null, required }).failed, ["the run's manifest (its drop-signal-scene row) is missing: which cells ran is unknown", 'dragstart-150: 0 of its 2 drags ran', 'dragstart-400: 0 of its 2 drags ran']);
+  assert.deepEqual(holdRegressionVerdict(good.slice(0, 2), { specs: specs.slice(0, 1), required }).failed, ["dragstart-400: not in the run's manifest with its 2 drags", 'dragstart-400: 0 of its 2 drags ran']);
+  assert.match(holdRegressionVerdict(good, { specs }).failed.join('; '), /dragstart-150: not in the run's manifest with its 10 drags; dragstart-150: 2 of its 10 drags ran/);
+  const { PLANS } = await import('../../scripts/linux-engine-diff/drop-signals.mjs');
+  assert.deepEqual(PLANS['hold-regression'], HOLD_REGRESSION_CELLS, "the plan runs the judge's cells");
+  assert.match(dropSignalsVerdict({ plan: 'hold-regression', families: ['chrome'] }, good).failed.join('; '), /manifest .* is missing/, 'rows with no scene row');
 });

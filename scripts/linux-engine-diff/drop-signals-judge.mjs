@@ -13,7 +13,7 @@ export const FREEZE_ENDS = [230, 240, 250, 255, 260, 280, 330];
 export const PREFREEZE_ENDS = [30, 40, 150, 200, 215, 230, 260, 300];
 
 /** The page's drag sources (`data-src`), in its status line's order. */
-export const SOURCES = ['plain', 'nested', 'nested-late', 'slider', 'dragstart-150', 'press-150', 'dragstart-400', 'press-400', 'link', 'image', 'seltext', 'canvas-drag'];
+export const SOURCES = ['plain', 'nested', 'nested-late', 'slider', 'dragstart-150', 'press-150', 'dragstart-400', 'press-400', 'dragstart-500', 'dragstart-600', 'link', 'image', 'seltext', 'canvas-drag'];
 
 /** The drags a load needs before any count of it can stand for an adoption (the design session's 300, M4 pre-flight). */
 export const MIN_DRAGS = 300;
@@ -73,7 +73,7 @@ export function parseDropStatus(texts) {
  * The page cells (drop-signals.mjs `CELLS`): a cell either drags from a source (`src`, a drop counted when `zone`) or
  * is a kind with an effect of its own.
  */
-export const CELL_SOURCE = { 'freeze-230': 'press-150', 'freeze-240': 'press-150', 'freeze-250': 'press-150', 'freeze-255': 'press-150', 'freeze-260': 'press-150', 'freeze-280': 'press-150', 'freeze-330': 'press-150', plain: 'plain', nozone: 'plain', nested: 'nested', 'nested-late': 'nested-late', slider: 'slider', 'dragstart-150': 'dragstart-150', 'press-150': 'press-150', 'dragstart-400': 'dragstart-400', 'press-400': 'press-400', link: 'link', image: 'image', seltext: 'seltext', 'plain-long': 'plain', 'canvas-drag': 'canvas-drag', move: 'move' };
+export const CELL_SOURCE = { 'freeze-230': 'press-150', 'freeze-240': 'press-150', 'freeze-250': 'press-150', 'freeze-255': 'press-150', 'freeze-260': 'press-150', 'freeze-280': 'press-150', 'freeze-330': 'press-150', plain: 'plain', nozone: 'plain', nested: 'nested', 'nested-late': 'nested-late', slider: 'slider', 'dragstart-150': 'dragstart-150', 'press-150': 'press-150', 'dragstart-400': 'dragstart-400', 'press-400': 'press-400', 'dragstart-500': 'dragstart-500', 'dragstart-600': 'dragstart-600', link: 'link', image: 'image', seltext: 'seltext', 'plain-long': 'plain', 'canvas-drag': 'canvas-drag', move: 'move' };
 /** T14's and T17's cells' sources (drop-signals.mjs `CELLS`): each a drop the zone never counts. */
 export const T14_SOURCE = { stall: 'plain', left: 'plain', 'inzone-out': 'inzone', 'long-left': 'plain', root: 'plain', xterm: 'plain', other: 'plain', slow: 'plain', moved: 'plain', 'prefreeze-linger-150': 'plain', ...Object.fromEntries(PREFREEZE_ENDS.map((to) => [`prefreeze-${to}`, 'plain'])) };
 
@@ -109,7 +109,7 @@ export function stampedDragend(r) {
   return ownDragend(r);
 }
 
-export const ZONE_CELLS = ['freeze-230', 'freeze-240', 'freeze-250', 'freeze-255', 'freeze-260', 'freeze-280', 'freeze-330', 'plain', 'nested', 'nested-late', 'slider', 'dragstart-150', 'press-150', 'dragstart-400', 'press-400', 'link', 'image', 'plain-long', 'canvas-drag', 'move'];
+export const ZONE_CELLS = ['freeze-230', 'freeze-240', 'freeze-250', 'freeze-255', 'freeze-260', 'freeze-280', 'freeze-330', 'plain', 'nested', 'nested-late', 'slider', 'dragstart-150', 'press-150', 'dragstart-400', 'press-400', 'dragstart-500', 'dragstart-600', 'link', 'image', 'plain-long', 'canvas-drag', 'move'];
 
 /** The range runs' end values: even runs drag up to about 10, odd runs back to 0 (drop-signals.mjs `CELLS.range`). */
 export const RANGE_END = (i) => (i % 2 === 0 ? 10 : 0);
@@ -832,9 +832,52 @@ export function chromeDropVerdict(rows, { specs = [], plan = null, capped = fals
  * CLI parses them): T17's Electron cells (`electronDropVerdict`), T14's Chrome cells (`chromeDropVerdict`), or null for
  * a plan no gate judge holds. Answers the verdict with `judge`, the judge's name.
  */
+/** The hold's regression plan (drop-signals.mjs PLANS `hold-regression`; task 117, the design session's ruling 900). */
+export const HOLD_REGRESSION_PLAN = 'hold-regression';
+
+/**
+ * The hold's regression cells and their counts, the plan's own (drop-signals.mjs PLANS takes them from here) and what
+ * the judge requires whatever a run's rows say (the re-review of wave 4, I2: judged from the run's manifest alone, a
+ * run with none, or one missing a cell, passed).
+ */
+export const HOLD_REGRESSION_CELLS = [['cua', 'dragstart-150', 10], ['cua', 'dragstart-400', 10]];
+
+/**
+ * The hold's regression cells (ruling 900): drops whose page starts them late from a busy handler (`dragstart-150`,
+ * `dragstart-400`, Chrome's own browser idle and fast) must land inside B, as the fixed 450 ms lands them and an early
+ * release on fast pings did not (task 117: 24 of 24 lost). Fails, each named: a drag that did not land, whose page did
+ * not start it, or whose engine saw no take; a hold that was not the fixed one (no release before B, no extension on
+ * fast pings); a source the engine did not identify as Chrome; a required cell (`required`, HOLD_REGRESSION_CELLS by
+ * default) short of its count, or missing from the run's manifest (`specs`, the scene row's; null when the run wrote
+ * none), and a run with no manifest at all.
+ */
+export function holdRegressionVerdict(rows, { specs = null, required = HOLD_REGRESSION_CELLS.map(([lane, cell, n]) => ({ lane, cell, n })) } = {}) {
+  const failed = [];
+  const counts = {};
+  if (!Array.isArray(specs)) failed.push("the run's manifest (its drop-signal-scene row) is missing: which cells ran is unknown");
+  for (const spec of required) {
+    if (Array.isArray(specs) && !specs.some((s) => s.cell === spec.cell && s.lane === spec.lane && s.n >= spec.n)) failed.push(`${spec.cell}: not in the run's manifest with its ${spec.n} drags`);
+    const list = rows.filter((r) => r.cell === spec.cell && r.lane === spec.lane);
+    const bad = (what, pred) => {
+      const misses = list.filter((r) => !pred(r));
+      if (misses.length) failed.push(`${spec.cell}: ${what} on ${misses.length} of ${list.length} (${misses.slice(0, 3).map((r) => `${r.block ?? 0}/${r.i}`).join(', ')})`);
+    };
+    if (list.length < spec.n) failed.push(`${spec.cell}: ${list.length} of its ${spec.n} drags ran`);
+    bad('not landed', (r) => r.outcome?.started === true && r.outcome?.landed === true);
+    bad('no take seen inside the hold', (r) => r.hold?.taken === true);
+    bad('a hold other than the fixed one', (r) => r.hold?.adaptive?.way === 'fixed');
+    bad('Chrome not identified as a browser', (r) => r.hold?.adaptive?.source?.identified === true);
+    counts[spec.cell] = { drags: list.length, landed: list.filter((r) => r.outcome?.landed === true).length };
+  }
+  const md = ['', `The hold's regression cells (drop-signals-judge.mjs \`holdRegressionVerdict\`, ruling 900): ${failed.length ? `**fails:** ${failed.join('; ')}` : 'every drop whose page started it late landed inside B'}.`, '', ...Object.entries(counts).map(([cell, c]) => `- ${cell}: ${c.landed} of ${c.drags} landed`)];
+  return { failed, findings: [], counts, md };
+}
+
 export function dropSignalsVerdict(args, rows) {
   const drags = rows.filter((r) => r.kind === 'drop-signal');
-  const specs = rows.find((r) => r.kind === 'drop-signal-scene')?.specs ?? [];
+  const manifest = rows.find((r) => r.kind === 'drop-signal-scene')?.specs ?? null;
+  const specs = manifest ?? [];
+  if ((args.families?.[0] ?? 'chrome') === 'chrome' && args.plan === HOLD_REGRESSION_PLAN) return { judge: 'holdRegressionVerdict', ...holdRegressionVerdict(drags, { specs: manifest }) };
   if (judgedElectronPlan(args)) return { judge: 'electronDropVerdict', ...electronDropVerdict(drags, { specs, plan: args.plan }) };
   if (judgedChromePlan(args)) return { judge: 'chromeDropVerdict', ...chromeDropVerdict(drags, { specs, plan: args.plan, capped: args.samplesTrials != null }) };
   return null;

@@ -72,10 +72,13 @@ pub struct Config {
     /// Measurement only (`--dnd-defer-take`): a drag and drop that begins during a watched drag is left unseen until
     /// after the release, so the after-release watch finds it and the next request reports it (Acceptance 8).
     pub dnd_defer_take: bool,
-    /// How long after the press a Chromium drag the engine lets drop keeps its button down for its source's take when
-    /// none came by the path's end (`dnd::TAKE_HOLD_AFTER_PRESS`; `--drag-dnd-hold-ms`, measurement only, sets another,
-    /// 0 none).
+    /// B, how long after the press a drag whose source is a Chromium-family window keeps its button down for the
+    /// source's take when none has come, on every route (`dnd::TAKE_HOLD_AFTER_PRESS`, ruling 888.1;
+    /// `--drag-dnd-hold-ms`, measurement only, sets another, 0 none).
     pub dnd_hold: std::time::Duration,
+    /// Whether a hold with no take pings its source (`hold_ping.rs`, ruling 888.2); `--drag-dnd-hold-ping off`,
+    /// measurement only, turns it off (ruling 892: task 116's control that the sampler leaves the release unchanged).
+    pub dnd_hold_ping: bool,
     /// How long after a Chromium drag source's take a drag the engine lets drop is released at the soonest
     /// (`dnd::RELEASE_AFTER_TAKE`; `--drag-dnd-after-take-ms`, measurement only, sets another, 0 none).
     pub dnd_after_take: std::time::Duration,
@@ -155,6 +158,8 @@ pub struct Engine {
     idle_watchdog: Option<idle_watchdog::IdleWatchdog>,
     /// The Electron drops' settles over the engine's life, on every `--stats` line (`drop_settles`).
     drop_settles: crate::drop_settle::SettleCounts,
+    /// What the current request's drag answers beside its ok: an extended hold with no take's notice (ruling 897).
+    hold_notice: Option<&'static str>,
 }
 
 /// Whether a request sends input or changes state, and so is refused while a late drag and drop, an unconfirmed drop
@@ -361,6 +366,7 @@ impl Engine {
             stray_watch: None,
             idle_watchdog: None,
             drop_settles: Default::default(),
+            hold_notice: None,
         })
     }
 
@@ -478,6 +484,14 @@ impl Engine {
                     .map(|(app, end)| crate::dnd::pending_notice(app, end))
             }
         };
+        // a drag whose extended hold saw no take answers its ok with the hold's notice (ruling 897), in the `notice` the
+        // pending one uses, so the service and the facade carry it; its failure carries none. A drag runs only with
+        // nothing pending (an acting request is refused then), so the two never meet on one reply
+        let held = self.hold_notice.take().filter(|_| result.is_ok());
+        if held.is_some() {
+            self.extra.insert("hold_notice".into(), json!(true));
+        }
+        let notice = notice.or(held.map(String::from));
         if notice.is_some() {
             self.extra.insert("notice".into(), json!(true));
         }
@@ -541,7 +555,7 @@ impl Engine {
         self.inputs.end_watched(&mut self.x);
     }
 
-    /// When the engine must act with no request (`serve.rs`): an armed late-take watch's end, `dnd::SETTLE` after its
+    /// When the engine must act with no request (`serve.rs`): an armed late-take watch's end, `dnd::late_watch_end` after its
     /// drag's release, which its drag's `FocusOut` follows; and a held `drag_handle`'s idle bound (`handle.rs`).
     pub fn next_due(&self) -> Option<Instant> {
         let watch = self.late_watch.as_ref().and_then(crate::dnd::LateWatch::ends_at);
@@ -671,6 +685,54 @@ impl Engine {
         found
     }
 
+    /// Whether a drag's source `window` is a Chrome or Chromium browser's (`browser.rs`, the design session's ruling 899),
+    /// asked before the press: what identified it, or why not. Not asked while the hold's pings are off, whose hold is
+    /// fixed anyway. Read again at every drag, nothing kept (the re-review of wave 3, I3: a kept answer outlived a
+    /// window whose role or application changed): the window's own marks first, and the accessibility bus only once
+    /// they hold, the whole lookup (the bus's address, its connection when the engine has none yet, and its calls)
+    /// within `adaptive_hold::IDENTIFY_BOUND` of the identification's start (ruling 912); the cost goes on the `--stats`
+    /// line (`browser_identity`).
+    pub(super) fn browser_source(&mut self, window: x11rb::protocol::xproto::Window) -> Result<String, String> {
+        if !self.cfg.dnd_hold_ping {
+            return Err("not asked: the hold's pings are off".into());
+        }
+        let started = std::time::Instant::now();
+        let deadline = started + crate::adaptive_hold::IDENTIFY_BOUND;
+        let class = self.x.wm_class(window);
+        let pid = self.x.pid(window);
+        let (role, machine) = match class
+            .as_deref()
+            .is_some_and(|c| crate::browser::BROWSER_CLASSES.contains(&c))
+        {
+            true => self.x.role_and_machine(window),
+            false => (None, None),
+        };
+        let marks = crate::browser::Marks {
+            class,
+            role,
+            machine,
+            pid,
+        };
+        let host = crate::browser::host_name();
+        let mut asked = false;
+        let identified = crate::browser::identify(
+            &marks,
+            host.as_deref(),
+            |pid| {
+                asked = true;
+                self.with_bus_by(deadline, |bus| atspi::application_name_of(bus, pid, deadline))
+                    .map_err(|error| format!("{error:#}"))
+            },
+            crate::browser::executable,
+        );
+        let took = started.elapsed();
+        self.extra.insert(
+            "browser_identity".into(),
+            json!({ "ms": took.as_secs_f64() * 1000.0, "bus": asked }),
+        );
+        crate::browser::within_bound(identified, took, crate::adaptive_hold::IDENTIFY_BOUND)
+    }
+
     /// Whether `window` is a Qt application's that no listed family names, so one with no accessibility tree on the bus
     /// (no `ToolkitName` to read), and by which mark (`families::qt_mark`), looked up once (task 61's fixes, the design
     /// session's rulings): Qt's `_XEMBED_INFO` on the window, which cua's worker sandbox can read, else its process's
@@ -754,11 +816,33 @@ impl Engine {
     }
 
     /// Runs `f` on the accessibility bus, connecting first if needed; a broken connection is reopened once.
+    /// [`Engine::with_bus`] done by `deadline`: the bus's address and the engine's connection to it, when it has none
+    /// yet, are had by then too (`Bus::connect`), so a bus that accepts and stays silent costs no more than the
+    /// deadline; a connection found broken is made again only while time is left.
+    fn with_bus_by<T>(&mut self, deadline: std::time::Instant, mut f: impl FnMut(&mut Bus) -> Result<T>) -> Result<T> {
+        loop {
+            if self.bus.is_none() {
+                let address = atspi::bus_address_by(&self.x, Some(deadline))?;
+                self.bus = Some(Bus::connect(&address, Some(deadline))?);
+            }
+            let bus = self.bus.as_mut().expect("connected above");
+            match f(bus) {
+                Err(error) if error.downcast_ref::<Broken>().is_some() => {
+                    self.drop_bus();
+                    if std::time::Instant::now() >= deadline {
+                        return Err(error);
+                    }
+                }
+                other => return other,
+            }
+        }
+    }
+
     fn with_bus<T>(&mut self, mut f: impl FnMut(&mut Bus, &mut X11) -> Result<T>) -> Result<T> {
         for attempt in 0..2 {
             if self.bus.is_none() {
                 let address = atspi::bus_address(&self.x)?;
-                self.bus = Some(Bus::connect(&address)?);
+                self.bus = Some(Bus::connect(&address, None)?);
             }
             let bus = self.bus.as_mut().expect("connected above");
             match f(bus, &mut self.x) {
@@ -922,22 +1006,26 @@ impl Engine {
     /// The orderly exit: a `drag_handle` still held ended, every key still held released, an armed after-release watch
     /// run out, its drag's session and the sessions a hold kept open ended, the exit's settle waited out (`settle::EXIT_SETTLE`), the
     /// clipboard's owner stopped (CLIPBOARD goes with it, as the vendor's does), then the screenshot directory removed.
-    pub fn shutdown(&mut self) {
+    /// With `exit_by` (a stop signal's: `serve::exit_by`), the watch's run-out and the settle end by then at the latest,
+    /// so the exit's last steps come before the signal's backstop ends the process.
+    pub fn shutdown(&mut self, exit_by: Option<Instant>) {
         // first, every key and button still held released, so no wait below keeps one down (the design session's
         // rulings, M4 T7b): a drag_handle between its start and its end ends as its own end would, its drop where the
         // pointer is, a Chromium handle's after-release watch armed and run out below; then the holds; then whatever
         // the ledger still has down (pressed.rs; normally nothing)
         if self.handle.is_some() {
-            let _ = self.end_drag_handle();
+            let _ = self.end_drag_handle(false);
         }
         self.inputs.release_held(&mut self.x);
         crate::pressed::release_rest(&self.x.conn, self.x.root);
-        // an armed after-release watch then runs out its lifetime (at most `dnd::SETTLE` after its drag's release), so
-        // a late take inside it is still cancelled, its Escape sent before the connections close and before the
-        // FocusOut of its drag's session and of a session the exit released; collected then, the Escape is a key the
-        // settle below follows
+        // an armed after-release watch then runs out its whole lifetime (`dnd::late_watch_end`), but after a stop signal
+        // it ends by the exit's deadline less the exit's settle, 650 ms after the signal, so a take it reads by then
+        // keeps its whole settle (300 ms, settle.rs) inside the backstop (the design session's ruling 893; the review
+        // of task 115, P4: 0.4.2's first exit cut it 300 ms after the release); a late take inside it is still
+        // cancelled, its Escape sent before the connections close and before the FocusOut of its drag's session and of
+        // a session the exit released; collected then, the Escape is a key the settle below follows
         if let Some(watch) = &self.late_watch {
-            watch.run_out();
+            watch.run_out_by(exit_by.map(|by| watch_end_at_exit(by, self.cfg.pacing.exit_settle)));
         }
         self.collect_late_watch(true);
         self.inputs.end_watched(&mut self.x);
@@ -946,7 +1034,11 @@ impl Engine {
         let _ = self.x.sync();
         // the exit drops every redirect it holds: input still queued in a covered Chromium window would be cut, so the
         // last input to such a window is given the exit's settle first (`settle::EXIT_SETTLE`)
-        let until = self.inputs.exit_settle_until(&self.x);
+        // a settle that would run past the exit's deadline (an Escape in the watch's last moments) ends there
+        let until = self
+            .inputs
+            .exit_settle_until(&self.x)
+            .map(|until| exit_by.map_or(until, |by| until.min(by)));
         let started = Instant::now();
         crate::settle::wait(until);
         if self.cfg.stats {
@@ -960,6 +1052,35 @@ impl Engine {
         if let Some(dir) = self.shot_dir.take() {
             let _ = std::fs::remove_dir_all(dir);
         }
+    }
+}
+
+/// When the late-take watch ends at an orderly exit after a stop signal (the design session's ruling 893): the exit's
+/// deadline (`serve::exit_by`) less the exit's settle, so a take the watch reads by then keeps its whole settle.
+fn watch_end_at_exit(exit_by: Instant, exit_settle: std::time::Duration) -> Instant {
+    exit_by.checked_sub(exit_settle).unwrap_or(exit_by)
+}
+
+#[cfg(test)]
+mod exit_watch_tests {
+    use super::watch_end_at_exit;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn at_an_orderly_exit_the_watch_ends_650_ms_after_the_stop_so_its_take_s_settle_is_whole() {
+        // ruling 893: the watch ends at stop + 650 ms; a take read then gets its 300 ms settle, done at stop + 950,
+        // the exit's last steps after it, all before the 1 s backstop
+        let stop = Instant::now();
+        let exit_by = crate::serve::exit_by_after(stop);
+        let settle = crate::settle::EXIT_SETTLE;
+        let end = watch_end_at_exit(exit_by, settle);
+        assert_eq!(end, stop + Duration::from_millis(650));
+        assert_eq!(
+            end + settle,
+            exit_by,
+            "a take read at the watch's end settles whole by the exit's deadline"
+        );
+        assert!(exit_by < stop + crate::serve::EXIT_BACKSTOP);
     }
 }
 

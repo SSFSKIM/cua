@@ -1319,7 +1319,16 @@ and stopped. `accessibility.enabled` checks `IsEnabled`. While the vendor engine
 - **Chromium drags** are refused on a `shared` desktop unless their whole path is visible. A window-targeted drag on a
   `shared` desktop into a family whose drop changes the desktop (Chrome; not Electron or Firefox) is watched for a
   drag and drop, unless the window is already active, focused and fully unobscured: one that starts is cancelled
-  before the drop, or the answer says the cancel may have come too late and the drop may have happened.
+  before the drop, or the answer says the cancel may have come too late and the drop may have happened. A drag whose
+  source is a Chromium window (Chrome, Electron) keeps its button down until 450 ms after its press, however short its
+  path, unless the page starts its drag and drop sooner, since Chrome drops a drag its page starts after the button is
+  up; a drag and drop the engine sees start within 700 ms after the drag's release is reported as a late drop (below).
+  When the source is a Chrome or Chromium browser (known by its window's class and role and its accessible
+  application's name) that still answers the engine slowly at 450 ms, as it does while it starts a drag and drop, the
+  button stays down up to 650 ms after the press, and a drag with no drag and drop by then answers ok with `the page
+  may have started a drag that did not complete`. A page whose own code takes longer than about 450 ms to start its drag
+  can still lose it while the drag answers ok with no notice: on Chrome 156 a dragstart handler busy 400 ms still
+  landed 6 of 6, and one busy 500 or 600 ms lost 6 of 6 each.
 - **Late drops.** A drag that may not have ended as it answered (a drag and drop that started late, a drop its target
   did not confirm, a failed watch, an idle drag handle released) is reported at the next reply, and the next acting
   request is refused once. In M4's final drag-handle proof on Electron, 6 of 100 handle drops that landed answered

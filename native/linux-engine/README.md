@@ -169,13 +169,19 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
 - **Exit** (`serve.rs`): stdin closing, SIGTERM, SIGINT or SIGHUP end the engine through its orderly exit: a
   `drag_handle` still between its start and its end ends first as its own end would (the family's release dwell, then
   button 1 up where the pointer is), then held keys are released, so no wait of the exit keeps one down; then an armed
-  after-release drag-and-drop watch runs out its lifetime (at most 300 ms after its drag's release), so a late
-  take is still cancelled with its Escape, inside the drag's session; then that session and a session a hold kept
-  open get their `FocusOut`; then the
+  after-release drag-and-drop watch runs out its whole lifetime (700 ms after its drag's release since 0.4.2), so a
+  late take is still cancelled with its Escape, inside the drag's session; then that session and a session a hold
+  kept open get their `FocusOut`; then the
   exit's settle: the engine waits until `--exit-settle-ms` (300 ms) has passed since the last background input to
   a window whose redirect it still holds, the watch's Escape included (clicks too: once no `FocusOut` drain waits first, the unredirect cuts them as it
-  cuts keys). At its longest, a stop right after a watched drag whose late take comes at the end of the watch,
-  that is about 300 + 300 ms after the drag's release, inside the 1 s backstop. Its exit drops those redirects (the X
+  cuts keys). After a stop signal the settle ends 950 ms after the signal at the latest (`serve.rs` `exit_by`, the
+  1 s backstop less `EXIT_TEARDOWN`, 50 ms for the exit's last steps), and the watch 650 ms after it, the exit's
+  settle before that, so a take the watch cancels keeps its whole 300 ms settle. **Exit-only shortening (the design
+  session's ruling 893):** at an orderly exit after a stop signal, a drag's late-take watch ends 650 ms after the
+  signal, short of its 700 ms after the release when the stop came straight after the drag's answer; a take after
+  that goes unseen. Off the exit, and at an exit for stdin closing, the watch runs its whole 700 ms. (The review of
+  task 115, P4: 0.4.2's first build cut the exit's watch at 300 ms, and a take at 500 ms went uncancelled.) Its exit
+  drops those redirects (the X
   connection closes), and a covered Chromium window whose redirect goes while it still has input queued cuts that input
   and delivers it only with its next `FocusIn`. So a burst answered just before the signal still arrives in order; an
   exit with no such input in the last 300 ms waits for nothing. The declared limits
@@ -205,7 +211,10 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
 - **Keys** (`keys.rs`, `engine/keyboard.rs`): the vendor's chord grammar and Shift rule (`Z` is z without Shift, so
   `Ctrl+Z` stays undo), and its held-key bookkeeping: counts per target and keycode shared by `press_key`, `key_down`
   and every command's `key` chord; a window with held keys keeps its session across requests until the last hold is
-  released; whatever is still held at exit is released, each release with the state that was held.
+  released; whatever is still held at exit is released, each release with the state that was held. A key held across a
+  `key_down` and a `key_up` is subject to X autorepeat, as a person's held key is: the server repeats it while it is
+  down, so a page counts key-downs ahead of key-ups, and under load late repeats can arrive with the late release
+  (#302's key_up form, the design session's ruling 869; no model-facing API sends `key_down` or `key_up`).
 - **`type_characters`** (`engine/keyboard.rs`, `keys.rs`): the newest build's command, with its events. The window's
   session opens, then the whole text is resolved: each character's keysym (its code point below 0x100, else 0x1000000
   plus it) at level 1 of a key, or at level 2 with Shift_L held (letters included); the first character it cannot
@@ -264,7 +273,9 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
     drop may have happened and the desktop changed;
   - no take by the release: the drag answers at once as a plain drag (it claims nothing about drops). A watch on its
     own X connection, subscribed before the drag began and told the instant the button went up, goes on off the
-    request path for 300 ms from the release, or until a request that acts stops it. A take then gets the cancel's
+    request path for 700 ms from the release (since 0.4.2; 300 ms before it), or until a request that acts stops it
+    (`dnd.rs` `LATE_TAKE_WATCH`, `late_watch_end`: 300 ms after the hold's end below if that is later; the design
+    session's ruling 888.3). A take then gets the cancel's
     Escape at once (synthetic, to Chrome's window, never XTEST). The drag's own session stays focused until the watch
     ends, so that Escape lands inside it whatever Chrome does with an unfocused one; the session's `FocusOut` follows
     the watch's end (cause `watch`), and an engine with no request to handle wakes for it (`serve.rs`; the design
@@ -286,9 +297,12 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
     through `CUA_ENGINE_FAULT`, honoured only in a build with the `live` feature, never a release asset. `preflight`
     (no input, answers null) is for a caller about to change the desktop by a route the engine never sees: cua's
     service sends it just before its wrapper launches an application through the supervisor, so that launch gets the
-    notice, and does not happen, as an engine request would. Known limit: a take later than 300 ms after the release,
+    notice, and does not happen, as an engine request would. A take counts when the watch read it by its end; one first
+    read after it, the watch's thread descheduled across the end, is past the watch. Known limit: a take later than
+    700 ms after the release,
     or after an acting request has begun, is not seen; M3.1 measured none after the release in 240 takes, idle and
-    under load;
+    under load, and task 113 saw Chrome take 335 to 973 ms after it at twice the gate's load with its button-up
+    delayed (evidence `m5/hold-042/`), which 0.4.1's 300 ms watch missed;
   - a take whose cancel could not be sent: `… it was cancelled, but whether the drop landed cannot be confirmed. …`.
 
   Where the engine lets the drop happen (Chrome already in front, or a dedicated desktop; every Chromium window,
@@ -345,20 +359,91 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   A short path can end before the take (task 22, evidence `m3/drop-misses/task22/`): under a load of Chrome windows
   the renderer gets the drag's first moves a frame or a stall late and starts the drag and drop after a 40 px path has
   ended, and a release before the take drops nothing while the drag answers success (`m3-gate-final`'s three cold
-  misses). So when no take came by the path's end the button stays down for it until 250 ms after the press (`dnd.rs`
-  `TAKE_HOLD_AFTER_PRESS`; takes came 4 to 93 ms after the press over 195 drags of the gate's sequence), and a take then,
-  or one seen at the path's last look, gets the same floor; with no take by then the drag is released and answers as
-  before. `--stats` `hold` has one shape on every drag the hold watches: `bound_ms`, `path_ms` (the press to the path's
-  end), `held` (no take by the path's end, so the hold ran), `waited_ms` (0 when it did not), `taken` (a take by the
-  release), `take_after_press_ms` (null without one) and `keepalives`; the bound and the take's time count from the
-  button's press itself. Known limits, for M4:
+  misses). Chrome also refuses a renderer's drag once its browser has seen the button go up: on arm64's V5 at H⁵ the
+  renderer started its drag 47 to 108 ms after 0.4.1's release, Chrome refused it, and the drag answered as a plain one
+  (task 112). So since 0.4.2 a drag whose source (the window pressed into: the window named on the background route;
+  on the foreground and desktop routes, whose press goes through XTEST, the client under the path's start, the window
+  named only when the start lies inside it, since the review of task 115, P2) is a Chromium-family window is not released
+  before B after its press, unless its source takes `XdndSelection` first (`dnd.rs` `TAKE_HOLD_AFTER_PRESS`, B, 450 ms
+  by the design session's ruling 892 on task 114's measurements, ruling 888.1's rule; `--drag-dnd-hold-ms`
+  overrides it). That is the hold on every route: on a drag the engine lets drop, from the path's end (0.4.1's hold,
+  then 250 ms), where a take then, or one seen at the path's last look, gets the same floor; on a guarded drag, before
+  its release dwell, where a take then is cancelled before the drop at once, Escape and then the release, and the drag
+  refused with the drag-and-drop sentence; and at a Chromium `drag_handle`'s `end` (not at the exit's, the idle bound's
+  or a lost handle's release), where a take then is a drag and drop under way, rested after and judged as any other;
+  with no take, the hold's motionless wait is the family's rest before the release, so the visit and the release come
+  at B, not a rest after it (the review of task 115, P3). A drag's release dwell after a hold with no take is served
+  the same way, by the hold's motionless wait since its last motion: a foreground drag named for Firefox whose press
+  reaches Chrome keeps Gecko's 30 ms dwell inside B, not after it (the re-review of fdaff715, P1). The hold sends no
+  motion past the background route's refreshes, which end a rest before 250 ms after the press as 0.4.1's did
+  (`REFRESH_AFTER_PRESS`). With no take by then the drag is released and answers as before. `--stats` `hold` has one
+  shape on every drag the hold watches: `bound_ms`, `path_ms` (the press to the path's end), `held` (no take by the
+  path's end, so the hold ran), `waited_ms` (0 when it did not), `taken` (a take by the release), `take_after_press_ms`
+  (null without one), `keepalives` and `refreshes` (0 and null on a guarded drag), and `pings`; the bound and the take's
+  time count from the button's press itself. A handle's record carries its `hold` (`bound_ms`, `start_after_press_ms`,
+  `held`, `waited_ms`, `taken`, `take_after_press_ms`, `pings`; null when none was due).
+
+  **The extended hold** (`adaptive_hold.rs`, `browser.rs`; the design session's rulings 897-900, task 116's
+  measurements, task 117). A source positively identified as a Chrome or Chromium browser is one whose `WM_CLASS` is
+  `Google-chrome`, `Chromium` or `Chromium-browser`, whose `WM_WINDOW_ROLE` is `browser` or `pop-up` (Electron's say
+  `browser-window`), whose `WM_CLIENT_MACHINE` is this host, and whose `_NET_WM_PID`'s accessible application on the
+  AT-SPI bus is named `Google Chrome` or `Chromium`; where `/proc` can see that process (not in service, where the
+  engine runs in the sandbox's own PID namespace), its executable must be `chrome`, `chromium` or `chromium-browser`
+  too. All of it is read again at every drag, before the press, nothing kept; the bus is asked only once the window's
+  own marks hold. The bus part (its address, its connect and setup when the engine has none yet, every call's writes
+  and reads) is bounded by 50 ms from the identification's start (`IDENTIFY_BOUND`, ruling 912; idle lookups take 1
+  to 5 ms); a write that runs out drops that connection, and the next drag makes a new one. The X property reads and
+  the executable's lookup are synchronous and take what the X server and `/proc` take, so they have no hard bound;
+  an identification that ends past 50 ms counts as none. A lookup that fails or runs out leaves the source
+  unidentified, so its drag keeps the fixed hold (`--stats` `browser_identity`: `ms`, `bus`). A drag whose path
+  reaches B before its hold
+  would begin (a path that long, or `--drag-dnd-hold-ms 0`) holds nothing: its last look for a take stays, but it asks
+  no ping and never extends. A take only the extension caught, past B, whose drop nothing can confirm (no
+  `_NET_ACTIVE_WINDOW` to ask, no Electron cursor), is reported unconfirmed, as the after-release watch would have
+  reported it without the extension, never a plain ok. For an identified source, at B every ping answered
+  under 20 ms (`FAST_PING`) releases as above; a ping that came back slower, one unanswered, still being sent or failed,
+  or no ping answered at all, extends the hold to 650 ms after the press (`EXTENDED_HOLD_AFTER_PRESS`), waiting for the
+  take, which goes the way any take goes. With no take by then the drag answers ok with the notice `the page may have
+  started a drag that did not complete` (`NOTICE`), on the drag's own answer (the reply's `notice`, which the service
+  hands the facade as the drag's `{notice}`, and the facade writes as the cell's output), and at a handle's `end`.
+  Chrome's browser answers the pings in a few milliseconds while nothing drags, and slowly while it starts a drag its
+  renderer began (task 116: 91 ms and more at twice the load). Electron's stays fast while its drag starts, so it,
+  every unidentified source, and any source while the pings are off, keep the fixed hold to B, with no extension and no
+  notice. Nothing releases before B: a page whose dragstart or press handler is busy starts its drag late while its
+  browser, idle, answers every ping fast, so a release on fast pings loses that drag (task 117: 24 of 24 such drags on
+  Chrome 156 answered a plain ok under an early release at 150 ms; B lands them). `--stats` `hold.adaptive`: `way`
+  (`fixed`, `extended`, `noticed`), `why`, and `source` (`identified` with `by`, or `why` not).
+
+  While a hold waits with no take, the source is sent `_NET_WM_PING` (`hold_ping.rs`; for an identified browser they
+  decide the extension above, and otherwise they change no answer): one ping at a time, the
+  next 25 ms after the last once that was answered, none (the first included) in the hold's last 25 ms, so none after
+  it. The sampler is best effort and never holds the drag up: it sets up and pings on a thread and an X connection of
+  its own, and the hold only starts it and takes what it recorded when it ends, with no X request and no wait (the
+  review of task 115, P1: a setup on the drag's thread could push the look for the take past B). A ping is recorded in
+  flight when admitted and checked again at its submission: a hold that ended meanwhile (a take) or a deadline crossed
+  sends nothing; one still in flight at the hold's end is `in_flight: true`, and one whose send failed `send_failed`,
+  never an unanswered ping (the re-review of fdaff715, P2). At most two samplers set up at once in an engine, so a
+  connect that never returns costs two threads, not one per hold.
+  `hold.pings` is `{asked: true, round_trips: [{sent_after_press_ms, rtt_ms}]}`, an unanswered ping's `rtt_ms` null
+  with `unanswered_ms`, how long it had waited by the hold's end; or `{asked: false, why}`: the window lists no
+  `_NET_WM_PING`, the connection failed, the sampler was still connecting at the hold's end, no ping fitted in
+  what was left of the hold, `disabled` (`--drag-dnd-hold-ping off`, measurement only), or earlier holds' ping
+  connections still being set up. Known limits:
   - an accept later than 350 ms after the take still misses, unseen (the latest seen was 275 ms), and so does a take
-    later than 250 ms after the press: the drag answers success;
+    later than B after the press whose browser answered fast by then, or later than 650 ms on an extended hold: the
+    drag answers success (task 113 measured renderers starting their drag up to about 580 ms after the press on arm64
+    at twice the gate's load). This replaces M4's 250 ms limit. A page whose own code takes longer than about 450 ms
+    to start its drag can still lose it while the drag answers ok with no notice, since its browser stays idle and
+    fast: on Chrome 156 at idle on x64 (task 117, drop-signals' cells, 6 drags each), dragstart handlers busy 150 and
+    400 ms and press handlers busy 150 and 400 ms landed 24 of 24 (takes at 154 to 423 ms), and dragstart handlers
+    busy 500 and 600 ms lost 6 of 6 each, every one a plain ok;
   - a speed gap: a Chromium drag that never takes (a text selection, a range, a short thumb drag) holds its button
-    until 250 ms after the press, paying 250 ms less its path's time: a 40 px Chrome selection goes from about 134 ms
-    to about 254, a 40 px range from about 130 to about 350; a drag whose path lasts 250 ms or more pays nothing. On
-    the selection the vendor builds take as long (task 69, every lane in front: cua 254.4 ms, the newest build 251.9,
-    the pinned 254.1), so the speed rule passes;
+    until B after the press, paying B less its path's time; a drag whose path lasts B or more pays nothing. Through
+    0.4.1 B was 250 ms: a 40 px Chrome selection went from about 134 ms to about 254, a 40 px range from about 130 to
+    about 350, and on the selection the vendor builds took as long (task 69, every lane in front: cua 254.4 ms, the
+    newest build 251.9, the pinned 254.1). At 450 ms the selection takes about 454 ms; task 113's D1 and D2 at a
+    press-anchored hold of 300 and 350 ms passed every judge, since select, range and scroller are judged on landing
+    alone;
   - a speed gap: the short Chrome drop (40 px, in front) takes 365.9 ms and lands 40 of 40, against the newest vendor
     build's 251.5 (25 of 40 landed) and the pinned build's 252.9 (22 of 40; task 69). The release at Chrome's accept
     cursor closes it (task 68: medians of 54 to 66 ms) but does not ship: a stale accept released one drop Chrome
@@ -498,7 +583,8 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
 | `--drag-step-ms`, `--drag-step-us` | by family | the wait after each drag sample, fixed for every target (the vendor's is 1 ms; measurement only) |
 | `--drag-press-dwell-ms`, `--drag-release-dwell-ms` | by family | the wait after a drag's press and before its release, fixed for every target (measurement only); any drag flag sets the others to 0 |
 | `--drag-dnd-after-take-ms` | 350 | how long after a Chromium drag source's take a drag the engine lets drop is released at the soonest, its remaining steps spaced to it (measurement only; 0 turns the spacing off) |
-| `--drag-dnd-hold-ms` | 250 | how long after the press a Chromium drag the engine lets drop keeps its button down for its source's take when none came by the path's end (measurement only; 0 turns the hold off; `--stats` `hold`) |
+| `--drag-dnd-hold-ms` | 450 | B, how long after the press a drag whose source is a Chromium-family window keeps its button down for its source's take when none has come, on a drag the engine lets drop, a guarded drag and a `drag_handle`'s end (measurement only: the design session's runs of other bounds on one build; 0 turns the hold off; an identified browser's slow pings extend it to the later of B and 650 ms; `--stats` `hold`) |
+| `--drag-dnd-hold-ping` | on | `off`: a hold with no take sends its source no `_NET_WM_PING`, `hold.pings` is `{asked: false, why: "disabled"}`, and no hold extends: an identified browser keeps the fixed B too (measurement only: the design session's ruling 892, the control that the ping sampler leaves the release where it was) |
 | `--dnd-cancel-after-release` | off | a drag and drop the engine cancels is cancelled only after the release, too late (measurement only: the harness's check of the honest answer) |
 | `--dnd-defer-take` | off | a drag and drop that begins during a watched drag is left unseen until after the release, so the after-release watch finds it and the next request carries the notice (measurement only: Acceptance 8's late-take case) |
 | `--drag-ignore-cover` | off | a drag into a family listed `unless_path_unobscured` (Chromium) goes out on the background route along a covered path (measurement only: T13's covered paths) |

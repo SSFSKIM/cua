@@ -16,7 +16,7 @@ export const USAGE = `usage:
   linux-engine-diff.mjs --check-wire --vendor-js <@oai/sky directory>
   linux-engine-diff.mjs --vendor <bin> --newest <bin> --cua <artifact> --scene <list> --ops <list|all> --out <dir>
       [--dev | --pinned] [--pilot] [--ballast gate] [--blocks 3] [--samples-tree 7] [--samples-input 5] [--variant <label>=<cua flags>]... [--run <name>]
-      [--occlusion covered|visible|partial (drag, kinds)] [--no-counts] [--no-audit] [--audit-traces <MB>|off] [--via wire|vendor-js --vendor-js <@oai/sky directory>] [--trace-engine (with --dev)] [--engine-stats (with --dev)]
+      [--occlusion covered|visible|partial (drag, kinds)] [--no-counts] [--no-audit] [--audit-traces <MB>|off] [--via wire|vendor-js --vendor-js <@oai/sky directory>] [--trace-engine (with --dev)] [--engine-stats (with --dev)] [--engine-sandbox]
   linux-engine-diff.mjs --experiment capture-readiness|key-pace|matrix|qt-bridge|element-click|partial-cover|events|engine-readiness|drag|kinds|dnd|atspi|focus-timer|engine-stop|qt-activation|settle|drop-signals|predicates|pointer-route|writer-drag --cua <bin> --out <dir> [--run <name>] [--gate | --pinned] [--pilot] [--engine-stats (not with --gate or --pinned alone)]
       [--vendor <bin> --newest <bin>] [--family <list>] [--load | --load-factor <workers per core>] [--no-grabs] [--dnd-short | --dnd-select] [--stops-only] [--exit-settle-ms <ms>] [--scenarios <list>] [--lanes <list>] [--trace] (focus-timer) [--dnd-cold [--cover-ms N] [--prelude dedicated] [--ballast gate] [--stray nudge|popup:N] [--park-pointer X,Y]] (dnd) [--samples-input 5] [--samples-text 2] [--trials 12] [--geometry WxH]
       [--via vendor-js --vendor-js <@oai/sky directory>] (events only) [--lanes <labels>] (drag, kinds, dnd, engine-stop, qt-activation)
@@ -114,6 +114,9 @@ export function parseArgs(argv) {
     // every cua lane's engine with --stats, its settle counter recorded (engine.mjs `recordEngines`; ruling 834): a
     // development run's or a pilot's alone, since --stats is not inert
     else if (flag === '--engine-stats') a.engineStats = true;
+    // every cua lane's engine inside cua's worker sandbox, as the service runs it (engine-sandbox.mjs; ruling 899's
+    // condition): the hold canary's and the identification's form
+    else if (flag === '--engine-sandbox') a.engineSandbox = true;
     // the stop runs' exit settle, 0 included
     else if (flag === '--exit-settle-ms') {
       const n = Number(need());

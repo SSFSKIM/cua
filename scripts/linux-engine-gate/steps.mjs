@@ -68,6 +68,18 @@ const FOCUS_CLICKS = ['--experiment', 'focus-timer', '--scenarios', 'click-paste
 // family named, the others go unmeasured and fail the sitting (the pilot's F2)
 const FOCUS_STOPS = ['--experiment', 'focus-timer', '--stops-only', '--family', 'chrome,electron'];
 
+/**
+ * The hold canary (task 117; the design session's rulings 897.3, 898.4, 899 and 900): V5's in-front short drop and its
+ * select control on a private display under the gate's Chrome ballast, every cua engine inside cua's worker sandbox
+ * as the service runs it (`--engine-sandbox`), judged by device.mjs `holdCanary` from the engine's own hold records:
+ * a press on a draggable source reads slow at least once, a warm plain drag never, and Chrome is identified. Once on
+ * the installed Chrome the gate's other steps drive (`installed`) and once on the current stable one, extracted from
+ * Google's signed index and never installed (`current-stable`: gate.mjs puts its directory first on PATH, and refuses
+ * the step without it).
+ */
+const CANARY_OPS = ['chrome_dnd_short_in_front_shared', 'chrome_select_nudged_shared'];
+const canary = (name, chrome, what) => ({ name, kind: 'canary', display: 'private', load: 'idle', minutes: 15, scenes: ['device-chrome-dnd'], only: { 'device-chrome-dnd': CANARY_OPS }, ballast: true, chrome, what, pilot: (args) => args });
+
 export const STEPS = [
   // ---- the verdict run on :0, M3's scenes and M4's in the frozen order
   verdict('V1', 40, ['gedit'], "gedit's text operations and its caret case (the newest build's clipboard_write about 15 min)", { only: { gedit: GEDIT_TEXT } }),
@@ -118,6 +130,9 @@ export const STEPS = [
   experiment('H1', 'private', 'idle', 22, signals('electron', 't17-fix3'), "T17's Electron cells: plain drags and handles, the controls, the four releases off the window"),
   experiment('H2', 'private', 'gate-windows', 25, signals('electron', 't17-fix3', ['--ballast', 'gate']), "T17's Electron cells at the gate's window load"),
   experiment('C1', 'private', 'idle', 4, signals('chrome', 't14-late'), "#264's real late takes (T14), which the gate's device scene cannot produce"),
+  canary('K1', 'installed', "the hold canary on the gate's Chrome: a draggable press reads slow, a plain drag fast, Chrome identified, the engine sandboxed as in service"),
+  canary('K2', 'current-stable', 'the hold canary on the current stable Chrome (extracted, not installed)'),
+  experiment('K3', 'private', 'idle', 6, signals('chrome', 'hold-regression', ['--engine-sandbox']), "the hold's regression cells: drops whose page starts them 150 and 400 ms late land inside B, the engine sandboxed (ruling 900)"),
 
   // ---- private, twice the load
   experiment('L1', 'private', 'load2', 22, drag('chrome,electron', ['--ops', 'scroller,range', ...LOAD2]), 'thumbs and ranges at 40 a side against the pinned build (T12, #265)', { pilot: dragLoadPilot }),
@@ -185,7 +200,7 @@ export function stepArgs(step, { paths, gate, pilot = null, engineStats = false 
   // the opt-in --stats of every cua lane (engine.mjs `recordEngines`), a development run's, whose refusal is gate.mjs's
   const stats = engineStats ? ['--engine-stats'] : [];
   const fill = (args) => args.map((a) => ({ '{vendor}': paths.vendor, '{newest}': paths.newest })[a] ?? a);
-  if (step.kind === 'verdict') {
+  if (step.kind === 'verdict' || step.kind === 'canary') {
     return [
       '--vendor', paths.vendor, '--newest', paths.newest, '--cua', paths.candidate,
       '--scene', step.scenes.join(','), '--ops', verdictOps(step).join(','),
@@ -194,6 +209,8 @@ export function stepArgs(step, { paths, gate, pilot = null, engineStats = false 
       ...(gate === 'pinned' || gate === PINNED_DEVELOPMENT ? ['--pinned'] : gate ? [] : ['--dev']),
       ...(pilot ? ['--pilot'] : []),
       ...stats,
+      // the canary's engines as the service runs them (engine-sandbox.mjs)
+      ...(step.kind === 'canary' ? ['--engine-sandbox'] : []),
     ];
   }
   if (step.kind === 'facade') return ['--vendor-js', paths.vendorJs, '--engine', paths.candidate, ...step.args];

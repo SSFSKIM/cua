@@ -175,6 +175,14 @@ export function renderSummary(lines) {
       for (const v of verdicts.filter((x) => x.drops)) out.push(`| ${v.scene} | ${v.op} | ${v.drops.samples} | ${v.drops.landed} | ${v.drops.ok} | ${v.drops.false_ok} | ${v.drops.unconfirmed_landed} |`);
       out.push(`| **run** | | ${drops.samples} | ${drops.landed} | ${drops.ok} | ${drops.false_ok} | ${drops.unconfirmed_landed} |`);
     }
+    // the adaptive hold's notices (ruling 898.2): honest where the page shows no drop; a false alarm where it dropped,
+    // counted here, never hidden
+    const noticed = verdicts.filter((v) => v.hold_notices);
+    if (noticed.length) {
+      out.push('', "Chrome's hold notices (`the page may have started a drag that did not complete`). Honest only where the page shows no drop; a notice on a drag that dropped is a false alarm:", '');
+      out.push('| scene | op | samples | noticed | honest | false alarm | false alarms |', '|---|---|---:|---:|---:|---:|---|');
+      for (const v of noticed) out.push(`| ${v.scene} | ${v.op} | ${v.hold_notices.samples} | ${v.hold_notices.noticed} | ${v.hold_notices.honest} | ${v.hold_notices.false_alarm} | ${v.hold_notices.false_alarms.join(', ') || '–'} |`);
+    }
     // every pass that is a small measured loss inside the bound, in one table (Acceptance 3)
     // a label's `candidate` is the candidate's median; the engine is the verdict's own `candidate`
     const bound = verdicts.flatMap((v) => (v.labels ?? []).filter((l) => l.label === 'within the bound').map((l) => ({ ...l, scene: v.scene, op: v.op, engine: v.candidate })));

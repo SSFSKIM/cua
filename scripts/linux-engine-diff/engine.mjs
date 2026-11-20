@@ -23,6 +23,15 @@ import { xExecFileSync, xSpawn } from './xspawn.mjs';
 
 const now = () => Number(process.hrtime.bigint()) / 1e6;
 
+// `--engine-sandbox`: the launch of a cua lane's engine inside cua's worker sandbox (engine-sandbox.mjs
+// `sandboxedEngine`), or null, every engine run directly
+let engineSandbox = null;
+
+/** The run's engines from now on, sandboxed by `launch` (`(bin, args, env) -> {command, args, env, cwd}`) or not (null). */
+export function sandboxEngines(launch) {
+  engineSandbox = launch;
+}
+
 const operationWatchers = new Set();
 
 // the scratch directory of the run open now (`runEngines`): every engine started meanwhile writes its temporary files
@@ -201,7 +210,10 @@ export class Engine {
     this.spawnedAt = now();
     const args = ['server', ...this.args, ...(this.statsWanted || this.stats === 'opt-in' ? ['--stats'] : [])];
     this.argv = args;
-    this.child = xSpawn(this.bin, args, { stdio: ['pipe', 'pipe', 'pipe'], env });
+    // a cua lane's engine inside cua's worker sandbox, as the service runs it (`--engine-sandbox`, engine-sandbox.mjs)
+    this.sandboxed = Boolean(engineSandbox) && !(rec?.vendorPaths.has(this.bin) || rec?.vendorPaths.has(real(this.bin)));
+    const launch = this.sandboxed ? engineSandbox(this.bin, args, env) : { command: this.bin, args, env };
+    this.child = xSpawn(launch.command, launch.args, { stdio: ['pipe', 'pipe', 'pipe'], env: launch.env, ...(launch.cwd ? { cwd: launch.cwd } : {}) });
     this.pid = this.child.pid;
     if (rec) {
       rec.engines.push(this);

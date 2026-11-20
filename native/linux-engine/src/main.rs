@@ -3,10 +3,12 @@
 //! M1a's engine core (`README.md` says what it answers). See `docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md`.
 
 mod accept;
+mod adaptive_hold;
 #[cfg(test)]
 mod alloc_watch;
 mod apps;
 mod atspi;
+mod browser;
 mod caps;
 mod capture;
 mod clipboard;
@@ -25,6 +27,7 @@ mod fault;
 mod field;
 mod focus_ack;
 mod held;
+mod hold_ping;
 mod identity;
 mod input;
 mod keys;
@@ -54,7 +57,7 @@ const USAGE: &str = "usage: cua-engine server [--mouse-size-px <n>] [--desktop s
        [--window-calls <W>] [--window-bytes <R>] [--call-reservation <bytes>] [--slack-nodes <n>]
        [--retention per-request|session|none] [--settle-ms <ms>] [--capture-wait damage|fixed|quiet]
        [--teardown-ms <ms>] [--exit-settle-ms <ms>] [--paste-settle-ms <ms>] [--key-pace-ms <ms>] [--path-step-ms <ms>] [--drag-step-ms <ms> | --drag-step-us <µs>] [--drag-press-dwell-ms <ms>]
-       [--drag-release-dwell-ms <ms>] [--drag-dnd-hold-ms <ms>] [--drag-dnd-after-take-ms <ms>] [--drag-handle-idle-ms <ms>] [--dnd-cancel-after-release] [--dnd-defer-take]
+       [--drag-release-dwell-ms <ms>] [--drag-dnd-hold-ms <ms>] [--drag-dnd-hold-ping on|off] [--drag-dnd-after-take-ms <ms>] [--drag-handle-idle-ms <ms>] [--dnd-cancel-after-release] [--dnd-defer-take]
        [--drag-dnd-release-at-accept] [--drag-ignore-cover] [--ignore-cover] [--ignore-pointer] [--drop-no-settle]
        [--targets-wait-ms <ms>] [--focus-ack-ms <ms>] [--stats]
        cua-engine launcher-shim <parent pid> <program> [args...]
@@ -93,6 +96,7 @@ fn default_config() -> Config {
         dnd_cancel_late: false,
         dnd_defer_take: false,
         dnd_hold: crate::dnd::TAKE_HOLD_AFTER_PRESS,
+        dnd_hold_ping: true,
         dnd_after_take: crate::dnd::RELEASE_AFTER_TAKE,
         targets_wait: None,
         focus_ack: focus_ack::FOCUS_ACK,
@@ -242,6 +246,13 @@ fn parse_args(args: &[String]) -> Result<Command, String> {
             "--drag-press-dwell-ms" => fixed_drag(&mut cfg).press = Duration::from_millis(number(value, arg)?),
             "--drag-release-dwell-ms" => fixed_drag(&mut cfg).release = Duration::from_millis(number(value, arg)?),
             "--drag-dnd-hold-ms" => cfg.dnd_hold = Duration::from_millis(number(value, arg)?),
+            "--drag-dnd-hold-ping" => {
+                cfg.dnd_hold_ping = match value.map(String::as_str) {
+                    Some("on") => true,
+                    Some("off") => false,
+                    _ => return Err("--drag-dnd-hold-ping is on or off".into()),
+                }
+            }
             "--drag-dnd-after-take-ms" => cfg.dnd_after_take = Duration::from_millis(number(value, arg)?),
             "--drag-handle-idle-ms" => cfg.handle_idle = Duration::from_millis(number(value, arg)?),
             "--targets-wait-ms" => cfg.targets_wait = Some(Duration::from_millis(number(value, arg)?)),
@@ -307,7 +318,7 @@ fn main() {
     };
     serve::read_stdin(inbox);
     let code = serve::serve(&mut engine, &next, std::io::stdout());
-    engine.shutdown();
+    engine.shutdown(serve::exit_by());
     std::process::exit(code);
 }
 
@@ -562,6 +573,23 @@ mod tests {
             panic!()
         };
         assert_eq!(cfg.capture_wait, CaptureWait::QuietOnly);
+    }
+
+    #[test]
+    fn the_hold_s_pings_are_on_unless_the_measurement_flag_turns_them_off() {
+        let Ok(Command::Server(cfg)) = parse_args(&args(&["server"])) else {
+            panic!()
+        };
+        assert!(cfg.dnd_hold_ping, "on by default");
+        let Ok(Command::Server(cfg)) = parse_args(&args(&["server", "--drag-dnd-hold-ping", "off"])) else {
+            panic!()
+        };
+        assert!(!cfg.dnd_hold_ping);
+        let Ok(Command::Server(cfg)) = parse_args(&args(&["server", "--drag-dnd-hold-ping", "on"])) else {
+            panic!()
+        };
+        assert!(cfg.dnd_hold_ping);
+        assert!(parse_args(&args(&["server", "--drag-dnd-hold-ping", "no"])).is_err());
     }
 
     #[test]

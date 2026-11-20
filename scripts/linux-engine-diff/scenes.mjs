@@ -188,7 +188,8 @@ export function desktopEnding(ending) {
       trace: { clean: audit.clean, requests: audit.requests, mutating: audit.mutating, foreign: audit.foreign.slice(0, 10).map(foreignLine), unplaced: audit.unplaced ?? 0 },
       watchdog: watchdog ? { state: watchdog.state, round_trips: watchdog.round_trips ?? null, ...(watchdog.clean ? {} : { reason: watchdog.reason }) } : null,
       // the run's Chrome as its end stopped it (pids it spawned: terminated, killed, still running), and its session bus
-      ...(ending.chrome ? { chrome: { spawned: ending.chrome.spawned.length, terminated: ending.chrome.terminated, killed: ending.chrome.killed, left: ending.chrome.left } } : {}),
+      // and each browser process it ran: its executable and that executable's version (chrome.mjs `browserIdentity`)
+      ...(ending.chrome ? { chrome: { spawned: ending.chrome.spawned.length, browsers: ending.chrome.browsers ?? [], terminated: ending.chrome.terminated, killed: ending.chrome.killed, left: ending.chrome.left } } : {}),
       ...(ending.session ? { session: ending.session } : {}),
       // the cleanup's failed steps (every other step ran, ruling 721), and what the run left on its own side: an
       // unclean end, never a verdict failure (ruling 730, part (a)); the next run's start check refuses on it
@@ -842,6 +843,8 @@ export class Desktop {
         throw error;
       }
       scene.id = info.id;
+      // what the run's Chrome runs, read while its window shows (chrome.mjs `seen`)
+      this.chromeInstance().seen();
       if (this.stopping) return scene;
       this.place(scene.id, 'chrome');
       await this.waitForTree(scene);
@@ -883,6 +886,7 @@ export class Desktop {
             await this.close([win]);
             throw error;
           }
+          this.chromeInstance().seen();
           windows.push(win);
         }
       } else {

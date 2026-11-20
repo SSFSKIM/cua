@@ -56,7 +56,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { pendingOf } from './drop-signals-judge.mjs';
-import { AUDIT_PLAN, FOLLOW_UP_FIELDS, TIMED_QUOTAS, bindAudit, bindTimed, evidenceLabel, isShortage, judgePremise, repeatedSlots, slotProblems } from './premise.mjs';
+import { AUDIT_PLAN, FOLLOW_UP_FIELDS, TIMED_QUOTAS, bindAudit, bindTimed, evidenceLabel, holdNoticed, isShortage, judgePremise, parsePageRead, repeatedSlots, slotProblems } from './premise.mjs';
 import { preorder } from './normalize.mjs';
 import { readGtk4Status } from './families.mjs';
 import { IDENTITY_OPS, IDENTITY_SCENE_OPS, judgeIdentity } from './identity.mjs';
@@ -409,7 +409,8 @@ function device({ device: expect, condition = covered, park, read, request, effe
       const attemptFrom = ctx.premiseReadAt;
       // the reply's own notice, for ruling 823's plain-drag ok (premise.mjs): one that claims or implies a drop is never
       // an unmet premise
-      if (PREMISE_KINDS.includes(expect)) out.reply_notice = response.notice ?? null;
+      // and a drop case's, where an ok with the adaptive hold's notice is judged by its page (ruling 898.2)
+      if (PREMISE_KINDS.includes(expect) || confirm) out.reply_notice = response.notice ?? null;
       // past the drop's window: a confirmed drop leaves nothing pending, an unconfirmed one its notice; a late case's
       // drag, whatever it answered, may leave the after-release watch's report of a late take
       if ((confirm && response.ok) || expect === 'late') Object.assign(out, await readPending(ctx));
@@ -417,7 +418,7 @@ function device({ device: expect, condition = covered, park, read, request, effe
         // whether a drag that leaves the zone started its drag and drop, and whether anything dropped on the zone
         const after = await read(ctx);
         out.started = typeof ctx.before?.starts === 'number' && typeof after?.starts === 'number' && after.starts > ctx.before.starts;
-        out.dropped = !(typeof ctx.before?.drops === 'number' && after?.drops === ctx.before.drops);
+        Object.assign(out, firstDropRead(ctx.before, after));
       }
       if (expect === 'refusal') {
         out.expected_error = deviceSentence(ctx.scene.app);
@@ -441,13 +442,13 @@ function device({ device: expect, condition = covered, park, read, request, effe
         out.late_dnd = next.stats?.late_dnd ?? null;
         await sleep(QUIET_MS);
         const after = await read(ctx);
-        out.dropped = !(typeof ctx.before?.drops === 'number' && after?.drops === ctx.before.drops);
+        Object.assign(out, firstDropRead(ctx.before, after));
       }
       if (expect === 'stray') {
         out.expected_error = strayNotice(ctx.scene.app);
         await sleep(QUIET_MS);
         const after = await read(ctx);
-        out.dropped = !(typeof ctx.before?.drops === 'number' && after?.drops === ctx.before.drops);
+        Object.assign(out, firstDropRead(ctx.before, after));
       }
       if (expect === 'cancel' || expect === 'late') {
         out.expected_error = dndCancelledSentence(ctx.scene.app);
@@ -455,7 +456,7 @@ function device({ device: expect, condition = covered, park, read, request, effe
         // a drop the page counts shows within its settle; one never read counts as dropped
         await sleep(QUIET_MS);
         const after = await read(ctx);
-        out.dropped = !(typeof ctx.before?.drops === 'number' && after?.drops === ctx.before.drops);
+        Object.assign(out, firstDropRead(ctx.before, after));
       }
       if (dedicated && response.ok) out.activated = activeWindow() === ctx.scene.id;
       // in front: the desktop at the end as it was at the start
@@ -554,13 +555,25 @@ function lateTakes(rows) {
 }
 
 /**
+ * The runner's first read of the page after a drag-and-drop sample (pages/drag.html `drops`): `dropped`, an unread
+ * counter counted as a drop (the safe side for a rule a drop fails), and `drop_seen`, the counter read on both sides and
+ * risen: a definite drop, kept apart from an unread one, so a later read that fails cannot lose it (the re-review of
+ * wave 3, I7: a false alarm whose second read failed went uncounted).
+ */
+export function firstDropRead(before, after) {
+  const read = typeof before?.drops === 'number' && typeof after?.drops === 'number';
+  return { dropped: !(read && after.drops === before.drops), drop_seen: read && after.drops > before.drops };
+}
+
+/**
  * Whether a drag-and-drop sample's page shows a drop it read: the drop counter read before and after the sample, and
- * risen (pages/drag.html `drops`). The runner's `dropped` counts an unread counter as a drop (the checks above), the
- * safe side for a rule a drop fails; a rule a drop passes reads the counter itself (ruling 870).
+ * risen, on the runner's first read (`drop_seen`) or the page's later one (`drop_status`). The runner's `dropped` counts
+ * an unread counter as a drop (the checks above), the safe side for a rule a drop fails; a rule a drop passes reads the
+ * counter itself (ruling 870).
  */
 function dropSeen(r) {
   const { before, after } = r.drop_status ?? {};
-  return typeof before?.drops === 'number' && typeof after?.drops === 'number' && after.drops > before.drops;
+  return r.drop_seen === true || (typeof before?.drops === 'number' && typeof after?.drops === 'number' && after.drops > before.drops);
 }
 
 /**
@@ -571,6 +584,110 @@ function dropSeen(r) {
  */
 function mayHaveDropped(r) {
   return r.dropped !== false || dropSeen(r);
+}
+
+/**
+ * Ruling 898.2: an ok with the adaptive hold's notice (premise.mjs `HOLD_NOTICE`, word for word) is honest only when the
+ * page shows no drop, on read evidence (`noDropRead`): the page's drop counter read before and after the sample, both
+ * numbers, unchanged; the runner's first read, where the case makes one, unchanged too (`dropped` false: an unread
+ * counter counts as a drop, as `mayHaveDropped` has it); no read risen; and the case saw no effect (`honestNotice`). The
+ * in-front drop cases make no first read, so their later read alone decides (task 118's arm runs: with `dropped`
+ * required, no in-front notice could ever be honest, and an honest one, drops 3 to 3, was judged a false ok). One on a
+ * drag that did drop (`falseAlarm`: the counter risen, or the case's effect seen) is a false alarm, counted and reported
+ * in the verdict. One whose page cannot say either way (an unread counter) is neither, and is judged as any ok is.
+ */
+export function honestNotice(r) {
+  return holdNoticed(r) && r.effect !== true && noDropRead(r);
+}
+
+/**
+ * Whether the sample's page was read showing no drop: both reads of the counter numbers, unchanged (see above). An
+ * audited answer, whose row is the binding's (premise.mjs `bindAudit`), is read from its bound evidence's page lines.
+ */
+function noDropRead(r) {
+  const { before, after } = r.drop_status ?? { before: parsePageRead(r.premise_evidence?.page?.before), after: parsePageRead(r.premise_evidence?.page?.after) };
+  const unchanged = typeof before?.drops === 'number' && typeof after?.drops === 'number' && after.drops === before.drops;
+  return unchanged && (r.dropped === undefined || r.dropped === false) && !dropSeen(r);
+}
+
+export function falseAlarm(r) {
+  return holdNoticed(r) && (r.effect === true || dropSeen(r));
+}
+
+/**
+ * The hold canary (the design session's rulings 897.3 and 898.4, task 117): the extended hold rests on Chrome's browser
+ * answering the engine's `_NET_WM_PING` slowly while it starts a drag its page began, and fast while nothing drags. A
+ * Chrome update that changed either would bring the false oks back quietly, so two of V5's cells check it from the
+ * engine's own hold records (`engine_stats.hold`), whatever else they judge:
+ * - the in-front short drop (`chrome_dnd_short_in_front_shared`, a press on a draggable source): of its samples whose
+ *   hold ran, at least `CANARY_HELD`, and at least half of them busy: a ping round trip, or a ping's wait unanswered
+ *   at the take, of `CANARY_BUSY_MS` or more, where an idle browser answers in about 1.1 ms (p99 1.2 at idle, task 116):
+ *   the browser busy setting up the drag its page started (task 117, sandboxed, idle x64: 9 of 9 held presses on
+ *   Chrome 156 waited 8 to 27 ms, 9 of 9 on Chrome 158 6 to 21 ms; V5 at idle 40 of 40); and at least one of them slow
+ *   by the engine's own threshold (`CANARY_SLOW_MS`, `adaptive_hold::FAST_PING`), the reading that extends a hold at B
+ *   (the re-review of wave 3, I5: a cell whose pings all came back in 6 ms passed, though the engine reads every one
+ *   of them fast), on a press whose drag did start, seen apart from the pings: the engine's watch saw the take, or the
+ *   page counted the sample's own dragstart (the re-review of wave 4, I1: a slow press that started nothing passed);
+ * - V5's select control (`chrome_select_nudged_shared`, a plain drag in the same scene): at least `CANARY_HELD` warm
+ *   samples whose hold ran, every one read fast at B (`hold.adaptive.way` fixed on its pings); a cold one that read
+ *   slow is counted, not failed (a fresh page's first ping can be slow).
+ * A cell of these two whose rows carry the engine's `--stats` but no hold record fails: its evidence is missing. One
+ * with no `--stats` at all (an engine run without them) is not the canary's; the gate's canary steps require its
+ * record on both cells (`scripts/linux-engine-gate/gate.mjs` `canaryCheck`).
+ */
+/** How long a ping waits on a browser busy setting up a drag, at the least: an idle browser answers in about 1.1 ms. */
+export const CANARY_BUSY_MS = 5;
+/** A plain drag's ping is slow from T (cua-engine's `adaptive_hold::FAST_PING`), as the engine reads it at B. */
+export const CANARY_SLOW_MS = 20;
+export const CANARY_HELD = 3;
+
+/** Whether the page counted one dragstart between the reads before and after this sample (pages/drag.html `starts`). */
+function ownDragstart(r) {
+  const { before, after } = r.drop_status ?? {};
+  return typeof before?.starts === 'number' && after?.starts === before.starts + 1;
+}
+
+/** A hold record's largest ping wait: a round trip, or an unanswered ping's age at the hold's end; null with none. */
+export function holdPingWait(hold) {
+  const waits = (hold?.pings?.round_trips ?? []).map((t) => t.rtt_ms ?? t.unanswered_ms ?? null).filter((w) => typeof w === 'number');
+  return waits.length ? Math.max(...waits) : null;
+}
+
+/** The canary's reasons for a cell's rows (none for a cell it does not judge), and its counts. */
+export function holdCanary(op, rows) {
+  const recorded = rows.filter((r) => r.engine_stats != null);
+  if (!recorded.length || !['chrome_dnd_short_in_front_shared', 'chrome_select_nudged_shared'].includes(op)) return null;
+  const held = recorded.filter((r) => r.engine_stats?.hold?.held === true);
+  const slow = held.filter((r) => (holdPingWait(r.engine_stats.hold) ?? 0) >= CANARY_SLOW_MS);
+  const busy = held.filter((r) => (holdPingWait(r.engine_stats.hold) ?? 0) >= CANARY_BUSY_MS);
+  // the re-review of wave 4, I1: a slow sample counts for the canary only where a drag did start, seen apart from the
+  // pings: the take the engine's watch saw (`hold.taken`), or the page's own count of this sample's dragstart
+  const slowStarted = slow.filter((r) => r.engine_stats.hold.taken === true || ownDragstart(r));
+  const reasons = [];
+  // the extension applies only to a source identified as a Chrome browser (ruling 899): one that is not cannot extend
+  const unidentified = held.filter((r) => r.engine_stats.hold.adaptive?.source?.identified !== true);
+  if (unidentified.length) reasons.push(`the hold canary: Chrome was not identified as a browser on ${unidentified.length} of ${held.length} held samples (${unidentified[0].engine_stats.hold.adaptive?.source?.why ?? 'no record'})`);
+  if (op === 'chrome_dnd_short_in_front_shared') {
+    if (held.length < CANARY_HELD) reasons.push(`the hold canary is untested: ${held.length} of ${recorded.length} presses on a draggable source held for their take, fewer than ${CANARY_HELD}`);
+    else if (busy.length * 2 < held.length) reasons.push(`the hold canary: ${held.length - busy.length} of ${held.length} held presses on a draggable source found their browser idle (every ping answered under ${CANARY_BUSY_MS} ms), more than half: Chrome may no longer mark the drag it starts`);
+    else if (!slow.length) reasons.push(`the hold canary: none of ${held.length} held presses on a draggable source read slow by the engine's own threshold (a ping of ${CANARY_SLOW_MS} ms or more): at B the engine would read every one fast, so no busy browser would extend its hold`);
+    else if (!slowStarted.length) reasons.push(`the hold canary: none of the ${slow.length} held presses on a draggable source that read slow by the engine's own threshold started a drag (no take of the engine's watch, no dragstart of the sample's own on the page): their slowness is not Chrome's drag setup`);
+    return { reasons, record: { kind: 'draggable', held: held.length, busy: busy.length, slow: slow.length, slow_started: slowStarted.length } };
+  }
+  const warm = held.filter((r) => r.i !== 0);
+  if (warm.length < CANARY_HELD) reasons.push(`the hold canary's plain control is untested: ${warm.length} warm samples of ${recorded.length} held their drag, fewer than ${CANARY_HELD}`);
+  const warmSlow = slow.filter((r) => r.i !== 0);
+  const unfast = held.filter((r) => r.i !== 0 && !(r.engine_stats.hold.adaptive?.way === 'fixed' && /^every ping answered by B came back under/.test(r.engine_stats.hold.adaptive.why ?? '')));
+  if (warmSlow.length || unfast.length) reasons.push(`the hold canary: a plain drag read slow on ${new Set([...warmSlow, ...unfast]).size} of ${warm.length} warm samples (${[...new Set([...warmSlow, ...unfast])].slice(0, 3).map((r) => `${r.block}/${r.i}`).join(', ')})`);
+  return { reasons, record: { kind: 'plain', held: held.length, slow: slow.length, cold_slow: slow.length - warmSlow.length } };
+}
+
+/** A cell's hold notices for its verdict, or null when none came: how many, the honest ones and the false alarms. */
+function holdNoticeCounts(rows) {
+  const noticed = rows.filter(holdNoticed);
+  if (!noticed.length) return null;
+  const alarms = noticed.filter(falseAlarm);
+  return { samples: rows.length, noticed: noticed.length, honest: noticed.filter(honestNotice).length, false_alarm: alarms.length, false_alarms: alarms.map((r) => `${r.block}/${r.i}`) };
 }
 
 /**
@@ -1005,7 +1122,8 @@ export function judgeDevice(op, samples, audit, premise = undefined) {
   const late = new Set(expect === 'cancel' ? lateTakes(samples) : []);
   binding?.rows.forEach((r, k) => late.has(samples[k]) && late.add(r));
   if (expect === 'cancel') {
-    bad('not cancelled with the drag-and-drop sentence', (r) => (!r.ok && r.error === r.expected_error) || late.has(r));
+    // or an honest hold notice (ruling 898.2): Chrome refused a drag its page started too late, or began none
+    bad('not cancelled with the drag-and-drop sentence', (r) => (!r.ok && r.error === r.expected_error) || late.has(r) || honestNotice(r));
     bad('it dropped', (r) => !mayHaveDropped(r));
   }
   if (expect === 'stray') {
@@ -1032,7 +1150,8 @@ export function judgeDevice(op, samples, audit, premise = undefined) {
     const held = (r) => pendingOf({ notice: r.state_notice, next: r.state_notice == null ? null : { ok: r.next_ok, error: r.next_error } });
     const pending = (r) => r.state_notice != null && held(r).kept;
     const landed = rows.filter((r) => r.effect === true);
-    const falseOk = rows.filter((r) => r.ok && r.effect !== true && !pending(r));
+    // an honest hold notice is no false ok (ruling 898.2); one of another wording, or with no page to vouch for it, is
+    const falseOk = rows.filter((r) => r.ok && r.effect !== true && !pending(r) && !honestNotice(r));
     drops = { samples: rows.length, landed: landed.length, ok: rows.filter((r) => r.ok).length, false_ok: falseOk.length, unconfirmed_landed: landed.filter(pending).length };
     if (falseOk.length) reasons.push(`a drag answered ok with no drop and nothing pending on ${falseOk.length} of ${rows.length} samples (${falseOk.slice(0, 3).map((r) => `${r.block}/${r.i}`).join(', ')})`);
     const unrefused = rows.filter((r) => r.state_notice != null && !held(r).kept);
@@ -1065,7 +1184,8 @@ export function judgeDevice(op, samples, audit, premise = undefined) {
   }
   if (expect === 'foreground' || expect === 'background') {
     bad('a request failed', (r) => r.ok);
-    bad('the effect was not verified', (r) => r.effect === true);
+    // a drop that did not land, honestly noticed (ruling 898.2), is no unverified effect: its answer said so
+    bad('the effect was not verified', (r) => r.effect === true || honestNotice(r));
   }
   // a request refused for a late take did not run, so there is no drag of its own to have watched
   const ran = (r) => !(late.has(r) && r.ok === false);
@@ -1097,7 +1217,8 @@ export function judgeDevice(op, samples, audit, premise = undefined) {
         excluded += judged.excluded;
       }
       const expected = (a) => {
-        if (expect === 'refusal' || expect === 'cancel' || expect === 'stray') return !a.ok && a.error === a.expected_error;
+        if (expect === 'cancel') return (!a.ok && a.error === a.expected_error) || honestNotice(a);
+        if (expect === 'refusal' || expect === 'stray') return !a.ok && a.error === a.expected_error;
         if (expect === 'late') return !a.ok && (a.error === a.late_error || a.error === a.expected_error);
         return a.ok;
       };
@@ -1112,10 +1233,17 @@ export function judgeDevice(op, samples, audit, premise = undefined) {
     reasons.unshift(reasons.every(isShortage) ? `incomplete only by ${n} (a whole V5 rerun under §8.2, the controller's call)` : `incomplete by ${n}, and failing for more than that (below)`);
   }
   const limited = spanLimited.map((r) => ({ sample: `${r.block}/${r.i}`, dragend_ms: r.drop_status.after.dur, answer_ms: r.ms }));
+  // the hold's notices, counted and reported, the false alarms never hidden (ruling 898.2)
+  const holdNotices = holdNoticeCounts(rows);
+  // the hold canary, on the samples every rule above judged (rulings 897.3, 898.4)
+  const canary = holdCanary(op, rows);
+  if (canary) reasons.push(...canary.reasons);
   return {
     pass: reasons.length === 0,
     reasons,
     ...(drops ? { drops } : {}),
+    ...(holdNotices ? { hold_notices: holdNotices } : {}),
+    ...(canary ? { hold_canary: canary.record } : {}),
     ...(Object.keys(unmet).length ? { premise_unmet: unmet } : {}),
     ...(binding?.unverified ? { plan_unverified: true } : {}),
     ...(limited.length ? { span_limited: limited } : {}),

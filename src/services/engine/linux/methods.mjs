@@ -62,10 +62,13 @@ export function createLinuxMethods({engine, settler, ids}) {
   // An input method: the wait, the request (its element id translated when `resolve`) checked for the capability
   // `gate` names for it, the defer by the settle `settle` names for the request and the engine's answer (the command's
   // own by default).
-  const input = (command, {gate = null, resolve = false, settle = () => command} = {}) => async request => {
+  // With `notice`, an answer the engine put a notice beside resolves to {notice} (a drag's: an identified browser's hold, ruling 897), else to
+  // nothing, the vendor's shape.
+  const input = (command, {gate = null, resolve = false, settle = () => command, notice: carries = false} = {}) => async request => {
     await settler.wait();
-    const answer = await engine.request(command, (resolve ? ids.resolve(request) : request) ?? {}, gate ? needs(gate(request)) : undefined);
+    const {output: answer, notice} = await engine.exchange(command, (resolve ? ids.resolve(request) : request) ?? {}, gate ? needs(gate(request)) : undefined);
     settler.defer(settle(request, answer));
+    if (carries && notice !== undefined) return {notice};
   };
   // An element action's settle: by the family cua-engine names when the action it ran was the element's primary action
   // in a family that animates it, else `otherwise`.
@@ -100,15 +103,16 @@ export function createLinuxMethods({engine, settler, ids}) {
       if (abandoned) throw new Error(ABANDONED);
       if (stale) throw new Error(stale);
     };
+    // a step's notice, the engine's beside its ok (an end's hold notice, ruling 897), or undefined
     const step = async (input, check) => {
       await settler.wait();
-      await engine.request('drag_handle', input, check);
+      return (await engine.exchange('drag_handle', input, check)).notice;
     };
     // a move's or an end's step: refused once stale; an answer of the engine's idle release makes it stale
     const held = async input => {
       fresh();
       try {
-        await step(input, fresh);
+        return await step(input, fresh);
       } catch (error) {
         if (IDLE_RELEASED.test(error.message)) stale = STALE_HANDLE.expired;
         throw error;
@@ -140,9 +144,10 @@ export function createLinuxMethods({engine, settler, ids}) {
       },
       async end() {
         if (state !== 'dragging') throw new Error('drag handle must be started before ending');
-        await held({action: 'end'});
+        const notice = await held({action: 'end'});
         state = 'ended';
         settler.defer('drag_handle');
+        if (notice !== undefined) return {notice};
       },
     };
   }
@@ -162,7 +167,7 @@ export function createLinuxMethods({engine, settler, ids}) {
       await engine.request('clipboard_release', request ?? {});
     },
     clipboard_write: input('clipboard_write', {gate: () => 'text.paste'}),
-    drag: input('drag', {gate: inputRoute}),
+    drag: input('drag', {gate: inputRoute, notice: true}),
     drag_handle: dragHandle,
     activate_window: input('activate_window'),
     async get_screenshot() {

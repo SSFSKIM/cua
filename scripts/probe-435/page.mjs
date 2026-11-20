@@ -55,7 +55,7 @@ function run(c){
     slots=[row(),row(),row()];nav.replaceChildren(...slots);
     if(spec.twin==='cap'&&far.dataset.filler==='1'){for(const ch of [...far.children])if(!ch.classList.contains('fill'))ch.remove();}
     else{far.replaceChildren();far.dataset.filler='';}
-    far.className=spec.twin==='cap'?'on':'';
+    far.className=spec.twin==='cap'||spec.hide==='cv'?'on':'';
     // For the cap twin, the region and the twin's row are groups of their own, so neither is flattened into a sibling the walk
     // reads before the filler.
     if(spec.twin==='cap')far.setAttribute('role','group');else far.removeAttribute('role');
@@ -79,6 +79,22 @@ function run(c){
       twins=[control('twin',spec.before,spec)];let inner=twins[0];
       for(let i=0;i<DEEP;i++){const d=document.createElement('div');d.setAttribute('role','group');d.append(inner);inner=d;}
       mover=inner;slots[1].append(mover);slots[2].append(archive);
+    }else if(spec.twin==='hidden'){
+      // #435: the twin inside a container that may leave it listed without a frame; mark moves it out into the target's
+      // row, shown. \`cv\` lies below the fold (content-visibility:auto skips only what is off screen), so its row holds
+      // Archive.
+      twins=[control('twin',spec.before,spec)];mover=twins[0];
+      let box;
+      if(spec.hide==='details'){box=document.createElement('details');const s=document.createElement('summary');s.textContent='More';box.append(s,mover);}
+      else{
+        box=document.createElement('div');
+        if(spec.hide==='until')box.setAttribute('hidden','until-found');
+        box.style.cssText=spec.hide==='cv'?'content-visibility:auto;contain-intrinsic-size:auto 64px'
+          :spec.hide==='zero'?'width:0;height:0;overflow:hidden':spec.hide==='clip'?'height:64px;overflow:hidden':'';
+        if(spec.hide==='clip'){const pad=document.createElement('div');pad.style.height='64px';box.append(pad);}
+        box.append(mover);
+      }
+      if(spec.hide==='cv'){far.append(box);slots[1].append(archive);}else{slots[1].append(box);slots[2].append(archive);}
     }else if(spec.twin==='swap'){
       // The target alone in its row; mark moves it two rows down (absolutely, so its element survives) and puts a new
       // control with its label, a link or a button, at its old place.

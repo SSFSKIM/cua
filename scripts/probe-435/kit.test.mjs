@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {Script} from 'node:vm';
 import {CELLS,UNITS,AT,FILLER,DEEP,recordedRole,unitKey,unitsFor,unitsForLane,repsOf,plan,pointFor} from './cells.mjs';
-import {quantiles,outcomeOf,stalePointOf,routeOf,findLink,covers,uncoveredBy,nodeAt,landingOf,delta,score,gates,coverage,summarize,judge,MIN_PAIRS} from './check.mjs';
+import {labelledOf,quantiles,outcomeOf,stalePointOf,routeOf,findLink,covers,uncoveredBy,nodeAt,landingOf,delta,score,gates,coverage,summarize,judge,MIN_PAIRS} from './check.mjs';
 import {page} from './page.mjs';
 import {toPixels} from './run.mjs';
 
@@ -37,7 +37,7 @@ test('plans: ten per unit to measure, twenty per head interleaved to qualify', (
   assert.deepEqual([...new Set(q.filter((_, i) => i % 2 === 0).map(r => r.head))].sort(), ['fix', 'main']);
   for (const c of Object.values(CELLS)) assert.ok(['twin', 'keep', 'big', 'asMain'].includes(c.kind));
   // A twin carries the target's label, so the topmost of those reading it is the target.
-  for (const c of Object.values(CELLS)) if (c.kind === 'twin') assert.ok(c.before === c.after && ['move', 'list', 'cap', 'deep', 'swap', 'cover', 'row', 'wide'].includes(c.twin));
+  for (const c of Object.values(CELLS)) if (c.kind === 'twin') assert.ok(c.before === c.after && ['move', 'list', 'cap', 'deep', 'swap', 'cover', 'row', 'wide', 'hidden'].includes(c.twin));
   // Every cell's text before and after is distinct from the other links', so the observation finds it alone.
   for (const c of Object.values(CELLS)) for (const t of [c.before, c.after]) assert.ok(!['Archive', 'Drafts'].includes(t));
 });
@@ -209,11 +209,13 @@ test('gates pass a fix that refuses every twin and answers as main elsewhere, an
   const g = gates(ok, {coverage: cov});
   assert.ok(Object.values(g).every(x => x.pass), JSON.stringify(g));
   assert.equal(g.reproduced.result, 'reproduced');
-  assert.equal(g.twinRefused.mainWrong, 20 * 12); assert.equal(g.twinUnrecorded.mainWrong, 20 * 6);
+  assert.equal(g.twinRefused.mainWrong, 20 * 12); assert.equal(g.twinUnrecorded.mainWrong, 20 * 6); assert.equal(g.twinFrameless.mainWrong, 20 * 10);
   // A moved target's own handle refuses frameMoved, which the swap cells count with nodeGone; no other twin does.
   const swapMoved = rows(good, r => r.head === 'fix' && r.cell.startsWith('twinswap') ? {guard: {verdict: 'refused', reason: 'frameMoved'}} : {});
   assert.equal(gates(swapMoved, {coverage: cov}).twinRefused.pass, true);
-  assert.equal(g.noWrongTarget.mainWrong, 18 * 20);
+  assert.equal(g.noWrongTarget.mainWrong, 28 * 20);
+  const cvKept = gates(rows(at('twincv', 'text', 0, 'kept-landed')), {coverage: cov});
+  assert.equal(cvKept.twinFrameless.pass, false); assert.equal(cvKept.twinRefused.pass, true); assert.equal(cvKept.twinFrameless.perUnit['twincv/text'].missed, 1);
   // twincover at the link (#433) is reported, never gated: a wrong target there fails nothing.
   const overlay = gates(rows(at('twincover', 'link', null, 'wrong-target')), {coverage: cov});
   assert.ok(overlay.twinRefused.pass && overlay.noWrongTarget.pass); assert.equal(overlay.reportOnly.perUnit['twincover/link'].fixWrong, 20);
@@ -383,4 +385,35 @@ test('summaries carry the geometry as median and span', () => {
   assert.equal(s.domText.n, 1);
   assert.deepEqual(s.reason, {'refused/nodeGone': 2});
   assert.deepEqual(quantiles([3, 1, 2, 10]), {n: 4, p50: 3, p95: 10, max: 10});
+});
+
+test('#435: a frameless twin must be listed without a frame, of the unit\'s role, and nothing reading the label framed elsewhere', () => {
+  const found = {text, link}, archive = {role: 'AXLink', title: 'Archive', frame: {x: 420, y: 264, width: 130, height: 56}};
+  const ftext = {role: 'AXStaticText', value: 'Inbox', frame: null}, flink = {role: 'AXLink', title: 'Inbox', frame: null};
+  const spec = CELLS.twindetails, sky = nodes => ({nodes});
+  assert.equal(uncoveredBy(sky([text, link, flink, ftext, archive]), spec, found, {at: 'text'}), null);
+  assert.equal(uncoveredBy(sky([text, link, flink, ftext, archive]), spec, found, {at: 'link'}), null);
+  // Only the link listed frameless: the link point is tested, the text point is not.
+  assert.equal(uncoveredBy(sky([text, link, flink, archive]), spec, found, {at: 'text'}), 'frameless');
+  assert.equal(uncoveredBy(sky([text, link, {role: 'AXLink', title: '', frame: null}, archive]), spec, found, {at: 'link'}), null);
+  assert.equal(uncoveredBy(sky([text, link, {role: 'AXLink', title: 'Other', frame: null}, archive]), spec, found, {at: 'link'}), 'frameless');
+  // Nothing of the twin listed: not tested.
+  assert.equal(uncoveredBy(sky([text, link, archive]), spec, found, {at: 'link'}), 'frameless');
+  // A zero-size twin is framed for #431's search, so the cell does not test the fix.
+  const zero = {x: 420, y: 200, width: 0, height: 0};
+  assert.equal(uncoveredBy(sky([text, link, {...ftext, frame: zero}, flink, archive]), spec, found, {at: 'text'}), 'label');
+  assert.equal(uncoveredBy(sky([text, link, ftext, {role: 'AXLink', title: '', frame: zero}, archive]), spec, found, {at: 'text'}), 'control');
+  // A framed twin is a second carrier.
+  assert.equal(uncoveredBy(sky([text, link, {...text, frame: {...text.frame, y: 214}}, flink, ftext]), spec, found, {at: 'text'}), 'count');
+  // The discovery's evidence: the label's carriers by role and frame, every frameless node by role.
+  assert.deepEqual(labelledOf([text, link, ftext, flink, {...ftext, frame: zero}, {role: 'AXGroup', frame: null}, archive], 'Inbox'),
+    {label: {'AXStaticText:framed': 1, 'AXLink:framed': 1, 'AXStaticText:frameless': 1, 'AXLink:frameless': 1, 'AXStaticText:zero': 1},
+      frameless: {AXStaticText: 1, AXLink: 1, AXGroup: 1}});
+  // A short qualification asks the valid bar of its repetitions in usable pairs.
+  const units = unitsFor('remount'), ten = plan({mode: 'qualify', heads: ['main', 'fix'], units, reps: 10});
+  assert.equal(plan({mode: 'discover', heads: ['main'], units}).length, 3 * units.length);
+  const kept = ten.map(r => ({...r, lane: 'cft', valid: !(r.head === 'fix' && r.rep < 2), invalid: null, verdict: 'kept-landed',
+    guard: {verdict: 'kept', reason: 'sameElement', ms: 1}, click: 'success', clickEvents: [], presentationHeld: true}));
+  const cov = coverage(kept, {planned: planned(ten), heads: ['main', 'fix'], units});
+  assert.equal(judge(kept, {mode: 'qualify', abort: null, coverage: cov, units, reps: 10}).pass, true);
 });

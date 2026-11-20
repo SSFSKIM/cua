@@ -31,7 +31,7 @@ export function findLink(nodes,text,{first=false,role='AXLink'}={}){
 
 // How many controls reading the label a twin cell prepares in what the observation can read: the target and its twin
 // (`move`), the three rows (`list`), the target alone where the twin lies outside the walk (`cap`, `deep`).
-export const LABELLED={move:2,list:3,cap:1,deep:1,swap:1,cover:2,row:2,wide:1};
+export const LABELLED={move:2,list:3,cap:1,deep:1,swap:1,cover:2,row:2,wide:1,hidden:1};
 // Whether an observation of a twin cell is the one the cell needs (every other cell: true):
 // - the target is the control found: exactly LABELLED of the label's carriers were emitted (AXStaticText for links,
 //   AXButton for buttons), so an observation that missed the target never aims at the next row;
@@ -45,7 +45,12 @@ export const LABELLED={move:2,list:3,cap:1,deep:1,swap:1,cover:2,row:2,wide:1};
 // `uncoveredBy` names the first condition that failed (a closed code), null when the observation is the one needed.
 // A big cell's observation must show the cut it names: the width rule's subset (a node `shown` fewer of its children
 // than it has) for `wide`, the node cap itself for `cap`.
-export function uncoveredBy(sky,spec,found,{role='AXLink'}={}){
+// #435's frameless twins (`hidden`): no node reading the label with any frame (a zero-size one included, which #431's
+// search already reads) outside the target control's frame (`label`), no control of the role with any frame at or below
+// the target's row but the target and Archive (`control`), and a node of the unit's recorded role (`at`) listed with no
+// frame that #431's label rule would take for the target (`frameless`): a text reading the label, a control reading it
+// or carrying no label.
+export function uncoveredBy(sky,spec,found,{role='AXLink',at=null}={}){
   const nodes=Array.isArray(sky?.nodes)?sky.nodes:[];
   if(spec.big==='wide')return nodes.some(n=>Number.isInteger(n?.shown?.count)&&n.shown.count<n.shown.of)?null:'cut';
   if(spec.big==='cap')return sky?.timings?.nodeCapHit===true?null:'cut';
@@ -58,6 +63,14 @@ export function uncoveredBy(sky,spec,found,{role='AXLink'}={}){
     const bottom=found.link.frame.y+found.link.frame.height;
     return nodes.some(n=>n?.role===role&&framed(n)&&n!==found.link&&n.frame.y>=bottom)?'control':null;
   }
+  if(spec.twin==='hidden'){
+    const placed=n=>n?.frame!=null;
+    if(!nodes.filter(n=>placed(n)&&reads(n,spec.before)).every(n=>framed(n)&&holds(found.link.frame,centre(n.frame))))return 'label';
+    const above=n=>framed(n)&&n.frame.y+n.frame.height<=found.link.frame.y+2;
+    if(!nodes.filter(n=>n?.role===role&&placed(n)&&!above(n)).every(n=>n===found.link||reads(n,'Archive')))return 'control';
+    const want=at==='text'?'AXStaticText':role;
+    return nodes.some(n=>n&&!placed(n)&&n.role===want&&(reads(n,spec.before)||want!=='AXStaticText'&&unlabelled(n)))?null:'frameless';
+  }
   if(spec.twin!=='cap'&&spec.twin!=='deep')return null;
   const t=sky.truncated;
   if(spec.twin==='cap'?!(t?.count>0&&sky.timings?.nodeCapHit===true):!(t?.depth>0))return 'cut';
@@ -67,6 +80,16 @@ export function uncoveredBy(sky,spec,found,{role='AXLink'}={}){
   return nodes.filter(n=>n?.role===role&&!above(n)).every(n=>n===found.link||reads(n,'Archive'))?null:'control';
 }
 export const covers=(...a)=>uncoveredBy(...a)===null;
+const unlabelled=n=>[n.title,n.description,n.value].every(v=>typeof v!=='string'||!v.trim());
+
+// #435's discovery: how the observation lists every node reading `text`, by role and frame (`framed`, `zero` for a frame
+// with no area, `frameless` for none: no AXPosition or AXSize), and every frameless node by role. Closed codes and counts.
+export function labelledOf(nodes,text){
+  const list=Array.isArray(nodes)?nodes.filter(Boolean):[];
+  const cls=n=>n.frame==null?'frameless':framed(n)?'framed':'zero';
+  return {label:tally(list.filter(n=>reads(n,text)).map(n=>`${role(n.role)}:${cls(n)}`)),
+    frameless:tally(list.filter(n=>n.frame==null).map(n=>role(n.role)??'none'))};
+}
 
 const name=x=>typeof x==='string'&&/^[A-Za-z][A-Za-z0-9]{0,47}$/.test(x)?x:'other';
 const role=x=>typeof x==='string'&&/^AX[A-Za-z]{1,40}$/.test(x)?x:x==null?null:'other';
@@ -139,6 +162,7 @@ export function score({attested,observeFailed=false,cell='plain',at,click,stale,
 }
 
 const tally=list=>list.reduce((o,k)=>(o[k]=(o[k]??0)+1,o),{});
+const signature=o=>Object.entries(o??{}).sort(([a],[b])=>a<b?-1:1).map(([k,n])=>`${k}x${n}`).join(' ')||'none';
 const median=xs=>{const a=xs.filter(Number.isFinite).sort((p,q)=>p-q);return a.length?a[Math.floor((a.length-1)/2)]:null;};
 // Quantiles of a list (nearest rank, rounded up): p50, p95 and the max; null when empty.
 export const quantiles=xs=>{const a=xs.filter(Number.isFinite).sort((p,q)=>p-q);if(!a.length)return null;
@@ -164,7 +188,12 @@ export function summarize(rows){
       domText:geo(v,r=>r.dom?.text),domLink:geo(v,r=>r.dom?.link),
       // Where the twin ended against the target's place (CSS px), and what the observation's walk read and cut.
       domTwin:geo(v,r=>r.dom?.twin),walkNodes:quantiles(v.map(r=>r.walk?.nodes)),walkCut:quantiles(v.map(r=>r.walk?.cut)),
-      walkDepthCut:v.filter(r=>r.walk?.depth!=null).length,observeMs:quantiles(v.map(r=>r.observeMs))}];
+      walkDepthCut:v.filter(r=>r.walk?.depth!=null).length,observeMs:quantiles(v.map(r=>r.observeMs)),
+      // #435: how the label's carriers were listed (one signature per row), and why a row's observation fell short of
+      // the cell's (`gap`, recorded in mode discover instead of invalidating the row).
+      walkLabel:tally(list.filter(r=>r.walk?.labelled).map(r=>signature(r.walk.labelled.label))),
+      walkFrameless:tally(list.filter(r=>r.walk?.labelled).map(r=>signature(r.walk.labelled.frameless))),
+      gap:tally(list.filter(r=>r.gap!==undefined).map(r=>r.gap??'none'))}];
   }));
 }
 
@@ -187,6 +216,8 @@ export function coverage(rows,{planned,heads,units=UNITS}){
 export const MIN_PAIRS=10;
 // The ruling-881 twins (absent from the record), gated apart from the twins the record holds so each answer reads alone.
 export const UNRECORDED=new Set(['twincap','twindeep','twinwide']);
+// #435's frameless twins, gated apart (`twinFrameless`).
+export const FRAMELESS=new Set(Object.keys(CELLS).filter(c=>CELLS[c].twin==='hidden'));
 // The qualification gates (two heads). A row pairs with the other head's row of the same unit and repetition.
 export function gates(rows,{coverage:cov,units:all=UNITS,minPairs=MIN_PAIRS}){
   // A unit a cell names report-only (`reportOnlyAt`) is run and reported (`reportOnly`), never gated: twincover at the
@@ -256,8 +287,9 @@ export function gates(rows,{coverage:cov,units:all=UNITS,minPairs=MIN_PAIRS}){
   return {
     coverage:{pass:cov.complete&&cov.covered},
     reproduced:{pass:reproduced,result:!twinRun?'not in this run':reproduced?'reproduced':'not reproduced (inconclusive)',mainRows:mainTwin.length,mainWrong:mainTwinWrong},
-    twinRefused:twinGate(c=>isTwin(c)&&!UNRECORDED.has(c)),
+    twinRefused:twinGate(c=>isTwin(c)&&!UNRECORDED.has(c)&&!FRAMELESS.has(c)),
     twinUnrecorded:twinGate(c=>UNRECORDED.has(c)),
+    twinFrameless:twinGate(c=>FRAMELESS.has(c)),
     keptAsMain:asMainGate(c=>CELLS[c].kind==='keep',{mustKeep:true}),
     othersAsMain:asMainGate(c=>CELLS[c].kind==='asMain'),
     // Genuine re-creations where the record could not hold the container whole (the builder's question): reported with
@@ -286,8 +318,8 @@ export function gates(rows,{coverage:cov,units:all=UNITS,minPairs=MIN_PAIRS}){
 
 // A run's gates and pass: the qualification gates in mode `qualify` only; smoke and measure pass on coverage alone.
 export function judge(rows,{mode,abort,coverage:cov,units=UNITS,reps=null}){
-  // A short qualification (fewer repetitions) asks no more usable pairs per unit than it planned.
-  const gate=mode==='qualify'?gates(rows,{coverage:cov,units,minPairs:Math.min(MIN_PAIRS,reps??MIN_PAIRS)}):null;
+  // A short qualification (fewer repetitions) asks no more usable pairs per unit than the valid bar of what it planned.
+  const gate=mode==='qualify'?gates(rows,{coverage:cov,units,minPairs:Math.min(MIN_PAIRS,Math.ceil(VALID_BAR*(reps??MIN_PAIRS/VALID_BAR)))}):null;
   const measured=abort===null&&cov.complete&&cov.covered;
   // An informational entry (the guard's time) is reported, never part of the pass.
   return {gates:gate,pass:measured&&(!gate||Object.values(gate).every(g=>g.informational||g.pass))};

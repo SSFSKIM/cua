@@ -45,6 +45,18 @@ export const CELLS={
   twinrow:{kind:'twin',before:'Inbox',after:'Inbox',twin:'row'},
   // A group of links, the shape whose width cut Safari shows (Chromium reads such a group whole), so Safari only.
   twinwide:{kind:'twin',before:'Delete',after:'Delete',twin:'wide',lanes:['safari']},
+  // #435's frameless twins: the second "Inbox" link, in the second row, inside a container that may leave the browser
+  // listing it with no AXPosition or AXSize (`hide`): a collapsed <details> (`details`), a content-visibility:auto section
+  // below the fold (`cv`), a hidden=until-found section (`until`), a 0x0 overflow:hidden box (`zero`), a 64 px
+  // overflow:hidden box the link lies past (`clip`). After the observation the target is removed and the twin moved out
+  // into its row, shown. #431's twin search reads the record's framed nodes only, so main keeps the re-created match and
+  // lands on the twin; #435's reads the frameless ones too and must refuse. Gated (`twinFrameless`) only where the
+  // observation holds the twin frameless (check.mjs `uncoveredBy`); mode `discover` records what each lane lists.
+  twindetails:{kind:'twin',before:'Inbox',after:'Inbox',twin:'hidden',hide:'details'},
+  twincv:{kind:'twin',before:'Inbox',after:'Inbox',twin:'hidden',hide:'cv'},
+  twinuntil:{kind:'twin',before:'Inbox',after:'Inbox',twin:'hidden',hide:'until'},
+  twinzero:{kind:'twin',before:'Inbox',after:'Inbox',twin:'hidden',hide:'zero'},
+  twinclip:{kind:'twin',before:'Inbox',after:'Inbox',twin:'hidden',hide:'clip'},
   remount:{kind:'keep',before:'Inbox',after:'Inbox',remount:'link'},
   retext:{kind:'keep',before:'Inbox',after:'Inbox',remount:'text'},
   like:{kind:'keep',before:'Like (12)',after:'Like (13)',style:'tabular'},
@@ -122,7 +134,7 @@ export function repsOf(input){
 
 // Rows in run order. A qualification interleaves the heads, alternating which goes first per unit and repetition.
 export function plan({mode,heads,units=UNITS,reps:override=null}){
-  const reps=Number.isInteger(override)&&override>0?override:mode==='smoke'?1:mode==='qualify'?20:10;
+  const reps=Number.isInteger(override)&&override>0?override:mode==='smoke'?1:mode==='qualify'?20:mode==='discover'?3:10;
   const rows=[];
   for(let rep=0;rep<reps;rep++)units.forEach((u,i)=>{
     const order=heads.length===2&&(rep+i)%2===1?[heads[1],heads[0]]:heads;

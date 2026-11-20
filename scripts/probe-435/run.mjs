@@ -9,7 +9,7 @@ import {execFileSync} from 'node:child_process';
 import {Wire} from './wire.mjs';
 import {owned,stop,pause,environment,startPlatform,startHelper} from './platform.mjs';
 import {LANES,CELLS,recordedRole,controlRole,unitKey,unitsForLane,isReportOnly,repsOf,plan,pointFor} from './cells.mjs';
-import {outcomeOf,stalePointOf,routeOf,findLink,uncoveredBy,nodeAt,landingOf,delta,score,summarize,coverage,judge} from './check.mjs';
+import {outcomeOf,stalePointOf,routeOf,findLink,uncoveredBy,labelledOf,nodeAt,landingOf,delta,score,summarize,coverage,judge} from './check.mjs';
 
 const setupLabel=e=>typeof e?.setupStep==='string'?e.setupStep:'other';
 const stepError=step=>Object.assign(Error(step),{setupStep:step});
@@ -72,14 +72,14 @@ async function startEngine({name,bin,root,platform,linkText}){
 async function main(){
   const [lane,mode,root,out,helperBin,cover,...headSpecs]=process.argv.slice(2);
   if(process.env.RUNNER_ENVIRONMENT!=='github-hosted')throw Error('hosted runners only');
-  if(!LANES.includes(lane)||!['smoke','measure','qualify'].includes(mode))throw Error('invalid lane');
+  if(!LANES.includes(lane)||!['smoke','measure','qualify','discover'].includes(mode))throw Error('invalid lane');
   const heads=Object.fromEntries(headSpecs.map(s=>{const [name,bin]=s.split('::');return [name,{bin}];}));
   // Repetitions per unit and head, when the dispatch names them (`reps`); else the mode's.
   const reps=repsOf(process.env.PROBE_REPS||'');
   // A cell measured on some lanes only (`lanes`) is not planned on the others.
   const headNames=Object.keys(heads),units=unitsForLane(process.env.PROBE_CELLS||'',lane);
   if(!headNames.length||headNames.some(h=>!['main','fix'].includes(h))||mode==='qualify'&&headNames.length!==2)throw Error('invalid heads');
-  mkdirSync(out,{recursive:true});const tmp=mkdtempSync(join(root,'q431-')),home=join(tmp,'platform'),shots=join(tmp,'shots');
+  mkdirSync(out,{recursive:true});const tmp=mkdtempSync(join(root,'q435-')),home=join(tmp,'platform'),shots=join(tmp,'shots');
   mkdirSync(home);mkdirSync(shots,{mode:0o700});
   const config={kit:process.env.GITHUB_SHA,refs:{main:process.env.MAIN_SHA,fix:process.env.FIX_SHA||null},image:process.env.ImageVersion,
     os:execFileSync('sw_vers',['-productVersion'],{encoding:'utf8',stdio:['ignore','pipe','ignore']}).trim(),lane,mode,heads:headNames,cells:process.env.PROBE_CELLS||null};
@@ -101,7 +101,7 @@ async function main(){
     for(const c of cells){
       const e=engines[c.head],app=e.appPath,spec=CELLS[c.cell];
       let s='engine-attach',attested=false,armed=false,observeFailed=false,observed=null,found=null,placed=null,mark=null,click=null,read=null,
-        after=null,reobserved=false,witness=null,invalid=null,exercised=null,walk=null,observeTries=0;
+        after=null,reobserved=false,witness=null,invalid=null,exercised=null,walk=null,observeTries=0,gap;
       try{
         const w=await e.attach();
         await platform.arm(++trial,{cell:c.cell},x=>{s=x;});armed=true;
@@ -118,7 +118,9 @@ async function main(){
         const sky=observed.reply?.result;
         // What the walk read: its node count, what it cut (count and depth) and whether the node cap stopped it.
         if(sky)walk={nodes:Array.isArray(sky.nodes)?sky.nodes.length:null,cut:Number.isInteger(sky.truncated?.count)?sky.truncated.count:0,
-          depth:Number.isInteger(sky.truncated?.depth)?sky.truncated.depth:null,nodeCapHit:sky.timings?.nodeCapHit===true};
+          depth:Number.isInteger(sky.truncated?.depth)?sky.truncated.depth:null,nodeCapHit:sky.timings?.nodeCapHit===true,
+          // #435: how the label's carriers and every frameless node were listed.
+          labelled:labelledOf(sky.nodes,spec.before)};
         // The page is prepared and attested: an observation (or the link in it) missing now is the head's own answer,
         // a valid row whose verdict says so, once the page re-attests that it still holds the prepared link.
         if(sky&&w.lineage)found=findLink(sky.nodes,spec.before,{first:!!spec.twin,role:controlRole(c.cell)});
@@ -138,7 +140,8 @@ async function main(){
           if(nodeAt(sky.nodes,placed.screen)?.role!==recordedRole(c.cell,c.at))throw stepError('placement');
           // A twin cell's observation must hold every control it prepares (so the target is the one found), and a ruling-881
           // twin none of its own, else the unit is not tested.
-          const gap=uncoveredBy(sky,spec,found,{role:controlRole(c.cell)});if(gap)throw stepError('uncovered-'+gap);
+          // Mode discover (#435) records the shortfall (`gap`) and runs the row on, so main's answer is read either way.
+          gap=uncoveredBy(sky,spec,found,{role:controlRole(c.cell),at:c.at});if(gap&&mode!=='discover')throw stepError('uncovered-'+gap);
           // The cell's change, after the observation (and so after the record), before the click.
           s='mark';
           mark=await platform.command({op:'mark',trial});
@@ -194,7 +197,7 @@ async function main(){
         // after the change, in screen points; and the page's own before and after, in CSS pixels.
         ax:found?{recorded:delta(aim?.frame,after?.[c.at]?.frame),text:delta(found.text?.frame,after?.text?.frame),link:delta(found.link.frame,after?.link?.frame),
           reobserved,foundAfter:!!after}:null,
-        observeTries,dom:mark?{text:delta(mark.before?.textRect,mark.after?.textRect),link:delta(mark.before?.link,mark.after?.link),twin:delta(mark.before?.link,mark.twin)}:null,walk,
+        ...(mode==='discover'&&gap!==undefined?{gap}:{}),observeTries,dom:mark?{text:delta(mark.before?.textRect,mark.after?.textRect),link:delta(mark.before?.link,mark.after?.link),twin:delta(mark.before?.link,mark.twin)}:null,walk,
         frames:found?{text:found.text?.frame??null,link:found.link.frame,point:placed?.screen??null}:null,
         presentationHeld:witness?.held??null,observeMs:observed?.ms??null,clickMs:click?.ms??null};
       rows.push(row);

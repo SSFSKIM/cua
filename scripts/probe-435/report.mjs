@@ -1,4 +1,4 @@
-// Markdown tables from a downloaded run: node scripts/probe-431/report.mjs <dir> (gh run download <id> -D <dir>).
+// Markdown tables from a downloaded run: node scripts/probe-435/report.mjs <dir> (gh run download <id> -D <dir>).
 import {readdirSync,readFileSync,existsSync} from 'node:fs';
 import {join} from 'node:path';
 import {UNITS,unitKey} from './cells.mjs';
@@ -6,7 +6,7 @@ import {quantiles} from './check.mjs';
 
 const dir=process.argv[2];
 const load=(d,f)=>existsSync(join(dir,d,f))?JSON.parse(readFileSync(join(dir,d,f),'utf8')):null;
-const arts=readdirSync(dir).filter(d=>d.startsWith('probe-431-')).sort();
+const arts=readdirSync(dir).filter(d=>d.startsWith('probe-435-')).sort();
 const fmt=o=>Object.entries(o??{}).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`${k} ${v}`).join(', ')||'–';
 const g=x=>!x?'–':['dx','dw'].map(k=>`${k} ${x[k].median}${x[k].span[0]!==x[k].span[1]?` [${x[k].span[0]}, ${x[k].span[1]}]`:''}`).join('; ')+(x.dy.span[0]||x.dy.span[1]?`; dy ${x.dy.median}`:'');
 for(const d of arts){
@@ -25,6 +25,12 @@ for(const d of arts){
   for(const u of UNITS)for(const h of ['main','fix']){
     const x=sum[`${h}|${unitKey(u)}`];if(!x)continue;
     console.log(`| ${unitKey(u)} | ${h} | ${g(x.axRecorded)} | ${g(x.axText)} | ${g(x.axLink)} | ${g(x.domText)} | ${g(x.domLink)} | ${g(x.domTwin)} | ${x.walkNodes?.p50??'–'} (${x.walkCut?.p50??'–'}; ${x.walkDepthCut}) | ${qq(x.observeMs)} |`);
+  }
+  // #435's discovery: how each row's observation listed the label's carriers and its frameless nodes, and its gap.
+  console.log('\n| Unit | Head | Gap | Label carriers (role:frame x n), rows | Frameless nodes by role, rows |\n|---|---|---|---|---|');
+  for(const u of UNITS)for(const h of ['main','fix']){
+    const x=sum[`${h}|${unitKey(u)}`];if(!x||!x.walkLabel)continue;
+    console.log(`| ${unitKey(u)} | ${h} | ${fmt(x.gap)} | ${fmt(x.walkLabel)} | ${fmt(x.walkFrameless)} |`);
   }
   // The guard's own time (stalePoint.ms) per head over every valid row, and split by its verdict.
   const rows=load(d,'rows.json')??[];

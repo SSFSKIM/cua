@@ -1,10 +1,10 @@
-name: probe-431-qualification
-# Disposable #431 kit (scripts/probe-431/README.md), built on #340's. A push of this file only registers the workflow on
+name: probe-435-qualification
+# Disposable #435 kit (scripts/probe-435/README.md), built on #431's. A push of this file only registers the workflow on
 # its branch; hosted macOS runs need explicit main (and fix) SHAs.
 on:
   push:
-    branches: ['probe/431-qual']
-    paths: ['.github/workflows/probe-431-qual.yml']
+    branches: ['probe/435-qual']
+    paths: ['.github/workflows/probe-435-qual.yml']
   workflow_dispatch:
     inputs:
       main:
@@ -16,9 +16,9 @@ on:
         type: string
         default: ''
       mode:
-        description: smoke (one trial per unit), measure (ten per unit per head), qualify (twenty per unit per head, interleaved)
+        description: smoke (one trial per unit), measure (ten per unit per head), qualify (twenty per unit per head, interleaved), discover (three per unit, a short observation records its gap and runs on)
         type: choice
-        options: [smoke, measure, qualify]
+        options: [smoke, measure, qualify, discover]
         default: smoke
       lanes:
         description: Comma list of lanes (cft, safari, electron)
@@ -35,7 +35,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: probe-431-qualification-${{ github.run_id }}
+  group: probe-435-qualification-${{ github.run_id }}
   cancel-in-progress: false
 jobs:
   register:
@@ -51,7 +51,7 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
-          sparse-checkout: scripts/probe-431
+          sparse-checkout: scripts/probe-435
           persist-credentials: false
       - id: plan
         shell: bash
@@ -67,7 +67,7 @@ jobs:
           # Unknown cells or a malformed reps fail here, before any macOS job; a lane with no unit of the cells is dropped,
           # and a dispatch that leaves none is refused.
           node --input-type=module -e '
-            const {unitsForLane,repsOf}=await import("./scripts/probe-431/cells.mjs");
+            const {unitsForLane,repsOf}=await import("./scripts/probe-435/cells.mjs");
             repsOf(process.env.PROBE_REPS);
             const lanes=process.env.LANES.split(",").map(s=>s.trim()).filter(Boolean);
             if(!lanes.length||lanes.some(l=>!["cft","safari","electron"].includes(l)))throw Error("unknown lane");
@@ -112,15 +112,15 @@ jobs:
           fi
           git log -1 --format='kit %H %s'
           sw_vers
-          node --test scripts/probe-431/kit.test.mjs
-          node -e 'import("./scripts/probe-431/cells.mjs").then(m=>console.log("units",m.unitsFor(process.env.PROBE_CELLS).length))'
+          node --test scripts/probe-435/kit.test.mjs
+          node -e 'import("./scripts/probe-435/cells.mjs").then(m=>console.log("units",m.unitsFor(process.env.PROBE_CELLS).length))'
           heads=(main)
           if [[ -n "$FIX_SHA" ]]; then heads=(main fix); fi
-          printf '%s\n' "${heads[@]}" > "$RUNNER_TEMP/q431-heads"
+          printf '%s\n' "${heads[@]}" > "$RUNNER_TEMP/q435-heads"
           for head in "${heads[@]}"; do
             pin="$MAIN_SHA"
             if [[ "$head" == fix ]]; then pin="$FIX_SHA"; fi
-            base="$RUNNER_TEMP/q431-$head"
+            base="$RUNNER_TEMP/q435-$head"
             git worktree add --detach "$base-src" "$pin"
             test "$(git -C "$base-src" rev-parse HEAD)" = "$pin"
             test -z "$(git -C "$base-src" status --porcelain)"
@@ -131,35 +131,35 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [[ "$LANE" == electron ]]; then npm ci --prefix scripts/probe-431/electron --no-audit --no-fund; fi
-          swiftc -O scripts/probe-431/host.swift -o "$RUNNER_TEMP/q431-host"
-          cover="$RUNNER_TEMP/Probe431 Cover.app"
+          if [[ "$LANE" == electron ]]; then npm ci --prefix scripts/probe-435/electron --no-audit --no-fund; fi
+          swiftc -O scripts/probe-435/host.swift -o "$RUNNER_TEMP/q435-host"
+          cover="$RUNNER_TEMP/Probe435 Cover.app"
           mkdir -p "$cover/Contents/MacOS"
           cat > "$cover/Contents/Info.plist" <<PLIST
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0"><dict>
-          <key>CFBundleExecutable</key><string>q431</string>
+          <key>CFBundleExecutable</key><string>q435</string>
           <key>CFBundleIdentifier</key><string>org.cua.probe395.cover</string>
-          <key>CFBundleName</key><string>Probe431</string>
+          <key>CFBundleName</key><string>Probe435</string>
           <key>CFBundlePackageType</key><string>APPL</string>
           <key>CFBundleVersion</key><string>1</string>
           </dict></plist>
           PLIST
-          cp "$RUNNER_TEMP/q431-host" "$cover/Contents/MacOS/q431"
+          cp "$RUNNER_TEMP/q435-host" "$cover/Contents/MacOS/q435"
           codesign --force --sign - "$cover"
       - name: Run the lane and publish its coded evidence
         id: qualification
         shell: bash
         run: |
           set -euo pipefail
-          evidence="$RUNNER_TEMP/q431-evidence"
+          evidence="$RUNNER_TEMP/q435-evidence"
           mkdir -p "$evidence"
           rc=0
           specs=()
-          while read -r head; do specs+=("$head::$RUNNER_TEMP/q431-$head-build/release/cua-engine"); done < "$RUNNER_TEMP/q431-heads"
-          node scripts/probe-431/run.mjs "$LANE" "$MODE" "$RUNNER_TEMP" "$evidence" "$RUNNER_TEMP/q431-host" \
-            "$RUNNER_TEMP/Probe431 Cover.app/Contents/MacOS/q431" "${specs[@]}" || rc=$?
+          while read -r head; do specs+=("$head::$RUNNER_TEMP/q435-$head-build/release/cua-engine"); done < "$RUNNER_TEMP/q435-heads"
+          node scripts/probe-435/run.mjs "$LANE" "$MODE" "$RUNNER_TEMP" "$evidence" "$RUNNER_TEMP/q435-host" \
+            "$RUNNER_TEMP/Probe435 Cover.app/Contents/MacOS/q435" "${specs[@]}" || rc=$?
           if [[ ! -s "$evidence/status.json" ]]; then
             printf '%s\n' '{"pass":false,"abort":"publication-missing"}' > "$evidence/status.json"
             rc=1
@@ -169,13 +169,13 @@ jobs:
         if: ${{ !cancelled() && steps.qualification.outcome == 'skipped' }}
         shell: bash
         run: |
-          mkdir -p "$RUNNER_TEMP/q431-evidence"
-          printf '%s\n' '{"pass":false,"abort":"build-or-provisioning-setup"}' > "$RUNNER_TEMP/q431-evidence/status.json"
+          mkdir -p "$RUNNER_TEMP/q435-evidence"
+          printf '%s\n' '{"pass":false,"abort":"build-or-provisioning-setup"}' > "$RUNNER_TEMP/q435-evidence/status.json"
       - name: Upload the coded evidence, never runner state
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
         with:
-          name: probe-431-${{ matrix.lane }}-${{ env.MODE }}
-          path: ${{ runner.temp }}/q431-evidence/*.json
+          name: probe-435-${{ matrix.lane }}-${{ env.MODE }}
+          path: ${{ runner.temp }}/q435-evidence/*.json
           if-no-files-found: error
           retention-days: 30

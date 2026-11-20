@@ -656,51 +656,56 @@ final class BackgroundPointerTests: XCTestCase {
     XCTAssertTrue(hitIn(application, window, stub(application, answers: window)) === window, "the window itself")
   }
 
-  /// #452/#337: a hit in another window of the app's is its own outcome, with that window's number (Chrome's omnibox
-  /// popup, window 49 over the browser window), so #282's refusal can name the window rather than the page; a hit whose
-  /// ancestry reads to no window, or no answer, is none, and the target's own hit is in the window.
-  func testAHitInAnotherWindowOfTheAppIsItsOwnOutcomeWithTheWindowsNumber() {
+  /// #452/#337: where the hit answered, the guard's signal, beside main's hit: another window of the app's with its number
+  /// (Chrome's omnibox popup, window 49 over the browser window), the observed window with an AXPopover on the way
+  /// (TextEdit's colour-well popover) or without, and unread for an ancestry that reads to no window or no answer.
+  func testTheHitTestSaysWhereItAnsweredWithTheOtherWindowsNumber() {
     let application = Node("AXApplication")
     let window = Node("AXWindow", parent: application)
     let popup = Node("AXWindow", parent: application)
     let row = Node("AXStaticText", parent: Node("AXList", parent: Node("AXWebArea", parent: popup)))
     let numbers = [ObjectIdentifier(popup): CGWindowID(49), ObjectIdentifier(window): CGWindowID(28)]
     let found = outcome(application, window, stub(application, answers: row), numbers: numbers)
-    guard case .otherWindow(let number) = found else { return XCTFail("another window's hit: \(found)") }
-    XCTAssertEqual(number, 49)
-    XCTAssertNil(found.element, "taken as no hit")
-    guard case .otherWindow(nil) = outcome(application, window, stub(application, answers: row)) else { return XCTFail("number unread") }
-    guard case .none = outcome(application, window, stub(application, answers: Node("AXButton", parent: Node("AXGroup")))) else {
-      return XCTFail("no window ancestor read")
-    }
-    guard case .none = outcome(application, window, stub(application, answers: nil)) else { return XCTFail("no answer") }
+    XCTAssertEqual(found.place, .otherWindow(49))
+    XCTAssertNil(found.element, "main's hit: none")
+    XCTAssertEqual(outcome(application, window, stub(application, answers: row)).place, .otherWindow(nil), "its number unread")
+    XCTAssertEqual(outcome(application, window, stub(application, answers: Node("AXButton", parent: Node("AXGroup")))).place, .unread)
+    XCTAssertEqual(outcome(application, window, stub(application, answers: nil)).place, .unread)
     let button = Node("AXButton", parent: window)
     let own = outcome(application, window, stub(application, answers: button), numbers: numbers)
     XCTAssertTrue(own.element === button)
-    XCTAssertNil(own.otherWindow, "the target's own hit")
+    XCTAssertEqual(own.place, .observedWindow(inPopover: false))
+    let swatch = Node("AXButton", parent: Node("AXGroup", parent: Node("AXPopover", parent: window)))
+    let inPopover = outcome(application, window, stub(application, answers: swatch))
+    XCTAssertTrue(inPopover.element === swatch, "main's hit unchanged")
+    XCTAssertEqual(inPopover.place, .observedWindow(inPopover: true))
   }
 
-  /// #452/#337: shared mode's refusal of a background click whose hit lay in another window of the app's (Chrome's
-  /// omnibox popup open in the screenshot) names the app's own window and the way through, never the page; nothing is
-  /// posted. Without that hit the page's sentence stands.
-  func testSharedModesRefusalOfAHitInAnotherWindowOfTheAppNamesThatWindowNotThePage() {
-    for over in [true, false] {
-      let seam = GuardSeam(frontmost: user)
-      var clickMeta = meta(connection())
-      var pointer = PointerTarget(view: .possibleWebArea, app: "Google Chrome", engine: .chromium)
-      pointer.overAppWindow = over
-      XCTAssertThrowsError(try click(seam, activation: chrome(seam), pointer: pointer, meta: &clickMeta)) { error in
-        let refusal = error as? EngineError
-        if over {
-          XCTAssertEqual(refusal?.errorName, "appWindowOverPoint")
-          XCTAssertEqual(refusal?.message, appWindowOverPointRefusal(app: "Google Chrome").message)
-          XCTAssertFalse(refusal?.message.contains("web page") ?? true, "the page is not blamed")
-        } else {
-          XCTAssertEqual(refusal?.errorName, "backgroundClickRefused")
-        }
+  /// Design ruling 940: a hit-test past `pointHitSignalDeadlineMs` gives the guard no signal (main's verdict stands), and
+  /// main's hit is unchanged; its time is reported either way, and another window's number is not read once late.
+  func testAHitTestPastItsDeadlineGivesNoSignalAndKeepsMainsHit() {
+    let application = Node("AXApplication")
+    let window = Node("AXWindow", parent: application)
+    let popup = Node("AXWindow", parent: application)
+    let row = Node("AXStaticText", parent: popup)
+    let button = Node("AXButton", parent: window)
+    for (lateMs, expectedOwn, expectedOther) in [(10.0, PointHitPlace.observedWindow(inPopover: false), PointHitPlace.otherWindow(49)),
+                                                 (pointHitSignalDeadlineMs + 1, .unread, .unread)] {
+      var clock = 0.0
+      var numbered = 0
+      func late(_ answer: Node) -> (Node, CGPoint) -> (AXError, Node?) {
+        { root, at in clock += lateMs; return self.stub(application, answers: answer)(root, at) }
       }
-      XCTAssertEqual(seam.posts.count, 0, "nothing posted")
-      XCTAssertNil(clickMeta.startedAt)
+      let own = windowHit(application: application, window: window, at: point, elementAt: late(button), role: { $0.role },
+                          parent: { $0.parent }, same: { $0 === $1 }, now: { clock })
+      XCTAssertTrue(own.element === button)
+      XCTAssertEqual(own.place, expectedOwn)
+      XCTAssertEqual(own.ms, lateMs)
+      let other = windowHit(application: application, window: window, at: point, elementAt: late(row), role: { $0.role },
+                            parent: { $0.parent }, same: { $0 === $1 }, number: { _ in numbered += 1; return 49 }, now: { clock })
+      XCTAssertNil(other.element)
+      XCTAssertEqual(other.place, expectedOther)
+      XCTAssertEqual(numbered, expectedOther == .unread ? 0 : 1)
     }
   }
 

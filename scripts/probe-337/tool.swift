@@ -14,10 +14,13 @@
 //   {"op":"settext","pid","text"}            the text area's value set to text, its caret put at 0
 //   {"op":"value","pid","x","y"}             the hit at the point: role, subrole, description, AXValue when a number
 //   {"op":"focusweb","pid"}                  AXFocused written on the focused window's first web area (the reset's)
-//   {"op":"popup","pid","window":[x,y,w,h]}  the app's on-screen windows (number, layer, bounds, z index), the target
-//       window among them, and the popup: the frontmost other window of the app inside the target's bounds; for it the AX
-//       window whose frame matches, its elements breadth-first (role, labels, frame), and the application's hit-test
-//       scanned down the popup every 4 pt (role, labels, frame, the hit's window frame)
+//   {"op":"popup","pid","window":[x,y,w,h]}  the app's on-screen windows (number, layer, owner, bounds, z index), the
+//       target window among them, and the overlay: the frontmost other window of the app in front of it (any layer); for
+//       it the AX root inside it (a window, an app child, or the opener's menu), that root's elements breadth-first (role,
+//       labels, value, menu mark, frame), and the application's and the system's hit-tests scanned down it every 4 pt
+//   {"op":"open","pid","find":{roles,title,description,value,any},"action"}  the first matching element of the app's
+//       windows, remembered as the opener, and an action taken on it ("focus" or an AX action name)
+//   {"op":"opener"}                          the opener's value, title, frame and focus now
 import AppKit
 import ApplicationServices
 import Foundation
@@ -319,47 +322,102 @@ func popup(_ q: [String: Any]) -> [String: Any] {
     guard ((w[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value ?? 0) == pid else { continue }
     let b = rectOf(w), layer = (w[kCGWindowLayer as String] as? NSNumber)?.intValue ?? 0
     let r: [String: Any] = ["i": i, "n": (w[kCGWindowNumber as String] as? NSNumber)?.intValue ?? 0, "layer": layer, "bounds": wire(b),
-                            "alpha": (w[kCGWindowAlpha as String] as? NSNumber)?.doubleValue ?? 1]
+                            "alpha": (w[kCGWindowAlpha as String] as? NSNumber)?.doubleValue ?? 1,
+                            "owner": short(w[kCGWindowOwnerName as String] as? String)]
     mine.append(r)
-    if target == nil, layer == 0, near(b, wanted) { target = r; continue }
-    // The popup: the frontmost other window of the app that lies inside the target's bounds and is smaller.
-    if pop == nil, target == nil, b.width * b.height < wanted.width * wanted.height, wanted.insetBy(dx: -4, dy: -4).contains(b), b.height > 20 {
-      pop = r; popRect = b
-    }
+    if target == nil, layer == 0, near(b, wanted, 3) { target = r; continue }
+    // The overlay: the frontmost window of the app in front of the target (any layer: a menu's is 101), 20 pt each way.
+    if pop == nil, target == nil, b.height >= 20, b.width >= 20 { pop = r; popRect = b }
   }
   var out: [String: Any] = ["appWindows": mine, "target": target ?? NSNull(), "popup": pop ?? NSNull()]
   guard pop != nil else { return out }
   let app = prepare(AXUIElementCreateApplication(pid))
-  let axWindows = elements(attr(app, kAXWindowsAttribute)) + elements(attr(app, kAXChildrenAttribute)).filter { role($0) != "AXMenuBar" }
-  out["axWindows"] = axWindows.map { describe($0) }
-  if let axPop = axWindows.first(where: { frameOf($0).map { near($0, popRect, 3) } ?? false }) {
+  var roots = elements(attr(app, kAXWindowsAttribute)) + elements(attr(app, kAXChildrenAttribute)).filter { role($0) != "AXMenuBar" }
+  // A popup button's menu hangs under the button that opened it.
+  if let opener { roots += elements(attr(opener, kAXChildrenAttribute)).filter { role($0) == "AXMenu" } }
+  out["axRoots"] = roots.prefix(12).map { describe($0) }
+  let grown = popRect.insetBy(dx: -8, dy: -8)
+  if let axPop = roots.first(where: { frameOf($0).map { grown.contains($0) && $0.width * $0.height >= popRect.width * popRect.height * 0.5 } ?? false }) {
     out["axPopup"] = describe(axPop)
     var queue: [(AXUIElement, Int)] = [(axPop, 0)], head = 0, rows: [[String: Any]] = []
-    while head < queue.count && queue.count < 400 {
+    while head < queue.count && queue.count < 900 {
       let (e, depth) = queue[head]; head += 1
-      if depth > 0, let f = frameOf(e), f.height >= 8, f.width >= 8 { rows.append(row(e, depth: depth)) }
-      if depth < 14 { for k in elements(attr(e, kAXChildrenAttribute)) { queue.append((k, depth + 1)) } }
+      if depth > 0, let f = frameOf(e), f.height >= 8, f.width >= 8, grown.contains(f) {
+        var d = row(e, depth: depth); d["mark"] = short(str(e, "AXMenuItemMarkChar")); d["enabled"] = boolAttr(e, kAXEnabledAttribute)
+        rows.append(d)
+      }
+      if depth < 20 { for k in elements(attr(e, kAXChildrenAttribute)) { queue.append((k, depth + 1)) } }
     }
-    out["axRows"] = Array(rows.prefix(80))
+    out["axRows"] = Array(rows.prefix(160))
   } else { out["axPopup"] = NSNull() }
-  var scan: [[String: Any]] = [], last = ""
-  let x = popRect.minX + popRect.width * 0.3
-  var y = popRect.minY + 2
-  while y < popRect.maxY - 1 {
-    var hit: AXUIElement?
-    if AXUIElementCopyElementAtPosition(app, Float(x), Float(y), &hit) == .success, let h = hit {
-      let e = prepare(h)
-      var d = describe(e)
-      d["windowFrame"] = wire(windowAncestor(e).flatMap(frameOf))
-      d["value"] = short(str(e, kAXValueAttribute))
-      let key = "\(d["role"] ?? "")|\(d["frame"] ?? "")"
-      if key != last { d["y"] = r1(Double(y)); scan.append(d); last = key }
-    } else if last != "none" { scan.append(["y": r1(Double(y)), "role": NSNull()]); last = "none" }
-    y += 4
+  // The hit-test scanned down the overlay, asked of the application and of the system.
+  let system = prepare(AXUIElementCreateSystemWide())
+  for (name, root) in [("scan", app), ("systemScan", system)] {
+    var scan: [[String: Any]] = [], last = ""
+    let x = popRect.minX + popRect.width * 0.3
+    var y = popRect.minY + 2
+    while y < popRect.maxY - 1 && scan.count < 80 {
+      var hit: AXUIElement?
+      if AXUIElementCopyElementAtPosition(root, Float(x), Float(y), &hit) == .success, let h = hit {
+        let e = prepare(h)
+        var d = describe(e)
+        d["windowFrame"] = wire(windowAncestor(e).flatMap(frameOf))
+        d["value"] = short(str(e, kAXValueAttribute))
+        d["pid"] = pidOf(e)
+        let key = "\(d["role"] ?? "")|\(d["frame"] ?? "")"
+        if key != last { d["y"] = r1(Double(y)); scan.append(d); last = key }
+      } else if last != "none" { scan.append(["y": r1(Double(y)), "role": NSNull()]); last = "none" }
+      y += 4
+    }
+    out[name] = scan
   }
-  out["scan"] = scan
-  out["scanX"] = r1(Double(x))
+  out["scanX"] = r1(Double(popRect.minX + popRect.width * 0.3))
   return out
+}
+
+/// The element the last `open` found (the kit's opener), read again after the click for its value.
+var opener: AXUIElement? = nil
+func matches(_ e: AXUIElement, _ q: [String: Any]) -> Bool {
+  if let roles = q["roles"] as? [String], !roles.contains(role(e)) { return false }
+  for (key, name) in [("title", kAXTitleAttribute), ("description", kAXDescriptionAttribute), ("value", kAXValueAttribute)] {
+    guard let want = q[key] as? String else { continue }
+    guard let have = str(e, name as String), have.trimmingCharacters(in: .whitespaces) == want else { return false }
+  }
+  if let any = q["any"] as? String {
+    let text = [kAXTitleAttribute, kAXDescriptionAttribute, kAXHelpAttribute, "AXPlaceholderValue"].compactMap { str(e, $0 as String) }.joined(separator: " | ")
+    if text.range(of: any, options: [.regularExpression, .caseInsensitive]) == nil { return false }
+  }
+  return true
+}
+func actionList(_ e: AXUIElement) -> [String] { var n: CFArray?; return AXUIElementCopyActionNames(e, &n) == .success ? (n as? [String] ?? []) : [] }
+/// The first element of the app's windows that matches `find` (breadth-first), remembered as the opener, then `action`
+/// taken on it: "focus" writes AXFocused, any other names an AX action. A press that opens a menu may answer only when
+/// the menu closes, so its AXError is often the 1 s timeout's.
+func open(_ q: [String: Any]) -> [String: Any] {
+  guard let pid = (q["pid"] as? NSNumber)?.int32Value, let find = q["find"] as? [String: Any] else { return ["error": "args"] }
+  let app = prepare(AXUIElementCreateApplication(pid))
+  var queue: [(AXUIElement, Int)] = elements(attr(app, kAXWindowsAttribute)).map { ($0, 0) }, head = 0
+  var found: AXUIElement? = nil
+  while head < queue.count && queue.count < 6000 {
+    let (e, depth) = queue[head]; head += 1
+    if matches(e, find), let f = frameOf(e), f.width > 2, f.height > 2 { found = e; break }
+    if depth < 40 { for k in elements(attr(e, kAXChildrenAttribute)) { queue.append((k, depth + 1)) } }
+  }
+  guard let found else { opener = nil; return ["error": "not found", "visited": head] }
+  opener = found
+  var out: [String: Any] = ["opener": describe(found), "value": short(str(found, kAXValueAttribute)), "actions": actionList(found)]
+  switch q["action"] as? String {
+  case "focus"?: out["result"] = AXUIElementSetAttributeValue(found, kAXFocusedAttribute as CFString, kCFBooleanTrue).rawValue
+  case let a?: out["result"] = AXUIElementPerformAction(found, a as CFString).rawValue
+  case nil: break
+  }
+  return out
+}
+/// The opener's value, title, frame and focus now.
+func openerNow(_ q: [String: Any]) -> [String: Any] {
+  guard let opener else { return ["error": "no opener"] }
+  return ["value": short(str(opener, kAXValueAttribute)), "title": short(str(opener, kAXTitleAttribute)), "frame": wire(frameOf(opener)),
+          "focused": boolAttr(opener, kAXFocusedAttribute)]
 }
 
 while let line = readLine() {
@@ -373,6 +431,9 @@ while let line = readLine() {
   case "value": emit(value(q))
   case "focusweb": emit(focusweb(q))
   case "popup": emit(popup(q))
+  case "open": emit(open(q))
+  case "opener": emit(openerNow(q))
+  case "forget": opener = nil; emit(["ok": true])
   default: emit(["error": "unknown op"])
   }
 }

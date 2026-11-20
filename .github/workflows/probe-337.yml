@@ -1,6 +1,7 @@
 name: probe-337
-# Disposable #337 kit (scripts/probe-337/README.md), on #316's. A push of this file only registers the workflow on its
-# branch; the hosted macOS measurement runs on dispatch, with the engine built unmodified from an exact SHA.
+# Disposable #337 / #452 kit (scripts/probe-337/README.md), on #316's. A push of this file only registers the workflow on
+# its branch; the hosted macOS runs go on dispatch, with the engine built unmodified from an exact SHA. kit=measure is
+# #337's measurement (measure.mjs), kit=qualify the overlay qualification (qualify.mjs), one head per run.
 on:
   push:
     branches: ['probe/337-measure']
@@ -8,19 +9,40 @@ on:
   workflow_dispatch:
     inputs:
       engine:
-        description: Exact 40-character engine SHA (main's)
+        description: Exact 40-character engine SHA
         required: true
         type: string
-      reps:
-        description: Repetitions per cell and sequence
+      head:
+        description: The head's label in the results (main, fix)
         type: string
-        default: '6'
+        default: main
+      kit:
+        description: measure (#337's) or qualify (the overlay qualification)
+        type: choice
+        options: [measure, qualify]
+        default: measure
+      reps:
+        description: Repetitions per unit (empty takes the kit's, 6 for measure and 5 for qualify)
+        type: string
+        default: ''
       cells:
-        description: Comma list of cells (empty for all; shared-behind, shared-behind-primed, shared-front, dedicated-behind)
+        description: measure only, comma list (shared-behind, shared-behind-primed, shared-front, dedicated-behind)
         type: string
         default: ''
       seqs:
-        description: Comma list of sequences (empty for all; zeroRow, typedRow, outside, outsideTyped)
+        description: measure only, comma list (zeroRow, typedRow, outside, outsideTyped)
+        type: string
+        default: ''
+      overlays:
+        description: qualify only, comma list (omnibox, select, datalist, permission, menu, popover)
+        type: string
+        default: ''
+      modes:
+        description: qualify only, comma list (shared-behind, shared-front, dedicated-behind)
+        type: string
+        default: ''
+      sides:
+        description: qualify only, comma list (inside, outside)
         type: string
         default: ''
 permissions:
@@ -34,12 +56,17 @@ jobs:
   measure:
     if: github.event_name == 'workflow_dispatch'
     runs-on: macos-latest
-    timeout-minutes: 150
+    timeout-minutes: 170
     env:
       ENGINE_SHA: ${{ inputs.engine }}
+      HEAD_LABEL: ${{ inputs.head }}
+      KIT: ${{ inputs.kit }}
       REPS: ${{ inputs.reps }}
       CELLS: ${{ inputs.cells }}
       SEQS: ${{ inputs.seqs }}
+      OVERLAYS: ${{ inputs.overlays }}
+      MODES: ${{ inputs.modes }}
+      SIDES: ${{ inputs.sides }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -68,16 +95,26 @@ jobs:
         shell: bash
         run: |
           extra=()
-          if [ -n "$CELLS" ]; then extra+=(--variants "$CELLS"); fi
-          if [ -n "$SEQS" ]; then extra+=(--seqs "$SEQS"); fi
-          P337_ENGINE_REF="$ENGINE_SHA" node scripts/probe-337/measure.mjs --engine "$RUNNER_TEMP/eng/release/cua-engine" \
-            --tool "$RUNNER_TEMP/tool337" --out "$RUNNER_TEMP/probe-337" --reps "${REPS:-6}" --budget 110 "${extra[@]}"
-          node scripts/probe-337/summary.mjs "$RUNNER_TEMP/probe-337/results.json" | tee "$RUNNER_TEMP/probe-337/summary.txt"
+          bin="$RUNNER_TEMP/eng/release/cua-engine"
+          if [ "$KIT" = qualify ]; then
+            if [ -n "$OVERLAYS" ]; then extra+=(--overlays "$OVERLAYS"); fi
+            if [ -n "$MODES" ]; then extra+=(--modes "$MODES"); fi
+            if [ -n "$SIDES" ]; then extra+=(--sides "$SIDES"); fi
+            P337_HEAD="$HEAD_LABEL" P337_ENGINE_REF="$ENGINE_SHA" node scripts/probe-337/qualify.mjs --engine "$bin" \
+              --tool "$RUNNER_TEMP/tool337" --out "$RUNNER_TEMP/probe-337" --reps "${REPS:-5}" --budget 140 "${extra[@]}"
+            node scripts/probe-337/qsummary.mjs "$RUNNER_TEMP/probe-337/results.json" | tee "$RUNNER_TEMP/probe-337/summary.txt"
+          else
+            if [ -n "$CELLS" ]; then extra+=(--variants "$CELLS"); fi
+            if [ -n "$SEQS" ]; then extra+=(--seqs "$SEQS"); fi
+            P337_ENGINE_REF="$ENGINE_SHA" node scripts/probe-337/measure.mjs --engine "$bin" \
+              --tool "$RUNNER_TEMP/tool337" --out "$RUNNER_TEMP/probe-337" --reps "${REPS:-6}" --budget 110 "${extra[@]}"
+            node scripts/probe-337/summary.mjs "$RUNNER_TEMP/probe-337/results.json" | tee "$RUNNER_TEMP/probe-337/summary.txt"
+          fi
       - name: Upload
         if: always()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
-          name: probe-337
+          name: probe-337-${{ inputs.kit }}-${{ inputs.head }}
           path: |
             ${{ runner.temp }}/probe-337/*.txt
             ${{ runner.temp }}/probe-316/install.txt

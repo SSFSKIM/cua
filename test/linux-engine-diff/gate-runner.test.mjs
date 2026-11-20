@@ -690,6 +690,39 @@ test('the hold canary runs on both Chromes, sandboxed, beside its regression cel
   }
 });
 
+// The re-review of wave 3, I5: a canary step proves itself beside its harness's verdicts: both cells carry the canary's
+// record, and every browser the run's Chrome ran, read from its running process, is the Chrome the step meant (on the
+// current stable one, named to the harness outright, its version and its own tree).
+test('a canary step runs the Chrome it means and passes only with its evidence there and that Chrome read running', async () => {
+  const { canaryCheck, intendedChrome } = await import('../../scripts/linux-engine-gate/gate.mjs');
+  const root = mkdtempSync(join(tmpdir(), 'cua171-chrome-stable-'));
+  try {
+    writeFileSync(join(root, 'current'), '158.0.8127.36-1\n');
+    mkdirSync(join(root, '158.0.8127.36-1', 'bin'), { recursive: true });
+    writeFileSync(join(root, '158.0.8127.36-1', 'bin', 'google-chrome'), '#!/bin/sh\n');
+    const k2 = intendedChrome(stepNamed('K2'), { chromeStable: root, installed: 'Google Chrome 156.0.8078.73' });
+    assert.deepEqual(k2, { command: join(root, '158.0.8127.36-1', 'bin', 'google-chrome'), version: '158.0.8127.36', under: `${join(root, '158.0.8127.36-1')}/` });
+    const k1 = intendedChrome(stepNamed('K1'), { chromeStable: root, installed: 'Google Chrome 156.0.8078.73 ' });
+    assert.deepEqual(k1, { command: null, version: '156.0.8078.73', under: null });
+    const verdicts = ['chrome_dnd_short_in_front_shared', 'chrome_select_nudged_shared'].map((op) => ({ kind: 'verdict', op, candidate: 'cua', verdict: 'pass', hold_canary: { kind: 'x' } }));
+    const exe = join(root, '158.0.8127.36-1', 'root', 'opt', 'google', 'chrome', 'chrome');
+    const end = (browsers) => ({ kind: 'end', desktop: { chrome: { browsers } } });
+    const ran158 = [{ pid: 7, exe, version: 'Google Chrome 158.0.8127.36' }];
+    assert.deepEqual(canaryCheck([...verdicts, end(ran158)], k2), { pass: true, reasons: [], browsers: ran158 });
+    // the installed Chrome ran instead of the named one
+    const ran156 = [{ pid: 7, exe: '/opt/google/chrome/chrome', version: 'Google Chrome 156.0.8078.73' }];
+    assert.match(canaryCheck([...verdicts, end(ran156)], k2).reasons.join('; '), /ran \/opt\/google\/chrome\/chrome at Google Chrome 156.0.8078.73, not Chrome 158.0.8127.36/);
+    assert.equal(canaryCheck([...verdicts, end(ran156)], k1).pass, true, 'K1 on the gate\'s Chrome');
+    // a 158 outside the named tree, no browser read, a verdict with no canary record, a cell with no verdict
+    assert.match(canaryCheck([...verdicts, end([{ ...ran158[0], exe: '/opt/other/chrome' }])], k2).reasons.join('; '), /outside/);
+    assert.match(canaryCheck([...verdicts, end([])], k2).reasons.join('; '), /no browser process of the run's Chrome was read/);
+    assert.match(canaryCheck([{ ...verdicts[0], hold_canary: undefined }, verdicts[1], end(ran158)], k2).reasons.join('; '), /chrome_dnd_short_in_front_shared's verdict carries no hold canary/);
+    assert.match(canaryCheck([verdicts[0], end(ran158)], k2).reasons.join('; '), /no verdict for chrome_select_nudged_shared/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("the hold's regression cells fail on any drop that did not land inside B, any hold not the fixed one, and any Chrome not identified", async () => {
   const { holdRegressionVerdict } = await import('../../scripts/linux-engine-diff/drop-signals-judge.mjs');
   const specs = [{ lane: 'cua', cell: 'dragstart-150', n: 2 }, { lane: 'cua', cell: 'dragstart-400', n: 2 }];

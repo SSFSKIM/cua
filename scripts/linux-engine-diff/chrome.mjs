@@ -15,13 +15,22 @@
 //   run's own session bus (B2, task 47), with `CHROME_ENV`.
 
 import { spawn as spawnProcess } from 'node:child_process';
-import { lstatSync, mkdirSync, readFileSync, realpathSync, rmSync } from 'node:fs';
+import { lstatSync, mkdirSync, readFileSync, readlinkSync, realpathSync, rmSync } from 'node:fs';
 import { basename, isAbsolute, join, relative, sep } from 'node:path';
 
-import { guard } from './xspawn.mjs';
+import { guard, xExecFileSync } from './xspawn.mjs';
 
 /** What the harness runs to start Chrome: the distribution's wrapper on the PATH, as a person starts it. */
 export const CHROME_COMMAND = 'google-chrome';
+
+/**
+ * The variable a gate step names the run's Chrome with (`scripts/linux-engine-gate/gate.mjs`: the canary on the current
+ * stable Chrome), an absolute path to its `google-chrome` wrapper; unset, the run's Chrome is `CHROME_COMMAND` on PATH.
+ */
+export const CHROME_COMMAND_VAR = 'CUA171_CHROME_COMMAND';
+
+/** The command the run's Chrome starts with: the step's named wrapper, else `CHROME_COMMAND`. */
+export const chromeCommand = (env = process.env) => env[CHROME_COMMAND_VAR] || CHROME_COMMAND;
 
 /**
  * Chrome's own variables: accessibility on. Chromium decides whether to start its ATK bridge by ACCESSIBILITY_ENABLED,
@@ -30,6 +39,24 @@ export const CHROME_COMMAND = 'google-chrome';
  * then gives the pages' trees (`CHROME_FLAGS`), and the bridge finds the bus through the display's AT_SPI_BUS.
  */
 export const CHROME_ENV = { ACCESSIBILITY_ENABLED: '1' };
+
+/**
+ * A running browser's executable (`/proc/<pid>/exe`) and its version, as that executable says (`--version`): what
+ * ran, not what PATH would find now. Either is null when it could not be read.
+ */
+export function browserIdentity(pid, { readlink = readlinkSync, run = xExecFileSync } = {}) {
+  let exe = null;
+  try {
+    exe = readlink(`/proc/${pid}/exe`).replace(/ \(deleted\)$/, '');
+  } catch {
+    return { exe: null, version: null };
+  }
+  try {
+    return { exe, version: String(run(exe, ['--version'], { encoding: 'utf8', timeout: 20000 })).trim() };
+  } catch {
+    return { exe, version: null };
+  }
+}
 
 /** Every command that starts a Chrome or Chromium browser, by its file name: only `ChromeInstance` runs one. */
 export const CHROME_COMMANDS = new Set(['google-chrome', 'google-chrome-stable', 'google-chrome-beta', 'google-chrome-unstable', 'chrome', 'chromium', 'chromium-browser']);
@@ -117,8 +144,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  * `kill` are the display-free tests' own.
  */
 export class ChromeInstance {
-  constructor({ scratch, environment, spawn = spawnProcess, cmdline = procCmdline, kill = (pid, signal) => process.kill(pid, signal) }) {
+  constructor({ scratch, environment, spawn = spawnProcess, cmdline = procCmdline, kill = (pid, signal) => process.kill(pid, signal), command = chromeCommand(), identity = browserIdentity }) {
     if (typeof environment !== 'function') throw new Error("the run's Chrome needs the run's launch environment (its home, its session bus)");
+    if (!isChromeCommand(command)) throw new Error(`the run's Chrome starts a Chrome command (${[...CHROME_COMMANDS].join(', ')}), not ${command}`);
     this.scratch = scratch;
     this.profile = join(scratch, 'chrome-profile');
     // the run's launch environment (app-env.mjs; the run's Desktop passes its own): a home of the run's, so Chrome's NSS
@@ -128,6 +156,8 @@ export class ChromeInstance {
     this.spawnProcess = spawn;
     this.cmdline = cmdline;
     this.kill = kill;
+    this.command = command;
+    this.identity = identity;
     // every pid an open started: the browser among them, whichever open started it
     this.spawned = [];
     this.stopped = null;
@@ -144,9 +174,9 @@ export class ChromeInstance {
     mkdirSync(this.profile, { recursive: true, mode: 0o700 });
     const args = this.args(url);
     const env = this.environment();
-    assertOwnChrome(CHROME_COMMAND, args, this.scratch);
+    assertOwnChrome(this.command, args, this.scratch);
     // on a display the run may reach only (xspawn.mjs), whatever launcher it was given
-    const child = guard(this.spawnProcess)(CHROME_COMMAND, args, { env, stdio: 'ignore', detached: true });
+    const child = guard(this.spawnProcess)(this.command, args, { env, stdio: 'ignore', detached: true });
     // a Chrome that cannot start shows as a window that never comes, which the open's wait reports
     child.on?.('error', () => {});
     child.unref?.();
@@ -172,7 +202,10 @@ export class ChromeInstance {
    */
   stop({ graceMs = 10000, killMs = 3000 } = {}) {
     this.stopped ??= (async () => {
-      const record = { profile: this.profile, spawned: [...this.spawned], terminated: [], killed: [], left: [] };
+      // what ran, read from each browser process of the profile still running before it is stopped: its executable
+      // and that executable's version (a gate step checks them against the Chrome it named, gate.mjs `canaryCheck`)
+      const browsers = this.spawned.filter((pid) => this.owns(pid)).map((pid) => ({ pid, ...this.identity(pid) }));
+      const record = { profile: this.profile, spawned: [...this.spawned], browsers, terminated: [], killed: [], left: [] };
       for (const pid of this.spawned) {
         if (!this.owns(pid)) continue;
         try {

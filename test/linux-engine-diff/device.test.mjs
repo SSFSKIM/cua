@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { auditNothingSent, parseXtrace } from '../../scripts/linux-engine-diff/audit.mjs';
-import { DEVICE_OPS, DEVICE_SCENE_OPS, capabilitiesAnswer, scalePath, deviceSentence, dndCancelledSentence, dndLateNotice, dndLateRefusal, dndMayHaveDroppedSentence, dndUnconfirmedNotice, dndUnansweredNotice, dndUnansweredRefusal, dndUnconfirmedRefusal, judgeDevice, strayNotice } from '../../scripts/linux-engine-diff/device.mjs';
+import { DEVICE_OPS, DEVICE_SCENE_OPS, capabilitiesAnswer, scalePath, deviceSentence, dndCancelledSentence, dndLateNotice, dndLateRefusal, dndMayHaveDroppedSentence, dndUnconfirmedNotice, dndUnansweredNotice, dndUnansweredRefusal, dndUnconfirmedRefusal, firstDropRead, judgeDevice, strayNotice } from '../../scripts/linux-engine-diff/device.mjs';
 import { allowPointer } from '../../scripts/linux-engine-diff/safety.mjs';
 import { OPS, SCENE_OPS } from '../../scripts/linux-engine-diff/ops.mjs';
 import { DEVIATIONS, DEVICE_REFUSAL, DND_REFUSAL, GECKO_POINTER_LEFT, GECKO_POINTER_REFUSALS, PENDING_REFUSAL, declaredRefusal } from '../../scripts/linux-engine-diff/deviations.mjs';
@@ -204,6 +204,15 @@ test("V5's cells: an ok with the hold's exact notice is honest only where the pa
   const alarm = { ...honest, effect: true, dropped: true, drop_status: rose };
   const alarmed = judgeDevice('chrome_dnd_short_in_front_shared', [landed, alarm], audit);
   assert.deepEqual(alarmed.hold_notices, { samples: 2, noticed: 1, honest: 0, false_alarm: 1, false_alarms: ['0/1'] });
+  // the re-review of wave 3, I7: the runner's first read saw the counter rise, and the page's later read failed; the
+  // drop was seen all the same, so the notice on it is a false alarm, never lost
+  const firstRead = firstDropRead({ drops: 65 }, { drops: 66 });
+  assert.deepEqual(firstRead, { dropped: true, drop_seen: true });
+  assert.deepEqual(firstDropRead({ drops: 65 }, null), { dropped: true, drop_seen: false }, 'unread: may have dropped, not seen');
+  assert.deepEqual(firstDropRead({ drops: 65 }, { drops: 65 }), { dropped: false, drop_seen: false });
+  const secondReadFailed = { ...honest, ...firstRead, drop_status: { before: { drops: 65 }, after: null } };
+  const lost = judgeDevice('chrome_dnd_short_in_front_shared', [landed, secondReadFailed], audit);
+  assert.deepEqual(lost.hold_notices, { samples: 2, noticed: 1, honest: 0, false_alarm: 1, false_alarms: ['0/1'] });
   // an ok with no notice and no drop: still a false ok
   const bare = judgeDevice('chrome_dnd_short_in_front_shared', [landed, { ...honest, reply_notice: null }], audit);
   assert.equal(bare.pass, false);
@@ -251,6 +260,11 @@ test('the hold canary: a draggable press must read slow at least once, a warm pl
   // most presses found the browser idle: Chrome no longer marks its drag start
   const fast = judgeDevice('chrome_dnd_short_in_front_shared', [press(0, [1]), press(1, [1, 15]), press(2, [2])], audit);
   assert.match(fast.reasons.join('; '), /the hold canary: 2 of 3 held presses on a draggable source found their browser idle/);
+  // the re-review of wave 3, I5: every press busy, but none slow by the engine's own threshold (20 ms): at B the engine
+  // reads all of them fast, so the canary proves nothing and fails
+  const sixes = judgeDevice('chrome_dnd_short_in_front_shared', [press(0, [6]), press(1, [6, 6]), press(2, [6])], audit);
+  assert.match(sixes.reasons.join('; '), /none of 3 held presses on a draggable source read slow by the engine's own threshold \(a ping of 20 ms or more\)/);
+  assert.deepEqual(sixes.hold_canary, { kind: 'draggable', held: 3, busy: 3, slow: 0 });
   // too few holds ran to say: untested, a failure
   assert.match(judgeDevice('chrome_dnd_short_in_front_shared', [press(0, [40])], audit).reasons.join('; '), /the hold canary is untested: 1 of 1/);
   // Chrome not identified: the extension cannot apply
@@ -260,11 +274,16 @@ test('the hold canary: a draggable press must read slow at least once, a warm pl
   // the plain control: warm drags fast at B; a cold one slow is counted, not failed
   const fastWhy = 'every ping answered by B came back under 20 ms';
   const select = (i, waits, way = 'fixed', why = fastWhy) => row({ block: 0, i, ok: true, effect: true, route: 'background', dnd: { in_front: true }, desktop_same: true, engine_stats: { hold: hold(waits, way, why) } });
-  const plain = judgeDevice('chrome_select_nudged_shared', [select(0, [58], 'noticed', 'a ping came back in 58 ms; no take by 650 ms after the press'), select(1, [1, 1]), select(2, [2])], audit);
+  const plain = judgeDevice('chrome_select_nudged_shared', [select(0, [58], 'noticed', 'a ping came back in 58 ms; no take by 650 ms after the press'), select(1, [1, 1]), select(2, [2]), select(3, [1])], audit);
   assert.ok(!plain.reasons.some((r) => r.includes('hold canary')), plain.reasons.join('; '));
-  assert.deepEqual(plain.hold_canary, { kind: 'plain', held: 3, slow: 1, cold_slow: 1 });
-  const warmSlow = judgeDevice('chrome_select_nudged_shared', [select(0, [1]), select(1, [1, 26], 'noticed', 'a ping came back in 26 ms; no take by 650 ms after the press'), select(2, [2])], audit);
-  assert.match(warmSlow.reasons.join('; '), /the hold canary: a plain drag read slow on 1 of 2 warm samples \(0\/1\)/);
+  assert.deepEqual(plain.hold_canary, { kind: 'plain', held: 4, slow: 1, cold_slow: 1 });
+  const warmSlow = judgeDevice('chrome_select_nudged_shared', [select(0, [1]), select(1, [1, 26], 'noticed', 'a ping came back in 26 ms; no take by 650 ms after the press'), select(2, [2]), select(3, [1])], audit);
+  assert.match(warmSlow.reasons.join('; '), /the hold canary: a plain drag read slow on 1 of 3 warm samples \(0\/1\)/);
+  // the plain control's evidence missing (I5): too few warm holds, or the engine's records carry no hold at all
+  assert.match(judgeDevice('chrome_select_nudged_shared', [select(0, [1]), select(1, [1]), select(2, [1])], audit).reasons.join('; '), /the hold canary's plain control is untested: 2 warm samples of 3/);
+  const unheld = [0, 1, 2, 3].map((i) => row({ block: 0, i, ok: true, effect: true, route: 'background', dnd: { in_front: true }, desktop_same: true, engine_stats: { route: 'background' } }));
+  assert.match(judgeDevice('chrome_select_nudged_shared', unheld, audit).reasons.join('; '), /the hold canary's plain control is untested: 0 warm samples of 4/);
+  assert.match(judgeDevice('chrome_dnd_short_in_front_shared', unheld, audit).reasons.join('; '), /the hold canary is untested: 0 of 4/);
   // a cell with no hold records (a vendor lane) is not the canary's
   assert.equal(judgeDevice('chrome_dnd_short_in_front_shared', [row({ ok: true, effect: true, route: 'background', dnd: { in_front: true }, desktop_same: true, state_notice: null })], audit).hold_canary, undefined);
 });

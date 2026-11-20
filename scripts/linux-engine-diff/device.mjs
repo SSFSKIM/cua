@@ -418,7 +418,7 @@ function device({ device: expect, condition = covered, park, read, request, effe
         // whether a drag that leaves the zone started its drag and drop, and whether anything dropped on the zone
         const after = await read(ctx);
         out.started = typeof ctx.before?.starts === 'number' && typeof after?.starts === 'number' && after.starts > ctx.before.starts;
-        out.dropped = !(typeof ctx.before?.drops === 'number' && after?.drops === ctx.before.drops);
+        Object.assign(out, firstDropRead(ctx.before, after));
       }
       if (expect === 'refusal') {
         out.expected_error = deviceSentence(ctx.scene.app);
@@ -442,13 +442,13 @@ function device({ device: expect, condition = covered, park, read, request, effe
         out.late_dnd = next.stats?.late_dnd ?? null;
         await sleep(QUIET_MS);
         const after = await read(ctx);
-        out.dropped = !(typeof ctx.before?.drops === 'number' && after?.drops === ctx.before.drops);
+        Object.assign(out, firstDropRead(ctx.before, after));
       }
       if (expect === 'stray') {
         out.expected_error = strayNotice(ctx.scene.app);
         await sleep(QUIET_MS);
         const after = await read(ctx);
-        out.dropped = !(typeof ctx.before?.drops === 'number' && after?.drops === ctx.before.drops);
+        Object.assign(out, firstDropRead(ctx.before, after));
       }
       if (expect === 'cancel' || expect === 'late') {
         out.expected_error = dndCancelledSentence(ctx.scene.app);
@@ -456,7 +456,7 @@ function device({ device: expect, condition = covered, park, read, request, effe
         // a drop the page counts shows within its settle; one never read counts as dropped
         await sleep(QUIET_MS);
         const after = await read(ctx);
-        out.dropped = !(typeof ctx.before?.drops === 'number' && after?.drops === ctx.before.drops);
+        Object.assign(out, firstDropRead(ctx.before, after));
       }
       if (dedicated && response.ok) out.activated = activeWindow() === ctx.scene.id;
       // in front: the desktop at the end as it was at the start
@@ -555,13 +555,25 @@ function lateTakes(rows) {
 }
 
 /**
+ * The runner's first read of the page after a drag-and-drop sample (pages/drag.html `drops`): `dropped`, an unread
+ * counter counted as a drop (the safe side for a rule a drop fails), and `drop_seen`, the counter read on both sides and
+ * risen: a definite drop, kept apart from an unread one, so a later read that fails cannot lose it (the re-review of
+ * wave 3, I7: a false alarm whose second read failed went uncounted).
+ */
+export function firstDropRead(before, after) {
+  const read = typeof before?.drops === 'number' && typeof after?.drops === 'number';
+  return { dropped: !(read && after.drops === before.drops), drop_seen: read && after.drops > before.drops };
+}
+
+/**
  * Whether a drag-and-drop sample's page shows a drop it read: the drop counter read before and after the sample, and
- * risen (pages/drag.html `drops`). The runner's `dropped` counts an unread counter as a drop (the checks above), the
- * safe side for a rule a drop fails; a rule a drop passes reads the counter itself (ruling 870).
+ * risen, on the runner's first read (`drop_seen`) or the page's later one (`drop_status`). The runner's `dropped` counts
+ * an unread counter as a drop (the checks above), the safe side for a rule a drop fails; a rule a drop passes reads the
+ * counter itself (ruling 870).
  */
 function dropSeen(r) {
   const { before, after } = r.drop_status ?? {};
-  return typeof before?.drops === 'number' && typeof after?.drops === 'number' && after.drops > before.drops;
+  return r.drop_seen === true || (typeof before?.drops === 'number' && typeof after?.drops === 'number' && after.drops > before.drops);
 }
 
 /**
@@ -598,11 +610,16 @@ export function falseAlarm(r) {
  *   hold ran, at least `CANARY_HELD`, and at least half of them busy: a ping round trip, or a ping's wait unanswered
  *   at the take, of `CANARY_BUSY_MS` or more, where an idle browser answers in about 1.1 ms (p99 1.2 at idle, task 116):
  *   the browser busy setting up the drag its page started (task 117, sandboxed, idle x64: 9 of 9 held presses on
- *   Chrome 156 waited 8 to 27 ms, 9 of 9 on Chrome 158 6 to 21 ms; V5 at idle 40 of 40);
- * - V5's select control (`chrome_select_nudged_shared`, a plain drag in the same scene): every warm sample whose hold
- *   ran read fast at B (`hold.adaptive.way` fixed on its pings); a cold one that read slow is counted, not failed (a
- *   fresh page's first ping can be slow).
- * A cell with no hold records (a vendor lane) is not the canary's.
+ *   Chrome 156 waited 8 to 27 ms, 9 of 9 on Chrome 158 6 to 21 ms; V5 at idle 40 of 40); and at least one of them slow
+ *   by the engine's own threshold (`CANARY_SLOW_MS`, `adaptive_hold::FAST_PING`), the reading that extends a hold at B
+ *   (the re-review of wave 3, I5: a cell whose pings all came back in 6 ms passed, though the engine reads every one
+ *   of them fast);
+ * - V5's select control (`chrome_select_nudged_shared`, a plain drag in the same scene): at least `CANARY_HELD` warm
+ *   samples whose hold ran, every one read fast at B (`hold.adaptive.way` fixed on its pings); a cold one that read
+ *   slow is counted, not failed (a fresh page's first ping can be slow).
+ * A cell of these two whose rows carry the engine's `--stats` but no hold record fails: its evidence is missing. One
+ * with no `--stats` at all (an engine run without them) is not the canary's; the gate's canary steps require its
+ * record on both cells (`scripts/linux-engine-gate/gate.mjs` `canaryCheck`).
  */
 /** How long a ping waits on a browser busy setting up a drag, at the least: an idle browser answers in about 1.1 ms. */
 export const CANARY_BUSY_MS = 5;
@@ -618,7 +635,7 @@ export function holdPingWait(hold) {
 
 /** The canary's reasons for a cell's rows (none for a cell it does not judge), and its counts. */
 export function holdCanary(op, rows) {
-  const recorded = rows.filter((r) => r.engine_stats?.hold !== undefined || r.engine_stats?.route !== undefined);
+  const recorded = rows.filter((r) => r.engine_stats != null);
   if (!recorded.length || !['chrome_dnd_short_in_front_shared', 'chrome_select_nudged_shared'].includes(op)) return null;
   const held = recorded.filter((r) => r.engine_stats?.hold?.held === true);
   const slow = held.filter((r) => (holdPingWait(r.engine_stats.hold) ?? 0) >= CANARY_SLOW_MS);
@@ -630,11 +647,14 @@ export function holdCanary(op, rows) {
   if (op === 'chrome_dnd_short_in_front_shared') {
     if (held.length < CANARY_HELD) reasons.push(`the hold canary is untested: ${held.length} of ${recorded.length} presses on a draggable source held for their take, fewer than ${CANARY_HELD}`);
     else if (busy.length * 2 < held.length) reasons.push(`the hold canary: ${held.length - busy.length} of ${held.length} held presses on a draggable source found their browser idle (every ping answered under ${CANARY_BUSY_MS} ms), more than half: Chrome may no longer mark the drag it starts`);
+    else if (!slow.length) reasons.push(`the hold canary: none of ${held.length} held presses on a draggable source read slow by the engine's own threshold (a ping of ${CANARY_SLOW_MS} ms or more): at B the engine would read every one fast, so no busy browser would extend its hold`);
     return { reasons, record: { kind: 'draggable', held: held.length, busy: busy.length, slow: slow.length } };
   }
+  const warm = held.filter((r) => r.i !== 0);
+  if (warm.length < CANARY_HELD) reasons.push(`the hold canary's plain control is untested: ${warm.length} warm samples of ${recorded.length} held their drag, fewer than ${CANARY_HELD}`);
   const warmSlow = slow.filter((r) => r.i !== 0);
   const unfast = held.filter((r) => r.i !== 0 && !(r.engine_stats.hold.adaptive?.way === 'fixed' && /^every ping answered by B came back under/.test(r.engine_stats.hold.adaptive.why ?? '')));
-  if (warmSlow.length || unfast.length) reasons.push(`the hold canary: a plain drag read slow on ${new Set([...warmSlow, ...unfast]).size} of ${held.filter((r) => r.i !== 0).length} warm samples (${[...new Set([...warmSlow, ...unfast])].slice(0, 3).map((r) => `${r.block}/${r.i}`).join(', ')})`);
+  if (warmSlow.length || unfast.length) reasons.push(`the hold canary: a plain drag read slow on ${new Set([...warmSlow, ...unfast]).size} of ${warm.length} warm samples (${[...new Set([...warmSlow, ...unfast])].slice(0, 3).map((r) => `${r.block}/${r.i}`).join(', ')})`);
   return { reasons, record: { kind: 'plain', held: held.length, slow: slow.length, cold_slow: slow.length - warmSlow.length } };
 }
 

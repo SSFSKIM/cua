@@ -509,3 +509,17 @@ test("the lost motion's bound and the guarded route: a sweep of stops past the h
   assert.deepEqual(LANES['cua:guarded'], { args: [], guarded: true });
   assert.deepEqual(PLANS['v5-guarded'].map(([lane, cell, n]) => `${lane} ${cell} ${n}`), ['cua:guarded plain 20', 'cua:guarded prefreeze-30 20', 'cua:guarded prefreeze-40 20', 'cua:guarded prefreeze-150 20']);
 });
+
+test("0.4.2's freeze sweep (task 121): the press-150 source stopped from 60 ms to ends bracketing a release at press + 450 and + 650", async () => {
+  const { CELLS, PLANS, freezeOf } = await import('../../scripts/linux-engine-diff/drop-signals.mjs');
+  const { CELL_SOURCE, LATE_FREEZE_ENDS, ZONE_CELLS } = await import('../../scripts/linux-engine-diff/drop-signals-judge.mjs');
+  assert.ok(LATE_FREEZE_ENDS.some((to) => to < 450) && LATE_FREEZE_ENDS.some((to) => to > 650), 'both releases bracketed');
+  for (const to of LATE_FREEZE_ENDS) {
+    const cell = `freeze-${to}`;
+    assert.deepEqual(freezeOf(cell), { from: 60, to }, cell);
+    assert.deepEqual(CELLS[cell](0), CELLS['freeze-250'](0), `${cell}: T13's freeze path`);
+    assert.equal(CELL_SOURCE[cell], 'press-150', cell);
+    assert.ok(ZONE_CELLS.includes(cell), `${cell}: a drop the zone counts`);
+  }
+  assert.deepEqual(PLANS['freeze-042'], LATE_FREEZE_ENDS.map((to) => ['cua', `freeze-${to}`, 10]));
+});

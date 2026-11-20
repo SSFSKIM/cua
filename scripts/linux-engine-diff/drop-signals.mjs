@@ -25,7 +25,7 @@
 
 import { GATE_BALLAST } from './dnd.mjs';
 import { locate } from './drag.mjs';
-import { FREEZE_ENDS, HOLD_REGRESSION_CELLS, PREFREEZE_ENDS, T14_SOURCE, acceptTable, afterReleaseTable, blockPlan, coverTable, dragOutcome, lateTakeTable, neverTakeTable, parseDropStatus, signalsOf } from './drop-signals-judge.mjs';
+import { FREEZE_ENDS, HOLD_REGRESSION_CELLS, LATE_FREEZE_ENDS, PREFREEZE_ENDS, T14_SOURCE, acceptTable, afterReleaseTable, blockPlan, coverTable, dragOutcome, lateTakeTable, neverTakeTable, parseDropStatus, signalsOf } from './drop-signals-judge.mjs';
 import { Engine } from './engine.mjs';
 import { openFamily } from './families.mjs';
 import { preorder } from './normalize.mjs';
@@ -60,7 +60,7 @@ export const CELLS = {
   // the press-150 source with the run's browser process stopped from 60 ms after the request to the cell's number
   // (`freezeOf`): the renderer's drag start, and the release, wait for the browser (#264's late take, by a lagging
   // browser)
-  ...Object.fromEntries(FREEZE_ENDS.map((to) => [`freeze-${to}`, () => [[530, 312], [570, 312]]])),
+  ...Object.fromEntries([...FREEZE_ENDS, ...LATE_FREEZE_ENDS].map((to) => [`freeze-${to}`, () => [[530, 312], [570, 312]]])),
   // V5's lost motion (2026-11-13): the plain short drop with the run's browser stopped from the drag's send to 150 ms,
   // so the press and every step queue unread; and the same press with a path over the zone that goes on long after the
   // stop ends, so the steps sent once the browser reads again come one by one (`freezeOf`)
@@ -323,6 +323,8 @@ export const PLANS = {
   ],
   // the freeze sweep: where a lagging browser's thaw falls against the release
   freeze: FREEZE_ENDS.map((to) => ['cua', `freeze-${to}`, 10]),
+  // the same sweep against 0.4.2's hold (task 121): where the thaw falls against a release at press + 450 or + 650
+  'freeze-042': LATE_FREEZE_ENDS.map((to) => ['cua', `freeze-${to}`, 10]),
   // V5's lost motion: a browser that reads the X stream only after the drag's steps are all queued (Chromium's core
   // MotionNotify coalescing), against the plain drop and a path that outlasts the stop
   'v5-loss': [['cua', 'plain', 30], ['cua', 'prefreeze-150', 30], ['cua', 'prefreeze-linger-150', 30]],

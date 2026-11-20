@@ -6,6 +6,14 @@
 /** The freeze cells' browser stops end this many ms after the drag is sent (drop-signals.mjs `freezeOf`). */
 export const FREEZE_ENDS = [230, 240, 250, 255, 260, 280, 330];
 /**
+ * The same cells' stop ends against 0.4.2's hold (task 121; the design session's ruling 929.1): a late take needs the
+ * browser's thaw to fall just before the engine's release, so its drag start is read after the release went out but
+ * before the browser reads the release (T13: thawed 20 ms early the hold takes it, thawed after the release Chrome refuses
+ * the drag). 0.4.2 releases a frozen, identified Chrome's drag at press + 650 (its pings unanswered: the extended hold),
+ * and an Electron or unidentified source's at press + 450, so the sweep brackets both.
+ */
+export const LATE_FREEZE_ENDS = [440, 450, 600, 620, 630, 640, 645, 650, 655, 660, 670, 700];
+/**
  * The ends of V5's lost-motion stops, ms after the drag's send (`prefreeze-<to>`): on the guarded route, inside the
  * path's end rest (30, 40) and past its release; on the held route, before the hold's refresh stops (150, 200), after
  * its last refresh (215, 230: a rest before the bound) and past the release (260, 300).
@@ -73,7 +81,7 @@ export function parseDropStatus(texts) {
  * The page cells (drop-signals.mjs `CELLS`): a cell either drags from a source (`src`, a drop counted when `zone`) or
  * is a kind with an effect of its own.
  */
-export const CELL_SOURCE = { 'freeze-230': 'press-150', 'freeze-240': 'press-150', 'freeze-250': 'press-150', 'freeze-255': 'press-150', 'freeze-260': 'press-150', 'freeze-280': 'press-150', 'freeze-330': 'press-150', plain: 'plain', nozone: 'plain', nested: 'nested', 'nested-late': 'nested-late', slider: 'slider', 'dragstart-150': 'dragstart-150', 'press-150': 'press-150', 'dragstart-400': 'dragstart-400', 'press-400': 'press-400', 'dragstart-500': 'dragstart-500', 'dragstart-600': 'dragstart-600', link: 'link', image: 'image', seltext: 'seltext', 'plain-long': 'plain', 'canvas-drag': 'canvas-drag', move: 'move' };
+export const CELL_SOURCE = { 'freeze-230': 'press-150', 'freeze-240': 'press-150', 'freeze-250': 'press-150', 'freeze-255': 'press-150', 'freeze-260': 'press-150', 'freeze-280': 'press-150', 'freeze-330': 'press-150', ...Object.fromEntries(LATE_FREEZE_ENDS.map((to) => [`freeze-${to}`, 'press-150'])), plain: 'plain', nozone: 'plain', nested: 'nested', 'nested-late': 'nested-late', slider: 'slider', 'dragstart-150': 'dragstart-150', 'press-150': 'press-150', 'dragstart-400': 'dragstart-400', 'press-400': 'press-400', 'dragstart-500': 'dragstart-500', 'dragstart-600': 'dragstart-600', link: 'link', image: 'image', seltext: 'seltext', 'plain-long': 'plain', 'canvas-drag': 'canvas-drag', move: 'move' };
 /** T14's and T17's cells' sources (drop-signals.mjs `CELLS`): each a drop the zone never counts. */
 export const T14_SOURCE = { stall: 'plain', left: 'plain', 'inzone-out': 'inzone', 'long-left': 'plain', root: 'plain', xterm: 'plain', other: 'plain', slow: 'plain', moved: 'plain', 'prefreeze-linger-150': 'plain', ...Object.fromEntries(PREFREEZE_ENDS.map((to) => [`prefreeze-${to}`, 'plain'])) };
 
@@ -109,7 +117,7 @@ export function stampedDragend(r) {
   return ownDragend(r);
 }
 
-export const ZONE_CELLS = ['freeze-230', 'freeze-240', 'freeze-250', 'freeze-255', 'freeze-260', 'freeze-280', 'freeze-330', 'plain', 'nested', 'nested-late', 'slider', 'dragstart-150', 'press-150', 'dragstart-400', 'press-400', 'dragstart-500', 'dragstart-600', 'link', 'image', 'plain-long', 'canvas-drag', 'move'];
+export const ZONE_CELLS = ['freeze-230', 'freeze-240', 'freeze-250', 'freeze-255', 'freeze-260', 'freeze-280', 'freeze-330', ...LATE_FREEZE_ENDS.map((to) => `freeze-${to}`), 'plain', 'nested', 'nested-late', 'slider', 'dragstart-150', 'press-150', 'dragstart-400', 'press-400', 'dragstart-500', 'dragstart-600', 'link', 'image', 'plain-long', 'canvas-drag', 'move'];
 
 /** The range runs' end values: even runs drag up to about 10, odd runs back to 0 (drop-signals.mjs `CELLS.range`). */
 export const RANGE_END = (i) => (i % 2 === 0 ? 10 : 0);

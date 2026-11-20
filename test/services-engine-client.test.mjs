@@ -18,6 +18,8 @@ import {MAX_FRAME, SkyComputerUseError, SkyComputerUseTransportError} from '../s
 import {DEFAULT_DEADLINE_MS, bundleIdentity, createEngineClient, socketPathFor} from '../src/services/engine/client.mjs';
 
 const IDENTITY = {engineVersion: '0.1.0', build: 'b1'};
+// Blocks this thread for `ms`, as a loaded machine or a long synchronous task does.
+const stall = ms => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 
 function scratchDir(t) {
   const s = shortScratch('cua-ecl-');
@@ -98,6 +100,21 @@ test('a connection opened late in the first window gets its own full ping wait, 
   nodeRepl.nativePipe.createConnection = async path => { await new Promise(resolve => setTimeout(resolve, 130)); return open(path); };
   assert.deepEqual(await client.connect(), {serverApiVersion: 'cua-engine-1', ...IDENTITY});
   assert.equal(launches.length, 0, 'the healthy engine is not launched over');
+  assert.deepEqual(engine.received.map(r => r.method), ['ping']);
+});
+
+// After a stall the event loop runs its due timers before the I/O that completed meanwhile, so a window timer would
+// beat a connect the engine had already accepted (#441, a loaded hosted runner).
+test('a stall of the event loop past the first window does not make a running engine look absent: the connect it held back wins over the window', async t => {
+  const socket = join(scratchDir(t), 'engine.sock');
+  const engine = await startFakeEngine(t, socket);
+  const {client, launches, nodeRepl} = clientFor(socket);
+  t.after(() => client.close());
+  // The loop stalls 300 ms right after the open is requested and the 150 ms window armed; the socket connects meanwhile.
+  const open = nodeRepl.nativePipe.createConnection.bind(nodeRepl.nativePipe);
+  nodeRepl.nativePipe.createConnection = path => { queueMicrotask(() => stall(300)); return open(path); };
+  assert.deepEqual(await client.connect(), {serverApiVersion: 'cua-engine-1', ...IDENTITY});
+  assert.equal(launches.length, 0, 'the running engine is not launched over');
   assert.deepEqual(engine.received.map(r => r.method), ['ping']);
 });
 

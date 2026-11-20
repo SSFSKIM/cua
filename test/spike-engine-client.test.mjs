@@ -77,6 +77,34 @@ test('connect pings with cua-engine-1 and accepts an engine whose version and bu
   assert.equal(engine.received.length, 1, 'a live connection is reused');
 });
 
+// A loaded runner (#441): the ping's round trip may outlast the first window, and a stalled loop runs the window's
+// timer before the connect that completed meanwhile; neither makes a running engine look absent.
+test('a connection opened late in the first window gets its own full ping wait, so a slow ping to a healthy engine launches nothing', async t => {
+  const socket = join(scratchDir(t), 'engine.sock');
+  const engine = await startFakeEngine(t, socket, {handlers: {ping: async () => { await new Promise(resolve => setTimeout(resolve, 80)); return {serverApiVersion: 'cua-engine-1', engineVersion: '0.1.0', build: 'b1'}; }}});
+  const {client, launches, nodeRepl} = clientFor(socket);
+  t.after(() => client.close());
+  // The socket opens 130 ms into the 150 ms window, leaving the ping 20 ms of it.
+  const open = nodeRepl.nativePipe.createConnection.bind(nodeRepl.nativePipe);
+  nodeRepl.nativePipe.createConnection = async path => { await new Promise(resolve => setTimeout(resolve, 130)); return open(path); };
+  assert.equal((await client.connect()).build, 'b1');
+  assert.equal(launches.length, 0, 'the healthy engine is not launched over');
+  assert.deepEqual(engine.received.map(r => r.method), ['ping']);
+});
+
+test('a stall of the event loop past the first window does not make a running engine look absent: the connect it held back wins over the window', async t => {
+  const socket = join(scratchDir(t), 'engine.sock');
+  const engine = await startFakeEngine(t, socket);
+  const {client, launches, nodeRepl} = clientFor(socket);
+  t.after(() => client.close());
+  // The loop stalls 300 ms right after the open is requested and the 150 ms window armed; the socket connects meanwhile.
+  const open = nodeRepl.nativePipe.createConnection.bind(nodeRepl.nativePipe);
+  nodeRepl.nativePipe.createConnection = path => { queueMicrotask(() => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 300)); return open(path); };
+  assert.equal((await client.connect()).build, 'b1');
+  assert.equal(launches.length, 0, 'the running engine is not launched over');
+  assert.deepEqual(engine.received.map(r => r.method), ['ping']);
+});
+
 test('a build or version mismatch fails at once, naming cua install --engine, without launching or retrying', async t => {
   for (const identity of [{engineVersion: '0.1.0', build: 'other'}, {engineVersion: '9.9.9', build: 'b1'}]) {
     const socket = join(scratchDir(t), 'engine.sock');

@@ -7,7 +7,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {EventEmitter} from 'node:events';
-import {mkdirSync, mkdtempSync, readdirSync, realpathSync, renameSync, rmSync, statSync, symlinkSync} from 'node:fs';
+import {lstatSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, renameSync, rmSync, statSync, symlinkSync} from 'node:fs';
 import {spawn} from 'node:child_process';
 import {createServer} from 'node:net';
 import {tmpdir} from 'node:os';
@@ -23,7 +23,11 @@ const socketStat = {isSocket: () => true};
 const systemError = (code, errno, syscall) => Object.assign(new Error(`${syscall} ${code}`), {code, errno: -errno, syscall});
 const alive = pid => { try { process.kill(pid, 0); return true; } catch { return false; } };
 const until = async (predicate, ms = 3000) => { for (const end = Date.now() + ms; Date.now() < end && !predicate();) await delay(5); return predicate(); };
-const tmpResidue = () => readdirSync('/tmp').filter(name => name.startsWith('cua-')).sort();
+// The entries of `dir` that link into `root` (the alias for a long path the relay once made in /tmp). Names alone would
+// also catch the scratch directories other test files make and remove there meanwhile.
+const linksInto = (dir, root) => readdirSync(dir).filter(name => {
+  try { return lstatSync(join(dir, name)).isSymbolicLink() && realpathSync(join(dir, name)).startsWith(`${root}/`); } catch { return false; }
+});
 const identityOf = path => { const {dev, ino} = statSync(path, {bigint: true}); return {dev, ino}; };
 
 class SocketDouble extends EventEmitter {
@@ -141,7 +145,11 @@ test('real listeners: concurrent connects through padded paths each reach their 
 test('macOS: a 192-byte socket path connects, bytes both ways, and the server sees one live descendant peer throughout', darwinOnly, async t => {
   const root = scratch(t);
   const listener = await longListener(t, root, 192, {echo: true});
-  const before = tmpResidue();
+  // The relay's temporary directory, its own for this test.
+  const ownTmp = scratch(t, 'cua-pipe-tmp-');
+  const givenTmp = process.env.TMPDIR;
+  process.env.TMPDIR = ownTmp;
+  t.after(() => { if (givenTmp === undefined) delete process.env.TMPDIR; else process.env.TMPDIR = givenTmp; });
   const sent = [];
   const relay = nativePipeRelay({send: m => sent.push(m)});
   t.after(() => relay.closeAll());
@@ -167,13 +175,16 @@ test('macOS: a 192-byte socket path connects, bytes both ways, and the server se
   assert.ok(pids.length >= 3, 'accept, data and end were each read');
   assert.deepEqual([...new Set(pids)], [peer], 'one process operates the connection from accept to end');
   assert.equal(await until(() => !alive(peer)), true, 'the connector exits once the connection is closed');
-  assert.deepEqual(tmpResidue(), before, 'nothing is left in /tmp');
+  assert.deepEqual(readdirSync(ownTmp), [], 'nothing is left in the relay\'s temporary directory');
+  assert.deepEqual(readdirSync(listener.dir), ['s.sock'], 'nor in the socket\'s directory, where the connector worked');
+  assert.deepEqual(linksInto('/tmp', root), [], 'and no link to the socket is left in /tmp');
 });
 
 test('macOS: a directory swapped after the vendor\'s check fails closed, and the socket now at that path is never reached', darwinOnly, async t => {
   const real = await longListener(t, scratch(t), 160, {greeting: 'real'});
-  // A same-length directory elsewhere with its own listening socket of the same name.
-  const decoy = await longListener(t, join(real.dir, '..', '..'), 160 + 20, {greeting: 'decoy'});
+  // A same-length directory elsewhere (a scratch of its own, not a fixed name in the shared temporary directory) with its
+  // own listening socket of the same name.
+  const decoy = await longListener(t, scratch(t), 160, {greeting: 'decoy'});
   const sent = [];
   const relay = nativePipeRelay({send: m => sent.push(m), openDirectory: path => {
     const identity = identityOf(path);
@@ -297,10 +308,8 @@ test('the connect budget includes the connector\'s synchronous start', async () 
     realpath: () => Buffer.from(`/${'p'.repeat(140)}/s.sock`), stat: () => socketStat, openDirectory: () => ({dev: 1n, ino: 2n}),
     connectInDirectory: () => { const end = Date.now() + 400; while (Date.now() < end); return new SocketDouble(); }});
   relay.handle({id: 'c', op: 'connect', path: `/${'./'.repeat(80)}s.sock`});
-  const returned = performance.now();
-  await until(() => sent.length);
+  // Answered before the handle returned: the budget had already run out when the start returned, not 300 ms after it.
   assert.deepEqual(sent, [{type: 'native_pipe_response', id: 'c', ok: false, error: 'native pipe initial connect timed out'}]);
-  assert.ok(performance.now() - returned < 150, 'the budget had already run out when the start returned');
   relay.closeAll();
 });
 

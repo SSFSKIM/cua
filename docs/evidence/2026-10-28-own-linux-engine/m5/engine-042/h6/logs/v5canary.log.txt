@@ -1,0 +1,10 @@
+head 8e36a54a8ea267f41ae7a22c504fe907a24342b6 clean=0
+development run, not a release gate (task 121, V5's canary cells, ruling 932): {"code":0,"signal":null,"clean":true,"reason":null}
+V5 canary cells exit 0
+head 8e36a54a8ea267f41ae7a22c504fe907a24342b6
+harness suite exit 0
+ℹ tests 1397
+ℹ pass 1392
+ℹ fail 0
+ℹ skipped 4
+ℹ todo 1

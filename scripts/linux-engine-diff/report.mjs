@@ -188,7 +188,7 @@ export function renderSummary(lines) {
     const canaries = verdicts.filter((v) => v.hold_canary);
     if (canaries.length) {
       const ms = (x) => (typeof x === 'number' ? String(x) : '–');
-      out.push('', "The hold canary (device.mjs `holdCanary`): each cell's ping waits in ms. A draggable cell passes on a press that started a drag and read slow by the engine's own 20 ms (`absolute`), or waited 3x the plain control's warm largest and 5 ms at least (`relative`, x64's K1 and K2):", '');
+      out.push('', "The hold canary (device.mjs `holdCanary`): each cell's ping waits in ms. A draggable cell passes on a press that started a drag and read slow by the engine's own 20 ms (`absolute`), or waited 3x the plain control's warm largest and 5 ms at least (`relative`, x64's K1, K2 and V5):", '');
       out.push('| scene | op | kind | criterion | held | started | largest wait | median wait | plain largest | bar |', '|---|---|---|---|---:|---:|---:|---:|---:|---:|');
       for (const v of canaries) {
         const c = v.hold_canary;

@@ -160,3 +160,21 @@ So no non-K step differs in how the runner launches it. Under 929.2, none reruns
   and its rows gzipped (`run/results.jsonl.gz`). The whole-run order-watch record is left out.
 - `comparison/`, `mutation/`, `scripts/` and `logs/`.
 - Logs are kept as `.txt`, since the repository ignores `*.log`.
+
+## 6. V5's in-step canary by architecture (ruling 932, 8e36a54a)
+
+- **What changed.** V5's verdict step is marked `holdCanary`. Its launch gets `--hold-canary` from the same
+  `CANARY_CRITERION`: `relative` on x64, `absolute` (20 ms) on arm64 and on any other architecture. Its engines stay
+  unsandboxed, as V5 ran them. A test pins V5's criterion on each architecture (`hold-canary-relative.test.mjs`).
+- **The comparison again.** H5 against 8e36a54a (`comparison/h6-932.txt`, 1,101 lines, sha256 `fd585484…`):
+  - exactly one line differs, V5's print line, which on x64 now ends `--pinned --hold-canary relative`;
+  - every other non-K step is byte-identical to H5;
+  - the K steps launch as at 4fffcdd3 (`k-h6-932.txt` is equal to `k-h6.txt`).
+- **A development run of V5's canary cells.** `dev-runs/V5-canary-cells-x64` ran V5's `device-chrome-dnd` scene with
+  its two canary cells, under the gate's ballast, with `--hold-canary relative --dev`. It ran on a private display
+  against the pinned 0.4.2 engine, on Chrome 156, with the engines unsandboxed as V5 runs them.
+  - It passed, with every verdict PASS.
+  - Held and started 9 of 9. The largest wait was 41.3 ms and the median 16.1 ms. The plain control's largest was
+    1.5 ms, so the bar was 5 ms.
+- **The harness suite at 8e36a54a:** 1397 tests, 1392 pass, 0 fail, 4 skipped (the wire lanes, which need a local engine
+  build), 1 todo (`logs/v5canary.log.txt`).

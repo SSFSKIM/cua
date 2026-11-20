@@ -161,8 +161,8 @@ The inside and past bands each need their outcome 7 times in 10, or the band fai
 judged: a plain ok on a drag its page started that did not land is a false ok. The knife-edge freeze at 650 is the
 development plan `t14-late-edge`, held to T14's late-take contract.
 
-**The hold canary's criterion is a step parameter.** `steps.mjs` `CANARY_CRITERION` sets it on K1 and K2 by
-architecture (ruling 930), as `--hold-canary`:
+**The hold canary's criterion is a step parameter.** `steps.mjs` `CANARY_CRITERION` sets it on K1, K2 and V5 by
+architecture (rulings 930 and 932), as `--hold-canary`:
 - **x64, `relative`:** a press that started a drag must wait 3x the run's plain control's warm maximum, and at least
   5 ms.
 - **arm64, `absolute`:** the engine's 20 ms. Every other run uses this default.

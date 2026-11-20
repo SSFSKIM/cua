@@ -119,7 +119,7 @@ export function parseArgs(argv) {
     // condition): the hold canary's and the identification's form
     else if (flag === '--engine-sandbox') a.engineSandbox = true;
     // the hold canary's criterion for the draggable cell (device.mjs `holdCanary`; ruling 930): `relative`, against the
-    // run's own plain control (x64's K1 and K2), or `absolute`, the engine's own 20 ms (the default, arm64's)
+    // run's own plain control (x64's K1, K2 and V5), or `absolute`, the engine's own 20 ms (the default, arm64's)
     else if (flag === '--hold-canary') {
       const v = need();
       if (!['relative', 'absolute'].includes(v)) throw new Error('--hold-canary takes relative or absolute');

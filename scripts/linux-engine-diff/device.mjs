@@ -642,7 +642,7 @@ export const CANARY_BUSY_MS = 5;
 export const CANARY_SLOW_MS = 20;
 export const CANARY_HELD = 3;
 /**
- * The relative criterion (the design session's ruling 930, x64's K1 and K2): a press on the draggable source that
+ * The relative criterion (the design session's rulings 930 and 932, x64's K1, K2 and V5): a press on the draggable source that
  * started a drag waits at least this many times the run's own plain control's warm maximum (`canaryPlainControl`)...
  */
 export const CANARY_RELATIVE_FACTOR = 3;
@@ -682,7 +682,7 @@ export function canaryPlainControl(rows) {
 /**
  * The canary's reasons for a cell's rows (none for a cell it does not judge), and its counts. `criterion` decides the
  * draggable cell's last rule (ruling 930): `absolute` (arm64's, and the default), a press that started a drag read slow
- * by the engine's own threshold; `relative` (x64's K1 and K2), a press that started a drag waited
+ * by the engine's own threshold; `relative` (x64's K1, K2 and V5), a press that started a drag waited
  * `CANARY_RELATIVE_FACTOR` times the run's own plain control's warm maximum (`plain`, `canaryPlainControl`'s), and
  * `CANARY_RELATIVE_FLOOR_MS` at the least. The identification, the count of held presses and the busy half stand under
  * both. Each record carries its waits, so drift toward the bar shows before it fails: the draggable cell's started

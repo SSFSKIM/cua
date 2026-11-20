@@ -163,4 +163,47 @@ against the floor of half. x64's thin margin on Chrome 158 (2 of 8 presses at 20
   every acquire and release. `logs/builds.txt`: the three builds.
 - `scripts/`: the plans and chains (`plan.sh`, `w4-plan.sh`, `w5-plan.sh`; `chain.sh`, `chain2.sh`, `chain3.sh`),
   `procrec.sh`, `private-run.mjs` (task 113's), `tail_tables.py`, `canary_tables.py`, `canary_rejudge.mjs` and
-  `procs_summary.sh`. `w6-plan.sh` is staged for ruling 913's wave-6 smoke and has not run.
+  `procs_summary.sh`. `w6-plan.sh` ran ruling 913's wave-6 smoke (below).
+
+
+## The final review's check: identification time in the counted f10946bf block (ruling 921)
+
+`f10946bf/identify-times.md`, from `scripts/identify_times.py`. The field read is `engine_stats.browser_identity.ms`
+on every cua sample.
+
+| Chrome | runs | samples with a record | max ms | max ms, held samples | over 50 ms |
+|---|---|---:|---:|---:|---:|
+| 156 | V5 at twice the load (1 run) | 150 | 27.0 | 19.6 | **0** |
+| 158 | V5 at twice the load (1 run) | 150 | 25.0 | 25.0 | **0** |
+| 156 | K1, 20 runs | 360 | 0.9 | 0.9 | **0** |
+| 158 | K2, 20 runs | 360 | 1.7 | 1.7 | **0** |
+
+**No identification in the counted block took more than 50 ms, so the block carries over unchanged.** Wave 6's rule,
+that an identification past 50 ms counts as none, would have changed no sample. Ruling 921's extra run was therefore
+not needed and was not made.
+
+## Wave 6's smoke at 9371d234 (ruling 913.2)
+
+- **Binary:** arm64 static musl, built on the VM under `m5-tail042`. sha256
+  `d0e2f2b265865b74df7ecb9f18a03ea41bc387dcc9781bff6d24b8aa76fde280`, `cua-engine 0.4.2 (9371d2348cf8)`.
+- **Harness:** the `t118-wave6` checkout at 9371d234.
+- **V5:** one 7-block run per Chrome version at twice the load (21 in-front and 21 cancel samples each), as the
+  counted block ran.
+- **Canary:** 5 K1 and 5 K2 runs in gate form, sandboxed, as the counted block ran.
+- **Process records:** every 156 run drove only `/opt/google/chrome/chrome`, and every 158 run drove only T7's 158
+  tree.
+
+| Chrome | V5 in front: n / landed | false oks | hold notices (in front / cancel), false alarms | unconfirmed-drop notices | in-front verdict | cancel verdict | K step: runs passed | canary busy / held, lowest | identification max (held), over 50 ms |
+|---|---|---:|---|---:|---|---|---|---|---|
+| 156 | 21 / 21 | **0** | 0 / 2, 0 | 0 | pass | pass | K1 5/5 | 5 / 9 | 13.7 ms, 0 |
+| 158 | 21 / 18 | **0** | 0 / 1, 0 | 3 | fail: effect not verified 3, witness changed 2 | pass | K2 5/5 | 5 / 8 | 16.9 ms, 0 |
+
+- **Target met: 0 false oks.** The healthy path did not move.
+- **The tail behaved as before.** One 156 in-front dragstart came at +475.6 ms. It took inside the extension at
+  +481.0 ms and dropped.
+- **Every hold notice was honest.**
+- **158's in-front fail has the twice-load reasons seen throughout,** not a false ok: 3 honest unconfirmed-drop
+  notices and 2 stacking-notify witness spans.
+- **Every canary run passed both cells,** with at least 5 slow presses per run.
+- Evidence: `9371d234/` (`v5.md`, `samples.tsv`, `canary.md`, `canary-rejudged.md`, `identify-times.md`) and
+  `procs/9371d234/`.

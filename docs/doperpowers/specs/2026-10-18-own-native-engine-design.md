@@ -6764,6 +6764,78 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   fields on real pages (#398's measurement, run separately). The rule needs no such number, since a gone handle is
   matched strictly whatever it finds.
   Date/Author: 2026-11-18, cursor235's implementer for #398.
+- Decision (#431, design rulings 1ea561bc:880, 881, 884/885 and 889, 2026-11-19, `fix/431-recreated-identity`, plugin
+  0.28.19; amends #296's re-created match and #305's re-created identity of a hit, StalePoint.swift `recreatedRefused`):
+  **a handle found in place of a gone node by role, a 2 pt frame and an agreeing label is refused where the record could
+  not tell it from another element.** #340's phase 1 (run 44507959686, cell `twin`) measured the gap: link A removed, a
+  same-label link B with another destination slid into its frame, and main kept the click and landed on B, 10/10 on CfT,
+  Safari and Electron, with the record at the text and at the link.
+  The first build (3ece1a1a) proved the candidate new instead: absent from the record, under a complete recorded
+  ancestor, under no recorded control but the node's own. CfT and Electron then refused `twin`, `twincap` and `twindeep`,
+  but Safari kept all three at both points as `sameElement/recreated` and landed on B (hosted smoke, run 44520748737):
+  the kit moves B in the DOM, and WebKit gives a moved element new accessibility handles in A's own, completely recorded
+  row, which is structurally what a re-creation is. So no proof of novelty from the tree holds, and ruling 889 replaced
+  it with refusals read from the record. A re-created candidate, on #296's path and on #305's, is refused when:
+  1. **The region was not recorded whole** (`ScreenshotNode.regionCovered`). The region is the node's nearest web area
+     (else the record's root), taken from the node's own ancestors at the observation, so a container re-created since
+     cannot move the judgement to a complete ancestor. Whole means every element of its recorded subtree read its
+     AXChildren and has each child those listed in the record by handle (`screenshotNodes`' `key`), by count only where
+     the handles are unknown. Membership, because past 100 children the width rule records AXVisibleChildren, which can
+     hold others than AXChildren lists (the review of main..3ece1a1a, finding 5), and because Chromium lists a table's
+     cell under its row and its column while the walk records it once (the review of main..849bcdad, finding 9). A twin
+     past the node cap (`twincap`), below the depth cap (`twindeep`), outside the visible subset or under a failed
+     children read is refused on coverage alone. #330's lookup (`screenshotChildrenRecorded`) keeps main's count, so its
+     verdicts are main's (849bcdad's finding 4).
+  2. **Its control is unknown**: an ancestor's role or action names failed to read at the observation (carried as
+     `ScreenshotNodeRead.roleRead` and `actionsRead`, from `ElementData.unreadable` and `ElementSource.actionsFailed`),
+     so the record cannot say what the node's control was; neither is taken for inert (3ece1a1a's finding 4, 849bcdad's
+     finding 6).
+  3. **The node's own handle still lives** (its role read is not kAXErrorInvalidUIElement; only its frame read failed),
+     or the record holds the candidate as another node (849bcdad's findings 3 and 8).
+  4. **The record holds a twin** (`recreatedTwin`): another element the match could have taken for the node, of its role
+     or of a role unread then, in its region, whose recorded label agrees by the match's own rule
+     (`recreatedLabelsAgree`: never past a label read that failed on either side, 849bcdad's finding 5). Only the node's
+     own control and that control's inert content are exempt; a link, a button, anything with AXPress or whose role or
+     actions did not read, under the same control, is its own action and counts (849bcdad's finding 1). The label is
+     used only to refuse. In `twin` B and its text are recorded with A's label, so it refuses whatever handles B answers
+     now.
+  5. **The candidate's nearest web area is not the node's** (849bcdad's finding 7: an iframe's document over its place).
+     A web area node itself is left to #316's and #330's rules.
+  6. **The candidate's nearest control is not the node's** (849bcdad's finding 2, and 3ece1a1a's finding 1): where the
+     record had none, it has one; while the node's control lives, it is another element; once that control is gone, it
+     is none, an element the record holds, or of another role than the recorded control's (`ScreenshotNode.controlRole`;
+     a link's text under a button, a clickable row's under a link, `twinbtn`). A parent, role or action-name read that
+     fails on the way up refuses.
+  Findings 3 and 6 of the review of main..3ece1a1a are moot: they tightened the candidate-chain walk of the novelty
+  proof, which is gone; coverage is judged on the node's side. Its finding 2 is applied: #305's re-created identity, and
+  the element route's press verdict through it, take the same refusals.
+  Kept as before: position, role and label agreement, #298's edited-text exemption, #330's rule dL and every node found
+  by its own handle. The cost, accepted by ruling 889: a genuine re-creation now refuses (`nodeGone`) wherever the walk did
+  not record the page whole (a large page cut by the cap, the deadline or the width rule; `capremount`, `wideremount`),
+  and wherever the page holds another element of the node's role with an agreeing label (a list of "Reply" links, and
+  links or buttons with no label at all). #296's truncated-container case now refuses with its title unchanged too.
+  Proven offline (`RecreatedIdentityTests`, and the walk's record in `NewElementGuardTests`): `twin` refuses at the text
+  and at the link with B on its own handles and on new ones, as do pressable rows and `twinrow`; `twincap`, `twindeep`, a
+  twin under a failed children read and one outside the visible subset refuse on coverage, while a table's doubly listed
+  cell does not count against it; `plain`, `like` and `remount` stay kept in a whole record with no twin; `capremount`
+  and a gap anywhere in the page refuse, a gap in the browser's toolbar does not; the label rule's edges; a sibling link
+  under a shared clickable group is a twin, the node's own control is not; a control unknown by its actions or its role,
+  a living control elsewhere, a new button inside a surviving row, a plain text now in a button, a gone control's text
+  with no control or inside a recorded link or under another role, a living own handle, a candidate recorded as another
+  node, and another document's candidate all refuse; #305's path and the press verdict refuse as #296's does; #330 keeps
+  main's verdict over a visible subset. The last mutation pass, 34 mutations over every refusal, its exemptions, the
+  label rule, coverage's membership and carrying, the region, the record's classifications, #330's input and the walk's
+  three new fields, is caught by these tests, every one.
+  The review of 849bcdad..38a55469 added three things. The record's membership of a candidate, and of a replacement
+  control, reads the screenshot's whole handle map, framed and frameless, on #296's path and #305's (a link recorded
+  without a frame gains one at the node's place). The observation reads action names as the click does
+  (`decodedActionNames`: kAXErrorNoValue is none, not unread), so a text with no actions stays inert content of its
+  link, as on main. And a re-created match the record refuses is judged on as main judges it: a rule that refuses it
+  keeps its reason (#330's `newElementOverPoint` first), and a verdict that would keep it becomes `nodeGone`, so a
+  refused match never carries a pointer.
+  Not measured live: `twin`, `twincap`, `twindeep` and `twinbtn` on Safari with this build, and how often real pages lose
+  a re-created click to coverage or to a same-label element.
+  Date/Author: 2026-11-19, cursor235's implementer for #431.
 
 ## Outcomes & Retrospective
 

@@ -613,7 +613,8 @@ export function falseAlarm(r) {
  *   Chrome 156 waited 8 to 27 ms, 9 of 9 on Chrome 158 6 to 21 ms; V5 at idle 40 of 40); and at least one of them slow
  *   by the engine's own threshold (`CANARY_SLOW_MS`, `adaptive_hold::FAST_PING`), the reading that extends a hold at B
  *   (the re-review of wave 3, I5: a cell whose pings all came back in 6 ms passed, though the engine reads every one
- *   of them fast);
+ *   of them fast), on a press whose drag did start, seen apart from the pings: the engine's watch saw the take, or the
+ *   page counted the sample's own dragstart (the re-review of wave 4, I1: a slow press that started nothing passed);
  * - V5's select control (`chrome_select_nudged_shared`, a plain drag in the same scene): at least `CANARY_HELD` warm
  *   samples whose hold ran, every one read fast at B (`hold.adaptive.way` fixed on its pings); a cold one that read
  *   slow is counted, not failed (a fresh page's first ping can be slow).
@@ -626,6 +627,12 @@ export const CANARY_BUSY_MS = 5;
 /** A plain drag's ping is slow from T (cua-engine's `adaptive_hold::FAST_PING`), as the engine reads it at B. */
 export const CANARY_SLOW_MS = 20;
 export const CANARY_HELD = 3;
+
+/** Whether the page counted one dragstart between the reads before and after this sample (pages/drag.html `starts`). */
+function ownDragstart(r) {
+  const { before, after } = r.drop_status ?? {};
+  return typeof before?.starts === 'number' && after?.starts === before.starts + 1;
+}
 
 /** A hold record's largest ping wait: a round trip, or an unanswered ping's age at the hold's end; null with none. */
 export function holdPingWait(hold) {
@@ -640,6 +647,9 @@ export function holdCanary(op, rows) {
   const held = recorded.filter((r) => r.engine_stats?.hold?.held === true);
   const slow = held.filter((r) => (holdPingWait(r.engine_stats.hold) ?? 0) >= CANARY_SLOW_MS);
   const busy = held.filter((r) => (holdPingWait(r.engine_stats.hold) ?? 0) >= CANARY_BUSY_MS);
+  // the re-review of wave 4, I1: a slow sample counts for the canary only where a drag did start, seen apart from the
+  // pings: the take the engine's watch saw (`hold.taken`), or the page's own count of this sample's dragstart
+  const slowStarted = slow.filter((r) => r.engine_stats.hold.taken === true || ownDragstart(r));
   const reasons = [];
   // the extension applies only to a source identified as a Chrome browser (ruling 899): one that is not cannot extend
   const unidentified = held.filter((r) => r.engine_stats.hold.adaptive?.source?.identified !== true);
@@ -648,7 +658,8 @@ export function holdCanary(op, rows) {
     if (held.length < CANARY_HELD) reasons.push(`the hold canary is untested: ${held.length} of ${recorded.length} presses on a draggable source held for their take, fewer than ${CANARY_HELD}`);
     else if (busy.length * 2 < held.length) reasons.push(`the hold canary: ${held.length - busy.length} of ${held.length} held presses on a draggable source found their browser idle (every ping answered under ${CANARY_BUSY_MS} ms), more than half: Chrome may no longer mark the drag it starts`);
     else if (!slow.length) reasons.push(`the hold canary: none of ${held.length} held presses on a draggable source read slow by the engine's own threshold (a ping of ${CANARY_SLOW_MS} ms or more): at B the engine would read every one fast, so no busy browser would extend its hold`);
-    return { reasons, record: { kind: 'draggable', held: held.length, busy: busy.length, slow: slow.length } };
+    else if (!slowStarted.length) reasons.push(`the hold canary: none of the ${slow.length} held presses on a draggable source that read slow by the engine's own threshold started a drag (no take of the engine's watch, no dragstart of the sample's own on the page): their slowness is not Chrome's drag setup`);
+    return { reasons, record: { kind: 'draggable', held: held.length, busy: busy.length, slow: slow.length, slow_started: slowStarted.length } };
   }
   const warm = held.filter((r) => r.i !== 0);
   if (warm.length < CANARY_HELD) reasons.push(`the hold canary's plain control is untested: ${warm.length} warm samples of ${recorded.length} held their drag, fewer than ${CANARY_HELD}`);

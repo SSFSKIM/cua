@@ -724,14 +724,24 @@ test('a canary step runs the Chrome it means and passes only with its evidence t
 });
 
 test("the hold's regression cells fail on any drop that did not land inside B, any hold not the fixed one, and any Chrome not identified", async () => {
-  const { holdRegressionVerdict } = await import('../../scripts/linux-engine-diff/drop-signals-judge.mjs');
+  const { HOLD_REGRESSION_CELLS, dropSignalsVerdict, holdRegressionVerdict } = await import('../../scripts/linux-engine-diff/drop-signals-judge.mjs');
   const specs = [{ lane: 'cua', cell: 'dragstart-150', n: 2 }, { lane: 'cua', cell: 'dragstart-400', n: 2 }];
+  const required = specs;
   const drag = (cell, i, over = {}) => ({ kind: 'drop-signal', lane: 'cua', cell, i, outcome: { started: true, landed: true }, hold: { taken: true, adaptive: { way: 'fixed', source: { identified: true } } }, ...over });
   const good = ['dragstart-150', 'dragstart-400'].flatMap((cell) => [drag(cell, 0), drag(cell, 1)]);
-  assert.deepEqual(holdRegressionVerdict(good, { specs }).failed, []);
+  assert.deepEqual(holdRegressionVerdict(good, { specs, required }).failed, []);
   const lost = [...good.slice(0, 3), drag('dragstart-400', 1, { outcome: { started: true, landed: false }, hold: { taken: false, adaptive: { way: 'fixed', source: { identified: true } } } })];
-  assert.deepEqual(holdRegressionVerdict(lost, { specs }).failed, ['dragstart-400: not landed on 1 of 2 (0/1)', 'dragstart-400: no take seen inside the hold on 1 of 2 (0/1)']);
+  assert.deepEqual(holdRegressionVerdict(lost, { specs, required }).failed, ['dragstart-400: not landed on 1 of 2 (0/1)', 'dragstart-400: no take seen inside the hold on 1 of 2 (0/1)']);
   const unknown = [...good.slice(0, 3), drag('dragstart-400', 1, { hold: { taken: true, adaptive: { way: 'fixed', source: { identified: false } } } })];
-  assert.deepEqual(holdRegressionVerdict(unknown, { specs }).failed, ['dragstart-400: Chrome not identified as a browser on 1 of 2 (0/1)']);
-  assert.deepEqual(holdRegressionVerdict(good.slice(0, 3), { specs }).failed, ['dragstart-400: 1 of its 2 drags ran']);
+  assert.deepEqual(holdRegressionVerdict(unknown, { specs, required }).failed, ['dragstart-400: Chrome not identified as a browser on 1 of 2 (0/1)']);
+  assert.deepEqual(holdRegressionVerdict(good.slice(0, 3), { specs, required }).failed, ['dragstart-400: 1 of its 2 drags ran']);
+  // the re-review of wave 4, I2: the required cells and counts are the plan's own, whatever the run's rows say. A run
+  // with no manifest, or one whose manifest and rows lack a cell, fails; and by default each cell needs its 10 drags
+  assert.deepEqual(HOLD_REGRESSION_CELLS, [['cua', 'dragstart-150', 10], ['cua', 'dragstart-400', 10]]);
+  assert.deepEqual(holdRegressionVerdict([], { specs: null, required }).failed, ["the run's manifest (its drop-signal-scene row) is missing: which cells ran is unknown", 'dragstart-150: 0 of its 2 drags ran', 'dragstart-400: 0 of its 2 drags ran']);
+  assert.deepEqual(holdRegressionVerdict(good.slice(0, 2), { specs: specs.slice(0, 1), required }).failed, ["dragstart-400: not in the run's manifest with its 2 drags", 'dragstart-400: 0 of its 2 drags ran']);
+  assert.match(holdRegressionVerdict(good, { specs }).failed.join('; '), /dragstart-150: not in the run's manifest with its 10 drags; dragstart-150: 2 of its 10 drags ran/);
+  const { PLANS } = await import('../../scripts/linux-engine-diff/drop-signals.mjs');
+  assert.deepEqual(PLANS['hold-regression'], HOLD_REGRESSION_CELLS, "the plan runs the judge's cells");
+  assert.match(dropSignalsVerdict({ plan: 'hold-regression', families: ['chrome'] }, good).failed.join('; '), /manifest .* is missing/, 'rows with no scene row');
 });

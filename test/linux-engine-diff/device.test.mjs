@@ -248,15 +248,31 @@ test("V5's cells: an ok with the hold's exact notice is honest only where the pa
 // in-front cell must read slow at least once, and V5's select control's warm drags fast; either failing fails its cell.
 test('the hold canary: a draggable press must read slow at least once, a warm plain drag never, and Chrome must be identified', () => {
   const source = { identified: true, by: 'Google-chrome, role browser, application "Google Chrome", executable not visible here' };
-  const hold = (waits, way = 'fixed', why = 'the take came 70 ms after the press, inside B') => ({
-    held: true, pings: { asked: true, round_trips: waits.map((w, k) => (w < 0 ? { sent_after_press_ms: 50 + 25 * k, rtt_ms: null, unanswered_ms: -w } : { sent_after_press_ms: 50 + 25 * k, rtt_ms: w })) }, adaptive: { way, why, source },
+  const hold = (waits, way = 'fixed', why = 'the take came 70 ms after the press, inside B', taken = true) => ({
+    held: true, taken, pings: { asked: true, round_trips: waits.map((w, k) => (w < 0 ? { sent_after_press_ms: 50 + 25 * k, rtt_ms: null, unanswered_ms: -w } : { sent_after_press_ms: 50 + 25 * k, rtt_ms: w })) }, adaptive: { way, why, source },
   });
   const press = (i, waits) => row({ block: 0, i, ok: true, effect: true, route: 'background', dnd: { in_front: true }, desktop_same: true, state_notice: null, reply_notice: null, dropped: true, engine_stats: { hold: hold(waits) } });
   const audit = { clean: true, kind: 'background', answered: [{ ok: true }] };
   // two of three presses found the browser busy (a ping answered in 8 ms, one unanswered for 34 ms when its take came)
   const good = judgeDevice('chrome_dnd_short_in_front_shared', [press(0, [8]), press(1, [1, -34]), press(2, [2])], audit);
   assert.equal(good.pass, true, good.reasons.join('; '));
-  assert.deepEqual(good.hold_canary, { kind: 'draggable', held: 3, busy: 2, slow: 1 });
+  assert.deepEqual(good.hold_canary, { kind: 'draggable', held: 3, busy: 2, slow: 1, slow_started: 1 });
+  // the re-review of wave 4, I1: the slow press must have started a drag, seen apart from the pings: with no take of the
+  // engine's watch and no dragstart of its own on the page, its slowness proves nothing, and the canary fails
+  const unstarted = (i, waits, drop_status) => {
+    const r = press(i, waits);
+    r.engine_stats.hold.taken = false;
+    if (drop_status) r.drop_status = drop_status;
+    return r;
+  };
+  const idleSlow = judgeDevice('chrome_dnd_short_in_front_shared', [press(0, [8]), unstarted(1, [1, -34]), press(2, [6])], audit);
+  assert.match(idleSlow.reasons.join('; '), /none of the 1 held presses on a draggable source that read slow by the engine's own threshold started a drag/);
+  assert.deepEqual(idleSlow.hold_canary, { kind: 'draggable', held: 3, busy: 3, slow: 1, slow_started: 0 });
+  const noStart = { before: { starts: 4, drops: 4 }, after: { starts: 4, drops: 4 } };
+  assert.equal(judgeDevice('chrome_dnd_short_in_front_shared', [press(0, [8]), unstarted(1, [40], noStart), press(2, [6])], audit).pass, false, 'the page counted no dragstart');
+  // the page's own dragstart is evidence enough where the engine's watch saw no take
+  const pageStarted = judgeDevice('chrome_dnd_short_in_front_shared', [press(0, [8]), unstarted(1, [40], { before: { starts: 4, drops: 4 }, after: { starts: 5, drops: 5 } }), press(2, [6])], audit);
+  assert.ok(!pageStarted.reasons.some((r) => r.includes('hold canary')), pageStarted.reasons.join('; '));
   // most presses found the browser idle: Chrome no longer marks its drag start
   const fast = judgeDevice('chrome_dnd_short_in_front_shared', [press(0, [1]), press(1, [1, 15]), press(2, [2])], audit);
   assert.match(fast.reasons.join('; '), /the hold canary: 2 of 3 held presses on a draggable source found their browser idle/);
@@ -264,7 +280,7 @@ test('the hold canary: a draggable press must read slow at least once, a warm pl
   // reads all of them fast, so the canary proves nothing and fails
   const sixes = judgeDevice('chrome_dnd_short_in_front_shared', [press(0, [6]), press(1, [6, 6]), press(2, [6])], audit);
   assert.match(sixes.reasons.join('; '), /none of 3 held presses on a draggable source read slow by the engine's own threshold \(a ping of 20 ms or more\)/);
-  assert.deepEqual(sixes.hold_canary, { kind: 'draggable', held: 3, busy: 3, slow: 0 });
+  assert.deepEqual(sixes.hold_canary, { kind: 'draggable', held: 3, busy: 3, slow: 0, slow_started: 0 });
   // too few holds ran to say: untested, a failure
   assert.match(judgeDevice('chrome_dnd_short_in_front_shared', [press(0, [40])], audit).reasons.join('; '), /the hold canary is untested: 1 of 1/);
   // Chrome not identified: the extension cannot apply

@@ -836,16 +836,27 @@ export function chromeDropVerdict(rows, { specs = [], plan = null, capped = fals
 export const HOLD_REGRESSION_PLAN = 'hold-regression';
 
 /**
+ * The hold's regression cells and their counts, the plan's own (drop-signals.mjs PLANS takes them from here) and what
+ * the judge requires whatever a run's rows say (the re-review of wave 4, I2: judged from the run's manifest alone, a
+ * run with none, or one missing a cell, passed).
+ */
+export const HOLD_REGRESSION_CELLS = [['cua', 'dragstart-150', 10], ['cua', 'dragstart-400', 10]];
+
+/**
  * The hold's regression cells (ruling 900): drops whose page starts them late from a busy handler (`dragstart-150`,
  * `dragstart-400`, Chrome's own browser idle and fast) must land inside B, as the fixed 450 ms lands them and an early
  * release on fast pings did not (task 117: 24 of 24 lost). Fails, each named: a drag that did not land, whose page did
  * not start it, or whose engine saw no take; a hold that was not the fixed one (no release before B, no extension on
- * fast pings); a source the engine did not identify as Chrome; a cell of the plan with no drag.
+ * fast pings); a source the engine did not identify as Chrome; a required cell (`required`, HOLD_REGRESSION_CELLS by
+ * default) short of its count, or missing from the run's manifest (`specs`, the scene row's; null when the run wrote
+ * none), and a run with no manifest at all.
  */
-export function holdRegressionVerdict(rows, { specs = [] } = {}) {
+export function holdRegressionVerdict(rows, { specs = null, required = HOLD_REGRESSION_CELLS.map(([lane, cell, n]) => ({ lane, cell, n })) } = {}) {
   const failed = [];
   const counts = {};
-  for (const spec of specs) {
+  if (!Array.isArray(specs)) failed.push("the run's manifest (its drop-signal-scene row) is missing: which cells ran is unknown");
+  for (const spec of required) {
+    if (Array.isArray(specs) && !specs.some((s) => s.cell === spec.cell && s.lane === spec.lane && s.n >= spec.n)) failed.push(`${spec.cell}: not in the run's manifest with its ${spec.n} drags`);
     const list = rows.filter((r) => r.cell === spec.cell && r.lane === spec.lane);
     const bad = (what, pred) => {
       const misses = list.filter((r) => !pred(r));
@@ -864,8 +875,9 @@ export function holdRegressionVerdict(rows, { specs = [] } = {}) {
 
 export function dropSignalsVerdict(args, rows) {
   const drags = rows.filter((r) => r.kind === 'drop-signal');
-  const specs = rows.find((r) => r.kind === 'drop-signal-scene')?.specs ?? [];
-  if ((args.families?.[0] ?? 'chrome') === 'chrome' && args.plan === HOLD_REGRESSION_PLAN) return { judge: 'holdRegressionVerdict', ...holdRegressionVerdict(drags, { specs }) };
+  const manifest = rows.find((r) => r.kind === 'drop-signal-scene')?.specs ?? null;
+  const specs = manifest ?? [];
+  if ((args.families?.[0] ?? 'chrome') === 'chrome' && args.plan === HOLD_REGRESSION_PLAN) return { judge: 'holdRegressionVerdict', ...holdRegressionVerdict(drags, { specs: manifest }) };
   if (judgedElectronPlan(args)) return { judge: 'electronDropVerdict', ...electronDropVerdict(drags, { specs, plan: args.plan }) };
   if (judgedChromePlan(args)) return { judge: 'chromeDropVerdict', ...chromeDropVerdict(drags, { specs, plan: args.plan, capped: args.samplesTrials != null }) };
   return null;

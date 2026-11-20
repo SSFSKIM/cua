@@ -101,7 +101,7 @@ d929148b, 360 rows: omnibox, select, datalist, permission, TextEdit menu, TextEd
 |---|---|---|
 | omnibox | Chrome, layer 0, (499,56,458×218) | ⌘L and a typed URL, every mode |
 | select | Chrome's native menu, layer 101, (404,154,77×82) | AXPress on the `<select>`, every mode |
-| datalist | Chrome, **layer 999**, (467,220,164×166) | focus the `<input list>` and type; shows only with Chrome frontmost (0/10 behind or dedicated) |
+| datalist | Chrome, **layer 999**, (467,220,164×166) | focus the `<input list>` and type; shows only with Chrome frontmost (in none of the 40 behind or dedicated rows) |
 | permission (geolocation) | Chrome, layer 0, (521,111,320×266) | a fresh origin per row; shows in 2-3 of 5 rows; with Chrome frontmost the bubble is the app's focused window, so get_app_state observes the bubble itself |
 | TextEdit menu (font popup) | TextEdit, layer 101, (535,44,159×660) | AXPress on the format bar's popup, every mode |
 | TextEdit popover (text colour well) | TextEdit, layer 0, (393,91,225×246); in AX an AXPopover inside the document's window, so its swatches are in the observed tree | AXPress on the colour well, every mode |

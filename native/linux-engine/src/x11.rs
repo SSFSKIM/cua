@@ -618,6 +618,25 @@ impl X11 {
             .and_then(|r| wm_class_app(&r.value))
     }
 
+    /// `WM_WINDOW_ROLE` and `WM_CLIENT_MACHINE` as text (`browser.rs`): the role's atom interned only when asked, so a
+    /// drag that never needs it sends nothing more.
+    pub fn role_and_machine(&self, window: Window) -> (Option<String>, Option<String>) {
+        let role = self
+            .conn
+            .intern_atom(true, b"WM_WINDOW_ROLE")
+            .ok()
+            .and_then(|c| c.reply().ok())
+            .map(|r| r.atom)
+            .filter(|&atom| atom != x11rb::NONE)
+            .and_then(|atom| self.get_property(window, atom).ok())
+            .and_then(|r| property_text(&r.value));
+        let machine = self
+            .get_property(window, AtomEnum::WM_CLIENT_MACHINE.into())
+            .ok()
+            .and_then(|r| property_text(&r.value));
+        (role, machine)
+    }
+
     /// The client window at a root point: the top-level under it, then the first window holding `WM_STATE` in its
     /// subtree (a reparenting window manager's frame holds the client).
     pub fn client_at(&self, rx: i16, ry: i16) -> Option<Window> {

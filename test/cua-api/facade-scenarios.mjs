@@ -273,6 +273,16 @@ export const scenarios = [
       assert.deepEqual(record.result.slice(6), [`${record.result[5]}\n${RENDERED}`], 'the reason\'s notice renders the same way');
       assert.deepEqual(writes(record), [['cua.state', state], ['cua.state', state]], 'the emitted state carries the notice too');
     }},
+  {name: 'linux app: a drag whose answer carries the hold\'s notice writes it as the cell\'s state output; one without writes nothing (#171 M5, ruling 897)',
+    differs: 'own Linux engine spec (#171), M5: the adaptive hold\'s notice (the design session, ruling 897)', run: async (f, ctx) => {
+      const notice = 'the page may have started a drag that did not complete';
+      const noticed = f.bind_linux_app(skyDouble(ctx, 'linux', {drag: {notice}}), linuxWindow);
+      const plain = f.bind_linux_app(skyDouble(ctx, 'linux', {}), {...linuxWindow, id: 8});
+      return [await noticed.drag([1, 2], [3, 4]), await plain.drag([1, 2], [3, 4])];
+    }, check(record, assert) {
+      assert.deepEqual(record.result, [undefined, undefined], 'a drag resolves to nothing either way');
+      assert.deepEqual(writes(record), [['cua.state', 'the page may have started a drag that did not complete\n']]);
+    }},
   {name: 'linux app: a state with no notice, or an empty one, renders byte for byte as before', run: async (f, ctx) => {
     const absent = f.bind_linux_app(linuxSky(ctx, f), linuxWindow);
     const empty = f.bind_linux_app(linuxSky(ctx, f, {notice: ''}), {...linuxWindow, id: 8});

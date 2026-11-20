@@ -11,6 +11,7 @@ use x11rb::protocol::xproto::{ConnectionExt as _, Window};
 
 use super::way::{Way, target_of};
 use super::{DesktopMode, Engine};
+use crate::adaptive_hold::{Hold, Reading};
 use crate::desktop::Desktop;
 use crate::dnd::{Confirm, DndWatch, EscapeRoute, LateWatch, Outcome, Standing};
 use crate::families::DragPacing;
@@ -343,12 +344,15 @@ pub(super) struct DragMeasure<'a> {
 /// The hold for a Chromium-family source's take (`dnd::TAKE_HOLD_AFTER_PRESS`, B, the design session's ruling 888.1;
 /// `--drag-dnd-hold-ms` sets another): its bound after the press, and the source window, the window pressed into, which
 /// the hold's pings ask (`hold_ping.rs`, ruling 888.2, measurement only).
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub(super) struct TakeHold {
     pub(super) bound: Duration,
     pub(super) source: Window,
     /// Whether the hold pings its source (`--drag-dnd-hold-ping`, on unless turned off for measurement).
     pub(super) ping: bool,
+    /// Whether the source is a Chrome or Chromium browser (`browser.rs`), what said so or why not: an identified one's
+    /// hold is adaptive (`adaptive_hold.rs`) while its pings are on.
+    pub(super) browser: Result<String, String>,
 }
 
 impl TakeHold {
@@ -359,7 +363,32 @@ impl TakeHold {
             false => HoldPing::off(),
         }
     }
+
+    /// When the hold of a drag pressed at `pressed_at` ends with no take: adaptive, reading `pings`, for an identified
+    /// browser whose pings are on; else fixed at the bound. `rest` is the family's rest before a release.
+    pub(super) fn end<'a>(
+        &self,
+        pressed_at: Instant,
+        rest: Duration,
+        pings: Option<&'a HoldPing>,
+    ) -> Hold<impl FnMut(Instant, Instant) -> Reading + 'a> {
+        let read = move |by, now| match pings {
+            Some(pings) => pings.reading(by, now),
+            None => Reading::Slow("the hold ran no sampler".into()),
+        };
+        match (&self.browser, self.ping) {
+            (Ok(by), true) => Hold::adaptive(pressed_at, self.bound, rest, read, by.clone()),
+            (_, false) => Hold::fixed(pressed_at, self.bound, PINGS_OFF.into(), self.browser.clone(), read),
+            (Err(_), true) => Hold::fixed(pressed_at, self.bound, UNIDENTIFIED.into(), self.browser.clone(), read),
+        }
+    }
 }
+
+/// Why a hold is fixed: the source is not positively a Chrome or Chromium browser (`browser.rs`).
+pub(super) const UNIDENTIFIED: &str = "the source is not identified as a Chrome or Chromium browser";
+
+/// Why a browser's hold is fixed: its pings are off (`--drag-dnd-hold-ping off`, measurement only).
+pub(super) const PINGS_OFF: &str = "the hold's pings are off";
 
 /// Whether a drop on `window` (a managed top-level) is confirmed by its activation request: its family's drop sends one
 /// (Chrome's, known by its X11 class alone, so no accessibility-bus call comes before the release).
@@ -413,8 +442,9 @@ fn drag_along(
     pacing: &DragPacing,
     mut guard: Option<&mut DropGuard>,
     mut hold: Option<&mut DndWatch>,
-    take_hold: Option<TakeHold>,
+    take_hold: Option<&TakeHold>,
     held_for_take: &mut Option<Value>,
+    noticed: &mut bool,
     after_take: Duration,
     scheduled: &mut Option<Value>,
     mut press: Option<&mut ChromiumPress>,
@@ -521,10 +551,13 @@ fn drag_along(
             let mut refreshes = None;
             // the source's answers to the hold's pings (ruling 888.2, measurement only)
             let mut pings_record = Value::Null;
+            // which way the hold went (`adaptive_hold.rs`, ruling 897)
+            let mut adaptive_record = Value::Null;
             if held {
                 let since = Instant::now();
                 let deadline = pressed_at + take_hold.bound;
                 let pings = (since < deadline).then(|| take_hold.pings(deadline));
+                let mut end = take_hold.end(pressed_at, pacing.rest, pings.as_ref());
                 // the hold's last motion: the path's end, then each refresh on the background route
                 let mut last_motion = since;
                 let looked = if matches!(route, Route::Window(_)) {
@@ -545,7 +578,7 @@ fn drag_along(
                         before_last,
                         last,
                         refreshed.checked_sub(pacing.rest).unwrap_or(refreshed),
-                        deadline,
+                        &mut end,
                     )?;
                     refreshes = Some(sent);
                     looked
@@ -557,10 +590,16 @@ fn drag_along(
                             }
                             watch.started(x)
                         },
-                        deadline,
+                        &mut end,
                     )
                 };
                 let ended = Instant::now();
+                if looked {
+                    end.taken(ended);
+                }
+                *noticed = end.way() == crate::adaptive_hold::Way::Noticed;
+                adaptive_record = end.record();
+                drop(end);
                 pings_record = crate::hold_ping::hold_record(pings, pressed_at, ended);
                 if looked {
                     taken = Some((Instant::now(), 0));
@@ -632,6 +671,7 @@ fn drag_along(
                 "keepalives": keepalives,
                 "refreshes": refreshes,
                 "pings": pings_record,
+                "adaptive": adaptive_record,
             }));
         }
         // a guarded drag's hold (ruling 888.1): with no take so far, the button stays down until the bound after the
@@ -646,8 +686,18 @@ fn drag_along(
             let deadline = pressed_at + take_hold.bound;
             let held = since < deadline && !guard.watch.started(x);
             let pings = held.then(|| take_hold.pings(deadline));
+            let mut adaptive_record = Value::Null;
             let taken = match held {
-                true => crate::dnd::wait_for_take(|| guard.watch.started(x), deadline),
+                true => {
+                    let mut end = take_hold.end(pressed_at, pacing.rest, pings.as_ref());
+                    let taken = crate::dnd::wait_for_take(|| guard.watch.started(x), &mut end);
+                    if taken {
+                        end.taken(Instant::now());
+                    }
+                    *noticed = end.way() == crate::adaptive_hold::Way::Noticed;
+                    adaptive_record = end.record();
+                    taken
+                }
                 false => guard.watch.is_started(),
             };
             let ended = Instant::now();
@@ -664,6 +714,7 @@ fn drag_along(
                 "keepalives": 0,
                 "refreshes": null,
                 "pings": crate::hold_ping::hold_record(pings, pressed_at, ended),
+                "adaptive": adaptive_record,
             }));
             if taken {
                 return cancel_in_time(x, route, guard, &mut pressed);
@@ -1162,12 +1213,15 @@ impl Engine {
         let after_take = self.cfg.dnd_after_take;
         let mut scheduled = None;
         // the hold for the take of a drag whose source is a Chromium-family window, guarded or not (ruling 888.1)
+        // identified before the press (ruling 899: off the release's timing), for an adaptive hold
         let take_hold = pressing_into.map(|source| TakeHold {
             bound: self.cfg.dnd_hold,
             source,
             ping: self.cfg.dnd_hold_ping,
+            browser: self.browser_source(source),
         });
         let mut held_for_take = None;
+        let mut noticed = false;
         // measurement only (`--drag-dnd-release-at-accept`, reverted from shipping by the design session's ruling on
         // task 69's counts): a drop the engine can confirm released at Chrome's accept cursor, read from before the
         // press (`accept.rs`); a watch that cannot start leaves the drag to its floor
@@ -1217,8 +1271,9 @@ impl Engine {
                 &pacing,
                 guard.as_mut(),
                 hold.as_mut(),
-                take_hold,
+                take_hold.as_ref(),
                 &mut held_for_take,
+                &mut noticed,
                 after_take,
                 &mut scheduled,
                 press.as_mut(),
@@ -1248,6 +1303,10 @@ impl Engine {
             false => (confirm, drop_window),
         };
         self.record_focus_ack(ack.as_ref());
+        // an extended hold with no take: the drag's ok carries the notice (ruling 897; `Engine::hold_notice`)
+        if noticed {
+            self.hold_notice = Some(crate::adaptive_hold::NOTICE);
+        }
         // the pointer watch's word on a drag that otherwise succeeded (`within.rs`)
         let left = self.within_answer(within, "drag");
         if let Some((event, server)) = times {

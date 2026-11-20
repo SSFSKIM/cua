@@ -26,6 +26,8 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
+
+use crate::adaptive_hold::{Ping, Reading};
 use serde_json::{Value, json};
 use x11rb::connection::Connection;
 use x11rb::protocol::Event;
@@ -198,6 +200,46 @@ impl HoldPing {
         }
     }
 }
+
+impl HoldPing {
+    /// What the pings begun by `by` say `now` (`adaptive_hold::read`), read under the lock the sampler holds only to
+    /// record: no X request, no wait. A sampler that never ran, is still setting up, or could not ask reads slow, with
+    /// why: only an answer counts as evidence.
+    pub fn reading(&self, by: Instant, now: Instant) -> Reading {
+        let sampled = match &self.sampled {
+            Ok(sampled) => locked(sampled),
+            Err(why) => return Reading::Slow((*why).into()),
+        };
+        match &sampled.phase {
+            Phase::Starting => Reading::Slow(NOT_READY_YET.into()),
+            Phase::Failed(why) => Reading::Slow(why.clone()),
+            Phase::Ready => {
+                let pings: Vec<(Instant, Ping)> = sampled
+                    .trips
+                    .iter()
+                    .map(|trip| {
+                        let ping = match trip.sending {
+                            Sending::InFlight => Ping::Sending,
+                            Sending::Failed(_) => Ping::Failed,
+                            Sending::Sent => Ping::Sent {
+                                sent: trip.sent,
+                                answered: trip.answered,
+                            },
+                        };
+                        (trip.sent, ping)
+                    })
+                    .collect();
+                crate::adaptive_hold::read(&pings, by, now, NO_ANSWER)
+            }
+        }
+    }
+}
+
+/// Why the pings read slow while the sampler is still setting up.
+const NOT_READY_YET: &str = "the ping's connection was not ready";
+
+/// Why the pings read slow when the sampler is ready but no ping was answered by then.
+const NO_ANSWER: &str = "no ping was answered by then";
 
 impl Drop for HoldPing {
     fn drop(&mut self) {

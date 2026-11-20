@@ -202,6 +202,22 @@ test('a pending drag notice reaches the facade on the window state; lists, handl
   await assert.rejects(execute(svc, 'get_window_state', {window: W, query: 'fails'}), {message: `Window 7 is gone\n${NOTICE}`});
 });
 
+// The hold's notice (#171 M5, ruling 897): a drag, or a drag handle's end, from an identified browser whose hold waited
+// for a take that never came answers ok with the notice beside it; the service resolves that drag to {notice}, which
+// the facade shows (src/cua-api/bind-linux-app.mjs), and a drag with no notice to nothing, as before.
+test('a drag\'s or a handle end\'s hold notice reaches the facade as {notice}; with none they resolve to nothing', async t => {
+  const HOLD = 'the page may have started a drag that did not complete';
+  const engine = fakeLinuxEngine(t, {behaviour: `export function answer(command, input) {
+    if (command === 'drag' && input.path[0].x === 1) return {notice: ${JSON.stringify(HOLD)}};
+    if (command === 'drag_handle' && input.action === 'end') return {notice: ${JSON.stringify(HOLD)}};
+  }`});
+  const svc = service(t, engine);
+  assert.deepEqual(await execute(svc, 'drag', {window: W, path: [{x: 1, y: 1}, {x: 9, y: 1}]}), {notice: HOLD});
+  assert.equal(await execute(svc, 'drag', {window: W, path: [{x: 2, y: 1}, {x: 9, y: 1}]}), undefined);
+  await svc.handleRpc({type: 'drag_start', handle_id: 'h', point: {x: 1, y: 1}});
+  assert.deepEqual(await svc.handleRpc({type: 'drag_end', handle_id: 'h'}), {notice: HOLD});
+});
+
 test('element ids are translated back to native ids before input reaches the engine; an unknown one is refused and nothing is sent', async t => {
   const engine = fakeLinuxEngine(t);
   const svc = service(t, engine);

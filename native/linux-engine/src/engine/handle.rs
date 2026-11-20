@@ -177,9 +177,15 @@ pub(super) struct Handle {
     /// An Electron target's displayed cursor, watched from before the press for its drop's confirmation
     /// (`drop_cursor.rs`), or why the watch could not start, which confirms nothing.
     cursor: Option<std::result::Result<DropCursor, String>>,
+    /// Whether its Chromium source is a Chrome or Chromium browser (`browser.rs`), identified at the start, before the
+    /// press: an identified one's hold at the end is adaptive (`adaptive_hold.rs`).
+    browser: std::result::Result<String, String>,
     /// When its last request came, its start or a move: the engine releases it once it is [`HANDLE_IDLE`] past.
     last_request: Instant,
 }
+
+/// Why a handle's hold is not adaptive: its source is no Chromium-family window, so it holds for no take.
+const NOT_CHROMIUM: &str = "not a Chromium-family source";
 
 impl Handle {
     /// A move with no start: its family's pacing, nothing pressed and nothing watched.
@@ -194,6 +200,7 @@ impl Handle {
             after: None,
             cursor: None,
             last_request: Instant::now(),
+            browser: Err(NOT_CHROMIUM.into()),
         }
     }
 }
@@ -475,6 +482,7 @@ impl Engine {
             after: None,
             cursor: None,
             last_request: Instant::now(),
+            browser: Err(NOT_CHROMIUM.into()),
         };
         let started = (|| -> Result<()> {
             if let Some(window) = target {
@@ -490,6 +498,7 @@ impl Engine {
                     }
                 }
                 if self.blink(window) {
+                    handle.browser = self.browser_source(window);
                     let escape = chord_keycodes(&self.x, "Escape")?;
                     handle.after = Some(LateWatch::start(
                         window,
@@ -607,9 +616,24 @@ impl Engine {
                 true => HoldPing::start(target, deadline),
                 false => HoldPing::off(),
             });
+            let mut adaptive_record = Value::Null;
             if held {
+                let take_hold = super::pointer::TakeHold {
+                    bound,
+                    source: target,
+                    ping,
+                    browser: handle.browser.clone(),
+                };
+                let mut end = take_hold.end(pressed_at, pacing.held_rest, pings.as_ref());
                 held_take =
-                    crate::dnd::wait_for_take(|| watch.before_release(holding).is_ok_and(|held| held.taken), deadline);
+                    crate::dnd::wait_for_take(|| watch.before_release(holding).is_ok_and(|held| held.taken), &mut end);
+                if held_take {
+                    end.taken(Instant::now());
+                }
+                if end.way() == crate::adaptive_hold::Way::Noticed {
+                    self.hold_notice = Some(crate::adaptive_hold::NOTICE);
+                }
+                adaptive_record = end.record();
             }
             let ended = Instant::now();
             if held && !held_take {
@@ -623,6 +647,7 @@ impl Engine {
                 "taken": held_take || taken_by_now,
                 "take_after_press_ms": held_take.then(|| ms(ended.saturating_duration_since(pressed_at))),
                 "pings": crate::hold_ping::hold_record(pings, pressed_at, ended),
+                "adaptive": adaptive_record,
             });
         }
         // an Electron source whose drag and drop has begun: its application asked where it has got to before the rest,

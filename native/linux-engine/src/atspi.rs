@@ -181,6 +181,44 @@ pub fn toolkit_of(bus: &mut Bus, pid: u32) -> Result<Option<crate::families::Too
     }))
 }
 
+/// The accessible name of a process's application (the first the registry lists for the PID: its root's `Name`), read
+/// by `deadline` (`browser.rs`, the design session's ruling 899): `Ok(None)` when the process has none on the bus or
+/// its name is not a string, `Err` when a call fails or the deadline passes first (its late replies are discarded).
+pub fn application_name_of(bus: &mut Bus, pid: u32, deadline: std::time::Instant) -> Result<Option<String>> {
+    let until = |bus: &mut Bus, calls: &[MethodCall]| -> Result<Vec<CallResult>> {
+        bus.calls_until(calls, deadline)?
+            .ok_or_else(|| anyhow!("the accessibility bus did not answer in time"))
+    };
+    let registry = ObjRef {
+        bus: REGISTRY.into(),
+        path: ROOT_PATH.into(),
+    };
+    let listed = until(bus, &[children_call(&registry)])?;
+    let apps = refs_of(&listed[0]).map_err(|e| anyhow!(e))?;
+    let pid_args: Vec<[Arg; 1]> = apps.iter().map(|app| [Arg::Str(&app.bus)]).collect();
+    let pid_calls: Vec<MethodCall> = pid_args
+        .iter()
+        .map(|args| MethodCall {
+            dest: "org.freedesktop.DBus",
+            path: "/org/freedesktop/DBus",
+            iface: "org.freedesktop.DBus",
+            member: "GetConnectionUnixProcessID",
+            args,
+        })
+        .collect();
+    let pids = until(bus, &pid_calls)?;
+    let Some(app) = apps
+        .iter()
+        .zip(&pids)
+        .find(|(_, r)| matches!(r.as_ref().ok().and_then(|v| v.first()), Some(Value::U32(p)) if *p == pid))
+        .map(|(a, _)| a)
+    else {
+        return Ok(None);
+    };
+    let named = until(bus, &[name_call(app)])?;
+    Ok(first_str(&named[0]))
+}
+
 /// What association concluded (behaviour §4): a frame with the proof that found it, one of the vendor's own failures,
 /// or what cua's own routes answer when they find no frame.
 pub enum Association {

@@ -181,6 +181,34 @@ impl Engine {
         clear_display_record();
         let mut command = Command::new(engine_bin());
         command.arg("server").arg("--stats").args(options);
+        Engine::spawn_with_stats(command)
+    }
+
+    /// [`Engine::start_with_stats`] inside a PID namespace of its own, as [`Engine::start_sandboxed`] makes: no process
+    /// of the display's applications is visible to it. None, said on stderr, where this host refuses such namespaces.
+    pub fn start_sandboxed_with_stats(options: &[&str]) -> Option<Engine> {
+        if !Command::new("unshare")
+            .args(SANDBOX)
+            .arg("true")
+            .stderr(Stdio::null())
+            .status()
+            .is_ok_and(|s| s.success())
+        {
+            eprintln!("skipped: unshare cannot make a user and PID namespace here");
+            return None;
+        }
+        clear_display_record();
+        let mut command = Command::new("unshare");
+        command
+            .args(SANDBOX)
+            .arg(engine_bin())
+            .arg("server")
+            .arg("--stats")
+            .args(options);
+        Some(Engine::spawn_with_stats(command))
+    }
+
+    fn spawn_with_stats(mut command: Command) -> Engine {
         let mut child = command
             .stderr(Stdio::piped())
             .stdin(Stdio::piped())

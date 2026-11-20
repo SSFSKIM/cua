@@ -158,6 +158,11 @@ pub struct Engine {
     idle_watchdog: Option<idle_watchdog::IdleWatchdog>,
     /// The Electron drops' settles over the engine's life, on every `--stats` line (`drop_settles`).
     drop_settles: crate::drop_settle::SettleCounts,
+    /// Each drag source window's identification as a Chrome or Chromium browser (`browser.rs`), by its window and the pid
+    /// it names, kept once it is definite: a lookup that failed or ran out of its time is asked again next drag.
+    browsers: HashMap<(x11rb::protocol::xproto::Window, Option<u32>), Result<String, String>>,
+    /// What the current request's drag answers beside its ok: an extended hold with no take's notice (ruling 897).
+    hold_notice: Option<&'static str>,
 }
 
 /// Whether a request sends input or changes state, and so is refused while a late drag and drop, an unconfirmed drop
@@ -364,6 +369,8 @@ impl Engine {
             stray_watch: None,
             idle_watchdog: None,
             drop_settles: Default::default(),
+            browsers: HashMap::new(),
+            hold_notice: None,
         })
     }
 
@@ -481,6 +488,14 @@ impl Engine {
                     .map(|(app, end)| crate::dnd::pending_notice(app, end))
             }
         };
+        // a drag whose extended hold saw no take answers its ok with the hold's notice (ruling 897), in the `notice` the
+        // pending one uses, so the service and the facade carry it; its failure carries none. A drag runs only with
+        // nothing pending (an acting request is refused then), so the two never meet on one reply
+        let held = self.hold_notice.take().filter(|_| result.is_ok());
+        if held.is_some() {
+            self.extra.insert("hold_notice".into(), json!(true));
+        }
+        let notice = notice.or(held.map(String::from));
         if notice.is_some() {
             self.extra.insert("notice".into(), json!(true));
         }
@@ -672,6 +687,66 @@ impl Engine {
         }
         self.families.insert(window, found);
         found
+    }
+
+    /// Whether a drag's source `window` is a Chrome or Chromium browser's (`browser.rs`, the design session's ruling 899),
+    /// asked before the press: what identified it, or why not. Not asked while the hold's pings are off, whose hold is
+    /// fixed anyway. The accessibility bus is asked only once the window's own marks hold, within
+    /// `adaptive_hold::IDENTIFY_BOUND`, and a definite answer is kept for the window and its pid; the cost goes on the
+    /// `--stats` line (`browser_identity`).
+    pub(super) fn browser_source(&mut self, window: x11rb::protocol::xproto::Window) -> Result<String, String> {
+        if !self.cfg.dnd_hold_ping {
+            return Err("not asked: the hold's pings are off".into());
+        }
+        let started = std::time::Instant::now();
+        let class = self.x.wm_class(window);
+        let pid = self.x.pid(window);
+        if let Some(known) = self.browsers.get(&(window, pid)) {
+            let known = known.clone();
+            self.extra.insert(
+                "browser_identity".into(),
+                json!({ "ms": started.elapsed().as_secs_f64() * 1000.0, "cached": true, "bus": false }),
+            );
+            return known;
+        }
+        let (role, machine) = match class
+            .as_deref()
+            .is_some_and(|c| crate::browser::BROWSER_CLASSES.contains(&c))
+        {
+            true => self.x.role_and_machine(window),
+            false => (None, None),
+        };
+        let marks = crate::browser::Marks {
+            class,
+            role,
+            machine,
+            pid,
+        };
+        let host = crate::browser::host_name();
+        let mut asked = false;
+        let mut definite = true;
+        let identified = crate::browser::identify(
+            &marks,
+            host.as_deref(),
+            |pid| {
+                asked = true;
+                let deadline = std::time::Instant::now() + crate::adaptive_hold::IDENTIFY_BOUND;
+                self.with_bus(|bus, _| atspi::application_name_of(bus, pid, deadline))
+                    .map_err(|error| {
+                        definite = false;
+                        format!("{error:#}")
+                    })
+            },
+            crate::browser::executable,
+        );
+        if definite {
+            self.browsers.insert((window, pid), identified.clone());
+        }
+        self.extra.insert(
+            "browser_identity".into(),
+            json!({ "ms": started.elapsed().as_secs_f64() * 1000.0, "cached": false, "bus": asked }),
+        );
+        identified
     }
 
     /// Whether `window` is a Qt application's that no listed family names, so one with no accessibility tree on the bus

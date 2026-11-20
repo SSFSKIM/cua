@@ -3,10 +3,12 @@
 //! M1a's engine core (`README.md` says what it answers). See `docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md`.
 
 mod accept;
+mod adaptive_hold;
 #[cfg(test)]
 mod alloc_watch;
 mod apps;
 mod atspi;
+mod browser;
 mod caps;
 mod capture;
 mod clipboard;

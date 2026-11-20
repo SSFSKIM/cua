@@ -19,6 +19,7 @@
 //! ruling on task 68, 2026-11-09), where the window manager supports that request; with none, it is reported as
 //! unconfirmed, never ok.
 
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
@@ -497,9 +498,23 @@ enum Note {
     /// An acting request has come, or the engine ends: look one last time and end. A drop still waiting for its
     /// confirmation is waited for, at most [`DROP_CONFIRM`] after its release.
     Stop,
-    /// The engine's orderly exit after a stop signal: the watch of a release with no take ends by then at the latest,
-    /// a take first read after it past the watch ([`LateWatch::run_out_by`]).
-    EndBy(Instant),
+}
+
+/// The engine's orderly exit after a stop signal, for the watch ([`LateWatch::run_out_by`]): the watch of a release with
+/// no take ends by then at the latest, a take first read after it past the watch. Shared, not a note: the watch reads it
+/// at each decision, so a cutoff set while the watch's read was blocked is in force when that read returns (the
+/// re-review of wave 3, I4: a note waited in the inbox while a take first read past the cutoff was cancelled).
+#[derive(Debug, Default)]
+pub struct EndBy(Mutex<Option<Instant>>);
+
+impl EndBy {
+    fn set(&self, by: Instant) {
+        *self.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(by);
+    }
+
+    fn get(&self) -> Option<Instant> {
+        *self.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
 }
 
 /// What the watch's look found since the last one.
@@ -544,6 +559,8 @@ pub struct LateWatch {
     released_at: std::cell::Cell<Option<(Instant, bool, Instant)>>,
     /// The window whose activation request confirms the drop (`NONE`: none yet), read by the watch's thread.
     confirm: std::sync::Arc<std::sync::atomic::AtomicU32>,
+    /// The exit's end for the watch, once a stop signal set one ([`EndBy`]), read by the watch's thread.
+    end_by: Arc<EndBy>,
     /// Whether the drop it waits to see confirmed is an Electron source's whose settle failed (ruling 835 keeps the
     /// activation's precedence; 837 counts the case in `drop_settles.settle_failed_activation_confirmed`).
     pub settle_failed: bool,
@@ -562,7 +579,10 @@ impl LateWatch {
         };
         let cell = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(window));
         let confirming = (confirm != Confirm::Never).then(|| cell.clone());
-        let thread = std::thread::spawn(move || watch_after_release(target, route, escape, confirming, inbox, ready));
+        let end_by = Arc::new(EndBy::default());
+        let ends = end_by.clone();
+        let thread =
+            std::thread::spawn(move || watch_after_release(target, route, escape, confirming, &ends, inbox, ready));
         match subscribed.recv_timeout(Duration::from_secs(2)) {
             Ok(Ok(())) => Ok(LateWatch {
                 notes,
@@ -575,6 +595,7 @@ impl LateWatch {
                 released_at: std::cell::Cell::new(None),
                 settle_failed: false,
                 confirm: cell,
+                end_by,
             }),
             Ok(Err(error)) => Err(anyhow::anyhow!("the drag-and-drop watch could not start: {error}")),
             Err(_) => Err(anyhow::anyhow!("the drag-and-drop watch did not start")),
@@ -637,7 +658,7 @@ impl LateWatch {
     /// then, its Escape sent before the exit's settle and before the connection closes.
     pub fn run_out_by(&self, end_by: Option<Instant>) {
         if let Some(by) = end_by {
-            let _ = self.notes.send(Note::EndBy(by));
+            self.end_by.set(by);
         }
         if let Some((_, _, until)) = self.released_at.get() {
             self.run_out_until(end_by.map_or(until, |by| until.min(by)));
@@ -693,6 +714,7 @@ impl LateWatch {
             released_at: std::cell::Cell::new(None),
             settle_failed: false,
             confirm: Default::default(),
+            end_by: Default::default(),
         }
     }
 }
@@ -714,6 +736,7 @@ const LATE_POLL: Duration = Duration::from_millis(2);
 /// take's time and says whether it went out.
 fn watch_loop(
     inbox: &std::sync::mpsc::Receiver<Note>,
+    end_by: &EndBy,
     confirming: bool,
     mut on_release: impl FnMut(),
     mut look: impl FnMut() -> Result<Seen>,
@@ -726,12 +749,9 @@ fn watch_loop(
     let mut activations: Vec<Instant> = Vec::new();
     // the release, whether a take came before it, and when the watch of a release with no take ends
     let mut released: Option<(Instant, bool, Instant)> = None;
-    // the exit's end for the watch, when the engine exits after a stop signal
-    let mut end_by: Option<Instant> = None;
     let mut stopping = false;
     loop {
         match inbox.try_recv() {
-            Ok(Note::EndBy(by)) => end_by = Some(by),
             Ok(Note::Released { at, taken, until }) => {
                 released = Some((at, taken, until));
                 on_release();
@@ -779,7 +799,9 @@ fn watch_loop(
                 }
             }
             Some((at, false, until)) => {
-                let until = end_by.map_or(until, |by| until.min(by));
+                // the exit's end for the watch, read here, at the decision: one set while the look above was blocked
+                // is in force for a take that look returned
+                let until = end_by.get().map_or(until, |by| until.min(by));
                 // a take is the watch's when it was read by the watch's end; one first read after it (the watch's thread
                 // descheduled across its end) is past the watch, as one it never read
                 if let Some((time, seen)) = taken
@@ -810,6 +832,7 @@ fn watch_after_release(
     route: EscapeRoute,
     escape: u8,
     confirm: Option<std::sync::Arc<std::sync::atomic::AtomicU32>>,
+    end_by: &EndBy,
     inbox: std::sync::mpsc::Receiver<Note>,
     ready: std::sync::mpsc::Sender<std::result::Result<(), String>>,
 ) -> WatchEnd {
@@ -907,6 +930,7 @@ fn watch_after_release(
     };
     watch_loop(
         &inbox,
+        end_by,
         confirm.is_some(),
         || inject_fault(&conn, root),
         look,
@@ -1272,6 +1296,7 @@ mod tests {
             let mut escapes = 0;
             let end = watch_loop(
                 &inbox,
+                &EndBy::default(),
                 confirming,
                 || {},
                 || Ok(seen(released.elapsed())),
@@ -1357,6 +1382,7 @@ mod tests {
         let thread = std::thread::spawn(move || {
             watch_loop(
                 &inbox,
+                &EndBy::default(),
                 true,
                 || {},
                 || {
@@ -1381,7 +1407,15 @@ mod tests {
         notes
             .send(note_released(Instant::now() - Duration::from_millis(200), true))
             .unwrap();
-        let end = watch_loop(&inbox, true, || {}, || Ok(ACTIVATED), || Ok(()), |_| true);
+        let end = watch_loop(
+            &inbox,
+            &EndBy::default(),
+            true,
+            || {},
+            || Ok(ACTIVATED),
+            || Ok(()),
+            |_| true,
+        );
         assert_eq!(end, WatchEnd::Unconfirmed);
     }
 
@@ -1393,6 +1427,7 @@ mod tests {
         let mut looks = 0;
         let end = watch_loop(
             &inbox,
+            &EndBy::default(),
             true,
             || {},
             || {
@@ -1505,6 +1540,7 @@ mod tests {
         let mut escapes = 0;
         let end = watch_loop(
             &inbox,
+            &EndBy::default(),
             false,
             || {},
             || {
@@ -1528,6 +1564,7 @@ mod tests {
         notes.send(note_released(released_at, false)).unwrap();
         let end = watch_loop(
             &inbox,
+            &EndBy::default(),
             false,
             || {},
             || {
@@ -1641,6 +1678,7 @@ mod tests {
         notes.send(note_released(Instant::now(), false)).unwrap();
         let end = watch_loop(
             &inbox,
+            &EndBy::default(),
             false,
             || {},
             || Err(anyhow::anyhow!("connection lost")),
@@ -1652,6 +1690,7 @@ mod tests {
         notes.send(Note::Stop).unwrap();
         let end = watch_loop(
             &inbox,
+            &EndBy::default(),
             false,
             || {},
             || Ok(Seen::default()),
@@ -1682,6 +1721,7 @@ mod tests {
         let mut escaped_at = None;
         let end = watch_loop(
             &inbox,
+            &EndBy::default(),
             false,
             || {},
             || {
@@ -1718,6 +1758,7 @@ mod tests {
         let mut looks = 0;
         let end = watch_loop(
             &inbox,
+            &EndBy::default(),
             false,
             || {},
             || {
@@ -1734,7 +1775,15 @@ mod tests {
         // a take read after it: late, cancelled at once
         let (notes, inbox) = std::sync::mpsc::channel();
         notes.send(Note::ReleasedUnread { at: Instant::now() }).unwrap();
-        let end = watch_loop(&inbox, false, || {}, || Ok(took(7)), || Ok(()), |_| true);
+        let end = watch_loop(
+            &inbox,
+            &EndBy::default(),
+            false,
+            || {},
+            || Ok(took(7)),
+            || Ok(()),
+            |_| true,
+        );
         assert!(matches!(end, WatchEnd::Late(LateDrop { escaped: true, .. })), "{end:?}");
     }
 
@@ -1750,6 +1799,7 @@ mod tests {
         let mut escaped = None;
         let end = watch_loop(
             &inbox,
+            &EndBy::default(),
             true,
             || {},
             || {
@@ -1774,7 +1824,15 @@ mod tests {
     fn a_cancel_whose_escape_did_not_go_out_records_no_key() {
         let (notes, inbox) = std::sync::mpsc::channel();
         notes.send(note_released(Instant::now(), false)).unwrap();
-        let end = watch_loop(&inbox, false, || {}, || Ok(took(7)), || Ok(()), |_| false);
+        let end = watch_loop(
+            &inbox,
+            &EndBy::default(),
+            false,
+            || {},
+            || Ok(took(7)),
+            || Ok(()),
+            |_| false,
+        );
         let WatchEnd::Late(late) = end else { panic!("{end:?}") };
         assert!(!late.escaped && late.escaped_at.is_none());
     }
@@ -1791,6 +1849,7 @@ mod tests {
         let thread = std::thread::spawn(move || {
             watch_loop(
                 &inbox,
+                &EndBy::default(),
                 false,
                 || {},
                 || {
@@ -1820,8 +1879,17 @@ mod tests {
         let (notes, inbox) = std::sync::mpsc::channel();
         let released = Instant::now();
         notes.send(note_released(released, false)).unwrap();
-        let thread =
-            std::thread::spawn(move || watch_loop(&inbox, false, || {}, || Ok(Seen::default()), || Ok(()), |_| true));
+        let thread = std::thread::spawn(move || {
+            watch_loop(
+                &inbox,
+                &EndBy::default(),
+                false,
+                || {},
+                || Ok(Seen::default()),
+                || Ok(()),
+                |_| true,
+            )
+        });
         let watch = LateWatch::around(thread);
         watch
             .released_at
@@ -1839,8 +1907,17 @@ mod tests {
         let (notes, inbox) = std::sync::mpsc::channel();
         let released = Instant::now();
         notes.send(note_released(released, false)).unwrap();
-        let thread =
-            std::thread::spawn(move || watch_loop(&inbox, false, || {}, || Ok(Seen::default()), || Ok(()), |_| true));
+        let thread = std::thread::spawn(move || {
+            watch_loop(
+                &inbox,
+                &EndBy::default(),
+                false,
+                || {},
+                || Ok(Seen::default()),
+                || Ok(()),
+                |_| true,
+            )
+        });
         let watch = LateWatch::around(thread);
         watch
             .released_at
@@ -1859,10 +1936,12 @@ mod tests {
             let (notes, inbox) = std::sync::mpsc::channel();
             let released = Instant::now();
             notes.send(note_released(released, false)).unwrap();
-            notes.send(Note::EndBy(released + Duration::from_millis(100))).unwrap();
+            let end_by = EndBy::default();
+            end_by.set(released + Duration::from_millis(100));
             let mut escapes = 0;
             let end = watch_loop(
                 &inbox,
+                &end_by,
                 false,
                 || {},
                 || {
@@ -1889,6 +1968,52 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// The re-review of wave 3, I4: the stop comes while the watch's read is blocked, and that read returns, past the
+    /// exit's end for the watch, with a take. The take was first read after the cutoff, so it is past the watch: quiet,
+    /// no Escape, though the cutoff was set only while the read was blocked.
+    #[test]
+    fn a_take_whose_blocked_read_returns_past_the_exit_s_end_for_the_watch_is_past_it() {
+        let (notes, inbox) = std::sync::mpsc::channel();
+        let released = Instant::now();
+        notes.send(note_released(released, false)).unwrap();
+        let end_by = Arc::new(EndBy::default());
+        let (set, cutoff) = (end_by.clone(), released + Duration::from_millis(60));
+        let mut looks = 0;
+        let mut escapes = 0;
+        let end = watch_loop(
+            &inbox,
+            &end_by,
+            false,
+            || {},
+            || {
+                looks += 1;
+                if looks < 3 {
+                    return Ok(Seen::default());
+                }
+                // the third look blocks across the cutoff: the stop sets it 30 ms in, and the read returns at 120 ms
+                // with the take
+                let stop = set.clone();
+                let setter = std::thread::spawn(move || {
+                    std::thread::sleep(Duration::from_millis(30));
+                    stop.set(cutoff);
+                });
+                std::thread::sleep(Duration::from_millis(120).saturating_sub(released.elapsed()));
+                setter.join().unwrap();
+                Ok(Seen {
+                    take: Some(7),
+                    ..Seen::default()
+                })
+            },
+            || Ok(()),
+            |_| {
+                escapes += 1;
+                true
+            },
+        );
+        assert!(released.elapsed() >= Duration::from_millis(120));
+        assert_eq!((end, escapes), (WatchEnd::Quiet, 0));
     }
 
     #[test]
@@ -1942,6 +2067,7 @@ mod tests {
         let mut escapes = 0;
         let end = watch_loop(
             &inbox,
+            &EndBy::default(),
             false,
             || {},
             || Ok(took(9)),
@@ -1960,7 +2086,15 @@ mod tests {
                 false,
             ))
             .unwrap();
-        let end = watch_loop(&inbox, false, || {}, || Ok(took(9)), || Ok(()), |_| true);
+        let end = watch_loop(
+            &inbox,
+            &EndBy::default(),
+            false,
+            || {},
+            || Ok(took(9)),
+            || Ok(()),
+            |_| true,
+        );
         assert!(matches!(end, WatchEnd::Late(LateDrop { escaped: true, .. })), "{end:?}");
     }
 
@@ -1973,7 +2107,15 @@ mod tests {
             .unwrap();
         let started = Instant::now();
         assert_eq!(
-            watch_loop(&inbox, false, || {}, || Ok(Seen::default()), || Ok(()), |_| true),
+            watch_loop(
+                &inbox,
+                &EndBy::default(),
+                false,
+                || {},
+                || Ok(Seen::default()),
+                || Ok(()),
+                |_| true
+            ),
             WatchEnd::Quiet
         );
         assert!(

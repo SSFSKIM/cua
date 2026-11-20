@@ -581,6 +581,26 @@ impl std::error::Error for Broken {}
 impl Bus {
     /// Connects, authenticates with `EXTERNAL` and says `Hello` (behaviour §19).
     pub fn connect(address: &str) -> Result<Bus> {
+        Bus::connect_by(address, None)
+    }
+
+    /// [`Bus::connect`], its whole setup done by `deadline` when there is one (the browser identification's bound,
+    /// `adaptive_hold::IDENTIFY_BOUND`): a bus that accepts the connection and then stays silent fails it then, not
+    /// after [`IO_TIMEOUT`]. The connection keeps [`IO_TIMEOUT`] once it is set up.
+    pub fn connect_by(address: &str, deadline: Option<Instant>) -> Result<Bus> {
+        // what the setup's next read or write may wait: what is left of the deadline, never more than IO_TIMEOUT
+        let left = || -> Result<Duration> {
+            match deadline {
+                None => Ok(IO_TIMEOUT),
+                Some(deadline) => {
+                    let now = Instant::now();
+                    if now >= deadline {
+                        bail!("the D-Bus connection was not set up in time");
+                    }
+                    Ok((deadline - now).min(IO_TIMEOUT))
+                }
+            }
+        };
         let stream = match parse_address(address)? {
             SocketAddr::Path(path) => UnixStream::connect(&path).context("failed to connect to the D-Bus socket")?,
             SocketAddr::Abstract(name) => {
@@ -593,20 +613,31 @@ impl Bus {
             use std::os::unix::fs::MetadataExt;
             std::fs::metadata("/proc/self")?.uid()
         };
-        let mut bus = Bus::over(stream, IO_TIMEOUT)?;
+        let mut bus = Bus::over(stream, left()?)?;
         bus.stream.write_all(&auth_line(uid))?;
-        let line = bus.read_auth_line()?;
+        let line = bus.read_auth_line(&left)?;
         if !line.starts_with("OK ") {
             bail!("D-Bus EXTERNAL authentication failed");
         }
+        bus.stream.set_write_timeout(Some(left()?))?;
         bus.stream.write_all(b"BEGIN\r\n")?;
-        let hello = bus.call(&MethodCall {
+        let hello = MethodCall {
             dest: "org.freedesktop.DBus",
             path: "/org/freedesktop/DBus",
             iface: "org.freedesktop.DBus",
             member: "Hello",
             args: &[],
-        })?;
+        };
+        let hello = match deadline {
+            None => bus.call(&hello)?,
+            Some(deadline) => bus
+                .calls_until(std::slice::from_ref(&hello), deadline)?
+                .ok_or_else(|| anyhow!("the D-Bus connection was not set up in time"))?
+                .remove(0),
+        };
+        bus.io_timeout = IO_TIMEOUT;
+        bus.stream.set_read_timeout(Some(IO_TIMEOUT))?;
+        bus.stream.set_write_timeout(Some(IO_TIMEOUT))?;
         let reply = hello.map_err(|e| anyhow!(e))?;
         bus.unique_name = reply.first().and_then(Value::as_str).unwrap_or_default().to_string();
         bus.stats.connections = 1;
@@ -631,10 +662,12 @@ impl Bus {
         })
     }
 
-    fn read_auth_line(&mut self) -> Result<String> {
+    /// The bus's answer to `AUTH`, each read waiting at most what `left` says is left of the setup's time.
+    fn read_auth_line(&mut self, left: &impl Fn() -> Result<Duration>) -> Result<String> {
         let mut line = Vec::new();
         let mut byte = [0u8; 1];
         while !line.ends_with(b"\r\n") {
+            self.stream.set_read_timeout(Some(left()?))?;
             if self.stream.read(&mut byte)? == 0 {
                 bail!("D-Bus EXTERNAL authentication failed");
             }

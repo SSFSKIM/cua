@@ -158,9 +158,6 @@ pub struct Engine {
     idle_watchdog: Option<idle_watchdog::IdleWatchdog>,
     /// The Electron drops' settles over the engine's life, on every `--stats` line (`drop_settles`).
     drop_settles: crate::drop_settle::SettleCounts,
-    /// Each drag source window's identification as a Chrome or Chromium browser (`browser.rs`), by its window and the pid
-    /// it names, kept once it is definite: a lookup that failed or ran out of its time is asked again next drag.
-    browsers: HashMap<(x11rb::protocol::xproto::Window, Option<u32>), Result<String, String>>,
     /// What the current request's drag answers beside its ok: an extended hold with no take's notice (ruling 897).
     hold_notice: Option<&'static str>,
 }
@@ -369,7 +366,6 @@ impl Engine {
             stray_watch: None,
             idle_watchdog: None,
             drop_settles: Default::default(),
-            browsers: HashMap::new(),
             hold_notice: None,
         })
     }
@@ -691,9 +687,10 @@ impl Engine {
 
     /// Whether a drag's source `window` is a Chrome or Chromium browser's (`browser.rs`, the design session's ruling 899),
     /// asked before the press: what identified it, or why not. Not asked while the hold's pings are off, whose hold is
-    /// fixed anyway. The accessibility bus is asked only once the window's own marks hold, within
-    /// `adaptive_hold::IDENTIFY_BOUND`, and a definite answer is kept for the window and its pid; the cost goes on the
-    /// `--stats` line (`browser_identity`).
+    /// fixed anyway. Read again at every drag, nothing kept (the re-review of wave 3, I3: a kept answer outlived a
+    /// window whose role or application changed): the window's own marks first, and the accessibility bus only once
+    /// they hold, the whole lookup (the bus's address, its connection when the engine has none yet, and its calls)
+    /// within `adaptive_hold::IDENTIFY_BOUND`; the cost goes on the `--stats` line (`browser_identity`).
     pub(super) fn browser_source(&mut self, window: x11rb::protocol::xproto::Window) -> Result<String, String> {
         if !self.cfg.dnd_hold_ping {
             return Err("not asked: the hold's pings are off".into());
@@ -701,14 +698,6 @@ impl Engine {
         let started = std::time::Instant::now();
         let class = self.x.wm_class(window);
         let pid = self.x.pid(window);
-        if let Some(known) = self.browsers.get(&(window, pid)) {
-            let known = known.clone();
-            self.extra.insert(
-                "browser_identity".into(),
-                json!({ "ms": started.elapsed().as_secs_f64() * 1000.0, "cached": true, "bus": false }),
-            );
-            return known;
-        }
         let (role, machine) = match class
             .as_deref()
             .is_some_and(|c| crate::browser::BROWSER_CLASSES.contains(&c))
@@ -724,27 +713,20 @@ impl Engine {
         };
         let host = crate::browser::host_name();
         let mut asked = false;
-        let mut definite = true;
         let identified = crate::browser::identify(
             &marks,
             host.as_deref(),
             |pid| {
                 asked = true;
                 let deadline = std::time::Instant::now() + crate::adaptive_hold::IDENTIFY_BOUND;
-                self.with_bus(|bus, _| atspi::application_name_of(bus, pid, deadline))
-                    .map_err(|error| {
-                        definite = false;
-                        format!("{error:#}")
-                    })
+                self.with_bus_by(deadline, |bus| atspi::application_name_of(bus, pid, deadline))
+                    .map_err(|error| format!("{error:#}"))
             },
             crate::browser::executable,
         );
-        if definite {
-            self.browsers.insert((window, pid), identified.clone());
-        }
         self.extra.insert(
             "browser_identity".into(),
-            json!({ "ms": started.elapsed().as_secs_f64() * 1000.0, "cached": false, "bus": asked }),
+            json!({ "ms": started.elapsed().as_secs_f64() * 1000.0, "bus": asked }),
         );
         identified
     }
@@ -832,6 +814,28 @@ impl Engine {
     }
 
     /// Runs `f` on the accessibility bus, connecting first if needed; a broken connection is reopened once.
+    /// [`Engine::with_bus`] done by `deadline`: the bus's address and the engine's connection to it, when it has none
+    /// yet, are had by then too (`Bus::connect_by`), so a bus that accepts and stays silent costs no more than the
+    /// deadline; a connection found broken is made again only while time is left.
+    fn with_bus_by<T>(&mut self, deadline: std::time::Instant, mut f: impl FnMut(&mut Bus) -> Result<T>) -> Result<T> {
+        loop {
+            if self.bus.is_none() {
+                let address = atspi::bus_address_by(&self.x, Some(deadline))?;
+                self.bus = Some(Bus::connect_by(&address, Some(deadline))?);
+            }
+            let bus = self.bus.as_mut().expect("connected above");
+            match f(bus) {
+                Err(error) if error.downcast_ref::<Broken>().is_some() => {
+                    self.drop_bus();
+                    if std::time::Instant::now() >= deadline {
+                        return Err(error);
+                    }
+                }
+                other => return other,
+            }
+        }
+    }
+
     fn with_bus<T>(&mut self, mut f: impl FnMut(&mut Bus, &mut X11) -> Result<T>) -> Result<T> {
         for attempt in 0..2 {
             if self.bus.is_none() {

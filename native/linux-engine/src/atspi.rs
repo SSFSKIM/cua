@@ -48,6 +48,11 @@ impl Transport for Bus {
 /// The accessibility bus address: the root window's `AT_SPI_BUS` property, else `org.a11y.Bus.GetAddress` on the
 /// session bus (`$DBUS_SESSION_BUS_ADDRESS`, else `unix:path=$XDG_RUNTIME_DIR/bus`), behaviour §19.
 pub fn bus_address(x: &X11) -> Result<String> {
+    bus_address_by(x, None)
+}
+
+/// [`bus_address`], the session bus's answer had by `deadline` when there is one (`Bus::connect_by`).
+pub fn bus_address_by(x: &X11, deadline: Option<std::time::Instant>) -> Result<String> {
     if let Some(address) = x.at_spi_bus_address() {
         return Ok(address);
     }
@@ -58,16 +63,22 @@ pub fn bus_address(x: &X11) -> Result<String> {
             Err(_) => bail!("AT-SPI accessibility bus is unavailable"),
         },
     };
-    let mut bus = Bus::connect(&session)?;
-    let reply = bus
-        .call(&MethodCall {
-            dest: "org.a11y.Bus",
-            path: "/org/a11y/bus",
-            iface: "org.a11y.Bus",
-            member: "GetAddress",
-            args: &[],
-        })?
-        .map_err(|e| anyhow!(e))?;
+    let mut bus = Bus::connect_by(&session, deadline)?;
+    let get = MethodCall {
+        dest: "org.a11y.Bus",
+        path: "/org/a11y/bus",
+        iface: "org.a11y.Bus",
+        member: "GetAddress",
+        args: &[],
+    };
+    let reply = match deadline {
+        None => bus.call(&get)?,
+        Some(deadline) => bus
+            .calls_until(std::slice::from_ref(&get), deadline)?
+            .ok_or_else(|| anyhow!("the session bus did not answer in time"))?
+            .remove(0),
+    }
+    .map_err(|e| anyhow!(e))?;
     match reply.first() {
         Some(Value::Str(address)) => Ok(address.clone()),
         _ => bail!("AT-SPI bus did not return a socket address"),
@@ -216,6 +227,10 @@ pub fn application_name_of(bus: &mut Bus, pid: u32, deadline: std::time::Instant
         return Ok(None);
     };
     let named = until(bus, &[name_call(app)])?;
+    // a `Name` the application failed to answer says nothing of its name: an error, never "no name"
+    named[0]
+        .as_ref()
+        .map_err(|error| anyhow!("its application's Name could not be read: {error}"))?;
     Ok(first_str(&named[0]))
 }
 

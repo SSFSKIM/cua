@@ -375,13 +375,18 @@ impl TakeHold {
             Some(pings) => pings.reading(now),
             None => Reading::Slow("the hold ran no sampler".into()),
         };
-        match (&self.browser, self.ping) {
-            (Ok(by), true) => Hold::extensible(pressed_at, self.bound, read, by.clone()),
-            (_, false) => Hold::fixed(pressed_at, self.bound, PINGS_OFF.into(), self.browser.clone(), read),
-            (Err(_), true) => Hold::fixed(pressed_at, self.bound, UNIDENTIFIED.into(), self.browser.clone(), read),
+        match (&self.browser, self.ping, pings) {
+            (_, false, _) => Hold::fixed(pressed_at, self.bound, PINGS_OFF.into(), self.browser.clone(), read),
+            (Err(_), true, _) => Hold::fixed(pressed_at, self.bound, UNIDENTIFIED.into(), self.browser.clone(), read),
+            (Ok(_), true, None) => Hold::fixed(pressed_at, self.bound, NOT_HELD.into(), self.browser.clone(), read),
+            (Ok(by), true, Some(_)) => Hold::extensible(pressed_at, self.bound, read, by.clone()),
         }
     }
 }
+
+/// Why an identified browser's hold is fixed: the drag reached B (its path that long, or B 0) before the hold began, so
+/// it ran no sampler and holds nothing up; only its last look for a take is left (the re-review of wave 3, I2).
+pub(super) const NOT_HELD: &str = "the path ended at or past B, so nothing was held and no ping asked";
 
 /// Why a hold is fixed: the source is not positively a Chrome or Chromium browser (`browser.rs`).
 pub(super) const UNIDENTIFIED: &str = "the source is not identified as a Chrome or Chromium browser";
@@ -443,7 +448,7 @@ fn drag_along(
     mut hold: Option<&mut DndWatch>,
     take_hold: Option<&TakeHold>,
     held_for_take: &mut Option<Value>,
-    noticed: &mut bool,
+    hold_way: &mut Option<crate::adaptive_hold::Way>,
     after_take: Duration,
     scheduled: &mut Option<Value>,
     mut press: Option<&mut ChromiumPress>,
@@ -596,7 +601,7 @@ fn drag_along(
                 if looked {
                     end.taken(ended);
                 }
-                *noticed = end.way() == crate::adaptive_hold::Way::Noticed;
+                *hold_way = Some(end.way());
                 adaptive_record = end.record();
                 drop(end);
                 pings_record = crate::hold_ping::hold_record(pings, pressed_at, ended);
@@ -693,7 +698,7 @@ fn drag_along(
                     if taken {
                         end.taken(Instant::now());
                     }
-                    *noticed = end.way() == crate::adaptive_hold::Way::Noticed;
+                    *hold_way = Some(end.way());
                     adaptive_record = end.record();
                     taken
                 }
@@ -1220,7 +1225,7 @@ impl Engine {
             browser: self.browser_source(source),
         });
         let mut held_for_take = None;
-        let mut noticed = false;
+        let mut hold_way = None;
         // measurement only (`--drag-dnd-release-at-accept`, reverted from shipping by the design session's ruling on
         // task 69's counts): a drop the engine can confirm released at Chrome's accept cursor, read from before the
         // press (`accept.rs`); a watch that cannot start leaves the drag to its floor
@@ -1272,7 +1277,7 @@ impl Engine {
                 hold.as_mut(),
                 take_hold.as_ref(),
                 &mut held_for_take,
-                &mut noticed,
+                &mut hold_way,
                 after_take,
                 &mut scheduled,
                 press.as_mut(),
@@ -1303,9 +1308,12 @@ impl Engine {
         };
         self.record_focus_ack(ack.as_ref());
         // an extended hold with no take: the drag's ok carries the notice (ruling 897; `Engine::hold_notice`)
-        if noticed {
+        if hold_way == Some(crate::adaptive_hold::Way::Noticed) {
             self.hold_notice = Some(crate::adaptive_hold::NOTICE);
         }
+        // a take only the extended hold caught, past B: without the extension it came after the release, for the
+        // after-release watch to cancel and report, so its drop is never left unjudged (`handle::Confirming::Extended`)
+        let extended_take = hold_way == Some(crate::adaptive_hold::Way::Extended);
         // the pointer watch's word on a drag that otherwise succeeded (`within.rs`)
         let left = self.within_answer(within, "drag");
         if let Some((event, server)) = times {
@@ -1411,7 +1419,7 @@ impl Engine {
                     over_aware = Some(over);
                     cursor = Some(Some(held && (settled == Some(true) || !drop_settle)));
                 }
-                let confirming = super::handle::confirming(confirm, supported, cursor);
+                let confirming = super::handle::confirming(confirm, supported, cursor).after_hold(extended_take);
                 // ruling 837: a drop handed to Chrome's activation though its Electron source's settle failed
                 let settle_failed_activation = super::handle::activation_over_failed_settle(
                     confirming,

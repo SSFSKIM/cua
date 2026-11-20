@@ -389,9 +389,14 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   `browser-window`), whose `WM_CLIENT_MACHINE` is this host, and whose `_NET_WM_PID`'s accessible application on the
   AT-SPI bus is named `Google Chrome` or `Chromium`; where `/proc` can see that process (not in service, where the
   engine runs in the sandbox's own PID namespace), its executable must be `chrome`, `chromium` or `chromium-browser`
-  too. The bus lookup is asked before the press, only once the window's own marks hold, within 200 ms
-  (`IDENTIFY_BOUND`); a lookup that fails or runs out leaves the source unidentified, and a definite answer is kept per
-  window and pid (`--stats` `browser_identity`: `ms`, `cached`, `bus`). For such a source, at B every ping answered
+  too. All of it is read again at every drag, before the press, nothing kept; the bus is asked only once the window's
+  own marks hold, and the whole lookup (the bus's address, a connection when the engine has none yet, the calls) is
+  done within 200 ms (`IDENTIFY_BOUND`); a lookup that fails or runs out leaves the source unidentified (`--stats`
+  `browser_identity`: `ms`, `bus`, about 1.5 ms when the bus was asked). A drag whose path reaches B before its hold
+  would begin (a path that long, or `--drag-dnd-hold-ms 0`) holds nothing: its last look for a take stays, but it asks
+  no ping and never extends. A take only the extension caught, past B, whose drop nothing can confirm (no
+  `_NET_ACTIVE_WINDOW` to ask, no Electron cursor), is reported unconfirmed, as the after-release watch would have
+  reported it without the extension, never a plain ok. For an identified source, at B every ping answered
   under 20 ms (`FAST_PING`) releases as above; a ping that came back slower, one unanswered, still being sent or failed,
   or no ping answered at all, extends the hold to 650 ms after the press (`EXTENDED_HOLD_AFTER_PRESS`), waiting for the
   take, which goes the way any take goes. With no take by then the drag answers ok with the notice `the page may have

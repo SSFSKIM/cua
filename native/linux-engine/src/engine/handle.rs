@@ -131,12 +131,28 @@ pub enum Confirming {
     Nothing,
     /// The drop is not judged, as before T17: a Chrome source under a window manager without `_NET_ACTIVE_WINDOW`.
     Unjudged,
+    /// A drop [`Confirming::Unjudged`] would leave, whose take only the extended hold caught (past B,
+    /// `adaptive_hold.rs`): before the extension that take came after the release, and the after-release watch
+    /// cancelled and reported it, so it is reported unconfirmed, never a plain ok (the re-review of wave 3, I1).
+    Extended,
 }
 
 impl Confirming {
     /// Whether the drop is reported unconfirmed at once (an activation request is the watch's to wait for).
     pub(super) fn unconfirmed(self) -> bool {
-        matches!(self, Confirming::Cursor(false) | Confirming::Nothing)
+        matches!(
+            self,
+            Confirming::Cursor(false) | Confirming::Nothing | Confirming::Extended
+        )
+    }
+
+    /// What confirms a drop whose take came in the extended hold (`extended_take`): nothing can when nothing else
+    /// would judge it ([`Confirming::Extended`]); otherwise what confirms any drop.
+    pub(super) fn after_hold(self, extended_take: bool) -> Confirming {
+        match (self, extended_take) {
+            (Confirming::Unjudged, true) => Confirming::Extended,
+            (confirming, _) => confirming,
+        }
     }
 }
 
@@ -596,6 +612,8 @@ impl Engine {
         // judged below as a take before the end is. Only at the agent's `end`: the exit's, the idle bound's and a lost
         // handle's releases go at once, as they did, so the exit stays inside its backstop and nobody's drop begins then
         let mut held_take = false;
+        // whether that take came only in the extended hold, past B (`Confirming::Extended`)
+        let mut extended_take = false;
         let mut hold_record = Value::Null;
         // how long a hold with no take kept the pointer still up to its end: the rest before the release, which it
         // serves, so a release with no take comes at the bound and not a rest after it (the review of task 115, P3)
@@ -633,6 +651,7 @@ impl Engine {
                 if end.way() == crate::adaptive_hold::Way::Noticed {
                     self.hold_notice = Some(crate::adaptive_hold::NOTICE);
                 }
+                extended_take = end.way() == crate::adaptive_hold::Way::Extended;
                 adaptive_record = end.record();
             }
             let ended = Instant::now();
@@ -735,7 +754,7 @@ impl Engine {
                     None
                 }
             });
-            confirming(destination, supported, cursor)
+            confirming(destination, supported, cursor).after_hold(extended_take)
         });
         if let Some(after) = &handle.after {
             after.confirm_drop_of(match confirmed {
@@ -989,5 +1008,17 @@ mod tests {
         assert!(Confirming::Nothing.unconfirmed() && Confirming::Cursor(false).unconfirmed());
         assert!(!Confirming::Cursor(true).unconfirmed() && !Confirming::Unjudged.unconfirmed());
         assert!(!Confirming::Activation(7).unconfirmed(), "the watch waits for it");
+        // a take only the extended hold caught: unjudged becomes unconfirmed, whatever else confirms stays as it was
+        assert_eq!(Confirming::Unjudged.after_hold(true), Confirming::Extended);
+        assert!(Confirming::Extended.unconfirmed());
+        assert_eq!(Confirming::Unjudged.after_hold(false), Confirming::Unjudged);
+        for confirming in [
+            Confirming::Activation(7),
+            Confirming::Cursor(true),
+            Confirming::Cursor(false),
+            Confirming::Nothing,
+        ] {
+            assert_eq!(confirming.after_hold(true), confirming);
+        }
     }
 }

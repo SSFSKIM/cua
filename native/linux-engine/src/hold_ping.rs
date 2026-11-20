@@ -19,7 +19,8 @@
 //! a hold that ended meanwhile (a take) or a deadline the worker crossed sends nothing (the re-review of fdaff715, P2).
 //! A ping still unanswered when the hold ends is recorded with how long it had waited; one whose submission was under
 //! way then, or failed, is recorded as such, never as unanswered. At most [`MAX_SETTING_UP`] samplers set up at once
-//! in an engine: a connect that never returns leaves its thread behind, and no more than that many.
+//! in an engine, each holding its slot until its whole setup is over: a connect, or a request after it, that never
+//! returns leaves its thread behind, and no more than that many.
 
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -166,13 +167,13 @@ impl HoldPing {
             trips: Vec::new(),
         }));
         let (shared, stopped) = (sampled.clone(), stop.clone());
+        // the slot is held through the whole setup, the connect and every request after it (the re-review of wave 3,
+        // I8: a server that stalls once the connection is made held a thread past the cap)
         let spawned = std::thread::Builder::new().name("hold-ping".into()).spawn(move || {
-            let connect = move || {
-                let connected = connect();
+            let set_up = move || {
                 setting_up.fetch_sub(1, Ordering::SeqCst);
-                connected
             };
-            sample(window, ends, connect, gap, &shared, &stopped)
+            sample(window, ends, connect, set_up, gap, &shared, &stopped)
         });
         if let Err(error) = spawned {
             setting_up.fetch_sub(1, Ordering::SeqCst);
@@ -310,17 +311,21 @@ impl Asking {
     }
 }
 
-/// The sampler's thread: set up, then a ping whenever one is [`admitted`] and the last was answered, until the hold
-/// stops it. A connection that fails ends it where it is: the pings are measurement only, so nothing else follows.
+/// The sampler's thread: set up (`set_up` told once that is over, however it went), then a ping whenever one is
+/// [`admitted`] and the last was answered, until the hold stops it. A connection that fails ends it where it is: the
+/// pings are measurement only, so nothing else follows.
 fn sample(
     window: Window,
     ends: Instant,
     connect: impl FnOnce() -> Result<(RustConnection, usize)>,
+    set_up: impl FnOnce(),
     mut gap: impl FnMut(),
     sampled: &Mutex<Sampled>,
     stop: &AtomicBool,
 ) {
-    let asking = match Asking::set_up(window, connect) {
+    let asking = Asking::set_up(window, connect);
+    set_up();
+    let asking = match asking {
         Ok(asking) => asking,
         Err(error) => {
             locked(sampled).phase = Phase::Failed(format!("{error:#}"));
@@ -637,6 +642,68 @@ mod tests {
         );
         drop(pings);
         drop(releases);
+    }
+
+    /// A setup that stalls once its connection is made (the re-review of wave 3, I8: here, the server grabbed by
+    /// another client, so the sampler's first request after its connect gets no reply) keeps its slot: two such
+    /// setups fill the cap, and a third hold starts no sampler; once the server is let go, they end and free it.
+    #[test]
+    #[cfg_attr(not(feature = "live"), ignore = "needs an X display (--features live)")]
+    fn setups_stalled_after_their_connection_hold_their_slots() {
+        static SETTING_UP: AtomicUsize = AtomicUsize::new(0);
+        let grabber = display_held();
+        let ends = Instant::now() + Duration::from_secs(5);
+        let (connected, connects) = std::sync::mpsc::channel::<()>();
+        let (grabbed, grabs) = std::sync::mpsc::channel::<()>();
+        let grabs = Arc::new(Mutex::new(grabs));
+        let stalled: Vec<_> = (0..MAX_SETTING_UP)
+            .map(|_| {
+                let (connected, grabs) = (connected.clone(), grabs.clone());
+                HoldPing::spawn(
+                    0,
+                    ends,
+                    move || {
+                        let conn = x11rb::connect(None).context("connect")?;
+                        connected.send(()).unwrap();
+                        // the server is grabbed before this returns: the setup's requests after it wait
+                        let _ = grabs.lock().unwrap().recv();
+                        Ok(conn)
+                    },
+                    || {},
+                    &SETTING_UP,
+                )
+            })
+            .collect();
+        for _ in 0..MAX_SETTING_UP {
+            connects.recv_timeout(Duration::from_secs(5)).expect("connected");
+        }
+        grabber.grab_server().unwrap();
+        grabber.get_input_focus().unwrap().reply().unwrap();
+        for _ in 0..MAX_SETTING_UP {
+            grabbed.send(()).unwrap();
+        }
+        // their setups' first requests are stalled behind the grab now
+        std::thread::sleep(Duration::from_millis(100));
+        let started = Instant::now();
+        let busy = HoldPing::spawn(0, ends, || anyhow::bail!("not connected"), || {}, &SETTING_UP);
+        let record = busy.finish(started, Instant::now());
+        grabber.ungrab_server().unwrap();
+        grabber.get_input_focus().unwrap().reply().unwrap();
+        assert_eq!(
+            record,
+            json!({"asked": false, "why": BUSY}),
+            "the stalled setups hold the cap"
+        );
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while SETTING_UP.load(Ordering::SeqCst) > 0 && Instant::now() < deadline {
+            std::thread::sleep(MS);
+        }
+        assert_eq!(
+            SETTING_UP.load(Ordering::SeqCst),
+            0,
+            "their slots freed once their setups ended"
+        );
+        drop(stalled);
     }
 
     /// A connection held through the test, so the display does not reset between its cases (Xvfb resets once its last

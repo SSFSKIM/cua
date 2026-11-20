@@ -1403,7 +1403,11 @@ fn held_drag_on(
     sandboxed: bool,
 ) -> Option<HeldDrag> {
     support::fresh_display();
-    let path = json!([{"x": 20, "y": 20}, {"x": 60, "y": 20}]);
+    let path = HELD_PATH
+        .lock()
+        .unwrap()
+        .clone()
+        .unwrap_or_else(|| json!([{"x": 20, "y": 20}, {"x": 60, "y": 20}]));
     let (window, stop, recorder) = drag_source_answering(on_release, pings);
     match route {
         HoldRoute::InFront | HoldRoute::Dedicated => in_front(window),
@@ -1453,6 +1457,9 @@ fn held_drag_on(
         stats,
     })
 }
+
+/// The path [`held_drag_on`] drags along, when a test sets one (None: a short one, 40 px).
+static HELD_PATH: std::sync::Mutex<Option<Value>> = std::sync::Mutex::new(None);
 
 struct HeldDrag {
     app: String,
@@ -2003,20 +2010,40 @@ fn an_identified_chrome_source_releases_at_b_on_fast_pings_and_holds_slow_ones_t
         let what = format!("{route:?}, slow pings, a take at {take:?}");
         let adaptive = &drag.stats["hold"]["adaptive"];
         assert_eq!(adaptive["way"], json!("extended"), "{what}: {adaptive}");
-        assert_eq!(drag.notice, None, "{what}");
         assert!(
             drag.take_to_release.is_some(),
             "{what}: the take came before the release"
         );
         match route {
-            HoldRoute::Guarded => assert!(
-                drag.answer
-                    .as_ref()
-                    .is_err_and(|e| e.starts_with(&format!("{} began a drag and drop", drag.app))),
-                "{what}: cancelled in time: {:?}",
-                drag.answer
-            ),
-            _ => assert_eq!(drag.answer, Ok(Value::Null), "{what}: dropped"),
+            HoldRoute::Guarded => {
+                assert_eq!(drag.notice, None, "{what}");
+                assert!(
+                    drag.answer
+                        .as_ref()
+                        .is_err_and(|e| e.starts_with(&format!("{} began a drag and drop", drag.app))),
+                    "{what}: cancelled in time: {:?}",
+                    drag.answer
+                )
+            }
+            // a take only the extension caught, its drop let land where nothing can confirm it (this display lists no
+            // `_NET_ACTIVE_WINDOW`, the source no Electron cursor): before the extension the after-release watch
+            // cancelled and reported that take, so it is never a plain ok now; the drop is pending unconfirmed
+            _ => {
+                assert_eq!(drag.answer, Ok(Value::Null), "{what}: dropped");
+                assert!(
+                    drag.notice
+                        .as_ref()
+                        .and_then(Value::as_str)
+                        .is_some_and(|n| n.starts_with(&format!(
+                            "Pending from your last drag, an unconfirmed drop: your drag into {} began a drag and drop",
+                            drag.app
+                        ))),
+                    "{what}: {:?}, {}",
+                    drag.notice,
+                    drag.stats["after_release"]
+                );
+                assert_eq!(drag.stats["after_release"]["confirmed_by"], json!("Extended"), "{what}");
+            }
         }
     }
     // no _NET_WM_PING: not evidence of a fast browser
@@ -2116,19 +2143,28 @@ fn a_source_not_positively_identified_as_a_browser_keeps_the_fixed_hold() {
 }
 
 /// A `drag_handle`'s `end` from an identified Chrome source holds the same way: released at B on fast pings;
-/// on slow ones held to 650, its ok carrying the notice.
+/// on slow ones held to 650, its ok carrying the notice; and a take only the extension caught, past B, where nothing can
+/// confirm its drop, is pending unconfirmed, never a plain ok (the re-review of wave 3, I1).
 #[test]
 fn an_identified_chrome_handle_s_end_extends_on_slow_pings_and_carries_the_notice() {
     support::fresh_display();
     let Some(app) = BrowserApp::start("Google Chrome", "chrome") else {
         return;
     };
-    for (pings, way, at) in [
-        (Duration::ZERO, "fixed", hold_bound()),
+    let past_b = hold_bound() + Duration::from_millis(70);
+    for (pings, on_release, way, at) in [
+        (Duration::ZERO, OnRelease::NeverTakes, "fixed", hold_bound()),
         (
             Duration::from_millis(40),
+            OnRelease::NeverTakes,
             "noticed",
             adaptive_constant("EXTENDED_HOLD_AFTER_PRESS"),
+        ),
+        (
+            Duration::from_millis(40),
+            OnRelease::TakesAfter(past_b),
+            "extended",
+            past_b,
         ),
     ] {
         support::fresh_display();
@@ -2136,7 +2172,7 @@ fn an_identified_chrome_handle_s_end_extends_on_slow_pings_and_carries_the_notic
             role: "browser",
             pid: app.pid,
         });
-        let (window, stop, recorder) = drag_source_answering(OnRelease::NeverTakes, Some(pings));
+        let (window, stop, recorder) = drag_source_answering(on_release, Some(pings));
         *SOURCE_IDENTITY.lock().unwrap() = None;
         managed(window);
         let mut engine = Engine::start_with_stats(&[]);
@@ -2156,11 +2192,29 @@ fn an_identified_chrome_handle_s_end_extends_on_slow_pings_and_carries_the_notic
         assert_eq!(hold["adaptive"]["way"], json!(way), "{hold}");
         match way {
             "noticed" => assert_eq!(ended["notice"], json!(HOLD_NOTICE), "{ended}"),
+            "extended" => {
+                assert!(
+                    ended["notice"].as_str().is_some_and(|n| n.starts_with(
+                        "Pending from your last drag, an unconfirmed drop: your drag into Google-chrome began a drag \
+                         and drop"
+                    )),
+                    "{ended}: {}",
+                    stats["handle"]
+                );
+                assert_eq!(
+                    stats["handle"]["confirmed_by"],
+                    json!("Extended"),
+                    "{}",
+                    stats["handle"]
+                );
+            }
             _ => assert_eq!(ended.get("notice"), None, "{ended}"),
         }
         let whole = PRESS_TO_RELEASE.lock().unwrap().expect("a press and a release");
+        // a take's release comes after its rest; one with none at the hold's end
+        let late = Duration::from_millis(if way == "extended" { 450 } else { 60 });
         assert!(
-            whole + Duration::from_millis(5) >= at && whole < at + Duration::from_millis(60),
+            whole + Duration::from_millis(5) >= at && whole < at + late,
             "{way}: released {whole:?} after the press, not at {at:?}"
         );
     }
@@ -2210,6 +2264,230 @@ fn in_its_own_pid_namespace_the_engine_identifies_chrome_by_its_accessible_appli
     let adaptive = &drag.stats["hold"]["adaptive"];
     assert_eq!(adaptive["way"], json!("fixed"), "{adaptive}");
     assert_eq!(adaptive["source"]["identified"], json!(false), "{adaptive}");
+}
+
+/// A drag whose path ends at or past B never enters the hold (the re-review of wave 3, I2): its last look for a take
+/// stays, but no sampler ran, so its pings say nothing and nothing extends: an identified Chrome's slow-answering source
+/// dragged along a path that lasts past B (zigzags, each reversal a browser's rest), and a short path with
+/// `--drag-dnd-hold-ms 0`, each released at its path's end, a plain ok with no notice.
+#[test]
+fn a_drag_whose_path_ends_at_or_past_b_is_not_held_and_gets_no_notice() {
+    support::fresh_display();
+    let Some(app) = BrowserApp::start("Google Chrome", "chrome") else {
+        return;
+    };
+    let chrome = Some(Identity {
+        role: "browser",
+        pid: app.pid,
+    });
+    let bound = hold_bound();
+    let zigzag: Vec<Value> = (0..20)
+        .map(|i| json!({"x": if i % 2 == 0 { 20 } else { 60 }, "y": 20 + i}))
+        .collect();
+    for (path, options) in [
+        (Some(Value::Array(zigzag)), &[][..]),
+        (None, &["--drag-dnd-hold-ms", "0"][..]),
+    ] {
+        let long = path.is_some();
+        *HELD_PATH.lock().unwrap() = path;
+        let drag = identified_drag(
+            chrome,
+            HoldRoute::InFront,
+            OnRelease::NeverTakes,
+            Some(Duration::from_millis(40)),
+            options,
+            false,
+        )
+        .unwrap();
+        *HELD_PATH.lock().unwrap() = None;
+        let what = if long { "a path past B" } else { "B of 0" };
+        let hold = &drag.stats["hold"];
+        let path_ms = Duration::from_secs_f64(hold["path_ms"].as_f64().expect("the path's length") / 1000.0);
+        if long {
+            assert!(path_ms >= bound, "{what}: the test's path lasts past B: {hold}");
+        }
+        assert_eq!(drag.answer, Ok(Value::Null), "{what}");
+        assert_eq!(drag.notice, None, "{what}: {hold}");
+        assert_eq!(drag.stats.get("hold_notice"), None, "{what}");
+        assert_eq!(hold["adaptive"]["way"], json!("fixed"), "{what}: {hold}");
+        assert_eq!(hold["pings"], Value::Null, "{what}: no sampler: {hold}");
+        assert!(
+            drag.press_to_release < path_ms + Duration::from_millis(80),
+            "{what}: released {:?} after the press, its path {path_ms:?}",
+            drag.press_to_release
+        );
+    }
+}
+
+/// The root window's `AT_SPI_BUS` set to `address` until dropped, then put back as it was.
+struct RootBusAddress {
+    conn: RustConnection,
+    root: Window,
+    atom: u32,
+    saved: Option<(u32, u8, Vec<u8>)>,
+}
+
+impl RootBusAddress {
+    fn set(address: &str) -> RootBusAddress {
+        let (conn, screen) = x11rb::connect(None).expect("an X connection");
+        let root = conn.setup().roots[screen].root;
+        let atom = conn.intern_atom(false, b"AT_SPI_BUS").unwrap().reply().unwrap().atom;
+        let reply = conn
+            .get_property(false, root, atom, AtomEnum::ANY, 0, 4096)
+            .unwrap()
+            .reply()
+            .unwrap();
+        let saved = (reply.type_ != x11rb::NONE).then(|| (reply.type_, reply.format, reply.value.clone()));
+        conn.change_property8(PropMode::REPLACE, root, atom, AtomEnum::STRING, address.as_bytes())
+            .unwrap();
+        conn.sync().unwrap();
+        RootBusAddress {
+            conn,
+            root,
+            atom,
+            saved,
+        }
+    }
+}
+
+impl Drop for RootBusAddress {
+    fn drop(&mut self) {
+        match &self.saved {
+            Some((type_, format, value)) => {
+                let len = value.len() as u32 / (u32::from(*format) / 8).max(1);
+                let _ = self
+                    .conn
+                    .change_property(PropMode::REPLACE, self.root, self.atom, *type_, *format, len, value);
+            }
+            None => {
+                let _ = self.conn.delete_property(self.root, self.atom);
+            }
+        }
+        let _ = self.conn.sync();
+    }
+}
+
+/// The identification's whole bus lookup is bounded (the re-review of wave 3, I3): an accessibility bus that accepts the
+/// connection and then says nothing, met cold (the engine's first bus use), leaves the source unidentified within the
+/// bound, before the press, and its drag keeps the fixed hold at B; the engine never waits out its 2 s I/O timeout.
+#[test]
+fn a_silent_accessibility_bus_met_cold_leaves_the_source_unidentified_within_the_bound() {
+    support::fresh_display();
+    let socket = std::env::temp_dir().join(format!("cua-live-silent-bus-{}", std::process::id()));
+    let _ = std::fs::remove_file(&socket);
+    let listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
+    // every connection accepted and kept, never read from or answered
+    let held = std::thread::spawn(move || {
+        let mut kept = Vec::new();
+        for stream in listener.incoming().take(4) {
+            match stream {
+                Ok(stream) => kept.push(stream),
+                Err(_) => break,
+            }
+        }
+        kept
+    });
+    let silent = RootBusAddress::set(&format!("unix:path={}", socket.display()));
+    let bound = hold_bound();
+    let identify = adaptive_constant("IDENTIFY_BOUND");
+    let drag = identified_drag(
+        Some(Identity {
+            role: "browser",
+            pid: std::process::id(),
+        }),
+        HoldRoute::InFront,
+        OnRelease::NeverTakes,
+        Some(Duration::from_millis(40)),
+        &[],
+        false,
+    )
+    .unwrap();
+    drop(silent);
+    let _ = std::fs::remove_file(&socket);
+    drop(held);
+    let identity = &drag.stats["browser_identity"];
+    let adaptive = &drag.stats["hold"]["adaptive"];
+    assert_eq!(identity["bus"], json!(true), "{identity}");
+    let ms = Duration::from_secs_f64(identity["ms"].as_f64().unwrap() / 1000.0);
+    assert!(
+        ms < identify + Duration::from_millis(50),
+        "the lookup took {ms:?}: {identity}"
+    );
+    assert_eq!(adaptive["source"]["identified"], json!(false), "{adaptive}");
+    assert_eq!(adaptive["way"], json!("fixed"), "{adaptive}");
+    assert_eq!(drag.notice, None);
+    assert!(
+        drag.answered < bound + identify + Duration::from_millis(200),
+        "answered {:?} after the request",
+        drag.answered
+    );
+}
+
+/// A window's identification is read again at every drag (the re-review of wave 3, I3): a reused source window whose
+/// role, then whose process's accessible application, stops being a Chrome browser's is unidentified at once, and
+/// identified again once it is back. Its slow pings extend the hold only while it is identified.
+#[test]
+fn a_reused_window_s_identity_that_changes_and_recovers_is_read_again_at_every_drag() {
+    support::fresh_display();
+    let (Some(chrome), Some(other)) = (
+        BrowserApp::start("Google Chrome", "chrome"),
+        BrowserApp::start("Spotify", "chrome"),
+    ) else {
+        return;
+    };
+    *SOURCE_IDENTITY.lock().unwrap() = Some(Identity {
+        role: "browser",
+        pid: chrome.pid,
+    });
+    let (window, stop, recorder) = drag_source_answering(OnRelease::NeverTakes, Some(Duration::from_millis(40)));
+    *SOURCE_IDENTITY.lock().unwrap() = None;
+    in_front(window);
+    let (conn, _) = x11rb::connect(None).unwrap();
+    let atom = |name: &[u8]| conn.intern_atom(false, name).unwrap().reply().unwrap().atom;
+    let (role, pid) = (atom(b"WM_WINDOW_ROLE"), atom(b"_NET_WM_PID"));
+    let set_role = |value: &str| {
+        conn.change_property8(PropMode::REPLACE, window, role, AtomEnum::STRING, value.as_bytes())
+            .unwrap();
+        conn.sync().unwrap();
+    };
+    let set_pid = |value: u32| {
+        conn.change_property32(PropMode::REPLACE, window, pid, AtomEnum::CARDINAL, &[value])
+            .unwrap();
+        conn.sync().unwrap();
+    };
+    let mut engine = Engine::start_with_stats(&[]);
+    let mut drag = |what: &str, identified: bool| {
+        let answer = engine.exchange(
+            "drag",
+            json!({"window": {"id": window}, "path": [{"x": 20, "y": 20}, {"x": 60, "y": 20}]}),
+        );
+        let stats = engine.stats_of(engine.last_id());
+        let adaptive = &stats["hold"]["adaptive"];
+        assert_eq!(answer["ok"], json!(true), "{what}: {answer}");
+        assert_eq!(
+            adaptive["source"]["identified"],
+            json!(identified),
+            "{what}: {adaptive}"
+        );
+        assert_eq!(
+            adaptive["way"],
+            json!(if identified { "noticed" } else { "fixed" }),
+            "{what}: {adaptive}"
+        );
+        sleep(SETTLE);
+    };
+    drag("Chrome", true);
+    set_role("browser-window");
+    drag("its role changed", false);
+    set_role("browser");
+    drag("its role back", true);
+    set_pid(other.pid);
+    drag("its process's application another", false);
+    set_pid(chrome.pid);
+    drag("its process back", true);
+    drop(engine);
+    stop.send(()).unwrap();
+    recorder.join().unwrap();
 }
 
 /// The late-take watch after a release with no take (ruling 888.3) runs 700 ms after the release, past 0.4.1's 300 ms,

@@ -38,3 +38,38 @@ What #433 adds to #435's kit:
 - **Report** (`report.mjs <dir>`, from `gh run download <id> -D <dir>`): per unit and head, what the record held (`recordedRole`), the hit, and the controls the click reached, beside #435's columns; `stalePoint.ms` per head.
 
 The harness (heads, lanes, presentation under the owned cover, setup checks, per-trial evidence, the keep, twin and #340 cells) is #435's, as its README describes.
+
+## Batch A: main against 2a1b0368
+
+Main `870dd117615bbfce72e637b8749b4b24293b8fa5`; fix `2a1b0368744b60666ddfbf1d7f15124d2482ed44` (the first fix wave, which a later head supersedes for batches B and C). Kit `9cd63c7b`, mode qualify, 20 rows per head per unit, heads interleaved: [run 44715767925](https://github.com/SSFSKIM/cua/actions/runs/44715767925). Every row valid, no abort, every lane in the background under the cover; the record held the overlay (AXGroup) in every row. A cell gives the verdict and the guard's reason per head, and on the fix the control beneath it judged (`underlyingRole:underlyingIdentity`, `none` when not found):
+
+| Unit | cft: main | cft: fix | safari: main | safari: fix | electron: main | electron: fix |
+|---|---|---|---|---|---|---|
+| twincover/text | kept-missed sameElement 20 | refused nodeGone 20 [AXLink:none 20] | refused newElementOverPoint 20 | refused newElementOverPoint 20 | wrong-target sameElement 20 | refused nodeGone 20 [AXLink:none 20] |
+| twincover/link | kept-missed sameElement 20 | refused nodeGone 20 [AXLink:none 20] | refused interactiveHit 20 | refused interactiveHit 20 | wrong-target sameElement 20 | refused nodeGone 20 [AXLink:none 20] |
+| overcontrol/text | kept-missed sameElement 20 | kept-missed sameElement 20 [AXLink:handle 20] | kept-landed nonInteractiveHit 20 | kept-landed nonInteractiveHit 20 [AXLink:handle 20] | kept-landed sameElement 20 | kept-landed sameElement 20 [AXLink:handle 20] |
+| overcontrol/link | kept-missed sameElement 20 | kept-missed sameElement 20 [AXLink:handle 20] | kept-landed recordedHit 20 | kept-landed recordedHit 20 | kept-landed sameElement 20 | kept-landed sameElement 20 [AXLink:handle 20] |
+| scrim/text | kept-missed sameElement 20 | kept-missed sameElement 20 [AXLink:handle 20] | kept-missed sameElement 20 | kept-missed sameElement 20 [AXLink:handle 20] | kept-missed sameElement 20 | kept-missed sameElement 20 [AXLink:handle 20] |
+| scrim/link | kept-missed sameElement 20 | kept-missed sameElement 20 [AXLink:handle 20] | kept-missed sameElement 20 | kept-missed sameElement 20 [AXLink:handle 20] | kept-missed sameElement 20 | kept-missed sameElement 20 [AXLink:handle 20] |
+| decomove/text | wrong-target sameElement 20 | refused nodeGone 20 [AXLink:none 20] | refused nodeGone 20 | refused nodeGone 20 | wrong-target sameElement 20 | refused nodeGone 20 [AXLink:none 20] |
+| decomove/link | wrong-target sameElement 20 | refused nodeGone 20 [AXLink:none 20] | refused nodeGone 20 | refused nodeGone 20 | wrong-target sameElement 20 | refused nodeGone 20 [AXLink:none 20] |
+
+| Lane | Head | stalePoint.ms p50 / p95 / max (n), all | kept | refused | text point |
+|---|---|---|---|---|---|
+| cft | main | 1.999 / 8.321 / 10.385 (160) | 1.999 / 8.321 / 10.385 (160) | – | 1.999 / 8.784 / 10.385 (80) |
+| cft | fix | 4.223 / 12.38 / 16.448 (160) | 1.79 / 3.892 / 16.448 (80) | 7.461 / 14.069 / 15.16 (80) | 4.331 / 14.069 / 16.448 (80) |
+| safari | main | 3.042 / 11.438 / 15.316 (160) | 2.034 / 6.161 / 8.329 (80) | 6.127 / 11.77 / 15.316 (80) | 2.488 / 11.438 / 15.316 (80) |
+| safari | fix | 4.158 / 11.252 / 23.274 (160) | 2.276 / 7.002 / 12.15 (80) | 6.185 / 11.931 / 23.274 (80) | 3.91 / 11.445 / 23.274 (80) |
+| electron | main | 1.48 / 3.149 / 5.099 (160) | 1.48 / 3.149 / 5.099 (160) | – | 1.449 / 3.053 / 4.234 (80) |
+| electron | fix | 4.009 / 10.363 / 17.532 (160) | 2.103 / 3.302 / 9.392 (80) | 7.94 / 11.15 / 17.532 (80) | 4.299 / 10.179 / 15.394 (80) |
+
+| Run | Lane | Image | Browser | Rows | Abort | Gates failing |
+|---|---|---|---|---|---|---|
+| A-44715767925 | cft | 20261102.0473.1 | 156.0.8078.80 | 320/320 | none | overlayKept |
+| A-44715767925 | electron | 20261102.0473.1 | Electron 44.4.5 / Chromium 152.0.7977.130 | 320/320 | none | none |
+| A-44715767925 | safari | 20261117.0516.1 | 27.2 | 320/320 | none | none |
+
+- **`twincover` never reaches B on the fix** (`overlayTwin` passes on every lane): Electron, where main lands on B at both points (40 of 40), and CfT, where main keeps but posts nothing (`backgroundClickRefused`), refuse `nodeGone` with the link beneath gone. Safari refuses on both heads, as main does (it hit-tests through the veil), so the new check never runs there.
+- **`decomove`** is the same on every lane: main lands on B on CfT and Electron (wrong target, 40 of 40 each); the fix refuses `nodeGone`; Safari refuses on both heads.
+- **The controls answer as main, row for row, reason included**: `overcontrol` kept and landed on Electron and Safari; `scrim` eaten on every lane; no fix click reached anything main's did not. CfT fails `overlayKept` on main's own baseline: main keeps every `overcontrol` row but the shared-mode element route presses the overlay group and posts nothing (`backgroundClickRefused`), so neither head lands (`mainNotKept` 40, `differ` 0, `reasonDiffer` 0). That is the lane's route, not the fix.
+- **The guard's time.** The fix's p50 rises from 1.5-3.0 ms to 4.0-4.2 ms, and its p95 from 3.1-11.4 to 10.4-12.4 ms: its refusals take 6-8 ms at p50 (the search for the control beneath); its keeps stay within 0.6 ms of main's. Maximum 23.3 ms (Safari).

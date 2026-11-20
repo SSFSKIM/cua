@@ -5,7 +5,7 @@
 counted reruns.
 
 Everything ran on the x64 VM, on private displays (none on `:0`), against the pinned linux-engine 0.4.2 installed in a
-run-owned home (`cua install --engine`: sha256 `a1314106…a85a78`, `cua-engine 0.4.2 (9371d2348cf8)`; `logs/setup.log`).
+run-owned home (`cua install --engine`: sha256 `a1314106…a85a78`, `cua-engine 0.4.2 (9371d2348cf8)`; `logs/setup.log.txt`).
 Each run was held under the host lock as `m5-h6` (`logs/host-lock-m5-h6.txt`). The engine was not changed. Chrome was
 156.0.8078.73 (installed), and 158.0.8127.36 (extracted current stable) for K2.
 
@@ -100,7 +100,7 @@ tests were run alone, as the gate runs them (a private Xvfb, its own session bus
 | the watch shortened to 400 ms, below the take's 500 | **FAILED**: "Guarded: the read carries the notice", left Null | ok (its take comes sooner) |
 | the watch removed (`late_watch_end` answers the release) | **FAILED**, as above | **FAILED**: "in front, shared: the watch's Escape reached the source" |
 
-The copy was restored after each mutation, and the worktree's `dnd.rs` was compared unchanged (`mutation/mutation.log`).
+The copy was restored after each mutation, and the worktree's `dnd.rs` was compared unchanged (`mutation/mutation.log.txt`; each test's output in `mutation/<case>.<test>.txt`).
 
 ## 4. The hold canary's criterion (ruling 930; `canary/`)
 
@@ -159,3 +159,4 @@ So no non-K step differs in how the runner launches it. Under 929.2, none reruns
 - `sweeps/`, `dev-runs/` and `canary/`: each run's README, `step.json` (gate runs), session rows and logs, its summary,
   and its rows gzipped (`run/results.jsonl.gz`). The whole-run order-watch record is left out.
 - `comparison/`, `mutation/`, `scripts/` and `logs/`.
+- Logs are kept as `.txt`, since the repository ignores `*.log`.

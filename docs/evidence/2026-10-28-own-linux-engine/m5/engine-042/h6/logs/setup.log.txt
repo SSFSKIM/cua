@@ -1,0 +1,11 @@
+npm ci exit 0
+xprobe exit 0
+installing 26.928.40906-linux-x64 from https://persistent.oaistatic.com/codex-app-prod/linux/deb/pool/main/c/chatgpt/chatgpt_26.928.40906_amd64.deb
+installed and activated 26.928.40906-linux-x64 at /Users/new/.local/share/cua-171/task121/home/.local/share/cua/runtimes/26.928.40906-linux-x64
+installed cua's sandbox helper at /Users/new/.local/share/cua-171/task121/home/.local/share/cua/sandbox/rust-v0.163.0/codex-linux-sandbox
+installed cua's Linux engine 0.4.2 (linux-engine-v0.4.2) at /Users/new/.local/share/cua-171/task121/home/.local/share/cua/engine/linux/cua-engine
+installing Node 24.22.0 for cua's own REPL host from https://nodejs.org/dist/v24.22.0/node-v24.22.0-linux-x64.tar.gz
+installed Node 24.22.0 for cua's own REPL host at /Users/new/.local/share/cua-171/task121/home/.local/share/cua/node/24.22.0
+install exit 0
+a1314106a388167191670d38c0b67292617fe0f7e929f133ff7343b4a8a85a78  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/engine/linux/cua-engine
+cua-engine 0.4.2 (9371d2348cf8)

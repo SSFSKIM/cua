@@ -1,0 +1,3 @@
+development run, not a release gate (task 121, sweep-load2)
+[1120/115249.642746:WARNING:chrome/app/chrome_main_linux.cc:84] Read channel stable from /opt/google/chrome/CHROME_VERSION_EXTRA
+XGetWindowProperty[_NET_ACTIVE_WINDOW] failed (code=1)

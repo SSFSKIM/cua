@@ -32,6 +32,10 @@ for(const d of arts){
   console.log('\n| Head | stalePoint.ms p50 / p95 / max, all | kept | refused |\n|---|---|---|---|');
   for(const h of ['main','fix']){const v=rows.filter(r=>r.head===h&&r.valid&&r.guard);if(!v.length)continue;
     console.log(`| ${h} | ${q(v)} | ${q(v.filter(r=>r.guard.verdict==='kept'))} | ${q(v.filter(r=>r.guard.verdict==='refused'))} |`);}
+  // #433 (ruling 909): the guard's refusal sentences on the overlay cells, each distinct one with its rows.
+  const said={};for(const r of rows.filter(r=>r.valid&&r.sentence))(said[`${r.head}|${r.cell}/${r.at}|${r.sentence}`]??=0),said[`${r.head}|${r.cell}/${r.at}|${r.sentence}`]++;
+  if(Object.keys(said).length){console.log('\n| Head | Unit | Refusal sentence | Rows |\n|---|---|---|---|');
+    for(const [k,n] of Object.entries(said)){const [h,u,t]=k.split('|');console.log(`| ${h} | ${u} | ${t.replaceAll('|','\\|')} | ${n} |`);}}
   if(s.gates){
     console.log('\n| Gate | Pass | Detail |\n|---|---|---|');
     for(const [k,v] of Object.entries(s.gates)){const {pass,examples,reasonExamples,...rest}=v;console.log(`| ${k}${v.informational?' (informational)':''} | ${pass?'pass':'**fail**'} | ${JSON.stringify(rest)} |`);}

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {Script} from 'node:vm';
 import {CELLS,UNITS,AT,FILLER,DEEP,recordedRole,unitKey,unitsFor,unitsForLane,repsOf,plan,pointFor,isReportOnly} from './cells.mjs';
-import {FRAMELESS,overlayAt,labelledOf,quantiles,outcomeOf,stalePointOf,routeOf,findLink,covers,uncoveredBy,nodeAt,landingOf,delta,score,gates,coverage,summarize,judge,MIN_PAIRS} from './check.mjs';
+import {sentenceOf,FRAMELESS,overlayAt,labelledOf,quantiles,outcomeOf,stalePointOf,routeOf,findLink,covers,uncoveredBy,nodeAt,landingOf,delta,score,gates,coverage,summarize,judge,MIN_PAIRS} from './check.mjs';
 import {page} from './page.mjs';
 import {toPixels} from './run.mjs';
 
@@ -132,6 +132,9 @@ test('replies: outcome, the guard\'s record on a refusal and on a success, the r
   const under = stalePointOf({result: {meta: {stalePoint: {verdict: 'kept', reason: 'sameElement', recordedRole: 'AXGroup', underlyingRole: 'AXLink', underlyingIdentity: 'recreated'}}}});
   assert.equal(under.underlyingRole, 'AXLink'); assert.equal(under.underlyingIdentity, 'recreated');
   assert.equal(routeOf(refused), 'synthesized');
+  // #433: the refusal sentence, the engine's message, bounded and without control characters.
+  assert.equal(sentenceOf({error: {message: 'The point lies on an AXGroup\nthat does not act on its own.'}}), 'The point lies on an AXGroup that does not act on its own.');
+  assert.equal(sentenceOf({error: {message: 'x'.repeat(900)}}).length, 600); assert.equal(sentenceOf({result: {}}), null);
   const kept = {result: {meta: {stalePoint: {verdict: 'kept', reason: 'sameElement', identity: 'recreated', recordedRole: 'AXLink', hitRole: 'AX Link'}}}};
   assert.equal(outcomeOf(kept), 'success');
   assert.equal(stalePointOf(kept).identity, 'recreated');

@@ -122,6 +122,9 @@ export function stalePointOf(reply){
     // #433's fix: the recorded control beneath the node that the guard judged too, and how it was found (absent on main).
     underlyingRole:role(sp.underlyingRole),underlyingIdentity:sp.underlyingIdentity==='handle'||sp.underlyingIdentity==='recreated'?sp.underlyingIdentity:sp.underlyingIdentity==null?null:'other'};
 }
+// #433 (ruling 909): the guard's refusal sentence, the engine's own error message on the owned fixture, captured for an
+// overlay cell's refusal only; control characters dropped, at most 600 characters.
+export const sentenceOf=reply=>{const m=reply?.error?.message;return typeof m==='string'?m.replace(/[\u0000-\u001f\u007f]/g,' ').slice(0,600):null;};
 export const routeOf=reply=>{const r=metaOf(reply)?.inputRoute;return r==null?null:name(r);};
 
 // How far a frame moved and grew between two readings (points, or CSS pixels for the page's own geometry).

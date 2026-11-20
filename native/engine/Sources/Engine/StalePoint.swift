@@ -193,6 +193,15 @@ func screenshotLabelValue(role: String, _ value: CFTypeRef?) -> String? {
 /// handle, by which each child an element's AXChildren listed is looked for in the record; without it only their count
 /// is compared.
 func screenshotNodes<Element>(_ reads: [ScreenshotNodeRead<Element>], key: ((Element) -> AnyHashable)? = nil) -> [ScreenshotNode<Element>] {
+  screenshotRecord(reads, key: key).nodes
+}
+
+/// The record (`screenshotNodes`) with the walk's frameless elements beside it (#435): each read as a framed node is,
+/// its role, labels, web area and control known, its frame `CGRect.null` and nothing shown, so it is never chosen at a
+/// point or matched in place. Only #431's twin search (`recreatedRefused`) reads them: a twin recorded without a frame
+/// that gains one at the removed node's place is the twin a framed one is.
+func screenshotRecord<Element>(_ reads: [ScreenshotNodeRead<Element>], key: ((Element) -> AnyHashable)? = nil)
+  -> (nodes: [ScreenshotNode<Element>], frameless: [ScreenshotNode<Element>]) {
   var recordedChildren: [Int: Int] = [:]
   for read in reads { if let parent = read.parent { recordedChildren[parent, default: 0] += 1 } }
   let members = key.map { key in Set(reads.map { key($0.element) }) }
@@ -234,6 +243,7 @@ func screenshotNodes<Element>(_ reads: [ScreenshotNodeRead<Element>], key: ((Ele
   var regionRoots: [Int: Int] = [:]
   var nodes: [ScreenshotNode<Element>] = []
   nodes.reserveCapacity(reads.count)
+  var frameless: [ScreenshotNode<Element>] = []
   for read in reads {
     let webArea = read.role == "AXWebArea" ? read.element : read.parent.flatMap { webAreas[$0] }
     if let webArea { webAreas[read.number] = webArea }
@@ -272,27 +282,32 @@ func screenshotNodes<Element>(_ reads: [ScreenshotNodeRead<Element>], key: ((Ele
       bounds[read.number] = .some(inherited)
     }
     let ancestor = read.parent.flatMap { framed[$0] }
+    func node(frame: CGRect, shown: CGRect?) -> ScreenshotNode<Element> {
+      ScreenshotNode(element: read.element, role: read.role, title: read.title, description: read.description,
+                     subrole: read.subrole, value: read.value,
+                     editableAncestor: read.role == "AXStaticText" ? regions[read.number] : nil,
+                     labelsUnread: read.labelsUnread,
+                     frame: frame, shown: shown, depth: read.depth,
+                     subtreeRecorded: !incomplete.contains(read.number),
+                     thinGap: thin(frame) && incomplete.contains(read.number), gapsBelow: gapsBelow[read.number] ?? [],
+                     ancestor: ancestor, webArea: webArea, control: control?.element,
+                     controlRole: control?.role, controlUnknown: control?.unknown ?? false, roleUnknown: !read.roleRead,
+                     actionable: !read.roleRead ? nil
+                       : stalePointInteractiveRoles.contains(read.role) || read.actions.contains("AXPress") ? true
+                       : read.actionsRead ? false : nil,
+                     regionCovered: !broken.contains(regionRoot))
+    }
     guard let frame = own else {
       framed[read.number] = ancestor
+      var unframed = node(frame: .null, shown: nil)
+      (unframed.thinGap, unframed.gapsBelow) = (false, [])
+      frameless.append(unframed)
       continue
     }
     framed[read.number] = nodes.count
-    let shown = cut(frame).flatMap { $0.isNull || $0.width <= 0 || $0.height <= 0 ? nil : $0 }
-    nodes.append(ScreenshotNode(element: read.element, role: read.role, title: read.title, description: read.description,
-                                subrole: read.subrole, value: read.value,
-                                editableAncestor: read.role == "AXStaticText" ? regions[read.number] : nil,
-                                labelsUnread: read.labelsUnread,
-                                frame: frame, shown: shown, depth: read.depth,
-                                subtreeRecorded: !incomplete.contains(read.number),
-                                thinGap: thin(frame) && incomplete.contains(read.number), gapsBelow: gapsBelow[read.number] ?? [],
-                                ancestor: ancestor, webArea: webArea, control: control?.element,
-                                controlRole: control?.role, controlUnknown: control?.unknown ?? false, roleUnknown: !read.roleRead,
-                                actionable: !read.roleRead ? nil
-                                  : stalePointInteractiveRoles.contains(read.role) || read.actions.contains("AXPress") ? true
-                                  : read.actionsRead ? false : nil,
-                                regionCovered: !broken.contains(regionRoot)))
+    nodes.append(node(frame: frame, shown: cut(frame).flatMap { $0.isNull || $0.width <= 0 || $0.height <= 0 ? nil : $0 }))
   }
-  return nodes
+  return (nodes, frameless)
 }
 
 /// #330's rule dL: every element of the walk's record (`reads`), framed or frameless, keyed by `key`, with whether the walk
@@ -422,6 +437,8 @@ struct StalePointVerdict<Element> {
   var point: CGPoint?
   var windowShift: CGVector = .zero
   var nodes: [ScreenshotNode<Element>] = []
+  /// The record's frameless elements (`screenshotRecord`, #435), which the press verdict's #305 check reads with `nodes`.
+  var frameless: [ScreenshotNode<Element>] = []
   /// The record's handle map (`stalePointVerdict`'s `recorded`), which the press verdict's #305 check reads a re-created
   /// identity's candidate against (`recreatedRefused`).
   var recorded: (Element) -> Bool? = { _ in nil }
@@ -809,7 +826,8 @@ let stalePointControlStops: Set<String> = ["AXWebArea", "AXWindow", "AXSheet", "
 /// 3. the node's own handle still lives (`StalePointReads.isGone` answers no: its frame read only failed), or the record
 ///    holds the candidate as another node, framed or frameless (the review of main..849bcdad, findings 3 and 8; of
 ///    849bcdad..38a55469, item 1);
-/// 4. the record holds a twin (`recreatedTwin`): another element the match could have taken for the node;
+/// 4. the record holds a twin (`recreatedTwin`): another element the match could have taken for the node, framed or
+///    frameless (`frameless`, #435: a twin recorded without a frame that gains one at the node's place);
 /// 5. the candidate's nearest web area is not the node's (finding 7: an iframe's document laid over the node's place);
 /// 6. the candidate's nearest control (an ancestor of `stalePointInteractiveRoles` or with AXPress, below
 ///    `stalePointControlStops`) is not the node's: where the record had none, it has one (finding 2); while the node's
@@ -817,12 +835,14 @@ let stalePointControlStops: Set<String> = ["AXWebArea", "AXWindow", "AXSheet", "
 ///    of another role than the recorded control's (a link's text under a button, `twinbtn`).
 /// A parent, role or action-name read that fails on the way up refuses.
 func recreatedRefused<Element>(_ candidate: Element, of node: ScreenshotNode<Element>, nodes: [ScreenshotNode<Element>],
-                               recorded: (Element) -> Bool?, _ reads: StalePointReads<Element>) -> Bool {
+                               frameless: [ScreenshotNode<Element>], recorded: (Element) -> Bool?,
+                               _ reads: StalePointReads<Element>) -> Bool {
   guard node.regionCovered, !node.controlUnknown, reads.isGone(node.element) else { return true }
   /// Whether the record holds `element`: the screenshot's handle map, framed and frameless (`recorded`), else a framed
   /// node by its handle (the review of 849bcdad..38a55469, item 1).
   func recordedNode(_ element: Element) -> Bool { recorded(element) != nil || nodes.contains { reads.same($0.element, element) } }
-  if recordedNode(candidate) || nodes.contains(where: { recreatedTwin($0, of: node, reads) }) { return true }
+  func twin(_ other: ScreenshotNode<Element>) -> Bool { recreatedTwin(other, of: node, reads) }
+  if recordedNode(candidate) || nodes.contains(where: twin) || frameless.contains(where: twin) { return true }
   func controlDiffers(_ control: (element: Element, role: String)?) -> Bool {
     guard let recorded = node.control else { return control != nil }
     guard let control else { return true }
@@ -898,7 +918,7 @@ func recreatedLabelsAgree<Element>(_ a: ScreenshotNode<Element>, _ b: Screenshot
 /// record refuses it (`recreatedRefused` over the record, #431): a refused match is judged as main judges it, so a rule
 /// that refuses it keeps its reason, and refuses whatever else would keep it (`stalePointVerdict`).
 func recreatedHandle<Element>(of node: ScreenshotNode<Element>, near hit: Element, windowShift: CGVector = .zero,
-                              nodes: [ScreenshotNode<Element>], recorded: (Element) -> Bool?,
+                              nodes: [ScreenshotNode<Element>], frameless: [ScreenshotNode<Element>], recorded: (Element) -> Bool?,
                               _ reads: StalePointReads<Element>) -> (element: Element, frame: CGRect, refused: Bool)? {
   let expected = node.frame.offsetBy(dx: windowShift.dx, dy: windowShift.dy)
   var best: (element: Element, frame: CGRect, distance: CGFloat)?
@@ -918,7 +938,7 @@ func recreatedHandle<Element>(of node: ScreenshotNode<Element>, near hit: Elemen
     best = (candidate, frame, distance)
   }
   guard let best else { return nil }
-  return (best.element, best.frame, recreatedRefused(best.element, of: node, nodes: nodes, recorded: recorded, reads))
+  return (best.element, best.frame, recreatedRefused(best.element, of: node, nodes: nodes, frameless: frameless, recorded: recorded, reads))
 }
 
 /// The guard at `point` (#296): the deepest recorded node there (`deepestScreenshotNode`) found now, by its own handle
@@ -936,7 +956,9 @@ func recreatedHandle<Element>(of node: ScreenshotNode<Element>, near hit: Elemen
 ///
 /// `recorded` is the record's every element, framed or frameless, with whether its children all were recorded
 /// (`screenshotChildrenRecorded`; nil for an element the record lacks), which #330's rule dL judges the hit's chain by.
+/// `frameless` is the record's frameless elements (`screenshotRecord`), which #431's twin search reads beside `nodes`.
 func stalePointVerdict<Element>(at point: CGPoint, windowShift: CGVector = .zero, nodes: [ScreenshotNode<Element>],
+                                frameless: [ScreenshotNode<Element>] = [],
                                 recorded: @escaping (Element) -> Bool? = { _ in nil }, hit first: Element?,
                                 rehit: () -> Element? = { nil }, sleep: (Double) -> Void = { _ in },
                                 reads: StalePointReads<Element>) -> StalePointVerdict<Element> {
@@ -954,7 +976,7 @@ func stalePointVerdict<Element>(at point: CGPoint, windowShift: CGVector = .zero
     }
   }
   var verdict = StalePointVerdict(reason: .nodeGone, node: node, hitRole: hitRole, hit: hit, point: point, windowShift: windowShift, nodes: nodes,
-                                  recorded: recorded)
+                                  frameless: frameless, recorded: recorded)
   var currentFrame: CGRect?
   /// #431: the re-created match the record refuses (`recreatedRefused`), judged on as main judges it so that a rule that
   /// refuses it (#330's `newElementOverPoint`, a moved frame, another control hit) keeps its reason; whatever would keep it
@@ -964,7 +986,8 @@ func stalePointVerdict<Element>(at point: CGPoint, windowShift: CGVector = .zero
     (verdict.current, verdict.identity, currentFrame) = (node.element, .handle, frame)
   } else if let hit, reads.same(hit, node.element) || isInside(hit, node.element, reads) {
     (verdict.current, verdict.identity) = (node.element, .handle)  // its frame unread, but the point reaches it
-  } else if let hit, let found = recreatedHandle(of: node, near: hit, windowShift: windowShift, nodes: nodes, recorded: recorded, reads) {
+  } else if let hit, let found = recreatedHandle(of: node, near: hit, windowShift: windowShift, nodes: nodes, frameless: frameless,
+                                                 recorded: recorded, reads) {
     (verdict.current, verdict.identity, currentFrame) = (found.element, .recreated, found.frame)
     vetoed = found.refused
   }
@@ -981,7 +1004,7 @@ func stalePointVerdict<Element>(at point: CGPoint, windowShift: CGVector = .zero
   var newElementReads: Int?
   func judged(_ reason: StalePointReason) -> StalePointVerdict<Element> {
     StalePointVerdict(reason: reason, node: node, identity: verdict.identity, current: current, hitRole: hitRole, hit: hit, gaps: gaps,
-                      point: point, windowShift: windowShift, nodes: nodes, recorded: recorded, webAreaReads: webAreaReads,
+                      point: point, windowShift: windowShift, nodes: nodes, frameless: frameless, recorded: recorded, webAreaReads: webAreaReads,
                       newElementReads: newElementReads)
   }
   // Judged in order: the node's identity (above) and its frame, then the hit (the reasons name what was read, kept or
@@ -1019,7 +1042,7 @@ func stalePointVerdict<Element>(at point: CGPoint, windowShift: CGVector = .zero
     // is all that is checked.
     if insideGap(hit, gaps, reads) { return judged(.unrecordedDescendant) }
     // #305: the hit is itself a recorded node the screenshot showed at the point, in its place.
-    if let by = recordedHitAtPoint(hit, at: point, windowShift: windowShift, nodes: nodes, recorded: recorded, reads) {
+    if let by = recordedHitAtPoint(hit, at: point, windowShift: windowShift, nodes: nodes, frameless: frameless, recorded: recorded, reads) {
       var kept = judged(.recordedHit)
       kept.recordedHitBy = by
       return kept
@@ -1070,7 +1093,8 @@ let recordedHitAncestorShare: CGFloat = 0.25
 /// Read only where the verdict would refuse: the element's frame, role and labels, a frame read per recorded node of its
 /// role and frame that its handle does not match, and the ancestor's frame.
 func recordedHitAtPoint<Element>(_ element: Element, at point: CGPoint, windowShift: CGVector, nodes: [ScreenshotNode<Element>],
-                                 recorded: (Element) -> Bool? = { _ in nil }, _ reads: StalePointReads<Element>) -> RecordedHitFrame? {
+                                 frameless: [ScreenshotNode<Element>] = [], recorded: (Element) -> Bool? = { _ in nil },
+                                 _ reads: StalePointReads<Element>) -> RecordedHitFrame? {
   let tolerance = stalePointFrameTolerance
   func widened(_ rect: CGRect) -> CGRect { rect.insetBy(dx: -tolerance, dy: -tolerance) }
   func inPlace(_ live: CGRect?, _ node: ScreenshotNode<Element>) -> Bool {
@@ -1097,7 +1121,7 @@ func recordedHitAtPoint<Element>(_ element: Element, at point: CGPoint, windowSh
   for node in nodes where node.role == role && inPlace(live, node)
     && stalePointLabelsAgree(recordedTitle: node.title, recordedDescription: node.description, recordedValue: node.value, title: title,
                              description: description, value: value)
-    && reads.frame(node.element) == nil && !recreatedRefused(element, of: node, nodes: nodes, recorded: recorded, reads) {
+    && reads.frame(node.element) == nil && !recreatedRefused(element, of: node, nodes: nodes, frameless: frameless, recorded: recorded, reads) {
     if let by = carried(node) { return by }
   }
   return nil
@@ -1208,7 +1232,8 @@ func stalePointPressVerdict<Element>(_ pressed: Element, _ verdict: StalePointVe
   if reads.same(pressed, current) || isInside(current, pressed, reads) { return verdict }
   func judged(_ reason: StalePointReason) -> StalePointVerdict<Element> {
     StalePointVerdict(reason: reason, node: node, identity: verdict.identity, current: current, hitRole: reads.role(pressed), hit: pressed,
-                      gaps: verdict.gaps, point: verdict.point, windowShift: verdict.windowShift, nodes: verdict.nodes, recorded: verdict.recorded,
+                      gaps: verdict.gaps, point: verdict.point, windowShift: verdict.windowShift, nodes: verdict.nodes,
+                      frameless: verdict.frameless, recorded: verdict.recorded,
                       webAreaReads: verdict.webAreaReads,  // #316: the hit's walk, which this verdict was judged after
                       newElementReads: verdict.newElementReads)  // #330: and rule dL's reads on it
   }
@@ -1218,7 +1243,8 @@ func stalePointPressVerdict<Element>(_ pressed: Element, _ verdict: StalePointVe
   }
   // #305: the element is itself a recorded node the screenshot showed at the point, in its place.
   if let point = verdict.point,
-     let by = recordedHitAtPoint(pressed, at: point, windowShift: verdict.windowShift, nodes: verdict.nodes, recorded: verdict.recorded, reads) {
+     let by = recordedHitAtPoint(pressed, at: point, windowShift: verdict.windowShift, nodes: verdict.nodes, frameless: verdict.frameless,
+                                 recorded: verdict.recorded, reads) {
     var kept = judged(.recordedHit)
     kept.recordedHitBy = by
     return kept
@@ -1379,8 +1405,8 @@ extension Engine {
       defer { windowsMs = monotonicMilliseconds() - read }
       return onScreenWindowList()
     }) {
-      stalePointVerdict(at: point, windowShift: shift, nodes: screenshot?.nodes ?? [], recorded: { screenshot?.recorded[ElementKey(element: $0)] },
-                        hit: hit, rehit: rehit, sleep: { usleep(UInt32($0 * 1000)) }, reads: reads)
+      stalePointVerdict(at: point, windowShift: shift, nodes: screenshot?.nodes ?? [], frameless: screenshot?.frameless ?? [],
+                        recorded: { screenshot?.recorded[ElementKey(element: $0)] }, hit: hit, rehit: rehit, sleep: { usleep(UInt32($0 * 1000)) }, reads: reads)
     }
     var outcome = stalePointOutcome(verdict, ms: monotonicMilliseconds() - started, app: app.displayName, reads: reads)
     outcome.record.windowsMs = windowsMs
@@ -1392,7 +1418,7 @@ extension Engine {
                          context: ExecutionContext) -> StalePointVerdict<AXUIElement> {
     let rehit = { hitTest(window: window, pid: appPid, at: point) }
     let screenshot = context.connection.observedScreenshot(app: app)
-    return stalePointVerdict(at: point, windowShift: shift, nodes: screenshot?.nodes ?? [], recorded: { screenshot?.recorded[ElementKey(element: $0)] },
-                             hit: rehit(), rehit: rehit, sleep: { usleep(UInt32($0 * 1000)) }, reads: .live)
+    return stalePointVerdict(at: point, windowShift: shift, nodes: screenshot?.nodes ?? [], frameless: screenshot?.frameless ?? [],
+                             recorded: { screenshot?.recorded[ElementKey(element: $0)] }, hit: rehit(), rehit: rehit, sleep: { usleep(UInt32($0 * 1000)) }, reads: .live)
   }
 }

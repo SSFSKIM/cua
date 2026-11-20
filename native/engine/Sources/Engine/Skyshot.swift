@@ -407,10 +407,11 @@ extension Engine {
       // What this window's coordinate clicks divide by, and the tree they are checked against (#296), every element of it
       // with whether its children all were recorded (#330).
       let record = timings.time("stalePointRecord") {
-        (screenshotNodes(walk.screenshotReads) { AnyHashable(ElementKey(element: $0)) },
+        (screenshotRecord(walk.screenshotReads) { AnyHashable(ElementKey(element: $0)) },
          screenshotChildrenRecorded(walk.screenshotReads) { ElementKey(element: $0) })
       }
-      lineage.screenshot = ObservedScreenshot(window: window, image: image, nodes: record.0, recorded: record.1)
+      lineage.screenshot = ObservedScreenshot(window: window, image: image, nodes: record.0.nodes, frameless: record.0.frameless,
+                                              recorded: record.1)
       return image.wire
     }
     timings.add("total", monotonicMilliseconds() - started)

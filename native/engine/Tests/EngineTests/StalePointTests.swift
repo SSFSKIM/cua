@@ -121,6 +121,17 @@ private func recorded(_ root: Node, skipping skipped: Set<ObjectIdentifier> = []
   screenshotNodes(walked(root, skipping: skipped)) { AnyHashable(ObjectIdentifier($0)) }
 }
 
+/// #435: the same walk's frameless elements (`screenshotRecord`), which #431's twin search reads beside the record.
+private func recordedFrameless(_ root: Node, skipping skipped: Set<ObjectIdentifier> = []) -> [ScreenshotNode<Node>] {
+  screenshotRecord(walked(root, skipping: skipped)) { AnyHashable(ObjectIdentifier($0)) }.frameless
+}
+
+/// The whole record an observation makes of `root`'s tree: its framed nodes, its frameless ones and its handle map.
+private func walkRecord(_ root: Node, skipping skipped: Set<ObjectIdentifier> = [])
+  -> (nodes: [ScreenshotNode<Node>], frameless: [ScreenshotNode<Node>], members: (Node) -> Bool?) {
+  (recorded(root, skipping: skipped), recordedFrameless(root, skipping: skipped), recordedMembers(root, skipping: skipped))
+}
+
 /// #330: every element the same walk recorded, framed or not, with whether it recorded all of the element's children
 /// (`screenshotChildrenRecorded`), as the verdict looks it up.
 private func recordedMembers(_ root: Node, skipping skipped: Set<ObjectIdentifier> = []) -> (Node) -> Bool? {
@@ -130,9 +141,9 @@ private func recordedMembers(_ root: Node, skipping skipped: Set<ObjectIdentifie
 
 /// The guard's verdict over `nodes`, with `members` the same observation's lookup (`recordedMembers`), which a re-created
 /// handle must be new to (#431); without it nothing counts as covered, and no re-created handle is taken.
-private func verdict(_ nodes: [ScreenshotNode<Node>], members: @escaping (Node) -> Bool? = { _ in nil }, at point: CGPoint, shift: CGVector = .zero,
-                     hit: Node?) -> StalePointVerdict<Node> {
-  stalePointVerdict(at: point, windowShift: shift, nodes: nodes, recorded: members, hit: hit, reads: reads)
+private func verdict(_ nodes: [ScreenshotNode<Node>], frameless: [ScreenshotNode<Node>] = [], members: @escaping (Node) -> Bool? = { _ in nil },
+                     at point: CGPoint, shift: CGVector = .zero, hit: Node?) -> StalePointVerdict<Node> {
+  stalePointVerdict(at: point, windowShift: shift, nodes: nodes, frameless: frameless, recorded: members, hit: hit, reads: reads)
 }
 
 /// Moves `node` and everything below it by `shift` (the window moved, its layout unchanged).
@@ -2580,9 +2591,9 @@ final class RecreatedIdentityTests: XCTestCase {
   /// The verdict at `point` after `change`, the record taken before it (with `skipping` left out of the walk).
   private func judged(_ thread: Thread, skipping: [Node] = [], at point: CGPoint, change: (Thread) -> Node?) -> StalePointVerdict<Node> {
     let skipped = Set(skipping.map(ObjectIdentifier.init))
-    let nodes = recorded(thread.window, skipping: skipped), members = recordedMembers(thread.window, skipping: skipped)
+    let (nodes, frameless, members) = walkRecord(thread.window, skipping: skipped)
     let hit = change(thread)
-    return verdict(nodes, members: members, at: point, hit: hit)
+    return verdict(nodes, frameless: frameless, members: members, at: point, hit: hit)
   }
 
   /// #340's `twin`, and the same with B answering new handles after the slide (Safari): B's label is in the record, so
@@ -2749,13 +2760,13 @@ final class RecreatedIdentityTests: XCTestCase {
       thread.a.add(group)
       group.add(thread.aText)
       group.actionsUnread = unread
-      let nodes = recorded(thread.window), members = recordedMembers(thread.window)
+      let (nodes, frameless, members) = walkRecord(thread.window)
       group.actionsUnread = false
       thread.aText.destroy()
       let text = Node("AXStaticText", CGRect(x: 30, y: 105, width: 60, height: 20), value: "Reply")
       group.add(text)
       XCTAssertEqual(nodes.first { $0.element === thread.aText }?.controlUnknown, unread)
-      XCTAssertEqual(verdict(nodes, members: members, at: atText, hit: text).reason, unread ? .nodeGone : .sameElement)
+      XCTAssertEqual(verdict(nodes, frameless: frameless, members: members, at: atText, hit: text).reason, unread ? .nodeGone : .sameElement)
     }
   }
 
@@ -2811,23 +2822,24 @@ final class RecreatedIdentityTests: XCTestCase {
     let capped = Thread()
     let overlay = overlaid(capped)
     let skipped: Set<ObjectIdentifier> = [ObjectIdentifier(capped.b)]
-    let nodes = recorded(capped.window, skipping: skipped), members = recordedMembers(capped.window, skipping: skipped)
+    let (nodes, frameless, members) = walkRecord(capped.window, skipping: skipped)
     XCTAssertTrue(deepestScreenshotNode(at: atLink, in: nodes)?.element === overlay)
     let moved = capped.slide(webkit: true).link
-    XCTAssertEqual(verdict(nodes, members: members, at: atLink, hit: moved).reason, .interactiveHit, "the hit B")
-    let kept = verdict(nodes, members: members, at: atLink, hit: overlay)
+    XCTAssertEqual(verdict(nodes, frameless: frameless, members: members, at: atLink, hit: moved).reason, .interactiveHit, "the hit B")
+    let kept = verdict(nodes, frameless: frameless, members: members, at: atLink, hit: overlay)
     XCTAssertEqual(kept.reason, .sameElement)
     XCTAssertEqual(stalePointPressVerdict(moved, kept, reads: reads).reason, .pressedOther, "the route pressing B")
     // B recorded with A's label: the same.
     let twin = Thread()
     _ = overlaid(twin)
-    let twinNodes = recorded(twin.window), twinMembers = recordedMembers(twin.window)
-    XCTAssertEqual(verdict(twinNodes, members: twinMembers, at: atLink, hit: twin.slide(webkit: true).link).reason, .interactiveHit)
+    let (twinNodes, twinFrameless, twinMembers) = walkRecord(twin.window)
+    XCTAssertEqual(verdict(twinNodes, frameless: twinFrameless, members: twinMembers, at: atLink, hit: twin.slide(webkit: true).link).reason,
+                   .interactiveHit)
     // A re-rendered whole under the overlay, in a whole record with no twin: kept as A.
     let alone = Thread(twin: "Archive")
     _ = overlaid(alone)
-    let aloneNodes = recorded(alone.window), aloneMembers = recordedMembers(alone.window)
-    XCTAssertEqual(verdict(aloneNodes, members: aloneMembers, at: atLink, hit: alone.rerenderA().link).reason, .recordedHit)
+    let (aloneNodes, aloneFrameless, aloneMembers) = walkRecord(alone.window)
+    XCTAssertEqual(verdict(aloneNodes, frameless: aloneFrameless, members: aloneMembers, at: atLink, hit: alone.rerenderA().link).reason, .recordedHit)
   }
 
   /// The record keeps each node's control (`ScreenshotNode.control`): its nearest ancestor by an interactive role or
@@ -2853,9 +2865,9 @@ final class RecreatedIdentityTests: XCTestCase {
     window.add(web)
     web.add(list)
     for child in children { list.add(child) }
-    let nodes = recorded(window), members = recordedMembers(window)
+    let (nodes, frameless, members) = walkRecord(window)
     let hit = change(list)
-    return verdict(nodes, members: members, at: point, hit: hit)
+    return verdict(nodes, frameless: frameless, members: members, at: point, hit: hit)
   }
 
   /// Finding 1: two "Reply" links inside one clickable group share it as their control, yet each is its own action: the
@@ -2962,17 +2974,18 @@ final class RecreatedIdentityTests: XCTestCase {
   func testAnUnreadRoleCountsAsATwinAndAnUnknownControl() {
     let twin = Thread()
     twin.b.roleUnread = true
-    let nodes = recorded(twin.window), members = recordedMembers(twin.window)
+    let (nodes, frameless, members) = walkRecord(twin.window)
     twin.b.roleUnread = false
-    XCTAssertEqual(verdict(nodes, members: members, at: atLink, hit: twin.rerenderA().link).reason, .nodeGone, "a twin")
+    XCTAssertEqual(verdict(nodes, frameless: frameless, members: members, at: atLink, hit: twin.rerenderA().link).reason, .nodeGone, "a twin")
     let control = Thread(twin: "Archive")
     control.a.roleUnread = true
-    let controlNodes = recorded(control.window), controlMembers = recordedMembers(control.window)
+    let (controlNodes, controlFrameless, controlMembers) = walkRecord(control.window)
     control.a.roleUnread = false
     control.aText.destroy()
     let again = Node("AXStaticText", CGRect(x: 30, y: 105, width: 60, height: 20), value: "Reply")
     control.a.add(again)
-    XCTAssertEqual(verdict(controlNodes, members: controlMembers, at: atText, hit: again).reason, .nodeGone, "an unknown control")
+    XCTAssertEqual(verdict(controlNodes, frameless: controlFrameless, members: controlMembers, at: atText, hit: again).reason, .nodeGone,
+                   "an unknown control")
   }
 
   /// Finding 7: the candidate's nearest web area must be the node's: a same-label link in an iframe's document laid at
@@ -3066,13 +3079,13 @@ final class RecreatedIdentityTests: XCTestCase {
     thread.a.children.removeAll { $0 === thread.aText }
     wrapper.add(thread.aText)
     wrapper.actionsUnread = true
-    let nodes = recorded(thread.window), members = recordedMembers(thread.window)
+    let (nodes, frameless, members) = walkRecord(thread.window)
     wrapper.actionsUnread = false
     thread.aText.destroy()
     let again = Node("AXStaticText", CGRect(x: 30, y: 105, width: 60, height: 20), value: "Reply")
     wrapper.add(again)
     XCTAssertEqual(nodes.first { $0.element === again || $0.element === thread.aText }?.controlUnknown, true)
-    XCTAssertEqual(verdict(nodes, members: members, at: atText, hit: again).reason, .nodeGone)
+    XCTAssertEqual(verdict(nodes, frameless: frameless, members: members, at: atText, hit: again).reason, .nodeGone)
   }
 
   // MARK: The review of 849bcdad..38a55469
@@ -3090,16 +3103,16 @@ final class RecreatedIdentityTests: XCTestCase {
         thread.list.add(veil)
         overlay = veil
       }
-      let nodes = recorded(thread.window), members = recordedMembers(thread.window)
+      let (nodes, frameless, members) = walkRecord(thread.window)
       XCTAssertNil(nodes.first { $0.element === thread.b }, "B frameless: no framed node")
       XCTAssertNotNil(members(thread.b), "B in the handle map")
       thread.b.frame = bFrame
       thread.slide()
       thread.b.unreadable = [.title]
-      let judgedNow = verdict(nodes, members: members, at: atLink, hit: thread.b)
+      let judgedNow = verdict(nodes, frameless: frameless, members: members, at: atLink, hit: thread.b)
       XCTAssertEqual(judgedNow.reason, viaHit ? .interactiveHit : .nodeGone, viaHit ? "#305's path" : "#296's path")
       if let overlay {
-        let kept = verdict(nodes, members: members, at: atLink, hit: overlay)
+        let kept = verdict(nodes, frameless: frameless, members: members, at: atLink, hit: overlay)
         XCTAssertEqual(stalePointPressVerdict(thread.b, kept, reads: reads).reason, .pressedOther, "the route pressing B")
       }
     }
@@ -3145,15 +3158,105 @@ final class RecreatedIdentityTests: XCTestCase {
       let second = Node("AXStaticText", CGRect(x: 100, y: 105, width: 60, height: 20), value: "Reply")
       thread.a.add(second)
       second.actionsUnread = unread
-      let nodes = recorded(thread.window), members = recordedMembers(thread.window)
+      let (nodes, frameless, members) = walkRecord(thread.window)
       second.actionsUnread = false
       thread.aText.destroy()
       let again = Node("AXStaticText", CGRect(x: 30, y: 105, width: 60, height: 20), value: "Reply")
       thread.a.children.insert(again, at: 0)
       again.parent = thread.a
-      XCTAssertEqual(verdict(nodes, members: members, at: atText, hit: again).reason, unread ? .nodeGone : .sameElement,
+      XCTAssertEqual(verdict(nodes, frameless: frameless, members: members, at: atText, hit: again).reason, unread ? .nodeGone : .sameElement,
                      unread ? "the other fragment's actions unread" : "both fragments inert")
     }
+  }
+
+  // MARK: #435: a twin recorded without a frame
+
+  /// Leaves B and its text frameless for the observation, as the walk reads an element without AXPosition and AXSize (a
+  /// hidden or collapsed control, one not yet laid out); the returned closure gives them their frames back.
+  private func unframe(_ thread: Thread) -> () -> Void {
+    let (link, text) = (thread.b.frame, thread.bText.frame)
+    (thread.b.frame, thread.bText.frame) = (nil, nil)
+    return { (thread.b.frame, thread.bText.frame) = (link, text) }
+  }
+
+  /// A twin the record holds without a frame refuses as a framed one does: B and its text, with A's label, read no frame
+  /// at the observation and take A's place with one, on their own handles or on new ones (Safari's), at the text and at
+  /// the link. The record carries what the twin search reads of them: role, label, web area and control.
+  func testATwinRecordedFramelessRefuses() throws {
+    let shape = Thread()
+    _ = unframe(shape)
+    let (nodes, frameless, _) = walkRecord(shape.window)
+    XCTAssertFalse(nodes.contains { $0.element === shape.b || $0.element === shape.bText }, "no framed node")
+    let link = try XCTUnwrap(frameless.first { $0.element === shape.b })
+    let text = try XCTUnwrap(frameless.first { $0.element === shape.bText })
+    XCTAssertEqual(link.role, "AXLink")
+    XCTAssertEqual(link.title, "Reply")
+    XCTAssertTrue(link.webArea === shape.page)
+    XCTAssertNil(link.shown)
+    XCTAssertEqual(text.value, "Reply")
+    XCTAssertTrue(text.control === shape.b)
+    XCTAssertEqual(text.actionable, false)
+    for (name, point, atText) in points {
+      for webkit in [false, true] {
+        let thread = Thread()
+        let restore = unframe(thread)
+        let judgedNow = judged(thread, at: point) { thread in
+          restore()
+          let moved = thread.slide(webkit: webkit)
+          return atText ? moved.text : moved.link
+        }
+        XCTAssertEqual(judgedNow.reason, .nodeGone, "\(name), \(webkit ? "new handles" : "its own handles")")
+        XCTAssertNil(judgedNow.identity)
+      }
+    }
+  }
+
+  /// The filter is the match's own: a frameless element of another role, or whose label disagrees, is no twin, and
+  /// neither is frameless inert content of the node's own control; A re-rendered beside each stays kept.
+  func testAFramelessElementTheMatchCouldNotTakeForTheNodeIsNoTwin() {
+    for (name, point, atText) in points {
+      let archive = Thread(twin: "Archive")
+      _ = unframe(archive)
+      let button = Thread(twin: "Archive")
+      button.list.add(Node("AXButton", nil, title: "Reply"))
+      button.list.add(Node("AXButton", nil, [Node("AXStaticText", nil, value: "Archive")]))
+      for (other, thread) in [("B frameless as \"Archive\"", archive), ("frameless buttons", button)] {
+        var again: (link: Node, text: Node)?
+        let kept = judged(thread, at: point) { thread in
+          again = thread.rerenderA()
+          return atText ? again?.text : again?.link
+        }
+        XCTAssertEqual(kept.identity, .recreated, "\(name), \(other)")
+        XCTAssertEqual(kept.reason, .sameElement, "\(name), \(other)")
+      }
+    }
+    // A second "Reply" text inside A's link, frameless: inert content of the node's own control.
+    let thread = Thread(twin: "Archive")
+    thread.a.add(Node("AXStaticText", nil, value: "Reply"))
+    let kept = judged(thread, at: atText) { thread in
+      thread.aText.destroy()
+      let again = Node("AXStaticText", CGRect(x: 30, y: 105, width: 60, height: 20), value: "Reply")
+      thread.a.children.insert(again, at: 0)
+      again.parent = thread.a
+      return again
+    }
+    XCTAssertEqual(kept.reason, .sameElement, "inert content of A")
+    XCTAssertEqual(kept.identity, .recreated)
+  }
+
+  /// #305's re-created identity of a hit, and the element route's, read the frameless twins too: under a surviving
+  /// overlay over A, B (frameless, A's label) slides into A's place on new handles.
+  func testAFramelessTwinRefusesARecordedHitsReCreatedIdentity() {
+    let thread = Thread()
+    let overlay = Node("AXGroup", CGRect(x: 20, y: 100, width: 200, height: 30))
+    thread.list.add(overlay)
+    _ = unframe(thread)
+    let (nodes, frameless, members) = walkRecord(thread.window)
+    let moved = thread.slide(webkit: true).link
+    XCTAssertEqual(verdict(nodes, frameless: frameless, members: members, at: atLink, hit: moved).reason, .interactiveHit, "the hit B")
+    let kept = verdict(nodes, frameless: frameless, members: members, at: atLink, hit: overlay)
+    XCTAssertEqual(kept.reason, .sameElement)
+    XCTAssertEqual(stalePointPressVerdict(moved, kept, reads: reads).reason, .pressedOther, "the route pressing B")
   }
 }
 

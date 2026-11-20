@@ -438,11 +438,11 @@ test('removing a media download\'s interceptor that Chrome refuses or never answ
     const responses = new DocumentResponses(cdp, {cleanupMs: 200, recoveryMs: 100});
     await responses.ensureInterceptionReady(9);
     const remove = await responses.addRequestInterceptor(9, () => {});
-    // Refused three times (every attempt), or one hung answer that outlasts the removal's budget.
+    // Every attempt of the removal refused (at most three, as many as its budget lets through), or one hung answer that
+    // outlasts the budget; Chrome answers again once the recovery has disabled Fetch.
     let refusals = 0;
-    const limit = kind === 'hung' ? 1 : 3;
     cdp.answers['Fetch.enable'] = params => {
-      if (params.patterns.length === 1 && refusals < limit) {
+      if (params.patterns.length === 1 && !methods(cdp).includes('Fetch.disable')) {
         refusals += 1;
         if (kind === 'hung') return never();
         throw new Error('Internal error');
@@ -460,6 +460,6 @@ test('removing a media download\'s interceptor that Chrome refuses or never answ
       assert.deepEqual(cdp.detached, [], kind);
     }
     assert.equal(responses.ownsRequestStage(9), false, kind);
-    assert.ok(refusals >= 1, kind);
+    assert.ok(refusals >= 1 && refusals <= (kind === 'hung' ? 1 : 3), `${kind}: ${refusals} attempts`);
   }
 });

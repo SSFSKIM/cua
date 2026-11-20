@@ -93,7 +93,9 @@ test('the drag cell sees the fixture acknowledge the drag\'s end when every queu
   }
   const document={documentElement:{setAttribute:(k,v)=>attributes.set(k.toLowerCase(),String(v))},querySelector:s=>elements.get(s.slice(1)),
     addEventListener:(name,handler)=>{(listeners[name]??=[]).push(handler);}};
-  page=vm.createContext({document,fetch:async(url,options)=>{await pause(900);return fetch(fixture.url+url,options);}});
+  // the page has painted: its own observer marks html[data-first-contentful-paint], which the cell waits for
+  const PerformanceObserver=class{constructor(callback){this.callback=callback;}observe(){this.callback({getEntriesByName:name=>name==='first-contentful-paint'?[{}]:[]});}};
+  page=vm.createContext({document,window:{scrollY:0,scrollTo(){}},PerformanceObserver,fetch:async(url,options)=>{await pause(900);return fetch(fixture.url+url,options);}});
   for(const [,script] of html.matchAll(/<script>([\s\S]*?)<\/script>/g))vm.runInContext(script,page);
   const fire=(handler,point)=>{
     page.target=elements.get('drag');page.pointer={clientX:point.x,clientY:point.y};
@@ -111,6 +113,7 @@ test('the drag cell sees the fixture acknowledge the drag\'s end when every queu
   const tab={
     cua:{async drag({path}){const [start,...rest]=path;move(start);fire('onpointerdown',start);for(const point of rest)move(point);fire('onpointerup',path.at(-1));}},
     playwright:{
+      evaluate:async fn=>vm.runInContext(`(${fn.toString()})()`,page),
       locator:selector=>({waitFor:({timeoutMs})=>waitUntil(()=>find(selector),timeoutMs),textContent:async()=>find(selector)?.textContent??null}),
       getByText:text=>({waitFor:({timeoutMs})=>waitUntil(()=>[...elements.values()].some(e=>e.textContent===text),timeoutMs)}),
     },

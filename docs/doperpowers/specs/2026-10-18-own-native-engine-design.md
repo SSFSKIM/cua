@@ -554,9 +554,10 @@ error    {code: number (the vendor's codes where mapped; -10005 otherwise), mess
   stalePoint: #296's stale-point guard at a coordinate click's point or a drag's start, on its result and its errors once the
     point is placed: {verdict ("kept" | "refused"), reason ("unrecorded" | "sameElement" | "noHit" | "nonInteractiveHit" |
     "hitAboveNode" | "unrecordedDescendant" | "recordedHit" | "nodeGone" | "frameMoved" | "interactiveHit" | "pressedOther" |
-    "newWindow" | "otherWebArea" (#316) | "newElementOverPoint" (#330) | "relabelled" (#298)), identity? ("handle" | "recreated"), recordedRole?, hitRole?, recordedHitBy? ("hit" | "ancestor", #305: the frame that carried a
+    "newWindow" | "otherWebArea" (#316) | "newElementOverPoint" (#330) | "relabelled" (#298) | "appWindowOverPoint" (#452)), identity? ("handle" | "recreated"), recordedRole?, hitRole?, recordedHitBy? ("hit" | "ancestor", #305: the frame that carried a
     `recordedHit`), windowsMs? (#316's rule W's window-list read), webAreaReads? (#316's rule G's parent reads),
-    newWindow? (#316: the new window's number), newElementReads? (#330's rule dL's reads, when it read any), ms,
+    newWindow? (#316: the new window's number), overWindow? (#452: the number of the app's window over the observed one at
+    the point), hitWindow? (#452: the number of the app's other window the hit-test answered in, 0 unread), newElementReads? (#330's rule dL's reads, when it read any), ms,
     rechecked? (true: #282's or #283's
     route waited and the guard ran again before the press; the verdict is that check's, ms both checks'), afterActivation?
     (true: that check ran after the route's focus hold had activated the app)}; roles only, never a title
@@ -6918,6 +6919,49 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   Not measured live: `twincover` on CfT, Safari and Electron with this build, and how often real pages lose a click to a
   changed control under an inert layer.
   Date/Author: 2026-11-20, cursor235's implementer for #433.
+- Decision (#452 with #337, design ruling 928, 2026-11-20, `fix/452-same-app-overlay`, plugin 0.28.23; amends #296's guard,
+  StalePoint.swift `appWindowOverPoint` and `guardedPointVerdict`, and #282's refusal, Input.swift `WindowHit`):
+  **a coordinate click or drag start whose point lies on another window of the app's, over the observed one, is refused
+  before anything is posted, in every mode.** #337's kit (`probe/337-measure`, README fbe9e642; runs 44797144792 and
+  44799499336 on main d44a4fe1) found Chrome's omnibox popup is a layer-0 window of Chrome's own over the browser window,
+  holding the point in 19 of 19 rows, its rows absent from the tree. The engine posts to the process with the observed
+  window's id and window-local point (`stampWindow`), so Chrome delivered the click to the page under the popup: posted
+  and answered ok, the suggestion taken 0 of 12 (shared frontmost and dedicated), and refused 7 of 7 in shared mode with
+  Chrome behind by #282's sentence blaming the page, since `windowHit` turned the popup's hit into no hit.
+  The rule is the invariant, not a list of window kinds: the guard reads the window list it already reads for #316's
+  rule W (now whenever the click's window has a number, recorded list or not), and after W refuses when the app's
+  topmost window at the point is not the observed one. "Topmost at the point" is read among the app's own windows, at
+  the observed window's layer, that show something (alpha above 0), front to back down to the observed window. Other
+  apps' windows are skipped, since the events go to the process, not through the window server's hit-test, so they
+  neither take the click nor appear in the screenshot; that case stays as it was. The layer follows the screenshot:
+  ScreenCaptureKit's desktop-independent window captures the window with the child windows AppKit orders at its level
+  (the popup, a bubble, a popover), which are what the model aims at and what the stamped click goes under; a pop-up
+  menu (101) and a floating panel (3) are in neither, as W leaves them. Alpha 0 shows nothing. W stays first, so a
+  window new since the screenshot keeps W's sentence. The refusal is `appWindowOverPoint` (not
+  `screenChangedSinceScreenshot`: the screenshot may have shown the window), meta `stalePoint.reason`
+  `appWindowOverPoint` with `overWindow`, its sentence: "<App> has a window of its own over the one the screenshot
+  showed at this point (a suggestion list, popup or panel), and a click here would reach the window under it, not what
+  the screenshot shows. Nothing was sent. Use keys instead (the arrow keys and Return for a suggestion list, Escape to
+  close it), or call getScreenshot for a new screenshot and click an element its tree holds." `windowHit` now answers a
+  hit in another window of the app's as its own outcome with that window's number (`hitWindow` in the meta); the action
+  still takes it as no hit, but #282's shared-mode refusal then answers with that sentence instead of the page's, for
+  the case the window list missed (no window number, or a window it skipped).
+  Limits, for the qualification to measure: the window list cannot tell a window that ignores mouse events (Chrome's
+  status bubble and hover cards, tooltips) from one that takes them, so a click under one at the observed window's
+  layer refuses though the click would land where the screenshot shows; a layer-0 window of the app's that is not a
+  child of the observed one (another document window in front, a non-floating panel) is not in the screenshot, yet
+  refuses too. A sheet is a window of its own in the list, so a coordinate click on a sheet refuses now (its controls
+  are in the tree). Wheel scrolls are stamped the same way and not guarded (out of scope). Re-aiming the post at the
+  overlay's window is #453.
+  Proven offline (`AppWindowOverPointTests`, two `BackgroundPointerTests`; each fails with the rule and the outcome
+  disabled): the popup over the point refuses before the tree with the sentence and meta, another app's window over both
+  changing nothing; the point outside it, another app's window alone, the observed window topmost, a menu's or floating
+  panel's layer, alpha 0 and a list without the observed window go to the tree; a click and a drag start refuse with
+  nothing posted, activated or held in shared frontmost, shared behind and dedicated; the hit-test's other-window
+  outcome carries the number and #282's refusal names the window, not the page.
+  Not measured live: any of it on Chrome; the cells the ticket names (omnibox in three modes, `<select>`, autofill, a
+  permission bubble, a native popover and its menu, a click outside each).
+  Date/Author: 2026-11-20, cursor235's implementer for #452.
 
 ## Outcomes & Retrospective
 

@@ -2,8 +2,9 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync, writeFileSync, existsSync, lstatSync, readlinkSync, readdirSync, statSync, rmSync, mkdirSync, realpathSync} from 'node:fs';
 import {spawnSync} from 'node:child_process';
+import {pbkdf2} from 'node:crypto';
 import {join} from 'node:path';
-import {installRuntime, useRuntime} from '../src/runtime/install.mjs';
+import {download, installRuntime, useRuntime} from '../src/runtime/install.mjs';
 import {parsePin, resolveRuntime} from '../src/runtime/manifest.mjs';
 import {verifyCodeSignatures} from '../src/runtime/checks.mjs';
 import {scratch, zipFixture, fixturePin, acceptSignatures, XATTR_NAME} from './fixtures/runtime-fixture.mjs';
@@ -279,6 +280,21 @@ test('download mode fetches the pinned URL, verifies it like a local archive, an
   await assert.rejects(install(fresh, {archivePath: undefined, fetch: async () => new Response(tampered)}), expectCode('archive_hash_mismatch'));
   assert.equal(pointer(fresh.home), null);
   assert.deepEqual(stagingLeftovers(fresh.home), []);
+});
+
+// #441: a body that overruns the pin can fail the download before its file has finished opening (the open waits on
+// libuv's thread pool, the body does not); were the failure returned then, the file would appear afterwards, in a
+// staging directory its caller is already removing (ENOTEMPTY in place of the typed error). Here the pool is held busy
+// so the open is surely late: the failure still returns only once the file is opened and closed.
+test('a failed download returns only once its file is closed: nothing lands in staging after the typed error', async () => {
+  const s = scratch();
+  try {
+    const dest = join(s.dir, 'archive.zip');
+    const busy = Promise.all(Array.from({length: 16}, () => new Promise(resolve => pbkdf2('x', 'y', 100_000, 32, 'sha256', resolve))));
+    await assert.rejects(download({url: 'https://example.invalid/a.zip', length: 10}, dest, async () => new Response(Buffer.alloc(11))), expectCode('archive_length_mismatch'));
+    assert.ok(existsSync(dest), 'the file was still opening when the failure returned');
+    await busy;
+  } finally { s.cleanup(); }
 });
 
 test('install on an unsupported host refuses before touching the network or the home', async () => {

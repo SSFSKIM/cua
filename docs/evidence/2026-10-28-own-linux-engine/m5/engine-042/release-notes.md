@@ -83,7 +83,21 @@ idle: arm64's on `:0` and a private display):
   handlers busy 150 and 400 ms and press handlers busy 150 and 400 ms landed 24 of 24 (takes at 154 to 423 ms after
   the press), and dragstart handlers busy 500 and 600 ms lost 6 of 6 each, every one a plain ok (task 117). This
   replaces 0.4.1's 250 ms limit.
-- <wave 3's own measurements: the smoke check's V5 and D1 rows, and arm64 twice the load's ≥ 200 in-front samples
-  (ruling 898.3)>
+- **The rule as built, smoke-checked (task 117, fd050739, x64 private displays, development runs, never counted).** V5
+  at idle (20 blocks): the cancel cell 60/60 with no hold and no notice; in front 60/60 landed, no false ok, no notice,
+  the canary's draggable presses busy on 40 of 40 held. V5 at twice the load (20 blocks): the cancel cell 4 honest
+  notices and no false alarm; in front 60/60 landed, no false ok, 0 notices, 43 of 57 held presses busy. D1's Chrome
+  selection at idle: 454.1 ms warm (the newest vendor build 322.4), judge PASS. No plain drag released before B: the
+  early release is gone (ruling 900).
+- **The canary and the regression cells, sandboxed (steps K1 to K3, development runs, x64 private displays under the
+  gate's ballast).** K1 (Chrome 156.0.8078.73) and K2 (Chrome 158.0.8127.36): in front 9/9 landed, Chrome identified
+  on 9/9 held presses through the accessibility bus with its executable not visible, busy on 9/9; the select control
+  fast at B on 9/9. K3: dragstart-150 10/10 and dragstart-400 10/10 landed inside B, the hold fixed, Chrome identified.
+- **The identification inside the real sandbox (ruling 899, `wave3/identify/`).** With the engine inside the pinned
+  codex-linux-sandbox, on Chrome 156 and on 158: Chrome identified by its class, role and accessible application
+  ("executable not visible here"); the Electron fixture not (its class); a stub with Chrome's class and role whose
+  accessible application is "Stub Browser" not. The lookup cost 1.1 to 1.7 ms when the bus was asked.
+- <arm64 twice the load's ≥ 200 in-front samples on the rule as built (ruling 898.3): not run in wave 3, whose arm VM
+  use was limited to reading Chrome 158>
 
 No pin change and no `MIN_ENGINE_VERSION` bump come with this release; both follow the design session's check.

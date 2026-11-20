@@ -17,6 +17,10 @@ import { createInterface } from 'node:readline';
 import { pathToFileURL } from 'node:url';
 
 const [checkout, engineBin, chrome, electron, outFile] = process.argv.slice(2);
+if (![checkout, engineBin, chrome, electron, outFile].every(Boolean)) {
+  console.error('usage: identify-sandboxed.mjs <checkout> <engine> <chrome command> <electron binary> <out.jsonl>');
+  process.exit(2);
+}
 const { sandboxedEngine } = await import(pathToFileURL(join(checkout, 'scripts/linux-engine-diff/engine-sandbox.mjs')).href);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const scratch = mkdtempSync(join(tmpdir(), 'cua171-identify-'));

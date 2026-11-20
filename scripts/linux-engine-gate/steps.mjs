@@ -36,7 +36,7 @@ export const GATE_SCENES = [...M3_SCENES, ...M4_SCENES];
 /** gedit's operations split across two steps: the newest build's failing clipboard_write alone is about 15 minutes (T2). */
 const GEDIT_TEXT = ['type_text', 'type_text_selection', 'type_text_dedicated', 'clipboard_read', 'clipboard_write', 'clipboard_release', 'caret_placed'];
 
-const verdict = (name, minutes, scenes, what, { only = {}, ballast = false } = {}) => ({ name, kind: 'verdict', display: ':0', load: 'idle', minutes, scenes, only, ballast, what });
+const verdict = (name, minutes, scenes, what, { only = {}, ballast = false, holdCanary = false } = {}) => ({ name, kind: 'verdict', display: ':0', load: 'idle', minutes, scenes, only, ballast, what, ...(holdCanary ? { holdCanary } : {}) });
 const experiment = (name, display, load, minutes, args, what, { pilot = null } = {}) => ({ name, kind: 'experiment', display, load, minutes, args, what, pilot });
 const LOAD2 = ['--load-factor', '2'];
 /**
@@ -83,7 +83,8 @@ const CANARY_OPS = ['chrome_dnd_short_in_front_shared', 'chrome_select_nudged_sh
  * The canary's criterion for its draggable cell by architecture (the design session's ruling 930; device.mjs
  * `holdCanary`): on x64 Chrome 158 often takes its drag before a ping has waited 20 ms (task 119: 0 and then 1 of 9 held
  * presses reached it, every drop landing), so there a press is judged against the run's own plain control; arm64, where
- * the extension is meant to fire, keeps the engine's own 20 ms. Any other architecture keeps it too.
+ * the extension is meant to fire, keeps the engine's own 20 ms. Any other architecture keeps it too. V5's own canary cells
+ * take the same criterion (ruling 932: its verdict step is marked `holdCanary`).
  */
 export const CANARY_CRITERION = { x64: 'relative', arm64: 'absolute' };
 const canary = (name, chrome, what) => ({ name, kind: 'canary', display: 'private', load: 'idle', minutes: 15, scenes: ['device-chrome-dnd'], only: { 'device-chrome-dnd': CANARY_OPS }, ballast: true, chrome, what, pilot: (args) => args });
@@ -94,7 +95,7 @@ export const STEPS = [
   verdict('V2', 39, ['desktop', 'gedit', 'chrome', 'over-budget'], "the desktop's operations (run here alone), gedit's reads and input, Chrome's, the over-budget page", { only: { gedit: SCENE_OPS.gedit.filter((op) => !GEDIT_TEXT.includes(op)) } }),
   verdict('V3', 35, ['chrome-input', 'retention', 'minimized', 'minimized-xterm', 'minimized-recorder'], "Chrome's input page, retention, the minimized scenes (T4)"),
   verdict('V4', 34, ['chrome-textarea', 'chrome-address-bar', 'gnome-text-editor', 'paste-target', 'device-gtk4', 'device-xterm', 'device-qt'], 'the browsers\' and GTK 4\'s text with the paste cases; the GTK 4, xterm and Qt device cases'),
-  verdict('V5', 38, ['device-firefox', 'device-chrome', 'device-chrome-dnd', 'identity', 'identity-gtk3', 'identity-gtk4', 'identity-kate'], "Firefox's device cases (T19), Chrome's drags and drops with #263's and #264's cases, under the gate's Chrome ballast; identity (T5), its Chrome windows after device-chrome-dnd", { ballast: true }),
+  verdict('V5', 38, ['device-firefox', 'device-chrome', 'device-chrome-dnd', 'identity', 'identity-gtk3', 'identity-gtk4', 'identity-kate'], "Firefox's device cases (T19), Chrome's drags and drops with #263's and #264's cases, under the gate's Chrome ballast; identity (T5), its Chrome windows after device-chrome-dnd", { ballast: true, holdCanary: true }),
   experiment('Z0', ':0', 'idle', 25, drag('firefox,writer', ['--ops', 'dnd,select']), "on :0: T11's end rest landing Firefox's plain drop, and Writer's drag cell unprimed (T16)"),
 
   // ---- private, idle
@@ -219,7 +220,9 @@ export function stepArgs(step, { paths, gate, pilot = null, engineStats = false,
       ...(pilot ? ['--pilot'] : []),
       ...stats,
       // the canary's engines as the service runs them (engine-sandbox.mjs)
-      ...(step.kind === 'canary' ? ['--engine-sandbox', '--hold-canary', CANARY_CRITERION[arch] ?? 'absolute'] : []),
+      ...(step.kind === 'canary' ? ['--engine-sandbox'] : []),
+      // the hold canary's criterion by architecture: K1's and K2's (ruling 930), and V5's in-step canary (ruling 932)
+      ...(step.kind === 'canary' || step.holdCanary ? ['--hold-canary', CANARY_CRITERION[arch] ?? 'absolute'] : []),
     ];
   }
   if (step.kind === 'facade') return ['--vendor-js', paths.vendorJs, '--engine', paths.candidate, ...step.args];

@@ -78,7 +78,7 @@ test('each verdict step is a valid run of its own: its own run name, explicit op
     assert.equal(parsed.dev, undefined, 'a gate verdict run is a gate: no --dev');
     assert.equal(parsed.cua, PATHS.candidate);
     names.add(parsed.run);
-    assert.equal(stepArgs(s, { paths: PATHS, gate: false }).at(-1), '--dev', 'a development run says so');
+    assert.ok(stepArgs(s, { paths: PATHS, gate: false }).includes('--dev'), 'a development run says so');
   }
   assert.equal(names.size, verdicts.length);
 });

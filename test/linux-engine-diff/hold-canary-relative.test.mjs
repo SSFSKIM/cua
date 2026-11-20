@@ -104,9 +104,19 @@ test('the criterion is a step parameter the gate sets by architecture: relative 
     // an architecture with no ruling keeps the engine's own threshold
     assert.equal(flag(stepArgs(stepNamed(name), { paths: PATHS, gate: 'pinned', arch: 'riscv64' })), 'absolute', name);
   }
-  for (const step of STEPS.filter((s) => !['K1', 'K2'].includes(s.name))) {
+  for (const step of STEPS.filter((s) => !['K1', 'K2', 'V5'].includes(s.name))) {
     for (const arch of ['x64', 'arm64']) assert.equal(flag(stepArgs(step, { paths: PATHS, gate: 'pinned', arch })), null, `${step.name} on ${arch}`);
   }
+});
+
+test("V5's in-step canary takes the same criterion by architecture (ruling 932): relative on x64, absolute on arm64", () => {
+  const flag = (args) => (args.includes('--hold-canary') ? args[args.indexOf('--hold-canary') + 1] : null);
+  const v5 = stepNamed('V5');
+  assert.equal(flag(stepArgs(v5, { paths: PATHS, gate: 'pinned', arch: 'x64' })), 'relative');
+  assert.equal(flag(stepArgs(v5, { paths: PATHS, gate: 'pinned', arch: 'arm64' })), 'absolute');
+  assert.equal(flag(stepArgs(v5, { paths: PATHS, gate: 'pinned', arch: 'riscv64' })), 'absolute');
+  // and only the criterion: V5 keeps its engines unsandboxed, as it ran
+  assert.ok(!stepArgs(v5, { paths: PATHS, gate: 'pinned', arch: 'x64' }).includes('--engine-sandbox'));
 });
 
 test('the harness takes --hold-canary relative or absolute, absolute by default', () => {

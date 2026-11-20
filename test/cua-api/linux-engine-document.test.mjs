@@ -44,6 +44,10 @@ const QUOTED = [
   // An Electron drop whose application did not answer the engine's syncs before the release (#171 M5, ruling 827).
   ['did not answer in time for its drop to be confirmed', [LINUX_DOCUMENT], 'native/linux-engine/src/dnd.rs',
     'an unconfirmed drop: your drag into {app} began a drag and drop, and {app} did not answer in time for its drop to be confirmed, so the drop may not have landed as the drag answered'],
+  // The notice a Chrome or Chromium drag answers when its hold, extended for a busy browser, saw no drag and drop start
+  // (#171 M5, rulings 897 and 900).
+  ['the page may have started a drag that did not complete', [LINUX_DOCUMENT, README], 'native/linux-engine/src/adaptive_hold.rs',
+    'pub const NOTICE: &str = "the page may have started a drag that did not complete";'],
   ['Accessibility tree truncated: at least <n> elements not shown (<reason>)', [LINUX_DOCUMENT, README], 'src/cua-api/bind-linux-app.mjs',
     'Accessibility tree truncated: at least ${total} elements not shown (${reason})'],
   ['clipboard update timed out', [README], 'native/linux-engine/src/copy.rs', 'CopyRoute::Text => "clipboard update timed out",'],
@@ -98,10 +102,19 @@ test('the documents name the hold of a drag from a Chromium window and its late-
   assert.ok(bound, 'dnd.rs names TAKE_HOLD_AFTER_PRESS in milliseconds');
   const watch = /pub const LATE_TAKE_WATCH: Duration = Duration::from_millis\((\d+)\);/.exec(dnd);
   assert.ok(watch, 'dnd.rs names LATE_TAKE_WATCH in milliseconds');
+  // the extended hold for a busy Chrome or Chromium browser (adaptive_hold.rs; rulings 897 and 900)
+  const extended = /pub const EXTENDED_HOLD_AFTER_PRESS: Duration = Duration::from_millis\((\d+)\);/.exec(file('native/linux-engine/src/adaptive_hold.rs'));
+  assert.ok(extended, 'adaptive_hold.rs names EXTENDED_HOLD_AFTER_PRESS in milliseconds');
   for (const [document, phrase] of [
     [LINUX_DOCUMENT, `the mouse button is not released until ${bound[1]} ms after its press, however short the path`],
+    [LINUX_DOCUMENT, `So a short drag there takes about ${bound[1]} ms.`],
+    [LINUX_DOCUMENT, `If Chrome or Chromium is still busy at ${bound[1]} ms`],
+    [LINUX_DOCUMENT, `the button stays down for up to ${extended[1]} ms after the press`],
+    [LINUX_DOCUMENT, `takes longer than about ${bound[1]} ms to start its drag can still lose it`],
     [LINUX_DOCUMENT, `while it still watches, for ${watch[1]} ms after the release`],
     [README, `keeps its button down until ${bound[1]} ms after its press, however short its path`],
+    [README, `up to ${extended[1]} ms after the press`],
+    [README, `takes longer than about ${bound[1]} ms to start its drag can still lose it`],
     [README, `within ${watch[1]} ms after the drag's release`],
   ]) assert.ok(flat(file(document)).includes(flat(phrase)), `${document} does not say: ${phrase}`);
 });

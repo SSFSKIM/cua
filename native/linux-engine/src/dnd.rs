@@ -176,9 +176,9 @@ pub fn step_due(taken: Instant, after_take: Duration, done: usize, left: usize) 
 /// while the drag answered as a plain one. A take during the hold ends it at once, and the drag goes on as any take's
 /// does: dropped after its floor, or cancelled before the drop on a guarded drag. A drag whose path already lasts this
 /// long waits for nothing; a shorter one that never takes (a text selection, a range) pays the rest of it, with no
-/// motion past [`REFRESH_AFTER_PRESS`]. A take after it still misses, and the drag answers as a plain one. The design
-/// session picks the value from task 114's measurements; 450 ms for now (`--drag-dnd-hold-ms` sets another, measurement
-/// only).
+/// motion past [`REFRESH_AFTER_PRESS`]. A take after it still misses, and the drag answers as a plain one, unless
+/// its source is an identified browser still slow at B (`adaptive_hold.rs`: the hold extends to 650 ms). 450 ms by
+/// the design session's ruling 892 on task 114's measurements (`--drag-dnd-hold-ms` sets another, measurement only).
 pub const TAKE_HOLD_AFTER_PRESS: Duration = Duration::from_millis(450);
 
 /// How long after the press the background route's hold refreshes the path's end ([`wait_for_take_refreshing`]), a

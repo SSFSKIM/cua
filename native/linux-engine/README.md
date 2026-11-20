@@ -365,7 +365,7 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   on the foreground and desktop routes, whose press goes through XTEST, the client under the path's start, the window
   named only when the start lies inside it, since the review of task 115, P2) is a Chromium-family window is not released
   before B after its press, unless its source takes `XdndSelection` first (`dnd.rs` `TAKE_HOLD_AFTER_PRESS`, B, 450 ms
-  for now; the design session's ruling 888.1, which sets B from task 114's measurements; `--drag-dnd-hold-ms`
+  by the design session's ruling 892 on task 114's measurements, ruling 888.1's rule; `--drag-dnd-hold-ms`
   overrides it). That is the hold on every route: on a drag the engine lets drop, from the path's end (0.4.1's hold,
   then 250 ms), where a take then, or one seen at the path's last look, gets the same floor; on a guarded drag, before
   its release dwell, where a take then is cancelled before the drop at once, Escape and then the release, and the drag
@@ -381,9 +381,32 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   path's end, so the hold ran), `waited_ms` (0 when it did not), `taken` (a take by the release), `take_after_press_ms`
   (null without one), `keepalives` and `refreshes` (0 and null on a guarded drag), and `pings`; the bound and the take's
   time count from the button's press itself. A handle's record carries its `hold` (`bound_ms`, `start_after_press_ms`,
-  `held`, `waited_ms`, `taken`, `take_after_press_ms`, `pings`; null when none was due). While a hold waits with no
-  take, the source is sent `_NET_WM_PING` (measurement only, ruling 888.2: it changes no answer, and the design session
-  decides from it whether a slow answer marks the drags the hold cannot catch; `hold_ping.rs`): one ping at a time, the
+  `held`, `waited_ms`, `taken`, `take_after_press_ms`, `pings`; null when none was due).
+
+  **The extended hold** (`adaptive_hold.rs`, `browser.rs`; the design session's rulings 897-900, task 116's
+  measurements, task 117). A source positively identified as a Chrome or Chromium browser is one whose `WM_CLASS` is
+  `Google-chrome`, `Chromium` or `Chromium-browser`, whose `WM_WINDOW_ROLE` is `browser` or `pop-up` (Electron's say
+  `browser-window`), whose `WM_CLIENT_MACHINE` is this host, and whose `_NET_WM_PID`'s accessible application on the
+  AT-SPI bus is named `Google Chrome` or `Chromium`; where `/proc` can see that process (not in service, where the
+  engine runs in the sandbox's own PID namespace), its executable must be `chrome`, `chromium` or `chromium-browser`
+  too. The bus lookup is asked before the press, only once the window's own marks hold, within 200 ms
+  (`IDENTIFY_BOUND`); a lookup that fails or runs out leaves the source unidentified, and a definite answer is kept per
+  window and pid (`--stats` `browser_identity`: `ms`, `cached`, `bus`). For such a source, at B every ping answered
+  under 20 ms (`FAST_PING`) releases as above; a ping that came back slower, one unanswered, still being sent or failed,
+  or no ping answered at all, extends the hold to 650 ms after the press (`EXTENDED_HOLD_AFTER_PRESS`), waiting for the
+  take, which goes the way any take goes. With no take by then the drag answers ok with the notice `the page may have
+  started a drag that did not complete` (`NOTICE`), on the drag's own answer (the reply's `notice`, which the service
+  hands the facade as the drag's `{notice}`, and the facade writes as the cell's output), and at a handle's `end`.
+  Chrome's browser answers the pings in a few milliseconds while nothing drags, and slowly while it starts a drag its
+  renderer began (task 116: 91 ms and more at twice the load). Electron's stays fast while its drag starts, so it,
+  every unidentified source, and any source while the pings are off, keep the fixed hold to B, with no extension and no
+  notice. Nothing releases before B: a page whose dragstart or press handler is busy starts its drag late while its
+  browser, idle, answers every ping fast, so a release on fast pings loses that drag (task 117: 24 of 24 such drags on
+  Chrome 156 answered a plain ok under an early release at 150 ms; B lands them). `--stats` `hold.adaptive`: `way`
+  (`fixed`, `extended`, `noticed`), `why`, and `source` (`identified` with `by`, or `why` not).
+
+  While a hold waits with no take, the source is sent `_NET_WM_PING` (`hold_ping.rs`; for an identified browser they
+  decide the extension above, and otherwise they change no answer): one ping at a time, the
   next 25 ms after the last once that was answered, none (the first included) in the hold's last 25 ms, so none after
   it. The sampler is best effort and never holds the drag up: it sets up and pings on a thread and an X connection of
   its own, and the hold only starts it and takes what it recorded when it ends, with no X request and no wait (the
@@ -398,8 +421,13 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   what was left of the hold, `disabled` (`--drag-dnd-hold-ping off`, measurement only), or earlier holds' ping
   connections still being set up. Known limits:
   - an accept later than 350 ms after the take still misses, unseen (the latest seen was 275 ms), and so does a take
-    later than B after the press: the drag answers success (task 113 measured renderers starting their drag up to
-    about 580 ms after the press on arm64 at twice the gate's load);
+    later than B after the press whose browser answered fast by then, or later than 650 ms on an extended hold: the
+    drag answers success (task 113 measured renderers starting their drag up to about 580 ms after the press on arm64
+    at twice the gate's load). This replaces M4's 250 ms limit. A page whose own code takes longer than about 450 ms
+    to start its drag can still lose it while the drag answers ok with no notice, since its browser stays idle and
+    fast: on Chrome 156 at idle on x64 (task 117, drop-signals' cells, 6 drags each), dragstart handlers busy 150 and
+    400 ms and press handlers busy 150 and 400 ms landed 24 of 24 (takes at 154 to 423 ms), and dragstart handlers
+    busy 500 and 600 ms lost 6 of 6 each, every one a plain ok;
   - a speed gap: a Chromium drag that never takes (a text selection, a range, a short thumb drag) holds its button
     until B after the press, paying B less its path's time; a drag whose path lasts B or more pays nothing. Through
     0.4.1 B was 250 ms: a 40 px Chrome selection went from about 134 ms to about 254, a 40 px range from about 130 to
@@ -546,8 +574,8 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
 | `--drag-step-ms`, `--drag-step-us` | by family | the wait after each drag sample, fixed for every target (the vendor's is 1 ms; measurement only) |
 | `--drag-press-dwell-ms`, `--drag-release-dwell-ms` | by family | the wait after a drag's press and before its release, fixed for every target (measurement only); any drag flag sets the others to 0 |
 | `--drag-dnd-after-take-ms` | 350 | how long after a Chromium drag source's take a drag the engine lets drop is released at the soonest, its remaining steps spaced to it (measurement only; 0 turns the spacing off) |
-| `--drag-dnd-hold-ms` | 450 | B, how long after the press a drag whose source is a Chromium-family window keeps its button down for its source's take when none has come, on a drag the engine lets drop, a guarded drag and a `drag_handle`'s end (measurement only: the design session's runs of other bounds on one build; 0 turns the hold off; `--stats` `hold`) |
-| `--drag-dnd-hold-ping` | on | `off`: a hold with no take sends its source no `_NET_WM_PING`, and `hold.pings` is `{asked: false, why: "disabled"}` (measurement only: the design session's ruling 892, the control that the ping sampler leaves the release where it was) |
+| `--drag-dnd-hold-ms` | 450 | B, how long after the press a drag whose source is a Chromium-family window keeps its button down for its source's take when none has come, on a drag the engine lets drop, a guarded drag and a `drag_handle`'s end (measurement only: the design session's runs of other bounds on one build; 0 turns the hold off; an identified browser's slow pings extend it to the later of B and 650 ms; `--stats` `hold`) |
+| `--drag-dnd-hold-ping` | on | `off`: a hold with no take sends its source no `_NET_WM_PING`, `hold.pings` is `{asked: false, why: "disabled"}`, and no hold extends: an identified browser keeps the fixed B too (measurement only: the design session's ruling 892, the control that the ping sampler leaves the release where it was) |
 | `--dnd-cancel-after-release` | off | a drag and drop the engine cancels is cancelled only after the release, too late (measurement only: the harness's check of the honest answer) |
 | `--dnd-defer-take` | off | a drag and drop that begins during a watched drag is left unseen until after the release, so the after-release watch finds it and the next request carries the notice (measurement only: Acceptance 8's late-take case) |
 | `--drag-ignore-cover` | off | a drag into a family listed `unless_path_unobscured` (Chromium) goes out on the background route along a covered path (measurement only: T13's covered paths) |

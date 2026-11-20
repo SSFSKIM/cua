@@ -1,9 +1,9 @@
-//! The ping predictor (the design session's ruling 888.2; measurement only, it changes no answer). While a Chromium
-//! source's hold for its take runs with no take (`dnd::TAKE_HOLD_AFTER_PRESS`), the engine asks the source's window a
-//! `_NET_WM_PING`, as the Electron settle does (`drop_settle.rs`, `drop_cursor.rs`), and records how long each took to
+//! The ping predictor (the design session's ruling 888.2; since rulings 897-900 it decides an identified browser's
+//! extended hold, `adaptive_hold.rs`). While a Chromium source's hold for its take runs with no take
+//! (`dnd::TAKE_HOLD_AFTER_PRESS`), the engine asks the source's window a `_NET_WM_PING`, as the Electron settle does (`drop_settle.rs`, `drop_cursor.rs`), and records how long each took to
 //! come back, per drag, in `--stats` (`hold.pings`). Chromium answers on its browser's UI thread, in the order of its
-//! events, so a slow answer says the browser was behind; the design session decides from these whether a slow ping
-//! marks the drags whose late drag and drop the hold cannot catch.
+//! events, so a slow answer says the browser was behind: for a source `browser.rs` identifies, a slow or missing
+//! answer at B extends the hold (`adaptive_hold.rs`); for any other source the pings change no answer.
 //!
 //! The sampler is best effort and never holds the drag up: it runs on a thread of its own, on an X connection of its
 //! own (the answers come to the root, read with its `SubstructureNotify`), and everything it does on X (the connect, the

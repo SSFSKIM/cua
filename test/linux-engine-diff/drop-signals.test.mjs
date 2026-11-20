@@ -311,7 +311,10 @@ test("the plan's cells: every drop path 40 px into the zone, the covers placed o
   const { ZONE_CELLS } = await import('../../scripts/linux-engine-diff/drop-signals-judge.mjs');
   const zone = { x0: 560, x1: 960, y0: 100, y1: 620 };
   const inZone = ([x, y]) => x >= zone.x0 && x < zone.x1 && y >= zone.y0 && y < zone.y1;
-  for (const cell of ZONE_CELLS.filter((c) => c !== 'plain-long')) {
+  // the delayed dragstarts past B (task 117) sit left of the column, a longer path into the zone: the handler's delay, not
+  // the path, times their drops
+  for (const cell of ['dragstart-500', 'dragstart-600']) assert.ok(!inZone(CELLS[cell](0)[0]) && inZone(CELLS[cell](0)[1]), cell);
+  for (const cell of ZONE_CELLS.filter((c) => !['plain-long', 'dragstart-500', 'dragstart-600'].includes(c))) {
     const path = CELLS[cell](0);
     assert.equal(path.length, 2, cell);
     assert.equal(Math.hypot(path[1][0] - path[0][0], path[1][1] - path[0][1]), 40, `${cell}: a short drop`);

@@ -624,7 +624,7 @@ impl Engine {
                     ping,
                     browser: handle.browser.clone(),
                 };
-                let mut end = take_hold.end(pressed_at, pacing.held_rest, pings.as_ref());
+                let mut end = take_hold.end(pressed_at, pings.as_ref());
                 held_take =
                     crate::dnd::wait_for_take(|| watch.before_release(holding).is_ok_and(|held| held.taken), &mut end);
                 if held_take {

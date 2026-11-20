@@ -364,20 +364,19 @@ impl TakeHold {
         }
     }
 
-    /// When the hold of a drag pressed at `pressed_at` ends with no take: adaptive, reading `pings`, for an identified
-    /// browser whose pings are on; else fixed at the bound. `rest` is the family's rest before a release.
+    /// When the hold of a drag pressed at `pressed_at` ends with no take: at the bound, extended past it on slow `pings`
+    /// for an identified browser whose pings are on (`adaptive_hold.rs`); else fixed at the bound.
     pub(super) fn end<'a>(
         &self,
         pressed_at: Instant,
-        rest: Duration,
         pings: Option<&'a HoldPing>,
-    ) -> Hold<impl FnMut(Instant, Instant) -> Reading + 'a> {
-        let read = move |by, now| match pings {
-            Some(pings) => pings.reading(by, now),
+    ) -> Hold<impl FnMut(Instant) -> Reading + 'a> {
+        let read = move |now| match pings {
+            Some(pings) => pings.reading(now),
             None => Reading::Slow("the hold ran no sampler".into()),
         };
         match (&self.browser, self.ping) {
-            (Ok(by), true) => Hold::adaptive(pressed_at, self.bound, rest, read, by.clone()),
+            (Ok(by), true) => Hold::extensible(pressed_at, self.bound, read, by.clone()),
             (_, false) => Hold::fixed(pressed_at, self.bound, PINGS_OFF.into(), self.browser.clone(), read),
             (Err(_), true) => Hold::fixed(pressed_at, self.bound, UNIDENTIFIED.into(), self.browser.clone(), read),
         }
@@ -557,7 +556,7 @@ fn drag_along(
                 let since = Instant::now();
                 let deadline = pressed_at + take_hold.bound;
                 let pings = (since < deadline).then(|| take_hold.pings(deadline));
-                let mut end = take_hold.end(pressed_at, pacing.rest, pings.as_ref());
+                let mut end = take_hold.end(pressed_at, pings.as_ref());
                 // the hold's last motion: the path's end, then each refresh on the background route
                 let mut last_motion = since;
                 let looked = if matches!(route, Route::Window(_)) {
@@ -689,7 +688,7 @@ fn drag_along(
             let mut adaptive_record = Value::Null;
             let taken = match held {
                 true => {
-                    let mut end = take_hold.end(pressed_at, pacing.rest, pings.as_ref());
+                    let mut end = take_hold.end(pressed_at, pings.as_ref());
                     let taken = crate::dnd::wait_for_take(|| guard.watch.started(x), &mut end);
                     if taken {
                         end.taken(Instant::now());

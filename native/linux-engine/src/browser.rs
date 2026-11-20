@@ -1,5 +1,5 @@
-//! Positive identification of a Chrome or Chromium browser window, the only source the adaptive hold applies to
-//! (`adaptive_hold.rs`; the design session's rulings 897, 898 and 899). Electron and the applications that embed
+//! Positive identification of a Chrome or Chromium browser window, the only source whose hold for its take extends
+//! on slow pings (`adaptive_hold.rs`; the design session's rulings 897-900). Electron and the applications that embed
 //! Chromium are Chromium's engine too, and their windows can carry a class like a browser's, but their browser process
 //! answers `_NET_WM_PING` fast while a drag starts (task 116), so the ping says nothing about them: they keep the fixed
 //! hold. A window is identified only when everything below holds; anything unread, absent or different leaves it

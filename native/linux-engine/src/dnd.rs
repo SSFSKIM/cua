@@ -194,7 +194,7 @@ pub const KEEPALIVE: Duration = Duration::from_millis(12);
 const TAKE_POLL: Duration = Duration::from_millis(2);
 
 /// The hold: whether the source's take was seen (through `started`, looked at once at least) before the hold's `end`
-/// came: an instant, or the adaptive hold's end (`adaptive_hold::Hold`).
+/// came: an instant, or the extensible hold's end (`adaptive_hold::Hold`).
 pub fn wait_for_take(mut started: impl FnMut() -> bool, mut end: impl HoldEnd) -> bool {
     loop {
         if started() {
@@ -204,7 +204,7 @@ pub fn wait_for_take(mut started: impl FnMut() -> bool, mut end: impl HoldEnd) -
         if end.ends(now) {
             return false;
         }
-        std::thread::sleep(TAKE_POLL.min(end.next(now).saturating_duration_since(now)));
+        std::thread::sleep(TAKE_POLL.min(end.next().saturating_duration_since(now)));
     }
 }
 
@@ -219,14 +219,13 @@ pub fn wait_for_take(mut started: impl FnMut() -> bool, mut end: impl HoldEnd) -
 /// browser reads once it catches up carries the path's end. `stop` is a browser's rest before the bound, so the point
 /// the pointer ends on sits in a frame of its own before the release (`families.rs` `BROWSER_REST`). `look(motion)`
 /// places the motion, when there is one, then answers whether the take was seen. Answers the take and how many motions
-/// went out; a motion that fails ends the hold with its error. An adaptive hold whose early release is still possible
-/// (`HoldEnd::still_from`) has the refreshes stop sooner, on the last sample, so the pointer rests there before that
-/// release, and go on once it is ruled out.
+/// went out; a motion that fails ends the hold with its error. The hold ends at `end`: an instant, or the extensible hold
+/// (`adaptive_hold::Hold`).
 pub fn wait_for_take_refreshing(
     mut look: impl FnMut(Option<(i16, i16)>) -> anyhow::Result<bool>,
     before: (i16, i16),
     last: (i16, i16),
-    refresh_stop: Instant,
+    stop: Instant,
     mut end: impl HoldEnd,
 ) -> anyhow::Result<(bool, u32)> {
     let mut sent = 0;
@@ -234,7 +233,6 @@ pub fn wait_for_take_refreshing(
     let mut next = Instant::now() + KEEPALIVE;
     loop {
         let now = Instant::now();
-        let stop = end.still_from().map_or(refresh_stop, |still| refresh_stop.min(still));
         let motion = if now < stop && now >= next {
             next = now + KEEPALIVE;
             on_last = !on_last;
@@ -253,7 +251,7 @@ pub fn wait_for_take_refreshing(
         if end.ends(now) {
             return Ok((false, sent));
         }
-        std::thread::sleep(TAKE_POLL.min(end.next(now).saturating_duration_since(now)));
+        std::thread::sleep(TAKE_POLL.min(end.next().saturating_duration_since(now)));
     }
 }
 

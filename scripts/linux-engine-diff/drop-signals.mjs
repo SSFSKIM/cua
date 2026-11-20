@@ -71,6 +71,9 @@ export const CELLS = {
   stall: () => [[530, 128], [570, 128]],
   'dragstart-400': () => [[530, 358], [570, 358]],
   'press-400': () => [[530, 404], [570, 404]],
+  // the delayed dragstarts past B (task 117, ruling 900): placed left of the column, a longer path into the zone
+  'dragstart-500': () => [[465, 468], [570, 468]],
+  'dragstart-600': () => [[465, 518], [570, 518]],
   link: () => [[530, 450], [570, 450]],
   image: () => [[530, 496], [570, 496]],
   // a draggable canvas: a drop source under the role the canvas rule predicts never takes (the review of task 68)
@@ -378,6 +381,9 @@ export const PLANS = {
   't17-moved': [['cua:desktop', 'moved', 30]],
   // 60 cold first-handle drags into the hung sink, each a fresh engine's first: the design session's count for #365 (2026-11-12)
   't17-slow-cold': Array.from({ length: 60 }, () => ['cua:handle', 'slow', 1]),
+  // the extended hold's limit (task 117, ruling 900.2): delayed dragstarts and late presses up to and past B, 6 drags each
+  'hold-limit': ['dragstart-150', 'press-150', 'dragstart-400', 'press-400', 'dragstart-500', 'dragstart-600'].map((cell) => ['cua', cell, 6]),
+  'hold-canary-pilot': ['plain', 'nozone', 'link', 'image', 'seltext', 'select', 'range'].map((cell) => ['cua', cell, 10]),
   pilot: [
     ...['plain', 'nozone', 'nested', 'slider', 'dragstart-150', 'press-150', 'dragstart-400', 'press-400', 'freeze-250', 'link', 'image', 'seltext', 'select', 'range', 'scroller', 'canvas', 'inert'].map((cell) => ['cua', cell, 2]),
     ['cua:accept', 'plain', 5],

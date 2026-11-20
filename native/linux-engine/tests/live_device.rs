@@ -1930,17 +1930,17 @@ fn adaptive_constant(name: &str) -> Duration {
 /// The notice an extended hold with no take answers beside its ok, word for word (ruling 897).
 const HOLD_NOTICE: &str = "the page may have started a drag that did not complete";
 
-/// The adaptive hold (rulings 897-899), through the real drag path, from a fake source identified as Chrome (its class,
+/// The extensible hold (rulings 897-900), through the real drag path, from a fake source identified as Chrome (its class,
 /// its role "browser", this host, and a process whose accessible application is "Google Chrome" running `chrome`). On
 /// the background route in front, the guarded drag and the foreground route:
-/// - pings answered at once and no take: released at press + 150, a plain drag, no notice (`early`);
+/// - pings answered at once and no take: released at B (450), a plain drag, no notice (`fixed`): no release before B;
 /// - pings answered 40 ms late and no take: held to press + 650, then a plain drag's ok carrying the notice (`noticed`);
 /// - pings answered late and a take at +520, past B: the take is held for and goes the way any take goes (`extended`):
 ///   dropped in front, cancelled with the drag-and-drop sentence when guarded;
 /// - a window that lists no `_NET_WM_PING`: no answer is no evidence, so it is held to 650 with the notice;
 /// - pings off (`--drag-dnd-hold-ping off`): the fixed 450, no notice.
 #[test]
-fn an_identified_chrome_source_releases_early_on_fast_pings_and_holds_slow_ones_to_650_with_the_notice() {
+fn an_identified_chrome_source_releases_at_b_on_fast_pings_and_holds_slow_ones_to_650_with_the_notice() {
     support::fresh_display();
     let Some(app) = BrowserApp::start("Google Chrome", "chrome") else {
         return;
@@ -1950,7 +1950,6 @@ fn an_identified_chrome_source_releases_early_on_fast_pings_and_holds_slow_ones_
         pid: app.pid,
     });
     let bound = hold_bound();
-    let early = adaptive_constant("EARLY_RELEASE_AFTER_PRESS");
     let extended = adaptive_constant("EXTENDED_HOLD_AFTER_PRESS");
     let within = |whole: Duration, at: Duration, what: &str| {
         assert!(
@@ -1959,15 +1958,20 @@ fn an_identified_chrome_source_releases_early_on_fast_pings_and_holds_slow_ones_
         );
     };
     for route in [HoldRoute::InFront, HoldRoute::Guarded, HoldRoute::Dedicated] {
-        // fast: released early
+        // fast: released at B, never sooner
         let drag = identified_drag(chrome, route, OnRelease::NeverTakes, Some(Duration::ZERO), &[], false).unwrap();
         let what = format!("{route:?}, fast pings");
         let adaptive = &drag.stats["hold"]["adaptive"];
         assert_eq!(drag.answer, Ok(Value::Null), "{what}");
         assert_eq!(drag.notice, None, "{what}");
-        assert_eq!(adaptive["way"], json!("early"), "{what}: {adaptive}");
+        assert_eq!(adaptive["way"], json!("fixed"), "{what}: {adaptive}");
+        assert_eq!(
+            adaptive["why"],
+            json!("every ping answered by B came back under 20 ms"),
+            "{what}: {adaptive}"
+        );
         assert_eq!(adaptive["source"]["identified"], json!(true), "{what}: {adaptive}");
-        within(drag.press_to_release, early, &what);
+        within(drag.press_to_release, bound, &what);
         // slow: held to 650, the notice on the ok
         let drag = identified_drag(
             chrome,
@@ -2042,8 +2046,8 @@ fn an_identified_chrome_source_releases_early_on_fast_pings_and_holds_slow_ones_
     within(drag.press_to_release, bound, "pings off");
 }
 
-/// Only a source positively identified as a Chrome or Chromium browser gets the adaptive hold (ruling 899). Each of
-/// these, whose pings come back fast or slow, keeps the fixed hold to B, with no early release, no extension and no
+/// Only a source positively identified as a Chrome or Chromium browser gets the extensible hold (ruling 899). Each of
+/// these, whose pings come back fast or slow, keeps the fixed hold to B, with no extension and no
 /// notice, and its record says why: an Electron-like window (role "browser-window"), a process whose executable is not a
 /// browser's, an accessible application named for another app, and a window with no role, host or pid at all.
 #[test]
@@ -2111,16 +2115,16 @@ fn a_source_not_positively_identified_as_a_browser_keeps_the_fixed_hold() {
     }
 }
 
-/// A `drag_handle`'s `end` from an identified Chrome source holds the same adaptive way: released at 150 on fast pings;
+/// A `drag_handle`'s `end` from an identified Chrome source holds the same way: released at B on fast pings;
 /// on slow ones held to 650, its ok carrying the notice.
 #[test]
-fn an_identified_chrome_handle_s_end_holds_adaptively_and_carries_the_notice() {
+fn an_identified_chrome_handle_s_end_extends_on_slow_pings_and_carries_the_notice() {
     support::fresh_display();
     let Some(app) = BrowserApp::start("Google Chrome", "chrome") else {
         return;
     };
     for (pings, way, at) in [
-        (Duration::ZERO, "early", adaptive_constant("EARLY_RELEASE_AFTER_PRESS")),
+        (Duration::ZERO, "fixed", hold_bound()),
         (
             Duration::from_millis(40),
             "noticed",
@@ -2163,7 +2167,8 @@ fn an_identified_chrome_handle_s_end_holds_adaptively_and_carries_the_notice() {
 }
 
 /// In service the engine runs in a PID namespace of its own, where the browser's process cannot be seen (ruling 899):
-/// there the accessible application's name identifies Chrome, and one named for another app still does not.
+/// there the accessible application's name identifies Chrome, so its slow pings extend the hold, and one named for another
+/// app still does not: its hold stays fixed at B.
 #[test]
 fn in_its_own_pid_namespace_the_engine_identifies_chrome_by_its_accessible_application() {
     support::fresh_display();
@@ -2178,14 +2183,15 @@ fn in_its_own_pid_namespace_the_engine_identifies_chrome_by_its_accessible_appli
         identity(chrome.pid),
         HoldRoute::InFront,
         OnRelease::NeverTakes,
-        Some(Duration::ZERO),
+        Some(Duration::from_millis(40)),
         &[],
         true,
     ) else {
         return;
     };
     let adaptive = &drag.stats["hold"]["adaptive"];
-    assert_eq!(adaptive["way"], json!("early"), "{adaptive}");
+    assert_eq!(adaptive["way"], json!("noticed"), "{adaptive}");
+    assert_eq!(adaptive["source"]["identified"], json!(true), "{adaptive}");
     assert!(
         adaptive["source"]["by"]
             .as_str()
@@ -2196,7 +2202,7 @@ fn in_its_own_pid_namespace_the_engine_identifies_chrome_by_its_accessible_appli
         identity(other.pid),
         HoldRoute::InFront,
         OnRelease::NeverTakes,
-        Some(Duration::ZERO),
+        Some(Duration::from_millis(40)),
         &[],
         true,
     )

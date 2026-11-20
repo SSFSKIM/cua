@@ -113,7 +113,9 @@ test('the sminos name: `who --session <id>` from the session\'s directory, kept 
   const project = scratch();
   const {config} = fakeSminos('printf "%s\\n" "$*" > "$PWD/asked"; echo "Sminos-Session: cursor235#b93055dd (cua on macbook)"');
   const env = {CLAUDE_CONFIG_DIR: config, CLAUDE_CODE_SESSION_ID: SESSION, CLAUDE_PROJECT_DIR: project, PATH: '/usr/bin:/bin'};
-  assert.equal(await sminosName({env}), 'cursor235');
+  // The CLI's answer is the subject here, not the lookup's 500 ms bound (the next test's): a loaded runner can take longer
+  // to start a shell, so this lookup is bounded for liveness only.
+  assert.equal(await sminosName({env, timeoutMs: 20_000}), 'cursor235');
   assert.equal(readFileSync(join(project, 'asked'), 'utf8').trim(), `who --session ${SESSION}`);
   let asked = 0;
   assert.equal(await sminosName({env, run: async () => { asked++; return ''; }}), 'cursor235', 'kept for the session');

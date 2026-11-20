@@ -25,7 +25,7 @@
 
 import { GATE_BALLAST } from './dnd.mjs';
 import { locate } from './drag.mjs';
-import { FREEZE_ENDS, HOLD_REGRESSION_CELLS, LATE_FREEZE_ENDS, PREFREEZE_ENDS, T14_SOURCE, acceptTable, afterReleaseTable, blockPlan, coverTable, dragOutcome, lateTakeTable, neverTakeTable, parseDropStatus, signalsOf } from './drop-signals-judge.mjs';
+import { FREEZE_ENDS, HOLD_REGRESSION_CELLS, LATE_FREEZE_ENDS, LATE_FREEZE_FINE, PREFREEZE_ENDS, T14_SOURCE, acceptTable, afterReleaseTable, blockPlan, coverTable, dragOutcome, lateTakeTable, neverTakeTable, parseDropStatus, signalsOf } from './drop-signals-judge.mjs';
 import { Engine } from './engine.mjs';
 import { openFamily } from './families.mjs';
 import { preorder } from './normalize.mjs';
@@ -60,7 +60,7 @@ export const CELLS = {
   // the press-150 source with the run's browser process stopped from 60 ms after the request to the cell's number
   // (`freezeOf`): the renderer's drag start, and the release, wait for the browser (#264's late take, by a lagging
   // browser)
-  ...Object.fromEntries([...FREEZE_ENDS, ...LATE_FREEZE_ENDS].map((to) => [`freeze-${to}`, () => [[530, 312], [570, 312]]])),
+  ...Object.fromEntries([...FREEZE_ENDS, ...LATE_FREEZE_ENDS, ...LATE_FREEZE_FINE].map((to) => [`freeze-${to}`, () => [[530, 312], [570, 312]]])),
   // V5's lost motion (2026-11-13): the plain short drop with the run's browser stopped from the drag's send to 150 ms,
   // so the press and every step queue unread; and the same press with a path over the zone that goes on long after the
   // stop ends, so the steps sent once the browser reads again come one by one (`freezeOf`)
@@ -325,6 +325,7 @@ export const PLANS = {
   freeze: FREEZE_ENDS.map((to) => ['cua', `freeze-${to}`, 10]),
   // the same sweep against 0.4.2's hold (task 121): where the thaw falls against a release at press + 450 or + 650
   'freeze-042': LATE_FREEZE_ENDS.map((to) => ['cua', `freeze-${to}`, 10]),
+  'freeze-042-fine': [...LATE_FREEZE_FINE, 650].sort((a, b) => a - b).map((to) => ['cua', `freeze-${to}`, 10]),
   // V5's lost motion: a browser that reads the X stream only after the drag's steps are all queued (Chromium's core
   // MotionNotify coalescing), against the plain drop and a path that outlasts the stop
   'v5-loss': [['cua', 'plain', 30], ['cua', 'prefreeze-150', 30], ['cua', 'prefreeze-linger-150', 30]],
@@ -346,7 +347,13 @@ export const PLANS = {
   // #264's real late takes (the design session's ruling 4, 2026-11-10): task 68's reproduction, the run's own browser
   // stopped from 60 ms after the request to 250 ms (its late takes came there), on a drag the engine lets drop; run on
   // the engine before T14 too, its failing first
-  't14-late': [['cua', 'freeze-250', 40]],
+  // Since 0.4.2 (the design session's ruling 931, task 121's sweeps): its hold takes a thaw before the release inside,
+  // and Chrome refuses one after it, so the plan runs three freeze bands, judged by drop-signals-judge.mjs `LATE_BANDS`
+  // (inside, the edge whose late takes are counted, past)
+  't14-late': [['cua', 'freeze-600', 10], ...['freeze-646', 'freeze-648', 'freeze-650', 'freeze-652'].map((cell) => ['cua', cell, 5]), ['cua', 'freeze-700', 10]],
+  // the knife-edge ride-along (ruling 931.5), a development plan no gate step runs: the thaw at the release, where 0.4.2's
+  // late takes come, judged by T14's late-take contract (at least one, each reported)
+  't14-late-edge': [['cua', 'freeze-650', 40]],
   // 0.4.1's failed settle end to end (task 101's review; `--family electron`): plain drops whose Electron browser stops
   // across their end, so the settle's pings go unanswered; a development plan, never judged by the gate
   't101-stall': [['cua', 'stall', 10]],
@@ -636,6 +643,8 @@ async function oneDrag(ctx, { lane, spec, cell, i, engine, before, cold }) {
     cold,
     ok: value.response.ok === true,
     error: value.response.ok ? undefined : String(value.response.error).slice(0, 300),
+    // the notice the drag's own reply carried: 0.4.2's hold notice on a Chrome drag with no take (ruling 931's bands)
+    reply_notice: value.response.notice ?? null,
     ms: Math.round(value.ms * 10) / 10,
     route: stats.route,
     hold: stats.hold,

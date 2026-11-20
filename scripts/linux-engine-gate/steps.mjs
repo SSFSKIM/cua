@@ -17,7 +17,8 @@
 // the service as shipped (T8, T16's 25 ms drag); the facade suites on the candidate (repl-parity, native-baseline with
 // compare --engines, linux-native, linux-device-mode: suites.sh, M4's facade.sh made one runner); T7 revised's acceptance on the shipped engine (the focus-timer
 // experiment's shipped lane and its stops); T7b's engine stop through cua serve on the installed engine (ES, from M5); the device cases of #263 and #264 (V5's device-chrome-dnd, and the real late
-// takes of `t14-late`, which the device scene cannot produce, judged by drop-signals-judge.mjs `chromeDropVerdict`);
+// takes' path through `t14-late`'s freeze bands, which the device scene cannot produce, judged by drop-signals-judge.mjs
+// `chromeDropVerdict` and its `LATE_BANDS`, ruling 931);
 // T19's predicates manifest, Firefox's drag and drop included (P6); T17's Electron cells (`t17-fix3`, judged by
 // `electronDropVerdict`). Apart in the same sitting, at twice the load
 // (16 stress-ng workers on 8 cores, `--load-factor 2`): thumbs and ranges at 40 a side, the Chromium and Gecko kinds,
@@ -136,7 +137,7 @@ export const STEPS = [
   experiment('P5', 'private', 'idle', 20, [...predicates('click,scroll,move,select,dnd'), '--plan', 'leave'], "T19's leave cases: the pointer moved out during the request", { pilot: asIs }),
   experiment('H1', 'private', 'idle', 22, signals('electron', 't17-fix3'), "T17's Electron cells: plain drags and handles, the controls, the four releases off the window"),
   experiment('H2', 'private', 'gate-windows', 25, signals('electron', 't17-fix3', ['--ballast', 'gate']), "T17's Electron cells at the gate's window load"),
-  experiment('C1', 'private', 'idle', 4, signals('chrome', 't14-late'), "#264's real late takes (T14), which the gate's device scene cannot produce"),
+  experiment('C1', 'private', 'idle', 4, signals('chrome', 't14-late'), "#264's late-take path (T14) in three freeze bands: landed inside the hold, the edge's late takes counted, refused with the hold notice past it (ruling 931)"),
   canary('K1', 'installed', "the hold canary on the gate's Chrome: a draggable press reads slow, a plain drag fast, Chrome identified, the engine sandboxed as in service"),
   canary('K2', 'current-stable', 'the hold canary on the current stable Chrome (extracted, not installed)'),
   experiment('K3', 'private', 'idle', 6, signals('chrome', 'hold-regression', ['--engine-sandbox']), "the hold's regression cells: drops whose page starts them 150 and 400 ms late land inside B, the engine sandboxed (ruling 900)"),
@@ -153,7 +154,7 @@ export const STEPS = [
   experiment('L3e', 'own', 'load2', 38, settle('xterm,gtk3,qt5,qt6,gtk4', LOAD2), "the settle's observations: xterm, GTK 3, Qt 5 and 6, GTK 4"),
   experiment('L4a', 'private', 'load2', 25, signals('electron', 't17-fix3', LOAD2), "T17's Electron cells at twice the load"),
   experiment('L4b', 'private', 'load2', 25, signals('chrome', 't14', LOAD2), "the accept signal's false releases (the measurement lane, T14's 300 long drops and the controls)"),
-  experiment('L4c', 'private', 'load2', 4, signals('chrome', 't14-late', LOAD2), 'the late-take rate: real late takes at twice the load'),
+  experiment('L4c', 'private', 'load2', 4, signals('chrome', 't14-late', LOAD2), "the same freeze bands at twice the load (ruling 931)"),
   experiment('L5', 'private', 'load2', 4, ['--experiment', 'engine-readiness', '--vendor', '{vendor}', '--family', 'gnome-text-editor', ...LOAD2], "GTK 4's covered first captures judged by content (T9's shortened cap)"),
   experiment('F3a', 'own', 'load2', 30, [...FOCUS_KEYS, ...LOAD2], 'T7 revised at twice the load: burst, A-B-A, key then paste'),
   experiment('F3b', 'own', 'load2', 15, [...FOCUS_CLICKS, ...LOAD2], 'T7 revised at twice the load: click then paste, a click into another field then paste'),

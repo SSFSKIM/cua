@@ -13,6 +13,8 @@ export const FREEZE_ENDS = [230, 240, 250, 255, 260, 280, 330];
  * and an Electron or unidentified source's at press + 450, so the sweep brackets both.
  */
 export const LATE_FREEZE_ENDS = [440, 450, 600, 620, 630, 640, 645, 650, 655, 660, 670, 700];
+/** The same, millisecond by millisecond around 650, where the idle sweep's late takes came (task 121). */
+export const LATE_FREEZE_FINE = [646, 647, 648, 649, 651, 652, 653, 654];
 /**
  * The ends of V5's lost-motion stops, ms after the drag's send (`prefreeze-<to>`): on the guarded route, inside the
  * path's end rest (30, 40) and past its release; on the held route, before the hold's refresh stops (150, 200), after
@@ -81,7 +83,7 @@ export function parseDropStatus(texts) {
  * The page cells (drop-signals.mjs `CELLS`): a cell either drags from a source (`src`, a drop counted when `zone`) or
  * is a kind with an effect of its own.
  */
-export const CELL_SOURCE = { 'freeze-230': 'press-150', 'freeze-240': 'press-150', 'freeze-250': 'press-150', 'freeze-255': 'press-150', 'freeze-260': 'press-150', 'freeze-280': 'press-150', 'freeze-330': 'press-150', ...Object.fromEntries(LATE_FREEZE_ENDS.map((to) => [`freeze-${to}`, 'press-150'])), plain: 'plain', nozone: 'plain', nested: 'nested', 'nested-late': 'nested-late', slider: 'slider', 'dragstart-150': 'dragstart-150', 'press-150': 'press-150', 'dragstart-400': 'dragstart-400', 'press-400': 'press-400', 'dragstart-500': 'dragstart-500', 'dragstart-600': 'dragstart-600', link: 'link', image: 'image', seltext: 'seltext', 'plain-long': 'plain', 'canvas-drag': 'canvas-drag', move: 'move' };
+export const CELL_SOURCE = { 'freeze-230': 'press-150', 'freeze-240': 'press-150', 'freeze-250': 'press-150', 'freeze-255': 'press-150', 'freeze-260': 'press-150', 'freeze-280': 'press-150', 'freeze-330': 'press-150', ...Object.fromEntries([...LATE_FREEZE_ENDS, ...LATE_FREEZE_FINE].map((to) => [`freeze-${to}`, 'press-150'])), plain: 'plain', nozone: 'plain', nested: 'nested', 'nested-late': 'nested-late', slider: 'slider', 'dragstart-150': 'dragstart-150', 'press-150': 'press-150', 'dragstart-400': 'dragstart-400', 'press-400': 'press-400', 'dragstart-500': 'dragstart-500', 'dragstart-600': 'dragstart-600', link: 'link', image: 'image', seltext: 'seltext', 'plain-long': 'plain', 'canvas-drag': 'canvas-drag', move: 'move' };
 /** T14's and T17's cells' sources (drop-signals.mjs `CELLS`): each a drop the zone never counts. */
 export const T14_SOURCE = { stall: 'plain', left: 'plain', 'inzone-out': 'inzone', 'long-left': 'plain', root: 'plain', xterm: 'plain', other: 'plain', slow: 'plain', moved: 'plain', 'prefreeze-linger-150': 'plain', ...Object.fromEntries(PREFREEZE_ENDS.map((to) => [`prefreeze-${to}`, 'plain'])) };
 
@@ -117,7 +119,7 @@ export function stampedDragend(r) {
   return ownDragend(r);
 }
 
-export const ZONE_CELLS = ['freeze-230', 'freeze-240', 'freeze-250', 'freeze-255', 'freeze-260', 'freeze-280', 'freeze-330', ...LATE_FREEZE_ENDS.map((to) => `freeze-${to}`), 'plain', 'nested', 'nested-late', 'slider', 'dragstart-150', 'press-150', 'dragstart-400', 'press-400', 'dragstart-500', 'dragstart-600', 'link', 'image', 'plain-long', 'canvas-drag', 'move'];
+export const ZONE_CELLS = ['freeze-230', 'freeze-240', 'freeze-250', 'freeze-255', 'freeze-260', 'freeze-280', 'freeze-330', ...[...LATE_FREEZE_ENDS, ...LATE_FREEZE_FINE].map((to) => `freeze-${to}`), 'plain', 'nested', 'nested-late', 'slider', 'dragstart-150', 'press-150', 'dragstart-400', 'press-400', 'dragstart-500', 'dragstart-600', 'link', 'image', 'plain-long', 'canvas-drag', 'move'];
 
 /** The range runs' end values: even runs drag up to about 10, odd runs back to 0 (drop-signals.mjs `CELLS.range`). */
 export const RANGE_END = (i) => (i % 2 === 0 ? 10 : 0);
@@ -737,13 +739,54 @@ export function electronDropVerdict(rows, { specs = [], share = 0.05, slowMode =
  * long control on the engine as it ships (`t14-floor`, `t14-long`, `t14-long-gate`). T13's surveys measure and judge
  * nothing, and no gate step runs them.
  */
-export const CHROME_JUDGED_PLANS = ['t14', 't14-floor', 't14-late', 't14-long', 't14-long-gate'];
+export const CHROME_JUDGED_PLANS = ['t14', 't14-floor', 't14-late', 't14-late-edge', 't14-long', 't14-long-gate'];
 
 /** Whether a drop-signals run's rows are T14's Chrome cells (Chrome is the experiment's default family), judged by `chromeDropVerdict`. */
 export const judgedChromePlan = (args) => (args.families?.[0] ?? 'chrome') === 'chrome' && CHROME_JUDGED_PLANS.includes(args.plan);
 
-/** The Chrome plans whose sitting exists to make real late takes (#264): one with none proves nothing. */
-const LATE_TAKE_PLANS = ['t14-late'];
+/**
+ * The Chrome plans whose sitting exists to make real late takes (#264): one with none proves nothing. Since 0.4.2 that is
+ * the knife-edge ride-along alone (`t14-late-edge`, a development plan no gate step runs; ruling 931.5).
+ */
+const LATE_TAKE_PLANS = ['t14-late-edge'];
+
+/**
+ * What 0.4.2's hold answers beside the ok of a drag whose identified Chrome source read slow and never took by the
+ * extended hold's end (cua-engine `adaptive_hold::NOTICE`; premise.mjs `HOLD_NOTICE`), word for word.
+ */
+export const HOLD_NOTICE = 'the page may have started a drag that did not complete';
+
+/**
+ * C1's and L4c's freeze bands (`t14-late`; the design session's ruling 931, from task 121's sweeps on the pinned 0.4.2,
+ * x64, Chrome 156, the browser stopped from 60 ms after the send). 0.4.2 holds a frozen, identified Chrome's drag to
+ * press + 650, so a thaw inside the hold lets the take come there and the drop land; a thaw past the release finds the
+ * button up, Chrome refuses the drag, and the reply carries the hold notice; a late take came only from a thaw within
+ * a few ms of the release (idle 649-653, twice the load 640-660, most at 646-649). Each band with an outcome expected
+ * needs `min` of it per series, or it is unexercised:
+ * - inside (freeze-600): every drag landed in the sweeps, 30 of 30 at freeze-600 to -630 at idle and 30 of 30 at twice
+ *   the load (and 60 of 60 from 620 to 648 at idle, bar one late take);
+ * - edge: the late takes, counted and each judged in full, never required (idle 18 in 90 from 646 to 654, twice the load
+ *   10 in 41 from 646 to 650);
+ * - past (freeze-700): the hold notice with no drop and nothing sent after it, 10 of 10 at idle and 10 of 10 at twice
+ *   the load (670 and 700, 40 of 40).
+ * A minimum of 7 of 10 leaves a band whose outcome held 30 of 30 or more a chance under 0.2% of failing by chance.
+ */
+export const LATE_BANDS = [
+  { band: 'inside', cells: ['freeze-600'], expects: 'landed', min: 7 },
+  { band: 'edge', cells: ['freeze-646', 'freeze-648', 'freeze-650', 'freeze-652'], expects: null, min: 0 },
+  { band: 'past', cells: ['freeze-700'], expects: 'refused', min: 7 },
+];
+/** The plans judged by bands, and theirs. */
+const BANDED_PLANS = { 't14-late': LATE_BANDS };
+const BAND_OUTCOMES = {
+  landed: { what: 'landed', holds: (r) => r.outcome?.landed === true },
+  // Chrome refused the drag: the reply's hold notice, no drop and no take, and nothing sent after it (no notice on the
+  // read, the next acting request run, no Escape of the engine's or the harness's)
+  refused: {
+    what: 'answered the hold notice with no drop and nothing sent after it',
+    holds: (r) => r.ok === true && r.reply_notice === HOLD_NOTICE && r.outcome?.landed !== true && r.signals?.late_take !== true && !r.notice && r.next?.ok === true && !r.next?.late_dnd && r.escaped !== true,
+  },
+};
 
 /** T14's controls: a drag and drop that leaves the zone (the accepted-then-left path, the press inside it, the long path). */
 const CONTROL_CELLS = ['left', 'inzone-out', 'long-left'];
@@ -763,15 +806,17 @@ const lateReported = (r) => honest(r) === 'late' && r.next?.late_dnd?.escaped ==
  * the refusal of the next acting request with it and its Escape; a late drag and drop reported on a drag with no late
  * take (a normal drop leaves no late notice and sends no Escape); a false ok (answered ok on a drop that did not land,
  * with nothing honestly pending); a long drop that did not land, whatever its answer; T14's pending contract broken (a
- * notice without its refusal, or a refusal without its notice); a missing case; and, for a plan that exists to make them
- * (`t14-late`), a sitting with no late take. On the measurement lane (`cua:accept`) a drag released at the accept that
+ * notice without its refusal, or a refusal without its notice); a missing case; for a plan that exists to make them
+ * (`t14-late-edge`), a sitting with no late take; and for a banded plan (`bands`, `t14-late`'s `LATE_BANDS` by
+ * default; ruling 931) a plain ok on a drag its page started that did not land, and a band short of its own outcome's
+ * minimum (unexercised), its hold notices on drops that landed counted as false alarms. On the measurement lane (`cua:accept`) a drag released at the accept that
  * did not land is a false release, counted with its answer: that lane's early release does not ship, and its ok is
  * the stated limit of Chrome's confirmation (it confirms Chrome's drop, not the page's); its drags that fell to the
  * floor are judged as shipped. Findings, counted: the late takes; landed drops answered unconfirmed (T14's share against
  * 5%); the false releases; drags whose drag and drop the harness had to end with its own Escape. Answers
  * `{md, failed, findings, counts}`.
  */
-export function chromeDropVerdict(rows, { specs = [], plan = null, capped = false, share = 0.05 } = {}) {
+export function chromeDropVerdict(rows, { specs = [], plan = null, capped = false, share = 0.05, bands = BANDED_PLANS[plan] ?? null } = {}) {
   const failed = [];
   const findings = [];
   const cells = planCells(rows, specs, failed);
@@ -782,7 +827,7 @@ export function chromeDropVerdict(rows, { specs = [], plan = null, capped = fals
     '| lane | cell | drags | never took | landed | ok, nothing pending | unconfirmed | late takes | reported | false ok | false releases (answered ok) | harness Escapes |',
     '|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|',
   ];
-  const total = { drags: 0, untaken: 0, landed: 0, late: 0, late_reported: 0, late_notice_without_take: 0, false_ok: 0, missing_landing: 0, pending_broken: 0, unconfirmed_landed: 0, false_releases: 0, false_release_ok: 0, harness_escapes: 0 };
+  const total = { drags: 0, untaken: 0, landed: 0, late: 0, late_reported: 0, late_notice_without_take: 0, false_ok: 0, missing_landing: 0, pending_broken: 0, unconfirmed_landed: 0, false_releases: 0, false_release_ok: 0, harness_escapes: 0, ...(bands ? { false_alarms: 0 } : {}) };
   for (const c of cells.values()) {
     const name = `${c.lane} ${c.cell}`;
     const list = c.rows;
@@ -804,6 +849,11 @@ export function chromeDropVerdict(rows, { specs = [], plan = null, capped = fals
     if (unreported.length) failed.push(`${name}: a late take not reported (its notice on the read, the next acting request refused with it, its Escape) on ${unreported.length} of ${list.length} (${which(unreported)})`);
     if (lateWithoutTake.length) failed.push(`${name}: a late drag and drop reported, and its Escape sent, on a drag with no late take, on ${lateWithoutTake.length} of ${list.length} (${which(lateWithoutTake)})`);
     if (falseOk.length) failed.push(`${name}: answered ok with no drop and nothing pending on ${falseOk.length} of ${list.length} (${which(falseOk)})`);
+    // a banded plan judges every answer (ruling 931): a drag its page started that Chrome refused must say so (0.4.2's
+    // hold notice); a plain ok there is a false ok, though no take came. A notice on a drop that landed is a false alarm
+    const plainRefused = bands ? list.filter((r) => r.ok === true && honest(r) === null && r.reply_notice !== HOLD_NOTICE && r.outcome?.started === true && !landed(r) && !tookOf(r)) : [];
+    if (plainRefused.length) failed.push(`${name}: answered ok with no notice and nothing pending on a drag its page started that did not land, on ${plainRefused.length} of ${list.length} (${which(plainRefused)})`);
+    if (bands) total.false_alarms += count((r) => r.reply_notice === HOLD_NOTICE && landed(r));
     if (missing.length) failed.push(`${name}: the drop did not land on ${missing.length} of ${list.length}, in a cell that expects it (${which(missing)})`);
     total.pending_broken += pendingBreaks(list, name, failed);
     total.drags += list.length;
@@ -812,7 +862,7 @@ export function chromeDropVerdict(rows, { specs = [], plan = null, capped = fals
     total.late += late.length;
     total.late_reported += late.length - unreported.length;
     total.late_notice_without_take += lateWithoutTake.length;
-    total.false_ok += falseOk.length;
+    total.false_ok += falseOk.length + plainRefused.length;
     total.missing_landing += missing.length;
     total.unconfirmed_landed += landedUnconfirmed.length;
     total.false_releases += falseReleases.length;
@@ -824,6 +874,20 @@ export function chromeDropVerdict(rows, { specs = [], plan = null, capped = fals
   if (LATE_TAKE_PLANS.includes(plan) && total.late === 0) {
     if (capped) findings.push('no late take came in a sitting capped by --trials: #264 unjudged here');
     else failed.push('no late take came: the sitting proves nothing of #264');
+  }
+  // each band's own outcome, a minimum of it per series, or the band is unexercised (ruling 931.2)
+  if (bands) {
+    total.bands = {};
+    for (const b of bands) {
+      const list = rows.filter((r) => b.cells.includes(r.cell));
+      const outcome = b.expects ? BAND_OUTCOMES[b.expects] : null;
+      const expected = outcome ? list.filter(outcome.holds).length : null;
+      total.bands[b.band] = { drags: list.length, expected, late: list.filter((r) => r.signals?.late_take === true).length };
+      if (outcome && expected < b.min) failed.push(`the ${b.band} band (${b.cells.join(', ')}): ${expected} of ${list.length} drags ${outcome.what}, fewer than its ${b.min}: the band is unexercised`);
+      if (!outcome && !total.bands[b.band].late) findings.push(`the ${b.band} band made no late take (not required, ruling 931)`);
+    }
+    md.push('', '| band | cells | drags | its outcome | minimum | late takes |', '|---|---|---:|---:|---:|---:|', ...bands.map((b) => `| ${b.band} | ${b.cells.join(', ')} | ${total.bands[b.band].drags} | ${b.expects ? `${total.bands[b.band].expected} ${BAND_OUTCOMES[b.expects].what}` : '–'} | ${b.min || '–'} | ${total.bands[b.band].late} |`));
+    if (total.false_alarms) findings.push(`${total.false_alarms} hold notice${total.false_alarms === 1 ? '' : 's'} on a drop that landed (a false alarm, counted, ruling 898.2)`);
   }
   if (total.late) findings.push(`${total.late} late takes, ${total.late_reported} reported`);
   if (total.untaken) findings.push(`${total.untaken} drags whose drag and drop never took, answered as plain drags`);

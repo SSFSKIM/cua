@@ -1,0 +1,5 @@
+{"t": 16.405, "kind": "outside-peer-connection", "pids": [3351108], "comm": "chrome", "peer_path": "@e6c83", "peer_pids": [], "peer_comm": null, "peer_inode": "30617131"}
+{"t": 16.405, "kind": "stop-sent", "pid": 3349823, "why": "outside-peer-connection"}
+{"t": 16.974, "kind": "outside-peer-connection", "pids": [3350074, 3350072], "comm": "chrome", "peer_path": "@54684", "peer_pids": [], "peer_comm": null, "peer_inode": "30610522"}
+{"t": 16.974, "kind": "outside-peer-connection", "pids": [3350071], "comm": "chrome", "peer_path": "@000d6", "peer_pids": [], "peer_comm": null, "peer_inode": "30610520"}
+{"t": 16.974, "kind": "outside-peer-connection", "pids": [3350063], "comm": "chrome_crashpad", "peer_path": "@69cd9", "peer_pids": [], "peer_comm": null, "peer_inode": "30610514"}

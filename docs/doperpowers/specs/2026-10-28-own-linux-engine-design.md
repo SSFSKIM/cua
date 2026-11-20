@@ -2534,6 +2534,33 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
   Evidence: task-112, task-113 and task-114 reports (local); `m5/hold-042/` on `m5-hold-042` (4da5e197); the candidate `m5-engine-042` (3dd381ec, ci-gate GREEN 44621931235, `linux-engine.yml` publish=false 44621955893).
   Date/Author: 2026-11-19, the plan-executor (session linux171), on the design session's rulings.
 
+- Decision (2026-11-20, M5, linux-engine 0.4.2's hold made adaptive, on the design session's rulings 892, 893, 897 and 898; measured by tasks 114 and 116): the fixed hold of the previous entry becomes an adaptive hold for Chrome and Chromium sources. Electron and every other source keep the fixed B = 450.
+  - **B = 450 (892)** by 888.1's rule. p350 left arm64 at twice the load at 3/210 on the cancel cell's shape (1.4%), above the 1% cap. p600 would push Chrome's canvas past newest's speed. At B = 450:
+    - V5's two cells are 0 on both architectures at idle;
+    - the cancel cell's shape is 0/90 on arm64 at twice the load;
+    - canvas and dnd are unchanged.
+    - The cost at idle, warm, against newest: Chrome select, range and scroller ~452–454 ms (newest 312–322, scroller 258–263); Electron's ~453–457 ms; every D1 and D2 judge passes (task 116).
+  - **The ping (888.2) marks a press on a draggable Chrome source, not the tail.** Task 116 measured it on wave 2's head, 313167a9.
+    - During the hold, Chrome's browser answers `_NET_WM_PING` in 1–7 ms on plain drags (max 26.8 ms, arm64 at twice the load). That holds even for a no-take select drag in V5's own scene.
+    - A press on a draggable source reads ≥ 91 ms (x64) and ≥ 204 ms (arm64) when nothing takes. Any such press is slow by +69–85 ms after the press.
+    - Chrome 158 behaves as 156 does.
+    - **Electron's browser stays fast (1–6 ms) while its drag starts**, so the ping says nothing about an Electron source.
+    - Turning the sampler off (`--drag-dnd-hold-ping off`) moves no release beyond noise (892): x64 at twice the load, take in the hold, p50/p95 534/610 against 535/620 ms.
+  - **The adaptive hold (897, 898).** It applies only to a source positively identified as a Chrome or Chromium browser: WM_CLASS together with the process's executable. WM_CLASS alone isn't enough, because Electron and Chromium-embedding apps carry similar classes.
+    - **Early release:** at press + 150 ms, if every ping answered by then came back under T = 20 ms. Only positive evidence counts: an unanswered, in-flight, failed or unsent ping counts as slow, and so does a source that doesn't advertise `_NET_WM_PING`.
+    - **Extension:** if any ping was slow, the hold runs past B to press + 650 ms, waiting for the take.
+    - **Notice:** a slow drag with no take by then answers ok with the notice "the page may have started a drag that did not complete".
+    - Unidentified sources, Electron and Chromium-embedded apps keep the fixed B = 450, with no early release, no extension and no notice.
+    - **T = 20 is set from the gap (897.2).** At arm64 twice the load, plain drags reach 26.8 ms at most, and the slowest draggable press an early release would act on reads 40.9 ms. T sits 2× below the draggable side. On the plain side it errs toward the hold: 1/568 plain drags held to 450, which costs only latency.
+    - Measured misses at 150: x64 at twice the load 0/205, arm64 at twice the load 0/252, arm64 `:0` idle 0/14, Chrome 158 0/32.
+    - The extension drops all 4 arm64 twice-load tails (dragstarts at +458–496 ms). Presses where Chrome began no drag (7 on arm64, 5 on x64) pay ~200 ms and get the notice, which is honest there.
+  - **V5's judge (898.2).** An ok with that exact notice counts as honest only when the page shows no drop. A notice on a drag that did drop is a false alarm, counted and reported.
+  - **The canary (897.3, 898.4).** A gate cell asserts that a draggable press still reads slow and a plain drag fast, on Chrome 156 and 158. If a Chrome update changes the behaviour, the gate fails instead of quietly bringing the false oks back.
+  - **The exit (893).** On an orderly exit only, the late-take watch ends at stop + 650 ms, so a take it cancels keeps the validated 300 ms settle inside the 1 s backstop. In normal operation the watch is unchanged.
+  - **The residue (898.3).** After wave 3, arm64 at twice the load runs in-front for ≥ 200 more samples on the candidate. If that finds 0 false oks, 888.3 has no residue to take to the owner.
+  Evidence: task-114 and task-116 reports (local); `m5/hold-042/` (6287b763) and `m5/engine-042/measure/` (62cc7322); the candidate `m5-engine-042` at 313167a9 (ci-gate GREEN 44646308804).
+  Date/Author: 2026-11-20, the plan-executor (session linux171), on the design session's rulings.
+
 ## Outcomes & Retrospective
 
 Written per milestone as each lands; the whole-plan retrospective at finish. The execution record (tasks, reviews, friction) is `docs/doperpowers/specs/2026-10-28-own-linux-engine-report.md`.

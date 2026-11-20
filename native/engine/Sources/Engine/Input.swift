@@ -822,18 +822,15 @@ func hitTest(window: AXUIElement, pid: pid_t, at point: CGPoint) -> AXUIElement?
 }
 
 /// `hitTest(window:pid:at:)`'s answer with where it answered and its time on the engine's clock (`now`), another
-/// window's number read within what is left of `pointHitSignalDeadlineMs`: the SPI first, and only where it gives none
-/// the window's frame, each of its reads bounded by that time (`boundedMessagingTimeout`).
+/// window's number read before the deadline (`pointHitSignalDeadlineMs` from the hit-test's start, an absolute cutoff):
+/// the SPI first, and only where it gives none, the cutoff not yet passed, the window's frame, each read asked with what
+/// is left (`frame(of:before:now:)`).
 func hitTestOutcome(window: AXUIElement, pid: pid_t, at point: CGPoint, now: @escaping () -> Double) -> WindowHit<AXUIElement> {
   windowHit(application: prepare(AXUIElementCreateApplication(pid)), window: window, at: point, elementAt: elementAtPosition,
             role: { attribute($0, kAXRoleAttribute) as? String }, parent: { elementAttribute($0, kAXParentAttribute) },
             same: { CFEqual($0, $1) }, number: { other, leftMs in
-              windowNumber(of: other, pid: pid, readFrame: {
-                guard let timeout = boundedMessagingTimeout(leftMs: leftMs ?? pointHitSignalDeadlineMs) else { return nil }
-                AXUIElementSetMessagingTimeout(other, timeout)
-                defer { AXUIElementSetMessagingTimeout(other, elementMessagingTimeout) }
-                return frame(of: other)
-              })
+              let cutoff = now() + (leftMs ?? pointHitSignalDeadlineMs)
+              return windowNumber(of: other, pid: pid, readFrame: { frame(of: other, before: cutoff, now: now) })
             }, now: now)
 }
 

@@ -91,6 +91,29 @@ func bool(_ value: CFTypeRef?) -> Bool? {
   return nil
 }
 
+/// #452 (the review of 023a3bee..e98276d2): a window's frame read before `cutoff` on the engine's clock (`now`), its
+/// position and its size each asked with what is left then (`boundedMessagingTimeout`, whose floor a read may run past
+/// the cutoff by), and none asked once it has passed.
+func frame(of element: AXUIElement, before cutoff: Double, now: () -> Double) -> CGRect? {
+  boundedFrame(left: { cutoff - now() }, position: { timeout in
+    AXUIElementSetMessagingTimeout(element, timeout)
+    defer { AXUIElementSetMessagingTimeout(element, elementMessagingTimeout) }
+    return point(attribute(element, kAXPositionAttribute))
+  }, size: { timeout in
+    AXUIElementSetMessagingTimeout(element, timeout)
+    defer { AXUIElementSetMessagingTimeout(element, elementMessagingTimeout) }
+    return size(attribute(element, kAXSizeAttribute))
+  })
+}
+
+/// `frame(of:before:now:)` over its reads: each asked with the messaging timeout of the time `left()` answers just
+/// before it, none once that is spent.
+func boundedFrame(left: () -> Double, position: (Float) -> CGPoint?, size: (Float) -> CGSize?) -> CGRect? {
+  guard let first = boundedMessagingTimeout(leftMs: left()), let origin = position(first),
+        let second = boundedMessagingTimeout(leftMs: left()), let extent = size(second) else { return nil }
+  return CGRect(origin: origin, size: extent)
+}
+
 func frame(of element: AXUIElement) -> CGRect? {
   guard let origin = point(attribute(element, kAXPositionAttribute)), let extent = size(attribute(element, kAXSizeAttribute)) else { return nil }
   return CGRect(origin: origin, size: extent)

@@ -747,6 +747,35 @@ final class BackgroundPointerTests: XCTestCase {
     XCTAssertNil(resolvedWindowNumber(spi: { nil }, readFrame: { nil }, matching: { _ in 50 }), "no frame within the budget")
   }
 
+  /// The review of 023a3bee..e98276d2 (P2): another window's frame is read against an absolute cutoff, checked after the
+  /// SPI's attempt and before each read, each asked with what is left then: an SPI that ran past the cutoff leaves no read,
+  /// a position read that ran past it leaves the size unasked, and the size is asked with less than the position was.
+  func testAnotherWindowsFrameIsReadAgainstAnAbsoluteCutoff() {
+    var clock = 0.0
+    let cutoff = 400.0
+    var asked: [String] = []
+    var timeouts: [Float] = []
+    func read(positionTakes: Double) -> CGRect? {
+      boundedFrame(left: { cutoff - clock }, position: { timeout in
+        asked.append("position"); timeouts.append(timeout); clock += positionTakes; return .zero
+      }, size: { timeout in
+        asked.append("size"); timeouts.append(timeout); return CGSize(width: 10, height: 10)
+      })
+    }
+    // The SPI's attempt spends the budget: no frame read at all.
+    XCTAssertNil(resolvedWindowNumber(spi: { clock += 450; return nil }, readFrame: { read(positionTakes: 0) }, matching: { _ in 49 }))
+    XCTAssertEqual(asked, [])
+    // Within it: both asked, the size with what the position's read left.
+    clock = 0
+    XCTAssertEqual(resolvedWindowNumber(spi: { clock += 100; return nil }, readFrame: { read(positionTakes: 200) }, matching: { _ in 49 }), 49)
+    XCTAssertEqual(asked, ["position", "size"])
+    XCTAssertEqual(timeouts, [0.3, 0.1])
+    // A position read that runs past the cutoff: the size is never asked.
+    (clock, asked) = (0, [])
+    XCTAssertNil(read(positionTakes: 500))
+    XCTAssertEqual(asked, ["position"])
+  }
+
   /// The review of 023a3bee (P1): the guard's signal is the outcome of the hit-test whose hit it judges, #288's last
   /// re-hit when it ran: a popup the first saw and the re-hit no longer finds gives no refusal, a popup only the re-hit
   /// finds refuses, though both hits are none.

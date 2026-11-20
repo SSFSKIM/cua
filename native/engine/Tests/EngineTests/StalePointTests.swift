@@ -1429,6 +1429,27 @@ final class AppWindowOverPointTests: XCTestCase {
     }
   }
 
+  /// The review of 023a3bee..e98276d2 (P1): the hit's window must still cover the point in the list, its bounds holding
+  /// it and, the observed window listed, in front of it at any layer; one visible elsewhere, or behind the observed
+  /// window, keeps main's verdict. With the observed window unlisted, the bounds alone decide.
+  func testAHitWindowThatNoLongerCoversThePointKeepsMainsVerdict() {
+    let elsewhere = ListedWindow(number: 49, owner: app, layer: 0, bounds: CGRect(x: 2000, y: 0, width: 300, height: 200))
+    let behind = ListedWindow(number: 49, owner: app, layer: 0, bounds: popup.bounds)
+    let kept: [(String, [ListedWindow])] = [
+      ("its bounds off the point", [elsewhere, browser]),
+      ("behind the observed window", [browser, behind]),
+    ]
+    for (name, list) in kept {
+      let (verdict, treeRead) = guarded(list, place: .otherWindow(49))
+      XCTAssertEqual(verdict.reason, .noHit, name)
+      XCTAssertTrue(treeRead, name)
+    }
+    XCTAssertEqual(guarded([popup], place: .otherWindow(49)).verdict.reason, .appWindowOverPoint, "observed unlisted, over the point")
+    XCTAssertEqual(guarded([elsewhere], place: .otherWindow(49)).verdict.reason, .noHit, "observed unlisted, off the point")
+    let menuLayer = ListedWindow(number: 49, owner: app, layer: 101, bounds: popup.bounds)
+    XCTAssertEqual(guarded([menuLayer, browser], place: .otherWindow(49)).verdict.reason, .appWindowOverPoint, "in front at any layer")
+  }
+
   /// (b) TextEdit's colour-well popover: the hit is an AXPopover inside the document window's tree, and the list holds a
   /// window of the app's over the document at the point. Refused as `popover`, the list's window named; another app's
   /// window over both changes nothing.

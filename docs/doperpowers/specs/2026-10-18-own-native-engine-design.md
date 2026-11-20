@@ -7025,6 +7025,11 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   (4) The untimed element-only hit-test (scroll, the guard's re-hits) numbers no other window; the timed one asks the
   SPI first and reads the window's frame only where it gives none, each read bounded by what is left of the deadline.
   (5) An element route's record carries the first check's `hitMs`, as it carries `windowsMs`.
+  The re-review of 023a3bee..e98276d2 narrowed (1) and (4): the hit's window must still cover the point in the list
+  already read (`hitWindowCovers`: its bounds hold the point and, the observed window listed, it lies in front of it,
+  at any layer), else main's verdict; and its frame is read against an absolute cutoff (the deadline from the
+  hit-test's start), checked after the SPI's attempt and before the position and the size reads, each asked with what
+  is left then, neither once it has passed (`boundedFrame`; a read may overrun by the 50 ms messaging-timeout floor).
   Left as debt (`tech-debt-tracker.md`, the same as main): the element route's post-wait recheck runs the tree verdict
   alone, so a popup of the app's that opens during that wait is pressed under.
   Date/Author: 2026-11-20, cursor235's implementer for #452.

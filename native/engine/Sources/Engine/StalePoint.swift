@@ -1358,11 +1358,25 @@ func appWindowOverPoint(_ point: CGPoint, target: CGWindowID, pid: pid_t, list: 
   return nil
 }
 
+/// #452's check of the window the app's hit-test answered in (`number`), against the on-screen list (front to back): it
+/// covers the point when the list holds it, not transparent (alpha above 0; the review of 023a3bee: run 44822312301's
+/// window 44, of alpha 0, over the visible page), its bounds holding the point, and, when the list holds the observed
+/// window (`target`), in front of it, at any layer (the review of 023a3bee..e98276d2). A window the list does not hold
+/// is not on screen, or the list did not read: false, as for one that no longer covers the point, and main's verdict
+/// stands.
+func hitWindowCovers(_ number: CGWindowID, point: CGPoint, target: CGWindowID?, list: [ListedWindow]) -> Bool {
+  guard let index = list.firstIndex(where: { $0.number == number }) else { return false }
+  let window = list[index]
+  guard window.alpha > 0, window.bounds.contains(point) else { return false }
+  if let target, let observed = list.firstIndex(where: { $0.number == target }) { return index < observed }
+  return true
+}
+
 /// The guard at a coordinate click's or drag start's point (#296, #316, #452), all before anything is posted: rule W from
 /// the window list (`windows`, the on-screen list read at most once, only when there is a target window number: about
 /// 0.3 ms, p95 1 ms, with 30 windows on screen on the MacBook) where there is a recorded list to compare; then #452 from
-/// where the app's hit-test answered (`place`): in another window of the app's that the list holds on screen with alpha
-/// above 0, at any layer, it refuses (`axHit`); in a
+/// where the app's hit-test answered (`place`): in another window of the app's that covers the point in the list
+/// (`hitWindowCovers`), at any layer, it refuses (`axHit`); in a
 /// popover of the observed window, it refuses when the list holds a window of the app's over the observed one at the
 /// point (`popover`); and only when these keep the point, the tree's verdict (`tree`, `stalePointVerdict`). The
 /// qualification (kit `probe/337-measure` README ac805945) set the signals: the omnibox popup, Chrome's `<datalist>` popup
@@ -1386,10 +1400,8 @@ func guardedPointVerdict<Element>(at point: CGPoint, hit: Element?, place: Point
   }
   switch place {
   case .otherWindow(let number):
-    // Only a window the screenshot can have shown: listed on screen and not transparent (the review of 023a3bee, P1: a
-    // window of alpha 0 the hit answered in, with the visible page under it, is main's). One the list does not hold is
-    // not on screen, or the list did not read, and an unread number cannot be looked up: main's verdict either way.
-    if let number, let listed = list().first(where: { $0.number == number }), listed.alpha > 0 {
+    // Only a window the screenshot can have shown over the point (`hitWindowCovers`); otherwise main's verdict.
+    if let number, hitWindowCovers(number, point: point, target: target, list: list()) {
       return StalePointVerdict(reason: .appWindowOverPoint, hit: hit, point: point, overWindow: number, overBy: .axHit)
     }
   case .observedWindow(inPopover: true):

@@ -117,7 +117,7 @@ test("every drop-signals step is judged: T17's Electron cells by electronDropVer
     const parsed = parseArgs([...stepArgs(s, { paths: PATHS, gate: true }), '--out', '/o']);
     return [s.name, dropSignalsVerdict(parsed, [])?.judge ?? null];
   }));
-  assert.deepEqual(judges, { H1: 'electronDropVerdict', H2: 'electronDropVerdict', C1: 'chromeDropVerdict', L4a: 'electronDropVerdict', L4b: 'chromeDropVerdict', L4c: 'chromeDropVerdict' });
+  assert.deepEqual(judges, { H1: 'electronDropVerdict', H2: 'electronDropVerdict', C1: 'chromeDropVerdict', K3: 'holdRegressionVerdict', L4a: 'electronDropVerdict', L4b: 'chromeDropVerdict', L4c: 'chromeDropVerdict' });
 });
 
 test("T19's predicates manifest is measured whole: every kind in a step of its own, the leave cases of every kind in P5, Firefox's drag and drop in P6", () => {
@@ -658,4 +658,47 @@ test("a :0 step's decoy paths are measured where run71.sh puts them: through the
   const a = parseGateArgs(['print', 'V5', '--candidate', PATHS.candidate, '--out', short, '--dev']);
   assert.ok(Buffer.byteLength(join(short, 'V5.development-run', 'decoy', 'session.sock')) <= 107, 'the lexical path fits');
   assert.throws(() => printStep(a, { root: ROOT, git: cleanGit() }), (e) => e instanceof GateRefused && /decoy bus/.test(e.message) && e.message.includes(long));
+});
+
+// The hold canary and its regression cells in every release gate (task 117; rulings 897.3, 898.4, 899, 900): K1 on the
+// gate's Chrome and K2 on the current stable one run V5's in-front short drop and its select control on a private
+// display under the gate's ballast, every cua engine sandboxed as the service runs it; K3 the late-started drops, also
+// sandboxed, judged by holdRegressionVerdict.
+test('the hold canary runs on both Chromes, sandboxed, beside its regression cells; the current stable one is required', async () => {
+  const [k1, k2, k3] = ['K1', 'K2', 'K3'].map(stepNamed);
+  for (const k of [k1, k2]) {
+    assert.deepEqual([k.kind, k.display, k.scenes, verdictOps(k)], ['canary', 'private', ['device-chrome-dnd'], ['chrome_dnd_short_in_front_shared', 'chrome_select_nudged_shared']]);
+    const args = stepArgs(k, { paths: PATHS, gate: true });
+    assert.ok(args.includes('--engine-sandbox') && args.includes('--ballast'), k.name);
+    assert.equal(parseArgs([...args, '--out', '/o']).engineSandbox, true, k.name);
+  }
+  assert.deepEqual([k1.chrome, k2.chrome], ['installed', 'current-stable']);
+  const parsed = parseArgs([...stepArgs(k3, { paths: PATHS, gate: true }), '--out', '/o']);
+  assert.deepEqual([parsed.plan, parsed.engineSandbox], ['hold-regression', true]);
+  assert.ok(verdicts.every((s) => !stepArgs(s, { paths: PATHS, gate: true }).includes('--engine-sandbox')), "V1-V5 keep their engines as they ran");
+  const { currentStableChrome } = await import('../../scripts/linux-engine-gate/gate.mjs');
+  const root = mkdtempSync(join(tmpdir(), 'cua171-chrome-stable-'));
+  try {
+    assert.throws(() => currentStableChrome(root), GateRefused, 'no current stable Chrome: refused');
+    writeFileSync(join(root, 'current'), '158.0.8127.36-1\n');
+    assert.throws(() => currentStableChrome(root), GateRefused, 'its wrapper missing: refused');
+    mkdirSync(join(root, '158.0.8127.36-1', 'bin'), { recursive: true });
+    writeFileSync(join(root, '158.0.8127.36-1', 'bin', 'google-chrome'), '#!/bin/sh\n');
+    assert.equal(currentStableChrome(root), join(root, '158.0.8127.36-1', 'bin'));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("the hold's regression cells fail on any drop that did not land inside B, any hold not the fixed one, and any Chrome not identified", async () => {
+  const { holdRegressionVerdict } = await import('../../scripts/linux-engine-diff/drop-signals-judge.mjs');
+  const specs = [{ lane: 'cua', cell: 'dragstart-150', n: 2 }, { lane: 'cua', cell: 'dragstart-400', n: 2 }];
+  const drag = (cell, i, over = {}) => ({ kind: 'drop-signal', lane: 'cua', cell, i, outcome: { started: true, landed: true }, hold: { taken: true, adaptive: { way: 'fixed', source: { identified: true } } }, ...over });
+  const good = ['dragstart-150', 'dragstart-400'].flatMap((cell) => [drag(cell, 0), drag(cell, 1)]);
+  assert.deepEqual(holdRegressionVerdict(good, { specs }).failed, []);
+  const lost = [...good.slice(0, 3), drag('dragstart-400', 1, { outcome: { started: true, landed: false }, hold: { taken: false, adaptive: { way: 'fixed', source: { identified: true } } } })];
+  assert.deepEqual(holdRegressionVerdict(lost, { specs }).failed, ['dragstart-400: not landed on 1 of 2 (0/1)', 'dragstart-400: no take seen inside the hold on 1 of 2 (0/1)']);
+  const unknown = [...good.slice(0, 3), drag('dragstart-400', 1, { hold: { taken: true, adaptive: { way: 'fixed', source: { identified: false } } } })];
+  assert.deepEqual(holdRegressionVerdict(unknown, { specs }).failed, ['dragstart-400: Chrome not identified as a browser on 1 of 2 (0/1)']);
+  assert.deepEqual(holdRegressionVerdict(good.slice(0, 3), { specs }).failed, ['dragstart-400: 1 of its 2 drags ran']);
 });

@@ -235,6 +235,40 @@ test("V5's cells: an ok with the hold's exact notice is honest only where the pa
   assert.equal(judgeDevice('chrome_dnd_shared', [cancelled], audited).pass, false);
 });
 
+// The hold canary (rulings 897.3, 898.4): from the engine's own hold records, a press on a draggable source in V5's
+// in-front cell must read slow at least once, and V5's select control's warm drags fast; either failing fails its cell.
+test('the hold canary: a draggable press must read slow at least once, a warm plain drag never, and Chrome must be identified', () => {
+  const source = { identified: true, by: 'Google-chrome, role browser, application "Google Chrome", executable not visible here' };
+  const hold = (waits, way = 'fixed', why = 'the take came 70 ms after the press, inside B') => ({
+    held: true, pings: { asked: true, round_trips: waits.map((w, k) => (w < 0 ? { sent_after_press_ms: 50 + 25 * k, rtt_ms: null, unanswered_ms: -w } : { sent_after_press_ms: 50 + 25 * k, rtt_ms: w })) }, adaptive: { way, why, source },
+  });
+  const press = (i, waits) => row({ block: 0, i, ok: true, effect: true, route: 'background', dnd: { in_front: true }, desktop_same: true, state_notice: null, reply_notice: null, dropped: true, engine_stats: { hold: hold(waits) } });
+  const audit = { clean: true, kind: 'background', answered: [{ ok: true }] };
+  // one press read slow (a ping unanswered for 34 ms when its take came): the canary holds
+  const good = judgeDevice('chrome_dnd_short_in_front_shared', [press(0, [1]), press(1, [1, -34]), press(2, [2])], audit);
+  assert.equal(good.pass, true, good.reasons.join('; '));
+  assert.deepEqual(good.hold_canary, { kind: 'draggable', held: 3, slow: 1 });
+  // every press fast: Chrome no longer marks its drag start
+  const fast = judgeDevice('chrome_dnd_short_in_front_shared', [press(0, [1]), press(1, [1, 15]), press(2, [2])], audit);
+  assert.match(fast.reasons.join('; '), /the hold canary: no press on a draggable source read slow \(3 held/);
+  // too few holds ran to say: untested, a failure
+  assert.match(judgeDevice('chrome_dnd_short_in_front_shared', [press(0, [40])], audit).reasons.join('; '), /the hold canary is untested: 1 of 1/);
+  // Chrome not identified: the extension cannot apply
+  const unknown = press(1, [40]);
+  unknown.engine_stats.hold.adaptive.source = { identified: false, why: 'its accessible application could not be read' };
+  assert.match(judgeDevice('chrome_dnd_short_in_front_shared', [press(0, [40]), unknown, press(2, [1])], audit).reasons.join('; '), /Chrome was not identified as a browser on 1 of 3/);
+  // the plain control: warm drags fast at B; a cold one slow is counted, not failed
+  const fastWhy = 'every ping answered by B came back under 20 ms';
+  const select = (i, waits, way = 'fixed', why = fastWhy) => row({ block: 0, i, ok: true, effect: true, route: 'background', dnd: { in_front: true }, desktop_same: true, engine_stats: { hold: hold(waits, way, why) } });
+  const plain = judgeDevice('chrome_select_nudged_shared', [select(0, [58], 'noticed', 'a ping came back in 58 ms; no take by 650 ms after the press'), select(1, [1, 1]), select(2, [2])], audit);
+  assert.ok(!plain.reasons.some((r) => r.includes('hold canary')), plain.reasons.join('; '));
+  assert.deepEqual(plain.hold_canary, { kind: 'plain', held: 3, slow: 1, cold_slow: 1 });
+  const warmSlow = judgeDevice('chrome_select_nudged_shared', [select(0, [1]), select(1, [1, 26], 'noticed', 'a ping came back in 26 ms; no take by 650 ms after the press'), select(2, [2])], audit);
+  assert.match(warmSlow.reasons.join('; '), /the hold canary: a plain drag read slow on 1 of 2 warm samples \(0\/1\)/);
+  // a cell with no hold records (a vendor lane) is not the canary's
+  assert.equal(judgeDevice('chrome_dnd_short_in_front_shared', [row({ ok: true, effect: true, route: 'background', dnd: { in_front: true }, desktop_same: true, state_notice: null })], audit).hold_canary, undefined);
+});
+
 test("GTK 4's scale is dragged away from where it stands, whichever sample of whichever block", () => {
   const [from, to] = scalePath({ before: { scale: 0 } });
   assert.ok(to.x > from.x, 'up from the start');

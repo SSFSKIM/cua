@@ -589,6 +589,49 @@ export function falseAlarm(r) {
   return holdNoticed(r) && (r.effect === true || dropSeen(r));
 }
 
+/**
+ * The hold canary (the design session's rulings 897.3 and 898.4, task 117): the extended hold rests on Chrome's browser
+ * answering the engine's `_NET_WM_PING` slowly while it starts a drag its page began, and fast while nothing drags. A
+ * Chrome update that changed either would bring the false oks back quietly, so two of V5's cells check it from the
+ * engine's own hold records (`engine_stats.hold`), whatever else they judge:
+ * - the in-front short drop (`chrome_dnd_short_in_front_shared`, a press on a draggable source): of its samples whose
+ *   hold ran, at least `CANARY_HELD` and at least one read slow, a ping's round trip or its wait unanswered of
+ *   `CANARY_SLOW_MS` or more (task 117 at x64 idle: 9 of 15 held presses);
+ * - V5's select control (`chrome_select_nudged_shared`, a plain drag in the same scene): every warm sample whose hold
+ *   ran read fast at B (`hold.adaptive.way` fixed on its pings); a cold one that read slow is counted, not failed (a
+ *   fresh page's first ping can be slow).
+ * A cell with no hold records (a vendor lane) is not the canary's.
+ */
+export const CANARY_SLOW_MS = 20;
+export const CANARY_HELD = 3;
+
+/** A hold record's largest ping wait: a round trip, or an unanswered ping's age at the hold's end; null with none. */
+export function holdPingWait(hold) {
+  const waits = (hold?.pings?.round_trips ?? []).map((t) => t.rtt_ms ?? t.unanswered_ms ?? null).filter((w) => typeof w === 'number');
+  return waits.length ? Math.max(...waits) : null;
+}
+
+/** The canary's reasons for a cell's rows (none for a cell it does not judge), and its counts. */
+export function holdCanary(op, rows) {
+  const recorded = rows.filter((r) => r.engine_stats?.hold !== undefined || r.engine_stats?.route !== undefined);
+  if (!recorded.length || !['chrome_dnd_short_in_front_shared', 'chrome_select_nudged_shared'].includes(op)) return null;
+  const held = recorded.filter((r) => r.engine_stats?.hold?.held === true);
+  const slow = held.filter((r) => (holdPingWait(r.engine_stats.hold) ?? 0) >= CANARY_SLOW_MS);
+  const reasons = [];
+  // the extension applies only to a source identified as a Chrome browser (ruling 899): one that is not cannot extend
+  const unidentified = held.filter((r) => r.engine_stats.hold.adaptive?.source?.identified !== true);
+  if (unidentified.length) reasons.push(`the hold canary: Chrome was not identified as a browser on ${unidentified.length} of ${held.length} held samples (${unidentified[0].engine_stats.hold.adaptive?.source?.why ?? 'no record'})`);
+  if (op === 'chrome_dnd_short_in_front_shared') {
+    if (held.length < CANARY_HELD) reasons.push(`the hold canary is untested: ${held.length} of ${recorded.length} presses on a draggable source held for their take, fewer than ${CANARY_HELD}`);
+    else if (!slow.length) reasons.push(`the hold canary: no press on a draggable source read slow (${held.length} held, every ping under ${CANARY_SLOW_MS} ms): Chrome may no longer mark the drag it starts`);
+    return { reasons, record: { kind: 'draggable', held: held.length, slow: slow.length } };
+  }
+  const warmSlow = slow.filter((r) => r.i !== 0);
+  const unfast = held.filter((r) => r.i !== 0 && !(r.engine_stats.hold.adaptive?.way === 'fixed' && /^every ping answered by B came back under/.test(r.engine_stats.hold.adaptive.why ?? '')));
+  if (warmSlow.length || unfast.length) reasons.push(`the hold canary: a plain drag read slow on ${new Set([...warmSlow, ...unfast]).size} of ${held.filter((r) => r.i !== 0).length} warm samples (${[...new Set([...warmSlow, ...unfast])].slice(0, 3).map((r) => `${r.block}/${r.i}`).join(', ')})`);
+  return { reasons, record: { kind: 'plain', held: held.length, slow: slow.length, cold_slow: slow.length - warmSlow.length } };
+}
+
 /** A cell's hold notices for its verdict, or null when none came: how many, the honest ones and the false alarms. */
 function holdNoticeCounts(rows) {
   const noticed = rows.filter(holdNoticed);
@@ -1142,11 +1185,15 @@ export function judgeDevice(op, samples, audit, premise = undefined) {
   const limited = spanLimited.map((r) => ({ sample: `${r.block}/${r.i}`, dragend_ms: r.drop_status.after.dur, answer_ms: r.ms }));
   // the hold's notices, counted and reported, the false alarms never hidden (ruling 898.2)
   const holdNotices = holdNoticeCounts(rows);
+  // the hold canary, on the samples every rule above judged (rulings 897.3, 898.4)
+  const canary = holdCanary(op, rows);
+  if (canary) reasons.push(...canary.reasons);
   return {
     pass: reasons.length === 0,
     reasons,
     ...(drops ? { drops } : {}),
     ...(holdNotices ? { hold_notices: holdNotices } : {}),
+    ...(canary ? { hold_canary: canary.record } : {}),
     ...(Object.keys(unmet).length ? { premise_unmet: unmet } : {}),
     ...(binding?.unverified ? { plan_unverified: true } : {}),
     ...(limited.length ? { span_limited: limited } : {}),

@@ -383,7 +383,9 @@ export const PLANS = {
   't17-slow-cold': Array.from({ length: 60 }, () => ['cua:handle', 'slow', 1]),
   // the extended hold's limit (task 117, ruling 900.2): delayed dragstarts and late presses up to and past B, 6 drags each
   'hold-limit': ['dragstart-150', 'press-150', 'dragstart-400', 'press-400', 'dragstart-500', 'dragstart-600'].map((cell) => ['cua', cell, 6]),
-  'hold-canary-pilot': ['plain', 'nozone', 'link', 'image', 'seltext', 'select', 'range'].map((cell) => ['cua', cell, 10]),
+  // the hold's regression cells in the release gate (step K3; ruling 900): drops started late by a busy dragstart
+  // handler, which B lands (drop-signals-judge.mjs `holdRegressionVerdict`)
+  'hold-regression': [['cua', 'dragstart-150', 10], ['cua', 'dragstart-400', 10]],
   pilot: [
     ...['plain', 'nozone', 'nested', 'slider', 'dragstart-150', 'press-150', 'dragstart-400', 'press-400', 'freeze-250', 'link', 'image', 'seltext', 'select', 'range', 'scroller', 'canvas', 'inert'].map((cell) => ['cua', cell, 2]),
     ['cua:accept', 'plain', 5],

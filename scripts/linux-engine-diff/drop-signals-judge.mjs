@@ -832,9 +832,40 @@ export function chromeDropVerdict(rows, { specs = [], plan = null, capped = fals
  * CLI parses them): T17's Electron cells (`electronDropVerdict`), T14's Chrome cells (`chromeDropVerdict`), or null for
  * a plan no gate judge holds. Answers the verdict with `judge`, the judge's name.
  */
+/** The hold's regression plan (drop-signals.mjs PLANS `hold-regression`; task 117, the design session's ruling 900). */
+export const HOLD_REGRESSION_PLAN = 'hold-regression';
+
+/**
+ * The hold's regression cells (ruling 900): drops whose page starts them late from a busy handler (`dragstart-150`,
+ * `dragstart-400`, Chrome's own browser idle and fast) must land inside B, as the fixed 450 ms lands them and an early
+ * release on fast pings did not (task 117: 24 of 24 lost). Fails, each named: a drag that did not land, whose page did
+ * not start it, or whose engine saw no take; a hold that was not the fixed one (no release before B, no extension on
+ * fast pings); a source the engine did not identify as Chrome; a cell of the plan with no drag.
+ */
+export function holdRegressionVerdict(rows, { specs = [] } = {}) {
+  const failed = [];
+  const counts = {};
+  for (const spec of specs) {
+    const list = rows.filter((r) => r.cell === spec.cell && r.lane === spec.lane);
+    const bad = (what, pred) => {
+      const misses = list.filter((r) => !pred(r));
+      if (misses.length) failed.push(`${spec.cell}: ${what} on ${misses.length} of ${list.length} (${misses.slice(0, 3).map((r) => `${r.block ?? 0}/${r.i}`).join(', ')})`);
+    };
+    if (list.length < spec.n) failed.push(`${spec.cell}: ${list.length} of its ${spec.n} drags ran`);
+    bad('not landed', (r) => r.outcome?.started === true && r.outcome?.landed === true);
+    bad('no take seen inside the hold', (r) => r.hold?.taken === true);
+    bad('a hold other than the fixed one', (r) => r.hold?.adaptive?.way === 'fixed');
+    bad('Chrome not identified as a browser', (r) => r.hold?.adaptive?.source?.identified === true);
+    counts[spec.cell] = { drags: list.length, landed: list.filter((r) => r.outcome?.landed === true).length };
+  }
+  const md = ['', `The hold's regression cells (drop-signals-judge.mjs \`holdRegressionVerdict\`, ruling 900): ${failed.length ? `**fails:** ${failed.join('; ')}` : 'every drop whose page started it late landed inside B'}.`, '', ...Object.entries(counts).map(([cell, c]) => `- ${cell}: ${c.landed} of ${c.drags} landed`)];
+  return { failed, findings: [], counts, md };
+}
+
 export function dropSignalsVerdict(args, rows) {
   const drags = rows.filter((r) => r.kind === 'drop-signal');
   const specs = rows.find((r) => r.kind === 'drop-signal-scene')?.specs ?? [];
+  if ((args.families?.[0] ?? 'chrome') === 'chrome' && args.plan === HOLD_REGRESSION_PLAN) return { judge: 'holdRegressionVerdict', ...holdRegressionVerdict(drags, { specs }) };
   if (judgedElectronPlan(args)) return { judge: 'electronDropVerdict', ...electronDropVerdict(drags, { specs, plan: args.plan }) };
   if (judgedChromePlan(args)) return { judge: 'chromeDropVerdict', ...chromeDropVerdict(drags, { specs, plan: args.plan, capped: args.samplesTrials != null }) };
   return null;

@@ -22,7 +22,7 @@ import { join } from 'node:path';
 
 import { PreparationStopped, candidateLine, gateLabel, isCounted, isPinnedRule, prepareCandidate } from './candidate.mjs';
 import { pinnedEngine } from './pinned-home.mjs';
-import { dropSignalsVerdict, judgedChromePlan, judgedElectronPlan } from './drop-signals-judge.mjs';
+import { HOLD_REGRESSION_PLAN, dropSignalsVerdict, judgedChromePlan, judgedElectronPlan } from './drop-signals-judge.mjs';
 import { RunRefused, runHasRows } from './run.mjs';
 
 import { elementClick, partialCover } from './clicks.mjs';
@@ -389,7 +389,7 @@ export async function runExperiment(args, { prepare = prepareCandidate, start = 
   // and candidate), or a gate step with no judge to fail it
   const results = join(args.out, 'results.jsonl');
   if (runHasRows(results, run)) throw new RunRefused(`the run name ${run} already has rows in ${results}: give each execution a --run name of its own`);
-  if (isCounted(args.gate) && args.experiment === 'drop-signals' && !judgedElectronPlan(args) && !judgedChromePlan(args)) {
+  if (isCounted(args.gate) && args.experiment === 'drop-signals' && !judgedElectronPlan(args) && !judgedChromePlan(args) && args.plan !== HOLD_REGRESSION_PLAN) {
     throw new RunRefused(`no gate judge holds the drop-signals plan ${args.plan ?? 'main'} (${args.families?.[0] ?? 'chrome'}): its counts would pass whatever they are; run it as a development run`);
   }
   if (isCounted(args.gate) && args.experiment === 'drop-signals' && args.samplesTrials != null) throw new RunRefused('a gate drop-signals step runs its plan whole: --trials caps it (a pilot, a development run)');

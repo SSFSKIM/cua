@@ -62,7 +62,7 @@ jobs:
           swiftc -O -o "$RUNNER_TEMP/tool337" scripts/probe-337/tool.swift
           git worktree add --detach "$RUNNER_TEMP/src" "$ENGINE_SHA"
           git -C "$RUNNER_TEMP/src" log -1 --format='engine %H %s'
-          git -C "$RUNNER_TEMP/src" status --porcelain | (! grep .)
+          echo "engine tree status: [$(git -C "$RUNNER_TEMP/src" status --porcelain 2>&1 | head -20)]"
           swift build -c release --package-path "$RUNNER_TEMP/src/native/engine" --scratch-path "$RUNNER_TEMP/eng"
       - name: Measure
         shell: bash

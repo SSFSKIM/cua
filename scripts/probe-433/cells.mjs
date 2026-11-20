@@ -84,6 +84,11 @@ export const CELLS={
   overcontrol:{kind:'keep',before:'Inbox',after:'Inbox',cover:'veil',records:'AXGroup'},
   scrim:{kind:'asMain',before:'Inbox',after:'Inbox',cover:'scrim',records:'AXGroup'},
   nounder:{kind:'asMain',before:'Inbox',after:'Inbox',cover:'beside',aim:'beside',records:'AXGroup',at:['link']},
+  // The fix review's regressions, kept and landed as main (gate `overlayKept`): the veil over link A, in a branch of its
+  // own, while A's list parent is re-rendered in place with A's label unchanged (`rebuildunder`); the veil over an
+  // unchanged link and its text while an unrelated button behind them is removed (`bgbutton`).
+  rebuildunder:{kind:'keep',before:'Inbox',after:'Inbox',cover:'veil',parent:'list',records:'AXGroup'},
+  bgbutton:{kind:'keep',before:'Inbox',after:'Inbox',cover:'veil',behind:'button',records:'AXGroup'},
   // The fix's costs (the builder's, reported, never gated: `reportOnlyAt` every point): a fixed header strip that catches
   // the pointer over the link, the page scrolled 128 px under it (`stickyscroll`: main keeps the header, the fix may refuse
   // the link as moved); the veil over a link re-rendered whole with its label (`tipremount`: #431's strict form judges the

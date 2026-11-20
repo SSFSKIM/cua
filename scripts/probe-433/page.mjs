@@ -52,24 +52,29 @@ const row=()=>{const d=document.createElement('div');d.className='row';return d;
 // no interactive role); \`beside\` is a veil laid past the target's right edge, over nothing interactive; \`sticky\` is a
 // scrim fixed to the viewport over the target's row (a sticky header strip), which stays as the page scrolls under it.
 const WRAP=2;
-function cover(kind){
+// \`extra\` nests it further where the link lies deeper (rebuildunder's list and item).
+function cover(kind,extra=0){
   slots[0].style.position='relative';
   const left=kind==='beside'?(target.offsetLeft+target.offsetWidth+20)+'px':'0',width=kind==='beside'?'240px':'100%';
   const through=kind==='scrim'||kind==='sticky'?'':';pointer-events:none';
   const place=kind==='sticky'?'position:fixed;left:0;top:'+Math.round(slots[0].getBoundingClientRect().top)+'px;width:100%;height:64px;background:rgba(255,255,255,.5)'
     :'position:absolute;left:'+left+';top:0;width:'+width+';height:64px';
   let outer=null,inner=null;
-  for(let i=0;i<=WRAP;i++){
+  for(let i=0;i<=WRAP+extra;i++){
     const d=document.createElement('div');d.setAttribute('role','group');
     d.style.cssText=(i?'position:absolute;left:0;top:0;width:100%;height:100%':place)+through;
     if(inner)inner.append(d);else outer=d;inner=d;
   }
   inner.id='veil';slots[0].append(outer);
 }
+// #433's rebuildunder: the target inside a list (its parent), which mark re-renders in place with the label unchanged.
+function listed(el){const ul=document.createElement('ul');ul.id='list';ul.style.cssText='margin:0;padding:0;list-style:none';
+  const li=document.createElement('li');li.append(el);ul.append(li);return ul;}
+let behind=null;
 function run(c){
   if(c.op==='prepare'){
     const spec=CELLS[c.cell];if(!spec)throw Error('cell');
-    trial=c.trial;cell=c.cell;marked=null;twins=[];mover=null;drafts=null;
+    trial=c.trial;cell=c.cell;marked=null;twins=[];mover=null;drafts=null;behind=null;
     // The cap filler is kept across consecutive cap trials (only the twin's row is rebuilt): rebuilding 6,000 nodes every
     // trial left both Chromium lanes' page unanswering after 15 repetitions (run 44611947576).
     slots=[row(),row(),row()];nav.replaceChildren(...slots);
@@ -172,7 +177,16 @@ function run(c){
       // target's row.
       twins=[control('twin',spec.before,spec),control('twin2',spec.before,spec)];slots[1].append(twins[0]);slots[2].append(twins[1]);archive=null;
       cover(spec.cover);
-    }else{drafts=control('drafts',OTHERS.drafts);slots[1].append(archive);slots[2].append(drafts);if(spec.cover)cover(spec.cover);}
+    }else{
+      drafts=control('drafts',OTHERS.drafts);slots[1].append(archive);slots[2].append(drafts);
+      if(spec.parent)slots[0].replaceChildren(listed(target));
+      // #433's bgbutton: an unrelated button behind the link (a later sibling, so the record's walk reads it after the
+      // link, drawn below it), the size of the link's box; mark removes it.
+      if(spec.behind){behind=document.createElement('button');behind.type='button';behind.textContent='Close';
+        behind.style.cssText='position:absolute;left:0;top:0;width:'+target.offsetWidth+'px;height:64px;z-index:-1;border:0;background:#eee;color:#999';
+        slots[0].style.position='relative';slots[0].append(behind);}
+      if(spec.cover)cover(spec.cover,spec.parent?2:0);
+    }
     if(document.activeElement&&document.activeElement!==document.body)document.activeElement.blur();
     clicks=[];
     return {trial,cell,present:target.isConnected,text:target.textContent,geometry:geometry()};
@@ -198,6 +212,8 @@ function run(c){
     else if(spec.twin==='hidden'){target.remove();mover.remove();const n=control('twin',spec.before,spec);twins.push(n);slots[0].replaceChildren(n);}
     else if(spec.twin){target.remove();slots[0].replaceChildren(mover);}
     else if(spec.scroll)scrollBy(0,spec.scroll);  // #433's stickyscroll: the link moves away under the fixed header
+    else if(spec.parent){const n=control('target',spec.after,spec);document.getElementById('list').replaceWith(listed(n));target=n;}
+    else if(spec.behind)behind.remove();
     else if(spec.cover&&!spec.remount){}  // #433's controls: the overlay over a live link, nothing changing
     else if(spec.remount==='link'){const n=control('target',spec.after,spec);target.replaceWith(n);target=n;}
     else if(spec.remount==='text'){const s=document.createElement('span');s.textContent=spec.after;target.firstChild.replaceWith(s);}

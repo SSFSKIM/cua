@@ -6,7 +6,7 @@ A disposable hosted macOS kit, not product code, built from `probe/435-qual` (`d
 gh workflow run probe-433-qual.yml --ref probe/433-qual -f main="$MAIN_SHA" -f mode=smoke -f cells=twincover,overcontrol,scrim,nounder
 # The qualification: three batches, one in flight at a time, each lane under 500 rows.
 gh workflow run probe-433-qual.yml --ref probe/433-qual -f main="$MAIN_SHA" -f fix="$FIX_SHA" -f mode=qualify -f reps=20 -f cells=twincover,overcontrol,scrim
-gh workflow run probe-433-qual.yml --ref probe/433-qual -f main="$MAIN_SHA" -f fix="$FIX_SHA" -f mode=qualify -f reps=10 -f cells=nounder,twin,twincap,remount,retext,plain,like,btnremount,tableremount,tablecellremount
+gh workflow run probe-433-qual.yml --ref probe/433-qual -f main="$MAIN_SHA" -f fix="$FIX_SHA" -f mode=qualify -f reps=10 -f cells=nounder,rebuildunder,bgbutton,twin,twincap,remount,retext,plain,like,btnremount,tableremount,tablecellremount
 gh workflow run probe-433-qual.yml --ref probe/433-qual -f main="$MAIN_SHA" -f fix="$FIX_SHA" -f mode=qualify -f reps=10 -f cells=inbox,reltime,shrink,linksave,moved,linkmono,right,centre,wideoverlay,stickyscroll,tipremount,twinunder
 ```
 
@@ -22,6 +22,7 @@ What #433 adds to #435's kit:
   - `overcontrol` (kind keep, `veil`, both points): the veil over link A and nothing changes. On Chrome for Testing it may land on neither head: the shared-mode element route presses the accessibility hit, here the overlay group, and refuses (`backgroundClickRefused`); the smoke measures it.
   - `scrim` (kind asMain, `scrim`, both points): the scrim over a live, unchanged link A; on main the scrim eats the click.
   - `nounder` (kind asMain, `beside`, the link point only, aimed 60 pt past the link's right edge): the veil with nothing interactive under it, nothing changing.
+  - The fix review's regressions (kind keep, `veil`, both points; gate `overlayKept`, kept and landed as main): `rebuildunder` (link A inside a list, the veil in a branch of its own, nested two more groups so it stays deeper than A's text; `mark` re-renders the list in place with a new A, its label unchanged) and `bgbutton` (an unrelated "Close" button behind the link, a later sibling the size of the link's box drawn below it; `mark` removes it, the link and its text unchanged).
   - The fix's costs, the builder's, reported on both heads and never gated (`reportOnlyAt` every point; `gates.reportOnly` tallies their verdicts): `stickyscroll` (a header strip fixed to the viewport over the target's row, catching the pointer; `mark` scrolls the page 128 px, so the link moves away under it and Drafts comes under the header: main keeps the header, the fix may refuse the link beneath as moved); `tipremount` (the veil over link A, A re-rendered whole with its label: the fix judges A beneath by #431's strict form); `twinunder` (the veil over the first of three "Delete" links, re-rendered whole: the record holds the link beneath's twins).
   - Every row records the fix's `stalePoint.underlyingRole` and `underlyingIdentity` (`handle` or `recreated`, set whenever its check of the control beneath ran; absent on main); `report.mjs` tabulates them per unit and head (`Underlying`).
 - **Gates** (`check.mjs` `gates`, qualify only):

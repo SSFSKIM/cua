@@ -843,6 +843,8 @@ export class Desktop {
         throw error;
       }
       scene.id = info.id;
+      // what the run's Chrome runs, read while its window shows (chrome.mjs `seen`)
+      this.chromeInstance().seen();
       if (this.stopping) return scene;
       this.place(scene.id, 'chrome');
       await this.waitForTree(scene);
@@ -884,6 +886,7 @@ export class Desktop {
             await this.close([win]);
             throw error;
           }
+          this.chromeInstance().seen();
           windows.push(win);
         }
       } else {

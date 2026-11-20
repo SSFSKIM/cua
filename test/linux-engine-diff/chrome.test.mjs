@@ -14,7 +14,7 @@ import test from 'node:test';
 import './fixture-scope.mjs';
 
 import { launchEnvironment } from '../../scripts/linux-engine-diff/app-env.mjs';
-import { CHROME_COMMAND, CHROME_COMMAND_VAR, CHROME_ENV, CHROME_FLAGS, ChromeInstance, assertOwnChrome, browserIdentity, chromeCommand, isChromeCommand, procCmdline, profileSwitches } from '../../scripts/linux-engine-diff/chrome.mjs';
+import { CHROME_COMMAND, CHROME_COMMAND_VAR, CHROME_ENV, CHROME_FLAGS, ChromeInstance, assertOwnChrome, browserIdentity, chromeCommand, cmdlineArgs, isChromeCommand, procCmdline, profileSwitches } from '../../scripts/linux-engine-diff/chrome.mjs';
 import { Desktop } from '../../scripts/linux-engine-diff/scenes.mjs';
 
 const HARNESS = join(import.meta.dirname, '../../scripts/linux-engine-diff');
@@ -416,7 +416,7 @@ test("the launcher's one process start comes after its guard", () => {
 // The re-review of wave 3, I5: a gate step names the Chrome it means (`CUA171_CHROME_COMMAND`, an absolute path to its
 // wrapper), and the run's Chrome starts that one, never whichever `google-chrome` PATH finds; what ran is read from the
 // running browser: its executable and that executable's own version.
-test("a step's named Chrome is the one the run starts, and what ran is read from the running browser", () => {
+test("a step's named Chrome is the one the run starts, and what ran is read from the running browser", async () => {
   const d = dirs();
   try {
     const { spawnFake, calls } = fakeSpawn();
@@ -434,6 +434,27 @@ test("a step's named Chrome is the one the run starts, and what ran is read from
     assert.deepEqual(asked, [[exe, '--version']], 'the running executable asked, not PATH');
     assert.deepEqual(browserIdentity(4242, { readlink: () => { throw new Error('gone'); } }), { exe: null, version: null });
     assert.deepEqual(browserIdentity(4242, { readlink: () => exe, run: () => { throw new Error('no'); } }), { exe, version: null });
+    // Chrome's browser rewrites its process title: its arguments read as one string, joined by spaces, which is split
+    // (the fix wave's probe: read as one argument, the run's Chrome was never its own at the run's end)
+    const profile = join(d.scratch, 'chrome-profile');
+    assert.deepEqual(cmdlineArgs(`/opt/google/chrome/chrome --no-first-run --user-data-dir=${profile} --new-window about:blank${'\0'.repeat(40)}`), ['/opt/google/chrome/chrome', '--no-first-run', `--user-data-dir=${profile}`, '--new-window', 'about:blank']);
+    assert.deepEqual(cmdlineArgs(`/usr/bin/google-chrome\0--user-data-dir=${profile}\0`), ['/usr/bin/google-chrome', `--user-data-dir=${profile}`]);
+    // what ran is read while the browser runs (once its window shows): one that exited before the run's end is kept
+    let alive = true;
+    const seenChrome = new ChromeInstance({
+      scratch: d.scratch,
+      environment: runEnvironment(d.scratch),
+      spawn: fakeSpawn([501]).spawnFake,
+      cmdline: () => (alive ? [exe, `--user-data-dir=${profile}`] : null),
+      kill: () => {},
+      identity: () => ({ exe, version: 'Google Chrome 158.0.8127.36' }),
+      command: named,
+    });
+    seenChrome.open('file:///a');
+    seenChrome.seen();
+    alive = false;
+    const record = await seenChrome.stop({ graceMs: 10 });
+    assert.deepEqual(record.browsers, [{ pid: 501, exe, version: 'Google Chrome 158.0.8127.36' }]);
   } finally {
     d.done();
   }

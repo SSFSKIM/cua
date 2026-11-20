@@ -128,10 +128,20 @@ export function assertOwnChrome(cmd, args, scratch) {
 /** A process's arguments (`/proc/<pid>/cmdline`), or null when there is no such process to read. */
 export function procCmdline(pid) {
   try {
-    return readFileSync(`/proc/${pid}/cmdline`, 'utf8').split('\0').filter(Boolean);
+    return cmdlineArgs(readFileSync(`/proc/${pid}/cmdline`, 'utf8'));
   } catch {
     return null;
   }
+}
+
+/**
+ * A process's arguments from its `/proc/<pid>/cmdline`. Chrome's browser rewrites its process title (setproctitle):
+ * the file then holds one string, its arguments joined by spaces, so that string is split on them (task 117's fix wave 4:
+ * read as one argument, no Chrome of the run's was ever its own at the run's end). The run's profile path has no space.
+ */
+export function cmdlineArgs(text) {
+  const parts = text.split('\0').filter(Boolean);
+  return parts.length === 1 && parts[0].includes(' ') ? parts[0].split(' ').filter(Boolean) : parts;
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -158,6 +168,8 @@ export class ChromeInstance {
     this.kill = kill;
     this.command = command;
     this.identity = identity;
+    // what each browser process of the profile ran, read while it ran (`seen`), by pid
+    this.identities = new Map();
     // every pid an open started: the browser among them, whichever open started it
     this.spawned = [];
     this.stopped = null;
@@ -185,6 +197,17 @@ export class ChromeInstance {
   }
 
   /**
+   * Records what each browser process of the profile runs now (`browserIdentity`: its executable and that executable's
+   * version), once a pid. The run's Desktop calls it once a window of its Chrome shows: the run's end closes the
+   * windows, and the browser exits with its last, before `stop`.
+   */
+  seen() {
+    for (const pid of this.spawned) {
+      if (!this.identities.has(pid) && this.owns(pid)) this.identities.set(pid, { pid, ...this.identity(pid) });
+    }
+  }
+
+  /**
    * Whether `pid` is a browser process of this instance now: its command line carries exactly the run's
    * --user-data-dir and names no child process type (a renderer or the zygote carries the profile too).
    */
@@ -202,9 +225,11 @@ export class ChromeInstance {
    */
   stop({ graceMs = 10000, killMs = 3000 } = {}) {
     this.stopped ??= (async () => {
-      // what ran, read from each browser process of the profile still running before it is stopped: its executable
-      // and that executable's version (a gate step checks them against the Chrome it named, gate.mjs `canaryCheck`)
-      const browsers = this.spawned.filter((pid) => this.owns(pid)).map((pid) => ({ pid, ...this.identity(pid) }));
+      // what ran, read from each browser process of the profile while it ran (`seen`), those still running read now:
+      // its executable and that executable's version (a gate step checks them against the Chrome it named, gate.mjs
+      // `canaryCheck`)
+      this.seen();
+      const browsers = [...this.identities.values()];
       const record = { profile: this.profile, spawned: [...this.spawned], browsers, terminated: [], killed: [], left: [] };
       for (const pid of this.spawned) {
         if (!this.owns(pid)) continue;

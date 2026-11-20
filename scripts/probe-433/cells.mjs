@@ -84,6 +84,14 @@ export const CELLS={
   overcontrol:{kind:'keep',before:'Inbox',after:'Inbox',cover:'veil',records:'AXGroup'},
   scrim:{kind:'asMain',before:'Inbox',after:'Inbox',cover:'scrim',records:'AXGroup'},
   nounder:{kind:'asMain',before:'Inbox',after:'Inbox',cover:'beside',aim:'beside',records:'AXGroup',at:['link']},
+  // The fix's costs (the builder's, reported, never gated: `reportOnlyAt` every point): a fixed header strip that catches
+  // the pointer over the link, the page scrolled 128 px under it (`stickyscroll`: main keeps the header, the fix may refuse
+  // the link as moved); the veil over a link re-rendered whole with its label (`tipremount`: #431's strict form judges the
+  // link beneath); the veil over the first of three same-label links, re-rendered whole (`twinunder`: the record holds
+  // twins of the link beneath).
+  stickyscroll:{kind:'asMain',before:'Inbox',after:'Inbox',cover:'sticky',scroll:128,records:'AXGroup',reportOnlyAt:['text','link']},
+  tipremount:{kind:'keep',before:'Inbox',after:'Inbox',cover:'veil',remount:'link',records:'AXGroup',reportOnlyAt:['text','link']},
+  twinunder:{kind:'keep',before:'Delete',after:'Delete',cover:'veil',remount:'link',list:true,records:'AXGroup',reportOnlyAt:['text','link']},
   inbox:{kind:'asMain',before:'Inbox',after:'Inbox (3)'},
   reltime:{kind:'asMain',before:'1 minute ago',after:'2 minutes ago'},
   shrink:{kind:'asMain',before:'Inbox (12)',after:'Inbox'},

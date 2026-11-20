@@ -127,7 +127,10 @@ test('replies: outcome, the guard\'s record on a refusal and on a success, the r
     stalePoint: {verdict: 'refused', reason: 'nodeGone', recordedRole: 'AXStaticText', hitRole: 'AXStaticText', ms: 1.2}}}};
   assert.equal(outcomeOf(refused), 'screenChangedSinceScreenshot');
   assert.deepEqual(stalePointOf(refused), {verdict: 'refused', reason: 'nodeGone', identity: null, recordedRole: 'AXStaticText',
-    hitRole: 'AXStaticText', ms: 1.2, rechecked: false});
+    hitRole: 'AXStaticText', ms: 1.2, rechecked: false, underlyingRole: null, underlyingIdentity: null});
+  // #433's fix: the control beneath, and how it was found.
+  const under = stalePointOf({result: {meta: {stalePoint: {verdict: 'kept', reason: 'sameElement', recordedRole: 'AXGroup', underlyingRole: 'AXLink', underlyingIdentity: 'recreated'}}}});
+  assert.equal(under.underlyingRole, 'AXLink'); assert.equal(under.underlyingIdentity, 'recreated');
   assert.equal(routeOf(refused), 'synthesized');
   const kept = {result: {meta: {stalePoint: {verdict: 'kept', reason: 'sameElement', identity: 'recreated', recordedRole: 'AXLink', hitRole: 'AX Link'}}}};
   assert.equal(outcomeOf(kept), 'success');
@@ -226,7 +229,10 @@ test('gates pass a fix that refuses every twin and answers as main elsewhere, an
   assert.equal(why.overlayTwin.pass, true); assert.equal(why.overlayTwin.refused, 40);
   const quietKeep = gates(rows(at('twincover', 'text', 0, 'kept-missed'), r => r.head === 'fix' && r.cell === 'twincover' && r.at === 'text' && r.rep === 0 ? {clickEvents: []} : {}), {coverage: cov});
   assert.equal(quietKeep.overlayTwin.pass, true); assert.equal(quietKeep.overlayTwin.refused, 39); assert.equal(quietKeep.overlayTwin.failed, 1);
-  assert.deepEqual(g.guardMs.fix, {n: ok.length / 2, p50: 4, p95: 4, max: 4});
+  // The builder's cost cells (#433) are reported only, outside the gates' rows.
+  const costRows = ok.filter(r => r.head === 'fix' && ['stickyscroll', 'tipremount', 'twinunder'].includes(r.cell)).length;
+  assert.equal(costRows, 3 * 2 * 20); assert.ok(['stickyscroll', 'tipremount', 'twinunder'].every(c => g.reportOnly.perUnit[c + '/link']));
+  assert.deepEqual(g.guardMs.fix, {n: ok.length / 2 - costRows, p50: 4, p95: 4, max: 4});
   // Only a guard that judged the overlay counts: a fix row with no guard record, or another recorded role, fails; too few
   // rows recording the overlay on either head leave the gate inconclusive.
   assert.equal(gates(rows(at('twincover', 'text', 4, 'no-guard')), {coverage: cov}).overlayTwin.pass, false);

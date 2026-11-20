@@ -118,7 +118,9 @@ export function stalePointOf(reply){
   if(!sp||typeof sp!=='object')return null;
   return {verdict:sp.verdict==='kept'||sp.verdict==='refused'?sp.verdict:'other',reason:name(sp.reason),
     identity:sp.identity==='handle'||sp.identity==='recreated'?sp.identity:sp.identity==null?null:'other',
-    recordedRole:role(sp.recordedRole),hitRole:role(sp.hitRole),ms:Number.isFinite(sp.ms)?sp.ms:null,rechecked:sp.rechecked===true};
+    recordedRole:role(sp.recordedRole),hitRole:role(sp.hitRole),ms:Number.isFinite(sp.ms)?sp.ms:null,rechecked:sp.rechecked===true,
+    // #433's fix: the recorded control beneath the node that the guard judged too, and how it was found (absent on main).
+    underlyingRole:role(sp.underlyingRole),underlyingIdentity:sp.underlyingIdentity==='handle'||sp.underlyingIdentity==='recreated'?sp.underlyingIdentity:sp.underlyingIdentity==null?null:'other'};
 }
 export const routeOf=reply=>{const r=metaOf(reply)?.inputRoute;return r==null?null:name(r);};
 
@@ -203,6 +205,7 @@ export function summarize(rows){
       identity:tally(v.map(r=>r.guard?.identity??'none')),hitRole:tally(v.map(r=>r.guard?.hitRole??'none')),
       // #433: what the record held at the point, and the controls the click reached (`none` for the page itself).
       recorded:tally(v.map(r=>r.guard?.recordedRole??'none')),
+      underlying:tally(v.map(r=>r.guard?.underlyingRole?`${r.guard.underlyingRole}:${r.guard.underlyingIdentity??'none'}`:'none')),
       reached:tally(v.map(r=>[...new Set(eventsOf(r).map(e=>e.link))].sort().join('+')||'nothing')),route:tally(v.map(r=>r.route??'none')),
       landed:v.filter(r=>r.landed).length,wrong:v.filter(r=>r.verdict==='wrong-target').length,
       presentationLost:v.filter(r=>r.presentationHeld===false).length,guardMs:quantiles(v.map(r=>r.guard?.ms)),

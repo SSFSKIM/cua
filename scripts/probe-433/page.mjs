@@ -125,6 +125,13 @@ function run(c){
       // The target alone in its row; mark moves it two rows down (absolutely, so its element survives) and puts a new
       // control with its label, a link or a button, at its old place.
       slots[0].style.position='relative';slots[1].append(archive);
+    }else if(spec.twin==='deco'){
+      // #433's decomove: an inert decoration nested two groups deep inside the target, the size of its box; mark moves it
+      // into a new link B at the target's place.
+      target.style.position='relative';let inner=null;
+      for(let i=0;i<=WRAP;i++){const d=document.createElement('span');d.setAttribute('role','group');
+        d.style.cssText='position:absolute;left:0;top:0;width:100%;height:100%;display:block';if(inner)inner.append(d);else mover=d;inner=d;}
+      inner.id='veil';target.append(mover);slots[1].append(archive);
     }else if(spec.twin==='cover'){
       // As move, under a group laid over the target's row that survives the change (a transparent overlay, which lets
       // the pointer through to what lies under it).
@@ -180,6 +187,9 @@ function run(c){
     }else{
       drafts=control('drafts',OTHERS.drafts);slots[1].append(archive);slots[2].append(drafts);
       if(spec.parent)slots[0].replaceChildren(listed(target));
+      // #433's textbehind: a text behind the link (an earlier sibling, drawn below it), which mark changes.
+      if(spec.behindText){behind=document.createElement('div');behind.textContent=spec.behindText[0];
+        behind.style.cssText='position:absolute;left:8px;top:18px;font:12px sans-serif;color:#bbb';slots[0].style.position='relative';slots[0].prepend(behind);}
       // #433's bgbutton: an unrelated button behind the link (a later sibling, so the record's walk reads it after the
       // link, drawn below it), the size of the link's box; mark removes it.
       if(spec.behind){behind=document.createElement('button');behind.type='button';behind.textContent='Close';
@@ -207,6 +217,7 @@ function run(c){
       const n=control('twin',spec.before,{control:spec.swap});twins=[n];slots[0].prepend(n);
     }
     else if(spec.twin==='cover'){target.remove();slots[0].prepend(mover);}
+    else if(spec.twin==='deco'){const n=control('twin',spec.after,spec);n.style.position='relative';twins=[n];target.remove();n.append(mover);slots[0].prepend(n);}
     else if(spec.twin==='row'){slots[0].remove();const n=control('twin',spec.before,spec);twins[0].replaceWith(n);twins.push(n);}
     else if(spec.twin==='wide')rows[2].remove();
     else if(spec.twin==='hidden'){target.remove();mover.remove();const n=control('twin',spec.before,spec);twins.push(n);slots[0].replaceChildren(n);}
@@ -214,6 +225,7 @@ function run(c){
     else if(spec.scroll)scrollBy(0,spec.scroll);  // #433's stickyscroll: the link moves away under the fixed header
     else if(spec.parent){const n=control('target',spec.after,spec);document.getElementById('list').replaceWith(listed(n));target=n;}
     else if(spec.behind)behind.remove();
+    else if(spec.behindText)behind.textContent=spec.behindText[1];
     else if(spec.cover&&!spec.remount){}  // #433's controls: the overlay over a live link, nothing changing
     else if(spec.remount==='link'){const n=control('target',spec.after,spec);target.replaceWith(n);target=n;}
     else if(spec.remount==='text'){const s=document.createElement('span');s.textContent=spec.after;target.firstChild.replaceWith(s);}

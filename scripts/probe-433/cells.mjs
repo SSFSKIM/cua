@@ -89,6 +89,12 @@ export const CELLS={
   // unchanged link and its text while an unrelated button behind them is removed (`bgbutton`).
   rebuildunder:{kind:'keep',before:'Inbox',after:'Inbox',cover:'veil',parent:'list',records:'AXGroup'},
   bgbutton:{kind:'keep',before:'Inbox',after:'Inbox',cover:'veil',behind:'button',records:'AXGroup'},
+  // The second fix wave's cells: the link's text unchanged while the text behind it changes (`textbehind`, kept as main,
+  // gate keptAsMain: the record holds the link's text, no overlay); an inert decoration (a group nested two deep, the
+  // size of the link) moved from link A into a new link B, "Next", at the same point (`decomove`: the record holds the
+  // decoration alive, so main keeps and lands on B; the fix must refuse and never reach B, gate overlayTwin).
+  textbehind:{kind:'keep',before:'Inbox',after:'Inbox',behindText:['Saved','Saving']},
+  decomove:{kind:'twin',before:'Inbox',after:'Next',twin:'deco',cover:'deco',records:'AXGroup'},
   // The fix's costs (the builder's, reported, never gated: `reportOnlyAt` every point): a fixed header strip that catches
   // the pointer over the link, the page scrolled 128 px under it (`stickyscroll`: main keeps the header, the fix may refuse
   // the link as moved); the veil over a link re-rendered whole with its label (`tipremount`: #431's strict form judges the

@@ -31,7 +31,7 @@ export function findLink(nodes,text,{first=false,role='AXLink'}={}){
 
 // How many controls reading the label a twin cell prepares in what the observation can read: the target and its twin
 // (`move`), the three rows (`list`), the target alone where the twin lies outside the walk (`cap`, `deep`).
-export const LABELLED={move:2,list:3,cap:1,deep:1,swap:1,cover:2,row:2,wide:1,hidden:1};
+export const LABELLED={move:2,list:3,cap:1,deep:1,swap:1,cover:2,row:2,wide:1,hidden:1,deco:1};
 // Whether an observation of a twin cell is the one the cell needs (every other cell: true):
 // - the target is the control found: exactly LABELLED of the label's carriers were emitted (AXStaticText for links,
 //   AXButton for buttons), so an observation that missed the target never aims at the next row;

@@ -37,7 +37,7 @@ test('plans: ten per unit to measure, twenty per head interleaved to qualify', (
   assert.deepEqual([...new Set(q.filter((_, i) => i % 2 === 0).map(r => r.head))].sort(), ['fix', 'main']);
   for (const c of Object.values(CELLS)) assert.ok(['twin', 'keep', 'big', 'asMain'].includes(c.kind));
   // A twin carries the target's label, so the topmost of those reading it is the target.
-  for (const c of Object.values(CELLS)) if (c.kind === 'twin') assert.ok(c.before === c.after && ['move', 'list', 'cap', 'deep', 'swap', 'cover', 'row', 'wide', 'hidden'].includes(c.twin));
+  for (const c of Object.values(CELLS)) if (c.kind === 'twin') assert.ok((c.before === c.after || c.twin === 'deco') && ['move', 'list', 'cap', 'deep', 'swap', 'cover', 'row', 'wide', 'hidden', 'deco'].includes(c.twin));
   // Every cell's text before and after is distinct from the other links', so the observation finds it alone.
   for (const c of Object.values(CELLS)) for (const t of [c.before, c.after]) assert.ok(!['Archive', 'Drafts'].includes(t));
 });
@@ -217,7 +217,7 @@ test('gates pass a fix that refuses every twin and answers as main elsewhere, an
   // A moved target's own handle refuses frameMoved, which the swap cells count with nodeGone; no other twin does.
   const swapMoved = rows(good, r => r.head === 'fix' && r.cell.startsWith('twinswap') ? {guard: {verdict: 'refused', reason: 'frameMoved'}} : {});
   assert.equal(gates(swapMoved, {coverage: cov}).twinRefused.pass, true);
-  assert.equal(g.noWrongTarget.mainWrong, 12 * 20);
+  assert.equal(g.noWrongTarget.mainWrong, 14 * 20);
   const cvKept = gates(rows(at('twincv', 'text', 0, 'kept-landed')), {coverage: cov});
   assert.equal(cvKept.twinFrameless.pass, false); assert.equal(cvKept.twinRefused.pass, true); assert.equal(cvKept.twinFrameless.perUnit['twincv/text'].missed, 1);
   // #433: twincover is gated at both points on the click never reaching the twin; any refusal reason counts, a keep
@@ -226,9 +226,9 @@ test('gates pass a fix that refuses every twin and answers as main elsewhere, an
   assert.equal(overlay.overlayTwin.pass, false); assert.equal(overlay.overlayTwin.reachedTwin, 1); assert.equal(overlay.noWrongTarget.pass, false);
   assert.equal(overlay.twinRefused.pass, true);
   const why = gates(rows(good, r => r.head === 'fix' && r.cell === 'twincover' ? {guard: {verdict: 'refused', reason: 'interactiveHit', recordedRole: 'AXGroup'}} : {}), {coverage: cov});
-  assert.equal(why.overlayTwin.pass, true); assert.equal(why.overlayTwin.refused, 40);
+  assert.equal(why.overlayTwin.pass, true); assert.equal(why.overlayTwin.refused, 80);
   const quietKeep = gates(rows(at('twincover', 'text', 0, 'kept-missed'), r => r.head === 'fix' && r.cell === 'twincover' && r.at === 'text' && r.rep === 0 ? {clickEvents: []} : {}), {coverage: cov});
-  assert.equal(quietKeep.overlayTwin.pass, true); assert.equal(quietKeep.overlayTwin.refused, 39); assert.equal(quietKeep.overlayTwin.failed, 1);
+  assert.equal(quietKeep.overlayTwin.pass, true); assert.equal(quietKeep.overlayTwin.refused, 79); assert.equal(quietKeep.overlayTwin.failed, 1);
   // The builder's cost cells (#433) are reported only, outside the gates' rows.
   const costRows = ok.filter(r => r.head === 'fix' && ['stickyscroll', 'tipremount', 'twinunder'].includes(r.cell)).length;
   assert.equal(costRows, 3 * 2 * 20); assert.ok(['stickyscroll', 'tipremount', 'twinunder'].every(c => g.reportOnly.perUnit[c + '/link']));

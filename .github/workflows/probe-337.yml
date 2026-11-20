@@ -1,0 +1,88 @@
+name: probe-337
+# Disposable #337 kit (scripts/probe-337/README.md), on #316's. A push of this file only registers the workflow on its
+# branch; the hosted macOS measurement runs on dispatch, with the engine built unmodified from an exact SHA.
+on:
+  push:
+    branches: ['probe/337-measure']
+    paths: ['.github/workflows/probe-337.yml']
+  workflow_dispatch:
+    inputs:
+      engine:
+        description: Exact 40-character engine SHA (main's)
+        required: true
+        type: string
+      reps:
+        description: Repetitions per cell and sequence
+        type: string
+        default: '6'
+      cells:
+        description: Comma list of cells (empty for all; shared-behind, shared-behind-primed, shared-front, dedicated-behind)
+        type: string
+        default: ''
+      seqs:
+        description: Comma list of sequences (empty for all; zeroRow, typedRow, outside)
+        type: string
+        default: ''
+permissions:
+  contents: read
+jobs:
+  register:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo 'Registered; the measurement runs on dispatch with an exact engine SHA.'
+  measure:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: macos-latest
+    timeout-minutes: 150
+    env:
+      ENGINE_SHA: ${{ inputs.engine }}
+      REPS: ${{ inputs.reps }}
+      CELLS: ${{ inputs.cells }}
+      SEQS: ${{ inputs.seqs }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Apps
+        run: |
+          bash scripts/probe-316/install.sh chrome
+          defaults write com.apple.TextEdit ApplePersistenceIgnoreState -bool YES
+          defaults write com.apple.TextEdit NSQuitAlwaysKeepsWindows -bool NO
+      - name: Build the engine and the tool
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          [[ "$ENGINE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse "$ENGINE_SHA^{commit}")" = "$ENGINE_SHA"
+          sw_vers
+          git log -1 --format='kit %H %s'
+          swiftc -O -o "$RUNNER_TEMP/tool337" scripts/probe-337/tool.swift
+          git worktree add --detach "$RUNNER_TEMP/src" "$ENGINE_SHA"
+          git -C "$RUNNER_TEMP/src" log -1 --format='engine %H %s'
+          git -C "$RUNNER_TEMP/src" status --porcelain | (! grep .)
+          swift build -c release --package-path "$RUNNER_TEMP/src/native/engine" --scratch-path "$RUNNER_TEMP/eng"
+      - name: Measure
+        shell: bash
+        run: |
+          extra=()
+          if [ -n "$CELLS" ]; then extra+=(--variants "$CELLS"); fi
+          if [ -n "$SEQS" ]; then extra+=(--seqs "$SEQS"); fi
+          P337_ENGINE_REF="$ENGINE_SHA" node scripts/probe-337/measure.mjs --engine "$RUNNER_TEMP/eng/release/cua-engine" \
+            --tool "$RUNNER_TEMP/tool337" --out "$RUNNER_TEMP/probe-337" --reps "${REPS:-6}" --budget 110 "${extra[@]}"
+          node scripts/probe-337/summary.mjs "$RUNNER_TEMP/probe-337/results.json" | tee "$RUNNER_TEMP/probe-337/summary.txt"
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: probe-337
+          path: |
+            ${{ runner.temp }}/probe-337/*.txt
+            ${{ runner.temp }}/probe-316/install.txt
+            ${{ runner.temp }}/probe-337/results.json
+            ${{ runner.temp }}/probe-337/screens/*.jpg
+            ${{ runner.temp }}/probe-337/shots/**/*.jpg
+            ${{ runner.temp }}/probe-337/shots/**/*.png
+          if-no-files-found: warn

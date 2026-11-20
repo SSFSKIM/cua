@@ -494,6 +494,9 @@ enum Note {
     /// An acting request has come, or the engine ends: look one last time and end. A drop still waiting for its
     /// confirmation is waited for, at most [`DROP_CONFIRM`] after its release.
     Stop,
+    /// The engine's orderly exit after a stop signal: the watch of a release with no take ends by then at the latest,
+    /// a take first read after it past the watch ([`LateWatch::run_out_by`]).
+    EndBy(Instant),
 }
 
 /// What the watch's look found since the last one.
@@ -624,14 +627,17 @@ impl LateWatch {
         }
     }
 
-    /// At the engine's exit: [`LateWatch::run_out`], its whole lifetime, but done by `exit_by` when the exit has to be
-    /// done by then (a stop signal's backstop less the exit's own last steps, `serve.rs` `exit_by`). A stop that comes
-    /// once its drag has answered leaves the whole watch inside it (`serve.rs` `EXIT_TEARDOWN`); one that came while the
-    /// drag still ran can cut it short. Collecting the watch then takes its last look, which still cancels a take read by
+    /// At the engine's exit: [`LateWatch::run_out`], its whole lifetime, but ended by `end_by` when the exit has one
+    /// (after a stop signal: early enough that a take read by then gets its whole exit settle inside the backstop, the
+    /// design session's ruling 893, `Engine::shutdown`). The watch is told, so a take first read after `end_by` is past
+    /// it, as one after its own end. Collecting the watch then takes its last look, which still cancels a take read by
     /// then, its Escape sent before the exit's settle and before the connection closes.
-    pub fn run_out_by(&self, exit_by: Option<Instant>) {
+    pub fn run_out_by(&self, end_by: Option<Instant>) {
+        if let Some(by) = end_by {
+            let _ = self.notes.send(Note::EndBy(by));
+        }
         if let Some((_, _, until)) = self.released_at.get() {
-            self.run_out_until(exit_by.map_or(until, |by| until.min(by)));
+            self.run_out_until(end_by.map_or(until, |by| until.min(by)));
         }
     }
 
@@ -717,9 +723,12 @@ fn watch_loop(
     let mut activations: Vec<Instant> = Vec::new();
     // the release, whether a take came before it, and when the watch of a release with no take ends
     let mut released: Option<(Instant, bool, Instant)> = None;
+    // the exit's end for the watch, when the engine exits after a stop signal
+    let mut end_by: Option<Instant> = None;
     let mut stopping = false;
     loop {
         match inbox.try_recv() {
+            Ok(Note::EndBy(by)) => end_by = Some(by),
             Ok(Note::Released { at, taken, until }) => {
                 released = Some((at, taken, until));
                 on_release();
@@ -767,6 +776,7 @@ fn watch_loop(
                 }
             }
             Some((at, false, until)) => {
+                let until = end_by.map_or(until, |by| until.min(by));
                 // a take is the watch's when it was read by the watch's end; one first read after it (the watch's thread
                 // descheduled across its end) is past the watch, as one it never read
                 if let Some((time, seen)) = taken
@@ -1767,9 +1777,9 @@ mod tests {
     }
 
     #[test]
-    fn at_the_exit_a_watch_runs_out_its_whole_lifetime_so_a_take_500_ms_after_the_release_is_still_cancelled() {
-        // a stop straight after the drag's answer, at its release: the exit's deadline lies past the whole watch
-        let by_stop_at = |stopped: Instant| Some(crate::serve::exit_by_after(stopped));
+    fn at_the_exit_a_watch_runs_out_to_the_exit_s_end_for_it_so_a_take_500_ms_after_the_release_is_still_cancelled() {
+        // a stop straight after the drag's answer, at its release: the watch ends 650 ms after it (ruling 893)
+        let end_at_stop = |stopped: Instant| Some(stopped + Duration::from_millis(650));
         // a take 500 ms after the release, past 0.4.1's watch of SETTLE: still cancelled at the exit (the review of
         // task 115, P4)
         let (notes, inbox) = std::sync::mpsc::channel();
@@ -1794,7 +1804,7 @@ mod tests {
         watch
             .released_at
             .set(Some((released, false, late_watch_end(released, None))));
-        watch.run_out_by(by_stop_at(released));
+        watch.run_out_by(end_at_stop(released));
         assert!(watch.finished(), "returned only once the watch had ended");
         let WatchEnd::Late(late) = watch.stop() else {
             panic!("the late take was not cancelled")
@@ -1803,7 +1813,7 @@ mod tests {
             late.escaped && late.after_release >= Duration::from_millis(500),
             "{late:?}"
         );
-        // no take: the exit runs the watch to its end, LATE_TAKE_WATCH after the release, where it ends by itself
+        // no take: the exit's wait ends at its end for the watch, and the last look of the watch's stop ends it quiet
         let (notes, inbox) = std::sync::mpsc::channel();
         let released = Instant::now();
         notes.send(note_released(released, false)).unwrap();
@@ -1813,36 +1823,69 @@ mod tests {
         watch
             .released_at
             .set(Some((released, false, late_watch_end(released, None))));
-        watch.run_out_by(by_stop_at(released));
-        assert!(watch.finished() && released.elapsed() >= LATE_TAKE_WATCH);
-        assert!(
-            released.elapsed() < LATE_TAKE_WATCH + Duration::from_millis(50),
-            "{:?}",
-            released.elapsed()
-        );
-        assert_eq!(watch.stop(), WatchEnd::Quiet);
-        // a stop that came 400 ms before the release, while the drag still ran: the deadline cuts the watch short, and
-        // the last look of its stop ends it
-        let (notes, inbox) = std::sync::mpsc::channel();
-        let released = Instant::now();
-        notes.send(note_released(released, false)).unwrap();
-        let thread =
-            std::thread::spawn(move || watch_loop(&inbox, false, || {}, || Ok(Seen::default()), || Ok(()), |_| true));
-        let watch = LateWatch::around(thread);
-        watch
-            .released_at
-            .set(Some((released, false, late_watch_end(released, None))));
-        let by = crate::serve::exit_by_after(released - Duration::from_millis(400));
-        assert!(by < released + LATE_TAKE_WATCH);
+        let by = released + Duration::from_millis(650);
         watch.run_out_by(Some(by));
         assert!(Instant::now() >= by);
         assert!(
-            Instant::now() < by + Duration::from_millis(50),
+            Instant::now() < by + Duration::from_millis(40),
             "{:?}",
             released.elapsed()
         );
-        assert!(!watch.finished(), "the watch itself runs on to its LATE_TAKE_WATCH");
         assert_eq!(watch.stop(), WatchEnd::Quiet);
+        // with no end (stdin closed): the whole watch, which ends by itself LATE_TAKE_WATCH after the release
+        let (notes, inbox) = std::sync::mpsc::channel();
+        let released = Instant::now();
+        notes.send(note_released(released, false)).unwrap();
+        let thread =
+            std::thread::spawn(move || watch_loop(&inbox, false, || {}, || Ok(Seen::default()), || Ok(()), |_| true));
+        let watch = LateWatch::around(thread);
+        watch
+            .released_at
+            .set(Some((released, false, late_watch_end(released, None))));
+        watch.run_out_by(None);
+        assert!(watch.finished() && released.elapsed() >= LATE_TAKE_WATCH);
+        assert_eq!(watch.stop(), WatchEnd::Quiet);
+    }
+
+    #[test]
+    fn at_an_orderly_exit_a_take_read_after_the_exit_s_end_for_the_watch_is_past_it() {
+        // ruling 893: the exit ends the watch early (650 ms after the stop); a take read after that, though inside the
+        // watch's own 700 ms, is past it, quiet with no Escape, so no settle can run past the exit's deadline; one read
+        // before it is cancelled
+        for (take_after, late) in [(150, false), (50, true)] {
+            let (notes, inbox) = std::sync::mpsc::channel();
+            let released = Instant::now();
+            notes.send(note_released(released, false)).unwrap();
+            notes.send(Note::EndBy(released + Duration::from_millis(100))).unwrap();
+            let mut escapes = 0;
+            let end = watch_loop(
+                &inbox,
+                false,
+                || {},
+                || {
+                    Ok(Seen {
+                        take: (released.elapsed() >= Duration::from_millis(take_after)).then_some(7),
+                        ..Seen::default()
+                    })
+                },
+                || Ok(()),
+                |_| {
+                    escapes += 1;
+                    true
+                },
+            );
+            if late {
+                assert!(matches!(end, WatchEnd::Late(LateDrop { escaped: true, .. })), "{end:?}");
+                assert_eq!(escapes, 1);
+            } else {
+                assert_eq!((end, escapes), (WatchEnd::Quiet, 0), "a take at +{take_after} ms");
+                assert!(
+                    released.elapsed() < Duration::from_millis(140),
+                    "ended at the exit's end for it: {:?}",
+                    released.elapsed()
+                );
+            }
+        }
     }
 
     #[test]

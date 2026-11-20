@@ -937,12 +937,14 @@ impl Engine {
         }
         self.inputs.release_held(&mut self.x);
         crate::pressed::release_rest(&self.x.conn, self.x.root);
-        // an armed after-release watch then runs out its whole lifetime (`dnd::late_watch_end`), by the exit's deadline
-        // at the latest (the review of task 115, P4: 0.4.2's first exit cut it 300 ms after the release); a late take
-        // inside it is still cancelled, its Escape sent before the connections close and before the FocusOut of its
-        // drag's session and of a session the exit released; collected then, the Escape is a key the settle below follows
+        // an armed after-release watch then runs out its whole lifetime (`dnd::late_watch_end`), but after a stop signal
+        // it ends by the exit's deadline less the exit's settle, 650 ms after the signal, so a take it reads by then
+        // keeps its whole settle (300 ms, settle.rs) inside the backstop (the design session's ruling 893; the review
+        // of task 115, P4: 0.4.2's first exit cut it 300 ms after the release); a late take inside it is still
+        // cancelled, its Escape sent before the connections close and before the FocusOut of its drag's session and of
+        // a session the exit released; collected then, the Escape is a key the settle below follows
         if let Some(watch) = &self.late_watch {
-            watch.run_out_by(exit_by);
+            watch.run_out_by(exit_by.map(|by| watch_end_at_exit(by, self.cfg.pacing.exit_settle)));
         }
         self.collect_late_watch(true);
         self.inputs.end_watched(&mut self.x);
@@ -969,6 +971,35 @@ impl Engine {
         if let Some(dir) = self.shot_dir.take() {
             let _ = std::fs::remove_dir_all(dir);
         }
+    }
+}
+
+/// When the late-take watch ends at an orderly exit after a stop signal (the design session's ruling 893): the exit's
+/// deadline (`serve::exit_by`) less the exit's settle, so a take the watch reads by then keeps its whole settle.
+fn watch_end_at_exit(exit_by: Instant, exit_settle: std::time::Duration) -> Instant {
+    exit_by.checked_sub(exit_settle).unwrap_or(exit_by)
+}
+
+#[cfg(test)]
+mod exit_watch_tests {
+    use super::watch_end_at_exit;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn at_an_orderly_exit_the_watch_ends_650_ms_after_the_stop_so_its_take_s_settle_is_whole() {
+        // ruling 893: the watch ends at stop + 650 ms; a take read then gets its 300 ms settle, done at stop + 950,
+        // the exit's last steps after it, all before the 1 s backstop
+        let stop = Instant::now();
+        let exit_by = crate::serve::exit_by_after(stop);
+        let settle = crate::settle::EXIT_SETTLE;
+        let end = watch_end_at_exit(exit_by, settle);
+        assert_eq!(end, stop + Duration::from_millis(650));
+        assert_eq!(
+            end + settle,
+            exit_by,
+            "a take read at the watch's end settles whole by the exit's deadline"
+        );
+        assert!(exit_by < stop + crate::serve::EXIT_BACKSTOP);
     }
 }
 

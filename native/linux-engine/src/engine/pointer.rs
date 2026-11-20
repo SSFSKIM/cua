@@ -504,6 +504,10 @@ fn drag_along(
                 return cancel_in_time(x, route, guard, &mut pressed);
             }
         }
+        // how long a hold that ended with no take kept the pointer still up to its end: the release dwell, which it
+        // serves, so the button goes up at B and not a dwell after it (the re-review of fdaff715, P1: a foreground
+        // drag named for Firefox that presses into Chrome kept Gecko's 30 ms dwell after B)
+        let mut still = Duration::ZERO;
         if let (Some(watch), Some(take_hold)) = (hold.as_mut(), take_hold) {
             let ms = |d: Duration| d.as_secs_f64() * 1000.0;
             let path = pressed_at.elapsed();
@@ -521,6 +525,8 @@ fn drag_along(
                 let since = Instant::now();
                 let deadline = pressed_at + take_hold.bound;
                 let pings = (since < deadline).then(|| take_hold.pings(deadline));
+                // the hold's last motion: the path's end, then each refresh on the background route
+                let mut last_motion = since;
                 let looked = if matches!(route, Route::Window(_)) {
                     // the refreshes end a browser's rest before REFRESH_AFTER_PRESS, or before the bound if it is
                     // shorter: the hold past them sends no motion
@@ -529,6 +535,7 @@ fn drag_along(
                         |motion| {
                             if let Some((px, py)) = motion {
                                 route.place_again(x, px, py)?;
+                                last_motion = Instant::now();
                             }
                             if let Some(cursor) = accept.as_deref_mut() {
                                 let _ = cursor.poll();
@@ -553,9 +560,12 @@ fn drag_along(
                         deadline,
                     )
                 };
-                pings_record = crate::hold_ping::hold_record(pings, pressed_at, Instant::now());
+                let ended = Instant::now();
+                pings_record = crate::hold_ping::hold_record(pings, pressed_at, ended);
                 if looked {
                     taken = Some((Instant::now(), 0));
+                } else {
+                    still = ended.saturating_duration_since(last_motion);
                 }
                 waited = since.elapsed();
             }
@@ -641,6 +651,9 @@ fn drag_along(
                 false => guard.watch.is_started(),
             };
             let ended = Instant::now();
+            if held && !taken {
+                still = ended - since;
+            }
             *held_for_take = Some(json!({
                 "bound_ms": ms(take_hold.bound),
                 "path_ms": ms(path),
@@ -656,7 +669,7 @@ fn drag_along(
                 return cancel_in_time(x, route, guard, &mut pressed);
             }
         }
-        std::thread::sleep(pacing.release);
+        std::thread::sleep(pacing.release.saturating_sub(still));
         // the last look before the release
         if let Some(guard) = guard.as_deref_mut()
             && guard.looks()

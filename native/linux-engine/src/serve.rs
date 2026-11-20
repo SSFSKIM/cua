@@ -41,11 +41,9 @@ pub const EXIT_BACKSTOP: Duration = Duration::from_millis(1000);
 
 /// What the orderly exit keeps of the backstop for its last steps, after the late-take watch's run-out and the exit's
 /// settle, which end by [`exit_by`]: the watch collected, the sessions' `FocusOut`s, the exit's `--stats` line, the
-/// clipboard's owner stopped, the screenshot directory removed (a few milliseconds idle). A stop that comes once a
-/// drag has answered leaves the drag's whole late-take watch inside the backstop (`dnd::LATE_TAKE_WATCH` after its
-/// release, which came before the answer), and the exit's whole settle after a take the watch cancelled unless the take
-/// came in the watch's last 50 ms, whose settle the deadline shortens to no less than 250 ms (the review of task 115,
-/// P4).
+/// clipboard's owner stopped, the screenshot directory removed (a few milliseconds idle). The watch itself ends the
+/// exit's settle before that, 650 ms after the signal, so a take it cancels keeps its whole settle (the design
+/// session's ruling 893, `Engine::shutdown`).
 pub const EXIT_TEARDOWN: Duration = Duration::from_millis(50);
 
 /// When the first stop signal came (none: no stop signal yet).
@@ -567,25 +565,11 @@ mod tests {
     }
 
     #[test]
-    fn a_stop_after_a_drag_s_answer_leaves_its_whole_late_take_watch_inside_the_backstop() {
-        // the soonest a stop can come after a drag's answer is its release (the review of task 115, P4)
-        let released = Instant::now();
-        let by = exit_by_after(released);
+    fn the_exit_s_deadline_leaves_its_last_steps_before_the_backstop() {
+        let stopped = Instant::now();
+        let by = exit_by_after(stopped);
         assert_eq!(EXIT_TEARDOWN, Duration::from_millis(50));
-        assert!(
-            by < released + EXIT_BACKSTOP,
-            "the exit's last steps before the backstop"
-        );
-        assert!(
-            crate::dnd::late_watch_end(released, Some(released)) < by,
-            "the whole watch, 700 ms after the release"
-        );
-        // a take in the watch's last moment: its Escape's exit settle keeps all but 50 ms of its 300
-        let left = by - (released + crate::dnd::LATE_TAKE_WATCH);
-        assert!(
-            left >= crate::settle::EXIT_SETTLE - Duration::from_millis(50),
-            "{left:?}"
-        );
+        assert_eq!(by + EXIT_TEARDOWN, stopped + EXIT_BACKSTOP);
     }
 
     #[test]

@@ -1612,8 +1612,8 @@ fn a_foreground_drag_named_for_another_family_that_starts_over_chrome_is_held_fo
     );
     let whole = PRESS_TO_RELEASE.lock().unwrap().expect("a press and a release");
     assert!(
-        whole + Duration::from_millis(5) >= bound && whole < bound + Duration::from_millis(80),
-        "held for Chrome's take: released {whole:?} after the press"
+        whole + Duration::from_millis(5) >= bound && whole < bound + Duration::from_millis(25),
+        "held for Chrome's take, Gecko's release dwell inside the hold: released {whole:?} after the press"
     );
     let hold = &stats["hold"];
     assert_eq!(
@@ -2521,12 +2521,13 @@ fn an_exit_inside_the_watch_s_lifetime_still_cancels_a_late_drag_and_drop_and_se
     );
 }
 
-/// An engine stopped straight after a Chromium source's plain drag answered runs the drag's whole late-take watch, 700
-/// ms after the release, inside the stop's 1 s backstop (the review of task 115, P4: the exit cut the watch 300 ms after
-/// the release, so a take at +500 ms went uncancelled): the take 500 ms after the release is cancelled, the exit's
-/// settle follows its Escape, and the exit is the orderly one, its `--stats` line written, before the backstop.
+/// An engine stopped straight after a Chromium source's plain drag answered runs the drag's late-take watch on past
+/// 0.4.1's 300 ms, to 650 ms after the stop (ruling 893), inside the stop's 1 s backstop (the review of task 115, P4: the
+/// exit cut the watch 300 ms after the release, so a take at +500 ms went uncancelled): the take 500 ms after the
+/// release is cancelled, the exit's settle follows its Escape, and the exit is the orderly one, its `--stats` line
+/// written, before the backstop.
 #[test]
-fn an_exit_straight_after_a_drag_s_answer_runs_its_whole_late_take_watch_inside_the_backstop() {
+fn an_exit_straight_after_a_drag_s_answer_cancels_a_take_500_ms_after_the_release_inside_the_backstop() {
     support::fresh_display();
     let late = Duration::from_millis(500);
     assert!(
@@ -2587,6 +2588,55 @@ fn an_exit_straight_after_a_drag_s_answer_runs_its_whole_late_take_watch_inside_
         .stats_where(|line| line["settle_final"] == json!(true))
         .expect("the orderly exit's --stats line");
     assert!(exit_line["exit_settle"]["waited_ms"].is_number(), "{exit_line}");
+}
+
+/// At an orderly exit after a stop signal the late-take watch ends 650 ms after the signal (the design session's ruling
+/// 893), so a take it sees keeps the exit's whole 300 ms settle inside the 1 s backstop: stopped straight after a
+/// plain drag's answer, a take 590 ms after the release, just inside that end, is cancelled and the exit waits 300 ms
+/// after its Escape; one 680 ms after the release, past that end though inside the watch's own 700 ms, is not.
+#[test]
+fn an_orderly_exit_ends_the_watch_650_ms_after_the_stop_so_a_take_it_cancels_settles_its_whole_300_ms() {
+    for (late, cancelled) in [(590, true), (680, false)] {
+        support::fresh_display();
+        let path = json!([{"x": 20, "y": 20}, {"x": 60, "y": 20}]);
+        let (window, stop, recorder) = drag_source(OnRelease::TakesLateAfter(Duration::from_millis(late)));
+        focus_nothing();
+        let mut shared = Engine::start();
+        assert_eq!(
+            shared.request("drag", json!({"window": {"id": window}, "path": path})),
+            Ok(Value::Null)
+        );
+        let signalled = Instant::now();
+        shared.signal(rustix::process::Signal::TERM);
+        let (status, exited) = shared.exit_within(Duration::from_secs(5)).expect("the engine exits");
+        assert_eq!(status.code(), Some(143));
+        sleep(SETTLE);
+        stop.send(()).unwrap();
+        let inputs = recorder.join().unwrap();
+        assert!(
+            exited - signalled < Duration::from_millis(990),
+            "+{late} ms: inside the backstop, {:?} after the stop",
+            exited - signalled
+        );
+        let order = ESCAPES_AND_FOCUS_OUTS.lock().unwrap().clone();
+        if cancelled {
+            assert!(
+                inputs.contains(&Input::KeyPress { sent: true }),
+                "+{late} ms: cancelled: {inputs:?}"
+            );
+            assert_eq!(order[0].0, "escape", "{order:?}");
+            assert!(
+                exited >= order[0].1 + EXIT_SETTLE - Duration::from_millis(3),
+                "+{late} ms: the whole settle after the Escape: {:?}",
+                exited.saturating_duration_since(order[0].1)
+            );
+        } else {
+            assert!(
+                !inputs.contains(&Input::KeyPress { sent: true }),
+                "+{late} ms: past the exit's end for the watch: {inputs:?}"
+            );
+        }
+    }
 }
 
 /// The after-release watch's lifetime after a release with no take (`dnd::LATE_TAKE_WATCH`, ruling 888.3; a drag's

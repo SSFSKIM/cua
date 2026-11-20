@@ -29,9 +29,9 @@ cua's own Linux engine, cua-engine 0.4.2, built from <commit> for x86-64 and arm
   - **The late-take watch.** After a release with no take, the watch runs at least 700 ms after the release, or 300 ms
     after the hold's end if that is later. It runs after the answer, so a plain drag does not wait for it. A take inside
     it is cancelled at once and reported as before: the next reply carries `Pending from your last drag, a late drag
-    and drop: …`, and the next acting request is refused with it. The engine's exit runs the whole watch too when it
-    is stopped after the drag answered, and ends its waits 950 ms after the stop signal at the latest, inside its 1 s
-    backstop.
+    and drop: …`, and the next acting request is refused with it. At an orderly exit after a stop signal only, the
+    watch ends 650 ms after the signal (the design session's ruling 893), so a take it cancels keeps its whole 300 ms
+    settle inside the 1 s backstop; a take after that, at such an exit, goes unseen.
 - **The bound.** B is 450 ms in this build (`dnd::TAKE_HOLD_AFTER_PRESS`), <B as the design session set it from task
   114's p450 and p600 runs>. A take later than B after the press still misses, and the drag answers as a plain one: at
   twice the gate's load on arm64, task 113 saw renderers start their drag up to about 580 ms after the press.
@@ -39,6 +39,8 @@ cua's own Linux engine, cua-engine 0.4.2, built from <commit> for x86-64 and arm
 - **The ping predictor, measurement only.** While a hold waits with no take, the engine sends the source window
   `_NET_WM_PING`, one at a time, the next 25 ms after the last once it was answered, none in the hold's last 25 ms.
   It pings from a thread and an X connection of its own, so the drag never waits for it, and it changes no answer;
+  a ping still in flight at the hold's end or whose send failed is recorded as such (`in_flight`, `send_failed`),
+  never as unanswered;
   `--drag-dnd-hold-ping off` (measurement only) turns it off, the control that it leaves the release where it was. `--stats` `hold.pings` records each round trip
   (`{asked, round_trips: [{sent_after_press_ms, rtt_ms}]}`, an unanswered one with `unanswered_ms`, or
   `{asked: false, why}`). A handle's record has its `hold` too.

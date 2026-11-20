@@ -15,9 +15,13 @@
 //! The pings are bounded by the hold: one at a time, the next one [`PING_EVERY`] after the last went out once that one
 //! was answered, and none, the first included, in the hold's last [`PING_EVERY`] (it could not come back inside the
 //! hold), so none goes out after the hold's end, however late the setup finished. A hold with less than that left when
-//! it starts starts no sampler. A ping still unanswered when the hold ends is recorded with how long it had waited.
+//! it starts starts no sampler. A ping is admitted, recorded as in flight, and then checked again at its submission:
+//! a hold that ended meanwhile (a take) or a deadline the worker crossed sends nothing (the re-review of fdaff715, P2).
+//! A ping still unanswered when the hold ends is recorded with how long it had waited; one whose submission was under
+//! way then, or failed, is recorded as such, never as unanswered. At most [`MAX_SETTING_UP`] samplers set up at once
+//! in an engine: a connect that never returns leaves its thread behind, and no more than that many.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
@@ -47,15 +51,38 @@ const NO_TIME: &str = "no ping fitted in what was left of the hold";
 /// Why a hold's record asks nothing: the sampler was still setting up when the hold ended.
 const NOT_READY: &str = "the ping's connection was not ready by the hold's end";
 
+/// How many samplers may be setting up at once in an engine (connecting, reading the window's protocols): a connect
+/// that never returns keeps its slot, so a stuck X server costs this many threads, not one per hold.
+const MAX_SETTING_UP: usize = 2;
+
+/// The samplers setting up now, in this engine.
+static SETTING_UP: AtomicUsize = AtomicUsize::new(0);
+
+/// Why a hold's record asks nothing: [`MAX_SETTING_UP`] earlier samplers are still setting up.
+const BUSY: &str = "earlier holds' ping connections were still being set up";
+
 /// Why a hold's record asks nothing: the engine runs with the hold's pings off (`--drag-dnd-hold-ping off`, measurement
 /// only: the design session's ruling 892, task 116's control that the sampler leaves the release where it was).
 const DISABLED: &str = "disabled";
 
-/// One ping: when it went out, and when its answer was read (None: not yet).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// One ping: when it went out (or its submission began), how its submission went, and when its answer was read (None:
+/// not yet).
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct RoundTrip {
     sent: Instant,
+    sending: Sending,
     answered: Option<Instant>,
+}
+
+/// A ping's submission.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Sending {
+    /// Admitted and recorded, not yet sent: it may go out, or be dropped at its submission's check.
+    InFlight,
+    /// Sent and flushed.
+    Sent,
+    /// The send failed: nothing was asked.
+    Failed(String),
 }
 
 /// Where the sampler is.
@@ -106,10 +133,29 @@ impl HoldPing {
         ends: Instant,
         connect: impl FnOnce() -> Result<(RustConnection, usize)> + Send + 'static,
     ) -> HoldPing {
+        Self::spawn(window, ends, connect, || {}, &SETTING_UP)
+    }
+
+    /// [`HoldPing::start_with`], `gap` run between each ping's admission and its submission (the tests' window into
+    /// it), the setups counted in `setting_up`.
+    fn spawn(
+        window: Window,
+        ends: Instant,
+        connect: impl FnOnce() -> Result<(RustConnection, usize)> + Send + 'static,
+        gap: impl FnMut() + Send + 'static,
+        setting_up: &'static AtomicUsize,
+    ) -> HoldPing {
         let stop = Arc::new(AtomicBool::new(false));
         if !admitted(None, Instant::now(), ends) {
             return HoldPing {
                 sampled: Err(NO_TIME),
+                stop,
+            };
+        }
+        if setting_up.fetch_add(1, Ordering::SeqCst) >= MAX_SETTING_UP {
+            setting_up.fetch_sub(1, Ordering::SeqCst);
+            return HoldPing {
+                sampled: Err(BUSY),
                 stop,
             };
         }
@@ -118,10 +164,16 @@ impl HoldPing {
             trips: Vec::new(),
         }));
         let (shared, stopped) = (sampled.clone(), stop.clone());
-        let spawned = std::thread::Builder::new()
-            .name("hold-ping".into())
-            .spawn(move || sample(window, ends, connect, &shared, &stopped));
+        let spawned = std::thread::Builder::new().name("hold-ping".into()).spawn(move || {
+            let connect = move || {
+                let connected = connect();
+                setting_up.fetch_sub(1, Ordering::SeqCst);
+                connected
+            };
+            sample(window, ends, connect, gap, &shared, &stopped)
+        });
         if let Err(error) = spawned {
+            setting_up.fetch_sub(1, Ordering::SeqCst);
             locked(&sampled).phase = Phase::Failed(format!("the ping's thread could not start: {error}"));
         }
         HoldPing {
@@ -225,6 +277,7 @@ fn sample(
     window: Window,
     ends: Instant,
     connect: impl FnOnce() -> Result<(RustConnection, usize)>,
+    mut gap: impl FnMut(),
     sampled: &Mutex<Sampled>,
     stop: &AtomicBool,
 ) {
@@ -253,19 +306,40 @@ fn sample(
             }
         }
         if outstanding.is_none() && admitted(last_sent, Instant::now(), ends) {
-            // recorded before it goes out, under the lock the hold's end takes after it says stop: a ping either goes
-            // into the record or never goes out
-            let sent = {
+            // recorded in flight before it goes out, under the lock the hold's end takes after it says stop, so the
+            // record never misses a ping that went out; the lock is never held through the send
+            let index = {
                 let mut sampled = locked(sampled);
                 if stop.load(Ordering::SeqCst) {
                     return;
                 }
-                let sent = Instant::now();
-                sampled.trips.push(RoundTrip { sent, answered: None });
-                sent
+                sampled.trips.push(RoundTrip {
+                    sent: Instant::now(),
+                    sending: Sending::InFlight,
+                    answered: None,
+                });
+                sampled.trips.len() - 1
             };
+            gap();
+            // checked again at the submission: a hold that has ended meanwhile (a take ends it at once), or a worker
+            // late past the hold's last PING_EVERY, sends nothing, and the ping leaves the record
+            if stop.load(Ordering::SeqCst) || !admitted(last_sent, Instant::now(), ends) {
+                locked(sampled).trips.truncate(index);
+                continue;
+            }
             let token = crate::drop_settle::next_token();
-            if asking.ask(token).is_err() {
+            let sent = Instant::now();
+            let asked = asking.ask(token);
+            {
+                let mut sampled = locked(sampled);
+                let trip = &mut sampled.trips[index];
+                trip.sent = sent;
+                trip.sending = match &asked {
+                    Ok(()) => Sending::Sent,
+                    Err(error) => Sending::Failed(format!("{error:#}")),
+                };
+            }
+            if asked.is_err() {
                 return;
             }
             outstanding = Some(token);
@@ -291,7 +365,8 @@ fn not_asked(why: &str) -> Value {
 }
 
 /// `hold.pings`: each ping's time after the press and its round trip, or, unanswered by the hold's end (`ended`), how
-/// long it had waited by then.
+/// long it had waited by then; a ping whose submission was still under way at the hold's end (`in_flight`), or failed
+/// (`send_failed`, nothing asked), is no round trip and no unanswered ping.
 fn record(trips: &[RoundTrip], pressed_at: Instant, ended: Instant) -> Value {
     json!({
         "asked": true,
@@ -299,6 +374,15 @@ fn record(trips: &[RoundTrip], pressed_at: Instant, ended: Instant) -> Value {
             .iter()
             .map(|trip| {
                 let sent_after_press_ms = ms(trip.sent.saturating_duration_since(pressed_at));
+                match &trip.sending {
+                    Sending::InFlight => {
+                        return json!({ "sent_after_press_ms": sent_after_press_ms, "rtt_ms": null, "in_flight": true });
+                    }
+                    Sending::Failed(error) => {
+                        return json!({ "sent_after_press_ms": sent_after_press_ms, "rtt_ms": null, "send_failed": error });
+                    }
+                    Sending::Sent => {}
+                }
                 match trip.answered.filter(|&at| at <= ended) {
                     Some(at) => json!({
                         "sent_after_press_ms": sent_after_press_ms,
@@ -349,19 +433,26 @@ mod tests {
     fn the_record_has_each_ping_s_round_trip_or_how_long_it_waited_unanswered() {
         let pressed = Instant::now();
         let at = |ms: u64| pressed + Duration::from_millis(ms);
+        let sent = |ms: u64, answered: Option<u64>| RoundTrip {
+            sent: at(ms),
+            sending: Sending::Sent,
+            answered: answered.map(at),
+        };
         let trips = [
+            sent(250, Some(251)),
+            sent(276, None),
+            // read only after the hold had ended: unanswered by then
+            sent(300, Some(451)),
+            // a submission still under way at the hold's end, and one that failed: neither is an unanswered ping
             RoundTrip {
-                sent: at(250),
-                answered: Some(at(251)),
-            },
-            RoundTrip {
-                sent: at(276),
+                sent: at(426),
+                sending: Sending::InFlight,
                 answered: None,
             },
-            // read only after the hold had ended: unanswered by then
             RoundTrip {
-                sent: at(300),
-                answered: Some(at(451)),
+                sent: at(426),
+                sending: Sending::Failed("broken pipe".into()),
+                answered: None,
             },
         ];
         assert_eq!(
@@ -372,6 +463,8 @@ mod tests {
                     {"sent_after_press_ms": 250.0, "rtt_ms": 1.0},
                     {"sent_after_press_ms": 276.0, "rtt_ms": null, "unanswered_ms": 174.0},
                     {"sent_after_press_ms": 300.0, "rtt_ms": null, "unanswered_ms": 150.0},
+                    {"sent_after_press_ms": 426.0, "rtt_ms": null, "in_flight": true},
+                    {"sent_after_press_ms": 426.0, "rtt_ms": null, "send_failed": "broken pipe"},
                 ],
             })
         );
@@ -413,14 +506,16 @@ mod tests {
     /// ready.
     #[test]
     fn a_sampler_still_setting_up_at_the_hold_s_end_holds_nothing_up() {
+        static SETTING_UP: AtomicUsize = AtomicUsize::new(0);
         let (release, stuck) = std::sync::mpsc::channel::<()>();
         let pressed = Instant::now();
         let ends = pressed + Duration::from_millis(50);
         let started = Instant::now();
-        let pings = HoldPing::start_with(0, ends, move || {
+        let connect = move || {
             let _ = stuck.recv();
             anyhow::bail!("let go")
-        });
+        };
+        let pings = HoldPing::spawn(0, ends, connect, || {}, &SETTING_UP);
         assert!(
             started.elapsed() < Duration::from_millis(5),
             "started at once: {:?}",
@@ -436,6 +531,73 @@ mod tests {
         );
         assert_eq!(record, json!({"asked": false, "why": NOT_READY}));
         release.send(()).unwrap();
+    }
+
+    /// Connects that never return hold at most [`MAX_SETTING_UP`] threads: a hold past that starts no sampler, and its
+    /// record says why; once a setup returns, the next hold samples again.
+    #[test]
+    fn stuck_setups_hold_at_most_their_cap_of_threads() {
+        static SETTING_UP: AtomicUsize = AtomicUsize::new(0);
+        let ends = Instant::now() + Duration::from_secs(5);
+        let stuck = |release: std::sync::mpsc::Receiver<()>| {
+            move || {
+                let _ = release.recv();
+                anyhow::bail!("let go")
+            }
+        };
+        let releases: Vec<_> = (0..MAX_SETTING_UP)
+            .map(|_| {
+                let (release, waits) = std::sync::mpsc::channel::<()>();
+                let pings = HoldPing::spawn(0, ends, stuck(waits), || {}, &SETTING_UP);
+                (release, pings)
+            })
+            .collect();
+        let connected = Arc::new(AtomicBool::new(false));
+        let flag = connected.clone();
+        let started = Instant::now();
+        let busy = HoldPing::spawn(
+            0,
+            ends,
+            move || {
+                flag.store(true, Ordering::SeqCst);
+                anyhow::bail!("not connected")
+            },
+            || {},
+            &SETTING_UP,
+        );
+        assert_eq!(
+            busy.finish(started, Instant::now()),
+            json!({"asked": false, "why": BUSY})
+        );
+        assert!(!connected.load(Ordering::SeqCst), "no thread started past the cap");
+        for (release, _) in &releases {
+            release.send(()).unwrap();
+        }
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while SETTING_UP.load(Ordering::SeqCst) > 0 && Instant::now() < deadline {
+            std::thread::sleep(MS);
+        }
+        let flag = connected.clone();
+        let pings = HoldPing::spawn(
+            0,
+            ends,
+            move || {
+                flag.store(true, Ordering::SeqCst);
+                anyhow::bail!("not connected")
+            },
+            || {},
+            &SETTING_UP,
+        );
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while !connected.load(Ordering::SeqCst) && Instant::now() < deadline {
+            std::thread::sleep(MS);
+        }
+        assert!(
+            connected.load(Ordering::SeqCst),
+            "sampling again once the setups returned"
+        );
+        drop(pings);
+        drop(releases);
     }
 
     /// A connection held through the test, so the display does not reset between its cases (Xvfb resets once its last
@@ -649,6 +811,68 @@ mod tests {
         let arrivals = arrivals.lock().unwrap().clone();
         assert_eq!(arrivals.len(), trips.len(), "{record}");
         assert!(arrivals.iter().all(|&at| at < ended), "none after the hold");
+        end(window, answerer);
+    }
+
+    /// The gap between a ping's admission and its submission (the re-review of fdaff715, P2). A hold that ends in it,
+    /// as a take ends one at once, records the ping as in flight, never as unanswered, and the ping is not sent; a
+    /// worker that crosses the hold's last [`PING_EVERY`] in it sends nothing either.
+    #[test]
+    #[cfg_attr(not(feature = "live"), ignore = "needs an X display (--features live)")]
+    fn a_ping_admitted_but_not_yet_submitted_when_the_hold_ends_or_its_time_runs_out_is_not_sent() {
+        static SETTING_UP: AtomicUsize = AtomicUsize::new(0);
+        let _held = display_held();
+        let connect = || x11rb::connect(None).context("connect");
+        // the hold ends (an early take) while the first ping waits in the gap
+        let (window, answerer, arrivals) = answering_window(Some(Duration::ZERO));
+        let (in_gap, at_gap) = std::sync::mpsc::channel::<()>();
+        let (go_on, held_in_gap) = std::sync::mpsc::channel::<()>();
+        let gap = move || {
+            let _ = in_gap.send(());
+            let _ = held_in_gap.recv();
+        };
+        let pressed = Instant::now();
+        let pings = HoldPing::spawn(window, pressed + Duration::from_millis(400), connect, gap, &SETTING_UP);
+        at_gap
+            .recv_timeout(Duration::from_secs(5))
+            .expect("the first ping admitted");
+        let ended = Instant::now();
+        let record = pings.finish(pressed, ended);
+        assert!(
+            ended.elapsed() < Duration::from_millis(5),
+            "the hold's end waits for nothing"
+        );
+        go_on.send(()).unwrap();
+        std::thread::sleep(Duration::from_millis(100));
+        let trips = record["round_trips"].as_array().expect("a record").clone();
+        assert_eq!(trips.len(), 1, "{record}");
+        assert_eq!(
+            trips[0]["in_flight"],
+            json!(true),
+            "in flight, not unanswered: {record}"
+        );
+        assert!(trips[0].get("unanswered_ms").is_none(), "{record}");
+        assert!(
+            arrivals.lock().unwrap().is_empty(),
+            "the ping was not sent after the hold had ended"
+        );
+        end(window, answerer);
+
+        // the worker late in the gap, past the hold's last PING_EVERY: nothing sent
+        let (window, answerer, arrivals) = answering_window(Some(Duration::ZERO));
+        let pressed = Instant::now();
+        let ends = pressed + Duration::from_millis(100);
+        let late =
+            move || std::thread::sleep((ends - Duration::from_millis(10)).saturating_duration_since(Instant::now()));
+        let pings = HoldPing::spawn(window, ends, connect, late, &SETTING_UP);
+        std::thread::sleep(Duration::from_millis(150));
+        let record = pings.finish(pressed, ends);
+        std::thread::sleep(Duration::from_millis(50));
+        assert_eq!(record, json!({"asked": false, "why": NO_TIME}), "nothing went out");
+        assert!(
+            arrivals.lock().unwrap().is_empty(),
+            "no ping past the hold's last 25 ms"
+        );
         end(window, answerer);
     }
 

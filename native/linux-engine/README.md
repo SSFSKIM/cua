@@ -174,12 +174,14 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   kept open get their `FocusOut`; then the
   exit's settle: the engine waits until `--exit-settle-ms` (300 ms) has passed since the last background input to
   a window whose redirect it still holds, the watch's Escape included (clicks too: once no `FocusOut` drain waits first, the unredirect cuts them as it
-  cuts keys). After a stop signal the watch's run-out and the settle end 950 ms after the signal at the latest
-  (`serve.rs` `exit_by`, the 1 s backstop less `EXIT_TEARDOWN`, 50 ms for the exit's last steps). A stop that comes
-  once a drag has answered comes after its release, so the whole watch fits, and a late take's settle loses at most
-  50 ms of its 300 (a take in the watch's last 50 ms); a stop that came while the drag still ran can cut the watch
-  short (the review of task 115, P4: 0.4.2's first build cut the exit's watch at 300 ms, and a take at 500 ms went
-  uncancelled). Its exit drops those redirects (the X
+  cuts keys). After a stop signal the settle ends 950 ms after the signal at the latest (`serve.rs` `exit_by`, the
+  1 s backstop less `EXIT_TEARDOWN`, 50 ms for the exit's last steps), and the watch 650 ms after it, the exit's
+  settle before that, so a take the watch cancels keeps its whole 300 ms settle. **Exit-only shortening (the design
+  session's ruling 893):** at an orderly exit after a stop signal, a drag's late-take watch ends 650 ms after the
+  signal, short of its 700 ms after the release when the stop came straight after the drag's answer; a take after
+  that goes unseen. Off the exit, and at an exit for stdin closing, the watch runs its whole 700 ms. (The review of
+  task 115, P4: 0.4.2's first build cut the exit's watch at 300 ms, and a take at 500 ms went uncancelled.) Its exit
+  drops those redirects (the X
   connection closes), and a covered Chromium window whose redirect goes while it still has input queued cuts that input
   and delivers it only with its next `FocusIn`. So a burst answered just before the signal still arrives in order; an
   exit with no such input in the last 300 ms waits for nothing. The declared limits
@@ -370,7 +372,9 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   refused with the drag-and-drop sentence; and at a Chromium `drag_handle`'s `end` (not at the exit's, the idle bound's
   or a lost handle's release), where a take then is a drag and drop under way, rested after and judged as any other;
   with no take, the hold's motionless wait is the family's rest before the release, so the visit and the release come
-  at B, not a rest after it (the review of task 115, P3). The hold sends no
+  at B, not a rest after it (the review of task 115, P3). A drag's release dwell after a hold with no take is served
+  the same way, by the hold's motionless wait since its last motion: a foreground drag named for Firefox whose press
+  reaches Chrome keeps Gecko's 30 ms dwell inside B, not after it (the re-review of fdaff715, P1). The hold sends no
   motion past the background route's refreshes, which end a rest before 250 ms after the press as 0.4.1's did
   (`REFRESH_AFTER_PRESS`). With no take by then the drag is released and answers as before. `--stats` `hold` has one
   shape on every drag the hold watches: `bound_ms`, `path_ms` (the press to the path's end), `held` (no take by the
@@ -383,11 +387,16 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   next 25 ms after the last once that was answered, none (the first included) in the hold's last 25 ms, so none after
   it. The sampler is best effort and never holds the drag up: it sets up and pings on a thread and an X connection of
   its own, and the hold only starts it and takes what it recorded when it ends, with no X request and no wait (the
-  review of task 115, P1: a setup on the drag's thread could push the look for the take past B).
+  review of task 115, P1: a setup on the drag's thread could push the look for the take past B). A ping is recorded in
+  flight when admitted and checked again at its submission: a hold that ended meanwhile (a take) or a deadline crossed
+  sends nothing; one still in flight at the hold's end is `in_flight: true`, and one whose send failed `send_failed`,
+  never an unanswered ping (the re-review of fdaff715, P2). At most two samplers set up at once in an engine, so a
+  connect that never returns costs two threads, not one per hold.
   `hold.pings` is `{asked: true, round_trips: [{sent_after_press_ms, rtt_ms}]}`, an unanswered ping's `rtt_ms` null
   with `unanswered_ms`, how long it had waited by the hold's end; or `{asked: false, why}`: the window lists no
   `_NET_WM_PING`, the connection failed, the sampler was still connecting at the hold's end, no ping fitted in
-  what was left of the hold, or `disabled` (`--drag-dnd-hold-ping off`, measurement only). Known limits:
+  what was left of the hold, `disabled` (`--drag-dnd-hold-ping off`, measurement only), or earlier holds' ping
+  connections still being set up. Known limits:
   - an accept later than 350 ms after the take still misses, unseen (the latest seen was 275 ms), and so does a take
     later than B after the press: the drag answers success (task 113 measured renderers starting their drag up to
     about 580 ms after the press on arm64 at twice the gate's load);

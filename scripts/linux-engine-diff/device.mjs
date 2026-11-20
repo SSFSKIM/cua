@@ -595,13 +595,18 @@ export function falseAlarm(r) {
  * Chrome update that changed either would bring the false oks back quietly, so two of V5's cells check it from the
  * engine's own hold records (`engine_stats.hold`), whatever else they judge:
  * - the in-front short drop (`chrome_dnd_short_in_front_shared`, a press on a draggable source): of its samples whose
- *   hold ran, at least `CANARY_HELD` and at least one read slow, a ping's round trip or its wait unanswered of
- *   `CANARY_SLOW_MS` or more (task 117 at x64 idle: 9 of 15 held presses);
+ *   hold ran, at least `CANARY_HELD`, and at least half of them busy: a ping round trip, or a ping's wait unanswered
+ *   at the take, of `CANARY_BUSY_MS` or more, where an idle browser answers in about 1.1 ms (p99 1.2 at idle, task 116):
+ *   the browser busy setting up the drag its page started (task 117, sandboxed, idle x64: 9 of 9 held presses on
+ *   Chrome 156 waited 8 to 27 ms, 9 of 9 on Chrome 158 6 to 21 ms; V5 at idle 40 of 40);
  * - V5's select control (`chrome_select_nudged_shared`, a plain drag in the same scene): every warm sample whose hold
  *   ran read fast at B (`hold.adaptive.way` fixed on its pings); a cold one that read slow is counted, not failed (a
  *   fresh page's first ping can be slow).
  * A cell with no hold records (a vendor lane) is not the canary's.
  */
+/** How long a ping waits on a browser busy setting up a drag, at the least: an idle browser answers in about 1.1 ms. */
+export const CANARY_BUSY_MS = 5;
+/** A plain drag's ping is slow from T (cua-engine's `adaptive_hold::FAST_PING`), as the engine reads it at B. */
 export const CANARY_SLOW_MS = 20;
 export const CANARY_HELD = 3;
 
@@ -617,14 +622,15 @@ export function holdCanary(op, rows) {
   if (!recorded.length || !['chrome_dnd_short_in_front_shared', 'chrome_select_nudged_shared'].includes(op)) return null;
   const held = recorded.filter((r) => r.engine_stats?.hold?.held === true);
   const slow = held.filter((r) => (holdPingWait(r.engine_stats.hold) ?? 0) >= CANARY_SLOW_MS);
+  const busy = held.filter((r) => (holdPingWait(r.engine_stats.hold) ?? 0) >= CANARY_BUSY_MS);
   const reasons = [];
   // the extension applies only to a source identified as a Chrome browser (ruling 899): one that is not cannot extend
   const unidentified = held.filter((r) => r.engine_stats.hold.adaptive?.source?.identified !== true);
   if (unidentified.length) reasons.push(`the hold canary: Chrome was not identified as a browser on ${unidentified.length} of ${held.length} held samples (${unidentified[0].engine_stats.hold.adaptive?.source?.why ?? 'no record'})`);
   if (op === 'chrome_dnd_short_in_front_shared') {
     if (held.length < CANARY_HELD) reasons.push(`the hold canary is untested: ${held.length} of ${recorded.length} presses on a draggable source held for their take, fewer than ${CANARY_HELD}`);
-    else if (!slow.length) reasons.push(`the hold canary: no press on a draggable source read slow (${held.length} held, every ping under ${CANARY_SLOW_MS} ms): Chrome may no longer mark the drag it starts`);
-    return { reasons, record: { kind: 'draggable', held: held.length, slow: slow.length } };
+    else if (busy.length * 2 < held.length) reasons.push(`the hold canary: ${held.length - busy.length} of ${held.length} held presses on a draggable source found their browser idle (every ping answered under ${CANARY_BUSY_MS} ms), more than half: Chrome may no longer mark the drag it starts`);
+    return { reasons, record: { kind: 'draggable', held: held.length, busy: busy.length, slow: slow.length } };
   }
   const warmSlow = slow.filter((r) => r.i !== 0);
   const unfast = held.filter((r) => r.i !== 0 && !(r.engine_stats.hold.adaptive?.way === 'fixed' && /^every ping answered by B came back under/.test(r.engine_stats.hold.adaptive.why ?? '')));

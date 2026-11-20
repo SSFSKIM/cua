@@ -187,9 +187,10 @@ function run(c){
     }else{
       drafts=control('drafts',OTHERS.drafts);slots[1].append(archive);slots[2].append(drafts);
       if(spec.parent)slots[0].replaceChildren(listed(target));
-      // #433's textbehind: a text behind the link (an earlier sibling, drawn below it), which mark changes.
+      // #433's textbehind: a text behind the link (an earlier sibling, drawn below it: z-index -1, as a positioned box would
+      // otherwise paint over the link in flow, run 44722388282), which mark changes.
       if(spec.behindText){behind=document.createElement('div');behind.textContent=spec.behindText[0];
-        behind.style.cssText='position:absolute;left:8px;top:18px;font:12px sans-serif;color:#bbb';slots[0].style.position='relative';slots[0].prepend(behind);}
+        behind.style.cssText='position:absolute;left:8px;top:18px;font:12px sans-serif;color:#bbb;z-index:-1';slots[0].style.position='relative';slots[0].prepend(behind);}
       // #433's bgbutton: an unrelated button behind the link (a later sibling, so the record's walk reads it after the
       // link, drawn below it), the size of the link's box; mark removes it.
       if(spec.behind){behind=document.createElement('button');behind.type='button';behind.textContent='Close';

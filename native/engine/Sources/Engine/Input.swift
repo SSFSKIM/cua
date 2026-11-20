@@ -239,6 +239,9 @@ struct PointerTarget {
   /// #296's refusal of a stale point (StalePoint.swift), thrown before anything is posted on every path that would post
   /// the pointer's events; nil when the guard kept the point or did not run (an element's own point).
   var staleRefusal: EngineError? = nil
+  /// #452: the hit-test answered in another window of the app's at the point (`WindowHit.otherWindow`), so #282's refusal
+  /// names that window (`appWindowOverPointRefusal`) rather than blaming the page under it.
+  var overAppWindow = false
 
   /// The unit tests' default: a view known to accept first mouse, where a pointer's path is the one before #282.
   static var acceptingFirstMouse: PointerTarget { PointerTarget(view: .acceptsFirstMouse, app: "the app") }
@@ -306,7 +309,9 @@ func deliverPointer(to pid: pid_t, route: InputRoute, activation: FakeActivation
       release = try activations.acquire(pid: activation.pid, holder: ActivationHolder(connection: meta.context.connection.id),
                                         pointer: hold, beforeActivating: beforeActivating, make: { activation }, meta: &meta)
     } catch is PointerRefused {
-      guard let elementRoute = pointer.elementRoute else { throw backgroundClickRefused(pointer.app, engine: pointer.engine) }
+      guard let elementRoute = pointer.elementRoute else {
+        throw pointer.overAppWindow ? appWindowOverPointRefusal(app: pointer.app) : backgroundClickRefused(pointer.app, engine: pointer.engine)
+      }
       try elementRoute(&meta)
       return
     }
@@ -505,10 +510,11 @@ extension Engine {
         let placed = try signposted("click.coordinatePoint") {
           try coordinatePlacement(given.x, given.y, app: app, appPid: appPid, context: context)
         }
-        let (hit, owner) = signposted("click.hitTest") { () -> (AXUIElement?, pid_t) in
-          let hit = hitTest(window: placed.window, pid: appPid, at: placed.point)
-          return (hit, hit.map { ownerPid(of: $0, fallback: appPid) } ?? appPid)
+        let (hitOutcome, owner) = signposted("click.hitTest") { () -> (WindowHit<AXUIElement>, pid_t) in
+          let outcome = hitTestOutcome(window: placed.window, pid: appPid, at: placed.point)
+          return (outcome, outcome.element.map { ownerPid(of: $0, fallback: appPid) } ?? appPid)
         }
+        let hit = hitOutcome.element
         try signposted("click.owner") {
           try refuseForbiddenOwner(owner)
           actionTargets(owner, app: app, connection: context.connection)
@@ -546,6 +552,11 @@ extension Engine {
         }
         meta.stalePoint = stale.record
         pointer.staleRefusal = stale.refusal
+        // #452: a hit in another window of the app's is no hit, and named as that window if #282 refuses the click.
+        if let other = hitOutcome.otherWindow, pointerHit == nil {
+          pointer.overAppWindow = true
+          meta.stalePoint?.hitWindow = other ?? 0
+        }
         // The guard may have recovered a hit the first hit-test missed (a node mid-replacement, `stalePointRehits`): the
         // route and the view it is classified by are read from that one.
         if case .recovered(let recovered) = stalePointRouteHit(pointerHit, stale.verdict, same: { CFEqual($0, $1) }) {
@@ -780,28 +791,51 @@ func elementAtPosition(_ root: AXUIElement, _ point: CGPoint) -> (AXError, AXUIE
   return (error, hit.map(prepare))
 }
 
-/// The element `window`'s process answers at a global screen point, kept only when it lies in `window` (#282): asked of
-/// the process's application element, then the hit's AXWindow ancestor must be `window` itself (CFEqual). A hit in
-/// another window of the app at that point, one whose ancestry cannot be read to a window, or no answer is nil.
-func hitTest(window: AXUIElement, pid: pid_t, at point: CGPoint) -> AXUIElement? {
-  windowHit(application: prepare(AXUIElementCreateApplication(pid)), window: window, at: point, elementAt: elementAtPosition,
-            role: { attribute($0, kAXRoleAttribute) as? String }, parent: { elementAttribute($0, kAXParentAttribute) },
-            same: { CFEqual($0, $1) })
+/// What a coordinate's hit-test answered, bounded to the window the point was placed in (#282, #452).
+enum WindowHit<Element> {
+  /// An element of the window (the window itself, or an element of a sheet of it).
+  case inWindow(Element)
+  /// An element of another of the app's windows, the one the app answers at the point (#452: Chrome's omnibox popup over
+  /// the browser window); its window's number, nil when it could not be read. The action takes it as no hit, and #282's
+  /// background refusal names that window rather than the page.
+  case otherWindow(CGWindowID?)
+  /// No answer, or one whose ancestry cannot be read to a window.
+  case none
+
+  var element: Element? { if case .inWindow(let element) = self { return element } else { return nil } }
+  var otherWindow: CGWindowID?? { if case .otherWindow(let number) = self { return .some(number) } else { return nil } }
 }
 
-/// `hitTest(window:pid:at:)` over its AX calls (the unit tests' seam): the hit-test asked of `application`, never of
-/// `window`; the hit kept when it is `window` or its first AXWindow ancestor (parents walked up to 300 levels) is.
+/// The element `window`'s process answers at a global screen point, kept only when it lies in `window` (#282): asked of
+/// the process's application element, then the hit's AXWindow ancestor must be `window` itself (CFEqual). A hit in
+/// another window of the app at that point, one whose ancestry cannot be read to a window, or no answer is nil
+/// (`hitTestOutcome` tells them apart).
+func hitTest(window: AXUIElement, pid: pid_t, at point: CGPoint) -> AXUIElement? {
+  hitTestOutcome(window: window, pid: pid, at: point).element
+}
+
+/// `hitTest(window:pid:at:)`'s answer with a hit in another window of the app's told apart, with that window's number.
+func hitTestOutcome(window: AXUIElement, pid: pid_t, at point: CGPoint) -> WindowHit<AXUIElement> {
+  windowHit(application: prepare(AXUIElementCreateApplication(pid)), window: window, at: point, elementAt: elementAtPosition,
+            role: { attribute($0, kAXRoleAttribute) as? String }, parent: { elementAttribute($0, kAXParentAttribute) },
+            same: { CFEqual($0, $1) }, number: { windowNumber(of: $0, pid: pid, frame: frame(of: $0)) })
+}
+
+/// `hitTestOutcome(window:pid:at:)` over its AX calls (the unit tests' seam): the hit-test asked of `application`, never
+/// of `window`; the hit kept when it is `window` or its first AXWindow ancestor (parents walked up to 300 levels) is, and
+/// another AXWindow ancestor answered as that window's (`number`).
 func windowHit<Element>(application: Element, window: Element, at point: CGPoint, elementAt: (Element, CGPoint) -> (AXError, Element?),
-                        role: (Element) -> String?, parent: (Element) -> Element?, same: (Element, Element) -> Bool) -> Element? {
+                        role: (Element) -> String?, parent: (Element) -> Element?, same: (Element, Element) -> Bool,
+                        number: (Element) -> CGWindowID? = { _ in nil }) -> WindowHit<Element> {
   let (error, found) = elementAt(application, point)
-  guard error == .success, let hit = found else { return nil }
+  guard error == .success, let hit = found else { return .none }
   var current = hit
   for _ in 0...300 {
-    if role(current) == kAXWindowRole { return same(current, window) ? hit : nil }
-    guard let next = parent(current) else { return nil }
+    if role(current) == kAXWindowRole { return same(current, window) ? .inWindow(hit) : .otherWindow(number(current)) }
+    guard let next = parent(current) else { return .none }
     current = next
   }
-  return nil
+  return .none
 }
 
 /// The element a process's application answers at a global screen point (the gate's hit-test: what that app would

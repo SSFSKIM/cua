@@ -613,8 +613,13 @@ final class BackgroundPointerTests: XCTestCase {
   }
 
   private func hitIn(_ application: Node, _ window: Node, _ elementAt: (Node, CGPoint) -> (AXError, Node?)) -> Node? {
+    outcome(application, window, elementAt).element
+  }
+
+  private func outcome(_ application: Node, _ window: Node, _ elementAt: (Node, CGPoint) -> (AXError, Node?),
+                       numbers: [ObjectIdentifier: CGWindowID] = [:]) -> WindowHit<Node> {
     windowHit(application: application, window: window, at: point, elementAt: elementAt, role: { $0.role }, parent: { $0.parent },
-                     same: { $0 === $1 })
+              same: { $0 === $1 }, number: { numbers[ObjectIdentifier($0)] })
   }
 
   /// The hit-test is asked of the application element, never the window (which answers -25201): a page point in the
@@ -649,6 +654,54 @@ final class BackgroundPointerTests: XCTestCase {
     let inSheet = Node("AXButton", parent: Node("AXSheet", parent: window))
     XCTAssertTrue(hitIn(application, window, stub(application, answers: inSheet)) === inSheet, "a sheet's element is its window's")
     XCTAssertTrue(hitIn(application, window, stub(application, answers: window)) === window, "the window itself")
+  }
+
+  /// #452/#337: a hit in another window of the app's is its own outcome, with that window's number (Chrome's omnibox
+  /// popup, window 49 over the browser window), so #282's refusal can name the window rather than the page; a hit whose
+  /// ancestry reads to no window, or no answer, is none, and the target's own hit is in the window.
+  func testAHitInAnotherWindowOfTheAppIsItsOwnOutcomeWithTheWindowsNumber() {
+    let application = Node("AXApplication")
+    let window = Node("AXWindow", parent: application)
+    let popup = Node("AXWindow", parent: application)
+    let row = Node("AXStaticText", parent: Node("AXList", parent: Node("AXWebArea", parent: popup)))
+    let numbers = [ObjectIdentifier(popup): CGWindowID(49), ObjectIdentifier(window): CGWindowID(28)]
+    let found = outcome(application, window, stub(application, answers: row), numbers: numbers)
+    guard case .otherWindow(let number) = found else { return XCTFail("another window's hit: \(found)") }
+    XCTAssertEqual(number, 49)
+    XCTAssertNil(found.element, "taken as no hit")
+    guard case .otherWindow(nil) = outcome(application, window, stub(application, answers: row)) else { return XCTFail("number unread") }
+    guard case .none = outcome(application, window, stub(application, answers: Node("AXButton", parent: Node("AXGroup")))) else {
+      return XCTFail("no window ancestor read")
+    }
+    guard case .none = outcome(application, window, stub(application, answers: nil)) else { return XCTFail("no answer") }
+    let button = Node("AXButton", parent: window)
+    let own = outcome(application, window, stub(application, answers: button), numbers: numbers)
+    XCTAssertTrue(own.element === button)
+    XCTAssertNil(own.otherWindow, "the target's own hit")
+  }
+
+  /// #452/#337: shared mode's refusal of a background click whose hit lay in another window of the app's (Chrome's
+  /// omnibox popup open in the screenshot) names the app's own window and the way through, never the page; nothing is
+  /// posted. Without that hit the page's sentence stands.
+  func testSharedModesRefusalOfAHitInAnotherWindowOfTheAppNamesThatWindowNotThePage() {
+    for over in [true, false] {
+      let seam = GuardSeam(frontmost: user)
+      var clickMeta = meta(connection())
+      var pointer = PointerTarget(view: .possibleWebArea, app: "Google Chrome", engine: .chromium)
+      pointer.overAppWindow = over
+      XCTAssertThrowsError(try click(seam, activation: chrome(seam), pointer: pointer, meta: &clickMeta)) { error in
+        let refusal = error as? EngineError
+        if over {
+          XCTAssertEqual(refusal?.errorName, "appWindowOverPoint")
+          XCTAssertEqual(refusal?.message, appWindowOverPointRefusal(app: "Google Chrome").message)
+          XCTAssertFalse(refusal?.message.contains("web page") ?? true, "the page is not blamed")
+        } else {
+          XCTAssertEqual(refusal?.errorName, "backgroundClickRefused")
+        }
+      }
+      XCTAssertEqual(seam.posts.count, 0, "nothing posted")
+      XCTAssertNil(clickMeta.startedAt)
+    }
   }
 
   // MARK: The mode reaches the connection through its ping

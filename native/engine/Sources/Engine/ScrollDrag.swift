@@ -168,7 +168,8 @@ extension Engine {
       // The start is placed first, so a start outside keeps #328's sentence; an end outside is #334's (the drop).
       let end = try coordinatePoint(toX, toY, app: app, appPid: appPid, context: context, dragEnd: true)
       // Both points were refused in a minimized window as they were placed (coordinatePoint), before anything below.
-      let hit = hitTest(window: start.window, pid: appPid, at: start.point)
+      let hitOutcome = hitTestOutcome(window: start.window, pid: appPid, at: start.point)
+      let hit = hitOutcome.element
       let owner = hit.map { ownerPid(of: $0, fallback: appPid) } ?? appPid
       try refuseForbiddenOwner(owner)
       actionTargets(owner, app: app, connection: context.connection)
@@ -186,6 +187,11 @@ extension Engine {
                                   context: context)
       meta.stalePoint = stale.record
       pointer.staleRefusal = stale.refusal
+      // #452: a start in another window of the app's, named as that window if #282 refuses the drag.
+      if let other = hitOutcome.otherWindow {
+        pointer.overAppWindow = true
+        meta.stalePoint?.hitWindow = other ?? 0
+      }
       try armingSettle(&meta, acted: { context.connection.markActed(app) }) { meta in
         try recordingRouteAdvice(route, app: app, meta: &meta) { meta in
           try deliverPointer(to: owner, route: route, activation: activation, activations: heldActivations, postsLeftMouseDown: true,

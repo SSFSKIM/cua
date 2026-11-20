@@ -2,6 +2,13 @@
 
 ## Open
 
+- **2026-11-20 — The engine README still lacks 0.4.2's late-take finding (docs, minor; #171 M5 task 121, ruling 931.6).**
+  - The finding: under 0.4.2 a Chrome drag either lands inside the hold or is refused by Chrome, and a late take needs the browser to read the drag start within about 3 ms of the release.
+  - It is recorded in `docs/evidence/2026-10-28-own-linux-engine/m5/engine-042/h6/README.md` and in the harness README.
+  - `native/linux-engine/README.md` can't take it yet. The pinned rule requires `native/linux-engine/` to equal the release's tree, so a change there before the next engine release would stop every pinned run.
+  - Fix: add it to the README's "Known limits" for the hold in the next engine release's branch.
+  - Check: the README's hold limits name the about-3-ms window.
+
 - **2026-11-20 — Two `test`-gate flakes on #171 M5's 0.4.2 candidate (hosted CI; neither test touches the Linux engine; listed on #444).**
   - `test/wheel-scroll-chrome.test.mjs` failed with "no room, answered at once (1629 ms)" in run [44781056110](https://github.com/SSFSKIM/cua/actions/runs/44781056110), on 9371d234.
   - `test/services-engine-service.test.mjs` failed with "the engine is running; nothing launches it" in run [44784520843](https://github.com/SSFSKIM/cua/actions/runs/44784520843), on the same head.

@@ -147,6 +147,29 @@ and `step.json` carrying the label; a pilot's record lists what it left unjudged
 ok, a missing landing, an error for a drop that landed and a missing cell fail; landed drops answered unconfirmed are
 findings with their counts.
 
+**C1 and L4c on 0.4.2: the freeze bands (ruling 931, task 121).** 0.4.2 holds a frozen, identified Chrome's drag until
+press + 650 ms. If the run's browser thaws before then, the take comes inside the hold and the drop lands. If it thaws
+after, Chrome refuses the drag and the reply carries the hold notice. A late take came only from a thaw within about
+3 ms of the release (`docs/evidence/…/m5/engine-042/h6/`).
+
+So `t14-late` runs three bands (`drop-signals-judge.mjs` `LATE_BANDS`):
+- **inside** (`freeze-600`), whose drops must land;
+- **edge** (`freeze-646` to `-652`), whose late takes are counted and each judged in full, but never required;
+- **past** (`freeze-700`), which must answer the hold notice, with no drop and nothing sent after it.
+
+The inside and past bands each need their outcome 7 times in 10, or the band fails as unexercised. Every answer is
+judged: a plain ok on a drag its page started that did not land is a false ok. The knife-edge freeze at 650 is the
+development plan `t14-late-edge`, held to T14's late-take contract.
+
+**The hold canary's criterion is a step parameter.** `steps.mjs` `CANARY_CRITERION` sets it on K1 and K2 by
+architecture (ruling 930), as `--hold-canary`:
+- **x64, `relative`:** a press that started a drag must wait 3x the run's plain control's warm maximum, and at least
+  5 ms.
+- **arm64, `absolute`:** the engine's 20 ms. Every other run uses this default.
+
+`scripts/linux-engine-gate/launch-plan.mjs` prints what `gate.mjs run` would launch for each step, dry, for comparing
+two heads byte for byte (ruling 929.2).
+
 ## The run's cleanup and the end check (#171 M5's T4 round 2)
 
 A run's end (`Desktop.closeEverything`) tries every step whatever an earlier one did: the windows, the reader, the

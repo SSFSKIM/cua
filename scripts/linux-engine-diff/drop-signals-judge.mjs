@@ -761,12 +761,12 @@ export const HOLD_NOTICE = 'the page may have started a drag that did not comple
  * x64, Chrome 156, the browser stopped from 60 ms after the send). 0.4.2 holds a frozen, identified Chrome's drag to
  * press + 650, so a thaw inside the hold lets the take come there and the drop land; a thaw past the release finds the
  * button up, Chrome refuses the drag, and the reply carries the hold notice; a late take came only from a thaw within
- * a few ms of the release (idle 649-653, twice the load 640-660, most at 646-649). Each band with an outcome expected
+ * a few ms of the release (idle 647 and 649-653, twice the load 640-660). Each band with an outcome expected
  * needs `min` of it per series, or it is unexercised:
  * - inside (freeze-600): every drag landed in the sweeps, 30 of 30 at freeze-600 to -630 at idle and 30 of 30 at twice
  *   the load (and 60 of 60 from 620 to 648 at idle, bar one late take);
  * - edge: the late takes, counted and each judged in full, never required (idle 18 in 90 from 646 to 654, twice the load
- *   10 in 41 from 646 to 650);
+ *   17 in 90);
  * - past (freeze-700): the hold notice with no drop and nothing sent after it, 10 of 10 at idle and 10 of 10 at twice
  *   the load (670 and 700, 40 of 40).
  * A minimum of 7 of 10 leaves a band whose outcome held 30 of 30 or more a chance under 0.2% of failing by chance.

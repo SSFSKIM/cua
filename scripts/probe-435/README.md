@@ -35,3 +35,87 @@ The harness, as #431's:
 **Gates** (`check.mjs` `gates`, qualify only; smoke and measure pass on coverage alone): `coverage` (every planned row ran, every unit of every head at least 80% valid); `reproduced` (the page logged a `click` on the twin itself on at least half main's valid `twin` rows; failing it is an inconclusive run); `twinRefused` (every valid fix row of `twin`, `twinbtn`, `twindel` refused with `nodeGone`, nothing reaching the target or another control) and `twinUnrecorded` (the same for `twincap`, `twindeep`), each with per-unit tallies of both heads; `keptAsMain` (every fix row of the keep cells the verdict of its paired main row, at least 10 usable pairs per unit, and every valid fix row but a failed observation `kept-landed`, so two heads refusing alike still fail; reports `fixNotKept`, `refusedWhereMainKept` and, apart, `mainNotKept`, an unusable baseline); `othersAsMain` (the same for the asMain cells; a different refusal reason alone is counted, not failed); `noWrongTarget` (no fix row anywhere a wrong target, and no invalid fix row whose captured page log holds an event on another control, `invalidRowsWithWrongEvents`; main's per unit reported); `presentation` (per unit, no more fix rows than main's on which something other than the cover activated). `bigPage` reports the big cells with `keptAsMain`'s measure and is never part of the pass; `guardMs` reports `stalePoint.ms` per head (all rows and the twin rows) and is never part of the pass; `report.mjs` gives it per unit and head as p50 / p95 / max. A run of some cells (`cells`, own cell names only, never an empty selection) is judged on those cells alone.
 
 `report.mjs <dir>` prints the tables from a downloaded run (`gh run download <id> -D <dir>`).
+
+## Discovery: does a browser list a link, or its text, without a frame?
+
+[Run 44688188130](https://github.com/SSFSKIM/cua/actions/runs/44688188130) (kit `9daa744e`, mode discover), main `f8f34652` alone, three rows per unit; Chrome for Testing 157.0.8103.78 and Safari 27.2 on image `20261112.0504.1`, Electron 44.4.5 / Chromium 152.0.7977.130 on `20261102.0473.1`; every lane in the background under the cover, 30/30 rows valid on each. How the observation listed the nodes reading "Inbox" (the target's link and text, and the twin's where listed; every row of a unit alike), and main's answer once the twin was re-rendered in the target's place:
+
+| Layout | cft: twin listed | cft: main | electron: twin listed | electron: main | safari: twin listed | safari: main |
+|---|---|---|---|---|---|---|
+| `twindetails` (collapsed `<details>`) | no | wrong target (kept, re-created) 6 | no | wrong target 6 | no | wrong target 6 |
+| `twinuntil` (`hidden="until-found"`) | no | wrong target 6 | no | wrong target 6 | no | wrong target 6 |
+| `twincv` (`content-visibility: auto`, below the fold) | framed | refused `nodeGone` 6 | framed | refused `nodeGone` 6 | no | text: wrong target 3; link: refused `nodeGone` 3 |
+| `twinzero` (0x0 `overflow: hidden`) | framed | refused `nodeGone` 6 | framed | refused `nodeGone` 6 | framed | refused `nodeGone` 6 |
+| `twinclip` (64 px `overflow: hidden`, the link past it) | framed | refused `nodeGone` 6 | framed | refused `nodeGone` 6 | framed | refused `nodeGone` 6 |
+
+- **No lane listed any node without a frame, in any layout.** Every observation held no node with `frame: null`, of any role (`walk.labelled.frameless` empty on all 90 rows). Each layout either leaves the twin out of the tree (`<details>` and `until-found` on all three browsers, `content-visibility` on Safari) or lists its link and text with frames (the `overflow: hidden` boxes everywhere, `content-visibility` on Chromium), which #431's search on main already reads and refuses. No frameless twin cell could be built, so step 2 (main against the fix on a frameless twin) has nothing to run: on these browsers #435's fix is defence only.
+- **The unlisted twins are wrong targets on main**, as ruling 881's unrecorded twins were before #431: the record holds no twin, so the re-created match is kept and the click lands on the other link. #435 reads only the record, so it cannot refuse them either (not run on the fix): the same class as the issue's out-of-scope `display:none` twin, and `twincap`/`twindeep`, which #431 refuses only through its coverage rule.
+- Every discovery row's gap was `frameless` (twin unlisted) or `framed` (twin framed), with one exception: Safari's `twincv/link` reads `framed` though the twin is not listed, so another framed link agreed with the target's link under the label rule at that point (the kit does not keep labels to say which). It does not change the finding: Safari listed no node without a frame there either.
+
+## Regression set: main against the fix
+
+Main `f8f34652dc1591b4bdf3f8b44ac479518f6becfc` (#431 merged), the final #435 head `493c64cab7e3f1d9aedf0882f9fb8c14b2fd5997` (`66ae2e8d` plus a performance-only cache of the node's label words). Kit `9daa744e`, mode qualify, ten rows per head per unit, the heads interleaved, in two runs to keep each lane under 500 rows: [run A](https://github.com/SSFSKIM/cua/actions/runs/44689045231) (the keep cells, `twin`, `twincap`, `capremount`, `wideremount`) and [run B](https://github.com/SSFSKIM/cua/actions/runs/44694519236) (#340's cells and `wideoverlay`). Every lane of both runs passed every gate, every row valid, no abort; every lane in the background under the cover. Chrome for Testing 156.0.8078.80 (run A, image `20261102.0473.1`) and 157.0.8103.78 (run B, `20261117.0516.1`), Safari 27.2 (`20261102.0473.1`), Electron 44.4.5 / Chromium 152.0.7977.130 (`20261112.0504.1`, `20261117.0516.1`).
+
+A row's verdict is followed by the guard's reason (valid rows per head):
+
+| Unit | Gate | cft: main | cft: fix | safari: main | safari: fix | electron: main | electron: fix |
+|---|---|---|---|---|---|---|---|
+| twin/text | twin | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 |
+| twin/link | twin | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 |
+| twincap/text | twin | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 |
+| twincap/link | twin | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 |
+| remount/text | keep | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 |
+| remount/link | keep | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 |
+| retext/text | keep | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 |
+| retext/link | keep | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 |
+| like/text | keep | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 |
+| like/link | keep | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 |
+| plain/text | keep | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 |
+| plain/link | keep | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 |
+| btnremount/link | keep | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 |
+| wideremount/text | big | – | – | refused nodeGone 10 | refused nodeGone 10 | – | – |
+| wideremount/link | big | – | – | refused nodeGone 10 | refused nodeGone 10 | – | – |
+| capremount/text | big | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 |
+| capremount/link | big | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 |
+| wideoverlay/text | asMain | refused newElementOverPoint 10 | refused newElementOverPoint 10 | kept-missed nonInteractiveHit 10 | kept-missed nonInteractiveHit 10 | refused newElementOverPoint 10 | refused newElementOverPoint 10 |
+| wideoverlay/link | asMain | refused newElementOverPoint 10 | refused newElementOverPoint 10 | kept-missed nonInteractiveHit 10 | kept-missed nonInteractiveHit 10 | refused newElementOverPoint 10 | refused newElementOverPoint 10 |
+| tableremount/text | keep | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 |
+| tableremount/link | keep | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 |
+| tablecellremount/text | keep | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 |
+| tablecellremount/link | keep | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 |
+| inbox/text | asMain | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 |
+| inbox/link | asMain | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 |
+| reltime/text | asMain | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 |
+| reltime/link | asMain | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 |
+| shrink/text | asMain | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 |
+| shrink/link | asMain | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 |
+| linksave/text | asMain | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 |
+| linksave/link | asMain | refused relabelled 10 | refused relabelled 10 | refused relabelled 10 | refused relabelled 10 | refused relabelled 10 | refused relabelled 10 |
+| moved/text | asMain | refused frameMoved 10 | refused frameMoved 10 | refused nodeGone 10 | refused nodeGone 10 | refused frameMoved 10 | refused frameMoved 10 |
+| moved/link | asMain | refused frameMoved 10 | refused frameMoved 10 | refused nodeGone 10 | refused nodeGone 10 | refused frameMoved 10 | refused frameMoved 10 |
+| linkmono/text | asMain | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 |
+| linkmono/link | asMain | refused relabelled 10 | refused relabelled 10 | refused relabelled 10 | refused relabelled 10 | refused relabelled 10 | refused relabelled 10 |
+| right/text | asMain | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 |
+| right/link | asMain | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 |
+| centre/text | asMain | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 |
+| centre/link | asMain | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 |
+
+| Lane | Rows valid (main / fix) | Wrong targets on the fix | stalePoint.ms main p50 / p95 / max (n) | stalePoint.ms fix p50 / p95 / max (n) |
+|---|---|---|---|---|
+| cft | 370/370 / 370/370 | 0 | 6.811 / 20.354 / 38.036 (370) | 7.121 / 20.035 / 49.53 (370) |
+| safari | 390/390 / 390/390 | 0 | 4.203 / 8.213 / 14.03 (390) | 4.119 / 9.017 / 365.043 (390) |
+| electron | 370/370 / 370/370 | 0 | 4.476 / 9.768 / 15.371 (370) | 4.763 / 10.145 / 16.824 (370) |
+
+| Run | Lane | Image | Browser | Rows | Abort | Gates failing |
+|---|---|---|---|---|---|---|
+| regA-44689045231 | cft | 20261102.0473.1 | 156.0.8078.80 | 380/380 | none | none |
+| regA-44689045231 | electron | 20261112.0504.1 | Electron 44.4.5 / Chromium 152.0.7977.130 | 380/380 | none | none |
+| regA-44689045231 | safari | 20261102.0473.1 | 27.2 | 420/420 | none | none |
+| regB-44694519236 | cft | 20261117.0516.1 | 157.0.8103.78 | 360/360 | none | none |
+| regB-44694519236 | electron | 20261117.0516.1 | Electron 44.4.5 / Chromium 152.0.7977.130 | 360/360 | none | none |
+| regB-44694519236 | safari | 20261102.0473.1 | 27.2 | 360/360 | none | none |
+
+- **Every unit answers as on main, row for row, reason included.** Pairing each fix row with its main row of the same unit and repetition: 0 differing verdicts and 0 differing reasons on every lane, in both runs (`keptAsMain`, `othersAsMain`, `bigPage`). No new refusal, and no click on the fix reached a wrong target (main: none either).
+- **The keep cells** (`remount`, `retext`, `plain`, `like`, `btnremount`, `tableremount`, `tablecellremount`) are kept and landed on both heads, every row, on every lane: reading the record's frameless nodes refuses no genuine re-creation here (the pages hold none, as discovery found).
+- **`twin` and `twincap`** are refused `nodeGone` on both heads (main carries #431). **`capremount`** and Safari's **`wideremount`** are refused `nodeGone` on both, #431's known cost of its coverage rule, unchanged by #435.
+- **The guard's time.** `stalePoint.ms` p50 within 0.4 ms of main's on every lane, p95 within 0.9 ms. The fix's Safari maximum, 365.0 ms, is one `wideoverlay/link` row (kept-missed, as main); #431's qualification saw a 311.7 ms Safari outlier of the same kind. Taken on `493c64ca` throughout.

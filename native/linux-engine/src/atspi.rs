@@ -51,7 +51,7 @@ pub fn bus_address(x: &X11) -> Result<String> {
     bus_address_by(x, None)
 }
 
-/// [`bus_address`], the session bus's answer had by `deadline` when there is one (`Bus::connect_by`).
+/// [`bus_address`], the session bus's answer had by `deadline` when there is one (`Bus::connect`).
 pub fn bus_address_by(x: &X11, deadline: Option<std::time::Instant>) -> Result<String> {
     if let Some(address) = x.at_spi_bus_address() {
         return Ok(address);
@@ -63,7 +63,7 @@ pub fn bus_address_by(x: &X11, deadline: Option<std::time::Instant>) -> Result<S
             Err(_) => bail!("AT-SPI accessibility bus is unavailable"),
         },
     };
-    let mut bus = Bus::connect_by(&session, deadline)?;
+    let mut bus = Bus::connect(&session, deadline)?;
     let get = MethodCall {
         dest: "org.a11y.Bus",
         path: "/org/a11y/bus",

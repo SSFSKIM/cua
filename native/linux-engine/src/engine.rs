@@ -815,13 +815,13 @@ impl Engine {
 
     /// Runs `f` on the accessibility bus, connecting first if needed; a broken connection is reopened once.
     /// [`Engine::with_bus`] done by `deadline`: the bus's address and the engine's connection to it, when it has none
-    /// yet, are had by then too (`Bus::connect_by`), so a bus that accepts and stays silent costs no more than the
+    /// yet, are had by then too (`Bus::connect`), so a bus that accepts and stays silent costs no more than the
     /// deadline; a connection found broken is made again only while time is left.
     fn with_bus_by<T>(&mut self, deadline: std::time::Instant, mut f: impl FnMut(&mut Bus) -> Result<T>) -> Result<T> {
         loop {
             if self.bus.is_none() {
                 let address = atspi::bus_address_by(&self.x, Some(deadline))?;
-                self.bus = Some(Bus::connect_by(&address, Some(deadline))?);
+                self.bus = Some(Bus::connect(&address, Some(deadline))?);
             }
             let bus = self.bus.as_mut().expect("connected above");
             match f(bus) {
@@ -840,7 +840,7 @@ impl Engine {
         for attempt in 0..2 {
             if self.bus.is_none() {
                 let address = atspi::bus_address(&self.x)?;
-                self.bus = Some(Bus::connect(&address)?);
+                self.bus = Some(Bus::connect(&address, None)?);
             }
             let bus = self.bus.as_mut().expect("connected above");
             match f(bus, &mut self.x) {

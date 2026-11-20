@@ -579,15 +579,11 @@ impl std::fmt::Display for Broken {
 impl std::error::Error for Broken {}
 
 impl Bus {
-    /// Connects, authenticates with `EXTERNAL` and says `Hello` (behaviour §19).
-    pub fn connect(address: &str) -> Result<Bus> {
-        Bus::connect_by(address, None)
-    }
-
-    /// [`Bus::connect`], its whole setup done by `deadline` when there is one (the browser identification's bound,
-    /// `adaptive_hold::IDENTIFY_BOUND`): a bus that accepts the connection and then stays silent fails it then, not
-    /// after [`IO_TIMEOUT`]. The connection keeps [`IO_TIMEOUT`] once it is set up.
-    pub fn connect_by(address: &str, deadline: Option<Instant>) -> Result<Bus> {
+    /// Connects, authenticates with `EXTERNAL` and says `Hello` (behaviour §19), the whole setup done by `deadline` when
+    /// there is one (the browser identification's bound, `adaptive_hold::IDENTIFY_BOUND`): a bus that accepts the
+    /// connection and then stays silent fails it then, not after [`IO_TIMEOUT`]. The connection keeps [`IO_TIMEOUT`]
+    /// once it is set up.
+    pub fn connect(address: &str, deadline: Option<Instant>) -> Result<Bus> {
         // what the setup's next read or write may wait: what is left of the deadline, never more than IO_TIMEOUT
         let left = || -> Result<Duration> {
             match deadline {

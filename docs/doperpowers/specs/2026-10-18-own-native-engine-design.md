@@ -7009,6 +7009,25 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   the unread hit.
   Not measured live: this build on the qualification's cells, and `hitMs`'s distribution.
   Date/Author: 2026-11-20, cursor235's implementer for #452.
+- Decision (#452, the review of 0469183..023a3bee, 2026-11-20; amends the entry above): five corrections, each tested
+  and each test failing with its fix reverted.
+  (1) (a) refuses only when the window the hit answered in is in the on-screen window list with alpha above 0, at any
+  layer (the `<datalist>` popup at 999 still refuses). Run 44822312301 had five inside clicks whose hit answered window
+  44, of alpha 0 at the observation and the click, with the visible page under it, which the screenshot showed and
+  main's click reached. A hit window the list does not hold keeps main's verdict too: the list is the on-screen one, so
+  such a window is not on screen and the screenshot did not show it (or the list failed to read), and an unread number
+  cannot be looked up; never worse than main (ruling 940).
+  (2) The guard's signal is the outcome of the hit-test whose hit it judges (`LatestHit`: #288's last re-hit when it
+  ran), not one inferred from the two hits being alike, which every no-hit outcome is.
+  (3) `windowHit` recognises the observed target on its walk whatever its role: a save panel observed as its AXSheet
+  (run 44816112944, AXSheet under AXWindow 948 while the observed panel was 952) places the hit in the observed window,
+  where it had read as another window over the panel; main's hit is unchanged (none there).
+  (4) The untimed element-only hit-test (scroll, the guard's re-hits) numbers no other window; the timed one asks the
+  SPI first and reads the window's frame only where it gives none, each read bounded by what is left of the deadline.
+  (5) An element route's record carries the first check's `hitMs`, as it carries `windowsMs`.
+  Left as debt (`tech-debt-tracker.md`, the same as main): the element route's post-wait recheck runs the tree verdict
+  alone, so a popup of the app's that opens during that wait is pressed under.
+  Date/Author: 2026-11-20, cursor235's implementer for #452.
 
 ## Outcomes & Retrospective
 

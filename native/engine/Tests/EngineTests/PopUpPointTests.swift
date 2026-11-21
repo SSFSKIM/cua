@@ -254,13 +254,13 @@ final class PopUpPointTests: XCTestCase {
 
   /// A fake restore system: the person's frontmost app and focused window, every recorded window resolved by its number
   /// unless `unresolved` names it, the raise and the hold recorded.
-  private func fakeSystem(front: pid_t? = 300, focused: CGWindowID? = 40, unresolved: Set<CGWindowID> = [],
+  private func fakeSystem(front: pid_t? = 300, focused: CGWindowID? = 40, unresolved: Set<CGWindowID> = [], failing: Set<CGWindowID> = [],
                           raise: @escaping (CGWindowID) -> Void, hold: @escaping () -> () -> Void = { {} },
                           scheduleRelease: @escaping (Double, @escaping @Sendable () -> Void) -> Void = { _, _ in })
     -> PopUpRestoreSystem<CGWindowID> {
     PopUpRestoreSystem(frontmost: { front }, focusedWindow: { _ in focused }, resolve: { persons, left in
       Self.allResolved(persons.filter { !unresolved.contains($0.number) }, left)
-    }, raise: raise, hold: hold, scheduleRelease: scheduleRelease)
+    }, raise: { raise($0); return !failing.contains($0) }, hold: hold, scheduleRelease: scheduleRelease)
   }
 
   /// AXRaise as a person's app answers it: the window to the front of the ordinary layer, below the menu and the cursor.
@@ -836,28 +836,50 @@ final class PopUpPointTests: XCTestCase {
     XCTAssertEqual(restores, [], "the person's input during the watch: their order is theirs")
   }
 
-  /// Item 2: one absolute cutoff from the restore's start covers resolving the windows, the raises and the hold, which a
-  /// timer of its own is asked to release at the cutoff; no AX call is made once it has passed, and the end is incomplete.
-  func testTheRestoresCutoffCoversResolutionRaisesAndTheHold() {
+  /// One absolute cutoff from the restore's start covers resolving the windows, the raises and the hold, which a timer of
+  /// its own is asked to release. Past it the remaining others are skipped, and the focused window's raise is still the
+  /// last act, past the cutoff by that one call (the review of 7e5bb454..67cf8b26, items 1 and 3): the end is `bound`,
+  /// never complete, even with the order read back.
+  func testTheCutoffSkipsTheRestButNeverTheFocusedRaise() {
     let f1 = ListedWindow(number: 40, owner: finder, layer: 0, bounds: CGRect(x: 760, y: 420, width: 300, height: 300))
     let f2 = ListedWindow(number: 41, owner: finder, layer: 0, bounds: CGRect(x: 240, y: 480, width: 300, height: 300))
     let f3 = ListedWindow(number: 43, owner: finder, layer: 0, bounds: CGRect(x: 40, y: 80, width: 200, height: 200))
-    // A slow app: each raise takes 300 ms, so the pass's third raise would fall past the cutoff.
+    let f4 = ListedWindow(number: 44, owner: finder, layer: 0, bounds: CGRect(x: 40, y: 380, width: 200, height: 200))
+    // A slow app: each raise takes 300 ms, so the cutoff passes after the second of the others.
     var clock = 0.0
+    var raised: [CGWindowID] = []
     var raisedAt: [Double] = []
     var scheduled: [Double] = []
     var released = 0
-    let slow = popUpRestoreOrder([f1, f2, f3], appWindow: observed, system: fakeSystem(raise: { _ in
+    var reads = 0
+    let slow = popUpRestoreOrder([f1, f2, f3, f4], appWindow: observed, system: fakeSystem(raise: { number in
+      raised.append(number)
       raisedAt.append(clock)
       clock += 300
     }, hold: { { released += 1 } }, scheduleRelease: { ms, _ in scheduled.append(ms) }),
-                                  windows: { [self.fontMenu, self.appWindow, f1, f2, f3] }, now: { clock }, sleep: { clock += $0 })
+                                  windows: { reads += 1; return [self.fontMenu, f1, f2, f3, f4, self.appWindow] },
+                                  now: { clock }, sleep: { clock += $0 })
     XCTAssertEqual(scheduled, [activationPointHoldCeilingMs], "the hold's release timed, within the cutoff")
-    XCTAssertTrue(raisedAt.allSatisfy { $0 < popUpRestoreBoundMs }, "no raise past the cutoff: \(raisedAt)")
-    XCTAssertEqual(raisedAt.count, 2)
-    XCTAssertFalse(slow.complete)
+    XCTAssertEqual(raised, [44, 43, 40], "the others back to front until the cutoff, F2 skipped, the focused F1 last")
+    XCTAssertEqual(raisedAt.last, 600, "the focused raise past the cutoff by its one call")
+    XCTAssertFalse(slow.complete, "past the cutoff: not complete, though the order would read back")
     XCTAssertEqual(slow.stopped, .bound)
+    XCTAssertEqual(reads, 0, "no read past the cutoff")
     XCTAssertEqual(released, 1)
+    // The final raise alone crossing the cutoff (the read would then fall past it): bound, not complete, no read.
+    clock = 0
+    reads = 0
+    let crossing = popUpRestoreOrder([f1], appWindow: observed, system: fakeSystem(raise: { _ in clock += 520 }),
+                                     windows: { reads += 1; return [self.fontMenu, f1, self.appWindow] }, now: { clock }, sleep: { clock += $0 })
+    XCTAssertEqual(crossing.stopped, .bound)
+    XCTAssertFalse(crossing.complete)
+    XCTAssertEqual(reads, 0)
+    // The read itself crossing the cutoff: bound, not complete.
+    clock = 0
+    let slowRead = popUpRestoreOrder([f1], appWindow: observed, system: fakeSystem(raise: { _ in }),
+                                     windows: { clock += 300; return [self.fontMenu, f1, self.appWindow] }, now: { clock }, sleep: { clock += $0 })
+    XCTAssertEqual(slowRead.stopped, .bound)
+    XCTAssertFalse(slowRead.complete)
     // Slow resolution spends the budget before the hold: no hold, no raise.
     clock = 0
     var holds = 0
@@ -866,7 +888,7 @@ final class PopUpPointTests: XCTestCase {
       focusedWindow: { _ in 40 }, resolve: { persons, left in
       clock += 600
       return Self.allResolved(persons, left)
-    }, raise: { _ in raises += 1 }, hold: { holds += 1; return {} }), windows: { [self.fontMenu, self.appWindow, f1, f2] },
+    }, raise: { _ in raises += 1; return true }, hold: { holds += 1; return {} }), windows: { [self.fontMenu, self.appWindow, f1, f2] },
                                        now: { clock }, sleep: { clock += $0 })
     XCTAssertEqual([holds, raises], [0, 0])
     XCTAssertEqual(resolving.stopped, .bound)
@@ -993,5 +1015,59 @@ final class PopUpPointTests: XCTestCase {
     guard case .kept(.disabled, _) = decide(hit: scene.arrow, scene.verdict, at: arrowPoint) else { return XCTFail("main's path") }
     scene.arrow.enabled = nil
     guard case .kept(.disabled, _) = decide(hit: scene.arrow, scene.verdict, at: arrowPoint) else { return XCTFail("unread: main's path") }
+  }
+
+  // MARK: The review of 7e5bb454..67cf8b26 (the hard bar)
+
+  /// Item 1: each raise's AX answer is read. The focused window's raise failing ends the pass as `focusRaiseFailed`,
+  /// incomplete; another's failing is counted and the pass goes on to the focused one.
+  func testTheFocusedRaiseFailingIsRecorded() {
+    let f1 = ListedWindow(number: 40, owner: finder, layer: 0, bounds: CGRect(x: 760, y: 420, width: 300, height: 300))
+    let f2 = ListedWindow(number: 41, owner: finder, layer: 0, bounds: CGRect(x: 240, y: 480, width: 300, height: 300))
+    var raised: [CGWindowID] = []
+    var clock = 0.0
+    let failed = popUpRestoreOrder([f1, f2], appWindow: observed, system: fakeSystem(failing: [40], raise: { raised.append($0) }),
+                                   windows: { [self.fontMenu, f1, f2, self.appWindow] }, now: { clock }, sleep: { clock += $0 })
+    XCTAssertEqual(raised, [41, 40])
+    XCTAssertEqual(failed.stopped, .focusRaiseFailed)
+    XCTAssertFalse(failed.complete)
+    XCTAssertEqual(failed.failedRaises, 1)
+    raised = []
+    clock = 0
+    let other = popUpRestoreOrder([f1, f2], appWindow: observed, system: fakeSystem(failing: [41], raise: { raised.append($0) }),
+                                  windows: { [self.fontMenu, f1, f2, self.appWindow] }, now: { clock }, sleep: { clock += $0 })
+    XCTAssertEqual(raised, [41, 40], "the focused window still raised last")
+    XCTAssertEqual(other.failedRaises, 1)
+    XCTAssertNil(other.stopped)
+  }
+
+  /// Items 1 and 4: the person's input, or their switching apps during the open, is read before the focus and before an
+  /// early return on no candidates, and before the first raise: the restore then records `personInput`, reads nothing of
+  /// the person's app and raises nothing, with no note.
+  func testInputBeforeAnythingIsReadOrRaisedStopsWithNothingRaised() {
+    let f1 = ListedWindow(number: 40, owner: finder, layer: 0, bounds: CGRect(x: 760, y: 420, width: 300, height: 300))
+    let calculator = ListedWindow(number: 70, owner: 600, layer: 0, bounds: CGRect(x: 100, y: 100, width: 230, height: 400))
+    for persons in [[f1], [calculator]] {
+      var frontReads = 0, focusReads = 0, raises = 0
+      var clock = 0.0
+      let record = popUpRestoreOrder(persons, appWindow: observed, system: PopUpRestoreSystem<CGWindowID>(
+        frontmost: { frontReads += 1; return self.finder }, focusedWindow: { _ in focusReads += 1; return 40 },
+        resolve: Self.allResolved, raise: { _ in raises += 1; return true }, hold: { {} }),
+        windows: { [self.appWindow] + persons }, now: { clock }, sleep: { clock += $0 }, intervened: { true })
+      XCTAssertEqual(record.stopped, .personInput, "\(persons.map(\.number))")
+      XCTAssertEqual([frontReads, focusReads, raises], [0, 0, 0])
+    }
+    // Input arriving after the frontmost app is read, with only a third app's window recorded: still `personInput`.
+    var acted = false
+    var clock = 0.0
+    let late = popUpRestoreOrder([calculator], appWindow: observed, system: PopUpRestoreSystem<CGWindowID>(
+      frontmost: { acted = true; return self.finder }, focusedWindow: { _ in nil }, resolve: Self.allResolved,
+      raise: { _ in XCTFail("nothing raised"); return true }, hold: { {} }),
+      windows: { [self.appWindow, calculator] }, now: { clock }, sleep: { clock += $0 }, intervened: { acted })
+    XCTAssertEqual(late.stopped, .personInput)
+    // Item 2: the focused window's number is the SPI's alone; none proven, nothing raised.
+    XCTAssertNil(focusedWindowNumber(Optional("F1"), number: { _ in nil }))
+    XCTAssertNil(focusedWindowNumber(String?.none, number: { _ in 40 }))
+    XCTAssertEqual(focusedWindowNumber(Optional("F1"), number: { _ in 40 }), 40)
   }
 }

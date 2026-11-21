@@ -314,15 +314,16 @@ struct PopUpPersonSignals {
 }
 
 /// What the restore reads and does outside its own state (the unit tests' seams; `.live` over the Accessibility API and
-/// route 3's screen-update hold): the person's frontmost app and its focused window's number (route 3's `frontmost` and
-/// `userWindow`), the windows' elements, resolved together within what is left of the cutoff (`resolve`, keyed by window
-/// number; a window it cannot prove is absent), route 3's repair (`ActivationSystem.raise`, AXRaise), the hold, which
+/// route 3's screen-update hold): the person's frontmost app (route 3's `frontmost`) and its focused window's own number
+/// (`focusedWindowNumber`: AXFocusedWindow numbered by the SPI alone, nil when it does not prove it), the windows'
+/// elements, resolved together within what is left of the cutoff (`resolve`, keyed by window number; a window it cannot
+/// prove is absent), route 3's repair call (AXRaise, `gatedPerform`, answering whether it succeeded), the hold, which
 /// answers its release, and the timer that releases it on its own (`ActivationSystem.scheduleHoldRelease`).
 struct PopUpRestoreSystem<Window> {
   var frontmost: () -> pid_t?
   var focusedWindow: (pid_t) -> CGWindowID?
   var resolve: (_ persons: [ListedWindow], _ left: () -> Double) -> [CGWindowID: Window]
-  var raise: (Window) -> Void
+  var raise: (Window) -> Bool
   var hold: () -> () -> Void
   var scheduleRelease: (Double, @escaping @Sendable () -> Void) -> Void = { _, _ in }
 }
@@ -330,11 +331,20 @@ struct PopUpRestoreSystem<Window> {
 extension PopUpRestoreSystem where Window == AXUIElement {
   static var live: PopUpRestoreSystem<AXUIElement> {
     let system = ActivationSystem()
-    return PopUpRestoreSystem(frontmost: system.frontmost, focusedWindow: { system.userWindow($0)?.id }, resolve: { persons, left in
+    return PopUpRestoreSystem(frontmost: system.frontmost, focusedWindow: { pid in
+      focusedWindowNumber(elementAttribute(prepare(AXUIElementCreateApplication(pid)), kAXFocusedWindowAttribute), number: axWindowNumber)
+    }, resolve: { persons, left in
       resolveByNumber(persons, left: left, windowsOf: { attribute(prepare(AXUIElementCreateApplication($0)), kAXWindowsAttribute) as? [AXUIElement] },
                       number: axWindowNumber)
-    }, raise: system.raise, hold: { system.holdScreenUpdates(ReenableStamp()) }, scheduleRelease: system.scheduleHoldRelease)
+    }, raise: { gatedPerform($0, kAXRaiseAction) == .success }, hold: { system.holdScreenUpdates(ReenableStamp()) },
+       scheduleRelease: system.scheduleHoldRelease)
   }
+}
+
+/// The person's focused window's own number (the review of 7e5bb454..67cf8b26, item 2): their app's AXFocusedWindow,
+/// numbered by the SPI alone (`axWindowNumber`), never by a window of the same size; nil when either is missing.
+func focusedWindowNumber<Window>(_ focused: Window?, number: (Window) -> CGWindowID?) -> CGWindowID? {
+  focused.flatMap(number)
 }
 
 /// The person's windows' elements by their own window numbers alone (the re-reviews of 97344ee7..a094f620, item 3, and
@@ -362,8 +372,9 @@ func resolveByNumber<Window>(_ persons: [ListedWindow], left: () -> Double, wind
 /// to the front since the press (`personInput`; their own act is never undone, and no note blames cua), the bound spent
 /// (`bound`), a window of the person's frontmost app that could not be told for certain (`unresolved`, never raised), or
 /// the person's focused window not known among the recorded ones (`focusUnknown`: nothing raised, since a raise of
-/// another of their windows, last, would change their focused window).
-enum PopUpRestoreStop: String, Equatable { case personInput, bound, unresolved, focusUnknown }
+/// another of their windows, last, would change their focused window), or the focused window's own raise answering an
+/// AX error (`focusRaiseFailed`).
+enum PopUpRestoreStop: String, Equatable { case personInput, bound, unresolved, focusUnknown, focusRaiseFailed }
 
 /// The meta's `popUpClick.restored`: how many of the person's windows were in front of the app's before the press, the
 /// milliseconds from the restore's start to its read, whether the read found the recorded order back, how many
@@ -375,11 +386,14 @@ struct PopUpRestoreRecord: Equatable {
   var complete = false
   var raises = 0
   var skipped = 0
+  /// The raises whose AXRaise answered an error.
+  var failedRaises = 0
   var stopped: PopUpRestoreStop?
 
   var wire: [String: Any] {
     var wire: [String: Any] = ["windows": windows, "ms": (ms * 1000).rounded() / 1000, "complete": complete, "raises": raises,
                                "skipped": skipped]
+    if failedRaises > 0 { wire["failedRaises"] = failedRaises }
     if let stopped { wire["stopped"] = stopped.rawValue }
     return wire
   }
@@ -393,10 +407,13 @@ struct PopUpRestoreRecord: Equatable {
 /// app's window is skipped (`skipped`): an AXRaise of a background app's window stays under the active app's. About
 /// `popUpRestoreReadMs` after the first raise the order is read once and recorded (`complete`), never raised again on a
 /// mismatch. The hold is released at the read, its timer set no later than route 3's ceiling
-/// (`activationPointHoldCeilingMs`). The person's input or another frontmost app (`intervened`) stops it before any
-/// raise; an absolute cutoff of `popUpRestoreBoundMs` from its start covers everything, no AX call made past it. The
-/// hard bar: the person's focused window never changes. Raising it last keeps it on top of its app's windows; when it is
-/// not known, not among the recorded windows, or not resolved, nothing is raised.
+/// (`activationPointHoldCeilingMs`). The person's input or another frontmost app (`intervened`) stops it with nothing
+/// more raised, checked before anything is read, before the first raise and before each one after. An absolute cutoff
+/// of `popUpRestoreBoundMs` from its start covers everything but one call: past it, the remaining others are skipped and
+/// the focused window's raise is still made, so the pass never ends on another window's raise; the read is made only
+/// inside the cutoff, and an end past it is `bound`, never complete. The hard bar: the person's focused window never
+/// changes. Raising it last keeps it on top of its app's windows; when it is not known, not among the recorded windows,
+/// or not resolved, nothing is raised, and its raise answering an error ends the pass as `focusRaiseFailed`.
 func popUpRestoreOrder<Window>(_ persons: [ListedWindow], appWindow: CGWindowID, system: PopUpRestoreSystem<Window>,
                                windows: () -> [ListedWindow]?, now: () -> Double, sleep: (Double) -> Void,
                                intervened: () -> Bool = { false }) -> PopUpRestoreRecord {
@@ -410,34 +427,54 @@ func popUpRestoreOrder<Window>(_ persons: [ListedWindow], appWindow: CGWindowID,
     record.complete = complete
     return record
   }
+  // The person's switching apps during the open is theirs, before anything is read (the review of 7e5bb454..67cf8b26,
+  // item 4).
+  if intervened() { return ended(.personInput) }
   guard let front = system.frontmost() else { return ended(.focusUnknown) }
   let own = persons.filter { $0.owner == front }
   record.skipped = persons.count - own.count
+  if intervened() { return ended(.personInput) }
   guard !own.isEmpty else { return ended(nil) }  // only third apps' windows: nothing an AXRaise can put back
   guard left() > 0 else { return ended(.bound) }
   guard let focused = system.focusedWindow(front), own.contains(where: { $0.number == focused }) else { return ended(.focusUnknown) }
   let found = system.resolve(own, left)
   guard let focusedElement = found[focused] else { return ended(.unresolved) }
   let unresolved = own.contains { found[$0.number] == nil }
-  // Back to front, the focused window last.
-  let elements = own.reversed().filter { $0.number != focused }.compactMap { found[$0.number] } + [focusedElement]
+  // Back to front, the focused window apart: it is raised last, always.
+  let others = own.reversed().filter { $0.number != focused }.compactMap { found[$0.number] }
+  // Input before the first raise stops it with nothing raised; after it, a stop can only follow input.
   if intervened() { return ended(.personInput) }
   guard left() > 0 else { return ended(.bound) }
   let release = OnceRelease(system.hold())
   system.scheduleRelease(min(left(), activationPointHoldCeilingMs)) { release() }
   defer { release() }
   let raisedAt = now()
-  for element in elements {
-    guard left() > 0 else { return ended(.bound) }
+  var cutoffPassed = false
+  for element in others {
+    // The person's act defines their focus: nothing more is raised (item 1).
     if intervened() { return ended(.personInput) }
-    system.raise(element)
+    // The cutoff skips the rest of the others, never the focused window's raise.
+    guard left() > 0 else { cutoffPassed = true; break }
+    if !system.raise(element) { record.failedRaises += 1 }
     record.raises += 1
   }
-  // One read, about `popUpRestoreReadMs` after the first raise (never past the cutoff); a mismatch is recorded, not raised again.
-  let wait = min(raisedAt + popUpRestoreReadMs, cutoff) - now()
+  if intervened() { return ended(.personInput) }
+  // The pass's last act is the focused window's raise, on the cutoff too, past it by that one call (item 1).
+  let focusedRaised = system.raise(focusedElement)
+  record.raises += 1
+  guard focusedRaised else {
+    record.failedRaises += 1
+    return ended(.focusRaiseFailed)
+  }
+  if cutoffPassed || left() <= 0 { return ended(.bound) }
+  // One read, about `popUpRestoreReadMs` after the first raise and inside the cutoff, checked before and after (item 3);
+  // a mismatch is recorded, never raised again.
+  let wait = min(raisedAt + popUpRestoreReadMs, cutoff - deliveryGuardSampleMs) - now()
   if wait > 0 { sleep(wait) }
   if intervened() { return ended(.personInput) }
+  guard left() > 0 else { return ended(.bound) }
   let holds = windows().flatMap { personOrderHolds(persons, appWindow: appWindow, in: $0) } == true
+  guard left() > 0 else { return ended(.bound) }
   return ended(unresolved ? .unresolved : nil, complete: holds && !unresolved)
 }
 

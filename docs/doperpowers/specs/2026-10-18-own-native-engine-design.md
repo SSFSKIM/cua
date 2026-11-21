@@ -564,10 +564,13 @@ error    {code: number (the vendor's codes where mapped; -10005 otherwise), mess
     (true: that check ran after the route's focus hold had activated the app)}; roles only, never a title
   menuItemClick: #454's coordinate click on an open menu's item, on its result and its errors once the guard kept the
     point: {menuWindow (the number of the app's menu window over the point), delivery? ("action": the click delivered as
-    the item's action, inputRoute 1, no pointer event), action? ("AXPick" | "AXPress"), effect? ("confirmed" |
-    "unconfirmed"), menuClosed? (the menu's window left the screen or the item's handle died), value? ("taken" | "other"
-    | "unread": what the control the menu belongs to reads against the item's title), polls?, ms? (from the action's
-    return to the last read), refused? ("notRecorded" | "notHit" | "disabled" | "noAction")}; never a title
+    the item's action, inputRoute 1, no pointer event; set as the action is dispatched), action? ("AXPick" |
+    "AXPress"), effect? ("confirmed" | "unconfirmed"), actionError? (the action's AXError when not success: a messaging
+    timeout is then judged by the effect), menuClosed? (true: the menu's window left the screen or the item's handle
+    died; null: the window list did not read), value? ("taken" | "unchanged" | "other" | "unread": the selection of
+    the control identified before the action against the item's title, moved to it, already it or unread before, another,
+    or nothing to read), polls?, ms? (from the action's return to the last read), refused? ("notRecorded" | "notHit" |
+    "relabelled" | "disabled" | "noAction")}; never a title
   note: on a paste result that pasted a line with no channel to see it, read after ⌘V (#187; type_text's paste route
     since #361 never, its read-back answering instead), on a type_text a password field's length confirmed (#414), and on a
     scroll whose content was already at its end in that direction (#328): the sentence the service adds to the tool
@@ -7099,6 +7102,40 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   recorded-item tests.
   Not measured live: this build on the kit's cells (the three menus by `coord` in three modes, context and menu-bar
   menus, a submenu).
+  Date/Author: 2026-11-20, cursor235's implementer for #454.
+- Decision (#454, the review of fdd285dd..32787ce3, reviewer-high, 2026-11-20; amends the entry above and #452's
+  sentence): ten corrections, each tested and each test failing with its fix reverted.
+  (1) The process serving the item, not main's bounded hit's, is refused when forbidden and registered as driven
+  (`actionTargets`), before the in-flight check, as #282's element route does.
+  (2) Confirmation needs selection evidence: the control's selection is its AXValue, its AXTitle only where it has no
+  value (a static label such as the hosted fixture's "Choice" never stands in), read before and after the action; it
+  must move to the item's title from another. Already the item, or unread before, is `unchanged`: unconfirmed, so
+  choosing the item already chosen answers `clickUnconfirmed`.
+  (3) That control is identified before the action: the AXMenu's pop-up or combo-box parent; for a menu with no parent
+  (Chrome's `<select>`), the app's focused element of those roles then; a menu with any other parent (a context menu's
+  view) has none. A control that takes the focus only after the action confirms nothing, so Chrome confirms only if its
+  focus reads the `<select>` while the menu is open, unmeasured.
+  (4) The coordinate guard's re-hits go through `LatestHit`, so a menu item the first hit-test missed and the guard's
+  re-hit recovered is the menu step's timed signal; a final re-hit that answered late or nothing stays no signal.
+  (5) The recorded item's title rides with it (`RecordedMenuItem`) and the live item must read it (nil and empty
+  alike), else refused as `relabelled` ("the item there no longer reads what the screenshot showed"): a recorded icon's
+  item kept by `hitAboveNode` in a dynamic menu that reused it.
+  (6) A menu item inside an AXWebArea (or, with no item hit, a recorded one there) is main's, whatever window of the
+  app's at layer 101 lies over the point: a page's ARIA menu under a click-through panel keeps its posted click.
+  (7) Closure is read from `onScreenWindowIDs()`; a list that does not read is unknown (`menuClosed: null`), never
+  closed, where `onScreenWindowList()` answered an empty list.
+  (8) A messaging timeout (`cannotComplete`) from the action may have taken effect while the app closed its menu, so
+  the effect is read and decides (`actionError` in the meta); any other error is `actionFailed`, read no further.
+  (9) The meta's `delivery` and `action` are set as the action is dispatched, so an owner refusal or an intervention
+  stop before it records none.
+  (10) Both `appWindowOverPoint` sentences name getAXState(), since getScreenshot answers an image: #454's now ends
+  "or call getAXState() and click the menu item it lists, by its element.", and #452's "or call getAXState() and click
+  an element it lists." (the #452 entry quotes the old wording; `docs/evidence/2026-11-20-same-app-overlay` records a
+  live reply with it). The model-facing sentence now says the control must have moved to the item, and that the item
+  already chosen answers `clickUnconfirmed` too.
+  Proven offline (`MenuItemPointTests`, 17 tests; `AppWindowOverPointTests` for #452's sentence): with each fix
+  reverted its test fails; for (4) the reverted form is the old composition (an untimed re-hit beside `latest`), since
+  the click's live wiring is not unit-reachable.
   Date/Author: 2026-11-20, cursor235's implementer for #454.
 
 ## Outcomes & Retrospective

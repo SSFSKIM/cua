@@ -2,7 +2,7 @@
 
 ## Open
 
-- **2026-11-21 — A background pop-up's open leaves the person's other windows under the app's (P2; design ruling 1005).** #458's restore raises only the person's focused window back over the app's window (`restored.leftCovered` counts the rest): the full-order restore was tried and dropped, since raising the person's other windows moved their focus for 13–49 ms (#458's qual 2, 38/80 and 13/30 rows). Shipped with: their focused window, the one they work in, is put back; a full-order restore that never changes key or focus gets its own ticket.
+- **2026-11-21 — A background pop-up's open leaves the person's other windows under the app's (P2; design ruling 1005).** #458's restore raises only the person's focused window back over the app's window (`restored.leftCovered` counts the rest): the full-order restore was tried and dropped, since raising the person's other windows moved their focus for 13–49 ms (#458's qual 2, 38/80 and 13/30 rows). Shipped with: their focused window, the one they work in, is put back; a full-order restore that never changes key or focus is #466.
 
 - **2026-11-21 — Another connection's after-action repair watch can close a menu #458 just opened (P3, rare; reviewer-high on edbfbd23..75fecad2).** A request cancels only its own connection's watch and closed connections' (`execute`), so a second live session's one-second repair watch on the same person's window can raise it over the app's while #458's pop-up menu is open, and the menu closes. Shipped with: a rare two-session race on one app within a second, and fixing it needs coordination of watches across connections.
 

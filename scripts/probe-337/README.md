@@ -230,3 +230,82 @@ window, the observation's nodes in it, the item's AX chain and actions), then on
 Menus: `select` (Chrome's `<select>` native menu), `font` (TextEdit's format-bar font pop-up), `typeface` (TextEdit's
 typeface pop-up), `language` (Script Editor's document language pop-up). Modes: shared-behind, shared-front,
 dedicated-behind.
+
+Readers: `summary.mjs` (per cell, the menu's facts, representative meta) and `pivot.mjs` (where each route went, one
+column per mode).
+
+### Results, engine fdd285ddf376e4f3841b5c91f9d5255b6d9cf514 (main)
+
+Full run: https://github.com/SSFSKIM/cua/actions/runs/44848863214 (kit 3f5bb82a; Google Chrome 157.0.8103.79, macOS
+26.7.2, image 20261117.0516.1; 495 rows, 5 per cell, no setup failures). Smokes, 1 row per cell, the same answers:
+https://github.com/SSFSKIM/cua/actions/runs/44845897832 (kit 6e275a2e, 92 rows, all four menus; Chrome 156, image
+20261102.0473.1; `typeface` matched `font` cell for cell, so it was left out of the full run) and
+https://github.com/SSFSKIM/cua/actions/runs/44847726632 (kit 1c93a36b, 57 rows, keys and kit posts). Artifacts in
+`~/.local/share/probe-454/run-<id>/` on the MacBook.
+
+The menus at the re-observation (150/150 rows each): Chrome's `<select>` menu, layer 101, (404,154,77×82); TextEdit's
+font menu, layer 101, (535,44,159×660); Script Editor's language menu, layer 101, (388,85,97×54). Each is a window of the
+app's own, above the observed window, holding the click point.
+
+| menu | route | shared-behind | shared-front | dedicated-behind |
+|---|---|---|---|---|
+| all three | `coord` (today) | ok, item not taken, menu closed 15/15 | the same 15/15 | the same 15/15 |
+| all three | `element` (AXPick) | taken 15/15 | taken 15/15 | taken 15/15 |
+| all three | `keys` (Down…, Return) | taken 15/15 | taken 15/15 | taken 15/15 |
+| all three | `outside` | menu closed, the control not reached 15/15 | the same 15/15 | the same 15/15 |
+| select | `button` (closed) | menu opened 5/5 (#282's element route, AXPress) | opened 5/5 | ok, the page's `<select>` got mousedown/focusin/click, no menu 5/5 |
+| font, language | `button` (closed) | ok, **nothing opened** 10/10 | opened 10/10 | ok, **nothing opened** 10/10 |
+| all three | `kit:observed` (the engine's events, rebuilt) | menu closed, not taken 15/15 | the same 15/15 | - |
+| all three | `kit:menu` (stamped to the menu's window) | menu closed, not taken 15/15 | the same 15/15 | - |
+| all three | `kit:none` (no window stamped) | menu closed, not taken 15/15 | the same 15/15 | - |
+| all three | `kit:warp-observed` | menu closed, not taken 15/15 | the same 15/15 | - |
+| select, font | `kit:warp-menu` | menu stays up, nothing taken 10/10 | the same 10/10 | - |
+| language | `kit:warp-menu` | closed 4, up 1 | closed 5 | - |
+| all three | `kit:move-menu` (mouse-moved first, cursor elsewhere) | menu closed, not taken 15/15 | the same 15/15 | - |
+| font, language | `kit:warpmove-menu` (cursor at the point, mouse-moved, stamped to the menu) | **taken 10/10** | **taken 10/10** | - |
+| select | `kit:warpmove-menu` | not taken, the page's `<select>` got a click 5/5 | the same 4/5, taken 1/5 | - |
+| select, font | `kit:hid` (HID down and up, no move) | menu stays up 10/10 | the same 10/10 | - |
+| language | `kit:hid` | closed 4, up 1 | closed 5 | - |
+| all three | `kit:move-hid` (HID, mouse-moved first) | **taken 15/15** | **taken 15/15** | - |
+
+The engine's answers: `coord` posted by route 3 (`activationJoin: "fresh"`, `error: null`) 45/45, stale point kept
+(`<select>` `noHit` 15, the AppKit menus `sameElement` 30), stamped to the observed window (its frame in
+`coordinateClick.windowFrame`; the stamp is the primary window's number, Input.swift `click.windowNumber`); `element`
+route 1 `elementClick {plan: action, reason: advertised, action: AXPick, hit: element}` 45/45; `keys` route 2′ 45/45,
+`keyEffect: unconfirmed`, the highlight read Down by Down reached the item every time (`<select>` One, Two, Three;
+TextEdit Helvetica, Times; Script Editor AppleScript, JavaScript). No refusal in 495 rows.
+
+A representative `coord` reply (TextEdit, shared-front), verbatim:
+`{"receivedAt":…,"startedAt":…,"endedAt":…,"inputRoute":3,"activationJoin":"fresh","hidIdleMs":null,"stalePoint":{"verdict":"kept","reason":"sameElement","recordedRole":"AXMenuItem","hitRole":"AXMenuItem","identity":"handle","ms":0.72,"windowsMs":0.43,"hitMs":0.508},"coordinateClick":{"screenshotPoint":{"x":215,"y":73},"windowPoint":{"x":215,"y":73},"postedLocation":{"x":615,"y":104},"postedWindowLocation":{"x":215,"y":73},"windowFrame":{"x":400,"y":31,"width":620,"height":679},"frameBeforePost":{"x":400,"y":31,"width":620,"height":679}}}`
+(`<select>`: `"stalePoint":{"verdict":"kept","reason":"noHit","recordedRole":"AXGroup","underlyingRole":"AXMenuItem",…}`).
+
+The item in the trees:
+- **The observation lists the item in every row**, as an AXMenuItem with actions `AXCancel, AXPress, AXPick` and a token:
+  TextEdit at depth 3 under AXMenu < AXPopUpButton < the document window; Script Editor at depth 4 under AXMenu <
+  AXPopUpButton < AXGroup < window; Chrome at depth 9 under an AXMenu the walk hangs below the window's groups.
+- **The app's AX tree:** TextEdit's and Script Editor's menus are children of their pop-up button, inside the document
+  window. Chrome's real menu (404,154,77×82) is an AXMenu with no parent chain to a window (an app-level menu); Chrome
+  also keeps an untitled 57×10 AXMenu under the page's AXPopUpButton.
+- **The application's hit-test** at the click point answers the AXMenuItem in every row; for the `<select>` the engine's
+  `windowHit` turns it into `noHit`, because the item's chain reaches no window.
+
+### Reading
+
+- **Why today's click is not taken.** The engine's events reach the app (the menu closes in 45/45), but the menu treats
+  them as a click outside it. Stamping the menu's own window instead changes nothing (0/30), nor does stamping no window
+  (0/30). Only events that come with the real cursor on the item and a mouse-moved before the down take it: posted to
+  the app and stamped to the menu, AppKit's menus take it 20/20; at the HID tap, all three take it 30/30. A HID down and
+  up with no move before them leaves the menu up. So menu tracking reads the cursor's real position and needs a move to
+  highlight the item; the window stamp alone cannot carry it. Chrome's `<select>` menu does not take even the stamped,
+  warped and moved post (1/10).
+- **Re-aiming (#453) does not deliver a menu click** without moving the person's cursor. The engine has no input that
+  posts to another window or moves the real cursor: every pointer event is stamped with the app's primary window
+  (`coordinatePlacement` → `primaryWindow`, ElementInput.swift; `stampWindow`, Mouse.swift), and `spikeRoute` and the
+  route-4 override change the route, not the stamp.
+- **Both ways through work in every mode and menu:** the element click on the observation's AXMenuItem (AXPick, 45/45)
+  and keys (Down to the item, Return, 45/45). The observation always holds the item, so a refusal can name either.
+- **Outside clicks** only close the menu, in every mode; the control under them is not reached (45/45).
+- **A second false ok, found here:** a coordinate click on a *closed* AppKit pop-up button in a background app (TextEdit,
+  Script Editor; shared-behind and dedicated-behind) answers ok and opens nothing, 20/20; with the app frontmost it opens
+  the menu, 10/10. Chrome's `<select>` opens in shared mode (through #282's element route) and in dedicated mode answers
+  ok with the page's click events and no menu, 5/5.

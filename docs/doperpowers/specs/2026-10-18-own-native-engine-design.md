@@ -7300,6 +7300,25 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   baseline taken at the decision (the after-hold test); an unread list taken as empty at the decision or before the
   press (the unread test); no deadline check after the hold.
   Date/Author: 2026-11-21, cursor235's implementer for #458.
+- Decision (#458, the re-review of 75fecad2..1d70a333, reviewer-high, 2026-11-21, the last review wave; amends the
+  entries above): six corrections. (1) A qualifying `<select>` in a shared-mode page behind is no longer #282's
+  refusal-only fallback, which `deliverPointer` reaches only when the activation throws `PointerRefused`; where the
+  activation clicks its in-window point (Electron's) the click was still posted. Once decided, the press is the pointer's
+  `pressRoute`, run instead of any activation or event; every other page click keeps the fallback (Electron's posted
+  click unchanged). (2) #282's press goes through `deliverAction` with a judgment of non-success errors
+  (`elementActionClick`'s `tolerates`, `webAreaPress`'s `popUpPress`): on the `<select>` a messaging timeout is left to
+  the observed menu, as on the direct route; any other error, and any other control's, stays `actionFailed`. (3) The
+  option evidence is the measured shape only: the deepest recorded node at the point is an AXMenuItem under the pop-up,
+  the hit-test answering above it (`hitAboveNode`); items recorded off the point (parked offscreen) are none, and such a
+  pop-up keeps main's path. (4) The combo box's arrow is its AXButton child at its trailing edge (its frame ending
+  within 4 points of the box's, no button child further right), or with either frame unread its only button child; a
+  clear or accessory button keeps its own click (not measured: TextEdit's arrow frame). (5) The baseline before the
+  press holds every window of that list, whatever its layer or alpha; only windows after the press are filtered by
+  layer and alpha, so a window already there that later shows at the menu layer is not the press's menu. (6) The
+  deadline is checked after the last read before the press (AXExpanded can take the messaging timeout, then the window
+  list), on the unread-baseline path too. Proven offline (`PopUpPointTests` 17 tests, `BackgroundPointerTests` 1 more);
+  reverted one at a time (7 mutations), each fails its test.
+  Date/Author: 2026-11-21, cursor235's implementer for #458.
 
 ## Outcomes & Retrospective
 

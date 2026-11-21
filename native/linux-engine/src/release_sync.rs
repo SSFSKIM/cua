@@ -26,13 +26,14 @@
 //! to its end or filled with keepalives, still ended on steps far shorter than Chrome's status lag under load (task 130's
 //! `t14-floor` `left` at arm64 twice the load: 241 steps spread over 350 ms, 1.45 ms apart, 0 keepalives, a false ok).
 //! So with the tail, the floor's steps and keepalives end [`TAIL_SPAN`] early ([`steps_floor`]) and the tail fills the
-//! rest of the floor, released at the floor's end ([`before_release`]'s `floor_end`): a release time unchanged, the
-//! tail's rests and visits inside it. A path that outlasts that earlier end gets the tail after its last motion, as at
-//! the open gate.
+//! rest of the floor ([`Schedule::InFloor`], ruling 1001): its visits 16 and 8 ms before the floor's end, the release at
+//! the end as the floor alone releases it. A visit that no longer fits is dropped; the release never moves. The 326 ms
+//! boundary only schedules: the gate judges the path against the 350 ms floor, so a path whose last step comes between
+//! the two keeps the gate shut and its tail inside the floor.
 //!
 //! The motion is one synthetic motion on the background route (SendEvent, never XTEST). On XTEST's routes a motion to
-//! the pointer's own place produces no event (M4's T9), so each visit is the floor's pair, the path's second-to-last
-//! sample and then its last.
+//! the pointer's own place produces no event (M4's T9), so each visit steps 1 px forward along the path's last segment
+//! and back to its end ([`xtest_step`]).
 //!
 //! The gate ([`gate`], rulings 967, 974 and 993): the step runs only on #459's shape, a drop whose floor after the take
 //! sent no keepalive and did not space out the path's last step, the path's steps having outlasted the floor at their
@@ -134,6 +135,23 @@ pub fn steps_floor(form: Form, after_take: Duration) -> Duration {
     }
 }
 
+/// When the `done`-th of the `left` steps a drag still had at its take (`taken`) is due on the floor, and when the gate
+/// judges it against: the steps spread over `steps_floor` ([`steps_floor`]), and judged against the whole floor
+/// `after_take` (ruling 1001): the tail's earlier boundary schedules steps, and is no evidence that a path outlasted the
+/// 350 ms floor.
+pub fn floor_dues(
+    taken: Instant,
+    steps_floor: Duration,
+    after_take: Duration,
+    done: usize,
+    left: usize,
+) -> (Instant, Instant) {
+    (
+        crate::dnd::step_due(taken, steps_floor, done, left),
+        crate::dnd::step_due(taken, after_take, done, left),
+    )
+}
+
 /// The wait after a sample on a drag's floor after a take: its own pacing's `paced`, or what is left of the floor's
 /// spacing to `floor_due` at `now` when that is longer, no step longer than [`crate::dnd::KEEPALIVE`]. Answers the wait
 /// and whether the floor spaced it out (its spacing longer than the pacing): a sample sent at or past its floor's due,
@@ -143,15 +161,74 @@ pub fn floor_spaces(paced: Duration, floor_due: Instant, now: Instant) -> (Durat
     (paced.max(spaced), spaced > paced)
 }
 
+/// When the tail's visits and the release come (ruling 1001).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Schedule {
+    /// After a path that outlasted the floor (the gate open), or a drop with no floor: [`TAIL_REST`] before each visit
+    /// and before the release, from the tail's start, as the measured form has it.
+    AfterPath,
+    /// Inside the floor (the gate shut): the release at the floor's end, this instant, as the floor alone releases it,
+    /// the visits [`TAIL_REST`] apart before it. A visit whose time has passed when the tail reaches it is dropped, and
+    /// the release never moves.
+    InFloor(Instant),
+}
+
+impl Schedule {
+    /// The schedule of a drop whose gate is `open`, its floor ending at `floor_end` (None: no floor ran).
+    pub fn of(open: bool, floor_end: Option<Instant>) -> Schedule {
+        match (open, floor_end) {
+            (false, Some(end)) => Schedule::InFloor(end),
+            _ => Schedule::AfterPath,
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Schedule::AfterPath => "after_path",
+            Schedule::InFloor(_) => "in_floor",
+        }
+    }
+}
+
+/// Where an XTEST route's visit steps to before it returns to the path's end (ruling 1001): an XTEST motion to where
+/// the pointer already is generates no event (M4's T9), so each visit is a real motion 1 px forward along the path's
+/// last segment, then one back to the end. `path` is the path's samples, its end last; the last segment's direction is
+/// taken from the nearest earlier sample that differs from the end, so a repeated end still has one. Forward, the point
+/// is on the side of the end the path was moving toward: a border the last segment crossed stays behind it, so an end
+/// entered on the last sample is not left, and one left on it is not re-entered. It can lie across a border only when
+/// the end is within 1 px of a border the path did not cross, which ruling 961's 3 px margin judges ambiguous already.
+/// A step off the screen (`screen`, its width and height), which the server would clamp back onto the end, goes back
+/// along the segment instead; a path that never moved steps 1 px in x.
+pub fn xtest_step(path: &[(i16, i16)], screen: (u16, u16)) -> (i16, i16) {
+    let end = *path.last().expect("a path has samples");
+    let (dx, dy) = path
+        .iter()
+        .rev()
+        .find(|&&p| p != end)
+        .map_or((1, 0), |&(px, py)| ((end.0 - px).signum(), (end.1 - py).signum()));
+    let on_screen = |(px, py): (i16, i16)| {
+        px >= 0 && py >= 0 && i32::from(px) < i32::from(screen.0) && i32::from(py) < i32::from(screen.1)
+    };
+    let forward = (end.0.saturating_add(dx), end.1.saturating_add(dy));
+    match on_screen(forward) {
+        true => forward,
+        false => (end.0.saturating_sub(dx), end.1.saturating_sub(dy)),
+    }
+}
+
 /// What the step before the release did (`--stats` `release_sync`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Synced {
     pub form: Form,
+    /// When its visits and the release came.
+    pub schedule: Schedule,
     /// The motions it sent.
     pub motions: u32,
+    /// The visits it dropped, their time passed before it reached them (inside the floor only).
+    pub visits_dropped: u32,
     /// How long the step took, from its start to the release.
     pub added: Duration,
-    /// How long after the floor's end it released (None: no floor ran): 0 when it ran inside the floor, its span past
+    /// How long after the floor's end it released (None: no floor ran): about 0 inside the floor, the tail's span past
     /// the path's end when the path outlasted it.
     pub past_floor: Option<Duration>,
 }
@@ -161,59 +238,74 @@ impl Synced {
         json!({
             "form": self.form.name(),
             "when": when.name(),
+            "schedule": self.schedule.name(),
             "motions": self.motions,
+            "visits_dropped": self.visits_dropped,
+            "skipped": self.visits_dropped == TAIL_VISITS,
             "added_ms": self.added.as_secs_f64() * 1000.0,
             "past_floor_ms": self.past_floor.map(|d| d.as_secs_f64() * 1000.0),
         })
     }
 }
 
-/// The step before the release of a Chrome drop the engine lets drop, by `form`: `place` sends a motion; `xtest` is
-/// whether the drag's input is XTEST's; `before` and `last` are the path's last two samples; `floor_end` is the floor's
-/// end after the take (None: no floor ran). The tail releases at the later of the floor's end and [`TAIL_SPAN`] after it
-/// starts, its visits [`TAIL_REST`] and [`TAIL_REST`] before that release: inside the floor, whose steps ended its span
-/// early ([`steps_floor`]), the release comes when the floor alone would have released; past a path that outlasted the
-/// floor, [`TAIL_SPAN`] after its last motion. No rest is shorter than [`TAIL_REST`], the measured form's: a wait that
-/// overran delays what follows it, as the floor's own waits do. A motion that fails ends it with its error, as the
-/// floor's do. None for [`Form::Off`].
+/// The step before the release of a Chrome drop the engine lets drop, by `form`, on `schedule`: [`TAIL_VISITS`] visits
+/// to the path's end `last`, then the release. `place` sends a motion. On XTEST's routes `step` is where each visit
+/// steps to first ([`xtest_step`]); on the background route (None) a visit is one synthetic motion to the end, which
+/// SendEvent delivers wherever the pointer is. `floor_end` is the floor's end after the take, for the record (None: no
+/// floor ran). A motion that fails ends it with its error, as the floor's do. None for [`Form::Off`].
 pub fn before_release(
     form: Form,
-    xtest: bool,
-    before: (i16, i16),
+    step: Option<(i16, i16)>,
     last: (i16, i16),
+    schedule: Schedule,
     floor_end: Option<Instant>,
     mut place: impl FnMut((i16, i16)) -> Result<()>,
 ) -> Result<Option<Synced>> {
     let started = Instant::now();
     let until = |at: Instant| std::thread::sleep(at.saturating_duration_since(Instant::now()));
     let mut motions = 0;
-    let release_at = match form {
-        Form::Off => return Ok(None),
-        Form::Tail => {
-            // the later of the floor's end and the tail's whole span from now
-            let release_at = floor_end
-                .map_or(started, |end| end.max(started))
-                .max(started + TAIL_SPAN);
-            let mut visited = started;
-            for visit in 0..TAIL_VISITS {
-                until((release_at - TAIL_REST.saturating_mul(TAIL_VISITS - visit)).max(visited + TAIL_REST));
-                if xtest {
-                    place(before)?;
-                    motions += 1;
-                }
-                place(last)?;
-                motions += 1;
-                visited = Instant::now();
-            }
-            until(release_at.max(visited + TAIL_REST));
-            Instant::now()
+    let mut visits_dropped = 0;
+    let mut visit = |motions: &mut u32| -> Result<()> {
+        if let Some(step) = step {
+            place(step)?;
+            *motions += 1;
         }
+        place(last)?;
+        *motions += 1;
+        Ok(())
     };
+    match (form, schedule) {
+        (Form::Off, _) => return Ok(None),
+        (Form::Tail, Schedule::AfterPath) => {
+            for _ in 0..TAIL_VISITS {
+                std::thread::sleep(TAIL_REST);
+                visit(&mut motions)?;
+            }
+            std::thread::sleep(TAIL_REST);
+        }
+        (Form::Tail, Schedule::InFloor(release_at)) => {
+            for k in 0..TAIL_VISITS {
+                let due = release_at
+                    .checked_sub(TAIL_REST.saturating_mul(TAIL_VISITS - k))
+                    .unwrap_or(started);
+                if Instant::now() > due {
+                    visits_dropped += 1;
+                    continue;
+                }
+                until(due);
+                visit(&mut motions)?;
+            }
+            until(release_at);
+        }
+    }
+    let released = Instant::now();
     Ok(Some(Synced {
         form,
+        schedule,
         motions,
-        added: release_at - started,
-        past_floor: floor_end.map(|end| release_at.saturating_duration_since(end)),
+        visits_dropped,
+        added: released - started,
+        past_floor: floor_end.map(|end| released.saturating_duration_since(end)),
     }))
 }
 
@@ -224,15 +316,21 @@ mod tests {
     /// Every motion the step sent, with when it went.
     type Sent = Vec<((i16, i16), Instant)>;
 
-    /// The step run against a recorder with no floor (or one already past): what it sent, and when it returned.
-    fn run(form: Form, xtest: bool) -> (Option<Synced>, Sent, Instant) {
-        run_by(form, xtest, None)
+    /// The step run against a recorder after a path, its visits on the background route (`step` None) or XTEST's:
+    /// what it sent, and when it returned.
+    fn run(form: Form, step: Option<(i16, i16)>) -> (Option<Synced>, Sent, Instant) {
+        run_on(form, step, Schedule::AfterPath, None)
     }
 
-    /// [`run`] with the floor ending at `floor_end`.
-    fn run_by(form: Form, xtest: bool, floor_end: Option<Instant>) -> (Option<Synced>, Sent, Instant) {
+    /// [`run`] on `schedule`, the floor ending at `floor_end`.
+    fn run_on(
+        form: Form,
+        step: Option<(i16, i16)>,
+        schedule: Schedule,
+        floor_end: Option<Instant>,
+    ) -> (Option<Synced>, Sent, Instant) {
         let log = std::cell::RefCell::new(Vec::new());
-        let synced = before_release(form, xtest, (9, 10), (10, 10), floor_end, |p| {
+        let synced = before_release(form, step, (10, 10), schedule, floor_end, |p| {
             log.borrow_mut().push((p, Instant::now()));
             Ok(())
         })
@@ -302,7 +400,7 @@ mod tests {
     #[test]
     fn off_sends_nothing_and_holds_nothing_up() {
         let started = Instant::now();
-        let (synced, log, _) = run(Form::Off, false);
+        let (synced, log, _) = run(Form::Off, None);
         assert_eq!(synced, None);
         assert!(log.is_empty());
         assert!(started.elapsed() < Duration::from_millis(2));
@@ -312,7 +410,7 @@ mod tests {
     fn tail_rests_then_revisits_the_last_point_twice_a_rest_apart_and_rests_again_before_the_release() {
         assert_eq!((TAIL_REST, TAIL_VISITS), (Duration::from_millis(8), 2));
         let started = Instant::now();
-        let (synced, log, ended) = run(Form::Tail, false);
+        let (synced, log, ended) = run(Form::Tail, None);
         assert_eq!(
             log.iter().map(|(p, _)| *p).collect::<Vec<_>>(),
             vec![(10, 10), (10, 10)]
@@ -322,24 +420,50 @@ mod tests {
         assert!(log[1].1 - log[0].1 >= TAIL_REST, "{:?}", log[1].1 - log[0].1);
         assert!(ended - log[1].1 >= TAIL_REST, "{:?}", ended - log[1].1);
         let synced = synced.expect("a record");
-        assert_eq!(synced.motions, 2);
+        assert_eq!((synced.motions, synced.visits_dropped), (2, 0));
         assert!(synced.added >= 3 * TAIL_REST && synced.added < 3 * TAIL_REST + Duration::from_millis(10));
         assert_eq!(
             synced.record(When::Outlasted),
-            json!({"form": "tail", "when": "outlasted", "motions": 2, "added_ms": synced.added.as_secs_f64() * 1000.0,
-                   "past_floor_ms": null})
+            json!({"form": "tail", "when": "outlasted", "schedule": "after_path", "motions": 2, "visits_dropped": 0,
+                   "skipped": false, "added_ms": synced.added.as_secs_f64() * 1000.0, "past_floor_ms": null})
         );
-        // on XTEST each visit is the pair, a motion to the pointer's own place being no event there
-        let (synced, log, _) = run(Form::Tail, true);
+        // on XTEST each visit is a real motion: a step, then back to the end
+        let (synced, log, _) = run(Form::Tail, Some((11, 10)));
         assert_eq!(
             log.iter().map(|(p, _)| *p).collect::<Vec<_>>(),
-            vec![(9, 10), (10, 10), (9, 10), (10, 10)]
+            vec![(11, 10), (10, 10), (11, 10), (10, 10)]
         );
         assert_eq!(synced.unwrap().motions, 4);
     }
 
-    /// Ruling 1000: with the tail, the floor's steps and keepalives end its span early, and no floor's fill is longer
-    /// than the floor; with no tail, they fill the whole floor, as 0.4.2's.
+    /// Ruling 1001 (3): an XTEST motion to where the pointer already is generates no event, so each visit steps 1 px
+    /// forward along the last segment and back. Every motion of a visit is to a place the pointer is not at.
+    #[test]
+    fn an_xtest_visit_steps_forward_along_the_last_segment_so_every_motion_moves_the_pointer() {
+        let screen = (640, 480);
+        // forward along the last segment, in each direction
+        assert_eq!(xtest_step(&[(5, 5), (9, 10), (10, 10)], screen), (11, 10));
+        assert_eq!(xtest_step(&[(20, 20), (10, 10)], screen), (9, 9));
+        assert_eq!(xtest_step(&[(10, 30), (10, 29)], screen), (10, 28));
+        // a repeated end (the path's last two samples one point): the direction from the nearest sample that differs,
+        // never the end itself
+        assert_eq!(xtest_step(&[(4, 10), (9, 10), (10, 10), (10, 10)], screen), (11, 10));
+        assert_ne!(xtest_step(&[(10, 10), (10, 10)], screen), (10, 10));
+        // an end entered on the last sample: the zone from x = 560 on, the path crossing into it on its last step; the
+        // step stays inside it, so no point outside the zone is shown after the path's end
+        let entered = [(557, 300), (558, 300), (559, 300), (560, 300)];
+        assert_eq!(xtest_step(&entered, screen), (561, 300));
+        assert!(xtest_step(&entered, screen).0 >= 560);
+        // and an end left on the last sample stays outside: the step goes further out, not back into the zone
+        let left = [(561, 300), (560, 300), (559, 300)];
+        assert!(xtest_step(&left, screen).0 < 559);
+        // a step off the screen, which the server would clamp onto the end, goes back along the segment
+        assert_eq!(xtest_step(&[(637, 5), (638, 5), (639, 5)], screen), (638, 5));
+        assert_eq!(xtest_step(&[(1, 0), (0, 0)], screen), (1, 0));
+    }
+
+    /// Ruling 1000: with the tail, the floor's steps and keepalives end its span early; with no tail, they fill the
+    /// whole floor, as 0.4.2's.
     #[test]
     fn with_the_tail_the_floor_s_steps_end_its_span_early() {
         let ms = Duration::from_millis;
@@ -349,15 +473,17 @@ mod tests {
         assert_eq!(steps_floor(Form::Tail, ms(10)), Duration::ZERO);
     }
 
-    /// Ruling 1000: a drop whose gate stays shut releases when its floor alone would have, the tail inside the floor.
-    /// The floor's keepalives fill to [`steps_floor`], the tail its last [`TAIL_SPAN`]; with no tail they fill the whole
-    /// floor and release at its end. Both releases come at the floor's end.
+    /// Rulings 1000 and 1001 (1): a drop whose gate stays shut releases at its floor's end, as the floor alone
+    /// releases it: the floor's keepalives fill to [`steps_floor`], the tail's visits come 16 and 8 ms before the end,
+    /// and the button goes up at the end. With no tail the keepalives fill the whole floor and release at its end. The
+    /// two releases are pinned to the floor's end and to each other.
     #[test]
     fn the_tail_inside_the_floor_leaves_the_release_time_unchanged() {
         let ms = Duration::from_millis;
         let after_take = ms(70);
         let release = |form: Form| {
             let taken = Instant::now();
+            let floor_end = taken + after_take;
             let mut motions = Vec::new();
             let keepalives = crate::dnd::keepalive(
                 |p| {
@@ -369,78 +495,148 @@ mod tests {
                 taken + steps_floor(form, after_take),
             )
             .unwrap();
-            let synced = before_release(form, false, (9, 10), (10, 10), Some(taken + after_take), |p| {
-                motions.push((p, Instant::now()));
-                Ok(())
-            })
+            let synced = before_release(
+                form,
+                None,
+                (10, 10),
+                Schedule::of(false, Some(floor_end)),
+                Some(floor_end),
+                |p| {
+                    motions.push((p, Instant::now()));
+                    Ok(())
+                },
+            )
             .unwrap();
             let released = Instant::now();
-            (released - taken, keepalives, synced, motions, taken)
+            (released - floor_end, keepalives, synced, motions, floor_end)
         };
         let (off, off_keepalives, synced, _, _) = release(Form::Off);
         assert_eq!(synced, None);
         assert!(off_keepalives > 0);
-        let (tail, keepalives, synced, motions, taken) = release(Form::Tail);
-        // the floor's end, within a scheduler's wakeup, either way
-        for at in [off, tail] {
-            assert!(
-                at >= after_take && at < after_take + ms(4),
-                "released {at:?} after the take"
-            );
+        let (tail, keepalives, synced, motions, floor_end) = release(Form::Tail);
+        // both at the floor's end, within a wakeup's lateness, and within one of each other
+        for late in [off, tail] {
+            assert!(late < ms(1), "released {late:?} past the floor's end");
         }
+        assert!(tail.abs_diff(off) < ms(1), "the tail {tail:?} against off {off:?}");
         assert!(keepalives > 0, "the keepalives still fill the floor up to the tail");
         let synced = synced.expect("the tail ran");
-        assert_eq!(synced.motions, 2);
-        assert!(synced.past_floor.unwrap() < ms(4), "{synced:?}");
-        // the tail's two visits at the last point, 16 and 8 ms before the floor's end, after the floor's last pair
-        let visits: Vec<Duration> = motions[motions.len() - 2..].iter().map(|(_, at)| *at - taken).collect();
         assert_eq!(
-            motions[motions.len() - 2..].iter().map(|(p, _)| *p).collect::<Vec<_>>(),
+            (synced.schedule, synced.motions, synced.visits_dropped),
+            (Schedule::InFloor(floor_end), 2, 0)
+        );
+        assert!(synced.past_floor.unwrap() < ms(1), "{synced:?}");
+        // the tail's two visits at the last point, 16 and 8 ms before the floor's end, after the floor's last pair
+        let tail_motions = &motions[motions.len() - 2..];
+        assert_eq!(
+            tail_motions.iter().map(|(p, _)| *p).collect::<Vec<_>>(),
             vec![(10, 10), (10, 10)]
         );
+        for ((_, at), before) in tail_motions.iter().zip([ms(16), ms(8)]) {
+            let due = floor_end - before;
+            assert!(
+                *at >= due && *at - due < ms(1),
+                "a visit {:?} after its time",
+                *at - due
+            );
+        }
+        let last_keepalive = motions[motions.len() - 3].1;
         assert!(
-            visits[0] >= after_take - ms(16) && visits[0] < after_take - ms(16) + ms(4),
-            "{visits:?}"
-        );
-        assert!(visits[1] - visits[0] >= TAIL_REST, "{visits:?}");
-        assert!(tail - visits[1] >= TAIL_REST, "{tail:?} {visits:?}");
-        let last_keepalive = motions[motions.len() - 3].1 - taken;
-        assert!(
-            visits[0] - last_keepalive >= TAIL_REST,
-            "a rest after the fill: {last_keepalive:?} {visits:?}"
+            tail_motions[0].1 - last_keepalive >= TAIL_REST,
+            "a rest after the fill: {:?}",
+            tail_motions[0].1 - last_keepalive
         );
     }
 
-    /// A floor that still has more than the tail's span left when the tail starts (a fill cut short) is waited out:
-    /// the visits come 16 and 8 ms before its end; and one already past (a path that outlasted it) releases the span
-    /// after the tail's start, past the floor by that much.
+    /// Ruling 1001 (1): inside the floor, a visit whose time has passed when the tail reaches it is dropped and the
+    /// release stays at the floor's end; with no time for either visit the tail is skipped, and the button goes up at
+    /// the end, or at once when the end has passed.
     #[test]
-    fn the_tail_releases_at_the_later_of_the_floor_s_end_and_its_span() {
+    fn inside_the_floor_a_visit_that_does_not_fit_is_dropped_and_the_release_never_moves() {
         let ms = Duration::from_millis;
-        let started = Instant::now();
-        let (synced, log, ended) = run_by(Form::Tail, false, Some(started + ms(40)));
+        // 12 ms left: the first visit's time (16 ms before) has passed, the second's (8 ms before) has not
+        let floor_end = Instant::now() + ms(12);
+        let (synced, log, ended) = run_on(Form::Tail, None, Schedule::InFloor(floor_end), Some(floor_end));
         let synced = synced.unwrap();
+        assert_eq!((synced.motions, synced.visits_dropped), (1, 1));
+        assert_eq!(synced.record(When::Outlasted)["skipped"], json!(false));
         assert!(
-            ended - started >= ms(40) && ended - started < ms(44),
-            "{:?}",
-            ended - started
-        );
-        assert!(
-            log[0].1 - started >= ms(24) && log[1].1 - log[0].1 >= TAIL_REST,
+            log[0].1 >= floor_end - ms(8) && log[0].1 - (floor_end - ms(8)) < ms(1),
             "{log:?}"
         );
-        assert!(synced.past_floor.unwrap() < ms(4));
-        let started = Instant::now();
-        let (synced, _, ended) = run_by(Form::Tail, false, Some(started - ms(5)));
+        assert!(ended >= floor_end && ended - floor_end < ms(1));
+        // 4 ms left: both dropped, the tail skipped, the release at the end
+        let floor_end = Instant::now() + ms(4);
+        let (synced, log, ended) = run_on(Form::Tail, None, Schedule::InFloor(floor_end), Some(floor_end));
         let synced = synced.unwrap();
-        assert!(ended - started >= TAIL_SPAN && ended - started < TAIL_SPAN + ms(4));
-        let past = synced.past_floor.unwrap();
-        assert!(past >= TAIL_SPAN + ms(5) && past < TAIL_SPAN + ms(9), "{past:?}");
+        assert!(log.is_empty());
+        assert_eq!((synced.motions, synced.visits_dropped), (0, 2));
+        assert_eq!(synced.record(When::Outlasted)["skipped"], json!(true));
+        assert!(ended >= floor_end && ended - floor_end < ms(1));
+        // the end already past: released at once
+        let started = Instant::now();
+        let floor_end = started - ms(2);
+        let (synced, _, ended) = run_on(
+            Form::Tail,
+            Some((11, 10)),
+            Schedule::InFloor(floor_end),
+            Some(floor_end),
+        );
+        assert_eq!(synced.unwrap().visits_dropped, 2);
+        assert!(ended - started < ms(1));
+    }
+
+    /// Ruling 1001 (2): the tail's 326 ms scheduling boundary is not the gate's: the gate judges the path against the
+    /// 350 ms floor. A path whose last sample goes out 338 ms after the take, past 326 and short of 350, is spaced by
+    /// the 350 ms floor, so the gate stays shut (no outlasted answer under option (c)), and its tail runs inside the
+    /// floor: the first visit's time (334 ms) has passed and is dropped, the second comes at 342, and the release at 350.
+    #[test]
+    fn a_last_sample_between_the_tail_s_boundary_and_the_floor_keeps_the_gate_shut_and_the_release_at_the_floor() {
+        let ms = Duration::from_millis;
+        let paced = Duration::from_micros(500);
+        let after_take = crate::dnd::RELEASE_AFTER_TAKE;
+        let now = Instant::now();
+        let taken = now - ms(338);
+        // the path's last step: its scheduled due and the one the gate judges it by
+        let (schedule_end, floor_end) = floor_dues(taken, steps_floor(Form::Tail, after_take), after_take, 100, 100);
+        assert_eq!(schedule_end, taken + ms(326));
+        assert_eq!(floor_end, taken + after_take);
+        // the schedule's boundary has passed: it spaces nothing
+        assert_eq!(floor_spaces(paced, schedule_end, now), (paced, false));
+        // the floor's has not: the last step is spaced, and the gate stays shut
+        let (_, last_spaced) = floor_spaces(paced, floor_end, now);
+        assert!(last_spaced);
+        assert!(!gate(When::Outlasted, 0, last_spaced));
+        let schedule = Schedule::of(false, Some(floor_end));
+        assert_eq!(schedule, Schedule::InFloor(floor_end));
+        let (synced, log, ended) = run_on(Form::Tail, None, schedule, Some(floor_end));
+        let synced = synced.unwrap();
+        assert_eq!((synced.motions, synced.visits_dropped), (1, 1));
+        assert!(
+            log[0].1 >= taken + ms(342) && log[0].1 - (taken + ms(342)) < ms(1),
+            "{log:?}"
+        );
+        assert!(ended >= floor_end && ended - floor_end < ms(1));
+    }
+
+    /// The gate open (or no floor) schedules the tail after the path; shut with a floor, inside it.
+    #[test]
+    fn the_schedule_follows_the_gate() {
+        let end = Instant::now();
+        assert_eq!(Schedule::of(true, Some(end)), Schedule::AfterPath);
+        assert_eq!(Schedule::of(true, None), Schedule::AfterPath);
+        assert_eq!(Schedule::of(false, None), Schedule::AfterPath);
+        assert_eq!(Schedule::of(false, Some(end)), Schedule::InFloor(end));
     }
 
     #[test]
     fn a_motion_that_fails_ends_the_step_with_its_error() {
-        let failed = before_release(Form::Tail, false, (9, 10), (10, 10), None, |_| anyhow::bail!("gone"));
-        assert!(failed.is_err());
+        for schedule in [
+            Schedule::AfterPath,
+            Schedule::InFloor(Instant::now() + Duration::from_millis(30)),
+        ] {
+            let failed = before_release(Form::Tail, None, (10, 10), schedule, None, |_| anyhow::bail!("gone"));
+            assert!(failed.is_err(), "{schedule:?}");
+        }
     }
 }

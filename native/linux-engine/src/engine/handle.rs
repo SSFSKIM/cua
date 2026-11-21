@@ -932,7 +932,7 @@ impl Engine {
 /// the connection's setup, which gives its size when the engine connected (the whole-branch review of M4, P2: a handle
 /// moved into area the screen gained after the engine started recorded a point the pointer was never at, and its end
 /// reported the person's motion). A root that cannot be read keeps nothing off the screen.
-fn screen_size(x: &X11) -> (u16, u16) {
+pub(super) fn screen_size(x: &X11) -> (u16, u16) {
     x.conn
         .get_geometry(x.root)
         .ok()

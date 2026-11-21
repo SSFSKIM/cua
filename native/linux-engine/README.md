@@ -324,16 +324,21 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   not space out the path's last step (the gate, `release_sync::gate`, open on any path whose last step came past the
   floor's end; `--stats` `release_sync`), the engine waits 8 ms, moves to the path's last point, waits 8 ms, moves
   there again, waits 8 ms, then releases (`TAIL_REST`, `TAIL_VISITS`: the newest vendor build's end of a drag,
-  26.1023.51421's `Client::run_full_desktop_command`). On the background route each motion is one synthetic motion, on
-  XTEST's routes the pair ending on the last point. Without it the release followed the path's last motion at once,
+  26.1023.51421's `Client::run_full_desktop_command`). On the background route each motion is one synthetic motion. On
+  XTEST's routes a motion to where the pointer is generates no event, so each visit steps 1 px forward along the path's
+  last segment and back to its end (`release_sync::xtest_step`, ruling 1001): a border the last segment crossed stays
+  behind the step, so an end entered on the last sample is never shown a point outside it. Without it the release
+  followed the path's last motion at once,
   and under load Chrome dropped on a stale accept and position and confirmed the drop with its activation request.
   Chrome's drop status lags one renderer round trip (`WebContentsViewAura::OnDragUpdated` answers each position), and
   with a status outstanding at the release its pending drop is decided on that older status before the last queued
   position is sent (`x11_drag_drop_client.cc`, `HandleMouseReleased` and `OnXdndStatus`). A later motion at the same
   point refreshes the status, so the status that decides answers the path's end. A drop whose gate stays shut gets the
   tail too, inside its floor (ruling 1000, on 999): the floor's steps spread over its first 326 ms and its keepalives
-  fill to there (`release_sync::steps_floor`), and the tail's rests and visits fill the last 24 ms, released at the
-  floor's end as before. A floor that spread a path's steps 1.45 ms apart still ended on steps far shorter than
+  fill to there (`release_sync::steps_floor`), and the tail's visits come 16 and 8 ms before the floor's end, the
+  release at the end as before (ruling 1001): a visit whose time has passed when the tail reaches it is dropped
+  (`--stats` `release_sync.visits_dropped`, `skipped` when both were), and the release never moves. The 326 ms only
+  schedules: the gate judges the path against the 350 ms floor. A floor that spread a path's steps 1.45 ms apart still ended on steps far shorter than
   Chrome's status lag under load: task 130's `t14-floor` `left` at arm64 twice the load answered one false ok in 30
   through the shut gate, 241 steps spread over 350 ms with no keepalive. The tail costs about 25 ms on the drags whose
   path outlasts the floor, and nothing on the others. The residual bound: no false ok in

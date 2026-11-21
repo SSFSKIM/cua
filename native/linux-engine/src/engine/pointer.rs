@@ -364,18 +364,18 @@ pub(super) struct GateRead {
 }
 
 impl ReleaseSync<'_> {
-    /// At the release of a drop whose take was seen: the gate, on the floor's `keepalives` and whether it spaced out
-    /// the path's `last_spaced` step; then the step on `route`, the path's last two samples `before` and `last`, its
-    /// motions placed again on the route (synthetic on the background route, XTEST's elsewhere), released at the later
-    /// of the floor's end (`floor_end`) and its span: past the path's end when the gate opened, inside the floor when
-    /// it stayed shut (ruling 1000), the floor's steps having ended the step's span early.
+    /// At the release of a drop whose take was seen: the gate, on the floor's `keepalives` and whether the 350 ms
+    /// floor spaced out the path's `last_spaced` step; then the step on `route` to the path's end `last`, its motions
+    /// placed again on the route (synthetic on the background route; on XTEST's, each visit by way of `xtest_step`),
+    /// after the path when the gate opened, inside the floor when it stayed shut (`release_sync::Schedule`, rulings 1000
+    /// and 1001), released at the floor's end (`floor_end`) then.
     fn at_release(
         &mut self,
         x: &mut X11,
         route: &mut Route,
         keepalives: u32,
         last_spaced: bool,
-        (before, last): ((i16, i16), (i16, i16)),
+        (xtest_step, last): ((i16, i16), (i16, i16)),
         floor_end: Option<Instant>,
     ) -> Result<()> {
         let open = crate::release_sync::gate(self.when, keepalives, last_spaced);
@@ -384,8 +384,9 @@ impl ReleaseSync<'_> {
             keepalives,
             last_spaced,
         });
-        let xtest = !matches!(route, Route::Window(_));
-        *self.synced = crate::release_sync::before_release(self.form, xtest, before, last, floor_end, |(px, py)| {
+        let step = (!matches!(route, Route::Window(_))).then_some(xtest_step);
+        let schedule = crate::release_sync::Schedule::of(open, floor_end);
+        *self.synced = crate::release_sync::before_release(self.form, step, last, schedule, floor_end, |(px, py)| {
             route.place_again(x, px, py)
         })?;
         Ok(())
@@ -550,13 +551,23 @@ fn drag_along(
         };
         let last = samples[path - 1];
         let before_last = path.checked_sub(2).map_or(last, |k| samples[k]);
+        // where a Chrome drop's tail steps to on XTEST's routes before each visit to the end (`release_sync::xtest_step`,
+        // ruling 1001), read before anything times the release
+        let xtest_step = match (&measure.release_sync, &*route) {
+            (Some(_), Route::Desktop(..)) => {
+                crate::release_sync::xtest_step(&samples[..path], super::handle::screen_size(x))
+            }
+            _ => last,
+        };
         // the take, when it was seen, and how many samples were still to send then
         let mut taken: Option<(Instant, usize)> = None;
         let mut since_take = 0;
         // whether the floor after the take spaced out the path's last step, the wait after its last sample (a wait
         // longer than the step's own pacing): a path the floor slowed to its end rested on its last point, as one its
         // keepalives filled does (`release_sync::gate`). Only the last step counts: under load the floor can space a
-        // step early in a path that then outlasts it (task 126)
+        // step early in a path that then outlasts it (task 126). It is judged against the 350 ms floor, whatever the
+        // steps are scheduled to: the tail's earlier boundary is no evidence that the path outlasted the floor (ruling
+        // 1001)
         let mut floor_spaced_last = false;
         // when the sample being sent was due
         let mut due = Instant::now();
@@ -568,13 +579,19 @@ fn drag_along(
             if let Some(cursor) = accept.as_deref_mut() {
                 let _ = cursor.poll();
             }
-            // when the floor after a take spaces this step to, if it does
+            // when the floor after a take spaces this step to, if it does, and when the 350 ms floor would have
             let mut floor = None;
             if let Some(watch) = hold.as_mut() {
                 match taken {
                     Some((at, left)) if spacing => {
                         since_take += 1;
-                        floor = Some(crate::dnd::step_due(at, steps_floor, since_take, left));
+                        floor = Some(crate::release_sync::floor_dues(
+                            at,
+                            steps_floor,
+                            after_take,
+                            since_take,
+                            left,
+                        ));
                     }
                     Some(_) => {}
                     None if watch.started(x) => taken = Some((Instant::now(), count - 1 - i)),
@@ -583,10 +600,13 @@ fn drag_along(
             }
             let floored = taken.is_some() && spacing;
             due = next_due(due, sent, pacing, rests_before(&rests, i + 1, floored));
-            let mut wait = due.saturating_duration_since(Instant::now());
+            let paced = due.saturating_duration_since(Instant::now());
+            let mut wait = paced;
             floor_spaced_last = false;
-            if let Some(floor) = floor {
-                (wait, floor_spaced_last) = crate::release_sync::floor_spaces(wait, floor, Instant::now());
+            if let Some((scheduled, judged)) = floor {
+                let now = Instant::now();
+                (wait, _) = crate::release_sync::floor_spaces(paced, scheduled, now);
+                (_, floor_spaced_last) = crate::release_sync::floor_spaces(paced, judged, now);
             }
             std::thread::sleep(wait);
             if let Some(guard) = guard.as_deref_mut()
@@ -806,7 +826,7 @@ fn drag_along(
                 route,
                 floor_keepalives,
                 floor_spaced_last,
-                (before_last, last),
+                (xtest_step, last),
                 floor_end,
             )?;
         }
@@ -1437,8 +1457,12 @@ impl Engine {
             if !read.open {
                 record["skipped_for"] = json!({ "keepalives": read.keepalives, "last_step_spaced": read.last_spaced });
             }
-            // the gate shut, the tail ran inside the floor (ruling 1000)
-            record["in_floor"] = json!(!read.open && synced.is_some());
+            // the tail's schedule as it ran (`release_sync::Schedule`): inside the floor, or after the path
+            record["in_floor"] = json!(
+                synced
+                    .as_ref()
+                    .is_some_and(|s| matches!(s.schedule, crate::release_sync::Schedule::InFloor(_)))
+            );
             record["unconfirm_outlasted"] = json!(outlasted);
             self.extra.insert("release_sync".into(), record);
         }

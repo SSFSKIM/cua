@@ -953,7 +953,10 @@ fn drag_source_answering(
                     }
                     Event::MotionNotify(e) if took_at.is_some() => {
                         AFTER_TAKE_MOTIONS.lock().unwrap().push((e.event_x, e.event_y));
-                        AFTER_TAKE_EVENTS.lock().unwrap().push(("motion", Instant::now()));
+                        AFTER_TAKE_EVENTS
+                            .lock()
+                            .unwrap()
+                            .push(("motion", Instant::now(), (e.event_x, e.event_y)));
                     }
                     Event::FocusOut(_) if sent => {
                         ESCAPES_AND_FOCUS_OUTS
@@ -992,7 +995,10 @@ fn drag_source_answering(
                         seen.push(Input::ButtonPress { button: e.detail, sent })
                     }
                     Event::ButtonRelease(e) => {
-                        AFTER_TAKE_EVENTS.lock().unwrap().push(("release", Instant::now()));
+                        AFTER_TAKE_EVENTS
+                            .lock()
+                            .unwrap()
+                            .push(("release", Instant::now(), (e.event_x, e.event_y)));
                         seen.push(Input::ButtonRelease { button: e.detail, sent });
                         *TAKE_TO_RELEASE.lock().unwrap() = took_at.map(|t| t.elapsed());
                         *PRESS_TO_RELEASE.lock().unwrap() = pressed_at.map(|t| t.elapsed());
@@ -1068,9 +1074,11 @@ static DROP_ACTIVATES: std::sync::Mutex<Option<Window>> = std::sync::Mutex::new(
 /// The window-relative places of the motions the last drag's source saw after its take.
 static AFTER_TAKE_MOTIONS: std::sync::Mutex<Vec<(i16, i16)>> = std::sync::Mutex::new(Vec::new());
 
-/// What the last drag's source read after its take, in order, each with when it read it: `motion` and `release`
-/// (`release_sync.rs`: what comes just before the release).
-static AFTER_TAKE_EVENTS: std::sync::Mutex<Vec<(&'static str, Instant)>> = std::sync::Mutex::new(Vec::new());
+/// What the last drag's source read after its take, in order, each with when it read it and where: `motion` and
+/// `release` (`release_sync.rs`: what comes just before the release).
+#[allow(clippy::type_complexity)]
+static AFTER_TAKE_EVENTS: std::sync::Mutex<Vec<(&'static str, Instant, (i16, i16))>> =
+    std::sync::Mutex::new(Vec::new());
 
 /// How long the last late take (`OnRelease::TakesLate`) waited for the engine's Escape, as its source saw it.
 static TAKE_TO_ESCAPE: std::sync::Mutex<Option<Duration>> = std::sync::Mutex::new(None);
@@ -6097,11 +6105,15 @@ fn outlasting_path() -> Value {
 /// motions it read in the 20 ms before that release (the tail's last two rests), each with how long before it.
 fn source_before_release() -> (Duration, Vec<Duration>) {
     let events = AFTER_TAKE_EVENTS.lock().unwrap().clone();
-    let release = events.iter().find(|(kind, _)| *kind == "release").expect("a release").1;
+    let release = events
+        .iter()
+        .find(|(kind, ..)| *kind == "release")
+        .expect("a release")
+        .1;
     let motions: Vec<Duration> = events
         .iter()
-        .filter(|(kind, at)| *kind == "motion" && *at <= release)
-        .map(|(_, at)| release - *at)
+        .filter(|(kind, at, _)| *kind == "motion" && *at <= release)
+        .map(|(_, at, _)| release - *at)
         .collect();
     let last = *motions.last().expect("a motion after the take");
     (
@@ -6112,7 +6124,7 @@ fn source_before_release() -> (Duration, Vec<Duration>) {
 
 /// The tail as it ships (ruling 995): a Chrome drop the engine lets drop whose path outlasts its floor, on every route
 /// such a drop takes, gets 8 ms, a motion at the path's last point, 8 ms, the same motion, 8 ms, then its release (on
-/// the background route each motion one synthetic motion; on XTEST's routes the pair ending there). Off
+/// the background route each motion one synthetic motion; on XTEST's routes a step 1 px forward and back). Off
 /// (`--drag-dnd-release-sync off`, measurement only), the background route's release follows the path's last motion at
 /// once, #459's shape. A short path, whose floor's keepalives rest on its end, shuts the gate and gets the tail inside its
 /// floor, its release when 0.4.2's floor releases it (ruling 1000); `--drag-dnd-release-sync-when always` opens the
@@ -6217,24 +6229,23 @@ fn a_chrome_drop_whose_path_outlasts_its_floor_ends_on_the_tail_and_a_short_one_
     // fill what they leave, and the gate stays shut; the tail runs inside the floor (ruling 1000), released when the
     // floor alone releases it, 350 ms after the take, as 0.4.2's floor does (`off`)
     *HELD_PATH.lock().unwrap() = None;
-    let floor = ms(350);
+    // the button-up, on the engine's own clock (`after_take.release_after_take_ms`, read as the release goes out):
+    // at the floor's end and within a millisecond of off's, never later (ruling 1001)
+    let released_after_take = |drag: &HeldDrag| drag.stats["after_take"]["release_after_take_ms"].as_f64().unwrap();
     let drag = held_drag_with(
         HoldRoute::InFront,
         OnRelease::Nothing,
         None,
         &["--drag-dnd-release-sync", "off"],
     );
-    let off = drag.take_to_release.expect("a take");
-    assert!(
-        off >= floor && off < floor + ms(15),
-        "off: released {off:?} after the take"
-    );
+    let off = released_after_take(&drag);
+    assert!((350.0..351.0).contains(&off), "off: released {off} ms after the take");
     assert!(drag.stats["release_sync"].get("motions").is_none(), "{}", drag.stats);
     let drag = held_drag_with(HoldRoute::InFront, OnRelease::Nothing, None, &[]);
-    let tail = drag.take_to_release.expect("a take");
+    let tail = released_after_take(&drag);
     assert!(
-        tail >= floor && tail < floor + ms(15),
-        "the tail: released {tail:?} after the take"
+        (350.0..351.0).contains(&tail) && (tail - off).abs() < 1.0,
+        "the tail: released {tail} ms after the take, off {off}"
     );
     let sync = &drag.stats["release_sync"];
     assert_eq!(
@@ -6242,7 +6253,12 @@ fn a_chrome_drop_whose_path_outlasts_its_floor_ends_on_the_tail_and_a_short_one_
         (&json!("tail"), &json!(false), &json!(true), &json!(2)),
         "{sync}"
     );
-    assert!(sync["past_floor_ms"].as_f64().unwrap() < 4.0, "{sync}");
+    assert_eq!(
+        (&sync["schedule"], &sync["visits_dropped"]),
+        (&json!("in_floor"), &json!(0)),
+        "{sync}"
+    );
+    assert!(sync["past_floor_ms"].as_f64().unwrap() < 1.0, "{sync}");
     let (gap, recent) = source_before_release();
     assert!(gap >= ms(6) && gap < ms(20), "released {gap:?} after the last motion");
     assert_eq!(
@@ -6370,4 +6386,88 @@ fn option_c_answers_an_outlasted_chrome_drop_confirmed_by_its_activation_alone_u
         }
     }
     drop(listed);
+}
+
+/// Ruling 1001 (3): on XTEST's routes (the desktop route here) a motion to where the pointer already is generates no
+/// event, so each of the tail's visits steps 1 px forward along the path's last segment and back to its end
+/// (`release_sync::xtest_step`). Both reach the source as motions, the last at the end, and nothing behind the end is
+/// shown: for an end entered on the path's last sample (x = 60, entered from 59), no motion after the path's end is at
+/// x < 60; for a repeated end (the request's last point twice, so the path's last two samples are one point), the
+/// visits are still real motions. Inside the floor (a short path) and after a path that outlasts it alike.
+#[test]
+fn on_xtest_routes_each_tail_visit_steps_forward_and_back_and_shows_nothing_behind_the_end() {
+    support::fresh_display();
+    let cases = [
+        (
+            "an end entered on the last sample",
+            json!([{"x": 20, "y": 20}, {"x": 60, "y": 20}]),
+            (60, 20),
+            (61, 20),
+            "in_floor",
+        ),
+        (
+            "a repeated end",
+            json!([{"x": 20, "y": 20}, {"x": 60, "y": 20}, {"x": 60, "y": 20}]),
+            (60, 20),
+            (61, 20),
+            "in_floor",
+        ),
+        (
+            "an outlasting path",
+            outlasting_path(),
+            (20, 40),
+            (20, 39),
+            "after_path",
+        ),
+    ];
+    for (case, path, end, forward, schedule) in cases {
+        *HELD_PATH.lock().unwrap() = Some(path);
+        let drag = held_drag_with(HoldRoute::Desktop, OnRelease::Nothing, None, &[]);
+        assert_eq!(drag.answer, Ok(Value::Null), "{case}");
+        assert_eq!(drag.stats["route"], json!("desktop"), "{case}: {}", drag.stats);
+        let sync = &drag.stats["release_sync"];
+        assert_eq!(
+            (&sync["schedule"], &sync["motions"], &sync["visits_dropped"]),
+            (&json!(schedule), &json!(4), &json!(0)),
+            "{case}: {sync}"
+        );
+        let events = AFTER_TAKE_EVENTS.lock().unwrap().clone();
+        let release = events
+            .iter()
+            .find(|(kind, ..)| *kind == "release")
+            .expect("a release")
+            .1;
+        // what the source read in the tail's span before the release: the visits' motions
+        let tail: Vec<(i16, i16)> = events
+            .iter()
+            .filter(|(kind, at, _)| *kind == "motion" && *at <= release && release - *at < Duration::from_millis(20))
+            .map(|(_, _, p)| *p)
+            .collect();
+        assert!(
+            tail.contains(&forward),
+            "{case}: the step reached the source as a motion: {tail:?}"
+        );
+        assert_eq!(
+            tail.last(),
+            Some(&end),
+            "{case}: the last motion before the release is the end: {tail:?}"
+        );
+        assert!(
+            tail.iter().all(|p| *p == end || *p == forward),
+            "{case}: only the end and the step forward of it: {tail:?}"
+        );
+        let after_end: Vec<(i16, i16)> = events
+            .iter()
+            .filter(|(kind, at, _)| *kind == "motion" && *at <= release)
+            .map(|(_, _, p)| *p)
+            .skip_while(|p| *p != end)
+            .collect();
+        if case == "an end entered on the last sample" {
+            assert!(
+                after_end.iter().all(|p| p.0 >= 60),
+                "{case}: nothing behind the end: {after_end:?}"
+            );
+        }
+    }
+    *HELD_PATH.lock().unwrap() = None;
 }

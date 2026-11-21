@@ -11,8 +11,8 @@ const short = s => (s ?? '').replace(/^com\.\w+\./, '');
 for (const file of process.argv.slice(2)) {
   const {config, results} = JSON.parse(readFileSync(file, 'utf8'));
   console.log(`## ${config.engineLabel ?? ''} engine ${config.engineRef} (${config.chrome}; ${config.macOS}; image ${config.image}; kit ${config.commit}; ${results.length} rows, ${config.minutes} min${config.budgetStop ? ', budget stop' : ''})\n`);
-  console.log('| cell | rows | answer [popUpClick] | open at 1.8 s | pick after | whole order kept | moved | front / person focus kept (1.8 s) | key window off F1 (5 ms watch): transient / end / unread | app AXFrontmost | F1 covered ms p50/max | click ms p50/max | restored (meta) |');
-  console.log('|---|---|---|---|---|---|---|---|---|---|---|---|---|');
+  console.log('| cell | rows | answer [popUpClick] | open at 1.8 s | pick after | whole order kept | F1 above the app window | moved | front / person focus kept (1.8 s) | key window off F1 (5 ms watch): transient / end / unread | app AXFrontmost | F1 covered ms p50/max | click ms p50/max | restored (meta) |');
+  console.log('|---|---|---|---|---|---|---|---|---|---|---|---|---|---|');
   const keys = [...new Set(results.map(r => `${r.kind}|${r.control}|${r.mode}|${r.layout}`))];
   for (const k of keys) {
     const rs = results.filter(r => `${r.kind}|${r.control}|${r.mode}|${r.layout}` === k);
@@ -22,6 +22,8 @@ for (const file of process.argv.slice(2)) {
     const open = tally(ok.map(r => r.opened ?? (r.page?.length ? r.page.join(',') : r.after.focused ?? '-')));
     const pick = tally(ok.filter(r => r.itemClick).map(r => `${r.itemClick.error ?? 'ok'} ${r.item?.taken ? 'taken' : 'not taken'}${r.item?.moved?.length ? ` moved ${r.item.moved.join(',')}` : ''}`));
     const kept = `${ok.filter(r => r.orderRestored).length}/${ok.length}`;
+    const f1Above = r => { const o = r.after.order ?? []; const i = o.indexOf('F1'), j = o.indexOf('App'); return i >= 0 && j >= 0 && i < j; };
+    const f1 = `${ok.filter(f1Above).length}/${ok.length}`;
     const mv = tally(ok.filter(r => r.moved?.length).map(r => r.moved.join(',')));
     const fr = tally(ok.map(r => `${short(r.before.front)}->${short(r.after.front)}, focus ${JSON.stringify(r.after.personFocusedWindow) === JSON.stringify(r.before.personFocusedWindow) ? 'kept' : 'CHANGED'}`));
     const af = tally(ok.map(r => String(r.after.appFrontmost)));
@@ -30,11 +32,11 @@ for (const file of process.argv.slice(2)) {
     const key = keyed.length ? `${off.length} / ${keyed.filter(r => !r.key.endF1).length} / ${keyed.filter(r => r.key.unread).length} of ${keyed.length}${off.some(r => r.key.offMs != null) ? ` (off ms p50/max ${pct(off.map(r => r.key.offMs), 0.5)}/${pct(off.map(r => r.key.offMs), 1)})` : ''}` : '-';
     const actMs = `${pct(ok.map(r => r.actMs), 0.5)}/${pct(ok.map(r => r.actMs), 1)}`;
     const cover = `${pct(ok.map(r => r.watch?.aboveMs), 0.5)}/${pct(ok.map(r => r.watch?.aboveMs), 1)}`;
-    const rest = tally(ok.filter(r => pc(r)?.restored).map(r => { const x = pc(r).restored; return `${x.windows} win ${x.complete ? 'complete' : 'INCOMPLETE'}${x.stopped ? ` stopped ${x.stopped}` : ''}${x.skipped ? ` skipped ${x.skipped}` : ''} ${x.raises} raise${x.raises === 1 ? '' : 's'}`; }));
+    const rest = tally(ok.filter(r => pc(r)?.restored).map(r => { const x = pc(r).restored; return `${x.windows} win ${x.complete ? 'complete' : 'INCOMPLETE'}${x.stopped ? ` stopped ${x.stopped}` : ''}${x.skipped ? ` skipped ${x.skipped}` : ''}${x.leftCovered != null ? ` leftCovered ${x.leftCovered}` : ''} ${x.raises} raise${x.raises === 1 ? '' : 's'}`; }));
     const noRestore = ok.filter(r => pc(r)?.action && !pc(r).restored).length;
     const restMs = ok.filter(r => pc(r)?.restored).map(r => pc(r).restored.ms);
     const bad = rs.length - ok.length ? ` (${rs.length - ok.length} setup)` : '';
-    console.log(`| ${k.replace(/\|/g, ' ')} | ${rs.length}${bad} | ${ans} | ${open} | ${pick || '-'} | ${kept} | ${mv} | ${fr} | ${key} | ${af} | ${cover} | ${actMs} | ${rest}${noRestore ? `; none ${noRestore}` : ''}${restMs.length ? `; ms ${pct(restMs, 0.5)}/${pct(restMs, 1)}` : ''} |`);
+    console.log(`| ${k.replace(/\|/g, ' ')} | ${rs.length}${bad} | ${ans} | ${open} | ${pick || '-'} | ${kept} | ${f1} | ${mv} | ${fr} | ${key} | ${af} | ${cover} | ${actMs} | ${rest}${noRestore ? `; none ${noRestore}` : ''}${restMs.length ? `; ms ${pct(restMs, 0.5)}/${pct(restMs, 1)}` : ''} |`);
   }
   console.log('\nkey window off F1 (rows, behind modes; first samples):');
 for (const r of results.filter(r => r.key && r.mode !== 'shared-front' && (r.key.focusedOff.length || r.key.mainOff.length || !r.key.endF1))) console.log(`  ${r.label}: focused off ${JSON.stringify(r.key.focusedOff.slice(0, 3))} main off ${JSON.stringify(r.key.mainOff.slice(0, 3))} end F1 ${r.key.endF1}`);

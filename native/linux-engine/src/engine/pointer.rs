@@ -339,6 +339,42 @@ pub(super) struct DragMeasure<'a> {
     /// watch is told it when the window manager takes that request (the flag), as a handle's release does (the
     /// whole-branch review of M4, P2).
     pub(super) drop_window_at_release: Option<(&'a mut Option<Window>, bool)>,
+    /// #459's prototype (measurement only, `release_sync.rs`): the step before the release of a drop the engine lets
+    /// drop, and the slot that gets what it did.
+    pub(super) release_sync: Option<ReleaseSync<'a>>,
+}
+
+/// The step before a drop's release (`release_sync.rs`, measurement only): its form, the pinger its ping form asks
+/// through (made before the press; or why it could not be), and what it did.
+pub(super) struct ReleaseSync<'a> {
+    pub(super) form: crate::release_sync::Form,
+    pub(super) pinger: Option<&'a mut std::result::Result<crate::release_sync::Pinger, String>>,
+    pub(super) synced: &'a mut Option<crate::release_sync::Synced>,
+    /// Whether the step runs only on a drop whose floor sent no keepalive (`--drag-dnd-release-sync-when outlasted`).
+    pub(super) outlasted: bool,
+    /// The floor's keepalives and the steps it spaced out, when the step was skipped for them.
+    pub(super) skipped: &'a mut Option<(u32, u32)>,
+}
+
+impl ReleaseSync<'_> {
+    /// The step on `route`, the path's last two samples `before` and `last`: its motions placed again on the route.
+    pub(super) fn run(&mut self, x: &mut X11, route: &mut Route, before: (i16, i16), last: (i16, i16)) -> Result<()> {
+        let xtest = !matches!(route, Route::Window(_));
+        let pinger = &mut self.pinger;
+        *self.synced = crate::release_sync::before_release(
+            self.form,
+            xtest,
+            before,
+            last,
+            |(px, py)| route.place_again(x, px, py),
+            |by| match pinger.as_deref_mut() {
+                Some(Ok(pinger)) => pinger.ask(by),
+                Some(Err(error)) => Err(anyhow!("{error}")),
+                None => Err(anyhow!("no ping connection was made")),
+            },
+        )?;
+        Ok(())
+    }
 }
 
 /// The hold for a Chromium-family source's take (`dnd::TAKE_HOLD_AFTER_PRESS`, B, the design session's ruling 888.1;
@@ -497,6 +533,9 @@ fn drag_along(
         // the take, when it was seen, and how many samples were still to send then
         let mut taken: Option<(Instant, usize)> = None;
         let mut since_take = 0;
+        // the steps after the take the floor spaced out (a wait longer than the step's own pacing): a path that the
+        // floor slowed rests near its end, as one its keepalives filled does (#459's prototype, `outlasted`)
+        let mut floor_spaced = 0u32;
         // when the sample being sent was due
         let mut due = Instant::now();
         for (i, &(sx, sy)) in samples.iter().enumerate().skip(first) {
@@ -524,11 +563,11 @@ fn drag_along(
             due = next_due(due, sent, pacing, rests_before(&rests, i + 1, floored));
             let mut wait = due.saturating_duration_since(Instant::now());
             if let Some(floor) = floor {
-                wait = wait.max(
-                    floor
-                        .saturating_duration_since(Instant::now())
-                        .min(crate::dnd::KEEPALIVE),
-                );
+                let spaced = floor
+                    .saturating_duration_since(Instant::now())
+                    .min(crate::dnd::KEEPALIVE);
+                floor_spaced += u32::from(spaced > wait);
+                wait = wait.max(spaced);
             }
             std::thread::sleep(wait);
             if let Some(guard) = guard.as_deref_mut()
@@ -542,6 +581,9 @@ fn drag_along(
         // serves, so the button goes up at B and not a dwell after it (the re-review of fdaff715, P1: a foreground
         // drag named for Firefox that presses into Chrome kept Gecko's 30 ms dwell after B)
         let mut still = Duration::ZERO;
+        // the floor's keepalive motions after a take (none: the path's steps filled or outlasted the floor, or no floor
+        // ran)
+        let mut floor_keepalives = 0;
         if let (Some(watch), Some(take_hold)) = (hold.as_mut(), take_hold) {
             let ms = |d: Duration| d.as_secs_f64() * 1000.0;
             let path = pressed_at.elapsed();
@@ -677,6 +719,7 @@ fn drag_along(
                 "pings": pings_record,
                 "adaptive": adaptive_record,
             }));
+            floor_keepalives = keepalives;
         }
         // a guarded drag's hold (ruling 888.1): with no take so far, the button stays down until the bound after the
         // press for one, with no motion; a take then is cancelled before the drop at once, as one seen along the path
@@ -731,6 +774,19 @@ fn drag_along(
             && guard.watch.started(x)
         {
             return cancel_in_time(x, route, guard, &mut pressed);
+        }
+        // #459's prototype (measurement only, `release_sync.rs`): a drop the engine lets drop, its source's take seen,
+        // gets the step before its release, whatever the floor left; with `outlasted`, only when the floor neither
+        // sent a keepalive nor spaced out a step (the path's steps outlasted it at their own pace: #459's shape), since
+        // otherwise the path's end already came slowly or rested on its last point
+        if taken.is_some()
+            && hold.is_some()
+            && let Some(sync) = measure.release_sync.as_mut()
+        {
+            match sync.outlasted && (floor_keepalives > 0 || floor_spaced > 0) {
+                true => *sync.skipped = Some((floor_keepalives, floor_spaced)),
+                false => sync.run(x, route, before_last, last)?,
+            }
         }
         // what reached the window up to the release, read apart from what comes after it: a grab that ends before the
         // release is another client's, and crosses into the window as any crossing does
@@ -1240,6 +1296,24 @@ impl Engine {
             },
             _ => None,
         };
+        // #459's prototype (measurement only, `release_sync.rs`): the step before the release of a Chromium drop the
+        // engine lets drop (not a guarded drag, which drops nothing), its ping form's connection made before the press
+        let sync_form = self.cfg.dnd_release_sync;
+        let syncing = sync_form != crate::release_sync::Form::Off
+            && guard.is_none()
+            && hold.is_some()
+            && pressing_into.is_some_and(|source| {
+                self.family_of(source)
+                    .is_some_and(|f| crate::release_sync::applies(f.name))
+            });
+        let mut pinger = match (sync_form, pressing_into) {
+            (crate::release_sync::Form::Ping { .. }, Some(source)) if syncing => {
+                Some(crate::release_sync::Pinger::connect(source).map_err(|e| format!("{e:#}")))
+            }
+            _ => None,
+        };
+        let mut synced = None;
+        let mut sync_skipped = None;
         let mut wall = None;
         let mut accept_record = None;
         // the time field the drag's events carried at its end, beside the server's time read just after (M3.1: whether
@@ -1292,6 +1366,16 @@ impl Engine {
                     settle: drop_settle.then_some(&mut settle),
                     release_point: xtest_route.then_some(&mut release_point),
                     drop_window_at_release: resolve_at_release.then_some((&mut drop_at_release, supported)),
+                    release_sync: match syncing {
+                        true => Some(ReleaseSync {
+                            form: sync_form,
+                            pinger: pinger.as_mut(),
+                            synced: &mut synced,
+                            outlasted: self.cfg.dnd_release_sync_outlasted,
+                            skipped: &mut sync_skipped,
+                        }),
+                        false => None,
+                    },
                 },
             );
             if let Some(event) = route.event_time()
@@ -1324,6 +1408,29 @@ impl Engine {
         }
         if let Some(scheduled) = scheduled {
             self.extra.insert("after_take".into(), scheduled);
+        }
+        match (&synced, &pinger) {
+            (Some(synced), _) => {
+                self.extra.insert("release_sync".into(), synced.record());
+            }
+            // skipped: the floor's keepalives rested on the path's last point (`--drag-dnd-release-sync-when outlasted`)
+            (None, _) if sync_skipped.is_some() => {
+                self.extra.insert(
+                    "release_sync".into(),
+                    json!({
+                        "form": sync_form.name(),
+                        "skipped_for": { "keepalives": sync_skipped.map(|s| s.0), "spaced_steps": sync_skipped.map(|s| s.1) },
+                    }),
+                );
+            }
+            // a ping form that never reached its step (no take, or the drag cut short): its connection's word only
+            (None, Some(Err(error))) => {
+                self.extra.insert(
+                    "release_sync".into(),
+                    json!({ "form": sync_form.name(), "error": error }),
+                );
+            }
+            _ => {}
         }
         if let Some((press, release)) = wall {
             self.extra
@@ -1419,7 +1526,9 @@ impl Engine {
                     over_aware = Some(over);
                     cursor = Some(Some(held && (settled == Some(true) || !drop_settle)));
                 }
-                let confirming = super::handle::confirming(confirm, supported, cursor).after_hold(extended_take);
+                let confirming = super::handle::confirming(confirm, supported, cursor)
+                    .after_hold(extended_take)
+                    .after_sync(synced.as_ref().is_some_and(|s| s.expired));
                 // ruling 837: a drop handed to Chrome's activation though its Electron source's settle failed
                 let settle_failed_activation = super::handle::activation_over_failed_settle(
                     confirming,

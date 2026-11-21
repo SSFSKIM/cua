@@ -135,6 +135,10 @@ pub enum Confirming {
     /// `adaptive_hold.rs`): before the extension that take came after the release, and the after-release watch
     /// cancelled and reported it, so it is reported unconfirmed, never a plain ok (the re-review of wave 3, I1).
     Extended,
+    /// A drop whose browser did not show, inside the bound, that it had read the motion at the path's end before the
+    /// release (#459's prototype, measurement only: `release_sync.rs`'s ping form): its activation request would
+    /// confirm a drop decided on a stale position, so it is reported unconfirmed.
+    Unsynced,
 }
 
 impl Confirming {
@@ -142,8 +146,17 @@ impl Confirming {
     pub(super) fn unconfirmed(self) -> bool {
         matches!(
             self,
-            Confirming::Cursor(false) | Confirming::Nothing | Confirming::Extended
+            Confirming::Cursor(false) | Confirming::Nothing | Confirming::Extended | Confirming::Unsynced
         )
+    }
+
+    /// What confirms a drop whose step before the release expired (`expired`, `release_sync.rs`): nothing
+    /// ([`Confirming::Unsynced`]); otherwise what confirms it already.
+    pub(super) fn after_sync(self, expired: bool) -> Confirming {
+        match expired {
+            true => Confirming::Unsynced,
+            false => self,
+        }
     }
 
     /// What confirms a drop whose take came in the extended hold (`extended_take`): nothing can when nothing else
@@ -713,6 +726,22 @@ impl Engine {
             Some(Ok(Held { taken, take_time, .. })) => (*taken, *take_time),
             _ => (false, None),
         };
+        // #459's prototype (measurement only, `release_sync.rs`): a Chromium handle's drop under way gets the step
+        // before its release, at the pointer's place, on XTEST (a handle's input), the pair's first motion a pixel
+        // beside it; a step that fails reports the drop unconfirmed and the release still goes
+        let synced = match (self.cfg.dnd_release_sync, handle.target) {
+            (form, Some(target))
+                if form != crate::release_sync::Form::Off
+                    && taken
+                    && handle.after.is_some()
+                    && self
+                        .family_of(target)
+                        .is_some_and(|f| crate::release_sync::applies(f.name)) =>
+            {
+                Some(self.sync_handle_release(form, target))
+            }
+            _ => None,
+        };
         // a drag and drop under way: whether the window manager takes Chrome's activation request, read before the
         // pointer, and an Electron source's cursor watch stopped, so only the lookups the place needs come between the
         // pointer's reading and the release
@@ -754,7 +783,9 @@ impl Engine {
                     None
                 }
             });
-            confirming(destination, supported, cursor).after_hold(extended_take)
+            confirming(destination, supported, cursor)
+                .after_hold(extended_take)
+                .after_sync(synced.as_ref().is_some_and(|s| s.expired))
         });
         if let Some(after) = &handle.after {
             after.confirm_drop_of(match confirmed {
@@ -826,6 +857,8 @@ impl Engine {
                 "release_wall_ms": release_wall,
                 // the hold for the take at the end (ruling 888.1), null when none was due: an `end` request's alone
                 "hold": hold_record,
+                // #459's prototype, measurement only: the step before the release, null when none ran
+                "release_sync": synced.as_ref().map(crate::release_sync::Synced::record),
             }),
         );
         // the after-release watch, handed over as a `drag`'s: after a release with no take (the late take is the
@@ -892,6 +925,48 @@ impl Engine {
     }
 
     /// The real pointer, on the engine's root.
+    /// The step before a Chromium handle's release (`release_sync.rs`, measurement only): at the pointer's place, the
+    /// pair's first motion a pixel beside it; its pinger, for the ping form, asks `target`. A step that cannot run
+    /// (the pointer unread, or on another screen; a motion that failed) is an expired one, with its reason.
+    fn sync_handle_release(&mut self, form: crate::release_sync::Form, target: Window) -> crate::release_sync::Synced {
+        let failed = |error: String| crate::release_sync::Synced {
+            form,
+            motions: 0,
+            pings: Vec::new(),
+            expired: true,
+            error: Some(error),
+            added: Duration::ZERO,
+            answer_to_release: None,
+            answered_wall_ms: None,
+        };
+        let last = match self.query_pointer() {
+            Ok(p) if p.same_screen => (p.root_x, p.root_y),
+            Ok(_) => return failed("the pointer is on another screen".into()),
+            Err(error) => return failed(format!("{error:#}")),
+        };
+        let before = (if last.0 > 0 { last.0 - 1 } else { last.0 + 1 }, last.1);
+        let mut pinger = matches!(form, crate::release_sync::Form::Ping { .. })
+            .then(|| crate::release_sync::Pinger::connect(target).map_err(|e| format!("{e:#}")));
+        let x = &self.x;
+        let stepped = crate::release_sync::before_release(
+            form,
+            true,
+            before,
+            last,
+            |(px, py)| Desktop::motion(x, px, py),
+            |by| match pinger.as_mut() {
+                Some(Ok(pinger)) => pinger.ask(by),
+                Some(Err(error)) => Err(anyhow::anyhow!("{error}")),
+                None => Err(anyhow::anyhow!("no ping connection was made")),
+            },
+        );
+        match stepped {
+            Ok(Some(synced)) => synced,
+            Ok(None) => failed("the form is off".into()),
+            Err(error) => failed(format!("{error:#}")),
+        }
+    }
+
     fn query_pointer(&self) -> Result<QueryPointerReply> {
         Ok(self.x.conn.query_pointer(self.x.root)?.reply()?)
     }

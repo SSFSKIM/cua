@@ -923,6 +923,7 @@ fn drag_source_answering(
         *TAKE_TO_RELEASE.lock().unwrap() = None;
         *PRESS_TO_RELEASE.lock().unwrap() = None;
         AFTER_TAKE_MOTIONS.lock().unwrap().clear();
+        AFTER_TAKE_EVENTS.lock().unwrap().clear();
         ESCAPES_AND_FOCUS_OUTS.lock().unwrap().clear();
         PINGS_READ.lock().unwrap().clear();
         while stopped.try_recv() == Err(mpsc::TryRecvError::Empty) {
@@ -952,6 +953,7 @@ fn drag_source_answering(
                     }
                     Event::MotionNotify(e) if took_at.is_some() => {
                         AFTER_TAKE_MOTIONS.lock().unwrap().push((e.event_x, e.event_y));
+                        AFTER_TAKE_EVENTS.lock().unwrap().push(("motion", Instant::now()));
                     }
                     Event::FocusOut(_) if sent => {
                         ESCAPES_AND_FOCUS_OUTS
@@ -972,6 +974,9 @@ fn drag_source_answering(
                     Event::ClientMessage(e) if e.type_ == protocols && e.data.as_data32()[0] == ping => {
                         let after_release = seen.iter().any(|i| matches!(i, Input::ButtonRelease { .. }));
                         PINGS_READ.lock().unwrap().push(after_release);
+                        if took_at.is_some() {
+                            AFTER_TAKE_EVENTS.lock().unwrap().push(("ping", Instant::now()));
+                        }
                         if let Some(delay) = pings {
                             sleep(delay);
                             let answer = x11rb::protocol::xproto::ClientMessageEvent::new(
@@ -990,6 +995,7 @@ fn drag_source_answering(
                         seen.push(Input::ButtonPress { button: e.detail, sent })
                     }
                     Event::ButtonRelease(e) => {
+                        AFTER_TAKE_EVENTS.lock().unwrap().push(("release", Instant::now()));
                         seen.push(Input::ButtonRelease { button: e.detail, sent });
                         *TAKE_TO_RELEASE.lock().unwrap() = took_at.map(|t| t.elapsed());
                         *PRESS_TO_RELEASE.lock().unwrap() = pressed_at.map(|t| t.elapsed());
@@ -1064,6 +1070,10 @@ static DROP_ACTIVATES: std::sync::Mutex<Option<Window>> = std::sync::Mutex::new(
 
 /// The window-relative places of the motions the last drag's source saw after its take.
 static AFTER_TAKE_MOTIONS: std::sync::Mutex<Vec<(i16, i16)>> = std::sync::Mutex::new(Vec::new());
+
+/// What the last drag's source read after its take, in order, each with when it read it: `motion`, `ping` and
+/// `release` (#459's prototype, `release_sync.rs`: what comes just before the release).
+static AFTER_TAKE_EVENTS: std::sync::Mutex<Vec<(&'static str, Instant)>> = std::sync::Mutex::new(Vec::new());
 
 /// How long the last late take (`OnRelease::TakesLate`) waited for the engine's Escape, as its source saw it.
 static TAKE_TO_ESCAPE: std::sync::Mutex<Option<Duration>> = std::sync::Mutex::new(None);
@@ -6077,4 +6087,289 @@ fn a_pointer_moved_during_the_release_dwell_is_the_one_the_end_reports() {
     );
     assert!(!button1_down(), "released");
     probe.inputs();
+}
+
+/// #459's prototype (`release_sync.rs`, measurement only, task 126): a path long enough that its steps after the
+/// take outlast the floor (about 1,220 px, some 640 ms at Chromium's 500 µs a sample; the take at its first motion),
+/// so the release follows its end with no keepalive, as `t14-long`'s long-left drags.
+fn outlasting_path() -> Value {
+    json!([{"x": 20, "y": 20}, {"x": 380, "y": 20}, {"x": 380, "y": 280}, {"x": 20, "y": 280}, {"x": 20, "y": 40}])
+}
+
+/// What the last drag's source read after its take, its kinds in order, and how long before its release it read its
+/// last motion.
+fn source_tail() -> (Vec<&'static str>, Duration) {
+    let events = AFTER_TAKE_EVENTS.lock().unwrap().clone();
+    let release = events
+        .iter()
+        .rev()
+        .find(|(kind, _)| *kind == "release")
+        .expect("a release")
+        .1;
+    let motion = events
+        .iter()
+        .rev()
+        .find(|(kind, _)| *kind == "motion")
+        .expect("a motion")
+        .1;
+    (events.iter().map(|(kind, _)| *kind).collect(), release - motion)
+}
+
+/// Form (a), `keepalive`: a drop the engine lets drop whose path outlasts its floor gets one more motion at the
+/// path's last point (on the background route one motion; on XTEST's routes the pair ending there, since a motion to
+/// the pointer's own place is no event) and the keepalive's spacing before its release, on every route a drop the
+/// engine lets drop takes. Off, as the engine ships, the background route's release follows the path's last motion at
+/// once (the shape of #459).
+#[test]
+fn the_keepalive_form_gives_a_drop_whose_path_outlasts_its_floor_a_motion_at_its_end_and_a_keepalive_before_release() {
+    support::fresh_display();
+    *HELD_PATH.lock().unwrap() = Some(outlasting_path());
+    for route in [HoldRoute::InFront, HoldRoute::Dedicated, HoldRoute::Desktop] {
+        // as it ships: no step, and on the background route the release straight after the path's last motion
+        let drag = held_drag_with(route, OnRelease::Nothing, None, &[]);
+        // the route the engine took (a dedicated desktop takes the background route where it works)
+        let background = drag.stats["route"] == json!("background");
+        assert_eq!(drag.answer, Ok(Value::Null), "{route:?}");
+        assert_eq!(
+            drag.stats["hold"]["keepalives"],
+            json!(0),
+            "{route:?}: the path outlasts the floor"
+        );
+        assert!(drag.stats.get("release_sync").is_none(), "{route:?}: {}", drag.stats);
+        let (_, gap) = source_tail();
+        if background {
+            assert!(
+                gap < Duration::from_millis(8),
+                "{route:?}: off, released {gap:?} after the last motion"
+            );
+        }
+        // keepalive: the motion at the end, then the keepalive before the release
+        let drag = held_drag_with(
+            route,
+            OnRelease::Nothing,
+            None,
+            &["--drag-dnd-release-sync", "keepalive"],
+        );
+        assert_eq!(drag.answer, Ok(Value::Null), "{route:?}");
+        assert_eq!(
+            drag.stats["route"] == json!("background"),
+            background,
+            "{route:?}: the same route"
+        );
+        let sync = &drag.stats["release_sync"];
+        assert_eq!(sync["form"], json!("keepalive"), "{route:?}: {sync}");
+        assert_eq!(
+            sync["motions"],
+            json!(if background { 1 } else { 2 }),
+            "{route:?}: {sync}"
+        );
+        let motions = AFTER_TAKE_MOTIONS.lock().unwrap().clone();
+        assert_eq!(
+            motions.last(),
+            Some(&(20, 40)),
+            "{route:?}: ending on the path's last point"
+        );
+        // on XTEST the pair's two motions may reach the source as one: the server's event queue folds a device's
+        // motion into the one still queued before it (`mieqEnqueue`), so the place it ends on is what counts
+        let (_, gap) = source_tail();
+        assert!(
+            gap >= Duration::from_millis(10) && gap < Duration::from_millis(60),
+            "{route:?}: released {gap:?} after the last motion"
+        );
+    }
+    // `--drag-dnd-release-sync-when outlasted`: the step on the long path, and none on a short one whose floor's
+    // keepalives already rest on its last point
+    let outlasted = [
+        "--drag-dnd-release-sync",
+        "keepalive",
+        "--drag-dnd-release-sync-when",
+        "outlasted",
+    ];
+    let drag = held_drag_with(HoldRoute::InFront, OnRelease::Nothing, None, &outlasted);
+    assert_eq!(drag.stats["release_sync"]["motions"], json!(1), "{}", drag.stats);
+    *HELD_PATH.lock().unwrap() = None;
+    let drag = held_drag_with(HoldRoute::InFront, OnRelease::Nothing, None, &outlasted);
+    // the short path's steps spread over the floor, and its keepalives fill what they leave
+    let skipped = &drag.stats["release_sync"]["skipped_for"];
+    assert_eq!(drag.stats["release_sync"]["form"], json!("keepalive"), "{}", drag.stats);
+    assert_eq!(
+        skipped["keepalives"], drag.stats["hold"]["keepalives"],
+        "{}",
+        drag.stats
+    );
+    assert!(
+        skipped["spaced_steps"].as_u64().unwrap() > 0,
+        "the floor spaced the short path's steps: {}",
+        drag.stats
+    );
+    assert!(
+        drag.stats["release_sync"].get("motions").is_none(),
+        "no step: {}",
+        drag.stats
+    );
+    assert_eq!(AFTER_TAKE_MOTIONS.lock().unwrap().last(), Some(&(60, 20)));
+}
+
+/// Form (b'), `ping`: before the release, a ping to the source and its answer, the motion at the path's end, a second
+/// ping and its answer, then the release, on every route a drop the engine lets drop takes; a confirmed drop answers
+/// as before. When the answers do not come inside the bound (100 ms), the release goes at the bound and the drop is
+/// unconfirmed, though the source's activation request came: every reply carries the unconfirmed-drop notice and the
+/// next acting request is refused. A dwell (b'') follows the second answer.
+#[test]
+fn the_ping_form_releases_on_its_second_answer_after_a_motion_at_the_path_s_end_or_at_its_bound_unconfirmed() {
+    support::fresh_display();
+    let listed = ActiveWindowSupported::listed();
+    let ms = Duration::from_millis;
+    for route in [HoldRoute::InFront, HoldRoute::Dedicated, HoldRoute::Desktop] {
+        for (answer_after, dwell) in [(ms(2), None), (ms(2), Some(30)), (ms(150), None)] {
+            let case = format!("{route:?}, pings answered after {answer_after:?}, dwell {dwell:?}");
+            let (window, stop, recorder) = drag_source_answering(
+                OnRelease::Drops {
+                    activates: true,
+                    cursors: &[],
+                },
+                Some(answer_after),
+            );
+            // the foreground route's drop window is the managed top-level under the pointer at the release
+            match route {
+                HoldRoute::Desktop => managed(window),
+                HoldRoute::Dedicated => {
+                    in_front(window);
+                    managed(window);
+                }
+                _ => in_front(window),
+            }
+            let mut args = vec!["--drag-dnd-release-sync", "ping"];
+            let dwell_ms = dwell.map(|d: u64| d.to_string());
+            if let Some(d) = &dwell_ms {
+                args.extend(["--drag-dnd-release-sync-dwell-ms", d.as_str()]);
+            }
+            if route == HoldRoute::Dedicated {
+                args.extend(["--desktop", "dedicated"]);
+            }
+            let mut engine = Engine::start_with_stats(&args);
+            let app = app_of(&mut engine, window);
+            let path = json!([{"x": 20, "y": 20}, {"x": 200, "y": 120}]);
+            let request = match route {
+                HoldRoute::Desktop => json!({"path": path}),
+                _ => json!({"window": {"id": window}, "path": path}),
+            };
+            let dragged = engine.request("drag", request);
+            let stats = engine.stats_of(engine.last_id());
+            sleep(SETTLE);
+            let read = engine.exchange("list_windows", json!({}));
+            let next = engine.request("click", json!({"window": {"id": window}, "x": 50, "y": 50}));
+            set_active_window(None);
+            stop.send(()).unwrap();
+            recorder.join().unwrap();
+            assert_eq!(dragged, Ok(Value::Null), "{case}");
+            // the route the engine took (a dedicated desktop takes the background route where it works)
+            let background = stats["route"] == json!("background");
+            let sync = &stats["release_sync"];
+            assert_eq!(sync["form"], json!("ping"), "{case}: {stats}");
+            let (kinds, _) = source_tail();
+            let events = AFTER_TAKE_EVENTS.lock().unwrap().clone();
+            // the drag's release: the first (the click after it releases too)
+            let release = events.iter().find(|(k, _)| *k == "release").unwrap().1;
+            let before_release: Vec<&str> = events
+                .iter()
+                .take_while(|(k, _)| *k != "release")
+                .map(|(k, _)| *k)
+                .collect();
+            if answer_after < ms(100) {
+                // answered: ping, the motion (or the pair), ping, release; confirmed by the activation request
+                // on XTEST the pair may reach the source as one motion (the server folds queued motions)
+                let between = before_release
+                    .iter()
+                    .rev()
+                    .skip(1)
+                    .take_while(|k| **k == "motion")
+                    .count();
+                let first_ping = before_release.len().checked_sub(between + 2).map(|k| before_release[k]);
+                assert!(
+                    before_release.last() == Some(&"ping")
+                        && first_ping == Some("ping")
+                        && (between == 1 || (!background && between == 2)),
+                    "{case}: {kinds:?}"
+                );
+                assert_eq!(sync["motions"], json!(if background { 1 } else { 2 }), "{case}: {sync}");
+                assert_eq!(sync["expired"], json!(false), "{case}: {sync}");
+                assert_eq!(sync["pings_ms"].as_array().map(Vec::len), Some(2), "{case}: {sync}");
+                let second_ping = events.iter().rev().find(|(k, _)| *k == "ping").unwrap().1;
+                let waited = release - second_ping;
+                let least = answer_after + ms(dwell.unwrap_or(0));
+                assert!(
+                    waited >= least && waited < least + ms(40),
+                    "{case}: released {waited:?} after the second ping was read"
+                );
+                assert_eq!(read["notice"], Value::Null, "{case}: a confirmed drop");
+                assert_eq!(next, Ok(Value::Null), "{case}");
+            } else {
+                // the bound: no motion after the first ping, released at once, the drop unconfirmed
+                assert!(before_release.ends_with(&["ping"]), "{case}: {kinds:?}");
+                assert_eq!(sync["expired"], json!(true), "{case}: {sync}");
+                assert_eq!(sync["pings_ms"], json!([null]), "{case}: {sync}");
+                let added = sync["added_ms"].as_f64().unwrap();
+                assert!((100.0..130.0).contains(&added), "{case}: {sync}");
+                assert_eq!(read["notice"], json!(unconfirmed_notice(&app)), "{case}: {read}");
+                assert_eq!(next, Err(unconfirmed_refusal(&app, "click")), "{case}");
+            }
+        }
+    }
+    drop(listed);
+}
+
+/// A Chromium handle's end gets the same step (`release_sync.rs`): with the keepalive form, the pair ending at the
+/// pointer's place, then the keepalive, before its release; with the ping form and an unanswering source, the drop is
+/// unconfirmed at the bound.
+#[test]
+fn a_chromium_handle_s_end_gets_the_release_sync_step() {
+    support::fresh_display();
+    let listed = ActiveWindowSupported::listed();
+    for (form, answer_after) in [("keepalive", None), ("ping", Some(Duration::from_millis(150)))] {
+        let (window, stop, recorder) = drag_source_answering(
+            OnRelease::Drops {
+                activates: true,
+                cursors: &[],
+            },
+            answer_after,
+        );
+        managed(window);
+        let mut engine = Engine::start_with_stats(&["--drag-dnd-release-sync", form]);
+        let app = app_of(&mut engine, window);
+        engine
+            .request("drag_handle", json!({"action": "start", "x": 20, "y": 20}))
+            .unwrap();
+        engine
+            .request("drag_handle", json!({"action": "move_to", "x": 60, "y": 20}))
+            .unwrap();
+        let ended = engine.request("drag_handle", json!({"action": "end"}));
+        let stats = engine.stats_of(engine.last_id());
+        sleep(SETTLE);
+        let read = engine.exchange("list_windows", json!({}));
+        set_active_window(None);
+        stop.send(()).unwrap();
+        recorder.join().unwrap();
+        assert_eq!(ended, Ok(Value::Null), "{form}");
+        let sync = &stats["handle"]["release_sync"];
+        assert_eq!(sync["form"], json!(form), "{form}: {stats}");
+        match form {
+            "keepalive" => {
+                assert_eq!(sync["motions"], json!(2), "{form}: {sync}");
+                let motions = AFTER_TAKE_MOTIONS.lock().unwrap().clone();
+                assert_eq!(motions.last(), Some(&(60, 20)), "{form}: {motions:?}");
+                let (_, gap) = source_tail();
+                assert!(
+                    gap >= Duration::from_millis(10),
+                    "{form}: released {gap:?} after the last motion"
+                );
+                assert_eq!(read["notice"], Value::Null, "{form}: a confirmed drop");
+            }
+            _ => {
+                assert_eq!(sync["expired"], json!(true), "{form}: {sync}");
+                assert_eq!(read["notice"], json!(unconfirmed_notice(&app)), "{form}: {read}");
+            }
+        }
+    }
+    drop(listed);
 }

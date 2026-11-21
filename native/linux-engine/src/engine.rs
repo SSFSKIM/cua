@@ -114,6 +114,13 @@ pub struct Config {
     /// counted only when it answered both. Off (`--drop-no-settle`, measurement only) the release goes out unasked and
     /// the accept is judged as `linux-engine-v0.4.0` judged it, which answered ok for releases outside the drop zone.
     pub drop_settle: bool,
+    /// Measurement only (#459's prototype, `--drag-dnd-release-sync`, task 126; never released): what a Chromium drop
+    /// the engine lets drop does just before its release, beyond the floor (`release_sync.rs`). Off as it ships.
+    pub dnd_release_sync: crate::release_sync::Form,
+    /// Measurement only (`--drag-dnd-release-sync-when outlasted`): a drag's step runs only when its floor sent no
+    /// keepalive, the path's steps having outlasted it (#459's shape); off, on every drop the engine lets drop. A
+    /// handle, which has no floor, always gets it.
+    pub dnd_release_sync_outlasted: bool,
 }
 
 pub struct Engine {

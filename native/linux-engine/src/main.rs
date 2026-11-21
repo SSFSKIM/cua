@@ -34,6 +34,7 @@ mod keys;
 mod paste;
 mod pressed;
 mod readiness;
+mod release_sync;
 mod resolve;
 mod route;
 mod serve;
@@ -58,7 +59,7 @@ const USAGE: &str = "usage: cua-engine server [--mouse-size-px <n>] [--desktop s
        [--retention per-request|session|none] [--settle-ms <ms>] [--capture-wait damage|fixed|quiet]
        [--teardown-ms <ms>] [--exit-settle-ms <ms>] [--paste-settle-ms <ms>] [--key-pace-ms <ms>] [--path-step-ms <ms>] [--drag-step-ms <ms> | --drag-step-us <µs>] [--drag-press-dwell-ms <ms>]
        [--drag-release-dwell-ms <ms>] [--drag-dnd-hold-ms <ms>] [--drag-dnd-hold-ping on|off] [--drag-dnd-after-take-ms <ms>] [--drag-handle-idle-ms <ms>] [--dnd-cancel-after-release] [--dnd-defer-take]
-       [--drag-dnd-release-at-accept] [--drag-ignore-cover] [--ignore-cover] [--ignore-pointer] [--drop-no-settle]
+       [--drag-dnd-release-at-accept] [--drag-dnd-release-sync off|keepalive|ping] [--drag-dnd-release-sync-dwell-ms <ms>] [--drag-dnd-release-sync-when always|outlasted] [--drag-ignore-cover] [--ignore-cover] [--ignore-pointer] [--drop-no-settle]
        [--targets-wait-ms <ms>] [--focus-ack-ms <ms>] [--stats]
        cua-engine launcher-shim <parent pid> <program> [args...]
        cua-engine --version";
@@ -106,6 +107,8 @@ fn default_config() -> Config {
         ignore_pointer: false,
         handle_idle: engine::HANDLE_IDLE,
         drop_settle: true,
+        dnd_release_sync: release_sync::Form::Off,
+        dnd_release_sync_outlasted: false,
     }
 }
 
@@ -251,6 +254,38 @@ fn parse_args(args: &[String]) -> Result<Command, String> {
                     Some("on") => true,
                     Some("off") => false,
                     _ => return Err("--drag-dnd-hold-ping is on or off".into()),
+                }
+            }
+            // #459's prototype, measurement only (`release_sync.rs`): the form, and (b'')'s dwell after the second
+            // answer, which needs the ping form
+            "--drag-dnd-release-sync" => {
+                let dwell = match cfg.dnd_release_sync {
+                    release_sync::Form::Ping { dwell } => dwell,
+                    _ => Duration::ZERO,
+                };
+                cfg.dnd_release_sync = match value.map(String::as_str) {
+                    Some("off") => release_sync::Form::Off,
+                    Some("keepalive") => release_sync::Form::Keepalive,
+                    Some("ping") => release_sync::Form::Ping { dwell },
+                    _ => return Err("--drag-dnd-release-sync is off, keepalive or ping".into()),
+                }
+            }
+            "--drag-dnd-release-sync-dwell-ms" => {
+                let dwell = Duration::from_millis(number(value, arg)?);
+                match &mut cfg.dnd_release_sync {
+                    release_sync::Form::Ping { dwell: d } => *d = dwell,
+                    _ => {
+                        return Err(
+                            "--drag-dnd-release-sync-dwell-ms needs --drag-dnd-release-sync ping before it".into(),
+                        );
+                    }
+                }
+            }
+            "--drag-dnd-release-sync-when" => {
+                cfg.dnd_release_sync_outlasted = match value.map(String::as_str) {
+                    Some("always") => false,
+                    Some("outlasted") => true,
+                    _ => return Err("--drag-dnd-release-sync-when is always or outlasted".into()),
                 }
             }
             "--drag-dnd-after-take-ms" => cfg.dnd_after_take = Duration::from_millis(number(value, arg)?),
@@ -590,6 +625,62 @@ mod tests {
         };
         assert!(cfg.dnd_hold_ping);
         assert!(parse_args(&args(&["server", "--drag-dnd-hold-ping", "no"])).is_err());
+    }
+
+    #[test]
+    fn the_release_sync_prototype_is_off_unless_its_measurement_flag_names_a_form() {
+        let form = |a: &[&str]| match parse_args(&args(a)) {
+            Ok(Command::Server(cfg)) => Ok(cfg.dnd_release_sync),
+            Ok(_) => panic!(),
+            Err(e) => Err(e),
+        };
+        use release_sync::Form;
+        assert_eq!(form(&["server"]), Ok(Form::Off), "shipped behaviour unchanged");
+        assert_eq!(
+            form(&["server", "--drag-dnd-release-sync", "keepalive"]),
+            Ok(Form::Keepalive)
+        );
+        assert_eq!(
+            form(&["server", "--drag-dnd-release-sync", "ping"]),
+            Ok(Form::Ping { dwell: Duration::ZERO })
+        );
+        assert_eq!(
+            form(&[
+                "server",
+                "--drag-dnd-release-sync",
+                "ping",
+                "--drag-dnd-release-sync-dwell-ms",
+                "30"
+            ]),
+            Ok(Form::Ping {
+                dwell: Duration::from_millis(30)
+            })
+        );
+        assert_eq!(form(&["server", "--drag-dnd-release-sync", "off"]), Ok(Form::Off));
+        assert!(form(&["server", "--drag-dnd-release-sync", "status"]).is_err());
+        assert!(
+            form(&["server", "--drag-dnd-release-sync-dwell-ms", "30"]).is_err(),
+            "a dwell needs the ping form"
+        );
+        let outlasted = |a: &[&str]| match parse_args(&args(a)) {
+            Ok(Command::Server(cfg)) => Ok(cfg.dnd_release_sync_outlasted),
+            Ok(_) => panic!(),
+            Err(e) => Err(e),
+        };
+        assert_eq!(
+            outlasted(&["server"]),
+            Ok(false),
+            "every drop the engine lets drop, by default"
+        );
+        assert_eq!(
+            outlasted(&["server", "--drag-dnd-release-sync-when", "outlasted"]),
+            Ok(true)
+        );
+        assert_eq!(
+            outlasted(&["server", "--drag-dnd-release-sync-when", "always"]),
+            Ok(false)
+        );
+        assert!(outlasted(&["server", "--drag-dnd-release-sync-when", "never"]).is_err());
     }
 
     #[test]

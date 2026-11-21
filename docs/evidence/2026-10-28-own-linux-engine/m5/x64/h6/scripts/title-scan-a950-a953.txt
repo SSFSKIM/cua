@@ -1,0 +1,2 @@
+{"files":13,"json_fields":522,"sentence_quotes":0,"text_quotes":2,"own":524,"not_own":0,"distinct":11}
+exit 0

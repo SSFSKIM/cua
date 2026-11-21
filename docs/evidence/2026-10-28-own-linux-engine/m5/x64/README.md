@@ -687,9 +687,12 @@ steps, `zero/` V5's `:0` sitting, and `scripts/` task 123's launchers and record
 - **Class A at idle**, every one exit 0 and passing by its own judge at H6: C1, K1, K2, K3, D1, D2, S1, H1 and H2.
 - **Class A at twice the load:**
   - L1, L2a, L2b, L3b, L4a, L4b and L4c exit 0 and pass.
-  - **L3a FAILS**: chrome-text `activate_window` reached 41 runs without 30 in a row. Two runs read
+  - **L3a FAILS on the declared #429 limit, now extended to x64 at twice the load** (the design session, after
+    ruling 950). chrome-text `activate_window` reached 41 runs without 30 in a row. Two runs read
     `_NET_ACTIVE_WINDOW` 91–94 ms late (below).
-  - It is not rerun. Ruling 950's measurement (`a950/`) is its follow-up.
+  - It is not rerun. Ruling 950's measurement (`a950/`) reads (b): X focus on the target at the answer in every run,
+    on 0.4.1 and 0.4.2 alike.
+- **Ruling 953's shipped twin** (`a953/`, plan `t14-long`, #459): 0 false oks, 0 stale-position drops in 100.
 - **V5** passes every one of its 52 verdicts on `:0`, in the owner's window (ruling 933, GO 939). Its all-clear is clear.
 - **S2**, the cross-check for the steps that only gained new reads (V4, S4, L3c, L3e), is **the same** as its record
   at H in every cell. So those four don't rerun.
@@ -825,7 +828,63 @@ From `L3a.pinned-release/run/results.jsonl`, the cell's settle-series and settle
   - The host's sysstat shows steady stress, with no spike: ldavg-1 14.5–17.7 every 10 min, CPU %nice 97.8–98.0,
     iowait and steal 0.
   - The rows carry no per-trial time, so the two trials can't be placed against it.
-- **What follows:** the design session ruled a measurement, not a rerun (950): `a950/`, below.
+- **The verdict:** FAIL on the declared #429 limit, now extended to x64 at twice the load.
+- **Ruling 950's measurement** (`h6/a950/`, a development run, never counted; 05:14:57–05:45:36Z):
+  - **The setup:** chrome-text's `activate_window` from the covered front window, at twice the load (the gate's 16
+    workers on 8 cores) on a private display, under the host lock. It ran 200 runs per engine, one of each in turn.
+  - **The method** is task 99's 872b (`m5/arm64/scripts/activation-872b.mjs`), with its XReader unchanged:
+    - at the answer, GetInputFocus and `_NET_ACTIVE_WINDOW` read on a connection of the experiment's own;
+    - both then polled for 500 ms;
+    - one press_key "x" right after the answer, its landing read from the field's own text.
+  - **The engines:** 0.4.1 (`c432c8c2…`, the pin at H⁗ = 3b5c0441, attestation verified on
+    `release/linux-engine-v0.4.1`, run 44380699966) and the pinned 0.4.2 (`a1314106…`). `a950.mjs` checks each one's
+    sha256 against its pin before any run.
+  - **No version check was stepped around.** Both engines were started as the service starts them
+    (`server --desktop shared`), through the harness's engine client. That client has no version check, and the
+    service's MIN_ENGINE_VERSION check is not on this path. No product code was changed.
+
+| engine | runs | failed to start | X focus on the target at the answer | `_NET_ACTIVE_WINDOW` the target at the answer | … by answer + 10 ms | late | lag after the answer median / p95 / max (ms) | focus left the target in 500 ms | key in the target |
+|---|---:|---:|---:|---:|---:|---:|---|---:|---:|
+| 0.4.1 | 200 | 0 | 200 | 152 | 196 | 4 | 0 / 5.2 / 16.5 | 0 | 200 |
+| 0.4.2 | 200 | 0 | 200 | 166 | 199 | 1 | 0 / 4.9 / 14.8 | 0 | 200 |
+
+- **Late rates:** 0.4.1 4/200, 0.4.2 1/200. The one-sided Fisher exact p that 0.4.2 is higher is 0.970, so it is not
+  clearly above. At these rates the test can catch only a large difference (951).
+- **The reading** by the rule fixed before the run (950, 951) is **(b)**:
+  - the focus was on the target at the answer in every run of both engines;
+  - the key landed in the target in every run;
+  - the late rate is not clearly above.
+- **The lag** never passed 16.5 ms in these 400 runs, against L3a's 91 and 94 ms.
+- **The load:** loadavg 9.74 at stress start (L4c's lagging average), 15.79 after a 2-minute warm-up, and
+  17.53 16.99 16.30 at the end. L3a's was 0.88 8.51 9.33 → 16.86 17.05 16.17 at H6, and 0.95 9.28 13.57 →
+  16.68 16.96 16.62 at fefe306c.
+- A 2-run smoke came first (`a950/smoke/`).
+
+### Ruling 953's shipped twin of L4b (#459; a development run, never counted)
+
+`h6/a953/`, 05:47:29–05:51:59Z. This is plan `t14-long` (cua: long-left 100) at twice the load, on the engine as it ships:
+the `cua` lane, with no measurement flag.
+- **The launch** is L4b's as the H6 runner gives it (`a953/plan-l4b.txt`, from task 121's launch-plan.mjs), with
+  three arguments changed (`a953.mjs`):
+  - `--plan t14` became `--plan t14-long`;
+  - `--run pinned-L4b` became `--run pinned-a953-t14-long`;
+  - `--pilot` was added beside `--pinned`, making it a development run on the pinned release.
+  It ran on a private display through display.mjs `runOnPrivateDisplay`, as the gate runs L4b, and L4b's judge
+  judged it.
+- **The judge:** PASS, with 0 false ok, 0 missing landing, 0 late takes and 0 harness Escapes.
+- **Per cell** (`a953/cells.txt`), long-left, 100 drags:
+  - Chrome took in every one (`released_with_take` 100), and nothing landed (0 landed, 100 no drop).
+  - **0 drops at a stale position**: none landed although the path ended outside the zone.
+  - Every drag answered ok with no notice. The read after it carried the unconfirmed-drop notice ("Pending from your
+    last drag, an unconfirmed drop: …"), and the next request was refused, in 100 of 100.
+  - `after_release.confirmed_by` is `Activation(<the page's window>)` in all 100. That field names the confirmation
+    the route waits for (pointer.rs, `format!("{confirming:?}")`), not one that came.
+  - From the last step to the release (the wall press-to-release, less `hold.path_ms`): median 0.1, p95 3.4,
+    max 5.3 ms, with no keepalive after the floor (`hold.keepalives` 0 in all 100). That is #23's timing: the take
+    came at about 17 ms, and the path ran 473 ms with 917 steps after the take.
+- **The outcome, by 953's rule:** 0 false oks. On x64 at twice the load, the shipped route reported every one of
+  these drops as unconfirmed, and none landed at a stale position. arm64's run gave 7 false oks and 5 stale-position
+  drops in 100.
 
 ### The hold canary (rulings 930, 932): x64 relative
 
@@ -941,8 +1000,8 @@ No step outside class A reads taken.
 
 ### Scans before the commit
 
-- **Token-shaped strings:** `h6/scripts/scan-evidence.sh` over `h6/`, file names only: 376 files, 0 hits.
-- **Key codes** (rulings 874, 875): `privacy-scan.mjs` (task 109's) over `h6/`, 376 files, found 0 held-code rows and 0
+- **Token-shaped strings:** `h6/scripts/scan-evidence.sh` over `h6/`, file names only: 404 files, 0 hits.
+- **Key codes** (rulings 874, 875): `privacy-scan.mjs` (task 109's) over `h6/`, 404 files, found 0 held-code rows and 0
   raw minimized codes.
 - **Window titles** (ruling 863): **the live title half was not run on x64.** Its `:0` is the owner's display, and
   reading its windows' titles is a read of that display outside the GO (the controller's word, ruling 947).
@@ -952,7 +1011,8 @@ No step outside class A reads taken.
   strings on plain-text lines that name a window.
 - Every value is one the harness set itself: its `cua171-…` windows, its scene pages' elements, its own instances'
   classes and app names, and its labels. Over `h6/out/` and `h6/zero/` (309 files; `title-scan.txt`) that is 14923 of
-  14923, with 0 not its own (8855 of 8855 at the first commit, before L3a–L4c). The owner's Chrome appears in the owner-check lines by class and geometry only, as at H⁗.
+  14923, with 0 not its own (8855 of 8855 at the first commit, before L3a–L4c). Over `a950/runs/` and `a953/runs/` (13
+  files; `title-scan-a950-a953.txt`), it is 524 of 524. The owner's Chrome appears in the owner-check lines by class and geometry only, as at H⁗.
 - `h6/scripts/` holds task 123's own code and records from private displays only. There the scan's other hits are
   quoted strings in that code, and doctor's own device-mode words in item 9's transcript (`:1`).
 

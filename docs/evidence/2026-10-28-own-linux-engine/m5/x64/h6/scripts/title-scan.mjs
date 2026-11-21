@@ -32,6 +32,7 @@ const OWN = [
   /^(cua|pinned|newest|cua:\w+|stub-activating|desktop|handle|harness|foreign|none|null|unknown|true|false)$/i,
   /^(Unnamed|identity-windows\.py|cua171-electron-page|at_spi|tree|oracle|pass|faster|View|abs src|acceptance on the pinned release|false positives, indeterminates counted)$/, // the identity scene's own apps, the harness's own labels and page classes
   /^Google-chrome, role browser, application "Google Chrome"/, // identification's own sentence, with or without the executable
+  /^development run on the pinned release, not acceptance/, /^a95[03]$/, // the runner's development label; task 123's own session labels
   /^$/,
 ];
 const isOwn = (s) => OWN.some((r) => r.test(s));

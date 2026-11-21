@@ -24,8 +24,12 @@ struct ListedWindow: Equatable, Sendable {
 }
 
 /// The on-screen windows, front to back (no window name is read).
-func onScreenWindowList() -> [ListedWindow] {
-  guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else { return [] }
+func onScreenWindowList() -> [ListedWindow] { onScreenWindowListRead() ?? [] }
+
+/// `onScreenWindowList` with a failed read told from an empty list: nil when the window server gave no list (#458,
+/// whose effect check must not take an unread list for a closed menu or every later window for a new one).
+func onScreenWindowListRead() -> [ListedWindow]? {
+  guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else { return nil }
   return list.compactMap { info in
     guard let number = (info[kCGWindowNumber as String] as? NSNumber)?.uint32Value,
           let owner = (info[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value,

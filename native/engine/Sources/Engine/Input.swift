@@ -599,47 +599,80 @@ extension Engine {
           if carried { return ["meta": meta.wire] }
         }
         // #458: a kept point on a closed pop-up button is carried by its AXPress and confirmed by its menu opening, and a
-        // native combo box's arrow behind is refused; never posted. A web page behind in shared mode stays #282's route.
-        if stale.refusal == nil, forced == nil, button == .left, count == 1, route == .activation,
-           !(context.connection.desktop == .shared && pointer.view.mayBeWebArea && !ActivationSystem().believesItHasFocus(owner)) {
+        // native combo box's arrow behind is refused; never posted. A web page behind in shared mode keeps #282's route,
+        // which presses a `<select>` itself; there its press gets the same check before it, effect and order record.
+        var webAreaPopUp: PopUpTarget<AXUIElement>?
+        if stale.refusal == nil, forced == nil, button == .left, count == 1, route == .activation {
+          let leftToWebAreaRoute = context.connection.desktop == .shared && pointer.view.mayBeWebArea
+            && !ActivationSystem().believesItHasFocus(owner)
           let answered = latest.outcome.answered
           let pressOwner = answered.map { ownerPid(of: $0, fallback: appPid) } ?? appPid
           let pids: Set<pid_t> = [appPid, pressOwner]
           let decision = signposted("click.popUp") {
-            popUpPoint(hit: answered, recorded: recordedAtPoint(stale.verdict, roles: popUpRoles).map { ($0.element, $0.role) },
-                       point: placed.point, pids: pids, reads: .live, frontmost: { frontmostPid().map(pids.contains) == true },
-                       windows: onScreenWindowList)
+            popUpPoint(hit: answered, recorded: recordedPopUp(stale.verdict, same: { CFEqual($0, $1) }), point: placed.point, pids: pids,
+                       reads: .live, frontmost: { frontmostPid().map(pids.contains) == true }, windows: onScreenWindowListRead)
           }
-          var pressRoute = InputRoute.action
-          if case .press = decision { pressRoute = actionRoute(owner: pressOwner, app: app, connection: context.connection) }
-          let carried = try armingSettle(&meta, acted: { context.connection.markActed(app) }) { meta in
-            try popUpClick(decision, app: app.displayName, route: pressRoute, appWindow: windowID, pids: pids, windows: onScreenWindowList,
-                           now: monotonicMilliseconds, sleep: { usleep(UInt32(max(0, $0) * 1000)) },
-                           deadlinePassed: { unixMilliseconds() >= context.deadline }, hold: { element, meta in
-              try refuseForbiddenOwner(pressOwner)
-              actionTargets(pressOwner, app: app, connection: context.connection)
-              // The element click's route: its focus hold when the app does not believe it has focus, then the guard's
-              // last check on the button, as #282's element route makes it.
-              if pressRoute == .activation {
-                try holdElementFocus(element: element, owner: pressOwner, app: app, appPid: appPid, guarding: guarding, context: context, meta: &meta)
-              }
-              let gate = StalePointGate(first: stale.verdict, record: stale.record) { [self] in
-                stalePointRecheck(at: placed.point, shift: stale.shift, window: placed.window, appPid: appPid, app: app, context: context)
-              }
-              try finalStalePointCheck(gate, pressing: element)?(pressRoute == .activation, &meta)
-            }, checkInFlight: guarding.checkInFlight,
-              announce: { cursor.act(connection: context.connection.id, app: app.key, window: windowID, .click(placed.point)) },
-              perform: { gatedPerform($0, $1) }, opened: { context.connection.popUpMenuOrders[app.key] = $0 }, meta: &meta)
+          if leftToWebAreaRoute {
+            if case .press(let target) = decision { webAreaPopUp = target }
+          } else {
+            var pressRoute = InputRoute.action
+            if case .press = decision { pressRoute = actionRoute(owner: pressOwner, app: app, connection: context.connection) }
+            func carry(_ meta: inout InputMeta) throws -> Bool {
+              try popUpClick(decision, app: app.displayName, route: pressRoute, appWindow: windowID, pids: pids, reads: .live,
+                             windows: onScreenWindowListRead, now: monotonicMilliseconds, sleep: { usleep(UInt32(max(0, $0) * 1000)) },
+                             deadlinePassed: { unixMilliseconds() >= context.deadline }, hold: { element, meta in
+                try refuseForbiddenOwner(pressOwner)
+                actionTargets(pressOwner, app: app, connection: context.connection)
+                // The element click's route: its focus hold when the app does not believe it has focus, then the guard's
+                // last check on the button, as #282's element route makes it.
+                if pressRoute == .activation {
+                  try holdElementFocus(element: element, owner: pressOwner, app: app, appPid: appPid, guarding: guarding, context: context, meta: &meta)
+                }
+                let gate = StalePointGate(first: stale.verdict, record: stale.record) { [self] in
+                  stalePointRecheck(at: placed.point, shift: stale.shift, window: placed.window, appPid: appPid, app: app, context: context)
+                }
+                try finalStalePointCheck(gate, pressing: element)?(pressRoute == .activation, &meta)
+              }, checkInFlight: guarding.checkInFlight,
+                announce: { cursor.act(connection: context.connection.id, app: app.key, window: windowID, .click(placed.point)) },
+                perform: { gatedPerform($0, $1) }, opened: { context.connection.popUpMenuOrders[app.key] = $0 }, meta: &meta)
+            }
+            let carried = try armingSettle(&meta, acted: { context.connection.markActed(app) }) { meta -> Bool in
+              guard case .press = decision else { return try carry(&meta) }
+              // The press's route-3 activation is counted as the posted click's is (routeAdvice); a kept decision is not.
+              var carried = false
+              try recordingRouteAdvice(pressRoute, app: app, meta: &meta) { meta in carried = try carry(&meta) }
+              return carried
+            }
+            if carried { return ["meta": meta.wire] }
           }
-          if carried { return ["meta": meta.wire] }
         }
         if pointer.view.mayBeWebArea, let hit = pointerHit {
           // A kept point's element route presses only the node or its control, the guard run again after any wait.
           let gate = StalePointGate(first: stale.verdict, record: stale.record) { [self] in
             stalePointRecheck(at: placed.point, shift: stale.shift, window: placed.window, appPid: appPid, app: app, context: context)
           }
-          pointer.elementRoute = webAreaPress(hit, button: button, count: count, point: placed.point, windowID: windowID, app: app,
-                                              appPid: appPid, guarding: guarding, context: context, stalePoint: gate)
+          let checks = PopUpPressChecks()
+          let route = webAreaPress(hit, button: button, count: count, point: placed.point, windowID: windowID, app: app,
+                                   appPid: appPid, guarding: guarding, context: context, stalePoint: gate,
+                                   beforePress: webAreaPopUp == nil ? nil : { control, meta in try checks.run(control, &meta) })
+          if let target = webAreaPopUp, let route {
+            let pids: Set<pid_t> = [appPid, ownerPid(of: target.element, fallback: appPid)]
+            pointer.elementRoute = { meta in
+              try popUpConfirmingRoute(target, app: app.displayName, appWindow: windowID, pids: pids, reads: .live,
+                                       windows: onScreenWindowListRead, now: monotonicMilliseconds,
+                                       sleep: { usleep(UInt32(max(0, $0) * 1000)) },
+                                       deadlinePassed: { unixMilliseconds() >= context.deadline },
+                                       opened: { context.connection.popUpMenuOrders[app.key] = $0 }, route: { beforePress, meta in
+                try withoutActuallyEscaping(beforePress) { check in
+                  checks.check = check
+                  defer { checks.check = nil }
+                  try route(&meta)
+                }
+              }, meta: &meta)
+            }
+          } else {
+            pointer.elementRoute = route
+          }
         }
         try armingSettle(&meta, acted: { context.connection.markActed(app) }) { meta in
           try recordingRouteAdvice(route, app: app, meta: &meta) { meta in

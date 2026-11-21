@@ -459,9 +459,13 @@ extension Engine {
   /// be the node the screenshot showed at the point or its control (`stalePointPressVerdict`), checked just before the
   /// press, and after the action's re-read wait against the guard run again (`StalePointGate`); refused otherwise as
   /// `screenChangedSinceScreenshot`, nothing pressed. The focus route (#283) checks its field the same way.
+  ///
+  /// `beforePress` (#458): run on the control just before its action, after the stale-point guard's last check (a
+  /// `<select>`'s check that it is still closed and its effect's baseline, `popUpConfirmingRoute`).
   func webAreaPress(_ hit: AXUIElement, button: MouseButton, count: Int, point: CGPoint, windowID: CGWindowID?, app: ResolvedApp,
                     appPid: pid_t, guarding: InterventionGuard, context: ExecutionContext,
-                    stalePoint: StalePointGate<AXUIElement>? = nil) -> ((inout InputMeta) throws -> Void)? {
+                    stalePoint: StalePointGate<AXUIElement>? = nil,
+                    beforePress: ((AXUIElement, inout InputMeta) throws -> Void)? = nil) -> ((inout InputMeta) throws -> Void)? {
     guard button == .left, count == 1 else { return nil }
     let engine = webAccessibility.pageEngine(app.appPath)
     var walk: [String] = []
@@ -525,7 +529,7 @@ extension Engine {
                                sleep: { usleep(UInt32($0 * 1000)) }) {
         try elementActionClick(control, owner: owner, action: action, route: actionRoute(owner: owner, app: app, connection: context.connection),
                                point: point, windowID: windowID, app: app, appPid: appPid, guarding: guarding, context: context,
-                               finalCheck: finalStalePointCheck(stalePoint, pressing: control), meta: &meta)
+                               finalCheck: pressChecks(finalStalePointCheck(stalePoint, pressing: control), beforePress, control), meta: &meta)
       }
     }
   }
@@ -540,6 +544,17 @@ extension Engine {
       meta.stalePoint = checked.record
       if let refusal = checked.refusal { throw refusal }
     } }
+  }
+
+  /// The stale-point guard's last check, then `beforePress` on the control (#458), as one `finalCheck`; nil for neither.
+  func pressChecks(_ stale: ((_ afterHold: Bool, _ meta: inout InputMeta) throws -> Void)?,
+                   _ beforePress: ((AXUIElement, inout InputMeta) throws -> Void)?,
+                   _ control: AXUIElement) -> ((_ afterHold: Bool, _ meta: inout InputMeta) throws -> Void)? {
+    guard stale != nil || beforePress != nil else { return nil }
+    return { afterHold, meta in
+      try stale?(afterHold, &meta)
+      try beforePress?(control, &meta)
+    }
   }
 
   /// The focus route a plain left click into a Gecko web area's text field takes (#315, WebAreaFocus.swift

@@ -1,0 +1,1290 @@
+## V1
+print: /Users/new/.local/share/cua-171/locked.sh m5-gate /usr/bin/node /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-gate/sitting.mjs --dir /Users/new/.local/share/cua-171/task128/cmp/out/V1/V1.pinned-release --hold /Users/new/.local/share/cua-171/hold-sittings --terminal end -- env WRAP=/Users/new/.local/share/cua-171/task128/cmp/tree/docs/evidence/2026-10-28-own-linux-engine/m5/guards/wrap71.py /Users/new/.local/share/cua-171/task128/cmp/tree/docs/evidence/2026-10-28-own-linux-engine/m4/pointer-route/scripts/run71.sh /Users/new/.local/share/cua-171/task128/cmp/out/V1/V1.pinned-release /Users/new/.local/share/cua-171/task128/cmp/tree/ --vendor /Users/new/.local/share/cua-171/task121/home/.local/share/cua/runtimes/26.928.40906-linux-arm64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64 --newest /Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64 --cua /Users/new/.local/share/cua-171/task121/home/.local/share/cua/engine/linux/cua-engine --scene gedit --ops type_text,type_text_selection,type_text_dedicated,clipboard_read,clipboard_write,clipboard_release,caret_placed --blocks 3 --run pinned-V1 --pinned
+launch: none (a :0 step: run in the declared sitting with its print line)
+
+## V2
+print: /Users/new/.local/share/cua-171/locked.sh m5-gate /usr/bin/node /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-gate/sitting.mjs --dir /Users/new/.local/share/cua-171/task128/cmp/out/V2/V2.pinned-release --hold /Users/new/.local/share/cua-171/hold-sittings --terminal end -- env WRAP=/Users/new/.local/share/cua-171/task128/cmp/tree/docs/evidence/2026-10-28-own-linux-engine/m5/guards/wrap71.py /Users/new/.local/share/cua-171/task128/cmp/tree/docs/evidence/2026-10-28-own-linux-engine/m4/pointer-route/scripts/run71.sh /Users/new/.local/share/cua-171/task128/cmp/out/V2/V2.pinned-release /Users/new/.local/share/cua-171/task128/cmp/tree/ --vendor /Users/new/.local/share/cua-171/task121/home/.local/share/cua/runtimes/26.928.40906-linux-arm64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64 --newest /Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64 --cua /Users/new/.local/share/cua-171/task121/home/.local/share/cua/engine/linux/cua-engine --scene desktop,gedit,chrome,over-budget --ops list_windows,list_apps,get_screenshot,launch_app,capabilities,tree,tree_shot,press_key,click,type_characters --blocks 3 --run pinned-V2 --pinned
+launch: none (a :0 step: run in the declared sitting with its print line)
+
+## V3
+print: /Users/new/.local/share/cua-171/locked.sh m5-gate /usr/bin/node /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-gate/sitting.mjs --dir /Users/new/.local/share/cua-171/task128/cmp/out/V3/V3.pinned-release --hold /Users/new/.local/share/cua-171/hold-sittings --terminal end -- env WRAP=/Users/new/.local/share/cua-171/task128/cmp/tree/docs/evidence/2026-10-28-own-linux-engine/m5/guards/wrap71.py /Users/new/.local/share/cua-171/task128/cmp/tree/docs/evidence/2026-10-28-own-linux-engine/m4/pointer-route/scripts/run71.sh /Users/new/.local/share/cua-171/task128/cmp/out/V3/V3.pinned-release /Users/new/.local/share/cua-171/task128/cmp/tree/ --vendor /Users/new/.local/share/cua-171/task121/home/.local/share/cua/runtimes/26.928.40906-linux-arm64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64 --newest /Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64 --cua /Users/new/.local/share/cua-171/task121/home/.local/share/cua/engine/linux/cua-engine --scene chrome-input,retention,minimized,minimized-xterm,minimized-recorder --ops click_element,right_click,right_click_fallback,secondary_action,move,drag,scroll,scroll_element_hidden,key_down,key_up,activate_window,after_resize,after_remap,after_covered_change,minimized_press_key,minimized_key_down,minimized_click,minimized_right_click,minimized_click_element,minimized_secondary_action,minimized_move,minimized_scroll,minimized_drag,minimized_type_text,minimized_type_characters,minimized_clipboard_read,minimized_clipboard_write,minimized_press_key_dedicated,minimized_click_dedicated,minimized_type_text_dedicated,minimized_list,minimized_tree,minimized_shot,minimized_restored_shot,minimized_restored_list,minimized_activate,minimized_activate_withdrawn,minimized_xterm_key_shared,minimized_xterm_key_dedicated,minimized_xterm_key_up_foreground,minimized_key_up_background --blocks 3 --run pinned-V3 --pinned
+launch: none (a :0 step: run in the declared sitting with its print line)
+
+## V4
+print: /Users/new/.local/share/cua-171/locked.sh m5-gate /usr/bin/node /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-gate/sitting.mjs --dir /Users/new/.local/share/cua-171/task128/cmp/out/V4/V4.pinned-release --hold /Users/new/.local/share/cua-171/hold-sittings --terminal end -- env WRAP=/Users/new/.local/share/cua-171/task128/cmp/tree/docs/evidence/2026-10-28-own-linux-engine/m5/guards/wrap71.py /Users/new/.local/share/cua-171/task128/cmp/tree/docs/evidence/2026-10-28-own-linux-engine/m4/pointer-route/scripts/run71.sh /Users/new/.local/share/cua-171/task128/cmp/out/V4/V4.pinned-release /Users/new/.local/share/cua-171/task128/cmp/tree/ --vendor /Users/new/.local/share/cua-171/task121/home/.local/share/cua/runtimes/26.928.40906-linux-arm64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64 --newest /Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64 --cua /Users/new/.local/share/cua-171/task121/home/.local/share/cua/engine/linux/cua-engine --scene chrome-textarea,chrome-address-bar,gnome-text-editor,paste-target,device-gtk4,device-xterm,device-qt --ops type_text,focus_change,focus_change_takeover,silent_owner,concurrent,contention,late_page,ignored_page,restore_refused,gte_type_text_shared,stalled_incr,late_convert,unreadable,gtk4_click_shared,gtk4_click_dedicated,gtk4_key_shared,gtk4_key_dedicated,gtk4_key_down_shared,gtk4_right_click_shared,gtk4_element_click,gtk4_scroll_shared,gtk4_scroll_dedicated,gtk4_move_shared,gtk4_move_dedicated,gtk4_drag_shared,gtk4_drag_dedicated,xterm_key_shared,xterm_key_dedicated,xterm_click_shared,qt_scroll_shared,qt_scroll_dedicated --blocks 3 --run pinned-V4 --pinned
+launch: none (a :0 step: run in the declared sitting with its print line)
+
+## V5
+print: /Users/new/.local/share/cua-171/locked.sh m5-gate /usr/bin/node /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-gate/sitting.mjs --dir /Users/new/.local/share/cua-171/task128/cmp/out/V5/V5.pinned-release --hold /Users/new/.local/share/cua-171/hold-sittings --terminal end -- env WRAP=/Users/new/.local/share/cua-171/task128/cmp/tree/docs/evidence/2026-10-28-own-linux-engine/m5/guards/wrap71.py /Users/new/.local/share/cua-171/task128/cmp/tree/docs/evidence/2026-10-28-own-linux-engine/m4/pointer-route/scripts/run71.sh /Users/new/.local/share/cua-171/task128/cmp/out/V5/V5.pinned-release /Users/new/.local/share/cua-171/task128/cmp/tree/ --vendor /Users/new/.local/share/cua-171/task121/home/.local/share/cua/runtimes/26.928.40906-linux-arm64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64 --newest /Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64 --cua /Users/new/.local/share/cua-171/task121/home/.local/share/cua/engine/linux/cua-engine --scene device-firefox,device-chrome,device-chrome-dnd,identity,identity-gtk3,identity-gtk4,identity-kate --ops firefox_click_pointer_out_shared,firefox_click_pointer_under_shared,firefox_right_click_pointer_out_shared,firefox_click_pointer_out_dedicated,firefox_click_visible_shared,firefox_click_overlap_pointer_in_shared,firefox_element_click_covered,firefox_move_pointer_out_shared,firefox_move_overlap_pointer_in_shared,firefox_move_covered_dedicated,firefox_drag_pointer_out_shared,firefox_drag_overlap_pointer_in_shared,firefox_drag_covered_dedicated,firefox_scroll_pointer_out_shared,firefox_scroll_overlap_pointer_in_shared,firefox_scroll_covered_dedicated,chrome_drag_visible_path_shared,chrome_drag_covered_path_shared,chrome_drag_covered_dedicated,chrome_dnd_shared,chrome_dnd_in_front_shared,chrome_dnd_late_shared,chrome_dnd_covered_dedicated,chrome_dnd_short_in_front_shared,chrome_dnd_short_covered_dedicated,chrome_dnd_obscured_in_front_shared,chrome_dnd_obscured_in_front_late_shared,chrome_dnd_late_take_shared,chrome_dnd_short_pointer_outside_shared,chrome_dnd_short_pointer_outside_dedicated,chrome_select_nudged_shared,chrome_dnd_inzone_out_in_front_shared,chrome_dnd_long_left_in_front_shared,identity_apart,identity_stacked,identity_stacked_self_active,identity_stacked_other_active,identity_apart_shot,identity_click_element,identity_secondary_action,identity_type_text,identity_clipboard_read,identity_key_up,identity_kate --blocks 3 --run pinned-V5 --ballast gate --pinned --hold-canary absolute
+launch: none (a :0 step: run in the declared sitting with its print line)
+
+## Z0
+print: /Users/new/.local/share/cua-171/locked.sh m5-gate /usr/bin/node /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-gate/sitting.mjs --dir /Users/new/.local/share/cua-171/task128/cmp/out/Z0/Z0.pinned-release --hold /Users/new/.local/share/cua-171/hold-sittings --terminal experiment-summary -- env WRAP=/Users/new/.local/share/cua-171/task128/cmp/tree/docs/evidence/2026-10-28-own-linux-engine/m5/guards/wrap71.py /Users/new/.local/share/cua-171/task128/cmp/tree/docs/evidence/2026-10-28-own-linux-engine/m4/pointer-route/scripts/run71.sh /Users/new/.local/share/cua-171/task128/cmp/out/Z0/Z0.pinned-release /Users/new/.local/share/cua-171/task128/cmp/tree/ --experiment drag --vendor /Users/new/.local/share/cua-171/task121/home/.local/share/cua/runtimes/26.928.40906-linux-arm64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64 --newest /Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64 --occlusion visible --family firefox,writer --ops dnd,select --cua /Users/new/.local/share/cua-171/task121/home/.local/share/cua/engine/linux/cua-engine --run pinned-Z0 --pinned
+launch: none (a :0 step: run in the declared sitting with its print line)
+
+## D1
+print: /Users/new/.local/share/cua-171/locked.sh m5-gate /usr/bin/node /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-gate/gate.mjs run D1 --pinned /Users/new/.local/share/cua-171/task121/home/.local/share/cua --out /Users/new/.local/share/cua-171/task128/cmp/out/D1
+launch: private display
+command: /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-diff.mjs
+cwd: /Users/new/.local/share/cua-171/task128/cmp/tree/
+args:
+  --experiment
+  drag
+  --vendor
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/runtimes/26.928.40906-linux-arm64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64
+  --newest
+  /Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64
+  --occlusion
+  visible
+  --family
+  chrome
+  --cua
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/engine/linux/cua-engine
+  --run
+  pinned-D1
+  --pinned
+  --out
+  /Users/new/.local/share/cua-171/task128/cmp/out/D1/D1.pinned-release/run
+env:
+  CUA_HOME=/Users/new/.local/share/cua-171/task121/home/.local/share/cua
+  PATH=/Users/new/.local/share/cua-171/task59/bin:/usr/local/bin:/usr/bin:/bin
+
+## D2
+print: /Users/new/.local/share/cua-171/locked.sh m5-gate /usr/bin/node /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-gate/gate.mjs run D2 --pinned /Users/new/.local/share/cua-171/task121/home/.local/share/cua --out /Users/new/.local/share/cua-171/task128/cmp/out/D2
+launch: private display
+command: /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-diff.mjs
+cwd: /Users/new/.local/share/cua-171/task128/cmp/tree/
+args:
+  --experiment
+  drag
+  --vendor
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/runtimes/26.928.40906-linux-arm64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64
+  --newest
+  /Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64
+  --occlusion
+  visible
+  --family
+  electron
+  --cua
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/engine/linux/cua-engine
+  --run
+  pinned-D2
+  --pinned
+  --out
+  /Users/new/.local/share/cua-171/task128/cmp/out/D2/D2.pinned-release/run
+env:
+  CUA_HOME=/Users/new/.local/share/cua-171/task121/home/.local/share/cua
+  PATH=/Users/new/.local/share/cua-171/task59/bin:/usr/local/bin:/usr/bin:/bin
+
+## D3
+print: /Users/new/.local/share/cua-171/locked.sh m5-gate /usr/bin/node /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-gate/gate.mjs run D3 --pinned /Users/new/.local/share/cua-171/task121/home/.local/share/cua --out /Users/new/.local/share/cua-171/task128/cmp/out/D3
+launch: private display
+command: /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-diff.mjs
+cwd: /Users/new/.local/share/cua-171/task128/cmp/tree/
+args:
+  --experiment
+  drag
+  --vendor
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/runtimes/26.928.40906-linux-arm64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64
+  --newest
+  /Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64
+  --occlusion
+  visible
+  --family
+  firefox
+  --cua
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/engine/linux/cua-engine
+  --run
+  pinned-D3
+  --pinned
+  --out
+  /Users/new/.local/share/cua-171/task128/cmp/out/D3/D3.pinned-release/run
+env:
+  CUA_HOME=/Users/new/.local/share/cua-171/task121/home/.local/share/cua
+  PATH=/Users/new/.local/share/cua-171/task59/bin:/usr/local/bin:/usr/bin:/bin
+
+## D4
+print: /Users/new/.local/share/cua-171/locked.sh m5-gate /usr/bin/node /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-gate/gate.mjs run D4 --pinned /Users/new/.local/share/cua-171/task121/home/.local/share/cua --out /Users/new/.local/share/cua-171/task128/cmp/out/D4
+launch: private display
+command: /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-diff.mjs
+cwd: /Users/new/.local/share/cua-171/task128/cmp/tree/
+args:
+  --experiment
+  drag
+  --vendor
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/runtimes/26.928.40906-linux-arm64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64
+  --newest
+  /Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64
+  --occlusion
+  visible
+  --family
+  gedit,gtk-scale,gnome-text-editor,kate,qtcreator
+  --cua
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/engine/linux/cua-engine
+  --run
+  pinned-D4
+  --pinned
+  --out
+  /Users/new/.local/share/cua-171/task128/cmp/out/D4/D4.pinned-release/run
+env:
+  CUA_HOME=/Users/new/.local/share/cua-171/task121/home/.local/share/cua
+  PATH=/Users/new/.local/share/cua-171/task59/bin:/usr/local/bin:/usr/bin:/bin
+
+## D5
+print: /Users/new/.local/share/cua-171/locked.sh m5-gate /usr/bin/node /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-gate/gate.mjs run D5 --pinned /Users/new/.local/share/cua-171/task121/home/.local/share/cua --out /Users/new/.local/share/cua-171/task128/cmp/out/D5
+launch: private display
+command: /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-diff.mjs
+cwd: /Users/new/.local/share/cua-171/task128/cmp/tree/
+args:
+  --experiment
+  drag
+  --vendor
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/runtimes/26.928.40906-linux-arm64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64
+  --newest
+  /Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64
+  --occlusion
+  visible
+  --family
+  writer,xterm,xterm-allow,gtk4-input,gnome-terminal,writer-gen
+  --cua
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/engine/linux/cua-engine
+  --run
+  pinned-D5
+  --pinned
+  --out
+  /Users/new/.local/share/cua-171/task128/cmp/out/D5/D5.pinned-release/run
+env:
+  CUA_HOME=/Users/new/.local/share/cua-171/task121/home/.local/share/cua
+  PATH=/Users/new/.local/share/cua-171/task59/bin:/usr/local/bin:/usr/bin:/bin
+
+## R1
+print: /Users/new/.local/share/cua-171/locked.sh m5-gate /usr/bin/node /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-gate/gate.mjs run R1 --pinned /Users/new/.local/share/cua-171/task121/home/.local/share/cua --out /Users/new/.local/share/cua-171/task128/cmp/out/R1
+launch: spawn
+command: bash
+cwd: /Users/new/.local/share/cua-171/task128/cmp/tree/
+args:
+  /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-gate/suites.sh
+  parity
+env:
+  CUA_HOME=/Users/new/.local/share/cua-171/task121/home/.local/share/cua
+  DEVICE=cua-171-arm64
+  ENGINE=installed
+  LABEL=counted
+  LOGS=/tmp/cua171-gl-XXXXXX
+  OUT=/Users/new/.local/share/cua-171/task128/cmp/out/R1/R1.pinned-release/run
+  PATH=/Users/new/.local/share/cua-171/task59/bin:/usr/local/bin:/usr/bin:/bin
+  PINNED_RULE=enforce
+
+## R2
+print: /Users/new/.local/share/cua-171/locked.sh m5-gate /usr/bin/node /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-gate/gate.mjs run R2 --pinned /Users/new/.local/share/cua-171/task121/home/.local/share/cua --out /Users/new/.local/share/cua-171/task128/cmp/out/R2
+launch: spawn
+command: bash
+cwd: /Users/new/.local/share/cua-171/task128/cmp/tree/
+args:
+  /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-gate/suites.sh
+  baseline
+env:
+  CUA_HOME=/Users/new/.local/share/cua-171/task121/home/.local/share/cua
+  DEVICE=cua-171-arm64
+  ENGINE=installed
+  LABEL=counted
+  LOGS=/tmp/cua171-gl-XXXXXX
+  OUT=/Users/new/.local/share/cua-171/task128/cmp/out/R2/R2.pinned-release/run
+  PATH=/Users/new/.local/share/cua-171/task59/bin:/usr/local/bin:/usr/bin:/bin
+  PINNED_RULE=enforce
+
+## R3
+print: /Users/new/.local/share/cua-171/locked.sh m5-gate /usr/bin/node /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-gate/gate.mjs run R3 --pinned /Users/new/.local/share/cua-171/task121/home/.local/share/cua --out /Users/new/.local/share/cua-171/task128/cmp/out/R3
+launch: spawn
+command: bash
+cwd: /Users/new/.local/share/cua-171/task128/cmp/tree/
+args:
+  /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-gate/suites.sh
+  accept
+env:
+  CUA_HOME=/Users/new/.local/share/cua-171/task121/home/.local/share/cua
+  DEVICE=cua-171-arm64
+  ENGINE=installed
+  LABEL=counted
+  LOGS=/tmp/cua171-gl-XXXXXX
+  OUT=/Users/new/.local/share/cua-171/task128/cmp/out/R3/R3.pinned-release/run
+  PATH=/Users/new/.local/share/cua-171/task59/bin:/usr/local/bin:/usr/bin:/bin
+  PINNED_RULE=enforce
+
+## R4
+print: /Users/new/.local/share/cua-171/locked.sh m5-gate /usr/bin/node /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-gate/gate.mjs run R4 --pinned /Users/new/.local/share/cua-171/task121/home/.local/share/cua --out /Users/new/.local/share/cua-171/task128/cmp/out/R4
+launch: spawn
+command: bash
+cwd: /Users/new/.local/share/cua-171/task128/cmp/tree/
+args:
+  /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-gate/suites.sh
+  device
+env:
+  CUA_HOME=/Users/new/.local/share/cua-171/task121/home/.local/share/cua
+  DEVICE=cua-171-arm64
+  ENGINE=installed
+  LABEL=counted
+  LOGS=/tmp/cua171-gl-XXXXXX
+  OUT=/Users/new/.local/share/cua-171/task128/cmp/out/R4/R4.pinned-release/run
+  PATH=/Users/new/.local/share/cua-171/task59/bin:/usr/local/bin:/usr/bin:/bin
+  PINNED_RULE=enforce
+
+## FB
+print: /Users/new/.local/share/cua-171/locked.sh m5-gate /usr/bin/node /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-gate/gate.mjs run FB --pinned /Users/new/.local/share/cua-171/task121/home/.local/share/cua --out /Users/new/.local/share/cua-171/task128/cmp/out/FB
+launch: private display
+command: /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-diff/services.mjs
+cwd: /Users/new/.local/share/cua-171/task128/cmp/tree/
+args:
+  --vendor-js
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/runtimes/26.928.40906-linux-arm64/cua_node/lib/node_modules/@oai/sky
+  --engine
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/engine/linux/cua-engine
+  --scenes
+  over-budget
+  --out
+  /Users/new/.local/share/cua-171/task128/cmp/out/FB/FB.pinned-release/run
+env:
+  CUA_HOME=/Users/new/.local/share/cua-171/task121/home/.local/share/cua
+  PATH=/Users/new/.local/share/cua-171/task59/bin:/usr/local/bin:/usr/bin:/bin
+
+## E1
+print: /Users/new/.local/share/cua-171/locked.sh m5-gate /usr/bin/node /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-gate/gate.mjs run E1 --pinned /Users/new/.local/share/cua-171/task121/home/.local/share/cua --out /Users/new/.local/share/cua-171/task128/cmp/out/E1
+launch: spawn
+command: /usr/bin/node
+cwd: /Users/new/.local/share/cua-171/task128/cmp/tree/
+args:
+  /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-diff.mjs
+  --experiment
+  events
+  --vendor
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/runtimes/26.928.40906-linux-arm64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64
+  --newest
+  /Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64
+  --cua
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/engine/linux/cua-engine
+  --run
+  pinned-E1
+  --pinned
+  --out
+  /Users/new/.local/share/cua-171/task128/cmp/out/E1/E1.pinned-release/run
+env:
+  CUA_HOME=/Users/new/.local/share/cua-171/task121/home/.local/share/cua
+  PATH=/Users/new/.local/share/cua-171/task59/bin:/usr/local/bin:/usr/bin:/bin
+
+## S1
+print: /Users/new/.local/share/cua-171/locked.sh m5-gate /usr/bin/node /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-gate/gate.mjs run S1 --pinned /Users/new/.local/share/cua-171/task121/home/.local/share/cua --out /Users/new/.local/share/cua-171/task128/cmp/out/S1
+launch: spawn
+command: /usr/bin/node
+cwd: /Users/new/.local/share/cua-171/task128/cmp/tree/
+args:
+  /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-diff.mjs
+  --experiment
+  settle
+  --lanes
+  shipped
+  --family
+  chrome,electron
+  --cua
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/engine/linux/cua-engine
+  --run
+  pinned-S1
+  --pinned
+  --out
+  /Users/new/.local/share/cua-171/task128/cmp/out/S1/S1.pinned-release/run
+env:
+  CUA_HOME=/Users/new/.local/share/cua-171/task121/home/.local/share/cua
+  PATH=/Users/new/.local/share/cua-171/task59/bin:/usr/local/bin:/usr/bin:/bin
+
+## S2
+print: /Users/new/.local/share/cua-171/locked.sh m5-gate /usr/bin/node /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-gate/gate.mjs run S2 --pinned /Users/new/.local/share/cua-171/task121/home/.local/share/cua --out /Users/new/.local/share/cua-171/task128/cmp/out/S2
+launch: spawn
+command: /usr/bin/node
+cwd: /Users/new/.local/share/cua-171/task128/cmp/tree/
+args:
+  /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-diff.mjs
+  --experiment
+  settle
+  --lanes
+  shipped
+  --family
+  firefox,gedit
+  --cua
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/engine/linux/cua-engine
+  --run
+  pinned-S2
+  --pinned
+  --out
+  /Users/new/.local/share/cua-171/task128/cmp/out/S2/S2.pinned-release/run
+env:
+  CUA_HOME=/Users/new/.local/share/cua-171/task121/home/.local/share/cua
+  PATH=/Users/new/.local/share/cua-171/task59/bin:/usr/local/bin:/usr/bin:/bin
+
+## S3
+print: /Users/new/.local/share/cua-171/locked.sh m5-gate /usr/bin/node /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-gate/gate.mjs run S3 --pinned /Users/new/.local/share/cua-171/task121/home/.local/share/cua --out /Users/new/.local/share/cua-171/task128/cmp/out/S3
+launch: spawn
+command: /usr/bin/node
+cwd: /Users/new/.local/share/cua-171/task128/cmp/tree/
+args:
+  /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-diff.mjs
+  --experiment
+  settle
+  --lanes
+  shipped
+  --family
+  kate,qtcreator,writer,gnome-terminal
+  --cua
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/engine/linux/cua-engine
+  --run
+  pinned-S3
+  --pinned
+  --out
+  /Users/new/.local/share/cua-171/task128/cmp/out/S3/S3.pinned-release/run
+env:
+  CUA_HOME=/Users/new/.local/share/cua-171/task121/home/.local/share/cua
+  PATH=/Users/new/.local/share/cua-171/task59/bin:/usr/local/bin:/usr/bin:/bin
+
+## S4
+print: /Users/new/.local/share/cua-171/locked.sh m5-gate /usr/bin/node /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-gate/gate.mjs run S4 --pinned /Users/new/.local/share/cua-171/task121/home/.local/share/cua --out /Users/new/.local/share/cua-171/task128/cmp/out/S4
+launch: spawn
+command: /usr/bin/node
+cwd: /Users/new/.local/share/cua-171/task128/cmp/tree/
+args:
+  /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-diff.mjs
+  --experiment
+  settle
+  --lanes
+  shipped
+  --family
+  xterm,gtk3,qt5,qt6,gtk4
+  --cua
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/engine/linux/cua-engine
+  --run
+  pinned-S4
+  --pinned
+  --out
+  /Users/new/.local/share/cua-171/task128/cmp/out/S4/S4.pinned-release/run
+env:
+  CUA_HOME=/Users/new/.local/share/cua-171/task121/home/.local/share/cua
+  PATH=/Users/new/.local/share/cua-171/task59/bin:/usr/local/bin:/usr/bin:/bin
+
+## F1a
+print: /Users/new/.local/share/cua-171/locked.sh m5-gate /usr/bin/node /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-gate/gate.mjs run F1a --pinned /Users/new/.local/share/cua-171/task121/home/.local/share/cua --out /Users/new/.local/share/cua-171/task128/cmp/out/F1a
+launch: spawn
+command: /usr/bin/node
+cwd: /Users/new/.local/share/cua-171/task128/cmp/tree/
+args:
+  /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-diff.mjs
+  --experiment
+  focus-timer
+  --scenarios
+  burst,aba,paste
+  --lanes
+  shipped
+  --cua
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/engine/linux/cua-engine
+  --run
+  pinned-F1a
+  --pinned
+  --out
+  /Users/new/.local/share/cua-171/task128/cmp/out/F1a/F1a.pinned-release/run
+env:
+  CUA_HOME=/Users/new/.local/share/cua-171/task121/home/.local/share/cua
+  PATH=/Users/new/.local/share/cua-171/task59/bin:/usr/local/bin:/usr/bin:/bin
+
+## F1b
+print: /Users/new/.local/share/cua-171/locked.sh m5-gate /usr/bin/node /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-gate/gate.mjs run F1b --pinned /Users/new/.local/share/cua-171/task121/home/.local/share/cua --out /Users/new/.local/share/cua-171/task128/cmp/out/F1b
+launch: spawn
+command: /usr/bin/node
+cwd: /Users/new/.local/share/cua-171/task128/cmp/tree/
+args:
+  /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-diff.mjs
+  --experiment
+  focus-timer
+  --scenarios
+  click-paste,click-field
+  --lanes
+  shipped
+  --cua
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/engine/linux/cua-engine
+  --run
+  pinned-F1b
+  --pinned
+  --out
+  /Users/new/.local/share/cua-171/task128/cmp/out/F1b/F1b.pinned-release/run
+env:
+  CUA_HOME=/Users/new/.local/share/cua-171/task121/home/.local/share/cua
+  PATH=/Users/new/.local/share/cua-171/task59/bin:/usr/local/bin:/usr/bin:/bin
+
+## F2
+print: /Users/new/.local/share/cua-171/locked.sh m5-gate /usr/bin/node /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-gate/gate.mjs run F2 --pinned /Users/new/.local/share/cua-171/task121/home/.local/share/cua --out /Users/new/.local/share/cua-171/task128/cmp/out/F2
+launch: spawn
+command: /usr/bin/node
+cwd: /Users/new/.local/share/cua-171/task128/cmp/tree/
+args:
+  /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-diff.mjs
+  --experiment
+  focus-timer
+  --stops-only
+  --family
+  chrome,electron
+  --cua
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/engine/linux/cua-engine
+  --run
+  pinned-F2
+  --pinned
+  --out
+  /Users/new/.local/share/cua-171/task128/cmp/out/F2/F2.pinned-release/run
+env:
+  CUA_HOME=/Users/new/.local/share/cua-171/task121/home/.local/share/cua
+  PATH=/Users/new/.local/share/cua-171/task59/bin:/usr/local/bin:/usr/bin:/bin
+
+## ES
+print: /Users/new/.local/share/cua-171/locked.sh m5-gate /usr/bin/node /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-gate/gate.mjs run ES --pinned /Users/new/.local/share/cua-171/task121/home/.local/share/cua --out /Users/new/.local/share/cua-171/task128/cmp/out/ES
+launch: spawn
+command: /usr/bin/node
+cwd: /Users/new/.local/share/cua-171/task128/cmp/tree/
+args:
+  /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-diff.mjs
+  --experiment
+  engine-stop
+  --lanes
+  drain
+  --cua
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/engine/linux/cua-engine
+  --run
+  pinned-ES
+  --pinned
+  --out
+  /Users/new/.local/share/cua-171/task128/cmp/out/ES/ES.pinned-release/run
+env:
+  CUA_HOME=/Users/new/.local/share/cua-171/task121/home/.local/share/cua
+  PATH=/Users/new/.local/share/cua-171/task59/bin:/usr/local/bin:/usr/bin:/bin
+
+## P1
+print: /Users/new/.local/share/cua-171/locked.sh m5-gate /usr/bin/node /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-gate/gate.mjs run P1 --pinned /Users/new/.local/share/cua-171/task121/home/.local/share/cua --out /Users/new/.local/share/cua-171/task128/cmp/out/P1
+launch: private display
+command: /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-diff.mjs
+cwd: /Users/new/.local/share/cua-171/task128/cmp/tree/
+args:
+  --experiment
+  predicates
+  --vendor
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/runtimes/26.928.40906-linux-arm64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64
+  --ops
+  click
+  --cua
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/engine/linux/cua-engine
+  --run
+  pinned-P1
+  --pinned
+  --out
+  /Users/new/.local/share/cua-171/task128/cmp/out/P1/P1.pinned-release/run
+env:
+  CUA_HOME=/Users/new/.local/share/cua-171/task121/home/.local/share/cua
+  PATH=/Users/new/.local/share/cua-171/task59/bin:/usr/local/bin:/usr/bin:/bin
+
+## P2
+print: /Users/new/.local/share/cua-171/locked.sh m5-gate /usr/bin/node /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-gate/gate.mjs run P2 --pinned /Users/new/.local/share/cua-171/task121/home/.local/share/cua --out /Users/new/.local/share/cua-171/task128/cmp/out/P2
+launch: private display
+command: /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-diff.mjs
+cwd: /Users/new/.local/share/cua-171/task128/cmp/tree/
+args:
+  --experiment
+  predicates
+  --vendor
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/runtimes/26.928.40906-linux-arm64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64
+  --ops
+  scroll
+  --cua
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/engine/linux/cua-engine
+  --run
+  pinned-P2
+  --pinned
+  --out
+  /Users/new/.local/share/cua-171/task128/cmp/out/P2/P2.pinned-release/run
+env:
+  CUA_HOME=/Users/new/.local/share/cua-171/task121/home/.local/share/cua
+  PATH=/Users/new/.local/share/cua-171/task59/bin:/usr/local/bin:/usr/bin:/bin
+
+## P3
+print: /Users/new/.local/share/cua-171/locked.sh m5-gate /usr/bin/node /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-gate/gate.mjs run P3 --pinned /Users/new/.local/share/cua-171/task121/home/.local/share/cua --out /Users/new/.local/share/cua-171/task128/cmp/out/P3
+launch: private display
+command: /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-diff.mjs
+cwd: /Users/new/.local/share/cua-171/task128/cmp/tree/
+args:
+  --experiment
+  predicates
+  --vendor
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/runtimes/26.928.40906-linux-arm64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64
+  --ops
+  move
+  --cua
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/engine/linux/cua-engine
+  --run
+  pinned-P3
+  --pinned
+  --out
+  /Users/new/.local/share/cua-171/task128/cmp/out/P3/P3.pinned-release/run
+env:
+  CUA_HOME=/Users/new/.local/share/cua-171/task121/home/.local/share/cua
+  PATH=/Users/new/.local/share/cua-171/task59/bin:/usr/local/bin:/usr/bin:/bin
+
+## P4
+print: /Users/new/.local/share/cua-171/locked.sh m5-gate /usr/bin/node /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-gate/gate.mjs run P4 --pinned /Users/new/.local/share/cua-171/task121/home/.local/share/cua --out /Users/new/.local/share/cua-171/task128/cmp/out/P4
+launch: private display
+command: /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-diff.mjs
+cwd: /Users/new/.local/share/cua-171/task128/cmp/tree/
+args:
+  --experiment
+  predicates
+  --vendor
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/runtimes/26.928.40906-linux-arm64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64
+  --ops
+  select
+  --cua
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/engine/linux/cua-engine
+  --run
+  pinned-P4
+  --pinned
+  --out
+  /Users/new/.local/share/cua-171/task128/cmp/out/P4/P4.pinned-release/run
+env:
+  CUA_HOME=/Users/new/.local/share/cua-171/task121/home/.local/share/cua
+  PATH=/Users/new/.local/share/cua-171/task59/bin:/usr/local/bin:/usr/bin:/bin
+
+## P6
+print: /Users/new/.local/share/cua-171/locked.sh m5-gate /usr/bin/node /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-gate/gate.mjs run P6 --pinned /Users/new/.local/share/cua-171/task121/home/.local/share/cua --out /Users/new/.local/share/cua-171/task128/cmp/out/P6
+launch: private display
+command: /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-diff.mjs
+cwd: /Users/new/.local/share/cua-171/task128/cmp/tree/
+args:
+  --experiment
+  predicates
+  --vendor
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/runtimes/26.928.40906-linux-arm64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64
+  --ops
+  dnd
+  --cua
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/engine/linux/cua-engine
+  --run
+  pinned-P6
+  --pinned
+  --out
+  /Users/new/.local/share/cua-171/task128/cmp/out/P6/P6.pinned-release/run
+env:
+  CUA_HOME=/Users/new/.local/share/cua-171/task121/home/.local/share/cua
+  PATH=/Users/new/.local/share/cua-171/task59/bin:/usr/local/bin:/usr/bin:/bin
+
+## P5
+print: /Users/new/.local/share/cua-171/locked.sh m5-gate /usr/bin/node /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-gate/gate.mjs run P5 --pinned /Users/new/.local/share/cua-171/task121/home/.local/share/cua --out /Users/new/.local/share/cua-171/task128/cmp/out/P5
+launch: private display
+command: /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-diff.mjs
+cwd: /Users/new/.local/share/cua-171/task128/cmp/tree/
+args:
+  --experiment
+  predicates
+  --vendor
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/runtimes/26.928.40906-linux-arm64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64
+  --ops
+  click,scroll,move,select,dnd
+  --plan
+  leave
+  --cua
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/engine/linux/cua-engine
+  --run
+  pinned-P5
+  --pinned
+  --out
+  /Users/new/.local/share/cua-171/task128/cmp/out/P5/P5.pinned-release/run
+env:
+  CUA_HOME=/Users/new/.local/share/cua-171/task121/home/.local/share/cua
+  PATH=/Users/new/.local/share/cua-171/task59/bin:/usr/local/bin:/usr/bin:/bin
+
+## H1
+print: /Users/new/.local/share/cua-171/locked.sh m5-gate /usr/bin/node /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-gate/gate.mjs run H1 --pinned /Users/new/.local/share/cua-171/task121/home/.local/share/cua --out /Users/new/.local/share/cua-171/task128/cmp/out/H1
+launch: private display
+command: /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-diff.mjs
+cwd: /Users/new/.local/share/cua-171/task128/cmp/tree/
+args:
+  --experiment
+  drop-signals
+  --family
+  electron
+  --plan
+  t17-fix3
+  --cua
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/engine/linux/cua-engine
+  --run
+  pinned-H1
+  --pinned
+  --out
+  /Users/new/.local/share/cua-171/task128/cmp/out/H1/H1.pinned-release/run
+env:
+  CUA_HOME=/Users/new/.local/share/cua-171/task121/home/.local/share/cua
+  PATH=/Users/new/.local/share/cua-171/task59/bin:/usr/local/bin:/usr/bin:/bin
+plan t17-fix3 on arm64:
+  cua plain x100 freeze null
+  cua left x30 freeze null
+  cua inzone-out x30 freeze null
+  cua:desktop root x30 freeze null
+  cua:desktop xterm x30 freeze null
+  cua:desktop other x30 freeze null
+  cua:desktop slow x30 freeze null
+  cua:handle plain x100 freeze null
+  cua:handle left x30 freeze null
+  cua:handle inzone-out x30 freeze null
+  cua:handle root x30 freeze null
+  cua:handle xterm x30 freeze null
+  cua:handle other x30 freeze null
+  cua:handle slow x30 freeze null
+
+## H2
+print: /Users/new/.local/share/cua-171/locked.sh m5-gate /usr/bin/node /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-gate/gate.mjs run H2 --pinned /Users/new/.local/share/cua-171/task121/home/.local/share/cua --out /Users/new/.local/share/cua-171/task128/cmp/out/H2
+launch: private display
+command: /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-diff.mjs
+cwd: /Users/new/.local/share/cua-171/task128/cmp/tree/
+args:
+  --experiment
+  drop-signals
+  --family
+  electron
+  --plan
+  t17-fix3
+  --ballast
+  gate
+  --cua
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/engine/linux/cua-engine
+  --run
+  pinned-H2
+  --pinned
+  --out
+  /Users/new/.local/share/cua-171/task128/cmp/out/H2/H2.pinned-release/run
+env:
+  CUA_HOME=/Users/new/.local/share/cua-171/task121/home/.local/share/cua
+  PATH=/Users/new/.local/share/cua-171/task59/bin:/usr/local/bin:/usr/bin:/bin
+plan t17-fix3 on arm64:
+  cua plain x100 freeze null
+  cua left x30 freeze null
+  cua inzone-out x30 freeze null
+  cua:desktop root x30 freeze null
+  cua:desktop xterm x30 freeze null
+  cua:desktop other x30 freeze null
+  cua:desktop slow x30 freeze null
+  cua:handle plain x100 freeze null
+  cua:handle left x30 freeze null
+  cua:handle inzone-out x30 freeze null
+  cua:handle root x30 freeze null
+  cua:handle xterm x30 freeze null
+  cua:handle other x30 freeze null
+  cua:handle slow x30 freeze null
+
+## C1
+print: /Users/new/.local/share/cua-171/locked.sh m5-gate /usr/bin/node /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-gate/gate.mjs run C1 --pinned /Users/new/.local/share/cua-171/task121/home/.local/share/cua --out /Users/new/.local/share/cua-171/task128/cmp/out/C1
+launch: private display
+command: /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-diff.mjs
+cwd: /Users/new/.local/share/cua-171/task128/cmp/tree/
+args:
+  --experiment
+  drop-signals
+  --family
+  chrome
+  --plan
+  t14-late
+  --cua
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/engine/linux/cua-engine
+  --run
+  pinned-C1
+  --pinned
+  --out
+  /Users/new/.local/share/cua-171/task128/cmp/out/C1/C1.pinned-release/run
+env:
+  CUA_HOME=/Users/new/.local/share/cua-171/task121/home/.local/share/cua
+  PATH=/Users/new/.local/share/cua-171/task59/bin:/usr/local/bin:/usr/bin:/bin
+plan t14-late on arm64:
+  cua freeze-600 x10 freeze {"from":60,"to":600,"afterPress":55}
+  cua freeze-646 x5 freeze {"from":60,"to":646,"afterPress":55}
+  cua freeze-648 x5 freeze {"from":60,"to":648,"afterPress":55}
+  cua freeze-650 x5 freeze {"from":60,"to":650,"afterPress":55}
+  cua freeze-652 x5 freeze {"from":60,"to":652,"afterPress":55}
+  cua freeze-700 x10 freeze {"from":60,"to":700,"afterPress":55}
+
+## K1
+print: /Users/new/.local/share/cua-171/locked.sh m5-gate /usr/bin/node /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-gate/gate.mjs run K1 --pinned /Users/new/.local/share/cua-171/task121/home/.local/share/cua --out /Users/new/.local/share/cua-171/task128/cmp/out/K1
+launch: private display
+command: /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-diff.mjs
+cwd: /Users/new/.local/share/cua-171/task128/cmp/tree/
+args:
+  --vendor
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/runtimes/26.928.40906-linux-arm64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64
+  --newest
+  /Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64
+  --cua
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/engine/linux/cua-engine
+  --scene
+  device-chrome-dnd
+  --ops
+  chrome_dnd_short_in_front_shared,chrome_select_nudged_shared
+  --blocks
+  3
+  --run
+  pinned-K1
+  --ballast
+  gate
+  --pinned
+  --engine-sandbox
+  --hold-canary
+  absolute
+  --out
+  /Users/new/.local/share/cua-171/task128/cmp/out/K1/K1.pinned-release/run
+env:
+  CUA_HOME=/Users/new/.local/share/cua-171/task121/home/.local/share/cua
+  PATH=/Users/new/.local/share/cua-171/task59/bin:/usr/local/bin:/usr/bin:/bin
+
+## K2
+print: /Users/new/.local/share/cua-171/locked.sh m5-gate /usr/bin/node /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-gate/gate.mjs run K2 --pinned /Users/new/.local/share/cua-171/task121/home/.local/share/cua --out /Users/new/.local/share/cua-171/task128/cmp/out/K2
+launch: private display
+command: /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-diff.mjs
+cwd: /Users/new/.local/share/cua-171/task128/cmp/tree/
+args:
+  --vendor
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/runtimes/26.928.40906-linux-arm64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64
+  --newest
+  /Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64
+  --cua
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/engine/linux/cua-engine
+  --scene
+  device-chrome-dnd
+  --ops
+  chrome_dnd_short_in_front_shared,chrome_select_nudged_shared
+  --blocks
+  3
+  --run
+  pinned-K2
+  --ballast
+  gate
+  --pinned
+  --engine-sandbox
+  --hold-canary
+  absolute
+  --out
+  /Users/new/.local/share/cua-171/task128/cmp/out/K2/K2.pinned-release/run
+env:
+  CUA171_CHROME_COMMAND=/Users/new/.local/share/cua-171/chrome-stable/158.0.8127.36-1/bin/google-chrome
+  CUA_HOME=/Users/new/.local/share/cua-171/task121/home/.local/share/cua
+  PATH=/Users/new/.local/share/cua-171/chrome-stable/158.0.8127.36-1/bin:/Users/new/.local/share/cua-171/task59/bin:/usr/local/bin:/usr/bin:/bin
+
+## K3
+print: /Users/new/.local/share/cua-171/locked.sh m5-gate /usr/bin/node /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-gate/gate.mjs run K3 --pinned /Users/new/.local/share/cua-171/task121/home/.local/share/cua --out /Users/new/.local/share/cua-171/task128/cmp/out/K3
+launch: private display
+command: /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-diff.mjs
+cwd: /Users/new/.local/share/cua-171/task128/cmp/tree/
+args:
+  --experiment
+  drop-signals
+  --family
+  chrome
+  --plan
+  hold-regression
+  --engine-sandbox
+  --cua
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/engine/linux/cua-engine
+  --run
+  pinned-K3
+  --pinned
+  --out
+  /Users/new/.local/share/cua-171/task128/cmp/out/K3/K3.pinned-release/run
+env:
+  CUA_HOME=/Users/new/.local/share/cua-171/task121/home/.local/share/cua
+  PATH=/Users/new/.local/share/cua-171/task59/bin:/usr/local/bin:/usr/bin:/bin
+plan hold-regression on arm64:
+  cua dragstart-150 x10 freeze null
+  cua dragstart-400 x10 freeze null
+
+## L1
+print: /Users/new/.local/share/cua-171/locked.sh m5-gate /usr/bin/node /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-gate/gate.mjs run L1 --pinned /Users/new/.local/share/cua-171/task121/home/.local/share/cua --out /Users/new/.local/share/cua-171/task128/cmp/out/L1
+launch: private display
+command: /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-diff.mjs
+cwd: /Users/new/.local/share/cua-171/task128/cmp/tree/
+args:
+  --experiment
+  drag
+  --vendor
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/runtimes/26.928.40906-linux-arm64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64
+  --newest
+  /Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64
+  --occlusion
+  visible
+  --family
+  chrome,electron
+  --ops
+  scroller,range
+  --load-factor
+  2
+  --cua
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/engine/linux/cua-engine
+  --run
+  pinned-L1
+  --pinned
+  --out
+  /Users/new/.local/share/cua-171/task128/cmp/out/L1/L1.pinned-release/run
+env:
+  CUA_HOME=/Users/new/.local/share/cua-171/task121/home/.local/share/cua
+  PATH=/Users/new/.local/share/cua-171/task59/bin:/usr/local/bin:/usr/bin:/bin
+
+## L2a
+print: /Users/new/.local/share/cua-171/locked.sh m5-gate /usr/bin/node /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-gate/gate.mjs run L2a --pinned /Users/new/.local/share/cua-171/task121/home/.local/share/cua --out /Users/new/.local/share/cua-171/task128/cmp/out/L2a
+launch: private display
+command: /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-diff.mjs
+cwd: /Users/new/.local/share/cua-171/task128/cmp/tree/
+args:
+  --experiment
+  drag
+  --vendor
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/runtimes/26.928.40906-linux-arm64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64
+  --newest
+  /Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64
+  --occlusion
+  visible
+  --family
+  chrome
+  --ops
+  select,dnd,canvas
+  --load-factor
+  2
+  --cua
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/engine/linux/cua-engine
+  --run
+  pinned-L2a
+  --pinned
+  --out
+  /Users/new/.local/share/cua-171/task128/cmp/out/L2a/L2a.pinned-release/run
+env:
+  CUA_HOME=/Users/new/.local/share/cua-171/task121/home/.local/share/cua
+  PATH=/Users/new/.local/share/cua-171/task59/bin:/usr/local/bin:/usr/bin:/bin
+
+## L2b
+print: /Users/new/.local/share/cua-171/locked.sh m5-gate /usr/bin/node /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-gate/gate.mjs run L2b --pinned /Users/new/.local/share/cua-171/task121/home/.local/share/cua --out /Users/new/.local/share/cua-171/task128/cmp/out/L2b
+launch: private display
+command: /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-diff.mjs
+cwd: /Users/new/.local/share/cua-171/task128/cmp/tree/
+args:
+  --experiment
+  drag
+  --vendor
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/runtimes/26.928.40906-linux-arm64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64
+  --newest
+  /Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64
+  --occlusion
+  visible
+  --family
+  electron
+  --ops
+  select,dnd,canvas
+  --load-factor
+  2
+  --cua
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/engine/linux/cua-engine
+  --run
+  pinned-L2b
+  --pinned
+  --out
+  /Users/new/.local/share/cua-171/task128/cmp/out/L2b/L2b.pinned-release/run
+env:
+  CUA_HOME=/Users/new/.local/share/cua-171/task121/home/.local/share/cua
+  PATH=/Users/new/.local/share/cua-171/task59/bin:/usr/local/bin:/usr/bin:/bin
+
+## L2c
+print: /Users/new/.local/share/cua-171/locked.sh m5-gate /usr/bin/node /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-gate/gate.mjs run L2c --pinned /Users/new/.local/share/cua-171/task121/home/.local/share/cua --out /Users/new/.local/share/cua-171/task128/cmp/out/L2c
+launch: private display
+command: /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-diff.mjs
+cwd: /Users/new/.local/share/cua-171/task128/cmp/tree/
+args:
+  --experiment
+  drag
+  --vendor
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/runtimes/26.928.40906-linux-arm64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64
+  --newest
+  /Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64
+  --occlusion
+  visible
+  --family
+  firefox
+  --load-factor
+  2
+  --cua
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/engine/linux/cua-engine
+  --run
+  pinned-L2c
+  --pinned
+  --out
+  /Users/new/.local/share/cua-171/task128/cmp/out/L2c/L2c.pinned-release/run
+env:
+  CUA_HOME=/Users/new/.local/share/cua-171/task121/home/.local/share/cua
+  PATH=/Users/new/.local/share/cua-171/task59/bin:/usr/local/bin:/usr/bin:/bin
+
+## L3a
+print: /Users/new/.local/share/cua-171/locked.sh m5-gate /usr/bin/node /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-gate/gate.mjs run L3a --pinned /Users/new/.local/share/cua-171/task121/home/.local/share/cua --out /Users/new/.local/share/cua-171/task128/cmp/out/L3a
+launch: spawn
+command: /usr/bin/node
+cwd: /Users/new/.local/share/cua-171/task128/cmp/tree/
+args:
+  /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-diff.mjs
+  --experiment
+  settle
+  --lanes
+  shipped
+  --family
+  chrome
+  --load-factor
+  2
+  --cua
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/engine/linux/cua-engine
+  --run
+  pinned-L3a
+  --pinned
+  --out
+  /Users/new/.local/share/cua-171/task128/cmp/out/L3a/L3a.pinned-release/run
+env:
+  CUA_HOME=/Users/new/.local/share/cua-171/task121/home/.local/share/cua
+  PATH=/Users/new/.local/share/cua-171/task59/bin:/usr/local/bin:/usr/bin:/bin
+
+## L3b
+print: /Users/new/.local/share/cua-171/locked.sh m5-gate /usr/bin/node /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-gate/gate.mjs run L3b --pinned /Users/new/.local/share/cua-171/task121/home/.local/share/cua --out /Users/new/.local/share/cua-171/task128/cmp/out/L3b
+launch: spawn
+command: /usr/bin/node
+cwd: /Users/new/.local/share/cua-171/task128/cmp/tree/
+args:
+  /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-diff.mjs
+  --experiment
+  settle
+  --lanes
+  shipped
+  --family
+  electron
+  --load-factor
+  2
+  --cua
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/engine/linux/cua-engine
+  --run
+  pinned-L3b
+  --pinned
+  --out
+  /Users/new/.local/share/cua-171/task128/cmp/out/L3b/L3b.pinned-release/run
+env:
+  CUA_HOME=/Users/new/.local/share/cua-171/task121/home/.local/share/cua
+  PATH=/Users/new/.local/share/cua-171/task59/bin:/usr/local/bin:/usr/bin:/bin
+
+## L3c
+print: /Users/new/.local/share/cua-171/locked.sh m5-gate /usr/bin/node /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-gate/gate.mjs run L3c --pinned /Users/new/.local/share/cua-171/task121/home/.local/share/cua --out /Users/new/.local/share/cua-171/task128/cmp/out/L3c
+launch: spawn
+command: /usr/bin/node
+cwd: /Users/new/.local/share/cua-171/task128/cmp/tree/
+args:
+  /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-diff.mjs
+  --experiment
+  settle
+  --lanes
+  shipped
+  --family
+  firefox,gedit
+  --load-factor
+  2
+  --cua
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/engine/linux/cua-engine
+  --run
+  pinned-L3c
+  --pinned
+  --out
+  /Users/new/.local/share/cua-171/task128/cmp/out/L3c/L3c.pinned-release/run
+env:
+  CUA_HOME=/Users/new/.local/share/cua-171/task121/home/.local/share/cua
+  PATH=/Users/new/.local/share/cua-171/task59/bin:/usr/local/bin:/usr/bin:/bin
+
+## L3d
+print: /Users/new/.local/share/cua-171/locked.sh m5-gate /usr/bin/node /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-gate/gate.mjs run L3d --pinned /Users/new/.local/share/cua-171/task121/home/.local/share/cua --out /Users/new/.local/share/cua-171/task128/cmp/out/L3d
+launch: spawn
+command: /usr/bin/node
+cwd: /Users/new/.local/share/cua-171/task128/cmp/tree/
+args:
+  /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-diff.mjs
+  --experiment
+  settle
+  --lanes
+  shipped
+  --family
+  kate,qtcreator,writer,gnome-terminal
+  --load-factor
+  2
+  --cua
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/engine/linux/cua-engine
+  --run
+  pinned-L3d
+  --pinned
+  --out
+  /Users/new/.local/share/cua-171/task128/cmp/out/L3d/L3d.pinned-release/run
+env:
+  CUA_HOME=/Users/new/.local/share/cua-171/task121/home/.local/share/cua
+  PATH=/Users/new/.local/share/cua-171/task59/bin:/usr/local/bin:/usr/bin:/bin
+
+## L3e
+print: /Users/new/.local/share/cua-171/locked.sh m5-gate /usr/bin/node /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-gate/gate.mjs run L3e --pinned /Users/new/.local/share/cua-171/task121/home/.local/share/cua --out /Users/new/.local/share/cua-171/task128/cmp/out/L3e
+launch: spawn
+command: /usr/bin/node
+cwd: /Users/new/.local/share/cua-171/task128/cmp/tree/
+args:
+  /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-diff.mjs
+  --experiment
+  settle
+  --lanes
+  shipped
+  --family
+  xterm,gtk3,qt5,qt6,gtk4
+  --load-factor
+  2
+  --cua
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/engine/linux/cua-engine
+  --run
+  pinned-L3e
+  --pinned
+  --out
+  /Users/new/.local/share/cua-171/task128/cmp/out/L3e/L3e.pinned-release/run
+env:
+  CUA_HOME=/Users/new/.local/share/cua-171/task121/home/.local/share/cua
+  PATH=/Users/new/.local/share/cua-171/task59/bin:/usr/local/bin:/usr/bin:/bin
+
+## L4a
+print: /Users/new/.local/share/cua-171/locked.sh m5-gate /usr/bin/node /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-gate/gate.mjs run L4a --pinned /Users/new/.local/share/cua-171/task121/home/.local/share/cua --out /Users/new/.local/share/cua-171/task128/cmp/out/L4a
+launch: private display
+command: /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-diff.mjs
+cwd: /Users/new/.local/share/cua-171/task128/cmp/tree/
+args:
+  --experiment
+  drop-signals
+  --family
+  electron
+  --plan
+  t17-fix3
+  --load-factor
+  2
+  --cua
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/engine/linux/cua-engine
+  --run
+  pinned-L4a
+  --pinned
+  --out
+  /Users/new/.local/share/cua-171/task128/cmp/out/L4a/L4a.pinned-release/run
+env:
+  CUA_HOME=/Users/new/.local/share/cua-171/task121/home/.local/share/cua
+  PATH=/Users/new/.local/share/cua-171/task59/bin:/usr/local/bin:/usr/bin:/bin
+plan t17-fix3 on arm64:
+  cua plain x100 freeze null
+  cua left x30 freeze null
+  cua inzone-out x30 freeze null
+  cua:desktop root x30 freeze null
+  cua:desktop xterm x30 freeze null
+  cua:desktop other x30 freeze null
+  cua:desktop slow x30 freeze null
+  cua:handle plain x100 freeze null
+  cua:handle left x30 freeze null
+  cua:handle inzone-out x30 freeze null
+  cua:handle root x30 freeze null
+  cua:handle xterm x30 freeze null
+  cua:handle other x30 freeze null
+  cua:handle slow x30 freeze null
+
+## L4b
+print: /Users/new/.local/share/cua-171/locked.sh m5-gate /usr/bin/node /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-gate/gate.mjs run L4b --pinned /Users/new/.local/share/cua-171/task121/home/.local/share/cua --out /Users/new/.local/share/cua-171/task128/cmp/out/L4b
+launch: private display
+command: /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-diff.mjs
+cwd: /Users/new/.local/share/cua-171/task128/cmp/tree/
+args:
+  --experiment
+  drop-signals
+  --family
+  chrome
+  --plan
+  t14
+  --load-factor
+  2
+  --cua
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/engine/linux/cua-engine
+  --run
+  pinned-L4b
+  --pinned
+  --out
+  /Users/new/.local/share/cua-171/task128/cmp/out/L4b/L4b.pinned-release/run
+env:
+  CUA_HOME=/Users/new/.local/share/cua-171/task121/home/.local/share/cua
+  PATH=/Users/new/.local/share/cua-171/task59/bin:/usr/local/bin:/usr/bin:/bin
+plan t14 on arm64:
+  cua:accept plain-long x300 freeze null
+  cua:accept left x30 freeze null
+  cua:accept inzone-out x30 freeze null
+
+## L4c
+print: /Users/new/.local/share/cua-171/locked.sh m5-gate /usr/bin/node /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-gate/gate.mjs run L4c --pinned /Users/new/.local/share/cua-171/task121/home/.local/share/cua --out /Users/new/.local/share/cua-171/task128/cmp/out/L4c
+launch: private display
+command: /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-diff.mjs
+cwd: /Users/new/.local/share/cua-171/task128/cmp/tree/
+args:
+  --experiment
+  drop-signals
+  --family
+  chrome
+  --plan
+  t14-late
+  --load-factor
+  2
+  --cua
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/engine/linux/cua-engine
+  --run
+  pinned-L4c
+  --pinned
+  --out
+  /Users/new/.local/share/cua-171/task128/cmp/out/L4c/L4c.pinned-release/run
+env:
+  CUA_HOME=/Users/new/.local/share/cua-171/task121/home/.local/share/cua
+  PATH=/Users/new/.local/share/cua-171/task59/bin:/usr/local/bin:/usr/bin:/bin
+plan t14-late on arm64:
+  cua freeze-600 x10 freeze {"from":60,"to":600,"afterPress":55}
+  cua freeze-646 x5 freeze {"from":60,"to":646,"afterPress":55}
+  cua freeze-648 x5 freeze {"from":60,"to":648,"afterPress":55}
+  cua freeze-650 x5 freeze {"from":60,"to":650,"afterPress":55}
+  cua freeze-652 x5 freeze {"from":60,"to":652,"afterPress":55}
+  cua freeze-700 x10 freeze {"from":60,"to":700,"afterPress":55}
+
+## L4d
+print: /Users/new/.local/share/cua-171/locked.sh m5-gate /usr/bin/node /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-gate/gate.mjs run L4d --pinned /Users/new/.local/share/cua-171/task121/home/.local/share/cua --out /Users/new/.local/share/cua-171/task128/cmp/out/L4d
+launch: private display
+command: /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-diff.mjs
+cwd: /Users/new/.local/share/cua-171/task128/cmp/tree/
+args:
+  --experiment
+  drop-signals
+  --family
+  chrome,electron
+  --plan
+  t14-stale
+  --load-factor
+  2
+  --cua
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/engine/linux/cua-engine
+  --run
+  pinned-L4d
+  --pinned
+  --out
+  /Users/new/.local/share/cua-171/task128/cmp/out/L4d/L4d.pinned-release/run
+env:
+  CUA_HOME=/Users/new/.local/share/cua-171/task121/home/.local/share/cua
+  PATH=/Users/new/.local/share/cua-171/task59/bin:/usr/local/bin:/usr/bin:/bin
+plan t14-stale on arm64, in 3 parts:
+  part 1: chrome t14-long
+    cua long-left x100 freeze null
+  part 2: chrome t14-floor
+    cua plain-long x300 freeze null
+    cua left x30 freeze null
+    cua inzone-out x30 freeze null
+  part 3: electron t17-long
+    cua long-left x30 freeze null
+
+## L5
+print: /Users/new/.local/share/cua-171/locked.sh m5-gate /usr/bin/node /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-gate/gate.mjs run L5 --pinned /Users/new/.local/share/cua-171/task121/home/.local/share/cua --out /Users/new/.local/share/cua-171/task128/cmp/out/L5
+launch: private display
+command: /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-diff.mjs
+cwd: /Users/new/.local/share/cua-171/task128/cmp/tree/
+args:
+  --experiment
+  engine-readiness
+  --vendor
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/runtimes/26.928.40906-linux-arm64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64
+  --family
+  gnome-text-editor
+  --load-factor
+  2
+  --cua
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/engine/linux/cua-engine
+  --run
+  pinned-L5
+  --pinned
+  --out
+  /Users/new/.local/share/cua-171/task128/cmp/out/L5/L5.pinned-release/run
+env:
+  CUA_HOME=/Users/new/.local/share/cua-171/task121/home/.local/share/cua
+  PATH=/Users/new/.local/share/cua-171/task59/bin:/usr/local/bin:/usr/bin:/bin
+
+## F3a
+print: /Users/new/.local/share/cua-171/locked.sh m5-gate /usr/bin/node /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-gate/gate.mjs run F3a --pinned /Users/new/.local/share/cua-171/task121/home/.local/share/cua --out /Users/new/.local/share/cua-171/task128/cmp/out/F3a
+launch: spawn
+command: /usr/bin/node
+cwd: /Users/new/.local/share/cua-171/task128/cmp/tree/
+args:
+  /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-diff.mjs
+  --experiment
+  focus-timer
+  --scenarios
+  burst,aba,paste
+  --lanes
+  shipped
+  --load-factor
+  2
+  --cua
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/engine/linux/cua-engine
+  --run
+  pinned-F3a
+  --pinned
+  --out
+  /Users/new/.local/share/cua-171/task128/cmp/out/F3a/F3a.pinned-release/run
+env:
+  CUA_HOME=/Users/new/.local/share/cua-171/task121/home/.local/share/cua
+  PATH=/Users/new/.local/share/cua-171/task59/bin:/usr/local/bin:/usr/bin:/bin
+
+## F3b
+print: /Users/new/.local/share/cua-171/locked.sh m5-gate /usr/bin/node /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-gate/gate.mjs run F3b --pinned /Users/new/.local/share/cua-171/task121/home/.local/share/cua --out /Users/new/.local/share/cua-171/task128/cmp/out/F3b
+launch: spawn
+command: /usr/bin/node
+cwd: /Users/new/.local/share/cua-171/task128/cmp/tree/
+args:
+  /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-diff.mjs
+  --experiment
+  focus-timer
+  --scenarios
+  click-paste,click-field
+  --lanes
+  shipped
+  --load-factor
+  2
+  --cua
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/engine/linux/cua-engine
+  --run
+  pinned-F3b
+  --pinned
+  --out
+  /Users/new/.local/share/cua-171/task128/cmp/out/F3b/F3b.pinned-release/run
+env:
+  CUA_HOME=/Users/new/.local/share/cua-171/task121/home/.local/share/cua
+  PATH=/Users/new/.local/share/cua-171/task59/bin:/usr/local/bin:/usr/bin:/bin
+
+## F4
+print: /Users/new/.local/share/cua-171/locked.sh m5-gate /usr/bin/node /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-gate/gate.mjs run F4 --pinned /Users/new/.local/share/cua-171/task121/home/.local/share/cua --out /Users/new/.local/share/cua-171/task128/cmp/out/F4
+launch: spawn
+command: /usr/bin/node
+cwd: /Users/new/.local/share/cua-171/task128/cmp/tree/
+args:
+  /Users/new/.local/share/cua-171/task128/cmp/tree/scripts/linux-engine-diff.mjs
+  --experiment
+  focus-timer
+  --stops-only
+  --family
+  chrome,electron
+  --load-factor
+  2
+  --cua
+  /Users/new/.local/share/cua-171/task121/home/.local/share/cua/engine/linux/cua-engine
+  --run
+  pinned-F4
+  --pinned
+  --out
+  /Users/new/.local/share/cua-171/task128/cmp/out/F4/F4.pinned-release/run
+env:
+  CUA_HOME=/Users/new/.local/share/cua-171/task121/home/.local/share/cua
+  PATH=/Users/new/.local/share/cua-171/task59/bin:/usr/local/bin:/usr/bin:/bin

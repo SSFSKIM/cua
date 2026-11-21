@@ -156,6 +156,11 @@ export const STEPS = [
   experiment('L4a', 'private', 'load2', 25, signals('electron', 't17-fix3', LOAD2), "T17's Electron cells at twice the load"),
   experiment('L4b', 'private', 'load2', 25, signals('chrome', 't14', LOAD2), "the accept signal's false releases (the measurement lane, T14's 300 long drops and the controls)"),
   experiment('L4c', 'private', 'load2', 4, signals('chrome', 't14-late', LOAD2), "the same freeze bands at twice the load (ruling 931)"),
+  // ruling 962: the drops at a stale position (ruling 957, #459) at twice the load, on the shipped lane: t14-long and
+  // t14-floor in Chrome, each its own plan, and Electron's long path that leaves the zone (`t17-long`), sat in turn in
+  // one run (drop-signals-judge.mjs `PART_PLANS`), each part judged by its own plan's judge. 30 min: task 122's a953 sat
+  // the two Chrome plans in 23 on arm64 (t14-floor 16.5, t14-long 6.3), and Electron's 30 drags take about 3
+  experiment('L4d', 'private', 'load2', 30, signals('chrome,electron', 't14-stale', LOAD2), "the stale-position drops at twice the load (rulings 957 and 962): Chrome's long control and the floor's cells, and Electron's long path out of the zone, any false ok and any drop at a stale position a fail"),
   experiment('L5', 'private', 'load2', 4, ['--experiment', 'engine-readiness', '--vendor', '{vendor}', '--family', 'gnome-text-editor', ...LOAD2], "GTK 4's covered first captures judged by content (T9's shortened cap)"),
   experiment('F3a', 'own', 'load2', 30, [...FOCUS_KEYS, ...LOAD2], 'T7 revised at twice the load: burst, A-B-A, key then paste'),
   experiment('F3b', 'own', 'load2', 15, [...FOCUS_CLICKS, ...LOAD2], 'T7 revised at twice the load: click then paste, a click into another field then paste'),

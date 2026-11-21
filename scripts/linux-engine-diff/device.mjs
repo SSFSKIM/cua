@@ -55,7 +55,7 @@ import { appendFileSync, existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { pendingOf } from './drop-signals-judge.mjs';
+import { endAgainstZone, pendingOf } from './drop-signals-judge.mjs';
 import { AUDIT_PLAN, FOLLOW_UP_FIELDS, TIMED_QUOTAS, bindAudit, bindTimed, evidenceLabel, holdNoticed, isShortage, judgePremise, parsePageRead, repeatedSlots, slotProblems } from './premise.mjs';
 import { preorder } from './normalize.mjs';
 import { readGtk4Status } from './families.mjs';
@@ -215,6 +215,15 @@ async function pageHome({ scene, cua }) {
 
 const rose = (key) => (before, after) => typeof before?.[key] === 'number' && after?.[key] === before[key] + 1;
 
+/** pages/drag.html `#target`, the drag scene's drop zone, in page pixels (right and bottom exclusive). */
+export const DRAG_TARGET = { left: 560, top: 120, right: 760, bottom: 220 };
+/**
+ * The drop cases' path ends in page pixels (drag.mjs `pagePath`'s last point, for the kinds their requests drag), which
+ * the judge places against the target (the design session's ruling 957: a drop counts as landed only where the path
+ * ended; `endAgainstZone`, with drop-signals-judge.mjs's border margin, ruling 961).
+ */
+const DND_END = { dnd: [660, 170], 'dnd-short': [570, 185], 'dnd-inzone': [720, 250], 'dnd-long-left': [450, 260] };
+
 // ---------------------------------------------------------------------------------------------------------------
 // the conditions
 
@@ -370,11 +379,13 @@ const selectDrag = (ctx) => ['drag', { window: { id: ctx.scene.id }, path: ctx.s
  * A case: `device` its expectation, `scene` where it runs, `condition` the arrangement before each sample, `read` what
  * the window counts, `request`, and `effect` (from the counts before and after) for the cases that must take effect.
  */
-function device({ device: expect, condition = covered, park, read, request, effect, route, args, inFront = false, heldAtStart = false, settleMs = 300, alongside, pointerMoves = false, confirm = false }) {
+function device({ device: expect, condition = covered, park, read, request, effect, route, args, inFront = false, heldAtStart = false, settleMs = 300, alongside, pointerMoves = false, confirm = false, endsAt }) {
   const dedicated = expect === 'foreground';
   return {
     // a drop the engine confirms or reports: its notice read on the same engine after the drop's window (`confirm`)
     confirm,
+    // where its path ends, in page pixels, against the target (`DRAG_TARGET`): its drop counts as landed only there
+    ...(endsAt ? { endsAt } : {}),
     // the witness's in-front allowance (witness.mjs), for the request the engine records as made to a window in front
     inFront,
     // the drop's signature already held when the watched drag began (`obscuredInFront`), as the engine records it
@@ -877,20 +888,20 @@ export const DEVICE_OPS = {
   chrome_dnd_shared: device({ device: 'cancel', condition: visible, park: INSIDE, read: dropStatus, request: dndDrag, settleMs: DND_SETTLE_MS }),
   // the drops that land carry nothing pending: Chrome's activation request confirmed each (`confirm`, M4's T14), the
   // control of the after-release watch's reports
-  chrome_dnd_in_front_shared: device({ device: 'background', route: 'background', condition: alreadyInFront, park: INSIDE, read: dropStatus, request: dndDrag, effect: rose('drops'), inFront: true, settleMs: DND_SETTLE_MS, confirm: true }),
+  chrome_dnd_in_front_shared: device({ device: 'background', route: 'background', condition: alreadyInFront, park: INSIDE, read: dropStatus, request: dndDrag, effect: rose('drops'), inFront: true, settleMs: DND_SETTLE_MS, confirm: true, endsAt: DND_END['dnd'] }),
   chrome_dnd_late_shared: device({ device: 'late', condition: visible, park: INSIDE, read: dropStatus, request: dndLingerDrag, args: LATE, settleMs: DND_SETTLE_MS }),
-  chrome_dnd_covered_dedicated: device({ device: 'foreground', condition: covered, read: dropStatus, request: dndDrag, effect: rose('drops'), settleMs: DND_SETTLE_MS, confirm: true }),
+  chrome_dnd_covered_dedicated: device({ device: 'foreground', condition: covered, read: dropStatus, request: dndDrag, effect: rose('drops'), settleMs: DND_SETTLE_MS, confirm: true, endsAt: DND_END['dnd'] }),
   // a short drag and drop (40 px) where the drop goes ahead, in front and dedicated: released at Chrome's accept cursor,
   // or at the floor after the take (dnd.rs RELEASE_AFTER_TAKE), so it lands
-  chrome_dnd_short_in_front_shared: device({ device: 'background', route: 'background', condition: alreadyInFront, park: INSIDE, read: dropStatus, request: dndShortDrag, effect: rose('drops'), inFront: true, settleMs: DND_SETTLE_MS, confirm: true }),
+  chrome_dnd_short_in_front_shared: device({ device: 'background', route: 'background', condition: alreadyInFront, park: INSIDE, read: dropStatus, request: dndShortDrag, effect: rose('drops'), inFront: true, settleMs: DND_SETTLE_MS, confirm: true, endsAt: DND_END['dnd-short'] }),
   // the press-inside control at the floor (the design session, 2026-11-10): a press on a source inside the zone, its
   // first status already an accept, and a path out of it. Chrome must not drop on the stale accept; nothing landing,
   // the drag is never answered ok with nothing pending (task 69 saw one released early that Chrome confirmed)
-  chrome_dnd_inzone_out_in_front_shared: device({ device: 'leaves', route: 'background', condition: alreadyInFront, park: INSIDE, read: dropStatus, request: dndInzoneDrag, effect: rose('drops'), inFront: true, settleMs: DND_SETTLE_MS, confirm: true }),
+  chrome_dnd_inzone_out_in_front_shared: device({ device: 'leaves', route: 'background', condition: alreadyInFront, park: INSIDE, read: dropStatus, request: dndInzoneDrag, effect: rose('drops'), inFront: true, settleMs: DND_SETTLE_MS, confirm: true, endsAt: DND_END['dnd-inzone'] }),
   // and the long path that crosses the zone and ends outside it, its steps after the take outlasting the floor, so the
   // release follows its last step (the design session, 2026-11-10: measured clean, the control stays in the gate)
-  chrome_dnd_long_left_in_front_shared: device({ device: 'leaves', route: 'background', condition: alreadyInFront, park: INSIDE, read: dropStatus, request: dndLongLeftDrag, effect: rose('drops'), inFront: true, settleMs: DND_SETTLE_MS, confirm: true }),
-  chrome_dnd_short_covered_dedicated: device({ device: 'foreground', condition: covered, read: dropStatus, request: dndShortDrag, effect: rose('drops'), settleMs: DND_SETTLE_MS, confirm: true }),
+  chrome_dnd_long_left_in_front_shared: device({ device: 'leaves', route: 'background', condition: alreadyInFront, park: INSIDE, read: dropStatus, request: dndLongLeftDrag, effect: rose('drops'), inFront: true, settleMs: DND_SETTLE_MS, confirm: true, endsAt: DND_END['dnd-long-left'] }),
+  chrome_dnd_short_covered_dedicated: device({ device: 'foreground', condition: covered, read: dropStatus, request: dndShortDrag, effect: rose('drops'), settleMs: DND_SETTLE_MS, confirm: true, endsAt: DND_END['dnd-short'] }),
   // the same with the drop's signature already held (Chrome active, focused, on top) and a corner covered, so the drag
   // is watched: cancelled in time and said so; with the cancel forced late, every answer says the drop may have happened
   chrome_dnd_obscured_in_front_shared: device({ device: 'cancel', condition: obscuredInFront, park: INSIDE, read: dropStatus, request: dndDrag, heldAtStart: true, settleMs: DND_SETTLE_MS }),
@@ -903,7 +914,7 @@ export const DEVICE_OPS = {
   // the foreground route, which puts the pointer there, and the drop lands. And the real pointer nudged all through a
   // text selection: the press window of a drag that never takes a drag and drop runs to its release
   chrome_dnd_short_pointer_outside_shared: device({ device: 'stray', condition: pointerOutside, read: dropStatus, request: dndShortDrag, inFront: true, settleMs: DND_SETTLE_MS }),
-  chrome_dnd_short_pointer_outside_dedicated: device({ device: 'foreground', condition: pointerOutside, read: dropStatus, request: dndShortDrag, effect: rose('drops'), settleMs: DND_SETTLE_MS, confirm: true }),
+  chrome_dnd_short_pointer_outside_dedicated: device({ device: 'foreground', condition: pointerOutside, read: dropStatus, request: dndShortDrag, effect: rose('drops'), settleMs: DND_SETTLE_MS, confirm: true, endsAt: DND_END['dnd-short'] }),
   chrome_select_nudged_shared: device({ device: 'stray', condition: alreadyInFront, park: INSIDE, read: dropStatus, request: selectDrag, inFront: true, alongside: nudges, pointerMoves: true, settleMs: DND_SETTLE_MS }),
   // Qt (`device-qt`, kate on a long document): its scroll bar's value
   qt_scroll_shared: device({ device: 'refusal', read: scrollBar, request: (ctx) => ['scroll', { window: { id: ctx.scene.id }, direction: 'down', pixels: 300, x: 450, y: 350 }] }),
@@ -1202,11 +1213,19 @@ export function judgeDevice(op, samples, audit, premise = undefined, { canary: c
     // a notice holds only when the acting request after it was refused with it (drop-signals-judge.mjs `pendingOf`)
     const held = (r) => pendingOf({ notice: r.state_notice, next: r.state_notice == null ? null : { ok: r.next_ok, error: r.next_error } });
     const pending = (r) => r.state_notice != null && held(r).kept;
-    const landed = rows.filter((r) => r.effect === true);
+    // a drop counts as landed only where its path ended (ruling 957): on the target, as planned; one from a path that
+    // ended outside the target is a drop at a stale position, a wrong outcome, and one ending within the border margin is
+    // ambiguous, neither (ruling 961)
+    const at = DEVICE_OPS[op].endsAt ? endAgainstZone(DEVICE_OPS[op].endsAt, DRAG_TARGET) : 'inside';
+    const dropped = rows.filter((r) => r.effect === true);
+    const landed = at === 'inside' ? dropped : [];
+    const stale = at === 'outside' ? dropped : [];
+    const ambiguous = at === 'ambiguous' ? dropped : [];
     // an honest hold notice is no false ok (ruling 898.2); one of another wording, or with no page to vouch for it, is
     const falseOk = rows.filter((r) => r.ok && r.effect !== true && !pending(r) && !honestNotice(r));
-    drops = { samples: rows.length, landed: landed.length, ok: rows.filter((r) => r.ok).length, false_ok: falseOk.length, unconfirmed_landed: landed.filter(pending).length };
+    drops = { samples: rows.length, landed: landed.length, ok: rows.filter((r) => r.ok).length, false_ok: falseOk.length, unconfirmed_landed: landed.filter(pending).length, stale_position: stale.length, ambiguous: ambiguous.length };
     if (falseOk.length) reasons.push(`a drag answered ok with no drop and nothing pending on ${falseOk.length} of ${rows.length} samples (${falseOk.slice(0, 3).map((r) => `${r.block}/${r.i}`).join(', ')})`);
+    if (stale.length) reasons.push(`a drop at a stale position (the path ended outside the target, the drop landed on it) on ${stale.length} of ${rows.length} samples (${stale.slice(0, 3).map((r) => `${r.block}/${r.i}`).join(', ')})`);
     const unrefused = rows.filter((r) => r.state_notice != null && !held(r).kept);
     if (unrefused.length) reasons.push(`a notice the next acting request was not refused with on ${unrefused.length} of ${rows.length} samples (${unrefused.slice(0, 3).map((r) => `${r.block}/${r.i}`).join(', ')})`);
     // and the other way: the next acting request refused for something pending that the read did not announce

@@ -106,3 +106,18 @@ test("launch-plan.mjs prints L4d's plan part by part", async () => {
     '    cua long-left x30 freeze null',
   ]);
 });
+
+test("a plan of parts opens the run's front window once, before its first sitting, and sits every part (the x64 L4d development run: the second sitting's front xterm was a second window of the same name)", async () => {
+  const { runDropSignals } = await import('../../scripts/linux-engine-diff/drop-signals.mjs');
+  const fronts = [];
+  const desktop = { openFront: async (occlusion) => fronts.push(occlusion) };
+  const sat = [];
+  const sit = async (args, ctx, one) => {
+    sat.push(`${one.family} ${one.plan} ${one.part}`);
+    return [`part ${one.part}`];
+  };
+  const result = await runDropSignals(l4dArgs(), { desktop, emit: () => {} }, { sit });
+  assert.deepEqual(fronts, ['visible']);
+  assert.deepEqual(sat, ['chrome t14-long 0', 'chrome t14-floor 1', 'electron t17-long 2']);
+  assert.deepEqual(result, { md: ['part 0', 'part 1', 'part 2'], complete: true, failed: [] });
+});

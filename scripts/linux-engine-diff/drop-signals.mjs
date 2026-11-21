@@ -855,12 +855,17 @@ async function oneDrag(ctx, { lane, spec, cell, i, engine, before, cold }) {
   return { row, after };
 }
 
-/** The run: each of its sittings in turn (`runSittings`; one, but for a plan of parts), their tables one after another. */
-export async function runDropSignals(args, { desktop, emit }) {
+/**
+ * The run: the front window, opened once (each sitting arranges it, and the run's end closes it), then each of its
+ * sittings in turn (`runSittings`; one, but for a plan of parts), their tables one after another. `sit` is the sitting,
+ * for the tests.
+ */
+export async function runDropSignals(args, { desktop, emit }, { sit = sitDropSignals } = {}) {
   const sittings = runSittings(args);
   for (const { family } of sittings) if (!['chrome', 'electron'].includes(family)) throw new Error('the drop-signals experiment runs in chrome or electron');
+  await desktop.openFront('visible');
   const md = [];
-  for (const one of sittings) md.push(...(await sitDropSignals(args, { desktop, emit }, one)));
+  for (const one of sittings) md.push(...(await sit(args, { desktop, emit }, one)));
   return { md, complete: true, failed: [] };
 }
 
@@ -869,7 +874,6 @@ async function sitDropSignals(args, { desktop, emit: emitRow }, { family, plan: 
   const emit = part === undefined ? emitRow : (row) => emitRow({ ...row, part });
   const load = args.load ? `load${args.loadFactor ?? 1}` : args.ballast === 'gate' ? 'gate-windows' : 'idle';
   const oracle = new Oracle();
-  await desktop.openFront('visible');
   const ballast = [];
   const rows = [];
   let watch = null;

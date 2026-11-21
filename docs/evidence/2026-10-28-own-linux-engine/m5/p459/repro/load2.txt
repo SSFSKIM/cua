@@ -1,0 +1,2 @@
+stale-position drops: 0 of 30 (load 2 per core)
+rm: cannot remove '/tmp/tmp.9SgbRQpkvr/profile/Default': Directory not empty

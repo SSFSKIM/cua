@@ -1,0 +1,12 @@
+   Compiling cua-linux-engine v0.4.2 (/Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m5-p459/native/linux-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.55s
+     Running tests/live_device.rs (/Users/new/.local/share/cua-171/task126/target/debug/deps/live_device-7225354f27d4670d)
+
+running 3 tests
+test a_chromium_handle_s_end_gets_the_release_sync_step ... ok
+test the_keepalive_form_gives_a_drop_whose_path_outlasts_its_floor_a_motion_at_its_end_and_a_keepalive_before_release ... ok
+test the_ping_form_releases_on_its_second_answer_after_a_motion_at_the_path_s_end_or_at_its_bound_unconfirmed ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 74 filtered out; finished in 19.54s
+
+focused exit 0

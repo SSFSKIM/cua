@@ -1,0 +1,3 @@
+    Checking cua-linux-engine v0.4.2 (/Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m5-p459/native/linux-engine)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 4.63s
+clippy exit 0

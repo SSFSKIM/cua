@@ -409,3 +409,52 @@ The `unobserved` sentence (menubar, submenu):
 
 `menuItemClick.ms` p50/p95: confirmed 421/471 (font) and 406/464 (language); unconfirmed 1019–1040/1064–1073.
 `stalePoint.ms` p50 0.5–1.0, p95 0.8–4.6; `hitMs` p50 0.3–0.7, p95 0.6–1.5 on coordinate clicks.
+
+### The confirm on cf9162490b14ecfeb4a50ba4241afbcc526b4e45 (the PR head), fix-only, against the same main data
+
+https://github.com/SSFSKIM/cua/actions/runs/44869514420 (kit e78f90e5, 300 rows, no setup failures). This run landed on
+another runner image than main's: Google Chrome 156.0.8078.80, image 20261102.0473.1 (main: Chrome 157,
+image 20261117.0516.1).
+
+| cell (inside), all three modes | main fdd285dd | cf916249 |
+|---|---|---|
+| select (Three) | ok, not taken, menu closed 15/15 | `clickUnconfirmed`, route 1 AXPick, `value: "unread"`; **taken** 15/15 |
+| select-same (One) | ok, menu closed 15/15 | `clickUnconfirmed` [`unread`], menu closed, nothing changed 15/15 |
+| font (TextEdit pop-up) | ok, not taken 15/15 | ok, `effect: "confirmed"`, `value: "taken"`; **taken** 15/15 |
+| language (Script Editor pop-up) | ok, not taken 15/15 | ok, confirmed; **taken** 15/15 |
+| font-same, language-same | ok, menu closed 30/30 | `clickUnconfirmed` [`unchanged`], selection unchanged 30/30 |
+| tectx (Copy) | ok, not taken 15/15 | `clickUnconfirmed` [`unread`]; **taken** 15/15 |
+| chromectx (Reload) | refused `screenChangedSinceScreenshot` (`otherWebArea`) 15/15 | the same 15/15 |
+| menubar, submenu | ok, not taken (kept/noHit) 30/30 | refused `appWindowOverPoint` `refused: unobserved`, nothing sent, menu up 30/30 |
+| outside, every cell (150 rows a head) | closes the menu, nothing under it reached | the same 150/150 |
+
+Sentences on cf916249:
+- `unobserved` (menubar, submenu): `TextEdit has a menu open at this point, and the accessibility record of the screenshot holds no item of it at this point (a menu-bar menu, a submenu, or a menu opened since the screenshot), so the click cannot be checked against what the screenshot showed. Nothing was sent. A click outside the menu closes it. If a fresh getAXState() lists the item (a menu-bar menu's items are listed once its title in the menu bar has been clicked by its element), click the item by its element.`
+- `clickUnconfirmed` (select, select-same, tectx, font-same, language-same; the app's name varies): `The click could not be confirmed: it was carried by the menu item's AXPick action in Google Chrome, since a pointer click does not take a menu's item, and the menu closed, but nothing cua can read shows the item taken. Observe the app with get_app_state before any retry, and never retry blindly.`
+- chromectx keeps main's `screenChangedSinceScreenshot` sentence.
+
+Timing, coordinate clicks, 15 per cell (ms, p50/p95):
+
+| cell | main stalePoint.ms | cf916249 stalePoint.ms | main hitMs | cf916249 hitMs | cf916249 menuItemClick.ms |
+|---|---|---|---|---|---|
+| select | 1.33/3.33 | 1.17/13.95 | 0.60/3.87 | 0.48/3.80 | 1024.9/1060.5 (unconfirmed) |
+| select-same | 0.86/1.25 | 1.21/1.80 | 0.44/1.18 | 0.74/1.62 | 1032.0/1052.9 (unconfirmed) |
+| font | 0.72/1.03 | 1.16/3.55 | 0.47/1.54 | 0.69/1.30 | 430.5/485.5 (confirmed) |
+| language | 0.83/2.07 | 0.77/2.09 | 0.54/1.44 | 0.53/1.89 | 412.6/487.7 (confirmed) |
+| font-same | 0.93/1.82 | 0.96/2.51 | 0.53/1.87 | 0.60/1.73 | 1024.7/1050.9 (unconfirmed) |
+| language-same | 1.10/1.99 | 0.85/1.92 | 0.86/1.36 | 0.57/1.30 | 1031.3/1068.7 (unconfirmed) |
+| tectx | 0.81/1.87 | 0.90/6.41 | 0.59/1.31 | 0.65/1.71 | 1017.3/1068.0 (unconfirmed) |
+| chromectx | 1.80/4.54 | 1.86/3.51 | 1.32/3.66 | 1.38/2.98 | - (main's refusal) |
+| menubar | 0.66/1.69 | 0.74/1.79 | 0.59/1.76 | 0.61/1.30 | - (refused) |
+| submenu | 0.56/2.42 | 0.71/1.49 | 0.73/1.71 | 0.99/1.73 | - (refused) |
+
+Reading:
+- **No cell answers a false ok any more.** Each one either takes the item or answers honestly:
+  - confirmed and taken: the AppKit pop-ups, 30/30;
+  - unconfirmed and taken: Chrome's `<select>` and TextEdit's context menu, 30/30;
+  - unconfirmed with nothing changed: the already-selected items, 45/45;
+  - refused with nothing sent: the menu-bar menu and submenu, 30/30, and Chrome's context menu, 15/15.
+- **Chrome's `<select>` still does not confirm** `Three`: the value reads `unread` 15/15.
+- **The unconfirmed answers cost about 1 s each.** `menuItemClick.ms` p50 is about 1020–1030 ms against about 410–430 ms
+  when confirmed. `stalePoint.ms` and `hitMs` stay where main's are, apart from single p95 outliers (select 13.95 ms,
+  tectx 6.41 ms).

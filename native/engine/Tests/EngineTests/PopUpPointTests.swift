@@ -269,7 +269,7 @@ final class PopUpPointTests: XCTestCase {
     var raised: [CGWindowID] = []
     var holds = 0, releases = 0
     var clock = 0.0
-    let record = popUpRestoreOrder(persons, appWindow: observed, system: PopUpRestoreSystem<CGWindowID>(element: { $0.number }, raise: { number in
+    let record = popUpRestoreOrder(persons, appWindow: observed, system: PopUpRestoreSystem<CGWindowID>(resolve: Self.allResolved, raise: { number in
       raised.append(number)
       // AXRaise brings the window to the front of the ordinary layer, below the menu and the cursor.
       if let window = current.first(where: { $0.number == number }) {
@@ -296,7 +296,7 @@ final class PopUpPointTests: XCTestCase {
     var released = false
     var clock = 0.0
     var raises = 0
-    let record = popUpRestoreOrder(persons, appWindow: observed, system: PopUpRestoreSystem<CGWindowID>(element: { $0.number },
+    let record = popUpRestoreOrder(persons, appWindow: observed, system: PopUpRestoreSystem<CGWindowID>(resolve: Self.allResolved,
                                    raise: { _ in raises += 1 }, hold: { { released = true } }),
                                    windows: { [self.fontMenu, self.appWindow, self.person] }, now: { clock }, sleep: { clock += $0 })
     XCTAssertFalse(record.complete)
@@ -722,7 +722,7 @@ final class PopUpPointTests: XCTestCase {
     var raised = 0
     var acted = false
     var restoreClock = 0.0
-    let record = popUpRestoreOrder([person, f2], appWindow: observed, system: PopUpRestoreSystem<CGWindowID>(element: { $0.number }, raise: { _ in
+    let record = popUpRestoreOrder([person, f2], appWindow: observed, system: PopUpRestoreSystem<CGWindowID>(resolve: Self.allResolved, raise: { _ in
       raised += 1
       acted = true  // the person clicks the app right after the raise; the app's window stays over theirs
     }, hold: { {} }), windows: { current }, now: { restoreClock }, sleep: { restoreClock += $0 }, intervened: { acted })
@@ -733,7 +733,7 @@ final class PopUpPointTests: XCTestCase {
     var back = false
     var actedAfter = false
     var sampleClock = 0.0
-    let after = popUpRestoreOrder([person], appWindow: observed, system: PopUpRestoreSystem<CGWindowID>(element: { $0.number },
+    let after = popUpRestoreOrder([person], appWindow: observed, system: PopUpRestoreSystem<CGWindowID>(resolve: Self.allResolved,
                                   raise: { _ in back = true }, hold: { {} }),
                                   windows: {
       if back { actedAfter = true }
@@ -778,7 +778,7 @@ final class PopUpPointTests: XCTestCase {
     var raisedAt: [Double] = []
     var scheduled: [Double] = []
     var released = 0
-    let slow = popUpRestoreOrder([f1, f2, f3], appWindow: observed, system: PopUpRestoreSystem<CGWindowID>(element: { $0.number }, raise: { _ in
+    let slow = popUpRestoreOrder([f1, f2, f3], appWindow: observed, system: PopUpRestoreSystem<CGWindowID>(resolve: Self.allResolved, raise: { _ in
       raisedAt.append(clock)
       clock += 300
     }, hold: { { released += 1 } }, scheduleRelease: { ms, _ in scheduled.append(ms) }),
@@ -793,40 +793,82 @@ final class PopUpPointTests: XCTestCase {
     clock = 0
     var holds = 0
     var raises = 0
-    let resolving = popUpRestoreOrder([f1, f2], appWindow: observed, system: PopUpRestoreSystem<CGWindowID>(element: { window in
-      clock += 300
-      return window.number
+    let resolving = popUpRestoreOrder([f1, f2], appWindow: observed, system: PopUpRestoreSystem<CGWindowID>(resolve: { persons, left in
+      clock += 600
+      return Self.allResolved(persons, left)
     }, raise: { _ in raises += 1 }, hold: { holds += 1; return {} }), windows: { [self.fontMenu, self.appWindow, f1, f2] },
                                        now: { clock }, sleep: { clock += $0 })
     XCTAssertEqual([holds, raises], [0, 0])
     XCTAssertEqual(resolving.stopped, .bound)
   }
 
-  /// Item 3: a window is raised only when it is told for certain: by its own number, or by frame when exactly one
-  /// unnumbered candidate and exactly one listed window of the process have its bounds. Two same-sized windows are
-  /// ambiguous: that one is not raised, the other is, and the restore is incomplete.
-  func testAnAmbiguousWindowIsNeverRaised() {
+  /// Every recorded window resolved by its own number (the fakes' resolver).
+  static func allResolved(_ persons: [ListedWindow], _ left: () -> Double) -> [CGWindowID: CGWindowID] {
+    Dictionary(uniqueKeysWithValues: persons.map { ($0.number, $0.number) })
+  }
+
+  /// A fake AX window: its SPI number (nil: the SPI answers none) and its size, which no lookup reads.
+  private struct FakeAXWindow {
+    let name: String
+    let number: CGWindowID?
+  }
+
+  /// Re-review items 1 and 2: a window is resolved only by its own number. No fallback by size: an unnumbered window,
+  /// however alone its size, is unresolved. One AXWindows scan per process, stopping at the process's last recorded
+  /// window, and no read once the cutoff is spent.
+  func testAWindowIsResolvedOnlyByItsOwnNumberOneScanPerProcess() {
     let bounds = CGRect(x: 100, y: 100, width: 400, height: 300)
-    let recordedWindow = ListedWindow(number: 40, owner: finder, layer: 0, bounds: bounds)
-    let twin = ListedWindow(number: 42, owner: finder, layer: 0, bounds: bounds)
-    XCTAssertEqual(uniqueWindow(recordedWindow, among: [("a", 42, bounds), ("b", 40, bounds)], listed: [recordedWindow, twin]), "b",
-                   "the number decides")
-    XCTAssertNil(uniqueWindow(recordedWindow, among: [("a", nil, bounds), ("b", nil, bounds)], listed: [recordedWindow, twin]),
-                 "two unnumbered same-sized windows: ambiguous")
-    XCTAssertNil(uniqueWindow(recordedWindow, among: [("a", nil, bounds)], listed: [recordedWindow, twin]),
-                 "one candidate, but two listed windows of the process with those bounds")
-    XCTAssertEqual(uniqueWindow(recordedWindow, among: [("a", nil, bounds), ("c", 99, bounds)], listed: [recordedWindow]), "a",
-                   "one unnumbered candidate, one listed window")
+    let f1 = ListedWindow(number: 40, owner: finder, layer: 0, bounds: bounds)
+    let f2 = ListedWindow(number: 41, owner: finder, layer: 0, bounds: CGRect(x: 600, y: 400, width: 200, height: 200))
+    let calc = ListedWindow(number: 70, owner: 600, layer: 0, bounds: bounds)
+    var scans: [pid_t] = []
+    var numberReads = 0
+    let windowsOf: (pid_t) -> [FakeAXWindow]? = { pid in
+      scans.append(pid)
+      return pid == self.finder
+        ? [FakeAXWindow(name: "f2", number: 41), FakeAXWindow(name: "f1", number: 40), FakeAXWindow(name: "other", number: 49)]
+        : [FakeAXWindow(name: "calc", number: nil)]
+    }
+    let found = resolveByNumber([f1, f2, calc], left: { 100 }, windowsOf: windowsOf, number: { numberReads += 1; return $0.number })
+    XCTAssertEqual(found.mapValues(\.name), [40: "f1", 41: "f2"], "the unnumbered same-sized window is never guessed")
+    XCTAssertEqual(scans, [finder, 600], "one scan per process")
+    XCTAssertEqual(numberReads, 3, "Finder's scan stops at its last recorded window; Calculator's one window read")
+    scans = []
+    numberReads = 0
+    XCTAssertTrue(resolveByNumber([f1, f2], left: { 0 }, windowsOf: windowsOf, number: { numberReads += 1; return $0.number }).isEmpty)
+    XCTAssertEqual([scans.count, numberReads], [0, 0], "no read past the cutoff")
+  }
+
+  /// Re-review item 3: a window that could not be resolved is never raised; once the resolved ones are back in order and
+  /// only the unresolved one is still behind the app's window, the restore ends `unresolved` after its stable samples,
+  /// with one round of raises, not re-raising until the cutoff.
+  func testAnUnresolvedWindowStaysBehindAndEndsTheRestoreAsUnresolved() {
+    let unresolvedWindow = ListedWindow(number: 40, owner: finder, layer: 0, bounds: CGRect(x: 100, y: 100, width: 400, height: 300))
     let other = ListedWindow(number: 41, owner: finder, layer: 0, bounds: CGRect(x: 600, y: 400, width: 200, height: 200))
     var raised: [CGWindowID] = []
     var clock = 0.0
-    let record = popUpRestoreOrder([recordedWindow, other], appWindow: observed, system: PopUpRestoreSystem<CGWindowID>(
-      element: { $0.number == 40 ? nil : $0.number }, raise: { raised.append($0) }, hold: { {} }),
-      windows: { raised.isEmpty ? [self.appWindow, recordedWindow, other] : [recordedWindow, other, self.appWindow] },
+    let record = popUpRestoreOrder([unresolvedWindow, other], appWindow: observed, system: PopUpRestoreSystem<CGWindowID>(
+      resolve: { persons, left in Self.allResolved(persons.filter { $0.number != 40 }, left) }, raise: { raised.append($0) }, hold: { {} }),
+      // The unresolved window stays behind the app's throughout.
+      windows: { raised.isEmpty ? [self.appWindow, other, unresolvedWindow] : [other, self.appWindow, unresolvedWindow] },
       now: { clock }, sleep: { clock += $0 })
-    XCTAssertEqual(raised, [41], "the ambiguous window never raised")
+    XCTAssertEqual(raised, [41], "the unresolved window never raised, the other once")
+    XCTAssertEqual(record.raises, 1)
     XCTAssertFalse(record.complete)
     XCTAssertEqual(record.stopped, .unresolved)
+    XCTAssertLessThan(record.ms, popUpRestoreBoundMs, "ended on the resolved order, not at the cutoff")
+  }
+
+  /// Re-review item 4: the 60 ms minimum of the sampling counts from after the resolution, the 500 ms cutoff from the
+  /// restore's start.
+  func testTheSamplingMinimumCountsFromAfterTheResolution() {
+    var clock = 0.0
+    let record = popUpRestoreOrder([person], appWindow: observed, system: PopUpRestoreSystem<CGWindowID>(resolve: { persons, left in
+      clock += 100  // a slow app's AXWindows
+      return Self.allResolved(persons, left)
+    }, raise: { _ in }, hold: { {} }), windows: { [self.person, self.appWindow] }, now: { clock }, sleep: { clock += $0 })
+    XCTAssertTrue(record.complete)
+    XCTAssertGreaterThanOrEqual(record.ms, 100 + deliveryGuardMinimumMs, "60 ms of sampling after a 100 ms resolution")
   }
 
   /// Item 4: a restore starts only when the app's window crossed above a recorded window; the person's windows swapped
@@ -882,7 +924,7 @@ final class PopUpPointTests: XCTestCase {
   /// Item 7: the bound reached before three stable samples is incomplete, even when the last sample read the order back.
   func testTheBoundBeforeThreeStableSamplesIsIncomplete() {
     var clock = 0.0
-    let record = popUpRestoreOrder([person], appWindow: observed, system: PopUpRestoreSystem<CGWindowID>(element: { $0.number },
+    let record = popUpRestoreOrder([person], appWindow: observed, system: PopUpRestoreSystem<CGWindowID>(resolve: Self.allResolved,
                                    raise: { _ in }, hold: { {} }),
                                    windows: { clock >= popUpRestoreBoundMs - 3 ? [self.person, self.appWindow] : [self.appWindow, self.person] },
                                    now: { clock }, sleep: { clock += $0 })

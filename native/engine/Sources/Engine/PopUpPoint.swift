@@ -311,11 +311,12 @@ struct PopUpPersonSignals {
 }
 
 /// What the restore reads and does outside its own state (the unit tests' seams; `.live` over the Accessibility API and
-/// route 3's screen-update hold): a person's window's element (nil when it cannot be told for certain), route 3's repair
-/// (`ActivationSystem.raise`, AXRaise), the hold, which answers its release, and the timer that releases it on its own
+/// route 3's screen-update hold): the person's windows' elements, resolved together within what is left of the cutoff
+/// (`resolve`, keyed by window number; a window it cannot prove is absent), route 3's repair (`ActivationSystem.raise`,
+/// AXRaise), the hold, which answers its release, and the timer that releases it on its own
 /// (`ActivationSystem.scheduleHoldRelease`).
 struct PopUpRestoreSystem<Window> {
-  var element: (ListedWindow) -> Window?
+  var resolve: (_ persons: [ListedWindow], _ left: () -> Double) -> [CGWindowID: Window]
   var raise: (Window) -> Void
   var hold: () -> () -> Void
   var scheduleRelease: (Double, @escaping @Sendable () -> Void) -> Void = { _, _ in }
@@ -324,32 +325,32 @@ struct PopUpRestoreSystem<Window> {
 extension PopUpRestoreSystem where Window == AXUIElement {
   static var live: PopUpRestoreSystem<AXUIElement> {
     let system = ActivationSystem()
-    return PopUpRestoreSystem(element: personWindowElement, raise: system.raise, hold: { system.holdScreenUpdates(ReenableStamp()) },
-                              scheduleRelease: system.scheduleHoldRelease)
+    return PopUpRestoreSystem(resolve: { persons, left in
+      resolveByNumber(persons, left: left, windowsOf: { attribute(prepare(AXUIElementCreateApplication($0)), kAXWindowsAttribute) as? [AXUIElement] },
+                      number: axWindowNumber)
+    }, raise: system.raise, hold: { system.holdScreenUpdates(ReenableStamp()) }, scheduleRelease: system.scheduleHoldRelease)
   }
 }
 
-/// A listed window's element (the review of 97344ee7..a094f620, item 3): among its process's AXWindows, the one whose
-/// own window number (the SPI's, `axWindowNumber`) is the listed one; where the SPI answers none, the one AXWindow whose
-/// frame is the listed bounds, and only when the list holds exactly one window of the process with those bounds. Nil
-/// otherwise: missing, or ambiguous (two same-sized windows), never a guess.
-func personWindowElement(_ window: ListedWindow) -> AXUIElement? {
-  let application = prepare(AXUIElementCreateApplication(window.owner))
-  guard let windows = attribute(application, kAXWindowsAttribute) as? [AXUIElement] else { return nil }
-  return uniqueWindow(window, among: windows.map { (element: $0, number: axWindowNumber($0), frame: frame(of: $0)) },
-                      listed: onScreenWindowListRead() ?? [])
-}
-
-/// `personWindowElement`'s choice over its reads (the unit tests' seam).
-func uniqueWindow<Window>(_ window: ListedWindow, among candidates: [(element: Window, number: CGWindowID?, frame: CGRect?)],
-                          listed: [ListedWindow]) -> Window? {
-  if let exact = candidates.first(where: { $0.number == window.number }) { return exact.element }
-  // A candidate the SPI numbered is another window; only unnumbered ones may match by frame.
-  func same(_ a: CGRect, _ b: CGRect) -> Bool { abs(a.minX - b.minX) <= 1 && abs(a.minY - b.minY) <= 1 && abs(a.width - b.width) <= 1 && abs(a.height - b.height) <= 1 }
-  let byFrame = candidates.filter { $0.number == nil && $0.frame.map { same($0, window.bounds) } == true }
-  let listedAlike = listed.filter { $0.owner == window.owner && $0.layer == 0 && same($0.bounds, window.bounds) }
-  guard byFrame.count == 1, listedAlike.count <= 1 else { return nil }
-  return byFrame[0].element
+/// The person's windows' elements by their own window numbers alone (the re-reviews of 97344ee7..a094f620, item 3, and
+/// of a094f620..1612abe2, items 1 and 2): one AXWindows scan per process, each window's number read by the SPI
+/// (`axWindowNumber`) and no frame, stopping once the process's recorded windows are all found, and no read once the
+/// cutoff (`left`) is spent. A window whose number no AXWindow proves is absent: never raised, never guessed by its size.
+func resolveByNumber<Window>(_ persons: [ListedWindow], left: () -> Double, windowsOf: (pid_t) -> [Window]?,
+                             number: (Window) -> CGWindowID?) -> [CGWindowID: Window] {
+  var found: [CGWindowID: Window] = [:]
+  var owners: [pid_t] = []
+  for person in persons where !owners.contains(person.owner) { owners.append(person.owner) }
+  for owner in owners {
+    var wanted = Set(persons.filter { $0.owner == owner }.map(\.number))
+    guard left() > 0 else { break }
+    guard let windows = windowsOf(owner) else { continue }
+    for window in windows {
+      guard !wanted.isEmpty, left() > 0 else { break }
+      if let id = number(window), wanted.remove(id) != nil { found[id] = window }
+    }
+  }
+  return found
 }
 
 /// Why a restore ended without the order back (the meta's `restored.stopped`): the person's input or another app brought
@@ -396,22 +397,24 @@ func popUpRestoreOrder<Window>(_ persons: [ListedWindow], appWindow: CGWindowID,
     record.complete = complete
     return record
   }
-  var elements: [Window] = []
-  var unresolved = false
-  for person in persons {
-    guard left() > 0 else { return ended(.bound) }
-    if let element = system.element(person) { elements.append(element) } else { unresolved = true }
-  }
+  let found = system.resolve(persons, left)
+  // Raised back to front; the order the restore can bring back is the resolved windows' (the re-review of
+  // a094f620..1612abe2, item 3): once they are back, an unresolved window still out of order ends it as `unresolved`.
+  let resolved = persons.filter { found[$0.number] != nil }
+  let elements = resolved.compactMap { found[$0.number] }
+  let unresolved = resolved.count < persons.count
   if intervened() { return ended(.personInput) }
   guard left() > 0 else { return ended(.bound) }
   let release = OnceRelease(system.hold())
   system.scheduleRelease(left()) { release() }
   defer { release() }
+  // The sampling's 60 ms minimum counts from here, after the resolution (item 4); the cutoff from the start.
+  let sampling = now()
   var stable = 0
   while true {
     if intervened() { return ended(.personInput) }
     guard left() > 0 else { return ended(.bound) }
-    let holds = windows().flatMap { personOrderHolds(persons, appWindow: appWindow, in: $0) }
+    let holds = windows().flatMap { personOrderHolds(resolved, appWindow: appWindow, in: $0) }
     if holds == true {
       stable += 1
     } else {
@@ -425,7 +428,7 @@ func popUpRestoreOrder<Window>(_ persons: [ListedWindow], appWindow: CGWindowID,
         record.raises += 1
       }
     }
-    if stable >= deliveryGuardStableSamples && now() - started >= deliveryGuardMinimumMs {
+    if stable >= deliveryGuardStableSamples && now() - sampling >= deliveryGuardMinimumMs {
       return unresolved ? ended(.unresolved) : ended(nil, complete: true)
     }
     guard left() > 0 else { return ended(.bound) }

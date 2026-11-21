@@ -571,6 +571,14 @@ error    {code: number (the vendor's codes where mapped; -10005 otherwise), mess
     the control identified before the action against the item's title, moved to it, already it or unread before, another,
     or nothing to read), polls?, ms? (from the action's return to the last read), refused? ("notRecorded" | "notHit" |
     "unobserved" | "relabelled" | "disabled" | "noAction")}; never a title
+  popUpClick: #458's coordinate click on a closed pop-up button, on its result and its errors once the guard kept the
+    point and #454's step left it: {role ("AXPopUpButton" | "AXComboBox"), kept? ("noSignal" | "notRecorded" | "notHit" |
+    "disabled" | "open" | "noAction" | "frontmost": main's path was kept, and why), refused? ("noAction": a native combo
+    box's arrow, the app not frontmost), delivery? ("action": the click delivered as the pop-up button's AXPress, by the
+    element click's route, inputRoute 3 or 1, no pointer event; set as the action is dispatched), action? ("AXPress"),
+    effect? ("confirmed" | "unconfirmed"), actionError?, menuWindow? (the number of the app's new menu window at the
+    button), raisedAppWindow? (true: the open raised the app's window above the person's front window; null: not
+    comparable), polls?, ms? (from the action's return to the last read)}; never a title
   note: on a paste result that pasted a line with no channel to see it, read after ⌘V (#187; type_text's paste route
     since #361 never, its read-back answering instead), on a type_text a password field's length confirmed (#414), and on a
     scroll whose content was already at its end in that direction (#328): the sentence the service adds to the tool
@@ -7189,6 +7197,73 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   accessibility record of the screenshot holds no item of it at this point" and offers the element route only "If a
   fresh getAXState() lists the item"; the model-facing sentence says the same.
   Date/Author: 2026-11-20, cursor235's implementer for #454.
+- Decision (#458, design rulings 977 and 979, 2026-11-21, `fix/458-popup-press`, plugin 0.28.26; PopUpPoint.swift,
+  Input.swift, `ConnectionState.popUpMenuOrders`): **a coordinate click on a closed pop-up button is delivered as the
+  button's AXPress and confirmed by its menu opening; a native combo box's arrow with the app not frontmost is refused;
+  neither is posted.** #458's kit (`probe/458-measure`, scripts/probe-337/README.md §#458 at b55d2908; run 44877626226
+  on main edbfbd23, 475 rows) found main's click on TextEdit's font pop-up or Script Editor's language pop-up, the app
+  behind in shared mode, answering ok with no menu showing (10/10): the menu opens 110–260 ms in and is gone when route
+  3's hold ends and the person's window order is put back (`delivery.screenHoldMs` 180–260 in the same rows). Posted
+  events without activation, keys and the AX actions open every pop-up behind; the element click's AXPress opens them in
+  every mode (30/30 by route 3, 30/30 by route 1), and the next observation lists the items, which #454's fix then takes.
+  The owner chose open-then-restore.
+  The rule, after the stale-point guard keeps a plain left click's point (no spike route, route 3 chosen) and after
+  #454's step, before anything is posted: (1) the trigger needs both signals. The hit-test's own answer in time
+  (`WindowHit.answered`) is an AXPopUpButton (in a web page only one with an AXMenu child, Chrome's `<select>`, whose
+  options it lists; a page's ARIA pop-up button opens the page's own menu, which a posted click takes) or a native
+  AXComboBox hit on its arrow (the trailing square of its frame); it is the control the observation recorded at the point
+  (`recordedAtPoint`, #454's search: the node, a recorded ancestor of the role, or #433's control beneath); it reads
+  enabled, not expanded, and no window of the app's at layer 101 lies over or within 24 points of it (`popUpMenuMargin`).
+  A hit on an AXMenuItem is #454's, whatever the record holds above it. A web page behind in shared mode (the app not
+  believing it has focus) stays #282's element route, which already presses a `<select>`; everywhere else (shared
+  frontmost, dedicated, AppKit apps) the rule applies. (2) Advertising AXPress, the button is pressed by the element
+  click's own route (`actionRoute`: route 3's focus hold when the app does not believe it has focus, else route 1),
+  after the press owner's forbidden check, the hold, the guard's last check on the button (`finalStalePointCheck`, as
+  #282's route makes it), the in-flight check and the agent cursor's click; the request's deadline is checked before
+  the hold. The action's return is not the effect: a window of the app's at layer 101, absent from the list read before
+  the press, alpha above 0, over or within 24 points of the button's frame, must appear, read at once and every 20 ms
+  for up to 500 ms (`popUpOpenSettleMs`, about twice the slowest open measured). Seen, the click answers success; else
+  `clickUnconfirmed`, "The click could not be confirmed: it was carried by the pop-up button's AXPress action in <App>,
+  since a posted click can close the menu it opens, and no menu was seen to open at the button. Observe the app with
+  get_app_state before any retry, and never retry blindly." A messaging timeout from the press is judged by the effect,
+  as #454's; any other error is `actionFailed`. Why the menu stays open: the focus hold's activation guard, which raises
+  the person's window back over the app's while it samples, ends before the press, and the element route runs no
+  delivery guard and no after-action watch (those are `deliverPointer`'s, route 3's pointer delivery in shared mode),
+  where the posted click's delivery guard restores the order after the menu has opened and so closes it; every request
+  cancels an earlier action's watch first (`execute`). (3) A native combo box's arrow with no element action (TextEdit's
+  font-size NSComboBox: `synthesized:noAction`, AXPress unsupported, AXShowMenu opens nothing, its focus write does not
+  hold), the app not frontmost, is refused with nothing sent as `backgroundClickRefused`: "<App>'s combo box opens its
+  list only for a pointer click, and a click cua sends to <App> while it is not the frontmost app does not leave that
+  list open; the combo box has no accessibility action that opens it. Nothing was sent. Ask the person to bring <App>
+  to the front, or type the value into the combo box's text field instead (setValue on its element, or click its text
+  and use typeText)." Frontmost, the posted click opens its list (5/5): main's path (`kept: "frontmost"`). A click on its
+  text is a click into a text field, main's. (4) Main's path is kept, and the meta says so (`popUpClick.kept`), for a
+  hit late or failed with a pop-up recorded (`noSignal`: the record alone is never taken, #452's rule), signals that
+  disagree (`notRecorded`, `notHit`), a disabled button, one already open (AXExpanded true, or the app's menu window at
+  it), and a pop-up button with no AXPress or actions that do not read (`noAction`).
+  (5) The restore seam (ruling 979, item 4; not implemented): opening any menu behind raises the app's window above the
+  person's front window, and Escape does not undo it. A confirmed open compares the window list read before the press
+  with the one that saw the menu (`popUpRaisedOrder`: the person's front window is the first layer-0 window of another
+  app's, never the engine's own) and, when the app's window went from behind it to in front, records
+  `PopUpMenuOrder {menuWindow, appWindow, personWindow, personPid}` in `ConnectionState.popUpMenuOrders[app key]`, a
+  connection's state that #454's pick (which knows its menu's window) and press_key (by app) can read; an open that
+  raised nothing clears the app's entry. Nothing reads it yet: the restore's reliability and cost are being measured
+  on hosted macOS first. The meta carries `raisedAppWindow`.
+  Proven offline (`PopUpPointTests`, 8 tests, fakes only): an agreeing closed pop-up is pressed with nothing posted after
+  its hold, confirmed by its menu window, the order recorded; frontmost by route 1 and Chrome's `<select>` list below the
+  button confirm and record none; no new menu window at the button (a far one, another app's, one up before) answers
+  `clickUnconfirmed` after the full settle; a timeout is judged by the effect, another error fails; the combo box's arrow
+  behind is refused with nothing held, performed or sent, frontmost and its text are main's; disagreements, a late or
+  failed hit, disabled and open keep main's path with the reason; a button, an ARIA pop-up and an open pop-up's item are
+  unchanged, #454 still delivering the item. Each fails with its piece reverted (8 mutations: the rule off fails 6 of
+  the 8 tests; the action's return taken as proof, the unconfirmed test; the combo refusal removed, the combo test; the
+  agreement or the no-signal rule removed, the disagreement test; any role taken for a pop-up or an ARIA one for a
+  `<select>`, the unchanged test; the menu item not left to #454, its test). `recordedMenuItem` now calls the shared
+  `recordedAtPoint`, `inWebArea` gained a two-read form; #454's 27 tests pass unchanged.
+  Not measured live: this build on the kit's cells (the three pop-ups and the combo box by `button` in three modes, and
+  the item afterwards), Chrome's `<select>` in dedicated mode and shared frontmost, and the open time of an AXPress behind
+  against the 500 ms bound.
+  Date/Author: 2026-11-21, cursor235's implementer for #458.
 
 ## Outcomes & Retrospective
 

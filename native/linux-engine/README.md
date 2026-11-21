@@ -330,8 +330,13 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   Chrome's drop status lags one renderer round trip (`WebContentsViewAura::OnDragUpdated` answers each position), and
   with a status outstanding at the release its pending drop is decided on that older status before the last queued
   position is sent (`x11_drag_drop_client.cc`, `HandleMouseReleased` and `OnXdndStatus`). A later motion at the same
-  point refreshes the status, so the status that decides answers the path's end. The tail costs about 25 ms on the
-  drags that reach it; a shorter path, whose floor rests on its end, pays nothing. The residual bound: no false ok in
+  point refreshes the status, so the status that decides answers the path's end. A drop whose gate stays shut gets the
+  tail too, inside its floor (ruling 1000, on 999): the floor's steps spread over its first 326 ms and its keepalives
+  fill to there (`release_sync::steps_floor`), and the tail's rests and visits fill the last 24 ms, released at the
+  floor's end as before. A floor that spread a path's steps 1.45 ms apart still ended on steps far shorter than
+  Chrome's status lag under load: task 130's `t14-floor` `left` at arm64 twice the load answered one false ok in 30
+  through the shut gate, 241 steps spread over 350 ms with no keepalive. The tail costs about 25 ms on the drags whose
+  path outlasts the floor, and nothing on the others. The residual bound: no false ok in
   <N> measured long Chrome drags at arm64 twice the load (95% upper bound <X>%). Electron's drops (settled, below),
   guarded drags and the release at the accept are unchanged. Option (c), which answers such a drop unconfirmed when
   Chrome's activation request is its only confirmation (`Pending from your last drag, an unconfirmed drop: your drag

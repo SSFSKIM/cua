@@ -365,8 +365,10 @@ pub(super) struct GateRead {
 
 impl ReleaseSync<'_> {
     /// At the release of a drop whose take was seen: the gate, on the floor's `keepalives` and whether it spaced out
-    /// the path's `last_spaced` step; when it opens, the step on `route`, the path's last two samples `before` and
-    /// `last`, its motions placed again on the route (synthetic on the background route, XTEST's elsewhere).
+    /// the path's `last_spaced` step; then the step on `route`, the path's last two samples `before` and `last`, its
+    /// motions placed again on the route (synthetic on the background route, XTEST's elsewhere), released at the later
+    /// of the floor's end (`floor_end`) and its span: past the path's end when the gate opened, inside the floor when
+    /// it stayed shut (ruling 1000), the floor's steps having ended the step's span early.
     fn at_release(
         &mut self,
         x: &mut X11,
@@ -374,6 +376,7 @@ impl ReleaseSync<'_> {
         keepalives: u32,
         last_spaced: bool,
         (before, last): ((i16, i16), (i16, i16)),
+        floor_end: Option<Instant>,
     ) -> Result<()> {
         let open = crate::release_sync::gate(self.when, keepalives, last_spaced);
         *self.gate = Some(GateRead {
@@ -381,12 +384,10 @@ impl ReleaseSync<'_> {
             keepalives,
             last_spaced,
         });
-        if open {
-            let xtest = !matches!(route, Route::Window(_));
-            *self.synced = crate::release_sync::before_release(self.form, xtest, before, last, |(px, py)| {
-                route.place_again(x, px, py)
-            })?;
-        }
+        let xtest = !matches!(route, Route::Window(_));
+        *self.synced = crate::release_sync::before_release(self.form, xtest, before, last, floor_end, |(px, py)| {
+            route.place_again(x, px, py)
+        })?;
         Ok(())
     }
 }
@@ -534,6 +535,11 @@ fn drag_along(
         // with the release at the accept, the path after a take keeps its own pacing (task 68's live lane): spread over
         // the floor, the steps would reach the zone, and the accept with them, only near the floor's end
         let spacing = !after_take.is_zero() && accept.is_none();
+        // how much of the floor the path's steps and the keepalives fill: with a Chrome drop's tail, all but the tail's
+        // span, which the tail fills before the release at the floor's end (`release_sync::steps_floor`, ruling 1000)
+        let steps_floor = measure.release_sync.as_ref().map_or(after_take, |sync| {
+            crate::release_sync::steps_floor(sync.form, after_take)
+        });
         std::thread::sleep(pacing.press);
         // the path's last two samples, which a floor after a take re-visits (the path's own: not the end's second
         // visit after its rest, which would make them one point)
@@ -568,7 +574,7 @@ fn drag_along(
                 match taken {
                     Some((at, left)) if spacing => {
                         since_take += 1;
-                        floor = Some(crate::dnd::step_due(at, after_take, since_take, left));
+                        floor = Some(crate::dnd::step_due(at, steps_floor, since_take, left));
                     }
                     Some(_) => {}
                     None if watch.started(x) => taken = Some((Instant::now(), count - 1 - i)),
@@ -699,7 +705,7 @@ fn drag_along(
                         last,
                         match (&measure.settle, &measure.drop_cursor) {
                             (Some(_), Some(_)) => (at + after_take).checked_sub(pacing.rest).unwrap_or(at),
-                            _ => at + after_take,
+                            _ => at + steps_floor,
                         },
                     )?,
                 };
@@ -794,7 +800,15 @@ fn drag_along(
             && hold.is_some()
             && let Some(sync) = measure.release_sync.as_mut()
         {
-            sync.at_release(x, route, floor_keepalives, floor_spaced_last, (before_last, last))?;
+            let floor_end = taken.map(|(at, _)| at + after_take).filter(|_| !after_take.is_zero());
+            sync.at_release(
+                x,
+                route,
+                floor_keepalives,
+                floor_spaced_last,
+                (before_last, last),
+                floor_end,
+            )?;
         }
         // what reached the window up to the release, read apart from what comes after it: a grab that ends before the
         // release is another client's, and crosses into the window as any crossing does
@@ -1409,7 +1423,8 @@ impl Engine {
             self.extra.insert("after_take".into(), scheduled);
         }
         // the outlasted gate's word on a drop whose take was seen (`--stats` `release_sync`): how it decided, the step it
-        // ran when it opened, and whether option (c) answers the drop's activation unconfirmed
+        // ran (past the path's end when it opened, inside the floor when it stayed shut), and whether option (c) answers
+        // the drop's activation unconfirmed
         let outlasted = gate_read.is_some_and(|g| g.open) && self.cfg.dnd_unconfirm_outlasted;
         if let Some(read) = gate_read {
             let mut record = match &synced {
@@ -1422,6 +1437,8 @@ impl Engine {
             if !read.open {
                 record["skipped_for"] = json!({ "keepalives": read.keepalives, "last_step_spaced": read.last_spaced });
             }
+            // the gate shut, the tail ran inside the floor (ruling 1000)
+            record["in_floor"] = json!(!read.open && synced.is_some());
             record["unconfirm_outlasted"] = json!(outlasted);
             self.extra.insert("release_sync".into(), record);
         }

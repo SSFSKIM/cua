@@ -6114,11 +6114,12 @@ fn source_before_release() -> (Duration, Vec<Duration>) {
 /// such a drop takes, gets 8 ms, a motion at the path's last point, 8 ms, the same motion, 8 ms, then its release (on
 /// the background route each motion one synthetic motion; on XTEST's routes the pair ending there). Off
 /// (`--drag-dnd-release-sync off`, measurement only), the background route's release follows the path's last motion at
-/// once, #459's shape. A short path, whose floor's keepalives rest on its end, shuts the gate and keeps 0.4.2's release;
-/// `--drag-dnd-release-sync-when always` opens it there too. A guarded drag and the release at the accept never reach
+/// once, #459's shape. A short path, whose floor's keepalives rest on its end, shuts the gate and gets the tail inside its
+/// floor, its release when 0.4.2's floor releases it (ruling 1000); `--drag-dnd-release-sync-when always` opens the
+/// gate there too. A guarded drag and the release at the accept never reach
 /// the gate.
 #[test]
-fn a_chrome_drop_whose_path_outlasts_its_floor_ends_on_the_tail_and_a_short_one_releases_as_before() {
+fn a_chrome_drop_whose_path_outlasts_its_floor_ends_on_the_tail_and_a_short_one_on_the_tail_inside_its_floor() {
     support::fresh_display();
     *HELD_PATH.lock().unwrap() = Some(outlasting_path());
     let ms = Duration::from_millis;
@@ -6213,15 +6214,43 @@ fn a_chrome_drop_whose_path_outlasts_its_floor_ends_on_the_tail_and_a_short_one_
         drag.stats
     );
     // a short path: its steps spread over the floor to its end (the last one spaced, as D1's are), or its keepalives
-    // fill what they leave, and the gate stays shut
+    // fill what they leave, and the gate stays shut; the tail runs inside the floor (ruling 1000), released when the
+    // floor alone releases it, 350 ms after the take, as 0.4.2's floor does (`off`)
     *HELD_PATH.lock().unwrap() = None;
+    let floor = ms(350);
+    let drag = held_drag_with(
+        HoldRoute::InFront,
+        OnRelease::Nothing,
+        None,
+        &["--drag-dnd-release-sync", "off"],
+    );
+    let off = drag.take_to_release.expect("a take");
+    assert!(
+        off >= floor && off < floor + ms(15),
+        "off: released {off:?} after the take"
+    );
+    assert!(drag.stats["release_sync"].get("motions").is_none(), "{}", drag.stats);
     let drag = held_drag_with(HoldRoute::InFront, OnRelease::Nothing, None, &[]);
+    let tail = drag.take_to_release.expect("a take");
+    assert!(
+        tail >= floor && tail < floor + ms(15),
+        "the tail: released {tail:?} after the take"
+    );
     let sync = &drag.stats["release_sync"];
     assert_eq!(
-        (&sync["form"], &sync["open"]),
-        (&json!("tail"), &json!(false)),
+        (&sync["form"], &sync["open"], &sync["in_floor"], &sync["motions"]),
+        (&json!("tail"), &json!(false), &json!(true), &json!(2)),
         "{sync}"
     );
+    assert!(sync["past_floor_ms"].as_f64().unwrap() < 4.0, "{sync}");
+    let (gap, recent) = source_before_release();
+    assert!(gap >= ms(6) && gap < ms(20), "released {gap:?} after the last motion");
+    assert_eq!(
+        recent.len(),
+        2,
+        "the tail's two motions in the floor's last 20 ms: {recent:?}"
+    );
+    assert!(recent[0] - recent[1] >= ms(6), "{recent:?}");
     assert_eq!(
         sync["skipped_for"]["keepalives"], drag.stats["hold"]["keepalives"],
         "{}",
@@ -6232,7 +6261,6 @@ fn a_chrome_drop_whose_path_outlasts_its_floor_ends_on_the_tail_and_a_short_one_
         "{}",
         drag.stats
     );
-    assert!(sync.get("motions").is_none(), "no step: {sync}");
     assert_eq!(AFTER_TAKE_MOTIONS.lock().unwrap().last(), Some(&(60, 20)));
     // measurement only: `always` opens the gate on it too
     let drag = held_drag_with(

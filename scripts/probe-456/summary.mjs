@@ -3,11 +3,16 @@
 //   node scripts/probe-456/summary.mjs <results.json>...
 //
 // The times are wall-clock ms on the runner: the engine's receivedAt (the request in; the first check runs right after
-// it), the wait's end (the meta's startedAt, the press or the focus write, else the answer's arrival when nothing was
-// posted), and the racer's first sight of a window of Chrome's other than the observed one, alpha above 0, holding the
-// click's point. Classes: early (refused appWindowOverPoint at the first check, `rechecked` absent), in (popup seen after
-// receivedAt and by the wait's end), late (no popup by the wait's end), pre (seen before receivedAt but not refused at the
-// first check), nopopup (none seen at all, in the watch's 1.3 s).
+// it), the wait's end, and the racer's first sight of a window of Chrome's other than the observed one, alpha above 0,
+// holding the click's point. The wait's end: for the button (#282's route, whose recheck runs right after the focus
+// hold and just before the press) the meta's startedAt, the press, else the answer's arrival when nothing was posted;
+// for the field (#283's route, whose recheck runs right after #359's wait, and whose caret reads take a further 50-200
+// ms before the focus write) receivedAt plus the wait's own waitMs, a lower bound on the recheck's start.
+// Classes: early (refused at the first check, `rechecked` absent: #452's rule, or #316's rule W once the popup's window is
+// listed at alpha 0 above the screenshot's), in (popup seen after receivedAt and by the wait's end), hitFirst (refused by
+// the recheck's hit over the popup's own window, which the window list showed at alpha above 0 only just after the
+// answer), afterWait (field only: seen after the wait's end but before the focus write), late (seen after that),
+// nopopup (none seen in the watch's 1.3 s), intervened (refused userIntervened).
 import {readFileSync} from 'node:fs';
 const tally = xs => Object.entries(xs.reduce((m, x) => (m[x] = (m[x] ?? 0) + 1, m), {})).map(([k, n]) => `${k} ×${n}`).join('; ') || '-';
 const r0 = v => (v == null ? '-' : Math.round(v));
@@ -16,7 +21,9 @@ export function classify(r) {
   const c = r.click, rc = r.race;
   if (!c || !rc) return null;
   const sp = c.stalePoint ?? {};
-  const received = c.receivedAt, end = c.startedAt ?? c.answeredAt;
+  const received = c.receivedAt;
+  const posted = c.startedAt ?? c.answeredAt;
+  const end = r.cell === 'field' ? (c.pendingClick?.waitMs != null ? received + c.pendingClick.waitMs : posted) : posted;
   const tv = rc.firstVisible?.t ?? null;
   if (c.error === 'userIntervened') return {cls: 'intervened', received, end, tv};
   // Refused by the guard at the first check: #452's rule, or #316's rule W once the popup's window is listed (at alpha 0
@@ -25,6 +32,8 @@ export function classify(r) {
   if (tv == null) return {cls: r.cell === 'nokeys' || r.cell === 'plain' ? 'nokeys' : 'nopopup', received, end, tv};
   if (tv <= received) return {cls: 'pre', received, end, tv};
   if (tv <= end) return {cls: 'in', received, end, tv, margin: end - tv};
+  if (c.error === 'appWindowOverPoint' && sp.rechecked && sp.overWindow === rc.firstVisible?.n) return {cls: 'hitFirst', received, end, tv, margin: end - tv};
+  if (r.cell === 'field' && tv <= posted) return {cls: 'afterWait', received, end, tv, margin: posted - tv};
   return {cls: 'late', received, end, tv};
 }
 export function outcome(r) {
@@ -58,7 +67,7 @@ for (const file of process.argv.slice(2)) {
     const t0 = c?.receivedAt ?? r.base;
     const rel = t => (t == null ? '-' : r0(t - t0));
     const ev = (r.after?.events ?? []).filter(e => ['wfocus', 'wblur', 'click', 'focusin', 'jitter', 'jitterEnd'].includes(e.type)).map(e => `${e.type}:${e.id ?? ''}@${rel(e.t)}`).join(' ');
-    console.log(`  ${r.label}: ${k?.cls ?? '-'} sent=${c ? rel(c.sentAt) : '-'} keys=${rc.keys ? rel(rc.keys[0]) : '-'} listed=${rc.firstListed ? `${rc.firstListed.n}@${rel(rc.firstListed.t)}` : '-'} visible=${rc.firstVisible ? `${rc.firstVisible.n}@${rel(rc.firstVisible.t)}` : '-'} ax=${rc.axAtSeen ? `${rc.axAtSeen.role}/inTarget=${rc.axAtSeen.inTarget}@${rel(rc.axAtSeen.t0)}+${rc.axAtSeen.ms}` : '-'} end=${c ? rel(c.startedAt ?? c.answeredAt) : '-'} answered=${c ? rel(c.answeredAt) : '-'} guard=${c?.activationGuardMs ?? '-'} pend=${c?.pendingClick ? JSON.stringify(c.pendingClick) : '-'} sp=${c?.stalePoint ? `${c.stalePoint.verdict}/${c.stalePoint.reason}/ms=${c.stalePoint.ms}/hitMs=${c.stalePoint.hitMs ?? '-'}` : '-'} route=${c?.route ?? '-'} => ${outcome(r)} | ${ev} | after popup=${r.after?.popup ? r.after.popup.n : '-'} focused=${r.after?.focused?.role ?? '-'}:${r.after?.focused?.description ?? ''}${r.press ? ` | press=${r.press.error ?? 'ok'}/${r.press.route}` : ''}${r.prehold ? ` | prehold=${r.prehold.error ?? 'ok'}/${r.prehold.route}` : ''}${r.engineKeys ? ` | engineKeys key=${r.engineKeys.key.error ?? 'ok'}@${rel(r.engineKeys.at)}..${rel(r.engineKeys.keyAnswered)} type=${r.engineKeys.type.error ?? 'ok'}@..${rel(r.engineKeys.typeAnswered)}` : ''}`);
+    console.log(`  ${r.label}: ${k?.cls ?? '-'} sent=${c ? rel(c.sentAt) : '-'} keys=${rc.keys ? rel(rc.keys[0]) : '-'} listed=${rc.firstListed ? `${rc.firstListed.n}@${rel(rc.firstListed.t)}` : '-'} visible=${rc.firstVisible ? `${rc.firstVisible.n}@${rel(rc.firstVisible.t)}` : '-'} ax=${rc.axAtSeen ? `${rc.axAtSeen.role}/inTarget=${rc.axAtSeen.inTarget}@${rel(rc.axAtSeen.t0)}+${rc.axAtSeen.ms}` : '-'} end=${k?.end != null ? rel(k.end) : '-'} posted=${c?.startedAt != null ? rel(c.startedAt) : '-'} answered=${c ? rel(c.answeredAt) : '-'} guard=${c?.activationGuardMs ?? '-'} pend=${c?.pendingClick ? JSON.stringify(c.pendingClick) : '-'} sp=${c?.stalePoint ? `${c.stalePoint.verdict}/${c.stalePoint.reason}/ms=${c.stalePoint.ms}/hitMs=${c.stalePoint.hitMs ?? '-'}` : '-'} route=${c?.route ?? '-'} => ${outcome(r)} | ${ev} | after popup=${r.after?.popup ? r.after.popup.n : '-'} focused=${r.after?.focused?.role ?? '-'}:${r.after?.focused?.description ?? ''}${r.press ? ` | press=${r.press.error ?? 'ok'}/${r.press.route}` : ''}${r.prehold ? ` | prehold=${r.prehold.error ?? 'ok'}/${r.prehold.route}` : ''}${r.engineKeys ? ` | engineKeys key=${r.engineKeys.key.error ?? 'ok'}@${rel(r.engineKeys.at)}..${rel(r.engineKeys.keyAnswered)} type=${r.engineKeys.type.error ?? 'ok'}@..${rel(r.engineKeys.typeAnswered)}` : ''}`);
   }
   console.log('\nrefusal sentences:');
   const sentences = results.filter(r => r.click?.message).reduce((m, r) => { const s = `${r.click.error}: ${r.click.message}`; (m[s] ??= []).push(`${r.head}:${r.cell}`); return m; }, {});
@@ -67,7 +76,7 @@ for (const file of process.argv.slice(2)) {
   for (const r of results) {
     const k = classify(r);
     if (!k) continue;
-    const bad = (k.cls === 'in' && !r.click.error) || ((r.cell === 'nokeys' || r.cell === 'plain') && r.click.error);
+    const bad = ((k.cls === 'in' || k.cls === 'afterWait') && !r.click.error) || ((r.cell === 'nokeys' || r.cell === 'plain') && r.click.error);
     if (bad) console.log(`  ${r.label}: ${k.cls} margin=${r0(k.margin)} ${outcome(r)}`);
   }
   console.log('\n');

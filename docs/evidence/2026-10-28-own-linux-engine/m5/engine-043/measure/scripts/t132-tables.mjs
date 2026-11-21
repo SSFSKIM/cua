@@ -41,7 +41,7 @@ for (const lane of lanes) {
       const cur = (r.signals?.cursors ?? []).filter((x) => !x.named);
       const endAt = cur.findIndex((x) => String(x.image).startsWith('b46b') && x.t_ms > 150);
       const prev = endAt > 0 ? String(cur[endAt - 1].image).slice(0, 4) : 'none';
-      all.push({ lane, round, i: r.i, cold: r.cold, cell: r.base ?? r.cell, cls, landing: landingOf(r), took: r.outcome?.started, notice: r.reply_notice ? 'hold' : r.notice ? (/unconfirmed drop/.test(r.notice) ? (/went on past the engine's settle time/.test(r.notice) ? 'outlasted' : 'unconfirmed') : 'other') : null,
+      all.push({ lane, round, i: r.i, cold: r.cold, cell: r.base ?? r.cell, cls, landing: landingOf(r), took: r.outcome?.started, notice: ((t) => (t == null ? null : /went on past the engine's settle time/.test(t) ? 'outlasted' : /unconfirmed drop/.test(t) ? 'unconfirmed' : r.reply_notice ? 'hold' : 'other'))(r.reply_notice ?? r.notice ?? null),
         activation: r.signals?.activation_after_release_ms ?? null, cursor_end: { bd1d: 'nodrop', '1dc3': 'accept' }[prev] ?? 'other', confirmed_by: r.after_release?.confirmed_by ?? null,
         gap: r.wall && r.hold ? r.wall.release_ms - r.wall.press_ms - r.hold.path_ms : NaN, after_take_ms: r.after_take?.release_after_take_ms ?? null, keepalives: r.hold?.keepalives ?? null, sync, joined: Boolean(st), ms: r.ms });
     }

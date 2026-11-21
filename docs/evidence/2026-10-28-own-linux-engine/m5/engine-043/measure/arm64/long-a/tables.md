@@ -21,3 +21,6 @@ The residue: every false ok and stale-position drop (7).
 | e042 | r7 | 1 | warm | long-left | STALE | 3.1 | accept | Activation | 1228.3 | 0 | 0.1 | – | – |
 | e042 | r8 | 1 | warm | long-left | STALE | 5.6 | accept | Activation | 1446.3 | 0 | 0.0 | – | – |
 | e042 | r8 | 4 | warm | long-left | FALSE OK | 2.0 | accept | Activation | 1254.3 | 0 | 0.1 | – | – |
+
+In-floor rows with a visit dropped (ruling 1023): 0.
+

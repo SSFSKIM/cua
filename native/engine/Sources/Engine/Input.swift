@@ -119,6 +119,9 @@ struct InputMeta {
   var keyEffectUnconfirmed = false
   /// #374's Show Menu confirmation (MenuConfirm.swift): where the new menu was seen, or that none was, and the wait.
   var menu: MenuConfirmRecord?
+  /// #454's coordinate click on an open menu's item (MenuItemPoint.swift): delivered as the item's action and its effect,
+  /// or why it was refused.
+  var menuItemClick: MenuItemClickRecord?
   /// #359's wait for a posted click before an accessibility action on the text, and set_value's watch after its write
   /// (ClickOrdering.swift); nil when no pointer press to the app was pending.
   var pendingClick: PendingClickRecord?
@@ -191,6 +194,7 @@ struct InputMeta {
     if let typeReadback { wire["typeReadback"] = typeReadback.wire }
     if keyEffectUnconfirmed { wire["keyEffect"] = "unconfirmed" }
     if let menu { wire["menu"] = menu.wire }
+    if let menuItemClick { wire["menuItemClick"] = menuItemClick.wire }
     if let pendingClick { wire["pendingClick"] = pendingClick.wire }
     if let unfocusedValue { wire["unfocusedValue"] = unfocusedValue.wire }
     if let afterActionRepairs = context.connection.afterAction.wire { wire["afterActionRepairs"] = afterActionRepairs }
@@ -411,7 +415,9 @@ extension Engine {
   /// of the app's primary window on this connection, refused (`noScreenshotForCoordinates`, nothing posted) when there
   /// is none, and goes by route 3; it is refused, nothing posted, when what that screenshot showed at the point has gone,
   /// moved off it, or given way to another interactive element (`screenChangedSinceScreenshot`, #296, StalePoint.swift);
-  /// where #282 element-routes it, the element pressed must be that node or its control, checked again after any wait. Route 4 takes route 3's place for an app the owner's override names. The process
+  /// where #282 element-routes it, the element pressed must be that node or its control, checked again after any wait. A
+  /// kept plain left click on an item of a menu open in a window of the app's own goes as the item's AXPick or AXPress,
+  /// confirmed by its effect, or is refused, never posted (#454, MenuItemPoint.swift). Route 4 takes route 3's place for an app the owner's override names. The process
   /// serving the target receives the input, after the forbidden list has been checked against it.
   func click(_ args: [String: Any], _ context: ExecutionContext) throws -> Any {
     let token = try elementTokenArg(args, lineage: context.lineage)
@@ -555,6 +561,25 @@ extension Engine {
           pointerHit = recovered
           if route == .activation, button == .left { pointer = pointerTarget(hit: recovered, app: app, appPid: appPid) }
           pointer.staleRefusal = stale.refusal
+        }
+        // #454: a kept point on an open menu's item is carried by the item's own action, or refused; never posted.
+        if stale.refusal == nil, forced == nil, button == .left, count == 1 {
+          let reads = MenuItemReads<AXUIElement>.live(appPid: appPid)
+          let answered = latest.outcome.answered
+          let decision = signposted("click.menuItem") {
+            menuItemPoint(hit: answered, recorded: recordedMenuItem(stale.verdict), reads: reads) {
+              let pids: Set<pid_t> = [appPid, answered.map { ownerPid(of: $0, fallback: appPid) } ?? appPid]
+              return menuWindowOverPoint(placed.point, target: windowID, pids: pids, list: onScreenWindowList())?.number
+            }
+          }
+          let carried = try armingSettle(&meta, acted: { context.connection.markActed(app) }) { meta in
+            try menuItemClick(decision, app: app.displayName, reads: reads, menuWindowShown: { number in
+              onScreenWindowList().contains { $0.number == number }
+            }, now: monotonicMilliseconds, sleep: { usleep(UInt32(max(0, $0) * 1000)) }, checkInFlight: guarding.checkInFlight,
+              announce: { cursor.act(connection: context.connection.id, app: app.key, window: windowID, .click(placed.point)) },
+              perform: { gatedPerform($0, $1) }, meta: &meta)
+          }
+          if carried { return ["meta": meta.wire] }
         }
         if pointer.view.mayBeWebArea, let hit = pointerHit {
           // A kept point's element route presses only the node or its control, the guard run again after any wait.
@@ -790,6 +815,9 @@ struct WindowHit<Element> {
   let element: Element?
   let place: PointHitPlace
   var ms: Double?
+  /// #454: the element the hit-test answered, whatever window its chain reads to (Chrome's `<select>` menu, an app-level
+  /// AXMenu whose chain reaches none); nil for no answer or one past `pointHitSignalDeadlineMs`.
+  var answered: Element? = nil
 }
 
 /// #452 (the review of 023a3bee, P1): a coordinate's hit-test and the re-hits #288's establishment takes in its place
@@ -841,18 +869,22 @@ func hitTestOutcome(window: AXUIElement, pid: pid_t, at point: CGPoint, now: @es
 /// not being `window`). Another AXWindow ancestor answers as that window's place, numbered by `number` (given the
 /// milliseconds left of the deadline, nil untimed; none asked for an untimed hit-test's element alone) only within the
 /// deadline. The walk is main's, each read bounded by the messaging timeout; past `pointHitSignalDeadlineMs` (design
-/// ruling 940) the place is `unread`, so #452 keeps main's verdict, and the hit is still main's.
+/// ruling 940) the place is `unread`, so #452 keeps main's verdict, and the hit is still main's. `answered` is the
+/// hit-test's own answer, unbounded to the window, within the deadline (#454's signal).
 func windowHit<Element>(application: Element, window: Element, at point: CGPoint, elementAt: (Element, CGPoint) -> (AXError, Element?),
                         role: (Element) -> String?, parent: (Element) -> Element?, same: (Element, Element) -> Bool,
                         number: ((Element, Double?) -> CGWindowID?)? = nil, now: (() -> Double)? = nil) -> WindowHit<Element> {
   let started = now?()
+  var answered: Element?
   func elapsed() -> Double? { now.flatMap { now in started.map { now() - $0 } } }
   func answer(_ element: Element?, _ place: PointHitPlace) -> WindowHit<Element> {
     let ms = elapsed()
-    return WindowHit(element: element, place: (ms ?? 0) > pointHitSignalDeadlineMs ? .unread : place, ms: ms)
+    let late = (ms ?? 0) > pointHitSignalDeadlineMs
+    return WindowHit(element: element, place: late ? .unread : place, ms: ms, answered: late ? nil : answered)
   }
   let (error, found) = elementAt(application, point)
   guard error == .success, let hit = found else { return answer(nil, .unread) }
+  answered = hit
   var current = hit
   var inPopover = false
   for _ in 0...300 {

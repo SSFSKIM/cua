@@ -78,6 +78,38 @@ The interval is cua against the newest build, with #358's bound at 40 ms.
 - The ping forms make their connection before the press, and that costs about 1-3 ms of the request on every Chrome
   drop the engine lets drop. It is inside the noise between lanes here.
 
+
+### t14-floor and t14-late with (b') gated (ruling 981; `arm64/floor-ping/`, `arm64/late2-ping/`)
+
+**t14-floor at twice the load**, against a953's 0.4.2 control:
+- plain-long 300/300 landed, and left and inzone-out 30/30 honest each;
+- 0 false oks;
+- the gate fired 201, 18 and 0 times; 4.6 / 8.0 / 21.7 ms added where it fired;
+- the bound expired 0 of 219.
+
+**t14-late at twice the load**, 0.4.2 and (b') one run each:
+- the judge passes both, with C1's bands met;
+- the gate never fired.
+
+### Option (c), priced offline (`c-cost/`, `v5-gate/`)
+
+Option (c): with the gate open, a Chrome drop confirmed by its activation alone answers unconfirmed. It is not built.
+For 0.4.2 rows the gate is decided offline, the way the engine decides it: a take before the release, no keepalive, and
+the release more than 2 ms past 350 ms after the take. That rule matched the engine's counts: 203/300 against 201/300 on
+plain-long, and 100/100 on long-left. "ub" is a one-sided 95% upper bound.
+
+| option | false oks (long-left, arm64 2x) | stale-position drops (long-left, arm64 2x) | legitimate long drops noticed: arm64 2x plain-long | idle x64 plain-long | idle arm64 plain-long | V5 H6 landed (x64 / arm64) | added ms on #459's shape, p50 / p95 / max |
+|---|---|---|---|---|---|---|---|
+| (A) 0.4.2 as is | 10/100 (10.0%, ub 16.4%) | 7/100 (7.0%, ub 12.7%) | 0/300 | 0/200 | 0/200 | 0/71 / 0/71 | 0 |
+| (B) (b') gated + (c) | 0/150 (ub 2.0%) | 0/150 (ub 2.0%) | 201/300 (67.0%, ub 71.5%) | 0/200 (ub 1.5%) | 0/200 (ub 1.5%) | 0/71 / 0/71 | 5.3 / 8.5 / 14.9 (plain-long at 2x, when open: 4.6 / 8.0 / 21.7); ~1-3 ms connect per Chrome drop |
+| (C) (c) alone | 0/100 (ub 3.0%) | 7/100, each answered unconfirmed (honest) | 203/300 (67.7%, ub 72.1%) | 0/200 (ub 1.5%) | 0/200 (ub 1.5%) | 0/71 / 0/71 | 0 |
+
+**B against C.** C leaves long-left's 7 stale-position drops happening, honestly answered unconfirmed. B prevents them,
+for +5.3 ms p50 on #459's shape.
+
+**Idle** (x64 `x64/idle-floor/`, arm64 `arm64/idle-floor/`, 0.4.2 and (b') alternating): the gate opens on 0 of 200
+plain-long drops on each arch.
+
 ### The route audit (x64, `x64/audit-a/`)
 
 V5's in-front short drop ran with the request audit on, and the ungated forms ran the step on every drop. The audit was

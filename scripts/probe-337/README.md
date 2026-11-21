@@ -560,3 +560,98 @@ and `"activationClick":"outsideFrame"`). The element click behind:
   and that is the same step that closes the menu.
 - **Frontmost clicks are unchanged:** `button` opens every pop-up with the app frontmost, 20/20 (the ticket's three,
   15/15, plus the combo box).
+
+
+## #458's restore: the person's window order put back after a background pop-up menu is used
+
+Kit `scripts/probe-458/restore.mjs` (tool.swift `restore`, `order`, `watch`, `cancel`, `combo`; reader `rsummary.mjs`),
+workflow `.github/workflows/probe-458-restore.yml`, dispatched with an exact engine SHA built unmodified; the restore is
+the kit's.
+
+**The engine's mechanism (Activation.swift, main edbfbd23).** Route 3's delivery guard (`FakeActivation.deliver`) takes a
+screen-update hold (`SkyLight.hold`: `SLSDisableUpdate` on the main connection, `SLSReenableUpdate` at release), then
+samples the window order every 2 ms (`deliveryGuardSampleMs`): while the target's window is in front of the person's
+(`windowIsInFront`, a window-list walk), it raises the person's window back with `ActivationSystem.raise`, which is
+`AXUIElementPerformAction(window, kAXRaiseAction)` on the person's app's `AXFocusedWindow` (`guardedUser`); with the person's
+app no longer frontmost, it re-activates it (`NSRunningApplication.activate`). It ends on 3 stable samples, no sooner than
+60 ms, and the hold is capped. `delivery.restores` counts the raises. The held menu activation (`MenuSpan.swift`,
+`restoresByActivationOnly`) restores by activation only. The kit's `restore` does the same calls from outside the engine:
+the person's focused window found by AX and matched in the window list (p50 1.7 ms), the hold, AXRaise while the app's
+window is in front, 3 stable samples, at least 60 ms; `+ra` raises every window of the person's that was in front of the
+app's before the open, back to front, instead of the focused one alone. It needs neither the app frontmost nor the menu
+closed: raised with the menu still open, the menu stays up (layer 101) and keeps working.
+
+The layout: the app's window (400, 30, 620×720) and, for TextEdit and Script Editor, its second window behind it; the
+person's Finder frontmost, its focused window F1 (760, 420) over the app's lower right and a second window F2 (240, 480)
+over its lower left; Calculator behind them all. The order at the start: Finder F1 > Finder F2 > the app's window(s) >
+Calculator, 380/380. Each row opens the menu with the engine's element click on the closed button (route 3,
+`action:AXPress`, 380/380 opened), then:
+`pick`/`escape`/`cancel` end it by the engine's coordinate click on an item (#454's AXPick path), the engine's Escape or
+the kit's AXCancel; `+r` the engine's repair (F1 raised), `+ra` every person window raised; `ropen-` restores (`+ra`)
+as soon as the menu is up, then picks or escapes; `escape` and `timeout` (8 s, then Escape) restore nothing;
+`person-click` is a HID click inside F1 while the menu is open, then `+ra`.
+
+### Results, engine edbfbd233ad9b4496b4d78062e51c0f826f78631 (main), kit a64ad598
+
+Full run: https://github.com/SSFSKIM/cua/actions/runs/44888938314 (Google Chrome 157.0.8103.79, macOS 26.7.2, image
+20261117.0516.1; 380 rows, 10 per cell, plus 20 combo-box arrow rows; no setup failures). Smokes:
+https://github.com/SSFSKIM/cua/actions/runs/44883898384 (kit 7ba57edb, 30 rows) and
+https://github.com/SSFSKIM/cua/actions/runs/44888203834 (kit 0138fe08, 18 rows, image 20261102.0473.1, Chrome 156); the
+same answers. Artifacts in `~/.local/share/probe-458/run-<id>/` on the MacBook.
+
+| route (select, font, language) | F1 back on top | whole order as before | menu closed | pick taken | restore ms p50/p95/max |
+|---|---|---|---|---|---|
+| `pick+r`, shared and dedicated | 60/60 | **0/60**: F2 left under the app's window | 60/60 | 60/60 | 67/75/81 (1 raise, 2 in 2 rows) |
+| `escape+r` | 30/30 | **0/30** (F2) | 30/30 | - | the same |
+| `cancel+r` | 30/30 | **0/30** (F2) | TextEdit, Script Editor 20/20; **Chrome's stays up 10/10** (AXCancel answers 0) | - | the same |
+| `pick+ra`, shared and dedicated | 60/60 | **60/60** | 60/60 | 60/60 | 127/200/232 (4 raises, 2 in 1 row) |
+| `escape+ra` | 30/30 | 30/30 | 30/30 | - | the same |
+| `ropen-pick` (restore with the menu up, then the pick) | 30/30 (also with the menu up, 30/30) | 30/30 | 30/30 | 30/30 | 145/182/185 |
+| `ropen-escape` | 30/30 (menu up: 30/30) | 30/30 | 30/30 | - | 132/176/192 |
+| `escape` (no restore) | 0/30: the app's window stays on top | 0/30 | 30/30 | - | - |
+| `timeout` (8 s, no restore) | 0/30: after 8 s the menu is still up and the app's window still on top; Escape leaves it on top | 0/30 | 30/30 after Escape | - | - |
+| `person-click`, then `+ra` | the click closes the menu (30/30) but leaves the app's window over F1 (30/30); the restore then 30/30 | 30/30 | 30/30 | - | 156/207/212 |
+
+Every restore found the app's window in front and left it behind (300/300, every AXRaise answered 0, the hold taken
+300/300). Nothing beyond F1, F2 and the app's window moved in any of the 380 rows: the app's second window and Calculator
+kept their places. The frontmost app stayed Finder and the person's focused window stayed F1 in every row (380/380). The
+pop-up's value: picked items taken 150/150 (AppKit confirmed; Chrome `clickUnconfirmed` but taken), Escape and AXCancel
+left it unchanged.
+
+Timing (watch, 10 ms samples; ms): the app's window rises over F1 186 p50 (max 547) after the element click begins, when
+the menu opens. After the restore starts, F1 is uncovered again in 51 p50 (max 106) for `+r` and 102–109 p50 (max 211)
+for `+ra`. In this kit F1 stayed covered for 1.0–1.4 s with `ropen-` and 1.5–3.3 s with restores after the pick or
+Escape, mostly the kit's own waits (900 ms after the open, an observation before the pick). The restore can run as
+soon as the menu is up.
+
+The app's `AXFrontmost`: false before the open, true from the element click on, 380/380 (route 3's activation; the
+frontmost app stays Finder). The restore does not change it.
+
+**TextEdit's font-size combo box** (for the fix's arrow rule, in 4 rows of this run plus every arrow row, kit AX read and
+the engine's observation agree): the combo (715, 70, 52×22), actions `AXShowMenu, AXConfirm`; one AXButton child
+`font size` (743, 73, 20×15), actions `AXPress`, its trailing edge **exactly 4.0 pt** inside the combo's (28 pt from its
+leading edge). The arrow pressed behind, `arrow-kit` (the kit's AXPress on it) and `arrow-engine` (the engine's element
+click on its node, route 3 `action:AXPress`): the list opens 20/20 (AXExpanded true, a new **layer-0** window
+(706, 70, 65×250) above the app's document window, below both Finder windows), the frontmost app stays Finder, the order
+of the person's windows is unchanged, and Escape closes it 20/20.
+
+### Reading
+
+- **The engine's own repair (F1 raised) is reliable, about 70 ms, and incomplete.** It puts the person's focused window
+  back over the app's every time (120/120, never leaving it in front), inside the screen-update hold (taken 300/300; no
+  pixel check was made for a flash), with no activation or focus change. But it restores only the focused window: a
+  second window of the person's that the app's window covered keeps being covered (F2, 120/120). That is a reorder of
+  another of the person's windows.
+- **Raising every window of the person's that was in front of the app's before the open, back to front, restores the
+  whole order** in every row (180/180 across pick, Escape, restore-while-open and the person's click), at 120–160 ms
+  p50 and 232 ms worst, with nothing else moved. It needs the order read before the open (the person's windows in front
+  of the app's).
+- **The restore does not need the menu closed:** run with the menu up, it uncovers F1, the menu stays usable, and the pick
+  or Escape after it leaves the order as restored (60/60). So the window covers the person's for only the time from the
+  menu opening to the restore (here ~190 ms to the raise, ~100 ms more to uncover).
+- **What the engine cannot restore:** a menu left open (8 s: still up, the app's window still on top, 30/30) and a menu
+  closed by the person's own click elsewhere (the click is consumed closing the menu, and the app's window stays over F1,
+  30/30). Restoring as soon as the menu is up covers both. Chrome's menu also ignores AXCancel (answers 0, stays up,
+  10/10).
+- **The combo box's arrow** has an element action that opens its list behind without raising anything: AXPress on the
+  trailing AXButton child, whose trailing gap is exactly 4.0 pt, so the fix's "within 4 pt" has to include 4.

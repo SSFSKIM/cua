@@ -19,6 +19,7 @@ rsync -a --no-specials --no-devices $X --exclude 'run/audit-traces/' "$VM:$D/m5/
 rsync -a --no-specials --no-devices $X "$VM:$D/m5/a953-arm64-h6/" "$STAGE/a953/"
 rsync -a --no-specials --no-devices $X "$VM:$D/m5/a957-arm64-h6/" "$STAGE/a957/"
 # ruling 959: the device cell at H6 (cua only) and on the development branch m5-a959 (the vendor lanes too)
+mkdir -p "$STAGE/a959"
 rsync -a --no-specials --no-devices $X --exclude 'run/audit-traces/' "$VM:$D/m5/a959-arm64-h6/" "$STAGE/a959/h6-cua/"
 rsync -a --no-specials --no-devices $X --exclude 'run/audit-traces/' "$VM:$D/m5/a959-arm64-m5a959/" "$STAGE/a959/m5-a959/"
 ssh "$VM" "test -d $D/m5/s954-arm64-h7" && rsync -a --no-specials --no-devices $X "$VM:$D/m5/s954-arm64-h7/" "$STAGE/s954/"

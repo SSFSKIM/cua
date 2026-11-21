@@ -36,7 +36,8 @@ acceptance home's own `cua install` of **linux-engine-v0.4.0**: `cua-engine` sha
     honest. It stands as a FAIL (954).
   - S2's cross-check reads the same as H‴, so V4, S4, L3c and L3e stand.
   - Four development runs follow it: 953, the shipped long-left path, with 7 false oks in 100 (#459); 957, which finds
-    0.4.1 the same; 954.2, the m5-h7 sweep, 30/30 landed; and 959, the vendor baseline.
+    0.4.1 the same; 954.2, the m5-h7 sweep, 30/30 landed; and 959, V5's long-left device cell, with 0 stale drops on cua
+    (210) and on both vendor lanes (108 each).
 
 ## Setup
 
@@ -632,7 +633,7 @@ none.
   - Positive controls: the same scan finds x64's V3 at H (`m5/x64/out/V3.pinned-release`): 2 held-code rows and 27 raw
     minimized codes, before ruling 874's tokens. A title known to be in those rows is found too.
 
-## At H6 on 0.4.2 (2026-11-20 22:27Z to 11-21 05:45Z; task 122)
+## At H6 on 0.4.2 (2026-11-20 22:27Z to 11-21 07:37Z; task 122)
 
 The head is **H6 = `69bd7993`**. Its ci-gate is GREEN 8/8 (run 44824501779), and its Decision Log entry is
 "linux-engine 0.4.2 released and pinned, and the frozen head H6". The engine is **linux-engine-v0.4.2**: arm64
@@ -645,8 +646,7 @@ new-reads-only steps, and item 9. After them came four development runs the desi
 - 953, the shipped twin of L4b;
 - 954.2, arm64's inside-band sweep, on the m5-h7 candidate;
 - 957, t14-long with 0.4.1 and 0.4.2 alternating;
-- 959, the vendor baseline on the same path. It needed the development branch m5-a959 and is still running, so its
-  part follows in its own commit.
+- 959, the vendor baseline on V5's long-left device cell, run on the development branch m5-a959.
 
 ### Setup, item 9 and the local proof
 
@@ -912,15 +912,71 @@ The run: task 125's candidate **m5-h7 at 348cae0f**, in a fresh worktree `t122-h
 - No late take and no false ok. Every stop came 54–58 ms after the press mark.
 - arm64 lands 10/10 at all three freezes, freeze-600 included, once identification is out of the freeze's way.
 
+### Ruling 959 (and 964, 973): V5's long-left device cell at twice the load (development runs; `h6/a959/`)
+
+**The cell.** `chrome_dnd_long_left_in_front_shared` is V5's long path. It runs across the zone, out of it below, then
+left, in drag.html's dnd scene, with Chrome in front, shared mode, on the background route. Its steps after the take
+outlast the floor, so the release follows the last step.
+- The path, in page px: [[410,155],[680,170],[680,320],[450,320],[450,260]], about 750 px.
+- t14-long's long-left, by contrast, runs on drop-signals.html: [[530,128],[800,128],[800,500],[500,500]], about
+  940 px.
+
+**The runs:**
+- **At H6, cua only (`h6/a959/h6-cua/`, sets s1 and s2, 05:48–06:09Z).** The device cells are `cuaOnly` (device.mjs
+  `device()`), so V5 never runs this cell for the vendor builds. These sets ran it on cua alone.
+- **On m5-a959, all three lanes (`h6/a959/m5-a959/`, sets v1, v2 and v3b, 06:09–07:37Z).** m5-a959 is a development
+  branch, `da2deeb2`, H6 plus one change and never a counted head (rulings 964, 973). The diff:
+
+  ```diff
+  -  chrome_dnd_long_left_in_front_shared: device({ device: 'leaves', … confirm: true }),
+  +  chrome_dnd_long_left_in_front_shared: { ...device({ device: 'leaves', … confirm: true }), cuaOnly: false },
+  ```
+
+  With that change the verdict run sends the cell to the pinned (26.928.40906) and newest (26.1023.51421) vendor builds
+  too, the harness's blocks rotating the three engines.
+- **Each set** was a development verdict run on a private display (`a959.sh`, `a959v.sh`): `--scene device-chrome-dnd
+  --ops chrome_dnd_long_left_in_front_shared --dev`, 17 or 12 blocks of 3 samples per lane.
+- **The load:** a verdict run takes no `--load-factor`, so the script started the experiments' load itself,
+  `stress-ng --cpu <2 × cores> --cpu-method matrixprod`, as `startLoad` does.
+- **Each set had its own hold.** Task 126's holds ran between them.
+- **Set v3's start check refused** at 07:12:04Z, 0 s after task 126's hold ended with status 143. Four of its
+  processes (node, dbus-daemon, at-spi-bus-launcher, dbus-daemon) still referenced a cua171-run directory that was
+  gone. v3 ran nothing. I signalled nothing; the processes were gone a minute later, and the gate's leftovers read
+  "end check: clear". v3b ran in v3's place (the controller: not a rerun around a result). v3's refused directory is
+  kept.
+
+| run | lane | samples (cold / warm) | stale-position drops | no drop | the answer on no drop | false ok | honest unconfirmed |
+|---|---|---|---:|---:|---|---:|---:|
+| H6, s1+s2 | cua 0.4.2 | 102 (34 / 68) | 0 | 102 | ok, the unconfirmed-drop notice on the read | 0 | 102 |
+| m5-a959, v1+v2+v3b | pinned | 108 (36 / 72) | 0 | 108 | the drag ok, the read clean* | – | – |
+| m5-a959, v1+v2+v3b | newest | 108 (36 / 72) | 0 | 108 | the drag ok, the read clean* | – | – |
+| m5-a959, v1+v2+v3b | cua 0.4.2 | 108 (36 / 72) | 0 | 108 | ok, the unconfirmed-drop notice on the read | 0 | 108 |
+
+\* The vendor builds have no drop confirmation, so their ok claims no drop. Those answers are reported as they are,
+not as false oks. The cell's follow-up request is cua's `preflight`, which the vendor rejects as "unknown variant", so
+the vendor's "next refused" in the rows is that rejection, not a refusal.
+
+- Every set's verdict reads "every verdict PASS". Every drag on every lane started a drag on the page.
+- **The finding (ruling 973):**
+  - No #459 outcome on V5's shipped device route at arm64 twice the load: 0 stale drops and 0 false oks in 210 cua
+    drags.
+  - 0 stale drops on both vendor lanes.
+  - This cell can't separate the vendor's behaviour from cua's on #459's shape: cua's own count here is 0, against
+    12/100 on t14-long's cell. The vendor lanes on t14-long's cell (route (b)) are held (973). They come back only if
+    0.4.3 fails to close #459.
+- **Ruling 961's margin.** The cell's path ends at page (450, 260). The zone (#target) is x 560–760, y 120–220, so the
+  end is 110 px left of it and 40 px below, about 117 px from its corner. Every row keeps its drop-status counts, and
+  the path and zone are the page's. No margin of a few px changes a count.
+
 ### Scans (rulings 863, 874, 875)
 
 - **Token-shaped strings** (`h6/scripts/scan-evidence.sh`, file names only; `scan-token.txt`): the whole `m5/arm64/`,
-  3042 files, 0 hits.
+  3107 files, 0 hits.
 - **No `:0` window title or key code** in the committed `h6/` (`privacy-run.sh`, `privacy-scan.mjs`;
   `privacy-scan.txt`).
   - The titles of every `:0` client window (the stand-in session's Chrome, the only one) were piped from the VM straight
     into the scan, never written or printed.
-  - The result: 447 files, 3 titles looked for, **0 title hits, 0 held-code rows, 0 raw minimized codes**.
+  - The result: 512 files, 3 titles looked for, **0 title hits, 0 held-code rows, 0 raw minimized codes**.
   - Positive control: the same scan over x64's V3 at H finds 2 held-code rows and 27 raw minimized codes
     (`privacy-scan-control.txt`).
 - No secret value was read, and every run home's secret store was empty.
@@ -928,10 +984,11 @@ The run: task 125's candidate **m5-h7 at 348cae0f**, in a fresh worktree `t122-h
 ## Files
 
 - `h6/`: the H6 part: `out/` (every counted step as the runner wrote it, V5's sitting records, `driver.log`,
-  `zero.log`); `a953/`, `a957/` and `s954/` (rulings 953, 957 and 954.2's development runs, with `analysis.md`,
-  `summary.md` and `per-freeze.md`); `scripts/` (task 122's launchers, the setup, item 9, the proof, the after-step
-  reading, settle-check, the S2 cross-check, the analysis scripts, the scans and the lock lines). Logs are kept as
-  `.log.txt`, since the repository ignores `*.log`. The kept route-audit traces are left out (on the x64 host).
+  `zero.log`); `a953/`, `a957/`, `a959/` and `s954/` (rulings 953, 957, 959 and 954.2's development runs, with
+  `analysis.md`, the `summary` files and `per-freeze.md`); `scripts/` (task 122's launchers, the setup, item 9, the
+  proof, the after-step reading, settle-check, the S2 cross-check, the analysis scripts, the scans and the lock lines).
+  Logs are kept as `.log.txt`, since the repository ignores `*.log`. The kept route-audit traces are left out (on the
+  x64 host).
 - `h5/`: the H⁵ part (`out/`: the counted sitting, V5's stopped first attempt and its clearance; `f2/`: F2's `:0`
   parts on Chrome 158; `f3/`: F3, with V3's stop and its clearance; `scripts/`: task 109's launchers and records, the
   after-step readings, `settle-check.txt`, `kept-traces.sha256` and the scans). The kept route-audit traces are left

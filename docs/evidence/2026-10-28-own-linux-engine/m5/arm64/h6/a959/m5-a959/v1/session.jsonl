@@ -1,0 +1,4 @@
+{"t":"2026-11-21T06:09:44.024Z","label":"development run, not a release gate (task 122, ruling 959 on m5-a959 da2deeb2, the vendor lanes, set v1, at twice the load)","kind":"server","display":":1","pid":618824}
+{"t":"2026-11-21T06:09:44.414Z","label":"development run, not a release gate (task 122, ruling 959 on m5-a959 da2deeb2, the vendor lanes, set v1, at twice the load)","kind":"setup","openbox":618846,"person":"6291468"}
+{"t":"2026-11-21T06:33:59.694Z","label":"development run, not a release gate (task 122, ruling 959 on m5-a959 da2deeb2, the vendor lanes, set v1, at twice the load)","kind":"run-end","code":0,"signal":null}
+{"t":"2026-11-21T06:34:00.711Z","label":"development run, not a release gate (task 122, ruling 959 on m5-a959 da2deeb2, the vendor lanes, set v1, at twice the load)","kind":"server-stopped","clean":true,"reason":null}

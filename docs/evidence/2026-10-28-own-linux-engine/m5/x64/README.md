@@ -1034,6 +1034,9 @@ counted steps, and `scripts/` holds task 129's launchers, extracts, scans and lo
   reported.
 - **In both:** 0 unexercised, 0 skipped, 0 false ok and 0 unjudged. All 40 sources were identified, and all 40 press
   marks were bound.
+- **Re-judged under ruling 957's judge** (96fa1fd3, task 128, ruling 984): no row moved. Both steps still PASS. C1's 24
+  and L4c's 20 landings each ended where the path ended, so there are 0 drops at a stale position and 0 path ends in
+  the 3 px margin.
 
 ### Setup
 

@@ -27,6 +27,9 @@
 //   {"op":"menuinfo","pid","title"}          every open AXMenu the app's tree reaches (the opener's children, the app's
 //       children, the windows' trees outside web areas): its chain up to its window or the app, its items (title, enabled,
 //       AXSelected, mark); the item titled `title`: role, subrole, actions, chain; the highlighted item (AXSelected)
+//       `bar`: [title, ...] scopes it to a menu-bar menu: the bar item's AXMenu, then each next title's submenu (added first)
+//   {"op":"pressitem","pid","bar":[...],"title"}  AXPress on the item `title` of the menu `bar` names (a submenu's opener)
+//   {"op":"select","pid","phrase","window"}  the text area's selection written to the phrase (AXSelectedTextRange)
 //   {"op":"post","pid","x","y","stamp","win":[n,x,y,w,h]}  the kit's own left click (not the engine's), the engine's events
 //       rebuilt (Mouse.swift: NSEvent down/up, field 3 button, field 7 subtype 3) and posted to pid: stamp "observed" or
 //       "menu" sets fields 91/92 to win's number and the window location from win's origin; "none" stamps no window;
@@ -524,10 +527,24 @@ func openerNow(_ q: [String: Any]) -> [String: Any] {
 
 /// Every open AXMenu the app's tree reaches, deduplicated: the opener's children, the app's children, then the windows'
 /// trees (breadth-first, web areas not entered, 4000 elements).
-func openMenus(_ pid: pid_t) -> [AXUIElement] {
+/// The menu a menu-bar path names: the bar item titled path[0]'s AXMenu, then the AXMenu of each next title's item in it.
+func barMenu(_ pid: pid_t, _ path: [String]) -> AXUIElement? {
+  let app = prepare(AXUIElementCreateApplication(pid))
+  guard let bar = element(attr(app, kAXMenuBarAttribute)), let first = path.first,
+        let item = elements(attr(bar, kAXChildrenAttribute)).first(where: { str($0, kAXTitleAttribute) == first }),
+        var menu = elements(attr(item, kAXChildrenAttribute)).first(where: { role($0) == "AXMenu" }) else { return nil }
+  for title in path.dropFirst() {
+    guard let i = elements(attr(menu, kAXChildrenAttribute)).first(where: { str($0, kAXTitleAttribute) == title }),
+          let sub = elements(attr(i, kAXChildrenAttribute)).first(where: { role($0) == "AXMenu" }) else { return nil }
+    menu = sub
+  }
+  return menu
+}
+func openMenus(_ pid: pid_t, bar: [String]? = nil) -> [AXUIElement] {
   let app = prepare(AXUIElementCreateApplication(pid))
   var found: [AXUIElement] = []
   func add(_ e: AXUIElement) { if !found.contains(where: { CFEqual($0, e) }) { found.append(e) } }
+  if let bar, let m = barMenu(pid, bar) { add(m) }
   if let opener { for k in elements(attr(opener, kAXChildrenAttribute)) where role(k) == "AXMenu" { add(k) } }
   for k in elements(attr(app, kAXChildrenAttribute)) where role(k) == "AXMenu" { add(k) }
   var queue: [(AXUIElement, Int)] = elements(attr(app, kAXWindowsAttribute)).map { ($0, 0) }, head = 0
@@ -545,7 +562,7 @@ func menuinfo(_ q: [String: Any]) -> [String: Any] {
   let want = q["title"] as? String
   var out: [String: Any] = [:]
   var item: AXUIElement? = nil, highlighted: Any = NSNull()
-  out["menus"] = openMenus(pid).prefix(6).map { m -> [String: Any] in
+  out["menus"] = openMenus(pid, bar: q["bar"] as? [String]).prefix(6).map { m -> [String: Any] in
     var d = describe(m)
     d["chain"] = chainWire(chain(m))
     d["pid"] = pidOf(m)
@@ -581,6 +598,20 @@ func menuinfo(_ q: [String: Any]) -> [String: Any] {
     out["item"] = t
   } else { out["item"] = NSNull() }
   return out
+}
+
+func pressitem(_ q: [String: Any]) -> [String: Any] {
+  guard let pid = (q["pid"] as? NSNumber)?.int32Value, let bar = q["bar"] as? [String], let title = q["title"] as? String else { return ["error": "args"] }
+  guard let menu = barMenu(pid, bar), let item = elements(attr(menu, kAXChildrenAttribute)).first(where: { str($0, kAXTitleAttribute) == title }) else { return ["error": "no item"] }
+  return ["result": AXUIElementPerformAction(item, kAXPressAction as CFString).rawValue]
+}
+func selectPhrase(_ q: [String: Any]) -> [String: Any] {
+  guard let pid = (q["pid"] as? NSNumber)?.int32Value, let phrase = q["phrase"] as? String else { return ["error": "args"] }
+  guard let ta = textArea(pid), let value = str(ta, kAXValueAttribute) else { return ["error": "no text area"] }
+  let r = (value as NSString).range(of: phrase)
+  guard r.location != NSNotFound else { return ["error": "phrase not found"] }
+  var cr = CFRange(location: r.location, length: r.length)
+  return ["result": AXUIElementSetAttributeValue(ta, kAXSelectedTextRangeAttribute as CFString, AXValueCreate(.cfRange, &cr)!).rawValue, "range": range(ta) ?? NSNull()]
 }
 
 private typealias SetWindowLocation = @convention(c) (CGEvent, CGPoint) -> Void
@@ -655,6 +686,8 @@ while let line = readLine() {
   case "raise": emit(raise(q))
   case "menuinfo": emit(menuinfo(q))
   case "post": emit(post(q))
+  case "pressitem": emit(pressitem(q))
+  case "select": emit(selectPhrase(q))
   default: emit(["error": "unknown op"])
   }
 }

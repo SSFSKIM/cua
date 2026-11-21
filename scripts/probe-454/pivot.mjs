@@ -20,5 +20,18 @@ for (const menu of menus) for (const route of ['coord', 'element', 'keys', 'outs
 console.log('\nmenu windows:', tally(results.filter(r => r.overlayAtObs?.popup).map(r => `${r.menu} L${r.overlayAtObs.popup.layer} ${JSON.stringify(r.overlayAtObs.popup.bounds)} ${r.overlayAtObs.popup.owner}`)));
 console.log('observation item:', tally(results.filter(r => r.tree).map(r => `${r.menu} ${r.tree.item ? `${r.tree.item.role} [${r.tree.item.actions.join(',')}] depth ${r.tree.item.depth}` : 'none'}`)));
 console.log('closed button:', tally(results.filter(r => r.route === 'button').map(r => `${r.menu}/${r.mode}: ${r.landing}${r.click?.meta?.elementClick ? ` ec=${r.click.meta.elementClick.reason}` : ''}${r.click?.meta?.activationClickKind ? ` act=${r.click.meta.activationClickKind.kind}` : ''}`)));
+console.log('opened by:', tally(results.filter(r => r.openedBy !== undefined).map(r => `${r.menu}/${r.mode}: ${r.openedBy ?? 'none'}${r.rightClick ? ` (right click ${r.rightClick.error ?? 'ok'} route=${r.rightClick.route})` : ''}`)));
+console.log('menu windows at the re-observation:', tally(results.filter(r => r.menuWindows).map(r => `${r.menu} ${r.menuWindows.map(m => `L${m.layer} ${JSON.stringify(m.bounds)}`).join(' + ')}`)));
+console.log('item point inside the observed window:', tally(results.filter(r => r.pick && r.pickInWindow !== undefined).map(r => `${r.menu} ${r.pickInWindow}`)));
+console.log('observation menu bar:', tally(results.filter(r => r.tree?.menuBar).map(r => `${r.menu} ${r.tree.menuBar.nodes} nodes, ${r.tree.menuBar.items} AXMenuItem${r.tree.item?.in ? ', item in menuBar' : ''}`)));
+console.log('hit-test at the item:', tally(results.filter(r => r.atClick && r.route === 'coord').map(r => `${r.menu} ${(r.atClick.hit ?? []).slice(0, 2).map(c => c[0]).join('<') || 'none'}`)));
+const q = (xs, p) => { if (!xs.length) return '-'; const t = [...xs].sort((a, b) => a - b); return t[Math.min(t.length - 1, Math.ceil(p * t.length) - 1)].toFixed(2); };
+console.log('\n| menu | route | clicks | stalePoint.ms p50 | p95 | hitMs p50 | p95 |\n|---|---|---|---|---|---|---|');
+for (const menu of menus) for (const route of ['coord', 'outside']) {
+  const sp = results.filter(r => r.menu === menu && r.route === route && r.click?.stalePoint).map(r => r.click.stalePoint);
+  if (!sp.length) continue;
+  const ms = sp.map(x => x.ms).filter(Number.isFinite), hit = sp.map(x => x.hitMs).filter(Number.isFinite);
+  console.log(`| ${menu} | ${route} | ${sp.length} | ${q(ms, 0.5)} | ${q(ms, 0.95)} | ${q(hit, 0.5)} | ${q(hit, 0.95)} |`);
+}
 console.log('problems:', tally(results.filter(r => r.problem || r.exception).map(r => `${r.label.replace(/-\d+$/, '')}: ${r.problem ?? r.exception.split('\n')[0]}`)));
 console.log('rows', results.length);

@@ -17,7 +17,7 @@ on:
         type: string
         default: '5'
       menus:
-        description: comma list (select, font, typeface, language); empty runs all
+        description: comma list (select, font, typeface, language, tectx, chromectx, menubar, submenu); empty runs all
         type: string
         default: ''
       routes:

@@ -232,6 +232,72 @@ const MENUS = {
   language: {app: 'scripteditor', find: {roles: ['AXPopUpButton'], value: 'AppleScript'}, current: 'AppleScript', want: 'JavaScript',
     node: sky => sky.nodes.find(n => n.role === 'AXPopUpButton' && n.value === 'AppleScript')},
 };
+// #454's qualification cells: menus opened another way, their item's effect read by `taken` (the engine's own click for
+// a context menu; the kit's AX press on a menu-bar item; the kit's HID hover on a submenu's parent).
+const WIN_MB = {x: 60, y: 30, w: 620, h: 720};  // under the menu bar's Edit and Format menus, so their items lie in the window
+const SENTINEL = 'p454-sentinel';
+const engineRightClick = async (c, point) => {
+  const {px} = toPixels(c.sky0, point);
+  const r = await c.w.execute('click', {pid: c.pid, x: px.x, y: px.y, mouse_button: 'right'});
+  c.row.rightClick = brief(r);
+  await sleep(900);
+  const pop = await ask({op: 'popup', pid: c.pid, window: winArr(c.sky0.window.frame)});
+  c.row.openedBy = pop.popup?.layer >= 100 ? 'engine right click' : null;
+  return Boolean(c.row.openedBy);
+};
+Object.assign(MENUS, {
+  // TextEdit's context menu on a selected word (the selection written through AX), Copy taken when the pasteboard holds it.
+  tectx: {app: 'textedit', want: 'Copy',
+    open: async c => {
+      sh('bash', ['-c', `printf %s ${SENTINEL} | pbcopy`]);
+      c.row.steps.push({step: 'select', answer: await ask({op: 'select', pid: c.pid, phrase: 'eol12', window: winArr(c.sky0.window.frame)})});
+      const tp = await ask({op: 'textpoint', pid: c.pid, phrase: 'eol12', after: 2, window: winArr(c.sky0.window.frame)});
+      if (tp.error) throw Object.assign(new Error(`textpoint ${tp.error}`), {setup: true});
+      if (!(await engineRightClick(c, {x: tp.x, y: tp.y}))) {
+        const r = await ask({op: 'open', pid: c.pid, find: {roles: ['AXTextArea']}, action: 'AXShowMenu'}, 15_000);
+        c.row.steps.push({step: 'open:AXShowMenu', answer: r});
+        c.row.openedBy = 'kit AXShowMenu';
+        await sleep(900);
+      }
+    },
+    taken: () => sh('pbpaste', []).out === 'eol12'},
+  // Chrome's page context menu (a right click on the page's blank area), Reload taken when the page loads again.
+  chromectx: {app: 'chrome', want: 'Reload',
+    open: async c => {
+      const f = c.sky0.window.frame;
+      if (!(await engineRightClick(c, {x: f.x + 300, y: f.y + 250}))) {
+        const r = await ask({op: 'open', pid: c.pid, find: {roles: ['AXWebArea']}, action: 'AXShowMenu'}, 15_000);
+        c.row.steps.push({step: 'open:AXShowMenu', answer: r});
+        c.row.openedBy = 'kit AXShowMenu';
+        await sleep(900);
+      }
+    },
+    taken: ctx => ctx.ev.some(e => e.type === 'ready' && e.load !== ctx.row.loadObserved)},
+  // TextEdit's Edit menu from the menu bar (the kit's AXPress on the bar item), Select All taken when the selection is all.
+  menubar: {app: 'textedit', frame: WIN_MB, want: 'Select All', bar: ['Edit'],
+    open: async c => { c.row.steps.push({step: 'menu:Edit', answer: await ask({op: 'menu', pid: c.pid, path: ['Edit']}, 15_000)}); c.row.openedBy = 'kit AXPress on the bar item'; await sleep(900); },
+    taken: ctx => Array.isArray(ctx.caretAfter?.range) && ctx.caretAfter.range[0] === 0 && ctx.caretAfter.range[1] === ctx.caretAfter.length && ctx.caretAfter.length > 0},
+  // TextEdit's Format > Font submenu (the bar item pressed, then the kit's HID hover on Font; AXPress on Font if no
+  // submenu shows), Show Colors taken when a new window of TextEdit (the colour panel) is on screen.
+  submenu: {app: 'textedit', frame: WIN_MB, want: 'Show Colors', bar: ['Format', 'Font'],
+    open: async c => {
+      c.row.steps.push({step: 'menu:Format', answer: await ask({op: 'menu', pid: c.pid, path: ['Format']}, 15_000)});
+      await sleep(700);
+      const font = await ask({op: 'menuinfo', pid: c.pid, bar: ['Format'], title: 'Font'});
+      const f = rect(font.item?.frame);
+      if (!f) throw Object.assign(new Error('no Font item'), {setup: true});
+      await ask({op: 'hover', x: f.x + f.width / 2, y: f.y + f.height / 2});
+      await sleep(900);
+      const menus = ((await ask({op: 'popup', pid: c.pid, window: winArr(c.sky0.window.frame)})).appWindows ?? []).filter(x => x.layer >= 100).length;
+      c.row.openedBy = menus >= 2 ? 'kit AXPress on the bar item, HID hover on Font' : null;
+      if (!c.row.openedBy) {
+        c.row.steps.push({step: 'pressitem:Font', answer: await ask({op: 'pressitem', pid: c.pid, bar: ['Format'], title: 'Font'}, 15_000)});
+        c.row.openedBy = 'kit AXPress on the bar item, AXPress on Font';
+        await sleep(900);
+      }
+    },
+    taken: ctx => (ctx.after.appWindows ?? []).some(x => x.layer < 100 && x.bounds[2] >= 150 && x.bounds[3] >= 150 && !(ctx.before.appWindows ?? []).some(y => y.n === x.n))},
+});
 const ROUTES = ['coord', 'element', 'keys', 'outside', 'button', 'kit:observed', 'kit:menu', 'kit:none', 'kit:hid',
   'kit:warp-observed', 'kit:warp-menu', 'kit:move-menu', 'kit:warpmove-menu', 'kit:move-hid'];
 const MODES = [
@@ -309,14 +375,14 @@ function docApp(name, appName, file) {
   const pid = () => pidOf(name);
   return {
     pid,
-    reset: async front => {
+    reset: async (front, frame = WIN) => {
       await ask({op: 'hover', x: 200, y: 600});
       await quit(name);
       sh('open', ['-a', appName, file]);
       for (let i = 0; i < 40; i++) { await sleep(300); if (Number(osa(`tell application "System Events" to count windows of process "${name}"`).out) >= 1) break; }
       await sleep(500);
-      osa(`tell application "System Events" to tell process "${name}" to set position of window 1 to {${WIN.x}, ${WIN.y}}`);
-      osa(`tell application "System Events" to tell process "${name}" to set size of window 1 to {${WIN.w}, ${WIN.h}}`);
+      osa(`tell application "System Events" to tell process "${name}" to set position of window 1 to {${frame.x}, ${frame.y}}`);
+      osa(`tell application "System Events" to tell process "${name}" to set size of window 1 to {${frame.w}, ${frame.h}}`);
       await sleep(400);
       if (front) { setFront(pid()); await sleep(700); } else await raiseFinderCover();
       return [];
@@ -337,12 +403,15 @@ function treeFacts(sky, pr, title) {
   const nodes = sky.nodes ?? [];
   const menuNodes = nodes.filter(n => /^AXMenu/.test(n.role));
   const i = nodes.findIndex(n => n.role === 'AXMenuItem' && n.title === title);
+  const bar = sky.menuBar ?? [];
+  const inBar = bar.find(n => n.role === 'AXMenuItem' && n.title === title);
   const slim = n => n && {token: n.token, role: n.role, subrole: n.subrole, title: n.title ?? null, value: n.value ?? null, depth: n.depth, actions: n.actions, frame: n.frame};
   const above = [];
   if (i >= 0) { let d = nodes[i].depth; for (let k = i - 1; k >= 0 && d > 0; k--) if (nodes[k].depth < d) { above.push(`${nodes[k].role}${nodes[k].subrole ? `/${nodes[k].subrole}` : ''}@${nodes[k].depth}`); d = nodes[k].depth; } }
   return {nodes: nodes.length, inMenuWindow: pr ? nodes.filter(n => n.frame && inside(centre(n.frame), pr)).length : null,
     menuNodes: menuNodes.length, menuItems: menuNodes.filter(n => n.role === 'AXMenuItem').length,
-    menus: menuNodes.filter(n => n.role === 'AXMenu').slice(0, 3).map(slim), item: slim(nodes[i]) ?? null, itemIndex: i, above};
+    menus: menuNodes.filter(n => n.role === 'AXMenu').slice(0, 3).map(slim), item: slim(nodes[i]) ?? (inBar ? {...slim(inBar), in: 'menuBar'} : null), itemIndex: i, above,
+    menuBar: {nodes: bar.length, roles: [...new Set(bar.map(n => n.role))], items: bar.filter(n => n.role === 'AXMenuItem').length}};
 }
 
 async function runRow(app, menuName, mode, route, rep) {
@@ -353,7 +422,7 @@ async function runRow(app, menuName, mode, route, rep) {
   let w;
   try {
     await ask({op: 'forget'});
-    row.reset = await app.reset(mode.front);
+    row.reset = await app.reset(mode.front, mn.frame);
     const pid = app.pid();
     row.frontBefore = frontmost();
     w = await connect(mode.desktop);
@@ -382,11 +451,15 @@ async function runRow(app, menuName, mode, route, rep) {
       row.landing = row.click.error ? `refused:${row.click.error}` : after.popup?.layer === 101 || (info.menus ?? []).length ? 'opened' : row.after.page.length ? `page:${row.after.page.join(',')}` : 'nothing';
       return;
     }
-    const open = await ask({op: 'open', pid, find: mn.find, action: 'AXPress'}, 15_000);
-    row.steps.push({step: 'open:AXPress', answer: open});
-    if (open.error) throw Object.assign(new Error(`opener ${open.error}`), {setup: true});
-    row.openerBefore = {value: open.value, actions: open.actions, opener: open.opener};
-    await sleep(900);
+    if (mn.open) await mn.open({row, pid, sky0, w});
+    else {
+      const open = await ask({op: 'open', pid, find: mn.find, action: 'AXPress'}, 15_000);
+      row.steps.push({step: 'open:AXPress', answer: open});
+      if (open.error) throw Object.assign(new Error(`opener ${open.error}`), {setup: true});
+      row.openerBefore = {value: open.value, actions: open.actions, opener: open.opener};
+      row.openedBy = 'kit AXPress on the pop-up button';
+      await sleep(900);
+    }
     row.frontAtObs = frontmost();
     const sky = await observe(w, pid, `${lab}-reobs`);
     const wf = sky.window.frame;
@@ -399,10 +472,18 @@ async function runRow(app, menuName, mode, route, rep) {
     const pr = rect(pop.popup?.bounds);
     if (!pop.target) { row.problem = 'the observed window is not on screen'; return; }
     if (!pr) { row.problem = 'no menu at the re-observation'; return; }
-    row.pick = menuPick(pop, mn.current, mn.want);
+    // The new cells pick by the item's own AX frame (menuinfo); the pop-up menus as before.
+    const info = await ask({op: 'menuinfo', pid, title: mn.want, bar: mn.bar});
+    if (mn.open) {
+      const f = rect(info.item?.frame);
+      row.pick = f && f.width > 4 ? {by: 'menuinfo', role: 'AXMenuItem', title: mn.want, frame: info.item.frame, point: centre(f), expect: mn.want} : null;
+    } else row.pick = menuPick(pop, mn.current, mn.want);
     if (!row.pick) { row.problem = 'no item in the menu'; return; }
     const title = row.pick.expect;
-    const info = await ask({op: 'menuinfo', pid, title});
+    // Every menu window of the app on screen (a submenu's parent too): an outside point avoids them all.
+    const menuRects = (pop.appWindows ?? []).filter(x => x.layer >= 100 && x.n !== pop.target.n).map(x => rect(x.bounds));
+    row.menuWindows = (pop.appWindows ?? []).filter(x => x.layer >= 100).map(x => ({n: x.n, layer: x.layer, bounds: x.bounds}));
+    row.pickInWindow = inside(row.pick.point, rect(winArr(wf)));
     row.menuAX = {menus: (info.menus ?? []).map(m => ({role: m.role, subrole: m.subrole, frame: m.frame, pid: m.pid, count: m.count, chain: m.chain})),
       item: info.item ?? null, highlighted: info.highlighted ?? null};
     row.tree = treeFacts(sky, pr, title);
@@ -421,7 +502,7 @@ async function runRow(app, menuName, mode, route, rep) {
         } else {
           for (const [phrase, after] of TEXT_PHRASES) {
             const tp = await ask({op: 'textpoint', pid, phrase, after, window: winArr(wf)});
-            if (!tp.error && !inside(tp, pr) && inside(tp, wf)) { row.outsidePick = {by: 'text', phrase, frame: tp.bounds}; point = {x: tp.x, y: tp.y}; break; }
+            if (!tp.error && !menuRects.some(m => inside(tp, m)) && inside(tp, wf)) { row.outsidePick = {by: 'text', phrase, frame: tp.bounds}; point = {x: tp.x, y: tp.y}; break; }
           }
           if (!point) { row.problem = 'no text outside the menu'; return; }
         }
@@ -459,7 +540,7 @@ async function runRow(app, menuName, mode, route, rep) {
         row.keys.answers.push(brief(r));
         if (r.error) break;
         await sleep(350);
-        lit = (await ask({op: 'menuinfo', pid, title})).highlighted ?? null;
+        lit = (await ask({op: 'menuinfo', pid, title, bar: mn.bar})).highlighted ?? null;
         row.keys.highlights.push(lit);
       }
       const r = await w.execute('press_key', {pid, key: 'Return'});
@@ -478,7 +559,9 @@ async function runRow(app, menuName, mode, route, rep) {
       overlay: after.popup ? {n: after.popup.n, layer: after.popup.layer, bounds: after.popup.bounds} : null, opener: openerAfter,
       caretBefore: caretBefore?.range ?? null, caret: caretAfter ? {range: caretAfter.range, line: caretAfter.line, phraseIndex: caretAfter.phraseIndex} : null, front: frontmost()};
     const valueNow = openerAfter?.value ?? null;
-    const changedTo = ev.filter(e => e.type === 'change' && e.id === 'sel').map(e => e.value).pop() ?? (valueNow !== row.openerBefore.value ? valueNow : null);
+    const changedTo = ev.filter(e => e.type === 'change' && e.id === 'sel').map(e => e.value).pop() ?? (row.openerBefore && valueNow !== row.openerBefore.value ? valueNow : null);
+    const effect = mn.taken ? mn.taken({row, ev, after, before: pop, caretAfter}) : null;
+    row.after.effect = effect;
     const caretAt = () => Boolean(caretAfter?.range && caretAfter.phraseIndex >= 0 && caretAfter.range[0] >= caretAfter.phraseIndex && caretAfter.range[0] <= caretAfter.phraseIndex + 7);
     const caretMoved = caretAfter && JSON.stringify(caretAfter.range) !== JSON.stringify(caretBefore?.range);
     const pageClicks = row.after.page.filter(p => /^(click|mousedown):/.test(p));
@@ -486,8 +569,8 @@ async function runRow(app, menuName, mode, route, rep) {
     row.after.menuUp = menuUp;
     let landing;
     if (row.click?.error) landing = `refused:${row.click.error}`;
-    else if (route === 'outside') landing = (mn.app === 'chrome' ? ev.some(e => e.type === 'click' && e.id === 'b2') : caretAt()) ? 'landed' : changedTo ? `taken:${changedTo}` : menuUp ? 'nothing' : 'dismissed';
-    else if (changedTo === title) landing = 'taken';
+    else if (route === 'outside') landing = effect ? `taken:${title}` : (mn.app === 'chrome' ? ev.some(e => e.type === 'click' && e.id === 'b2') : caretAt()) ? 'landed' : changedTo ? `taken:${changedTo}` : menuUp ? 'nothing' : 'dismissed';
+    else if (effect || changedTo === title) landing = 'taken';
     else if (changedTo) landing = `taken-other:${changedTo}`;
     else if (pageClicks.length) landing = `beneath:${pageClicks.join(',')}`;
     else if (caretMoved) landing = 'beneath:caret';

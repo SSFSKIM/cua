@@ -24,8 +24,14 @@ pre() {
 }
 export PATH=$D/node24/bin:$PATH
 pre setup
-$L "$T/setup.sh" t122-h7c "$H7" > "$T/setup-h7c.log" 2>&1; c=$?; log "setup t122-h7c exit $c"
-[ "$c" = 0 ] || exit 1
+# the worktree made once (setup.sh refuses an existing one): on a second start, it must already be at H7 and clean
+if [ -e "$G" ]; then
+  [ "$(git -C "$G" rev-parse HEAD)" = "$(git -C "$G" rev-parse "$H7^{commit}")" ] && [ -z "$(git -C "$G" status --porcelain)" ] || { log "$G is not clean at H7"; exit 1; }
+  log "setup: t122-h7c already at H7, clean"
+else
+  $L "$T/setup.sh" t122-h7c "$H7" > "$T/setup-h7c.log" 2>&1; c=$?; log "setup t122-h7c exit $c"
+  [ "$c" = 0 ] || exit 1
+fi
 {
   cd "$G" || exit 2
   echo "== head $(git rev-parse HEAD), $(git status --porcelain | wc -l) changes, $(date -u +%FT%TZ)"
@@ -39,7 +45,11 @@ grep -q "equal$" "$OUT/home-check-h7.txt" && grep -q "^check exit 0" "$OUT/home-
 log "home check: sha256 equals H7's pin, check --pinned exit 0"
 QUIET='s=$(date +%s); while [ $(( $(date +%s) - s )) -lt 360 ]; do if ! pgrep -x stress-ng > /dev/null && awk -v l="$(cut -d" " -f1 /proc/loadavg)" "BEGIN{exit !(l < 1.0)}"; then break; fi; sleep 10; done; echo "quiet wait $(( $(date +%s) - s )) s: load $(cut -d" " -f1-3 /proc/loadavg) stress-ng $(pgrep -c -x stress-ng)"'
 for step in C1 L4c; do
+  [ -e "$OUT/$step.pinned-release" ] && { log "$OUT/$step.pinned-release exists: not started"; exit 2; }
   node "$G/scripts/linux-engine-gate/gate.mjs" print "$step" --pinned "$ACC" --out "$OUT" --holder task122-arm64 > "$OUT/$step.print.txt" 2>&1 || { log "print $step failed"; exit 1; }
+  # `gate.mjs print` writes the step's record directory (step.json, README.md), which `run` then refuses as an earlier
+  # execution: it is kept apart as the print's record
+  [ -e "$OUT/$step.pinned-release" ] && mv "$OUT/$step.pinned-release" "$OUT/$step.print-record"
   cmd=$(tail -1 "$OUT/$step.print.txt")
   case "$cmd" in "$L "*) gate=${cmd#"$L "} ;; *) log "$step's printed line does not start with the lock: refused"; exit 2 ;; esac
   pre "$step"

@@ -1,0 +1,6 @@
+row #24 (left, part 2): take 29.011031 ms after the press; release 354.603012 ms after the take; floor keepalives 0; last step spaced false (the floor's end, take + 350 ms, came 4.6 ms before the release); confirmed_by Activation(18874370); released_with_take true; answered ok true, notice none
+1. the gate (de3bc094, outlasted): gate(true, 0, false) = true: it OPENS on #24
+2. (b')'s release sync: it would have run (gate open, a drop the engine let drop with its take seen: true, unguarded Chromium hold: yes)
+3. option (c): it would have answered #24 unconfirmed (gate open, its only confirmation Activation)
+
+over the cell's 30 rows: gate open on 20; let drop with the take seen 30; confirmed by Activation 30; (c) would answer unconfirmed 20 (the other 29 already answer unconfirmed)

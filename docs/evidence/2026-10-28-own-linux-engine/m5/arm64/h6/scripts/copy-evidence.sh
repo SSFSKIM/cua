@@ -22,6 +22,8 @@ rsync -a --no-specials --no-devices $X "$VM:$D/m5/a957-arm64-h6/" "$STAGE/a957/"
 mkdir -p "$STAGE/a959"
 rsync -a --no-specials --no-devices $X --exclude 'run/audit-traces/' "$VM:$D/m5/a959-arm64-h6/" "$STAGE/a959/h6-cua/"
 rsync -a --no-specials --no-devices $X --exclude 'run/audit-traces/' "$VM:$D/m5/a959-arm64-m5a959/" "$STAGE/a959/m5-a959/"
+# ruling 981: t14-long's cell with the vendor lanes, on m5-a959 bb4d7c1f
+rsync -a --no-specials --no-devices $X "$VM:$D/m5/a981-arm64-m5a959/" "$STAGE/a959/m5-a959-t14-long/"
 ssh "$VM" "test -d $D/m5/s954-arm64-h7" && rsync -a --no-specials --no-devices $X "$VM:$D/m5/s954-arm64-h7/" "$STAGE/s954/"
 (cd "$TR" && find . -type f ! -name SHA256SUMS | sort | xargs -r sha256sum > "$TR/SHA256SUMS")
 rsync -a --no-specials --no-devices --exclude 'vm-copy/' --exclude 'item9/desktop/' "$VM:$T/" "$STAGE/scripts/"

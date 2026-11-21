@@ -40,6 +40,8 @@ acceptance home's own `cua install` of **linux-engine-v0.4.0**: `cua-engine` sha
     (210) and on both vendor lanes (108 each).
 - **At H7 = `ae3fc1e8` on 0.4.2** (the section "At H7 on 0.4.2" below): the counted C1 and L4c both PASS, with 0
   unexercised rows, 0 false oks, every press mark bound and no stop before its mark (982).
+  - **L4d at H7.1 = `96fa1fd3`** FAILs once, as expected on 0.4.2: t14-long has 5 stale drops and 10 false oks in 100,
+    all of #459's shape; t14-floor `left` has 1 stale drop, past the floor by 4.6 ms; Electron passes.
 
 ## Setup
 
@@ -914,7 +916,7 @@ The run: task 125's candidate **m5-h7 at 348cae0f**, in a fresh worktree `t122-h
 - No late take and no false ok. Every stop came 54–58 ms after the press mark.
 - arm64 lands 10/10 at all three freezes, freeze-600 included, once identification is out of the freeze's way.
 
-### Ruling 959 (and 964, 973): V5's long-left device cell at twice the load (development runs; `h6/a959/`)
+### Ruling 959 (and 964, 973, 981): the vendor baseline on #459's path at twice the load (development runs; `h6/a959/`)
 
 **The cell.** `chrome_dnd_long_left_in_front_shared` is V5's long path. It runs across the zone, out of it below, then
 left, in drag.html's dnd scene, with Chrome in front, shared mode, on the background route. Its steps after the take
@@ -964,21 +966,48 @@ the vendor's "next refused" in the rows is that rejection, not a refusal.
     drags.
   - 0 stale drops on both vendor lanes.
   - This cell can't separate the vendor's behaviour from cua's on #459's shape: cua's own count here is 0, against
-    12/100 on t14-long's cell. The vendor lanes on t14-long's cell (route (b)) are held (973). They come back only if
-    0.4.3 fails to close #459.
+    12/100 on t14-long's cell. The vendor lanes on t14-long's cell (route (b)) were held by 973 and then run under 981
+    (below).
 - **Ruling 961's margin.** The cell's path ends at page (450, 260). The zone (#target) is x 560–760, y 120–220, so the
   end is 110 px left of it and 40 px below, about 117 px from its corner. Every row keeps its drop-status counts, and
   the path and zone are the page's. No margin of a few px changes a count.
 
+**Route (b): t14-long's own cell with the vendor lanes (ruling 981; `h6/a959/m5-a959-t14-long/`).** This route was
+held by 973 and brought back by 981.
+- **The branch.** m5-a959 moved to **`bb4d7c1f`**, which adds to drop-signals.mjs only:
+  - the lanes `pinned` and `newest`: the binary `--vendor` or `--newest` names, sending the same `drag` request on the
+    same window and path as cua's lane, with no cua flags and no `--stats`, as the drag experiment's `dragEngines`
+    builds its vendor lanes;
+  - the plan `t14-long-vendor`: long-left 100 drags each for pinned, newest and cua, taking turns per block of 10
+    (`blockPlan`).
+- **The launch** (`a981.sh`) is a953's, with `--plan t14-long-vendor --vendor <pinned> --newest <newest>`.
+- **A smoke run** (`--trials 2`) showed the vendor's drag driven on drop-signals.html as cua's is.
+- **The run:** arm64 twice the load, Chrome 156, 09:02–09:20Z, exit 0, "complete" (`summary.md`).
+- **The vendor rows** carry no engine stats. Their follow-up `preflight` is cua's request, which the vendor rejects.
+
+| lane | stale-position drops | landed | no drop | the answer on no-drop rows | Chrome's activation after the release (warm / cold) |
+|---|---|---|---|---|---|
+| pinned 26.928.40906 | **0/100 (≤ 3.0%)** | 0/100 | 100/100 | the drag ok, the read clean: 100 | 0 / 0 |
+| newest 26.1023.51421 | **0/100 (≤ 3.0%)** | 0/100 | 100/100 | the drag ok, the read clean: 100 | 0 / 0 |
+| cua 0.4.2 | **8/100 (≤ 14.0%)** | 8/100 | 92/100 | false ok (ok, nothing pending) 11; honest unconfirmed 81 | 17 / 2 |
+
+- The bounds are one-sided 95% Clopper–Pearson upper bounds. Every landing in this cell is a stale-position drop: the
+  path ends 60 px left of the zone.
+- All 8 stale drops and 11 false oks of cua's are drags Chrome activated after (0.6–5.5 ms for the stale drops). They
+  answered a plain ok with nothing pending.
+- Chrome never activated after a vendor drag, and no vendor drag dropped.
+- **On this path at arm64 twice the load, the vendor builds users run today made 0 wrong drops in 100 each, and cua
+  0.4.2 made 8, plus 11 false oks.**
+
 ### Scans (rulings 863, 874, 875)
 
 - **Token-shaped strings** (`h6/scripts/scan-evidence.sh`, file names only; `scan-token.txt`): the whole `m5/arm64/`,
-  3107 files, 0 hits.
+  3214 files, 0 hits.
 - **No `:0` window title or key code** in the committed `h6/` (`privacy-run.sh`, `privacy-scan.mjs`;
   `privacy-scan.txt`).
   - The titles of every `:0` client window (the stand-in session's Chrome, the only one) were piped from the VM straight
     into the scan, never written or printed.
-  - The result: 512 files, 3 titles looked for, **0 title hits, 0 held-code rows, 0 raw minimized codes**.
+  - The result: 542 files, 3 titles looked for, **0 title hits, 0 held-code rows, 0 raw minimized codes**.
   - Positive control: the same scan over x64's V3 at H finds 2 held-code rows and 27 raw minimized codes
     (`privacy-scan-control.txt`).
 - No secret value was read, and every run home's secret store was empty.
@@ -1040,7 +1069,38 @@ send's server time, and not after its own arrival.
   band landed 10/10 where H6's L4c landed 6/10.
 - These ran at H7 before H7.1 was green, and task 128 re-judges them offline under H7.1's judge (984).
 
-**Scans** of `h7/`: token-shaped strings 0 hits in 48 files (`scan-token.txt`); `:0` titles and key codes 0 in 49 files, with 3 titles looked for (`privacy-scan.txt`).
+### L4d at H7.1 = `96fa1fd3` (rulings 957, 961, 962, 972, 984, 986; `h7/out/L4d.pinned-release/`)
+
+L4d is the shipped Chrome drop route at twice the load, plan `t14-stale` in three parts. It ran **once**, counted,
+09:23–09:47Z (`h7/scripts/l4d.sh`).
+- The setup: a fresh worktree `t122-h71` with electron v44.9.0 present, the home's sha256 equal to H7.1's pin, and
+  check --pinned exiting 0.
+- The line ran as printed, with step.sh's quiet wait inside the hold.
+- **It exits 1, as expected on 0.4.2.** It was not rerun.
+
+| part | drags | landed | stale-position drops | false ok | honest unconfirmed | untaken | ambiguous (961) | judge |
+|---|---:|---:|---:|---:|---:|---:|---:|---|
+| Chrome t14-long, long-left | 100 | 5 (all stale) | **5** | **10** | 85 | 0 | 0 | FAIL |
+| Chrome t14-floor, plain-long | 300 | 300 | 0 | 0 | 0 | 0 | 0 | – |
+| Chrome t14-floor, left | 30 | 1 (stale) | **1** (#24) | 0 | 29 | 0 | 0 | FAIL |
+| Chrome t14-floor, inzone-out | 30 | 0 | 0 | 0 | 30 | 0 | 0 | – |
+| Electron t17-long, long-left | 30 | 0 | 0 | 0 | 27 | 0 | 0 | PASS: 30/30 exercised. The 3 plain oks are ruling 830's zone-truth mismatches |
+
+**Ruling 986** (`h7/out/h71/l4d-rows.md`, `l4d-rows.mjs`):
+- **The 15 t14-long rows all have #459's shape.** Each is a Chrome long-left drag:
+  - activated 1.2–10.2 ms after the release;
+  - its path after the take 502.8–1590.4 ms, past the 350 ms floor;
+  - the last step to the release 0.1–4.0 ms, with 0 keepalives;
+  - every one warm, and each a plain ok with nothing pending.
+- **t14-floor `left` #24 is outside it by its cell.** Its path after the take ran 354.6 ms, only 4.6 ms past the floor,
+  so 0 keepalives were sent. The release came 2.1 ms after the last step, and Chrome activated 1.9 ms after the
+  release. It is a stale drop answered with a plain ok.
+  - de3bc094's `release_sync::gate`, applied offline to #24's recorded fields (`gate459-row24.mjs`, task 129's
+    `gate459-row8.mjs`; `gate459-row24.txt`), **opens**: gate(true, 0, false).
+  - (b')'s release sync would have run on #24, and option (c) would have answered it unconfirmed.
+  - Over the cell's 30 rows, the gate opens on 20.
+
+**Scans** of `h7/`, L4d included: token-shaped strings 0 hits in 77 files (`scan-token.txt`); `:0` titles and key codes 0 in 77 files, with 3 titles looked for (`privacy-scan.txt`).
 
 ## Files
 

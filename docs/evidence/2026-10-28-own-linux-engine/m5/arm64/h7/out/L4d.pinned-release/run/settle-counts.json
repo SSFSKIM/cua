@@ -1,0 +1,1456 @@
+{
+ "kind": "settle-counts",
+ "processes": [
+  {
+   "harness_pid": 777499,
+   "run": "pinned-L4d",
+   "opt_in": false,
+   "started": "2026-11-21T09:23:08.322Z",
+   "finished": "2026-11-21T09:46:57.649Z",
+   "engines": [
+    {
+     "lane": "reader",
+     "pid": 777590,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "list_windows": 20,
+      "get_window_state": 560
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "cua",
+     "pid": 778381,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-042/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 41,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua",
+     "pid": 778759,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-042/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 41,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua",
+     "pid": 779149,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-042/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 41,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua",
+     "pid": 779466,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-042/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 41,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua",
+     "pid": 779672,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-042/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 41,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua",
+     "pid": 779890,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-042/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 41,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua",
+     "pid": 780110,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-042/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 41,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua",
+     "pid": 780329,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-042/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 41,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua",
+     "pid": 780536,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-042/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 41,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua",
+     "pid": 781125,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-042/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 41,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua",
+     "pid": 781641,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-042/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 36,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua",
+     "pid": 781848,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-042/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 41,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua",
+     "pid": 782099,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-042/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 41,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua",
+     "pid": 782319,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-042/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 41,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua",
+     "pid": 782520,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-042/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 41,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua",
+     "pid": 782724,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-042/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 39,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua",
+     "pid": 782941,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-042/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 41,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua",
+     "pid": 783144,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-042/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 33,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua",
+     "pid": 783358,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-042/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 41,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua",
+     "pid": 783567,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-042/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 36,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua",
+     "pid": 783774,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-042/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 35,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua",
+     "pid": 783969,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-042/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 34,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua",
+     "pid": 784178,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-042/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 35,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua",
+     "pid": 784398,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-042/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 37,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua",
+     "pid": 784594,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-042/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 37,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua",
+     "pid": 784787,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-042/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 37,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua",
+     "pid": 784988,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-042/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 36,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua",
+     "pid": 785197,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-042/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 36,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua",
+     "pid": 785406,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-042/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 35,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua",
+     "pid": 785617,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-042/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 39,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua",
+     "pid": 785818,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-042/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 34,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua",
+     "pid": 786029,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-042/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 35,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua",
+     "pid": 786238,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-042/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 35,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua",
+     "pid": 786443,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-042/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 37,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua",
+     "pid": 786646,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-042/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 36,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua",
+     "pid": 786862,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-042/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 35,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua",
+     "pid": 787076,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-042/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 35,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua",
+     "pid": 787288,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-042/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 38,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua",
+     "pid": 787505,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-042/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 39,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua",
+     "pid": 787716,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-042/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 39,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua",
+     "pid": 787927,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-042/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 36,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua",
+     "pid": 788143,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-042/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 36,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua",
+     "pid": 788358,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-042/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 35,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua",
+     "pid": 788573,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-042/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 37,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua",
+     "pid": 788762,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-042/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 37,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua",
+     "pid": 788982,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-042/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 39,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 0,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua",
+     "pid": 789375,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-042/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 31,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 10,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua",
+     "pid": 789587,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-042/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 31,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 10,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua",
+     "pid": 789797,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-042/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 31,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 10,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    }
+   ]
+  }
+ ]
+}

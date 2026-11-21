@@ -1548,48 +1548,87 @@ func pressAfterFinalCheck(holds: Bool, hold: () throws -> Void, finalCheck: (_ a
   try perform()
 }
 
+/// What an element route's recheck answered (`StalePointGate.recheck`): its verdict, and the costs the record carries for
+/// it (#456): its own hit-test's time (`hitMs`, the hit #452's rule judged then) and its window-list read (`windowsMs`,
+/// none when #452's rule read no list).
+struct StalePointRecheck<Element> {
+  let verdict: StalePointVerdict<Element>
+  var hitMs: Double?
+  var windowsMs: Double?
+
+  init(_ verdict: StalePointVerdict<Element>, hitMs: Double? = nil, windowsMs: Double? = nil) {
+    self.verdict = verdict
+    self.hitMs = hitMs
+    self.windowsMs = windowsMs
+  }
+}
+
 /// #296's check where a kept point is carried by an element route: the first verdict (the click's), and the guard run
-/// again at the point with a fresh hit-test (`recheck`), which the route asks for when it waited (#282's action re-read,
-/// #283's focus settle and box re-read; up to `webAreaRereadDeadline`) since the page can change meanwhile.
+/// again at the point with a fresh hit-test (`recheck`, `recheckedPointVerdict`: #452's rule on that hit-test first,
+/// #456), which the route asks for when it waited (#282's action re-read, #283's focus settle and box re-read; up to
+/// `webAreaRereadDeadline`) since the page can change meanwhile, and a window of the app's own can open over the point.
 struct StalePointGate<Element> {
   let first: StalePointVerdict<Element>
   let firstMs: Double
   /// The first check's window-list read (#316's rule W, `StalePointRecord.windowsMs`), which the record this gate
-  /// answers replaces in the meta: it is kept there, the recheck reading no window list of its own.
+  /// answers replaces in the meta: it is kept there, with the recheck's own read added after a wait.
   var firstWindowsMs: Double? = nil
-  /// The first check's hit-test time (#452, `StalePointRecord.hitMs`), carried on the same way.
+  /// The first check's hit-test time (#452, `StalePointRecord.hitMs`), carried on the same way; after a wait the
+  /// recheck's own.
   var firstHitMs: Double? = nil
-  let recheck: () -> StalePointVerdict<Element>
+  /// The app a refusal's sentence names (#452's names it).
+  var app = "The app"
+  let recheck: () -> StalePointRecheck<Element>
 
   /// The first check's verdict and its record (`Engine.stalePointGuard`'s), whose time and window-list read this gate's
   /// record carries on.
-  init(first: StalePointVerdict<Element>, record: StalePointRecord, recheck: @escaping () -> StalePointVerdict<Element>) {
-    self.init(first: first, firstMs: record.ms, firstWindowsMs: record.windowsMs, firstHitMs: record.hitMs, recheck: recheck)
+  init(first: StalePointVerdict<Element>, record: StalePointRecord, app: String = "The app",
+       recheck: @escaping () -> StalePointRecheck<Element>) {
+    self.init(first: first, firstMs: record.ms, firstWindowsMs: record.windowsMs, firstHitMs: record.hitMs, app: app, recheck: recheck)
   }
 
   init(first: StalePointVerdict<Element>, firstMs: Double, firstWindowsMs: Double? = nil, firstHitMs: Double? = nil,
-       recheck: @escaping () -> StalePointVerdict<Element>) {
+       app: String = "The app", recheck: @escaping () -> StalePointRecheck<Element>) {
     self.first = first
     self.firstMs = firstMs
     self.firstWindowsMs = firstWindowsMs
     self.firstHitMs = firstHitMs
+    self.app = app
     self.recheck = recheck
   }
 
   /// The verdict on `pressed` just before the route acts on it: the first one, or after a wait the recheck's, each
-  /// judged by `stalePointPressVerdict`; its record (`rechecked` after a wait, the time both checks', the first check's
-  /// window-list read) and its refusal.
+  /// judged by `stalePointPressVerdict`; its record (`rechecked` after a wait, the time both checks', their window-list
+  /// reads, the hit-test time of the hit judged) and its refusal.
   func check(_ pressed: Element, waited: Bool, afterActivation: Bool = false, now: () -> Double,
              reads: StalePointReads<Element>) -> (record: StalePointRecord, refusal: EngineError?) {
     let started = now()
-    let verdict = stalePointPressVerdict(pressed, waited ? recheck() : first, reads: reads)
-    let outcome = stalePointOutcome(verdict, ms: firstMs + (now() - started), afterActivation: afterActivation, reads: reads)
+    let rechecked = waited ? recheck() : nil
+    let verdict = stalePointPressVerdict(pressed, rechecked?.verdict ?? first, reads: reads)
+    let outcome = stalePointOutcome(verdict, ms: firstMs + (now() - started), afterActivation: afterActivation, app: app, reads: reads)
     var record = outcome.record
-    record.windowsMs = firstWindowsMs
-    record.hitMs = firstHitMs
+    switch (firstWindowsMs, rechecked?.windowsMs) {
+    case let (first?, again?): record.windowsMs = first + again
+    case let (first, again): record.windowsMs = first ?? again
+    }
+    record.hitMs = rechecked.map(\.hitMs) ?? firstHitMs
     record.rechecked = waited
     record.afterActivation = afterActivation
     return (record, outcome.refusal)
+  }
+}
+
+/// #456: the guard an element route runs again at its point after a wait (`StalePointGate.recheck`): #452's rule
+/// (`guardedPointVerdict`) on the recheck's own fresh, timed hit-test (`hit`, `hitTestOutcome`), so a window of the app's
+/// own that opened over the point during the wait (Chrome's omnibox popup, TextEdit's colour-well popover) is refused as
+/// at the first check, the window list read only when that hit-test's place asks for it; a hit unread or past
+/// `pointHitSignalDeadlineMs`, or one in the observed window with nothing of the app's over it, keeps the tree's verdict
+/// on the same hit (`tree`), as before. #316's rule W ran at the first check and is not run again (no recorded list).
+func recheckedPointVerdict<Element>(at point: CGPoint, hit: WindowHit<Element>, target: CGWindowID?, pid: pid_t,
+                                    windows: () -> [ListedWindow],
+                                    tree: (Element?) -> StalePointVerdict<Element>) -> StalePointVerdict<Element> {
+  guardedPointVerdict(at: point, hit: hit.element, place: hit.place, target: target, pid: pid, recorded: nil, windows: windows) {
+    tree(hit.element)
   }
 }
 
@@ -1663,9 +1702,10 @@ func newWindowOverScreenshot(app: String) -> EngineError {
 /// stamped to the observed window, would reach that window's content under it. The screenshot may well have shown that
 /// window (#337: Chrome's omnibox popup open at the observation), so nothing is said to have changed and no page is
 /// blamed; the sentence names the ways through: keys for the overlay, or an element the tree holds. Nothing was posted.
-func appWindowOverPointRefusal(app: String) -> EngineError {
-  EngineError(name: "appWindowOverPoint",
-    "\(app) has a window of its own over the one the screenshot showed at this point (a suggestion list, popup or panel), and a click here would reach the window under it, not what the screenshot shows. Nothing was sent. Use keys instead (the arrow keys and Return for a suggestion list, Escape to close it), or call getAXState() and click an element it lists.")
+func appWindowOverPointRefusal(app: String, afterActivation: Bool = false) -> EngineError {
+  let sent = afterActivation ? "The app was activated in the background, but nothing was pressed." : "Nothing was sent."
+  return EngineError(name: "appWindowOverPoint",
+    "\(app) has a window of its own over the one the screenshot showed at this point (a suggestion list, popup or panel), and a click here would reach the window under it, not what the screenshot shows. \(sent) Use keys instead (the arrow keys and Return for a suggestion list, Escape to close it), or call getAXState() and click an element it lists.")
 }
 
 /// The guard's outcome at a point: its meta record, and the refusal to throw (nil when it kept the pointer). The refusal
@@ -1676,7 +1716,7 @@ func stalePointOutcome<Element>(_ verdict: StalePointVerdict<Element>, ms: Doubl
                                 reads: StalePointReads<Element>) -> (record: StalePointRecord, refusal: EngineError?) {
   let record = StalePointRecord(verdict, ms: ms)
   if verdict.reason == .newWindow { return (record, newWindowOverScreenshot(app: app)) }
-  if verdict.reason == .appWindowOverPoint { return (record, appWindowOverPointRefusal(app: app)) }
+  if verdict.reason == .appWindowOverPoint { return (record, appWindowOverPointRefusal(app: app, afterActivation: afterActivation)) }
   guard verdict.refused, let node = verdict.node else { return (record, nil) }
   if verdict.underlyingRefused, let control = verdict.underlying {
     return (record, controlUnderInertChanged(
@@ -1726,12 +1766,23 @@ extension Engine {
     return (outcome.record, outcome.refusal, verdict, shift)
   }
 
-  /// `stalePointVerdict` again at a point an element route was given (`StalePointGate.recheck`), its hit taken fresh.
-  func stalePointRecheck(at point: CGPoint, shift: CGVector, window: AXUIElement, appPid: pid_t, app: ResolvedApp,
-                         context: ExecutionContext) -> StalePointVerdict<AXUIElement> {
+  /// The guard again at a point an element route was given (`StalePointGate.recheck`), its hit-test taken fresh and
+  /// timed (`hitTestOutcome`): #452's rule on it, then `stalePointVerdict` (`recheckedPointVerdict`, #456). `windowID` is
+  /// the number of the window the point was placed in, as for the first check.
+  func stalePointRecheck(at point: CGPoint, shift: CGVector, window: AXUIElement, windowID: CGWindowID?, appPid: pid_t,
+                         app: ResolvedApp, context: ExecutionContext) -> StalePointRecheck<AXUIElement> {
     let rehit = { hitTest(window: window, pid: appPid, at: point) }
     let screenshot = context.connection.observedScreenshot(app: app)
-    return stalePointVerdict(at: point, windowShift: shift, nodes: screenshot?.nodes ?? [], frameless: screenshot?.frameless ?? [],
-                             recorded: { screenshot?.recorded[ElementKey(element: $0)] }, hit: rehit(), rehit: rehit, sleep: { usleep(UInt32($0 * 1000)) }, reads: .live)
+    let fresh = hitTestOutcome(window: window, pid: appPid, at: point, now: monotonicMilliseconds)
+    var windowsMs: Double?
+    let verdict = recheckedPointVerdict(at: point, hit: fresh, target: windowID, pid: appPid, windows: {
+      let read = monotonicMilliseconds()
+      defer { windowsMs = monotonicMilliseconds() - read }
+      return onScreenWindowList()
+    }) { hit in
+      stalePointVerdict(at: point, windowShift: shift, nodes: screenshot?.nodes ?? [], frameless: screenshot?.frameless ?? [],
+                        recorded: { screenshot?.recorded[ElementKey(element: $0)] }, hit: hit, rehit: rehit, sleep: { usleep(UInt32($0 * 1000)) }, reads: .live)
+    }
+    return StalePointRecheck(verdict, hitMs: fresh.ms, windowsMs: windowsMs)
   }
 }

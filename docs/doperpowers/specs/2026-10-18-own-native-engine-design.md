@@ -558,9 +558,11 @@ error    {code: number (the vendor's codes where mapped; -10005 otherwise), mess
     `recordedHit`), windowsMs? (#316's rule W's window-list read), webAreaReads? (#316's rule G's parent reads),
     newWindow? (#316: the new window's number), overWindow? (#452: the number of the app's window over the observed one at
     the point, 0 unread), by? (#452: "axHit" | "popover", the signal that refused), hitMs? (#452, design ruling 940: the
-    coordinate's hit-test's time), newElementReads? (#330's rule dL's reads, when it read any), ms,
+    coordinate's hit-test's time; after a recheck, the recheck's own, #456), newElementReads? (#330's rule dL's reads, when
+    it read any), ms,
     rechecked? (true: #282's or #283's
-    route waited and the guard ran again before the press; the verdict is that check's, ms both checks'), afterActivation?
+    route waited and the guard ran again before the press, #452's rule first on its own hit-test (#456); the verdict is
+    that check's, ms and windowsMs both checks'), afterActivation?
     (true: that check ran after the route's focus hold had activated the app)}; roles only, never a title
   menuItemClick: #454's coordinate click on an open menu's item, on its result and its errors once the guard kept the
     point: {menuWindow (the number of the app's menu window over the point), delivery? ("action": the click delivered as
@@ -7189,6 +7191,25 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   accessibility record of the screenshot holds no item of it at this point" and offers the element route only "If a
   fresh getAXState() lists the item"; the model-facing sentence says the same.
   Date/Author: 2026-11-20, cursor235's implementer for #454.
+
+- Decision (#456, 2026-11-20, `fix/456-recheck-overlay`, plugin 0.28.25; amends #452's entry and #296's
+  `StalePointGate`): **the element route's recheck after its wait runs #452's same-app overlay rule on its own fresh,
+  timed hit-test before the press or the focus.** #282's and #283's element routes (shared mode, the app behind) wait
+  for action names or a focus hold and then check the point again (`stalePointRecheck`); that recheck read only the
+  tree's verdict, so a window of the app's own that opened over the point during the wait (Chrome's omnibox popup) was
+  pressed under, as on main (reviewer-high on 023a3bee, P2). The recheck now takes `hitTestOutcome` instead of the
+  untimed hit-test and passes its place to `guardedPointVerdict` (`recheckedPointVerdict`, StalePoint.swift): the same
+  (a) `axHit` and (b) `popover` signals, the same `hitWindowCovers` and `appWindowOverPoint` checks against the window
+  list (read only when the place asks for it), the same 500 ms deadline (a late or unread hit keeps the tree's verdict),
+  and the same refusal: `appWindowOverPoint`, #452's sentence naming the app (the gate now carries the app's name;
+  "The app" before), meta `by`, `overWindow` and the recheck's own `hitMs`; `windowsMs` adds the recheck's list read to
+  the first check's. After the focus hold the sentence says "The app was activated in the background, but nothing was
+  pressed." in place of "Nothing was sent.", as the guard's other refusals do there. #316's rule W is not run again (no
+  recorded list is passed): it ran at the first check, and W's own question at the recheck is left as it was. The hit
+  the tree judges is unchanged (the timed hit-test's element is the untimed one's), so an ordinary element-route click
+  reads no window list and answers as before. Unit-tested over fakes only (`RecheckAppWindowOverPointTests`); the
+  hosted cell (an omnibox popup opened during a background element-route click) is not yet measured.
+  Date/Author: 2026-11-20, cursor235's implementer for #456.
 
 ## Outcomes & Retrospective
 

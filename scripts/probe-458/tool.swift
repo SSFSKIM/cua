@@ -39,7 +39,8 @@
 //   {"op":"state","pid"}                     the opener's value, AXExpanded, AXFocused, actions and its AXMenu children
 //       (frame, item count); the app's AXFrontmost, its focused element (and whether it is the opener), its focused
 //       window's frame; the on-screen layer-0 windows front to back (owner, pid, number), the top 6
-//   {"op":"watch","pid","ms","target","user","skip"}  the window list sampled every 10 ms: each change of the app's
+//   {"op":"watch","pid","ms","target","user","skip","person"}  the window list sampled every 10 ms (5 ms with `person`,
+//       whose AXFocusedWindow and AXMainWindow frames are read each sample): each change of the app's
 //       menu-level windows, of whether `target` is in front of `user`, and of the layer-0 order (run on a second tool)
 //   {"op":"order","skip"}                    the on-screen layer-0 windows front to back
 //   {"op":"restore","user","target","hold"}  route 3's repair by the kit: AXRaise on the user app's focused window while
@@ -715,6 +716,10 @@ func watch(_ q: [String: Any]) -> [String: Any] {
   let ms = (q["ms"] as? NSNumber)?.doubleValue ?? 2000
   let target = (q["target"] as? NSNumber)?.intValue ?? -1, user = (q["user"] as? NSNumber)?.intValue ?? -1
   let skip = Set((q["skip"] as? [NSNumber] ?? []).map { $0.int32Value })
+  // `person`: the person's app, whose AXFocusedWindow and AXMainWindow frames are read every sample (5 ms apart), each
+  // change kept as [ms, focused frame, main frame] (null where a read fails).
+  let personApp = (q["person"] as? NSNumber).map { prepare(AXUIElementCreateApplication($0.int32Value)) }
+  var personSamples: [[Any]] = [], lastPerson = "", personReads = 0
   let t0 = nowMs()
   var samples: [[Any]] = [], last = "", lastOrder = "", reads = 0
   var aboveMs = 0.0, aboveSince: Double? = nil, firstAbove: Double? = nil, lastAboveEnd: Double? = nil
@@ -738,10 +743,17 @@ func watch(_ q: [String: Any]) -> [String: Any] {
       samples.append([r1(t), menus, above, order == lastOrder ? NSNull() : numbers])
       last = key; lastOrder = order
     }
-    usleep(10_000)
+    if let personApp {
+      let focused = wire(element(attr(personApp, kAXFocusedWindowAttribute)).flatMap(frameOf))
+      let main = wire(element(attr(personApp, kAXMainWindowAttribute)).flatMap(frameOf))
+      personReads += 1
+      let k = "\(focused)|\(main)"
+      if k != lastPerson { personSamples.append([r1(nowMs() - t0), focused, main]); lastPerson = k }
+      usleep(5_000)
+    } else { usleep(10_000) }
   }
   if let since = aboveSince { aboveMs += nowMs() - t0 - since }
-  return ["samples": samples, "reads": reads, "aboveMs": r1(aboveMs), "firstAbove": firstAbove.map(r1) ?? NSNull(),
+  return ["samples": samples, "reads": reads, "personSamples": personSamples, "personReads": personReads, "aboveMs": r1(aboveMs), "firstAbove": firstAbove.map(r1) ?? NSNull(),
           "lastAboveEnd": lastAboveEnd.map(r1) ?? NSNull(), "aboveAtEnd": aboveSince != nil]
 }
 

@@ -62,6 +62,7 @@ const PAGE = `<!doctype html><html lang="en" translate="no"><head><meta charset=
 <body id="page"><div id="wrap" style="position:relative;height:560px">
 <h3 class="a" style="top:2px;margin:0">probe454 page</h3>
 <div class="a" style="top:40px"><select id="sel" aria-label="Choice"><option>One</option><option>Two</option><option>Three</option></select> <button id="top" type="button" style="margin-left:120px">Top</button></div>
+<div class="a" style="top:300px"><select id="empty" aria-label="Empty"></select> <select id="blocked" aria-label="Blocked" onmousedown="event.preventDefault()"><option>Ay</option><option>Bee</option></select></div>
 <div class="a" style="top:440px"><button id="b1" type="button">Alpha</button> <button id="b2" type="button">Beta</button> <button id="b3" type="button">Gamma</button></div>
 </div>${SCRIPT}</body></html>`;
 
@@ -231,6 +232,12 @@ const MENUS = {
     node: sky => sky.nodes.find(n => n.role === 'AXPopUpButton' && n.value === 'Helvetica')},
   language: {app: 'scripteditor', find: {roles: ['AXPopUpButton'], value: 'AppleScript'}, current: 'AppleScript', want: 'JavaScript',
     node: sky => sky.nodes.find(n => n.role === 'AXPopUpButton' && n.value === 'AppleScript')},
+  // Chrome <select>s a press may open nothing for (the 1.5 s wait's cost): an empty one, and one whose mousedown the page
+  // cancels.
+  empty: {app: 'chrome', find: {roles: ['AXPopUpButton', 'AXComboBox', 'AXMenuButton'], any: '^Empty'},
+    node: sky => sky.nodes.find(n => ['AXPopUpButton', 'AXComboBox', 'AXMenuButton'].includes(n.role) && /^Empty/.test(label(n)) && n.frame?.width > 4)},
+  blocked: {app: 'chrome', find: {roles: ['AXPopUpButton', 'AXComboBox', 'AXMenuButton'], any: '^Blocked'}, current: 'Ay', want: 'Bee',
+    node: sky => sky.nodes.find(n => ['AXPopUpButton', 'AXComboBox', 'AXMenuButton'].includes(n.role) && /^Blocked/.test(label(n)) && n.frame?.width > 4)},
   // TextEdit's font-size combo box, clicked on its arrow (the observation's AXButton inside the box, rightmost).
   combo: {app: 'textedit', find: {roles: ['AXComboBox']}, list: true,
     node: sky => {
@@ -248,6 +255,7 @@ const MODES = {
 const CELLS = [];
 for (const control of ['select', 'font', 'combo', 'language']) for (const mode of ['shared-behind', 'dedicated-behind', 'shared-front']) CELLS.push({kind: 'delivery', control, mode, layout: 'a'});
 for (const layout of ['b', 'c', 'd']) for (const control of ['select', 'font']) CELLS.push({kind: 'delivery', control, mode: 'shared-behind', layout});
+for (const control of ['empty', 'blocked']) CELLS.push({kind: 'delivery', control, mode: 'shared-behind', layout: 'a'});
 CELLS.push({kind: 'parity', control: 'button', app: 'chrome', mode: 'shared-behind', layout: 'a', reps: 5});
 CELLS.push({kind: 'parity', control: 'menu-item', app: 'textedit', mode: 'shared-behind', layout: 'a', reps: 5});
 for (const mode of ['shared-behind', 'shared-front']) CELLS.push({kind: 'parity', control: 'combo-text', app: 'textedit', mode, layout: 'a', reps: 5});
@@ -433,7 +441,8 @@ async function runRow(app, cell, rep) {
     row.before = {order: orderNames(ord0, names), front: frontmost(), personFocusedWindow: (await ask({op: 'state', pid: pidOf('Finder')})).focusedWindow ?? null};
     const target = pop0.target?.n;
     const t0 = Date.now();
-    const watching = askWatch({op: 'watch', pid, ms: 5000, target: target ?? -1, user: names.F1 ?? -1, skip: skip()}, 20_000);
+    const watching = askWatch({op: 'watch', pid, ms: 5000, target: target ?? -1, user: names.F1 ?? -1, skip: skip(), person: pidOf('Finder')}, 20_000);
+    row.f1Bounds = ord0.find(x => x.n === names.F1)?.bounds ?? null;
     await sleep(30);
     let point, node;
     if (cell.kind === 'delivery') {
@@ -480,6 +489,17 @@ async function runRow(app, cell, rep) {
     const after = await snap(pid, wf, baseline);
     row.after = {...after, order: orderNames(after.order, names)};
     row.watch = await watching;
+    // The person's key window through the row: every sample's focused and main window against F1 (a read that fails is
+    // counted apart, not as a change).
+    if (row.f1Bounds) {
+      const isF1 = f => Array.isArray(f) && f.slice(0, 2).every((v, i) => Math.abs(v - row.f1Bounds[i]) <= 3);
+      const ps = row.watch.personSamples ?? [];
+      row.key = {samples: ps.length, reads: row.watch.personReads,
+        focusedOff: ps.filter(x => x[1] !== null && !isF1(x[1])).map(x => [x[0], x[1]]), mainOff: ps.filter(x => x[2] !== null && !isF1(x[2])).map(x => [x[0], x[2]]),
+        unread: ps.filter(x => x[1] === null).length, endF1: isF1(ps[ps.length - 1]?.[1])};
+      delete row.watch.personSamples;
+      row.key.samplesKept = ps.slice(0, 12);
+    }
     row.moved = moved(ord0, after.order).map(n => nameOf(names, n) ?? n);
     row.orderRestored = row.moved.length === 0;
     if (row.clickEvents) { row.page = [...new Set(row.clickEvents().filter(e => ['click', 'mousedown', 'focusin', 'change'].includes(e.type)).map(e => `${e.type}:${e.id}${e.value ? `=${e.value}` : ''}`))]; delete row.clickEvents; }

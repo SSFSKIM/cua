@@ -302,11 +302,11 @@ test('an application whose own variables the environment refuses is never starte
 /**
  * The commands the harness starts that are not applications: its X and bus tools, its own programs, the engines
  * (engines are not applications, task 45; `launch.command` an engine's launch inside cua's worker sandbox,
- * engine-sandbox.mjs), the candidate's preparation commands, git, node as the run's
+ * engine-sandbox.mjs), `stdbuf` around xprop's spy (drop-signals.mjs), the candidate's preparation commands, git, node as the run's
  * org.a11y.Bus stand-in (a11y-stub.mjs; xspawn.test.mjs holds `process.execPath` to that one start), and a running
  * browser's own executable asked its version (`exe`, chrome.mjs `browserIdentity`: no window, no profile).
  */
-const TOOLS = new Set(["'xdotool'", "'xprop'", "'xwininfo'", "'xclip'", "'busctl'", "'dbus-monitor'", "'dbus-daemon'", "'xtrace'", "'setpriv'", "'Xvfb'", "'stress-ng'", "'git'", "'pgrep'", "'sleep'", 'XPROBE', 'xprobe', 'this.bin', 'launch.command', 'values.engine', 'args.cua', 'command', 'cmd', 'process.execPath', 'exe']);
+const TOOLS = new Set(["'xdotool'", "'xprop'", "'xwininfo'", "'xclip'", "'busctl'", "'dbus-monitor'", "'dbus-daemon'", "'xtrace'", "'setpriv'", "'stdbuf'", "'Xvfb'", "'stress-ng'", "'git'", "'pgrep'", "'sleep'", 'XPROBE', 'xprobe', 'this.bin', 'launch.command', 'values.engine', 'args.cua', 'command', 'cmd', 'process.execPath', 'exe']);
 
 test('no application start bypasses the launch environment: every process start is a tool, an engine, or one of the two application launchers', () => {
   const modules = harnessModules();

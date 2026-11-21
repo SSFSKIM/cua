@@ -10,7 +10,11 @@
 // compare byte for byte (ruling 929.2: a step whose launch differs between two heads reruns). It needs no display, no
 // engine and no network: the pinned home's engine file need only exist.
 //
-//   node scripts/linux-engine-gate/launch-plan.mjs --pinned <home> --out <new dir> [--skip <regex>]
+//   node scripts/linux-engine-gate/launch-plan.mjs --pinned <home> --out <new dir> [--skip <regex>] [--arch x64|arm64]
+//
+// Each drop-signals step also prints its plan's contents on the architecture (ruling 954): every cell, its count and
+// its freeze with its start rule (`planContents`), rendered from the arguments the runner would launch it with, through
+// the harness's own parser and plan (the review of cf1ef10f, finding 5).
 //
 // The scratch names the runner makes afresh each time (a suite's log directory, `/tmp/cua171-gl-XXXXXX`) print as that
 // pattern. `--skip` leaves out the steps whose names match (task 121: `^K`, the canary steps, whose launch ruling 930
@@ -70,14 +74,28 @@ export async function dryLaunch(step, { pinned, out, base = process.env }) {
   return { step: step.name, print, launch: launch && { ...launch, env: envDelta(launch.env, base) } };
 }
 
-/** The plan's text: every step not skipped, in the gate's order. */
-export async function launchPlan({ pinned, out, skip = null, base = process.env, steps = STEPS }) {
+/**
+ * A drop-signals launch's plan as it runs on `arch` (ruling 954: the plan's contents, not only its name): `args` the
+ * harness arguments the runner launches (`dryLaunch`), read by the harness's own parser (cli.mjs `parseArgs`) and sat as
+ * its run sits them (drop-signals.mjs `runSpecs`: the plan or the default one, the ballast's cells, the lanes, the
+ * `--trials` cap); each cell, its count and its freeze (`freezeOf`, the start rule included). Empty for any other launch.
+ */
+export async function planContents(args, arch) {
+  if (!args.includes('--experiment') || args[args.indexOf('--experiment') + 1] !== 'drop-signals') return [];
+  const [{ parseArgs }, signals] = await Promise.all([import('../linux-engine-diff/cli.mjs'), import('../linux-engine-diff/drop-signals.mjs')]);
+  const run = parseArgs(args);
+  return [`plan ${run.plan ?? 'main'} on ${arch}:`, ...signals.runSpecs(run).map((s) => `  ${s.lane} ${s.cell} x${s.n} freeze ${JSON.stringify(signals.freezeOf(s.cell.split('@')[0]))}`)];
+}
+
+/** The plan's text: every step not skipped, in the gate's order, on `arch` (this machine's unless given). */
+export async function launchPlan({ pinned, out, skip = null, base = process.env, steps = STEPS, arch = process.arch }) {
   const lines = [];
   for (const step of steps.filter((s) => !skip || !skip.test(s.name))) {
     const { print, launch } = await dryLaunch(step, { pinned, out: join(out, step.name), base });
     lines.push(`## ${step.name}`, `print: ${print}`);
     if (!launch) lines.push('launch: none (a :0 step: run in the declared sitting with its print line)');
     else lines.push(`launch: ${launch.via}`, `command: ${launch.command}`, `cwd: ${launch.cwd}`, 'args:', ...launch.args.map((x) => `  ${x}`), 'env:', ...launch.env.map((x) => `  ${x}`));
+    if (launch) lines.push(...(await planContents(launch.args, arch)));
     lines.push('');
   }
   return normalize(lines.join('\n'));
@@ -88,9 +106,13 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const flag = (name) => (argv.includes(name) ? argv[argv.indexOf(name) + 1] : null);
   const pinned = flag('--pinned');
   const out = flag('--out');
-  if (!pinned || !out) throw new Error('usage: launch-plan.mjs --pinned <home> --out <new dir> [--skip <regex>]');
+  if (!pinned || !out) throw new Error('usage: launch-plan.mjs --pinned <home> --out <new dir> [--skip <regex>] [--arch x64|arm64]');
+  // another architecture's plan, printed here: the runner and the steps read the architecture when they are called
+  // (`parseGateArgs`, `stepArgs`), and the plan's contents are asked for it outright (`planContents`)
+  const arch = flag('--arch');
+  if (arch) Object.defineProperty(process, 'arch', { value: arch });
   if (existsSync(out) && readdirSync(out).length) throw new Error(`${out} is not empty: each plan writes its steps' directories afresh`);
   mkdirSync(out, { recursive: true });
   const skip = flag('--skip');
-  process.stdout.write(await launchPlan({ pinned: resolve(pinned), out: resolve(out), skip: skip ? new RegExp(skip) : null }));
+  process.stdout.write(await launchPlan({ pinned: resolve(pinned), out: resolve(out), skip: skip ? new RegExp(skip) : null, arch: process.arch }));
 }

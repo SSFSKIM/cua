@@ -1,0 +1,72 @@
+✔ t14-late's plan is its three bands, each expecting band a minimum under its drags; the hold notice is the engine's word for word (2.218001ms)
+✔ a banded sitting passes on honest answers in every band, its late takes counted, not required (3.547395ms)
+✔ a band below its minimum is unexercised and fails, and one that never shows its outcome fails the same way (2.129623ms)
+✔ every banded answer is judged: a plain ok on a drag its page started that Chrome refused is a false ok; a notice on a drop that landed a false alarm, counted (1.660925ms)
+✔ the review of H6, blocker 2: a late take that landed before its cancel is no inside-band landing (1.083673ms)
+✔ the review of H6, blocker 3: a past-band answer needs the page read before and after, its drop counter unchanged (2.727837ms)
+✔ the review of H6, blocker 4: on a banded plan only a pending cause that accounts for the outcome excuses it (1.794647ms)
+✔ the re-review of 9a8f32a5: a plain ok with no take and its page unread is unjudged, and fails, in the edge band and in the past band (1.28443ms)
+✔ ruling 954: a row whose source ended unidentified is unexercised for its band, never its outcome, counted and shown (1.065017ms)
+✔ ruling 955: a row whose stop was skipped (the press marked too late for a stop before the thaw) is unexercised, counted and shown (1.031687ms)
+✔ the per-cell table's false ok column counts the banded plan's refused plain oks, as the total does (0.489988ms)
+✔ a plan without bands keeps T14's rules: an untaken plain ok there claims no drop (0.291658ms)
+✔ by default t14-late is judged by its own bands (0.674976ms)
+✔ t14-late is the same plan on both architectures: task 122's sweep landed arm64 10 of 10 at 600 once the race was closed (0.152627ms)
+✖ the review of cf1ef10f, finding 1: a stop needs positive evidence that it began before the thaw; a skip string's absence is none (1.653842ms)
+✖ the review of cf1ef10f, finding 3: a band counts the late takes of its exercised rows only; every late take is still judged and reported (0.661562ms)
+ℹ tests 16
+ℹ suites 0
+ℹ pass 14
+ℹ fail 2
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 196.369021
+
+✖ failing tests:
+
+test at test/linux-engine-diff/late-bands.test.mjs:204:1
+✖ the review of cf1ef10f, finding 1: a stop needs positive evidence that it began before the thaw; a skip string's absence is none (1.653842ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  
+  + []
+  - [
+  -   'the inside band (freeze-600): 6 of 10 drags landed after a take inside the hold, fewer than its 7: the band is unexercised'
+  - ]
+  
+      at TestContext.<anonymous> (file:///Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m5-h7-128/test/linux-engine-diff/late-bands.test.mjs:208:10)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1402:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:974:18)
+      at Test.postRun (node:internal/test_runner/test:1542:19)
+      at Test.run (node:internal/test_runner/test:1467:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: [],
+    expected: [ 'the inside band (freeze-600): 6 of 10 drags landed after a take inside the hold, fewer than its 7: the band is unexercised' ],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at test/linux-engine-diff/late-bands.test.mjs:222:1
+✖ the review of cf1ef10f, finding 3: a band counts the late takes of its exercised rows only; every late take is still judged and reported (0.661562ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  2 !== 0
+  
+      at TestContext.<anonymous> (file:///Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m5-h7-128/test/linux-engine-diff/late-bands.test.mjs:227:10)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1402:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:974:18)
+      at Test.postRun (node:internal/test_runner/test:1542:19)
+      at Test.run (node:internal/test_runner/test:1467:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 2,
+    expected: 0,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

@@ -575,12 +575,15 @@ error    {code: number (the vendor's codes where mapped; -10005 otherwise), mess
     point and #454's step left it (and on #282's element route when it pressed a `<select>`): {role ("AXPopUpButton" |
     "AXComboBox"), kept? ("noSignal" | "notRecorded" | "notHit" | "ancestryUnread" | "disabled" | "open" |
     "windowsUnread" | "noAction" | "frontmost": main's path was kept, and why), refused? ("noAction": a native combo
-    box's arrow, the app not frontmost), delivery? ("action": the click delivered as the pop-up button's AXPress, by the
-    element click's route, inputRoute 3 or 1, no pointer event; set as the action is dispatched), action? ("AXPress"),
-    effect? ("confirmed" | "unconfirmed"), actionError?, baselineUnread? (true: the window list did not read just before
-    the press, so the effect could not be confirmed), menuWindow? (the number of the app's new menu window at the
-    button), raisedAppWindow? (true: the open raised the app's window above the person's front window; null: not
-    comparable), polls?, ms? (from the action's return to the last read)}; never a title
+    box whose arrow has no AXPress, the app not frontmost), delivery? ("action": the click delivered as the pop-up
+    button's or the combo box's arrow's AXPress, by the element click's route, inputRoute 3 or 1, no pointer event; set
+    as the action is dispatched), action? ("AXPress"), arrow? (true: the combo box's arrow was pressed), effect?
+    ("confirmed" | "unconfirmed"), actionError?, baselineUnread? (true: the window list did not read just before the
+    press, so the effect could not be confirmed), menuWindow? (the number of the app's new window that opened: a menu
+    window at layer 101 for a pop-up button, a window of any layer for a combo box's list), restored? ({windows, ms,
+    complete, raises}: the person's windows in front of the app's window before the press, raised back once the open
+    had raised the app's over them; complete false when the order was not back within 500 ms, with the result's note),
+    polls?, ms? (from the action's return to the open)}; never a title
   note: on a paste result that pasted a line with no channel to see it, read after ⌘V (#187; type_text's paste route
     since #361 never, its read-back answering instead), on a type_text a password field's length confirmed (#414), and on a
     scroll whose content was already at its end in that direction (#328): the sentence the service adds to the tool
@@ -7318,6 +7321,49 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   deadline is checked after the last read before the press (AXExpanded can take the messaging timeout, then the window
   list), on the unread-baseline path too. Proven offline (`PopUpPointTests` 17 tests, `BackgroundPointerTests` 1 more);
   reverted one at a time (7 mutations), each fails its test.
+  Date/Author: 2026-11-21, cursor235's implementer for #458.
+- Decision (#458's restore, design ruling 979 item 4 carried out, 2026-11-21; kit `probe/458-restore`,
+  scripts/probe-337/README.md §"#458's restore" at f39ce428, run 44888938314, 380 rows plus 20 combo-box arrow rows;
+  amends the entries above and corrects ruling 977's combo-box refusal): **the open puts the person's window order back
+  at once, and a combo box's arrow is pressed.** Measured: opening a menu behind raises the app's window over the
+  person's (186 ms p50 after the click begins), and neither the pick nor Escape undoes it; route 3's repair (AXRaise on
+  the person's focused window) restores that window only, leaving a second one covered (0/120 whole); raising every
+  window of the person's that was in front of the app's before the open, back to front, restores the whole order
+  (180/180, 127/200/232 ms p50/p95/max, inside the screen-update hold, nothing else moved in 380/380, the frontmost app
+  and the person's focused window unchanged); done with the menu up, the menu stays usable and the pick or Escape after
+  it keeps the order (60/60); a menu left open (8 s) or closed by the person's own click leaves the app's window on top,
+  which only a restore at the open covers. The rule: the list read just before the press (`popUpBeforeDispatch`) gives
+  the person's windows in front of the app's window (`personWindowsAbove`: layer 0, alpha above 0, another process than
+  the app's, never the engine's own), front to back. Once the open is confirmed and the app's window has risen over any
+  of them (in the confirming list, or within `deliveryGuardMinimumMs` after it, sampled every `deliveryGuardSampleMs`),
+  `popUpRestoreOrder` takes the screen-update hold (`ActivationSystem.holdScreenUpdates`, SLSDisableUpdate) and samples
+  as route 3's delivery guard does: whenever the recorded order does not hold (`personOrderHolds`: each recorded window
+  still listed in front of the app's, in its recorded order), it raises every recorded window back to front by route
+  3's repair (`ActivationSystem.raise`, AXRaise on each window's element, found among its process's AXWindows by
+  number; never an activation); it ends on three samples holding the order and no sooner than 60 ms, or at
+  `popUpRestoreBoundMs` (500 ms, about twice the slowest measured). Only the recorded windows move. Meta
+  `popUpClick.restored {windows, ms, complete, raises}`; an order not back within the bound leaves the open confirmed,
+  `complete: false`, and the result carries the note "<App>'s menu is open, but the person's windows that were in front
+  of <App>'s window could not all be put back in front of it, so <App>'s window may now cover them." Nothing raised, no
+  restore. #282's `<select>` route restores the same way. The seam the earlier entry recorded (`popUpMenuOrders`,
+  `PopUpMenuOrder`) is removed: #454's pick and the key path need nothing from it.
+  The combo box (correcting ruling 977's refusal on the measurement): TextEdit's font-size combo box has one AXButton
+  child, "font size" (743, 73, 20×15), with AXPress, its trailing edge exactly 4.0 pt inside the box's, so the arrow
+  rule's 4 pt includes 4 (`<=`). Its AXPress, behind, opens the list 20/20 as a new layer-0 window of the app's
+  (706, 70, 65×250) above its document window and below the person's, raising nothing, the frontmost app unchanged.
+  So the arrow's AXPress is delivered (`PopUpTarget.element` the arrow, `control` the combo box, read for AXExpanded and
+  its frame), confirmed by a window of the app's of any layer, alpha above 0, new since the press, at or within 24 points
+  of the combo box (`isOpenedWindow`), and the restore check runs (normally nothing to do); the refusal is kept only for
+  a combo box whose arrow has no AXPress. The model-facing sentences say so.
+  Proven offline (`PopUpPointTests`, 21 tests): two person windows above, raised back to front once, the order back
+  and nothing else moved, one hold released; the engine's window never counted; a rise seen only after the open is
+  restored; nothing raised, no restore; an order not back within the bound `complete: false`; an incomplete restore
+  keeps the open confirmed with its note; the combo box's arrow at 4.0 pt pressed, its layer-0 list confirmed, no
+  restore; one with no pressable arrow refused. Reverted one at a time (10 mutations), each fails: no restore at the
+  open (4 tests), raised front to back, complete at the bound, the engine's window counted, no watch for a later rise,
+  no note, one sample and no minimum, the combo box pressed instead of its arrow, its list only at layer 101, the edge
+  rule excluding 4.0 pt.
+  Not measured with this build: the restore and the arrow press by the engine itself (the kit's restore was its own).
   Date/Author: 2026-11-21, cursor235's implementer for #458.
 
 ## Outcomes & Retrospective

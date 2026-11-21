@@ -1,0 +1,2 @@
+step.sh 2026-11-21T03:40:34Z start L4a after 171 s quiet wait: load=0.90 9.26 13.22 stress-ng=none
+step.sh 2026-11-21T04:01:59Z end L4a exit 0 load=16.60 16.49 15.80

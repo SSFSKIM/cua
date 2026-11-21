@@ -1,0 +1,23 @@
+# linux-engine-diff summary
+
+## pinned-D2 (experiment drag; acceptance on the pinned release)
+
+candidate: sha256 25035ca1b4c8f2c4dd42568e570f54f5994da0f894a84c036d59eedc58f1092f, aarch64-unknown-linux-musl static, cua-engine 0.4.2 (9371d2348cf8); the pin's arm64 asset of linux-engine-v0.4.2; native/linux-engine as at 9371d2348cf84eab35ed4fa8f99cf3bacc40c6da, the checkout at 69bd7993e1f1cb252574939bd6e8e80674bab5b8; attestation verified: .github/workflows/linux-engine.yml run https://github.com/SSFSKIM/cua/actions/runs/44796908527/attempts/1, built from 9371d2348cf84eab35ed4fa8f99cf3bacc40c6da (refs/heads/release/linux-engine-v0.4.2) on a github-hosted runner
+
+Every engine drags the same path 30 times per family and kind, in its own window (visible), each drag in a witness span; a run took effect when its result is the pinned build's (module header, drag.mjs). `cua:0ms` has no wait after a sample, after the press or before the release.
+The judges (T10), for the shipped lane `cua`: every run takes effect; Chrome's and Electron's thumbs land at or past the pinned build's mean distance of the same sitting; the long paths (Chrome's and Firefox's canvas, Chrome's drag and drop in front) pass on warm speed under Acceptance 3's interval rule, topped up to 40 a side. Every other cua lane is measured, not judged.
+
+| family | kind | pinned took | newest took | cua took | cua:0ms took | newest warm ms | cua warm ms | cua:0ms warm ms | pinned warm ms | witness | judges | verdict |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---|---|
+| Electron (cua fixture) | select | 30/30 | 30/30 | 30/30 | 30/30 | 311.5 | 453.1 | 453 | 416.2 | clean | received, coalesced samples (events), raw/moves, median: pinned 193 (193)/193 (14), newest 50 (50)/50 (7), cua 197 (196.5)/197 (13), cua:0ms 143 (129)/143 (16) | cua PASS, cua:0ms PASS |
+| Electron (cua fixture) | range | 30/30 | 30/30 | 30/30 | 30/30 | 311.5 | 452.9 | 453 | 414.8 | clean | received, coalesced samples (events), raw/moves, median: pinned 241 (241)/241 (16.5), newest 50 (50)/50 (7), cua 242 (241.5)/242 (14), cua:0ms 168 (146.5)/168 (16) | cua PASS, cua:0ms PASS |
+| Electron (cua fixture) | scroller | 30/30 | 30/30 | 30/30 | 30/30 | 257.7 | 453.1 | 452.9 | 268.7 | clean | reach (pinned mean 129.8 px): cua 30/30 (shortest 143, mean 145.6), cua:0ms 30/30 (shortest 143, mean 145.7); received, coalesced samples (events), raw/moves, median: pinned 61 (61)/0 (0), newest 17 (17)/0 (0), cua 71 (71)/0 (0), cua:0ms 55.5 (54)/0 (0) | cua PASS, cua:0ms PASS |
+| Electron (cua fixture) | dnd | 30/30 | 30/30 | 30/30 | 30/30 | 328.2 | 399 | 365.6 | 480 | clean | received, coalesced samples (events), raw/moves, median: pinned 12.5 (12.5)/12.5 (1), newest 5 (5)/5 (1), cua 24 (24)/24 (1), cua:0ms 153.5 (147)/153.5 (1) | cua PASS, cua:0ms PASS |
+| Electron (cua fixture) | canvas | 30/30 | 15/30 | 30/30 | 0/30 | 485.8 | 474.5 | 453.2 | 1046.8 | clean | received, coalesced samples (events), raw/moves, median: pinned 769 (769)/769 (52), newest 196 (196)/196 (17.5), cua 765 (765)/765 (28), cua:0ms 490 (430)/490 (16) | cua PASS, cua:0ms **FAIL** |
+
+Cells where a cua lane missed a run the pinned build took: electron canvas (cua:0ms).
+
+The judges' verdict for `cua`: PASS.
+
+desktop: started with 0x0080000c active (foreign), ended with 0x0080000c active (foreign), neither acted on; holder 0x00e0000c; the harness's own trace: 8763 requests, 1957 changes of a window, every one of its own; the run's record: not run (the display is a private one, and the run's caller declined to start the whole-run RECORD on it)
+

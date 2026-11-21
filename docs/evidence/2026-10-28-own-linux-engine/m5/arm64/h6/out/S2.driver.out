@@ -1,0 +1,2 @@
+step.sh 2026-11-21T04:29:43Z start S2 after 100 s quiet wait: load=0.89 6.91 11.32 stress-ng=none
+step.sh 2026-11-21T04:54:56Z end S2 exit 0 load=0.32 0.31 2.40

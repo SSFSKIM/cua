@@ -1,0 +1,7 @@
+2026-11-20T22:27:03Z df / avail 116G
+2026-11-20T22:27:31Z setup t122-h6 exit 0
+2026-11-20T22:28:05Z install-home exit 0
+2026-11-20T22:28:05Z chrome-check exit 0
+2026-11-20T22:28:27Z item9 exit 0
+2026-11-20T22:29:36Z proof exit 0
+2026-11-20T22:29:36Z setup-all done

@@ -5,7 +5,7 @@ acceptance home's own `cua install` of **linux-engine-v0.4.0**: `cua-engine` sha
 (c55c8e08d9cb)`, the pin's arm64 asset. The pinned rule takes it inside each step. The machine is the GCE arm64 VM
 `dc-linux171arm-996d` (c4a-standard-8, aarch64, uid 501, home /Users/new).
 
-**Status: complete.** Three parts.
+**Status: complete.** Four parts.
 - **At H‴ on 0.4.0:** setup, H‴'s local proof (passed, by the controller's two rulings below), item 9 (passes), and the
   private idle block: all 25 steps that ran exited 0 by their own judge. S1, H1 and H2 were skipped as class A
   (ruling 827), and those idle steps that are not class A stand on H‴.
@@ -27,6 +27,16 @@ acceptance home's own `cua install` of **linux-engine-v0.4.0**: `cua-engine` sha
   - F2 and F3 are unjudged. F3's V3 was stopped by the guard and stands as stopped (ruling 773).
 - V1 at H⁗ had stopped that sitting on a harness fault in the audit's window ownership (hold-sittings at 23:34:28Z,
   cleared by the controller at 23:36Z). Task 106's fix is in H⁵, and V1 to V5 and Z0 reran there (857.3).
+- **At H6 = `69bd7993` on 0.4.2** (the section "At H6 on 0.4.2" below): ruling 929's reruns, with item 9 and the
+  local proof passing.
+  - V5 passes on `:0`, every verdict PASS. Its two H⁵ cells pass on 0.4.2.
+  - D1, D2, S1, H1, H2, C1, K1–K3, L1, L2a, L2b, L3a, L3b and L4a exit 0.
+  - **L4b** exits 1 on the `cua:accept` finding, as at H⁗ (871, 872; #459).
+  - **L4c** exits 1: its inside band is under its floor on arm64 at twice the load, with 0 false oks and every miss
+    honest. It stands as a FAIL (954).
+  - S2's cross-check reads the same as H‴, so V4, S4, L3c and L3e stand.
+  - Four development runs follow it: 953, the shipped long-left path, with 7 false oks in 100 (#459); 957, which finds
+    0.4.1 the same; 954.2, the m5-h7 sweep, 30/30 landed; and 959, the vendor baseline.
 
 ## Setup
 
@@ -622,8 +632,306 @@ none.
   - Positive controls: the same scan finds x64's V3 at H (`m5/x64/out/V3.pinned-release`): 2 held-code rows and 27 raw
     minimized codes, before ruling 874's tokens. A title known to be in those rows is found too.
 
+## At H6 on 0.4.2 (2026-11-20 22:27Z to 11-21 05:45Z; task 122)
+
+The head is **H6 = `69bd7993`**. Its ci-gate is GREEN 8/8 (run 44824501779), and its Decision Log entry is
+"linux-engine 0.4.2 released and pinned, and the frozen head H6". The engine is **linux-engine-v0.4.2**: arm64
+`cua-engine` sha256 `25035ca1b4c8f2c4dd42568e570f54f5994da0f894a84c036d59eedc58f1092f`, `cua-engine 0.4.2
+(9371d2348cf8)`, aarch64 musl, statically linked. The records are in `h6/`. Holder `task122-arm64`. The lock lines are
+in `h6/scripts/lock-lines.txt`.
+
+What ran here is ruling 929's set: the class-A steps at their counted loads, V5 on `:0`, S2 as the cross-check for the
+new-reads-only steps, and item 9. After them came four development runs the design session asked for, never counted:
+- 953, the shipped twin of L4b;
+- 954.2, arm64's inside-band sweep, on the m5-h7 candidate;
+- 957, t14-long with 0.4.1 and 0.4.2 alternating;
+- 959, the vendor baseline on the same path. It needed the development branch m5-a959 and is still running, so its
+  part follows in its own commit.
+
+### Setup, item 9 and the local proof
+
+All of it ran under the lock (`h6/scripts/setup-all.sh`, `setup-all.log.txt`).
+- **The checkout.** `t122-h6` is a fresh worktree, detached and clean at `69bd7993`, with 0 changes before and after.
+  It has `npm ci`, electron 44.9.0 and xprobe (aarch64) (`setup-h6.log.txt`).
+- **The acceptance home.** `~/.local/share/cua-171/m5/home-arm64-042` is fresh. Its own `cua install`, under a HOME
+  and XDG directories of the run's with an empty secret store, placed the 0.4.2 engine above (`install-home.sh`,
+  `install-home.log.txt`).
+  - Its sha256 equals the brief's digest and the pin.
+  - `gate.mjs check --pinned` exited 0.
+  - Chrome is 156.0.8078.73, held. K2's current stable is 158.0.8127.36, extracted under `chrome-stable`
+    (`chrome-check.log.txt`).
+- **Item 9** (`item9.sh`, `item9/transcript.txt`) ran in a fresh mktemp home on a private display.
+  - `cua install --engine` exited 0, and the installed engine's sha256 equals the pin's.
+  - `CUA_NATIVE_ENGINE=cua cua doctor` exited 0: 17 PASS, 7 SKIP and 3 BLOCKED. The BLOCKED lines are the Chrome
+    registration lines (`chrome.route`, `chrome.host.registered`, `chrome.hosts.live`), as at H‴.
+  - No engine process was left, and the fresh home was removed.
+- **The local proof** (`proof/`, `proof.out`): "proof: PASS".
+  - The harness suite: 1403 tests, 1398 pass, 0 fail, 4 skipped, 1 todo.
+  - harness-dbus: 91/91.
+- **Disk (ruling 937):** 112–116G free on `/` at every check.
+
+### The step table at H6
+
+The private steps ran through `h6/scripts/drive.sh` and `step.sh`, with the same quiet wait inside the hold as before.
+Unlike task 99's driver, this one stops at any step that exits nonzero. V5 ran through the sitting launcher (below).
+Load is the 1-, 5- and 15-minute average. Every row ran at H6 on 0.4.2.
+
+| step | stands on | acquire (UTC) | step start | release | min | exit | load at step start | load at release | end | result |
+|---|---|---|---|---|---:|---:|---|---|---|---|
+| D1 | 69bd7993 | 11-20 22:30:19 | 22:30:19 | 22:54:13 | 23.9 | 0 | 0.38 0.37 0.16 | 0.83 0.61 0.44 | clean; end check clear | **class A**: the judges' verdict for `cua` PASS. dnd is #358, declared: [26.7, 27] ms against newest (355 / 328.2), within the 40 ms bound. Canvas is faster than newest: [−12.6, −11.75] (473.7 / 486.1). Select, range and scroller take 452.1–452.3 ms warm (the 450 ms hold) |
+| D2 | 69bd7993 | 11-20 22:54:13 | 22:54:13 | 23:13:03 | 18.8 | 0 | 0.83 0.61 0.44 | 0.08 0.12 0.23 | clean; end check clear | **class A**: PASS |
+| S1 | 69bd7993 | 11-20 23:13:03 | 23:13:03 | 23:47:10 | 34.1 | 0 | 0.08 0.12 0.23 | 0.16 0.18 0.25 | unclean: pid 256221 openbox; end check clear | **class A**: complete, 50 series, every one 30 consecutive. chrome-input and electron-input `move desktop` were each 1 late, then 30 consecutive (as at H⁗) |
+| H1 | 69bd7993 | 11-20 23:47:10 | 23:47:10 | 00:04:42 | 17.5 | 0 | 0.16 0.18 0.25 | 0.14 0.14 0.17 | clean; end check clear | **class A**: no false ok, no missing landing, no false error. #365 0 of 60. Ruling 830: none in 320 |
+| H2 | 69bd7993 | 11-21 00:04:42 | 00:04:42 | 00:22:41 | 18.0 | 0 | 0.14 0.14 0.17 | 0.27 0.22 0.19 | clean; end check clear | **class A**: no false ok, no missing landing, no false error. **Ruling 838: cua:desktop root 0 ok and 30 unconfirmed of 30; cua:handle root 0 ok and 30 unconfirmed of 30.** Ruling 830: none in 320 |
+| C1 | 69bd7993 | 11-21 00:22:41 | 00:22:41 | 00:24:46 | 2.1 | 0 | 0.27 0.22 0.19 | 0.40 0.26 0.20 | clean; end check clear | **class A**: PASS, with every band at its minimum or above (below) |
+| K1 | 69bd7993 | 11-21 00:24:46 | 00:24:46 | 00:27:42 | 2.9 | 0 | 0.40 0.26 0.20 | 0.30 0.30 0.22 | clean; end check clear | **class A**: the canary passes on Chrome 156 (`canary_check` pass), criterion absolute (below) |
+| K2 | 69bd7993 | 11-21 00:27:42 | 00:27:42 | 00:30:38 | 2.9 | 0 | 0.30 0.30 0.22 | 0.22 0.28 0.23 | clean; end check clear | **class A**: the canary passes on Chrome 158.0.8127.36, whose browser ran from its own extracted tree (`canary_check` pass) |
+| K3 | 69bd7993 | 11-21 00:30:38 | 00:30:38 | 00:31:45 | 1.1 | 0 | 0.22 0.28 0.23 | 0.47 0.36 0.26 | clean; end check clear | **class A**: dragstart-150 and dragstart-400 each landed 10 of 10 inside B |
+| V5 | 69bd7993 | (the sitting) 00:32:14 | 00:32:14 | 01:08:15 | 36.0 | 0 | 0.28 0.32 0.25 | 0.91 0.81 0.60 | all-clear clear | **class A**: every verdict PASS, 52 of 52 (below) |
+| L1 | 69bd7993 | 11-21 01:09:23 | 01:09:23 | 01:41:40 | 32.3 | 0 | 0.31 0.65 0.56 | 16.30 16.47 14.68 | clean; end check clear | **class A**: the judges' verdict PASS |
+| L2a | 69bd7993 | 11-21 01:41:40 | 01:44:30 | 02:12:11 | 27.7 | 0 | 0.96 9.33 12.22 | 16.86 16.97 16.23 | clean; end check clear | **class A**: PASS |
+| L2b | 69bd7993 | 11-21 02:12:11 | 02:15:01 | 02:34:02 | 19.0 | 0 | 0.98 9.60 13.51 | 15.42 16.38 15.72 | clean; end check clear | **class A**: PASS |
+| L3a | 69bd7993 | 11-21 02:34:02 | 02:36:52 | 03:13:51 | 37.0 | 0 | 0.90 9.26 13.09 | 16.75 16.89 16.64 | unclean: pid 477409 openbox; end check clear | **class A**: complete, 26 series, every one 30 consecutive with no miss |
+| L3b | 69bd7993 | 11-21 03:13:51 | 03:16:42 | 03:37:43 | 21.0 | 0 | 0.98 9.55 13.85 | 15.41 16.37 15.89 | unclean: pid 489438 openbox; end check clear | **class A**: complete, 21 series, every one 30 consecutive. #302 is listed apart and counted toward the streak: electron-input press_key background 3, press_key desktop 5, key_up desktop 2 |
+| L4a | 69bd7993 | 11-21 03:37:43 | 03:40:34 | 04:01:59 | 21.4 | 0 | 0.90 9.26 13.22 | 16.60 16.49 15.80 | clean; end check clear | **class A**: no false ok, no missing landing beyond the residue. **Residue (827 3b): cua plain 0 of 100, cua:handle plain 0 of 100, bound 2. Ruling 830: cua left 3 of 30** (listed apart, not a fail, not a false ok; 1 of 30 at H⁗). #365 0 of 60 |
+| L4b | 69bd7993 | 11-21 04:01:59 | 04:04:50 | 04:21:26 | 16.6 | **1** | 0.97 9.33 13.15 | 17.50 17.06 15.84 | clean; end check clear | **class A. Stored: FAIL**: "cua:accept left: answered ok with no drop and nothing pending on 1 of 30 (#23)". That is the measurement lane `cua:accept`, which nothing that ships selects. inzone-out had 7 false releases at the accept, 6 answered ok (H⁗: 5 and 2). **Ruled: a finding, not a step failure** (rulings 871, 872, as at H⁗; the controller, 2026-11-21; #459) (below) |
+| L4c | 69bd7993 | 11-21 04:22:23 | 04:24:24 | 04:26:54 | 2.5 | **1** | 0.86 9.33 13.04 | 13.86 12.01 13.53 | clean; end check clear | **class A. FAIL** (ruling 954.1): "the inside band (freeze-600): 6 of 10 drags landed after a take inside the hold, fewer than its 7: the band is unexercised". 0 false oks, and every miss is honest. The judge is not loosened (below) |
+| S2 | 69bd7993 | 11-21 04:28:03 | 04:29:43 | 04:54:56 | 25.2 | 0 | 0.89 6.91 11.32 | 0.32 0.31 2.40 | unclean: pid 526772 openbox; end check clear | **the cross-check**: complete, 30 series, and the same as H‴ cell by cell (below) |
+
+The openbox unclean ends are the known record-teardown race (ruling 730 (a)). Every end check was clear, and no start
+check refused. Nothing was rerun.
+
+### V5 on `:0` (the sitting, 00:32–01:08Z)
+
+V5 ran alone, in its own hold of the lock (`run-sitting.sh counted`: CUA_LOCK_MAX 70m, a 60-minute hard stop). It
+went through the sitting launcher around run71.sh under M5's wrap71, exactly as `gate.mjs print` gave it with only
+its leading `locked.sh` stripped (`zero-commands.txt`).
+- **Its command** carries `--pinned`, the 0.4.2 home's engine and `--hold-canary absolute` (ruling 932 on arm64).
+- **Pre-check** (`zero-precheck.out`): hold-sittings absent, no stress-ng. The stand-in session's Chrome (pid 9512)
+  was the only `:0` client, the pointer was at 640,400, and there were no leftovers. Firefox was task 59's, and
+  google-chrome was the held 156. 114G free.
+- **The all-clear: clear.** wrap71 took 16890 samples with 0 flags and 0 decoy connections, and left nothing. The
+  pointer was restored to 640 400. The owner side shows the stand-in Chrome profile's mtime only, as in every sitting.
+  The harness's browser was Chrome 156.0.8078.73 (the end row's `desktop.chrome.browsers`).
+- **The verdict: "every verdict PASS", 52 of 52.** The two cells that failed at H⁵ pass on 0.4.2:
+  - `chrome_dnd_shared` cua: 9/9 cancelled with the drag-and-drop sentence.
+  - `chrome_dnd_short_in_front_shared` cua: 9 landed, 9 ok, 0 false ok.
+  - Every Chrome drop cell: 63 samples, 45 landed, 0 false ok, 0 landed reported unconfirmed.
+- **Hold notices:** none in the run. So ruling 898.2's honest-notice and false-alarm counts are both 0.
+- **The in-step canary (absolute, 20 ms):** draggable presses 9 held and 9 started, wait max 84.5 ms and median
+  82.4 ms. The plain control's max is 1.1 ms.
+- **Span-limited samples (ruling 680 as encoded):** 5, all in `chrome_dnd_late_take_shared` cua, which passes 6/9.
+  They are 0/0 (dragend 301 ms, answer 158.56), 0/2 (259, 157.08), 1/0 (300, 158.33), 2/0 (301, 158.34) and 2/2 (261,
+  157.04).
+- **Kept traces:** 52 audit rows, all carrying `kept_traces` with 52 files. `rejudge-audit.mjs` reproduces the stored
+  findings (`after-V5.txt`). The traces aren't committed. They are on the x64 host under
+  `~/.local/share/cua-171/m5/arm64-h6-traces/` (with K1's and K2's 2 each), and each is listed with its sha256 in
+  `h6/scripts/kept-traces.sha256`.
+
+### The hold canary, K1 and K2 (absolute on arm64, ruling 930)
+
+| step | Chrome | criterion | draggable held / started | draggable max wait (ms) | median wait (ms) | plain control max (ms) | bar |
+|---|---|---|---:|---:|---:|---:|---:|
+| K1 | 156.0.8078.73 (installed) | absolute | 9 / 9 | 94.0 | 91.1 | 1.1 | 20 |
+| K2 | 158.0.8127.36 (extracted) | absolute | 8 / 8 | 92.2 | 86.8 | 1.1 | 20 |
+| V5 (in-step) | 156.0.8078.73 | absolute | 9 / 9 | 84.5 | 82.4 | 1.1 | 20 |
+
+### C1's and L4c's bands (ruling 931; `late-takes.mjs` judges each late take in full)
+
+| step | load | inside: landed after a take in the hold (min 7) | edge: late takes, reported | past: hold notice, no drop, nothing sent after (min 7) | false ok | false alarms | verdict |
+|---|---|---:|---:|---:|---:|---:|---|
+| C1 | idle | 10 / 10 | 2, 2 | 10 / 10 | 0 | 0 | PASS |
+| L4c | twice the load | **6 / 10** | 2, 2 | 10 / 10 | 0 | 0 | **FAIL: the inside band unexercised** |
+
+Each late take of the edge band:
+
+| step | cell | # | answer | engine saw a take by its release | take after the release (ms) | landed | read carries the late notice | next request refused with it | Escape after the release (ms) |
+|---|---|---:|---|---|---:|---|---|---|---:|
+| C1 | freeze-648 | 0 | ok, the hold notice | no | 1.0 | no | yes | yes | 1.8 |
+| C1 | freeze-648 | 4 | ok, the hold notice | no | 1.3 | no | yes | yes | 2.8 |
+| L4c | freeze-648 | 2 | ok, the hold notice | no | −0.1 | no | yes | yes | 0.9 |
+| L4c | freeze-650 | 0 | ok, the late-take notice on the reply | no | 4.2 | no | yes | yes | 10.0 |
+
+**L4c's inside band, miss by miss** (freeze-600: the browser stopped from send + 60 ms, thawed at send + ~602):
+- **#2, #5 and #8 are honest hold notices.** The extension released at press + 650–653 ms with no take, about 50 ms
+  after the thaw. Chrome had not started a drag (`started` false). The answer was ok with the hold notice, with no
+  drop.
+  - At arm64 twice the load Chrome needed more than ~50 ms after the thaw to take. The six that landed took at
+    press + 581–616 ms.
+  - The band's minimum of 7 came from task 121's sweeps, which ran on x64 only.
+- **#4 is an unidentified source.** So are freeze-646 #1 and #4 and freeze-648 #1, 4 of the run's 40 drags. Their
+  `why` reads "the source is not identified as a Chrome or Chromium browser", so they got the fixed 450 hold, released
+  at 450 with no take, and answered a plain ok.
+  - In all four the page did not start a drag, so no plain ok claims a drop it lost.
+  - The plan SIGSTOPs the browser 60 ms after the send. Under the load, identification's AT-SPI lookup of the
+    browser's pid (bounded at 50 ms, ruling 912) can still be in flight then, so it fails closed to unidentified.
+- **Ruling 954:** L4c at H6 stands as a FAIL. The inside band is under its floor, with 0 false oks and every miss
+  honest, and the judge is not loosened. The sweep on m5-h7 (below) measures the band again with the freeze started
+  after identification.
+
+### L4b: the `cua:accept` finding (rulings 871, 872; #459)
+
+L4b's only lane is `cua:accept`, the measurement lane behind `--drag-dnd-release-at-accept`, which nothing that ships
+selects. Its stored FAIL is a finding, not a step failure, as at H⁗. **#23's row** (left, block 8, warm):
+- The take came at press + 27.4 ms, and the path ran 410.6 ms. The release followed the path with the take (no accept
+  was read, `accepted` false). Nothing was held.
+- Chrome's own `_NET_ACTIVE_WINDOW` came 2.5 ms after the release, and the engine took that as the drop's confirmation
+  (`confirmed_by` Activation). It answered a plain ok with no notice, and the next request ran.
+- The page counted a dragstart and no drop: the left cell's path ends outside the zone.
+- The rest of the lane: plain-long 300/300 landed with 0 false oks. inzone-out had 7 false releases at the accept,
+  6 of them answered ok with nothing pending (H⁗: 5 and 2).
+
+The shipped twin of this cell, and the path where the same shape reaches the shipped lane, are ruling 953's runs
+below.
+
+### S2, the cross-check (`h6/scripts/crosscheck-S2.txt`, in `m4/gate/scripts/compare-settle.mjs`'s form)
+
+S2 at H6 against arm64's H‴ record (`out/S2.pinned-release`) reads **"CROSS-CHECK: SAME verdicts, cells, audits and
+the runs' own failures"**.
+- 30 of 30 cells and 19 of 19 audited cells match, and 0 misses differ.
+- firefox-input `right_click background` keeps its one refused run, then 30 consecutive, at both heads.
+
+**S2 does not move, so V4, S4, L3c and L3e stand** (ruling 929).
+
+### The settle counter at H6 (`settle-check.mjs` over every step dir; `h6/scripts/settle-check.txt`)
+
+| reading | steps |
+|---|---|
+| **TAKEN** (each class A and rerun here, as at H⁗) | H1 (entered 560, second_rest 0), H2 (entered 560, second_rest 14), L4a (entered 560, second_rest 10, skipped 2). In each, unsettled and settle_failed_activation_confirmed are 0 |
+| not taken | C1, K3, L4b, L4c (entered 0) |
+| unknown (ruling 834: the counted runs keep no stats) | D1, D2, S1, S2, L1, L2a, L2b, L3a, L3b; K1 and K2 (2 of 10 engines unrecorded, the recorded entered 0); V5 (20 of 218 unrecorded, the recorded entered 0) |
+
+No step outside class A read TAKEN.
+
+### Identification of a Chrome source (ruling 954.3; `ident-count.mjs`)
+
+The engine records its identification only on a drag whose hold waited (`hold.adaptive.source`). A drag that took
+along its path has `adaptive: null`, and the counted runs keep no engine stats (ruling 834).
+- **Without a freeze, only V5 carries the record:** 60 of 153 Chrome cua drag rows, all 60 identified ("Google-chrome,
+  role browser, application "Google Chrome", executable chrome"), on `:0` at idle.
+- **The twice-load steps carry none.** The Chrome drags of L1, L2a and L3a, counted with no stats, and L4b's 360 and
+  a953's 460, which took along their paths, leave no record.
+- **With a freeze, at twice the load:**
+  - L4c: 36 of 40 identified. 4 unidentified (above): the freeze raced the lookup.
+  - The m5-h7 sweep, whose freeze starts after the browser's press mark: 30 of 30 identified.
+- So the real-world rate at twice the load without a freeze is not measured by any run here.
+
+### Ruling 953: the shipped twin of L4b at twice the load (development runs; `h6/a953/`; #459)
+
+L4b's launch at H6 was used, with exactly these changes (`h6/scripts/a953.sh`):
+- `--plan t14` became `t14-floor`, then `t14-long` (the `cua` lane, with no measurement flag);
+- `--run pinned-L4b` became `dev-a953-<plan>`;
+- `--pinned` was left out, as for an experiment run outside the gate;
+- the out dir is `a953-arm64-h6/<plan>`;
+- the run went through task 121's `private-run.mjs` (display.mjs `runOnPrivateDisplay`, a gate step's private display)
+  instead of `gate.mjs run`.
+
+`--load-factor 2`, the engine and CUA_HOME are L4b's. The judge is L4b's (drop-signals-judge.mjs).
+`h6/a953/analysis.md` gives every row (`a953-cells.mjs`, `a953-rows.mjs`).
+- In those tables, `confirmed_by` names the confirmation the engine armed (Chrome's `_NET_ACTIVE_WINDOW` request for
+  its window), and "activation after the release" says whether it came.
+
+**t14-floor (04:56–05:12Z): 0 false oks.**
+
+| cell | drags | landed | no drop | false ok | answers on no drop | activation after the release | released with the take | last step to release, ms (min / median / max) | keepalives max |
+|---|---:|---:|---:|---:|---|---:|---|---|---:|
+| plain-long | 300 | 300 | 0 | 0 | – | – | 300 | 0.0 / 0.8 / 6.9 | 0 |
+| left | 30 | 0 | 30 | 0 | 30 ok with the unconfirmed-drop notice on the read | 0 of 30 | 30 | 0.1 / 2.0 / 5.1 | 0 |
+| inzone-out | 30 | 0 | 30 | 0 | 30 ok with the unconfirmed-drop notice on the read | 0 of 30 | 30 | 0.1 / 1.9 / 243.2 | 19 |
+
+**t14-long (05:12–05:19Z): 7 FALSE OKS in 100.** The judge reads "Fails: cua long-left: answered ok with no drop and
+nothing pending on 7 of 100 (#28, #38, #51)"; the seven are #28, #38, #51, #64, #79, #88 and #89. Stopped as the rule
+says, and not rerun.
+
+| what Chrome did | drags | landed | false ok | honest (the unconfirmed-drop notice) |
+|---|---:|---:|---:|---:|
+| activated its window 1.7–9.6 ms after the release (all warm) | 12 | **5, in the zone although the path ended left of it** | **7** | 0 |
+| no activation (10 of them cold) | 88 | 0 | 0 | 88 |
+
+- Every row had its release 0.0–4.1 ms after the last step, with 0 keepalives, and was released with the take.
+- **Row #28** (warm, block 2), as #23 above:
+  - The take came at press + 16.9 ms, the path ran 764.7 ms, and the release came 0.1 ms after the last step.
+  - Chrome activated 4.6 ms after the release, and the engine answered a plain ok with nothing pending. The page counted
+    a dragstart and no drop.
+- So on the shipped route, on a path that outlasts the 350 ms floor, Chrome's activation confirms a drop the page never
+  took, or one taken at a stale position. The guard that keeps a shorter path safe doesn't apply: the keepalive motions
+  that fill the floor at the path's end (`pointer.rs` 418–425, `dnd.rs` 161) aren't sent on a path that outlasts it.
+  This is #459.
+- **Ruling 961's border margin.**
+  - long-left's path ends at page (500, 500). drop-signals.html's zone is x 560–960, y 100–620, so the end lies 60 px
+    left of the zone's border, with y inside its span.
+  - Every row keeps its screen end point (`end`, 504,587 here), and the zone's geometry is the page's.
+  - So a margin of a few pixels changes no row's count here or in a957.
+
+### Ruling 957: 0.4.1 against 0.4.2 on t14-long (development run; `h6/a957/`)
+
+The setup (05:25:53–05:44:58Z):
+- one hold and one private-display session (watchdog clean), from the H6 checkout for both arms (`a957.sh`,
+  `a957-run.mjs`, `a957-alternate.mjs`);
+- 10 rounds in ABBA order, each harness run `--plan t14-long --load-factor 2 --trials 10` (one block, its first drag
+  cold, like each of t14-long's ten blocks), so 100 long-left drags per engine.
+
+The engines:
+- 0.4.2 is the H6 home's.
+- 0.4.1 is H⁗'s acceptance home's: sha256 `8850abcb…`, equal to 3b5c0441's `runtime/engine/linux-engine.json`, reading
+  `cua-engine 0.4.1 (7522dcb8fb8c)`. `gh attestation verify` passes with 2 attestations, linux-engine.yml run
+  44380699966 on `release/linux-engine-v0.4.1` among them (`a957/attestation-041.txt`).
+- Nothing had to step around `MIN_ENGINE_VERSION`: the harness's engine.mjs launches the binary itself, and only cua's
+  service client checks the version.
+
+| engine | drags | false ok | stale-position drops | honest notices | activation ≤ 10 ms after the release, warm / cold |
+|---|---:|---:|---:|---:|---|
+| 0.4.1 | 100 | **10** | 7 | 83 | 16 / 0 (of 90 / 10) |
+| 0.4.2 | 100 | **6** | 6 | 88 | 12 / 0 (of 90 / 10) |
+
+- Every false ok and stale drop on both engines is a drag Chrome activated after. One 0.4.1 false ok activated at
+  10.7 ms, just past the bucket.
+- Every drag with no activation was answered honestly. No cold drag activated.
+- The last step to the release took median 0.1–0.2 ms and max 4–5 ms, with 0 keepalives.
+- The rounds show no trend (`a957/summary.md`).
+- **So #459's shape predates 0.4.2. 0.4.2 did not regress this path.**
+
+### Ruling 954.2: arm64's inside band swept on m5-h7 (development run; `h6/s954/`)
+
+The run: task 125's candidate **m5-h7 at 348cae0f**, in a fresh worktree `t122-h7` (clean), against the same pinned
+0.4.2 home (05:20:39–05:22:35Z; `sweep954.sh`).
+- It launched as L4c's line does at twice the load, with `--plan freeze-042-inside` (freeze-500, -550 and -600, 10
+  each) and the same changes as a953's.
+- On this candidate each freeze starts at the browser's press mark (`_NET_WM_USER_TIME`) + 55 ms, never earlier. A row
+  with no usable mark is skipped as unexercised.
+- `xprop` and `stdbuf` are on the VM. The run started at a 1-minute load of 2.81, while a953's load decayed, and the
+  harness's own load then ran as usual.
+- Chrome was 156.0.8078.73, one browser for all 30 rows.
+
+| freeze | landed after an in-hold take | hold notices | unidentified | skipped | take after the press, ms (min / median / max) | press mark after the send, ms | freeze start after the send, ms (min / median / max) |
+|---|---:|---:|---:|---:|---|---|---|
+| 500 | 10 / 10 | 0 | 0 | 0 | 390.1 / 454.2 / 498.1 | 24–141 | 78 / 135 / 196 |
+| 550 | 10 / 10 | 0 | 0 | 0 | 433.9 / 507.8 / 555.8 | 15–148 | 70 / 131 / 203 |
+| 600 | 10 / 10 | 0 | 0 | 0 | 495.3 / 583.8 / 602.5 | 22–139 | 77 / 135 / 195 |
+
+- No late take and no false ok. Every stop came 54–58 ms after the press mark.
+- arm64 lands 10/10 at all three freezes, freeze-600 included, once identification is out of the freeze's way.
+
+### Scans (rulings 863, 874, 875)
+
+- **Token-shaped strings** (`h6/scripts/scan-evidence.sh`, file names only; `scan-token.txt`): the whole `m5/arm64/`,
+  3042 files, 0 hits.
+- **No `:0` window title or key code** in the committed `h6/` (`privacy-run.sh`, `privacy-scan.mjs`;
+  `privacy-scan.txt`).
+  - The titles of every `:0` client window (the stand-in session's Chrome, the only one) were piped from the VM straight
+    into the scan, never written or printed.
+  - The result: 447 files, 3 titles looked for, **0 title hits, 0 held-code rows, 0 raw minimized codes**.
+  - Positive control: the same scan over x64's V3 at H finds 2 held-code rows and 27 raw minimized codes
+    (`privacy-scan-control.txt`).
+- No secret value was read, and every run home's secret store was empty.
+
 ## Files
 
+- `h6/`: the H6 part: `out/` (every counted step as the runner wrote it, V5's sitting records, `driver.log`,
+  `zero.log`); `a953/`, `a957/` and `s954/` (rulings 953, 957 and 954.2's development runs, with `analysis.md`,
+  `summary.md` and `per-freeze.md`); `scripts/` (task 122's launchers, the setup, item 9, the proof, the after-step
+  reading, settle-check, the S2 cross-check, the analysis scripts, the scans and the lock lines). Logs are kept as
+  `.log.txt`, since the repository ignores `*.log`. The kept route-audit traces are left out (on the x64 host).
 - `h5/`: the H⁵ part (`out/`: the counted sitting, V5's stopped first attempt and its clearance; `f2/`: F2's `:0`
   parts on Chrome 158; `f3/`: F3, with V3's stop and its clearance; `scripts/`: task 109's launchers and records, the
   after-step readings, `settle-check.txt`, `kept-traces.sha256` and the scans). The kept route-audit traces are left

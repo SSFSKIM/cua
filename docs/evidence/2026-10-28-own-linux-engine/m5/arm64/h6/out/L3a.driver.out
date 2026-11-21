@@ -1,0 +1,2 @@
+step.sh 2026-11-21T02:36:52Z start L3a after 170 s quiet wait: load=0.90 9.26 13.09 stress-ng=none
+step.sh 2026-11-21T03:13:51Z end L3a exit 0 load=16.75 16.89 16.64

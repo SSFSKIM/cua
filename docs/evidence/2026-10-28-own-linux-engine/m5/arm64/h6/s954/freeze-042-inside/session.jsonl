@@ -1,0 +1,4 @@
+{"t":"2026-11-21T05:20:39.611Z","label":"development run, not a release gate (task 122, ruling 954.2, plan freeze-042-inside, m5-h7 348cae0f)","kind":"server","display":":1","pid":577529}
+{"t":"2026-11-21T05:20:39.958Z","label":"development run, not a release gate (task 122, ruling 954.2, plan freeze-042-inside, m5-h7 348cae0f)","kind":"setup","openbox":577536,"person":"8388620"}
+{"t":"2026-11-21T05:22:34.630Z","label":"development run, not a release gate (task 122, ruling 954.2, plan freeze-042-inside, m5-h7 348cae0f)","kind":"run-end","code":0,"signal":null}
+{"t":"2026-11-21T05:22:35.642Z","label":"development run, not a release gate (task 122, ruling 954.2, plan freeze-042-inside, m5-h7 348cae0f)","kind":"server-stopped","clean":true,"reason":null}

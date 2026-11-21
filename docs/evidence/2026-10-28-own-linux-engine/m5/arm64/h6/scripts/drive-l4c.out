@@ -1,0 +1,4 @@
+2026-11-21T04:22:23Z driver start: L4c (df / avail 114G)
+2026-11-21T04:22:23Z wait L4c load=6.43 13.95 14.85 df / avail 114G
+2026-11-21T04:26:54Z end L4c exit 1 load=13.86 12.01 13.53 
+2026-11-21T04:26:54Z FAILED L4c (exit 1): driver stopped for the controller

@@ -1,0 +1,4 @@
+{"t":"2026-11-21T05:25:53.424Z","label":"development run, not a release gate (task 122, ruling 957: t14-long, e041 against e042, alternating)","kind":"server","display":":1","pid":580609}
+{"t":"2026-11-21T05:25:53.770Z","label":"development run, not a release gate (task 122, ruling 957: t14-long, e041 against e042, alternating)","kind":"setup","openbox":580616,"person":"8388620"}
+{"t":"2026-11-21T05:44:57.353Z","label":"development run, not a release gate (task 122, ruling 957: t14-long, e041 against e042, alternating)","kind":"run-end","code":0,"signal":null}
+{"t":"2026-11-21T05:44:58.363Z","label":"development run, not a release gate (task 122, ruling 957: t14-long, e041 against e042, alternating)","kind":"server-stopped","clean":true,"reason":null}

@@ -1,0 +1,16 @@
+2026-11-21T01:09:23Z driver start: L1 L2a L2b L3a L3b L4a L4b L4c (df / avail 114G)
+2026-11-21T01:09:23Z wait L1 load=0.31 0.65 0.56 df / avail 114G
+2026-11-21T01:41:40Z end L1 exit 0 load=16.30 16.47 14.68 
+2026-11-21T01:41:40Z wait L2a load=16.30 16.47 14.68 df / avail 114G
+2026-11-21T02:12:11Z end L2a exit 0 load=16.86 16.97 16.23 
+2026-11-21T02:12:11Z wait L2b load=16.86 16.97 16.23 df / avail 114G
+2026-11-21T02:34:02Z end L2b exit 0 load=15.42 16.38 15.72 
+2026-11-21T02:34:02Z wait L3a load=15.42 16.38 15.72 df / avail 114G
+2026-11-21T03:13:51Z end L3a exit 0 load=16.75 16.89 16.64 
+2026-11-21T03:13:51Z wait L3b load=16.75 16.89 16.64 df / avail 114G
+2026-11-21T03:37:43Z end L3b exit 0 load=15.41 16.37 15.89 
+2026-11-21T03:37:43Z wait L4a load=15.41 16.37 15.89 df / avail 114G
+2026-11-21T04:01:59Z end L4a exit 0 load=16.60 16.49 15.80 
+2026-11-21T04:01:59Z wait L4b load=16.60 16.49 15.80 df / avail 114G
+2026-11-21T04:21:26Z end L4b exit 1 load=17.50 17.06 15.84 
+2026-11-21T04:21:26Z FAILED L4b (exit 1): driver stopped for the controller

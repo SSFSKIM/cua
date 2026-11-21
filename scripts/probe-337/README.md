@@ -151,3 +151,60 @@ The fix's sentence (Chrome; TextEdit's names TextEdit):
   skips it and the click still lands on the page beneath, 5/5.
 - Two windows of one app: a back window is never the observed one. Once the other window is raised, the app's focused
   window changes and both heads refuse `noScreenshotForCoordinates` before any overlay rule, so no regression here.
+
+### Requalification of the reworked rule, fix-only against the same main data (`compare.mjs`)
+
+The rule as reworked refuses `appWindowOverPoint` in two cases; otherwise main's verdict stands:
+- `by: "axHit"`: the app's AX hit at the point is in another window of the app.
+- `by: "popover"`: the hit lies under an AXPopover in the observed window, and a same-app, same-layer window with alpha
+  above 0 is over the point.
+
+The new `stalePoint.hitMs` records the hit-test's duration. Both runs below used kit dec29b1b, 330 rows each,
+`label=fix2` and `label=fix3`:
+- fix2, 023a3beecd22b659eb2b64bfbaa5979789486ba9: https://github.com/SSFSKIM/cua/actions/runs/44831489386 (Chrome
+  156.0.8078.80, image 20261102.0473.1).
+- fix3, bbe42e2c9c0a06d26e4754295379a81c36529a4f, the final head: https://github.com/SSFSKIM/cua/actions/runs/44837693749
+  (Chrome 157.0.8103.79, image 20261117.0516.1, the same as main's batch 3).
+
+bbe42e2c adds three things over 023a3bee:
+- An axHit refusal needs the hit's window listed on screen with alpha above 0, holding the point, and in front of the
+  observed window.
+- A hit under an observed AXSheet counts as in the observed window.
+- `hitMs` is carried on the element route.
+
+| cell (where the overlay shows) | main | fix2 (023a3bee) | fix3 (bbe42e2c) |
+|---|---|---|---|
+| omnibox, shared-behind, inside | refused `backgroundClickRefused` 5/5 | refused `appWindowOverPoint` by axHit 5/5 | refused by axHit 5/5 |
+| omnibox, shared-front / dedicated, inside | page beneath 5/5, 4/4 | refused by axHit 5/5, 5/5 | refused by axHit 4/4, 5/5 |
+| datalist (L999), shared-front, inside | page beneath 5/5 | refused by axHit 5/5 | refused by axHit 5/5 |
+| permission, shared-behind, inside | refused `backgroundClickRefused` 3/3 | refused by axHit 4/4 | refused by axHit 1/1 |
+| permission, shared-front (the bubble observed itself) | Never allow taken 1/1 | taken 2/2 | taken 4/4 |
+| TextEdit popover, all modes, inside | text beneath 15/15 | refused by popover 15/15 | refused by popover 15/15 |
+| select menu and TextEdit menu (L101), all modes | posted, item not taken 30/30 | the same 30/30 | the same 30/30 |
+| status bubble, shared-front, inside | landed under it 5/5 | **landed 5/5** | **landed 5/5** |
+| tab hover card, shared-front, inside | landed under it 5/5 | **landed 5/5** | **landed 5/5** |
+| two windows, Chrome and TextEdit, all modes | refused `noScreenshotForCoordinates` 60/60 | the same 60/60 | the same 60/60 |
+| Save panel (observed itself), shared-front, inside | posted, Cancel not taken 5/5 | **refused by axHit 5/5** (the hit's AXSheet reads as the document's window) | posted, Cancel not taken 5/5, as main |
+| every outside click | landed (menus: dismissed) | the same | the same |
+
+Notes:
+- Omnibox rows whose popup window was at alpha 0 are left out. On fix3 the one such inside row posted to the page, as
+  main does, which matches the screenshot.
+- Permission prompts show in 1 to 4 of 5 rows. Datalist, status bubble and hover card show only with Chrome frontmost.
+
+The sentence (Chrome; TextEdit's names TextEdit), unchanged from 5f85ffcc:
+`Google Chrome has a window of its own over the one the screenshot showed at this point (a suggestion list, popup or panel), and a click here would reach the window under it, not what the screenshot shows. Nothing was sent. Use keys instead (the arrow keys and Return for a suggestion list, Escape to close it), or call getScreenshot for a new screenshot and click an element its tree holds.`
+
+Timing, per lane, over every click that carried a stalePoint (ms):
+
+| lane | head | clicks | stalePoint.ms p50 | p95 | hitMs p50 | p95 | hitMs present |
+|---|---|---|---|---|---|---|---|
+| chrome | main 04691839 | 98 | 1.67 | 7.91 | - | - | 0/98 |
+| chrome | fix2 023a3bee | 101 | 1.11 | 4.38 | 1.62 | 5.89 | 93/101 (not on the 8 background element-route clicks) |
+| chrome | fix3 bbe42e2c | 96 | 1.72 | 5.22 | 2.53 | 4.93 | 96/96 |
+| textedit | main 04691839 | 65 | 1.25 | 3.33 | - | - | 0/65 |
+| textedit | fix2 023a3bee | 65 | 0.89 | 2.51 | 0.74 | 1.37 | 65/65 |
+| textedit | fix3 bbe42e2c | 65 | 1.00 | 2.07 | 0.81 | 1.89 | 65/65 |
+
+fix2 ran on another runner image and Chrome than main. fix3 ran on main's image and Chrome. `hitMs` is not part of
+`stalePoint.ms`: the hit-test runs before the guard, so it adds its own time.

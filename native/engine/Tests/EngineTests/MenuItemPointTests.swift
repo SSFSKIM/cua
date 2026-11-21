@@ -43,7 +43,8 @@ final class MenuItemPointTests: XCTestCase {
   private var reads: MenuItemReads<Node> {
     MenuItemReads(role: { $0.role }, parent: { $0.parent }, enabled: { $0.enabled }, actions: { $0.actions },
                   title: { $0.titleFails ? .failed : $0.title.map { .text($0) } ?? .absent },
-                  value: { $0.valueFails ? .failed : $0.value.map { .text($0) } ?? .absent }, focused: { [unowned self] in self.focused }, gone: { $0.gone }, same: { $0 === $1 })
+                  value: { $0.valueFails ? .failed : $0.value.map { .text($0) } ?? .absent }, focused: { [unowned self] in self.focused },
+                  children: { $0.children }, gone: { $0.gone }, same: { $0 === $1 })
   }
 
   private func observedWindow(_ number: CGWindowID = 28) -> ListedWindow {
@@ -79,7 +80,7 @@ final class MenuItemPointTests: XCTestCase {
   }
 
   private func decide(hit: Node?, record: RecordedMenuItem<Node>?, list: [ListedWindow]? = nil) -> MenuItemPoint<Node> {
-    menuItemPoint(hit: hit, recorded: record, reads: reads) {
+    menuItemPoint(hit: hit, recorded: record.map { [$0] } ?? [], reads: reads) {
       self.listReads += 1
       return menuWindowOverPoint(point, target: observed, pids: [app], list: list ?? [menuWindow, observedWindow()])?.number
     }
@@ -229,7 +230,6 @@ final class MenuItemPointTests: XCTestCase {
     let field = Node("AXTextField", parent: Node("AXWindow"))
     for (hit, recorded, why, cause) in [
       (scene.times, scene.helvetica, MenuItemRefusal.notRecorded, "the item there is not the one the screenshot showed at this point"),
-      (scene.times, nil, .notRecorded, "the item there is not the one the screenshot showed at this point"),
       (field, scene.times, .notHit, "the item the screenshot showed there is not what the point reaches now"),
     ] as [(Node, Node?, MenuItemRefusal, String)] {
       let decision = decide(hit: hit, recorded: recorded)
@@ -583,6 +583,84 @@ final class MenuItemPointTests: XCTestCase {
     guard case .refuse(.relabelled, _) = decide(hit: scene.times, record: RecordedMenuItem(element: scene.times, title: bounded("Other " + long))) else {
       return XCTFail("another long title")
     }
+  }
+
+  // MARK: #454's qualification (run 44860009214)
+
+  /// Chrome's page: the `<select>` (an AXPopUpButton with its own hidden AXMenu of the options) and the app-level menu
+  /// open over it, whose items the record holds, the already-selected One over the pop-up button itself.
+  private func chromeSelect() -> (popup: Node, hidden: Node, menu: Node, one: Node, three: Node) {
+    let popup = Node("AXPopUpButton", title: "Choice", value: "One", parent: Node("AXGroup", parent: Node("AXWebArea", parent: Node("AXWindow"))))
+    let hidden = Node("AXMenu", parent: popup)
+    for title in ["One", "Two", "Three"] { _ = Node("AXMenuItem", title: title, parent: hidden) }
+    let menu = Node("AXMenu")
+    let one = Node("AXMenuItem", title: "One", parent: menu)
+    _ = Node("AXMenuItem", title: "Two", parent: menu)
+    let three = Node("AXMenuItem", title: "Three", parent: menu)
+    return (popup, hidden, menu, one, three)
+  }
+
+  /// `select-same`: the deepest recorded node at One's point is the page's AXPopUpButton (it acts, so #433 reads no control
+  /// beneath it), refused `notRecorded` 15/15 though the record holds One there. Every recorded item holding the point
+  /// counts, so One agrees with the hit and is delivered.
+  func testAnItemOverADeeperRecordedControlStillAgreesWithTheRecord() {
+    let chrome = chromeSelect()
+    var popupNode = recordedNode(chrome.popup, depth: 13)
+    popupNode.actionable = true
+    let nodes = [recordedNode(chrome.one, depth: 9), popupNode]
+    var verdict = StalePointVerdict<Node>(reason: .noHit, node: popupNode, identity: .handle, current: chrome.popup, point: point)
+    verdict.nodes = nodes
+    XCTAssertNil(recordedMenuItem(verdict), "neither the node nor a control beneath it is the item")
+    XCTAssertTrue(recordedMenuItems(verdict).first?.element === chrome.one)
+    guard case .deliver(let target) = menuItemPoint(hit: chrome.one, recorded: recordedMenuItems(verdict), reads: reads, menuWindow: { 44 }) else {
+      return XCTFail("delivered")
+    }
+    XCTAssertTrue(target.item === chrome.one)
+    // Another recorded item at the point than the hit still disagrees.
+    guard case .refuse(.notRecorded, _) = menuItemPoint(hit: chrome.three, recorded: recordedMenuItems(verdict), reads: reads, menuWindow: { 44 }) else {
+      return XCTFail("notRecorded")
+    }
+  }
+
+  /// `select`: answered `value: "unread"` 15/15, the focus not on the `<select>` while its menu is open. The parentless
+  /// menu's control is the one recorded pop-up whose own AXMenu lists the same options; its AXValue moves One to Three.
+  /// Two such pop-ups (the same options) identify none.
+  func testAParentlessMenusControlIsTheRecordedPopUpListingItsOptions() {
+    let chrome = chromeSelect()
+    focused = chrome.three  // not an opener
+    guard case .deliver(let target) = decide(hit: chrome.three, recorded: chrome.three) else { return XCTFail("delivered") }
+    var open = true
+    var meta = freshMeta()
+    var clock = 0.0
+    XCTAssertTrue(try menuItemClick(.deliver(target), app: "Google Chrome", reads: reads, menuWindowShown: { _ in open }, now: { clock },
+                                    sleep: { clock += $0 }, openers: [Node("AXComboBox"), chrome.popup], prepareOwner: { _ in },
+                                    checkInFlight: {}, perform: { _, _ in chrome.popup.value = "Three"; open = false; return .success }, meta: &meta))
+    XCTAssertEqual(wire(meta)?["value"] as? String, "taken")
+    let twin = Node("AXPopUpButton", value: "One")
+    let twinMenu = Node("AXMenu", parent: twin)
+    for title in ["One", "Two", "Three"] { _ = Node("AXMenuItem", title: title, parent: twinMenu) }
+    XCTAssertNil(parentlessMenuOpener(chrome.menu, candidates: [chrome.popup, twin], reads: reads))
+    XCTAssertTrue(parentlessMenuOpener(chrome.menu, candidates: [chrome.popup], reads: reads) === chrome.popup)
+    chrome.hidden.children.last?.title = "Four"
+    XCTAssertNil(parentlessMenuOpener(chrome.menu, candidates: [chrome.popup], reads: reads), "other options: not its menu")
+  }
+
+  /// `menubar` and `submenu`: the observation lists no item of the menu at the point (the screenshot does not show it),
+  /// so the refusal says so, and names what works with the app behind: a click outside closes it, and the item by its
+  /// element once getAXState() lists it (the menu bar's title clicked by its element first), never the keys.
+  func testAMenuTheObservationHoldsNoItemOfIsRefusedAsUnobserved() {
+    let scene = textEdit()
+    guard case .refuse(.unobserved, window: 77) = decide(hit: scene.times, recorded: nil) else { return XCTFail("unobserved") }
+    var meta = freshMeta()
+    XCTAssertThrowsError(try click(decide(hit: scene.times, recorded: nil), shown: { _ in true }, meta: &meta) { _, _ in
+      XCTFail("nothing performed"); return .success
+    }) { error in
+      let error = error as? EngineError
+      XCTAssertEqual(error?.errorName, "appWindowOverPoint")
+      XCTAssertEqual(error?.message, "TextEdit has a menu open at this point that the screenshot does not show (a menu-bar menu, a submenu, or a menu opened since the screenshot), so the click cannot be checked against it. Nothing was sent. A click outside the menu closes it. To choose one of its items, call getAXState() and click the item it lists by its element; a menu-bar menu's items are listed once its title in the menu bar has been clicked by its element.")
+    }
+    XCTAssertEqual(wire(meta)?["refused"] as? String, "unobserved")
+    XCTAssertNil(meta.startedAt)
   }
 }
 

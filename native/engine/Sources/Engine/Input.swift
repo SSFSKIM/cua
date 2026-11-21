@@ -568,7 +568,7 @@ extension Engine {
           let reads = MenuItemReads<AXUIElement>.live(appPid: appPid)
           let answered = latest.outcome.answered
           let decision = signposted("click.menuItem") {
-            menuItemPoint(hit: answered, recorded: recordedMenuItem(stale.verdict), reads: reads) {
+            menuItemPoint(hit: answered, recorded: recordedMenuItems(stale.verdict), reads: reads) {
               let pids: Set<pid_t> = [appPid, answered.map { ownerPid(of: $0, fallback: appPid) } ?? appPid]
               return menuWindowOverPoint(placed.point, target: windowID, pids: pids, list: onScreenWindowList())?.number
             }
@@ -576,7 +576,10 @@ extension Engine {
           let carried = try armingSettle(&meta, acted: { context.connection.markActed(app) }) { meta in
             try menuItemClick(decision, app: app.displayName, reads: reads, menuWindowShown: { number in
               onScreenWindowIDs().map { $0.contains(number) }  // nil when the list does not read: unknown, never closed
-            }, now: monotonicMilliseconds, sleep: { usleep(UInt32(max(0, $0) * 1000)) }, prepareOwner: { item in
+            }, now: monotonicMilliseconds, sleep: { usleep(UInt32(max(0, $0) * 1000)) },
+              // A parentless menu's control is looked for among the recorded pop-ups and combo boxes (Chrome's `<select>`).
+              openers: stale.verdict.nodes.filter { menuOpenerRoles.contains($0.role) }.prefix(menuOpenerCandidateLimit).map(\.element),
+              prepareOwner: { item in
               // The item's own process (a helper's menu can be served by another than main's bounded hit).
               let owner = ownerPid(of: item, fallback: appPid)
               try refuseForbiddenOwner(owner)

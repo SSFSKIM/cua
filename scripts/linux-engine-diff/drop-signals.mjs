@@ -587,18 +587,20 @@ export function freezeStart(span, t0, press) {
 
 /**
  * The run's browser process stopped over `span` (ms after the send at `t0`, the thaw at `t0 + to`), and always
- * continued: what was done, with times. A span that waits for the press (`afterPress`) reads this trial's from
+ * continued: what was done, with times. Every time here is on the monotonic clock (`performance.now`, the re-review of
+ * 0e43238b, finding 1): the send's `t0`, the press mark's arrival, the deadline, the stop and the thaw, so a step of the
+ * wall clock moves none of them. A span that waits for the press (`afterPress`) reads this trial's from
  * `pressed({from, sent, deadline})` (`startPressWatch`), `sent` the send's server time (`serverNow`), and records the
  * press's own value beside it. The deadline is read again just before the signal: a timer that woke at or past the thaw
  * sends none, and the stop is skipped with why (the review of cf1ef10f, finding 1). `now`, `wait` and `kill` are the
  * clock, the timer and the signal, for the tests.
  */
-export async function freezeBrowser(pid, span, t0, pressed = null, { sent = null, now = Date.now, wait = sleep, kill = (p, sig) => process.kill(p, sig) } = {}) {
+export async function freezeBrowser(pid, span, t0, pressed = null, { sent = null, now = () => performance.now(), wait = sleep, kill = (p, sig) => process.kill(p, sig) } = {}) {
   if (!pid) throw new Error('the freeze cell needs the run\'s browser process');
   if (span.afterPress !== undefined && !pressed) throw new Error("the freeze cell needs the browser's press mark (startPressWatch)");
   const press = span.afterPress === undefined ? null : await pressed({ from: t0, sent, deadline: t0 + span.to });
-  const at = freezeStart(span, t0, press?.wall ?? null);
-  const marked = span.afterPress === undefined ? {} : { press_ms: press === null ? null : Math.round((press.wall - t0) * 10) / 10, ...(press ? { press_time: press.time } : {}), sent_time: sent, ...(press?.ignored?.length ? { press_ignored: press.ignored } : {}) };
+  const at = freezeStart(span, t0, press?.at ?? null);
+  const marked = span.afterPress === undefined ? {} : { press_ms: press === null ? null : Math.round((press.at - t0) * 10) / 10, ...(press ? { press_time: press.time } : {}), sent_time: sent, ...(press?.ignored?.length ? { press_ignored: press.ignored } : {}) };
   if (at.skipped) return { pid, skipped: at.skipped, ...marked, from_ms: span.from, to_ms: span.to };
   await wait(t0 + at.start - now());
   const stopped = now();
@@ -609,7 +611,8 @@ export async function freezeBrowser(pid, span, t0, pressed = null, { sent = null
   } finally {
     kill(pid, 'SIGCONT');
   }
-  return { pid, ...marked, stopped_ms: stopped - t0, continued_ms: now() - t0 };
+  // to a tenth of a millisecond, as the press is: the stop's own reading, never rounded up to the thaw
+  return { pid, ...marked, stopped_ms: Math.floor((stopped - t0) * 10) / 10, continued_ms: Math.round((now() - t0) * 10) / 10 };
 }
 
 /**
@@ -632,34 +635,35 @@ export const PRESS_CLOCK_SLACK_MS = 2;
 
 /**
  * The browser's press marks as `xprop -spy` prints them (`startPressWatch`), fed line by line with each line's arrival
- * (`line(text, wall, server)`: the wall clock and the server's, `serverNow`). The first value printed is the property as
+ * (`line(text, at, server)`: the monotonic clock, `performance.now` (the re-review of 0e43238b, finding 1), and the
+ * server's, `serverNow`). The first value printed is the property as
  * it stood when the spy began, never a press, however late it comes. A mark's value is the X server time of the press
  * the browser read, so it binds the mark to a trial (the review of cf1ef10f, finding 2): `pressed({from, sent,
- * deadline})` answers `{wall, time}`, the first mark arriving from `from` (the wall clock at the send) by `deadline`
+ * deadline})` answers `{at, time}`, the first mark arriving from `from` (the monotonic clock at the send) by `deadline`
  * (the thaw) whose value is newer than every value seen before it (never a repeat of the property, the baseline's
  * included), not before the send's server time `sent` (an earlier trial's queued notification), and not after its own
  * arrival (a server whose clock is not this machine's), each by `PRESS_CLOCK_SLACK_MS`; else null, and the stop is
  * skipped and its row unexercised (ruling 956), never begun from `from` alone. What was passed over in the trial's
  * window, with why, is `ignored(trial)`.
  */
-export function pressMarks() {
+export function pressMarks({ now = () => performance.now() } = {}) {
   const marks = [];
   const waiting = new Set();
   let latest = null;
   const why = (m, { from, sent, deadline }) => {
-    if (m.wall < from || m.wall > deadline) return 'outside the trial';
+    if (m.at < from || m.at > deadline) return 'outside the trial';
     if (!m.newer) return 'not newer than the last value seen';
     if (serverDiff(m.time, sent) < -PRESS_CLOCK_SLACK_MS) return 'stamped before the send';
     if (serverDiff(m.time, m.server) > PRESS_CLOCK_SLACK_MS) return 'stamped after it arrived';
     return null;
   };
-  const inTrial = (trial) => marks.filter((m) => m.wall >= trial.from && m.wall <= trial.deadline);
-  const ignored = (trial) => inTrial(trial).filter((m) => why(m, trial) !== null).map((m) => ({ time: m.time, wall_ms: Math.round((m.wall - trial.from) * 10) / 10, why: why(m, trial) }));
-  const answer = (m, trial) => ({ wall: m.wall, time: m.time, ...(ignored(trial).length ? { ignored: ignored(trial) } : {}) });
+  const inTrial = (trial) => marks.filter((m) => m.at >= trial.from && m.at <= trial.deadline);
+  const ignored = (trial) => inTrial(trial).filter((m) => why(m, trial) !== null).map((m) => ({ time: m.time, at_ms: Math.round((m.at - trial.from) * 10) / 10, why: why(m, trial) }));
+  const answer = (m, trial) => ({ at: m.at, time: m.time, ...(ignored(trial).length ? { ignored: ignored(trial) } : {}) });
   return {
     marks,
     ignored,
-    line(text, wall, server) {
+    line(text, at, server) {
       const value = /_NET_WM_USER_TIME\(CARDINAL\) = (\d+)/.exec(text)?.[1];
       if (value === undefined) return;
       const time = Number(value);
@@ -667,15 +671,15 @@ export function pressMarks() {
         latest = time;
         return;
       }
-      const m = { wall, server, time, newer: serverDiff(time, latest) > 0 };
+      const m = { at, server, time, newer: serverDiff(time, latest) > 0 };
       if (m.newer) latest = time;
       marks.push(m);
       for (const w of waiting) w(m);
     },
     pressed(trial) {
-      const seen = marks.find((m) => m.wall >= trial.from && why(m, trial) === null && m.wall <= trial.deadline);
+      const seen = marks.find((m) => m.at >= trial.from && why(m, trial) === null && m.at <= trial.deadline);
       if (seen !== undefined) return Promise.resolve(answer(seen, trial));
-      if (Date.now() >= trial.deadline) return Promise.resolve(null);
+      if (now() >= trial.deadline) return Promise.resolve(null);
       return new Promise((resolve) => {
         const done = (v) => {
           waiting.delete(on);
@@ -683,10 +687,10 @@ export function pressMarks() {
           resolve(v);
         };
         const on = (m) => {
-          if (m.wall > trial.deadline) done(null);
+          if (m.at > trial.deadline) done(null);
           else if (why(m, trial) === null) done(answer(m, trial));
         };
-        const timer = setTimeout(() => done(null), Math.max(0, trial.deadline - Date.now()));
+        const timer = setTimeout(() => done(null), Math.max(0, trial.deadline - now()));
         waiting.add(on);
       });
     },
@@ -695,8 +699,8 @@ export function pressMarks() {
 
 /**
  * Chrome's browser's own mark of each button press it reads: `_NET_WM_USER_TIME` on its window (or on the window its
- * `_NET_WM_USER_TIME_WINDOW` names), watched by `xprop -spy`, each change stamped with this process's wall clock as it
- * arrives (`pressMarks`).
+ * `_NET_WM_USER_TIME_WINDOW` names), watched by `xprop -spy`, each change stamped with this process's monotonic clock as
+ * it arrives (`pressMarks`).
  */
 async function startPressWatch(window) {
   const named = /window id # (0x[0-9a-f]+)/i.exec(xExecFileSync('xprop', ['-id', String(window), '_NET_WM_USER_TIME_WINDOW'], { encoding: 'utf8', timeout: 5000 }))?.[1];
@@ -704,7 +708,7 @@ async function startPressWatch(window) {
   const child = xSpawn('stdbuf', ['-oL', 'xprop', '-spy', '-id', target, '_NET_WM_USER_TIME'], { stdio: ['ignore', 'pipe', 'inherit'] });
   const marks = pressMarks();
   const rl = createInterface({ input: child.stdout });
-  rl.on('line', (l) => marks.line(l, Date.now(), serverNow()));
+  rl.on('line', (l) => marks.line(l, performance.now(), serverNow()));
   const exited = new Promise((resolve) => {
     child.once('exit', resolve);
     child.once('error', resolve);
@@ -740,7 +744,8 @@ async function oneDrag(ctx, { lane, spec, cell, i, engine, before, cold }) {
   const rect = cover ? coverRect(cover, (COVER_CELLS[base])(i)) : null;
   const screenRect = rect && { ...rect, x: rect.x + at.page.x + scene.window.x, y: rect.y + at.page.y + scene.window.y };
   const sent = Date.now();
-  const frozen = freezeOf(base) ? freezeBrowser(ctx.browser, freezeOf(base), sent, ctx.presses?.pressed, { sent: serverNow() }) : null;
+  // the stop's schedule on the monotonic clock (`freezeBrowser`); the wall clock's `sent` is the watch's and the stats'
+  const frozen = freezeOf(base) ? freezeBrowser(ctx.browser, freezeOf(base), performance.now(), ctx.presses?.pressed, { sent: serverNow() }) : null;
   const handled = LANES[lane].handle === true;
   const desktopLane = LANES[lane].desktop === true;
   const end = { x: scene.window.x + path.at(-1).x, y: scene.window.y + path.at(-1).y };

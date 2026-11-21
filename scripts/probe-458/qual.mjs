@@ -498,7 +498,9 @@ async function runRow(app, cell, rep) {
         focusedOff: ps.filter(x => x[1] !== null && !isF1(x[1])).map(x => [x[0], x[1]]), mainOff: ps.filter(x => x[2] !== null && !isF1(x[2])).map(x => [x[0], x[2]]),
         unread: ps.filter(x => x[1] === null).length, endF1: isF1(ps[ps.length - 1]?.[1])};
       delete row.watch.personSamples;
-      row.key.samplesKept = ps.slice(0, 12);
+      row.key.samplesKept = ps.slice(0, 60);
+      // How long the focused window was not F1, summed over the samples' spans (to the watch's end when it stays off).
+      row.key.offMs = Math.round(ps.reduce((sum, x, i) => x[1] !== null && !isF1(x[1]) ? sum + ((ps[i + 1]?.[0] ?? 5000) - x[0]) : sum, 0));
     }
     row.moved = moved(ord0, after.order).map(n => nameOf(names, n) ?? n);
     row.orderRestored = row.moved.length === 0;

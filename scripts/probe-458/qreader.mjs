@@ -26,7 +26,8 @@ for (const file of process.argv.slice(2)) {
     const fr = tally(ok.map(r => `${short(r.before.front)}->${short(r.after.front)}, focus ${JSON.stringify(r.after.personFocusedWindow) === JSON.stringify(r.before.personFocusedWindow) ? 'kept' : 'CHANGED'}`));
     const af = tally(ok.map(r => String(r.after.appFrontmost)));
     const keyed = ok.filter(r => r.key);
-    const key = keyed.length ? `${keyed.filter(r => r.key.focusedOff.length || r.key.mainOff.length).length} / ${keyed.filter(r => !r.key.endF1).length} / ${keyed.filter(r => r.key.unread).length} of ${keyed.length}` : '-';
+    const off = keyed.filter(r => r.key.focusedOff.length || r.key.mainOff.length);
+    const key = keyed.length ? `${off.length} / ${keyed.filter(r => !r.key.endF1).length} / ${keyed.filter(r => r.key.unread).length} of ${keyed.length}${off.some(r => r.key.offMs != null) ? ` (off ms p50/max ${pct(off.map(r => r.key.offMs), 0.5)}/${pct(off.map(r => r.key.offMs), 1)})` : ''}` : '-';
     const actMs = `${pct(ok.map(r => r.actMs), 0.5)}/${pct(ok.map(r => r.actMs), 1)}`;
     const cover = `${pct(ok.map(r => r.watch?.aboveMs), 0.5)}/${pct(ok.map(r => r.watch?.aboveMs), 1)}`;
     const rest = tally(ok.filter(r => pc(r)?.restored).map(r => { const x = pc(r).restored; return `${x.windows} win ${x.complete ? 'complete' : 'INCOMPLETE'}${x.stopped ? ` stopped ${x.stopped}` : ''}${x.skipped ? ` skipped ${x.skipped}` : ''} ${x.raises} raise${x.raises === 1 ? '' : 's'}`; }));

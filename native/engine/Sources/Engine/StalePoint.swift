@@ -32,8 +32,12 @@ import Foundation
 // region the model types into is exempt (`editedInPlace`, ruling 1ea561bc:553). #433: a point kept at an inert layer (a
 // node that does not act on its own, with no acting ancestor in its document: a transparent overlay), with a hit that
 // names no interactive element, is judged again at the recorded control beneath it (`underlyingTarget`), which a click
-// passes through to: gone with no re-created handle #431 accepts, moved off the point, or relabelled, it refuses. Everything here reads through closures, so the rule is
-// unit-tested over a fake tree.
+// passes through to: gone with no re-created handle #431 accepts, moved off the point, or relabelled, it refuses. #452
+// (design ruling 928, narrowed by the qualification's measurements): the pointer's events are posted to the app's process
+// stamped with the observed window (Mouse.swift `stampWindow`), so the app delivers them to that window whatever lies over
+// it; a point the app's own hit-test answers in another of its windows (Chrome's omnibox popup, its `<datalist>` popup, a
+// permission bubble), or in a popover over the observed one (`PointHitPlace`, `appWindowOverPoint`), refuses before the
+// tree is read. Everything here reads through closures, so the rule is unit-tested over a fake tree.
 
 /// One node of the tree an observation with a screenshot walked, as the screenshot showed it.
 struct ScreenshotNode<Element> {
@@ -427,10 +431,13 @@ enum StalePointReason: String, Equatable {
   /// Refused (#298, `relabelledLabel`): the node, found by its own handle with its frame still holding the point, reads a
   /// label whose words differ from the recorded one's (Save to Delete on one element).
   case relabelled
+  /// Refused (#452, `guardedPointVerdict`): the point lies on another window of the app's own, over the observed one,
+  /// which the pointer's events are stamped to (`AppWindowSignal` says how it was found); nothing of the tree was read.
+  case appWindowOverPoint
 
   var refuses: Bool {
     self == .nodeGone || self == .frameMoved || self == .interactiveHit || self == .pressedOther || self == .newWindow || self == .otherWebArea
-      || self == .newElementOverPoint || self == .relabelled
+      || self == .newElementOverPoint || self == .relabelled || self == .appWindowOverPoint
   }
 }
 
@@ -471,6 +478,10 @@ struct StalePointVerdict<Element> {
   var newElementReads: Int?
   /// #316's rule W: the new window over the screenshot's, for `newWindow`.
   var newWindow: ListedWindow?
+  /// #452: for `appWindowOverPoint`, the number of the app's window over the observed one at the point (0 when the
+  /// hit's window could not be numbered) and the signal that found it.
+  var overWindow: CGWindowID?
+  var overBy: AppWindowSignal?
   /// #298: the node's label read now, for `relabelled`'s sentence (#433: the control beneath's, when it refused).
   var labelNow: String?
   /// #433: the recorded control beneath a node that does not act on its own (`underlyingTarget`), judged when the verdict
@@ -1305,14 +1316,99 @@ func newWindowAbove(target: CGWindowID, pid: pid_t, recorded: Set<CGWindowID>, l
   return nil
 }
 
-/// The guard at a coordinate click's or drag start's point (#296, #316): rule W from the window list (`windows`, the
-/// on-screen list read once, only when there is a target window number and a recorded list to compare: about 0.3 ms, p95
-/// 1 ms, with 30 windows on screen on the MacBook), and only when it keeps the point, the tree's verdict (`tree`,
-/// `stalePointVerdict`). Both call sites take this one, so a drag's start is guarded as a click is.
-func guardedPointVerdict<Element>(at point: CGPoint, hit: Element?, target: CGWindowID?, pid: pid_t, recorded: Set<CGWindowID>?,
-                                  windows: () -> [ListedWindow], tree: () -> StalePointVerdict<Element>) -> StalePointVerdict<Element> {
-  if let target, let recorded, let new = newWindowAbove(target: target, pid: pid, recorded: recorded, list: windows()) {
+/// #452: where the app's own hit-test at a coordinate's point answered (Input.swift `windowHit`), the signal the rule reads.
+enum PointHitPlace: Equatable {
+  /// In the observed window, `inPopover` when its ancestry to the window passed an AXPopover (TextEdit's colour-well
+  /// popover, whose own window AX folds into the document window's tree).
+  case observedWindow(inPopover: Bool)
+  /// In another of the app's windows (Chrome's omnibox and `<datalist>` popups, a permission bubble), its number when read
+  /// (only by a timed hit-test, `hitTestOutcome`).
+  case otherWindow(CGWindowID?)
+  /// No answer, an ancestry that reads to no window, or an answer past `pointHitSignalDeadlineMs`: main's verdict stands.
+  case unread
+}
+
+/// #452 (design ruling 940): the longest a coordinate's hit-test may take for its answer to count as the rule's signal.
+/// The hit-test is main's own, each of its messages bounded by `elementMessagingTimeout` (1 s, AX.swift `prepare`); one
+/// that takes longer than this answered an app busy enough that the answer may be stale, so the rule keeps main's verdict.
+let pointHitSignalDeadlineMs: Double = 500
+
+/// Which of #452's signals refused (the meta's `stalePoint.by`).
+enum AppWindowSignal: String, Equatable {
+  /// The app's hit-test answered in another of its windows.
+  case axHit
+  /// The hit lay in an AXPopover, and the window list holds a window of the app's over the observed one at the point.
+  case popover
+}
+
+/// #452 (design ruling 928): the app's topmost window at `point` (global, top-left) when it is not `target`, the observed
+/// window the pointer's events are stamped to; nil when that is the target, when no window of the app's above it holds the
+/// point, or when `list` (front to back) does not hold the target. Read among `pid`'s windows alone (the events go to the
+/// process, not through the window server's hit-test, so another app's window takes none of them), at the target's own
+/// layer (the child windows the screenshot's desktop-independent capture includes are ordered at their parent's), that
+/// show something (alpha above 0). The window list cannot tell a window that ignores mouse events (Chrome's status bubble
+/// and hover cards) from one that takes them, so it only confirms the popover signal and never refuses alone
+/// (`guardedPointVerdict`).
+func appWindowOverPoint(_ point: CGPoint, target: CGWindowID, pid: pid_t, list: [ListedWindow]) -> ListedWindow? {
+  guard let observed = list.first(where: { $0.number == target }) else { return nil }
+  for window in list {
+    if window.number == target { return nil }
+    if window.owner == pid, window.layer == observed.layer, window.alpha > 0, window.bounds.contains(point) { return window }
+  }
+  return nil
+}
+
+/// #452's check of the window the app's hit-test answered in (`number`), against the on-screen list (front to back): it
+/// covers the point when the list holds it, not transparent (alpha above 0; the review of 023a3bee: run 44822312301's
+/// window 44, of alpha 0, over the visible page), its bounds holding the point, and, when the list holds the observed
+/// window (`target`), in front of it, at any layer (the review of 023a3bee..e98276d2). A window the list does not hold
+/// is not on screen, or the list did not read: false, as for one that no longer covers the point, and main's verdict
+/// stands.
+func hitWindowCovers(_ number: CGWindowID, point: CGPoint, target: CGWindowID?, list: [ListedWindow]) -> Bool {
+  guard let index = list.firstIndex(where: { $0.number == number }) else { return false }
+  let window = list[index]
+  guard window.alpha > 0, window.bounds.contains(point) else { return false }
+  if let target, let observed = list.firstIndex(where: { $0.number == target }) { return index < observed }
+  return true
+}
+
+/// The guard at a coordinate click's or drag start's point (#296, #316, #452), all before anything is posted: rule W from
+/// the window list (`windows`, the on-screen list read at most once, only when there is a target window number: about
+/// 0.3 ms, p95 1 ms, with 30 windows on screen on the MacBook) where there is a recorded list to compare; then #452 from
+/// where the app's hit-test answered (`place`): in another window of the app's that covers the point in the list
+/// (`hitWindowCovers`), at any layer, it refuses (`axHit`); in a
+/// popover of the observed window, it refuses when the list holds a window of the app's over the observed one at the
+/// point (`popover`); and only when these keep the point, the tree's verdict (`tree`, `stalePointVerdict`). The
+/// qualification (kit `probe/337-measure` README ac805945) set the signals: the omnibox popup, Chrome's `<datalist>` popup
+/// (layer 999) and a permission bubble answer in their own windows; TextEdit's colour-well popover answers an AXPopover in
+/// the document window's tree; Chrome's status bubble and tab hover card, which pass clicks through, answer the observed
+/// window's own elements and keep, as does a hit unread or too late, or one in a window of alpha 0, unlisted or
+/// unnumbered. Both call sites take this one, so a drag's start is
+/// guarded as a click is.
+func guardedPointVerdict<Element>(at point: CGPoint, hit: Element?, place: PointHitPlace = .unread, target: CGWindowID?, pid: pid_t,
+                                  recorded: Set<CGWindowID>?, windows: () -> [ListedWindow],
+                                  tree: () -> StalePointVerdict<Element>) -> StalePointVerdict<Element> {
+  var read: [ListedWindow]?
+  func list() -> [ListedWindow] {
+    if let read { return read }
+    let list = windows()
+    read = list
+    return list
+  }
+  if let target, let recorded, let new = newWindowAbove(target: target, pid: pid, recorded: recorded, list: list()) {
     return StalePointVerdict(reason: .newWindow, hit: hit, point: point, newWindow: new)
+  }
+  switch place {
+  case .otherWindow(let number):
+    // Only a window the screenshot can have shown over the point (`hitWindowCovers`); otherwise main's verdict.
+    if let number, hitWindowCovers(number, point: point, target: target, list: list()) {
+      return StalePointVerdict(reason: .appWindowOverPoint, hit: hit, point: point, overWindow: number, overBy: .axHit)
+    }
+  case .observedWindow(inPopover: true):
+    if let target, let over = appWindowOverPoint(point, target: target, pid: pid, list: list()) {
+      return StalePointVerdict(reason: .appWindowOverPoint, hit: hit, point: point, overWindow: over.number, overBy: .popover)
+    }
+  case .observedWindow(inPopover: false), .unread: break
   }
   return tree()
 }
@@ -1344,6 +1440,13 @@ struct StalePointRecord: Equatable {
   let newElementReads: Int?
   /// For `newWindow`, the new window's number.
   let newWindow: CGWindowID?
+  /// For `appWindowOverPoint` (#452), the number of the app's window over the observed one at the point (0 unread), and
+  /// the signal that found it (`by`).
+  let overWindow: CGWindowID?
+  let overBy: AppWindowSignal?
+  /// #452 (design ruling 940): how long the coordinate's hit-test took, the AX reads #452's signal comes from; set by the
+  /// guard's caller.
+  var hitMs: Double?
   /// #433: the role of the recorded control beneath the node that the guard judged too, and how it was found.
   let underlyingRole: String?
   let underlyingIdentity: StalePointIdentity?
@@ -1358,6 +1461,8 @@ struct StalePointRecord: Equatable {
     webAreaReads = verdict.webAreaReads
     newElementReads = verdict.newElementReads
     newWindow = verdict.newWindow?.number
+    overWindow = verdict.overWindow
+    overBy = verdict.overBy
     underlyingRole = verdict.underlying?.role
     underlyingIdentity = verdict.underlyingIdentity
     self.ms = ms
@@ -1374,6 +1479,9 @@ struct StalePointRecord: Equatable {
     if let webAreaReads { wire["webAreaReads"] = webAreaReads }
     if let newElementReads { wire["newElementReads"] = newElementReads }
     if let newWindow { wire["newWindow"] = Int(newWindow) }
+    if let overWindow { wire["overWindow"] = Int(overWindow) }
+    if let overBy { wire["by"] = overBy.rawValue }
+    if let hitMs { wire["hitMs"] = (hitMs * 1000).rounded() / 1000 }
     if let underlyingRole { wire["underlyingRole"] = underlyingRole }
     if let underlyingIdentity { wire["underlyingIdentity"] = underlyingIdentity.rawValue }
     if rechecked { wire["rechecked"] = true }
@@ -1449,18 +1557,22 @@ struct StalePointGate<Element> {
   /// The first check's window-list read (#316's rule W, `StalePointRecord.windowsMs`), which the record this gate
   /// answers replaces in the meta: it is kept there, the recheck reading no window list of its own.
   var firstWindowsMs: Double? = nil
+  /// The first check's hit-test time (#452, `StalePointRecord.hitMs`), carried on the same way.
+  var firstHitMs: Double? = nil
   let recheck: () -> StalePointVerdict<Element>
 
   /// The first check's verdict and its record (`Engine.stalePointGuard`'s), whose time and window-list read this gate's
   /// record carries on.
   init(first: StalePointVerdict<Element>, record: StalePointRecord, recheck: @escaping () -> StalePointVerdict<Element>) {
-    self.init(first: first, firstMs: record.ms, firstWindowsMs: record.windowsMs, recheck: recheck)
+    self.init(first: first, firstMs: record.ms, firstWindowsMs: record.windowsMs, firstHitMs: record.hitMs, recheck: recheck)
   }
 
-  init(first: StalePointVerdict<Element>, firstMs: Double, firstWindowsMs: Double? = nil, recheck: @escaping () -> StalePointVerdict<Element>) {
+  init(first: StalePointVerdict<Element>, firstMs: Double, firstWindowsMs: Double? = nil, firstHitMs: Double? = nil,
+       recheck: @escaping () -> StalePointVerdict<Element>) {
     self.first = first
     self.firstMs = firstMs
     self.firstWindowsMs = firstWindowsMs
+    self.firstHitMs = firstHitMs
     self.recheck = recheck
   }
 
@@ -1474,6 +1586,7 @@ struct StalePointGate<Element> {
     let outcome = stalePointOutcome(verdict, ms: firstMs + (now() - started), afterActivation: afterActivation, reads: reads)
     var record = outcome.record
     record.windowsMs = firstWindowsMs
+    record.hitMs = firstHitMs
     record.rechecked = waited
     record.afterActivation = afterActivation
     return (record, outcome.refusal)
@@ -1546,14 +1659,24 @@ func newWindowOverScreenshot(app: String) -> EngineError {
     "The screen changed since the screenshot: \(app) has opened a window over the one the screenshot showed, which can take the click. Nothing was sent. Call getScreenshot for a new screenshot, then give the coordinates in its pixels.")
 }
 
+/// #452's refusal (design ruling 928): a window of the app's own lies over the observed one at the point, and the click,
+/// stamped to the observed window, would reach that window's content under it. The screenshot may well have shown that
+/// window (#337: Chrome's omnibox popup open at the observation), so nothing is said to have changed and no page is
+/// blamed; the sentence names the ways through: keys for the overlay, or an element the tree holds. Nothing was posted.
+func appWindowOverPointRefusal(app: String) -> EngineError {
+  EngineError(name: "appWindowOverPoint",
+    "\(app) has a window of its own over the one the screenshot showed at this point (a suggestion list, popup or panel), and a click here would reach the window under it, not what the screenshot shows. Nothing was sent. Use keys instead (the arrow keys and Return for a suggestion list, Escape to close it), or call getScreenshot for a new screenshot and click an element its tree holds.")
+}
+
 /// The guard's outcome at a point: its meta record, and the refusal to throw (nil when it kept the pointer). The refusal
 /// names what is there now (the verdict's hit; for `pressedOther` the element the route would act on) only when it is
 /// known (its role read) and is not the node itself (Chrome's hit-test may still answer a moved control's handle at its
-/// old point); otherwise it names nothing there. A `newWindow` refusal names the app (`app`).
+/// old point); otherwise it names nothing there. A `newWindow` or `appWindowOverPoint` refusal names the app (`app`).
 func stalePointOutcome<Element>(_ verdict: StalePointVerdict<Element>, ms: Double, afterActivation: Bool = false, app: String = "The app",
                                 reads: StalePointReads<Element>) -> (record: StalePointRecord, refusal: EngineError?) {
   let record = StalePointRecord(verdict, ms: ms)
   if verdict.reason == .newWindow { return (record, newWindowOverScreenshot(app: app)) }
+  if verdict.reason == .appWindowOverPoint { return (record, appWindowOverPointRefusal(app: app)) }
   guard verdict.refused, let node = verdict.node else { return (record, nil) }
   if verdict.underlyingRefused, let control = verdict.underlying {
     return (record, controlUnderInertChanged(
@@ -1579,16 +1702,17 @@ extension Engine {
   /// The guard at a coordinate pointer's posted point, live (`stalePointVerdict` over the Accessibility API), with `hit` the
   /// hit-test the action already took there and `windowOrigin` the origin of the window the point was placed in, now; its
   /// time covers the reads it adds. `rehit` hit-tests the point again (the action's own hit-test). `windowID` is the number
-  /// of the window the point was placed in, which #316's rule W looks above among `appPid`'s windows.
-  func stalePointGuard(at point: CGPoint, windowOrigin: CGPoint, windowID: CGWindowID?, hit: AXUIElement?, rehit: () -> AXUIElement?,
-                       app: ResolvedApp, appPid: pid_t, context: ExecutionContext)
+  /// of the window the point was placed in, which #316's rule W looks above among `appPid`'s windows. `place` is where
+  /// that hit-test answered, #452's signal, and `hitMs` its time (the meta's `hitMs`).
+  func stalePointGuard(at point: CGPoint, windowOrigin: CGPoint, windowID: CGWindowID?, hit: AXUIElement?, place: PointHitPlace,
+                       hitMs: Double?, rehit: () -> AXUIElement?, app: ResolvedApp, appPid: pid_t, context: ExecutionContext)
     -> (record: StalePointRecord, refusal: EngineError?, verdict: StalePointVerdict<AXUIElement>, shift: CGVector) {
     let started = monotonicMilliseconds()
     let reads = StalePointReads<AXUIElement>.live
     let screenshot = context.connection.observedScreenshot(app: app)
     let shift = screenshot.map { CGVector(dx: windowOrigin.x - $0.windowOrigin.x, dy: windowOrigin.y - $0.windowOrigin.y) } ?? .zero
     var windowsMs: Double?
-    let verdict = guardedPointVerdict(at: point, hit: hit, target: windowID, pid: appPid, recorded: screenshot?.windowList, windows: {
+    let verdict = guardedPointVerdict(at: point, hit: hit, place: place, target: windowID, pid: appPid, recorded: screenshot?.windowList, windows: {
       let read = monotonicMilliseconds()
       defer { windowsMs = monotonicMilliseconds() - read }
       return onScreenWindowList()
@@ -1598,6 +1722,7 @@ extension Engine {
     }
     var outcome = stalePointOutcome(verdict, ms: monotonicMilliseconds() - started, app: app.displayName, reads: reads)
     outcome.record.windowsMs = windowsMs
+    outcome.record.hitMs = hitMs
     return (outcome.record, outcome.refusal, verdict, shift)
   }
 

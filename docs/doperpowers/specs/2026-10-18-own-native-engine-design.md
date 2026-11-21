@@ -554,9 +554,11 @@ error    {code: number (the vendor's codes where mapped; -10005 otherwise), mess
   stalePoint: #296's stale-point guard at a coordinate click's point or a drag's start, on its result and its errors once the
     point is placed: {verdict ("kept" | "refused"), reason ("unrecorded" | "sameElement" | "noHit" | "nonInteractiveHit" |
     "hitAboveNode" | "unrecordedDescendant" | "recordedHit" | "nodeGone" | "frameMoved" | "interactiveHit" | "pressedOther" |
-    "newWindow" | "otherWebArea" (#316) | "newElementOverPoint" (#330) | "relabelled" (#298)), identity? ("handle" | "recreated"), recordedRole?, hitRole?, recordedHitBy? ("hit" | "ancestor", #305: the frame that carried a
+    "newWindow" | "otherWebArea" (#316) | "newElementOverPoint" (#330) | "relabelled" (#298) | "appWindowOverPoint" (#452)), identity? ("handle" | "recreated"), recordedRole?, hitRole?, recordedHitBy? ("hit" | "ancestor", #305: the frame that carried a
     `recordedHit`), windowsMs? (#316's rule W's window-list read), webAreaReads? (#316's rule G's parent reads),
-    newWindow? (#316: the new window's number), newElementReads? (#330's rule dL's reads, when it read any), ms,
+    newWindow? (#316: the new window's number), overWindow? (#452: the number of the app's window over the observed one at
+    the point, 0 unread), by? (#452: "axHit" | "popover", the signal that refused), hitMs? (#452, design ruling 940: the
+    coordinate's hit-test's time), newElementReads? (#330's rule dL's reads, when it read any), ms,
     rechecked? (true: #282's or #283's
     route waited and the guard ran again before the press; the verdict is that check's, ms both checks'), afterActivation?
     (true: that check ran after the route's focus hold had activated the app)}; roles only, never a title
@@ -6918,6 +6920,119 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   Not measured live: `twincover` on CfT, Safari and Electron with this build, and how often real pages lose a click to a
   changed control under an inert layer.
   Date/Author: 2026-11-20, cursor235's implementer for #433.
+- Decision (#452 with #337, design ruling 928, 2026-11-20, `fix/452-same-app-overlay`, plugin 0.28.23; amends #296's guard,
+  StalePoint.swift `appWindowOverPoint` and `guardedPointVerdict`, and #282's refusal, Input.swift `WindowHit`):
+  **a coordinate click or drag start whose point lies on another window of the app's, over the observed one, is refused
+  before anything is posted, in every mode.** #337's kit (`probe/337-measure`, README fbe9e642; runs 44797144792 and
+  44799499336 on main d44a4fe1) found Chrome's omnibox popup is a layer-0 window of Chrome's own over the browser window,
+  holding the point in 19 of 19 rows, its rows absent from the tree. The engine posts to the process with the observed
+  window's id and window-local point (`stampWindow`), so Chrome delivered the click to the page under the popup: posted
+  and answered ok, the suggestion taken 0 of 12 (shared frontmost and dedicated), and refused 7 of 7 in shared mode with
+  Chrome behind by #282's sentence blaming the page, since `windowHit` turned the popup's hit into no hit.
+  The rule is the invariant, not a list of window kinds: the guard reads the window list it already reads for #316's
+  rule W (now whenever the click's window has a number, recorded list or not), and after W refuses when the app's
+  topmost window at the point is not the observed one. "Topmost at the point" is read among the app's own windows, at
+  the observed window's layer, that show something (alpha above 0), front to back down to the observed window. Other
+  apps' windows are skipped, since the events go to the process, not through the window server's hit-test, so they
+  neither take the click nor appear in the screenshot; that case stays as it was. The layer follows the screenshot:
+  ScreenCaptureKit's desktop-independent window captures the window with the child windows AppKit orders at its level
+  (the popup, a bubble, a popover), which are what the model aims at and what the stamped click goes under; a pop-up
+  menu (101) and a floating panel (3) are in neither, as W leaves them. Alpha 0 shows nothing. W stays first, so a
+  window new since the screenshot keeps W's sentence. The refusal is `appWindowOverPoint` (not
+  `screenChangedSinceScreenshot`: the screenshot may have shown the window), meta `stalePoint.reason`
+  `appWindowOverPoint` with `overWindow`, its sentence: "<App> has a window of its own over the one the screenshot
+  showed at this point (a suggestion list, popup or panel), and a click here would reach the window under it, not what
+  the screenshot shows. Nothing was sent. Use keys instead (the arrow keys and Return for a suggestion list, Escape to
+  close it), or call getScreenshot for a new screenshot and click an element its tree holds." `windowHit` now answers a
+  hit in another window of the app's as its own outcome with that window's number (`hitWindow` in the meta); the action
+  still takes it as no hit, but #282's shared-mode refusal then answers with that sentence instead of the page's, for
+  the case the window list missed (no window number, or a window it skipped).
+  Limits, for the qualification to measure: the window list cannot tell a window that ignores mouse events (Chrome's
+  status bubble and hover cards, tooltips) from one that takes them, so a click under one at the observed window's
+  layer refuses though the click would land where the screenshot shows; a layer-0 window of the app's that is not a
+  child of the observed one (another document window in front, a non-floating panel) is not in the screenshot, yet
+  refuses too. A sheet is a window of its own in the list, so a coordinate click on a sheet refuses now (its controls
+  are in the tree). Wheel scrolls are stamped the same way and not guarded (out of scope). Re-aiming the post at the
+  overlay's window is #453.
+  Proven offline (`AppWindowOverPointTests`, two `BackgroundPointerTests`; each fails with the rule and the outcome
+  disabled): the popup over the point refuses before the tree with the sentence and meta, another app's window over both
+  changing nothing; the point outside it, another app's window alone, the observed window topmost, a menu's or floating
+  panel's layer, alpha 0 and a list without the observed window go to the tree; a click and a drag start refuse with
+  nothing posted, activated or held in shared frontmost, shared behind and dedicated; the hit-test's other-window
+  outcome carries the number and #282's refusal names the window, not the page.
+  Not measured live: any of it on Chrome; the cells the ticket names (omnibox in three modes, `<select>`, autofill, a
+  permission bubble, a native popover and its menu, a click outside each).
+  Date/Author: 2026-11-20, cursor235's implementer for #452.
+- Decision (#452's qualification, design rulings 928 and 940, 2026-11-20, `fix/452-same-app-overlay`; amends the entry
+  above, StalePoint.swift `guardedPointVerdict` and `PointHitPlace`, Input.swift `windowHit`): **the rule reads where the
+  app's own hit-test answered, and the window list only confirms a popover.** The hosted qualification of 5f85ffcc
+  against main 04691839 (kit `probe/337-measure` README ac805945; runs 44805302760, 44816112944 and 44822312301) found the
+  window-list rule right where main misdelivers (the omnibox popup in all three modes, a permission bubble, TextEdit's
+  colour-well popover 15 of 15, where main landed in the text beneath), but refusing 10 of 10 clicks main lands where the
+  screenshot shows on Chrome's status bubble and tab hover card (layer-0 windows that pass clicks through, Chrome
+  frontmost), and missing Chrome's `<datalist>` popup, a window at layer 999 (both heads landed on the page beneath, 5 of
+  5). The signal that separates them is the app's hit-test at the point: on the click-through windows it answers the
+  observed window's own elements (main's `nonInteractiveHit`); on real overlays, the overlay's own window (omnibox,
+  datalist, permission bubble). TextEdit's popover is the exception: its hit is an AXPopover inside the document
+  window's tree (`sameElement`), so only the window list shows a window over the point there. So, after rule W and before
+  the tree, all before anything is posted:
+  (a) the hit answered in another window of the app's, at any layer: refused (`by: "axHit"`, `overWindow` the hit's
+  window, 0 when its number did not read), whatever the window list says or whether the observed window has a number;
+  this is #337's other-window outcome made a refusal in every mode, so #282's sentence never meets it;
+  (b) the hit lies in the observed window with an AXPopover on its ancestry, and the window list holds a window of the
+  app's at the observed window's layer, alpha above 0, over the observed one at the point: refused (`by: "popover"`,
+  `overWindow` the list's window);
+  (c) anything else keeps main's verdict: a window of the app's over the point whose hit answers an ordinary element of
+  the observed window (the click-through bubbles and cards), and a hit that failed, read to no window or came late.
+  The window list is read only for W (a recorded list to compare) or for (b). The sentence and the error name are
+  unchanged; the meta's `by` names the signal, and `hitWindow` is gone, (a) refusing wherever it was set.
+  Design ruling 940 bounds the signal: the hit-test is main's own, each AX message bounded by `elementMessagingTimeout`
+  (1 s, AX.swift `prepare`, set on the application and every parent read), and `windowHit` now times it on the engine's
+  clock; past `pointHitSignalDeadlineMs` (500 ms) its place is `unread`, so the rule keeps main's verdict, while the hit
+  the action uses is still main's. The other window's number is read only within that deadline. The meta's `hitMs`
+  carries the time on every coordinate click and drag, for the qualification's p50 and p95.
+  Unchanged by (a): an open pop-up menu (layer 101: Chrome's `<select>`, TextEdit's font menu), where the qualification
+  saw both heads post and the item not taken. A menu item's AX ancestry runs to its menu, menu-bar item or pop-up button,
+  not to another AXWindow, so the hit reads as no window, or as the observed window when the menu hangs from a button in
+  it; (a) does not fire, by reading, not measured. A sheet is not an AXPopover and its hit lies in the observed window's
+  tree, so a sheet keeps main's verdict too, as does the save panel, served by another process. Re-aiming at the
+  overlay's window stays #453.
+  Proven offline (`AppWindowOverPointTests`, 5 tests; `BackgroundPointerTests`' place and deadline tests): (a) refuses
+  for the omnibox and a layer-999 popup, its number unread, an empty list and no observed number, with the sentence, `by`
+  and `hitMs` in the record; (b) refuses for a popover with the app's window over the point, another app's window over
+  both changing nothing; (c) keeps a click-through bubble, an unread hit over it, a popover hit with nothing of the app's
+  over the point (or only another app's window, one at layer 101, one of alpha 0, or the observed window topmost), and a
+  plain hit; the refusal posts nothing in shared frontmost, shared behind and dedicated, for a click and a drag start;
+  `windowHit` reports the other window's number, the AXPopover and unread, and past the deadline gives no signal, keeps
+  main's hit and reads no number. With (a), (b), the popover flag and the deadline disabled, 6 of these 7 tests fail (41
+  assertions); with 5f85ffcc's window-list-alone rule restored, the keeping test fails on the click-through bubble and
+  the unread hit.
+  Not measured live: this build on the qualification's cells, and `hitMs`'s distribution.
+  Date/Author: 2026-11-20, cursor235's implementer for #452.
+- Decision (#452, the review of 0469183..023a3bee, 2026-11-20; amends the entry above): five corrections, each tested
+  and each test failing with its fix reverted.
+  (1) (a) refuses only when the window the hit answered in is in the on-screen window list with alpha above 0, at any
+  layer (the `<datalist>` popup at 999 still refuses). Run 44822312301 had five inside clicks whose hit answered window
+  44, of alpha 0 at the observation and the click, with the visible page under it, which the screenshot showed and
+  main's click reached. A hit window the list does not hold keeps main's verdict too: the list is the on-screen one, so
+  such a window is not on screen and the screenshot did not show it (or the list failed to read), and an unread number
+  cannot be looked up; never worse than main (ruling 940).
+  (2) The guard's signal is the outcome of the hit-test whose hit it judges (`LatestHit`: #288's last re-hit when it
+  ran), not one inferred from the two hits being alike, which every no-hit outcome is.
+  (3) `windowHit` recognises the observed target on its walk whatever its role: a save panel observed as its AXSheet
+  (run 44816112944, AXSheet under AXWindow 948 while the observed panel was 952) places the hit in the observed window,
+  where it had read as another window over the panel; main's hit is unchanged (none there).
+  (4) The untimed element-only hit-test (scroll, the guard's re-hits) numbers no other window; the timed one asks the
+  SPI first and reads the window's frame only where it gives none, each read bounded by what is left of the deadline.
+  (5) An element route's record carries the first check's `hitMs`, as it carries `windowsMs`.
+  The re-review of 023a3bee..e98276d2 narrowed (1) and (4): the hit's window must still cover the point in the list
+  already read (`hitWindowCovers`: its bounds hold the point and, the observed window listed, it lies in front of it,
+  at any layer), else main's verdict; and its frame is read against an absolute cutoff (the deadline from the
+  hit-test's start), checked after the SPI's attempt and before the position and the size reads, each asked with what
+  is left then, neither once it has passed (`boundedFrame`; a read may overrun by the 50 ms messaging-timeout floor).
+  Left as debt (`tech-debt-tracker.md`, the same as main): the element route's post-wait recheck runs the tree verdict
+  alone, so a popup of the app's that opens during that wait is pressed under.
+  Date/Author: 2026-11-20, cursor235's implementer for #452.
 
 ## Outcomes & Retrospective
 

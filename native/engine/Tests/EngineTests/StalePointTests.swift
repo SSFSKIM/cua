@@ -1358,6 +1358,190 @@ final class NewWindowGuardTests: XCTestCase {
   }
 }
 
+// MARK: #452: a window of the app's own over the observed one at the point (design rulings 928 and 940, #337's sentence)
+
+final class AppWindowOverPointTests: XCTestCase {
+  private let app: pid_t = 990_021, other: pid_t = 990_022
+  /// #337's measurement (run 44797144792): the browser window 28 at (400, 31, 620×678), the omnibox popup 49 over it at
+  /// (499, 56, 458×218), the row clicked at (728, 136).
+  private let browser = ListedWindow(number: 28, owner: 990_021, layer: 0, bounds: CGRect(x: 400, y: 31, width: 620, height: 678))
+  private let popup = ListedWindow(number: 49, owner: 990_021, layer: 0, bounds: CGRect(x: 499, y: 56, width: 458, height: 218))
+  private let row = CGPoint(x: 728, y: 136)
+  /// The screenshot's list held every window here (open at the observation), so #316's rule W passes them.
+  private let recorded: Set<CGWindowID> = [28, 44, 49, 51, 77, 90]
+
+  private func guarded(_ list: [ListedWindow], place: PointHitPlace, target: CGWindowID? = 28)
+    -> (verdict: StalePointVerdict<Node>, treeRead: Bool) {
+    var treeRead = false
+    let verdict = guardedPointVerdict(at: row, hit: Node?.none, place: place, target: target, pid: app, recorded: recorded,
+                                      windows: { list }) {
+      treeRead = true
+      return StalePointVerdict<Node>(reason: .noHit)
+    }
+    return (verdict, treeRead)
+  }
+
+  /// (a) The app's hit-test answers in another of its windows (the omnibox popup): refused before the tree, with the
+  /// window's number and the signal in the meta, and a sentence that names the app's window and the ways through, never
+  /// the page.
+  func testAHitInAnotherWindowOfTheAppRefusesBeforeTheTree() {
+    let (verdict, treeRead) = guarded([popup, browser], place: .otherWindow(49))
+    XCTAssertEqual(verdict.reason, .appWindowOverPoint)
+    XCTAssertTrue(verdict.refused)
+    XCTAssertFalse(treeRead, "nothing of the tree read")
+    var outcome = stalePointOutcome(verdict, ms: 0.4, app: "Google Chrome", reads: reads)
+    outcome.record.windowsMs = 0.2
+    outcome.record.hitMs = 3.25
+    XCTAssertEqual(outcome.refusal?.errorName, "appWindowOverPoint")
+    XCTAssertEqual(outcome.refusal?.message,
+                   "Google Chrome has a window of its own over the one the screenshot showed at this point (a suggestion list, popup or panel), and a click here would reach the window under it, not what the screenshot shows. Nothing was sent. Use keys instead (the arrow keys and Return for a suggestion list, Escape to close it), or call getScreenshot for a new screenshot and click an element its tree holds.")
+    XCTAssertEqual(outcome.record.wire as NSDictionary, ["verdict": "refused", "reason": "appWindowOverPoint", "overWindow": 49, "by": "axHit",
+                                                         "windowsMs": 0.2, "hitMs": 3.25, "ms": 0.4] as NSDictionary)
+  }
+
+  /// (a) at any layer: Chrome's `<datalist>` popup at layer 999 refuses, with no number for the observed window too.
+  func testAHitInAnotherWindowRefusesAtAnyLayer() {
+    let datalist = ListedWindow(number: 77, owner: app, layer: 999, bounds: popup.bounds)
+    let atLayer999 = guarded([datalist, browser], place: .otherWindow(77)).verdict
+    XCTAssertEqual(atLayer999.reason, .appWindowOverPoint)
+    XCTAssertEqual(atLayer999.overWindow, 77)
+    XCTAssertEqual(atLayer999.overBy, .axHit)
+    XCTAssertEqual(guarded([datalist, browser], place: .otherWindow(77), target: nil).verdict.reason, .appWindowOverPoint,
+                   "no number for the observed window")
+  }
+
+  /// The review of 023a3bee (P1), run 44822312301: the hit answered in window 44, of alpha 0, with the visible page under
+  /// it, which the screenshot showed and main's click reached. (a) refuses only a window the list holds on screen with
+  /// alpha above 0; a transparent one, one the list does not hold (not on screen, or the list unread) and an unread
+  /// number keep main's verdict.
+  func testAHitInATransparentUnlistedOrUnnumberedWindowKeepsMainsVerdict() {
+    let transparent = ListedWindow(number: 44, owner: app, layer: 0, bounds: popup.bounds, alpha: 0)
+    let cases: [(String, [ListedWindow], PointHitPlace)] = [
+      ("alpha 0", [transparent, browser], .otherWindow(44)),
+      ("not in the list", [browser], .otherWindow(44)),
+      ("an empty list", [], .otherWindow(44)),
+      ("its number unread", [popup, browser], .otherWindow(nil)),
+    ]
+    for (name, list, place) in cases {
+      let (verdict, treeRead) = guarded(list, place: place)
+      XCTAssertEqual(verdict.reason, .noHit, name)
+      XCTAssertTrue(treeRead, name)
+    }
+  }
+
+  /// The review of 023a3bee..e98276d2 (P1): the hit's window must still cover the point in the list, its bounds holding
+  /// it and, the observed window listed, in front of it at any layer; one visible elsewhere, or behind the observed
+  /// window, keeps main's verdict. With the observed window unlisted, the bounds alone decide.
+  func testAHitWindowThatNoLongerCoversThePointKeepsMainsVerdict() {
+    let elsewhere = ListedWindow(number: 49, owner: app, layer: 0, bounds: CGRect(x: 2000, y: 0, width: 300, height: 200))
+    let behind = ListedWindow(number: 49, owner: app, layer: 0, bounds: popup.bounds)
+    let kept: [(String, [ListedWindow])] = [
+      ("its bounds off the point", [elsewhere, browser]),
+      ("behind the observed window", [browser, behind]),
+    ]
+    for (name, list) in kept {
+      let (verdict, treeRead) = guarded(list, place: .otherWindow(49))
+      XCTAssertEqual(verdict.reason, .noHit, name)
+      XCTAssertTrue(treeRead, name)
+    }
+    XCTAssertEqual(guarded([popup], place: .otherWindow(49)).verdict.reason, .appWindowOverPoint, "observed unlisted, over the point")
+    XCTAssertEqual(guarded([elsewhere], place: .otherWindow(49)).verdict.reason, .noHit, "observed unlisted, off the point")
+    let menuLayer = ListedWindow(number: 49, owner: app, layer: 101, bounds: popup.bounds)
+    XCTAssertEqual(guarded([menuLayer, browser], place: .otherWindow(49)).verdict.reason, .appWindowOverPoint, "in front at any layer")
+  }
+
+  /// (b) TextEdit's colour-well popover: the hit is an AXPopover inside the document window's tree, and the list holds a
+  /// window of the app's over the document at the point. Refused as `popover`, the list's window named; another app's
+  /// window over both changes nothing.
+  func testAPopoverOverTheObservedWindowRefuses() {
+    let popover = ListedWindow(number: 51, owner: app, layer: 0, bounds: CGRect(x: 700, y: 100, width: 100, height: 100))
+    let (verdict, treeRead) = guarded([popover, browser], place: .observedWindow(inPopover: true))
+    XCTAssertEqual(verdict.reason, .appWindowOverPoint)
+    XCTAssertEqual(verdict.overWindow, 51)
+    XCTAssertEqual(verdict.overBy, .popover)
+    XCTAssertFalse(treeRead)
+    XCTAssertEqual(StalePointRecord(verdict, ms: 1).wire["by"] as? String, "popover")
+    let cover = ListedWindow(number: 90, owner: other, layer: 0, bounds: CGRect(x: 0, y: 0, width: 1500, height: 900))
+    XCTAssertEqual(guarded([cover, popover, browser], place: .observedWindow(inPopover: true)).verdict.overWindow, 51)
+  }
+
+  /// (c) What keeps main's verdict: Chrome's status bubble or tab hover card (a window of the app's over the point, the
+  /// hit the observed window's own element), a hit unread, failed or too late over the same window, a popover hit with
+  /// no window of the app's over the point (or only another app's, or one at another layer, or of alpha 0), and a hit in
+  /// the observed window with nothing over it.
+  func testWhatKeepsMainsVerdict() {
+    let bubble = ListedWindow(number: 51, owner: app, layer: 0, bounds: CGRect(x: 700, y: 100, width: 100, height: 100))
+    let cases: [(String, [ListedWindow], PointHitPlace)] = [
+      ("a click-through bubble over the point", [bubble, browser], .observedWindow(inPopover: false)),
+      ("a hit unread over it", [bubble, browser], .unread),
+      ("a popover hit, nothing of the app's over the point", [browser], .observedWindow(inPopover: true)),
+      ("a popover hit, another app's window over it", [ListedWindow(number: 90, owner: other, layer: 0, bounds: bubble.bounds), browser],
+       .observedWindow(inPopover: true)),
+      ("a popover hit, the app's window at another layer", [ListedWindow(number: 51, owner: app, layer: 101, bounds: bubble.bounds), browser],
+       .observedWindow(inPopover: true)),
+      ("a popover hit, the app's window of alpha 0", [ListedWindow(number: 51, owner: app, layer: 0, bounds: bubble.bounds, alpha: 0), browser],
+       .observedWindow(inPopover: true)),
+      ("a popover hit, the observed window topmost", [browser, bubble], .observedWindow(inPopover: true)),
+      ("a plain hit, nothing over it", [browser], .observedWindow(inPopover: false)),
+    ]
+    for (name, list, place) in cases {
+      let (verdict, treeRead) = guarded(list, place: place)
+      XCTAssertEqual(verdict.reason, .noHit, name)
+      XCTAssertTrue(treeRead, name)
+    }
+    // Only a popover hit reads the window list for #452; without a recorded list to compare (W), nothing else does.
+    var listRead = false
+    _ = guardedPointVerdict(at: row, hit: Node?.none, place: .observedWindow(inPopover: false), target: 28, pid: app, recorded: nil,
+                            windows: { listRead = true; return [bubble, self.browser] }) { StalePointVerdict<Node>(reason: .noHit) }
+    XCTAssertFalse(listRead)
+    // A popup the screenshot's list lacked is #316's rule W's, with W's sentence.
+    let new = guardedPointVerdict(at: row, hit: Node?.none, place: .otherWindow(49), target: 28, pid: app, recorded: [28],
+                                  windows: { [self.popup, self.browser] }) { StalePointVerdict<Node>(reason: .noHit) }
+    XCTAssertEqual(new.reason, .newWindow)
+  }
+
+  /// The refusal is thrown before anything in every mode: shared with the app frontmost, shared with it behind (where #282
+  /// would otherwise refuse blaming the page), and a dedicated desktop; a click and a drag's start alike, nothing posted,
+  /// activated or held.
+  func testTheRefusalPostsNothingInEveryMode() {
+    let refusal = stalePointOutcome(guarded([popup, browser], place: .otherWindow(49)).verdict, ms: 0, app: "Google Chrome", reads: reads).refusal
+    XCTAssertNotNil(refusal)
+    let frame = browser.bounds
+    let activations = HeldActivations()
+    let modes: [(String, DesktopMode, pid_t)] = [("shared, frontmost", .shared, app), ("shared, behind", .shared, other),
+                                                ("dedicated", .dedicated, other)]
+    for (mode, desktop, frontmost) in modes {
+      for drag in [false, true] {
+        let name = "\(mode), \(drag ? "a drag" : "a click")"
+        let seam = GuardSeam(frontmost: frontmost)
+        seam.activationPoint = CGPoint(x: -1, y: 1441)  // Chrome's: outside the frame
+        let activation = FakeActivation(pid: app, window: AXUIElementCreateApplication(app), windowFrame: frame, windowID: 28, system: seam.system)
+        let connection = ConnectionState(id: 1, fd: -1)
+        connection.desktop = desktop
+        var meta = InputMeta(ExecutionContext(connection: connection, receivedAt: 1, hidIdleMs: 0, deadline: 2, lineage: nil))
+        var pointer = PointerTarget(view: .possibleWebArea, app: "Google Chrome", engine: .chromium)
+        pointer.staleRefusal = refusal
+        let target = ClickTarget(point: row, windowFrame: frame, windowID: 28, pid: app)
+        XCTAssertThrowsError(try {
+          if drag {
+            try deliverPointer(to: app, route: .activation, activation: activation, activations: activations, pointer: pointer,
+                               post: seam.system.post, meta: &meta) {
+              dragEvents(from: row, to: CGPoint(x: 728, y: 400), window: target, flags: [])
+            }
+          } else {
+            try deliverClick(target, route: .activation, button: .left, count: 1, activation: activation, activations: activations,
+                             pointer: pointer, targetActive: { frontmost == self.app }, post: seam.system.post, meta: &meta)
+          }
+        }(), name) { XCTAssertEqual(($0 as? EngineError)?.errorName, "appWindowOverPoint", name) }
+        XCTAssertEqual(seam.posts.count, 0, name)
+        XCTAssertEqual(seam.holds, 0, name)
+        XCTAssertEqual(activations.holders(app), 0, name)
+        XCTAssertNil(meta.startedAt, name)
+      }
+    }
+  }
+}
+
 // MARK: #316's rule G: the hit in the document the screenshot showed (the design session's ruling 4701abd8)
 
 final class WebAreaGuardTests: XCTestCase {
@@ -1484,12 +1668,14 @@ final class WebAreaGuardTests: XCTestCase {
     XCTAssertEqual(first.reason, .unrecordedDescendant)
     var firstRecord = StalePointRecord(first, ms: 1.25)
     firstRecord.windowsMs = 0.4
+    firstRecord.hitMs = 2.5  // #452's hit-test time (the review of 023a3bee, P2)
     let gate = StalePointGate(first: first, record: firstRecord) { verdict(partial, at: self.payPoint, hit: browser.pay) }
     for waited in [false, true] {
       let checked = gate.check(browser.pay, waited: waited, now: { 0 }, reads: reads)
       XCTAssertNil(checked.refusal)
       XCTAssertEqual(checked.record.reason, .unrecordedDescendant, "the press verdict rebuilt: the button inside the iframe group")
       XCTAssertEqual(checked.record.wire["windowsMs"] as? Double, 0.4, "waited: \(waited)")
+      XCTAssertEqual(checked.record.wire["hitMs"] as? Double, 2.5, "waited: \(waited)")
       XCTAssertEqual(checked.record.wire["webAreaReads"] as? Int, 3, "waited: \(waited)")
       XCTAssertEqual(checked.record.ms, 1.25)
     }

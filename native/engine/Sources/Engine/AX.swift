@@ -91,6 +91,29 @@ func bool(_ value: CFTypeRef?) -> Bool? {
   return nil
 }
 
+/// #452 (the review of 023a3bee..e98276d2): a window's frame read before `cutoff` on the engine's clock (`now`), its
+/// position and its size each asked with what is left then (`boundedMessagingTimeout`, whose floor a read may run past
+/// the cutoff by), and none asked once it has passed.
+func frame(of element: AXUIElement, before cutoff: Double, now: () -> Double) -> CGRect? {
+  boundedFrame(left: { cutoff - now() }, position: { timeout in
+    AXUIElementSetMessagingTimeout(element, timeout)
+    defer { AXUIElementSetMessagingTimeout(element, elementMessagingTimeout) }
+    return point(attribute(element, kAXPositionAttribute))
+  }, size: { timeout in
+    AXUIElementSetMessagingTimeout(element, timeout)
+    defer { AXUIElementSetMessagingTimeout(element, elementMessagingTimeout) }
+    return size(attribute(element, kAXSizeAttribute))
+  })
+}
+
+/// `frame(of:before:now:)` over its reads: each asked with the messaging timeout of the time `left()` answers just
+/// before it, none once that is spent.
+func boundedFrame(left: () -> Double, position: (Float) -> CGPoint?, size: (Float) -> CGSize?) -> CGRect? {
+  guard let first = boundedMessagingTimeout(leftMs: left()), let origin = position(first),
+        let second = boundedMessagingTimeout(leftMs: left()), let extent = size(second) else { return nil }
+  return CGRect(origin: origin, size: extent)
+}
+
 func frame(of element: AXUIElement) -> CGRect? {
   guard let origin = point(attribute(element, kAXPositionAttribute)), let extent = size(attribute(element, kAXSizeAttribute)) else { return nil }
   return CGRect(origin: origin, size: extent)
@@ -150,11 +173,28 @@ private let getWindowFunction: GetWindowFunction? = {
 }()
 
 func windowNumber(of window: AXUIElement, pid: pid_t, frame: CGRect?) -> CGWindowID? {
-  if let getWindowFunction {
+  windowNumber(of: window, pid: pid, readFrame: { frame })
+}
+
+/// `windowNumber(of:pid:frame:)` with the frame read (`readFrame`) only when the SPI cannot answer (#452, the review of
+/// 023a3bee: a hit-test numbering another window reads no position or size where the SPI answers).
+func windowNumber(of window: AXUIElement, pid: pid_t, readFrame: () -> CGRect?) -> CGWindowID? {
+  resolvedWindowNumber(spi: {
+    guard let getWindowFunction else { return nil }
     var id: CGWindowID = 0
-    if getWindowFunction(window, &id) == .success, id != 0 { return id }
-  }
-  guard let frame, let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]
+    return getWindowFunction(window, &id) == .success && id != 0 ? id : nil
+  }, readFrame: readFrame, matching: { windowNumber(pid: pid, frame: $0) })
+}
+
+/// The SPI's number, else the frame read and matched; the frame is read only when the SPI gives none.
+func resolvedWindowNumber(spi: () -> CGWindowID?, readFrame: () -> CGRect?, matching: (CGRect) -> CGWindowID?) -> CGWindowID? {
+  if let id = spi() { return id }
+  return readFrame().flatMap(matching)
+}
+
+/// The number of `pid`'s on-screen layer-0 window whose bounds are `frame` (within a point).
+private func windowNumber(pid: pid_t, frame: CGRect) -> CGWindowID? {
+  guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]
   else { return nil }
   for info in list where (info[kCGWindowOwnerPID as String] as? Int).map(pid_t.init) == pid && (info[kCGWindowLayer as String] as? Int) == 0 {
     guard let bounds = info[kCGWindowBounds as String] as? NSDictionary, let rect = CGRect(dictionaryRepresentation: bounds) else { continue }

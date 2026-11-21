@@ -572,11 +572,13 @@ error    {code: number (the vendor's codes where mapped; -10005 otherwise), mess
     or nothing to read), polls?, ms? (from the action's return to the last read), refused? ("notRecorded" | "notHit" |
     "unobserved" | "relabelled" | "disabled" | "noAction")}; never a title
   popUpClick: #458's coordinate click on a closed pop-up button, on its result and its errors once the guard kept the
-    point and #454's step left it: {role ("AXPopUpButton" | "AXComboBox"), kept? ("noSignal" | "notRecorded" | "notHit" |
-    "disabled" | "open" | "noAction" | "frontmost": main's path was kept, and why), refused? ("noAction": a native combo
+    point and #454's step left it (and on #282's element route when it pressed a `<select>`): {role ("AXPopUpButton" |
+    "AXComboBox"), kept? ("noSignal" | "notRecorded" | "notHit" | "ancestryUnread" | "disabled" | "open" |
+    "windowsUnread" | "noAction" | "frontmost": main's path was kept, and why), refused? ("noAction": a native combo
     box's arrow, the app not frontmost), delivery? ("action": the click delivered as the pop-up button's AXPress, by the
     element click's route, inputRoute 3 or 1, no pointer event; set as the action is dispatched), action? ("AXPress"),
-    effect? ("confirmed" | "unconfirmed"), actionError?, menuWindow? (the number of the app's new menu window at the
+    effect? ("confirmed" | "unconfirmed"), actionError?, baselineUnread? (true: the window list did not read just before
+    the press, so the effect could not be confirmed), menuWindow? (the number of the app's new menu window at the
     button), raisedAppWindow? (true: the open raised the app's window above the person's front window; null: not
     comparable), polls?, ms? (from the action's return to the last read)}; never a title
   note: on a paste result that pasted a line with no channel to see it, read after ⌘V (#187; type_text's paste route
@@ -7263,6 +7265,40 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   Not measured live: this build on the kit's cells (the three pop-ups and the combo box by `button` in three modes, and
   the item afterwards), Chrome's `<select>` in dedicated mode and shared frontmost, and the open time of an AXPress behind
   against the 500 ms bound.
+  Date/Author: 2026-11-21, cursor235's implementer for #458.
+- Decision (#458, the review of edbfbd23..75fecad2, reviewer-high, 2026-11-21; amends the entry above): eight
+  corrections, the fakes rebuilt from run 44877626226's measured shapes (results.json), each new piece failing its test
+  when reverted. (1) A closed `<select>` has no AXMenu child (`openerMenus: []` in all 125 select rows; it appears only
+  once pressed), so the first rule dropped it to main's post in dedicated mode, the false ok. A page's AXPopUpButton now
+  qualifies by evidence present while closed: the record holds one of its options, an AXMenuItem under it, which is the
+  deepest recorded node at the point (`hitAboveNode`, recorded role AXMenuItem, 15/15; `RecordedPopUp.holdsOption`); a
+  page's ARIA pop-up button has none and stays main's. (2) TextEdit's combo-box arrow hit-tests and is recorded as an
+  AXButton (15/15), so the refusal never fired; an AXButton whose parent is an AXComboBox resolves to the combo box, and
+  a hit on the combo box itself is its text, main's (the frame-square rule is gone). (3) In a shared-mode page behind,
+  #282's element route still delivers the `<select>`'s press, and that press now gets the same check just before it,
+  the effect, `clickUnconfirmed` and the order record (`popUpConfirmingRoute`, through `webAreaPress`'s `beforePress`);
+  #282 alone answered ok with no menu open, and recorded no order though the open raises Chrome. (4) A control whose
+  parents do not read to its window (`webAreaWalk` incomplete) is not taken as native: the record's AXWebArea above it
+  answers where the record holds one, else main's path (`kept: "ancestryUnread"`). (5) The decision's window list is
+  read before the focus hold and stays the restore seam's order, but just before the press, after the hold, the button
+  must still read closed (AXExpanded, no menu window of the app's at it), else `screenChangedSinceScreenshot` with
+  nothing pressed ("The screen changed since the screenshot: the pop-up button at this point now shows its menu open,
+  and a press would close it. The button was not pressed. Take a new screenshot or call getAXState() to see the menu's
+  items before clicking one."), and the effect's baseline is read then, so a window of the app's that appeared during
+  the hold is never the press's menu. (6) The window list is read as optional (`onScreenWindowListRead`): unread at
+  the decision, main's path (`kept: "windowsUnread"`); unread just before the press, the press goes and answers
+  `clickUnconfirmed` (`baselineUnread`), since the decision had already found the button closed and the hold had run;
+  an unread poll is a sample with nothing seen. (7) The deadline is checked again just before the press, after the
+  hold (`timeoutReached`, "…The button was not pressed."). (8) The press is counted by `recordingRouteAdvice` (route 3's
+  guard failures toward the route-4 advice), a kept decision not.
+  Debt: another live connection's after-action repair watch can raise the person's window over a menu just opened
+  (tech-debt-tracker.md; a rare two-session race that needs coordination across connections).
+  Proven offline (`PopUpPointTests`, 13 tests): the measured select, combo box and font pop-up shapes, the #282 route's
+  confirmation, the check after the hold, unread lists and unread ancestry. Reverted one at a time (10 mutations), each
+  fails: the select back to a live AXMenu child (3 tests) or any page pop-up taken (2); the arrow unresolved (the combo
+  test); #282's route without the effect (its test); unread ancestry taken as native; no closed re-check, or the
+  baseline taken at the decision (the after-hold test); an unread list taken as empty at the decision or before the
+  press (the unread test); no deadline check after the hold.
   Date/Author: 2026-11-21, cursor235's implementer for #458.
 
 ## Outcomes & Retrospective

@@ -298,7 +298,7 @@ test("the private server's own clients, its watchdog, its mark and the run's rec
  * What reaches an X display when the harness starts it: its X tools (xtrace among them, started through `setpriv` for
  * its parent-death signal, audit.mjs), the engines, the applications, the bus daemon.
  */
-const X_FACING = new Set(["'xtrace'", "'setpriv'", "'xprop'", "'xdotool'", "'xwininfo'", "'xclip'", "'xdpyinfo'", "'xauth'", "'Xvfb'", "'dbus-daemon'", 'XPROBE', 'xprobe', 'this.bin', 'launch.command', 'values.engine', 'args.cua', 'cmd', 'this.command', 'exe']);
+const X_FACING = new Set(["'xtrace'", "'setpriv'", "'stdbuf'", "'xprop'", "'xdotool'", "'xwininfo'", "'xclip'", "'xdpyinfo'", "'xauth'", "'Xvfb'", "'dbus-daemon'", 'XPROBE', 'xprobe', 'this.bin', 'launch.command', 'values.engine', 'args.cua', 'cmd', 'this.command', 'exe']);
 
 /**
  * What the harness starts that reaches no X display: the bus tools, its load and its build steps, and the run's

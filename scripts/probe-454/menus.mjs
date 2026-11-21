@@ -271,7 +271,9 @@ Object.assign(MENUS, {
       if (!(await engineRightClick(c, p)) && !(await engineRightClick(c, p))) {
         c.row.steps.push({step: 'hid right click', answer: await ask({op: 'post', pid: c.pid, x: p.x, y: p.y, stamp: 'hid', button: 'right'})});
         c.row.openedBy = 'kit HID right click';
-        await sleep(900);
+        // Past the engine's 5 s intervention debounce (Intervention.swift): run 44856543463's next action refused
+        // userIntervened in 19 of the 20 rows the kit's HID right click opened.
+        await sleep(5600);
       }
     },
     taken: ctx => ctx.ev.some(e => e.type === 'ready' && e.load !== ctx.row.loadObserved)},

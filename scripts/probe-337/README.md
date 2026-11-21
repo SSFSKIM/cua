@@ -325,7 +325,8 @@ out, because the kit's HID right click tripped the engine's 5 s intervention deb
 menu https://github.com/SSFSKIM/cua/actions/runs/44863373571 (kit 55fcdcea, 120 rows). Fix
 c83ed8467f5e06f53632c2f8e59932a00bbaac68: https://github.com/SSFSKIM/cua/actions/runs/44860009214 (kit 96261a16, 300
 rows; its Chrome context menu behind has the same setup artifact, so it is re-run on kit 55fcdcea in
-https://github.com/SSFSKIM/cua/actions/runs/44864909827). All runs used Chrome 157.0.8103.79, macOS 26.7.2 and image
+https://github.com/SSFSKIM/cua/actions/runs/44864909827, 30 rows: refused `screenChangedSinceScreenshot` 15/15, outside
+closes the menu 15/15). All runs used Chrome 157.0.8103.79, macOS 26.7.2 and image
 20261117.0516.1.
 
 | cell (inside click), all three modes | main | fix |
@@ -337,7 +338,7 @@ https://github.com/SSFSKIM/cua/actions/runs/44864909827). All runs used Chrome 1
 | font-same, language-same | ok, menu closed 30/30 | `clickUnconfirmed`, `value: "unchanged"`, menu closed, selection unchanged 30/30 |
 | tectx (Copy) | ok, not taken 15/15 | `clickUnconfirmed`, AXPick, **taken** (the pasteboard holds the word) 15/15 |
 | chromectx (Reload), shared-front and dedicated | refused `screenChangedSinceScreenshot` (`otherWebArea`) 10/10 | the same 10/10 (items in an AXWebArea stay on main's path) |
-| chromectx, shared-behind | refused `screenChangedSinceScreenshot` 5/5 | in run 44864909827 |
+| chromectx, shared-behind | refused `screenChangedSinceScreenshot` 5/5 | the same 5/5 (run 44864909827) |
 | menubar (Edit > Select All) | ok, not taken (kept/noHit) 15/15 | refused `appWindowOverPoint`, `notRecorded`, nothing sent, menu stays up 15/15 |
 | submenu (Format > Font > Show Colors) | ok, not taken (kept/noHit) 15/15 | refused `appWindowOverPoint`, `notRecorded` 15/15 |
 | every outside click | closes the menu, the control not reached | the same, in every cell and mode |

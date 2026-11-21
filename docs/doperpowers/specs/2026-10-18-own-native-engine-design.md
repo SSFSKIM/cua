@@ -583,12 +583,13 @@ error    {code: number (the vendor's codes where mapped; -10005 otherwise), mess
     ("confirmed" | "unconfirmed"), actionError?, baselineUnread? (true: the window list did not read just before the
     press, so the effect could not be confirmed), menuWindow? (the number of the app's new window that opened: a menu
     window at layer 101 for a pop-up button, a window of any layer above the app's window for a combo box's list),
-    restored? ({windows, ms, complete, raises, skipped, failedRaises?, stopped? ("personInput" | "bound" | "unresolved" |
-    "focusUnknown" | "focusRaiseFailed")}: the person's windows in front of the app's window before the press; once the open had raised the
-    app's over them, those of the person's frontmost app raised once each, back to front, the focused window last
-    (raises: the AXRaises made), third apps' skipped (skipped), and the order read once about 300 ms later (complete);
-    the result's note when not complete, unless the person acted), polls?, ms? (from the action's return to the open)};
-    never a title
+    restored? ({windows, ms, complete, raises, leftCovered, failedRaises?, stopped? ("personInput" | "bound" |
+    "unresolved" | "focusUnknown" | "focusRaiseFailed" | "orderUnread")}: windows, the person's windows in front of the
+    app's window before the press; once the open had raised the app's over the person's focused window, that one window
+    raised back (raises: 0 or 1), the order read once about 300 ms later (complete: the focused window back over the
+    app's), and the other recorded windows the app's window covers counted, never raised (leftCovered); the result's
+    note when not complete, unless the person acted), polls?, ms? (from the action's return to the open)}; never a
+    title
   note: on a paste result that pasted a line with no channel to see it, read after ⌘V (#187; type_text's paste route
     since #361 never, its read-back answering instead), on a type_text a password field's length confirmed (#414), and on a
     scroll whose content was already at its end in that direction (#328): the sentence the service adds to the tool
@@ -7443,6 +7444,33 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   before and after the one order read; an end past the cutoff is `bound`, never complete. (4) The person's input is
   checked before the focus is read and before the early return on no candidates (only third apps' windows), so their
   switching apps during the open records `personInput`, with no note.
+  Date/Author: 2026-11-21, cursor235's implementer for #458.
+- Decision (#458, design ruling 1005, 2026-11-21; #458's qual 2, kit `probe/458-qual`, scripts/probe-337/README.md
+  §"#458 qual 2" at 5246652f; supersedes the full-order restore of rulings 979 item 4 and 1004 in the entries above):
+  **the restore is route 3's own repair alone: only the person's focused window is raised back, once.** The full-order
+  restore was tried and dropped for the transient key change: a 5 ms watch saw the person's app's AXFocusedWindow go to
+  F2 or F3 for 13–49 ms during the back-to-front raise of their non-focused windows, in 38/80 behind rows on 67cf8b26 and
+  13/30 on 2bd74c6e, though the end state was always F1. Now (`popUpRestoreOrder`): the trigger is the app's window over
+  the person's focused window (their frontmost app's AXFocusedWindow, numbered by `axWindowNumber` alone; it must be among
+  the windows recorded in front of the app's before the press); that one window is raised once by AXRaise
+  (`gatedPerform`, its AX result read) inside the screen-update hold, the hold's timer at route 3's 300 ms ceiling, and
+  about 300 ms later the order is read once: `complete` means the focused window is back over the app's. No other window
+  is raised, neither the person's other windows nor a third app's; those the app's window covers are counted as
+  `restored.leftCovered` (the former `skipped` folded into it). A focused window not covered is not raised (nothing to
+  do, complete); an unread window list raises nothing (`orderUnread`). Kept: `focusUnknown`, the input check before
+  anything is read and just before the raise, `focusRaiseFailed`, the 500 ms cutoff (an end past it `bound`, never
+  complete), the timed hold release and the single read. The back-to-front pass and its full-order predicate are
+  removed. The incomplete note now reads "<App>'s menu is open, but the person's front window could not be put back in
+  front of <App>'s window, so <App>'s window may now cover it." The model-facing sentences name no restore and are
+  unchanged; the windows left covered are a debt line in tech-debt-tracker.md, and the full-order restore its own ticket.
+  The hard bar holds by construction: the only window raised is the focused one.
+  Proven offline (`PopUpPointTests`, 31 tests): the focused window alone raised, once, F2 and Calculator left covered
+  and counted, read once at 300 ms; nothing raised with the focused window uncovered, and a miss not retried; nothing
+  raised with the focus unproven, unresolved or the list unread; the person's input before anything is read, before the
+  raise and before the read; the cutoff through resolution, the raise and the read; the raise's failure recorded.
+  Reverted one at a time (8 mutations), each fails: the other covered windows raised too, a raise whatever the focused
+  window's cover, `complete` as the whole order, the others not counted, no input check before the raise, the AX result
+  ignored, no time-left check between the raise and the read, or after the read.
   Date/Author: 2026-11-21, cursor235's implementer for #458.
 
 - Decision (#456, 2026-11-20, `fix/456-recheck-overlay`, plugin 0.28.25; amends #452's entry and #296's

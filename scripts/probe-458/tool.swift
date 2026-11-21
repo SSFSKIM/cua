@@ -46,6 +46,7 @@
 //       `target` is in front of it, inside a screen-update hold
 //   {"op":"cancel","pid"}                    AXCancel on the app's open menu (else its first item)
 //   {"op":"combo","pid"}                     the first AXComboBox's frame and its children's frames (the arrow's)
+//   {"op":"arrange","wins":[n]}              the windows raised by AXRaise, back to front (the qualification's layouts)
 import AppKit
 import ApplicationServices
 import Foundation
@@ -860,6 +861,25 @@ func combo(_ q: [String: Any]) -> [String: Any] {
   return ["error": "no combo box"]
 }
 
+/// {"op":"arrange","wins":[n,...]}: the windows named by number raised through accessibility, back to front (AXRaise on the
+/// window of its owner's AXWindows whose frame is the listed one), 150 ms apart, no activation: the qualification's
+/// layouts. Answers each raise's AXError (or "missing").
+func arrange(_ q: [String: Any]) -> [String: Any] {
+  guard let wins = (q["wins"] as? [NSNumber])?.map({ $0.intValue }) else { return ["error": "args"] }
+  var out: [Any] = []
+  for n in wins {
+    let list = (CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]) ?? []
+    guard let w = list.first(where: { (($0[kCGWindowNumber as String] as? NSNumber)?.intValue ?? 0) == n }),
+          let owner = (w[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value else { out.append("missing"); continue }
+    let b = rectOf(w)
+    let app = prepare(AXUIElementCreateApplication(owner))
+    guard let e = elements(attr(app, kAXWindowsAttribute)).first(where: { frameOf($0).map { near($0, b, 3) } ?? false }) else { out.append("no AX window"); continue }
+    out.append(AXUIElementPerformAction(e, kAXRaiseAction as CFString).rawValue)
+    usleep(150_000)
+  }
+  return ["raised": out]
+}
+
 while let line = readLine() {
   guard let data = line.data(using: .utf8), let q = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { emit(["error": "bad request"]); continue }
   textWindowFrame = (q["window"] as? [Double]).flatMap { $0.count == 4 ? CGRect(x: $0[0], y: $0[1], width: $0[2], height: $0[3]) : nil }
@@ -889,6 +909,7 @@ while let line = readLine() {
   case "restore": emit(restoreOrder(q))
   case "cancel": emit(cancel(q))
   case "combo": emit(combo(q))
+  case "arrange": emit(arrange(q))
   default: emit(["error": "unknown op"])
   }
 }

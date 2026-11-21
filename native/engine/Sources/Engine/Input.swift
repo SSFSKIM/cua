@@ -634,7 +634,7 @@ extension Engine {
             func carry(_ meta: inout InputMeta) throws -> Bool {
               try popUpClick(decision, app: app.displayName, route: pressRoute, appWindow: windowID, pids: pids, reads: .live,
                              windows: onScreenWindowListRead, now: monotonicMilliseconds, sleep: { usleep(UInt32(max(0, $0) * 1000)) },
-                             deadlinePassed: { unixMilliseconds() >= context.deadline }, hold: { element, meta in
+                             deadlinePassed: { unixMilliseconds() >= context.deadline }, person: .live, hold: { element, meta in
                 try refuseForbiddenOwner(pressOwner)
                 actionTargets(pressOwner, app: app, connection: context.connection)
                 // The element click's route: its focus hold when the app does not believe it has focus, then the guard's
@@ -676,7 +676,7 @@ extension Engine {
               try popUpConfirmingRoute(target, app: app.displayName, appWindow: windowID, pids: pids, reads: .live,
                                        windows: onScreenWindowListRead, now: monotonicMilliseconds,
                                        sleep: { usleep(UInt32(max(0, $0) * 1000)) },
-                                       deadlinePassed: { unixMilliseconds() >= context.deadline },
+                                       deadlinePassed: { unixMilliseconds() >= context.deadline }, person: .live,
                                        restore: livePopUpRestore, route: { beforePress, tolerates, meta in
                 try withoutActuallyEscaping(beforePress) { check in
                   try withoutActuallyEscaping(tolerates) { judge in

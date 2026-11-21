@@ -130,11 +130,12 @@ final class PopUpPointTests: XCTestCase {
   /// `restore` is recorded (`restores`), answering `restoreAnswer`.
   private func click(_ decision: PopUpPoint<Node>, route: InputRoute = .activation, meta: inout InputMeta,
                      deadlinePassed: @escaping () -> Bool = { false }, held: @escaping () -> Void = {},
+                     person: PopUpPersonSignals = PopUpPersonSignals(secondsSinceInput: { .infinity }, frontmost: { nil }),
                      onPress: @escaping (Node, String) -> AXError) throws -> Bool {
     var clock = 0.0
     return try popUpClick(decision, app: "TextEdit", route: route, appWindow: observed, pids: [app], ownPid: 999, reads: reads,
-                          windows: { self.list }, now: { clock }, sleep: { clock += $0 }, deadlinePassed: deadlinePassed,
-                          hold: { _, _ in held() }, checkInFlight: {}, perform: onPress, restore: { persons, appWindow in
+                          windows: { self.list }, now: { clock }, sleep: { clock += $0 }, deadlinePassed: deadlinePassed, person: person,
+                          hold: { _, _ in held() }, checkInFlight: {}, perform: onPress, restore: { persons, appWindow, _ in
       XCTAssertEqual(appWindow, self.observed)
       self.restores.append(persons.map(\.number))
       return self.restoreAnswer
@@ -229,7 +230,7 @@ final class PopUpPointTests: XCTestCase {
       // The menu shows first (the press's first read after it), the app's window rises over Finder's two samples later.
       return reads < 2 ? self.list : reads < 4 ? [self.fontMenu, self.person, self.appWindow] : [self.fontMenu, self.appWindow, self.person]
     }, now: { clock }, sleep: { clock += $0 }, hold: { _, _ in }, checkInFlight: {}, perform: { _, _ in .success },
-                                 restore: { persons, _ in self.restores.append(persons.map(\.number)); return self.restoreAnswer }, meta: &late))
+                                 restore: { persons, _, _ in self.restores.append(persons.map(\.number)); return self.restoreAnswer }, meta: &late))
     XCTAssertEqual(restores, [[40]], "a rise within the watch after the open is put back")
   }
 
@@ -377,7 +378,7 @@ final class PopUpPointTests: XCTestCase {
       guard pressed else { return self.list }
       return reads == 2 ? nil : [self.fontMenu, self.appWindow, self.person]
     }, now: { clock }, sleep: { clock += $0 }, hold: { _, _ in }, checkInFlight: {}, perform: { _, _ in pressed = true; return .success },
-                                 restore: { _, _ in self.restoreAnswer }, meta: &later))
+                                 restore: { _, _, _ in self.restoreAnswer }, meta: &later))
     XCTAssertEqual(wire(later)?["polls"] as? Int, 2, "the failed read a sample, the next confirming")
   }
 
@@ -629,7 +630,7 @@ final class PopUpPointTests: XCTestCase {
       list = [person, appWindow]
       var clock = 0.0
       try popUpConfirmingRoute(target, app: "Google Chrome", appWindow: observed, pids: [app], ownPid: 999, reads: reads,
-                               windows: { self.list }, now: { clock }, sleep: { clock += $0 }, restore: { persons, _ in
+                               windows: { self.list }, now: { clock }, sleep: { clock += $0 }, restore: { persons, _, _ in
         self.restores.append(persons.map(\.number))
         return self.restoreAnswer
       }, route: { beforePress, tolerates, meta in
@@ -695,5 +696,197 @@ final class PopUpPointTests: XCTestCase {
     XCTAssertNil(popUpControl(scene.arrow, reads: reads), "frames unread and two buttons: none is taken")
     scene.combo.children.removeAll { $0 === clear }
     XCTAssertNotNil(popUpControl(scene.arrow, reads: reads), "frames unread, the lone button")
+  }
+
+  // MARK: The review of 97344ee7..a094f620
+
+  /// Item 1: the person's input, or another app brought to the front, since the press stops the restore before its next
+  /// raise (`personInput`, incomplete, no note), and the watch for a later rise; the signals read as route 3's guard
+  /// reads them, from the dispatch on.
+  func testThePersonsInputStopsTheWatchAndTheRestore() throws {
+    var input = 10.0  // seconds since the last input
+    var front: pid_t? = finder
+    var clock = 1_000.0
+    let signals = PopUpPersonSignals(secondsSinceInput: { input }, frontmost: { front })
+    let intervened = signals.since(clock, now: { clock })
+    XCTAssertFalse(intervened())
+    clock += 50
+    input = 0.02  // 20 ms ago: after the dispatch
+    XCTAssertTrue(intervened())
+    input = 10
+    front = 777
+    XCTAssertTrue(intervened(), "another app brought to the front")
+    // The restore: input after its first raise stops the rest of the round and the next.
+    let f2 = ListedWindow(number: 41, owner: finder, layer: 0, bounds: CGRect(x: 240, y: 480, width: 300, height: 300))
+    let current = [fontMenu, appWindow, person, f2]
+    var raised = 0
+    var acted = false
+    var restoreClock = 0.0
+    let record = popUpRestoreOrder([person, f2], appWindow: observed, system: PopUpRestoreSystem<CGWindowID>(element: { $0.number }, raise: { _ in
+      raised += 1
+      acted = true  // the person clicks the app right after the raise; the app's window stays over theirs
+    }, hold: { {} }), windows: { current }, now: { restoreClock }, sleep: { restoreClock += $0 }, intervened: { acted })
+    XCTAssertEqual(raised, 1, "no raise after the person's input")
+    XCTAssertFalse(record.complete)
+    XCTAssertEqual(record.stopped, .personInput)
+    // Input once the order is back ends the sampling at once: the order is the person's from then on.
+    var back = false
+    var actedAfter = false
+    var sampleClock = 0.0
+    let after = popUpRestoreOrder([person], appWindow: observed, system: PopUpRestoreSystem<CGWindowID>(element: { $0.number },
+                                  raise: { _ in back = true }, hold: { {} }),
+                                  windows: {
+      if back { actedAfter = true }
+      return back ? [self.person, self.appWindow] : [self.appWindow, self.person]
+    }, now: { sampleClock }, sleep: { sampleClock += $0 }, intervened: { actedAfter })
+    XCTAssertEqual(after.stopped, .personInput)
+    XCTAssertLessThan(after.ms, deliveryGuardMinimumMs, "ended at the input, not after the stable samples")
+    // Through the click: a restore stopped by the person adds no note; input during the watch means no restore at all.
+    let scene = font()
+    restoreAnswer = PopUpRestoreRecord(windows: 1, ms: 4, complete: false, raises: 1, stopped: .personInput)
+    var meta = freshMeta()
+    XCTAssertTrue(try click(decide(hit: scene.popup, scene.verdict, at: fontPoint), meta: &meta) { _, _ in
+      self.list = [self.fontMenu, self.appWindow, self.person]
+      return .success
+    })
+    XCTAssertNil(meta.note, "the person's own act: no note blaming cua")
+    XCTAssertEqual((wire(meta)?["restored"] as? [String: Any])?["stopped"] as? String, "personInput")
+    restores = []
+    list = [person, appWindow]
+    var watched = freshMeta()
+    var reads = 0
+    var watchClock = 0.0
+    XCTAssertTrue(try popUpClick(decide(hit: scene.popup, scene.verdict, at: fontPoint), app: "TextEdit", route: .action, appWindow: observed,
+                                 pids: [app], ownPid: 999, reads: self.reads, windows: {
+      reads += 1
+      return reads < 2 ? self.list : reads < 4 ? [self.fontMenu, self.person, self.appWindow] : [self.fontMenu, self.appWindow, self.person]
+    }, now: { watchClock }, sleep: { watchClock += $0 },
+       person: PopUpPersonSignals(secondsSinceInput: { reads >= 2 ? 0 : 10 }, frontmost: { self.finder }),
+       hold: { _, _ in }, checkInFlight: {}, perform: { _, _ in .success },
+       restore: { persons, _, _ in self.restores.append(persons.map(\.number)); return self.restoreAnswer }, meta: &watched))
+    XCTAssertEqual(restores, [], "the person's input during the watch: their order is theirs")
+  }
+
+  /// Item 2: one absolute cutoff from the restore's start covers resolving the windows, the raises and the hold, which a
+  /// timer of its own is asked to release at the cutoff; no AX call is made once it has passed, and the end is incomplete.
+  func testTheRestoresCutoffCoversResolutionRaisesAndTheHold() {
+    let f1 = ListedWindow(number: 40, owner: finder, layer: 0, bounds: CGRect(x: 760, y: 420, width: 300, height: 300))
+    let f2 = ListedWindow(number: 41, owner: finder, layer: 0, bounds: CGRect(x: 240, y: 480, width: 300, height: 300))
+    let f3 = ListedWindow(number: 43, owner: finder, layer: 0, bounds: CGRect(x: 40, y: 80, width: 200, height: 200))
+    // A slow app: each raise takes 300 ms, so the round's third raise would fall past the cutoff.
+    var clock = 0.0
+    var raisedAt: [Double] = []
+    var scheduled: [Double] = []
+    var released = 0
+    let slow = popUpRestoreOrder([f1, f2, f3], appWindow: observed, system: PopUpRestoreSystem<CGWindowID>(element: { $0.number }, raise: { _ in
+      raisedAt.append(clock)
+      clock += 300
+    }, hold: { { released += 1 } }, scheduleRelease: { ms, _ in scheduled.append(ms) }),
+                                  windows: { [self.fontMenu, self.appWindow, f1, f2, f3] }, now: { clock }, sleep: { clock += $0 })
+    XCTAssertEqual(scheduled, [popUpRestoreBoundMs], "the hold's release timed at the cutoff")
+    XCTAssertTrue(raisedAt.allSatisfy { $0 < popUpRestoreBoundMs }, "no raise past the cutoff: \(raisedAt)")
+    XCTAssertEqual(raisedAt.count, 2)
+    XCTAssertFalse(slow.complete)
+    XCTAssertEqual(slow.stopped, .bound)
+    XCTAssertEqual(released, 1)
+    // Slow resolution spends the budget before the hold: no hold, no raise.
+    clock = 0
+    var holds = 0
+    var raises = 0
+    let resolving = popUpRestoreOrder([f1, f2], appWindow: observed, system: PopUpRestoreSystem<CGWindowID>(element: { window in
+      clock += 300
+      return window.number
+    }, raise: { _ in raises += 1 }, hold: { holds += 1; return {} }), windows: { [self.fontMenu, self.appWindow, f1, f2] },
+                                       now: { clock }, sleep: { clock += $0 })
+    XCTAssertEqual([holds, raises], [0, 0])
+    XCTAssertEqual(resolving.stopped, .bound)
+  }
+
+  /// Item 3: a window is raised only when it is told for certain: by its own number, or by frame when exactly one
+  /// unnumbered candidate and exactly one listed window of the process have its bounds. Two same-sized windows are
+  /// ambiguous: that one is not raised, the other is, and the restore is incomplete.
+  func testAnAmbiguousWindowIsNeverRaised() {
+    let bounds = CGRect(x: 100, y: 100, width: 400, height: 300)
+    let recordedWindow = ListedWindow(number: 40, owner: finder, layer: 0, bounds: bounds)
+    let twin = ListedWindow(number: 42, owner: finder, layer: 0, bounds: bounds)
+    XCTAssertEqual(uniqueWindow(recordedWindow, among: [("a", 42, bounds), ("b", 40, bounds)], listed: [recordedWindow, twin]), "b",
+                   "the number decides")
+    XCTAssertNil(uniqueWindow(recordedWindow, among: [("a", nil, bounds), ("b", nil, bounds)], listed: [recordedWindow, twin]),
+                 "two unnumbered same-sized windows: ambiguous")
+    XCTAssertNil(uniqueWindow(recordedWindow, among: [("a", nil, bounds)], listed: [recordedWindow, twin]),
+                 "one candidate, but two listed windows of the process with those bounds")
+    XCTAssertEqual(uniqueWindow(recordedWindow, among: [("a", nil, bounds), ("c", 99, bounds)], listed: [recordedWindow]), "a",
+                   "one unnumbered candidate, one listed window")
+    let other = ListedWindow(number: 41, owner: finder, layer: 0, bounds: CGRect(x: 600, y: 400, width: 200, height: 200))
+    var raised: [CGWindowID] = []
+    var clock = 0.0
+    let record = popUpRestoreOrder([recordedWindow, other], appWindow: observed, system: PopUpRestoreSystem<CGWindowID>(
+      element: { $0.number == 40 ? nil : $0.number }, raise: { raised.append($0) }, hold: { {} }),
+      windows: { raised.isEmpty ? [self.appWindow, recordedWindow, other] : [recordedWindow, other, self.appWindow] },
+      now: { clock }, sleep: { clock += $0 })
+    XCTAssertEqual(raised, [41], "the ambiguous window never raised")
+    XCTAssertFalse(record.complete)
+    XCTAssertEqual(record.stopped, .unresolved)
+  }
+
+  /// Item 4: a restore starts only when the app's window crossed above a recorded window; the person's windows swapped
+  /// among themselves, the app's still behind both, is no crossing and moves nothing.
+  func testOnlyACrossingStartsARestore() throws {
+    let f2 = ListedWindow(number: 41, owner: finder, layer: 0, bounds: CGRect(x: 240, y: 480, width: 300, height: 300))
+    XCTAssertEqual(appWindowCrossed([person, f2], appWindow: observed, in: [f2, person, appWindow]), false)
+    XCTAssertEqual(personOrderHolds([person, f2], appWindow: observed, in: [f2, person, appWindow]), false, "the order differs")
+    XCTAssertEqual(appWindowCrossed([person, f2], appWindow: observed, in: [person, appWindow, f2]), true)
+    let scene = font()
+    list = [person, f2, appWindow]
+    var meta = freshMeta()
+    XCTAssertTrue(try click(decide(hit: scene.popup, scene.verdict, at: fontPoint), meta: &meta) { _, _ in
+      self.list = [self.fontMenu, f2, self.person, self.appWindow]
+      return .success
+    })
+    XCTAssertEqual(restores, [], "a swap among the person's windows is theirs")
+  }
+
+  /// Item 5: the combo box's list is confirmed only on the measured signals: a new window above the app's document window,
+  /// and the combo box not reading AXExpanded false. Below the document window, or with AXExpanded false, it is
+  /// unconfirmed; AXExpanded unread does not stand in the way.
+  func testTheComboBoxsListIsConfirmedOnlyOnTheMeasuredSignals() throws {
+    let listWindow = ListedWindow(number: 830, owner: app, layer: 0, bounds: CGRect(x: 706, y: 70, width: 65, height: 250))
+    for (expanded, below, confirms) in [(false, false, false), (true, true, false), (nil, false, true)] as [(Bool?, Bool, Bool)] {
+      let scene = combo()
+      list = [person, appWindow]
+      var meta = freshMeta()
+      let run = { try self.click(self.decide(hit: scene.arrow, scene.verdict, at: self.arrowPoint), meta: &meta) { _, _ in
+        scene.combo.expanded = expanded
+        self.list = below ? [self.person, self.appWindow, listWindow] : [self.person, listWindow, self.appWindow]
+        return .success
+      } }
+      if confirms {
+        XCTAssertTrue(try run())
+      } else {
+        XCTAssertThrowsError(try run(), "expanded \(String(describing: expanded)), below \(below)") {
+          XCTAssertEqual(($0 as? EngineError)?.errorName, "clickUnconfirmed")
+        }
+      }
+    }
+  }
+
+  /// Item 6: the arrow's own AXEnabled is read before it is pressed; a disabled arrow keeps main's path.
+  func testADisabledArrowKeepsMainsPath() {
+    let scene = combo()
+    scene.arrow.enabled = false
+    guard case .kept(.disabled, _) = decide(hit: scene.arrow, scene.verdict, at: arrowPoint) else { return XCTFail("main's path") }
+    scene.arrow.enabled = nil
+    guard case .kept(.disabled, _) = decide(hit: scene.arrow, scene.verdict, at: arrowPoint) else { return XCTFail("unread: main's path") }
+  }
+
+  /// Item 7: the bound reached before three stable samples is incomplete, even when the last sample read the order back.
+  func testTheBoundBeforeThreeStableSamplesIsIncomplete() {
+    var clock = 0.0
+    let record = popUpRestoreOrder([person], appWindow: observed, system: PopUpRestoreSystem<CGWindowID>(element: { $0.number },
+                                   raise: { _ in }, hold: { {} }),
+                                   windows: { clock >= popUpRestoreBoundMs - 3 ? [self.person, self.appWindow] : [self.appWindow, self.person] },
+                                   now: { clock }, sleep: { clock += $0 })
+    XCTAssertFalse(record.complete)
+    XCTAssertEqual(record.stopped, .bound)
   }
 }

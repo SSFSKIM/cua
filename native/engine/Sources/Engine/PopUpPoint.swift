@@ -250,6 +250,8 @@ func popUpPoint<Element>(hit: Element?, recorded: RecordedPopUp<Element>?, point
   guard !list.contains(where: { isMenuWindow($0, pids: pids) && $0.bounds.intersects(near) }) else { return .kept(.open, role: role) }
   // The pop-up button's own AXPress; the combo box's arrow's (TextEdit's "font size" button: AXPress, 20/20 opened).
   let pressed = kind == .comboBoxArrow ? hit : control
+  // The arrow reads enabled itself too (review of 97344ee7..a094f620, item 6); a disabled one keeps main's path.
+  guard kind == .popUpButton || reads.enabled(pressed) == true else { return .kept(.disabled, role: role) }
   guard let actions = reads.actions(pressed) else { return .kept(.noAction, role: role) }
   if actions.contains(kAXPressAction) {
     return .press(PopUpTarget(element: pressed, control: control, kind: kind, role: role, near: near, before: list))
@@ -267,85 +269,167 @@ func personWindowsAbove(_ appWindow: CGWindowID?, in list: [ListedWindow], pids:
 }
 
 /// Whether `list` holds the recorded order: each recorded window still listed lies in front of the app's window, in its
-/// recorded order (a window closed since is left out). Nil when the app's window is not listed.
+/// recorded order (a window closed since is left out). Nil when the app's window is not listed. The check of a restore
+/// already needed; whether one is needed is `appWindowCrossed`.
 func personOrderHolds(_ persons: [ListedWindow], appWindow: CGWindowID, in list: [ListedWindow]) -> Bool? {
   guard let app = list.firstIndex(where: { $0.number == appWindow }) else { return nil }
   let at = persons.compactMap { person in list.firstIndex(where: { $0.number == person.number }) }
   return at.allSatisfy { $0 < app } && at == at.sorted()
 }
 
-/// The restore's bound: about twice the slowest whole restore #458's restore kit measured (232 ms, run 44888938314).
+/// Whether the app's window has crossed above any recorded window of the person's (all of them in front of it before the
+/// press): what starts a restore (the review of 97344ee7..a094f620, item 4). The person's windows reordered among
+/// themselves are not a crossing. Nil when the app's window is not listed.
+func appWindowCrossed(_ persons: [ListedWindow], appWindow: CGWindowID, in list: [ListedWindow]) -> Bool? {
+  guard let app = list.firstIndex(where: { $0.number == appWindow }) else { return nil }
+  return persons.contains { person in list.firstIndex(where: { $0.number == person.number }).map { $0 > app } ?? false }
+}
+
+/// The restore's bound: about twice the slowest whole restore #458's restore kit measured (232 ms, run 44888938314). An
+/// absolute cutoff from the restore's start, covering the windows' resolution, every raise and the hold, whose release a
+/// timer of its own makes at the cutoff whatever blocks (route 3's `scheduleHoldRelease`).
 let popUpRestoreBoundMs: Double = 500
 
+/// The person's input and the frontmost app, as route 3's delivery guard reads them (`ActivationSystem.secondsSinceInput`
+/// and `frontmost`): from the press's dispatch on, input of the person's or another app brought to the front stops the
+/// watch for the app's window's rise and any further raise (the review of 97344ee7..a094f620, item 1).
+struct PopUpPersonSignals {
+  var secondsSinceInput: () -> Double
+  var frontmost: () -> pid_t?
+
+  static var live: PopUpPersonSignals {
+    let system = ActivationSystem()
+    return PopUpPersonSignals(secondsSinceInput: system.secondsSinceInput, frontmost: system.frontmost)
+  }
+
+  /// From `at` on (`now`'s clock): whether the person has given input since, or the frontmost app is no longer the one
+  /// read now.
+  func since(_ at: Double, now: @escaping () -> Double) -> () -> Bool {
+    let front = frontmost()
+    return { self.secondsSinceInput() * 1000 < now() - at || self.frontmost() != front }
+  }
+}
+
 /// What the restore reads and does outside its own state (the unit tests' seams; `.live` over the Accessibility API and
-/// route 3's screen-update hold): a person's window's element, route 3's repair (`ActivationSystem.raise`, AXRaise),
-/// and the hold, which answers its release.
+/// route 3's screen-update hold): a person's window's element (nil when it cannot be told for certain), route 3's repair
+/// (`ActivationSystem.raise`, AXRaise), the hold, which answers its release, and the timer that releases it on its own
+/// (`ActivationSystem.scheduleHoldRelease`).
 struct PopUpRestoreSystem<Window> {
   var element: (ListedWindow) -> Window?
   var raise: (Window) -> Void
   var hold: () -> () -> Void
+  var scheduleRelease: (Double, @escaping @Sendable () -> Void) -> Void = { _, _ in }
 }
 
 extension PopUpRestoreSystem where Window == AXUIElement {
   static var live: PopUpRestoreSystem<AXUIElement> {
     let system = ActivationSystem()
-    return PopUpRestoreSystem(element: personWindowElement, raise: system.raise, hold: { system.holdScreenUpdates(ReenableStamp()) })
+    return PopUpRestoreSystem(element: personWindowElement, raise: system.raise, hold: { system.holdScreenUpdates(ReenableStamp()) },
+                              scheduleRelease: system.scheduleHoldRelease)
   }
 }
 
-/// A listed window's element: the window of its process's AXWindows whose number is the listed one.
+/// A listed window's element (the review of 97344ee7..a094f620, item 3): among its process's AXWindows, the one whose
+/// own window number (the SPI's, `axWindowNumber`) is the listed one; where the SPI answers none, the one AXWindow whose
+/// frame is the listed bounds, and only when the list holds exactly one window of the process with those bounds. Nil
+/// otherwise: missing, or ambiguous (two same-sized windows), never a guess.
 func personWindowElement(_ window: ListedWindow) -> AXUIElement? {
   let application = prepare(AXUIElementCreateApplication(window.owner))
   guard let windows = attribute(application, kAXWindowsAttribute) as? [AXUIElement] else { return nil }
-  return windows.first { windowNumber(of: $0, pid: window.owner, frame: frame(of: $0)) == window.number }
+  return uniqueWindow(window, among: windows.map { (element: $0, number: axWindowNumber($0), frame: frame(of: $0)) },
+                      listed: onScreenWindowListRead() ?? [])
 }
 
-/// The meta's `popUpClick.restored`: how many of the person's windows were put back, the milliseconds from the hold to
-/// the end, whether the order came back within the bound, and how many rounds of raises it took.
+/// `personWindowElement`'s choice over its reads (the unit tests' seam).
+func uniqueWindow<Window>(_ window: ListedWindow, among candidates: [(element: Window, number: CGWindowID?, frame: CGRect?)],
+                          listed: [ListedWindow]) -> Window? {
+  if let exact = candidates.first(where: { $0.number == window.number }) { return exact.element }
+  // A candidate the SPI numbered is another window; only unnumbered ones may match by frame.
+  func same(_ a: CGRect, _ b: CGRect) -> Bool { abs(a.minX - b.minX) <= 1 && abs(a.minY - b.minY) <= 1 && abs(a.width - b.width) <= 1 && abs(a.height - b.height) <= 1 }
+  let byFrame = candidates.filter { $0.number == nil && $0.frame.map { same($0, window.bounds) } == true }
+  let listedAlike = listed.filter { $0.owner == window.owner && $0.layer == 0 && same($0.bounds, window.bounds) }
+  guard byFrame.count == 1, listedAlike.count <= 1 else { return nil }
+  return byFrame[0].element
+}
+
+/// Why a restore ended without the order back (the meta's `restored.stopped`): the person's input or another app brought
+/// to the front since the press (`personInput`; their own act is never undone, and no note blames cua), the bound spent
+/// (`bound`), or a window that could not be told for certain (`unresolved`, never raised).
+enum PopUpRestoreStop: String, Equatable { case personInput, bound, unresolved }
+
+/// The meta's `popUpClick.restored`: how many of the person's windows were to be put back, the milliseconds from the
+/// restore's start to its end, whether the order came back within the bound, how many rounds of raises it took, and why
+/// it stopped short.
 struct PopUpRestoreRecord: Equatable {
   let windows: Int
   var ms: Double = 0
   var complete = false
   var raises = 0
+  var stopped: PopUpRestoreStop?
 
-  var wire: [String: Any] { ["windows": windows, "ms": (ms * 1000).rounded() / 1000, "complete": complete, "raises": raises] }
+  var wire: [String: Any] {
+    var wire: [String: Any] = ["windows": windows, "ms": (ms * 1000).rounded() / 1000, "complete": complete, "raises": raises]
+    if let stopped { wire["stopped"] = stopped.rawValue }
+    return wire
+  }
 }
 
 /// #458's restore (design ruling 979, item 4; run 44888938314): the person's windows recorded in front of the app's
 /// window before the press (`persons`, front to back) raised back over it, back to front, by route 3's own repair
 /// (AXRaise on each window's element, never an activation), inside the screen-update hold, sampled as route 3's delivery
 /// guard samples (every `deliveryGuardSampleMs`, raising all of them again whenever the order reads wrong, ending on
-/// `deliveryGuardStableSamples` samples holding the recorded order and no sooner than `deliveryGuardMinimumMs`), for up
-/// to `popUpRestoreBoundMs`. Only the recorded windows move; the menu stays open and usable (60/60 measured).
+/// `deliveryGuardStableSamples` samples holding the recorded order and no sooner than `deliveryGuardMinimumMs`). An
+/// absolute cutoff of `popUpRestoreBoundMs` from its start covers the resolution, the raises and the hold, which a timer
+/// releases at the cutoff on its own; no AX call is made past it, and an end there is incomplete. The person's input or
+/// another frontmost app (`intervened`) stops it before the next raise. A window that cannot be told for certain is
+/// never raised, and the restore is then incomplete. Only the recorded windows move; the menu stays usable (60/60).
 func popUpRestoreOrder<Window>(_ persons: [ListedWindow], appWindow: CGWindowID, system: PopUpRestoreSystem<Window>,
-                               windows: () -> [ListedWindow]?, now: () -> Double, sleep: (Double) -> Void) -> PopUpRestoreRecord {
-  let elements = persons.compactMap(system.element)
-  let release = system.hold()
-  defer { release() }
+                               windows: () -> [ListedWindow]?, now: () -> Double, sleep: (Double) -> Void,
+                               intervened: () -> Bool = { false }) -> PopUpRestoreRecord {
   let started = now()
+  let cutoff = started + popUpRestoreBoundMs
   var record = PopUpRestoreRecord(windows: persons.count)
+  func left() -> Double { cutoff - now() }
+  func ended(_ stop: PopUpRestoreStop?, complete: Bool = false) -> PopUpRestoreRecord {
+    record.ms = now() - started
+    record.stopped = stop
+    record.complete = complete
+    return record
+  }
+  var elements: [Window] = []
+  var unresolved = false
+  for person in persons {
+    guard left() > 0 else { return ended(.bound) }
+    if let element = system.element(person) { elements.append(element) } else { unresolved = true }
+  }
+  if intervened() { return ended(.personInput) }
+  guard left() > 0 else { return ended(.bound) }
+  let release = OnceRelease(system.hold())
+  system.scheduleRelease(left()) { release() }
+  defer { release() }
   var stable = 0
   while true {
+    if intervened() { return ended(.personInput) }
+    guard left() > 0 else { return ended(.bound) }
     let holds = windows().flatMap { personOrderHolds(persons, appWindow: appWindow, in: $0) }
     if holds == true {
       stable += 1
     } else {
       stable = 0
       if holds == false {
-        for element in elements.reversed() { system.raise(element) }
+        for element in elements.reversed() {
+          guard left() > 0 else { return ended(.bound) }
+          if intervened() { return ended(.personInput) }
+          system.raise(element)
+        }
         record.raises += 1
       }
     }
-    record.ms = now() - started
-    if stable >= deliveryGuardStableSamples && record.ms >= deliveryGuardMinimumMs {
-      record.complete = true
-      return record
+    if stable >= deliveryGuardStableSamples && now() - started >= deliveryGuardMinimumMs {
+      return unresolved ? ended(.unresolved) : ended(nil, complete: true)
     }
-    if record.ms >= popUpRestoreBoundMs {
-      record.complete = holds == true
-      return record
-    }
-    sleep(deliveryGuardSampleMs)
+    guard left() > 0 else { return ended(.bound) }
+    sleep(min(deliveryGuardSampleMs, left()))
   }
 }
 
@@ -406,16 +490,32 @@ func popUpBeforeDispatch<Element>(_ target: PopUpTarget<Element>, app: String, p
   return list
 }
 
-/// The press's effect: a window of the app's absent from the baseline (`before`, the list just before the press) that
-/// can be what it opened (`isOpenedWindow`), over or next to the control, read at once and every `popUpOpenSampleMs` for
-/// up to `popUpOpenSettleMs` (a read that fails is a sample with nothing seen); otherwise, or with no baseline,
-/// `clickUnconfirmed`. Seen, the person's windows that were in front of the app's window (`personWindowsAbove`) are put
-/// back (`restore`, `popUpRestoreOrder`) as soon as the app's window has risen over any of them: in the list that saw the
-/// open, or within `deliveryGuardMinimumMs` after it (sampled every `deliveryGuardSampleMs`); none risen, nothing moves.
-/// A restore that did not complete puts its note in the meta.
+/// Whether a window new since the press, in `list`, is what the press opened: over or next to the control, of a kind it
+/// can open (`isOpenedWindow`); for a combo box's list also on the measured signals (the review of 97344ee7..a094f620,
+/// item 5): above the app's window (the document window; not confirmed when that is not listed), and the combo box not
+/// reading AXExpanded false (`expanded`, read only then).
+func popUpOpened<Element>(_ window: ListedWindow, target: PopUpTarget<Element>, appWindow: CGWindowID?, list: [ListedWindow],
+                          baseline: Set<CGWindowID>, pids: Set<pid_t>, expanded: () -> Bool?) -> Bool {
+  guard isOpenedWindow(window, kind: target.kind, pids: pids), !baseline.contains(window.number), window.bounds.intersects(target.near)
+  else { return false }
+  guard target.kind == .comboBoxArrow else { return true }
+  guard let appWindow, let app = list.firstIndex(where: { $0.number == appWindow }),
+        let at = list.firstIndex(where: { $0.number == window.number }), at < app else { return false }
+  return expanded() != false
+}
+
+/// The press's effect: a window new since the baseline (`before`, the list just before the press) that is what it
+/// opened (`popUpOpened`), read at once and every `popUpOpenSampleMs` for up to `popUpOpenSettleMs` (a read that fails is
+/// a sample with nothing seen); otherwise, or with no baseline, `clickUnconfirmed`. Seen, the person's windows that were
+/// in front of the app's window (`personWindowsAbove`) are put back (`restore`, `popUpRestoreOrder`) as soon as the app's
+/// window has crossed above any of them (`appWindowCrossed`): in the list that saw the open, or within
+/// `deliveryGuardMinimumMs` after it (sampled every `deliveryGuardSampleMs`); none crossed, nothing moves. The person's
+/// input or another frontmost app since the press (`intervened`) ends the watch and is handed to the restore. A restore
+/// that ended short for any other reason puts its note in the meta.
 func popUpAwaitOpen<Element>(_ target: PopUpTarget<Element>, before: [ListedWindow]?, app: String, appWindow: CGWindowID?,
-                             pids: Set<pid_t>, ownPid: pid_t, windows: () -> [ListedWindow]?, now: () -> Double,
-                             sleep: (Double) -> Void, restore: (_ persons: [ListedWindow], _ appWindow: CGWindowID) -> PopUpRestoreRecord,
+                             pids: Set<pid_t>, ownPid: pid_t, reads: PopUpReads<Element>, windows: () -> [ListedWindow]?,
+                             now: () -> Double, sleep: (Double) -> Void, intervened: @escaping () -> Bool,
+                             restore: (_ persons: [ListedWindow], _ appWindow: CGWindowID, _ intervened: () -> Bool) -> PopUpRestoreRecord,
                              record: inout PopUpClickRecord, meta: inout InputMeta) throws {
   guard let before else {
     record.baselineUnread = true
@@ -426,22 +526,25 @@ func popUpAwaitOpen<Element>(_ target: PopUpTarget<Element>, before: [ListedWind
   while true {
     record.polls += 1
     let list = windows()
-    let opened = list?.first { isOpenedWindow($0, kind: target.kind, pids: pids) && !baseline.contains($0.number) && $0.bounds.intersects(target.near) }
+    let opened = list.flatMap { list in
+      list.first { popUpOpened($0, target: target, appWindow: appWindow, list: list, baseline: baseline, pids: pids,
+                               expanded: { reads.expanded(target.control) }) }
+    }
     record.ms = now() - started
     if let list, let opened {
       record.menuWindow = opened.number
       let persons = personWindowsAbove(appWindow, in: before, pids: pids, ownPid: ownPid)
       guard let appWindow, !persons.isEmpty else { return }
-      var risen = personOrderHolds(persons, appWindow: appWindow, in: list) == false
+      var crossed = appWindowCrossed(persons, appWindow: appWindow, in: list) == true
       let seen = now()
-      while !risen && now() - seen < deliveryGuardMinimumMs {
+      while !crossed && !intervened() && now() - seen < deliveryGuardMinimumMs {
         sleep(deliveryGuardSampleMs)
-        risen = windows().flatMap { personOrderHolds(persons, appWindow: appWindow, in: $0) } == false
+        crossed = windows().flatMap { appWindowCrossed(persons, appWindow: appWindow, in: $0) } == true
       }
-      guard risen else { return }
-      let restored = restore(persons, appWindow)
+      guard crossed else { return }
+      let restored = restore(persons, appWindow, intervened)
       record.restored = restored
-      if !restored.complete { meta.note = popUpRestoreIncomplete(app: app) }
+      if !restored.complete && restored.stopped != .personInput { meta.note = popUpRestoreIncomplete(app: app) }
       return
     }
     let ms = record.ms ?? 0
@@ -457,12 +560,14 @@ func popUpAwaitOpen<Element>(_ target: PopUpTarget<Element>, before: [ListedWind
 /// the click to main's path, `kept`'s reason in the meta. Before the press the request's deadline is checked, then
 /// `hold` runs (the press owner's forbidden check, the element click's focus hold when `route` is 3, and the stale-point
 /// guard's last check after it), then `popUpBeforeDispatch`, the in-flight check and `announce` (the agent cursor's
-/// click); after it, `popUpAwaitOpen` and its restore.
+/// click); at the dispatch the person's baseline (`person`), and after it `popUpAwaitOpen` and its restore.
 func popUpClick<Element>(_ decision: PopUpPoint<Element>, app: String, route: InputRoute, appWindow: CGWindowID?, pids: Set<pid_t>,
-                         ownPid: pid_t = getpid(), reads: PopUpReads<Element>, windows: () -> [ListedWindow]?, now: () -> Double,
-                         sleep: (Double) -> Void, deadlinePassed: () -> Bool = { false }, hold: (Element, inout InputMeta) throws -> Void,
-                         checkInFlight: () throws -> Void, announce: () -> Void = {}, perform: (Element, String) -> AXError,
-                         restore: (_ persons: [ListedWindow], _ appWindow: CGWindowID) -> PopUpRestoreRecord,
+                         ownPid: pid_t = getpid(), reads: PopUpReads<Element>, windows: () -> [ListedWindow]?,
+                         now: @escaping () -> Double, sleep: (Double) -> Void, deadlinePassed: () -> Bool = { false },
+                         person: PopUpPersonSignals = PopUpPersonSignals(secondsSinceInput: { .infinity }, frontmost: { nil }),
+                         hold: (Element, inout InputMeta) throws -> Void, checkInFlight: () throws -> Void, announce: () -> Void = {},
+                         perform: (Element, String) -> AXError,
+                         restore: (_ persons: [ListedWindow], _ appWindow: CGWindowID, _ intervened: () -> Bool) -> PopUpRestoreRecord,
                          meta: inout InputMeta) throws -> Bool {
   switch decision {
   case .notPopUp: return false
@@ -482,6 +587,7 @@ func popUpClick<Element>(_ decision: PopUpPoint<Element>, app: String, route: In
     announce()
     var record = PopUpClickRecord(role: target.role, action: kAXPressAction, arrow: target.kind == .comboBoxArrow)
     defer { meta.popUpClick = record }
+    let intervened = person.since(now(), now: now)
     var error = AXError.failure
     meta.posting { error = perform(target.element, kAXPressAction); return true }
     if error != .success {
@@ -491,8 +597,8 @@ func popUpClick<Element>(_ decision: PopUpPoint<Element>, app: String, route: In
         throw EngineError(name: "actionFailed", "The element did not accept the \(kAXPressAction) action.")
       }
     }
-    try popUpAwaitOpen(target, before: before, app: app, appWindow: appWindow, pids: pids, ownPid: ownPid, windows: windows,
-                       now: now, sleep: sleep, restore: restore, record: &record, meta: &meta)
+    try popUpAwaitOpen(target, before: before, app: app, appWindow: appWindow, pids: pids, ownPid: ownPid, reads: reads, windows: windows,
+                       now: now, sleep: sleep, intervened: intervened, restore: restore, record: &record, meta: &meta)
     return true
   }
 }
@@ -500,21 +606,24 @@ func popUpClick<Element>(_ decision: PopUpPoint<Element>, app: String, route: In
 /// #282's element route on a qualifying `<select>` (a shared-mode web page behind, review item 3): the route delivers
 /// (`route`, handed the check to run just before its press, on the element it presses, and the judgment of a non-success
 /// AX error from that press), and when it pressed the button the same baseline, error handling as the direct route's (a
-/// messaging timeout left to the observed menu, re-review item 2), effect, unconfirmed answer and restore follow. A route
-/// that pressed another control answers as #282's alone.
+/// messaging timeout left to the observed menu, re-review item 2), person baseline, effect, unconfirmed answer and
+/// restore follow. A route that pressed another control answers as #282's alone.
 func popUpConfirmingRoute<Element>(_ target: PopUpTarget<Element>, app: String, appWindow: CGWindowID?, pids: Set<pid_t>,
                                    ownPid: pid_t = getpid(), reads: PopUpReads<Element>, windows: @escaping () -> [ListedWindow]?,
-                                   now: () -> Double, sleep: (Double) -> Void, deadlinePassed: @escaping () -> Bool = { false },
-                                   restore: (_ persons: [ListedWindow], _ appWindow: CGWindowID) -> PopUpRestoreRecord,
+                                   now: @escaping () -> Double, sleep: (Double) -> Void, deadlinePassed: @escaping () -> Bool = { false },
+                                   person: PopUpPersonSignals = PopUpPersonSignals(secondsSinceInput: { .infinity }, frontmost: { nil }),
+                                   restore: (_ persons: [ListedWindow], _ appWindow: CGWindowID, _ intervened: () -> Bool) -> PopUpRestoreRecord,
                                    route: (_ beforePress: (Element, inout InputMeta) throws -> Void,
                                            _ tolerates: (AXError) -> Bool, _ meta: inout InputMeta) throws -> Void,
                                    meta: inout InputMeta) throws {
   var armed: [ListedWindow]??
+  var intervened: (() -> Bool)?
   var actionError: AXError?
   try route({ pressed, meta in
     guard reads.same(pressed, target.element) else { return }
     meta.popUpClick = PopUpClickRecord(role: target.role)
     armed = .some(try popUpBeforeDispatch(target, app: app, pids: pids, reads: reads, windows: windows, deadlinePassed: deadlinePassed))
+    intervened = person.since(now(), now: now)
   }, { error in
     guard armed != nil else { return false }
     actionError = error
@@ -524,8 +633,8 @@ func popUpConfirmingRoute<Element>(_ target: PopUpTarget<Element>, app: String, 
   var record = PopUpClickRecord(role: target.role, action: kAXPressAction)
   record.actionError = actionError?.rawValue
   defer { meta.popUpClick = record }
-  try popUpAwaitOpen(target, before: before, app: app, appWindow: appWindow, pids: pids, ownPid: ownPid, windows: windows,
-                     now: now, sleep: sleep, restore: restore, record: &record, meta: &meta)
+  try popUpAwaitOpen(target, before: before, app: app, appWindow: appWindow, pids: pids, ownPid: ownPid, reads: reads, windows: windows,
+                     now: now, sleep: sleep, intervened: intervened ?? { false }, restore: restore, record: &record, meta: &meta)
 }
 
 /// The hooks #282's route runs on its press (`webAreaPress`'s `popUpPress`), set by `popUpConfirmingRoute` while that
@@ -538,12 +647,11 @@ final class PopUpPressChecks {
   func tolerates(_ error: AXError) -> Bool { actionError?(error) ?? false }
 }
 
-/// The restore over the live window list, route 3's raise and hold (the click's `restore`).
-func livePopUpRestore(_ persons: [ListedWindow], _ appWindow: CGWindowID) -> PopUpRestoreRecord {
+/// The restore over the live window list, route 3's raise, hold and hold timer (the click's `restore`).
+func livePopUpRestore(_ persons: [ListedWindow], _ appWindow: CGWindowID, _ intervened: () -> Bool) -> PopUpRestoreRecord {
   popUpRestoreOrder(persons, appWindow: appWindow, system: .live, windows: onScreenWindowListRead, now: monotonicMilliseconds,
-                    sleep: { usleep(UInt32(max(0, $0) * 1000)) })
+                    sleep: { usleep(UInt32(max(0, $0) * 1000)) }, intervened: intervened)
 }
-
 /// A carried click's result: its meta, and the restore's note when it did not complete.
 func popUpResult(_ meta: InputMeta) -> [String: Any] {
   var result: [String: Any] = ["meta": meta.wire]

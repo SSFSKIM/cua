@@ -570,7 +570,7 @@ error    {code: number (the vendor's codes where mapped; -10005 otherwise), mess
     died; null: the window list did not read), value? ("taken" | "unchanged" | "other" | "unread": the selection of
     the control identified before the action against the item's title, moved to it, already it or unread before, another,
     or nothing to read), polls?, ms? (from the action's return to the last read), refused? ("notRecorded" | "notHit" |
-    "relabelled" | "disabled" | "noAction")}; never a title
+    "unobserved" | "relabelled" | "disabled" | "noAction")}; never a title
   note: on a paste result that pasted a line with no channel to see it, read after ⌘V (#187; type_text's paste route
     since #361 never, its read-back answering instead), on a type_text a password field's length confirmed (#414), and on a
     scroll whose content was already at its end in that direction (#328): the sentence the service adds to the tool
@@ -7149,6 +7149,32 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   as the observation does (a string or an attributed string's text) and cuts it as the observation cuts what it records
   (`bounded`: 10,000 UTF-16 units and the marker), so a long unchanged option is not refused; the full title stays the
   selection's evidence.
+  Date/Author: 2026-11-20, cursor235's implementer for #454.
+- Decision (#454's qualification, 2026-11-20; kit `probe/454-measure` README 735d8727, fix run 44860009214 on c83ed846
+  against main 44848863214, 44856543463 and 44863373571; amends the entries above): the AppKit pop-ups are delivered and
+  confirmed (30/30), Chrome's `<select>` and TextEdit's context menu delivered and taken (30/30) but unconfirmed, and
+  every outside click unchanged; three corrections follow from the rest. (1) Chrome's already-selected option
+  (`select-same`) was refused `notRecorded` 15/15 where main closed the menu on the selection it keeps: the option lies
+  over the page's own AXPopUpButton, the deepest recorded node at the point, which acts, so neither it nor #433's control
+  beneath it was the item. Every recorded AXMenuItem whose shown frame holds the point now counts
+  (`recordedMenuItems`: `recordedMenuItem`'s first, then the rest deepest first), and the hit agrees with any of them;
+  the option is delivered and, its selection unchanged, answers `clickUnconfirmed` (`unchanged`) as AppKit's
+  already-selected items do (30/30), a stated limit. (2) The `<select>` answered `value: "unread"`: the focus is not on
+  it while its menu is open. The artifacts show the page's AXPopUpButton keeps an AXMenu child of its own listing the
+  options and reads AXValue One before and Three after; a parentless menu's control is now the one recorded pop-up or
+  combo box whose own AXMenu lists the open menu's item titles in order (`parentlessMenuOpener`, at most
+  `menuOpenerCandidateLimit` recorded controls read), none when two do, the focused one only as the fallback. Not yet
+  measured with this build. (3) The menu-bar menu and its submenu were refused `notRecorded`, rightly (the screenshot
+  does not show them and the observation lists none of their items), but with a sentence saying the item differed from
+  the screenshot's and advising keys, which took the item only with TextEdit frontmost (behind, the menu stays up
+  20/20). A hit on a native item with no recorded menu item at the point is now `unobserved`: "<App> has a menu open at
+  this point that the screenshot does not show (a menu-bar menu, a submenu, or a menu opened since the screenshot), so
+  the click cannot be checked against it. Nothing was sent. A click outside the menu closes it. To choose one of its
+  items, call getAXState() and click the item it lists by its element; a menu-bar menu's items are listed once its title
+  in the menu bar has been clicked by its element." An outside click closes every menu in every mode (measured); the
+  element route through the menu-bar record is the engine's own (MenuRecord.swift, MenuSpan.swift) and was not part of
+  this kit. Chrome's page context menu keeps main's refusal (`otherWebArea`), its items under the web area.
+  Proven offline (`MenuItemPointTests`, 24 tests): each of the three fails with its fix reverted.
   Date/Author: 2026-11-20, cursor235's implementer for #454.
 
 ## Outcomes & Retrospective

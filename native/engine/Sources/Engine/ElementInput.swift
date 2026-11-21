@@ -589,9 +589,14 @@ extension Engine {
     let field = target.element
     return { [self] meta in
       // #359: within the window of a pointer press posted to the app, the field's range settles first, before #296's check.
-      awaitPendingClick(on: field, pids: [appPid, ownerPid(of: field, fallback: appPid)], meta: &meta)
-      // #296: the field must be the node the screenshot showed at the point or its ancestor, before it is pressed.
-      try checkStalePoint(stalePoint, pressing: field, waited: false, meta: &meta)
+      // #296: the field must be the node the screenshot showed at the point or its ancestor, before it is pressed; checked
+      // again after that wait when it ran (#456).
+      if let checked = fieldRouteFirstCheck(field, gate: stalePoint, awaitPendingClick: {
+        awaitPendingClick(on: field, pids: [appPid, ownerPid(of: field, fallback: appPid)], meta: &meta)
+      }, now: monotonicMilliseconds, reads: .live) {
+        meta.stalePoint = checked.record
+        if let refusal = checked.refusal { throw refusal }
+      }
       let owner = ownerPid(of: field, fallback: appPid)
       try refuseForbiddenOwner(owner)
       actionTargets(owner, app: app, connection: context.connection)
@@ -649,9 +654,14 @@ extension Engine {
     let field = target.element
     return { [self] meta in
       // #359: within the window of a pointer press posted to the app, the field's range settles first, before #296's check.
-      awaitPendingClick(on: field, pids: [appPid, ownerPid(of: field, fallback: appPid)], meta: &meta)
-      // #296: the field must be the node the screenshot showed at the point or its ancestor, before it is focused.
-      try checkStalePoint(stalePoint, pressing: field, waited: false, meta: &meta)
+      // #296: the field must be the node the screenshot showed at the point or its ancestor, before it is focused; checked
+      // again after that wait when it ran (#456).
+      if let checked = fieldRouteFirstCheck(field, gate: stalePoint, awaitPendingClick: {
+        awaitPendingClick(on: field, pids: [appPid, ownerPid(of: field, fallback: appPid)], meta: &meta)
+      }, now: monotonicMilliseconds, reads: .live) {
+        meta.stalePoint = checked.record
+        if let refusal = checked.refusal { throw refusal }
+      }
       let owner = ownerPid(of: field, fallback: appPid)
       try refuseForbiddenOwner(owner)
       actionTargets(owner, app: app, connection: context.connection)

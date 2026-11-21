@@ -1,0 +1,36 @@
+{
+  "label": "task 132 development run (the linux-engine 0.4.3 candidate, D1's dnd cell)",
+  "started": "2026-11-21T17:22:30.009Z",
+  "load_factor": null,
+  "cores": 8,
+  "args": [
+    "--experiment",
+    "drag",
+    "--vendor",
+    "/Users/new/.local/share/cua-171/m5/home-x64-042/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+    "--newest",
+    "/Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+    "--occlusion",
+    "visible",
+    "--family",
+    "chrome",
+    "--cua",
+    "/Users/new/.local/share/cua-171/task132/home-x64-043/engine/linux/cua-engine",
+    "--ops",
+    "dnd",
+    "--lanes",
+    "pinned,newest,cua,cua:off",
+    "--variant",
+    "off=--drag-dnd-release-sync off",
+    "--engine-stats",
+    "--run",
+    "dev-t132-d1-b"
+  ],
+  "finished": "2026-11-21T17:27:36.670Z",
+  "result": {
+    "code": 0,
+    "signal": null,
+    "clean": true,
+    "reason": null
+  }
+}

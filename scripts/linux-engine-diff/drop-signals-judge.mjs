@@ -758,11 +758,13 @@ export function electronDropVerdict(rows, { specs = [], share = 0.05, slowMode =
     const list = c.rows.filter((r) => !unverified.includes(r));
     const count = (f) => list.filter(f).length;
     // a drop counts as landed only where the path ended (ruling 957): a landing in the zone from a path that ended
-    // outside it is a drop at a stale position; one within the border margin is ambiguous (ruling 961)
+    // outside it is a drop at a stale position; one within the border margin is ambiguous (ruling 961). The zone's
+    // counter is judged on every drag of the cell, an unverified end's too: that exception qualifies the off-window
+    // checks below, never the zone's own evidence (the review of 2dd2b0d8, finding 2)
     const landed = (r) => landingOf(r, ends) === 'landed';
-    const stale = list.filter((r) => landingOf(r, ends) === 'stale');
-    const ambiguous = list.filter((r) => landingOf(r, ends) === 'ambiguous');
-    const unplaced = list.filter((r) => landingOf(r, ends) === 'unknown');
+    const stale = c.rows.filter((r) => landingOf(r, ends) === 'stale');
+    const ambiguous = c.rows.filter((r) => landingOf(r, ends) === 'ambiguous');
+    const unplaced = c.rows.filter((r) => landingOf(r, ends) === 'unknown');
     const falseOk = list.filter((r) => r.ok === true && honest(r) === null && !droppedOf(r));
     const landing = LANDING_CELLS.includes(base);
     const nonLanding = landing ? list.filter((r) => !r.outcome?.landed) : [];
@@ -797,7 +799,7 @@ export function electronDropVerdict(rows, { specs = [], share = 0.05, slowMode =
     } else if (falseOk.length) failed.push(`${name}: answered ok with no drop and nothing pending on ${falseOk.length} of ${list.length} (${which(falseOk)})`);
     if (missing.length) failed.push(`${name}: the drop did not land on ${missing.length} of ${list.length}, in a cell that expects it (${which(missing)})`);
     if (falseError.length) failed.push(`${name}: answered an error for a drop that landed on ${falseError.length} of ${list.length} (${which(falseError)})`);
-    landingFails(name, list, stale, unplaced, failed);
+    landingFails(name, c.rows, stale, unplaced, failed);
     ambiguousRows.push(...ambiguous);
     total.pending_broken += pendingBreaks(list, name, failed);
     if (c.rows.length && !list.length) findings.push(`${name} unmeasured: every end (${unverified.length}) was not verified where the drag left the pointer`);

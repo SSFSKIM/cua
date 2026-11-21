@@ -128,3 +128,17 @@ test("the hold's regression cells land only where their paths end, inside the zo
   const moved = holdRegressionVerdict(rows, { specs: manifest, ends: { ...PATH_ENDS, 'dragstart-150': [500, 266] } });
   assert.match(moved.failed.join('\n'), /dragstart-150: not landed on 10 of 10/);
 });
+
+test("the review of 2dd2b0d8, finding 2: an off-window drag whose end was not verified is still judged on the zone's drop: a landing there is stale, never dropped from the evidence", () => {
+  const unverified = { ...landedIn(electron({ lane: 'cua:desktop', cell: 'root', i: 0 })), end_park: { over: 'root', verified: false, why: 'the pointer is over window 0x00400808, not on the bare root' } };
+  const quiet = { ...electron({ lane: 'cua:desktop', cell: 'root', i: 1, pending: 'unconfirmed' }), end_park: { over: 'root', verified: false, why: 'over another window' } };
+  const v = electronDropVerdict([unverified, quiet], { specs: specs(['cua:desktop', 'root', 2]) });
+  assert.deepEqual(v.failed, ['cua:desktop root: a drop at a stale position (the path ended outside the zone, the drop landed in it) on 1 of 2 (#0)']);
+  assert.equal(v.counts.stale_drops, 1);
+  // the endpoint exception still qualifies what it was meant to: the unverified drags stay out of the false-ok count
+  assert.equal(v.counts.false_ok, 0);
+  assert.equal(v.counts.unverified, 2);
+  // a cell whose path end the judge cannot place fails as unplaced, verified or not
+  const odd = { ...landedIn(electron({ cell: 'nowhere', i: 0 })), end_park: { over: 'root', verified: false } };
+  assert.match(electronDropVerdict([odd], { specs: specs(['cua', 'nowhere', 1]) }).failed.join('\n'), /cua nowhere: a drop landed in a cell whose path end the judge cannot place against the zone, on 1 of 1 \(#0\)/);
+});

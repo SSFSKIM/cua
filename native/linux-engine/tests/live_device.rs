@@ -1346,9 +1346,15 @@ fn a_take_after_a_short_path_s_end_is_held_for_and_its_floor_filled_with_motions
             "{args:?}: the floor filled with motions: {motions:?}"
         );
         assert_eq!(motions.last(), Some(&(60, 20)), "{args:?}: ending on the last sample");
+        // the floor's keepalives on the path's last two samples; on an XTEST route the tail inside the floor
+        // (`release_sync.rs`, rulings 1000 and 1001) then steps 1 px forward of the end and back, twice
+        let tail = motions.len().saturating_sub(4);
         assert!(
-            motions.iter().all(|m| *m == (59, 20) || *m == (60, 20)),
-            "{args:?}: on the path's last two samples: {motions:?}"
+            motions[..tail].iter().all(|m| *m == (59, 20) || *m == (60, 20))
+                && motions[tail..]
+                    .iter()
+                    .all(|m| [(59, 20), (60, 20), (61, 20)].contains(m)),
+            "{args:?}: on the path's last two samples, then the tail's step forward: {motions:?}"
         );
     }
     // no take at all: held to B after the press, released, answered success, and no keepalive
@@ -6470,4 +6476,36 @@ fn on_xtest_routes_each_tail_visit_steps_forward_and_back_and_shows_nothing_behi
         }
     }
     *HELD_PATH.lock().unwrap() = None;
+}
+
+/// The re-review of 75718f55 (2): a nonzero release dwell (`--drag-release-dwell-ms`; Gecko's 30 ms is the default
+/// family that has one, reached by a foreground drag named for Firefox whose press lands in Chrome) stays on top of the
+/// floor, as 0.4.2's: a short taken drag releases 350 ms plus the dwell after its take with the tail inside the floor,
+/// within a millisecond of off's, and both of the tail's visits go out before it.
+#[test]
+fn a_release_dwell_stays_on_top_of_the_floor_with_the_tail_inside_it() {
+    support::fresh_display();
+    *HELD_PATH.lock().unwrap() = None;
+    let released_after_take = |drag: &HeldDrag| drag.stats["after_take"]["release_after_take_ms"].as_f64().unwrap();
+    let dwell = ["--drag-release-dwell-ms", "30"];
+    let drag = held_drag_with(
+        HoldRoute::InFront,
+        OnRelease::Nothing,
+        None,
+        &[&dwell[..], &["--drag-dnd-release-sync", "off"]].concat(),
+    );
+    let off = released_after_take(&drag);
+    assert!((380.0..381.0).contains(&off), "off: released {off} ms after the take");
+    let drag = held_drag_with(HoldRoute::InFront, OnRelease::Nothing, None, &dwell);
+    let tail = released_after_take(&drag);
+    assert!(
+        (380.0..381.0).contains(&tail) && (tail - off).abs() < 1.0,
+        "the tail: released {tail} ms after the take, off {off}"
+    );
+    let sync = &drag.stats["release_sync"];
+    assert_eq!(
+        (&sync["schedule"], &sync["motions"], &sync["visits_dropped"]),
+        (&json!("in_floor"), &json!(2), &json!(0)),
+        "{sync}"
+    );
 }

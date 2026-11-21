@@ -353,6 +353,9 @@ pub(super) struct ReleaseSync<'a> {
     pub(super) gate: &'a mut Option<GateRead>,
     /// What the step did, when the gate opened and the form sends one.
     pub(super) synced: &'a mut Option<crate::release_sync::Synced>,
+    /// The screen's width and height, read before the press for the tail on XTEST's routes (`release_sync::xtest_step`):
+    /// None on the background route and for `Form::Off`, which read nothing.
+    pub(super) screen: Option<(u16, u16)>,
 }
 
 /// What the outlasted gate read of a drop's floor and decided (`release_sync::gate`).
@@ -368,7 +371,10 @@ impl ReleaseSync<'_> {
     /// floor spaced out the path's `last_spaced` step; then the step on `route` to the path's end `last`, its motions
     /// placed again on the route (synthetic on the background route; on XTEST's, each visit by way of `xtest_step`),
     /// after the path when the gate opened, inside the floor when it stayed shut (`release_sync::Schedule`, rulings 1000
-    /// and 1001), released at the floor's end (`floor_end`) then.
+    /// and 1001), released at the floor's end (`floor_end`) then. The release dwell `dwell`, which the drag waited
+    /// before the release in 0.4.2, stays on top of the floor: inside the floor the release comes that long after its
+    /// end; otherwise (after the path, or `Form::Off`) it is waited first, as before.
+    #[allow(clippy::too_many_arguments)]
     fn at_release(
         &mut self,
         x: &mut X11,
@@ -377,6 +383,7 @@ impl ReleaseSync<'_> {
         last_spaced: bool,
         (xtest_step, last): ((i16, i16), (i16, i16)),
         floor_end: Option<Instant>,
+        dwell: Duration,
     ) -> Result<()> {
         let open = crate::release_sync::gate(self.when, keepalives, last_spaced);
         *self.gate = Some(GateRead {
@@ -385,7 +392,15 @@ impl ReleaseSync<'_> {
             last_spaced,
         });
         let step = (!matches!(route, Route::Window(_))).then_some(xtest_step);
-        let schedule = crate::release_sync::Schedule::of(open, floor_end);
+        let schedule = match (self.form, crate::release_sync::Schedule::of(open, floor_end)) {
+            (crate::release_sync::Form::Tail, crate::release_sync::Schedule::InFloor(end)) => {
+                crate::release_sync::Schedule::InFloor(end + dwell)
+            }
+            (_, schedule) => {
+                std::thread::sleep(dwell);
+                schedule
+            }
+        };
         *self.synced = crate::release_sync::before_release(self.form, step, last, schedule, floor_end, |(px, py)| {
             route.place_again(x, px, py)
         })?;
@@ -554,9 +569,12 @@ fn drag_along(
         // where a Chrome drop's tail steps to on XTEST's routes before each visit to the end (`release_sync::xtest_step`,
         // ruling 1001), read before anything times the release
         let xtest_step = match (&measure.release_sync, &*route) {
-            (Some(_), Route::Desktop(..)) => {
-                crate::release_sync::xtest_step(&samples[..path], super::handle::screen_size(x))
-            }
+            (
+                Some(ReleaseSync {
+                    screen: Some(screen), ..
+                }),
+                Route::Desktop(..),
+            ) => crate::release_sync::xtest_step(&samples[..path], *screen),
             _ => last,
         };
         // the take, when it was seen, and how many samples were still to send then
@@ -806,7 +824,13 @@ fn drag_along(
                 return cancel_in_time(x, route, guard, &mut pressed);
             }
         }
-        std::thread::sleep(pacing.release.saturating_sub(still));
+        // the release dwell; a Chrome drop's tail takes it over (`ReleaseSync::at_release`), so it stays on top of the
+        // floor, as 0.4.2's (the re-review of 75718f55)
+        let dwell = pacing.release.saturating_sub(still);
+        let tail_takes_dwell = taken.is_some() && hold.is_some() && measure.release_sync.is_some();
+        if !tail_takes_dwell {
+            std::thread::sleep(dwell);
+        }
         // the last look before the release
         if let Some(guard) = guard.as_deref_mut()
             && guard.looks()
@@ -828,6 +852,7 @@ fn drag_along(
                 floor_spaced_last,
                 (xtest_step, last),
                 floor_end,
+                dwell,
             )?;
         }
         // what reached the window up to the release, read apart from what comes after it: a grab that ends before the
@@ -1349,6 +1374,11 @@ impl Engine {
                     .is_some_and(|f| crate::release_sync::applies(f.name))
             });
         let (sync_form, sync_when) = (self.cfg.dnd_release_sync, self.cfg.dnd_release_sync_when);
+        // the screen's size for the tail's XTEST step, read before the press; none for the background route or the
+        // measurement control `off`, which send no extra request
+        let sync_screen =
+            (syncing && sync_form == crate::release_sync::Form::Tail && !matches!(target, Target::Window(_)))
+                .then(|| super::handle::screen_size(&self.x));
         let mut gate_read: Option<GateRead> = None;
         let mut synced = None;
         let mut wall = None;
@@ -1408,6 +1438,7 @@ impl Engine {
                         when: sync_when,
                         gate: &mut gate_read,
                         synced: &mut synced,
+                        screen: sync_screen,
                     }),
                 },
             );

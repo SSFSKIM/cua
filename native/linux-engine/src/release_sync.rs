@@ -216,6 +216,31 @@ pub fn xtest_step(path: &[(i16, i16)], screen: (u16, u16)) -> (i16, i16) {
     }
 }
 
+/// How long before the release a visit inside the floor may still go out (ruling 1001's re-review): a wakeup later
+/// than this drops the visit, leaving its motions and the release path room before the button goes up.
+pub const VISIT_CUTOFF: Duration = Duration::from_millis(4);
+
+/// What the tail reads the time from and waits on: the real clock as the engine runs, and in its tests one that wakes
+/// late on demand.
+pub trait Clock {
+    fn now(&self) -> Instant;
+    /// Waits until `at`, or past it when the wakeup is late.
+    fn sleep_until(&self, at: Instant);
+}
+
+/// The real clock.
+pub struct RealClock;
+
+impl Clock for RealClock {
+    fn now(&self) -> Instant {
+        Instant::now()
+    }
+
+    fn sleep_until(&self, at: Instant) {
+        std::thread::sleep(at.saturating_duration_since(Instant::now()));
+    }
+}
+
 /// What the step before the release did (`--stats` `release_sync`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Synced {
@@ -244,6 +269,8 @@ impl Synced {
             "skipped": self.visits_dropped == TAIL_VISITS,
             "added_ms": self.added.as_secs_f64() * 1000.0,
             "past_floor_ms": self.past_floor.map(|d| d.as_secs_f64() * 1000.0),
+            // ruling 1002: on XTEST's routes the visits' step forward and back is proved by its live test only
+            "xtest_proof": "live test only, no counted rate",
         })
     }
 }
@@ -252,8 +279,23 @@ impl Synced {
 /// to the path's end `last`, then the release. `place` sends a motion. On XTEST's routes `step` is where each visit
 /// steps to first ([`xtest_step`]); on the background route (None) a visit is one synthetic motion to the end, which
 /// SendEvent delivers wherever the pointer is. `floor_end` is the floor's end after the take, for the record (None: no
-/// floor ran). A motion that fails ends it with its error, as the floor's do. None for [`Form::Off`].
+/// floor ran). Inside the floor a visit goes out only when its time has not passed and the wakeup that reaches it comes
+/// no later than [`VISIT_CUTOFF`] before the release; otherwise it is dropped and recorded. A motion that fails ends it
+/// with its error, as the floor's do. None for [`Form::Off`].
 pub fn before_release(
+    form: Form,
+    step: Option<(i16, i16)>,
+    last: (i16, i16),
+    schedule: Schedule,
+    floor_end: Option<Instant>,
+    place: impl FnMut((i16, i16)) -> Result<()>,
+) -> Result<Option<Synced>> {
+    before_release_on(&RealClock, form, step, last, schedule, floor_end, place)
+}
+
+/// [`before_release`] on `clock`.
+pub fn before_release_on(
+    clock: &impl Clock,
     form: Form,
     step: Option<(i16, i16)>,
     last: (i16, i16),
@@ -261,8 +303,7 @@ pub fn before_release(
     floor_end: Option<Instant>,
     mut place: impl FnMut((i16, i16)) -> Result<()>,
 ) -> Result<Option<Synced>> {
-    let started = Instant::now();
-    let until = |at: Instant| std::thread::sleep(at.saturating_duration_since(Instant::now()));
+    let started = clock.now();
     let mut motions = 0;
     let mut visits_dropped = 0;
     let mut visit = |motions: &mut u32| -> Result<()> {
@@ -278,27 +319,33 @@ pub fn before_release(
         (Form::Off, _) => return Ok(None),
         (Form::Tail, Schedule::AfterPath) => {
             for _ in 0..TAIL_VISITS {
-                std::thread::sleep(TAIL_REST);
+                clock.sleep_until(clock.now() + TAIL_REST);
                 visit(&mut motions)?;
             }
-            std::thread::sleep(TAIL_REST);
+            clock.sleep_until(clock.now() + TAIL_REST);
         }
         (Form::Tail, Schedule::InFloor(release_at)) => {
+            let cutoff = release_at.checked_sub(VISIT_CUTOFF).unwrap_or(started);
             for k in 0..TAIL_VISITS {
                 let due = release_at
                     .checked_sub(TAIL_REST.saturating_mul(TAIL_VISITS - k))
                     .unwrap_or(started);
-                if Instant::now() > due {
+                if clock.now() > due {
                     visits_dropped += 1;
                     continue;
                 }
-                until(due);
+                clock.sleep_until(due);
+                // a wakeup that came too late for the visit to go out before the release
+                if clock.now() > cutoff {
+                    visits_dropped += 1;
+                    continue;
+                }
                 visit(&mut motions)?;
             }
-            until(release_at);
+            clock.sleep_until(release_at);
         }
     }
-    let released = Instant::now();
+    let released = clock.now();
     Ok(Some(Synced {
         form,
         schedule,
@@ -425,7 +472,8 @@ mod tests {
         assert_eq!(
             synced.record(When::Outlasted),
             json!({"form": "tail", "when": "outlasted", "schedule": "after_path", "motions": 2, "visits_dropped": 0,
-                   "skipped": false, "added_ms": synced.added.as_secs_f64() * 1000.0, "past_floor_ms": null})
+                   "skipped": false, "added_ms": synced.added.as_secs_f64() * 1000.0, "past_floor_ms": null,
+                   "xtest_proof": "live test only, no counted rate"})
         );
         // on XTEST each visit is a real motion: a step, then back to the end
         let (synced, log, _) = run(Form::Tail, Some((11, 10)));
@@ -584,6 +632,66 @@ mod tests {
         );
         assert_eq!(synced.unwrap().visits_dropped, 2);
         assert!(ended - started < ms(1));
+    }
+
+    /// A clock that runs only when the tail sleeps, each wakeup as late as its entry of `late` (none left: on time).
+    struct LateClock {
+        now: std::cell::Cell<Instant>,
+        late: std::cell::RefCell<std::collections::VecDeque<Duration>>,
+    }
+
+    impl Clock for LateClock {
+        fn now(&self) -> Instant {
+            self.now.get()
+        }
+
+        fn sleep_until(&self, at: Instant) {
+            let late = self.late.borrow_mut().pop_front().unwrap_or_default();
+            self.now.set(self.now.get().max(at) + late);
+        }
+    }
+
+    /// The re-review of 75718f55 (1): a wakeup that comes late, past the cutoff before the release, drops its visit
+    /// and records it, and the release stays where it was; one late by less still sends its visit.
+    #[test]
+    fn inside_the_floor_a_visit_whose_wakeup_comes_too_late_is_dropped() {
+        let ms = Duration::from_millis;
+        let start = Instant::now();
+        let release_at = start + ms(24);
+        for (late, sent, dropped) in [
+            // the second visit's wakeup, due 8 ms before the release, comes 6 ms late: 2 ms before it
+            (vec![ms(0), ms(6)], 1, 1),
+            // 3 ms late: 5 ms before it, inside the cutoff
+            (vec![ms(0), ms(3)], 2, 0),
+            // the first's comes 13 ms late, past the cutoff and the second's time: both dropped
+            (vec![ms(13)], 0, 2),
+        ] {
+            let clock = LateClock {
+                now: std::cell::Cell::new(start),
+                late: std::cell::RefCell::new(late.clone().into()),
+            };
+            let mut at = Vec::new();
+            let synced = before_release_on(
+                &clock,
+                Form::Tail,
+                Some((11, 10)),
+                (10, 10),
+                Schedule::InFloor(release_at),
+                Some(release_at),
+                |p| {
+                    at.push((p, clock.now()));
+                    Ok(())
+                },
+            )
+            .unwrap()
+            .unwrap();
+            assert_eq!((synced.motions, synced.visits_dropped), (sent * 2, dropped), "{late:?}");
+            assert!(
+                at.iter().all(|(_, t)| *t <= release_at - VISIT_CUTOFF),
+                "{late:?}: no motion past the cutoff: {at:?}"
+            );
+            assert_eq!(clock.now(), release_at, "{late:?}: the release where it was");
+        }
     }
 
     /// Ruling 1001 (2): the tail's 326 ms scheduling boundary is not the gate's: the gate judges the path against the

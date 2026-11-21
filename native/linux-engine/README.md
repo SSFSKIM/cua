@@ -327,8 +327,10 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   26.1023.51421's `Client::run_full_desktop_command`). On the background route each motion is one synthetic motion. On
   XTEST's routes a motion to where the pointer is generates no event, so each visit steps 1 px forward along the path's
   last segment and back to its end (`release_sync::xtest_step`, ruling 1001): a border the last segment crossed stays
-  behind the step, so an end entered on the last sample is never shown a point outside it. Without it the release
-  followed the path's last motion at once,
+  behind the step, so an end entered on the last sample is shown no point outside it, except at the screen's edge,
+  where the step would leave the screen and goes 1 px back along the segment instead, inside ruling 961's 3 px
+  ambiguous margin. The XTEST tail is proved by its live test only, with no counted rate (ruling 1002; `--stats`
+  `release_sync.xtest_proof`). Without it the release followed the path's last motion at once,
   and under load Chrome dropped on a stale accept and position and confirmed the drop with its activation request.
   Chrome's drop status lags one renderer round trip (`WebContentsViewAura::OnDragUpdated` answers each position), and
   with a status outstanding at the release its pending drop is decided on that older status before the last queued
@@ -336,10 +338,12 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   point refreshes the status, so the status that decides answers the path's end. A drop whose gate stays shut gets the
   tail too, inside its floor (ruling 1000, on 999): the floor's steps spread over its first 326 ms and its keepalives
   fill to there (`release_sync::steps_floor`), and the tail's visits come 16 and 8 ms before the floor's end, the
-  release at the end as before (ruling 1001): a visit whose time has passed when the tail reaches it is dropped
-  (`--stats` `release_sync.visits_dropped`, `skipped` when both were), and the release never moves. The 326 ms only
-  schedules: the gate judges the path against the 350 ms floor. A floor that spread a path's steps 1.45 ms apart still ended on steps far shorter than
-  Chrome's status lag under load: task 130's `t14-floor` `left` at arm64 twice the load answered one false ok in 30
+  release at the end as before (ruling 1001): a visit whose time has passed when the tail reaches it, or whose wakeup
+  comes later than 4 ms before the release (`release_sync::VISIT_CUTOFF`), is dropped (`--stats`
+  `release_sync.visits_dropped`, `skipped` when both were), and the release never moves. A release dwell (Gecko's
+  30 ms, reached by a foreground drag named for Firefox that presses into Chrome) stays on top of the floor, as
+  before. The 326 ms only schedules: the gate judges the path against the 350 ms floor. A floor that spread a path's
+  steps 1.45 ms apart still ended on steps far shorter than Chrome's status lag under load: task 130's `t14-floor` `left` at arm64 twice the load answered one false ok in 30
   through the shut gate, 241 steps spread over 350 ms with no keepalive. The tail costs about 25 ms on the drags whose
   path outlasts the floor, and nothing on the others. The residual bound: no false ok in
   <N> measured long Chrome drags at arm64 twice the load (95% upper bound <X>%). Electron's drops (settled, below),

@@ -1,0 +1,4 @@
+acceptance on the pinned release
+XGetWindowProperty[_NET_ACTIVE_WINDOW] failed (code=1)
+XGetWindowProperty[_NET_ACTIVE_WINDOW] failed (code=1)
+the run's end is unclean (its own side, not a verdict failure): a process it spawned still runs: pid 1769370 openbox

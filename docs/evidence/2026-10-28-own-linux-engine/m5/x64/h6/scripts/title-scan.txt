@@ -1,2 +1,2 @@
-{"files":251,"json_fields":8841,"sentence_quotes":0,"text_quotes":14,"own":8855,"not_own":0,"distinct":49}
-exit 0
+{"files":309,"json_fields":14903,"sentence_quotes":0,"text_quotes":20,"own":14923,"not_own":0,"distinct":55}
+title scan exit 0

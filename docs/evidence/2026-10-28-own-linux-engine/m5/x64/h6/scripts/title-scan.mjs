@@ -23,7 +23,7 @@ const SENTENCE_KEY = /error|why|cause|evidence|reason|notice|foreign|finding|lin
 const OWN = [
   /^cua171[-_ ]/i, // its run- and scene-titled windows and pages (cua171-diff-<run>-<scene>…)
   /^cua-engine[-\s]/, /^linux-engine-v/, // its release assets and engines
-  /^(Busy press|Slow dragstart|Plain|Nested|Slider|Image|Link|Canvas|Drop|Drag|Zone|Move|Select|Range|Scroll)\b/, // scene page elements
+  /^(Busy press|Slow dragstart|Plain|Nested|Slider|Image|Link|Canvas|Drop|Drag|Zone|In-zone source|Move|Select|Range|Scroll)\b/, // scene page elements (drop-signals.html's In-zone source too)
   /^(Google-chrome|google-chrome|Google Chrome|Chromium|chrome|Firefox|firefox|Navigator|Gedit|gedit|org\.gnome\.\w+|kate|Kate|xterm|XTerm|Xterm|Electron|electron|Openbox|openbox|gtk3-demo|gtk4-demo|Gtk4-demo|paste-target|recorder|minimized-recorder|Mozilla Firefox)$/, // the run's own app instances, by class or app name
   /^(browser|pop-up|browser-window|normal|dialog)$/, // window roles and types
   /^(GTK|Qt|GTK 3|GTK 4|gtk|qt|Gecko|Chromium)( \d)?$/, // toolkits

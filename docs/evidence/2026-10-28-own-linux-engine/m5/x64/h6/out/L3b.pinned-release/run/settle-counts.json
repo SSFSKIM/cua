@@ -1,0 +1,1355 @@
+{
+ "kind": "settle-counts",
+ "processes": [
+  {
+   "harness_pid": 1769099,
+   "run": "pinned-L3b",
+   "opt_in": false,
+   "started": "2026-11-21T04:03:45.171Z",
+   "finished": "2026-11-21T04:21:57.064Z",
+   "engines": [
+    {
+     "lane": "reader",
+     "pid": 1769433,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "list_windows": 11,
+      "get_window_state": 279
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-seed",
+     "pid": 1770343,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 19
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1781111,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1781132,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1781149,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1781166,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1781182,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1781284,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1781300,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1781316,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1781334,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1781345,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1781363,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1781465,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1781479,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1781507,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1781520,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1781535,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1781600,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1781645,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1781658,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1781677,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1781696,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1781712,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1781817,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1781830,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1781849,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1781862,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1781876,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1781894,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1781983,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1782003,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1782137,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1782216,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1782254,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1782277,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1782295,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1793731,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1793744,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1793764,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1793775,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1793789,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1793885,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1793898,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1793912,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1793929,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1793946,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1793972,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1794058,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1794070,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1794081,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1794097,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1794111,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1794200,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1794217,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1794264,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1794284,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1794325,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1794335,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1794431,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1794445,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1794459,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1794473,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1794491,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1794588,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1794602,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "settle-top",
+     "pid": 1794617,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-x64-042/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "press_key": 1
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    }
+   ]
+  }
+ ]
+}

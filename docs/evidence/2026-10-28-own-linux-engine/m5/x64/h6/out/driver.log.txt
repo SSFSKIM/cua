@@ -56,3 +56,25 @@
     step.sh 2026-11-21T03:08:34Z start L2b  after 0 s quiet wait: load=0.63 1.02 1.15 stress-ng=none
     step.sh 2026-11-21T03:24:52Z end L2b exit 0 load=17.38 16.55 11.55
 2026-11-21T03:24:52Z wait L3a load=17.38 16.55 11.55 df avail 50G
+2026-11-21T04:00:22Z end L3a exit 1 load=16.86 17.05 16.17 
+    step.sh 2026-11-21T03:28:17Z start L3a  after 201 s quiet wait: load=0.88 8.51 9.33 stress-ng=none
+    step.sh 2026-11-21T04:00:22Z end L3a exit 1 load=16.86 17.05 16.17
+2026-11-21T04:00:22Z FAILED L3a (exit 1): driver stopped; read /Users/new/.local/share/cua-171/m5/out-x64-h6/L3a.driver.out
+2026-11-21T04:02:24Z driver start: L3b L4a L4b L4c fence:  df avail 50G
+2026-11-21T04:02:24Z wait L3b load=2.78 11.54 14.25 df avail 50G
+2026-11-21T04:21:57Z end L3b exit 0 load=16.74 16.72 15.79 
+    step.sh 2026-11-21T04:03:44Z start L3b  after 80 s quiet wait: load=0.93 8.78 13.03 stress-ng=none
+    step.sh 2026-11-21T04:21:57Z end L3b exit 0 load=16.74 16.72 15.79
+2026-11-21T04:21:57Z wait L4a load=16.74 16.72 15.79 df avail 50G
+2026-11-21T04:45:19Z end L4a exit 0 load=16.99 16.89 15.84 
+    step.sh 2026-11-21T04:25:37Z start L4a  after 220 s quiet wait: load=0.96 8.25 12.55 stress-ng=none
+    step.sh 2026-11-21T04:45:19Z end L4a exit 0 load=16.99 16.89 15.84
+2026-11-21T04:45:19Z wait L4b load=16.99 16.89 15.84 df avail 50G
+2026-11-21T05:02:38Z end L4b exit 0 load=17.44 16.81 15.37 
+    step.sh 2026-11-21T04:48:46Z start L4b  after 201 s quiet wait: load=0.85 8.49 12.67 stress-ng=none
+    step.sh 2026-11-21T05:02:38Z end L4b exit 0 load=17.44 16.81 15.37
+2026-11-21T05:02:38Z wait L4c load=17.44 16.81 15.37 df avail 50G
+2026-11-21T05:08:12Z end L4c exit 0 load=15.65 12.07 13.20 
+    step.sh 2026-11-21T05:05:46Z start L4c  after 50 s quiet wait: load=0.87 9.01 12.57 stress-ng=none
+    step.sh 2026-11-21T05:08:12Z end L4c exit 0 load=15.65 12.07 13.20
+2026-11-21T05:08:12Z driver done: L3b L4a L4b L4c

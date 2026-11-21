@@ -60,3 +60,17 @@
 2026-11-21T03:24:53Z wait task123-x64 load=17.38 16.55 11.55 render-host=none :: /Users/new/.local/share/cua-171/task123/step.sh L3a /Users/new/.local/share/cua-171/m5/out-x64-h6
 2026-11-21T03:24:56Z release task123-x64 status=0 load=15.99 16.28 11.49 render-host=none :: timeout 60 /Users/new/.local/share/cua-171/task123/xdo-msg-check.sh
 2026-11-21T03:24:56Z acquire task123-x64 load=15.99 16.28 11.49 render-host=none :: /Users/new/.local/share/cua-171/task123/step.sh L3a /Users/new/.local/share/cua-171/m5/out-x64-h6
+2026-11-21T04:00:22Z release task123-x64 status=1 load=16.86 17.05 16.17 render-host=none :: /Users/new/.local/share/cua-171/task123/step.sh L3a /Users/new/.local/share/cua-171/m5/out-x64-h6
+2026-11-21T04:02:24Z wait task123-x64 load=2.78 11.54 14.25 render-host=none :: /Users/new/.local/share/cua-171/task123/step.sh L3b /Users/new/.local/share/cua-171/m5/out-x64-h6
+2026-11-21T04:02:24Z acquire task123-x64 load=2.78 11.54 14.25 render-host=none :: /Users/new/.local/share/cua-171/task123/step.sh L3b /Users/new/.local/share/cua-171/m5/out-x64-h6
+2026-11-21T04:21:57Z release task123-x64 status=0 load=16.74 16.72 15.79 render-host=none :: /Users/new/.local/share/cua-171/task123/step.sh L3b /Users/new/.local/share/cua-171/m5/out-x64-h6
+2026-11-21T04:21:57Z wait task123-x64 load=16.74 16.72 15.79 render-host=none :: /Users/new/.local/share/cua-171/task123/step.sh L4a /Users/new/.local/share/cua-171/m5/out-x64-h6
+2026-11-21T04:21:57Z acquire task123-x64 load=16.74 16.72 15.79 render-host=none :: /Users/new/.local/share/cua-171/task123/step.sh L4a /Users/new/.local/share/cua-171/m5/out-x64-h6
+2026-11-21T04:45:19Z release task123-x64 status=0 load=16.99 16.89 15.84 render-host=none :: /Users/new/.local/share/cua-171/task123/step.sh L4a /Users/new/.local/share/cua-171/m5/out-x64-h6
+2026-11-21T04:45:19Z wait task123-x64 load=16.99 16.89 15.84 render-host=none :: /Users/new/.local/share/cua-171/task123/step.sh L4b /Users/new/.local/share/cua-171/m5/out-x64-h6
+2026-11-21T04:45:25Z acquire task123-x64 load=14.38 16.34 15.67 render-host=none :: /Users/new/.local/share/cua-171/task123/step.sh L4b /Users/new/.local/share/cua-171/m5/out-x64-h6
+2026-11-21T05:02:38Z release task123-x64 status=0 load=17.44 16.81 15.37 render-host=none :: /Users/new/.local/share/cua-171/task123/step.sh L4b /Users/new/.local/share/cua-171/m5/out-x64-h6
+2026-11-21T05:02:38Z yield task123-x64 (released 0 s ago; another holder waits) :: /Users/new/.local/share/cua-171/task123/step.sh L4c /Users/new/.local/share/cua-171/m5/out-x64-h6
+2026-11-21T05:04:08Z wait task123-x64 load=4.19 12.56 13.99 render-host=none :: /Users/new/.local/share/cua-171/task123/step.sh L4c /Users/new/.local/share/cua-171/m5/out-x64-h6
+2026-11-21T05:04:56Z acquire task123-x64 load=1.88 10.64 13.26 render-host=none :: /Users/new/.local/share/cua-171/task123/step.sh L4c /Users/new/.local/share/cua-171/m5/out-x64-h6
+2026-11-21T05:08:12Z release task123-x64 status=0 load=15.65 12.07 13.20 render-host=none :: /Users/new/.local/share/cua-171/task123/step.sh L4c /Users/new/.local/share/cua-171/m5/out-x64-h6

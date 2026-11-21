@@ -684,9 +684,12 @@ premise-unmet, so this is not route D's stop. The stored verdict stands as recor
 #171 x64 VM (`dc-linux171-1e68`) from 2026-11-20T22:24Z. The records are in `h6/`: `out/` holds the counted private
 steps, `zero/` V5's `:0` sitting, and `scripts/` task 123's launchers and records.
 
-- **Class A**, every one exit 0 and passing by its own judge at H6:
-  - at idle: C1, K1, K2, K3, D1, D2, S1, H1 and H2;
-  - at twice the load: L1, L2a and L2b so far. L3a, L3b, L4a, L4b and L4c are running (the next part's commit).
+- **Class A at idle**, every one exit 0 and passing by its own judge at H6: C1, K1, K2, K3, D1, D2, S1, H1 and H2.
+- **Class A at twice the load:**
+  - L1, L2a, L2b, L3b, L4a, L4b and L4c exit 0 and pass.
+  - **L3a FAILS**: chrome-text `activate_window` reached 41 runs without 30 in a row. Two runs read
+    `_NET_ACTIVE_WINDOW` 91–94 ms late (below).
+  - It is not rerun. Ruling 950's measurement (`a950/`) is its follow-up.
 - **V5** passes every one of its 52 verdicts on `:0`, in the owner's window (ruling 933, GO 939). Its all-clear is clear.
 - **S2**, the cross-check for the steps that only gained new reads (V4, S4, L3c, L3e), is **the same** as its record
   at H in every cell. So those four don't rerun.
@@ -745,6 +748,11 @@ released. Load is the 1-, 5- and 15-minute average.
 | L2a | 69bd7993 | 11-21 01:31:46 | 01:34:57 | 01:58:56 | 24.0 | 0 | 0.91 8.93 11.92 | 17.15 16.97 15.99 | clean; end check clear | the judges' verdict PASS |
 | V5 | 69bd7993 | 11-21 02:30:02 | 02:30:02 | 03:07:37 | 37.6 | 0 | 0.15 0.26 2.30 | 1.30 1.19 1.21 | all-clear clear | **every verdict PASS** (52 rows; below) |
 | L2b | 69bd7993 | 11-21 03:08:34 | 03:08:34 | 03:24:52 | 16.3 | 0 | 0.63 1.02 1.15 | 17.38 16.55 11.55 | clean; end check clear | the judges' verdict PASS |
+| L3a | 69bd7993 | 11-21 03:24:56 | 03:28:17 | 04:00:22 | 32.1 | 1 | 0.88 8.51 9.33 | 16.86 17.05 16.17 | unclean: pid 1718078 openbox; end check clear | **FAIL**: "chrome-text activate_window background (shipped): no 30 consecutive passing runs in 41" (below) |
+| L3b | 69bd7993 | 11-21 04:02:24 | 04:03:44 | 04:21:57 | 18.2 | 0 | 0.93 8.78 13.03 | 16.74 16.72 15.79 | unclean: pid 1769370 openbox; end check clear | complete (#302 listed apart: electron-input press_key 1 background, 3 desktop) |
+| L4a | 69bd7993 | 11-21 04:21:57 | 04:25:37 | 04:45:19 | 19.7 | 0 | 0.96 8.25 12.55 | 16.99 16.89 15.84 | clean; end check clear | no false ok, no missing landing; residue 0 (below) |
+| L4b | 69bd7993 | 11-21 04:45:25 | 04:48:46 | 05:02:38 | 13.9 | 0 | 0.85 8.49 12.67 | 17.44 16.81 15.37 | clean; end check clear | complete: no false ok, 0 of 300 landed drops unconfirmed. The `cua:accept` measurement lane's 6 false releases (3 answered ok) are listed apart, as at H: that lane does not ship |
+| L4c | 69bd7993 | 11-21 05:04:56 | 05:05:46 | 05:08:12 | 2.4 | 0 | 0.87 9.01 12.57 | 15.65 12.07 13.20 | clean; end check clear | PASS: every band at its minimum (below) |
 
 **What stands, and on which SHA.** Every other step stands on its record as above, for these reasons:
 
@@ -777,6 +785,48 @@ took and were answered as plain drags. T14's share is 0 of 25 landed drops answe
 In each one, the engine saw no take by its release (`hold.taken` false), and `late_dnd` was recorded with
 `escaped: true`.
 
+### L4c's bands (ruling 931), at twice the load
+
+| band | cells | drags | its outcome | minimum | late takes |
+|---|---|---:|---|---:|---:|
+| inside | freeze-600 | 10 | 9 landed after a take inside the hold | 7 | 0 |
+| edge | freeze-646, -648, -650, -652 | 20 | – | – | 2 |
+| past | freeze-700 | 10 | 10 answered the hold notice, with no drop and nothing sent after it | 7 | 0 |
+
+- 0 false ok and 0 unjudged.
+- The inside band's one drag that didn't land is freeze-600 #0.
+  - Chrome, thawed at 605 ms, made no take by press + 650. Its ping was unanswered at 397 ms.
+  - It answered ok with the hold notice, and nothing started on the page. That is honest.
+- **The two late takes, judged in full** (`late-takes-L4c.txt`):
+  - freeze-648 #1 and #4 were taken 0.7 and 2.3 ms after the release.
+  - Each answered with the hold notice, the read carried the late notice, and the next request was refused.
+  - The engine's Escape came 2.5 and 3.6 ms after the release, and nothing dropped.
+
+### L3a's failure (not rerun; ruling 950)
+
+From `L3a.pinned-release/run/results.jsonl`, the cell's settle-series and settle-run rows:
+- **The cell:** chrome-text `activate_window` background, the shipped lane, covered. It ran 41 runs with 2 misses,
+  both "late" (0 never, refused or invalid, 0 false ok). Its streak at the end was 0, so 30 in a row was never
+  reached.
+- Every other L3a cell, and every audit, passes.
+- **The two misses**, trials 24 and 40:
+  - The engine answered ok at 1.4 and 6.6 ms, after sending the activation at 6.2 and 5.0 ms.
+  - At the read after the 10 ms settle, the oracle found the window manager's `_NET_ACTIVE_WINDOW` not yet naming
+    the target (`wm: false`; action-settle.mjs `fromOracle`). For a Chromium page the oracle has no application
+    state, so its reading is the window manager's alone.
+  - The property named the target 94.2 and 91.3 ms late.
+  - The other 39 runs read it within the settle.
+- **The comparison:** at H (`fefe306c`, 0.4.0) the same cell was 30 of 30 with no miss. 0.4.2 changes only the drag
+  hold, the late-take watch, the ping and identification. activate_window's path and its 10 ms settle are as at M4.
+- **The shape** is the one declared for arm64 at twice the load (rulings 871, 872, 876; `tech-debt-tracker.md`):
+  `_NET_ACTIVE_WINDOW` lags the answer by about 85–108 ms while the X focus is already the target's. #429 is its fix.
+- **The load:** step start 0.88 8.51 9.33 and end 16.86 17.05 16.17, against fefe306c's 0.95 9.28 13.57 →
+  16.68 16.96 16.62.
+  - The host's sysstat shows steady stress, with no spike: ldavg-1 14.5–17.7 every 10 min, CPU %nice 97.8–98.0,
+    iowait and steal 0.
+  - The rows carry no per-trial time, so the two trials can't be placed against it.
+- **What follows:** the design session ruled a measurement, not a rerun (950): `a950/`, below.
+
 ### The hold canary (rulings 930, 932): x64 relative
 
 Each canary takes the plain control's largest warm wait, triples it, and floors the result at 5 ms. The table gives
@@ -800,11 +850,31 @@ The comparator's line: "CROSS-CHECK: SAME verdicts, cells, audits and the runs' 
 
 ### The judges' counts
 
-- **Ruling 830's zone-truth mismatches:** none in 320 drags of the window's cells, in each of H1 (idle) and H2 (window
-  load).
+- **Ruling 830's zone-truth mismatches:** none in 320 drags of the window's cells, in each of H1 (idle), H2 (window
+  load) and L4a (twice the load).
+- **L4a's residue** (827 3b): cua plain **0 of 100** and cua:handle plain **0 of 100**, against a bound of 2 each.
+  0 false oks.
 - **Ruling 838's H2-root unverified ends by answer:** cua:desktop root **0 ok** and 30 unconfirmed of 30; cua:handle
   root **0 ok** and 30 unconfirmed of 30. The ok count is zero, so there is no finding.
-- **#365's declared race:** 0 of 60 in each of H1 and H2.
+- **#365's declared race:** 0 of 60 in each of H1, H2 and L4a.
+- **The adaptive hold's identification (ruling 954; `ident-count.mjs`, `ident-count.txt`).** These are hold records
+  as the rows carry them (V5 carries each sample's twice).
+  - **0 unidentified anywhere.**
+  - V5 carries each sample's record twice (`hold` and `engine_stats.hold`), so its 99 Chrome drag samples give 198
+    records.
+    - 96 records (48 samples) are identified ("Google-chrome, role browser, application "Google Chrome", executable
+      chrome"). They cover chrome_drag_visible_path, chrome_drag_covered_dedicated, chrome_select_nudged,
+      chrome_dnd_short_in_front and chrome_dnd_short_pointer_outside_shared, and some of the inzone-out and
+      short-covered samples.
+    - 102 records are `adaptive: null`, with no identification recorded, because no adaptive hold ran for them (a
+      take on the path, or a route that holds nothing).
+  - C1 (freeze, idle) 40 of 40 identified, and L4c (freeze, twice the load) 40 of 40.
+  - K1, K2 and K3: 36, 36 and 20 identified, as "executable not visible here", since their engines are sandboxed as
+    in service (899).
+  - The twice-load steps' Chrome cells otherwise record no hold:
+    - L1, L2a, L3a: counted lanes without `--stats` (834);
+    - L4b: its `cua:accept` lane's 360 records `adaptive: null`, the take on the path;
+    - L4a and H1/H2: Electron, `adaptive: null`, never identified as a browser.
 
 ### V5 on `:0` (ruling 933's window; GO 939)
 
@@ -861,16 +931,18 @@ The comparator's line: "CROSS-CHECK: SAME verdicts, cells, audits and the runs' 
 | H1, H2 | **TAKEN**: entered 560 each, second_rest 0 and 5, and skipped, unsettled and settle_failed_activation_confirmed 0. These are class A by design: their Electron cells are where the settle decides, as at H⁗ (560 each) |
 | C1, K3 | not taken: all zero, final |
 | K1, K2 | unknown: 2 of 10 cua engines kept no counter, and those were sent no drag or handle. Every recorded one entered 0 |
+| L4a | **TAKEN**: entered 560, second_rest 11, the rest 0. Class A by design, its Electron cells, as H1 and H2 |
+| L4b, L4c | not taken: all zero, final |
 | D1, D2, L1, L2a, L2b | unknown: the counted lanes take no `--stats` (834) |
-| S1, S2 | unknown: their engines start through cua's service, which 843 excludes from the opt-in |
+| S1, S2, L3a, L3b | unknown: their engines start through cua's service, which 843 excludes from the opt-in |
 | V5 | unknown: 20 of 218 cua engines are without a counter (its audit engines, `stats: false`). Every recorded one entered 0 |
 
 No step outside class A reads taken.
 
 ### Scans before the commit
 
-- **Token-shaped strings:** `h6/scripts/scan-evidence.sh` over `h6/`, file names only: 314 files, 0 hits.
-- **Key codes** (rulings 874, 875): `privacy-scan.mjs` (task 109's) over `h6/`, 314 files, found 0 held-code rows and 0
+- **Token-shaped strings:** `h6/scripts/scan-evidence.sh` over `h6/`, file names only: 376 files, 0 hits.
+- **Key codes** (rulings 874, 875): `privacy-scan.mjs` (task 109's) over `h6/`, 376 files, found 0 held-code rows and 0
   raw minimized codes.
 - **Window titles** (ruling 863): **the live title half was not run on x64.** Its `:0` is the owner's display, and
   reading its windows' titles is a read of that display outside the GO (the controller's word, ruling 947).
@@ -879,8 +951,8 @@ No step outside class A reads taken.
   class, by, source, toolkit and the like), the quoted strings in error and notice sentences, and the double-quoted
   strings on plain-text lines that name a window.
 - Every value is one the harness set itself: its `cua171-…` windows, its scene pages' elements, its own instances'
-  classes and app names, and its labels. Over `h6/out/` and `h6/zero/` (251 files; `title-scan.txt`) that is 8855 of
-  8855, with 0 not its own. The owner's Chrome appears in the owner-check lines by class and geometry only, as at H⁗.
+  classes and app names, and its labels. Over `h6/out/` and `h6/zero/` (309 files; `title-scan.txt`) that is 14923 of
+  14923, with 0 not its own (8855 of 8855 at the first commit, before L3a–L4c). The owner's Chrome appears in the owner-check lines by class and geometry only, as at H⁗.
 - `h6/scripts/` holds task 123's own code and records from private displays only. There the scan's other hits are
   quoted strings in that code, and doctor's own device-mode words in item 9's transcript (`:1`).
 

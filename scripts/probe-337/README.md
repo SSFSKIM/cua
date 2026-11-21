@@ -756,3 +756,64 @@ No regression: nothing main kept is refused or changed by the fix.
     focused window in 11/20.
 - No row activated anything: the frontmost app stayed the person's in all 400. The app's AXFrontmost reads true after
   the fix's route 3 press, as after main's element click.
+
+
+## #458 qual 2: main aebd0eb45 against fix 67cf8b26 (one-pass restore), and the final head 2bd74c6e
+
+This is the same kit as "#458 qual", with three additions:
+- A key-window watch (tool.swift `watch` with `person`): the person's app's AXFocusedWindow and AXMainWindow are read
+  every 5 ms, from the click to 5 s after it. A row counts as transient when any read is not F1, and as end when the last
+  read is not F1.
+- Two Chrome `<select>`s on the page that a press may open nothing for: `empty` (no options) and `blocked` (its
+  mousedown cancelled by the page). These measure the cost of the 1.5 s menu wait on an unconfirmed answer.
+- Click ms: the wall time of the engine's click call.
+
+Kit 6c0906f1. All runs used Google Chrome 157.0.8103.79, macOS 26.7.2 and image 20261117.0516.1, with no setup failures,
+and every layout was read back as built:
+- main aebd0eb45584e41f33ee31ee4e15db7e2cbf7bcb (includes #456): https://github.com/SSFSKIM/cua/actions/runs/44936682259
+  (220 rows)
+- fix 67cf8b263eb1d0bb0ab9c5f0a3e9f0f06b9f7509: https://github.com/SSFSKIM/cua/actions/runs/44941888406 (220 rows)
+- final 2bd74c6e2d05591cb8ed82e8925ba5d61153693d, layouts a and c, font and select, 5 rows per cell:
+  https://github.com/SSFSKIM/cua/actions/runs/44947309728 (40 rows)
+- smoke on 67cf8b26: https://github.com/SSFSKIM/cua/actions/runs/44935707967 (22 rows)
+
+### Restore layouts (behind rows; the person's app Finder, F1 its focused window)
+
+| layout | head | order kept at 1.8 s | `restored` | key window off F1: transient / end | off ms p50/max | frontmost app | cover ms p50/max |
+|---|---|---|---|---|---|---|---|
+| a, shared-behind | main | 0/40 (select's menu keeps the app's window over F1; route 3 leaves F2 under) | - | 0 / 0 of 40 | - | Finder 40/40 | select 4771/4827, others 21–49/79 |
+| a, shared-behind | 67cf8b26 | 30/30 (+ combo 10/10, nothing raised) | complete 30, no `stopped`, `skipped` 0 | **8 / 0 of 30** (select 3, font 3, language 2) | 13–24 / 26 | Finder | 95–133/278 |
+| a, dedicated-behind | 67cf8b26 | 30/30 (+ combo 10/10) | complete 30 | **11 / 0 of 30** (select 6, font 4, language 1) | 21–26 / 34 | Finder | 105–115/188 |
+| b (Calculator above) | 67cf8b26 | **0/20** (Calculator left under the app's window) | complete false, `skipped` 1, 20/20 | 0 / 0 of 20 | - | Finder | 64–67/107 |
+| c (F1 > F2 > Calculator > F3) | 67cf8b26 | **0/20** (Calculator and F3 left under) | complete false, `skipped` 1, 20/20 | **19 / 0 of 20** | 26–32 / 38 | Finder | 109–185/246 |
+| d (F4 under the app's) | 67cf8b26 | 20/20 (F4 stays under) | complete 20 | 0 / 0 of 20 | - | Finder | 31–49/105 |
+| a, shared-behind | final 2bd74c6e | 10/10 | complete 10 | **3 / 0 of 10** | 25–26 / 26 | Finder | 121–138/177 |
+| a, dedicated-behind | final | 10/10 | complete 10 | **3 / 0 of 10** | 31–49 / 49 | Finder | 112–133/259 |
+| c | final | 0/10 | complete false, `skipped` 1, 10/10 | **7 / 0 of 10** | 15–20 / 28 | Finder | 127–132/166 |
+
+On main, b, c and d: select keeps the app's window over F1 for the whole watch (0/30 order). Font opens nothing, and
+route 3 puts F1 back but not Calculator, F2 or F3 (b 0/10, c 0/10, d 10/10). Main's key window never left F1 (0/220).
+
+None of the fix or final rows ended with the focused window off F1, but it was off F1 transiently in
+19/60 + 19/20 rows on 67cf8b26 and 13/30 on 2bd74c6e. Each time, AXFocusedWindow read the person's other raised window
+(F2 at (240, 480), or F3) for one or more 5 ms samples, 13–49 ms long, at 220–940 ms after the click. That is during the
+one-pass raise (back to front, F2 then F1). AXMainWindow read off F1 in one row only (67cf8b26, language
+dedicated-behind a, one sample, the transient counted above), and no read failed. `restored.ms` was
+329–385 p50/max on every layout. No `stopped` value was seen (`personInput`, `bound`, `unresolved`, `focusUnknown`,
+`focusRaiseFailed`: 0).
+
+### Delivery, parity, unconfirmed (main aebd0eb45 / fix 67cf8b26)
+
+| cell | main | fix |
+|---|---|---|
+| font, language, behind (both modes) | ok route 3, open 0/40 | confirmed, open 40/40, picks taken 40/40 |
+| select, behind | shared: open 10/10 (#282); dedicated: 0/10 | confirmed 20/20, open 20/20, picks taken (`clickUnconfirmed`, as on main) 20/20 |
+| combo arrow, behind | open 0/20 | confirmed (arrow) 20/20 |
+| all four, frontmost | open 40/40 | confirmed route 1, 40/40 |
+| `blocked` select (press accepted, no menu) | ok route 3, no menu, click 208/281 ms p50/max | `clickUnconfirmed` (AXPress unconfirmed) 10/10, no menu, click **1773/2015 ms** (`popUpClick.ms` 1506–1776): about **+1.57 s p50, +1.73 s max** |
+| `empty` select | ok route 3, no menu, 205/235 ms | the same: ok route 3, no `popUpClick` (not taken as a pop-up), 261/313 ms |
+| parity: Beta button, menu item (#454), combo text behind and front | ok route 3 / 1 / 3 / 3, 20/20 | identical, 20/20 |
+
+There were no false confirmed answers (0 on both fix heads) and no false unconfirmed answers (0: every unconfirmed row
+had no menu at 1.8 s). The late `<select>` open seen in the first qual did not recur (0/30 with the 1.5 s wait). There
+were no regressions, and the frontmost app stayed the person's in every row.

@@ -289,13 +289,15 @@ func pendingClickWait<Sample: Equatable>(_ ordering: ClickOrdering, pids: [pid_t
 }
 
 extension Engine {
-  /// `pendingClickWait` on `element`, read live, recorded in the meta.
-  func awaitPendingClick(on element: AXUIElement, pids: [pid_t], meta: inout InputMeta) {
-    guard let pid = pids.first else { return }
+  /// `pendingClickWait` on `element`, read live, recorded in the meta; whether it waited.
+  @discardableResult
+  func awaitPendingClick(on element: AXUIElement, pids: [pid_t], meta: inout InputMeta) -> Bool {
+    guard let pid = pids.first else { return false }
     let wait = signposted("clickOrdering.wait") {
       pendingClickWait(clickOrdering, pids: pids, read: { liveElementRangeRead(element, pid: pid) }, now: monotonicMilliseconds,
                        sleep: { usleep(UInt32(max(0, $0) * 1000)) })
     }
     if let wait { meta.pendingClick = PendingClickRecord(wait: wait) }
+    return wait != nil
   }
 }

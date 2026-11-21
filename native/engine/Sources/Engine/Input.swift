@@ -594,8 +594,9 @@ extension Engine {
         }
         if pointer.view.mayBeWebArea, let hit = pointerHit {
           // A kept point's element route presses only the node or its control, the guard run again after any wait.
-          let gate = StalePointGate(first: stale.verdict, record: stale.record) { [self] in
-            stalePointRecheck(at: placed.point, shift: stale.shift, window: placed.window, appPid: appPid, app: app, context: context)
+          let gate = StalePointGate(first: stale.verdict, record: stale.record, app: app.displayName) { [self] in
+            stalePointRecheck(at: placed.point, shift: stale.shift, window: placed.window, windowID: windowID, appPid: appPid, app: app,
+                              context: context)
           }
           pointer.elementRoute = webAreaPress(hit, button: button, count: count, point: placed.point, windowID: windowID, app: app,
                                               appPid: appPid, guarding: guarding, context: context, stalePoint: gate)

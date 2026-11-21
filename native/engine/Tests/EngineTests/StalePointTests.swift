@@ -535,9 +535,9 @@ final class StalePointTests: XCTestCase {
     let first = verdict(nodes, at: point, hit: item)
     XCTAssertFalse(first.refused)
     var clock: Double = 0
-    let gate = StalePointGate(first: first, firstMs: 1.5) { () -> StalePointVerdict<Node> in
+    let gate = StalePointGate(first: first, firstMs: 1.5) { () -> StalePointRecheck<Node> in
       clock += 0.75
-      return verdict(nodes, at: point, hit: item)
+      return StalePointRecheck(verdict(nodes, at: point, hit: item))
     }
     let before = gate.check(item, waited: false, now: { clock }, reads: reads)
     XCTAssertNil(before.refusal, "no wait: the first verdict")
@@ -583,7 +583,7 @@ final class StalePointTests: XCTestCase {
       return XCTFail("no control")
     }
     XCTAssertTrue(control.control === again, "the route presses the recovered button")
-    let gate = StalePointGate(first: verdict, firstMs: 0) { verdict }
+    let gate = StalePointGate(first: verdict, firstMs: 0) { StalePointRecheck(verdict) }
     XCTAssertNil(gate.check(control.control, waited: false, now: { 0 }, reads: reads).refusal)
     if case .recovered = stalePointRouteHit(again, verdict, same: { $0 === $1 }) { XCTFail("the same hit is unchanged") }
   }
@@ -598,7 +598,7 @@ final class StalePointTests: XCTestCase {
     window.add(item)
     let nodes = recorded(window)
     let point = CGPoint(x: 50, y: 25)
-    let gate = StalePointGate(first: verdict(nodes, at: point, hit: item), firstMs: 1) { verdict(nodes, at: point, hit: item) }
+    let gate = StalePointGate(first: verdict(nodes, at: point, hit: item), firstMs: 1) { StalePointRecheck(verdict(nodes, at: point, hit: item)) }
     XCTAssertNil(gate.check(item, waited: false, now: { 0 }, reads: reads).refusal, "the early check passes")
     var steps: [String] = []
     var record: StalePointRecord?
@@ -1083,7 +1083,7 @@ final class RecordedHitTests: XCTestCase {
     let pressed = stalePointPressVerdict(page.textArea, first, reads: reads)
     XCTAssertEqual(pressed.reason, .recordedHit)
     XCTAssertFalse(pressed.refused)
-    let gate = StalePointGate(first: first, firstMs: 0.5) { verdict(nodes, at: self.codePoint, hit: page.textArea) }
+    let gate = StalePointGate(first: first, firstMs: 0.5) { StalePointRecheck(verdict(nodes, at: self.codePoint, hit: page.textArea)) }
     let checked = gate.check(page.textArea, waited: true, now: { 0 }, reads: reads)
     XCTAssertNil(checked.refusal)
     XCTAssertEqual(checked.record.wire["reason"] as? String, "recordedHit", "after the route's wait, the recheck's reading")
@@ -1542,6 +1542,254 @@ final class AppWindowOverPointTests: XCTestCase {
   }
 }
 
+// MARK: #456: the element route's recheck after its wait runs #452's rule on its own fresh hit-test
+
+final class RecheckAppWindowOverPointTests: XCTestCase {
+  private let app: pid_t = 990_031
+  /// #337's measurement again: the browser window 28, the omnibox popup 49 over it, the row at (728, 136), here over a
+  /// page button the screenshot showed (nothing of the app's over it then, so the first check kept the point).
+  private let browser = ListedWindow(number: 28, owner: 990_031, layer: 0, bounds: CGRect(x: 400, y: 31, width: 620, height: 678))
+  private let popup = ListedWindow(number: 49, owner: 990_031, layer: 0, bounds: CGRect(x: 499, y: 56, width: 458, height: 218))
+  private let row = CGPoint(x: 728, y: 136)
+
+  /// The app's AX tree: the browser window holding the page's button at the row, and the popup's window with its row.
+  private final class Scene {
+    let application = Node("AXApplication", nil)
+    let window = Node("AXWindow", CGRect(x: 400, y: 31, width: 620, height: 678))
+    let button = Node("AXButton", CGRect(x: 600, y: 120, width: 260, height: 32), title: "Search")
+    let popupWindow = Node("AXWindow", CGRect(x: 499, y: 56, width: 458, height: 218))
+    let suggestion = Node("AXStaticText", CGRect(x: 510, y: 120, width: 430, height: 32), value: "cua")
+    /// TextEdit's colour-well popover as AX folds it into the observed window's tree (#452's (b)).
+    let popover = Node("AXPopover", CGRect(x: 650, y: 100, width: 160, height: 120))
+    let swatch = Node("AXButton", CGRect(x: 700, y: 120, width: 40, height: 40), description: "Red")
+    init() {
+      window.add(button)
+      application.add(window)
+      popupWindow.add(suggestion)
+      application.add(popupWindow)
+      popover.add(swatch)
+    }
+  }
+
+  /// The element route's gate over `scene`: the first check kept the button, and the recheck after the wait hit-tests the
+  /// row again (`windowHit`, timed by a fake clock, each hit-test taking `hitTakes`) to whatever `answer` gives then,
+  /// with the window list `list` then (asked only when the recheck reads it).
+  private func gate(_ scene: Scene, answer: @escaping () -> Node?, list: @escaping () -> [ListedWindow],
+                    hitTakes: Double = 3) -> StalePointGate<Node> {
+    let nodes = recorded(scene.window)
+    let first = verdict(nodes, at: row, hit: scene.button)
+    XCTAssertEqual(first.reason, .sameElement, "the first check kept the point")
+    var firstRecord = StalePointRecord(first, ms: 1)
+    firstRecord.hitMs = 2
+    return StalePointGate(first: first, record: firstRecord, app: "Google Chrome") { [row, app] in
+      var clock = 0.0
+      let hit = windowHit(application: scene.application, window: scene.window, at: row, elementAt: { root, _ in
+        clock += hitTakes
+        let answered = answer()
+        return root === scene.application ? (answered == nil ? .noValue : .success, answered) : (.illegalArgument, nil)
+      }, role: { $0.role }, parent: { $0.parent }, same: { $0 === $1 },
+         number: { window, _ in window === scene.popupWindow ? 49 : nil }, now: { clock })
+      let rechecked = recheckedPointVerdict(at: row, hit: hit, target: 28, pid: app, windows: list) {
+        verdict(nodes, at: row, hit: $0)
+      }
+      return StalePointRecheck(rechecked, hitMs: hit.ms)
+    }
+  }
+
+  /// The route as `webAreaPress` runs it: the early check after its action re-read wait, then the final check after the
+  /// focus hold, then the press. Answers the steps taken and the last record, or the refusal thrown.
+  private func press(_ gate: StalePointGate<Node>, _ pressed: Node, hold: Bool = false)
+    -> (steps: [String], record: StalePointRecord?, refusal: EngineError?) {
+    var steps: [String] = []
+    var record: StalePointRecord?
+    do {
+      let early = gate.check(pressed, waited: true, now: { 0 }, reads: reads)
+      record = early.record
+      if let refusal = early.refusal { throw refusal }
+      try pressAfterFinalCheck(holds: hold, hold: { steps.append("hold") }, finalCheck: { afterHold in
+        guard afterHold else { return }
+        let checked = gate.check(pressed, waited: true, afterActivation: true, now: { 0 }, reads: reads)
+        record = checked.record
+        if let refusal = checked.refusal { throw refusal }
+      }, perform: { steps.append("press") })
+      return (steps, record, nil)
+    } catch {
+      return (steps, record, error as? EngineError)
+    }
+  }
+
+  /// The omnibox popup opens over the point during the route's wait: the recheck's hit-test answers in its window, which
+  /// covers the point in the list, and the route is refused with #452's sentence and meta, nothing pressed; the same
+  /// when it opens during the focus hold, the sentence then saying the activation ran.
+  func testAPopupThatOpensDuringTheWaitIsRefusedWithNothingPressed() {
+    let scene = Scene()
+    let refused = press(gate(scene, answer: { scene.suggestion }, list: { [self.popup, self.browser] }), scene.button)
+    XCTAssertEqual(refused.steps, [], "nothing pressed")
+    XCTAssertEqual(refused.refusal?.errorName, "appWindowOverPoint")
+    XCTAssertEqual(refused.refusal?.message,
+                   "Google Chrome has a window of its own over the one the screenshot showed at this point (a suggestion list, popup or panel), and a click here would reach the window under it, not what the screenshot shows. Nothing was sent. Use keys instead (the arrow keys and Return for a suggestion list, Escape to close it), or call getAXState() and click an element it lists.")
+    XCTAssertEqual(refused.record?.wire["reason"] as? String, "appWindowOverPoint")
+    XCTAssertEqual(refused.record?.wire["by"] as? String, "axHit")
+    XCTAssertEqual(refused.record?.wire["overWindow"] as? Int, 49)
+    XCTAssertEqual(refused.record?.wire["hitMs"] as? Double, 3, "the recheck's own hit-test")
+    XCTAssertEqual(refused.record?.wire["rechecked"] as? Bool, true)
+
+    // Opened during the focus hold: the early check keeps, the final one refuses, nothing pressed.
+    var opened = false
+    var steps: [String] = []
+    let held = gate(scene, answer: { opened ? scene.suggestion : scene.button }, list: { opened ? [self.popup, self.browser] : [self.browser] })
+    XCTAssertNil(held.check(scene.button, waited: true, now: { 0 }, reads: reads).refusal, "the early check keeps")
+    XCTAssertThrowsError(try pressAfterFinalCheck(holds: true, hold: { steps.append("hold"); opened = true }, finalCheck: { afterHold in
+      let checked = held.check(scene.button, waited: afterHold, afterActivation: afterHold, now: { 0 }, reads: reads)
+      XCTAssertEqual(checked.record.wire["afterActivation"] as? Bool, true)
+      if let refusal = checked.refusal { throw refusal }
+    }, perform: { steps.append("press") })) {
+      XCTAssertEqual(($0 as? EngineError)?.errorName, "appWindowOverPoint")
+      XCTAssertEqual(($0 as? EngineError)?.message.contains("Google Chrome has a window of its own"), true)
+      XCTAssertEqual(($0 as? EngineError)?.message.contains("The app was activated in the background, but nothing was pressed."), true)
+    }
+    XCTAssertEqual(steps, ["hold"], "nothing pressed")
+  }
+
+  /// (b) on the recheck: a popover of the app's opened over the point during the wait (the hit under an AXPopover in the
+  /// observed window's tree, a window of the app's over the point in the list) is refused as `popover`.
+  func testAPopoverThatOpensDuringTheWaitIsRefused() {
+    let scene = Scene()
+    let over = ListedWindow(number: 51, owner: app, layer: 0, bounds: CGRect(x: 650, y: 100, width: 160, height: 120))
+    let routed = gate(scene, answer: { scene.swatch }, list: { [over, self.browser] })
+    scene.window.add(scene.popover)  // opened during the wait
+    let refused = press(routed, scene.button)
+    XCTAssertEqual(refused.steps, [])
+    XCTAssertEqual(refused.refusal?.errorName, "appWindowOverPoint")
+    XCTAssertEqual(refused.record?.wire["by"] as? String, "popover")
+    XCTAssertEqual(refused.record?.wire["overWindow"] as? Int, 51)
+  }
+
+  /// A popup that opened after the first check and is gone by the recheck: the hit is the button again, nothing of the
+  /// app's over the point, and the route presses it.
+  func testAPopupGoneByTheRecheckKeepsThePoint() {
+    let scene = Scene()
+    let kept = press(gate(scene, answer: { scene.button }, list: { [self.browser] }), scene.button)
+    XCTAssertNil(kept.refusal)
+    XCTAssertEqual(kept.steps, ["press"])
+    XCTAssertEqual(kept.record?.reason, .sameElement)
+  }
+
+  /// A click-through window of the app's over the point at the recheck (Chrome's status bubble, a tab hover card): the
+  /// hit answers the observed window's own button, so it keeps, the window list not even read.
+  func testAClickThroughWindowOverThePointKeeps() {
+    let scene = Scene()
+    let bubble = ListedWindow(number: 51, owner: app, layer: 0, bounds: CGRect(x: 700, y: 100, width: 100, height: 100))
+    var listReads = 0
+    let kept = press(gate(scene, answer: { scene.button }, list: { listReads += 1; return [bubble, self.browser] }), scene.button)
+    XCTAssertNil(kept.refusal)
+    XCTAssertEqual(kept.steps, ["press"])
+    XCTAssertEqual(kept.record?.reason, .sameElement)
+    XCTAssertEqual(listReads, 0)
+  }
+
+  /// A recheck hit-test past `pointHitSignalDeadlineMs` gives no signal: the popup's row answered late keeps main's
+  /// verdict (no hit in the observed window: `noHit`, the button still in place) and the route presses, where the same
+  /// answer in time refuses.
+  func testALateRecheckHitKeepsMainsVerdict() {
+    let scene = Scene()
+    let late = press(gate(scene, answer: { scene.suggestion }, list: { [self.popup, self.browser] }, hitTakes: pointHitSignalDeadlineMs + 1),
+                     scene.button)
+    XCTAssertNil(late.refusal)
+    XCTAssertEqual(late.steps, ["press"])
+    XCTAssertEqual(late.record?.reason, .noHit)
+    XCTAssertEqual(late.record?.wire["hitMs"] as? Double, pointHitSignalDeadlineMs + 1)
+    let inTime = press(gate(scene, answer: { scene.suggestion }, list: { [self.popup, self.browser] }, hitTakes: pointHitSignalDeadlineMs - 1),
+                       scene.button)
+    XCTAssertEqual(inTime.refusal?.errorName, "appWindowOverPoint")
+  }
+
+  /// An ordinary element-route click, nothing over the point: the recheck's verdict is the tree's on its hit, as before,
+  /// the window list never read, the record carrying none of #452's fields; and with no wait nothing is read again.
+  func testAnOrdinaryElementRouteClickIsUnchanged() {
+    let scene = Scene()
+    var listReads = 0
+    var hits = 0
+    let routed = gate(scene, answer: { hits += 1; return scene.button }, list: { listReads += 1; return [self.browser] })
+    let pressed = press(routed, scene.button, hold: true)
+    XCTAssertNil(pressed.refusal)
+    XCTAssertEqual(pressed.steps, ["hold", "press"])
+    XCTAssertEqual(hits, 2, "the early and the final check each hit-test again")
+    XCTAssertEqual(listReads, 0)
+    let record = pressed.record?.wire ?? [:]
+    XCTAssertEqual(record["reason"] as? String, "sameElement")
+    XCTAssertNil(record["by"])
+    XCTAssertNil(record["overWindow"])
+    XCTAssertEqual(verdict(recorded(scene.window), at: row, hit: scene.button).reason, pressed.record?.reason, "the tree's verdict")
+    hits = 0
+    XCTAssertNil(routed.check(scene.button, waited: false, now: { 0 }, reads: reads).refusal)
+    XCTAssertEqual(hits, 0, "no wait: nothing read again")
+  }
+
+  /// The review of edbfbd23..e1a01d42 (P2): a field route's first check follows #359's pending-click wait (up to
+  /// `pendingClickCapMs` after a recent pointer press to the app). A popup that opens during that wait, with no other
+  /// wait after it (the field's boxes already there; no focus hold), is refused there, nothing focused; with no pointer
+  /// press pending nothing waits, and the first verdict stands with no hit-test again.
+  func testAPopupThatOpensDuringThePendingClickWaitIsRefusedAtTheFieldsFirstCheck() {
+    let scene = Scene()
+    var opened = false
+    var hits = 0
+    let routed = gate(scene, answer: { hits += 1; return opened ? scene.suggestion : scene.button },
+                      list: { opened ? [self.popup, self.browser] : [self.browser] })
+    let ordering = ClickOrdering()
+    ordering.pointerPosted(pids: [app], at: 1_000)
+    var clock = 1_100.0
+    func pendingWait() -> Bool {
+      pendingClickWait(ordering, pids: [app], at: clock, read: { RangeRead.sample(NSRange(location: 3, length: 0)) },
+                       now: { clock }, sleep: { clock += $0; opened = true }) != nil
+    }
+    var focused = false
+    let checked = fieldRouteFirstCheck(scene.button, gate: routed, awaitPendingClick: pendingWait, now: { 0 }, reads: reads)
+    if checked?.refusal == nil { focused = true }
+    XCTAssertTrue(opened, "the popup opened during the pending-click wait")
+    XCTAssertFalse(focused, "nothing focused")
+    XCTAssertEqual(checked?.refusal?.errorName, "appWindowOverPoint")
+    XCTAssertEqual(checked?.record.wire["by"] as? String, "axHit")
+    XCTAssertEqual(checked?.record.wire["rechecked"] as? Bool, true)
+    XCTAssertEqual(hits, 1)
+
+    // No pointer press pending: no wait, the first verdict, nothing hit-tested again.
+    (opened, hits, clock) = (false, 0, 5_000)
+    let idle = fieldRouteFirstCheck(scene.button, gate: routed, awaitPendingClick: pendingWait, now: { 0 }, reads: reads)
+    XCTAssertNil(idle?.refusal)
+    XCTAssertEqual(idle?.record.rechecked, false)
+    XCTAssertEqual(hits, 0)
+    XCTAssertNil(fieldRouteFirstCheck(scene.button, gate: nil, awaitPendingClick: { true }, now: { 0 }, reads: reads), "no gate")
+  }
+
+  /// The review of edbfbd23..e1a01d42 (P2): an early recheck after the action wait, then a final one after the focus
+  /// hold. The final record, which replaces the early one in the meta, carries the time and window-list reads of all
+  /// three checks, and the final recheck's hit-test time.
+  func testTheFinalRecordAddsUpEveryChecksCosts() {
+    let scene = Scene()
+    let nodes = recorded(scene.window)
+    let first = verdict(nodes, at: row, hit: scene.button)
+    var firstRecord = StalePointRecord(first, ms: 1)
+    (firstRecord.windowsMs, firstRecord.hitMs) = (0.5, 2)
+    var clock = 0.0
+    var rechecks: [(takes: Double, windowsMs: Double, hitMs: Double)] = [(0.5, 0.25, 3), (0.25, 0.125, 4)]
+    let routed = StalePointGate(first: first, record: firstRecord, app: "Google Chrome") { [row] in
+      let next = rechecks.removeFirst()
+      clock += next.takes
+      return StalePointRecheck(verdict(nodes, at: row, hit: scene.button), hitMs: next.hitMs, windowsMs: next.windowsMs)
+    }
+    let early = routed.check(scene.button, waited: true, now: { clock }, reads: reads).record
+    XCTAssertEqual(early.ms, 1.5)
+    XCTAssertEqual(early.windowsMs, 0.75)
+    XCTAssertEqual(early.hitMs, 3)
+    let final = routed.check(scene.button, waited: true, afterActivation: true, now: { clock }, reads: reads).record
+    XCTAssertEqual(final.ms, 1.75, "all three checks' time")
+    XCTAssertEqual(final.windowsMs, 0.875, "all three checks' window-list reads")
+    XCTAssertEqual(final.hitMs, 4, "the final recheck's hit-test")
+    XCTAssertEqual(final.wire["afterActivation"] as? Bool, true)
+  }
+}
+
 // MARK: #316's rule G: the hit in the document the screenshot showed (the design session's ruling 4701abd8)
 
 final class WebAreaGuardTests: XCTestCase {
@@ -1669,13 +1917,16 @@ final class WebAreaGuardTests: XCTestCase {
     var firstRecord = StalePointRecord(first, ms: 1.25)
     firstRecord.windowsMs = 0.4
     firstRecord.hitMs = 2.5  // #452's hit-test time (the review of 023a3bee, P2)
-    let gate = StalePointGate(first: first, record: firstRecord) { verdict(partial, at: self.payPoint, hit: browser.pay) }
+    // #456: the recheck's own hit-test time, and its window-list read added to the first's.
+    let gate = StalePointGate(first: first, record: firstRecord) {
+      StalePointRecheck(verdict(partial, at: self.payPoint, hit: browser.pay), hitMs: 1.5, windowsMs: 0.25)
+    }
     for waited in [false, true] {
       let checked = gate.check(browser.pay, waited: waited, now: { 0 }, reads: reads)
       XCTAssertNil(checked.refusal)
       XCTAssertEqual(checked.record.reason, .unrecordedDescendant, "the press verdict rebuilt: the button inside the iframe group")
-      XCTAssertEqual(checked.record.wire["windowsMs"] as? Double, 0.4, "waited: \(waited)")
-      XCTAssertEqual(checked.record.wire["hitMs"] as? Double, 2.5, "waited: \(waited)")
+      XCTAssertEqual(checked.record.wire["windowsMs"] as? Double, waited ? 0.65 : 0.4, "waited: \(waited)")
+      XCTAssertEqual(checked.record.wire["hitMs"] as? Double, waited ? 1.5 : 2.5, "waited: \(waited)")
       XCTAssertEqual(checked.record.wire["webAreaReads"] as? Int, 3, "waited: \(waited)")
       XCTAssertEqual(checked.record.ms, 1.25)
     }
@@ -2313,7 +2564,7 @@ final class RelabelledGuardTests: XCTestCase {
     // After an element route's wait, the recheck refuses with the label read then.
     let item = Node("AXButton", nil, title: "Follow")
     let itemNodes = recorded(windowHolding(item))
-    let gate = StalePointGate(first: verdict(itemNodes, at: point, hit: item), firstMs: 1) { [point] in verdict(itemNodes, at: point, hit: item) }
+    let gate = StalePointGate(first: verdict(itemNodes, at: point, hit: item), firstMs: 1) { [point] in StalePointRecheck(verdict(itemNodes, at: point, hit: item)) }
     item.title = "Following"
     let checked = gate.check(item, waited: true, now: { 0 }, reads: reads)
     XCTAssertEqual(checked.record.reason, .relabelled)

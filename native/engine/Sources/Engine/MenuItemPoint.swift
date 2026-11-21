@@ -29,7 +29,7 @@ let menuItemSampleMs: Double = 20
 /// The controls whose value shows the item their menu took: a pop-up button (AppKit's, the AXMenu's parent) and Chrome's
 /// `<select>`, a pop-up button or combo box that has the app's focus as its parentless menu is open.
 let menuOpenerRoles: Set<String> = ["AXPopUpButton", "AXComboBox"]
-/// The most recorded controls a parentless menu's control is looked for among (each costs its children's reads).
+/// The most recorded controls a parentless menu's control is looked for among; with more, the search answers unknown.
 let menuOpenerCandidateLimit = 32
 
 /// The reads #454 makes (the unit tests' seams; `.live` over the Accessibility API).
@@ -95,8 +95,8 @@ enum MenuItemRefusal: String, Equatable {
   case notRecorded
   /// The observation recorded an item at the point, and the hit-test answers no item of an open menu there.
   case notHit
-  /// The hit-test answers an item of an open menu, and the observation recorded no menu item at the point at all: the
-  /// screenshot does not show this menu (a menu-bar menu, a submenu, a menu opened since; #454's qualification).
+  /// The hit-test answers an item of an open menu, and the observation recorded no menu item at the point at all (a
+  /// menu-bar menu, a submenu, a menu opened since; #454's qualification; or the walk's limits).
   case unobserved
   /// The recorded item, its handle the same, reads another title than the observation recorded (a dynamic menu that
   /// reused the item for another command).
@@ -153,17 +153,25 @@ func recordedMenuItem<Element>(_ verdict: StalePointVerdict<Element>) -> Recorde
   return nil
 }
 
-/// Every menu item the observation recorded at the point: `recordedMenuItem`'s first, then each recorded AXMenuItem
-/// whose shown frame holds the point in the screenshot's space, deepest first. The deepest recorded node at a point is
-/// not always the menu's item: #454's qualification (run 44860009214, `select-same`) found Chrome's already-selected
-/// option over the page's own AXPopUpButton, which is deeper in the walk and acts, so neither the node nor #433's control
-/// beneath it is the item, though the record holds it there.
-func recordedMenuItems<Element>(_ verdict: StalePointVerdict<Element>) -> [RecordedMenuItem<Element>] {
-  var found = recordedMenuItem(verdict).map { [$0] } ?? []
+/// The menu items the observation recorded at a point: the one identified (`identified`), and every recorded AXMenuItem
+/// whose shown frame holds the point in the screenshot's space (`holding`). The identified one is `recordedMenuItem`'s
+/// when it names one; only when it names none (a node of another role won the stale-point check), the one recorded item
+/// holding the point, if exactly one does (#454's qualification, run 44860009214, `select-same`: Chrome's
+/// already-selected option over the page's own AXPopUpButton, which is deeper in the walk and acts, so neither the node
+/// nor #433's control beneath it is the item). Two holding it (a shared edge, rows shifted since) identify none (the
+/// review of c83ed846..74c99b92, item 1).
+struct RecordedMenuItems<Element> {
+  var identified: RecordedMenuItem<Element>?
+  var holding: [RecordedMenuItem<Element>] = []
+}
+
+func recordedMenuItems<Element>(_ verdict: StalePointVerdict<Element>) -> RecordedMenuItems<Element> {
+  var found = RecordedMenuItems(identified: recordedMenuItem(verdict))
   guard let point = verdict.point else { return found }
   let shown = CGPoint(x: point.x - verdict.windowShift.dx, y: point.y - verdict.windowShift.dy)
-  let items = verdict.nodes.filter { $0.role == kAXMenuItemRole && $0.shown.map { holdsPoint($0, shown) } == true }
-  found += items.sorted { $0.depth > $1.depth }.map { RecordedMenuItem(element: $0.element, title: $0.title) }
+  found.holding = verdict.nodes.filter { $0.role == kAXMenuItemRole && $0.shown.map { holdsPoint($0, shown) } == true }
+    .map { RecordedMenuItem(element: $0.element, title: $0.title) }
+  if found.identified == nil, found.holding.count == 1 { found.identified = found.holding[0] }
   return found
 }
 
@@ -208,21 +216,22 @@ func sameMenuTitle(recorded: String?, live: MenuTextRead) -> Bool {
 /// #454's decision (design ruling 946): `hit` is what the app's hit-test answered at the point whatever window its chain
 /// reads to (`WindowHit.answered` of the hit-test the guard judged; nil when it answered nothing or late, which keeps
 /// main's path), `recorded` the items the observation recorded there (`recordedMenuItems`), which agree with the hit
-/// when one of them is its handle. The menu window (`menuWindow`, the window list) is read only when one of them names a
-/// menu item outside a web page, so no other click reads it.
-func menuItemPoint<Element>(hit: Element?, recorded: [RecordedMenuItem<Element>], reads: MenuItemReads<Element>,
+/// when the identified one is its handle. The menu window (`menuWindow`, the window list) is read only when one of them
+/// names a menu item outside a web page, so no other click reads it.
+func menuItemPoint<Element>(hit: Element?, recorded: RecordedMenuItems<Element>, reads: MenuItemReads<Element>,
                             menuWindow: () -> CGWindowID?) -> MenuItemPoint<Element> {
   guard let hit else { return .notMenu }
   let hitMenu = reads.role(hit) == kAXMenuItemRole ? reads.parent(hit).flatMap { reads.role($0) == kAXMenuRole ? $0 : nil } : nil
   // A page's own (ARIA) menu is main's, unless the record holds a native item at the point (the re-review's item 3:
   // a page item answered under a native menu window still open over it is not what the screenshot showed).
   let nativeMenu = hitMenu.flatMap { inWebArea($0, reads: reads) ? nil : $0 }
-  let nativeRecords = recorded.filter { !inWebArea($0.element, reads: reads) }
-  guard nativeMenu != nil || !nativeRecords.isEmpty else { return .notMenu }
+  let identified = recorded.identified.flatMap { inWebArea($0.element, reads: reads) ? nil : $0 }
+  let anyNative = identified != nil || recorded.holding.contains { !inWebArea($0.element, reads: reads) }
+  guard nativeMenu != nil || anyNative else { return .notMenu }
   guard let window = menuWindow() else { return .notMenu }
   guard let menu = nativeMenu else { return .refuse(.notHit, window: window) }
-  guard !nativeRecords.isEmpty else { return .refuse(.unobserved, window: window) }
-  guard let recorded = nativeRecords.first(where: { reads.same($0.element, hit) }) else { return .refuse(.notRecorded, window: window) }
+  guard anyNative else { return .refuse(.unobserved, window: window) }
+  guard let recorded = identified, reads.same(recorded.element, hit) else { return .refuse(.notRecorded, window: window) }
   let title = reads.title(hit)
   guard sameMenuTitle(recorded: recorded.title, live: title) else { return .refuse(.relabelled, window: window) }
   guard reads.enabled(hit) == true else { return .refuse(.disabled, window: window) }
@@ -296,7 +305,16 @@ func deliverMenuItem<Element>(_ target: MenuItemTarget<Element>, app: String, re
   }
   let title = target.title
   let parent = reads.parent(target.menu)
-  let control = parent != nil ? opener(parent) : parentlessMenuOpener(target.menu, candidates: openers, reads: reads) ?? opener(reads.focused())
+  let control: Element?
+  if parent != nil {
+    control = opener(parent)
+  } else {
+    switch parentlessMenuOpener(target.menu, candidates: openers, reads: reads, now: now) {
+    case .found(let found): control = found
+    case .none: control = opener(reads.focused())
+    case .unknown: control = nil
+    }
+  }
   // The selection's attribute is chosen once, before the action: AXValue when it reads, AXTitle only where the value is
   // absent; a failed read chooses none, so it gives no evidence. After the action the same attribute is read.
   let source: ((Element) -> MenuTextRead)?
@@ -342,24 +360,55 @@ func deliverMenuItem<Element>(_ target: MenuItemTarget<Element>, app: String, re
   throw menuItemUnconfirmed(app: app, action: target.action, closed: record.closed == true)
 }
 
+/// The time the search for a parentless menu's control may take before the action (each candidate's reads are AX
+/// round trips): past it, the evidence is incomplete.
+let menuOpenerBudgetMs: Double = 100
+
+/// What the search for a parentless menu's control found: the control, none among complete evidence (the focused
+/// element may still be it), or no answer (`unknown`: two matches, a read that failed, the candidates capped, or the
+/// budget spent), which leaves the click unconfirmed (the review of c83ed846..74c99b92, items 2 and 3).
+enum MenuOpenerSearch<Element> {
+  case found(Element)
+  case none
+  case unknown
+}
+
 /// The page control a menu with no parent belongs to (#454's qualification, run 44860009214: Chrome's `<select>` menu is
 /// an app-level AXMenu, and the page's AXPopUpButton, the one control whose value shows the option taken, keeps its own
 /// AXMenu child listing the same options while the focus is elsewhere): among the recorded controls of a
-/// `menuOpenerRoles` role (`candidates`, the observation's), the one whose own AXMenu child lists the menu's item titles,
-/// in order; nil when none does, when more than one does (two selects with the same options), or a read fails.
-func parentlessMenuOpener<Element>(_ menu: Element, candidates: [Element], reads: MenuItemReads<Element>) -> Element? {
+/// `menuOpenerRoles` role (`candidates`, the observation's, at most `menuOpenerCandidateLimit`), the one whose own AXMenu
+/// child lists the menu's item titles, in order. Only complete evidence answers: every candidate read, within
+/// `menuOpenerBudgetMs` on `now`; a second match ends the search as unknown.
+func parentlessMenuOpener<Element>(_ menu: Element, candidates: [Element], reads: MenuItemReads<Element>,
+                                   now: () -> Double = { 0 }, budgetMs: Double = menuOpenerBudgetMs) -> MenuOpenerSearch<Element> {
+  let started = now()
   func titles(_ menu: Element) -> [String]? {
     guard let items = reads.children(menu) else { return nil }
-    let read = items.filter { reads.role($0) == kAXMenuItemRole }.map { reads.title($0).text }
-    guard !read.isEmpty, read.allSatisfy({ $0 != nil }) else { return nil }
-    return read.compactMap { $0 }
+    var read: [String] = []
+    for item in items {
+      guard let role = reads.role(item) else { return nil }
+      guard role == kAXMenuItemRole else { continue }
+      guard let title = reads.title(item).text else { return nil }
+      read.append(title)
+    }
+    return read.isEmpty ? nil : read
   }
-  guard let shown = titles(menu) else { return nil }
-  let matching = candidates.filter { candidate in
-    guard reads.role(candidate).map(menuOpenerRoles.contains) == true, let children = reads.children(candidate) else { return false }
-    return children.contains { reads.role($0) == kAXMenuRole && titles($0) == shown }
+  guard candidates.count <= menuOpenerCandidateLimit, let shown = titles(menu) else { return .unknown }
+  var match: Element?
+  for candidate in candidates {
+    guard now() - started < budgetMs, let role = reads.role(candidate) else { return .unknown }
+    guard menuOpenerRoles.contains(role) else { continue }
+    guard let children = reads.children(candidate) else { return .unknown }
+    for child in children {
+      guard let childRole = reads.role(child) else { return .unknown }
+      guard childRole == kAXMenuRole else { continue }
+      guard let listed = titles(child) else { return .unknown }
+      guard listed == shown else { continue }
+      if match != nil { return .unknown }
+      match = candidate
+    }
   }
-  return matching.count == 1 ? matching[0] : nil
+  return match.map { .found($0) } ?? MenuOpenerSearch.none
 }
 
 /// #454's step in a coordinate click, after the stale-point guard kept the point and before anything is posted: the
@@ -371,7 +420,8 @@ func parentlessMenuOpener<Element>(_ menu: Element, candidates: [Element], reads
 /// delivery is set as the action is dispatched.
 func menuItemClick<Element>(_ decision: MenuItemPoint<Element>, app: String, reads: MenuItemReads<Element>,
                             menuWindowShown: (CGWindowID) -> Bool?, now: () -> Double, sleep: (Double) -> Void,
-                            openers: [Element] = [], prepareOwner: (Element) throws -> Void, checkInFlight: () throws -> Void,
+                            openers: [Element] = [], deadlinePassed: () -> Bool = { false }, prepareOwner: (Element) throws -> Void,
+                            checkInFlight: () throws -> Void,
                             announce: () -> Void = {},
                             perform: (Element, String) -> AXError, meta: inout InputMeta) throws -> Bool {
   switch decision {
@@ -385,6 +435,8 @@ func menuItemClick<Element>(_ decision: MenuItemPoint<Element>, app: String, rea
     var record = MenuItemClickRecord(menuWindow: target.window)
     defer { meta.menuItemClick = record }
     try deliverMenuItem(target, app: app, reads: reads, menuWindowShown: menuWindowShown, now: now, sleep: sleep, openers: openers, beforeDispatch: {
+      // The reads before the action (the control's search included) may have used the request's time up.
+      if deadlinePassed() { throw menuItemDeadlinePassed }
       try prepareOwner(target.item)
       try checkInFlight()
       announce()
@@ -403,7 +455,7 @@ func menuItemClick<Element>(_ decision: MenuItemPoint<Element>, app: String, rea
 func menuItemRefused(app: String, _ why: MenuItemRefusal) -> EngineError {
   if why == .unobserved {
     return EngineError(name: "appWindowOverPoint",
-      "\(app) has a menu open at this point that the screenshot does not show (a menu-bar menu, a submenu, or a menu opened since the screenshot), so the click cannot be checked against it. Nothing was sent. A click outside the menu closes it. To choose one of its items, call getAXState() and click the item it lists by its element; a menu-bar menu's items are listed once its title in the menu bar has been clicked by its element.")
+      "\(app) has a menu open at this point, and the accessibility record of the screenshot holds no item of it at this point (a menu-bar menu, a submenu, or a menu opened since the screenshot), so the click cannot be checked against what the screenshot showed. Nothing was sent. A click outside the menu closes it. If a fresh getAXState() lists the item (a menu-bar menu's items are listed once its title in the menu bar has been clicked by its element), click the item by its element.")
   }
   let cause: String
   switch why {
@@ -417,6 +469,10 @@ func menuItemRefused(app: String, _ why: MenuItemRefusal) -> EngineError {
   return EngineError(name: "appWindowOverPoint",
     "\(app) has a menu open at this point, which a click takes only as its item's own action, but \(cause). Nothing was sent. Use keys instead (the arrow keys to the item, then Return; Escape closes the menu), or call getAXState() and click the menu item it lists, by its element.")
 }
+
+/// The request's deadline passed before the menu item's action was sent (the review of c83ed846..74c99b92, item 3).
+let menuItemDeadlinePassed = EngineError(name: "timeoutReached",
+  "timeoutReached: the request's deadline passed before the menu item's action was sent. Nothing was sent.")
 
 /// #454's unconfirmed answer: the item's action was performed, but its effect was not seen within the settle.
 func menuItemUnconfirmed(app: String, action: String, closed: Bool) -> EngineError {

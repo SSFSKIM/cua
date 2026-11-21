@@ -578,7 +578,9 @@ extension Engine {
               onScreenWindowIDs().map { $0.contains(number) }  // nil when the list does not read: unknown, never closed
             }, now: monotonicMilliseconds, sleep: { usleep(UInt32(max(0, $0) * 1000)) },
               // A parentless menu's control is looked for among the recorded pop-ups and combo boxes (Chrome's `<select>`).
-              openers: stale.verdict.nodes.filter { menuOpenerRoles.contains($0.role) }.prefix(menuOpenerCandidateLimit).map(\.element),
+              // All of them: past `menuOpenerCandidateLimit` the search answers unknown, never a partial match.
+              openers: stale.verdict.nodes.filter { menuOpenerRoles.contains($0.role) }.map(\.element),
+              deadlinePassed: { unixMilliseconds() >= context.deadline },
               prepareOwner: { item in
               // The item's own process (a helper's menu can be served by another than main's bounded hit).
               let owner = ownerPid(of: item, fallback: appPid)

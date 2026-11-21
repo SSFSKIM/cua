@@ -21,6 +21,8 @@ final class MenuItemPointTests: XCTestCase {
     /// Its AXValue or AXTitle read fails now (a messaging timeout).
     var valueFails = false
     var titleFails = false
+    /// Its AXChildren read fails now.
+    var childrenFails = false
     weak var parent: Node?
     var children: [Node] = []
 
@@ -44,7 +46,7 @@ final class MenuItemPointTests: XCTestCase {
     MenuItemReads(role: { $0.role }, parent: { $0.parent }, enabled: { $0.enabled }, actions: { $0.actions },
                   title: { $0.titleFails ? .failed : $0.title.map { .text($0) } ?? .absent },
                   value: { $0.valueFails ? .failed : $0.value.map { .text($0) } ?? .absent }, focused: { [unowned self] in self.focused },
-                  children: { $0.children }, gone: { $0.gone }, same: { $0 === $1 })
+                  children: { $0.childrenFails ? nil : $0.children }, gone: { $0.gone }, same: { $0 === $1 })
   }
 
   private func observedWindow(_ number: CGWindowID = 28) -> ListedWindow {
@@ -80,7 +82,7 @@ final class MenuItemPointTests: XCTestCase {
   }
 
   private func decide(hit: Node?, record: RecordedMenuItem<Node>?, list: [ListedWindow]? = nil) -> MenuItemPoint<Node> {
-    menuItemPoint(hit: hit, recorded: record.map { [$0] } ?? [], reads: reads) {
+    menuItemPoint(hit: hit, recorded: RecordedMenuItems(identified: record, holding: record.map { [$0] } ?? []), reads: reads) {
       self.listReads += 1
       return menuWindowOverPoint(point, target: observed, pids: [app], list: list ?? [menuWindow, observedWindow()])?.number
     }
@@ -611,7 +613,7 @@ final class MenuItemPointTests: XCTestCase {
     var verdict = StalePointVerdict<Node>(reason: .noHit, node: popupNode, identity: .handle, current: chrome.popup, point: point)
     verdict.nodes = nodes
     XCTAssertNil(recordedMenuItem(verdict), "neither the node nor a control beneath it is the item")
-    XCTAssertTrue(recordedMenuItems(verdict).first?.element === chrome.one)
+    XCTAssertTrue(recordedMenuItems(verdict).identified?.element === chrome.one, "the one recorded item holding the point")
     guard case .deliver(let target) = menuItemPoint(hit: chrome.one, recorded: recordedMenuItems(verdict), reads: reads, menuWindow: { 44 }) else {
       return XCTFail("delivered")
     }
@@ -639,10 +641,11 @@ final class MenuItemPointTests: XCTestCase {
     let twin = Node("AXPopUpButton", value: "One")
     let twinMenu = Node("AXMenu", parent: twin)
     for title in ["One", "Two", "Three"] { _ = Node("AXMenuItem", title: title, parent: twinMenu) }
-    XCTAssertNil(parentlessMenuOpener(chrome.menu, candidates: [chrome.popup, twin], reads: reads))
-    XCTAssertTrue(parentlessMenuOpener(chrome.menu, candidates: [chrome.popup], reads: reads) === chrome.popup)
+    guard case .unknown = parentlessMenuOpener(chrome.menu, candidates: [chrome.popup, twin], reads: reads) else { return XCTFail("two: unknown") }
+    guard case .found(let found) = parentlessMenuOpener(chrome.menu, candidates: [chrome.popup], reads: reads) else { return XCTFail("found") }
+    XCTAssertTrue(found === chrome.popup)
     chrome.hidden.children.last?.title = "Four"
-    XCTAssertNil(parentlessMenuOpener(chrome.menu, candidates: [chrome.popup], reads: reads), "other options: not its menu")
+    guard case .none = parentlessMenuOpener(chrome.menu, candidates: [chrome.popup], reads: reads) else { return XCTFail("other options: not its menu") }
   }
 
   /// `menubar` and `submenu`: the observation lists no item of the menu at the point (the screenshot does not show it),
@@ -657,10 +660,81 @@ final class MenuItemPointTests: XCTestCase {
     }) { error in
       let error = error as? EngineError
       XCTAssertEqual(error?.errorName, "appWindowOverPoint")
-      XCTAssertEqual(error?.message, "TextEdit has a menu open at this point that the screenshot does not show (a menu-bar menu, a submenu, or a menu opened since the screenshot), so the click cannot be checked against it. Nothing was sent. A click outside the menu closes it. To choose one of its items, call getAXState() and click the item it lists by its element; a menu-bar menu's items are listed once its title in the menu bar has been clicked by its element.")
+      XCTAssertEqual(error?.message, "TextEdit has a menu open at this point, and the accessibility record of the screenshot holds no item of it at this point (a menu-bar menu, a submenu, or a menu opened since the screenshot), so the click cannot be checked against what the screenshot showed. Nothing was sent. A click outside the menu closes it. If a fresh getAXState() lists the item (a menu-bar menu's items are listed once its title in the menu bar has been clicked by its element), click the item by its element.")
     }
     XCTAssertEqual(wire(meta)?["refused"] as? String, "unobserved")
     XCTAssertNil(meta.startedAt)
+  }
+
+  // MARK: The review of c83ed846..74c99b92
+
+  /// Item 1: a recorded item the guard identified at the point stands: a neighbour row holding the point too (a shared
+  /// edge, rows shifted since) is not taken for it. Where a node of another role won, two recorded rows holding the
+  /// point identify none.
+  func testTheIdentifiedRowStandsAndTwoRowsHoldingThePointIdentifyNone() {
+    let scene = textEdit()
+    let nodes = [recordedNode(scene.helvetica, depth: 3), recordedNode(scene.times, depth: 3)]  // both frames hold the point
+    var verdict = StalePointVerdict<Node>(reason: .sameElement, node: nodes[1], identity: .handle, current: scene.times, point: point)
+    verdict.nodes = nodes
+    let recorded = recordedMenuItems(verdict)
+    XCTAssertTrue(recorded.identified?.element === scene.times)
+    XCTAssertEqual(recorded.holding.count, 2)
+    guard case .refuse(.notRecorded, _) = menuItemPoint(hit: scene.helvetica, recorded: recorded, reads: reads, menuWindow: { 77 }) else {
+      return XCTFail("the neighbour row is not the identified one")
+    }
+    var popup = recordedNode(scene.popup, depth: 4)
+    popup.actionable = true
+    var overControl = StalePointVerdict<Node>(reason: .noHit, node: popup, identity: .handle, current: scene.popup, point: point)
+    overControl.nodes = nodes + [popup]
+    XCTAssertNil(recordedMenuItems(overControl).identified, "two rows hold the point")
+    guard case .refuse(.notRecorded, _) = menuItemPoint(hit: scene.times, recorded: recordedMenuItems(overControl), reads: reads, menuWindow: { 77 }) else {
+      return XCTFail("ambiguous: refused")
+    }
+  }
+
+  /// Item 2: only complete evidence names the control: with two pop-ups of the same options, the real one's AXChildren
+  /// failing to read leaves the other unproven (unknown, so the click is unconfirmed, no focus fallback), and more
+  /// candidates than the limit answer unknown too.
+  func testAnIncompleteSearchForTheControlNamesNone() {
+    let chrome = chromeSelect()
+    let twin = Node("AXPopUpButton", value: "One")
+    let twinMenu = Node("AXMenu", parent: twin)
+    for title in ["One", "Two", "Three"] { _ = Node("AXMenuItem", title: title, parent: twinMenu) }
+    chrome.popup.childrenFails = true
+    guard case .unknown = parentlessMenuOpener(chrome.menu, candidates: [chrome.popup, twin], reads: reads) else { return XCTFail("a read failed") }
+    focused = twin
+    guard case .deliver(let target) = decide(hit: chrome.three, recorded: chrome.three) else { return XCTFail("delivered") }
+    var meta = freshMeta()
+    var clock = 0.0
+    XCTAssertThrowsError(try menuItemClick(.deliver(target), app: "Google Chrome", reads: reads, menuWindowShown: { _ in false }, now: { clock },
+                                           sleep: { clock += $0 }, openers: [chrome.popup, twin], prepareOwner: { _ in }, checkInFlight: {},
+                                           perform: { _, _ in twin.value = "Three"; return .success }, meta: &meta))
+    XCTAssertEqual(wire(meta)?["value"] as? String, "unread", "neither the twin nor the focus confirms")
+    chrome.popup.childrenFails = false
+    let many = Array(repeating: Node("AXGroup"), count: menuOpenerCandidateLimit) + [chrome.popup]
+    guard case .unknown = parentlessMenuOpener(chrome.menu, candidates: many, reads: reads) else { return XCTFail("capped") }
+  }
+
+  /// Item 3: the search has a time budget, past which it is unknown; and a request whose deadline passed during the reads
+  /// before the action sends nothing (timeoutReached).
+  func testTheSearchHasABudgetAndThePassedDeadlineSendsNothing() {
+    let chrome = chromeSelect()
+    var clock = 0.0
+    let slow = MenuItemReads<Node>(role: { clock += 60; return $0.role }, parent: reads.parent, enabled: reads.enabled, actions: reads.actions,
+                                   title: reads.title, value: reads.value, focused: reads.focused, children: reads.children, gone: reads.gone,
+                                   same: reads.same)
+    guard case .unknown = parentlessMenuOpener(chrome.menu, candidates: [Node("AXComboBox"), Node("AXComboBox"), chrome.popup], reads: slow,
+                                               now: { clock }) else { return XCTFail("over budget") }
+    let scene = textEdit()
+    var meta = freshMeta()
+    var now = 0.0
+    XCTAssertThrowsError(try menuItemClick(decide(hit: scene.times, recorded: scene.times), app: "TextEdit", reads: reads, menuWindowShown: { _ in false },
+                                           now: { now }, sleep: { now += $0 }, deadlinePassed: { true }, prepareOwner: { _ in }, checkInFlight: {},
+                                           perform: { _, _ in XCTFail("nothing performed"); return .success }, meta: &meta)) { error in
+      XCTAssertEqual((error as? EngineError)?.errorName, "timeoutReached")
+    }
+    XCTAssertNil(meta.startedAt)
+    XCTAssertNil(wire(meta)?["delivery"])
   }
 }
 

@@ -4,10 +4,12 @@
 //
 // Each row: a re-set (the menu closed), one observation, the pop-up button's node in it, the kit's reads before (the
 // app's windows, the button's AXExpanded and focus, the app's AXFrontmost and focused element, the window order), one
-// route on the closed button, then the same reads at 300 ms and 1.8 s, the page's events and the frontmost app:
-//   button         the engine's coordinate click on the button's node (today's case)
-//   element        the engine's element click on the button's node (route 1), then a re-observation: does it list the
-//                  menu's items, does its screenshot hold the menu
+// route on the closed button, then the same reads at 300 ms and 1.8 s, the page's events and the frontmost app; a second
+// tool samples the window list every 10 ms through the action (`watch`: a menu that opens and closes at once):
+//   button         the engine's coordinate click on the button's node (today's case); button-2p the same forced to route
+//                  2' (spikeRoute: posted to the app with no activation, as the kit's `observed` post)
+//   element        the engine's element click on the button's node, then a re-observation: does it list the menu's
+//                  items, does its screenshot hold the menu; element-1 the same forced to route 1 (behind modes)
 //   element-item   `element`, then the engine's coordinate click on an item of the menu in the re-observation (#454's fix)
 //   keys:<k>       the kit writes AXFocused on the button, then the engine's press_key <k> (space, Down);
 //                  keys:fka-<k> with Full Keyboard Access on (AppleKeyboardUIMode 2) for the relaunched app
@@ -165,10 +167,16 @@ async function connect(mode) {
   }
   throw new Error('engine did not listen');
 }
-const tool = spawn(TOOL, [], {stdio: ['pipe', 'pipe', 'inherit']});
-const waiting = [];
-createInterface({input: tool.stdout}).on('line', l => { try { waiting.shift()?.(JSON.parse(l)); } catch { waiting.shift()?.({error: 'bad answer'}); } });
-const ask = (o, timeout = 30_000) => new Promise(resolve => { const t = setTimeout(() => resolve({error: 'tool timeout'}), timeout); waiting.push(v => { clearTimeout(t); resolve(v); }); tool.stdin.write(JSON.stringify(o) + '\n'); });
+function toolProcess() {
+  const t = spawn(TOOL, [], {stdio: ['pipe', 'pipe', 'inherit']});
+  const waiting = [];
+  createInterface({input: t.stdout}).on('line', l => { try { waiting.shift()?.(JSON.parse(l)); } catch { waiting.shift()?.({error: 'bad answer'}); } });
+  const ask = (o, timeout = 30_000) => new Promise(resolve => { const k = setTimeout(() => resolve({error: 'tool timeout'}), timeout); waiting.push(v => { clearTimeout(k); resolve(v); }); t.stdin.write(JSON.stringify(o) + '\n'); });
+  return {t, ask};
+}
+const {t: tool, ask} = toolProcess();
+// A second tool, so the window list is sampled while the first one, or the engine, acts (`watch`).
+const {t: watcher, ask: askWatch} = toolProcess();
 
 // ---- shared steps -------------------------------------------------------------------------------------------------
 const errName = r => r?.error ? (r.error.data?.errorName ?? r.error.data?.name ?? r.error.errorName ?? r.error.name ?? r.error.code ?? 'error') : null;
@@ -234,10 +242,10 @@ const MENUS = {
     node: sky => sky.nodes.find(n => n.role === 'AXComboBox' && n.frame?.width > 4),
     at: f => ({x: f.x + f.width - 7, y: f.y + f.height / 2})},
 };
-const ROUTES = ['button', 'element', 'element-item', 'keys:space', 'keys:down', 'keys:fka-space',
+const ROUTES = ['button', 'button-2p', 'element', 'element-1', 'element-item', 'keys:space', 'keys:Down', 'keys:fka-space',
   'kit:axpress', 'kit:axshowmenu', 'kit:observed', 'kit:warpmove-observed', 'kit:hid'];
-const COMBO_ROUTES = new Set(['button', 'element', 'keys:space', 'kit:axpress', 'kit:axshowmenu', 'kit:hid']);
-const applies = (menu, route, mode) => (!route.startsWith('kit:') || mode.desktop === 'shared')
+const COMBO_ROUTES = new Set(['button', 'button-2p', 'element', 'element-item', 'keys:space', 'kit:axpress', 'kit:axshowmenu', 'kit:observed', 'kit:hid']);
+const applies = (menu, route, mode) => (!route.startsWith('kit:') || mode.desktop === 'shared') && (route !== 'element-1' || !mode.front)
   && (MENUS[menu].app !== 'chrome' || !route.includes('fka')) && (menu !== 'combo' || COMBO_ROUTES.has(route));
 const MODES = [
   {name: 'shared-behind', desktop: 'shared', front: false},
@@ -386,11 +394,14 @@ async function runRow(app, menuName, mode, route, rep) {
     const {px, screen} = toPixels(sky0, point);
     row.point = {px, screen};
     const mark0 = events.length;
+    const watchStart = Date.now();
+    const watching = askWatch({op: 'watch', pid, ms: 2500}, 10_000);
+    await sleep(30);
     const t0 = Date.now();
-    if (route === 'button') {
-      row.click = brief(await w.execute('click', {pid, x: px.x, y: px.y}));
-    } else if (route === 'element' || route === 'element-item') {
-      row.click = brief(await w.execute('click', {pid, element: n.token}));
+    if (route === 'button' || route === 'button-2p') {
+      row.click = brief(await w.execute('click', {pid, x: px.x, y: px.y, ...(route === 'button-2p' ? {spikeRoute: "2'"} : {})}));
+    } else if (route === 'element' || route === 'element-1' || route === 'element-item') {
+      row.click = brief(await w.execute('click', {pid, element: n.token, ...(route === 'element-1' ? {spikeRoute: '1'} : {})}));
     } else if (route.startsWith('keys:')) {
       const key = route.split(':')[1].replace(/^fka-/, '');
       row.focusWrite = await ask({op: 'open', pid, find: mn.find, action: 'focus'});
@@ -410,19 +421,24 @@ async function runRow(app, menuName, mode, route, rep) {
         win: [target.n, ...target.bounds], warp: /warp/.test(flag), move: /move/.test(flag)});
     }
     row.actMs = Date.now() - t0;
+    row.actAt = t0 - watchStart;
     await sleep(300);
     row.quick = await reads(pid, wf, beforeNs, false);
     await sleep(1500);
     row.after = await reads(pid, wf, beforeNs);
+    row.watch = await watching;
+    row.watch.actAt = row.actAt;
+    row.watch.actMs = row.actMs;
     const ev = events.slice(mark0);
     row.after.page = [...new Set(ev.filter(e => ['pointerdown', 'mousedown', 'click', 'focusin'].includes(e.type)).map(e => `${e.type}:${e.id}`))];
     row.after.changes = ev.filter(e => ['input', 'change'].includes(e.type)).map(e => `${e.type}:${e.id}=${e.value}`);
     if (rep <= SHOTS) sh('screencapture', ['-x', '-t', 'jpg', join(OUT, 'screens', `${fileName(lab)}.jpg`)]);
     const answer = row.click ? (row.click.error ? `refused:${row.click.error}` : 'ok') : row.kitAct ? `ax:${row.kitAct.result}` : row.kitPost ? 'posted' : '-';
-    row.opened = opened(row.after) ? 'opened' : row.quick.menuWindow ? 'opened-closed' : 'none';
+    const seen = (row.watch.samples ?? []).some(x => x[1] > 0);
+    row.opened = opened(row.after) ? 'opened' : seen || row.quick.menuWindow ? 'opened-closed' : 'none';
     row.activated = row.before.front !== row.after.front ? `${row.before.front}->${row.after.front}` : null;
     row.landing = `${answer}/${row.opened}`;
-    if (route === 'element' || route === 'element-item') {
+    if (route.startsWith('element')) {
       // Observable once open: the engine's next observation, its menu items and its screenshot.
       const sky1 = await observe(w, pid, `${lab}-reobs`);
       const items = (sky1.nodes ?? []).filter(x => x.role === 'AXMenuItem');
@@ -481,5 +497,5 @@ config.engineStderr = engineErr.slice(-4000);
 config.minutes = Math.round((Date.now() - STARTED) / 600) / 100;
 save();
 engine?.kill('SIGKILL');
-tool.stdin.end(); server.close();
+tool.stdin.end(); watcher.stdin.end(); server.close();
 process.exit(0);

@@ -38,6 +38,8 @@
 //   {"op":"state","pid"}                     the opener's value, AXExpanded, AXFocused, actions and its AXMenu children
 //       (frame, item count); the app's AXFrontmost, its focused element (and whether it is the opener), its focused
 //       window's frame; the on-screen layer-0 windows front to back (owner, pid, number), the top 6
+//   {"op":"watch","pid","ms"}                the window list sampled every 10 ms: each change of the app's menu-level
+//       windows and of the frontmost layer-0 window's owner (run on a second tool while the first or the engine acts)
 import AppKit
 import ApplicationServices
 import Foundation
@@ -696,6 +698,28 @@ func state(_ q: [String: Any]) -> [String: Any] {
   return out
 }
 
+/// {"op":"watch","pid","ms"}: the window list sampled every 10 ms for `ms`: each change of (the app's on-screen windows at
+/// layer >= 100 and at least 20 pt each way, the owner pid of the frontmost layer-0 window), as [ms since start, count, pid].
+func watch(_ q: [String: Any]) -> [String: Any] {
+  guard let pid = (q["pid"] as? NSNumber)?.int32Value else { return ["error": "args"] }
+  let ms = (q["ms"] as? NSNumber)?.doubleValue ?? 2000
+  let t0 = nowMs()
+  var samples: [[Any]] = [], last = "", reads = 0
+  while nowMs() - t0 < ms {
+    let list = (CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]) ?? []
+    reads += 1
+    let menus = list.filter { w in
+      let b = rectOf(w)
+      return ((w[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value ?? 0) == pid && ((w[kCGWindowLayer as String] as? NSNumber)?.intValue ?? 0) >= 100 && b.width >= 20 && b.height >= 20
+    }.count
+    let top = list.first { (($0[kCGWindowLayer as String] as? NSNumber)?.intValue ?? 0) == 0 }.flatMap { ($0[kCGWindowOwnerPID as String] as? NSNumber)?.intValue } ?? 0
+    let key = "\(menus)|\(top)"
+    if key != last { samples.append([r1(nowMs() - t0), menus, top]); last = key }
+    usleep(10_000)
+  }
+  return ["samples": samples, "reads": reads]
+}
+
 while let line = readLine() {
   guard let data = line.data(using: .utf8), let q = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { emit(["error": "bad request"]); continue }
   textWindowFrame = (q["window"] as? [Double]).flatMap { $0.count == 4 ? CGRect(x: $0[0], y: $0[1], width: $0[2], height: $0[3]) : nil }
@@ -720,6 +744,7 @@ while let line = readLine() {
   case "pressitem": emit(pressitem(q))
   case "select": emit(selectPhrase(q))
   case "state": emit(state(q))
+  case "watch": emit(watch(q))
   default: emit(["error": "unknown op"])
   }
 }

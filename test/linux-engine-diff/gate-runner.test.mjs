@@ -112,12 +112,12 @@ test("the coverage the gate names: T7 revised's shipped lane and stops, the sett
   assert.deepEqual([z0.families, z0.ops], [['firefox', 'writer'], ['dnd', 'select']]);
 });
 
-test("every drop-signals step is judged: T17's Electron cells by electronDropVerdict, Chrome's t14 and t14-late by chromeDropVerdict", () => {
+test("every drop-signals step is judged: T17's Electron cells by electronDropVerdict, Chrome's t14 and t14-late by chromeDropVerdict, L4d's parts each by its own", () => {
   const judges = Object.fromEntries(STEPS.filter((s) => s.args?.includes('drop-signals')).map((s) => {
     const parsed = parseArgs([...stepArgs(s, { paths: PATHS, gate: true }), '--out', '/o']);
     return [s.name, dropSignalsVerdict(parsed, [])?.judge ?? null];
   }));
-  assert.deepEqual(judges, { H1: 'electronDropVerdict', H2: 'electronDropVerdict', C1: 'chromeDropVerdict', K3: 'holdRegressionVerdict', L4a: 'electronDropVerdict', L4b: 'chromeDropVerdict', L4c: 'chromeDropVerdict' });
+  assert.deepEqual(judges, { H1: 'electronDropVerdict', H2: 'electronDropVerdict', C1: 'chromeDropVerdict', K3: 'holdRegressionVerdict', L4a: 'electronDropVerdict', L4b: 'chromeDropVerdict', L4c: 'chromeDropVerdict', L4d: 'partsVerdict' });
 });
 
 test("T19's predicates manifest is measured whole: every kind in a step of its own, the leave cases of every kind in P5, Firefox's drag and drop in P6", () => {

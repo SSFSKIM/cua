@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
 import { auditNothingSent, parseXtrace } from '../../scripts/linux-engine-diff/audit.mjs';
-import { DEVICE_OPS, DEVICE_SCENE_OPS, capabilitiesAnswer, scalePath, deviceSentence, dndCancelledSentence, dndLateNotice, dndLateRefusal, dndMayHaveDroppedSentence, dndUnconfirmedNotice, dndUnansweredNotice, dndUnansweredRefusal, dndUnconfirmedRefusal, firstDropRead, judgeDevice, strayNotice } from '../../scripts/linux-engine-diff/device.mjs';
+import { DEVICE_OPS, DEVICE_SCENE_OPS, DRAG_TARGET, capabilitiesAnswer, scalePath, deviceSentence, dndCancelledSentence, dndLateNotice, dndLateRefusal, dndMayHaveDroppedSentence, dndUnconfirmedNotice, dndUnansweredNotice, dndUnansweredRefusal, dndUnconfirmedRefusal, firstDropRead, judgeDevice, strayNotice } from '../../scripts/linux-engine-diff/device.mjs';
 import { allowPointer } from '../../scripts/linux-engine-diff/safety.mjs';
 import { OPS, SCENE_OPS } from '../../scripts/linux-engine-diff/ops.mjs';
 import { DEVIATIONS, DEVICE_REFUSAL, DND_REFUSAL, GECKO_POINTER_LEFT, GECKO_POINTER_REFUSALS, PENDING_REFUSAL, declaredRefusal } from '../../scripts/linux-engine-diff/deviations.mjs';
@@ -178,7 +179,7 @@ test('the in-front drop passes only where the engine recorded the window in fron
   assert.deepEqual(Object.keys(DEVICE_OPS).filter((op) => DEVICE_OPS[op].inFront), ['chrome_dnd_in_front_shared', 'chrome_dnd_short_in_front_shared', 'chrome_dnd_inzone_out_in_front_shared', 'chrome_dnd_long_left_in_front_shared', 'chrome_dnd_short_pointer_outside_shared', 'chrome_select_nudged_shared']);
   const good = row({ ok: true, effect: true, route: 'background', dnd: { in_front: true }, desktop_same: true, state_notice: null });
   const audit = { clean: true, kind: 'background', answered: [{ ok: true }] };
-  assert.deepEqual(judgeDevice('chrome_dnd_in_front_shared', [good], audit), { pass: true, reasons: [], drops: { samples: 1, landed: 1, ok: 1, false_ok: 0, unconfirmed_landed: 0 } });
+  assert.deepEqual(judgeDevice('chrome_dnd_in_front_shared', [good], audit), { pass: true, reasons: [], drops: { samples: 1, landed: 1, ok: 1, false_ok: 0, unconfirmed_landed: 0, stale_position: 0, ambiguous: 0 } });
   assert.equal(judgeDevice('chrome_dnd_in_front_shared', [{ ...good, dnd: { in_front: false } }], audit).pass, false, 'not the in-front path');
   assert.equal(judgeDevice('chrome_dnd_in_front_shared', [{ ...good, desktop_same: false }], audit).pass, false);
   assert.equal(judgeDevice('chrome_dnd_in_front_shared', [{ ...good, witness: false }], audit).pass, false);
@@ -492,17 +493,17 @@ test("a landed drop reported unconfirmed is honest, counted apart; a false ok fa
     const dedicated = OPS[op].device === 'foreground';
     const good = row({ ok: true, effect: true, state_notice: null, ...(dedicated ? { route: 'foreground', activated: true } : { dnd: { in_front: true }, desktop_same: true }) });
     const audit = { clean: true, kind: dedicated ? 'foreground' : 'background', answered: [{ ok: true }] };
-    assert.deepEqual(judgeDevice(op, [good], audit), { pass: true, reasons: [], drops: { samples: 1, landed: 1, ok: 1, false_ok: 0, unconfirmed_landed: 0 } }, op);
+    assert.deepEqual(judgeDevice(op, [good], audit), { pass: true, reasons: [], drops: { samples: 1, landed: 1, ok: 1, false_ok: 0, unconfirmed_landed: 0, stale_position: 0, ambiguous: 0 } }, op);
     // landed, its confirmation late: honest, the case passes and the run counts it
     const honest = judgeDevice(op, [good, { ...good, i: 1, state_notice: dndUnconfirmedNotice('Google-chrome'), next_ok: false, next_error: dndUnconfirmedRefusal('Google-chrome', 'preflight') }], audit);
     assert.equal(honest.pass, true, `${op}: an honest unconfirmed`);
-    assert.deepEqual(honest.drops, { samples: 2, landed: 2, ok: 2, false_ok: 0, unconfirmed_landed: 1 });
+    assert.deepEqual(honest.drops, { samples: 2, landed: 2, ok: 2, false_ok: 0, unconfirmed_landed: 1, stale_position: 0, ambiguous: 0 });
   }
   // a false ok: answered ok, nothing dropped, nothing pending
   const op = 'chrome_dnd_inzone_out_in_front_shared';
   const base = row({ ok: true, effect: false, started: true, dropped: false, dnd: { in_front: true }, desktop_same: true, state_notice: dndUnconfirmedNotice('Google-chrome'), next_ok: false, next_error: dndUnconfirmedRefusal('Google-chrome', 'preflight') });
   const audit = { clean: true, kind: 'background', answered: [{ ok: true }] };
-  assert.deepEqual(judgeDevice(op, [base], audit), { pass: true, reasons: [], drops: { samples: 1, landed: 0, ok: 1, false_ok: 0, unconfirmed_landed: 0 } }, 'nothing landed, reported');
+  assert.deepEqual(judgeDevice(op, [base], audit), { pass: true, reasons: [], drops: { samples: 1, landed: 0, ok: 1, false_ok: 0, unconfirmed_landed: 0, stale_position: 0, ambiguous: 0 } }, 'nothing landed, reported');
   const falseOk = judgeDevice(op, [base, { ...base, i: 1, state_notice: null }], audit);
   assert.equal(falseOk.pass, false);
   assert.match(falseOk.reasons[0], /answered ok with no drop and nothing pending on 1 of 2 samples/);
@@ -773,4 +774,25 @@ test("a drop case whose next acting request was refused with no notice on the re
   const unannounced = judgeDevice(op, [{ ...good, next_ok: false, next_error: dndUnconfirmedRefusal('Google-chrome', 'preflight') }], audit);
   assert.equal(unannounced.pass, false);
   assert.ok(unannounced.reasons.some((r) => /refused for something pending with no notice on the read on 1 of 1/.test(r)), unannounced.reasons.join('\n'));
+});
+
+test("ruling 957 in the device scene: a drop on the target from a drag whose path ended outside it is a drop at a stale position, never landed, and fails its case", () => {
+  const html = readFileSync(new URL('../../scripts/linux-engine-diff/pages/drag.html', import.meta.url), 'utf8');
+  const css = /#target \{ position: absolute; left: (\d+)px; top: (\d+)px; width: (\d+)px; height: (\d+)px;/.exec(html).slice(1).map(Number);
+  assert.deepEqual(DRAG_TARGET, { left: css[0], top: css[1], right: css[0] + css[2], bottom: css[1] + css[3] });
+  // every drop case's path end is its path's own last point, and the leaves cases' lie outside the target
+  const kinds = { chrome_dnd_in_front_shared: 'dnd', chrome_dnd_covered_dedicated: 'dnd', chrome_dnd_short_in_front_shared: 'dnd-short', chrome_dnd_short_covered_dedicated: 'dnd-short', chrome_dnd_short_pointer_outside_dedicated: 'dnd-short', chrome_dnd_inzone_out_in_front_shared: 'dnd-inzone', chrome_dnd_long_left_in_front_shared: 'dnd-long-left' };
+  assert.deepEqual(Object.keys(DEVICE_OPS).filter((op) => DEVICE_OPS[op].confirm).sort(), Object.keys(kinds).sort());
+  for (const [op, kind] of Object.entries(kinds)) assert.deepEqual(DEVICE_OPS[op].endsAt, pagePath(kind, 0).at(-1), op);
+  const audit = { clean: true, kind: 'background', answered: [{ ok: true }] };
+  for (const op of ['chrome_dnd_inzone_out_in_front_shared', 'chrome_dnd_long_left_in_front_shared']) {
+    const stale = row({ ok: true, effect: true, started: true, dnd: { in_front: true }, desktop_same: true, state_notice: null });
+    const v = judgeDevice(op, [stale, { ...stale, i: 1, effect: false, state_notice: dndUnconfirmedNotice('Google-chrome'), next_ok: false, next_error: dndUnconfirmedRefusal('Google-chrome', 'preflight') }], audit);
+    assert.equal(v.pass, false, op);
+    assert.ok(v.reasons.includes('a drop at a stale position (the path ended outside the target, the drop landed on it) on 1 of 2 samples (0/0)'), v.reasons.join('\n'));
+    assert.deepEqual(v.drops, { samples: 2, landed: 0, ok: 2, false_ok: 0, unconfirmed_landed: 0, stale_position: 1, ambiguous: 0 }, op);
+  }
+  // a drop case whose path ends on the target lands as before
+  const landed = row({ ok: true, effect: true, dnd: { in_front: true }, desktop_same: true, state_notice: null });
+  assert.equal(judgeDevice('chrome_dnd_short_in_front_shared', [landed], audit).drops.landed, 1);
 });

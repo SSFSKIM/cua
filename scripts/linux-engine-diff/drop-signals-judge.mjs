@@ -124,6 +124,102 @@ export function stampedDragend(r) {
 
 export const ZONE_CELLS = ['freeze-230', 'freeze-240', 'freeze-250', 'freeze-255', 'freeze-260', 'freeze-280', 'freeze-330', ...[...LATE_FREEZE_ENDS, ...LATE_FREEZE_FINE, ...LATE_FREEZE_INSIDE].map((to) => `freeze-${to}`), 'plain', 'nested', 'nested-late', 'slider', 'dragstart-150', 'press-150', 'dragstart-400', 'press-400', 'dragstart-500', 'dragstart-600', 'link', 'image', 'plain-long', 'canvas-drag', 'move'];
 
+// ---------------------------------------------------------------------------------------------------------------
+// where the path ended against the zone (the design session's rulings 957 and 961, task 128): a drop counts as landed
+// only where the path ended. The page counts drops by source and records no drop position, so the judge places each
+// cell's own path end against the zone's geometry; the pages are unchanged
+
+/** pages/drop-signals.html `#zone`, in page pixels: its left and top edges, and its right and bottom ones (exclusive). */
+export const ZONE = { left: 560, top: 100, right: 960, bottom: 620 };
+
+/**
+ * The border margin (ruling 961): a path that ends this close to the zone's border, inside or out, cannot be told apart
+ * by geometry. 3 px: the drag's last step (the engine samples each segment about 1 px apart, at most √2 px on a
+ * diagonal, `pointer.rs` `drag_samples`, so a browser one sample behind sits within 1.42 px of the end), rounded up to
+ * 2, and 1 px for the page's origin, read from the accessible frame's whole-pixel extents. The zone's border is a CSS
+ * edge with no border width, and the device scale is 1 (a row's end is the window, the page's origin and the cell's
+ * page point summed, pixel for pixel), so neither adds to it. Every planned cell ends 8 px or more from the border.
+ */
+export const STALE_MARGIN_PX = 3;
+
+/**
+ * Each drop cell's path end in the window, in page pixels: the last point of its path (drop-signals.mjs `CELLS`, the
+ * same for every run). The cells that end off the window (`OFF_WINDOW_CELLS`) have none: they end outside the zone.
+ */
+export const PATH_ENDS = {
+  ...Object.fromEntries([...FREEZE_ENDS, ...LATE_FREEZE_ENDS, ...LATE_FREEZE_FINE, ...LATE_FREEZE_INSIDE].map((to) => [`freeze-${to}`, [570, 312]])),
+  ...Object.fromEntries(PREFREEZE_ENDS.map((to) => [`prefreeze-${to}`, [570, 128]])),
+  'prefreeze-linger-150': [575, 128],
+  plain: [570, 128],
+  'plain-long': [900, 300],
+  nozone: [490, 128],
+  nested: [570, 174],
+  'nested-late': [570, 542],
+  slider: [570, 220],
+  'dragstart-150': [570, 266],
+  'press-150': [570, 312],
+  stall: [570, 128],
+  'dragstart-400': [570, 358],
+  'press-400': [570, 404],
+  'dragstart-500': [570, 468],
+  'dragstart-600': [570, 518],
+  link: [570, 450],
+  image: [570, 496],
+  'canvas-drag': [570, 588],
+  seltext: [100, 612],
+  left: [500, 128],
+  'inzone-out': [725, 632],
+  'long-left': [500, 500],
+  move: [725, 108],
+};
+
+/**
+ * A point (page pixels) against a rectangle (`ZONE` by default): `inside`, `outside`, or `ambiguous` within `margin` of
+ * its border on either side (by the distance to the nearest edge inside, to the rectangle outside).
+ */
+export function endAgainstZone([x, y], zone = ZONE, margin = STALE_MARGIN_PX) {
+  const inside = x >= zone.left && x < zone.right && y >= zone.top && y < zone.bottom;
+  const distance = inside
+    ? Math.min(x - zone.left, zone.right - x, y - zone.top, zone.bottom - y)
+    : Math.hypot(Math.max(zone.left - x, 0, x - zone.right), Math.max(zone.top - y, 0, y - zone.bottom));
+  if (distance <= margin) return 'ambiguous';
+  return inside ? 'inside' : 'outside';
+}
+
+/**
+ * Where a drag's path ended against the zone: `outside` for a cell that ends off the window (the `moved` cell's release
+ * too, put on the bare root before it), else its end (`ends`, `PATH_ENDS` by default) against the zone, or `unknown`
+ * for a cell with none.
+ */
+export function pathEndOf(r, ends = PATH_ENDS) {
+  const cell = r.base ?? r.cell;
+  if (OFF_WINDOW_CELLS.includes(cell)) return 'outside';
+  return ends[cell] ? endAgainstZone(ends[cell]) : 'unknown';
+}
+
+/**
+ * A drag's landing as the gate counts it (ruling 957): null when the zone counted no drop; `landed` when it did and the
+ * path ended inside the zone, or the measurement lane released the drag at Chrome's accept (its path ended there, in
+ * the zone); `stale` when it did and the path ended outside the zone, "a drop at a stale position", a wrong outcome;
+ * `ambiguous` when the path ended within the border margin (ruling 961), neither; `unknown` when the judge cannot place
+ * the path's end.
+ */
+export function landingOf(r, ends = PATH_ENDS) {
+  if (r.outcome?.landed !== true) return null;
+  if (r.lane === 'cua:accept' && r.accept?.accepted === true) return 'landed';
+  return { inside: 'landed', outside: 'stale', ambiguous: 'ambiguous', unknown: 'unknown' }[pathEndOf(r, ends)];
+}
+
+/** The fail a cell's drops at a stale position name (ruling 957), with the drags', and an unplaced landing's. */
+function landingFails(name, list, stale, unknown, failed) {
+  const which = (rs) => rs.slice(0, 3).map((r) => `#${r.i}`).join(', ');
+  if (stale.length) failed.push(`${name}: a drop at a stale position (the path ended outside the zone, the drop landed in it) on ${stale.length} of ${list.length} (${which(stale)})`);
+  if (unknown.length) failed.push(`${name}: a drop landed in a cell whose path end the judge cannot place against the zone, on ${unknown.length} of ${list.length} (${which(unknown)})`);
+}
+
+/** The ambiguous landings' finding (ruling 961): each named, counted, neither landed nor wrong. */
+const ambiguousFinding = (rows) => `${rows.length} drop${rows.length === 1 ? '' : 's'} whose path ended within ${STALE_MARGIN_PX} px of the zone's border (${rows.slice(0, 5).map((r) => `${r.lane} ${r.cell} #${r.i}`).join(', ')}${rows.length > 5 ? ', …' : ''}): ambiguous, neither landed nor at a stale position (ruling 961)`;
+
 /** The range runs' end values: even runs drag up to about 10, odd runs back to 0 (drop-signals.mjs `CELLS.range`). */
 export const RANGE_END = (i) => (i % 2 === 0 ? 10 : 0);
 
@@ -446,7 +542,7 @@ export function blockPlan(specs, { size = 10 } = {}) {
 // T17's Electron cells in the gate (#364; the T18 executor's ruling on the design session's T14 gate rule, 2026-11-12)
 
 /** The drop-signals plans whose Electron cells the gate judges (drop-signals.mjs PLANS); `t17-moved` needs a live build's hook. */
-export const ELECTRON_JUDGED_PLANS = ['t17-floor', 't17-handle', 't17-fix2', 't17-fix3', 't17-slow-cold'];
+export const ELECTRON_JUDGED_PLANS = ['t17-floor', 't17-handle', 't17-fix2', 't17-fix3', 't17-slow-cold', 't17-long'];
 
 /** Whether a drop-signals run's rows are T17's Electron cells, judged by `electronDropVerdict`. */
 export const judgedElectronPlan = (args) => args.families?.[0] === 'electron' && ELECTRON_JUDGED_PLANS.includes(args.plan);
@@ -634,7 +730,7 @@ export function unconfirmedClass(r) {
  * oks listed with their settle outcome (`settleOutcomeOf`), a finding for the design session, never a fail. Answers
  * `{md, failed, findings, counts}`.
  */
-export function electronDropVerdict(rows, { specs = [], share = 0.05, slowMode = SLOW_CELL_MODE, plan = null } = {}) {
+export function electronDropVerdict(rows, { specs = [], share = 0.05, slowMode = SLOW_CELL_MODE, plan = null, ends = PATH_ENDS } = {}) {
   if (!['hard', 'declared-race'].includes(slowMode)) throw new Error(`the slow cell's mode is hard or declared-race, not ${slowMode}`);
   const failed = [];
   // #365's declared race: the hung sink's false oks per lane, and its drags
@@ -651,16 +747,23 @@ export function electronDropVerdict(rows, { specs = [], share = 0.05, slowMode =
   const md = [
     `T17's Electron cells (drop-signals-judge.mjs \`electronDropVerdict\`), load ${load}:`,
     '',
-    '| lane | cell | drags | end not verified | landed | ok, nothing pending | unconfirmed | other notice | error | false ok | landed, unconfirmed (move or link / cold handle at load / other) |',
-    '|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|',
+    '| lane | cell | drags | end not verified | landed | ok, nothing pending | unconfirmed | other notice | error | false ok | landed, unconfirmed (move or link / cold handle at load / other) | stale-position drops | ambiguous |',
+    '|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|',
   ];
-  const total = { drags: 0, landed: 0, false_ok: 0, race_false_ok: 0, race_drags: 0, missing_landing: 0, false_error: 0, pending_broken: 0, unconfirmed_landed: 0, by_class: { 'move-link': 0, 'cold-load': 0, other: 0 }, unverified: 0 };
+  const ambiguousRows = [];
+  const total = { drags: 0, landed: 0, stale_drops: 0, ambiguous: 0, false_ok: 0, race_false_ok: 0, race_drags: 0, missing_landing: 0, false_error: 0, pending_broken: 0, unconfirmed_landed: 0, by_class: { 'move-link': 0, 'cold-load': 0, other: 0 }, unverified: 0 };
   for (const c of cells.values()) {
     const name = `${c.lane} ${c.cell}`;
     const base = c.rows[0]?.base ?? c.cell.split('@')[0];
     const unverified = c.rows.filter((r) => r.end_park && r.end_park.verified === false);
     const list = c.rows.filter((r) => !unverified.includes(r));
     const count = (f) => list.filter(f).length;
+    // a drop counts as landed only where the path ended (ruling 957): a landing in the zone from a path that ended
+    // outside it is a drop at a stale position; one within the border margin is ambiguous (ruling 961)
+    const landed = (r) => landingOf(r, ends) === 'landed';
+    const stale = list.filter((r) => landingOf(r, ends) === 'stale');
+    const ambiguous = list.filter((r) => landingOf(r, ends) === 'ambiguous');
+    const unplaced = list.filter((r) => landingOf(r, ends) === 'unknown');
     const falseOk = list.filter((r) => r.ok === true && honest(r) === null && !droppedOf(r));
     const landing = LANDING_CELLS.includes(base);
     const nonLanding = landing ? list.filter((r) => !r.outcome?.landed) : [];
@@ -669,8 +772,8 @@ export function electronDropVerdict(rows, { specs = [], share = 0.05, slowMode =
     const residueApplies = plan === RESIDUE.plan && base === RESIDUE.cell && list.length > 0 && list.every((r) => r.load === RESIDUE.load);
     const residual = residueApplies ? nonLanding.filter(honestNonLanding) : [];
     const missing = nonLanding.filter((r) => !residual.includes(r));
-    const falseError = landing ? list.filter((r) => r.outcome?.landed && r.ok !== true) : [];
-    const landedUnconfirmed = list.filter((r) => r.outcome?.landed && honest(r) === 'unconfirmed');
+    const falseError = landing ? list.filter((r) => landed(r) && r.ok !== true) : [];
+    const landedUnconfirmed = list.filter((r) => landed(r) && honest(r) === 'unconfirmed');
     const byClass = { 'move-link': 0, 'cold-load': 0, other: 0 };
     for (const r of landedUnconfirmed) byClass[unconfirmedClass(r)] += 1;
     const which = (rs) => rs.slice(0, 3).map((r) => `#${r.i}`).join(', ');
@@ -695,18 +798,23 @@ export function electronDropVerdict(rows, { specs = [], share = 0.05, slowMode =
     } else if (falseOk.length) failed.push(`${name}: answered ok with no drop and nothing pending on ${falseOk.length} of ${list.length} (${which(falseOk)})`);
     if (missing.length) failed.push(`${name}: the drop did not land on ${missing.length} of ${list.length}, in a cell that expects it (${which(missing)})`);
     if (falseError.length) failed.push(`${name}: answered an error for a drop that landed on ${falseError.length} of ${list.length} (${which(falseError)})`);
+    landingFails(name, list, stale, unplaced, failed);
+    ambiguousRows.push(...ambiguous);
     total.pending_broken += pendingBreaks(list, name, failed);
     if (c.rows.length && !list.length) findings.push(`${name} unmeasured: every end (${unverified.length}) was not verified where the drag left the pointer`);
     total.drags += list.length;
-    total.landed += count((r) => r.outcome?.landed);
+    total.landed += count(landed);
+    total.stale_drops += stale.length;
+    total.ambiguous += ambiguous.length;
     if (!raced) total.false_ok += falseOk.length;
     total.missing_landing += missing.length;
     total.false_error += falseError.length;
     total.unconfirmed_landed += landedUnconfirmed.length;
     total.unverified += unverified.length;
     for (const k of Object.keys(byClass)) total.by_class[k] += byClass[k];
-    md.push(`| ${c.lane} | ${c.cell} | ${list.length} | ${unverified.length} | ${count((r) => r.outcome?.landed)} | ${count((r) => r.ok === true && honest(r) === null)} | ${count((r) => honest(r) === 'unconfirmed')} | ${count((r) => ![null, 'unconfirmed'].includes(honest(r)))} | ${count((r) => r.ok !== true)} | ${falseOk.length} | ${landedUnconfirmed.length} (${byClass['move-link']} / ${byClass['cold-load']} / ${byClass.other}) |`);
+    md.push(`| ${c.lane} | ${c.cell} | ${list.length} | ${unverified.length} | ${count(landed)} | ${count((r) => r.ok === true && honest(r) === null)} | ${count((r) => honest(r) === 'unconfirmed')} | ${count((r) => ![null, 'unconfirmed'].includes(honest(r)))} | ${count((r) => r.ok !== true)} | ${falseOk.length} | ${landedUnconfirmed.length} (${byClass['move-link']} / ${byClass['cold-load']} / ${byClass.other}) | ${stale.length} | ${ambiguous.length} |`);
   }
+  if (ambiguousRows.length) findings.push(ambiguousFinding(ambiguousRows));
   total.race_false_ok = race.false_ok;
   total.race_drags = race.drags;
   if (race.drags) findings.push(`#365's declared race, load ${load}: the hung sink answered ok with no drop and nothing pending on ${race.false_ok} of ${race.drags} drags (${race.lanes.join(', ')}), a finding, not a fail`);
@@ -729,7 +837,7 @@ export function electronDropVerdict(rows, { specs = [], share = 0.05, slowMode =
   const residual = residue.some((x) => x.count > 0) ? " beyond L4a's residue" : '';
   const rootOks = rootUnverified.filter((x) => x.ok > 0);
   const rootOkLine = rootOks.length ? ` ${rootOks.reduce((n, x) => n + x.ok, 0)} ok answers on the root cells' unverified ends (${rootOks.map((x) => `${x.lane} ${x.cell} ${x.ok}`).join(', ')}): a finding for the design session (ruling 838), not a fail.` : '';
-  md.push('', `${failed.length ? `**Fails:** ${failed.join('; ')}.` : `No false ok, no missing landing${residual}, no false error, every notice refused once; every cell of the plan ran.`}${rootOkLine}`, '', `Findings (counted, not fails): ${findings.join('; ')}.`, '');
+  md.push('', `${failed.length ? `**Fails:** ${failed.join('; ')}.` : `No false ok, no drop at a stale position, no missing landing${residual}, no false error, every notice refused once; every cell of the plan ran.`}${rootOkLine}`, '', `Findings (counted, not fails): ${findings.join('; ')}.`, '');
   return { md, failed, findings, counts: { load, ...total, over_share: over, residue, zone_mismatch: mismatches, root_unverified: rootUnverified } };
 }
 
@@ -828,7 +936,7 @@ const stoppedBeforeThaw = (r) => {
 const BAND_OUTCOMES = {
   // the drop landed after a take the engine saw inside its hold (the review of H6, blocker 2: a late take that landed
   // before its cancel is no in-hold landing)
-  landed: { what: 'landed after a take inside the hold', holds: (r) => r.outcome?.landed === true && r.hold?.taken === true && r.signals?.late_take !== true },
+  landed: { what: 'landed after a take inside the hold', holds: (r, ends) => landingOf(r, ends) === 'landed' && r.hold?.taken === true && r.signals?.late_take !== true },
   // Chrome refused the drag: the reply's hold notice, the page read showing no drop, no take, and nothing sent after it
   // (no notice on the read, the next acting request run, no Escape of the engine's or the harness's)
   refused: {
@@ -877,7 +985,7 @@ const lateReported = (r) => honest(r) === 'late' && r.next?.late_dnd?.escaped ==
  * 5%); the false releases; drags whose drag and drop the harness had to end with its own Escape. Answers
  * `{md, failed, findings, counts}`.
  */
-export function chromeDropVerdict(rows, { specs = [], plan = null, capped = false, share = 0.05, bands = BANDED_PLANS[plan] ?? null } = {}) {
+export function chromeDropVerdict(rows, { specs = [], plan = null, capped = false, share = 0.05, bands = BANDED_PLANS[plan] ?? null, ends = PATH_ENDS } = {}) {
   const failed = [];
   const findings = [];
   const cells = planCells(rows, specs, failed);
@@ -885,36 +993,45 @@ export function chromeDropVerdict(rows, { specs = [], plan = null, capped = fals
   const md = [
     `T14's Chrome cells (drop-signals-judge.mjs \`chromeDropVerdict\`), plan ${plan ?? 'none'}, load ${load}:`,
     '',
-    '| lane | cell | drags | never took | landed | ok, nothing pending | unconfirmed | late takes | reported | false ok | false releases (answered ok) | harness Escapes |',
-    '|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|',
+    '| lane | cell | drags | never took | landed | ok, nothing pending | unconfirmed | late takes | reported | false ok | false releases (answered ok) | harness Escapes | stale-position drops | ambiguous |',
+    '|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|',
   ];
-  const total = { drags: 0, untaken: 0, landed: 0, late: 0, late_reported: 0, late_notice_without_take: 0, false_ok: 0, missing_landing: 0, pending_broken: 0, unconfirmed_landed: 0, false_releases: 0, false_release_ok: 0, harness_escapes: 0, ...(bands ? { false_alarms: 0, unjudged: 0 } : {}) };
+  const ambiguousRows = [];
+  const total = { drags: 0, untaken: 0, landed: 0, stale_drops: 0, ambiguous: 0, late: 0, late_reported: 0, late_notice_without_take: 0, false_ok: 0, missing_landing: 0, pending_broken: 0, unconfirmed_landed: 0, false_releases: 0, false_release_ok: 0, harness_escapes: 0, ...(bands ? { false_alarms: 0, unjudged: 0 } : {}) };
   for (const c of cells.values()) {
     const name = `${c.lane} ${c.cell}`;
     const list = c.rows;
     const base = list[0]?.base ?? c.cell;
     const count = (f) => list.filter(f).length;
     const which = (rs) => rs.slice(0, 3).map((r) => `#${r.i}`).join(', ');
-    const landed = (r) => r.outcome?.landed === true;
+    // a drop counts as landed only where the path ended (ruling 957); `dropped`, the zone's counter alone, is what the
+    // no-drop rules read: a drop at a stale position is its own wrong outcome, never a false ok as well
+    const landed = (r) => landingOf(r, ends) === 'landed';
+    const dropped = (r) => r.outcome?.landed === true;
+    const stale = list.filter((r) => landingOf(r, ends) === 'stale');
+    const ambiguous = list.filter((r) => landingOf(r, ends) === 'ambiguous');
+    const unplaced = list.filter((r) => landingOf(r, ends) === 'unknown');
     const late = list.filter((r) => r.signals?.late_take === true);
     const unreported = late.filter((r) => !lateReported(r));
     const lateWithoutTake = list.filter((r) => r.signals?.late_take !== true && pendingOf(r).kind === 'late');
-    const falseReleases = list.filter((r) => releasedAtAccept(r) && !landed(r));
+    const falseReleases = list.filter((r) => releasedAtAccept(r) && !dropped(r));
     // a drag whose drag and drop never took (no XdndSelection take, the watch's or the hold's) answers as a plain drag:
     // its ok claims no drop. A control needs drags that took, or it proved nothing
     const untaken = list.filter((r) => !tookOf(r));
     // on a banded plan only a cause that accounts for the outcome excuses it; elsewhere T14's kept pair does
     const excused = (r) => (bands ? accountedFor(r, tookOf(r)) : honest(r) !== null);
-    const falseOk = list.filter((r) => r.ok === true && !excused(r) && !landed(r) && tookOf(r) && !releasedAtAccept(r));
-    const missing = base === 'plain-long' ? list.filter((r) => !landed(r) && !releasedAtAccept(r)) : [];
+    const falseOk = list.filter((r) => r.ok === true && !excused(r) && !dropped(r) && tookOf(r) && !releasedAtAccept(r));
+    const missing = base === 'plain-long' ? list.filter((r) => !dropped(r) && !releasedAtAccept(r)) : [];
     if (CONTROL_CELLS.includes(base) && list.length && untaken.length === list.length) failed.push(`${name}: no drag and drop took on any of ${list.length}: the control proved nothing`);
     const landedUnconfirmed = list.filter((r) => landed(r) && honest(r) === 'unconfirmed');
     if (unreported.length) failed.push(`${name}: a late take not reported (its notice on the read, the next acting request refused with it, its Escape) on ${unreported.length} of ${list.length} (${which(unreported)})`);
     if (lateWithoutTake.length) failed.push(`${name}: a late drag and drop reported, and its Escape sent, on a drag with no late take, on ${lateWithoutTake.length} of ${list.length} (${which(lateWithoutTake)})`);
     if (falseOk.length) failed.push(`${name}: answered ok with no drop and nothing pending on ${falseOk.length} of ${list.length} (${which(falseOk)})`);
+    landingFails(name, list, stale, unplaced, failed);
+    ambiguousRows.push(...ambiguous);
     // a banded plan judges every answer (ruling 931): a drag its page started that Chrome refused must say so (0.4.2's
     // hold notice); a plain ok there is a false ok, though no take came. A notice on a drop that landed is a false alarm
-    const plainRefused = bands ? list.filter((r) => r.ok === true && !excused(r) && r.reply_notice !== HOLD_NOTICE && r.outcome?.started === true && !landed(r) && !tookOf(r)) : [];
+    const plainRefused = bands ? list.filter((r) => r.ok === true && !excused(r) && r.reply_notice !== HOLD_NOTICE && r.outcome?.started === true && !dropped(r) && !tookOf(r)) : [];
     if (plainRefused.length) failed.push(`${name}: answered ok with no notice and nothing pending on a drag its page started that did not land, on ${plainRefused.length} of ${list.length} (${which(plainRefused)})`);
     // the re-review of 9a8f32a5: a plain ok with no take seen and nothing that accounts for it, whose page was not read
     // before or after, cannot be judged honest or not (Chrome may have started the drag): unjudged, and a counted step
@@ -928,6 +1045,8 @@ export function chromeDropVerdict(rows, { specs = [], plan = null, capped = fals
     total.drags += list.length;
     total.untaken += untaken.length;
     total.landed += count(landed);
+    total.stale_drops += stale.length;
+    total.ambiguous += ambiguous.length;
     total.late += late.length;
     total.late_reported += late.length - unreported.length;
     total.late_notice_without_take += lateWithoutTake.length;
@@ -937,8 +1056,9 @@ export function chromeDropVerdict(rows, { specs = [], plan = null, capped = fals
     total.false_releases += falseReleases.length;
     total.false_release_ok += falseReleases.filter((r) => r.ok === true && honest(r) === null).length;
     total.harness_escapes += count((r) => r.escaped === true);
-    md.push(`| ${c.lane} | ${c.cell} | ${list.length} | ${untaken.length} | ${count(landed)} | ${count((r) => r.ok === true && honest(r) === null)} | ${count((r) => honest(r) === 'unconfirmed')} | ${late.length} | ${late.length - unreported.length} | ${falseOk.length + plainRefused.length} | ${falseReleases.length} (${falseReleases.filter((r) => r.ok === true && honest(r) === null).length}) | ${count((r) => r.escaped === true)} |`);
+    md.push(`| ${c.lane} | ${c.cell} | ${list.length} | ${untaken.length} | ${count(landed)} | ${count((r) => r.ok === true && honest(r) === null)} | ${count((r) => honest(r) === 'unconfirmed')} | ${late.length} | ${late.length - unreported.length} | ${falseOk.length + plainRefused.length} | ${falseReleases.length} (${falseReleases.filter((r) => r.ok === true && honest(r) === null).length}) | ${count((r) => r.escaped === true)} | ${stale.length} | ${ambiguous.length} |`);
   }
+  if (ambiguousRows.length) findings.push(ambiguousFinding(ambiguousRows));
   // a sitting capped by --trials (a pilot; a gate step runs its plan whole, `runExperiment`) may well make none
   if (LATE_TAKE_PLANS.includes(plan) && total.late === 0) {
     if (capped) findings.push('no late take came in a sitting capped by --trials: #264 unjudged here');
@@ -956,13 +1076,15 @@ export function chromeDropVerdict(rows, { specs = [], plan = null, capped = fals
       const unidentified = list.filter((r) => !sourceIdentified(r));
       const skipped = list.filter((r) => typeof r.freeze?.skipped === 'string');
       const unstopped = list.filter((r) => typeof r.freeze?.skipped !== 'string' && !stoppedBeforeThaw(r));
-      const unexercised = list.filter((r) => !sourceIdentified(r) || !stoppedBeforeThaw(r));
+      // and a landing whose path ended within the border margin (ruling 961): never the outcome
+      const unplaced = list.filter((r) => landingOf(r, ends) === 'ambiguous');
+      const unexercised = list.filter((r) => !sourceIdentified(r) || !stoppedBeforeThaw(r) || unplaced.includes(r));
       const exercised = list.filter((r) => !unexercised.includes(r));
-      const expected = outcome ? exercised.filter((r) => outcome.holds(r)).length : null;
+      const expected = outcome ? exercised.filter((r) => outcome.holds(r, ends)).length : null;
       // the band's late takes are its exercised rows' (finding 3); every late take is judged and reported above, whichever row
       total.bands[b.band] = { drags: list.length, expected, late: exercised.filter((r) => r.signals?.late_take === true).length, unexercised: unexercised.length };
       if (outcome && expected < b.min) failed.push(`the ${b.band} band (${b.cells.join(', ')}): ${expected} of ${list.length} drags ${outcome.what}, fewer than its ${b.min}: the band is unexercised`);
-      if (unexercised.length) findings.push(`the ${b.band} band: ${unexercised.length} of ${list.length} drags unexercised (the source not identified on ${unidentified.length}, the stop skipped on ${skipped.length}, the stop not begun before the thaw on ${unstopped.length})`);
+      if (unexercised.length) findings.push(`the ${b.band} band: ${unexercised.length} of ${list.length} drags unexercised (the source not identified on ${unidentified.length}, the stop skipped on ${skipped.length}, the stop not begun before the thaw on ${unstopped.length}${unplaced.length ? `, the path's end ambiguous on ${unplaced.length}` : ''})`);
       if (!outcome && !total.bands[b.band].late) findings.push(`the ${b.band} band made no late take (not required, ruling 931)`);
     }
     md.push('', '| band | cells | drags | its outcome | minimum | late takes | unexercised |', '|---|---|---:|---:|---:|---:|---:|', ...bands.map((b) => `| ${b.band} | ${b.cells.join(', ')} | ${total.bands[b.band].drags} | ${b.expects ? `${total.bands[b.band].expected} ${BAND_OUTCOMES[b.expects].what}` : '–'} | ${b.min || '–'} | ${total.bands[b.band].late} | ${total.bands[b.band].unexercised} |`));
@@ -974,7 +1096,7 @@ export function chromeDropVerdict(rows, { specs = [], plan = null, capped = fals
   findings.push(`T14's share, reported and not a fail: ${total.unconfirmed_landed} of ${total.landed} landed drops answered unconfirmed, ${over ? 'over' : 'within'} ${share * 100}%`);
   if (total.false_releases) findings.push(`${total.false_releases} false releases at the accept (measurement lane \`${ACCEPT_LANE}\`, not shipped), ${total.false_release_ok} of them answered ok with nothing pending`);
   if (total.harness_escapes) findings.push(`${total.harness_escapes} drags whose drag and drop was still open a second after the answer, ended by the harness's Escape`);
-  md.push('', failed.length ? `**Fails:** ${failed.join('; ')}.` : 'Every late take reported, no false ok, no missing landing, every notice refused once; every cell of the plan ran.', '', `Findings (counted, not fails): ${findings.join('; ')}.`, '');
+  md.push('', failed.length ? `**Fails:** ${failed.join('; ')}.` : 'Every late take reported, no false ok, no drop at a stale position, no missing landing, every notice refused once; every cell of the plan ran.', '', `Findings (counted, not fails): ${findings.join('; ')}.`, '');
   return { md, failed, findings, counts: { load, ...total, over_share: over } };
 }
 
@@ -1002,7 +1124,7 @@ export const HOLD_REGRESSION_CELLS = [['cua', 'dragstart-150', 10], ['cua', 'dra
  * default) short of its count, or missing from the run's manifest (`specs`, the scene row's; null when the run wrote
  * none), and a run with no manifest at all.
  */
-export function holdRegressionVerdict(rows, { specs = null, required = HOLD_REGRESSION_CELLS.map(([lane, cell, n]) => ({ lane, cell, n })) } = {}) {
+export function holdRegressionVerdict(rows, { specs = null, required = HOLD_REGRESSION_CELLS.map(([lane, cell, n]) => ({ lane, cell, n })), ends = PATH_ENDS } = {}) {
   const failed = [];
   const counts = {};
   if (!Array.isArray(specs)) failed.push("the run's manifest (its drop-signal-scene row) is missing: which cells ran is unknown");
@@ -1014,7 +1136,7 @@ export function holdRegressionVerdict(rows, { specs = null, required = HOLD_REGR
       if (misses.length) failed.push(`${spec.cell}: ${what} on ${misses.length} of ${list.length} (${misses.slice(0, 3).map((r) => `${r.block ?? 0}/${r.i}`).join(', ')})`);
     };
     if (list.length < spec.n) failed.push(`${spec.cell}: ${list.length} of its ${spec.n} drags ran`);
-    bad('not landed', (r) => r.outcome?.started === true && r.outcome?.landed === true);
+    bad('not landed', (r) => r.outcome?.started === true && landingOf(r, ends) === 'landed');
     bad('no take seen inside the hold', (r) => r.hold?.taken === true);
     bad('a hold other than the fixed one', (r) => r.hold?.adaptive?.way === 'fixed');
     bad('Chrome not identified as a browser', (r) => r.hold?.adaptive?.source?.identified === true);
@@ -1025,6 +1147,7 @@ export function holdRegressionVerdict(rows, { specs = null, required = HOLD_REGR
 }
 
 export function dropSignalsVerdict(args, rows) {
+  if (PART_PLANS[args.plan]) return partsVerdict(args, rows);
   const drags = rows.filter((r) => r.kind === 'drop-signal');
   const manifest = rows.find((r) => r.kind === 'drop-signal-scene')?.specs ?? null;
   const specs = manifest ?? [];
@@ -1032,4 +1155,56 @@ export function dropSignalsVerdict(args, rows) {
   if (judgedElectronPlan(args)) return { judge: 'electronDropVerdict', ...electronDropVerdict(drags, { specs, plan: args.plan }) };
   if (judgedChromePlan(args)) return { judge: 'chromeDropVerdict', ...chromeDropVerdict(drags, { specs, plan: args.plan, capped: args.samplesTrials != null }) };
   return null;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// a plan of parts (the design session's ruling 962: step L4d)
+
+/**
+ * The plans of parts: each part a family and a plan of its own, sat in turn in one run (drop-signals.mjs
+ * `runDropSignals`), each in a scene of its own, its rows marked with its index (`part`), and each judged by its own
+ * plan's judge (`dropSignalsVerdict`). `t14-stale` is L4d's (ruling 962): Chrome's long control and the floor's cells,
+ * each the plan of its name, on the shipped lane, and Electron's long path that crosses the zone and ends outside it
+ * (`t17-long`).
+ */
+export const PART_PLANS = {
+  't14-stale': [
+    { family: 'chrome', plan: 't14-long' },
+    { family: 'chrome', plan: 't14-floor' },
+    { family: 'electron', plan: 't17-long' },
+  ],
+};
+
+/** The families a plan of parts sits, in order, each once: the run's `--family` must name them. */
+export const partFamilies = (plan) => [...new Set(PART_PLANS[plan].map((p) => p.family))];
+
+/** Whether a drop-signals run is a plan of parts every part of which a gate judge holds. */
+export const judgedPartsPlan = (args) => Boolean(PART_PLANS[args.plan]) && PART_PLANS[args.plan].every((p) => judgedChromePlan({ families: [p.family], plan: p.plan }) || judgedElectronPlan({ families: [p.family], plan: p.plan }));
+
+/**
+ * A plan of parts judged (`PART_PLANS`): each part's rows (`part`) by its own plan's judge, as a run of that plan alone
+ * would be, under its own scene row's manifest. Fails each part's fails, named by the part, and a part whose scene row is
+ * missing (which cells ran unknown) or that no judge holds. Answers `{judge, md, failed, findings, counts}`, the counts
+ * each part's.
+ */
+export function partsVerdict(args, rows) {
+  const failed = [];
+  const findings = [];
+  const md = [`A plan of parts, ${args.plan} (drop-signals-judge.mjs \`partsVerdict\`): each part judged by its own plan's judge.`, ''];
+  const parts = [];
+  for (const [k, part] of PART_PLANS[args.plan].entries()) {
+    const name = `part ${k + 1} (${part.family} ${part.plan})`;
+    const own = rows.filter((r) => r.part === k);
+    if (!own.some((r) => r.kind === 'drop-signal-scene')) failed.push(`${name}: its scene row is missing: which cells ran is unknown`);
+    const v = dropSignalsVerdict({ ...args, families: [part.family], plan: part.plan }, own);
+    if (!v) {
+      failed.push(`${name}: no gate judge holds it`);
+      continue;
+    }
+    failed.push(...v.failed.map((f) => `${name}: ${f}`));
+    findings.push(...v.findings.map((f) => `${name}: ${f}`));
+    md.push(`### ${name}`, '', ...v.md);
+    parts.push({ part: k, family: part.family, plan: part.plan, judge: v.judge, pass: v.failed.length === 0, counts: v.counts });
+  }
+  return { judge: 'partsVerdict', md, failed, findings, counts: { parts } };
 }

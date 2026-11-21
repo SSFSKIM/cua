@@ -1,0 +1,158 @@
+✔ the judge's zone is the page's #zone, and every drop cell's path end is its path's own last point (2.468308ms)
+✔ a path end against the zone: inside, outside, and within the border margin ambiguous (0.378882ms)
+✖ ruling 957: Chrome's long-left control, its path ended left of the zone, a drop landed in the zone: a drop at a stale position, never landed, and the step fails (4.767747ms)
+✖ ruling 957 on t14-floor: left and inzone-out end outside the zone, the long drop inside; only the controls' landings are stale (0.626046ms)
+✖ the measurement lane's release at the accept ends the drag at the accept, in the zone: its landing is not a stale one (0.459043ms)
+✖ ruling 961: a path that ended within the border margin is ambiguous: neither landed nor wrong, named and counted; where a landing is needed, unexercised (0.450597ms)
+✖ ruling 957 in Electron: the controls' and the off-window releases' landings in the zone are stale; the short drop's and the move's land (1.326943ms)
+✖ the hold's regression cells land only where their paths end, inside the zone (0.955656ms)
+ℹ tests 8
+ℹ suites 0
+ℹ pass 2
+ℹ fail 6
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 175.436634
+
+✖ failing tests:
+
+test at test/linux-engine-diff/stale-position.test.mjs:51:1
+✖ ruling 957: Chrome's long-left control, its path ended left of the zone, a drop landed in the zone: a drop at a stale position, never landed, and the step fails (4.767747ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  
+  + []
+  - [
+  -   'cua long-left: a drop at a stale position (the path ended outside the zone, the drop landed in it) on 5 of 100 (#0, #1, #2)'
+  - ]
+  
+      at TestContext.<anonymous> (file:///Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m5-h7-128/test/linux-engine-diff/stale-position.test.mjs:54:10)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1402:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:974:18)
+      at Test.postRun (node:internal/test_runner/test:1542:19)
+      at Test.run (node:internal/test_runner/test:1467:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: [],
+    expected: [ 'cua long-left: a drop at a stale position (the path ended outside the zone, the drop landed in it) on 5 of 100 (#0, #1, #2)' ],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at test/linux-engine-diff/stale-position.test.mjs:63:1
+✖ ruling 957 on t14-floor: left and inzone-out end outside the zone, the long drop inside; only the controls' landings are stale (0.626046ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  
+  + []
+  - [
+  -   'cua left: a drop at a stale position (the path ended outside the zone, the drop landed in it) on 1 of 2 (#0)',
+  -   'cua inzone-out: a drop at a stale position (the path ended outside the zone, the drop landed in it) on 1 of 1 (#0)'
+  - ]
+  
+      at TestContext.<anonymous> (file:///Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m5-h7-128/test/linux-engine-diff/stale-position.test.mjs:66:10)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1402:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:974:18)
+      at Test.postRun (node:internal/test_runner/test:1542:19)
+      at Test.run (node:internal/test_runner/test:1467:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: [],
+    expected: [ 'cua left: a drop at a stale position (the path ended outside the zone, the drop landed in it) on 1 of 2 (#0)', 'cua inzone-out: a drop at a stale position (the path ended outside the zone, the drop landed in it) on 1 of 1 (#0)' ],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at test/linux-engine-diff/stale-position.test.mjs:76:1
+✖ the measurement lane's release at the accept ends the drag at the accept, in the zone: its landing is not a stale one (0.459043ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  undefined !== 0
+  
+      at TestContext.<anonymous> (file:///Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m5-h7-128/test/linux-engine-diff/stale-position.test.mjs:80:10)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1402:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:974:18)
+      at Test.postRun (node:internal/test_runner/test:1542:19)
+      at Test.run (node:internal/test_runner/test:1467:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: 0,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/linux-engine-diff/stale-position.test.mjs:86:1
+✖ ruling 961: a path that ended within the border margin is ambiguous: neither landed nor wrong, named and counted; where a landing is needed, unexercised (0.450597ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  undefined !== 1
+  
+      at TestContext.<anonymous> (file:///Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m5-h7-128/test/linux-engine-diff/stale-position.test.mjs:90:10)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1402:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:974:18)
+      at Test.postRun (node:internal/test_runner/test:1542:19)
+      at Test.run (node:internal/test_runner/test:1467:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: 1,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/linux-engine-diff/stale-position.test.mjs:100:1
+✖ ruling 957 in Electron: the controls' and the off-window releases' landings in the zone are stale; the short drop's and the move's land (1.326943ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  
+  + []
+  - [
+  -   'cua left: a drop at a stale position (the path ended outside the zone, the drop landed in it) on 1 of 1 (#0)',
+  -   'cua:desktop root: a drop at a stale position (the path ended outside the zone, the drop landed in it) on 1 of 1 (#0)'
+  - ]
+  
+      at TestContext.<anonymous> (file:///Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m5-h7-128/test/linux-engine-diff/stale-position.test.mjs:103:10)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1402:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:974:18)
+      at Test.postRun (node:internal/test_runner/test:1542:19)
+      at Test.run (node:internal/test_runner/test:1467:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: [],
+    expected: [ 'cua left: a drop at a stale position (the path ended outside the zone, the drop landed in it) on 1 of 1 (#0)', 'cua:desktop root: a drop at a stale position (the path ended outside the zone, the drop landed in it) on 1 of 1 (#0)' ],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at test/linux-engine-diff/stale-position.test.mjs:115:1
+✖ the hold's regression cells land only where their paths end, inside the zone (0.955656ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /dragstart-150: not landed on 10 of 10/. Input:
+  
+  ''
+  
+      at TestContext.<anonymous> (file:///Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m5-h7-128/test/linux-engine-diff/stale-position.test.mjs:121:10)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1402:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:974:18)
+      at Test.postRun (node:internal/test_runner/test:1542:19)
+      at Test.run (node:internal/test_runner/test:1467:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '',
+    expected: /dragstart-150: not landed on 10 of 10/,
+    operator: 'match',
+    diff: 'simple'
+  }

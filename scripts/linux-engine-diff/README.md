@@ -172,6 +172,24 @@ begun before the thaw. Such a row is shown, but never counted as the band's outc
 counts its exercised rows only.
 The inside band's freeze is 600 on both architectures (task 122's arm64 sweep, at twice the load, landed 10 of 10 there).
 
+**A drop counts as landed only where the path ended** (rulings 957 and 961, task 128). The pages count drops by source
+and record no position, so the judges place each cell's own path end (`PATH_ENDS`, the last point of its path; the
+cells off the window end outside) against the zone (`ZONE`, the page's `#zone`):
+- the path ended inside the zone: a landing there is landed, as before;
+- it ended outside: a landing is "a drop at a stale position", a named wrong outcome that fails the step as a false ok
+  does, and is never counted as landed (Chrome dropped where an earlier motion left it, #459);
+- it ended within 3 px of the border (`STALE_MARGIN_PX`): ambiguous, neither landed nor wrong, named and counted, and
+  unexercised where a band needs a landing. No planned cell ends that close.
+
+The measurement lane's release at the accept ends the drag at the accept, in the zone. `chromeDropVerdict`,
+`electronDropVerdict`, `holdRegressionVerdict` and device.mjs's drop cases (`DRAG_TARGET`, each case's `endsAt`) all
+judge by it.
+
+**Step L4d** (ruling 962) runs the plan of parts `t14-stale` (drop-signals-judge.mjs `PART_PLANS`) at twice the load,
+on the shipped lane. Its three parts sit in turn in one run, each in its own scene and judged by its own plan's judge:
+Chrome's `t14-long`, Chrome's `t14-floor`, and Electron's `t17-long` (the long path out of the zone, 30 drags). The run's
+`--family` names the parts' families, `chrome,electron`.
+
 **The hold canary's criterion is a step parameter.** `steps.mjs` `CANARY_CRITERION` sets it on K1, K2 and V5 by
 architecture (rulings 930 and 932), as `--hold-canary`:
 - **x64, `relative`:** a press that started a drag must wait 3x the run's plain control's warm maximum, and at least

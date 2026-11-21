@@ -77,14 +77,18 @@ export async function dryLaunch(step, { pinned, out, base = process.env }) {
 /**
  * A drop-signals launch's plan as it runs on `arch` (ruling 954: the plan's contents, not only its name): `args` the
  * harness arguments the runner launches (`dryLaunch`), read by the harness's own parser (cli.mjs `parseArgs`) and sat as
- * its run sits them (drop-signals.mjs `runSpecs`: the plan or the default one, the ballast's cells, the lanes, the
- * `--trials` cap); each cell, its count and its freeze (`freezeOf`, the start rule included). Empty for any other launch.
+ * its run sits them (drop-signals.mjs `runSittings`: the plan or the default one, the ballast's cells, the lanes, the
+ * `--trials` cap, and a plan of parts part by part); each cell, its count and its freeze (`freezeOf`, the start rule included). Empty for any other launch.
  */
 export async function planContents(args, arch) {
   if (!args.includes('--experiment') || args[args.indexOf('--experiment') + 1] !== 'drop-signals') return [];
   const [{ parseArgs }, signals] = await Promise.all([import('../linux-engine-diff/cli.mjs'), import('../linux-engine-diff/drop-signals.mjs')]);
   const run = parseArgs(args);
-  return [`plan ${run.plan ?? 'main'} on ${arch}:`, ...signals.runSpecs(run).map((s) => `  ${s.lane} ${s.cell} x${s.n} freeze ${JSON.stringify(signals.freezeOf(s.cell.split('@')[0]))}`)];
+  const cells = (specs, indent) => specs.map((s) => `${indent}${s.lane} ${s.cell} x${s.n} freeze ${JSON.stringify(signals.freezeOf(s.cell.split('@')[0]))}`);
+  // a plan of parts (ruling 962) each part's family and plan, then its cells
+  const sittings = signals.runSittings(run);
+  if (sittings[0].part === undefined) return [`plan ${run.plan ?? 'main'} on ${arch}:`, ...cells(sittings[0].specs, '  ')];
+  return [`plan ${run.plan} on ${arch}, in ${sittings.length} parts:`, ...sittings.flatMap((p) => [`  part ${p.part + 1}: ${p.family} ${p.plan}`, ...cells(p.specs, '    ')])];
 }
 
 /** The plan's text: every step not skipped, in the gate's order, on `arch` (this machine's unless given). */

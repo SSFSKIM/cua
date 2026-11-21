@@ -25,7 +25,7 @@
 
 import { GATE_BALLAST } from './dnd.mjs';
 import { locate } from './drag.mjs';
-import { FREEZE_ENDS, HOLD_REGRESSION_CELLS, LATE_FREEZE_ENDS, LATE_FREEZE_FINE, LATE_FREEZE_INSIDE, PREFREEZE_ENDS, T14_SOURCE, acceptTable, afterReleaseTable, blockPlan, coverTable, dragOutcome, lateTakeTable, neverTakeTable, parseDropStatus, signalsOf } from './drop-signals-judge.mjs';
+import { FREEZE_ENDS, HOLD_REGRESSION_CELLS, PART_PLANS, partFamilies, LATE_FREEZE_ENDS, LATE_FREEZE_FINE, LATE_FREEZE_INSIDE, PREFREEZE_ENDS, T14_SOURCE, acceptTable, afterReleaseTable, blockPlan, coverTable, dragOutcome, lateTakeTable, neverTakeTable, parseDropStatus, signalsOf } from './drop-signals-judge.mjs';
 import { Engine } from './engine.mjs';
 import { openFamily } from './families.mjs';
 import { preorder } from './normalize.mjs';
@@ -390,6 +390,12 @@ export const PLANS = {
     ...['root', 'xterm', 'other', 'slow'].map((cell) => ['cua:handle', cell, 30]),
   ],
   't17-slow': [['cua:desktop', 'slow', 30], ['cua:handle', 'slow', 30]],
+  // L4d's Electron part (the design session's ruling 962): the long path that crosses the zone and ends outside it, on
+  // the shipped lane, 30 drags. Chrome's `long-left` fits Electron's window as it is: the page sits at the window's
+  // origin, every point of the path is in the window and clear of the run's other windows (no `other` window or sink
+  // opens for it), it crosses the zone (into it at x 560 on y 128, down x 800 from y 128 to 500), ends 60 px left of it
+  // at (500, 500), and is about 940 px long, so its steps after the take outlast the floor (task 128's x64 run, h7/l4d/)
+  't17-long': [['cua', 'long-left', 30]],
   't17-moved': [['cua:desktop', 'moved', 30]],
   // 60 cold first-handle drags into the hung sink, each a fresh engine's first: the design session's count for #365 (2026-11-12)
   't17-slow-cold': Array.from({ length: 60 }, () => ['cua:handle', 'slow', 1]),
@@ -415,6 +421,18 @@ export function planSpecs({ plan = 'main', ballast = null, trials = null, lanes 
 
 /** The specs a run of the harness's arguments (cli.mjs `parseArgs`) sits: the run's own, and launch-plan.mjs's. */
 export const runSpecs = (args) => planSpecs({ plan: args.plan, ballast: args.ballast, trials: args.samplesTrials ?? null, lanes: args.lanes ?? null });
+
+/**
+ * The sittings a run of the harness's arguments sits, in turn: `{family, plan, specs, part}`. A plan of parts
+ * (drop-signals-judge.mjs `PART_PLANS`, ruling 962) sits each part's own plan in its family, `part` its index; its run's
+ * `--family` must name the parts' families, in order. Any other plan is one sitting of the run's family, with no part.
+ */
+export function runSittings(args) {
+  const parts = PART_PLANS[args.plan];
+  if (!parts) return [{ family: args.families?.[0] ?? 'chrome', plan: args.plan, specs: runSpecs(args), part: undefined }];
+  if ((args.families ?? []).join(',') !== partFamilies(args.plan).join(',')) throw new Error(`the plan of parts ${args.plan} runs --family ${partFamilies(args.plan).join(',')}`);
+  return parts.map((p, k) => ({ family: p.family, plan: p.plan, specs: runSpecs({ ...args, plan: p.plan }), part: k }));
+}
 
 /** A cell's base cell and cover part (`select@middle`). */
 const splitCell = (cell) => {
@@ -837,12 +855,19 @@ async function oneDrag(ctx, { lane, spec, cell, i, engine, before, cold }) {
   return { row, after };
 }
 
-/** The run: the scene, the watch, the ballast, then every block of the plan. */
+/** The run: each of its sittings in turn (`runSittings`; one, but for a plan of parts), their tables one after another. */
 export async function runDropSignals(args, { desktop, emit }) {
-  const family = args.families?.[0] ?? 'chrome';
-  if (!['chrome', 'electron'].includes(family)) throw new Error('the drop-signals experiment runs in chrome or electron');
+  const sittings = runSittings(args);
+  for (const { family } of sittings) if (!['chrome', 'electron'].includes(family)) throw new Error('the drop-signals experiment runs in chrome or electron');
+  const md = [];
+  for (const one of sittings) md.push(...(await sitDropSignals(args, { desktop, emit }, one)));
+  return { md, complete: true, failed: [] };
+}
+
+/** One sitting: the scene, the watch, the ballast, then every block of its plan; its rows marked with its `part`, if any. */
+async function sitDropSignals(args, { desktop, emit: emitRow }, { family, plan: planName, specs, part }) {
+  const emit = part === undefined ? emitRow : (row) => emitRow({ ...row, part });
   const load = args.load ? `load${args.loadFactor ?? 1}` : args.ballast === 'gate' ? 'gate-windows' : 'idle';
-  const specs = runSpecs(args);
   const oracle = new Oracle();
   await desktop.openFront('visible');
   const ballast = [];
@@ -887,7 +912,7 @@ export async function runDropSignals(args, { desktop, emit }) {
     const moved = specs.some((s) => splitCell(s.cell).base === 'moved') ? screenOf(scene, windowPath(at, 'root', 0, scene.window).at(-1)) : null;
     const ends = offWindowEnds({ front: frontPoint(desktop), other: other && { id: other.id, ...clientOrigin(other.id) }, sink: sink && { id: sink.id, ...clientOrigin(sink.id) }, moved });
     const ctx = { desktop, scene, at, watch, presses, oracle, emit, load, family, cua: args.cua, browser, frame: await frameOf(desktop, scene), xdndAware: xdndAware(scene.id), ends };
-    emit({ kind: 'drop-signal-scene', family, load, browser, window: scene.id, page: at.page, frame: ctx.frame, xdnd_aware: ctx.xdndAware, ballast: ballast.length, plan: args.plan ?? 'main', specs, ends, other: other ? { id: other.id, xdnd_aware: xdndAware(other.id) } : null, sink: sink ? { id: sink.id, xdnd_aware: xdndAware(sink.id) } : null });
+    emit({ kind: 'drop-signal-scene', family, load, browser, window: scene.id, page: at.page, frame: ctx.frame, xdnd_aware: ctx.xdndAware, ballast: ballast.length, plan: planName ?? 'main', specs, ends, other: other ? { id: other.id, xdnd_aware: xdndAware(other.id) } : null, sink: sink ? { id: sink.id, xdnd_aware: xdndAware(sink.id) } : null });
     const plan = blockPlan(specs.map((s, k) => ({ ...s, spec: k })));
     for (const [b, block] of plan.entries()) {
       const lane = LANES[block.lane];
@@ -929,7 +954,7 @@ export async function runDropSignals(args, { desktop, emit }) {
     if (presses) await presses.stop();
     await desktop.close([...(scene ? [scene] : []), ...(other ? [other] : []), ...(sink ? [sink] : []), ...ballast]);
   }
-  const md = [`Drop signals (drop-signals.mjs), ${family}, load ${load}, plan ${args.plan ?? 'main'}: ${rows.length} drags.`, ''];
+  const md = [`Drop signals (drop-signals.mjs), ${family}, load ${load}, plan ${planName ?? 'main'}${part === undefined ? '' : ` (part ${part + 1} of ${args.plan})`}: ${rows.length} drags.`, ''];
   for (const table of [neverTakeTable(rows), afterReleaseTable(rows), acceptTable(rows), lateTakeTable(rows), coverTable(rows)]) md.push(...table.md, '');
-  return { md, complete: true, failed: [] };
+  return md;
 }

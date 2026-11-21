@@ -2608,6 +2608,41 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
   Evidence: task-112 to task-121 reports (local); `m5/engine-042/` (measure, tail, h6, reach), `m5/hold-042/`; the release notes of linux-engine-v0.4.2.
   Date/Author: 2026-11-21, the plan-executor (session linux171), on the design session's rulings.
 
+- Decision (2026-11-21, M5, the counted reruns at H6, the freeze H7 = ae3fc1e8 and H7.1 = 96fa1fd3, and #459; the design session's rulings 938–985): what the 0.4.2 reruns found, and the heads after H6.
+  - **H6's counted reruns** (tasks 122 and 123; 938–949).
+    - Both arches pass at H6 69bd7993 except:
+      - x64 L3a. It failed 2/41 late on `_NET_ACTIVE_WINDOW`, and is recorded as FAIL on #429's declared limit, extended to x64 at twice the load (950, 960). An interleaved measurement found X focus and the typed key right in 400/400 on 0.4.1 and 0.4.2, with the property late at +10 ms in 4/200 and 1/200.
+      - arm64 L4b: the unshipped accept lane's finding, as at H⁗ (871/872).
+      - arm64 L4c: its inside band was under its floor, 6/10 (954).
+    - x64's V5 ran in the owner's window under GO 939: 52/52, all-clear clear.
+    - S2 matched its H record on both arches, so V4, S4, L3c and L3e stand.
+    - x64 D1's #358 sits 3.1 ms inside its 40 ms bound, and its run-to-run spread is several ms. #457 (P3) prices identification's share.
+    - No title read of the owner's display (947, 948). A structural scan found the committed title values all the harness's own.
+  - **H7 = ae3fc1e8** (tasks 125 and 128 Part 1; 954–956, 963, 969, 971).
+    - arm64 L4c's misses were the plan's freeze racing the engine's pre-press identification. AT-SPI lives in the browser's process, so a SIGSTOP during identification fails it closed to unidentified, and the press was read only after the thaw.
+    - A freeze now starts after Chrome's `_NET_WM_USER_TIME` press mark, bound to the trial by its server timestamp, plus 55 ms, on a monotonic clock. A stop that can't begin before its thaw is skipped.
+    - Unidentified and skipped rows are unexercised, never a band's outcome.
+    - arm64 lands 10/10 at freeze-600 once the race is closed, so both arches keep 600.
+    - The byte comparison covers plan contents: only C1 and L4c differ.
+    - Reviewed in three rounds. The last two blocked only on fail-open paths a normal run can reach (969); hypotheticals went to the tracker.
+    - Counted C1 and L4c PASS on both arches (6487363e, 1b7b76a2), with every stop after its bound mark (982).
+  - **H7.1 = 96fa1fd3** (task 128 Part 2; 957, 961, 962, 972, 984).
+    - A drop counts as landed only where the path ended. It's judged from the path's end against the zone, with a 3 px border margin; no page changed.
+    - Re-judging every stored run moved only two development rounds, to fail, and no counted verdict. C1 and L4c at H7 stand, re-judged.
+    - The new counted step L4d runs the shipped `t14-long`, `t14-floor` and an Electron long-left at twice the load. Its Electron part counts a row only with a take, motion after the take over 375 ms and the expected outcome, at a minimum of 20 of 30.
+  - **#459 (P2) is a false-ok path on the shipped route** (952, 953, 957–959, 964–968, 970, 973–974, 981, 983).
+    - On a Chrome drop whose path outlasts the 350 ms floor, the release follows the last step with no keepalive. Chrome then drops on its stale accept and position, and its activation request confirms the drop.
+    - Chromium's source explains it. x11_drag_drop_client.cc never puts XdndStatus on the wire. With a status outstanding at the release, the drop becomes kPendingDrop and the queued last position is never sent.
+    - Measured on the drop-signals page at arm64 twice the load: 0.4.1 17/100 wrong outcomes, 0.4.2 12/100 (false oks plus stale-position drops); 0.4.2 didn't regress it. x64 0/100. V5's device route at arm64 load 0/174, and both vendor lanes 0 there.
+    - The fix prototypes (task 126, m5-p459, never released), gated to #459's shape (when-outlasted), all keep x64 D1 inside its bound:
+      - (a), one keepalive: no effect.
+      - (b'), ping, keepalive, ping: removes the stale drops (0/150) but not the false oks (10/150), since Chrome decides on a status the engine can't read.
+      - (b'') was worse.
+    - Criterion 1 of the owner's 968 fails, so nothing is built. The owner chooses between flipping on 0.4.2 with #459 declared, and 0.4.3 with (b') plus answering unconfirmed on the gated shape, with the Chromium bug filed either way.
+  - **Coverage gaps registered**: #460 (a Chrome drop on the desktop route, and a Chrome drag_handle that takes).
+  Evidence: `m5/x64/h6/`, `m5/arm64/h6/` (a953, a957, a959, s954), `m5/{x64,arm64}/h7/`, `m5/engine-042/h7/` (fix, fix2, fix3, judge957), `m5/engine-043/reach/` (m5-reach-043), m5-p459's evidence; task-122 to task-129 reports (local).
+  Date/Author: 2026-11-21, the plan-executor (session linux171), on the design session's rulings.
+
 ## Outcomes & Retrospective
 
 Written per milestone as each lands; the whole-plan retrospective at finish. The execution record (tasks, reviews, friction) is `docs/doperpowers/specs/2026-10-28-own-linux-engine-report.md`.

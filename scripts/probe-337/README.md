@@ -458,3 +458,105 @@ Reading:
 - **The unconfirmed answers cost about 1 s each.** `menuItemClick.ms` p50 is about 1020–1030 ms against about 410–430 ms
   when confirmed. `stalePoint.ms` and `hitMs` stay where main's are, apart from single p95 outliers (select 13.95 ms,
   tectx 6.41 ms).
+
+
+## #458: a click on a closed pop-up button of a background app
+
+Kit `scripts/probe-458/` (`closed.mjs`; `tool.swift`, #454's tool plus `state` and `watch`; readers `summary.mjs` and
+`pivot.mjs`), workflow `.github/workflows/probe-458.yml`, dispatched with an exact engine SHA built unmodified. The page,
+the re-sets and the Finder cover (0, 40, 380×300, beside the app's window at x 400, not over it) are #454's. Each row: a
+re-set with the menu closed, one observation, the pop-up button's node in it, then one route on the closed button, read
+at 300 ms and 1.8 s (the app's new windows, a menu's at layer 101; AXExpanded; the AX menus; the focus; the frontmost app;
+the window order). A second tool samples the window list every 10 ms through the action (`watch`), so a menu that opens
+and closes at once shows. After anything opened, the engine's Escape, then the window order again.
+
+Routes: `button` (the engine's coordinate click on the button, today's case); `button-2p` (the same click forced to
+route 2′ with `spikeRoute`: posted to the app, no activation); `element-item` (the engine's element click on the
+button's node, a re-observation, then the engine's coordinate click on a menu item, #454's fix); `element-1` (the element
+click forced to route 1); `keys:space`, `keys:Down` (the kit writes AXFocused on the button, then the engine's
+`press_key`); `kit:axpress`, `kit:axshowmenu` (the kit's AX action on the button); `kit:observed` (the kit's click
+posted to the app, the engine's events rebuilt and stamped to the observed window, no activation); `kit:hid` (a HID-tap
+click, a person's). Pop-ups: `select` (Chrome's `<select>`), `font` (TextEdit's font pop-up), `language` (Script
+Editor's language pop-up), and `combo`, TextEdit's font-size combo box (an NSComboBox, clicked on its arrow), the added
+native control. Modes: shared-behind, shared-front, dedicated-behind; kit routes in the shared ones, `element-1` behind.
+
+### Results, engine edbfbd233ad9b4496b4d78062e51c0f826f78631 (main, with #454's fix)
+
+Full run: https://github.com/SSFSKIM/cua/actions/runs/44877626226 (kit 62c4a406; Google Chrome 157.0.8103.79, macOS
+26.7.2, image 20261117.0516.1; 475 rows, 5 per cell, no setup failures). Smokes, 1 row per cell, the same answers:
+https://github.com/SSFSKIM/cua/actions/runs/44875033215 (kit aa498a6c, 96 rows; also `keys:fka-space`, Full Keyboard
+Access on, the same as `keys:space`, and `kit:warpmove-observed`, the same as `kit:observed`) and
+https://github.com/SSFSKIM/cua/actions/runs/44876506494 (kit 287ff573, 59 rows). Artifacts in
+`~/.local/share/probe-458/run-<id>/` on the MacBook.
+
+"Opened": a menu window still up at 1.8 s (or AXExpanded true for the combo box's list); "opened-closed": the watch saw
+it come and go. "Top": the top layer-0 window, Finder's (the person's) or the app's observed window, after the action and
+after Escape. The frontmost app stayed Finder in every behind row but `kit:hid`'s.
+
+| pop-up | route | shared-behind | shared-front | dedicated-behind |
+|---|---|---|---|---|
+| font, language | `button` (today) | ok route 3, **opened-closed 10/10**, top Finder | ok, opened 10/10 | ok route 3, nothing seen 9, opened-closed 1; top app |
+| select | `button` | ok route 3 (#282's AXPress), opened 5/5, top app | ok, opened 5/5 | ok route 3, nothing 3, opened-closed 2 (page: pointerdown, mousedown, focusin, click); top app |
+| combo | `button` | ok route 3, nothing 5/5 | ok, opened 5/5 | ok, nothing 5/5 |
+| all four | `button-2p` (route 2′) | ok, **opened 20/20**, top app | opened 20/20 | **opened 20/20**, top app |
+| select, font, language | `element-item` | ok route 3 `action:AXPress:advertised`, opened 15/15, top app | ok route 1, opened 15/15 | ok route 3, opened 15/15, top app |
+| select, font, language | `element-1` (route 1) | ok, opened 15/15, top app | - | opened 15/15, top app |
+| combo | `element-item` | ok route 3 `synthesized:noAction` (no action advertised), nothing 5/5 | nothing 5/5 | nothing 5/5 |
+| select, font, language | `keys:space`, `keys:Down` | ok route 2′, opened 30/30 (AXFocused write answered 0, the button read focused), top app | opened 30/30 | opened 30/30, top app |
+| combo | `keys:space` | ok, nothing 5/5 (the AXFocused write answered 0 but the combo box never read focused) | nothing 5/5 | nothing 5/5 |
+| select, font, language | `kit:axpress`, `kit:axshowmenu` | answered 0, opened 30/30, top app | opened 30/30 | - |
+| combo | `kit:axpress` / `kit:axshowmenu` | -25206 (unsupported) / 0, nothing 10/10 | the same 10/10 | - |
+| all four | `kit:observed` | opened 20/20; top app (combo: top Finder) | opened 20/20 | - |
+| font, combo | `kit:hid` | TextEdit activated; font opened-closed 5, combo opened 5 | opened 10/10 | - |
+| select, language | `kit:hid` | nothing, not activated 10/10 (unexplained) | opened 10/10 | - |
+
+The follow-through, `element-item`'s coordinate click on an item of the menu the element click opened (#454's fix):
+font and language **taken and confirmed** 30/30 (route 1 AXPick, `menuItemClick {effect: confirmed, value: taken}`,
+p50 ~420 ms); select **taken** 15/15 but answered `clickUnconfirmed` (`value: unread`), #454's known Chrome answer.
+
+Observable once open by the element click (`element-item`, `element-1`): the next observation lists the menu's items
+with tokens in every row (select 6, font 72, language 2 AXMenuItem nodes), and its screenshot shows the menu (rows
+checked by eye: TextEdit's font list, Chrome's One/Two/Three).
+
+When today's click opens the menu behind (watch, ms after the click began): font 130–260 up, gone by 250–410; language
+110–200 up, gone by 250–340; the engine's `delivery.screenHoldMs` 180–260 in the same rows. So the menu opens and is
+closed when route 3's hold ends and the window order is put back. Dedicated: never seen in 9 of 10 AppKit rows (up for
+50 ms in the tenth); Chrome's `<select>` up for about 60 ms in 2 of 5.
+
+A representative `button` reply (font, shared-behind), verbatim:
+`{"inputRoute":3,"activationGuardMs":32.814,"startedAt":1795245412313,"delivery":{"guardMs":253.142,"transientRaise":{"outlivedHold":false,"seen":true,"ms":162.569},"personInput":false,"otherAppFront":false,"screenHoldMs":260.872,"restoreLatencyMs":32.726,"capped":true,"frontmostRestored":false,"releasedAt":1795245412513,"holdStartedAt":1795245412252,"restores":4,"postedAt":1795245412313,"repairedAfterRelease":false,"frozenMs":261.21,"raiseLeft":false},"activationClick":"posted","stalePoint":{"recordedRole":"AXPopUpButton","ms":5.365,"windowsMs":0.964,"hitMs":1.594,"identity":"handle","verdict":"kept","reason":"sameElement","hitRole":"AXPopUpButton"},"activationClickKind":{"when":"early","kind":"activationPoint"},"coordinateClick":{"windowPoint":{"x":186,"y":50},"frameBeforePost":{"height":679,"x":400,"y":31,"width":620},"postedWindowLocation":{"x":186,"y":50},"windowFrame":{"y":31,"x":400,"width":620,"height":679},"screenshotPoint":{"y":50,"x":186},"postedLocation":{"y":81,"x":586}},"receivedAt":1795245412229,"endedAt":1795245412313,"hidIdleMs":null,"activationJoin":"fresh"}`
+(dedicated: the same without `delivery`; Chrome's `<select>` shared-behind adds
+`"elementClick":{"action":"AXPress","pressedRole":"AXPopUpButton","walk":["AXPopUpButton"],"pressed":"hit","reason":"webArea","plan":"action"}`
+and `"activationClick":"outsideFrame"`). The element click behind:
+`{"elementClick":{"action":"AXPress","reason":"advertised","plan":"action","hitTest":"application","hit":"element"},"activationJoin":"fresh","inputRoute":3,"activationClickKind":{"when":"early","kind":"activationPoint"},"activationClick":"posted",…}`.
+
+### Reading
+
+- **Why today's click opens nothing behind.** It is neither "AppKit opens a pop-up only for an active app" nor "only
+  from a real mouse-down loop": the same events posted with no activation open every pop-up behind (`button-2p` and
+  `kit:observed`, 40/40 with the app still in the background), and so do AX actions and keys. Route 3 is what closes it:
+  in shared mode its menu opens about 150 ms in and is gone when the hold ends and the person's window order is put back
+  (10/10 watched). In dedicated mode, nothing is put back, yet the menu shows in 1 of 10 AppKit rows; there the
+  activation's down seems to take the click before it reaches the button (not resolved by this kit).
+- **Honest routes.**
+  - For AppKit and Chrome pop-up buttons, the element action AXPress works: the engine's element click opens the menu
+    in every mode (30/30 on route 3, 30/30 forced to route 1). The menu is then observable (items listed with tokens,
+    menu in the screenshot), and #454's fix takes the item (AppKit confirmed 30/30; Chrome taken 15/15 but
+    `clickUnconfirmed`).
+  - Keys (space or Down, once the button holds focus) open it in every mode (60/60 behind, 30/30 front).
+  - Route 2′ for the coordinate click opens it in every mode (40/40).
+  - So a closed-button coordinate click could be delivered as the button's AXPress, as #282 already does for Chrome
+    in shared mode. That route opens Chrome's `<select>` behind 5/5.
+- **The combo box has no element action**: its node advertises none (`synthesized:noAction`), AXPress is unsupported,
+  AXShowMenu answers 0 and opens nothing, and its focus write does not hold, so keys reach the text area. Only a posted
+  click opens it behind (route 2′ 10/10, `kit:observed` 5/5). The honest answers for it are a refusal that names the
+  way through, or route 2′.
+- **Activation and the person's windows.** No engine route activated the app: the frontmost app stayed Finder in every
+  behind row (`kit:hid`, a real click, activated TextEdit). But **opening a pop-up menu behind orders the app's
+  observed window above the person's window**, whichever route opens it (AXPress, keys, route 2′, the kit's post): the
+  top layer-0 window became the observed one in every such row, and it stayed there after Escape. Here the two windows do
+  not overlap, so nothing was hidden. Where they overlap, the opened menu's window would cover the person's.
+  Route 3's `button` in shared mode is the only behind route that leaves Finder on top, because it puts the order back,
+  and that is the same step that closes the menu.
+- **Frontmost clicks are unchanged:** `button` opens every pop-up with the app frontmost, 20/20 (the ticket's three,
+  15/15, plus the combo box).

@@ -47,6 +47,7 @@
 //   {"op":"cancel","pid"}                    AXCancel on the app's open menu (else its first item)
 //   {"op":"combo","pid"}                     the first AXComboBox's frame and its children's frames (the arrow's)
 //   {"op":"arrange","wins":[n]}              the windows raised by AXRaise, back to front (the qualification's layouts)
+//   {"op":"front","n"}                       window n made main, raised, its app activated with no options
 import AppKit
 import ApplicationServices
 import Foundation
@@ -880,6 +881,25 @@ func arrange(_ q: [String: Any]) -> [String: Any] {
   return ["raised": out]
 }
 
+/// {"op":"front","n"}: window n brought to the front as a person would bring one window of an app forward: AXMain written
+/// on it, AXRaise, then its app activated with no options (NSRunningApplication.activate: only the main and key windows
+/// come forward). The qualification's layouts, where an AXRaise of a background app's window stays under the active
+/// app's windows (smoke run 44920398171).
+func frontWindow(_ q: [String: Any]) -> [String: Any] {
+  guard let n = (q["n"] as? NSNumber)?.intValue else { return ["error": "args"] }
+  let list = (CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]) ?? []
+  guard let w = list.first(where: { (($0[kCGWindowNumber as String] as? NSNumber)?.intValue ?? 0) == n }),
+        let owner = (w[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value else { return ["error": "missing"] }
+  let b = rectOf(w)
+  let app = prepare(AXUIElementCreateApplication(owner))
+  guard let e = elements(attr(app, kAXWindowsAttribute)).first(where: { frameOf($0).map { near($0, b, 3) } ?? false }) else { return ["error": "no AX window"] }
+  let main = AXUIElementSetAttributeValue(e, kAXMainAttribute as CFString, kCFBooleanTrue).rawValue
+  let raise = AXUIElementPerformAction(e, kAXRaiseAction as CFString).rawValue
+  let activated = NSRunningApplication(processIdentifier: owner)?.activate(options: []) ?? false
+  usleep(350_000)
+  return ["main": main, "raise": raise, "activated": activated]
+}
+
 while let line = readLine() {
   guard let data = line.data(using: .utf8), let q = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { emit(["error": "bad request"]); continue }
   textWindowFrame = (q["window"] as? [Double]).flatMap { $0.count == 4 ? CGRect(x: $0[0], y: $0[1], width: $0[2], height: $0[3]) : nil }
@@ -910,6 +930,7 @@ while let line = readLine() {
   case "cancel": emit(cancel(q))
   case "combo": emit(combo(q))
   case "arrange": emit(arrange(q))
+  case "front": emit(frontWindow(q))
   default: emit(["error": "unknown op"])
   }
 }

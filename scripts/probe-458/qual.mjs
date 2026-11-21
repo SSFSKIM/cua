@@ -10,7 +10,8 @@
 // - parity, 5 rows: a plain page button (Chrome's Beta), an open menu's item (#454: the kit's AXPress opens the font
 //   menu), the combo box's text (behind and frontmost).
 // A second tool samples the window list every 10 ms (how long the app's window covered F1). Layouts are built with the
-// kit's AXRaise, back to front (tool.swift `arrange`), and read back (`layoutBuilt.ok`).
+// kit, back to front (tool.swift `front`: each window made main, raised, its app activated with no options), and read
+// back (`layoutBuilt.ok`).
 //
 //   node scripts/probe-458/qual.mjs --engine <bin> --tool <bin> --out <dir> [--reps n] [--menus a,b] [--routes kinds or
 //        layouts] [--modes a,b] [--budget minutes] [--shots n]
@@ -283,7 +284,7 @@ function named(list, appPid) {
   for (const w of list) {
     if (w.owner === 'Finder') { for (const [k, f] of Object.entries(FW)) if (at(w, f)) out[k] = w.n; }
     else if (w.owner === 'Calculator') out.Calc ??= w.n;
-    else if (w.pid === appPid) { if (at(w, WIN) || (Math.abs(w.bounds[0] - WIN.x) <= 3 && Math.abs(w.bounds[1] - (WIN.y + 1)) <= 3)) out.App ??= w.n; else if (at(w, WIN2)) out.App2 ??= w.n; }
+    else if (w.pid === appPid) { if (at(w, WIN) || (Math.abs(w.bounds[0] - WIN.x) <= 3 && Math.abs(w.bounds[1] - (WIN.y + 1)) <= 3)) out.App ??= w.n; else if (w.bounds[2] >= 200) out.App2 ??= w.n; }
   }
   return out;
 }
@@ -306,14 +307,17 @@ async function buildLayout(layoutName, appPid, front) {
   await sleep(500);
   let list = await orderNow();
   const names = named(list, appPid);
+  // Back to front, each window brought forward as a person brings one window of an app forward (`front`: AXMain, AXRaise,
+  // its app activated with no options), so the active app ends as the front window's.
   const wins = [...L.order].reverse().map(k => names[k]).filter(Boolean);
-  const arranged = await ask({op: 'arrange', wins}, 15_000);
+  const arranged = [];
+  for (const n of wins) arranged.push(await ask({op: 'front', n}, 15_000));
   if (front) { setFront(appPid); await sleep(700); }
   await sleep(300);
   list = await orderNow();
   const actual = list.map(w => nameOf(names, w.n)).filter(Boolean);
   const want = L.order.filter(k => names[k]);
-  return {layout: layoutName, names, arranged: arranged.raised, actual, ok: front || JSON.stringify(actual) === JSON.stringify(want)};
+  return {layout: layoutName, names, arranged, actual, ok: front || JSON.stringify(actual) === JSON.stringify(want)};
 }
 async function escapeTwice(pid) {
   try { const w = await connect('shared'); for (let i = 0; i < 2; i++) { await w.execute('press_key', {pid, key: 'Escape'}); await sleep(250); } w.close(); } catch {}

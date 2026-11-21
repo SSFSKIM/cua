@@ -26,10 +26,11 @@ for (const file of process.argv.slice(2)) {
     const fr = tally(ok.map(r => `${short(r.before.front)}->${short(r.after.front)}, focus ${JSON.stringify(r.after.personFocusedWindow) === JSON.stringify(r.before.personFocusedWindow) ? 'kept' : 'CHANGED'}`));
     const af = tally(ok.map(r => String(r.after.appFrontmost)));
     const cover = `${pct(ok.map(r => r.watch?.aboveMs), 0.5)}/${pct(ok.map(r => r.watch?.aboveMs), 1)}`;
-    const rest = tally(ok.filter(r => pc(r)?.restored).map(r => { const x = pc(r).restored; return `${x.windows} win ${x.complete ? 'complete' : 'INCOMPLETE'} ${x.raises} raise${x.raises === 1 ? '' : 's'}`; }));
+    const rest = tally(ok.filter(r => pc(r)?.restored).map(r => { const x = pc(r).restored; return `${x.windows} win ${x.complete ? 'complete' : 'INCOMPLETE'}${x.stopped ? ` stopped ${x.stopped}` : ''} ${x.raises} raise${x.raises === 1 ? '' : 's'}`; }));
+    const noRestore = ok.filter(r => pc(r)?.action && !pc(r).restored).length;
     const restMs = ok.filter(r => pc(r)?.restored).map(r => pc(r).restored.ms);
     const bad = rs.length - ok.length ? ` (${rs.length - ok.length} setup)` : '';
-    console.log(`| ${k.replace(/\|/g, ' ')} | ${rs.length}${bad} | ${ans} | ${open} | ${pick || '-'} | ${kept} | ${mv} | ${fr} | ${af} | ${cover} | ${rest}${restMs.length ? `; ms ${pct(restMs, 0.5)}/${pct(restMs, 1)}` : ''} |`);
+    console.log(`| ${k.replace(/\|/g, ' ')} | ${rs.length}${bad} | ${ans} | ${open} | ${pick || '-'} | ${kept} | ${mv} | ${fr} | ${af} | ${cover} | ${rest}${noRestore ? `; none ${noRestore}` : ''}${restMs.length ? `; ms ${pct(restMs, 0.5)}/${pct(restMs, 1)}` : ''} |`);
   }
   console.log('\nfalse confirmations (popUpClick confirmed, nothing open at 300 ms or 1.8 s):');
   for (const r of results.filter(r => r.click?.meta?.popUpClick?.effect === 'confirmed' && r.opened === 'none')) console.log(`  ${r.label}`);

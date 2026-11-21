@@ -1665,7 +1665,7 @@ func newWindowOverScreenshot(app: String) -> EngineError {
 /// blamed; the sentence names the ways through: keys for the overlay, or an element the tree holds. Nothing was posted.
 func appWindowOverPointRefusal(app: String) -> EngineError {
   EngineError(name: "appWindowOverPoint",
-    "\(app) has a window of its own over the one the screenshot showed at this point (a suggestion list, popup or panel), and a click here would reach the window under it, not what the screenshot shows. Nothing was sent. Use keys instead (the arrow keys and Return for a suggestion list, Escape to close it), or call getScreenshot for a new screenshot and click an element its tree holds.")
+    "\(app) has a window of its own over the one the screenshot showed at this point (a suggestion list, popup or panel), and a click here would reach the window under it, not what the screenshot shows. Nothing was sent. Use keys instead (the arrow keys and Return for a suggestion list, Escape to close it), or call getAXState() and click an element it lists.")
 }
 
 /// The guard's outcome at a point: its meta record, and the refusal to throw (nil when it kept the pointer). The refusal

@@ -1394,7 +1394,7 @@ final class AppWindowOverPointTests: XCTestCase {
     outcome.record.hitMs = 3.25
     XCTAssertEqual(outcome.refusal?.errorName, "appWindowOverPoint")
     XCTAssertEqual(outcome.refusal?.message,
-                   "Google Chrome has a window of its own over the one the screenshot showed at this point (a suggestion list, popup or panel), and a click here would reach the window under it, not what the screenshot shows. Nothing was sent. Use keys instead (the arrow keys and Return for a suggestion list, Escape to close it), or call getScreenshot for a new screenshot and click an element its tree holds.")
+                   "Google Chrome has a window of its own over the one the screenshot showed at this point (a suggestion list, popup or panel), and a click here would reach the window under it, not what the screenshot shows. Nothing was sent. Use keys instead (the arrow keys and Return for a suggestion list, Escape to close it), or call getAXState() and click an element it lists.")
     XCTAssertEqual(outcome.record.wire as NSDictionary, ["verdict": "refused", "reason": "appWindowOverPoint", "overWindow": 49, "by": "axHit",
                                                          "windowsMs": 0.2, "hitMs": 3.25, "ms": 0.4] as NSDictionary)
   }

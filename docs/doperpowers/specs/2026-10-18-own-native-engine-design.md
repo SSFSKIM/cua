@@ -562,6 +562,15 @@ error    {code: number (the vendor's codes where mapped; -10005 otherwise), mess
     rechecked? (true: #282's or #283's
     route waited and the guard ran again before the press; the verdict is that check's, ms both checks'), afterActivation?
     (true: that check ran after the route's focus hold had activated the app)}; roles only, never a title
+  menuItemClick: #454's coordinate click on an open menu's item, on its result and its errors once the guard kept the
+    point: {menuWindow (the number of the app's menu window over the point), delivery? ("action": the click delivered as
+    the item's action, inputRoute 1, no pointer event; set as the action is dispatched), action? ("AXPick" |
+    "AXPress"), effect? ("confirmed" | "unconfirmed"), actionError? (the action's AXError when not success: a messaging
+    timeout is then judged by the effect), menuClosed? (true: the menu's window left the screen or the item's handle
+    died; null: the window list did not read), value? ("taken" | "unchanged" | "other" | "unread": the selection of
+    the control identified before the action against the item's title, moved to it, already it or unread before, another,
+    or nothing to read), polls?, ms? (from the action's return to the last read), refused? ("notRecorded" | "notHit" |
+    "unobserved" | "relabelled" | "disabled" | "noAction")}; never a title
   note: on a paste result that pasted a line with no channel to see it, read after ⌘V (#187; type_text's paste route
     since #361 never, its read-back answering instead), on a type_text a password field's length confirmed (#414), and on a
     scroll whose content was already at its end in that direction (#328): the sentence the service adds to the tool
@@ -7033,6 +7042,153 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   Left as debt (`tech-debt-tracker.md`, the same as main): the element route's post-wait recheck runs the tree verdict
   alone, so a popup of the app's that opens during that wait is pressed under.
   Date/Author: 2026-11-20, cursor235's implementer for #452.
+- Decision (#454, design ruling 946, 2026-11-20, `fix/454-menu-item`, plugin 0.28.24; amends #452's "unchanged by (a)"
+  paragraph above, MenuItemPoint.swift, Input.swift `WindowHit.answered`): **a coordinate click on an item of an open
+  menu is delivered as the item's own action and confirmed by its effect, or refused; it is never posted.** #454's kit
+  (`probe/454-measure`, README 4d87ff55; run 44848863214 on main fdd285dd, 495 rows) found every menu it opened (Chrome's
+  `<select>`, TextEdit's font pop-up, Script Editor's language pop-up) a layer-101 window of the app's own over the point,
+  the observation listing the item as an AXMenuItem with AXPick and a token, and the app's hit-test at the point answering
+  that item (315/315). Main's click is posted by route 3, answers ok and only closes the menu (45/45, nothing taken);
+  the element click on the listed item (route 1, AXPick) takes it 45/45, in shared frontmost, shared behind and
+  dedicated. No pointer post takes it without the real cursor on the item (the kit's stamped, unstamped and warped
+  posts), which the engine never moves, so the route is the item's action, not a re-aimed post (#453).
+  The rule, after the stale-point guard keeps a plain left click's point (no spike route) and before anything is posted
+  or activated: (1) the trigger needs both signals. The hit-test's own answer, whatever window its chain reads to
+  (`WindowHit.answered`: Chrome's menu is an app-level AXMenu whose chain reaches no window, so main's hit is none and the
+  guard keeps `noHit`), is an AXMenuItem whose parent is an AXMenu; the window list (read only when the hit or the
+  record names a menu item) holds a window of the app's (or the hit's process's) at layer 101, alpha above 0, over the
+  point, in front of the observed window; and the item is the one the observation recorded there (`recordedMenuItem`:
+  the deepest recorded node itself, as the guard found it, TextEdit's `sameElement`; a recorded AXMenuItem above it; or
+  #433's recorded control beneath it, Chrome's `underlyingRole: AXMenuItem`, by handle). Enabled (AXEnabled read true)
+  and advertising AXPick (else AXPress), it is performed by route 1 (`deliverAction`, no focus hold, so no activation and
+  no activation click), after the intervention guard's in-flight check, the agent cursor acting the click at the point.
+  (2) The action's return is not the effect: the menu's window must leave the on-screen list (or the item's handle die),
+  and the control the menu belongs to (the AXMenu's AXPopUpButton or AXComboBox parent, read before the action, else the
+  app's focused element of those roles, read each time, which for Chrome's parentless menu is the `<select>` the focus
+  returns to) must read the item's title as its AXValue or AXTitle; read at once and every 20 ms for up to 1 s
+  (`menuItemSettleMs`). Seen, the click answers success; otherwise `clickUnconfirmed`, "The click could not be confirmed:
+  it was carried by the menu item's <action> action in <App>, since a pointer click does not take a menu's item, and
+  <the menu closed, but nothing cua can read shows the item taken | the menu was not seen to close with the item taken>.
+  Observe the app with get_app_state before any retry, and never retry blindly." (3) Signals that disagree (the hit's
+  item is not the recorded one or none is recorded there, `notRecorded`; the record names an item and the hit answers
+  none of an open menu, `notHit`), a disabled item or one whose AXEnabled does not read (`disabled`), and an item with
+  neither action or whose actions do not read (`noAction`) are refused with nothing performed or posted, as
+  `appWindowOverPoint` (the menu is #452's window of the app's own over the observed one): "<App> has a menu open at
+  this point, which a click takes only as its item's own action, but <cause>. Nothing was sent. Use keys instead (the
+  arrow keys to the item, then Return; Escape closes the menu), or call getScreenshot for a new screenshot and click
+  the menu item its tree lists, by its element." The meta's `menuItemClick` (Interfaces) carries the menu window,
+  `delivery: "action"` with the action, the effect and its reads, or `refused`; `inputRoute` is 1 on both.
+  Main's path is kept for a hit-test that answered nothing or past `pointHitSignalDeadlineMs` (#452's no-signal rule;
+  the record alone is not taken as showing a menu item, since a stale record is what the guard exists to doubt), for a
+  menu item with no window of its own over the point (a web page's ARIA menu, which a posted click takes, and in shared
+  mode #282's element route), for any button but the left, a click count above 1 and a spike route, and for every
+  other click, which reads no window list.
+  Expected, not measured: a context menu (an AXMenu under the view that popped it, at layer 101) is delivered when its
+  item is recorded and answers `clickUnconfirmed`, having no pop-up button or combo box to read; a menu-bar menu open over
+  the window is refused (`notRecorded`) unless an observation recorded its items at the point, then delivered and
+  unconfirmed as a context menu's; a submenu's item (its own layer-101 window, its AXMenu under the parent AXMenuItem)
+  is delivered when recorded, confirmed only through the app's focused pop-up button, else unconfirmed. Chrome's
+  confirmation rests on its focused element reading the `<select>` after the pick, and the agreement on the hit and the
+  record naming the same AXMenuItem handle; either failing turns a taken item into `clickUnconfirmed` or a refusal,
+  never ok. A closed pop-up button (#458) and re-aiming (#453) are out of scope.
+  Proven offline (`MenuItemPointTests`, 8 tests): TextEdit's agreeing item is its AXPick by route 1, carried with nothing
+  posted and confirmed by the window leaving and the pop-up reading the item; Chrome's item, recorded beneath the page
+  and answered with no window, is pressed (AXPress-only) and confirmed through the focused `<select>`; a context menu's
+  item and a menu still up answer `clickUnconfirmed` with their sentences after the full settle; the three disagreements,
+  a disabled and an actionless item refuse with the sentence, nothing performed; a late or failed hit-test and every
+  click off a menu window keep main's path, reading no window list for a plain click. With the rule off 5 of the 8 fail
+  (14 assertions); with the action's return taken as proof, 3; with the deadline ignored, the late-hit test; with the
+  window gate removed, the off-menu test; with the control beneath or the recorded ancestor ignored, the Chrome and the
+  recorded-item tests.
+  Not measured live: this build on the kit's cells (the three menus by `coord` in three modes, context and menu-bar
+  menus, a submenu).
+  Date/Author: 2026-11-20, cursor235's implementer for #454.
+- Decision (#454, the review of fdd285dd..32787ce3, reviewer-high, 2026-11-20; amends the entry above and #452's
+  sentence): ten corrections, each tested and each test failing with its fix reverted.
+  (1) The process serving the item, not main's bounded hit's, is refused when forbidden and registered as driven
+  (`actionTargets`), before the in-flight check, as #282's element route does.
+  (2) Confirmation needs selection evidence: the control's selection is its AXValue, its AXTitle only where it has no
+  value (a static label such as the hosted fixture's "Choice" never stands in), read before and after the action; it
+  must move to the item's title from another. Already the item, or unread before, is `unchanged`: unconfirmed, so
+  choosing the item already chosen answers `clickUnconfirmed`.
+  (3) That control is identified before the action: the AXMenu's pop-up or combo-box parent; for a menu with no parent
+  (Chrome's `<select>`), the app's focused element of those roles then; a menu with any other parent (a context menu's
+  view) has none. A control that takes the focus only after the action confirms nothing, so Chrome confirms only if its
+  focus reads the `<select>` while the menu is open, unmeasured.
+  (4) The coordinate guard's re-hits go through `LatestHit`, so a menu item the first hit-test missed and the guard's
+  re-hit recovered is the menu step's timed signal; a final re-hit that answered late or nothing stays no signal.
+  (5) The recorded item's title rides with it (`RecordedMenuItem`) and the live item must read it (nil and empty
+  alike), else refused as `relabelled` ("the item there no longer reads what the screenshot showed"): a recorded icon's
+  item kept by `hitAboveNode` in a dynamic menu that reused it.
+  (6) A menu item inside an AXWebArea (or, with no item hit, a recorded one there) is main's, whatever window of the
+  app's at layer 101 lies over the point: a page's ARIA menu under a click-through panel keeps its posted click.
+  (7) Closure is read from `onScreenWindowIDs()`; a list that does not read is unknown (`menuClosed: null`), never
+  closed, where `onScreenWindowList()` answered an empty list.
+  (8) A messaging timeout (`cannotComplete`) from the action may have taken effect while the app closed its menu, so
+  the effect is read and decides (`actionError` in the meta); any other error is `actionFailed`, read no further.
+  (9) The meta's `delivery` and `action` are set as the action is dispatched, so an owner refusal or an intervention
+  stop before it records none.
+  (10) Both `appWindowOverPoint` sentences name getAXState(), since getScreenshot answers an image: #454's now ends
+  "or call getAXState() and click the menu item it lists, by its element.", and #452's "or call getAXState() and click
+  an element it lists." (the #452 entry quotes the old wording; `docs/evidence/2026-11-20-same-app-overlay` records a
+  live reply with it). The model-facing sentence now says the control must have moved to the item, and that the item
+  already chosen answers `clickUnconfirmed` too.
+  Proven offline (`MenuItemPointTests`, 17 tests; `AppWindowOverPointTests` for #452's sentence): with each fix
+  reverted its test fails; for (4) the reverted form is the old composition (an untimed re-hit beside `latest`), since
+  the click's live wiring is not unit-reachable.
+  Date/Author: 2026-11-20, cursor235's implementer for #454.
+- Decision (#454, the re-review of 32787ce3..3eb2b806, 2026-11-20; amends the entry above): four corrections, each
+  tested and each test failing with its fix reverted. (1) AXTitle and AXValue read as text, absent or failed
+  (`MenuTextRead`); the selection's attribute is chosen once before the action (AXValue; AXTitle only where the value is
+  absent, never where its read failed) and the same one is read after it, so a value timing out after the action never
+  hands the judgement to a static label, and a failed read on either side is no evidence (`unread`). (2) The title the
+  decision verified against the record rides in `MenuItemTarget`, judges the selection, and is read again just before
+  the action: another, or a failed read, refuses as `relabelled` with nothing performed. (3) A page's (ARIA) item is
+  main's only when no native item is recorded at the point; with one recorded and its menu window still over the point,
+  a hit on a page item refuses (`notHit`), nothing posted or pressed. (4) The identity comparison decodes the live title
+  as the observation does (a string or an attributed string's text) and cuts it as the observation cuts what it records
+  (`bounded`: 10,000 UTF-16 units and the marker), so a long unchanged option is not refused; the full title stays the
+  selection's evidence.
+  Date/Author: 2026-11-20, cursor235's implementer for #454.
+- Decision (#454's qualification, 2026-11-20; kit `probe/454-measure` README 735d8727, fix run 44860009214 on c83ed846
+  against main 44848863214, 44856543463 and 44863373571; amends the entries above): the AppKit pop-ups are delivered and
+  confirmed (30/30), Chrome's `<select>` and TextEdit's context menu delivered and taken (30/30) but unconfirmed, and
+  every outside click unchanged; three corrections follow from the rest. (1) Chrome's already-selected option
+  (`select-same`) was refused `notRecorded` 15/15 where main closed the menu on the selection it keeps: the option lies
+  over the page's own AXPopUpButton, the deepest recorded node at the point, which acts, so neither it nor #433's control
+  beneath it was the item. Every recorded AXMenuItem whose shown frame holds the point now counts
+  (`recordedMenuItems`: `recordedMenuItem`'s first, then the rest deepest first), and the hit agrees with any of them;
+  the option is delivered and, its selection unchanged, answers `clickUnconfirmed` (`unchanged`) as AppKit's
+  already-selected items do (30/30), a stated limit. (2) The `<select>` answered `value: "unread"`: the focus is not on
+  it while its menu is open. The artifacts show the page's AXPopUpButton keeps an AXMenu child of its own listing the
+  options and reads AXValue One before and Three after; a parentless menu's control is now the one recorded pop-up or
+  combo box whose own AXMenu lists the open menu's item titles in order (`parentlessMenuOpener`, at most
+  `menuOpenerCandidateLimit` recorded controls read), none when two do, the focused one only as the fallback. Not yet
+  measured with this build. (3) The menu-bar menu and its submenu were refused `notRecorded`, rightly (the screenshot
+  does not show them and the observation lists none of their items), but with a sentence saying the item differed from
+  the screenshot's and advising keys, which took the item only with TextEdit frontmost (behind, the menu stays up
+  20/20). A hit on a native item with no recorded menu item at the point is now `unobserved`: "<App> has a menu open at
+  this point that the screenshot does not show (a menu-bar menu, a submenu, or a menu opened since the screenshot), so
+  the click cannot be checked against it. Nothing was sent. A click outside the menu closes it. To choose one of its
+  items, call getAXState() and click the item it lists by its element; a menu-bar menu's items are listed once its title
+  in the menu bar has been clicked by its element." An outside click closes every menu in every mode (measured); the
+  element route through the menu-bar record is the engine's own (MenuRecord.swift, MenuSpan.swift) and was not part of
+  this kit. Chrome's page context menu keeps main's refusal (`otherWebArea`), its items under the web area.
+  Proven offline (`MenuItemPointTests`, 24 tests): each of the three fails with its fix reverted.
+  Date/Author: 2026-11-20, cursor235's implementer for #454.
+- Decision (#454, the review of c83ed846..74c99b92, reviewer-medium, 2026-11-20; amends the entry above): four
+  corrections, each tested and each test failing with its fix reverted (7 reversions). (1) The recorded item the guard
+  identified (`recordedMenuItem`) stands; only where a node of another role won the check is the recorded AXMenuItem
+  holding the point taken, and only when exactly one does (`RecordedMenuItems`), so a neighbour row on a shared edge, or
+  rows shifted since the screenshot, never lend another row's action (refused `notRecorded`). (2) A parentless menu's
+  control is named only on complete evidence (`MenuOpenerSearch`): a failed role, children or title read, or more
+  candidates than `menuOpenerCandidateLimit`, answers unknown, and the click is then unconfirmed with no focus fallback.
+  (3) The search shares a 100 ms budget (`menuOpenerBudgetMs`) and ends at a second match (unknown), and the request's
+  deadline is checked just before the action (`timeoutReached`, nothing sent). (4) `unobserved` proves only that the
+  record holds no item of the menu at the point (the walk can reach its limits), so its sentence now says "the
+  accessibility record of the screenshot holds no item of it at this point" and offers the element route only "If a
+  fresh getAXState() lists the item"; the model-facing sentence says the same.
+  Date/Author: 2026-11-20, cursor235's implementer for #454.
 
 ## Outcomes & Retrospective
 

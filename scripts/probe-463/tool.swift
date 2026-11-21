@@ -940,7 +940,7 @@ func frontWindow(_ q: [String: Any]) -> [String: Any] {
   return ["main": main, "raise": raise, "activated": activated]
 }
 
-/// {"op":"closeExtra","pid","keep":[x,y,w,h]}: #463's reset. Each AX window of the app but the one at `keep` (within 6 pt):
+/// {"op":"closeExtra","pid","keep":[x,y,w,h]}: #463's reset. Each AX window of the app but the one at `keep`'s origin (6 pt):
 /// its close button pressed, else a descendant AXButton titled or described "Close" (a Chrome bubble's), else AXCancel on
 /// the window. Answers what each got and the app's on-screen windows left, other than `keep`, at least 20 pt each way.
 func closeExtra(_ q: [String: Any]) -> [String: Any] {
@@ -949,7 +949,10 @@ func closeExtra(_ q: [String: Any]) -> [String: Any] {
   let app = prepare(AXUIElementCreateApplication(pid))
   var done: [Any] = []
   for w in elements(attr(app, kAXWindowsAttribute)) {
-    if let f = frameOf(w), near(f, keep, 6) { continue }
+    // The main window is kept by its origin (Chrome's is shorter than asked on a 768-pt screen); a window with no frame
+    // is left alone.
+    guard let f = frameOf(w) else { continue }
+    if abs(f.minX - keep.minX) <= 6 && abs(f.minY - keep.minY) <= 6 { continue }
     var how = "none"
     if let close = element(attr(w, kAXCloseButtonAttribute)) {
       how = "closeButton \(AXUIElementPerformAction(close, kAXPressAction as CFString).rawValue)"
@@ -968,7 +971,7 @@ func closeExtra(_ q: [String: Any]) -> [String: Any] {
   usleep(300_000)
   let list = (CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]) ?? []
   let left = list.filter { (($0[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value ?? 0) == pid }.map { ($0, rectOf($0)) }
-    .filter { !near($0.1, keep, 6) && $0.1.width >= 20 && $0.1.height >= 20 }
+    .filter { !(abs($0.1.minX - keep.minX) <= 6 && abs($0.1.minY - keep.minY) <= 6) && $0.1.width >= 20 && $0.1.height >= 20 }
     .map { [($0.0[kCGWindowLayer as String] as? NSNumber)?.intValue ?? 0, wire($0.1)] as [Any] }
   return ["closed": done, "left": left]
 }

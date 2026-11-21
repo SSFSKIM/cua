@@ -207,21 +207,24 @@ const rank = n => { const i = PRIORITY.indexOf(n.role); return i < 0 ? 99 : i; }
 /// A toolbar node (above the web area) whose label matches `re`, a button-like role first.
 const toolbar = re => sky => {
   const wf = sky.window.frame;
-  return sky.nodes.filter(n => big(n.frame) && n.frame.y < wf.y + 130 && n.role !== 'AXStaticText' && re.test(label(n))).sort((a, b) => rank(a) - rank(b))[0];
+  return sky.nodes.filter(n => big(n.frame) && n.frame.y < wf.y + 130 && n.role !== 'AXStaticText' && labelled(n, re)).sort((a, b) => rank(a) - rank(b))[0];
 };
-const pageNode = (re, roles) => sky => sky.nodes.filter(n => big(n.frame) && (!roles || roles.includes(n.role)) && re.test(label(n)) && n.role !== 'AXStaticText').sort((a, b) => rank(a) - rank(b))[0];
+/// Whether any of the node's labels (title, description, value, placeholder) matches `re`.
+const labelled = (n, re) => label(n).split(' | ').some(s => re.test(s));
+const pageNode = (re, roles) => sky => sky.nodes.filter(n => big(n.frame) && (!roles || roles.includes(n.role)) && labelled(n, re) && n.role !== 'AXStaticText').sort((a, b) => rank(a) - rank(b))[0];
 const LEFT_ALTS = ['element', 'showmenu', 'kit:AXPress', 'kit:AXShowMenu'];
 const CONTROLS = {
-  // TextEdit: the format bar's first menu button (a pull-down), the text view's context menu, the first colour well.
-  'te-menubutton': {app: 'textedit', alts: LEFT_ALTS,
-    node: sky => sky.nodes.filter(n => n.role === 'AXMenuButton' && big(n.frame)).sort((a, b) => a.frame.x - b.frame.x)[0]},
+  // TextEdit: the format bar's list-style menu button (a pull-down), the title bar's document-actions menu button (it
+  // opens the document's popover), the text view's context menu, the text colour well.
+  'te-menubutton': {app: 'textedit', alts: LEFT_ALTS, node: sky => sky.nodes.find(n => n.role === 'AXMenuButton' && big(n.frame) && labelled(n, /^list style$/i))},
+  'te-doctitle': {app: 'textedit', alts: LEFT_ALTS, node: sky => sky.nodes.find(n => n.role === 'AXMenuButton' && big(n.frame) && labelled(n, /^document actions$/i))},
   'te-context': {app: 'textedit', right: true, alts: ['showmenu', 'kit:AXShowMenu'],
     node: sky => sky.nodes.find(n => n.role === 'AXTextArea' && big(n.frame)), point: f => ({x: f.x + 120, y: f.y + 40})},
   'te-color': {app: 'textedit', alts: LEFT_ALTS,
-    node: sky => sky.nodes.filter(n => n.role === 'AXColorWell' && big(n.frame)).sort((a, b) => a.frame.x - b.frame.x)[0]},
+    node: sky => sky.nodes.find(n => n.role === 'AXColorWell' && big(n.frame) && labelled(n, /^text color$/i))},
   // Chrome's toolbar.
   'cr-appmenu': {app: 'chrome', alts: LEFT_ALTS, node: toolbar(/customize and control|^chrome$/i)},
-  'cr-profile': {app: 'chrome', alts: LEFT_ALTS, node: toolbar(/profile|^guest|not signed in|^person/i)},
+  'cr-profile': {app: 'chrome', alts: LEFT_ALTS, node: toolbar(/^you$|profile|^guest|not signed in|^person/i)},
   'cr-star': {app: 'chrome', alts: LEFT_ALTS, node: toolbar(/bookmark this tab|edit bookmark/i)},
   'cr-siteinfo': {app: 'chrome', alts: LEFT_ALTS, node: toolbar(/view site information|site information|not secure/i)},
   'cr-puzzle': {app: 'chrome', alts: LEFT_ALTS, node: toolbar(/^extensions$/i)},

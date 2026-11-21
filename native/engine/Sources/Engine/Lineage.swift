@@ -61,6 +61,10 @@ final class ConnectionState: @unchecked Sendable {
   /// The device mode this connection's session runs in, as its ping named it (#282; Routes.swift): shared until one says
   /// otherwise. Per connection, never the engine's: one engine serves sessions of either mode.
   var desktop: DesktopMode = .shared
+  /// #458's restore seam (PopUpPoint.swift, design ruling 979 item 4): per app (by lineage key), the window order a
+  /// confirmed open of a pop-up button's menu broke, and the menu it belongs to, for #454's pick of an item of that menu
+  /// and an Escape the engine sends to put back. Recorded only; nothing restores it yet.
+  var popUpMenuOrders: [String: PopUpMenuOrder] = [:]
 
   init(id: Int, fd: Int32, peerPid: pid_t? = nil, menuSpan: ActivationSpan = ActivationSpan(),
        focusHold: ActivationSpan = ActivationSpan(label: "focus", idleMs: focusHoldIdleMs)) {

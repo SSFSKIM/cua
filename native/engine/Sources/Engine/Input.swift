@@ -122,6 +122,9 @@ struct InputMeta {
   /// #454's coordinate click on an open menu's item (MenuItemPoint.swift): delivered as the item's action and its effect,
   /// or why it was refused.
   var menuItemClick: MenuItemClickRecord?
+  /// #458's coordinate click on a closed pop-up button (PopUpPoint.swift): delivered as its AXPress and its effect, the
+  /// combo box's refusal, or why main's path was kept.
+  var popUpClick: PopUpClickRecord?
   /// #359's wait for a posted click before an accessibility action on the text, and set_value's watch after its write
   /// (ClickOrdering.swift); nil when no pointer press to the app was pending.
   var pendingClick: PendingClickRecord?
@@ -195,6 +198,7 @@ struct InputMeta {
     if keyEffectUnconfirmed { wire["keyEffect"] = "unconfirmed" }
     if let menu { wire["menu"] = menu.wire }
     if let menuItemClick { wire["menuItemClick"] = menuItemClick.wire }
+    if let popUpClick { wire["popUpClick"] = popUpClick.wire }
     if let pendingClick { wire["pendingClick"] = pendingClick.wire }
     if let unfocusedValue { wire["unfocusedValue"] = unfocusedValue.wire }
     if let afterActionRepairs = context.connection.afterAction.wire { wire["afterActionRepairs"] = afterActionRepairs }
@@ -417,7 +421,9 @@ extension Engine {
   /// moved off it, or given way to another interactive element (`screenChangedSinceScreenshot`, #296, StalePoint.swift);
   /// where #282 element-routes it, the element pressed must be that node or its control, checked again after any wait. A
   /// kept plain left click on an item of a menu open in a window of the app's own goes as the item's AXPick or AXPress,
-  /// confirmed by its effect, or is refused, never posted (#454, MenuItemPoint.swift). Route 4 takes route 3's place for an app the owner's override names. The process
+  /// confirmed by its effect, or is refused, never posted (#454, MenuItemPoint.swift); one on a closed pop-up button goes
+  /// as the button's AXPress, confirmed by its menu opening, and one on a native combo box's arrow with the app not
+  /// frontmost is refused, neither posted (#458, PopUpPoint.swift). Route 4 takes route 3's place for an app the owner's override names. The process
   /// serving the target receives the input, after the forbidden list has been checked against it.
   func click(_ args: [String: Any], _ context: ExecutionContext) throws -> Any {
     let token = try elementTokenArg(args, lineage: context.lineage)
@@ -589,6 +595,41 @@ extension Engine {
             }, checkInFlight: guarding.checkInFlight,
               announce: { cursor.act(connection: context.connection.id, app: app.key, window: windowID, .click(placed.point)) },
               perform: { gatedPerform($0, $1) }, meta: &meta)
+          }
+          if carried { return ["meta": meta.wire] }
+        }
+        // #458: a kept point on a closed pop-up button is carried by its AXPress and confirmed by its menu opening, and a
+        // native combo box's arrow behind is refused; never posted. A web page behind in shared mode stays #282's route.
+        if stale.refusal == nil, forced == nil, button == .left, count == 1, route == .activation,
+           !(context.connection.desktop == .shared && pointer.view.mayBeWebArea && !ActivationSystem().believesItHasFocus(owner)) {
+          let answered = latest.outcome.answered
+          let pressOwner = answered.map { ownerPid(of: $0, fallback: appPid) } ?? appPid
+          let pids: Set<pid_t> = [appPid, pressOwner]
+          let decision = signposted("click.popUp") {
+            popUpPoint(hit: answered, recorded: recordedAtPoint(stale.verdict, roles: popUpRoles).map { ($0.element, $0.role) },
+                       point: placed.point, pids: pids, reads: .live, frontmost: { frontmostPid().map(pids.contains) == true },
+                       windows: onScreenWindowList)
+          }
+          var pressRoute = InputRoute.action
+          if case .press = decision { pressRoute = actionRoute(owner: pressOwner, app: app, connection: context.connection) }
+          let carried = try armingSettle(&meta, acted: { context.connection.markActed(app) }) { meta in
+            try popUpClick(decision, app: app.displayName, route: pressRoute, appWindow: windowID, pids: pids, windows: onScreenWindowList,
+                           now: monotonicMilliseconds, sleep: { usleep(UInt32(max(0, $0) * 1000)) },
+                           deadlinePassed: { unixMilliseconds() >= context.deadline }, hold: { element, meta in
+              try refuseForbiddenOwner(pressOwner)
+              actionTargets(pressOwner, app: app, connection: context.connection)
+              // The element click's route: its focus hold when the app does not believe it has focus, then the guard's
+              // last check on the button, as #282's element route makes it.
+              if pressRoute == .activation {
+                try holdElementFocus(element: element, owner: pressOwner, app: app, appPid: appPid, guarding: guarding, context: context, meta: &meta)
+              }
+              let gate = StalePointGate(first: stale.verdict, record: stale.record) { [self] in
+                stalePointRecheck(at: placed.point, shift: stale.shift, window: placed.window, appPid: appPid, app: app, context: context)
+              }
+              try finalStalePointCheck(gate, pressing: element)?(pressRoute == .activation, &meta)
+            }, checkInFlight: guarding.checkInFlight,
+              announce: { cursor.act(connection: context.connection.id, app: app.key, window: windowID, .click(placed.point)) },
+              perform: { gatedPerform($0, $1) }, opened: { context.connection.popUpMenuOrders[app.key] = $0 }, meta: &meta)
           }
           if carried { return ["meta": meta.wire] }
         }

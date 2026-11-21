@@ -139,17 +139,24 @@ struct RecordedMenuItem<Element> {
 /// which the walk hangs under the window's groups, so the deepest node at the point is the page's group under the menu:
 /// `underlyingRole: AXMenuItem`). Nil when the record names none there.
 func recordedMenuItem<Element>(_ verdict: StalePointVerdict<Element>) -> RecordedMenuItem<Element>? {
+  recordedAtPoint(verdict, roles: [kAXMenuItemRole]).map { RecordedMenuItem(element: $0.element, title: $0.title) }
+}
+
+/// The recorded node of one of `roles` at the point, as the guard found it (`recordedMenuItem`'s search, which #458's
+/// pop-up button shares): the recorded node itself (its handle as found now), else its nearest recorded ancestor of such
+/// a role, else #433's recorded control beneath it. Nil when the record names none there.
+func recordedAtPoint<Element>(_ verdict: StalePointVerdict<Element>, roles: Set<String>) -> (element: Element, role: String, title: String?)? {
   if let node = verdict.node {
-    if node.role == kAXMenuItemRole { return RecordedMenuItem(element: verdict.current ?? node.element, title: node.title) }
+    if roles.contains(node.role) { return (verdict.current ?? node.element, node.role, node.title) }
     var index = node.ancestor
     var levels = 0
     while let at = index, at < verdict.nodes.count, levels < stalePointAncestorLevels {
       let ancestor = verdict.nodes[at]
-      if ancestor.role == kAXMenuItemRole { return RecordedMenuItem(element: ancestor.element, title: ancestor.title) }
+      if roles.contains(ancestor.role) { return (ancestor.element, ancestor.role, ancestor.title) }
       (index, levels) = (ancestor.ancestor, levels + 1)
     }
   }
-  if let control = verdict.underlying, control.role == kAXMenuItemRole { return RecordedMenuItem(element: control.element, title: control.title) }
+  if let control = verdict.underlying, roles.contains(control.role) { return (control.element, control.role, control.title) }
   return nil
 }
 
@@ -190,13 +197,18 @@ func menuWindowOverPoint(_ point: CGPoint, target: CGWindowID?, pids: Set<pid_t>
 /// ARIA menu, drawn in the page, which a posted click takes, whatever window of the app's lies over it (the review of
 /// fdd285dd..32787ce3, item 6: a click-through panel at the menu layer over such a menu).
 func inWebArea<Element>(_ element: Element, reads: MenuItemReads<Element>) -> Bool {
-  var current = reads.parent(element)
+  inWebArea(element, role: reads.role, parent: reads.parent)
+}
+
+/// `inWebArea` over its two reads (#458's pop-up button reads it too).
+func inWebArea<Element>(_ element: Element, role: (Element) -> String?, parent: (Element) -> Element?) -> Bool {
+  var current = parent(element)
   var levels = 0
   while let at = current, levels < stalePointAncestorLevels {
-    switch reads.role(at) {
+    switch role(at) {
     case "AXWebArea": return true
     case kAXWindowRole, kAXApplicationRole: return false
-    default: (current, levels) = (reads.parent(at), levels + 1)
+    default: (current, levels) = (parent(at), levels + 1)
     }
   }
   return false

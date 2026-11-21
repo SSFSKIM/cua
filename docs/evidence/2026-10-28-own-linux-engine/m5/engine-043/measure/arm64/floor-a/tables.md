@@ -19,3 +19,23 @@ The residue: every false ok and stale-position drop (1).
 | lane | round | # | cold | cell | class | activation after the release (ms) | cursor before the end | confirmed_by | after take to release (ms) | keepalives | last step to release (ms) | gate | schedule, motions, visits dropped, added ms |
 |---|---|---:|---|---|---|---:|---|---|---:|---:|---:|---|---|
 | e042 | r3 | 3 | warm | left | FALSE OK | 3.0 | accept | Activation | 537.2 | 0 | 0.4 | – | – |
+
+In-floor rows with a visit dropped (ruling 1023): 15.
+
+| lane | round | # | cold | cell | class | visits_dropped | skipped | activation after the release (ms) | past_floor_ms |
+|---|---|---:|---|---|---|---:|---|---:|---:|
+| e043 | r0 | 17 | warm | left | honest unconfirmed | 1 | false | none | 0.1 |
+| e043 | r0 | 13 | warm | plain-long | landed | 2 | true | 0.7 | 0.1 |
+| e043 | r0 | 21 | warm | plain-long | landed | 1 | false | 1.1 | 0.1 |
+| e043 | r0 | 57 | warm | plain-long | landed | 1 | false | -1.3 | 0.1 |
+| e043 | r1 | 0 | cold | plain-long | landed | 2 | true | 1.2 | 0.1 |
+| e043 | r1 | 15 | warm | left | honest unconfirmed | 2 | true | none | 0.1 |
+| e043 | r1 | 19 | warm | left | honest unconfirmed | 2 | true | none | 0.1 |
+| e043 | r1 | 59 | warm | plain-long | landed | 1 | false | 1.4 | 0.1 |
+| e043 | r2 | 3 | warm | plain-long | landed | 1 | false | 1.1 | 0.1 |
+| e043 | r2 | 55 | warm | plain-long | landed | 1 | false | 1.1 | 0.1 |
+| e043 | r2 | 67 | warm | plain-long | landed | 1 | false | 2.0 | 0.1 |
+| e043 | r2 | 69 | warm | plain-long | landed | 1 | false | 0.4 | 0.1 |
+| e043 | r3 | 6 | warm | plain-long | landed | 1 | false | 1.2 | 0.1 |
+| e043 | r3 | 0 | cold | left | honest unconfirmed | 2 | true | none | 0.1 |
+| e043 | r3 | 27 | warm | plain-long | landed | 1 | false | 0.0 | 0.1 |

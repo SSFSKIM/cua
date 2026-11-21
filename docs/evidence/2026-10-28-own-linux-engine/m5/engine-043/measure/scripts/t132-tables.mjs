@@ -78,4 +78,12 @@ if (residue.length) {
   console.log('|---|---|---:|---|---|---|---:|---|---|---:|---:|---:|---|---|');
   for (const r of residue) console.log(`| ${r.lane} | ${r.round} | ${r.i} | ${r.cold ? 'cold' : 'warm'} | ${r.cell} | ${r.cls} | ${f1(r.activation ?? NaN)} | ${r.cursor_end} | ${(r.confirmed_by ?? 'none').replace(/\(\d+\)/, '')} | ${f1(r.after_take_ms ?? NaN)} | ${r.keepalives ?? '–'} | ${f1(r.gap)} | ${r.sync ? (r.sync.open ? 'open' : `shut (spaced ${r.sync.last_step_spaced})`) : '–'} | ${r.sync ? `${r.sync.schedule ?? '–'}, ${r.sync.motions ?? 0}, ${r.sync.visits_dropped ?? 0}, ${f1(r.sync.added_ms)}` : '–'} |`);
 }
+// the coordinator's ruling 1023: every in-floor row where the tail dropped a visit, one by one
+const dropped = all.filter((r) => r.sync?.schedule === 'in_floor' && (r.sync.visits_dropped ?? 0) > 0);
+console.log(`\nIn-floor rows with a visit dropped (ruling 1023): ${dropped.length}.\n`);
+if (dropped.length) {
+  console.log('| lane | round | # | cold | cell | class | visits_dropped | skipped | activation after the release (ms) | past_floor_ms |');
+  console.log('|---|---|---:|---|---|---|---:|---|---:|---:|');
+  for (const r of dropped) console.log(`| ${r.lane} | ${r.round} | ${r.i} | ${r.cold ? 'cold' : 'warm'} | ${r.cell} | ${r.cls}${r.cls === 'honest' && r.notice ? ` ${r.notice}` : ''} | ${r.sync.visits_dropped} | ${r.sync.skipped} | ${r.activation == null ? 'none' : f1(r.activation)} | ${f1(r.sync.past_floor_ms ?? NaN)} |`);
+}
 if (flags.includes('--rows')) for (const r of all) console.log(JSON.stringify(r));

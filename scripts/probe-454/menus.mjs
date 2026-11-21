@@ -300,6 +300,8 @@ Object.assign(MENUS, {
     },
     taken: ctx => (ctx.after.appWindows ?? []).some(x => x.layer < 100 && x.bounds[2] >= 150 && x.bounds[3] >= 150 && !(ctx.before.appWindows ?? []).some(y => y.n === x.n))},
 });
+// The already-selected item of each pop-up (the fix confirms only a selection that moves, so these expect unconfirmed).
+for (const m of ['select', 'font', 'language']) MENUS[`${m}-same`] = {...MENUS[m], want: MENUS[m].current};
 const ROUTES = ['coord', 'element', 'keys', 'outside', 'button', 'kit:observed', 'kit:menu', 'kit:none', 'kit:hid',
   'kit:warp-observed', 'kit:warp-menu', 'kit:move-menu', 'kit:warpmove-menu', 'kit:move-hid'];
 const MODES = [

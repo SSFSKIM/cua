@@ -13,7 +13,7 @@ const pct = (xs, p) => { const s = xs.filter(x => typeof x === 'number').sort((a
 console.log(`## engine ${config.engineRef} (${config.chrome}; ${config.macOS}; image ${config.image}; kit ${config.commit}; ${results.length} rows, ${config.minutes} min${config.budgetStop ? ', budget stop' : ''})\n`);
 console.log('| pop-up | mode | route | rows | F1 on top at end | whole order as before | other windows moved | menu at end | picked | front / app AXFrontmost | person focus kept | restore ms p50/max (raises; found in front) | F1 covered ms p50/max |');
 console.log('|---|---|---|---|---|---|---|---|---|---|---|---|---|');
-const keys = [...new Set(results.map(r => `${r.menu}|${r.mode}|${r.route}`))];
+const keys = [...new Set(results.filter(r => !r.route.startsWith('arrow')).map(r => `${r.menu}|${r.mode}|${r.route}`))];
 for (const k of keys) {
   const [menu, mode, route] = k.split('|');
   const rs = results.filter(r => `${r.menu}|${r.mode}|${r.route}` === k);
@@ -50,5 +50,12 @@ console.log('\nother steps answered:', tally(results.flatMap(r => r.steps.filter
 console.log('open answers:', tally(results.filter(r => r.open).map(r => `${r.menu}/${r.mode}: ${r.open.error ?? 'ok'} route ${r.open.route}`)));
 console.log('\nTextEdit font-size combo box (kit AX read; observation nodes inside its frame):');
 for (const r of results.filter(r => r.combo).slice(0, 4)) console.log(`  ${r.label}: ${JSON.stringify(r.combo)}`);
+console.log('\nthe combo box arrow (font rows): answer; at 300 ms / 1.5 s: new windows, AXExpanded; top window; front; after Escape:');
+for (const route of ['arrow-kit', 'arrow-engine']) {
+  const rs = results.filter(r => r.route === route && r.arrowAfter);
+  if (!rs.length) continue;
+  const top = o => o?.[0]?.split(':')[0];
+  console.log(`  ${route} (${rs.length}): ${tally(rs.map(r => `${r.arrow.press ?? r.arrow.error ?? 'ok'}${r.arrow.route ? ` route ${r.arrow.route}${r.arrow.meta?.elementClick ? ` ${r.arrow.meta.elementClick.plan}:${r.arrow.meta.elementClick.action ?? ''}` : ''}` : ''}; ${r.arrowQuick.newWindows.length ? `L${r.arrowQuick.newWindows.map(x => x.layer).join(',')}` : 'none'}/${r.arrowQuick.expanded} ${r.arrowAfter.newWindows.length ? `L${r.arrowAfter.newWindows.map(x => x.layer).join(',')}` : 'none'}/${r.arrowAfter.expanded}; top ${top(r.arrowAfter.order)}; front ${r.arrowAfter.front?.replace(/^com\.\w+\./, '')}; Esc: ${r.arrowEsc.newWindows.length ? 'still open' : 'closed'}, top ${top(r.arrowEsc.order)}`))}`);
+}
 console.log('\nproblems, exceptions:');
 for (const r of results.filter(r => r.problem || r.exception)) console.log(`  ${r.label}: ${r.problem ?? r.exception.split('\n')[0].slice(0, 200)}`);

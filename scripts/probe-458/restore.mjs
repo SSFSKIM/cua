@@ -240,13 +240,17 @@ const MENUS = {
 // restores the person's window order: `+r` the engine's repair (the person's focused window raised), `+ra` every window
 // of the person's that was in front of the app's raised back to front, `ropen-` that restore as soon as the menu is up,
 // before the pick or the Escape.
-const ROUTES = ['pick+r', 'escape+r', 'cancel+r', 'pick+ra', 'escape+ra', 'ropen-pick', 'ropen-escape', 'pick', 'escape', 'person-click', 'timeout'];
+const ROUTES = ['pick+r', 'escape+r', 'cancel+r', 'pick+ra', 'escape+ra', 'ropen-pick', 'ropen-escape', 'pick', 'escape', 'person-click', 'timeout',
+  'arrow-kit', 'arrow-engine'];
+// The combo box's arrow (TextEdit's font size, font rows only): the kit's AXPress on its trailing AXButton child, or the
+// engine's element click on that child's node; does the list open behind, and what does it do to the order.
+const ARROW_ROUTES = new Set(['arrow-kit', 'arrow-engine']);
 const DEDICATED_ROUTES = new Set(['pick+r', 'pick+ra']);
 const MODES = [
   {name: 'shared-behind', desktop: 'shared', front: false},
   {name: 'dedicated-behind', desktop: 'dedicated', front: false},
 ];
-const applies = (route, mode) => mode.desktop === 'shared' || DEDICATED_ROUTES.has(route);
+const applies = (menu, route, mode) => ARROW_ROUTES.has(route) ? menu === 'font' && mode.desktop === 'shared' : mode.desktop === 'shared' || DEDICATED_ROUTES.has(route);
 const SHOTS = Number(arg('shots') ?? 1);
 
 // ---- the layout ---------------------------------------------------------------------------------------------------
@@ -392,7 +396,7 @@ async function runRow(app, menuName, mode, route, rep) {
     const wf = sky0.window.frame;
     // TextEdit's font-size combo box, for #458's fix (the arrow as its trailing AXButton child): the kit's AX read and
     // the observation's nodes inside the combo's frame, in a few rows.
-    if (menuName === 'font' && rep <= 2) {
+    if (menuName === 'font' && (rep <= 2 || ARROW_ROUTES.has(route))) {
       const cb = await ask({op: 'combo', pid});
       const cf = rect(cb.frame);
       row.combo = {ax: cb, nodes: cf ? (sky0.nodes ?? []).filter(x => x.frame && within(x.frame, cf)).map(x => ({role: x.role, subrole: x.subrole ?? null, frame: x.frame, actions: x.actions,
@@ -411,6 +415,27 @@ async function runRow(app, menuName, mode, route, rep) {
     row.before = await snap(pid, wf, 'before');
     row.layoutOk = row.before.order[0] === `Finder:${f1.n}`;
     row.target = target; row.f1 = f1.n;
+    if (ARROW_ROUTES.has(route)) {
+      await ask({op: 'open', pid, find: {roles: ['AXComboBox']}});
+      const ns = new Set((pop0.appWindows ?? []).map(x => x.n));
+      const t1 = Date.now();
+      if (route === 'arrow-kit') row.arrow = await ask({op: 'combo', pid, press: true}, 15_000);
+      else {
+        const cf = rect(row.combo?.ax?.frame);
+        const node = cf && (sky0.nodes ?? []).filter(x => x.role === 'AXButton' && x.frame && within(x.frame, cf)).sort((a, b) => (b.frame.x + b.frame.width) - (a.frame.x + a.frame.width))[0];
+        if (!node) { row.problem = 'no arrow node'; return; }
+        row.arrow = {node: {frame: node.frame, actions: node.actions}, ...brief(await w.execute('click', {pid, element: node.token}))};
+      }
+      row.arrow.ms = Date.now() - t1;
+      const read = async () => { const p = await ask({op: 'popup', pid, window: winArr(wf)}); const st = await ask({op: 'state', pid});
+        return {newWindows: (p.appWindows ?? []).filter(x => !ns.has(x.n) && x.bounds?.[2] >= 20).map(x => ({n: x.n, layer: x.layer, bounds: x.bounds})), expanded: st.opener?.expanded ?? null,
+          front: frontmost(), appFrontmost: st.axFrontmost, order: (await orderNow()).map(x => `${x.owner}:${x.n}`)}; };
+      await sleep(300); row.arrowQuick = await read();
+      await sleep(1200); row.arrowAfter = await read();
+      await w.execute('press_key', {pid, key: 'Escape'}); await sleep(500);
+      row.arrowEsc = await read();
+      return;
+    }
     const mark0 = events.length;
     row.t0 = Date.now();
     const watching = askWatch({op: 'watch', pid, ms: route === 'timeout' ? 14_000 : 7000, target, user: f1.n, skip: skip()}, 30_000);
@@ -482,7 +507,7 @@ async function run() {
     if (!mine.length) continue;
     const app = appName === 'chrome' ? chromeApp() : appName === 'textedit' ? docApp('TextEdit', 'TextEdit', teFile, teFile2) : docApp('Script Editor', 'Script Editor', seFile, seFile2);
     for (let rep = 1; rep <= REPS; rep++) for (const m of mine) for (const mode of modes) for (const route of routes) {
-      if (!applies(route, mode)) continue;
+      if (!applies(m, route, mode)) continue;
       if (Date.now() - STARTED > BUDGET_MS) { config.budgetStop = true; save(); return; }
       await runRow(app, m, mode, route, rep);
     }

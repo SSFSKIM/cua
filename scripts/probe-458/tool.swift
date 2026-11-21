@@ -832,7 +832,8 @@ func cancel(_ q: [String: Any]) -> [String: Any] {
 }
 
 /// {"op":"combo","pid"}: the app's first AXComboBox (its windows breadth-first): its frame and actions, and each child's
-/// role, subrole, frame, actions and trailing gap (the combo's right edge less the child's).
+/// role, subrole, frame, actions and trailing gap (the combo's right edge less the child's); `press` then AXPress on its
+/// trailing AXButton child.
 func combo(_ q: [String: Any]) -> [String: Any] {
   guard let pid = (q["pid"] as? NSNumber)?.int32Value else { return ["error": "args"] }
   let app = prepare(AXUIElementCreateApplication(pid))
@@ -845,7 +846,14 @@ func combo(_ q: [String: Any]) -> [String: Any] {
         if let kf = frameOf(k) { d["trailingGap"] = r1(Double(f.maxX - kf.maxX)); d["leadingFromComboX"] = r1(Double(kf.minX - f.minX)) }
         return d
       }
-      return ["frame": wire(f), "actions": actionList(e), "value": short(str(e, kAXValueAttribute)), "children": kids]
+      var out: [String: Any] = ["frame": wire(f), "actions": actionList(e), "value": short(str(e, kAXValueAttribute)), "children": kids]
+      // `press`: AXPress on the trailing AXButton child (the arrow).
+      if (q["press"] as? Bool) == true, let arrow = elements(attr(e, kAXChildrenAttribute)).filter({ role($0) == "AXButton" }).max(by: { (frameOf($0)?.maxX ?? 0) < (frameOf($1)?.maxX ?? 0) }) {
+        let t0 = nowMs()
+        out["press"] = AXUIElementPerformAction(arrow, kAXPressAction as CFString).rawValue
+        out["pressMs"] = r1(nowMs() - t0)
+      }
+      return out
     }
     queue.append(contentsOf: elements(attr(e, kAXChildrenAttribute)))
   }

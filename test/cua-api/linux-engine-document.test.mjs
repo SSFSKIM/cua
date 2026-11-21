@@ -119,6 +119,27 @@ test('the documents name the hold of a drag from a Chromium window and its late-
   ]) assert.ok(flat(file(document)).includes(flat(phrase)), `${document} does not say: ${phrase}`);
 });
 
+// The tail of a Chrome drop whose path outlasts the floor after its take (#171 M5, #459; rulings 995 and 997): the floor,
+// the tail's rest and its visits are the engine's constants, and the documents name them, with the rest's sum as its
+// cost.
+test('the documents name the tail of a long Chrome drag and drop by the engine\'s constants', () => {
+  const floor = /pub const RELEASE_AFTER_TAKE: Duration = Duration::from_millis\((\d+)\);/.exec(file('native/linux-engine/src/dnd.rs'));
+  assert.ok(floor, 'dnd.rs names RELEASE_AFTER_TAKE in milliseconds');
+  const sync = file('native/linux-engine/src/release_sync.rs');
+  const rest = /pub const TAIL_REST: Duration = Duration::from_millis\((\d+)\);/.exec(sync);
+  assert.ok(rest, 'release_sync.rs names TAIL_REST in milliseconds');
+  assert.match(sync, /pub const TAIL_VISITS: u32 = 2;/, 'the documents say "twice more"');
+  // the rests before each visit and before the release: about 25 ms in all
+  assert.equal(Number(rest[1]) * 3, 24);
+  assert.match(sync, /pub const UNCONFIRM_OUTLASTED: bool = false;/, 'option (c) is off as it ships (ruling 997), so no document promises its notice');
+  for (const [document, phrase] of [
+    [LINUX_DOCUMENT, `whose path goes on for more than about ${floor[1]} ms after the page starts it ends with a short rest`],
+    [LINUX_DOCUMENT, `is moved there twice more, ${rest[1]} ms apart, before the button goes up, which makes such a drag about 25 ms longer`],
+    [LINUX_DOCUMENT, 'The rest makes that rare, not impossible: when it matters where a long drag dropped, read the page after it.'],
+    [README, `whose path goes on past ${floor[1]} ms after its take ends with a rest of about 25 ms on its last point, moved there twice more`],
+  ]) assert.ok(flat(file(document)).includes(flat(phrase)), `${document} does not say: ${phrase}`);
+});
+
 test('the README\'s Chromium menu line is the engine README\'s, word for word', () => {
   const engine = flat(file('native/linux-engine/README.md'));
   const start = engine.indexOf('In Chromium, a context menu requested on a window that is not focused');

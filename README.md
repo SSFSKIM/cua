@@ -1328,7 +1328,9 @@ and stopped. `accessibility.enabled` checks `IsEnabled`. While the vendor engine
   button stays down up to 650 ms after the press, and a drag with no drag and drop by then answers ok with `the page
   may have started a drag that did not complete`. A page whose own code takes longer than about 450 ms to start its drag
   can still lose it while the drag answers ok with no notice: on Chrome 156 a dragstart handler busy 400 ms still
-  landed 6 of 6, and one busy 500 or 600 ms lost 6 of 6 each.
+  landed 6 of 6, and one busy 500 or 600 ms lost 6 of 6 each. A Chrome drag and drop whose path goes on past 350 ms
+  after its take ends with a rest of about 25 ms on its last point, moved there twice more, since under load Chrome
+  could otherwise drop on a position the path had already left and report the drop as made (#459; engine 0.4.3).
 - **Late drops.** A drag that may not have ended as it answered (a drag and drop that started late, a drop its target
   did not confirm, a failed watch, an idle drag handle released) is reported at the next reply, and the next acting
   request is refused once. In M4's final drag-handle proof on Electron, 6 of 100 handle drops that landed answered

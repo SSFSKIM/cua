@@ -7137,6 +7137,19 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   reverted its test fails; for (4) the reverted form is the old composition (an untimed re-hit beside `latest`), since
   the click's live wiring is not unit-reachable.
   Date/Author: 2026-11-20, cursor235's implementer for #454.
+- Decision (#454, the re-review of 32787ce3..3eb2b806, 2026-11-20; amends the entry above): four corrections, each
+  tested and each test failing with its fix reverted. (1) AXTitle and AXValue read as text, absent or failed
+  (`MenuTextRead`); the selection's attribute is chosen once before the action (AXValue; AXTitle only where the value is
+  absent, never where its read failed) and the same one is read after it, so a value timing out after the action never
+  hands the judgement to a static label, and a failed read on either side is no evidence (`unread`). (2) The title the
+  decision verified against the record rides in `MenuItemTarget`, judges the selection, and is read again just before
+  the action: another, or a failed read, refuses as `relabelled` with nothing performed. (3) A page's (ARIA) item is
+  main's only when no native item is recorded at the point; with one recorded and its menu window still over the point,
+  a hit on a page item refuses (`notHit`), nothing posted or pressed. (4) The identity comparison decodes the live title
+  as the observation does (a string or an attributed string's text) and cuts it as the observation cuts what it records
+  (`bounded`: 10,000 UTF-16 units and the marker), so a long unchanged option is not refused; the full title stays the
+  selection's evidence.
+  Date/Author: 2026-11-20, cursor235's implementer for #454.
 
 ## Outcomes & Retrospective
 

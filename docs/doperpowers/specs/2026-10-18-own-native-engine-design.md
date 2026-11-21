@@ -580,10 +580,11 @@ error    {code: number (the vendor's codes where mapped; -10005 otherwise), mess
     as the action is dispatched), action? ("AXPress"), arrow? (true: the combo box's arrow was pressed), effect?
     ("confirmed" | "unconfirmed"), actionError?, baselineUnread? (true: the window list did not read just before the
     press, so the effect could not be confirmed), menuWindow? (the number of the app's new window that opened: a menu
-    window at layer 101 for a pop-up button, a window of any layer for a combo box's list), restored? ({windows, ms,
-    complete, raises}: the person's windows in front of the app's window before the press, raised back once the open
-    had raised the app's over them; complete false when the order was not back within 500 ms, with the result's note),
-    polls?, ms? (from the action's return to the open)}; never a title
+    window at layer 101 for a pop-up button, a window of any layer above the app's window for a combo box's list),
+    restored? ({windows, ms, complete, raises, stopped? ("personInput" | "bound" | "unresolved")}: the person's windows
+    in front of the app's window before the press, raised back once the open had raised the app's over them; complete
+    false when the order was not back within 500 ms, a window could not be told for certain, or the person acted, the
+    result's note on all but the last), polls?, ms? (from the action's return to the open)}; never a title
   note: on a paste result that pasted a line with no channel to see it, read after ⌘V (#187; type_text's paste route
     since #361 never, its read-back answering instead), on a type_text a password field's length confirmed (#414), and on a
     scroll whose content was already at its end in that direction (#328): the sentence the service adds to the tool
@@ -7364,6 +7365,24 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   no note, one sample and no minimum, the combo box pressed instead of its arrow, its list only at layer 101, the edge
   rule excluding 4.0 pt.
   Not measured with this build: the restore and the arrow press by the engine itself (the kit's restore was its own).
+  Date/Author: 2026-11-21, cursor235's implementer for #458.
+- Decision (#458's restore, the review of 97344ee7..a094f620, reviewer-high, 2026-11-21; amends the entry above):
+  seven corrections, each tested and each test failing with its fix reverted (17 mutations). (1) The person's act wins:
+  at the press's dispatch the engine takes route 3's own person baseline (`PopUpPersonSignals`: input since, by
+  `secondsSinceInput` as the delivery guard's `personActed` reads it, and the frontmost app), and input or another app
+  brought to the front since ends the watch for the rise and stops the restore before its next raise, `complete: false`,
+  `stopped: "personInput"`, with no note (the order is theirs). (2) One absolute cutoff of `popUpRestoreBoundMs` from the
+  restore's start covers resolving the windows, every raise (none is issued past it) and the hold, which a timer of its
+  own releases at the cutoff whatever blocks (`scheduleHoldRelease`, `OnceRelease`); an end there is `stopped: "bound"`.
+  (3) A person's window is raised only when told for certain (`uniqueWindow`): its own number by the SPI
+  (`axWindowNumber`, no frame fallback), else the one unnumbered AXWindow with its bounds while the list holds exactly one
+  such window of the process; two same-sized windows are ambiguous, never raised, and the restore ends
+  `stopped: "unresolved"`. (4) A restore starts only when the app's window crossed above a recorded window
+  (`appWindowCrossed`); the person's windows reordered among themselves start none, and the full order
+  (`personOrderHolds`) is what a needed restore checks. (5) A combo box's list counts only on the measured signals: a new
+  window above the app's (document) window, and the combo box not reading AXExpanded false; otherwise the click is
+  unconfirmed. (6) The arrow's own AXEnabled must read true, else main's path (`kept: "disabled"`). (7) The bound
+  reached before three stable samples is incomplete, whatever the last sample read.
   Date/Author: 2026-11-21, cursor235's implementer for #458.
 
 ## Outcomes & Retrospective

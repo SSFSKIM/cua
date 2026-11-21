@@ -20,6 +20,11 @@
 //! The forms ([`Form`]):
 //! - `keepalive` (a): one more motion at the path's last point, whatever the floor left, then [`dnd::KEEPALIVE`]
 //!   before the release.
+//! - `tail` (task 130, ruling 988): the end of a drag in the newest vendor build (26.1023.51421), re-implemented:
+//!   [`TAIL_REST`], a motion at the path's last point, [`TAIL_REST`], the same motion again, [`TAIL_REST`], then the
+//!   release. Read in that build's `Client::run_full_desktop_command` (x86-64, 0xe7ea0-0xe7f10: three
+//!   `thread::sleep(8 ms)` around two `InputTarget::send_event_at_position` at the last point, then
+//!   `InputTarget::send_event(ButtonRelease, 1)`), and seen in its X trace (task 130's `x64/idle-t2`).
 //! - `ping` (b'): the source's browser asked a `_NET_WM_PING`, which it answers in the order of its X events, and its
 //!   answer waited for, so it has read the path's backlog; then the motion at the last point, read alone; then a second
 //!   ping and its answer, so it has read that motion; then the release. Both answers share one bound, [`BOUND`]; a
@@ -53,6 +58,9 @@ pub enum Form {
     Off,
     /// (a) One motion at the path's last point, then [`dnd::KEEPALIVE`].
     Keepalive,
+    /// The newest vendor build's end of a drag: [`TAIL_REST`], the last point, [`TAIL_REST`], the last point again,
+    /// [`TAIL_REST`].
+    Tail,
     /// (b') A ping and its answer, the motion, a second ping and its answer, inside [`BOUND`]; then `dwell` (b'').
     Ping { dwell: Duration },
 }
@@ -62,6 +70,7 @@ impl Form {
         match self {
             Form::Off => "off",
             Form::Keepalive => "keepalive",
+            Form::Tail => "tail",
             Form::Ping { .. } => "ping",
         }
     }
@@ -85,6 +94,9 @@ pub fn applies(family: &str) -> bool {
 pub fn gate(outlasted: bool, keepalives: u32, last_spaced: bool) -> bool {
     !outlasted || (keepalives == 0 && !last_spaced)
 }
+
+/// The tail's rest before each of its visits to the path's last point and before the release.
+pub const TAIL_REST: Duration = Duration::from_millis(8);
 
 /// The bound both of (b')'s answers share, from the first ping's send.
 pub const BOUND: Duration = Duration::from_millis(100);
@@ -167,6 +179,13 @@ pub fn before_release(
         Form::Keepalive => {
             motion(&mut synced)?;
             std::thread::sleep(dnd::KEEPALIVE);
+        }
+        Form::Tail => {
+            for _ in 0..2 {
+                std::thread::sleep(TAIL_REST);
+                motion(&mut synced)?;
+            }
+            std::thread::sleep(TAIL_REST);
         }
         Form::Ping { dwell } => {
             let by = started + BOUND;
@@ -376,6 +395,32 @@ mod tests {
     }
 
     #[test]
+    fn tail_rests_then_revisits_the_last_point_twice_a_rest_apart_and_rests_again_before_the_release() {
+        let started = Instant::now();
+        let (synced, log, ended) = run(Form::Tail, false, &[]);
+        assert_eq!(kinds(&log), vec![Sent::Motion((10, 10)), Sent::Motion((10, 10))]);
+        // a rest before each motion and one before the release, none short
+        assert!(log[0].1 - started >= TAIL_REST, "{:?}", log[0].1 - started);
+        assert!(log[1].1 - log[0].1 >= TAIL_REST, "{:?}", log[1].1 - log[0].1);
+        assert!(ended - log[1].1 >= TAIL_REST, "{:?}", ended - log[1].1);
+        let synced = synced.expect("a record");
+        assert_eq!((synced.motions, synced.expired, synced.pings.len()), (2, false, 0));
+        assert!(synced.added >= 3 * TAIL_REST && synced.added < 3 * TAIL_REST + Duration::from_millis(10));
+        // on XTEST each visit is the pair, a motion to the pointer's own place being no event there
+        let (synced, log, _) = run(Form::Tail, true, &[]);
+        assert_eq!(
+            kinds(&log),
+            vec![
+                Sent::Motion((9, 10)),
+                Sent::Motion((10, 10)),
+                Sent::Motion((9, 10)),
+                Sent::Motion((10, 10))
+            ]
+        );
+        assert_eq!(synced.unwrap().motions, 4);
+    }
+
+    #[test]
     fn ping_asks_answered_then_moves_then_asks_again_and_releases_on_the_second_answer() {
         let ms = Duration::from_millis;
         let (synced, log, ended) = run(Form::Ping { dwell: Duration::ZERO }, false, &[Some(ms(3)), Some(ms(4))]);
@@ -446,7 +491,7 @@ mod tests {
 
     #[test]
     fn a_motion_that_fails_ends_the_step_with_its_error() {
-        for form in [Form::Keepalive, Form::Ping { dwell: Duration::ZERO }] {
+        for form in [Form::Keepalive, Form::Tail, Form::Ping { dwell: Duration::ZERO }] {
             let failed = before_release(
                 form,
                 false,

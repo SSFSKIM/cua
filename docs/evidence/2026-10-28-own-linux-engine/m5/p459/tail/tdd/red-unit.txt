@@ -1,0 +1,30 @@
+
+---- release_sync::tests::a_motion_that_fails_ends_the_step_with_its_error stdout ----
+
+thread 'release_sync::tests::a_motion_that_fails_ends_the_step_with_its_error' (2834895) panicked at src/release_sync.rs:492:13:
+Tail
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- release_sync::tests::tail_rests_then_revisits_the_last_point_twice_a_rest_apart_and_rests_again_before_the_release stdout ----
+
+thread 'release_sync::tests::tail_rests_then_revisits_the_last_point_twice_a_rest_apart_and_rests_again_before_the_release' (2834904) panicked at src/release_sync.rs:390:9:
+assertion `left == right` failed
+  left: []
+ right: [Motion((10, 10)), Motion((10, 10))]
+
+---- tests::the_release_sync_prototype_is_off_unless_its_measurement_flag_names_a_form stdout ----
+
+thread 'tests::the_release_sync_prototype_is_off_unless_its_measurement_flag_names_a_form' (2834906) panicked at src/main.rs:643:9:
+assertion `left == right` failed
+  left: Err("--drag-dnd-release-sync is off, keepalive or ping")
+ right: Ok(Tail)
+
+
+failures:
+    release_sync::tests::a_motion_that_fails_ends_the_step_with_its_error
+    release_sync::tests::tail_rests_then_revisits_the_last_point_twice_a_rest_apart_and_rests_again_before_the_release
+    tests::the_release_sync_prototype_is_off_unless_its_measurement_flag_names_a_form
+
+test result: FAILED. 9 passed; 3 failed; 0 ignored; 0 measured; 534 filtered out; finished in 0.20s
+
+error: test failed, to rerun pass `--bin cua-engine`

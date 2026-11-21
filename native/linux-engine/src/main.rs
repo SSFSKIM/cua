@@ -59,7 +59,7 @@ const USAGE: &str = "usage: cua-engine server [--mouse-size-px <n>] [--desktop s
        [--retention per-request|session|none] [--settle-ms <ms>] [--capture-wait damage|fixed|quiet]
        [--teardown-ms <ms>] [--exit-settle-ms <ms>] [--paste-settle-ms <ms>] [--key-pace-ms <ms>] [--path-step-ms <ms>] [--drag-step-ms <ms> | --drag-step-us <µs>] [--drag-press-dwell-ms <ms>]
        [--drag-release-dwell-ms <ms>] [--drag-dnd-hold-ms <ms>] [--drag-dnd-hold-ping on|off] [--drag-dnd-after-take-ms <ms>] [--drag-handle-idle-ms <ms>] [--dnd-cancel-after-release] [--dnd-defer-take]
-       [--drag-dnd-release-at-accept] [--drag-dnd-release-sync off|keepalive|ping] [--drag-dnd-release-sync-dwell-ms <ms>] [--drag-dnd-release-sync-when always|outlasted] [--drag-ignore-cover] [--ignore-cover] [--ignore-pointer] [--drop-no-settle]
+       [--drag-dnd-release-at-accept] [--drag-dnd-release-sync off|keepalive|tail|ping] [--drag-dnd-release-sync-dwell-ms <ms>] [--drag-dnd-release-sync-when always|outlasted] [--drag-ignore-cover] [--ignore-cover] [--ignore-pointer] [--drop-no-settle]
        [--targets-wait-ms <ms>] [--focus-ack-ms <ms>] [--stats]
        cua-engine launcher-shim <parent pid> <program> [args...]
        cua-engine --version";
@@ -266,8 +266,9 @@ fn parse_args(args: &[String]) -> Result<Command, String> {
                 cfg.dnd_release_sync = match value.map(String::as_str) {
                     Some("off") => release_sync::Form::Off,
                     Some("keepalive") => release_sync::Form::Keepalive,
+                    Some("tail") => release_sync::Form::Tail,
                     Some("ping") => release_sync::Form::Ping { dwell },
-                    _ => return Err("--drag-dnd-release-sync is off, keepalive or ping".into()),
+                    _ => return Err("--drag-dnd-release-sync is off, keepalive, tail or ping".into()),
                 }
             }
             "--drag-dnd-release-sync-dwell-ms" => {
@@ -640,6 +641,7 @@ mod tests {
             form(&["server", "--drag-dnd-release-sync", "keepalive"]),
             Ok(Form::Keepalive)
         );
+        assert_eq!(form(&["server", "--drag-dnd-release-sync", "tail"]), Ok(Form::Tail));
         assert_eq!(
             form(&["server", "--drag-dnd-release-sync", "ping"]),
             Ok(Form::Ping { dwell: Duration::ZERO })

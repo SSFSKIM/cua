@@ -138,6 +138,8 @@ test('the documents name the tail of a long Chrome drag and drop by the engine\'
     [LINUX_DOCUMENT, `the pointer stays on the path's last point and is moved there twice more, ${rest[1]} ms apart`],
     [LINUX_DOCUMENT, `A drag whose path goes on for more than about ${floor[1]} ms after the page starts its drag and drop takes about 25 ms longer for it; a shorter one takes no longer.`],
     [LINUX_DOCUMENT, 'The rest makes that rare, not impossible: when it matters where a drag dropped, read the page after it.'],
+    // a Chrome drag handle's end with its drop under way (ruling 998): its own rest, then the two visits and their rests
+    [LINUX_DOCUMENT, `A drag handle's end in Chrome, with a drag and drop under way, ends with the same two moves ${rest[1]} ms apart after its own rest, which makes the end about ${Number(rest[1]) * 2} ms longer.`],
     [README, 'A Chrome drag and drop ends with a rest of about 25 ms on its last point, moved there twice more'],
     [README, `it falls inside the ${floor[1]} ms after the take that a drop is held for, so only a path that goes on past ${floor[1]} ms after its take takes longer for it`],
   ]) assert.ok(flat(file(document)).includes(flat(phrase)), `${document} does not say: ${phrase}`);

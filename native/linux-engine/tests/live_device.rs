@@ -6509,3 +6509,77 @@ fn a_release_dwell_stays_on_top_of_the_floor_with_the_tail_inside_it() {
         "{sync}"
     );
 }
+
+/// Ruling 998 (confirmed by 1026): a Chrome source's `drag_handle` end with its drag and drop under way gets the tail:
+/// after the end's rest, the step 1 px forward along the last segment and back to the pointer's place, 8 ms, the same,
+/// 8 ms, then the release (a handle's input is XTEST's). `--drag-dnd-release-sync off` gives f9d1f86b's end: the
+/// end's rest, then one revisit to the pointer's own place with the release at once after it. Live proof only, no
+/// counted rate.
+#[test]
+fn a_chrome_handle_s_end_with_a_drop_under_way_gets_the_tail_and_off_gives_the_old_end() {
+    support::fresh_display();
+    let ms = Duration::from_millis;
+    for off in [false, true] {
+        let (window, stop, recorder) = drag_source(OnRelease::Nothing);
+        managed(window);
+        let args: &[&str] = if off { &["--drag-dnd-release-sync", "off"] } else { &[] };
+        let mut engine = Engine::start_with_stats(args);
+        engine
+            .request("drag_handle", json!({"action": "start", "x": 20, "y": 20}))
+            .unwrap();
+        engine
+            .request("drag_handle", json!({"action": "move_to", "x": 60, "y": 20}))
+            .unwrap();
+        let ended = engine.request("drag_handle", json!({"action": "end"}));
+        let stats = engine.stats_of(engine.last_id());
+        sleep(SETTLE);
+        stop.send(()).unwrap();
+        recorder.join().unwrap();
+        assert_eq!(ended, Ok(Value::Null), "off {off}");
+        let tail = &stats["handle"]["release_sync"];
+        let events = AFTER_TAKE_EVENTS.lock().unwrap().clone();
+        let release = events
+            .iter()
+            .find(|(kind, ..)| *kind == "release")
+            .expect("a release")
+            .1;
+        let before: Vec<(Duration, (i16, i16))> = events
+            .iter()
+            .filter(|(kind, at, _)| *kind == "motion" && *at <= release)
+            .map(|(_, at, p)| (release - *at, *p))
+            .collect();
+        let last = before.last().expect("a motion after the take").0;
+        if off {
+            assert_eq!(
+                (&tail["ran"], &tail["why_not"]),
+                (&json!(false), &json!("the form is off")),
+                "{tail}"
+            );
+            // f9d1f86b's end: after the end's rest (30 ms, Chrome's held rest) one revisit of the pointer's own place,
+            // just before the release, and no step. On this Xvfb the same-place XTEST revisit reaches the source as a
+            // motion (task 133's discovery), so it is the last motion read
+            let tail_of = &before[before.len().saturating_sub(2)..];
+            assert!(
+                tail_of.len() == 2 && tail_of[1].1 == (60, 20) && tail_of[0].0 - tail_of[1].0 >= ms(25) && last < ms(6),
+                "off: the rest, then the revisit at once before the release: {tail_of:?}"
+            );
+            assert!(before.iter().all(|(_, p)| *p != (61, 20)), "off: no step: {before:?}");
+        } else {
+            assert_eq!(
+                (&tail["ran"], &tail["motions"], &tail["form"]),
+                (&json!(true), &json!(4), &json!("tail")),
+                "{tail}"
+            );
+            // the source polls every 1 ms: each time it reads may be up to a poll late, so 6 ms of the 8
+            assert!(
+                last >= ms(6) && last < ms(20),
+                "released {last:?} after the last motion"
+            );
+            let recent: Vec<&(Duration, (i16, i16))> = before.iter().filter(|(d, _)| *d < ms(20)).collect();
+            let places: Vec<(i16, i16)> = recent.iter().map(|(_, p)| *p).collect();
+            assert_eq!(places, vec![(61, 20), (60, 20), (61, 20), (60, 20)], "{recent:?}");
+            // the two visits a rest apart: each visit's return to the end against the next
+            assert!(recent[1].0 - recent[3].0 >= ms(6), "{recent:?}");
+        }
+    }
+}

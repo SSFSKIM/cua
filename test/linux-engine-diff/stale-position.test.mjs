@@ -73,14 +73,22 @@ test("ruling 957 on t14-floor: left and inzone-out end outside the zone, the lon
   assert.deepEqual(chromeDropVerdict([rows[0], chrome({ cell: 'left', i: 0, pending: 'unconfirmed' })], { specs: specs(['cua', 'plain-long', 1], ['cua', 'left', 1]), plan: 't14-floor' }).failed, []);
 });
 
-test("the measurement lane's release at the accept ends the drag at the accept, in the zone: its landing is not a stale one", () => {
-  const accepted = { ...landedIn(chrome({ lane: 'cua:accept', cell: 'left', i: 0 })), accept: { accepted: true } };
-  const v = chromeDropVerdict([accepted], { specs: specs(['cua:accept', 'left', 1]), plan: 't14' });
-  assert.deepEqual(v.failed, []);
-  assert.equal(v.counts.stale_drops, 0);
-  // the floor's fallback on that lane (no release at the accept) ends at the path's end, as shipped
-  const fell = { ...landedIn(chrome({ lane: 'cua:accept', cell: 'left', i: 1 })), accept: { accepted: false } };
-  assert.match(chromeDropVerdict([fell], { specs: specs(['cua:accept', 'left', 1]), plan: 't14' }).failed.join('\n'), /a drop at a stale position/);
+test("the review of 2dd2b0d8, finding 1: the measurement lane's accept is no proof the path ended in the zone (the engine sends every sample before it reads the cursor): its landings are judged by the path's end too", () => {
+  for (const cell of ['left', 'inzone-out']) {
+    const accepted = { ...landedIn(chrome({ lane: 'cua:accept', cell, i: 0 })), accept: { accepted: true } };
+    const v = chromeDropVerdict([accepted], { specs: specs(['cua:accept', cell, 1]), plan: 't14' });
+    assert.deepEqual(v.failed, [`cua:accept ${cell}: a drop at a stale position (the path ended outside the zone, the drop landed in it) on 1 of 1 (#0)`]);
+    assert.equal(v.counts.stale_drops, 1);
+    assert.equal(v.counts.landed, 0);
+  }
+  // the lane's own false-release rule stands: released at the accept, nothing landed
+  const released = { ...chrome({ lane: 'cua:accept', cell: 'plain-long', i: 0, landed: false }), accept: { accepted: true } };
+  const r = chromeDropVerdict([released], { specs: specs(['cua:accept', 'plain-long', 1]), plan: 't14' });
+  assert.equal(r.counts.false_releases, 1);
+  assert.equal(r.counts.stale_drops, 0);
+  // and its long drop, released at the accept, landed where its path ended, in the zone
+  const long = { ...chrome({ lane: 'cua:accept', cell: 'plain-long', i: 1 }), accept: { accepted: true } };
+  assert.equal(chromeDropVerdict([long], { specs: specs(['cua:accept', 'plain-long', 1]), plan: 't14' }).counts.landed, 1);
 });
 
 test('ruling 961: a path that ended within the border margin is ambiguous: neither landed nor wrong, named and counted; where a landing is needed, unexercised', () => {

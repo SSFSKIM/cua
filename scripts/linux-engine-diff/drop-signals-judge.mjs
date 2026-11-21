@@ -199,14 +199,13 @@ export function pathEndOf(r, ends = PATH_ENDS) {
 
 /**
  * A drag's landing as the gate counts it (ruling 957): null when the zone counted no drop; `landed` when it did and the
- * path ended inside the zone, or the measurement lane released the drag at Chrome's accept (its path ended there, in
- * the zone); `stale` when it did and the path ended outside the zone, "a drop at a stale position", a wrong outcome;
- * `ambiguous` when the path ended within the border margin (ruling 961), neither; `unknown` when the judge cannot place
- * the path's end.
+ * path ended inside the zone; `stale` when it did and the path ended outside the zone, "a drop at a stale position", a
+ * wrong outcome; `ambiguous` when the path ended within the border margin (ruling 961), neither; `unknown` when the
+ * judge cannot place the path's end. The measurement lane's accept proves nothing of where the path ended: the engine
+ * sends every sample of the path before it reads the cursor (the review of 2dd2b0d8, finding 1).
  */
 export function landingOf(r, ends = PATH_ENDS) {
   if (r.outcome?.landed !== true) return null;
-  if (r.lane === 'cua:accept' && r.accept?.accepted === true) return 'landed';
   return { inside: 'landed', outside: 'stale', ambiguous: 'ambiguous', unknown: 'unknown' }[pathEndOf(r, ends)];
 }
 

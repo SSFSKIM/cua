@@ -6579,7 +6579,13 @@ fn a_chrome_handle_s_end_with_a_drop_under_way_gets_the_tail_and_off_gives_the_o
                 last >= ms(6) && last < ms(20),
                 "released {last:?} after the last motion"
             );
-            let recent: Vec<&(Duration, (i16, i16))> = before.iter().filter(|(d, _)| *d < ms(20)).collect();
+            // the tail follows the end's revisit and the take read (the re-review of 9fb61c32, 1): a revisit that
+            // reaches the source as a motion can fall inside the last 20 ms just before the first step
+            let recent: Vec<&(Duration, (i16, i16))> = before
+                .iter()
+                .filter(|(d, _)| *d < ms(20))
+                .skip_while(|(_, p)| *p == (60, 20))
+                .collect();
             let places: Vec<(i16, i16)> = recent.iter().map(|(_, p)| *p).collect();
             assert_eq!(places, vec![(61, 20), (60, 20), (61, 20), (60, 20)], "{recent:?}");
             // the two visits a rest apart: each visit's return to the end against the next

@@ -5,7 +5,7 @@ acceptance home's own `cua install` of **linux-engine-v0.4.0**: `cua-engine` sha
 (c55c8e08d9cb)`, the pin's arm64 asset. The pinned rule takes it inside each step. The machine is the GCE arm64 VM
 `dc-linux171arm-996d` (c4a-standard-8, aarch64, uid 501, home /Users/new).
 
-**Status: complete.** Four parts.
+**Status: complete.** Five parts.
 - **At H‴ on 0.4.0:** setup, H‴'s local proof (passed, by the controller's two rulings below), item 9 (passes), and the
   private idle block: all 25 steps that ran exited 0 by their own judge. S1, H1 and H2 were skipped as class A
   (ruling 827), and those idle steps that are not class A stand on H‴.
@@ -38,6 +38,8 @@ acceptance home's own `cua install` of **linux-engine-v0.4.0**: `cua-engine` sha
   - Four development runs follow it: 953, the shipped long-left path, with 7 false oks in 100 (#459); 957, which finds
     0.4.1 the same; 954.2, the m5-h7 sweep, 30/30 landed; and 959, V5's long-left device cell, with 0 stale drops on cua
     (210) and on both vendor lanes (108 each).
+- **At H7 = `ae3fc1e8` on 0.4.2** (the section "At H7 on 0.4.2" below): the counted C1 and L4c both PASS, with 0
+  unexercised rows, 0 false oks, every press mark bound and no stop before its mark (982).
 
 ## Setup
 
@@ -981,8 +983,66 @@ the vendor's "next refused" in the rows is that rejection, not a refusal.
     (`privacy-scan-control.txt`).
 - No secret value was read, and every run home's secret store was empty.
 
+## At H7 on 0.4.2 (2026-11-21 07:48Z to 08:46Z; task 122)
+
+The head is **H7 = `ae3fc1e8`** (ci-gate GREEN 44877479152). It is H6 with C1's and L4c's race fix and the unexercised
+rules (rulings 954–956, 963, 969).
+- Each freeze starts 55 ms after Chrome's browser marks the press (`_NET_WM_USER_TIME`, bound to the trial by its
+  server time).
+- A stop that can't begin before its thaw is skipped.
+- Unidentified or skipped rows are unexercised for their band.
+- The byte comparison shows only C1 and L4c differ, in plan contents.
+
+The engine is still linux-engine-v0.4.2 (arm64 `25035ca1…`). The records are in `h7/`. Holder `task122-arm64`; the lock
+lines are `h7/scripts/lock-lines.txt`.
+
+**Setup** (`h7/scripts/h7.sh`, `setup-h7c.log.txt`, `out/home-check-h7.txt`):
+- `t122-h7c` is a fresh worktree, detached and clean at `ae3fc1e8`, with npm ci, electron and xprobe.
+- `home-arm64-042`'s engine sha256 equals H7's pin, and `gate.mjs check --pinned` from the H7 checkout exited 0.
+- hold-sittings was absent, and there was 109–110G free.
+
+**How it ran.** Each step's line is `gate.mjs print`'s (`out/<step>.print.txt`). It ran with its own `locked.sh
+task122-arm64` taking the hold, and inside that hold step.sh's quiet wait (no stress-ng, a 1-minute load below 1.0)
+before the printed gate command, which was unchanged. Task 126's holds ran between them.
+- C1's first start, at 08:10Z, was refused before anything ran: "C1.pinned-release exists". `gate.mjs print` writes
+  the step's record directory, and that was the one it found. It is kept as `out/C1.refused-1.driver.out` and
+  `out/C1.print-record-1`. The launcher now keeps each print's record apart (`<step>.print-record`).
+
+| step | stands on | hold (UTC) | run | exit | load at the run's start | result |
+|---|---|---|---|---:|---|---|
+| C1 | ae3fc1e8 | 08:30:35–08:35:39 | 08:33:35–08:35:39 | 0 | 0.87 9.26 13.13 (after a 180 s quiet wait) | **PASS**: every late take reported, no false ok, no missing landing; 0 unexercised |
+| L4c | ae3fc1e8 | 08:40:30–08:45:54 | 08:43:20–08:45:54 | 0 | 0.97 7.22 10.76 (after a 170 s quiet wait) | **PASS**: the same; 0 unexercised |
+
+Both runs were clean, with the end checks clear and the watchdog clean, and Chrome was 156.0.8078.73.
+
+**The bands** (`h7/scripts/h7-rows.txt`):
+
+| step | inside: landed after an in-hold take (min 7) | edge: late takes, each judged in full | past: hold notice, no drop, nothing after (min 7) | unexercised | skipped | identified | false ok |
+|---|---:|---|---:|---:|---:|---:|---:|
+| C1 (idle) | 10 / 10 | 3, all reported: freeze-648 #1, #3 and #4. Take +1.9, +1.7 and +1.2 ms after the release, the read's late notice, the next request refused, Escape +2.9, +0.8 and +0.8 ms | 10 / 10 | 0 | 0 | 40 / 40 | 0 |
+| L4c (twice the load) | 10 / 10 | 1, reported: freeze-650 #0. Take +5.0 ms, the late notice, the next request refused, Escape +6.5 ms | 10 / 10 | 0 | 0 | 40 / 40 | 0 |
+
+**The press marks and ruling 982.** Every row's mark was bound by its value: newer than any before it, not before the
+send's server time, and not after its own arrival.
+
+| step | marks bound | the mark after the send (ms) | its value − the send's server time (ms) | the stop after the mark (ms) | stops before the mark |
+|---|---:|---|---|---|---:|
+| C1 | 40 / 40 | 2.0–4.5 | 0–2 | 54.8–57.4 | 0 |
+| L4c | 40 / 40 | 5.8–151.7 | 2–119 | 53.5–56.5 | 0 |
+
+- Every stop began after its mark was bound, so there was no fail-open (982). The 53.5 ms minimum is the timer waking
+  early, which x64 shows too (53.5–57).
+- At twice the load the browser marked the press up to 152 ms after the send. The stop followed the mark, so the inside
+  band landed 10/10 where H6's L4c landed 6/10.
+- These ran at H7 before H7.1 was green, and task 128 re-judges them offline under H7.1's judge (984).
+
+**Scans** of `h7/`: token-shaped strings 0 hits in 48 files (`scan-token.txt`); `:0` titles and key codes 0 in 49 files, with 3 titles looked for (`privacy-scan.txt`).
+
 ## Files
 
+- `h7/`: the H7 part: `out/` (C1 and L4c as the runner wrote them, the prints and their records, the refused first
+  start of C1, `h7.log.txt`, the home check); `scripts/` (task 122's launcher, `h7-rows.mjs` and its output, the
+  scans, the lock lines).
 - `h6/`: the H6 part: `out/` (every counted step as the runner wrote it, V5's sitting records, `driver.log`,
   `zero.log`); `a953/`, `a957/`, `a959/` and `s954/` (rulings 953, 957, 959 and 954.2's development runs, with
   `analysis.md`, the `summary` files and `per-freeze.md`); `scripts/` (task 122's launchers, the setup, item 9, the

@@ -161,6 +161,13 @@ The inside and past bands each need their outcome 7 times in 10, or the band fai
 judged: a plain ok on a drag its page started that did not land is a false ok. The knife-edge freeze at 650 is the
 development plan `t14-late-edge`, held to T14's late-take contract.
 
+Since H7 (rulings 954–956), a freeze cell's stop waits until the browser marks the drag's press read
+(`_NET_WM_USER_TIME`, which the harness watches with `xprop -spy`), plus 55 ms. The engine's identification of the
+source asks the browser over AT-SPI before the press, and a stop during it left the source unidentified. A stop that
+can't begin before its thaw is skipped, and its row says why. The judge counts a row whose source ended unidentified,
+or whose stop was skipped, as unexercised for its band; such a row is shown, but never counted as the band's outcome.
+The inside band's freeze is per architecture (`LATE_INSIDE_FREEZE`).
+
 **The hold canary's criterion is a step parameter.** `steps.mjs` `CANARY_CRITERION` sets it on K1, K2 and V5 by
 architecture (rulings 930 and 932), as `--hold-canary`:
 - **x64, `relative`:** a press that started a drag must wait 3x the run's plain control's warm maximum, and at least

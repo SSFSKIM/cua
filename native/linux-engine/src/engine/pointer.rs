@@ -352,8 +352,8 @@ pub(super) struct ReleaseSync<'a> {
     pub(super) synced: &'a mut Option<crate::release_sync::Synced>,
     /// Whether the step runs only on a drop whose floor sent no keepalive (`--drag-dnd-release-sync-when outlasted`).
     pub(super) outlasted: bool,
-    /// The floor's keepalives and the steps it spaced out, when the step was skipped for them.
-    pub(super) skipped: &'a mut Option<(u32, u32)>,
+    /// The floor's keepalives, and whether it spaced out the path's last step, when the step was skipped for them.
+    pub(super) skipped: &'a mut Option<(u32, bool)>,
 }
 
 impl ReleaseSync<'_> {
@@ -533,9 +533,11 @@ fn drag_along(
         // the take, when it was seen, and how many samples were still to send then
         let mut taken: Option<(Instant, usize)> = None;
         let mut since_take = 0;
-        // the steps after the take the floor spaced out (a wait longer than the step's own pacing): a path that the
-        // floor slowed rests near its end, as one its keepalives filled does (#459's prototype, `outlasted`)
-        let mut floor_spaced = 0u32;
+        // whether the floor after the take spaced out the path's last step (a wait longer than the step's own pacing):
+        // a path the floor slowed to its end came to its last point slowly, as one its keepalives filled rests there
+        // (#459's prototype, `outlasted`). Only the last step counts: under load the floor can space a step early in a
+        // path that then outlasts it, and the gate's first cut, counting any, skipped such drags (task 126)
+        let mut floor_spaced_last = false;
         // when the sample being sent was due
         let mut due = Instant::now();
         for (i, &(sx, sy)) in samples.iter().enumerate().skip(first) {
@@ -566,8 +568,10 @@ fn drag_along(
                 let spaced = floor
                     .saturating_duration_since(Instant::now())
                     .min(crate::dnd::KEEPALIVE);
-                floor_spaced += u32::from(spaced > wait);
+                floor_spaced_last = spaced > wait;
                 wait = wait.max(spaced);
+            } else {
+                floor_spaced_last = false;
             }
             std::thread::sleep(wait);
             if let Some(guard) = guard.as_deref_mut()
@@ -783,8 +787,8 @@ fn drag_along(
             && hold.is_some()
             && let Some(sync) = measure.release_sync.as_mut()
         {
-            match !crate::release_sync::gate(sync.outlasted, floor_keepalives, floor_spaced) {
-                true => *sync.skipped = Some((floor_keepalives, floor_spaced)),
+            match !crate::release_sync::gate(sync.outlasted, floor_keepalives, floor_spaced_last) {
+                true => *sync.skipped = Some((floor_keepalives, floor_spaced_last)),
                 false => sync.run(x, route, before_last, last)?,
             }
         }
@@ -1419,7 +1423,7 @@ impl Engine {
                     "release_sync".into(),
                     json!({
                         "form": sync_form.name(),
-                        "skipped_for": { "keepalives": sync_skipped.map(|s| s.0), "spaced_steps": sync_skipped.map(|s| s.1) },
+                        "skipped_for": { "keepalives": sync_skipped.map(|s| s.0), "last_step_spaced": sync_skipped.map(|s| s.1) },
                     }),
                 );
             }

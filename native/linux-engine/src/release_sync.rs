@@ -75,13 +75,15 @@ pub fn applies(family: &str) -> bool {
 }
 
 /// Whether a drag's step runs, by its gate (`--drag-dnd-release-sync-when`; ruling 967): always, or with `outlasted`
-/// only when the floor after the take sent no keepalive and spaced no step (`keepalives`, `spaced`), the path's steps
-/// having outlasted the floor at their own pace: #459's shape. Once the floor sent a keepalive the gate stays shut, even
-/// when its last pair went out just before the release: every keepalive is on the path's last two samples, so whatever
-/// motion the browser has read last, it is at most one sample from where the drag ends, and the floor has rested there
-/// since. Likewise a step the floor spaced out came at least that far apart from the one before.
-pub fn gate(outlasted: bool, keepalives: u32, spaced: u32) -> bool {
-    !outlasted || (keepalives == 0 && spaced == 0)
+/// only when the floor after the take sent no keepalive and did not space out the path's last step (`keepalives`,
+/// `last_spaced`), the path's steps having outlasted the floor at their own pace: #459's shape. Once the floor sent a
+/// keepalive the gate stays shut, even when its last pair went out just before the release: every keepalive is on the
+/// path's last two samples, so whatever motion the browser has read last, it is at most one sample from where the drag
+/// ends, and the floor has rested there since. Likewise a last step the floor spaced out came that far after the one
+/// before. A step spaced earlier in the path does not count: under load the floor can space a step early in a path that
+/// then outlasts it, and the gate's first cut skipped such drags: 11 of 95 long-left drags at arm64 twice the load.
+pub fn gate(outlasted: bool, keepalives: u32, last_spaced: bool) -> bool {
+    !outlasted || (keepalives == 0 && !last_spaced)
 }
 
 /// The bound both of (b')'s answers share, from the first ping's send.
@@ -329,16 +331,16 @@ mod tests {
     #[test]
     fn the_outlasted_gate_opens_only_on_a_path_the_floor_never_slowed_nor_filled() {
         // ungated: every drop the engine lets drop
-        assert!(gate(false, 0, 0) && gate(false, 30, 0) && gate(false, 0, 36));
-        // #459's shape: the steps outlasted the floor at their own pace
-        assert!(gate(true, 0, 0));
+        assert!(gate(false, 0, false) && gate(false, 30, false) && gate(false, 0, true));
+        // #459's shape: the steps outlasted the floor at their own pace, whatever the floor spaced before the end
+        assert!(gate(true, 0, false));
         // a short path whose steps the floor spread out, then filled with keepalives
-        assert!(!gate(true, 12, 36));
+        assert!(!gate(true, 12, true));
         // the floor's keepalives ran, its last pair just before the release (the remaining floor all but gone, so the
         // last step came late against the release): shut, since every keepalive rests on the path's last two samples
-        assert!(!gate(true, 1, 0));
-        // the floor spaced the path's last steps and left nothing for a keepalive: shut, the end came slowly
-        assert!(!gate(true, 0, 1));
+        assert!(!gate(true, 1, false));
+        // the floor spaced the path's last step and left nothing for a keepalive: shut, the end came slowly
+        assert!(!gate(true, 0, true));
     }
 
     #[test]

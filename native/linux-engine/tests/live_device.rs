@@ -6198,7 +6198,7 @@ fn the_keepalive_form_gives_a_drop_whose_path_outlasts_its_floor_a_motion_at_its
         drag.stats
     );
     assert!(
-        skipped["spaced_steps"].as_u64().unwrap() > 0,
+        skipped["last_step_spaced"] == json!(true),
         "the floor spaced the short path's steps: {}",
         drag.stats
     );

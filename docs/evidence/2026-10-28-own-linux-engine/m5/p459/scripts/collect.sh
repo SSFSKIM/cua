@@ -11,7 +11,7 @@ cp "$S"/{tdd.sh,full.sh,build.sh,p459.sh,p459-run.mjs,p459-alternate.mjs,p459-ta
 [ -e "$S/collect-arm.sh" ] && cp "$S/collect-arm.sh" "$E/scripts/"
 cp "$S"/repro/{page.html,repro.sh} "$E/repro/"
 cp "$T"/repro/*.txt "$E/repro/" 2>/dev/null
-for r in d1-a d1-b audit-a; do
+for r in d1-a d1-b d1-c audit-a; do
   [ -e "$T/x64/$r/run/summary.md" ] || continue
   mkdir -p "$E/x64/$r"
   cp "$T/x64/$r/run/summary.md" "$T/x64/$r/step.json" "$E/x64/$r/"

@@ -7176,6 +7176,19 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   this kit. Chrome's page context menu keeps main's refusal (`otherWebArea`), its items under the web area.
   Proven offline (`MenuItemPointTests`, 24 tests): each of the three fails with its fix reverted.
   Date/Author: 2026-11-20, cursor235's implementer for #454.
+- Decision (#454, the review of c83ed846..74c99b92, reviewer-medium, 2026-11-20; amends the entry above): four
+  corrections, each tested and each test failing with its fix reverted (7 reversions). (1) The recorded item the guard
+  identified (`recordedMenuItem`) stands; only where a node of another role won the check is the recorded AXMenuItem
+  holding the point taken, and only when exactly one does (`RecordedMenuItems`), so a neighbour row on a shared edge, or
+  rows shifted since the screenshot, never lend another row's action (refused `notRecorded`). (2) A parentless menu's
+  control is named only on complete evidence (`MenuOpenerSearch`): a failed role, children or title read, or more
+  candidates than `menuOpenerCandidateLimit`, answers unknown, and the click is then unconfirmed with no focus fallback.
+  (3) The search shares a 100 ms budget (`menuOpenerBudgetMs`) and ends at a second match (unknown), and the request's
+  deadline is checked just before the action (`timeoutReached`, nothing sent). (4) `unobserved` proves only that the
+  record holds no item of the menu at the point (the walk can reach its limits), so its sentence now says "the
+  accessibility record of the screenshot holds no item of it at this point" and offers the element route only "If a
+  fresh getAXState() lists the item"; the model-facing sentence says the same.
+  Date/Author: 2026-11-20, cursor235's implementer for #454.
 
 ## Outcomes & Retrospective
 

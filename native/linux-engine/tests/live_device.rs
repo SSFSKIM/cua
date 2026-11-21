@@ -6556,12 +6556,16 @@ fn a_chrome_handle_s_end_with_a_drop_under_way_gets_the_tail_and_off_gives_the_o
                 "{tail}"
             );
             // f9d1f86b's end: after the end's rest (30 ms, Chrome's held rest) one revisit of the pointer's own place,
-            // just before the release, and no step. On this Xvfb the same-place XTEST revisit reaches the source as a
-            // motion (task 133's discovery), so it is the last motion read
+            // then the release, and no step. Whether the same-place XTEST revisit reaches the source as a motion of its
+            // own depends on the server (on this Xvfb it does; ruling 1001 takes it as no event), so either delivery
+            // passes: the revisit read just before the release after the rest, or nothing read after the rest. The
+            // request sequence is pinned by the unit tests (`every_end_without_the_tail_keeps_f9d1f86b_s_sequence`)
             let tail_of = &before[before.len().saturating_sub(2)..];
+            let revisit_read = tail_of.len() == 2 && tail_of[0].0 - tail_of[1].0 >= ms(25) && last < ms(6);
+            let nothing_after_rest = last >= ms(25);
             assert!(
-                tail_of.len() == 2 && tail_of[1].1 == (60, 20) && tail_of[0].0 - tail_of[1].0 >= ms(25) && last < ms(6),
-                "off: the rest, then the revisit at once before the release: {tail_of:?}"
+                before.last().map(|(_, p)| *p) == Some((60, 20)) && (revisit_read || nothing_after_rest),
+                "off: the rest, then the revisit (delivered or not) and the release: {tail_of:?}"
             );
             assert!(before.iter().all(|(_, p)| *p != (61, 20)), "off: no step: {before:?}");
         } else {

@@ -186,6 +186,9 @@ impl Confirming {
 pub enum EndStep {
     Motion((i16, i16)),
     Rest(Duration),
+    /// The pointer read again before a visit after the first: one no longer at this place (a person moved it, or it is
+    /// on another screen) ends the visits there, and the release's own read reports the move.
+    Check((i16, i16)),
 }
 
 /// Why a handle's end runs no tail (ruling 998, confirmed by 1026), or None when it runs one. The tail is the drag's
@@ -228,7 +231,10 @@ pub fn end_steps(tail: Option<(i16, i16)>, pointer: Option<(i16, i16)>, revisit:
             if !revisit {
                 steps.push(EndStep::Rest(crate::release_sync::TAIL_REST));
             }
-            for _ in 0..crate::release_sync::TAIL_VISITS {
+            for visit in 0..crate::release_sync::TAIL_VISITS {
+                if visit > 0 {
+                    steps.push(EndStep::Check(at));
+                }
                 steps.extend([
                     EndStep::Motion(step),
                     EndStep::Motion(at),
@@ -237,6 +243,60 @@ pub fn end_steps(tail: Option<(i16, i16)>, pointer: Option<(i16, i16)>, revisit:
             }
             steps
         }
+    }
+}
+
+/// What a handle's end's plan did ([`run_end`]): the motions it sent, and whether a check found the pointer moved and
+/// ended it there.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct EndRun {
+    pub motions: u32,
+    pub stopped: bool,
+}
+
+/// Runs a handle's end's plan: `motion` sends each motion, `rest` waits each rest, and `read` reads the pointer's place
+/// for each check (None: on another screen, or unread). A check that finds the pointer elsewhere sends nothing more
+/// (the review of f15e1f09, 2: a person's motion during a rest is never overwritten before the button goes up). A
+/// motion that fails ends it with its error.
+pub fn run_end(
+    plan: Vec<EndStep>,
+    mut motion: impl FnMut((i16, i16)) -> Result<()>,
+    mut rest: impl FnMut(Duration),
+    mut read: impl FnMut() -> Option<(i16, i16)>,
+) -> Result<EndRun> {
+    let mut run = EndRun::default();
+    for step in plan {
+        match step {
+            EndStep::Motion(at) => {
+                motion(at)?;
+                run.motions += 1;
+            }
+            EndStep::Rest(d) => rest(d),
+            EndStep::Check(at) if read() != Some(at) => {
+                run.stopped = true;
+                break;
+            }
+            EndStep::Check(_) => {}
+        }
+    }
+    Ok(run)
+}
+
+/// Whether a handle's end saw its take first after the one sample the tail is decided on (ruling 1030): `eligible` the
+/// end samples the take (a Chrome source at the agent's end, the form on, its after-release watch running), `sampled`
+/// the take seen then, `at_release` the take the release reads. Such a drop ran no tail, so nothing may confirm it: it
+/// is answered unconfirmed ([`judged_from_the_sample`]), never ok. Every other end judges its take as before.
+pub fn take_after_the_sample(eligible: bool, sampled: bool, at_release: bool) -> bool {
+    eligible && !sampled && at_release
+}
+
+/// What confirms a handle's drop judged from the tail's sample (ruling 1030): with its take first seen after it
+/// (`late`), nothing ([`Confirming::Nothing`], reported unconfirmed at once), whatever would have confirmed it;
+/// otherwise what confirms it already.
+pub fn judged_from_the_sample(confirmed: Option<Confirming>, late: bool) -> Option<Confirming> {
+    match late {
+        true => confirmed.map(|_| Confirming::Nothing),
+        false => confirmed,
     }
 }
 
@@ -813,9 +873,10 @@ impl Engine {
                 .is_some_and(|f| crate::families::confirms_drop(f.name))
         });
         let could_tail = self.cfg.dnd_release_sync != crate::release_sync::Form::Off && hold && chrome;
-        let judging_now = could_tail
-            && handle.pressed
-            && handle.after.is_some()
+        // the one sample the tail is decided on and the release judges (ruling 1030): a take first seen after it is
+        // answered unconfirmed below (`take_after_the_sample`)
+        let eligible = could_tail && handle.pressed && handle.after.is_some();
+        let judging_now = eligible
             && (held_take
                 || handle
                     .holding
@@ -838,22 +899,30 @@ impl Engine {
         );
         let tailing = refused.is_none() && place.is_some();
         let tail_started = Instant::now();
-        let mut tail_motions = 0;
+        let mut tail_run = EndRun::default();
         let revisited = match (&pointer, pacing.held_rest.is_zero() && !tailing) {
             (_, true) => Ok(()),
             (Err(error), false) => Err(anyhow::anyhow!("{error:#}")),
-            (Ok(_), false) => plan.into_iter().try_for_each(|end_step| match end_step {
-                EndStep::Motion((mx, my)) => {
-                    tail_motions += u32::from(tailing);
-                    Desktop::motion(&self.x, mx, my)
-                }
-                EndStep::Rest(rest) => {
-                    std::thread::sleep(rest);
-                    Ok(())
-                }
-            }),
+            (Ok(_), false) => {
+                let x = &self.x;
+                run_end(
+                    plan,
+                    |(mx, my)| Desktop::motion(x, mx, my),
+                    std::thread::sleep,
+                    || {
+                        x.conn
+                            .query_pointer(x.root)
+                            .ok()
+                            .and_then(|c| c.reply().ok())
+                            .filter(|p| p.same_screen)
+                            .map(|p| (p.root_x, p.root_y))
+                    },
+                )
+                .map(|run| tail_run = run)
+            }
         };
-        let tail_record = json!({
+        let tail_motions = if tailing { tail_run.motions } else { 0 };
+        let mut tail_record = json!({
             "form": self.cfg.dnd_release_sync.name(),
             "schedule": "handle_end",
             "ran": tailing,
@@ -863,6 +932,8 @@ impl Engine {
                 (None, Some(_)) => None,
             },
             "motions": tail_motions,
+            // a person moved the pointer during a rest: the visits ended there (the review of f15e1f09, 2)
+            "stopped_for_motion": tail_run.stopped,
             "added_ms": tailing.then(|| tail_started.elapsed().as_secs_f64() * 1000.0),
             "one_point": tailing && handle.previous.is_none(),
             "xtest_proof": "live test only, no counted rate",
@@ -928,6 +999,10 @@ impl Engine {
             });
             confirming(destination, supported, cursor).after_hold(extended_take)
         });
+        // ruling 1030: a take first seen after the tail's sample ran no tail, so it is answered unconfirmed, never ok
+        let late_take = take_after_the_sample(eligible, judging_now, judging);
+        confirmed = judged_from_the_sample(confirmed, late_take);
+        tail_record["take_after_the_sample"] = json!(late_take);
         if let Some(after) = &handle.after {
             after.confirm_drop_of(match confirmed {
                 Some(Confirming::Activation(window)) => Some(window),
@@ -1216,6 +1291,8 @@ mod tests {
                 EndStep::Motion((301, 260)),
                 EndStep::Motion((300, 260)),
                 EndStep::Rest(rest),
+                // the pointer read again before the second visit (the review of f15e1f09, 2)
+                EndStep::Check((300, 260)),
                 EndStep::Motion((301, 260)),
                 EndStep::Motion((300, 260)),
                 EndStep::Rest(rest),
@@ -1252,6 +1329,95 @@ mod tests {
             assert_eq!(plan(Some((300, 260)), false), vec![]);
             assert_eq!(plan(None, true), vec![]);
         }
+    }
+
+    /// The review of f15e1f09 (2): a person who moves the pointer during the tail's rest keeps their motion. The check
+    /// before the second visit reads the pointer elsewhere (or on another screen), nothing more is sent, and the release
+    /// reads the move as before. A pointer still in place gets both visits.
+    #[test]
+    fn a_pointer_moved_during_the_tail_s_rest_ends_the_visits_there() {
+        let plan = || end_plan(None, Some((200, 260)), Some((300, 260)), (640, 480), true);
+        for (now_at, motions, stopped) in [
+            (Some((300, 260)), 4, false),
+            (Some((340, 262)), 2, true),
+            (None, 2, true),
+        ] {
+            let sent = std::cell::RefCell::new(Vec::new());
+            let run = run_end(
+                plan(),
+                |p| {
+                    sent.borrow_mut().push(EndStep::Motion(p));
+                    Ok(())
+                },
+                |d| sent.borrow_mut().push(EndStep::Rest(d)),
+                || now_at,
+            )
+            .unwrap();
+            assert_eq!(run, EndRun { motions, stopped }, "{now_at:?}");
+            let sent = sent.into_inner();
+            let first = [
+                EndStep::Motion((301, 260)),
+                EndStep::Motion((300, 260)),
+                EndStep::Rest(Duration::from_millis(8)),
+            ];
+            match stopped {
+                // nothing after the check: no motion takes the pointer back from where the person put it
+                true => assert_eq!(sent, first.to_vec(), "{now_at:?}"),
+                false => assert_eq!(sent.len(), 6, "{sent:?}"),
+            }
+        }
+        // the ends with no tail have no check, so their run is the revisit alone, as f9d1f86b's
+        let sent = std::cell::RefCell::new(Vec::new());
+        let run = run_end(
+            end_plan(
+                Some("not a Chrome source"),
+                Some((200, 260)),
+                Some((300, 260)),
+                (640, 480),
+                true,
+            ),
+            |p| {
+                sent.borrow_mut().push(p);
+                Ok(())
+            },
+            |_| {},
+            || panic!("no read on an end with no tail"),
+        )
+        .unwrap();
+        assert_eq!(
+            (run, sent.into_inner()),
+            (
+                EndRun {
+                    motions: 1,
+                    stopped: false
+                },
+                vec![(300, 260)]
+            )
+        );
+    }
+
+    /// Ruling 1030: the tail and the release judge the take from one sample. A take first seen after that sample (at
+    /// the release's own read) ran no tail and is answered unconfirmed, whatever would have confirmed it; a take in the
+    /// sample is judged as any; an end that takes no sample (Electron, the form off, not the agent's end, no
+    /// after-release watch) judges its take as before.
+    #[test]
+    fn a_take_first_seen_after_the_tail_s_sample_is_answered_unconfirmed() {
+        // eligible, sampled, at the release
+        assert!(take_after_the_sample(true, false, true));
+        assert!(!take_after_the_sample(true, true, true));
+        assert!(!take_after_the_sample(true, false, false));
+        assert!(!take_after_the_sample(false, false, true));
+        let activation = Some(Confirming::Activation(7));
+        let late = judged_from_the_sample(activation, true);
+        assert_eq!(late, Some(Confirming::Nothing));
+        assert!(late.unwrap().unconfirmed(), "reported unconfirmed at once, never ok");
+        assert_eq!(
+            judged_from_the_sample(Some(Confirming::Unjudged), true),
+            Some(Confirming::Nothing)
+        );
+        assert_eq!(judged_from_the_sample(activation, false), activation);
+        assert_eq!(judged_from_the_sample(None, true), None, "no take, nothing to judge");
+        assert_eq!(late.unwrap().unconfirmed_end(None), crate::dnd::WatchEnd::Unconfirmed);
     }
 
     /// The last segment of a handle: from the point before its end to the pointer's own place; a handle that never

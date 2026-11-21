@@ -817,3 +817,30 @@ dedicated-behind a, one sample, the transient counted above), and no read failed
 There were no false confirmed answers (0 on both fix heads) and no false unconfirmed answers (0: every unconfirmed row
 had no menu at 1.8 s). The late `<select>` open seen in the first qual did not recur (0/30 with the 1.5 s wait). There
 were no regressions, and the frontmost app stayed the person's in every row.
+
+
+## #458 qual 3: the focused-window-only restore, fix e7fc289a
+
+The kit and layouts are qual 2's (kit 709deecf). Head e7fc289ad1be5a9f6de657615857c4040955a5e3 was built unmodified:
+https://github.com/SSFSKIM/cua/actions/runs/44949635594 (120 rows, Google Chrome 157.0.8103.79, macOS 26.7.2, image
+20261117.0516.1, no setup failures, every layout read back as built). The cells were font and select, 15 rows each, in
+layout a (shared-behind and dedicated-behind), layout c (shared-behind), and frontmost. The main baseline is qual 2's run
+44936682259 on aebd0eb4.
+
+Key-window watch: Finder's AXFocusedWindow and AXMainWindow are read from the click to 5 s after it, with every read
+succeeding. The loop asks for 5 ms, but with the AX and window-list reads it averaged ~22 ms a sample (228 reads p50
+per row), so a change shorter than that could pass unseen. Qual 2's transients, 13–49 ms long, were seen with the same
+loop.
+
+| layout | rows | focused / main window off F1: transient / end | F1 above the app's window at 1.8 s | `restored` | `stopped` | frontmost app / person's focus | cover ms p50/max |
+|---|---|---|---|---|---|---|---|
+| a, shared-behind | 30 | **0 / 0 of 30** | 30/30 | complete (F1 raised once), `leftCovered` 1 (F2), 30/30 | 0 | Finder 30/30 / kept 30/30 | 30–44/100 |
+| a, dedicated-behind | 30 | **0 / 0 of 30** | 30/30 | complete, `leftCovered` 1, 30/30 | 0 | Finder / kept | 27–51/84 |
+| c, shared-behind | 30 | **0 / 0 of 30** | 30/30 | complete, `leftCovered` 3 (F2, Calculator, F3), 30/30 | 0 | Finder / kept | 32–47/77 |
+
+The whole order is not kept (0/90): F2, and in c also Calculator and F3, stay under the app's window, as `leftCovered`
+says. `restored.ms` was 338–349 p50, 383 max, with 1 raise in every row.
+
+Delivery sanity: behind, confirmed 90/90, the menu open at 1.8 s 90/90, and the pick taken 90/90 (select
+`clickUnconfirmed`, as on main). Frontmost, confirmed on route 1 30/30 and taken 30/30. Key window off F1 0/30. There
+were no false confirmed or false unconfirmed answers.

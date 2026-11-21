@@ -7,7 +7,8 @@
 //     whose bounds hold the point, the first time it was listed and the first time it was listed with alpha above 0
 //     (wall ms, number, layer, bounds); with `keysAt`, at that time ⌘L (flags, down, up, flags) then each character of
 //     `text` as a unicode key down and up, `gapMs` after the chord; with `axAtSeen`, one application hit-test at the
-//     point as the popup is first seen visible, and whether its window is the target's frame.
+//     point as the popup is first seen visible, and whether its window is the target's frame; with `asPid`, every key
+//     event's source pid (field 41) stamped with that pid.
 import AppKit
 import ApplicationServices
 import Foundation
@@ -44,7 +45,15 @@ func windowFrameOf(_ hit: AXUIElement) -> (role: String?, frame: CGRect?) {
 }
 
 let source = CGEventSource(stateID: .hidSystemState)
-func post(_ e: CGEvent?, _ pid: pid_t) { guard let e else { return }; e.timestamp = DispatchTime.now().uptimeNanoseconds; e.postToPid(pid) }
+/// The source pid an event carries (field 41), stamped when the kit asks: the engine's intervention tap excludes its own
+/// events by it, so keys stamped with the engine's pid stand for the app's own doing rather than a person's (#456: a
+/// popup the app opens itself during the wait; unstamped keys are a user's, refused userIntervened).
+var stampPid: pid_t? = nil
+func post(_ e: CGEvent?, _ pid: pid_t) {
+  guard let e else { return }
+  if let stampPid { e.setIntegerValueField(.eventSourceUnixProcessID, value: Int64(stampPid)) }
+  e.timestamp = DispatchTime.now().uptimeNanoseconds; e.postToPid(pid)
+}
 func flags(_ f: CGEventFlags, key: CGKeyCode, _ pid: pid_t) {
   let e = CGEvent(source: source); e?.type = .flagsChanged; e?.flags = f
   e?.setIntegerValueField(.keyboardEventKeycode, value: Int64(key)); post(e, pid)
@@ -73,6 +82,7 @@ func race(_ q: [String: Any]) -> [String: Any] {
   let text = q["text"] as? String ?? "probe"
   let gapMs = (q["gapMs"] as? NSNumber)?.doubleValue ?? 5
   let axAtSeen = (q["axAtSeen"] as? Bool) ?? true
+  stampPid = (q["asPid"] as? NSNumber)?.int32Value
   var out: [String: Any] = ["startedAt": r1(wallMs())]
   var keysDone = keysAt == nil
   var listed: [Int: [String: Any]] = [:], visible: [Int: [String: Any]] = [:]

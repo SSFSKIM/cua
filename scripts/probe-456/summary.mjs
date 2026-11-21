@@ -18,7 +18,10 @@ export function classify(r) {
   const sp = c.stalePoint ?? {};
   const received = c.receivedAt, end = c.startedAt ?? c.answeredAt;
   const tv = rc.firstVisible?.t ?? null;
-  if (c.error === 'appWindowOverPoint' && !sp.rechecked) return {cls: 'early', received, end, tv};
+  if (c.error === 'userIntervened') return {cls: 'intervened', received, end, tv};
+  // Refused by the guard at the first check: #452's rule, or #316's rule W once the popup's window is listed (at alpha 0
+  // before it shows) above the screenshot's.
+  if ((c.error === 'appWindowOverPoint' || (c.error === 'screenChangedSinceScreenshot' && sp.reason === 'newWindow')) && !sp.rechecked) return {cls: 'early', received, end, tv};
   if (tv == null) return {cls: r.cell === 'nokeys' || r.cell === 'plain' ? 'nokeys' : 'nopopup', received, end, tv};
   if (tv <= received) return {cls: 'pre', received, end, tv};
   if (tv <= end) return {cls: 'in', received, end, tv, margin: end - tv};
@@ -40,7 +43,7 @@ for (const file of process.argv.slice(2)) {
   console.log('| cell | prehold | head | rows | class | answer and landing |');
   console.log('|---|---|---|---|---|---|');
   const groups = new Map();
-  for (const r of results) { const k = `${r.cell}|${r.prehold ? 'held' : 'free'}|${r.head}`; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(r); }
+  for (const r of results) { const k = `${r.cell}${r.via && r.via !== 'racer' ? `/${r.via}` : ''}|${r.prehold ? 'held' : 'free'}|${r.head}`; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(r); }
   for (const [k, rs] of groups) {
     const [cell, prehold, head] = k.split('|');
     const cls = tally(rs.map(r => r.problem ? `problem:${r.problem}` : r.exception ? 'exception' : classify(r)?.cls ?? (r.race?.firstVisible ? 'popup' : 'nopopup')));
@@ -54,7 +57,7 @@ for (const file of process.argv.slice(2)) {
     const t0 = c?.receivedAt ?? r.base;
     const rel = t => (t == null ? '-' : r0(t - t0));
     const ev = (r.after?.events ?? []).filter(e => ['wfocus', 'wblur', 'click', 'focusin'].includes(e.type)).map(e => `${e.type}:${e.id ?? ''}@${rel(e.t)}`).join(' ');
-    console.log(`  ${r.label}: ${k?.cls ?? '-'} sent=${c ? rel(c.sentAt) : '-'} keys=${rc.keys ? rel(rc.keys[0]) : '-'} listed=${rc.firstListed ? `${rc.firstListed.n}@${rel(rc.firstListed.t)}` : '-'} visible=${rc.firstVisible ? `${rc.firstVisible.n}@${rel(rc.firstVisible.t)}` : '-'} ax=${rc.axAtSeen ? `${rc.axAtSeen.role}/inTarget=${rc.axAtSeen.inTarget}@${rel(rc.axAtSeen.t0)}+${rc.axAtSeen.ms}` : '-'} end=${c ? rel(c.startedAt ?? c.answeredAt) : '-'} answered=${c ? rel(c.answeredAt) : '-'} guard=${c?.activationGuardMs ?? '-'} pend=${c?.pendingClick ? JSON.stringify(c.pendingClick) : '-'} sp=${c?.stalePoint ? `${c.stalePoint.verdict}/${c.stalePoint.reason}/ms=${c.stalePoint.ms}/hitMs=${c.stalePoint.hitMs ?? '-'}` : '-'} route=${c?.route ?? '-'} => ${outcome(r)} | ${ev} | after popup=${r.after?.popup ? r.after.popup.n : '-'} focused=${r.after?.focused?.role ?? '-'}:${r.after?.focused?.description ?? ''}${r.press ? ` | press=${r.press.error ?? 'ok'}/${r.press.route}` : ''}${r.prehold ? ` | prehold=${r.prehold.error ?? 'ok'}/${r.prehold.route}` : ''}`);
+    console.log(`  ${r.label}: ${k?.cls ?? '-'} sent=${c ? rel(c.sentAt) : '-'} keys=${rc.keys ? rel(rc.keys[0]) : '-'} listed=${rc.firstListed ? `${rc.firstListed.n}@${rel(rc.firstListed.t)}` : '-'} visible=${rc.firstVisible ? `${rc.firstVisible.n}@${rel(rc.firstVisible.t)}` : '-'} ax=${rc.axAtSeen ? `${rc.axAtSeen.role}/inTarget=${rc.axAtSeen.inTarget}@${rel(rc.axAtSeen.t0)}+${rc.axAtSeen.ms}` : '-'} end=${c ? rel(c.startedAt ?? c.answeredAt) : '-'} answered=${c ? rel(c.answeredAt) : '-'} guard=${c?.activationGuardMs ?? '-'} pend=${c?.pendingClick ? JSON.stringify(c.pendingClick) : '-'} sp=${c?.stalePoint ? `${c.stalePoint.verdict}/${c.stalePoint.reason}/ms=${c.stalePoint.ms}/hitMs=${c.stalePoint.hitMs ?? '-'}` : '-'} route=${c?.route ?? '-'} => ${outcome(r)} | ${ev} | after popup=${r.after?.popup ? r.after.popup.n : '-'} focused=${r.after?.focused?.role ?? '-'}:${r.after?.focused?.description ?? ''}${r.press ? ` | press=${r.press.error ?? 'ok'}/${r.press.route}` : ''}${r.prehold ? ` | prehold=${r.prehold.error ?? 'ok'}/${r.prehold.route}` : ''}${r.engineKeys ? ` | engineKeys key=${r.engineKeys.key.error ?? 'ok'}@${rel(r.engineKeys.at)}..${rel(r.engineKeys.keyAnswered)} type=${r.engineKeys.type.error ?? 'ok'}@..${rel(r.engineKeys.typeAnswered)}` : ''}`);
   }
   console.log('\nrefusal sentences:');
   const sentences = results.filter(r => r.click?.message).reduce((m, r) => { const s = `${r.click.error}: ${r.click.message}`; (m[s] ??= []).push(`${r.head}:${r.cell}`); return m; }, {});

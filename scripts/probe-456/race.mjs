@@ -39,6 +39,10 @@ const DELAYS = nums('delays') ?? [-40, -20, 0, 10, 20, 30, 45, 60, 90];
 const FIELD_DELAYS = nums('field-delays') ?? [0, 20, 40, 60];
 const PREHOLD = (list('prehold') ?? ['0', '1']).map(v => v === '1');
 const TEXT = arg('text') ?? 'probe';
+/// How the race cell's keys reach Chrome: the racer (a second process, its events stamped with the engine's pid unless
+/// --stamp 0) or a second engine connection's press_key and type_text.
+const VIA = list('via') ?? ['racer'];
+const STAMP = arg('stamp') !== '0';
 const BUDGET_MS = Number(arg('budget') ?? 100) * 60_000;
 const STARTED = Date.now();
 mkdirSync(OUT, {recursive: true});
@@ -287,11 +291,11 @@ const save = () => writeFileSync(join(OUT, 'results.json'), JSON.stringify({conf
 /// The point a model would click on the control: its centre across, 18 pt down from its top (the popup's first row).
 const upper = f => ({x: f.x + f.width / 2, y: f.y + Math.min(18, f.height / 2)});
 
-async function runRow(cell, delay, prehold, rep, headLabel) {
-  const lab = `${cell}-${delay ?? 'x'}-${prehold ? 'held' : 'free'}-${rep}-${headLabel}`;
-  const row = {label: lab, head: headLabel, cell, delay, prehold, rep, steps: []};
+async function runRow(cell, delay, prehold, rep, headLabel, via = 'racer') {
+  const lab = `${cell}-${delay ?? 'x'}-${prehold ? 'held' : 'free'}-${via}-${rep}-${headLabel}`;
+  const row = {label: lab, head: headLabel, cell, delay, prehold, via, stamp: STAMP, rep, steps: []};
   results.push(row);
-  let w, held;
+  let w, held, second;
   try {
     await ask({op: 'forget'});
     row.reset = await reset();
@@ -333,9 +337,23 @@ async function runRow(cell, delay, prehold, rep, headLabel) {
       if (r.error) { row.problem = `the pointer press was refused: ${errName(r)}`; return; }
       await sleep(120);
     }
-    const base = Date.now() + 60;
+    if (keys && via === 'engine') second = await connect();
+    const base = Date.now() + 60 + Math.max(0, -(delay ?? 0));
+    const byRacer = keys && via === 'racer';
     const watch = racer.ask({op: 'race', pid, target: pop.target.n, point: [screen.x, screen.y], until: base + 1300,
-      keysAt: keys ? base + (delay ?? 0) : null, text: TEXT, gapMs: 5, axAtSeen: true}, 10_000);
+      keysAt: byRacer ? base + (delay ?? 0) : null, text: TEXT, gapMs: 5, axAtSeen: true, asPid: STAMP ? engine.pid : undefined}, 10_000);
+    let engineKeys = null;
+    if (second) {
+      engineKeys = (async () => {
+        await sleepUntil(base + (delay ?? 0));
+        const t0 = Date.now();
+        const k = await second.execute('press_key', {pid, key: 'cmd+l'});
+        const t1 = Date.now();
+        const ty = await second.execute('type_text', {pid, text: TEXT});
+        const k1 = brief(k), ty1 = brief(ty); delete k1.meta; delete ty1.meta;
+        return {at: t0, keyAnswered: t1, typeAnswered: Date.now(), key: k1, type: ty1};
+      })();
+    }
     await sleepUntil(base);
     if (cell !== 'keysonly') {
       const t0 = Date.now();
@@ -346,6 +364,7 @@ async function runRow(cell, delay, prehold, rep, headLabel) {
       delete row.click.meta.stalePoint;
     } else row.base = base;
     row.race = await watch;
+    if (engineKeys) { row.engineKeys = await engineKeys; row.race.keys = [row.engineKeys.at, row.engineKeys.keyAnswered]; }
     row.base = base;
     await sleep(250);
     const ev = events.slice(mark);
@@ -360,7 +379,7 @@ async function runRow(cell, delay, prehold, rep, headLabel) {
     row.landed = {ub: pressed('ub'), uf: focused('uf'), b2: pressed('b2')};
   } catch (e) { if (e.setup) row.problem = e.message; else row.exception = String(e?.stack || e).slice(0, 1500); }
   finally {
-    w?.close(); held?.close(); save();
+    w?.close(); held?.close(); second?.close(); save();
     const c = row.click, sp = c?.stalePoint, rc = row.race;
     const pv = rc?.firstVisible ? `${rc.firstVisible.n}@${Math.round(rc.firstVisible.t - (c?.receivedAt ?? row.base))}` : '-';
     log(`${lab}: ${row.problem ?? row.exception?.split('\n')[0] ?? `${c ? (c.error ?? 'ok') : 'noclick'} sp=${sp ? `${sp.verdict}/${sp.reason}/re=${sp.rechecked ?? '-'}/aa=${sp.afterActivation ?? '-'}/by=${sp.by ?? '-'}/ow=${sp.overWindow ?? '-'}` : '-'} route=${c?.route} guard=${c?.activationGuardMs} pend=${JSON.stringify(c?.pendingClick)} popup(n@ms from received)=${pv} keys=${rc?.keys ? Math.round(rc.keys[0] - (c?.receivedAt ?? row.base)) : '-'} end=${c ? Math.round((c.startedAt ?? c.answeredAt) - c.receivedAt) : '-'} landed=${JSON.stringify(row.landed)} msg=${(c?.message ?? '').slice(0, 120)}`}`);
@@ -373,7 +392,8 @@ async function run() {
   for (const cell of CELLS) {
     const delays = cell === 'race' ? DELAYS : cell === 'field' || cell === 'keysonly' ? FIELD_DELAYS : [null];
     const holds = cell === 'field' || cell === 'keysonly' ? PREHOLD : [false];
-    for (const prehold of holds) units.push({cell, delays, prehold});
+    const vias = cell === 'race' ? VIA : ['racer'];
+    for (const prehold of holds) for (const via of vias) units.push({cell, delays, prehold, via});
   }
   // A unit's delays run on one head, then on the other; the heads' order alternates by rep and unit.
   let k = 0;
@@ -383,7 +403,7 @@ async function run() {
       await useHead(h);
       for (const d of u.delays) {
         if (Date.now() - STARTED > BUDGET_MS) { config.budgetStop = true; save(); return; }
-        await runRow(u.cell, d, u.prehold, rep, h.label);
+        await runRow(u.cell, d, u.prehold, rep, h.label, u.via);
       }
     }
   }

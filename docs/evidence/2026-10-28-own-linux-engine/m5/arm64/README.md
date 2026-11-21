@@ -1015,6 +1015,10 @@ before the printed gate command, which was unchanged. Task 126's holds ran betwe
 
 Both runs were clean, with the end checks clear and the watchdog clean, and Chrome was 156.0.8078.73.
 
+**Re-judged under ruling 957's judge** (96fa1fd3, task 128, ruling 984): no row moved. Both steps still PASS. C1's 17 and
+L4c's 23 landings each ended where the path ended, so there are 0 drops at a stale position and 0 path ends in the 3 px
+margin.
+
 **The bands** (`h7/scripts/h7-rows.txt`):
 
 | step | inside: landed after an in-hold take (min 7) | edge: late takes, each judged in full | past: hold notice, no drop, nothing after (min 7) | unexercised | skipped | identified | false ok |

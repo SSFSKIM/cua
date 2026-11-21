@@ -542,3 +542,27 @@ test("the freeze cells wait for the browser's mark of the press, after the engin
   assert.deepEqual(freezeStart(freezeOf('prefreeze-150'), t0, null), { start: 0 });
   assert.equal(freezeOf('stall').afterPress, undefined);
 });
+
+test("ruling 956: the press mark is the browser's own or none; never seen, or seen past the thaw, the stop is skipped, never begun from 60 ms alone", async () => {
+  const { pressMarks, freezeOf, freezeStart } = await import('../../scripts/linux-engine-diff/drop-signals.mjs');
+  const line = (v) => `_NET_WM_USER_TIME(CARDINAL) = ${v}`;
+  const now = Date.now();
+  // the spy's first value is the property as it stood, never a press, even when it arrives after the drag's send
+  const m = pressMarks();
+  m.line(line(1), now + 10);
+  assert.equal(await m.pressed(now, now + 50), null, 'the first value is no press');
+  m.line('xprop: something else', now + 20);
+  m.line(line(2), now + 30);
+  assert.equal(await m.pressed(now, now + 50), now + 30, 'a later change is the press');
+  // a mark only past the deadline (the thaw) is none
+  const late = pressMarks();
+  late.line(line(1), now);
+  late.line(line(2), now + 80);
+  assert.equal(await late.pressed(now, now + 50), null);
+  // none at all by a deadline already gone
+  assert.equal(await pressMarks().pressed(now - 100, now - 1), null);
+  // and with no mark the stop is skipped, not begun at its 60 ms
+  const span = freezeOf('freeze-650');
+  assert.equal(freezeStart(span, now, null).start, undefined);
+  assert.match(freezeStart(span, now, null).skipped, /no press marked/);
+});

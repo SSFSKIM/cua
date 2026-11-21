@@ -619,48 +619,69 @@ async function freezeBrowser(pid, span, t0, pressed = null) {
 }
 
 /**
- * Chrome's browser's own mark of each button press it reads: `_NET_WM_USER_TIME` on its window (or on the window its
- * `_NET_WM_USER_TIME_WINDOW` names), watched by `xprop -spy`, each change stamped with this process's wall clock as it
- * arrives. `pressed(from, deadline)` answers the first change at or after `from`, or null by `deadline`.
+ * The browser's press marks as `xprop -spy` prints them (`startPressWatch`), fed line by line with each line's arrival
+ * (`line(text, wall)`). The first value printed is the property as it stood when the spy began, never a press, however
+ * late it comes. `pressed(from, deadline)` answers the first mark at or after `from` and by `deadline`, else null: a mark
+ * never seen, or seen only past the deadline (the cell's thaw), leaves the stop skipped and its row unexercised (ruling
+ * 956), never a stop from `from` alone.
  */
-async function startPressWatch(window) {
-  const named = /window id # (0x[0-9a-f]+)/i.exec(xExecFileSync('xprop', ['-id', String(window), '_NET_WM_USER_TIME_WINDOW'], { encoding: 'utf8', timeout: 5000 }))?.[1];
-  const target = named ?? String(window);
-  const child = xSpawn('stdbuf', ['-oL', 'xprop', '-spy', '-id', target, '_NET_WM_USER_TIME'], { stdio: ['ignore', 'pipe', 'inherit'] });
+export function pressMarks() {
   const marks = [];
   const waiting = new Set();
-  const rl = createInterface({ input: child.stdout });
-  rl.on('line', (l) => {
-    if (!/_NET_WM_USER_TIME\(CARDINAL\) = \d+/.test(l)) return;
-    const wall = Date.now();
-    marks.push(wall);
-    for (const w of waiting) w(wall);
-  });
-  const exited = new Promise((resolve) => {
-    child.once('exit', resolve);
-    child.once('error', resolve);
-  });
-  // xprop -spy prints the property as it stands first: that line is no press
-  await new Promise((resolve) => {
-    rl.once('line', resolve);
-    setTimeout(resolve, 2000);
-  });
+  let primed = false;
   return {
-    window: Number(target),
+    marks,
+    line(text, wall) {
+      if (!/_NET_WM_USER_TIME\(CARDINAL\) = \d+/.test(text)) return;
+      if (!primed) {
+        primed = true;
+        return;
+      }
+      marks.push(wall);
+      for (const w of waiting) w(wall);
+    },
     pressed(from, deadline) {
       const seen = marks.find((m) => m >= from);
-      if (seen !== undefined) return Promise.resolve(seen);
+      if (seen !== undefined) return Promise.resolve(seen <= deadline ? seen : null);
+      if (Date.now() >= deadline) return Promise.resolve(null);
       return new Promise((resolve) => {
         const done = (v) => {
           waiting.delete(on);
           clearTimeout(timer);
           resolve(v);
         };
-        const on = (wall) => wall >= from && done(wall);
+        const on = (wall) => wall >= from && done(wall <= deadline ? wall : null);
         const timer = setTimeout(() => done(null), Math.max(0, deadline - Date.now()));
         waiting.add(on);
       });
     },
+  };
+}
+
+/**
+ * Chrome's browser's own mark of each button press it reads: `_NET_WM_USER_TIME` on its window (or on the window its
+ * `_NET_WM_USER_TIME_WINDOW` names), watched by `xprop -spy`, each change stamped with this process's wall clock as it
+ * arrives (`pressMarks`).
+ */
+async function startPressWatch(window) {
+  const named = /window id # (0x[0-9a-f]+)/i.exec(xExecFileSync('xprop', ['-id', String(window), '_NET_WM_USER_TIME_WINDOW'], { encoding: 'utf8', timeout: 5000 }))?.[1];
+  const target = named ?? String(window);
+  const child = xSpawn('stdbuf', ['-oL', 'xprop', '-spy', '-id', target, '_NET_WM_USER_TIME'], { stdio: ['ignore', 'pipe', 'inherit'] });
+  const marks = pressMarks();
+  const rl = createInterface({ input: child.stdout });
+  rl.on('line', (l) => marks.line(l, Date.now()));
+  const exited = new Promise((resolve) => {
+    child.once('exit', resolve);
+    child.once('error', resolve);
+  });
+  // the spy's first line, the property as it stands, before any drag is sent
+  await new Promise((resolve) => {
+    rl.once('line', resolve);
+    setTimeout(resolve, 2000);
+  });
+  return {
+    window: Number(target),
+    pressed: (from, deadline) => marks.pressed(from, deadline),
     async stop() {
       child.kill('SIGTERM');
       await exited;

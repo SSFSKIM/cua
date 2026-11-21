@@ -122,8 +122,9 @@ struct InputMeta {
   /// #454's coordinate click on an open menu's item (MenuItemPoint.swift): delivered as the item's action and its effect,
   /// or why it was refused.
   var menuItemClick: MenuItemClickRecord?
-  /// #458's coordinate click on a closed pop-up button (PopUpPoint.swift): delivered as its AXPress and its effect, the
-  /// combo box's refusal, or why main's path was kept.
+  /// #458's coordinate click on a closed pop-up button or a combo box's arrow (PopUpPoint.swift): delivered as its AXPress,
+  /// its effect and the restore of the person's window order, the refusal of a combo box with no pressable arrow, or why
+  /// main's path was kept.
   var popUpClick: PopUpClickRecord?
   /// #359's wait for a posted click before an accessibility action on the text, and set_value's watch after its write
   /// (ClickOrdering.swift); nil when no pointer press to the app was pending.
@@ -434,8 +435,9 @@ extension Engine {
   /// where #282 element-routes it, the element pressed must be that node or its control, checked again after any wait. A
   /// kept plain left click on an item of a menu open in a window of the app's own goes as the item's AXPick or AXPress,
   /// confirmed by its effect, or is refused, never posted (#454, MenuItemPoint.swift); one on a closed pop-up button goes
-  /// as the button's AXPress, confirmed by its menu opening, and one on a native combo box's arrow with the app not
-  /// frontmost is refused, neither posted (#458, PopUpPoint.swift). Route 4 takes route 3's place for an app the owner's override names. The process
+  /// as the button's AXPress, one on a native combo box's arrow as the arrow's, each confirmed by what it opens and the
+  /// person's window order put back; a combo box whose arrow has no action, the app not frontmost, is refused; none is
+  /// posted (#458, PopUpPoint.swift). Route 4 takes route 3's place for an app the owner's override names. The process
   /// serving the target receives the input, after the forbidden list has been checked against it.
   func click(_ args: [String: Any], _ context: ExecutionContext) throws -> Any {
     let token = try elementTokenArg(args, lineage: context.lineage)
@@ -610,9 +612,9 @@ extension Engine {
           }
           if carried { return ["meta": meta.wire] }
         }
-        // #458: a kept point on a closed pop-up button is carried by its AXPress and confirmed by its menu opening, and a
-        // native combo box's arrow behind is refused; never posted. A web page behind in shared mode keeps #282's route,
-        // which presses a `<select>` itself; there its press gets the same check before it, effect and order record.
+        // #458: a kept point on a closed pop-up button or a combo box's arrow is carried by its AXPress, confirmed by what
+        // it opens, the person's window order put back; never posted. A web page behind in shared mode keeps #282's
+        // route, which presses a `<select>` itself; there its press gets the same check before it, effect and restore.
         var webAreaPopUp: PopUpTarget<AXUIElement>?
         if stale.refusal == nil, forced == nil, button == .left, count == 1, route == .activation {
           let leftToWebAreaRoute = context.connection.desktop == .shared && pointer.view.mayBeWebArea
@@ -646,7 +648,7 @@ extension Engine {
                 try finalStalePointCheck(gate, pressing: element)?(pressRoute == .activation, &meta)
               }, checkInFlight: guarding.checkInFlight,
                 announce: { cursor.act(connection: context.connection.id, app: app.key, window: windowID, .click(placed.point)) },
-                perform: { gatedPerform($0, $1) }, opened: { context.connection.popUpMenuOrders[app.key] = $0 }, meta: &meta)
+                perform: { gatedPerform($0, $1) }, restore: livePopUpRestore, meta: &meta)
             }
             let carried = try armingSettle(&meta, acted: { context.connection.markActed(app) }) { meta -> Bool in
               guard case .press = decision else { return try carry(&meta) }
@@ -655,7 +657,7 @@ extension Engine {
               try recordingRouteAdvice(pressRoute, app: app, meta: &meta) { meta in carried = try carry(&meta) }
               return carried
             }
-            if carried { return ["meta": meta.wire] }
+            if carried { return popUpResult(meta) }
           }
         }
         if pointer.view.mayBeWebArea, let hit = pointerHit {
@@ -675,7 +677,7 @@ extension Engine {
                                        windows: onScreenWindowListRead, now: monotonicMilliseconds,
                                        sleep: { usleep(UInt32(max(0, $0) * 1000)) },
                                        deadlinePassed: { unixMilliseconds() >= context.deadline },
-                                       opened: { context.connection.popUpMenuOrders[app.key] = $0 }, route: { beforePress, tolerates, meta in
+                                       restore: livePopUpRestore, route: { beforePress, tolerates, meta in
                 try withoutActuallyEscaping(beforePress) { check in
                   try withoutActuallyEscaping(tolerates) { judge in
                     (checks.check, checks.actionError) = (check, judge)

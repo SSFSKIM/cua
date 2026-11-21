@@ -98,7 +98,7 @@ final class PopUpPointTests: XCTestCase {
     let box = Node("AXComboBox", frame: comboFrame, parent: window)
     box.actions = ["AXShowMenu", "AXConfirm"]
     box.expanded = false
-    let arrow = Node("AXButton", frame: CGRect(x: 748, y: 70, width: 19, height: 22), parent: box)
+    let arrow = Node("AXButton", frame: CGRect(x: 743, y: 73, width: 20, height: 15), parent: box)
     arrow.actions = ["AXPress"]
     var verdict = StalePointVerdict<Node>(reason: .sameElement, node: recorded(arrow, ancestor: 1), current: arrow, point: arrowPoint)
     verdict.nodes = [recorded(window), recorded(box, ancestor: 0), recorded(arrow, ancestor: 1)]
@@ -122,15 +122,23 @@ final class PopUpPointTests: XCTestCase {
                frontmost: { self.frontmost }, windows: windows)
   }
 
-  /// The click carried out over a fake clock: `held` runs as the hold does, `onPress` as the AXPress is performed.
+  /// The person windows each restore the click ran was handed (numbers, front to back), and what it answers.
+  private var restores: [[CGWindowID]] = []
+  private var restoreAnswer = PopUpRestoreRecord(windows: 0, ms: 70, complete: true, raises: 1)
+
+  /// The click carried out over a fake clock: `held` runs as the hold does, `onPress` as the AXPress is performed, and
+  /// `restore` is recorded (`restores`), answering `restoreAnswer`.
   private func click(_ decision: PopUpPoint<Node>, route: InputRoute = .activation, meta: inout InputMeta,
                      deadlinePassed: @escaping () -> Bool = { false }, held: @escaping () -> Void = {},
-                     opened: @escaping (PopUpMenuOrder?) -> Void = { _ in },
                      onPress: @escaping (Node, String) -> AXError) throws -> Bool {
     var clock = 0.0
     return try popUpClick(decision, app: "TextEdit", route: route, appWindow: observed, pids: [app], ownPid: 999, reads: reads,
                           windows: { self.list }, now: { clock }, sleep: { clock += $0 }, deadlinePassed: deadlinePassed,
-                          hold: { _, _ in held() }, checkInFlight: {}, perform: onPress, opened: opened, meta: &meta)
+                          hold: { _, _ in held() }, checkInFlight: {}, perform: onPress, restore: { persons, appWindow in
+      XCTAssertEqual(appWindow, self.observed)
+      self.restores.append(persons.map(\.number))
+      return self.restoreAnswer
+    }, meta: &meta)
   }
 
   private func wire(_ meta: InputMeta) -> [String: Any]? { meta.wire["popUpClick"] as? [String: Any] }
@@ -139,7 +147,7 @@ final class PopUpPointTests: XCTestCase {
 
   /// TextEdit's font pop-up behind Finder: the hit and the record name the same enabled closed button, so the click is its
   /// AXPress after the hold, with nothing posted (the caller returns on `true`), confirmed once a menu window of the app's
-  /// appears over the button. The open raised the app's window above Finder's, so the order to put back is recorded.
+  /// appears over the button. The open raised the app's window above Finder's, so Finder's window is put back at once.
   func testAnAgreeingClosedPopUpIsItsAXPressWithNothingPostedConfirmedWhenItsMenuWindowAppears() throws {
     let scene = font()
     let decision = decide(hit: scene.popup, scene.verdict, at: fontPoint)
@@ -147,9 +155,8 @@ final class PopUpPointTests: XCTestCase {
     XCTAssertTrue(target.element === scene.popup)
     var performed: [String] = []
     var held = 0
-    var order: PopUpMenuOrder?
     var meta = freshMeta()
-    let carried = try click(decision, meta: &meta, held: { held += 1 }, opened: { order = $0 }) { button, action in
+    let carried = try click(decision, meta: &meta, held: { held += 1 }) { button, action in
       XCTAssertTrue(button === scene.popup)
       performed.append(action)
       self.list = [self.fontMenu, self.appWindow, self.person]
@@ -163,8 +170,9 @@ final class PopUpPointTests: XCTestCase {
     XCTAssertEqual(wire(meta)?["delivery"] as? String, "action")
     XCTAssertEqual(wire(meta)?["effect"] as? String, "confirmed")
     XCTAssertEqual(wire(meta)?["menuWindow"] as? Int, 77)
-    XCTAssertEqual(wire(meta)?["raisedAppWindow"] as? Bool, true)
-    XCTAssertEqual(order, PopUpMenuOrder(menuWindow: 77, appWindow: observed, personWindow: 40, personPid: finder))
+    XCTAssertEqual(restores, [[40]], "Finder's window, recorded in front before the press, put back")
+    XCTAssertEqual((wire(meta)?["restored"] as? [String: Any])?["complete"] as? Bool, true)
+    XCTAssertNil(meta.note)
   }
 
   /// Chrome's `<select>` as measured, dedicated mode: closed it has no AXMenu child, and the record's option under it is
@@ -189,19 +197,112 @@ final class PopUpPointTests: XCTestCase {
     XCTAssertEqual(wire(meta)?["effect"] as? String, "confirmed")
   }
 
-  /// The app frontmost by route 1: confirmed, and no order to put back (the app's window was in front already).
-  func testAFrontmostOpenRecordsNoOrder() throws {
+  /// The app frontmost by route 1: confirmed, and nothing to put back (no window of the person's was in front of it).
+  /// Behind, with the app's window not risen over the person's within the watch after the open, nothing moves either; a
+  /// rise seen within it is put back.
+  func testNothingRaisedMeansNoRestore() throws {
     let scene = font()
     list = [appWindow, person]
-    var order: PopUpMenuOrder? = PopUpMenuOrder(menuWindow: 1, appWindow: 1, personWindow: 1, personPid: 1)
     var meta = freshMeta()
-    XCTAssertTrue(try click(decide(hit: scene.popup, scene.verdict, at: fontPoint), route: .action, meta: &meta, opened: { order = $0 }) { _, _ in
+    XCTAssertTrue(try click(decide(hit: scene.popup, scene.verdict, at: fontPoint), route: .action, meta: &meta) { _, _ in
       self.list = [self.fontMenu, self.appWindow, self.person]
       return .success
     })
     XCTAssertEqual(meta.inputRoute, .action)
-    XCTAssertEqual(wire(meta)?["raisedAppWindow"] as? Bool, false)
-    XCTAssertNil(order, "nothing to put back: the app's entry is cleared")
+    XCTAssertEqual(restores, [], "nothing of the person's was in front")
+    XCTAssertNil(wire(meta)?["restored"])
+    list = [person, appWindow]
+    var behind = freshMeta()
+    XCTAssertTrue(try click(decide(hit: scene.popup, scene.verdict, at: fontPoint), meta: &behind) { _, _ in
+      self.list = [self.fontMenu, self.person, self.appWindow]
+      return .success
+    })
+    XCTAssertEqual(restores, [], "the app's window never rose: nothing moves")
+    XCTAssertNil(wire(behind)?["restored"])
+    list = [person, appWindow]
+    var late = freshMeta()
+    var reads = 0
+    var clock = 0.0
+    XCTAssertTrue(try popUpClick(decide(hit: scene.popup, scene.verdict, at: fontPoint), app: "TextEdit", route: .action, appWindow: observed,
+                                 pids: [app], ownPid: 999, reads: self.reads, windows: {
+      reads += 1
+      // The menu shows first (the press's first read after it), the app's window rises over Finder's two samples later.
+      return reads < 2 ? self.list : reads < 4 ? [self.fontMenu, self.person, self.appWindow] : [self.fontMenu, self.appWindow, self.person]
+    }, now: { clock }, sleep: { clock += $0 }, hold: { _, _ in }, checkInFlight: {}, perform: { _, _ in .success },
+                                 restore: { persons, _ in self.restores.append(persons.map(\.number)); return self.restoreAnswer }, meta: &late))
+    XCTAssertEqual(restores, [[40]], "a rise within the watch after the open is put back")
+  }
+
+  /// A restore that does not bring the order back within its bound leaves the open confirmed, says `complete: false`,
+  /// and puts its note in the answer.
+  func testAnIncompleteRestoreKeepsTheOpenConfirmedWithItsNote() throws {
+    let scene = font()
+    restoreAnswer = PopUpRestoreRecord(windows: 1, ms: 500, complete: false, raises: 250)
+    var meta = freshMeta()
+    XCTAssertTrue(try click(decide(hit: scene.popup, scene.verdict, at: fontPoint), meta: &meta) { _, _ in
+      self.list = [self.fontMenu, self.appWindow, self.person]
+      return .success
+    })
+    XCTAssertEqual(wire(meta)?["effect"] as? String, "confirmed")
+    XCTAssertEqual((wire(meta)?["restored"] as? [String: Any])?["complete"] as? Bool, false)
+    XCTAssertEqual(meta.note, "TextEdit's menu is open, but the person's windows that were in front of TextEdit's window could not all be put back in front of it, so TextEdit's window may now cover them.")
+    XCTAssertEqual(popUpResult(meta)["note"] as? String, meta.note)
+  }
+
+  // MARK: The restore
+
+  /// Two of the person's windows in front of the app's before the open (Finder's F1 over F2, as the kit's layout), the
+  /// app's window risen over both: both raised back, back to front, inside one hold, until the order holds for three
+  /// samples and 60 ms; nothing else is raised (the app's second window, a third app's behind). The engine's own window
+  /// (its cursor panel) in front is never the person's.
+  func testTwoPersonWindowsAboveAreRaisedBackToFront() {
+    let f1 = ListedWindow(number: 40, owner: finder, layer: 0, bounds: CGRect(x: 760, y: 420, width: 300, height: 300))
+    let f2 = ListedWindow(number: 41, owner: finder, layer: 0, bounds: CGRect(x: 240, y: 480, width: 300, height: 300))
+    let cursor = ListedWindow(number: 5, owner: 999, layer: 0, bounds: CGRect(x: 0, y: 0, width: 40, height: 40))
+    let second = ListedWindow(number: 29, owner: app, layer: 0, bounds: CGRect(x: 420, y: 60, width: 600, height: 600))
+    let calculator = ListedWindow(number: 70, owner: 600, layer: 0, bounds: CGRect(x: 100, y: 100, width: 230, height: 400))
+    let before = [cursor, f1, f2, appWindow, second, calculator]
+    let persons = personWindowsAbove(observed, in: before, pids: [app], ownPid: 999)
+    XCTAssertEqual(persons.map(\.number), [40, 41], "front to back; the engine's own window never counted")
+    var current = [fontMenu, cursor, appWindow, f1, f2, second, calculator]
+    var raised: [CGWindowID] = []
+    var holds = 0, releases = 0
+    var clock = 0.0
+    let record = popUpRestoreOrder(persons, appWindow: observed, system: PopUpRestoreSystem<CGWindowID>(element: { $0.number }, raise: { number in
+      raised.append(number)
+      // AXRaise brings the window to the front of the ordinary layer, below the menu and the cursor.
+      if let window = current.first(where: { $0.number == number }) {
+        current.removeAll { $0.number == number }
+        current.insert(window, at: 2)
+      }
+    }, hold: {
+      holds += 1
+      return { releases += 1 }
+    }), windows: { current }, now: { clock }, sleep: { clock += $0 })
+    XCTAssertEqual(raised, [41, 40], "back to front, once")
+    XCTAssertEqual(current.map(\.number), [77, 5, 40, 41, 28, 29, 70], "the recorded order back, nothing else moved")
+    XCTAssertTrue(record.complete)
+    XCTAssertEqual(record.windows, 2)
+    XCTAssertEqual(record.raises, 1)
+    XCTAssertGreaterThanOrEqual(record.ms, deliveryGuardMinimumMs)
+    XCTAssertEqual([holds, releases], [1, 1], "one screen-update hold, released")
+  }
+
+  /// An order that does not come back within the bound (the app's window re-raised over the person's every time) ends at
+  /// `popUpRestoreBoundMs` with `complete: false`, the hold released.
+  func testAnOrderNotBackWithinTheBoundIsIncomplete() {
+    let persons = [person]
+    var released = false
+    var clock = 0.0
+    var raises = 0
+    let record = popUpRestoreOrder(persons, appWindow: observed, system: PopUpRestoreSystem<CGWindowID>(element: { $0.number },
+                                   raise: { _ in raises += 1 }, hold: { { released = true } }),
+                                   windows: { [self.fontMenu, self.appWindow, self.person] }, now: { clock }, sleep: { clock += $0 })
+    XCTAssertFalse(record.complete)
+    XCTAssertGreaterThanOrEqual(record.ms, popUpRestoreBoundMs)
+    XCTAssertLessThan(record.ms, popUpRestoreBoundMs + deliveryGuardSampleMs + 1)
+    XCTAssertGreaterThan(raises, 1, "raised again at every sample that read wrong")
+    XCTAssertTrue(released)
   }
 
   // MARK: Unconfirmed
@@ -213,8 +314,7 @@ final class PopUpPointTests: XCTestCase {
     let earlier = ListedWindow(number: 60, owner: app, layer: menuWindowLayer, bounds: CGRect(x: 900, y: 600, width: 50, height: 50))
     list = [earlier, person, appWindow]
     var meta = freshMeta()
-    var opened = false
-    XCTAssertThrowsError(try click(decide(hit: scene.popup, scene.verdict, at: fontPoint), meta: &meta, opened: { _ in opened = true }) { _, _ in
+    XCTAssertThrowsError(try click(decide(hit: scene.popup, scene.verdict, at: fontPoint), meta: &meta) { _, _ in
       self.list = [
         ListedWindow(number: 61, owner: self.app, layer: menuWindowLayer, bounds: CGRect(x: 40, y: 600, width: 50, height: 50)),
         ListedWindow(number: 62, owner: 777, layer: menuWindowLayer, bounds: self.fontFrame),
@@ -227,7 +327,7 @@ final class PopUpPointTests: XCTestCase {
       XCTAssertEqual((error as? EngineError)?.message,
         "The click could not be confirmed: it was carried by the pop-up button's AXPress action in TextEdit, since a posted click can close the menu it opens, and no menu was seen to open at the button. Observe the app with get_app_state before any retry, and never retry blindly.")
     }
-    XCTAssertFalse(opened)
+    XCTAssertEqual(restores, [])
     XCTAssertEqual(wire(meta)?["effect"] as? String, "unconfirmed")
     XCTAssertGreaterThanOrEqual(wire(meta)?["ms"] as? Double ?? 0, popUpOpenSettleMs)
   }
@@ -277,7 +377,7 @@ final class PopUpPointTests: XCTestCase {
       guard pressed else { return self.list }
       return reads == 2 ? nil : [self.fontMenu, self.appWindow, self.person]
     }, now: { clock }, sleep: { clock += $0 }, hold: { _, _ in }, checkInFlight: {}, perform: { _, _ in pressed = true; return .success },
-                                 opened: { _ in }, meta: &later))
+                                 restore: { _, _ in self.restoreAnswer }, meta: &later))
     XCTAssertEqual(wire(later)?["polls"] as? Int, 2, "the failed read a sample, the next confirming")
   }
 
@@ -352,14 +452,43 @@ final class PopUpPointTests: XCTestCase {
     }
   }
 
-  // MARK: Refused
+  // MARK: The combo box
 
-  /// TextEdit's font-size combo box as measured: its arrow is an AXButton child, hit and recorded alike, resolved to the
-  /// combo box, which has no action that opens it; with TextEdit behind the click is refused with nothing held,
-  /// performed or sent. Frontmost, the posted click opens its list: main's. A hit on the combo box itself is its text:
-  /// main's, unrecorded.
-  func testAComboBoxArrowBehindIsRefusedWithNothingSent() {
+  /// TextEdit's font-size combo box as measured (run 44888938314): its arrow, the AXButton "font size" (743, 73, 20×15)
+  /// whose trailing edge lies exactly 4.0 pt inside the box's, hit and recorded alike, is pressed by its own AXPress with
+  /// TextEdit behind; the list opens as a new layer-0 window of TextEdit's at the combo box (706, 70, 65×250), above the
+  /// document window and below the person's, which confirms it, and nothing of the person's was covered, so nothing is
+  /// restored.
+  func testAComboBoxArrowIsPressedAndItsListConfirmedByANewWindowOfAnyLayer() throws {
     let scene = combo()
+    XCTAssertEqual(comboFrame.maxX - scene.arrow.frame!.maxX, 4.0, "measured: exactly 4.0 pt")
+    let decision = decide(hit: scene.arrow, scene.verdict, at: arrowPoint)
+    guard case .press(let target) = decision else { return XCTFail("pressed, not \(decision)") }
+    XCTAssertTrue(target.element === scene.arrow, "the arrow is pressed")
+    XCTAssertTrue(target.control === scene.combo, "the combo box is read")
+    var performed: [Node] = []
+    var meta = freshMeta()
+    let list = ListedWindow(number: 830, owner: app, layer: 0, bounds: CGRect(x: 706, y: 70, width: 65, height: 250))
+    XCTAssertTrue(try click(decision, meta: &meta) { pressed, _ in
+      performed.append(pressed)
+      scene.combo.expanded = true
+      self.list = [self.person, list, self.appWindow]
+      return .success
+    })
+    XCTAssertTrue(performed.count == 1 && performed[0] === scene.arrow)
+    XCTAssertEqual(wire(meta)?["menuWindow"] as? Int, 830)
+    XCTAssertEqual(wire(meta)?["arrow"] as? Bool, true)
+    XCTAssertEqual(wire(meta)?["effect"] as? String, "confirmed")
+    XCTAssertEqual(restores, [], "nothing raised over the person's: no restore")
+    XCTAssertNil(wire(meta)?["restored"])
+  }
+
+  /// A combo box whose arrow has no AXPress (the box itself has none either, AXShowMenu and AXConfirm only): with the app
+  /// behind the click is refused with nothing held, performed or sent; frontmost, the posted click opens its list: main's.
+  /// A hit on the combo box itself is its text: main's, unrecorded.
+  func testAComboBoxWithNoPressableArrowBehindIsRefusedWithNothingSent() {
+    let scene = combo()
+    scene.arrow.actions = []
     let decision = decide(hit: scene.arrow, scene.verdict, at: arrowPoint)
     guard case .refuse(let role) = decision else { return XCTFail("refused, not \(decision)") }
     XCTAssertEqual(role, "AXComboBox")
@@ -370,7 +499,7 @@ final class PopUpPointTests: XCTestCase {
     }) { error in
       XCTAssertEqual((error as? EngineError)?.errorName, "backgroundClickRefused")
       XCTAssertEqual((error as? EngineError)?.message,
-        "TextEdit's combo box opens its list only for a pointer click, and a click cua sends to TextEdit while it is not the frontmost app does not leave that list open; the combo box has no accessibility action that opens it. Nothing was sent. Ask the person to bring TextEdit to the front, or type the value into the combo box's text field instead (setValue on its element, or click its text and use typeText).")
+        "TextEdit's combo box opens its list only for a pointer click, and a click cua sends to TextEdit while it is not the frontmost app does not leave that list open; neither the combo box nor its arrow has an accessibility action that opens it. Nothing was sent. Ask the person to bring TextEdit to the front, or type the value into the combo box's text field instead (setValue on its element, or click its text and use typeText).")
     }
     XCTAssertNil(meta.startedAt, "nothing sent")
     XCTAssertEqual(wire(meta)?["refused"] as? String, "noAction")
@@ -496,13 +625,14 @@ final class PopUpPointTests: XCTestCase {
   func testAWebAreaRoutesSelectPressGetsTheSameEffectCheckAndOrder() throws {
     let scene = select()
     guard case .press(let target) = decide(hit: scene.popup, scene.verdict, at: selectPoint) else { return XCTFail("qualifies") }
-    func run(pressing: Node, opens: Bool, answer: AXError = .success, meta: inout InputMeta,
-             opened: @escaping (PopUpMenuOrder?) -> Void = { _ in }) throws {
+    func run(pressing: Node, opens: Bool, answer: AXError = .success, meta: inout InputMeta) throws {
       list = [person, appWindow]
       var clock = 0.0
       try popUpConfirmingRoute(target, app: "Google Chrome", appWindow: observed, pids: [app], ownPid: 999, reads: reads,
-                               windows: { self.list }, now: { clock }, sleep: { clock += $0 }, opened: opened,
-                               route: { beforePress, tolerates, meta in
+                               windows: { self.list }, now: { clock }, sleep: { clock += $0 }, restore: { persons, _ in
+        self.restores.append(persons.map(\.number))
+        return self.restoreAnswer
+      }, route: { beforePress, tolerates, meta in
         // #282's route: its hold, then its final checks on the control it presses, then the press.
         try beforePress(pressing, &meta)
         try withoutActuallyEscaping(tolerates) { judge in
@@ -513,11 +643,10 @@ final class PopUpPointTests: XCTestCase {
         }
       }, meta: &meta)
     }
-    var order: PopUpMenuOrder?
     var meta = freshMeta()
-    try run(pressing: scene.popup, opens: true, meta: &meta, opened: { order = $0 })
+    try run(pressing: scene.popup, opens: true, meta: &meta)
     XCTAssertEqual(wire(meta)?["effect"] as? String, "confirmed")
-    XCTAssertEqual(order, PopUpMenuOrder(menuWindow: 45, appWindow: observed, personWindow: 40, personPid: finder))
+    XCTAssertEqual(restores.first, [40], "the raised Chrome window put back behind the person's")
     var none = freshMeta()
     XCTAssertThrowsError(try run(pressing: scene.popup, opens: false, meta: &none)) {
       XCTAssertEqual(($0 as? EngineError)?.errorName, "clickUnconfirmed")
@@ -560,8 +689,8 @@ final class PopUpPointTests: XCTestCase {
     var onClear = StalePointVerdict<Node>(reason: .sameElement, node: recorded(clear, ancestor: 1), current: clear, point: CGPoint(x: 724, y: 81))
     onClear.nodes = scene.verdict.nodes + [recorded(clear, ancestor: 1)]
     XCTAssertNil(popUpControl(clear, reads: reads))
-    if case .refuse = decide(hit: clear, onClear, at: CGPoint(x: 724, y: 81)) { XCTFail("the clear button keeps its own click") }
-    guard case .refuse = decide(hit: scene.arrow, scene.verdict, at: arrowPoint) else { return XCTFail("the trailing arrow") }
+    if case .press = decide(hit: clear, onClear, at: CGPoint(x: 724, y: 81)) { XCTFail("the clear button keeps its own click") }
+    guard case .press = decide(hit: scene.arrow, scene.verdict, at: arrowPoint) else { return XCTFail("the trailing arrow") }
     scene.arrow.frame = nil
     XCTAssertNil(popUpControl(scene.arrow, reads: reads), "frames unread and two buttons: none is taken")
     scene.combo.children.removeAll { $0 === clear }

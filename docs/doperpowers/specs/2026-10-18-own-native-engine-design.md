@@ -583,8 +583,8 @@ error    {code: number (the vendor's codes where mapped; -10005 otherwise), mess
     ("confirmed" | "unconfirmed"), actionError?, baselineUnread? (true: the window list did not read just before the
     press, so the effect could not be confirmed), menuWindow? (the number of the app's new window that opened: a menu
     window at layer 101 for a pop-up button, a window of any layer above the app's window for a combo box's list),
-    restored? ({windows, ms, complete, raises, skipped, stopped? ("personInput" | "bound" | "unresolved" |
-    "focusUnknown")}: the person's windows in front of the app's window before the press; once the open had raised the
+    restored? ({windows, ms, complete, raises, skipped, failedRaises?, stopped? ("personInput" | "bound" | "unresolved" |
+    "focusUnknown" | "focusRaiseFailed")}: the person's windows in front of the app's window before the press; once the open had raised the
     app's over them, those of the person's frontmost app raised once each, back to front, the focused window last
     (raises: the AXRaises made), third apps' skipped (skipped), and the order read once about 300 ms later (complete);
     the result's note when not complete, unless the person acted), polls?, ms? (from the action's return to the open)};
@@ -7427,6 +7427,22 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   focus unknown, not recorded or unresolved; the 940 ms `<select>` confirmed. Reverted one at a time (6 mutations), each
   fails: a re-raise on the mismatch, the focused window not last, a third app's window raised, the focused window not
   required among the recorded, the read not delayed, the 500 ms wait.
+  Date/Author: 2026-11-21, cursor235's implementer for #458.
+- Decision (#458's restore, the review of 7e5bb454..67cf8b26, reviewer-high, 2026-11-21, the last wave on that range;
+  amends the entry above; the hard bar is the person's focused window): four corrections, each tested and failing with
+  its fix reverted (7 mutations). (1) The pass can no longer end on a non-focused window's raise: the person's input
+  stops it with nothing more raised (checked before the first raise, so a stop midway only ever follows input, and before
+  each raise after it); the cutoff skips the remaining other windows but the focused window's raise is still made, past
+  the cutoff by that one call, and recorded (`bound`); each raise's AX result is read (AXRaise by `gatedPerform`, the
+  call route 3's repair makes, which `ActivationSystem.raise` discards): failures counted (`failedRaises`), and the
+  focused window's failing ends the pass as `focusRaiseFailed`, incomplete. No ordering call that cannot change key or
+  focus is known to the engine: it has no SkyLight window-ordering call, and the window server orders a window only for
+  its owning connection, so AXRaise stays the call. (2) The focused window is the person's app's AXFocusedWindow
+  numbered by `axWindowNumber` alone (`focusedWindowNumber`), never by route 3's `userWindow`, whose frame fallback could
+  name another window of the same size; none proven, nothing raised (`focusUnknown`). (3) The time left is checked
+  before and after the one order read; an end past the cutoff is `bound`, never complete. (4) The person's input is
+  checked before the focus is read and before the early return on no candidates (only third apps' windows), so their
+  switching apps during the open records `personInput`, with no note.
   Date/Author: 2026-11-21, cursor235's implementer for #458.
 
 - Decision (#456, 2026-11-20, `fix/456-recheck-overlay`, plugin 0.28.25; amends #452's entry and #296's

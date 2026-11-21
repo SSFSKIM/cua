@@ -1,0 +1,98 @@
+name: probe-454
+# Disposable #454 kit (scripts/probe-454/, README section in scripts/probe-337/README.md): a click on an open pop-up
+# menu's item, per menu, route and mode. A push of this file only registers the workflow on its branch; the hosted macOS
+# run goes on dispatch, with the engine built unmodified from an exact SHA.
+on:
+  push:
+    branches: ['probe/454-measure']
+    paths: ['.github/workflows/probe-454.yml']
+  workflow_dispatch:
+    inputs:
+      engine:
+        description: Exact 40-character engine SHA
+        required: true
+        type: string
+      reps:
+        description: Repetitions per cell
+        type: string
+        default: '5'
+      menus:
+        description: comma list (select, font, typeface, language); empty runs all
+        type: string
+        default: ''
+      routes:
+        description: comma list (coord, element, keys, outside, button, kit or kit:observed, kit:menu, kit:none, kit:hid); empty runs all
+        type: string
+        default: ''
+      modes:
+        description: comma list (shared-behind, shared-front, dedicated-behind); empty runs all
+        type: string
+        default: ''
+permissions:
+  contents: read
+jobs:
+  register:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo 'Registered; the measurement runs on dispatch with an exact engine SHA.'
+  measure:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: macos-latest
+    timeout-minutes: 170
+    env:
+      ENGINE_SHA: ${{ inputs.engine }}
+      REPS: ${{ inputs.reps }}
+      MENUS: ${{ inputs.menus }}
+      ROUTES: ${{ inputs.routes }}
+      MODES: ${{ inputs.modes }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Apps
+        run: |
+          bash scripts/probe-316/install.sh chrome
+          for d in com.apple.TextEdit com.apple.ScriptEditor2; do
+            defaults write "$d" ApplePersistenceIgnoreState -bool YES
+            defaults write "$d" NSQuitAlwaysKeepsWindows -bool NO
+          done
+          ls -d "/System/Applications/Utilities/Script Editor.app" || true
+      - name: Build the engine and the tool
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          [[ "$ENGINE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse "$ENGINE_SHA^{commit}")" = "$ENGINE_SHA"
+          sw_vers
+          git log -1 --format='kit %H %s'
+          swiftc -O -o "$RUNNER_TEMP/tool454" scripts/probe-454/tool.swift
+          git worktree add --detach "$RUNNER_TEMP/src-engine" "$ENGINE_SHA"
+          git -C "$RUNNER_TEMP/src-engine" log -1 --format='engine %H %s'
+          echo "engine tree status: [$(git -C "$RUNNER_TEMP/src-engine" status --porcelain 2>&1 | head -20)]"
+          swift build -c release --package-path "$RUNNER_TEMP/src-engine/native/engine" --scratch-path "$RUNNER_TEMP/eng"
+      - name: Measure
+        shell: bash
+        run: |
+          extra=()
+          if [ -n "$MENUS" ]; then extra+=(--menus "$MENUS"); fi
+          if [ -n "$ROUTES" ]; then extra+=(--routes "$ROUTES"); fi
+          if [ -n "$MODES" ]; then extra+=(--modes "$MODES"); fi
+          P454_ENGINE_REF="$ENGINE_SHA" node scripts/probe-454/menus.mjs --engine "$RUNNER_TEMP/eng/release/cua-engine" \
+            --tool "$RUNNER_TEMP/tool454" --out "$RUNNER_TEMP/probe-454" --reps "${REPS:-5}" --budget 145 "${extra[@]}"
+          node scripts/probe-454/summary.mjs "$RUNNER_TEMP/probe-454/results.json" | tee "$RUNNER_TEMP/probe-454/summary.txt"
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: probe-454
+          path: |
+            ${{ runner.temp }}/probe-454/*.txt
+            ${{ runner.temp }}/probe-316/install.txt
+            ${{ runner.temp }}/probe-454/results.json
+            ${{ runner.temp }}/probe-454/screens/*.jpg
+            ${{ runner.temp }}/probe-454/shots/**/*.jpg
+            ${{ runner.temp }}/probe-454/shots/**/*.png
+          if-no-files-found: warn

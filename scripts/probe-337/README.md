@@ -208,3 +208,24 @@ Timing, per lane, over every click that carried a stalePoint (ms):
 
 fix2 ran on another runner image and Chrome than main. fix3 ran on main's image and Chrome. On Chrome, fix3's `hitMs` p50 is above its
 `stalePoint.ms` p50, so the hit-test's time is not inside `stalePoint.ms`; read the two as adding.
+
+## #454: a click on an open pop-up menu's item
+
+Kit `scripts/probe-454/` (`menus.mjs`, `tool.swift`: #337's tool plus `menuinfo` and `post`; reader `summary.mjs`),
+workflow `.github/workflows/probe-454.yml`, dispatched with an exact engine SHA built unmodified. The page, the re-sets,
+the Finder cover and the TextEdit handling are #452's qualification's. Each row: a re-set, one observation, the menu
+opened kit-side by AXPress on its pop-up button, a re-observation whose screenshot holds it, the menu's facts (its CG
+window, the observation's nodes in it, the item's AX chain and actions), then one route on the same item:
+
+- `coord`: the engine's coordinate click on the item, in the re-observation's pixels (today's case).
+- `element`: the engine's element click on the item's node of the re-observation, when the observation lists it.
+- `keys`: the engine's `press_key` Down until the item reads highlighted (AXSelected), then Return.
+- `outside`: the engine's coordinate click on the observed window outside the menu.
+- `button`: no menu opened; the engine's coordinate click on the closed pop-up button.
+- `kit:observed`, `kit:menu`, `kit:none`, `kit:hid`: the kit's own click, not the engine's: the engine's events rebuilt
+  (`Mouse.swift`) and posted to the app stamped to the observed window, to the menu's window, to no window, or a HID-tap
+  click (a person's). Shared modes only.
+
+Menus: `select` (Chrome's `<select>` native menu), `font` (TextEdit's format-bar font pop-up), `typeface` (TextEdit's
+typeface pop-up), `language` (Script Editor's document language pop-up). Modes: shared-behind, shared-front,
+dedicated-behind.

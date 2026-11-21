@@ -129,14 +129,17 @@ test('the documents name the tail of a long Chrome drag and drop by the engine\'
   const rest = /pub const TAIL_REST: Duration = Duration::from_millis\((\d+)\);/.exec(sync);
   assert.ok(rest, 'release_sync.rs names TAIL_REST in milliseconds');
   assert.match(sync, /pub const TAIL_VISITS: u32 = 2;/, 'the documents say "twice more"');
+  // a shorter path's tail falls inside its floor (ruling 1000): "a shorter one takes no longer"
+  assert.match(sync, /Form::Tail => after_take\.saturating_sub\(TAIL_SPAN\),/);
   // the rests before each visit and before the release: about 25 ms in all
   assert.equal(Number(rest[1]) * 3, 24);
   assert.match(sync, /pub const UNCONFIRM_OUTLASTED: bool = false;/, 'option (c) is off as it ships (ruling 997), so no document promises its notice');
   for (const [document, phrase] of [
-    [LINUX_DOCUMENT, `whose path goes on for more than about ${floor[1]} ms after the page starts it ends with a short rest`],
-    [LINUX_DOCUMENT, `is moved there twice more, ${rest[1]} ms apart, before the button goes up, which makes such a drag about 25 ms longer`],
-    [LINUX_DOCUMENT, 'The rest makes that rare, not impossible: when it matters where a long drag dropped, read the page after it.'],
-    [README, `whose path goes on past ${floor[1]} ms after its take ends with a rest of about 25 ms on its last point, moved there twice more`],
+    [LINUX_DOCUMENT, `the pointer stays on the path's last point and is moved there twice more, ${rest[1]} ms apart`],
+    [LINUX_DOCUMENT, `A drag whose path goes on for more than about ${floor[1]} ms after the page starts its drag and drop takes about 25 ms longer for it; a shorter one takes no longer.`],
+    [LINUX_DOCUMENT, 'The rest makes that rare, not impossible: when it matters where a drag dropped, read the page after it.'],
+    [README, 'A Chrome drag and drop ends with a rest of about 25 ms on its last point, moved there twice more'],
+    [README, `it falls inside the ${floor[1]} ms after the take that a drop is held for, so only a path that goes on past ${floor[1]} ms after its take takes longer for it`],
   ]) assert.ok(flat(file(document)).includes(flat(phrase)), `${document} does not say: ${phrase}`);
 });
 

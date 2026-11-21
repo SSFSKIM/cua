@@ -30,7 +30,8 @@
 //   {"op":"post","pid","x","y","stamp","win":[n,x,y,w,h]}  the kit's own left click (not the engine's), the engine's events
 //       rebuilt (Mouse.swift: NSEvent down/up, field 3 button, field 7 subtype 3) and posted to pid: stamp "observed" or
 //       "menu" sets fields 91/92 to win's number and the window location from win's origin; "none" stamps no window;
-//       "hid" posts the down and up at the HID tap instead (a person's click, the cursor warped there)
+//       "hid" posts the down and up at the HID tap instead (a person's click, the cursor warped there); "move" posts a
+//       mouse-moved (stamped alike) 200 ms before the down and 80 ms between down and up; "warp" moves the cursor there first
 import AppKit
 import ApplicationServices
 import Foundation
@@ -555,11 +556,18 @@ func menuinfo(_ q: [String: Any]) -> [String: Any] {
        "mark": short(str(i, "AXMenuItemMarkChar")), "frame": wire(frameOf(i))]
     }
     d["titles"] = items.prefix(600).filter { (boolAttr($0, kAXEnabledAttribute) as? Bool) != false }.compactMap { str($0, kAXTitleAttribute) }.filter { !$0.isEmpty }
+    // The menu's highlighted item: the first titled item reading AXSelected; the answer's is the one of the menu that holds
+    // `title` (Chrome's <select> also has an untitled AXMenu under the page's pop-up button), else the first found.
+    var lit: Any = NSNull()
+    var holds = false
     for i in items {
       let t = str(i, kAXTitleAttribute)
-      if item == nil, let want, t == want { item = i }
-      if (highlighted as? String) == nil, (boolAttr(i, kAXSelectedAttribute) as? Bool) == true { highlighted = short(t) }
+      if let want, t == want { holds = true; if item == nil { item = i } }
+      if (lit as? String) == nil, let t, !t.isEmpty, (boolAttr(i, kAXSelectedAttribute) as? Bool) == true { lit = short(t) }
     }
+    d["highlighted"] = lit
+    d["holdsTitle"] = holds
+    if (holds && want != nil) || (want == nil && (highlighted as? String) == nil) { highlighted = lit }
     return d
   }
   out["highlighted"] = highlighted
@@ -584,15 +592,21 @@ func post(_ q: [String: Any]) -> [String: Any] {
   guard let pid = (q["pid"] as? NSNumber)?.int32Value, let x = (q["x"] as? NSNumber)?.doubleValue, let y = (q["y"] as? NSNumber)?.doubleValue,
         let stamp = q["stamp"] as? String else { return ["error": "args"] }
   let p = CGPoint(x: x, y: y)
+  let move = (q["move"] as? Bool) == true
   if stamp == "hid" {
     let warp = CGWarpMouseCursorPosition(p).rawValue
     usleep(40_000)
+    if move {
+      for dx in [-2.0, 0.0] { CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: CGPoint(x: p.x + dx, y: p.y), mouseButton: .left)?.post(tap: .cghidEventTap); usleep(100_000) }
+    }
     for type in [CGEventType.leftMouseDown, .leftMouseUp] {
       CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: p, mouseButton: .left)?.post(tap: .cghidEventTap)
-      usleep(40_000)
+      usleep(move ? 80_000 : 40_000)
     }
-    return ["stamp": stamp, "warp": warp]
+    return ["stamp": stamp, "warp": warp, "move": move]
   }
+  var warped: Any = NSNull()
+  if (q["warp"] as? Bool) == true { warped = CGWarpMouseCursorPosition(p).rawValue; usleep(100_000) }
   var id = 0, origin = CGPoint.zero
   if stamp != "none" {
     guard let w = q["win"] as? [Double], w.count == 5 else { return ["error": "win"] }
@@ -600,9 +614,10 @@ func post(_ q: [String: Any]) -> [String: Any] {
   }
   kitEventNumber += 1
   var made = 0
-  for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+  for type in (move ? [NSEvent.EventType.mouseMoved] : []) + [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
     guard let e = NSEvent.mouseEvent(with: type, location: p, modifierFlags: [], timestamp: 0, windowNumber: id, context: nil,
-                                     eventNumber: kitEventNumber, clickCount: 1, pressure: 1.0)?.cgEvent else { continue }
+                                     eventNumber: type == .mouseMoved ? 0 : kitEventNumber, clickCount: type == .mouseMoved ? 0 : 1,
+                                     pressure: type == .mouseMoved ? 0 : 1.0)?.cgEvent else { continue }
     e.location = p
     e.setIntegerValueField(.mouseEventButtonNumber, value: 0)
     e.setIntegerValueField(.mouseEventSubtype, value: 3)
@@ -614,8 +629,9 @@ func post(_ q: [String: Any]) -> [String: Any] {
     e.timestamp = DispatchTime.now().uptimeNanoseconds
     e.postToPid(pid)
     made += 1
+    if move { usleep(type == .mouseMoved ? 200_000 : 80_000) }
   }
-  return ["stamp": stamp, "window": id, "windowLocation": [r1(p.x - origin.x), r1(p.y - origin.y)], "posted": made, "setWindowLocation": setWindowLocation != nil]
+  return ["stamp": stamp, "move": move, "warp": warped, "window": id, "windowLocation": [r1(p.x - origin.x), r1(p.y - origin.y)], "posted": made, "setWindowLocation": setWindowLocation != nil]
 }
 
 while let line = readLine() {

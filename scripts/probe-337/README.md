@@ -224,7 +224,8 @@ window, the observation's nodes in it, the item's AX chain and actions), then on
 - `button`: no menu opened; the engine's coordinate click on the closed pop-up button.
 - `kit:observed`, `kit:menu`, `kit:none`, `kit:hid`: the kit's own click, not the engine's: the engine's events rebuilt
   (`Mouse.swift`) and posted to the app stamped to the observed window, to the menu's window, to no window, or a HID-tap
-  click (a person's). Shared modes only.
+  click (a person's). `kit:warp-observed` and `kit:warp-menu` move the cursor to the point first; `kit:move-menu` and
+  `kit:move-hid` post a mouse-moved 200 ms before the down. Shared modes only.
 
 Menus: `select` (Chrome's `<select>` native menu), `font` (TextEdit's format-bar font pop-up), `typeface` (TextEdit's
 typeface pop-up), `language` (Script Editor's document language pop-up). Modes: shared-behind, shared-front,

@@ -11,7 +11,8 @@
 //   outside  the engine's coordinate click on the observed window outside the menu (a dismiss)
 //   button   no menu opened: the engine's coordinate click on the closed pop-up button
 //   kit:<s>  the kit's own click posted to the app (tool.swift `post`, not the engine): the engine's events stamped to
-//            the observed window (`observed`), to the menu's window (`menu`), to no window (`none`), or a HID click (`hid`)
+//            the observed window (`observed`), to the menu's window (`menu`), to no window (`none`), or a HID click (`hid`);
+//            `warp-<s>` with the cursor moved to the point first, `move-<s>` with a mouse-moved before the down
 // After it: the pop-up button's value, the page's change beacons, the caret, and whether the menu is still up.
 //
 // Menus: select (Chrome, a <select>'s native menu), font (TextEdit's format-bar font family pop-up), typeface (TextEdit's
@@ -230,7 +231,8 @@ const MENUS = {
   language: {app: 'scripteditor', find: {roles: ['AXPopUpButton'], value: 'AppleScript'}, current: 'AppleScript', want: 'JavaScript',
     node: sky => sky.nodes.find(n => n.role === 'AXPopUpButton' && n.value === 'AppleScript')},
 };
-const ROUTES = ['coord', 'element', 'keys', 'outside', 'button', 'kit:observed', 'kit:menu', 'kit:none', 'kit:hid'];
+const ROUTES = ['coord', 'element', 'keys', 'outside', 'button', 'kit:observed', 'kit:menu', 'kit:none', 'kit:hid',
+  'kit:warp-observed', 'kit:warp-menu', 'kit:move-menu', 'kit:move-hid'];
 const MODES = [
   {name: 'shared-behind', desktop: 'shared', front: false},
   {name: 'shared-front', desktop: 'shared', front: true},
@@ -429,9 +431,9 @@ async function runRow(app, menuName, mode, route, rep) {
       row.atClick = {holdsPoint: (sig.aboveAtPoint ?? []).some(x => x.n === pop.popup?.n), aboveAtPoint: sig.aboveAtPoint, hit: sig.hit?.chain?.slice(0, 8) ?? null,
         systemHit: sig.systemHit?.chain?.slice(0, 8) ?? null, hitPid: sig.hit?.pid ?? null};
       if (route.startsWith('kit:')) {
-        const stamp = route.slice(4);
+        const [flag, stamp] = route.slice(4).includes('-') ? route.slice(4).split('-') : [null, route.slice(4)];
         const win = stamp === 'menu' ? [pop.popup.n, ...pop.popup.bounds] : [pop.target.n, ...pop.target.bounds];
-        row.kitPost = await ask({op: 'post', pid, x: screen.x, y: screen.y, stamp, win});
+        row.kitPost = await ask({op: 'post', pid, x: screen.x, y: screen.y, stamp, win, warp: flag === 'warp', move: flag === 'move'});
       } else {
         const r = await w.execute('click', {pid, x: px.x, y: px.y});
         row.click = brief(r);
@@ -446,7 +448,7 @@ async function runRow(app, menuName, mode, route, rep) {
       row.click = brief(r);
     } else if (route === 'keys') {
       // Down until the item reads highlighted (AXSelected), at most the item's distance from the checked one plus 3, then Return.
-      const titles = info.menus?.[0]?.titles ?? [];
+      const titles = (info.menus ?? []).find(m => m.holdsTitle)?.titles ?? [];
       const k = Math.max(1, titles.indexOf(title) - Math.max(0, titles.indexOf(mn.current)));
       row.keys = {k, highlights: [info.highlighted ?? null], answers: []};
       let lit = info.highlighted ?? null;
@@ -456,7 +458,7 @@ async function runRow(app, menuName, mode, route, rep) {
         row.keys.answers.push(brief(r));
         if (r.error) break;
         await sleep(350);
-        lit = (await ask({op: 'menuinfo', pid})).highlighted ?? null;
+        lit = (await ask({op: 'menuinfo', pid, title})).highlighted ?? null;
         row.keys.highlights.push(lit);
       }
       const r = await w.execute('press_key', {pid, key: 'Return'});

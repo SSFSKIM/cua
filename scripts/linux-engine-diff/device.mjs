@@ -888,8 +888,10 @@ export const DEVICE_OPS = {
   // the drag is never answered ok with nothing pending (task 69 saw one released early that Chrome confirmed)
   chrome_dnd_inzone_out_in_front_shared: device({ device: 'leaves', route: 'background', condition: alreadyInFront, park: INSIDE, read: dropStatus, request: dndInzoneDrag, effect: rose('drops'), inFront: true, settleMs: DND_SETTLE_MS, confirm: true }),
   // and the long path that crosses the zone and ends outside it, its steps after the take outlasting the floor, so the
-  // release follows its last step (the design session, 2026-11-10: measured clean, the control stays in the gate)
-  chrome_dnd_long_left_in_front_shared: device({ device: 'leaves', route: 'background', condition: alreadyInFront, park: INSIDE, read: dropStatus, request: dndLongLeftDrag, effect: rose('drops'), inFront: true, settleMs: DND_SETTLE_MS, confirm: true }),
+  // release follows its last step (the design session, 2026-11-10: measured clean, the control stays in the gate).
+  // m5-a959 (task 122, ruling 964), a development branch, never a counted head: sent to the vendor builds too, for the
+  // vendor's baseline on #459's path (its stale-position drops), so not `cuaOnly`
+  chrome_dnd_long_left_in_front_shared: { ...device({ device: 'leaves', route: 'background', condition: alreadyInFront, park: INSIDE, read: dropStatus, request: dndLongLeftDrag, effect: rose('drops'), inFront: true, settleMs: DND_SETTLE_MS, confirm: true }), cuaOnly: false },
   chrome_dnd_short_covered_dedicated: device({ device: 'foreground', condition: covered, read: dropStatus, request: dndShortDrag, effect: rose('drops'), settleMs: DND_SETTLE_MS, confirm: true }),
   // the same with the drop's signature already held (Chrome active, focused, on top) and a corner covered, so the drag
   // is watched: cancelled in time and said so; with the cancel forced late, every answer says the drop may have happened

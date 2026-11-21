@@ -88,3 +88,15 @@ It ran on H6 (69bd7993) and on H7, for both x64 and arm64, from one fixed path u
   - past: 10 of 10 gave the hold notice, with no drop and nothing sent after it;
   - 0 unexercised, 0 false oks, 0 unjudged.
 - **The edge band made 6 late takes, all 6 reported.**
+
+## The review of cf1ef10f (task 128, `fix/`)
+
+The review's four Important and two Minor findings are fixed in `fix/` (see its README):
+- the stop is rechecked before its signal, and judged by positive evidence;
+- the press mark is bound to its trial by its value;
+- a band's late takes are counted over its exercised rows;
+- the probe runs on a display its own server named (`probe/` holds the rerun);
+- each plan is rendered from its launch's own arguments.
+
+The Chrome line on both development runs' stderr (`Read channel stable from /opt/google/chrome/CHROME_VERSION_EXTRA`)
+is Chrome's startup noise. The raw files are kept.

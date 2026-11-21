@@ -1,0 +1,22 @@
+2026-11-21T02:30:03.340Z baseline (owner):
+start 51157914
+windows-any 2
+windows-viewable 1
+client 0x600002 "google-chrome", "Google-chrome" window state: Normal   Position: 0,0 (screen: 0)  Geometry: 1050x780 
+baseline (bus): 27 lines, digest 953eb266a3bf
+2026-11-21T02:30:03.417Z check 1 same
+2026-11-21T02:35:25.913Z check 31 same
+2026-11-21T02:39:45.610Z check 55: windows-viewable unread(rc 1) 
+2026-11-21T02:40:50.360Z check 61 same
+2026-11-21T02:46:14.766Z check 91: windows-any unread(rc 1) 
+2026-11-21T02:46:14.775Z check 91 same
+2026-11-21T02:48:02.788Z check 101: windows-viewable unread(rc 1) 
+2026-11-21T02:51:38.679Z check 121 same
+2026-11-21T02:56:40.501Z check 149: windows-any unread(rc 1) 
+2026-11-21T02:57:02.114Z check 151 same
+2026-11-21T02:57:23.954Z check 153: windows-any unread(rc 1) 
+2026-11-21T03:02:26.054Z check 181 same
+2026-11-21T03:03:41.774Z check 188: windows-viewable unread(rc 1) 
+2026-11-21T03:04:03.651Z check 190: windows-any unread(rc 1) 
+2026-11-21T03:06:02.124Z check 201: windows-any unread(rc 1) 
+2026-11-21T03:07:36.869Z done after 209 checks; changed=0

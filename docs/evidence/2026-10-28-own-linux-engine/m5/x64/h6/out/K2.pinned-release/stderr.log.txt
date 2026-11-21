@@ -1,0 +1,2 @@
+acceptance on the pinned release
+[1120/143531.000986:WARNING:chrome/app/chrome_main_linux.cc:84] Read channel stable from /Users/new/.local/share/cua-171/chrome-stable/158.0.8127.36-1/root/opt/google/chrome/CHROME_VERSION_EXTRA

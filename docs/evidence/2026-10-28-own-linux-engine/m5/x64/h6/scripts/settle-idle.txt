@@ -1,0 +1,292 @@
+/Users/new/.local/share/cua-171/m5/out-x64-h6/C1.pinned-release: not taken (entered 0, second_rest 0, skipped 0, unsettled 0, settle_failed_activation_confirmed 0; 7 cua engines (1 unidentified, held to the counter as cua lanes); 1 of them with no counter were sent no drag or drag_handle)
+  reader 1190644: no counter; sent no drag or drag_handle (not a measured zero)
+/Users/new/.local/share/cua-171/m5/out-x64-h6/D1.pinned-release: unknown: 32 of 34 cua engines (34 unidentified, held to the counter as cua lanes) not recorded; 2 of them with no counter were sent no drag or drag_handle
+  cua 1219242: no stats: not recorded
+  cua:0ms 1220049: no stats: not recorded
+  cua 1220770: no stats: not recorded
+  cua:0ms 1221148: no stats: not recorded
+  cua 1221725: no stats: not recorded
+  cua:0ms 1222039: no stats: not recorded
+  cua 1223300: no stats: not recorded
+  cua:0ms 1223612: no stats: not recorded
+  cua 1224200: no stats: not recorded
+  cua:0ms 1224475: no stats: not recorded
+  cua:0ms 1225379: no stats: not recorded
+  cua 1226268: no stats: not recorded
+  cua 1226584: no stats: not recorded
+  cua:0ms 1227040: no stats: not recorded
+  cua:0ms 1228217: no stats: not recorded
+  cua 1229771: no stats: not recorded
+  cua 1230992: no stats: not recorded
+  cua:0ms 1231566: no stats: not recorded
+  cua:0ms 1231966: no stats: not recorded
+  cua 1233182: no stats: not recorded
+  cua 1234408: no stats: not recorded
+  cua:0ms 1234819: no stats: not recorded
+  cua 1235497: no stats: not recorded
+  cua:0ms 1235920: no stats: not recorded
+  cua 1237307: no stats: not recorded
+  cua:0ms 1237627: no stats: not recorded
+  cua 1238238: no stats: not recorded
+  cua:0ms 1238645: no stats: not recorded
+  cua 1239504: no stats: not recorded
+  cua:0ms 1239822: no stats: not recorded
+  cua:0ms 1240857: no stats: not recorded
+  cua 1241809: no stats: not recorded
+  reader 1216724: no counter; sent no drag or drag_handle (not a measured zero)
+  stub-activating 1217629: no counter; sent no drag or drag_handle (not a measured zero)
+/Users/new/.local/share/cua-171/m5/out-x64-h6/D2.pinned-release: unknown: 30 of 32 cua engines (32 unidentified, held to the counter as cua lanes) not recorded; 2 of them with no counter were sent no drag or drag_handle
+  cua 1244777: no stats: not recorded
+  cua:0ms 1245138: no stats: not recorded
+  cua 1245833: no stats: not recorded
+  cua:0ms 1246144: no stats: not recorded
+  cua 1246761: no stats: not recorded
+  cua:0ms 1247082: no stats: not recorded
+  cua 1248137: no stats: not recorded
+  cua:0ms 1248375: no stats: not recorded
+  cua 1248979: no stats: not recorded
+  cua:0ms 1249209: no stats: not recorded
+  cua:0ms 1249993: no stats: not recorded
+  cua 1250775: no stats: not recorded
+  cua 1251088: no stats: not recorded
+  cua:0ms 1251559: no stats: not recorded
+  cua:0ms 1253473: no stats: not recorded
+  cua 1254853: no stats: not recorded
+  cua 1256463: no stats: not recorded
+  cua:0ms 1256820: no stats: not recorded
+  cua:0ms 1257237: no stats: not recorded
+  cua 1258024: no stats: not recorded
+  cua 1258903: no stats: not recorded
+  cua:0ms 1259130: no stats: not recorded
+  cua 1259662: no stats: not recorded
+  cua:0ms 1259911: no stats: not recorded
+  cua 1261098: no stats: not recorded
+  cua:0ms 1261339: no stats: not recorded
+  cua 1261932: no stats: not recorded
+  cua:0ms 1262240: no stats: not recorded
+  cua 1262868: no stats: not recorded
+  cua:0ms 1263105: no stats: not recorded
+  reader 1242457: no counter; sent no drag or drag_handle (not a measured zero)
+  stub-activating 1243308: no counter; sent no drag or drag_handle (not a measured zero)
+/Users/new/.local/share/cua-171/m5/out-x64-h6/H1.pinned-release: TAKEN (entered 560, second_rest 0, skipped 0, unsettled 0, settle_failed_activation_confirmed 0; 57 cua engines (1 unidentified, held to the counter as cua lanes); 1 of them with no counter were sent no drag or drag_handle): reruns as class A
+  reader 1322731: no counter; sent no drag or drag_handle (not a measured zero)
+/Users/new/.local/share/cua-171/m5/out-x64-h6/H2.pinned-release: TAKEN (entered 560, second_rest 5, skipped 0, unsettled 0, settle_failed_activation_confirmed 0; 57 cua engines (1 unidentified, held to the counter as cua lanes); 1 of them with no counter were sent no drag or drag_handle): reruns as class A
+  reader 1353972: no counter; sent no drag or drag_handle (not a measured zero)
+/Users/new/.local/share/cua-171/m5/out-x64-h6/K1.pinned-release: unknown: 2 of 10 cua engines (4 unidentified, held to the counter as cua lanes) not recorded; 2 of them with no counter were sent no drag or drag_handle; the recorded: entered 0, second_rest 0, skipped 0, unsettled 0, settle_failed_activation_confirmed 0
+  cua 1205105: no stats: not recorded
+  cua 1205535: no stats: not recorded
+  reader 1197279: no counter; sent no drag or drag_handle (not a measured zero)
+  stub-activating 1200219: no counter; sent no drag or drag_handle (not a measured zero)
+/Users/new/.local/share/cua-171/m5/out-x64-h6/K2.pinned-release: unknown: 2 of 10 cua engines (4 unidentified, held to the counter as cua lanes) not recorded; 2 of them with no counter were sent no drag or drag_handle; the recorded: entered 0, second_rest 0, skipped 0, unsettled 0, settle_failed_activation_confirmed 0
+  cua 1212854: no stats: not recorded
+  cua 1213272: no stats: not recorded
+  reader 1206322: no counter; sent no drag or drag_handle (not a measured zero)
+  stub-activating 1208395: no counter; sent no drag or drag_handle (not a measured zero)
+/Users/new/.local/share/cua-171/m5/out-x64-h6/K3.pinned-release: not taken (entered 0, second_rest 0, skipped 0, unsettled 0, settle_failed_activation_confirmed 0; 3 cua engines (1 unidentified, held to the counter as cua lanes); 1 of them with no counter were sent no drag or drag_handle)
+  reader 1214064: no counter; sent no drag or drag_handle (not a measured zero)
+/Users/new/.local/share/cua-171/m5/out-x64-h6/L1.pinned-release: unknown: no settle-counts.json
+/Users/new/.local/share/cua-171/m5/out-x64-h6/S1.pinned-release: unknown: 1 of 133 cua engines (133 unidentified, held to the counter as cua lanes) not recorded; 133 of them with no counter were sent no drag or drag_handle
+  no cua engine recorded its counter
+  reader 1264468: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-seed 1265198: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1273571: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1273588: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1273601: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1273616: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1273638: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1273695: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1273746: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1273764: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1273791: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1273807: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1273824: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1273918: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1273937: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1273957: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1273974: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1273993: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1274009: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1274099: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1274118: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1274138: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1274153: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1274179: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1274270: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1274286: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1274310: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1274325: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1274342: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1274355: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1274448: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1274479: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1274628: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1274722: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1274738: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1274752: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1274770: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1287815: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1287906: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1287922: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1287934: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1287948: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1287970: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1288023: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1288072: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1288090: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1288113: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1288129: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1288144: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1288232: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1288263: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1288277: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1288291: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1288307: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1288396: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1288410: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1288424: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1288439: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1288463: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1288521: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1288571: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1288584: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1288605: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1288621: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1288633: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1288722: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1288753: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-seed 1296456: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1303549: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1303574: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1303594: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1303632: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1303685: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1303737: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1303767: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1303785: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1303794: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1303811: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1303853: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1303943: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1303957: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1303971: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1303991: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1304004: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1304028: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1304121: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1304136: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1304152: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1304177: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1304190: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1304201: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1304256: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1304307: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1304337: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1304354: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1304370: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1304388: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1304408: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1304620: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1304638: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1304661: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1304678: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1304768: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1315135: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1315151: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1315159: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1315175: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1315194: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1315251: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1315297: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1315311: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1315335: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1315345: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1315361: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1315435: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1315529: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1315553: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1315570: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1315584: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1315597: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1315608: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1315706: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1315720: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1315733: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1315745: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1315760: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1315782: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1315841: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1315886: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1315899: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1315924: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1315935: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1315948: no counter; sent no drag or drag_handle (not a measured zero)
+/Users/new/.local/share/cua-171/m5/out-x64-h6/S2.pinned-release: unknown: 1 of 67 cua engines (67 unidentified, held to the counter as cua lanes) not recorded; 67 of them with no counter were sent no drag or drag_handle
+  no cua engine recorded its counter
+  reader 1387610: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-seed 1388531: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1394593: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1394617: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1394632: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1394674: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1394702: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1394763: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1394840: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1394879: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1394911: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1394961: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1394976: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1394994: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1395084: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1395115: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1395132: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1395159: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1395183: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1395199: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1395294: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1395308: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1395321: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1395336: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1395359: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1395376: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1395473: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1395490: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1395512: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1395532: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1395543: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1395558: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1395794: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1395814: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1395832: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1395847: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1395942: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1418514: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1418725: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1418857: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1419079: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1419223: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1419431: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1419581: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1419792: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1419937: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1420149: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1420295: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1420497: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1420656: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1420861: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1420984: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1421203: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1421382: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1421696: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1421881: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1422093: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1422226: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1422441: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1422585: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1422787: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1422941: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1423146: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1423274: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1423492: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1423640: no counter; sent no drag or drag_handle (not a measured zero)
+  settle-top 1423842: no counter; sent no drag or drag_handle (not a measured zero)
+settle-check exit 1

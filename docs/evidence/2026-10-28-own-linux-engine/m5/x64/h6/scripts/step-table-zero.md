@@ -1,0 +1,3 @@
+| step | SHA | acquire (UTC) | step start | release | min | exit | load at step start | load at release | end | verdict |
+|---|---|---|---|---|---:|---:|---|---|---|---|
+| V5 | 69bd7993 | 11-21 02:30:02 | 02:30:02 | 03:07:37 | 37.6 | 0 | 0.15 0.26 2.30 | 1.30 1.19 1.21 | clean | negative check: the witness failed the activating stub (stacking, active, focus); the audit failed it (_NET_ACTIVE_WINDOW ClientMessage, XTEST FakeInput) / XGetWindowProperty[_NET_ACTIVE_WINDOW] failed (code=1) / run valid; acceptance on the pinned release: every verdict PASS; text restores (the first word put back before a sample): pinned 0, newest 0, cua 0 |

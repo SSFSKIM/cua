@@ -1,0 +1,10 @@
+xdotool xdotool version 3.20160805.1
+--- no window active: getactivewindow
+XGetWindowProperty[_NET_ACTIVE_WINDOW] failed (code=1)
+xdo_get_active_window reported an error
+exit 1
+--- windowactivate --sync to the harness's own window
+exit 0
+--- a window active: getactivewindow (stderr shown)
+exit 0
+done

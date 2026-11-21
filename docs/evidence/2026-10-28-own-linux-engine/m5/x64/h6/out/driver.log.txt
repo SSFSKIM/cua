@@ -1,0 +1,58 @@
+2026-11-20T22:29:16Z driver start: C1 K1 K2 K3 D1 D2 S1 H1 H2 S2 fence: 2026-11-21T02:15:00Z df avail 51G
+2026-11-20T22:29:16Z wait C1 load=1.70 1.11 0.61 df avail 51G
+2026-11-20T22:32:18Z end C1 exit 0 load=0.41 0.80 0.57 
+    step.sh 2026-11-20T22:30:06Z start C1  after 50 s quiet wait: load=0.85 0.96 0.58 stress-ng=none
+    step.sh 2026-11-20T22:32:18Z end C1 exit 0 load=0.41 0.80 0.57
+2026-11-20T22:32:18Z wait K1 load=0.41 0.80 0.57 df avail 51G
+2026-11-20T22:35:21Z end K1 exit 0 load=0.34 0.69 0.58 
+    step.sh 2026-11-20T22:32:18Z start K1  after 0 s quiet wait: load=0.41 0.80 0.57 stress-ng=none
+    step.sh 2026-11-20T22:35:21Z end K1 exit 0 load=0.34 0.69 0.58
+2026-11-20T22:35:21Z wait K2 load=0.34 0.69 0.58 df avail 51G
+2026-11-20T22:38:21Z end K2 exit 0 load=0.31 0.61 0.58 
+    step.sh 2026-11-20T22:35:21Z start K2  after 0 s quiet wait: load=0.34 0.69 0.58 stress-ng=none
+    step.sh 2026-11-20T22:38:21Z end K2 exit 0 load=0.31 0.61 0.58
+2026-11-20T22:38:21Z wait K3 load=0.31 0.61 0.58 df avail 51G
+2026-11-20T22:39:31Z end K3 exit 0 load=0.51 0.59 0.57 
+    step.sh 2026-11-20T22:38:21Z start K3  after 0 s quiet wait: load=0.31 0.61 0.58 stress-ng=none
+    step.sh 2026-11-20T22:39:31Z end K3 exit 0 load=0.51 0.59 0.57
+2026-11-20T22:39:31Z wait D1 load=0.51 0.59 0.57 df avail 51G
+2026-11-20T23:03:29Z end D1 exit 0 load=0.78 0.74 0.65 
+    step.sh 2026-11-20T22:39:31Z start D1  after 0 s quiet wait: load=0.51 0.59 0.57 stress-ng=none
+    step.sh 2026-11-20T23:03:29Z end D1 exit 0 load=0.78 0.74 0.65
+2026-11-20T23:03:29Z wait D2 load=0.78 0.74 0.65 df avail 51G
+2026-11-20T23:22:59Z end D2 exit 0 load=0.42 0.49 0.50 
+    step.sh 2026-11-20T23:03:29Z start D2  after 0 s quiet wait: load=0.78 0.74 0.65 stress-ng=none
+    step.sh 2026-11-20T23:22:59Z end D2 exit 0 load=0.42 0.49 0.50
+2026-11-20T23:22:59Z wait S1 load=0.42 0.49 0.50 df avail 51G
+2026-11-20T23:58:03Z end S1 exit 0 load=0.50 0.89 0.81 
+    step.sh 2026-11-20T23:22:59Z start S1  after 0 s quiet wait: load=0.42 0.49 0.50 stress-ng=none
+    step.sh 2026-11-20T23:58:03Z end S1 exit 0 load=0.50 0.89 0.81
+2026-11-20T23:58:03Z wait H1 load=0.50 0.89 0.81 df avail 51G
+2026-11-21T00:16:11Z end H1 exit 0 load=0.79 0.46 0.56 
+    step.sh 2026-11-20T23:58:03Z start H1  after 0 s quiet wait: load=0.50 0.89 0.81 stress-ng=none
+    step.sh 2026-11-21T00:16:11Z end H1 exit 0 load=0.79 0.46 0.56
+2026-11-21T00:16:11Z wait H2 load=0.79 0.46 0.56 df avail 51G
+2026-11-21T00:34:47Z end H2 exit 0 load=0.24 0.40 0.50 
+    step.sh 2026-11-21T00:16:11Z start H2  after 0 s quiet wait: load=0.79 0.46 0.56 stress-ng=none
+    step.sh 2026-11-21T00:34:47Z end H2 exit 0 load=0.24 0.40 0.50
+2026-11-21T00:34:47Z wait S2 load=0.24 0.40 0.50 df avail 51G
+2026-11-21T01:01:24Z end S2 exit 0 load=0.62 0.48 0.45 
+    step.sh 2026-11-21T00:34:47Z start S2  after 0 s quiet wait: load=0.24 0.40 0.50 stress-ng=none
+    step.sh 2026-11-21T01:01:24Z end S2 exit 0 load=0.62 0.48 0.45
+2026-11-21T01:01:24Z driver done: C1 K1 K2 K3 D1 D2 S1 H1 H2 S2
+2026-11-21T01:01:40Z driver start: L1 L2a L2b L3a L3b L4a L4b L4c fence: 2026-11-21T02:15:00Z df avail 50G
+2026-11-21T01:01:40Z wait L1 load=0.48 0.46 0.44 df avail 50G
+2026-11-21T01:31:46Z end L1 exit 0 load=16.64 16.67 14.59 
+    step.sh 2026-11-21T01:01:40Z start L1  after 0 s quiet wait: load=0.48 0.46 0.44 stress-ng=none
+    step.sh 2026-11-21T01:31:46Z end L1 exit 0 load=16.64 16.67 14.59
+2026-11-21T01:31:46Z wait L2a load=16.64 16.67 14.59 df avail 50G
+2026-11-21T01:58:56Z end L2a exit 0 load=17.15 16.97 15.99 
+    step.sh 2026-11-21T01:34:57Z start L2a  after 191 s quiet wait: load=0.91 8.93 11.92 stress-ng=none
+    step.sh 2026-11-21T01:58:56Z end L2a exit 0 load=17.15 16.97 15.99
+2026-11-21T01:58:56Z FENCE: L2b's 22 min (and the quiet wait) do not end before 2026-11-21T02:15:00Z: stopping before it
+2026-11-21T03:08:34Z driver start: L2b L3a L3b L4a L4b L4c fence:  df avail 50G
+2026-11-21T03:08:34Z wait L2b load=0.63 1.02 1.15 df avail 50G
+2026-11-21T03:24:52Z end L2b exit 0 load=17.38 16.55 11.55 
+    step.sh 2026-11-21T03:08:34Z start L2b  after 0 s quiet wait: load=0.63 1.02 1.15 stress-ng=none
+    step.sh 2026-11-21T03:24:52Z end L2b exit 0 load=17.38 16.55 11.55
+2026-11-21T03:24:52Z wait L3a load=17.38 16.55 11.55 df avail 50G

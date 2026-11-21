@@ -1,0 +1,2 @@
+acceptance on the pinned release
+the run's end is unclean (its own side, not a verdict failure): a process it spawned still runs: pid 1387597 openbox

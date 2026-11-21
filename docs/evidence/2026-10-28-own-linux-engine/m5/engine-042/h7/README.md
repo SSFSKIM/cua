@@ -42,13 +42,18 @@ Chrome sets `_NET_WM_USER_TIME_WINDOW`.
 
 **C1 and L4c use each VM's installed `google-chrome`:** 156.0.8078.73 on x64. Only K2 runs 158.
 
-## The inside freeze per architecture (ruling 954)
+## The inside freeze: 600 on both architectures (rulings 954 and 957's companion decision)
 
-- **x64 keeps 600.** In task 121's sweeps it landed 30 of 30 at idle and at twice the load.
-- **arm64 is 600, PENDING task 122's sweep.** The sweep is plan `freeze-042-inside` (freeze-500, -550 and -600, ×10, at
-  twice the load), run on this candidate. arm64's value will be the freeze that lands 9 of 10.
-- `drop-signals-judge.mjs` `LATE_INSIDE_FREEZE` and `LATE_INSIDE_PENDING` hold the values, and a test pins both.
-- The inside band takes every architecture's own freeze. `planSpecs({ plan: 't14-late', arch })` builds the plan.
+- **Ruling 954 planned a per-architecture inside freeze**, since arm64 at twice the load landed only 6 of 10 at 600 at
+  H6.
+- **Task 122's sweep on 348cae0f, with the race fixed, landed 10 of 10 at every freeze.** It ran on arm64 at twice the
+  load, Chrome 156, plan `freeze-042-inside`: freeze-500, -550 and -600, each a take inside the hold, then a landing.
+  - 0 notices, 0 unidentified, 0 skipped.
+  - Every stop came 54–58 ms after the press mark; the marks came 15–148 ms after the send.
+  - Rows are on the VM, in `~/.local/share/cua-171/m5/s954-arm64-h7/`.
+- **H6's arm64 misses at 600 were the race's, not the thaw's.** So, by the controller's decision, both architectures
+  keep 600 and the per-architecture mechanism is removed. `freeze-042-inside` and its 500 and 550 cells stay, as the
+  sweep's record.
 
 ## The byte comparison against H6 (`comparison/`)
 
@@ -62,7 +67,6 @@ It ran on H6 (69bd7993) and on H7, for both x64 and arm64, from one fixed path u
 **Result: on both architectures, C1 and L4c differ, and nothing else does** (53 steps; `steps-differ.txt`).
 - The only difference is in the plan contents: each freeze cell's schedule gains `"afterPress":55`.
 - The launches are identical. C1 and L4c still run `--plan t14-late`.
-- arm64's inside cell is still freeze-600 while it is PENDING. Setting its value will change arm64's C1 and L4c again.
 
 ## The x64 development run (`dev-run/`, `dev-run/race.md`)
 

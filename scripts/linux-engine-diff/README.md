@@ -166,7 +166,7 @@ Since H7 (rulings 954–956), a freeze cell's stop waits until the browser marks
 source asks the browser over AT-SPI before the press, and a stop during it left the source unidentified. A stop that
 can't begin before its thaw is skipped, and its row says why. The judge counts a row whose source ended unidentified,
 or whose stop was skipped, as unexercised for its band; such a row is shown, but never counted as the band's outcome.
-The inside band's freeze is per architecture (`LATE_INSIDE_FREEZE`).
+The inside band's freeze is 600 on both architectures (task 122's arm64 sweep, at twice the load, landed 10 of 10 there).
 
 **The hold canary's criterion is a step parameter.** `steps.mjs` `CANARY_CRITERION` sets it on K1, K2 and V5 by
 architecture (rulings 930 and 932), as `--hold-canary`:

@@ -43,8 +43,7 @@ test("t14-late's plan is its three bands, each expecting band a minimum under it
   assert.equal(HOLD_NOTICE, premise.HOLD_NOTICE);
   assert.deepEqual(LATE_BANDS.map((b) => b.band), ['inside', 'edge', 'past']);
   const planned = planSpecs({ plan: 't14-late' });
-  // every planned cell in one band, in order (the inside band holds every architecture's own freeze: ruling 954)
-  assert.deepEqual(planned.map((s) => LATE_BANDS.findIndex((b) => b.cells.includes(s.cell))), [0, 1, 1, 1, 1, 2]);
+  assert.deepEqual(planned.map((s) => s.cell), LATE_BANDS.flatMap((b) => b.cells), 'every planned cell in one band, in order');
   for (const b of LATE_BANDS.filter((x) => x.expects)) {
     const n = planned.filter((s) => b.cells.includes(s.cell)).reduce((k, s) => k + s.n, 0);
     assert.ok(b.min > 0 && b.min < n, `${b.band}: a minimum of ${b.min} below its ${n} drags`);
@@ -193,23 +192,8 @@ test("by default t14-late is judged by its own bands", () => {
   assert.ok(cells.length >= 3);
 });
 
-test("ruling 954: t14-late's inside freeze is the architecture's own; arm64's PENDING task 122's sweep", async () => {
-  const { LATE_INSIDE_FREEZE, LATE_INSIDE_PENDING, lateInsideCell } = await import('../../scripts/linux-engine-diff/drop-signals-judge.mjs');
-  const { PLANS, lateBandPlan } = await import('../../scripts/linux-engine-diff/drop-signals.mjs');
-  assert.equal(LATE_INSIDE_FREEZE.x64, 600, "x64 keeps task 121's 600");
-  // PENDING (ruling 954): arm64 stays at 600 until task 122's sweep (freeze-042-inside) names the freeze landing 9 of
-  // 10; this assertion changes with it
-  assert.equal(LATE_INSIDE_FREEZE.arm64, 600);
-  assert.deepEqual(LATE_INSIDE_PENDING, ['arm64']);
-  assert.equal(lateInsideCell('riscv64'), 'freeze-600', "another architecture takes x64's");
-  for (const arch of ['x64', 'arm64']) {
-    const plan = planSpecs({ plan: 't14-late', arch });
-    assert.equal(plan[0].cell, lateInsideCell(arch), arch);
-    assert.deepEqual(plan.map((s) => s.cell).slice(1), ['freeze-646', 'freeze-648', 'freeze-650', 'freeze-652', 'freeze-700'], arch);
-    assert.equal(plan.reduce((n, s) => n + s.n, 0), 40, arch);
-    for (const s of plan) assert.ok(LATE_BANDS.some((b) => b.cells.includes(s.cell)), `${arch}: ${s.cell} in a band`);
-    assert.ok(LATE_BANDS[0].cells.includes(lateInsideCell(arch)), `${arch}: its inside cell is the inside band's`);
-  }
-  assert.deepEqual(PLANS['t14-late'], lateBandPlan(process.arch), "the plan as this machine runs it");
+test("t14-late is the same plan on both architectures: task 122's sweep landed arm64 10 of 10 at 600 once the race was closed", () => {
+  assert.equal(planSpecs({ plan: 't14-late' })[0].cell, 'freeze-600');
+  assert.deepEqual(LATE_BANDS[0].cells, ['freeze-600']);
   assert.deepEqual(planSpecs({ plan: 'freeze-042-inside' }).map((s) => `${s.cell} ${s.n}`), ['freeze-500 10', 'freeze-550 10', 'freeze-600 10']);
 });

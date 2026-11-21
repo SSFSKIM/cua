@@ -15,21 +15,9 @@ export const FREEZE_ENDS = [230, 240, 250, 255, 260, 280, 330];
 export const LATE_FREEZE_ENDS = [440, 450, 600, 620, 630, 640, 645, 650, 655, 660, 670, 700];
 /** The same, millisecond by millisecond around 650, where the idle sweep's late takes came (task 121). */
 export const LATE_FREEZE_FINE = [646, 647, 648, 649, 651, 652, 653, 654];
-/** Earlier thaws for the inside band on a slower machine (ruling 954: task 122's arm64 sweep, `freeze-042-inside`). */
+/** Earlier thaws for the inside band, swept on arm64 at twice the load (ruling 954: task 122, `freeze-042-inside`). */
 export const LATE_FREEZE_INSIDE = [500, 550];
 
-/**
- * The inside band's freeze by architecture (the design session's ruling 954): the thaw after which the take still comes
- * inside the extended hold and the drop lands. x64's is task 121's sweeps' (600: 30 of 30 at idle and at twice the
- * load). arm64 at twice the load landed 6 of 10 at 600 at H6 (three honest hold notices: the take came too late for its
- * hold), so its value is the freeze where task 122's sweep (500, 550, 600, 10 each, twice the load) lands 9 of 10 or more.
- * PENDING: arm64 stays at 600 until that sweep reports (`LATE_INSIDE_PENDING`). Any other architecture takes x64's.
- */
-export const LATE_INSIDE_FREEZE = { x64: 600, arm64: 600 };
-/** The architectures whose inside freeze still waits for its sweep. */
-export const LATE_INSIDE_PENDING = ['arm64'];
-/** The inside band's cell on `arch`. */
-export const lateInsideCell = (arch = process.arch) => `freeze-${LATE_INSIDE_FREEZE[arch] ?? LATE_INSIDE_FREEZE.x64}`;
 /**
  * The ends of V5's lost-motion stops, ms after the drag's send (`prefreeze-<to>`): on the guarded route, inside the
  * path's end rest (30, 40) and past its release; on the held route, before the hold's refresh stops (150, 200), after
@@ -787,8 +775,9 @@ export const HOLD_NOTICE = 'the page may have started a drag that did not comple
  * A minimum of 7 of 10 leaves a band whose outcome held 30 of 30 or more a chance under 0.2% of failing by chance.
  */
 export const LATE_BANDS = [
-  // the inside freeze is each architecture's own (`LATE_INSIDE_FREEZE`): the band holds every one of them
-  { band: 'inside', cells: [...new Set(Object.values(LATE_INSIDE_FREEZE))].map((to) => `freeze-${to}`), expects: 'landed', min: 7 },
+  // the same freeze on both architectures: task 122's sweep at the race fix (ruling 956) landed arm64 10 of 10 at twice the
+  // load at 500, 550 and 600, so the per-architecture value of ruling 954 was removed again
+  { band: 'inside', cells: ['freeze-600'], expects: 'landed', min: 7 },
   { band: 'edge', cells: ['freeze-646', 'freeze-648', 'freeze-650', 'freeze-652'], expects: null, min: 0 },
   { band: 'past', cells: ['freeze-700'], expects: 'refused', min: 7 },
 ];

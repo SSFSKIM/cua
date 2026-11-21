@@ -25,7 +25,7 @@
 
 import { GATE_BALLAST } from './dnd.mjs';
 import { locate } from './drag.mjs';
-import { FREEZE_ENDS, HOLD_REGRESSION_CELLS, LATE_FREEZE_ENDS, LATE_FREEZE_FINE, LATE_FREEZE_INSIDE, lateInsideCell, PREFREEZE_ENDS, T14_SOURCE, acceptTable, afterReleaseTable, blockPlan, coverTable, dragOutcome, lateTakeTable, neverTakeTable, parseDropStatus, signalsOf } from './drop-signals-judge.mjs';
+import { FREEZE_ENDS, HOLD_REGRESSION_CELLS, LATE_FREEZE_ENDS, LATE_FREEZE_FINE, LATE_FREEZE_INSIDE, PREFREEZE_ENDS, T14_SOURCE, acceptTable, afterReleaseTable, blockPlan, coverTable, dragOutcome, lateTakeTable, neverTakeTable, parseDropStatus, signalsOf } from './drop-signals-judge.mjs';
 import { Engine } from './engine.mjs';
 import { openFamily } from './families.mjs';
 import { preorder } from './normalize.mjs';
@@ -353,8 +353,7 @@ export const PLANS = {
   // Since 0.4.2 (the design session's ruling 931, task 121's sweeps): its hold takes a thaw before the release inside,
   // and Chrome refuses one after it, so the plan runs three freeze bands, judged by drop-signals-judge.mjs `LATE_BANDS`
   // (inside, the edge whose late takes are counted, past)
-  // (the inside freeze is the architecture's own, ruling 954: `lateBandPlan`)
-  't14-late': lateBandPlan(),
+  't14-late': [['cua', 'freeze-600', 10], ...['freeze-646', 'freeze-648', 'freeze-650', 'freeze-652'].map((cell) => ['cua', cell, 5]), ['cua', 'freeze-700', 10]],
   // the knife-edge ride-along (ruling 931.5), a development plan no gate step runs: the thaw at the release, where 0.4.2's
   // late takes come, judged by T14's late-take contract (at least one, each reported)
   't14-late-edge': [['cua', 'freeze-650', 40]],
@@ -408,21 +407,9 @@ export const PLANS = {
   ],
 };
 
-/** `t14-late` on `arch`: its inside band's freeze the architecture's own (drop-signals-judge.mjs `LATE_INSIDE_FREEZE`). */
-export function lateBandPlan(arch = process.arch) {
-  return [['cua', lateInsideCell(arch), 10], ...['freeze-646', 'freeze-648', 'freeze-650', 'freeze-652'].map((cell) => ['cua', cell, 5]), ['cua', 'freeze-700', 10]];
-}
-
-/** The plans whose cells follow the architecture they run on. */
-const PLANS_BY_ARCH = { 't14-late': lateBandPlan };
-
-/**
- * A plan's specs for the sitting: `--plan`'s on `arch` (this machine's), the gate cells added at the gate's window load,
- * `--trials` capping each.
- */
-export function planSpecs({ plan = 'main', ballast = null, trials = null, lanes = null, arch = process.arch } = {}) {
-  const own = PLANS_BY_ARCH[plan] ? PLANS_BY_ARCH[plan](arch) : PLANS[plan];
-  const rows = [...(own ?? (() => { throw new Error(`no plan ${plan}; known: ${Object.keys(PLANS).join(', ')}`); })()), ...(ballast === 'gate' && plan === 'main' ? PLANS.gate : [])];
+/** A plan's specs for the sitting: `--plan`'s, the gate cells added at the gate's window load, `--trials` capping each. */
+export function planSpecs({ plan = 'main', ballast = null, trials = null, lanes = null } = {}) {
+  const rows = [...(PLANS[plan] ?? (() => { throw new Error(`no plan ${plan}; known: ${Object.keys(PLANS).join(', ')}`); })()), ...(ballast === 'gate' && plan === 'main' ? PLANS.gate : [])];
   return rows.filter(([lane]) => !lanes || lanes.includes(lane)).map(([lane, cell, n]) => ({ lane, cell, n: trials ? Math.min(trials, n) : n }));
 }
 

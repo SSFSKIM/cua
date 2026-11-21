@@ -581,10 +581,12 @@ error    {code: number (the vendor's codes where mapped; -10005 otherwise), mess
     ("confirmed" | "unconfirmed"), actionError?, baselineUnread? (true: the window list did not read just before the
     press, so the effect could not be confirmed), menuWindow? (the number of the app's new window that opened: a menu
     window at layer 101 for a pop-up button, a window of any layer above the app's window for a combo box's list),
-    restored? ({windows, ms, complete, raises, stopped? ("personInput" | "bound" | "unresolved")}: the person's windows
-    in front of the app's window before the press, raised back once the open had raised the app's over them; complete
-    false when the order was not back within 500 ms, a window could not be told for certain, or the person acted, the
-    result's note on all but the last), polls?, ms? (from the action's return to the open)}; never a title
+    restored? ({windows, ms, complete, raises, skipped, stopped? ("personInput" | "bound" | "unresolved" |
+    "focusUnknown")}: the person's windows in front of the app's window before the press; once the open had raised the
+    app's over them, those of the person's frontmost app raised once each, back to front, the focused window last
+    (raises: the AXRaises made), third apps' skipped (skipped), and the order read once about 300 ms later (complete);
+    the result's note when not complete, unless the person acted), polls?, ms? (from the action's return to the open)};
+    never a title
   note: on a paste result that pasted a line with no channel to see it, read after ⌘V (#187; type_text's paste route
     since #361 never, its read-back answering instead), on a type_text a password field's length confirmed (#414), and on a
     scroll whose content was already at its end in that direction (#328): the sentence the service adds to the tool
@@ -7393,6 +7395,36 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   unresolved window still out of order ends the restore as `unresolved` after its stable samples, instead of
   re-raising until the cutoff. (4) The 500 ms cutoff counts from the restore's start, the 60 ms sampling minimum from a
   timestamp taken after the resolution.
+  Date/Author: 2026-11-21, cursor235's implementer for #458.
+- Decision (#458, design ruling 1004, 2026-11-21; #458's qual, kit `probe/458-qual`, scripts/probe-337/README.md
+  §"#458 qual" at efa35057, main run 44924065133 against fix run 44929018111 on 7e5bb454, 200 rows each; supersedes the
+  restore's sampling loop in the entries above): **the restore is one pass, and the menu wait is 1.5 s.** The qual found
+  the delivery right everywhere (confirmed 138/140 behind, 40/40 frontmost, no false confirmation; #454's pick taken
+  every time; parity unchanged) but the loop harmful: AXRaises land 30–150 ms late, so the loop read the order wrong
+  and re-raised 6–11 times, F1 and F2 flipping for up to a second, and the last raise to land decided the top window,
+  changing the person's focused window in 3/40 rows of layout a in dedicated mode and 11/20 of layout c; and in c (a
+  background Calculator window between the person's Finder windows) an AXRaise of the third app's window stays under
+  the active app's, so the order never read back (0/20, bound). Chrome's `<select>` opened about 940 ms after the click
+  in 2/20 rows, past the 500 ms wait, answering `clickUnconfirmed` with no restore. The rule now
+  (`popUpRestoreOrder`): of the recorded windows, those of the person's frontmost app are raised once each, back to
+  front, the person's focused window (route 3's `userWindow`, the frontmost app's AXFocusedWindow) last, inside the
+  screen-update hold (its timer at route 3's 300 ms ceiling, `activationPointHoldCeilingMs`); third apps' windows are
+  skipped (`restored.skipped`); about `popUpRestoreReadMs` (300 ms) after the first raise the order is read once and
+  recorded (`complete`), never re-raised on a mismatch. The hard bar, the person's focused window never changes, is met
+  by raising it last; when it is not known, not among the recorded windows, or not resolved by its number, nothing is
+  raised (`focusUnknown`, `unresolved`). The person-input stop before each raise and before the read, the absolute
+  500 ms cutoff and the timed hold release stay. `popUpOpenSettleMs` is 1.5 s for pop-ups and the combo box's list.
+  The model-facing sentences name no timing and are unchanged.
+  Left for the measurement: the focused window can still change outside the engine's raises (a person's click during
+  the open, which `personInput` then reports), and the AXRaise of a non-focused window of the active app may make it key
+  for the moment before the focused one is raised, which the app could see as a focus change (key-window notifications)
+  even though the end state keeps the focus.
+  Proven offline (`PopUpPointTests`, 31 tests): two windows raised once, back to front, the focused last, read once at
+  300 ms, raises landing 150 ms late seen by it; the focused window last even with another in front of it, the mismatch
+  recorded with no re-raise and one read; layout c's Calculator skipped, Finder's three raised; nothing raised with the
+  focus unknown, not recorded or unresolved; the 940 ms `<select>` confirmed. Reverted one at a time (6 mutations), each
+  fails: a re-raise on the mismatch, the focused window not last, a third app's window raised, the focused window not
+  required among the recorded, the read not delayed, the 500 ms wait.
   Date/Author: 2026-11-21, cursor235's implementer for #458.
 
 ## Outcomes & Retrospective

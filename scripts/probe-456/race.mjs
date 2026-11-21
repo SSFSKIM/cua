@@ -41,7 +41,12 @@ const PREHOLD = (list('prehold') ?? ['0', '1']).map(v => v === '1');
 const TEXT = arg('text') ?? 'probe';
 /// How the race cell's keys reach Chrome: the racer (a second process, its events stamped with the engine's pid unless
 /// --stamp 0) or a second engine connection's press_key and type_text.
-const VIA = list('via') ?? ['racer'];
+const VIA = list('via') ?? ['typed'];
+/// The field cell's: `engine` (a second connection's ⌘L and type_text inside the wait; its focus hold does not touch the
+/// field route, which takes none), and whether the page jitters the field's value through the wait (`jitter`: #359's
+/// wait then runs to its 300 ms cap, the range never stable).
+const FIELD_VIA = list('field-via') ?? ['engine'];
+const JITTER = (list('jitter') ?? ['0', '1']).map(v => v === '1');
 const STAMP = arg('stamp') !== '0';
 const BUDGET_MS = Number(arg('budget') ?? 100) * 60_000;
 const STARTED = Date.now();
@@ -70,7 +75,8 @@ for (const k of ['pointerdown', 'mousedown', 'click', 'focusin', 'submit']) docu
 for (const k of ['input', 'change']) document.addEventListener(k, e => send(k, {id: idOf(e.target), value: e.target.value ?? null}), true);
 addEventListener('focus', () => send('wfocus', {}));
 addEventListener('blur', () => send('wblur', {}));
-const run = c => { if (c === 'reload') location.replace('/'); if (c.startsWith('goto:')) location.replace(c.slice(5)); };
+const jitter = ms => { const f = document.getElementById('uf'), end = Date.now() + ms; let i = 0; const id = setInterval(() => { if (Date.now() > end) { clearInterval(id); f.value = ''; send('jitterEnd', {}); return; } f.value = i++ % 2 ? 'x' : 'xy'; }, 15); send('jitter', {}); };
+const run = c => { if (c === 'reload') location.replace('/'); if (c.startsWith('goto:')) location.replace(c.slice(5)); if (c.startsWith('jitter:')) jitter(Number(c.slice(7))); };
 (async () => { for (;;) { try { const r = await fetch('/cmd?load=' + load, {cache: 'no-store'}); const j = await r.json(); if (j.cmd) run(j.cmd); } catch (e) { await new Promise(r => setTimeout(r, 500)); } } })();
 addEventListener('load', () => send('ready', {}));
 })();</script>`;
@@ -291,9 +297,9 @@ const save = () => writeFileSync(join(OUT, 'results.json'), JSON.stringify({conf
 /// The point a model would click on the control: its centre across, 18 pt down from its top (the popup's first row).
 const upper = f => ({x: f.x + f.width / 2, y: f.y + Math.min(18, f.height / 2)});
 
-async function runRow(cell, delay, prehold, rep, headLabel, via = 'racer') {
-  const lab = `${cell}-${delay ?? 'x'}-${prehold ? 'held' : 'free'}-${via}-${rep}-${headLabel}`;
-  const row = {label: lab, head: headLabel, cell, delay, prehold, via, stamp: STAMP, rep, steps: []};
+async function runRow(cell, delay, prehold, rep, headLabel, via = 'racer', jit = false) {
+  const lab = `${cell}-${delay ?? 'x'}-${prehold ? 'held' : 'free'}-${via}${jit ? '-jitter' : ''}-${rep}-${headLabel}`;
+  const row = {label: lab, head: headLabel, cell, delay, prehold, via, jitter: jit, stamp: STAMP, rep, steps: []};
   results.push(row);
   let w, held, second;
   try {
@@ -302,6 +308,14 @@ async function runRow(cell, delay, prehold, rep, headLabel, via = 'racer') {
     const pid = browser.pid;
     row.frontBefore = frontmost();
     if (prehold) held = await holdFocus(pid, row);
+    if (via === 'typed') {
+      // The omnibox focused by ⌘L ahead of the observation, on a connection closed before it (its focus hold released,
+      // Chrome no longer believing it is focused); the keys in the wait are then plain characters (route 2', no activation).
+      const b = await connect();
+      const k = await b.execute('press_key', {pid, key: 'cmd+l'});
+      row.prefocus = brief(k); delete row.prefocus.meta;
+      await sleep(300); b.close(); await sleep(500);
+    }
     w = await connect();
     const sky = await observe(w, pid, `${lab}-obs`);
     const wf = sky.window.frame;
@@ -337,7 +351,7 @@ async function runRow(cell, delay, prehold, rep, headLabel, via = 'racer') {
       if (r.error) { row.problem = `the pointer press was refused: ${errName(r)}`; return; }
       await sleep(120);
     }
-    if (keys && via === 'engine') second = await connect();
+    if (keys && (via === 'engine' || via === 'typed')) second = await connect();
     const base = Date.now() + 60 + Math.max(0, -(delay ?? 0));
     const byRacer = keys && via === 'racer';
     const watch = racer.ask({op: 'race', pid, target: pop.target.n, point: [screen.x, screen.y], until: base + 1300,
@@ -347,13 +361,14 @@ async function runRow(cell, delay, prehold, rep, headLabel, via = 'racer') {
       engineKeys = (async () => {
         await sleepUntil(base + (delay ?? 0));
         const t0 = Date.now();
-        const k = await second.execute('press_key', {pid, key: 'cmd+l'});
+        const k = via === 'typed' ? null : await second.execute('press_key', {pid, key: 'cmd+l'});
         const t1 = Date.now();
         const ty = await second.execute('type_text', {pid, text: TEXT});
-        const k1 = brief(k), ty1 = brief(ty); delete k1.meta; delete ty1.meta;
+        const k1 = k ? brief(k) : {error: null, skipped: true}, ty1 = brief(ty); delete k1.meta; delete ty1.meta;
         return {at: t0, keyAnswered: t1, typeAnswered: Date.now(), key: k1, type: ty1};
       })();
     }
+    if (jit) { await sleepUntil(base - 40); sendCmd('jitter:700'); }
     await sleepUntil(base);
     if (cell !== 'keysonly') {
       const t0 = Date.now();
@@ -392,8 +407,9 @@ async function run() {
   for (const cell of CELLS) {
     const delays = cell === 'race' ? DELAYS : cell === 'field' || cell === 'keysonly' ? FIELD_DELAYS : [null];
     const holds = cell === 'field' || cell === 'keysonly' ? PREHOLD : [false];
-    const vias = cell === 'race' ? VIA : ['racer'];
-    for (const prehold of holds) for (const via of vias) units.push({cell, delays, prehold, via});
+    const vias = cell === 'race' || cell === 'nokeys' ? VIA : cell === 'field' ? FIELD_VIA : ['racer'];
+    const jits = cell === 'field' ? JITTER : [false];
+    for (const prehold of holds) for (const via of vias) for (const jit of jits) units.push({cell, delays, prehold, via, jit});
   }
   // A unit's delays run on one head, then on the other; the heads' order alternates by rep and unit.
   let k = 0;
@@ -403,7 +419,7 @@ async function run() {
       await useHead(h);
       for (const d of u.delays) {
         if (Date.now() - STARTED > BUDGET_MS) { config.budgetStop = true; save(); return; }
-        await runRow(u.cell, d, u.prehold, rep, h.label, u.via);
+        await runRow(u.cell, d, u.prehold, rep, h.label, u.via, u.jit);
       }
     }
   }

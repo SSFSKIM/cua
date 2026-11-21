@@ -1,0 +1,5 @@
+/Users/new/.local/share/cua-171/m5/out-x64-h7/C1.pinned-release: not taken (entered 0, second_rest 0, skipped 0, unsettled 0, settle_failed_activation_confirmed 0; 7 cua engines (1 unidentified, held to the counter as cua lanes); 1 of them with no counter were sent no drag or drag_handle)
+  reader 2353680: no counter; sent no drag or drag_handle (not a measured zero)
+/Users/new/.local/share/cua-171/m5/out-x64-h7/L4c.pinned-release: not taken (entered 0, second_rest 0, skipped 0, unsettled 0, settle_failed_activation_confirmed 0; 7 cua engines (1 unidentified, held to the counter as cua lanes); 1 of them with no counter were sent no drag or drag_handle)
+  reader 2399364: no counter; sent no drag or drag_handle (not a measured zero)
+settle-check exit 0

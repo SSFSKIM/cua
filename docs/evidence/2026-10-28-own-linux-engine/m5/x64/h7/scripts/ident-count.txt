@@ -1,0 +1,4 @@
+== C1.pinned-release
+  40 | idle | freeze | identified by: Google-chrome, role browser, application "Google Chrome", executable chrome
+== L4c.pinned-release
+  40 | load2 | freeze | identified by: Google-chrome, role browser, application "Google Chrome", executable chrome

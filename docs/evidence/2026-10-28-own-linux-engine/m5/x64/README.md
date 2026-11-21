@@ -1016,6 +1016,150 @@ No step outside class A reads taken.
 - `h6/scripts/` holds task 123's own code and records from private displays only. There the scan's other hits are
   quoted strings in that code, and doctor's own device-mode words in item 9's transcript (`:1`).
 
+## At H7 on 0.4.2 (task 129), 2026-11-21
+
+**C1 and L4c rerun counted at the frozen head H7 = `ae3fc1e8` on linux-engine-v0.4.2 (rulings 954–956, 963, 969).**
+H7 changes only the `t14-late` plan these two steps run, and its judge
+(`../engine-042/h7/README.md`, `../engine-042/h7/fix/README.md`):
+- each freeze waits for Chrome's own mark of the press (`_NET_WM_USER_TIME`, bound to the trial by its server time),
+  plus 55 ms;
+- a stop that can't begin before its thaw is skipped;
+- an unidentified or skipped row is unexercised for its band.
+
+Both ran on the #171 x64 VM (`dc-linux171-1e68`) on private displays. The records are in `h7/`: `out/` holds the two
+counted steps, and `scripts/` holds task 129's launchers, extracts, scans and lock lines.
+
+- **C1 at idle: PASS.** Inside 10/10 landed, past 10/10 answered the notice, 5 late takes at the edge, all reported.
+- **L4c at twice the load: PASS.** Inside 10/10 landed, past 10/10 answered the notice, 3 late takes at the edge, all
+  reported.
+- **In both:** 0 unexercised, 0 skipped, 0 false ok and 0 unjudged. All 40 sources were identified, and all 40 press
+  marks were bound.
+
+### Setup
+
+- **Checkout:** `t129-x64`, a fresh worktree detached at `ae3fc1e80685e192fd75d01a71ac14c034992a77`, inside the shared
+  checkout's `.claude/worktrees/`. The brief named task 123's `t123-x64`, but two things stood in the way. The session's
+  worktree isolation refuses git there, and task 126 runs its development runs from `t123-x64` at H6, so moving it
+  would have changed another task's checkout.
+  - The lockfile is the same as H6's.
+  - Under the lock it got a real `npm ci`, electron v44.9.0, and xprobe through the cargo wrapper
+    (`h7/scripts/setup.sh`, `setup-t129.log.txt`).
+  - It had 0 changes before and 0 after.
+- **The acceptance home:** task 123's `~/.local/share/cua-171/m5/home-x64-042`, rechecked at H7 (`check-home.sh`,
+  `.log.txt`).
+  - Its engine's sha256 `a1314106…a85a78` equals the pin's x64 asset.
+  - It reads `cua-engine 0.4.2 (9371d2348cf8)` and is static-pie, with install.json build `pinned`.
+  - `gate.mjs check --pinned` exited 0: attested (run 44796908527), native/linux-engine as at 9371d234, and the
+    checkout at ae3fc1e8 and clean.
+- **Chrome:** the installed google-chrome, 156.0.8078.73.
+- **Preconditions:** hold-sittings was absent. `df` showed 42G free before C1 and 41G before L4c (ruling 937).
+- **The commands:** `gate.mjs print C1` and `print L4c` gave the lines in `scripts/commands.txt`. `print` writes a stub
+  of the step's directory, and `run` refuses a directory that exists, so each stub was moved to `out/print/` before its
+  step ran.
+  - Each step ran as `locked.sh task129-x64 timeout -s TERM -k 60 45m step.sh <step>`, one step per hold.
+  - Inside the hold, `step.sh` waits up to 6 minutes for a quiet host (no stress-ng, the 1-minute load under 1.0). It
+    then execs the printed line, minus its leading `locked.sh task129-x64`.
+- **The holder in the records:** the printed `run` line carries no `--holder`, so each step's `step.json` and README
+  name the gate's default holder, `m5-gate`, in their command. The lock itself was held as `task129-x64`
+  (`scripts/lock-lines.txt`).
+
+### The step table at H7
+
+| step | SHA | acquire (UTC) | step start | release | min | exit | load at step start | load at release | end | result |
+|---|---|---|---|---|---:|---:|---|---|---|---|
+| C1 | ae3fc1e8 | 11-21 07:56:08 | 07:56:08 | 07:58:18 | 2.2 | 0 | 0.45 1.92 6.40 | 0.36 1.35 5.60 | clean; end check clear | **PASS**: every band at its minimum, 0 unexercised |
+| L4c | ae3fc1e8 | 11-21 08:18:15 | 08:21:46 (after a 211 s quiet wait) | 08:24:16 | 2.5 | 0 | 0.89 8.82 11.58 | 15.99 12.13 12.41 | clean; end check clear | **PASS**: every band at its minimum, 0 unexercised |
+
+### The bands (ruling 931), from each step's `run/summary.md`
+
+| step | band | cells | drags | its outcome (exercised rows) | minimum | late takes | unexercised |
+|---|---|---|---:|---|---:|---:|---:|
+| C1 | inside | freeze-600 | 10 | 10 landed after a take inside the hold | 7 | 0 | 0 |
+| C1 | edge | freeze-646, -648, -650, -652 | 20 | – | – | 5 | 0 |
+| C1 | past | freeze-700 | 10 | 10 answered the hold notice, with no drop and nothing sent after it | 7 | 0 | 0 |
+| L4c | inside | freeze-600 | 10 | 10 landed after a take inside the hold | 7 | 0 | 0 |
+| L4c | edge | freeze-646, -648, -650, -652 | 20 | – | – | 3 | 0 |
+| L4c | past | freeze-700 | 10 | 10 answered the hold notice, with no drop and nothing sent after it | 7 | 0 | 0 |
+
+Both judges counted 0 false ok, 0 unjudged, 0 missing landings, 0 false alarms and 0 harness Escapes.
+- C1: 11 drags never took, answered as plain drags. 0 of 24 landed drops were answered unconfirmed.
+- L4c: 17 drags never took, answered as plain drags. 0 of 20 landed drops were answered unconfirmed.
+- H6 had inside 10/10 for C1 and 9/10 for L4c (freeze-600 #0, honest), with 3 and 2 late takes.
+
+**Each late take, judged in full** (`late-takes.mjs`, output `late-takes-C1.txt` and `-L4c.txt`):
+
+| step | cell | take after the release | the engine's Escape after the release | drop |
+|---|---|---:|---:|---|
+| C1 | freeze-650 #2 | 0.9 ms | 2.2 ms | none |
+| C1 | freeze-650 #3 | 0.0 ms | 1.6 ms | none |
+| C1 | freeze-650 #4 | 0.1 ms | 1.1 ms | none |
+| C1 | freeze-652 #2 | 2.2 ms | 2.4 ms | none |
+| C1 | freeze-652 #3 | 1.5 ms | 3.3 ms | none |
+| L4c | freeze-648 #4 | 2.1 ms | 3.8 ms | none |
+| L4c | freeze-650 #2 | 2.1 ms | 3.2 ms | none |
+| L4c | freeze-652 #3 | 4.6 ms | 4.7 ms | none |
+
+All eight have the same shape:
+- the engine saw no take by its release (`hold.taken` false, way `noticed`);
+- the answer was ok with the hold notice ("the page may have started a drag that did not complete");
+- the read carried the late notice, and the next request was refused with it;
+- `late_dnd` was recorded with `escaped: true`, and nothing landed.
+
+On L4c's freeze-652 #3, the engine's own late-drag watch saw the take 1.1 ms after the release. The harness's
+observer saw it at 4.6 ms.
+
+### Unexercised and skipped rows, identification, and the press mark's binding
+
+From `h7-bands.mjs` (output `bands-C1.txt`, `bands-L4c.txt`) and `ident-count.mjs` (`ident-count.txt`):
+
+- **Unexercised: 0 of 40 in each step, so 0 per band.** Every row's source was identified, and every stop was credited:
+  it began before its thaw, then continued.
+- **Skipped: 0 of 40 in each step.** Every row has a freeze record.
+- **Identification:** 40 of 40 in each step: "Google-chrome, role browser, application "Google Chrome", executable
+  chrome".
+- **Press-mark binding:** 40 of 40 bound in each step (`press_time` and `sent_time` both recorded). No mark was passed
+  over (`press_ignored` absent).
+
+| step | cell | n | bound | press marked (ms after the send) | value − send (server ms) | stop began (ms after the send) | thawed |
+|---|---|---:|---:|---|---|---|---|
+| C1 | freeze-600 | 10 | 10 | 4.4–12.4 | 2–10 | 59.4–67.2 | 600–602.8 |
+| C1 | freeze-646 | 5 | 5 | 4.8–9.4 | 2–6 | 59–64 | 646.8–648.3 |
+| C1 | freeze-648 | 5 | 5 | 4.9–11.4 | 2–8 | 59.3–65.1 | 647.9–651.2 |
+| C1 | freeze-650 | 5 | 5 | 4.7–10 | 2–8 | 59.3–64.4 | 651.9–653.4 |
+| C1 | freeze-652 | 5 | 5 | 4.4–10.3 | 2–8 | 59.6–64.7 | 653.5–655.8 |
+| C1 | freeze-700 | 10 | 10 | 4.5–10.8 | 2–9 | 58.9–65.5 | 699.4–700.7 |
+| L4c | freeze-600 | 10 | 10 | 4.2–23.2 | 1–21 | 59.8–78.3 | 601–604.8 |
+| L4c | freeze-646 | 5 | 5 | 8.4–30.9 | 2–29 | 65.4–85.3 | 647.8–650.7 |
+| L4c | freeze-648 | 5 | 5 | 9.4–19.7 | 7–16 | 64.3–74.1 | 650.3–653.3 |
+| L4c | freeze-650 | 5 | 5 | 4.8–20.2 | 1–15 | 59.6–74.4 | 651.2–654.8 |
+| L4c | freeze-652 | 5 | 5 | 10.3–22.7 | 4–20 | 64.7–77.4 | 653–658.9 |
+| L4c | freeze-700 | 10 | 10 | 3.2–20.5 | 1–14 | 59.5–74.7 | 699.2–702.1 |
+
+- **Each press's server time against the send's:**
+  - C1: 2–10 ms after it, median 3.
+  - L4c: 1–29 ms after it, median 9.
+  - Every value is inside the binding's bounds (2 ms of slack before the send), and far from a stale mark, which is a
+    second or more older.
+- **The stop against its start rule** (the later of 60 ms after the send, and the mark + 55):
+  - Every stop came 53.5–55.5 ms after its mark in C1, and 53.6–57.0 ms after it in L4c. So each began well after
+    the mark, and with it the identification the mark follows.
+  - The stop's timer (`setTimeout`, on Node's millisecond loop clock) woke up to 1.5 ms (C1) and 1.4 ms (L4c) before
+    the rule's start. By more than 1 ms, that happened in 7 rows of C1 and 1 of L4c.
+  - The judge doesn't credit a stop by that rule, so no verdict turns on it. H7's development runs had 59 ms minima
+    too (`../engine-042/h7/README.md`).
+
+### settle-check, stderr and scans
+
+- **settle-check** over both step dirs (`settle.txt`): not taken, with 0 entered and 0 second rests, as at H6.
+- **stderr:** each step has Chrome's startup line ("Read channel stable from …"), as at H6. L4c also has one
+  `XGetWindowProperty[_NET_ACTIVE_WINDOW] failed (code=1)`, the same line H6's twice-load steps carry (L2a, L3a, L3b,
+  L4a, L4b) and H⁗'s.
+- **Token-shaped strings** (`scan-evidence.sh` over `h7/`, file names only): 55 files, 0 hits.
+- **Key codes** (`privacy-scan.mjs`): 0 held-code rows and 0 raw minimized codes. It was given no titles: x64's `:0` is
+  the owner's display and was not read.
+- **Window titles:** the structural scan (`title-scan.mjs`, ruling 947) covered `h7/out/` (29 files: 432 JSON fields
+  and 4 quoted strings on text lines). All 436 values are the harness's own, with 0 not its own (`title-scan.txt`).
+
 ## Corrections
 
 - **The local proof's summary log had false exits** (ruling 774). `scripts/proof-all.sh` wrote
@@ -1041,6 +1185,9 @@ No step outside class A reads taken.
 - `h6/`: task 123's reruns at H6 on 0.4.2 (above): `out/` the counted private steps, `zero/` V5's `:0` sitting, and
   `scripts/` its launchers, proof logs, item 9, cross-check, settle readings, canary and late-take extracts, scans and
   lock lines. Logs are kept as `.log.txt`, since the repository ignores `*.log`.
+- `h7/`: task 129's counted reruns of C1 and L4c at H7 on 0.4.2 (above). `out/` holds the two step directories, the
+  driver's log and `print/`, the print's stubs. `scripts/` holds the setup, the home's check, the printed commands, the
+  driver and step launcher, the band, binding and late-take extracts, settle-check, the scans and the lock lines.
 - `scripts/`: task 89's launchers and records as they ran.
   - The setup, the home, item 9 and its transcript.
   - The local proof and its logs (`proof/`).

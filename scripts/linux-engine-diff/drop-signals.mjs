@@ -266,6 +266,11 @@ export const LANES = {
   // Chrome raised, not activated: a drag the engine watches (its guard) and releases at the path's end (V5's guarded
   // lost motion)
   'cua:guarded': { args: [], guarded: true },
+  // m5-a959 (task 122, ruling 964), a development branch, never a counted head: the vendor builds as lanes, each drag
+  // the same `drag` request on the same window and path, the engine `--vendor` or `--newest` names (as the drag
+  // experiment's `dragEngines` builds its vendor lanes), with no flags of cua's and no `--stats`
+  pinned: { args: [], vendor: 'vendor' },
+  newest: { args: [], vendor: 'newest' },
 };
 
 /** One drag of a `desktop` lane: `drag` with no window, the path in screen coordinates. */
@@ -343,6 +348,9 @@ export const PLANS = {
   // the long-path accepted-then-left control on the engine as it ships: 100 a load at idle and twice the load, 30 at
   // the gate's window load
   't14-long': [['cua', 'long-left', 100]],
+  // m5-a959 (ruling 964): the same cell on the pinned and newest vendor builds and cua, 100 each, the lanes taking turns
+  // block by block (`blockPlan`)
+  't14-long-vendor': [['pinned', 'long-left', 100], ['newest', 'long-left', 100], ['cua', 'long-left', 100]],
   't14-long-gate': [['cua', 'long-left', 30]],
   // #264's real late takes (the design session's ruling 4, 2026-11-10): task 68's reproduction, the run's own browser
   // stopped from 60 ms after the request to 250 ms (its late takes came there), on a drag the engine lets drop; run on
@@ -730,7 +738,8 @@ export async function runDropSignals(args, { desktop, emit }) {
       const { cover } = splitCell(block.cell);
       if (Boolean(cover) !== Boolean(lane.cover)) throw new Error(`${block.lane} ${block.cell}: a covered cell runs on the cover lane, and only there`);
       const env = splitCell(block.cell).base === 'moved' ? moveHook(process.env, ends.moved) : undefined;
-      const fresh = () => new Engine({ label: block.lane, bin: args.cua, args: lane.args, stats: true, env }).start();
+      if (lane.vendor && !args[lane.vendor]) throw new Error(`the ${block.lane} lane needs --${lane.vendor}`);
+      const fresh = () => new Engine({ label: block.lane, bin: lane.vendor ? args[lane.vendor] : args.cua, args: lane.args, stats: !lane.vendor, env }).start();
       let engine = lane.gate ? null : fresh();
       try {
         let before = await readStatus(desktop, scene);

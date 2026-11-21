@@ -1,0 +1,82 @@
+name: probe-453
+# Disposable #453 kit (scripts/probe-453/README.md), on #337's and #458's. A push of this file only registers the workflow
+# on its branch; the hosted macOS run goes on dispatch, with the engine built unmodified from an exact SHA.
+on:
+  push:
+    branches: ['probe/453-measure']
+    paths: ['.github/workflows/probe-453.yml']
+  workflow_dispatch:
+    inputs:
+      engine:
+        description: Exact 40-character engine SHA
+        required: true
+        type: string
+      reps:
+        description: Repetitions per cell
+        type: string
+        default: '6'
+      only:
+        description: Comma list of regexes on cell names (overlay/mode/delivery); empty runs every cell
+        type: string
+        default: ''
+permissions:
+  contents: read
+jobs:
+  register:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo 'Registered; the measurement runs on dispatch with an exact engine SHA.'
+  measure:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: macos-latest
+    timeout-minutes: 170
+    env:
+      ENGINE_SHA: ${{ inputs.engine }}
+      REPS: ${{ inputs.reps }}
+      ONLY: ${{ inputs.only }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Apps
+        run: |
+          bash scripts/probe-316/install.sh chrome
+          defaults write com.apple.TextEdit ApplePersistenceIgnoreState -bool YES
+          defaults write com.apple.TextEdit NSQuitAlwaysKeepsWindows -bool NO
+      - name: Build the engine and the tool
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          [[ "$ENGINE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse "$ENGINE_SHA^{commit}")" = "$ENGINE_SHA"
+          sw_vers
+          git log -1 --format='kit %H %s'
+          swiftc -O -o "$RUNNER_TEMP/tool453" scripts/probe-453/tool.swift
+          git worktree add --detach "$RUNNER_TEMP/src-main" "$ENGINE_SHA"
+          git -C "$RUNNER_TEMP/src-main" log -1 --format='main %H %s'
+          echo "main tree status: [$(git -C "$RUNNER_TEMP/src-main" status --porcelain 2>&1 | head -20)]"
+          swift build -c release --package-path "$RUNNER_TEMP/src-main/native/engine" --scratch-path "$RUNNER_TEMP/eng-main"
+      - name: Measure
+        shell: bash
+        run: |
+          extra=()
+          if [ -n "$ONLY" ]; then extra+=(--only "$ONLY"); fi
+          P453_ENGINE_REF="$ENGINE_SHA" node scripts/probe-453/deliver.mjs --engine "$RUNNER_TEMP/eng-main/release/cua-engine" \
+            --tool "$RUNNER_TEMP/tool453" --out "$RUNNER_TEMP/probe-453" --reps "${REPS:-6}" --budget 140 "${extra[@]}"
+          node scripts/probe-453/summary.mjs "$RUNNER_TEMP/probe-453/results.json" | tee "$RUNNER_TEMP/probe-453/summary.txt"
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: probe-453
+          path: |
+            ${{ runner.temp }}/probe-453/*.txt
+            ${{ runner.temp }}/probe-316/install.txt
+            ${{ runner.temp }}/probe-453/results.json
+            ${{ runner.temp }}/probe-453/screens/*.jpg
+            ${{ runner.temp }}/probe-453/shots/**/*.jpg
+            ${{ runner.temp }}/probe-453/shots/**/*.png
+          if-no-files-found: warn

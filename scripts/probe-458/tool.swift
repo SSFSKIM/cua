@@ -1,4 +1,5 @@
-// #458's side tool: #454's (scripts/probe-454/tool.swift) with `state` added; scripts/probe-458/closed.mjs runs it
+// #458's side tool: #454's (scripts/probe-454/tool.swift) with `state`, `watch`, `order`, `restore` and `cancel` added;
+// scripts/probe-458/closed.mjs and restore.mjs run it
 // as a child of the job shell, which holds the runner image's Accessibility and Screen Recording grants. A line server on stdin, one JSON answer per line on stdout. Nothing here but
 // `hover` posts input. It reads what a narrower detector could read at click time, and the native apps' ground truth.
 //   {"op":"signals","pid","x","y","window":[x,y,w,h]}  at a point about to be clicked: the on-screen window list front to
@@ -38,8 +39,12 @@
 //   {"op":"state","pid"}                     the opener's value, AXExpanded, AXFocused, actions and its AXMenu children
 //       (frame, item count); the app's AXFrontmost, its focused element (and whether it is the opener), its focused
 //       window's frame; the on-screen layer-0 windows front to back (owner, pid, number), the top 6
-//   {"op":"watch","pid","ms"}                the window list sampled every 10 ms: each change of the app's menu-level
-//       windows and of the frontmost layer-0 window's owner (run on a second tool while the first or the engine acts)
+//   {"op":"watch","pid","ms","target","user","skip"}  the window list sampled every 10 ms: each change of the app's
+//       menu-level windows, of whether `target` is in front of `user`, and of the layer-0 order (run on a second tool)
+//   {"op":"order","skip"}                    the on-screen layer-0 windows front to back
+//   {"op":"restore","user","target","hold"}  route 3's repair by the kit: AXRaise on the user app's focused window while
+//       `target` is in front of it, inside a screen-update hold
+//   {"op":"cancel","pid"}                    AXCancel on the app's open menu (else its first item)
 import AppKit
 import ApplicationServices
 import Foundation
@@ -698,29 +703,118 @@ func state(_ q: [String: Any]) -> [String: Any] {
   return out
 }
 
-/// {"op":"watch","pid","ms"}: the window list sampled every 10 ms for `ms`: each change of (the app's on-screen windows at
-/// layer >= 100 and at least 20 pt each way, the frontmost layer-0 window's owner pid and number), as [ms since start,
-/// count, pid, number].
+/// {"op":"watch","pid","ms","target","user","skip":[pid]}: the window list sampled every 10 ms for `ms`: each change of
+/// (the app's on-screen windows at layer >= 100 and at least 20 pt each way, whether window `target` is in front of window
+/// `user`, the layer-0 order of every window not owned by a `skip` pid, as their numbers front to back) as
+/// [ms since start, menus, above, order or null when unchanged]; and the time `target` spent in front of `user`.
 func watch(_ q: [String: Any]) -> [String: Any] {
   guard let pid = (q["pid"] as? NSNumber)?.int32Value else { return ["error": "args"] }
   let ms = (q["ms"] as? NSNumber)?.doubleValue ?? 2000
+  let target = (q["target"] as? NSNumber)?.intValue ?? -1, user = (q["user"] as? NSNumber)?.intValue ?? -1
+  let skip = Set((q["skip"] as? [NSNumber] ?? []).map { $0.int32Value })
   let t0 = nowMs()
-  var samples: [[Any]] = [], last = "", reads = 0
+  var samples: [[Any]] = [], last = "", lastOrder = "", reads = 0
+  var aboveMs = 0.0, aboveSince: Double? = nil, firstAbove: Double? = nil, lastAboveEnd: Double? = nil
   while nowMs() - t0 < ms {
     let list = (CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]) ?? []
+    let t = nowMs() - t0
     reads += 1
     let menus = list.filter { w in
       let b = rectOf(w)
       return ((w[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value ?? 0) == pid && ((w[kCGWindowLayer as String] as? NSNumber)?.intValue ?? 0) >= 100 && b.width >= 20 && b.height >= 20
     }.count
-    let front = list.first { (($0[kCGWindowLayer as String] as? NSNumber)?.intValue ?? 0) == 0 }
-    let top = (front?[kCGWindowOwnerPID as String] as? NSNumber)?.intValue ?? 0
-    let topN = (front?[kCGWindowNumber as String] as? NSNumber)?.intValue ?? 0
-    let key = "\(menus)|\(top)|\(topN)"
-    if key != last { samples.append([r1(nowMs() - t0), menus, top, topN]); last = key }
+    let zero = list.filter { (($0[kCGWindowLayer as String] as? NSNumber)?.intValue ?? 0) == 0 && !skip.contains((($0[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value ?? 0)) }
+    let numbers = zero.map { ($0[kCGWindowNumber as String] as? NSNumber)?.intValue ?? 0 }
+    let ti = numbers.firstIndex(of: target), ui = numbers.firstIndex(of: user)
+    let above = ti != nil && ui != nil && ti! < ui!
+    if above { if aboveSince == nil { aboveSince = t; if firstAbove == nil { firstAbove = t } } }
+    else if let since = aboveSince { aboveMs += t - since; aboveSince = nil; lastAboveEnd = t }
+    let order = numbers.map(String.init).joined(separator: ",")
+    let key = "\(menus)|\(above)|\(order)"
+    if key != last {
+      samples.append([r1(t), menus, above, order == lastOrder ? NSNull() : numbers])
+      last = key; lastOrder = order
+    }
     usleep(10_000)
   }
-  return ["samples": samples, "reads": reads]
+  if let since = aboveSince { aboveMs += nowMs() - t0 - since }
+  return ["samples": samples, "reads": reads, "aboveMs": r1(aboveMs), "firstAbove": firstAbove.map(r1) ?? NSNull(),
+          "lastAboveEnd": lastAboveEnd.map(r1) ?? NSNull(), "aboveAtEnd": aboveSince != nil]
+}
+
+/// {"op":"order","skip":[pid]}: the on-screen layer-0 windows front to back (number, owner pid and name, bounds), but
+/// those of the `skip` pids.
+func order(_ q: [String: Any]) -> [String: Any] {
+  let skip = Set((q["skip"] as? [NSNumber] ?? []).map { $0.int32Value })
+  let list = (CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]) ?? []
+  let rows = list.filter { (($0[kCGWindowLayer as String] as? NSNumber)?.intValue ?? 0) == 0 && !skip.contains((($0[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value ?? 0)) }
+    .map { w -> [String: Any] in
+      ["n": (w[kCGWindowNumber as String] as? NSNumber)?.intValue ?? 0, "pid": (w[kCGWindowOwnerPID as String] as? NSNumber)?.intValue ?? 0,
+       "owner": short(w[kCGWindowOwnerName as String] as? String), "bounds": wire(rectOf(w))]
+    }
+  return ["windows": rows]
+}
+
+private enum Sky {
+  typealias ConnectionID = @convention(c) () -> Int32
+  typealias Update = @convention(c) (Int32) -> Int32
+  static let main: ConnectionID? = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "SLSMainConnectionID").map { unsafeBitCast($0, to: ConnectionID.self) }
+  static let disable: Update? = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "SLSDisableUpdate").map { unsafeBitCast($0, to: Update.self) }
+  static let reenable: Update? = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "SLSReenableUpdate").map { unsafeBitCast($0, to: Update.self) }
+}
+func windowInFront(_ a: Int, of b: Int) -> Bool {
+  let list = (CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]) ?? []
+  for w in list {
+    let n = (w[kCGWindowNumber as String] as? NSNumber)?.intValue ?? 0
+    if n == a { return true }
+    if n == b { return false }
+  }
+  return false
+}
+/// {"op":"restore","user":pid,"target":n,"hold":bool}: route 3's delivery-guard repair (engine Activation.swift
+/// `deliver`: `guardedUser` -> `ActivationSystem.userWindow` + `raise`), done by the kit: the user app's focused window
+/// (AXFocusedWindow, its number matched in the window list by pid and frame), then, inside a screen-update hold
+/// (SLSDisableUpdate .. SLSReenableUpdate) when `hold`, sampled every 2 ms: while window `target` is in front of it, AXRaise
+/// on it; ends on 3 stable samples no sooner than 60 ms, or at 1000 ms.
+func restoreOrder(_ q: [String: Any]) -> [String: Any] {
+  guard let user = (q["user"] as? NSNumber)?.int32Value, let target = (q["target"] as? NSNumber)?.intValue else { return ["error": "args"] }
+  let t0 = nowMs()
+  let app = prepare(AXUIElementCreateApplication(user))
+  guard let win = element(attr(app, kAXFocusedWindowAttribute)), let f = frameOf(win) else { return ["error": "no focused window", "ms": r1(nowMs() - t0)] }
+  let list = (CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]) ?? []
+  guard let userN = list.first(where: { (($0[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value ?? 0) == user && (($0[kCGWindowLayer as String] as? NSNumber)?.intValue ?? 0) == 0 && near(rectOf($0), f, 3) })
+    .flatMap({ ($0[kCGWindowNumber as String] as? NSNumber)?.intValue }) else { return ["error": "focused window not on screen", "frame": wire(f)] }
+  let found = nowMs() - t0
+  let hold = (q["hold"] as? Bool) == true
+  var held = false
+  if hold, let c = Sky.main?(), let d = Sky.disable { _ = d(c); held = true }
+  let tHold = nowMs()
+  let firstAbove = windowInFront(target, of: userN)
+  var raises: [Int32] = [], stable = 0
+  while (stable < 3 || nowMs() - tHold < 60) && nowMs() - tHold < 1000 {
+    if windowInFront(target, of: userN) { raises.append(AXUIElementPerformAction(win, kAXRaiseAction as CFString).rawValue); stable = 0 }
+    else { stable += 1 }
+    usleep(2_000)
+  }
+  let lastAbove = windowInFront(target, of: userN)
+  if held, let c = Sky.main?(), let r = Sky.reenable { _ = r(c) }
+  return ["userWindow": userN, "userFrame": wire(f), "firstAbove": firstAbove, "lastAbove": lastAbove, "raises": raises,
+          "held": held, "findMs": r1(found), "loopMs": r1(nowMs() - tHold), "ms": r1(nowMs() - t0)]
+}
+
+/// {"op":"cancel","pid"}: AXCancel on the app's open menu (the first AXMenu `openMenus` finds holding items), else on its
+/// first item.
+func cancel(_ q: [String: Any]) -> [String: Any] {
+  guard let pid = (q["pid"] as? NSNumber)?.int32Value else { return ["error": "args"] }
+  guard let m = openMenus(pid).first(where: { elements(attr($0, kAXChildrenAttribute)).contains { role($0) == "AXMenuItem" } }) else { return ["error": "no open menu"] }
+  let t0 = nowMs()
+  let onMenu = AXUIElementPerformAction(m, kAXCancelAction as CFString).rawValue
+  var out: [String: Any] = ["menu": onMenu, "menuActions": actionList(m)]
+  if onMenu != 0, let item = elements(attr(m, kAXChildrenAttribute)).first(where: { role($0) == "AXMenuItem" }) {
+    out["item"] = AXUIElementPerformAction(item, kAXCancelAction as CFString).rawValue
+  }
+  out["ms"] = r1(nowMs() - t0)
+  return out
 }
 
 while let line = readLine() {
@@ -748,6 +842,9 @@ while let line = readLine() {
   case "select": emit(selectPhrase(q))
   case "state": emit(state(q))
   case "watch": emit(watch(q))
+  case "order": emit(order(q))
+  case "restore": emit(restoreOrder(q))
+  case "cancel": emit(cancel(q))
   default: emit(["error": "unknown op"])
   }
 }

@@ -390,6 +390,14 @@ async function runRow(app, menuName, mode, route, rep) {
     w = await connect(mode.desktop);
     const sky0 = await observe(w, pid, `${lab}-obs`);
     const wf = sky0.window.frame;
+    // TextEdit's font-size combo box, for #458's fix (the arrow as its trailing AXButton child): the kit's AX read and
+    // the observation's nodes inside the combo's frame, in a few rows.
+    if (menuName === 'font' && rep <= 2) {
+      const cb = await ask({op: 'combo', pid});
+      const cf = rect(cb.frame);
+      row.combo = {ax: cb, nodes: cf ? (sky0.nodes ?? []).filter(x => x.frame && within(x.frame, cf)).map(x => ({role: x.role, subrole: x.subrole ?? null, frame: x.frame, actions: x.actions,
+        trailingGap: Math.round((cf.x + cf.width - x.frame.x - x.frame.width) * 10) / 10})) : null};
+    }
     const n = mn.node(sky0);
     if (!n) { row.problem = 'no pop-up button in the observation'; return; }
     const remembered = await ask({op: 'open', pid, find: mn.find});

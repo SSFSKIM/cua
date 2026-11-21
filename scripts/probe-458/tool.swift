@@ -45,6 +45,7 @@
 //   {"op":"restore","user","target","hold"}  route 3's repair by the kit: AXRaise on the user app's focused window while
 //       `target` is in front of it, inside a screen-update hold
 //   {"op":"cancel","pid"}                    AXCancel on the app's open menu (else its first item)
+//   {"op":"combo","pid"}                     the first AXComboBox's frame and its children's frames (the arrow's)
 import AppKit
 import ApplicationServices
 import Foundation
@@ -830,6 +831,27 @@ func cancel(_ q: [String: Any]) -> [String: Any] {
   return out
 }
 
+/// {"op":"combo","pid"}: the app's first AXComboBox (its windows breadth-first): its frame and actions, and each child's
+/// role, subrole, frame, actions and trailing gap (the combo's right edge less the child's).
+func combo(_ q: [String: Any]) -> [String: Any] {
+  guard let pid = (q["pid"] as? NSNumber)?.int32Value else { return ["error": "args"] }
+  let app = prepare(AXUIElementCreateApplication(pid))
+  var queue = elements(attr(app, kAXWindowsAttribute)), head = 0
+  while head < queue.count && queue.count < 4000 {
+    let e = queue[head]; head += 1
+    if role(e) == "AXComboBox", let f = frameOf(e) {
+      let kids = elements(attr(e, kAXChildrenAttribute)).map { k -> [String: Any] in
+        var d = describe(k); d["actions"] = actionList(k)
+        if let kf = frameOf(k) { d["trailingGap"] = r1(Double(f.maxX - kf.maxX)); d["leadingFromComboX"] = r1(Double(kf.minX - f.minX)) }
+        return d
+      }
+      return ["frame": wire(f), "actions": actionList(e), "value": short(str(e, kAXValueAttribute)), "children": kids]
+    }
+    queue.append(contentsOf: elements(attr(e, kAXChildrenAttribute)))
+  }
+  return ["error": "no combo box"]
+}
+
 while let line = readLine() {
   guard let data = line.data(using: .utf8), let q = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { emit(["error": "bad request"]); continue }
   textWindowFrame = (q["window"] as? [Double]).flatMap { $0.count == 4 ? CGRect(x: $0[0], y: $0[1], width: $0[2], height: $0[3]) : nil }
@@ -858,6 +880,7 @@ while let line = readLine() {
   case "order": emit(order(q))
   case "restore": emit(restoreOrder(q))
   case "cancel": emit(cancel(q))
+  case "combo": emit(combo(q))
   default: emit(["error": "unknown op"])
   }
 }

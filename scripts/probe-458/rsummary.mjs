@@ -48,5 +48,7 @@ console.log('\nrestore steps that failed or left the window in front:');
 for (const r of results) for (const s of r.steps.filter(s => s.step.startsWith('restore') && (s.error || s.lastAbove || s.raises?.some(x => x !== 0)))) console.log(`  ${r.label} ${s.step}: ${JSON.stringify(s)}`);
 console.log('\nother steps answered:', tally(results.flatMap(r => r.steps.filter(s => !s.step.startsWith('restore')).map(s => `${r.menu} ${s.step}: ${s.error ?? (s.menu != null ? `AXCancel menu ${s.menu}${s.item != null ? ` item ${s.item}` : ''}` : 'ok')}${s.meta?.menuItemClick ? ` [${s.meta.menuItemClick.effect}]` : ''}`))));
 console.log('open answers:', tally(results.filter(r => r.open).map(r => `${r.menu}/${r.mode}: ${r.open.error ?? 'ok'} route ${r.open.route}`)));
+console.log('\nTextEdit font-size combo box (kit AX read; observation nodes inside its frame):');
+for (const r of results.filter(r => r.combo).slice(0, 4)) console.log(`  ${r.label}: ${JSON.stringify(r.combo)}`);
 console.log('\nproblems, exceptions:');
 for (const r of results.filter(r => r.problem || r.exception)) console.log(`  ${r.label}: ${r.problem ?? r.exception.split('\n')[0].slice(0, 200)}`);

@@ -11,25 +11,25 @@ for (const file of process.argv.slice(2)) {
   const groups = new Map();
   for (const r of results) { if (!groups.has(r.cell)) groups.set(r.cell, []); groups.get(r.cell).push(r); }
   console.log('### Deliveries\n');
-  console.log('| cell | rows | measured | where it went | row taken = row clicked | reached the window beneath | frontmost changed | observed window over the cover | person\'s key/main window changed | kit answer |');
-  console.log('|---|---|---|---|---|---|---|---|---|---|');
+  console.log('| cell | rows | measured | where it went | row taken = row clicked | reached the window beneath | frontmost changed | observed window over the cover | others\' window order moved | person\'s key/main window changed | kit answer |');
+  console.log('|---|---|---|---|---|---|---|---|---|---|---|');
   for (const [cell, rs] of groups) {
     if (rs[0].delivery === 'idle' || rs[0].delivery === 'type') continue;
     const m = rs.filter(r => r.landing);
-    const person = m.filter(r => { const ps = r.watch?.person ?? []; return ps.some(x => frameKey(x[1]) !== frameKey(ps[0][1]) || frameKey(x[2]) !== frameKey(ps[0][2])); }).length;
+    const person = m.filter(r => { const ps = (r.watch?.person ?? []).filter(x => x[1] !== null || x[2] !== null); return ps.some(x => frameKey(x[1]) !== frameKey(ps[0][1]) || frameKey(x[2]) !== frameKey(ps[0][2])); }).length;
     const answer = tally(m.map(r => r.click?.error ? `error:${r.click.error}` : r.click?.result != null ? `AXError ${r.click.result}${r.click.listed === false ? ' (not listed)' : ''} on ${r.click.pressed?.role}` : r.click?.posted != null ? `posted ${r.click.posted}${r.click.activated ? '+act' : ''}` : 'ok'));
-    console.log(`| ${cell} | ${rs.length} | ${m.length} | ${tally(m.map(r => r.landing))} | ${tally(m.filter(r => r.takenRow != null).map(r => String(r.takenRow)))} | ${m.filter(r => r.reachedBeneath).length}/${m.length} | ${m.filter(r => r.frontChanged).length}/${m.length} (${tally(m.map(r => `${r.frontAtObs}->${r.after?.front}`))}) | ${m.filter(r => r.watch?.aboveMs > 0).length}/${m.length} | ${person}/${m.length} | ${answer} |`);
+    console.log(`| ${cell} | ${rs.length} | ${m.length} | ${tally(m.map(r => r.landing))} | ${tally(m.filter(r => r.takenRow != null).map(r => String(r.takenRow)))} | ${m.filter(r => r.reachedBeneath).length}/${m.length} | ${m.filter(r => r.frontChanged).length}/${m.length} (${tally(m.map(r => `${r.frontAtObs}->${r.after?.front}`))}) | ${m.filter(r => r.watch?.aboveMs > 0).length}/${m.length} | ${m.filter(r => r.watch?.orderMoved).length}/${m.length} | ${person}/${m.length} | ${answer} |`);
   }
   console.log('\nproblems:', tally(results.filter(r => r.problem || r.exception).map(r => `${r.cell}: ${r.problem ?? r.exception.split('\n')[0].slice(0, 80)}`)));
   console.log('\n### Identity (just before the click, the hit at the point against the row picked at the observation)\n');
-  console.log('| overlay | mode | rows | hit role | hit\'s window = overlay | row text same | row frame same | overlay window number same | pick | observation tree: nodes in the overlay / a row\'s text in it |');
+  console.log('| overlay | mode | rows | hit role (three hit-tests, 40 ms apart) | hit\'s window = overlay | row text same | row frame same | overlay window number same | pick | observation tree: nodes in the overlay / a row\'s text in it |');
   console.log('|---|---|---|---|---|---|---|---|---|---|');
   const byOM = new Map();
   for (const r of results.filter(r => r.identity)) { const k = `${r.overlay}|${r.mode}`; if (!byOM.has(k)) byOM.set(k, []); byOM.get(k).push(r); }
   for (const [k, rs] of byOM) {
     const [o, mode] = k.split('|');
     const winIs = rs.filter(r => r.identity.hitWindow && r.overlayAtObs?.popup && frameKey(r.identity.hitWindow) === frameKey(r.overlayAtObs.popup.bounds)).length;
-    console.log(`| ${o} | ${mode} | ${rs.length} | ${tally(rs.map(r => r.identity.hitRole))} | ${winIs}/${rs.length} | ${tally(rs.map(r => String(r.identity.sameText)))} | ${tally(rs.map(r => String(r.identity.sameFrame)))} | ${tally(rs.map(r => String(r.identity.sameWindow)))} | ${tally(rs.map(r => `${r.pick?.by}:${r.pick?.role}#${r.pick?.index ?? ''}/${r.pick?.count ?? ''}`))} | ${tally(rs.map(r => `${r.observation?.nodesInOverlay}/${r.observation?.rowTextInTree}`))} |`);
+    console.log(`| ${o} | ${mode} | ${rs.length} | ${tally(rs.map(r => (r.identity.roles ?? [r.identity.hitRole]).join('>')))} | ${winIs}/${rs.length} | ${tally(rs.map(r => String(r.identity.sameText)))} | ${tally(rs.map(r => String(r.identity.sameFrame)))} | ${tally(rs.map(r => String(r.identity.sameWindow)))} | ${tally(rs.map(r => `${r.pick?.by}:${r.pick?.role}#${r.pick?.index ?? ''}/${r.pick?.count ?? ''}`))} | ${tally(rs.map(r => `${r.observation?.nodesInOverlay}/${r.observation?.rowTextInTree}`))} |`);
   }
   console.log('\n### The overlay between the observation and the click (delivery rows) and in the timing cells\n');
   console.log('| overlay | mode | kind | rows | delay ms p50 | gone before the end | window changes (n, bounds, alpha) p50/max | row layouts p50/max | AX read ms avg p50 / max | windows seen |');

@@ -227,10 +227,11 @@ const OVERLAYS = {
   omnibox: {
     app: 'chrome',
     open: async c => { await c.key('cmd+l'); await c.type(`${URL_}results-`); },
-    // A row other than the default where there is one (the second), else the first; its text names the URL it takes.
+    // A row other than the default that loads a page of the kit's: /results-beta's history row (the smoke run's second
+    // row was the search one, which loads Google), else the last row; its text names the URL it takes.
     inside: (pop, rows) => {
       const bands = omniRows(rows);
-      const c = bands[bands.length > 1 ? 1 : 0];
+      const c = bands.find(b => /results-beta/.test(b.text ?? '')) ?? bands[bands.length - 1];
       if (c) return {by: 'ax', role: c.role, text: c.text, frame: c.frame, point: centre(c.f), index: bands.indexOf(c), count: bands.length, all: bands.map(b => b.text)};
       const pr = rect(pop.popup.bounds), strip = pr.y + 34;
       return {by: 'geometry', point: {x: pr.x + pr.width * 0.3, y: strip + (pr.y + pr.height - strip) / 2}, index: -1, count: 0};
@@ -467,14 +468,21 @@ async function runRow(app, cell, rep) {
     row.lifeStartMs = Date.now() - tObs;
     row.life = left > 50 ? await ask2({op: 'life', pid, window: winArr(wf), ms: left, every: 40, rows: true}, 20_000) : null;
     // Q4: what lies under the point now, and the overlay's window now (the one the kit stamps).
-    row.identify = await ask({op: 'identify', pid, x: screen.x, y: screen.y});
+    // Chromium answers its first hit-test into a web area with the web area itself (the smoke run), so three, 40 ms apart.
+    const hits = [];
+    for (let i = 0; i < 3; i++) { hits.push(await ask({op: 'identify', pid, x: screen.x, y: screen.y})); if (i < 2) await sleep(40); }
+    row.identify = hits[hits.length - 1];
+    row.identifyRoles = hits.map(h => h.chain?.[0]?.role ?? null);
     const now = await ask({op: 'overlay', pid, window: winArr(wf)});
     row.overlayAtClick = now.popup ?? null;
-    const chainRow = (row.identify.chain ?? []).find(e => isRow(e.frame, pr));
-    row.identity = {hitRole: row.identify.chain?.[0]?.role ?? null, hitWindow: row.identify.windowFrame ?? null, system: row.identify.system ?? null,
+    // The element up the hit's chain whose frame is the picked one's (within 2 pt), else the first row-sized one.
+    const sameF = f => Array.isArray(f) && Array.isArray(row.pick.frame) && f.every((v, i) => Math.abs(v - row.pick.frame[i]) <= 2);
+    const norm = t => [...new Set(String(t ?? '').split(' | ').map(x => x.trim()).filter(Boolean))].join(' | ');
+    const chainRow = (row.identify.chain ?? []).find(e => sameF(e.frame)) ?? (row.identify.chain ?? []).find(e => isRow(e.frame, pr));
+    row.identity = {hitRole: row.identify.chain?.[0]?.role ?? null, roles: row.identifyRoles, hitWindow: row.identify.windowFrame ?? null, system: row.identify.system ?? null,
       rowText: chainRow?.text ?? null, rowFrame: chainRow?.frame ?? null,
-      sameText: chainRow && row.pick.text ? chainRow.text === row.pick.text : null,
-      sameFrame: chainRow && row.pick.frame ? chainRow.frame.every((v, i) => Math.abs(v - row.pick.frame[i]) <= 2) : null,
+      sameText: chainRow && row.pick.text ? norm(chainRow.text) === norm(row.pick.text) : null,
+      sameFrame: chainRow ? sameF(chainRow.frame) : null,
       sameWindow: now.popup && pop.popup ? now.popup.n === pop.popup.n : null};
     if (!now.popup) { row.problem = 'the overlay closed before the click'; return; }
     // The person's window (the cover's, or none with the app frontmost) for the watch.
@@ -501,7 +509,10 @@ async function runRow(app, cell, rep) {
     row.clickMs = Date.now() - t0;
     const watch = await watching;
     const ps = watch.personSamples ?? [];
-    row.watch = {aboveMs: watch.aboveMs, firstAbove: watch.firstAbove, orderChanges: (watch.samples ?? []).filter((s, i) => i > 0 && s[3] !== null).length,
+    // The layer-0 order but the overlay's own windows (its closing is not a move of anyone's window).
+    const overlayNs = new Set([pop.popup.n, now.popup.n]);
+    const orders = (watch.samples ?? []).filter(x => Array.isArray(x[3])).map(x => x[3].filter(n => !overlayNs.has(n)).join(','));
+    row.watch = {aboveMs: watch.aboveMs, firstAbove: watch.firstAbove, orderMoved: orders.some(o => o !== orders[0]), samples: (watch.samples ?? []).slice(0, 12),
       menus: [...new Set((watch.samples ?? []).map(s => s[1]))], person: ps.slice(0, 20), personChanges: Math.max(0, ps.length - 1), reads: watch.reads};
     const wait = 1500 - (Date.now() - t0); if (wait > 0) await sleep(wait);
     const ev = events.slice(mark);
@@ -524,6 +535,7 @@ async function runRow(app, cell, rep) {
     else if (row.click?.error) row.landing = `kitError:${row.click.error}`;
     else if (ov.taken(ctx)) { row.landing = 'taken'; if (ov.takenRow) row.takenRow = ov.takenRow(ctx); }
     else if (row.after.loads.length) row.landing = `navigated:${row.after.loads.join(',')}`;
+    else if (omniAfter && row.omniboxAtObs && !omniAfter.focused && omniAfter.value !== row.omniboxAtObs.value && !/127\.0\.0\.1/.test(omniAfter.value ?? '')) row.landing = `navigated:${String(omniAfter.value).split(/[/?]/)[0]}`;
     else if (beneath.length) row.landing = `beneath:${[...new Set(beneath)].join(',')}`;
     else if (!after.popup) row.landing = 'dismissed';
     else row.landing = 'nothing';

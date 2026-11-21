@@ -25,6 +25,8 @@ final class PopUpPointTests: XCTestCase {
     var expanded: Bool?
     /// Its AXParent read fails now.
     var parentFails = false
+    /// Runs as its AXExpanded is read (time passing in a read).
+    var onExpandedRead: (() -> Void)?
     weak var parent: Node?
     var children: [Node] = []
 
@@ -56,8 +58,8 @@ final class PopUpPointTests: XCTestCase {
   private var frontmost = false
 
   private var reads: PopUpReads<Node> {
-    PopUpReads(role: { $0.role }, parent: { $0.parentFails ? nil : $0.parent }, enabled: { $0.enabled }, actions: { $0.actions },
-               frame: { $0.frame }, expanded: { $0.expanded }, same: { $0 === $1 })
+    PopUpReads(role: { $0.role }, parent: { $0.parentFails ? nil : $0.parent }, children: { $0.children }, enabled: { $0.enabled }, actions: { $0.actions },
+               frame: { $0.frame }, expanded: { node in node.onExpandedRead?(); return node.expanded }, same: { $0 === $1 })
   }
 
   private func windows() -> [ListedWindow]? {
@@ -314,6 +316,42 @@ final class PopUpPointTests: XCTestCase {
     }) { XCTAssertEqual(($0 as? EngineError)?.errorName, "clickUnconfirmed") }
   }
 
+  /// The baseline holds every window the list held before the press (re-review item 5): one of the app's then hidden
+  /// (alpha 0) or at another layer that shows at the menu layer at the button after it is not the press's menu.
+  func testAWindowInTheBaselineThatLaterShowsAsAMenuIsNotThePressesMenu() {
+    let scene = font()
+    for hidden in [ListedWindow(number: 91, owner: app, layer: menuWindowLayer, bounds: fontFrame, alpha: 0),
+                   ListedWindow(number: 92, owner: app, layer: 0, bounds: CGRect(x: 900, y: 600, width: 10, height: 10))] {
+      list = [hidden, person, appWindow]
+      var meta = freshMeta()
+      XCTAssertThrowsError(try click(decide(hit: scene.popup, scene.verdict, at: fontPoint), meta: &meta) { _, _ in
+        self.list = [ListedWindow(number: hidden.number, owner: self.app, layer: menuWindowLayer, bounds: self.fontFrame), self.appWindow, self.person]
+        return .success
+      }) { XCTAssertEqual(($0 as? EngineError)?.errorName, "clickUnconfirmed", "window \(hidden.number)") }
+    }
+  }
+
+  /// The deadline is checked after the last read before the press (re-review item 6): passed during the AXExpanded or
+  /// window-list read, the press is timeoutReached with nothing pressed, on the unread-baseline path too.
+  func testTheDeadlineIsCheckedAfterTheLastReadBeforeThePress() {
+    let scene = font()
+    for unread in [false, true] {
+      list = [person, appWindow]
+      let decision = decide(hit: scene.popup, scene.verdict, at: fontPoint)
+      var passed = false
+      scene.popup.onExpandedRead = {
+        passed = true
+        if unread { self.list = nil }
+      }
+      defer { scene.popup.onExpandedRead = nil }
+      var meta = freshMeta()
+      XCTAssertThrowsError(try click(decision, meta: &meta, deadlinePassed: { passed }) { _, _ in XCTFail("not pressed"); return .success }) {
+        XCTAssertEqual(($0 as? EngineError)?.errorName, "timeoutReached", "unread baseline \(unread)")
+      }
+      XCTAssertNil(meta.startedAt)
+    }
+  }
+
   // MARK: Refused
 
   /// TextEdit's font-size combo box as measured: its arrow is an AXButton child, hit and recorded alike, resolved to the
@@ -452,19 +490,27 @@ final class PopUpPointTests: XCTestCase {
 
   /// Chrome's `<select>` in a shared-mode page behind is #282's element route (review item 3): it delivers as before, and
   /// on the button the same check runs just before its press, then the effect: confirmed with the order recorded, or
-  /// clickUnconfirmed when no list opens; a route that pressed another control answers as #282's alone.
+  /// clickUnconfirmed when no list opens; a route that pressed another control answers as #282's alone. The press goes
+  /// through `deliverAction` as #282's does: a messaging timeout with the list open is judged by the list (re-review
+  /// item 2), on another control it is still actionFailed, and any other error is actionFailed.
   func testAWebAreaRoutesSelectPressGetsTheSameEffectCheckAndOrder() throws {
     let scene = select()
     guard case .press(let target) = decide(hit: scene.popup, scene.verdict, at: selectPoint) else { return XCTFail("qualifies") }
-    func run(pressing: Node, opens: Bool, meta: inout InputMeta, opened: @escaping (PopUpMenuOrder?) -> Void = { _ in }) throws {
+    func run(pressing: Node, opens: Bool, answer: AXError = .success, meta: inout InputMeta,
+             opened: @escaping (PopUpMenuOrder?) -> Void = { _ in }) throws {
       list = [person, appWindow]
       var clock = 0.0
       try popUpConfirmingRoute(target, app: "Google Chrome", appWindow: observed, pids: [app], ownPid: 999, reads: reads,
-                               windows: { self.list }, now: { clock }, sleep: { clock += $0 }, opened: opened, route: { beforePress, meta in
+                               windows: { self.list }, now: { clock }, sleep: { clock += $0 }, opened: opened,
+                               route: { beforePress, tolerates, meta in
         // #282's route: its hold, then its final checks on the control it presses, then the press.
         try beforePress(pressing, &meta)
-        meta.posting { true }
-        if opens { self.list = [self.selectMenu, self.appWindow, self.person] }
+        try withoutActuallyEscaping(tolerates) { judge in
+          try deliverAction("AXPress", tolerates: judge, perform: { _ in
+            if opens { self.list = [self.selectMenu, self.appWindow, self.person] }
+            return answer
+          }, meta: &meta)
+        }
       }, meta: &meta)
     }
     var order: PopUpMenuOrder?
@@ -476,8 +522,49 @@ final class PopUpPointTests: XCTestCase {
     XCTAssertThrowsError(try run(pressing: scene.popup, opens: false, meta: &none)) {
       XCTAssertEqual(($0 as? EngineError)?.errorName, "clickUnconfirmed")
     }
+    var timedOut = freshMeta()
+    try run(pressing: scene.popup, opens: true, answer: .cannotComplete, meta: &timedOut)
+    XCTAssertEqual(wire(timedOut)?["effect"] as? String, "confirmed", "the observed list decides")
+    XCTAssertEqual(wire(timedOut)?["actionError"] as? Int, Int(AXError.cannotComplete.rawValue))
+    var refused = freshMeta()
+    XCTAssertThrowsError(try run(pressing: scene.popup, opens: false, answer: .actionUnsupported, meta: &refused)) {
+      XCTAssertEqual(($0 as? EngineError)?.errorName, "actionFailed")
+    }
     var other = freshMeta()
     XCTAssertNoThrow(try run(pressing: Node("AXCheckBox"), opens: false, meta: &other))
     XCTAssertNil(other.wire["popUpClick"], "another control pressed: #282's answer alone")
+    var otherTimedOut = freshMeta()
+    XCTAssertThrowsError(try run(pressing: Node("AXCheckBox"), opens: false, answer: .cannotComplete, meta: &otherTimedOut)) {
+      XCTAssertEqual(($0 as? EngineError)?.errorName, "actionFailed", "another control's timeout is #282's")
+    }
+  }
+
+  /// A page pop-up whose recorded AXMenuItems lie off the point (parked offscreen, the deepest node at the point the
+  /// pop-up itself) is no `<select>` by the measured shape (re-review item 3): main's path.
+  func testAPagePopUpWithItsRecordedItemsOffThePointKeepsMainsPath() {
+    let scene = select()
+    var parked = StalePointVerdict<Node>(reason: .sameElement, node: scene.verdict.nodes[2], current: scene.popup, point: selectPoint)
+    parked.nodes = Array(scene.verdict.nodes.prefix(3)) + [
+      recorded(Node("AXMenuItem", frame: CGRect(x: -2000, y: -2000, width: 57, height: 19)), ancestor: 2),
+      recorded(Node("AXMenuItem", frame: CGRect(x: -2000, y: -1981, width: 57, height: 19)), ancestor: 2),
+    ]
+    XCTAssertEqual(recordedPopUp(parked, same: { $0 === $1 })?.holdsOption, false)
+    guard case .notPopUp = decide(hit: scene.popup, parked, at: selectPoint) else { return XCTFail("main's path") }
+  }
+
+  /// A combo box's other child button (a clear button at its leading edge) is not its arrow (re-review item 4): it keeps
+  /// its own click, while the trailing one is still the arrow; with frames unread only a lone button child counts.
+  func testOnlyTheComboBoxsTrailingButtonIsItsArrow() {
+    let scene = combo()
+    let clear = Node("AXButton", frame: CGRect(x: 717, y: 72, width: 16, height: 18), parent: scene.combo)
+    var onClear = StalePointVerdict<Node>(reason: .sameElement, node: recorded(clear, ancestor: 1), current: clear, point: CGPoint(x: 724, y: 81))
+    onClear.nodes = scene.verdict.nodes + [recorded(clear, ancestor: 1)]
+    XCTAssertNil(popUpControl(clear, reads: reads))
+    if case .refuse = decide(hit: clear, onClear, at: CGPoint(x: 724, y: 81)) { XCTFail("the clear button keeps its own click") }
+    guard case .refuse = decide(hit: scene.arrow, scene.verdict, at: arrowPoint) else { return XCTFail("the trailing arrow") }
+    scene.arrow.frame = nil
+    XCTAssertNil(popUpControl(scene.arrow, reads: reads), "frames unread and two buttons: none is taken")
+    scene.combo.children.removeAll { $0 === clear }
+    XCTAssertNotNil(popUpControl(scene.arrow, reads: reads), "frames unread, the lone button")
   }
 }

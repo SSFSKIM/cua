@@ -52,6 +52,8 @@ let popUpRoles: Set<String> = [kAXPopUpButtonRole, kAXComboBoxRole]
 struct PopUpReads<Element> {
   var role: (Element) -> String?
   var parent: (Element) -> Element?
+  /// AXChildren; nil when the read failed.
+  var children: (Element) -> [Element]?
   /// AXEnabled; nil when it does not read.
   var enabled: (Element) -> Bool?
   /// The advertised actions; nil when the read failed.
@@ -68,7 +70,7 @@ private func popUpFrame(_ element: AXUIElement) -> CGRect? { frame(of: element) 
 extension PopUpReads where Element == AXUIElement {
   static var live: PopUpReads<AXUIElement> {
     PopUpReads(role: { attribute($0, kAXRoleAttribute) as? String }, parent: { elementAttribute($0, kAXParentAttribute) },
-               enabled: { (attribute($0, kAXEnabledAttribute) as? NSNumber)?.boolValue },
+               children: childrenRead, enabled: { (attribute($0, kAXEnabledAttribute) as? NSNumber)?.boolValue },
                actions: { establishedActionNames(of: $0) }, frame: popUpFrame,
                expanded: { (attribute($0, kAXExpandedAttribute) as? NSNumber)?.boolValue }, same: { CFEqual($0, $1) })
   }
@@ -81,21 +83,35 @@ enum PopUpControl: Equatable {
   case comboBoxArrow
 }
 
-/// The control a hit names: an AXPopUpButton itself, or the AXComboBox whose arrow (an AXButton child) it is. A hit on
-/// the combo box itself is its text, a text field's: none.
+/// How near the combo box's trailing edge its arrow's frame ends, in points.
+let comboArrowEdgeSlack: CGFloat = 4
+
+/// The control a hit names: an AXPopUpButton itself, or the AXComboBox whose arrow it is. A hit on the combo box itself
+/// is its text, a text field's: none. The arrow is an AXButton child of the combo box at its trailing edge (its frame
+/// ending within `comboArrowEdgeSlack` of the box's, no other button child further right); where either frame does not
+/// read, only the box's one button child is. Any other child button (a clear or accessory button) keeps its own click.
 func popUpControl<Element>(_ hit: Element, reads: PopUpReads<Element>) -> (control: Element, kind: PopUpControl)? {
   switch reads.role(hit) {
   case kAXPopUpButtonRole?: return (hit, .popUpButton)
   case kAXButtonRole?:
-    guard let parent = reads.parent(hit), reads.role(parent) == kAXComboBoxRole else { return nil }
+    guard let parent = reads.parent(hit), reads.role(parent) == kAXComboBoxRole,
+          let buttons = reads.children(parent)?.filter({ reads.role($0) == kAXButtonRole }),
+          buttons.contains(where: { reads.same($0, hit) }) else { return nil }
+    if let box = reads.frame(parent), let arrow = reads.frame(hit) {
+      guard abs(arrow.maxX - box.maxX) <= comboArrowEdgeSlack,
+            !buttons.contains(where: { !reads.same($0, hit) && (reads.frame($0)?.maxX ?? -.infinity) > arrow.maxX }) else { return nil }
+    } else {
+      guard buttons.count == 1 else { return nil }
+    }
     return (parent, .comboBoxArrow)
   default: return nil
   }
 }
 
 /// The pop-up button or combo box the observation recorded at the point (`recordedAtPoint`, #454's search), with what the
-/// record holds around it: an AXMenuItem under it (`holdsOption`: Chrome's `<select>` records its options while closed),
-/// and an AXWebArea above it (`inRecordedWebArea`).
+/// record holds around it: the deepest recorded node at the point an AXMenuItem under it, the hit-test answering above it
+/// (`holdsOption`: Chrome's closed `<select>` over its recorded option, `hitAboveNode`), and an AXWebArea above it
+/// (`inRecordedWebArea`).
 struct RecordedPopUp<Element> {
   let element: Element
   let role: String
@@ -111,17 +127,22 @@ func recordedPopUp<Element>(_ verdict: StalePointVerdict<Element>, same: (Elemen
   guard let index = nodes.firstIndex(where: { node in
     same(node.element, found.element) || recordedHandle.map { same(node.element, $0) } == true
   }) else { return popUp }
-  func ancestors(of start: Int) -> [Int] {
+  func ancestors(from first: Int?) -> [Int] {
     var found: [Int] = []
-    var next = nodes[start].ancestor
+    var next = first
     while let at = next, at < nodes.count, found.count < stalePointAncestorLevels {
       found.append(at)
       next = nodes[at].ancestor
     }
     return found
   }
-  popUp.inRecordedWebArea = ancestors(of: index).contains { nodes[$0].role == "AXWebArea" }
-  popUp.holdsOption = nodes.indices.contains { nodes[$0].role == kAXMenuItemRole && ancestors(of: $0).contains(index) }
+  popUp.inRecordedWebArea = ancestors(from: nodes[index].ancestor).contains { nodes[$0].role == "AXWebArea" }
+  // The measured shape only (re-review of 75fecad2..1d70a333, item 3): the option is the deepest recorded node at the
+  // point, under the pop-up, which the hit-test answers above it (`hitAboveNode`); options recorded elsewhere (parked
+  // off the point) are no evidence.
+  if verdict.reason == .hitAboveNode, let node = verdict.node, node.role == kAXMenuItemRole {
+    popUp.holdsOption = ancestors(from: node.ancestor).contains(index)
+  }
   return popUp
 }
 
@@ -285,17 +306,21 @@ struct PopUpClickRecord: Equatable {
   }
 }
 
-/// The check just before the press, after any hold (the review of edbfbd23..75fecad2, items 5–7): the request's
-/// deadline again, the button still closed (not expanded, no menu window of the app's at it), and the effect's baseline,
-/// the app's menu windows then (nil when the list did not read: the press goes, and cannot be confirmed). A menu opened
+/// The check just before the press, after any hold (the review of edbfbd23..75fecad2, items 5–7, and the re-review's 5
+/// and 6): the button still closed (not expanded, no menu window of the app's at it), the request's deadline checked
+/// after those reads (AXExpanded can take the messaging timeout), on every path out, and the effect's baseline: every
+/// window the list holds then, whatever its layer or alpha, so a window already there that later shows at the menu layer
+/// is never the press's menu (nil when the list did not read: the press goes, and cannot be confirmed). A menu opened
 /// since the decision refuses with nothing pressed.
 func popUpBeforeDispatch<Element>(_ target: PopUpTarget<Element>, app: String, pids: Set<pid_t>, reads: PopUpReads<Element>,
                                   windows: () -> [ListedWindow]?, deadlinePassed: () -> Bool) throws -> Set<CGWindowID>? {
+  let expanded = reads.expanded(target.element)
+  let list = windows()
   if deadlinePassed() { throw popUpDeadlinePassed }
-  if reads.expanded(target.element) == true { throw popUpOpenedSince }
-  guard let list = windows() else { return nil }
+  if expanded == true { throw popUpOpenedSince }
+  guard let list else { return nil }
   if list.contains(where: { isMenuWindow($0, pids: pids) && $0.bounds.intersects(target.near) }) { throw popUpOpenedSince }
-  return Set(list.filter { isMenuWindow($0, pids: pids) }.map(\.number))
+  return Set(list.map(\.number))
 }
 
 /// The press's effect: a window of the app's at the menu layer, absent from `baseline`, over or next to the button, read
@@ -377,35 +402,45 @@ func popUpClick<Element>(_ decision: PopUpPoint<Element>, app: String, route: In
   }
 }
 
-/// #282's element route on a qualifying `<select>` (a shared-mode web page behind, review item 3): the route delivers as
-/// before (`route`, handed the check to run just before its press, on the element it presses), and when it pressed the
-/// button the same baseline, effect, unconfirmed answer and order record follow. A route that pressed another control
-/// answers as #282's alone.
+/// #282's element route on a qualifying `<select>` (a shared-mode web page behind, review item 3): the route delivers
+/// (`route`, handed the check to run just before its press, on the element it presses, and the judgment of a non-success
+/// AX error from that press), and when it pressed the button the same baseline, error handling as the direct route's (a
+/// messaging timeout left to the observed menu, re-review item 2), effect, unconfirmed answer and order record follow. A
+/// route that pressed another control answers as #282's alone.
 func popUpConfirmingRoute<Element>(_ target: PopUpTarget<Element>, app: String, appWindow: CGWindowID?, pids: Set<pid_t>,
                                    ownPid: pid_t = getpid(), reads: PopUpReads<Element>, windows: @escaping () -> [ListedWindow]?,
                                    now: () -> Double, sleep: (Double) -> Void, deadlinePassed: @escaping () -> Bool = { false },
                                    opened: (PopUpMenuOrder?) -> Void,
-                                   route: (_ beforePress: (Element, inout InputMeta) throws -> Void, _ meta: inout InputMeta) throws -> Void,
+                                   route: (_ beforePress: (Element, inout InputMeta) throws -> Void,
+                                           _ tolerates: (AXError) -> Bool, _ meta: inout InputMeta) throws -> Void,
                                    meta: inout InputMeta) throws {
   var armed: Set<CGWindowID>??
+  var actionError: AXError?
   try route({ pressed, meta in
     guard reads.same(pressed, target.element) else { return }
     meta.popUpClick = PopUpClickRecord(role: target.role)
     armed = .some(try popUpBeforeDispatch(target, app: app, pids: pids, reads: reads, windows: windows, deadlinePassed: deadlinePassed))
+  }, { error in
+    guard armed != nil else { return false }
+    actionError = error
+    return menuItemAmbiguousErrors.contains(error)
   }, &meta)
   guard let baseline = armed else { return }
   var record = PopUpClickRecord(role: target.role, action: kAXPressAction)
+  record.actionError = actionError?.rawValue
   defer { meta.popUpClick = record }
   try popUpAwaitOpen(target, baseline: baseline, app: app, appWindow: appWindow, pids: pids, ownPid: ownPid, windows: windows,
                      now: now, sleep: sleep, opened: opened, record: &record)
 }
 
-/// The check #282's route runs just before its press (`webAreaPress`'s `beforePress`), set by `popUpConfirmingRoute`
-/// while that route runs; none outside it.
+/// The hooks #282's route runs on its press (`webAreaPress`'s `popUpPress`), set by `popUpConfirmingRoute` while that
+/// route runs; none outside it: the check just before the press, and the judgment of a non-success AX error from it.
 final class PopUpPressChecks {
   var check: ((AXUIElement, inout InputMeta) throws -> Void)?
+  var actionError: ((AXError) -> Bool)?
 
   func run(_ control: AXUIElement, _ meta: inout InputMeta) throws { try check?(control, &meta) }
+  func tolerates(_ error: AXError) -> Bool { actionError?(error) ?? false }
 }
 
 /// #458's unconfirmed answer: the button's AXPress was performed, and no menu of the app's was seen to open at it.

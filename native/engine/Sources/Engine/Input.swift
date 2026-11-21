@@ -244,6 +244,10 @@ struct PointerTarget {
   /// (`backgroundFieldAlternative`).
   var engine: PageEngine = .other
   var elementRoute: ((inout InputMeta) throws -> Void)? = nil
+  /// #458: the route that takes the pointer's place outright, decided before delivery (a qualifying `<select>`'s press on
+  /// #282's element route): run instead of any activation or event, whatever the activation would click, never as a
+  /// fallback the activation's refusal alone reaches (the re-review of 75fecad2..1d70a333, item 1).
+  var pressRoute: ((inout InputMeta) throws -> Void)? = nil
   /// #296's refusal of a stale point (StalePoint.swift), thrown before anything is posted on every path that would post
   /// the pointer's events; nil when the guard kept the point or did not run (an element's own point).
   var staleRefusal: EngineError? = nil
@@ -287,6 +291,10 @@ func deliverPointer(to pid: pid_t, route: InputRoute, activation: FakeActivation
                     pointerPosted: () -> Void = {}, post: (CGEvent, pid_t) -> Void, meta: inout InputMeta, events: () -> [CGEvent]) throws {
   meta.inputRoute = route
   if let stale = pointer.staleRefusal { throw stale }
+  if let pressRoute = pointer.pressRoute {
+    try pressRoute(&meta)
+    return
+  }
   let shared = meta.context.connection.desktop == .shared
   // An earlier action's after-action watch ends before anything of this one happens (its activation included).
   let watches = meta.context.connection.afterAction
@@ -385,12 +393,16 @@ func keyPresses(_ presses: [KeyPress], checkIntervention: () throws -> Void, pos
 
 /// An element's own action, route 1, or route 3 when the held activation came first: performed, and refused as
 /// actionFailed when the element does not accept it (no fall-through to a synthesized click, which could click twice
-/// after an action that took effect and still erred).
-func deliverAction(_ action: String, route: InputRoute = .action, perform: (String) -> AXError, meta: inout InputMeta) throws {
+/// after an action that took effect and still erred). `tolerates` (#458's `<select>` press on #282's route) is handed a
+/// non-success error and answers whether the caller judges it by the action's effect instead.
+func deliverAction(_ action: String, route: InputRoute = .action, tolerates: ((AXError) -> Bool)? = nil, perform: (String) -> AXError,
+                   meta: inout InputMeta) throws {
   meta.inputRoute = route
   var error = AXError.failure
   meta.posting { error = perform(action); return true }
-  guard error == .success else { throw EngineError(name: "actionFailed", "The element did not accept the \(action) action.") }
+  guard error == .success || tolerates?(error) == true else {
+    throw EngineError(name: "actionFailed", "The element did not accept the \(action) action.")
+  }
 }
 
 /// An action's delivery with the deferred settle armed (`acted`, markActed) whenever `meta` says something was posted,
@@ -651,27 +663,30 @@ extension Engine {
           let gate = StalePointGate(first: stale.verdict, record: stale.record) { [self] in
             stalePointRecheck(at: placed.point, shift: stale.shift, window: placed.window, appPid: appPid, app: app, context: context)
           }
-          let checks = PopUpPressChecks()
-          let route = webAreaPress(hit, button: button, count: count, point: placed.point, windowID: windowID, app: app,
-                                   appPid: appPid, guarding: guarding, context: context, stalePoint: gate,
-                                   beforePress: webAreaPopUp == nil ? nil : { control, meta in try checks.run(control, &meta) })
-          if let target = webAreaPopUp, let route {
+          let checks = webAreaPopUp == nil ? nil : PopUpPressChecks()
+          let elementRoute = webAreaPress(hit, button: button, count: count, point: placed.point, windowID: windowID, app: app,
+                                          appPid: appPid, guarding: guarding, context: context, stalePoint: gate, popUpPress: checks)
+          if let target = webAreaPopUp, let checks, let elementRoute {
+            // Decided: the press takes the pointer's place outright, whatever the activation would click (an Electron
+            // page's in-window activation point included), never a posted click behind it.
             let pids: Set<pid_t> = [appPid, ownerPid(of: target.element, fallback: appPid)]
-            pointer.elementRoute = { meta in
+            pointer.pressRoute = { meta in
               try popUpConfirmingRoute(target, app: app.displayName, appWindow: windowID, pids: pids, reads: .live,
                                        windows: onScreenWindowListRead, now: monotonicMilliseconds,
                                        sleep: { usleep(UInt32(max(0, $0) * 1000)) },
                                        deadlinePassed: { unixMilliseconds() >= context.deadline },
-                                       opened: { context.connection.popUpMenuOrders[app.key] = $0 }, route: { beforePress, meta in
+                                       opened: { context.connection.popUpMenuOrders[app.key] = $0 }, route: { beforePress, tolerates, meta in
                 try withoutActuallyEscaping(beforePress) { check in
-                  checks.check = check
-                  defer { checks.check = nil }
-                  try route(&meta)
+                  try withoutActuallyEscaping(tolerates) { judge in
+                    (checks.check, checks.actionError) = (check, judge)
+                    defer { (checks.check, checks.actionError) = (nil, nil) }
+                    try elementRoute(&meta)
+                  }
                 }
               }, meta: &meta)
             }
           } else {
-            pointer.elementRoute = route
+            pointer.elementRoute = elementRoute
           }
         }
         try armingSettle(&meta, acted: { context.connection.markActed(app) }) { meta in

@@ -655,3 +655,104 @@ of the person's windows is unchanged, and Escape closes it 20/20.
   10/10).
 - **The combo box's arrow** has an element action that opens its list behind without raising anything: AXPress on the
   trailing AXButton child, whose trailing gap is exactly 4.0 pt, so the fix's "within 4 pt" has to include 4.
+
+
+## #458 qual: main edbfbd23 against fix/458-popup-press 7e5bb454
+
+Kit `scripts/probe-458/qual.mjs` (tool.swift's `order`, `watch`, `state`, `front`; reader `qreader.mjs`), workflow
+`.github/workflows/probe-458-qual.yml`, one engine head per dispatch, built unmodified. Cells:
+- Delivery: the engine's coordinate click on a closed pop-up: TextEdit's font pop-up, Script Editor's language pop-up,
+  Chrome's `<select>`, and TextEdit's font-size combo box on its arrow. Run in shared-behind, dedicated-behind and
+  shared-front, with layout a. Read at 300 ms and 1.8 s: the app's new windows (a menu's at layer 101; the combo box's
+  list at layer 0), the answer and its meta, the whole layer-0 window order against the one before the click, the
+  frontmost app, and the person's focused window. Then the pick of an item (#454's path), or Escape for the combo box.
+- Restore layouts, font and select, shared-behind. Each is built by bringing each window forward as a person does: AXMain,
+  AXRaise, then the window's app activated with no options, back to front. Each is read back before the click, and every
+  layout was built as intended in all 400 rows:
+  - a: Finder F1 > Finder F2 > the app's window(s) > Calculator;
+  - b: F1 > Calculator > the app's;
+  - c: F1 > F2 > Calculator > F3 > the app's;
+  - d: F1 > the app's > Finder F4, where F4 must stay under the app's window.
+- Parity, 5 rows each: Chrome's page button Beta (behind), an open menu's item (#454; the kit's AXPress opens the font
+  menu), and the combo box's text (behind and frontmost).
+
+A second tool samples the window list every 10 ms. "Cover" is how long the app's window lay above F1.
+
+Runs. Both used Google Chrome 157.0.8103.79, macOS 26.7.2, image 20261117.0516.1 and kit 6d30f534, with 200 rows each,
+10 per cell (parity 5), and no setup failures:
+- main edbfbd233ad9b4496b4d78062e51c0f826f78631: https://github.com/SSFSKIM/cua/actions/runs/44924065133
+- fix 7e5bb454297326700d9bd30f0d83835d5e2cc4e5: https://github.com/SSFSKIM/cua/actions/runs/44929018111
+
+Smokes, fix: https://github.com/SSFSKIM/cua/actions/runs/44920398171 (kit 0cab29ae, 22 rows; its layouts c and d were built
+wrong, so it was rebuilt) and https://github.com/SSFSKIM/cua/actions/runs/44922278566 (kit 6d30f534, layouts b–d, 6 rows).
+Artifacts are in `~/.local/share/probe-458/run-<id>/`.
+
+### Delivery (layout a), main against fix
+
+"Open" means a menu window, or the combo box's list, is still up at 1.8 s. "Order" means the whole window order is
+unchanged at 1.8 s.
+
+| control | mode | main edbfbd23 | fix 7e5bb454 |
+|---|---|---|---|
+| font, language | shared-behind | ok route 3, **open 0/20**; order 0/20 (F2 left under the app's window) | ok `popUpClick {AXPress, confirmed}`, **open 20/20**, pick taken 20/20; order 20/20 |
+| font, language | dedicated-behind | ok, open 0/20; order 0/20 | confirmed, open 20/20, pick taken 20/20; **order 17/20** (3 rows end F2 > F1, the person's focused window changed) |
+| select | shared-behind | ok (#282's AXPress), open 10/10, pick taken (`clickUnconfirmed`); order 0/10 | confirmed 9, **`clickUnconfirmed` 1** (menu open at 1.8 s), pick taken 10/10; order 9/10 |
+| select | dedicated-behind | ok, open 0/10; order 0/10 | confirmed 9, `clickUnconfirmed` 1 (menu open), pick taken 10/10; order 9/10 |
+| combo arrow | shared-behind, dedicated-behind | ok, open 0/20 | `popUpClick {AXPress, confirmed, arrow}`, open 20/20 (list (706, 70, 65×250), layer 0); order 20/20, no restore needed |
+| all four | shared-front | ok route 3, open 40/40, picks taken 30/30 | ok route 1 confirmed, open 40/40, picks taken 30/30 |
+
+There were no false confirmations: confirmed answers came with a menu or list up, 0 exceptions in 200 rows. The two
+`clickUnconfirmed` answers on select were each a menu that opened about 940 ms after the click, past the 500 ms settle
+(`popUpClick.ms` 550, the watch's first menu sample at 943 ms). Neither row was restored, so the app's window stayed over
+F1 for about 4 s, until the reads ended.
+
+### Restore layouts (fix; shared-behind unless named)
+
+| layout | rows | whole order kept at 1.8 s | `restored` | frontmost app / person's focused window | cover ms p50/max |
+|---|---|---|---|---|---|
+| a, shared-behind | 40 | 39/40 | complete 22, `stopped: bound` 7 (order kept in all 7), none 11 (combo 10, the late-select row 1) | Finder 40/40 / kept 40/40 | 98/153 (the late-select row 4075) |
+| a, dedicated-behind | 40 | **36/40** | complete 19, `stopped: bound` 10 (order kept in 7), none 11 | Finder 40/40 / **changed 3** (F2 on top) | 97/185 (late row 4207) |
+| b (Calculator above the app's) | 20 | 20/20 | complete 20 | Finder 20/20 / kept 20/20 | 51/100 |
+| c (F1 > F2 > Calculator > F3) | 20 | **0/20** | **`stopped: bound` 20/20** | Finder 20/20 / **changed 11/20** | 147/233 |
+| d (F4 under the app's) | 20 | 20/20 (F4 stays under) | complete 20 (1 window) | Finder 20/20 / kept 20/20 | 40/129 |
+
+`restored.ms`: p50 66 in b and d, 243–398 in a, 518–535 in c. `stopped: personInput` and `stopped: unresolved` were never
+seen. On main nothing restores the order once a menu is open: select shared-behind keeps the app's window over F1 for the
+whole watch (~4.7 s) in every layout, and is order 0/10 in a, b, c and d. Main's font clicks open nothing; route 3 puts
+F1 back but not F2 or Calculator (a 0/10, b 0/10, c 0/10, d 10/10).
+
+**Why `stopped: bound`** (watch samples): in layout a the raises of F2 and F1 keep landing after the restore's own reads.
+The order then flips F1 > F2, F2 > F1, F1 > F2 … every 30–150 ms, for up to 1 s, past the 500 ms bound, and the last raise
+to land decides which Finder window ends on top. The restore keeps re-raising both windows while it reads the order wrong
+(6–11 AXRaises in those rows). In layout c, Calculator's raise does not go back above F3, the person's active app's
+window (an AXRaise of a background app's window stays under the active app's), so the order never reads right. The
+re-raises then leave F3 or F2 on top in 11 of 20 rows. #458's restore kit ran its restore ~900 ms after the open and saw
+neither in 180/180 (layouts with only the active app's windows above).
+
+### Parity (5 rows each, main / fix)
+
+| cell | main | fix |
+|---|---|---|
+| Chrome's Beta button, behind | ok route 3, page `mousedown, focusin, click` on b2 5/5 | the same 5/5 |
+| an open menu's item (#454) | ok route 1 5/5 | the same 5/5 |
+| combo box text, behind | ok route 3, focus to the AXComboBox 5/5 (order: F2 left under the app's, as main's route 3 always does) | the same 5/5 |
+| combo box text, frontmost | ok route 3, AXComboBox 5/5 | the same 5/5 |
+
+No regression: nothing main kept is refused or changed by the fix.
+
+### Reading
+
+- **Delivery is fixed.** Every closed pop-up and the combo box's arrow opens behind in both modes. The fix answers
+  confirmed 138/140 behind and 40/40 frontmost, with no false confirmed. #454's pick takes the item every time (90/90
+  AppKit, 60/60 Chrome, the latter `clickUnconfirmed` as on main). Main opens nothing behind except Chrome's `<select>`
+  in shared mode.
+- **Chrome's `<select>` sometimes opens late:** 2/20 rows opened at ~940 ms, past the 500 ms settle. The answer was then
+  `clickUnconfirmed`, and the person's order was left covered because no restore ran.
+- **The restore is whole and fast when only one other app's windows are above and they settle quickly** (b and d 40/40,
+  a shared 39/40). But:
+  - it ends on `stopped: bound` in 17/80 of layout a's rows, from raises that land late and flip F1 and F2;
+  - in dedicated mode it left F2 above F1 (the person's focused window changed) in 3/40;
+  - with the person's windows interleaved with a third app's (c) it never restores (0/20) and changes the person's
+    focused window in 11/20.
+- No row activated anything: the frontmost app stayed the person's in all 400. The app's AXFrontmost reads true after
+  the fix's route 3 press, as after main's element click.

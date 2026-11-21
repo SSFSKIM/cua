@@ -235,3 +235,21 @@ test('the review of cf1ef10f, finding 3: a band counts the late takes of its exe
   const unreported = banded().map((r) => (r.cell === 'freeze-650' && r.i === 0 ? { ...unidentified(r), notice: null, next: { ok: true, error: null, late_dnd: null } } : r));
   assert.ok(judge(unreported).failed.some((f) => /cua freeze-650: a late take not reported/.test(f)));
 });
+
+test('the re-review of 0e43238b, finding 2: an explicit skip is decisive, and a stop needs a finite, nonnegative start, a continue after it, the start before the thaw', () => {
+  const shaped = (freeze) => (r) => ({ ...r, freeze });
+  const unexercisedBy = (freeze) => judge(banded().map((r) => (r.cell === 'freeze-600' && r.i === 0 ? shaped(freeze)(r) : r))).counts.bands.inside.unexercised;
+  // a skip string with stop times beside it: the skip decides
+  assert.equal(unexercisedBy({ pid: 1, skipped: 'no press marked by the browser by the thaw at 600 ms', stopped_ms: 60, continued_ms: 600 }), 1);
+  // a negative stop, a continue before the stop, a continue missing, a stop that is no number
+  assert.equal(unexercisedBy({ pid: 1, stopped_ms: -5, continued_ms: 600 }), 1);
+  assert.equal(unexercisedBy({ pid: 1, stopped_ms: 60, continued_ms: 40 }), 1);
+  assert.equal(unexercisedBy({ pid: 1, stopped_ms: 60, continued_ms: 60 }), 1);
+  assert.equal(unexercisedBy({ pid: 1, stopped_ms: 60 }), 1);
+  assert.equal(unexercisedBy({ pid: 1, stopped_ms: null, continued_ms: 600 }), 1);
+  assert.equal(unexercisedBy({ pid: 1, stopped_ms: 'x', continued_ms: 600 }), 1);
+  // H6's shape (no press fields) and H7's, their continue at the thaw within the timer's 1 ms tick: exercised
+  assert.equal(unexercisedBy({ pid: 1, stopped_ms: 61, continued_ms: 604 }), 0);
+  assert.equal(unexercisedBy({ pid: 1, stopped_ms: 59, continued_ms: 599 }), 0);
+  assert.equal(unexercisedBy({ pid: 1, press_ms: 5, press_time: 9, sent_time: 4, stopped_ms: 60, continued_ms: 600 }), 0);
+});

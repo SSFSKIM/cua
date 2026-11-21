@@ -811,12 +811,19 @@ const sourceIdentified = (r) => r.hold?.adaptive?.source?.identified === true;
 const thawOf = (cell) => Number(/^freeze-(\d+)$/.exec(cell)?.[1] ?? NaN);
 
 /**
- * Whether the row's own record shows its browser stop begun before its cell's thaw (`freeze.stopped_ms`, read just
- * before the signal): positive evidence the band's freeze happened (the review of cf1ef10f, finding 1). A record with no
- * skip says nothing by itself: a timer that woke past the thaw stopped nothing that mattered. H6's rows carry the stop
- * without H7's press fields, and are judged by it alike.
+ * Whether the row's own record shows its browser stop begun before its cell's thaw and then continued: positive evidence
+ * the band's freeze happened (the review of cf1ef10f, finding 1). An explicit skip decides, whatever else the record
+ * holds (the re-review of 0e43238b, finding 2); else the stop (`freeze.stopped_ms`, read just before the signal) must be
+ * a finite, nonnegative time before the thaw, and the continue (`continued_ms`) a finite time after the stop. The
+ * continue comes at the thaw by design, within the timer's 1 ms tick either side (the stored rows: 1 ms before it at
+ * the earliest), so it is not held to the thaw. A record with no skip says nothing by itself: a timer that woke past the
+ * thaw stopped nothing that mattered. H6's rows carry both times without H7's press fields, and are judged by them alike.
  */
-const stoppedBeforeThaw = (r) => Number.isFinite(r.freeze?.stopped_ms) && r.freeze.stopped_ms < thawOf(r.base ?? r.cell);
+const stoppedBeforeThaw = (r) => {
+  const f = r.freeze;
+  if (!f || typeof f.skipped === 'string') return false;
+  return Number.isFinite(f.stopped_ms) && f.stopped_ms >= 0 && f.stopped_ms < thawOf(r.base ?? r.cell) && Number.isFinite(f.continued_ms) && f.continued_ms > f.stopped_ms;
+};
 
 const BAND_OUTCOMES = {
   // the drop landed after a take the engine saw inside its hold (the review of H6, blocker 2: a late take that landed

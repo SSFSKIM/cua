@@ -11,8 +11,8 @@ const config = JSON.parse(readFileSync(files[0], 'utf8')).config;
 const tally = xs => Object.entries(xs.reduce((m, x) => (m[x] = (m[x] ?? 0) + 1, m), {})).map(([k, n]) => `${k} ${n}`).join('; ') || '-';
 const pct = (xs, p) => { const s = xs.filter(x => typeof x === 'number').sort((a, b) => a - b); return s.length ? Math.round(s[Math.min(s.length - 1, Math.floor(p * s.length))]) : '-'; };
 console.log(`## engine ${config.engineRef} (${config.chrome}; ${config.macOS}; image ${config.image}; kit ${config.commit}; ${results.length} rows, ${config.minutes} min${config.budgetStop ? ', budget stop' : ''})\n`);
-console.log('| pop-up | mode | route | rows | F1 on top at end | other windows moved | menu at end | picked | front / app AXFrontmost | person focus kept | restore ms p50/max (raises; found in front) | F1 covered ms p50/max |');
-console.log('|---|---|---|---|---|---|---|---|---|---|---|---|');
+console.log('| pop-up | mode | route | rows | F1 on top at end | whole order as before | other windows moved | menu at end | picked | front / app AXFrontmost | person focus kept | restore ms p50/max (raises; found in front) | F1 covered ms p50/max |');
+console.log('|---|---|---|---|---|---|---|---|---|---|---|---|---|');
 const keys = [...new Set(results.map(r => `${r.menu}|${r.mode}|${r.route}`))];
 for (const k of keys) {
   const [menu, mode, route] = k.split('|');
@@ -22,6 +22,7 @@ for (const k of keys) {
   const others = r => (r.moved ?? []).filter(m => !m.endsWith(`:${r.target}`) && !m.endsWith(`:${r.f1}`));
   const cells = [
     tally(ok.map(r => r.personOnTop ? 'yes' : `no (${r.final.order[0]})`)),
+    tally(ok.map(r => (r.moved ?? []).length ? 'no' : 'yes')),
     tally(ok.map(r => others(r).length ? `moved ${others(r).join(',')}` : 'none')),
     tally(ok.map(r => r.final.menuUp ? 'up' : 'closed')),
     route.startsWith('pick') ? tally(ok.map(r => r.picked === r.pick?.expect ? 'taken' : `not (${r.picked})`)) : tally(ok.map(r => r.picked ? `changed ${r.picked}` : 'unchanged')),

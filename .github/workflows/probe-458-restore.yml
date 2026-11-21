@@ -21,7 +21,7 @@ on:
         type: string
         default: ''
       routes:
-        description: comma list (pick+r, escape+r, cancel+r, pick, escape, raise-open, person-click, timeout); empty runs all
+        description: comma list (pick+r, escape+r, cancel+r, pick+ra, escape+ra, ropen-pick, ropen-escape, pick, escape, person-click, timeout); empty runs all
         type: string
         default: ''
       modes:

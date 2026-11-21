@@ -7,9 +7,11 @@
 // focused window F1 over the app's lower right and a second window F2 over its lower left, and Calculator behind them
 // all. Each row: a re-set, one observation, the element click on the button, then a route:
 //   pick+r, escape+r, cancel+r   the menu ended by the engine's coordinate click on an item (#454's AXPick path), the
-//                                engine's Escape, or the kit's AXCancel on the menu, then the kit's restore
+//                                engine's Escape, or the kit's AXCancel on the menu, then the kit's restore (the
+//                                engine's repair: the person's focused window raised)
 //   pick, escape                 the same with no restore (the baseline)
-//   raise-open                   the restore while the menu is still open, then Escape
+//   pick+ra, escape+ra           the same with every window of the person's that was in front of the app's raised
+//   ropen-pick, ropen-escape     that restore as soon as the menu is up, then the pick or the Escape
 //   person-click                 a HID click inside F1 while the menu is open (the person clicking elsewhere), then the
 //                                restore
 //   timeout                      the menu left open 8 s, then Escape, no restore
@@ -235,9 +237,11 @@ const MENUS = {
     node: sky => sky.nodes.find(n => n.role === 'AXPopUpButton' && n.value === 'AppleScript')},
 };
 // After the open (the engine's element click on the closed button, AXPress), how the menu ends and whether the kit then
-// restores the person's window order (`+r`).
-const ROUTES = ['pick+r', 'escape+r', 'cancel+r', 'pick', 'escape', 'raise-open', 'person-click', 'timeout'];
-const DEDICATED_ROUTES = new Set(['pick+r', 'escape+r']);
+// restores the person's window order: `+r` the engine's repair (the person's focused window raised), `+ra` every window
+// of the person's that was in front of the app's raised back to front, `ropen-` that restore as soon as the menu is up,
+// before the pick or the Escape.
+const ROUTES = ['pick+r', 'escape+r', 'cancel+r', 'pick+ra', 'escape+ra', 'ropen-pick', 'ropen-escape', 'pick', 'escape', 'person-click', 'timeout'];
+const DEDICATED_ROUTES = new Set(['pick+r', 'pick+ra']);
 const MODES = [
   {name: 'shared-behind', desktop: 'shared', front: false},
   {name: 'dedicated-behind', desktop: 'dedicated', front: false},
@@ -407,7 +411,10 @@ async function runRow(app, menuName, mode, route, rep) {
     await sleep(900);
     row.opened = await snap(pid, wf, 'opened');
     if (!row.opened.menuUp) { row.problem = 'the element click opened no menu'; row.watch = await watching; return; }
-    const restore = async tag => { const at = t(); const r = await ask({op: 'restore', user: pidOf('Finder'), target, hold: true}, 10_000); row.steps.push({step: `restore:${tag}`, at, ...r}); return r; };
+    // The person's windows in front of the app's before the open, back to front (`all`).
+    const personAbove = ord0.slice(0, ord0.findIndex(x => x.n === target)).filter(x => x.owner === 'Finder').map(x => x.n).reverse();
+    row.personAbove = personAbove;
+    const restore = async (tag, all) => { const at = t(); const r = await ask({op: 'restore', user: pidOf('Finder'), target, hold: true, ...(all ? {users: personAbove} : {})}, 10_000); row.steps.push({step: `restore:${tag}`, at, ...r}); return r; };
     const end = async tag => {
       if (tag === 'pick') {
         const sky1 = await observe(w, pid, `${lab}-reobs`);
@@ -420,18 +427,19 @@ async function runRow(app, menuName, mode, route, rep) {
       else if (tag === 'cancel') row.steps.push({step: 'cancel', at: t(), ...(await ask({op: 'cancel', pid}, 10_000))});
       await sleep(500);
     };
-    if (route.endsWith('+r')) { await end(route.slice(0, -2)); await restore('after'); await sleep(400); row.final = await snap(pid, wf, 'final'); }
-    else if (route === 'pick' || route === 'escape') { await end(route); await sleep(400); row.final = await snap(pid, wf, 'final'); }
-    else if (route === 'raise-open') {
-      await restore('open'); await sleep(400);
+    if (/\+ra?$/.test(route)) { const [how, r] = route.split('+'); await end(how); await restore('after', r === 'ra'); await sleep(400); row.final = await snap(pid, wf, 'final'); }
+    else if (route.startsWith('ropen-')) {
+      await restore('open', true); await sleep(300);
       row.mid = await snap(pid, wf, 'after restore, menu open');
-      await end('escape'); await sleep(400);
-      row.final = await snap(pid, wf, 'after Escape');
-    } else if (route === 'person-click') {
+      await end(route.slice(6)); await sleep(400);
+      row.final = await snap(pid, wf, `after the ${route.slice(6)}`);
+    }
+    else if (route === 'pick' || route === 'escape') { await end(route); await sleep(400); row.final = await snap(pid, wf, 'final'); }
+    else if (route === 'person-click') {
       row.steps.push({step: 'person click', at: t(), ...(await ask({op: 'post', pid, x: PERSON_CLICK.x, y: PERSON_CLICK.y, stamp: 'hid'}))});
       await sleep(900);
       row.mid = await snap(pid, wf, 'after the person\'s click');
-      await restore('after person'); await sleep(400);
+      await restore('after person', true); await sleep(400);
       row.final = await snap(pid, wf, 'after restore');
     } else if (route === 'timeout') {
       await sleep(8000);

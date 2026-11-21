@@ -771,7 +771,7 @@ func windowInFront(_ a: Int, of b: Int) -> Bool {
   }
   return false
 }
-/// {"op":"restore","user":pid,"target":n,"hold":bool}: route 3's delivery-guard repair (engine Activation.swift
+/// {"op":"restore","user":pid,"target":n,"hold":bool,"users":[n]}: route 3's delivery-guard repair (engine Activation.swift
 /// `deliver`: `guardedUser` -> `ActivationSystem.userWindow` + `raise`), done by the kit: the user app's focused window
 /// (AXFocusedWindow, its number matched in the window list by pid and frame), then, inside a screen-update hold
 /// (SLSDisableUpdate .. SLSReenableUpdate) when `hold`, sampled every 2 ms: while window `target` is in front of it, AXRaise
@@ -782,23 +782,36 @@ func restoreOrder(_ q: [String: Any]) -> [String: Any] {
   let app = prepare(AXUIElementCreateApplication(user))
   guard let win = element(attr(app, kAXFocusedWindowAttribute)), let f = frameOf(win) else { return ["error": "no focused window", "ms": r1(nowMs() - t0)] }
   let list = (CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]) ?? []
-  guard let userN = list.first(where: { (($0[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value ?? 0) == user && (($0[kCGWindowLayer as String] as? NSNumber)?.intValue ?? 0) == 0 && near(rectOf($0), f, 3) })
-    .flatMap({ ($0[kCGWindowNumber as String] as? NSNumber)?.intValue }) else { return ["error": "focused window not on screen", "frame": wire(f)] }
+  let mine = list.filter { (($0[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value ?? 0) == user && (($0[kCGWindowLayer as String] as? NSNumber)?.intValue ?? 0) == 0 }
+  guard let userN = mine.first(where: { near(rectOf($0), f, 3) }).flatMap({ ($0[kCGWindowNumber as String] as? NSNumber)?.intValue }) else { return ["error": "focused window not on screen", "frame": wire(f)] }
+  // `users` (back to front): every window of the person's app that was in front of `target`, each raised in that order,
+  // so their own order comes back with them; else the focused window alone (the engine's repair).
+  var guarded: [(n: Int, element: AXUIElement)] = [(userN, win)]
+  if let users = (q["users"] as? [NSNumber])?.map({ $0.intValue }), !users.isEmpty {
+    let axWindows = elements(attr(app, kAXWindowsAttribute))
+    guarded = users.compactMap { n in
+      guard let b = mine.first(where: { (($0[kCGWindowNumber as String] as? NSNumber)?.intValue ?? 0) == n }).map(rectOf),
+            let e = axWindows.first(where: { frameOf($0).map { near($0, b, 3) } ?? false }) else { return nil }
+      return (n, e)
+    }
+    if guarded.count != users.count { return ["error": "person's windows not all found", "found": guarded.map { $0.n }, "users": users] }
+  }
   let found = nowMs() - t0
   let hold = (q["hold"] as? Bool) == true
   var held = false
   if hold, let c = Sky.main?(), let d = Sky.disable { _ = d(c); held = true }
   let tHold = nowMs()
-  let firstAbove = windowInFront(target, of: userN)
+  let covering = { guarded.contains { windowInFront(target, of: $0.n) } }
+  let firstAbove = covering()
   var raises: [Int32] = [], stable = 0
   while (stable < 3 || nowMs() - tHold < 60) && nowMs() - tHold < 1000 {
-    if windowInFront(target, of: userN) { raises.append(AXUIElementPerformAction(win, kAXRaiseAction as CFString).rawValue); stable = 0 }
+    if covering() { for g in guarded { raises.append(AXUIElementPerformAction(g.element, kAXRaiseAction as CFString).rawValue) }; stable = 0 }
     else { stable += 1 }
     usleep(2_000)
   }
-  let lastAbove = windowInFront(target, of: userN)
+  let lastAbove = covering()
   if held, let c = Sky.main?(), let r = Sky.reenable { _ = r(c) }
-  return ["userWindow": userN, "userFrame": wire(f), "firstAbove": firstAbove, "lastAbove": lastAbove, "raises": raises,
+  return ["userWindow": userN, "userFrame": wire(f), "guarded": guarded.map { $0.n }, "firstAbove": firstAbove, "lastAbove": lastAbove, "raises": raises,
           "held": held, "findMs": r1(found), "loopMs": r1(nowMs() - tHold), "ms": r1(nowMs() - t0)]
 }
 

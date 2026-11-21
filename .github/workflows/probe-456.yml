@@ -1,0 +1,137 @@
+name: probe-456
+# Disposable #456 qualification kit (scripts/probe-456/README.md), on #337's. A push of this file only registers the
+# workflow on its branch; the hosted macOS runs go on dispatch, with both engines built unmodified from exact SHAs.
+# kit=race runs race.mjs (the popup opened during the element route's wait, and its controls), kit=parity #337's
+# qualify.mjs on #452's click-through cells, kit=both the two in turn.
+on:
+  push:
+    branches: ['probe/456-qual']
+    paths: ['.github/workflows/probe-456.yml']
+  workflow_dispatch:
+    inputs:
+      engine:
+        description: Exact 40-character main SHA
+        required: true
+        type: string
+      fix:
+        description: Exact 40-character fix SHA
+        required: true
+        type: string
+      kit:
+        description: race, parity or both
+        type: choice
+        options: [race, parity, both]
+        default: both
+      cells:
+        description: race only, comma list (race, nokeys, field, keysonly, plain); empty takes all
+        type: string
+        default: ''
+      delays:
+        description: race only, the race cell's key delays after the click is sent (ms, comma list)
+        type: string
+        default: ''
+      field_delays:
+        description: race only, the field and keysonly cells' key delays (ms, comma list)
+        type: string
+        default: ''
+      prehold:
+        description: race only, the field and keysonly cells' prehold settings (0, 1, or 0,1)
+        type: string
+        default: ''
+      reps:
+        description: race only, repetitions of every unit
+        type: string
+        default: '1'
+      parity_reps:
+        description: parity only, repetitions per unit
+        type: string
+        default: '5'
+permissions:
+  contents: read
+jobs:
+  register:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo 'Registered; the qualification runs on dispatch with exact engine SHAs.'
+  qualify:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: macos-latest
+    timeout-minutes: 170
+    env:
+      ENGINE_SHA: ${{ inputs.engine }}
+      FIX_SHA: ${{ inputs.fix }}
+      KIT: ${{ inputs.kit }}
+      CELLS: ${{ inputs.cells }}
+      DELAYS: ${{ inputs.delays }}
+      FIELD_DELAYS: ${{ inputs.field_delays }}
+      PREHOLD: ${{ inputs.prehold }}
+      REPS: ${{ inputs.reps }}
+      PARITY_REPS: ${{ inputs.parity_reps }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Apps
+        run: |
+          bash scripts/probe-316/install.sh chrome
+          defaults write com.apple.TextEdit ApplePersistenceIgnoreState -bool YES
+          defaults write com.apple.TextEdit NSQuitAlwaysKeepsWindows -bool NO
+      - name: Build the engines and the tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          [[ "$ENGINE_SHA" =~ ^[0-9a-f]{40}$ && "$FIX_SHA" =~ ^[0-9a-f]{40}$ && "$FIX_SHA" != "$ENGINE_SHA" ]]
+          sw_vers
+          git log -1 --format='kit %H %s'
+          swiftc -O -o "$RUNNER_TEMP/tool337" scripts/probe-337/tool.swift
+          swiftc -O -o "$RUNNER_TEMP/racer456" scripts/probe-456/racer.swift
+          build() {
+            test "$(git rev-parse "$2^{commit}")" = "$2"
+            git worktree add --detach "$RUNNER_TEMP/src-$1" "$2"
+            git -C "$RUNNER_TEMP/src-$1" log -1 --format="$1 %H %s"
+            echo "$1 tree status: [$(git -C "$RUNNER_TEMP/src-$1" status --porcelain 2>&1 | head -20)]"
+            swift build -c release --package-path "$RUNNER_TEMP/src-$1/native/engine" --scratch-path "$RUNNER_TEMP/eng-$1"
+          }
+          build main "$ENGINE_SHA"
+          build fix "$FIX_SHA"
+      - name: Race
+        if: inputs.kit != 'parity'
+        shell: bash
+        run: |
+          extra=()
+          if [ -n "$CELLS" ]; then extra+=(--cells "$CELLS"); fi
+          if [ -n "$DELAYS" ]; then extra+=(--delays "$DELAYS"); fi
+          if [ -n "$FIELD_DELAYS" ]; then extra+=(--field-delays "$FIELD_DELAYS"); fi
+          if [ -n "$PREHOLD" ]; then extra+=(--prehold "$PREHOLD"); fi
+          P456_ENGINE_REFS="main=$ENGINE_SHA,fix=$FIX_SHA" node scripts/probe-456/race.mjs \
+            --engines "main=$RUNNER_TEMP/eng-main/release/cua-engine,fix=$RUNNER_TEMP/eng-fix/release/cua-engine" \
+            --tool "$RUNNER_TEMP/tool337" --racer "$RUNNER_TEMP/racer456" --out "$RUNNER_TEMP/probe-456" --reps "${REPS:-1}" --budget 100 "${extra[@]}"
+          node scripts/probe-456/summary.mjs "$RUNNER_TEMP/probe-456/results.json" | tee "$RUNNER_TEMP/probe-456/summary.txt"
+      - name: Parity
+        if: inputs.kit != 'race'
+        shell: bash
+        run: |
+          osascript -e 'tell application "System Events" to set frontmost of (first process whose name is "Finder") to true' || true
+          P337_ENGINE_REFS="main=$ENGINE_SHA,fix=$FIX_SHA" node scripts/probe-337/qualify.mjs \
+            --engines "main=$RUNNER_TEMP/eng-main/release/cua-engine,fix=$RUNNER_TEMP/eng-fix/release/cua-engine" \
+            --tool "$RUNNER_TEMP/tool337" --out "$RUNNER_TEMP/probe-337" --reps "${PARITY_REPS:-5}" --budget 40 \
+            --overlays statusbubble,hovercard --modes shared-front --sides inside,outside
+          node scripts/probe-337/qsummary.mjs "$RUNNER_TEMP/probe-337/results.json" | tee "$RUNNER_TEMP/probe-337/summary.txt"
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: probe-456-${{ inputs.kit }}
+          path: |
+            ${{ runner.temp }}/probe-456/*.txt
+            ${{ runner.temp }}/probe-456/results.json
+            ${{ runner.temp }}/probe-456/screens/*.jpg
+            ${{ runner.temp }}/probe-456/shots/**/*.jpg
+            ${{ runner.temp }}/probe-456/shots/**/*.png
+            ${{ runner.temp }}/probe-337/*.txt
+            ${{ runner.temp }}/probe-337/results.json
+            ${{ runner.temp }}/probe-316/install.txt
+          if-no-files-found: warn

@@ -309,3 +309,79 @@ The item in the trees:
   Script Editor; shared-behind and dedicated-behind) answers ok and opens nothing, 20/20; with the app frontmost it opens
   the menu, 10/10. Chrome's `<select>` opens in shared mode (through #282's element route) and in dedicated mode answers
   ok with the page's click events and no menu, 5/5.
+
+## #454's qualification: main fdd285dd against the fix c83ed846
+
+The same kit, with these cells added: `tectx` (TextEdit's context menu on a selected word; Copy is taken when the
+pasteboard holds the word), `chromectx` (Chrome's page context menu; Reload is taken when the page loads again),
+`menubar` (TextEdit's Edit menu from the menu bar, window at x 60; Select All is taken when the selection is the whole
+text), `submenu` (Format > Font, then Show Colors; taken when the colour panel's window shows), and `*-same` (each
+pop-up's already-selected item). Each cell gets an inside click on the item (`coord`) and an outside click (`outside`),
+5 rows per mode. The engines were built unmodified.
+
+Runs. Main fdd285ddf376e4f3841b5c91f9d5255b6d9cf514: pop-ups 44848863214 (above); new cells
+https://github.com/SSFSKIM/cua/actions/runs/44856543463 (kit 24bf3b88, 240 rows; its Chrome context menu behind is left
+out, because the kit's HID right click tripped the engine's 5 s intervention debounce); `*-same` and Chrome's context
+menu https://github.com/SSFSKIM/cua/actions/runs/44863373571 (kit 55fcdcea, 120 rows). Fix
+c83ed8467f5e06f53632c2f8e59932a00bbaac68: https://github.com/SSFSKIM/cua/actions/runs/44860009214 (kit 96261a16, 300
+rows; its Chrome context menu behind has the same setup artifact, so it is re-run on kit 55fcdcea in
+https://github.com/SSFSKIM/cua/actions/runs/44864909827). All runs used Chrome 157.0.8103.79, macOS 26.7.2 and image
+20261117.0516.1.
+
+| cell (inside click), all three modes | main | fix |
+|---|---|---|
+| select (`<select>`, Three) | ok, not taken, menu closed 15/15 | `clickUnconfirmed`, route 1 AXPick, `menuClosed`, `value: "unread"`; **taken** 15/15 |
+| font (TextEdit pop-up) | ok, not taken 15/15 | ok, `effect: "confirmed"`, **taken** 15/15 |
+| language (Script Editor pop-up) | ok, not taken 15/15 | ok, confirmed, **taken** 15/15 |
+| select-same (One, already selected) | ok, menu closed 15/15 | refused `appWindowOverPoint`, `refused: notRecorded`, nothing sent, menu stays up 15/15 |
+| font-same, language-same | ok, menu closed 30/30 | `clickUnconfirmed`, `value: "unchanged"`, menu closed, selection unchanged 30/30 |
+| tectx (Copy) | ok, not taken 15/15 | `clickUnconfirmed`, AXPick, **taken** (the pasteboard holds the word) 15/15 |
+| chromectx (Reload), shared-front and dedicated | refused `screenChangedSinceScreenshot` (`otherWebArea`) 10/10 | the same 10/10 (items in an AXWebArea stay on main's path) |
+| chromectx, shared-behind | refused `screenChangedSinceScreenshot` 5/5 | in run 44864909827 |
+| menubar (Edit > Select All) | ok, not taken (kept/noHit) 15/15 | refused `appWindowOverPoint`, `notRecorded`, nothing sent, menu stays up 15/15 |
+| submenu (Format > Font > Show Colors) | ok, not taken (kept/noHit) 15/15 | refused `appWindowOverPoint`, `notRecorded` 15/15 |
+| every outside click | closes the menu, the control not reached | the same, in every cell and mode |
+
+Facts per cell (both heads):
+- **Menu windows:** every menu is a layer-101 window of the app's own. Chrome's context menu is at (701,275,284×401).
+  TextEdit's context menu is at (686,185,225×519). The Edit menu is at (155,31,265×534). The submenu is at
+  (435,31,214×438), over Format at (199,31,241×248).
+- **Observation:** it lists the item with `AXCancel, AXPress, AXPick` and a token for every pop-up and both context menus.
+  It lists **no** item of the menu-bar menu or its submenu (`menuBar` holds 8 nodes and no AXMenuItem).
+- **Screenshot:** the engine's screenshot shows pop-up and context menus, but not the menu-bar menu or its submenu. At the
+  kit's point it shows document text.
+- **Hit-test:** the application's hit-test at the item answers the AXMenuItem in every row.
+- **Ways through on main:** keys take the item in every context-menu row, but in the menu-bar and submenu rows only with
+  TextEdit frontmost. Behind, the menu stays up, 20/20. The element click takes context-menu items 25/25 (Chrome behind
+  excluded by the setup artifact).
+
+Refusal sentence (fix, menubar, submenu and select-same):
+`TextEdit has a menu open at this point, which a click takes only as its item's own action, but the item there is not the one the screenshot showed at this point. Nothing was sent. Use keys instead (the arrow keys to the item, then Return; Escape closes the menu), or call getAXState() and click the menu item it lists, by its element.`
+Unconfirmed sentence:
+`The click could not be confirmed: it was carried by the menu item's AXPick action in Google Chrome, since a pointer click does not take a menu's item, and the menu closed, but nothing cua can read shows the item taken. Observe the app with get_app_state before any retry, and never retry blindly.`
+
+Timing (ms; coord clicks, 15 per cell; main / fix):
+
+| cell | stalePoint.ms p50/p95 | hitMs p50/p95 | fix menuItemClick.ms p50/p95 |
+|---|---|---|---|
+| select | 1.33/3.33 / 0.96/4.10 | 0.60/3.87 / 0.46/1.40 | 1022.7/1064.1 (unconfirmed, polls to 1 s) |
+| font | 0.72/1.03 / 0.81/1.71 | 0.47/1.54 / 0.55/1.09 | 415.0/470.9 (confirmed) |
+| language | 0.83/2.07 / 0.76/1.56 | 0.54/1.44 / 0.54/1.34 | 409.9/470.3 (confirmed) |
+| tectx | 0.81/1.87 / 0.72/2.25 | 0.59/1.31 / 0.52/1.52 | 1027.5/1072.4 (unconfirmed) |
+| font-same / language-same | 0.93/1.82, 1.10/1.99 / 0.67/1.76, 0.78/1.41 | - | 1034.1/1071.2, 1025.7/1063.7 (unconfirmed) |
+| menubar / submenu | 0.66/1.69, 0.56/2.42 / 0.55/0.85, 0.68/2.21 | 0.59/1.76, 0.73/1.71 / 0.59/0.94, 0.79/1.56 | - (refused) |
+
+### Reading
+
+- **The fix delivers and confirms the AppKit pop-ups,** 30/30.
+- **Chrome's `<select>` is delivered (15/15) but answers `clickUnconfirmed`** with `value: "unread"`. The builder
+  expected a confirmation there.
+- **An already-selected item:**
+  - In AppKit it answers unconfirmed (`unchanged`), as ruled.
+  - Chrome's `select-same` is refused `notRecorded`. Its sentence says the item differs from the screenshot, but the
+    screenshot shows the menu's own One item there, so the reason it names is not the one that applies.
+- **Context menus** are delivered and unconfirmed (TextEdit, 15/15). Chrome's page context menu keeps main's refusal
+  (`otherWebArea`), because its items hang under the web area.
+- **Menu-bar menus** are refused, as expected: the screenshot does not show them and the observation does not list them.
+  The submenu is refused as well, where the builder expected a delivery.
+- **Ordinary outside clicks are unchanged.**

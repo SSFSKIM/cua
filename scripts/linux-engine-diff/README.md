@@ -163,9 +163,13 @@ development plan `t14-late-edge`, held to T14's late-take contract.
 
 Since H7 (rulings 954–956), a freeze cell's stop waits until the browser marks the drag's press read
 (`_NET_WM_USER_TIME`, which the harness watches with `xprop -spy`), plus 55 ms. The engine's identification of the
-source asks the browser over AT-SPI before the press, and a stop during it left the source unidentified. A stop that
-can't begin before its thaw is skipped, and its row says why. The judge counts a row whose source ended unidentified,
-or whose stop was skipped, as unexercised for its band; such a row is shown, but never counted as the band's outcome.
+source asks the browser over AT-SPI before the press, and a stop during it left the source unidentified. The mark
+counts for a trial only by its value, the X server time of the press: newer than every value seen before it, and not
+before the send's server time, which the harness reads from this machine's monotonic clock (the X server's own clock).
+A stop that can't begin before its thaw is skipped, and so is one whose timer wakes at or past it; the row says why.
+The judge counts a row as unexercised for its band when its source ended unidentified, or when its record shows no stop
+begun before the thaw. Such a row is shown, but never counted as the band's outcome, and a band's late-take column
+counts its exercised rows only.
 The inside band's freeze is 600 on both architectures (task 122's arm64 sweep, at twice the load, landed 10 of 10 there).
 
 **The hold canary's criterion is a step parameter.** `steps.mjs` `CANARY_CRITERION` sets it on K1, K2 and V5 by

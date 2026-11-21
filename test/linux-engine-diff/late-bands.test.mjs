@@ -20,7 +20,10 @@ const untaken = { signals: { take_after_press_ms: null, late_take: false }, hold
 const refused = (cell, i) => Object.assign(chrome({ cell, i, landed: false }), { reply_notice: HOLD_NOTICE, ...untaken });
 /** A row whose source the engine identified as Chrome (`hold.adaptive.source`), as every banded cell means it to be. */
 const identified = (r) => ({ ...r, hold: { ...(r.hold ?? {}), adaptive: { ...(r.hold?.adaptive ?? {}), source: { identified: true, by: 'Google-chrome, role browser, application "Google Chrome"' } } } });
-const banded = (o) => bandedRows(o).map(identified);
+/** A row whose stop began before its thaw, as H6 recorded it (`freeze`: the stop and the continue, ms after the send). */
+const thawOf = (cell) => Number(/^freeze-(\d+)$/.exec(cell)[1]);
+const stopped = (r) => ({ ...r, freeze: { pid: 1, stopped_ms: 61, continued_ms: thawOf(r.cell) + 2 } });
+const banded = (o) => bandedRows(o).map(identified).map(stopped);
 const bandedRows = ({ inside = 10, past = 10, late = 2, edgeLanded = 8 } = {}) => [
   ...many(inside, (i) => Object.assign(chrome({ cell: 'freeze-600', i, landed: true }), { hold: { taken: true } })),
   ...many(10 - inside, (i) => chrome({ cell: 'freeze-600', i: inside + i, landed: false, pending: 'unconfirmed' })),
@@ -150,7 +153,7 @@ test('ruling 954: a row whose source ended unidentified is unexercised for its b
   const v = judge(banded().map((r) => (r.cell === 'freeze-600' && r.i < 4 ? unidentified(r) : r)));
   assert.deepEqual(v.failed, ['the inside band (freeze-600): 6 of 10 drags landed after a take inside the hold, fewer than its 7: the band is unexercised']);
   assert.deepEqual(v.counts.bands.inside, { drags: 10, expected: 6, late: 0, unexercised: 4 });
-  assert.match(v.findings.join('\n'), /the inside band: 4 of 10 drags unexercised \(the source not identified on 4, the stop skipped on 0\)/);
+  assert.match(v.findings.join('\n'), /the inside band: 4 of 10 drags unexercised \(the source not identified on 4, the stop skipped on 0, the stop not begun before the thaw on 0\)/);
   assert.ok(v.md.some((l) => /^\| inside \| freeze-600 \| 10 \| 6 landed after a take inside the hold \| 7 \| 0 \| 4 \|$/.test(l)), v.md.join('\n'));
   // a record with no hold at all says nothing of the source: unexercised too
   const none = judge(banded().map((r) => (r.cell === 'freeze-700' && r.i < 2 ? { ...r, hold: undefined } : r)));
@@ -163,7 +166,7 @@ test('ruling 955: a row whose stop was skipped (the press marked too late for a 
   const v = judge(banded().map((r) => (r.cell === 'freeze-700' && r.i < 4 ? skipped(r) : r)));
   assert.deepEqual(v.failed, ['the past band (freeze-700): 6 of 10 drags answered the hold notice with no drop and nothing sent after it, fewer than its 7: the band is unexercised']);
   assert.equal(v.counts.bands.past.unexercised, 4);
-  assert.match(v.findings.join('\n'), /the past band: 4 of 10 drags unexercised \(the source not identified on 0, the stop skipped on 4\)/);
+  assert.match(v.findings.join('\n'), /the past band: 4 of 10 drags unexercised \(the source not identified on 0, the stop skipped on 4, the stop not begun before the thaw on 0\)/);
   // in the edge band, which requires nothing, it is counted all the same
   const edge = judge(banded().map((r) => (r.cell === 'freeze-650' && r.i === 9 ? skipped(r) : r)));
   assert.deepEqual(edge.failed, []);
@@ -196,4 +199,39 @@ test("t14-late is the same plan on both architectures: task 122's sweep landed a
   assert.equal(planSpecs({ plan: 't14-late' })[0].cell, 'freeze-600');
   assert.deepEqual(LATE_BANDS[0].cells, ['freeze-600']);
   assert.deepEqual(planSpecs({ plan: 'freeze-042-inside' }).map((s) => `${s.cell} ${s.n}`), ['freeze-500 10', 'freeze-550 10', 'freeze-600 10']);
+});
+
+test("the review of cf1ef10f, finding 1: a stop needs positive evidence that it began before the thaw; a skip string's absence is none", () => {
+  // the stop due at +595 whose timer woke at +603 and signalled anyway (H7 as reviewed): no inside outcome
+  const overran = (r) => ({ ...r, freeze: { pid: 1, press_ms: 540, stopped_ms: 603, continued_ms: 603 } });
+  const v = judge(banded().map((r) => (r.cell === 'freeze-600' && r.i < 4 ? overran(r) : r)));
+  assert.deepEqual(v.failed, ['the inside band (freeze-600): 6 of 10 drags landed after a take inside the hold, fewer than its 7: the band is unexercised']);
+  assert.deepEqual(v.counts.bands.inside, { drags: 10, expected: 6, late: 0, unexercised: 4 });
+  assert.match(v.findings.join('\n'), /the inside band: 4 of 10 drags unexercised \(the source not identified on 0, the stop skipped on 0, the stop not begun before the thaw on 4\)/);
+  // a stop at the thaw itself is not before it; and a row with no freeze record says nothing of its stop
+  const atThaw = judge(banded().map((r) => (r.cell === 'freeze-700' && r.i === 0 ? { ...r, freeze: { pid: 1, press_ms: 5, stopped_ms: 700, continued_ms: 700 } } : r)));
+  assert.equal(atThaw.counts.bands.past.unexercised, 1);
+  const none = judge(banded().map((r) => (r.cell === 'freeze-700' && r.i < 2 ? { ...r, freeze: undefined } : r)));
+  assert.equal(none.counts.bands.past.unexercised, 2);
+  // H6's rows, with no H7 press fields, are judged as before: their stop began at 61 ms, before every thaw
+  const h6 = judge(banded());
+  assert.deepEqual(h6.failed, []);
+  assert.deepEqual(h6.counts.bands.inside, { drags: 10, expected: 10, late: 0, unexercised: 0 });
+});
+
+test('the review of cf1ef10f, finding 3: a band counts the late takes of its exercised rows only; every late take is still judged and reported', () => {
+  const unidentified = (r) => ({ ...r, hold: { ...r.hold, adaptive: { source: { identified: false, why: 'its accessible application could not be read' } } } });
+  // both of the edge band's late takes came on rows whose source ended unidentified
+  const v = judge(banded().map((r) => (r.cell === 'freeze-650' && r.i < 2 ? unidentified(r) : r)));
+  assert.deepEqual(v.failed, []);
+  assert.equal(v.counts.bands.edge.late, 0);
+  assert.equal(v.counts.bands.edge.unexercised, 2);
+  assert.match(v.findings.join('\n'), /the edge band made no late take \(not required, ruling 931\)/);
+  assert.ok(v.md.some((l) => /^\| edge \| freeze-650 \| 10 \| – \| – \| 0 \| 2 \|$/.test(l)), v.md.join('\n'));
+  // the run's own late takes, every one judged: still 2, both reported
+  assert.equal(v.counts.late, 2);
+  assert.match(v.findings.join('\n'), /2 late takes, 2 reported/);
+  // and an unexercised late take left unreported still fails
+  const unreported = banded().map((r) => (r.cell === 'freeze-650' && r.i === 0 ? { ...unidentified(r), notice: null, next: { ok: true, error: null, late_dnd: null } } : r));
+  assert.ok(judge(unreported).failed.some((f) => /cua freeze-650: a late take not reported/.test(f)));
 });

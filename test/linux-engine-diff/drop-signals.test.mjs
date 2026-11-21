@@ -547,22 +547,95 @@ test("ruling 956: the press mark is the browser's own or none; never seen, or se
   const { pressMarks, freezeOf, freezeStart } = await import('../../scripts/linux-engine-diff/drop-signals.mjs');
   const line = (v) => `_NET_WM_USER_TIME(CARDINAL) = ${v}`;
   const now = Date.now();
+  // the server's 32-bit clock, 1e9 ms at the test's start
+  const at = (wall) => wall - now + 1e9;
+  const trial = (from, deadline) => ({ from, sent: at(from), deadline });
   // the spy's first value is the property as it stood, never a press, even when it arrives after the drag's send
   const m = pressMarks();
-  m.line(line(1), now + 10);
-  assert.equal(await m.pressed(now, now + 50), null, 'the first value is no press');
-  m.line('xprop: something else', now + 20);
-  m.line(line(2), now + 30);
-  assert.equal(await m.pressed(now, now + 50), now + 30, 'a later change is the press');
+  m.line(line(at(now + 9)), now + 10, at(now + 10));
+  assert.equal(await m.pressed(trial(now, now + 50)), null, 'the first value is no press');
+  m.line('xprop: something else', now + 20, at(now + 20));
+  m.line(line(at(now + 29)), now + 30, at(now + 30));
+  assert.deepEqual(await m.pressed(trial(now, now + 50)), { wall: now + 30, time: at(now + 29) }, 'a later change is the press');
   // a mark only past the deadline (the thaw) is none
   const late = pressMarks();
-  late.line(line(1), now);
-  late.line(line(2), now + 80);
-  assert.equal(await late.pressed(now, now + 50), null);
+  late.line(line(1), now, at(now));
+  late.line(line(at(now + 79)), now + 80, at(now + 80));
+  assert.equal(await late.pressed(trial(now, now + 50)), null);
   // none at all by a deadline already gone
-  assert.equal(await pressMarks().pressed(now - 100, now - 1), null);
+  assert.equal(await pressMarks().pressed(trial(now - 100, now - 1)), null);
   // and with no mark the stop is skipped, not begun at its 60 ms
   const span = freezeOf('freeze-650');
   assert.equal(freezeStart(span, now, null).start, undefined);
   assert.match(freezeStart(span, now, null).skipped, /no press marked/);
+});
+
+test("the review of cf1ef10f, finding 2: the press mark is bound to the trial by its value, the press's server time; a queued earlier mark and a repeated value are never this trial's press", async () => {
+  const { pressMarks } = await import('../../scripts/linux-engine-diff/drop-signals.mjs');
+  const line = (v) => `_NET_WM_USER_TIME(CARDINAL) = ${v}`;
+  const t0 = Date.now();
+  const at = (wall) => wall - t0 + 1e9;
+  const m = pressMarks();
+  m.line(line(at(t0 - 9000)), t0 - 5000, at(t0 - 5000)); // the baseline, primed
+  // the earlier trial's press (stamped at t0 - 1500), its notification queued until after this trial's send
+  m.line(line(at(t0 - 1500)), t0 + 3, at(t0 + 3));
+  // the baseline value again, after the send: a repeat, no press
+  m.line(line(at(t0 - 9000)), t0 + 4, at(t0 + 4));
+  const waiting = m.pressed({ from: t0, sent: at(t0), deadline: t0 + 600 });
+  // this trial's own press, stamped after the send
+  m.line(line(at(t0 + 6)), t0 + 7, at(t0 + 7));
+  const got = await waiting;
+  assert.deepEqual({ wall: got.wall, time: got.time }, { wall: t0 + 7, time: at(t0 + 6) });
+  // what was passed over is kept, with why, for the row
+  assert.deepEqual(got.ignored, [{ time: at(t0 - 1500), wall_ms: 3, why: 'stamped before the send' }, { time: at(t0 - 9000), wall_ms: 4, why: 'not newer than the last value seen' }]);
+  assert.deepEqual(m.ignored({ from: t0, sent: at(t0), deadline: t0 + 600 }).map((x) => x.why), ['stamped before the send', 'not newer than the last value seen']);
+  // with only the stale and the repeated marks, the trial has no press: the stop is skipped
+  const stale = pressMarks();
+  stale.line(line(at(t0 - 9000)), t0 - 5000, at(t0 - 5000));
+  stale.line(line(at(t0 - 1500)), t0 + 3, at(t0 + 3));
+  stale.line(line(at(t0 - 1500)), t0 + 4, at(t0 + 4));
+  assert.equal(await stale.pressed({ from: t0, sent: at(t0), deadline: Date.now() + 30 }), null);
+  // a value stamped after the line arrived is no press of this clock's: the server's clock is not the one read here
+  const ahead = pressMarks();
+  ahead.line(line(1), t0 - 5000, at(t0 - 5000));
+  ahead.line(line(at(t0 + 500)), t0 + 8, at(t0 + 8));
+  assert.equal(await ahead.pressed({ from: t0, sent: at(t0), deadline: Date.now() + 30 }), null);
+  assert.deepEqual(ahead.ignored({ from: t0, sent: at(t0), deadline: t0 + 600 }).map((x) => x.why), ['stamped after it arrived']);
+  // the 32-bit server clock wraps: a press just past the wrap is newer than a baseline just before it
+  const wrap = pressMarks();
+  wrap.line(line(2 ** 32 - 3), t0 - 10, 2 ** 32 - 2);
+  wrap.line(line(4), t0 + 6, 5);
+  assert.deepEqual(await wrap.pressed({ from: t0, sent: 2 ** 32 - 1, deadline: t0 + 600 }), { wall: t0 + 6, time: 4 });
+});
+
+test("the review of cf1ef10f, finding 1: a stop whose timer wakes at or past the thaw sends no signal and is skipped, with why; the judge counts it unexercised", async () => {
+  const { freezeBrowser, freezeOf } = await import('../../scripts/linux-engine-diff/drop-signals.mjs');
+  const { chromeDropVerdict } = await import('../../scripts/linux-engine-diff/drop-signals-judge.mjs');
+  const { dropRow } = await import('./drop-rows.mjs');
+  const run = async (overshoot) => {
+    let clock = 0;
+    const signals = [];
+    const record = await freezeBrowser(7, freezeOf('freeze-600'), 0, async () => ({ wall: 540, time: 1540 }), {
+      now: () => clock,
+      wait: async (ms) => { clock += Math.max(0, ms) + overshoot; },
+      kill: (pid, sig) => signals.push(`${pid} ${sig}`),
+      sent: 1000,
+    });
+    return { record, signals };
+  };
+  // the stop due at +595 (the mark at +540, its lead 55) whose timer woke at +603: past the thaw at 600
+  const woke = await run(8);
+  assert.deepEqual(woke.signals, [], 'no SIGSTOP past the thaw');
+  assert.match(woke.record.skipped, /the stop's timer woke 603 ms after the send, at or past the thaw at 600 ms/);
+  assert.equal(woke.record.stopped_ms, undefined);
+  // on time, the stop and the continue, the press's value and the send's server time recorded
+  const onTime = await run(0);
+  assert.deepEqual(onTime.signals, ['7 SIGSTOP', '7 SIGCONT']);
+  assert.deepEqual(onTime.record, { pid: 7, press_ms: 540, press_time: 1540, sent_time: 1000, stopped_ms: 595, continued_ms: 600 });
+  // the scheduler's record into the verdict: the woken-late stop is unexercised for the inside band, the on-time one its outcome
+  const row = (i, freeze) => ({ ...dropRow({ family: 'chrome', cell: 'freeze-600', i, landed: true }), hold: { taken: true, adaptive: { source: { identified: true } } }, freeze });
+  const rows = [...Array.from({ length: 7 }, (_, i) => row(i, onTime.record)), ...Array.from({ length: 3 }, (_, i) => row(7 + i, woke.record))];
+  const v = chromeDropVerdict(rows, { specs: [{ lane: 'cua', cell: 'freeze-600', n: 10 }], plan: 't14-late', bands: [{ band: 'inside', cells: ['freeze-600'], expects: 'landed', min: 8 }] });
+  assert.deepEqual(v.counts.bands.inside, { drags: 10, expected: 7, late: 0, unexercised: 3 });
+  assert.deepEqual(v.failed, ['the inside band (freeze-600): 7 of 10 drags landed after a take inside the hold, fewer than its 8: the band is unexercised']);
 });

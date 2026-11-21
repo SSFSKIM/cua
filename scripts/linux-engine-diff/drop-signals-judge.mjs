@@ -807,6 +807,17 @@ function countersRead(r) {
 /** Whether the engine identified the drag's source as a Chrome browser, by its own hold record (ruling 954). */
 const sourceIdentified = (r) => r.hold?.adaptive?.source?.identified === true;
 
+/** A freeze cell's thaw, ms after the send (drop-signals.mjs `freezeOf`), or NaN for any other cell. */
+const thawOf = (cell) => Number(/^freeze-(\d+)$/.exec(cell)?.[1] ?? NaN);
+
+/**
+ * Whether the row's own record shows its browser stop begun before its cell's thaw (`freeze.stopped_ms`, read just
+ * before the signal): positive evidence the band's freeze happened (the review of cf1ef10f, finding 1). A record with no
+ * skip says nothing by itself: a timer that woke past the thaw stopped nothing that mattered. H6's rows carry the stop
+ * without H7's press fields, and are judged by it alike.
+ */
+const stoppedBeforeThaw = (r) => Number.isFinite(r.freeze?.stopped_ms) && r.freeze.stopped_ms < thawOf(r.base ?? r.cell);
+
 const BAND_OUTCOMES = {
   // the drop landed after a take the engine saw inside its hold (the review of H6, blocker 2: a late take that landed
   // before its cancel is no in-hold landing)
@@ -933,14 +944,18 @@ export function chromeDropVerdict(rows, { specs = [], plan = null, capped = fals
       const list = rows.filter((r) => b.cells.includes(r.cell));
       const outcome = b.expects ? BAND_OUTCOMES[b.expects] : null;
       // a row that did not exercise the band it ran in is never its outcome (rulings 954 and 955): its source ended
-      // unidentified, or its stop was skipped. Counted and shown; it can only fail the band, never pass it
+      // unidentified, its stop was skipped, or its record shows no stop begun before the thaw (the review of cf1ef10f,
+      // finding 1). Counted and shown; it can only fail the band, never pass it
       const unidentified = list.filter((r) => !sourceIdentified(r));
       const skipped = list.filter((r) => typeof r.freeze?.skipped === 'string');
-      const unexercised = list.filter((r) => !sourceIdentified(r) || typeof r.freeze?.skipped === 'string');
-      const expected = outcome ? list.filter((r) => !unexercised.includes(r) && outcome.holds(r)).length : null;
-      total.bands[b.band] = { drags: list.length, expected, late: list.filter((r) => r.signals?.late_take === true).length, unexercised: unexercised.length };
+      const unstopped = list.filter((r) => typeof r.freeze?.skipped !== 'string' && !stoppedBeforeThaw(r));
+      const unexercised = list.filter((r) => !sourceIdentified(r) || !stoppedBeforeThaw(r));
+      const exercised = list.filter((r) => !unexercised.includes(r));
+      const expected = outcome ? exercised.filter((r) => outcome.holds(r)).length : null;
+      // the band's late takes are its exercised rows' (finding 3); every late take is judged and reported above, whichever row
+      total.bands[b.band] = { drags: list.length, expected, late: exercised.filter((r) => r.signals?.late_take === true).length, unexercised: unexercised.length };
       if (outcome && expected < b.min) failed.push(`the ${b.band} band (${b.cells.join(', ')}): ${expected} of ${list.length} drags ${outcome.what}, fewer than its ${b.min}: the band is unexercised`);
-      if (unexercised.length) findings.push(`the ${b.band} band: ${unexercised.length} of ${list.length} drags unexercised (the source not identified on ${unidentified.length}, the stop skipped on ${skipped.length})`);
+      if (unexercised.length) findings.push(`the ${b.band} band: ${unexercised.length} of ${list.length} drags unexercised (the source not identified on ${unidentified.length}, the stop skipped on ${skipped.length}, the stop not begun before the thaw on ${unstopped.length})`);
       if (!outcome && !total.bands[b.band].late) findings.push(`the ${b.band} band made no late take (not required, ruling 931)`);
     }
     md.push('', '| band | cells | drags | its outcome | minimum | late takes | unexercised |', '|---|---|---:|---:|---:|---:|---:|', ...bands.map((b) => `| ${b.band} | ${b.cells.join(', ')} | ${total.bands[b.band].drags} | ${b.expects ? `${total.bands[b.band].expected} ${BAND_OUTCOMES[b.expects].what}` : '–'} | ${b.min || '–'} | ${total.bands[b.band].late} | ${total.bands[b.band].unexercised} |`));

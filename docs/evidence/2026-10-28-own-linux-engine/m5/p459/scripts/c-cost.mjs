@@ -40,7 +40,7 @@ for (const arg of process.argv.slice(2)) for (const { lane, file, stats } of fil
   const landed = Boolean(r.outcome?.landed);
   const legit = landed && !OUTSIDE.has(r.base);
   const stale = landed && OUTSIDE.has(r.base);
-  const falseOk = !landed && r.ok && !r.reply_notice && !r.notice && r.next?.ok !== false;
+  const falseOk = !landed && r.outcome?.started !== false && r.ok && !r.reply_notice && !r.notice && r.next?.ok !== false;
   const key = `${lane} ${r.base}`;
   const e = per.get(key) ?? { n: 0, open: 0, legit: 0, noticed: 0, falseOk: 0, falseOkLeft: 0, stale: 0, gate: sync ? 'engine' : 'offline' };
   e.n += 1;

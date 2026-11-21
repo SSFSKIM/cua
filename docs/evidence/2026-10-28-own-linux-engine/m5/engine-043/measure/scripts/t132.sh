@@ -20,7 +20,11 @@ f=$(df -BG --output=avail / | tail -1 | tr -dc 0-9)
 [ "$f" -le 20 ] && { log "$name: disk ${f}G free, 20G or less: not started"; exit 9; }
 [ -e "$OUT" ] && { log "$name: $OUT exists: not started"; exit 2; }
 [ "$(sha256sum "$E042" | cut -d' ' -f1)" = 25035ca1b4c8f2c4dd42568e570f54f5994da0f894a84c036d59eedc58f1092f ] || { log "$name: 0.4.2's sha256 differs: not started"; exit 2; }
-[ "$(sha256sum "$T/home-arm64-043/engine/linux/cua-engine" | cut -d' ' -f1)" = b6e906df2435c6daa9326cfd4713512f9a8798f67015d4d88cc4d8c7a457a5f3 ] || { log "$name: the candidate's sha256 differs: not started"; exit 2; }
+# the candidate checked: f9d1f86b's local build by default; the handle-tail head's CI artifact with T132_CAND and
+# T132_CAND_SHA (ruling 1026)
+CAND=${T132_CAND:-$T/home-arm64-043/engine/linux/cua-engine}
+CAND_SHA=${T132_CAND_SHA:-b6e906df2435c6daa9326cfd4713512f9a8798f67015d4d88cc4d8c7a457a5f3}
+[ "$(sha256sum "$CAND" | cut -d' ' -f1)" = "$CAND_SHA" ] || { log "$name: the candidate's sha256 differs: not started"; exit 2; }
 log "$name: queued at harness $(git -C "$G" rev-parse HEAD) ($(git -C "$G" status --porcelain --untracked-files=no | wc -l) changes), $*, df ${f}G load=$(cut -d' ' -f1-3 /proc/loadavg)"
 cd "$G" || exit 2
 CUA_LOCK_MAX=50m "$D/locked.sh" task132-arm64 bash -c '

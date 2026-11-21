@@ -130,3 +130,73 @@ The set ran t14-long at twice the load, 3 rounds of 10 per lane, interleaved.
 
 The switch works. c-alone's one stale drop (0.4.2's end) was answered unconfirmed by (c), with the notice on the reply
 and on the read.
+
+## 7. The handle end's tail (ruling 1026), on f15e1f09 (`arm64/handle-q`)
+
+The head is f15e1f0965bca25907561e870d5a3b1c1f802193, task 133's.
+- **The binary measured** is the arm64 artifact of linux-engine.yml run 44960431400 (publish=false), sha256
+  `11693e0a1000c153dda27e278856d394e5c418f7cf7f7a12df9416f5d7f6b2b2`, which equals the sum sent with the head. It
+  reads `cua-engine 0.4.3 (f15e1f0965bc)` and sits in `task132/home-arm64-f15e1f09/`.
+- **A local build of the same commit** (`scripts/arm-build-new.sh`) gives `569454252949…954f`. The workflow builds
+  with `RUSTFLAGS=--remap-path-prefix` for the cargo home, the checkout and the sysroot; the local build doesn't, so its
+  bytes carry absolute paths. The f9d1f86b binaries above are local builds for the same reason. Measuring the CI
+  artifact measures the bytes that ship.
+
+**Carry-over (1026 (3)).** `git diff --stat f9d1f86b f15e1f09`:
+
+```
+ docs/cua-api/linux-engine.md                |   2 +-
+ native/linux-engine/README.md               |   7 +-
+ native/linux-engine/src/engine/handle.rs    | 240 +++++++++++++++++++++++++++-
+ native/linux-engine/tests/live_device.rs    |  74 +++++++++
+ test/cua-api/linux-engine-document.test.mjs |   2 +
+ 5 files changed, 319 insertions(+), 6 deletions(-)
+```
+
+`release_sync.rs` and `pointer.rs` are untouched, so items 1–4 and 6, measured on f9d1f86b, carry over to f15e1f09.
+
+**The set.** Plan `t132-handle-q`, 4 rounds at arm64 twice the load. Lanes, interleaved:
+- `f15e`: the head as it ships;
+- `off`: the same binary with `--drag-dnd-release-sync off`, 0.4.2's handle end, at 8 per cell a round.
+
+| lane | cell | n | landed | false ok | stale | honest unconfirmed | Chrome activated after the release | ended on the no-drop image / accept / other |
+|---|---|---:|---:|---:|---:|---:|---:|---|
+| f15e | long-left | 100 | 0 | **0** | **0** | 100 | 0 | 99 / 0 / 1 |
+| off | long-left | 32 | 0 | 0 | 0 | 32 | 0 | 32 / 0 / 0 |
+| f15e | plain-long | 52 | 52 (ok) | 0 | 0 | 0 | 52 | 0 / 50 / 2 |
+| off | plain-long | 32 | 32 (ok) | 0 | 0 | 0 | 32 | 1 / 30 / 1 |
+| f15e | inzone-out | 32 | 0 | 0 | 0 | 32 | 0 | 11 / 0 / 21 |
+| off | inzone-out | 32 | 0 | 0 | 0 | 32 | 0 | 10 / 0 / 22 |
+
+**The handle tail's cost**, from `--stats` `handle.release_sync`:
+
+| lane | cell | tail ran | not run, and why | motions | added ms p50 / p95 / max |
+|---|---|---:|---|---|---|
+| f15e | long-left | 100 / 100 | – | 4 on every drag (2 visits, each the 1 px step and back) | 19.6 / 22.6 / 26.1 |
+| f15e | plain-long | 52 / 52 | – | 4 | 19.4 / 22.1 / 23.1 |
+| f15e | inzone-out | 32 / 32 | – | 4 | 16.4 / 21.4 / 24.1 |
+| off | every cell | 0 / 96 | 96: "the form is off" | – | – |
+
+No handle in the set was a one-point handle.
+- The long-left baseline on f9d1f86b (section 5), whose handle end is 0.4.2's, was 1 false ok in 100.
+- On f15e1f09 the result is **0 false oks and 0 stale drops in 100** (one-sided 95% upper bound 3.0%).
+- The `off` control's 0 in 32 on long-left is a small sample beside the baseline's 1 in 100.
+
+## 8. Does an XTEST motion to the pointer's own place make an event? (the coordinator's 1029; `arm64/xtest-1029`)
+
+`scripts/xtest-same-place.{py,sh}`:
+- **Servers:** a private Xorg (X.Org X Server 1.21.1.11, the dummy driver, no input devices, vendor "The X.Org
+  Foundation", release 12101011, XTEST 2.2) on :100, and a private Xvfb 21.1.12 on :100 for comparison. Never :0.
+- **The window:** 400×400, under the pointer.
+- **Each trial:** XTestFakeMotionEvent to the pointer's exact root position, then a flush, then the events counted for
+  200 ms. The control is a 1 px move away and one back, each counted the same way. There are 10 trials per server.
+
+| server | selection counted | same-place motion events, 10 trials | control away / back |
+|---|---|---|---|
+| Xorg 1.21.1.11 | core MotionNotify (PointerMotionMask) | 1 on every trial, at the pointer's own point | 1 / 1 on every trial |
+| Xorg 1.21.1.11 | XI2 XI_Motion (XISelectEvents, all master devices, as Chrome does) | 1 on every trial (core: 0, since XI2 takes the event) | 1 / 1 on every trial |
+| Xvfb 21.1.12 | core MotionNotify | 1 on every trial | 1 / 1 |
+| Xvfb 21.1.12 | XI2 XI_Motion | 1 on every trial | 1 / 1 |
+
+So on xserver 21.1 an XTEST motion to where the pointer already is still generates one motion event, core and XI2.
+Ruling 1001's "no event" does not hold on these servers.

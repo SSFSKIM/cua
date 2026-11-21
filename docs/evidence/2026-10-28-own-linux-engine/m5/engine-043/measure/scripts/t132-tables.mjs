@@ -43,7 +43,9 @@ for (const lane of lanes) {
       const prev = endAt > 0 ? String(cur[endAt - 1].image).slice(0, 4) : 'none';
       all.push({ lane, round, i: r.i, cold: r.cold, cell: r.base ?? r.cell, cls, landing: landingOf(r), took: r.outcome?.started, notice: ((t) => (t == null ? null : /went on past the engine's settle time/.test(t) ? 'outlasted' : /unconfirmed drop/.test(t) ? 'unconfirmed' : r.reply_notice ? 'hold' : 'other'))(r.reply_notice ?? r.notice ?? null),
         activation: r.signals?.activation_after_release_ms ?? null, cursor_end: { bd1d: 'nodrop', '1dc3': 'accept' }[prev] ?? 'other', confirmed_by: r.after_release?.confirmed_by ?? null,
-        gap: r.wall && r.hold ? r.wall.release_ms - r.wall.press_ms - r.hold.path_ms : NaN, after_take_ms: r.after_take?.release_after_take_ms ?? null, keepalives: r.hold?.keepalives ?? null, sync, joined: Boolean(st), ms: r.ms });
+        gap: r.wall && r.hold ? r.wall.release_ms - r.wall.press_ms - r.hold.path_ms : NaN, after_take_ms: r.after_take?.release_after_take_ms ?? null, keepalives: r.hold?.keepalives ?? null, sync, joined: Boolean(st), ms: r.ms,
+        // a handle end's tail (ruling 1026, f15e1f09 on): `--stats` `handle.release_sync`
+        handle_tail: r.handle?.release_sync ?? st?.handle?.release_sync ?? null });
     }
   }
   const v = chromeDropVerdict(rows, { plan: judgePlan });
@@ -67,6 +69,22 @@ for (const cell of cells) for (const lane of lanes) {
   const past = inFloor.map((r) => r.sync.past_floor_ms).filter(Number.isFinite);
   const ce = (k) => rs.filter((r) => r.cursor_end === k).length;
   console.log(`| ${lane} | ${cell} | ${rs.length} | ${rs.filter((r) => r.joined).length} | ${n('landed')} | ${n('STALE')} | ${n('FALSE OK')} | ${n('ambiguous')} | ${hon.length} (${hon.filter((r) => r.notice === 'unconfirmed').length} / ${hon.filter((r) => r.notice === 'outlasted').length} / ${hon.filter((r) => r.notice === 'hold').length} / ${hon.filter((r) => r.notice === 'other' || !r.notice).length}) | ${n('refused')} | ${rs.filter((r) => r.took === false).length} | ${rs.filter((r) => r.activation != null).length} | ${ce('nodrop')} / ${ce('accept')} / ${ce('other')} | ${s.length ? `${open.length} / ${s.length - open.length}` : '–'} | ${s.length ? `${after.length} / ${inFloor.length}` : '–'} | ${s.length ? `${vd(1)} / ${vd(2)}` : '–'} | ${tri(added)} | ${past.length ? `${f1(q(past, 0.5))} / ${f1(Math.max(...past))}` : '–'} |`);
+}
+const tails = all.filter((r) => r.handle_tail);
+if (tails.length) {
+  console.log('\nThe handle end\'s tail (`--stats` `handle.release_sync`, ruling 1026):\n');
+  console.log('| lane | cell | handle drags with a record | tail ran | not run, and why | motions (count: drags) | one-point handles | added ms p50 / p95 / max |');
+  console.log('|---|---|---:|---:|---|---|---:|---|');
+  for (const cell of cells) for (const lane of lanes) {
+    const rs = tails.filter((r) => r.lane === lane && r.cell === cell);
+    if (!rs.length) continue;
+    const ran = rs.filter((r) => r.handle_tail.ran === true);
+    const why = {};
+    for (const r of rs.filter((x) => x.handle_tail.ran !== true)) why[r.handle_tail.why_not ?? 'none given'] = (why[r.handle_tail.why_not ?? 'none given'] ?? 0) + 1;
+    const motions = {};
+    for (const r of ran) motions[r.handle_tail.motions] = (motions[r.handle_tail.motions] ?? 0) + 1;
+    console.log(`| ${lane} | ${cell} | ${rs.length} | ${ran.length} | ${Object.entries(why).map(([k, v]) => `${v}: ${k}`).join('; ') || '–'} | ${Object.entries(motions).map(([k, v]) => `${k}: ${v}`).join(', ') || '–'} | ${ran.filter((r) => r.handle_tail.one_point).length} | ${tri(ran.map((r) => r.handle_tail.added_ms).filter(Number.isFinite))} |`);
+  }
 }
 console.log('\nThe judge per lane (H7.1 `chromeDropVerdict`, the lane\'s rows of every round together):\n');
 // the plan's cell counts are this set's own (rounds x caps), so the judge's count checks against a plan manifest are left out

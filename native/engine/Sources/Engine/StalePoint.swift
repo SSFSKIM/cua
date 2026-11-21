@@ -1571,14 +1571,18 @@ struct StalePointGate<Element> {
   let first: StalePointVerdict<Element>
   let firstMs: Double
   /// The first check's window-list read (#316's rule W, `StalePointRecord.windowsMs`), which the record this gate
-  /// answers replaces in the meta: it is kept there, with the recheck's own read added after a wait.
+  /// answers replaces in the meta: it is kept there, with every recheck's own read added (`costs`).
   var firstWindowsMs: Double? = nil
-  /// The first check's hit-test time (#452, `StalePointRecord.hitMs`), carried on the same way; after a wait the
-  /// recheck's own.
+  /// The first check's hit-test time (#452, `StalePointRecord.hitMs`), carried on the same way until a recheck takes
+  /// a hit-test of its own; then the latest recheck's.
   var firstHitMs: Double? = nil
   /// The app a refusal's sentence names (#452's names it).
   var app = "The app"
   let recheck: () -> StalePointRecheck<Element>
+  /// What the checks so far cost, which each record carries whole (the review of edbfbd23..e1a01d42, P2): a route's
+  /// final check after its focus hold replaces the early check's record in the meta, so the time and window-list reads
+  /// add up across every check this gate ran, and the hit-test time is the last hit-test's.
+  private let costs: StalePointGateCosts
 
   /// The first check's verdict and its record (`Engine.stalePointGuard`'s), whose time and window-list read this gate's
   /// record carries on.
@@ -1595,27 +1599,54 @@ struct StalePointGate<Element> {
     self.firstHitMs = firstHitMs
     self.app = app
     self.recheck = recheck
+    costs = StalePointGateCosts(ms: firstMs, windowsMs: firstWindowsMs, hitMs: firstHitMs)
   }
 
   /// The verdict on `pressed` just before the route acts on it: the first one, or after a wait the recheck's, each
-  /// judged by `stalePointPressVerdict`; its record (`rechecked` after a wait, the time both checks', their window-list
-  /// reads, the hit-test time of the hit judged) and its refusal.
+  /// judged by `stalePointPressVerdict`; its record (`rechecked` after a wait; the time and window-list reads of every
+  /// check so far, the first's included; the hit-test time of the last hit judged) and its refusal.
   func check(_ pressed: Element, waited: Bool, afterActivation: Bool = false, now: () -> Double,
              reads: StalePointReads<Element>) -> (record: StalePointRecord, refusal: EngineError?) {
     let started = now()
     let rechecked = waited ? recheck() : nil
     let verdict = stalePointPressVerdict(pressed, rechecked?.verdict ?? first, reads: reads)
-    let outcome = stalePointOutcome(verdict, ms: firstMs + (now() - started), afterActivation: afterActivation, app: app, reads: reads)
-    var record = outcome.record
-    switch (firstWindowsMs, rechecked?.windowsMs) {
-    case let (first?, again?): record.windowsMs = first + again
-    case let (first, again): record.windowsMs = first ?? again
+    costs.ms += now() - started
+    if let rechecked {
+      if let again = rechecked.windowsMs { costs.windowsMs = (costs.windowsMs ?? 0) + again }
+      costs.hitMs = rechecked.hitMs
     }
-    record.hitMs = rechecked.map(\.hitMs) ?? firstHitMs
+    let outcome = stalePointOutcome(verdict, ms: costs.ms, afterActivation: afterActivation, app: app, reads: reads)
+    var record = outcome.record
+    record.windowsMs = costs.windowsMs
+    record.hitMs = costs.hitMs
     record.rechecked = waited
     record.afterActivation = afterActivation
     return (record, outcome.refusal)
   }
+}
+
+/// `StalePointGate`'s running costs (`StalePointGate.costs`).
+private final class StalePointGateCosts {
+  var ms: Double
+  var windowsMs: Double?
+  var hitMs: Double?
+
+  init(ms: Double, windowsMs: Double?, hitMs: Double?) {
+    self.ms = ms
+    self.windowsMs = windowsMs
+    self.hitMs = hitMs
+  }
+}
+
+/// The first check a field route (#283's focus, #315's press) makes once its field is resolved: #359's pending-click
+/// wait first (`awaitPendingClick`, answering whether it waited: up to `pendingClickCapMs` after a recent pointer press),
+/// then #296's check of the field, rechecked when that wait ran (the review of edbfbd23..e1a01d42, P2), since a window
+/// of the app's own can open over the point meanwhile and no later wait need follow. Nil without a gate.
+func fieldRouteFirstCheck<Element>(_ field: Element, gate: StalePointGate<Element>?, awaitPendingClick: () -> Bool,
+                                   now: () -> Double, reads: StalePointReads<Element>)
+  -> (record: StalePointRecord, refusal: EngineError?)? {
+  let waited = awaitPendingClick()
+  return gate?.check(field, waited: waited, now: now, reads: reads)
 }
 
 /// #456: the guard an element route runs again at its point after a wait (`StalePointGate.recheck`): #452's rule

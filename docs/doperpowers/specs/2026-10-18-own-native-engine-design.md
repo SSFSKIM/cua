@@ -7211,6 +7211,16 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   hosted cell (an omnibox popup opened during a background element-route click) is not yet measured.
   Date/Author: 2026-11-20, cursor235's implementer for #456.
 
+- Decision (#456, the review of edbfbd23..e1a01d42, reviewer-high, 2026-11-20; amends the entry above): two
+  corrections, each tested and each test failing with its fix reverted. (1) #359's pending-click wait (up to
+  `pendingClickCapMs`, 300 ms, after a recent pointer press to the app) is a wait too: the field routes (#283's Chromium
+  focus, #315's Gecko press) now check the field after it with the recheck when it ran (`fieldRouteFirstCheck`;
+  `awaitPendingClick` answers whether it waited), where they passed "no wait" and so never hit-tested a popup that
+  opened during it when no later wait followed (boxes already there, no focus hold). (2) The gate's record adds up the
+  time and window-list reads of every check it ran (`StalePointGate`'s running costs), since a route's final check after
+  its focus hold replaces the early recheck's record in the meta; `hitMs` is the last hit-test's.
+  Date/Author: 2026-11-20, cursor235's implementer for #456.
+
 ## Outcomes & Retrospective
 
 Pending for the initiative — written at finish. M1a's interim account (2026-10-20) follows; the full record is `docs/doperpowers/specs/2026-10-18-own-native-engine-m1a-report.md`.

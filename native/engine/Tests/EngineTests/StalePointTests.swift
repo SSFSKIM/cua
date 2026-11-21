@@ -1725,6 +1725,69 @@ final class RecheckAppWindowOverPointTests: XCTestCase {
     XCTAssertNil(routed.check(scene.button, waited: false, now: { 0 }, reads: reads).refusal)
     XCTAssertEqual(hits, 0, "no wait: nothing read again")
   }
+
+  /// The review of edbfbd23..e1a01d42 (P2): a field route's first check follows #359's pending-click wait (up to
+  /// `pendingClickCapMs` after a recent pointer press to the app). A popup that opens during that wait, with no other
+  /// wait after it (the field's boxes already there; no focus hold), is refused there, nothing focused; with no pointer
+  /// press pending nothing waits, and the first verdict stands with no hit-test again.
+  func testAPopupThatOpensDuringThePendingClickWaitIsRefusedAtTheFieldsFirstCheck() {
+    let scene = Scene()
+    var opened = false
+    var hits = 0
+    let routed = gate(scene, answer: { hits += 1; return opened ? scene.suggestion : scene.button },
+                      list: { opened ? [self.popup, self.browser] : [self.browser] })
+    let ordering = ClickOrdering()
+    ordering.pointerPosted(pids: [app], at: 1_000)
+    var clock = 1_100.0
+    func pendingWait() -> Bool {
+      pendingClickWait(ordering, pids: [app], at: clock, read: { RangeRead.sample(NSRange(location: 3, length: 0)) },
+                       now: { clock }, sleep: { clock += $0; opened = true }) != nil
+    }
+    var focused = false
+    let checked = fieldRouteFirstCheck(scene.button, gate: routed, awaitPendingClick: pendingWait, now: { 0 }, reads: reads)
+    if checked?.refusal == nil { focused = true }
+    XCTAssertTrue(opened, "the popup opened during the pending-click wait")
+    XCTAssertFalse(focused, "nothing focused")
+    XCTAssertEqual(checked?.refusal?.errorName, "appWindowOverPoint")
+    XCTAssertEqual(checked?.record.wire["by"] as? String, "axHit")
+    XCTAssertEqual(checked?.record.wire["rechecked"] as? Bool, true)
+    XCTAssertEqual(hits, 1)
+
+    // No pointer press pending: no wait, the first verdict, nothing hit-tested again.
+    (opened, hits, clock) = (false, 0, 5_000)
+    let idle = fieldRouteFirstCheck(scene.button, gate: routed, awaitPendingClick: pendingWait, now: { 0 }, reads: reads)
+    XCTAssertNil(idle?.refusal)
+    XCTAssertEqual(idle?.record.rechecked, false)
+    XCTAssertEqual(hits, 0)
+    XCTAssertNil(fieldRouteFirstCheck(scene.button, gate: nil, awaitPendingClick: { true }, now: { 0 }, reads: reads), "no gate")
+  }
+
+  /// The review of edbfbd23..e1a01d42 (P2): an early recheck after the action wait, then a final one after the focus
+  /// hold. The final record, which replaces the early one in the meta, carries the time and window-list reads of all
+  /// three checks, and the final recheck's hit-test time.
+  func testTheFinalRecordAddsUpEveryChecksCosts() {
+    let scene = Scene()
+    let nodes = recorded(scene.window)
+    let first = verdict(nodes, at: row, hit: scene.button)
+    var firstRecord = StalePointRecord(first, ms: 1)
+    (firstRecord.windowsMs, firstRecord.hitMs) = (0.5, 2)
+    var clock = 0.0
+    var rechecks: [(takes: Double, windowsMs: Double, hitMs: Double)] = [(0.5, 0.25, 3), (0.25, 0.125, 4)]
+    let routed = StalePointGate(first: first, record: firstRecord, app: "Google Chrome") { [row] in
+      let next = rechecks.removeFirst()
+      clock += next.takes
+      return StalePointRecheck(verdict(nodes, at: row, hit: scene.button), hitMs: next.hitMs, windowsMs: next.windowsMs)
+    }
+    let early = routed.check(scene.button, waited: true, now: { clock }, reads: reads).record
+    XCTAssertEqual(early.ms, 1.5)
+    XCTAssertEqual(early.windowsMs, 0.75)
+    XCTAssertEqual(early.hitMs, 3)
+    let final = routed.check(scene.button, waited: true, afterActivation: true, now: { clock }, reads: reads).record
+    XCTAssertEqual(final.ms, 1.75, "all three checks' time")
+    XCTAssertEqual(final.windowsMs, 0.875, "all three checks' window-list reads")
+    XCTAssertEqual(final.hitMs, 4, "the final recheck's hit-test")
+    XCTAssertEqual(final.wire["afterActivation"] as? Bool, true)
+  }
 }
 
 // MARK: #316's rule G: the hit in the document the screenshot showed (the design session's ruling 4701abd8)

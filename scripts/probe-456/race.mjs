@@ -43,8 +43,10 @@ const TEXT = arg('text') ?? 'probe';
 /// --stamp 0) or a second engine connection's press_key and type_text.
 const VIA = list('via') ?? ['typed'];
 /// The field cell's: `engine` (a second connection's ⌘L and type_text inside the wait; its focus hold does not touch the
-/// field route, which takes none), and whether the page jitters the field's value through the wait (`jitter`: #359's
-/// wait then runs to its 300 ms cap, the range never stable).
+/// field route, which takes none), and whether the page moves its focus between the field and Alpha every 20 ms through
+/// the wait (`jitter`: #359's sample, the range and whether the app's focus is elsewhere, never holds still, so the wait
+/// runs to its 300 ms cap; a jittered row's landing is read from the meta, whether the engine posted its focus write, since
+/// the page's own focus moves fire the field's focusin).
 const FIELD_VIA = list('field-via') ?? ['engine'];
 const JITTER = (list('jitter') ?? ['0', '1']).map(v => v === '1');
 const STAMP = arg('stamp') !== '0';
@@ -75,7 +77,7 @@ for (const k of ['pointerdown', 'mousedown', 'click', 'focusin', 'submit']) docu
 for (const k of ['input', 'change']) document.addEventListener(k, e => send(k, {id: idOf(e.target), value: e.target.value ?? null}), true);
 addEventListener('focus', () => send('wfocus', {}));
 addEventListener('blur', () => send('wblur', {}));
-const jitter = ms => { const f = document.getElementById('uf'), end = Date.now() + ms; let i = 0; const id = setInterval(() => { if (Date.now() > end) { clearInterval(id); f.value = ''; send('jitterEnd', {}); return; } f.value = i++ % 2 ? 'x' : 'xy'; }, 15); send('jitter', {}); };
+const jitter = ms => { const f = document.getElementById('uf'), o = document.getElementById('b1'), end = Date.now() + ms; let i = 0; send('jitter', {}); const id = setInterval(() => { if (Date.now() > end) { clearInterval(id); o.focus(); send('jitterEnd', {}); return; } (i++ % 2 ? o : f).focus(); }, 20); };
 const run = c => { if (c === 'reload') location.replace('/'); if (c.startsWith('goto:')) location.replace(c.slice(5)); if (c.startsWith('jitter:')) jitter(Number(c.slice(7))); };
 (async () => { for (;;) { try { const r = await fetch('/cmd?load=' + load, {cache: 'no-store'}); const j = await r.json(); if (j.cmd) run(j.cmd); } catch (e) { await new Promise(r => setTimeout(r, 500)); } } })();
 addEventListener('load', () => send('ready', {}));

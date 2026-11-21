@@ -31,10 +31,11 @@ export function outcome(r) {
   const c = r.click;
   if (!c) return r.cell === 'keysonly' ? 'keysonly' : 'noclick';
   const sp = c.stalePoint ?? {};
-  const pressed = r.cell === 'field' ? r.landed?.uf : r.cell === 'plain' ? r.landed?.b2 : r.landed?.ub;
-  const what = r.cell === 'field' ? 'focused' : 'pressed';
+  const pressed = r.cell === 'field' ? (r.jitter ? c.posted : r.landed?.uf) : r.cell === 'plain' ? r.landed?.b2 : r.landed?.ub;
+  const what = r.cell === 'field' ? (r.jitter ? 'focus written' : `focused${c.posted ? '' : ''}`) : 'pressed';
+  const wrote = r.cell === 'field' && !r.jitter ? (c.posted ? ' (focus written)' : ' (nothing written)') : '';
   if (c.error) return `refused ${c.error}${sp.rechecked ? ' rechecked' : ''}${sp.afterActivation ? ' afterActivation' : ''}${sp.by ? ` by ${sp.by}` : ''}${sp.overWindow != null ? ` over ${sp.overWindow === r.race?.firstVisible?.n ? 'the popup' : sp.overWindow}` : ''}${pressed ? `, ${what} anyway` : `, not ${what}`}`;
-  return `ok ${sp.verdict ?? '-'}/${sp.reason ?? '-'}${sp.rechecked ? ' rechecked' : ''}, ${pressed ? what : `not ${what}`}`;
+  return `ok ${sp.verdict ?? '-'}/${sp.reason ?? '-'}${sp.rechecked ? ' rechecked' : ''}, ${pressed ? what : `not ${what}`}${wrote}`;
 }
 
 for (const file of process.argv.slice(2)) {

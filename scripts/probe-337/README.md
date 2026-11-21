@@ -386,3 +386,26 @@ Timing (ms; coord clicks, 15 per cell; main / fix):
 - **Menu-bar menus** are refused, as expected: the screenshot does not show them and the observation does not list them.
   The submenu is refused as well, where the builder expected a delivery.
 - **Ordinary outside clicks are unchanged.**
+
+### The confirm on 74c99b92a7668c1915b917138c61aa95a68ec771, fix-only, against the same main data
+
+https://github.com/SSFSKIM/cua/actions/runs/44866341695 (kit 735d8727, 300 rows). Reader: `effects.mjs`, which gives the
+answer per coordinate click, `menuItemClick`'s effect/value/refused, whether the item was taken, and whether the menu
+stayed up.
+
+| cell (inside), all modes | main | 74c99b92 |
+|---|---|---|
+| select | ok, not taken 15/15 | `clickUnconfirmed` [`unread`], **taken** 15/15 |
+| select-same | ok, menu closed 15/15 | `clickUnconfirmed` [`unread`], menu closed, nothing changed 15/15 (now delivered, no longer refused `notRecorded`) |
+| font, language | ok, not taken 30/30 | ok, `confirmed`/`taken`, taken 30/30 |
+| font-same, language-same | ok, menu closed 30/30 | `clickUnconfirmed` [`unchanged`] 30/30 |
+| tectx | ok, not taken 15/15 | `clickUnconfirmed` [`unread`], taken 15/15 |
+| chromectx | refused `screenChangedSinceScreenshot` 15/15 | the same 15/15 |
+| menubar, submenu | ok, not taken 30/30 | refused `appWindowOverPoint` `refused: unobserved`, nothing sent, menu up 30/30 |
+| outside, every cell | closes the menu | the same (one language-front row had a setup miss: opener not found) |
+
+The `unobserved` sentence (menubar, submenu):
+`TextEdit has a menu open at this point that the screenshot does not show (a menu-bar menu, a submenu, or a menu opened since the screenshot), so the click cannot be checked against it. Nothing was sent. A click outside the menu closes it. To choose one of its items, call getAXState() and click the item it lists by its element; a menu-bar menu's items are listed once its title in the menu bar has been clicked by its element.`
+
+`menuItemClick.ms` p50/p95: confirmed 421/471 (font) and 406/464 (language); unconfirmed 1019–1040/1064–1073.
+`stalePoint.ms` p50 0.5–1.0, p95 0.8–4.6; `hitMs` p50 0.3–0.7, p95 0.6–1.5 on coordinate clicks.

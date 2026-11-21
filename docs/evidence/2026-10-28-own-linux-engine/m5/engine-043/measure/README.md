@@ -200,3 +200,43 @@ No handle in the set was a one-point handle.
 
 So on xserver 21.1 an XTEST motion to where the pointer already is still generates one motion event, core and XI2.
 Ruling 1001's "no event" does not hold on these servers.
+
+## 9. The handle end's fix head 9fb61c32 (ruling 1030; `arm64/handle-fix`)
+
+The head is 9fb61c320f19fef609638ed20eadab5f24f023f9, task 133's fix.
+- **The binary measured** is the arm64 artifact of linux-engine.yml run 44962552628 (publish=false), sha256
+  `7de07c4de9428d029dcba6a957b61d58afc9a4a759a3657e62446c683b3c8ee5`, which equals the sum sent with the head. It
+  reads `cua-engine 0.4.3 (9fb61c320f19)`.
+
+**Carry-over (ruling 1030).** `git diff --stat f15e1f09 9fb61c32`:
+
+```
+ native/linux-engine/src/engine/handle.rs | 198 ++++++++++++++++++++++++++++---
+ native/linux-engine/tests/live_device.rs |  12 +-
+ 2 files changed, 190 insertions(+), 20 deletions(-)
+```
+
+So handle plain-long and inzone-out carry over from f15e1f09 (section 7). Items 1–4 and 6 carry over from f9d1f86b,
+since `release_sync.rs` and `pointer.rs` are still untouched.
+
+**The set.** Plan `t132-handle-long`, 4 rounds of 25 at arm64 twice the load. The `off` control is the same binary with
+`--drag-dnd-release-sync off`, 8 a round, interleaved.
+
+| lane | cell | n | false ok | stale | honest unconfirmed | Chrome activated after the release | ended on the no-drop image |
+|---|---|---:|---:|---:|---:|---:|---:|
+| fix | long-left | 100 | **0** | **0** | 100 | 0 | 100 |
+| off | long-left | 32 | 0 | 0 | 32 | 0 | 32 |
+
+`--stats` `handle.release_sync`:
+
+| lane | tail ran | not run, and why | motions | take_after_the_sample | stopped_for_motion | added ms p50 / p95 / max |
+|---|---:|---|---|---:|---:|---|
+| fix | 100 / 100 | – | 4 on every drag | 0 of 100 | 0 of 100 | 21.1 / 24.1 / 28.1 |
+| off | 0 / 32 | 32: "the form is off" | – | 0 of 32 | 0 of 32 | – |
+
+**Handle long-left over the three heads:**
+- f9d1f86b (0.4.2's handle end): 1 in 100;
+- f15e1f09: 0 in 100;
+- 9fb61c32: 0 in 100.
+
+On the shipped handle tail that is 0 in 200 (one-sided 95% upper bound 1.5%), counting both heads' tails as one form.

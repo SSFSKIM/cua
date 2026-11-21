@@ -459,9 +459,14 @@ extension Engine {
   /// be the node the screenshot showed at the point or its control (`stalePointPressVerdict`), checked just before the
   /// press, and after the action's re-read wait against the guard run again (`StalePointGate`); refused otherwise as
   /// `screenChangedSinceScreenshot`, nothing pressed. The focus route (#283) checks its field the same way.
+  ///
+  /// `popUpPress` (#458): its check runs on the control just before its action, after the stale-point guard's last check
+  /// (a `<select>`'s check that it is still closed and its effect's baseline, `popUpConfirmingRoute`), and it judges a
+  /// non-success AX error from the action (a messaging timeout is left to the observed menu) in place of actionFailed.
   func webAreaPress(_ hit: AXUIElement, button: MouseButton, count: Int, point: CGPoint, windowID: CGWindowID?, app: ResolvedApp,
                     appPid: pid_t, guarding: InterventionGuard, context: ExecutionContext,
-                    stalePoint: StalePointGate<AXUIElement>? = nil) -> ((inout InputMeta) throws -> Void)? {
+                    stalePoint: StalePointGate<AXUIElement>? = nil,
+                    popUpPress: PopUpPressChecks? = nil) -> ((inout InputMeta) throws -> Void)? {
     guard button == .left, count == 1 else { return nil }
     let engine = webAccessibility.pageEngine(app.appPath)
     var walk: [String] = []
@@ -525,7 +530,8 @@ extension Engine {
                                sleep: { usleep(UInt32($0 * 1000)) }) {
         try elementActionClick(control, owner: owner, action: action, route: actionRoute(owner: owner, app: app, connection: context.connection),
                                point: point, windowID: windowID, app: app, appPid: appPid, guarding: guarding, context: context,
-                               finalCheck: finalStalePointCheck(stalePoint, pressing: control), meta: &meta)
+                               finalCheck: pressChecks(finalStalePointCheck(stalePoint, pressing: control), popUpPress, control),
+                               tolerates: popUpPress.map { hook in { hook.tolerates($0) } }, meta: &meta)
       }
     }
   }
@@ -540,6 +546,17 @@ extension Engine {
       meta.stalePoint = checked.record
       if let refusal = checked.refusal { throw refusal }
     } }
+  }
+
+  /// The stale-point guard's last check, then #458's check on the control, as one `finalCheck`; nil for neither.
+  func pressChecks(_ stale: ((_ afterHold: Bool, _ meta: inout InputMeta) throws -> Void)?,
+                   _ beforePress: PopUpPressChecks?,
+                   _ control: AXUIElement) -> ((_ afterHold: Bool, _ meta: inout InputMeta) throws -> Void)? {
+    guard stale != nil || beforePress != nil else { return nil }
+    return { afterHold, meta in
+      try stale?(afterHold, &meta)
+      try beforePress?.run(control, &meta)
+    }
   }
 
   /// The focus route a plain left click into a Gecko web area's text field takes (#315, WebAreaFocus.swift
@@ -761,13 +778,14 @@ extension Engine {
   /// and after the focus hold (`pressAfterFinalCheck`), told whether the hold ran.
   func elementActionClick(_ element: AXUIElement, owner: pid_t, action: String, route: InputRoute, point: CGPoint?, windowID: CGWindowID?,
                           app: ResolvedApp, appPid: pid_t, guarding: InterventionGuard, context: ExecutionContext,
-                          finalCheck: ((_ afterHold: Bool, _ meta: inout InputMeta) throws -> Void)? = nil, meta: inout InputMeta) throws {
+                          finalCheck: ((_ afterHold: Bool, _ meta: inout InputMeta) throws -> Void)? = nil,
+                          tolerates: ((AXError) -> Bool)? = nil, meta: inout InputMeta) throws {
     try pressAfterFinalCheck(holds: route == .activation, hold: {
       try holdElementFocus(element: element, owner: owner, app: app, appPid: appPid, guarding: guarding, context: context, meta: &meta)
     }, finalCheck: { afterHold in try finalCheck?(afterHold, &meta) }, perform: {
       try guarding.checkInFlight()
       if let point { cursor.act(connection: context.connection.id, app: app.key, window: windowID, .click(point)) }
-      try deliverAction(action, route: route, perform: { gatedPerform(element, $0) }, meta: &meta)
+      try deliverAction(action, route: route, tolerates: tolerates, perform: { gatedPerform(element, $0) }, meta: &meta)
     })
   }
 }

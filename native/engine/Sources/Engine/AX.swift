@@ -186,6 +186,14 @@ func windowNumber(of window: AXUIElement, pid: pid_t, readFrame: () -> CGRect?) 
   }, readFrame: readFrame, matching: { windowNumber(pid: pid, frame: $0) })
 }
 
+/// The window's own number by the SPI alone (`_AXUIElementGetWindow`), with no frame fallback: nil when it gives none
+/// (#458's restore, which must never take one window for another of the same size).
+func axWindowNumber(_ window: AXUIElement) -> CGWindowID? {
+  guard let getWindowFunction else { return nil }
+  var id: CGWindowID = 0
+  return getWindowFunction(window, &id) == .success && id != 0 ? id : nil
+}
+
 /// The SPI's number, else the frame read and matched; the frame is read only when the SPI gives none.
 func resolvedWindowNumber(spi: () -> CGWindowID?, readFrame: () -> CGRect?, matching: (CGRect) -> CGWindowID?) -> CGWindowID? {
   if let id = spi() { return id }

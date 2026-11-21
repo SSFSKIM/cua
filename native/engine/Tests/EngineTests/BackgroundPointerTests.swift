@@ -140,6 +140,24 @@ final class BackgroundPointerTests: XCTestCase {
     XCTAssertNotNil(clickMeta.delivery)
   }
 
+  /// #458 (re-review of 75fecad2..1d70a333, item 1): a press decided before delivery (a `<select>`'s on #282's route)
+  /// takes the pointer's place outright, even where the activation would click its in-window point (Electron's): no
+  /// activation, no event, no delivery guard; and over Chrome's activation too. The click above, with none, still posts.
+  func testADecidedPressTakesThePointersPlaceWhateverTheActivationWouldClick() throws {
+    for make in [electron, chrome] {
+      let seam = GuardSeam(frontmost: user)
+      var pressed = 0
+      var pointer = webArea({ _ in XCTFail("not the refusal's fallback") })
+      pointer.pressRoute = { _ in pressed += 1 }
+      var clickMeta = meta(connection())
+      try click(seam, activation: make(seam), pointer: pointer, meta: &clickMeta)
+      XCTAssertEqual(pressed, 1)
+      XCTAssertEqual(seam.posts.count, 0, "nothing posted")
+      XCTAssertNil(clickMeta.delivery)
+      XCTAssertEqual(activations.holders(target), 0)
+    }
+  }
+
   // MARK: Dedicated mode: the down meets a key window, and nothing is put back
 
   /// The inert click goes right after subtype 1 for a left click and a drag too, before the action's own down, and the

@@ -573,6 +573,23 @@ error    {code: number (the vendor's codes where mapped; -10005 otherwise), mess
     the control identified before the action against the item's title, moved to it, already it or unread before, another,
     or nothing to read), polls?, ms? (from the action's return to the last read), refused? ("notRecorded" | "notHit" |
     "unobserved" | "relabelled" | "disabled" | "noAction")}; never a title
+  popUpClick: #458's coordinate click on a closed pop-up button, on its result and its errors once the guard kept the
+    point and #454's step left it (and on #282's element route when it pressed a `<select>`): {role ("AXPopUpButton" |
+    "AXComboBox"), kept? ("noSignal" | "notRecorded" | "notHit" | "ancestryUnread" | "disabled" | "open" |
+    "windowsUnread" | "noAction" | "frontmost": main's path was kept, and why), refused? ("noAction": a native combo
+    box whose arrow has no AXPress, the app not frontmost), delivery? ("action": the click delivered as the pop-up
+    button's or the combo box's arrow's AXPress, by the element click's route, inputRoute 3 or 1, no pointer event; set
+    as the action is dispatched), action? ("AXPress"), arrow? (true: the combo box's arrow was pressed), effect?
+    ("confirmed" | "unconfirmed"), actionError?, baselineUnread? (true: the window list did not read just before the
+    press, so the effect could not be confirmed), menuWindow? (the number of the app's new window that opened: a menu
+    window at layer 101 for a pop-up button, a window of any layer above the app's window for a combo box's list),
+    restored? ({windows, ms, complete, raises, leftCovered, failedRaises?, stopped? ("personInput" | "bound" |
+    "unresolved" | "focusUnknown" | "focusRaiseFailed" | "orderUnread")}: windows, the person's windows in front of the
+    app's window before the press; once the open had raised the app's over the person's focused window, that one window
+    raised back (raises: 0 or 1), the order read once about 300 ms later (complete: the focused window back over the
+    app's), and the other recorded windows the app's window covers counted, never raised (leftCovered); the result's
+    note when not complete, unless the person acted), polls?, ms? (from the action's return to the open)}; never a
+    title
   note: on a paste result that pasted a line with no channel to see it, read after ⌘V (#187; type_text's paste route
     since #361 never, its read-back answering instead), on a type_text a password field's length confirmed (#414), and on a
     scroll whose content was already at its end in that direction (#328): the sentence the service adds to the tool
@@ -7191,6 +7208,270 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   accessibility record of the screenshot holds no item of it at this point" and offers the element route only "If a
   fresh getAXState() lists the item"; the model-facing sentence says the same.
   Date/Author: 2026-11-20, cursor235's implementer for #454.
+- Decision (#458, design rulings 977 and 979, 2026-11-21, `fix/458-popup-press`, plugin 0.28.26; PopUpPoint.swift,
+  Input.swift, `ConnectionState.popUpMenuOrders`): **a coordinate click on a closed pop-up button is delivered as the
+  button's AXPress and confirmed by its menu opening; a native combo box's arrow with the app not frontmost is refused;
+  neither is posted.** #458's kit (`probe/458-measure`, scripts/probe-337/README.md §#458 at b55d2908; run 44877626226
+  on main edbfbd23, 475 rows) found main's click on TextEdit's font pop-up or Script Editor's language pop-up, the app
+  behind in shared mode, answering ok with no menu showing (10/10): the menu opens 110–260 ms in and is gone when route
+  3's hold ends and the person's window order is put back (`delivery.screenHoldMs` 180–260 in the same rows). Posted
+  events without activation, keys and the AX actions open every pop-up behind; the element click's AXPress opens them in
+  every mode (30/30 by route 3, 30/30 by route 1), and the next observation lists the items, which #454's fix then takes.
+  The owner chose open-then-restore.
+  The rule, after the stale-point guard keeps a plain left click's point (no spike route, route 3 chosen) and after
+  #454's step, before anything is posted: (1) the trigger needs both signals. The hit-test's own answer in time
+  (`WindowHit.answered`) is an AXPopUpButton (in a web page only one with an AXMenu child, Chrome's `<select>`, whose
+  options it lists; a page's ARIA pop-up button opens the page's own menu, which a posted click takes) or a native
+  AXComboBox hit on its arrow (the trailing square of its frame); it is the control the observation recorded at the point
+  (`recordedAtPoint`, #454's search: the node, a recorded ancestor of the role, or #433's control beneath); it reads
+  enabled, not expanded, and no window of the app's at layer 101 lies over or within 24 points of it (`popUpMenuMargin`).
+  A hit on an AXMenuItem is #454's, whatever the record holds above it. A web page behind in shared mode (the app not
+  believing it has focus) stays #282's element route, which already presses a `<select>`; everywhere else (shared
+  frontmost, dedicated, AppKit apps) the rule applies. (2) Advertising AXPress, the button is pressed by the element
+  click's own route (`actionRoute`: route 3's focus hold when the app does not believe it has focus, else route 1),
+  after the press owner's forbidden check, the hold, the guard's last check on the button (`finalStalePointCheck`, as
+  #282's route makes it), the in-flight check and the agent cursor's click; the request's deadline is checked before
+  the hold. The action's return is not the effect: a window of the app's at layer 101, absent from the list read before
+  the press, alpha above 0, over or within 24 points of the button's frame, must appear, read at once and every 20 ms
+  for up to 500 ms (`popUpOpenSettleMs`, about twice the slowest open measured). Seen, the click answers success; else
+  `clickUnconfirmed`, "The click could not be confirmed: it was carried by the pop-up button's AXPress action in <App>,
+  since a posted click can close the menu it opens, and no menu was seen to open at the button. Observe the app with
+  get_app_state before any retry, and never retry blindly." A messaging timeout from the press is judged by the effect,
+  as #454's; any other error is `actionFailed`. Why the menu stays open: the focus hold's activation guard, which raises
+  the person's window back over the app's while it samples, ends before the press, and the element route runs no
+  delivery guard and no after-action watch (those are `deliverPointer`'s, route 3's pointer delivery in shared mode),
+  where the posted click's delivery guard restores the order after the menu has opened and so closes it; every request
+  cancels an earlier action's watch first (`execute`). (3) A native combo box's arrow with no element action (TextEdit's
+  font-size NSComboBox: `synthesized:noAction`, AXPress unsupported, AXShowMenu opens nothing, its focus write does not
+  hold), the app not frontmost, is refused with nothing sent as `backgroundClickRefused`: "<App>'s combo box opens its
+  list only for a pointer click, and a click cua sends to <App> while it is not the frontmost app does not leave that
+  list open; the combo box has no accessibility action that opens it. Nothing was sent. Ask the person to bring <App>
+  to the front, or type the value into the combo box's text field instead (setValue on its element, or click its text
+  and use typeText)." Frontmost, the posted click opens its list (5/5): main's path (`kept: "frontmost"`). A click on its
+  text is a click into a text field, main's. (4) Main's path is kept, and the meta says so (`popUpClick.kept`), for a
+  hit late or failed with a pop-up recorded (`noSignal`: the record alone is never taken, #452's rule), signals that
+  disagree (`notRecorded`, `notHit`), a disabled button, one already open (AXExpanded true, or the app's menu window at
+  it), and a pop-up button with no AXPress or actions that do not read (`noAction`).
+  (5) The restore seam (ruling 979, item 4; not implemented): opening any menu behind raises the app's window above the
+  person's front window, and Escape does not undo it. A confirmed open compares the window list read before the press
+  with the one that saw the menu (`popUpRaisedOrder`: the person's front window is the first layer-0 window of another
+  app's, never the engine's own) and, when the app's window went from behind it to in front, records
+  `PopUpMenuOrder {menuWindow, appWindow, personWindow, personPid}` in `ConnectionState.popUpMenuOrders[app key]`, a
+  connection's state that #454's pick (which knows its menu's window) and press_key (by app) can read; an open that
+  raised nothing clears the app's entry. Nothing reads it yet: the restore's reliability and cost are being measured
+  on hosted macOS first. The meta carries `raisedAppWindow`.
+  Proven offline (`PopUpPointTests`, 8 tests, fakes only): an agreeing closed pop-up is pressed with nothing posted after
+  its hold, confirmed by its menu window, the order recorded; frontmost by route 1 and Chrome's `<select>` list below the
+  button confirm and record none; no new menu window at the button (a far one, another app's, one up before) answers
+  `clickUnconfirmed` after the full settle; a timeout is judged by the effect, another error fails; the combo box's arrow
+  behind is refused with nothing held, performed or sent, frontmost and its text are main's; disagreements, a late or
+  failed hit, disabled and open keep main's path with the reason; a button, an ARIA pop-up and an open pop-up's item are
+  unchanged, #454 still delivering the item. Each fails with its piece reverted (8 mutations: the rule off fails 6 of
+  the 8 tests; the action's return taken as proof, the unconfirmed test; the combo refusal removed, the combo test; the
+  agreement or the no-signal rule removed, the disagreement test; any role taken for a pop-up or an ARIA one for a
+  `<select>`, the unchanged test; the menu item not left to #454, its test). `recordedMenuItem` now calls the shared
+  `recordedAtPoint`, `inWebArea` gained a two-read form; #454's 27 tests pass unchanged.
+  Not measured live: this build on the kit's cells (the three pop-ups and the combo box by `button` in three modes, and
+  the item afterwards), Chrome's `<select>` in dedicated mode and shared frontmost, and the open time of an AXPress behind
+  against the 500 ms bound.
+  Date/Author: 2026-11-21, cursor235's implementer for #458.
+- Decision (#458, the review of edbfbd23..75fecad2, reviewer-high, 2026-11-21; amends the entry above): eight
+  corrections, the fakes rebuilt from run 44877626226's measured shapes (results.json), each new piece failing its test
+  when reverted. (1) A closed `<select>` has no AXMenu child (`openerMenus: []` in all 125 select rows; it appears only
+  once pressed), so the first rule dropped it to main's post in dedicated mode, the false ok. A page's AXPopUpButton now
+  qualifies by evidence present while closed: the record holds one of its options, an AXMenuItem under it, which is the
+  deepest recorded node at the point (`hitAboveNode`, recorded role AXMenuItem, 15/15; `RecordedPopUp.holdsOption`); a
+  page's ARIA pop-up button has none and stays main's. (2) TextEdit's combo-box arrow hit-tests and is recorded as an
+  AXButton (15/15), so the refusal never fired; an AXButton whose parent is an AXComboBox resolves to the combo box, and
+  a hit on the combo box itself is its text, main's (the frame-square rule is gone). (3) In a shared-mode page behind,
+  #282's element route still delivers the `<select>`'s press, and that press now gets the same check just before it,
+  the effect, `clickUnconfirmed` and the order record (`popUpConfirmingRoute`, through `webAreaPress`'s `beforePress`);
+  #282 alone answered ok with no menu open, and recorded no order though the open raises Chrome. (4) A control whose
+  parents do not read to its window (`webAreaWalk` incomplete) is not taken as native: the record's AXWebArea above it
+  answers where the record holds one, else main's path (`kept: "ancestryUnread"`). (5) The decision's window list is
+  read before the focus hold and stays the restore seam's order, but just before the press, after the hold, the button
+  must still read closed (AXExpanded, no menu window of the app's at it), else `screenChangedSinceScreenshot` with
+  nothing pressed ("The screen changed since the screenshot: the pop-up button at this point now shows its menu open,
+  and a press would close it. The button was not pressed. Take a new screenshot or call getAXState() to see the menu's
+  items before clicking one."), and the effect's baseline is read then, so a window of the app's that appeared during
+  the hold is never the press's menu. (6) The window list is read as optional (`onScreenWindowListRead`): unread at
+  the decision, main's path (`kept: "windowsUnread"`); unread just before the press, the press goes and answers
+  `clickUnconfirmed` (`baselineUnread`), since the decision had already found the button closed and the hold had run;
+  an unread poll is a sample with nothing seen. (7) The deadline is checked again just before the press, after the
+  hold (`timeoutReached`, "…The button was not pressed."). (8) The press is counted by `recordingRouteAdvice` (route 3's
+  guard failures toward the route-4 advice), a kept decision not.
+  Debt: another live connection's after-action repair watch can raise the person's window over a menu just opened
+  (tech-debt-tracker.md; a rare two-session race that needs coordination across connections).
+  Proven offline (`PopUpPointTests`, 13 tests): the measured select, combo box and font pop-up shapes, the #282 route's
+  confirmation, the check after the hold, unread lists and unread ancestry. Reverted one at a time (10 mutations), each
+  fails: the select back to a live AXMenu child (3 tests) or any page pop-up taken (2); the arrow unresolved (the combo
+  test); #282's route without the effect (its test); unread ancestry taken as native; no closed re-check, or the
+  baseline taken at the decision (the after-hold test); an unread list taken as empty at the decision or before the
+  press (the unread test); no deadline check after the hold.
+  Date/Author: 2026-11-21, cursor235's implementer for #458.
+- Decision (#458, the re-review of 75fecad2..1d70a333, reviewer-high, 2026-11-21, the last review wave; amends the
+  entries above): six corrections. (1) A qualifying `<select>` in a shared-mode page behind is no longer #282's
+  refusal-only fallback, which `deliverPointer` reaches only when the activation throws `PointerRefused`; where the
+  activation clicks its in-window point (Electron's) the click was still posted. Once decided, the press is the pointer's
+  `pressRoute`, run instead of any activation or event; every other page click keeps the fallback (Electron's posted
+  click unchanged). (2) #282's press goes through `deliverAction` with a judgment of non-success errors
+  (`elementActionClick`'s `tolerates`, `webAreaPress`'s `popUpPress`): on the `<select>` a messaging timeout is left to
+  the observed menu, as on the direct route; any other error, and any other control's, stays `actionFailed`. (3) The
+  option evidence is the measured shape only: the deepest recorded node at the point is an AXMenuItem under the pop-up,
+  the hit-test answering above it (`hitAboveNode`); items recorded off the point (parked offscreen) are none, and such a
+  pop-up keeps main's path. (4) The combo box's arrow is its AXButton child at its trailing edge (its frame ending
+  within 4 points of the box's, no button child further right), or with either frame unread its only button child; a
+  clear or accessory button keeps its own click (not measured: TextEdit's arrow frame). (5) The baseline before the
+  press holds every window of that list, whatever its layer or alpha; only windows after the press are filtered by
+  layer and alpha, so a window already there that later shows at the menu layer is not the press's menu. (6) The
+  deadline is checked after the last read before the press (AXExpanded can take the messaging timeout, then the window
+  list), on the unread-baseline path too. Proven offline (`PopUpPointTests` 17 tests, `BackgroundPointerTests` 1 more);
+  reverted one at a time (7 mutations), each fails its test.
+  Date/Author: 2026-11-21, cursor235's implementer for #458.
+- Decision (#458's restore, design ruling 979 item 4 carried out, 2026-11-21; kit `probe/458-restore`,
+  scripts/probe-337/README.md §"#458's restore" at f39ce428, run 44888938314, 380 rows plus 20 combo-box arrow rows;
+  amends the entries above and corrects ruling 977's combo-box refusal): **the open puts the person's window order back
+  at once, and a combo box's arrow is pressed.** Measured: opening a menu behind raises the app's window over the
+  person's (186 ms p50 after the click begins), and neither the pick nor Escape undoes it; route 3's repair (AXRaise on
+  the person's focused window) restores that window only, leaving a second one covered (0/120 whole); raising every
+  window of the person's that was in front of the app's before the open, back to front, restores the whole order
+  (180/180, 127/200/232 ms p50/p95/max, inside the screen-update hold, nothing else moved in 380/380, the frontmost app
+  and the person's focused window unchanged); done with the menu up, the menu stays usable and the pick or Escape after
+  it keeps the order (60/60); a menu left open (8 s) or closed by the person's own click leaves the app's window on top,
+  which only a restore at the open covers. The rule: the list read just before the press (`popUpBeforeDispatch`) gives
+  the person's windows in front of the app's window (`personWindowsAbove`: layer 0, alpha above 0, another process than
+  the app's, never the engine's own), front to back. Once the open is confirmed and the app's window has risen over any
+  of them (in the confirming list, or within `deliveryGuardMinimumMs` after it, sampled every `deliveryGuardSampleMs`),
+  `popUpRestoreOrder` takes the screen-update hold (`ActivationSystem.holdScreenUpdates`, SLSDisableUpdate) and samples
+  as route 3's delivery guard does: whenever the recorded order does not hold (`personOrderHolds`: each recorded window
+  still listed in front of the app's, in its recorded order), it raises every recorded window back to front by route
+  3's repair (`ActivationSystem.raise`, AXRaise on each window's element, found among its process's AXWindows by
+  number; never an activation); it ends on three samples holding the order and no sooner than 60 ms, or at
+  `popUpRestoreBoundMs` (500 ms, about twice the slowest measured). Only the recorded windows move. Meta
+  `popUpClick.restored {windows, ms, complete, raises}`; an order not back within the bound leaves the open confirmed,
+  `complete: false`, and the result carries the note "<App>'s menu is open, but the person's windows that were in front
+  of <App>'s window could not all be put back in front of it, so <App>'s window may now cover them." Nothing raised, no
+  restore. #282's `<select>` route restores the same way. The seam the earlier entry recorded (`popUpMenuOrders`,
+  `PopUpMenuOrder`) is removed: #454's pick and the key path need nothing from it.
+  The combo box (correcting ruling 977's refusal on the measurement): TextEdit's font-size combo box has one AXButton
+  child, "font size" (743, 73, 20×15), with AXPress, its trailing edge exactly 4.0 pt inside the box's, so the arrow
+  rule's 4 pt includes 4 (`<=`). Its AXPress, behind, opens the list 20/20 as a new layer-0 window of the app's
+  (706, 70, 65×250) above its document window and below the person's, raising nothing, the frontmost app unchanged.
+  So the arrow's AXPress is delivered (`PopUpTarget.element` the arrow, `control` the combo box, read for AXExpanded and
+  its frame), confirmed by a window of the app's of any layer, alpha above 0, new since the press, at or within 24 points
+  of the combo box (`isOpenedWindow`), and the restore check runs (normally nothing to do); the refusal is kept only for
+  a combo box whose arrow has no AXPress. The model-facing sentences say so.
+  Proven offline (`PopUpPointTests`, 21 tests): two person windows above, raised back to front once, the order back
+  and nothing else moved, one hold released; the engine's window never counted; a rise seen only after the open is
+  restored; nothing raised, no restore; an order not back within the bound `complete: false`; an incomplete restore
+  keeps the open confirmed with its note; the combo box's arrow at 4.0 pt pressed, its layer-0 list confirmed, no
+  restore; one with no pressable arrow refused. Reverted one at a time (10 mutations), each fails: no restore at the
+  open (4 tests), raised front to back, complete at the bound, the engine's window counted, no watch for a later rise,
+  no note, one sample and no minimum, the combo box pressed instead of its arrow, its list only at layer 101, the edge
+  rule excluding 4.0 pt.
+  Not measured with this build: the restore and the arrow press by the engine itself (the kit's restore was its own).
+  Date/Author: 2026-11-21, cursor235's implementer for #458.
+- Decision (#458's restore, the review of 97344ee7..a094f620, reviewer-high, 2026-11-21; amends the entry above):
+  seven corrections, each tested and each test failing with its fix reverted (17 mutations). (1) The person's act wins:
+  at the press's dispatch the engine takes route 3's own person baseline (`PopUpPersonSignals`: input since, by
+  `secondsSinceInput` as the delivery guard's `personActed` reads it, and the frontmost app), and input or another app
+  brought to the front since ends the watch for the rise and stops the restore before its next raise, `complete: false`,
+  `stopped: "personInput"`, with no note (the order is theirs). (2) One absolute cutoff of `popUpRestoreBoundMs` from the
+  restore's start covers resolving the windows, every raise (none is issued past it) and the hold, which a timer of its
+  own releases at the cutoff whatever blocks (`scheduleHoldRelease`, `OnceRelease`); an end there is `stopped: "bound"`.
+  (3) A person's window is raised only when told for certain (`uniqueWindow`): its own number by the SPI
+  (`axWindowNumber`, no frame fallback), else the one unnumbered AXWindow with its bounds while the list holds exactly one
+  such window of the process; two same-sized windows are ambiguous, never raised, and the restore ends
+  `stopped: "unresolved"`. (4) A restore starts only when the app's window crossed above a recorded window
+  (`appWindowCrossed`); the person's windows reordered among themselves start none, and the full order
+  (`personOrderHolds`) is what a needed restore checks. (5) A combo box's list counts only on the measured signals: a new
+  window above the app's (document) window, and the combo box not reading AXExpanded false; otherwise the click is
+  unconfirmed. (6) The arrow's own AXEnabled must read true, else main's path (`kept: "disabled"`). (7) The bound
+  reached before three stable samples is incomplete, whatever the last sample read.
+  Date/Author: 2026-11-21, cursor235's implementer for #458.
+- Decision (#458's restore, the re-review of a094f620..1612abe2, reviewer-high, 2026-11-21, the last review wave;
+  amends the entry above, item 3): four corrections, each tested and failing with its fix reverted. (1) The frame
+  fallback is dropped: a person's window is resolved only by its own number (`axWindowNumber`, the SPI); one it does not
+  prove is `unresolved`, never raised. (2) The lookup (`resolveByNumber`) is handed the cutoff, scans each process's
+  AXWindows once, reads only the number (no frame), stops at the process's last recorded window, and reads nothing once
+  the cutoff is spent. (3) The order the restore checks and raises for is the resolved windows'; once they are back, an
+  unresolved window still out of order ends the restore as `unresolved` after its stable samples, instead of
+  re-raising until the cutoff. (4) The 500 ms cutoff counts from the restore's start, the 60 ms sampling minimum from a
+  timestamp taken after the resolution.
+  Date/Author: 2026-11-21, cursor235's implementer for #458.
+- Decision (#458, design ruling 1004, 2026-11-21; #458's qual, kit `probe/458-qual`, scripts/probe-337/README.md
+  §"#458 qual" at efa35057, main run 44924065133 against fix run 44929018111 on 7e5bb454, 200 rows each; supersedes the
+  restore's sampling loop in the entries above): **the restore is one pass, and the menu wait is 1.5 s.** The qual found
+  the delivery right everywhere (confirmed 138/140 behind, 40/40 frontmost, no false confirmation; #454's pick taken
+  every time; parity unchanged) but the loop harmful: AXRaises land 30–150 ms late, so the loop read the order wrong
+  and re-raised 6–11 times, F1 and F2 flipping for up to a second, and the last raise to land decided the top window,
+  changing the person's focused window in 3/40 rows of layout a in dedicated mode and 11/20 of layout c; and in c (a
+  background Calculator window between the person's Finder windows) an AXRaise of the third app's window stays under
+  the active app's, so the order never read back (0/20, bound). Chrome's `<select>` opened about 940 ms after the click
+  in 2/20 rows, past the 500 ms wait, answering `clickUnconfirmed` with no restore. The rule now
+  (`popUpRestoreOrder`): of the recorded windows, those of the person's frontmost app are raised once each, back to
+  front, the person's focused window (route 3's `userWindow`, the frontmost app's AXFocusedWindow) last, inside the
+  screen-update hold (its timer at route 3's 300 ms ceiling, `activationPointHoldCeilingMs`); third apps' windows are
+  skipped (`restored.skipped`); about `popUpRestoreReadMs` (300 ms) after the first raise the order is read once and
+  recorded (`complete`), never re-raised on a mismatch. The hard bar, the person's focused window never changes, is met
+  by raising it last; when it is not known, not among the recorded windows, or not resolved by its number, nothing is
+  raised (`focusUnknown`, `unresolved`). The person-input stop before each raise and before the read, the absolute
+  500 ms cutoff and the timed hold release stay. `popUpOpenSettleMs` is 1.5 s for pop-ups and the combo box's list.
+  The model-facing sentences name no timing and are unchanged.
+  Left for the measurement: the focused window can still change outside the engine's raises (a person's click during
+  the open, which `personInput` then reports), and the AXRaise of a non-focused window of the active app may make it key
+  for the moment before the focused one is raised, which the app could see as a focus change (key-window notifications)
+  even though the end state keeps the focus.
+  Proven offline (`PopUpPointTests`, 31 tests): two windows raised once, back to front, the focused last, read once at
+  300 ms, raises landing 150 ms late seen by it; the focused window last even with another in front of it, the mismatch
+  recorded with no re-raise and one read; layout c's Calculator skipped, Finder's three raised; nothing raised with the
+  focus unknown, not recorded or unresolved; the 940 ms `<select>` confirmed. Reverted one at a time (6 mutations), each
+  fails: a re-raise on the mismatch, the focused window not last, a third app's window raised, the focused window not
+  required among the recorded, the read not delayed, the 500 ms wait.
+  Date/Author: 2026-11-21, cursor235's implementer for #458.
+- Decision (#458's restore, the review of 7e5bb454..67cf8b26, reviewer-high, 2026-11-21, the last wave on that range;
+  amends the entry above; the hard bar is the person's focused window): four corrections, each tested and failing with
+  its fix reverted (7 mutations). (1) The pass can no longer end on a non-focused window's raise: the person's input
+  stops it with nothing more raised (checked before the first raise, so a stop midway only ever follows input, and before
+  each raise after it); the cutoff skips the remaining other windows but the focused window's raise is still made, past
+  the cutoff by that one call, and recorded (`bound`); each raise's AX result is read (AXRaise by `gatedPerform`, the
+  call route 3's repair makes, which `ActivationSystem.raise` discards): failures counted (`failedRaises`), and the
+  focused window's failing ends the pass as `focusRaiseFailed`, incomplete. No ordering call that cannot change key or
+  focus is known to the engine: it has no SkyLight window-ordering call, and the window server orders a window only for
+  its owning connection, so AXRaise stays the call. (2) The focused window is the person's app's AXFocusedWindow
+  numbered by `axWindowNumber` alone (`focusedWindowNumber`), never by route 3's `userWindow`, whose frame fallback could
+  name another window of the same size; none proven, nothing raised (`focusUnknown`). (3) The time left is checked
+  before and after the one order read; an end past the cutoff is `bound`, never complete. (4) The person's input is
+  checked before the focus is read and before the early return on no candidates (only third apps' windows), so their
+  switching apps during the open records `personInput`, with no note.
+  Date/Author: 2026-11-21, cursor235's implementer for #458.
+- Decision (#458, design ruling 1005, 2026-11-21; #458's qual 2, kit `probe/458-qual`, scripts/probe-337/README.md
+  §"#458 qual 2" at 5246652f; supersedes the full-order restore of rulings 979 item 4 and 1004 in the entries above):
+  **the restore is route 3's own repair alone: only the person's focused window is raised back, once.** The full-order
+  restore was tried and dropped for the transient key change: a 5 ms watch saw the person's app's AXFocusedWindow go to
+  F2 or F3 for 13–49 ms during the back-to-front raise of their non-focused windows, in 38/80 behind rows on 67cf8b26 and
+  13/30 on 2bd74c6e, though the end state was always F1. Now (`popUpRestoreOrder`): the trigger is the app's window over
+  the person's focused window (their frontmost app's AXFocusedWindow, numbered by `axWindowNumber` alone; it must be among
+  the windows recorded in front of the app's before the press); that one window is raised once by AXRaise
+  (`gatedPerform`, its AX result read) inside the screen-update hold, the hold's timer at route 3's 300 ms ceiling, and
+  about 300 ms later the order is read once: `complete` means the focused window is back over the app's. No other window
+  is raised, neither the person's other windows nor a third app's; those the app's window covers are counted as
+  `restored.leftCovered` (the former `skipped` folded into it). A focused window not covered is not raised (nothing to
+  do, complete); an unread window list raises nothing (`orderUnread`). Kept: `focusUnknown`, the input check before
+  anything is read and just before the raise, `focusRaiseFailed`, the 500 ms cutoff (an end past it `bound`, never
+  complete), the timed hold release and the single read. The back-to-front pass and its full-order predicate are
+  removed. The incomplete note now reads "<App>'s menu is open, but the person's front window could not be put back in
+  front of <App>'s window, so <App>'s window may now cover it." The model-facing sentences name no restore and are
+  unchanged; the windows left covered are a debt line in tech-debt-tracker.md, and the full-order restore its own ticket.
+  The hard bar holds by construction: the only window raised is the focused one.
+  Proven offline (`PopUpPointTests`, 31 tests): the focused window alone raised, once, F2 and Calculator left covered
+  and counted, read once at 300 ms; nothing raised with the focused window uncovered, and a miss not retried; nothing
+  raised with the focus unproven, unresolved or the list unread; the person's input before anything is read, before the
+  raise and before the read; the cutoff through resolution, the raise and the read; the raise's failure recorded.
+  Reverted one at a time (8 mutations), each fails: the other covered windows raised too, a raise whatever the focused
+  window's cover, `complete` as the whole order, the others not counted, no input check before the raise, the AX result
+  ignored, no time-left check between the raise and the read, or after the read.
+  Date/Author: 2026-11-21, cursor235's implementer for #458.
 
 - Decision (#456, 2026-11-20, `fix/456-recheck-overlay`, plugin 0.28.25; amends #452's entry and #296's
   `StalePointGate`): **the element route's recheck after its wait runs #452's same-app overlay rule on its own fresh,

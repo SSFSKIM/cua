@@ -6,14 +6,15 @@
 # step's line exactly as gate.mjs print gave it (commands.txt) without its leading `locked.sh task129-x64`, which this
 # hold already is. The 45-minute timeout outside covers the wait and the step (SIGTERM, which gate.mjs forwards).
 # Its own lines start with "step.sh ".
-# usage: step.sh <step>
+# CMDS names the commands file (default commands.txt; L4d at H7.1: commands-l4d.txt).
+# usage: [CMDS=<file name>] step.sh <step>
 set -u
 D=/Users/new/.local/share/cua-171
 T=$D/task129
 step=$1
 LOCKED="$D/locked.sh task129-x64 "
 [ -e "$D/hold-sittings" ] && { echo "step.sh hold-sittings present inside the hold: $step not started"; exit 5; }
-cmd=$(awk -v s="== $step" '$0 == s {getline; print; exit}' "$T/commands.txt")
+cmd=$(awk -v s="== $step" '$0 == s {getline; print; exit}' "$T/${CMDS:-commands.txt}")
 [ -n "$cmd" ] || { echo "step.sh no printed command for $step"; exit 2; }
 case "$cmd" in "$LOCKED"*) cmd=${cmd#"$LOCKED"} ;; *) echo "step.sh $step's printed command does not start with $LOCKED"; exit 2 ;; esac
 start=$(date +%s)

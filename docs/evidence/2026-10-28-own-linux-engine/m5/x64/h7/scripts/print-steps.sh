@@ -3,13 +3,14 @@
 # release, holder task129-x64, home-x64-042, the out root), into commands.txt. `print` writes a labelled stub of the
 # step's directory (README.md, step.json) into the out root, and `run` refuses a step directory that exists, so each
 # stub is moved aside into <out root>/print/ (kept as the print's record) before its step runs. Display-free.
-# usage: print-steps.sh <out root> <step>...
+# CMDS names the commands file (default commands.txt; L4d at H7.1: commands-l4d.txt).
+# usage: [CMDS=<file name>] print-steps.sh <out root> <step>...
 set -u
 T=/Users/new/.local/share/cua-171/task129
 G=/Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/t129-x64
 ACC=/Users/new/.local/share/cua-171/m5/home-x64-042
 OUT=$1; shift
-f=$T/commands.txt
+f=$T/${CMDS:-commands.txt}
 : > "$f"
 mkdir -p "$OUT/print"
 for s in "$@"; do

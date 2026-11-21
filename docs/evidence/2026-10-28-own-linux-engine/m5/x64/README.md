@@ -1163,6 +1163,83 @@ From `h7-bands.mjs` (output `bands-C1.txt`, `bands-L4c.txt`) and `ident-count.mj
 - **Window titles:** the structural scan (`title-scan.mjs`, ruling 947) covered `h7/out/` (29 files: 432 JSON fields
   and 4 quoted strings on text lines). All 436 values are the harness's own, with 0 not its own (`title-scan.txt`).
 
+### L4d at H7.1 (96fa1fd3), at twice the load: FAIL on one false ok (rulings 957, 961, 962, 972, 986)
+
+**L4d is the new counted step:** the shipped Chrome drop route at twice the load. It runs plan `t14-stale` as three
+parts in turn, judged by ruling 957's judge (`../engine-042/h7/judge957/README.md`):
+1. chrome `t14-long`;
+2. chrome `t14-floor`;
+3. electron `t17-long`.
+
+It ran once and was not rerun. The record is `h7/out/L4d.pinned-release/`. The extracts in `h7/scripts/` are
+`l4d-parts.txt`, `l4d-row8.txt` and `gate459-row8.txt`.
+
+- **Setup:**
+  - `t129-x64` was moved to `96fa1fd3b6a30c15eed4de232bc252d41655831e`, detached, with 0 changes. Its lockfile and
+    xprobe are as at H7, and the Electron binary was present (44.9.0).
+  - home-x64-042's engine still equals the pin, and `check --pinned` exited 0 at 96fa1fd3 (`check-home-h71.log.txt`).
+  - hold-sittings was absent, with 41G free.
+  - `gate.mjs print L4d --pinned home-x64-042 --holder task129-x64` gave `commands-l4d.txt`, and its line ran under
+    `locked.sh task129-x64 timeout -s TERM -k 60 45m`.
+- **The run:** acquire and start 09:00:28Z, with no quiet wait (load 0.75 0.48 1.61); release 09:20:32Z, 20.1 min.
+  Exit 1, the watchdog clean, the end check clear, the end clean.
+- **The verdict, as printed:** "part 1 (chrome t14-long): cua long-left: answered ok with no drop and nothing pending
+  on 1 of 100 (#8)".
+
+| part | plan | drags | landed where the path ended | stale-position drops | false oks | honest unconfirmed notices | untaken | in the 3 px margin | judge |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---|
+| 1 | chrome t14-long (long-left) | 100 | 0 | 0 | **1** (#8) | 99 | 0 | 0 | **FAIL** |
+| 2 | chrome t14-floor (plain-long 300, left 30, inzone-out 30) | 360 | 300 | 0 | 0 | 60 (left 30, inzone-out 30) | 0 | 0 | pass |
+| 3 | electron t17-long (long-left) | 30 | 0 | 0 | 0 | 30 | 0 | 0 | pass: 30 of 30 exercised (minimum 20) |
+
+Every honest notice was kept: the read carried it, and the next request was refused with it.
+- In Electron's long path, the motion after the take ran 442 / 457 / 531 ms (min / median / max), so 92 ms past the floor at
+  the least.
+- Over t14-long's 100 drags:
+  - take after the press: 5.1 / 19.1 / 68.7 ms;
+  - path after the take: 402.7 / 457.6 / 587.1 ms;
+  - last step to release: 0 / 0.1 / 6.3 ms.
+
+**Row #8, the false ok** (part 1, long-left, block 0, warm):
+
+| take after the press | path after the take | last step to release | Chrome's activation after the release |
+|---:|---:|---:|---:|
+| 27.0 ms (the harness saw 27.8) | 445.0 ms (path 472.0 ms; 895 steps after the take) | 0.1 ms | 4.8 ms |
+
+- **The engine's answer:** it let the drop drop with the take seen (`released_with_take`, no keepalive, the hold not
+  held). It waited on Chrome's activation (`confirmed_by` Activation of Chrome's window), and the activation came. It
+  answered a plain ok with no notice, and the next request ran.
+- **What landed:** the zone's counter did not move (`plain` drops 0 → 0), and the path ended at page (500, 500),
+  outside the zone. So it is a false ok, not a stale-position drop.
+- **The page's own dragend reported a copy** (this trial's, stamped with its press). Chrome's accept cursor showed
+  after the release.
+- **The other 99 rows:** Chrome activated on none of them, and every one answered unconfirmed honestly. Their dragend
+  reported no drop.
+- **Reading:** Chrome finished this drop as accepted, but the zone never counted it. The release came 0.1 ms after the
+  last step, with the path 95 ms past the floor. That is #459's shape. It is x64's first such row: a953 x64 at H6 had
+  0 of 100.
+
+**m5-p459's gate on #8, offline** (`gate459-row8.mjs`, read-only, nothing run live). It applies de3bc094's
+`release_sync::gate`, `!outlasted || (keepalives == 0 && !last_spaced)`, to the row's recorded fields:
+1. **The gate opens:** `gate(true, 0, false)`. The floor sent no keepalive, and its end at the take + 350 ms came
+   95.1 ms before the release, so the last step was not spaced.
+2. **(b')'s release sync would have run.** The gate was open, the engine let the drop drop with its take seen, and the
+   Chromium hold was unguarded.
+3. **Option (c) would have answered it unconfirmed:** the gate was open, and its only confirmation was Activation.
+
+**settle-check** (`settle-l4d.txt`): TAKEN. Electron's part entered the settle 30 times, with 0 second rests and 0
+unsettled, so L4d reruns as class A.
+
+**stderr:**
+- the step's: Chrome's startup line twice, and seven `XGetWindowProperty[_NET_ACTIVE_WINDOW] failed (code=1)` lines,
+  as H6's twice-load steps carry;
+- Electron's app log (`run/apps/`): Chromium's network-service restart and zygote lines, at the part's end.
+
+**Scans over `h7/` after L4d's copy:**
+- token-shaped strings: 86 files, 0 hits;
+- key codes: 0;
+- titles over `h7/out/`: 44 files, 2603 of 2603 values the harness's own.
+
 ## Corrections
 
 - **The local proof's summary log had false exits** (ruling 774). `scripts/proof-all.sh` wrote
@@ -1188,9 +1265,11 @@ From `h7-bands.mjs` (output `bands-C1.txt`, `bands-L4c.txt`) and `ident-count.mj
 - `h6/`: task 123's reruns at H6 on 0.4.2 (above): `out/` the counted private steps, `zero/` V5's `:0` sitting, and
   `scripts/` its launchers, proof logs, item 9, cross-check, settle readings, canary and late-take extracts, scans and
   lock lines. Logs are kept as `.log.txt`, since the repository ignores `*.log`.
-- `h7/`: task 129's counted reruns of C1 and L4c at H7 on 0.4.2 (above). `out/` holds the two step directories, the
-  driver's log and `print/`, the print's stubs. `scripts/` holds the setup, the home's check, the printed commands, the
-  driver and step launcher, the band, binding and late-take extracts, settle-check, the scans and the lock lines.
+- `h7/`: task 129's counted reruns of C1 and L4c at H7 on 0.4.2, and its counted L4d at H7.1 (above).
+  - `out/` holds the three step directories, the driver's log and `print/`, the print's stubs.
+  - `scripts/` holds the setup, the home's checks, the printed commands and the driver and step launcher. It also has
+    the band, binding and late-take extracts, L4d's part, row and offline-gate extracts (`l4d-*`, `gate459-row8.*`),
+    settle-check, the scans and the lock lines.
 - `scripts/`: task 89's launchers and records as they ran.
   - The setup, the home, item 9 and its transcript.
   - The local proof and its logs (`proof/`).

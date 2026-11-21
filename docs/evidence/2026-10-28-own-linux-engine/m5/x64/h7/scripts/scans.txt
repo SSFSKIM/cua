@@ -1,5 +1,5 @@
-files: 55
+files: 86
 hits: 0
 token scan exit 0
-titles looked for: 0; {"files":55,"title_hits":0,"held_code_rows":0,"minimized_raw_codes":0}
+titles looked for: 0; {"files":86,"title_hits":0,"held_code_rows":0,"minimized_raw_codes":0}
 key-code scan exit 0

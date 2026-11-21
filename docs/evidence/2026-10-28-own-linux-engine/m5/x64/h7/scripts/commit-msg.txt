@@ -1,0 +1,19 @@
+#171 M5 x64 at H7 on 0.4.2 (task 129): C1 and L4c counted, both PASS, 0 unexercised
+
+C1 and L4c are the two steps the frozen head H7 (ae3fc1e8) changes, rulings 954-956, 963 and 969. Both reran
+counted on x64 against linux-engine-v0.4.2 in home-x64-042, on private displays. Each step was one hold of
+locked.sh task129-x64, and each ran gate.mjs print's line.
+
+- C1 at idle: PASS. Inside 10/10 landed, past 10/10 answered the hold notice, and the edge's 5 late takes
+  were all reported.
+- L4c at twice the load: PASS. Inside 10/10, past 10/10, and the edge's 3 late takes were all reported.
+- In both: 0 unexercised, 0 skipped, 0 false ok and 0 unjudged. Every one of the 40 sources was identified
+  and every press mark was bound. The press's server time came 2-10 ms after the send's in C1 and 1-29 ms
+  after it in L4c.
+- Each stop came 53.5-57 ms after its mark. setTimeout woke up to 1.5 ms before the rule's start, which the
+  judge does not credit by.
+
+The evidence is m5/x64/h7/ (out/ and scripts/), with the README part "At H7 on 0.4.2". It was scanned before
+the commit: 0 token-shaped strings, 0 key codes, and 436 of 436 title-bearing values the harness's own.
+
+Sminos-Session: linux171#3c5ca588 (cua on dc-linux171-1e68)

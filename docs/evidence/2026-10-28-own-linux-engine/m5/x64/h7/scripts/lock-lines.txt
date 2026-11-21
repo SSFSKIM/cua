@@ -10,3 +10,9 @@
 2026-11-21T07:59:15Z wait task129-x64 load=10.70 4.07 6.29 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task129/step.sh L4c
 2026-11-21T08:18:15Z acquire task129-x64 load=17.35 17.56 14.47 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task129/step.sh L4c
 2026-11-21T08:24:16Z release task129-x64 status=0 load=15.99 12.13 12.41 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task129/step.sh L4c
+2026-11-21T09:00:22Z wait task129-x64 load=0.82 0.49 1.62 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task129/check-home.sh
+2026-11-21T09:00:22Z acquire task129-x64 load=0.82 0.49 1.62 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task129/check-home.sh
+2026-11-21T09:00:27Z release task129-x64 status=0 load=0.75 0.48 1.61 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task129/check-home.sh
+2026-11-21T09:00:28Z wait task129-x64 load=0.75 0.48 1.61 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task129/step.sh L4d
+2026-11-21T09:00:28Z acquire task129-x64 load=0.75 0.48 1.61 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task129/step.sh L4d
+2026-11-21T09:20:32Z release task129-x64 status=1 load=17.58 17.31 13.22 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task129/step.sh L4d

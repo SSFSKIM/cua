@@ -699,7 +699,8 @@ func state(_ q: [String: Any]) -> [String: Any] {
 }
 
 /// {"op":"watch","pid","ms"}: the window list sampled every 10 ms for `ms`: each change of (the app's on-screen windows at
-/// layer >= 100 and at least 20 pt each way, the owner pid of the frontmost layer-0 window), as [ms since start, count, pid].
+/// layer >= 100 and at least 20 pt each way, the frontmost layer-0 window's owner pid and number), as [ms since start,
+/// count, pid, number].
 func watch(_ q: [String: Any]) -> [String: Any] {
   guard let pid = (q["pid"] as? NSNumber)?.int32Value else { return ["error": "args"] }
   let ms = (q["ms"] as? NSNumber)?.doubleValue ?? 2000
@@ -712,9 +713,11 @@ func watch(_ q: [String: Any]) -> [String: Any] {
       let b = rectOf(w)
       return ((w[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value ?? 0) == pid && ((w[kCGWindowLayer as String] as? NSNumber)?.intValue ?? 0) >= 100 && b.width >= 20 && b.height >= 20
     }.count
-    let top = list.first { (($0[kCGWindowLayer as String] as? NSNumber)?.intValue ?? 0) == 0 }.flatMap { ($0[kCGWindowOwnerPID as String] as? NSNumber)?.intValue } ?? 0
-    let key = "\(menus)|\(top)"
-    if key != last { samples.append([r1(nowMs() - t0), menus, top]); last = key }
+    let front = list.first { (($0[kCGWindowLayer as String] as? NSNumber)?.intValue ?? 0) == 0 }
+    let top = (front?[kCGWindowOwnerPID as String] as? NSNumber)?.intValue ?? 0
+    let topN = (front?[kCGWindowNumber as String] as? NSNumber)?.intValue ?? 0
+    let key = "\(menus)|\(top)|\(topN)"
+    if key != last { samples.append([r1(nowMs() - t0), menus, top, topN]); last = key }
     usleep(10_000)
   }
   return ["samples": samples, "reads": reads]

@@ -22,7 +22,7 @@ function watched(r) {
 for (const file of process.argv.slice(2)) {
   const {config, results} = JSON.parse(readFileSync(file, 'utf8'));
   console.log(`## engine ${config.engineRef}  (${config.chrome}; ${config.macOS}; image ${config.image}; kit ${config.commit}; ${results.length} rows, ${config.minutes} min${config.budgetStop ? ', budget stop' : ''})\n`);
-  console.log('| pop-up | route | mode | rows | answer (route/plan/activation) | opened | watch (ms) | AXExpanded | front before->after | focus after | page | re-observation | item click |');
+  console.log('| pop-up | route | mode | rows | answer (route/plan/activation) | opened | watch (ms) | AXExpanded | front before->after; top window before->after->after Escape | focus after | page | re-observation | item click |');
   console.log('|---|---|---|---|---|---|---|---|---|---|---|---|---|');
   const groups = new Map();
   for (const r of results) { const k = `${r.menu}|${r.route}|${r.mode}`; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(r); }
@@ -34,7 +34,8 @@ for (const file of process.argv.slice(2)) {
     const op = tally(ok.map(r => r.opened));
     const wa = tally(ok.map(watched));
     const ex = tally(ok.map(r => `${r.before?.expanded}->${r.after?.expanded}`));
-    const fr = tally(ok.map(r => `${r.before?.front}->${r.after?.front}`).map(s => s.replace(/com\.(apple|google)\./g, '')));
+    const short = s => s.replace(/com\.(apple|google)\./g, '');
+    const fr = tally(ok.map(r => short(`${r.before?.front}->${r.after?.front}; order ${r.before?.order?.[0]}->${r.after?.order?.[0]}${r.afterClose ? `->${r.afterClose.order?.[0]} (Escape${r.afterClose.menuUp ? ', menu up' : ''}; front ${r.afterClose.front})` : ''}${r.item ? `; after item ${r.item.order?.[0]}, front ${r.item.front}` : ''}`)));
     const fo = tally(ok.map(r => `${r.after?.focused ?? '-'}${r.after?.focusedIsOpener ? '(button)' : ''}${r.focusAfterWrite ? ` [write ${r.focusAfterWrite.result}, button focused ${r.focusAfterWrite.openerFocused}]` : ''}`));
     const pg = menu === 'select' ? tally(ok.map(r => [...(r.after?.page ?? []), ...(r.after?.changes ?? [])].join(',') || 'none')) : '-';
     const re = tally(ok.filter(r => r.reobs).map(r => `${r.reobs.menuItems} items${r.reobs.menuItems ? ` (${r.reobs.tokens} tokens)` : ''}`));

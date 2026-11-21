@@ -459,10 +459,19 @@ async function runRow(app, menuName, mode, route, rep) {
         const pop1 = await ask({op: 'popup', pid, window: winArr(sky1.window.frame)});
         const changed = ev1.filter(e => e.type === 'change' && e.id === 'sel').map(e => e.value).pop() ?? (st.opener?.value !== row.opener.value ? st.opener?.value : null);
         row.item = {changes: ev1.filter(e => ['input', 'change'].includes(e.type)).map(e => `${e.type}:${e.id}=${e.value}`), value: st.opener?.value ?? null,
-          menuUp: Boolean(pop1.popup && pop1.popup.layer >= 100), front: frontmost()};
+          menuUp: Boolean(pop1.popup && pop1.popup.layer >= 100), front: frontmost(), order: (st.order ?? []).map(o => o[0]), axFrontmost: st.axFrontmost};
         row.item.landing = row.itemClick.error ? `refused:${row.itemClick.error}` : changed === row.pick.expect ? 'taken' : changed ? `taken-other:${changed}` : row.item.menuUp ? 'menu-still-up' : 'closed-not-taken';
         if (row.itemClick.error && changed === row.pick.expect) row.item.landing += '+taken';
       }
+    }
+    // Left as found? After anything opened, the engine's Escape (route 2'), then the window order and the frontmost app.
+    if (row.opened !== 'none' || row.after?.order?.[0] !== row.before?.order?.[0]) {
+      const esc = brief(await w.execute('press_key', {pid, key: 'Escape'}));
+      await sleep(700);
+      const st = await ask({op: 'state', pid});
+      const pe = await ask({op: 'popup', pid, window: winArr(wf)});
+      row.afterClose = {escape: esc.error ?? 'ok', order: (st.order ?? []).map(o => o[0]), front: frontmost(), axFrontmost: st.axFrontmost,
+        menuUp: (pe.appWindows ?? []).some(x => x.layer >= 100 && x.bounds?.[2] >= 20)};
     }
   } catch (e) { row.exception = String(e?.stack || e).slice(0, 1500); }
   finally {

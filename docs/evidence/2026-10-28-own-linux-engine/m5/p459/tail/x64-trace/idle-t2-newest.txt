@@ -1,0 +1,57 @@
+idle-t2/traces/newest.2823798.xtrace: 2 presses, 2 releases
+--- drag: press at 1795273415.550, release +368.0 ms, 238 motions, 240 input events
+    motion spacing ms p50 1.00 max 9.00
+       -1.0 c000 RQ GetInputFocus 
+       -1.0 c000 EV MotionNotify dest=0x01200002 root=(534,215) ev=(534,215) state=0 detail=Normal(0x00) time=0x7d8145b0
+       -1.0 c000 RQ GetInputFocus 
+        0.0 c000 EV ButtonPress dest=0x01200002 root=(534,215) ev=(534,215) state=0 detail=- time=0x7d8145b0
+        0.0 c000 RQ GetInputFocus 
+        1.0 c000 RQ TranslateCoordinates src-window=0x000001ff dst-window=0x01200002 src-x=538 src-y=215
+        1.0 c000 EV MotionNotify dest=0x01200002 root=(538,215) ev=(538,215) state=Button1 detail=Normal(0x00) time=0x7d8145b2
+        1.0 c000 RQ GetInputFocus 
+        3.0 c000 RQ TranslateCoordinates src-window=0x000001ff dst-window=0x01200002 src-x=542 src-y=215
+      340.0 c000 EV MotionNotify dest=0x01200002 root=(512,587) ev=(512,587) state=Button1 detail=Normal(0x00) time=0x7d814704
+      340.0 c000 RQ GetInputFocus 
+      341.0 c000 RQ TranslateCoordinates src-window=0x000001ff dst-window=0x01200002 src-x=508 src-y=587
+      342.0 c000 EV MotionNotify dest=0x01200002 root=(508,587) ev=(508,587) state=Button1 detail=Normal(0x00) time=0x7d814706
+      342.0 c000 RQ GetInputFocus 
+      343.0 c000 RQ TranslateCoordinates src-window=0x000001ff dst-window=0x01200002 src-x=504 src-y=587
+      343.0 c000 EV MotionNotify dest=0x01200002 root=(504,587) ev=(504,587) state=Button1 detail=Normal(0x00) time=0x7d814707
+      343.0 c000 RQ GetInputFocus 
+      351.0 c000 RQ TranslateCoordinates src-window=0x000001ff dst-window=0x01200002 src-x=504 src-y=587
+      351.0 c000 EV MotionNotify dest=0x01200002 root=(504,587) ev=(504,587) state=Button1 detail=Normal(0x00) time=0x7d814710
+      351.0 c000 RQ GetInputFocus 
+      360.0 c000 RQ TranslateCoordinates src-window=0x000001ff dst-window=0x01200002 src-x=504 src-y=587
+      360.0 c000 EV MotionNotify dest=0x01200002 root=(504,587) ev=(504,587) state=Button1 detail=Normal(0x00) time=0x7d814718
+      360.0 c000 RQ GetInputFocus 
+      368.0 c000 EV ButtonRelease dest=0x01200002 root=(504,587) ev=(504,587) state=Button1 detail=- time=0x7d814721
+      368.0 c000 RQ GetInputFocus 
+      469.0 c000 RQ GetInputFocus 
+--- drag: press at 1795273417.642, release +350.0 ms, 238 motions, 240 input events
+    motion spacing ms p50 1.00 max 9.00
+        0.0 c000 RQ GetInputFocus 
+        0.0 c000 EV MotionNotify dest=0x01200002 root=(534,215) ev=(534,215) state=0 detail=Normal(0x00) time=0x7d814ddb
+        0.0 c000 RQ GetInputFocus 
+        0.0 c000 EV ButtonPress dest=0x01200002 root=(534,215) ev=(534,215) state=0 detail=- time=0x7d814ddb
+        0.0 c000 RQ GetInputFocus 
+        1.0 c000 RQ TranslateCoordinates src-window=0x000001ff dst-window=0x01200002 src-x=538 src-y=215
+        1.0 c000 EV MotionNotify dest=0x01200002 root=(538,215) ev=(538,215) state=Button1 detail=Normal(0x00) time=0x7d814ddd
+        1.0 c000 RQ GetInputFocus 
+        3.0 c000 RQ TranslateCoordinates src-window=0x000001ff dst-window=0x01200002 src-x=542 src-y=215
+      322.0 c000 EV MotionNotify dest=0x01200002 root=(512,587) ev=(512,587) state=Button1 detail=Normal(0x00) time=0x7d814f1e
+      322.0 c000 RQ GetInputFocus 
+      324.0 c000 RQ TranslateCoordinates src-window=0x000001ff dst-window=0x01200002 src-x=508 src-y=587
+      324.0 c000 EV MotionNotify dest=0x01200002 root=(508,587) ev=(508,587) state=Button1 detail=Normal(0x00) time=0x7d814f1f
+      324.0 c000 RQ GetInputFocus 
+      325.0 c000 RQ TranslateCoordinates src-window=0x000001ff dst-window=0x01200002 src-x=504 src-y=587
+      325.0 c000 EV MotionNotify dest=0x01200002 root=(504,587) ev=(504,587) state=Button1 detail=Normal(0x00) time=0x7d814f21
+      325.0 c000 RQ GetInputFocus 
+      333.0 c000 RQ TranslateCoordinates src-window=0x000001ff dst-window=0x01200002 src-x=504 src-y=587
+      334.0 c000 EV MotionNotify dest=0x01200002 root=(504,587) ev=(504,587) state=Button1 detail=Normal(0x00) time=0x7d814f29
+      334.0 c000 RQ GetInputFocus 
+      342.0 c000 RQ TranslateCoordinates src-window=0x000001ff dst-window=0x01200002 src-x=504 src-y=587
+      342.0 c000 EV MotionNotify dest=0x01200002 root=(504,587) ev=(504,587) state=Button1 detail=Normal(0x00) time=0x7d814f32
+      342.0 c000 RQ GetInputFocus 
+      350.0 c000 EV ButtonRelease dest=0x01200002 root=(504,587) ev=(504,587) state=Button1 detail=- time=0x7d814f3a
+      350.0 c000 RQ GetInputFocus 
+      451.0 c000 RQ GetInputFocus 

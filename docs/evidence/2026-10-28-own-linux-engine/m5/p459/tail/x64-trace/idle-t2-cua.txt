@@ -1,0 +1,69 @@
+idle-t2/traces/cua.2824298.xtrace: 2 presses, 2 releases
+--- drag: press at 1795273422.789, release +472.0 ms, 946 motions, 948 input events
+    motion spacing ms p50 0.00 max 6.00
+        0.0 c001 RQ GetInputFocus 
+        0.0 c000 RQ GrabServer 
+        0.0 c000 RQ QueryPointer window=0x004002dc
+        0.0 c000 EV ButtonPress dest=0x01200002 root=(534,215) ev=(534,215) state=0 detail=- time=0x7d8161f7
+        0.0 c000 RQ GetInputFocus 
+        0.0 c000 RQ TranslateCoordinates src-window=0x000001ff dst-window=0x01200002 src-x=534 src-y=215
+        0.0 c000 EV MotionNotify dest=0x01200002 root=(534,215) ev=(534,215) state=Button1 detail=Normal(0x00) time=0x7d8161f7
+        0.0 c000 RQ GetInputFocus 
+        0.0 c000 RQ TranslateCoordinates src-window=0x000001ff dst-window=0x01200002 src-x=535 src-y=215
+      469.0 c000 RQ GetInputFocus 
+      470.0 c000 RQ TranslateCoordinates src-window=0x000001ff dst-window=0x01200002 src-x=506 src-y=587
+      470.0 c000 EV MotionNotify dest=0x01200002 root=(506,587) ev=(506,587) state=Button1 detail=Normal(0x00) time=0x7d8163cd
+      470.0 c000 RQ GetInputFocus 
+      470.0 c000 RQ TranslateCoordinates src-window=0x000001ff dst-window=0x01200002 src-x=505 src-y=587
+      471.0 c000 EV MotionNotify dest=0x01200002 root=(505,587) ev=(505,587) state=Button1 detail=Normal(0x00) time=0x7d8163ce
+      471.0 c000 RQ GetInputFocus 
+      471.0 c000 RQ TranslateCoordinates src-window=0x000001ff dst-window=0x01200002 src-x=504 src-y=587
+      471.0 c000 EV MotionNotify dest=0x01200002 root=(504,587) ev=(504,587) state=Button1 detail=Normal(0x00) time=0x7d8163ce
+      471.0 c000 RQ GetInputFocus 
+      471.0 c000 RQ TranslateCoordinates src-window=0x000001ff dst-window=0x01200002 src-x=504 src-y=587
+      471.0 c000 EV MotionNotify dest=0x01200002 root=(504,587) ev=(504,587) state=Button1 detail=Normal(0x00) time=0x7d8163cf
+      471.0 c000 RQ GetInputFocus 
+      472.0 c001 RQ GetInputFocus 
+      472.0 c000 EV ButtonRelease dest=0x01200002 root=(504,587) ev=(504,587) state=Button1 detail=- time=0x7d8163cf
+      472.0 c000 RQ GetInputFocus 
+      472.0 c001 RQ GetInputFocus 
+      472.0 c001 RQ ChangeWindowAttributes window=0x01200002 value-list={event-mask=0}
+      472.0 c000 RQ CreateWindow depth=0x00 window=0x02000001 parent=0x000001ff x=0 y=0 width=1 height=1 border-width=0 class=InputO
+      472.0 c000 RQ ChangeProperty mode=Replace(0x00) window=0x02000001 property=0x27("WM_NAME") type=0x1f("STRING") data=''
+      472.0 c000 RQ GetInputFocus 
+      472.0 c000 RQ DestroyWindow window=0x02000001
+      473.0 c000 RQ TranslateCoordinates src-window=0x01200002 dst-window=0x000001ff src-x=0 src-y=0
+--- drag: press at 1795273424.660, release +472.0 ms, 946 motions, 948 input events
+    motion spacing ms p50 0.00 max 3.00
+        0.0 c001 RQ GetInputFocus 
+        0.0 c000 RQ GrabServer 
+        0.0 c000 RQ QueryPointer window=0x004002dc
+        0.0 c000 EV ButtonPress dest=0x01200002 root=(534,215) ev=(534,215) state=0 detail=- time=0x7d816946
+        0.0 c000 RQ GetInputFocus 
+        0.0 c000 RQ TranslateCoordinates src-window=0x000001ff dst-window=0x01200002 src-x=534 src-y=215
+        0.0 c000 EV MotionNotify dest=0x01200002 root=(534,215) ev=(534,215) state=Button1 detail=Normal(0x00) time=0x7d816946
+        0.0 c000 RQ GetInputFocus 
+        0.0 c000 RQ TranslateCoordinates src-window=0x000001ff dst-window=0x01200002 src-x=535 src-y=215
+      469.0 c000 RQ GetInputFocus 
+      470.0 c000 RQ TranslateCoordinates src-window=0x000001ff dst-window=0x01200002 src-x=506 src-y=587
+      470.0 c000 EV MotionNotify dest=0x01200002 root=(506,587) ev=(506,587) state=Button1 detail=Normal(0x00) time=0x7d816b1c
+      470.0 c000 RQ GetInputFocus 
+      470.0 c000 RQ TranslateCoordinates src-window=0x000001ff dst-window=0x01200002 src-x=505 src-y=587
+      471.0 c000 EV MotionNotify dest=0x01200002 root=(505,587) ev=(505,587) state=Button1 detail=Normal(0x00) time=0x7d816b1c
+      471.0 c000 RQ GetInputFocus 
+      471.0 c000 RQ TranslateCoordinates src-window=0x000001ff dst-window=0x01200002 src-x=504 src-y=587
+      471.0 c000 EV MotionNotify dest=0x01200002 root=(504,587) ev=(504,587) state=Button1 detail=Normal(0x00) time=0x7d816b1d
+      471.0 c000 RQ GetInputFocus 
+      471.0 c000 RQ TranslateCoordinates src-window=0x000001ff dst-window=0x01200002 src-x=504 src-y=587
+      472.0 c000 EV MotionNotify dest=0x01200002 root=(504,587) ev=(504,587) state=Button1 detail=Normal(0x00) time=0x7d816b1d
+      472.0 c000 RQ GetInputFocus 
+      472.0 c001 RQ GetInputFocus 
+      472.0 c000 EV ButtonRelease dest=0x01200002 root=(504,587) ev=(504,587) state=Button1 detail=- time=0x7d816b1e
+      472.0 c000 RQ GetInputFocus 
+      472.0 c001 RQ GetInputFocus 
+      472.0 c001 RQ ChangeWindowAttributes window=0x01200002 value-list={event-mask=0}
+      472.0 c000 RQ CreateWindow depth=0x00 window=0x02000003 parent=0x000001ff x=0 y=0 width=1 height=1 border-width=0 class=InputO
+      472.0 c000 RQ ChangeProperty mode=Replace(0x00) window=0x02000003 property=0x27("WM_NAME") type=0x1f("STRING") data=''
+      472.0 c000 RQ GetInputFocus 
+      473.0 c000 RQ DestroyWindow window=0x02000003
+      473.0 c000 RQ TranslateCoordinates src-window=0x01200002 dst-window=0x000001ff src-x=0 src-y=0

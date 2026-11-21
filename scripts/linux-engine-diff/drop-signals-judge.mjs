@@ -545,7 +545,19 @@ export const ELECTRON_JUDGED_PLANS = ['t17-floor', 't17-handle', 't17-fix2', 't1
 
 /** The engine's floor after a take (cua-engine `dnd.rs` `RELEASE_AFTER_TAKE`): the release no later than this after it. */
 export const T17_LONG_FLOOR_MS = 350;
-/** The exercised rows Electron's `t17-long` (L4d's part 3) needs of its 30, or the part is unexercised (ruling 972). */
+/**
+ * How far past the floor the motion after the take must run to have outlasted it: the engine spreads a path's steps
+ * after a take over the floor (pointer.rs), so a path that would end sooner ends at the floor, 350 to 358 ms after the
+ * take in the stored rows (L4a's left and plain cells, both architectures). 25 ms clears that jitter; L4d's x64
+ * development run outlasted it by 87 ms at the least (437 to 520 ms after the take).
+ */
+export const T17_LONG_OUTLAST_MS = 25;
+/**
+ * The exercised drags Electron's `t17-long` (L4d's part 3) needs of its 30, or the part is unexercised (ruling 972): two
+ * thirds, as the late bands' 7 of 10. L4d's x64 development run at twice the load exercised 30 of 30, and Electron took
+ * every one of L4a's drags at twice the load on both architectures (H6). From 0 misses in 30 the miss rate is under 10%
+ * (the rule of three), and at a 90% rate the chance of fewer than 20 by chance is under 0.1%.
+ */
 export const T17_LONG_MIN = 20;
 
 /** Whether a drop-signals run's rows are T17's Electron cells, judged by `electronDropVerdict`. */
@@ -718,7 +730,7 @@ export function unconfirmedClass(r) {
 /**
  * Electron's long path out of the zone (`t17-long`, L4d's part 3; the design session's ruling 972): a drag exercised it
  * only when all of these hold: a take was seen (the watch's or the hold's); the motion after the take outlasted the
- * floor (`hold.path_ms` less the take's time after the press, over `T17_LONG_FLOOR_MS`), so the release followed the
+ * floor (`hold.path_ms` less the take's time after the press, over `T17_LONG_FLOOR_MS` by `T17_LONG_OUTLAST_MS`), so the release followed the
  * path's end, not the floor; and it ended as expected: answered ok, with no drop at a stale position, no ambiguous or
  * unplaced landing, and no false ok. An errored or untaken drag is unexercised. Short of `T17_LONG_MIN` exercised drags
  * the cell fails as unexercised; the counts are reported either way. Answers the counts.
@@ -726,7 +738,7 @@ export function unconfirmedClass(r) {
 function longPathCheck(name, list, ends, failed, findings) {
   const takeOf = (r) => r.hold?.take_after_press_ms ?? r.signals?.take_after_press_ms ?? null;
   const took = list.filter((r) => typeof takeOf(r) === 'number' || r.hold?.taken === true);
-  const outlasted = took.filter((r) => Number.isFinite(r.hold?.path_ms) && typeof takeOf(r) === 'number' && r.hold.path_ms - takeOf(r) > T17_LONG_FLOOR_MS);
+  const outlasted = took.filter((r) => Number.isFinite(r.hold?.path_ms) && typeof takeOf(r) === 'number' && r.hold.path_ms - takeOf(r) > T17_LONG_FLOOR_MS + T17_LONG_OUTLAST_MS);
   const expected = (r) => r.ok === true && landingOf(r, ends) === null && !(honest(r) === null && !droppedOf(r));
   const exercised = outlasted.filter(expected);
   const what = `${exercised.length} of ${list.length} drags exercised the long path (a take, its motion after the take past the ${T17_LONG_FLOOR_MS} ms floor, and the expected end)`;

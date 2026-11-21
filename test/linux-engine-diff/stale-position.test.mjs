@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
-import { CELL_SOURCE, LATE_BANDS, OFF_WINDOW_CELLS, PATH_ENDS, STALE_MARGIN_PX, T14_SOURCE, T17_LONG_FLOOR_MS, T17_LONG_MIN, ZONE, chromeDropVerdict, electronDropVerdict, endAgainstZone, holdRegressionVerdict } from '../../scripts/linux-engine-diff/drop-signals-judge.mjs';
+import { CELL_SOURCE, LATE_BANDS, OFF_WINDOW_CELLS, PATH_ENDS, STALE_MARGIN_PX, T14_SOURCE, T17_LONG_FLOOR_MS, T17_LONG_MIN, T17_LONG_OUTLAST_MS, ZONE, chromeDropVerdict, electronDropVerdict, endAgainstZone, holdRegressionVerdict } from '../../scripts/linux-engine-diff/drop-signals-judge.mjs';
 import { CELLS } from '../../scripts/linux-engine-diff/drop-signals.mjs';
 import { dropRow } from './drop-rows.mjs';
 
@@ -166,4 +166,14 @@ test("the review of 2dd2b0d8, finding 3 (ruling 972): Electron's t17-long counts
   assert.match(enough.findings.join('\n'), new RegExp(`cua long-left: ${T17_LONG_MIN} of 30 drags exercised the long path`));
   // the rule is t17-long's: another plan's cells are judged as before
   assert.equal(electronDropVerdict(errored.slice(0, 1).map((r) => ({ ...r, cell: 'left' })), { specs: specs(['cua', 'left', 1]), plan: 't17-fix3' }).counts.long_path, undefined);
+});
+
+test("ruling 972: the motion after the take outlasts the floor only by more than the floor's own jitter: a short path the engine spreads over the floor ends 350–358 ms after the take", () => {
+  const row = (i, after) => ({ ...electron({ cell: 'long-left', i, pending: 'unconfirmed' }), signals: { take_after_press_ms: 20, late_take: false }, hold: { taken: true, path_ms: 20 + after, take_after_press_ms: 20 } });
+  const judge = (rows) => electronDropVerdict(rows, { specs: specs(['cua', 'long-left', 30]), plan: 't17-long' }).counts.long_path;
+  // spread over the floor (L4a's left and plain cells: 350 to 358 ms after the take): not outlasted
+  assert.equal(judge(many(30, (i) => row(i, 350 + (i % 9)))).outlasted, 0);
+  // past it by more than the jitter (L4d's x64 development run: 437 to 520): outlasted
+  assert.equal(judge(many(30, (i) => row(i, T17_LONG_FLOOR_MS + T17_LONG_OUTLAST_MS + 1 + i))).outlasted, 30);
+  assert.equal(T17_LONG_OUTLAST_MS, 25);
 });

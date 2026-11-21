@@ -1,0 +1,42 @@
+✔ the judge's zone is the page's #zone, and every drop cell's path end is its path's own last point (2.503204ms)
+✔ a path end against the zone: inside, outside, and within the border margin ambiguous (0.43092ms)
+✔ ruling 957: Chrome's long-left control, its path ended left of the zone, a drop landed in the zone: a drop at a stale position, never landed, and the step fails (4.226231ms)
+✔ ruling 957 on t14-floor: left and inzone-out end outside the zone, the long drop inside; only the controls' landings are stale (0.550255ms)
+✔ the review of 2dd2b0d8, finding 1: the measurement lane's accept is no proof the path ended in the zone (the engine sends every sample before it reads the cursor): its landings are judged by the path's end too (0.709233ms)
+✔ ruling 961: a path that ended within the border margin is ambiguous: neither landed nor wrong, named and counted; where a landing is needed, unexercised (1.344998ms)
+✔ ruling 957 in Electron: the controls' and the off-window releases' landings in the zone are stale; the short drop's and the move's land (1.318939ms)
+✔ the hold's regression cells land only where their paths end, inside the zone (0.873572ms)
+✔ the review of 2dd2b0d8, finding 2: an off-window drag whose end was not verified is still judged on the zone's drop: a landing there is stale, never dropped from the evidence (0.656524ms)
+✔ the review of 2dd2b0d8, finding 3 (ruling 972): Electron's t17-long counts a row only when it took, its motion after the take outlasted the floor, and it ended as expected; short of its minimum the part is unexercised (4.229158ms)
+✖ ruling 972: the motion after the take outlasts the floor only by more than the floor's own jitter: a short path the engine spreads over the floor ends 350–358 ms after the take (1.704953ms)
+ℹ tests 11
+ℹ suites 0
+ℹ pass 10
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 217.415812
+
+✖ failing tests:
+
+test at test/linux-engine-diff/stale-position.test.mjs:171:1
+✖ ruling 972: the motion after the take outlasts the floor only by more than the floor's own jitter: a short path the engine spreads over the floor ends 350–358 ms after the take (1.704953ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  26 !== 0
+  
+      at TestContext.<anonymous> (file:///Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m5-h7-p2/test/linux-engine-diff/stale-position.test.mjs:175:10)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1402:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:974:18)
+      at Test.postRun (node:internal/test_runner/test:1542:19)
+      at Test.run (node:internal/test_runner/test:1467:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 26,
+    expected: 0,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

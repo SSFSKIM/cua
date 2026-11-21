@@ -7384,6 +7384,16 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   unconfirmed. (6) The arrow's own AXEnabled must read true, else main's path (`kept: "disabled"`). (7) The bound
   reached before three stable samples is incomplete, whatever the last sample read.
   Date/Author: 2026-11-21, cursor235's implementer for #458.
+- Decision (#458's restore, the re-review of a094f620..1612abe2, reviewer-high, 2026-11-21, the last review wave;
+  amends the entry above, item 3): four corrections, each tested and failing with its fix reverted. (1) The frame
+  fallback is dropped: a person's window is resolved only by its own number (`axWindowNumber`, the SPI); one it does not
+  prove is `unresolved`, never raised. (2) The lookup (`resolveByNumber`) is handed the cutoff, scans each process's
+  AXWindows once, reads only the number (no frame), stops at the process's last recorded window, and reads nothing once
+  the cutoff is spent. (3) The order the restore checks and raises for is the resolved windows'; once they are back, an
+  unresolved window still out of order ends the restore as `unresolved` after its stable samples, instead of
+  re-raising until the cutoff. (4) The 500 ms cutoff counts from the restore's start, the 60 ms sampling minimum from a
+  timestamp taken after the resolution.
+  Date/Author: 2026-11-21, cursor235's implementer for #458.
 
 ## Outcomes & Retrospective
 

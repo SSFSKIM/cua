@@ -206,5 +206,5 @@ Timing, per lane, over every click that carried a stalePoint (ms):
 | textedit | fix2 023a3bee | 65 | 0.89 | 2.51 | 0.74 | 1.37 | 65/65 |
 | textedit | fix3 bbe42e2c | 65 | 1.00 | 2.07 | 0.81 | 1.89 | 65/65 |
 
-fix2 ran on another runner image and Chrome than main. fix3 ran on main's image and Chrome. `hitMs` is not part of
-`stalePoint.ms`: the hit-test runs before the guard, so it adds its own time.
+fix2 ran on another runner image and Chrome than main. fix3 ran on main's image and Chrome. On Chrome, fix3's `hitMs` p50 is above its
+`stalePoint.ms` p50, so the hit-test's time is not inside `stalePoint.ms`; read the two as adding.

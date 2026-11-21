@@ -4,7 +4,7 @@
  * button 1 held, one every <step_us> by elapsed time (a late sample does not delay the ones after it), each followed by
  * a round trip (XSync), and ButtonRelease at once after the last. Only libX11 is linked; its few declarations are
  * written out here, the VM having no X11 headers.
- *   synth-drag <window> <window x> <window y> <step us> <x0> <y0> <x1> <y1> ...   (waypoints in window coordinates) */
+ *   [SYNTH_TAIL_US=8000] synth-drag <window> <window x> <window y> <step us> <x0> <y0> <x1> <y1> ...   (waypoints in window coordinates) */
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -58,6 +58,13 @@ int main(int argc, char **argv) {
       lx = px[j] + i * dx / k; ly = py[j] + i * dy / k;
       wait_until(due); send(MotionNotify, lx, ly, Button1Mask); due += step; samples++;
     }
+  }
+  /* SYNTH_TAIL_US (optional): newest vendor build's end, a rest, the last point, a rest, the last point, a rest */
+  const char *tail = getenv("SYNTH_TAIL_US");
+  if (tail && atof(tail) > 0) {
+    double rest = atof(tail);
+    for (int k = 0; k < 2; k++) { wait_until(now_us() + rest); send(MotionNotify, lx, ly, Button1Mask); }
+    wait_until(now_us() + rest);
   }
   send(ButtonRelease, lx, ly, Button1Mask);
   printf("%ld motions\n", samples);

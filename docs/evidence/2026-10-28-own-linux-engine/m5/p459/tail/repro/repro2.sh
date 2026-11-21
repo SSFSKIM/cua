@@ -6,6 +6,7 @@
 # the page's title: a drop counted (the release was outside the zone) is a stale-position drop; a dragend whose
 # dropEffect is not none with no drop counted is a false-ok shape (Chrome dropped, the page took nothing).
 # Optional load: stress-ng CPU workers per core.
+# SYNTH_TAIL_US=8000 in the environment ends each drag as the newest vendor build does (synth-drag.c).
 # usage: repro2.sh <n drags> <stress workers per core, 0 for none> [step us, default 500]
 set -u
 here=$(cd "$(dirname "$0")" && pwd)

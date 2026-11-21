@@ -38,6 +38,10 @@ on:
         description: race only, the field and keysonly cells' prehold settings (0, 1, or 0,1)
         type: string
         default: ''
+      via:
+        description: race only, how the race cell's keys go (racer, engine, or racer,engine)
+        type: string
+        default: ''
       reps:
         description: race only, repetitions of every unit
         type: string
@@ -66,6 +70,7 @@ jobs:
       DELAYS: ${{ inputs.delays }}
       FIELD_DELAYS: ${{ inputs.field_delays }}
       PREHOLD: ${{ inputs.prehold }}
+      VIA: ${{ inputs.via }}
       REPS: ${{ inputs.reps }}
       PARITY_REPS: ${{ inputs.parity_reps }}
     steps:
@@ -106,6 +111,7 @@ jobs:
           if [ -n "$DELAYS" ]; then extra+=(--delays "$DELAYS"); fi
           if [ -n "$FIELD_DELAYS" ]; then extra+=(--field-delays "$FIELD_DELAYS"); fi
           if [ -n "$PREHOLD" ]; then extra+=(--prehold "$PREHOLD"); fi
+          if [ -n "$VIA" ]; then extra+=(--via "$VIA"); fi
           P456_ENGINE_REFS="main=$ENGINE_SHA,fix=$FIX_SHA" node scripts/probe-456/race.mjs \
             --engines "main=$RUNNER_TEMP/eng-main/release/cua-engine,fix=$RUNNER_TEMP/eng-fix/release/cua-engine" \
             --tool "$RUNNER_TEMP/tool337" --racer "$RUNNER_TEMP/racer456" --out "$RUNNER_TEMP/probe-456" --reps "${REPS:-1}" --budget 100 "${extra[@]}"

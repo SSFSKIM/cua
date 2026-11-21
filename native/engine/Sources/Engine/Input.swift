@@ -548,10 +548,11 @@ extension Engine {
         // #296: what the screenshot showed at the point is checked against what is there now (#316: and the app's windows
         // above the screenshot's against the screenshot's window list; #452: where that hit-test answered), every button
         // and route; a refusal is thrown before anything is posted or pressed (deliverPointer), #282's element route included.
+        // Its re-hits go through `latest`, so #454 reads the timed outcome of the hit the guard judged.
         let stale = signposted("click.stalePoint") {
           stalePointGuard(at: placed.point, windowOrigin: placed.windowFrame.origin, windowID: windowID, hit: pointerHit,
                           place: latest.outcome.place, hitMs: latest.outcome.ms,
-                          rehit: { hitTest(window: placed.window, pid: appPid, at: placed.point) }, app: app, appPid: appPid, context: context)
+                          rehit: latest.rehit, app: app, appPid: appPid, context: context)
         }
         meta.stalePoint = stale.record
         pointer.staleRefusal = stale.refusal
@@ -574,8 +575,13 @@ extension Engine {
           }
           let carried = try armingSettle(&meta, acted: { context.connection.markActed(app) }) { meta in
             try menuItemClick(decision, app: app.displayName, reads: reads, menuWindowShown: { number in
-              onScreenWindowList().contains { $0.number == number }
-            }, now: monotonicMilliseconds, sleep: { usleep(UInt32(max(0, $0) * 1000)) }, checkInFlight: guarding.checkInFlight,
+              onScreenWindowIDs().map { $0.contains(number) }  // nil when the list does not read: unknown, never closed
+            }, now: monotonicMilliseconds, sleep: { usleep(UInt32(max(0, $0) * 1000)) }, prepareOwner: { item in
+              // The item's own process (a helper's menu can be served by another than main's bounded hit).
+              let owner = ownerPid(of: item, fallback: appPid)
+              try refuseForbiddenOwner(owner)
+              actionTargets(owner, app: app, connection: context.connection)
+            }, checkInFlight: guarding.checkInFlight,
               announce: { cursor.act(connection: context.connection.id, app: app.key, window: windowID, .click(placed.point)) },
               perform: { gatedPerform($0, $1) }, meta: &meta)
           }

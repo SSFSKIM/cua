@@ -71,18 +71,23 @@ final class MenuItemPointTests: XCTestCase {
 
   /// The decision with the menu window listed, counting the list's reads.
   private func decide(hit: Node?, recorded: Node?, list: [ListedWindow]? = nil) -> MenuItemPoint<Node> {
-    menuItemPoint(hit: hit, recorded: recorded, reads: reads) {
+    decide(hit: hit, record: recorded.map { RecordedMenuItem(element: $0, title: $0.title) }, list: list)
+  }
+
+  private func decide(hit: Node?, record: RecordedMenuItem<Node>?, list: [ListedWindow]? = nil) -> MenuItemPoint<Node> {
+    menuItemPoint(hit: hit, recorded: record, reads: reads) {
       self.listReads += 1
       return menuWindowOverPoint(point, target: observed, pids: [app], list: list ?? [menuWindow, observedWindow()])?.number
     }
   }
 
   /// The click carried out over a fake clock: `onAction` runs as the item's action is performed (the app taking it).
-  private func click(_ decision: MenuItemPoint<Node>, shown: @escaping (CGWindowID) -> Bool, meta: inout InputMeta,
+  private func click(_ decision: MenuItemPoint<Node>, shown: @escaping (CGWindowID) -> Bool?, meta: inout InputMeta,
+                     prepareOwner: @escaping (Node) throws -> Void = { _ in }, checkInFlight: @escaping () throws -> Void = {},
                      onAction: @escaping (Node, String) -> AXError) throws -> Bool {
     var clock = 0.0
     return try menuItemClick(decision, app: "TextEdit", reads: reads, menuWindowShown: shown, now: { clock }, sleep: { clock += $0 },
-                             checkInFlight: {}, perform: onAction, meta: &meta)
+                             prepareOwner: prepareOwner, checkInFlight: checkInFlight, perform: onAction, meta: &meta)
   }
 
   private func wire(_ meta: InputMeta) -> [String: Any]? { meta.wire["menuItemClick"] as? [String: Any] }
@@ -139,16 +144,15 @@ final class MenuItemPointTests: XCTestCase {
     XCTAssertTrue(hit.answered === three)
     var verdict = StalePointVerdict<Node>(reason: .noHit, node: recordedNode(group, depth: 12), point: point)
     verdict.underlying = recordedNode(three, depth: 9)
-    XCTAssertTrue(recordedMenuItem(verdict) === three)
-    let decision = decide(hit: hit.answered, recorded: recordedMenuItem(verdict))
+    XCTAssertTrue(recordedMenuItem(verdict)?.element === three)
+    let decision = decide(hit: hit.answered, record: recordedMenuItem(verdict))
     guard case .deliver(let target) = decision else { return XCTFail("delivered, not \(decision)") }
     XCTAssertEqual(target.action, "AXPress")
-    focused = three
+    focused = select  // the <select> holds the focus while its parentless menu is open
     var open = true
     var meta = freshMeta()
     XCTAssertTrue(try click(decision, shown: { _ in open }, meta: &meta) { _, _ in
       select.value = "Three"
-      self.focused = select
       open = false
       return .success
     })
@@ -159,12 +163,13 @@ final class MenuItemPointTests: XCTestCase {
   /// control beneath it; none of those, none.
   func testTheRecordedItemIsTheNodeAnItemAboveItOrTheControlBeneath() {
     let scene = textEdit()
-    XCTAssertTrue(recordedMenuItem(StalePointVerdict(reason: .sameElement, node: recordedNode(scene.times, depth: 3), current: scene.times)) === scene.times)
+    XCTAssertTrue(recordedMenuItem(StalePointVerdict(reason: .sameElement, node: recordedNode(scene.times, depth: 3), current: scene.times))?.element === scene.times)
     let icon = Node("AXImage", parent: scene.times)
     let nodes = [recordedNode(scene.menu, depth: 2), recordedNode(scene.times, depth: 3, ancestor: 0), recordedNode(icon, depth: 4, ancestor: 1)]
     var inside = StalePointVerdict<Node>(reason: .nonInteractiveHit, node: nodes[2], point: point)
     inside.nodes = nodes
-    XCTAssertTrue(recordedMenuItem(inside) === scene.times)
+    XCTAssertTrue(recordedMenuItem(inside)?.element === scene.times)
+    XCTAssertEqual(recordedMenuItem(inside)?.title, "Times", "the item's recorded title rides with it")
     var page = StalePointVerdict<Node>(reason: .noHit, node: recordedNode(Node("AXGroup"), depth: 12), point: point)
     XCTAssertNil(recordedMenuItem(page))
     page.underlying = recordedNode(Node("AXButton"), depth: 9)
@@ -230,7 +235,7 @@ final class MenuItemPointTests: XCTestCase {
       XCTAssertThrowsError(try click(decision, shown: { _ in true }, meta: &meta) { _, _ in XCTFail("nothing performed"); return .success }) { error in
         let error = error as? EngineError
         XCTAssertEqual(error?.errorName, "appWindowOverPoint")
-        XCTAssertEqual(error?.message, "TextEdit has a menu open at this point, which a click takes only as its item's own action, but \(cause). Nothing was sent. Use keys instead (the arrow keys to the item, then Return; Escape closes the menu), or call getScreenshot for a new screenshot and click the menu item its tree lists, by its element.")
+        XCTAssertEqual(error?.message, "TextEdit has a menu open at this point, which a click takes only as its item's own action, but \(cause). Nothing was sent. Use keys instead (the arrow keys to the item, then Return; Escape closes the menu), or call getAXState() and click the menu item it lists, by its element.")
       }
       XCTAssertNil(meta.startedAt, "nothing sent")
       XCTAssertEqual(meta.inputRoute, .action)
@@ -287,15 +292,17 @@ final class MenuItemPointTests: XCTestCase {
   }
 
   /// A click on anything but a menu item (a button, a text field), with no item recorded there, is main's and reads no
-  /// window list; a menu item with no menu window of the app's over the point (a web page's ARIA menu, drawn in the
-  /// page) is main's too, as is one whose only layer-101 window is another app's, behind the observed one, or transparent.
+  /// window list; a menu item with no menu window of the app's over the point is main's too, as is one whose only
+  /// layer-101 window is another app's, behind the observed one, or transparent.
   func testClicksOffAnOpenMenusWindowAreMains() {
     for hit in [Node("AXButton", parent: Node("AXWindow")), Node("AXTextField")] {
       guard case .notMenu = decide(hit: hit, recorded: nil) else { return XCTFail("main's path") }
     }
     XCTAssertEqual(listReads, 0, "no window list read")
-    let aria = Node("AXMenuItem", title: "Rename", parent: Node("AXMenu", parent: Node("AXGroup", parent: Node("AXWebArea"))))
-    guard case .notMenu = decide(hit: aria, recorded: aria, list: [observedWindow()]) else { return XCTFail("an in-page menu") }
+    let unwindowed = textEdit()
+    guard case .notMenu = decide(hit: unwindowed.times, recorded: unwindowed.times, list: [observedWindow()]) else {
+      return XCTFail("a menu with no window of its own over the point")
+    }
     let other = ListedWindow(number: 90, owner: 777, layer: menuWindowLayer, bounds: menuWindow.bounds)
     let behind = ListedWindow(number: 91, owner: 501, layer: menuWindowLayer, bounds: menuWindow.bounds)
     var clear = menuWindow
@@ -308,5 +315,187 @@ final class MenuItemPointTests: XCTestCase {
     }
     XCTAssertEqual(menuWindowOverPoint(point, target: observed, pids: [app], list: [menuWindow, observedWindow()])?.number, 77)
     XCTAssertEqual(menuWindowOverPoint(point, target: nil, pids: [app], list: [menuWindow])?.number, 77, "the observed window unlisted")
+  }
+
+  // MARK: The review of fdd285dd..32787ce3
+
+  /// Item 1: the process serving the item is refused when forbidden and registered as driven before the in-flight check,
+  /// whatever main's bounded hit was; a refused owner leaves nothing performed.
+  func testTheItemsOwnProcessIsCheckedBeforeTheInFlightCheckAndTheAction() {
+    let scene = textEdit()
+    var order: [String] = []
+    var meta = freshMeta()
+    XCTAssertThrowsError(try click(decide(hit: scene.times, recorded: scene.times), shown: { _ in false }, meta: &meta, prepareOwner: { item in
+      XCTAssertTrue(item === scene.times, "the item acted on, not main's hit")
+      order.append("owner")
+      throw EngineError(name: "appNotAllowed", "forbidden")
+    }, checkInFlight: { order.append("inFlight") }) { _, _ in order.append("perform"); return .success }) { error in
+      XCTAssertEqual((error as? EngineError)?.errorName, "appNotAllowed")
+    }
+    XCTAssertEqual(order, ["owner"])
+    XCTAssertNil(meta.startedAt)
+    var allowed = freshMeta()
+    order = []
+    _ = try? click(decide(hit: scene.times, recorded: scene.times), shown: { _ in false }, meta: &allowed, prepareOwner: { _ in order.append("owner") },
+                   checkInFlight: { order.append("inFlight") }) { _, _ in order.append("perform"); scene.popup.value = "Times"; return .success }
+    XCTAssertEqual(order, ["owner", "inFlight", "perform"])
+  }
+
+  /// Item 2: the selection must move to the item. A pop-up button already showing the item gives no evidence
+  /// (`unchanged`); a control whose AXTitle is a static label matching the item while its AXValue reads another option is
+  /// `other`: the value decides, the title only where there is no value.
+  func testTheSelectionMustMoveToTheItemAndALabelNeverOverridesTheValue() {
+    let scene = textEdit()
+    scene.popup.value = "Times"
+    var meta = freshMeta()
+    XCTAssertThrowsError(try click(decide(hit: scene.times, recorded: scene.times), shown: { _ in false }, meta: &meta) { _, _ in .success })
+    XCTAssertEqual(wire(meta)?["value"] as? String, "unchanged")
+    XCTAssertEqual(wire(meta)?["effect"] as? String, "unconfirmed")
+
+    let labelled = textEdit()
+    labelled.popup.title = "Times"  // a static label
+    var label = freshMeta()
+    XCTAssertThrowsError(try click(decide(hit: labelled.times, recorded: labelled.times), shown: { _ in false }, meta: &label) { _, _ in .success })
+    XCTAssertEqual(wire(label)?["value"] as? String, "other", "AXValue still reads Helvetica")
+
+    let untitled = textEdit()
+    untitled.popup.value = nil
+    untitled.popup.title = "Helvetica"
+    var byTitle = freshMeta()
+    XCTAssertNoThrow(try click(decide(hit: untitled.times, recorded: untitled.times), shown: { _ in false }, meta: &byTitle) { _, _ in
+      untitled.popup.title = "Times"
+      return .success
+    })
+    XCTAssertEqual(wire(byTitle)?["value"] as? String, "taken", "no value: the title shows the selection")
+  }
+
+  /// Item 3: the control is identified before the action. A context menu's known parent (a text view) has none, so a
+  /// pop-up button focused elsewhere confirms nothing; a parentless menu whose focus before the action is no pop-up
+  /// button or combo box has none either, whatever takes the focus after.
+  func testOnlyAControlIdentifiedBeforeTheActionConfirms() {
+    let text = Node("AXTextArea", parent: Node("AXWindow"))
+    let copy = Node("AXMenuItem", title: "Copy", parent: Node("AXMenu", parent: text))
+    let unrelated = Node("AXPopUpButton", value: "One", parent: Node("AXWindow"))
+    focused = unrelated
+    var meta = freshMeta()
+    XCTAssertThrowsError(try click(decide(hit: copy, recorded: copy), shown: { _ in false }, meta: &meta) { _, _ in
+      unrelated.value = "Copy"
+      return .success
+    })
+    XCTAssertEqual(wire(meta)?["value"] as? String, "unread")
+
+    let parentlessMenu = Node("AXMenu")
+    let three = Node("AXMenuItem", title: "Three", parent: parentlessMenu)
+    let select = Node("AXPopUpButton", value: "One", parent: Node("AXWindow"))
+    focused = three
+    var parentless = freshMeta()
+    XCTAssertThrowsError(try click(decide(hit: three, recorded: three), shown: { _ in false }, meta: &parentless) { _, _ in
+      select.value = "Three"
+      self.focused = select
+      return .success
+    })
+    XCTAssertEqual(wire(parentless)?["value"] as? String, "unread", "the select was not identified before the action")
+  }
+
+  /// Item 4: the guard's re-hits go through `latest` (as the click now gives them), so a menu item the first hit-test
+  /// missed and the guard's re-hit found is the timed signal the menu step reads.
+  func testAGuardsRecoveredHitIsTheMenuSignal() {
+    let scene = textEdit()
+    let application = Node("AXApplication")
+    let window = Node("AXWindow", parent: application)
+    scene.popup.parent = window
+    var answers: [Node?] = [nil, scene.times]
+    let outcome = { () -> WindowHit<Node> in
+      let answer = answers.isEmpty ? nil : answers.removeFirst()
+      return windowHit(application: application, window: window, at: self.point, elementAt: { _, _ in (answer == nil ? .noValue : .success, answer) },
+                       role: { $0.role }, parent: { $0.parent }, same: { $0 === $1 }, now: { 0 })
+    }
+    let latest = LatestHit(outcome(), hitTest: outcome)
+    XCTAssertNil(latest.outcome.answered, "the first hit-test answered nothing")
+    let node = recordedNode(scene.times, depth: 3)
+    let staleReads = StalePointReads<Node>(role: { $0.role }, frame: { _ in nil }, parent: { $0.parent }, children: { $0.children },
+                                           title: { $0.title }, description: { _ in nil }, same: { $0 === $1 })
+    let verdict = stalePointVerdict(at: point, nodes: [node], hit: latest.outcome.element, rehit: latest.rehit, reads: staleReads)
+    XCTAssertTrue(verdict.hit === scene.times, "the guard recovered the item")
+    XCTAssertTrue(latest.outcome.answered === scene.times, "and the outcome the menu step reads is that re-hit's")
+    guard case .deliver = decide(hit: latest.outcome.answered, record: recordedMenuItem(verdict)) else { return XCTFail("delivered") }
+  }
+
+  /// Item 5: a recorded item found by its handle (the recorded icon's item, kept by `hitAboveNode`) that reads another
+  /// title now, a dynamic menu reusing it for another command, is refused before anything is acted on.
+  func testARecordedItemReadingAnotherTitleIsRefused() {
+    let scene = textEdit()
+    let record = RecordedMenuItem(element: scene.times, title: "Times")
+    scene.times.title = "Delete"
+    guard case .refuse(.relabelled, window: 77) = decide(hit: scene.times, record: record) else { return XCTFail("relabelled") }
+    var meta = freshMeta()
+    XCTAssertThrowsError(try click(decide(hit: scene.times, record: record), shown: { _ in false }, meta: &meta) { _, _ in
+      XCTFail("nothing performed"); return .success
+    }) { error in
+      XCTAssertTrue((error as? EngineError)?.message.contains("but the item there no longer reads what the screenshot showed. Nothing was sent.") == true)
+    }
+    guard case .deliver = decide(hit: scene.times, record: RecordedMenuItem(element: scene.times, title: "Delete")) else { return XCTFail("same title") }
+  }
+
+  /// Item 6: a page's ARIA menu item, inside a web area, is main's even with a window of the app's at the menu layer over
+  /// the point (a click-through panel), and no window list is read for it.
+  func testAnInPageMenuUnderAMenuLayerWindowIsMains() {
+    let page = Node("AXWebArea", parent: Node("AXWindow"))
+    let ariaMenu = Node("AXMenu", parent: Node("AXGroup", parent: page))
+    let aria = Node("AXMenuItem", title: "Rename", parent: ariaMenu)
+    guard case .notMenu = decide(hit: aria, recorded: aria) else { return XCTFail("main's path") }
+    let field = Node("AXTextField", parent: page)
+    guard case .notMenu = decide(hit: field, recorded: aria) else { return XCTFail("main's path: the recorded item is in the page") }
+    XCTAssertEqual(listReads, 0)
+  }
+
+  /// Item 7: a window list that does not read is unknown, never closed: with the pop-up button reading the item, the
+  /// click is still unconfirmed, `menuClosed` null.
+  func testAnUnreadWindowListLeavesTheMenuUnknownNotClosed() {
+    let scene = textEdit()
+    var meta = freshMeta()
+    XCTAssertThrowsError(try click(decide(hit: scene.times, recorded: scene.times), shown: { _ in nil }, meta: &meta) { _, _ in
+      scene.popup.value = "Times"
+      return .success
+    }) { error in
+      XCTAssertTrue((error as? EngineError)?.message.contains("the menu was not seen to close with the item taken") == true)
+    }
+    XCTAssertTrue(wire(meta)?["menuClosed"] is NSNull)
+    XCTAssertEqual(wire(meta)?["value"] as? String, "taken")
+  }
+
+  /// Item 8: a messaging timeout may have taken effect, so the effect is read and decides (the AXError in the meta); a
+  /// definite refusal of the action is actionFailed, read no further.
+  func testAnAmbiguousActionErrorIsJudgedByItsEffectAndADefiniteOneFails() throws {
+    let scene = textEdit()
+    var open = true
+    var meta = freshMeta()
+    XCTAssertTrue(try click(decide(hit: scene.times, recorded: scene.times), shown: { _ in open }, meta: &meta) { _, _ in
+      scene.popup.value = "Times"
+      open = false
+      return .cannotComplete
+    })
+    XCTAssertEqual(wire(meta)?["effect"] as? String, "confirmed")
+    XCTAssertEqual(wire(meta)?["actionError"] as? Int, Int(AXError.cannotComplete.rawValue))
+    let other = textEdit()
+    var failed = freshMeta()
+    XCTAssertThrowsError(try click(decide(hit: other.times, recorded: other.times), shown: { _ in false }, meta: &failed) { _, _ in .actionUnsupported }) { error in
+      XCTAssertEqual((error as? EngineError)?.errorName, "actionFailed")
+    }
+    XCTAssertNil(wire(failed)?["polls"], "no effect read")
+    XCTAssertNotNil(failed.startedAt, "the action was sent")
+  }
+
+  /// Item 9: an intervention stop before the action leaves no delivery in the meta.
+  func testAStopBeforeTheActionRecordsNoDelivery() {
+    let scene = textEdit()
+    var meta = freshMeta()
+    XCTAssertThrowsError(try click(decide(hit: scene.times, recorded: scene.times), shown: { _ in false }, meta: &meta,
+                                   checkInFlight: { throw EngineError(name: "userIntervened", "stopped") }) { _, _ in
+      XCTFail("nothing performed"); return .success
+    })
+    XCTAssertNil(wire(meta)?["delivery"])
+    XCTAssertNil(wire(meta)?["action"])
+    XCTAssertNil(meta.startedAt)
   }
 }

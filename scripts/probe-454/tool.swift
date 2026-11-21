@@ -630,8 +630,9 @@ func post(_ q: [String: Any]) -> [String: Any] {
     if move {
       for dx in [-2.0, 0.0] { CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: CGPoint(x: p.x + dx, y: p.y), mouseButton: .left)?.post(tap: .cghidEventTap); usleep(100_000) }
     }
-    for type in [CGEventType.leftMouseDown, .leftMouseUp] {
-      CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: p, mouseButton: .left)?.post(tap: .cghidEventTap)
+    let right = (q["button"] as? String) == "right"
+    for type in right ? [CGEventType.rightMouseDown, .rightMouseUp] : [CGEventType.leftMouseDown, .leftMouseUp] {
+      CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: p, mouseButton: right ? .right : .left)?.post(tap: .cghidEventTap)
       usleep(move ? 80_000 : 40_000)
     }
     return ["stamp": stamp, "warp": warp, "move": move]

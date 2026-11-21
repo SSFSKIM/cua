@@ -265,10 +265,12 @@ Object.assign(MENUS, {
   chromectx: {app: 'chrome', want: 'Reload',
     open: async c => {
       const f = c.sky0.window.frame;
-      if (!(await engineRightClick(c, {x: f.x + 300, y: f.y + 250}))) {
-        const r = await ask({op: 'open', pid: c.pid, find: {roles: ['AXWebArea']}, action: 'AXShowMenu'}, 15_000);
-        c.row.steps.push({step: 'open:AXShowMenu', answer: r});
-        c.row.openedBy = 'kit AXShowMenu';
+      // Behind, Chrome's menu often closes at once: a second engine right click, then the kit's HID right click (smoke
+      // run 44855447848: AXShowMenu on the web area opened nothing).
+      const p = {x: f.x + 300, y: f.y + 250};
+      if (!(await engineRightClick(c, p)) && !(await engineRightClick(c, p))) {
+        c.row.steps.push({step: 'hid right click', answer: await ask({op: 'post', pid: c.pid, x: p.x, y: p.y, stamp: 'hid', button: 'right'})});
+        c.row.openedBy = 'kit HID right click';
         await sleep(900);
       }
     },

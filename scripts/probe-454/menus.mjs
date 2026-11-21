@@ -12,7 +12,8 @@
 //   button   no menu opened: the engine's coordinate click on the closed pop-up button
 //   kit:<s>  the kit's own click posted to the app (tool.swift `post`, not the engine): the engine's events stamped to
 //            the observed window (`observed`), to the menu's window (`menu`), to no window (`none`), or a HID click (`hid`);
-//            `warp-<s>` with the cursor moved to the point first, `move-<s>` with a mouse-moved before the down
+//            `warp-<s>` with the cursor moved to the point first, `move-<s>` with a mouse-moved before the down,
+//            `warpmove-<s>` both
 // After it: the pop-up button's value, the page's change beacons, the caret, and whether the menu is still up.
 //
 // Menus: select (Chrome, a <select>'s native menu), font (TextEdit's format-bar font family pop-up), typeface (TextEdit's
@@ -232,7 +233,7 @@ const MENUS = {
     node: sky => sky.nodes.find(n => n.role === 'AXPopUpButton' && n.value === 'AppleScript')},
 };
 const ROUTES = ['coord', 'element', 'keys', 'outside', 'button', 'kit:observed', 'kit:menu', 'kit:none', 'kit:hid',
-  'kit:warp-observed', 'kit:warp-menu', 'kit:move-menu', 'kit:move-hid'];
+  'kit:warp-observed', 'kit:warp-menu', 'kit:move-menu', 'kit:warpmove-menu', 'kit:move-hid'];
 const MODES = [
   {name: 'shared-behind', desktop: 'shared', front: false},
   {name: 'shared-front', desktop: 'shared', front: true},
@@ -433,7 +434,7 @@ async function runRow(app, menuName, mode, route, rep) {
       if (route.startsWith('kit:')) {
         const [flag, stamp] = route.slice(4).includes('-') ? route.slice(4).split('-') : [null, route.slice(4)];
         const win = stamp === 'menu' ? [pop.popup.n, ...pop.popup.bounds] : [pop.target.n, ...pop.target.bounds];
-        row.kitPost = await ask({op: 'post', pid, x: screen.x, y: screen.y, stamp, win, warp: flag === 'warp', move: flag === 'move'});
+        row.kitPost = await ask({op: 'post', pid, x: screen.x, y: screen.y, stamp, win, warp: /warp/.test(flag ?? ''), move: /move/.test(flag ?? '')});
       } else {
         const r = await w.execute('click', {pid, x: px.x, y: px.y});
         row.click = brief(r);

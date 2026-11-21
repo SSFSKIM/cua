@@ -543,6 +543,11 @@ export function blockPlan(specs, { size = 10 } = {}) {
 /** The drop-signals plans whose Electron cells the gate judges (drop-signals.mjs PLANS); `t17-moved` needs a live build's hook. */
 export const ELECTRON_JUDGED_PLANS = ['t17-floor', 't17-handle', 't17-fix2', 't17-fix3', 't17-slow-cold', 't17-long'];
 
+/** The engine's floor after a take (cua-engine `dnd.rs` `RELEASE_AFTER_TAKE`): the release no later than this after it. */
+export const T17_LONG_FLOOR_MS = 350;
+/** The exercised rows Electron's `t17-long` (L4d's part 3) needs of its 30, or the part is unexercised (ruling 972). */
+export const T17_LONG_MIN = 20;
+
 /** Whether a drop-signals run's rows are T17's Electron cells, judged by `electronDropVerdict`. */
 export const judgedElectronPlan = (args) => args.families?.[0] === 'electron' && ELECTRON_JUDGED_PLANS.includes(args.plan);
 
@@ -711,6 +716,26 @@ export function unconfirmedClass(r) {
 }
 
 /**
+ * Electron's long path out of the zone (`t17-long`, L4d's part 3; the design session's ruling 972): a drag exercised it
+ * only when all of these hold: a take was seen (the watch's or the hold's); the motion after the take outlasted the
+ * floor (`hold.path_ms` less the take's time after the press, over `T17_LONG_FLOOR_MS`), so the release followed the
+ * path's end, not the floor; and it ended as expected: answered ok, with no drop at a stale position, no ambiguous or
+ * unplaced landing, and no false ok. An errored or untaken drag is unexercised. Short of `T17_LONG_MIN` exercised drags
+ * the cell fails as unexercised; the counts are reported either way. Answers the counts.
+ */
+function longPathCheck(name, list, ends, failed, findings) {
+  const takeOf = (r) => r.hold?.take_after_press_ms ?? r.signals?.take_after_press_ms ?? null;
+  const took = list.filter((r) => typeof takeOf(r) === 'number' || r.hold?.taken === true);
+  const outlasted = took.filter((r) => Number.isFinite(r.hold?.path_ms) && typeof takeOf(r) === 'number' && r.hold.path_ms - takeOf(r) > T17_LONG_FLOOR_MS);
+  const expected = (r) => r.ok === true && landingOf(r, ends) === null && !(honest(r) === null && !droppedOf(r));
+  const exercised = outlasted.filter(expected);
+  const what = `${exercised.length} of ${list.length} drags exercised the long path (a take, its motion after the take past the ${T17_LONG_FLOOR_MS} ms floor, and the expected end)`;
+  if (exercised.length < T17_LONG_MIN) failed.push(`${name}: ${what}, fewer than its ${T17_LONG_MIN}: unexercised`);
+  else findings.push(`${name}: ${what}; ${took.length} took, ${outlasted.length} outlasted the floor`);
+  return { drags: list.length, took: took.length, outlasted: outlasted.length, exercised: exercised.length, minimum: T17_LONG_MIN };
+}
+
+/**
  * T17's Electron cells judged for the gate, from one run's `drop-signal` rows (one load) and its plan's `specs`
  * (`{lane, cell, n}`). Fails, each named: a false ok (answered ok on a drag that dropped nowhere, with nothing honestly
  * pending: a notice counts only with the next acting request refused with it, `pendingOf`); T14's pending contract
@@ -801,6 +826,8 @@ export function electronDropVerdict(rows, { specs = [], share = 0.05, slowMode =
     if (falseError.length) failed.push(`${name}: answered an error for a drop that landed on ${falseError.length} of ${list.length} (${which(falseError)})`);
     landingFails(name, c.rows, stale, unplaced, failed);
     ambiguousRows.push(...ambiguous);
+    // ruling 972: t17-long's long path proves something only on the drags that exercised it
+    if (plan === 't17-long' && base === 'long-left') total.long_path = longPathCheck(name, list, ends, failed, findings);
     total.pending_broken += pendingBreaks(list, name, failed);
     if (c.rows.length && !list.length) findings.push(`${name} unmeasured: every end (${unverified.length}) was not verified where the drag left the pointer`);
     total.drags += list.length;

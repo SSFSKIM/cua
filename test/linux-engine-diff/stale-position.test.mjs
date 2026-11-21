@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
-import { CELL_SOURCE, LATE_BANDS, OFF_WINDOW_CELLS, PATH_ENDS, STALE_MARGIN_PX, T14_SOURCE, ZONE, chromeDropVerdict, electronDropVerdict, endAgainstZone, holdRegressionVerdict } from '../../scripts/linux-engine-diff/drop-signals-judge.mjs';
+import { CELL_SOURCE, LATE_BANDS, OFF_WINDOW_CELLS, PATH_ENDS, STALE_MARGIN_PX, T14_SOURCE, T17_LONG_FLOOR_MS, T17_LONG_MIN, ZONE, chromeDropVerdict, electronDropVerdict, endAgainstZone, holdRegressionVerdict } from '../../scripts/linux-engine-diff/drop-signals-judge.mjs';
 import { CELLS } from '../../scripts/linux-engine-diff/drop-signals.mjs';
 import { dropRow } from './drop-rows.mjs';
 
@@ -141,4 +141,29 @@ test("the review of 2dd2b0d8, finding 2: an off-window drag whose end was not ve
   // a cell whose path end the judge cannot place fails as unplaced, verified or not
   const odd = { ...landedIn(electron({ cell: 'nowhere', i: 0 })), end_park: { over: 'root', verified: false } };
   assert.match(electronDropVerdict([odd], { specs: specs(['cua', 'nowhere', 1]) }).failed.join('\n'), /cua nowhere: a drop landed in a cell whose path end the judge cannot place against the zone, on 1 of 1 \(#0\)/);
+});
+
+test("the review of 2dd2b0d8, finding 3 (ruling 972): Electron's t17-long counts a row only when it took, its motion after the take outlasted the floor, and it ended as expected; short of its minimum the part is unexercised", () => {
+  const ok = (i, { take = 20, path = 1000 } = {}) => ({ ...electron({ cell: 'long-left', i, pending: 'unconfirmed' }), signals: { take_after_press_ms: take, late_take: false }, hold: { taken: take !== null, path_ms: path, take_after_press_ms: take } });
+  const judge = (rows) => electronDropVerdict(rows, { specs: specs(['cua', 'long-left', 30]), plan: 't17-long' });
+  // the full manifest, every request an error with no take: nothing exercised, and the part fails
+  const errored = many(30, (i) => ({ ...electron({ cell: 'long-left', i, ok: false }), error: 'no drag', signals: { take_after_press_ms: null, late_take: false }, hold: { taken: false, path_ms: 900 } }));
+  const none = judge(errored);
+  assert.ok(none.failed.includes(`cua long-left: 0 of 30 drags exercised the long path (a take, its motion after the take past the ${T17_LONG_FLOOR_MS} ms floor, and the expected end), fewer than its ${T17_LONG_MIN}: unexercised`), none.failed.join('\n'));
+  assert.deepEqual(none.counts.long_path, { drags: 30, took: 0, outlasted: 0, exercised: 0, minimum: T17_LONG_MIN });
+  // takes whose motion after them ended inside the floor (the release then comes at the floor, not after the path)
+  const short = judge(many(30, (i) => ok(i, { take: 300, path: 600 })));
+  assert.equal(short.counts.long_path.exercised, 0);
+  assert.equal(short.counts.long_path.took, 30);
+  assert.match(short.failed.join('\n'), /0 of 30 drags exercised the long path/);
+  // a drop at a stale position, or a false ok, is not the expected end
+  const stale = many(30, (i) => (i < 30 - T17_LONG_MIN + 1 ? landedIn(ok(i)) : ok(i)));
+  assert.equal(judge(stale).counts.long_path.exercised, T17_LONG_MIN - 1);
+  // at the minimum it passes, its counts reported
+  const enough = judge(many(30, (i) => (i < T17_LONG_MIN ? ok(i) : { ...ok(i), ok: false, error: 'no drag' })));
+  assert.equal(enough.counts.long_path.exercised, T17_LONG_MIN);
+  assert.ok(!enough.failed.some((f) => /exercised the long path/.test(f)), enough.failed.join('\n'));
+  assert.match(enough.findings.join('\n'), new RegExp(`cua long-left: ${T17_LONG_MIN} of 30 drags exercised the long path`));
+  // the rule is t17-long's: another plan's cells are judged as before
+  assert.equal(electronDropVerdict(errored.slice(0, 1).map((r) => ({ ...r, cell: 'left' })), { specs: specs(['cua', 'left', 1]), plan: 't17-fix3' }).counts.long_path, undefined);
 });

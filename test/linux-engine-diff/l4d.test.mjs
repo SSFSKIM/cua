@@ -71,7 +71,8 @@ test("a plan of parts is judged part by part, each by its own plan's judge, its 
     ...many(30, (i) => ({ ...chromeRow({ cell: 'left', i }), part: 1 })),
     ...many(30, (i) => ({ ...chromeRow({ cell: 'inzone-out', i }), part: 1 })),
     scene(2, 'electron', 't17-long'),
-    ...many(30, (i) => ({ ...dropRow({ family: 'electron', cell: 'long-left', i, pending: 'unconfirmed' }), part: 2 })),
+    // each took, its motion after the take past the floor (ruling 972)
+    ...many(30, (i) => ({ ...dropRow({ family: 'electron', cell: 'long-left', i, pending: 'unconfirmed' }), signals: { take_after_press_ms: 20, late_take: false }, hold: { taken: true, path_ms: 1000, take_after_press_ms: 20 }, part: 2 })),
   ];
   const args = l4dArgs();
   const v = dropSignalsVerdict(args, rows);

@@ -1,0 +1,22 @@
+✔ L4d is a counted step of the twice-load block on a private display, within the step limit, its plan the three parts (7.446623ms)
+✔ L4d's Electron cell in Electron's window: it crosses the zone, ends outside it, is long enough to outlast the floor, and stays in the window clear of the run's other windows (4.78479ms)
+✔ a plan of parts is judged part by part, each by its own plan's judge, its fails named by the part (38.379898ms)
+✔ launch-plan.mjs prints L4d's plan part by part (3.722952ms)
+✔ the judge's zone is the page's #zone, and every drop cell's path end is its path's own last point (6.864358ms)
+✔ a path end against the zone: inside, outside, and within the border margin ambiguous (0.352194ms)
+✔ ruling 957: Chrome's long-left control, its path ended left of the zone, a drop landed in the zone: a drop at a stale position, never landed, and the step fails (8.744027ms)
+✔ ruling 957 on t14-floor: left and inzone-out end outside the zone, the long drop inside; only the controls' landings are stale (2.404017ms)
+✔ the review of 2dd2b0d8, finding 1: the measurement lane's accept is no proof the path ended in the zone (the engine sends every sample before it reads the cursor): its landings are judged by the path's end too (1.084662ms)
+✔ ruling 961: a path that ended within the border margin is ambiguous: neither landed nor wrong, named and counted; where a landing is needed, unexercised (3.011953ms)
+✔ ruling 957 in Electron: the controls' and the off-window releases' landings in the zone are stale; the short drop's and the move's land (5.082221ms)
+✔ the hold's regression cells land only where their paths end, inside the zone (0.848237ms)
+✔ the review of 2dd2b0d8, finding 2: an off-window drag whose end was not verified is still judged on the zone's drop: a landing there is stale, never dropped from the evidence (5.445667ms)
+✔ the review of 2dd2b0d8, finding 3 (ruling 972): Electron's t17-long counts a row only when it took, its motion after the take outlasted the floor, and it ended as expected; short of its minimum the part is unexercised (8.132435ms)
+ℹ tests 14
+ℹ suites 0
+ℹ pass 14
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 424.944788

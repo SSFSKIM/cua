@@ -18,7 +18,10 @@ const specs = (...cells) => cells.map(([lane, cell, n]) => ({ lane, cell, n }));
 const untaken = { signals: { take_after_press_ms: null, late_take: false }, hold: { taken: false, adaptive: { way: 'noticed' } } };
 /** The past band's honest answer: Chrome refused the drag, the reply carried the hold notice, nothing was pending. */
 const refused = (cell, i) => Object.assign(chrome({ cell, i, landed: false }), { reply_notice: HOLD_NOTICE, ...untaken });
-const banded = ({ inside = 10, past = 10, late = 2, edgeLanded = 8 } = {}) => [
+/** A row whose source the engine identified as Chrome (`hold.adaptive.source`), as every banded cell means it to be. */
+const identified = (r) => ({ ...r, hold: { ...(r.hold ?? {}), adaptive: { ...(r.hold?.adaptive ?? {}), source: { identified: true, by: 'Google-chrome, role browser, application "Google Chrome"' } } } });
+const banded = (o) => bandedRows(o).map(identified);
+const bandedRows = ({ inside = 10, past = 10, late = 2, edgeLanded = 8 } = {}) => [
   ...many(inside, (i) => Object.assign(chrome({ cell: 'freeze-600', i, landed: true }), { hold: { taken: true } })),
   ...many(10 - inside, (i) => chrome({ cell: 'freeze-600', i: inside + i, landed: false, pending: 'unconfirmed' })),
   ...many(late, (i) => Object.assign(chrome({ cell: 'freeze-650', i, landed: false, late: true, pending: 'late' }), { reply_notice: HOLD_NOTICE })),
@@ -40,7 +43,8 @@ test("t14-late's plan is its three bands, each expecting band a minimum under it
   assert.equal(HOLD_NOTICE, premise.HOLD_NOTICE);
   assert.deepEqual(LATE_BANDS.map((b) => b.band), ['inside', 'edge', 'past']);
   const planned = planSpecs({ plan: 't14-late' });
-  assert.deepEqual(planned.map((s) => s.cell), LATE_BANDS.flatMap((b) => b.cells), 'every planned cell in one band, in order');
+  // every planned cell in one band, in order (the inside band holds every architecture's own freeze: ruling 954)
+  assert.deepEqual(planned.map((s) => LATE_BANDS.findIndex((b) => b.cells.includes(s.cell))), [0, 1, 1, 1, 1, 2]);
   for (const b of LATE_BANDS.filter((x) => x.expects)) {
     const n = planned.filter((s) => b.cells.includes(s.cell)).reduce((k, s) => k + s.n, 0);
     assert.ok(b.min > 0 && b.min < n, `${b.band}: a minimum of ${b.min} below its ${n} drags`);
@@ -51,7 +55,7 @@ test("t14-late's plan is its three bands, each expecting band a minimum under it
 test('a banded sitting passes on honest answers in every band, its late takes counted, not required', () => {
   const v = judge(banded());
   assert.deepEqual(v.failed, []);
-  assert.deepEqual(v.counts.bands, { inside: { drags: 10, expected: 10, late: 0 }, edge: { drags: 10, expected: null, late: 2 }, past: { drags: 10, expected: 10, late: 0 } });
+  assert.deepEqual(v.counts.bands, { inside: { drags: 10, expected: 10, late: 0, unexercised: 0 }, edge: { drags: 10, expected: null, late: 2, unexercised: 0 }, past: { drags: 10, expected: 10, late: 0, unexercised: 0 } });
   const none = judge(banded({ late: 0, edgeLanded: 9 }));
   assert.deepEqual(none.failed, [], 'no late take came: counted, never a failure');
   assert.match(none.findings.join('\n'), /the edge band made no late take \(not required, ruling 931\)/);
@@ -142,6 +146,31 @@ test('the re-review of 9a8f32a5: a plain ok with no take and its page unread is 
   assert.equal(judge(banded()).counts.unjudged, 0);
 });
 
+test('ruling 954: a row whose source ended unidentified is unexercised for its band, never its outcome, counted and shown', () => {
+  const unidentified = (r) => ({ ...r, hold: { ...r.hold, adaptive: { ...r.hold.adaptive, source: { identified: false, why: 'its accessible application could not be read' } } } });
+  const v = judge(banded().map((r) => (r.cell === 'freeze-600' && r.i < 4 ? unidentified(r) : r)));
+  assert.deepEqual(v.failed, ['the inside band (freeze-600): 6 of 10 drags landed after a take inside the hold, fewer than its 7: the band is unexercised']);
+  assert.deepEqual(v.counts.bands.inside, { drags: 10, expected: 6, late: 0, unexercised: 4 });
+  assert.match(v.findings.join('\n'), /the inside band: 4 of 10 drags unexercised \(the source not identified on 4, the stop skipped on 0\)/);
+  assert.ok(v.md.some((l) => /^\| inside \| freeze-600 \| 10 \| 6 landed after a take inside the hold \| 7 \| 0 \| 4 \|$/.test(l)), v.md.join('\n'));
+  // a record with no hold at all says nothing of the source: unexercised too
+  const none = judge(banded().map((r) => (r.cell === 'freeze-700' && r.i < 2 ? { ...r, hold: undefined } : r)));
+  assert.equal(none.counts.bands.past.unexercised, 2);
+  assert.equal(none.counts.bands.past.expected, 8);
+});
+
+test('ruling 955: a row whose stop was skipped (the press marked too late for a stop before the thaw) is unexercised, counted and shown', () => {
+  const skipped = (r) => ({ ...r, freeze: { pid: 1, skipped: 'the press was marked 560 ms after the send, so the stop would begin at 615 ms, at or past the thaw at 600 ms', press_ms: 560 } });
+  const v = judge(banded().map((r) => (r.cell === 'freeze-700' && r.i < 4 ? skipped(r) : r)));
+  assert.deepEqual(v.failed, ['the past band (freeze-700): 6 of 10 drags answered the hold notice with no drop and nothing sent after it, fewer than its 7: the band is unexercised']);
+  assert.equal(v.counts.bands.past.unexercised, 4);
+  assert.match(v.findings.join('\n'), /the past band: 4 of 10 drags unexercised \(the source not identified on 0, the stop skipped on 4\)/);
+  // in the edge band, which requires nothing, it is counted all the same
+  const edge = judge(banded().map((r) => (r.cell === 'freeze-650' && r.i === 9 ? skipped(r) : r)));
+  assert.deepEqual(edge.failed, []);
+  assert.equal(edge.counts.bands.edge.unexercised, 1);
+});
+
 test("the per-cell table's false ok column counts the banded plan's refused plain oks, as the total does", () => {
   const plainOk = Object.assign(chrome({ cell: 'freeze-700', i: 9, landed: false }), { signals: { take_after_press_ms: null, late_take: false }, hold: { taken: false } });
   const v = judge(swap(banded(), 'freeze-700', 9, plainOk));
@@ -162,4 +191,25 @@ test("by default t14-late is judged by its own bands", () => {
   // every drag landed: the past band's refusals never came, so it is unexercised
   assert.ok(v.failed.some((f) => f.startsWith(`the past band (${LATE_BANDS.at(-1).cells.join(', ')})`)), v.failed.join('\n'));
   assert.ok(cells.length >= 3);
+});
+
+test("ruling 954: t14-late's inside freeze is the architecture's own; arm64's PENDING task 122's sweep", async () => {
+  const { LATE_INSIDE_FREEZE, LATE_INSIDE_PENDING, lateInsideCell } = await import('../../scripts/linux-engine-diff/drop-signals-judge.mjs');
+  const { PLANS, lateBandPlan } = await import('../../scripts/linux-engine-diff/drop-signals.mjs');
+  assert.equal(LATE_INSIDE_FREEZE.x64, 600, "x64 keeps task 121's 600");
+  // PENDING (ruling 954): arm64 stays at 600 until task 122's sweep (freeze-042-inside) names the freeze landing 9 of
+  // 10; this assertion changes with it
+  assert.equal(LATE_INSIDE_FREEZE.arm64, 600);
+  assert.deepEqual(LATE_INSIDE_PENDING, ['arm64']);
+  assert.equal(lateInsideCell('riscv64'), 'freeze-600', "another architecture takes x64's");
+  for (const arch of ['x64', 'arm64']) {
+    const plan = planSpecs({ plan: 't14-late', arch });
+    assert.equal(plan[0].cell, lateInsideCell(arch), arch);
+    assert.deepEqual(plan.map((s) => s.cell).slice(1), ['freeze-646', 'freeze-648', 'freeze-650', 'freeze-652', 'freeze-700'], arch);
+    assert.equal(plan.reduce((n, s) => n + s.n, 0), 40, arch);
+    for (const s of plan) assert.ok(LATE_BANDS.some((b) => b.cells.includes(s.cell)), `${arch}: ${s.cell} in a band`);
+    assert.ok(LATE_BANDS[0].cells.includes(lateInsideCell(arch)), `${arch}: its inside cell is the inside band's`);
+  }
+  assert.deepEqual(PLANS['t14-late'], lateBandPlan(process.arch), "the plan as this machine runs it");
+  assert.deepEqual(planSpecs({ plan: 'freeze-042-inside' }).map((s) => `${s.cell} ${s.n}`), ['freeze-500 10', 'freeze-550 10', 'freeze-600 10']);
 });

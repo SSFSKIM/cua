@@ -472,7 +472,7 @@ test("V5's motion-loss cells: the run's browser stopped from the drag's send, a 
   const { CELLS, PLANS, T14_SOURCE, freezeOf } = await import('../../scripts/linux-engine-diff/drop-signals.mjs');
   assert.deepEqual(freezeOf('prefreeze-150'), { from: 0, to: 150 }, 'stopped before the press goes out');
   assert.deepEqual(freezeOf('prefreeze-linger-150'), { from: 0, to: 150 });
-  assert.deepEqual(freezeOf('freeze-250'), { from: 60, to: 250 }, "T13's cells unchanged");
+  assert.deepEqual(freezeOf('freeze-250'), { from: 60, to: 250, afterPress: 55 }, "T13's cells: from 60 ms, and not before the press is read (ruling 954)");
   assert.deepEqual(CELLS['prefreeze-150'](0), CELLS.plain(0), 'the plain short drop');
   const linger = CELLS['prefreeze-linger-150'](0);
   assert.deepEqual(linger.slice(0, 2), CELLS.plain(0));
@@ -517,11 +517,28 @@ test("0.4.2's freeze sweep (task 121): the press-150 source stopped from 60 ms t
   assert.ok(LATE_FREEZE_FINE.every((to) => to > 645 && to < 655), 'the fine sweep, millisecond by millisecond about 650');
   for (const to of [...LATE_FREEZE_ENDS, ...LATE_FREEZE_FINE]) {
     const cell = `freeze-${to}`;
-    assert.deepEqual(freezeOf(cell), { from: 60, to }, cell);
+    assert.deepEqual(freezeOf(cell), { from: 60, to, afterPress: 55 }, cell);
     assert.deepEqual(CELLS[cell](0), CELLS['freeze-250'](0), `${cell}: T13's freeze path`);
     assert.equal(CELL_SOURCE[cell], 'press-150', cell);
     assert.ok(ZONE_CELLS.includes(cell), `${cell}: a drop the zone counts`);
   }
   assert.deepEqual(PLANS['freeze-042'], LATE_FREEZE_ENDS.map((to) => ['cua', `freeze-${to}`, 10]));
   assert.deepEqual(PLANS['freeze-042-fine'].map(([, cell]) => cell), [646, 647, 648, 649, 650, 651, 652, 653, 654].map((to) => `freeze-${to}`));
+});
+
+test("the freeze cells wait for the browser's mark of the press, after the engine's identification (ruling 954); a stop past the thaw is skipped and says so (ruling 955)", async () => {
+  const { FREEZE_PRESS_LEAD, freezeOf, freezeStart } = await import('../../scripts/linux-engine-diff/drop-signals.mjs');
+  const span = freezeOf('freeze-600');
+  const t0 = 1000;
+  // at idle the press is marked some 5 ms after the send: the stop begins at 60 ms, as the cells were designed
+  assert.deepEqual(freezeStart(span, t0, t0 + 5), { start: 60 });
+  // a late identification delays the press: the stop waits for it and its lead, the thaw stays at 600
+  assert.deepEqual(freezeStart(span, t0, t0 + 80), { start: 80 + FREEZE_PRESS_LEAD });
+  // no press marked by the thaw, or one too late for any stop before it: skipped, with why, never shortened silently
+  assert.match(freezeStart(span, t0, null).skipped, /no press marked by the browser by the thaw at 600 ms/);
+  const late = freezeStart(span, t0, t0 + 560);
+  assert.match(late.skipped, /the press was marked 560 ms after the send, so the stop would begin at 615 ms, at or past the thaw at 600 ms/);
+  // the stops that begin before the press by design keep their start (V5's lost motion, 0.4.1's failed settle)
+  assert.deepEqual(freezeStart(freezeOf('prefreeze-150'), t0, null), { start: 0 });
+  assert.equal(freezeOf('stall').afterPress, undefined);
 });

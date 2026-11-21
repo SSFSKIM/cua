@@ -15,6 +15,21 @@ export const FREEZE_ENDS = [230, 240, 250, 255, 260, 280, 330];
 export const LATE_FREEZE_ENDS = [440, 450, 600, 620, 630, 640, 645, 650, 655, 660, 670, 700];
 /** The same, millisecond by millisecond around 650, where the idle sweep's late takes came (task 121). */
 export const LATE_FREEZE_FINE = [646, 647, 648, 649, 651, 652, 653, 654];
+/** Earlier thaws for the inside band on a slower machine (ruling 954: task 122's arm64 sweep, `freeze-042-inside`). */
+export const LATE_FREEZE_INSIDE = [500, 550];
+
+/**
+ * The inside band's freeze by architecture (the design session's ruling 954): the thaw after which the take still comes
+ * inside the extended hold and the drop lands. x64's is task 121's sweeps' (600: 30 of 30 at idle and at twice the
+ * load). arm64 at twice the load landed 6 of 10 at 600 at H6 (three honest hold notices: the take came too late for its
+ * hold), so its value is the freeze where task 122's sweep (500, 550, 600, 10 each, twice the load) lands 9 of 10 or more.
+ * PENDING: arm64 stays at 600 until that sweep reports (`LATE_INSIDE_PENDING`). Any other architecture takes x64's.
+ */
+export const LATE_INSIDE_FREEZE = { x64: 600, arm64: 600 };
+/** The architectures whose inside freeze still waits for its sweep. */
+export const LATE_INSIDE_PENDING = ['arm64'];
+/** The inside band's cell on `arch`. */
+export const lateInsideCell = (arch = process.arch) => `freeze-${LATE_INSIDE_FREEZE[arch] ?? LATE_INSIDE_FREEZE.x64}`;
 /**
  * The ends of V5's lost-motion stops, ms after the drag's send (`prefreeze-<to>`): on the guarded route, inside the
  * path's end rest (30, 40) and past its release; on the held route, before the hold's refresh stops (150, 200), after
@@ -83,7 +98,7 @@ export function parseDropStatus(texts) {
  * The page cells (drop-signals.mjs `CELLS`): a cell either drags from a source (`src`, a drop counted when `zone`) or
  * is a kind with an effect of its own.
  */
-export const CELL_SOURCE = { 'freeze-230': 'press-150', 'freeze-240': 'press-150', 'freeze-250': 'press-150', 'freeze-255': 'press-150', 'freeze-260': 'press-150', 'freeze-280': 'press-150', 'freeze-330': 'press-150', ...Object.fromEntries([...LATE_FREEZE_ENDS, ...LATE_FREEZE_FINE].map((to) => [`freeze-${to}`, 'press-150'])), plain: 'plain', nozone: 'plain', nested: 'nested', 'nested-late': 'nested-late', slider: 'slider', 'dragstart-150': 'dragstart-150', 'press-150': 'press-150', 'dragstart-400': 'dragstart-400', 'press-400': 'press-400', 'dragstart-500': 'dragstart-500', 'dragstart-600': 'dragstart-600', link: 'link', image: 'image', seltext: 'seltext', 'plain-long': 'plain', 'canvas-drag': 'canvas-drag', move: 'move' };
+export const CELL_SOURCE = { 'freeze-230': 'press-150', 'freeze-240': 'press-150', 'freeze-250': 'press-150', 'freeze-255': 'press-150', 'freeze-260': 'press-150', 'freeze-280': 'press-150', 'freeze-330': 'press-150', ...Object.fromEntries([...LATE_FREEZE_ENDS, ...LATE_FREEZE_FINE, ...LATE_FREEZE_INSIDE].map((to) => [`freeze-${to}`, 'press-150'])), plain: 'plain', nozone: 'plain', nested: 'nested', 'nested-late': 'nested-late', slider: 'slider', 'dragstart-150': 'dragstart-150', 'press-150': 'press-150', 'dragstart-400': 'dragstart-400', 'press-400': 'press-400', 'dragstart-500': 'dragstart-500', 'dragstart-600': 'dragstart-600', link: 'link', image: 'image', seltext: 'seltext', 'plain-long': 'plain', 'canvas-drag': 'canvas-drag', move: 'move' };
 /** T14's and T17's cells' sources (drop-signals.mjs `CELLS`): each a drop the zone never counts. */
 export const T14_SOURCE = { stall: 'plain', left: 'plain', 'inzone-out': 'inzone', 'long-left': 'plain', root: 'plain', xterm: 'plain', other: 'plain', slow: 'plain', moved: 'plain', 'prefreeze-linger-150': 'plain', ...Object.fromEntries(PREFREEZE_ENDS.map((to) => [`prefreeze-${to}`, 'plain'])) };
 
@@ -119,7 +134,7 @@ export function stampedDragend(r) {
   return ownDragend(r);
 }
 
-export const ZONE_CELLS = ['freeze-230', 'freeze-240', 'freeze-250', 'freeze-255', 'freeze-260', 'freeze-280', 'freeze-330', ...[...LATE_FREEZE_ENDS, ...LATE_FREEZE_FINE].map((to) => `freeze-${to}`), 'plain', 'nested', 'nested-late', 'slider', 'dragstart-150', 'press-150', 'dragstart-400', 'press-400', 'dragstart-500', 'dragstart-600', 'link', 'image', 'plain-long', 'canvas-drag', 'move'];
+export const ZONE_CELLS = ['freeze-230', 'freeze-240', 'freeze-250', 'freeze-255', 'freeze-260', 'freeze-280', 'freeze-330', ...[...LATE_FREEZE_ENDS, ...LATE_FREEZE_FINE, ...LATE_FREEZE_INSIDE].map((to) => `freeze-${to}`), 'plain', 'nested', 'nested-late', 'slider', 'dragstart-150', 'press-150', 'dragstart-400', 'press-400', 'dragstart-500', 'dragstart-600', 'link', 'image', 'plain-long', 'canvas-drag', 'move'];
 
 /** The range runs' end values: even runs drag up to about 10, odd runs back to 0 (drop-signals.mjs `CELLS.range`). */
 export const RANGE_END = (i) => (i % 2 === 0 ? 10 : 0);
@@ -772,7 +787,8 @@ export const HOLD_NOTICE = 'the page may have started a drag that did not comple
  * A minimum of 7 of 10 leaves a band whose outcome held 30 of 30 or more a chance under 0.2% of failing by chance.
  */
 export const LATE_BANDS = [
-  { band: 'inside', cells: ['freeze-600'], expects: 'landed', min: 7 },
+  // the inside freeze is each architecture's own (`LATE_INSIDE_FREEZE`): the band holds every one of them
+  { band: 'inside', cells: [...new Set(Object.values(LATE_INSIDE_FREEZE))].map((to) => `freeze-${to}`), expects: 'landed', min: 7 },
   { band: 'edge', cells: ['freeze-646', 'freeze-648', 'freeze-650', 'freeze-652'], expects: null, min: 0 },
   { band: 'past', cells: ['freeze-700'], expects: 'refused', min: 7 },
 ];
@@ -798,6 +814,9 @@ function countersRead(r) {
   const read = (c) => Number.isInteger(c?.starts) && Number.isInteger(c?.drops);
   return Boolean(src) && read(r.before?.dnd?.[src]) && read(r.after?.dnd?.[src]);
 }
+
+/** Whether the engine identified the drag's source as a Chrome browser, by its own hold record (ruling 954). */
+const sourceIdentified = (r) => r.hold?.adaptive?.source?.identified === true;
 
 const BAND_OUTCOMES = {
   // the drop landed after a take the engine saw inside its hold (the review of H6, blocker 2: a late take that landed
@@ -924,12 +943,18 @@ export function chromeDropVerdict(rows, { specs = [], plan = null, capped = fals
     for (const b of bands) {
       const list = rows.filter((r) => b.cells.includes(r.cell));
       const outcome = b.expects ? BAND_OUTCOMES[b.expects] : null;
-      const expected = outcome ? list.filter(outcome.holds).length : null;
-      total.bands[b.band] = { drags: list.length, expected, late: list.filter((r) => r.signals?.late_take === true).length };
+      // a row that did not exercise the band it ran in is never its outcome (rulings 954 and 955): its source ended
+      // unidentified, or its stop was skipped. Counted and shown; it can only fail the band, never pass it
+      const unidentified = list.filter((r) => !sourceIdentified(r));
+      const skipped = list.filter((r) => typeof r.freeze?.skipped === 'string');
+      const unexercised = list.filter((r) => !sourceIdentified(r) || typeof r.freeze?.skipped === 'string');
+      const expected = outcome ? list.filter((r) => !unexercised.includes(r) && outcome.holds(r)).length : null;
+      total.bands[b.band] = { drags: list.length, expected, late: list.filter((r) => r.signals?.late_take === true).length, unexercised: unexercised.length };
       if (outcome && expected < b.min) failed.push(`the ${b.band} band (${b.cells.join(', ')}): ${expected} of ${list.length} drags ${outcome.what}, fewer than its ${b.min}: the band is unexercised`);
+      if (unexercised.length) findings.push(`the ${b.band} band: ${unexercised.length} of ${list.length} drags unexercised (the source not identified on ${unidentified.length}, the stop skipped on ${skipped.length})`);
       if (!outcome && !total.bands[b.band].late) findings.push(`the ${b.band} band made no late take (not required, ruling 931)`);
     }
-    md.push('', '| band | cells | drags | its outcome | minimum | late takes |', '|---|---|---:|---:|---:|---:|', ...bands.map((b) => `| ${b.band} | ${b.cells.join(', ')} | ${total.bands[b.band].drags} | ${b.expects ? `${total.bands[b.band].expected} ${BAND_OUTCOMES[b.expects].what}` : '–'} | ${b.min || '–'} | ${total.bands[b.band].late} |`));
+    md.push('', '| band | cells | drags | its outcome | minimum | late takes | unexercised |', '|---|---|---:|---:|---:|---:|---:|', ...bands.map((b) => `| ${b.band} | ${b.cells.join(', ')} | ${total.bands[b.band].drags} | ${b.expects ? `${total.bands[b.band].expected} ${BAND_OUTCOMES[b.expects].what}` : '–'} | ${b.min || '–'} | ${total.bands[b.band].late} | ${total.bands[b.band].unexercised} |`));
     if (total.false_alarms) findings.push(`${total.false_alarms} hold notice${total.false_alarms === 1 ? '' : 's'} on a drop that landed (a false alarm, counted, ruling 898.2)`);
   }
   if (total.late) findings.push(`${total.late} late takes, ${total.late_reported} reported`);

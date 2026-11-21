@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { after, test } from 'node:test';
 import './fixture-scope.mjs';
 
-import { dryLaunch, envDelta, launchPlan, normalize } from '../../scripts/linux-engine-gate/launch-plan.mjs';
+import { dryLaunch, envDelta, launchPlan, normalize, planContents } from '../../scripts/linux-engine-gate/launch-plan.mjs';
 import { launchCommand, parseGateArgs } from '../../scripts/linux-engine-gate/gate.mjs';
 import { STEPS, stepArgs, stepNamed } from '../../scripts/linux-engine-gate/steps.mjs';
 
@@ -54,4 +54,13 @@ test("the plan's text: every step not skipped, the suites' fresh log directory a
 test('envDelta and normalize', () => {
   assert.deepEqual(envDelta({ A: '1', B: '3', D: '4' }, { A: '1', B: '2', C: '0' }), ['B=3', '-C', 'D=4']);
   assert.equal(normalize('LOGS=/tmp/cua171-gl-aB3dE9 and /tmp/cua171-gl-XXXXXX'), 'LOGS=/tmp/cua171-gl-XXXXXX and /tmp/cua171-gl-XXXXXX');
+});
+
+test("a drop-signals step's plan contents on each architecture: its cells, counts and freezes with their start rule (ruling 954)", async () => {
+  const lines = await planContents(stepNamed('C1'), 'arm64');
+  assert.equal(lines[0], 'plan t14-late on arm64:');
+  assert.ok(lines.some((l) => /^  cua freeze-700 x10 freeze \{"from":60,"to":700,"afterPress":55\}$/.test(l)), lines.join('\n'));
+  assert.deepEqual(await planContents(stepNamed('D1'), 'x64'), [], 'not a drop-signals step');
+  const text = await launchPlan({ pinned: home, out: fresh(), skip: /^(?!C1$)/, arch: 'x64' });
+  assert.match(text, /plan t14-late on x64:\n  cua freeze-600 x10 freeze/);
 });

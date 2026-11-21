@@ -10,7 +10,10 @@
 // compare byte for byte (ruling 929.2: a step whose launch differs between two heads reruns). It needs no display, no
 // engine and no network: the pinned home's engine file need only exist.
 //
-//   node scripts/linux-engine-gate/launch-plan.mjs --pinned <home> --out <new dir> [--skip <regex>]
+//   node scripts/linux-engine-gate/launch-plan.mjs --pinned <home> --out <new dir> [--skip <regex>] [--arch x64|arm64]
+//
+// Each drop-signals step also prints its plan's contents on the architecture (ruling 954): every cell, its count and
+// its freeze with its start rule (`planContents`).
 //
 // The scratch names the runner makes afresh each time (a suite's log directory, `/tmp/cua171-gl-XXXXXX`) print as that
 // pattern. `--skip` leaves out the steps whose names match (task 121: `^K`, the canary steps, whose launch ruling 930
@@ -70,14 +73,30 @@ export async function dryLaunch(step, { pinned, out, base = process.env }) {
   return { step: step.name, print, launch: launch && { ...launch, env: envDelta(launch.env, base) } };
 }
 
-/** The plan's text: every step not skipped, in the gate's order. */
-export async function launchPlan({ pinned, out, skip = null, base = process.env, steps = STEPS }) {
+/**
+ * A drop-signals step's plan as it runs on `arch` (ruling 954: the plan's contents, not only its name): each cell, its
+ * count and its freeze (drop-signals.mjs `freezeOf`, the start rule included), from the checkout's own module. Empty for
+ * any other step.
+ */
+export async function planContents(step, arch, signals = null) {
+  const args = step.args ?? [];
+  if (args[args.indexOf('--experiment') + 1] !== 'drop-signals' || !args.includes('--experiment')) return [];
+  const mod = signals ?? (await import('../linux-engine-diff/drop-signals.mjs'));
+  const plan = args[args.indexOf('--plan') + 1];
+  const ballast = args.includes('--ballast') ? args[args.indexOf('--ballast') + 1] : null;
+  const specs = mod.planSpecs({ plan, ballast, arch });
+  return [`plan ${plan} on ${arch}:`, ...specs.map((s) => `  ${s.lane} ${s.cell} x${s.n} freeze ${JSON.stringify(mod.freezeOf(s.cell.split('@')[0]))}`)];
+}
+
+/** The plan's text: every step not skipped, in the gate's order, on `arch` (this machine's unless given). */
+export async function launchPlan({ pinned, out, skip = null, base = process.env, steps = STEPS, arch = process.arch }) {
   const lines = [];
   for (const step of steps.filter((s) => !skip || !skip.test(s.name))) {
     const { print, launch } = await dryLaunch(step, { pinned, out: join(out, step.name), base });
     lines.push(`## ${step.name}`, `print: ${print}`);
     if (!launch) lines.push('launch: none (a :0 step: run in the declared sitting with its print line)');
     else lines.push(`launch: ${launch.via}`, `command: ${launch.command}`, `cwd: ${launch.cwd}`, 'args:', ...launch.args.map((x) => `  ${x}`), 'env:', ...launch.env.map((x) => `  ${x}`));
+    lines.push(...(await planContents(step, arch)));
     lines.push('');
   }
   return normalize(lines.join('\n'));
@@ -88,9 +107,13 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const flag = (name) => (argv.includes(name) ? argv[argv.indexOf(name) + 1] : null);
   const pinned = flag('--pinned');
   const out = flag('--out');
-  if (!pinned || !out) throw new Error('usage: launch-plan.mjs --pinned <home> --out <new dir> [--skip <regex>]');
+  if (!pinned || !out) throw new Error('usage: launch-plan.mjs --pinned <home> --out <new dir> [--skip <regex>] [--arch x64|arm64]');
+  // another architecture's plan, printed here: the runner and the steps read the architecture when they are called
+  // (`parseGateArgs`, `stepArgs`), and the plan's contents are asked for it outright (`planContents`)
+  const arch = flag('--arch');
+  if (arch) Object.defineProperty(process, 'arch', { value: arch });
   if (existsSync(out) && readdirSync(out).length) throw new Error(`${out} is not empty: each plan writes its steps' directories afresh`);
   mkdirSync(out, { recursive: true });
   const skip = flag('--skip');
-  process.stdout.write(await launchPlan({ pinned: resolve(pinned), out: resolve(out), skip: skip ? new RegExp(skip) : null }));
+  process.stdout.write(await launchPlan({ pinned: resolve(pinned), out: resolve(out), skip: skip ? new RegExp(skip) : null, arch: process.arch }));
 }

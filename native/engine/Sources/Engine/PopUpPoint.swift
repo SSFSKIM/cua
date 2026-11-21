@@ -37,8 +37,8 @@ import Foundation
 // restore apply (`popUpConfirmingRoute`). Signals that disagree, a hit late or failed, a disabled or already open button,
 // one with no AXPress keep main's path, said in `popUpClick.kept`. Opening a menu behind raises the app's window above the
 // person's in the window order, which neither the pick nor Escape undoes: as soon as the open is confirmed and the app's
-// window has risen, the windows of the person's frontmost app that were in front of it are raised back in one pass, the
-// focused window last, and the order is read once (`popUpRestoreOrder`, design rulings 979 item 4 and 1004). Everything
+// window has risen over the person's focused window, that one window is raised back by route 3's own repair, and the
+// order is read once; no other window is raised (`popUpRestoreOrder`, design rulings 979 item 4, 1004 and 1005). Everything
 // reads through closures, so the rule is unit-tested over fakes.
 
 /// The wait for the button's menu or the combo box's list after its AXPress: read at once, then every 20 ms for up to
@@ -268,15 +268,6 @@ func personWindowsAbove(_ appWindow: CGWindowID?, in list: [ListedWindow], pids:
   return list[..<index].filter { $0.layer == 0 && $0.alpha > 0 && !pids.contains($0.owner) && $0.owner != ownPid }
 }
 
-/// Whether `list` holds the recorded order: each recorded window still listed lies in front of the app's window, in its
-/// recorded order (a window closed since is left out). Nil when the app's window is not listed. The check of a restore
-/// already needed; whether one is needed is `appWindowCrossed`.
-func personOrderHolds(_ persons: [ListedWindow], appWindow: CGWindowID, in list: [ListedWindow]) -> Bool? {
-  guard let app = list.firstIndex(where: { $0.number == appWindow }) else { return nil }
-  let at = persons.compactMap { person in list.firstIndex(where: { $0.number == person.number }) }
-  return at.allSatisfy { $0 < app } && at == at.sorted()
-}
-
 /// Whether the app's window has crossed above any recorded window of the person's (all of them in front of it before the
 /// press): what starts a restore (the review of 97344ee7..a094f620, item 4). The person's windows reordered among
 /// themselves are not a crossing. Nil when the app's window is not listed.
@@ -368,52 +359,55 @@ func resolveByNumber<Window>(_ persons: [ListedWindow], left: () -> Double, wind
   return found
 }
 
-/// Why a restore did not bring the order back (the meta's `restored.stopped`): the person's input or another app brought
-/// to the front since the press (`personInput`; their own act is never undone, and no note blames cua), the bound spent
-/// (`bound`), a window of the person's frontmost app that could not be told for certain (`unresolved`, never raised), or
-/// the person's focused window not known among the recorded ones (`focusUnknown`: nothing raised, since a raise of
-/// another of their windows, last, would change their focused window), or the focused window's own raise answering an
-/// AX error (`focusRaiseFailed`).
-enum PopUpRestoreStop: String, Equatable { case personInput, bound, unresolved, focusUnknown, focusRaiseFailed }
+/// Why a restore did not bring the person's focused window back over the app's (the meta's `restored.stopped`): the
+/// person's input or another app brought to the front since the press (`personInput`; their own act is never undone,
+/// and no note blames cua), the bound spent (`bound`), the focused window's element not found by its number
+/// (`unresolved`), the focused window's number not proven (`focusUnknown`), its raise answering an AX error
+/// (`focusRaiseFailed`), or the window list not read, so whether it is covered is unknown (`orderUnread`).
+enum PopUpRestoreStop: String, Equatable { case personInput, bound, unresolved, focusUnknown, focusRaiseFailed, orderUnread }
 
 /// The meta's `popUpClick.restored`: how many of the person's windows were in front of the app's before the press, the
-/// milliseconds from the restore's start to its read, whether the read found the recorded order back, how many
-/// AXRaises it made, how many recorded windows of third apps it skipped, and why it did not complete when it stopped
-/// short.
+/// milliseconds from the restore's start to its read, whether the person's focused window is back over the app's
+/// (`complete`), how many AXRaises it made (one at most: the focused window's) and how many answered an error, how many
+/// of the other recorded windows the app's window covers at the end, never raised (`leftCovered`), and why it did not
+/// complete when it stopped short.
 struct PopUpRestoreRecord: Equatable {
   let windows: Int
   var ms: Double = 0
   var complete = false
   var raises = 0
-  var skipped = 0
-  /// The raises whose AXRaise answered an error.
   var failedRaises = 0
+  var leftCovered = 0
   var stopped: PopUpRestoreStop?
 
   var wire: [String: Any] {
     var wire: [String: Any] = ["windows": windows, "ms": (ms * 1000).rounded() / 1000, "complete": complete, "raises": raises,
-                               "skipped": skipped]
+                               "leftCovered": leftCovered]
     if failedRaises > 0 { wire["failedRaises"] = failedRaises }
     if let stopped { wire["stopped"] = stopped.rawValue }
     return wire
   }
 }
 
-/// #458's restore (design ruling 1004, replacing the sampling loop #458's qual found harmful: run 44929018111, late
-/// AXRaises flipping the person's windows for up to a second and the last one to land changing their focused window,
-/// 3/40 and 11/20): one pass, no loop. Of the person's windows recorded in front of the app's window before the press
-/// (`persons`, front to back), those of the person's frontmost app are raised once each, back to front, the person's
-/// focused window last, by route 3's own repair (AXRaise, never an activation), inside the screen-update hold. A third
-/// app's window is skipped (`skipped`): an AXRaise of a background app's window stays under the active app's. About
-/// `popUpRestoreReadMs` after the first raise the order is read once and recorded (`complete`), never raised again on a
-/// mismatch. The hold is released at the read, its timer set no later than route 3's ceiling
-/// (`activationPointHoldCeilingMs`). The person's input or another frontmost app (`intervened`) stops it with nothing
-/// more raised, checked before anything is read, before the first raise and before each one after. An absolute cutoff
-/// of `popUpRestoreBoundMs` from its start covers everything but one call: past it, the remaining others are skipped and
-/// the focused window's raise is still made, so the pass never ends on another window's raise; the read is made only
-/// inside the cutoff, and an end past it is `bound`, never complete. The hard bar: the person's focused window never
-/// changes. Raising it last keeps it on top of its app's windows; when it is not known, not among the recorded windows,
-/// or not resolved, nothing is raised, and its raise answering an error ends the pass as `focusRaiseFailed`.
+/// Whether `list` shows `window` behind the app's window (`appWindow`); nil when either is not listed.
+func covered(_ window: CGWindowID, by appWindow: CGWindowID, in list: [ListedWindow]) -> Bool? {
+  guard let app = list.firstIndex(where: { $0.number == appWindow }), let at = list.firstIndex(where: { $0.number == window })
+  else { return nil }
+  return at > app
+}
+
+/// #458's restore (design ruling 1005, after rulings 979 item 4 and 1004): route 3's own repair, and only it. When the
+/// app's window has crossed above the person's focused window (their frontmost app's AXFocusedWindow, numbered by the SPI
+/// alone), that one window is raised once by AXRaise (`gatedPerform`, its AX result read) inside the screen-update hold,
+/// and about `popUpRestoreReadMs` later the order is read once: `complete` when the focused window is back over the app's.
+/// No other window is ever raised, neither the person's other windows nor a third app's: the full-order pass raised them
+/// back to front and moved the person's focus to another window for 13–49 ms in 38/80 and 13/30 rows (#458's qual 2,
+/// README §"#458 qual 2" at 5246652f), so they are counted as left covered (`leftCovered`) instead. A focused window the
+/// app's window did not cover is not raised. The person's input or another frontmost app (`intervened`) stops it with
+/// nothing raised, checked before anything is read and just before the raise; an absolute cutoff of
+/// `popUpRestoreBoundMs` covers everything, the hold's release timed no later than route 3's ceiling
+/// (`activationPointHoldCeilingMs`), and an end past it is `bound`, never complete. The hard bar, the person's focused
+/// window never changes, holds by construction: only that window is raised.
 func popUpRestoreOrder<Window>(_ persons: [ListedWindow], appWindow: CGWindowID, system: PopUpRestoreSystem<Window>,
                                windows: () -> [ListedWindow]?, now: () -> Double, sleep: (Double) -> Void,
                                intervened: () -> Bool = { false }) -> PopUpRestoreRecord {
@@ -427,57 +421,47 @@ func popUpRestoreOrder<Window>(_ persons: [ListedWindow], appWindow: CGWindowID,
     record.complete = complete
     return record
   }
-  // The person's switching apps during the open is theirs, before anything is read (the review of 7e5bb454..67cf8b26,
-  // item 4).
+  /// The recorded windows other than `focused` that `list` shows under the app's window.
+  func othersCovered(_ focused: CGWindowID?, in list: [ListedWindow]) -> Int {
+    persons.filter { $0.number != focused && covered($0.number, by: appWindow, in: list) == true }.count
+  }
   if intervened() { return ended(.personInput) }
   guard let front = system.frontmost() else { return ended(.focusUnknown) }
-  let own = persons.filter { $0.owner == front }
-  record.skipped = persons.count - own.count
   if intervened() { return ended(.personInput) }
-  guard !own.isEmpty else { return ended(nil) }  // only third apps' windows: nothing an AXRaise can put back
   guard left() > 0 else { return ended(.bound) }
-  guard let focused = system.focusedWindow(front), own.contains(where: { $0.number == focused }) else { return ended(.focusUnknown) }
-  let found = system.resolve(own, left)
-  guard let focusedElement = found[focused] else { return ended(.unresolved) }
-  let unresolved = own.contains { found[$0.number] == nil }
-  // Back to front, the focused window apart: it is raised last, always.
-  let others = own.reversed().filter { $0.number != focused }.compactMap { found[$0.number] }
-  // Input before the first raise stops it with nothing raised; after it, a stop can only follow input.
+  guard let focused = system.focusedWindow(front) else { return ended(.focusUnknown) }
+  guard let list = windows() else { return ended(.orderUnread) }
+  record.leftCovered = othersCovered(focused, in: list)
+  // The trigger: the app's window over the person's focused window, which was in front of it before the press.
+  guard let focusedWindow = persons.first(where: { $0.number == focused }), covered(focused, by: appWindow, in: list) == true else {
+    return ended(nil, complete: true)
+  }
+  guard left() > 0 else { return ended(.bound) }
+  guard let element = system.resolve([focusedWindow], left)[focused] else { return ended(.unresolved) }
   if intervened() { return ended(.personInput) }
   guard left() > 0 else { return ended(.bound) }
   let release = OnceRelease(system.hold())
   system.scheduleRelease(min(left(), activationPointHoldCeilingMs)) { release() }
   defer { release() }
   let raisedAt = now()
-  var cutoffPassed = false
-  for element in others {
-    // The person's act defines their focus: nothing more is raised (item 1).
-    if intervened() { return ended(.personInput) }
-    // The cutoff skips the rest of the others, never the focused window's raise.
-    guard left() > 0 else { cutoffPassed = true; break }
-    if !system.raise(element) { record.failedRaises += 1 }
-    record.raises += 1
-  }
-  if intervened() { return ended(.personInput) }
-  // The pass's last act is the focused window's raise, on the cutoff too, past it by that one call (item 1).
-  let focusedRaised = system.raise(focusedElement)
-  record.raises += 1
-  guard focusedRaised else {
-    record.failedRaises += 1
+  let raised = system.raise(element)
+  record.raises = 1
+  guard raised else {
+    record.failedRaises = 1
     return ended(.focusRaiseFailed)
   }
-  if cutoffPassed || left() <= 0 { return ended(.bound) }
-  // One read, about `popUpRestoreReadMs` after the first raise and inside the cutoff, checked before and after (item 3);
-  // a mismatch is recorded, never raised again.
+  guard left() > 0 else { return ended(.bound) }
+  // One read, about `popUpRestoreReadMs` after the raise and inside the cutoff, checked before and after.
   let wait = min(raisedAt + popUpRestoreReadMs, cutoff - deliveryGuardSampleMs) - now()
   if wait > 0 { sleep(wait) }
   if intervened() { return ended(.personInput) }
   guard left() > 0 else { return ended(.bound) }
-  let holds = windows().flatMap { personOrderHolds(persons, appWindow: appWindow, in: $0) } == true
+  let final = windows()
   guard left() > 0 else { return ended(.bound) }
-  return ended(unresolved ? .unresolved : nil, complete: holds && !unresolved)
+  guard let final else { return ended(.orderUnread) }
+  record.leftCovered = othersCovered(focused, in: final)
+  return ended(nil, complete: covered(focused, by: appWindow, in: final) == false)
 }
-
 /// The meta's `popUpClick` (#458, value-free): the control's role; and either why main's path was kept (`kept`), the
 /// refusal (`refused: "noAction"`, a combo box whose arrow has no action), or the click delivered as the control's AXPress
 /// (`delivery: "action"`, set once the action is dispatched; `arrow: true` for a combo box's arrow) with its effect,
@@ -551,8 +535,9 @@ func popUpOpened<Element>(_ window: ListedWindow, target: PopUpTarget<Element>, 
 
 /// The press's effect: a window new since the baseline (`before`, the list just before the press) that is what it
 /// opened (`popUpOpened`), read at once and every `popUpOpenSampleMs` for up to `popUpOpenSettleMs` (a read that fails is
-/// a sample with nothing seen); otherwise, or with no baseline, `clickUnconfirmed`. Seen, the person's windows that were
-/// in front of the app's window (`personWindowsAbove`) are put back (`restore`, `popUpRestoreOrder`) as soon as the app's
+/// a sample with nothing seen); otherwise, or with no baseline, `clickUnconfirmed`. Seen, the restore (`restore`,
+/// `popUpRestoreOrder`: the person's focused window raised back over the app's, if the app's covers it; the other
+/// windows recorded in front of the app's, `personWindowsAbove`, counted) runs as soon as the app's
 /// window has crossed above any of them (`appWindowCrossed`): in the list that saw the open, or within
 /// `deliveryGuardMinimumMs` after it (sampled every `deliveryGuardSampleMs`); none crossed, nothing moves. The person's
 /// input or another frontmost app since the press (`intervened`) ends the watch and is handed to the restore. A restore
@@ -712,10 +697,10 @@ func popUpUnconfirmed(app: String, kind: PopUpControl = .popUpButton) -> EngineE
     "The click could not be confirmed: it was carried by \(carried) in \(app), since a posted click can close the menu it opens, and \(seen). Observe the app with get_app_state before any retry, and never retry blindly.")
 }
 
-/// #458's note on an open whose restore did not complete within its bound: the open is confirmed, and the app's window
-/// may lie over windows of the person's it had been behind.
+/// #458's note on an open whose restore did not complete: the open is confirmed, and the app's window may lie over the
+/// person's focused window.
 func popUpRestoreIncomplete(app: String) -> String {
-  "\(app)'s menu is open, but the person's windows that were in front of \(app)'s window could not all be put back in front of it, so \(app)'s window may now cover them."
+  "\(app)'s menu is open, but the person's front window could not be put back in front of \(app)'s window, so \(app)'s window may now cover it."
 }
 
 /// #458's refusal (design ruling 979, item 3, narrowed by the restore measurement): a native combo box whose arrow has no

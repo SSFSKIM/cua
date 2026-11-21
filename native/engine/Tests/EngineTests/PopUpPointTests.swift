@@ -246,11 +246,11 @@ final class PopUpPointTests: XCTestCase {
     })
     XCTAssertEqual(wire(meta)?["effect"] as? String, "confirmed")
     XCTAssertEqual((wire(meta)?["restored"] as? [String: Any])?["complete"] as? Bool, false)
-    XCTAssertEqual(meta.note, "TextEdit's menu is open, but the person's windows that were in front of TextEdit's window could not all be put back in front of it, so TextEdit's window may now cover them.")
+    XCTAssertEqual(meta.note, "TextEdit's menu is open, but the person's front window could not be put back in front of TextEdit's window, so TextEdit's window may now cover it.")
     XCTAssertEqual(popUpResult(meta)["note"] as? String, meta.note)
   }
 
-  // MARK: The restore (design ruling 1004: one pass)
+  // MARK: The restore (design ruling 1005: the focused window alone)
 
   /// A fake restore system: the person's frontmost app and focused window, every recorded window resolved by its number
   /// unless `unresolved` names it, the raise and the hold recorded.
@@ -270,23 +270,24 @@ final class PopUpPointTests: XCTestCase {
     current.insert(window, at: index)
   }
 
-  /// Two of the person's windows in front of the app's before the open (Finder's F1, focused, over F2: the kit's layout
-  /// a), the app's window risen over both: each raised once, back to front, F1 last, inside one hold; the order read once,
-  /// about 300 ms after the first raise, and found back; nothing else raised (the app's second window, a third app's
-  /// behind). The engine's own window (its cursor panel) in front is never the person's.
-  func testTwoPersonWindowsAboveAreRaisedOnceBackToFrontTheFocusedLast() {
-    let f1 = ListedWindow(number: 40, owner: finder, layer: 0, bounds: CGRect(x: 760, y: 420, width: 300, height: 300))
-    let f2 = ListedWindow(number: 41, owner: finder, layer: 0, bounds: CGRect(x: 240, y: 480, width: 300, height: 300))
+  /// The qual's layout a with a third app: Finder's F1 (focused) over F2, then the app's window, then Calculator, before
+  /// the press; the open raises the app's window over all three.
+  private var f1: ListedWindow { ListedWindow(number: 40, owner: finder, layer: 0, bounds: CGRect(x: 760, y: 420, width: 300, height: 300)) }
+  private var f2: ListedWindow { ListedWindow(number: 41, owner: finder, layer: 0, bounds: CGRect(x: 240, y: 480, width: 300, height: 300)) }
+  private var calculator: ListedWindow { ListedWindow(number: 70, owner: 600, layer: 0, bounds: CGRect(x: 100, y: 100, width: 230, height: 400)) }
+
+  /// Design ruling 1005: only the person's focused window is raised, once, inside the hold (its timer at route 3's
+  /// ceiling); the order is read once about 300 ms later, and `complete` says the focused window is back over the app's.
+  /// The other covered windows (F2, and Calculator, a third app's) are never raised and are counted as left covered.
+  func testOnlyTheFocusedWindowIsRaisedTheOthersLeftCoveredAndCounted() {
     let cursor = ListedWindow(number: 5, owner: 999, layer: 0, bounds: CGRect(x: 0, y: 0, width: 40, height: 40))
-    let second = ListedWindow(number: 29, owner: app, layer: 0, bounds: CGRect(x: 420, y: 60, width: 600, height: 600))
-    let calculator = ListedWindow(number: 70, owner: 600, layer: 0, bounds: CGRect(x: 100, y: 100, width: 230, height: 400))
-    let before = [cursor, f1, f2, appWindow, second, calculator]
-    let persons = personWindowsAbove(observed, in: before, pids: [app], ownPid: 999)
-    XCTAssertEqual(persons.map(\.number), [40, 41], "front to back; the engine's own window never counted")
-    var current = [fontMenu, cursor, appWindow, f1, f2, second, calculator]
+    let persons = personWindowsAbove(observed, in: [cursor, f1, f2, calculator, appWindow], pids: [app], ownPid: 999)
+    XCTAssertEqual(persons.map(\.number), [40, 41, 70], "front to back; the engine's own window never counted")
+    var current = [fontMenu, cursor, appWindow, f1, f2, calculator]
     var raised: [CGWindowID] = []
     var holds = 0, releases = 0
     var scheduled: [Double] = []
+    var reads = 0
     var clock = 0.0
     let record = popUpRestoreOrder(persons, appWindow: observed, system: fakeSystem(raise: { number in
       raised.append(number)
@@ -294,87 +295,126 @@ final class PopUpPointTests: XCTestCase {
     }, hold: {
       holds += 1
       return { releases += 1 }
-    }, scheduleRelease: { ms, _ in scheduled.append(ms) }), windows: { current }, now: { clock }, sleep: { clock += $0 })
-    XCTAssertEqual(raised, [41, 40], "back to front, the focused window last, once each")
-    XCTAssertEqual(current.map(\.number), [77, 5, 40, 41, 28, 29, 70], "the recorded order back, nothing else moved")
-    XCTAssertTrue(record.complete)
-    XCTAssertEqual([record.windows, record.raises, record.skipped], [2, 2, 0])
-    XCTAssertEqual(record.ms, 300, accuracy: 0.001, "read once, about 300 ms after the first raise")
+    }, scheduleRelease: { ms, _ in scheduled.append(ms) }), windows: { reads += 1; return current }, now: { clock }, sleep: { clock += $0 })
+    XCTAssertEqual(raised, [40], "the focused window alone")
+    XCTAssertEqual(current.map(\.number), [77, 5, 40, 28, 41, 70], "F1 back over the app's; F2 and Calculator left under it")
+    XCTAssertTrue(record.complete, "the focused window is back over the app's")
+    XCTAssertEqual([record.windows, record.raises, record.leftCovered], [3, 1, 2])
+    XCTAssertEqual(record.ms, 300, accuracy: 0.001, "read once, about 300 ms after the raise")
+    XCTAssertEqual(reads, 2, "the trigger's read and the one read after the raise")
     XCTAssertEqual([holds, releases], [1, 1], "one screen-update hold, released")
-    XCTAssertEqual(scheduled, [activationPointHoldCeilingMs], "its timer no later than route 3's ceiling")
-    // Raises that land late (the qual: 30–150 ms) are read as landed, since the read waits for them.
-    var landed = [fontMenu, appWindow, f1, f2]
-    var lateClock = 0.0
-    var issuedAt: Double?
-    let late = popUpRestoreOrder([f1, f2], appWindow: observed, system: fakeSystem(raise: { _ in issuedAt = issuedAt ?? lateClock }),
-                                 windows: {
-      if let at = issuedAt, lateClock - at >= 150 { landed = [self.fontMenu, f1, f2, self.appWindow] }
-      return landed
-    }, now: { lateClock }, sleep: { lateClock += $0 })
-    XCTAssertTrue(late.complete, "raises landing 150 ms late are seen by the read")
+    XCTAssertEqual(scheduled, [activationPointHoldCeilingMs])
+    XCTAssertEqual(record.wire["leftCovered"] as? Int, 2)
+    XCTAssertNil(record.wire["skipped"])
   }
 
-  /// The person's focused window is raised last even when another of their windows lay in front of it (the hard bar:
-  /// their focused window never changes); the order then reads otherwise, which is recorded, never re-raised.
-  func testTheFocusedWindowIsRaisedLastAndAMismatchIsRecordedWithNoReRaise() {
-    let f1 = ListedWindow(number: 40, owner: finder, layer: 0, bounds: CGRect(x: 760, y: 420, width: 300, height: 300))
-    let f2 = ListedWindow(number: 41, owner: finder, layer: 0, bounds: CGRect(x: 240, y: 480, width: 300, height: 300))
-    // F2 in front of the focused F1 before the press.
-    var current = [fontMenu, appWindow, f2, f1]
-    var raised: [CGWindowID] = []
-    var reads = 0
+  /// A focused window the app's window did not cover is not raised, nor is any other: F2 covered, F1 still over the app's.
+  /// And a focused window still covered at the read is recorded incomplete, never raised again.
+  func testNothingIsRaisedWhenTheFocusedWindowIsNotCoveredAndAMissIsNotRetried() {
+    var raised = 0
     var clock = 0.0
-    let record = popUpRestoreOrder([f2, f1], appWindow: observed, system: fakeSystem(raise: { number in
-      raised.append(number)
-      self.raising(number, in: &current)
-    }), windows: { reads += 1; return current }, now: { clock }, sleep: { clock += $0 })
-    XCTAssertEqual(raised, [41, 40], "F2, then the focused F1 last")
-    XCTAssertEqual(current.map(\.number), [77, 40, 41, 28], "the focused window on top")
-    XCTAssertFalse(record.complete, "F1 over F2 is not the recorded order")
-    XCTAssertEqual(record.raises, 2, "never raised again on the mismatch")
-    XCTAssertEqual(reads, 1, "one read")
+    let uncovered = popUpRestoreOrder([f1, f2], appWindow: observed, system: fakeSystem(raise: { _ in raised += 1 }),
+                                      windows: { [self.fontMenu, self.f1, self.appWindow, self.f2] }, now: { clock }, sleep: { clock += $0 })
+    XCTAssertEqual(raised, 0)
+    XCTAssertTrue(uncovered.complete, "the focused window is over the app's")
+    XCTAssertEqual(uncovered.leftCovered, 1)
+    clock = 0
+    let missed = popUpRestoreOrder([f1, f2], appWindow: observed, system: fakeSystem(raise: { _ in raised += 1 }),
+                                   windows: { [self.fontMenu, self.appWindow, self.f1, self.f2] }, now: { clock }, sleep: { clock += $0 })
+    XCTAssertEqual(raised, 1, "one raise, no retry")
+    XCTAssertFalse(missed.complete)
+    XCTAssertNil(missed.stopped)
   }
 
-  /// A third app's window among the person's (the qual's layout c: F1 > F2 > Calculator > F3 > the app's) is skipped: an
-  /// AXRaise of a background app's window stays under the active app's. The person's frontmost app's windows are raised
-  /// once each, back to front, F1 last; the order, Calculator still under, is recorded as not back.
-  func testAThirdAppsWindowIsSkipped() {
-    let f1 = ListedWindow(number: 40, owner: finder, layer: 0, bounds: CGRect(x: 760, y: 420, width: 300, height: 300))
-    let f2 = ListedWindow(number: 41, owner: finder, layer: 0, bounds: CGRect(x: 240, y: 480, width: 300, height: 300))
-    let calculator = ListedWindow(number: 70, owner: 600, layer: 0, bounds: CGRect(x: 100, y: 100, width: 230, height: 400))
-    let f3 = ListedWindow(number: 43, owner: finder, layer: 0, bounds: CGRect(x: 40, y: 80, width: 200, height: 200))
-    var current = [fontMenu, appWindow, f1, f2, calculator, f3]
-    var raised: [CGWindowID] = []
-    var clock = 0.0
-    let record = popUpRestoreOrder([f1, f2, calculator, f3], appWindow: observed, system: fakeSystem(raise: { number in
-      raised.append(number)
-      self.raising(number, in: &current)
-    }), windows: { current }, now: { clock }, sleep: { clock += $0 })
-    XCTAssertEqual(raised, [43, 41, 40], "Finder's back to front, F1 last; Calculator never")
-    XCTAssertEqual(record.skipped, 1)
-    XCTAssertFalse(record.complete, "Calculator left under the app's window")
-    XCTAssertEqual(record.raises, 3)
-  }
-
-  /// The hard bar: with the person's focused window unknown, or not among the recorded windows, nothing is raised
-  /// (`focusUnknown`); with it unresolved, nothing either (`unresolved`), since raising another of their windows last
-  /// would change their focus.
-  func testNothingIsRaisedWithoutTheFocusedWindowToRaiseLast() {
-    let f1 = ListedWindow(number: 40, owner: finder, layer: 0, bounds: CGRect(x: 760, y: 420, width: 300, height: 300))
-    let f2 = ListedWindow(number: 41, owner: finder, layer: 0, bounds: CGRect(x: 240, y: 480, width: 300, height: 300))
-    let cases: [(pid_t?, CGWindowID?, Set<CGWindowID>, PopUpRestoreStop)] = [
-      (nil, 40, [], .focusUnknown), (300, nil, [], .focusUnknown), (300, 99, [], .focusUnknown), (300, 40, [40], .unresolved),
+  /// The focused window's number not proven (`focusUnknown`) or its element not found (`unresolved`), or the window list
+  /// not read (`orderUnread`): nothing is raised.
+  func testNothingIsRaisedWithoutTheFocusedWindowProven() {
+    let cases: [(pid_t?, CGWindowID?, Set<CGWindowID>, Bool, PopUpRestoreStop)] = [
+      (nil, 40, [], true, .focusUnknown), (300, nil, [], true, .focusUnknown), (300, 40, [40], true, .unresolved),
+      (300, 40, [], false, .orderUnread),
     ]
-    for (front, focused, unresolved, stop) in cases {
+    for (front, focused, unresolved, listReads, stop) in cases {
       var raised = 0
       var clock = 0.0
       let record = popUpRestoreOrder([f1, f2], appWindow: observed,
                                      system: fakeSystem(front: front, focused: focused, unresolved: unresolved, raise: { _ in raised += 1 }),
-                                     windows: { [self.appWindow, f1, f2] }, now: { clock }, sleep: { clock += $0 })
+                                     windows: { listReads ? [self.appWindow, self.f1, self.f2] : nil }, now: { clock }, sleep: { clock += $0 })
       XCTAssertEqual(raised, 0, "nothing raised: \(stop)")
       XCTAssertEqual(record.stopped, stop)
       XCTAssertFalse(record.complete)
     }
+  }
+
+  /// The person's input stops the restore with nothing raised: before anything is read (switching apps during the open:
+  /// the frontmost app never read), and just before the raise; after the raise, before the read, `personInput` too.
+  func testThePersonsInputStopsTheRestoreWithNothingRaised() {
+    var frontReads = 0, raised = 0
+    var clock = 0.0
+    let first = popUpRestoreOrder([f1], appWindow: observed, system: PopUpRestoreSystem<CGWindowID>(
+      frontmost: { frontReads += 1; return self.finder }, focusedWindow: { _ in 40 }, resolve: Self.allResolved,
+      raise: { _ in raised += 1; return true }, hold: { {} }),
+      windows: { [self.appWindow, self.f1] }, now: { clock }, sleep: { clock += $0 }, intervened: { true })
+    XCTAssertEqual(first.stopped, .personInput)
+    XCTAssertEqual([frontReads, raised], [0, 0])
+    // Input arriving once the focus is read, before the raise.
+    var acted = false
+    clock = 0
+    let beforeRaise = popUpRestoreOrder([f1], appWindow: observed, system: PopUpRestoreSystem<CGWindowID>(
+      frontmost: { self.finder }, focusedWindow: { _ in 40 }, resolve: { persons, left in acted = true; return Self.allResolved(persons, left) },
+      raise: { _ in raised += 1; return true }, hold: { {} }),
+      windows: { [self.appWindow, self.f1] }, now: { clock }, sleep: { clock += $0 }, intervened: { acted })
+    XCTAssertEqual(beforeRaise.stopped, .personInput)
+    XCTAssertEqual(raised, 0)
+    // Input after the raise, before the read.
+    var back = false
+    var reads = 0
+    clock = 0
+    let after = popUpRestoreOrder([f1], appWindow: observed, system: fakeSystem(raise: { _ in back = true }), windows: {
+      reads += 1
+      return back ? [self.f1, self.appWindow] : [self.appWindow, self.f1]
+    }, now: { clock }, sleep: { clock += $0 }, intervened: { back })
+    XCTAssertEqual(after.stopped, .personInput)
+    XCTAssertEqual(reads, 1, "the trigger's read only")
+  }
+
+  /// The cutoff: resolution spending it raises nothing and takes no hold; the raise crossing it, or the read crossing
+  /// it, ends `bound`, never complete.
+  func testTheCutoffEndsTheRestoreAsBound() {
+    var clock = 0.0
+    var holds = 0, raises = 0
+    let resolving = popUpRestoreOrder([f1], appWindow: observed, system: PopUpRestoreSystem<CGWindowID>(frontmost: { self.finder },
+      focusedWindow: { _ in 40 }, resolve: { persons, left in clock += 600; return Self.allResolved(persons, left) },
+      raise: { _ in raises += 1; return true }, hold: { holds += 1; return {} }),
+      windows: { [self.appWindow, self.f1] }, now: { clock }, sleep: { clock += $0 })
+    XCTAssertEqual(resolving.stopped, .bound)
+    XCTAssertEqual([holds, raises], [0, 0])
+    clock = 0
+    var reads = 0
+    let crossing = popUpRestoreOrder([f1], appWindow: observed, system: fakeSystem(raise: { _ in clock += 520 }),
+                                     windows: { reads += 1; return reads == 1 ? [self.appWindow, self.f1] : [self.f1, self.appWindow] },
+                                     now: { clock }, sleep: { clock += $0 })
+    XCTAssertEqual(crossing.stopped, .bound)
+    XCTAssertFalse(crossing.complete)
+    XCTAssertEqual(reads, 1, "no read past the cutoff")
+    clock = 0
+    reads = 0
+    let slowRead = popUpRestoreOrder([f1], appWindow: observed, system: fakeSystem(raise: { _ in }), windows: {
+      reads += 1
+      if reads == 2 { clock += 300 }
+      return reads == 1 ? [self.appWindow, self.f1] : [self.f1, self.appWindow]
+    }, now: { clock }, sleep: { clock += $0 })
+    XCTAssertEqual(slowRead.stopped, .bound)
+    XCTAssertFalse(slowRead.complete)
+  }
+
+  /// The focused window's raise answering an AX error ends the restore as `focusRaiseFailed`, incomplete.
+  func testTheFocusedRaiseFailingIsRecorded() {
+    var clock = 0.0
+    let failed = popUpRestoreOrder([f1, f2], appWindow: observed, system: fakeSystem(failing: [40], raise: { _ in }),
+                                   windows: { [self.fontMenu, self.appWindow, self.f1, self.f2] }, now: { clock }, sleep: { clock += $0 })
+    XCTAssertEqual(failed.stopped, .focusRaiseFailed)
+    XCTAssertFalse(failed.complete)
+    XCTAssertEqual([failed.raises, failed.failedRaises], [1, 1])
   }
 
   // MARK: Unconfirmed
@@ -787,29 +827,7 @@ final class PopUpPointTests: XCTestCase {
     input = 10
     front = 777
     XCTAssertTrue(intervened(), "another app brought to the front")
-    // The restore: input after its first raise stops the rest of the round and the next.
-    let f2 = ListedWindow(number: 41, owner: finder, layer: 0, bounds: CGRect(x: 240, y: 480, width: 300, height: 300))
-    let current = [fontMenu, appWindow, person, f2]
-    var raised = 0
-    var acted = false
-    var restoreClock = 0.0
-    let record = popUpRestoreOrder([person, f2], appWindow: observed, system: fakeSystem(raise: { _ in
-      raised += 1
-      acted = true  // the person clicks the app right after the raise; the app's window stays over theirs
-    }), windows: { current }, now: { restoreClock }, sleep: { restoreClock += $0 }, intervened: { acted })
-    XCTAssertEqual(raised, 1, "no raise after the person's input")
-    XCTAssertFalse(record.complete)
-    XCTAssertEqual(record.stopped, .personInput)
-    // Input after the raises and before the read: the order is the person's from then on, not read as the restore's.
-    var back = false
-    var sampleClock = 0.0
     var reads = 0
-    let after = popUpRestoreOrder([person], appWindow: observed, system: fakeSystem(raise: { _ in back = true }), windows: {
-      reads += 1
-      return back ? [self.person, self.appWindow] : [self.appWindow, self.person]
-    }, now: { sampleClock }, sleep: { sampleClock += $0 }, intervened: { back })
-    XCTAssertEqual(after.stopped, .personInput)
-    XCTAssertEqual(reads, 0)
     // Through the click: a restore stopped by the person adds no note; input during the watch means no restore at all.
     let scene = font()
     restoreAnswer = PopUpRestoreRecord(windows: 1, ms: 4, complete: false, raises: 1, stopped: .personInput)
@@ -836,63 +854,6 @@ final class PopUpPointTests: XCTestCase {
     XCTAssertEqual(restores, [], "the person's input during the watch: their order is theirs")
   }
 
-  /// One absolute cutoff from the restore's start covers resolving the windows, the raises and the hold, which a timer of
-  /// its own is asked to release. Past it the remaining others are skipped, and the focused window's raise is still the
-  /// last act, past the cutoff by that one call (the review of 7e5bb454..67cf8b26, items 1 and 3): the end is `bound`,
-  /// never complete, even with the order read back.
-  func testTheCutoffSkipsTheRestButNeverTheFocusedRaise() {
-    let f1 = ListedWindow(number: 40, owner: finder, layer: 0, bounds: CGRect(x: 760, y: 420, width: 300, height: 300))
-    let f2 = ListedWindow(number: 41, owner: finder, layer: 0, bounds: CGRect(x: 240, y: 480, width: 300, height: 300))
-    let f3 = ListedWindow(number: 43, owner: finder, layer: 0, bounds: CGRect(x: 40, y: 80, width: 200, height: 200))
-    let f4 = ListedWindow(number: 44, owner: finder, layer: 0, bounds: CGRect(x: 40, y: 380, width: 200, height: 200))
-    // A slow app: each raise takes 300 ms, so the cutoff passes after the second of the others.
-    var clock = 0.0
-    var raised: [CGWindowID] = []
-    var raisedAt: [Double] = []
-    var scheduled: [Double] = []
-    var released = 0
-    var reads = 0
-    let slow = popUpRestoreOrder([f1, f2, f3, f4], appWindow: observed, system: fakeSystem(raise: { number in
-      raised.append(number)
-      raisedAt.append(clock)
-      clock += 300
-    }, hold: { { released += 1 } }, scheduleRelease: { ms, _ in scheduled.append(ms) }),
-                                  windows: { reads += 1; return [self.fontMenu, f1, f2, f3, f4, self.appWindow] },
-                                  now: { clock }, sleep: { clock += $0 })
-    XCTAssertEqual(scheduled, [activationPointHoldCeilingMs], "the hold's release timed, within the cutoff")
-    XCTAssertEqual(raised, [44, 43, 40], "the others back to front until the cutoff, F2 skipped, the focused F1 last")
-    XCTAssertEqual(raisedAt.last, 600, "the focused raise past the cutoff by its one call")
-    XCTAssertFalse(slow.complete, "past the cutoff: not complete, though the order would read back")
-    XCTAssertEqual(slow.stopped, .bound)
-    XCTAssertEqual(reads, 0, "no read past the cutoff")
-    XCTAssertEqual(released, 1)
-    // The final raise alone crossing the cutoff (the read would then fall past it): bound, not complete, no read.
-    clock = 0
-    reads = 0
-    let crossing = popUpRestoreOrder([f1], appWindow: observed, system: fakeSystem(raise: { _ in clock += 520 }),
-                                     windows: { reads += 1; return [self.fontMenu, f1, self.appWindow] }, now: { clock }, sleep: { clock += $0 })
-    XCTAssertEqual(crossing.stopped, .bound)
-    XCTAssertFalse(crossing.complete)
-    XCTAssertEqual(reads, 0)
-    // The read itself crossing the cutoff: bound, not complete.
-    clock = 0
-    let slowRead = popUpRestoreOrder([f1], appWindow: observed, system: fakeSystem(raise: { _ in }),
-                                     windows: { clock += 300; return [self.fontMenu, f1, self.appWindow] }, now: { clock }, sleep: { clock += $0 })
-    XCTAssertEqual(slowRead.stopped, .bound)
-    XCTAssertFalse(slowRead.complete)
-    // Slow resolution spends the budget before the hold: no hold, no raise.
-    clock = 0
-    var holds = 0
-    var raises = 0
-    let resolving = popUpRestoreOrder([f1, f2], appWindow: observed, system: PopUpRestoreSystem<CGWindowID>(frontmost: { self.finder },
-      focusedWindow: { _ in 40 }, resolve: { persons, left in
-      clock += 600
-      return Self.allResolved(persons, left)
-    }, raise: { _ in raises += 1; return true }, hold: { holds += 1; return {} }), windows: { [self.fontMenu, self.appWindow, f1, f2] },
-                                       now: { clock }, sleep: { clock += $0 })
-    XCTAssertEqual([holds, raises], [0, 0])
-    XCTAssertEqual(resolving.stopped, .bound)
-  }
 
   /// Every recorded window resolved by its own number (the fakes' resolver).
   static func allResolved(_ persons: [ListedWindow], _ left: () -> Double) -> [CGWindowID: CGWindowID] {
@@ -931,24 +892,6 @@ final class PopUpPointTests: XCTestCase {
     XCTAssertEqual([scans.count, numberReads], [0, 0], "no read past the cutoff")
   }
 
-  /// A window of the person's app that could not be resolved is never raised: the others are, once each, the focused
-  /// window last, and the restore ends `unresolved` at its one read, the unresolved window still behind the app's.
-  func testAnUnresolvedWindowStaysBehindAndEndsTheRestoreAsUnresolved() {
-    let unresolvedWindow = ListedWindow(number: 40, owner: finder, layer: 0, bounds: CGRect(x: 100, y: 100, width: 400, height: 300))
-    let focusedWindow = ListedWindow(number: 41, owner: finder, layer: 0, bounds: CGRect(x: 600, y: 400, width: 200, height: 200))
-    var raised: [CGWindowID] = []
-    var clock = 0.0
-    let record = popUpRestoreOrder([unresolvedWindow, focusedWindow], appWindow: observed,
-                                   system: fakeSystem(focused: 41, unresolved: [40], raise: { raised.append($0) }),
-      // The unresolved window stays behind the app's throughout.
-      windows: { raised.isEmpty ? [self.appWindow, focusedWindow, unresolvedWindow] : [focusedWindow, self.appWindow, unresolvedWindow] },
-      now: { clock }, sleep: { clock += $0 })
-    XCTAssertEqual(raised, [41], "the unresolved window never raised, the focused one once")
-    XCTAssertEqual(record.raises, 1)
-    XCTAssertFalse(record.complete)
-    XCTAssertEqual(record.stopped, .unresolved)
-    XCTAssertLessThan(record.ms, popUpRestoreBoundMs, "ended at its read, not at the cutoff")
-  }
 
   /// Design ruling 1004, item 2: the wait for the menu is 1.5 s; Chrome's `<select>` list opening about 940 ms after
   /// the press (2/20 in #458's qual) is confirmed.
@@ -972,7 +915,6 @@ final class PopUpPointTests: XCTestCase {
   func testOnlyACrossingStartsARestore() throws {
     let f2 = ListedWindow(number: 41, owner: finder, layer: 0, bounds: CGRect(x: 240, y: 480, width: 300, height: 300))
     XCTAssertEqual(appWindowCrossed([person, f2], appWindow: observed, in: [f2, person, appWindow]), false)
-    XCTAssertEqual(personOrderHolds([person, f2], appWindow: observed, in: [f2, person, appWindow]), false, "the order differs")
     XCTAssertEqual(appWindowCrossed([person, f2], appWindow: observed, in: [person, appWindow, f2]), true)
     let scene = font()
     list = [person, f2, appWindow]
@@ -1019,55 +961,5 @@ final class PopUpPointTests: XCTestCase {
 
   // MARK: The review of 7e5bb454..67cf8b26 (the hard bar)
 
-  /// Item 1: each raise's AX answer is read. The focused window's raise failing ends the pass as `focusRaiseFailed`,
-  /// incomplete; another's failing is counted and the pass goes on to the focused one.
-  func testTheFocusedRaiseFailingIsRecorded() {
-    let f1 = ListedWindow(number: 40, owner: finder, layer: 0, bounds: CGRect(x: 760, y: 420, width: 300, height: 300))
-    let f2 = ListedWindow(number: 41, owner: finder, layer: 0, bounds: CGRect(x: 240, y: 480, width: 300, height: 300))
-    var raised: [CGWindowID] = []
-    var clock = 0.0
-    let failed = popUpRestoreOrder([f1, f2], appWindow: observed, system: fakeSystem(failing: [40], raise: { raised.append($0) }),
-                                   windows: { [self.fontMenu, f1, f2, self.appWindow] }, now: { clock }, sleep: { clock += $0 })
-    XCTAssertEqual(raised, [41, 40])
-    XCTAssertEqual(failed.stopped, .focusRaiseFailed)
-    XCTAssertFalse(failed.complete)
-    XCTAssertEqual(failed.failedRaises, 1)
-    raised = []
-    clock = 0
-    let other = popUpRestoreOrder([f1, f2], appWindow: observed, system: fakeSystem(failing: [41], raise: { raised.append($0) }),
-                                  windows: { [self.fontMenu, f1, f2, self.appWindow] }, now: { clock }, sleep: { clock += $0 })
-    XCTAssertEqual(raised, [41, 40], "the focused window still raised last")
-    XCTAssertEqual(other.failedRaises, 1)
-    XCTAssertNil(other.stopped)
-  }
 
-  /// Items 1 and 4: the person's input, or their switching apps during the open, is read before the focus and before an
-  /// early return on no candidates, and before the first raise: the restore then records `personInput`, reads nothing of
-  /// the person's app and raises nothing, with no note.
-  func testInputBeforeAnythingIsReadOrRaisedStopsWithNothingRaised() {
-    let f1 = ListedWindow(number: 40, owner: finder, layer: 0, bounds: CGRect(x: 760, y: 420, width: 300, height: 300))
-    let calculator = ListedWindow(number: 70, owner: 600, layer: 0, bounds: CGRect(x: 100, y: 100, width: 230, height: 400))
-    for persons in [[f1], [calculator]] {
-      var frontReads = 0, focusReads = 0, raises = 0
-      var clock = 0.0
-      let record = popUpRestoreOrder(persons, appWindow: observed, system: PopUpRestoreSystem<CGWindowID>(
-        frontmost: { frontReads += 1; return self.finder }, focusedWindow: { _ in focusReads += 1; return 40 },
-        resolve: Self.allResolved, raise: { _ in raises += 1; return true }, hold: { {} }),
-        windows: { [self.appWindow] + persons }, now: { clock }, sleep: { clock += $0 }, intervened: { true })
-      XCTAssertEqual(record.stopped, .personInput, "\(persons.map(\.number))")
-      XCTAssertEqual([frontReads, focusReads, raises], [0, 0, 0])
-    }
-    // Input arriving after the frontmost app is read, with only a third app's window recorded: still `personInput`.
-    var acted = false
-    var clock = 0.0
-    let late = popUpRestoreOrder([calculator], appWindow: observed, system: PopUpRestoreSystem<CGWindowID>(
-      frontmost: { acted = true; return self.finder }, focusedWindow: { _ in nil }, resolve: Self.allResolved,
-      raise: { _ in XCTFail("nothing raised"); return true }, hold: { {} }),
-      windows: { [self.appWindow, calculator] }, now: { clock }, sleep: { clock += $0 }, intervened: { acted })
-    XCTAssertEqual(late.stopped, .personInput)
-    // Item 2: the focused window's number is the SPI's alone; none proven, nothing raised.
-    XCTAssertNil(focusedWindowNumber(Optional("F1"), number: { _ in nil }))
-    XCTAssertNil(focusedWindowNumber(String?.none, number: { _ in 40 }))
-    XCTAssertEqual(focusedWindowNumber(Optional("F1"), number: { _ in 40 }), 40)
-  }
 }

@@ -18,6 +18,9 @@ final class MenuItemPointTests: XCTestCase {
     var enabled: Bool? = true
     var actions: [String]? = ["AXCancel", "AXPress", "AXPick"]
     var gone = false
+    /// Its AXValue or AXTitle read fails now (a messaging timeout).
+    var valueFails = false
+    var titleFails = false
     weak var parent: Node?
     var children: [Node] = []
 
@@ -38,8 +41,9 @@ final class MenuItemPointTests: XCTestCase {
   private var listReads = 0
 
   private var reads: MenuItemReads<Node> {
-    MenuItemReads(role: { $0.role }, parent: { $0.parent }, enabled: { $0.enabled }, actions: { $0.actions }, title: { $0.title },
-                  value: { $0.value }, focused: { [unowned self] in self.focused }, gone: { $0.gone }, same: { $0 === $1 })
+    MenuItemReads(role: { $0.role }, parent: { $0.parent }, enabled: { $0.enabled }, actions: { $0.actions },
+                  title: { $0.titleFails ? .failed : $0.title.map { .text($0) } ?? .absent },
+                  value: { $0.valueFails ? .failed : $0.value.map { .text($0) } ?? .absent }, focused: { [unowned self] in self.focused }, gone: { $0.gone }, same: { $0 === $1 })
   }
 
   private func observedWindow(_ number: CGWindowID = 28) -> ListedWindow {
@@ -498,4 +502,87 @@ final class MenuItemPointTests: XCTestCase {
     XCTAssertNil(wire(meta)?["action"])
     XCTAssertNil(meta.startedAt)
   }
+
+  // MARK: The re-review of 32787ce3..3eb2b806
+
+  /// Item 1: the selection's attribute is chosen before the action and read again after it: a value that fails to read
+  /// after the action gives no evidence, never the static title beside it; a value that failed before gives none either.
+  func testASelectionReadThatFailsGivesNoEvidenceAndTheAttributeNeverChanges() {
+    let scene = textEdit()
+    scene.popup.title = "Times"  // a static label, the item's title
+    var meta = freshMeta()
+    XCTAssertThrowsError(try click(decide(hit: scene.times, recorded: scene.times), shown: { _ in false }, meta: &meta) { _, _ in
+      scene.popup.valueFails = true
+      return .success
+    })
+    XCTAssertEqual(wire(meta)?["value"] as? String, "unread")
+
+    let failedBefore = textEdit()
+    failedBefore.popup.valueFails = true
+    var before = freshMeta()
+    XCTAssertThrowsError(try click(decide(hit: failedBefore.times, recorded: failedBefore.times), shown: { _ in false }, meta: &before) { _, _ in
+      failedBefore.popup.valueFails = false
+      failedBefore.popup.value = "Times"
+      return .success
+    })
+    XCTAssertEqual(wire(before)?["value"] as? String, "unread", "no reading before the action: no evidence")
+  }
+
+  /// Item 2: the title the decision verified rides into the delivery: an item reading another just before the action is
+  /// refused as relabelled, nothing performed, and the selection is judged against the verified title.
+  func testTheVerifiedTitleIsReadAgainBeforeTheActionAndJudgesTheSelection() {
+    let scene = textEdit()
+    let decision = decide(hit: scene.times, recorded: scene.times)
+    guard case .deliver(let target) = decision else { return XCTFail("delivered") }
+    XCTAssertEqual(target.title, "Times")
+    var meta = freshMeta()
+    XCTAssertThrowsError(try click(decision, shown: { _ in false }, meta: &meta, checkInFlight: { scene.times.title = "Delete" }) { _, _ in
+      XCTFail("nothing performed"); return .success
+    }) { error in
+      XCTAssertEqual((error as? EngineError)?.errorName, "appWindowOverPoint")
+      XCTAssertTrue((error as? EngineError)?.message.contains("no longer reads what the screenshot showed") == true)
+    }
+    XCTAssertEqual(wire(meta)?["refused"] as? String, "relabelled")
+    XCTAssertNil(wire(meta)?["delivery"])
+    XCTAssertNil(meta.startedAt)
+  }
+
+  /// Item 3: a hit on a page's ARIA item while the record holds a native item at the point and its menu window still
+  /// covers it is refused, nothing sent; with no menu window, or no native item recorded, it stays main's.
+  func testAPageItemUnderAStillOpenNativeMenuIsRefusedWhenTheRecordHoldsANativeItem() {
+    let scene = textEdit()
+    let page = Node("AXWebArea", parent: Node("AXWindow"))
+    let ariaMenu = Node("AXMenu", parent: page)
+    let aria = Node("AXMenuItem", title: "Rename", parent: ariaMenu)
+    guard case .refuse(.notHit, window: 77) = decide(hit: aria, recorded: scene.times) else { return XCTFail("refused") }
+    var meta = freshMeta()
+    XCTAssertThrowsError(try click(decide(hit: aria, recorded: scene.times), shown: { _ in true }, meta: &meta) { _, _ in
+      XCTFail("nothing performed"); return .success
+    })
+    XCTAssertNil(meta.startedAt)
+    guard case .notMenu = decide(hit: aria, recorded: scene.times, list: [observedWindow()]) else { return XCTFail("no menu window: main's") }
+    guard case .notMenu = decide(hit: aria, recorded: aria) else { return XCTFail("no native item recorded: main's") }
+  }
+
+  /// Item 4: the identity comparison cuts the live title as the observation cut the recorded one (10,000 UTF-16 units and
+  /// the marker), so a long option unchanged is delivered, and its full title judges the selection.
+  func testALongTitleComparesAsTheObservationRecordedIt() {
+    let scene = textEdit()
+    let long = String(repeating: "Garamond ", count: 1500)
+    scene.times.title = long
+    let record = RecordedMenuItem(element: scene.times, title: bounded(long))
+    XCTAssertNotEqual(record.title, long, "the record holds the cut title")
+    guard case .deliver(let target) = decide(hit: scene.times, record: record) else { return XCTFail("delivered") }
+    XCTAssertEqual(target.title, long, "the full title for the selection")
+    var meta = freshMeta()
+    XCTAssertNoThrow(try click(.deliver(target), shown: { _ in false }, meta: &meta) { _, _ in
+      scene.popup.value = long
+      return .success
+    })
+    XCTAssertEqual(wire(meta)?["value"] as? String, "taken")
+    guard case .refuse(.relabelled, _) = decide(hit: scene.times, record: RecordedMenuItem(element: scene.times, title: bounded("Other " + long))) else {
+      return XCTFail("another long title")
+    }
+  }
 }
+

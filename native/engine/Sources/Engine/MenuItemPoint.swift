@@ -38,9 +38,10 @@ struct MenuItemReads<Element> {
   var enabled: (Element) -> Bool?
   /// The advertised actions; nil when the read failed.
   var actions: (Element) -> [String]?
-  var title: (Element) -> String?
-  /// AXValue as text.
-  var value: (Element) -> String?
+  /// AXTitle and AXValue as text, a read that failed told from an absent attribute (the re-review of
+  /// 32787ce3..3eb2b806, item 1).
+  var title: (Element) -> MenuTextRead
+  var value: (Element) -> MenuTextRead
   /// The application's focused element.
   var focused: () -> Element?
   /// Whether the handle names a destroyed element.
@@ -53,9 +54,33 @@ extension MenuItemReads where Element == AXUIElement {
     MenuItemReads(role: { attribute($0, kAXRoleAttribute) as? String }, parent: { elementAttribute($0, kAXParentAttribute) },
                   enabled: { (attribute($0, kAXEnabledAttribute) as? NSNumber)?.boolValue },
                   actions: { establishedActionNames(of: $0) },
-                  title: { attribute($0, kAXTitleAttribute) as? String }, value: { attribute($0, kAXValueAttribute) as? String },
+                  title: { menuTextRead(copyAttribute($0, kAXTitleAttribute)) }, value: { menuTextRead(copyAttribute($0, kAXValueAttribute)) },
                   focused: { elementAttribute(prepare(AXUIElementCreateApplication(appPid)), kAXFocusedUIElementAttribute) },
                   gone: { copyAttribute($0, kAXRoleAttribute).error == .invalidUIElement }, same: { CFEqual($0, $1) })
+  }
+}
+
+/// A text attribute as read: its text (a string, or an attributed string's text, unbounded), absent (the element has
+/// no such attribute or no value), or failed (any other error, or a value that is not text): a failed read gives no
+/// evidence either way.
+enum MenuTextRead: Equatable {
+  case text(String)
+  case absent
+  case failed
+
+  var text: String? { if case .text(let text) = self { return text } else { return nil } }
+}
+
+func menuTextRead(_ read: (value: CFTypeRef?, error: AXError)) -> MenuTextRead {
+  switch read.error {
+  case .success:
+    guard let value = read.value else { return .absent }
+    let type = CFGetTypeID(value)
+    if type == CFStringGetTypeID() { return .text(value as! String) }
+    if type == CFAttributedStringGetTypeID() { return .text((value as! NSAttributedString).string) }
+    return .failed
+  case .noValue, .attributeUnsupported: return .absent
+  default: return .failed
   }
 }
 
@@ -74,12 +99,15 @@ enum MenuItemRefusal: String, Equatable {
   case noAction
 }
 
-/// The item a click is delivered to: the item, its menu, the action, and the menu's window, which must leave the screen.
+/// The item a click is delivered to: the item, its menu, the action, the menu's window, which must leave the screen,
+/// and the item's title as the decision verified it against the record (nil: none), which it must still read just
+/// before the action and which its control's selection must move to.
 struct MenuItemTarget<Element> {
   let item: Element
   let menu: Element
   let action: String
   let window: CGWindowID
+  var title: String? = nil
 }
 
 /// #454's decision at a kept coordinate click's point.
@@ -144,9 +172,15 @@ func inWebArea<Element>(_ element: Element, reads: MenuItemReads<Element>) -> Bo
   return false
 }
 
-/// Titles agree when both are absent (nil or empty) or equal.
-private func sameMenuTitle(_ a: String?, _ b: String?) -> Bool {
-  (a.flatMap { $0.isEmpty ? nil : $0 }) == (b.flatMap { $0.isEmpty ? nil : $0 })
+/// A recorded title and one read now agree when both are absent (nil, empty, or an absent attribute) or equal once the
+/// live one is cut as the observation cuts what it records (`bounded`, Fetch.swift); a failed read never agrees.
+func sameMenuTitle(recorded: String?, live: MenuTextRead) -> Bool {
+  let recorded = recorded.flatMap { $0.isEmpty ? nil : $0 }
+  switch live {
+  case .failed: return false
+  case .absent: return recorded == nil
+  case .text(let text): return (text.isEmpty ? nil : bounded(text)) == recorded
+  }
 }
 
 /// #454's decision (design ruling 946): `hit` is what the app's hit-test answered at the point whatever window its chain
@@ -156,26 +190,27 @@ private func sameMenuTitle(_ a: String?, _ b: String?) -> Bool {
 func menuItemPoint<Element>(hit: Element?, recorded: RecordedMenuItem<Element>?, reads: MenuItemReads<Element>,
                             menuWindow: () -> CGWindowID?) -> MenuItemPoint<Element> {
   guard let hit else { return .notMenu }
-  let menu = reads.role(hit) == kAXMenuItemRole ? reads.parent(hit).flatMap { reads.role($0) == kAXMenuRole ? $0 : nil } : nil
-  if let menu {
-    if inWebArea(menu, reads: reads) { return .notMenu }
-  } else {
-    guard let recorded, !inWebArea(recorded.element, reads: reads) else { return .notMenu }
-  }
+  let hitMenu = reads.role(hit) == kAXMenuItemRole ? reads.parent(hit).flatMap { reads.role($0) == kAXMenuRole ? $0 : nil } : nil
+  // A page's own (ARIA) menu is main's, unless the record holds a native item at the point (the re-review's item 3:
+  // a page item answered under a native menu window still open over it is not what the screenshot showed).
+  let nativeMenu = hitMenu.flatMap { inWebArea($0, reads: reads) ? nil : $0 }
+  let nativeRecord = recorded.flatMap { inWebArea($0.element, reads: reads) ? nil : $0 }
+  guard nativeMenu != nil || nativeRecord != nil else { return .notMenu }
   guard let window = menuWindow() else { return .notMenu }
-  guard let menu else { return .refuse(.notHit, window: window) }
-  guard let recorded, reads.same(recorded.element, hit) else { return .refuse(.notRecorded, window: window) }
-  guard sameMenuTitle(recorded.title, reads.title(hit)) else { return .refuse(.relabelled, window: window) }
+  guard let menu = nativeMenu else { return .refuse(.notHit, window: window) }
+  guard let recorded = nativeRecord, reads.same(recorded.element, hit) else { return .refuse(.notRecorded, window: window) }
+  let title = reads.title(hit)
+  guard sameMenuTitle(recorded: recorded.title, live: title) else { return .refuse(.relabelled, window: window) }
   guard reads.enabled(hit) == true else { return .refuse(.disabled, window: window) }
   guard let action = reads.actions(hit).flatMap({ actions in ["AXPick", "AXPress"].first(where: actions.contains) }) else {
     return .refuse(.noAction, window: window)
   }
-  return .deliver(MenuItemTarget(item: hit, menu: menu, action: action, window: window))
+  return .deliver(MenuItemTarget(item: hit, menu: menu, action: action, window: window, title: title.text.flatMap { $0.isEmpty ? nil : $0 }))
 }
 
 /// What the control the menu belongs to shows after the action against before it: moved to the item's title (`taken`),
-/// the item's title as before or before unread (`unchanged`: no evidence the action moved it), another (`other`), or
-/// nothing to compare (`unread`: no control identified before the action, no title, no selection read).
+/// the item's title as before (`unchanged`: no evidence the action moved it), another (`other`), or nothing to compare
+/// (`unread`: no control identified before the action, no title, or the selection's attribute not read before or now).
 enum MenuItemValue: String, Equatable { case taken, unchanged, other, unread }
 
 /// The meta's `menuItemClick` (#454, value-free): how the click was carried (`delivery: "action"` and the action, "the
@@ -222,8 +257,11 @@ let menuItemAmbiguousErrors: Set<AXError> = [.cannotComplete]
 /// when the list did not read: unknown, never closed) or the item's handle dead, and the control the menu belongs to,
 /// identified before the action (the AXMenu's parent of a `menuOpenerRoles` role; for a menu with no parent, Chrome's
 /// `<select>`, the app's focused element of such a role; a menu whose parent is anything else has none), showing the
-/// item's title where it showed another before. A control's selection is its AXValue, its AXTitle only where it has no
-/// value, so a static label never stands in for the value. Read at once and every `menuItemSampleMs` for up to
+/// item's title where it showed another before. A control's selection is its AXValue, its AXTitle only where the value
+/// is absent (never where its read failed), chosen once before the action and read the same after it, so a static label
+/// never stands in for the value and a failed read gives no evidence (the re-review of 32787ce3..3eb2b806, item 1). The
+/// item's title is the one the decision verified against the record (`MenuItemTarget.title`), read again just before the
+/// action: another, or a failed read, refuses as `relabelled` with nothing performed (item 2). Read at once and every `menuItemSampleMs` for up to
 /// `menuItemSettleMs`; seen, it answers; otherwise `clickUnconfirmed`.
 func deliverMenuItem<Element>(_ target: MenuItemTarget<Element>, app: String, reads: MenuItemReads<Element>,
                               menuWindowShown: (CGWindowID) -> Bool?, now: () -> Double, sleep: (Double) -> Void,
@@ -232,12 +270,26 @@ func deliverMenuItem<Element>(_ target: MenuItemTarget<Element>, app: String, re
   func opener(_ element: Element?) -> Element? {
     element.flatMap { reads.role($0).map(menuOpenerRoles.contains) == true ? $0 : nil }
   }
-  func selection(_ control: Element) -> String? { reads.value(control) ?? reads.title(control) }
-  let title = reads.title(target.item).flatMap { $0.isEmpty ? nil : $0 }
+  let title = target.title
   let parent = reads.parent(target.menu)
   let control = parent != nil ? opener(parent) : opener(reads.focused())
-  let before = control.flatMap(selection)
+  // The selection's attribute is chosen once, before the action: AXValue when it reads, AXTitle only where the value is
+  // absent; a failed read chooses none, so it gives no evidence. After the action the same attribute is read.
+  let source: ((Element) -> MenuTextRead)?
+  let before: String?
+  switch control.map(reads.value) {
+  case .text(let value)?: (source, before) = (reads.value, value)
+  case .absent?:
+    let label = control.map(reads.title)?.text
+    (source, before) = (label == nil ? nil : reads.title, label)
+  default: (source, before) = (nil, nil)
+  }
   try beforeDispatch()
+  // The verified title, read once more just before the action (the re-review's item 2): another refuses, nothing sent.
+  guard sameMenuTitle(recorded: title.map(bounded), live: reads.title(target.item)) else {
+    record.refused = .relabelled
+    throw menuItemRefused(app: app, .relabelled)
+  }
   record.action = target.action
   let error = perform(target.action)
   if error != .success {
@@ -248,9 +300,9 @@ func deliverMenuItem<Element>(_ target: MenuItemTarget<Element>, app: String, re
   }
   let started = now()
   func valueNow() -> MenuItemValue {
-    guard let title, let control, let after = selection(control) else { return .unread }
+    guard let title, let control, let source, let before, let after = source(control).text else { return .unread }
     guard after == title else { return .other }
-    return before == nil || before == title ? .unchanged : .taken
+    return before == title ? .unchanged : .taken
   }
   record.closedRead = true
   while true {

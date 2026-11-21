@@ -135,6 +135,11 @@ pub enum Confirming {
     /// `adaptive_hold.rs`): before the extension that take came after the release, and the after-release watch
     /// cancelled and reported it, so it is reported unconfirmed, never a plain ok (the re-review of wave 3, I1).
     Extended,
+    /// A drop [`Confirming::Activation`] would confirm, on #459's shape (the outlasted gate open, `release_sync::gate`)
+    /// with option (c) on (`release_sync::UNCONFIRM_OUTLASTED`, ruling 995): Chrome asks for that activation as well
+    /// when it completes a drop on a stale status the page never took, so it confirms nothing here, and the drop is
+    /// reported unconfirmed with that reason (`dnd::WatchEnd::Outlasted`).
+    Outlasted,
 }
 
 impl Confirming {
@@ -142,8 +147,27 @@ impl Confirming {
     pub(super) fn unconfirmed(self) -> bool {
         matches!(
             self,
-            Confirming::Cursor(false) | Confirming::Nothing | Confirming::Extended
+            Confirming::Cursor(false) | Confirming::Nothing | Confirming::Extended | Confirming::Outlasted
         )
+    }
+
+    /// What confirms a drop the outlasted gate opened on (`outlasted`: the gate open and option (c) on): nothing, when
+    /// Chrome's activation request would have been its only confirmation ([`Confirming::Outlasted`]); otherwise what
+    /// confirms it already, a stronger confirmation or an answer that is unconfirmed or unjudged already.
+    pub(super) fn after_outlasted(self, outlasted: bool) -> Confirming {
+        match (self, outlasted) {
+            (Confirming::Activation(_), true) => Confirming::Outlasted,
+            (confirming, _) => confirming,
+        }
+    }
+
+    /// How a drop reported unconfirmed at once ends its watch: with its own reason when the outlasted gate made it so,
+    /// else as `drop_settle::unconfirmed_end` judges an Electron source's settle (`settle`).
+    pub(super) fn unconfirmed_end(self, settle: Option<&crate::drop_settle::Settle>) -> crate::dnd::WatchEnd {
+        match self {
+            Confirming::Outlasted => crate::dnd::WatchEnd::Outlasted,
+            _ => crate::drop_settle::unconfirmed_end(settle),
+        }
     }
 
     /// What confirms a drop whose take came in the extended hold (`extended_take`): nothing can when nothing else
@@ -963,6 +987,57 @@ mod tests {
              s is released where it is)"
         );
         assert!(handle_held(Duration::from_millis(300)).contains("no request for 0.3 s"));
+    }
+
+    /// Option (c) (ruling 995): with the outlasted gate open and (c) on, a drop whose only confirmation is Chrome's
+    /// activation request is answered unconfirmed at once, with its own reason; with the gate shut, or (c) off, it is
+    /// confirmed by that request as in 0.4.2.
+    #[test]
+    fn the_outlasted_gate_makes_an_activation_only_drop_unconfirmed_with_its_own_reason() {
+        let activation = confirming(Some(7), true, None);
+        assert_eq!(activation, Confirming::Activation(7));
+        // the gate open, (c) on: the activation alone confirms nothing
+        let outlasted = activation.after_hold(false).after_outlasted(true);
+        assert_eq!(outlasted, Confirming::Outlasted);
+        assert!(outlasted.unconfirmed(), "reported unconfirmed at once, not waited for");
+        assert_eq!(outlasted.unconfirmed_end(None), crate::dnd::WatchEnd::Outlasted);
+        // the gate shut, or (c) off (both are `false` here): the activation confirms, as in 0.4.2
+        let confirmed = activation.after_hold(false).after_outlasted(false);
+        assert_eq!(confirmed, Confirming::Activation(7));
+        assert!(
+            !confirmed.unconfirmed(),
+            "handed to the watch, which waits for the request"
+        );
+    }
+
+    #[test]
+    fn the_outlasted_gate_leaves_every_other_confirmation_as_it_is() {
+        // a stronger confirmation: an accept cursor at the release, the drag loop's own word (an Electron source's,
+        // which never reaches the gate; no Chrome source has one)
+        assert_eq!(
+            confirming(None, true, Some(Some(true))).after_outlasted(true),
+            Confirming::Cursor(true)
+        );
+        // answers that are unconfirmed already keep their own reasons
+        assert_eq!(
+            confirming(None, true, Some(Some(false))).after_outlasted(true),
+            Confirming::Cursor(false)
+        );
+        assert_eq!(confirming(None, true, None).after_outlasted(true), Confirming::Nothing);
+        assert_eq!(
+            confirming(None, false, None).after_hold(true).after_outlasted(true),
+            Confirming::Extended
+        );
+        // a drop not judged (no window manager that takes the request) is not judged still
+        assert_eq!(
+            confirming(None, false, None).after_outlasted(true),
+            Confirming::Unjudged
+        );
+        // and the generic unconfirmed end stays the settle's
+        assert_eq!(
+            Confirming::Nothing.unconfirmed_end(None),
+            crate::dnd::WatchEnd::Unconfirmed
+        );
     }
 
     #[test]

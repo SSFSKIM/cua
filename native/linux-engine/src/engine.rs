@@ -114,6 +114,15 @@ pub struct Config {
     /// counted only when it answered both. Off (`--drop-no-settle`, measurement only) the release goes out unasked and
     /// the accept is judged as `linux-engine-v0.4.0` judged it, which answered ok for releases outside the drop zone.
     pub drop_settle: bool,
+    /// What a Chrome drop the engine lets drop does just before its release when the gate opens (`release_sync.rs`,
+    /// #459's fix): the tail as it ships; `--drag-dnd-release-sync off` (measurement only) releases as 0.4.2 did.
+    pub dnd_release_sync: crate::release_sync::Form,
+    /// When that gate opens: on #459's shape as it ships; `--drag-dnd-release-sync-when always` (measurement only) on
+    /// every such drop.
+    pub dnd_release_sync_when: crate::release_sync::When,
+    /// Whether a drop the gate opened on whose only confirmation is Chrome's activation request answers unconfirmed
+    /// (option (c), `release_sync::UNCONFIRM_OUTLASTED`; `--drag-dnd-unconfirm-outlasted` sets it, measurement only).
+    pub dnd_unconfirm_outlasted: bool,
 }
 
 pub struct Engine {
@@ -321,6 +330,7 @@ fn late_stats(app: &str, end: &crate::dnd::WatchEnd) -> Value {
         crate::dnd::WatchEnd::Failed(why) => json!({ "app": app, "failed": why }),
         crate::dnd::WatchEnd::Unconfirmed => json!({ "app": app, "unconfirmed": true }),
         crate::dnd::WatchEnd::Unanswered => json!({ "app": app, "unconfirmed": true, "unanswered": true }),
+        crate::dnd::WatchEnd::Outlasted => json!({ "app": app, "unconfirmed": true, "outlasted": true }),
         crate::dnd::WatchEnd::IdleHandle { idle, at } => {
             json!({ "app": app, "idle_handle": { "idle_ms": idle.as_secs_f64() * 1000.0, "at": at } })
         }

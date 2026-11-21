@@ -34,6 +34,7 @@ mod keys;
 mod paste;
 mod pressed;
 mod readiness;
+mod release_sync;
 mod resolve;
 mod route;
 mod serve;
@@ -58,7 +59,8 @@ const USAGE: &str = "usage: cua-engine server [--mouse-size-px <n>] [--desktop s
        [--retention per-request|session|none] [--settle-ms <ms>] [--capture-wait damage|fixed|quiet]
        [--teardown-ms <ms>] [--exit-settle-ms <ms>] [--paste-settle-ms <ms>] [--key-pace-ms <ms>] [--path-step-ms <ms>] [--drag-step-ms <ms> | --drag-step-us <µs>] [--drag-press-dwell-ms <ms>]
        [--drag-release-dwell-ms <ms>] [--drag-dnd-hold-ms <ms>] [--drag-dnd-hold-ping on|off] [--drag-dnd-after-take-ms <ms>] [--drag-handle-idle-ms <ms>] [--dnd-cancel-after-release] [--dnd-defer-take]
-       [--drag-dnd-release-at-accept] [--drag-ignore-cover] [--ignore-cover] [--ignore-pointer] [--drop-no-settle]
+       [--drag-dnd-release-at-accept] [--drag-dnd-release-sync tail|off] [--drag-dnd-release-sync-when outlasted|always]
+       [--drag-dnd-unconfirm-outlasted on|off] [--drag-ignore-cover] [--ignore-cover] [--ignore-pointer] [--drop-no-settle]
        [--targets-wait-ms <ms>] [--focus-ack-ms <ms>] [--stats]
        cua-engine launcher-shim <parent pid> <program> [args...]
        cua-engine --version";
@@ -106,6 +108,9 @@ fn default_config() -> Config {
         ignore_pointer: false,
         handle_idle: engine::HANDLE_IDLE,
         drop_settle: true,
+        dnd_release_sync: release_sync::Form::Tail,
+        dnd_release_sync_when: release_sync::When::Outlasted,
+        dnd_unconfirm_outlasted: release_sync::UNCONFIRM_OUTLASTED,
     }
 }
 
@@ -251,6 +256,28 @@ fn parse_args(args: &[String]) -> Result<Command, String> {
                     Some("on") => true,
                     Some("off") => false,
                     _ => return Err("--drag-dnd-hold-ping is on or off".into()),
+                }
+            }
+            // #459's fix (`release_sync.rs`), measurement only: the step at the gate, the gate, and option (c)'s answer
+            "--drag-dnd-release-sync" => {
+                cfg.dnd_release_sync = match value.map(String::as_str) {
+                    Some("tail") => release_sync::Form::Tail,
+                    Some("off") => release_sync::Form::Off,
+                    _ => return Err("--drag-dnd-release-sync is tail or off".into()),
+                }
+            }
+            "--drag-dnd-release-sync-when" => {
+                cfg.dnd_release_sync_when = match value.map(String::as_str) {
+                    Some("outlasted") => release_sync::When::Outlasted,
+                    Some("always") => release_sync::When::Always,
+                    _ => return Err("--drag-dnd-release-sync-when is outlasted or always".into()),
+                }
+            }
+            "--drag-dnd-unconfirm-outlasted" => {
+                cfg.dnd_unconfirm_outlasted = match value.map(String::as_str) {
+                    Some("on") => true,
+                    Some("off") => false,
+                    _ => return Err("--drag-dnd-unconfirm-outlasted is on or off".into()),
                 }
             }
             "--drag-dnd-after-take-ms" => cfg.dnd_after_take = Duration::from_millis(number(value, arg)?),
@@ -590,6 +617,64 @@ mod tests {
         };
         assert!(cfg.dnd_hold_ping);
         assert!(parse_args(&args(&["server", "--drag-dnd-hold-ping", "no"])).is_err());
+    }
+
+    #[test]
+    fn the_release_sync_ships_the_tail_on_the_outlasted_gate_and_each_flag_sets_its_own() {
+        let cfg = |a: &[&str]| match parse_args(&args(a)) {
+            Ok(Command::Server(cfg)) => Ok((
+                cfg.dnd_release_sync,
+                cfg.dnd_release_sync_when,
+                cfg.dnd_unconfirm_outlasted,
+            )),
+            Ok(_) => panic!(),
+            Err(e) => Err(e),
+        };
+        use release_sync::{Form, When};
+        // as it ships: the tail at the outlasted gate, and option (c) at `release_sync::UNCONFIRM_OUTLASTED`, off by the
+        // owner's ruling 997
+        assert_eq!(
+            cfg(&["server"]),
+            Ok((Form::Tail, When::Outlasted, release_sync::UNCONFIRM_OUTLASTED))
+        );
+        assert_eq!(
+            cfg(&["server", "--drag-dnd-release-sync", "off"]),
+            Ok((Form::Off, When::Outlasted, false))
+        );
+        assert_eq!(
+            cfg(&["server", "--drag-dnd-release-sync", "tail"]),
+            Ok((Form::Tail, When::Outlasted, false))
+        );
+        assert_eq!(
+            cfg(&["server", "--drag-dnd-release-sync-when", "always"]),
+            Ok((Form::Tail, When::Always, false))
+        );
+        assert_eq!(
+            cfg(&["server", "--drag-dnd-release-sync-when", "outlasted"]),
+            Ok((Form::Tail, When::Outlasted, false))
+        );
+        assert_eq!(
+            cfg(&["server", "--drag-dnd-unconfirm-outlasted", "off"]),
+            Ok((Form::Tail, When::Outlasted, false))
+        );
+        // 0.4.2's release and answer, for a measurement lane
+        assert_eq!(
+            cfg(&[
+                "server",
+                "--drag-dnd-release-sync",
+                "off",
+                "--drag-dnd-unconfirm-outlasted",
+                "off"
+            ]),
+            Ok((Form::Off, When::Outlasted, false))
+        );
+        assert_eq!(
+            cfg(&["server", "--drag-dnd-unconfirm-outlasted", "on"]),
+            Ok((Form::Tail, When::Outlasted, true))
+        );
+        assert!(cfg(&["server", "--drag-dnd-release-sync", "ping"]).is_err());
+        assert!(cfg(&["server", "--drag-dnd-release-sync-when", "never"]).is_err());
+        assert!(cfg(&["server", "--drag-dnd-unconfirm-outlasted", "yes"]).is_err());
     }
 
     #[test]

@@ -923,6 +923,7 @@ fn drag_source_answering(
         *TAKE_TO_RELEASE.lock().unwrap() = None;
         *PRESS_TO_RELEASE.lock().unwrap() = None;
         AFTER_TAKE_MOTIONS.lock().unwrap().clear();
+        AFTER_TAKE_EVENTS.lock().unwrap().clear();
         ESCAPES_AND_FOCUS_OUTS.lock().unwrap().clear();
         PINGS_READ.lock().unwrap().clear();
         while stopped.try_recv() == Err(mpsc::TryRecvError::Empty) {
@@ -952,6 +953,7 @@ fn drag_source_answering(
                     }
                     Event::MotionNotify(e) if took_at.is_some() => {
                         AFTER_TAKE_MOTIONS.lock().unwrap().push((e.event_x, e.event_y));
+                        AFTER_TAKE_EVENTS.lock().unwrap().push(("motion", Instant::now()));
                     }
                     Event::FocusOut(_) if sent => {
                         ESCAPES_AND_FOCUS_OUTS
@@ -990,6 +992,7 @@ fn drag_source_answering(
                         seen.push(Input::ButtonPress { button: e.detail, sent })
                     }
                     Event::ButtonRelease(e) => {
+                        AFTER_TAKE_EVENTS.lock().unwrap().push(("release", Instant::now()));
                         seen.push(Input::ButtonRelease { button: e.detail, sent });
                         *TAKE_TO_RELEASE.lock().unwrap() = took_at.map(|t| t.elapsed());
                         *PRESS_TO_RELEASE.lock().unwrap() = pressed_at.map(|t| t.elapsed());
@@ -1064,6 +1067,10 @@ static DROP_ACTIVATES: std::sync::Mutex<Option<Window>> = std::sync::Mutex::new(
 
 /// The window-relative places of the motions the last drag's source saw after its take.
 static AFTER_TAKE_MOTIONS: std::sync::Mutex<Vec<(i16, i16)>> = std::sync::Mutex::new(Vec::new());
+
+/// What the last drag's source read after its take, in order, each with when it read it: `motion` and `release`
+/// (`release_sync.rs`: what comes just before the release).
+static AFTER_TAKE_EVENTS: std::sync::Mutex<Vec<(&'static str, Instant)>> = std::sync::Mutex::new(Vec::new());
 
 /// How long the last late take (`OnRelease::TakesLate`) waited for the engine's Escape, as its source saw it.
 static TAKE_TO_ESCAPE: std::sync::Mutex<Option<Duration>> = std::sync::Mutex::new(None);
@@ -6077,4 +6084,262 @@ fn a_pointer_moved_during_the_release_dwell_is_the_one_the_end_reports() {
     );
     assert!(!button1_down(), "released");
     probe.inputs();
+}
+
+/// #459's fix (`release_sync.rs`): a path long enough that its steps after the take outlast the floor (about 1,220 px,
+/// some 640 ms at Chrome's 500 µs a sample; the source's take at its first motion), so its release would follow its end
+/// with no keepalive, as `t14-long`'s long-left drags do.
+fn outlasting_path() -> Value {
+    json!([{"x": 20, "y": 20}, {"x": 380, "y": 20}, {"x": 380, "y": 280}, {"x": 20, "y": 280}, {"x": 20, "y": 40}])
+}
+
+/// How long before the last drag's release (the first its source read) the source read its last motion, and the
+/// motions it read in the 20 ms before that release (the tail's last two rests), each with how long before it.
+fn source_before_release() -> (Duration, Vec<Duration>) {
+    let events = AFTER_TAKE_EVENTS.lock().unwrap().clone();
+    let release = events.iter().find(|(kind, _)| *kind == "release").expect("a release").1;
+    let motions: Vec<Duration> = events
+        .iter()
+        .filter(|(kind, at)| *kind == "motion" && *at <= release)
+        .map(|(_, at)| release - *at)
+        .collect();
+    let last = *motions.last().expect("a motion after the take");
+    (
+        last,
+        motions.into_iter().filter(|d| *d < Duration::from_millis(20)).collect(),
+    )
+}
+
+/// The tail as it ships (ruling 995): a Chrome drop the engine lets drop whose path outlasts its floor, on every route
+/// such a drop takes, gets 8 ms, a motion at the path's last point, 8 ms, the same motion, 8 ms, then its release (on
+/// the background route each motion one synthetic motion; on XTEST's routes the pair ending there). Off
+/// (`--drag-dnd-release-sync off`, measurement only), the background route's release follows the path's last motion at
+/// once, #459's shape. A short path, whose floor's keepalives rest on its end, shuts the gate and keeps 0.4.2's release;
+/// `--drag-dnd-release-sync-when always` opens it there too. A guarded drag and the release at the accept never reach
+/// the gate.
+#[test]
+fn a_chrome_drop_whose_path_outlasts_its_floor_ends_on_the_tail_and_a_short_one_releases_as_before() {
+    support::fresh_display();
+    *HELD_PATH.lock().unwrap() = Some(outlasting_path());
+    let ms = Duration::from_millis;
+    for route in [HoldRoute::InFront, HoldRoute::Dedicated, HoldRoute::Desktop] {
+        // 0.4.2's release: the gate opens, and nothing is sent at it
+        let drag = held_drag_with(route, OnRelease::Nothing, None, &["--drag-dnd-release-sync", "off"]);
+        // the route the engine took (a dedicated desktop takes the background route where it works)
+        let background = drag.stats["route"] == json!("background");
+        assert_eq!(drag.answer, Ok(Value::Null), "{route:?}");
+        assert_eq!(
+            drag.stats["hold"]["keepalives"],
+            json!(0),
+            "{route:?}: the path outlasts the floor"
+        );
+        let sync = &drag.stats["release_sync"];
+        assert_eq!(
+            (&sync["form"], &sync["open"], &sync["last_step_spaced"]),
+            (&json!("off"), &json!(true), &json!(false)),
+            "{route:?}: {sync}"
+        );
+        assert!(sync.get("motions").is_none(), "{route:?}: {sync}");
+        let (gap, _) = source_before_release();
+        if background {
+            assert!(gap < ms(4), "{route:?}: off, released {gap:?} after the last motion");
+        }
+        // as it ships: the tail
+        let drag = held_drag_with(route, OnRelease::Nothing, None, &[]);
+        assert_eq!(drag.answer, Ok(Value::Null), "{route:?}");
+        assert_eq!(
+            drag.stats["route"] == json!("background"),
+            background,
+            "{route:?}: the same route"
+        );
+        let sync = &drag.stats["release_sync"];
+        assert_eq!(
+            (&sync["form"], &sync["when"], &sync["open"]),
+            (&json!("tail"), &json!("outlasted"), &json!(true)),
+            "{route:?}: {sync}"
+        );
+        assert_eq!(
+            sync["motions"],
+            json!(if background { 2 } else { 4 }),
+            "{route:?}: {sync}"
+        );
+        let added = sync["added_ms"].as_f64().unwrap();
+        assert!((24.0..60.0).contains(&added), "{route:?}: {sync}");
+        assert_eq!(
+            sync["unconfirm_outlasted"],
+            json!(false),
+            "{route:?}: option (c) is off as it ships"
+        );
+        let motions = AFTER_TAKE_MOTIONS.lock().unwrap().clone();
+        assert_eq!(
+            motions.last(),
+            Some(&(20, 40)),
+            "{route:?}: ending on the path's last point"
+        );
+        // the source reads its events on a 1 ms poll, so each time it reads is up to a poll late: 6 ms of the 8
+        let (gap, recent) = source_before_release();
+        assert!(
+            gap >= ms(6) && gap < ms(40),
+            "{route:?}: released {gap:?} after the last motion"
+        );
+        if background {
+            // the path's own last motion and the tail's two, each a rest apart, all at its end
+            assert!(
+                motions.ends_with(&[(20, 40), (20, 40), (20, 40)]),
+                "{route:?}: {motions:?}"
+            );
+            assert_eq!(
+                recent.len(),
+                2,
+                "{route:?}: the tail's two motions in its last 20 ms: {recent:?}"
+            );
+            assert!(recent[0] - recent[1] >= ms(6), "{route:?}: {recent:?}");
+        }
+        // on XTEST the pair's two motions may reach the source as one: the server's event queue folds a device's motion
+        // into the one still queued before it (`mieqEnqueue`), so the place it ends on is what counts
+    }
+    // a guarded drag cancels its take before the drop, and the release at the accept keeps its own floor: no gate
+    let drag = held_drag_with(HoldRoute::Guarded, OnRelease::Nothing, None, &[]);
+    assert!(drag.stats.get("release_sync").is_none(), "guarded: {}", drag.stats);
+    let drag = held_drag_with(
+        HoldRoute::InFront,
+        OnRelease::Nothing,
+        None,
+        &["--drag-dnd-release-at-accept"],
+    );
+    assert!(
+        drag.stats.get("release_sync").is_none(),
+        "at the accept: {}",
+        drag.stats
+    );
+    // a short path: its steps spread over the floor to its end (the last one spaced, as D1's are), or its keepalives
+    // fill what they leave, and the gate stays shut
+    *HELD_PATH.lock().unwrap() = None;
+    let drag = held_drag_with(HoldRoute::InFront, OnRelease::Nothing, None, &[]);
+    let sync = &drag.stats["release_sync"];
+    assert_eq!(
+        (&sync["form"], &sync["open"]),
+        (&json!("tail"), &json!(false)),
+        "{sync}"
+    );
+    assert_eq!(
+        sync["skipped_for"]["keepalives"], drag.stats["hold"]["keepalives"],
+        "{}",
+        drag.stats
+    );
+    assert!(
+        drag.stats["hold"]["keepalives"].as_u64().unwrap() > 0 || sync["last_step_spaced"] == json!(true),
+        "{}",
+        drag.stats
+    );
+    assert!(sync.get("motions").is_none(), "no step: {sync}");
+    assert_eq!(AFTER_TAKE_MOTIONS.lock().unwrap().last(), Some(&(60, 20)));
+    // measurement only: `always` opens the gate on it too
+    let drag = held_drag_with(
+        HoldRoute::InFront,
+        OnRelease::Nothing,
+        None,
+        &["--drag-dnd-release-sync-when", "always"],
+    );
+    let sync = &drag.stats["release_sync"];
+    assert_eq!((&sync["open"], &sync["motions"]), (&json!(true), &json!(2)), "{sync}");
+    let (gap, _) = source_before_release();
+    assert!(gap >= ms(6), "released {gap:?} after the last motion");
+}
+
+/// What option (c) leaves pending (`dnd::WatchEnd::Outlasted`), as every reply carries it and the first acting request
+/// is refused with it.
+fn outlasted_cause(app: &str) -> String {
+    format!(
+        "Pending from your last drag, an unconfirmed drop: your drag into {app} began a drag and drop and went on past \
+         the engine's settle time, and {app}'s confirmation cannot tell a drop the page took from one {app} completed \
+         without the page taking it, so read the page to see whether the drop landed where your drag ended"
+    )
+}
+
+/// Option (c) (ruling 995, `--drag-dnd-unconfirm-outlasted on`; off as 0.4.3 ships, ruling 997): a Chrome drop whose
+/// path outlasts its floor, from a source whose activation request comes after the release and is its only
+/// confirmation, answers unconfirmed at once with the outlasted notice, and the next acting request is refused with it,
+/// on every route such a drop takes. Off, the same drop is confirmed by that request, as in 0.4.2. On, a short path,
+/// which shuts the gate, is confirmed as before.
+#[test]
+fn option_c_answers_an_outlasted_chrome_drop_confirmed_by_its_activation_alone_unconfirmed() {
+    support::fresh_display();
+    let listed = ActiveWindowSupported::listed();
+    for route in [HoldRoute::InFront, HoldRoute::Dedicated, HoldRoute::Desktop] {
+        for (outlasting, unconfirm) in [(true, true), (true, false), (false, true)] {
+            let case = format!("{route:?}, outlasting {outlasting}, option (c) {unconfirm}");
+            let (window, stop, recorder) = drag_source_answering(
+                OnRelease::Drops {
+                    activates: true,
+                    cursors: &[],
+                },
+                None,
+            );
+            // the foreground route's drop window is the managed top-level under the pointer at the release
+            match route {
+                HoldRoute::Desktop => managed(window),
+                HoldRoute::Dedicated => {
+                    in_front(window);
+                    managed(window);
+                }
+                _ => in_front(window),
+            }
+            let mut args = vec!["--drag-dnd-unconfirm-outlasted", if unconfirm { "on" } else { "off" }];
+            if route == HoldRoute::Dedicated {
+                args.extend(["--desktop", "dedicated"]);
+            }
+            let mut engine = Engine::start_with_stats(&args);
+            let app = app_of(&mut engine, window);
+            let path = match outlasting {
+                true => outlasting_path(),
+                false => json!([{"x": 20, "y": 20}, {"x": 60, "y": 20}]),
+            };
+            let request = match route {
+                HoldRoute::Desktop => json!({"path": path}),
+                _ => json!({"window": {"id": window}, "path": path}),
+            };
+            let dragged = engine.exchange("drag", request);
+            let stats = engine.stats_of(engine.last_id());
+            sleep(SETTLE);
+            let read = engine.exchange("list_windows", json!({}));
+            let next = engine.request("click", json!({"window": {"id": window}, "x": 50, "y": 50}));
+            set_active_window(None);
+            stop.send(()).unwrap();
+            recorder.join().unwrap();
+            assert_eq!(dragged["ok"], json!(true), "{case}: {dragged}");
+            let sync = &stats["release_sync"];
+            assert_eq!(sync["open"], json!(outlasting), "{case}: {sync}");
+            let confirmed_by = stats["after_release"]["confirmed_by"].as_str().unwrap_or_default();
+            if outlasting && unconfirm {
+                assert_eq!(sync["unconfirm_outlasted"], json!(true), "{case}: {sync}");
+                assert_eq!(confirmed_by, "Outlasted", "{case}: {stats}");
+                let notice = format!(
+                    "{}. Read the window before sending input again: your next input request will not be run",
+                    outlasted_cause(&app)
+                );
+                assert_eq!(
+                    dragged["notice"],
+                    json!(notice),
+                    "{case}: the drag's own answer carries it"
+                );
+                assert_eq!(read["notice"], json!(notice), "{case}: {read}");
+                assert_eq!(
+                    next,
+                    Err(format!(
+                        "{}; this click request was not run, so read the window before sending it again",
+                        outlasted_cause(&app)
+                    )),
+                    "{case}"
+                );
+            } else {
+                assert_eq!(sync["unconfirm_outlasted"], json!(false), "{case}: {sync}");
+                assert!(confirmed_by.starts_with("Activation"), "{case}: {stats}");
+                assert_eq!(dragged.get("notice"), None, "{case}: {dragged}");
+                assert_eq!(read.get("notice"), None, "{case}: a confirmed drop: {read}");
+                assert_eq!(next, Ok(Value::Null), "{case}");
+            }
+        }
+    }
+    drop(listed);
 }

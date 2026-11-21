@@ -339,6 +339,56 @@ pub(super) struct DragMeasure<'a> {
     /// watch is told it when the window manager takes that request (the flag), as a handle's release does (the
     /// whole-branch review of M4, P2).
     pub(super) drop_window_at_release: Option<(&'a mut Option<Window>, bool)>,
+    /// A Chrome drop the engine lets drop (`release_sync.rs`, #459's fix): the step before its release at the gate,
+    /// and the slots that get what the gate decided and what the step did.
+    pub(super) release_sync: Option<ReleaseSync<'a>>,
+}
+
+/// The step before a Chrome drop's release (`release_sync.rs`): its form and gate, and what they did.
+pub(super) struct ReleaseSync<'a> {
+    pub(super) form: crate::release_sync::Form,
+    pub(super) when: crate::release_sync::When,
+    /// What the gate decided once a take was seen by the release: whether it opened, on the floor's keepalives and
+    /// whether the floor spaced out the path's last step.
+    pub(super) gate: &'a mut Option<GateRead>,
+    /// What the step did, when the gate opened and the form sends one.
+    pub(super) synced: &'a mut Option<crate::release_sync::Synced>,
+}
+
+/// What the outlasted gate read of a drop's floor and decided (`release_sync::gate`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct GateRead {
+    pub(super) open: bool,
+    pub(super) keepalives: u32,
+    pub(super) last_spaced: bool,
+}
+
+impl ReleaseSync<'_> {
+    /// At the release of a drop whose take was seen: the gate, on the floor's `keepalives` and whether it spaced out
+    /// the path's `last_spaced` step; when it opens, the step on `route`, the path's last two samples `before` and
+    /// `last`, its motions placed again on the route (synthetic on the background route, XTEST's elsewhere).
+    fn at_release(
+        &mut self,
+        x: &mut X11,
+        route: &mut Route,
+        keepalives: u32,
+        last_spaced: bool,
+        (before, last): ((i16, i16), (i16, i16)),
+    ) -> Result<()> {
+        let open = crate::release_sync::gate(self.when, keepalives, last_spaced);
+        *self.gate = Some(GateRead {
+            open,
+            keepalives,
+            last_spaced,
+        });
+        if open {
+            let xtest = !matches!(route, Route::Window(_));
+            *self.synced = crate::release_sync::before_release(self.form, xtest, before, last, |(px, py)| {
+                route.place_again(x, px, py)
+            })?;
+        }
+        Ok(())
+    }
 }
 
 /// The hold for a Chromium-family source's take (`dnd::TAKE_HOLD_AFTER_PRESS`, B, the design session's ruling 888.1;
@@ -497,6 +547,11 @@ fn drag_along(
         // the take, when it was seen, and how many samples were still to send then
         let mut taken: Option<(Instant, usize)> = None;
         let mut since_take = 0;
+        // whether the floor after the take spaced out the path's last step, the wait after its last sample (a wait
+        // longer than the step's own pacing): a path the floor slowed to its end rested on its last point, as one its
+        // keepalives filled does (`release_sync::gate`). Only the last step counts: under load the floor can space a
+        // step early in a path that then outlasts it (task 126)
+        let mut floor_spaced_last = false;
         // when the sample being sent was due
         let mut due = Instant::now();
         for (i, &(sx, sy)) in samples.iter().enumerate().skip(first) {
@@ -523,12 +578,9 @@ fn drag_along(
             let floored = taken.is_some() && spacing;
             due = next_due(due, sent, pacing, rests_before(&rests, i + 1, floored));
             let mut wait = due.saturating_duration_since(Instant::now());
+            floor_spaced_last = false;
             if let Some(floor) = floor {
-                wait = wait.max(
-                    floor
-                        .saturating_duration_since(Instant::now())
-                        .min(crate::dnd::KEEPALIVE),
-                );
+                (wait, floor_spaced_last) = crate::release_sync::floor_spaces(wait, floor, Instant::now());
             }
             std::thread::sleep(wait);
             if let Some(guard) = guard.as_deref_mut()
@@ -542,6 +594,9 @@ fn drag_along(
         // serves, so the button goes up at B and not a dwell after it (the re-review of fdaff715, P1: a foreground
         // drag named for Firefox that presses into Chrome kept Gecko's 30 ms dwell after B)
         let mut still = Duration::ZERO;
+        // the floor's keepalive motions after a take (none: the path's steps filled or outlasted the floor, or no floor
+        // ran)
+        let mut floor_keepalives = 0;
         if let (Some(watch), Some(take_hold)) = (hold.as_mut(), take_hold) {
             let ms = |d: Duration| d.as_secs_f64() * 1000.0;
             let path = pressed_at.elapsed();
@@ -677,6 +732,7 @@ fn drag_along(
                 "pings": pings_record,
                 "adaptive": adaptive_record,
             }));
+            floor_keepalives = keepalives;
         }
         // a guarded drag's hold (ruling 888.1): with no take so far, the button stays down until the bound after the
         // press for one, with no motion; a take then is cancelled before the drop at once, as one seen along the path
@@ -731,6 +787,14 @@ fn drag_along(
             && guard.watch.started(x)
         {
             return cancel_in_time(x, route, guard, &mut pressed);
+        }
+        // a Chrome drop the engine lets drop, its source's take seen by now: the outlasted gate, and at it the step
+        // before the release (`release_sync.rs`, #459's fix)
+        if taken.is_some()
+            && hold.is_some()
+            && let Some(sync) = measure.release_sync.as_mut()
+        {
+            sync.at_release(x, route, floor_keepalives, floor_spaced_last, (before_last, last))?;
         }
         // what reached the window up to the release, read apart from what comes after it: a grab that ends before the
         // release is another client's, and crosses into the window as any crossing does
@@ -1240,6 +1304,19 @@ impl Engine {
             },
             _ => None,
         };
+        // the step before the release of a Chrome drop the engine lets drop, at the outlasted gate (`release_sync.rs`,
+        // #459's fix): not a guarded drag, which drops nothing, and not the release at the accept (measurement only),
+        // which keeps 0.4.2's floor
+        let syncing = guard.is_none()
+            && hold.is_some()
+            && !self.cfg.dnd_release_at_accept
+            && pressing_into.is_some_and(|source| {
+                self.family_of(source)
+                    .is_some_and(|f| crate::release_sync::applies(f.name))
+            });
+        let (sync_form, sync_when) = (self.cfg.dnd_release_sync, self.cfg.dnd_release_sync_when);
+        let mut gate_read: Option<GateRead> = None;
+        let mut synced = None;
         let mut wall = None;
         let mut accept_record = None;
         // the time field the drag's events carried at its end, beside the server's time read just after (M3.1: whether
@@ -1292,6 +1369,12 @@ impl Engine {
                     settle: drop_settle.then_some(&mut settle),
                     release_point: xtest_route.then_some(&mut release_point),
                     drop_window_at_release: resolve_at_release.then_some((&mut drop_at_release, supported)),
+                    release_sync: syncing.then_some(ReleaseSync {
+                        form: sync_form,
+                        when: sync_when,
+                        gate: &mut gate_read,
+                        synced: &mut synced,
+                    }),
                 },
             );
             if let Some(event) = route.event_time()
@@ -1324,6 +1407,23 @@ impl Engine {
         }
         if let Some(scheduled) = scheduled {
             self.extra.insert("after_take".into(), scheduled);
+        }
+        // the outlasted gate's word on a drop whose take was seen (`--stats` `release_sync`): how it decided, the step it
+        // ran when it opened, and whether option (c) answers the drop's activation unconfirmed
+        let outlasted = gate_read.is_some_and(|g| g.open) && self.cfg.dnd_unconfirm_outlasted;
+        if let Some(read) = gate_read {
+            let mut record = match &synced {
+                Some(synced) => synced.record(sync_when),
+                None => json!({ "form": sync_form.name(), "when": sync_when.name() }),
+            };
+            record["open"] = json!(read.open);
+            record["keepalives"] = json!(read.keepalives);
+            record["last_step_spaced"] = json!(read.last_spaced);
+            if !read.open {
+                record["skipped_for"] = json!({ "keepalives": read.keepalives, "last_step_spaced": read.last_spaced });
+            }
+            record["unconfirm_outlasted"] = json!(outlasted);
+            self.extra.insert("release_sync".into(), record);
         }
         if let Some((press, release)) = wall {
             self.extra
@@ -1419,7 +1519,9 @@ impl Engine {
                     over_aware = Some(over);
                     cursor = Some(Some(held && (settled == Some(true) || !drop_settle)));
                 }
-                let confirming = super::handle::confirming(confirm, supported, cursor).after_hold(extended_take);
+                let confirming = super::handle::confirming(confirm, supported, cursor)
+                    .after_hold(extended_take)
+                    .after_outlasted(outlasted);
                 // ruling 837: a drop handed to Chrome's activation though its Electron source's settle failed
                 let settle_failed_activation = super::handle::activation_over_failed_settle(
                     confirming,
@@ -1469,7 +1571,7 @@ impl Engine {
                     (Some(true), confirming) if confirming.unconfirmed() => {
                         after.done();
                         self.inputs.end_watched(&mut self.x);
-                        let end = crate::drop_settle::unconfirmed_end(settle.as_ref());
+                        let end = confirming.unconfirmed_end(settle.as_ref());
                         self.late_pending = Some((app(&mut self.x), end));
                     }
                     _ => {

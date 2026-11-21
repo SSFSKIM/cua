@@ -783,7 +783,7 @@ fn drag_along(
             && hold.is_some()
             && let Some(sync) = measure.release_sync.as_mut()
         {
-            match sync.outlasted && (floor_keepalives > 0 || floor_spaced > 0) {
+            match !crate::release_sync::gate(sync.outlasted, floor_keepalives, floor_spaced) {
                 true => *sync.skipped = Some((floor_keepalives, floor_spaced)),
                 false => sync.run(x, route, before_last, last)?,
             }

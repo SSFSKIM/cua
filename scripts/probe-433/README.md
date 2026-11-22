@@ -733,10 +733,10 @@ A cell gives refused / kept-and-landed rows, per lane (cft · safari · electron
 The fix is `fix/442-other-control-on-top` (from main `5580ac20`; ruling 1073, narrowed by ruling 1078). The same branch and workflow, mode `qualify`, with main and fix interleaved, cold and warm. Not yet counted: the narrowing wave and its review come first. Each lane stays under 500 rows, and one run is in flight at a time.
 
 ```sh
-# QA1: the refuse cells, siblingstack, decomove and popupwait, cold; QA2: the review's and ruling 1079's shapes, cold;
+# QA1: the refuse cells, siblingstack, decomove, popupwait and ruling 1080's rows, cold; QA2: the review's and ruling 1079's shapes, cold;
 # QAw: the refuse cells, siblingstack and the shapes, warm
-gh workflow run probe-442-measure.yml --ref probe/442-measure -f main="$MAIN_SHA" -f fix="$FIX_SHA" -f mode=qualify -f reps=10 -f hits=cold -f cells=slideover,siblingstack,veilinto,decomove,popupwait
-gh workflow run probe-442-measure.yml --ref probe/442-measure -f main="$MAIN_SHA" -f fix="$FIX_SHA" -f mode=qualify -f reps=10 -f hits=cold -f cells=overflowlink,deepfront,rescrim,scrimhidden,widen,shrinkfront,textoutside,contentsfront,parentpad,relabelfront,relabelfirst
+gh workflow run probe-442-measure.yml --ref probe/442-measure -f main="$MAIN_SHA" -f fix="$FIX_SHA" -f mode=qualify -f reps=10 -f hits=cold -f cells=slideover,siblingstack,veilinto,decomove,popupwait,relabelfront,relabelfirst
+gh workflow run probe-442-measure.yml --ref probe/442-measure -f main="$MAIN_SHA" -f fix="$FIX_SHA" -f mode=qualify -f reps=10 -f hits=cold -f cells=overflowlink,deepfront,rescrim,scrimhidden,widen,shrinkfront,textoutside,contentsfront,parentpad
 gh workflow run probe-442-measure.yml --ref probe/442-measure -f main="$MAIN_SHA" -f fix="$FIX_SHA" -f mode=qualify -f reps=10 -f hits=warm -f cells=slideover,siblingstack,veilinto,overflowlink,deepfront,rescrim,scrimhidden,widen,shrinkfront,textoutside,contentsfront,parentpad
 # QB: #433's and #443's overlay cells, cold; then the overlay keeps warm
 gh workflow run probe-442-measure.yml --ref probe/442-measure -f main="$MAIN_SHA" -f fix="$FIX_SHA" -f mode=qualify -f reps=10 -f hits=cold -f cells=overcontrol,bgbutton,rebuildunder,overlapinto,overlaprow,rolechange,scrim,twincover,tipremount,twinunder,stickyscroll,nounder
@@ -747,7 +747,7 @@ gh workflow run probe-442-measure.yml --ref probe/442-measure -f main="$MAIN_SHA
 # Tables: node scripts/probe-433/tables.mjs <dir> <label> (verdicts per head, the fix's {hitCorrection}, stalePoint.ms p50/p95, popupwait by delay)
 ```
 
-Rows per lane: QA1 160 (180 on CfT and Electron, with popupwait), QA2 420, QAw 460, QB cold 460, QB warm 320, QC 300 and 400.
+Rows per lane: QA1 240 (260 on CfT and Electron, with popupwait), QA2 340, QAw 460, QB cold 460, QB warm 320, QC 300 and 400.
 
 What the qual adds to the #442 kit:
 - **Kinds** (`cells.mjs`):

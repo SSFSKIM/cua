@@ -844,3 +844,134 @@ says. `restored.ms` was 338–349 p50, 383 max, with 1 raise in every row.
 Delivery sanity: behind, confirmed 90/90, the menu open at 1.8 s 90/90, and the pick taken 90/90 (select
 `clickUnconfirmed`, as on main). Frontmost, confirmed on route 1 30/30 and taken 30/30. Key window off F1 0/30. There
 were no false confirmed or false unconfirmed answers.
+
+## #463: transient UI a background click opens, and route 3's restore closes
+
+Kit `scripts/probe-463/` (`measure.mjs`; `tool.swift`, #458's tool plus the watch's `fresh` windows with an epoch anchor,
+`open`'s frame match and `closeExtra`; reader `reader.mjs`), workflow `.github/workflows/probe-463.yml`, one engine head
+per dispatch, built unmodified. The layout is #458 qual's a (Finder F1 > F2 > the app's window(s) > Calculator, built back
+to front as a person does; read back as built in all 364 rows); the screen is 1024×768. Each row: one observation, then
+the action at the control the observation recorded, while a second tool samples the window list every 10 ms for 4 s:
+every window new since the watch began, of any owner but the engine, at any layer (its layer, alpha and bounds, and when
+it came and went on the action's clock), plus Finder's AXFocusedWindow and AXMainWindow each sample (the key-window
+watch). At 1.8 s the kit reads the window order and the frontmost app. "Closed" means the UI was gone again before
+1.8 s; "after release" is the time it went, less `delivery.releasedAt` (the end of route 3's hold and its guard).
+
+Controls: TextEdit's format-bar `list style` pull-down (an AXMenuButton, not an AXPopUpButton); its title bar's
+`document actions` AXMenuButton (it opens the document popover); the text view's context menu (a right click,
+`mouse_button: right`); the `text color` well (it opens the colour popover). Chrome's toolbar: the app menu (an
+AXPopUpButton), the profile button `You`, the bookmark star, and the site-information icon and tab-search button (both
+AXPopUpButtons). The extensions puzzle is not on this image's toolbar. The page: its context menu (a right click on a
+blank area), `<input list>` (clicked on its datalist arrow), `<input type=date>` (on its calendar icon) and
+`<input type=color>`. Routes: `click`, the engine's coordinate click, in shared-behind (6 rows), shared-front (5) and
+dedicated-behind (3). The element alternatives run behind: `element` (the engine's element click, 5 rows), `showmenu`
+(`perform_secondary_action` "Show Menu", 5), and the kit's own `kit:AXPress` and `kit:AXShowMenu` (3 each), each only
+where the node advertises the action.
+
+### Results, engine 1a1956b2b7f749ccd1f8389fdc31566cd7b79a35 (main)
+
+Full run: https://github.com/SSFSKIM/cua/actions/runs/44959835166 (kit 7fe9df6a, Google Chrome 157.0.8103.79, macOS 26.7.2,
+image 20261117.0516.1). It has 364 rows: 358 measured, and 6 where a control or action was absent. There were no setup
+failures. Smokes, 1 row per cell: https://github.com/SSFSKIM/cua/actions/runs/44955237095 (kit 2369e807; its Chrome rows
+are void, because the reset closed the page's window) and https://github.com/SSFSKIM/cua/actions/runs/44958306802 (kit
+7fe9df6a, 77 rows, the same answers). Artifacts are in `~/.local/share/probe-463/run-<id>/` on the MacBook.
+
+**The coordinate click, engine 1a1956b2.** "UI" is the window the action opened (layer, size in pt). "Open / closed /
+up" count the rows where it opened, where it was gone before 1.8 s, and where it was still up at 1.8 s.
+
+| control | UI | shared-behind: answer; open / closed / up; gone after release (ms) | shared-front | dedicated-behind | frontmost at 1.8 s, behind |
+|---|---|---|---|---|---|
+| TextEdit `list style` (AXMenuButton) | menu, L101 100×280 | ok route 3; 6 / **6** / 0; 49–294 (2–3 raises) | ok, up 5/5 | ok; open 1/3, closed | Finder |
+| TextEdit `document actions` (AXMenuButton) | popover, L0 660×150 | ok; 6 / 0 / **6** (opens 560–1515 ms in, after the hold) | up 5/5 | up 3/3 | Finder |
+| TextEdit text view, right click | context menu, L101 220×250 | ok; 6 / **6** / 0; 41–123 (0–2 raises; none in 2 rows) | up 5/5 | nothing 0/3 | Finder |
+| TextEdit `text color` well | colour popover, L0 220×250 | ok; 6 / **6** / 0; 90–286 (1 raise, before it opened) | up 5/5 | nothing 0/3 | Finder |
+| Chrome app menu (AXPopUpButton) | menu, L101 320×600 | ok, #458's `popUpClick` confirmed; 6 / 0 / 6 | ok route 1, up 5/5 | confirmed, up 3/3 | Finder |
+| Chrome profile `You` | bubble, L0 330×410 | ok; **1** / **1** / 0; 111 (5 rows: nothing seen) | up 5/5 | up 3/3 | Finder; dedicated **Chrome** |
+| Chrome bookmark star | bubble, L0 450×340 | ok; **3** / **3** / 0; 69–187 (3 rows: nothing) | up 5/5 | nothing 0/3 | Finder; dedicated **Chrome** |
+| Chrome site information (AXPopUpButton) | bubble, L0 320×280 | **`clickUnconfirmed`** (#458's AXPress; no layer-101 menu seen); 6 / 0 / **6** | `clickUnconfirmed` route 1, up 5/5 | `clickUnconfirmed`, up 3/3 | **Chrome** |
+| Chrome tab search (AXPopUpButton) | bubble, L0 320×170 | **`clickUnconfirmed`**; 6 / 0 / **6** | `clickUnconfirmed`, up 5/5 | `clickUnconfirmed`, up 3/3 | **Chrome** |
+| page, right click | context menu, L101 280×400 | ok; **4** / **4** / 0; 108–168 (0 raises; 2 rows: nothing) | up 5/5 | up 3/3 | Finder |
+| `<input list>` arrow | datalist, L999 160×130 | ok route 1 (#282's `focusField`, the caret placed); nothing 0/6 | up 5/5 | nothing 0/3 | Finder |
+| `<input type=date>` icon | picker, L101 220×280 | ok (#282's `AXPress:webArea`); up **6/6** | nothing 0/5 | nothing 0/3 | Finder |
+| `<input type=color>` | picker, L101 230×250 | `backgroundClickRefused` (#282, `webArea`); nothing 0/6 | up 5/5 | nothing 0/3 | Finder |
+
+**When the UI goes.** In all 27 rows with a closed UI, it lasted 29–323 ms. TextEdit's pull-down opened during the hold
+(25–100 ms before its release), and its context menu between 44 ms before and 84 ms after; both went 41–294 ms after
+the release. TextEdit's colour popover opened 49–208 ms *after* the release, and its one raise came
+before that, then the popover went about 50 ms later. In Chrome, the hold was 100 ms with 0 raises; the UI opened 14–94 ms
+after the release and went 37–150 ms later. So the close follows the end of route 3's fake activation whether or not the
+guard raised anything; it is not the raise alone. Behind, after a closed UI, the order at 1.8 s was F1 > the app's window >
+F2 (`moved` F2 and App: F2 is left under the app's window, as in #458).
+
+**The element alternatives, shared-behind** (rows where the UI was open and still up at 1.8 s, of the rows run):
+
+| control | `element` (engine element click) | `showmenu` (engine "Show Menu") | `kit:AXPress` | `kit:AXShowMenu` | order at 1.8 s; frontmost |
+|---|---|---|---|---|---|
+| TextEdit `list style` | AXPress, **5/5** | ok, 5/5 | 3/3 | 3/3 | the app's window over F1 and F2; Finder |
+| TextEdit `document actions` | AXPress, **5/5** | `menuUnconfirmed`, but up 5/5 | 3/3 | 3/3 | unchanged, the popover under F1 and F2; Finder |
+| TextEdit text view | - (right click) | ok, **5/5** (the context menu) | - | 3/3 | the app's window over F1 and F2; Finder |
+| TextEdit `text color` | AXPress, **5/5** | not advertised | 3/3 | not advertised | unchanged; Finder |
+| Chrome app menu | AXPress, 5/5 | `menuUnconfirmed`, nothing 0/5 | 3/3 | 0/3 | unchanged; Finder |
+| Chrome profile | AXPress, 5/5 | `menuUnconfirmed`, nothing 0/5 | 3/3 | 0/3 | AXPress: the bubble and Chrome's window over F1, **Chrome frontmost** |
+| Chrome star | AXPress, 5/5 | not advertised | **0/3** | not advertised | element: the same, **Chrome frontmost**; kit: unchanged |
+| Chrome site information | AXPress, 5/5 | `menuUnconfirmed`, but up 5/5 | 3/3 | 3/3 | the same, **Chrome frontmost** in all 16 |
+| Chrome tab search | AXPress, 5/5 | `menuUnconfirmed`; a small context menu (L101 100×50) 5/5 | 3/3 | the small menu 3/3 | AXPress: **Chrome frontmost**; Show Menu: unchanged, Finder |
+| page, right click | - | `menuUnconfirmed`, nothing 0/5 | - | 0/3 | unchanged; Finder |
+| `<input list>` | AXPress, **5/5** (the datalist) | ok, the page's context menu 5/5 | 0/3 | context menu 3/3 | unchanged; Finder |
+| `<input type=date>` | **`backgroundClickRefused`** (`synthesized`, the point on a descendant) 0/5 | ok, the page's context menu 5/5 | 0/3 | context menu 3/3 | unchanged; Finder |
+| `<input type=color>` | AXPress, **5/5** (the picker) | ok, the page's context menu 5/5 | 0/3 | context menu 3/3 | unchanged; Finder |
+
+**Focus.** Finder's focused and main window stayed F1 in every sample of every row (key-window watch, 358/358 rows, no
+failed reads). The frontmost app did change. In every behind row with a Chrome toolbar bubble up at 1.8 s, Chrome became
+frontmost and its bubble and window went above F1 (58/58). Those rows came from the engine's AXPress, the kit's AXPress,
+#458's delivery, Show Menu on site information, and dedicated mode's posted click. Dedicated mode's posted click on the
+star made Chrome frontmost with no bubble seen (3/3). When an element action opened a native menu, TextEdit's window went
+above F1 and F2 without TextEdit becoming frontmost (as #458 found). The popovers that AXPress opened (document actions,
+colour) left the order unchanged, under the person's windows.
+
+### Reading
+
+- **Confirmed, and wider than menus.** With the app behind in shared mode, the coordinate click answered ok while the UI
+  it opened closed again before 1.8 s:
+  - TextEdit's AXMenuButton pull-down, its context menu and its colour popover, 6/6 each;
+  - Chrome's page context menu 4/6 (nothing in 2), its bookmark-star bubble 3/6 (nothing in 3) and its profile bubble
+    1/6 (nothing in 5).
+
+  Frontmost, every one stays up, 5/5 each. The close follows the delivery guard's release, and in Chrome it comes with
+  no raise at all. So what keeps the UI open is a delivery that does not end in route 3's activation release, as #458's
+  AXPress does; skipping only the raise would not.
+- **Not every transient closes.** The title bar's document popover opens 0.5–1.5 s in, after the hold, and stays up
+  (6/6). Chrome's app menu is an AXPopUpButton, which #458's delivery already confirms, open 6/6.
+- **#458's AXPopUpButton rule answers falsely for Chrome's bubble buttons.** Site information and tab search are
+  AXPopUpButtons whose press opens a layer-0 bubble, not a layer-101 menu. So the delivery answers `clickUnconfirmed` while
+  the bubble is up: 6/6 behind, 5/5 frontmost and 3/3 dedicated. The answer tells the model to observe before any retry,
+  so the cost is an extra observation, not a doubled action. The same press makes Chrome frontmost.
+- **Element actions that open the UI and keep it open behind:**
+  - AXPress opens TextEdit's pull-down, its document-actions popover and its colour popover (engine 5/5 each, the kit's
+    3/3), and each of Chrome's toolbar buttons (5/5).
+  - The engine's element click opens `<input list>` and `<input type=color>` (5/5). The kit's bare AXPress opens nothing on
+    them (0/3), so the engine's element route there does more than the bare action.
+  - AXShowMenu opens TextEdit's text-view context menu (5/5).
+
+  What does not work:
+  - AXShowMenu on a page control opens the page's context menu, not the control's picker.
+  - On Chrome's web area or its toolbar buttons, AXShowMenu opens nothing; there the engine's `menuUnconfirmed` answer is
+    honest.
+  - No element action opens Chrome's page context menu behind.
+  - The date input's element click is refused.
+- **The element route's cost for Chrome's toolbar:** every AXPress that opens a toolbar bubble makes Chrome frontmost and
+  puts its window over the person's. The person's key window inside Finder is kept, but the frontmost app is not.
+- **Dedicated mode mostly opens nothing** for these controls (TextEdit's context menu 0/3, the colour well 0/3, the
+  pull-down 1/3 and closed, the star 0/3), and nothing there is a restore. That is #458's unexplained dedicated case,
+  not this one.
+
+Evidence for the design call, not the call:
+- The restore closes three kinds of UI while answering ok: native AppKit pull-downs (AXMenuButton), a popover a control
+  opens (the colour well), and context menus (TextEdit's, and Chrome's page).
+- The first two have an AXPress that opens the UI and keeps it open behind without making the app frontmost, as #458's
+  pop-up buttons do.
+- TextEdit's context menu has AXShowMenu, with the same result. Chrome's page context menu has no element route that opens
+  it behind.
+- Chrome's toolbar bubbles open only sometimes behind, and are closed when they do (star 3/6, profile 1/6). Their AXPress
+  opens them, but makes Chrome frontmost.
+- #458's own rule answers a false `clickUnconfirmed` for Chrome's AXPopUpButtons that open bubbles.

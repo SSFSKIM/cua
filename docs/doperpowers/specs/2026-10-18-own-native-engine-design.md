@@ -7650,6 +7650,46 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   its focus hold replaces the early recheck's record in the meta; `hitMs` is the last hit-test's.
   Date/Author: 2026-11-20, cursor235's implementer for #456.
 
+- Decision (#443, 2026-11-21, `fix/443-decoration-control-gone`, plugin 0.28.29; amends #433's scope note on `decomove`
+  and #296's verdict, StalePoint.swift `controlGoneVerdict`): **an inert node kept on its own handle whose recorded
+  control is confirmed destroyed refuses (`controlGone`).** #433's qualification (kit `probe/433-qual`, cell `decomove`,
+  batch A, run 44715767925) measured main 870dd117 landing on link B 40 of 40 times on CfT and on Electron when an inert
+  decoration of link A (nested groups the size of A) was moved into B once A was replaced; Safari refused `nodeGone`.
+  #433's entry left the case out of scope because two rounds that judged content of a control by where its content now
+  lies (a link's content must still lie inside its recorded link) kept refusing link-text clicks main keeps (text
+  re-rendered in an unchanged link, unread parents or children, overflowing labels, same-title links). This rule asks
+  nothing about where the node lies now, only whether its control still exists, and acts only on confirmation.
+  "Recorded control" is what the record already holds, so the observation is unchanged and costs nothing more:
+  `ScreenshotNode.control`, #431's nearest recorded ancestor, frameless ones included, of an interactive role or with
+  AXPress, below the node's web area, window, sheet or application; nil where a nearer ancestor's actions did not read
+  (`controlUnknown`), and then the rule does not run. "Confirmed gone" is `StalePointReads.gone`, the control's handle
+  answering its AXRole read with kAXErrorInvalidUIElement; a seam without that read never refuses (not `isGone`'s
+  fallback on an unread frame). The rule runs after #296's verdict, before #433's check of a control beneath, and refuses
+  only a point that verdict keeps where all of these hold: the node was found by its own handle (a node re-created in
+  place came with its control, so `remount` and `retext` stay main's), it does not act on its own (its role and actions
+  read inert at the observation, no AXPress recorded: a button that outlived its clickable card is its own target), and
+  the verdict is not #305's `recordedHit` (another recorded control the screenshot showed at the point, in place,
+  vouches for the click). A live control keeps main's verdict whether it still holds the node or not, and a control
+  whose reads fail with any other error keeps it too. The refusal is the guard's own, `screenChangedSinceScreenshot`,
+  meta `stalePoint.reason` `controlGone` with `controlRole` (the gone control's role), its sentence: "The screen
+  changed since the screenshot: the point lies on an <node> that does not act on its own, inside the <control> the
+  screenshot showed there; that control is gone, and the <node> now lies in whatever replaced it. Nothing was sent.
+  Call getScreenshot for a new screenshot and aim again from what it shows." (the activated form as the guard's other
+  refusals). The press verdict and the route's recheck take it through `stalePointVerdict`. The model-facing docs are
+  unchanged: "what that screenshot showed at the point is gone" already covers it.
+  Limits: a link's own text node (AXStaticText) moved into a new link is refused the same way, which is the same wrong
+  click; Chromium recreating a control's accessibility object for the same DOM element (a role change) while a child's
+  object survives would refuse a click main lands correctly, not observed and not measured.
+  Proven offline (`OverlayTargetTests`, four new tests, one rewritten): `decomove` refuses with the decoration or A's text
+  moved into B, the hit on it, on B or nothing, and with A recorded frameless, with the sentence and meta; A's handle
+  alive with every read failing, or a seam without `gone`, keeps; A alive, with the decoration inside it or moved out,
+  keeps; a re-created node, an acting node and a `recordedHit` keep. #433's test that pinned `decomove` to main's verdict
+  now asserts the refusal, and its case with B's role unread refuses too. With the call removed, 17 assertions in three
+  tests fail; mutations of the handle-only, inert-only, `recordedHit` and confirmed-only conditions each fail a test.
+  Not measured live: `decomove` with this build on CfT and Electron, and #433's keep cells (`retext`, `plain`, `like`,
+  `remount`, `textbehind`) and #340's.
+  Date/Author: 2026-11-21, cursor235's builder for #443.
+
 ## Outcomes & Retrospective
 
 Pending for the initiative — written at finish. M1a's interim account (2026-10-20) follows; the full record is `docs/doperpowers/specs/2026-10-18-own-native-engine-m1a-report.md`.

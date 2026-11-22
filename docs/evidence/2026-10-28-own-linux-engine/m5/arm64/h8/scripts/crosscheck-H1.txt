@@ -1,0 +1,9 @@
+# H1's T17 cells: m5 evidence: m5/arm64/h6/out/H1.pinned-release/run/summary.md against m5/arm64/h8/out/H1.pinned-release/run/summary.md
+columns compared: end not verified, landed, ok, nothing pending, unconfirmed, other notice, error, false ok, landed, unconfirmed (move or link / cold handle at load / other); only in the later: stale-position drops, ambiguous
+
+| lane | cell | drags | column | earlier → later | Fisher p |
+|---|---|---:|---|---|---:|
+
+cells: 14 and 14; in one only 0; differing counts 0; the smallest Fisher p 1.000
+verdict, earlier: No false ok, no missing landing, no false error, every notice refused once; every cell of the plan ran.
+verdict, later: No false ok, no drop at a stale position, no missing landing, no false error, every notice refused once; every cell of the plan ran.

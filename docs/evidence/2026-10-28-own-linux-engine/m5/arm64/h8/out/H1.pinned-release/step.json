@@ -1,0 +1,49 @@
+{
+  "label": "acceptance on the pinned release",
+  "step": "H1",
+  "pilot": false,
+  "what": "T17's Electron cells: plain drags and handles, the controls, the four releases off the window",
+  "display": "private",
+  "load": "idle",
+  "minutes": 22,
+  "run_name": "pinned-H1",
+  "checkout": {
+    "root": "/Users/new/Developer/GitHub/cua/.claude/worktrees/t136-h8/",
+    "commit": "048140a2bde0f6398cc910c1aa14ecf2e7e51004",
+    "clean": true
+  },
+  "candidate": {
+    "path": "/Users/new/.local/share/cua-171/m5/home-arm64-043/engine/linux/cua-engine",
+    "sha256": "dd74e19b44596f992dd120b13fbbe8021a7ca0af581c07496f5cee8f5edbcf1e"
+  },
+  "pinned_home": "/Users/new/.local/share/cua-171/m5/home-arm64-043",
+  "command": "/Users/new/.local/share/cua-171/locked.sh m5-gate /Users/new/.local/share/cua-171/node24/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/t136-h8/scripts/linux-engine-gate/gate.mjs run H1 --pinned /Users/new/.local/share/cua-171/m5/home-arm64-043 --out /Users/new/.local/share/cua-171/m5/out-arm64-h8",
+  "argv": [
+    "scripts/linux-engine-diff.mjs",
+    "--experiment",
+    "drop-signals",
+    "--family",
+    "electron",
+    "--plan",
+    "t17-fix3",
+    "--cua",
+    "/Users/new/.local/share/cua-171/m5/home-arm64-043/engine/linux/cua-engine",
+    "--run",
+    "pinned-H1",
+    "--pinned",
+    "--out",
+    "/Users/new/.local/share/cua-171/m5/out-arm64-h8/H1.pinned-release/run"
+  ],
+  "started": "2026-11-22T03:15:20.545Z",
+  "end_check": {
+    "left_by_step": [],
+    "foreign": [],
+    "buses": [],
+    "clear": true
+  },
+  "finished": "2026-11-22T03:32:47.268Z",
+  "exit": 0,
+  "child_exit": 0,
+  "display_watchdog": "clean",
+  "unclean": []
+}

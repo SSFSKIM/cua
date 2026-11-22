@@ -1,0 +1,4 @@
+[1028110:1121/191700.732087:ERROR:ui/gfx/x/atom_cache.cc:236] Add application/vnd.portal.filetransfer to kAtomsToCache
+[1028110:1121/191700.732136:ERROR:ui/gfx/x/atom_cache.cc:236] Add application/vnd.portal.files to kAtomsToCache
+[1028143:1121/192112.422698:ERROR:components/viz/service/display/display.cc:271] Frame latency is negative: -0.018 ms
+[1028110:1121/193237.311603:ERROR:content/common/zygote/zygote_communication_linux.cc:291] Failed to send GetTerminationStatus message to zygote

@@ -5,7 +5,7 @@ acceptance home's own `cua install` of **linux-engine-v0.4.0**: `cua-engine` sha
 (c55c8e08d9cb)`, the pin's arm64 asset. The pinned rule takes it inside each step. The machine is the GCE arm64 VM
 `dc-linux171arm-996d` (c4a-standard-8, aarch64, uid 501, home /Users/new).
 
-**Status: complete.** Five parts.
+**Status: complete.** Six parts.
 - **At H‴ on 0.4.0:** setup, H‴'s local proof (passed, by the controller's two rulings below), item 9 (passes), and the
   private idle block: all 25 steps that ran exited 0 by their own judge. S1, H1 and H2 were skipped as class A
   (ruling 827), and those idle steps that are not class A stand on H‴.
@@ -42,6 +42,10 @@ acceptance home's own `cua install` of **linux-engine-v0.4.0**: `cua-engine` sha
   unexercised rows, 0 false oks, every press mark bound and no stop before its mark (982).
   - **L4d at H7.1 = `96fa1fd3`** FAILs once, as expected on 0.4.2: t14-long has 5 stale drops and 10 false oks in 100,
     all of #459's shape; t14-floor `left` has 1 stale drop, past the floor by 4.6 ms; Electron passes.
+- **At H8 = `048140a2` on 0.4.3** (the section "At H8 (0.4.3)" below): ruling 990 (3)'s reach. D1, H1 (the
+  cross-check, identical to H6), C1, K1–K3, L2a, L4c and **L4d** (0 false oks and 0 stale on every Chrome cell, 993)
+  pass. V5 passes on `:0` after two runs stopped on #432's class. L4b fails on the unshipped accept lane's finding
+  (871, 872, 1050; #474). Item 9 and the doctor pass.
 
 ## Setup
 
@@ -1102,8 +1106,164 @@ L4d is the shipped Chrome drop route at twice the load, plan `t14-stale` in thre
 
 **Scans** of `h7/`, L4d included: token-shaped strings 0 hits in 77 files (`scan-token.txt`); `:0` titles and key codes 0 in 77 files, with 3 titles looked for (`privacy-scan.txt`).
 
+## At H8 (0.4.3) (2026-11-22 02:49Z to 05:45Z; task 136)
+
+The head is **H8 = `048140a2`**, feat/171-m5 after task 134's pin merge. The engine is **linux-engine-v0.4.3**, tag
+ba5b0438 (release run 44966356899): arm64 `cua-engine` sha256 `dd74e19b44596f992dd120b13fbbe8021a7ca0af581c07496f5cee8f5edbcf1e`,
+`cua-engine 0.4.3 (ba5b043834ce)`. `MIN_ENGINE_VERSION` is 0.4.3.
+- The steps are ruling 990 (3)'s reach: class A on Chrome sources, H1 as the cross-check, item 9 and the doctor.
+- The records are in `h8/`. Holder `h8-arm64`; the lock lines are `h8/scripts/lock-lines.txt`.
+
+**Setup** (`h8/scripts/setup-all.sh`, `setup-all.log.txt`):
+- `t136-h8` is a fresh worktree, detached and clean at `048140a2`, with npm ci, the Electron binary present
+  (`node_modules/electron/dist/electron`), and xprobe.
+- The home `home-arm64-043` is fresh. Its own `cua install --engine` placed the 0.4.3 engine, whose sha256 equals H8's
+  pin, and `check --pinned` exited 0 (`install-home.log.txt`).
+- **Item 9** (`item9/transcript.txt`) ran in a fresh mktemp home on a private display. Install exited 0, the engine's
+  sha256 equals the pin, and the doctor exited 0 (17 PASS, 7 SKIP, 3 BLOCKED, the 3 being the Chrome registration
+  lines).
+- **The doctor on the pinned home** (`item9/doctor-pinned-home.txt`) ran in the same private session: exit 0, with the
+  same 17 / 7 / 3.
+- Disk: 101–103G free at every check. hold-sittings was absent before every set.
+
+**How the steps ran** (`h8/scripts/steps.sh`):
+- Each step's line is `gate.mjs print`'s (`out/<step>.print.txt`), run once as printed.
+- The printed line's own `locked.sh h8-arm64` takes the hold, and inside it step.sh's quiet wait runs before the gate
+  command, which is unchanged.
+- Each print's record is kept apart (`<step>.print-record`).
+- The runner stops at a nonzero exit. It stopped at L4b, and L4c and L4d ran after the controller's word (ruling 1050).
+
+| step | stands on | run (UTC, 11-22) | exit | load at the start (after the quiet wait) | result |
+|---|---|---|---:|---|---|
+| D1 | 048140a2 | 02:51:33–03:15:20 | 0 | 0.71 0.31 0.12 | **PASS** (below) |
+| H1 | 048140a2 | 03:15:20–03:32:47 | 0 | 0.57 0.40 0.31 | **the cross-check**: identical to H6, cell by cell (below) |
+| C1 | 048140a2 | 03:32:47–03:34:51 | 0 | 0.14 0.14 0.18 | **PASS**: inside 10/10, past 10/10, 3 edge late takes all reported; 0 unexercised, 0 stale |
+| K1 | 048140a2 | 03:34:52–03:37:47 | 0 | 0.15 0.14 0.18 | **PASS**, Chrome 156: draggable 8 held / 8 started, max 88.9, median 85.0 ms; plain max 1.1 ms |
+| K2 | 048140a2 | 03:37:48–03:40:44 | 0 | 0.50 0.34 0.25 | **PASS**, Chrome 158 from its extracted tree: 6 / 6, max 93.1, median 90.0 ms; plain max 1.1 ms |
+| K3 | 048140a2 | 03:40:44–03:41:50 | 0 | 0.27 0.33 0.27 | **PASS**: dragstart-150 and dragstart-400 each landed 10 of 10 |
+| V5 | 048140a2 | (`:0`) 05:09:10–05:45:12 | 0 | 0.63 8.84 12.91 | **PASS**: every verdict PASS, all-clear clear, after two runs stopped on #432's class (below) |
+| L2a | 048140a2 | 03:46:13–04:14:01 | 0 | 0.17 0.36 0.31 | **PASS** |
+| L4b | 048140a2 | 04:16:51–04:33:29 | **1** | 0.92 9.46 11.80 | **FAIL, the unshipped accept lane's finding** (rulings 871, 872, 1050; #474) (below) |
+| L4c | 048140a2 | 04:36:24–04:38:55 | 0 | 0.92 9.33 12.65 | **PASS**: inside 10/10, past 10/10, 2 edge late takes reported; 0 unexercised, 0 skipped, 0 stale; 40/40 marks bound; the stop came 54.1–55.9 ms after the mark, never before it (982) |
+| L4d | 048140a2 | 04:41:56–05:05:50 | 0 | 0.86 6.85 10.98 | **PASS at 993's bar**: 0 false oks and 0 stale on every Chrome cell (below) |
+
+Every private step's run was clean, with the watchdog clean.
+
+**D1.** The judges' verdict for `cua` is PASS.
+- dnd is #358, declared: [26.8, 27] ms (355 against newest's 328.1), within 40.
+- **Canvas is judged against pinned.** The newest build gave up the bar with 19 usable of 40, under the judge's own
+  rule (stats.mjs `judgeSeriesSpeed`, line 238: a vendor build sets the bar only with `MIN_NOISE_SAMPLES` = 20 usable).
+  cua 473.7 ms against pinned's 1045.35, the interval [−572.75, −571.15].
+- Against newest's 19 samples the judge prints no interval. Offline, its own `medianDifferenceInterval` gives
+  [−12.3, −11.6] ms (cua 473.7, newest 485.5), as at H6.
+
+**H1, the cross-check** (`h8/scripts/compare-t17.mjs`, `crosscheck-H1.txt`): H1 at H8 against its H6 record,
+`h6/out/H1.pinned-release`.
+- All 14 T17 cells match, with every shared count column identical (a Fisher exact test per column: p 1.0
+  throughout).
+- The verdict line gains only the new "no drop at a stale position" clause.
+- #365 is 0 of 60 and ruling 830's mismatches are none in 320, as at H6. **The reach argument holds.**
+
+**L4b** (rulings 871, 872, 1050; **#474**: retire the flag and its L4b lane, or put the lane under the tail at 993's
+bar).
+- Stored: "Fails: cua:accept left: answered ok with no drop and nothing pending on 3 of 30 (#5, #6, #15)". The lane is
+  `cua:accept`, behind `--drag-dnd-release-at-accept`, which nothing that ships selects.
+- 0.4.3 keeps that lane on 0.4.2's floor by design: native/linux-engine/src/engine/pointer.rs:1366–1371, `let syncing =
+  guard.is_none() && hold.is_some() && !self.cfg.dnd_release_at_accept && …`, "not the release at the accept
+  (measurement only), which keeps 0.4.2's floor".
+- plain-long landed 300/300, with 0 false oks and 0 stale.
+
+The three false oks. The gate is derived (below): counted rows carry no `release_sync`.
+
+| left # | take (ms after the press) | path after the take (ms) | derived gate | last step to release (ms) | keepalives | activation after the release (ms) | accept read |
+|---|---:|---:|---|---:|---:|---:|---|
+| 5 | 35.0 | 371.0 | open | 1.0 | 0 | 2.0 | none |
+| 6 | 26.2 | 390.6 | open | 0.1 | 0 | 3.8 | none |
+| 15 | 26.3 | 374.4 | open | 1.0 | 0 | 1.6 | none |
+
+The accept lane's false releases, head by head:
+
+| head | inzone-out: false releases at the accept (answered ok) | left: false releases (answered ok) | left: false oks (the fail) |
+|---|---:|---:|---:|
+| H⁗ (0.4.1) | 5 (2) | – | 1 |
+| H6 (0.4.2) | 7 (6) | – | 1 (#23) |
+| H8 (0.4.3) | 3 (1) | 1 (1) | 3 (#5, #6, #15) |
+
+**L4d at 0.4.3** (`h8/out/L4d.pinned-release/`; `l4d-parts.md`, `l4d-parts.mjs`). Ruling 993's bar is met: 0 false oks
+and 0 stale-position drops on every Chrome cell, `left` included.
+- The gate's reading is **derived offline**, since a counted row carries no `release_sync` record and runs no
+  `--engine-stats`.
+- The table uses ruling 993's rule: open = a take, no keepalive, and the path after the take past 350 ms. c-cost.mjs's
+  0.4.2 rule (the release more than 2 ms past take + 350) is shown beside it; it misreads a late in-floor release as
+  open.
+- `motions` and `visits_dropped` can't be read from the rows.
+
+| part / cell | drags | landed | stale | false ok | honest (a notice) | untaken | gate open / shut, 993's rule | the same, c-cost's rule |
+|---|---:|---:|---:|---:|---:|---:|---|---|
+| Chrome t14-long, long-left | 100 | 0 | 0 | 0 | 100 | 0 | 100 / 0 | 100 / 0 |
+| Chrome t14-floor, plain-long | 300 | 300 | 0 | 0 | 0 | 0 | 176 / 124 | 178 / 122 |
+| Chrome t14-floor, left | 30 | 0 | 0 | 0 | 30 | 0 | 17 / 13 | 17 / 13 |
+| Chrome t14-floor, inzone-out | 30 | 0 | 0 | 0 | 30 | 0 | 0 / 30 | 2 / 28 |
+| Electron t17-long, long-left | 30 | 0 | 0 | 0 | 26 | 0 | – | – |
+
+- The Electron part has 30/30 exercised (972). Its 4 plain oks are ruling 830's zone-truth mismatches, which the
+  judge counts as no false ok.
+- Against the 0.4.2 baseline at H7.1 (15/100 on t14-long, and `left` #24), every Chrome cell is now 0.
+
+**V5 on `:0`** (the sitting launcher around run71.sh under wrap71, as `gate.mjs print` gave it, with only its leading
+`locked.sh` stripped; `h8/scripts/run-sitting.sh`, `v5r.sh`; the in-step canary absolute, ruling 932). Three runs:
+
+| run | started (UTC, 11-22) | wrap71 | all-clear | result |
+|---|---|---|---|---|
+| `V5.pinned-release.stopped-1` | 03:42:26 | stopped at 80.948 s: 1 outside-peer-connection | NOT CLEAR | no verdict. Cleared on ruling 1046 (#432) |
+| `V5.pinned-release.stopped-2` | 05:06:16 | stopped at 7.418 s: 1 outside-peer-connection | NOT CLEAR | no verdict. Cleared on ruling 1053 (#432), with the attribution below |
+| `V5.pinned-release` | 05:09:10 | 16750 samples, 0 flags, 0 decoy connections, no leftovers | **clear** | **every verdict PASS, 52 of 52** |
+
+- **The stops.** Both are #432's class: the run's own Chrome connecting to an autobind address whose holder wrap71's
+  record left without a pid.
+  - stopped-1: pid 1064015 to `@7bbca`.
+  - stopped-2: pid 1097897 to `@cd628`.
+  - Each had 0 decoy connections, 0 leftovers and 0 audit rows, and its run reached no terminal row because of the
+    stop.
+  - The clearance records are in each dir (`hold-sittings-cleared-*.txt`).
+- **The attribution of stopped-2** (rulings 1046, 1047, 1053). A capture sidecar ran beside the sitting, outside the
+  repository and never part of it (`h8/scripts/flag-capture.py`; its proof `flag-capture-test.py`, `.out`: PASS). Its
+  raw capture stays on the VM. Attribution only:
+  - **comm:** `chrome` to `chrome_crashpad`;
+  - **the relation:** both ends descend from the run. The crash handler daemonized and was reparented to wrap71, the
+    subreaper. The flagged chrome descends from the harness under wrap71;
+  - **the path class:** the run's own home (the crash handler's database under the run's `cua171-run-*` home).
+  - The guard's fix is tracked on #432. It will be built after M5 under its own review, and is not on H8.
+- **The passing run.** The pointer was restored, and the owner side shows the stand-in Chrome profile's mtime only.
+  The harness's browser was Chrome 156.0.8078.73.
+  - Chrome's drops: 63 samples, 45 landed, 0 false ok, 0 landed reported unconfirmed. 0 hold notices.
+  - The in-step canary: 9 / 9 held and started, draggable max 153.1 and median 87.6 ms, plain max 1.1 ms.
+  - Span-limited (680): 5, all in `chrome_dnd_late_take_shared`, which passes: 0/0 (301, 158.43), 0/2 (263, 157.19),
+    1/2 (268, 157.29), 2/0 (302, 158.48) and 2/2 (266, 157.21).
+  - Kept traces: 52 audit rows, all with their files, and `rejudge-audit.mjs` reproduces the stored findings. The
+    traces aren't committed: they are on the x64 host under `~/.local/share/cua-171/m5/arm64-h8-traces/` with K1's and
+    K2's, listed in `h8/scripts/kept-traces.sha256`.
+  - The sidecar captured nothing, since no flag came, and exited 0.
+
+**The settle counter** (`h8/out/settle-check.txt`):
+- TAKEN in H1 (entered 560, second_rest 0) and in L4d (entered 30, its Electron part), as H1 was at H6.
+- Not taken: C1, K3, L4b and L4c.
+- Unknown (ruling 834): D1, K1, K2, V5 and L2a.
+
+
+**Scans** of `h8/` (rulings 863, 874, 875):
+- token-shaped strings: 0 hits in 285 files (`h8/scripts/scan-token.txt`);
+- `:0` titles and key codes: 0 title hits, 0 held-code rows and 0 raw minimized codes in 285 files, with 3 titles looked
+  for (`privacy-scan.txt`; the control is `privacy-scan-control.txt`).
+
+The sidecar's raw capture is not committed.
+
 ## Files
 
+- `h8/`: the H8 part: `out/` (every step as the runner wrote it, the prints and their records, V5's two stopped runs
+  with their clearances, `settle-check.txt`, `l4d-parts.md`); `scripts/` (task 136's launchers, the setup, item 9 and
+  the doctors, the sidecar and its proof, the analysis scripts, the cross-check, the scans, the lock lines). The kept
+  route-audit traces and the sidecar's raw capture are left out.
 - `h7/`: the H7 part: `out/` (C1 and L4c as the runner wrote them, the prints and their records, the refused first
   start of C1, `h7.log.txt`, the home check); `scripts/` (task 122's launcher, `h7-rows.mjs` and its output, the
   scans, the lock lines).

@@ -1,0 +1,1281 @@
+{
+ "exit": 143,
+ "samples": 124,
+ "maps_samples": 42,
+ "ss_samples": 26,
+ "maps_reads": 197,
+ "fd_reads": 575,
+ "sample_gap_ms": {
+  "median": 104.0,
+  "max": 125.4
+ },
+ "flags": [
+  {
+   "t": 7.418,
+   "kind": "outside-peer-connection",
+   "pids": [
+    1097897
+   ],
+   "comm": "chrome",
+   "peer_path": "@cd628",
+   "peer_pids": [],
+   "peer_comm": null,
+   "peer_inode": "48627584"
+  }
+ ],
+ "decoy_connections": [],
+ "leftovers": [],
+ "browsers": [
+  {
+   "pid": 1097897,
+   "comm": "chrome",
+   "kind": "chrome",
+   "type": null,
+   "first": 7.408,
+   "last": 7.96,
+   "profile": "/tmp/c71-KGbwif/cua171-run-eoEGJr/chrome-profile",
+   "home": "/tmp/c71-KGbwif/cua171-run-eoEGJr/home",
+   "home_readable": true,
+   "argv_has_profile": true
+  },
+  {
+   "pid": 1097908,
+   "comm": "chrome_crashpad",
+   "kind": "chrome",
+   "type": null,
+   "first": 7.522,
+   "last": 7.959,
+   "profile": null,
+   "home": "/tmp/c71-KGbwif/cua171-run-eoEGJr/home",
+   "home_readable": true,
+   "argv_has_profile": false
+  },
+  {
+   "pid": 1097906,
+   "comm": "chrome_crashpad",
+   "kind": "chrome",
+   "type": null,
+   "first": 7.523,
+   "last": 7.959,
+   "profile": null,
+   "home": "/tmp/c71-KGbwif/cua171-run-eoEGJr/home",
+   "home_readable": true,
+   "argv_has_profile": false
+  },
+  {
+   "pid": 1097915,
+   "comm": "chrome",
+   "kind": "chrome",
+   "type": "zygote",
+   "first": 7.523,
+   "last": 7.962,
+   "profile": null,
+   "home": null,
+   "home_readable": false,
+   "argv_has_profile": true
+  },
+  {
+   "pid": 1097917,
+   "comm": "chrome",
+   "kind": "chrome",
+   "type": "zygote",
+   "first": 7.523,
+   "last": 7.962,
+   "profile": null,
+   "home": null,
+   "home_readable": false,
+   "argv_has_profile": true
+  },
+  {
+   "pid": 1097914,
+   "comm": "chrome",
+   "kind": "chrome",
+   "type": "zygote",
+   "first": 7.524,
+   "last": 7.963,
+   "profile": null,
+   "home": null,
+   "home_readable": false,
+   "argv_has_profile": true
+  },
+  {
+   "pid": 1097947,
+   "comm": "chrome",
+   "kind": "chrome",
+   "type": "utility",
+   "first": 7.739,
+   "last": 7.961,
+   "profile": null,
+   "home": null,
+   "home_readable": false,
+   "argv_has_profile": true
+  },
+  {
+   "pid": 1098022,
+   "comm": "chrome",
+   "kind": "chrome",
+   "type": "renderer",
+   "first": 7.74,
+   "last": 7.851,
+   "profile": null,
+   "home": null,
+   "home_readable": false,
+   "argv_has_profile": true
+  },
+  {
+   "pid": 1098021,
+   "comm": "chrome",
+   "kind": "chrome",
+   "type": "renderer",
+   "first": 7.74,
+   "last": 7.74,
+   "profile": null,
+   "home": null,
+   "home_readable": false,
+   "argv_has_profile": true
+  },
+  {
+   "pid": 1098010,
+   "comm": "chrome",
+   "kind": "chrome",
+   "type": "renderer",
+   "first": 7.74,
+   "last": 7.851,
+   "profile": null,
+   "home": null,
+   "home_readable": false,
+   "argv_has_profile": true
+  },
+  {
+   "pid": 1097961,
+   "comm": "chrome",
+   "kind": "chrome",
+   "type": "utility",
+   "first": 7.741,
+   "last": 7.963,
+   "profile": null,
+   "home": null,
+   "home_readable": false,
+   "argv_has_profile": true
+  },
+  {
+   "pid": 1097945,
+   "comm": "chrome",
+   "kind": "chrome",
+   "type": "gpu-process",
+   "first": 7.741,
+   "last": 7.964,
+   "profile": null,
+   "home": null,
+   "home_readable": false,
+   "argv_has_profile": true
+  },
+  {
+   "pid": 1098080,
+   "comm": "chrome",
+   "kind": "chrome",
+   "type": "renderer",
+   "first": 7.85,
+   "last": 7.963,
+   "profile": null,
+   "home": null,
+   "home_readable": false,
+   "argv_has_profile": true
+  },
+  {
+   "pid": 1098048,
+   "comm": "chrome",
+   "kind": "chrome",
+   "type": "renderer",
+   "first": 7.85,
+   "last": 7.851,
+   "profile": null,
+   "home": null,
+   "home_readable": false,
+   "argv_has_profile": true
+  },
+  {
+   "pid": 1098047,
+   "comm": "chrome",
+   "kind": "chrome",
+   "type": "renderer",
+   "first": 7.851,
+   "last": 7.851,
+   "profile": null,
+   "home": null,
+   "home_readable": false,
+   "argv_has_profile": true
+  }
+ ],
+ "browser_run_home_nss": {
+  "<run scratch>/home/.local/share/pki/nssdb/cert9.db": [
+   "chrome (fd/cwd)"
+  ],
+  "<run scratch>/home/.local/share/pki/nssdb/key4.db": [
+   "chrome (fd/cwd)"
+  ]
+ },
+ "browser_nss_libraries": {
+  "libnss3.so": [
+   "chrome:browser",
+   "chrome:gpu-process",
+   "chrome:utility",
+   "chrome:zygote"
+  ],
+  "libnssckbi.so": [
+   "chrome:browser"
+  ],
+  "libsoftokn3.so": [
+   "chrome:browser"
+  ]
+ },
+ "run_home_nss_dirs": {
+  "/tmp/c71-KGbwif/cua171-run-eoEGJr/home/.local/share/pki/nssdb": {
+   "first": 7.977,
+   "entries": [
+    "cert9.db",
+    "key4.db",
+    "pkcs11.txt"
+   ]
+  }
+ },
+ "processes": [
+  {
+   "pid": 1097567,
+   "start": 36024863,
+   "comm": "MainThread",
+   "ppid": 1097563,
+   "pgid": 1097245,
+   "first": 0.004,
+   "argv": "node /Users/new/Developer/GitHub/cua/.claude/worktrees/t136-h8/scripts/linux-engine-diff.mjs --vendor /Users/new/.local/share/cua-171/m5/home-arm64-043/runtimes/26.928.40906-linux-arm64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64 --newest /Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64 --cua /Users/new/.local/share/cua-171/m5/home-arm64-043/engine/linux/cua-engine --scene device-firefox,device-chrome,device-chrome-dnd,identity,identity-gtk3,identity-gtk4,identity-kate --ops fire",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/session.sock",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/a11y.sock",
+    "DISPLAY": ":0",
+    "XAUTHORITY": "/Users/new/.Xauthority"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 9.984
+  },
+  {
+   "pid": 1097629,
+   "start": 36024872,
+   "comm": "git",
+   "ppid": 1097567,
+   "pgid": 1097245,
+   "first": 0.118,
+   "argv": "git -C /Users/new/Developer/GitHub/cua/.claude/worktrees/t136-h8/ status --porcelain",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/session.sock",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/a11y.sock",
+    "DISPLAY": ":0",
+    "XAUTHORITY": "/Users/new/.Xauthority"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 0.118
+  },
+  {
+   "pid": 1097656,
+   "start": 36024877,
+   "comm": "gh",
+   "ppid": 1097567,
+   "pgid": 1097245,
+   "first": 0.222,
+   "argv": "gh attestation verify /tmp/c71-KGbwif/cua171-candidate-EVVilO/cua-engine --repo SSFSKIM/cua --signer-workflow SSFSKIM/cua/.github/workflows/linux-engine.yml --deny-self-hosted-runners --format json",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/session.sock",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/a11y.sock",
+    "DISPLAY": ":0",
+    "XAUTHORITY": "/Users/new/.Xauthority"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 3.911
+  },
+  {
+   "pid": 1097716,
+   "start": 36025262,
+   "comm": "xprobe",
+   "ppid": 1097567,
+   "pgid": 1097716,
+   "first": 4.015,
+   "argv": "/Users/new/Developer/GitHub/cua/.claude/worktrees/t136-h8/scripts/linux-engine-diff/xprobe/target/release/xprobe watchdog --display :0 --interval-ms 2000 --bound-ms 5000 --grace-ms 20000 --stop 1097567",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/session.sock",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/a11y.sock",
+    "DISPLAY": ":0",
+    "XAUTHORITY": "/Users/new/.Xauthority"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 9.88
+  },
+  {
+   "pid": 1097740,
+   "start": 36025271,
+   "comm": "cua-engine",
+   "ppid": 1097567,
+   "pgid": 1097245,
+   "first": 4.119,
+   "argv": "/Users/new/.local/share/cua-171/m5/home-arm64-043/engine/linux/cua-engine server",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/session.sock",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/a11y.sock",
+    "DISPLAY": ":0",
+    "XAUTHORITY": "/Users/new/.Xauthority"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 8.925
+  },
+  {
+   "pid": 1097739,
+   "start": 36025271,
+   "comm": "xterm",
+   "ppid": 1097567,
+   "pgid": 1097739,
+   "first": 4.119,
+   "argv": "xterm -T cua171-diff-pinned-V5-4f893daa-holder -e sleep 86400",
+   "env": {
+    "HOME": "/tmp/c71-KGbwif/cua171-run-eoEGJr/home",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DISPLAY": ":0",
+    "XAUTHORITY": "/Users/new/.Xauthority",
+    "XDG_CONFIG_HOME": "/tmp/c71-KGbwif/cua171-run-eoEGJr/home/.config",
+    "XDG_DATA_HOME": "/tmp/c71-KGbwif/cua171-run-eoEGJr/home/.local/share",
+    "XDG_CACHE_HOME": "/tmp/c71-KGbwif/cua171-run-eoEGJr/home/.cache",
+    "XDG_STATE_HOME": "/tmp/c71-KGbwif/cua171-run-eoEGJr/home/.local/state",
+    "GSETTINGS_BACKEND": "memory",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/c71-KGbwif/cua171-run-eoEGJr/session/bus/dbus-O2gi1XgHfq,guid=2fd7bf34c360658a07f08f856b02784e"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 8.925
+  },
+  {
+   "pid": 1097744,
+   "start": 36025274,
+   "comm": "sleep",
+   "ppid": 1097739,
+   "pgid": 1097744,
+   "first": 4.119,
+   "argv": "sleep 86400",
+   "env": {
+    "HOME": "/tmp/c71-KGbwif/cua171-run-eoEGJr/home",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DISPLAY": ":0",
+    "XAUTHORITY": "/Users/new/.Xauthority",
+    "XDG_CONFIG_HOME": "/tmp/c71-KGbwif/cua171-run-eoEGJr/home/.config",
+    "XDG_DATA_HOME": "/tmp/c71-KGbwif/cua171-run-eoEGJr/home/.local/share",
+    "XDG_CACHE_HOME": "/tmp/c71-KGbwif/cua171-run-eoEGJr/home/.cache",
+    "XDG_STATE_HOME": "/tmp/c71-KGbwif/cua171-run-eoEGJr/home/.local/state",
+    "GSETTINGS_BACKEND": "memory",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/c71-KGbwif/cua171-run-eoEGJr/session/bus/dbus-O2gi1XgHfq,guid=2fd7bf34c360658a07f08f856b02784e"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 8.925
+  },
+  {
+   "pid": 1097735,
+   "start": 36025269,
+   "comm": "xtrace",
+   "ppid": 1097567,
+   "pgid": 1097245,
+   "first": 4.119,
+   "argv": "xtrace -k -m 256 -d :0 -D :40 -c -f /tmp/c71-KGbwif/cua171-audit-3zMWB6/Xauthority -F /Users/new/.Xauthority -o /tmp/c71-KGbwif/cua171-audit-3zMWB6/x11.log",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/session.sock",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/a11y.sock",
+    "DISPLAY": ":0",
+    "XAUTHORITY": "/Users/new/.Xauthority"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 9.88
+  },
+  {
+   "pid": 1097727,
+   "start": 36025266,
+   "comm": "MainThread",
+   "ppid": 1097567,
+   "pgid": 1097727,
+   "first": 4.12,
+   "argv": "/Users/new/.local/share/cua-171/node24/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/t136-h8/scripts/linux-engine-diff/a11y-stub.mjs --bus unix:path=/tmp/c71-KGbwif/cua171-run-eoEGJr/session/bus/dbus-O2gi1XgHfq,guid=2fd7bf34c360658a07f08f856b02784e --a11y unix:path=/run/user/501/at-spi/bus_0,guid=fd7a0f37c639b21ca14325986afcfb1a",
+   "env": {},
+   "paths": [],
+   "browser": null,
+   "last": 9.88
+  },
+  {
+   "pid": 1097724,
+   "start": 36025265,
+   "comm": "dbus-daemon",
+   "ppid": 1097567,
+   "pgid": 1097724,
+   "first": 4.12,
+   "argv": "dbus-daemon --config-file=/tmp/c71-KGbwif/cua171-run-eoEGJr/session/session.conf --nofork --nopidfile --print-address=3",
+   "env": {
+    "HOME": "/tmp/c71-KGbwif/cua171-run-eoEGJr/home",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DISPLAY": ":0",
+    "XAUTHORITY": "/Users/new/.Xauthority",
+    "XDG_CONFIG_HOME": "/tmp/c71-KGbwif/cua171-run-eoEGJr/home/.config",
+    "XDG_DATA_HOME": "/tmp/c71-KGbwif/cua171-run-eoEGJr/home/.local/share",
+    "XDG_CACHE_HOME": "/tmp/c71-KGbwif/cua171-run-eoEGJr/home/.cache",
+    "XDG_STATE_HOME": "/tmp/c71-KGbwif/cua171-run-eoEGJr/home/.local/state",
+    "GSETTINGS_BACKEND": "memory"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 9.88
+  },
+  {
+   "pid": 1097754,
+   "start": 36025303,
+   "comm": "sleep",
+   "ppid": 1097567,
+   "pgid": 1097245,
+   "first": 4.442,
+   "argv": "sleep 0.05",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/session.sock",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/a11y.sock",
+    "DISPLAY": ":0",
+    "XAUTHORITY": "/Users/new/.Xauthority"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 4.442
+  },
+  {
+   "pid": 1097759,
+   "start": 36025314,
+   "comm": "sleep",
+   "ppid": 1097567,
+   "pgid": 1097245,
+   "first": 4.546,
+   "argv": "sleep 0.05",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/session.sock",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/a11y.sock",
+    "DISPLAY": ":0",
+    "XAUTHORITY": "/Users/new/.Xauthority"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 4.546
+  },
+  {
+   "pid": 1097764,
+   "start": 36025325,
+   "comm": "sleep",
+   "ppid": 1097567,
+   "pgid": 1097245,
+   "first": 4.65,
+   "argv": "sleep 0.05",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/session.sock",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/a11y.sock",
+    "DISPLAY": ":0",
+    "XAUTHORITY": "/Users/new/.Xauthority"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 4.65
+  },
+  {
+   "pid": 1097769,
+   "start": 36025336,
+   "comm": "sleep",
+   "ppid": 1097567,
+   "pgid": 1097245,
+   "first": 4.754,
+   "argv": "sleep 0.05",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/session.sock",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/a11y.sock",
+    "DISPLAY": ":0",
+    "XAUTHORITY": "/Users/new/.Xauthority"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 4.755
+  },
+  {
+   "pid": 1097775,
+   "start": 36025347,
+   "comm": "sleep",
+   "ppid": 1097567,
+   "pgid": 1097245,
+   "first": 4.868,
+   "argv": "sleep 0.05",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/session.sock",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/a11y.sock",
+    "DISPLAY": ":0",
+    "XAUTHORITY": "/Users/new/.Xauthority"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 4.868
+  },
+  {
+   "pid": 1097780,
+   "start": 36025358,
+   "comm": "sleep",
+   "ppid": 1097567,
+   "pgid": 1097245,
+   "first": 4.972,
+   "argv": "sleep 0.05",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/session.sock",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/a11y.sock",
+    "DISPLAY": ":0",
+    "XAUTHORITY": "/Users/new/.Xauthority"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 4.972
+  },
+  {
+   "pid": 1097786,
+   "start": 36025369,
+   "comm": "sleep",
+   "ppid": 1097567,
+   "pgid": 1097245,
+   "first": 5.076,
+   "argv": "sleep 0.05",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/session.sock",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/a11y.sock",
+    "DISPLAY": ":0",
+    "XAUTHORITY": "/Users/new/.Xauthority"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 5.076
+  },
+  {
+   "pid": 1097791,
+   "start": 36025380,
+   "comm": "sleep",
+   "ppid": 1097567,
+   "pgid": 1097245,
+   "first": 5.181,
+   "argv": "sleep 0.05",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/session.sock",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/a11y.sock",
+    "DISPLAY": ":0",
+    "XAUTHORITY": "/Users/new/.Xauthority"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 5.181
+  },
+  {
+   "pid": 1097796,
+   "start": 36025391,
+   "comm": "sleep",
+   "ppid": 1097567,
+   "pgid": 1097245,
+   "first": 5.284,
+   "argv": "sleep 0.05",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/session.sock",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/a11y.sock",
+    "DISPLAY": ":0",
+    "XAUTHORITY": "/Users/new/.Xauthority"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 5.284
+  },
+  {
+   "pid": 1097802,
+   "start": 36025402,
+   "comm": "sleep",
+   "ppid": 1097567,
+   "pgid": 1097245,
+   "first": 5.398,
+   "argv": "sleep 0.05",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/session.sock",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/a11y.sock",
+    "DISPLAY": ":0",
+    "XAUTHORITY": "/Users/new/.Xauthority"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 5.398
+  },
+  {
+   "pid": 1097807,
+   "start": 36025413,
+   "comm": "sleep",
+   "ppid": 1097567,
+   "pgid": 1097245,
+   "first": 5.503,
+   "argv": "sleep 0.05",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/session.sock",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/a11y.sock",
+    "DISPLAY": ":0",
+    "XAUTHORITY": "/Users/new/.Xauthority"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 5.503
+  },
+  {
+   "pid": 1097820,
+   "start": 36025440,
+   "comm": "sleep",
+   "ppid": 1097567,
+   "pgid": 1097245,
+   "first": 5.815,
+   "argv": "sleep 0.05",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/session.sock",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/a11y.sock",
+    "DISPLAY": ":0",
+    "XAUTHORITY": "/Users/new/.Xauthority"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 5.815
+  },
+  {
+   "pid": 1097831,
+   "start": 36025462,
+   "comm": "sleep",
+   "ppid": 1097567,
+   "pgid": 1097245,
+   "first": 6.033,
+   "argv": "sleep 0.05",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/session.sock",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/a11y.sock",
+    "DISPLAY": ":0",
+    "XAUTHORITY": "/Users/new/.Xauthority"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 6.033
+  },
+  {
+   "pid": 1097836,
+   "start": 36025473,
+   "comm": "sleep",
+   "ppid": 1097567,
+   "pgid": 1097245,
+   "first": 6.138,
+   "argv": "sleep 0.05",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/session.sock",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/a11y.sock",
+    "DISPLAY": ":0",
+    "XAUTHORITY": "/Users/new/.Xauthority"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 6.138
+  },
+  {
+   "pid": 1097841,
+   "start": 36025484,
+   "comm": "sleep",
+   "ppid": 1097567,
+   "pgid": 1097245,
+   "first": 6.242,
+   "argv": "sleep 0.05",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/session.sock",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/a11y.sock",
+    "DISPLAY": ":0",
+    "XAUTHORITY": "/Users/new/.Xauthority"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 6.242
+  },
+  {
+   "pid": 1097846,
+   "start": 36025494,
+   "comm": "sleep",
+   "ppid": 1097567,
+   "pgid": 1097245,
+   "first": 6.346,
+   "argv": "sleep 0.05",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/session.sock",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/a11y.sock",
+    "DISPLAY": ":0",
+    "XAUTHORITY": "/Users/new/.Xauthority"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 6.346
+  },
+  {
+   "pid": 1097852,
+   "start": 36025505,
+   "comm": "sleep",
+   "ppid": 1097567,
+   "pgid": 1097245,
+   "first": 6.46,
+   "argv": "sleep 0.05",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/session.sock",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/a11y.sock",
+    "DISPLAY": ":0",
+    "XAUTHORITY": "/Users/new/.Xauthority"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 6.46
+  },
+  {
+   "pid": 1097857,
+   "start": 36025516,
+   "comm": "sleep",
+   "ppid": 1097567,
+   "pgid": 1097245,
+   "first": 6.564,
+   "argv": "sleep 0.05",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/session.sock",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/a11y.sock",
+    "DISPLAY": ":0",
+    "XAUTHORITY": "/Users/new/.Xauthority"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 6.564
+  },
+  {
+   "pid": 1097862,
+   "start": 36025527,
+   "comm": "sleep",
+   "ppid": 1097567,
+   "pgid": 1097245,
+   "first": 6.668,
+   "argv": "sleep 0.05",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/session.sock",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/a11y.sock",
+    "DISPLAY": ":0",
+    "XAUTHORITY": "/Users/new/.Xauthority"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 6.668
+  },
+  {
+   "pid": 1097867,
+   "start": 36025538,
+   "comm": "sleep",
+   "ppid": 1097567,
+   "pgid": 1097245,
+   "first": 6.772,
+   "argv": "sleep 0.05",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/session.sock",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/a11y.sock",
+    "DISPLAY": ":0",
+    "XAUTHORITY": "/Users/new/.Xauthority"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 6.772
+  },
+  {
+   "pid": 1097873,
+   "start": 36025549,
+   "comm": "sleep",
+   "ppid": 1097567,
+   "pgid": 1097245,
+   "first": 6.876,
+   "argv": "sleep 0.05",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/session.sock",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/a11y.sock",
+    "DISPLAY": ":0",
+    "XAUTHORITY": "/Users/new/.Xauthority"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 6.876
+  },
+  {
+   "pid": 1097879,
+   "start": 36025560,
+   "comm": "sleep",
+   "ppid": 1097567,
+   "pgid": 1097245,
+   "first": 6.99,
+   "argv": "sleep 0.05",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/session.sock",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/a11y.sock",
+    "DISPLAY": ":0",
+    "XAUTHORITY": "/Users/new/.Xauthority"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 6.99
+  },
+  {
+   "pid": 1097884,
+   "start": 36025571,
+   "comm": "sleep",
+   "ppid": 1097567,
+   "pgid": 1097245,
+   "first": 7.095,
+   "argv": "sleep 0.05",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/session.sock",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/a11y.sock",
+    "DISPLAY": ":0",
+    "XAUTHORITY": "/Users/new/.Xauthority"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 7.095
+  },
+  {
+   "pid": 1097889,
+   "start": 36025582,
+   "comm": "sleep",
+   "ppid": 1097567,
+   "pgid": 1097245,
+   "first": 7.199,
+   "argv": "sleep 0.05",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/session.sock",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/a11y.sock",
+    "DISPLAY": ":0",
+    "XAUTHORITY": "/Users/new/.Xauthority"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 7.199
+  },
+  {
+   "pid": 1097894,
+   "start": 36025593,
+   "comm": "sleep",
+   "ppid": 1097567,
+   "pgid": 1097245,
+   "first": 7.303,
+   "argv": "sleep 0.05",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/session.sock",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/m5/out-arm64-h8/V5.pinned-release/decoy/a11y.sock",
+    "DISPLAY": ":0",
+    "XAUTHORITY": "/Users/new/.Xauthority"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 7.303
+  },
+  {
+   "pid": 1097897,
+   "start": 36025602,
+   "comm": "chrome",
+   "ppid": 1097567,
+   "pgid": 1097897,
+   "first": 7.408,
+   "argv": "/usr/bin/google-chrome-stable --force-renderer-accessibility --password-store=basic --no-first-run --no-default-browser-check --no-first-run --no-default-browser-check --disable-search-engine-choice-screen --password-store=basic --force-renderer-accessibility --user-data-dir=/tmp/c71-KGbwif/cua171-run-eoEGJr/chrome-profile --new-window file:///Users/new/Developer/GitHub/cua/.claude/worktrees/t136-h8/scripts/linux-engine-diff/pages/scene.html#cua171-diff-pinned-V5-4f893daa-scene-ballast0",
+   "env": {
+    "XDG_DATA_HOME": "/tmp/c71-KGbwif/cua171-run-eoEGJr/home/.local/share",
+    "XDG_CONFIG_HOME": "/tmp/c71-KGbwif/cua171-run-eoEGJr/home/.config",
+    "XAUTHORITY": "/Users/new/.Xauthority",
+    "HOME": "/tmp/c71-KGbwif/cua171-run-eoEGJr/home",
+    "XDG_CACHE_HOME": "/tmp/c71-KGbwif/cua171-run-eoEGJr/home/.cache",
+    "ACCESSIBILITY_ENABLED": "1",
+    "DISPLAY": ":0",
+    "XDG_STATE_HOME": "/tmp/c71-KGbwif/cua171-run-eoEGJr/home/.local/state",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "GSETTINGS_BACKEND": "memory",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/c71-KGbwif/cua171-run-eoEGJr/session/bus/dbus-O2gi1XgHfq,guid=2fd7bf34c360658a07f08f856b02784e"
+   },
+   "paths": [],
+   "browser": "chrome",
+   "home_readable": true,
+   "profile": "/tmp/c71-KGbwif/cua171-run-eoEGJr/chrome-profile",
+   "last": 7.96
+  },
+  {
+   "pid": 1097903,
+   "start": 36025603,
+   "comm": "cat",
+   "ppid": 1097897,
+   "pgid": 1097897,
+   "first": 7.408,
+   "argv": "cat",
+   "env": {
+    "XDG_DATA_HOME": "/tmp/c71-KGbwif/cua171-run-eoEGJr/home/.local/share",
+    "XDG_CONFIG_HOME": "/tmp/c71-KGbwif/cua171-run-eoEGJr/home/.config",
+    "XAUTHORITY": "/Users/new/.Xauthority",
+    "HOME": "/tmp/c71-KGbwif/cua171-run-eoEGJr/home",
+    "XDG_CACHE_HOME": "/tmp/c71-KGbwif/cua171-run-eoEGJr/home/.cache",
+    "ACCESSIBILITY_ENABLED": "1",
+    "DISPLAY": ":0",
+    "XDG_STATE_HOME": "/tmp/c71-KGbwif/cua171-run-eoEGJr/home/.local/state",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "GSETTINGS_BACKEND": "memory",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/c71-KGbwif/cua171-run-eoEGJr/session/bus/dbus-O2gi1XgHfq,guid=2fd7bf34c360658a07f08f856b02784e"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 7.965
+  },
+  {
+   "pid": 1097902,
+   "start": 36025603,
+   "comm": "cat",
+   "ppid": 1097897,
+   "pgid": 1097897,
+   "first": 7.408,
+   "argv": "cat",
+   "env": {
+    "XDG_DATA_HOME": "/tmp/c71-KGbwif/cua171-run-eoEGJr/home/.local/share",
+    "XDG_CONFIG_HOME": "/tmp/c71-KGbwif/cua171-run-eoEGJr/home/.config",
+    "XAUTHORITY": "/Users/new/.Xauthority",
+    "HOME": "/tmp/c71-KGbwif/cua171-run-eoEGJr/home",
+    "XDG_CACHE_HOME": "/tmp/c71-KGbwif/cua171-run-eoEGJr/home/.cache",
+    "ACCESSIBILITY_ENABLED": "1",
+    "DISPLAY": ":0",
+    "XDG_STATE_HOME": "/tmp/c71-KGbwif/cua171-run-eoEGJr/home/.local/state",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "GSETTINGS_BACKEND": "memory",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/c71-KGbwif/cua171-run-eoEGJr/session/bus/dbus-O2gi1XgHfq,guid=2fd7bf34c360658a07f08f856b02784e"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 7.965
+  },
+  {
+   "pid": 1097908,
+   "start": 36025604,
+   "comm": "chrome_crashpad",
+   "ppid": 1097563,
+   "pgid": 1097907,
+   "first": 7.522,
+   "argv": "/opt/google/chrome/chrome_crashpad_handler --no-periodic-tasks --monitor-self-annotation=ptype=crashpad-handler --database=/tmp/c71-KGbwif/cua171-run-eoEGJr/home/.config/google-chrome/Crash Reports --url=https://clients2.google.com/cr/report --annotation=channel= --annotation=lsb-release=Ubuntu 24.04.5 LTS --annotation=plat=Linux --annotation=prod=Chrome_Linux --annotation=ver=156.0.8078.73 --initial-client-fd=4 --shared-client-connection",
+   "env": {
+    "XDG_DATA_HOME": "/tmp/c71-KGbwif/cua171-run-eoEGJr/home/.local/share",
+    "XDG_CONFIG_HOME": "/tmp/c71-KGbwif/cua171-run-eoEGJr/home/.config",
+    "XAUTHORITY": "/Users/new/.Xauthority",
+    "HOME": "/tmp/c71-KGbwif/cua171-run-eoEGJr/home",
+    "XDG_CACHE_HOME": "/tmp/c71-KGbwif/cua171-run-eoEGJr/home/.cache",
+    "ACCESSIBILITY_ENABLED": "1",
+    "DISPLAY": ":0",
+    "XDG_STATE_HOME": "/tmp/c71-KGbwif/cua171-run-eoEGJr/home/.local/state",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "GSETTINGS_BACKEND": "memory",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/c71-KGbwif/cua171-run-eoEGJr/session/bus/dbus-O2gi1XgHfq,guid=2fd7bf34c360658a07f08f856b02784e"
+   },
+   "paths": [],
+   "browser": "chrome",
+   "home_readable": true,
+   "last": 7.959
+  },
+  {
+   "pid": 1097906,
+   "start": 36025604,
+   "comm": "chrome_crashpad",
+   "ppid": 1097563,
+   "pgid": 1097905,
+   "first": 7.523,
+   "argv": "/opt/google/chrome/chrome_crashpad_handler --monitor-self --monitor-self-annotation=ptype=crashpad-handler --user-stream-region=4,65568 --database=/tmp/c71-KGbwif/cua171-run-eoEGJr/home/.config/google-chrome/Crash Reports --url=https://clients2.google.com/cr/report --annotation=channel= --annotation=lsb-release=Ubuntu 24.04.5 LTS --annotation=plat=Linux --annotation=prod=Chrome_Linux --annotation=ver=156.0.8078.73 --initial-client-fd=7 --shared-client-connection",
+   "env": {
+    "XDG_DATA_HOME": "/tmp/c71-KGbwif/cua171-run-eoEGJr/home/.local/share",
+    "XDG_CONFIG_HOME": "/tmp/c71-KGbwif/cua171-run-eoEGJr/home/.config",
+    "XAUTHORITY": "/Users/new/.Xauthority",
+    "HOME": "/tmp/c71-KGbwif/cua171-run-eoEGJr/home",
+    "XDG_CACHE_HOME": "/tmp/c71-KGbwif/cua171-run-eoEGJr/home/.cache",
+    "ACCESSIBILITY_ENABLED": "1",
+    "DISPLAY": ":0",
+    "XDG_STATE_HOME": "/tmp/c71-KGbwif/cua171-run-eoEGJr/home/.local/state",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "GSETTINGS_BACKEND": "memory",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/c71-KGbwif/cua171-run-eoEGJr/session/bus/dbus-O2gi1XgHfq,guid=2fd7bf34c360658a07f08f856b02784e"
+   },
+   "paths": [],
+   "browser": "chrome",
+   "home_readable": true,
+   "last": 7.959
+  },
+  {
+   "pid": 1097915,
+   "start": 36025605,
+   "comm": "chrome",
+   "ppid": 1097897,
+   "pgid": 1097897,
+   "first": 7.523,
+   "argv": "/opt/google/chrome/chrome --type=zygote --crashpad-handler-pid=1097906 --enable-crash-reporter=, --user-data-dir=/tmp/c71-KGbwif/cua171-run-eoEGJr/chrome-profile --change-stack-guard-on-fork=enable",
+   "env": {},
+   "paths": [],
+   "browser": "chrome",
+   "home_readable": false,
+   "last": 7.962
+  },
+  {
+   "pid": 1097917,
+   "start": 36025606,
+   "comm": "chrome",
+   "ppid": 1097915,
+   "pgid": 1097897,
+   "first": 7.523,
+   "argv": "/opt/google/chrome/chrome --type=zygote --crashpad-handler-pid=1097906 --enable-crash-reporter=, --user-data-dir=/tmp/c71-KGbwif/cua171-run-eoEGJr/chrome-profile --change-stack-guard-on-fork=enable",
+   "env": {},
+   "paths": [],
+   "browser": "chrome",
+   "home_readable": false,
+   "last": 7.962
+  },
+  {
+   "pid": 1097914,
+   "start": 36025605,
+   "comm": "chrome",
+   "ppid": 1097897,
+   "pgid": 1097897,
+   "first": 7.524,
+   "argv": "/opt/google/chrome/chrome --type=zygote --no-zygote-sandbox --crashpad-handler-pid=1097906 --enable-crash-reporter=, --user-data-dir=/tmp/c71-KGbwif/cua171-run-eoEGJr/chrome-profile --change-stack-guard-on-fork=enable",
+   "env": {},
+   "paths": [],
+   "browser": "chrome",
+   "home_readable": false,
+   "last": 7.963
+  },
+  {
+   "pid": 1097947,
+   "start": 36025626,
+   "comm": "chrome",
+   "ppid": 1097897,
+   "pgid": 1097897,
+   "first": 7.739,
+   "argv": "/opt/google/chrome/chrome --type=utility --utility-sub-type=network.mojom.NetworkService --lang=en-US --service-sandbox-type=none --crashpad-handler-pid=1097906 --enable-crash-reporter=, --user-data-dir=/tmp/c71-KGbwif/cua171-run-eoEGJr/chrome-profile --change-stack-guard-on-fork=enable --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,2564842807713182157,13812409933514774524,524288 --field-trial-handle=3,i,14472471248322547646,17264364124340108606,262144 --variations-seed-version --pseudonymization-salt-handle=7,i,12736010250926775151,10110702095233572050,4 --trace-proces",
+   "env": {},
+   "paths": [],
+   "browser": "chrome",
+   "home_readable": false,
+   "last": 7.961
+  },
+  {
+   "pid": 1098022,
+   "start": 36025635,
+   "comm": "chrome",
+   "ppid": 1097917,
+   "pgid": 1097897,
+   "first": 7.74,
+   "argv": "/opt/google/chrome/chrome --type=renderer --crashpad-handler-pid=1097906 --enable-crash-reporter=, --user-data-dir=/tmp/c71-KGbwif/cua171-run-eoEGJr/chrome-profile --change-stack-guard-on-fork=enable --ozone-platform=x11 --lang=en-US --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=6 --launch-time-ticks=360256357038 --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,16336966282991251910,2068184818393927466,1572864 --field-trial-handle=3,i,14472471248322547646,17264364124340108606,262144 --variations-seed-version --pseudonymization-salt-handl",
+   "env": {},
+   "paths": [],
+   "browser": "chrome",
+   "home_readable": false,
+   "last": 7.851
+  },
+  {
+   "pid": 1098021,
+   "start": 36025635,
+   "comm": "chrome",
+   "ppid": 1097917,
+   "pgid": 1097897,
+   "first": 7.74,
+   "argv": "/opt/google/chrome/chrome --type=renderer --crashpad-handler-pid=1097906 --enable-crash-reporter=, --user-data-dir=/tmp/c71-KGbwif/cua171-run-eoEGJr/chrome-profile --change-stack-guard-on-fork=enable --ozone-platform=x11 --lang=en-US --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=7 --launch-time-ticks=360256355274 --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,5372200930517379500,15650074603005331483,1572864 --field-trial-handle=3,i,14472471248322547646,17264364124340108606,262144 --variations-seed-version --pseudonymization-salt-handl",
+   "env": {},
+   "paths": [],
+   "browser": "chrome",
+   "home_readable": false,
+   "last": 7.74
+  },
+  {
+   "pid": 1098010,
+   "start": 36025633,
+   "comm": "chrome",
+   "ppid": 1097917,
+   "pgid": 1097897,
+   "first": 7.74,
+   "argv": "/opt/google/chrome/chrome --type=renderer --top-chrome-webui --crashpad-handler-pid=1097906 --enable-crash-reporter=, --user-data-dir=/tmp/c71-KGbwif/cua171-run-eoEGJr/chrome-profile --change-stack-guard-on-fork=enable --ozone-platform=x11 --lang=en-US --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=5 --launch-time-ticks=360256331247 --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,14229002611768153272,1803670635635623154,1572864 --field-trial-handle=3,i,14472471248322547646,17264364124340108606,262144 --variations-seed-version --pseudony",
+   "env": {},
+   "paths": [],
+   "browser": "chrome",
+   "home_readable": false,
+   "last": 7.851
+  },
+  {
+   "pid": 1097961,
+   "start": 36025628,
+   "comm": "chrome",
+   "ppid": 1097917,
+   "pgid": 1097897,
+   "first": 7.741,
+   "argv": "/opt/google/chrome/chrome --type=utility --utility-sub-type=storage.mojom.StorageService --lang=en-US --service-sandbox-type=utility --crashpad-handler-pid=1097906 --enable-crash-reporter=, --user-data-dir=/tmp/c71-KGbwif/cua171-run-eoEGJr/chrome-profile --change-stack-guard-on-fork=enable --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,7779213951798822732,10964423069189032056,524288 --field-trial-handle=3,i,14472471248322547646,17264364124340108606,262144 --variations-seed-version --pseudonymization-salt-handle=7,i,12736010250926775151,10110702095233572050,4 --trace-pro",
+   "env": {},
+   "paths": [],
+   "browser": "chrome",
+   "home_readable": false,
+   "last": 7.963
+  },
+  {
+   "pid": 1097945,
+   "start": 36025626,
+   "comm": "chrome",
+   "ppid": 1097914,
+   "pgid": 1097897,
+   "first": 7.741,
+   "argv": "/opt/google/chrome/chrome --type=gpu-process --gpu-recent-crash-count=0 --ozone-platform=x11 --crashpad-handler-pid=1097906 --enable-crash-reporter=, --user-data-dir=/tmp/c71-KGbwif/cua171-run-eoEGJr/chrome-profile --change-stack-guard-on-fork=enable --gpu-preferences=YAAAAAAAAAAgAQAEAAAAAAAAAAAAAGAASAAAAAAAAAABAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAMAAAAAAAAAAwAAAAAAAAAAEAAAAAAAAACAAAAAAAAAAMAAAAAQAAAAAAAAAAAAAACAAAAAAAAAAIAAAAAAAAAA== --shared-files --metrics-shmem-handle=4,i,15739921802164328144,9298440150444942197,262144 --field-trial-handle=3,i,14472471248322547646,1726436412",
+   "env": {},
+   "paths": [],
+   "browser": "chrome",
+   "home_readable": false,
+   "last": 7.964
+  },
+  {
+   "pid": 1098080,
+   "start": 36025646,
+   "comm": "chrome",
+   "ppid": 1097917,
+   "pgid": 1097897,
+   "first": 7.85,
+   "argv": "/opt/google/chrome/chrome --type=renderer --crashpad-handler-pid=1097906 --enable-crash-reporter=, --user-data-dir=/tmp/c71-KGbwif/cua171-run-eoEGJr/chrome-profile --extension-process --change-stack-guard-on-fork=enable --ozone-platform=x11 --disable-gpu-compositing --lang=en-US --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=10 --launch-time-ticks=360256463084 --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,5496644206891250800,13555711381731528182,1572864 --field-trial-handle=3,i,14472471248322547646,17264364124340108606,262144 --variat",
+   "env": {},
+   "paths": [],
+   "browser": "chrome",
+   "home_readable": false,
+   "last": 7.963
+  },
+  {
+   "pid": 1098048,
+   "start": 36025637,
+   "comm": "chrome",
+   "ppid": 1097917,
+   "pgid": 1097897,
+   "first": 7.85,
+   "argv": "/opt/google/chrome/chrome --type=renderer --crashpad-handler-pid=1097906 --enable-crash-reporter=, --user-data-dir=/tmp/c71-KGbwif/cua171-run-eoEGJr/chrome-profile --extension-process --change-stack-guard-on-fork=enable --ozone-platform=x11 --lang=en-US --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=9 --launch-time-ticks=360256378340 --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,8354837316702064797,15544229035526674851,1572864 --field-trial-handle=3,i,14472471248322547646,17264364124340108606,262144 --variations-seed-version --pseudon",
+   "env": {},
+   "paths": [],
+   "browser": "chrome",
+   "home_readable": false,
+   "last": 7.851
+  },
+  {
+   "pid": 1098047,
+   "start": 36025637,
+   "comm": "chrome",
+   "ppid": 1097917,
+   "pgid": 1097897,
+   "first": 7.851,
+   "argv": "/opt/google/chrome/chrome --type=renderer --crashpad-handler-pid=1097906 --enable-crash-reporter=, --user-data-dir=/tmp/c71-KGbwif/cua171-run-eoEGJr/chrome-profile --change-stack-guard-on-fork=enable --ozone-platform=x11 --lang=en-US --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=8 --launch-time-ticks=360256376563 --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,16806079557565843044,7579838307133999078,1572864 --field-trial-handle=3,i,14472471248322547646,17264364124340108606,262144 --variations-seed-version --pseudonymization-salt-handl",
+   "env": {},
+   "paths": [],
+   "browser": "chrome",
+   "home_readable": false,
+   "last": 7.851
+  }
+ ],
+ "home_paths_by_comm": {},
+ "mode": "person",
+ "person": {
+  "uid": 501,
+  "home": "/Users/new",
+  "runtime_dir": "/run/user/501"
+ },
+ "outside_peers_allowed": {
+  "chrome -> /run/dbus/system_bus_socket (pid not shown)": 1,
+  "chrome -> /run/user/501/at-spi/bus_0 (dbus-daemon)": 1,
+  "chrome -> @/tmp/.X11-unix/X0 (pid not shown)": 2,
+  "cua-engine -> /run/user/501/at-spi/bus_0 (dbus-daemon)": 2,
+  "cua-engine -> @/tmp/.X11-unix/X0 (pid not shown)": 9,
+  "xprobe -> @/tmp/.X11-unix/X0 (pid not shown)": 11,
+  "xterm -> @/tmp/.X11-unix/X0 (pid not shown)": 9
+ },
+ "xauthority_by_class": {
+  "person ~/.Xauthority": [
+   "MainThread",
+   "cat",
+   "chrome",
+   "chrome_crashpad",
+   "cua-engine",
+   "dbus-daemon",
+   "gh",
+   "git",
+   "sleep",
+   "xprobe",
+   "xterm",
+   "xtrace"
+  ],
+  "unset": [
+   "MainThread",
+   "chrome"
+  ]
+ }
+}

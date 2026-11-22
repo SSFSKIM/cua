@@ -1,0 +1,17 @@
+2026-11-22T03:42:25Z sitting start (V5:38), hard stop 2026-11-22T04:42:25Z, firefox /Users/new/.local/share/cua-171/task59/bin/firefox, node /Users/new/.local/share/cua-171/node24/bin/node v24.22.1, google-chrome /usr/local/bin/google-chrome
+2026-11-22T03:42:26Z start V5 load=0.12 0.27 0.25 PATH=/Users/new/.local/share/cua-171/task59/bin:/Users/new/.local/share/cua-171/node24/bin:/Users/new/.local/bin chrome=[Google Chrome 156.0.8078.73 ]
+2026-11-22T03:43:58Z end V5 exit 1 load=0.87 0.53 0.35
+2026-11-22T03:43:58Z after V5: audit rows 0, with kept_traces files 0, files 0, missing 0;kept-traces exit 1;rejudge: DIFFERS from the stored findings; settle:  2 unknown 
+2026-11-22T03:43:58Z hold-sittings written after V5: every later :0 step stopped
+2026-11-22T03:46:02Z hold-sittings cleared on ruling 1046 (#432 autobind class); the stopped V5 kept as V5.pinned-release.stopped-1
+2026-11-22T05:06:16Z sitting start (V5:38), hard stop 2026-11-22T06:06:16Z, firefox /Users/new/.local/share/cua-171/task59/bin/firefox, node /Users/new/.local/share/cua-171/node24/bin/node v24.22.1, google-chrome /usr/local/bin/google-chrome
+2026-11-22T05:06:16Z start V5 load=10.74 15.63 15.51 PATH=/Users/new/.local/share/cua-171/task59/bin:/Users/new/.local/share/cua-171/node24/bin:/Users/new/.local/bin chrome=[Google Chrome 156.0.8078.73 ]
+2026-11-22T05:06:47Z end V5 exit 1 load=6.51 14.14 15.02
+2026-11-22T05:06:47Z after V5: audit rows 0, with kept_traces files 0, files 0, missing 0;kept-traces exit 1;rejudge: DIFFERS from the stored findings; settle:  2 unknown 
+2026-11-22T05:06:47Z hold-sittings written after V5: every later :0 step stopped
+2026-11-22T05:09:03Z hold-sittings cleared on ruling 1053 (#432: the run's own chrome_crashpad); the stopped rerun kept as V5.pinned-release.stopped-2
+2026-11-22T05:09:10Z sitting start (V5:38), hard stop 2026-11-22T06:09:10Z, firefox /Users/new/.local/share/cua-171/task59/bin/firefox, node /Users/new/.local/share/cua-171/node24/bin/node v24.22.1, google-chrome /usr/local/bin/google-chrome
+2026-11-22T05:09:10Z start V5 load=0.63 8.84 12.91 PATH=/Users/new/.local/share/cua-171/task59/bin:/Users/new/.local/share/cua-171/node24/bin:/Users/new/.local/bin chrome=[Google Chrome 156.0.8078.73 ]
+2026-11-22T05:45:12Z end V5 exit 0 load=1.11 0.92 1.95
+2026-11-22T05:45:13Z after V5: audit rows 52, with kept_traces files 52, files 52, missing 0;kept-traces exit 0;rejudge: reproduces the stored findings; settle:  1 unknown 
+2026-11-22T05:45:13Z sitting done

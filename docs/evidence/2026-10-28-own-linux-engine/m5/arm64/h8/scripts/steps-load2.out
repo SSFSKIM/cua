@@ -1,0 +1,5 @@
+2026-11-22T03:46:13Z run L2a (df / 101G, load 0.17 0.36 0.31) as printed: /Users/new/.local/share/cua-171/locked.sh h8-arm64 /Users/new/.local/share/cua-171/node24/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/t136-h8/scripts/linux-engine-gate/gate.mjs run L2a --pinned /Users/new/.local/share/cua-171/m5/home-arm64-043 --out /Users/new/.local/share/cua-171/m5/out-arm64-h8
+2026-11-22T04:14:01Z end L2a exit 0 load=15.73 16.73 14.18 quiet wait 0 s: load 0.17 0.36 0.31 stress-ng 0
+2026-11-22T04:14:01Z run L4b (df / 101G, load 15.73 16.73 14.18) as printed: /Users/new/.local/share/cua-171/locked.sh h8-arm64 /Users/new/.local/share/cua-171/node24/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/t136-h8/scripts/linux-engine-gate/gate.mjs run L4b --pinned /Users/new/.local/share/cua-171/m5/home-arm64-043 --out /Users/new/.local/share/cua-171/m5/out-arm64-h8
+2026-11-22T04:33:29Z end L4b exit 1 load=16.91 16.75 15.28 quiet wait 170 s: load 0.92 9.46 11.80 stress-ng 0
+2026-11-22T04:33:29Z FAILED L4b (exit 1): stopped for the controller

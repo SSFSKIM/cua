@@ -7820,7 +7820,7 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   `OverlayClickDelivered`, which ends the route with nothing of its own pressed and which `click` answers as success
   with the meta reached. After a focus hold the delivery comes after that hold's activation, which the refusal there
   already said ran.
-  (6) #470 (`overlayElement`, the element click by its ID, plain left click, no forced route): when the element's own
+  (6) [Cut by design ruling 1066, the entry two below.] #470 (`overlayElement`, the element click by its ID, plain left click, no forced route): when the element's own
   ancestry reads to a window other than the app's primary one or through an AXPopover (every other element click reads
   nothing more), the hit at its clickable point, descended, must reach the element inside an overlay of a listed kind that
   covers the point (`hitWindowCovers`, or `appWindowOverPoint` for a popover), the element not disabled and, for AXPress,
@@ -7913,6 +7913,60 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   row on the chain, the alert dialog, Chromium required, #470's own-ancestry pre-check now counting window-list reads
   too, and #470's reach and enabled checks).
   Date/Author: 2026-11-21, cursor235's implementer for #453.
+- Decision (#453, the review of 07d487d8, reviewer-high, design ruling 1066, 2026-11-22; amends the two entries above):
+  **the element-ID route is cut, and the coordinate route takes six more corrections; where the record cannot make a
+  check sound, the click is refused.** Ruling 1066 cuts #470's overlay-row part (`overlayElement`,
+  `overlayElementClick`, its call site in Input.swift, `overlayElementRefused`, `overlayClick.from: "element"`, its
+  tests and its docs sentence): an element click on an overlay's row is main's again, and #470 stays open for it. That
+  route carried this review's findings 2 (the recorded identity's value is tagged `"s:"`, so an unchanged AXStaticText
+  would have refused) and 7 (a failed AXFocusedUIElement read left a popup candidate to route 3) and the element half of
+  9, and the previous review's 4 and 5; they leave with it. The coordinate route (OverlayClick.swift, Skyshot.swift):
+  (1, P1) #443's rule on the overlay's nodes: before delivery, the node the hit reaches and its row are judged by
+  `controlGoneVerdict`, as the stale-point guard judges a kept point in the observed window (an inert node on its own
+  handle whose recorded control is confirmed destroyed and that lies in another control now: `controlGone`), with the
+  record's frameless nodes passed for the recorded control's lookup. A labelled text whose button died and was adopted by
+  a button labelled otherwise is refused, never delivered into the other button.
+  (3, P1) Stability compares membership: the live tree under the overlay's recorded root (every element, read through
+  AXChildren, framed ones compared) must hold exactly the recorded framed nodes by handle, every recorded node's subtree
+  whole (`subtreeRecorded`), each at its frame, each with text reading it; an item added after the walk over a recorded
+  one (which the image, taken after the walk, shows) makes the window unstable. Drawing order is not in the tree; two of
+  the same items swapping places is caught by their frames. Past `overlayStableElementLimit` (400) it is unstable.
+  (4, P1) The overlap check covers the whole recorded overlay: the subtree of the record's root framed as the overlay's
+  window (`overlayRecordRoots`, the stability pass's), not the hit's chain, so a control in a sibling branch of the
+  popover (beside its grid) or of the window (beside the dialog) that the record held at the point refuses; a record
+  with no such root, or a row outside it, refuses too. The finding is general: the chain stopped below the popover for
+  a popover and below the window for the others, so both missed sibling branches; the measured popover (its swatch grid
+  beside nothing at the point) and Chrome's windows (one root group) hid it.
+  (5, P1) The path's predicate: any element the hit passes below the row whose role is interactive, whose actions do not
+  read, or which lists AXPress refuses (`overlayPassive`), whatever its role, an AXStaticText included (Chrome's omnibox
+  rows are such texts); the measured AXEmptyGroup (AXShowMenu, AXScrollToVisible) passes.
+  (6, P1) The last check finds the overlay anew as #452 does (`overlayRevalidated`, `overlayFromHit`): a fresh hit-test's
+  place, over the window list read then, through `hitWindowCovers` for a hit in another window or `appWindowOverPoint`
+  for one in a popover; the window and the signal must be the target's, and the decision on that hit must name the same
+  row; the post is stamped with that window's number and bounds as read then.
+  (8, P2) The stability pass is bounded: `overlayDecisionBudgetMs` cut to what is left of the observation's deadline,
+  every AX read bounded by it; a window not read through in time stays unstable, and the screenshot still answers.
+  (9, P2, coordinate half) The last check's hit-test (`windowHit` over bounded reads, the other window's number read
+  within the same cutoff) and window list are inside one decision's time with the decision: nothing is read once it is
+  spent, and nothing is sent.
+  No finding is specific to the AppKit popover: 4 is general as above; the others apply to every kind.
+  The model-facing paragraph loses the element-ID clause and sentence (agent-cursor.md, the documentation test, the
+  parity docs oracle, the surface inventory's amendment, now "(2026-11-21, #453, rulings 1040, 1042 and 1066)", and
+  PROVENANCE.md).
+  Proven offline (`OverlayClickTests`, 37 tests): the adopted text refused `controlGone` (the stale-point verdict on the
+  same scene, through the record's own conversion, also `controlGone`); an item added over a recorded row after the walk
+  unstable; the stability pass reading nothing once its time is spent and unstable when it runs out midway; a sibling
+  branch's gone control in the popover and in the window refused, and a record with no root framed as the window
+  refused; an unrecorded text listing AXPress below the row refused; the last check answering the window as listed then
+  and nil for another window, a hit in the observed window, the other signal, a window no longer in front or over the
+  point, no signal and another row; the last check reading nothing once its time is spent and no window list once the
+  hit-test spent it. Reverted one at a time (8 mutations), each fails: no #443 check, no membership, the overlap scoped to
+  the chain, no root required, a text or image passing whatever it lists, the window looked up by number alone, no
+  stability cutoff, no last-check cutoff. The earlier rounds' coordinate-route mutations, rerun and re-pointed where the
+  lines changed (the stability pass's frame and text checks, stability required, the overlap check, the last check, the
+  location bar, the frame, the row on the chain, the alert dialog, Chromium required, the expiry and the descent's
+  per-level expiry), each still fail; those of the cut element route no longer apply.
+  Date/Author: 2026-11-22, cursor235's implementer for #453.
 
 ## Outcomes & Retrospective
 

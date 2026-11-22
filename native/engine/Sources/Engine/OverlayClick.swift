@@ -329,8 +329,8 @@ struct OverlayClickRecord: Equatable {
 /// #453's step in a coordinate click, before anything is posted: the decision carried out. False leaves the click to
 /// main's path (`notOverlay`, or a refusal, recorded in the meta, after which main throws #452's refusal). For a row to
 /// deliver: `beforeDispatch` (the request's deadline, the row's process checked and registered, the in-flight check, the
-/// agent cursor), then AXPress on the recorded handle (`perform`; an error other than a messaging timeout is
-/// `actionFailed`), the identity read once more first (`overlayIdentityRefusal`; a change answers false, nothing pressed),
+/// agent cursor), then AXPress on the recorded handle (`perform`; a messaging timeout is `clickUnconfirmed`, whatever
+/// the window does after it, and any other error `actionFailed`), the identity read once more first (`overlayIdentityRefusal`; a change answers false, nothing pressed),
 /// then the overlay's window (`windowShown`, nil when the list does not read: unknown, never closed) read at once and every
 /// `overlaySampleMs` for up to `overlayConfirmMs`: the window gone answers true; otherwise `clickUnconfirmed`. No mouse event is posted and the app is not activated on any branch.
 func overlayClick<Element>(_ decision: OverlayPoint<Element>, app: String, reads: OverlayReads<Element>,
@@ -359,10 +359,12 @@ func overlayClick<Element>(_ decision: OverlayPoint<Element>, app: String, reads
     meta.posting { error = perform(row, "AXPress"); return true }
     if error != .success {
       record.actionError = error.rawValue
+      record.confirmed = false
+      // A messaging timeout (ruling 1072): the press may have landed, but the window leaving cannot be tied to it.
       guard menuItemAmbiguousErrors.contains(error) else {
-        record.confirmed = false
         throw EngineError(name: "actionFailed", "The element did not accept the AXPress action.")
       }
+      throw overlayClickUnconfirmed(app: app)
     }
     let started = now()
     while true {

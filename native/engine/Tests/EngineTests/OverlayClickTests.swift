@@ -532,8 +532,9 @@ final class OverlayClickTests: XCTestCase {
     }
   }
 
-  /// A press the element refuses is actionFailed; a messaging timeout is read for its effect.
-  func testAPressErrorIsActionFailedAndATimeoutIsReadForItsEffect() throws {
+  /// A press the element refuses is actionFailed; a messaging timeout is clickUnconfirmed even when the window then
+  /// leaves (ruling 1072: the window leaving cannot be tied to a press that may not have landed).
+  func testAPressErrorIsActionFailedAndATimeoutIsUnconfirmedEvenWhenTheWindowLeaves() throws {
     var meta = freshMeta()
     XCTAssertThrowsError(try click(decide(omnibox()), shown: { _ in true }, meta: &meta) { _, _ in .actionUnsupported }) {
       XCTAssertEqual(($0 as? EngineError)?.errorName, "actionFailed")
@@ -541,7 +542,11 @@ final class OverlayClickTests: XCTestCase {
     XCTAssertEqual(wire(meta)?["actionError"] as? Int, Int(AXError.actionUnsupported.rawValue))
     var timedOut = freshMeta()
     var open = true
-    XCTAssertTrue(try click(decide(omnibox()), shown: { _ in open }, meta: &timedOut) { _, _ in open = false; return .cannotComplete })
+    XCTAssertThrowsError(try click(decide(omnibox()), shown: { _ in open }, meta: &timedOut) { _, _ in open = false; return .cannotComplete }) {
+      XCTAssertEqual(($0 as? EngineError)?.errorName, "clickUnconfirmed")
+    }
+    XCTAssertEqual(wire(timedOut)?["confirmed"] as? Bool, false)
+    XCTAssertEqual(wire(timedOut)?["actionError"] as? Int, Int(AXError.cannotComplete.rawValue))
   }
 
   /// A check before the press (the deadline, a forbidden owner, the person's input) refuses with nothing pressed or sent.

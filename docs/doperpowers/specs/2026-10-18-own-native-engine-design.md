@@ -7844,8 +7844,9 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   #452's refusal stands. (6) The row must be of a role the kind's rows take (`OverlayKind.rowRoles`: a suggestion's
   text, button, link or cell; an option's text, cell, row or menu item; a prompt's button, checkbox, radio button or
   link; a popover's control), so a point in an AXList's padding or between a dialog's buttons refuses (`notARow`). (7)
-  The service forwards `cua/overlayClick` (`OPTIONAL_INPUT_META`, reset per call). A messaging timeout on the press
-  still reads the effect, as #454's does; only the window leaving confirms it. The capture-walk race stays a declared
+  The service forwards `cua/overlayClick` (`OPTIONAL_INPUT_META`, reset per call). A press that answers a messaging
+  timeout answers `clickUnconfirmed` even when the window then leaves (the coordinator's ruling on the wave): the press
+  may have landed, but the window leaving cannot be tied to it. The capture-walk race stays a declared
   limit with its own ticket, with no stability re-read.
   Proven offline: six `OverlayClickTests` (24 in all; one replaces the row-dying test), one per Swift finding, each failing with its fix reverted
   alone (the row-dying confirmation, the one-overlay check, the whole-subtree check, the first-part label comparison,

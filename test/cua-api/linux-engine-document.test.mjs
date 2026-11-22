@@ -119,6 +119,32 @@ test('the documents name the hold of a drag from a Chromium window and its late-
   ]) assert.ok(flat(file(document)).includes(flat(phrase)), `${document} does not say: ${phrase}`);
 });
 
+// The tail of a Chrome drop whose path outlasts the floor after its take (#171 M5, #459; rulings 995 and 997): the floor,
+// the tail's rest and its visits are the engine's constants, and the documents name them, with the rest's sum as its
+// cost.
+test('the documents name the tail of a long Chrome drag and drop by the engine\'s constants', () => {
+  const floor = /pub const RELEASE_AFTER_TAKE: Duration = Duration::from_millis\((\d+)\);/.exec(file('native/linux-engine/src/dnd.rs'));
+  assert.ok(floor, 'dnd.rs names RELEASE_AFTER_TAKE in milliseconds');
+  const sync = file('native/linux-engine/src/release_sync.rs');
+  const rest = /pub const TAIL_REST: Duration = Duration::from_millis\((\d+)\);/.exec(sync);
+  assert.ok(rest, 'release_sync.rs names TAIL_REST in milliseconds');
+  assert.match(sync, /pub const TAIL_VISITS: u32 = 2;/, 'the documents say "twice more"');
+  // a shorter path's tail falls inside its floor (ruling 1000): "a shorter one takes no longer"
+  assert.match(sync, /Form::Tail => after_take\.saturating_sub\(TAIL_SPAN\),/);
+  // the rests before each visit and before the release: about 25 ms in all
+  assert.equal(Number(rest[1]) * 3, 24);
+  assert.match(sync, /pub const UNCONFIRM_OUTLASTED: bool = false;/, 'option (c) is off as it ships (ruling 997), so no document promises its notice');
+  for (const [document, phrase] of [
+    [LINUX_DOCUMENT, `the pointer stays on the path's last point and is moved there twice more, ${rest[1]} ms apart`],
+    [LINUX_DOCUMENT, `A drag whose path goes on for more than about ${floor[1]} ms after the page starts its drag and drop takes about 25 ms longer for it; a shorter one takes no longer.`],
+    [LINUX_DOCUMENT, 'The rest makes that rare, not impossible: when it matters where a drag dropped, read the page after it.'],
+    // a Chrome drag handle's end with its drop under way (ruling 998): its own rest, then the two visits and their rests
+    [LINUX_DOCUMENT, `A drag handle's end in Chrome, with a drag and drop under way, ends with the same two moves ${rest[1]} ms apart after its own rest, which makes the end about ${Number(rest[1]) * 2} ms longer.`],
+    [README, 'A Chrome drag and drop ends with a rest of about 25 ms on its last point, moved there twice more'],
+    [README, `it falls inside the ${floor[1]} ms after the take that a drop is held for, so only a path that goes on past ${floor[1]} ms after its take takes longer for it`],
+  ]) assert.ok(flat(file(document)).includes(flat(phrase)), `${document} does not say: ${phrase}`);
+});
+
 test('the README\'s Chromium menu line is the engine README\'s, word for word', () => {
   const engine = flat(file('native/linux-engine/README.md'));
   const start = engine.indexOf('In Chromium, a context menu requested on a window that is not focused');

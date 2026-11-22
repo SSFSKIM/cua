@@ -135,6 +135,11 @@ pub enum Confirming {
     /// `adaptive_hold.rs`): before the extension that take came after the release, and the after-release watch
     /// cancelled and reported it, so it is reported unconfirmed, never a plain ok (the re-review of wave 3, I1).
     Extended,
+    /// A drop [`Confirming::Activation`] would confirm, on #459's shape (the outlasted gate open, `release_sync::gate`)
+    /// with option (c) on (`release_sync::UNCONFIRM_OUTLASTED`, ruling 995): Chrome asks for that activation as well
+    /// when it completes a drop on a stale status the page never took, so it confirms nothing here, and the drop is
+    /// reported unconfirmed with that reason (`dnd::WatchEnd::Outlasted`).
+    Outlasted,
 }
 
 impl Confirming {
@@ -142,8 +147,27 @@ impl Confirming {
     pub(super) fn unconfirmed(self) -> bool {
         matches!(
             self,
-            Confirming::Cursor(false) | Confirming::Nothing | Confirming::Extended
+            Confirming::Cursor(false) | Confirming::Nothing | Confirming::Extended | Confirming::Outlasted
         )
+    }
+
+    /// What confirms a drop the outlasted gate opened on (`outlasted`: the gate open and option (c) on): nothing, when
+    /// Chrome's activation request would have been its only confirmation ([`Confirming::Outlasted`]); otherwise what
+    /// confirms it already, a stronger confirmation or an answer that is unconfirmed or unjudged already.
+    pub(super) fn after_outlasted(self, outlasted: bool) -> Confirming {
+        match (self, outlasted) {
+            (Confirming::Activation(_), true) => Confirming::Outlasted,
+            (confirming, _) => confirming,
+        }
+    }
+
+    /// How a drop reported unconfirmed at once ends its watch: with its own reason when the outlasted gate made it so,
+    /// else as `drop_settle::unconfirmed_end` judges an Electron source's settle (`settle`).
+    pub(super) fn unconfirmed_end(self, settle: Option<&crate::drop_settle::Settle>) -> crate::dnd::WatchEnd {
+        match self {
+            Confirming::Outlasted => crate::dnd::WatchEnd::Outlasted,
+            _ => crate::drop_settle::unconfirmed_end(settle),
+        }
     }
 
     /// What confirms a drop whose take came in the extended hold (`extended_take`): nothing can when nothing else
@@ -154,6 +178,232 @@ impl Confirming {
             (confirming, _) => confirming,
         }
     }
+}
+
+/// A step of a handle's end between its rest and the release (`release_handle`): a motion of the real pointer, or a
+/// rest.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EndStep {
+    Motion((i16, i16)),
+    Rest(Duration),
+    /// The pointer read again before a visit after the first: one no longer at this place (a person moved it, or it is
+    /// on another screen) ends the visits there, and the release's own read reports the move.
+    Check((i16, i16)),
+}
+
+/// Why a handle's end runs no tail (ruling 998, confirmed by 1026), or None when it runs one. The tail is the drag's
+/// (`release_sync.rs`) for a Chrome source with a drag and drop under way at the agent's `end`: `form` its form (`off`
+/// restores the end of f9d1f86b, for A/B runs), `agent_end` the agent's `end` (the exit's, the idle bound's and a lost
+/// handle's releases go at once, as they did), `chrome` a source whose drop Chrome's activation request confirms
+/// (`families::confirms_drop`; Electron's settle path is its own), `judging` a take by now on a handle whose
+/// after-release watch runs (a Chromium source's).
+pub fn tail_refused(
+    form: crate::release_sync::Form,
+    agent_end: bool,
+    chrome: bool,
+    judging: bool,
+) -> Option<&'static str> {
+    match () {
+        _ if form == crate::release_sync::Form::Off => Some("the form is off"),
+        _ if !agent_end => Some("not the agent's end"),
+        _ if !chrome => Some("not a Chrome source"),
+        _ if !judging => Some("no drag and drop under way"),
+        _ => None,
+    }
+}
+
+/// What a handle's end sends between its rest and the release, in order. `pointer` is where the real pointer is (None:
+/// on another screen, whose place a motion on the engine's root would carry the held pointer back from); `revisit`
+/// whether the family rests at a held move's end (`held_rest`), whose end then visits the pointer's place once more.
+/// With `tail`, the step each visit takes first (`release_sync::xtest_step`), the end's rest standing in for the tail's
+/// first [`crate::release_sync::TAIL_REST`]: [`crate::release_sync::TAIL_VISITS`] visits, each the step and back to the
+/// pointer's place, each followed by [`crate::release_sync::TAIL_REST`], in place of the revisit; a family that does
+/// not rest takes the first rest first. Without it, f9d1f86b's end: the revisit alone. On another screen, neither.
+pub fn end_steps(tail: Option<(i16, i16)>, pointer: Option<(i16, i16)>, revisit: bool) -> Vec<EndStep> {
+    let Some(at) = pointer else {
+        return Vec::new();
+    };
+    match tail {
+        None if revisit => vec![EndStep::Motion(at)],
+        None => Vec::new(),
+        Some(step) => {
+            let mut steps = Vec::new();
+            if !revisit {
+                steps.push(EndStep::Rest(crate::release_sync::TAIL_REST));
+            }
+            for visit in 0..crate::release_sync::TAIL_VISITS {
+                if visit > 0 {
+                    steps.push(EndStep::Check(at));
+                }
+                steps.extend([
+                    EndStep::Motion(step),
+                    EndStep::Motion(at),
+                    EndStep::Rest(crate::release_sync::TAIL_REST),
+                ]);
+            }
+            steps
+        }
+    }
+}
+
+/// The calls a handle's end makes at its last take read and its tail ([`read_take_then_tail`]): the hold watch's read,
+/// the pointer's motions and place, and the rests. The engine's are [`EngineEnd`]'s; the tests record them.
+pub trait EndIo {
+    /// The hold watch's read just before the release (None: no hold watch).
+    fn read_take(&mut self) -> Option<Result<Held>>;
+    fn motion(&mut self, at: (i16, i16)) -> Result<()>;
+    fn rest(&mut self, rest: Duration);
+    /// The pointer's place (None: on another screen, or unread).
+    fn place(&mut self) -> Option<(i16, i16)>;
+}
+
+/// The engine's [`EndIo`]: its X connection and the handle's hold watch.
+struct EngineEnd<'a> {
+    x: &'a X11,
+    holding: Option<&'a mut (HoldWatch, Holding)>,
+}
+
+impl EndIo for EngineEnd<'_> {
+    fn read_take(&mut self) -> Option<Result<Held>> {
+        self.holding
+            .as_deref_mut()
+            .map(|(watch, holding)| watch.before_release(holding))
+    }
+
+    fn motion(&mut self, (mx, my): (i16, i16)) -> Result<()> {
+        Desktop::motion(self.x, mx, my)
+    }
+
+    fn rest(&mut self, rest: Duration) {
+        std::thread::sleep(rest);
+    }
+
+    fn place(&mut self) -> Option<(i16, i16)> {
+        self.x
+            .conn
+            .query_pointer(self.x.root)
+            .ok()
+            .and_then(|c| c.reply().ok())
+            .filter(|p| p.same_screen)
+            .map(|p| (p.root_x, p.root_y))
+    }
+}
+
+/// What decides a handle's tail ([`read_take_then_tail`]): `form` the release-sync form, `agent_end` the agent's `end`
+/// of a pressed handle, `chrome` a Chrome source, `watched` its after-release watch runs, `previous` and `place` the
+/// last segment's start and the pointer's place read after the rest (None: on another screen), `screen` its size.
+#[derive(Debug, Clone, Copy)]
+pub struct TailInputs {
+    pub form: crate::release_sync::Form,
+    pub agent_end: bool,
+    pub chrome: bool,
+    pub watched: bool,
+    pub previous: Option<(i16, i16)>,
+    pub place: Option<(i16, i16)>,
+    pub screen: (u16, u16),
+}
+
+/// What [`read_take_then_tail`] read and did: the hold watch's read, why no tail ran (None: it ran), and the tail's run.
+#[derive(Debug)]
+pub struct EndedTail {
+    pub held: Option<Result<Held>>,
+    pub refused: Option<&'static str>,
+    pub run: Result<EndRun>,
+}
+
+/// A handle's last take read, and the tail it decides (rulings 998 and 1030; the re-review of 9fb61c32, 1). The hold
+/// watch is read once, just before the release, as f9d1f86b read it: that read is the one take sample, which the tail
+/// and the release's judgement share, and a take it does not see is the after-release watch's to cancel or report, as
+/// at any release with no take seen. With a take under way at a Chrome source's agent end, the tail follows: the step
+/// along the last segment and back to the pointer's place, [`crate::release_sync::TAIL_REST`], the pointer read again,
+/// and the same once more unless it moved ([`run_end`]). Every other end makes no call past the read.
+pub fn read_take_then_tail(io: &mut impl EndIo, t: TailInputs) -> EndedTail {
+    let held = io.read_take();
+    let taken = matches!(&held, Some(Ok(h)) if h.taken);
+    let refused = match tail_refused(t.form, t.agent_end, t.chrome, taken && t.watched) {
+        None if t.place.is_none() => Some("the pointer is on another screen"),
+        refused => refused,
+    };
+    let run = match (refused, t.place) {
+        (None, Some(at)) => {
+            let plan = end_plan(None, t.previous, Some(at), t.screen, true);
+            let io = std::cell::RefCell::new(io);
+            run_end(
+                plan,
+                |p| io.borrow_mut().motion(p),
+                |d| io.borrow_mut().rest(d),
+                || io.borrow_mut().place(),
+            )
+        }
+        _ => Ok(EndRun::default()),
+    };
+    EndedTail { held, refused, run }
+}
+
+/// What a handle's end's plan did ([`run_end`]): the motions it sent, and whether a check found the pointer moved and
+/// ended it there.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct EndRun {
+    pub motions: u32,
+    pub stopped: bool,
+}
+
+/// Runs a handle's end's plan: `motion` sends each motion, `rest` waits each rest, and `read` reads the pointer's place
+/// for each check (None: on another screen, or unread). A check that finds the pointer elsewhere sends nothing more
+/// (the review of f15e1f09, 2: a person's motion during a rest is never overwritten before the button goes up). A
+/// motion that fails ends it with its error.
+pub fn run_end(
+    plan: Vec<EndStep>,
+    mut motion: impl FnMut((i16, i16)) -> Result<()>,
+    mut rest: impl FnMut(Duration),
+    mut read: impl FnMut() -> Option<(i16, i16)>,
+) -> Result<EndRun> {
+    let mut run = EndRun::default();
+    for step in plan {
+        match step {
+            EndStep::Motion(at) => {
+                motion(at)?;
+                run.motions += 1;
+            }
+            EndStep::Rest(d) => rest(d),
+            EndStep::Check(at) if read() != Some(at) => {
+                run.stopped = true;
+                break;
+            }
+            EndStep::Check(_) => {}
+        }
+    }
+    Ok(run)
+}
+
+/// What confirms a handle's drop whose tail a check stopped (`interrupted`; the re-review of 9fb61c32, 2): nothing
+/// ([`Confirming::Nothing`], reported unconfirmed at once), whatever would have confirmed it, so a person who brings the
+/// pointer back where the last request put it never leaves a plain ok; otherwise what confirms it already.
+pub fn unconfirmed_when(confirmed: Option<Confirming>, interrupted: bool) -> Option<Confirming> {
+    match interrupted {
+        true => confirmed.map(|_| Confirming::Nothing),
+        false => confirmed,
+    }
+}
+
+/// The end's whole plan between the rest and the release: [`end_steps`] with the tail when [`tail_refused`] gave
+/// `refused` None, its step along the last segment from `previous` (the handle's point before its end; None for a
+/// handle that never moved) to the pointer's own `pointer` place, on a screen `screen` wide and high.
+pub fn end_plan(
+    refused: Option<&'static str>,
+    previous: Option<(i16, i16)>,
+    pointer: Option<(i16, i16)>,
+    screen: (u16, u16),
+    revisit: bool,
+) -> Vec<EndStep> {
+    let step = match (refused, pointer) {
+        (None, Some(at)) => {
+            let segment: Vec<(i16, i16)> = previous.into_iter().chain([at]).collect();
+            Some(crate::release_sync::xtest_step(&segment, screen))
+        }
+        _ => None,
+    };
+    end_steps(step, pointer, revisit)
 }
 
 /// What confirms a handle's drop: `destination` the managed top-level under the release when its family confirms by
@@ -186,6 +436,11 @@ pub(super) struct Handle {
     target: Option<Window>,
     /// Where the real pointer was last put: the start, then each move's end, on the screen.
     asked: (i16, i16),
+    /// Where it was put before that, when a move took it elsewhere: the last segment's start, whose direction the end's
+    /// tail steps along (`release_sync::xtest_step`, ruling 998). None for a handle that never moved off its start.
+    previous: Option<(i16, i16)>,
+    /// The screen's width and height, read at the start and each move (the tail's step never leaves it).
+    screen: (u16, u16),
     /// The hold watch on the target, from just before the press.
     holding: Option<(HoldWatch, Holding)>,
     /// A Chromium target's after-release watch, subscribed before the press.
@@ -212,6 +467,8 @@ impl Handle {
             pressed_at: None,
             target: None,
             asked: (0, 0),
+            previous: None,
+            screen: (u16::MAX, u16::MAX),
             holding: None,
             after: None,
             cursor: None,
@@ -299,7 +556,12 @@ impl Engine {
                 }
                 let size = screen_size(&self.x);
                 let handle = self.handle.as_mut().expect("set above");
-                handle.asked = on_screen((px, py), size);
+                let asked = on_screen((px, py), size);
+                if asked != handle.asked {
+                    handle.previous = Some(handle.asked);
+                }
+                handle.asked = asked;
+                handle.screen = size;
                 handle.last_request = Instant::now();
                 let pacing = handle.pacing;
                 Desktop::move_path_paced(
@@ -494,6 +756,8 @@ impl Engine {
             pressed_at: None,
             target,
             asked: on_screen((px, py), screen_size(&self.x)),
+            previous: None,
+            screen: screen_size(&self.x),
             holding: None,
             after: None,
             cursor: None,
@@ -705,14 +969,55 @@ impl Engine {
             }),
             _ => None,
         };
-        let held = handle
-            .holding
-            .as_mut()
-            .map(|(watch, holding)| watch.before_release(holding));
+        // the hold watch's read just before the release, the one take sample (ruling 1030), and the tail at the end of a
+        // Chrome source's drop under way it decides (ruling 998): a take it does not see is the after-release watch's,
+        // as at any release with no take, so every end makes f9d1f86b's calls up to the release but for the tail's own
+        let chrome = handle.target.is_some_and(|window| {
+            self.family_of(window)
+                .is_some_and(|f| crate::families::confirms_drop(f.name))
+        });
+        let place = match &pointer {
+            Ok(p) if p.same_screen => Some((p.root_x, p.root_y)),
+            _ => None,
+        };
+        let tail_started = Instant::now();
+        let ended = read_take_then_tail(
+            &mut EngineEnd {
+                x: &self.x,
+                holding: handle.holding.as_mut(),
+            },
+            TailInputs {
+                form: self.cfg.dnd_release_sync,
+                agent_end: hold && handle.pressed,
+                chrome,
+                watched: handle.after.is_some(),
+                previous: handle.previous,
+                place,
+                screen: handle.screen,
+            },
+        );
+        let tail_added = tail_started.elapsed();
+        let held = ended.held;
         let (taken, take_time) = match &held {
             Some(Ok(Held { taken, take_time, .. })) => (*taken, *take_time),
             _ => (false, None),
         };
+        let tailing = ended.refused.is_none();
+        let tail_run = ended.run.as_ref().copied().unwrap_or_default();
+        // a tail motion that failed is the end's error, as a revisit's was
+        let revisited = revisited.and(ended.run.map(|_| ()));
+        let mut tail_record = json!({
+            "form": self.cfg.dnd_release_sync.name(),
+            "schedule": "handle_end",
+            "ran": tailing,
+            "why_not": ended.refused,
+            "motions": tail_run.motions,
+            // a person moved the pointer during a rest: the visits ended there (the review of f15e1f09, 2)
+            "stopped_for_motion": tail_run.stopped,
+            "added_ms": tailing.then_some(tail_added.as_secs_f64() * 1000.0),
+            "one_point": tailing && handle.previous.is_none(),
+            "xtest_proof": "live test only, no counted rate",
+        });
         // a drag and drop under way: whether the window manager takes Chrome's activation request, read before the
         // pointer, and an Electron source's cursor watch stopped, so only the lookups the place needs come between the
         // pointer's reading and the release
@@ -756,6 +1061,11 @@ impl Engine {
             });
             confirming(destination, supported, cursor).after_hold(extended_take)
         });
+        // a tail the pointer check stopped answers unconfirmed whenever the position check below would pass (the
+        // re-review of 9fb61c32, 2)
+        let interrupted = tail_run.stopped && moved.is_none();
+        confirmed = unconfirmed_when(confirmed, interrupted);
+        tail_record["interrupted_unconfirmed"] = json!(interrupted);
         if let Some(after) = &handle.after {
             after.confirm_drop_of(match confirmed {
                 Some(Confirming::Activation(window)) => Some(window),
@@ -826,6 +1136,8 @@ impl Engine {
                 "release_wall_ms": release_wall,
                 // the hold for the take at the end (ruling 888.1), null when none was due: an `end` request's alone
                 "hold": hold_record,
+                // the tail at the end of a Chrome source's drop under way (ruling 998), and why none ran
+                "release_sync": tail_record,
             }),
         );
         // the after-release watch, handed over as a `drag`'s: after a release with no take (the late take is the
@@ -908,7 +1220,7 @@ impl Engine {
 /// the connection's setup, which gives its size when the engine connected (the whole-branch review of M4, P2: a handle
 /// moved into area the screen gained after the engine started recorded a point the pointer was never at, and its end
 /// reported the person's motion). A root that cannot be read keeps nothing off the screen.
-fn screen_size(x: &X11) -> (u16, u16) {
+pub(super) fn screen_size(x: &X11) -> (u16, u16) {
     x.conn
         .get_geometry(x.root)
         .ok()
@@ -963,6 +1275,343 @@ mod tests {
              s is released where it is)"
         );
         assert!(handle_held(Duration::from_millis(300)).contains("no request for 0.3 s"));
+    }
+
+    /// Option (c) (ruling 995): with the outlasted gate open and (c) on, a drop whose only confirmation is Chrome's
+    /// activation request is answered unconfirmed at once, with its own reason; with the gate shut, or (c) off, it is
+    /// confirmed by that request as in 0.4.2.
+    #[test]
+    fn the_outlasted_gate_makes_an_activation_only_drop_unconfirmed_with_its_own_reason() {
+        let activation = confirming(Some(7), true, None);
+        assert_eq!(activation, Confirming::Activation(7));
+        // the gate open, (c) on: the activation alone confirms nothing
+        let outlasted = activation.after_hold(false).after_outlasted(true);
+        assert_eq!(outlasted, Confirming::Outlasted);
+        assert!(outlasted.unconfirmed(), "reported unconfirmed at once, not waited for");
+        assert_eq!(outlasted.unconfirmed_end(None), crate::dnd::WatchEnd::Outlasted);
+        // the gate shut, or (c) off (both are `false` here): the activation confirms, as in 0.4.2
+        let confirmed = activation.after_hold(false).after_outlasted(false);
+        assert_eq!(confirmed, Confirming::Activation(7));
+        assert!(
+            !confirmed.unconfirmed(),
+            "handed to the watch, which waits for the request"
+        );
+    }
+
+    #[test]
+    fn the_outlasted_gate_leaves_every_other_confirmation_as_it_is() {
+        // a stronger confirmation: an accept cursor at the release, the drag loop's own word (an Electron source's,
+        // which never reaches the gate; no Chrome source has one)
+        assert_eq!(
+            confirming(None, true, Some(Some(true))).after_outlasted(true),
+            Confirming::Cursor(true)
+        );
+        // answers that are unconfirmed already keep their own reasons
+        assert_eq!(
+            confirming(None, true, Some(Some(false))).after_outlasted(true),
+            Confirming::Cursor(false)
+        );
+        assert_eq!(confirming(None, true, None).after_outlasted(true), Confirming::Nothing);
+        assert_eq!(
+            confirming(None, false, None).after_hold(true).after_outlasted(true),
+            Confirming::Extended
+        );
+        // a drop not judged (no window manager that takes the request) is not judged still
+        assert_eq!(
+            confirming(None, false, None).after_outlasted(true),
+            Confirming::Unjudged
+        );
+        // and the generic unconfirmed end stays the settle's
+        assert_eq!(
+            Confirming::Nothing.unconfirmed_end(None),
+            crate::dnd::WatchEnd::Unconfirmed
+        );
+    }
+
+    /// Ruling 998 (confirmed by 1026): a handle's end runs the tail only for a Chrome source with a drag and drop under
+    /// way at the agent's `end`, the form on; every other end says why not.
+    #[test]
+    fn a_handle_s_tail_runs_only_at_a_chrome_source_s_end_with_a_drop_under_way() {
+        use crate::release_sync::Form;
+        assert_eq!(tail_refused(Form::Tail, true, true, true), None);
+        assert_eq!(tail_refused(Form::Off, true, true, true), Some("the form is off"));
+        assert_eq!(tail_refused(Form::Tail, false, true, true), Some("not the agent's end"));
+        assert_eq!(tail_refused(Form::Tail, true, false, true), Some("not a Chrome source"));
+        assert_eq!(
+            tail_refused(Form::Tail, true, true, false),
+            Some("no drag and drop under way")
+        );
+    }
+
+    /// Ruling 998: the tail's sequence at a Chrome handle's end, the end's rest standing in for its first 8 ms: the
+    /// step and back, 8 ms, the step and back, 8 ms, then the release.
+    #[test]
+    fn a_chrome_handle_s_end_visits_twice_8_ms_apart_and_rests_8_ms_before_the_release() {
+        let rest = Duration::from_millis(8);
+        assert_eq!(
+            end_steps(Some((301, 260)), Some((300, 260)), true),
+            vec![
+                EndStep::Motion((301, 260)),
+                EndStep::Motion((300, 260)),
+                EndStep::Rest(rest),
+                // the pointer read again before the second visit (the review of f15e1f09, 2)
+                EndStep::Check((300, 260)),
+                EndStep::Motion((301, 260)),
+                EndStep::Motion((300, 260)),
+                EndStep::Rest(rest),
+            ]
+        );
+        // a family with no rest at a held move's end takes the tail's first rest first
+        assert_eq!(
+            end_steps(Some((301, 260)), Some((300, 260)), false)[0],
+            EndStep::Rest(rest)
+        );
+        // on another screen nothing is sent, as before
+        assert_eq!(end_steps(Some((301, 260)), None, true), vec![]);
+    }
+
+    /// One call of a handle's end at its last take read and its tail, as [`EndIo`] makes it.
+    #[derive(Debug, Clone, PartialEq)]
+    enum Call {
+        ReadTake,
+        Motion((i16, i16)),
+        Rest(Duration),
+        Place,
+    }
+
+    /// An [`EndIo`] that records its calls: the take `taken` at the read (None: no hold watch), the pointer `at` each
+    /// place read.
+    struct Recorder {
+        calls: Vec<Call>,
+        taken: Option<bool>,
+        at: Option<(i16, i16)>,
+    }
+
+    impl EndIo for Recorder {
+        fn read_take(&mut self) -> Option<Result<Held>> {
+            self.calls.push(Call::ReadTake);
+            self.taken.map(|taken| {
+                Ok(Held {
+                    taken,
+                    ..Held::default()
+                })
+            })
+        }
+
+        fn motion(&mut self, at: (i16, i16)) -> Result<()> {
+            self.calls.push(Call::Motion(at));
+            Ok(())
+        }
+
+        fn rest(&mut self, rest: Duration) {
+            self.calls.push(Call::Rest(rest));
+        }
+
+        fn place(&mut self) -> Option<(i16, i16)> {
+            self.calls.push(Call::Place);
+            self.at
+        }
+    }
+
+    fn inputs(form: crate::release_sync::Form, agent_end: bool, chrome: bool, watched: bool) -> TailInputs {
+        TailInputs {
+            form,
+            agent_end,
+            chrome,
+            watched,
+            previous: Some((200, 260)),
+            place: Some((300, 260)),
+            screen: (640, 480),
+        }
+    }
+
+    /// The re-review of 9fb61c32 (1) and ruling 1030: the hold watch is read once before the release, as f9d1f86b read
+    /// it, and that read is the one take sample. Every end with no take under way, Chrome's included, makes that one
+    /// call and nothing more, so its calls up to the release are f9d1f86b's; as do Electron's, the form off and every
+    /// end but the agent's, whatever their take. A Chrome take at that read gets the tail after it.
+    #[test]
+    fn the_end_reads_its_take_once_and_only_a_chrome_take_then_runs_the_tail() {
+        use crate::release_sync::Form;
+        for (case, form, agent_end, chrome, watched, taken) in [
+            ("Chrome, no take", Form::Tail, true, true, true, Some(false)),
+            ("Electron, a take", Form::Tail, true, false, true, Some(true)),
+            ("the form off", Form::Off, true, true, true, Some(true)),
+            ("not the agent's end", Form::Tail, false, true, true, Some(true)),
+            ("no after-release watch", Form::Tail, true, false, false, Some(true)),
+            ("no hold watch", Form::Tail, true, true, true, None),
+        ] {
+            let mut io = Recorder {
+                calls: Vec::new(),
+                taken,
+                at: Some((300, 260)),
+            };
+            let ended = read_take_then_tail(&mut io, inputs(form, agent_end, chrome, watched));
+            assert_eq!(io.calls, vec![Call::ReadTake], "{case}: one read, as f9d1f86b's");
+            assert!(ended.refused.is_some(), "{case}");
+            assert_eq!(ended.run.unwrap(), EndRun::default(), "{case}");
+        }
+        // a Chrome take at the read: the tail after it, the pointer read again before the second visit
+        let mut io = Recorder {
+            calls: Vec::new(),
+            taken: Some(true),
+            at: Some((300, 260)),
+        };
+        let ended = read_take_then_tail(&mut io, inputs(Form::Tail, true, true, true));
+        let rest = Duration::from_millis(8);
+        assert_eq!(
+            io.calls,
+            vec![
+                Call::ReadTake,
+                Call::Motion((301, 260)),
+                Call::Motion((300, 260)),
+                Call::Rest(rest),
+                Call::Place,
+                Call::Motion((301, 260)),
+                Call::Motion((300, 260)),
+                Call::Rest(rest),
+            ]
+        );
+        assert_eq!(ended.refused, None);
+        assert_eq!(
+            ended.run.unwrap(),
+            EndRun {
+                motions: 4,
+                stopped: false
+            }
+        );
+        // and on another screen after the rest: the read alone, the tail refused for it
+        let mut io = Recorder {
+            calls: Vec::new(),
+            taken: Some(true),
+            at: None,
+        };
+        let ended = read_take_then_tail(
+            &mut io,
+            TailInputs {
+                place: None,
+                ..inputs(Form::Tail, true, true, true)
+            },
+        );
+        assert_eq!(io.calls, vec![Call::ReadTake]);
+        assert_eq!(ended.refused, Some("the pointer is on another screen"));
+    }
+
+    /// The re-review of 9fb61c32 (2): a tail the pointer check stopped answers unconfirmed whenever the release's
+    /// position check would otherwise pass (the person brought the pointer back where the last request put it), never a
+    /// plain ok on Chrome's activation; an uninterrupted tail is judged as any.
+    #[test]
+    fn an_interrupted_tail_answers_unconfirmed() {
+        let mut io = Recorder {
+            calls: Vec::new(),
+            taken: Some(true),
+            at: Some((340, 262)),
+        };
+        let ended = read_take_then_tail(&mut io, inputs(crate::release_sync::Form::Tail, true, true, true));
+        let run = ended.run.unwrap();
+        assert_eq!(
+            run,
+            EndRun {
+                motions: 2,
+                stopped: true
+            }
+        );
+        let activation = Some(Confirming::Activation(7));
+        let interrupted = unconfirmed_when(activation, run.stopped);
+        assert_eq!(interrupted, Some(Confirming::Nothing));
+        assert!(interrupted.unwrap().unconfirmed(), "reported unconfirmed at once");
+        assert_eq!(
+            interrupted.unwrap().unconfirmed_end(None),
+            crate::dnd::WatchEnd::Unconfirmed
+        );
+        assert_eq!(
+            unconfirmed_when(Some(Confirming::Unjudged), true),
+            Some(Confirming::Nothing)
+        );
+        assert_eq!(unconfirmed_when(activation, false), activation);
+        assert_eq!(unconfirmed_when(None, true), None);
+    }
+
+    /// The review of f15e1f09 (2): a person who moves the pointer during the tail's rest keeps their motion. The check
+    /// before the second visit reads the pointer elsewhere (or on another screen), nothing more is sent, and the release
+    /// reads the move as before. A pointer still in place gets both visits.
+    #[test]
+    fn a_pointer_moved_during_the_tail_s_rest_ends_the_visits_there() {
+        let plan = || end_plan(None, Some((200, 260)), Some((300, 260)), (640, 480), true);
+        for (now_at, motions, stopped) in [
+            (Some((300, 260)), 4, false),
+            (Some((340, 262)), 2, true),
+            (None, 2, true),
+        ] {
+            let sent = std::cell::RefCell::new(Vec::new());
+            let run = run_end(
+                plan(),
+                |p| {
+                    sent.borrow_mut().push(EndStep::Motion(p));
+                    Ok(())
+                },
+                |d| sent.borrow_mut().push(EndStep::Rest(d)),
+                || now_at,
+            )
+            .unwrap();
+            assert_eq!(run, EndRun { motions, stopped }, "{now_at:?}");
+            let sent = sent.into_inner();
+            let first = [
+                EndStep::Motion((301, 260)),
+                EndStep::Motion((300, 260)),
+                EndStep::Rest(Duration::from_millis(8)),
+            ];
+            match stopped {
+                // nothing after the check: no motion takes the pointer back from where the person put it
+                true => assert_eq!(sent, first.to_vec(), "{now_at:?}"),
+                false => assert_eq!(sent.len(), 6, "{sent:?}"),
+            }
+        }
+        // the ends with no tail have no check, so their run is the revisit alone, as f9d1f86b's
+        let sent = std::cell::RefCell::new(Vec::new());
+        let run = run_end(
+            end_plan(
+                Some("not a Chrome source"),
+                Some((200, 260)),
+                Some((300, 260)),
+                (640, 480),
+                true,
+            ),
+            |p| {
+                sent.borrow_mut().push(p);
+                Ok(())
+            },
+            |_| {},
+            || panic!("no read on an end with no tail"),
+        )
+        .unwrap();
+        assert_eq!(
+            (run, sent.into_inner()),
+            (
+                EndRun {
+                    motions: 1,
+                    stopped: false
+                },
+                vec![(300, 260)]
+            )
+        );
+    }
+
+    /// The last segment of a handle: from the point before its end to the pointer's own place; a handle that never
+    /// moved off its start (one point) steps 1 px in x, as the drag tail's path that never moved does, and at the
+    /// screen's edge back.
+    #[test]
+    fn a_handle_s_step_follows_its_last_segment_and_a_one_point_handle_steps_in_x() {
+        let screen = (640, 480);
+        let first = |previous, at| end_plan(None, previous, Some(at), screen, true)[0];
+        assert_eq!(first(Some((200, 260)), (300, 260)), EndStep::Motion((301, 260)));
+        assert_eq!(first(Some((300, 300)), (300, 260)), EndStep::Motion((300, 259)));
+        // a person moved the pointer since the last request: the visits go to where it is, along the segment to there
+        assert_eq!(
+            end_plan(None, Some((200, 260)), Some((310, 260)), screen, true)[..2],
+            [EndStep::Motion((311, 260)), EndStep::Motion((310, 260))]
+        );
+        assert_eq!(first(None, (300, 260)), EndStep::Motion((301, 260)));
+        assert_eq!(first(None, (639, 260)), EndStep::Motion((638, 260)));
     }
 
     #[test]

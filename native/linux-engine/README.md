@@ -319,6 +319,45 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   floor waited out without one dropped nothing after a take on the path's last sample or after it. These keepalives
   come only after a take, only on such a Chromium drag.
 
+  Since 0.4.3 (#459; the design session's rulings 962, 967, 974, 993 and 995, and the owner's 997) a Chrome drop whose
+  path outlasted that floor ends on a tail (`release_sync.rs`). When the floor after the take sent no keepalive and did
+  not space out the path's last step (the gate, `release_sync::gate`, open on any path whose last step came past the
+  floor's end; `--stats` `release_sync`), the engine waits 8 ms, moves to the path's last point, waits 8 ms, moves
+  there again, waits 8 ms, then releases (`TAIL_REST`, `TAIL_VISITS`: the newest vendor build's end of a drag,
+  26.1023.51421's `Client::run_full_desktop_command`). On the background route each motion is one synthetic motion. On
+  XTEST's routes a motion to where the pointer is generates no event, so each visit steps 1 px forward along the path's
+  last segment and back to its end (`release_sync::xtest_step`, ruling 1001): a border the last segment crossed stays
+  behind the step, so an end entered on the last sample is shown no point outside it, except at the screen's edge,
+  where the step would leave the screen and goes 1 px back along the segment instead, inside ruling 961's 3 px
+  ambiguous margin. The XTEST tail is proved by its live test only, with no counted rate (ruling 1002; `--stats`
+  `release_sync.xtest_proof`). Without it the release followed the path's last motion at once,
+  and under load Chrome dropped on a stale accept and position and confirmed the drop with its activation request.
+  Chrome's drop status lags one renderer round trip (`WebContentsViewAura::OnDragUpdated` answers each position), and
+  with a status outstanding at the release its pending drop is decided on that older status before the last queued
+  position is sent (`x11_drag_drop_client.cc`, `HandleMouseReleased` and `OnXdndStatus`). A later motion at the same
+  point refreshes the status, so the status that decides answers the path's end. A drop whose gate stays shut gets the
+  tail too, inside its floor (ruling 1000, on 999): the floor's steps spread over its first 326 ms and its keepalives
+  fill to there (`release_sync::steps_floor`), and the tail's visits come 16 and 8 ms before the floor's end, the
+  release at the end as before (ruling 1001): a visit whose time has passed when the tail reaches it, or whose wakeup
+  comes later than 4 ms before the release (`release_sync::VISIT_CUTOFF`), is dropped (`--stats`
+  `release_sync.visits_dropped`, `skipped` when both were), and the release never moves. A release dwell (Gecko's
+  30 ms, reached by a foreground drag named for Firefox that presses into Chrome) stays on top of the floor, as
+  before. The 326 ms only schedules: the gate judges the path against the 350 ms floor. A floor that spread a path's
+  steps 1.45 ms apart still ended on steps far shorter than Chrome's status lag under load: task 130's `t14-floor` `left` at arm64 twice the load answered one false ok in 30
+  through the shut gate, 241 steps spread over 350 ms with no keepalive. The tail costs about 25 ms on the drags whose
+  path outlasts the floor, and nothing on the others. A Chrome source's `drag_handle` end with its drag and drop under
+  way (a take by then) gets the tail too (ruling 998, confirmed by 1026; task 132's handle long-left at arm64 twice the
+  load answered one false ok in 100 on f9d1f86b): after the end's own rest, two visits from the pointer's own place,
+  each the 1 px step along the handle's last segment and back, each followed by 8 ms, then the release; about 16 ms.
+  It has no gate (a handle has no floor); `--drag-dnd-release-sync off` restores the earlier end, and `--stats`
+  `handle.release_sync` records whether it ran and why not. The residual bound, at arm64 twice the load (task 132):
+  no false ok in 200 measured long Chrome drags (95% upper bound 1.5%), and none in 300 Chrome handle drags across the
+  handle tail's three heads (95% upper bound 1.0%). Electron's drops (settled, below),
+  guarded drags and the release at the accept are unchanged. Option (c), which answers such a drop unconfirmed when
+  Chrome's activation request is its only confirmation (`Pending from your last drag, an unconfirmed drop: your drag
+  into <app> began a drag and drop and went on past the engine's settle time, …`), is built and off
+  (`release_sync::UNCONFIRM_OUTLASTED`, the one switch; `--drag-dnd-unconfirm-outlasted on` turns it on to measure it).
+
   Every such drag has the after-release watch too (M4's T14, #264; the design session's rulings, 2026-11-02): one
   that reached its release with no take is watched for a late one exactly as the shared-mode guard's is, its Escape on
   the route the drag used (synthetic to the window on the background route, XTEST on the foreground and desktop
@@ -585,6 +624,9 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
 | `--drag-dnd-after-take-ms` | 350 | how long after a Chromium drag source's take a drag the engine lets drop is released at the soonest, its remaining steps spaced to it (measurement only; 0 turns the spacing off) |
 | `--drag-dnd-hold-ms` | 450 | B, how long after the press a drag whose source is a Chromium-family window keeps its button down for its source's take when none has come, on a drag the engine lets drop, a guarded drag and a `drag_handle`'s end (measurement only: the design session's runs of other bounds on one build; 0 turns the hold off; an identified browser's slow pings extend it to the later of B and 650 ms; `--stats` `hold`) |
 | `--drag-dnd-hold-ping` | on | `off`: a hold with no take sends its source no `_NET_WM_PING`, `hold.pings` is `{asked: false, why: "disabled"}`, and no hold extends: an identified browser keeps the fixed B too (measurement only: the design session's ruling 892, the control that the ping sampler leaves the release where it was) |
+| `--drag-dnd-release-sync` | `tail`, `off` | what a Chrome drop the engine lets drop does at the outlasted gate before its release: the tail (above), or nothing, 0.4.2's release (measurement only; `--stats` `release_sync`) |
+| `--drag-dnd-release-sync-when` | `outlasted`, `always` | when that gate opens: on a drop whose floor after the take sent no keepalive and did not space out the path's last step, or on every such drop after a take (measurement only) |
+| `--drag-dnd-unconfirm-outlasted` | `off`, `on` | option (c): a drop the gate opened on whose only confirmation is Chrome's activation request answers unconfirmed with its own reason (measurement only; its default is `release_sync::UNCONFIRM_OUTLASTED`) |
 | `--dnd-cancel-after-release` | off | a drag and drop the engine cancels is cancelled only after the release, too late (measurement only: the harness's check of the honest answer) |
 | `--dnd-defer-take` | off | a drag and drop that begins during a watched drag is left unseen until after the release, so the after-release watch finds it and the next request carries the notice (measurement only: Acceptance 8's late-take case) |
 | `--drag-ignore-cover` | off | a drag into a family listed `unless_path_unobscured` (Chromium) goes out on the background route along a covered path (measurement only: T13's covered paths) |

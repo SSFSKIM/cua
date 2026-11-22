@@ -365,6 +365,11 @@ fn pending_cause(app: &str, end: &WatchEnd) -> String {
             "an unconfirmed drop: your drag into {app} began a drag and drop, and {app} did not answer in time for its \
              drop to be confirmed, so the drop may not have landed as the drag answered"
         ),
+        WatchEnd::Outlasted => format!(
+            "an unconfirmed drop: your drag into {app} began a drag and drop and went on past the engine's settle \
+             time, and {app}'s confirmation cannot tell a drop the page took from one {app} completed without the page \
+             taking it, so read the page to see whether the drop landed where your drag ended"
+        ),
         WatchEnd::Failed(why) => format!(
             "a failed watch: the drag-and-drop watch after your drag into {app} failed ({why}), so a drop may have \
              happened unseen and changed the desktop"
@@ -474,6 +479,10 @@ pub enum WatchEnd {
     /// (`drop_settle::Settle`, M5's ruling 827): its drag cursor at the release cannot be told to be its answer for where
     /// the pointer rests, so the drop is unconfirmed, with that reason.
     Unanswered,
+    /// A Chrome drop under way at the release whose path outlasted the floor after its take, on #459's shape
+    /// (`release_sync::gate`), and whose only confirmation would have been Chrome's activation request (option (c),
+    /// ruling 995): Chrome sends it as well for a drop it completed on a stale status, so it cannot confirm this one.
+    Outlasted,
     /// The watch could not keep watching (its connection failed, a round trip failed, the thread panicked): whether a
     /// drag and drop began cannot be told.
     Failed(String),
@@ -1643,6 +1652,23 @@ mod tests {
             "Pending from your last drag, an unconfirmed drop: your drag into Electron began a drag and drop, and \
              Electron did not answer in time for its drop to be confirmed, so the drop may not have landed as the drag \
              answered; this click request was not run, so read the window before sending it again"
+        );
+        // a Chrome drop on #459's shape whose activation request was its only confirmation (option (c), ruling 995):
+        // the same kind, with why the activation cannot confirm it and what to check
+        assert_eq!(
+            pending_notice(app, &WatchEnd::Outlasted),
+            "Pending from your last drag, an unconfirmed drop: your drag into Google-chrome began a drag and drop and \
+             went on past the engine's settle time, and Google-chrome's confirmation cannot tell a drop the page took \
+             from one Google-chrome completed without the page taking it, so read the page to see whether the drop \
+             landed where your drag ended. Read the window before sending input again: your next input request will \
+             not be run"
+        );
+        assert_eq!(
+            pending_refusal(app, &WatchEnd::Outlasted, "click"),
+            "Pending from your last drag, an unconfirmed drop: your drag into Google-chrome began a drag and drop and \
+             went on past the engine's settle time, and Google-chrome's confirmation cannot tell a drop the page took \
+             from one Google-chrome completed without the page taking it, so read the page to see whether the drop \
+             landed where your drag ended; this click request was not run, so read the window before sending it again"
         );
         assert_eq!(
             pending_refusal(app, &WatchEnd::Failed("connection lost".into()), "drag"),

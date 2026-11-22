@@ -975,3 +975,74 @@ Evidence for the design call, not the call:
 - Chrome's toolbar bubbles open only sometimes behind, and are closed when they do (star 3/6, profile 1/6). Their AXPress
   opens them, but makes Chrome frontmost.
 - #458's own rule answers a false `clickUnconfirmed` for Chrome's AXPopUpButtons that open bubbles.
+
+## #469 signal: what a closed pop-up button says before it is pressed
+
+The question is whether a closed AXPopUpButton says, before any press, that it opens a menu rather than a bubble. Kit:
+`scripts/probe-463/measure.mjs --signal` (workflow input `signal: yes`; tool.swift `axdump`; reader
+`signal-reader.mjs`). The apps were Chrome, TextEdit and Script Editor, 4 rows each. Each row: a reset with every button
+closed, the app behind the person's Finder windows (layout a, shared), and one observation, which turns Chrome's
+accessibility on. Then, for every AXPopUpButton, AXMenuButton and AXComboBox in the app's windows (web areas included)
+and every AXButton outside a web area, the kit read:
+- every attribute the element names, with its value;
+- the extras read whether named or not: AXHasPopup, AXPopupValue, AXSubrole, AXRoleDescription, AXDOMClassList,
+  AXIdentifier, AXDOMIdentifier, AXExpanded, AXValue, AXTitle, AXDescription;
+- its parameterized-attribute and action names, its children's roles, and its parent chain's roles.
+
+Nothing was pressed or posted. In all 12 rows, no window of the app was open above layer 0 at the read, Finder was
+frontmost, and the layout read back as built. Finder's and Calculator's buttons were dumped once.
+
+Run, engine 1a1956b2b7f749ccd1f8389fdc31566cd7b79a35 (main): https://github.com/SSFSKIM/cua/actions/runs/44970638020
+(kit 64ceac15, Google Chrome 157.0.8103.79, macOS 26.7.2, image 20261117.0516.1). It had 12 rows and no problems.
+Artifacts are in `~/.local/share/probe-463/run-44970638020/`.
+
+What each button opens comes from #463's run 44959835166. In every cell below, each value was the same in all 4 rows
+(TextEdit and Script Editor: in both windows of all 4 rows).
+
+| button | role | opens (#463) | AXHasPopup | AXPopupValue | AXDOMClassList | children (closed) | AXToolbar / AXWebArea ancestor | AXExpanded |
+|---|---|---|---|---|---|---|---|---|
+| Chrome app menu | AXPopUpButton | **menu** (L101) | true | `menu` | `BrowserAppMenuButton` | none | toolbar / - | unsupported |
+| Chrome page `<select>` | AXPopUpButton | **menu** (#458) | true | `menu` | [] | 1 AXMenuItem | - / web | false |
+| Chrome `<input type=date>` "Show date picker" | AXPopUpButton | picker (L101) | true | `menu` | [] | none | - / web (under an AXDateField) | false |
+| Chrome **tab search** | AXPopUpButton | **bubble** (L0) | **true** | **`menu`** | `TabStripFlatEdgeButton` | none | - / - (in the tab strip) | unsupported |
+| Chrome **site information** | AXPopUpButton | **bubble** (L0) | **false** | **`false`** | `LocationIconView` | none | toolbar / - | unsupported |
+| Chrome profile `You` | AXButton | bubble (L0) | true | `menu` | `AvatarToolbarButton` | none | toolbar / - | unsupported |
+| Chrome bookmark star | AXButton | bubble (L0) | false | `false` | `PageActionView` | none | toolbar / - | unsupported |
+| Chrome Back, Forward, Reload, New Tab, tab Close | AXButton | - | false | `false` | `BackForwardButton`, `ReloadButton`, `TabStripControlButton`, `TabCloseButton` | none | toolbar (Back, Forward, Reload) | unsupported |
+| TextEdit typeface, style, line spacing | AXPopUpButton | menu (#458) | unsupported | unsupported | unsupported | none | - / - | unsupported |
+| TextEdit `list style` | AXMenuButton | menu (#463) | unsupported | unsupported | unsupported | none | - / - | unsupported |
+| TextEdit `highlight color` | AXMenuButton (subrole AXSegment) | not measured | unsupported | unsupported | unsupported | none | - / - | unsupported |
+| TextEdit `document actions` | AXMenuButton | **popover** (L0, #463) | unsupported | unsupported | unsupported | none | - / - | unsupported |
+| TextEdit font-size combo box | AXComboBox | its list (#458) | unsupported | unsupported | unsupported | 1 AXButton (the arrow, AXPress only) | - / - | false |
+| Script Editor language, elements | AXPopUpButton | menu (#458: language) | unsupported | unsupported | unsupported | none | - / - | unsupported |
+| Finder "more toolbar items" | AXPopUpButton | not measured | unsupported | unsupported | unsupported | none | - | - |
+
+"Unsupported" is AXError −25205 (attribute unsupported). Chrome's toolbar buttons answer −25212 (no value) for
+AXExpanded. Chrome's native buttons have no AXSubrole. AXIdentifier has no value (−25212) in Chrome and TextEdit;
+Script Editor's pop-ups have `_NS:10` and `_NS:49`.
+
+Every other Chrome attribute is the same across the app menu, tab search and site information, with three exceptions:
+- AXDescription and AXTitle, the labels;
+- AXCustomContent, CFData on the app menu only and null on the other buttons (contents not decoded);
+- AXDOMIdentifier, a per-launch `view_NNNN`, empty on tab search and the star.
+
+### Reading
+
+- **No attribute separates every menu-opening button from every bubble-opening one.**
+  - AXHasPopup with AXPopupValue `menu` covers the app menu, the `<select>` and the date button. It rules out site
+    information and the star (`false`).
+  - But **tab search and the profile button claim `menu` too**, and both open a bubble. So AXPopupValue is necessary for a
+    menu here, not sufficient. 4/4 stable per button.
+  - An AXMenu child marks only the `<select>`, which has an AXMenuItem child while closed. The app menu has no child.
+    AppKit's pop-ups have none either.
+  - An AXToolbar ancestor holds the app menu and site information alike, and tab search sits outside it.
+  - AXExpanded is unsupported on Chrome's toolbar buttons.
+- **The only values that pull the app menu apart from tab search are the view class and AXCustomContent.** The view class
+  is AXDOMClassList: `BrowserAppMenuButton` against `TabStripFlatEdgeButton`, `LocationIconView`, `AvatarToolbarButton`
+  and `PageActionView`. AXCustomContent is present only on the app menu, meaning not known. Both are stable 4/4.
+- **AppKit says nothing either way.** AXHasPopup, AXPopupValue and AXDOMClassList are unsupported on every AppKit button.
+  Its AXPopUpButtons opened menus in every #458 and #463 row. An AXMenuButton is not always a menu: `document actions`
+  opens a popover.
+- **A signal measured after the press is available.** The UI's own window kind (layer 101 for a menu, layer 0 for a
+  bubble) is what #458's effect check already reads. That is why tab search and site information answer
+  `clickUnconfirmed`.

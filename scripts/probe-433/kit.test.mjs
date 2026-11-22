@@ -127,7 +127,7 @@ test('replies: outcome, the guard\'s record on a refusal and on a success, the r
     stalePoint: {verdict: 'refused', reason: 'nodeGone', recordedRole: 'AXStaticText', hitRole: 'AXStaticText', ms: 1.2}}}};
   assert.equal(outcomeOf(refused), 'screenChangedSinceScreenshot');
   assert.deepEqual(stalePointOf(refused), {verdict: 'refused', reason: 'nodeGone', identity: null, recordedRole: 'AXStaticText',
-    hitRole: 'AXStaticText', ms: 1.2, rechecked: false, underlyingRole: null, underlyingIdentity: null});
+    hitRole: 'AXStaticText', ms: 1.2, rechecked: false, underlyingRole: null, underlyingIdentity: null, controlRole: null});
   // #433's fix: the control beneath, and how it was found.
   const under = stalePointOf({result: {meta: {stalePoint: {verdict: 'kept', reason: 'sameElement', recordedRole: 'AXGroup', underlyingRole: 'AXLink', underlyingIdentity: 'recreated'}}}});
   assert.equal(under.underlyingRole, 'AXLink'); assert.equal(under.underlyingIdentity, 'recreated');
@@ -190,12 +190,15 @@ test('verdicts: kept and landed, refused, refused yet delivered or unreported, m
   assert.deepEqual(landingOf([ev('target'), ev('none', 'mouseup')]), {landed: true, reached: true, wrong: [], nowhere: true, events: 2});
 });
 
+const deco = r => r.head === 'fix' && CELLS[r.cell].twin === 'deco';
 // Synthetic qualification rows: `verdictFor` names each row's verdict.
 function rows(verdictFor, extra = () => ({}), units = UNITS) {
   return plan({mode: 'qualify', heads: ['main', 'fix'], units}).map(r => {
     const v = verdictFor(r), kept = v.startsWith('kept') || v === 'wrong-target';
     return {...r, valid: true, verdict: v, click: kept ? 'success' : 'screenChangedSinceScreenshot',
-      guard: {verdict: kept ? 'kept' : 'refused', reason: kept ? 'sameElement' : 'nodeGone', identity: v === 'wrong-target' ? 'recreated' : null,
+      // #443: the fix refuses decomove controlGone, the gone control's role beside.
+      guard: {verdict: kept ? 'kept' : 'refused', reason: kept ? 'sameElement' : deco(r) ? 'controlGone' : 'nodeGone', identity: v === 'wrong-target' ? 'recreated' : null,
+        ...(!kept && deco(r) ? {controlRole: 'AXLink'} : {}),
         recordedRole: recordedRole(r.cell, r.at), ms: r.head === 'fix' ? 4 : 2},
       clickEvents: v === 'wrong-target' ? ['pointerdown:twin', 'click:twin'] : v === 'kept-missed' ? ['click:none'] : v.startsWith('kept') ? ['click:target'] : [],
       presentationHeld: true, ...extra(r)};
@@ -220,7 +223,18 @@ test('gates pass a fix that refuses every twin and answers as main elsewhere, an
   // A moved target's own handle refuses frameMoved, which the swap cells count with nodeGone; no other twin does.
   const swapMoved = rows(good, r => r.head === 'fix' && r.cell.startsWith('twinswap') ? {guard: {verdict: 'refused', reason: 'frameMoved'}} : {});
   assert.equal(gates(swapMoved, {coverage: cov}).twinRefused.pass, true);
-  assert.equal(g.noWrongTarget.mainWrong, 12 * 20);
+  assert.equal(g.noWrongTarget.mainWrong, 13 * 20 + 20);  // decomove, gated from #443, at both points
+  // #443: decomove refuses controlGone wherever main kept; any other refusal reason there fails; where main refused
+  // (Safari's nodeGone), the fix answers as main, reason included; a controlGone elsewhere is reported.
+  assert.equal(g.decoGone.pass, true); assert.equal(g.decoGone.controlGone, 40); assert.deepEqual(g.decoGone.controlRole, {AXLink: 40});
+  const decoOther = gates(rows(good, r => r.head === 'fix' && r.cell === 'decomove' && r.at === 'text' && r.rep === 2 ? {guard: {verdict: 'refused', reason: 'nodeGone', recordedRole: 'AXGroup'}} : {}), {coverage: cov}).decoGone;
+  assert.equal(decoOther.pass, false); assert.equal(decoOther.failed, 1);
+  const safariLike = side => r => r.cell === 'decomove' && (side === 'both' || r.head === side) ? 'refused' : good(r);
+  const asSafari = rows(safariLike('both'), r => r.cell === 'decomove' ? {guard: {verdict: 'refused', reason: 'nodeGone', recordedRole: 'AXGroup'}} : {});
+  assert.equal(gates(asSafari, {coverage: cov}).decoGone.pass, true);
+  const goneElsewhere = gates(rows(good, r => r.head === 'fix' && r.cell === 'remount' && r.at === 'link' && r.rep === 1 ? {verdict: 'refused', guard: {verdict: 'refused', reason: 'controlGone', recordedRole: 'AXLink'}} : {}), {coverage: cov});
+  assert.deepEqual(goneElsewhere.decoGone.elsewhere, {'remount/link': 1}); assert.equal(goneElsewhere.decoGone.elsewhereLanded, 1);
+  assert.equal(goneElsewhere.keptAsMain.pass, false);
   const cvKept = gates(rows(at('twincv', 'text', 0, 'kept-landed')), {coverage: cov});
   assert.equal(cvKept.twinFrameless.pass, false); assert.equal(cvKept.twinRefused.pass, true); assert.equal(cvKept.twinFrameless.perUnit['twincv/text'].missed, 1);
   // #433: twincover is gated at both points on the click never reaching the twin; any refusal reason counts, a keep
@@ -229,12 +243,12 @@ test('gates pass a fix that refuses every twin and answers as main elsewhere, an
   assert.equal(overlay.overlayTwin.pass, false); assert.equal(overlay.overlayTwin.reachedTwin, 1); assert.equal(overlay.noWrongTarget.pass, false);
   assert.equal(overlay.twinRefused.pass, true);
   const why = gates(rows(good, r => r.head === 'fix' && r.cell === 'twincover' ? {guard: {verdict: 'refused', reason: 'interactiveHit', recordedRole: 'AXGroup'}} : {}), {coverage: cov});
-  assert.equal(why.overlayTwin.pass, true); assert.equal(why.overlayTwin.refused, 40);
+  assert.equal(why.overlayTwin.pass, true); assert.equal(why.overlayTwin.refused, 80);  // twincover and decomove (#443)
   const quietKeep = gates(rows(at('twincover', 'text', 0, 'kept-missed'), r => r.head === 'fix' && r.cell === 'twincover' && r.at === 'text' && r.rep === 0 ? {clickEvents: []} : {}), {coverage: cov});
-  assert.equal(quietKeep.overlayTwin.pass, true); assert.equal(quietKeep.overlayTwin.refused, 39); assert.equal(quietKeep.overlayTwin.failed, 1);
+  assert.equal(quietKeep.overlayTwin.pass, true); assert.equal(quietKeep.overlayTwin.refused, 79); assert.equal(quietKeep.overlayTwin.failed, 1);
   // The builder's cost cells (#433) are reported only, outside the gates' rows.
-  const costRows = ok.filter(r => r.head === 'fix' && ['stickyscroll', 'tipremount', 'twinunder', 'decomove'].includes(r.cell)).length;
-  assert.equal(costRows, 4 * 2 * 20); assert.ok(['stickyscroll', 'tipremount', 'twinunder'].every(c => g.reportOnly.perUnit[c + '/link']));
+  const costRows = ok.filter(r => r.head === 'fix' && ['stickyscroll', 'tipremount', 'twinunder'].includes(r.cell)).length;
+  assert.equal(costRows, 3 * 2 * 20); assert.ok(['stickyscroll', 'tipremount', 'twinunder'].every(c => g.reportOnly.perUnit[c + '/link']));
   assert.deepEqual(g.guardMs.fix, {n: ok.length / 2 - costRows, p50: 4, p95: 4, max: 4});
   // Only a guard that judged the overlay counts: a fix row with no guard record, or another recorded role, fails; too few
   // rows recording the overlay on either head leave the gate inconclusive.

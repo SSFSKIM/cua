@@ -120,7 +120,9 @@ export function stalePointOf(reply){
     identity:sp.identity==='handle'||sp.identity==='recreated'?sp.identity:sp.identity==null?null:'other',
     recordedRole:role(sp.recordedRole),hitRole:role(sp.hitRole),ms:Number.isFinite(sp.ms)?sp.ms:null,rechecked:sp.rechecked===true,
     // #433's fix: the recorded control beneath the node that the guard judged too, and how it was found (absent on main).
-    underlyingRole:role(sp.underlyingRole),underlyingIdentity:sp.underlyingIdentity==='handle'||sp.underlyingIdentity==='recreated'?sp.underlyingIdentity:sp.underlyingIdentity==null?null:'other'};
+    underlyingRole:role(sp.underlyingRole),underlyingIdentity:sp.underlyingIdentity==='handle'||sp.underlyingIdentity==='recreated'?sp.underlyingIdentity:sp.underlyingIdentity==null?null:'other',
+    // #443's fix: for controlGone, the role of the recorded control found gone (absent on main).
+    controlRole:role(sp.controlRole)};
 }
 // #433 (ruling 909): the guard's refusal sentence, the engine's own error message on the owned fixture, captured for an
 // overlay cell's refusal only; control characters dropped, at most 600 characters.
@@ -209,6 +211,7 @@ export function summarize(rows){
       // #433: what the record held at the point, and the controls the click reached (`none` for the page itself).
       recorded:tally(v.map(r=>r.guard?.recordedRole??'none')),
       underlying:tally(v.map(r=>r.guard?.underlyingRole?`${r.guard.underlyingRole}:${r.guard.underlyingIdentity??'none'}`:'none')),
+      control:tally(v.map(r=>r.guard?.controlRole??'none')),
       reached:tally(v.map(r=>[...new Set(eventsOf(r).map(e=>e.link))].sort().join('+')||'nothing')),route:tally(v.map(r=>r.route??'none')),
       landed:v.filter(r=>r.landed).length,wrong:v.filter(r=>r.verdict==='wrong-target').length,
       presentationLost:v.filter(r=>r.presentationHeld===false).length,guardMs:quantiles(v.map(r=>r.guard?.ms)),
@@ -349,6 +352,20 @@ export function gates(rows,{coverage:cov,units:all=UNITS,minPairs=MIN_PAIRS}){
       return {...g,pass:!unitsWhere(pred).length||list.length>0&&everyUnit(pred)&&reachedAny.length===0&&unguarded.length===0&&thin.length===0,
         reachedTwin:list.filter(r=>reached(r).includes('twin')).length,reachedAny:reachedAny.length,refused:list.filter(r=>r.verdict==='refused').length,
         unguarded:unguarded.length,evidence,thin};})(),
+    // #443: decomove's fix rows refused controlGone wherever their main row kept (main lands on B), and as main, reason
+    // included, wherever main refused (Safari's nodeGone); beside, every valid fix row of another cell refused controlGone
+    // (`elsewhere`, reported: a keep cell's is failed by its own gate; how many of those main kept and landed, `elsewhereLanded`).
+    decoGone:(()=>{const pred=c=>CELLS[c].twin==='deco',list=fix.filter(r=>pred(r.cell)),paired=list.filter(mate);
+      const ok=r=>mate(r).guard?.verdict==='kept'?r.verdict==='refused'&&r.guard?.reason==='controlGone'
+        :r.verdict===mate(r).verdict&&r.guard?.reason===mate(r).guard?.reason;
+      const miss=paired.filter(r=>!ok(r));
+      const elsewhere=rows.filter(r=>r.head==='fix'&&r.valid&&!pred(r.cell)&&r.guard?.reason==='controlGone');
+      return {pass:!unitsWhere(pred).length||paired.length>0&&everyUnit(pred)&&miss.length===0,
+        rows:list.length,paired:paired.length,failed:miss.length,
+        controlGone:list.filter(r=>r.verdict==='refused'&&r.guard?.reason==='controlGone').length,
+        mainKept:paired.filter(r=>mate(r).guard?.verdict==='kept').length,mainWrong:main.filter(r=>pred(r.cell)&&r.verdict==='wrong-target').length,
+        controlRole:tally(list.map(r=>r.guard?.controlRole??'none')),perUnit:perUnit(pred,miss),
+        elsewhere:tally(elsewhere.map(r=>unitKey(r))),elsewhereLanded:elsewhere.filter(r=>mate(r)?.verdict==='kept-landed').length,examples:brief(miss)};})(),
     twinUnrecorded:twinGate(c=>UNRECORDED.has(c)),
     twinFrameless:twinGate(c=>FRAMELESS.has(c)),
     keptAsMain:asMainGate(c=>CELLS[c].kind==='keep'&&!OVERLAY.has(c),{mustKeep:true}),

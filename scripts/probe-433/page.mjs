@@ -67,6 +67,14 @@ function cover(kind,extra=0){
   }
   inner.id='veil';slots[0].append(outer);
 }
+// #433's decomove (and #443's rolechange): an inert decoration nested WRAP groups deep inside the target, the size of
+// its box (\`mover\`, its outermost group).
+function deco(){
+  target.style.position='relative';let inner=null;
+  for(let i=0;i<=WRAP;i++){const d=document.createElement('span');d.setAttribute('role','group');
+    d.style.cssText='position:absolute;left:0;top:0;width:100%;height:100%;display:block';if(inner)inner.append(d);else mover=d;inner=d;}
+  inner.id='veil';target.append(mover);
+}
 // #433's rebuildunder: the target inside a list (its parent), which mark re-renders in place with the label unchanged.
 function listed(el){const ul=document.createElement('ul');ul.id='list';ul.style.cssText='margin:0;padding:0;list-style:none';
   const li=document.createElement('li');li.append(el);ul.append(li);return ul;}
@@ -128,10 +136,7 @@ function run(c){
     }else if(spec.twin==='deco'){
       // #433's decomove: an inert decoration nested two groups deep inside the target, the size of its box; mark moves it
       // into a new link B at the target's place.
-      target.style.position='relative';let inner=null;
-      for(let i=0;i<=WRAP;i++){const d=document.createElement('span');d.setAttribute('role','group');
-        d.style.cssText='position:absolute;left:0;top:0;width:100%;height:100%;display:block';if(inner)inner.append(d);else mover=d;inner=d;}
-      inner.id='veil';target.append(mover);slots[1].append(archive);
+      deco();slots[1].append(archive);
     }else if(spec.twin==='cover'){
       // As move, under a group laid over the target's row that survives the change (a transparent overlay, which lets
       // the pointer through to what lies under it).
@@ -196,7 +201,7 @@ function run(c){
       if(spec.behind){behind=document.createElement('button');behind.type='button';behind.textContent='Close';
         behind.style.cssText='position:absolute;left:0;top:0;width:'+target.offsetWidth+'px;height:64px;z-index:-1;border:0;background:#eee;color:#999';
         slots[0].style.position='relative';slots[0].append(behind);}
-      if(spec.cover)cover(spec.cover,spec.parent?2:0);
+      if(spec.cover==='deco')deco();else if(spec.cover)cover(spec.cover,spec.parent?2:0);
     }
     if(document.activeElement&&document.activeElement!==document.body)document.activeElement.blur();
     clicks=[];
@@ -227,6 +232,7 @@ function run(c){
     else if(spec.parent){const n=control('target',spec.after,spec);document.getElementById('list').replaceWith(listed(n));target=n;}
     else if(spec.behind)behind.remove();
     else if(spec.behindText)behind.textContent=spec.behindText[1];
+    else if(spec.role)target.setAttribute('role',spec.role);  // #443's rolechange: the same element, a new role
     else if(spec.cover&&!spec.remount){}  // #433's controls: the overlay over a live link, nothing changing
     else if(spec.remount==='link'){const n=control('target',spec.after,spec);target.replaceWith(n);target=n;}
     else if(spec.remount==='text'){const s=document.createElement('span');s.textContent=spec.after;target.firstChild.replaceWith(s);}

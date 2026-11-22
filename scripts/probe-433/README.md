@@ -307,3 +307,20 @@ Main `870dd117615bbfce72e637b8749b4b24293b8fa5`; fix `2a1b0368744b60666ddfbf1d7f
 - **`decomove`** is the same on every lane: main lands on B on CfT and Electron (wrong target, 40 of 40 each); the fix refuses `nodeGone`; Safari refuses on both heads.
 - **The controls answer as main, row for row, reason included**: `overcontrol` kept and landed on Electron and Safari; `scrim` eaten on every lane; no fix click reached anything main's did not. CfT fails `overlayKept` on main's own baseline: main keeps every `overcontrol` row but the shared-mode element route presses the overlay group and posts nothing (`backgroundClickRefused`), so neither head lands (`mainNotKept` 40, `differ` 0, `reasonDiffer` 0). That is the lane's route, not the fix.
 - **The guard's time.** The fix's p50 rises from 1.5-3.0 ms to 4.0-4.2 ms, and its p95 from 3.1-11.4 to 10.4-12.4 ms: its refusals take 6-8 ms at p50 (the search for the control beneath); its keeps stay within 0.6 ms of main's. Maximum 23.3 ms (Safari).
+
+## #443 qual
+
+Branch `probe/443-qual`, from `probe/433-qual` (`405cbb05`), workflow `probe-443-qual.yml` (artifacts `probe-443-<lane>-<mode>`). #443 (`fix/443-decoration-control-gone`): the guard refuses (`controlGone`) a point #296 keeps on an inert node found by its own handle, not #305's `recordedHit`, whose recorded control (`ScreenshotNode.control`) answers `kAXErrorInvalidUIElement`. This kit qualifies it main against fix on `decomove`, a role-change cell, #433's cells and #340's.
+
+```sh
+# Three batches, one in flight at a time, each lane under 500 rows (10 per head per unit).
+gh workflow run probe-443-qual.yml --ref probe/443-qual -f main="$MAIN_SHA" -f fix="$FIX_SHA" -f mode=qualify -f reps=10 -f cells=twincover,overcontrol,scrim,decomove,rolechange,stickyscroll,tipremount,twinunder
+gh workflow run probe-443-qual.yml --ref probe/443-qual -f main="$MAIN_SHA" -f fix="$FIX_SHA" -f mode=qualify -f reps=10 -f cells=nounder,rebuildunder,bgbutton,textbehind,twin,twincap,remount,retext,plain,like,btnremount,tableremount,tablecellremount
+gh workflow run probe-443-qual.yml --ref probe/443-qual -f main="$MAIN_SHA" -f fix="$FIX_SHA" -f mode=qualify -f reps=10 -f cells=inbox,reltime,shrink,linksave,moved,linkmono,right,centre,wideoverlay
+# The README's tables from a run: gh run download <id> -D <dir>; node scripts/probe-433/tables.mjs <dir> <label>
+```
+
+What #443 changes in #433's kit:
+- **`decomove` is gated** (no longer report only): in `overlayTwin` (no fix row reaches B or anything else) and in a new gate, `decoGone`: every fix row whose paired main row kept must be refused `controlGone`, and where main refused (Safari's `nodeGone`) the fix answers as main, reason included. Beside it, `decoGone.elsewhere` counts any other cell's fix rows refused `controlGone` (`elsewhereLanded`: of those, the ones whose main row kept and landed, a false refusal).
+- **`rolechange`** (kind keep, gate `overlayKept`): the same inert decoration inside link A (`page.mjs` `deco`), and `mark` sets `role="button"` on A's own element: the DOM element, its box and its label stay, so a click lands on A. Chromium re-creates an element's accessibility object when its role changes; if the decoration's object survives that, the fix's named limit (a control re-created for the same DOM element) shows here as a `controlGone` refusal main does not make.
+- Every row records the fix's `stalePoint.controlRole` (the gone control's role, set on `controlGone` only); `report.mjs` tabulates it (`Control gone`), and `tables.mjs` prints the tables below (a fix cell's `[AXLink n]` is that role).

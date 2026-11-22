@@ -94,8 +94,13 @@ export const CELLS={
   // size of the link) moved from link A into a new link B, "Next", at the same point (`decomove`: the record holds the
   // decoration alive, so main keeps and lands on B; reported, never gated).
   textbehind:{kind:'keep',before:'Inbox',after:'Inbox',behindText:['Saved','Saving']},
-  // decomove is report only (its own ticket; the narrowed fix runs only under an inert overlay with no acting ancestor).
-  decomove:{kind:'twin',before:'Inbox',after:'Next',twin:'deco',cover:'deco',records:'AXGroup',reportOnlyAt:['text','link']},
+  // #443 gates decomove (overlayTwin, and decoGone: refused controlGone wherever main kept); #433 reported it only.
+  decomove:{kind:'twin',before:'Inbox',after:'Next',twin:'deco',cover:'deco',records:'AXGroup'},
+  // #443's role change: the same decoration inside link A, and mark gives A's own element role=button (Chromium
+  // re-creates an element's accessibility object when its role changes). The DOM element, its box and its label stay, so
+  // a click lands on A; the fix's named limit is a control re-created this way while the decoration's object survives,
+  // which it would refuse controlGone (gate overlayKept: kept and landed as main).
+  rolechange:{kind:'keep',before:'Inbox',after:'Inbox',cover:'deco',role:'button',records:'AXGroup'},
   // The fix's costs (the builder's, reported, never gated: `reportOnlyAt` every point): a fixed header strip that catches
   // the pointer over the link, the page scrolled 128 px under it (`stickyscroll`: main keeps the header, the fix may refuse
   // the link as moved); the veil over a link re-rendered whole with its label (`tipremount`: #431's strict form judges the

@@ -671,10 +671,10 @@ final class OverlayClickTests: XCTestCase {
 
   private func elementDecision(_ element: Node, recorded: (label: String?, frame: CGRect?)? = nil, hit: Node?, point: CGPoint, observed: Node,
                                observedNumber: CGWindowID = 31, list: [ListedWindow], chromium: Bool = true,
-                               hits: UnsafeMutablePointer<Int>? = nil) -> OverlayElementDecision<Node> {
+                               hits: UnsafeMutablePointer<Int>? = nil, lists: UnsafeMutablePointer<Int>? = nil) -> OverlayElementDecision<Node> {
     let label = stalePointLabel(title: element.title, description: element.description, value: element.role == "AXStaticText" ? element.value : nil)
     return overlayElement(element, recorded: recorded ?? (label, element.frame), hit: { hits?.pointee += 1; return hit }, point: point,
-                          observed: observed, observedNumber: observedNumber, pid: pid, list: { list }, chromium: chromium, reads: reads,
+                          observed: observed, observedNumber: observedNumber, pid: pid, list: { lists?.pointee += 1; return list }, chromium: chromium, reads: reads,
                           number: { window in
       window === observed ? observedNumber : list.first { $0.number != observedNumber && $0.bounds == window.frame }?.number
     })
@@ -720,9 +720,10 @@ final class OverlayClickTests: XCTestCase {
     let browser = Node(kAXWindowRole, browserWindow.bounds)
     let button = Node("AXButton", rect(600, 400, 80, 30), title: "Reload", actions: ["AXPress"], parent: browser)
     var hits = 0
+    var lists = 0
     guard case .notOverlay = elementDecision(button, hit: button, point: CGPoint(x: 640, y: 415), observed: browser, list: [browserWindow],
-                                             hits: &hits) else { return XCTFail("the observed window's button") }
-    XCTAssertEqual(hits, 0, "no hit-test, descent or window list for a click in the observed window")
+                                             hits: &hits, lists: &lists) else { return XCTFail("the observed window's button") }
+    XCTAssertEqual(hits + lists, 0, "no hit-test, descent or window list for a click in the observed window")
     let scene = omnibox()
     scene.webArea.title = "Extension"
     guard case .notOverlay = elementDecision(scene.rows[1], hit: scene.webArea, point: rowPoint, observed: browser,

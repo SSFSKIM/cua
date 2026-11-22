@@ -7688,10 +7688,11 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   listed bounds, so `stampWindow` sets fields 91/92 and the overlay-local location), route 2′ with no activation, no hold
   and no delivery guard, which also covers the datalist; the popover by AXPress on the first element from the node up to
   its row that lists it, route 1 (`noAction` when none does).
-  (4) Confirmed by the overlay's window leaving the on-screen list or the row's element dying, read at once and every
+  (4) Confirmed by the overlay's window leaving the on-screen list (the row's element dying no longer counts: the entry
+  below, finding 7), read at once and every
   20 ms for 500 ms (`overlayConfirmMs`); otherwise `clickUnconfirmed` ("it was sent to the window of <App>'s own that lies
   over the one the screenshot showed (a suggestion list, popup or prompt), but that window was not seen to close").
-  Meta `overlayClick {window, by, kind, route ("post" | "AXPress"), effect ("closed" | "rowGone" | "unconfirmed"), polls,
+  Meta `overlayClick {window, by, kind, route ("post" | "AXPress"), effect ("closed" | "unconfirmed"), polls,
   ms}`, and on a refusal `{window, by, kind?, refused}` beside #452's unchanged `stalePoint` record (still `refused`,
   `appWindowOverPoint`, which says what #452 read; `overlayClick` says what was done).
   (5) #456's rechecks: `StalePointGate.check` now answers its verdict too, and every recheck site (#282's press, #283's
@@ -7732,6 +7733,66 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   window, no confirmation, no descent, no window shift, no recheck rule, the hit-test's answer not carried on the
   verdict; for #470 no own-ancestry pre-check (it would hit-test every element click), the element not required on the
   hit's chain, no enabled check.
+  Date/Author: 2026-11-21, cursor235's implementer for #453.
+- Decision (#453 and #470, the review of dfe6f443..b8bb5115, reviewer-high, 2026-11-21; amends the entry above): **nine
+  corrections, each a wrong click or a false ok the branch introduced where main refused; where the measurement gives
+  no signal, the click is refused rather than guessed.** OverlayClick.swift, Skyshot.swift, Screenshot.swift.
+  (1, P1) Inert path: every element the hit's chain passes between its leaf and the matched row must be inert content
+  (`overlayInert`: an AXStaticText or AXImage whatever it lists, since Chromium lists AXPress on every text; an AXGroup
+  whose actions read and hold no AXPress; the measured AXEmptyGroup lists AXShowMenu and AXScrollToVisible only), else
+  `notInert`: an unrecorded button added inside a suggestion is never posted to.
+  (2, P1) Stability: the capture ran beside the walk, so the record and the live tree could agree on rows the image did
+  not show (one typed character re-lays the omnibox out 2 to 4 times in about 250 ms). A re-read after the capture alone
+  cannot prove that (a row read after the image was taken may differ from it), so when the window list at the
+  observation's start holds a window of the app's over the observed one (`appWindowsOver`), the walk runs first and the
+  capture after it, and once the image is joined the overlay's recorded rows are read again (`overlayStableWindows`:
+  under the record's node framed as the window's bounds, within 1 pt, every node carrying text, its frame within 1 pt and
+  its label exact); rows the same before and after the image are the ones it shows. Only such a window is delivered into
+  (`ObservedScreenshot.overlayStable`), else `unsettled`, #452's refusal, whose fallback says take a new screenshot. Cost:
+  one window-list read (under 1 ms) on every observation with a screenshot; with an overlay present, the capture's time
+  added after the walk's instead of beside it, and the re-read of the overlay's text nodes (about 30 for the omnibox; the
+  kit's full read of the popup's rows took 14 to 18 ms), timed as `overlayStability` with `overlaySequential`,
+  `overlayStable` and `overlayRowsReread` in the timings. Not measured live.
+  (3, P1) Overlap: the record decides, not the hit: another recorded node of the overlay (the subtree of the row's highest
+  recorded ancestor on the hit's chain) that holds the point, is not known to be inert, and is neither the row's ancestor
+  nor inside it, refuses `overlapping`, so a control on top that has gone never lets the one under it pass.
+  (4, P1) #470 identity: the element's label and frame are compared with what its ID was recorded with (the lineage
+  entry's identity and frame; Chrome reuses a row's element for another suggestion): `textChanged` (none recorded
+  included), `frameMoved`. (5, P1) #470 target: the element must be a row or button itself, of no container role
+  (`overlayContainerRoles`: a group, a list, a dialog's group among them) and carrying text, reached by the hit through
+  inert content only; else `notItself`, `notReached`, `notInert`. Once the overlay is recognised (its own ancestry reads
+  to a listed kind), every such failure, a disabled row and a missing AXPress included, is refused with nothing sent
+  (`overlayElementRefused`, `appWindowOverPoint`: "… a click on it is sent to that window only when it is still the row
+  or button the last observation listed; here <cause>. Nothing was sent. Call getAXState() again and click the row or
+  button by its new ID, or use keys …"), never left to route 3; an element outside any listed overlay keeps its path.
+  (6, P1) Just before the click the decision runs again on a fresh hit-test and window list (`revalidate`): another row
+  or another window refuses `changed` (#452's refusal for a coordinate click, #470's for an element click), nothing sent,
+  and the post is stamped with the bounds read then.
+  (7, P1) Only the overlay's window leaving the screen confirms; `rowGone` is dropped, since an overlay refreshing its
+  rows destroys them while it stays open. The AppKit popover's swatch confirms the same way: the measurement saw its
+  popover close on every take (12/12); a swatch press that leaves it open answers `clickUnconfirmed`, which is honest.
+  (8, P2) Omnibox identity: beside the page title, the browser's own sign (`omniboxLocationBar`): the app's focused
+  element is an AXTextField outside any web page and outside the popup, inside the popup window's bounds above its page,
+  as the WebUI popup draws around the location bar (the measurement: the focused "Address and search bar" inside the
+  popup's bounds above its web area, 288/288 omnibox rows, by frame only, not its localised description). No AXURL of
+  the popup's page was recorded, so none is read. Without it, `unknownKind`.
+  (9, P2) Time: each decision has `overlayDecisionBudgetMs` (250 ms) or what is left of the request, every AX read
+  bounded by the time left (`BoundedAXRead`, `boundedMessagingTimeout`), the descent and the ancestry stopping once it
+  is spent; then the click is refused `timedOut` whatever was found, and #470's never falls through.
+  Proven offline (`OverlayClickTests`, 34 tests, 10 added): an unrecorded button inside the row and a group listing
+  AXPress refused, the measured empty group taken; an unsettled overlay refused; stability true only when the rows read
+  the same after the image, false on a re-laid-out row, a moved row or no root framed as the window, nothing of the page
+  read; a gone control over the row refusing whatever the hit; the decision run again (nothing sent on another row or
+  window, the post on the bounds read then); a row dying while the overlay stays unconfirmed; the omnibox refused with no
+  focused location bar, a page's field, or a field below the page; out of time refused for both routes, the descent
+  reading no further level; #470's recorded text, frame, container, dialog, reach and disabled refusals. Reverted one
+  at a time (13 mutations), each fails: no inert check, no stability required, the stability's text and frame checks,
+  no overlap check, no recorded label or frame (#470), the container rule, no revalidation, no location bar, the
+  point's and the element's expiry, the descent's per-level expiry check. Finding 7's test asserts the behaviour
+  b8bb5115's `rowGone` contradicted (it confirmed on the row's death); it was not run against that commit. The entry
+  above's mutations rerun on the corrected code each still fail (six re-pointed at the rewritten lines: the frame, the
+  row on the chain, the alert dialog, Chromium required, #470's own-ancestry pre-check now counting window-list reads
+  too, and #470's reach and enabled checks).
   Date/Author: 2026-11-21, cursor235's implementer for #453.
 
 ## Outcomes & Retrospective

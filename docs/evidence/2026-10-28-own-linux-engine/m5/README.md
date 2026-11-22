@@ -72,7 +72,8 @@ Part 1 names, for every item, the release each verdict stands on.
   (#449): 87 of 750 across 0.4.2's development heads. No rate was measured on 0.4.3, the release proposed as the
   default (part 3).
 - **On arm64 at twice the load, an Electron drop can answer ok where it landed outside the target** (#415, a declared
-  limit): 4 of 30 long Electron drags at H8 on 0.4.3, 3 of 30 in L4a at H6 on 0.4.2 (part 3).
+  limit), seen in two test cells: 4 of 30 in L4d's Electron long-left at H8 on 0.4.3, 3 of 30 in L4a's left at
+  H6 (part 3).
 - **Some context menus answer "unconfirmed" after about a second**: a page that draws its own menu, where the vendor
   answered "ok" (#377), and GTK 4's, Firefox's and Qt's menus, which the engine does not detect (#379) (part 3).
 - **Chromium drags on a shared desktop are refused unless their whole path is visible**, and an Electron key release
@@ -205,7 +206,7 @@ Each cell names the release its verdict stands on.
 |---|---|---|---|
 | 1 | No vendor process runs when cua's engine is selected | **Pass** on 0.4.0: only the installed `cua-engine` ran, under cua's trusted worker, and no `sky_linux` ([R3 at H](x64/README.md#L174)). Item 9 shows doctor naming the 0.4.3 pin. R3 reruns on 0.4.3 with the flip (part 6) | **Pass** on 0.4.0, the same ([R3 at H‴](arm64/README.md#L197)). The same rerun with the flip |
 | 2 | Every one of the 21 commands answers as the vendor's does, or as declared | **Pass**: V1–V4 on 0.4.1 ([at H⁗](x64/README.md#L539); [the 21 commands at H](x64/README.md#L299)); V5 on 0.4.2, 52 of 52 ([at H6](x64/README.md#L938)); `move_relative` and `drag_handle`, which V1–V5 don't send, by E1 on 0.4.1 ([E1 at H⁗](x64/README.md#L578); [the map](x64/README.md#L325)). **PENDING:** V5 on 0.4.3 at H8 (the owner's window). Declared cells in part 3 | **Pass**: V1–V4 on 0.4.1 ([at H⁵](arm64/README.md#L489)); V5 on 0.4.3, 52 of 52 ([at H8](arm64/README.md#L1213)); `move_relative` and `drag_handle` by E1 on 0.4.0 ([E1 at H‴](arm64/README.md#L200)). Declared cells in part 3 |
-| 3 | At or below the vendor's speed | **Pass**: the seven operations on 0.4.1 (V2, V3 at H⁗); Chrome's drags on 0.4.3 ([D1 at H8](x64/h8/out/D1.pinned-release/run/summary.md)); Electron's on 0.4.2 ([D2 at H6](x64/h6/out/D2.pinned-release/run/summary.md)); Firefox's on 0.4.0 (D3 at H); desktop moves on 0.4.1 (E1 at H⁗). #358 and #373 declared (parts 2 and 3) | **Pass**: the seven operations on 0.4.1 (V2, V3 at H⁵); Chrome's drags on 0.4.3 ([D1 at H8](arm64/h8/out/D1.pinned-release/run/summary.md)); Electron's on 0.4.2 ([D2 at H6](arm64/h6/out/D2.pinned-release/run/summary.md)); Firefox's and desktop moves on 0.4.0 (D3, E1 at H‴). #358 declared; `activate_window` within the bound (parts 2 and 3) |
+| 3 | At or below the vendor's speed | **Pass**: the seven operations on 0.4.1 (V2, V3 at H⁗); the long drag paths judged on speed, Chrome's canvas on 0.4.3 ([D1 at H8](x64/h8/out/D1.pinned-release/run/summary.md)) and Firefox's canvas on 0.4.0 (D3 at H); desktop moves on 0.4.1 (E1 at H⁗). The scrollbar thumbs pass on distance, not speed: Chrome's on 0.4.3 (D1 at H8), Electron's on 0.4.2 ([D2 at H6](x64/h6/out/D2.pinned-release/run/summary.md)). Listed apart: #358 and #373 declared, and the short Chrome and Electron drags (about 450 ms), which carry no speed verdict (parts 2 and 3) | **Pass**: the seven operations on 0.4.1 (V2, V3 at H⁵); the long drag paths judged on speed, Chrome's canvas on 0.4.3 against the pinned build ([D1 at H8](arm64/h8/out/D1.pinned-release/run/summary.md)) and Firefox's canvas on 0.4.0 (D3 at H‴); desktop moves on 0.4.0 (E1 at H‴). The scrollbar thumbs pass on distance, not speed: Chrome's on 0.4.3 (D1 at H8), Electron's on 0.4.2 ([D2 at H6](arm64/h6/out/D2.pinned-release/run/summary.md)). `activate_window` within the bound. Listed apart: #358 declared, and the short drags, which carry no speed verdict (parts 2 and 3) |
 | 4 | The same elements as the vendor reads | **Pass**: gedit, Chrome and the over-budget page, V2 on 0.4.1 ([V2 at H⁗](x64/README.md#L540)); the truncation line through the facade, FB on 0.4.0 ([FB at H](x64/README.md#L176)) | **Pass**: V2 on 0.4.1 ([at H⁵](arm64/README.md#L490)); the truncation line, FB on 0.4.0 ([FB at H‴](arm64/README.md#L199)) |
 | 5 | Background input leaves a person's windows, focus and pointer alone | **Pass**: the sitting's V1–V5 and Z0 on 0.4.1, every all-clear clear, 0 changes to windows the run did not open over 195 audits ([the sitting at H⁗](x64/README.md#L630), [the scan](x64/README.md#L658)); V5 on 0.4.2 clear with the owner's windows unchanged over 209 checks ([V5 at H6](x64/README.md#L962)). **PENDING:** V5 at H8 | **Pass**: every completed run clear: V1–V4, Z0 and V5 on 0.4.1 ([at H⁵](arm64/README.md#L497)), V5 on 0.4.2 ([at H6](arm64/README.md#L712)) and on 0.4.3 ([at H8](arm64/README.md#L1213)). Set apart: three V5 attempts the guard stopped (one at H⁵, two at H8) read NOT CLEAR and have no verdict (#432, part 3). Nobody uses this desktop (part 3) |
 | 6 | Text arrives once, exactly | **Pass**: gedit, Chrome's textarea and address bar, gnome-text-editor on a dedicated desktop, every paste safety case ([V1](x64/README.md#L539), [V4](x64/README.md#L542)), on 0.4.1 | **Pass**: V1 and V4 on 0.4.1, every paste case ([at H⁵](arm64/README.md#L489)) |
@@ -285,7 +286,7 @@ None of these counts as a pass.
 | #358 | Chrome's long drag and drop is a little slower than the newest vendor build. The engine holds every drop briefly so it can tell an honest answer | 368.7 ms against 337.9, [27.8, 32.7] within the declared 40 ms (D1 at H8). The upper end sits 7.3 ms inside the bound at H8, 3.1 at H6: run-to-run spread is several ms, so any change that adds time to a Chrome press starts here. **#457** (P3) measures the share of the engine's pre-press identification of a Chrome source and takes it off the press path if material ([Decision Log](../../../doperpowers/specs/2026-10-28-own-linux-engine-design.md#L2619)) | 355 against 328.1, [26.8, 27] (D1 at H8) |
 | #373 | Bringing a window to the front is about 7–9 ms slower, because the engine waits until the window is really on top before the next input goes out | cold 11.39 ms against the bar's 4.77, [4.63, 10.915]; warm 9.93 against 0.69, [6.955, 11.93]; within its 15 ms bound ([V3 at H⁗](x64/h4/zero/V3.pinned-release/run/summary.md)) | no gap on arm64: cold 2.6 against 2.2, warm 1.1 against 0.2, a pass **within the bound** of 1 ms, listed with those below ([V3 at H⁵](arm64/h5/out/V3.pinned-release/run/summary.md)) |
 | the hold | Short drags from Chrome or Electron take about 450 ms (above). No speed verdict judges them | 455.1 ms against newest's 320.8 (Chrome select, D1 at H8) | 452.2 against 311.7 |
-| the in-floor release under load | A short Chrome drop is scheduled for release 350 ms after its take. In the counted x64 L4d at twice the load it came 350–357.3 ms after the take; how many tail visits ran is not readable from counted rows. Time only; the 350 ms is a minimum ([Decision Log, 1051](../../../doperpowers/specs/2026-10-28-own-linux-engine-design.md#L2725); [x64 L4d](x64/README.md#L1344)) | counted: up to 7.3 ms past | development runs only (the candidate, not counted): 0.1 ms past, with one or both visits skipped on 15 of 191 ([0.4.3's measurement](engine-043/measure/README.md#L51)); the counted L4d gives no release timing |
+| the in-floor release under load | A short Chrome drop is scheduled for release 350 ms after its take. In the counted x64 L4d at twice the load it came 350–357.3 ms after the take; how many tail visits ran is not readable from counted rows. Time only; the 350 ms is a minimum ([Decision Log, 1051](../../../doperpowers/specs/2026-10-28-own-linux-engine-design.md#L2725); [x64 L4d](x64/README.md#L1344)) | counted: up to 7.3 ms past | development runs only (the candidate, not counted): 0.1 ms past, with one or both visits skipped on 15 of 191 ([0.4.3's measurement](engine-043/measure/README.md#L51)); the counted L4d's analysis reads release timestamps (`h8/scripts/l4d-parts.mjs`), but the committed summary reports no in-floor release range comparable to x64's |
 
 **Unconfirmed or refused by design** (V3, the Chrome page that draws its own context menu, #377):
 
@@ -363,13 +364,15 @@ live test only, with no counted rate (ruling 1002). The handle end's tail was me
 
 **#415 (P2), a declared limit (ruling 830): an Electron ok whose drop missed the zone.** Under heavy load Electron's
 renderer can lag the final dragover, so the drag answers ok, matching Electron's own dragend, for a drop that landed
-outside the target: Electron said the drop was copied, and the drop zone's counter did not move. It is listed apart
-in every run, never counted as a Chrome false ok, and the steps that carry it pass.
+outside the target: Electron reported a copy while the target recorded no drop. It is listed apart in every run and
+never counted as a Chrome false ok. In the plain cell a mismatch still fails, as a missing landing
+([Decision Log, 830](../../../doperpowers/specs/2026-10-28-own-linux-engine-design.md#L2433)).
 - x64: none in 320 drags in each of H1, H2 and L4a at H6 ([x64](x64/README.md#L912)).
-- arm64: none in 320 in H1 and H2 at H6 and H1 at H8. At twice the load, L4a listed **3 of 30** drags in its
-  `cua left` cell at H6 (1 of 30 at H⁗) ([L4a at H6](arm64/README.md#L704)), and on 0.4.3 L4d's Electron long-left
-  cell answered **4 plain oks in 30** that were these mismatches ([L4d at H8](arm64/README.md#L1209)). That is the
-  rate a user can meet at twice the load on arm64; L4d's pass stands.
+- arm64: none in 320 in H1 and H2 at H6 and H1 at H8. At twice the load the count is not
+  zero, at both heads: at H6 on 0.4.2, L4a's `cua left` cell listed **3 of 30** (1 of 30 at H⁗)
+  ([L4a at H6](arm64/README.md#L704)); at H8 on 0.4.3, L4d's Electron `t17-long` `long-left` cell answered **4 plain
+  oks in 30** that were these mismatches ([L4d at H8](arm64/README.md#L1209)). Both are test cells built for this case,
+  not a rate across a user's drags. These L4a and L4d verdicts stand under ruling 830.
 
 **Ruling 838**, Electron drags that end over Chrome, counted by answer: 0 ok, 30 unconfirmed of 30 on each lane, on both
 machines (H2 at H6; [x64](x64/README.md#L916), [arm64](arm64/README.md#L693)).
@@ -447,8 +450,8 @@ still stops) is planned on #432 after M5 ([Decision Log](../../../doperpowers/sp
   - **#429** (P2): `activate_window` can answer before the window manager records the new active window (part 3).
   - **#449** (P3): on 0.4.2, about 1 in 8 Chrome drags onto a page in front at arm64 twice the load didn't land, and
     said so; no rate was measured on 0.4.3.
-  - **#415** (P2): at twice the load on arm64, an Electron drop can answer ok where it landed outside the target, 4 in
-    30 at H8 (part 3).
+  - **#415** (P2): at twice the load on arm64, an Electron drop can answer ok where it landed outside the target,
+    seen in L4d's and L4a's test cells (part 3).
   - **#459** (P2): the long Chrome drag and drop's residual bound, 1.5% (part 3).
   - **#468**, **#474**, **#457**, **#460** (P3): the confirmation's read order, the unshipped accept lane, #358's
     margin and the coverage gaps (part 3).

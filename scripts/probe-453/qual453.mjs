@@ -505,7 +505,9 @@ const KINDS = {
       const n = sky0.nodes.find(n => big(n.frame) && n.frame.y < top && ['AXPopUpButton', 'AXButton', 'AXMenuButton'].includes(n.role) && /^tab search\b/i.test(nodeLabel(n)));
       if (!n) { c.row.toolbar = sky0.nodes.filter(n => big(n.frame) && n.frame.y < top).map(n => [n.role, nodeLabel(n).slice(0, 60)]).slice(0, 40); throw new Error('no Tab search button in the observation'); }
       c.row.opener = [n.role, nodeLabel(n)];
-      await c.clickAt(fcentre(n.frame), sky0);
+      // Behind, a coordinate click on the toolbar is refused (backgroundClickRefused, smoke 45058436188): the engine's
+      // element click on the button's node opens it there.
+      if (c.row.front) await c.clickAt(fcentre(n.frame), sky0); else await c.clickElement(n.token);
       await sleep(900);
     },
     pick: (sky, pr) => { const xs = nodesIn(sky, pr).filter(n => ['AXButton', 'AXLink', 'AXRow', 'AXCell', 'AXListBoxOption', 'AXMenuItem', 'AXRadioButton'].includes(n.role) && nodeLabel(n));
@@ -581,6 +583,7 @@ async function runRow(app, cell, rep) {
       key: async key => { const r = await w.execute('press_key', {pid, key}); row.steps.push({step: `key:${key}`, answer: answer(r)}); await sleep(800); },
       type: async t => { const r = await w.execute('type_text', {pid, text: t}); row.steps.push({step: `type:${t.length}`, answer: answer(r)}); await sleep(800); },
       toolOpen: async (find, action) => { const r = await ask({op: 'open', pid, find, action}, 15_000); row.steps.push({step: `open:${action}`, answer: r}); if (r.error) throw new Error(`opener ${r.error}`); row.openerBefore = {value: r.value}; await sleep(900); },
+      clickElement: async token => { const r = await w.execute('click', {pid, element: token}); row.steps.push({step: 'open:element', answer: answer(r)}); if (r.error) throw new Error(`opener element click ${errName(r)}`); },
       clickAt: async (p, sky) => { const r = await w.execute('click', {pid, ...toPixels(sky, p).px}); row.steps.push({step: 'open:click', answer: answer(r)}); if (r.error) throw new Error(`opener click ${errName(r)}`); },
     };
     await k.open(c, sky0);

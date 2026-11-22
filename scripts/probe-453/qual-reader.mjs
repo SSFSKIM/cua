@@ -6,7 +6,7 @@ const tally = xs => Object.entries(xs.reduce((m, x) => (m[x] = (m[x] ?? 0) + 1, 
 const answerOf = r => {
   const a = r.click ?? {};
   const oc = a.overlayClick;
-  const o = oc ? ` [${[oc.from === 'element' ? 'element' : null, oc.kind, oc.route, oc.effect, oc.confirmed === true ? 'confirmed' : oc.confirmed === false ? 'unconfirmed' : null, oc.refused ? `refused ${oc.refused}` : null].filter(Boolean).join(' ')}]` : '';
+  const o = oc ? ` [${[oc.from === 'element' ? 'element' : null, oc.kind, oc.route, oc.effect, oc.confirmed === true ? 'confirmed' : oc.confirmed === false ? 'unconfirmed' : null, oc.refused ? `refused ${oc.refused}` : null, oc.refusedBy ? `by ${oc.refusedBy.role}:${oc.refusedBy.reason}` : null, oc.row ? `row ${oc.row.role}` : null].filter(Boolean).join(' ')}]` : '';
   const pc = a.popUpClick ? ` {popUp ${JSON.stringify(a.popUpClick).slice(0, 60)}}` : '';
   return `${a.error ?? `ok route ${JSON.stringify(a.route)}`}${o}${pc}`;
 };

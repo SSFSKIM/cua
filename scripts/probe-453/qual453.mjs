@@ -613,6 +613,14 @@ async function runRow(app, cell, rep) {
     if (pr) row.recordedAtPoint = sky.nodes.filter(n => big(n.frame) && inside(screen, n.frame) && inside(screen, pr))
       .sort((a, b) => a.frame.width * a.frame.height - b.frame.width * b.frame.height).slice(0, 6)
       .map(n => [n.role, nodeLabel(n).slice(0, 60), winArr(n.frame)]);
+    // The recorded chain at the point (ruling 1082's follow-up): every observed node whose frame holds the point, by depth,
+    // with the fields the wire carries (the engine's recorded/subtreeRecorded/childrenLeaf do not reach it).
+    const short = v => typeof v === 'string' ? v.slice(0, 120) : v ?? null;
+    row.recordedChain = sky.nodes.filter(n => n.frame && n.frame.width > 0 && n.frame.height > 0 && inside(screen, n.frame))
+      .sort((a, b) => (a.depth ?? 0) - (b.depth ?? 0)).slice(-24)
+      .map(n => ({depth: n.depth ?? null, role: n.role, subrole: n.subrole ?? null, frame: winArr(n.frame), title: short(n.title), description: short(n.description),
+        value: short(typeof n.value === 'string' ? n.value : n.value == null ? null : JSON.stringify(n.value)), actions: n.actions ?? null, flags: n.flags ?? null,
+        children: Array.isArray(n.children) ? n.children.length : n.children ?? null, token: n.token ?? null}));
     row.point = {px, screen, inOverlay: pr ? inside(screen, pr) : null};
     // #453's re-laid-out case: one more character typed through the engine, after the screenshot, before the click.
     if (cell.how === 'relayout') {

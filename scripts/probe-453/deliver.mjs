@@ -57,7 +57,8 @@ for (const k of ['pointerdown', 'mousedown', 'click', 'focusin', 'submit']) docu
 for (const k of ['input', 'change']) document.addEventListener(k, e => send(k, {id: idOf(e.target), value: e.target.value ?? null}), true);
 const run = c => { if (c === 'reload') location.replace('/'); if (c.startsWith('goto:')) location.replace(c.slice(5)); };
 (async () => { for (;;) { try { const r = await fetch('/cmd?load=' + load, {cache: 'no-store'}); const j = await r.json(); if (j.cmd) run(j.cmd); } catch (e) { await new Promise(r => setTimeout(r, 500)); } } })();
-addEventListener('load', () => { send('ready', {}); if (location.pathname === '/geo') navigator.geolocation.getCurrentPosition(() => send('geo', {ok: true}), e => send('geo', {code: e.code})); });
+document.addEventListener('prerenderingchange', () => send('activated', {}));
+addEventListener('load', () => { send('ready', {prerendering: Boolean(document.prerendering)}); if (location.pathname === '/geo') navigator.geolocation.getCurrentPosition(() => send('geo', {ok: true}), e => send('geo', {code: e.code})); });
 })();</script>`;
 const PAGE = `<!doctype html><html lang="en" translate="no"><head><meta charset="utf-8"><meta name="google" content="notranslate"><title>probe453 page</title>
 <style>body{font:15px -apple-system,Helvetica,sans-serif;margin:0} .a{position:absolute;left:16px}</style></head>
@@ -100,7 +101,7 @@ const sendCmd = c => {
   if (!live.length) { queued = c; return; }
   for (const p of live) { try { p.writeHead(200, {'content-type': 'application/json'}); p.end(JSON.stringify({cmd: c})); } catch {} }
 };
-const lastReady = () => [...events].reverse().find(e => e.type === 'ready') ?? null;
+const lastReady = () => [...events].reverse().find(e => (e.type === 'ready' && !e.prerendering) || e.type === 'activated') ?? null;
 async function newLoad(prev, ms = 9000) {
   for (let i = 0; i < ms / 100; i++) { const l = lastReady(); if (l && l.load !== prev) return l; await sleep(100); }
   return null;
@@ -231,7 +232,7 @@ const OVERLAYS = {
     // row was the search one, which loads Google), else the last row; its text names the URL it takes.
     inside: (pop, rows) => {
       const bands = omniRows(rows);
-      const c = bands.find(b => /results-beta/.test(b.text ?? '')) ?? bands[bands.length - 1];
+      const c = bands.find((b, i) => i > 0 && /results-(alpha|beta)/.test(b.text ?? '')) ?? bands[bands.length - 1];
       if (c) return {by: 'ax', role: c.role, text: c.text, frame: c.frame, point: centre(c.f), index: bands.indexOf(c), count: bands.length, all: bands.map(b => b.text)};
       const pr = rect(pop.popup.bounds), strip = pr.y + 34;
       return {by: 'geometry', point: {x: pr.x + pr.width * 0.3, y: strip + (pr.y + pr.height - strip) / 2}, index: -1, count: 0};
@@ -520,7 +521,8 @@ async function runRow(app, cell, rep) {
     const openerAfter = row.openerBefore ? await ask({op: 'opener'}) : null;
     const omniAfter = cell.overlay === 'omnibox' ? await ask({op: 'omnibox', pid}) : null;
     const caretAfter = ov.app === 'textedit' ? await ask({op: 'caret', pid, window: winArr(wf)}) : null;
-    row.after = {loads: ev.filter(e => e.type === 'ready').map(e => `${e.origin}${e.path}`),
+    row.after = {loads: ev.filter(e => (e.type === 'ready' && !e.prerendering) || e.type === 'activated').map(e => `${e.origin}${e.path}`),
+      prerendered: ev.filter(e => e.type === 'ready' && e.prerendering).map(e => `${e.origin}${e.path}`),
       page: [...new Set(ev.filter(e => ['click', 'pointerdown', 'mousedown', 'focusin', 'submit'].includes(e.type)).map(e => `${e.type}:${e.id}${e.load === row.loadObserved ? '' : '@other'}`))],
       changes: ev.filter(e => ['input', 'change'].includes(e.type)).map(e => `${e.type}:${e.id}=${e.value}`), geo: ev.filter(e => e.type === 'geo'),
       overlay: after.popup ? {n: after.popup.n, layer: after.popup.layer, bounds: after.popup.bounds} : null, opener: openerAfter,
@@ -533,7 +535,10 @@ async function runRow(app, cell, rep) {
     row.frontChanged = row.after.front !== row.frontAtObs;
     if (row.click?.error && d === 'engine') row.landing = `refused:${row.click.error}`;
     else if (row.click?.error) row.landing = `kitError:${row.click.error}`;
-    else if (ov.taken(ctx)) { row.landing = 'taken'; if (ov.takenRow) row.takenRow = ov.takenRow(ctx); }
+    else if (ov.taken(ctx)) { row.landing = 'taken'; row.takenBy = 'load'; if (ov.takenRow) row.takenRow = ov.takenRow(ctx); }
+    // The address field's evidence, beside the page's: unfocused and showing the picked row's URL (Chrome's display form,
+    // no scheme) once its page is the tab's.
+    else if (omniAfter && !omniAfter.focused && (row.pick?.text ?? '').match(/https?:\/\/([^\s,]+)/)?.[1] === omniAfter.value) { row.landing = 'taken'; row.takenBy = 'address'; row.takenRow = true; }
     else if (row.after.loads.length) row.landing = `navigated:${row.after.loads.join(',')}`;
     else if (omniAfter && row.omniboxAtObs && !omniAfter.focused && omniAfter.value !== row.omniboxAtObs.value && !/127\.0\.0\.1/.test(omniAfter.value ?? '')) row.landing = `navigated:${String(omniAfter.value).split(/[/?]/)[0]}`;
     else if (beneath.length) row.landing = `beneath:${[...new Set(beneath)].join(',')}`;

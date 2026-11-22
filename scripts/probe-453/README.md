@@ -719,3 +719,195 @@ How this reads:
 
 **The omnibox's chain:** AXWebArea "Omnibox Popup" (7) › AXGroup (8) › AXList (9, 4 children) › **AXStaticText**
 (10, AXPress, AXShowMenu, AXScrollToVisible; the row) › AXGroup/AXEmptyGroup (11, 410×40).
+
+## #453 qual, counted on the final head: fix/453-axpress a8307c6c against main 5580ac20 (rulings 1040, 1069-1083)
+
+Runs:
+- Smoke on a8307c6c (reps 1): https://github.com/SSFSKIM/cua/actions/runs/45075185955.
+- Counted fix run: https://github.com/SSFSKIM/cua/actions/runs/45075999203 (kit 58827e12, 281 rows, 54 min).
+- Main's counted run, the baseline: https://github.com/SSFSKIM/cua/actions/runs/45061006010 (kit 3326bebf, 263 rows;
+  the same cells but `omniremove`).
+- Main's `omniremove` baseline: https://github.com/SSFSKIM/cua/actions/runs/45074375354 (18 rows). Its artifact upload
+  failed after measuring (`ENOTFOUND` on the runner), so its rows come from the run log: refused `appWindowOverPoint`
+  18/18, the suggestion kept 18/18, nothing navigated, frontmost, key window and window order all 0.
+- #443's decomove and keep cells on a8307c6c: https://github.com/SSFSKIM/cua/actions/runs/45081388473.
+
+### Reading
+
+- **Delivered, confirmed and taken:**
+
+  | kind | shared-behind | shared-front | dedicated-behind |
+  |---|---|---|---|
+  | omnibox | 6/6 | 6/6 | 6/6 |
+  | permission prompt | 10/10 | out of scope (observed as the window) | 10/10 |
+  | AppKit popover | 6/6 | 6/6 | 6/6 |
+  | datalist | 0/6 | 0/6 | 0/6 |
+
+  The rows pressed: the omnibox and the popover as their row AXStaticText and AXButton, the permission prompt as its
+  AXButton.
+- **Datalist: refused in 18/18 rows, for a ticket** (ruling 1083). Every row was refused `actionableDescendant` with
+  `refusedBy` AXStaticText and `row` AXGroup 471,228 156×188. Its recorded chain:
+  - AXList "Autofill" (AXPress) at depth 3;
+  - its one child, an AXGroup the size of the list (depth 4) — the fix's row;
+  - AXScrollArea (depth 5), AXGroup (depth 6), then an AXGroup with 5 children (depth 7);
+  - AXStaticText "apricot" (depth 8, AXPress, 1 child) and inside it AXStaticText "apricot" (depth 9, AXPress, no
+    children).
+
+  The wrapper AXGroup is the AXList's direct child. The actionable option rows lie three levels below it, so the
+  wrapper reads as holding actionable descendants. The spike's bare AXPress took the depth-8 text 15/15.
+- **Remove suggestion (`omniremove`, ruling 1083):** refused `actionableDescendant` in 18/18 rows, `refusedBy`
+  AXButton, row AXStaticText. The suggestion was kept and nothing navigated (0/18). Its chain: AXList (depth 9) ›
+  AXStaticText row (depth 10, AXPress) › AXGroup 410×40 (depth 11, 2 children) › AXButton "Remove Suggestion button,
+  press Enter to remove, …" 884,124 24×24 (depth 12) beside an AXEmptyGroup. Main refuses it `appWindowOverPoint`
+  18/18.
+- **Omnibox while typing (decisive):** 60/60 refused `labelChanged`, `refusedBy` AXStaticText. The row at the point had
+  changed in 60/60 (another row each time), and nothing was taken in any row. The image-against-pressed line is in
+  the bar lines.
+- **Shared mode:**
+  - frontmost changed 0/172 (transient and end);
+  - key window changed 0/172;
+  - window over the cover: transient 5/112, end 1/112. Four are #458's TextEdit font pop-up (transient only, as on
+    main, 4/106).
+  - **The one row that stayed raised at the end is a parity cell, not #453's route.** In
+    `datalist-shared-behind-p-element-3`, the element click by ID on a datalist row (route 3, main's) answered
+    `activationFailed` after 1 s: "the app's window did not stay behind the frontmost window within 1 s". Chrome's
+    window stayed listed over the cover from 1064 ms after the click to the end of the watch. Frontmost and the key
+    window did not move. Main's counted run had 0/5 there. This is the only parity difference.
+- **Dedicated mode (recorded, not failed):** 10/82 raised, all of them main's route-3 element click (p-element), as on
+  main.
+- **Wrong row:** 0/281. **False ok:** 0. **False confirmed:** 0. **Refused but taken:** 0. **Reached beneath:**
+  0/182.
+- **Re-laid-out datalist:** 18/18 refused `notOneOverlay`. **Permission:** 12/12 refused
+  `screenChangedSinceScreenshot`, as main.
+- **Parity:** 18 of 19 cells answer as main. The 19th is the `activationFailed` row above.
+- **Observations, fix against main:**
+  - The result's keys are the same, with one new timing key, `screenshotWindowsListedMs` (p50 0.6 ms, p95 1.7 ms).
+  - Wall clock: p50 101 ms against 107, p95 436 against 430. The engine's `totalMs`: p50 94 against 99, p95 423 against
+    419. The delta is within noise.
+  - Parity cells' rendered text after normalisation: 1 line only on the fix and 9 only on main. All are omnibox
+    history suggestion lines, whose titles vary per run.
+  - Nothing new reaches the model's view (no window owner, layer or bounds).
+
+#### fix-a8307c6c engine a8307c6cb5ccbe53f4b83689978aa67f90f14f31  (Google Chrome 157.0.8103.79; ProductName: macOS ProductVersion: 26.7.2 BuildVersion: 25G332; image 20261117.0516.1; kit 58827e12d57c14962b54c801f4291355fc58a7e8; 281 rows, 53.75 min)
+
+| cell | rows | answer [overlayClick] | effect | frontmost changed, transient / end | key/main window changed | window over the cover, transient / end | beneath | problems |
+|---|---|---|---|---|---|---|---|---|
+| omnibox/shared-behind/click | 6/6 | ok route 1 [omniboxPopup action confirmed row AXStaticText] ×6 | taken ×6 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| omnibox/shared-behind/p-element | 5/5 | backgroundClickRefused ×5 | nothing ×5 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| omnibox/shared-behind/relayout | 20/20 | appWindowOverPoint [omniboxPopup refused labelChanged by AXStaticText:labelChanged row AXStaticText] ×20 | nothing ×20 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| datalist/shared-behind/click | 6/6 | appWindowOverPoint [datalist refused actionableDescendant by AXStaticText:actionableDescendant row AXGroup] ×6 | nothing ×6 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| datalist/shared-behind/p-element | 5/5 | ok route 3 ×4; activationFailed ×1 | dismissed ×5 | 0 / 0 | 0 | 1 / 1 | 0 | - |
+| datalist/shared-behind/relayout | 6/6 | appWindowOverPoint [refused notOneOverlay] ×6 | nothing ×6 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| permission/shared-behind/allow | 5/5 | ok route 1 [permissionBubble action confirmed row AXButton] ×5 | taken ×5 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| permission/shared-behind/block | 5/5 | ok route 1 [permissionBubble action confirmed row AXButton] ×5 | taken ×5 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| permission/shared-behind/p-element | 6/6 | ok route 3 ×6 | nothing ×6 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| permission/shared-behind/relayout | 6/6 | screenChangedSinceScreenshot ×6 | nothing ×6 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| omniremove/shared-behind/click | 6/6 | appWindowOverPoint [omniboxPopup refused actionableDescendant by AXButton:actionableDescendant row AXStaticText] ×6 | kept ×6 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| omnibox/shared-front/click | 6/6 | ok route 1 [omniboxPopup action confirmed row AXStaticText] ×6 | taken ×6 | 0 / 0 | 0 | n/a | 0 | - |
+| omnibox/shared-front/p-element | 5/5 | ok route 3 ×5 | taken ×5 | 0 / 0 | 0 | n/a | 0 | - |
+| omnibox/shared-front/relayout | 20/20 | appWindowOverPoint [omniboxPopup refused labelChanged by AXStaticText:labelChanged row AXStaticText] ×20 | nothing ×20 | 0 / 0 | 0 | n/a | 0 | - |
+| datalist/shared-front/click | 6/6 | appWindowOverPoint [datalist refused actionableDescendant by AXStaticText:actionableDescendant row AXGroup] ×6 | nothing ×6 | 0 / 0 | 0 | n/a | 0 | - |
+| datalist/shared-front/p-element | 5/5 | ok route 3 ×5 | taken ×5 | 0 / 0 | 0 | n/a | 0 | - |
+| datalist/shared-front/relayout | 6/6 | appWindowOverPoint [refused notOneOverlay] ×6 | nothing ×6 | 0 / 0 | 0 | n/a | 0 | - |
+| permission/shared-front/allow (prompt observed as the window) | 5/5 | ok route 3 ×5 | taken ×5 | 0 / 0 | 5 | n/a | 0 | - |
+| permission/shared-front/block (prompt observed as the window) | 5/5 | ok route 3 ×5 | taken ×5 | 0 / 0 | 5 | n/a | 0 | - |
+| permission/shared-front/p-element (prompt observed as the window) | 6/6 | ok route 1 ×6 | taken ×6 | 0 / 0 | 6 | n/a | 0 | - |
+| permission/shared-front/relayout (prompt observed as the window) | 6/6 | noScreenshotForCoordinates ×6 | dismissed ×6 | 0 / 0 | 0 | n/a | 0 | - |
+| omniremove/shared-front/click | 6/6 | appWindowOverPoint [omniboxPopup refused actionableDescendant by AXButton:actionableDescendant row AXStaticText] ×6 | kept ×6 | 0 / 0 | 0 | n/a | 0 | - |
+| omnibox/dedicated-behind/click | 6/6 | ok route 1 [omniboxPopup action confirmed row AXStaticText] ×6 | taken ×6 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| omnibox/dedicated-behind/p-element | 5/5 | ok route 3 ×5 | taken ×5 | 0 / 0 | 0 | 5 / 5 | 0 | - |
+| omnibox/dedicated-behind/relayout | 20/20 | appWindowOverPoint [omniboxPopup refused labelChanged by AXStaticText:labelChanged row AXStaticText] ×20 | nothing ×20 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| datalist/dedicated-behind/click | 6/6 | appWindowOverPoint [datalist refused actionableDescendant by AXStaticText:actionableDescendant row AXGroup] ×6 | nothing ×6 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| datalist/dedicated-behind/p-element | 5/5 | ok route 3 ×5 | taken ×5 | 0 / 0 | 0 | 5 / 5 | 0 | - |
+| datalist/dedicated-behind/relayout | 6/6 | appWindowOverPoint [refused notOneOverlay] ×6 | nothing ×6 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| permission/dedicated-behind/allow | 5/5 | ok route 1 [permissionBubble action confirmed row AXButton] ×5 | taken ×5 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| permission/dedicated-behind/block | 5/5 | ok route 1 [permissionBubble action confirmed row AXButton] ×5 | taken ×5 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| permission/dedicated-behind/p-element | 6/6 | ok route 3 ×6 | nothing ×6 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| permission/dedicated-behind/relayout | 6/6 | screenChangedSinceScreenshot ×6 | nothing ×6 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| omniremove/dedicated-behind/click | 6/6 | appWindowOverPoint [omniboxPopup refused actionableDescendant by AXButton:actionableDescendant row AXStaticText] ×6 | kept ×6 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| page/shared-behind/p-page | 5/5 | ok route 3 ×5 | clicked ×5 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| underclosed/shared-behind/p-underclosed | 5/5 | ok route 3 ×5 | clicked ×5 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| omnibox/shared-behind/p-forced | 5/5 | appWindowOverPoint ×5 | nothing ×5 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| omnibox/shared-behind/p-drag | 5/5 | appWindowOverPoint ×5 | nothing ×5 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| siteinfo/shared-behind/p-unknown (prompt observed as the window) | 5/5 | ok route 3 ×5 | closed ×5 | 0 / 0 | 0 | 5 / 0 | 0 | - |
+| inputlist/shared-behind/p-inputlist | 5/5 | ok route 3 {popUp {"effect":"confirmed","action":"AXPress","kind":"datalist","} ×3; ok route 3 {popUp {"menuWindow":471,"polls":2,"delivery":"action","ms":46.712,} ×1; ok route 3 {popUp {"menuWindow":916,"polls":2,"delivery":"action","ms":42.793,} ×1 | opened ×5 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| popover/shared-behind/click | 6/6 | ok route 1 [appKitPopover action confirmed row AXButton] ×6 | changed ×6 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| popover/shared-front/click | 6/6 | ok route 1 [appKitPopover action confirmed row AXButton] ×6 | changed ×6 | 0 / 0 | 0 | n/a | 0 | - |
+| popover/dedicated-behind/click | 6/6 | ok route 1 [appKitPopover action confirmed row AXButton] ×6 | changed ×6 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| font/shared-behind/p-font | 5/5 | ok route 3 {popUp {"effect":"confirmed","action":"AXPress","kind":"popUpButton} ×5 | opened ×5 | 0 / 0 | 0 | 4 / 0 | 0 | - |
+
+##### Bar lines
+
+- delivered, confirmed and taken, per overlay cell: omnibox/shared-behind/click 6/6; datalist/shared-behind/click 0/6; permission/shared-behind/allow 5/5; permission/shared-behind/block 5/5; omniremove/shared-behind/click 0/6; omnibox/shared-front/click 6/6; datalist/shared-front/click 0/6; omniremove/shared-front/click 0/6; omnibox/dedicated-behind/click 6/6; datalist/dedicated-behind/click 0/6; permission/dedicated-behind/allow 5/5; permission/dedicated-behind/block 5/5; omniremove/dedicated-behind/click 0/6; popover/shared-behind/click 6/6; popover/shared-front/click 6/6; popover/dedicated-behind/click 6/6
+- shared: frontmost changed transient 0/172, end 0/172; key or main window changed 0/172; window over the cover transient 5/112, end 1/112 (datalist/shared-behind/p-element ×1; font/shared-behind/p-font ×4)
+- dedicated (recorded, not failed: ruling 1070): frontmost changed transient 0/82, end 0/82; key or main window changed 0/82; window over the cover transient 10/82, end 10/82 (omnibox/dedicated-behind/p-element ×5; datalist/dedicated-behind/p-element ×5)
+- wrong row: 0/281
+- re-laid-out omnibox: refused labelChanged ×60, the recorded row taken 0, a neighbour taken 0 (must be 0), other 0 (of 60; the list or prompt changed before the click in 59)
+- re-laid-out datalist: refused notOneOverlay ×18, the recorded row taken 0, a neighbour taken 0 (must be 0), other 0 (of 18; the list or prompt changed before the click in 18)
+- re-laid-out permission: refused screenChangedSinceScreenshot ×12, the recorded row taken 0, a neighbour taken 0 (must be 0), other 0 (of 12; the list or prompt changed before the click in 12)
+- omnibox re-laid out, the row at the point: shown in the screenshot vs held now: changed in 60/60 (now another row ×60); pressed/taken: appWindowOverPoint, nothing taken ×60
+- false ok (answered ok, not taken): 0
+- false confirmed (overlayClick confirmed, not taken): 0
+- refused but taken anyway: 0
+- reached the window beneath: 0/182
+- frontmost prompt observed as the window itself (out of scope, main's click): 27 (permission/shared-front/allow ok route 3 taken ×5; permission/shared-front/block ok route 3 taken ×5; permission/shared-front/p-element ok route 1 taken ×6; permission/shared-front/relayout noScreenshotForCoordinates dismissed ×6; siteinfo/shared-behind/p-unknown ok route 3 closed ×5)
+- permission state after: shared-behind/allow allow->-/granted ×5; shared-behind/block block->-/NotAllowedError ×5; shared-behind/p-element block->-/- ×3; shared-behind/relayout block->-/- ×6; shared-front/allow allow->-/granted ×5; shared-front/block block->-/NotAllowedError ×5; shared-front/p-element block->-/NotAllowedError ×3; shared-front/relayout block->-/- ×6; dedicated-behind/allow allow->-/granted ×5; dedicated-behind/block block->-/NotAllowedError ×5; dedicated-behind/p-element block->-/- ×3; dedicated-behind/relayout block->-/- ×6; shared-behind/p-element allow->-/- ×3; shared-front/p-element allow->-/granted ×3; dedicated-behind/p-element allow->-/- ×3
+
+##### Parity: main-5580ac20 5580ac20 against fix-a8307c6c a8307c6c
+
+| cell | main-5580ac20 | fix-a8307c6c | same |
+|---|---|---|---|
+| omnibox/shared-behind/p-element | backgroundClickRefused → nothing ×5 | backgroundClickRefused → nothing ×5 | yes |
+| datalist/shared-behind/p-element | ok → dismissed ×5 | ok → dismissed ×4; activationFailed → dismissed ×1 | **no** |
+| permission/shared-behind/p-element | ok → nothing ×6 | ok → nothing ×6 | yes |
+| omnibox/shared-front/p-element | ok → taken ×5 | ok → taken ×5 | yes |
+| datalist/shared-front/p-element | ok → taken ×5 | ok → taken ×5 | yes |
+| permission/shared-front/allow (prompt observed as the window) | ok → taken ×5 | ok → taken ×5 | yes |
+| permission/shared-front/block (prompt observed as the window) | ok → taken ×5 | ok → taken ×5 | yes |
+| permission/shared-front/p-element (prompt observed as the window) | ok → taken ×6 | ok → taken ×6 | yes |
+| permission/shared-front/relayout (prompt observed as the window) | noScreenshotForCoordinates → dismissed ×6 | noScreenshotForCoordinates → dismissed ×6 | yes |
+| omnibox/dedicated-behind/p-element | ok → taken ×5 | ok → taken ×5 | yes |
+| datalist/dedicated-behind/p-element | ok → taken ×5 | ok → taken ×5 | yes |
+| permission/dedicated-behind/p-element | ok → nothing ×6 | ok → nothing ×6 | yes |
+| page/shared-behind/p-page | ok → clicked ×5 | ok → clicked ×5 | yes |
+| underclosed/shared-behind/p-underclosed | ok → clicked ×5 | ok → clicked ×5 | yes |
+| omnibox/shared-behind/p-forced | appWindowOverPoint → nothing ×5 | appWindowOverPoint → nothing ×5 | yes |
+| omnibox/shared-behind/p-drag | appWindowOverPoint → nothing ×5 | appWindowOverPoint → nothing ×5 | yes |
+| siteinfo/shared-behind/p-unknown (prompt observed as the window) | ok → closed ×5 | ok → closed ×5 | yes |
+| inputlist/shared-behind/p-inputlist | ok → opened ×5 | ok → opened ×5 | yes |
+| font/shared-behind/p-font | ok → opened ×5 | ok → opened ×5 | yes |
+
+##### Observations (ruling 1074)
+
+| head | observations | wall ms p50 / p95 | screenshotWindowsListed ms p50 / p95 | total timing p50 / p95 | render errors |
+|---|---|---|---|---|---|
+| main-5580ac20 | 526 | 107 / 430 | - / - | 98.6 / 419 (totalMs) | 0 |
+| fix-a8307c6c | 580 | 101 / 436 | 0.6 / 1.7 | 94 / 423.2 (totalMs) | 0 |
+
+- result shape, fix-a8307c6c against main-5580ac20: the same keys
+- timing keys only on fix-a8307c6c: screenshotWindowsListedMs
+- parity cells' rendered text: 166 observations on fix-a8307c6c, 166 on main-5580ac20; lines only on fix-a8307c6c: 1 ("text probe453 /results-alpha http://127.0.0.1:PORT/results-alpha location from history, press Tab th"); only on main-5580ac20: 9 ("text probe453 /results-alpha http://127.0.0.1:PORT/results-alpha location from history, press Tab th", "button Help: Remove suggestion, Remove Suggestion button, press Enter to remove, probe453 /results-a", "text http://127.0.0.1:PORT/results- search, 2 of 4", "text http://127.0.0.1:PORT/results-, 3 of 4", "text probe453 page http://127.0.0.1:PORT/results-beta location from history, press Tab then Enter to", "text probe453 page http://127.0.0.1:PORT/results-beta location from history, press Tab then Enter to", "text probe453 /results-alpha http://127.0.0.1:PORT/results-alpha location from history, press Tab th", "text probe453 page http://127.0.0.1:PORT/results-beta location from history, press Tab then Enter to")
+- new in the model's view on fix-a8307c6c (lines naming a window owner that main-5580ac20 never shows): no
+
+### #443's decomove on fix a8307c6c
+
+One engine per dispatch: the kit names its only engine "main", so the "main" columns below are fix a8307c6c and the "fix" columns are unused. decomove was refused `controlGone` 40/40 (CfT 20, Electron 20). The keep cells (plain, overlapinto) were kept and landed 40/40.
+
+| Unit | cft: main | cft: fix | electron: main | electron: fix |
+|---|---|---|---|---|
+| plain/text | kept-landed sameElement 10 | – | kept-landed sameElement 10 | – |
+| plain/link | kept-landed sameElement 10 | – | kept-landed sameElement 10 | – |
+| decomove/text | refused controlGone 10 [AXLink 10] | – | refused controlGone 10 [AXLink 10] | – |
+| decomove/link | refused controlGone 10 [AXLink 10] | – | refused controlGone 10 [AXLink 10] | – |
+| overlapinto/text | kept-landed sameElement 10 | – | kept-landed sameElement 10 | – |
+| overlapinto/link | kept-landed sameElement 10 | – | kept-landed sameElement 10 | – |
+
+| Lane | Head | stalePoint.ms p50 / p95 / max (n), all | kept | refused | text point |
+|---|---|---|---|---|---|
+| cft | main | 6.368 / 17.788 / 23.532 (60) | 8.167 / 18.825 / 23.532 (40) | 3.639 / 11.226 / 11.226 (20) | 7.775 / 18.825 / 23.532 (30) |
+| electron | main | 2.414 / 3.929 / 5.586 (60) | 1.825 / 3.355 / 3.929 (40) | 3.453 / 5.586 / 5.586 (20) | 2.613 / 3.921 / 3.929 (30) |
+
+| Run | Lane | Image | Browser | Rows | Abort | Gates failing |
+|---|---|---|---|---|---|---|
+| fix-a8307c6c | cft | 20261117.0516.1 | 157.0.8103.78 | 60/60 | none | – |
+| fix-a8307c6c | electron | 20261117.0516.1 | Electron 44.4.5 / Chromium 152.0.7977.130 | 60/60 | none | – |

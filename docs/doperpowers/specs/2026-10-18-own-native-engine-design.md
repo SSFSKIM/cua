@@ -7650,6 +7650,90 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   its focus hold replaces the early recheck's record in the meta; `hitMs` is the last hit-test's.
   Date/Author: 2026-11-20, cursor235's implementer for #456.
 
+- Decision (#453 and #470, ruling 1040, owner ruling 1042, 2026-11-21, `fix/453-overlay-click`, plugin 0.28.29; amends
+  #452's and #456's entries; OverlayClick.swift, StalePoint.swift, Input.swift, ElementInput.swift): **a click on a row of
+  a window the app shows over the observed one is delivered into that window by its kind's route when the row is the one
+  the screenshot showed there; otherwise #452's refusal stands.** #453's measurement (kit `probe/453-measure`,
+  scripts/probe-453/README.md at 72d86db3; runs 44966589829, 44971146877, 44974557415, main 1a1956b2) found the
+  observation already records the overlays' rows with their text and frames, the row under the point at click time the
+  recorded one in every row measured (window, text, frame and window number, 108/108 omnibox, 24/24, 16/16, 72/72), and
+  two side-effect-free deliveries (84 deliveries: nothing beneath, no activation, nothing raised or reordered, the
+  person's key window unchanged): a down/up stamped with the overlay's own window number at an overlay-local point,
+  posted to the pid (omnibox 18/18 in every mode, datalist 6/6, permission bubble 9/9; TextEdit's popover behind 0/12,
+  route 3's subtype dismissing it), and AXPress on the row (omnibox, permission bubble, popover behind 12/12; nothing on
+  the datalist, 0/6). The rule (`overlayPoint`), only for a plain left click (no forced route, one click) where #452
+  refused `appWindowOverPoint`:
+  (1) Identity is the recorded node's, never the point's: the app's hit-test answer at the point (`WindowHit.answered`,
+  carried on the verdict as `overAnswered` with the overlay's and the observed window's listing) is descended to the
+  deepest element there (the last child whose frame holds the point, 24 levels, 200 frame reads; Chrome's first answer at
+  an omnibox row is the popup's web area) and read up to its AXWindow (for a popover, up to the AXPopover); the deepest
+  element of that chain the record holds (never the web area itself) must be a node the screenshot showed at the point
+  (its shown frame, in the screenshot's space), with no recorded node deeper inside it at the point (`notRecorded` when
+  the chain has elements the record lacks below it, a rebuilt row; `deeperRecorded` when the hit stopped short); its row
+  is that node when it carries text, else its nearest recorded ancestor that does, holds no other recorded text away from
+  the point and is not the web area, window or popover (never past an unrecorded element under a textless node), and the
+  row must lie on the live chain too. The node and the row read now at their recorded frames (shifted with the observed
+  window, within 2 pt), the row reads its recorded label exactly (title, else description, else an AXStaticText's value,
+  each cut by `bounded`; `textChanged`), neither reads AXEnabled false, and the screenshot's window list held the overlay's
+  number (`otherWindow`): a list re-laid out by typing whose row under the point now reads other text is refused, one whose
+  row still reads the same text at the same frame is taken.
+  (2) Kinds are an explicit list (`OverlayKind`, each case's `delivers` a one-line switch, all on): `omniboxPopup` (Chromium,
+  the chain passes the AXWebArea titled "Omnibox Popup", a literal in Chromium's omnibox_popup.html, the overlay at the
+  observed window's layer), `datalist` (Chromium, no web area, an AXList, the overlay above the observed layer: Chromium's
+  autofill list, which shows a page's `<datalist>` and its other suggestions), `permissionBubble` (Chromium, no web area,
+  an element of subrole AXApplicationAlertDialog, at the observed layer; on by owner ruling 1042), `appKitPopover` (#452's
+  `popover` signal, not Chromium). Anything else is `unknownKind`: an extension's popup, a views dialog that is no alert,
+  a native app's own window (the ruling's "hit in a native window" has no measured kind, so it stays refused).
+  (3) Route by kind: Chromium's overlays by the stamped post (`overlayPostTarget`: the point, the overlay's number and its
+  listed bounds, so `stampWindow` sets fields 91/92 and the overlay-local location), route 2′ with no activation, no hold
+  and no delivery guard, which also covers the datalist; the popover by AXPress on the first element from the node up to
+  its row that lists it, route 1 (`noAction` when none does).
+  (4) Confirmed by the overlay's window leaving the on-screen list or the row's element dying, read at once and every
+  20 ms for 500 ms (`overlayConfirmMs`); otherwise `clickUnconfirmed` ("it was sent to the window of <App>'s own that lies
+  over the one the screenshot showed (a suggestion list, popup or prompt), but that window was not seen to close").
+  Meta `overlayClick {window, by, kind, route ("post" | "AXPress"), effect ("closed" | "rowGone" | "unconfirmed"), polls,
+  ms}`, and on a refusal `{window, by, kind?, refused}` beside #452's unchanged `stalePoint` record (still `refused`,
+  `appWindowOverPoint`, which says what #452 read; `overlayClick` says what was done).
+  (5) #456's rechecks: `StalePointGate.check` now answers its verdict too, and every recheck site (#282's press, #283's
+  and #315's field routes, #458's press) goes through `stalePointChecked`, which on an `appWindowOverPoint` refusal asks
+  the gate's `overlay` rule (the coordinate click's, set where the gate is made); a delivery throws
+  `OverlayClickDelivered`, which ends the route with nothing of its own pressed and which `click` answers as success
+  with the meta reached. After a focus hold the delivery comes after that hold's activation, which the refusal there
+  already said ran.
+  (6) #470 (`overlayElement`, the element click by its ID, plain left click, no forced route): when the element's own
+  ancestry reads to a window other than the app's primary one or through an AXPopover (every other element click reads
+  nothing more), the hit at its clickable point, descended, must reach the element inside an overlay of a listed kind that
+  covers the point (`hitWindowCovers`, or `appWindowOverPoint` for a popover), the element not disabled and, for AXPress,
+  listing it; then the same route and confirmation, meta `overlayClick.from: "element"`. That replaces the measured
+  failures (run D): the permission bubble's route-3 post that did nothing (10/10), the omnibox row's route 3 that raised
+  Chrome over the person's window in dedicated mode (6/6), and its shared-behind `backgroundClickRefused`. Anything else
+  keeps the element click's path. Not this: #470's folded-in toolbar case (ruling 1044: a dedicated-mode posted click on
+  Chrome's site-information or tab-search button makes Chrome frontmost, 5/5) is a click on the browser window's own
+  toolbar, not an overlay's row; it needs its own delivery (#469 found AXPress raises Chrome there too) and stays open on
+  #470.
+  The model-facing #296 paragraph's #452 sentence becomes the delivery, a plain sentence that a permission prompt's
+  buttons are clicked like any other button, the conditions, and #452's refusal as the fallback with "take a new
+  screenshot and aim again" first (agent-cursor.md, the documentation test, the parity docs oracle; the surface
+  inventory's amendment and PROVENANCE.md record it). #452's error sentence is unchanged.
+  Limits stated: unmeasured live (fakes only); a Chromium row whose recorded shown frame the record clips away refuses
+  (`notRecorded`), as does a row the observation's walk left out; a row whose text changed only in what `bounded` cuts is
+  not told apart; the confirmation takes any closing of the overlay for the row's effect (an overlay that closes on its
+  own within 500 ms reads as confirmed).
+  Proven offline (`OverlayClickTests`, 24 tests, fakes from the measured shapes): each kind delivered by its route and
+  confirmed (the omnibox's post stamped with window 39 at the kit's window location (229, 120), inputRoute 2′; the
+  datalist posted, never pressed; the permission button posted; the popover's swatch pressed, nothing posted); unconfirmed
+  when the overlay stays and when the list does not read; refused on text changed, frame moved, another window number or
+  none recorded, a row the record lacks, a recorded row off the hit's chain, a hit short of the recorded row, a disabled
+  row, an unknown kind (four shapes), a popover row without AXPress; the re-laid-out list (other text refused, the same
+  text taken, rows rebuilt refused); the window's shift; the recheck's delivery and refusal through the gate; #470's
+  routes and its fallbacks. Reverted one at a time (20 mutations), each fails at least one test: no text check, no frame
+  check, no window-list check, no deeper-node check, no on-chain check for the row, no enabled check, the alert-dialog
+  test dropped, Chromium not required, AXPress for every kind, route 3 for the post, the post stamped with the observed
+  window, no confirmation, no descent, no window shift, no recheck rule, the hit-test's answer not carried on the
+  verdict; for #470 no own-ancestry pre-check (it would hit-test every element click), the element not required on the
+  hit's chain, no enabled check.
+  Date/Author: 2026-11-21, cursor235's implementer for #453.
+
 ## Outcomes & Retrospective
 
 Pending for the initiative — written at finish. M1a's interim account (2026-10-20) follows; the full record is `docs/doperpowers/specs/2026-10-18-own-native-engine-m1a-report.md`.

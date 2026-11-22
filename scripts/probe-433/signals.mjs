@@ -80,11 +80,17 @@ const tally=list=>list.reduce((o,k)=>(o[k]=(o[k]??0)+1,o),{});
 export function axFacts(s,spec={}){
   if(!s||typeof s!=='object')return null;
   if(s.error)return {error:String(s.error).slice(0,40),ms:s.ms??null};
-  const out={ms:s.ms??null,hitMs:s.hitMs??null,hitsMs:s.hitsMs??null,hit:hitName(s.hit,spec),webFrom:s.webFrom==='hit'?'hit':'windows'};
-  for(const k of ['full','pruned','nav','visible'])out[k]=liveSet(s[k],spec);
-  out.grid=tally((Array.isArray(s.grid)?s.grid:[]).map(h=>hitName(h,spec)));
-  out.hitFromWeb=hitName(s.hitFromWeb,spec);
-  out.hitFromChain=(Array.isArray(s.hitFromChain)?s.hitFromChain:[]).map(h=>`${role(h.root)}>${hitName(h,spec)}`);
+  // Only what the reading asked for (\`walks\`, \`hits\`, \`seq\`).
+  const out={ms:s.ms??null};
+  if(s.full)for(const k of ['full','pruned','nav','visible'])out[k]=liveSet(s[k],spec);
+  if(s.hit!==undefined){
+    Object.assign(out,{hitMs:s.hitMs??null,hitsMs:s.hitsMs??null,hit:hitName(s.hit,spec),webFrom:s.webFrom==='hit'?'hit':'windows'});
+    out.grid=tally((Array.isArray(s.grid)?s.grid:[]).map(h=>hitName(h,spec)));
+    out.hitFromWeb=hitName(s.hitFromWeb,spec);
+    out.hitFromChain=(Array.isArray(s.hitFromChain)?s.hitFromChain:[]).map(h=>`${role(h.root)}>${hitName(h,spec)}`);
+  }
+  // The hit sequence at the point: each answer and the ms it first came.
+  if(Array.isArray(s.seq))out.seq=s.seq.map(h=>`${hitName(h,spec)}@${Number.isFinite(h.t)?Math.round(h.t):'?'}`);
   if(Array.isArray(s.attributeNames))out.attributeNames=s.attributeNames.filter(n=>/^(param:)?AX[A-Za-z]{1,60}$/.test(n));
   return out;
 }
@@ -111,9 +117,11 @@ const paintControls=dom=>dom?dom.stack.filter(n=>!['overlay','page'].includes(n)
 //   `deepestScreenshotNode` assumes draws above) is the one painted on top, and whether AXVisibleChildren leaves out the
 //   covered one.
 // - c: elementFromPoint at the click names the control the click reached.
-export function signalsOf({spec={},nodes,point,pre,post,domPre,domPost,clicks}){
+// \`pre\` and \`post\` are walks (no hit-test before the click, which would move Chromium's hit cache under the engine);
+// \`after\` the hits and the hit sequence read after the click; \`warm\` a hit sequence read just before it (PROBE_HITS=warm).
+export function signalsOf({spec={},nodes,point,pre,post,after,warm,domPre,domPost,clicks}){
   const record=nodes?recordAt(nodes,point,spec):null;
-  const ax={pre:axFacts(pre,spec),post:axFacts(post,spec)},dom={pre:domFacts(domPre),post:domFacts(domPost)};
+  const ax={pre:axFacts(pre,spec),post:axFacts(post,spec),after:axFacts(after,spec),warm:axFacts(warm,spec)},dom={pre:domFacts(domPre),post:domFacts(domPost)};
   const live=w=>w?.full?.role??null;
   const recipient=clicks?recipientOf(clicks):null;
   const boxesOf=d=>d?[...new Set(d.boxes)].sort().join('+')||'none':null;

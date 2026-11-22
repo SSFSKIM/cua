@@ -83,7 +83,8 @@ async function main(){
   mkdirSync(out,{recursive:true});const tmp=mkdtempSync(join(root,'q433-')),home=join(tmp,'platform'),shots=join(tmp,'shots');
   mkdirSync(home);mkdirSync(shots,{mode:0o700});
   const config={kit:process.env.GITHUB_SHA,refs:{main:process.env.MAIN_SHA,fix:process.env.FIX_SHA||null},image:process.env.ImageVersion,
-    os:execFileSync('sw_vers',['-productVersion'],{encoding:'utf8',stdio:['ignore','pipe','ignore']}).trim(),lane,mode,heads:headNames,cells:process.env.PROBE_CELLS||null};
+    os:execFileSync('sw_vers',['-productVersion'],{encoding:'utf8',stdio:['ignore','pipe','ignore']}).trim(),lane,mode,heads:headNames,cells:process.env.PROBE_CELLS||null,
+    hits:process.env.PROBE_HITS==='warm'?'warm':'cold'};
   const rows=[],engines={},planned={};let platform,helper,stage='helper',abort=null,abortStep=null;
   try{
     // A lane with no unit of the dispatch's cells runs nothing and passes nothing (the plan job drops such lanes).
@@ -153,7 +154,7 @@ async function main(){
           s='signals-pre';sig.nodes=sky.nodes;sig.point=placed.screen;
           sig.css=cssPoint(prep?.geometry?.link,found.link.frame,placed.screen);
           if(sig.css)try{sig.domPre=await platform.command({op:'probe',trial,x:sig.css.x,y:sig.css.y});}catch{}
-          try{sig.pre=await platform.signals(placed.screen,{names:c.rep===0});}catch{}
+          try{sig.pre=await platform.signals(placed.screen,{names:c.rep===0,hits:false});}catch{}
           // The cell's change, after the observation (and so after the record), before the click.
           s='mark';
           mark=await platform.command({op:'mark',trial});
@@ -175,7 +176,9 @@ async function main(){
           // #442: the same readings at the click, the change applied.
           s='signals-post';
           if(sig.css)try{sig.domPost=await platform.command({op:'probe',trial,x:sig.css.x,y:sig.css.y});}catch{}
-          try{sig.post=await platform.signals(placed.screen);}catch{}
+          try{sig.post=await platform.signals(placed.screen,{hits:false});}catch{}
+          // PROBE_HITS=warm: hits at the point just before the click, so the engine's own hit reads Chromium's corrected answer.
+          if(process.env.PROBE_HITS==='warm')try{sig.warm=await platform.signals(placed.screen,{walks:false,hits:false,seq:true});}catch{}
           s='witness-before-action';
           if(!await platform.witness())throw stepError('witness-before-action');
           attested=true;
@@ -188,6 +191,9 @@ async function main(){
           const end=performance.now()+1500;
           while(!landingOf(read.clicks).landed&&performance.now()<end){await pause(50);read=await readOnce();}
           await pause(300);read=await readOnce();
+          // #442: the hit-tests, after the click (the first answer is what the engine's own hit left in the cache).
+          s='signals-after';
+          try{sig.after=await platform.signals(placed.screen,{walks:false,seq:true});}catch{}
           // The engine's own frames after the change: one more observation on this connection.
           s='reobserve';
           const re=await e.call('get_app_state',{app,includeScreenshot:false});
@@ -218,7 +224,7 @@ async function main(){
         ...(mode==='discover'&&gap!==undefined?{gap}:{}),observeTries,dom:mark?{text:delta(mark.before?.textRect,mark.after?.textRect),link:delta(mark.before?.link,mark.after?.link),twin:delta(mark.before?.link,mark.twin)}:null,walk,
         frames:found?{text:found.text?.frame??null,link:found.link.frame,point:placed?.screen??null}:null,
         presentationHeld:witness?.held??null,observeMs:observed?.ms??null,clickMs:click?.ms??null,
-        css:sig.css??null,signals:sig.nodes?signalsOf({spec,nodes:sig.nodes,point:sig.point,pre:sig.pre,post:sig.post,domPre:sig.domPre,
+        css:sig.css??null,signals:sig.nodes?signalsOf({spec,nodes:sig.nodes,point:sig.point,pre:sig.pre,post:sig.post,after:sig.after,warm:sig.warm,domPre:sig.domPre,
           domPost:sig.domPost,clicks:read?.clicks}):null};
       rows.push(row);
       // A report-only unit's rows never move the abort streak.
@@ -237,7 +243,7 @@ async function main(){
   const {gates:gate,pass}=judge(rows,{mode,abort,coverage:cov,units,reps});
   const tally=list=>list.reduce((o,k)=>(o[k]=(o[k]??0)+1,o),{});
   const status={lane,mode,kit:config.kit,refs:config.refs,version:config.version??null,os:config.os,image:config.image,
-    presentation:config.presentation??null,foregroundFallback:config.foregroundFallback??null,abort,abortStep,
+    presentation:config.presentation??null,foregroundFallback:config.foregroundFallback??null,hits:config.hits,abort,abortStep,
     planned:Object.values(planned).reduce((a,b)=>a+b,0),completed:rows.length,coverage:{complete:cov.complete,covered:cov.covered},
     invalid:tally(rows.filter(r=>!r.valid).map(r=>r.invalid)),gates:gate};
   status.pass=pass;

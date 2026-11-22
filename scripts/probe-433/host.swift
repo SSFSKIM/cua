@@ -255,55 +255,86 @@ func collect(_ root: AXUIElement, _ p: CGPoint, pruned: Bool, childAttr: String,
   }
   return ["found": found, "visited": visited, "ms": since(t0), "cut": cut, "unsupported": unsupported]
 }
+// The first web area under the application's windows, breadth-first (no hit-test).
+func webAreaOf(_ app: AXUIElement) -> AXUIElement? {
+  var queue: [AXUIElement] = kids(app, "AXWindows") ?? [], i = 0
+  while i < queue.count && i < 4000 {
+    let e = queue[i]; i += 1
+    AXUIElementSetMessagingTimeout(e, 0.5)
+    if attr(e, "AXRole") as? String == "AXWebArea" { return e }
+    queue += kids(e) ?? []
+  }
+  return nil
+}
+// Hits at one point, 5 ms apart for 300 ms (at most 60): the first answer and every change after it, with its time
+// (ms from the first call). Chromium answers a hit from its cache or its tree's bounds and corrects it asynchronously.
+func hitSeq(_ app: AXUIElement, _ p: CGPoint) -> [[String: Any]] {
+  let t0 = ms()
+  var out: [[String: Any]] = [], last = "", n = 0
+  while n < 60 && ms() - t0 <= 300 {
+    let h = hitOut(hitAt(app, p))
+    let ctl = (h["control"] as? [String: Any]).map { "\($0["role"] ?? "")/\($0["label"] ?? "")" } ?? ""
+    let key = "\(h["role"] ?? "")|\(h["dom"] ?? "")|\(ctl)"
+    if key != last { var w = h; w["t"] = since(t0); out.append(w); last = key }
+    n += 1
+    usleep(5000)
+  }
+  return out
+}
+// `walks`: the four walks for the controls at the point; `hits`: the hit-tests (one from the application, timed, from the
+// web area and the hit's ancestors, and the 5 x 5 grid); `seq`: `hitSeq`, before anything else. A hit-test moves
+// Chromium's hit cache, which the engine's own hit then reads, so the harness asks for hits only after the click unless
+// it means to warm the cache (PROBE_HITS=warm).
 func signals(_ q: [String: Any], pid: pid_t) -> [String: Any] {
   guard let x = (q["x"] as? NSNumber)?.doubleValue, let y = (q["y"] as? NSNumber)?.doubleValue else { return ["error": "request"] }
+  let walks = q["walks"] as? Bool ?? true, hits = q["hits"] as? Bool ?? true
   let p = CGPoint(x: x, y: y), start = ms(), deadline = start + 3000
   let app = AXUIElementCreateApplication(pid)
   AXUIElementSetMessagingTimeout(app, 0.5)
   var out: [String: Any] = [:]
-  // The hit from the application, timed; its ancestors' roles; the web area above it.
-  var t = ms()
-  let hit = hitAt(app, p)
-  out["hitMs"] = since(t)
-  out["hit"] = hitOut(hit)
-  let chain = hit.map { ancestorsOf($0) } ?? []
-  out["ancestorRoles"] = chain.prefix(40).map { attr($0, "AXRole") as? String ?? "AXUnknown" }
-  var web = chain.first { attr($0, "AXRole") as? String == "AXWebArea" }
+  if q["seq"] as? Bool == true { out["seq"] = hitSeq(app, p) }
+  var hit: AXUIElement?, chain: [AXUIElement] = [], web: AXUIElement?
+  if hits {
+    let t = ms()
+    hit = hitAt(app, p)
+    out["hitMs"] = since(t)
+    out["hit"] = hitOut(hit)
+    chain = hit.map { ancestorsOf($0) } ?? []
+    out["ancestorRoles"] = chain.prefix(40).map { attr($0, "AXRole") as? String ?? "AXUnknown" }
+    web = chain.first { attr($0, "AXRole") as? String == "AXWebArea" }
+  }
   out["webFrom"] = web == nil ? "windows" : "hit"
-  if web == nil {
-    var queue: [AXUIElement] = kids(app, "AXWindows") ?? [], i = 0
-    while i < queue.count && i < 4000 && web == nil {
-      let e = queue[i]; i += 1
-      AXUIElementSetMessagingTimeout(e, 0.5)
-      if attr(e, "AXRole") as? String == "AXWebArea" { web = e } else { queue += kids(e) ?? [] }
-    }
-  }
+  if web == nil { web = webAreaOf(app) }
   guard let web else { out["error"] = "no-web-area"; out["ms"] = since(start); return out }
-  // (a) the controls whose frames hold the point: the whole web area walked, the walk pruned to the point, and the pruned
-  // walk through AXChildrenInNavigationOrder and through AXVisibleChildren.
-  out["full"] = collect(web, p, pruned: false, childAttr: "AXChildren", deadline: deadline, cap: 8000, details: true)
-  out["pruned"] = collect(web, p, pruned: true, childAttr: "AXChildren", deadline: deadline, cap: 8000, details: false)
-  out["nav"] = collect(web, p, pruned: true, childAttr: "AXChildrenInNavigationOrder", deadline: deadline, cap: 8000, details: false)
-  out["visible"] = collect(web, p, pruned: true, childAttr: "AXVisibleChildren", deadline: deadline, cap: 8000, details: false)
-  // Hit-tests from other roots: the web area, and the hit's ancestors up to the web area (at most 8).
-  t = ms()
-  out["hitFromWeb"] = hitOut(hitAt(web, p))
-  var fromChain: [[String: Any]] = []
-  for a in chain.prefix(8) {
-    if ms() > deadline { break }
-    var w = hitOut(hitAt(a, p)); w["root"] = attr(a, "AXRole") as? String ?? "AXUnknown"; fromChain.append(w)
-    if CFEqual(a, web) { break }
+  if walks {
+    // (a) the controls whose frames hold the point: the whole web area walked, the walk pruned to the point, and the
+    // pruned walk through AXChildrenInNavigationOrder and through AXVisibleChildren.
+    out["full"] = collect(web, p, pruned: false, childAttr: "AXChildren", deadline: deadline, cap: 8000, details: true)
+    out["pruned"] = collect(web, p, pruned: true, childAttr: "AXChildren", deadline: deadline, cap: 8000, details: false)
+    out["nav"] = collect(web, p, pruned: true, childAttr: "AXChildrenInNavigationOrder", deadline: deadline, cap: 8000, details: false)
+    out["visible"] = collect(web, p, pruned: true, childAttr: "AXVisibleChildren", deadline: deadline, cap: 8000, details: false)
   }
-  out["hitFromChain"] = fromChain
-  // A 5 x 5 grid of hits 4 pt apart around the point, from the application.
-  var grid: [[String: Any]] = []
-  for dy in stride(from: -8.0, through: 8.0, by: 4.0) {
-    for dx in stride(from: -8.0, through: 8.0, by: 4.0) where ms() <= deadline {
-      var w = hitOut(hitAt(app, CGPoint(x: x + dx, y: y + dy))); w["dx"] = dx; w["dy"] = dy; grid.append(w)
+  if hits {
+    // Hit-tests from other roots: the web area, and the hit's ancestors up to the web area (at most 8).
+    let t = ms()
+    out["hitFromWeb"] = hitOut(hitAt(web, p))
+    var fromChain: [[String: Any]] = []
+    for a in chain.prefix(8) {
+      if ms() > deadline { break }
+      var w = hitOut(hitAt(a, p)); w["root"] = attr(a, "AXRole") as? String ?? "AXUnknown"; fromChain.append(w)
+      if CFEqual(a, web) { break }
     }
+    out["hitFromChain"] = fromChain
+    // A 5 x 5 grid of hits 4 pt apart around the point, from the application.
+    var grid: [[String: Any]] = []
+    for dy in stride(from: -8.0, through: 8.0, by: 4.0) {
+      for dx in stride(from: -8.0, through: 8.0, by: 4.0) where ms() <= deadline {
+        var w = hitOut(hitAt(app, CGPoint(x: x + dx, y: y + dy))); w["dx"] = dx; w["dy"] = dy; grid.append(w)
+      }
+    }
+    out["grid"] = grid
+    out["hitsMs"] = since(t)
   }
-  out["grid"] = grid
-  out["hitsMs"] = since(t)
   // The attribute names of the hit and of the controls whose frames hold the point (names only, on request).
   if q["names"] as? Bool == true {
     var names = Set<String>()

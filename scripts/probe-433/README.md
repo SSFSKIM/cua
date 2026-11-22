@@ -500,12 +500,14 @@ Main `dfe6f4434e8e0a401ccdeaf728737ed26281df5c`. [Run 44996489260](https://githu
 
 ## #442
 
-Branch `probe/442-measure`, from `probe/443-qual` (`a314e4f0`), workflow `probe-442-measure.yml` (artifacts `probe-442-<lane>-<mode>`). Main alone, unmodified, mode measure; nothing is gated. #442: under an inert overlay the stale-point guard vouches for the recorded controls beneath it, but accessibility does not say which of several controls there takes the click. This kit measures, before any design, where main's click goes in the ticket's two shapes and which signals exist at the click.
+Branch `probe/442-measure`, from `probe/443-qual` (`a314e4f0`), workflow `probe-442-measure.yml` (artifacts `probe-442-<lane>-<mode>-<hits>`). Main alone, unmodified, mode measure; nothing is gated. #442: under an inert overlay the stale-point guard vouches for the recorded controls beneath it, but accessibility does not say which of several controls there takes the click. This kit measures, before any design, where main's click goes in the ticket's two shapes and which signals exist at the click.
 
 ```sh
-# Batch 1: the two new cells and #433/#443's overlay cells, 10 per unit; batch 2: the keep cells and #340's, 5 per unit.
+# Batch 1: the two new cells and #433/#443's overlay cells, 10 per unit; batch 2: the keep cells, #340's and capremount
+# (the walk's cost on a 6,000-node page), 5 per unit; batch 3: warm hits (below), 10 per unit.
 gh workflow run probe-442-measure.yml --ref probe/442-measure -f main="$MAIN_SHA" -f mode=measure -f reps=10 -f cells=slideover,siblingstack,overcontrol,bgbutton,rebuildunder,overlapinto,overlaprow,rolechange,scrim,twincover,decomove,tipremount,twinunder
-gh workflow run probe-442-measure.yml --ref probe/442-measure -f main="$MAIN_SHA" -f mode=measure -f reps=5 -f cells=retext,plain,like,remount,textbehind,btnremount,tableremount,tablecellremount,inbox,reltime,shrink,linksave,moved,linkmono,right,centre
+gh workflow run probe-442-measure.yml --ref probe/442-measure -f main="$MAIN_SHA" -f mode=measure -f reps=5 -f cells=retext,plain,like,remount,textbehind,btnremount,tableremount,tablecellremount,inbox,reltime,shrink,linksave,moved,linkmono,right,centre,capremount
+gh workflow run probe-442-measure.yml --ref probe/442-measure -f main="$MAIN_SHA" -f mode=measure -f reps=10 -f hits=warm -f cells=slideover,siblingstack,overcontrol,bgbutton,overlapinto,overlaprow,scrim,twincover,retext,plain
 # The tables below from a run: gh run download <id> -D <dir>; node scripts/probe-433/tables442.mjs <dir> <label>
 ```
 
@@ -515,6 +517,12 @@ What #442 adds to #443's kit:
   - `siblingstack`: the veil over link A; button B ("Close", A's box), a later sibling of A in its row; CSS stacks A (`z-index` 1) above B (0), so the record holds both at the point. `mark` removes A.
 - **Signals**, read by the kit, never by the engine, on every row (`signals.mjs`, a row's `signals`):
   - The record: the observation's nodes (preorder, with depth) give the node #296 takes at the point, whether it is an inert layer, and the innermost controls whose frames hold the point, by role and by the engine's rule (role or AXPress).
-  - Accessibility live (`host.swift` `signals`, after the observation and again at the click): the AX hit from the application and from the web area and the hit's ancestors; a 5 x 5 grid of hits 4 pt apart; four walks collecting the elements whose frames hold the point that act on their own (the whole web area; pruned to the point; pruned through `AXChildrenInNavigationOrder`; pruned through `AXVisibleChildren`), each timed, with each control's place among its parent's children and whether its parent's `AXVisibleChildren` lists it; the attribute names on the controls there (repetition 0).
+  - Accessibility walks (`host.swift` `signals`, after the observation and again at the click, before it): four walks collecting the elements whose frames hold the point that act on their own (the whole web area; pruned to the point; pruned through `AXChildrenInNavigationOrder`; pruned through `AXVisibleChildren`), each timed, with each control's place among its parent's children and whether its parent's `AXVisibleChildren` lists it; the attribute names on the controls there (repetition 0).
+  - Accessibility hit-tests, after the click: a hit sequence at the point (5 ms apart for 300 ms, each change and when it came), the AX hit from the application, from the web area and from the hit's ancestors, and a 5 x 5 grid of hits 4 pt apart.
   - The page (`page.mjs` `probe`, the screen point mapped to CSS through the target's box): `elementFromPoint`, `elementsFromPoint` (paint order) and every control whose box holds the point.
   - The click's recipient, from the page's log.
+- **Cold and warm hits** (`hits`, `PROBE_HITS`). Chromium answers an AX hit-test at once from its cache (the last precise answer, while the point lies in that element's bounds) or from its tree's bounds, and corrects it asynchronously, so a hit-test moves what the engine's own hit then reads. The smoke below read the grid before the click and moved main's verdicts on CfT (`overcontrol` kept `recordedHit` and landed, where #443's batch A on dfe6f443 had `sameElement` and missed). So a cold run (the default) reads no hit before the click; a warm run reads a hit sequence at the point just before it, ending at the point, which is main's verdict with a corrected hit.
+
+### Smoke on main `5580ac204f1a2a5cd6a36186d658087060690e5f` (not counted: hits read before the click)
+
+[Run 45049284454](https://github.com/SSFSKIM/cua/actions/runs/45049284454), kit `66ca85ec`, 2 per unit, every row valid, no abort. Its signals table is the kit's check only; its verdicts are warm-ish on the Chromium lanes (the grid ended 8 pt off the point).

@@ -99,8 +99,9 @@ export async function startPlatform({lane,home,helper,cover,stage}){
       return Number.isInteger(r?.before)&&Number.isInteger(r?.after)?{before:r.before,after:r.after}:null;
     };
     // #442: what accessibility offers at a screen point (host.swift \`signals\`); null when the helper answers nothing usable.
-    const signals=async(point,{names=false}={})=>{
-      const r=await helper.ask({op:'signals',pid,x:point.x,y:point.y,names},10000);
+    // \`walks\`, \`hits\` and \`seq\` choose what it reads (host.swift \`signals\`).
+    const signals=async(point,{names=false,walks=true,hits=true,seq=false}={})=>{
+      const r=await helper.ask({op:'signals',pid,x:point.x,y:point.y,names,walks,hits,seq},10000);
       return r&&typeof r==='object'&&!r.reason?r:null;
     };
     stage('presentation-probe');

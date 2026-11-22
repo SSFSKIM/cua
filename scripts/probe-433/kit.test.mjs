@@ -561,10 +561,13 @@ test('#442: the record\'s controls at the point, innermost, by role and by the e
   assert.deepEqual(cssPoint({x: 20, y: 30, width: 116, height: 56}, A.frame, p), {x: 26, y: 58});
   // A removed: the live set at the click holds B alone; the page paints A over B before the change, B alone after.
   const post = {...walk, found: [{...walk.found[2], up: -1}]};
-  const s = signalsOf({spec, nodes, point: p, pre: {full: walk, grid: [{role: 'AXGroup', dom: 'veil'}]}, post: {full: post},
+  const after = {hit: {role: 'AXGroup', dom: 'veil'}, grid: [{role: 'AXGroup', dom: 'veil'}],
+    seq: [{role: 'AXGroup', dom: 'veil', t: 0}, {role: 'AXButton', control: {role: 'AXButton', label: 'Close'}, t: 12.4}]};
+  const s = signalsOf({spec, nodes, point: p, pre: {full: walk}, post: {full: post}, after,
     domPre: {top: 'target', stack: ['target', 'twin'], boxes: ['target', 'twin']}, domPost: {top: 'twin', stack: ['twin'], boxes: ['twin']},
     clicks: [{type: 'click', link: 'twin'}]});
   assert.equal(s.b.overlap, true); assert.equal(s.a.recordVsPost, true); assert.equal(s.a.preVsPost, true); assert.equal(s.a.complete, true);
   assert.deepEqual(s.stack.pre, {paintTop: 'target', treeLast: 'twin', treeAgrees: false, visible: {target: true, twin: true}});
-  assert.equal(s.stack.post, null); assert.equal(s.c.agrees, true); assert.deepEqual(s.ax.pre.grid, {overlay: 1});
+  assert.equal(s.stack.post, null); assert.equal(s.c.agrees, true); assert.deepEqual(s.ax.after.grid, {overlay: 1});
+  assert.deepEqual(s.ax.after.seq, ['overlay@0', 'twin@12']); assert.equal(s.ax.pre.grid, undefined); assert.equal(s.ax.warm, null);
 });

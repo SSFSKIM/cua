@@ -1,0 +1,4 @@
+window 4194306 at 2,44; probe title: xdnd-stale-repro mm 200,200
+page origin in the window: 0,0
+stale-position drops: 0, dropped with nothing taken: 0, clean leaves: 100, of 100 (load 2 per core, step 500 us)
+repro exit 0

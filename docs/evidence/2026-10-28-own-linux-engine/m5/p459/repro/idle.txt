@@ -1,0 +1,2 @@
+stale-position drops: 0 of 20 (load 0 per core)
+rm: cannot remove '/tmp/tmp.BrP1Gj7rhx/profile': Directory not empty

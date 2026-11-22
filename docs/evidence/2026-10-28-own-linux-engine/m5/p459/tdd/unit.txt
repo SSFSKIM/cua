@@ -1,0 +1,19 @@
+   Compiling cua-linux-engine v0.4.2 (/Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m5-p459/native/linux-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.11s
+     Running unittests src/main.rs (/Users/new/.local/share/cua-171/task126/target/debug/deps/cua_engine-abbd1217e3f611a1)
+
+running 10 tests
+test release_sync::tests::a_motion_that_fails_ends_the_step_with_its_error ... ok
+test release_sync::tests::a_ping_that_cannot_be_asked_expires_the_step_with_its_reason ... ok
+test release_sync::tests::off_sends_nothing_and_holds_nothing_up ... ok
+test release_sync::tests::only_a_chrome_source_s_drop_gets_the_step ... ok
+test tests::the_release_sync_prototype_is_off_unless_its_measurement_flag_names_a_form ... ok
+test release_sync::tests::ping_asks_answered_then_moves_then_asks_again_and_releases_on_the_second_answer ... ok
+test release_sync::tests::keepalive_leaves_its_keepalive_s_spacing_before_the_release ... ok
+test release_sync::tests::keepalive_sends_one_motion_at_the_last_point_on_the_background_route_and_the_pair_on_xtest ... ok
+test release_sync::tests::ping_s_dwell_follows_the_second_answer ... ok
+test release_sync::tests::both_answers_share_one_bound_and_an_expired_bound_releases_at_once_unconfirmed ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 534 filtered out; finished in 0.20s
+
+unit exit 0

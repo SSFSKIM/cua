@@ -461,6 +461,10 @@ async function runRow(app, cell, rep) {
 
     row.pick = ov.inside(pop, rows);
     if (!row.pick) { row.problem = 'no item in the overlay'; return; }
+    // Whether the observation's tree holds the picked item itself: a node at its frame (within 3 pt), and its label.
+    const atPick = sky.nodes.filter(n => n.frame && Array.isArray(row.pick.frame) && Math.abs(n.frame.x - row.pick.frame[0]) <= 3 && Math.abs(n.frame.y - row.pick.frame[1]) <= 3
+      && Math.abs(n.frame.width - row.pick.frame[2]) <= 3 && Math.abs(n.frame.height - row.pick.frame[3]) <= 3);
+    row.observation.pickInTree = atPick.map(n => ({role: n.role, label: nodeLabel(n).slice(0, 60)}));
     const {px, screen} = toPixels(sky, row.pick.point);
     row.point = {px, screen, inOverlay: inside(screen, pr)};
     // The overlay between the observation and the click (Q5), the click 1, 2 or 3 s after the observation.

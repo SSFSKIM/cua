@@ -22,14 +22,14 @@ for (const file of process.argv.slice(2)) {
   }
   console.log('\nproblems:', tally(results.filter(r => r.problem || r.exception).map(r => `${r.cell}: ${r.problem ?? r.exception.split('\n')[0].slice(0, 80)}`)));
   console.log('\n### Identity (just before the click, the hit at the point against the row picked at the observation)\n');
-  console.log('| overlay | mode | rows | hit role (three hit-tests, 40 ms apart) | hit\'s window = overlay | row text same | row frame same | overlay window number same | pick | observation tree: nodes in the overlay / a row\'s text in it |');
+  console.log('| overlay | mode | rows | hit role (three hit-tests, 40 ms apart) | hit\'s window = overlay | row text same | row frame same | overlay window number same | pick | observation tree: nodes whose centre is in the overlay / the picked item\'s node |');
   console.log('|---|---|---|---|---|---|---|---|---|---|');
   const byOM = new Map();
   for (const r of results.filter(r => r.identity)) { const k = `${r.overlay}|${r.mode}`; if (!byOM.has(k)) byOM.set(k, []); byOM.get(k).push(r); }
   for (const [k, rs] of byOM) {
     const [o, mode] = k.split('|');
     const winIs = rs.filter(r => r.identity.hitWindow && r.overlayAtObs?.popup && frameKey(r.identity.hitWindow) === frameKey(r.overlayAtObs.popup.bounds)).length;
-    console.log(`| ${o} | ${mode} | ${rs.length} | ${tally(rs.map(r => (r.identity.roles ?? [r.identity.hitRole]).join('>')))} | ${winIs}/${rs.length} | ${tally(rs.map(r => String(r.identity.sameText)))} | ${tally(rs.map(r => String(r.identity.sameFrame)))} | ${tally(rs.map(r => String(r.identity.sameWindow)))} | ${tally(rs.map(r => `${r.pick?.by}:${r.pick?.role}#${r.pick?.index ?? ''}/${r.pick?.count ?? ''}`))} | ${tally(rs.map(r => `${r.observation?.nodesInOverlay}/${r.observation?.rowTextInTree}`))} |`);
+    console.log(`| ${o} | ${mode} | ${rs.length} | ${tally(rs.map(r => (r.identity.roles ?? [r.identity.hitRole]).join('>')))} | ${winIs}/${rs.length} | ${tally(rs.map(r => String(r.identity.sameText)))} | ${tally(rs.map(r => String(r.identity.sameFrame)))} | ${tally(rs.map(r => String(r.identity.sameWindow)))} | ${tally(rs.map(r => `${r.pick?.by}:${r.pick?.role}#${r.pick?.index ?? ''}/${r.pick?.count ?? ''}`))} | ${tally(rs.map(r => `${r.observation?.nodesInOverlay}/${r.observation?.pickInTree ? (r.observation.pickInTree.length ? r.observation.pickInTree.map(n => n.role).join('+') : 'pick not in tree') : r.observation?.rowTextInTree}`))} |`);
   }
   console.log('\n### The overlay between the observation and the click (delivery rows) and in the timing cells\n');
   console.log('| overlay | mode | kind | rows | delay ms p50 | gone before the end | window changes (n, bounds, alpha) p50/max | row layouts p50/max | AX read ms avg p50 / max | windows seen |');

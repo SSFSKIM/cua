@@ -7503,6 +7503,123 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   consulted in a page too fails the `<select>` tests (7); unsupported kept too fails the AppKit tests (31); no value read
   as unsupported fails the mapping test.
   Date/Author: 2026-11-21, cursor235's implementer for #469.
+- Decision (#463, rulings 1036 and 1039, 2026-11-21, `fix/463-transient-ui`, plugin 0.28.28; extends #458's and #469's
+  entries above; PopUpPoint.swift, Input.swift): **with the app not frontmost, a coordinate click on what opens transient
+  UI is carried by the element's own action and confirmed per kind, or refused honestly, never answered ok while route
+  3's release closes it.** #463's measurement (kit `probe/463-measure`, scripts/probe-337/README.md §"#463", run
+  44959835166, and §"#469 signal", run 44970638020) found, with the app behind in shared mode, that the end of route 3's
+  fake activation, not its raise, closes what the posted click opened while the click answers ok: TextEdit's
+  AXMenuButton pull-down, its text view's context menu and its colour well's popover 6/6 each, Chrome's page context menu
+  4/6, its bookmark-star and profile bubbles whenever they opened; frontmost every one stays up (5/5). The rules, in the
+  cases #458 gates on (a kept point, no forced route, one click by route 3) and on its agreement of the recorded node and
+  the live hit:
+  (1) Delivered with the app not frontmost, in either mode (as #458's press), within #458's 1.5 s wait, else
+  `clickUnconfirmed`, the focused-window restore unchanged after a confirmed open: AppKit's AXMenuButton (AXDOMClassList
+  unsupported) by AXPress, confirmed by a new window of the app's at the control at any layer (`list style`'s layer-101
+  menu; `document actions`' layer-0 popover, which opens 0.5–1.5 s in and may answer unconfirmed, the wait not
+  stretched); AppKit's AXColorWell the same way (its layer-0 popover; the only popover control measured, so the only role
+  covered); a right click (`contextMenuPoint`) on an AppKit element outside every page that the record holds at the point
+  and that advertises AXShowMenu, by AXShowMenu, confirmed by a layer-101 menu; a page's `<input list>` (`datalistPoint`:
+  an AXComboBox in the page whose AXPopupValue reads `listbox` and AXAutocompleteValue `list`, 4/4) by the element
+  click's route, its focus hold then AXPress (the bare AXPress opened nothing, 0/3; the hold is what the element route
+  adds), carried by `popUpClick` rather than #282's focus route, confirmed by Chrome's suggestion window at layer 999.
+  Frontmost each keeps main's path (`kept: "frontmost"`; a right click unrecorded). The meta says what carried it:
+  `popUpClick.kind` (`menuButton`, `colorWell`, `contextMenu`, `datalist`; #458's `popUpButton` and `comboBoxArrow` now
+  named too) beside `action`.
+  (2) Refused in shared mode with the app not frontmost, nothing sent, as `backgroundClickRefused`, the family of #282's
+  web-page refusal and #458's combo box (no new error name: the cause is the same, a click a background app does not
+  keep, where #452's `appWindowOverPoint` names a different one); the meta's `popUpClick.refused` says which (`noAction`,
+  `browserView`, `webArea`), as #282's `elementClick.walkStopped` and #452's `stalePoint.by` do. A right click in a web page
+  by the hit's walk or the record's web area (a page point can answer a coarse view that walks to the window before the
+  page tree is exposed, #288): "<App>'s web page does not keep a context menu open for a right click cua sends while
+  <App> is not the frontmost app, and no accessibility action opens one there. Nothing was sent. Ask the person to bring
+  <App> to the front first, or act on the page without its context menu: click the element by its ID, or use keys." A
+  Chromium view's own button outside every page that advertises a popup (scope 1039): an AXPopUpButton whose
+  AXDOMClassList reads (the app menu, tab search, site information; #469's `kept: "browserView"` stands frontmost and in
+  dedicated mode), or an AXButton whose AXHasPopup reads true (the profile button; `browserButtonPoint`, the hit recorded
+  at the point): "<App>'s own button here opens a menu or panel, which a click cua sends while <App> is not the frontmost
+  app does not leave open, and its accessibility action would bring <App> to the front over the person's window. Nothing
+  was sent. Ask the person to bring <App> to the front first, or reach the same command another way: a keyboard
+  shortcut, or <App>'s menu bar by its elements." Back, Reload and New Tab (AXHasPopup false) keep main's click, and so
+  does the bookmark star, which no attribute measured tells from Back (a residual, #471 and tech-debt-tracker.md; no
+  class name is allow- or denylisted).
+  Dedicated mode keeps main's posted click for both refusals: the code's dedicated contract (#282, Routes.swift) lets the
+  window come forward and puts no order back, so nothing closes what the click opened, and the measurement shows the
+  posted click leaving the page's context menu and the profile bubble up there (3/3 each); Chrome frontmost after a
+  dedicated toolbar click is that contract, not the shared-mode rule the refusal enforces.
+  The `<select>`, AppKit's AXPopUpButton and the combo box's arrow are unchanged. The model-facing #296 paragraph gains two
+  sentences after #458's (agent-cursor.md, the documentation test, the parity docs oracle; the surface inventory's
+  amendment and PROVENANCE.md record it).
+  Limits stated: an ARIA combo box whose AXPopupValue and AXAutocompleteValue read as `<input list>`'s takes the element
+  click too, and with no suggestion window answers `clickUnconfirmed` where #283 placed the caret; a click on an `<input
+  list>`'s text, not its arrow, is carried the same way, since no attribute or child tells the arrow from the text; a
+  dedicated-mode posted click on these controls still often opens nothing (#458's unexplained dedicated case).
+  Proven offline (`PopUpPointTests`, fakes built from the measured shapes): 14 tests added (48 in all): each delivered
+  kind pressed or shown once after the hold and confirmed, and unconfirmed when no window of its kind comes (a far or
+  layer-0 window for a context menu, the page's layer-101 menu for an `<input list>`, a popover past 1.5 s); each
+  refusal with nothing held, performed or posted and its sentence; Back, the star, an AppKit button and an unrecorded
+  profile button left to main's click; frontmost and dedicated mode as above; a `<select>`, AppKit's pop-up button and
+  the combo box's arrow unchanged (#458's and #469's tests, the latter now frontmost). Reverted one at a time (12
+  mutations), each fails: no menu-button or colour-well control (6 failures), the Chromium pop-up button kept (1), no
+  AXButton refusal (1), no right-click decision (4), no `<input list>` decision (3), the menu button's and colour
+  well's effect read at the menu layer only (2), the suggestion window at any layer (1), frontmost not consulted (1),
+  the refusals in dedicated mode too (1), #282's route keeping every press (1), a right click pressed rather than
+  shown (1), the record's web area ignored (1).
+  Date/Author: 2026-11-21, cursor235's implementer for #463.
+- Decision (#463, the review of 1a1956b2..5364c10b, reviewer-medium, 2026-11-21; amends the entry above): four
+  corrections, each tested and each test failing with its fix reverted. (1) The action itself may bring the target app
+  to the front (an app's own action; Chrome's toolbar AXPress did), which the person-input watch read as `personInput`,
+  so the click answered a silent ok. Now `PopUpPersonSignals.activated` tells the target app become frontmost with no
+  input of the person's since the press (input at the press itself counts as theirs) from the person's own switch: it is
+  recorded (`popUpClick.activated: true`), nothing is restored (cua never takes the front from an app), and a confirmed
+  open answers success with the note "<App>'s menu is open, but opening it brought <App> to the front over the person's
+  window, and cua does not take the front back from an app. Tell the person if that is in their way." (the noun per
+  kind). Success, not `clickUnconfirmed`: what the click was for did open, and `clickUnconfirmed` asks for an
+  observation before a retry, which would only repeat the activation; the note says what changed for the person. An
+  unconfirmed one adds "The action brought <App> to the front over the person's window." to its sentence. (2) AXShowMenu
+  takes the element and not the point, and a text element's context menu acts on the word or selection under the click,
+  so the menu it opens may be for other text: a right click behind on AppKit text (`contextMenuTextRoles`: #283's
+  editable roles and AXStaticText) is refused in shared mode, `popUpClick.refused: "textElement"`, "<App>'s context menu
+  for text acts on the text under the pointer, which no accessibility action can aim at, and a right click cua sends
+  while <App> is not the frontmost app does not leave the menu open. Nothing was sent. Ask the person to bring <App> to
+  the front first, or use keys instead: select the text with selectText, then use <App>'s keyboard shortcuts or its menu
+  bar by its elements."; dedicated mode keeps the posted one. The measured cell, TextEdit's text view, is now this
+  refusal; Show Menu remains for AppKit elements that are not text, a shape no cell measured. (3) The web right-click
+  refusal reads the record's web area before it needs a live hit, and `recordedNodeInWebArea` reads the record's own
+  `ScreenshotNode.webArea` too, so a late or missing hit, or a node under a frameless web area, never posts it. (4) An
+  `<input list>` needs the live hit's role to be AXComboBox, not only the recorded one. The model-facing sentences say a
+  right click on native text is refused and that the answer says when the action brought the app to the front.
+  Shipped with (tech-debt-tracker.md): the menu button's and colour well's effect accepts any new window of the app's at
+  the control, so an unrelated one appearing there during the wait would confirm.
+  Proven offline (`PopUpPointTests`, 52 tests): reverted one at a time (5 mutations), each fails one test: the
+  activation not told from input, a right click on text shown, the record's web area read only with a live hit, its
+  own web area field ignored, the live hit's role not read.
+  Date/Author: 2026-11-21, cursor235's implementer for #463.
+- Decision (#463, the re-review of 5364c10b..6a702ccf, reviewer-medium, 2026-11-21; amends the two entries above and
+  replaces the design's item 1c): **in shared mode with the app not frontmost, every right click is refused; the
+  AXShowMenu delivery and the `contextMenu` kind are dropped.** AXShowMenu takes an element and no point, so no role
+  test proves the menu it opens is the one the point would open: a text element's acts on the word under the click (the
+  previous entry's reason for refusing text), a row's may depend on the column, and on a page it opens none (0/8); and
+  the role-narrowed rule still let a right click on recorded native text with a missing or late hit fall through to the
+  posted one, whose menu route 3's release closes (TextEdit's text view 6/6, Chrome's page 4/6). The simplest honest
+  shape is one refusal, whatever the point hits, text or not, page or native, hit or no hit (`contextMenuPoint`):
+  `popUpClick.refused: "rightClick"` (the former `webArea` and `textElement` folded into it; the hit's role, when one
+  answered, is the record's `role`), as `backgroundClickRefused`: "<App> does not keep a context menu open for a right
+  click cua sends while <App> is not the frontmost app, and no accessibility action opens one at a point. Nothing was
+  sent. Ask the person to bring <App> to the front first, or use keys, or, for an element's own menu, call
+  performSecondaryAction with "Show Menu" on that element by its ID." Show Menu by the model on an element it names is
+  the model choosing the target, not the engine guessing it. Frontmost (its posted menu stays up, 5/5) and dedicated mode
+  (the page's menu stayed up, 3/3) keep main's posted right click. `recordedNodeInWebArea` and `contextMenuTextRoles` are
+  gone. The model-facing sentence now says any right click behind is refused and names Show Menu as the way to an
+  element's menu. Shipped with (tech-debt-tracker.md, #472): an activation by the app that comes after its panel is
+  already up is not seen, since the foreground watch ends with the order check; unmeasured. The bookmark star's residual
+  is #471.
+  Proven offline (`PopUpPointTests`, 48 tests: the right-click delivery's two tests and the three per-place refusal tests
+  replaced by one): every right click behind in shared mode refused with nothing held, performed or posted and no window
+  list read (AppKit text, an AppKit row advertising AXShowMenu, an element the record does not hold, a page's group, a
+  coarse view before the page tree is exposed, no hit), and main's path in dedicated mode and frontmost. Reverted, each
+  fails: no refusal (2 failures), refused only with a live hit (1), refused in dedicated mode too (2).
+  Date/Author: 2026-11-21, cursor235's implementer for #463.
 
 - Decision (#456, 2026-11-20, `fix/456-recheck-overlay`, plugin 0.28.25; amends #452's entry and #296's
   `StalePointGate`): **the element route's recheck after its wait runs #452's same-app overlay rule on its own fresh,

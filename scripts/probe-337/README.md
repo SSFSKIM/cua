@@ -1135,4 +1135,4 @@ bubble buttons had answered with Finder frontmost at 1.8 s, and the transient wa
 - **The Electron toolbar pop-up is page content**, so neither engine takes #458's path for it. Its native menu opens and
   is closed again by the shared-behind restore on both engines (main 2/10, fix 7/10 seen; up 0 on both), as #463 found
   for menus. Dedicated keeps it up 5/5. No frontmost change on either engine.
-- **#458's cells and parity are unchanged:** 99/99 identical on main and the fix.
+- **#458's cells and parity are unchanged:** all 105 rows identical on main and the fix.

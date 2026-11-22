@@ -5,20 +5,30 @@ import {readFileSync} from 'node:fs';
 const tally = xs => Object.entries(xs.reduce((m, x) => (m[x] = (m[x] ?? 0) + 1, m), {})).map(([k, n]) => `${k} ×${n}`).join('; ') || '-';
 const q = (xs, p) => { const s = xs.filter(x => typeof x === 'number').sort((a, b) => a - b); return s.length ? s[Math.min(s.length - 1, Math.floor(p * s.length))] : '-'; };
 const frameKey = f => (Array.isArray(f) ? f.slice(0, 4).map(Math.round).join(',') : String(f));
+/// Whether the windows listed at the watch's start (but the overlay's) changed their order relative to each other; windows
+/// that appear later (a new bubble, a new page's widget) or go are not a move.
+function moved(r) {
+  const skip = new Set([r.overlayAtObs?.popup?.n, r.overlayAtClick?.n].filter(n => n != null));
+  let cur = null; const orders = [];
+  for (const x of r.watch?.samples ?? []) { if (Array.isArray(x[3])) cur = x[3]; if (cur) orders.push(cur.filter(n => !skip.has(n))); }
+  if (!orders.length) return false;
+  const first = orders[0];
+  return orders.some(o => { const common = o.filter(n => first.includes(n)); return common.join(',') !== first.filter(n => common.includes(n)).join(','); });
+}
 for (const file of process.argv.slice(2)) {
   const {config, results} = JSON.parse(readFileSync(file, 'utf8'));
   console.log(`## engine ${config.engineRef}  (${config.chrome}; ${config.macOS}; image ${config.image}; kit ${config.commit}; ${results.length} rows, ${config.minutes} min${config.budgetStop ? ', budget stop' : ''}; history seeded ${config.seeded})\n`);
   const groups = new Map();
   for (const r of results) { if (!groups.has(r.cell)) groups.set(r.cell, []); groups.get(r.cell).push(r); }
   console.log('### Deliveries\n');
-  console.log('| cell | rows | measured | where it went | row taken = row clicked | reached the window beneath | frontmost changed | observed window over the cover | others\' window order moved | person\'s key/main window changed | kit answer |');
+  console.log('| cell | rows | measured | where it went | row taken = row clicked | reached the window beneath | frontmost changed | observed window over the cover | windows at the start reordered | person\'s key/main window changed | kit answer |');
   console.log('|---|---|---|---|---|---|---|---|---|---|---|');
   for (const [cell, rs] of groups) {
     if (rs[0].delivery === 'idle' || rs[0].delivery === 'type') continue;
     const m = rs.filter(r => r.landing);
     const person = m.filter(r => { const ps = (r.watch?.person ?? []).filter(x => x[1] !== null || x[2] !== null); return ps.some(x => frameKey(x[1]) !== frameKey(ps[0][1]) || frameKey(x[2]) !== frameKey(ps[0][2])); }).length;
     const answer = tally(m.map(r => r.click?.error ? `error:${r.click.error}` : r.click?.route !== undefined ? `route ${r.click.route}${r.click.posted ? ' posted' : ''}` : r.click?.result != null ? `AXError ${r.click.result}${r.click.listed === false ? ' (not listed)' : ''} on ${r.click.pressed?.role}` : r.click?.posted != null ? `posted ${r.click.posted}${r.click.activated ? '+act' : ''}` : 'ok'));
-    console.log(`| ${cell} | ${rs.length} | ${m.length} | ${tally(m.map(r => r.landing + (r.takenBy && r.takenBy !== 'load' ? `(${r.takenBy})` : '')))} | ${tally(m.filter(r => r.takenRow != null).map(r => String(r.takenRow)))} | ${m.filter(r => r.reachedBeneath).length}/${m.length} | ${m.filter(r => r.frontChanged).length}/${m.length} (${tally(m.map(r => `${r.frontAtObs}->${r.after?.front}`))}) | ${m.filter(r => r.watch?.aboveMs > 0).length}/${m.length} | ${m.filter(r => r.watch?.orderMoved).length}/${m.length} | ${person}/${m.length} | ${answer} |`);
+    console.log(`| ${cell} | ${rs.length} | ${m.length} | ${tally(m.map(r => r.landing + (r.takenBy && r.takenBy !== 'load' ? `(${r.takenBy})` : '')))} | ${tally(m.filter(r => r.takenRow != null).map(r => String(r.takenRow)))} | ${m.filter(r => r.reachedBeneath).length}/${m.length} | ${m.filter(r => r.frontChanged).length}/${m.length} (${tally(m.map(r => `${r.frontAtObs}->${r.after?.front}`))}) | ${m.filter(r => r.watch?.aboveMs > 0).length}/${m.length} | ${m.filter(moved).length}/${m.length} | ${person}/${m.length} | ${answer} |`);
   }
   console.log('\nproblems:', tally(results.filter(r => r.problem || r.exception).map(r => `${r.cell}: ${r.problem ?? r.exception.split('\n')[0].slice(0, 80)}`)));
   console.log('\n### Identity (just before the click, the hit at the point against the row picked at the observation)\n');

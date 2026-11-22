@@ -1163,8 +1163,7 @@ element's own menu itself with Show Menu. The model needs both answers and the w
 #453 (the native engine spec's Decision Log, "#453") carries a plain left click that #452 refused on a row of a window
 the app shows over the observed one by AXPress on the row the screenshot's record holds at the point, pressed by its
 recorded handle while it reads the recorded role, label and frame and is enabled: Chromium's omnibox popup, its
-`<datalist>` list, its permission prompt, and a native app's popover, each confirmed by the window closing (or the row
-going), else `clickUnconfirmed`. Owner ruling 1042 keeps the permission prompt's buttons on and asks the text to say so
+`<datalist>` list, its permission prompt, and a native app's popover, each confirmed by the window closing, else `clickUnconfirmed`. Owner ruling 1042 keeps the permission prompt's buttons on and asks the text to say so
 plainly. #452's sentence of the #296 paragraph becomes the delivery, the permission sentence, the condition, and #452's
 refusal as the fallback, which now reads:
 

@@ -7826,6 +7826,35 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   (main against fix, every kind and mode) is the check from here.
   Date/Author: 2026-11-22, cursor235's builder for #453.
 
+- Decision (#453, the review of c8858c2a1, reviewer-high, ruling 1072, 2026-11-22; amends the entry above): seven
+  findings, all fixed in one wave. (1) A row dying no longer confirms: only the overlay's window leaving does, so a list
+  that rebuilds its rows under a press that changed nothing answers `clickUnconfirmed`. (2) The screenshot must have
+  shown exactly one window of the app's over the observed one at the point, the one the hit reaches now: with a bubble
+  over the omnibox popup, the bubble closed since, the hit reaches the popup's unchanged row, which the screenshot showed
+  covered (`notOneOverlay`). This is the one observation change: the capture now lists the on-screen windows with their
+  owners, layers and bounds beside the numbers it already read (`ObservedScreenshot.windowsListed`, with the captured
+  window's number), one `CGWindowListCopyWindowInfo` per screenshot, about 0.3 ms (p95 1 ms, #316's measurement), timed
+  as `screenshotWindowsListed`; the record's tree alone cannot tell an overlay's subtree from the page under it. (3) The
+  row's recorded subtree must be whole (`partlyRecorded`): every recorded element of it, framed or frameless, had its
+  children read and all recorded (`ObservedScreenshot.recorded`, #330's map, and `subtreeRecorded`); no new recording.
+  (4) The title, the description and a text's value are compared each on its own (`overlayLabelsAgree`); a part
+  unread then or now, changed, gone or gained refuses, where the first non-empty part alone used to decide. (5) The
+  identity (alive, role, label parts, frame, enabled; `overlayIdentityRefusal`) is read again after the owner's and
+  intervention's preparation, just before the AXPress, as #454's item path does; a change there presses nothing and
+  #452's refusal stands. (6) The row must be of a role the kind's rows take (`OverlayKind.rowRoles`: a suggestion's
+  text, button, link or cell; an option's text, cell, row or menu item; a prompt's button, checkbox, radio button or
+  link; a popover's control), so a point in an AXList's padding or between a dialog's buttons refuses (`notARow`). (7)
+  The service forwards `cua/overlayClick` (`OPTIONAL_INPUT_META`, reset per call). A messaging timeout on the press
+  still reads the effect, as #454's does; only the window leaving confirms it. The capture-walk race stays a declared
+  limit with its own ticket, with no stability re-read.
+  Proven offline: six `OverlayClickTests` (24 in all; one replaces the row-dying test), one per Swift finding, each failing with its fix reverted
+  alone (the row-dying confirmation, the one-overlay check, the whole-subtree check, the first-part label comparison,
+  the recheck before the press, the row-role check), and a service test failing against the previous service.mjs.
+  The earlier mutations (identity checks, nesting, membership, recorded root, kinds, trigger, confirmation, the route
+  removed) each still fail a test. 1631 swift tests (1 skipped), 0 failures; the service test file 44/44 and the
+  three docs tests pass.
+  Date/Author: 2026-11-22, cursor235's builder for #453.
+
 ## Outcomes & Retrospective
 
 Pending for the initiative — written at finish. M1a's interim account (2026-10-20) follows; the full record is `docs/doperpowers/specs/2026-10-18-own-native-engine-m1a-report.md`.

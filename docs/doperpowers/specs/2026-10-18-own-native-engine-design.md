@@ -7870,6 +7870,37 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   sampled before the first attempt. 27 `OverlayClickTests`; 1634 swift tests (1 skipped), 0 failures.
   Date/Author: 2026-11-22, cursor235's builder for #453.
 
+- Decision (#453, ruling 1082, the row-selection wave, 2026-11-22; amends the entries above): the counted qualification
+  (probe/453-measure README d542abaf, 652e673b) failed safe, 0 wrong rows and 0 false oks, but delivered only the
+  permission prompt (20/20): the omnibox refused `notARow` 18/18 (the deepest node at the point was the row text's
+  unlabelled AXGroup 410×40), the datalist answered `clickUnconfirmed` 18/18 (the press went to the option's inner
+  AXStaticText, which Chromium ignores), and the popover refused `partlyRecorded` 18/18. (1) Row choice: when the
+  recorded chain from the overlay's root down to the deepest node at the point passes an AXList or AXGrid (the
+  outermost on the chain), the row is that container's child on the chain (the omnibox's AXStaticText 426×40, the
+  datalist's outer "apricot", the popover's swatch), still of a row role for its kind and through every identity check
+  on its own handle; two of the container's children at the point refuse (`notNested`, `rowsOverlap`). With no list or
+  grid (the permission bubble) the deepest node stays the row, every recorded node at the point on one chain. (2)
+  `partlyRecorded`, scoped: the row's own children, and those of each recorded descendant of it whose frame holds the
+  point, must have been read and all recorded; other descendants do not block. The leaf line: AXChildren absent
+  (kAXErrorAttributeUnsupported, kAXErrorNoValue) is a leaf, whole; a read that failed otherwise (a timeout, any other
+  AXError) is unread and refuses. The observation already told the two apart (`ElementData.unreadable`, from the batched
+  read's slot), but the record dropped the difference: it now keeps one flag per element (`ElementData.childrenLeaf`,
+  `ScreenshotNodeRead.childrenLeaf`) and one state per framed node (`ScreenshotNode.children`: whole, childrenUnread,
+  childrenNotRecorded), computed in the record's existing pass; no AX read is added. #330's and #431's coverage inputs
+  are unchanged. The #1072 coverage over the row's whole subtree, frameless elements included, is replaced by this rule.
+  (3) The meta names the chosen row (`row: {role, frame}`) and, on a refusal, the node it stands on and why
+  (`refusedBy: {role, reason}`: the row's identity reason, `childrenUnread` or `childrenNotRecorded` for a node, the list
+  for `rowsOverlap`); the service forwards it whole as `cua/overlayClick`.
+  Proven offline over fakes built from the three recorded chains (`OverlayClickTests`, 31): the omnibox row text pressed,
+  never its inner group; the datalist's outer text pressed; the swatch with leaf children pressed; a row whose remove
+  button went unread refused; each side of the leaf line, from the AX error through `ElementData` and the record;
+  two list or grid children at the point refused; the permission bubble unchanged. Mutations each fail a test: the row
+  choice removed, the row-level overlap check, the leaf line removed or widened to every failed read, the scope widened
+  to every descendant or narrowed to the row alone or to its descendants alone, the meta's row and refusedBy, and the
+  earlier wave's checks (one overlay, the recheck, the row role, the nesting check, labels). 1638 swift tests (1
+  skipped), 0 failures; the service test file 44/44.
+  Date/Author: 2026-11-22, cursor235's builder for #453.
+
 ## Outcomes & Retrospective
 
 Pending for the initiative — written at finish. M1a's interim account (2026-10-20) follows; the full record is `docs/doperpowers/specs/2026-10-18-own-native-engine-m1a-report.md`.

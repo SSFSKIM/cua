@@ -52,6 +52,9 @@ struct ElementData {
   /// Whether AXChildren was read: false when its slot held an error or nothing, which decodes as no children (#330's
   /// rule dL then cannot tell a child the page added from one this read missed).
   var childrenRead: Bool
+  /// #453 (ruling 1082): AXChildren is absent (kAXErrorAttributeUnsupported or kAXErrorNoValue), not failed: a leaf,
+  /// whose children are all known (none). A read that failed otherwise (a timeout, any other AXError) is neither.
+  var childrenLeaf = false
   /// The attributes whose read failed with an error other than their absence (`failedSlot`): each decodes as none, as
   /// an absent one does, and #298's stale-point record tells the two apart for the label's attributes.
   var unreadable: Set<String> = []
@@ -107,6 +110,7 @@ struct ElementData {
     frame = point(values["AXPosition"]).flatMap { origin in size(values["AXSize"]).map { CGRect(origin: origin, size: $0) } }
     children = elementList(values["AXChildren"])
     childrenRead = values["AXChildren"].map { CFGetTypeID($0) == CFArrayGetTypeID() } ?? false
+    childrenLeaf = values["AXChildren"] == nil && !unreadable.contains("AXChildren")
   }
 }
 

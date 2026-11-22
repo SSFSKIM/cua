@@ -12,8 +12,9 @@ import Foundation
 // image (`ObservedScreenshot.windowsListed`), so exactly one overlay over the point can be required. The row is never
 // found again by a hit-test or a search: the hit-test #452 already took only says where the overlay's subtree starts in
 // the record (the outermost element of its chain, up to the overlay's AXWindow or AXPopover, that the record holds by
-// handle), and the row is the deepest recorded node of that subtree whose shown frame held the point, of a row's role
-// for its kind, its recorded subtree whole. Two such nodes not nested, no recorded subtree or row, or a row whose handle
+// handle), and the row is the deepest recorded node of that subtree whose shown frame held the point, or, where the chain
+// down to it passes an AXList or AXGrid, that container's child on the chain (ruling 1082), of a row's role for its kind,
+// its own children and those of its descendants at the point read (or absent: a leaf) and recorded. Two such nodes not nested, no recorded subtree or row, or a row whose handle
 // is dead or reads another role, another label part, a frame more than 2 pt from the recorded one after the window's
 // shift, or disabled, keeps main's refusal; so does any read of those that fails, and the identity is read again just
 // before the press. The press posts no mouse event and activates nothing. The click succeeds once the overlay's window
@@ -126,7 +127,28 @@ enum OverlayPoint<Element> {
   case notOverlay
   case deliver(OverlayTarget<Element>)
   /// #452's refusal stands; the kind when it was told.
-  case refuse(OverlayRefusal, kind: OverlayKind?, window: CGWindowID, by: AppWindowSignal)
+  case refuse(OverlayRefusal, kind: OverlayKind?, window: CGWindowID, by: AppWindowSignal, note: OverlayNote)
+}
+
+/// A recorded node as the meta names it (#453, ruling 1082): its role and its recorded frame, in global points.
+struct OverlayNodeNote: Equatable {
+  let role: String
+  let frame: CGRect
+  init<Element>(_ node: ScreenshotNode<Element>) { (role, frame) = (node.role, node.frame) }
+  init(role: String, frame: CGRect) { (self.role, self.frame) = (role, frame) }
+  var wire: [String: Any] {
+    ["role": role, "frame": [frame.minX, frame.minY, frame.width, frame.height].map { Double(($0 * 1000).rounded() / 1000) }]
+  }
+}
+
+/// What the meta says of a decision beyond its reason (#453, ruling 1082): the row chosen, once one is, and the node a
+/// refusal stands on with why (`refusedBy`: the row itself for its identity, a descendant whose children are unread).
+struct OverlayNote: Equatable {
+  var row: OverlayNodeNote?
+  var refusedBy: (role: String, reason: String)?
+  static func == (a: OverlayNote, b: OverlayNote) -> Bool {
+    a.row == b.row && a.refusedBy?.role == b.refusedBy?.role && a.refusedBy?.reason == b.refusedBy?.reason
+  }
 }
 
 /// Whether #453 may replace main's answer: only main's `appWindowOverPoint` (so every verdict decided before it, #316's
@@ -212,14 +234,12 @@ func overlayIdentityRefusal<Element>(_ row: ScreenshotNode<Element>, shift: CGVe
   }
 }
 
-/// What #453 reads of the connection's last screenshot: its record (framed nodes and frameless ones, and whether the walk
-/// recorded every child of each element, `ObservedScreenshot.recorded`), and the app's windows listed with it
+/// What #453 reads of the connection's last screenshot: its record (each framed node with what it holds of its own
+/// children, `ScreenshotNode.children`), and the app's windows listed with it
 /// (`ObservedScreenshot.windowsListed`, front to back, nil when unread), the observed window's number then and the app's
 /// process.
 struct OverlayRecord<Element> {
   var nodes: [ScreenshotNode<Element>]
-  var frameless: [ScreenshotNode<Element>] = []
-  var recorded: (Element) -> Bool? = { _ in nil }
   var windows: [ListedWindow]?
   var observedWindow: CGWindowID?
   var pid: pid_t
@@ -248,8 +268,10 @@ func overlayPoint<Element>(_ verdict: StalePointVerdict<Element>, answered: Elem
   guard verdict.reason == .appWindowOverPoint, let window = verdict.overWindow, let by = verdict.overBy, let point = verdict.point else {
     return .notOverlay
   }
-  func refuse(_ why: OverlayRefusal, _ kind: OverlayKind? = nil) -> OverlayPoint<Element> {
-    .refuse(why, kind: kind, window: window, by: by)
+  func refuse(_ why: OverlayRefusal, _ kind: OverlayKind? = nil, row: Int? = nil, blame: Int? = nil, reason: String? = nil) -> OverlayPoint<Element> {
+    var note = OverlayNote(row: row.map { OverlayNodeNote(nodes[$0]) })
+    if let blame { note.refusedBy = (nodes[blame].role, reason ?? why.rawValue) }
+    return .refuse(why, kind: kind, window: window, by: by, note: note)
   }
   let stale = reads.stale
   let nodes = record.nodes
@@ -281,22 +303,41 @@ func overlayPoint<Element>(_ verdict: StalePointVerdict<Element>, answered: Elem
     return refuse(.notRecorded)
   }
   let above = ancestry(deepest)
-  guard rows.allSatisfy({ $0 == deepest || above.contains($0) }) else { return refuse(.notNested) }
-  let row = nodes[deepest]
-  let path = deepest == root ? [row] : [nodes[root]] + above.prefix { $0 != root }.reversed().map { nodes[$0] } + [row]
-  guard let kind = overlayKind(path, by: by, chromium: chromium, overLayer: verdict.overLayer, observedLayer: verdict.observedLayer) else {
+  // The recorded chain from the overlay's root down to the deepest node at the point, by index.
+  let path = deepest == root ? [deepest] : [root] + above.prefix { $0 != root }.reversed() + [deepest]
+  guard let kind = overlayKind(path.map { nodes[$0] }, by: by, chromium: chromium, overLayer: verdict.overLayer,
+                               observedLayer: verdict.observedLayer) else {
     return refuse(.unknownKind)
   }
+  // Ruling 1082: through a list or grid of the overlay (the outermost on the chain), the row is that container's child on
+  // the chain, whatever lies inside it at the point (Chromium's omnibox row text over its unlabelled group, the datalist's
+  // option text over its inner text): the element its AXPress takes. Two of its children at the point: refused. With no
+  // list or grid (the permission bubble), the deepest node.
+  var rowIndex = deepest
+  if let at = path.firstIndex(where: { overlayRowContainerRoles.contains(nodes[$0].role) }) {
+    let container = path[at]
+    rowIndex = at + 1 < path.count ? path[at + 1] : container
+    let atPoint = nodes.indices.filter { nodes[$0].ancestor == container && nodes[$0].shown.map({ holdsPoint($0, shown) }) == true }
+    guard atPoint.count <= 1 else { return refuse(.notNested, kind, blame: container, reason: "rowsOverlap") }
+  }
+  // Every recorded node of the overlay at the point lies on one chain (none beside another).
+  guard rows.allSatisfy({ $0 == deepest || above.contains($0) }) else { return refuse(.notNested, kind) }
+  let row = nodes[rowIndex]
   // A row of the kind, never its list's or dialog's padding.
-  guard kind.rowRoles.contains(row.role) else { return refuse(.notARow, kind) }
-  // The row's recorded subtree whole: every element of it, framed or frameless, had its children read and recorded.
-  let subtree = Set([deepest] + nodes.indices.filter { ancestry($0).contains(deepest) })
-  let whole = subtree.allSatisfy { nodes[$0].subtreeRecorded && record.recorded(nodes[$0].element) == true }
-    && record.frameless.allSatisfy { node in node.ancestor.map { !subtree.contains($0) } ?? true || record.recorded(node.element) == true }
-  guard whole else { return refuse(.partlyRecorded, kind) }
-  if let why = overlayIdentityRefusal(row, shift: shift, reads: reads) { return refuse(why, kind) }
+  guard kind.rowRoles.contains(row.role) else { return refuse(.notARow, kind, row: rowIndex, blame: rowIndex) }
+  // The row's own children read (or absent: a leaf) and all recorded, and so for each recorded descendant of it whose
+  // frame holds the point; other descendants do not block (ruling 1082).
+  let blocking = [rowIndex] + nodes.indices.filter { holdsPoint(nodes[$0].frame, shown) && ancestry($0).contains(rowIndex) }
+    .sorted { nodes[$0].depth < nodes[$1].depth }
+  if let partial = blocking.first(where: { nodes[$0].children != .whole }) {
+    return refuse(.partlyRecorded, kind, row: rowIndex, blame: partial, reason: nodes[partial].children.rawValue)
+  }
+  if let why = overlayIdentityRefusal(row, shift: shift, reads: reads) { return refuse(why, kind, row: rowIndex, blame: rowIndex) }
   return .deliver(OverlayTarget(kind: kind, window: window, by: by, row: row, shift: shift))
 }
+
+/// The containers whose child on the chain is the row (ruling 1082).
+let overlayRowContainerRoles: Set<String> = ["AXList", "AXGrid"]
 
 /// The meta's `overlayClick` (#453, value-free): the overlay's window, the signal #452 found it by and its kind; then
 /// either the route that carried the click (`route: "action"`, set once the AXPress is dispatched) and whether its effect
@@ -307,6 +348,7 @@ struct OverlayClickRecord: Equatable {
   let by: AppWindowSignal
   var kind: OverlayKind?
   var refused: OverlayRefusal?
+  var note = OverlayNote()
   var pressed = false
   var confirmed: Bool?
   var actionError: Int32?
@@ -317,6 +359,8 @@ struct OverlayClickRecord: Equatable {
     var wire: [String: Any] = ["window": Int(window), "by": by.rawValue]
     if let kind { wire["kind"] = kind.rawValue }
     if let refused { wire["refused"] = refused.rawValue }
+    if let row = note.row { wire["row"] = row.wire }
+    if let refusedBy = note.refusedBy { wire["refusedBy"] = ["role": refusedBy.role, "reason": refusedBy.reason] }
     if pressed { wire["route"] = "action" }
     if let confirmed { wire["confirmed"] = confirmed }
     if let actionError { wire["actionError"] = Int(actionError) }
@@ -339,12 +383,12 @@ func overlayClick<Element>(_ decision: OverlayPoint<Element>, app: String, reads
                            perform: (Element, String) -> AXError, meta: inout InputMeta) throws -> Bool {
   switch decision {
   case .notOverlay: return false
-  case .refuse(let why, let kind, let window, let by):
-    meta.overlayClick = OverlayClickRecord(window: window, by: by, kind: kind, refused: why)
+  case .refuse(let why, let kind, let window, let by, let note):
+    meta.overlayClick = OverlayClickRecord(window: window, by: by, kind: kind, refused: why, note: note)
     return false
   case .deliver(let target):
     meta.inputRoute = .action
-    var record = OverlayClickRecord(window: target.window, by: target.by, kind: target.kind)
+    var record = OverlayClickRecord(window: target.window, by: target.by, kind: target.kind, note: OverlayNote(row: OverlayNodeNote(target.row)))
     defer { meta.overlayClick = record }
     let row = target.row.element
     try prepare(row)
@@ -352,6 +396,7 @@ func overlayClick<Element>(_ decision: OverlayPoint<Element>, app: String, reads
     // disabled meanwhile is not pressed, and #452's refusal stands.
     if let why = overlayIdentityRefusal(target.row, shift: target.shift, reads: reads) {
       record.refused = why
+      record.note.refusedBy = (target.row.role, why.rawValue)
       return false
     }
     // The request's deadline and the person's input once more, after those reads (the review of c8858c2a..e7e78424,
@@ -408,8 +453,7 @@ extension Engine {
                          context: ExecutionContext, meta: inout InputMeta) throws -> Bool {
     let reads = OverlayReads<AXUIElement>.live
     let screenshot = context.connection.observedScreenshot(app: app)
-    let record = OverlayRecord<AXUIElement>(nodes: screenshot?.nodes ?? [], frameless: screenshot?.frameless ?? [],
-                                            recorded: { screenshot?.recorded[ElementKey(element: $0)] }, windows: screenshot?.windowsListed,
+    let record = OverlayRecord<AXUIElement>(nodes: screenshot?.nodes ?? [], windows: screenshot?.windowsListed,
                                             observedWindow: screenshot?.windowNumber, pid: appPid)
     let decision = signposted("click.overlay") {
       overlayPoint(verdict, answered: answered, record: record, shift: shift, chromium: webAccessibility.pageEngine(app.appPath) == .chromium,

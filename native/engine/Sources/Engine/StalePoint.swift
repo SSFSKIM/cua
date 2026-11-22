@@ -117,6 +117,19 @@ struct ScreenshotNode<Element> {
   /// Whether its action names, read, included AXPress, whatever its role read (#433's review of 17942ad7, item 2:
   /// `actionable` is nil for a role unread, as #431 needs); a node that recorded AXPress is never an inert layer.
   var pressRecorded = false
+  /// #453 (ruling 1082): whether the walk read its AXChildren (or found the attribute absent: a leaf) and recorded every
+  /// child it listed (`ScreenshotChildren`), by handle where the listed children are known, else by their count.
+  var children: ScreenshotChildren = .whole
+}
+
+/// What the record holds of a node's own children (#453, ruling 1082).
+enum ScreenshotChildren: String, Equatable {
+  /// Read (or absent: a leaf), and every one recorded.
+  case whole
+  /// The AXChildren read failed with an error other than the attribute's absence: unknown.
+  case unread = "childrenUnread"
+  /// Read, but some child it listed is not in the record (a width cut, the depth cap, the budget or deadline).
+  case notAllRecorded = "childrenNotRecorded"
 }
 
 /// What an element offers its recorded descendants as their control (`screenshotNodes`, #431).
@@ -152,6 +165,8 @@ struct ScreenshotNodeRead<Element> {
   /// Whether the walk read its AXChildren (`ElementData.childrenRead`): a failed read counts no children, so with it
   /// unread the record cannot say whether it holds them all (#330's rule dL).
   var childrenRead = true
+  /// #453 (ruling 1082): its AXChildren absent, not failed (`ElementData.childrenLeaf`): a leaf, its children all known.
+  var childrenLeaf = false
   /// Its AXSubrole, and an AXStaticText's value (`screenshotLabelValue`), for #298's rule `relabelled`.
   var subrole: String? = nil
   var value: String? = nil
@@ -230,6 +245,8 @@ func screenshotRecord<Element>(_ reads: [ScreenshotNodeRead<Element>], key: ((El
   /// once), else by their count.
   var broken: Set<Int> = []
   var gapsBelow: [Int: [Element]] = [:]
+  /// Each read's own children as the record holds them (#453).
+  var ownChildren: [Int: ScreenshotChildren] = [:]
   func thin(_ frame: CGRect) -> Bool { frame.width <= 1 || frame.height <= 1 }
   for read in reads.reversed() {
     let listedRecorded: Bool
@@ -238,6 +255,7 @@ func screenshotRecord<Element>(_ reads: [ScreenshotNodeRead<Element>], key: ((El
     } else {
       listedRecorded = (recordedChildren[read.number] ?? 0) >= read.childCount
     }
+    ownChildren[read.number] = !(read.childrenRead || read.childrenLeaf) ? .unread : listedRecorded ? .whole : .notAllRecorded
     if !read.childrenRead || !listedRecorded { broken.insert(read.number) }
     if broken.contains(read.number), let parent = read.parent { broken.insert(parent) }
     if (recordedChildren[read.number] ?? 0) < read.childCount { incomplete.insert(read.number) }
@@ -331,7 +349,9 @@ func screenshotRecord<Element>(_ reads: [ScreenshotNodeRead<Element>], key: ((El
       continue
     }
     framed[read.number] = nodes.count
-    nodes.append(node(frame: frame, shown: cut(frame).flatMap { $0.isNull || $0.width <= 0 || $0.height <= 0 ? nil : $0 }))
+    var recorded = node(frame: frame, shown: cut(frame).flatMap { $0.isNull || $0.width <= 0 || $0.height <= 0 ? nil : $0 })
+    recorded.children = ownChildren[read.number] ?? .unread
+    nodes.append(recorded)
   }
   return (nodes, frameless)
 }

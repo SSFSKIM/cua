@@ -88,10 +88,13 @@ final class OverlayClickTests: XCTestCase {
     /// The other row of the overlay, beside the one at the point.
     let neighbour: Node
     /// The windows the screenshot's list held, front to back: the overlay (49) over the observed window (28).
-    var windows: [ListedWindow] = [ListedWindow(number: 49, owner: 501, layer: 0, bounds: CGRect(x: 90, y: 60, width: 440, height: 140)),
+    var windows: [ListedWindow] = [ListedWindow(number: 49, owner: 501, layer: 0, bounds: CGRect(x: 90, y: 60, width: 440, height: 250)),
                                    ListedWindow(number: 28, owner: 501, layer: 0, bounds: CGRect(x: 0, y: 0, width: 1000, height: 800))]
-    /// The elements whose children the walk did not all read or record.
+    /// What lies inside the row at the point in the record (the omnibox row's unlabelled group, the option's inner text).
+    var inner: Node? = nil
+    /// The elements whose AXChildren read failed at the observation, and those with a listed child left out of the record.
     var partial: [Node] = []
+    var missing: [Node] = []
   }
 
   /// The browser window and, under the popup, a deeper page link at the same point (deeper in the record than any of the
@@ -102,36 +105,68 @@ final class OverlayClickTests: XCTestCase {
     let group = Node("AXGroup", frame: CGRect(x: 0, y: 80, width: 1000, height: 400), parent: page)
     let inner = Node("AXGroup", frame: CGRect(x: 50, y: 90, width: 600, height: 200), parent: group)
     let section = Node("AXGroup", frame: CGRect(x: 80, y: 95, width: 500, height: 100), parent: inner)
-    let link = Node("AXLink", title: "Beneath", frame: CGRect(x: 100, y: 100, width: 400, height: 40), parent: section)
+    let s2 = Node("AXGroup", frame: CGRect(x: 90, y: 96, width: 450, height: 90), parent: section)
+    let s3 = Node("AXGroup", frame: CGRect(x: 95, y: 98, width: 420, height: 60), parent: s2)
+    let link = Node("AXLink", title: "Beneath", frame: CGRect(x: 100, y: 100, width: 400, height: 40), parent: s3)
     return (window, [recorded(window, depth: 0, ancestor: nil), recorded(page, depth: 1, ancestor: 0), recorded(group, depth: 2, ancestor: 1),
-                     recorded(inner, depth: 3, ancestor: 2), recorded(section, depth: 4, ancestor: 3), recorded(link, depth: 5, ancestor: 4)])
+                     recorded(inner, depth: 3, ancestor: 2), recorded(section, depth: 4, ancestor: 3), recorded(s2, depth: 5, ancestor: 4),
+                     recorded(s3, depth: 6, ancestor: 5), recorded(link, depth: 7, ancestor: 6)])
   }
 
-  /// Chrome's omnibox popup: its AXWindow > the "Omnibox Popup" web area > a group > two rows; the hit answers the web area.
+  /// Appends `chain` to `nodes`, each the child of the one before it, the first under `parent` at `depth`; answers the
+  /// index of each.
+  @discardableResult
+  private func append(_ chain: [Node], to nodes: inout [ScreenshotNode<Node>], under parent: Int?, depth: Int) -> [Int] {
+    var indices: [Int] = []
+    for (offset, node) in chain.enumerated() {
+      nodes.append(recorded(node, depth: depth + offset, ancestor: offset == 0 ? parent : indices[offset - 1]))
+      indices.append(nodes.count - 1)
+    }
+    return indices
+  }
+
+  /// Chrome's omnibox popup as the qualification recorded it (probe/453-measure README d542abaf): its AXWindow > the
+  /// "Omnibox Popup" web area > AXScrollArea > AXGroup > AXList 426×160 > AXStaticText rows 426×40 (AXPress) > an
+  /// unlabelled AXGroup 410×40 each; the hit answers the web area.
   private func omnibox() -> Scene {
     var (_, nodes) = browser()
-    let popup = Node("AXWindow", frame: CGRect(x: 90, y: 60, width: 440, height: 140))
-    let page = Node("AXWebArea", title: omniboxPopupTitle, frame: CGRect(x: 90, y: 92, width: 440, height: 100), parent: popup)
-    let list = Node("AXGroup", frame: CGRect(x: 95, y: 98, width: 430, height: 84), parent: page)
-    let first = Node("AXStaticText", value: "probe /results-alpha, 1 of 2", frame: CGRect(x: 100, y: 100, width: 426, height: 40), parent: list)
-    let second = Node("AXStaticText", value: "probe /results-beta, 2 of 2", frame: CGRect(x: 100, y: 140, width: 426, height: 40), parent: list)
-    let base = nodes.count
-    nodes += [recorded(popup, depth: 1, ancestor: 0), recorded(page, depth: 2, ancestor: base), recorded(list, depth: 3, ancestor: base + 1),
-              recorded(first, depth: 4, ancestor: base + 2), recorded(second, depth: 4, ancestor: base + 2)]
-    return Scene(nodes: nodes, answered: page, row: first, verdict: verdict(), neighbour: second)
+    let popup = Node("AXWindow", frame: CGRect(x: 90, y: 60, width: 440, height: 250))
+    let page = Node("AXWebArea", title: omniboxPopupTitle, frame: CGRect(x: 90, y: 92, width: 440, height: 210), parent: popup)
+    let scroll = Node("AXScrollArea", frame: CGRect(x: 90, y: 92, width: 440, height: 210), parent: page)
+    let group = Node("AXGroup", frame: CGRect(x: 95, y: 96, width: 430, height: 170), parent: scroll)
+    let list = Node("AXList", frame: CGRect(x: 100, y: 100, width: 426, height: 160), parent: group)
+    let first = Node("AXStaticText", value: "probe /results-alpha http://127.0.0.1/results-alpha, 1 of 2",
+                     frame: CGRect(x: 100, y: 100, width: 426, height: 40), parent: list)
+    let firstInner = Node("AXGroup", frame: CGRect(x: 108, y: 100, width: 410, height: 40), parent: first)
+    let second = Node("AXStaticText", value: "probe /results-beta http://127.0.0.1/results-beta, 2 of 2",
+                      frame: CGRect(x: 100, y: 140, width: 426, height: 40), parent: list)
+    let secondInner = Node("AXGroup", frame: CGRect(x: 108, y: 140, width: 410, height: 40), parent: second)
+    let at = append([popup, page, scroll, group, list, first, firstInner], to: &nodes, under: 0, depth: 1)
+    let beside = append([second], to: &nodes, under: at[4], depth: 6)
+    append([secondInner], to: &nodes, under: beside[0], depth: 7)
+    var scene = Scene(nodes: nodes, answered: page, row: first, verdict: verdict(), neighbour: second)
+    scene.inner = firstInner
+    return scene
   }
 
-  /// Chromium's `<datalist>` popup at layer 999: its AXWindow > an AXList > the options; the hit answers the option.
+  /// Chromium's `<datalist>` popup at layer 999 as recorded: its AXWindow > AXGroup > AXScrollArea > AXGroup > AXList
+  /// "Autofill" > the option's outer AXStaticText "apricot" (AXPress takes it) > an inner AXStaticText "apricot" at the same
+  /// frame (Chromium ignores a press on it); the hit answers the inner text.
   private func datalist() -> Scene {
     var (_, nodes) = browser()
     let popup = Node("AXWindow", frame: CGRect(x: 95, y: 95, width: 440, height: 90))
-    let list = Node("AXList", frame: CGRect(x: 95, y: 95, width: 440, height: 90), parent: popup)
+    let root = Node("AXGroup", frame: CGRect(x: 95, y: 95, width: 440, height: 90), parent: popup)
+    let scroll = Node("AXScrollArea", frame: CGRect(x: 95, y: 95, width: 440, height: 90), parent: root)
+    let group = Node("AXGroup", frame: CGRect(x: 95, y: 95, width: 440, height: 90), parent: scroll)
+    let list = Node("AXList", title: "Autofill", frame: CGRect(x: 95, y: 95, width: 440, height: 90), parent: group)
     let apricot = Node("AXStaticText", value: "apricot", frame: CGRect(x: 100, y: 100, width: 426, height: 40), parent: list)
+    let apricotInner = Node("AXStaticText", value: "apricot", frame: CGRect(x: 100, y: 100, width: 426, height: 40), parent: apricot)
     let banana = Node("AXStaticText", value: "banana", frame: CGRect(x: 100, y: 140, width: 426, height: 40), parent: list)
-    let base = nodes.count
-    nodes += [recorded(popup, depth: 1, ancestor: 0), recorded(list, depth: 2, ancestor: base), recorded(apricot, depth: 3, ancestor: base + 1),
-              recorded(banana, depth: 3, ancestor: base + 1)]
-    return Scene(nodes: nodes, answered: apricot, row: apricot, verdict: verdict(overLayer: 999), neighbour: banana)
+    let at = append([popup, root, scroll, group, list, apricot, apricotInner], to: &nodes, under: 0, depth: 1)
+    append([banana], to: &nodes, under: at[4], depth: 6)
+    var scene = Scene(nodes: nodes, answered: apricotInner, row: apricot, verdict: verdict(overLayer: 999), neighbour: banana)
+    scene.inner = apricotInner
+    return scene
   }
 
   /// Chromium's permission bubble: its AXWindow > the alert dialog > "Allow this time" over the point, "Never allow" below.
@@ -142,38 +177,49 @@ final class OverlayClickTests: XCTestCase {
     let allow = Node("AXButton", title: "Allow this time", frame: CGRect(x: 100, y: 100, width: 426, height: 40), parent: dialog)
     let never = Node("AXButton", title: "Never allow", frame: CGRect(x: 100, y: 145, width: 426, height: 40), parent: dialog)
     (allow.enabled, never.enabled) = (.enabled, .enabled)
-    let base = nodes.count
-    nodes += [recorded(bubble, depth: 1, ancestor: 0), recorded(dialog, depth: 2, ancestor: base), recorded(allow, depth: 3, ancestor: base + 1),
-              recorded(never, depth: 3, ancestor: base + 1)]
+    let at = append([bubble, dialog, allow], to: &nodes, under: 0, depth: 1)
+    append([never], to: &nodes, under: at[1], depth: 3)
     return Scene(nodes: nodes, answered: allow, row: allow, verdict: verdict(), neighbour: never)
   }
 
-  /// TextEdit's colour-well popover: the document window > an AXPopover > swatches, the document's text beneath at the
-  /// point; #452's popover signal, the app not Chromium's.
+  /// TextEdit's colour-well popover as recorded: the document window > AXScrollArea > AXTextArea > AXPopover > AXGrid >
+  /// swatch AXButtons 13×13 (leaves); #452's popover signal, the app not Chromium's; the text area holds the point too.
   private func popover() -> Scene {
     let window = Node("AXWindow", title: "Untitled", frame: CGRect(x: 0, y: 0, width: 1000, height: 800))
-    let text = Node("AXTextArea", value: "", frame: CGRect(x: 0, y: 40, width: 1000, height: 760), parent: window)
-    let popover = Node("AXPopover", frame: CGRect(x: 90, y: 60, width: 440, height: 140), parent: window)
-    let red = Node("AXButton", description: "rgb 1 0 0 1", frame: CGRect(x: 100, y: 100, width: 40, height: 40), parent: popover)
-    let blue = Node("AXButton", description: "rgb 0 0 1 1", frame: CGRect(x: 140, y: 100, width: 40, height: 40), parent: popover)
+    let scroll = Node("AXScrollArea", frame: CGRect(x: 0, y: 40, width: 1000, height: 760), parent: window)
+    let text = Node("AXTextArea", value: "", frame: CGRect(x: 0, y: 40, width: 1000, height: 760), parent: scroll)
+    let popover = Node("AXPopover", frame: CGRect(x: 90, y: 60, width: 200, height: 140), parent: text)
+    let grid = Node("AXGrid", frame: CGRect(x: 95, y: 95, width: 180, height: 60), parent: popover)
+    let red = Node("AXButton", description: "rgb 1 0 0 1", frame: CGRect(x: 100, y: 100, width: 13, height: 13), parent: grid)
+    let blue = Node("AXButton", description: "rgb 0 0 1 1", frame: CGRect(x: 115, y: 100, width: 13, height: 13), parent: grid)
     (red.enabled, blue.enabled) = (.enabled, .enabled)
-    let nodes = [recorded(window, depth: 0, ancestor: nil), recorded(text, depth: 1, ancestor: 0), recorded(popover, depth: 1, ancestor: 0),
-                 recorded(red, depth: 2, ancestor: 2), recorded(blue, depth: 2, ancestor: 2)]
+    var nodes: [ScreenshotNode<Node>] = []
+    let at = append([window, scroll, text, popover, grid, red], to: &nodes, under: nil, depth: 0)
+    append([blue], to: &nodes, under: at[4], depth: 5)
     var scene = Scene(nodes: nodes, answered: red, row: red, verdict: verdict(by: .popover), neighbour: blue)
     scene.chromium = false
-    // The swatch at the point: (110, 120) lies in it and in the text area beneath.
-    scene.verdict.point = CGPoint(x: 110, y: 120)
+    scene.verdict.point = CGPoint(x: 106, y: 106)
     return scene
   }
 
   private func decide(_ scene: Scene, shift: CGVector = .zero, answered: Node?? = .none) -> OverlayPoint<Node> {
-    let record = OverlayRecord(nodes: scene.nodes, recorded: { node in !scene.partial.contains { $0 === node } }, windows: scene.windows,
-                               observedWindow: 28, pid: 501)
+    let nodes = scene.nodes.map { node -> ScreenshotNode<Node> in
+      var node = node
+      if scene.partial.contains(where: { $0 === node.element }) { node.children = .unread }
+      if scene.missing.contains(where: { $0 === node.element }) { node.children = .notAllRecorded }
+      return node
+    }
+    let record = OverlayRecord(nodes: nodes, windows: scene.windows, observedWindow: 28, pid: 501)
     return overlayPoint(scene.verdict, answered: answered ?? scene.answered, record: record, shift: shift, chromium: scene.chromium, reads: reads)
   }
 
   private func refusal(_ decision: OverlayPoint<Node>) -> OverlayRefusal? {
-    if case .refuse(let why, _, _, _) = decision { return why }
+    if case .refuse(let why, _, _, _, _) = decision { return why }
+    return nil
+  }
+
+  private func note(_ decision: OverlayPoint<Node>) -> OverlayNote? {
+    if case .refuse(_, _, _, _, let note) = decision { return note }
     return nil
   }
 
@@ -213,8 +259,10 @@ final class OverlayClickTests: XCTestCase {
       XCTAssertTrue(pressed.first?.0 === scene.row, "\(kind): on the recorded handle")
       XCTAssertEqual(pressed.first?.1, "AXPress")
       XCTAssertEqual(meta.inputRoute, .action)
+      let frame = scene.row.frame!
       XCTAssertEqual(wire(meta), ["window": 49, "by": scene.verdict.overBy!.rawValue, "kind": kind.rawValue, "route": "action",
-                                  "confirmed": true, "polls": 1, "ms": 0] as NSDictionary)
+                                  "confirmed": true, "polls": 1, "ms": 0,
+                                  "row": ["role": scene.row.role, "frame": [frame.minX, frame.minY, frame.width, frame.height]]] as NSDictionary)
     }
   }
 
@@ -258,38 +306,126 @@ final class OverlayClickTests: XCTestCase {
     XCTAssertEqual(refusal(decide(unread)), .notOneOverlay, "a list without the observed window")
   }
 
-  /// Ruling 1072, item 3: the row's recorded subtree not whole (its children's read failed, a child of its own child left
-  /// out, or its subtree cut): refused.
+  /// Ruling 1082, item 2: the chosen row's own children, and those of each recorded descendant of it whose frame holds the
+  /// point, must have been read (or found absent: a leaf) and all recorded; the meta names the node and why. Other
+  /// descendants, and other rows, do not block.
   func testAPartlyRecordedRowRefuses() {
     var unread = omnibox()
     unread.partial = [unread.row]
-    XCTAssertEqual(refusal(decide(unread)), .partlyRecorded, "the row's children not read or recorded")
+    let decision = decide(unread)
+    XCTAssertEqual(refusal(decision), .partlyRecorded, "the row's children unread")
+    XCTAssertEqual(note(decision)?.refusedBy?.role, "AXStaticText")
+    XCTAssertEqual(note(decision)?.refusedBy?.reason, "childrenUnread")
     var cut = omnibox()
-    let at = cut.nodes.firstIndex { $0.element === cut.row }!
-    let kept = cut.nodes[at]
-    cut.nodes[at] = ScreenshotNode(element: kept.element, role: kept.role, title: kept.title, description: kept.description, subrole: kept.subrole,
-                                   value: kept.value, editableAncestor: nil, labelsUnread: [], frame: kept.frame, shown: kept.shown, depth: kept.depth,
-                                   subtreeRecorded: false)
-    cut.nodes[at].ancestor = kept.ancestor
-    XCTAssertEqual(refusal(decide(cut)), .partlyRecorded, "children left out")
-    var deeper = omnibox()
-    let rowAt = deeper.nodes.firstIndex { $0.element === deeper.row }!
-    let icon = Node("AXImage", frame: CGRect(x: 480, y: 105, width: 20, height: 20), parent: deeper.row)
-    deeper.nodes.append(recorded(icon, depth: 5, ancestor: rowAt))
-    deeper.partial = [icon]
-    XCTAssertEqual(refusal(decide(deeper)), .partlyRecorded, "a recorded child's children not all recorded")
-    let frameless = omnibox()
-    let group = Node("AXGroup", parent: frameless.row)
-    var unframed = ScreenshotNode(element: group, role: "AXGroup", title: nil, description: nil, subrole: nil, value: nil, editableAncestor: nil,
-                                  labelsUnread: [], frame: .null, shown: nil, depth: 5, subtreeRecorded: true)
-    unframed.ancestor = frameless.nodes.firstIndex { $0.element === frameless.row }
-    let record = OverlayRecord(nodes: frameless.nodes, frameless: [unframed], recorded: { $0 !== group }, windows: frameless.windows,
-                               observedWindow: 28, pid: 501)
-    let decision = overlayPoint(frameless.verdict, answered: frameless.answered, record: record, shift: .zero, chromium: true, reads: reads)
-    XCTAssertEqual(refusal(decision), .partlyRecorded, "a frameless child's children not read")
+    cut.missing = [cut.row]
+    XCTAssertEqual(note(decide(cut))?.refusedBy?.reason, "childrenNotRecorded", "a child the row listed left out")
+    var inner = omnibox()
+    inner.partial = [inner.inner!]
+    let innerDecision = decide(inner)
+    XCTAssertEqual(refusal(innerDecision), .partlyRecorded, "the descendant at the point unread")
+    XCTAssertEqual(note(innerDecision)?.refusedBy?.role, "AXGroup")
+    XCTAssertEqual(note(innerDecision)?.row, OverlayNodeNote(role: "AXStaticText", frame: CGRect(x: 100, y: 100, width: 426, height: 40)))
     var elsewhere = omnibox()
     elsewhere.partial = [elsewhere.neighbour]
     guard case .deliver = decide(elsewhere) else { return XCTFail("another row's coverage is not the row's") }
+  }
+
+  /// Ruling 1082: the omnibox row's remove button. Listed by the row and left unread out of the record, the row's own
+  /// children are not whole: refused. Recorded, with its own children unread but away from the point: no block. At the
+  /// point with its children unread: refused.
+  func testARowWhoseRemoveButtonWentUnreadRefuses() {
+    var unrecorded = omnibox()
+    unrecorded.missing = [unrecorded.row]
+    XCTAssertEqual(refusal(decide(unrecorded)), .partlyRecorded)
+    var recordedAway = omnibox()
+    let rowAt = recordedAway.nodes.firstIndex { $0.element === recordedAway.row }!
+    let remove = Node("AXButton", description: "Remove suggestion", frame: CGRect(x: 519, y: 108, width: 6, height: 20), parent: recordedAway.row)
+    recordedAway.nodes.append(recorded(remove, depth: 7, ancestor: rowAt))
+    recordedAway.partial = [remove]
+    guard case .deliver(let target) = decide(recordedAway) else { return XCTFail("a descendant away from the point does not block") }
+    XCTAssertTrue(target.row.element === recordedAway.row)
+    var atPoint = recordedAway
+    atPoint.verdict.point = CGPoint(x: 522, y: 115)
+    let decision = decide(atPoint)
+    XCTAssertEqual(refusal(decision), .partlyRecorded, "the remove button at the point, its children unread")
+    XCTAssertEqual(note(decision)?.refusedBy?.role, "AXButton")
+  }
+
+  /// Ruling 1082, the leaf line, from the AX error AXChildren's slot answered through the record: kAXErrorAttributeUnsupported
+  /// or kAXErrorNoValue is a leaf, whole, and the popover's swatch is pressed; kAXErrorCannotComplete (a timeout) or any
+  /// other error is unread and refuses.
+  func testTheLeafLineOnAXChildrensError() {
+    func children(after error: AXError) -> ScreenshotChildren {
+      var code = error
+      let slot = AXValueCreate(.axError, &code)!
+      let data = ElementData(values: present(slot).map { ["AXChildren": $0] } ?? [:], unreadable: failedSlot(slot) ? ["AXChildren"] : [])
+      let read = ScreenshotNodeRead(element: 1, number: 0, parent: nil, depth: 0, role: "AXButton", title: nil, description: nil,
+                                    frame: CGRect(x: 100, y: 100, width: 13, height: 13), actions: ["AXPress"], childCount: data.children.count,
+                                    childrenRead: data.childrenRead, childrenLeaf: data.childrenLeaf)
+      return screenshotRecord([read]).nodes[0].children
+    }
+    for error in [AXError.attributeUnsupported, .noValue] { XCTAssertEqual(children(after: error), .whole, "\(error.rawValue): a leaf") }
+    for error in [AXError.cannotComplete, .failure, .illegalArgument, .apiDisabled, .notImplemented] {
+      XCTAssertEqual(children(after: error), .unread, "\(error.rawValue): unread")
+    }
+    XCTAssertEqual(screenshotRecord([ScreenshotNodeRead(element: 1, number: 0, parent: nil, depth: 0, role: "AXButton", title: nil, description: nil,
+                                                        frame: .zero, actions: [], childCount: 0, childrenRead: true)]).nodes[0].children, .whole, "an empty list read")
+    let leaf = popover()
+    guard case .deliver(let target) = decide(leaf) else { return XCTFail("the swatch, a leaf, is pressed") }
+    XCTAssertTrue(target.row.element === leaf.row)
+    var timedOut = popover()
+    timedOut.partial = [timedOut.row]
+    XCTAssertEqual(note(decide(timedOut))?.refusedBy?.reason, "childrenUnread", "the swatch's AXChildren timed out")
+  }
+
+  /// Ruling 1082, item 1: through the omnibox's AXList the row is the list's child on the chain, the AXStaticText 426×40
+  /// that AXPress takes, never the unlabelled AXGroup 410×40 inside it that is the deepest node at the point; the meta
+  /// names it.
+  func testTheOmniboxRowTextIsPressedNeverItsInnerGroup() throws {
+    let scene = omnibox()
+    guard case .deliver(let target) = decide(scene) else { return XCTFail("delivered") }
+    XCTAssertTrue(target.row.element === scene.row)
+    XCTAssertFalse(target.row.element === scene.inner)
+    var meta = freshMeta()
+    var open = true
+    var pressed: [Node] = []
+    XCTAssertTrue(try click(.deliver(target), shown: { _ in open }, meta: &meta) { node, _ in pressed.append(node); open = false; return .success })
+    XCTAssertTrue(pressed.count == 1 && pressed[0] === scene.row)
+    XCTAssertEqual(wire(meta)?["row"] as? NSDictionary, ["role": "AXStaticText", "frame": [100, 100, 426, 40]] as NSDictionary)
+  }
+
+  /// Ruling 1082, item 1: the datalist's option is its outer AXStaticText, the AXList's child, never the inner text of the
+  /// same frame that the hit answers and that Chromium ignores a press on.
+  func testTheDatalistsOuterTextIsPressedNeverTheInnerOne() {
+    let scene = datalist()
+    guard case .deliver(let target) = decide(scene) else { return XCTFail("delivered") }
+    XCTAssertTrue(target.row.element === scene.row)
+    XCTAssertFalse(target.row.element === scene.inner)
+  }
+
+  /// Ruling 1082, item 1: two children of the list hold the point in the record (rows overlapping, or one shifted since
+  /// the walk): refused, the meta naming the list.
+  func testTwoListChildrenAtThePointRefuse() {
+    var scene = omnibox()
+    let at = scene.nodes.firstIndex { $0.element === scene.neighbour }!
+    scene.nodes[at] = recordedCopy(scene.nodes[at], frame: CGRect(x: 100, y: 110, width: 426, height: 40))
+    let decision = decide(scene)
+    XCTAssertEqual(refusal(decision), .notNested)
+    XCTAssertEqual(note(decision)?.refusedBy?.role, "AXList")
+    XCTAssertEqual(note(decision)?.refusedBy?.reason, "rowsOverlap")
+    var grid = popover()
+    let blue = grid.nodes.firstIndex { $0.element === grid.neighbour }!
+    grid.nodes[blue] = recordedCopy(grid.nodes[blue], frame: CGRect(x: 104, y: 100, width: 13, height: 13))
+    XCTAssertEqual(note(decide(grid))?.refusedBy?.reason, "rowsOverlap", "two swatches of the grid")
+  }
+
+  /// With no list or grid (the permission bubble), two recorded nodes of the overlay at the point that are not nested
+  /// (the two buttons overlapping) refuse.
+  func testOverlappingNodesOutsideAListRefuse() {
+    var scene = permission()
+    let at = scene.nodes.firstIndex { $0.element === scene.neighbour }!
+    scene.nodes[at] = recordedCopy(scene.nodes[at], frame: CGRect(x: 100, y: 110, width: 426, height: 40))
+    XCTAssertEqual(refusal(decide(scene, answered: .some(scene.row.parent))), .notNested)
   }
 
   /// Ruling 1072, item 4: each label part compared on its own: a description changed under an unchanged title, or a
@@ -325,7 +461,9 @@ final class OverlayClickTests: XCTestCase {
       XCTAssertFalse(carried, name)
       XCTAssertEqual(pressed, 0, "\(name): nothing pressed")
       XCTAssertNil(meta.startedAt, "\(name): nothing sent")
-      XCTAssertEqual(wire(meta), ["window": 49, "by": "axHit", "kind": "permissionBubble", "refused": expected.rawValue] as NSDictionary, name)
+      XCTAssertEqual(wire(meta), ["window": 49, "by": "axHit", "kind": "permissionBubble", "refused": expected.rawValue,
+                                  "row": ["role": "AXButton", "frame": [100, 100, 426, 40]],
+                                  "refusedBy": ["role": "AXButton", "reason": expected.rawValue]] as NSDictionary, name)
     }
   }
 
@@ -459,7 +597,7 @@ final class OverlayClickTests: XCTestCase {
       change(scene)
       // The hit-test answered the dialog around the row (a live element, whatever became of the row).
       let decision = decide(scene, answered: .some(scene.row.parent))
-      guard case .refuse(let why, let kind, let window, let by) = decision else { XCTFail("\(name): refused, not \(decision)"); continue }
+      guard case .refuse(let why, let kind, let window, let by, _) = decision else { XCTFail("\(name): refused, not \(decision)"); continue }
       XCTAssertEqual(why, expected, name)
       XCTAssertEqual(kind, .permissionBubble, name)
       XCTAssertEqual(window, 49, name)
@@ -477,27 +615,6 @@ final class OverlayClickTests: XCTestCase {
     scene.nodes[at] = original
     scene.nodes[at].roleUnknown = true
     XCTAssertEqual(refusal(decide(scene)), .roleChanged)
-  }
-
-  /// Two recorded rows of the overlay at the point, neither inside the other (overlapping siblings, or a row shifted
-  /// since the walk): refused, whichever is deeper or later.
-  func testOverlappingRecordedRowsThatAreNotNestedRefuse() {
-    var scene = omnibox()
-    let at = scene.nodes.firstIndex { $0.element === scene.neighbour }!
-    let overlapping = CGRect(x: 100, y: 110, width: 426, height: 40)
-    scene.nodes[at] = recordedCopy(scene.nodes[at], frame: overlapping)
-    scene.neighbour.frame = overlapping
-    XCTAssertEqual(refusal(decide(scene)), .notNested)
-  }
-
-  /// A row's own recorded child at the point is nested in it: the deepest, the child, is the one pressed.
-  func testANestedChildIsTheDeepestRecordedNodeAndIsPressed() {
-    var scene = omnibox()
-    let rowAt = scene.nodes.firstIndex { $0.element === scene.row }!
-    let child = Node("AXStaticText", value: "probe", frame: CGRect(x: 110, y: 105, width: 300, height: 20), parent: scene.row)
-    scene.nodes.append(recorded(child, depth: 5, ancestor: rowAt))
-    guard case .deliver(let target) = decide(scene) else { return XCTFail("delivered") }
-    XCTAssertTrue(target.row.element === child)
   }
 
   /// Overlays not of the four kinds keep #452's refusal: a Chromium window with neither list, dialog nor the omnibox's
@@ -524,7 +641,7 @@ final class OverlayClickTests: XCTestCase {
                           ("list at the layer", datalistLevel), ("not Chromium", notChromium), ("Chromium popover", chromiumPopover),
                           ("observed unlisted", unlisted)] {
       let decision = decide(scene)
-      guard case .refuse(.unknownKind, nil, _, _) = decision else { XCTFail("\(name): unknownKind, not \(decision)"); continue }
+      guard case .refuse(.unknownKind, nil, _, _, _) = decision else { XCTFail("\(name): unknownKind, not \(decision)"); continue }
     }
   }
 
@@ -545,7 +662,7 @@ final class OverlayClickTests: XCTestCase {
     unrecorded.nodes = browser().nodes
     XCTAssertEqual(refusal(decide(unrecorded)), .notRecorded, "the overlay unrecorded")
     var padding = omnibox()
-    padding.verdict.point = CGPoint(x: 92, y: 95)
+    padding.verdict.point = CGPoint(x: 92, y: 70)
     XCTAssertEqual(refusal(decide(padding)), .notRecorded, "only the window and its page at the point")
   }
 
@@ -575,7 +692,9 @@ final class OverlayClickTests: XCTestCase {
     XCTAssertFalse(carried, "main's refusal stands")
     XCTAssertEqual(pressed, 0)
     XCTAssertNil(meta.startedAt, "nothing sent")
-    XCTAssertEqual(wire(meta), ["window": 49, "by": "axHit", "kind": "permissionBubble", "refused": "gone"] as NSDictionary)
+    XCTAssertEqual(wire(meta), ["window": 49, "by": "axHit", "kind": "permissionBubble", "refused": "gone",
+                                "row": ["role": "AXButton", "frame": [100, 100, 426, 40]],
+                                "refusedBy": ["role": "AXButton", "reason": "gone"]] as NSDictionary)
   }
 
   /// The same bubble with the recorded button still alive but moved down out of the point, the neighbour at the point.

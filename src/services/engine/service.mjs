@@ -57,8 +57,8 @@
 //   click's establishment of a Chromium page tree not yet seen, {ms, webAreaFound, rehits}), and cua/stalePoint (#296: the
 //   stale-point guard at a coordinate click's or drag's point, {verdict "kept" | "refused", reason, identity?,
 //   recordedRole?, hitRole?, ms, rechecked?, afterActivation?}, roles only), and cua/overlayClick (#453: a coordinate
-//   click on a row of the app's own overlay carried by the row's AXPress, {window, by, kind, route "action", confirmed},
-//   or why #452's refusal stood, {window, by, kind?, refused}, value-free). cua/afterActionRepairs rides on
+//   click on a row of the app's own overlay carried by the row's AXPress, {window, by, kind, route "action", confirmed,
+//   row {role, frame}}, or why #452's refusal stood, {window, by, kind?, refused, row?, refusedBy? {role, reason}}). cua/afterActionRepairs rides on
 //   input results and on observations alike once the connection's after-action watch has repaired (#200: the repairs
 //   route 3's watch made after an action had answered, the connection's total and the last actions', each keyed by its
 //   delivery's postedAt). cua/serviceMs is the wrapper's (src/services/sky.mjs).
@@ -150,7 +150,8 @@ const NOTE_CHARS = 500;
 // cost, and on a mismatch both lengths, value-free, #354; `keyEffect`: "unconfirmed" on a press_key that posted, whose keys' effect is not
 // confirmed, #354; `menu`: a Show Menu's confirmation, where the new menu was seen or that none was, and the wait, #374;
 // `overlayClick`: a coordinate click on a row of the app's own overlay, carried by the row's AXPress and whether the
-// overlay closed, or why #452's refusal stood, {window, by, kind?, route?, confirmed?, refused?, ...}, #453).
+// overlay closed, or why #452's refusal stood, {window, by, kind?, route?, confirmed?, refused?, row? {role, frame},
+// refusedBy? {role, reason}, ...}, #453).
 const OPTIONAL_INPUT_META = ['activationGuardMs', 'activationClick', 'activationClickKind', 'activationJoin', 'pointUnconfirmed', 'intervention', 'entered', 'routeAdvice', 'delivery', 'afterActionRepairs', 'paste',
   'elementClick', 'coordinateClick', 'pointerEstablish', 'stalePoint', 'scroll', 'typeReadback', 'keyEffect', 'menu', 'overlayClick'];
 

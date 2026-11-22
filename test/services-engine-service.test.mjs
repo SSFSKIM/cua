@@ -594,8 +594,10 @@ test('#296: the stale-point guard\'s verdict rides as cua/stalePoint, and its re
 });
 
 test('#453: an overlay row\'s click rides as cua/overlayClick, carried or with #452\'s refusal standing, reset by the next call', async t => {
-  const carried = {window: 49, by: 'axHit', kind: 'omniboxPopup', route: 'action', confirmed: true, polls: 3, ms: 41.2};
-  const refused = {window: 49, by: 'axHit', kind: 'permissionBubble', refused: 'labelChanged'};
+  const carried = {window: 49, by: 'axHit', kind: 'omniboxPopup', route: 'action', confirmed: true, polls: 3, ms: 41.2,
+    row: {role: 'AXStaticText', frame: [100, 100, 426, 40]}};
+  const refused = {window: 49, by: 'axHit', kind: 'appKitPopover', refused: 'partlyRecorded', row: {role: 'AXButton', frame: [100, 100, 13, 13]},
+    refusedBy: {role: 'AXButton', reason: 'childrenUnread'}};
   const sentence = 'Google Chrome has a window of its own over the one the screenshot showed at this point (a suggestion list, popup or panel), and a click here would reach the window under it, not what the screenshot shows. Nothing was sent. Use keys instead (the arrow keys and Return for a suggestion list, Escape to close it), or call getAXState() and click an element it lists.';
   let refuse = false;
   const {getApp, call, meta} = await session(t, {handlers: {'execute:click': () => {

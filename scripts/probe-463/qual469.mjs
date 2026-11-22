@@ -14,6 +14,7 @@
 import {spawn, spawnSync} from 'node:child_process';
 import {createServer} from 'node:http';
 import {createConnection} from 'node:net';
+import {execFile} from 'node:child_process';
 import {resolve} from 'node:path';
 import {createRequire} from 'node:module';
 import {mkdirSync, writeFileSync, rmSync} from 'node:fs';
@@ -436,6 +437,17 @@ function spans(watch, actAt) {
   return out;
 }
 const misses = new Map();
+/// The frontmost app as LaunchServices answers it (`lsappinfo front`, its ASN), read back to back for `ms`: each change
+/// as [epoch ms, ASN]. The 5 ms watch's AX focused application also follows an open menu's tracking, so this is the
+/// frontmost-app reading; that one is kept beside it.
+const frontAsn = () => new Promise(r => execFile('lsappinfo', ['front'], {timeout: 2000}, (e, out) => r((out || '').trim())));
+async function sampleFront(ms) {
+  const out = [], start = Date.now();
+  let last = null, reads = 0;
+  while (Date.now() - start < ms) { const a = await frontAsn(); reads++; if (a !== last) { out.push([Date.now(), a]); last = a; } }
+  return {changes: out, reads};
+}
+const bundleOf = asn => (sh('lsappinfo', ['info', '-only', 'bundleid', asn]).out.match(/"CFBundleIdentifier"="([^"]*)"/) || [])[1] ?? asn;
 
 async function runRow(app, cell, rep) {
   const mode = MODES[cell.mode], ctl = CONTROLS[cell.control];
@@ -466,6 +478,8 @@ async function runRow(app, cell, rep) {
     const finder = pidOf('Finder');
     row.before = {order: orderNames(ord0, names), front: frontmost(), covering: covering(ord0, names)};
     row.f1Bounds = ord0.find(x => x.n === names.F1)?.bounds ?? null;
+    const asn0 = await frontAsn();
+    const fronting = sampleFront(WATCH_MS);
     const watching = askWatch({op: 'watch', pid, ms: WATCH_MS, target: pop0.target?.n ?? -1, user: names.F1 ?? -1, skip: skip(), person: finder, fresh: true}, 20_000);
     await sleep(40);
     const mark = events.length, popMark = menuPopups.length;
@@ -479,6 +493,9 @@ async function runRow(app, cell, rep) {
     row.after = {front: frontmost(), order: orderNames(ord1, names), covering: covering(ord1, names)};
     if (rep <= SHOTS) sh('screencapture', ['-x', '-t', 'jpg', join(OUT, 'screens', `${fileName(lab)}.jpg`)]);
     row.watch = await watching;
+    const fr = await fronting;
+    row.front = {before: bundleOf(asn0), reads: fr.reads, off: fr.changes.filter(c => c[1] !== asn0).map(c => [c[0] - t0, bundleOf(c[1])]),
+      endSame: (fr.changes[fr.changes.length - 1]?.[1] ?? asn0) === asn0};
     row.spans = spans(row.watch, t0);
     delete row.watch.freshSamples;
     row.watch.samples = row.watch.samples?.slice(0, 30);
@@ -504,7 +521,7 @@ async function runRow(app, cell, rep) {
     w?.close(); save();
     const ui = (row.spans ?? []).filter(s => s.bounds[2] >= 30 && s.bounds[3] >= 20);
     const pc = row.click?.meta?.popUpClick;
-    log(`${lab}: ${row.problem ?? row.exception?.split('\n')[0] ?? `${row.click?.error ?? 'ok'} route=${row.click?.route} popUpClick=${JSON.stringify(pc ?? null)} node=${row.node?.role}:${row.node?.label} ui=${JSON.stringify(ui.map(s => [s.layer, s.bounds.map(Math.round), s.from, s.to]))} front=${row.after?.front} frontOff=${row.key?.frontOff?.length} keyOff=${row.key?.focusedOff?.length} covering=${JSON.stringify(row.after?.covering)} layout=${row.layoutBuilt?.ok}:${row.layoutBuilt?.actual?.join('>')} msg=${(row.click?.message ?? '').slice(0, 120)}`}`);
+    log(`${lab}: ${row.problem ?? row.exception?.split('\n')[0] ?? `${row.click?.error ?? 'ok'} route=${row.click?.route} popUpClick=${JSON.stringify(pc ?? null)} node=${row.node?.role}:${row.node?.label} ui=${JSON.stringify(ui.map(s => [s.layer, s.bounds.map(Math.round), s.from, s.to]))} front=${row.after?.front} frontOff=${JSON.stringify(row.front?.off ?? null)} keyOff=${row.key?.focusedOff?.length} covering=${JSON.stringify(row.after?.covering)} layout=${row.layoutBuilt?.ok}:${row.layoutBuilt?.actual?.join('>')} msg=${(row.click?.message ?? '').slice(0, 120)}`}`);
   }
 }
 

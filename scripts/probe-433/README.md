@@ -541,3 +541,149 @@ What #442 adds to #443's kit:
 | slideover/link | refused interactiveHit 2; on nothing 2 | refused interactiveHit 2; on nothing 2 | refused interactiveHit 2; on nothing 2 |
 | siblingstack/text | kept recordedHit 2; on twin 2 | kept recordedHit 2; on twin 2 | kept nonInteractiveHit 2; on twin 2 |
 | siblingstack/link | kept recordedHit 2; on twin 2 | kept recordedHit 2; on twin 2 | kept recordedHit 2; on twin 2 |
+
+### Results on main `5580ac204f1a2a5cd6a36186d658087060690e5f`
+
+Engine 5580ac20, unmodified, mode measure, image 20261117.0516.1 (CfT 157.0.8103.78, Safari 27.2, Electron 44.4.5 / Chromium 152.0.7977.130), presentation background on every lane; every row valid, no abort.
+
+| Batch | Run | Kit | Hits | Reps | Rows per lane |
+|---|---|---|---|---|---|
+| 1: the two cells and the overlay cells | [45050323412](https://github.com/SSFSKIM/cua/actions/runs/45050323412) | `aa48262e` | cold | 10 | 260 |
+| 2: keep cells, #340's, capremount | [45053201038](https://github.com/SSFSKIM/cua/actions/runs/45053201038) | `aa48262e` | cold | 5 | 165 |
+| 3: warm hits | [45055361997](https://github.com/SSFSKIM/cua/actions/runs/45055361997) | `72c1979d` | warm | 10 | 200 |
+
+A cell below gives the guard's verdict and reason, then the control the page logged the click on (`twin` is B; `nothing`: no event reached the page, `none`: the page itself). `twincover` and `decomove` carry a B with the target's label (or the cell's text after the change), so the signals name it `target`.
+
+#### Where main's click went, cold (batch 1, engine 5580ac20)
+
+| Unit | cft | safari | electron |
+|---|---|---|---|
+| twincover/text | refused nodeGone 10; on nothing 10 | refused newElementOverPoint 10; on nothing 10 | refused nodeGone 10; on nothing 10 |
+| twincover/link | refused nodeGone 10; on nothing 10 | refused interactiveHit 10; on nothing 10 | refused nodeGone 10; on nothing 10 |
+| overcontrol/text | kept sameElement 10; on nothing 10 | kept nonInteractiveHit 10; on target 10 | kept sameElement 10; on target 10 |
+| overcontrol/link | kept sameElement 10; on nothing 10 | kept recordedHit 10; on target 10 | kept sameElement 10; on target 10 |
+| scrim/text | kept sameElement 10; on nothing 10 | kept sameElement 10; on none 10 | kept sameElement 10; on none 10 |
+| scrim/link | kept sameElement 10; on nothing 10 | kept sameElement 10; on none 10 | kept sameElement 10; on none 10 |
+| rebuildunder/text | kept sameElement 10; on nothing 10 | refused newElementOverPoint 10; on nothing 10 | kept sameElement 10; on target 10 |
+| rebuildunder/link | kept sameElement 10; on nothing 10 | kept recordedHit 10; on target 10 | kept sameElement 10; on target 10 |
+| bgbutton/text | kept sameElement 10; on nothing 10 | kept nonInteractiveHit 10; on target 10 | kept sameElement 10; on target 10 |
+| bgbutton/link | kept sameElement 10; on nothing 10 | kept recordedHit 10; on target 10 | kept sameElement 10; on target 10 |
+| decomove/text | refused controlGone 10; on nothing 10 | refused nodeGone 10; on nothing 10 | refused controlGone 10; on nothing 10 |
+| decomove/link | refused controlGone 10; on nothing 10 | refused nodeGone 10; on nothing 10 | refused controlGone 10; on nothing 10 |
+| rolechange/text | kept sameElement 10; on target 10 | kept hitAboveNode 10; on target 10 | kept sameElement 10; on target 10 |
+| rolechange/link | kept sameElement 10; on target 10 | kept hitAboveNode 10; on target 10 | kept sameElement 10; on target 10 |
+| overlapinto/text | kept sameElement 10; on target 10 | refused nodeGone 10; on nothing 10 | kept sameElement 10; on target 10 |
+| overlapinto/link | kept sameElement 10; on target 10 | refused nodeGone 10; on nothing 10 | kept sameElement 10; on target 10 |
+| overlaprow/text | kept recordedHit 10; on target 10 | refused nodeGone 10; on nothing 10 | kept nonInteractiveHit 10; on target 10 |
+| overlaprow/link | kept sameElement 10; on nothing 10 | refused nodeGone 10; on nothing 10 | kept sameElement 10; on target 10 |
+| tipremount/text | kept sameElement 10; on nothing 10 | refused newElementOverPoint 10; on nothing 10 | kept sameElement 10; on target 10 |
+| tipremount/link | kept sameElement 10; on nothing 10 | kept recordedHit 10; on target 10 | kept sameElement 10; on target 10 |
+| twinunder/text | refused nodeGone 10; on nothing 10 | refused newElementOverPoint 10; on nothing 10 | refused nodeGone 10; on nothing 10 |
+| twinunder/link | refused nodeGone 10; on nothing 10 | refused interactiveHit 10; on nothing 10 | refused nodeGone 10; on nothing 10 |
+| slideover/text | kept sameElement 10; on nothing 10 | refused interactiveHit 10; on nothing 10 | kept sameElement 10; on twin 10 |
+| slideover/link | kept sameElement 10; on nothing 10 | refused interactiveHit 10; on nothing 10 | kept sameElement 10; on twin 10 |
+| siblingstack/text | kept sameElement 10; on nothing 10 | kept recordedHit 10; on twin 10 | kept sameElement 10; on twin 10 |
+| siblingstack/link | kept sameElement 10; on nothing 10 | kept recordedHit 10; on twin 10 | kept sameElement 10; on twin 10 |
+
+
+#### Where main's click went, warm: a corrected hit at the point just before the click (batch 3, engine 5580ac20)
+
+| Unit | cft | safari | electron |
+|---|---|---|---|
+| twincover/text | refused nodeGone 10; on nothing 10 | refused newElementOverPoint 10; on nothing 10 | refused nodeGone 10; on nothing 10 |
+| twincover/link | refused interactiveHit 10; on nothing 10 | refused interactiveHit 10; on nothing 10 | refused interactiveHit 10; on nothing 10 |
+| retext/text | kept sameElement 10; on target 10 | kept sameElement 10; on target 10 | kept sameElement 10; on target 10 |
+| retext/link | kept sameElement 10; on target 10 | kept sameElement 10; on target 10 | kept sameElement 10; on target 10 |
+| plain/text | kept sameElement 10; on target 10 | kept sameElement 10; on target 10 | kept sameElement 10; on target 10 |
+| plain/link | kept sameElement 10; on target 10 | kept sameElement 10; on target 10 | kept sameElement 10; on target 10 |
+| overcontrol/text | kept recordedHit 10; on target 10 | kept nonInteractiveHit 10; on target 10 | kept nonInteractiveHit 10; on target 10 |
+| overcontrol/link | kept recordedHit 10; on target 10 | kept recordedHit 10; on target 10 | kept recordedHit 10; on target 10 |
+| scrim/text | kept sameElement 10; on nothing 10 | kept sameElement 10; on none 10 | kept sameElement 10; on none 10 |
+| scrim/link | kept sameElement 10; on nothing 10 | kept sameElement 10; on none 10 | kept sameElement 10; on none 10 |
+| bgbutton/text | kept recordedHit 10; on target 10 | kept nonInteractiveHit 10; on target 10 | kept nonInteractiveHit 10; on target 10 |
+| bgbutton/link | kept recordedHit 10; on target 10 | kept recordedHit 10; on target 10 | kept recordedHit 10; on target 10 |
+| overlapinto/text | kept sameElement 10; on target 10 | refused nodeGone 10; on nothing 10 | kept sameElement 10; on target 10 |
+| overlapinto/link | kept sameElement 10; on target 10 | refused nodeGone 10; on nothing 10 | kept sameElement 10; on target 10 |
+| overlaprow/text | kept recordedHit 10; on target 10 | refused nodeGone 10; on nothing 10 | kept nonInteractiveHit 10; on target 10 |
+| overlaprow/link | kept recordedHit 10; on target 10 | refused nodeGone 10; on nothing 10 | kept recordedHit 10; on target 10 |
+| slideover/text | refused pressedOther 10; on nothing 10 | refused interactiveHit 10; on nothing 10 | kept nonInteractiveHit 10; on twin 10 |
+| slideover/link | refused interactiveHit 10; on nothing 10 | refused interactiveHit 10; on nothing 10 | refused interactiveHit 10; on nothing 10 |
+| siblingstack/text | kept recordedHit 10; on twin 10 | kept recordedHit 10; on twin 10 | kept nonInteractiveHit 10; on twin 10 |
+| siblingstack/link | kept recordedHit 10; on twin 10 | kept recordedHit 10; on twin 10 | kept recordedHit 10; on twin 10 |
+
+
+#### Batch 2, cold (engine 5580ac20): main's verdicts on the keep cells and #340's
+
+| Unit | cft | safari | electron |
+|---|---|---|---|
+| remount/text | kept sameElement 5; on target 5 | kept sameElement 5; on target 5 | kept sameElement 5; on target 5 |
+| remount/link | kept sameElement 5; on target 5 | kept sameElement 5; on target 5 | kept sameElement 5; on target 5 |
+| retext/text | kept sameElement 5; on target 5 | kept sameElement 5; on target 5 | kept sameElement 5; on target 5 |
+| retext/link | kept sameElement 5; on target 5 | kept sameElement 5; on target 5 | kept sameElement 5; on target 5 |
+| like/text | kept sameElement 5; on target 5 | kept sameElement 5; on target 5 | kept sameElement 5; on target 5 |
+| like/link | kept sameElement 5; on target 5 | kept sameElement 5; on target 5 | kept sameElement 5; on target 5 |
+| plain/text | kept sameElement 5; on target 5 | kept sameElement 5; on target 5 | kept sameElement 5; on target 5 |
+| plain/link | kept sameElement 5; on target 5 | kept sameElement 5; on target 5 | kept sameElement 5; on target 5 |
+| btnremount/link | kept sameElement 5; on target 5 | kept sameElement 5; on target 5 | kept sameElement 5; on target 5 |
+| capremount/text | refused nodeGone 5; on nothing 5 | refused nodeGone 5; on nothing 5 | refused nodeGone 5; on nothing 5 |
+| capremount/link | refused nodeGone 5; on nothing 5 | refused nodeGone 5; on nothing 5 | refused nodeGone 5; on nothing 5 |
+| tableremount/text | kept sameElement 5; on target 5 | kept sameElement 5; on target 5 | kept sameElement 5; on target 5 |
+| tableremount/link | kept sameElement 5; on target 5 | kept sameElement 5; on target 5 | kept sameElement 5; on target 5 |
+| tablecellremount/text | kept sameElement 5; on target 5 | kept sameElement 5; on target 5 | kept sameElement 5; on target 5 |
+| tablecellremount/link | kept sameElement 5; on target 5 | kept sameElement 5; on target 5 | kept sameElement 5; on target 5 |
+| textbehind/text | kept sameElement 5; on target 5 | kept sameElement 5; on target 5 | kept sameElement 5; on target 5 |
+| textbehind/link | kept sameElement 5; on target 5 | kept sameElement 5; on target 5 | kept sameElement 5; on target 5 |
+| inbox/text | refused nodeGone 5; on nothing 5 | refused nodeGone 5; on nothing 5 | refused nodeGone 5; on nothing 5 |
+| inbox/link | kept sameElement 5; on target 5 | kept sameElement 5; on target 5 | kept sameElement 5; on target 5 |
+| reltime/text | refused nodeGone 5; on nothing 5 | refused nodeGone 5; on nothing 5 | refused nodeGone 5; on nothing 5 |
+| reltime/link | kept sameElement 5; on target 5 | kept sameElement 5; on target 5 | kept sameElement 5; on target 5 |
+| shrink/text | refused nodeGone 5; on nothing 5 | refused nodeGone 5; on nothing 5 | refused nodeGone 5; on nothing 5 |
+| shrink/link | kept sameElement 5; on target 5 | kept sameElement 5; on target 5 | kept sameElement 5; on target 5 |
+| linksave/text | refused nodeGone 5; on nothing 5 | refused nodeGone 5; on nothing 5 | refused nodeGone 5; on nothing 5 |
+| linksave/link | refused relabelled 5; on nothing 5 | refused relabelled 5; on nothing 5 | refused relabelled 5; on nothing 5 |
+| moved/text | refused frameMoved 5; on nothing 5 | refused nodeGone 5; on nothing 5 | refused frameMoved 5; on nothing 5 |
+| moved/link | refused frameMoved 5; on nothing 5 | refused nodeGone 5; on nothing 5 | refused frameMoved 5; on nothing 5 |
+| linkmono/text | refused nodeGone 5; on nothing 5 | refused nodeGone 5; on nothing 5 | refused nodeGone 5; on nothing 5 |
+| linkmono/link | refused relabelled 5; on nothing 5 | refused relabelled 5; on nothing 5 | refused relabelled 5; on nothing 5 |
+| right/text | refused nodeGone 5; on nothing 5 | refused nodeGone 5; on nothing 5 | refused nodeGone 5; on nothing 5 |
+| right/link | kept sameElement 5; on target 5 | kept sameElement 5; on target 5 | kept sameElement 5; on target 5 |
+| centre/text | refused nodeGone 5; on nothing 5 | refused nodeGone 5; on nothing 5 | refused nodeGone 5; on nothing 5 |
+| centre/link | kept sameElement 5; on target 5 | kept sameElement 5; on target 5 | kept sameElement 5; on target 5 |
+
+
+#### The signals (engine 5580ac20; batches 1 to 3, per lane; full tables from `tables442.mjs`)
+
+| Signal | cft | safari | electron |
+|---|---|---|---|
+| The engine's own hit in the overlay cells, cold (batch 1) | the overlay group in 24 of 26 units (not `overlaprow/text`) | the control under the veil, or its text | the overlay group in 24 of 26 units (not `overlaprow/text`) |
+| The first AX hit at a fresh point, warm sequence (batch 3) | the overlay group, corrected to the control under it after p50 26–34 ms, max 42 ms | the control under the veil at once | the overlay group, corrected after p50 25–35 ms, max 61 ms |
+| The corrected AX hit's control against `elementFromPoint` at the click (all batches but `twincover`, `decomove`) | 564 of 565 rows agree (one answered nothing) | 565 of 565 | 565 of 565 |
+| The corrected AX hit, pointer-events and z-order | through the veil to the control on top: B in `slideover` and `siblingstack`, the scrim itself in `scrim` | same | same |
+| (a) Full walk of the web area: the controls at the point against the page's | every row equal | every row equal | every row equal |
+| (a) Full walk's cost on the fixture pages (10–20 elements visited; tables more), unit p50 range / max | 4–34 / 49 ms | 3–24 / 33 ms | 3–35 / 44 ms |
+| (a) Full walk's cost on `capremount` (~6,000 elements) | 2.4–2.6 s, max 3.0 s (cut at the kit's 3 s / 8,000 bound) | 0.95–0.98 s, max 1.08 s | 1.7 s, max 2.9 s (cut) |
+| (a) Walk pruned to the point (also through `AXChildrenInNavigationOrder`, `AXVisibleChildren`) | at most 15 ms on the fixture, 24 ms on `capremount`; misses B in `slideover` 40 of 40 (transformed out of its row's frame) | at most 10 ms, 29 ms; finds B 40 of 40 | at most 15 ms, 24 ms; misses B in `slideover` 40 of 40 |
+| (b) Record holds 2+ unrelated controls at the point | only the cells built for it: `bgbutton`, `siblingstack` (under an inert node), `overlapinto`, `overlaprow` (not inert: the decoration lies in the back link); 0 of the 33 units of batch 2 | same | same |
+| Stacking in the tree: the later control in the AX tree is the one painted on top | `overlapinto`, `overlaprow` yes; `bgbutton`, `siblingstack` no (0 of 40) | same | same |
+| `AXVisibleChildren` leaves out a covered control | never | never | never |
+| An attribute naming stacking (z-order, layer, paint order) on the hit or the controls at the point | none | none | none |
+| Hit-testing from the web area or the hit's ancestors | answers nothing | answers the root itself | answers nothing |
+| (c) `elementFromPoint` names the control the click reached | every row where an event reached the page | same | same |
+| (c) reachable by the engine | only through cua's extension in a Chrome profile it serves | no | no |
+
+#### Exposure: the rows main kept and landed on the target that each rule would refuse (engine 5580ac20)
+
+| Rule | Batch 1 (cold), cft / safari / electron | Batch 2 (cold) | Batch 3 (warm) |
+|---|---|---|---|
+| Rows main kept and landed | 50 / 80 / 140 | 100 / 100 / 100 | 120 / 80 / 120 |
+| (a) the live set at the point differs from the record's, under an inert node | 0 / 20 / 20, all `bgbutton` | 0 | 20 / 20 / 20, all `bgbutton` |
+| (b) the record holds 2+ unrelated controls at the point under an inert node and one is not found in place | 0 / 20 / 20, all `bgbutton` | 0 | 20 / 20 / 20, all `bgbutton` |
+| (c) `elementFromPoint`, or the corrected AX hit's control, is not the target | 0 | 0 | 0 |
+
+CfT's batch 1 has no `bgbutton` row to lose: cold, it never lands there (the element route presses the overlay hit).
+
+#### Reading
+
+- **`slideover`** (B slides over a live A). Main's existing `interactiveHit` refuses it wherever its hit is the control on top: Safari always (40 of 40, both batches), Chromium only once the hit is corrected (warm: CfT 20 of 20 refused). Cold, Chromium's first hit is the overlay group, so main keeps: CfT presses the overlay and reaches nothing, Electron posts the click and lands on B (20 of 20). Warm, Electron's text point still lands on B (10 of 10): the corrected hit is B's text, and the guard takes a non-interactive hit without asking whose control it is (`nonInteractiveHit`).
+- **`siblingstack`** (A stacked over its later sibling B; A removed). Main keeps and lands on B on every lane where events are posted, cold and warm (Safari 40 of 40, Electron 40 of 40, CfT warm 20 of 20): B is a recorded control at the point, so even the corrected hit (B) vouches. `bgbutton` is the same record with the other control removed (B behind A goes; A takes the click); nothing in the record or the live tree says which of the two was on top at the observation (tree order agrees with paint order in two shapes and disagrees in the other two), so (a) and (b) refuse `bgbutton` too.
+- **Signals.** A corrected AX hit is the page's own hit test on all three engines (pointer-events and z-order honoured, equal to `elementFromPoint` in 1,694 of 1,695 rows). Chromium gives it only on a second ask, after an asynchronous correction (26–61 ms here, on a small page on an idle runner), with no notification that it came: a scrim's first answer and its corrected one are the same group. The enumeration (a) is complete only as a full walk, which costs seconds on a 6,000-element page; the pruned walk is cheap but misses a control transformed out of its parent's frame on Chromium. (b)'s overlap is rare in the measured record (only the cells built for it), but these fixtures are small: how often real pages hold overlapping unrelated controls under an inert layer is not measured here.

@@ -2704,6 +2704,26 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
     - Install and doctor pass on the pinned 0.4.3, and K1–K3 pass on it. ci-gate went green after reruns of two flakes the change can't reach (posted on #444).
     - H8 = 048140a2, feat fast-forwarded to it, is frozen for the counted reach. Its list is Chrome only (task 127's reach; 990 (3)): D1, C1, K1–K3, L2a, L4b, L4c, L4d at 993's bar, V5 on both arches (x64's in the owner's window, 11-23 02:30–08:00Z), the H1 cross-check, item 9 and the doctor.
 
+- Decision (2026-11-22, M5, the counted reach at H8 = 048140a2 on the pinned linux-engine 0.4.3; the design session's rulings 1042–1055): what the Chrome-only reach found on both arches.
+  - **The list** (task 127's reach, §6 "Chrome sources only"; 990 (3)): D1, C1, K1–K3, L2a, L4b, L4c and L4d at 993's bar, V5 (arm64 on its own `:0`; x64's in the owner's window), the H1 cross-check, item 9 and the doctor. Each runs once, a failure is never rerun, and a stop comes to the design session.
+  - **x64 (task 135, cb4b1234): every step passed on its first run** (1051).
+    - D1's #358 was [27.8, 32.7], against H6's [29.2, 36.9].
+    - H1's 14 Electron cells and take table were identical to H6's, so the reach argument holds.
+    - L4d passed at 993's bar: t14-long 100 honest with no activation, t14-floor plain-long 300/300, left and inzone-out 30/30 honest each. The 0.4.2 baseline was 1/100.
+  - **arm64 (task 136, 740c89b7): everything passed but L4b's unshipped lane** (1052, 1055).
+    - D1 passed. Its canvas line was judged against the pinned build because the newest gave the bar up at 19 usable of 40: the judge's coded rule (stats.mjs `judgeSeriesSpeed`, 1045). Against newest offline it is [−12.3, −11.6] ms.
+    - L4d passed at 993's bar: t14-long 0/100 against H7.1's 15/100, and `left` #24's stale drop is gone.
+    - L4b failed only in `cua:accept`, the measurement lane behind `--drag-dnd-release-at-accept`. 0.4.3 leaves that lane on 0.4.2's floor by design (pointer.rs:1366–1371), and it answered 3/30 false oks, #459's shape. That lane's finding stands under 871/872 (1050). The shipped lane was clean, and #474 (P3) is to retire the lane or bring it under the tail.
+  - **#432 attributed (1046–1053).**
+    - arm64's V5 was stopped twice by wrap71 (stopped-1 at 80.9 s, stopped-2 at 7.4 s) before passing 52/52 on its second rerun.
+    - A capture sidecar beside the sitting, outside the H8 tree, named the peer of stopped-2: the run's own chrome_crashpad. It daemonizes and is reparented to wrap71, the subreaper, outside the subtree wrap71 counts as the run's, so the guard failed closed with no reach outside the run.
+    - The guard fix goes on #432 after M5, under its own review and not on H8: a holder that descends from wrap71 passes, and any other holder, or none, stops.
+    - On x64, where the owner's session shares the uid, the sidecar writes only the lines naming the flagged inode or peer path, plus the owner record of 1047. x64's raw captures are deleted after M5's acceptance (1054).
+    - The rate: arm64's frozen-head V5 sittings stopped 3 times in 6 across H5–H8 (5 in 17 counting development sittings), every stop in the first 81 s; x64 had none of this class in 4.
+  - **Two measured facts for the tracker** (1051).
+    - Counted drop-signals rows don't carry the tail's `release_sync` record, so the gate's reading is derived by 993's rule. c-cost.mjs's 0.4.2 rule misreads late in-floor releases.
+    - On x64 under load, the in-floor release came up to ~7 ms past the floor (350–357.3 ms after the take), a time cost only.
+
 ## Outcomes & Retrospective
 
 Written per milestone as each lands; the whole-plan retrospective at finish. The execution record (tasks, reviews, friction) is `docs/doperpowers/specs/2026-10-28-own-linux-engine-report.md`.

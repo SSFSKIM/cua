@@ -98,6 +98,11 @@ export async function startPlatform({lane,home,helper,cover,stage}){
       const r=await helper.ask({op:'axtext',pid,before,after},5000);
       return Number.isInteger(r?.before)&&Number.isInteger(r?.after)?{before:r.before,after:r.after}:null;
     };
+    // #442: what accessibility offers at a screen point (host.swift \`signals\`); null when the helper answers nothing usable.
+    const signals=async(point,{names=false}={})=>{
+      const r=await helper.ask({op:'signals',pid,x:point.x,y:point.y,names},10000);
+      return r&&typeof r==='object'&&!r.reason?r:null;
+    };
     stage('presentation-probe');
     const probe={cell:'plain'};
     try{await arm(-1,probe);if(!(await disarm()).held)throw setupFail('presentation-witness');}
@@ -106,6 +111,6 @@ export async function startPlatform({lane,home,helper,cover,stage}){
       fallback=e.setupStep??'presentation';presentation='frontmost';active=pid;
       await arm(-2,probe);if(!(await disarm()).held)throw Error('frontmost witness');
     }
-    return {pid,bundle,version,get presentation(){return presentation;},get fallback(){return fallback;},arm,witness,disarm,command,axText,dispose};
+    return {pid,bundle,version,get presentation(){return presentation;},get fallback(){return fallback;},arm,witness,disarm,command,axText,signals,dispose};
   }catch(e){await dispose();throw e;}
 }

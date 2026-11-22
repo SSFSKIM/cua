@@ -497,3 +497,24 @@ Main `dfe6f4434e8e0a401ccdeaf728737ed26281df5c`. [Run 44996489260](https://githu
 | overlaprow/link | kept-missed sameElement 2 | refused controlGone 2 [AXLink 2] | refused nodeGone 2 | refused nodeGone 2 | kept-landed sameElement 2 | refused controlGone 2 [AXLink 2] |
 
 - 2a3c7e53 refused two shapes that main lands. `overlaprow/link` on Electron: the accessibility hit at the front link's padding is the decoration itself (`hitRole` AXGroup), not the front link, so `hitControlVouches` never saw the front link. `rolechange` on Safari: WebKit re-creates the link's accessibility object as an AXButton when its role changes, and the decoration's object survives: that is the fix's named limit, measured. On CfT and Electron the fix kept as main (`sameElement`): the recorded link did not read gone after the role change.
+
+## #442
+
+Branch `probe/442-measure`, from `probe/443-qual` (`a314e4f0`), workflow `probe-442-measure.yml` (artifacts `probe-442-<lane>-<mode>`). Main alone, unmodified, mode measure; nothing is gated. #442: under an inert overlay the stale-point guard vouches for the recorded controls beneath it, but accessibility does not say which of several controls there takes the click. This kit measures, before any design, where main's click goes in the ticket's two shapes and which signals exist at the click.
+
+```sh
+# Batch 1: the two new cells and #433/#443's overlay cells, 10 per unit; batch 2: the keep cells and #340's, 5 per unit.
+gh workflow run probe-442-measure.yml --ref probe/442-measure -f main="$MAIN_SHA" -f mode=measure -f reps=10 -f cells=slideover,siblingstack,overcontrol,bgbutton,rebuildunder,overlapinto,overlaprow,rolechange,scrim,twincover,decomove,tipremount,twinunder
+gh workflow run probe-442-measure.yml --ref probe/442-measure -f main="$MAIN_SHA" -f mode=measure -f reps=5 -f cells=retext,plain,like,remount,textbehind,btnremount,tableremount,tablecellremount,inbox,reltime,shrink,linksave,moved,linkmono,right,centre
+# The tables below from a run: gh run download <id> -D <dir>; node scripts/probe-433/tables442.mjs <dir> <label>
+```
+
+What #442 adds to #443's kit:
+- **Cells** (`cells.mjs`, `page.mjs` `rivalOf`; B is logged as `twin`):
+  - `slideover`: the veil over link A; button B ("Compose", A's box) in the second row, drawn under the veil (veil `z-index` 2, B 1). `mark` slides B over A by a transform: B's element and accessibility object survive, A is neither removed nor changed.
+  - `siblingstack`: the veil over link A; button B ("Close", A's box), a later sibling of A in its row; CSS stacks A (`z-index` 1) above B (0), so the record holds both at the point. `mark` removes A.
+- **Signals**, read by the kit, never by the engine, on every row (`signals.mjs`, a row's `signals`):
+  - The record: the observation's nodes (preorder, with depth) give the node #296 takes at the point, whether it is an inert layer, and the innermost controls whose frames hold the point, by role and by the engine's rule (role or AXPress).
+  - Accessibility live (`host.swift` `signals`, after the observation and again at the click): the AX hit from the application and from the web area and the hit's ancestors; a 5 x 5 grid of hits 4 pt apart; four walks collecting the elements whose frames hold the point that act on their own (the whole web area; pruned to the point; pruned through `AXChildrenInNavigationOrder`; pruned through `AXVisibleChildren`), each timed, with each control's place among its parent's children and whether its parent's `AXVisibleChildren` lists it; the attribute names on the controls there (repetition 0).
+  - The page (`page.mjs` `probe`, the screen point mapped to CSS through the target's box): `elementFromPoint`, `elementsFromPoint` (paint order) and every control whose box holds the point.
+  - The click's recipient, from the page's log.

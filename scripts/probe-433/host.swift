@@ -131,6 +131,7 @@ func dispatch(_ q: [String: Any]) -> [String: Any] {
     AXUIElementSetMessagingTimeout(app, 0.5)
     let windows = attr(app, "AXWindows") as? [AXUIElement] ?? []
     return ["titles": windows.compactMap { attr($0, "AXTitle") as? String }]
+  case "signals": return signals(q, pid: pid)
   case "axtext":
     // Breadth-first from the owned app's windows (depth at most 60, at most 6000 elements): how many AXStaticTexts
     // read `before` and how many read `after` (AXValue, trimmed). Counts only.
@@ -153,6 +154,177 @@ func dispatch(_ q: [String: Any]) -> [String: Any] {
     return ["before": nBefore, "after": nAfter]
   default: return [:]
   }
+}
+
+// #442: what accessibility offers at a screen point (top-left global points), read by the kit beside the engine. Every
+// walk is bounded and the whole op keeps a 3 s deadline, so it answers within the harness's 10 s ask.
+let interactiveRoles: Set<String> = [
+  "AXButton", "AXCheckBox", "AXRadioButton", "AXLink", "AXPopUpButton", "AXMenuButton", "AXMenuItem", "AXTextField", "AXTextArea",
+  "AXComboBox", "AXSearchField", "AXSecureTextField", "AXSlider", "AXIncrementor", "AXDisclosureTriangle", "AXTab", "AXSwitch",
+  "AXColorWell", "AXSegmentedControl",
+]
+func since(_ t: Double) -> Double { ((ms() - t) * 100).rounded() / 100 }
+func frameOf(_ e: AXUIElement) -> CGRect? {
+  guard let p = attr(e, "AXPosition"), let z = attr(e, "AXSize"), CFGetTypeID(p) == AXValueGetTypeID(), CFGetTypeID(z) == AXValueGetTypeID() else { return nil }
+  var o = CGPoint.zero, sz = CGSize.zero
+  guard AXValueGetValue(p as! AXValue, .cgPoint, &o), AXValueGetValue(z as! AXValue, .cgSize, &sz) else { return nil }
+  return CGRect(origin: o, size: sz)
+}
+func holdsPoint(_ r: CGRect, _ p: CGPoint) -> Bool { r.width > 0 && r.height > 0 && p.x >= r.minX && p.x <= r.maxX && p.y >= r.minY && p.y <= r.maxY }
+func actionsOf(_ e: AXUIElement) -> [String] {
+  var names: CFArray?
+  return AXUIElementCopyActionNames(e, &names) == .success ? (names as? [String] ?? []) : []
+}
+func kids(_ e: AXUIElement, _ name: String = "AXChildren") -> [AXUIElement]? { attr(e, name) as? [AXUIElement] }
+func trimmed(_ v: String) -> String { String(v.trimmingCharacters(in: .whitespacesAndNewlines).prefix(40)) }
+func labelOf(_ e: AXUIElement) -> String {
+  for name in ["AXTitle", "AXDescription", "AXValue"] {
+    if let v = attr(e, name) as? String, !trimmed(v).isEmpty { return trimmed(v) }
+  }
+  for c in (kids(e) ?? []).prefix(8) where attr(c, "AXRole") as? String == "AXStaticText" {
+    if let v = attr(c, "AXValue") as? String, !trimmed(v).isEmpty { return trimmed(v) }
+  }
+  return ""
+}
+func rectOut(_ r: CGRect?) -> Any {
+  guard let r else { return NSNull() }
+  let q = { (x: CGFloat) in (Double(x) * 100).rounded() / 100 }
+  return ["x": q(r.minX), "y": q(r.minY), "width": q(r.width), "height": q(r.height)]
+}
+func hitAt(_ root: AXUIElement, _ p: CGPoint) -> AXUIElement? {
+  var hit: AXUIElement?
+  return AXUIElementCopyElementAtPosition(root, Float(p.x), Float(p.y), &hit) == .success ? hit : nil
+}
+func ancestorsOf(_ e: AXUIElement, limit: Int = 300) -> [AXUIElement] {
+  var out: [AXUIElement] = [], at = e
+  while out.count < limit, let up = attr(at, "AXParent"), CFGetTypeID(up) == AXUIElementGetTypeID() {
+    let u = up as! AXUIElement
+    AXUIElementSetMessagingTimeout(u, 0.5)
+    out.append(u); at = u
+    if attr(u, "AXRole") as? String == "AXApplication" { break }
+  }
+  return out
+}
+// A hit's description: its role, its DOM id, and its nearest control (interactive role) at or above it below the web area.
+func hitOut(_ h: AXUIElement?) -> [String: Any] {
+  guard let h else { return ["role": NSNull()] }
+  AXUIElementSetMessagingTimeout(h, 0.5)
+  var w: [String: Any] = ["role": attr(h, "AXRole") as? String ?? NSNull(), "dom": attr(h, "AXDOMIdentifier") as? String ?? NSNull()]
+  for e in [h] + ancestorsOf(h, limit: 40) {
+    let role = attr(e, "AXRole") as? String ?? ""
+    if role == "AXWebArea" { break }
+    if interactiveRoles.contains(role) { w["control"] = ["role": role, "label": labelOf(e)]; break }
+  }
+  return w
+}
+// A depth-first preorder walk from `root` collecting the elements whose frame holds `p` and that act on their own (an
+// interactive role or AXPress), each with the index of its nearest such ancestor in the list (`up`, -1 for none).
+// `pruned` descends only into elements whose frame holds the point or reads none; `childAttr` names the children
+// attribute walked (an element that does not offer it is walked through AXChildren and counted `unsupported`).
+func collect(_ root: AXUIElement, _ p: CGPoint, pruned: Bool, childAttr: String, deadline: Double, cap: Int, details: Bool) -> [String: Any] {
+  let t0 = ms()
+  var stack: [(AXUIElement, Int, Int)] = [(root, 0, -1)]
+  var found: [[String: Any]] = [], visited = 0, unsupported = 0, cut = false
+  while let (e, depth, up) = stack.popLast() {
+    if visited >= cap || ms() > deadline { cut = true; break }
+    visited += 1
+    AXUIElementSetMessagingTimeout(e, 0.5)
+    let role = attr(e, "AXRole") as? String ?? "AXUnknown"
+    let frame = frameOf(e)
+    let here = frame.map { holdsPoint($0, p) } ?? false
+    var mine = up
+    if here {
+      let press = actionsOf(e).contains("AXPress")
+      if interactiveRoles.contains(role) || press {
+        var item: [String: Any] = ["role": role, "label": labelOf(e), "frame": rectOut(frame), "press": press, "depth": depth, "up": up,
+                                   "dom": attr(e, "AXDOMIdentifier") as? String ?? NSNull()]
+        if details, let par = attr(e, "AXParent"), CFGetTypeID(par) == AXUIElementGetTypeID() {
+          let pe = par as! AXUIElement
+          // Whether its parent's AXVisibleChildren lists it (null: the parent offers none), and its place among AXChildren.
+          if let vis = kids(pe, "AXVisibleChildren") { item["visible"] = vis.contains { CFEqual($0, e) } } else { item["visible"] = NSNull() }
+          if let all = kids(pe) { item["index"] = all.firstIndex { CFEqual($0, e) } ?? -1; item["siblings"] = all.count }
+        }
+        mine = found.count
+        found.append(item)
+      }
+    }
+    if depth >= 300 || (pruned && frame != nil && !here) { continue }
+    var list = kids(e, childAttr)
+    if list == nil && childAttr != "AXChildren" { unsupported += 1; list = kids(e) }
+    for k in (list ?? []).reversed() { stack.append((k, depth + 1, mine)) }
+  }
+  return ["found": found, "visited": visited, "ms": since(t0), "cut": cut, "unsupported": unsupported]
+}
+func signals(_ q: [String: Any], pid: pid_t) -> [String: Any] {
+  guard let x = (q["x"] as? NSNumber)?.doubleValue, let y = (q["y"] as? NSNumber)?.doubleValue else { return ["error": "request"] }
+  let p = CGPoint(x: x, y: y), start = ms(), deadline = start + 3000
+  let app = AXUIElementCreateApplication(pid)
+  AXUIElementSetMessagingTimeout(app, 0.5)
+  var out: [String: Any] = [:]
+  // The hit from the application, timed; its ancestors' roles; the web area above it.
+  var t = ms()
+  let hit = hitAt(app, p)
+  out["hitMs"] = since(t)
+  out["hit"] = hitOut(hit)
+  let chain = hit.map { ancestorsOf($0) } ?? []
+  out["ancestorRoles"] = chain.prefix(40).map { attr($0, "AXRole") as? String ?? "AXUnknown" }
+  var web = chain.first { attr($0, "AXRole") as? String == "AXWebArea" }
+  out["webFrom"] = web == nil ? "windows" : "hit"
+  if web == nil {
+    var queue: [AXUIElement] = kids(app, "AXWindows") ?? [], i = 0
+    while i < queue.count && i < 4000 && web == nil {
+      let e = queue[i]; i += 1
+      AXUIElementSetMessagingTimeout(e, 0.5)
+      if attr(e, "AXRole") as? String == "AXWebArea" { web = e } else { queue += kids(e) ?? [] }
+    }
+  }
+  guard let web else { out["error"] = "no-web-area"; out["ms"] = since(start); return out }
+  // (a) the controls whose frames hold the point: the whole web area walked, the walk pruned to the point, and the pruned
+  // walk through AXChildrenInNavigationOrder and through AXVisibleChildren.
+  out["full"] = collect(web, p, pruned: false, childAttr: "AXChildren", deadline: deadline, cap: 8000, details: true)
+  out["pruned"] = collect(web, p, pruned: true, childAttr: "AXChildren", deadline: deadline, cap: 8000, details: false)
+  out["nav"] = collect(web, p, pruned: true, childAttr: "AXChildrenInNavigationOrder", deadline: deadline, cap: 8000, details: false)
+  out["visible"] = collect(web, p, pruned: true, childAttr: "AXVisibleChildren", deadline: deadline, cap: 8000, details: false)
+  // Hit-tests from other roots: the web area, and the hit's ancestors up to the web area (at most 8).
+  t = ms()
+  out["hitFromWeb"] = hitOut(hitAt(web, p))
+  var fromChain: [[String: Any]] = []
+  for a in chain.prefix(8) {
+    if ms() > deadline { break }
+    var w = hitOut(hitAt(a, p)); w["root"] = attr(a, "AXRole") as? String ?? "AXUnknown"; fromChain.append(w)
+    if CFEqual(a, web) { break }
+  }
+  out["hitFromChain"] = fromChain
+  // A 5 x 5 grid of hits 4 pt apart around the point, from the application.
+  var grid: [[String: Any]] = []
+  for dy in stride(from: -8.0, through: 8.0, by: 4.0) {
+    for dx in stride(from: -8.0, through: 8.0, by: 4.0) where ms() <= deadline {
+      var w = hitOut(hitAt(app, CGPoint(x: x + dx, y: y + dy))); w["dx"] = dx; w["dy"] = dy; grid.append(w)
+    }
+  }
+  out["grid"] = grid
+  out["hitsMs"] = since(t)
+  // The attribute names of the hit and of the controls whose frames hold the point (names only, on request).
+  if q["names"] as? Bool == true {
+    var names = Set<String>()
+    var targets: [AXUIElement] = hit.map { [$0] } ?? []
+    var stack: [AXUIElement] = [web], n = 0
+    while let e = stack.popLast(), n < 4000, ms() <= deadline {
+      n += 1
+      AXUIElementSetMessagingTimeout(e, 0.5)
+      if interactiveRoles.contains(attr(e, "AXRole") as? String ?? ""), let f = frameOf(e), holdsPoint(f, p) { targets.append(e) }
+      stack += kids(e) ?? []
+    }
+    for e in targets.prefix(8) {
+      var list: CFArray?
+      if AXUIElementCopyAttributeNames(e, &list) == .success, let l = list as? [String] { names.formUnion(l) }
+      var param: CFArray?
+      if AXUIElementCopyParameterizedAttributeNames(e, &param) == .success, let l = param as? [String] { names.formUnion(l.map { "param:" + $0 }) }
+    }
+    out["attributeNames"] = names.sorted()
+  }
+  out["ms"] = since(start)
+  return out
 }
 
 func handle(_ line: String) -> String {

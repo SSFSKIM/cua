@@ -9,6 +9,7 @@ import {execFileSync} from 'node:child_process';
 import {Wire} from './wire.mjs';
 import {owned,stop,pause,environment,startPlatform,startHelper} from './platform.mjs';
 import {LANES,CELLS,recordedRole,controlRole,unitKey,unitsForLane,isReportOnly,repsOf,plan,pointFor} from './cells.mjs';
+import {signalsOf,cssPoint} from './signals.mjs';
 import {outcomeOf,stalePointOf,sentenceOf,routeOf,findLink,uncoveredBy,labelledOf,nodeAt,overlayAt,landingOf,delta,score,summarize,coverage,judge} from './check.mjs';
 
 const setupLabel=e=>typeof e?.setupStep==='string'?e.setupStep:'other';
@@ -101,10 +102,12 @@ async function main(){
     for(const c of cells){
       const e=engines[c.head],app=e.appPath,spec=CELLS[c.cell];
       let s='engine-attach',attested=false,armed=false,observeFailed=false,observed=null,found=null,placed=null,mark=null,click=null,read=null,
-        after=null,reobserved=false,witness=null,invalid=null,exercised=null,walk=null,observeTries=0,gap;
+        after=null,reobserved=false,witness=null,invalid=null,exercised=null,walk=null,observeTries=0,gap,prep=null;
+      // #442: the page's truth and accessibility's live reading at the point, after the observation and before the click.
+      const sig={};
       try{
         const w=await e.attach();
-        await platform.arm(++trial,{cell:c.cell},x=>{s=x;});armed=true;
+        prep=await platform.arm(++trial,{cell:c.cell},x=>{s=x;});armed=true;
         s='observe';
         observed=await e.call('get_app_state',{app,includeScreenshot:true,outputDirectory:shots});
         // A cell whose page fills the node cap is prepared only once the browser's accessibility tree holds the filler
@@ -146,6 +149,11 @@ async function main(){
           // Mode discover (#435) records the shortfall (`gap`) and runs the row on, so main's answer is read either way; but
           // not when the control found is not the target (`target`), where the click would test nothing.
           gap=uncoveredBy(sky,spec,found,{role:controlRole(c.cell),at:c.at});if(gap&&(mode!=='discover'||gap==='target'))throw stepError('uncovered-'+gap);
+          // #442: read after the observation, before the change; never invalidates the row.
+          s='signals-pre';sig.nodes=sky.nodes;sig.point=placed.screen;
+          sig.css=cssPoint(prep?.geometry?.link,found.link.frame,placed.screen);
+          if(sig.css)try{sig.domPre=await platform.command({op:'probe',trial,x:sig.css.x,y:sig.css.y});}catch{}
+          try{sig.pre=await platform.signals(placed.screen,{names:c.rep===0});}catch{}
           // The cell's change, after the observation (and so after the record), before the click.
           s='mark';
           mark=await platform.command({op:'mark',trial});
@@ -164,6 +172,10 @@ async function main(){
           }
           const rest=500-(performance.now()-marked);
           if(rest>0)await pause(rest);
+          // #442: the same readings at the click, the change applied.
+          s='signals-post';
+          if(sig.css)try{sig.domPost=await platform.command({op:'probe',trial,x:sig.css.x,y:sig.css.y});}catch{}
+          try{sig.post=await platform.signals(placed.screen);}catch{}
           s='witness-before-action';
           if(!await platform.witness())throw stepError('witness-before-action');
           attested=true;
@@ -205,7 +217,9 @@ async function main(){
           reobserved,foundAfter:!!after}:null,
         ...(mode==='discover'&&gap!==undefined?{gap}:{}),observeTries,dom:mark?{text:delta(mark.before?.textRect,mark.after?.textRect),link:delta(mark.before?.link,mark.after?.link),twin:delta(mark.before?.link,mark.twin)}:null,walk,
         frames:found?{text:found.text?.frame??null,link:found.link.frame,point:placed?.screen??null}:null,
-        presentationHeld:witness?.held??null,observeMs:observed?.ms??null,clickMs:click?.ms??null};
+        presentationHeld:witness?.held??null,observeMs:observed?.ms??null,clickMs:click?.ms??null,
+        css:sig.css??null,signals:sig.nodes?signalsOf({spec,nodes:sig.nodes,point:sig.point,pre:sig.pre,post:sig.post,domPre:sig.domPre,
+          domPost:sig.domPost,clicks:read?.clicks}):null};
       rows.push(row);
       // A report-only unit's rows never move the abort streak.
       if(!isReportOnly(c))streak=row.valid?0:streak+1;

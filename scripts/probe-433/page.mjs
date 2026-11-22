@@ -61,11 +61,25 @@ function cover(kind,extra=0){
     :'position:absolute;left:'+left+';top:0;width:'+width+';height:64px';
   let outer=null,inner=null;
   for(let i=0;i<=WRAP+extra;i++){
-    const d=document.createElement('div');d.setAttribute('role','group');
+    const d=document.createElement('div');d.setAttribute('role','group');d.dataset.cover='1';
     d.style.cssText=(i?'position:absolute;left:0;top:0;width:100%;height:100%':place)+through;
     if(inner)inner.append(d);else outer=d;inner=d;
   }
   inner.id='veil';slots[0].append(outer);
+  return outer;
+}
+// #442's rival, button B (page name \`twin\`), A's box: \`slide\`, in the second row, drawn under the veil (z-index 1 against
+// the veil's 2), which mark slides over A by a transform; \`stack\`, a later sibling of A in its row, A stacked above it
+// (z-index 1 against 0), which mark leaves alone and removes A.
+let rival=null;
+function rivalOf(spec){
+  const b=document.createElement('button');b.type='button';b.id='rival';b.className='l';b.textContent=spec.rival==='slide'?'Compose':'Close';
+  slots[0].style.position='relative';
+  const w=target.offsetWidth,h=target.offsetHeight,box='width:'+w+'px;height:'+h+'px;box-sizing:border-box;background:#eee';
+  if(spec.rival==='slide'){b.style.cssText='position:relative;z-index:1;'+box;slots[1].prepend(b);}
+  else{target.style.position='relative';target.style.zIndex='1';
+    b.style.cssText='position:absolute;left:'+target.offsetLeft+'px;top:'+target.offsetTop+'px;z-index:0;'+box;slots[0].append(b);}
+  twins=[b];rival=b;
 }
 // #433's decomove (and #443's rolechange): an inert decoration nested WRAP groups deep inside the target, the size of
 // its box (\`mover\`, its outermost group).
@@ -94,7 +108,7 @@ let behind=null;
 function run(c){
   if(c.op==='prepare'){
     const spec=CELLS[c.cell];if(!spec)throw Error('cell');
-    trial=c.trial;cell=c.cell;marked=null;twins=[];mover=null;drafts=null;behind=null;back=null;
+    trial=c.trial;cell=c.cell;marked=null;twins=[];mover=null;drafts=null;behind=null;back=null;rival=null;
     // The cap filler is kept across consecutive cap trials (only the twin's row is rebuilt): rebuilding 6,000 nodes every
     // trial left both Chromium lanes' page unanswering after 15 repetitions (run 44611947576).
     slots=[row(),row(),row()];nav.replaceChildren(...slots);
@@ -213,7 +227,9 @@ function run(c){
       if(spec.behind){behind=document.createElement('button');behind.type='button';behind.textContent='Close';
         behind.style.cssText='position:absolute;left:0;top:0;width:'+target.offsetWidth+'px;height:64px;z-index:-1;border:0;background:#eee;color:#999';
         slots[0].style.position='relative';slots[0].append(behind);}
-      if(spec.overlap)overlap();else if(spec.cover==='deco')deco();else if(spec.cover)cover(spec.cover,spec.parent?2:0);
+      if(spec.rival)rivalOf(spec);
+      if(spec.overlap)overlap();else if(spec.cover==='deco')deco();
+      else if(spec.cover){const veil=cover(spec.cover,spec.parent?2:0);if(spec.rival)veil.style.zIndex='2';}
     }
     if(document.activeElement&&document.activeElement!==document.body)document.activeElement.blur();
     clicks=[];
@@ -222,7 +238,10 @@ function run(c){
   if(c.trial!==trial)throw Error('generation');
   if(c.op==='mark'){
     const spec=CELLS[cell],before=geometry(),clicksBeforeMark=clicks.length;
-    if(spec.move){slots[0].replaceChildren(archive);slots[1].replaceChildren(target);}
+    if(spec.rival==='slide'){const a=target.getBoundingClientRect(),r=rival.getBoundingClientRect();
+      rival.style.transform='translate('+(a.left-r.left)+'px,'+(a.top-r.top)+'px)';}
+    else if(spec.rival==='stack')target.remove();
+    else if(spec.move){slots[0].replaceChildren(archive);slots[1].replaceChildren(target);}
     else if(spec.twin==='list')slots[0].remove();
     else if(spec.overlay){
       // A new element of the wide parent, over the target: a text that takes the pointer (a page's own suggestion box).
@@ -257,6 +276,20 @@ function run(c){
     const t=spec.twin==='row'||spec.twin==='hidden'?twins[twins.length-1]:twins[0];
     const after=spec.twin?{text:t.textContent,link:rect(t.getBoundingClientRect()),textRect:null}:geometry();
     return {trial,clicksBeforeMark,before,after,twin:spec.twin?rect(t.getBoundingClientRect()):null};
+  }
+  // #442's page truth at a CSS point (the harness maps the screen point through the target's box): the control
+  // elementFromPoint names (\`top\`, the recipient of a pointer event there), the controls elementsFromPoint lists top first
+  // (\`stack\`, paint order; pointer-events:none layers are skipped), and every control whose box holds the point (\`boxes\`,
+  // document order, whatever covers it). Closed names: the page's, \`back\` for the overlap cells' back link, \`overlay\` for a
+  // cover layer, \`page\` for anything else.
+  if(c.op==='probe'){
+    const t0=performance.now(),x=c.x,y=c.y;
+    const named=el=>{if(!el||!el.closest)return 'page';const k=el.closest('a,button');if(k)return k===back?'back':nameOf(k);return el.closest('[data-cover]')?'overlay':'page';};
+    const top=named(document.elementFromPoint(x,y)),stack=[];
+    for(const el of document.elementsFromPoint(x,y)){const n=named(el);if(n!=='page'&&stack[stack.length-1]!==n)stack.push(n);}
+    const boxes=[...document.querySelectorAll('a,button')].filter(el=>{const r=el.getBoundingClientRect();
+      return r.width>0&&r.height>0&&x>=r.left&&x<=r.right&&y>=r.top&&y<=r.bottom;}).map(el=>el===back?'back':nameOf(el));
+    return {trial,top,stack,boxes,ms:Math.round((performance.now()-t0)*100)/100};
   }
   if(c.op==='read')return {trial,clicks:clicks.slice(),present:!!target&&target.isConnected,sameNode:!!target&&target===marked,
     text:target?target.textContent:null};

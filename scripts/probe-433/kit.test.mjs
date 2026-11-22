@@ -529,3 +529,42 @@ test('#433: the overlay cells record the overlay at their point, which lies unde
   assert.equal(overlayAt(beside, CELLS.nounder, found), true); assert.equal(overlayAt(veil, CELLS.nounder, found), false);
   assert.equal(overlayAt(beside, CELLS.twincover, found), false);
 });
+
+test('#442: the record\'s controls at the point, innermost, by role and by the engine\'s rule; live sets and their judgements', async () => {
+  const {recordAt, liveSet, sameSet, signalsOf, nameOf, recipientOf, cssPoint, hitName} = await import('./signals.mjs');
+  const spec = CELLS.siblingstack;
+  assert.equal(nameOf('Close', spec), 'twin'); assert.equal(nameOf('Close', CELLS.bgbutton), 'behind'); assert.equal(nameOf('Inbox', spec), 'target');
+  // Preorder with depths: a row holding link A (its text below it), button B, and the veil nested two groups deep.
+  const A = {role: 'AXLink', title: 'Inbox', depth: 3, frame: {x: 420, y: 136, width: 116, height: 56}, actions: ['AXPress']};
+  const At = {role: 'AXStaticText', value: 'Inbox', depth: 4, frame: {x: 452, y: 150, width: 52, height: 28}, actions: ['AXPress']};
+  const B = {role: 'AXButton', title: 'Close', depth: 3, frame: A.frame, actions: ['AXPress']};
+  const g = d => ({role: 'AXGroup', frame: {x: 420, y: 132, width: 800, height: 64}, depth: d, actions: []});
+  const nodes = [{role: 'AXWebArea', depth: 1, frame: {x: 400, y: 100, width: 620, height: 600}}, {role: 'AXGroup', depth: 2, frame: {x: 420, y: 132, width: 580, height: 64}}, A, At, B, g(3), g(4), g(5)];
+  const p = {x: 426, y: 164};
+  const r = recordAt(nodes, p, spec);
+  assert.equal(r.deepest, 'AXGroup'); assert.equal(r.inert, true);
+  assert.deepEqual(r.role.map(c => c.name), ['target', 'twin']);
+  // The text acts too (AXPress) but lies off this point; at the text's point the engine's rule takes it in place of its link.
+  assert.deepEqual(r.engine.map(c => c.role), ['AXLink', 'AXButton']);
+  assert.deepEqual(recordAt(nodes, {x: 460, y: 160}, spec).engine.map(c => c.role), ['AXStaticText', 'AXButton']);
+  // Not inert where the deepest node lies inside a control.
+  assert.equal(recordAt(nodes.slice(0, 4), {x: 460, y: 160}, spec).inert, false);
+  const walk = {found: [{role: 'AXLink', label: 'Inbox', frame: A.frame, press: true, up: -1, visible: true, index: 0, siblings: 3},
+    {role: 'AXStaticText', label: 'Inbox', frame: At.frame, press: true, up: 0}, {role: 'AXButton', label: 'Close', frame: A.frame, press: true, up: -1, visible: true, index: 1, siblings: 3}], visited: 12, ms: 3};
+  const live = liveSet(walk, spec);
+  assert.deepEqual(live.role.map(c => c.name), ['target', 'twin']); assert.deepEqual(live.engine.map(c => c.role), ['AXStaticText', 'AXButton']);
+  assert.equal(sameSet(r.role, live.role), true);
+  assert.equal(sameSet(r.role, [live.role[1]]), false);
+  assert.equal(sameSet(r.role, [live.role[0], {...live.role[1], frame: {...live.role[1].frame, y: 300}}]), false);
+  assert.equal(recipientOf([{type: 'pointerdown', link: 'twin'}, {type: 'click', link: 'twin'}]), 'twin'); assert.equal(recipientOf([]), 'nothing');
+  assert.equal(hitName({role: 'AXGroup', dom: 'veil'}, spec), 'overlay'); assert.equal(hitName({role: 'AXStaticText', control: {role: 'AXLink', label: 'Inbox'}}, spec), 'target');
+  assert.deepEqual(cssPoint({x: 20, y: 30, width: 116, height: 56}, A.frame, p), {x: 26, y: 58});
+  // A removed: the live set at the click holds B alone; the page paints A over B before the change, B alone after.
+  const post = {...walk, found: [{...walk.found[2], up: -1}]};
+  const s = signalsOf({spec, nodes, point: p, pre: {full: walk, grid: [{role: 'AXGroup', dom: 'veil'}]}, post: {full: post},
+    domPre: {top: 'target', stack: ['target', 'twin'], boxes: ['target', 'twin']}, domPost: {top: 'twin', stack: ['twin'], boxes: ['twin']},
+    clicks: [{type: 'click', link: 'twin'}]});
+  assert.equal(s.b.overlap, true); assert.equal(s.a.recordVsPost, true); assert.equal(s.a.preVsPost, true); assert.equal(s.a.complete, true);
+  assert.deepEqual(s.stack.pre, {paintTop: 'target', treeLast: 'twin', treeAgrees: false, visible: {target: true, twin: true}});
+  assert.equal(s.stack.post, null); assert.equal(s.c.agrees, true); assert.deepEqual(s.ax.pre.grid, {overlay: 1});
+});

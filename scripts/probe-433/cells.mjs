@@ -115,6 +115,14 @@ export const CELLS={
   stickyscroll:{kind:'asMain',before:'Inbox',after:'Inbox',cover:'sticky',scroll:128,records:'AXGroup',reportOnlyAt:['text','link']},
   tipremount:{kind:'keep',before:'Inbox',after:'Inbox',cover:'veil',remount:'link',records:'AXGroup',reportOnlyAt:['text','link']},
   twinunder:{kind:'keep',before:'Delete',after:'Delete',cover:'veil',remount:'link',list:true,records:'AXGroup',reportOnlyAt:['text','link']},
+  // #442's measurement (main alone, mode measure; `kind` is never gated there): two shapes where the record under an inert
+  // veil holds link A and the click reaches another control, B, which the page logs as `twin`.
+  // - slideover: button B ("Compose", A's box) in the second row, drawn under the veil (veil z-index 2, B 1); mark slides B
+  //   up over A by a transform (its element and AX object survive; A not removed, unchanged).
+  // - siblingstack: button B ("Close", A's box), a later sibling of A in A's row; CSS stacks A (z-index 1) above B (0), so
+  //   the record holds both at the point; mark removes A.
+  slideover:{kind:'asMain',before:'Inbox',after:'Inbox',cover:'veil',rival:'slide',records:'AXGroup'},
+  siblingstack:{kind:'asMain',before:'Inbox',after:'Inbox',cover:'veil',rival:'stack',records:'AXGroup'},
   inbox:{kind:'asMain',before:'Inbox',after:'Inbox (3)'},
   reltime:{kind:'asMain',before:'1 minute ago',after:'2 minutes ago'},
   shrink:{kind:'asMain',before:'Inbox (12)',after:'Inbox'},

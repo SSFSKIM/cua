@@ -239,3 +239,132 @@ Left before the counted runs:
 - Then the full runs, main 5580ac20 and the fix head the coordinator names (each under 500 rows), and #443's
   `decomove` rows on the fix head through `probe/443-qual` (CfT and Electron, `controlGone` expected, plus a couple of
   #433 keep cells as a control). Add the tables here, each labelled with its engine SHA.
+
+## #453 spike: does a bare AXPress on an overlay row activate Chrome or move the person's windows? (ruling 1067)
+
+Engine main `5580ac204f1a2a5cd6a36186d658087060690e5f`, unmodified (observations, and the comparison clicks). Kit
+`qual453.mjs --order --spike` (workflow `probe-453.yml`, `kit: qual453`, `flags`), kit d2e5f139:
+https://github.com/SSFSKIM/cua/actions/runs/45050307595 (240 rows, 43 min; Chrome 157.0.8103.79, macOS 26.7.2, image
+20261117.0516.1). Smoke before it: https://github.com/SSFSKIM/cua/actions/runs/45048772778 (kit c78d1118, 61 rows).
+
+What a row does:
+- `axpress`: the kit's bare AXPress on the recorded row's own element. Tool op `pressrow` takes the element under the
+  overlay's AX root whose frame lies within 2 pt of the frame the engine's observation recorded for the row, of the
+  row's role (it found that role in every row). AXPress goes to exactly that element: no hit-test, no ancestor.
+- `click` / `block`: main's coordinate click on the same row (for the permission prompt, its Block button).
+- `kitpost`: `deliver.mjs`'s stamped post (run C), measured in this harness for window order.
+- `o-click`, `o-element`, `o-type`, `p-element`: main's own background input, with Chrome behind the cover (ruling 1069).
+- The permission prompt is Web MIDI's: Allow on every third AXPress row, Block otherwise.
+
+Per row:
+- Frontmost: `lsappinfo front`, read back to back for 4 s from the click.
+- The person's key and main window, read every 5 ms: the cover's, or Chrome's own when Chrome is frontmost.
+- The window list every 10 ms: whether Chrome's browser window is listed above the cover's window, at any time
+  (transient) and at the end of the 3 s watch.
+- The overlay's window, every 10 ms: the time it left, from the click.
+- The AXPress's AXError and the time the call took.
+
+| cell | rows | answer | taken | frontmost changed, transient / end | key/main window changed | window over the cover, transient / end | first over, ms after the click (p50) | AXPress result | AXPress ms p50 / max | overlay gone, ms after (p50) | problems |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| page/shared-behind/o-click | 10/10 | ok route 3 ×10 | 10/10 | 0/10 / 0/10 | 0/10 | 0/10 / 0/10 | - | - | - | - | - |
+| page/shared-behind/o-element | 10/10 | ok route 3 ×10 | 10/10 | 0/10 / 0/10 | 0/10 | 0/10 / 0/10 | - | - | - | - | - |
+| note/shared-behind/o-type | 5/5 | ok route "2'" ×5 | 5/5 | 0/5 / 0/5 | 0/5 | 0/5 / 0/5 | - | - | - | - | - |
+| page/dedicated-behind/o-click | 10/10 | ok route 3 ×10 | 10/10 | 0/10 / 0/10 | 0/10 | 10/10 / 10/10 | 145 | - | - | - | - |
+| page/dedicated-behind/o-element | 10/10 | ok route 3 ×10 | 10/10 | 0/10 / 0/10 | 0/10 | 0/10 / 0/10 | - | - | - | - | - |
+| note/dedicated-behind/o-type | 5/5 | ok route "2'" ×5 | 5/5 | 0/5 / 0/5 | 0/5 | 0/5 / 0/5 | - | - | - | - | - |
+| omnibox/dedicated-behind/p-element | 10/10 | ok route 3 ×10 | 10/10 | 0/10 / 0/10 | 0/10 | 10/10 / 10/10 | 30 | - | - | 83 (0 stayed) | - |
+| omnibox/shared-behind/axpress | 10/10 | ok route "kit AXPress" ×10 | 10/10 | 0/10 / 0/10 | 0/10 | 0/10 / 0/10 | - | 0 ×10 | 0 / 2 | 55 (0 stayed) | - |
+| omnibox/shared-behind/click | 5/5 | appWindowOverPoint ×5 | 0/5 | 0/5 / 0/5 | 0/5 | 0/5 / 0/5 | - | - | - | - (5 stayed) | - |
+| permission/shared-behind/axpress | 10/10 | ok route "kit AXPress" ×10 | 10/10 | 0/10 / 0/10 | 0/10 | 0/10 / 0/10 | - | 0 ×10 | 5 / 11 | 39 (0 stayed) | - |
+| permission/shared-behind/block | 5/5 | appWindowOverPoint ×5 | 0/5 | 0/5 / 0/5 | 0/5 | 0/5 / 0/5 | - | - | - | - (5 stayed) | - |
+| datalist/shared-behind/axpress | 5/5 | ok route "kit AXPress" ×5 | 5/5 | 0/5 / 0/5 | 0/5 | 0/5 / 0/5 | - | 0 ×5 | 3 / 10 | 40 (0 stayed) | - |
+| omnibox/shared-behind/kitpost | 5/5 | ok route "kit post" ×5 | 5/5 | 0/5 / 0/5 | 0/5 | 0/5 / 0/5 | - | - | - | 105 (0 stayed) | - |
+| datalist/shared-behind/kitpost | 5/5 | ok route "kit post" ×5 | 5/5 | 0/5 / 0/5 | 0/5 | 0/5 / 0/5 | - | - | - | 32 (0 stayed) | - |
+| permission/shared-behind/kitpost | 5/5 | ok route "kit post" ×5 | 5/5 | 0/5 / 0/5 | 0/5 | 0/5 / 0/5 | - | - | - | 34 (0 stayed) | - |
+| omnibox/shared-front/axpress | 10/10 | ok route "kit AXPress" ×10 | 10/10 | 0/10 / 0/10 | 0/10 | n/a | - | 0 ×10 | 0 / 2 | 53 (0 stayed) | - |
+| omnibox/shared-front/click | 5/5 | appWindowOverPoint ×5 | 0/5 | 0/5 / 0/5 | 0/5 | n/a | - | - | - | - (5 stayed) | - |
+| permission/shared-front/axpress (prompt observed as the window) | 10/10 | ok route "kit AXPress" ×10 | 10/10 | 0/10 / 0/10 | 10/10 | n/a | - | 0 ×10 | 9 / 32 | 63 (0 stayed) | - |
+| permission/shared-front/block (prompt observed as the window) | 5/5 | ok route 3 ×5 | 5/5 | 0/5 / 0/5 | 5/5 | n/a | - | - | - | 61 (0 stayed) | - |
+| datalist/shared-front/axpress | 5/5 | ok route "kit AXPress" ×5 | 5/5 | 0/5 / 0/5 | 0/5 | n/a | - | 0 ×5 | 2 / 5 | 33 (0 stayed) | - |
+| omnibox/dedicated-behind/axpress | 10/10 | ok route "kit AXPress" ×10 | 10/10 | 0/10 / 0/10 | 0/10 | 0/10 / 0/10 | - | 0 ×10 | 1 / 1 | 65 (0 stayed) | - |
+| omnibox/dedicated-behind/click | 5/5 | appWindowOverPoint ×5 | 0/5 | 0/5 / 0/5 | 0/5 | 0/5 / 0/5 | - | - | - | - (5 stayed) | - |
+| permission/dedicated-behind/axpress | 10/10 | ok route "kit AXPress" ×10 | 10/10 | 0/10 / 0/10 | 0/10 | 0/10 / 0/10 | - | 0 ×10 | 3 / 8 | 33 (0 stayed) | - |
+| permission/dedicated-behind/block | 5/5 | appWindowOverPoint ×5 | 0/5 | 0/5 / 0/5 | 0/5 | 0/5 / 0/5 | - | - | - | - (5 stayed) | - |
+| datalist/dedicated-behind/axpress | 5/5 | ok route "kit AXPress" ×5 | 5/5 | 0/5 / 0/5 | 0/5 | 0/5 / 0/5 | - | 0 ×5 | 2 / 7 | 37 (0 stayed) | - |
+| omnibox/dedicated-behind/kitpost | 5/5 | ok route "kit post" ×5 | 5/5 | 0/5 / 0/5 | 0/5 | 0/5 / 0/5 | - | - | - | 71 (0 stayed) | - |
+| datalist/dedicated-behind/kitpost | 5/5 | ok route "kit post" ×5 | 5/5 | 0/5 / 0/5 | 0/5 | 0/5 / 0/5 | - | - | - | 26 (0 stayed) | - |
+| permission/dedicated-behind/kitpost | 5/5 | ok route "kit post" ×5 | 5/5 | 0/5 / 0/5 | 0/5 | 0/5 / 0/5 | - | - | - | 40 (0 stayed) | - |
+| popover/shared-behind/axpress | 10/10 | ok route "kit AXPress" ×10 | 10/10 | 0/10 / 0/10 | 0/10 | 0/10 / 0/10 | - | 0 ×10 | 7 / 12 | 104 (0 stayed) | - |
+| popover/shared-behind/click | 5/5 | appWindowOverPoint ×5 | 0/5 | 0/5 / 0/5 | 0/5 | 0/5 / 0/5 | - | - | - | - (5 stayed) | - |
+| popover/shared-front/axpress | 10/10 | ok route "kit AXPress" ×10 | 10/10 | 0/10 / 0/10 | 0/10 | n/a | - | 0 ×10 | 13 / 25 | 145 (0 stayed) | - |
+| popover/shared-front/click | 5/5 | appWindowOverPoint ×5 | 0/5 | 0/5 / 0/5 | 0/5 | n/a | - | - | - | - (5 stayed) | - |
+| popover/dedicated-behind/axpress | 10/10 | ok route "kit AXPress" ×10 | 10/10 | 0/10 / 0/10 | 0/10 | 0/10 / 0/10 | - | 0 ×10 | 11 / 22 | 98 (0 stayed) | - |
+| popover/dedicated-behind/click | 5/5 | appWindowOverPoint ×5 | 0/5 | 0/5 / 0/5 | 0/5 | 0/5 / 0/5 | - | - | - | - (5 stayed) | - |
+
+- permission state after: shared-behind/axpress allow->-/granted ×4; shared-behind/block block->-/- ×5; shared-behind/kitpost block->-/NotAllowedError ×5; shared-front/axpress allow->-/granted ×4; shared-front/block block->-/NotAllowedError ×5; dedicated-behind/axpress allow->-/granted ×4; dedicated-behind/block block->-/- ×5; dedicated-behind/kitpost block->-/NotAllowedError ×5; shared-behind/axpress block->-/NotAllowedError ×6; shared-front/axpress block->-/NotAllowedError ×6; dedicated-behind/axpress block->-/NotAllowedError ×6
+- wrong row: 0
+
+Notes:
+- **Taken.**
+  - The omnibox row taken means the page that row names loaded.
+  - The permission prompt: Allow is the request granted (12/12), Block is NotAllowedError (18/18).
+  - The datalist: the field took `apricot`.
+  - The popover: the colour well's value changed.
+- **AXPress on the datalist row took it, 15/15.** The bare AXPress goes to the row's own AXStaticText at its recorded
+  frame. Run B's "nothing 6/6" pressed the element the kit's hit-test chain found first that lists AXPress.
+- **Key window, frontmost permission prompt.** When Chrome is frontmost the prompt is Chrome's own focused window
+  (`observedIsOverlay`). Its closing hands the focus back to the browser window, so the key window changes in every row
+  that takes it: AXPress 10/10, and main's own route-3 click 5/5. No other app's window changed.
+- **The kit's stamped post (`kitpost`) listed the browser window above the cover in 0/30 rows**, the same harness that
+  saw the fix's route-2′ post at 07d487d8 list it there in 10/10 (the qual smoke above). The raise comes from the
+  engine's path, not from the harness.
+
+Main's own background input, window order (ruling 1069; ruling 1070: a raise fails the bar only in shared mode, in
+dedicated mode it is recorded):
+
+| main 5580ac20, Chrome behind the cover | shared-behind: over the cover, transient / end | dedicated-behind: transient / end | first over, ms after the input (p50) |
+|---|---|---|---|
+| page click by coordinate (route 3) | 0/10 / 0/10 | **10/10 / 10/10** | 145 (dedicated) |
+| element click by ID on a page button (answered route 3) | 0/10 / 0/10 | 0/10 / 0/10 | - |
+| element click on an omnibox row (route 3) | - | **10/10 / 10/10** | 30 |
+| type_text then press_key into a page field (route 2′) | 0/5 / 0/5 | 0/5 / 0/5 | - |
+
+Frontmost and the key window: 0 in every one of these rows. Every input took effect.
+
+### The fix's route-2′ overlay post against the kit's stamped post
+
+The events are built and posted the same way:
+- They are made by `NSEvent.mouseEvent` with the overlay's window number, at the global point, button 0, subtype 3
+  (field 7).
+- Fields 91 and 92 hold the overlay's number, and the window-local point is set through `CGEventSetWindowLocation`
+  (`Mouse.swift` `mouseEvent`/`stampWindow`; the tool's `post`).
+- One down/up pair, click count 1, pressure 1, each event timestamped and sent by `postToPid` back to back, with no
+  activation event around them.
+
+What differs (fix `OverlayClick.swift` `overlayDelivery`/`deliverOverlayClick` at 07d487d8):
+- **Flags.** The engine writes the events' flags to 0 (`event.flags = []`). The kit leaves the flags NSEvent made.
+- **Event number.** The engine takes it from its own counter (from 1). The kit uses 50 001 upward.
+- **Pid.** The engine posts to the owner of the row's element (`ownerPid(of: row)`), the kit to the app's pid. Both are
+  Chrome's browser process here.
+- **Who posts.** The engine posts from its own process, an AppKit app with the agent cursor. Just before the post,
+  `beforeDispatch` runs `cursor.act(window: observedWindow, .click(point))`, which orders the cursor's screen-sized panel
+  `.above` the observed browser window at that window's level (`CursorPanel.place`). It also registers the owner as
+  driven (`actionTargets`), ends the after-action watch, and arms the settle (`markActed`).
+- **Reads around the post** (read-only):
+  - just before it, the engine reruns its decision (`revalidate`: AX hit-tests on the overlay and the window list);
+  - after it, the engine polls the window list every 20 ms for up to 500 ms.
+
+  The kit made no read before its post.
+
+Which of these lists the browser window over the cover is not settled by this run. The cursor panel alone does not
+explain it: main's element click by ID in dedicated-behind places the cursor the same way and raised 0/10, while its
+coordinate click raised 10/10. Two kit cells would tell the others apart: the kit post with its flags cleared and the
+engine's event numbering, and the kit post sent from inside the engine (a spike route on a probe build).
+
+### Runner fact: Location Services
+
+GitHub's hosted macOS image runs with Location Services off. Chrome answers a geolocation prompt's Allow with the
+site's state `denied` and a "Location is turned off in system settings" bubble. The first Allow of the qual smoke
+(run 45045858141, shared-behind) brought Chrome to the front 241 ms after the click. That came from Chrome's location
+request with the system service off, not from the click's delivery. The permission cells use Web MIDI's prompt for that
+reason: it has no macOS layer.

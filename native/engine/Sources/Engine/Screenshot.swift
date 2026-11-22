@@ -225,6 +225,9 @@ struct ObservedScreenshot {
   /// The walk's frameless elements (#435, StalePoint.swift `screenshotRecord`), which #431's twin search reads beside
   /// `nodes`.
   let frameless: [ScreenshotNode<AXUIElement>]
+  /// #453: the windows of the app's over this one whose recorded rows held still around the capture
+  /// (OverlayClick.swift `overlayStableWindows`), the only overlays a coordinate click is delivered into.
+  var overlayStable: Set<CGWindowID> = []
 
   init(window: AXUIElement, image: CapturedScreenshot, nodes: [ScreenshotNode<AXUIElement>] = [],
        frameless: [ScreenshotNode<AXUIElement>] = [], recorded: [ElementKey: Bool] = [:]) {

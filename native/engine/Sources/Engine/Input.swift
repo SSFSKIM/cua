@@ -481,7 +481,7 @@ extension Engine {
         // #470: a plain left click on a row of a window the app shows over the observed one, of a kind OverlayClick.swift
         // lists, takes that kind's route, as a coordinate click on it does (#453); any other keeps the element click's path.
         if forced == nil, button == .left, count == 1,
-           try overlayElementClick(pointing, app: app, appPid: appPid, guarding: guarding, context: context, meta: &meta) {
+           try overlayElementClick(pointing, entry: resolved.entry, app: app, appPid: appPid, guarding: guarding, context: context, meta: &meta) {
           context.connection.clearMenuRecord(app: app.key)
           return ["meta": meta.wire]
         }
@@ -603,8 +603,8 @@ extension Engine {
         // stands. The element routes below apply the same rule where their recheck after a wait refuses so (`overlayRule`).
         let overlayRule: (StalePointVerdict<AXUIElement>, inout InputMeta) throws -> Bool = { [self] verdict, meta in
           guard forced == nil, button == .left, count == 1 else { return false }
-          return try overlayPointClick(verdict, point: placed.point, shift: stale.shift, observedWindow: windowID, app: app, appPid: appPid,
-                                       guarding: guarding, context: context, meta: &meta)
+          return try overlayPointClick(verdict, point: placed.point, shift: stale.shift, observed: placed.window, observedWindow: windowID,
+                                       app: app, appPid: appPid, guarding: guarding, context: context, meta: &meta)
         }
         if stale.verdict.reason == .appWindowOverPoint, try overlayRule(stale.verdict, &meta) {
           return ["meta": meta.wire]

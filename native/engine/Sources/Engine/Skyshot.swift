@@ -322,12 +322,22 @@ extension Engine {
     // element token never change), and the capture thread only passes it to AX calls, which any thread may make, as
     // the walk's own reads of the same window on this thread do.
     nonisolated(unsafe) let captureWindow = window
-    let pendingCapture: PendingCapture<CapturedScreenshot>? = plan.capture && menuRoot == nil
-      ? PendingCapture { [self] timings in
-          try capture(window: captureWindow, pid: capturePid, frame: windowFrame, into: outputDirectory!, name: displayName,
-                      revision: captureRevision, timings: &timings)
-        }
-      : nil
+    let captures = plan.capture && menuRoot == nil
+    func startCapture() -> PendingCapture<CapturedScreenshot> {
+      PendingCapture { [self] timings in
+        try capture(window: captureWindow, pid: capturePid, frame: windowFrame, into: outputDirectory!, name: displayName,
+                    revision: captureRevision, timings: &timings)
+      }
+    }
+    // #453 (the review of dfe6f443..b8bb5115, finding 2): with a window of the app's own over the observed one (Chrome's
+    // omnibox popup, a permission prompt, a popover), the walk runs before the capture, and the overlay's recorded rows are
+    // read again once the image is taken (`overlayStableWindows`): rows the same before and after the image are the rows it
+    // shows, which a click into the overlay needs. The capture then costs its own time after the walk's, only here.
+    let observedNumber = captures ? windowNumber(of: window, pid: capturePid, frame: windowFrame) : nil
+    let overlaysAtStart = observedNumber.map { appWindowsOver($0, pid: capturePid, list: onScreenWindowList()) } ?? []
+    let sequential = !overlaysAtStart.isEmpty
+    if sequential { timings.set("overlaySequential", true) }
+    var pendingCapture: PendingCapture<CapturedScreenshot>? = captures && !sequential ? startCapture() : nil
     // The settle's reads stand for the tree only when nothing changed it since (adoptsSettledTree).
     let source: ElementSource
     if let settled, let reused = settled.source, let busyWindow = settled.window, !(readyAt.map { settlesFrom < $0 } ?? false),
@@ -345,9 +355,10 @@ extension Engine {
     let clipRereadPoll = enabledAt.map { ClipRereadPoll(enabledAt: $0, deadline: deadline) }
     let walk = TreeWalk(source: source, lineage: lineage, limits: WalkLimits(deadline: deadline), markdown: markdownEnabled,
                         interactionFlags: interactionFlags, chromium: chromium, visibleFrame: menuRoot == nil ? windowFrame : nil,
-                        recordsScreenshot: pendingCapture != nil, clipRereadPoll: clipRereadPoll)
+                        recordsScreenshot: captures, clipRereadPoll: clipRereadPoll)
     walk.revision.recordedAt = monotonicClock()
     timings.time("walk") { walk.run(window: menuRoot ?? window, menuBar: menuBarElement, menuItems: menuItems) }
+    if captures, sequential { pendingCapture = startCapture() }  // #453: the image after the walk's reads
     walk.revision.menuRoot = menuRoot
     timings.merge(source.costs)
     timings.set("nodes", walk.nodes.count + walk.menuBar.count)
@@ -410,8 +421,18 @@ extension Engine {
         (screenshotRecord(walk.screenshotReads) { AnyHashable(ElementKey(element: $0)) },
          screenshotChildrenRecorded(walk.screenshotReads) { ElementKey(element: $0) })
       }
-      lineage.screenshot = ObservedScreenshot(window: window, image: image, nodes: record.0.nodes, frameless: record.0.frameless,
-                                              recorded: record.1)
+      var observed = ObservedScreenshot(window: window, image: image, nodes: record.0.nodes, frameless: record.0.frameless,
+                                        recorded: record.1)
+      if sequential {
+        // #453: the overlay windows still over the observed one, their rows read again after the image.
+        let started = overlaysAtStart.map(\.number)
+        let still = appWindowsOver(observedNumber, pid: capturePid, list: onScreenWindowList()).filter { started.contains($0.number) }
+        let stability = timings.time("overlayStability") { overlayStableWindows(record.0.nodes, over: still, reads: .live) }
+        observed.overlayStable = stability.stable
+        timings.set("overlayStable", stability.stable.count)
+        timings.set("overlayRowsReread", stability.read)
+      }
+      lineage.screenshot = observed
       return image.wire
     }
     timings.add("total", monotonicMilliseconds() - started)

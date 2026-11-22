@@ -623,3 +623,57 @@ One engine per dispatch: the kit names its only engine "main", so the "main" col
 |---|---|---|---|---|---|---|
 | fix-de0d119f | cft | 20261117.0516.1 | 157.0.8103.78 | 60/60 | none | – |
 | fix-de0d119f | electron | 20261117.0516.1 | Electron 44.4.5 / Chromium 152.0.7977.130 | 60/60 | none | – |
+
+### The recorded chain at the point, and what each route pressed (from the saved rows; no new run)
+
+These are representative shared-behind rows: on de0d119f, `omnibox-`, `datalist-` and `popover-shared-behind-click-1` of
+run 45066234145; on c8858c2a, `popover-shared-behind-click-1` of run 45057158194; the spike rows are the
+`*-shared-behind-axpress-1` rows of run 45050307595.
+
+**What the kit kept, and what it did not.**
+- It kept the observation's nodes whose frame holds the point, inside the overlay's window, smallest first, up to six
+  (`recordedAtPoint`). Each has its role, frame and label, where the label is title, description, value and
+  placeholder joined. Nesting is read from the frames.
+- It did not keep the nodes' `actions`, `depth`, `children` or `flags` (all on the wire), the title, description and
+  value apart, or the parent links.
+- The wire carries no `recorded` or `subtreeRecorded`: they are the engine's own, and its meta names no chosen node.
+- So per-node actions, the recorded flags and the descendant behind `partlyRecorded` are not in these artifacts. A
+  kit change keeping the whole subtree at the point, and one more run, would give them. The actions listed below are
+  the ones the spike's tool read live on the element it pressed.
+
+**Chains, from the overlay's root down to the deepest node** (frames as `x,y w×h`):
+- **Omnibox popup** (window 37, layer 0): AXWebArea "Omnibox Popup" 515,116 426×210 › AXScrollArea 515,116 426×210 ›
+  AXGroup 515,116 426×210 › AXList 515,116 426×160 › AXStaticText "probe453 page http://…/results-beta location from
+  history, press T…" 515,236 426×40 › **AXGroup (no label) 515,236 410×40**.
+- **Datalist** (window 65, layer 999): AXGroup 471,228 156×188 › AXScrollArea › AXGroup › AXList "Autofill" 471,228
+  156×188 › AXStaticText "apricot" 475,268 148×36 › **AXStaticText "apricot" 475,268 148×36**. The two texts have the
+  same frame, one inside the other.
+- **AppKit popover** (window 1333; the popover lives in the document window's tree): AXWindow "p453.rtf" › AXScrollArea
+  › AXTextArea (the document's text, under the popover) › AXPopover 393,91 225×246 › AXGrid 418,137 175×147 ›
+  **AXButton "rgb 0.833356 0.518662 0 1" 520,197 13×13**.
+- **Popover on c8858c2a:** the same pick (AXButton "rgb 0.833356 …" 520,197 13×13, token t127, 143 nodes in the
+  overlay). That run predates `recordedAtPoint`.
+
+| kind, head | the fix's node (its rule: the deepest recorded node at the point, of no container role) | the fix's answer | the spike's bare AXPress pressed | in the recorded chain |
+|---|---|---|---|---|
+| omnibox, de0d119f | the AXGroup 410×40, the row's child | refused `notARow`: AXGroup is not one of the omnibox's row roles (AXStaticText, AXButton, AXLink, AXCell, AXRow) | the AXStaticText 426×40 (`AXPress, AXShowMenu, AXScrollToVisible`); took it 30/30 | yes: the AXGroup's parent |
+| datalist, de0d119f | the inner "apricot" (the deeper of the two) | AXPress sent, `clickUnconfirmed`: the list stayed, nothing written (6/6 per mode) | the outer "apricot" (`AXPress`, inference below); took it 15/15 | yes: both texts are |
+| popover, de0d119f | the swatch AXButton 13×13 | refused `partlyRecorded` before any press | the same swatch AXButton (`AXPress`); took it 30/30 | yes |
+| popover, c8858c2a | the swatch AXButton | `route: "action"`, confirmed; colour changed | — | yes |
+
+- **(b) The spike's selection rule** (`tool.swift` `pressRow`): under the overlay's AX root (the popup's or list's
+  AXWindow; for the popover its AXPopover), breadth-first, the first element of the recorded pick's role whose frame
+  lies within 2 pt of the pick's frame. That element gets AXPress itself: no hit-test, no ancestor. The kit picked its
+  row from the observation: the omnibox band's widest node with text, the datalist's widest node labelled "apricot",
+  and the middle "rgb …" swatch.
+- **(c) Datalist: which "apricot".** Both texts match the spike's rule. Breadth-first reaches the outer one first,
+  after visiting 10 elements, so the spike pressed the **outer** text. The fix's rule (the deepest, then nested) takes
+  the **inner** one. Both readings are inferences, from the walk's order and the fix's code (`OverlayClick.swift`,
+  `rows.max(by: depth)`): neither run recorded the element's depth. So Chromium's list takes AXPress on the outer text
+  and not on the inner one.
+- **(d) Popover, the cause of `partlyRecorded`.** Not determinable from these artifacts. The check needs every element
+  of the swatch's recorded subtree (and every frameless node under it) to have `subtreeRecorded` and to be recorded.
+  Neither flag reaches the wire, and the kit kept no children of the swatch. It is not the swatch itself failing to
+  record: the same swatch was pressed and confirmed on c8858c2a, which had no whole-subtree check. The descendant (a
+  child read that failed, or children left out, under an AXButton) would show in the engine's own record or in a kit
+  run that keeps the swatch's subtree with its `children` count.

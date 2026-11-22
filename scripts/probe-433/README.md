@@ -687,3 +687,43 @@ CfT's batch 1 has no `bgbutton` row to lose: cold, it never lands there (the ele
 - **`slideover`** (B slides over a live A). Main's existing `interactiveHit` refuses it wherever its hit is the control on top: Safari always (40 of 40, both batches), Chromium only once the hit is corrected (warm: CfT 20 of 20 refused). Cold, Chromium's first hit is the overlay group, so main keeps: CfT presses the overlay and reaches nothing, Electron posts the click and lands on B (20 of 20). Warm, Electron's text point still lands on B (10 of 10): the corrected hit is B's text, and the guard takes a non-interactive hit without asking whose control it is (`nonInteractiveHit`).
 - **`siblingstack`** (A stacked over its later sibling B; A removed). Main keeps and lands on B on every lane where events are posted, cold and warm (Safari 40 of 40, Electron 40 of 40, CfT warm 20 of 20): B is a recorded control at the point, so even the corrected hit (B) vouches. `bgbutton` is the same record with the other control removed (B behind A goes; A takes the click); nothing in the record or the live tree says which of the two was on top at the observation (tree order agrees with paint order in two shapes and disagrees in the other two), so (a) and (b) refuse `bgbutton` too.
 - **Signals.** A corrected AX hit is the page's own hit test on all three engines (pointer-events and z-order honoured, equal to `elementFromPoint` in 1,694 of 1,695 rows). Chromium gives it only on a second ask, after an asynchronous correction (26–61 ms here, on a small page on an idle runner), with no notification that it came: a scrim's first answer and its corrected one are the same group. The enumeration (a) is complete only as a full walk, which costs seconds on a 6,000-element page; the pruned walk is cheap but misses a control transformed out of its parent's frame on Chromium. (b)'s overlap is rare in the measured record (only the cells built for it), but these fixtures are small: how often real pages hold overlapping unrelated controls under an inert layer is not measured here.
+
+### #442 rule cost (ruling 1073)
+
+Ruling 1073's rule on main `5580ac20`, counted from batches 1 to 3 above (no new run; `node scripts/probe-433/rule1073.mjs "B1 cold=<dir>" "B2 cold=<dir>" "B3 warm=<dir>"`). The rule takes the hit at 80 ms, judges it by its nearest acting control, and refuses when that control is live and not among the record's controls at the point. It also refuses when the 80 ms hit has no acting control and is not in the record.
+- Warm (batch 3): the answer at 80 ms is read from the hit sequence the kit took just before the click. A hit with no control counts as in the record where the engine's own hit, taken right after that sequence, was a recorded node (`sameElement`, `recordedHit`).
+- Cold (batches 1, 2): no hit was read before the click, so the 80 ms answer is inferred. The kit takes the corrected answer it read after the click, since every warm sequence was corrected by 61 ms. Where that answer has no control, it is left unread, because the engine's own hit there was the first, approximate one.
+
+A cell gives refused / kept-and-landed rows, per lane (cft · safari · electron), both points pooled. `–`: main landed no row there.
+
+| Cell | B1 cold: cft / safari / electron | B2 cold: cft / safari / electron | B3 warm: cft / safari / electron |
+|---|---|---|---|
+| rolechange | 0/20 · 0/20 · 0/20 | – | – |
+| overlapinto | 0/20 (1 unread) · – · 0/20 | – | 0/20 · – · 0/20 |
+| overlaprow | 0/10 · – · 0/20 | – | 0/20 · – · 0/20 |
+| overcontrol | – · 0/20 · 0/20 | – | 0/20 · 0/20 · 0/20 |
+| rebuildunder | – · 0/10 · 0/20 | – | – |
+| bgbutton | – · 0/20 · 0/20 | – | 0/20 · 0/20 · 0/20 |
+| tipremount | – · 0/10 · 0/20 | – | – |
+| remount | – | 0/10 · 0/10 · 0/10 | – |
+| retext | – | 0/10 · 0/10 · 0/10 | 0/20 · 0/20 · 0/20 |
+| like | – | 0/10 · 0/10 · 0/10 | – |
+| plain | – | 0/10 · 0/10 · 0/10 | 0/20 · 0/20 · 0/20 |
+| btnremount | – | 0/5 · 0/5 · 0/5 | – |
+| tableremount | – | 0/10 · 0/10 · 0/10 | – |
+| tablecellremount | – | 0/10 · 0/10 · 0/10 | – |
+| textbehind | – | 0/10 · 0/10 · 0/10 | – |
+| inbox | – | 0/5 · 0/5 · 0/5 | – |
+| reltime | – | 0/5 · 0/5 · 0/5 | – |
+| shrink | – | 0/5 · 0/5 · 0/5 | – |
+| right | – | 0/5 · 0/5 · 0/5 | – |
+| centre | – | 0/5 · 0/5 · 0/5 | – |
+
+- **Keep rows refused: 0 of 890** (B1 270, B2 300, B3 320). One row is unread: CfT `overlapinto/text`, cold, where the read after the click answered nothing. That cell is outside the rule anyway, because its record node is not inert.
+- **The new no-control refusal never fired.** On every Chromium overlay row the approximate first answer is the overlay group, and that group is the recorded node itself. The engine's cold hit was the overlay group in 24 of 26 overlay units on CfT and on Electron, and on every such row the guard kept, its reason was `sameElement`: the hit is the recorded node. So in these cells the "no acting control and not in the record" clause does not catch CfT's approximate group: if a re-hit were still approximate, the rule would keep it, as main does.
+- **The 80 ms answer against the first answer, Chromium, warm (20 rows per cell per lane):**
+  - `scrim`: equal on 20 of 20 per lane, and still the overlay group. That is legitimate, since the scrim catches the click. It is kept, because the group is the recorded node (`sameElement`), so the new refusal does not touch it.
+  - `retext`, `plain`, `overlapinto`: 20 of 20 per lane, and `overlaprow` 10 of 20 (its text point). In these the first answer was already the right control.
+  - Every cell whose first answer was the overlay group over a control (`overcontrol`, `bgbutton`, `overlaprow/link`, `twincover`, `slideover`, `siblingstack`) was corrected before 80 ms on every row: by 42 ms at most on CfT, 61 ms on Electron.
+  - No non-scrim row still read the overlay group at 80 ms.
+- **The ticket's cells under the rule:** `slideover` is refused on every row, cold (inferred) and warm, on all three lanes (60 + 60). `siblingstack` is kept on every row (B is a recorded control).

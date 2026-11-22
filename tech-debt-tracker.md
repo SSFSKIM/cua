@@ -2,6 +2,7 @@
 
 ## Open
 
+- native/linux-engine/README.md:354 keeps 0.4.3's `<N>`/`<X>` placeholders (the residual bound: 200 long Chrome drags, 95% upper bound 1.5%; 300 Chrome handle drags, 1.0%); fill at the next engine release, since the gate's pinned rule compares the engine tree with the tag (task 134, ruling 1035).
 - **H7's freeze-signal timing is read, not acknowledged** (M5, rulings 963/969; task 128's last re-review, Minor). drop-signals.mjs takes the monotonic clock just before it sends `SIGSTOP`, not when Linux has actually stopped Chrome. That's enough for normal runs. If counted rows start landing next to the thaw, bracket the signal call, and treat a stop that can't be ordered against the thaw as unexercised.
 - **H7's first fix round's red log shows an interface mismatch** (task 128 Part 1, `m5/engine-042/h7/fix/logs/red-fix-runner.txt`): a `TimeoutNaNWarning` from the new caller against the old signature, where a scheduling failure was the point. The post-fix assertions do pin the behaviour. Cosmetic; the evidence stays as it is.
 - **A leaves cell's "no drop" can rest on a read without its status line** (task 128 Part 2's review, Minor). drop-signals.mjs (~l.187) turns a missing counter into `landed: false`, and an honest pending answer can then pass the non-banded judge (~l.1021). The stored L4b and H2 runs had no unread counters. Require positive no-drop evidence for leaves cells.

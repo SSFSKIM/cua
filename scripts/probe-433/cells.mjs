@@ -101,6 +101,12 @@ export const CELLS={
   // a click lands on A; the fix's named limit is a control re-created this way while the decoration's object survives,
   // which it would refuse controlGone (gate overlayKept: kept and landed as main).
   rolechange:{kind:'keep',before:'Inbox',after:'Inbox',cover:'deco',role:'button',records:'AXGroup'},
+  // #443's review shape (2a3c7e53's hitControlVouches): a back link under the target, the record taking the back link's
+  // decoration at the point; mark removes the back link, the decoration kept in place, moved into the target (`overlapinto`)
+  // or into the row under it (`overlaprow`); the target, in front, unchanged, takes the click (gate overlayKept: kept and
+  // landed as main).
+  overlapinto:{kind:'keep',before:'Inbox',after:'Inbox',cover:'deco',overlap:'into',records:'AXGroup'},
+  overlaprow:{kind:'keep',before:'Inbox',after:'Inbox',cover:'deco',overlap:'row',records:'AXGroup'},
   // The fix's costs (the builder's, reported, never gated: `reportOnlyAt` every point): a fixed header strip that catches
   // the pointer over the link, the page scrolled 128 px under it (`stickyscroll`: main keeps the header, the fix may refuse
   // the link as moved); the veil over a link re-rendered whole with its label (`tipremount`: #431's strict form judges the

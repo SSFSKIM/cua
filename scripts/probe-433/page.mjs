@@ -69,11 +69,23 @@ function cover(kind,extra=0){
 }
 // #433's decomove (and #443's rolechange): an inert decoration nested WRAP groups deep inside the target, the size of
 // its box (\`mover\`, its outermost group).
-function deco(){
-  target.style.position='relative';let inner=null;
+// \`host\` is the link it lies in (the target, or #443's overlap cells' back link).
+function deco(host=target){
+  host.style.position=host===target?'relative':host.style.position;let inner=null;
   for(let i=0;i<=WRAP;i++){const d=document.createElement('span');d.setAttribute('role','group');
     d.style.cssText='position:absolute;left:0;top:0;width:100%;height:100%;display:block';if(inner)inner.append(d);else mover=d;inner=d;}
-  inner.id='veil';target.append(mover);
+  inner.id='veil';host.append(mover);
+}
+// #443's overlap cells (the fix review's shape): a back link (\`back\`, no text, labelled "Older"), the target's size, laid
+// under the target in its row, with the decoration inside it; the target in front (z-index 1) takes the pointer, while
+// the record, deepest first, takes the back link's decoration at either point. Mark removes the back link and keeps the
+// decoration where it lay: inside the target (\`into\`), or in the row under the target (\`row\`); the target unchanged.
+let back=null;
+function overlap(){
+  slots[0].style.position='relative';target.style.position='relative';target.style.zIndex='1';
+  back=document.createElement('a');back.href='#back';back.setAttribute('aria-label','Older');
+  back.style.cssText='position:absolute;left:'+target.offsetLeft+'px;top:'+target.offsetTop+'px;width:'+target.offsetWidth+'px;height:'+target.offsetHeight+'px;z-index:0;display:block';
+  slots[0].prepend(back);deco(back);
 }
 // #433's rebuildunder: the target inside a list (its parent), which mark re-renders in place with the label unchanged.
 function listed(el){const ul=document.createElement('ul');ul.id='list';ul.style.cssText='margin:0;padding:0;list-style:none';
@@ -82,7 +94,7 @@ let behind=null;
 function run(c){
   if(c.op==='prepare'){
     const spec=CELLS[c.cell];if(!spec)throw Error('cell');
-    trial=c.trial;cell=c.cell;marked=null;twins=[];mover=null;drafts=null;behind=null;
+    trial=c.trial;cell=c.cell;marked=null;twins=[];mover=null;drafts=null;behind=null;back=null;
     // The cap filler is kept across consecutive cap trials (only the twin's row is rebuilt): rebuilding 6,000 nodes every
     // trial left both Chromium lanes' page unanswering after 15 repetitions (run 44611947576).
     slots=[row(),row(),row()];nav.replaceChildren(...slots);
@@ -201,7 +213,7 @@ function run(c){
       if(spec.behind){behind=document.createElement('button');behind.type='button';behind.textContent='Close';
         behind.style.cssText='position:absolute;left:0;top:0;width:'+target.offsetWidth+'px;height:64px;z-index:-1;border:0;background:#eee;color:#999';
         slots[0].style.position='relative';slots[0].append(behind);}
-      if(spec.cover==='deco')deco();else if(spec.cover)cover(spec.cover,spec.parent?2:0);
+      if(spec.overlap)overlap();else if(spec.cover==='deco')deco();else if(spec.cover)cover(spec.cover,spec.parent?2:0);
     }
     if(document.activeElement&&document.activeElement!==document.body)document.activeElement.blur();
     clicks=[];
@@ -232,6 +244,8 @@ function run(c){
     else if(spec.parent){const n=control('target',spec.after,spec);document.getElementById('list').replaceWith(listed(n));target=n;}
     else if(spec.behind)behind.remove();
     else if(spec.behindText)behind.textContent=spec.behindText[1];
+    else if(spec.overlap==='into'){back.remove();target.append(mover);}
+    else if(spec.overlap==='row'){const b=back.style;mover.style.cssText='position:absolute;left:'+b.left+';top:'+b.top+';width:'+b.width+';height:'+b.height+';z-index:0;display:block';back.remove();slots[0].prepend(mover);}
     else if(spec.role)target.setAttribute('role',spec.role);  // #443's rolechange: the same element, a new role
     else if(spec.cover&&!spec.remount){}  // #433's controls: the overlay over a live link, nothing changing
     else if(spec.remount==='link'){const n=control('target',spec.after,spec);target.replaceWith(n);target=n;}

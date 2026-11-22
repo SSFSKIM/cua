@@ -350,8 +350,9 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   load answered one false ok in 100 on f9d1f86b): after the end's own rest, two visits from the pointer's own place,
   each the 1 px step along the handle's last segment and back, each followed by 8 ms, then the release; about 16 ms.
   It has no gate (a handle has no floor); `--drag-dnd-release-sync off` restores the earlier end, and `--stats`
-  `handle.release_sync` records whether it ran and why not. The residual bound: no false ok in
-  <N> measured long Chrome drags at arm64 twice the load (95% upper bound <X>%). Electron's drops (settled, below),
+  `handle.release_sync` records whether it ran and why not. The residual bound, at arm64 twice the load (task 132):
+  no false ok in 200 measured long Chrome drags (95% upper bound 1.5%), and none in 300 Chrome handle drags across the
+  handle tail's three heads (95% upper bound 1.0%). Electron's drops (settled, below),
   guarded drags and the release at the accept are unchanged. Option (c), which answers such a drop unconfirmed when
   Chrome's activation request is its only confirmation (`Pending from your last drag, an unconfirmed drop: your drag
   into <app> began a drag and drop and went on past the engine's settle time, …`), is built and off

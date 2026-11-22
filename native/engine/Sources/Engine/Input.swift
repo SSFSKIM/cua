@@ -127,7 +127,7 @@ struct InputMeta {
   /// main's path was kept.
   var popUpClick: PopUpClickRecord?
   /// #453's click on a row of a window the app shows over the observed one (OverlayClick.swift): delivered into it by its
-  /// kind's route and its effect, or why #452's refusal stood.
+  /// kind's route and its effect, or why #452's refusal stood; #470's element click on such a row (`from: "element"`).
   var overlayClick: OverlayClickRecord?
   /// #359's wait for a posted click before an accessibility action on the text, and set_value's watch after its write
   /// (ClickOrdering.swift); nil when no pointer press to the app was pending.
@@ -478,6 +478,13 @@ extension Engine {
         }
         let target = try positionedTarget(resolved, token: token, app: app, appPid: appPid, context: context, guarding: guarding)
         let pointing = ElementPointing(target.element, owner: target.owner, ax: ax)
+        // #470: a plain left click on a row of a window the app shows over the observed one, of a kind OverlayClick.swift
+        // lists, takes that kind's route, as a coordinate click on it does (#453); any other keeps the element click's path.
+        if forced == nil, button == .left, count == 1,
+           try overlayElementClick(pointing, app: app, appPid: appPid, guarding: guarding, context: context, meta: &meta) {
+          context.connection.clearMenuRecord(app: app.key)
+          return ["meta": meta.wire]
+        }
         let plan = try elementClickPlan(forced: forced, button: button, count: count, role: target.entry.identity.role, actions: target.entry.actions,
                                         synthesized: synthesizedClickRoute(forced: nil, foreground: foreground)) {
           pointing.relation == .descendant  // no point, or no answer: the action needs no point

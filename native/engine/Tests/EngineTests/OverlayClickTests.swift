@@ -10,7 +10,7 @@ import XCTest
 // page "Omnibox Popup", whose first hit-test answers the web area), the `<datalist>` popup (Chromium's autofill list in a
 // layer-999 window), the permission bubble (an alert dialog in a layer-0 window) and TextEdit's colour-well popover (an
 // AXPopover in the document window's tree, with a window of its own in the list). Then #456's rechecks (`StalePointGate`'s
-// overlay rule).
+// overlay rule) and #470's element click on such a row.
 
 final class OverlayClickTests: XCTestCase {
   private final class Node {
@@ -509,13 +509,67 @@ final class OverlayClickTests: XCTestCase {
     XCTAssertEqual(verdict.observedListed, browserWindow)
   }
 
+  // MARK: #470: the element click on an overlay's row
+
+  private func elementTarget(_ element: Node, hit: Node?, point: CGPoint, observed: Node, observedNumber: CGWindowID = 31,
+                             list: [ListedWindow], chromium: Bool = true, hits: UnsafeMutablePointer<Int>? = nil) -> OverlayTarget<Node>? {
+    overlayElement(element, hit: { hits?.pointee += 1; return hit }, point: point, observed: observed, observedNumber: observedNumber, pid: pid,
+                   list: { list }, chromium: chromium, reads: reads, number: { window in
+      window === observed ? observedNumber : list.first { $0.number != observedNumber && $0.bounds == window.frame }?.number
+    })
+  }
+
+  /// The permission bubble's button clicked by its element: the post to the bubble's window (it was posted by route 3 and
+  /// did nothing, 10/10), the omnibox row's likewise (route 3 raised Chrome over the person's window in dedicated mode,
+  /// and shared mode refused it), the popover's swatch by AXPress.
+  func testAnElementClickOnAnOverlaysRowTakesItsKindsRoute() {
+    let browser = Node(kAXWindowRole, browserWindow.bounds)
+    let bubble = permissionBubble()
+    let byElement = elementTarget(bubble.never, hit: bubble.never, point: bubble.point, observed: browser, list: [bubble.listed, browserWindow])
+    XCTAssertEqual(byElement?.kind, .permissionBubble)
+    XCTAssertEqual(byElement?.route, .post)
+    XCTAssertEqual(byElement?.window.number, 132)
+    let scene = omnibox()
+    let row = elementTarget(scene.rows[1], hit: scene.webArea, point: rowPoint, observed: browser, list: [scene.listed, browserWindow])
+    XCTAssertEqual(row?.kind, .omniboxPopup)
+    XCTAssertTrue(row?.row === scene.rows[1])
+    let swatch = popover()
+    let observed = ListedWindow(number: 832, owner: pid, layer: 0, bounds: rect(400, 31, 620, 679))
+    let pressed = elementTarget(swatch.swatch, hit: swatch.swatch, point: swatch.point, observed: swatch.window, observedNumber: 832,
+                                list: [swatch.listed, observed], chromium: false)
+    XCTAssertEqual(pressed?.kind, .appKitPopover)
+    XCTAssertTrue(pressed?.pressed === swatch.swatch)
+  }
+
+  /// Every other element click keeps its own path: one in the observed window outside any popover reads no hit; one whose
+  /// point reaches another element of the overlay, a disabled one, or one of an unknown kind keeps it too.
+  func testAnElementClickElsewhereKeepsItsPath() {
+    let browser = Node(kAXWindowRole, browserWindow.bounds)
+    let button = Node("AXButton", rect(600, 400, 80, 30), title: "Reload", actions: ["AXPress"], parent: browser)
+    var hits = 0
+    XCTAssertNil(elementTarget(button, hit: button, point: CGPoint(x: 640, y: 415), observed: browser, list: [browserWindow], hits: &hits))
+    XCTAssertEqual(hits, 0, "no hit-test, descent or window list for a click in the observed window")
+    let bubble = permissionBubble()
+    XCTAssertNil(elementTarget(bubble.never, hit: bubble.allow, point: bubble.point, observed: browser, list: [bubble.listed, browserWindow]),
+                 "the point reaches another button")
+    bubble.never.enabled = false
+    XCTAssertNil(elementTarget(bubble.never, hit: bubble.never, point: bubble.point, observed: browser, list: [bubble.listed, browserWindow]))
+    let scene = omnibox()
+    scene.webArea.title = "Extension"
+    XCTAssertNil(elementTarget(scene.rows[1], hit: scene.webArea, point: rowPoint, observed: browser, list: [scene.listed, browserWindow]))
+    XCTAssertNil(elementTarget(scene.rows[1], hit: scene.webArea, point: rowPoint, observed: browser, list: [browserWindow]),
+                 "the overlay's window not listed over the point")
+  }
+
   // MARK: The meta
 
-  func testTheRecordsWireForARefusal() {
+  func testTheRecordsWireForARefusalAndAnElementClick() {
     XCTAssertEqual(OverlayClickRecord(window: 39, by: .axHit, kind: .omniboxPopup, refused: .textChanged).wire as NSDictionary,
                    ["window": 39, "by": "axHit", "kind": "omniboxPopup", "refused": "textChanged"])
-    XCTAssertEqual(OverlayClickRecord(window: 132, by: .axHit, kind: .permissionBubble, route: .post, effect: .closed, polls: 2, ms: 20).wire as NSDictionary,
-                   ["window": 132, "by": "axHit", "kind": "permissionBubble", "route": "post", "effect": "closed", "polls": 2, "ms": 20])
+    XCTAssertEqual(OverlayClickRecord(window: 132, by: .axHit, kind: .permissionBubble, route: .post, effect: .closed, polls: 2, ms: 20,
+                                      element: true).wire as NSDictionary,
+                   ["window": 132, "by": "axHit", "kind": "permissionBubble", "route": "post", "effect": "closed", "polls": 2, "ms": 20,
+                    "from": "element"])
     XCTAssertEqual(Set(OverlayKind.allCases.filter(\.delivers)), Set(OverlayKind.allCases), "every listed kind is on")
   }
 }

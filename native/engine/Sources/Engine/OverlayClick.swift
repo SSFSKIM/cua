@@ -19,8 +19,9 @@ import Foundation
 // the point now reads other text is refused. Chromium's overlays take the stamped post, with no activation and no hold;
 // an AppKit popover takes AXPress on the recorded node. The click succeeds once the overlay's window has left the screen
 // or the row's element has died, read for `overlayConfirmMs`; otherwise it answers `clickUnconfirmed`. Anything else keeps
-// #452's refusal unchanged. #456's rechecks after an element route's wait apply the same rule (`StalePointGate.overlay`).
-// Everything reads through closures, so the rule is unit-tested over fakes.
+// #452's refusal unchanged. #456's rechecks after an element route's wait apply the same rule (`StalePointGate.overlay`),
+// and an element click on a row of such an overlay (#470) takes the same kind's route. Everything reads through closures,
+// so the rule is unit-tested over fakes.
 
 /// The overlays a click is delivered into, each a switch of its own (`delivers`); any other refuses as #452 does.
 enum OverlayKind: String, CaseIterable, Equatable {
@@ -103,10 +104,10 @@ struct OverlayChain<Element> {
 /// `hit` descended to the deepest element at `point` (the last child whose frame holds it, as a later sibling draws
 /// above, up to `overlayDescentLevels` and `overlayDescentReads`), then read up to its AXWindow; nil when the chain reads
 /// to no window. Chrome's first hit-test at an omnibox row answers the popup's web area; the row lies below it.
-func overlayChain<Element>(from hit: Element, at point: CGPoint, reads: StalePointReads<Element>) -> OverlayChain<Element>? {
+func overlayChain<Element>(from hit: Element, at point: CGPoint, descends: Bool = true, reads: StalePointReads<Element>) -> OverlayChain<Element>? {
   var deepest = hit
   var budget = overlayDescentReads
-  descent: for _ in 0..<overlayDescentLevels {
+  descent: for _ in 0..<(descends ? overlayDescentLevels : 0) {
     guard let children = reads.children(deepest), !children.isEmpty else { break }
     for child in children.reversed() {
       guard budget > 0 else { break descent }
@@ -183,8 +184,8 @@ enum OverlayRefusal: String, Equatable {
   case noAction
 }
 
-/// A row a click is delivered to: its overlay's kind and window, the row (the recorded node carrying the text) and, for
-/// AXPress, the element pressed.
+/// A row a click is delivered to: its overlay's kind and window, the row (the recorded node carrying the text; the
+/// element clicked by ID for #470) and, for AXPress, the element pressed.
 struct OverlayTarget<Element> {
   let kind: OverlayKind
   let window: ListedWindow
@@ -297,6 +298,44 @@ func overlayLabelNow<Element>(_ element: Element, role: String, reads: StalePoin
   return nil
 }
 
+/// #470: an element click (`element`, by its ID) on a row of an overlay of a listed kind, `hit` the hit-test at the
+/// element's clickable point: the same kind's route when the point reaches the element (the chain from the hit, descended,
+/// holds it) inside a window of the app's other than the observed one (`observed`, listed now as `observedNumber`) that
+/// covers the point, or inside an AXPopover of the observed window with a window of the app's over the point; the element
+/// enabled, and listing AXPress for AXPress. Nil otherwise: the element click's own path, as before. The element's own
+/// ancestry is read first, so an element in the observed window outside any popover (every other click) reads no hit,
+/// no descent and no window list.
+func overlayElement<Element>(_ element: Element, hit: () -> Element?, point: CGPoint, observed: Element, observedNumber: CGWindowID?,
+                             pid: pid_t, list: () -> [ListedWindow], chromium: Bool, reads: OverlayReads<Element>,
+                             number: (Element) -> CGWindowID?) -> OverlayTarget<Element>? {
+  let stale = reads.stale
+  guard let own = overlayChain(from: element, at: point, descends: false, reads: stale),
+        !stale.same(own.root, observed) || own.popover != nil else { return nil }
+  guard let hit = hit(), let chain = overlayChain(from: hit, at: point, reads: stale) else { return nil }
+  let list = list()
+  let by: AppWindowSignal
+  let window: ListedWindow
+  if stale.same(chain.root, observed) {
+    guard let observedNumber, chain.popover != nil,
+          let over = appWindowOverPoint(point, target: observedNumber, pid: pid, list: list) else { return nil }
+    (by, window) = (.popover, over)
+  } else {
+    guard let overNumber = number(chain.root), hitWindowCovers(overNumber, point: point, target: observedNumber, list: list),
+          let over = list.first(where: { $0.number == overNumber }) else { return nil }
+    (by, window) = (.axHit, over)
+  }
+  guard chain.inside(by).contains(where: { stale.same($0, element) }),
+        let kind = overlayKind(chain, by: by, chromium: chromium, overlayLayer: window.layer,
+                               observedLayer: observedNumber.flatMap { number in list.first { $0.number == number }?.layer }, reads: reads),
+        kind.delivers, reads.enabled(element) != false else { return nil }
+  var target = OverlayTarget(kind: kind, window: window, by: by, row: element)
+  if kind.route == .press {
+    guard stale.actions(element)?.contains("AXPress") == true else { return nil }
+    target.pressed = element
+  }
+  return target
+}
+
 /// The events' target for the stamped post: the point, the overlay's own window number and its frame, so the window
 /// location is local to the overlay (Mouse.swift `stampWindow`), posted to `pid`.
 func overlayPostTarget(_ point: CGPoint, window: ListedWindow, pid: pid_t) -> ClickTarget {
@@ -308,7 +347,8 @@ enum OverlayEffect: String, Equatable { case closed, rowGone, unconfirmed }
 
 /// The meta's `overlayClick` (#453, value-free): the overlay's window, the signal #452 found it by, its kind, and either
 /// the route that carried the click and its effect (with the AXError of an AXPress that was not success, the reads and the
-/// milliseconds from the delivery to the last read) or why #452's refusal stood.
+/// milliseconds from the delivery to the last read) or why #452's refusal stood. `from` is `element` for #470's element
+/// click.
 struct OverlayClickRecord: Equatable {
   let window: CGWindowID
   let by: AppWindowSignal
@@ -319,6 +359,7 @@ struct OverlayClickRecord: Equatable {
   var actionError: Int32?
   var polls = 0
   var ms: Double?
+  var element = false
 
   var wire: [String: Any] {
     var wire: [String: Any] = ["window": Int(window), "by": by.rawValue]
@@ -329,6 +370,7 @@ struct OverlayClickRecord: Equatable {
     if let actionError { wire["actionError"] = Int(actionError) }
     if polls > 0 { wire["polls"] = polls }
     if let ms { wire["ms"] = (ms * 1000).rounded() / 1000 }
+    if element { wire["from"] = "element" }
     return wire
   }
 }
@@ -416,14 +458,38 @@ extension Engine {
     }
   }
 
+  /// #470 at an element click: the element's clickable point, the hit there, and the windows as listed now; delivered by
+  /// its overlay kind's route when `overlayElement` names one. True when carried; false keeps the element click's path.
+  func overlayElementClick(_ pointing: ElementPointing, app: ResolvedApp, appPid: pid_t, guarding: InterventionGuard,
+                           context: ExecutionContext, meta: inout InputMeta) throws -> Bool {
+    guard let point = pointing.point else { return false }
+    let application = prepare(AXUIElementCreateApplication(appPid))
+    guard let observed = primaryWindow(of: application) else { return false }
+    let observedNumber = windowNumber(of: observed, pid: appPid, readFrame: { frame(of: observed) })
+    let owner = pointing.owner
+    let reads = OverlayReads<AXUIElement>.live
+    let found = signposted("click.overlayElement") { () -> OverlayTarget<AXUIElement>? in
+      overlayElement(pointing.element, hit: { hitTest(application: owner, at: point) }, point: point, observed: observed,
+                     observedNumber: observedNumber, pid: appPid, list: onScreenWindowList,
+                     chromium: webAccessibility.pageEngine(app.appPath) == .chromium, reads: reads,
+                     number: { window in windowNumber(of: window, pid: owner, readFrame: { frame(of: window) }) })
+    }
+    guard let target = found else { return false }
+    try armingSettle(&meta, acted: { context.connection.markActed(app) }) { meta in
+      try overlayDelivery(target, point: point, observedWindow: observedNumber, app: app, appPid: appPid, guarding: guarding,
+                          context: context, element: true, meta: &meta)
+    }
+    return true
+  }
+
   /// The delivery, live: the row's own process checked against the forbidden list and registered as one the action drives,
   /// an earlier action's after-action watch ended, the in-flight check, the agent cursor at the point, then the kind's route
   /// (`deliverOverlayClick`), the posted click noted for #359's ordering.
   private func overlayDelivery(_ target: OverlayTarget<AXUIElement>, point: CGPoint, observedWindow: CGWindowID?, app: ResolvedApp,
-                               appPid: pid_t, guarding: InterventionGuard, context: ExecutionContext,
+                               appPid: pid_t, guarding: InterventionGuard, context: ExecutionContext, element: Bool = false,
                                meta: inout InputMeta) throws {
     let owner = ownerPid(of: target.row, fallback: appPid)
-    var record = OverlayClickRecord(window: target.window.number, by: target.by, kind: target.kind)
+    var record = OverlayClickRecord(window: target.window.number, by: target.by, kind: target.kind, element: element)
     defer { meta.overlayClick = record }
     try deliverOverlayClick(target, point: point, owner: owner, app: app.displayName, reads: .live, windowShown: { number in
       onScreenWindowIDs().map { $0.contains(number) }

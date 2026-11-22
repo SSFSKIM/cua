@@ -4081,7 +4081,7 @@ final class OverlayTargetTests: XCTestCase {
   /// refuses `controlGone`, A confirmed gone; so with A recorded without a frame.
   func testADecorationThatOutlivedItsControlRefuses() {
     for (text, hit) in [(false, "deco"), (false, "b"), (false, "none"), (true, "deco"), (true, "b")] {
-      let page = Page(bare: true)
+      let page = Page(twin: "Next", bare: true)
       let deco = text ? page.aText : Node("AXImage", CGRect(x: 20, y: 100, width: 200, height: 30))
       if !text { page.a.add(deco) }
       let refused = judged(page, at: CGPoint(x: 40, y: 112)) { page in
@@ -4098,7 +4098,7 @@ final class OverlayTargetTests: XCTestCase {
       XCTAssertEqual(refused.identity, .handle)
       XCTAssertNil(refused.underlying)
     }
-    let frameless = Page(bare: true)
+    let frameless = Page(twin: "Next", bare: true)
     let mark = Node("AXImage", CGRect(x: 100, y: 100, width: 120, height: 30))
     frameless.a.add(mark)
     let aFrame = frameless.a.frame
@@ -4115,7 +4115,7 @@ final class OverlayTargetTests: XCTestCase {
 
   /// The refusal's sentence names the inert node and the control it lay in, and the meta carries that control's role.
   func testTheControlGoneRefusalNamesTheNodeAndItsControl() {
-    let page = Page(bare: true)
+    let page = Page(twin: "Next", bare: true)
     let icon = Node("AXImage", CGRect(x: 100, y: 100, width: 120, height: 30))
     page.a.add(icon)
     let refused = judged(page) { page in
@@ -4132,7 +4132,7 @@ final class OverlayTargetTests: XCTestCase {
     XCTAssertEqual(outcome.record.wire["verdict"] as? String, "refused")
     XCTAssertEqual(outcome.record.wire["controlRole"] as? String, "AXLink")
     XCTAssertEqual(outcome.record.wire["identity"] as? String, "handle")
-    let kept = judged(Page(bare: true), at: CGPoint(x: 40, y: 112)) { $0.aText }
+    let kept = judged(Page(twin: "Next", bare: true), at: CGPoint(x: 40, y: 112)) { $0.aText }
     XCTAssertNil(StalePointRecord(kept, ms: 0).wire["controlRole"], "only a controlGone refusal carries it")
   }
 
@@ -4141,7 +4141,7 @@ final class OverlayTargetTests: XCTestCase {
   /// main's verdict; so does a seam that cannot tell a destroyed handle (no `gone`), A's frame reading none.
   func testAControlUnreadableButNotGoneKeepsMainsVerdict() {
     for hitB in [false, true] {
-      let page = Page(bare: true)
+      let page = Page(twin: "Next", bare: true)
       let icon = Node("AXImage", CGRect(x: 100, y: 100, width: 120, height: 30))
       page.a.add(icon)
       let kept = judged(page) { page in
@@ -4155,7 +4155,7 @@ final class OverlayTargetTests: XCTestCase {
       }
       XCTAssertEqual(kept.reason, hitB ? .hitAboveNode : .sameElement)
     }
-    let page = Page(bare: true)
+    let page = Page(twin: "Next", bare: true)
     let icon = Node("AXImage", CGRect(x: 100, y: 100, width: 120, height: 30))
     page.a.add(icon)
     let (nodes, frameless, members) = walkRecord(page.window)
@@ -4171,7 +4171,7 @@ final class OverlayTargetTests: XCTestCase {
   /// A live control keeps main's verdict: the decoration still inside A, unchanged (the hit on it or on A), or moved out of
   /// A into B while A lives on elsewhere, off the point.
   func testALiveControlKeepsMainsVerdict() {
-    let page = Page(bare: true)
+    let page = Page(twin: "Next", bare: true)
     let icon = Node("AXImage", CGRect(x: 100, y: 100, width: 120, height: 30))
     page.a.add(icon)
     for hit in [icon, page.a] {
@@ -4180,7 +4180,7 @@ final class OverlayTargetTests: XCTestCase {
       XCTAssertNil(kept.underlying)
     }
     for hitB in [false, true] {
-      let page = Page(bare: true)
+      let page = Page(twin: "Next", bare: true)
       let icon = Node("AXImage", CGRect(x: 100, y: 100, width: 120, height: 30))
       page.a.add(icon)
       let kept = judged(page) { page in
@@ -4205,7 +4205,7 @@ final class OverlayTargetTests: XCTestCase {
     XCTAssertEqual(remount.identity, .recreated)
     XCTAssertEqual(remount.reason, .sameElement)
     for hitButton in [true, false] {
-      let card = Page(bare: true, pressable: true)
+      let card = Page(twin: "Next", bare: true, pressable: true)
       let button = Node("AXButton", CGRect(x: 100, y: 100, width: 120, height: 30), title: "Go")
       card.a.add(button)
       let acting = judged(card) { page in
@@ -4237,13 +4237,15 @@ final class OverlayTargetTests: XCTestCase {
   }
 
   /// The review of dfe6f443..1d3b0963: links A and F overlap at the point, F in front (later in the list); the record takes
-  /// a decoration of A, deeper than F's text. A is removed, the decoration survives, and F, recorded at the point and in
-  /// place, takes the click as on main: the hit on F's text (`nonInteractiveHit`), or on F with the decoration moved into
-  /// it (`hitAboveNode`), keeps, and the element route presses F. A same-label link new at the point (not
-  /// recorded there) or F moved off its place does not vouch.
+  /// a decoration of A, deeper than F's text. A is removed and the decoration survives. F, recorded at the point and in
+  /// place, takes the click as on main, and vouches for it: with the decoration moved into F (the hit on F,
+  /// `hitAboveNode`; on the decoration, `sameElement`; on nothing, `noHit`), or moved into a new link N at A's place while
+  /// the hit answers
+  /// F's text (`nonInteractiveHit`; the route presses F, `recordedHit`). F moved 3 pt off its place, or a link new at the
+  /// point with F gone, does not vouch, and A's loss refuses.
   func testARecordedControlInFrontOfAGoneControlVouchesForTheClick() {
     func scene() -> (page: Page, front: Node, frontText: Node, deco: Node) {
-      let page = Page(bare: true)
+      let page = Page(twin: "Next", bare: true)
       let front = Node("AXLink", CGRect(x: 20, y: 100, width: 200, height: 30), title: "Front")
       let frontText = Node("AXStaticText", CGRect(x: 30, y: 105, width: 60, height: 20), value: "Front")
       front.add(frontText)
@@ -4256,23 +4258,32 @@ final class OverlayTargetTests: XCTestCase {
       return (page, front, frontText, deco)
     }
     let point = CGPoint(x: 40, y: 112)
-    for intoFront in [false, true] {
+    for (into, hitOn) in [("F", "F"), ("F", "deco"), ("F", "none"), ("N", "F text")] {
       let (page, front, frontText, deco) = scene()
       let (nodes, frameless, members) = walkRecord(page.window)
       XCTAssertTrue(deepestScreenshotNode(at: point, in: nodes)?.element === deco)
-      deco.reparent(to: intoFront ? front : page.list)
+      if into == "F" {
+        deco.reparent(to: front)
+      } else {
+        let fresh = Node("AXLink", CGRect(x: 20, y: 100, width: 200, height: 30), title: "Next")
+        page.list.add(fresh)
+        deco.reparent(to: fresh)
+      }
       page.aText.destroy()
       page.a.destroy()
-      let hit = intoFront ? front : frontText
+      let hit = hitOn == "F" ? front : hitOn == "deco" ? deco : hitOn == "none" ? nil : frontText
       let kept = verdict(nodes, frameless: frameless, members: members, at: point, hit: hit)
-      XCTAssertEqual(kept.reason, intoFront ? .hitAboveNode : .nonInteractiveHit, "into F \(intoFront)")
-      // The route presses F: an ancestor of the node now, or a recorded control in place.
-      XCTAssertEqual(stalePointPressVerdict(front, kept, reads: reads).reason, intoFront ? .hitAboveNode : .recordedHit, "into F \(intoFront)")
+      let expected: StalePointReason = hitOn == "F" ? .hitAboveNode : hitOn == "deco" ? .sameElement
+        : hitOn == "none" ? .noHit : .nonInteractiveHit
+      XCTAssertEqual(kept.reason, expected, "into \(into), hit \(hitOn)")
+      XCTAssertFalse(stalePointPressVerdict(front, kept, reads: reads).refused, "the route presses F")
+      if into == "N" { XCTAssertEqual(stalePointPressVerdict(front, kept, reads: reads).reason, .recordedHit) }
       // F moved off its recorded place: it no longer vouches.
       move(front, by: CGVector(dx: 0, dy: 3))
-      XCTAssertEqual(verdict(nodes, frameless: frameless, members: members, at: point, hit: hit).reason, .controlGone)
+      XCTAssertEqual(verdict(nodes, frameless: frameless, members: members, at: point, hit: hit).reason, .controlGone,
+                     "into \(into), hit \(hitOn), F moved")
     }
-    // A link new at the point, F's label, the decoration moved into it: not recorded there, so A's loss refuses.
+    // A link new at the point, F's label, the decoration moved into it, F gone: not recorded there, so A's loss refuses.
     let (page, front, _, deco) = scene()
     let (nodes, frameless, members) = walkRecord(page.window)
     let fresh = Node("AXLink", CGRect(x: 20, y: 100, width: 200, height: 30), title: "Front")
@@ -4282,6 +4293,59 @@ final class OverlayTargetTests: XCTestCase {
     page.a.destroy()
     front.destroy()
     XCTAssertEqual(verdict(nodes, frameless: frameless, members: members, at: point, hit: fresh).reason, .controlGone)
+  }
+
+  /// Hosted smoke 44997131965 (`overlaprow`, Electron; main landed on F 2/2, 2a3c7e53 refused 2/2): links A and F overlap
+  /// in a row, the record takes A's decoration, A is removed and the decoration stays in the row, under no control,
+  /// beneath the unchanged front link F; the hit at F's left padding answers the decoration itself. No control holds it
+  /// now, so nothing says it moved into another: main's verdict. So too with the hit on nothing or on F.
+  func testADecorationLeftInNoControlKeepsMainsVerdict() {
+    for hitOn in ["deco", "none", "F"] {
+      let page = Page(twin: "Next", bare: true)
+      let row = Node("AXGroup", CGRect(x: 20, y: 100, width: 200, height: 30))
+      page.list.children = [row, page.b]
+      row.parent = page.list
+      row.add(page.a)
+      let front = Node("AXLink", CGRect(x: 20, y: 100, width: 200, height: 30), title: "Front")
+      row.add(front)
+      let wrap = Node("AXGroup", CGRect(x: 20, y: 100, width: 200, height: 30))
+      let deco = Node("AXGroup", CGRect(x: 20, y: 100, width: 200, height: 30))
+      wrap.add(deco)
+      page.a.add(wrap)
+      let point = CGPoint(x: 24, y: 112)
+      let kept = judged(page, at: point) { page in
+        wrap.reparent(to: row)
+        page.aText.destroy()
+        page.a.destroy()
+        return hitOn == "deco" ? deco : hitOn == "F" ? front : nil
+      }
+      XCTAssertTrue(kept.node?.element === deco)
+      XCTAssertFalse(kept.refused, "hit \(hitOn): \(kept.reason)")
+    }
+  }
+
+  /// Hosted smoke 44997131965 (`rolechange`, Safari; main kept 4/4 as `hitAboveNode` on an AXButton, 2a3c7e53 refused 4/4):
+  /// the page sets role="button" on A's own element, and WebKit re-creates A's object as an AXButton with A's label and
+  /// frame, the decoration surviving inside it. The control it lies in now is A's in place, whatever its role: main's
+  /// verdict. The same new control off A's frame by 3 pt, or reading another label, is another control: refused.
+  func testADecorationInItsControlReCreatedWithAnotherRoleKeepsMainsVerdict() {
+    for (shift, label, hitButton) in [(0.0, "Open", true), (0.0, "Open", false), (3.0, "Open", true), (0.0, "Next", true)] {
+      let page = Page(twin: "Archive", bare: true)
+      let icon = Node("AXImage", CGRect(x: 20, y: 100, width: 200, height: 30))
+      page.a.add(icon)
+      let judgedNow = judged(page, at: CGPoint(x: 150, y: 112)) { page in
+        let button = Node("AXButton", CGRect(x: 20, y: 100 + shift, width: 200, height: 30), title: label)
+        page.list.children.insert(button, at: 0)
+        button.parent = page.list
+        icon.reparent(to: button)
+        page.aText.reparent(to: button)
+        page.a.destroy()
+        return hitButton ? button : icon
+      }
+      let same = shift == 0 && label == "Open"
+      XCTAssertEqual(judgedNow.reason, same ? (hitButton ? .hitAboveNode : .sameElement) : .controlGone,
+                     "shift \(shift), label \(label), hit the button \(hitButton)")
+    }
   }
 
   /// Item 1 (b), a regression against main: A and its text unchanged, a button behind the text (shallower, another
@@ -4414,7 +4478,7 @@ final class OverlayTargetTests: XCTestCase {
 
   /// The text unchanged and the hit on it, its AXParent and A's frame unreadable now, A's children listed or unreadable;
   /// a text whose AXParent answers another element: content of a link, so main's verdict. A decoration reparented into B
-  /// whose role cannot be read, A destroyed, is #443's: B's unread role does not keep it, A confirmed gone refuses.
+  /// whose role cannot be read, A destroyed, keeps too (#443): the control it lies in now is unknown, not another one.
   func testUnreadableReadsAroundALinksContentAreMainsVerdict() {
     for childrenUnread in [false, true] {
       let page = Page(twin: "Archive", bare: true)
@@ -4427,7 +4491,7 @@ final class OverlayTargetTests: XCTestCase {
       XCTAssertEqual(kept.reason, .sameElement, childrenUnread ? "A's children unread" : "A lists the text")
       XCTAssertNil(kept.underlying)
     }
-    let page = Page(bare: true)
+    let page = Page(twin: "Next", bare: true)
     let icon = Node("AXImage", CGRect(x: 100, y: 100, width: 120, height: 30))
     page.a.add(icon)
     let moved = judged(page) { page in
@@ -4436,7 +4500,7 @@ final class OverlayTargetTests: XCTestCase {
       page.b.roleUnread = true
       return icon
     }
-    XCTAssertEqual(moved.reason, .controlGone)
+    XCTAssertEqual(moved.reason, .sameElement)
     XCTAssertNil(moved.underlying)
     let elsewhere = judged(Page(twin: "Archive", bare: true), at: CGPoint(x: 40, y: 112)) { page in
       page.aText.parent = page.list

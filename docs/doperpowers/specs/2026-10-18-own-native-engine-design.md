@@ -7707,6 +7707,44 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   mask those conditions). 1601 swift tests, 0 failures.
   Date/Author: 2026-11-21, cursor235's builder for #443.
 
+- Decision (#443, the hosted smoke of 2a3c7e53 against main dfe6f443, run 44997131965, 2026-11-21; narrows the two
+  entries above): **the rule refuses only a node that has moved into a different control.** The smoke found two false
+  refusals against main. (1) `overlaprow`, Electron: links A and F overlap in a row, the record takes A's decoration, A
+  is removed and the decoration stays in the row under the unchanged front link F; the click at F's left padding hit
+  the decoration itself (`sameElement`), so the vouch, which walked from the hit, never saw F. Main landed on F 2/2, the
+  build refused 2/2. (2) `rolechange`, Safari, measured: the page sets role="button" on A's own element, WebKit
+  re-creates A's accessibility object (the old handle confirmed gone) as an AXButton, and the decoration survives in
+  it. Main kept and landed 4/4 (`hitAboveNode`, hit AXButton), the build refused 4/4; CfT and Electron keep A's object
+  and kept. `decomove` refused 4/4 on CfT and Electron, and `overlapinto` (the review's shape) kept everywhere.
+  So, with the recorded control confirmed gone, the guard reads the control the node lies in now (`liveControl`: its
+  nearest ancestor that acts on its own, an interactive role or AXPress read now, below its document, within
+  `stalePointAncestorLevels` parents, an ancestor whose role and actions do not read passed over) and refuses
+  `controlGone` only when that control exists and is another (`controlDiffers`): its label reads otherwise
+  (`stalePointLabelsAgree`, whose absent or unread side agrees), or its frame read now is more than 2 pt off the
+  recorded control's (a recorded control without a frame, or a frame unread now, says nothing). The role is not
+  compared, so `rolechange` keeps. No control now (`overlaprow`, or an ancestor whose role does not read) keeps main's
+  verdict. The vouch stays, since a recorded control in place at the point still takes a click the narrowed rule would
+  refuse (the decoration moved into front link F, whose label is not A's), and now checks both the node's live control
+  and the hit's (`controlVouches`, by recorded handle, shown at the point, in place): with the decoration in F, the hit
+  on F, on the decoration or on nothing keeps; with it in a new link N at A's place, the hit on F's text keeps by the
+  hit's control.
+  Limit, by design: a replacement with A's label at A's place (a same-label link slid into A's row, and the decoration
+  moved into it) reads as A re-created and keeps main's verdict, which clicks it; `decomove` refuses because B reads
+  "Next" where A read "Inbox". A control re-created in place with its label read from another attribute than before
+  (title one side, description the other) still agrees, as `stalePointLabelsAgree` lets an absent side agree.
+  Proven offline (`OverlayTargetTests`, 31 tests): the `decomove` fakes now give B another label, as the cell does, and
+  refuse; `testADecorationLeftInNoControlKeepsMainsVerdict` (`overlaprow`: the hit on the decoration, nothing or F) and
+  `testADecorationInItsControlReCreatedWithAnotherRoleKeepsMainsVerdict` (`rolechange`: an AXButton with A's label and
+  frame keeps, the hit on it or the decoration; 3 pt off or another label refuses) are new; the vouch test adds the
+  no-hit case; B's role unread now keeps (no known control). Against 2a3c7e53's StalePoint.swift both new tests, the
+  vouch test and the unread-role case fail. Mutations each fail a test: the call removed, `isGone`'s fallback, the
+  inert-only and `recordedHit` conditions, the label check, the frame check, the node's vouch and the hit's vouch. One
+  survives: dropping the own-handle condition, since a node re-created with its control (`remount`) now also keeps by
+  the same-control comparison; the condition stays as the cheaper guard of the keep cells. 153 StalePoint tests and
+  1603 swift tests, 0 failures.
+  Not measured live: this build on the smoke's cells and on #433's and #340's keep cells.
+  Date/Author: 2026-11-21, cursor235's builder for #443.
+
 ## Outcomes & Retrospective
 
 Pending for the initiative — written at finish. M1a's interim account (2026-10-20) follows; the full record is `docs/doperpowers/specs/2026-10-18-own-native-engine-m1a-report.md`.

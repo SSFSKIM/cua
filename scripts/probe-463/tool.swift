@@ -726,6 +726,7 @@ func watch(_ q: [String: Any]) -> [String: Any] {
   // change kept as [ms, focused frame, main frame] (null where a read fails).
   let personApp = (q["person"] as? NSNumber).map { prepare(AXUIElementCreateApplication($0.int32Value)) }
   var personSamples: [[Any]] = [], lastPerson = "", personReads = 0
+  let systemWide = prepare(AXUIElementCreateSystemWide())
   // `fresh` (#463): every on-screen window not in the list at the watch's start, of any owner but a `skip` pid, at least
   // 10 pt each way, any layer; each change of that set kept as [ms, [[n, pid, owner, layer, alpha, x, y, w, h], ...]].
   let freshOn = (q["fresh"] as? Bool) == true
@@ -773,9 +774,12 @@ func watch(_ q: [String: Any]) -> [String: Any] {
     if let personApp {
       let focused = wire(element(attr(personApp, kAXFocusedWindowAttribute)).flatMap(frameOf))
       let main = wire(element(attr(personApp, kAXMainWindowAttribute)).flatMap(frameOf))
+      // #469: the frontmost app each sample, the system-wide AXFocusedApplication's pid (0 when it does not read).
+      var frontPid: pid_t = 0
+      if let f = element(attr(systemWide, kAXFocusedApplicationAttribute)) { frontPid = pidOf(f) }
       personReads += 1
-      let k = "\(focused)|\(main)"
-      if k != lastPerson { personSamples.append([r1(nowMs() - t0), focused, main]); lastPerson = k }
+      let k = "\(focused)|\(main)|\(frontPid)"
+      if k != lastPerson { personSamples.append([r1(nowMs() - t0), focused, main, Int(frontPid)]); lastPerson = k }
       usleep(5_000)
     } else { usleep(10_000) }
   }

@@ -36,6 +36,10 @@ on:
         description: '#469: dump the closed buttons attributes instead (yes or empty)'
         type: string
         default: ''
+      kit:
+        description: 'measure (#463) or qual469 (#469 qualification)'
+        type: string
+        default: measure
 permissions:
   contents: read
 jobs:
@@ -56,6 +60,7 @@ jobs:
       ROUTES: ${{ inputs.routes }}
       MODES: ${{ inputs.modes }}
       SIGNAL: ${{ inputs.signal }}
+      KIT: ${{ inputs.kit }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -64,6 +69,7 @@ jobs:
       - name: Apps
         run: |
           bash scripts/probe-316/install.sh chrome
+          if [ "$KIT" = qual469 ]; then npm ci --prefix scripts/probe-463/electron --no-audit --no-fund; fi
           for d in com.apple.TextEdit com.apple.ScriptEditor2 com.apple.calculator; do
             defaults write "$d" ApplePersistenceIgnoreState -bool YES
             defaults write "$d" NSQuitAlwaysKeepsWindows -bool NO
@@ -86,6 +92,15 @@ jobs:
         shell: bash
         run: |
           extra=()
+          if [ "$KIT" = qual469 ]; then
+            if [ -n "$REPS" ]; then extra+=(--reps "$REPS"); fi
+            if [ -n "$CONTROLS" ]; then extra+=(--controls "$CONTROLS"); fi
+            if [ -n "$MODES" ]; then extra+=(--modes "$MODES"); fi
+            P463_ENGINE_REF="$ENGINE_SHA" P463_ENGINE_LABEL="$LABEL" node scripts/probe-463/qual469.mjs --engine "$RUNNER_TEMP/eng/release/cua-engine" \
+              --tool "$RUNNER_TEMP/tool463" --out "$RUNNER_TEMP/probe-463" --budget 145 "${extra[@]}"
+            node scripts/probe-463/reader469.mjs "$RUNNER_TEMP/probe-463/results.json" | tee "$RUNNER_TEMP/probe-463/summary.txt"
+            exit 0
+          fi
           if [ -n "$REPS" ]; then extra+=(--reps "$REPS"); fi
           if [ -n "$CONTROLS" ]; then extra+=(--controls "$CONTROLS"); fi
           if [ -n "$ROUTES" ]; then extra+=(--routes "$ROUTES"); fi

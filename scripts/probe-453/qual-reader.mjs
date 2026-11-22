@@ -11,7 +11,7 @@ const answerOf = r => {
   return `${a.error ?? `ok route ${JSON.stringify(a.route)}`}${o}${pc}`;
 };
 // The fix's overlay cells; a p- cell (parity, including the element click by ID that ruling 1066 cut from the fix) expects main's answer.
-const OVERLAY_CELLS = /^(omnibox|datalist|permission|popover)\/[^/]+\/(?!p-)/;
+const OVERLAY_CELLS = /^(omnibox|omniremove|datalist|permission|popover)\/[^/]+\/(?!p-)/;
 const pct = (xs, q) => { const v = xs.filter(x => typeof x === 'number').sort((a, b) => a - b); return v.length ? Math.round(v[Math.min(v.length - 1, Math.floor(q * v.length))]) : '-'; };
 const isTaken = r => /^(taken|changed|clicked|typed$|opened)/.test(r.effect ?? '');
 /// The spike's and the order measure's table (ruling 1069: the window listed over the cover's is part of the bar, beside

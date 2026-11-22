@@ -12,6 +12,9 @@
 //                      its "Allow while visiting the site" over the recorded point. Chrome changes no shown prompt's
 //                      buttons, so a replaced prompt is the re-layout that can be made. Any geolocation answer is a
 //                      neighbour taken.
+//   omniremove/click   the omnibox popup's own "Remove suggestion" button on a history row (the pointer rested on the row's
+//                      right end so Chrome shows it), a coordinate click at it: refused or the suggestion removed, never a
+//                      navigation (ruling 1083)
 // The fix (ruling 1071, fix/453-axpress) AXPresses the recorded row's own handle: overlayClick {kind, route: "action",
 // confirmed} or {kind, refused}. Frontmost, Chrome's permission prompt is the observed window itself (out of the fix's
 // scope, main clicks it as its own window): those rows are marked `observedIsOverlay` and kept apart.
@@ -415,6 +418,37 @@ const OMNI = {
 };
 const KINDS = {
   omnibox: OMNI,
+  omniremove: {
+    app: 'chrome',
+    // The popup opened as OMNI's, then the pointer rested on a non-default history row's right end, where Chrome draws the
+    // row's Remove suggestion button on hover.
+    open: async c => {
+      await OMNI.open(c);
+      const mid = await c.observe(`${c.row.label}-mid`);
+      const ov = await ask({op: 'overlay', pid: c.pid, window: winArr(mid.window.frame)});
+      const row = ov.popup && OMNI.pick(mid, rect(ov.popup.bounds));
+      if (!row) throw new Error('no history row to hover');
+      c.row.hovered = {path: row.path, frame: row.frame};
+      await ask({op: 'hover', x: row.frame[0] + row.frame[2] - 22, y: row.frame[1] + row.frame[3] / 2});
+      await sleep(700);
+    },
+    pick: (sky, pr) => {
+      const xs = nodesIn(sky, pr).filter(n => ['AXButton', 'AXLink'].includes(n.role) && /remove suggestion/i.test(nodeLabel(n)));
+      const bands = omniBands(sky, pr);
+      const owner = n => bands.find(b => n.frame.y >= b.frame.y - 1 && n.frame.y + n.frame.height <= b.frame.y + b.frame.height + 1);
+      const n = xs.find(n => /\/results-(alpha|beta)\b/.test(nodeLabel(owner(n) ?? {}))) ?? xs[0];
+      return n ? asPick(n, {rowPath: pathOf(nodeLabel(owner(n) ?? {})), buttons: xs.length}) : null;
+    },
+    // Navigated (a page of the kit's loaded): the failure. Removed: the popup still open and its row gone. Kept: the row
+    // still listed.
+    effect: ctx => {
+      const l = ctx.loads.find(l => /\/results/.test(l));
+      if (l) return `wrongRow:navigated ${l.replace(/^https?:\/\/[^/]+/, '')}`;
+      const rows = ctx.row.rowsAfter;
+      if (!rows) return null;
+      return rows.some(t => pathOf(t) === ctx.pick.rowPath) ? 'kept' : 'taken(removed)';
+    },
+  },
   datalist: {
     app: 'chrome',
     // The engine's click on the field's arrow (#463: AXPress behind, the posted click frontmost) opens every option.
@@ -540,6 +574,7 @@ if (!SPIKE && !ORDER) for (const m of Object.keys(MODES)) {
   cell('datalist', m, 'click', 6); cell('datalist', m, 'p-element', 5); cell('datalist', m, 'relayout', 6);
   cell('permission', m, 'allow', 5); cell('permission', m, 'block', 5); cell('permission', m, 'p-element', 6); cell('permission', m, 'relayout', 6);
   cell('popover', m, 'click', 6);
+  cell('omniremove', m, 'click', 6);
 }
 if (!SPIKE && !ORDER) {
 cell('page', 'shared-behind', 'p-page', 5);
@@ -583,6 +618,7 @@ async function runRow(app, cell, rep) {
       key: async key => { const r = await w.execute('press_key', {pid, key}); row.steps.push({step: `key:${key}`, answer: answer(r)}); await sleep(800); },
       type: async t => { const r = await w.execute('type_text', {pid, text: t}); row.steps.push({step: `type:${t.length}`, answer: answer(r)}); await sleep(800); },
       toolOpen: async (find, action) => { const r = await ask({op: 'open', pid, find, action}, 15_000); row.steps.push({step: `open:${action}`, answer: r}); if (r.error) throw new Error(`opener ${r.error}`); row.openerBefore = {value: r.value}; await sleep(900); },
+      observe: async label => observe(w, pid, label),
       clickElement: async token => { const r = await w.execute('click', {pid, element: token}); row.steps.push({step: 'open:element', answer: answer(r)}); if (r.error) throw new Error(`opener element click ${errName(r)}`); },
       clickAt: async (p, sky) => { const r = await w.execute('click', {pid, ...toPixels(sky, p).px}); row.steps.push({step: 'open:click', answer: answer(r)}); if (r.error) throw new Error(`opener click ${errName(r)}`); },
     };
@@ -682,7 +718,8 @@ async function runRow(app, cell, rep) {
     const ev = events.slice(mark);
     const after = await ask({op: 'overlay', pid, window: winArr(wf)});
     const openerAfter = row.openerBefore ? await ask({op: 'opener'}) : null;
-    const omniAfter = cell.kind === 'omnibox' ? await ask({op: 'omnibox', pid}) : null;
+    const omniAfter = ['omnibox', 'omniremove'].includes(cell.kind) ? await ask({op: 'omnibox', pid}) : null;
+    if (cell.kind === 'omniremove') { const ra = await ask({op: 'rows', pid, window: winArr(wf)}); row.rowsAfter = ra.popup ? (ra.elements ?? []).filter(e => e.row).map(e => String(e.text ?? '').slice(0, 160)) : null; }
     const caretAfter = cell.app === 'textedit' ? await ask({op: 'caret', pid, window: winArr(wf)}) : null;
     const watch = await watching;
     if (living) {

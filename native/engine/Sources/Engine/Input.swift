@@ -437,8 +437,12 @@ extension Engine {
   /// confirmed by its effect, or is refused, never posted (#454, MenuItemPoint.swift); one on a closed pop-up button goes
   /// as the button's AXPress, one on a native combo box's arrow as the arrow's, each confirmed by what it opens and the
   /// person's window order put back; a combo box whose arrow has no action, the app not frontmost, is refused; none is
-  /// posted (#458, PopUpPoint.swift). Route 4 takes route 3's place for an app the owner's override names. The process
-  /// serving the target receives the input, after the forbidden list has been checked against it.
+  /// posted (#458, PopUpPoint.swift). With the app not frontmost (#463), a kept left click on an AppKit menu button or
+  /// colour well goes as its AXPress, a kept right click on an AppKit element as its AXShowMenu and one on a page's
+  /// `<input list>` by the element click's route, each confirmed by what it opens; in shared mode a click on a Chromium
+  /// view's own popup button and a right click in a web page are refused, nothing posted. Route 4 takes route 3's place
+  /// for an app the owner's override names. The process serving the target receives the input, after the forbidden list
+  /// has been checked against it.
   func click(_ args: [String: Any], _ context: ExecutionContext) throws -> Any {
     let token = try elementTokenArg(args, lineage: context.lineage)
     let hasElement = token != nil
@@ -615,18 +619,28 @@ extension Engine {
         // #458: a kept point on a closed pop-up button or a combo box's arrow is carried by its AXPress, confirmed by what
         // it opens, the person's window order put back; never posted. A web page behind in shared mode keeps #282's
         // route, which presses a `<select>` itself; there its press gets the same check before it, effect and restore.
+        // #463: with the app behind, an AppKit menu button or colour well (AXPress), an AppKit element's right click
+        // (AXShowMenu) and a page's `<input list>` (the element click's route) are carried the same way; a Chromium view's
+        // popup button and a right click in a web page are refused in shared mode, nothing sent.
         var webAreaPopUp: PopUpTarget<AXUIElement>?
-        if stale.refusal == nil, forced == nil, button == .left, count == 1, route == .activation {
-          let leftToWebAreaRoute = context.connection.desktop == .shared && pointer.view.mayBeWebArea
+        if stale.refusal == nil, forced == nil, button == .left || button == .right, count == 1, route == .activation {
+          let shared = context.connection.desktop == .shared
+          let leftToWebAreaRoute = button == .left && shared && pointer.view.mayBeWebArea
             && !ActivationSystem().believesItHasFocus(owner)
           let answered = latest.outcome.answered
           let pressOwner = answered.map { ownerPid(of: $0, fallback: appPid) } ?? appPid
           let pids: Set<pid_t> = [appPid, pressOwner]
+          let frontmost = { frontmostPid().map(pids.contains) == true }
+          let recordedAt = recordedHolds(stale.verdict, same: { CFEqual($0, $1) })
           let decision = signposted("click.popUp") {
-            popUpPoint(hit: answered, recorded: recordedPopUp(stale.verdict, same: { CFEqual($0, $1) }), point: placed.point, pids: pids,
-                       reads: .live, frontmost: { frontmostPid().map(pids.contains) == true }, windows: onScreenWindowListRead)
+            button == .left
+              ? popUpPoint(hit: answered, recorded: recordedPopUp(stale.verdict, same: { CFEqual($0, $1) }), point: placed.point, pids: pids,
+                           reads: .live, shared: shared, recordedAt: recordedAt, frontmost: frontmost, windows: onScreenWindowListRead)
+              : contextMenuPoint(hit: answered, recordedAt: recordedAt, recordedInWebArea: recordedNodeInWebArea(stale.verdict),
+                                 point: placed.point, pids: pids, reads: .live, shared: shared, frontmost: frontmost,
+                                 windows: onScreenWindowListRead)
           }
-          if leftToWebAreaRoute {
+          if leftToWebAreaRoute, popUpLeftToWebAreaRoute(decision) {
             if case .press(let target) = decision { webAreaPopUp = target }
           } else {
             var pressRoute = InputRoute.action

@@ -25,6 +25,10 @@ final class PopUpPointTests: XCTestCase {
     var expanded: Bool?
     /// What its AXDOMClassList read answers: AppKit's is unsupported (#469's measurement).
     var viewClass: PopUpViewClass = .unsupported
+    /// AXHasPopup, AXPopupValue and AXAutocompleteValue (#463's signal run): unsupported on AppKit's, so nil.
+    var hasPopup: Bool?
+    var popupValue: String?
+    var autocomplete: String?
     /// Its AXParent read fails now.
     var parentFails = false
     /// Runs as its AXExpanded is read (time passing in a read).
@@ -62,7 +66,7 @@ final class PopUpPointTests: XCTestCase {
   private var reads: PopUpReads<Node> {
     PopUpReads(role: { $0.role }, parent: { $0.parentFails ? nil : $0.parent }, children: { $0.children }, enabled: { $0.enabled }, actions: { $0.actions },
                frame: { $0.frame }, expanded: { node in node.onExpandedRead?(); return node.expanded }, same: { $0 === $1 },
-               viewClass: { $0.viewClass })
+               viewClass: { $0.viewClass }, hasPopup: { $0.hasPopup }, popupValue: { $0.popupValue }, autocomplete: { $0.autocomplete })
   }
 
   private func windows() -> [ListedWindow]? {
@@ -606,7 +610,7 @@ final class PopUpPointTests: XCTestCase {
     let scene = combo()
     scene.arrow.actions = []
     let decision = decide(hit: scene.arrow, scene.verdict, at: arrowPoint)
-    guard case .refuse(let role) = decision else { return XCTFail("refused, not \(decision)") }
+    guard case .refuse(.noAction, let role) = decision else { return XCTFail("refused, not \(decision)") }
     XCTAssertEqual(role, "AXComboBox")
     var meta = freshMeta()
     XCTAssertThrowsError(try click(decision, meta: &meta, held: { XCTFail("nothing held") }) { _, _ in
@@ -988,9 +992,12 @@ final class PopUpPointTests: XCTestCase {
 
   /// Site information and tab search open a layer-0 bubble that the AXPress brings to the front over the person's window
   /// (#463's run 44959835166: Chrome frontmost 6/6 each, answering a false `clickUnconfirmed`); no attribute read before
-  /// the press tells them from the app menu but its view class, which is not allowlisted (ruling 1036). All three keep
-  /// main's posted click, `kept: "browserView"`, with nothing held or pressed and no window list read.
+  /// the press tells them from the app menu but its view class, which is not allowlisted (ruling 1036). With Chrome
+  /// frontmost (and in dedicated mode, `testWhatSharedModeRefusesDedicatedModePosts`) all three keep main's posted click,
+  /// `kept: "browserView"`, with nothing held or pressed and no window list read; behind in shared mode #463 refuses them
+  /// (`testChromiumPopUpButtonsBehindAreRefusedWithNothingSent`).
   func testChromesToolbarPopUpsKeepMainsPostedClickWithNothingPressed() throws {
+    frontmost = true
     for name in ["site information", "tab search", "app menu"] {
       let scene = chromeToolbar(name)
       let decision = decide(hit: scene.popup, scene.verdict, at: scene.point)
@@ -1052,5 +1059,388 @@ final class PopUpPointTests: XCTestCase {
 
   // MARK: The review of 7e5bb454..67cf8b26 (the hard bar)
 
+  // MARK: #463: what a background click opens and route 3's release closes
 
+  // The shapes of #463's kit (scripts/probe-337/README.md §"#463", run 44959835166, and §"#469 signal", run 44970638020):
+  // TextEdit's `list style` AXMenuButton (858, 70, 48×22) opens a layer-101 menu (854, 92, 96×285); its `document
+  // actions` AXMenuButton (558, 38, 12×18) a layer-0 popover (232, 55, 664×150) 0.5–1.5 s in; its `text color` AXColorWell
+  // (495, 70, 22×22) a layer-0 popover (393, 91, 225×246); its text view, an AXTextArea (400, 131, 603×555) with AXShowMenu
+  // alone, a layer-101 context menu (521, 165, 225×248). Chrome's profile button is an AXButton whose AXDOMClassList reads
+  // and AXHasPopup is true; its bookmark star and Back are AXButtons with AXHasPopup false; a page's blank point hit-tests
+  // as an AXGroup in the AXWebArea; its `<input list>` (416, 158, 188×23) is an AXComboBox with AXPopupValue `listbox`
+  // and AXAutocompleteValue `list`, whose suggestions open as a layer-999 window (485, 182, 164×130).
+
+  private let listStyleFrame = CGRect(x: 858, y: 70, width: 48, height: 22)
+  private let documentActionsFrame = CGRect(x: 558, y: 38, width: 12, height: 18)
+  private let colorWellFrame = CGRect(x: 495, y: 70, width: 22, height: 22)
+  private let textViewFrame = CGRect(x: 400, y: 131, width: 603, height: 555)
+  private let datalistFrame = CGRect(x: 416, y: 158, width: 188, height: 23)
+  private var listStyleMenu: ListedWindow { ListedWindow(number: 101, owner: app, layer: menuWindowLayer, bounds: CGRect(x: 854, y: 92, width: 96, height: 285)) }
+  private var documentPopover: ListedWindow { ListedWindow(number: 102, owner: app, layer: 0, bounds: CGRect(x: 232, y: 55, width: 664, height: 150)) }
+  private var colorPopover: ListedWindow { ListedWindow(number: 103, owner: app, layer: 0, bounds: CGRect(x: 393, y: 91, width: 225, height: 246)) }
+  private var contextMenu: ListedWindow { ListedWindow(number: 104, owner: app, layer: menuWindowLayer, bounds: CGRect(x: 521, y: 165, width: 225, height: 248)) }
+  private var suggestions: ListedWindow { ListedWindow(number: 105, owner: app, layer: datalistWindowLayer, bounds: CGRect(x: 485, y: 182, width: 164, height: 130)) }
+  /// Chrome's page context menu on the same field (a layer-101 window): not its suggestions.
+  private var pageMenu: ListedWindow { ListedWindow(number: 106, owner: app, layer: menuWindowLayer, bounds: CGRect(x: 511, y: 163, width: 284, height: 412)) }
+
+  /// A control in a window, recorded at its own point and hit there (`sameElement`).
+  private func appKit(_ role: String, frame: CGRect, actions: [String]) -> (node: Node, verdict: StalePointVerdict<Node>, point: CGPoint) {
+    let window = Node("AXWindow")
+    let node = Node(role, frame: frame, parent: window)
+    node.actions = actions
+    let point = CGPoint(x: frame.midX, y: frame.midY)
+    var verdict = StalePointVerdict<Node>(reason: .sameElement, node: recorded(node, ancestor: 0), current: node, point: point)
+    verdict.nodes = [recorded(window), recorded(node, ancestor: 0)]
+    return (node, verdict, point)
+  }
+
+  /// Chrome's toolbar AXButton (its view class read, outside every page), recorded and hit at its point.
+  private func chromeButton(hasPopup: Bool?) -> (node: Node, verdict: StalePointVerdict<Node>, point: CGPoint) {
+    let window = Node("AXWindow")
+    let toolbar = Node("AXToolbar", parent: window)
+    let button = Node("AXButton", frame: CGRect(x: 944, y: 77, width: 34, height: 34), parent: toolbar)
+    button.actions = ["AXPress", "AXShowMenu"]
+    button.viewClass = .answered
+    button.hasPopup = hasPopup
+    let point = CGPoint(x: 961, y: 94)
+    var verdict = StalePointVerdict<Node>(reason: .sameElement, node: recorded(button, ancestor: 1), current: button, point: point)
+    verdict.nodes = [recorded(window), recorded(toolbar, ancestor: 0), recorded(button, ancestor: 1)]
+    return (button, verdict, point)
+  }
+
+  /// Chrome's page: window > AXScrollArea > AXWebArea > AXGroup (a blank point's hit) > the `<input list>` AXComboBox.
+  private func page() -> (group: Node, field: Node, groupVerdict: StalePointVerdict<Node>, fieldVerdict: StalePointVerdict<Node>) {
+    let window = Node("AXWindow")
+    let scroll = Node("AXScrollArea", parent: window)
+    let web = Node("AXWebArea", frame: CGRect(x: 400, y: 118, width: 620, height: 592), parent: scroll)
+    let group = Node("AXGroup", frame: CGRect(x: 400, y: 118, width: 620, height: 592), parent: web)
+    let field = Node("AXComboBox", frame: datalistFrame, parent: group)
+    field.actions = ["AXPress", "AXShowMenu", "AXScrollToVisible"]
+    field.expanded = false
+    field.viewClass = .answered
+    field.hasPopup = true
+    field.popupValue = "listbox"
+    field.autocomplete = "list"
+    let nodes = [recorded(window), recorded(scroll, ancestor: 0), recorded(web, ancestor: 1), recorded(group, ancestor: 2),
+                 recorded(field, ancestor: 3)]
+    var groupVerdict = StalePointVerdict<Node>(reason: .sameElement, node: nodes[3], current: group, point: CGPoint(x: 700, y: 600))
+    groupVerdict.nodes = nodes
+    var fieldVerdict = StalePointVerdict<Node>(reason: .sameElement, node: nodes[4], current: field, point: CGPoint(x: 595, y: 169))
+    fieldVerdict.nodes = nodes
+    return (group, field, groupVerdict, fieldVerdict)
+  }
+
+  /// #463's left-click decision: the recorded pop-up control and the record's agreement on any other, `shared` the mode.
+  private func decide463(hit: Node?, _ verdict: StalePointVerdict<Node>, at point: CGPoint, shared: Bool = true) -> PopUpPoint<Node> {
+    popUpPoint(hit: hit, recorded: recordedPopUp(verdict, same: { $0 === $1 }), point: point, pids: [app], reads: reads, shared: shared,
+               recordedAt: recordedHolds(verdict, same: { $0 === $1 }), frontmost: { self.frontmost }, windows: windows)
+  }
+
+  /// #463's right-click decision.
+  private func rightClick(hit: Node?, _ verdict: StalePointVerdict<Node>, at point: CGPoint, shared: Bool = true) -> PopUpPoint<Node> {
+    contextMenuPoint(hit: hit, recordedAt: recordedHolds(verdict, same: { $0 === $1 }), recordedInWebArea: recordedNodeInWebArea(verdict),
+                     point: point, pids: [app], reads: reads, shared: shared, frontmost: { self.frontmost }, windows: windows)
+  }
+
+  /// A delivered click: pressed once after the hold, by `action`, nothing posted; `opens` is the list after the action.
+  private func assertDelivered(_ decision: PopUpPoint<Node>, kind: PopUpControl, action: String, pressing node: Node,
+                               opens: [ListedWindow]?, window: CGWindowID?, file: StaticString = #filePath, line: UInt = #line) throws {
+    guard case .press(let target) = decision else { return XCTFail("delivered, not \(decision)", file: file, line: line) }
+    XCTAssertEqual(target.kind, kind, file: file, line: line)
+    XCTAssertTrue(target.element === node, file: file, line: line)
+    var performed: [String] = []
+    var held = 0
+    var meta = freshMeta()
+    let run = {
+      try self.click(decision, meta: &meta, held: { held += 1 }) { pressed, name in
+        XCTAssertTrue(pressed === node, file: file, line: line)
+        XCTAssertEqual(held, 1, "pressed after the hold", file: file, line: line)
+        performed.append(name)
+        if let opens { self.list = opens }
+        return .success
+      }
+    }
+    if window != nil {
+      XCTAssertTrue(try run(), "carried: nothing posted", file: file, line: line)
+    } else {
+      XCTAssertThrowsError(try run(), file: file, line: line) {
+        XCTAssertEqual(($0 as? EngineError)?.errorName, "clickUnconfirmed", file: file, line: line)
+      }
+    }
+    XCTAssertEqual(performed, [action], file: file, line: line)
+    XCTAssertEqual(wire(meta)?["kind"] as? String, kind.rawValue, file: file, line: line)
+    XCTAssertEqual(wire(meta)?["action"] as? String, action, file: file, line: line)
+    XCTAssertEqual(wire(meta)?["effect"] as? String, window == nil ? "unconfirmed" : "confirmed", file: file, line: line)
+    XCTAssertEqual(wire(meta)?["menuWindow"] as? Int, window.map { Int($0) }, file: file, line: line)
+  }
+
+  /// A refused click: nothing held, performed or posted, `backgroundClickRefused` naming the ways through.
+  private func assertRefused(_ decision: PopUpPoint<Node>, _ why: PopUpRefusal, message: String,
+                             file: StaticString = #filePath, line: UInt = #line) {
+    guard case .refuse(why, _) = decision else { return XCTFail("refused \(why), not \(decision)", file: file, line: line) }
+    var meta = freshMeta()
+    XCTAssertThrowsError(try click(decision, meta: &meta, held: { XCTFail("nothing held", file: file, line: line) }) { _, _ in
+      XCTFail("nothing performed", file: file, line: line)
+      return .success
+    }, file: file, line: line) { error in
+      XCTAssertEqual((error as? EngineError)?.errorName, "backgroundClickRefused", file: file, line: line)
+      XCTAssertEqual((error as? EngineError)?.message, message, file: file, line: line)
+    }
+    XCTAssertNil(meta.startedAt, "nothing sent", file: file, line: line)
+    XCTAssertNil(meta.inputRoute, file: file, line: line)
+    XCTAssertEqual(wire(meta)?["refused"] as? String, why.rawValue, file: file, line: line)
+  }
+
+  /// TextEdit behind: `list style`'s AXPress, confirmed by its layer-101 menu, the person's window put back as #458's; and
+  /// with no window opening, `clickUnconfirmed` naming the menu button.
+  func testAnAppKitMenuButtonBehindIsItsAXPressConfirmedByItsMenu() throws {
+    let scene = appKit("AXMenuButton", frame: listStyleFrame, actions: ["AXShowMenu", "AXPress"])
+    try assertDelivered(decide463(hit: scene.node, scene.verdict, at: scene.point), kind: .menuButton, action: "AXPress",
+                        pressing: scene.node, opens: [listStyleMenu, appWindow, person], window: 101)
+    XCTAssertEqual(restores, [[40]], "the restore, unchanged after a confirmed open")
+    list = [person, appWindow]
+    var meta = freshMeta()
+    XCTAssertThrowsError(try click(decide463(hit: scene.node, scene.verdict, at: scene.point), meta: &meta) { _, _ in .success }) {
+      XCTAssertEqual(($0 as? EngineError)?.message,
+        "The click could not be confirmed: it was carried by the menu button's AXPress action in TextEdit, since a posted click can close what it opens, and no menu or panel was seen to open at the button. Observe the app with get_app_state before any retry, and never retry blindly.")
+    }
+  }
+
+  /// `document actions`' popover is a layer-0 window of TextEdit's at the button, which confirms it, at any time within
+  /// #458's 1.5 s wait (measured 560–1515 ms); later, the answer is unconfirmed, and the wait is not stretched for it.
+  func testAMenuButtonsPopoverOfAnyLayerConfirmsWithinTheWaitAndNotAfter() throws {
+    let scene = appKit("AXMenuButton", frame: documentActionsFrame, actions: ["AXPress", "AXShowMenu"])
+    for (opensAt, confirms) in [(1026.0, true), (1515.0, false)] {
+      list = [person, appWindow]
+      var clock = 0.0
+      var pressedAt: Double?
+      var meta = freshMeta()
+      let run = {
+        try popUpClick(self.decide463(hit: scene.node, scene.verdict, at: scene.point), app: "TextEdit", route: .activation,
+                       appWindow: self.observed, pids: [self.app], ownPid: 999, reads: self.reads, windows: {
+          guard let at = pressedAt, clock - at >= opensAt else { return self.list }
+          return [self.person, self.documentPopover, self.appWindow]
+        }, now: { clock }, sleep: { clock += $0 }, hold: { _, _ in }, checkInFlight: {},
+           perform: { _, _ in pressedAt = clock; return .success }, restore: { _, _, _ in self.restoreAnswer }, meta: &meta)
+      }
+      if confirms {
+        XCTAssertTrue(try run())
+        XCTAssertEqual(wire(meta)?["menuWindow"] as? Int, 102)
+      } else {
+        XCTAssertThrowsError(try run()) { XCTAssertEqual(($0 as? EngineError)?.errorName, "clickUnconfirmed") }
+        XCTAssertLessThan(wire(meta)?["ms"] as? Double ?? .infinity, 1515)
+      }
+    }
+  }
+
+  /// The colour well behind: its AXPress, confirmed by its layer-0 popover; a window far from it confirms nothing.
+  func testAnAppKitColorWellBehindIsItsAXPressConfirmedByItsPopover() throws {
+    let scene = appKit("AXColorWell", frame: colorWellFrame, actions: ["AXPress", "Name:Show color panel\nTarget:0x0\nSelector:(null)"])
+    try assertDelivered(decide463(hit: scene.node, scene.verdict, at: scene.point), kind: .colorWell, action: "AXPress",
+                        pressing: scene.node, opens: [person, colorPopover, appWindow], window: 103)
+    XCTAssertEqual(restores, [], "the popover left the order unchanged: nothing restored")
+    list = [person, appWindow]
+    let far = ListedWindow(number: 107, owner: app, layer: 0, bounds: CGRect(x: 40, y: 600, width: 50, height: 50))
+    try assertDelivered(decide463(hit: scene.node, scene.verdict, at: scene.point), kind: .colorWell, action: "AXPress",
+                        pressing: scene.node, opens: [far, person, appWindow], window: nil)
+  }
+
+  /// A right click on TextEdit's text view behind: its AXShowMenu, confirmed by a layer-101 menu at it; a new layer-0
+  /// window there is no context menu.
+  func testAnAppKitRightClickBehindIsItsShowMenuConfirmedByItsMenu() throws {
+    let scene = appKit("AXTextArea", frame: textViewFrame, actions: ["AXShowMenu"])
+    let point = CGPoint(x: 600, y: 300)
+    try assertDelivered(rightClick(hit: scene.node, scene.verdict, at: point), kind: .contextMenu, action: "AXShowMenu",
+                        pressing: scene.node, opens: [contextMenu, appWindow, person], window: 104)
+    XCTAssertEqual(restores, [[40]])
+    list = [person, appWindow]
+    let panel = ListedWindow(number: 108, owner: app, layer: 0, bounds: CGRect(x: 521, y: 165, width: 225, height: 248))
+    try assertDelivered(rightClick(hit: scene.node, scene.verdict, at: point), kind: .contextMenu, action: "AXShowMenu",
+                        pressing: scene.node, opens: [person, panel, appWindow], window: nil)
+  }
+
+  /// A right click keeps main's path on signals that disagree, a Chromium view's element, an element with no AXShowMenu,
+  /// an ancestry that does not read, or a window list that does not read; nothing held or performed.
+  func testARightClickKeepsMainsPathWhereItsElementDoesNotQualify() throws {
+    let scene = appKit("AXTextArea", frame: textViewFrame, actions: ["AXShowMenu"])
+    let point = CGPoint(x: 600, y: 300)
+    let other = Node("AXTextArea", frame: textViewFrame, parent: scene.node.parent)
+    other.actions = ["AXShowMenu"]
+    guard case .kept(.notRecorded, _) = rightClick(hit: other, scene.verdict, at: point) else { return XCTFail("not recorded") }
+    scene.node.viewClass = .answered
+    guard case .kept(.browserView, _) = rightClick(hit: scene.node, scene.verdict, at: point) else { return XCTFail("a browser view's") }
+    scene.node.viewClass = .unsupported
+    scene.node.actions = ["AXPress"]
+    guard case .kept(.noAction, _) = rightClick(hit: scene.node, scene.verdict, at: point) else { return XCTFail("no AXShowMenu") }
+    scene.node.actions = ["AXShowMenu"]
+    scene.node.parentFails = true
+    guard case .kept(.ancestryUnread, _) = rightClick(hit: scene.node, scene.verdict, at: point) else { return XCTFail("ancestry unread") }
+    scene.node.parentFails = false
+    list = nil
+    guard case .kept(.windowsUnread, _) = rightClick(hit: scene.node, scene.verdict, at: point) else { return XCTFail("list unread") }
+    guard case .notPopUp = rightClick(hit: nil, scene.verdict, at: point) else { return XCTFail("no hit: main's") }
+    var meta = freshMeta()
+    XCTAssertFalse(try click(rightClick(hit: other, scene.verdict, at: point), meta: &meta, held: { XCTFail("nothing held") }) { _, _ in
+      XCTFail("nothing performed"); return .success
+    })
+    XCTAssertEqual(wire(meta)?["kept"] as? String, "notRecorded")
+  }
+
+  /// Chrome's toolbar pop-up buttons behind in shared mode (ruling 1039): refused with nothing held, pressed or posted,
+  /// naming the ways through, where main's posted click had answered ok and #458's press had made Chrome frontmost.
+  func testChromiumPopUpButtonsBehindAreRefusedWithNothingSent() {
+    for name in ["site information", "tab search", "app menu"] {
+      list = [person, appWindow]
+      listReads = 0
+      let scene = chromeToolbar(name)
+      assertRefused(decide463(hit: scene.popup, scene.verdict, at: scene.point), .browserView,
+        message: "TextEdit's own button here opens a menu or panel, which a click cua sends while TextEdit is not the frontmost app does not leave open, and its accessibility action would bring TextEdit to the front over the person's window. Nothing was sent. Ask the person to bring TextEdit to the front first, or reach the same command another way: a keyboard shortcut, or TextEdit's menu bar by its elements.")
+      XCTAssertEqual(listReads, 0, "\(name): decided before the window list is read")
+    }
+  }
+
+  /// Chrome's profile button, an AXButton whose AXHasPopup reads true, is refused the same way; Back (AXHasPopup false)
+  /// and the bookmark star (AXHasPopup false, which no attribute tells from Back) keep main's click, unrecorded, as does
+  /// an AppKit button (AXDOMClassList unsupported) and a profile button the record does not hold at the point.
+  func testChromesProfileButtonIsRefusedAndItsPlainButtonsAndStarKeepMainsClick() {
+    let profile = chromeButton(hasPopup: true)
+    assertRefused(decide463(hit: profile.node, profile.verdict, at: profile.point), .browserView,
+      message: "TextEdit's own button here opens a menu or panel, which a click cua sends while TextEdit is not the frontmost app does not leave open, and its accessibility action would bring TextEdit to the front over the person's window. Nothing was sent. Ask the person to bring TextEdit to the front first, or reach the same command another way: a keyboard shortcut, or TextEdit's menu bar by its elements.")
+    for hasPopup in [false, nil] as [Bool?] {
+      let plain = chromeButton(hasPopup: hasPopup)
+      guard case .notPopUp = decide463(hit: plain.node, plain.verdict, at: plain.point) else {
+        return XCTFail("Back and the star (AXHasPopup \(String(describing: hasPopup))): main's click")
+      }
+    }
+    let appKitButton = chromeButton(hasPopup: true)
+    appKitButton.node.viewClass = .unsupported
+    guard case .notPopUp = decide463(hit: appKitButton.node, appKitButton.verdict, at: appKitButton.point) else { return XCTFail("AppKit's") }
+    let unrecorded = chromeButton(hasPopup: true)
+    var elsewhere = unrecorded.verdict
+    elsewhere.node = nil
+    elsewhere.current = nil
+    guard case .notPopUp = decide463(hit: unrecorded.node, elsewhere, at: unrecorded.point) else { return XCTFail("one signal: main's") }
+    XCTAssertEqual(listReads, 0)
+  }
+
+  /// A right click in Chrome's page behind in shared mode is refused, nothing sent, by the hit's walk or, where the hit
+  /// walks to the window before the page tree is exposed (#288), by the record's web area.
+  func testARightClickInAWebPageBehindIsRefusedWithNothingSent() {
+    let scene = page()
+    let message = "TextEdit's web page does not keep a context menu open for a right click cua sends while TextEdit is not the frontmost app, and no accessibility action opens one there. Nothing was sent. Ask the person to bring TextEdit to the front first, or act on the page without its context menu: click the element by its ID, or use keys."
+    assertRefused(rightClick(hit: scene.group, scene.groupVerdict, at: CGPoint(x: 700, y: 600)), .webArea, message: message)
+    let coarse = Node("AXScrollArea", parent: Node("AXWindow"))
+    coarse.viewClass = .answered
+    XCTAssertTrue(recordedNodeInWebArea(scene.groupVerdict))
+    assertRefused(rightClick(hit: coarse, scene.groupVerdict, at: CGPoint(x: 700, y: 600)), .webArea, message: message)
+    XCTAssertEqual(listReads, 0)
+  }
+
+  /// A page's `<input list>` behind: the element click's route, its hold then AXPress (the bare AXPress opened nothing),
+  /// confirmed by the layer-999 suggestion window at the field; the page's own context menu (layer 101) is not it.
+  func testAnInputListBehindIsTheElementClickConfirmedByItsSuggestionWindow() throws {
+    let scene = page()
+    let point = CGPoint(x: 595, y: 169)
+    try assertDelivered(decide463(hit: scene.field, scene.fieldVerdict, at: point), kind: .datalist, action: "AXPress",
+                        pressing: scene.field, opens: [suggestions, person, appWindow], window: 105)
+    list = [person, appWindow]
+    try assertDelivered(decide463(hit: scene.field, scene.fieldVerdict, at: point), kind: .datalist, action: "AXPress",
+                        pressing: scene.field, opens: [pageMenu, person, appWindow], window: nil)
+    list = [suggestions, person, appWindow]
+    guard case .kept(.open, _) = decide463(hit: scene.field, scene.fieldVerdict, at: point) else { return XCTFail("already open") }
+  }
+
+  /// Any other field keeps #283's focus route (main's path here): a page combo box that is no `<input list>` by the
+  /// measured shape (an ARIA combo box whose AXAutocompleteValue is not `list`), and a native combo box's text.
+  func testAFieldThatIsNoInputListKeepsItsCaretPlacement() {
+    let scene = page()
+    let point = CGPoint(x: 595, y: 169)
+    for (popup, autocomplete) in [("listbox", "none"), ("menu", "list"), (nil, nil)] as [(String?, String?)] {
+      scene.field.popupValue = popup
+      scene.field.autocomplete = autocomplete
+      guard case .notPopUp = decide463(hit: scene.field, scene.fieldVerdict, at: point) else {
+        return XCTFail("\(String(describing: popup)), \(String(describing: autocomplete)): main's")
+      }
+    }
+    let native = combo()
+    var text = StalePointVerdict<Node>(reason: .sameElement, node: recorded(native.combo, ancestor: 0), current: native.combo,
+                                       point: CGPoint(x: 730, y: 81))
+    text.nodes = native.verdict.nodes
+    guard case .notPopUp = decide463(hit: native.combo, text, at: CGPoint(x: 730, y: 81)) else { return XCTFail("its text: main's") }
+    XCTAssertEqual(listReads, 0)
+  }
+
+  /// Frontmost, every kind keeps today's path, its posted click opening the UI and leaving it up (5/5 each): the menu
+  /// button, the colour well and the `<input list>` keep main's path (`kept: "frontmost"`); a right click and Chrome's
+  /// buttons are unrecorded or `browserView`. #458's AppKit pop-up button is still pressed in every state.
+  func testFrontmostEveryKindKeepsTodaysPath() throws {
+    frontmost = true
+    let menuButton = appKit("AXMenuButton", frame: listStyleFrame, actions: ["AXShowMenu", "AXPress"])
+    let colorWell = appKit("AXColorWell", frame: colorWellFrame, actions: ["AXPress"])
+    let field = page()
+    for (name, decision) in [("menu button", decide463(hit: menuButton.node, menuButton.verdict, at: menuButton.point)),
+                             ("colour well", decide463(hit: colorWell.node, colorWell.verdict, at: colorWell.point)),
+                             ("<input list>", decide463(hit: field.field, field.fieldVerdict, at: CGPoint(x: 595, y: 169)))] {
+      guard case .kept(.frontmost, _) = decision else { XCTFail("\(name): main's, not \(decision)"); continue }
+    }
+    let textView = appKit("AXTextArea", frame: textViewFrame, actions: ["AXShowMenu"])
+    guard case .notPopUp = rightClick(hit: textView.node, textView.verdict, at: CGPoint(x: 600, y: 300)) else { return XCTFail("right click") }
+    guard case .notPopUp = rightClick(hit: field.group, field.groupVerdict, at: CGPoint(x: 700, y: 600)) else { return XCTFail("page") }
+    let profile = chromeButton(hasPopup: true)
+    guard case .notPopUp = decide463(hit: profile.node, profile.verdict, at: profile.point) else { return XCTFail("profile") }
+    let tabSearch = chromeToolbar("tab search")
+    guard case .kept(.browserView, _) = decide463(hit: tabSearch.popup, tabSearch.verdict, at: tabSearch.point) else { return XCTFail("tab search") }
+    XCTAssertEqual(listReads, 0, "nothing of the window list read for any")
+    let font = font()
+    guard case .press = decide463(hit: font.popup, font.verdict, at: fontPoint) else { return XCTFail("#458's press, unchanged") }
+  }
+
+  /// Dedicated mode keeps main's posted click for what shared mode refuses (it lets the window come forward, nothing puts
+  /// the order back, and the posted click left the page's context menu and the profile bubble up, 3/3 each), and carries
+  /// the AppKit kinds as #458 does in every mode.
+  func testWhatSharedModeRefusesDedicatedModePosts() throws {
+    let tabSearch = chromeToolbar("tab search")
+    guard case .kept(.browserView, _) = decide463(hit: tabSearch.popup, tabSearch.verdict, at: tabSearch.point, shared: false) else {
+      return XCTFail("tab search: main's")
+    }
+    let profile = chromeButton(hasPopup: true)
+    guard case .notPopUp = decide463(hit: profile.node, profile.verdict, at: profile.point, shared: false) else { return XCTFail("profile") }
+    let field = page()
+    guard case .notPopUp = rightClick(hit: field.group, field.groupVerdict, at: CGPoint(x: 700, y: 600), shared: false) else {
+      return XCTFail("page right click")
+    }
+    let menuButton = appKit("AXMenuButton", frame: listStyleFrame, actions: ["AXShowMenu", "AXPress"])
+    guard case .press = decide463(hit: menuButton.node, menuButton.verdict, at: menuButton.point, shared: false) else {
+      return XCTFail("the menu button is still its AXPress")
+    }
+  }
+
+  /// A menu button, a colour well and a pop-up button in a page stay #282's; one in a Chromium view keeps main's path.
+  func testOnlyAppKitsMenuButtonsAndColorWellsAreCarried() {
+    let field = page()
+    let pageColor = Node("AXColorWell", frame: CGRect(x: 416, y: 258, width: 60, height: 30), parent: field.group)
+    pageColor.actions = ["AXPress", "AXShowMenu", "AXScrollToVisible"]
+    pageColor.viewClass = .answered
+    var verdict = StalePointVerdict<Node>(reason: .sameElement, node: recorded(pageColor, ancestor: 3), current: pageColor,
+                                          point: CGPoint(x: 446, y: 273))
+    verdict.nodes = field.fieldVerdict.nodes + [recorded(pageColor, ancestor: 3)]
+    guard case .notPopUp = decide463(hit: pageColor, verdict, at: CGPoint(x: 446, y: 273)) else { return XCTFail("a page's <input type=color>") }
+    let menuButton = appKit("AXMenuButton", frame: listStyleFrame, actions: ["AXShowMenu", "AXPress"])
+    menuButton.node.viewClass = .answered
+    guard case .kept(.browserView, _) = decide463(hit: menuButton.node, menuButton.verdict, at: menuButton.point) else {
+      return XCTFail("a Chromium view's menu button")
+    }
+  }
+
+  /// In a shared-mode page behind, #282's route keeps a `<select>`'s press and every point not carried here; a refusal
+  /// and an `<input list>`'s press are carried by `popUpClick`, never by #282's focus route.
+  func testWhichDecisionsTheWebAreaRouteKeeps() {
+    let selectScene = select()
+    XCTAssertTrue(popUpLeftToWebAreaRoute(decide463(hit: selectScene.popup, selectScene.verdict, at: selectPoint)))
+    let field = page()
+    XCTAssertFalse(popUpLeftToWebAreaRoute(decide463(hit: field.field, field.fieldVerdict, at: CGPoint(x: 595, y: 169))))
+    XCTAssertFalse(popUpLeftToWebAreaRoute(rightClick(hit: field.group, field.groupVerdict, at: CGPoint(x: 700, y: 600))))
+    XCTAssertTrue(popUpLeftToWebAreaRoute(PopUpPoint<Node>.notPopUp))
+    XCTAssertTrue(popUpLeftToWebAreaRoute(PopUpPoint<Node>.kept(.frontmost, role: "AXComboBox")))
+  }
 }

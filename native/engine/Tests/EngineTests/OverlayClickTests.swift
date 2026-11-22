@@ -82,6 +82,11 @@ final class OverlayClickTests: XCTestCase {
     var chromium = true
     /// The other row of the overlay, beside the one at the point.
     let neighbour: Node
+    /// The windows the screenshot's list held, front to back: the overlay (49) over the observed window (28).
+    var windows: [ListedWindow] = [ListedWindow(number: 49, owner: 501, layer: 0, bounds: CGRect(x: 90, y: 60, width: 440, height: 140)),
+                                   ListedWindow(number: 28, owner: 501, layer: 0, bounds: CGRect(x: 0, y: 0, width: 1000, height: 800))]
+    /// The elements whose children the walk did not all read or record.
+    var partial: [Node] = []
   }
 
   /// The browser window and, under the popup, a deeper page link at the same point (deeper in the record than any of the
@@ -157,7 +162,9 @@ final class OverlayClickTests: XCTestCase {
   }
 
   private func decide(_ scene: Scene, shift: CGVector = .zero, answered: Node?? = .none) -> OverlayPoint<Node> {
-    overlayPoint(scene.verdict, answered: answered ?? scene.answered, nodes: scene.nodes, shift: shift, chromium: scene.chromium, reads: reads)
+    let record = OverlayRecord(nodes: scene.nodes, recorded: { node in !scene.partial.contains { $0 === node } }, windows: scene.windows,
+                               observedWindow: 28, pid: 501)
+    return overlayPoint(scene.verdict, answered: answered ?? scene.answered, record: record, shift: shift, chromium: scene.chromium, reads: reads)
   }
 
   private func refusal(_ decision: OverlayPoint<Node>) -> OverlayRefusal? {
@@ -206,17 +213,126 @@ final class OverlayClickTests: XCTestCase {
     }
   }
 
-  /// The row dying within the wait confirms too, its window still listed (an overlay that rebuilds as it takes the row).
-  func testTheRowDyingConfirmsTheClick() throws {
+  /// Ruling 1072, item 1: the row dying while its window stays (a list rebuilding its rows, the press having changed
+  /// nothing) is no confirmation: clickUnconfirmed after the whole wait.
+  func testTheRowDyingWithItsWindowOpenIsUnconfirmed() {
     let scene = omnibox()
     var meta = freshMeta()
-    var clock = 0
-    let carried = try overlayClick(decide(scene), app: "Google Chrome", reads: reads, windowShown: { _ in true },
-                                   now: { Double(clock) }, sleep: { clock += Int($0); if clock >= 60 { scene.row.gone = true } },
-                                   beforeDispatch: { _ in }, perform: { _, _ in .success }, meta: &meta)
-    XCTAssertTrue(carried)
-    XCTAssertEqual(wire(meta)?["confirmed"] as? Bool, true)
-    XCTAssertEqual(wire(meta)?["polls"] as? Int, 4)
+    var clock = 0.0
+    XCTAssertThrowsError(try overlayClick(decide(scene), app: "Google Chrome", reads: reads, windowShown: { _ in true },
+                                          now: { clock }, sleep: { clock += $0; if clock >= 60 { scene.row.gone = true } },
+                                          beforeDispatch: { _ in }, perform: { _, _ in .success }, meta: &meta)) {
+      XCTAssertEqual(($0 as? EngineError)?.errorName, "clickUnconfirmed")
+    }
+    XCTAssertEqual(wire(meta)?["confirmed"] as? Bool, false)
+    XCTAssertEqual(wire(meta)?["ms"] as? Double, 500)
+  }
+
+  /// Ruling 1072, item 2: two overlays of the app's over the point in the screenshot (a bubble over the omnibox popup), the
+  /// front one closed since, so the hit now reaches the back one's unchanged row, which the screenshot showed covered:
+  /// refused. So is a list that did not read, or held only another window over the point than the one the hit reaches.
+  func testTwoRecordedOverlaysAtThePointOrAnotherOneRefuse() {
+    var scene = omnibox()
+    let front = ListedWindow(number: 51, owner: 501, layer: 0, bounds: CGRect(x: 200, y: 90, width: 300, height: 120))
+    scene.windows.insert(front, at: 0)
+    XCTAssertEqual(refusal(decide(scene)), .notOneOverlay, "two overlays at the point")
+    var beside = omnibox()
+    beside.windows.insert(ListedWindow(number: 51, owner: 501, layer: 0, bounds: CGRect(x: 600, y: 90, width: 300, height: 120)), at: 0)
+    guard case .deliver = decide(beside) else { return XCTFail("another overlay away from the point changes nothing") }
+    var otherApp = omnibox()
+    otherApp.windows.insert(ListedWindow(number: 60, owner: 777, layer: 0, bounds: front.bounds), at: 0)
+    guard case .deliver = decide(otherApp) else { return XCTFail("another app's window is no overlay of the app's") }
+    var another = omnibox()
+    another.windows[0] = ListedWindow(number: 52, owner: 501, layer: 0, bounds: another.windows[0].bounds)
+    XCTAssertEqual(refusal(decide(another)), .notOneOverlay, "the screenshot's overlay is not the one the hit reaches")
+    var behind = omnibox()
+    behind.windows.reverse()
+    XCTAssertEqual(refusal(decide(behind)), .notOneOverlay, "behind the observed window it lay over nothing")
+    var unread = omnibox()
+    unread.windows = []
+    XCTAssertEqual(refusal(decide(unread)), .notOneOverlay, "a list without the observed window")
+  }
+
+  /// Ruling 1072, item 3: the row's recorded subtree not whole (its children's read failed, a child of its own child left
+  /// out, or its subtree cut): refused.
+  func testAPartlyRecordedRowRefuses() {
+    var unread = omnibox()
+    unread.partial = [unread.row]
+    XCTAssertEqual(refusal(decide(unread)), .partlyRecorded, "the row's children not read or recorded")
+    var cut = omnibox()
+    let at = cut.nodes.firstIndex { $0.element === cut.row }!
+    let kept = cut.nodes[at]
+    cut.nodes[at] = ScreenshotNode(element: kept.element, role: kept.role, title: kept.title, description: kept.description, subrole: kept.subrole,
+                                   value: kept.value, editableAncestor: nil, labelsUnread: [], frame: kept.frame, shown: kept.shown, depth: kept.depth,
+                                   subtreeRecorded: false)
+    cut.nodes[at].ancestor = kept.ancestor
+    XCTAssertEqual(refusal(decide(cut)), .partlyRecorded, "children left out")
+    var deeper = omnibox()
+    let rowAt = deeper.nodes.firstIndex { $0.element === deeper.row }!
+    let icon = Node("AXImage", frame: CGRect(x: 480, y: 105, width: 20, height: 20), parent: deeper.row)
+    deeper.nodes.append(recorded(icon, depth: 5, ancestor: rowAt))
+    deeper.partial = [icon]
+    XCTAssertEqual(refusal(decide(deeper)), .partlyRecorded, "a recorded child's children not all recorded")
+    let frameless = omnibox()
+    let group = Node("AXGroup", parent: frameless.row)
+    var unframed = ScreenshotNode(element: group, role: "AXGroup", title: nil, description: nil, subrole: nil, value: nil, editableAncestor: nil,
+                                  labelsUnread: [], frame: .null, shown: nil, depth: 5, subtreeRecorded: true)
+    unframed.ancestor = frameless.nodes.firstIndex { $0.element === frameless.row }
+    let record = OverlayRecord(nodes: frameless.nodes, frameless: [unframed], recorded: { $0 !== group }, windows: frameless.windows,
+                               observedWindow: 28, pid: 501)
+    let decision = overlayPoint(frameless.verdict, answered: frameless.answered, record: record, shift: .zero, chromium: true, reads: reads)
+    XCTAssertEqual(refusal(decision), .partlyRecorded, "a frameless child's children not read")
+    var elsewhere = omnibox()
+    elsewhere.partial = [elsewhere.neighbour]
+    guard case .deliver = decide(elsewhere) else { return XCTFail("another row's coverage is not the row's") }
+  }
+
+  /// Ruling 1072, item 4: each label part compared on its own: a description changed under an unchanged title, or a
+  /// recorded description that no longer reads or has gone, refuses (the first non-empty part alone agreed).
+  func testEachLabelPartIsComparedOnItsOwn() {
+    var scene = permission()
+    scene.row.description = "Allows the site to use MIDI devices"
+    let at = scene.nodes.firstIndex { $0.element === scene.row }!
+    scene.nodes[at] = recorded(scene.row, depth: scene.nodes[at].depth, ancestor: scene.nodes[at].ancestor)
+    let dialog = scene.row.parent
+    guard case .deliver = decide(scene, answered: .some(dialog)) else { return XCTFail("both parts unchanged") }
+    scene.row.description = "Allows the site to use your camera"
+    XCTAssertEqual(refusal(decide(scene, answered: .some(dialog))), .labelChanged, "the description changed under the same title")
+    scene.row.description = nil
+    XCTAssertEqual(refusal(decide(scene, answered: .some(dialog))), .labelChanged, "the recorded description gone")
+    let gained = permission()
+    gained.row.description = "new"
+    XCTAssertEqual(refusal(decide(gained, answered: .some(gained.row.parent))), .labelChanged, "a part gained since")
+  }
+
+  /// Ruling 1072, item 5: the identity is read again just before the press, after the owner's and intervention's
+  /// preparation: a row relabelled (or moved, or disabled) meanwhile is not pressed, and #452's refusal stands.
+  func testARowChangedDuringThePreparationIsNotPressed() throws {
+    let changes: [(String, OverlayRefusal, (Node) -> Void)] = [
+      ("relabelled", .labelChanged, { $0.title = "Block" }), ("moved", .frameMoved, { $0.frame = $0.frame?.offsetBy(dx: 0, dy: 40) }),
+      ("disabled", .disabled, { $0.enabled = .disabled }),
+    ]
+    for (name, expected, change) in changes {
+      let scene = permission()
+      var meta = freshMeta()
+      var pressed = 0
+      let carried = try click(decide(scene), shown: { _ in true }, meta: &meta, beforeDispatch: { change($0) }) { _, _ in pressed += 1; return .success }
+      XCTAssertFalse(carried, name)
+      XCTAssertEqual(pressed, 0, "\(name): nothing pressed")
+      XCTAssertNil(meta.startedAt, "\(name): nothing sent")
+      XCTAssertEqual(wire(meta), ["window": 49, "by": "axHit", "kind": "permissionBubble", "refused": expected.rawValue] as NSDictionary, name)
+    }
+  }
+
+  /// Ruling 1072, item 6: a point in a list's padding (the datalist at (99, 120), beside its options) or in the permission
+  /// dialog between its buttons lands on no row: refused.
+  func testAPointOnAListsOrDialogsPaddingRefuses() {
+    var list = datalist()
+    list.verdict.point = CGPoint(x: 99, y: 120)
+    XCTAssertEqual(refusal(decide(list)), .notARow, "the AXList's padding")
+    var dialog = permission()
+    dialog.verdict.point = CGPoint(x: 300, y: 142)
+    XCTAssertEqual(refusal(decide(dialog, answered: .some(dialog.row.parent))), .notARow, "the dialog's group between its buttons")
   }
 
   /// The window moved since the screenshot: the row's frame is compared after the window's shift, within 2 pt.

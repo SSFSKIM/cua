@@ -192,6 +192,11 @@ struct CapturedScreenshot {
   let scale: CGFloat
   /// The on-screen window numbers read just before the capture (#316): what the screenshot's window list held.
   var windowList: Set<CGWindowID>? = nil
+  /// #453: the on-screen windows with their owners, layers and bounds, front to back, read with `windowList` (nil when
+  /// unread), and the captured window's number: which of the app's windows lay over it where (OverlayClick.swift
+  /// `recordedOverlays`).
+  var windowsListed: [ListedWindow]? = nil
+  var windowNumber: CGWindowID? = nil
 
   var wire: [String: Any] { ["url": url, "width": width, "height": height, "scale": Double(scale)] }
 }
@@ -216,6 +221,10 @@ struct ObservedScreenshot {
   /// The on-screen window numbers when the image was captured (#316's rule W, StalePoint.swift `newWindowAbove`): a
   /// window of the app's above this one that the list did not hold is new since the screenshot. Nil when unread.
   let windowList: Set<CGWindowID>?
+  /// #453: the windows listed with their bounds when the image was captured, and this window's number then
+  /// (`CapturedScreenshot.windowsListed`).
+  let windowsListed: [ListedWindow]?
+  let windowNumber: CGWindowID?
   /// The image's size in pixels, the space the model's coordinates arrive in (#328: a point outside it is refused).
   let width: Int
   let height: Int
@@ -235,6 +244,8 @@ struct ObservedScreenshot {
     height = image.height
     windowOrigin = image.frame.origin
     windowList = image.windowList
+    windowsListed = image.windowsListed
+    windowNumber = image.windowNumber
     scaleX = CGFloat(image.width) / image.frame.width  // the capture refuses a frame under one point
     scaleY = CGFloat(image.height) / image.frame.height
     self.nodes = nodes
@@ -298,6 +309,8 @@ extension Engine {
       throw EngineError(name: "noCapturableWindow", "No capturable window found: \(name)")
     }
     var lookup = try shareableWindows.window(number, timings: &timings)
+    // #453: the app's windows over this one, with their bounds, as the image shows them (about 0.3 ms, p95 1 ms).
+    let listed = timings.time("screenshotWindowsListed") { onScreenWindowListRead() }
     guard var target = lookup.window else { throw EngineError(name: "noCapturableWindow", "No capturable window found: \(name)") }
     let configuration = SCStreamConfiguration()
     let scale = screenshotScale(for: frame, screens: screenScales.current)
@@ -322,7 +335,7 @@ extension Engine {
     guard let data = timings.time("screenshotEncode", { jpegData(image) }) else { throw screenCaptureFailed("The image could not be encoded.") }
     let path = try timings.time("screenshotWrite") { try writePrivately(data, into: directory, name: screenshotFileName(revision: revision)) }
     return CapturedScreenshot(url: URL(fileURLWithPath: path).absoluteString, width: image.width, height: image.height, frame: frame, scale: scale,
-                              windowList: lookup.onScreen)
+                              windowList: lookup.onScreen, windowsListed: listed, windowNumber: number)
   }
 }
 

@@ -10,7 +10,8 @@ const answerOf = r => {
   const pc = a.popUpClick ? ` {popUp ${JSON.stringify(a.popUpClick).slice(0, 60)}}` : '';
   return `${a.error ?? `ok route ${JSON.stringify(a.route)}`}${o}${pc}`;
 };
-const OVERLAY_CELLS = /^(omnibox|datalist|permission|popover)\//;
+// The fix's overlay cells; a p- cell (parity, including the element click by ID that ruling 1066 cut from the fix) expects main's answer.
+const OVERLAY_CELLS = /^(omnibox|datalist|permission|popover)\/[^/]+\/(?!p-)/;
 for (const file of process.argv.slice(2)) {
   const {config, results} = JSON.parse(readFileSync(file, 'utf8'));
   console.log(`## ${config.label ?? ''} engine ${config.engineRef}  (${config.chrome}; ${config.macOS}; image ${config.image}; kit ${config.commit}; ${results.length} rows, ${config.minutes} min${config.budgetStop ? ', budget stop' : ''})\n`);

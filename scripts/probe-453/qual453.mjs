@@ -2,12 +2,12 @@
 // measurement this follows is deliver.mjs; README section "#453 qual"). Every click here is the engine's own; the kit
 // only opens the overlay and reads what happened. Cells, in shared-behind, shared-front and dedicated-behind:
 //   omnibox/click      a coordinate click on a non-default history row of Chrome's omnibox popup, 1-3 s after the observation
-//   omnibox/element    the engine's element click on that row's node (#470)
+//   omnibox/p-element  the engine's element click on that row's node (#470, cut from the fix by ruling 1066: main's answer expected)
 //   omnibox/relayout   one more character typed through the engine after the observation, then the coordinate click at the
 //                      recorded row: refused, the same text taken, or another row taken (which must never happen)
-//   datalist/click, datalist/element   the page's <datalist> list (opened by the engine's click on the field's arrow,
+//   datalist/click, datalist/p-element   the page's <datalist> list (opened by the engine's click on the field's arrow,
 //                      #463's AXPress behind), its second row
-//   permission/allow, permission/block, permission/element   Chrome's geolocation prompt on a fresh origin; the site's
+//   permission/allow, permission/block, permission/p-element   Chrome's geolocation prompt on a fresh origin; the site's
 //                      permission state read after (the element cell alternates Block and Allow)
 //   popover/click      TextEdit's colour-well popover, a swatch
 // and parity (shared-behind unless named): a page button with no overlay (p-page), a page button under the omnibox popup
@@ -436,9 +436,9 @@ const KINDS = {
 const CELLS = [];
 const cell = (kind, mode, how, reps) => CELLS.push({name: `${kind}/${mode}/${how}`, kind, mode: MODES[mode], how, reps, app: KINDS[kind].app});
 for (const m of Object.keys(MODES)) {
-  cell('omnibox', m, 'click', 6); cell('omnibox', m, 'element', 5); cell('omnibox', m, 'relayout', 8);
-  cell('datalist', m, 'click', 6); cell('datalist', m, 'element', 5);
-  cell('permission', m, 'allow', 5); cell('permission', m, 'block', 5); cell('permission', m, 'element', 6);
+  cell('omnibox', m, 'click', 6); cell('omnibox', m, 'p-element', 5); cell('omnibox', m, 'relayout', 8);
+  cell('datalist', m, 'click', 6); cell('datalist', m, 'p-element', 5);
+  cell('permission', m, 'allow', 5); cell('permission', m, 'block', 5); cell('permission', m, 'p-element', 6);
   cell('popover', m, 'click', 6);
 }
 cell('page', 'shared-behind', 'p-page', 5);
@@ -494,10 +494,10 @@ async function runRow(app, cell, rep) {
     const pr = rect(ov.popup?.bounds);
     if (k.overlay !== false && !pr) { row.problem = 'no overlay at the re-observation'; return; }
     row.nodesInOverlay = pr ? nodesIn(sky, pr).length : 0;
-    const want = cell.kind === 'permission' ? (cell.how === 'element' ? (rep % 2 ? 'block' : 'allow') : cell.how) : null;
+    const want = cell.kind === 'permission' ? (cell.how === 'p-element' ? (rep % 2 ? 'block' : 'allow') : cell.how) : null;
     row.pick = k.pick(sky, pr, want);
     if (!row.pick) { row.problem = 'no item in the observation'; row.overlayNodes = pr ? nodesIn(sky, pr).slice(0, 40).map(n => [n.role, nodeLabel(n).slice(0, 60), winArr(n.frame)]) : null; return; }
-    if (cell.how === 'element' && row.pick.token == null) { row.problem = 'the item has no token'; return; }
+    if (cell.how === 'p-element' && row.pick.token == null) { row.problem = 'the item has no token'; return; }
     const {px, screen} = toPixels(sky, row.pick.point);
     row.point = {px, screen, inOverlay: pr ? inside(screen, pr) : null};
     // #453's re-laid-out case: one more character typed through the engine, after the screenshot, before the click.
@@ -518,7 +518,7 @@ async function runRow(app, cell, rep) {
     const mark = events.length;
     const t0 = Date.now();
     row.clickAfterObsMs = t0 - tObs;
-    if (cell.how === 'element') row.click = answer(await w.execute('click', {pid, element: row.pick.token}));
+    if (cell.how === 'p-element') row.click = answer(await w.execute('click', {pid, element: row.pick.token}));
     else if (cell.how === 'p-forced') row.click = answer(await w.execute('click', {pid, x: px.x, y: px.y, spikeRoute: '3'}));
     else if (cell.how === 'p-drag') {
       const to = toPixels(sky, {x: screen.x, y: screen.y + 250}).px;

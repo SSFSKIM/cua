@@ -911,3 +911,24 @@ One engine per dispatch: the kit names its only engine "main", so the "main" col
 |---|---|---|---|---|---|---|
 | fix-a8307c6c | cft | 20261117.0516.1 | 157.0.8103.78 | 60/60 | none | – |
 | fix-a8307c6c | electron | 20261117.0516.1 | Electron 44.4.5 / Chromium 152.0.7977.130 | 60/60 | none | – |
+
+### The shared-mode raise in `datalist/shared-behind/p-element`, pinned down (20 rows per head)
+
+This is main's element click by ID on a datalist row, by route 3, with Chrome behind the TextEdit cover. The cell
+alone, `--cellreps 20`, kit 8c992128:
+- main 5580ac20: https://github.com/SSFSKIM/cua/actions/runs/45082409495;
+- fix a8307c6c: https://github.com/SSFSKIM/cua/actions/runs/45084310309.
+
+| head | `activationFailed` | raised over the cover, transient | raised at the end | first raised, ms after the click | frontmost changed | key window changed |
+|---|---|---|---|---|---|---|
+| main 5580ac20 | 2/20 | 2/20 | 2/20 | 1038, 1022 | 0/20 | 0/20 |
+| fix a8307c6c | 1/20 | 1/20 | 1/20 | 1054 | 0/20 | 0/20 |
+
+How this reads:
+- The raise is main's. Every raised row is exactly the row that answered `activationFailed` ("the app's window did not
+  stay behind the frontmost window within 1 s"), and the window is listed over the cover from just after the 1 s give-up
+  to the end of the 3 s watch (about 1.8 s).
+- The other rows answered ok by route 3 and raised nothing.
+- Every row's effect was the same: the list dismissed, with no option taken.
+- The rates are 2/20 on main and 1/20 on the fix. The counted runs' 0/5 on main and 1/5 on the fix are the same
+  intermittent failure. It is route 3's activation guard on Chromium's datalist, outside #453's route.

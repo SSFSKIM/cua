@@ -39,7 +39,8 @@ import Foundation
 // stamped with the observed window (Mouse.swift `stampWindow`), so the app delivers them to that window whatever lies over
 // it; a point the app's own hit-test answers in another of its windows (Chrome's omnibox popup, its `<datalist>` popup, a
 // permission bubble), or in a popover over the observed one (`PointHitPlace`, `appWindowOverPoint`), refuses before the
-// tree is read. Everything here reads through closures, so the rule is unit-tested over a fake tree.
+// tree is read; #453 carries a plain left click so refused on a row of one of four overlays by the recorded row's
+// AXPress instead (OverlayClick.swift). Everything here reads through closures, so the rule is unit-tested over a fake tree.
 
 /// One node of the tree an observation with a screenshot walked, as the screenshot showed it.
 struct ScreenshotNode<Element> {
@@ -488,6 +489,10 @@ struct StalePointVerdict<Element> {
   /// hit's window could not be numbered) and the signal that found it.
   var overWindow: CGWindowID?
   var overBy: AppWindowSignal?
+  /// #453: for `appWindowOverPoint`, that window's layer and the observed window's, as the list held them (nil unlisted),
+  /// which tell the overlay's kind apart (OverlayClick.swift `overlayKind`).
+  var overLayer: Int?
+  var observedLayer: Int?
   /// #298: the node's label read now, for `relabelled`'s sentence (#433: the control beneath's, when it refused).
   var labelNow: String?
   /// #433: the recorded control beneath a node that does not act on its own (`underlyingTarget`), judged when the verdict
@@ -1517,16 +1522,18 @@ func guardedPointVerdict<Element>(at point: CGPoint, hit: Element?, place: Point
   if let target, let recorded, let new = newWindowAbove(target: target, pid: pid, recorded: recorded, list: list()) {
     return StalePointVerdict(reason: .newWindow, hit: hit, point: point, newWindow: new)
   }
+  func over(_ number: CGWindowID, _ by: AppWindowSignal) -> StalePointVerdict<Element> {
+    let list = list()
+    return StalePointVerdict(reason: .appWindowOverPoint, hit: hit, point: point, overWindow: number, overBy: by,
+                             overLayer: list.first { $0.number == number }?.layer,
+                             observedLayer: target.flatMap { target in list.first { $0.number == target }?.layer })
+  }
   switch place {
   case .otherWindow(let number):
     // Only a window the screenshot can have shown over the point (`hitWindowCovers`); otherwise main's verdict.
-    if let number, hitWindowCovers(number, point: point, target: target, list: list()) {
-      return StalePointVerdict(reason: .appWindowOverPoint, hit: hit, point: point, overWindow: number, overBy: .axHit)
-    }
+    if let number, hitWindowCovers(number, point: point, target: target, list: list()) { return over(number, .axHit) }
   case .observedWindow(inPopover: true):
-    if let target, let over = appWindowOverPoint(point, target: target, pid: pid, list: list()) {
-      return StalePointVerdict(reason: .appWindowOverPoint, hit: hit, point: point, overWindow: over.number, overBy: .popover)
-    }
+    if let target, let window = appWindowOverPoint(point, target: target, pid: pid, list: list()) { return over(window.number, .popover) }
   case .observedWindow(inPopover: false), .unread: break
   }
   return tree()

@@ -542,9 +542,8 @@ extension Engine {
                             pressing element: AXUIElement) -> ((_ afterHold: Bool, _ meta: inout InputMeta) throws -> Void)? {
     stalePoint.map { gate in { afterHold, meta in
       guard afterHold else { return }
-      let checked = gate.check(element, waited: true, afterActivation: true, now: monotonicMilliseconds, reads: .live)
-      meta.stalePoint = checked.record
-      if let refusal = checked.refusal { throw refusal }
+      try stalePointChecked(gate.check(element, waited: true, afterActivation: true, now: monotonicMilliseconds, reads: .live), gate: gate,
+                            meta: &meta)
     } }
   }
 
@@ -594,8 +593,7 @@ extension Engine {
       if let checked = fieldRouteFirstCheck(field, gate: stalePoint, awaitPendingClick: {
         awaitPendingClick(on: field, pids: [appPid, ownerPid(of: field, fallback: appPid)], meta: &meta)
       }, now: monotonicMilliseconds, reads: .live) {
-        meta.stalePoint = checked.record
-        if let refusal = checked.refusal { throw refusal }
+        try stalePointChecked(checked, gate: stalePoint, meta: &meta)
       }
       let owner = ownerPid(of: field, fallback: appPid)
       try refuseForbiddenOwner(owner)
@@ -659,8 +657,7 @@ extension Engine {
       if let checked = fieldRouteFirstCheck(field, gate: stalePoint, awaitPendingClick: {
         awaitPendingClick(on: field, pids: [appPid, ownerPid(of: field, fallback: appPid)], meta: &meta)
       }, now: monotonicMilliseconds, reads: .live) {
-        meta.stalePoint = checked.record
-        if let refusal = checked.refusal { throw refusal }
+        try stalePointChecked(checked, gate: stalePoint, meta: &meta)
       }
       let owner = ownerPid(of: field, fallback: appPid)
       try refuseForbiddenOwner(owner)
@@ -692,9 +689,7 @@ extension Engine {
           // After the boxes' re-read, which precedes every write (#341), the guard again: a changed page is refused with
           // nothing written.
           guard waited, let stalePoint else { return }
-          let checked = stalePoint.check(field, waited: true, now: monotonicMilliseconds, reads: .live)
-          meta.stalePoint = checked.record
-          if let refusal = checked.refusal { throw refusal }
+          try stalePointChecked(stalePoint.check(field, waited: true, now: monotonicMilliseconds, reads: .live), gate: stalePoint, meta: &meta)
         },
         writeFocused: {
           showCursor()
@@ -762,12 +757,11 @@ extension Engine {
   }
 
   /// #296's check of what an element route is about to act on (`StalePointGate.check`): its record into the meta, and its
-  /// refusal thrown, nothing pressed. Nothing without a gate.
+  /// refusal thrown, nothing pressed, or #453's delivery into the overlay in its place (`stalePointChecked`). Nothing
+  /// without a gate.
   func checkStalePoint(_ gate: StalePointGate<AXUIElement>?, pressing element: AXUIElement, waited: Bool, meta: inout InputMeta) throws {
     guard let gate else { return }
-    let checked = gate.check(element, waited: waited, now: monotonicMilliseconds, reads: .live)
-    meta.stalePoint = checked.record
-    if let refusal = checked.refusal { throw refusal }
+    try stalePointChecked(gate.check(element, waited: waited, now: monotonicMilliseconds, reads: .live), gate: gate, meta: &meta)
   }
 
   /// An element click by its own action (route 1; route 3's held activation first, `route` .activation, when the app does

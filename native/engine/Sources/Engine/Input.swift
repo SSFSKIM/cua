@@ -126,6 +126,9 @@ struct InputMeta {
   /// its effect and the restore of the person's window order, the refusal of a combo box with no pressable arrow, or why
   /// main's path was kept.
   var popUpClick: PopUpClickRecord?
+  /// #453's click on a row of a window the app shows over the observed one (OverlayClick.swift): delivered into it by its
+  /// kind's route and its effect, or why #452's refusal stood.
+  var overlayClick: OverlayClickRecord?
   /// #359's wait for a posted click before an accessibility action on the text, and set_value's watch after its write
   /// (ClickOrdering.swift); nil when no pointer press to the app was pending.
   var pendingClick: PendingClickRecord?
@@ -200,6 +203,7 @@ struct InputMeta {
     if let menu { wire["menu"] = menu.wire }
     if let menuItemClick { wire["menuItemClick"] = menuItemClick.wire }
     if let popUpClick { wire["popUpClick"] = popUpClick.wire }
+    if let overlayClick { wire["overlayClick"] = overlayClick.wire }
     if let pendingClick { wire["pendingClick"] = pendingClick.wire }
     if let unfocusedValue { wire["unfocusedValue"] = unfocusedValue.wire }
     if let afterActionRepairs = context.connection.afterAction.wire { wire["afterActionRepairs"] = afterActionRepairs }
@@ -575,7 +579,7 @@ extension Engine {
         // Its re-hits go through `latest`, so #454 reads the timed outcome of the hit the guard judged.
         let stale = signposted("click.stalePoint") {
           stalePointGuard(at: placed.point, windowOrigin: placed.windowFrame.origin, windowID: windowID, hit: pointerHit,
-                          place: latest.outcome.place, hitMs: latest.outcome.ms,
+                          place: latest.outcome.place, answered: latest.outcome.answered, hitMs: latest.outcome.ms,
                           rehit: latest.rehit, app: app, appPid: appPid, context: context)
         }
         meta.stalePoint = stale.record
@@ -586,6 +590,17 @@ extension Engine {
           pointerHit = recovered
           if route == .activation, button == .left { pointer = pointerTarget(hit: recovered, app: app, appPid: appPid) }
           pointer.staleRefusal = stale.refusal
+        }
+        // #453: a plain left click #452 refused on a row of a window the app shows over the observed one is delivered into
+        // that window by its kind's route, when the row is the one the screenshot showed there; otherwise the refusal
+        // stands. The element routes below apply the same rule where their recheck after a wait refuses so (`overlayRule`).
+        let overlayRule: (StalePointVerdict<AXUIElement>, inout InputMeta) throws -> Bool = { [self] verdict, meta in
+          guard forced == nil, button == .left, count == 1 else { return false }
+          return try overlayPointClick(verdict, point: placed.point, shift: stale.shift, observedWindow: windowID, app: app, appPid: appPid,
+                                       guarding: guarding, context: context, meta: &meta)
+        }
+        if stale.verdict.reason == .appWindowOverPoint, try overlayRule(stale.verdict, &meta) {
+          return ["meta": meta.wire]
         }
         // #454: a kept point on an open menu's item is carried by the item's own action, or refused; never posted.
         if stale.refusal == nil, forced == nil, button == .left, count == 1 {
@@ -655,10 +670,11 @@ extension Engine {
                   try holdElementFocus(element: element, owner: pressOwner, app: app, appPid: appPid, guarding: guarding, context: context, meta: &meta)
                 }
                 // #456's recheck: the same window rules as the click's own guard, as #282's route's gate.
-                let gate = StalePointGate(first: stale.verdict, record: stale.record, app: app.displayName) { [self] in
+                var gate = StalePointGate(first: stale.verdict, record: stale.record, app: app.displayName) { [self] in
                   stalePointRecheck(at: placed.point, shift: stale.shift, window: placed.window, windowID: windowID, appPid: appPid, app: app,
                                     context: context)
                 }
+                gate.overlay = overlayRule
                 try finalStalePointCheck(gate, pressing: element)?(pressRoute == .activation, &meta)
               }, checkInFlight: guarding.checkInFlight,
                 announce: { cursor.act(connection: context.connection.id, app: app.key, window: windowID, .click(placed.point)) },
@@ -676,10 +692,11 @@ extension Engine {
         }
         if pointer.view.mayBeWebArea, let hit = pointerHit {
           // A kept point's element route presses only the node or its control, the guard run again after any wait.
-          let gate = StalePointGate(first: stale.verdict, record: stale.record, app: app.displayName) { [self] in
+          var gate = StalePointGate(first: stale.verdict, record: stale.record, app: app.displayName) { [self] in
             stalePointRecheck(at: placed.point, shift: stale.shift, window: placed.window, windowID: windowID, appPid: appPid, app: app,
                               context: context)
           }
+          gate.overlay = overlayRule
           let checks = webAreaPopUp == nil ? nil : PopUpPressChecks()
           let elementRoute = webAreaPress(hit, button: button, count: count, point: placed.point, windowID: windowID, app: app,
                                           appPid: appPid, guarding: guarding, context: context, stalePoint: gate, popUpPress: checks)
@@ -722,6 +739,8 @@ extension Engine {
       var result: [String: Any] = ["meta": meta.wire]
       if let note = meta.note { result["note"] = note }
       return result
+    } catch is OverlayClickDelivered {
+      return ["meta": meta.wire]  // #453: an element route's recheck carried the click into the overlay instead
     } catch let error as EngineError {
       throw withMeta(error, meta)
     }

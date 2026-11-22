@@ -482,6 +482,12 @@ struct StalePointVerdict<Element> {
   /// hit's window could not be numbered) and the signal that found it.
   var overWindow: CGWindowID?
   var overBy: AppWindowSignal?
+  /// #453: for `appWindowOverPoint`, that window and the observed one as the list held them (nil unlisted), and what the
+  /// app's hit-test answered at the point (`WindowHit.answered`), from which the overlay's row is looked for
+  /// (OverlayClick.swift `overlayPoint`).
+  var overListed: ListedWindow?
+  var observedListed: ListedWindow?
+  var overAnswered: Element?
   /// #298: the node's label read now, for `relabelled`'s sentence (#433: the control beneath's, when it refused).
   var labelNow: String?
   /// #433: the recorded control beneath a node that does not act on its own (`underlyingTarget`), judged when the verdict
@@ -1385,7 +1391,9 @@ func hitWindowCovers(_ number: CGWindowID, point: CGPoint, target: CGWindowID?, 
 /// window's own elements and keep, as does a hit unread or too late, or one in a window of alpha 0, unlisted or
 /// unnumbered. Both call sites take this one, so a drag's start is
 /// guarded as a click is.
-func guardedPointVerdict<Element>(at point: CGPoint, hit: Element?, place: PointHitPlace = .unread, target: CGWindowID?, pid: pid_t,
+/// #453: `answered`, the hit-test's own answer, rides on an `appWindowOverPoint` verdict with the two windows as listed.
+func guardedPointVerdict<Element>(at point: CGPoint, hit: Element?, place: PointHitPlace = .unread, answered: Element? = nil,
+                                  target: CGWindowID?, pid: pid_t,
                                   recorded: Set<CGWindowID>?, windows: () -> [ListedWindow],
                                   tree: () -> StalePointVerdict<Element>) -> StalePointVerdict<Element> {
   var read: [ListedWindow]?
@@ -1398,16 +1406,18 @@ func guardedPointVerdict<Element>(at point: CGPoint, hit: Element?, place: Point
   if let target, let recorded, let new = newWindowAbove(target: target, pid: pid, recorded: recorded, list: list()) {
     return StalePointVerdict(reason: .newWindow, hit: hit, point: point, newWindow: new)
   }
+  func over(_ number: CGWindowID, _ by: AppWindowSignal) -> StalePointVerdict<Element> {
+    let list = list()
+    return StalePointVerdict(reason: .appWindowOverPoint, hit: hit, point: point, overWindow: number, overBy: by,
+                             overListed: list.first { $0.number == number },
+                             observedListed: target.flatMap { target in list.first { $0.number == target } }, overAnswered: answered)
+  }
   switch place {
   case .otherWindow(let number):
     // Only a window the screenshot can have shown over the point (`hitWindowCovers`); otherwise main's verdict.
-    if let number, hitWindowCovers(number, point: point, target: target, list: list()) {
-      return StalePointVerdict(reason: .appWindowOverPoint, hit: hit, point: point, overWindow: number, overBy: .axHit)
-    }
+    if let number, hitWindowCovers(number, point: point, target: target, list: list()) { return over(number, .axHit) }
   case .observedWindow(inPopover: true):
-    if let target, let over = appWindowOverPoint(point, target: target, pid: pid, list: list()) {
-      return StalePointVerdict(reason: .appWindowOverPoint, hit: hit, point: point, overWindow: over.number, overBy: .popover)
-    }
+    if let target, let window = appWindowOverPoint(point, target: target, pid: pid, list: list()) { return over(window.number, .popover) }
   case .observedWindow(inPopover: false), .unread: break
   }
   return tree()
@@ -1578,6 +1588,9 @@ struct StalePointGate<Element> {
   var firstHitMs: Double? = nil
   /// The app a refusal's sentence names (#452's names it).
   var app = "The app"
+  /// #453: where a check refuses `appWindowOverPoint`, the overlay's row delivered in its place (OverlayClick.swift); true
+  /// once delivered, so the route acts on nothing of its own (`Engine.stalePointChecked`). Nil: the refusal stands.
+  var overlay: ((StalePointVerdict<Element>, inout InputMeta) throws -> Bool)? = nil
   let recheck: () -> StalePointRecheck<Element>
   /// What the checks so far cost, which each record carries whole (the review of edbfbd23..e1a01d42, P2): a route's
   /// final check after its focus hold replaces the early check's record in the meta, so the time and window-list reads
@@ -1606,7 +1619,7 @@ struct StalePointGate<Element> {
   /// judged by `stalePointPressVerdict`; its record (`rechecked` after a wait; the time and window-list reads of every
   /// check so far, the first's included; the hit-test time of the last hit judged) and its refusal.
   func check(_ pressed: Element, waited: Bool, afterActivation: Bool = false, now: () -> Double,
-             reads: StalePointReads<Element>) -> (record: StalePointRecord, refusal: EngineError?) {
+             reads: StalePointReads<Element>) -> (record: StalePointRecord, refusal: EngineError?, verdict: StalePointVerdict<Element>) {
     let started = now()
     let rechecked = waited ? recheck() : nil
     let verdict = stalePointPressVerdict(pressed, rechecked?.verdict ?? first, reads: reads)
@@ -1621,7 +1634,7 @@ struct StalePointGate<Element> {
     record.hitMs = costs.hitMs
     record.rechecked = waited
     record.afterActivation = afterActivation
-    return (record, outcome.refusal)
+    return (record, outcome.refusal, verdict)
   }
 }
 
@@ -1644,7 +1657,7 @@ private final class StalePointGateCosts {
 /// of the app's own can open over the point meanwhile and no later wait need follow. Nil without a gate.
 func fieldRouteFirstCheck<Element>(_ field: Element, gate: StalePointGate<Element>?, awaitPendingClick: () -> Bool,
                                    now: () -> Double, reads: StalePointReads<Element>)
-  -> (record: StalePointRecord, refusal: EngineError?)? {
+  -> (record: StalePointRecord, refusal: EngineError?, verdict: StalePointVerdict<Element>)? {
   let waited = awaitPendingClick()
   return gate?.check(field, waited: waited, now: now, reads: reads)
 }
@@ -1658,7 +1671,8 @@ func fieldRouteFirstCheck<Element>(_ field: Element, gate: StalePointGate<Elemen
 func recheckedPointVerdict<Element>(at point: CGPoint, hit: WindowHit<Element>, target: CGWindowID?, pid: pid_t,
                                     windows: () -> [ListedWindow],
                                     tree: (Element?) -> StalePointVerdict<Element>) -> StalePointVerdict<Element> {
-  guardedPointVerdict(at: point, hit: hit.element, place: hit.place, target: target, pid: pid, recorded: nil, windows: windows) {
+  guardedPointVerdict(at: point, hit: hit.element, place: hit.place, answered: hit.answered, target: target, pid: pid, recorded: nil,
+                      windows: windows) {
     tree(hit.element)
   }
 }
@@ -1776,14 +1790,16 @@ extension Engine {
   /// of the window the point was placed in, which #316's rule W looks above among `appPid`'s windows. `place` is where
   /// that hit-test answered, #452's signal, and `hitMs` its time (the meta's `hitMs`).
   func stalePointGuard(at point: CGPoint, windowOrigin: CGPoint, windowID: CGWindowID?, hit: AXUIElement?, place: PointHitPlace,
-                       hitMs: Double?, rehit: () -> AXUIElement?, app: ResolvedApp, appPid: pid_t, context: ExecutionContext)
+                       answered: AXUIElement? = nil, hitMs: Double?, rehit: () -> AXUIElement?, app: ResolvedApp, appPid: pid_t,
+                       context: ExecutionContext)
     -> (record: StalePointRecord, refusal: EngineError?, verdict: StalePointVerdict<AXUIElement>, shift: CGVector) {
     let started = monotonicMilliseconds()
     let reads = StalePointReads<AXUIElement>.live
     let screenshot = context.connection.observedScreenshot(app: app)
     let shift = screenshot.map { CGVector(dx: windowOrigin.x - $0.windowOrigin.x, dy: windowOrigin.y - $0.windowOrigin.y) } ?? .zero
     var windowsMs: Double?
-    let verdict = guardedPointVerdict(at: point, hit: hit, place: place, target: windowID, pid: appPid, recorded: screenshot?.windowList, windows: {
+    let verdict = guardedPointVerdict(at: point, hit: hit, place: place, answered: answered, target: windowID, pid: appPid,
+                                      recorded: screenshot?.windowList, windows: {
       let read = monotonicMilliseconds()
       defer { windowsMs = monotonicMilliseconds() - read }
       return onScreenWindowList()

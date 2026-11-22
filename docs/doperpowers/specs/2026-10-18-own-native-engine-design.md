@@ -7650,6 +7650,125 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   its focus hold replaces the early recheck's record in the meta; `hitMs` is the last hit-test's.
   Date/Author: 2026-11-20, cursor235's implementer for #456.
 
+- Decision (#443, 2026-11-21, `fix/443-decoration-control-gone`, plugin 0.28.29; amends #433's scope note on `decomove`
+  and #296's verdict, StalePoint.swift `controlGoneVerdict`): **an inert node kept on its own handle whose recorded
+  control is confirmed destroyed refuses (`controlGone`).** #433's qualification (kit `probe/433-qual`, cell `decomove`,
+  batch A, run 44715767925) measured main 870dd117 landing on link B 40 of 40 times on CfT and on Electron when an inert
+  decoration of link A (nested groups the size of A) was moved into B once A was replaced; Safari refused `nodeGone`.
+  #433's entry left the case out of scope because two rounds that judged content of a control by where its content now
+  lies (a link's content must still lie inside its recorded link) kept refusing link-text clicks main keeps (text
+  re-rendered in an unchanged link, unread parents or children, overflowing labels, same-title links). This rule asks
+  nothing about where the node lies now, only whether its control still exists, and acts only on confirmation.
+  "Recorded control" is what the record already holds, so the observation is unchanged and costs nothing more:
+  `ScreenshotNode.control`, #431's nearest recorded ancestor, frameless ones included, of an interactive role or with
+  AXPress, below the node's web area, window, sheet or application; nil where a nearer ancestor's actions did not read
+  (`controlUnknown`), and then the rule does not run. "Confirmed gone" is `StalePointReads.gone`, the control's handle
+  answering its AXRole read with kAXErrorInvalidUIElement; a seam without that read never refuses (not `isGone`'s
+  fallback on an unread frame). The rule runs after #296's verdict, before #433's check of a control beneath, and refuses
+  only a point that verdict keeps where all of these hold: the node was found by its own handle (a node re-created in
+  place came with its control, so `remount` and `retext` stay main's), it does not act on its own (its role and actions
+  read inert at the observation, no AXPress recorded: a button that outlived its clickable card is its own target), and
+  the verdict is not #305's `recordedHit` (another recorded control the screenshot showed at the point, in place,
+  vouches for the click). A live control keeps main's verdict whether it still holds the node or not, and a control
+  whose reads fail with any other error keeps it too. The refusal is the guard's own, `screenChangedSinceScreenshot`,
+  meta `stalePoint.reason` `controlGone` with `controlRole` (the gone control's role), its sentence: "The screen
+  changed since the screenshot: the point lies on an <node> that does not act on its own, inside the <control> the
+  screenshot showed there; that control is gone, and the <node> now lies in whatever replaced it. Nothing was sent.
+  Call getScreenshot for a new screenshot and aim again from what it shows." (the activated form as the guard's other
+  refusals). The press verdict and the route's recheck take it through `stalePointVerdict`. The model-facing docs are
+  unchanged: "what that screenshot showed at the point is gone" already covers it.
+  Limits: a link's own text node (AXStaticText) moved into a new link is refused the same way, which is the same wrong
+  click; Chromium recreating a control's accessibility object for the same DOM element (a role change) while a child's
+  object survives would refuse a click main lands correctly, not observed and not measured.
+  Proven offline (`OverlayTargetTests`, four new tests, one rewritten): `decomove` refuses with the decoration or A's text
+  moved into B, the hit on it, on B or nothing, and with A recorded frameless, with the sentence and meta; A's handle
+  alive with every read failing, or a seam without `gone`, keeps; A alive, with the decoration inside it or moved out,
+  keeps; a re-created node, an acting node and a `recordedHit` keep. #433's test that pinned `decomove` to main's verdict
+  now asserts the refusal, and its case with B's role unread refuses too. With the call removed, 17 assertions in three
+  tests fail; mutations of the handle-only, inert-only, `recordedHit` and confirmed-only conditions each fail a test.
+  Not measured live: `decomove` with this build on CfT and Electron, and #433's keep cells (`retext`, `plain`, `like`,
+  `remount`, `textbehind`) and #340's.
+  Date/Author: 2026-11-21, cursor235's builder for #443.
+
+- Decision (#443, the review of dfe6f443..1d3b0963, reviewer-medium, 2026-11-21; amends the entry above): one P2, a
+  false refusal against main, fixed. With two links overlapping at the point, the record can take a deeper decoration
+  of the back link A while the front link B takes the click; once A is removed and the decoration survives, B gets the
+  same click, but the hit on B's text answers `nonInteractiveHit` and on B with the decoration moved into it
+  `hitAboveNode`, so neither reached the `recordedHit` exemption and the rule refused what main lands correctly (and
+  pre-empted the element route's own `recordedHit` check of B). Now, before refusing, the control the live hit lies in
+  vouches (`hitControlVouches`): the hit itself or its nearest ancestor below its document that acts on its own (an
+  interactive role or AXPress, read now), when it is a recorded node by its recorded handle, its shown frame holding the
+  point and its frame read now in place (2 pt). A match re-created by role and label never vouches, since a same-label
+  replacement would pass it; `decomove`'s B is the replacement, not recorded at the point, so it still refuses. Proven
+  offline (`testARecordedControlInFrontOfAGoneControlVouchesForTheClick`): both shapes keep, and the route presses B; B
+  moved 3 pt off its place, or a same-label link new at the point with B gone, refuses. The case fails with the vouch
+  removed; the earlier mutations still fail a test each (`testWhatTheControlGoneRuleLeavesToMain` now takes the acting
+  node with no hit and `recordedHit` on a re-created control, which no hit's control vouches for, so the vouch does not
+  mask those conditions). 1601 swift tests, 0 failures.
+  Date/Author: 2026-11-21, cursor235's builder for #443.
+
+- Decision (#443, the hosted smoke of 2a3c7e53 against main dfe6f443, run 44997131965, 2026-11-21; narrows the two
+  entries above): **the rule refuses only a node that has moved into a different control.** The smoke found two false
+  refusals against main. (1) `overlaprow`, Electron: links A and F overlap in a row, the record takes A's decoration, A
+  is removed and the decoration stays in the row under the unchanged front link F; the click at F's left padding hit
+  the decoration itself (`sameElement`), so the vouch, which walked from the hit, never saw F. Main landed on F 2/2, the
+  build refused 2/2. (2) `rolechange`, Safari, measured: the page sets role="button" on A's own element, WebKit
+  re-creates A's accessibility object (the old handle confirmed gone) as an AXButton, and the decoration survives in
+  it. Main kept and landed 4/4 (`hitAboveNode`, hit AXButton), the build refused 4/4; CfT and Electron keep A's object
+  and kept. `decomove` refused 4/4 on CfT and Electron, and `overlapinto` (the review's shape) kept everywhere.
+  So, with the recorded control confirmed gone, the guard reads the control the node lies in now (`liveControl`: its
+  nearest ancestor that acts on its own, an interactive role or AXPress read now, below its document, within
+  `stalePointAncestorLevels` parents, an ancestor whose role and actions do not read passed over) and refuses
+  `controlGone` only when that control exists and is another (`controlDiffers`): its label reads otherwise
+  (`stalePointLabelsAgree`, whose absent or unread side agrees), or its frame read now is more than 2 pt off the
+  recorded control's (a recorded control without a frame, or a frame unread now, says nothing). The role is not
+  compared, so `rolechange` keeps. No control now (`overlaprow`, or an ancestor whose role does not read) keeps main's
+  verdict. The vouch stays, since a recorded control in place at the point still takes a click the narrowed rule would
+  refuse (the decoration moved into front link F, whose label is not A's), and now checks both the node's live control
+  and the hit's (`controlVouches`, by recorded handle, shown at the point, in place): with the decoration in F, the hit
+  on F, on the decoration or on nothing keeps; with it in a new link N at A's place, the hit on F's text keeps by the
+  hit's control.
+  Limit, by design: a replacement with A's label at A's place (a same-label link slid into A's row, and the decoration
+  moved into it) reads as A re-created and keeps main's verdict, which clicks it; `decomove` refuses because B reads
+  "Next" where A read "Inbox". A control re-created in place with its label read from another attribute than before
+  (title one side, description the other) still agrees, as `stalePointLabelsAgree` lets an absent side agree.
+  Proven offline (`OverlayTargetTests`, 31 tests): the `decomove` fakes now give B another label, as the cell does, and
+  refuse; `testADecorationLeftInNoControlKeepsMainsVerdict` (`overlaprow`: the hit on the decoration, nothing or F) and
+  `testADecorationInItsControlReCreatedWithAnotherRoleKeepsMainsVerdict` (`rolechange`: an AXButton with A's label and
+  frame keeps, the hit on it or the decoration; 3 pt off or another label refuses) are new; the vouch test adds the
+  no-hit case; B's role unread now keeps (no known control). Against 2a3c7e53's StalePoint.swift both new tests, the
+  vouch test and the unread-role case fail. Mutations each fail a test: the call removed, `isGone`'s fallback, the
+  inert-only and `recordedHit` conditions, the label check, the frame check, the node's vouch and the hit's vouch. One
+  survives: dropping the own-handle condition, since a node re-created with its control (`remount`) now also keeps by
+  the same-control comparison; the condition stays as the cheaper guard of the keep cells. 153 StalePoint tests and
+  1603 swift tests, 0 failures.
+  Not measured live: this build on the smoke's cells and on #433's and #340's keep cells.
+  Date/Author: 2026-11-21, cursor235's builder for #443.
+
+- Decision (#443, the re-review of f394677e, reviewer-medium, 2026-11-21, the last review wave; amends the entry above):
+  two P2 and two P3, all fixed; the counted hosted qualification is the check from here, with no further review round.
+  (1) `liveControl`'s walk passed over an ancestor whose role or actions did not read and compared a farther control
+  (an outer clickable card) with the recorded one, so a link re-created under a card could refuse. An ancestor it
+  cannot classify (role unread with no AXPress read, or role read inert with its actions unread) now ends the walk,
+  inconclusive, and the verdict is main's. (2) A vouching control must be one the record holds as a control (an
+  interactive role, or AXPress read then: `actionable` or `pressRecorded`); an inert wrapper that gained AXPress since
+  never vouches. (3) `controlDiffers` no longer goes through `stalePointLabelsAgree`, whose unread title read as absent
+  and let the comparison fall through to the descriptions: it compares title, then description, and an attribute unread
+  on either side, then or now, ends the comparison with no label difference; the description is compared only where
+  both sides are known to lack a title. A frame confirmed off by more than 2 pt still refuses. (4) A front link's text
+  drawn outside the link's own frame, the hit on it, could not vouch, since `controlVouches` asks for the control's
+  shown frame at the point: the hit now vouches itself (`contentVouches`) when it is a recorded node by handle, shown at
+  the point and in place, whose recorded control is the control it lies in now and is in place.
+  Proven offline, four new `OverlayTargetTests`, each failing against f394677e's StalePoint.swift and with its own fix
+  reverted alone: `testAnUnclassifiedAncestorEndsTheSearchForTheLiveControl` (a re-created link whose role, or whose
+  actions, do not read, under a re-laid-out clickable card), `testAWrapperThatGainedAXPressNeverVouches` (refused),
+  `testAnUnreadTitleEndsTheLabelComparison` (the title unread then or now, the descriptions differing: kept; 3 pt off:
+  refused), `testOverflowingContentOfAControlInPlaceVouches` (kept; the front link 3 pt off: refused). The vouch test
+  adds the hit on the front link's text re-laid out 3 pt inside it, which only the hit's control vouches for, so that
+  vouch still earns its place beside the content's. The mutation pass (13 mutations) is caught but for the own-handle
+  condition, as the entry above says. 157 StalePoint tests and 1607 swift tests, 0 failures.
+  Date/Author: 2026-11-21, cursor235's builder for #443.
+
 - Decision (#453 and #470, ruling 1040, owner ruling 1042, 2026-11-21, `fix/453-overlay-click`, plugin 0.28.29; amends
   #452's and #456's entries; OverlayClick.swift, StalePoint.swift, Input.swift, ElementInput.swift): **a click on a row of
   a window the app shows over the observed one is delivered into that window by its kind's route when the row is the one

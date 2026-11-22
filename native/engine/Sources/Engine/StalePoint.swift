@@ -32,7 +32,9 @@ import Foundation
 // region the model types into is exempt (`editedInPlace`, ruling 1ea561bc:553). #433: a point kept at an inert layer (a
 // node that does not act on its own, with no acting ancestor in its document: a transparent overlay), with a hit that
 // names no interactive element, is judged again at the recorded control beneath it (`underlyingTarget`), which a click
-// passes through to: gone with no re-created handle #431 accepts, moved off the point, or relabelled, it refuses. #452
+// passes through to: gone with no re-created handle #431 accepts, moved off the point, or relabelled, it refuses. #443:
+// an inert node kept on its own handle whose recorded control is confirmed destroyed, and which lies in another control
+// now, refuses (`controlGoneVerdict`: a decoration moved from a replaced link into its replacement). #452
 // (design ruling 928, narrowed by the qualification's measurements): the pointer's events are posted to the app's process
 // stamped with the observed window (Mouse.swift `stampWindow`), so the app delivers them to that window whatever lies over
 // it; a point the app's own hit-test answers in another of its windows (Chrome's omnibox popup, its `<datalist>` popup, a
@@ -434,10 +436,14 @@ enum StalePointReason: String, Equatable {
   /// Refused (#452, `guardedPointVerdict`): the point lies on another window of the app's own, over the observed one,
   /// which the pointer's events are stamped to (`AppWindowSignal` says how it was found); nothing of the tree was read.
   case appWindowOverPoint
+  /// Refused (#443, `controlGoneVerdict`): the node, inert and found by its own handle, lay inside a recorded control
+  /// whose handle is confirmed destroyed (`StalePointReads.gone`), so the node outlived the control the screenshot showed
+  /// it in, and what it lies in now is not what the screenshot showed (`decomove`: a decoration moved into a new link).
+  case controlGone
 
   var refuses: Bool {
     self == .nodeGone || self == .frameMoved || self == .interactiveHit || self == .pressedOther || self == .newWindow || self == .otherWebArea
-      || self == .newElementOverPoint || self == .relabelled || self == .appWindowOverPoint
+      || self == .newElementOverPoint || self == .relabelled || self == .appWindowOverPoint || self == .controlGone
   }
 }
 
@@ -1029,6 +1035,7 @@ func stalePointVerdict<Element>(at point: CGPoint, windowShift: CGVector = .zero
                                 reads: StalePointReads<Element>) -> StalePointVerdict<Element> {
   var verdict = recordedNodeVerdict(at: point, windowShift: windowShift, nodes: nodes, frameless: frameless, recorded: recorded,
                                     hit: first, rehit: rehit, sleep: sleep, reads: reads)
+  if let refused = controlGoneVerdict(verdict, reads) { return refused }
   let shown = CGPoint(x: point.x - windowShift.dx, y: point.y - windowShift.dy)
   // A hit on a control names what the click reaches, judged by #296 and #305.
   // A hit that advertises AXPress (a clickable group) names a control too, for this gate only.
@@ -1061,6 +1068,118 @@ func stalePointVerdict<Element>(at point: CGPoint, windowShift: CGVector = .zero
                                   newElementReads: verdict.newElementReads)
   (refused.underlying, refused.underlyingIdentity, refused.labelNow, refused.underlyingRefused) = (target, judged.identity, judged.labelNow, true)
   return refused
+}
+
+/// #443: a point #296 keeps on an inert node found by its own handle (no interactive role, no AXPress recorded, read at
+/// the observation) is refused when the node has moved into another control: its recorded control
+/// (`ScreenshotNode.control`, #431's: its nearest recorded ancestor, frameless ones included, of an interactive role or
+/// with AXPress, below its document) is confirmed gone, its handle answering kAXErrorInvalidUIElement
+/// (`StalePointReads.gone`, never the fallback on an unread frame), and the control the node lies in now
+/// (`liveControl`) is another one (`controlDiffers`: another label, or a frame off the recorded control's): kit
+/// `probe/433-qual`, `decomove`, a decoration moved from a replaced link into its replacement, kept 40/40 on main.
+/// Everything else keeps main's verdict: a recorded control that lives or reads unreadably; a node in no acting
+/// ancestor now (hosted smoke 44997131965, `overlaprow`: the decoration left in its row under a front link, which takes
+/// the click); a control in the recorded one's place with its label, whatever its role (`rolechange`: WebKit re-creates
+/// a link's object as AXButton when the page sets role="button", the decoration surviving); a node re-created in place
+/// (its control with it, `remount`); a node of unknown actions or under an ancestor of unknown actions (no control
+/// recorded); a hit #305 keeps (`recordedHit`); and a recorded control in place at the point that the node or the hit
+/// lies in now (`controlVouches`: the review of dfe6f443..1d3b0963, a front link B the decoration moved into, or whose
+/// text is hit, answering `hitAboveNode` or `nonInteractiveHit`, never `recordedHit`), or whose recorded content in place
+/// is the hit (`contentVouches`, a front link's text drawn outside its frame).
+func controlGoneVerdict<Element>(_ verdict: StalePointVerdict<Element>, _ reads: StalePointReads<Element>) -> StalePointVerdict<Element>? {
+  guard !verdict.refused, verdict.reason != .recordedHit, verdict.identity == .handle, let node = verdict.node,
+        node.actionable == false, !node.pressRecorded, let control = node.control, reads.gone?(control) == true,
+        let recorded = (verdict.nodes + verdict.frameless).first(where: { reads.same($0.element, control) }),
+        let current = verdict.current, let now = liveControl(above: current, reads),
+        controlDiffers(now, from: recorded, windowShift: verdict.windowShift, reads), !controlVouches(now, verdict, reads),
+        !(verdict.hit.flatMap { liveControl(at: $0, reads) }.map { controlVouches($0, verdict, reads) } ?? false),
+        !(verdict.hit.map { contentVouches($0, verdict, reads) } ?? false)
+  else { return nil }
+  return StalePointVerdict(reason: .controlGone, node: node, identity: verdict.identity, current: verdict.current, hitRole: verdict.hitRole,
+                           hit: verdict.hit, gaps: verdict.gaps, point: verdict.point, windowShift: verdict.windowShift, nodes: verdict.nodes,
+                           frameless: verdict.frameless, recorded: verdict.recorded, webAreaReads: verdict.webAreaReads,
+                           newElementReads: verdict.newElementReads)
+}
+
+/// #443: the control an element lies in now: the element itself (`liveControl(at:)`) or its nearest ancestor
+/// (`liveControl(above:)`) that acts on its own (an interactive role or AXPress, read now), below its document (a
+/// `stalePointControlStops` role); nil when none, within the parent walk's bound (`stalePointAncestorLevels`), and nil
+/// too when the walk meets an element it cannot classify (its role unread and no AXPress read, or its role read inert and
+/// its actions unread) before any control: what holds the node now is then unknown, so a farther control (an outer
+/// clickable card) is never compared in its place (the re-review of f394677e, item 1).
+func liveControl<Element>(at element: Element, _ reads: StalePointReads<Element>) -> Element? {
+  firstActing(from: element, reads)
+}
+
+func liveControl<Element>(above element: Element, _ reads: StalePointReads<Element>) -> Element? {
+  reads.parent(element).flatMap { firstActing(from: $0, reads) }
+}
+
+private func firstActing<Element>(from start: Element, _ reads: StalePointReads<Element>) -> Element? {
+  var next: Element? = start
+  var levels = 0
+  while let element = next, levels < stalePointAncestorLevels {
+    let role = reads.role(element)
+    if role.map({ stalePointControlStops.contains($0) || stalePointWalkStops.contains($0) }) == true { return nil }
+    let actions = reads.actions(element)
+    if role.map(stalePointInteractiveRoles.contains) == true || actions?.contains("AXPress") == true { return element }
+    if role == nil || actions == nil { return nil }
+    (next, levels) = (reads.parent(element), levels + 1)
+  }
+  return nil
+}
+
+/// #443: whether the control a node lies in now is confirmed another than its recorded one: a label that reads otherwise,
+/// or a frame read now more than 2 pt off the recorded control's (a recorded control without a frame, or a frame unread
+/// now, says nothing). The label is compared as `stalePointLabelsAgree` does, title first, then description, but an
+/// attribute unread on either side, then or now, ends the comparison with no difference, and the next is compared only
+/// where both sides are known to lack it (the re-review of f394677e, item 3). The role is not compared: a control
+/// re-created in place may change it (`rolechange`).
+func controlDiffers<Element>(_ now: Element, from recorded: ScreenshotNode<Element>, windowShift: CGVector,
+                             _ reads: StalePointReads<Element>) -> Bool {
+  for part in [StalePointLabelPart.title, .description] {
+    guard !recorded.labelsUnread.contains(part), case .text(let live) = reads.readLabel(now, part) else { break }
+    let old = nonEmpty(part == .title ? recorded.title : recorded.description), fresh = nonEmpty(live.map(bounded))
+    if let old, let fresh { if old != fresh { return true } else { break } }
+    if old != nil || fresh != nil { break }
+  }
+  guard !recorded.frame.isNull, let live = reads.frame(now) else { return false }
+  return frameDistance(live, recorded.frame.offsetBy(dx: windowShift.dx, dy: windowShift.dy)) > stalePointFrameTolerance
+}
+
+/// #443: whether `control`, the one the node or the verdict's hit lies in now, is a recorded control the screenshot
+/// showed at the point, by its recorded handle (never a match re-created by role and label, which a same-label
+/// replacement would pass), its shown frame holding the point and its frame read now in place: then it takes the click,
+/// as #305 lets it. `decomove`'s B is the replacement, recorded elsewhere if at all, so it never vouches. The record must
+/// hold it as a control (an interactive role or AXPress, read then): an inert wrapper that gained AXPress since never
+/// vouches (the re-review of f394677e, item 2).
+func controlVouches<Element>(_ control: Element, _ verdict: StalePointVerdict<Element>, _ reads: StalePointReads<Element>) -> Bool {
+  guard let point = verdict.point, let live = reads.frame(control) else { return false }
+  let meant = CGPoint(x: point.x - verdict.windowShift.dx, y: point.y - verdict.windowShift.dy)
+  return verdict.nodes.contains { recorded in
+    reads.same(recorded.element, control) && (recorded.actionable == true || recorded.pressRecorded)
+      && recorded.shown.map { holdsPoint($0, meant) } == true && inPlace(live, recorded, verdict.windowShift)
+  }
+}
+
+/// #443: whether the verdict's hit is recorded content of a control in place that takes the click (the re-review of
+/// f394677e, item 4: a front link's text drawn outside the link's own frame, which `controlVouches` cannot take at the
+/// point): the hit, by its recorded handle, its shown frame holding the point and its frame read now in place, whose
+/// recorded control (`ScreenshotNode.control`) is the control it lies in now (`liveControl(above:)`) and is itself in
+/// place (a frameless one cannot be shown so).
+func contentVouches<Element>(_ hit: Element, _ verdict: StalePointVerdict<Element>, _ reads: StalePointReads<Element>) -> Bool {
+  guard let point = verdict.point, let live = reads.frame(hit) else { return false }
+  let meant = CGPoint(x: point.x - verdict.windowShift.dx, y: point.y - verdict.windowShift.dy)
+  guard let content = verdict.nodes.first(where: { reads.same($0.element, hit) }), content.shown.map({ holdsPoint($0, meant) }) == true,
+        inPlace(live, content, verdict.windowShift), let owner = content.control,
+        let now = liveControl(above: hit, reads), reads.same(owner, now), let ownerFrame = reads.frame(owner),
+        let recordedOwner = verdict.nodes.first(where: { reads.same($0.element, owner) }) else { return false }
+  return inPlace(ownerFrame, recordedOwner, verdict.windowShift)
+}
+
+/// Whether a frame read now lies within `stalePointFrameTolerance` of a recorded node's, the window's shift applied.
+private func inPlace<Element>(_ live: CGRect, _ recorded: ScreenshotNode<Element>, _ windowShift: CGVector) -> Bool {
+  frameDistance(live, recorded.frame.offsetBy(dx: windowShift.dx, dy: windowShift.dy)) <= stalePointFrameTolerance
 }
 
 /// #433: the recorded controls beneath an inert layer at `node`'s point, one of which a click there passes through to:
@@ -1460,6 +1579,8 @@ struct StalePointRecord: Equatable {
   /// #433: the role of the recorded control beneath the node that the guard judged too, and how it was found.
   let underlyingRole: String?
   let underlyingIdentity: StalePointIdentity?
+  /// #443: for `controlGone`, the role of the recorded control found gone.
+  let controlRole: String?
 
   init<Element>(_ verdict: StalePointVerdict<Element>, ms: Double, rechecked: Bool = false) {
     self.verdict = verdict.refused ? .refused : .kept
@@ -1475,6 +1596,7 @@ struct StalePointRecord: Equatable {
     overBy = verdict.overBy
     underlyingRole = verdict.underlying?.role
     underlyingIdentity = verdict.underlyingIdentity
+    controlRole = verdict.reason == .controlGone ? verdict.node?.controlRole : nil
     self.ms = ms
     self.rechecked = rechecked
   }
@@ -1494,6 +1616,7 @@ struct StalePointRecord: Equatable {
     if let hitMs { wire["hitMs"] = (hitMs * 1000).rounded() / 1000 }
     if let underlyingRole { wire["underlyingRole"] = underlyingRole }
     if let underlyingIdentity { wire["underlyingIdentity"] = underlyingIdentity.rawValue }
+    if let controlRole { wire["controlRole"] = controlRole }
     if rechecked { wire["rechecked"] = true }
     if afterActivation { wire["afterActivation"] = true }
     return wire
@@ -1736,6 +1859,15 @@ func controlUnderInertChanged(over: String, control: String, reason: StalePointR
     "The screen changed since the screenshot: the point lies on an \(over) that does not act on its own, over the \(control) the screenshot showed there, which a click passes through to; that control \(change). \(sent) Call getScreenshot for a new screenshot and aim again from what it shows; the same point would reach whatever lies under the \(over) now.")
 }
 
+/// #443's refusal: the point lies on an element that does not act on its own (`node`, a decoration or a label), inside
+/// the recorded control the screenshot showed it in (`control`), and that control is gone while the element lives on,
+/// so a click there reaches whatever the element lies in now. The same name as the guard's other refusals.
+func inertOutlivedControl(node: String, control: String, afterActivation: Bool = false) -> EngineError {
+  let sent = afterActivation ? "The app was activated in the background, but nothing was pressed." : "Nothing was sent."
+  return EngineError(name: "screenChangedSinceScreenshot",
+    "The screen changed since the screenshot: the point lies on an \(node) that does not act on its own, inside the \(control) the screenshot showed there; that control is gone, and the \(node) now lies in whatever replaced it. \(sent) Call getScreenshot for a new screenshot and aim again from what it shows.")
+}
+
 /// #316's rule W's refusal: the same name as the guard's other refusals, since the model's remedy is the same (a new
 /// screenshot first), with its own sentence, since no element of the screenshot's is at fault. Nothing was posted.
 func newWindowOverScreenshot(app: String) -> EngineError {
@@ -1763,6 +1895,14 @@ func stalePointOutcome<Element>(_ verdict: StalePointVerdict<Element>, ms: Doubl
   if verdict.reason == .newWindow { return (record, newWindowOverScreenshot(app: app)) }
   if verdict.reason == .appWindowOverPoint { return (record, appWindowOverPointRefusal(app: app, afterActivation: afterActivation)) }
   guard verdict.refused, let node = verdict.node else { return (record, nil) }
+  if verdict.reason == .controlGone {
+    let control = node.control.flatMap { control in (verdict.nodes + verdict.frameless).first { reads.same($0.element, control) } }
+    return (record, inertOutlivedControl(
+      node: stalePointName(role: node.role, title: node.title, description: node.description, value: node.value),
+      control: control.map { stalePointName(role: $0.role, title: $0.title, description: $0.description, value: $0.value) }
+        ?? node.controlRole ?? "control",
+      afterActivation: afterActivation))
+  }
   if verdict.underlyingRefused, let control = verdict.underlying {
     return (record, controlUnderInertChanged(
       over: stalePointName(role: node.role, title: node.title, description: node.description, value: node.value),

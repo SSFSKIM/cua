@@ -1,0 +1,11 @@
+{"trial": 0, "pointer": [200, 200], "same_place_motion_notify": 1, "same_place_points": [["core", 0]], "control_away": 1, "control_back": 1, "pointer_after": [200, 200]}
+{"trial": 1, "pointer": [200, 200], "same_place_motion_notify": 1, "same_place_points": [["core", 0]], "control_away": 1, "control_back": 1, "pointer_after": [200, 200]}
+{"trial": 2, "pointer": [200, 200], "same_place_motion_notify": 1, "same_place_points": [["core", 0]], "control_away": 1, "control_back": 1, "pointer_after": [200, 200]}
+{"trial": 3, "pointer": [200, 200], "same_place_motion_notify": 1, "same_place_points": [["core", 0]], "control_away": 1, "control_back": 1, "pointer_after": [200, 200]}
+{"trial": 4, "pointer": [200, 200], "same_place_motion_notify": 1, "same_place_points": [["core", 0]], "control_away": 1, "control_back": 1, "pointer_after": [200, 200]}
+{"trial": 5, "pointer": [200, 200], "same_place_motion_notify": 1, "same_place_points": [["core", 0]], "control_away": 1, "control_back": 1, "pointer_after": [200, 200]}
+{"trial": 6, "pointer": [200, 200], "same_place_motion_notify": 1, "same_place_points": [["core", 0]], "control_away": 1, "control_back": 1, "pointer_after": [200, 200]}
+{"trial": 7, "pointer": [200, 200], "same_place_motion_notify": 1, "same_place_points": [["core", 0]], "control_away": 1, "control_back": 1, "pointer_after": [200, 200]}
+{"trial": 8, "pointer": [200, 200], "same_place_motion_notify": 1, "same_place_points": [["core", 0]], "control_away": 1, "control_back": 1, "pointer_after": [200, 200]}
+{"trial": 9, "pointer": [200, 200], "same_place_motion_notify": 1, "same_place_points": [["core", 0]], "control_away": 1, "control_back": 1, "pointer_after": [200, 200]}
+{"counted": "XI_Motion (XI2, XISelectEvents on the window)", "server_vendor": "The X.Org Foundation", "vendor_release": 12101011, "xtest": "2.2", "trials": 10, "same_place_counts": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1], "control_away_counts": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1], "control_back_counts": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1]}

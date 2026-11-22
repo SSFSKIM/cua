@@ -7856,6 +7856,20 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   three docs tests pass.
   Date/Author: 2026-11-22, cursor235's builder for #453.
 
+- Decision (#453, the review of c8858c2a..e7e78424, reviewer-medium, 2026-11-22; amends the two entries above): one P1,
+  one P2 and one P3, all fixed. (P1) The identity's last reads came after the deadline and intervention checks, so a
+  request that expired, or a person who acted, during them still got the row pressed: the owner's checks and
+  registration stay before the reads, and the deadline and the in-flight intervention check run again after them, just
+  before the press (`overlayClick`'s `beforePress`), answering timeoutReached or userIntervened with nothing sent, as
+  main's other paths do. (P3) The agent cursor's click is announced only after those checks pass, never for a row the
+  last check refuses. (P2) A cached capture that failed was retried with the window list read before the failed
+  attempt: the list is now sampled immediately before each attempt and kept from the one that captured
+  (`captureSamplingList`). Proven offline: `testAnExpiryOrAnInterventionDuringTheLastReadsSendsNoPress` fails with the
+  checks after the reads removed or moved before them, `testTheCursorsClickComesOnlyAfterTheLastChecks` with the cursor
+  announced before the last check, `testTheWindowListIsTheOneSampledBeforeTheAttemptThatCaptured` with one list
+  sampled before the first attempt. 27 `OverlayClickTests`; 1634 swift tests (1 skipped), 0 failures.
+  Date/Author: 2026-11-22, cursor235's builder for #453.
+
 ## Outcomes & Retrospective
 
 Pending for the initiative — written at finish. M1a's interim account (2026-10-20) follows; the full record is `docs/doperpowers/specs/2026-10-18-own-native-engine-m1a-report.md`.

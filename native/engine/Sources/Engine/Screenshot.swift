@@ -309,8 +309,6 @@ extension Engine {
       throw EngineError(name: "noCapturableWindow", "No capturable window found: \(name)")
     }
     var lookup = try shareableWindows.window(number, timings: &timings)
-    // #453: the app's windows over this one, with their bounds, as the image shows them (about 0.3 ms, p95 1 ms).
-    let listed = timings.time("screenshotWindowsListed") { onScreenWindowListRead() }
     guard var target = lookup.window else { throw EngineError(name: "noCapturableWindow", "No capturable window found: \(name)") }
     let configuration = SCStreamConfiguration()
     let scale = screenshotScale(for: frame, screens: screenScales.current)
@@ -322,20 +320,41 @@ extension Engine {
     // Route 3 releases its screen-update hold off the request path (Activation.swift): a capture after an action waits
     // for that release, so it never captures a display the action still holds.
     timings.time("screenshotReleaseWait") { ScreenUpdateReleases.shared.drain() }
-    let image: CGImage
-    do {
-      image = try timings.time("screenshotCapture") { try captureImage(SCContentFilter(desktopIndependentWindow: target), configuration) }
-    } catch where lookup.cached {
+    // #453: the app's windows over this one, with their bounds, listed just before each capture attempt (about 0.3 ms,
+    // p95 1 ms), the list kept the one of the attempt that captured.
+    var listedMs = 0.0
+    let (image, listed) = try captureSamplingList(cached: lookup.cached, list: { () -> [ListedWindow]? in
+      let started = monotonicMilliseconds()
+      defer { listedMs += monotonicMilliseconds() - started }
+      return onScreenWindowListRead()
+    }, capture: {
+      try timings.time("screenshotCapture") { try captureImage(SCContentFilter(desktopIndependentWindow: target), configuration) }
+    }, refresh: {
       // A cached window that no longer captures: list the shareable content again and retry once.
       lookup = try shareableWindows.window(number, timings: &timings, refresh: true)
       guard let fresh = lookup.window else { throw EngineError(name: "noCapturableWindow", "No capturable window found: \(name)") }
       target = fresh
-      image = try timings.time("screenshotCapture") { try captureImage(SCContentFilter(desktopIndependentWindow: target), configuration) }
-    }
+    })
+    timings.add("screenshotWindowsListed", listedMs)
     guard let data = timings.time("screenshotEncode", { jpegData(image) }) else { throw screenCaptureFailed("The image could not be encoded.") }
     let path = try timings.time("screenshotWrite") { try writePrivately(data, into: directory, name: screenshotFileName(revision: revision)) }
     return CapturedScreenshot(url: URL(fileURLWithPath: path).absoluteString, width: image.width, height: image.height, frame: frame, scale: scale,
                               windowList: lookup.onScreen, windowsListed: listed, windowNumber: number)
+  }
+}
+
+/// One capture with its window list sampled immediately before it (#453; the review of c8858c2a..e7e78424, P2): `list`,
+/// then `capture`; when that fails on a cached window (`cached`), `refresh` (the shareable content listed again), `list`
+/// again and `capture` once more. Answers the image and the list of the attempt that captured it.
+func captureSamplingList<Image, List>(cached: Bool, list: () -> List, capture: () throws -> Image,
+                                      refresh: () throws -> Void) throws -> (image: Image, list: List) {
+  do {
+    let listed = list()
+    return (try capture(), listed)
+  } catch where cached {
+    try refresh()
+    let listed = list()
+    return (try capture(), listed)
   }
 }
 

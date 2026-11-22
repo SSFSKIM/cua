@@ -39,11 +39,16 @@ final class OverlayClickTests: XCTestCase {
   private let point = CGPoint(x: 300, y: 120)
   private let overWindow: CGWindowID = 49
 
+  /// Runs on every label read (the time those AX reads take, or what happens meanwhile).
+  private var duringReads: () -> Void = {}
+
   private var reads: OverlayReads<Node> {
+    let during = duringReads
     let stale = StalePointReads<Node>(
       role: { $0.gone ? nil : $0.roleNow ?? $0.role }, frame: { $0.gone ? nil : $0.frame }, parent: { $0.parent }, children: { _ in nil },
       title: { $0.title }, description: { $0.description }, value: { $0.value },
       label: { node, part in
+        during()
         if node.labelFails || node.gone { return .unreadable }
         switch part {
         case .title: return .text(node.title)
@@ -174,11 +179,11 @@ final class OverlayClickTests: XCTestCase {
 
   /// The decision carried out over a fake clock; `onPress` runs as the AXPress is performed (the app taking it).
   private func click(_ decision: OverlayPoint<Node>, shown: @escaping (CGWindowID) -> Bool?, meta: inout InputMeta,
-                     beforeDispatch: @escaping (Node) throws -> Void = { _ in },
-                     onPress: @escaping (Node, String) -> AXError) throws -> Bool {
+                     beforeDispatch: @escaping (Node) throws -> Void = { _ in }, beforePress: @escaping () throws -> Void = {},
+                     announce: @escaping () -> Void = {}, onPress: @escaping (Node, String) -> AXError) throws -> Bool {
     var clock = 0.0
     return try overlayClick(decision, app: "Google Chrome", reads: reads, windowShown: shown, now: { clock }, sleep: { clock += $0 },
-                            beforeDispatch: beforeDispatch, perform: onPress, meta: &meta)
+                            prepare: beforeDispatch, beforePress: beforePress, announce: announce, perform: onPress, meta: &meta)
   }
 
   private func wire(_ meta: InputMeta) -> NSDictionary? { (meta.wire["overlayClick"] as? [String: Any]).map { $0 as NSDictionary } }
@@ -221,7 +226,7 @@ final class OverlayClickTests: XCTestCase {
     var clock = 0.0
     XCTAssertThrowsError(try overlayClick(decide(scene), app: "Google Chrome", reads: reads, windowShown: { _ in true },
                                           now: { clock }, sleep: { clock += $0; if clock >= 60 { scene.row.gone = true } },
-                                          beforeDispatch: { _ in }, perform: { _, _ in .success }, meta: &meta)) {
+                                          prepare: { _ in }, beforePress: {}, perform: { _, _ in .success }, meta: &meta)) {
       XCTAssertEqual(($0 as? EngineError)?.errorName, "clickUnconfirmed")
     }
     XCTAssertEqual(wire(meta)?["confirmed"] as? Bool, false)
@@ -322,6 +327,81 @@ final class OverlayClickTests: XCTestCase {
       XCTAssertNil(meta.startedAt, "\(name): nothing sent")
       XCTAssertEqual(wire(meta), ["window": 49, "by": "axHit", "kind": "permissionBubble", "refused": expected.rawValue] as NSDictionary, name)
     }
+  }
+
+  /// The review of c8858c2a..e7e78424, P1: the request expiring, or the person's input, during the identity's reads just
+  /// before the press (each check passed before them) sends no press, with main's answers: timeoutReached and
+  /// userIntervened. P3: the agent cursor's click is announced only once every check has passed.
+  func testAnExpiryOrAnInterventionDuringTheLastReadsSendsNoPress() {
+    let cases: [(String, String)] = [("expired", "timeoutReached"), ("intervened", userChanged("Google Chrome").errorName)]
+    for (name, expected) in cases {
+      let scene = permission()
+      let decision = decide(scene)
+      var clock = 0.0
+      let deadline = 10.0
+      var intervened = false
+      duringReads = { if name == "expired" { clock = 20 } else { intervened = true } }
+      defer { duringReads = {} }
+      func checks() throws {
+        if clock >= deadline { throw overlayDeadlinePassed }
+        if intervened { throw userChanged("Google Chrome") }
+      }
+      var meta = freshMeta()
+      var pressed = 0
+      var announced = 0
+      XCTAssertThrowsError(try click(decision, shown: { _ in true }, meta: &meta, beforeDispatch: { _ in try checks() }, beforePress: checks,
+                                     announce: { announced += 1 }) { _, _ in pressed += 1; return .success }) {
+        XCTAssertEqual(($0 as? EngineError)?.errorName, expected, name)
+      }
+      XCTAssertEqual(pressed, 0, "\(name): no press")
+      XCTAssertEqual(announced, 0, "\(name): no cursor click")
+      XCTAssertNil(meta.startedAt, "\(name): nothing sent")
+      XCTAssertNil(wire(meta)?["route"], name)
+    }
+  }
+
+  /// P3: a row the last identity check refuses gets no cursor click; one that passes gets exactly one, before the press.
+  func testTheCursorsClickComesOnlyAfterTheLastChecks() throws {
+    let refused = permission()
+    var announced: [String] = []
+    var meta = freshMeta()
+    XCTAssertFalse(try click(decide(refused), shown: { _ in true }, meta: &meta, beforeDispatch: { $0.title = "Block" },
+                             announce: { announced.append("cursor") }) { _, _ in announced.append("press"); return .success })
+    XCTAssertEqual(announced, [], "refused at the last check: no cursor click")
+    var open = true
+    var delivered = freshMeta()
+    XCTAssertTrue(try click(decide(permission()), shown: { _ in open }, meta: &delivered, announce: { announced.append("cursor") }) { _, _ in
+      announced.append("press")
+      open = false
+      return .success
+    })
+    XCTAssertEqual(announced, ["cursor", "press"])
+  }
+
+  /// The review of c8858c2a..e7e78424, P2: a cached capture that fails is retried after the shareable content is listed
+  /// again, and the window list kept is the one sampled just before the attempt that captured, not the failed one's.
+  func testTheWindowListIsTheOneSampledBeforeTheAttemptThatCaptured() throws {
+    struct Failed: Error {}
+    var steps: [String] = []
+    var samples = 0
+    var attempts = 0
+    let (image, listed) = try captureSamplingList(cached: true, list: { () -> Int in
+      samples += 1
+      steps.append("list\(samples)")
+      return samples
+    }, capture: { () -> String in
+      attempts += 1
+      steps.append("capture\(attempts)")
+      if attempts == 1 { throw Failed() }
+      return "image"
+    }, refresh: { steps.append("refresh") })
+    XCTAssertEqual(image, "image")
+    XCTAssertEqual(listed, 2, "the retry's list")
+    XCTAssertEqual(steps, ["list1", "capture1", "refresh", "list2", "capture2"])
+    var once = 0
+    XCTAssertThrowsError(try captureSamplingList(cached: false, list: { () -> Int in 0 }, capture: { () -> String in once += 1; throw Failed() },
+                                                 refresh: { XCTFail("an uncached window is not retried") }))
+    XCTAssertEqual(once, 1)
   }
 
   /// Ruling 1072, item 6: a point in a list's padding (the datalist at (99, 120), beside its options) or in the permission

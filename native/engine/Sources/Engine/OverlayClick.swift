@@ -328,15 +328,15 @@ struct OverlayClickRecord: Equatable {
 
 /// #453's step in a coordinate click, before anything is posted: the decision carried out. False leaves the click to
 /// main's path (`notOverlay`, or a refusal, recorded in the meta, after which main throws #452's refusal). For a row to
-/// deliver: `beforeDispatch` (the request's deadline, the row's process checked and registered, the in-flight check, the
-/// agent cursor), then AXPress on the recorded handle (`perform`; a messaging timeout is `clickUnconfirmed`, whatever
-/// the window does after it, and any other error `actionFailed`), the identity read once more first (`overlayIdentityRefusal`; a change answers false, nothing pressed),
-/// then the overlay's window (`windowShown`, nil when the list does not read: unknown, never closed) read at once and every
+/// deliver: `prepare` (the request's deadline, the row's process checked and registered, the in-flight check), the
+/// identity read again, `beforePress` (the deadline and the in-flight check again, after those reads), `announce` (the
+/// agent cursor's click, once every check has passed), then AXPress on the recorded handle (`perform`; a messaging timeout is `clickUnconfirmed`, whatever
+/// the window does after it, and any other error `actionFailed`), then the overlay's window (`windowShown`, nil when the list does not read: unknown, never closed) read at once and every
 /// `overlaySampleMs` for up to `overlayConfirmMs`: the window gone answers true; otherwise `clickUnconfirmed`. No mouse event is posted and the app is not activated on any branch.
 func overlayClick<Element>(_ decision: OverlayPoint<Element>, app: String, reads: OverlayReads<Element>,
                            windowShown: (CGWindowID) -> Bool?, now: () -> Double, sleep: (Double) -> Void,
-                           beforeDispatch: (Element) throws -> Void, perform: (Element, String) -> AXError,
-                           meta: inout InputMeta) throws -> Bool {
+                           prepare: (Element) throws -> Void, beforePress: () throws -> Void, announce: () -> Void = {},
+                           perform: (Element, String) -> AXError, meta: inout InputMeta) throws -> Bool {
   switch decision {
   case .notOverlay: return false
   case .refuse(let why, let kind, let window, let by):
@@ -347,13 +347,17 @@ func overlayClick<Element>(_ decision: OverlayPoint<Element>, app: String, reads
     var record = OverlayClickRecord(window: target.window, by: target.by, kind: target.kind)
     defer { meta.overlayClick = record }
     let row = target.row.element
-    try beforeDispatch(row)
-    // The identity once more, after the owner's and the intervention's preparation and just before the press: a row
-    // relabelled, moved or disabled meanwhile is not pressed, and #452's refusal stands.
+    try prepare(row)
+    // The identity once more, after the owner's preparation and just before the press: a row relabelled, moved or
+    // disabled meanwhile is not pressed, and #452's refusal stands.
     if let why = overlayIdentityRefusal(target.row, shift: target.shift, reads: reads) {
       record.refused = why
       return false
     }
+    // The request's deadline and the person's input once more, after those reads (the review of c8858c2a..e7e78424,
+    // P1): an expired request or an intervention during them sends nothing. Only then the cursor's click (P3).
+    try beforePress()
+    announce()
     record.pressed = true
     var error = AXError.failure
     meta.posting { error = perform(row, "AXPress"); return true }
@@ -413,12 +417,16 @@ extension Engine {
     }
     return try armingSettle(&meta, acted: { context.connection.markActed(app) }) { meta in
       try overlayClick(decision, app: app.displayName, reads: reads, windowShown: { number in onScreenWindowIDs().map { $0.contains(number) } },
-                       now: monotonicMilliseconds, sleep: { usleep(UInt32(max(0, $0) * 1000)) }, beforeDispatch: { [self] row in
+                       now: monotonicMilliseconds, sleep: { usleep(UInt32(max(0, $0) * 1000)) }, prepare: { [self] row in
         if unixMilliseconds() >= context.deadline { throw overlayDeadlinePassed }
         let owner = ownerPid(of: row, fallback: appPid)
         try refuseForbiddenOwner(owner)
         actionTargets(owner, app: app, connection: context.connection)
         try guarding.checkInFlight()
+      }, beforePress: {
+        if unixMilliseconds() >= context.deadline { throw overlayDeadlinePassed }
+        try guarding.checkInFlight()
+      }, announce: { [self] in
         cursor.act(connection: context.connection.id, app: app.key, window: observedWindow, .click(point))
       }, perform: { gatedPerform($0, $1) }, meta: &meta)
     }

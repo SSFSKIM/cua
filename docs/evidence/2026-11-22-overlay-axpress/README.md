@@ -43,7 +43,7 @@ History (earlier heads, not counted toward the bar):
 | `<datalist>` option | **0/18**, refused `actionableDescendant` with nothing taken (#483) |
 | Shared mode: frontmost app changed | **0/172**, transient and end |
 | Shared mode: key or main window changed | **0/172** |
-| Shared mode: browser window over the person's cover | transient **5/112**, end **1/112**. Four transient rows are #458's TextEdit font pop-up, as on main. The end row is a parity cell (main's element click by ID on a datalist row, route 3), not this route; see below. |
+| Shared mode: browser window over the person's cover | transient **5/112**, end **1/112**. Four transient rows are #458's TextEdit font pop-up, as on main. The end row is main's own route-3 element click failing (`activationFailed`, pinned below; #485), not this route. |
 | Wrong row | **0/281** |
 | Omnibox re-laid out by one more typed character | **60/60** refused `labelChanged`, nothing taken. The row at the point had changed in 60/60. |
 | Remove suggestion button inside a row (`omniremove`) | **18/18** refused `actionableDescendant`, the suggestion kept, no navigation (main: `appWindowOverPoint` 18/18) |
@@ -53,12 +53,20 @@ History (earlier heads, not counted toward the bar):
 | Reached the window beneath | 0/182 |
 | Re-laid-out datalist | 18/18 refused `notOneOverlay` |
 | Re-laid-out permission prompt | 12/12 refused `screenChangedSinceScreenshot`, as on main |
-| Parity with main outside the route | **18/19** cells; the 19th is the end-raised row above |
+| Parity with main outside the route | **18/19** cells; the 19th is the end-raised row above, a route-3 flake main shows too in the pin (2/20 against 1/20) |
 | Observations | unchanged: the same result keys plus one timing, `screenshotWindowsListedMs` (p50 **0.6 ms**, p95 **1.7 ms**); wall clock p50 101 ms against 107, p95 436 against 430; nothing new in the model's view |
 | #443's `decomove` | **40/40** refused `controlGone` (CfT 20, Electron 20); keep cells 40/40 kept and landed |
 
-> **PLACEHOLDER (pin pending):** the one end-of-watch raise, `datalist-shared-behind-p-element-3`, is under a pin run. Replace this line with its result.
-> Facts so far: main's route-3 element click by ID on a datalist row answered `activationFailed` after 1 s ("the app's window did not stay behind the frontmost window within 1 s"). Chrome's window stayed listed over the cover from 1064 ms to the end of the watch. Frontmost and the key window did not move. Main's counted run had 0/5 there.
+**The one end-of-watch raise in shared mode is main's own route-3 failure, not this route.** The raised row, `datalist-shared-behind-p-element-3`, is main's element click by ID on a datalist row (route 3). It answered `activationFailed` after 1 s ("the app's window did not stay behind the frontmost window within 1 s"), and Chrome's window stayed listed over the cover from 1064 ms to the end of the watch.
+
+The kit pinned that cell with 20 rows per head (`probe/453-measure` README `0d52741c`, §"The shared-mode raise in datalist/shared-behind/p-element, pinned down"):
+
+| Head | `activationFailed` | Raised at the end | Run |
+|---|---|---|---|
+| main `5580ac20` | 2/20 | 2/20 | [45082409495](https://github.com/SSFSKIM/cua/actions/runs/45082409495) |
+| fix `a8307c6c` | 1/20 | 1/20 | [45084310309](https://github.com/SSFSKIM/cua/actions/runs/45084310309) |
+
+Every raised row is exactly an `activationFailed` row, and frontmost and the key window did not move in any of them. It is registered as #485 (P2, under ruling 891/1069). So in shared mode the route itself raised Chrome over the cover 0 times at the end. The 4 transient raises are #458's font pop-up, as on main.
 
 Dedicated mode is recorded, not failed (ruling 1070). There, 10/82 rows raised Chrome's window, all of them main's own route-3 element click (p-element), as on main.
 

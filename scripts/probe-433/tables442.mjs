@@ -39,12 +39,13 @@ for(const l of order)for(const u of units){const v=rowsOf(l,u).filter(r=>r.signa
   const agree=S.filter(s=>s.c?.agrees!=null);
   console.log(`| ${l} | ${unitKey(u)} | ${tally(post.map(p=>p.hit))} | ${tally(post.map(p=>p.hitFromWeb))} | ${Object.entries(grid).sort((a,b)=>b[1]-a[1]).map(([k,n])=>`${k} ${n}`).join(', ')||'–'} | ${pierce}/${post.length} | ${st('pre')} | ${st('post')} | ${hides} | ${tally(S.map(s=>s.c?.top??'?'))} | ${agree.length?count(agree,s=>s.c.agrees):'–'} |`);}
 
-console.log(`\n#### Exposure: rows main kept and landed on the target that each rule would refuse (engine ${engine})\n\n(a) the live set at the click differs from the record's (\`rec\`) or from the live set after the observation (\`live\`); (b) the record holds two or more unrelated controls at the point under an inert node (\`b\`), by role or by the engine's rule (\`b eng\`); (c) elementFromPoint at the click names another control than the target (\`c\`).\n`);
+console.log(`\n#### Exposure: rows main kept and landed on the target that each rule would refuse (engine ${engine})\n\nUnder an inert node at the point (the record's), (a) the live set at the click differs from the record's (\`rec\`) or from the live set read after the observation (\`live\`); (b) the record holds two or more unrelated controls at the point and one of them is not found in place at the click (\`b\`; \`b eng\` counts the overlap by the engine's rule, role or AXPress, with the same trigger); and on any row, (c) elementFromPoint at the click names another control than the target (\`c\`).\n`);
 console.log(`| Unit | ${order.map(l=>`${l}: kept-landed | a rec | a live | b | b eng | c`).join(' | ')} |\n|---|${order.map(()=>'---|---|---|---|---|---|').join('')}`);
 const tot={};
 for(const u of units){const cells=order.map(l=>{const v=rowsOf(l,u).filter(r=>r.verdict==='kept-landed'&&r.signals),S=v.map(r=>r.signals);
-  const n=[v.length,S.filter(s=>s.a?.recordVsPost).length,S.filter(s=>s.a?.preVsPost).length,S.filter(s=>s.b?.overlap&&s.record?.inert).length,
-    S.filter(s=>s.b?.overlapEngine&&s.record?.inert).length,S.filter(s=>s.c?.top&&s.c.top!=='target').length];
+  const inert=S.filter(s=>s.record?.inert);
+  const n=[v.length,inert.filter(s=>s.a?.recordVsPost).length,inert.filter(s=>s.a?.preVsPost).length,inert.filter(s=>s.b?.overlap&&s.a?.recordLost).length,
+    inert.filter(s=>s.b?.overlapEngine&&s.a?.recordLost).length,S.filter(s=>s.c?.top&&s.c.top!=='target').length];
   tot[l]=(tot[l]??[0,0,0,0,0,0]).map((x,i)=>x+n[i]);return n.join(' | ');});
   console.log(`| ${unitKey(u)} | ${cells.join(' | ')} |`);}
 console.log(`| all | ${order.map(l=>tot[l].join(' | ')).join(' | ')} |`);

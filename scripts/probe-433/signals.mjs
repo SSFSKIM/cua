@@ -105,7 +105,8 @@ const paintControls=dom=>dom?dom.stack.filter(n=>!['overlay','page'].includes(n)
 // - a: the live set at the click (the full walk, innermost by role) against the record's, and against the live set
 //   read after the observation (`preVsPost`, live against live); `complete`: the live set's names are every control the
 //   page has whose box holds the point; `prunedSame`/`navSame`/`visibleSame`: the cheaper walks find the full walk's set.
-// - b: the record holds two or more unrelated controls at the point (by role; `engine` by the engine's rule).
+// - b: the record holds two or more unrelated controls at the point (by role; `engine` by the engine's rule); its rule
+//   refuses where one of them changed (`a.recordLost`).
 // - stack: where the page holds two or more controls at the point, whether the later in the tree's order (what
 //   `deepestScreenshotNode` assumes draws above) is the one painted on top, and whether AXVisibleChildren leaves out the
 //   covered one.
@@ -125,6 +126,8 @@ export function signalsOf({spec={},nodes,point,pre,post,domPre,domPost,clicks}){
       engineRoles:record.engine.map(c=>c.role).sort().join('+')||'none'},
     ax,dom,recipient,
     a:{recordVsPost:record&&live(ax.post)?!sameSet(record.role,live(ax.post)):null,
+      // (b)'s trigger: a control of the record's set at the point not found, in place, in the live set at the click.
+      recordLost:record&&live(ax.post)?record.role.some(c=>!live(ax.post).some(d=>sameSet([c],[d]))):null,
       preVsPost:live(ax.pre)&&live(ax.post)?!sameSet(live(ax.pre),live(ax.post)):null,
       livePost:names(live(ax.post)),livePre:names(live(ax.pre)),
       complete:live(ax.post)&&dom.post?names(live(ax.post))===boxesOf(dom.post):null,

@@ -54,17 +54,21 @@ import Foundation
 //   at any layer (its pull-down is a layer-101 menu; `document actions` a layer-0 popover that opens 0.5–1.5 s in, so it
 //   may answer unconfirmed while it opens late);
 // - AppKit's AXColorWell: AXPress, confirmed the same way (its popover is a layer-0 window);
-// - a right click (`contextMenuPoint`) on an AppKit element outside every page: AXShowMenu, confirmed by a layer-101 menu;
+// - a right click (`contextMenuPoint`) on an AppKit element outside every page and not text: AXShowMenu, confirmed by a
+//   layer-101 menu;
 // - a page's `<input list>` (`datalistPoint`): the element click's route (its focus hold, then AXPress; the bare AXPress
 //   opened nothing, 0/3), confirmed by Chrome's suggestion window, layer 999.
 // And refused, nothing sent, in shared mode with the app not frontmost, naming the ways through (`backgroundClickRefused`,
-// `popUpClick.refused`): a right click in a web page (no element action opens a page's context menu behind), and a
+// `popUpClick.refused`): a right click in a web page (no element action opens a page's context menu behind), a right
+// click on AppKit text (AXShowMenu cannot aim at the word under the click; TextEdit's text view is one), and a
 // Chromium view's own button outside every page that advertises a popup, an AXPopUpButton (the app menu, tab search, site
 // information) or an AXButton whose AXHasPopup reads true (the profile button), whose AXPress opens the bubble but brings
 // the app to the front over the person's window. A plain Chromium button (Back, Reload: AXHasPopup false) keeps main's
 // click, and so does the bookmark star, which no attribute tells from Back. Dedicated mode keeps main's posted click for
 // what shared mode refuses: nobody's window is there to cover, it lets the window come forward (#282), and nothing puts the
 // order back, so the posted click left the page's context menu and the profile bubble up (3/3 each).
+// An action that brings the app to the front itself is recorded and said in the answer (`popUpClick.activated`), never
+// a silent ok (the review of 1a1956b2..5364c10b).
 
 /// The wait for the button's menu or the combo box's list after its AXPress: read at once, then every 20 ms for up to
 /// 1.5 s (design ruling 1004): #458's qual saw Chrome's `<select>` open about 940 ms after the click in 2 of 20 rows.
@@ -283,12 +287,16 @@ enum PopUpRefusal: String, Equatable {
   case browserView
   /// #463: a right click in a web page, the app not frontmost in shared mode.
   case webArea
+  /// #463 (the review of 1a1956b2..5364c10b, item 2): a right click on an AppKit text element, the app not frontmost in
+  /// shared mode.
+  case textElement
 
   func error(app: String) -> EngineError {
     switch self {
     case .noAction: return popUpComboRefused(app: app)
     case .browserView: return browserPopUpRefused(app: app)
     case .webArea: return webContextMenuRefused(app: app)
+    case .textElement: return textContextMenuRefused(app: app)
     }
   }
 }
@@ -362,7 +370,8 @@ func recordedHolds<Element>(_ verdict: StalePointVerdict<Element>, same: @escapi
 /// hit-test answers a coarse view that walks to the window, before Chrome's page tree is exposed, #288).
 func recordedNodeInWebArea<Element>(_ verdict: StalePointVerdict<Element>) -> Bool {
   guard let node = verdict.node else { return false }
-  if node.role == "AXWebArea" { return true }
+  // The record's own web area (`ScreenshotNode.webArea`), which a frameless web area's descendants carry too.
+  if node.role == "AXWebArea" || node.webArea != nil { return true }
   var index = node.ancestor
   var levels = 0
   while let at = index, at < verdict.nodes.count, levels < stalePointAncestorLevels {
@@ -464,7 +473,8 @@ func browserButtonPoint<Element>(_ hit: Element, reads: PopUpReads<Element>, sha
 /// click keeps #283's caret placement; frontmost, the posted click opens the list (5/5): kept.
 func datalistPoint<Element>(_ field: Element, recorded: RecordedPopUp<Element>, point: CGPoint, pids: Set<pid_t>,
                             reads: PopUpReads<Element>, frontmost: () -> Bool, windows: () -> [ListedWindow]?) -> PopUpPoint<Element> {
-  guard reads.popupValue(field) == "listbox", reads.autocomplete(field) == "list",
+  // The live hit's role as well as the recorded one (the review of 1a1956b2..5364c10b, item 4).
+  guard reads.role(field) == kAXComboBoxRole, reads.popupValue(field) == "listbox", reads.autocomplete(field) == "list",
         popUpPlace(field, reads: reads, recorded: recorded) == .web else { return .notPopUp }
   let role = kAXComboBoxRole
   guard !frontmost() else { return .kept(.frontmost, role: role) }
@@ -479,29 +489,40 @@ func datalistPoint<Element>(_ field: Element, recorded: RecordedPopUp<Element>, 
   return .press(PopUpTarget(element: field, control: field, kind: .datalist, role: role, near: near, before: list))
 }
 
+/// The roles whose context menu acts on the text under the click (the review of 1a1956b2..5364c10b, item 2): text entry
+/// (#283's editable roles) and static text, whose selectable labels offer the same menu.
+let contextMenuTextRoles: Set<String> = webAreaEditableRoles.union([kAXStaticTextRole])
+
 /// #463: a right click (`mouse_button: right`, one click) at a kept point, the app not frontmost (frontmost, its posted
 /// right click's context menu stays up, 5/5: main's path, nothing read). In a web page by the hit's walk or the record
 /// (`recordedInWebArea`): refused in shared mode, since no element action opens a page's context menu behind (the engine's
 /// Show Menu and the kit's AXShowMenu 0/8 on Chrome's page) and the posted one closes it (4/6); dedicated mode keeps the
-/// posted right click, which left the page's menu up (3/3). Outside every page, on an AppKit element (AXDOMClassList
-/// unsupported) that the observation recorded at the point and that advertises AXShowMenu: carried by its AXShowMenu
-/// (TextEdit's text view: 5/5 behind, where the posted one closed it 6/6), confirmed by a menu window of the app's at the
-/// element. Signals that disagree, a Chromium view's element, an ancestry or window list that does not read, and an
-/// element with no AXShowMenu keep main's path, said in `popUpClick.kept`.
+/// posted right click, which left the page's menu up (3/3). The record's web area decides first, with or without a live
+/// hit (the review of 1a1956b2..5364c10b, item 3), so a late or missing hit never posts it. Outside every page, on an
+/// AppKit element (AXDOMClassList unsupported) that the observation recorded at the point and that advertises
+/// AXShowMenu: carried by its AXShowMenu, confirmed by a menu window of the app's at the element. Except on text (item
+/// 2): AXShowMenu takes the element and not the point, and a text element's context menu acts on the word or selection
+/// under the click, so the menu it opens may be for other text; a right click there (`contextMenuTextRoles`) is refused
+/// in shared mode (`textElement`; TextEdit's text view, where the posted one's menu closed 6/6), and dedicated mode keeps
+/// the posted one. Signals that disagree, a Chromium view's element, an ancestry or window list that does not read, and
+/// an element with no AXShowMenu keep main's path, said in `popUpClick.kept`.
 func contextMenuPoint<Element>(hit: Element?, recordedAt: (Element) -> Bool, recordedInWebArea: Bool, point: CGPoint, pids: Set<pid_t>,
                                reads: PopUpReads<Element>, shared: Bool, frontmost: () -> Bool,
                                windows: () -> [ListedWindow]?) -> PopUpPoint<Element> {
-  guard let hit, !frontmost() else { return .notPopUp }
+  guard !frontmost() else { return .notPopUp }
+  if recordedInWebArea { return shared ? .refuse(.webArea, role: hit.flatMap(reads.role) ?? "AXWebArea") : .notPopUp }
+  guard let hit else { return .notPopUp }
   let role = reads.role(hit) ?? ""
   let walk = webAreaWalk(hit, role: reads.role, parent: reads.parent)
-  if walk == .inside || walk == .aboveWebArea || recordedInWebArea { return shared ? .refuse(.webArea, role: role) : .notPopUp }
+  if walk == .inside || walk == .aboveWebArea { return shared ? .refuse(.webArea, role: role) : .notPopUp }
   guard walk == .outside else { return .kept(.ancestryUnread, role: role) }
-  guard recordedAt(hit) else { return .kept(.notRecorded, role: role) }
   switch reads.viewClass(hit) {
   case .unsupported: break
   case .answered: return .kept(.browserView, role: role)
   case .unread: return .kept(.viewClassUnread, role: role)
   }
+  if contextMenuTextRoles.contains(role) { return shared ? .refuse(.textElement, role: role) : .notPopUp }
+  guard recordedAt(hit) else { return .kept(.notRecorded, role: role) }
   guard reads.actions(hit)?.contains(kAXShowMenuAction) == true else { return .kept(.noAction, role: role) }
   let near = (reads.frame(hit) ?? CGRect(origin: point, size: .zero)).insetBy(dx: -popUpMenuMargin, dy: -popUpMenuMargin)
   guard let list = windows() else { return .kept(.windowsUnread, role: role) }
@@ -550,6 +571,17 @@ struct PopUpPersonSignals {
   func since(_ at: Double, now: @escaping () -> Double) -> () -> Bool {
     let front = frontmost()
     return { self.secondsSinceInput() * 1000 < now() - at || self.frontmost() != front }
+  }
+
+  /// From `at` on (the review of 1a1956b2..5364c10b, item 1): whether the target app itself (`pids`) has become the
+  /// frontmost app with no input of the person's since, so the action it was sent activated it (an app's own action may;
+  /// Chrome's toolbar AXPress did, #463), as against the person switching apps, which `since` also reads.
+  func activated(since at: Double, pids: Set<pid_t>, now: @escaping () -> Double) -> () -> Bool {
+    let front = frontmost()
+    return {
+      guard let current = self.frontmost(), current != front, pids.contains(current) else { return false }
+      return self.secondsSinceInput() * 1000 > now() - at  // input at the press itself counts as the person's
+    }
   }
 }
 
@@ -725,6 +757,8 @@ struct PopUpClickRecord: Equatable {
   var action: String?
   var arrow = false
   var kind: PopUpControl?
+  /// The target app became frontmost through the action itself (the review of 1a1956b2..5364c10b, item 1).
+  var activated = false
   var actionError: Int32?
   var baselineUnread = false
   var menuWindow: CGWindowID?
@@ -738,6 +772,7 @@ struct PopUpClickRecord: Equatable {
     if let kept { wire["kept"] = kept.rawValue }
     if let refused { wire["refused"] = refused.rawValue }
     if let kind { wire["kind"] = kind.rawValue }
+    if activated { wire["activated"] = true }
     if let action {
       wire["delivery"] = "action"
       wire["action"] = action
@@ -796,14 +831,25 @@ func popUpOpened<Element>(_ window: ListedWindow, target: PopUpTarget<Element>, 
 /// `deliveryGuardMinimumMs` after it (sampled every `deliveryGuardSampleMs`); none crossed, nothing moves. The person's
 /// input or another frontmost app since the press (`intervened`) ends the watch and is handed to the restore. A restore
 /// that ended short for any other reason puts its note in the meta.
+///
+/// The target app made frontmost by the action itself (`activated`, `PopUpPersonSignals.activated`) is not the person's
+/// input: it is recorded (`popUpClick.activated`) and said in the answer, never a silent ok. A confirmed open answers
+/// success with a note that the app came to the front over the person's window (`popUpActivatedNote`), since what the
+/// click was for did open and a retry would only repeat the activation; nothing is restored, since cua never takes the
+/// front from an app. An unconfirmed one says it in its `clickUnconfirmed` sentence.
 func popUpAwaitOpen<Element>(_ target: PopUpTarget<Element>, before: [ListedWindow]?, app: String, appWindow: CGWindowID?,
                              pids: Set<pid_t>, ownPid: pid_t, reads: PopUpReads<Element>, windows: () -> [ListedWindow]?,
                              now: () -> Double, sleep: (Double) -> Void, intervened: @escaping () -> Bool,
+                             activated: () -> Bool = { false },
                              restore: (_ persons: [ListedWindow], _ appWindow: CGWindowID, _ intervened: () -> Bool) -> PopUpRestoreRecord,
                              record: inout PopUpClickRecord, meta: inout InputMeta) throws {
+  func unconfirmed() -> EngineError {
+    record.activated = activated()
+    return popUpUnconfirmed(app: app, kind: target.kind, activated: record.activated)
+  }
   guard let before else {
     record.baselineUnread = true
-    throw popUpUnconfirmed(app: app, kind: target.kind)
+    throw unconfirmed()
   }
   let baseline = Set(before.map(\.number))
   let started = now()
@@ -817,6 +863,14 @@ func popUpAwaitOpen<Element>(_ target: PopUpTarget<Element>, before: [ListedWind
     record.ms = now() - started
     if let list, let opened {
       record.menuWindow = opened.number
+      var noted = false
+      func activatedNow() -> Bool {
+        guard !noted, activated() else { return noted }
+        (noted, record.activated) = (true, true)
+        meta.note = popUpActivatedNote(app: app, kind: target.kind)
+        return true
+      }
+      defer { _ = activatedNow() }
       let persons = personWindowsAbove(appWindow, in: before, pids: pids, ownPid: ownPid)
       guard let appWindow, !persons.isEmpty else { return }
       var crossed = appWindowCrossed(persons, appWindow: appWindow, in: list) == true
@@ -825,7 +879,7 @@ func popUpAwaitOpen<Element>(_ target: PopUpTarget<Element>, before: [ListedWind
         sleep(deliveryGuardSampleMs)
         crossed = windows().flatMap { appWindowCrossed(persons, appWindow: appWindow, in: $0) } == true
       }
-      guard crossed else { return }
+      guard crossed, !activatedNow() else { return }
       let restored = restore(persons, appWindow, intervened)
       record.restored = restored
       if !restored.complete && restored.stopped != .personInput { meta.note = popUpRestoreIncomplete(app: app, kind: target.kind) }
@@ -835,7 +889,7 @@ func popUpAwaitOpen<Element>(_ target: PopUpTarget<Element>, before: [ListedWind
     if ms >= popUpOpenSettleMs { break }
     sleep(min(popUpOpenSampleMs, popUpOpenSettleMs - ms))
   }
-  throw popUpUnconfirmed(app: app, kind: target.kind)
+  throw unconfirmed()
 }
 
 /// #458's step in a coordinate click, after the stale-point guard kept the point (and after #454's) and before anything
@@ -874,6 +928,7 @@ func popUpClick<Element>(_ decision: PopUpPoint<Element>, app: String, route: In
     var record = PopUpClickRecord(role: target.role, action: action, arrow: target.kind == .comboBoxArrow, kind: target.kind)
     defer { meta.popUpClick = record }
     let intervened = person.since(now(), now: now)
+    let activated = person.activated(since: now(), pids: pids, now: now)
     var error = AXError.failure
     meta.posting { error = perform(target.element, action); return true }
     if error != .success {
@@ -884,7 +939,7 @@ func popUpClick<Element>(_ decision: PopUpPoint<Element>, app: String, route: In
       }
     }
     try popUpAwaitOpen(target, before: before, app: app, appWindow: appWindow, pids: pids, ownPid: ownPid, reads: reads, windows: windows,
-                       now: now, sleep: sleep, intervened: intervened, restore: restore, record: &record, meta: &meta)
+                       now: now, sleep: sleep, intervened: intervened, activated: activated, restore: restore, record: &record, meta: &meta)
     return true
   }
 }
@@ -904,12 +959,14 @@ func popUpConfirmingRoute<Element>(_ target: PopUpTarget<Element>, app: String, 
                                    meta: inout InputMeta) throws {
   var armed: [ListedWindow]??
   var intervened: (() -> Bool)?
+  var activated: (() -> Bool)?
   var actionError: AXError?
   try route({ pressed, meta in
     guard reads.same(pressed, target.element) else { return }
     meta.popUpClick = PopUpClickRecord(role: target.role)
     armed = .some(try popUpBeforeDispatch(target, app: app, pids: pids, reads: reads, windows: windows, deadlinePassed: deadlinePassed))
     intervened = person.since(now(), now: now)
+    activated = person.activated(since: now(), pids: pids, now: now)
   }, { error in
     guard armed != nil else { return false }
     actionError = error
@@ -920,7 +977,8 @@ func popUpConfirmingRoute<Element>(_ target: PopUpTarget<Element>, app: String, 
   record.actionError = actionError?.rawValue
   defer { meta.popUpClick = record }
   try popUpAwaitOpen(target, before: before, app: app, appWindow: appWindow, pids: pids, ownPid: ownPid, reads: reads, windows: windows,
-                     now: now, sleep: sleep, intervened: intervened ?? { false }, restore: restore, record: &record, meta: &meta)
+                     now: now, sleep: sleep, intervened: intervened ?? { false }, activated: activated ?? { false }, restore: restore,
+                     record: &record, meta: &meta)
 }
 
 /// The hooks #282's route runs on its press (`webAreaPress`'s `popUpPress`), set by `popUpConfirmingRoute` while that
@@ -947,7 +1005,7 @@ func popUpResult(_ meta: InputMeta) -> [String: Any] {
 
 /// #458's unconfirmed answer: the control's action was performed, and nothing of the app's was seen to open at it; #463's
 /// kinds say what carried the click and what was not seen.
-func popUpUnconfirmed(app: String, kind: PopUpControl = .popUpButton) -> EngineError {
+func popUpUnconfirmed(app: String, kind: PopUpControl = .popUpButton, activated: Bool = false) -> EngineError {
   let carried: String, seen: String
   switch kind {
   case .popUpButton: (carried, seen) = ("the pop-up button's AXPress action", "no menu was seen to open at the button")
@@ -958,21 +1016,31 @@ func popUpUnconfirmed(app: String, kind: PopUpControl = .popUpButton) -> EngineE
   case .datalist: (carried, seen) = ("the field's AXPress action", "its suggestion list was not seen to open")
   }
   let closes = kind == .popUpButton || kind == .comboBoxArrow ? "the menu it opens" : "what it opens"
+  let front = activated ? " The action brought \(app) to the front over the person's window." : ""
   return EngineError(name: "clickUnconfirmed",
-    "The click could not be confirmed: it was carried by \(carried) in \(app), since a posted click can close \(closes), and \(seen). Observe the app with get_app_state before any retry, and never retry blindly.")
+    "The click could not be confirmed: it was carried by \(carried) in \(app), since a posted click can close \(closes), and \(seen).\(front) Observe the app with get_app_state before any retry, and never retry blindly.")
+}
+
+/// The note of a confirmed open whose action brought the app to the front itself (the review of 1a1956b2..5364c10b, item
+/// 1): the open stands, and the person's window is now under the app's, which cua does not undo.
+func popUpActivatedNote(app: String, kind: PopUpControl) -> String {
+  "\(app)'s \(popUpOpenedNoun(kind)) is open, but opening it brought \(app) to the front over the person's window, and cua does not take the front back from an app. Tell the person if that is in their way."
+}
+
+/// What a kind's control opens, for the notes.
+func popUpOpenedNoun(_ kind: PopUpControl) -> String {
+  switch kind {
+  case .popUpButton, .comboBoxArrow, .menuButton: return "menu"
+  case .contextMenu: return "context menu"
+  case .colorWell: return "panel"
+  case .datalist: return "suggestion list"
+  }
 }
 
 /// #458's note on an open whose restore did not complete: the open is confirmed, and the app's window may lie over the
 /// person's focused window.
 func popUpRestoreIncomplete(app: String, kind: PopUpControl = .popUpButton) -> String {
-  let opened: String
-  switch kind {
-  case .popUpButton, .comboBoxArrow, .menuButton: opened = "menu"
-  case .contextMenu: opened = "context menu"
-  case .colorWell: opened = "panel"
-  case .datalist: opened = "suggestion list"
-  }
-  return "\(app)'s \(opened) is open, but the person's front window could not be put back in front of \(app)'s window, so \(app)'s window may now cover it."
+  "\(app)'s \(popUpOpenedNoun(kind)) is open, but the person's front window could not be put back in front of \(app)'s window, so \(app)'s window may now cover it."
 }
 
 /// #458's refusal (design ruling 979, item 3, narrowed by the restore measurement): a native combo box whose arrow has no
@@ -996,6 +1064,14 @@ func browserPopUpRefused(app: String) -> EngineError {
 func webContextMenuRefused(app: String) -> EngineError {
   EngineError(name: "backgroundClickRefused",
     "\(app)'s web page does not keep a context menu open for a right click cua sends while \(app) is not the frontmost app, and no accessibility action opens one there. Nothing was sent. Ask the person to bring \(app) to the front first, or act on the page without its context menu: click the element by its ID, or use keys.")
+}
+
+/// #463 (the review of 1a1956b2..5364c10b, item 2): a right click on text in a native app, the app not frontmost in shared
+/// mode: the posted one's context menu is closed as route 3 lets the app go, and Show Menu cannot aim at the text under
+/// the click.
+func textContextMenuRefused(app: String) -> EngineError {
+  EngineError(name: "backgroundClickRefused",
+    "\(app)'s context menu for text acts on the text under the pointer, which no accessibility action can aim at, and a right click cua sends while \(app) is not the frontmost app does not leave the menu open. Nothing was sent. Ask the person to bring \(app) to the front first, or use keys instead: select the text with selectText, then use \(app)'s keyboard shortcuts or its menu bar by its elements.")
 }
 
 /// The control opened its menu or list between the decision and the press (during the focus hold): pressing it would

@@ -25,6 +25,8 @@ final class PopUpPointTests: XCTestCase {
     var expanded: Bool?
     /// What its AXDOMClassList read answers: AppKit's is unsupported (#469's measurement).
     var viewClass: PopUpViewClass = .unsupported
+    /// The role read now, when it differs from the one recorded (`role`).
+    var liveRole: String?
     /// AXHasPopup, AXPopupValue and AXAutocompleteValue (#463's signal run): unsupported on AppKit's, so nil.
     var hasPopup: Bool?
     var popupValue: String?
@@ -64,7 +66,7 @@ final class PopUpPointTests: XCTestCase {
   private var frontmost = false
 
   private var reads: PopUpReads<Node> {
-    PopUpReads(role: { $0.role }, parent: { $0.parentFails ? nil : $0.parent }, children: { $0.children }, enabled: { $0.enabled }, actions: { $0.actions },
+    PopUpReads(role: { $0.liveRole ?? $0.role }, parent: { $0.parentFails ? nil : $0.parent }, children: { $0.children }, enabled: { $0.enabled }, actions: { $0.actions },
                frame: { $0.frame }, expanded: { node in node.onExpandedRead?(); return node.expanded }, same: { $0 === $1 },
                viewClass: { $0.viewClass }, hasPopup: { $0.hasPopup }, popupValue: { $0.popupValue }, autocomplete: { $0.autocomplete })
   }
@@ -1245,10 +1247,11 @@ final class PopUpPointTests: XCTestCase {
                         pressing: scene.node, opens: [far, person, appWindow], window: nil)
   }
 
-  /// A right click on TextEdit's text view behind: its AXShowMenu, confirmed by a layer-101 menu at it; a new layer-0
-  /// window there is no context menu.
+  /// A right click behind on an AppKit element that is not text (a row, whose menu is the row's wherever it is clicked;
+  /// the rule's shape, not a measured cell): its AXShowMenu, confirmed by a layer-101 menu at it; a new layer-0 window
+  /// there is no context menu.
   func testAnAppKitRightClickBehindIsItsShowMenuConfirmedByItsMenu() throws {
-    let scene = appKit("AXTextArea", frame: textViewFrame, actions: ["AXShowMenu"])
+    let scene = appKit("AXRow", frame: textViewFrame, actions: ["AXShowMenu"])
     let point = CGPoint(x: 600, y: 300)
     try assertDelivered(rightClick(hit: scene.node, scene.verdict, at: point), kind: .contextMenu, action: "AXShowMenu",
                         pressing: scene.node, opens: [contextMenu, appWindow, person], window: 104)
@@ -1262,9 +1265,9 @@ final class PopUpPointTests: XCTestCase {
   /// A right click keeps main's path on signals that disagree, a Chromium view's element, an element with no AXShowMenu,
   /// an ancestry that does not read, or a window list that does not read; nothing held or performed.
   func testARightClickKeepsMainsPathWhereItsElementDoesNotQualify() throws {
-    let scene = appKit("AXTextArea", frame: textViewFrame, actions: ["AXShowMenu"])
+    let scene = appKit("AXRow", frame: textViewFrame, actions: ["AXShowMenu"])
     let point = CGPoint(x: 600, y: 300)
-    let other = Node("AXTextArea", frame: textViewFrame, parent: scene.node.parent)
+    let other = Node("AXRow", frame: textViewFrame, parent: scene.node.parent)
     other.actions = ["AXShowMenu"]
     guard case .kept(.notRecorded, _) = rightClick(hit: other, scene.verdict, at: point) else { return XCTFail("not recorded") }
     scene.node.viewClass = .answered
@@ -1442,5 +1445,92 @@ final class PopUpPointTests: XCTestCase {
     XCTAssertFalse(popUpLeftToWebAreaRoute(rightClick(hit: field.group, field.groupVerdict, at: CGPoint(x: 700, y: 600))))
     XCTAssertTrue(popUpLeftToWebAreaRoute(PopUpPoint<Node>.notPopUp))
     XCTAssertTrue(popUpLeftToWebAreaRoute(PopUpPoint<Node>.kept(.frontmost, role: "AXComboBox")))
+  }
+
+  // MARK: The review of 1a1956b2..5364c10b
+
+  /// Item 2: AXShowMenu takes the element, not the point, and a text element's context menu acts on the word under the
+  /// click, so a right click behind on AppKit text (TextEdit's text view as measured, a text field, a label) is refused
+  /// in shared mode with nothing sent, naming the ways through; dedicated mode and a frontmost app keep the posted one.
+  func testARightClickOnAppKitTextBehindIsRefused() {
+    for role in ["AXTextArea", "AXTextField", "AXStaticText"] {
+      let scene = appKit(role, frame: textViewFrame, actions: ["AXShowMenu"])
+      let point = CGPoint(x: 600, y: 300)
+      assertRefused(rightClick(hit: scene.node, scene.verdict, at: point), .textElement,
+        message: "TextEdit's context menu for text acts on the text under the pointer, which no accessibility action can aim at, and a right click cua sends while TextEdit is not the frontmost app does not leave the menu open. Nothing was sent. Ask the person to bring TextEdit to the front first, or use keys instead: select the text with selectText, then use TextEdit's keyboard shortcuts or its menu bar by its elements.")
+      guard case .notPopUp = rightClick(hit: scene.node, scene.verdict, at: point, shared: false) else { return XCTFail("\(role): dedicated") }
+    }
+    XCTAssertEqual(listReads, 0)
+  }
+
+  /// Item 3: the record's web area decides before any hit is needed, so a right click on a recorded page point whose
+  /// hit-test answered nothing, or whose recorded node lies under a frameless web area the record carries on it
+  /// (`ScreenshotNode.webArea`), is refused, never posted.
+  func testARightClickOnARecordedPageIsRefusedWithoutALiveHit() {
+    let scene = page()
+    let message = "TextEdit's web page does not keep a context menu open for a right click cua sends while TextEdit is not the frontmost app, and no accessibility action opens one there. Nothing was sent. Ask the person to bring TextEdit to the front first, or act on the page without its context menu: click the element by its ID, or use keys."
+    assertRefused(rightClick(hit: nil, scene.groupVerdict, at: CGPoint(x: 700, y: 600)), .webArea, message: message)
+    let window = Node("AXWindow")
+    let text = Node("AXStaticText", frame: CGRect(x: 500, y: 300, width: 80, height: 16), parent: window)
+    var node = recorded(text, ancestor: 0)
+    node.webArea = Node("AXWebArea")  // frameless: not among the recorded nodes' ancestors
+    var verdict = StalePointVerdict<Node>(reason: .sameElement, node: node, current: text, point: CGPoint(x: 520, y: 308))
+    verdict.nodes = [recorded(window), node]
+    XCTAssertTrue(recordedNodeInWebArea(verdict))
+    assertRefused(rightClick(hit: nil, verdict, at: CGPoint(x: 520, y: 308)), .webArea, message: message)
+  }
+
+  /// Item 4: an `<input list>` needs the live hit's role to be AXComboBox as well as the recorded one.
+  func testAnInputListNeedsTheLiveHitsRole() {
+    let scene = page()
+    scene.field.liveRole = "AXTextField"
+    guard case .notPopUp = decide463(hit: scene.field, scene.fieldVerdict, at: CGPoint(x: 595, y: 169)) else {
+      return XCTFail("a field that reads as another role now: main's")
+    }
+  }
+
+  /// Item 1: an action that brings the target app to the front itself, with no input of the person's, is no person's
+  /// input: the open answers success with a note saying the app came to the front over the person's window, the meta
+  /// says `activated`, and nothing is restored; unconfirmed, the sentence says it. The person's own switch (input since
+  /// the press) stays theirs, with no note.
+  func testAnActionThatBringsTheAppToTheFrontIsSaidNotSilent() throws {
+    let scene = appKit("AXMenuButton", frame: listStyleFrame, actions: ["AXShowMenu", "AXPress"])
+    var pressed = false
+    var inputAt = Double.infinity
+    let person = PopUpPersonSignals(secondsSinceInput: { inputAt }, frontmost: { pressed ? self.app : self.finder })
+    var meta = freshMeta()
+    XCTAssertTrue(try click(decide463(hit: scene.node, scene.verdict, at: scene.point), meta: &meta, person: person) { _, _ in
+      pressed = true
+      self.list = [self.listStyleMenu, self.appWindow, self.person]
+      return .success
+    })
+    XCTAssertEqual(wire(meta)?["effect"] as? String, "confirmed")
+    XCTAssertEqual(wire(meta)?["activated"] as? Bool, true)
+    XCTAssertEqual(meta.note, "TextEdit's menu is open, but opening it brought TextEdit to the front over the person's window, and cua does not take the front back from an app. Tell the person if that is in their way.")
+    XCTAssertEqual(restores, [], "cua never takes the front from an app")
+    XCTAssertEqual(popUpResult(meta)["note"] as? String, meta.note)
+
+    pressed = false
+    list = [self.person, appWindow]
+    var none = freshMeta()
+    XCTAssertThrowsError(try click(decide463(hit: scene.node, scene.verdict, at: scene.point), meta: &none, person: person) { _, _ in
+      pressed = true
+      return .success
+    }) {
+      XCTAssertEqual(($0 as? EngineError)?.message,
+        "The click could not be confirmed: it was carried by the menu button's AXPress action in TextEdit, since a posted click can close what it opens, and no menu or panel was seen to open at the button. The action brought TextEdit to the front over the person's window. Observe the app with get_app_state before any retry, and never retry blindly.")
+    }
+    XCTAssertEqual(wire(none)?["activated"] as? Bool, true)
+
+    (pressed, inputAt) = (false, 0)
+    list = [self.person, appWindow]
+    var theirs = freshMeta()
+    XCTAssertTrue(try click(decide463(hit: scene.node, scene.verdict, at: scene.point), meta: &theirs, person: person) { _, _ in
+      pressed = true
+      self.list = [self.listStyleMenu, self.appWindow, self.person]
+      return .success
+    })
+    XCTAssertNil(wire(theirs)?["activated"], "the person's input: theirs")
+    XCTAssertNil(theirs.note)
   }
 }

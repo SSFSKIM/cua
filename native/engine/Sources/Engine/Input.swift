@@ -438,11 +438,11 @@ extension Engine {
   /// as the button's AXPress, one on a native combo box's arrow as the arrow's, each confirmed by what it opens and the
   /// person's window order put back; a combo box whose arrow has no action, the app not frontmost, is refused; none is
   /// posted (#458, PopUpPoint.swift). With the app not frontmost (#463), a kept left click on an AppKit menu button or
-  /// colour well goes as its AXPress, a kept right click on an AppKit element as its AXShowMenu and one on a page's
-  /// `<input list>` by the element click's route, each confirmed by what it opens; in shared mode a click on a Chromium
-  /// view's own popup button and a right click in a web page are refused, nothing posted. Route 4 takes route 3's place
-  /// for an app the owner's override names. The process serving the target receives the input, after the forbidden list
-  /// has been checked against it.
+  /// colour well goes as its AXPress, a kept right click on an AppKit element that is not text as its AXShowMenu and one
+  /// on a page's `<input list>` by the element click's route, each confirmed by what it opens; in shared mode a click on
+  /// a Chromium view's own popup button and a right click in a web page or on AppKit text are refused, nothing posted.
+  /// Route 4 takes route 3's place for an app the owner's override names. The process serving the target receives the
+  /// input, after the forbidden list has been checked against it.
   func click(_ args: [String: Any], _ context: ExecutionContext) throws -> Any {
     let token = try elementTokenArg(args, lineage: context.lineage)
     let hasElement = token != nil

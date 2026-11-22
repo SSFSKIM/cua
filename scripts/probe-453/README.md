@@ -207,8 +207,9 @@ What they showed (one row per cell, so a direction, not a count):
   `closed`). Main refused every one `appWindowOverPoint`.
 - **Re-laid-out (cell 6):** the fix refused `textChanged` 3/3, main `appWindowOverPoint` 3/3. No other row taken.
 - **Fix, the browser window listed over the cover's in every Chrome behind row it delivered** (10/10: omnibox,
-  datalist, permission, shared-behind and dedicated-behind), from about 30 to 80 ms into the click to the end of the
-  3 s watch, the window order changed. Frontmost and the key window did not change. Main's refusals moved nothing;
+  datalist, permission, shared-behind and dedicated-behind), from about 20 to 80 ms into the click to the end of the
+  3 s watch, the window order changed. The key window did not change; frontmost changed in one row, the first
+  geolocation Allow (Chrome to the front at 241 ms, read as Location Services' doing, see the kit fixes). Main's refusals moved nothing;
   `deliver.mjs`'s own stamped post took the same rows with 0/84 raised (run C), so the engine's delivery differs from
   the kit's there. TextEdit's popover (AXPress) raised nothing. The p-font row (#458, route 3 AXPress) lists the
   window over the cover for about 35 ms on both heads.

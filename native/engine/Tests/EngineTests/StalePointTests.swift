@@ -4240,9 +4240,9 @@ final class OverlayTargetTests: XCTestCase {
   /// a decoration of A, deeper than F's text. A is removed and the decoration survives. F, recorded at the point and in
   /// place, takes the click as on main, and vouches for it: with the decoration moved into F (the hit on F,
   /// `hitAboveNode`; on the decoration, `sameElement`; on nothing, `noHit`), or moved into a new link N at A's place while
-  /// the hit answers
-  /// F's text (`nonInteractiveHit`; the route presses F, `recordedHit`). F moved 3 pt off its place, or a link new at the
-  /// point with F gone, does not vouch, and A's loss refuses.
+  /// the hit answers F's text (`nonInteractiveHit`; the route presses F, `recordedHit`), in place or re-laid out 3 pt
+  /// inside F (then only F, the hit's control, vouches). F moved 3 pt off its place, or a link new at the point with F
+  /// gone, does not vouch, and A's loss refuses.
   func testARecordedControlInFrontOfAGoneControlVouchesForTheClick() {
     func scene() -> (page: Page, front: Node, frontText: Node, deco: Node) {
       let page = Page(twin: "Next", bare: true)
@@ -4258,7 +4258,7 @@ final class OverlayTargetTests: XCTestCase {
       return (page, front, frontText, deco)
     }
     let point = CGPoint(x: 40, y: 112)
-    for (into, hitOn) in [("F", "F"), ("F", "deco"), ("F", "none"), ("N", "F text")] {
+    for (into, hitOn) in [("F", "F"), ("F", "deco"), ("F", "none"), ("N", "F text"), ("N", "F text moved")] {
       let (page, front, frontText, deco) = scene()
       let (nodes, frameless, members) = walkRecord(page.window)
       XCTAssertTrue(deepestScreenshotNode(at: point, in: nodes)?.element === deco)
@@ -4271,6 +4271,7 @@ final class OverlayTargetTests: XCTestCase {
       }
       page.aText.destroy()
       page.a.destroy()
+      if hitOn == "F text moved" { frontText.frame = frontText.frame?.offsetBy(dx: 3, dy: 0) }
       let hit = hitOn == "F" ? front : hitOn == "deco" ? deco : hitOn == "none" ? nil : frontText
       let kept = verdict(nodes, frameless: frameless, members: members, at: point, hit: hit)
       let expected: StalePointReason = hitOn == "F" ? .hitAboveNode : hitOn == "deco" ? .sameElement
@@ -4345,6 +4346,111 @@ final class OverlayTargetTests: XCTestCase {
       let same = shift == 0 && label == "Open"
       XCTAssertEqual(judgedNow.reason, same ? (hitButton ? .hitAboveNode : .sameElement) : .controlGone,
                      "shift \(shift), label \(label), hit the button \(hitButton)")
+    }
+  }
+
+  /// The re-review of f394677e, item 1: A inside a clickable card, A re-created in place around the decoration, the new
+  /// link's role unread (or read inert with its actions unread), the card re-laid out (taller, so it no longer vouches as
+  /// a recorded control in place). What holds the decoration now cannot be classified, so the walk stops there,
+  /// inconclusive, and never compares the card beyond it with A: main's verdict.
+  func testAnUnclassifiedAncestorEndsTheSearchForTheLiveControl() {
+    for roleUnread in [true, false] {
+      let page = Page(twin: "Next", bare: true)
+      let card = Node("AXGroup", CGRect(x: 0, y: 90, width: 600, height: 50))
+      card.actions = ["AXPress"]
+      page.list.children[0] = card
+      card.parent = page.list
+      card.add(page.a)
+      let icon = Node("AXImage", CGRect(x: 20, y: 100, width: 200, height: 30))
+      page.a.add(icon)
+      XCTAssertTrue(recorded(page.window).first { $0.element === icon }?.control === page.a)
+      let kept = judged(page) { page in
+        let again = Node(roleUnread ? "AXLink" : "AXGroup", CGRect(x: 20, y: 100, width: 200, height: 30), title: "Open")
+        (again.roleUnread, again.actionsUnread) = (roleUnread, !roleUnread)
+        card.frame = CGRect(x: 0, y: 90, width: 600, height: 60)
+        card.add(again)
+        icon.reparent(to: again)
+        page.aText.destroy()
+        page.a.destroy()
+        return icon
+      }
+      XCTAssertEqual(kept.reason, .sameElement, "role unread \(roleUnread)")
+    }
+  }
+
+  /// Item 2: a vouching control must be one the record holds as a control. A row wrapper recorded inert at the point, in
+  /// place, gains AXPress after A is removed and the decoration is moved into it: the control the decoration lies in now
+  /// is another than A (its frame), and the wrapper, inert in the record, does not vouch: refused.
+  func testAWrapperThatGainedAXPressNeverVouches() {
+    let page = Page(twin: "Next", bare: true)
+    let row = Node("AXGroup", CGRect(x: 0, y: 90, width: 600, height: 50))
+    page.list.children[0] = row
+    row.parent = page.list
+    row.add(page.a)
+    let icon = Node("AXImage", CGRect(x: 20, y: 100, width: 200, height: 30))
+    page.a.add(icon)
+    let refused = judged(page) { page in
+      row.actions = ["AXPress"]
+      icon.reparent(to: row)
+      page.aText.destroy()
+      page.a.destroy()
+      return icon
+    }
+    XCTAssertEqual(refused.reason, .controlGone)
+  }
+
+  /// Item 3: A re-created in place as an AXButton around the decoration, its title unread at the observation (or now) and
+  /// its description another: the title, unknown, ends the label comparison with no difference, so main's verdict; the
+  /// same control 3 pt off A's frame still refuses on the frame.
+  func testAnUnreadTitleEndsTheLabelComparison() {
+    for (recordedUnread, shift) in [(true, 0.0), (false, 0.0), (false, 3.0)] {
+      let page = Page(twin: "Next", bare: true)
+      page.a.title = nil
+      page.a.description = "Open link"
+      if recordedUnread { (page.a.title, page.a.unreadable) = ("Open", [.title]) }
+      let icon = Node("AXImage", CGRect(x: 20, y: 100, width: 200, height: 30))
+      page.a.add(icon)
+      let judgedNow = judged(page, at: CGPoint(x: 150, y: 112)) { page in
+        let button = Node("AXButton", CGRect(x: 20, y: 100 + shift, width: 200, height: 30), description: "Open button")
+        if !recordedUnread { button.unreadable = [.title] }
+        page.list.children.insert(button, at: 0)
+        button.parent = page.list
+        icon.reparent(to: button)
+        page.aText.destroy()
+        page.a.destroy()
+        return button
+      }
+      XCTAssertEqual(judgedNow.reason, shift == 0 ? .hitAboveNode : .controlGone, "recorded unread \(recordedUnread), shift \(shift)")
+    }
+  }
+
+  /// Item 4: links A and F overlap, A wider; the record takes A's decoration at a point outside F's own frame, where F's
+  /// text overflows. A is removed and the decoration moved into a new link N; the hit is F's text, unchanged, whose
+  /// recorded and live owner is F in place: F takes the click, main's verdict. F moved 3 pt off its place does not vouch.
+  func testOverflowingContentOfAControlInPlaceVouches() {
+    for moved in [false, true] {
+      let page = Page(twin: "Next", bare: true)
+      page.a.frame = CGRect(x: 20, y: 100, width: 300, height: 30)
+      let front = Node("AXLink", CGRect(x: 20, y: 100, width: 200, height: 30), title: "Front")
+      let frontText = Node("AXStaticText", CGRect(x: 180, y: 105, width: 100, height: 20), value: "Front")
+      front.add(frontText)
+      page.list.children.insert(front, at: 1)
+      front.parent = page.list
+      let wrap = Node("AXGroup", CGRect(x: 20, y: 100, width: 300, height: 30))
+      let deco = Node("AXImage", CGRect(x: 20, y: 100, width: 300, height: 30))
+      wrap.add(deco)
+      page.a.add(wrap)
+      let point = CGPoint(x: 250, y: 112)
+      let (nodes, frameless, members) = walkRecord(page.window)
+      XCTAssertTrue(deepestScreenshotNode(at: point, in: nodes)?.element === deco)
+      let fresh = Node("AXLink", CGRect(x: 20, y: 100, width: 300, height: 30), title: "Next")
+      page.list.add(fresh)
+      deco.reparent(to: fresh)
+      page.aText.destroy()
+      page.a.destroy()
+      if moved { front.frame = front.frame?.offsetBy(dx: 0, dy: 3) }
+      let judgedNow = verdict(nodes, frameless: frameless, members: members, at: point, hit: frontText)
+      XCTAssertEqual(judgedNow.reason, moved ? .controlGone : .nonInteractiveHit, "F moved \(moved)")
     }
   }
 

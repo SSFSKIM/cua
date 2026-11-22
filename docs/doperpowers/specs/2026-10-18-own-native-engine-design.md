@@ -7745,6 +7745,30 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   Not measured live: this build on the smoke's cells and on #433's and #340's keep cells.
   Date/Author: 2026-11-21, cursor235's builder for #443.
 
+- Decision (#443, the re-review of f394677e, reviewer-medium, 2026-11-21, the last review wave; amends the entry above):
+  two P2 and two P3, all fixed; the counted hosted qualification is the check from here, with no further review round.
+  (1) `liveControl`'s walk passed over an ancestor whose role or actions did not read and compared a farther control
+  (an outer clickable card) with the recorded one, so a link re-created under a card could refuse. An ancestor it
+  cannot classify (role unread with no AXPress read, or role read inert with its actions unread) now ends the walk,
+  inconclusive, and the verdict is main's. (2) A vouching control must be one the record holds as a control (an
+  interactive role, or AXPress read then: `actionable` or `pressRecorded`); an inert wrapper that gained AXPress since
+  never vouches. (3) `controlDiffers` no longer goes through `stalePointLabelsAgree`, whose unread title read as absent
+  and let the comparison fall through to the descriptions: it compares title, then description, and an attribute unread
+  on either side, then or now, ends the comparison with no label difference; the description is compared only where
+  both sides are known to lack a title. A frame confirmed off by more than 2 pt still refuses. (4) A front link's text
+  drawn outside the link's own frame, the hit on it, could not vouch, since `controlVouches` asks for the control's
+  shown frame at the point: the hit now vouches itself (`contentVouches`) when it is a recorded node by handle, shown at
+  the point and in place, whose recorded control is the control it lies in now and is in place.
+  Proven offline, four new `OverlayTargetTests`, each failing against f394677e's StalePoint.swift and with its own fix
+  reverted alone: `testAnUnclassifiedAncestorEndsTheSearchForTheLiveControl` (a re-created link whose role, or whose
+  actions, do not read, under a re-laid-out clickable card), `testAWrapperThatGainedAXPressNeverVouches` (refused),
+  `testAnUnreadTitleEndsTheLabelComparison` (the title unread then or now, the descriptions differing: kept; 3 pt off:
+  refused), `testOverflowingContentOfAControlInPlaceVouches` (kept; the front link 3 pt off: refused). The vouch test
+  adds the hit on the front link's text re-laid out 3 pt inside it, which only the hit's control vouches for, so that
+  vouch still earns its place beside the content's. The mutation pass (13 mutations) is caught but for the own-handle
+  condition, as the entry above says. 157 StalePoint tests and 1607 swift tests, 0 failures.
+  Date/Author: 2026-11-21, cursor235's builder for #443.
+
 ## Outcomes & Retrospective
 
 Pending for the initiative — written at finish. M1a's interim account (2026-10-20) follows; the full record is `docs/doperpowers/specs/2026-10-18-own-native-engine-m1a-report.md`.

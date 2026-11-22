@@ -70,9 +70,10 @@ let markdownMaxLength = 2_000
 private let markdownRoles: Set<String> = [kAXTextAreaRole, kAXTextFieldRole]
 
 /// Whether a walk reads an element's value settability: whenever it has a value (the vendor's value branch of
-/// FUN_10074cb90 runs only for a value it holds) and the role's settability counts in the window (Derivations.swift).
+/// FUN_10074cb90 runs only for a value it holds; a password field, whose value is never read, counts as holding one, as
+/// every app answers it one, #405) and the role's settability counts in the window (Derivations.swift).
 func readsValueSettable(_ data: ElementData, parentRole: String?, chromium: Bool) -> Bool {
-  data.value != nil && readsValueSettability(role: data.role, subrole: data.subrole, parentRole: parentRole, chromium: chromium)
+  (data.value != nil || data.secure) && readsValueSettability(role: data.role, subrole: data.subrole, parentRole: parentRole, chromium: chromium)
 }
 
 /// A node's flags as the walk derives them (FUN_10074cb90; Derivations.swift).
@@ -485,6 +486,8 @@ final class TreeWalk {
     let recordable: Bool
     /// Its node, with a stand-in token the emission replaces (empty for a record-only read).
     var wire: [String: Any] = [:]
+    /// Whether its action names read (`ElementSource.actionsFailed`), for the stale-point record (#431's review, finding 4).
+    var actionsRead = true
   }
 
   private enum Outcome {
@@ -926,7 +929,9 @@ final class TreeWalk {
       let data = item.read.data
       screenshotReads.append(ScreenshotNodeRead(element: item.read.element, number: number, parent: parent, depth: depth, role: data.role,
                                                 title: data.title, description: data.description, frame: data.frame,
-                                                actions: item.read.actions, childCount: data.children.count, childrenRead: data.childrenRead,
+                                                actions: item.read.actions, childCount: data.children.count, children: data.children,
+                                                actionsRead: item.read.actionsRead, roleRead: !data.unreadable.contains(kAXRoleAttribute),
+                                                childrenRead: data.childrenRead,
                                                 subrole: data.subrole, value: screenshotLabelValue(role: data.role, data.value),
                                                 labelsUnread: screenshotLabelsUnread(role: data.role, data.unreadable)))
       emitRecord(item.read.children + item.recordChildren, parent: number, depth: depth + 1)
@@ -975,6 +980,7 @@ final class TreeWalk {
     if pastDeadline() { return .deadline }
     let owner = source.owner(element)
     let actions = source.actions(element)
+    let actionsRead = !source.actionsFailed(element)
     settleUnplacedClip(element, &data, actions)
     let order = ReadOrder(inMenu: pending.inMenu, path: pending.path)
     let described = actions.map { describe(action: $0, of: element, owner: owner, order: order) }
@@ -996,8 +1002,9 @@ final class TreeWalk {
        let text = data.value.flatMap({ CFGetTypeID($0) == CFStringGetTypeID() ? ($0 as! String) : nil }) {
       let length = text.utf16.count
       if length > 0 && length <= markdownMaxLength {
-        valueMarkdown = source.markdown(element, length: length)
-        markdownFetches += 1
+        // A field found closed just before the read (#405) comes back with its value dropped, and the node is made from that.
+        valueMarkdown = source.markdown(element, data: &data, length: length)
+        if !data.secure { markdownFetches += 1 }
       }
     }
     let (children, shown, recordable) = choose(element, data, actions, pending)
@@ -1005,6 +1012,7 @@ final class TreeWalk {
     var read = Read(element: element, data: data, owner: owner, actions: actions, actionDescriptions: actionDescriptions,
                     descriptionKeys: described.map(\.key), flags: flags,
                     url: url, valueMarkdown: valueMarkdown, children: children, shown: shown, recordable: recordable)
+    read.actionsRead = actionsRead
     read.wire = wire(read, number: standIn, depth: pending.depth)
     return .read(read)
   }
@@ -1016,11 +1024,14 @@ final class TreeWalk {
     guard var data = source.data(element) else { return .failed }
     if pastDeadline() { return .deadline }
     let actions = source.actions(element)
+    let actionsRead = !source.actionsFailed(element)
     settleUnplacedClip(element, &data, actions)
     let (children, shown, recordable) = choose(element, data, actions, pending)
     if pastDeadline() { return .deadline }
-    return .read(Read(element: element, data: data, owner: 0, actions: actions, actionDescriptions: [], descriptionKeys: [], flags: NodeFlags(), url: nil,
-                      valueMarkdown: nil, children: children, shown: shown, recordable: recordable))
+    var read = Read(element: element, data: data, owner: 0, actions: actions, actionDescriptions: [], descriptionKeys: [], flags: NodeFlags(), url: nil,
+                    valueMarkdown: nil, children: children, shown: shown, recordable: recordable)
+    read.actionsRead = actionsRead
+    return .read(read)
   }
 
   /// A clipping element whose frame read unplaced (`unplacedFrame`, #312): on the observation that enabled the process's
@@ -1109,11 +1120,14 @@ final class TreeWalk {
     }
     if inMenu { menuBar.append(node) } else { nodes.append(node) }
     revision.entries[number] = LineageEntry(element: read.element, identity: ElementIdentity(read.data, pid: read.owner), actions: read.actions,
-                                            frame: read.data.frame, firstChild: read.data.children.first, listed: read.data.children.count)
+                                            frame: read.data.frame, firstChild: read.data.children.first, listed: read.data.children.count,
+                                            recordedAt: revision.recordedAt)
     if !inMenu {
       screenshotReads.append(ScreenshotNodeRead(element: read.element, number: number, parent: parent, depth: depth, role: read.data.role,
                                                 title: read.data.title, description: read.data.description, frame: read.data.frame,
-                                                actions: read.actions, childCount: read.data.children.count, childrenRead: read.data.childrenRead,
+                                                actions: read.actions, childCount: read.data.children.count, children: read.data.children,
+                                                actionsRead: read.actionsRead, roleRead: !read.data.unreadable.contains(kAXRoleAttribute),
+                                                childrenRead: read.data.childrenRead,
                                                 subrole: read.data.subrole, value: screenshotLabelValue(role: read.data.role, read.data.value),
                                                 labelsUnread: screenshotLabelsUnread(role: read.data.role, read.data.unreadable)))
     }
@@ -1185,6 +1199,9 @@ func nodeWire(token: String, depth: Int, pid: pid_t, data: ElementData, actions:
   if let columns = data.columnIndexRange { node["columnIndexRange"] = columns }
   if let domClassList = data.domClassList { node["domClassList"] = domClassList }
   if let shown { node["shown"] = shown.wire }
+  // #405: a password field's value was never kept; the node says so, with no value, length or Markdown. Another element
+  // whose classification failed says only that its value was not read (ruling 1ea561bc:813).
+  if data.secure { node["secure"] = true } else if data.classificationFailed { node["valueUnread"] = true }
   return node
 }
 

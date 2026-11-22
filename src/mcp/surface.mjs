@@ -40,9 +40,12 @@ const PASSED_THROUGH = new Map([
   ['js_reset', os => `reset the computer-use session for ${os} gui control`],
 ]);
 // Search hints when the browser surface is on (alone, or with computer use).
+// With a MAWS backend configured (`maws`) the in-app browser comes first: tool search matches on this text, and an agent
+// that finds js by it never reads profiles_list (#368).
 const BROWSER_HINTS = {
-  browser: {js: () => 'operate the user\'s chrome browser profiles: open tabs, read pages, fill forms, screenshot', js_reset: () => 'reset the browser-use session'},
-  both: {js: os => `control ${os} apps and the user's chrome browser profiles: click, type, fill forms, read, screenshot`, js_reset: () => 'reset the computer-use and browser-use session'},
+  browser: {js: ({maws}) => `operate ${maws ? 'this session\'s MAWS in-app browser and ' : ''}the user's chrome browser profiles: open tabs, read pages, fill forms, screenshot`, js_reset: () => 'reset the browser-use session'},
+  both: {js: ({os, maws}) => maws ? `control ${os} apps, this session's MAWS in-app browser and the user's chrome profiles: click, type, fill forms, read, screenshot`
+    : `control ${os} apps and the user's chrome browser profiles: click, type, fill forms, read, screenshot`, js_reset: () => 'reset the computer-use and browser-use session'},
 };
 const hintOs = platform => platform === 'linux' ? 'linux' : 'macos';
 
@@ -67,7 +70,10 @@ export const SECRETS_LIST_TOOL = {
     + 'is used in place of a global one of the same name. Returns status "ok" with labels (the keys), or status "unavailable"/"error" '
     + 'with a code when secret storage cannot be used on this connection. To enter a secret the user has authorized, pass exactly "{{secret:<label>}}" '
     + 'as the whole text of typeText or paste, or the whole value of setValue: the stored value is substituted outside '
-    + 'your code and never returned. Anywhere else the marker is not expanded.',
+    + 'your code and never returned. Anywhere else the marker is not expanded. Once entered, the value is in the app like '
+    + 'any typed text: a field that does not mask its input shows it in your later screenshots and observations, so enter '
+    + 'a secret only into a field that masks it, such as a password field, which still shows its length on screen (one '
+    + 'mask character per character).',
   inputSchema: NO_ARGUMENTS,
   annotations: {readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false},
   _meta: {'anthropic/searchHint': 'list stored secret credential labels for computer-use typing'},
@@ -126,6 +132,9 @@ export const PROFILES_LIST_TOOL = {
 // browser (key maws, listed first) is what cua.getBrowser() with no id selects, so the first rule's "never pick" gives
 // way to the owner's default: the in-app browser, a Chrome profile only when the user names one.
 const MAWS_RULE = '- In MAWS: cua.getBrowser() with no id is this session\'s in-app browser (key maws). Use a Chrome profile only when the user names one.';
+// The same rule in js's own rules, which an agent reads without ever loading profiles_list (#368). The no-call
+// exemption names the in-app browser and comes before the Chrome sentence, so it cannot be read as covering Chrome.
+const JS_MAWS_RULE = '- In MAWS: cua.getBrowser() with no id is this session\'s in-app browser (key maws), the pane the user watches; use it for any page, and it needs no profiles_list call. Use a Chrome profile only when the user names one, and then follow profiles_list\'s rules.';
 function profilesListTool(inAppBrowser) {
   const [select, ...rest] = BROWSER_RULES;
   const rules = inAppBrowser ? [select.replace(' Never pick or bind a profile for the user.', ''), MAWS_RULE, ...rest] : [select, ...rest];
@@ -195,10 +204,13 @@ export const LINUX_HOST_NOTES = [TITLE, LINUX_COMPUTER_HEAD, ...GENERAL_NOTES, A
 
 // The notes for the enabled surfaces on `platform` (the host's by default), with the devices rule where the device
 // tools exist.
-export function hostNotesFor(surfaces, {platform = process.platform, devices = false, feedbackDir} = {}) {
+// With a MAWS backend configured (`inAppBrowser`) and the browser surface on, the MAWS rule follows the head (#368).
+export function hostNotesFor(surfaces, {platform = process.platform, devices = false, feedbackDir, inAppBrowser = false} = {}) {
   const notes = !surfaces.includes('computer') ? [TITLE, BROWSER_HEAD, ...GENERAL_NOTES].join('\n')
     : platform === 'linux' ? LINUX_HOST_NOTES : DEFAULT_HOST_NOTES;
-  return withFeedbackNote([notes, ...(devices ? [DEVICES_NOTE] : [])].join('\n'), feedbackDir);
+  const [title, head, ...rest] = notes.split('\n');
+  const named = inAppBrowser && surfaces.includes('browser') ? [title, head, MAWS_RULE, ...rest].join('\n') : notes;
+  return withFeedbackNote([named, ...(devices ? [DEVICES_NOTE] : [])].join('\n'), feedbackDir);
 }
 
 // Feedback belongs to the agent's client, even while the tools drive a remote device.
@@ -253,10 +265,10 @@ const BROWSER_POINTER = '- Chrome: follow the rules in profiles_list\'s descript
 
 // `engine`: the native engine the connection selected (launch.mjs nativeEngineFor's `engine`), which decides the
 // Linux text rule above.
-export function jsRulesFor(surfaces, {platform = process.platform, engine} = {}) {
+export function jsRulesFor(surfaces, {platform = process.platform, engine, inAppBrowser = false} = {}) {
   const computer = !surfaces.includes('computer') ? []
     : platform === 'linux' ? LINUX_COMPUTER_RULES[engine === 'cua' ? 'cua' : 'vendor'] : COMPUTER_RULES;
-  return [JS_TITLE, ...computer, ...(surfaces.includes('browser') ? [BROWSER_POINTER] : [])].join('\n');
+  return [JS_TITLE, ...computer, ...(surfaces.includes('browser') ? [...(inAppBrowser ? [JS_MAWS_RULE] : []), BROWSER_POINTER] : [])].join('\n');
 }
 
 // A model-visible profile entry: key and readiness, the instance id when bound, the reason when not ready. Never the
@@ -267,18 +279,19 @@ export function withHostNotes(instructions, hostNotes) {
   return [instructions, hostNotes].filter(Boolean).join('\n\n');
 }
 
-const hintFor = (name, surfaces, platform) => (!surfaces.includes('browser') ? PASSED_THROUGH.get(name)
-  : BROWSER_HINTS[surfaces.includes('computer') ? 'both' : 'browser'][name])(hintOs(platform));
+const hintFor = (name, surfaces, platform, maws) => (!surfaces.includes('browser') ? PASSED_THROUGH.get(name)(hintOs(platform))
+  : BROWSER_HINTS[surfaces.includes('computer') ? 'both' : 'browser'][name]({os: hintOs(platform), maws}));
 
-// `inAppBrowser`: a MAWS backend is configured (profiles_list's description says so). `engine`: as jsRulesFor's.
+// `inAppBrowser`: a MAWS backend is configured (profiles_list's description, js's hint and rules say so). `engine`: as
+// jsRulesFor's.
 export function modelTools(upstreamTools, {surfaces = ['computer'], platform = process.platform, devices = false, inAppBrowser = false, engine} = {}) {
-  const jsRules = jsRulesFor(surfaces, {platform, engine});
+  const jsRules = jsRulesFor(surfaces, {platform, engine, inAppBrowser});
   const passed = (Array.isArray(upstreamTools) ? upstreamTools : [])
     .filter(tool => PASSED_THROUGH.has(tool.name))
     .map(tool => ({
       ...tool,
       ...(tool.name === 'js' ? {description: [jsRules, tool.description].filter(Boolean).join('\n\n')} : {}),
-      _meta: {...(tool._meta ?? {}), 'anthropic/searchHint': hintFor(tool.name, surfaces, platform)},
+      _meta: {...(tool._meta ?? {}), 'anthropic/searchHint': hintFor(tool.name, surfaces, platform, inAppBrowser && surfaces.includes('browser'))},
     }));
   const linux = platform === 'linux';
   const endTask = linux ? LINUX_END_TASK_TOOL : END_TASK_TOOL;

@@ -140,6 +140,24 @@ final class BackgroundPointerTests: XCTestCase {
     XCTAssertNotNil(clickMeta.delivery)
   }
 
+  /// #458 (re-review of 75fecad2..1d70a333, item 1): a press decided before delivery (a `<select>`'s on #282's route)
+  /// takes the pointer's place outright, even where the activation would click its in-window point (Electron's): no
+  /// activation, no event, no delivery guard; and over Chrome's activation too. The click above, with none, still posts.
+  func testADecidedPressTakesThePointersPlaceWhateverTheActivationWouldClick() throws {
+    for make in [electron, chrome] {
+      let seam = GuardSeam(frontmost: user)
+      var pressed = 0
+      var pointer = webArea({ _ in XCTFail("not the refusal's fallback") })
+      pointer.pressRoute = { _ in pressed += 1 }
+      var clickMeta = meta(connection())
+      try click(seam, activation: make(seam), pointer: pointer, meta: &clickMeta)
+      XCTAssertEqual(pressed, 1)
+      XCTAssertEqual(seam.posts.count, 0, "nothing posted")
+      XCTAssertNil(clickMeta.delivery)
+      XCTAssertEqual(activations.holders(target), 0)
+    }
+  }
+
   // MARK: Dedicated mode: the down meets a key window, and nothing is put back
 
   /// The inert click goes right after subtype 1 for a left click and a drag too, before the action's own down, and the
@@ -524,12 +542,15 @@ final class BackgroundPointerTests: XCTestCase {
   /// successful write never opened and the re-read never ran. The process's first observation opens the fresh window,
   /// and so does every write attempt, failed or not; the observation reports the attempt and its AXError, value-free.
   func testAFailedEnablementWriteStillOpensTheFreshWindowAndIsReported() {
-    let web = WebAccessibility()
+    // The engine's clock is the test's (#408): a real uptime reading plus the window can round below the window in Double
+    // when the sum crosses a power of two, so the boundary asserted below read fresh on a hosted run now and then.
+    var clock: Double = 1_000
+    let web = WebAccessibility(now: { clock })
     var writes = 0
     let access = EnablementAccess(listed: { ["AXManualAccessibility"] }, readRole: {}, read: { _ in false },
                                   write: { _, _ in writes += 1; return .cannotComplete }, current: { true })
     XCTAssertNil(web.freshSince(pid: 7, launched: nil), "never observed")
-    let before = monotonicMilliseconds()
+    clock = 5_000
     var timings = Timings()
     let step = web.observeEnablement(eligible: true, pid: 7, launched: nil, connection: 1, access: access, timings: &timings)
     // The write was attempted; Electron's computed getter cannot confirm that a failed AXManualAccessibility write did
@@ -539,7 +560,7 @@ final class BackgroundPointerTests: XCTestCase {
     XCTAssertEqual(timings.wire["enablementWrite"] as? String, "failed")
     XCTAssertEqual(timings.wire["enablementWriteError"] as? Int, Int(AXError.cannotComplete.rawValue))
     let since = try? XCTUnwrap(web.freshSince(pid: 7, launched: nil))
-    XCTAssertGreaterThanOrEqual(since ?? 0, before)
+    XCTAssertEqual(since, 5_000, "opened at the observation")
     web.noteWebArea(pid: 7, launched: nil)
     XCTAssertTrue(webAreaAccessibilityFresh(freshSince: since, now: (since ?? 0) + 1_000, webAreaSeen: true),
                   "fresh after a failed write, the web area already seen")
@@ -610,8 +631,13 @@ final class BackgroundPointerTests: XCTestCase {
   }
 
   private func hitIn(_ application: Node, _ window: Node, _ elementAt: (Node, CGPoint) -> (AXError, Node?)) -> Node? {
+    outcome(application, window, elementAt).element
+  }
+
+  private func outcome(_ application: Node, _ window: Node, _ elementAt: (Node, CGPoint) -> (AXError, Node?),
+                       numbers: [ObjectIdentifier: CGWindowID] = [:]) -> WindowHit<Node> {
     windowHit(application: application, window: window, at: point, elementAt: elementAt, role: { $0.role }, parent: { $0.parent },
-                     same: { $0 === $1 })
+              same: { $0 === $1 }, number: { node, _ in numbers[ObjectIdentifier(node)] })
   }
 
   /// The hit-test is asked of the application element, never the window (which answers -25201): a page point in the
@@ -646,6 +672,142 @@ final class BackgroundPointerTests: XCTestCase {
     let inSheet = Node("AXButton", parent: Node("AXSheet", parent: window))
     XCTAssertTrue(hitIn(application, window, stub(application, answers: inSheet)) === inSheet, "a sheet's element is its window's")
     XCTAssertTrue(hitIn(application, window, stub(application, answers: window)) === window, "the window itself")
+  }
+
+  /// #452/#337: where the hit answered, the guard's signal, beside main's hit: another window of the app's with its number
+  /// (Chrome's omnibox popup, window 49 over the browser window), the observed window with an AXPopover on the way
+  /// (TextEdit's colour-well popover) or without, and unread for an ancestry that reads to no window or no answer.
+  func testTheHitTestSaysWhereItAnsweredWithTheOtherWindowsNumber() {
+    let application = Node("AXApplication")
+    let window = Node("AXWindow", parent: application)
+    let popup = Node("AXWindow", parent: application)
+    let row = Node("AXStaticText", parent: Node("AXList", parent: Node("AXWebArea", parent: popup)))
+    let numbers = [ObjectIdentifier(popup): CGWindowID(49), ObjectIdentifier(window): CGWindowID(28)]
+    let found = outcome(application, window, stub(application, answers: row), numbers: numbers)
+    XCTAssertEqual(found.place, .otherWindow(49))
+    XCTAssertNil(found.element, "main's hit: none")
+    XCTAssertEqual(outcome(application, window, stub(application, answers: row)).place, .otherWindow(nil), "its number unread")
+    XCTAssertEqual(outcome(application, window, stub(application, answers: Node("AXButton", parent: Node("AXGroup")))).place, .unread)
+    XCTAssertEqual(outcome(application, window, stub(application, answers: nil)).place, .unread)
+    let button = Node("AXButton", parent: window)
+    let own = outcome(application, window, stub(application, answers: button), numbers: numbers)
+    XCTAssertTrue(own.element === button)
+    XCTAssertEqual(own.place, .observedWindow(inPopover: false))
+    let swatch = Node("AXButton", parent: Node("AXGroup", parent: Node("AXPopover", parent: window)))
+    let inPopover = outcome(application, window, stub(application, answers: swatch))
+    XCTAssertTrue(inPopover.element === swatch, "main's hit unchanged")
+    XCTAssertEqual(inPopover.place, .observedWindow(inPopover: true))
+  }
+
+  /// Design ruling 940: a hit-test past `pointHitSignalDeadlineMs` gives the guard no signal (main's verdict stands), and
+  /// main's hit is unchanged; its time is reported either way, and another window's number is not read once late.
+  func testAHitTestPastItsDeadlineGivesNoSignalAndKeepsMainsHit() {
+    let application = Node("AXApplication")
+    let window = Node("AXWindow", parent: application)
+    let popup = Node("AXWindow", parent: application)
+    let row = Node("AXStaticText", parent: popup)
+    let button = Node("AXButton", parent: window)
+    for (lateMs, expectedOwn, expectedOther) in [(10.0, PointHitPlace.observedWindow(inPopover: false), PointHitPlace.otherWindow(49)),
+                                                 (pointHitSignalDeadlineMs + 1, .unread, .unread)] {
+      var clock = 0.0
+      var numbered = 0
+      func late(_ answer: Node) -> (Node, CGPoint) -> (AXError, Node?) {
+        { root, at in clock += lateMs; return self.stub(application, answers: answer)(root, at) }
+      }
+      let own = windowHit(application: application, window: window, at: point, elementAt: late(button), role: { $0.role },
+                          parent: { $0.parent }, same: { $0 === $1 }, now: { clock })
+      XCTAssertTrue(own.element === button)
+      XCTAssertEqual(own.place, expectedOwn)
+      XCTAssertEqual(own.ms, lateMs)
+      let other = windowHit(application: application, window: window, at: point, elementAt: late(row), role: { $0.role },
+                            parent: { $0.parent }, same: { $0 === $1 }, number: { _, _ in numbered += 1; return 49 }, now: { clock })
+      XCTAssertNil(other.element)
+      XCTAssertEqual(other.place, expectedOther)
+      XCTAssertEqual(numbered, expectedOther == .unread ? 0 : 1)
+    }
+  }
+
+  /// The review of 023a3bee (P2), run 44816112944: the observed window is a save panel's AXSheet (952), its controls'
+  /// hits walking AXSheet → AXWindow 948. The sheet met on the way places the hit in the observed window, never in "another
+  /// window" over it; main's hit (none: its first AXWindow ancestor is not the sheet) is unchanged.
+  func testAnObservedSheetMetOnTheWalkPlacesTheHitInItWhateverItsRole() {
+    let application = Node("AXApplication")
+    let document = Node("AXWindow", parent: application)
+    let sheet = Node("AXSheet", parent: document)
+    let save = Node("AXButton", parent: Node("AXGroup", parent: sheet))
+    var numbered = 0
+    let found = windowHit(application: application, window: sheet, at: point, elementAt: stub(application, answers: save), role: { $0.role },
+                          parent: { $0.parent }, same: { $0 === $1 }, number: { _, _ in numbered += 1; return 948 }, now: { 0 })
+    XCTAssertEqual(found.place, .observedWindow(inPopover: false))
+    XCTAssertNil(found.element, "main's hit")
+    XCTAssertEqual(numbered, 0, "no other window numbered")
+  }
+
+  /// The review of 023a3bee (P2): another window's number is asked with what is left of the deadline, and its frame is read
+  /// only when the SPI gives no number.
+  func testAnotherWindowsNumberIsAskedWithTheTimeLeftAndItsFrameReadOnlyWithoutTheSPI() {
+    let application = Node("AXApplication")
+    let window = Node("AXWindow", parent: application)
+    let row = Node("AXStaticText", parent: Node("AXWindow", parent: application))
+    var clock = 0.0
+    var given: Double??
+    let found = windowHit(application: application, window: window, at: point, elementAt: { root, at in
+      clock += 120
+      return self.stub(application, answers: row)(root, at)
+    }, role: { $0.role }, parent: { $0.parent }, same: { $0 === $1 }, number: { _, left in given = .some(left); return 49 }, now: { clock })
+    XCTAssertEqual(found.place, .otherWindow(49))
+    XCTAssertEqual(given, .some(pointHitSignalDeadlineMs - 120))
+    var framesRead = 0
+    XCTAssertEqual(resolvedWindowNumber(spi: { 49 }, readFrame: { framesRead += 1; return .zero }, matching: { _ in 50 }), 49)
+    XCTAssertEqual(framesRead, 0, "the SPI answered: no frame read")
+    XCTAssertEqual(resolvedWindowNumber(spi: { nil }, readFrame: { framesRead += 1; return .zero }, matching: { _ in 50 }), 50)
+    XCTAssertEqual(framesRead, 1)
+    XCTAssertNil(resolvedWindowNumber(spi: { nil }, readFrame: { nil }, matching: { _ in 50 }), "no frame within the budget")
+  }
+
+  /// The review of 023a3bee..e98276d2 (P2): another window's frame is read against an absolute cutoff, checked after the
+  /// SPI's attempt and before each read, each asked with what is left then: an SPI that ran past the cutoff leaves no read,
+  /// a position read that ran past it leaves the size unasked, and the size is asked with less than the position was.
+  func testAnotherWindowsFrameIsReadAgainstAnAbsoluteCutoff() {
+    var clock = 0.0
+    let cutoff = 400.0
+    var asked: [String] = []
+    var timeouts: [Float] = []
+    func read(positionTakes: Double) -> CGRect? {
+      boundedFrame(left: { cutoff - clock }, position: { timeout in
+        asked.append("position"); timeouts.append(timeout); clock += positionTakes; return .zero
+      }, size: { timeout in
+        asked.append("size"); timeouts.append(timeout); return CGSize(width: 10, height: 10)
+      })
+    }
+    // The SPI's attempt spends the budget: no frame read at all.
+    XCTAssertNil(resolvedWindowNumber(spi: { clock += 450; return nil }, readFrame: { read(positionTakes: 0) }, matching: { _ in 49 }))
+    XCTAssertEqual(asked, [])
+    // Within it: both asked, the size with what the position's read left.
+    clock = 0
+    XCTAssertEqual(resolvedWindowNumber(spi: { clock += 100; return nil }, readFrame: { read(positionTakes: 200) }, matching: { _ in 49 }), 49)
+    XCTAssertEqual(asked, ["position", "size"])
+    XCTAssertEqual(timeouts, [0.3, 0.1])
+    // A position read that runs past the cutoff: the size is never asked.
+    (clock, asked) = (0, [])
+    XCTAssertNil(read(positionTakes: 500))
+    XCTAssertEqual(asked, ["position"])
+  }
+
+  /// The review of 023a3bee (P1): the guard's signal is the outcome of the hit-test whose hit it judges, #288's last
+  /// re-hit when it ran: a popup the first saw and the re-hit no longer finds gives no refusal, a popup only the re-hit
+  /// finds refuses, though both hits are none.
+  func testTheGuardsSignalIsTheLastHitTestsOwn() {
+    let transient = WindowHit<Node>(element: nil, place: .otherWindow(49), ms: 3)
+    let gone = WindowHit<Node>(element: nil, place: .unread, ms: 4)
+    let staleRefusal = LatestHit(transient) { gone }
+    XCTAssertNil(staleRefusal.rehit())
+    XCTAssertEqual(staleRefusal.outcome.place, .unread)
+    XCTAssertEqual(staleRefusal.outcome.ms, 4)
+    let fresh = LatestHit(gone) { transient }
+    XCTAssertNil(fresh.rehit())
+    XCTAssertEqual(fresh.outcome.place, .otherWindow(49))
+    XCTAssertEqual(LatestHit(transient) { gone }.outcome.place, .otherWindow(49), "no re-hit: the first hit-test's own")
   }
 
   // MARK: The mode reaches the connection through its ping

@@ -5,7 +5,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {diff} from '../src/services/engine/diff.mjs';
-import {advanceNumbering, render, NOTE} from '../src/services/engine/render.mjs';
+import {advanceNumbering, render, NOTE, WINDOW_PLACEMENT} from '../src/services/engine/render.mjs';
 import {node, skyshot} from './native-goldens/builder.mjs';
 
 const HEADER = 'The following is a diff from the previous accessibility tree for Window: "W" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.';
@@ -24,6 +24,24 @@ test('an unchanged tree answers the no-change sentence, then the trailer', () =>
   const first = observe(shot);
   const second = observe(skyshot(shot.nodes, {focused: 'f', revision: 2}), first);
   assert.equal(diff(first, second), 'There has been no change in the accessibility tree for Window: "W".\nThe focused UI element is 1 text field (settable) a');
+});
+
+// #367: the placement line rides on every diff of a window off screen, the no-change answer's too.
+const offScreen = {title: 'W', frame: {x: -5000, y: 0, width: 100, height: 100}, pid: 1, placement: 'offScreen'};
+
+test('#367: a window off screen keeps its line in a diff with no change, before the trailer', () => {
+  const shot = skyshot([win(), field('f', 1, 'a', {focused: true})], {focused: 'f', window: offScreen});
+  const first = observe(shot);
+  const second = observe(skyshot(shot.nodes, {focused: 'f', revision: 2, window: offScreen}), first);
+  assert.equal(diff(first, second), `There has been no change in the accessibility tree for Window: "W".\n${WINDOW_PLACEMENT.offScreen.line}\nThe focused UI element is 1 text field (settable) a`);
+});
+
+test('#367: a window off screen keeps its line after a diff\'s changes; back on screen, the line is gone', () => {
+  const first = observe(skyshot([win(), field('f', 1, 'a')], {window: offScreen}));
+  const second = observe(skyshot([win(), field('f', 1, 'b')], {revision: 2, window: offScreen}), first);
+  assert.equal(diff(first, second), `${HEADER}\n~\t1 text field (settable) b\n${WINDOW_PLACEMENT.offScreen.line}`);
+  const third = observe(skyshot([win(), field('f', 1, 'b')], {revision: 3}), second);
+  assert.equal(diff(second, third), 'There has been no change in the accessibility tree for Window: "W".');
 });
 
 test('a changed line is marked ~ before its tabs, with the new line', () => {
@@ -86,4 +104,17 @@ test('a selection trailer follows the diff lines', () => {
   const first = observe(skyshot(rows(false)));
   const second = observe(skyshot(rows(true), {revision: 2, selectedElements: ['r']}), first);
   assert.equal(diff(first, second), `${HEADER}\n~\t\t2 row (selected)\nSelected:\n\t2 row (selected)\n\n${NOTE}`);
+});
+
+// #405: a password field's value never reaches the diff: a change of what it holds is no change, and its line says
+// `secure text`, whatever value its node carries.
+test('#405: a password field\'s changing value is no change, and an added one prints `secure text`', () => {
+  const pw = (token, value, fields = {}) => node(token, 1, 'AXTextField', {roleDescription: 'secure text field', subrole: 'AXSecureTextField', value, flags: {settable: true}, ...fields});
+  const first = observe(skyshot([win(), pw('p', 'PLAINTEXT-1')]));
+  const second = observe(skyshot([win(), pw('p', 'PLAINTEXT-22', {numberOfCharacters: 12})], {revision: 2}), first);
+  assert.equal(diff(first, second), 'There has been no change in the accessibility tree for Window: "W".');
+  const third = observe(skyshot([win(), pw('p', null, {secure: true}), pw('q', 'PLAINTEXT-3')], {revision: 3}), second);
+  // Its only part, so printed bare.
+  assert.equal(diff(second, third), `${HEADER}\n+\t2 secure text field (settable) secure text`);
+  assert.doesNotMatch(render(third.skyshot, third.numbering), /PLAINTEXT|12/);
 });

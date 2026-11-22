@@ -6,6 +6,8 @@
 // bind_mac_app(sky, app) -> App. Element indexes and [x, y] coordinates map to Sky's snake_case payloads; scroll takes a
 // page count (an object distance is refused before any input); paste defaults to text; screenshots are read from Sky's
 // data: or file: URL and returned as bytes, a missing one an error (the combined observation returns the state alone).
+// cua's one addition: the error ends with the reason when the service gives one (`screenshotUnavailable`, cua's own
+// engine for a window off screen, #367), else with the vendor's full stop.
 import {image, screenshot_bytes, text} from './display.mjs';
 
 export function bind_mac_app(sky, app) {
@@ -17,7 +19,7 @@ export function bind_mac_app(sky, app) {
     },
     async getScreenshot(options) {
       const appState = await sky.get_app_state({app});
-      if (appState.screenshot === null) throw new Error(`Screenshot unavailable for ${app}.`);
+      if (appState.screenshot === null) throw new Error(`Screenshot unavailable for ${app}${typeof appState.screenshotUnavailable === 'string' ? `: ${appState.screenshotUnavailable}` : '.'}`);
       const bytes = await screenshot_bytes(appState.screenshot.url);
       await image({bytes, options});
       return bytes;

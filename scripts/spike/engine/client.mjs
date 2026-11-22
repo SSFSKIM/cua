@@ -5,7 +5,9 @@
 //
 // Connect, as the vendor's native pipe does (R/A-contract.md §2.1): a 250 ms connect-and-ping loop, then a launch of the
 // bundle through `nodeRepl.launchServices.openApplication({applicationPath})`, then reconnects for up to 5 s, retrying
-// every 100 ms. The ping speaks `cua-engine-1` and the answer's engineVersion and build must equal the bundle's
+// every 100 ms. A connection that opened gets its own full second for the ping, whatever is left of the window, as
+// src/services/engine/client.mjs does: a ping cut short by a slow open would launch over a healthy engine. The ping
+// speaks `cua-engine-1` and the answer's engineVersion and build must equal the bundle's
 // (its Info.plist, as assemble.mjs writes it); a mismatch fails at once with a diagnostic naming `cua install --engine`
 // and is never retried, launched over or shut down: a service never replaces an engine it did not launch.
 //
@@ -182,10 +184,15 @@ class Connection {
 }
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+// The timeout gives way to I/O already done, as src/services/engine/client.mjs's does: after a stall the loop runs its
+// due timers before the I/O that completed meanwhile, so the rejection waits one turn (#441).
 function within(promise, ms, message) {
   let timer;
-  const timeout = new Promise((_, reject) => { timer = setTimeout(() => reject(new SkyComputerUseTransportError(message)), ms); });
-  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+  let turn;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => { turn = setImmediate(() => reject(new SkyComputerUseTransportError(message))); }, ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => { clearTimeout(timer); clearImmediate(turn); });
 }
 
 // `nodeRepl` is the trusted worker's (nativePipe, launchServices); `expected` the bundle's {engineVersion, build} or a
@@ -220,7 +227,7 @@ export function createEngineClient({nodeRepl, appPath, socketPath = socketPathFo
       if (pipe) {
         const candidate = new Connection(pipe);
         try {
-          const answer = await candidate.call('ping', {clientApiVersion: CLIENT_API_VERSION}, Math.min(PING_MS, Math.max(1, deadline - Date.now())));
+          const answer = await candidate.call('ping', {clientApiVersion: CLIENT_API_VERSION}, PING_MS);
           const checked = check(answer, want);
           connection = candidate;
           identity = checked;

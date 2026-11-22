@@ -162,10 +162,17 @@ class Connection {
 }
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+// `promise`, or `message` as a transport error once `ms` have passed. The timeout gives way to I/O already done: after a
+// stall (a loaded machine) the loop runs its due timers before the I/O that completed meanwhile, so the rejection waits
+// one turn (setImmediate runs after that I/O), and an engine that accepted the connect during the stall is not judged
+// absent and launched over (#441).
 function within(promise, ms, message) {
   let timer;
-  const timeout = new Promise((_, reject) => { timer = setTimeout(() => reject(new SkyComputerUseTransportError(message)), ms); });
-  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+  let turn;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => { turn = setImmediate(() => reject(new SkyComputerUseTransportError(message))); }, ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => { clearTimeout(timer); clearImmediate(turn); });
 }
 
 // `nodeRepl` is the trusted worker's (nativePipe, launchServices, withSuspendedTimeout); `expected` the bundle's

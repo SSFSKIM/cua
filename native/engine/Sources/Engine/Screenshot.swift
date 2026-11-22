@@ -222,10 +222,15 @@ struct ObservedScreenshot {
   /// Every element the walk recorded, framed or frameless, with whether it recorded all of the element's children
   /// (#330's rule dL, StalePoint.swift `screenshotChildrenRecorded`).
   let recorded: [ElementKey: Bool]
+  /// The walk's frameless elements (#435, StalePoint.swift `screenshotRecord`), which #431's twin search reads beside
+  /// `nodes`.
+  let frameless: [ScreenshotNode<AXUIElement>]
 
-  init(window: AXUIElement, image: CapturedScreenshot, nodes: [ScreenshotNode<AXUIElement>] = [], recorded: [ElementKey: Bool] = [:]) {
+  init(window: AXUIElement, image: CapturedScreenshot, nodes: [ScreenshotNode<AXUIElement>] = [],
+       frameless: [ScreenshotNode<AXUIElement>] = [], recorded: [ElementKey: Bool] = [:]) {
     self.window = window
     self.recorded = recorded
+    self.frameless = frameless
     width = image.width
     height = image.height
     windowOrigin = image.frame.origin

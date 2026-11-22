@@ -41,6 +41,12 @@ const copied = items => items.map(item => ({entries: item.entries.map(entry => (
   ...(item.presentation_style == null ? {} : {presentation_style: item.presentation_style})}));
 
 export class Clipboard {
+  // `stranded`, the backend's StrandedPageClipboards (clipboard-bridge.mjs), records the page sides a removal left.
+  constructor({stranded} = {}) {
+    this.stranded = stranded;
+  }
+
+  stranded;
   items = [];
   operationTail = Promise.resolve();
   bridges = new Map();           // CdpController -> PageClipboardBridge

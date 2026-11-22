@@ -411,7 +411,7 @@ export class Downloads extends Emitter {                                        
     const timedOut = () => new BrowserServiceError('timeout', `Timed out after ${timeoutMs}ms waiting for download.`);
     const {promise: expired, reject} = Promise.withResolvers();
     expired.catch(() => {});
-    const timer = setTimeout(() => reject(timedOut()), timeoutMs);
+    const disarm = deadline.whenSpent(() => reject(timedOut()));
     const request = this.waitForDownloadRequest(tabId);
     let completed;
     try {
@@ -430,7 +430,7 @@ export class Downloads extends Emitter {                                        
       if (deadline.expired() && isDeadlineError(error)) throw timedOut();
       throw error;
     } finally {
-      clearTimeout(timer);
+      disarm();
       request.cancel();
       completed?.cancel();
       await this.disableDownload(tabId);

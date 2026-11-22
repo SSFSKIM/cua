@@ -315,7 +315,7 @@ final class ReenableStamp: @unchecked Sendable {
 
 /// A release that runs once, however many times and from whichever thread it is asked for (the guard's own end, or the
 /// cap's timer).
-private final class OnceRelease: @unchecked Sendable {
+final class OnceRelease: @unchecked Sendable {
   private let lock = NSLock()
   private var release: (() -> Void)?
   init(_ release: @escaping () -> Void) { self.release = release }

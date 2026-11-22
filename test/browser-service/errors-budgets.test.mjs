@@ -8,6 +8,7 @@ import {
   DEFAULT_ACTION_MS, MAX_ACTION_MS, PRESS_SEQUENTIALLY_MS, DOWNLOAD_MS, CHOOSER_DEFAULT_MS, CHOOSER_MAX_MS, DIALOG_MS, LOAD_MS,
   clamp, Deadline, DEADLINE_EXCEEDED,
 } from '../../src/browser-service/budgets.mjs';
+import {earlyTimers, settle} from './support/early-timer.mjs';
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const rejection = async promise => { try { await promise; } catch (error) { return error; } assert.fail('expected a rejection'); };
@@ -121,4 +122,34 @@ test('Deadline.race settles with the work, or rejects with the deadline sentence
   assert.equal((await rejection(expired.race(work))).code, 'timeout');
   await sleep(10);
   assert.equal(settled, true, 'a raced loser\'s rejection is absorbed, not unhandled');
+});
+
+test('a Deadline whose timer fired is spent from then on, though the clock has not reached its end', async t => {
+  const clock = earlyTimers(t);
+  const raced = new Deadline(20);
+  const lost = rejection(raced.race(new Promise(() => {})));
+  clock.elapse(20);
+  assert.equal((await lost).code, 'timeout');
+  assert.ok(Date.now() < raced.at, 'the timer fired before the clock reached the end');
+  assert.equal(raced.expired(), true);
+  assert.equal(raced.remaining(), 0);
+  assert.throws(() => raced.check(), error => error.code === 'timeout');
+  assert.throws(() => raced.timeoutMs(), error => error.code === 'timeout', 'nothing is dispatched on it');
+  assert.equal((await rejection(raced.race(Promise.resolve('late')))).code, 'timeout');
+  assert.equal(raced.child(1000).expired(), true, 'nor on a part of it');
+
+  const armed = new Deadline(20);
+  let fired = 0;
+  armed.whenSpent(() => { fired += 1; });
+  clock.elapse(20);
+  assert.equal(fired, 1);
+  assert.ok(Date.now() < armed.at);
+  assert.equal(armed.expired(), true, 'a timer armed through whenSpent marks it spent as race\'s does');
+
+  const disarmed = new Deadline(20);
+  disarmed.whenSpent(() => { fired += 1; })();
+  clock.elapse(20);
+  await settle();
+  assert.equal(fired, 1, 'a disarmed timer never fires');
+  assert.equal(disarmed.expired(), false, 'and leaves the clock to decide');
 });

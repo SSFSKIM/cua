@@ -241,9 +241,17 @@ extension Engine {
   /// sheet or panel is served by another process than the app) and whose attributed events count as the user's on the
   /// app from now on. A re-fetch walks what the lineage's current revision walked: the recorded menu-bar item when the
   /// observation was rooted there, else the window and the menu bar.
-  func targetElement(_ token: String, app: ResolvedApp, appPid: pid_t, context: ExecutionContext, refetch: Refetch = .ifNeeded) throws -> ElementTarget {
+  /// An entry recorded before the app's Chromium readiness is first read again from its own handle (ruling 772,
+  /// `Lineage.resolve`'s `readiness`), its actions and identity those of the complete mode.
+  ///
+  /// `readsValue` false (#390, a sensitive set_value): every re-read and re-fetch here leaves AXValue unread.
+  func targetElement(_ token: String, app: ResolvedApp, appPid: pid_t, context: ExecutionContext, refetch: Refetch = .ifNeeded,
+                     readsValue: Bool = true) throws -> ElementTarget {
     guard let lineage = context.lineage else { throw EngineError.invalidArguments("lineage is required with an element token") }
-    let entry = try context.connection.element(token, app: app, lineage: lineage, refetch: refetch) { ElementResolver.live($0, pid: appPid) }
+    let readiness = entryReadiness(app: app, pid: appPid, launched: processGeneration(launchDate: app.running?.launchDate, pid: appPid))
+    let entry = try context.connection.element(token, app: app, lineage: lineage, refetch: refetch, readiness: readiness) {
+      ElementResolver.live($0, pid: appPid, readsValue: readsValue)
+    }
     let owner = ownerPid(of: entry.element, fallback: appPid)
     try refuseForbiddenOwner(owner)
     actionTargets(owner, app: app, connection: context.connection)
@@ -254,9 +262,9 @@ extension Engine {
   /// every element action that positions passes (click, perform_secondary_action, set_value, an element scroll). The
   /// in-flight intervention check runs before each scroll operation.
   func positionedTarget(_ target: ElementTarget, token: String, app: ResolvedApp, appPid: pid_t, context: ExecutionContext,
-                        guarding: InterventionGuard) throws -> ElementTarget {
+                        guarding: InterventionGuard, readsValue: Bool = true) throws -> ElementTarget {
     try scrolledIntoView(target, ax: .live, beforeMutating: guarding.checkInFlight) {
-      try targetElement(token, app: app, appPid: appPid, context: context, refetch: .always)
+      try targetElement(token, app: app, appPid: appPid, context: context, refetch: .always, readsValue: readsValue)
     }
   }
 
@@ -370,6 +378,7 @@ extension Engine {
                        targetActive: { NSRunningApplication(processIdentifier: owner)?.isActive == true },
                        beforeActivating: guarding.checkInFlight, beforePosting: guarding.checkInFlight,
                        announce: { cursor.act(connection: connection, app: app.key, window: pointing.windowID, .click(point)) },
+                       pointerPosted: { clickOrdering.pointerPosted(pids: [owner, appPid]) },
                        post: gatedPost, meta: &meta)
     }
   }
@@ -450,9 +459,14 @@ extension Engine {
   /// be the node the screenshot showed at the point or its control (`stalePointPressVerdict`), checked just before the
   /// press, and after the action's re-read wait against the guard run again (`StalePointGate`); refused otherwise as
   /// `screenChangedSinceScreenshot`, nothing pressed. The focus route (#283) checks its field the same way.
+  ///
+  /// `popUpPress` (#458): its check runs on the control just before its action, after the stale-point guard's last check
+  /// (a `<select>`'s check that it is still closed and its effect's baseline, `popUpConfirmingRoute`), and it judges a
+  /// non-success AX error from the action (a messaging timeout is left to the observed menu) in place of actionFailed.
   func webAreaPress(_ hit: AXUIElement, button: MouseButton, count: Int, point: CGPoint, windowID: CGWindowID?, app: ResolvedApp,
                     appPid: pid_t, guarding: InterventionGuard, context: ExecutionContext,
-                    stalePoint: StalePointGate<AXUIElement>? = nil) -> ((inout InputMeta) throws -> Void)? {
+                    stalePoint: StalePointGate<AXUIElement>? = nil,
+                    popUpPress: PopUpPressChecks? = nil) -> ((inout InputMeta) throws -> Void)? {
     guard button == .left, count == 1 else { return nil }
     let engine = webAccessibility.pageEngine(app.appPath)
     var walk: [String] = []
@@ -516,7 +530,8 @@ extension Engine {
                                sleep: { usleep(UInt32($0 * 1000)) }) {
         try elementActionClick(control, owner: owner, action: action, route: actionRoute(owner: owner, app: app, connection: context.connection),
                                point: point, windowID: windowID, app: app, appPid: appPid, guarding: guarding, context: context,
-                               finalCheck: finalStalePointCheck(stalePoint, pressing: control), meta: &meta)
+                               finalCheck: pressChecks(finalStalePointCheck(stalePoint, pressing: control), popUpPress, control),
+                               tolerates: popUpPress.map { hook in { hook.tolerates($0) } }, meta: &meta)
       }
     }
   }
@@ -531,6 +546,17 @@ extension Engine {
       meta.stalePoint = checked.record
       if let refusal = checked.refusal { throw refusal }
     } }
+  }
+
+  /// The stale-point guard's last check, then #458's check on the control, as one `finalCheck`; nil for neither.
+  func pressChecks(_ stale: ((_ afterHold: Bool, _ meta: inout InputMeta) throws -> Void)?,
+                   _ beforePress: PopUpPressChecks?,
+                   _ control: AXUIElement) -> ((_ afterHold: Bool, _ meta: inout InputMeta) throws -> Void)? {
+    guard stale != nil || beforePress != nil else { return nil }
+    return { afterHold, meta in
+      try stale?(afterHold, &meta)
+      try beforePress?.run(control, &meta)
+    }
   }
 
   /// The focus route a plain left click into a Gecko web area's text field takes (#315, WebAreaFocus.swift
@@ -562,8 +588,15 @@ extension Engine {
     }
     let field = target.element
     return { [self] meta in
-      // #296: the field must be the node the screenshot showed at the point or its ancestor, before it is pressed.
-      try checkStalePoint(stalePoint, pressing: field, waited: false, meta: &meta)
+      // #359: within the window of a pointer press posted to the app, the field's range settles first, before #296's check.
+      // #296: the field must be the node the screenshot showed at the point or its ancestor, before it is pressed; checked
+      // again after that wait when it ran (#456).
+      if let checked = fieldRouteFirstCheck(field, gate: stalePoint, awaitPendingClick: {
+        awaitPendingClick(on: field, pids: [appPid, ownerPid(of: field, fallback: appPid)], meta: &meta)
+      }, now: monotonicMilliseconds, reads: .live) {
+        meta.stalePoint = checked.record
+        if let refusal = checked.refusal { throw refusal }
+      }
       let owner = ownerPid(of: field, fallback: appPid)
       try refuseForbiddenOwner(owner)
       actionTargets(owner, app: app, connection: context.connection)
@@ -620,8 +653,15 @@ extension Engine {
     }
     let field = target.element
     return { [self] meta in
-      // #296: the field must be the node the screenshot showed at the point or its ancestor, before it is focused.
-      try checkStalePoint(stalePoint, pressing: field, waited: false, meta: &meta)
+      // #359: within the window of a pointer press posted to the app, the field's range settles first, before #296's check.
+      // #296: the field must be the node the screenshot showed at the point or its ancestor, before it is focused; checked
+      // again after that wait when it ran (#456).
+      if let checked = fieldRouteFirstCheck(field, gate: stalePoint, awaitPendingClick: {
+        awaitPendingClick(on: field, pids: [appPid, ownerPid(of: field, fallback: appPid)], meta: &meta)
+      }, now: monotonicMilliseconds, reads: .live) {
+        meta.stalePoint = checked.record
+        if let refusal = checked.refusal { throw refusal }
+      }
       let owner = ownerPid(of: field, fallback: appPid)
       try refuseForbiddenOwner(owner)
       actionTargets(owner, app: app, connection: context.connection)
@@ -738,13 +778,14 @@ extension Engine {
   /// and after the focus hold (`pressAfterFinalCheck`), told whether the hold ran.
   func elementActionClick(_ element: AXUIElement, owner: pid_t, action: String, route: InputRoute, point: CGPoint?, windowID: CGWindowID?,
                           app: ResolvedApp, appPid: pid_t, guarding: InterventionGuard, context: ExecutionContext,
-                          finalCheck: ((_ afterHold: Bool, _ meta: inout InputMeta) throws -> Void)? = nil, meta: inout InputMeta) throws {
+                          finalCheck: ((_ afterHold: Bool, _ meta: inout InputMeta) throws -> Void)? = nil,
+                          tolerates: ((AXError) -> Bool)? = nil, meta: inout InputMeta) throws {
     try pressAfterFinalCheck(holds: route == .activation, hold: {
       try holdElementFocus(element: element, owner: owner, app: app, appPid: appPid, guarding: guarding, context: context, meta: &meta)
     }, finalCheck: { afterHold in try finalCheck?(afterHold, &meta) }, perform: {
       try guarding.checkInFlight()
       if let point { cursor.act(connection: context.connection.id, app: app.key, window: windowID, .click(point)) }
-      try deliverAction(action, route: route, perform: { gatedPerform(element, $0) }, meta: &meta)
+      try deliverAction(action, route: route, tolerates: tolerates, perform: { gatedPerform(element, $0) }, meta: &meta)
     })
   }
 }

@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {parseCell} from '../../scripts/native-baseline/cells.mjs';
-import {CASES, FOCUS_REASONS, METHODS, NOT_APPLICABLE, TARGETS, caseId, focusVerdict} from '../../scripts/native-matrix/plan.mjs';
+import {CASES, FOCUS_REASONS, METHODS, NOT_APPLICABLE, TARGETS, TYPE_UNCONFIRMED_NOT_TEXT, caseId, focusVerdict, typeIntoList} from '../../scripts/native-matrix/plan.mjs';
 import {NO_SUCH_ACTION, caseCells, findingCell, panelCell, selectCell} from '../../scripts/native-matrix/matrix-cells.mjs';
 import {focusedIndexOf, selectedTextOf} from '../../scripts/native-matrix/matrix-text.mjs';
 import {NOTE} from '../../src/services/engine/render.mjs';
@@ -495,4 +495,16 @@ test('the finding scorer starts Finder\'s list at its first rows, scrolled back 
   // The other scenes have no list to normalize.
   const chrome = await run(findingCell('chrome'), {apps: {chrome: fakeApp(golden('chrome', 'vendor.txt'), {performSecondaryAction: refuse})}});
   assert.equal('showing' in chrome.value, false);
+});
+
+test('#354: a list\'s type-select keeps cua\'s typeUnconfirmed for an element that is not a text field as its expected difference; any other error still throws', async () => {
+  const typeSelect = CASES.finder.find(c => c.method === 'typeText' && c.case === 'typeSelect');
+  assert.equal(typeSelect.act, typeIntoList('scene-file-012'));
+  const act = new AsyncFunction('__app', '__m', `${typeSelect.act}\nreturn __m;`);
+  const answering = message => ({typeText: async () => { if (message) throw new Error(`Computer Use server error -10005: ${message}`); }});
+  const unconfirmed = `The text was typed, but ${TYPE_UNCONFIRMED_NOT_TEXT}, so it is not confirmed and some or all of it may have gone in.`;
+  assert.deepEqual(await act(answering(unconfirmed), {}), {typeUnconfirmed: true});
+  assert.deepEqual(await act(answering(null), {}), {}, 'the vendor\'s success');
+  await assert.rejects(act(answering('The text was typed, but the field does not read as expected'), {}), /does not read as expected/);
+  await assert.rejects(act(answering('The user changed \'x\'.'), {}), /user changed/);
 });

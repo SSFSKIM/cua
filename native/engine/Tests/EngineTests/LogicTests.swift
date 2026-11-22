@@ -270,15 +270,49 @@ final class PreparationTests: XCTestCase {
   // A fake clock: every read and sleep advances it.
   private final class Clock { var now: Int64 = 1_000 }
 
-  private func run(pid: pid_t?, deadline: Int64 = 2_000, reads: [WindowRead], readMs: Int64 = 10, openedPid: pid_t = 42, clock: Clock = Clock())
-    -> (result: Result<(opened: Bool, running: String?, pid: pid_t), Error>, opens: [Int64], readsDone: Int) {
-    var remaining = reads, opens: [Int64] = [], done = 0
+  private func run(pid: pid_t?, deadline: Int64 = 2_000, reads: [WindowRead], readMs: Int64 = 10, openedPid: pid_t = 42, clock: Clock = Clock(),
+                   refusal: EngineError? = nil)
+    -> (result: Result<(opened: Bool, running: String?, pid: pid_t), Error>, opens: [Int64], readsDone: Int, refusalChecks: [pid_t]) {
+    var remaining = reads, opens: [Int64] = [], done = 0, checks: [pid_t] = []
     let result = Result {
       try prepareTarget(pid: pid, deadline: deadline, now: { clock.now }, sleep: { clock.now += 50 },
                         read: { _ in done += 1; clock.now += readMs; return remaining.count > 1 ? remaining.removeFirst() : remaining[0] },
+                        absentRefusal: { checks.append($0); return refusal },
                         open: { budget in opens.append(budget); return ("opened", openedPid) })
     }
-    return (result, opens, done)
+    return (result, opens, done, checks)
+  }
+
+  // Ruling 1ea561bc:782: a running app with no accessible window whose windows are on another Space (Placement.swift's
+  // absence check) is refused at once: no reopen, no 5 s wait.
+  func testAnAbsentWindowOnAnotherSpaceIsRefusedAtOnceWithNoOpen() {
+    let clock = Clock()
+    let outcome = run(pid: 7, deadline: 99_000, reads: [.absent], clock: clock, refusal: windowOnAnotherSpace(app: "Fixture"))
+    guard case .failure(let error) = outcome.result else { return XCTFail("refused") }
+    XCTAssertEqual((error as? EngineError)?.errorName, "windowOnAnotherSpace")
+    XCTAssertEqual(outcome.opens, [], "nothing is reopened")
+    XCTAssertEqual(outcome.refusalChecks, [7])
+    XCTAssertEqual(clock.now, 1_010, "one read, no wait")
+  }
+
+  func testAnAbsentWindowNotOnAnotherSpaceIsReopenedAsBefore() throws {
+    let outcome = run(pid: 7, deadline: 2_000, reads: [.absent])
+    XCTAssertEqual(try outcome.result.get().opened, true, "an app merely slow to open its window still gets the reopen and the wait")
+    XCTAssertEqual(outcome.opens, [2_000])
+    XCTAssertEqual(outcome.refusalChecks, [7])
+  }
+
+  func testTheAbsenceCheckRunsOnlyOnAnAbsence() throws {
+    let refusal = windowOnAnotherSpace(app: "Fixture")
+    let shown = run(pid: 7, reads: [.window(AXUIElementCreateApplication(7))], refusal: refusal)
+    XCTAssertEqual(try shown.result.get().opened, false, "an app with a window is observed as before")
+    XCTAssertEqual(shown.refusalChecks, [], "and pays nothing for the check")
+    let retried = run(pid: 7, reads: [.failed(.cannotComplete), .window(AXUIElementCreateApplication(7))], refusal: refusal)
+    XCTAssertEqual(try retried.result.get().opened, false)
+    XCTAssertEqual(retried.refusalChecks, [], "a failed read is not an absence")
+    let launched = run(pid: nil, deadline: 99_000, reads: [.absent], refusal: refusal)
+    XCTAssertEqual(try launched.result.get().opened, true, "an app that is not running is launched")
+    XCTAssertEqual(launched.refusalChecks, [])
   }
 
   private func isTimeout(_ result: Result<(opened: Bool, running: String?, pid: pid_t), Error>) -> Bool {

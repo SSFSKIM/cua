@@ -19,18 +19,25 @@ struct ListedWindow: Equatable, Sendable {
   let layer: Int
   /// Global points, top-left origin.
   let bounds: CGRect
+  /// The window's alpha (kCGWindowAlpha): 0 for one that shows nothing, so a screenshot shows what lies under it.
+  var alpha: Double = 1
 }
 
 /// The on-screen windows, front to back (no window name is read).
-func onScreenWindowList() -> [ListedWindow] {
-  guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else { return [] }
+func onScreenWindowList() -> [ListedWindow] { onScreenWindowListRead() ?? [] }
+
+/// `onScreenWindowList` with a failed read told from an empty list: nil when the window server gave no list (#458,
+/// whose effect check must not take an unread list for a closed menu or every later window for a new one).
+func onScreenWindowListRead() -> [ListedWindow]? {
+  guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else { return nil }
   return list.compactMap { info in
     guard let number = (info[kCGWindowNumber as String] as? NSNumber)?.uint32Value,
           let owner = (info[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value,
           let layer = (info[kCGWindowLayer as String] as? NSNumber)?.intValue,
           let dictionary = info[kCGWindowBounds as String] as? NSDictionary,
           let bounds = CGRect(dictionaryRepresentation: dictionary) else { return nil }
-    return ListedWindow(number: number, owner: owner, layer: layer, bounds: bounds)
+    let alpha = (info[kCGWindowAlpha as String] as? NSNumber)?.doubleValue ?? 1
+    return ListedWindow(number: number, owner: owner, layer: layer, bounds: bounds, alpha: alpha)
   }
 }
 

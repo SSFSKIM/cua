@@ -314,7 +314,7 @@ Branch `probe/443-qual`, from `probe/433-qual` (`405cbb05`), workflow `probe-443
 
 ```sh
 # Three batches, one in flight at a time, each lane under 500 rows (10 per head per unit).
-gh workflow run probe-443-qual.yml --ref probe/443-qual -f main="$MAIN_SHA" -f fix="$FIX_SHA" -f mode=qualify -f reps=10 -f cells=twincover,overcontrol,scrim,decomove,rolechange,stickyscroll,tipremount,twinunder
+gh workflow run probe-443-qual.yml --ref probe/443-qual -f main="$MAIN_SHA" -f fix="$FIX_SHA" -f mode=qualify -f reps=10 -f cells=twincover,overcontrol,scrim,decomove,rolechange,overlapinto,overlaprow,stickyscroll,tipremount,twinunder
 gh workflow run probe-443-qual.yml --ref probe/443-qual -f main="$MAIN_SHA" -f fix="$FIX_SHA" -f mode=qualify -f reps=10 -f cells=nounder,rebuildunder,bgbutton,textbehind,twin,twincap,remount,retext,plain,like,btnremount,tableremount,tablecellremount
 gh workflow run probe-443-qual.yml --ref probe/443-qual -f main="$MAIN_SHA" -f fix="$FIX_SHA" -f mode=qualify -f reps=10 -f cells=inbox,reltime,shrink,linksave,moved,linkmono,right,centre,wideoverlay
 # The README's tables from a run: gh run download <id> -D <dir>; node scripts/probe-433/tables.mjs <dir> <label>
@@ -323,4 +323,177 @@ gh workflow run probe-443-qual.yml --ref probe/443-qual -f main="$MAIN_SHA" -f f
 What #443 changes in #433's kit:
 - **`decomove` is gated** (no longer report only): in `overlayTwin` (no fix row reaches B or anything else) and in a new gate, `decoGone`: every fix row whose paired main row kept must be refused `controlGone`, and where main refused (Safari's `nodeGone`) the fix answers as main, reason included. Beside it, `decoGone.elsewhere` counts any other cell's fix rows refused `controlGone` (`elsewhereLanded`: of those, the ones whose main row kept and landed, a false refusal).
 - **`rolechange`** (kind keep, gate `overlayKept`): the same inert decoration inside link A (`page.mjs` `deco`), and `mark` sets `role="button"` on A's own element: the DOM element, its box and its label stay, so a click lands on A. Chromium re-creates an element's accessibility object when its role changes; if the decoration's object survives that, the fix's named limit (a control re-created for the same DOM element) shows here as a `controlGone` refusal main does not make.
+- **`overlapinto` and `overlaprow`** (kind keep, gate `overlayKept`; the fix review's shape, added for 2a3c7e53's `hitControlVouches`): a back link "Older" (no text, the target's size) laid under the target in its row, with the decoration inside it; the target in front (`z-index` 1) takes the pointer, while the record, deepest first, takes the back link's decoration at either point. `mark` removes the back link and keeps the decoration where it lay: moved into the target (`overlapinto`), or into the row under the target (`overlaprow`). The target is unchanged and takes the click, so the right answer is main's.
 - Every row records the fix's `stalePoint.controlRole` (the gone control's role, set on `controlGone` only); `report.mjs` tabulates it (`Control gone`), and `tables.mjs` prints the tables below (a fix cell's `[AXLink n]` is that role).
+
+### Counted head df383120: main `dfe6f4434e8e0a401ccdeaf728737ed26281df5c` against fix `df3831209906cd5d40b1c1a206b53b336a1dad7b`
+
+Mode qualify, 10 per head per unit, heads interleaved, kit `d4bd4b93`. A cell gives the verdict and the guard's reason per head; on the fix, `[AXLink n]` is `stalePoint.controlRole` on its `controlGone` rows.
+
+#### Batch A: decomove, the role-change and overlap cells, #433's overlay and cost cells ([run 45003171589](https://github.com/SSFSKIM/cua/actions/runs/45003171589))
+
+Engines: main `dfe6f443`, fix `df383120`.
+
+| Unit | cft: main | cft: fix | safari: main | safari: fix | electron: main | electron: fix |
+|---|---|---|---|---|---|---|
+| twincover/text | refused nodeGone 10 | refused nodeGone 10 | refused newElementOverPoint 10 | refused newElementOverPoint 10 | refused nodeGone 10 | refused nodeGone 10 |
+| twincover/link | refused nodeGone 10 | refused nodeGone 10 | refused interactiveHit 10 | refused interactiveHit 10 | refused nodeGone 10 | refused nodeGone 10 |
+| overcontrol/text | kept-missed sameElement 10 | kept-missed sameElement 10 | kept-landed nonInteractiveHit 10 | kept-landed nonInteractiveHit 10 | kept-landed sameElement 10 | kept-landed sameElement 10 |
+| overcontrol/link | kept-missed sameElement 10 | kept-missed sameElement 10 | kept-landed recordedHit 10 | kept-landed recordedHit 10 | kept-landed sameElement 10 | kept-landed sameElement 10 |
+| scrim/text | kept-missed sameElement 10 | kept-missed sameElement 10 | kept-missed sameElement 10 | kept-missed sameElement 10 | kept-missed sameElement 10 | kept-missed sameElement 10 |
+| scrim/link | kept-missed sameElement 10 | kept-missed sameElement 10 | kept-missed sameElement 10 | kept-missed sameElement 10 | kept-missed sameElement 10 | kept-missed sameElement 10 |
+| decomove/text | wrong-target sameElement 10 | refused controlGone 10 [AXLink 10] | refused nodeGone 10 | refused nodeGone 10 | wrong-target sameElement 10 | refused controlGone 10 [AXLink 10] |
+| decomove/link | wrong-target sameElement 10 | refused controlGone 10 [AXLink 10] | refused nodeGone 10 | refused nodeGone 10 | wrong-target sameElement 10 | refused controlGone 10 [AXLink 10] |
+| rolechange/text | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed hitAboveNode 10 | kept-landed hitAboveNode 10 | kept-landed sameElement 10 | kept-landed sameElement 10 |
+| rolechange/link | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed hitAboveNode 10 | kept-landed hitAboveNode 10 | kept-landed sameElement 10 | kept-landed sameElement 10 |
+| overlapinto/text | kept-landed sameElement 10 | kept-landed sameElement 10 | refused nodeGone 10 | refused nodeGone 10 | kept-landed sameElement 10 | kept-landed sameElement 10 |
+| overlapinto/link | kept-landed sameElement 10 | kept-landed sameElement 10 | refused nodeGone 10 | refused nodeGone 10 | kept-landed sameElement 10 | kept-landed sameElement 10 |
+| overlaprow/text | kept-landed recordedHit 10 | kept-landed recordedHit 10 | refused nodeGone 10 | refused nodeGone 10 | kept-landed nonInteractiveHit 10 | kept-landed nonInteractiveHit 10 |
+| overlaprow/link | kept-missed sameElement 10 | kept-missed sameElement 10 | refused nodeGone 10 | refused nodeGone 10 | kept-landed sameElement 10 | kept-landed sameElement 10 |
+| stickyscroll/text | refused frameMoved 10 | refused frameMoved 10 | refused frameMoved 10 | refused frameMoved 10 | refused frameMoved 10 | refused frameMoved 10 |
+| stickyscroll/link | refused interactiveHit 10 | refused interactiveHit 10 | refused frameMoved 10 | refused frameMoved 10 | refused interactiveHit 10 | refused interactiveHit 10 |
+| tipremount/text | kept-missed sameElement 10 | kept-missed sameElement 10 | refused newElementOverPoint 10 | refused newElementOverPoint 10 | kept-landed sameElement 10 | kept-landed sameElement 10 |
+| tipremount/link | kept-missed sameElement 10 | kept-missed sameElement 10 | kept-landed recordedHit 10 | kept-landed recordedHit 10 | kept-landed sameElement 10 | kept-landed sameElement 10 |
+| twinunder/text | refused nodeGone 10 | refused nodeGone 10 | refused newElementOverPoint 10 | refused newElementOverPoint 10 | refused nodeGone 10 | refused nodeGone 10 |
+| twinunder/link | refused nodeGone 10 | refused nodeGone 10 | refused interactiveHit 10 | refused interactiveHit 10 | refused nodeGone 10 | refused nodeGone 10 |
+
+| Lane | Head | stalePoint.ms p50 / p95 / max (n), all | kept | refused | text point |
+|---|---|---|---|---|---|
+| cft | main | 5.307 / 10.76 / 16.623 (200) | 5.307 / 11.048 / 16.623 (140) | 5.533 / 10.094 / 13.915 (60) | 5.618 / 10.76 / 16.623 (100) |
+| cft | fix | 5.05 / 12.407 / 21.489 (200) | 5.171 / 13.794 / 21.489 (120) | 4.96 / 9.959 / 11.404 (80) | 5.535 / 13.794 / 21.489 (100) |
+| safari | main | 3.532 / 11.189 / 16.254 (200) | 2.455 / 7.063 / 11.189 (70) | 4.439 / 11.833 / 16.254 (130) | 2.846 / 11.448 / 16.254 (100) |
+| safari | fix | 3.562 / 10.11 / 14.215 (200) | 2.694 / 7.808 / 13.037 (70) | 4.052 / 11.271 / 14.215 (130) | 3.288 / 9.89 / 14.215 (100) |
+| electron | main | 2.412 / 10.33 / 12.748 (200) | 2.028 / 9.076 / 12.225 (140) | 6.063 / 11.729 / 12.748 (60) | 2.606 / 10.605 / 12.547 (100) |
+| electron | fix | 3.557 / 9.621 / 13.641 (200) | 2.509 / 8.583 / 13.641 (120) | 5.279 / 10.814 / 12.787 (80) | 3.655 / 9.335 / 12.787 (100) |
+
+| Run | Lane | Image | Browser | Rows | Abort | Gates failing |
+|---|---|---|---|---|---|---|
+| A-45003171589 | cft | 20261117.0516.1 | 157.0.8103.78 | 400/400 | none | overlayKept |
+| A-45003171589 | safari | 20261117.0516.1 | 27.2 | 400/400 | none | overlayKept |
+| A-45003171589 | electron | 20261117.0516.1 | Electron 44.4.5 / Chromium 152.0.7977.130 | 400/400 | none | none |
+
+- `decomove` refused `controlGone` on CfT (20 of 20) and Electron (20 of 20), never reaching B (`overlayTwin`, `decoGone` pass); main landed on B 20 of 20 on each. Safari refuses `nodeGone` on both heads.
+- Every other unit answers as main, row for row, reason included: `overlayKept` and the paired gates `differ` 0, `reasonDiffer` 0, `refusedWhereMainKept` 0, no fix click reaching a control main's did not, no wrong target on the fix. `overlayKept` fails on CfT and Safari on main's own baseline only (CfT: `overcontrol` and `overlaprow/link` never land on either head, the click answering `backgroundClickRefused` on both; Safari refuses `overlapinto` and `overlaprow` `nodeGone` on both heads).
+- Design ruling 1061's fixed rows: `overlaprow/link` on Electron kept and landed on both heads (10 of 10); `rolechange` on Safari kept and landed on both heads (`hitAboveNode`, 20 of 20); both had been refused `controlGone` on 2a3c7e53 (preview below).
+
+#### Batch B: the keep and link-text cells, #433's regressions ([run 45035915969](https://github.com/SSFSKIM/cua/actions/runs/45035915969))
+
+Engines: main `dfe6f443`, fix `df383120`.
+
+| Unit | cft: main | cft: fix | safari: main | safari: fix | electron: main | electron: fix |
+|---|---|---|---|---|---|---|
+| twin/text | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 |
+| twin/link | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 |
+| twincap/text | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 |
+| twincap/link | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 |
+| remount/text | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 |
+| remount/link | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 |
+| retext/text | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 |
+| retext/link | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 |
+| like/text | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 |
+| like/link | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 |
+| plain/text | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 |
+| plain/link | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 |
+| btnremount/link | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 |
+| tableremount/text | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 |
+| tableremount/link | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 |
+| tablecellremount/text | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 |
+| tablecellremount/link | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 |
+| nounder/link | kept-missed sameElement 10 | kept-missed sameElement 10 | kept-missed nonInteractiveHit 10 | kept-missed nonInteractiveHit 10 | kept-missed sameElement 10 | kept-missed sameElement 10 |
+| rebuildunder/text | kept-missed sameElement 10 | kept-missed sameElement 10 | refused newElementOverPoint 10 | refused newElementOverPoint 10 | kept-landed sameElement 10 | kept-landed sameElement 10 |
+| rebuildunder/link | kept-missed sameElement 10 | kept-missed sameElement 10 | kept-landed recordedHit 10 | kept-landed recordedHit 10 | kept-landed sameElement 10 | kept-landed sameElement 10 |
+| bgbutton/text | kept-missed sameElement 10 | kept-missed sameElement 10 | kept-landed nonInteractiveHit 10 | kept-landed nonInteractiveHit 10 | kept-landed sameElement 10 | kept-landed sameElement 10 |
+| bgbutton/link | kept-missed sameElement 10 | kept-missed sameElement 10 | kept-landed recordedHit 10 | kept-landed recordedHit 10 | kept-landed sameElement 10 | kept-landed sameElement 10 |
+| textbehind/text | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 |
+| textbehind/link | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 |
+
+| Lane | Head | stalePoint.ms p50 / p95 / max (n), all | kept | refused | text point |
+|---|---|---|---|---|---|
+| cft | main | 9.509 / 22.237 / 25.283 (240) | 10.838 / 23 / 25.283 (200) | 6.815 / 11.564 / 15.112 (40) | 12.963 / 23.163 / 25.283 (110) |
+| cft | fix | 9.368 / 22.738 / 36.379 (240) | 11.636 / 23.526 / 36.379 (200) | 8.018 / 11.526 / 15.837 (40) | 12.391 / 23.526 / 36.379 (110) |
+| safari | main | 4.897 / 11.401 / 17.73 (240) | 4.866 / 11.401 / 13.134 (190) | 6.204 / 11.248 / 17.73 (50) | 6.208 / 11.834 / 13.134 (110) |
+| safari | fix | 4.954 / 11.662 / 17.09 (240) | 4.748 / 11.74 / 17.09 (190) | 5.997 / 9.028 / 11.956 (50) | 5.856 / 11.758 / 17.09 (110) |
+| electron | main | 6.011 / 11.259 / 14.4 (240) | 5.856 / 11.259 / 13.964 (200) | 7.47 / 11.547 / 14.4 (40) | 7.822 / 11.461 / 14.4 (110) |
+| electron | fix | 6.654 / 11.403 / 18.653 (240) | 6.48 / 11.464 / 18.653 (200) | 7.279 / 10.121 / 10.443 (40) | 7.516 / 11.652 / 18.653 (110) |
+
+| Run | Lane | Image | Browser | Rows | Abort | Gates failing |
+|---|---|---|---|---|---|---|
+| B-45035915969 | cft | 20261117.0516.1 | 157.0.8103.78 | 480/480 | none | overlayKept |
+| B-45035915969 | safari | 20261117.0516.1 | 27.2 | 480/480 | none | overlayKept |
+| B-45035915969 | electron | 20261117.0516.1 | Electron 44.4.5 / Chromium 152.0.7977.130 | 480/480 | none | none |
+
+- Every unit answers as main, row for row, reason included, on every lane: `keptAsMain`, `twinAsMain` and `twinRefused` pass; `overlayKept` `differ` 0, `reasonDiffer` 0, `refusedWhereMainKept` 0; no fix row refused `controlGone`; no wrong target on either head. `overlayKept` fails on main's own baseline only (CfT: `rebuildunder` and `bgbutton` never land on either head; Safari: `rebuildunder/text` refused `newElementOverPoint` on both).
+
+#### Batch C: #340's cells and `wideoverlay` ([run 45040636364](https://github.com/SSFSKIM/cua/actions/runs/45040636364))
+
+Engines: main `dfe6f443`, fix `df383120`.
+
+| Unit | cft: main | cft: fix | safari: main | safari: fix | electron: main | electron: fix |
+|---|---|---|---|---|---|---|
+| wideoverlay/text | refused newElementOverPoint 10 | refused newElementOverPoint 10 | kept-missed nonInteractiveHit 10 | kept-missed nonInteractiveHit 10 | refused newElementOverPoint 10 | refused newElementOverPoint 10 |
+| wideoverlay/link | refused newElementOverPoint 10 | refused newElementOverPoint 10 | kept-missed nonInteractiveHit 10 | kept-missed nonInteractiveHit 10 | refused newElementOverPoint 10 | refused newElementOverPoint 10 |
+| inbox/text | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 |
+| inbox/link | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 |
+| reltime/text | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 |
+| reltime/link | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 |
+| shrink/text | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 |
+| shrink/link | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 |
+| linksave/text | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 |
+| linksave/link | refused relabelled 10 | refused relabelled 10 | refused relabelled 10 | refused relabelled 10 | refused relabelled 10 | refused relabelled 10 |
+| moved/text | refused frameMoved 10 | refused frameMoved 10 | refused nodeGone 10 | refused nodeGone 10 | refused frameMoved 10 | refused frameMoved 10 |
+| moved/link | refused frameMoved 10 | refused frameMoved 10 | refused nodeGone 10 | refused nodeGone 10 | refused frameMoved 10 | refused frameMoved 10 |
+| linkmono/text | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 |
+| linkmono/link | refused relabelled 10 | refused relabelled 10 | refused relabelled 10 | refused relabelled 10 | refused relabelled 10 | refused relabelled 10 |
+| right/text | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 |
+| right/link | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 |
+| centre/text | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 | refused nodeGone 10 |
+| centre/link | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 | kept-landed sameElement 10 |
+
+| Lane | Head | stalePoint.ms p50 / p95 / max (n), all | kept | refused | text point |
+|---|---|---|---|---|---|
+| cft | main | 4.42 / 9.463 / 39.822 (180) | 5.117 / 14.506 / 39.822 (50) | 3.782 / 8.477 / 13.325 (130) | 5.554 / 8.965 / 13.325 (90) |
+| cft | fix | 4.251 / 8.664 / 11.532 (180) | 5.383 / 8.792 / 10.2 (50) | 3.315 / 8.419 / 11.532 (130) | 4.769 / 8.74 / 11.532 (90) |
+| safari | main | 3.46 / 10.383 / 16.722 (180) | 2.001 / 5.355 / 16.722 (70) | 5.217 / 10.422 / 12.309 (110) | 5.917 / 10.596 / 16.722 (90) |
+| safari | fix | 3.216 / 9.143 / 10.829 (180) | 2.004 / 5.038 / 7.289 (70) | 4.816 / 9.893 / 10.829 (110) | 5.171 / 9.893 / 10.829 (90) |
+| electron | main | 2.736 / 9.22 / 11.567 (180) | 1.806 / 4.271 / 5.185 (50) | 4.143 / 9.619 / 11.567 (130) | 6.539 / 9.747 / 11.567 (90) |
+| electron | fix | 2.873 / 9.322 / 12.5 (180) | 1.833 / 4.404 / 6.322 (50) | 4.113 / 9.974 / 12.5 (130) | 6.266 / 10.16 / 12.5 (90) |
+
+| Run | Lane | Image | Browser | Rows | Abort | Gates failing |
+|---|---|---|---|---|---|---|
+| C-45040636364 | cft | 20261117.0516.1 | 157.0.8103.78 | 360/360 | none | none |
+| C-45040636364 | safari | 20261117.0516.1 | 27.2 | 360/360 | none | none |
+| C-45040636364 | electron | 20261117.0516.1 | Electron 44.4.5 / Chromium 152.0.7977.130 | 360/360 | none | none |
+
+- Every unit answers as main, row for row, reason included; every gate passes on every lane.
+
+#### The bar, fix df383120 against main dfe6f443
+
+| Line | CfT | Safari | Electron |
+|---|---|---|---|
+| `decomove` refused `controlGone` | 20/20 | – (both heads refuse `nodeGone`, 20/20) | 20/20 |
+| `decomove` landed on B, fix (main) | 0/20 (20/20) | 0/20 (0/20) | 0/20 (20/20) |
+| Keep, link-text, #340 and #433 units differing from main (verdict or reason) | 0/600 | 0/600 | 0/600 |
+| False refusals (fix refused, main kept and landed) | 0 | 0 | 0 |
+| `controlGone` outside `decomove` | 0 | 0 | 0 |
+| Invalid rows, both heads | 0/1240 | 0/1240 | 0/1240 |
+| `stalePoint.ms` p50 / max, main | 6.0 / 39.8 | 4.2 / 17.7 | 3.8 / 14.4 |
+| `stalePoint.ms` p50 / max, fix | 6.2 / 36.4 | 4.0 / 17.1 | 4.1 / 18.7 |
+
+Design ruling 1061's fixed rows hold: `overlaprow/link` on Electron landed as main (10/10), `rolechange` on Safari landed as main (20/20, both points), `decomove` refused on CfT and Electron (20/20 each); `overlapinto` answers as main on every lane. The `stalePoint.ms` figures are over every valid row of the three batches (620 per head per lane); the fix costs at most 0.4 ms at p50.
+
+### Previews on superseded heads (not counted, design ruling 1060)
+
+Main `dfe6f4434e8e0a401ccdeaf728737ed26281df5c`. [Run 44996489260](https://github.com/SSFSKIM/cua/actions/runs/44996489260) (batch A on `1d3b09630`) and [run 44997804442](https://github.com/SSFSKIM/cua/actions/runs/44997804442) (batch A on `2a3c7e53`) were cancelled unfinished, each superseded by a new head. The smoke of the new cells on fix `2a3c7e53d34b521edf6e0694bd82ea9e949a0867`, [run 44997131965](https://github.com/SSFSKIM/cua/actions/runs/44997131965) (kit `d4bd4b93`, mode measure, 2 per head per unit, every row valid, no abort):
+
+| Unit | cft: main | cft: fix | safari: main | safari: fix | electron: main | electron: fix |
+|---|---|---|---|---|---|---|
+| decomove/text | wrong-target sameElement 2 | refused controlGone 2 [AXLink 2] | refused nodeGone 2 | refused nodeGone 2 | wrong-target sameElement 2 | refused controlGone 2 [AXLink 2] |
+| decomove/link | wrong-target sameElement 2 | refused controlGone 2 [AXLink 2] | refused nodeGone 2 | refused nodeGone 2 | wrong-target sameElement 2 | refused controlGone 2 [AXLink 2] |
+| rolechange/text | kept-landed sameElement 2 | kept-landed sameElement 2 | kept-landed hitAboveNode 2 | refused controlGone 2 [AXLink 2] | kept-landed sameElement 2 | kept-landed sameElement 2 |
+| rolechange/link | kept-landed sameElement 2 | kept-landed sameElement 2 | kept-landed hitAboveNode 2 | refused controlGone 2 [AXLink 2] | kept-landed sameElement 2 | kept-landed sameElement 2 |
+| overlapinto/text | kept-landed sameElement 2 | kept-landed sameElement 2 | refused nodeGone 2 | refused nodeGone 2 | kept-landed sameElement 2 | kept-landed sameElement 2 |
+| overlapinto/link | kept-landed sameElement 2 | kept-landed sameElement 2 | refused nodeGone 2 | refused nodeGone 2 | kept-landed sameElement 2 | kept-landed sameElement 2 |
+| overlaprow/text | kept-landed recordedHit 2 | kept-landed recordedHit 2 | refused nodeGone 2 | refused nodeGone 2 | kept-landed nonInteractiveHit 2 | kept-landed nonInteractiveHit 2 |
+| overlaprow/link | kept-missed sameElement 2 | refused controlGone 2 [AXLink 2] | refused nodeGone 2 | refused nodeGone 2 | kept-landed sameElement 2 | refused controlGone 2 [AXLink 2] |
+
+- 2a3c7e53 refused two shapes that main lands. `overlaprow/link` on Electron: the accessibility hit at the front link's padding is the decoration itself (`hitRole` AXGroup), not the front link, so `hitControlVouches` never saw the front link. `rolechange` on Safari: WebKit re-creates the link's accessibility object as an AXButton when its role changes, and the decoration's object survives: that is the fix's named limit, measured. On CfT and Electron the fix kept as main (`sameElement`): the recorded link did not read gone after the role change.

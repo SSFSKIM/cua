@@ -229,7 +229,9 @@ async function main(){
         ...(mode==='discover'&&gap!==undefined?{gap}:{}),observeTries,dom:mark?{text:delta(mark.before?.textRect,mark.after?.textRect),link:delta(mark.before?.link,mark.after?.link),twin:delta(mark.before?.link,mark.twin)}:null,walk,
         frames:found?{text:found.text?.frame??null,link:found.link.frame,point:placed?.screen??null}:null,
         presentationHeld:witness?.held??null,observeMs:observed?.ms??null,clickMs:click?.ms??null,
-        ...(spec.popup?{popupDelay,popped:read?.popped??null}:{}),css:sig.css??null,signals:sig.nodes?signalsOf({spec,nodes:sig.nodes,point:sig.point,pre:sig.pre,post:sig.post,after:sig.after,warm:sig.warm,domPre:sig.domPre,
+        ...(spec.popup?{popupDelay,popped:read?.popped??null}:{}),
+        // contentsfront: the observation's frame of F (a link reading "Close"), or none listed.
+        ...(spec.front==='contents'?{frontFrame:sig.nodes?(sig.nodes.find(n=>n?.role==='AXLink'&&[n.title,n.description].includes('Close'))?.frame??'unlisted'):null}:{}),css:sig.css??null,signals:sig.nodes?signalsOf({spec,nodes:sig.nodes,point:sig.point,pre:sig.pre,post:sig.post,after:sig.after,warm:sig.warm,domPre:sig.domPre,
           domPost:sig.domPost,clicks:read?.clicks}):null};
       rows.push(row);
       // A report-only unit's rows never move the abort streak.

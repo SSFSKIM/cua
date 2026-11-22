@@ -12,6 +12,7 @@ export const page=()=>`<!doctype html><html lang="en"><head><meta charset="utf-8
 button.l{border:0;margin:0;background:none;cursor:pointer;text-align:left} #far.on{margin-top:1600px} #far div{font:4px/5px sans-serif}
 a.tabular{width:180px;font-variant-numeric:tabular-nums} a.mono{font-family:monospace}
 a.right{width:260px;text-align:right} a.centre{width:260px;text-align:center}
+a.pad{position:relative} a.pad::before{content:'';position:absolute;left:-12px;top:0;width:12px;height:100%}
 a.item{display:block;font:14px/20px sans-serif} table.grid{border-collapse:collapse} table.grid th,table.grid td{font:12px/16px sans-serif;padding:0 6px;border:1px solid #ccc} div.tiny{font:3px/4px sans-serif;white-space:nowrap} div.tiny span{display:inline-block;margin-right:1px}</style></head><body>
 <nav id="nav"></nav><div id="far"></div>
 <script>
@@ -238,9 +239,23 @@ function run(c){
         for(let i=0;i<DEEP;i++){const d=document.createElement('div');d.setAttribute('role','group');d.style.cssText='width:100%;height:100%';d.append(inner);inner=d;}
         inner.style.cssText='position:absolute;left:'+target.offsetLeft+'px;top:'+target.offsetTop+'px;width:'+target.offsetWidth+'px;height:'+target.offsetHeight+'px;z-index:1';
         slots[0].append(inner);twins=[f];}
+      // Ruling 1079's shapes: the target's text as a positioned span inside a box of fixed size (shrinkfront, textoutside).
+      if(spec.shrink||spec.outsideText){const w=target.offsetWidth,h=target.offsetHeight,t=document.createElement('span');t.textContent=target.textContent;
+        t.style.cssText='position:absolute;top:14px;white-space:nowrap;left:'+(spec.outsideText?(w+8)+'px':'32px');
+        target.textContent='';target.append(t);target.style.cssText+=';position:relative;box-sizing:border-box;width:'+w+'px;height:'+h+'px';}
+      if(spec.pad){const p=document.createElement('div');p.style.cssText='display:inline-block;padding-left:16px';target.classList.add('pad');
+        target.replaceWith(p);p.append(target);}
+      // contentsfront: button F with no box of its own, its span over the target's box on top.
+      if(spec.front==='contents'){slots[0].style.position='relative';
+        // A link, not a button: display:contents on a button computes to none.
+        const f=document.createElement('a');f.href='#front';f.id='front';f.style.cssText='display:contents';
+        f.dataset.box=JSON.stringify({l:target.offsetLeft,t:target.offsetTop,w:target.offsetWidth,h:target.offsetHeight});
+        const t=document.createElement('span');t.textContent='Close';
+        t.style.cssText='position:absolute;left:'+target.offsetLeft+'px;top:'+target.offsetTop+'px;width:'+target.offsetWidth+'px;height:'+target.offsetHeight+'px;z-index:1;background:#eee;font:20px/56px sans-serif;text-align:center';
+        f.append(t);slots[0].append(f);twins=[f];}
       if(spec.rival)rivalOf(spec);
       if(spec.overlap)overlap();else if(spec.cover==='deco')deco();
-      else if(spec.cover){const veil=cover(spec.cover,spec.parent?2:0);if(spec.rival||spec.front)veil.style.zIndex='2';
+      else if(spec.cover){const veil=cover(spec.cover,spec.parent||spec.narrow||spec.pad?2:0);if(spec.rival||spec.front)veil.style.zIndex='2';
         // #442's scrimhidden: an aria-hidden child of the scrim over the whole row.
         if(spec.hiddenChild){const h=document.createElement('span');h.setAttribute('aria-hidden','true');
           h.style.cssText='position:absolute;left:0;top:0;width:100%;height:100%;display:block';document.getElementById('veil').append(h);}}
@@ -256,6 +271,10 @@ function run(c){
       rival.style.transform='translate('+(a.left-r.left)+'px,'+(a.top-r.top)+'px)';
       if(spec.veilInto)rival.append(coverOuter);}  // #442's veilinto: the veil moved into B as it slides over
     else if(spec.rival==='stack'&&spec.widen)target.style.paddingRight=(32+spec.widen)+'px';  // #442's widen
+    else if(spec.rival==='stack'&&spec.shrink){target.style.padding='0';target.style.width='20px';}  // shrinkfront
+    else if(spec.front==='contents'){const f=twins[0],t=f.firstChild,b=JSON.parse(f.dataset.box);  // contentsfront: F takes a box of its own, in place
+      f.style.cssText='display:block;position:absolute;left:'+b.l+'px;top:'+b.t+'px;width:'+b.w+'px;height:'+b.h+'px;z-index:1;background:#eee';
+      t.style.cssText='display:block;width:100%;height:100%;font:20px/56px sans-serif;text-align:center';}
     else if(spec.rival==='stack')target.remove();
     else if(spec.recover){coverOuter.remove();cover(spec.cover);}  // #442's rescrim: a new scrim, the same box
     else if(spec.move){slots[0].replaceChildren(archive);slots[1].replaceChildren(target);}

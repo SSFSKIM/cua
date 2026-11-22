@@ -147,6 +147,21 @@ export const CELLS={
   rescrim:{kind:'shape',before:'Inbox',after:'Inbox',cover:'scrim',recover:true,records:'AXGroup'},
   scrimhidden:{kind:'shape',before:'Inbox',after:'Inbox',cover:'scrim',hiddenChild:true,records:'AXGroup'},
   widen:{kind:'shape',before:'Inbox',after:'Inbox',cover:'veil',rival:'stack',widen:10,records:'AXGroup'},
+  // Ruling 1079's shapes, each expected to keep and land as on main:
+  // - shrinkfront: siblingstack's two candidates, the front link's text a positioned span; mark shrinks the front link's
+  //   box to 20 px (padding 0) away from the text point while its text stays there.
+  // - textoutside: the link's text drawn outside its box (a positioned span 8 px past its right edge), the veil deeper
+  //   than the text so the record takes the veil; nothing changes.
+  // - parentpad (#305's edge): the link in a parent with 16 px of left padding and a ::before 12 px wide out into it, the
+  //   point 6 pt left of the link's frame (its parent's padding, which the link's pseudo-element takes); nothing changes.
+  // - contentsfront: link F ("Close", display:contents, so no box of its own at the observation) whose positioned span
+  //   covers the target's box on top; mark gives F a box of its own over the same place (display:block); both heads
+  //   reach F. The observation's frame of F is recorded (\`frontFrame\`).
+  // (A wrapper whose actions read unknown at the observation cannot be caused by a page.)
+  shrinkfront:{kind:'shape',before:'Inbox',after:'Inbox',cover:'veil',rival:'stack',shrink:true,records:'AXGroup'},
+  textoutside:{kind:'shape',before:'Inbox',after:'Inbox',cover:'veil',outsideText:true,records:'AXGroup'},
+  parentpad:{kind:'shape',before:'Inbox',after:'Inbox',cover:'veil',pad:true,aim:'pad',at:['link'],records:'AXGroup'},
+  contentsfront:{kind:'shape',before:'Inbox',after:'Inbox',cover:'veil',front:'contents',records:'AXGroup'},
   // A popup window of the app's own opened over the point while the fix waits to hit-test again (Chromium only; the page's
   // window.open, `popup`: the delay after the harness's command sweeps POPUP_DELAYS by repetition). Reported only.
   popupwait:{kind:'report',before:'Inbox',after:'Inbox',cover:'veil',popup:true,lanes:['cft','electron'],records:'AXGroup',at:['link'],reportOnlyAt:['link']},
@@ -192,6 +207,7 @@ export const OTHERS={archive:'Archive',drafts:'Drafts'};
 export function pointFor(at,frame,spec={}){
   if(!frame||!(frame.width>0)||!(frame.height>0))return null;
   if(spec.aim==='beside')return {x:frame.x+frame.width+60,y:frame.y+frame.height/2};
+  if(spec.aim==='pad')return {x:frame.x-6,y:frame.y+frame.height/2};  // #442's parentpad: the parent's padding
   return at==='text'?{x:frame.x+Math.min(frame.width/3,12),y:frame.y+frame.height/2}:{x:frame.x+6,y:frame.y+frame.height/2};
 }
 

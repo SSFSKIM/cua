@@ -129,7 +129,7 @@ test('replies: outcome, the guard\'s record on a refusal and on a success, the r
     stalePoint: {verdict: 'refused', reason: 'nodeGone', recordedRole: 'AXStaticText', hitRole: 'AXStaticText', ms: 1.2}}}};
   assert.equal(outcomeOf(refused), 'screenChangedSinceScreenshot');
   assert.deepEqual(stalePointOf(refused), {verdict: 'refused', reason: 'nodeGone', identity: null, recordedRole: 'AXStaticText',
-    hitRole: 'AXStaticText', ms: 1.2, rechecked: false, underlyingRole: null, underlyingIdentity: null, controlRole: null, hitCorrection: null});
+    hitRole: 'AXStaticText', ms: 1.2, rechecked: false, underlyingRole: null, underlyingIdentity: null, controlRole: null, hitCorrection: null, hitMs: null, by: null});
   // #433's fix: the control beneath, and how it was found.
   const under = stalePointOf({result: {meta: {stalePoint: {verdict: 'kept', reason: 'sameElement', recordedRole: 'AXGroup', underlyingRole: 'AXLink', underlyingIdentity: 'recreated'}}}});
   assert.equal(under.underlyingRole, 'AXLink'); assert.equal(under.underlyingIdentity, 'recreated');

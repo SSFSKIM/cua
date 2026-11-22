@@ -124,7 +124,9 @@ export function stalePointOf(reply){
     // #443's fix: for controlGone, the role of the recorded control found gone (absent on main).
     controlRole:role(sp.controlRole),
     // #442's fix: whether the guard hit-tested again after its wait, and whether the answer changed (absent on main).
-    hitCorrection:['same','changed','none'].includes(sp.hitCorrection)?sp.hitCorrection:sp.hitCorrection==null?null:'other'};
+    hitCorrection:['same','changed','none'].includes(sp.hitCorrection)?sp.hitCorrection:sp.hitCorrection==null?null:'other',
+    // The hit's time (on the fix's window refusal after its wait, the delayed hit's: correctedHitMs) and #452's window signal.
+    hitMs:Number.isFinite(sp.hitMs)?sp.hitMs:null,by:sp.by==null?null:name(sp.by)};
 }
 // #433 (ruling 909): the guard's refusal sentence, the engine's own error message on the owned fixture, captured for an
 // overlay cell's refusal only; control characters dropped, at most 600 characters.

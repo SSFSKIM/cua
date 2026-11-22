@@ -368,3 +368,258 @@ site's state `denied` and a "Location is turned off in system settings" bubble. 
 (run 45045858141, shared-behind) brought Chrome to the front 241 ms after the click. That came from Chrome's location
 request with the system service off, not from the click's delivery. The permission cells use Web MIDI's prompt for that
 reason: it has no macOS layer.
+
+## #453 qual, counted: main 5580ac20 against fix/453-axpress de0d119f (rulings 1040, 1069-1074)
+
+The fix's route (ruling 1071): where main refuses a plain left click with `appWindowOverPoint` on one of four overlay
+kinds (omnibox popup, datalist, permission prompt, AppKit popover), the engine presses the recorded row's own handle
+with AXPress. The meta is `overlayClick {window, by, kind, route: "action", confirmed}` or `{..., refused}`. The
+element-ID route and Chrome's frontmost permission prompt (observed as its own window) are out of scope.
+
+Kit 3326bebf (`qual453.mjs`, reader `qual-reader.mjs`), workflow `probe-453.yml`, `kit: qual453`, `reps: 99`. Chrome
+157.0.8103.79, macOS 26.7.2, image 20261117.0516.1.
+- Main 5580ac20: https://github.com/SSFSKIM/cua/actions/runs/45061006010 (263 rows, 50 min).
+- Fix de0d119f: https://github.com/SSFSKIM/cua/actions/runs/45066234145 (263 rows, 49 min).
+- #443's `decomove` and keep cells on de0d119f, through `probe/443-qual` (`probe-443-qual.yml`, `mode: measure`,
+  `lanes: cft,electron`, `cells: decomove,plain,overlapinto`, `reps: 10`, the fix as the only engine):
+  https://github.com/SSFSKIM/cua/actions/runs/45071184918.
+
+Previews, not counted (reps 1):
+- Fix c8858c2a: https://github.com/SSFSKIM/cua/actions/runs/45057158194.
+- Fix e7e78424 (the pre-fix comparison for ruling 1076's three ordering fixes):
+  https://github.com/SSFSKIM/cua/actions/runs/45058436188.
+- Main 5580ac20 on kit 3326bebf: https://github.com/SSFSKIM/cua/actions/runs/45059748139.
+
+What the cells do:
+- **Re-laid-out cells.**
+  - Omnibox: one character typed through the engine after the observation, 20 rows per mode. Each row records the row
+    the screenshot showed at the point, the row the popup held there just before the click (read from its AX rows by a
+    tree walk, no hit-test) and the row taken.
+  - Datalist: `b` typed, so the list re-filters to banana and blueberry and a neighbour lies at the recorded second
+    row.
+  - Permission: geolocation's prompt replaces MIDI's in the same place. Chrome changes no shown prompt's buttons, so a
+    replaced prompt is the re-layout that can be made.
+  - Popover: none could be made. The swatch grid holds still.
+- **Unknown kind (p-unknown):** Tab search's bubble. Both heads observe it as Chrome's focused window, so it is a
+  parity cell, not an overlay over the window.
+- **Observations (ruling 1074):** each `get_app_state` is rendered by the head's own renderer
+  (`src/services/engine/render.mjs` of the engine SHA), so the text compared is the model's view. Each also records the
+  result's keys and its timings.
+
+### Reading (the fix de0d119f against the bar)
+
+- **Delivered and confirmed, per kind:** only the permission prompt.
+  - Permission prompt: 20/20 behind (Allow granted, Block NotAllowedError, `confirmed`).
+  - Omnibox: 0/18, refused `notARow` in every mode. At the point, the observation's deepest recorded node is an AXGroup
+    of 410×40 inside the row's AXStaticText of 426×40. The AXStaticText is the element the spike's bare AXPress took
+    (30/30).
+  - Datalist: 0/18, `clickUnconfirmed`, nothing taken. The observation records two AXStaticText "apricot" nodes at the
+    same frame, one inside the other.
+  - Popover: 0/18, refused `partlyRecorded`. The c8858c2a preview took it 3/3.
+- **Shared mode:** frontmost 0/160 (transient and end) and key window 0/160 on both heads. Window over the cover:
+  transient 4/106 and end 0/106, all of them #458's TextEdit font pop-up (p-font), as on main (4/106).
+- **Dedicated mode (recorded, not failed):** 10/76 raised, all of them main's own route-3 element click (p-element).
+  Main shows the same 10/76.
+- **Wrong row:** 0/263. The re-laid-out cells refused every row:
+  - omnibox 60/60 (`notARow`; the row at the point had changed in 60/60, another row in 58);
+  - datalist 18/18 (`notOneOverlay`);
+  - permission 12/12 behind (`screenChangedSinceScreenshot`, as main).
+
+  The omnibox route refuses even an unchanged row, so these rows do not yet show what a delivering omnibox route
+  would do after a re-layout.
+- **False ok:** 0. **False confirmed:** 0. **Refused but taken anyway:** 0. **Reached the page beneath:** 0/164.
+- **Parity:** every cell outside the four kinds answers as main, 19/19 cells (table below), including the out-of-scope
+  frontmost prompt (27 rows).
+- **Observations, fix against main (ruling 1074):**
+  - The result's keys are the same, with one new timing key, `screenshotWindowsListedMs` (p50 0.5 ms, p95 1.4 ms).
+  - Observation time on the kit's wall clock: p50 80 ms against 107, p95 407 against 430. The engine's `totalMs`: p50
+    74 against 99, p95 397 against 419. The fix is not slower: the delta is within run-to-run noise, with no cost
+    visible beyond the 0.5 ms read.
+  - Parity cells' rendered text (166 observations on each head), after the kit's ports and Chrome's tab memory figures
+    are normalised: no line appears only on the fix. 4 lines appear only on main: omnibox suggestion lines whose
+    history titles vary per run.
+  - Nothing new reaches the model's view: no window owner, layer or bounds appears in the text.
+- **#443 on the fix head:** decomove refused `controlGone` 40/40 (CfT 20, Electron 20), the keep cells kept and landed 40/40 (table at the end).
+
+#### main-5580ac20 engine 5580ac204f1a2a5cd6a36186d658087060690e5f  (Google Chrome 157.0.8103.79; ProductName: macOS ProductVersion: 26.7.2 BuildVersion: 25G332; image 20261117.0516.1; kit 3326bebf21fcc05658a2c2fc1d9aa78a1c6ad91b; 263 rows, 50.23 min)
+
+| cell | rows | answer [overlayClick] | effect | frontmost changed, transient / end | key/main window changed | window over the cover, transient / end | beneath | problems |
+|---|---|---|---|---|---|---|---|---|
+| omnibox/shared-behind/click | 6/6 | appWindowOverPoint ×6 | nothing ×6 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| omnibox/shared-behind/p-element | 5/5 | backgroundClickRefused ×5 | nothing ×5 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| omnibox/shared-behind/relayout | 20/20 | appWindowOverPoint ×20 | nothing ×20 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| datalist/shared-behind/click | 6/6 | appWindowOverPoint ×6 | nothing ×6 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| datalist/shared-behind/p-element | 5/5 | ok route 3 ×5 | dismissed ×5 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| datalist/shared-behind/relayout | 6/6 | appWindowOverPoint ×6 | nothing ×6 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| permission/shared-behind/allow | 5/5 | appWindowOverPoint ×5 | nothing ×5 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| permission/shared-behind/block | 5/5 | appWindowOverPoint ×5 | nothing ×5 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| permission/shared-behind/p-element | 6/6 | ok route 3 ×6 | nothing ×6 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| permission/shared-behind/relayout | 6/6 | screenChangedSinceScreenshot ×6 | nothing ×2; dismissed ×4 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| omnibox/shared-front/click | 6/6 | appWindowOverPoint ×6 | nothing ×6 | 0 / 0 | 0 | n/a | 0 | - |
+| omnibox/shared-front/p-element | 5/5 | ok route 3 ×5 | taken ×5 | 0 / 0 | 0 | n/a | 0 | - |
+| omnibox/shared-front/relayout | 20/20 | appWindowOverPoint ×20 | nothing ×20 | 0 / 0 | 0 | n/a | 0 | - |
+| datalist/shared-front/click | 6/6 | appWindowOverPoint ×6 | nothing ×6 | 0 / 0 | 0 | n/a | 0 | - |
+| datalist/shared-front/p-element | 5/5 | ok route 3 ×5 | taken ×5 | 0 / 0 | 0 | n/a | 0 | - |
+| datalist/shared-front/relayout | 6/6 | appWindowOverPoint ×6 | nothing ×6 | 0 / 0 | 0 | n/a | 0 | - |
+| permission/shared-front/allow (prompt observed as the window) | 5/5 | ok route 3 ×5 | taken ×5 | 0 / 0 | 5 | n/a | 0 | - |
+| permission/shared-front/block (prompt observed as the window) | 5/5 | ok route 3 ×5 | taken ×5 | 0 / 0 | 5 | n/a | 0 | - |
+| permission/shared-front/p-element (prompt observed as the window) | 6/6 | ok route 1 ×6 | taken ×6 | 0 / 0 | 6 | n/a | 0 | - |
+| permission/shared-front/relayout (prompt observed as the window) | 6/6 | noScreenshotForCoordinates ×6 | dismissed ×6 | 0 / 0 | 0 | n/a | 0 | - |
+| omnibox/dedicated-behind/click | 6/6 | appWindowOverPoint ×6 | nothing ×6 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| omnibox/dedicated-behind/p-element | 5/5 | ok route 3 ×5 | taken ×5 | 0 / 0 | 0 | 5 / 5 | 0 | - |
+| omnibox/dedicated-behind/relayout | 20/20 | appWindowOverPoint ×20 | nothing ×20 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| datalist/dedicated-behind/click | 6/6 | appWindowOverPoint ×6 | nothing ×6 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| datalist/dedicated-behind/p-element | 5/5 | ok route 3 ×5 | taken ×5 | 0 / 0 | 0 | 5 / 5 | 0 | - |
+| datalist/dedicated-behind/relayout | 6/6 | appWindowOverPoint ×6 | nothing ×6 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| permission/dedicated-behind/allow | 5/5 | appWindowOverPoint ×5 | nothing ×5 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| permission/dedicated-behind/block | 5/5 | appWindowOverPoint ×5 | nothing ×5 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| permission/dedicated-behind/p-element | 6/6 | ok route 3 ×6 | nothing ×6 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| permission/dedicated-behind/relayout | 6/6 | screenChangedSinceScreenshot ×6 | nothing ×3; dismissed ×3 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| page/shared-behind/p-page | 5/5 | ok route 3 ×5 | clicked ×5 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| underclosed/shared-behind/p-underclosed | 5/5 | ok route 3 ×5 | clicked ×5 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| omnibox/shared-behind/p-forced | 5/5 | appWindowOverPoint ×5 | nothing ×5 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| omnibox/shared-behind/p-drag | 5/5 | appWindowOverPoint ×5 | nothing ×5 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| siteinfo/shared-behind/p-unknown (prompt observed as the window) | 5/5 | ok route 3 ×5 | closed ×5 | 0 / 0 | 0 | 5 / 0 | 0 | - |
+| inputlist/shared-behind/p-inputlist | 5/5 | ok route 3 {popUp {"role":"AXComboBox","polls":2,"ms":61.247,"action":"AXPress} ×1; ok route 3 {popUp {"kind":"datalist","effect":"confirmed","polls":2,"ms":44.94} ×1; ok route 3 {popUp {"delivery":"action","ms":92.281,"kind":"datalist","polls":2} ×1; ok route 3 {popUp {"ms":28.858,"action":"AXPress","role":"AXComboBox","kind":"} ×1; ok route 3 {popUp {"polls":2,"kind":"datalist","role":"AXComboBox","ms":44.591} ×1 | opened ×5 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| popover/shared-behind/click | 6/6 | appWindowOverPoint ×6 | nothing ×6 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| popover/shared-front/click | 6/6 | appWindowOverPoint ×6 | nothing ×6 | 0 / 0 | 0 | n/a | 0 | - |
+| popover/dedicated-behind/click | 6/6 | appWindowOverPoint ×6 | nothing ×6 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| font/shared-behind/p-font | 5/5 | ok route 3 {popUp {"role":"AXPopUpButton","polls":3,"ms":108.965,"action":"AXP} ×1; ok route 3 {popUp {"kind":"popUpButton","effect":"confirmed","restored":{"comp} ×1; ok route 3 {popUp {"menuWindow":1509,"action":"AXPress","restored":{"raises":1} ×1; ok route 3 {popUp {"kind":"popUpButton","restored":{"leftCovered":0,"windows":} ×1; ok route 3 {popUp {"role":"AXPopUpButton","kind":"popUpButton","delivery":"act} ×1 | opened ×5 | 0 / 0 | 0 | 4 / 0 | 0 | - |
+
+##### Bar lines
+
+- delivered, confirmed and taken, per overlay cell: omnibox/shared-behind/click 0/6; datalist/shared-behind/click 0/6; permission/shared-behind/allow 0/5; permission/shared-behind/block 0/5; omnibox/shared-front/click 0/6; datalist/shared-front/click 0/6; omnibox/dedicated-behind/click 0/6; datalist/dedicated-behind/click 0/6; permission/dedicated-behind/allow 0/5; permission/dedicated-behind/block 0/5; popover/shared-behind/click 0/6; popover/shared-front/click 0/6; popover/dedicated-behind/click 0/6
+- shared: frontmost changed transient 0/160, end 0/160; key or main window changed 0/160; window over the cover transient 4/106, end 0/106 (font/shared-behind/p-font ×4)
+- dedicated (recorded, not failed: ruling 1070): frontmost changed transient 0/76, end 0/76; key or main window changed 0/76; window over the cover transient 10/76, end 10/76 (omnibox/dedicated-behind/p-element ×5; datalist/dedicated-behind/p-element ×5)
+- wrong row: 0/263
+- re-laid-out omnibox: refused appWindowOverPoint ×60, the recorded row taken 0, a neighbour taken 0 (must be 0), other 0 (of 60; the list or prompt changed before the click in 60)
+- re-laid-out datalist: refused appWindowOverPoint ×18, the recorded row taken 0, a neighbour taken 0 (must be 0), other 0 (of 18; the list or prompt changed before the click in 18)
+- re-laid-out permission: refused screenChangedSinceScreenshot ×12, the recorded row taken 0, a neighbour taken 0 (must be 0), other 0 (of 12; the list or prompt changed before the click in 5)
+- omnibox re-laid out, the row at the point: shown in the screenshot vs held now: changed in 60/60 (now no row ×2; another row ×58); pressed/taken: appWindowOverPoint, nothing taken ×60
+- false ok (answered ok, not taken): 0
+- false confirmed (overlayClick confirmed, not taken): 0
+- refused but taken anyway: 0
+- reached the window beneath: 0/164
+- frontmost prompt observed as the window itself (out of scope, main's click): 27 (permission/shared-front/allow ok route 3 taken ×5; permission/shared-front/block ok route 3 taken ×5; permission/shared-front/p-element ok route 1 taken ×6; permission/shared-front/relayout noScreenshotForCoordinates dismissed ×6; siteinfo/shared-behind/p-unknown ok route 3 closed ×5)
+- permission state after: shared-behind/allow allow->-/- ×5; shared-behind/block block->-/- ×5; shared-behind/p-element block->-/- ×3; shared-behind/relayout block->-/- ×6; shared-front/allow allow->-/granted ×5; shared-front/block block->-/NotAllowedError ×5; shared-front/p-element block->-/NotAllowedError ×3; shared-front/relayout block->-/- ×6; dedicated-behind/allow allow->-/- ×5; dedicated-behind/block block->-/- ×5; dedicated-behind/p-element block->-/- ×3; dedicated-behind/relayout block->-/- ×6; shared-behind/p-element allow->-/- ×3; shared-front/p-element allow->-/granted ×3; dedicated-behind/p-element allow->-/- ×3
+
+#### fix-de0d119f engine de0d119f52b981ff29351a57b8fbf5498b4abd72  (Google Chrome 157.0.8103.79; ProductName: macOS ProductVersion: 26.7.2 BuildVersion: 25G332; image 20261117.0516.1; kit 3326bebf21fcc05658a2c2fc1d9aa78a1c6ad91b; 263 rows, 48.8 min)
+
+| cell | rows | answer [overlayClick] | effect | frontmost changed, transient / end | key/main window changed | window over the cover, transient / end | beneath | problems |
+|---|---|---|---|---|---|---|---|---|
+| omnibox/shared-behind/click | 6/6 | appWindowOverPoint [omniboxPopup refused notARow] ×6 | nothing ×6 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| omnibox/shared-behind/p-element | 5/5 | backgroundClickRefused ×5 | nothing ×5 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| omnibox/shared-behind/relayout | 20/20 | appWindowOverPoint [omniboxPopup refused notARow] ×20 | nothing ×20 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| datalist/shared-behind/click | 6/6 | clickUnconfirmed [datalist action unconfirmed] ×6 | nothing ×6 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| datalist/shared-behind/p-element | 5/5 | ok route 3 ×5 | dismissed ×5 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| datalist/shared-behind/relayout | 6/6 | appWindowOverPoint [refused notOneOverlay] ×6 | nothing ×6 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| permission/shared-behind/allow | 5/5 | ok route 1 [permissionBubble action confirmed] ×5 | taken ×5 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| permission/shared-behind/block | 5/5 | ok route 1 [permissionBubble action confirmed] ×5 | taken ×5 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| permission/shared-behind/p-element | 6/6 | ok route 3 ×6 | nothing ×6 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| permission/shared-behind/relayout | 6/6 | screenChangedSinceScreenshot ×6 | nothing ×5; dismissed ×1 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| omnibox/shared-front/click | 6/6 | appWindowOverPoint [omniboxPopup refused notARow] ×6 | nothing ×6 | 0 / 0 | 0 | n/a | 0 | - |
+| omnibox/shared-front/p-element | 5/5 | ok route 3 ×5 | taken ×5 | 0 / 0 | 0 | n/a | 0 | - |
+| omnibox/shared-front/relayout | 20/20 | appWindowOverPoint [omniboxPopup refused notARow] ×20 | nothing ×20 | 0 / 0 | 0 | n/a | 0 | - |
+| datalist/shared-front/click | 6/6 | clickUnconfirmed [datalist action unconfirmed] ×6 | nothing ×6 | 0 / 0 | 0 | n/a | 0 | - |
+| datalist/shared-front/p-element | 5/5 | ok route 3 ×5 | taken ×5 | 0 / 0 | 0 | n/a | 0 | - |
+| datalist/shared-front/relayout | 6/6 | appWindowOverPoint [refused notOneOverlay] ×6 | nothing ×6 | 0 / 0 | 0 | n/a | 0 | - |
+| permission/shared-front/allow (prompt observed as the window) | 5/5 | ok route 3 ×5 | taken ×5 | 0 / 0 | 5 | n/a | 0 | - |
+| permission/shared-front/block (prompt observed as the window) | 5/5 | ok route 3 ×5 | taken ×5 | 0 / 0 | 5 | n/a | 0 | - |
+| permission/shared-front/p-element (prompt observed as the window) | 6/6 | ok route 1 ×6 | taken ×6 | 0 / 0 | 6 | n/a | 0 | - |
+| permission/shared-front/relayout (prompt observed as the window) | 6/6 | noScreenshotForCoordinates ×6 | dismissed ×6 | 0 / 0 | 0 | n/a | 0 | - |
+| omnibox/dedicated-behind/click | 6/6 | appWindowOverPoint [omniboxPopup refused notARow] ×6 | nothing ×6 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| omnibox/dedicated-behind/p-element | 5/5 | ok route 3 ×5 | taken ×5 | 0 / 0 | 0 | 5 / 5 | 0 | - |
+| omnibox/dedicated-behind/relayout | 20/20 | appWindowOverPoint [omniboxPopup refused notARow] ×20 | nothing ×20 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| datalist/dedicated-behind/click | 6/6 | clickUnconfirmed [datalist action unconfirmed] ×6 | nothing ×6 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| datalist/dedicated-behind/p-element | 5/5 | ok route 3 ×5 | taken ×5 | 0 / 0 | 0 | 5 / 5 | 0 | - |
+| datalist/dedicated-behind/relayout | 6/6 | appWindowOverPoint [refused notOneOverlay] ×6 | nothing ×6 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| permission/dedicated-behind/allow | 5/5 | ok route 1 [permissionBubble action confirmed] ×5 | taken ×5 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| permission/dedicated-behind/block | 5/5 | ok route 1 [permissionBubble action confirmed] ×5 | taken ×5 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| permission/dedicated-behind/p-element | 6/6 | ok route 3 ×6 | nothing ×6 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| permission/dedicated-behind/relayout | 6/6 | screenChangedSinceScreenshot ×6 | nothing ×2; dismissed ×4 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| page/shared-behind/p-page | 5/5 | ok route 3 ×5 | clicked ×5 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| underclosed/shared-behind/p-underclosed | 5/5 | ok route 3 ×5 | clicked ×5 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| omnibox/shared-behind/p-forced | 5/5 | appWindowOverPoint ×5 | nothing ×5 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| omnibox/shared-behind/p-drag | 5/5 | appWindowOverPoint ×5 | nothing ×5 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| siteinfo/shared-behind/p-unknown (prompt observed as the window) | 5/5 | ok route 3 ×5 | closed ×5 | 0 / 0 | 0 | 5 / 0 | 0 | - |
+| inputlist/shared-behind/p-inputlist | 5/5 | ok route 3 {popUp {"role":"AXComboBox","menuWindow":238,"effect":"confirmed","} ×1; ok route 3 {popUp {"ms":34.419,"polls":2,"delivery":"action","effect":"confirm} ×1; ok route 3 {popUp {"kind":"datalist","effect":"confirmed","polls":2,"role":"AX} ×2; ok route 3 {popUp {"delivery":"action","menuWindow":847,"polls":2,"effect":"co} ×1 | opened ×5 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| popover/shared-behind/click | 6/6 | appWindowOverPoint [appKitPopover refused partlyRecorded] ×6 | nothing ×6 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| popover/shared-front/click | 6/6 | appWindowOverPoint [appKitPopover refused partlyRecorded] ×6 | nothing ×6 | 0 / 0 | 0 | n/a | 0 | - |
+| popover/dedicated-behind/click | 6/6 | appWindowOverPoint [appKitPopover refused partlyRecorded] ×6 | nothing ×6 | 0 / 0 | 0 | 0 / 0 | 0 | - |
+| font/shared-behind/p-font | 5/5 | ok route 3 {popUp {"ms":172.927,"effect":"confirmed","kind":"popUpButton","del} ×1; ok route 3 {popUp {"menuWindow":1450,"role":"AXPopUpButton","effect":"confirme} ×1; ok route 3 {popUp {"kind":"popUpButton","role":"AXPopUpButton","delivery":"act} ×1; ok route 3 {popUp {"ms":98.978,"effect":"confirmed","kind":"popUpButton","deli} ×1; ok route 3 {popUp {"restored":{"ms":348.193,"complete":true,"leftCovered":0,"w} ×1 | opened ×5 | 0 / 0 | 0 | 4 / 0 | 0 | - |
+
+##### Bar lines
+
+- delivered, confirmed and taken, per overlay cell: omnibox/shared-behind/click 0/6; datalist/shared-behind/click 0/6; permission/shared-behind/allow 5/5; permission/shared-behind/block 5/5; omnibox/shared-front/click 0/6; datalist/shared-front/click 0/6; omnibox/dedicated-behind/click 0/6; datalist/dedicated-behind/click 0/6; permission/dedicated-behind/allow 5/5; permission/dedicated-behind/block 5/5; popover/shared-behind/click 0/6; popover/shared-front/click 0/6; popover/dedicated-behind/click 0/6
+- shared: frontmost changed transient 0/160, end 0/160; key or main window changed 0/160; window over the cover transient 4/106, end 0/106 (font/shared-behind/p-font ×4)
+- dedicated (recorded, not failed: ruling 1070): frontmost changed transient 0/76, end 0/76; key or main window changed 0/76; window over the cover transient 10/76, end 10/76 (omnibox/dedicated-behind/p-element ×5; datalist/dedicated-behind/p-element ×5)
+- wrong row: 0/263
+- re-laid-out omnibox: refused notARow ×60, the recorded row taken 0, a neighbour taken 0 (must be 0), other 0 (of 60; the list or prompt changed before the click in 60)
+- re-laid-out datalist: refused notOneOverlay ×18, the recorded row taken 0, a neighbour taken 0 (must be 0), other 0 (of 18; the list or prompt changed before the click in 18)
+- re-laid-out permission: refused screenChangedSinceScreenshot ×12, the recorded row taken 0, a neighbour taken 0 (must be 0), other 0 (of 12; the list or prompt changed before the click in 7)
+- omnibox re-laid out, the row at the point: shown in the screenshot vs held now: changed in 60/60 (now no row ×2; another row ×58); pressed/taken: appWindowOverPoint, nothing taken ×60
+- false ok (answered ok, not taken): 0
+- false confirmed (overlayClick confirmed, not taken): 0
+- refused but taken anyway: 0
+- reached the window beneath: 0/164
+- frontmost prompt observed as the window itself (out of scope, main's click): 27 (permission/shared-front/allow ok route 3 taken ×5; permission/shared-front/block ok route 3 taken ×5; permission/shared-front/p-element ok route 1 taken ×6; permission/shared-front/relayout noScreenshotForCoordinates dismissed ×6; siteinfo/shared-behind/p-unknown ok route 3 closed ×5)
+- permission state after: shared-behind/allow allow->-/granted ×5; shared-behind/block block->-/NotAllowedError ×5; shared-behind/p-element block->-/- ×3; shared-behind/relayout block->-/- ×6; shared-front/allow allow->-/granted ×5; shared-front/block block->-/NotAllowedError ×5; shared-front/p-element block->-/NotAllowedError ×3; shared-front/relayout block->-/- ×6; dedicated-behind/allow allow->-/granted ×5; dedicated-behind/block block->-/NotAllowedError ×5; dedicated-behind/p-element block->-/- ×3; dedicated-behind/relayout block->-/- ×6; shared-behind/p-element allow->-/- ×3; shared-front/p-element allow->-/granted ×3; dedicated-behind/p-element allow->-/- ×3
+
+##### Parity: main-5580ac20 5580ac20 against fix-de0d119f de0d119f
+
+| cell | main-5580ac20 | fix-de0d119f | same |
+|---|---|---|---|
+| omnibox/shared-behind/p-element | backgroundClickRefused → nothing ×5 | backgroundClickRefused → nothing ×5 | yes |
+| datalist/shared-behind/p-element | ok → dismissed ×5 | ok → dismissed ×5 | yes |
+| permission/shared-behind/p-element | ok → nothing ×6 | ok → nothing ×6 | yes |
+| omnibox/shared-front/p-element | ok → taken ×5 | ok → taken ×5 | yes |
+| datalist/shared-front/p-element | ok → taken ×5 | ok → taken ×5 | yes |
+| permission/shared-front/allow (prompt observed as the window) | ok → taken ×5 | ok → taken ×5 | yes |
+| permission/shared-front/block (prompt observed as the window) | ok → taken ×5 | ok → taken ×5 | yes |
+| permission/shared-front/p-element (prompt observed as the window) | ok → taken ×6 | ok → taken ×6 | yes |
+| permission/shared-front/relayout (prompt observed as the window) | noScreenshotForCoordinates → dismissed ×6 | noScreenshotForCoordinates → dismissed ×6 | yes |
+| omnibox/dedicated-behind/p-element | ok → taken ×5 | ok → taken ×5 | yes |
+| datalist/dedicated-behind/p-element | ok → taken ×5 | ok → taken ×5 | yes |
+| permission/dedicated-behind/p-element | ok → nothing ×6 | ok → nothing ×6 | yes |
+| page/shared-behind/p-page | ok → clicked ×5 | ok → clicked ×5 | yes |
+| underclosed/shared-behind/p-underclosed | ok → clicked ×5 | ok → clicked ×5 | yes |
+| omnibox/shared-behind/p-forced | appWindowOverPoint → nothing ×5 | appWindowOverPoint → nothing ×5 | yes |
+| omnibox/shared-behind/p-drag | appWindowOverPoint → nothing ×5 | appWindowOverPoint → nothing ×5 | yes |
+| siteinfo/shared-behind/p-unknown (prompt observed as the window) | ok → closed ×5 | ok → closed ×5 | yes |
+| inputlist/shared-behind/p-inputlist | ok → opened ×5 | ok → opened ×5 | yes |
+| font/shared-behind/p-font | ok → opened ×5 | ok → opened ×5 | yes |
+
+##### Observations (ruling 1074)
+
+| head | observations | wall ms p50 / p95 | screenshotWindowsListed ms p50 / p95 | total timing p50 / p95 | render errors |
+|---|---|---|---|---|---|
+| main-5580ac20 | 526 | 107 / 430 | - / - | 98.6 / 419 (totalMs) | 0 |
+| fix-de0d119f | 526 | 80 / 407 | 0.5 / 1.4 | 74.4 / 397.3 (totalMs) | 0 |
+
+- result shape, fix-de0d119f against main-5580ac20: the same keys
+- timing keys only on fix-de0d119f: screenshotWindowsListedMs
+- parity cells' rendered text: 166 observations on fix-de0d119f, 166 on main-5580ac20; lines only on fix-de0d119f: 0; only on main-5580ac20: 4 ("text probe453 /results-alpha http://127.0.0.1:PORT/results-alpha location from history, press Tab th", "button Help: Remove suggestion, Remove Suggestion button, press Enter to remove, probe453 /results-a", "text probe453 page http://127.0.0.1:PORT/results-beta location from history, press Tab then Enter to", "text (selected) probe453 page http://127.0.0.1:PORT/results-beta location from history, press Tab th")
+- new in the model's view on fix-de0d119f (lines naming a window owner that main-5580ac20 never shows): no
+
+### #443's decomove on fix de0d119f
+
+One engine per dispatch: the kit names its only engine "main", so the "main" columns below are fix de0d119f and the "fix" columns are unused. Expected: decomove refused `controlGone`, the keep cells (plain, overlapinto) kept and landed. Result: decomove refused `controlGone` 40/40 (CfT 20, Electron 20), keep cells kept-landed 40/40.
+
+| Unit | cft: main | cft: fix | electron: main | electron: fix |
+|---|---|---|---|---|
+| plain/text | kept-landed sameElement 10 | – | kept-landed sameElement 10 | – |
+| plain/link | kept-landed sameElement 10 | – | kept-landed sameElement 10 | – |
+| decomove/text | refused controlGone 10 [AXLink 10] | – | refused controlGone 10 [AXLink 10] | – |
+| decomove/link | refused controlGone 10 [AXLink 10] | – | refused controlGone 10 [AXLink 10] | – |
+| overlapinto/text | kept-landed sameElement 10 | – | kept-landed sameElement 10 | – |
+| overlapinto/link | kept-landed sameElement 10 | – | kept-landed sameElement 10 | – |
+
+| Lane | Head | stalePoint.ms p50 / p95 / max (n), all | kept | refused | text point |
+|---|---|---|---|---|---|
+| cft | main | 5.106 / 17.635 / 21.443 (60) | 8.502 / 18.557 / 21.443 (40) | 4.031 / 5.836 / 5.836 (20) | 8.015 / 18.557 / 21.443 (30) |
+| electron | main | 3.058 / 6.677 / 19.986 (60) | 2.473 / 5.142 / 19.986 (40) | 5.12 / 9.313 / 9.313 (20) | 3.175 / 6.677 / 19.986 (30) |
+
+| Run | Lane | Image | Browser | Rows | Abort | Gates failing |
+|---|---|---|---|---|---|---|
+| fix-de0d119f | cft | 20261117.0516.1 | 157.0.8103.78 | 60/60 | none | – |
+| fix-de0d119f | electron | 20261117.0516.1 | Electron 44.4.5 / Chromium 152.0.7977.130 | 60/60 | none | – |

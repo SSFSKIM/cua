@@ -123,7 +123,7 @@ if (files.length > 1) {
     for (const f of all) {
       const os = obsOf(f);
       const total = timingKeys(os).find(k => /^(total|totalMs|getAppState)$/i.test(k));
-      console.log(`| ${f.config.label ?? f.config.engineRef} | ${os.length} | ${q(os.map(o => o.ms), 0.5)} / ${q(os.map(o => o.ms), 0.95)} | ${q(os.map(o => o.timings?.screenshotWindowsListed), 0.5)} / ${q(os.map(o => o.timings?.screenshotWindowsListed), 0.95)} | ${total ? `${q(os.map(o => o.timings[total]), 0.5)} / ${q(os.map(o => o.timings[total]), 0.95)} (${total})` : '-'} | ${os.filter(o => /^render error/.test(o.text ?? '')).length} |`);
+      console.log(`| ${f.config.label ?? f.config.engineRef} | ${os.length} | ${q(os.map(o => o.ms), 0.5)} / ${q(os.map(o => o.ms), 0.95)} | ${q(os.map(o => (o.timings?.screenshotWindowsListedMs ?? o.timings?.screenshotWindowsListed)), 0.5)} / ${q(os.map(o => (o.timings?.screenshotWindowsListedMs ?? o.timings?.screenshotWindowsListed)), 0.95)} | ${total ? `${q(os.map(o => o.timings[total]), 0.5)} / ${q(os.map(o => o.timings[total]), 0.95)} (${total})` : '-'} | ${os.filter(o => /^render error/.test(o.text ?? '')).length} |`);
     }
     if (all.length > 1) {
       const [base, ...rest] = all;
@@ -135,7 +135,7 @@ if (files.length > 1) {
         console.log(`\n- result shape, ${lab} against ${base.config.label}: ${diff.length ? diff.join('; ') : 'the same keys'}`);
         const tk = timingKeys(obsOf(f)).filter(k => !timingKeys(obsOf(base)).includes(k));
         console.log(`- timing keys only on ${lab}: ${tk.join(', ') || 'none'}`);
-        const linesOf = x => new Set(obsOf(x).filter(o => o.text).flatMap(o => o.text.split('\n').map(l => l.replace(/^\t*\d+ /, '').trim()).filter(Boolean)));
+        const linesOf = x => new Set(obsOf(x).filter(o => o.text).flatMap(o => o.text.split('\n').map(l => l.replace(/^\t*\d+ /, '').replace(/Memory usage - [0-9.]+ [KMG]B/g, 'Memory usage - N').trim()).filter(Boolean)));
         const lb = linesOf(base), lf = linesOf(f);
         const onlyF = [...lf].filter(l => !lb.has(l)), onlyB = [...lb].filter(l => !lf.has(l));
         console.log(`- parity cells' rendered text: ${obsOf(f).filter(o => o.text).length} observations on ${lab}, ${obsOf(base).filter(o => o.text).length} on ${base.config.label}; lines only on ${lab}: ${onlyF.length}${onlyF.length ? ` (${onlyF.slice(0, 8).map(l => JSON.stringify(l.slice(0, 100))).join(', ')})` : ''}; only on ${base.config.label}: ${onlyB.length}${onlyB.length ? ` (${onlyB.slice(0, 8).map(l => JSON.stringify(l.slice(0, 100))).join(', ')})` : ''}`);

@@ -7541,8 +7541,8 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   app does not leave open, and its accessibility action would bring <App> to the front over the person's window. Nothing
   was sent. Ask the person to bring <App> to the front first, or reach the same command another way: a keyboard
   shortcut, or <App>'s menu bar by its elements." Back, Reload and New Tab (AXHasPopup false) keep main's click, and so
-  does the bookmark star, which no attribute measured tells from Back (a residual, tech-debt-tracker.md; no class name is
-  allow- or denylisted).
+  does the bookmark star, which no attribute measured tells from Back (a residual, #471 and tech-debt-tracker.md; no
+  class name is allow- or denylisted).
   Dedicated mode keeps main's posted click for both refusals: the code's dedicated contract (#282, Routes.swift) lets the
   window come forward and puts no order back, so nothing closes what the click opened, and the measurement shows the
   posted click leaving the page's context menu and the profile bubble up there (3/3 each); Chrome frontmost after a
@@ -7594,6 +7594,31 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   Proven offline (`PopUpPointTests`, 52 tests): reverted one at a time (5 mutations), each fails one test: the
   activation not told from input, a right click on text shown, the record's web area read only with a live hit, its
   own web area field ignored, the live hit's role not read.
+  Date/Author: 2026-11-21, cursor235's implementer for #463.
+- Decision (#463, the re-review of 5364c10b..6a702ccf, reviewer-medium, 2026-11-21; amends the two entries above and
+  replaces the design's item 1c): **in shared mode with the app not frontmost, every right click is refused; the
+  AXShowMenu delivery and the `contextMenu` kind are dropped.** AXShowMenu takes an element and no point, so no role
+  test proves the menu it opens is the one the point would open: a text element's acts on the word under the click (the
+  previous entry's reason for refusing text), a row's may depend on the column, and on a page it opens none (0/8); and
+  the role-narrowed rule still let a right click on recorded native text with a missing or late hit fall through to the
+  posted one, whose menu route 3's release closes (TextEdit's text view 6/6, Chrome's page 4/6). The simplest honest
+  shape is one refusal, whatever the point hits, text or not, page or native, hit or no hit (`contextMenuPoint`):
+  `popUpClick.refused: "rightClick"` (the former `webArea` and `textElement` folded into it; the hit's role, when one
+  answered, is the record's `role`), as `backgroundClickRefused`: "<App> does not keep a context menu open for a right
+  click cua sends while <App> is not the frontmost app, and no accessibility action opens one at a point. Nothing was
+  sent. Ask the person to bring <App> to the front first, or use keys, or, for an element's own menu, call
+  performSecondaryAction with "Show Menu" on that element by its ID." Show Menu by the model on an element it names is
+  the model choosing the target, not the engine guessing it. Frontmost (its posted menu stays up, 5/5) and dedicated mode
+  (the page's menu stayed up, 3/3) keep main's posted right click. `recordedNodeInWebArea` and `contextMenuTextRoles` are
+  gone. The model-facing sentence now says any right click behind is refused and names Show Menu as the way to an
+  element's menu. Shipped with (tech-debt-tracker.md, #472): an activation by the app that comes after its panel is
+  already up is not seen, since the foreground watch ends with the order check; unmeasured. The bookmark star's residual
+  is #471.
+  Proven offline (`PopUpPointTests`, 48 tests: the right-click delivery's two tests and the three per-place refusal tests
+  replaced by one): every right click behind in shared mode refused with nothing held, performed or posted and no window
+  list read (AppKit text, an AppKit row advertising AXShowMenu, an element the record does not hold, a page's group, a
+  coarse view before the page tree is exposed, no hit), and main's path in dedicated mode and frontmost. Reverted, each
+  fails: no refusal (2 failures), refused only with a live hit (1), refused in dedicated mode too (2).
   Date/Author: 2026-11-21, cursor235's implementer for #463.
 
 - Decision (#456, 2026-11-20, `fix/456-recheck-overlay`, plugin 0.28.25; amends #452's entry and #296's

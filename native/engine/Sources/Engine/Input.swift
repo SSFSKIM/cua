@@ -576,7 +576,8 @@ extension Engine {
         let stale = signposted("click.stalePoint") {
           stalePointGuard(at: placed.point, windowOrigin: placed.windowFrame.origin, windowID: windowID, hit: pointerHit,
                           place: latest.outcome.place, hitMs: latest.outcome.ms,
-                          rehit: latest.rehit, hitTest: { hitTest(window: placed.window, pid: appPid, at: placed.point) }, app: app,
+                          rehit: latest.rehit, hitTest: { hitTestOutcome(window: placed.window, pid: appPid, at: placed.point, now: monotonicMilliseconds) },
+                          app: app,
                           appPid: appPid, context: context)
         }
         meta.stalePoint = stale.record

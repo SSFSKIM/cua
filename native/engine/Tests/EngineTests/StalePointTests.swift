@@ -4856,10 +4856,10 @@ private final class AnsweringSource: ElementSource, @unchecked Sendable {
   override func copyActionNames(_ element: AXUIElement) -> (error: AXError, names: CFArray?) { answer }
 }
 
-/// #442 (ruling 1073): on the guard's keep paths through an inert layer (#433's) and past a non-interactive hit, the
-/// corrected hit's control must be one the record holds at the point (`otherControlOnTop`). Kit `probe/442-measure`'s
-/// `slideover`: link A under a veil, button B ("Compose") in the second row, slid over A by a transform after the
-/// observation, A neither removed nor changed.
+/// #442 (rulings 1073 and 1078): on the guard's keep paths through an inert layer (#433's) and past a non-interactive hit,
+/// the corrected hit's control refuses only as a known control moved over the point (`otherControlOnTop`). Kit
+/// `probe/442-measure`'s `slideover`: link A under a veil, button B ("Compose") in the second row, slid over A by a
+/// transform after the observation, A neither removed nor changed.
 final class OtherControlOnTopTests: XCTestCase {
   private final class Page {
     let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 600, height: 400))
@@ -4869,10 +4869,11 @@ final class OtherControlOnTopTests: XCTestCase {
     let aText = Node("AXStaticText", CGRect(x: 30, y: 105, width: 60, height: 20), value: "Open")
     let b = Node("AXButton", CGRect(x: 20, y: 140, width: 200, height: 30), title: "Compose")
     let bText = Node("AXStaticText", CGRect(x: 30, y: 145, width: 60, height: 20), value: "Compose")
-    /// The veil over A: a group two layers deep, so the record takes it at A's text as at A (`page.mjs` `cover`).
+    /// The veil over A: a group two layers deep, so the record takes it at A's text as at A (`page.mjs` `cover`); `flat`,
+    /// a plain group after the rows in the list, at A's depth.
     let veil = Node("AXGroup", CGRect(x: 20, y: 100, width: 200, height: 30))
     /// `native`: the list straight in the window, no web area (#330's rule, which judges only web areas, stands aside).
-    init(veiled: Bool = true, native: Bool = false) {
+    init(veiled: Bool = true, native: Bool = false, flat: Bool = false) {
       if native {
         window.add(list)
       } else {
@@ -4884,6 +4885,7 @@ final class OtherControlOnTopTests: XCTestCase {
       list.add(b)
       b.add(bText)
       guard veiled else { return }
+      if flat { list.add(veil); return }
       let outer = Node("AXGroup", CGRect(x: 0, y: 80, width: 600, height: 200))
       let inner = Node("AXGroup", CGRect(x: 20, y: 100, width: 200, height: 30))
       list.add(outer)
@@ -4897,17 +4899,19 @@ final class OtherControlOnTopTests: XCTestCase {
   private let atText = CGPoint(x: 40, y: 112)
 
   /// The guard's verdict after `change`, whose answer is the first hit; `corrected`, when given, is what the hit-test answers
-  /// after the wait (Chromium). The sleeps and the second hit-tests it took are counted. `skipping`: elements the walk
-  /// did not record (a cut record).
+  /// after the wait (Chromium), in the observed window unless `place` says otherwise, judged by `windowCheck`. The sleeps
+  /// and the second hit-tests it took are counted. `skipping`: elements the walk did not record (a cut record).
   private func judged(_ page: Page, at point: CGPoint, skipping: Set<ObjectIdentifier> = [], corrected: ((Page) -> Node?)? = nil,
+                      place: PointHitPlace = .observedWindow(inPopover: false),
+                      windowCheck: @escaping (WindowHit<Node>) -> StalePointVerdict<Node>? = { _ in nil },
                       change: (Page) -> Node?) -> (verdict: StalePointVerdict<Node>, sleeps: [Double], rehits: Int) {
     let (nodes, frameless, members) = walkRecord(page.window, skipping: skipping)
     let first = change(page)
     var sleeps: [Double] = []
     var rehits = 0
-    let again: (() -> Node?)? = corrected.map { answer in { rehits += 1; return answer(page) } }
+    let again: (() -> WindowHit<Node>)? = corrected.map { answer in { rehits += 1; return WindowHit(element: answer(page), place: place) } }
     let verdict = stalePointVerdict(at: point, nodes: nodes, frameless: frameless, recorded: members, hit: first,
-                                    sleep: { sleeps.append($0) }, correctedHit: again, reads: reads)
+                                    sleep: { sleeps.append($0) }, correctedHit: again, windowCheck: windowCheck, reads: reads)
     return (verdict, sleeps, rehits)
   }
 
@@ -4927,6 +4931,7 @@ final class OtherControlOnTopTests: XCTestCase {
         XCTAssertEqual(sleeps, [stalePointCorrectionMs], name)
         XCTAssertEqual(rehits, 1, name)
         XCTAssertEqual(verdict.hitCorrection, .changed, name)
+        XCTAssertTrue(verdict.hit === nil || verdict.hit !== verdict.onTop, "the verdict keeps the action's own hit")
         XCTAssertEqual(verdict.underlying?.title, "Open", "#433's check found A unchanged beneath")
         let wire = StalePointRecord(verdict, ms: 0).wire
         XCTAssertEqual(wire["reason"] as? String, "otherControlOnTop")
@@ -4967,71 +4972,152 @@ final class OtherControlOnTopTests: XCTestCase {
     }
   }
 
-  /// After the wait the hit still names an element the record lacks, with no control (an approximate answer): refused,
-  /// with no control named. A post-wait hit that is the recorded veil itself (a scrim, whose corrected answer is the scrim;
-  /// CfT's approximate answer is the same recorded group) keeps. An unrecorded group on an engine that answers at once
-  /// is main's to judge (#330), and a second hit-test that answers nothing keeps.
-  func testAnUncorrectedHitRefusesWhereTheRecordLacksIt() {
+  /// The review of adebc77a's first shape: the veil itself moved into B as B slides over A, the corrected hit the veil or
+  /// B: B, a control the screenshot showed elsewhere, refuses; the veil's live parent is not its recorded control.
+  func testAVeilMovedIntoBAsItSlidesOverRefuses() {
+    for corrected in ["veil", "b"] {
+      let (verdict, _, _) = judged(Page(), at: atLink, corrected: { corrected == "veil" ? $0.veil : $0.b }) { page in
+        page.slide()
+        page.veil.reparent(to: page.b)
+        return page.veil
+      }
+      XCTAssertEqual(verdict.reason, .otherControlOnTop, corrected)
+      XCTAssertEqual(verdict.onTopRole, "AXButton", corrected)
+    }
+  }
+
+  /// Not a known control moved over the point: each keeps the verdict as it came (ruling 1078).
+  /// - A link whose text overflows its frame, the record at that text, its parent unread now, the corrected hit on the link
+  ///   itself: the node's recorded control.
+  /// - A front button the walk omitted (a cut record).
+  /// - A recorded inert group, moved over A, that gained AXPress (a declared limit: main keeps it).
+  /// - A scrim re-created in place, the corrected hit on the new one; a child Chromium hits that no parent lists; a
+  ///   post-wait group the record lacks; a scrim whose post-wait hit is the recorded veil itself; an unread hit; no second
+  ///   answer.
+  func testWhatIsNotAKnownControlMovedOverThePointKeeps() {
+    let overflow = Page(veiled: false)
+    overflow.aText.frame = CGRect(x: 30, y: 105, width: 300, height: 20)
+    let far = CGPoint(x: 300, y: 112)
+    let overflowing = judged(overflow, at: far, corrected: { $0.a }) { page in
+      page.aText.parentUnread = true
+      return page.list
+    }
+    XCTAssertTrue(overflowing.verdict.node?.element === overflow.aText)
+    XCTAssertEqual(overflowing.verdict.reason, .nonInteractiveHit, "the overflowing link's own text")
+
+    let cut = Page()
+    let front = Node("AXButton", CGRect(x: 20, y: 100, width: 200, height: 30), title: "Front")
+    cut.list.add(front)
+    let omitted = judged(cut, at: atLink, skipping: [ObjectIdentifier(front)], corrected: { _ in front }) { $0.veil }
+    XCTAssertFalse(omitted.verdict.refused, "a front button the walk omitted: \(omitted.verdict.reason)")
+
+    let gaining = Page()
+    let group = Node("AXGroup", CGRect(x: 20, y: 180, width: 200, height: 30))
+    gaining.list.add(group)
+    let pressable = judged(gaining, at: atLink, corrected: { _ in group }) { page in
+      group.frame = page.a.frame
+      group.actions = ["AXPress"]
+      return page.veil
+    }
+    XCTAssertFalse(pressable.verdict.refused, "an inert group that gained AXPress: \(pressable.verdict.reason)")
+
+    let scrim = Page(flat: true)
+    let fresh = Node("AXGroup", CGRect(x: 20, y: 100, width: 200, height: 30))
+    let recreated = judged(scrim, at: atLink, corrected: { _ in fresh }) { page in
+      page.veil.destroy()
+      page.list.add(fresh)
+      return fresh
+    }
+    XCTAssertEqual(recreated.verdict.identity, .recreated)
+    XCTAssertFalse(recreated.verdict.refused, "a re-created scrim: \(recreated.verdict.reason)")
+
+    let unlisted = Node("AXGroup", CGRect(x: 20, y: 100, width: 200, height: 30))
+    let hidden = judged(Page(), at: atLink, corrected: { _ in unlisted }) { page in
+      unlisted.parent = page.veil  // its parent answers, but lists no such child
+      return page.veil
+    }
+    XCTAssertFalse(hidden.verdict.refused, "a child no parent lists: \(hidden.verdict.reason)")
+
     let approximate = Node("AXGroup", CGRect(x: 0, y: 80, width: 600, height: 200))
-    let (refused, _, _) = judged(Page(), at: atLink, corrected: { _ in approximate }) { page in
+    let lacking = judged(Page(), at: atLink, corrected: { _ in approximate }) { page in
       page.list.add(approximate)
       page.slide()
       return page.veil
     }
-    XCTAssertEqual(refused.reason, .otherControlOnTop)
-    XCTAssertFalse(refused.onTopControl)
-    XCTAssertEqual(refused.hitCorrection, .changed)
-    XCTAssertNil(StalePointRecord(refused, ms: 0).wire["controlRole"])
-    XCTAssertEqual(stalePointOutcome(refused, ms: 0, reads: reads).refusal?.message, "The screen changed since the screenshot: at this point the app now answers an AXGroup the screenshot did not show, over the AXLink \"Open\" it showed there, so what a click would reach is not known. Nothing was sent. Call getScreenshot for a new screenshot and aim again from what it shows.")
+    XCTAssertFalse(lacking.verdict.refused, "a post-wait group the record lacks: \(lacking.verdict.reason)")
+
     for point in [atLink, atText] {
-      let scrim = judged(Page(), at: point, corrected: { $0.veil }) { $0.veil }
-      XCTAssertFalse(scrim.verdict.refused, "a scrim at \(point)")
-      XCTAssertEqual(scrim.verdict.reason, .sameElement)
-      XCTAssertEqual(scrim.verdict.hitCorrection, .same)
-      XCTAssertEqual(scrim.sleeps, [stalePointCorrectionMs])
+      let same = judged(Page(), at: point, corrected: { $0.veil }) { $0.veil }
+      XCTAssertFalse(same.verdict.refused, "a scrim at \(point)")
+      XCTAssertEqual(same.verdict.reason, .sameElement)
+      XCTAssertEqual(same.verdict.hitCorrection, .same)
     }
-    let atOnce = judged(Page(), at: atLink) { page in
-      page.list.add(approximate)
-      return approximate
+    let unreadB = judged(Page(), at: atLink, corrected: { $0.bText }) { page in
+      page.slide()
+      page.bText.actionsUnread = true
+      return page.veil
     }
-    XCTAssertNotEqual(atOnce.verdict.reason, .otherControlOnTop, "no wait, no uncorrected refusal (main's #330 judges it)")
+    XCTAssertFalse(unreadB.verdict.refused, "B's text whose actions do not read: \(unreadB.verdict.reason)")
     let unanswered = judged(Page(), at: atLink, corrected: { _ in nil }) { page in
       page.slide()
       return page.veil
     }
     XCTAssertFalse(unanswered.verdict.refused)
     XCTAssertEqual(unanswered.verdict.hitCorrection, StalePointHitCorrection.none)
-    // A cut record (a child of the list the walk did not record) cannot say the group is new: kept.
-    let cut = Page()
-    let missed = Node("AXGroup", CGRect(x: 0, y: 250, width: 600, height: 20))
-    cut.list.add(missed)
-    let uncertain = Node("AXGroup", CGRect(x: 0, y: 80, width: 600, height: 200))
-    let partial = judged(cut, at: atLink, skipping: [ObjectIdentifier(missed)], corrected: { _ in uncertain }) { page in
-      page.list.add(uncertain)
-      page.slide()
+  }
+
+  /// A window of the app's that opened over the point during the wait (a popup): the re-hit answers in it, and #452's
+  /// check on that re-hit refuses `appWindowOverPoint`; the verdict keeps the action's own hit.
+  func testAPopupArrivingDuringTheWaitRefuses() {
+    let pid: pid_t = 990_031
+    let browser = ListedWindow(number: 28, owner: pid, layer: 0, bounds: CGRect(x: 0, y: 0, width: 600, height: 400))
+    let popup = ListedWindow(number: 49, owner: pid, layer: 0, bounds: CGRect(x: 100, y: 100, width: 200, height: 100))
+    var list = [browser]
+    let page = Page()
+    let (verdict, _, _) = judged(page, at: atLink, corrected: { _ in nil }, place: .otherWindow(49), windowCheck: { [self] again in
+      appWindowVerdict(at: atLink, hit: again.element, place: again.place, target: 28, pid: pid, windows: { list })
+    }) { page in
+      list = [popup, browser]
       return page.veil
     }
-    XCTAssertFalse(partial.verdict.refused, "\(partial.verdict.reason)")
-    XCTAssertEqual(partial.verdict.hitCorrection, .changed)
-    // A post-wait hit whose actions do not read is not known to act on nothing: kept.
-    let unread = Node("AXGroup", CGRect(x: 0, y: 80, width: 600, height: 200))
-    unread.actionsUnread = true
-    let unclassified = judged(Page(), at: atLink, corrected: { _ in unread }) { page in
-      page.list.add(unread)
-      page.slide()
+    XCTAssertEqual(verdict.reason, .appWindowOverPoint)
+    XCTAssertEqual(verdict.overWindow, 49)
+    XCTAssertEqual(verdict.overBy, .axHit)
+    XCTAssertEqual(verdict.hitCorrection, StalePointHitCorrection.none)
+    XCTAssertEqual(StalePointRecord(verdict, ms: 0).wire["hitCorrection"] as? String, "none")
+    // The popup gone again before the re-hit: the observed window answers, and the verdict is the tree's.
+    let calm = judged(Page(), at: atLink, corrected: { $0.aText }, windowCheck: { again in
+      appWindowVerdict(at: CGPoint(x: 150, y: 115), hit: again.element, place: again.place, target: 28, pid: pid, windows: { [browser] })
+    }) { $0.veil }
+    XCTAssertFalse(calm.verdict.refused)
+  }
+
+  /// #433's candidates beneath the veil: the one the corrected hit names is judged by #433's test, whichever it is. Two
+  /// candidates at A's box, the later one (C) the first survivor: the front A widened 10 pt still holds the point with its
+  /// label, kept, now as the control beneath; A relabelled refuses as #433 refuses it.
+  func testTheCandidateTheHitNamesIsJudgedByTheOverlayTest() {
+    func twoCandidates() -> (Page, Node) {
+      let page = Page()
+      let other = Node("AXLink", CGRect(x: 20, y: 100, width: 200, height: 30), title: "Other")
+      page.list.children.insert(other, at: 2)
+      other.parent = page.list
+      return (page, other)
+    }
+    let (widenedPage, other) = twoCandidates()
+    let widened = judged(widenedPage, at: atLink, corrected: { $0.a }) { page in
+      page.a.frame = CGRect(x: 20, y: 100, width: 210, height: 30)
       return page.veil
     }
-    XCTAssertFalse(unclassified.verdict.refused, "\(unclassified.verdict.reason)")
-    // Outside a web area (#330 stands aside), an unrecorded group as the first hit: refused only after the wait, never
-    // on an engine that answers at once.
-    for late in [false, true] {
-      let group = Node("AXGroup", CGRect(x: 0, y: 80, width: 600, height: 200))
-      let native = judged(Page(native: true), at: atLink, corrected: late ? { _ in group } : nil) { page in
-        page.list.add(group)
-        return group
-      }
-      XCTAssertEqual(native.verdict.reason, late ? .otherControlOnTop : .nonInteractiveHit, "late \(late)")
+    XCTAssertFalse(widened.verdict.refused, "\(widened.verdict.reason)")
+    XCTAssertTrue(widened.verdict.underlying?.element === widenedPage.a, "the named candidate, not \(other.title ?? "")")
+    let relabelled = judged(twoCandidates().0, at: atLink, corrected: { $0.a }) { page in
+      page.a.title = "Delete"
+      return page.veil
     }
+    XCTAssertEqual(relabelled.verdict.reason, .relabelled)
+    XCTAssertTrue(relabelled.verdict.underlyingRefused)
+    XCTAssertEqual(relabelled.verdict.underlying?.title, "Open")
+    XCTAssertEqual(relabelled.verdict.hitCorrection, .changed)
   }
 
   /// `overcontrol`: the veil over an unchanged A, the corrected hit on A or its text: A is the recorded control beneath,
@@ -5052,7 +5138,7 @@ final class OtherControlOnTopTests: XCTestCase {
   }
 
   /// No veil: the record takes A at the link's point. B slid over A, a hit on B's text (main: `nonInteractiveHit`, kept)
-  /// refuses on its control; a hit on A's own text keeps, on Chromium and at once.
+  /// refuses on its control; a hit on A's own text keeps, on Chromium and at once, A widened by its count too (`like`).
   func testANonInteractiveHitIsJudgedByItsControl() {
     for corrected in [false, true] {
       let onB = judged(Page(veiled: false), at: atLink, corrected: corrected ? { $0.bText } : nil) { page in
@@ -5065,9 +5151,6 @@ final class OtherControlOnTopTests: XCTestCase {
       XCTAssertEqual(stalePointOutcome(onB.verdict, ms: 0, reads: reads).refusal?.message, "The screen changed since the screenshot: the AXButton \"Compose\" now lies on top at this point, over the AXLink \"Open\" the screenshot showed there, and a click would reach it. Nothing was sent. Call getScreenshot for a new screenshot and aim again from what it shows.")
       let onA = judged(Page(veiled: false), at: atLink, corrected: corrected ? { $0.aText } : nil) { $0.aText }
       XCTAssertEqual(onA.verdict.reason, .nonInteractiveHit, "Chromium \(corrected)")
-      XCTAssertFalse(onA.verdict.refused)
-      // `like`: A widened by its count (out of #305's 2 pt, still holding the point), the hit on its text: A is the node
-      // as found, kept.
       let grown = judged(Page(veiled: false), at: atLink, corrected: corrected ? { $0.aText } : nil) { page in
         page.a.frame = CGRect(x: 20, y: 100, width: 212, height: 30)
         return page.aText

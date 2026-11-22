@@ -7838,6 +7838,46 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   failures. Not measured live: this build.
   Date/Author: 2026-11-22, cursor235's builder for #442.
 
+- Decision (#442, ruling 1078, the review of adebc77a2 by reviewer-high, 2026-11-22; narrows the entry above,
+  StalePoint.swift `otherControlOnTopVerdict`, `movedOverPoint`, `appWindowVerdict`): **`otherControlOnTop` refuses only
+  a known control that moved over the target; anything unread, unrecorded or inconclusive keeps main's verdict.** The
+  review found 2 P1 and 5 P2, reproduced on fakes: six false refusals and two wrong-target keeps. The cause: a control
+  not found in the record was taken for a different control, and the recorded node's live parent was taken for its
+  owner. So `heldAtPoint` and the no-control refusal (`recordLacks`) are gone, and the rule is:
+  (1) The re-hit after the 80 ms wait is a `WindowHit` and goes through #452's window check first (`appWindowVerdict`,
+  extracted from `guardedPointVerdict`, with the window list read afresh): a window of the app's that arrived over the
+  point during the wait refuses `appWindowOverPoint`. The action's own hit stays the verdict's, as before. The click's
+  guard, the drag's and the element route's recheck all build the same check (`Engine.stalePointWindowCheck`).
+  (2) Where #433's check ran, a candidate beneath the layer that the corrected hit's control names is judged by #433's
+  own test (`underlyingRefusal`: its handle, its label, its frame under the pointer), whichever candidate it is and not
+  only the first survivor. Passing, it becomes the meta's control beneath and the point is kept; failing, the point is
+  refused as #433 refuses (`relabelled`, `frameMoved`).
+  (3) Otherwise the control refuses `otherControlOnTop` only when all of these hold (`movedOverPoint`): (a) it is live
+  (`firstActing` read it now; an unread role, actions or parent ends the walk inconclusive, and that keeps); (b) the record
+  holds it by handle as a control (an interactive role or AXPress read then, as `controlVouches` asks); (c) its every
+  recorded frame, widened 2 pt, lies away from the point the model meant; (d) it is not the recorded control at the
+  point. For (d), the node itself, the node's recorded control (`ScreenshotNode.control` by handle, never a live parent),
+  and the recorded control of the hit, where the hit is recorded content whose shown frame held the point (a link's text
+  overflowing its frame, #443's `contentVouches` shape).
+  The no-control refusal and its sentence are gone; `controlRole` is always set on the refusal.
+  Proven offline (`OtherControlOnTopTests`, 10 tests). These are the reviewer's eight shapes:
+  - the veil moved into B as B slides over refuses (B is recorded elsewhere);
+  - an overflowing link whose text's parent no longer reads, the corrected hit on the link, keeps;
+  - a front button the cut walk omitted keeps;
+  - a popup arriving during the wait refuses `appWindowOverPoint`;
+  - an inert group that gained AXPress keeps, as main does (a declared limit);
+  - a re-created scrim keeps;
+  - a child Chromium hits that no parent lists keeps;
+  - with two candidates, the front one widened 10 pt keeps, as the named control beneath.
+  Added beside them: the named candidate relabelled refuses `relabelled`, and a post-wait group the record lacks, an
+  unread hit, the recorded veil and no second answer keep. `slideover` still refuses at both points, on Chromium and
+  Safari-like, and a non-interactive hit on B's text still refuses.
+  Against adebc77a2's rule put behind the new signature, every one of those shapes fails (18 assertions in 5 tests),
+  each by its own assertion. Eleven mutations each fail a test: the window check, the corrected hit, the named candidate
+  and its keep, (b) twice, (c), (d)'s node and its content, the content's shown frame, and an unknown control taken for
+  none. #433's, #340's and #443's tests are unchanged. 1617 swift tests, 0 failures. Not measured live: this build.
+  Date/Author: 2026-11-22, cursor235's builder for #442.
+
 ## Outcomes & Retrospective
 
 Pending for the initiative — written at finish. M1a's interim account (2026-10-20) follows; the full record is `docs/doperpowers/specs/2026-10-18-own-native-engine-m1a-report.md`.

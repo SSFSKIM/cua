@@ -36,8 +36,9 @@ import Foundation
 // an inert node kept on its own handle whose recorded control is confirmed destroyed, and which lies in another control
 // now, refuses (`controlGoneVerdict`: a decoration moved from a replaced link into its replacement). #442 (ruling 1073): a
 // point kept through #433's check or past a non-interactive hit is judged by the control the corrected hit lies in (on
-// Chromium, the point hit-tested again after `stalePointCorrectionMs`); another live control on top refuses
-// (`otherControlOnTopVerdict`: a button slid over an unchanged link under a veil). #452
+// Chromium, the point hit-tested again after `stalePointCorrectionMs`, through #452's window check); a known control
+// that moved over the point refuses (`otherControlOnTopVerdict`, ruling 1078: a button slid over an unchanged link under
+// a veil), and anything unread, unrecorded or inconclusive keeps. #452
 // (design ruling 928, narrowed by the qualification's measurements): the pointer's events are posted to the app's process
 // stamped with the observed window (Mouse.swift `stampWindow`), so the app delivers them to that window whatever lies over
 // it; a point the app's own hit-test answers in another of its windows (Chrome's omnibox popup, its `<datalist>` popup, a
@@ -453,9 +454,8 @@ enum StalePointReason: String, Equatable {
   /// it in, and what it lies in now is not what the screenshot showed (`decomove`: a decoration moved into a new link).
   case controlGone
   /// Refused (#442, `otherControlOnTopVerdict`): on a keep through an inert layer (#433's) or past a non-interactive hit,
-  /// the corrected hit lies in a live control the record does not hold at the point (`slideover`: button B slid over an
-  /// unchanged link A under a veil), or, on an engine whose hit corrects late, still names an element the record lacks
-  /// with no control.
+  /// the corrected hit lies in a live control the record holds elsewhere, moved over the point (`movedOverPoint`;
+  /// `slideover`: button B slid over an unchanged link A under a veil).
   case otherControlOnTop
 
   var refuses: Bool {
@@ -513,11 +513,9 @@ struct StalePointVerdict<Element> {
   var underlying: ScreenshotNode<Element>?
   var underlyingIdentity: StalePointIdentity?
   var underlyingRefused = false
-  /// #442: for `otherControlOnTop`, what the corrected hit names on top at the point: the live control it lies in
-  /// (`onTopControl`), or, on the uncorrected refusal, the hit itself, which acts on nothing and the record lacks; and the
-  /// role read of it then. `hitCorrection` is set whenever the guard took the hit again after `stalePointCorrectionMs`.
+  /// #442: for `otherControlOnTop`, the live control the corrected hit lies in, a known control that moved over the point,
+  /// and its role read then; `hitCorrection` is set whenever the guard took the hit again after `stalePointCorrectionMs`.
   var onTop: Element?
-  var onTopControl = false
   var onTopRole: String?
   var hitCorrection: StalePointHitCorrection?
   var refused: Bool { reason.refuses }
@@ -1049,16 +1047,18 @@ func recreatedHandle<Element>(of node: ScreenshotNode<Element>, near hit: Elemen
 ///
 /// #442: a point kept through an inert layer, or past a non-interactive hit, is judged once more by the control the hit
 /// lies in (`otherControlOnTopVerdict`); `correctedHit`, given only for an engine whose first answer at a new point is
-/// approximate (Chromium's), hit-tests the point again after `sleep` `stalePointCorrectionMs`, and that answer is judged.
+/// approximate (Chromium's), hit-tests the point again after `sleep` `stalePointCorrectionMs`, and that answer is judged,
+/// after #452's check of where it answered (`windowCheck`, `appWindowVerdict`).
 func stalePointVerdict<Element>(at point: CGPoint, windowShift: CGVector = .zero, nodes: [ScreenshotNode<Element>],
                                 frameless: [ScreenshotNode<Element>] = [],
                                 recorded: @escaping (Element) -> Bool? = { _ in nil }, hit first: Element?,
                                 rehit: () -> Element? = { nil }, sleep: (Double) -> Void = { _ in },
-                                correctedHit: (() -> Element?)? = nil,
+                                correctedHit: (() -> WindowHit<Element>)? = nil,
+                                windowCheck: (WindowHit<Element>) -> StalePointVerdict<Element>? = { _ in nil },
                                 reads: StalePointReads<Element>) -> StalePointVerdict<Element> {
   let kept = inertLayerVerdict(at: point, windowShift: windowShift, nodes: nodes, frameless: frameless, recorded: recorded, hit: first,
                                rehit: rehit, sleep: sleep, reads: reads)
-  return otherControlOnTopVerdict(kept, correctedHit: correctedHit, sleep: sleep, reads)
+  return otherControlOnTopVerdict(kept, correctedHit: correctedHit, windowCheck: windowCheck, sleep: sleep, reads)
 }
 
 /// `stalePointVerdict` before #442's check: #296's verdict, #443's `controlGone`, then #433's check of the control beneath
@@ -1104,86 +1104,96 @@ private func inertLayerVerdict<Element>(at point: CGPoint, windowShift: CGVector
   return refused
 }
 
-/// #442 (ruling 1073): which control a click at a kept point reaches, where the tree alone cannot say. #433's check vouches
-/// for the recorded controls beneath an inert layer, and a non-interactive hit (`nonInteractiveHit`) is kept without
-/// asking whose control it lies in, but neither sees stacking: kit `probe/442-measure`, `slideover`, button B slid by a
-/// transform over an unchanged link A under a veil, kept and landed on B (Electron) or pressed the veil to no effect
-/// (CfT's element route). The page's own hit test does see it: the corrected AX hit named `elementFromPoint`'s element in
-/// 1,694 of 1,695 rows, through `pointer-events: none` and by z-order. So, only on those two keep paths (the verdict
-/// kept, and #433's check ran and kept, or the reason is `nonInteractiveHit`):
+/// #442 (rulings 1073 and 1078): which control a click at a kept point reaches, where the tree alone cannot say. #433's
+/// check vouches for the recorded controls beneath an inert layer, and a non-interactive hit (`nonInteractiveHit`) is
+/// kept without asking whose control it lies in, but neither sees stacking: kit `probe/442-measure`, `slideover`, button B
+/// slid by a transform over an unchanged link A under a veil, kept and landed on B (Electron) or pressed the veil to no
+/// effect (CfT's element route). The page's own hit test does see it: the corrected AX hit named `elementFromPoint`'s
+/// element in 1,694 of 1,695 rows, through `pointer-events: none` and by z-order. So, only on those two keep paths (the
+/// verdict kept, and #433's check ran and kept, or the reason is `nonInteractiveHit`):
 /// - The hit judged is the corrected one: with `correctedHit` (Chromium, whose first answer is the deepest element by
-///   bounds, corrected 25-61 ms later with no signal), the point hit-tested again after `stalePointCorrectionMs`; otherwise
-///   the action's own. `hitCorrection` records whether the second answer differed.
-/// - Its control is the nearest element at or above it that acts on its own (`firstActing`, #443's `liveControl`: an
-///   interactive role or AXPress read now, below its document). A live control the record does not hold at the point
-///   (`heldAtPoint`) refuses, `otherControlOnTop`.
-/// - With no control (the hit and its ancestors read inert up to the document), a post-wait hit the record is known to
-///   lack (`recordLacks`) refuses too: an answer still approximate, or something new at the point. A recorded one keeps
-///   (a scrim's corrected answer is the scrim itself, as is CfT's approximate one: probe/442-measure README b7beb361).
-/// Every other case keeps the verdict as it came: no hit, an ancestor that does not classify, no answer to the second
-/// hit-test.
-func otherControlOnTopVerdict<Element>(_ kept: StalePointVerdict<Element>, correctedHit: (() -> Element?)?, sleep: (Double) -> Void,
+///   bounds, corrected 25-61 ms later with no signal), the point hit-tested again after `stalePointCorrectionMs`, and that
+///   answer first goes through #452's window check (`windowCheck`: a window of the app's that arrived over the point
+///   during the wait refuses `appWindowOverPoint`); otherwise the action's own. The verdict keeps the action's own hit;
+///   `hitCorrection` records whether the second answer differed.
+/// - Its control is the nearest element at or above it that acts on its own (`firstActing`, #443's `liveControl`).
+/// - A recorded candidate of #433's beneath the layer that the hit names is judged by #433's test (its handle, its label,
+///   its frame under the pointer: `underlyingRefusal`), whichever it is, not only the first survivor.
+/// - Otherwise the control refuses (`otherControlOnTop`) only as a known control that moved over the target
+///   (`movedOverPoint`): live, recorded by handle as a control, at a recorded frame that did not hold the point, and not
+///   the recorded control at the point (the node, the node's recorded control, or the recorded control of recorded
+///   content the screenshot showed at the point that the hit is).
+/// Anything unread, unrecorded or inconclusive keeps the verdict as it came (ruling 1078): no hit, no control or one
+/// that does not classify, a control the record lacks (a cut walk) or holds as inert, no answer to the second hit-test.
+func otherControlOnTopVerdict<Element>(_ kept: StalePointVerdict<Element>, correctedHit: (() -> WindowHit<Element>)?,
+                                       windowCheck: (WindowHit<Element>) -> StalePointVerdict<Element>?, sleep: (Double) -> Void,
                                        _ reads: StalePointReads<Element>) -> StalePointVerdict<Element> {
-  guard !kept.refused, kept.node != nil, kept.reason == .nonInteractiveHit || kept.underlying != nil else { return kept }
+  guard !kept.refused, let node = kept.node, let point = kept.point,
+        kept.reason == .nonInteractiveHit || kept.underlying != nil else { return kept }
   var verdict = kept
   var hit = kept.hit
   if let correctedHit {
     sleep(stalePointCorrectionMs)
     let again = correctedHit()
-    verdict.hitCorrection = again.map { now in kept.hit.map { reads.same($0, now) } == true ? .same : .changed } ?? StalePointHitCorrection.none
-    hit = again
+    let correction = again.element.map { now in kept.hit.map { reads.same($0, now) } == true ? .same : .changed } ?? StalePointHitCorrection.none
+    verdict.hitCorrection = correction
+    if var over = windowCheck(again) {
+      over.hitCorrection = correction
+      return over
+    }
+    hit = again.element
   }
-  guard let hit else { return verdict }
-  var refused = StalePointVerdict(reason: .otherControlOnTop, node: kept.node, identity: kept.identity, current: kept.current, hitRole: kept.hitRole,
+  guard let hit, let control = firstActing(from: hit, reads).element else { return verdict }
+  let meant = CGPoint(x: point.x - kept.windowShift.dx, y: point.y - kept.windowShift.dy)
+  // #433's candidates beneath the layer: the one the hit names is the one judged.
+  if kept.underlying != nil,
+     let named = underlyingTargets(of: node, current: kept.current ?? node.element, at: meant, in: kept.nodes, reads)
+       .first(where: { reads.same($0.element, control) }) {
+    let judged = underlyingRefusal(named, at: point, windowShift: kept.windowShift, hit: hit, nodes: kept.nodes, frameless: kept.frameless,
+                                   recorded: kept.recorded, reads)
+    guard let reason = judged.refusal else {
+      (verdict.underlying, verdict.underlyingIdentity) = (named, judged.identity)
+      return verdict
+    }
+    var refused = refusal(of: kept, reason: reason, hitCorrection: verdict.hitCorrection)
+    (refused.underlying, refused.underlyingIdentity, refused.labelNow, refused.underlyingRefused) = (named, judged.identity, judged.labelNow, true)
+    return refused
+  }
+  guard movedOverPoint(control, hit: hit, node: node, at: meant, kept.nodes, reads) else { return verdict }
+  var refused = refusal(of: kept, reason: .otherControlOnTop, hitCorrection: verdict.hitCorrection)
+  (refused.onTop, refused.onTopRole) = (control, reads.role(control))
+  return refused
+}
+
+/// #442: a refusal of a kept verdict, carrying what it judged (#433's check included) and the hit's correction.
+private func refusal<Element>(of kept: StalePointVerdict<Element>, reason: StalePointReason,
+                              hitCorrection: StalePointHitCorrection?) -> StalePointVerdict<Element> {
+  var refused = StalePointVerdict(reason: reason, node: kept.node, identity: kept.identity, current: kept.current, hitRole: kept.hitRole,
                                   hit: kept.hit, gaps: kept.gaps, point: kept.point, windowShift: kept.windowShift, nodes: kept.nodes,
                                   frameless: kept.frameless, recorded: kept.recorded, webAreaReads: kept.webAreaReads,
                                   newElementReads: kept.newElementReads)
-  (refused.underlying, refused.underlyingIdentity, refused.hitCorrection) = (kept.underlying, kept.underlyingIdentity, verdict.hitCorrection)
-  switch firstActing(from: hit, reads) {
-  case .unknown: return verdict
-  case .control(let control):
-    if heldAtPoint(control, hit: hit, kept, reads) { return verdict }
-    (refused.onTop, refused.onTopControl, refused.onTopRole) = (control, true, reads.role(control))
-    return refused
-  case .none:
-    guard correctedHit != nil, recordLacks(hit, kept, reads) else { return verdict }
-    (refused.onTop, refused.onTopRole) = (hit, reads.role(hit))
-    return refused
-  }
+  (refused.underlying, refused.underlyingIdentity, refused.hitCorrection) = (kept.underlying, kept.underlyingIdentity, hitCorrection)
+  return refused
 }
 
-/// #442: whether the record is known to lack `hit`: it is no recorded element (framed, frameless, or in the handle map),
-/// and its nearest recorded ancestor had every child recorded (#330's `recorded` answer), so the walk did not merely miss
-/// it (a node cap, a deadline, the width rule) where the screenshot may well have shown it. A record that cannot say keeps.
-func recordLacks<Element>(_ hit: Element, _ verdict: StalePointVerdict<Element>, _ reads: StalePointReads<Element>) -> Bool {
-  guard verdict.recorded(hit) == nil, !(verdict.nodes + verdict.frameless).contains(where: { reads.same($0.element, hit) }) else { return false }
-  var next = reads.parent(hit)
-  var levels = 0
-  while let element = next, levels < stalePointAncestorLevels {
-    if let complete = verdict.recorded(element) { return complete }
-    (next, levels) = (reads.parent(element), levels + 1)
+/// #442 (ruling 1078): whether `control`, live (`firstActing` read it now), is a known control that moved over the target:
+/// recorded by its own handle as a control (an interactive role or AXPress read then, as `controlVouches` asks), its every
+/// recorded frame (2 pt widened) away from the point the model meant (`meant`, the screenshot's space), and none of the
+/// recorded controls at the point: not `node` itself, not `node`'s recorded control (`ScreenshotNode.control`, by handle,
+/// never the live parent), and not the recorded control of `hit` where the hit is recorded content whose shown frame held
+/// the point (a link's text overflowing its frame). Unrecorded, recorded inert or frameless: not known, so no.
+func movedOverPoint<Element>(_ control: Element, hit: Element, node: ScreenshotNode<Element>, at meant: CGPoint,
+                             _ nodes: [ScreenshotNode<Element>], _ reads: StalePointReads<Element>) -> Bool {
+  let records = nodes.filter { reads.same($0.element, control) }
+  guard !records.isEmpty, records.allSatisfy({ ($0.actionable == true || $0.pressRecorded) && !$0.frame.isNull }),
+        !records.contains(where: { holdsPoint($0.frame.insetBy(dx: -stalePointFrameTolerance, dy: -stalePointFrameTolerance), meant) })
+  else { return false }
+  if reads.same(node.element, control) || node.control.map({ reads.same($0, control) }) == true { return false }
+  let content = nodes.contains { recorded in
+    reads.same(recorded.element, hit) && recorded.shown.map { holdsPoint($0, meant) } == true
+      && recorded.control.map { reads.same($0, control) } == true
   }
-  return false
-}
-
-/// #442: whether `control`, the one the corrected hit lies in, is one the record holds at the point: the node as the
-/// verdict found it (its own handle or one re-created in place) or the control it lies in now; #433's control beneath
-/// found on its own handle; or a recorded node the screenshot showed at the point and still in place, by handle or
-/// re-created (`recordedHitAtPoint`, #305's rule, which takes a re-created control beneath too, and any other recorded
-/// control there: `siblingstack`, two recorded controls stacked at the point, stays a declared limit, spike #479); or the
-/// recorded control of `hit` when the hit is its recorded content shown at the point, both in place (#443's
-/// `contentVouches`: a front link's text drawn outside the link's own frame).
-func heldAtPoint<Element>(_ control: Element, hit: Element, _ verdict: StalePointVerdict<Element>, _ reads: StalePointReads<Element>) -> Bool {
-  if let current = verdict.current,
-     reads.same(control, current) || firstActing(from: current, reads).element.map({ reads.same($0, control) }) == true {
-    return true
-  }
-  if verdict.underlyingIdentity == .handle, let underlying = verdict.underlying, reads.same(underlying.element, control) { return true }
-  // An inert hit's control is the one it lies in now (`liveControl(above:)`), which the content vouch compares.
-  if !reads.same(hit, control), contentVouches(hit, verdict, reads) { return true }
-  guard let point = verdict.point else { return false }
-  return recordedHitAtPoint(control, at: point, windowShift: verdict.windowShift, nodes: verdict.nodes, frameless: verdict.frameless,
-                            recorded: verdict.recorded, reads) != nil
+  return !content
 }
 
 /// #443: a point #296 keeps on an inert node found by its own handle (no interactive role, no AXPress recorded, read at
@@ -1648,19 +1658,29 @@ func guardedPointVerdict<Element>(at point: CGPoint, hit: Element?, place: Point
   if let target, let recorded, let new = newWindowAbove(target: target, pid: pid, recorded: recorded, list: list()) {
     return StalePointVerdict(reason: .newWindow, hit: hit, point: point, newWindow: new)
   }
+  if let over = appWindowVerdict(at: point, hit: hit, place: place, target: target, pid: pid, windows: list) { return over }
+  return tree()
+}
+
+/// #452's refusal from where a hit-test answered (`place`): in another window of the app's that covers the point in the
+/// list (`axHit`), or in a popover of the observed window with a window of the app's over the observed one at the point
+/// (`popover`); nil otherwise. `guardedPointVerdict` runs it on the action's hit-test, and #442's check on its re-hit
+/// after the wait, with a list read then (`windows`, read only when a rule needs it).
+func appWindowVerdict<Element>(at point: CGPoint, hit: Element?, place: PointHitPlace, target: CGWindowID?, pid: pid_t,
+                               windows: () -> [ListedWindow]) -> StalePointVerdict<Element>? {
   switch place {
   case .otherWindow(let number):
     // Only a window the screenshot can have shown over the point (`hitWindowCovers`); otherwise main's verdict.
-    if let number, hitWindowCovers(number, point: point, target: target, list: list()) {
+    if let number, hitWindowCovers(number, point: point, target: target, list: windows()) {
       return StalePointVerdict(reason: .appWindowOverPoint, hit: hit, point: point, overWindow: number, overBy: .axHit)
     }
   case .observedWindow(inPopover: true):
-    if let target, let over = appWindowOverPoint(point, target: target, pid: pid, list: list()) {
+    if let target, let over = appWindowOverPoint(point, target: target, pid: pid, list: windows()) {
       return StalePointVerdict(reason: .appWindowOverPoint, hit: hit, point: point, overWindow: over.number, overBy: .popover)
     }
   case .observedWindow(inPopover: false), .unread: break
   }
-  return tree()
+  return nil
 }
 
 /// The meta's `stalePoint` (#296): what the guard decided ("kept" | "refused"), why, how it found the node, the recorded
@@ -1701,7 +1721,7 @@ struct StalePointRecord: Equatable {
   let underlyingRole: String?
   let underlyingIdentity: StalePointIdentity?
   /// #443: for `controlGone`, the role of the recorded control found gone; #442: for `otherControlOnTop`, the role of
-  /// the live control on top (none on the uncorrected refusal, whose hit acts on nothing).
+  /// the live control on top.
   let controlRole: String?
   /// #442: whether the guard took the hit again after `stalePointCorrectionMs` (Chromium, on its two keep paths), and
   /// whether that answer named the first one's element.
@@ -1722,7 +1742,7 @@ struct StalePointRecord: Equatable {
     underlyingRole = verdict.underlying?.role
     underlyingIdentity = verdict.underlyingIdentity
     controlRole = verdict.reason == .controlGone ? verdict.node?.controlRole
-      : verdict.reason == .otherControlOnTop && verdict.onTopControl ? verdict.onTopRole : nil
+      : verdict.reason == .otherControlOnTop ? verdict.onTopRole : nil
     hitCorrection = verdict.hitCorrection
     self.ms = ms
     self.rechecked = rechecked
@@ -1993,17 +2013,13 @@ func inertOutlivedControl(node: String, control: String, afterActivation: Bool =
     "The screen changed since the screenshot: the point lies on an \(node) that does not act on its own, inside the \(control) the screenshot showed there; that control is gone, and the \(node) now lies in whatever replaced it. \(sent) Call getScreenshot for a new screenshot and aim again from what it shows.")
 }
 
-/// #442's refusal: the corrected hit at the point lies in a live control (`top`) the record does not hold there, drawn
-/// over what the screenshot showed (`shown`: the control beneath an inert layer, else the element there), which a click
-/// would reach instead; or (`control` false) the app's hit-test still names an element the screenshot did not show, which
-/// acts on nothing, so what a click reaches is not known. The same name as the guard's other refusals.
-func otherControlOnTopRefusal(top: String, control: Bool, shown: String, afterActivation: Bool = false) -> EngineError {
+/// #442's refusal: the corrected hit at the point lies in a live control (`top`) the screenshot showed elsewhere, now
+/// drawn over what it showed at the point (`shown`: the control beneath an inert layer, else the element there), which a
+/// click would reach instead. The same name as the guard's other refusals.
+func otherControlOnTopRefusal(top: String, shown: String, afterActivation: Bool = false) -> EngineError {
   let sent = afterActivation ? "The app was activated in the background, but nothing was pressed." : "Nothing was sent."
-  let change = control
-    ? "the \(top) now lies on top at this point, over the \(shown) the screenshot showed there, and a click would reach it"
-    : "at this point the app now answers an \(top) the screenshot did not show, over the \(shown) it showed there, so what a click would reach is not known"
   return EngineError(name: "screenChangedSinceScreenshot",
-    "The screen changed since the screenshot: \(change). \(sent) Call getScreenshot for a new screenshot and aim again from what it shows.")
+    "The screen changed since the screenshot: the \(top) now lies on top at this point, over the \(shown) the screenshot showed there, and a click would reach it. \(sent) Call getScreenshot for a new screenshot and aim again from what it shows.")
 }
 
 /// #316's rule W's refusal: the same name as the guard's other refusals, since the model's remedy is the same (a new
@@ -2048,7 +2064,6 @@ func stalePointOutcome<Element>(_ verdict: StalePointVerdict<Element>, ms: Doubl
     return (record, otherControlOnTopRefusal(
       top: stalePointName(role: verdict.onTopRole, title: reads.title(top), description: reads.description(top),
                           value: verdict.onTopRole == "AXStaticText" ? reads.value(top) : nil),
-      control: verdict.onTopControl,
       shown: stalePointName(role: shown.role, title: shown.title, description: shown.description, value: shown.value),
       afterActivation: afterActivation))
   }
@@ -2078,16 +2093,24 @@ extension Engine {
   /// Chromium-specific rule here decides it.
   func stalePointCorrectsLate(_ app: ResolvedApp) -> Bool { webAccessibility.pageEngine(app.appPath) == .chromium }
 
+  /// #442 with #452: the window check on the re-hit after the wait, with the window list read afresh (a window of the
+  /// app's may have opened over the point meanwhile).
+  func stalePointWindowCheck(at point: CGPoint, target: CGWindowID?, pid: pid_t, windows: @escaping () -> [ListedWindow])
+    -> (WindowHit<AXUIElement>) -> StalePointVerdict<AXUIElement>? {
+    { again in appWindowVerdict(at: point, hit: again.element, place: again.place, target: target, pid: pid, windows: windows) }
+  }
+
   /// The guard at a coordinate pointer's posted point, live (`stalePointVerdict` over the Accessibility API), with `hit` the
   /// hit-test the action already took there and `windowOrigin` the origin of the window the point was placed in, now; its
   /// time covers the reads it adds. `rehit` hit-tests the point again (the action's own hit-test). `windowID` is the number
   /// of the window the point was placed in, which #316's rule W looks above among `appPid`'s windows. `place` is where
   /// that hit-test answered, #452's signal, and `hitMs` its time (the meta's `hitMs`). `hitTest` is the bare hit-test at
-  /// the point, which #442's check takes again after `stalePointCorrectionMs` on a Chromium app (`correctedHit`); it
-  /// never stands in for the action's own hit, whose outcome later steps read.
+  /// the point with where it answered, which #442's check takes again after `stalePointCorrectionMs` on a Chromium app
+  /// (`correctedHit`) and puts through #452's window check (`stalePointWindowCheck`); it never stands in for the action's
+  /// own hit, whose outcome later steps read.
   func stalePointGuard(at point: CGPoint, windowOrigin: CGPoint, windowID: CGWindowID?, hit: AXUIElement?, place: PointHitPlace,
-                       hitMs: Double?, rehit: () -> AXUIElement?, hitTest: @escaping () -> AXUIElement?, app: ResolvedApp, appPid: pid_t,
-                       context: ExecutionContext)
+                       hitMs: Double?, rehit: () -> AXUIElement?, hitTest: @escaping () -> WindowHit<AXUIElement>, app: ResolvedApp,
+                       appPid: pid_t, context: ExecutionContext)
     -> (record: StalePointRecord, refusal: EngineError?, verdict: StalePointVerdict<AXUIElement>, shift: CGVector) {
     let started = monotonicMilliseconds()
     let correctedHit = stalePointCorrectsLate(app) ? hitTest : nil
@@ -2095,14 +2118,17 @@ extension Engine {
     let screenshot = context.connection.observedScreenshot(app: app)
     let shift = screenshot.map { CGVector(dx: windowOrigin.x - $0.windowOrigin.x, dy: windowOrigin.y - $0.windowOrigin.y) } ?? .zero
     var windowsMs: Double?
-    let verdict = guardedPointVerdict(at: point, hit: hit, place: place, target: windowID, pid: appPid, recorded: screenshot?.windowList, windows: {
+    func timedList() -> [ListedWindow] {
       let read = monotonicMilliseconds()
-      defer { windowsMs = monotonicMilliseconds() - read }
+      defer { windowsMs = (windowsMs ?? 0) + monotonicMilliseconds() - read }
       return onScreenWindowList()
-    }) {
+    }
+    let verdict = guardedPointVerdict(at: point, hit: hit, place: place, target: windowID, pid: appPid, recorded: screenshot?.windowList,
+                                      windows: timedList) {
       stalePointVerdict(at: point, windowShift: shift, nodes: screenshot?.nodes ?? [], frameless: screenshot?.frameless ?? [],
                         recorded: { screenshot?.recorded[ElementKey(element: $0)] }, hit: hit, rehit: rehit, sleep: { usleep(UInt32($0 * 1000)) },
-                        correctedHit: correctedHit, reads: reads)
+                        correctedHit: correctedHit,
+                        windowCheck: stalePointWindowCheck(at: point, target: windowID, pid: appPid, windows: timedList), reads: reads)
     }
     var outcome = stalePointOutcome(verdict, ms: monotonicMilliseconds() - started, app: app.displayName, reads: reads)
     outcome.record.windowsMs = windowsMs
@@ -2116,18 +2142,20 @@ extension Engine {
   func stalePointRecheck(at point: CGPoint, shift: CGVector, window: AXUIElement, windowID: CGWindowID?, appPid: pid_t,
                          app: ResolvedApp, context: ExecutionContext) -> StalePointRecheck<AXUIElement> {
     let rehit = { hitTest(window: window, pid: appPid, at: point) }
-    let correctedHit = stalePointCorrectsLate(app) ? rehit : nil
+    let correctedHit = stalePointCorrectsLate(app) ? { hitTestOutcome(window: window, pid: appPid, at: point, now: monotonicMilliseconds) } : nil
     let screenshot = context.connection.observedScreenshot(app: app)
     let fresh = hitTestOutcome(window: window, pid: appPid, at: point, now: monotonicMilliseconds)
     var windowsMs: Double?
-    let verdict = recheckedPointVerdict(at: point, hit: fresh, target: windowID, pid: appPid, windows: {
+    func timedList() -> [ListedWindow] {
       let read = monotonicMilliseconds()
-      defer { windowsMs = monotonicMilliseconds() - read }
+      defer { windowsMs = (windowsMs ?? 0) + monotonicMilliseconds() - read }
       return onScreenWindowList()
-    }) { hit in
+    }
+    let verdict = recheckedPointVerdict(at: point, hit: fresh, target: windowID, pid: appPid, windows: timedList) { hit in
       stalePointVerdict(at: point, windowShift: shift, nodes: screenshot?.nodes ?? [], frameless: screenshot?.frameless ?? [],
                         recorded: { screenshot?.recorded[ElementKey(element: $0)] }, hit: hit, rehit: rehit, sleep: { usleep(UInt32($0 * 1000)) },
-                        correctedHit: correctedHit, reads: .live)
+                        correctedHit: correctedHit,
+                        windowCheck: stalePointWindowCheck(at: point, target: windowID, pid: appPid, windows: timedList), reads: .live)
     }
     return StalePointRecheck(verdict, hitMs: fresh.ms, windowsMs: windowsMs)
   }

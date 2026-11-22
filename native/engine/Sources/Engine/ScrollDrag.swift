@@ -184,7 +184,8 @@ extension Engine {
       // new-window rule and #452's window of the app's over the point included, as a click's.
       let stale = stalePointGuard(at: start.point, windowOrigin: start.windowFrame.origin, windowID: windowID, hit: hit,
                                   place: hitOutcome.place, hitMs: hitOutcome.ms, rehit: { hitTest(window: start.window, pid: appPid, at: start.point) },
-                                  hitTest: { hitTest(window: start.window, pid: appPid, at: start.point) }, app: app, appPid: appPid,
+                                  hitTest: { hitTestOutcome(window: start.window, pid: appPid, at: start.point, now: monotonicMilliseconds) },
+                                  app: app, appPid: appPid,
                                   context: context)
       meta.stalePoint = stale.record
       pointer.staleRefusal = stale.refusal

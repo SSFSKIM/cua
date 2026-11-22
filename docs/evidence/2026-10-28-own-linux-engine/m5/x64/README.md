@@ -1240,6 +1240,159 @@ unsettled, so L4d reruns as class A.
 - key codes: 0;
 - titles over `h7/out/`: 44 files, 2603 of 2603 values the harness's own.
 
+## At H8 (0.4.3) (task 135), 2026-11-22
+
+**The counted reach at the frozen head H8 = `048140a2`, on the pinned linux-engine-v0.4.3 (rulings 990 (3), 993,
+1037).** 0.4.3 carries three tails: #459's, the in-floor tail, and the handle end's.
+- The list is the reach's "Chrome sources only" class A: D1, C1, K1, K2 and K3 at idle, then L2a, L4b, L4c and L4d at
+  twice the load.
+- H1 is the cross-check against its H6 record.
+- Item 9 and the doctor ran on the pinned asset.
+- x64's V5 is the owner-window sitting, outside this set.
+
+It all ran on the #171 x64 VM (`dc-linux171-1e68`), on private displays only. The records are in `h8/`: `out/`
+holds the counted steps, and `scripts/` holds task 135's launchers, extracts, transcripts, scans and lock lines.
+
+- **Every step exits 0 and passes by its own judge.** No row is unexercised or skipped, there are 0 false oks, and
+  there are 0 drops at a stale position.
+- **L4d passes ruling 993's bar.** Every Chrome cell has 0 false oks and 0 stale-position drops, t14-long's 100 and
+  t14-floor's `left` included. Electron's part has 30 of 30 exercised. The 0.4.2 baseline at H7.1 on x64 was 1 false
+  ok in 100 (#8).
+- **H1 is the same as its H6 record** in every judged cell. Only the accept-cursor measurement signal moves, and
+  within chance (Fisher p 0.75 and 0.50). The reach argument stands.
+- **Item 9 and the doctor pass.** The fresh-home install equals the pin. The doctor exits 0 with engine PASS on 0.4.3,
+  both on the fresh home and on the pinned home. The three chrome-route rows are BLOCKED as before.
+
+### Setup
+
+- **Checkout:** `t129-x64` (`.claude/worktrees/cua-171/.claude/worktrees/t129-x64`), moved to
+  `048140a2bde0f6398cc910c1aa14ecf2e7e51004`, detached, with 0 changes. `h8/scripts/setup.sh` and `.log.txt` record:
+  - package.json and the lockfile are the same as at its `npm ci` (ae3fc1e8), and so is xprobe's source;
+  - the Electron binary is present (44.9.0);
+  - google-chrome is 156.0.8078.73, and the extracted current stable is 158.0.8127.36, for K2.
+- **The acceptance home:** `~/.local/share/cua-171/m5/home-x64-043`, its own `node bin/cua.mjs install --engine` under
+  a HOME of the run's with an empty secret store (`install-home.sh`, `.log.txt`).
+  - Its engine's sha256 is `f1513e79…4d921f`, the pin's x64 asset. It reads `cua-engine 0.4.3 (ba5b043834ce)`, is
+    static-pie, and install.json has build `pinned`.
+  - `gate.mjs check --pinned` exited 0. That covers the attestation (release run 44966356899, and 44964231636, both
+    built from ba5b0438 on `m5-engine-043`), native/linux-engine as at ba5b0438, and the checkout at 048140a2, clean.
+- **Preconditions:** hold-sittings was absent before each step, and `df` showed 35–36G free (ruling 937).
+- **The commands:** each step's line is `gate.mjs print <step> --pinned home-x64-043 --holder h8-x64`
+  (`scripts/commands.txt`). print's stubs are kept in `out/print/`.
+  - Each step ran as `locked.sh h8-x64 timeout -s TERM -k 60 45m step.sh <step>`, one step per hold, released at its
+    end (`scripts/lock-lines.txt`).
+  - Inside the hold, `step.sh` waits up to 6 minutes for a quiet host, then execs the printed line.
+  - The driver stops at any nonzero exit; it reached none.
+
+### Item 9 and the doctor (`scripts/item9/`, `scripts/doctor-home/`)
+
+| part | UTC (11-22) | result |
+|---|---|---|
+| item 9 (`item9.sh` in `private-desktop.mjs --session`, `:1`) | 02:51:33–02:52:04 | **passes**. `cua install --engine` in a fresh home exit 0; the engine's sha256 equals the pin; static-pie; `cua-engine 0.4.3 (ba5b043834ce)`. `CUA_NATIVE_ENGINE=cua cua doctor` exit 0, engine PASS (0.4.3, build ba5b043834ce), `accessibility.enabled` PASS, the three chrome-route rows BLOCKED (no Chrome registration in an empty home). No engine process left, the fresh home removed, the watchdog clean |
+| the doctor on the pinned home (`item9.sh home`, `:1`, after the steps) | 04:57:10–04:57:12 | exit 0: every row PASS but the same three chrome-route rows BLOCKED; engine PASS on home-x64-043's 0.4.3. No engine process left, the watchdog clean |
+
+### The step table at H8
+
+The load columns are the 1-, 5- and 15-minute averages. The verdicts are as each step printed them.
+
+| step | SHA | acquire (UTC) | step start | release | min | exit | load at step start | load at release | end | verdict |
+|---|---|---|---|---|---:|---:|---|---|---|---|
+| D1 | 048140a2 | 11-22 02:52:06 | 02:52:06 | 03:16:05 | 24.0 | 0 | 0.89 0.47 0.24 | 1.01 0.99 0.79 | clean; end check clear | "The judges' verdict for `cua`: PASS." #358 declared: cua 368.7 ms against newest's 337.9, the interval [27.8, 32.7] within 40 ms (cua:0ms 365.8, [22.8, 32.8]). At H6: 371.4 against 338.7, [29.2, 36.9] |
+| C1 | 048140a2 | 11-22 03:16:05 | 03:16:15 | 03:18:25 | 2.2 | 0 | 0.93 0.97 0.79 | 0.87 0.97 0.82 | clean; end check clear | "Every late take reported, no false ok, no drop at a stale position, no missing landing, every notice refused once; every cell of the plan ran." (below) |
+| K1 | 048140a2 | 11-22 03:18:25 | 03:18:25 | 03:21:26 | 3.0 | 0 | 0.87 0.97 0.82 | 0.94 1.04 0.89 | clean; end check clear | "every verdict PASS"; the canary relative: draggable 9/9 held, largest 46.7, median 18.2, plain largest 1.6, bar 5 (Chrome 156.0.8078.73) |
+| K2 | 048140a2 | 11-22 03:21:26 | 03:21:26 | 03:24:27 | 3.0 | 0 | 0.94 1.04 0.89 | 1.23 1.28 1.02 | clean; end check clear | "every verdict PASS" on Chrome 158.0.8127.36; the canary: 9/9 held, largest 20.5, median 12.1, plain largest 1.2, bar 5 |
+| K3 | 048140a2 | 11-22 03:24:28 | 03:24:58 | 03:26:08 | 1.2 | 0 | 0.95 1.21 1.00 | 1.45 1.32 1.06 | clean; end check clear | "every drop whose page started it late landed inside B": dragstart-150 10/10, dragstart-400 10/10 |
+| H1 | 048140a2 | 11-22 03:26:08 | 03:26:58 | 03:45:05 | 18.1 | 0 | 0.97 1.21 1.03 | 1.17 1.00 0.96 | clean; end check clear | "No false ok, no drop at a stale position, no missing landing, no false error, every notice refused once; every cell of the plan ran." #365: 0 of 60. The cross-check (below) |
+| L2a | 048140a2 | 11-22 03:45:05 | 03:45:25 | 04:09:29 | 24.1 | 0 | 0.98 0.97 0.95 | 17.47 17.39 14.09 | clean; end check clear | "The judges' verdict for `cua`: PASS." |
+| L4b | 048140a2 | 11-22 04:09:29 | 04:13:20 | 04:27:11 | 13.8 | 0 | 0.94 8.38 11.13 | 17.50 16.78 14.78 | clean; end check clear | "Every late take reported, no false ok, no drop at a stale position, …": plain-long 300/300 landed, 0 of 300 answered unconfirmed; left and inzone-out 59 of 60 unconfirmed, 0 false ok. The `cua:accept` measurement lane's 5 false releases (1 answered ok) on inzone-out are listed apart, as at H6 (6, 3): that lane does not ship |
+| L4c | 048140a2 | 11-22 04:27:11 | 04:31:12 | 04:33:41 | 2.5 | 0 | 0.99 7.72 11.47 | 16.06 11.34 12.28 | clean; end check clear | the same sentence as C1's (below) |
+| L4d | 048140a2 | 11-22 04:33:41 | 04:37:01 | 04:57:10 | 20.1 | 0 | 0.98 6.00 9.97 | 17.41 17.27 15.45 | clean; end check clear | "No false ok, no drop at a stale position, no missing landing, no false error, every notice refused once; every cell of the plan ran." (below) |
+
+The idle steps started at a 1-minute load of 0.87–0.98, below the quiet wait's 1.0. The quiet waits took 0–50 s at idle
+and 200–241 s after a twice-load step.
+
+### C1 and L4c (ruling 931; rulings 954–956's freeze)
+
+From `h7-bands.mjs` (`bands-C1.txt`, `bands-L4c.txt`) and `late-takes.mjs` (`late-takes-*.txt`):
+
+| step | inside: landed after an in-hold take | edge: late takes, all reported | past: hold notices | unexercised | skipped | identified | press marks bound (press − send, server ms) |
+|---|---|---:|---|---:|---:|---:|---|
+| C1 | 10 / 10 (min 7) | 5 | 10 / 10 (min 7) | 0 | 0 | 40 / 40 | 40 / 40 (1–9, median 4) |
+| L4c | 10 / 10 (min 7) | 4 | 10 / 10 (min 7) | 0 | 0 | 40 / 40 | 40 / 40 (1–25, median 9) |
+
+- **The other counts:** 0 false ok, 0 unjudged, 0 missing landings and 0 harness Escapes. C1 has 24 landed and L4c 18,
+  none of them unconfirmed and none at a stale position.
+- **Each late take, judged in full:** the engine saw no take by its release (`noticed`). The answer was ok with the
+  hold notice, the read carried the late notice, and the next request was refused with it. `late_dnd` escaped, and
+  nothing landed.
+  - C1's takes came 0.3–1.7 ms after the release, and the engine's Escape 1.5–3.0 ms after it.
+  - L4c's takes came 1.1–5.1 ms after the release, and the Escape 1.7–10.2 ms after it.
+- **The stop's timer, as at H7:** some stops began up to about 1.5 ms before max(60, mark + 55): 12 rows of C1 and 2
+  of L4c by more than 1 ms. Every stop came well after its mark, and the judge doesn't credit by that rule.
+
+### L4d at H8: PASS (ruling 993's bar)
+
+From `l4d-h8.mjs` (`l4d-parts.txt`), with the judge's own `landingOf` and `pendingOf`.
+
+**The gate's reading is derived.** Counted rows carry no `release_sync`: drop-signals.mjs copies none of it from
+`--stats`, and a counted run takes no `--engine-stats`.
+- **The gate:** by ruling 993's rule, open on a Chrome source whose drop was let go with its take seen, with no floor
+  keepalive, and whose path after the take outlasted the 350 ms floor.
+- **The schedule:** derived the same way. `after_path` where the gate is open, `in_floor` where it is shut.
+- **The check on the derivation:**
+  - the open rows' last step came 24.3–31.6 ms before the release, which is the tail's span of 3 × 8 ms;
+  - the shut rows released at the floor's end, 350–357.3 ms after the take.
+- **Not readable from counted rows:** the tail's `motions` and `visits_dropped`.
+
+Counts are "all (gate open / shut)":
+
+| part | cell | drags | gate open / shut | landed where the path ended | stale-position drops | false oks | honest unconfirmed | untaken | in the margin | Chrome activations |
+|---|---|---:|---|---:|---:|---:|---:|---:|---:|---:|
+| 1 chrome t14-long | long-left | 100 | 100 / 0 | 0 | 0 | 0 | 100 (100 / 0) | 0 | 0 | 0 |
+| 2 chrome t14-floor | plain-long | 300 | 0 / 300 | 300 (0 / 300) | 0 | 0 | 0 | 0 | 0 | 300 |
+| 2 chrome t14-floor | left | 30 | 0 / 30 | 0 | 0 | 0 | 30 (0 / 30) | 0 | 0 | 0 |
+| 2 chrome t14-floor | inzone-out | 30 | 0 / 30 | 0 | 0 | 0 | 30 (0 / 30) | 0 | 0 | 0 |
+| 3 electron t17-long | long-left | 30 | – (Chrome only) | 0 | 0 | 0 | 30 | 0 | 0 | 0 |
+
+- **Every part passes.** Electron's part has 30 of 30 exercised, against a minimum of 20; its motion after the take
+  ran 446.2 / 460 / 502.1 ms.
+- **t14-long's timings:** the take came 4.9 / 17.2 / 55.2 ms after the press, and the path ran 415.5 / 457.9 /
+  551.3 ms after the take (min / median / max).
+- **Chrome never activated on a t14-long drag**, and each drag answered unconfirmed honestly. At H7.1 #8 had activated
+  4.8 ms after the release and answered a false ok.
+- **plain-long's and left's paths** ended 326–333 ms after the take: the floor's steps end the tail's span early, and
+  its in-floor tail fills the rest. plain-long landed 300 of 300 with Chrome's activation and nothing pending.
+
+### H1, the cross-check (ruling 990 (3); `h1-compare.mjs`, `h1-crosscheck.txt`)
+
+H1 at H8 was compared cell by cell with its H6 record, `h6/out/H1.pinned-release/run/summary.md`. Each count that
+differs is tested with Fisher's exact test.
+- **Electron's judged cells:** 14 lanes and cells, across `cua`, `cua:desktop` and `cua:handle`. Each is the same in
+  every column: drags, ends not verified, landed, ok with nothing pending, unconfirmed, other notices, errors and false
+  oks. The two columns H7.1's judge added read 0 stale-position drops and 0 ambiguous, in every cell.
+- **The take table:** `cua` plain and `cua:handle` plain are the same (100 took of 100, 0 late).
+- **The activation signal** is the same.
+- **The accept cursor at the release** is a measurement signal. Its true positives went 67 → 63 of 200 (p 0.75), its
+  false negatives 51 → 58 (p 0.50), and its indeterminates 82 → 79.
+- **0 differences beyond chance** (p < 0.01), so the task did not stop.
+
+### settle-check, identification, stderr and scans
+
+- **settle-check** (`settle.txt`): H1 and L4d read TAKEN, from their Electron cells, as at H6 and H7.1. C1, K3, L4b and
+  L4c read not taken. D1, K1, K2 and L2a read unknown, under rulings 834 and 843.
+- **Identification** (`ident-count.txt`):
+  - C1 and L4c: 40 of 40 identified.
+  - K1, K2 (36 each) and K3 (20): identified, with the executable "not visible here", sandboxed as in service.
+  - L4b's and L4d's holds record no adaptive identification, as at H7.1.
+- **stderr:** Chrome's startup line, as before. There are also `XGetWindowProperty[_NET_ACTIVE_WINDOW] failed (code=1)`
+  lines in the twice-load steps (L2a 18, L4d 9, L4b 2), the line H6's and H7's twice-load steps carry.
+- **Token-shaped strings** (`scan-evidence.sh` over `h8/`, file names only): 187 files, 0 hits.
+- **Key codes** (`privacy-scan.mjs`): 0 held-code rows and 0 raw minimized codes. It was given no titles: x64's `:0` is
+  the owner's display and was not read.
+- **Window titles:** the structural scan (`title-scan.mjs`, ruling 947) covered `h8/out/` and the two doctor
+  transcripts (152 files). Of 6999 values, 6997 are the harness's own. The other 2 are the doctor's own device-mode
+  word in its `engine` row, one in each transcript, as at H6. There are no window titles.
+
 ## Corrections
 
 - **The local proof's summary log had false exits** (ruling 774). `scripts/proof-all.sh` wrote
@@ -1270,6 +1423,14 @@ unsettled, so L4d reruns as class A.
   - `scripts/` holds the setup, the home's checks, the printed commands and the driver and step launcher. It also has
     the band, binding and late-take extracts, L4d's part, row and offline-gate extracts (`l4d-*`, `gate459-row8.*`),
     settle-check, the scans and the lock lines.
+- `h8/`: task 135's counted reach at H8 on 0.4.3 (above).
+  - `out/` holds the ten step directories, the driver's log and `print/`, the print's stubs.
+  - `scripts/` holds:
+    - the setup, the home's install and its check, and the printed commands;
+    - the driver and step launcher, and the step table;
+    - the band, binding, late-take, L4d and H1 cross-check extracts, the identification counts and settle-check;
+    - item 9's and the pinned home's doctor transcripts (`item9/`, `doctor-home/`);
+    - the scans and the lock lines.
 - `scripts/`: task 89's launchers and records as they ran.
   - The setup, the home, item 9 and its transcript.
   - The local proof and its logs (`proof/`).

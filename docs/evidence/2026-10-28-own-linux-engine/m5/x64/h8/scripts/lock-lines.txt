@@ -1,0 +1,42 @@
+2026-11-22T02:50:57Z wait h8-x64 load=0.40 0.30 0.17 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task135/setup.sh
+2026-11-22T02:50:57Z acquire h8-x64 load=0.40 0.30 0.17 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task135/setup.sh
+2026-11-22T02:50:57Z release h8-x64 status=0 load=0.40 0.30 0.17 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task135/setup.sh
+2026-11-22T02:50:57Z wait h8-x64 load=0.40 0.30 0.17 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task135/install-home.sh
+2026-11-22T02:50:57Z acquire h8-x64 load=0.40 0.30 0.17 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task135/install-home.sh
+2026-11-22T02:51:33Z release h8-x64 status=0 load=0.68 0.39 0.21 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task135/install-home.sh
+2026-11-22T02:51:33Z wait h8-x64 load=0.68 0.39 0.21 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task135/item9.sh
+2026-11-22T02:51:33Z acquire h8-x64 load=0.68 0.39 0.21 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task135/item9.sh
+2026-11-22T02:52:04Z release h8-x64 status=0 load=0.88 0.46 0.24 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task135/item9.sh
+2026-11-22T02:52:06Z wait h8-x64 load=0.89 0.47 0.24 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task135/step.sh D1
+2026-11-22T02:52:06Z acquire h8-x64 load=0.89 0.47 0.24 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task135/step.sh D1
+2026-11-22T03:16:05Z release h8-x64 status=0 load=1.01 0.99 0.79 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task135/step.sh D1
+2026-11-22T03:16:05Z wait h8-x64 load=1.01 0.99 0.79 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task135/step.sh C1
+2026-11-22T03:16:05Z acquire h8-x64 load=1.01 0.99 0.79 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task135/step.sh C1
+2026-11-22T03:18:25Z release h8-x64 status=0 load=0.87 0.97 0.82 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task135/step.sh C1
+2026-11-22T03:18:25Z wait h8-x64 load=0.87 0.97 0.82 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task135/step.sh K1
+2026-11-22T03:18:25Z acquire h8-x64 load=0.87 0.97 0.82 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task135/step.sh K1
+2026-11-22T03:21:26Z release h8-x64 status=0 load=0.94 1.04 0.89 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task135/step.sh K1
+2026-11-22T03:21:26Z wait h8-x64 load=0.94 1.04 0.89 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task135/step.sh K2
+2026-11-22T03:21:26Z acquire h8-x64 load=0.94 1.04 0.89 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task135/step.sh K2
+2026-11-22T03:24:27Z release h8-x64 status=0 load=1.23 1.28 1.02 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task135/step.sh K2
+2026-11-22T03:24:28Z wait h8-x64 load=1.23 1.28 1.02 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task135/step.sh K3
+2026-11-22T03:24:28Z acquire h8-x64 load=1.23 1.28 1.02 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task135/step.sh K3
+2026-11-22T03:26:08Z release h8-x64 status=0 load=1.45 1.32 1.06 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task135/step.sh K3
+2026-11-22T03:26:08Z wait h8-x64 load=1.45 1.32 1.06 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task135/step.sh H1
+2026-11-22T03:26:08Z acquire h8-x64 load=1.45 1.32 1.06 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task135/step.sh H1
+2026-11-22T03:45:05Z release h8-x64 status=0 load=1.17 1.00 0.96 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task135/step.sh H1
+2026-11-22T03:45:05Z wait h8-x64 load=1.17 1.00 0.96 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task135/step.sh L2a
+2026-11-22T03:45:05Z acquire h8-x64 load=1.17 1.00 0.96 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task135/step.sh L2a
+2026-11-22T04:09:29Z release h8-x64 status=0 load=17.47 17.39 14.09 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task135/step.sh L2a
+2026-11-22T04:09:29Z wait h8-x64 load=17.47 17.39 14.09 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task135/step.sh L4b
+2026-11-22T04:09:29Z acquire h8-x64 load=17.47 17.39 14.09 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task135/step.sh L4b
+2026-11-22T04:27:11Z release h8-x64 status=0 load=17.50 16.78 14.78 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task135/step.sh L4b
+2026-11-22T04:27:11Z wait h8-x64 load=17.50 16.78 14.78 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task135/step.sh L4c
+2026-11-22T04:27:11Z acquire h8-x64 load=17.50 16.78 14.78 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task135/step.sh L4c
+2026-11-22T04:33:41Z release h8-x64 status=0 load=16.06 11.34 12.28 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task135/step.sh L4c
+2026-11-22T04:33:41Z wait h8-x64 load=16.06 11.34 12.28 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task135/step.sh L4d
+2026-11-22T04:33:41Z acquire h8-x64 load=16.06 11.34 12.28 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task135/step.sh L4d
+2026-11-22T04:57:10Z release h8-x64 status=0 load=17.41 17.27 15.45 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task135/step.sh L4d
+2026-11-22T04:57:11Z wait h8-x64 load=17.41 17.27 15.45 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task135/item9.sh home
+2026-11-22T04:57:11Z acquire h8-x64 load=17.41 17.27 15.45 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task135/item9.sh home
+2026-11-22T04:57:12Z release h8-x64 status=0 load=17.41 17.27 15.45 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task135/item9.sh home

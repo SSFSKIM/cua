@@ -518,6 +518,9 @@ struct StalePointVerdict<Element> {
   var onTop: Element?
   var onTopRole: String?
   var hitCorrection: StalePointHitCorrection?
+  /// #442: the delayed hit-test's own time, when its answer supplied the refusal (#452's window check on it), which the
+  /// meta's `hitMs` then reports.
+  var correctedHitMs: Double?
   var refused: Bool { reason.refuses }
 }
 
@@ -1138,28 +1141,28 @@ func otherControlOnTopVerdict<Element>(_ kept: StalePointVerdict<Element>, corre
     let correction = again.element.map { now in kept.hit.map { reads.same($0, now) } == true ? .same : .changed } ?? StalePointHitCorrection.none
     verdict.hitCorrection = correction
     if var over = windowCheck(again) {
-      over.hitCorrection = correction
+      // The refusal is the delayed hit's: its timing is reported, but the action's own hit stays the verdict's.
+      (over.hit, over.hitCorrection, over.correctedHitMs) = (kept.hit, correction, again.ms)
       return over
     }
     hit = again.element
   }
   guard let hit, let control = firstActing(from: hit, reads).element else { return verdict }
   let meant = CGPoint(x: point.x - kept.windowShift.dx, y: point.y - kept.windowShift.dy)
-  // #433's candidates beneath the layer: the one the hit names is the one judged.
+  // #433's candidates beneath the layer: the one the hit names, passing #433's test, is the control beneath. One that
+  // fails it is left to the rule below (the last review: a front link shrunk away from the point while its text stays
+  // there is what main keeps and lands on), never refused for #433's reason here.
   if kept.underlying != nil,
      let named = underlyingTargets(of: node, current: kept.current ?? node.element, at: meant, in: kept.nodes, reads)
        .first(where: { reads.same($0.element, control) }) {
     let judged = underlyingRefusal(named, at: point, windowShift: kept.windowShift, hit: hit, nodes: kept.nodes, frameless: kept.frameless,
                                    recorded: kept.recorded, reads)
-    guard let reason = judged.refusal else {
+    if judged.refusal == nil {
       (verdict.underlying, verdict.underlyingIdentity) = (named, judged.identity)
       return verdict
     }
-    var refused = refusal(of: kept, reason: reason, hitCorrection: verdict.hitCorrection)
-    (refused.underlying, refused.underlyingIdentity, refused.labelNow, refused.underlyingRefused) = (named, judged.identity, judged.labelNow, true)
-    return refused
   }
-  guard movedOverPoint(control, hit: hit, node: node, at: meant, kept.nodes, reads) else { return verdict }
+  guard movedOverPoint(control, node: node, at: meant, kept, reads) else { return verdict }
   var refused = refusal(of: kept, reason: .otherControlOnTop, hitCorrection: verdict.hitCorrection)
   (refused.onTop, refused.onTopRole) = (control, reads.role(control))
   return refused
@@ -1176,24 +1179,33 @@ private func refusal<Element>(of kept: StalePointVerdict<Element>, reason: Stale
   return refused
 }
 
-/// #442 (ruling 1078): whether `control`, live (`firstActing` read it now), is a known control that moved over the target:
-/// recorded by its own handle as a control (an interactive role or AXPress read then, as `controlVouches` asks), its every
-/// recorded frame (2 pt widened) away from the point the model meant (`meant`, the screenshot's space), and none of the
-/// recorded controls at the point: not `node` itself, not `node`'s recorded control (`ScreenshotNode.control`, by handle,
-/// never the live parent), and not the recorded control of `hit` where the hit is recorded content whose shown frame held
-/// the point (a link's text overflowing its frame). Unrecorded, recorded inert or frameless: not known, so no.
-func movedOverPoint<Element>(_ control: Element, hit: Element, node: ScreenshotNode<Element>, at meant: CGPoint,
-                             _ nodes: [ScreenshotNode<Element>], _ reads: StalePointReads<Element>) -> Bool {
-  let records = nodes.filter { reads.same($0.element, control) }
-  guard !records.isEmpty, records.allSatisfy({ ($0.actionable == true || $0.pressRecorded) && !$0.frame.isNull }),
-        !records.contains(where: { holdsPoint($0.frame.insetBy(dx: -stalePointFrameTolerance, dy: -stalePointFrameTolerance), meant) })
+/// #442 (ruling 1078 and the last review): whether `control`, live (`firstActing` read it now), is a known control that
+/// moved over the target. All of these hold:
+/// - the record holds it by its own handle as a control (an interactive role or AXPress read then, as `controlVouches`
+///   asks), at frames that place it (an unplaced frame, `unplacedFrame`, says nowhere), every one (2 pt widened) away
+///   from the point the model meant (`meant`, the screenshot's space);
+/// - #305's rule does not take it at the point (`recordedHitAtPoint`: in place by its own shown frame or its nearest
+///   recorded ancestor's padding);
+/// - it is not the recorded control at the point: not `node` itself, not `node`'s recorded control
+///   (`ScreenshotNode.control`, by handle, never the live parent), and no recorded content of it was shown at the point (a
+///   link's text drawn outside the link's box, whatever the hit names); and `node`'s control is known (no wrapper of
+///   unread actions, `controlUnknown`).
+/// Unrecorded, recorded inert, frameless or unplaced, or an ownership the record cannot say: not known, so no.
+func movedOverPoint<Element>(_ control: Element, node: ScreenshotNode<Element>, at meant: CGPoint, _ verdict: StalePointVerdict<Element>,
+                             _ reads: StalePointReads<Element>) -> Bool {
+  let records = verdict.nodes.filter { reads.same($0.element, control) }
+  let placed = records.filter { !$0.frame.isNull && !unplacedFrame($0.frame) }
+  guard !placed.isEmpty, records.allSatisfy({ $0.actionable == true || $0.pressRecorded }),
+        !placed.contains(where: { holdsPoint($0.frame.insetBy(dx: -stalePointFrameTolerance, dy: -stalePointFrameTolerance), meant) }),
+        !node.controlUnknown,
+        !(reads.same(node.element, control) || node.control.map({ reads.same($0, control) }) == true),
+        !verdict.nodes.contains(where: { recorded in
+          recorded.control.map { reads.same($0, control) } == true && recorded.shown.map { holdsPoint($0, meant) } == true
+        })
   else { return false }
-  if reads.same(node.element, control) || node.control.map({ reads.same($0, control) }) == true { return false }
-  let content = nodes.contains { recorded in
-    reads.same(recorded.element, hit) && recorded.shown.map { holdsPoint($0, meant) } == true
-      && recorded.control.map { reads.same($0, control) } == true
-  }
-  return !content
+  guard let point = verdict.point else { return false }
+  return recordedHitAtPoint(control, at: point, windowShift: verdict.windowShift, nodes: verdict.nodes, frameless: verdict.frameless,
+                            recorded: verdict.recorded, reads) == nil
 }
 
 /// #443: a point #296 keeps on an inert node found by its own handle (no interactive role, no AXPress recorded, read at
@@ -2132,7 +2144,7 @@ extension Engine {
     }
     var outcome = stalePointOutcome(verdict, ms: monotonicMilliseconds() - started, app: app.displayName, reads: reads)
     outcome.record.windowsMs = windowsMs
-    outcome.record.hitMs = hitMs
+    outcome.record.hitMs = verdict.correctedHitMs ?? hitMs
     return (outcome.record, outcome.refusal, verdict, shift)
   }
 
@@ -2157,6 +2169,6 @@ extension Engine {
                         correctedHit: correctedHit,
                         windowCheck: stalePointWindowCheck(at: point, target: windowID, pid: appPid, windows: timedList), reads: .live)
     }
-    return StalePointRecheck(verdict, hitMs: fresh.ms, windowsMs: windowsMs)
+    return StalePointRecheck(verdict, hitMs: verdict.correctedHitMs ?? fresh.ms, windowsMs: windowsMs)
   }
 }

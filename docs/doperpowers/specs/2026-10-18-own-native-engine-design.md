@@ -7878,6 +7878,29 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   none. #433's, #340's and #443's tests are unchanged. 1617 swift tests, 0 failures. Not measured live: this build.
   Date/Author: 2026-11-22, cursor235's builder for #442.
 
+- Decision (#442, the re-review of adebc77a2..d7b958b93, 2026-11-22, the last wave; amends the entry above): five P2
+  false refusals against main and one P3, all fixed. From here the counted qualification is the check, with no further
+  review round.
+  1. A named candidate that fails #433's test is no longer refused for #433's reason. Passing, it is the control beneath;
+     failing, the moved-control rule decides, and a control recorded at the point never meets that rule. Example: a front
+     link whose box shrank away from the point while its text stays there, which main keeps and lands on.
+  2. (d) asks whether the record showed any content of the control at the point, whatever the hit names. Example: the
+     hit is the link whose overflowing text lay under a deeper veil.
+  3. A control #305's `recordedHitAtPoint` takes at the point (in place, its own frame or its parent's padding,
+     `.ancestor`) has not moved.
+  4. A node whose control is unknown (`controlUnknown`, a wrapper's actions unread then) leaves ownership inconclusive,
+     and that keeps.
+  5. Unplaced frames (`unplacedFrame`, CGRect.zero) establish no previous location.
+  6. (P3) When the delayed hit supplies #452's refusal, the meta's `hitMs` is that hit-test's time
+     (`correctedHitMs`), in the click's guard and the final recheck. The verdict keeps the action's own hit.
+  Proven offline (`OtherControlOnTopTests`, 15 tests): five new tests, one per shape, and the popup test's timing.
+  - Against d7b958b93's rule, all six fail (10 assertions in 7 tests).
+  - Each fix reverted alone fails its own test: 1 the shrunk candidate (and the relabelled one, now main's verdict); 2
+    the overflowing content; 3 the parent padding; 4 the unknown ownership; 5 the unplaced button; P3 the popup's timing
+    and hit.
+  `slideover`, the popup and the reviewer's earlier eight shapes answer as before. 1622 swift tests, 0 failures.
+  Date/Author: 2026-11-22, cursor235's builder for #442.
+
 ## Outcomes & Retrospective
 
 Pending for the initiative — written at finish. M1a's interim account (2026-10-20) follows; the full record is `docs/doperpowers/specs/2026-10-18-own-native-engine-m1a-report.md`.

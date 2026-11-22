@@ -7769,6 +7769,63 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   condition, as the entry above says. 157 StalePoint tests and 1607 swift tests, 0 failures.
   Date/Author: 2026-11-21, cursor235's builder for #443.
 
+- Decision (#453, ruling 1071, 2026-11-22; the route changes): **a plain left click that #452 refuses on a row of the
+  app's own overlay is carried by AXPress on the row's recorded handle, not by a click posted to the overlay's window.**
+  The first build (`fix/453-overlay-click`, parked at 213fc5d6 by ruling 1067, never merged) stamped a mouse down and up
+  to the overlay's window at the point. That made the engine prove which control was on top at the point and that the
+  recorded tree was complete, and AX states neither reliably: three reviewer-high rounds (7 P1 and 2 P2, 7 P1 and 2 P2,
+  4 P1 and 2 P2) each found wrong-row or false-ok paths in the identity and stability machinery the proof needed (an
+  unrecorded descendant under a recorded row, the capture racing the walk across a relayout, the overlap root looked up
+  by the window's current bounds, which delivered "Allow this time" to "Never allow" once the bubble shrank, a failed
+  child read passing the subtree guard). Pressing the recorded element needs none of it: the target is the element the
+  screenshot's record names, and only its own identity is checked at click time. The spike (main 5580ac20, run
+  45050307595, kit `probe/453-measure` README §"#453 spike") measured the bare AXPress on the recorded row taking it
+  105/105 (omnibox, Web MIDI permission, TextEdit popover, and the datalist 15/15, whose earlier 0/6 pressed an ancestor
+  found by hit-test), the frontmost app changed 0/105, Chrome raised over the cover 0/75, no key window changed outside
+  the frontmost prompt, wrong row 0, AXPress p50 at most 13 ms.
+  The rule (OverlayClick.swift, called from Input.swift's coordinate click before #454): only main's
+  `appWindowOverPoint` for a plain left click (`overlayPressApplies`), so #316's `newWindow`, decided first, and every
+  tree verdict (#443's `controlGone` included, which #452's refusal never reaches) stay main's, and a drag, a right or
+  double click or a spike route keeps the refusal. The recorded handle is `ScreenshotNode.element` of the connection's
+  last screenshot: the observed window's walk already records these overlays' rows (README §Q3: Chromium hangs its
+  popups' and bubbles' trees under the browser window, the popover lies in its window's tree), so the observation is
+  unchanged and costs nothing more. The hit-test #452 already took is read up to the overlay's AXWindow (the nearest
+  AXPopover for the popover signal) only to find where the overlay's subtree starts in the record (the outermost element
+  of that chain the record holds by handle); the row is the deepest recorded node of that subtree, of no container role,
+  whose shown frame held the point, and two or more such nodes not nested refuse. The kind is read from the recorded
+  path from that root to the row and the two windows' layers, which the verdict now carries (`overLayer`,
+  `observedLayer`): one web area titled "Omnibox Popup" at the browser window's layer; an AXList above it; an alert
+  dialog at it, with no web area; #452's popover signal outside Chromium. At click time the row's handle must be alive,
+  read its recorded role and label (title, else description, else a text's value, equal once cut by `bounded`; a part
+  unread then or now refuses), have a frame within 2 pt of the recorded one after the window's shift, and read AXEnabled
+  true or have none. Then AXPress through `gatedPerform`, with no mouse event and no activation hold. The click succeeds
+  when the overlay's window leaves the on-screen list or the row's handle dies within 500 ms, and otherwise answers
+  `clickUnconfirmed`; an AXError other than a messaging timeout is `actionFailed`. Meta: `overlayClick {window, by, kind,
+  route: "action", confirmed}`, or `{window, by, kind, refused}` beside main's refusal, whose name and sentence are
+  unchanged. The model's paragraph says the click goes through the row's action, and (owner ruling 1042) that a
+  permission prompt's Allow grants what the site asks.
+  Not carried over from the parked branch: its post route, the observation's walk-before-capture order and stability
+  re-read (a list re-laid out between the walk and the image leaves the recorded row elsewhere, so its frame or label
+  refuses), the overlap-root and membership checks over the window's bounds, the descent from the hit, the decision
+  budget, the omnibox location-bar check (the kind only scopes the route; a lookalike overlay can at most get its
+  recorded row pressed under the same checks) and the element-ID route (#470). The element routes' recheck after a wait
+  (#456) keeps main's refusal when it answers `appWindowOverPoint`: the first check kept, so the overlay came over the
+  point after the click was judged.
+  Proven offline (`OverlayClickTests`, 19 tests): each kind delivered on its recorded handle, never on the deeper page
+  node beneath or the neighbour; each refusal (a dead handle, a changed label, an unread label, a changed role, a frame
+  moved or resized past 2 pt, disabled, AXEnabled unread, non-nested rows, six unknown kinds, no recorded handle, an
+  answer reading to no overlay); the re-laid-out bubble (the recorded button gone or moved, the neighbour at the point
+  and answered, never pressed); `clickUnconfirmed`; and main's other verdicts and clicks unchanged.
+  Each new test fails without the fix: with the decision leaving every click to main (the route removed), 17 of the 19
+  fail; the main-unchanged test fails once the trigger applies to every verdict and click, and the guard's test once
+  the verdict drops the overlay's layer. Each other condition removed alone fails a test: the dead-handle, role, label,
+  frame and enabled checks, the nesting check, the overlay membership, the recorded root, the popover's engine, the
+  Chromium kinds, the confirmation. 1626 swift
+  tests (1 skipped), 0 failures; the three docs tests pass.
+  Not measured live: this build. The spike measured the press itself on main; the hosted qualification of this build
+  (main against fix, every kind and mode) is the check from here.
+  Date/Author: 2026-11-22, cursor235's builder for #453.
+
 ## Outcomes & Retrospective
 
 Pending for the initiative — written at finish. M1a's interim account (2026-10-20) follows; the full record is `docs/doperpowers/specs/2026-10-18-own-native-engine-m1a-report.md`.

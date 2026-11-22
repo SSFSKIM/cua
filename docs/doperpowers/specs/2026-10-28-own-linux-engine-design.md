@@ -146,7 +146,7 @@ cua's own replacement for `@oai/sky`'s Linux target, written from `R/A` §1 and 
 
 **Distribution.** `.github/workflows/linux-engine.yml`, modelled on `linux-sandbox-helper.yml` (a push of the file registers it, so it can be dispatched from a branch before it reaches main): dispatched with a cua commit, it builds both musl targets from that commit with Rust 1.94.1 and a hermetic Cargo home, runs the engine's tests, attests build provenance, and publishes `cua-engine-<version>-linux-{x64,arm64}` with their SHA-256 sums as the release `linux-engine-v<version>`, the version read from `native/linux-engine/Cargo.toml` at that commit; it refuses a version whose release exists. `runtime/engine/linux-engine.json` pins version, URLs and hashes.
 
-Every milestone that changes engine behaviour or the wire (M1b's first release, then M2, M3 and M4) ends with a release in its own pull request: the reviewed head commit carries the bumped version, the workflow is dispatched on that commit, both assets' attestations are verified (`gh attestation verify`), and `scripts/linux-engine-pin.mjs` rewrites the pin, committed to the same pull request (from M3 with `MIN_ENGINE_VERSION` raised where needed). The pin commit changes nothing the engine is built from, so the released assets are the merged engine. M5's acceptance then runs on exactly those pinned assets.
+Every milestone that changes engine behaviour or the wire (M1b's first release, then M2, M3 and M4) ends with a release in its own pull request: the reviewed head commit carries the bumped version, the workflow is dispatched on that commit, both assets' attestations are verified (`gh attestation verify`), and `scripts/linux-engine-pin.mjs` rewrites the pin, committed to the same pull request (from M3 with `MIN_ENGINE_VERSION` raised where needed). The pin commit changes nothing the engine is built from, so the released assets are the merged engine. Before the dispatch, `native/` carries no placeholder (`<N>`, `<X>`, `@…@`): the tag's engine tree is what the pin script and the gate's pinned rule compare, so a fill after the tag breaks both (0.4.3's README:354; rulings 1035, 1038). M5's acceptance then runs on exactly those pinned assets.
 
 `cua install` on Linux (and `cua install --engine`) fetches the asset for the machine's architecture into `$CUA_HOME/engine/linux/`, verifies the hash, and marks it executable, replacing an installed engine of another version with one rename (a running engine keeps its file); `src/runtime/sandbox.mjs` protects that path as it protects the sandbox helper. `cua engine build` on Linux runs `cargo build --release` for local development and installs the result as the selected engine with `"build": "local"` in the doctor row.
 
@@ -2642,6 +2642,67 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
   - **Coverage gaps registered**: #460 (a Chrome drop on the desktop route, and a Chrome drag_handle that takes).
   Evidence: `m5/x64/h6/`, `m5/arm64/h6/` (a953, a957, a959, s954), `m5/{x64,arm64}/h7/`, `m5/engine-042/h7/` (fix, fix2, fix3, judge957), `m5/engine-043/reach/` (m5-reach-043), m5-p459's evidence; task-122 to task-129 reports (local).
   Date/Author: 2026-11-21, the plan-executor (session linux171), on the design session's rulings.
+
+- Decision (2026-11-21 to 22, M5, #459 and 0.4.3; the design session's rulings 986–1041 and the owner's 990, 996, 997 and 1041): what #459's fix is, how it was chosen, and what its candidate met.
+  - **The baselines (986, 989, 993).**
+    - The counted L4d at H7.1 fails on both arches. Those failures are recorded as the 0.4.2 baselines:
+      - arm64 at twice the load: 15 in 100 on `t14-long` long-left (10 false oks, 5 stale-position drops), plus `t14-floor` `left` #24, a stale drop whose path ran 4.6 ms past the floor;
+      - x64: 1 false ok in 100 (task 129, #8).
+    - Every failing row has #459's shape: a Chrome drop whose path outlasted the 350 ms floor, released straight after its last step, then confirmed by Chrome's activation request.
+    - L4d at 0.4.3 passes only with 0 false oks and 0 stale drops on every Chrome cell, on both arches (993).
+  - **The vendor baseline rules out (A) (988).** On the same cell and load, task 122 measured:
+    - the pinned vendor build: 0 stale drops in 100;
+    - the newest vendor build: 0 stale drops in 100;
+    - cua 0.4.2: 8 stale drops and 11 false oks in 100.
+    Answering such drops unconfirmed, with nothing else changed, would leave users worse off than the vendor.
+  - **The mechanism (task 130; 994, 995).**
+    - Chrome's `XdndStatus` answers a position one renderer round trip old (`WebContentsViewAura::OnDragUpdated`).
+    - A release with a status outstanding makes the drop pending, and the drop is decided on that older status. The last position is queued and never sent.
+    - The newest vendor build ends every drag with a tail: rest 8 ms, motion to the end, rest 8 ms, motion, rest 8 ms, release (`run_full_desktop_command` 0xe7ea0–0xe7f10).
+    - The tail measured 0 false oks and 0 stale drops in 200 at arm64 twice the load (95% upper bound 1.5%). (b') measured 11, and 0.4.2 measured 25 in 350. The tail costs about 26 ms.
+    - A standalone repro with no cua code in it (`synth-drag.c`, m5-p459) reproduces the fault, and the tail clears it. The Chromium report was drafted from it and fact-checked (1019).
+  - **The owner's decisions.** Option B as 0.4.3 (990). The tail only, with option (c) built but off behind one switch, on the condition that task 130's second set and `t14-floor` came out clean, which they did. The notes give a residual bound and never say "fixed" (997). Critical path first, at most 3 agents, the pin by 11-22 18:00Z (991, 996).
+  - **The tail inside the floor (999–1001).**
+    - Task 130's `t14-floor` `left` answered 1 false ok in 30 through the shut gate: 241 steps spread across the floor, released 1.9 ms after the last.
+    - So a shut gate also ends on the tail, at no cost. The steps fill the floor's first 326 ms. The visits come at take+350−16 and −8 ms. The release stays at take+350.
+    - A visit whose time has passed, or whose wakeup lands within 4 ms of the release (`VISIT_CUTOFF`), is dropped, and the release never moves.
+    - A same-place XTEST motion is no event, so XTEST visits step 1 px forward along the last segment and back. That is proved by live test only, with no counted rate (1002).
+    - The review took three rounds. The last one blocked only on a reachable release-time move or a fail-open; the rest went to the tracker (1002).
+  - **The candidate f9d1f86b (task 131, 1003).**
+    - Constants: `TAIL_REST` 8 ms, `TAIL_VISITS` 2, `TAIL_SPAN` 24, `VISIT_CUTOFF` 4 ms, `UNCONFIRM_OUTLASTED` false.
+    - Checks: the x64 full suite passed, ci-gate engine-linux passed, and its publish=false build produced the sums.
+    - The release's tag may differ from the candidate only in docs and notes. Its native engine tree must equal the candidate's, shown with `git diff --stat`.
+  - **Measured on f9d1f86b (task 132, arm64 at twice the load unless noted; 1021, 1023–1025).**
+    - `t14-long`: 0 false oks and 0 stale drops in 200, with no activation after the release (notes: N=200, X=1.5%; evidence: pooled with task 130, 400 and 0.75%).
+    - `t14-floor`: plain-long 300/300 landed. `left`: 0 false oks and 0 stale drops in 100. `inzone-out`: 32/32 honest.
+      - The in-floor tail dropped one visit on 10 drags and both on 5. All 15 answered right.
+    - x64 D1, three runs: every interval inside #358's 40 ms.
+    - The −1.3 ms activation on `t14-floor` r0#57 comes from the stamp. `--stats` `wall.release_ms` is taken after the release's round trip, while the confirm window's anchor is taken before the button-up. The window is sound (1025).
+    - The window does judge by read time, not by the server's order. That is pre-existing, seen 0 times in 486 rows, and went to #468 (P3; 891, 1027).
+  - **The handle's end (998, 1026).**
+    - Task 131 had left `drag_handle` ends as 0.4.2's (998). Its reason was that the end's 30 ms rest and revisit already did what the tail does.
+    - The reason did not hold. 1001 had taken the revisit, an XTEST motion to the pointer's own place, to generate no event; 1029 found that it does, so that end was the revisit with the release about 1 ms after it. That is #459's shape either way.
+    - Measured on f9d1f86b, Chrome `drag_handle` long-left answered 1 false ok in 100. The row was the run's first and cold, and Chrome kept its in-zone accept to the drag's end. That stopped the tag.
+    - The handle end now gets the tail (task 133), on a Chrome source with a take under way at the end, and with no gate:
+      - the 30 ms rest;
+      - visit, 8 ms;
+      - visit, 8 ms;
+      - release.
+    - Each visit is `xtest_step`. `--drag-dnd-release-sync off` restores 0.4.2's end.
+    - Electron, no-take, unwatched and off ends make f9d1f86b's exact calls (pinned at ba5b0438).
+    - The drag measurements carry over only if the change touches nothing outside handle.rs, its tests and docs.
+    - Review in three rounds (1030–1034), each blocking only on a reachable fail-open or a release-time move:
+      - f15e1f09 → 9fb61c32: the tail and the release now judge one take sample, and a person's motion during the tail stops it;
+      - 9fb61c32 → ba5b0438: the single sample is the pre-release read f9d1f86b already made, so a no-take Chrome end makes f9d1f86b's exact calls in order (pinned through a recording fake). A take after it goes to the after-release watch's late-take path, and a tail interrupted by motion answers unconfirmed;
+      - the confirm-only round put the first visit's pre-revisit pointer snapshot on the tracker (about 1 ms with a Chrome source; not a false ok), with its fix named for the next engine release (1034).
+    - Measured at arm64 twice the load: handle long-left 0/100 on each of f15e1f09, 9fb61c32 and ba5b0438, so 0 in 300 (95% upper bound 1.0%). plain-long was 52/52 landed and inzone-out 32/32 honest on f15e1f09. The tail added about 20 ms. The drag measurements carry over, since the diff touches only handle.rs, its tests and docs (1026 (3)).
+    - An XTEST motion to the pointer's own place does generate an event, core and XI2, on xserver 21.1 (1029; private Xorg 1.21.1.11 and Xvfb 21.1.12). 1001's "no event" premise was wrong, though nothing built on it changes.
+  - **The release (1035, 1037).** linux-engine-v0.4.3 at ba5b0438 by run 44966356899, 2026-11-22T00:35:53Z: x64 f1513e79…921f, arm64 dd74e19b…cf1e. These are byte-identical to the publish=false build and to the measured arm64 binary, and both attestations verify. The released README keeps its `<N>`/`<X>` placeholders. A docs-only fill after the tag (258c3c65, under 1035) broke the pinned trust rule, since the pin script and `gate.mjs check --pinned` compare the whole engine tree with the tag, so it was reverted on the pin branch (1038). The fill waits for the next engine release, and the tracker's release checklist now greps native/ for placeholders before tagging.
+  - **The pin and H8 (task 134; 1037–1041).**
+    - `runtime/engine/linux-engine.json` pins linux-engine-v0.4.3, both assets verified against run 44966356899's attestations, and `MIN_ENGINE_VERSION` is 0.4.3. A 0.4.2 engine is refused before anything is sent; the 0.4.0–0.4.2 refusal tests share one helper, mutation-checked.
+    - m5-a959's harness lanes came in with device.mjs on feat's side, so V5's long-left cell stays cua-only. Task 130's p459 evidence came in without its prototype code.
+    - Install and doctor pass on the pinned 0.4.3, and K1–K3 pass on it. ci-gate went green after reruns of two flakes the change can't reach (posted on #444).
+    - H8 = 048140a2, feat fast-forwarded to it, is frozen for the counted reach. Its list is Chrome only (task 127's reach; 990 (3)): D1, C1, K1–K3, L2a, L4b, L4c, L4d at 993's bar, V5 on both arches (x64's in the owner's window, 11-23 02:30–08:00Z), the H1 cross-check, item 9 and the doctor.
 
 ## Outcomes & Retrospective
 

@@ -6,7 +6,7 @@ const tally = xs => Object.entries(xs.reduce((m, x) => (m[x] = (m[x] ?? 0) + 1, 
 const answerOf = r => {
   const a = r.click ?? {};
   const oc = a.overlayClick;
-  const o = oc ? ` [${[oc.from === 'element' ? 'element' : null, oc.kind, oc.route, oc.effect, oc.refused ? `refused ${oc.refused}` : null].filter(Boolean).join(' ')}]` : '';
+  const o = oc ? ` [${[oc.from === 'element' ? 'element' : null, oc.kind, oc.route, oc.effect, oc.confirmed === true ? 'confirmed' : oc.confirmed === false ? 'unconfirmed' : null, oc.refused ? `refused ${oc.refused}` : null].filter(Boolean).join(' ')}]` : '';
   const pc = a.popUpClick ? ` {popUp ${JSON.stringify(a.popUpClick).slice(0, 60)}}` : '';
   return `${a.error ?? `ok route ${JSON.stringify(a.route)}`}${o}${pc}`;
 };
@@ -38,42 +38,65 @@ for (const file of process.argv.slice(2)) {
     continue;
   }
   console.log(`## ${config.label ?? ''} engine ${config.engineRef}  (${config.chrome}; ${config.macOS}; image ${config.image}; kit ${config.commit}; ${results.length} rows, ${config.minutes} min${config.budgetStop ? ', budget stop' : ''})\n`);
+  // Frontmost, Chrome's permission prompt is observed as the window itself: out of #453's scope (ruling 1071), kept apart.
+  const keyOf = r => `${r.cell}${r.observedIsOverlay ? ' (prompt observed as the window)' : ''}`;
   const groups = new Map();
-  for (const r of results) { if (!groups.has(r.cell)) groups.set(r.cell, []); groups.get(r.cell).push(r); }
-  console.log('| cell | rows | answer [overlayClick] | effect | frontmost changed, transient / end | key/main window changed | observed window over the cover | reordered | beneath | problems |');
-  console.log('|---|---|---|---|---|---|---|---|---|---|');
-  for (const [cell, rs] of groups) {
+  for (const r of results) { const k = keyOf(r); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(r); }
+  console.log('| cell | rows | answer [overlayClick] | effect | frontmost changed, transient / end | key/main window changed | window over the cover, transient / end | beneath | problems |');
+  console.log('|---|---|---|---|---|---|---|---|---|');
+  for (const [k, rs] of groups) {
     const m = rs.filter(r => r.click);
-    const n = m.length;
-    console.log(`| ${cell} | ${n}/${rs.length} | ${tally(m.map(answerOf))} | ${tally(m.map(r => r.effect ?? '-'))} | ${m.filter(r => r.front?.transient).length} / ${m.filter(r => r.front?.endChanged).length} | ${m.filter(r => r.key?.changed).length} | ${m.filter(r => r.windows?.aboveMs > 0).length} | ${m.filter(r => r.windows?.reordered).length} | ${m.filter(r => r.reachedBeneath).length} | ${tally(rs.filter(r => !r.click).map(r => r.problem ?? r.exception?.split('\n')[0] ?? '?'))} |`);
+    const n = m.length, behind = !/shared-front/.test(k);
+    console.log(`| ${k} | ${n}/${rs.length} | ${tally(m.map(answerOf))} | ${tally(m.map(r => r.effect ?? '-'))} | ${m.filter(r => r.front?.transient).length} / ${m.filter(r => r.front?.endChanged).length} | ${m.filter(r => r.key?.changed).length} | ${behind ? `${m.filter(r => r.windows?.aboveMs > 0).length} / ${m.filter(r => r.windows?.aboveAtEnd).length}` : 'n/a'} | ${m.filter(r => r.reachedBeneath).length} | ${tally(rs.filter(r => !r.click).map(r => r.problem ?? r.exception?.split('\n')[0] ?? '?'))} |`);
   }
-  // The bar's lines.
-  const ov = results.filter(r => r.click && OVERLAY_CELLS.test(r.cell));
+  // The bar's lines (rulings 1040, 1069, 1070, 1071).
+  const inScope = r => r.click && OVERLAY_CELLS.test(r.cell) && !r.observedIsOverlay;
+  const ov = results.filter(inScope);
   const ok = r => !r.click.error;
   const tookIt = r => /^(taken|changed)/.test(r.effect ?? '');
+  const confirmed = r => r.click.overlayClick?.confirmed === true;
   const wrong = results.filter(r => /^wrongRow/.test(r.effect ?? ''));
   const falseOk = ov.filter(r => ok(r) && !tookIt(r));
-  const falseConfirmed = ov.filter(r => ['closed', 'rowGone'].includes(r.click.overlayClick?.effect) && !tookIt(r));
+  const falseConfirmed = ov.filter(r => confirmed(r) && !tookIt(r));
   const missed = ov.filter(r => r.click.error && tookIt(r));
   const clicked = results.filter(r => r.click);
+  const count = (xs, f) => `${xs.filter(f).length}/${xs.length}`;
   console.log('\n### Bar lines\n');
-  console.log(`- overlay kinds delivered and taken, per cell: ${[...groups].filter(([c]) => OVERLAY_CELLS.test(c)).map(([c, rs]) => `${c} ${rs.filter(r => r.click && ok(r) && tookIt(r)).length}/${rs.filter(r => r.click).length}`).join('; ')}`);
-  console.log(`- frontmost changed, transient: ${clicked.filter(r => r.front?.transient).length}/${clicked.length}; at the end: ${clicked.filter(r => r.front?.endChanged).length}/${clicked.length}`);
-  console.log(`- key or main window changed: ${clicked.filter(r => r.key?.changed).length}/${clicked.length}`);
-  const raised = clicked.filter(r => r.windows?.aboveMs > 0);
-  console.log(`- observed window listed over the cover's (behind rows), window order changed: ${raised.length}/${clicked.filter(r => r.mode.endsWith("behind")).length}${raised.length ? ` (${tally(raised.map(r => r.cell))})` : ''}`);
+  console.log(`- delivered, confirmed and taken, per overlay cell: ${[...groups].filter(([k, rs]) => rs.some(inScope) && rs[0].how !== 'relayout').map(([k, rs]) => `${k} ${count(rs.filter(inScope), r => ok(r) && confirmed(r) && tookIt(r))}`).join('; ')}`);
+  for (const desktop of ['shared', 'dedicated']) {
+    const xs = clicked.filter(r => r.desktop === desktop && !r.observedIsOverlay), behind = xs.filter(r => !r.mode.endsWith('front'));
+    console.log(`- ${desktop}${desktop === 'dedicated' ? ' (recorded, not failed: ruling 1070)' : ''}: frontmost changed transient ${count(xs, r => r.front?.transient)}, end ${count(xs, r => r.front?.endChanged)}; key or main window changed ${count(xs, r => r.key?.changed)}; window over the cover transient ${count(behind, r => r.windows?.aboveMs > 0)}, end ${count(behind, r => r.windows?.aboveAtEnd)}${behind.some(r => r.windows?.aboveMs > 0) ? ` (${tally(behind.filter(r => r.windows?.aboveMs > 0).map(r => r.cell))})` : ''}`);
+  }
   console.log(`- wrong row: ${wrong.length}/${clicked.length}${wrong.length ? ` (${wrong.map(r => `${r.label} ${r.effect}`).join(', ')})` : ''}`);
-  const rl = results.filter(r => r.click && r.how === 'relayout');
-  console.log(`- re-laid-out: refused ${rl.filter(r => r.click.error).length}, same text taken ${rl.filter(r => ok(r) && tookIt(r)).length}, different row taken ${rl.filter(r => /^wrongRow/.test(r.effect ?? '')).length}, other ${rl.filter(r => !r.click.error && !tookIt(r) && !/^wrongRow/.test(r.effect ?? '')).length} (of ${rl.length})`);
+  for (const kind of ['omnibox', 'datalist', 'permission']) {
+    const rl = results.filter(r => r.click && r.how === 'relayout' && r.kind === kind && !r.observedIsOverlay);
+    if (rl.length) console.log(`- re-laid-out ${kind}: refused ${tally(rl.filter(r => r.click.error).map(r => r.click.overlayClick?.refused ?? r.click.error))}, the recorded row taken ${rl.filter(r => ok(r) && tookIt(r)).length}, a neighbour taken ${rl.filter(r => /^wrongRow/.test(r.effect ?? '')).length} (must be 0), other ${rl.filter(r => !r.click.error && !tookIt(r) && !/^wrongRow/.test(r.effect ?? '')).length} (of ${rl.length}; the list or prompt changed before the click in ${rl.filter(r => r.relaidOut ? r.relaidOut.window != null : JSON.stringify(r.overlayAtObs?.bounds) !== JSON.stringify(r.overlayAtClick?.bounds) || r.overlayAtObs?.n !== r.overlayAtClick?.n).length})`);
+  }
   console.log(`- false ok (answered ok, not taken): ${falseOk.length}${falseOk.length ? ` (${falseOk.map(r => `${r.label} ${r.effect}`).join(', ')})` : ''}`);
-  console.log(`- false confirmed (overlayClick closed or rowGone, not taken): ${falseConfirmed.length}${falseConfirmed.length ? ` (${falseConfirmed.map(r => r.label).join(', ')})` : ''}`);
+  console.log(`- false confirmed (overlayClick confirmed, not taken): ${falseConfirmed.length}${falseConfirmed.length ? ` (${falseConfirmed.map(r => r.label).join(', ')})` : ''}`);
   console.log(`- refused but taken anyway: ${missed.length}${missed.length ? ` (${missed.map(r => r.label).join(', ')})` : ''}`);
   console.log(`- reached the window beneath: ${ov.filter(r => r.reachedBeneath).length}/${ov.length}`);
   const own = results.filter(r => r.observedIsOverlay && r.click);
-  console.log(`- overlay observed as the window itself (frontmost prompt): ${own.length}${own.length ? ` (${tally(own.map(r => r.cell))})` : ''}`);
-  const behind = results.filter(r => r.overlayListedBehind);
-  console.log(`- overlay listed behind the browser window while shown: ${behind.length}${behind.length ? ` (${tally(behind.map(r => r.cell))})` : ''}`);
+  console.log(`- frontmost prompt observed as the window itself (out of scope, main's click): ${own.length}${own.length ? ` (${tally(own.map(r => `${r.cell} ${answerOf(r)} ${r.effect}`))})` : ''}`);
+  const behindListed = results.filter(r => r.overlayListedBehind);
+  if (behindListed.length) console.log(`- overlay listed behind the browser window while shown: ${behindListed.length} (${tally(behindListed.map(r => r.cell))})`);
   const perm = results.filter(r => r.permission);
-  if (perm.length) console.log(`- permission state after: ${tally(perm.map(r => `${r.cell.split('/').slice(1).join('/')} ${r.pick?.want}->${r.permission.state ?? '-'}/${r.permission.request ?? '-'}`))}`);
+  if (perm.length) console.log(`- permission state after: ${tally(perm.map(r => `${r.cell.split('/').slice(1).join('/')} ${r.pick?.want}->${r.permission.state ?? r.permission.geo ?? '-'}/${r.permission.request ?? '-'}`))}`);
+  console.log('');
+}
+// Parity across heads (the first file the baseline): every cell outside #453's in-scope overlay cells, each head's answer
+// and effect, and whether they differ.
+const files = process.argv.slice(2).map(f => JSON.parse(readFileSync(f, 'utf8'))).filter(f => !f.config.spike && !f.config.order);
+if (files.length > 1) {
+  const cellsOf = f => { const g = new Map(); for (const r of f.results.filter(r => r.click && !(OVERLAY_CELLS.test(r.cell) && !r.observedIsOverlay))) { const k = `${r.cell}${r.observedIsOverlay ? ' (prompt observed as the window)' : ''}`; if (!g.has(k)) g.set(k, []); g.get(k).push(r); } return g; };
+  const heads = files.map(cellsOf);
+  console.log(`### Parity: ${files.map(f => `${f.config.label ?? ''} ${String(f.config.engineRef).slice(0, 8)}`).join(' against ')}\n`);
+  console.log(`| cell | ${files.map(f => f.config.label ?? f.config.engineRef).join(' | ')} | same |`);
+  console.log(`|---|${files.map(() => '---|').join('')}---|`);
+  for (const k of [...new Set(heads.flatMap(h => [...h.keys()]))]) {
+    const cols = heads.map(h => (h.get(k) ?? []).map(r => `${r.click.error ?? 'ok'} → ${r.effect ?? '-'}`));
+    const sig = cols.map(c => [...new Set(c)].sort().join('; '));
+    console.log(`| ${k} | ${cols.map(tally).join(' | ')} | ${sig.every(s => s === sig[0]) ? 'yes' : '**no**'} |`);
+  }
   console.log('');
 }

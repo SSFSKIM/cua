@@ -5,6 +5,16 @@
 //   omnibox/p-element  the engine's element click on that row's node (#470, cut from the fix by ruling 1066: main's answer expected)
 //   omnibox/relayout   one more character typed through the engine after the observation, then the coordinate click at the
 //                      recorded row: refused, the same text taken, or another row taken (which must never happen)
+//   datalist/relayout  `b` typed through the engine after the observation: the list re-filters to banana, blueberry, so a
+//                      neighbour lies at the recorded second row's point
+//   permission/relayout   Web MIDI's prompt observed (Block picked, the left of two buttons in a row), then the page goes to
+//                      /geo on the same origin: geolocation's prompt (three buttons stacked) replaces it in the same place,
+//                      its "Allow while visiting the site" over the recorded point. Chrome changes no shown prompt's
+//                      buttons, so a replaced prompt is the re-layout that can be made. Any geolocation answer is a
+//                      neighbour taken.
+// The fix (ruling 1071, fix/453-axpress) AXPresses the recorded row's own handle: overlayClick {kind, route: "action",
+// confirmed} or {kind, refused}. Frontmost, Chrome's permission prompt is the observed window itself (out of the fix's
+// scope, main clicks it as its own window): those rows are marked `observedIsOverlay` and kept apart.
 //   datalist/click, datalist/p-element   the page's <datalist> list (opened by the engine's click on the field's arrow,
 //                      #463's AXPress behind), its second row
 //   permission/allow, permission/block, permission/p-element   Chrome's Web MIDI prompt on a fresh origin; the site's
@@ -88,13 +98,14 @@ const run = c => { if (c === 'reload') location.replace('/'); if (c.startsWith('
 (async () => { for (;;) { try { const r = await fetch('/cmd?load=' + load, {cache: 'no-store'}); const j = await r.json(); if (j.cmd) run(j.cmd); } catch (e) { await new Promise(r => setTimeout(r, 500)); } } })();
 document.addEventListener('prerenderingchange', () => send('activated', {}));
 const perm = () => navigator.permissions.query({name: 'midi'}).then(p => { send('perm', {state: p.state}); p.onchange = () => send('perm', {state: p.state}); }).catch(e => send('perm', {error: String(e)}));
-addEventListener('load', () => { send('ready', {prerendering: Boolean(document.prerendering)}); if (location.pathname === '/perm') { perm(); navigator.requestMIDIAccess().then(() => send('req', {ok: true}), e => send('req', {error: e.name})); } });
+addEventListener('load', () => { send('ready', {prerendering: Boolean(document.prerendering)}); if (location.pathname === '/perm') { perm(); navigator.requestMIDIAccess().then(() => send('req', {ok: true}), e => send('req', {error: e.name})); }
+  if (location.pathname === '/geo') navigator.geolocation.getCurrentPosition(() => send('geo', {ok: true}), e => send('geo', {code: e.code})); });
 })();</script>`;
 const PAGE = `<!doctype html><html lang="en" translate="no"><head><meta charset="utf-8"><meta name="google" content="notranslate"><title>probe453 page</title>
 <style>body{font:15px -apple-system,Helvetica,sans-serif;margin:0} .a{position:absolute;left:16px}</style></head>
 <body id="page"><div id="wrap" style="position:relative;height:560px">
 <h3 class="a" style="top:2px;margin:0">probe453 page</h3>
-<div class="a" style="top:80px"><input id="fruit" list="fruits" aria-label="Fruit" autocomplete="off" size="20"><datalist id="fruits"><option value="apple"></option><option value="apricot"></option><option value="avocado"></option><option value="banana"></option></datalist></div>
+<div class="a" style="top:80px"><input id="fruit" list="fruits" aria-label="Fruit" autocomplete="off" size="20"><datalist id="fruits"><option value="apple"></option><option value="apricot"></option><option value="avocado"></option><option value="banana"></option><option value="blueberry"></option></datalist></div>
 <div class="a" style="top:110px;left:330px"><button id="u1" type="button">Under</button></div>
 <div class="a" style="top:300px"><input id="note" aria-label="Note" autocomplete="off" size="20"></div>
 <div class="a" style="top:440px"><button id="b1" type="button">Alpha</button> <button id="b2" type="button">Beta</button> <button id="b3" type="button">Gamma</button></div>
@@ -105,7 +116,7 @@ const results_ = path => `<!doctype html><html lang="en"><head><meta charset="ut
 const events = [];
 let pollers = [], queued = null;
 function serve(req, res) {
-  if (req.method === 'GET' && (req.url === '/' || req.url.startsWith('/?') || req.url.startsWith('/results') || req.url.startsWith('/perm'))) {
+  if (req.method === 'GET' && (req.url === '/' || req.url.startsWith('/?') || req.url.startsWith('/results') || req.url.startsWith('/perm') || req.url.startsWith('/geo'))) {
     res.writeHead(200, {'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store'});
     res.end(req.url.startsWith('/results') ? results_(req.url.split('?')[0]) : PAGE);
     return;
@@ -391,9 +402,10 @@ const KINDS = {
       await sleep(700);
     },
     pick: (sky, pr) => asPick(widest(nodesIn(sky, pr).filter(n => /^apricot$/i.test(nodeLabel(n).split(' | ')[0])))),
+    relayout: async (c, w) => { c.row.typed = 'b'; const r = await w.execute('type_text', {pid: c.pid, text: 'b'}); c.row.steps.push({step: 'type:relayout', answer: answer(r)}); },
     effect: ctx => {
       const v = [...ctx.ev].reverse().find(e => ['input', 'change'].includes(e.type) && e.id === 'fruit')?.value;
-      return v == null ? null : v === 'apricot' ? 'taken' : `wrongRow:${v}`;
+      return v === 'apricot' ? 'taken' : ['apple', 'avocado', 'banana', 'blueberry'].includes(v) ? `wrongRow:${v}` : null;
     },
   },
   permission: {
@@ -412,11 +424,25 @@ const KINDS = {
       const re = want === 'allow' ? /^allow\b/i : /^(never allow|block|don.?t allow)\b/i;
       return asPick(buttons.find(n => re.test(nodeLabel(n))), {want, buttons: buttons.map(nodeLabel)});
     },
+    // The re-layout: the page goes to /geo on the same origin; geolocation's prompt replaces MIDI's in the same place.
+    relayout: async c => {
+      const before = c.row.overlayAtObs?.n;
+      sendCmd(`goto:${c.row.origin}/geo`);
+      for (let i = 0; i < 60; i++) {
+        await sleep(100);
+        const o = await ask({op: 'overlay', pid: c.pid, window: winArr(c.row.window)});
+        if (o.popup && o.popup.n !== before) { c.row.relaidOut = {window: o.popup.n, bounds: o.popup.bounds, ms: (i + 1) * 100}; break; }
+      }
+      if (!c.row.relaidOut) c.row.relaidOut = {window: null};
+      await sleep(400);
+    },
     // The origin's permission state after (its last change beaconed; every change kept) and requestMIDIAccess's answer.
     // Web MIDI, not geolocation: a runner's macOS has Location Services off, so Chrome answers geolocation's Allow with
     // the state `denied` and a "Location is turned off" bubble, and the first Allow brought Chrome to the front (smoke
     // 45045858141). MIDI's prompt has no macOS layer.
     effect: ctx => {
+      const geo = ctx.ev.find(e => e.type === 'geo');
+      if (ctx.row.how === 'relayout') { ctx.row.permission = {geo: geo ? (geo.ok ? 'position' : `code ${geo.code}`) : null}; return geo ? `wrongRow:geolocation ${geo.ok ? 'position' : `code ${geo.code}`}` : null; }
       const states = ctx.ev.filter(e => e.type === 'perm').map(e => e.state ?? e.error);
       const st = [...ctx.ev].reverse().find(e => e.type === 'perm' && e.state && e.state !== 'prompt')?.state ?? null;
       const req = ctx.ev.find(e => e.type === 'req');
@@ -484,8 +510,8 @@ if (SPIKE) for (const m of Object.keys(MODES)) {
 }
 if (!SPIKE && !ORDER) for (const m of Object.keys(MODES)) {
   cell('omnibox', m, 'click', 6); cell('omnibox', m, 'p-element', 5); cell('omnibox', m, 'relayout', 8);
-  cell('datalist', m, 'click', 6); cell('datalist', m, 'p-element', 5);
-  cell('permission', m, 'allow', 5); cell('permission', m, 'block', 5); cell('permission', m, 'p-element', 6);
+  cell('datalist', m, 'click', 6); cell('datalist', m, 'p-element', 5); cell('datalist', m, 'relayout', 6);
+  cell('permission', m, 'allow', 5); cell('permission', m, 'block', 5); cell('permission', m, 'p-element', 6); cell('permission', m, 'relayout', 6);
   cell('popover', m, 'click', 6);
 }
 if (!SPIKE && !ORDER) {
@@ -550,14 +576,17 @@ async function runRow(app, cell, rep) {
     const pr = rect(row.overlayAtObs?.bounds) ?? (row.observedIsOverlay ? rect(ov.target.bounds) : null);
     if (k.overlay !== false && !pr) { row.problem = 'no overlay at the re-observation'; row.otherWindows = ov.others ?? null; return; }
     row.nodesInOverlay = pr ? nodesIn(sky, pr).length : 0;
-    const want = cell.kind === 'permission' ? (cell.how === 'p-element' ? (rep % 2 ? 'block' : 'allow') : cell.how === 'axpress' ? (rep % 3 === 1 ? 'allow' : 'block') : cell.how === 'kitpost' ? 'block' : cell.how) : null;
+    const want = cell.kind === 'permission' ? (cell.how === 'p-element' ? (rep % 2 ? 'block' : 'allow') : cell.how === 'axpress' ? (rep % 3 === 1 ? 'allow' : 'block') : cell.how === 'kitpost' || cell.how === 'relayout' ? 'block' : cell.how) : null;
     row.pick = k.pick(sky, pr, want);
     if (!row.pick) { row.problem = 'no item in the observation'; row.overlayNodes = pr ? nodesIn(sky, pr).slice(0, 40).map(n => [n.role, nodeLabel(n).slice(0, 60), winArr(n.frame)]) : null; return; }
     if (['p-element', 'o-element'].includes(cell.how) && row.pick.token == null) { row.problem = 'the item has no token'; return; }
     const {px, screen} = toPixels(sky, row.pick.point);
     row.point = {px, screen, inOverlay: pr ? inside(screen, pr) : null};
     // #453's re-laid-out case: one more character typed through the engine, after the screenshot, before the click.
-    if (cell.how === 'relayout') { row.typed = rep % 2 ? 'a' : 'b'; const r = await w.execute('type_text', {pid, text: row.typed}); row.steps.push({step: 'type:relayout', answer: answer(r)}); }
+    if (cell.how === 'relayout') {
+      if (k.relayout) await k.relayout(c, w);
+      else { row.typed = rep % 2 ? 'a' : 'b'; const r = await w.execute('type_text', {pid, text: row.typed}); row.steps.push({step: 'type:relayout', answer: answer(r)}); }
+    }
     row.delayMs = DELAYS[(rep - 1) % DELAYS.length];
     const left = tObs + row.delayMs - 300 - Date.now(); if (left > 0) await sleep(left);
     const now = await ask({op: 'overlay', pid, window: winArr(wf)});

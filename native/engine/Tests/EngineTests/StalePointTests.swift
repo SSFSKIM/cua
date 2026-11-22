@@ -4195,36 +4195,93 @@ final class OverlayTargetTests: XCTestCase {
   }
 
   /// What the rule leaves to main, A confirmed gone: a node re-created in place with its control (`remount`, A re-rendered
-  /// whole), a node that acts on its own (a button that outlived the clickable card around it), and a hit #305 keeps as
-  /// another recorded control the screenshot showed at the point, still in place.
+  /// whole), a node that acts on its own (a button that outlived the clickable card around it, the hit answering nothing,
+  /// so no hit vouches), and a hit #305 keeps as another recorded control the screenshot showed at the point (on its own
+  /// handle, or re-created in place, which no hit's control vouches for).
   func testWhatTheControlGoneRuleLeavesToMain() {
     let remount = judged(Page(twin: "Archive", bare: true), at: CGPoint(x: 40, y: 112)) { page in
       page.rerenderA().children[0]
     }
     XCTAssertEqual(remount.identity, .recreated)
     XCTAssertEqual(remount.reason, .sameElement)
-    let card = Page(bare: true, pressable: true)
-    let button = Node("AXButton", CGRect(x: 100, y: 100, width: 120, height: 30), title: "Go")
-    card.a.add(button)
-    let acting = judged(card) { page in
-      page.a.children = []
-      page.slide(webkit: false)
-      button.reparent(to: page.b)
-      return button
+    for hitButton in [true, false] {
+      let card = Page(bare: true, pressable: true)
+      let button = Node("AXButton", CGRect(x: 100, y: 100, width: 120, height: 30), title: "Go")
+      card.a.add(button)
+      let acting = judged(card) { page in
+        page.a.children = []
+        page.slide(webkit: false)
+        button.reparent(to: page.b)
+        return hitButton ? button : nil
+      }
+      XCTAssertEqual(acting.reason, hitButton ? .sameElement : .noHit, "a node that acts on its own")
     }
-    XCTAssertEqual(acting.reason, .sameElement, "a node that acts on its own")
-    let page = Page(twin: "Archive", bare: true)
-    let icon = Node("AXImage", CGRect(x: 100, y: 100, width: 120, height: 30))
-    page.a.add(icon)
-    let other = Node("AXButton", CGRect(x: 20, y: 100, width: 200, height: 30), title: "Other")
-    page.list.add(other)
-    let byOther = judged(page) { page in
-      page.a.children = []
-      page.slide(webkit: false)
-      icon.reparent(to: page.b)
-      return other
+    for recreate in [false, true] {
+      let page = Page(twin: "Archive", bare: true)
+      let icon = Node("AXImage", CGRect(x: 100, y: 100, width: 120, height: 30))
+      page.a.add(icon)
+      let other = Node("AXButton", CGRect(x: 20, y: 100, width: 200, height: 30), title: "Other")
+      page.list.add(other)
+      let byOther = judged(page) { page in
+        page.a.children = []
+        page.slide(webkit: false)
+        icon.reparent(to: page.b)
+        guard recreate else { return other }
+        other.destroy()
+        let again = Node("AXButton", CGRect(x: 20, y: 100, width: 200, height: 30), title: "Other")
+        page.list.add(again)
+        return again
+      }
+      XCTAssertEqual(byOther.reason, .recordedHit, "another recorded control at the point, re-created \(recreate)")
     }
-    XCTAssertEqual(byOther.reason, .recordedHit, "another recorded control at the point vouches for the click")
+  }
+
+  /// The review of dfe6f443..1d3b0963: links A and F overlap at the point, F in front (later in the list); the record takes
+  /// a decoration of A, deeper than F's text. A is removed, the decoration survives, and F, recorded at the point and in
+  /// place, takes the click as on main: the hit on F's text (`nonInteractiveHit`), or on F with the decoration moved into
+  /// it (`hitAboveNode`), keeps, and the element route presses F. A same-label link new at the point (not
+  /// recorded there) or F moved off its place does not vouch.
+  func testARecordedControlInFrontOfAGoneControlVouchesForTheClick() {
+    func scene() -> (page: Page, front: Node, frontText: Node, deco: Node) {
+      let page = Page(bare: true)
+      let front = Node("AXLink", CGRect(x: 20, y: 100, width: 200, height: 30), title: "Front")
+      let frontText = Node("AXStaticText", CGRect(x: 30, y: 105, width: 60, height: 20), value: "Front")
+      front.add(frontText)
+      page.list.children.insert(front, at: 1)
+      front.parent = page.list
+      let wrap = Node("AXGroup", CGRect(x: 20, y: 100, width: 200, height: 30))
+      let deco = Node("AXImage", CGRect(x: 20, y: 100, width: 200, height: 30))
+      wrap.add(deco)
+      page.a.add(wrap)
+      return (page, front, frontText, deco)
+    }
+    let point = CGPoint(x: 40, y: 112)
+    for intoFront in [false, true] {
+      let (page, front, frontText, deco) = scene()
+      let (nodes, frameless, members) = walkRecord(page.window)
+      XCTAssertTrue(deepestScreenshotNode(at: point, in: nodes)?.element === deco)
+      deco.reparent(to: intoFront ? front : page.list)
+      page.aText.destroy()
+      page.a.destroy()
+      let hit = intoFront ? front : frontText
+      let kept = verdict(nodes, frameless: frameless, members: members, at: point, hit: hit)
+      XCTAssertEqual(kept.reason, intoFront ? .hitAboveNode : .nonInteractiveHit, "into F \(intoFront)")
+      // The route presses F: an ancestor of the node now, or a recorded control in place.
+      XCTAssertEqual(stalePointPressVerdict(front, kept, reads: reads).reason, intoFront ? .hitAboveNode : .recordedHit, "into F \(intoFront)")
+      // F moved off its recorded place: it no longer vouches.
+      move(front, by: CGVector(dx: 0, dy: 3))
+      XCTAssertEqual(verdict(nodes, frameless: frameless, members: members, at: point, hit: hit).reason, .controlGone)
+    }
+    // A link new at the point, F's label, the decoration moved into it: not recorded there, so A's loss refuses.
+    let (page, front, _, deco) = scene()
+    let (nodes, frameless, members) = walkRecord(page.window)
+    let fresh = Node("AXLink", CGRect(x: 20, y: 100, width: 200, height: 30), title: "Front")
+    page.list.add(fresh)
+    deco.reparent(to: fresh)
+    page.aText.destroy()
+    page.a.destroy()
+    front.destroy()
+    XCTAssertEqual(verdict(nodes, frameless: frameless, members: members, at: point, hit: fresh).reason, .controlGone)
   }
 
   /// Item 1 (b), a regression against main: A and its text unchanged, a button behind the text (shallower, another

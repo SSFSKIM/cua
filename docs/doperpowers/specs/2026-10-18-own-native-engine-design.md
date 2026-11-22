@@ -7690,6 +7690,23 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   `remount`, `textbehind`) and #340's.
   Date/Author: 2026-11-21, cursor235's builder for #443.
 
+- Decision (#443, the review of dfe6f443..1d3b0963, reviewer-medium, 2026-11-21; amends the entry above): one P2, a
+  false refusal against main, fixed. With two links overlapping at the point, the record can take a deeper decoration
+  of the back link A while the front link B takes the click; once A is removed and the decoration survives, B gets the
+  same click, but the hit on B's text answers `nonInteractiveHit` and on B with the decoration moved into it
+  `hitAboveNode`, so neither reached the `recordedHit` exemption and the rule refused what main lands correctly (and
+  pre-empted the element route's own `recordedHit` check of B). Now, before refusing, the control the live hit lies in
+  vouches (`hitControlVouches`): the hit itself or its nearest ancestor below its document that acts on its own (an
+  interactive role or AXPress, read now), when it is a recorded node by its recorded handle, its shown frame holding the
+  point and its frame read now in place (2 pt). A match re-created by role and label never vouches, since a same-label
+  replacement would pass it; `decomove`'s B is the replacement, not recorded at the point, so it still refuses. Proven
+  offline (`testARecordedControlInFrontOfAGoneControlVouchesForTheClick`): both shapes keep, and the route presses B; B
+  moved 3 pt off its place, or a same-label link new at the point with B gone, refuses. The case fails with the vouch
+  removed; the earlier mutations still fail a test each (`testWhatTheControlGoneRuleLeavesToMain` now takes the acting
+  node with no hit and `recordedHit` on a re-created control, which no hit's control vouches for, so the vouch does not
+  mask those conditions). 1601 swift tests, 0 failures.
+  Date/Author: 2026-11-21, cursor235's builder for #443.
+
 ## Outcomes & Retrospective
 
 Pending for the initiative — written at finish. M1a's interim account (2026-10-20) follows; the full record is `docs/doperpowers/specs/2026-10-18-own-native-engine-m1a-report.md`.

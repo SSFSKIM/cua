@@ -1073,14 +1073,39 @@ func stalePointVerdict<Element>(at point: CGPoint, windowShift: CGVector = .zero
 /// that confirmation refuses: a control that lives, inside it or not, or reads unreadably, keeps main's verdict, as does a
 /// node re-created in place (its control re-created with it, `remount`), a node of unknown actions or under an ancestor
 /// of unknown actions (no control recorded), and a hit #305 keeps as another recorded node in place (`recordedHit`),
-/// which then vouches for the click itself.
+/// which then vouches for the click itself. So does the control the live hit lies in (`hitControlVouches`), whatever the
+/// verdict's reason: the review of dfe6f443..1d3b0963 found the record can take a decoration of a back link A at the
+/// point while a recorded link B in front takes the click, and a hit on B's text (`nonInteractiveHit`) or on B with the
+/// decoration moved into it (`hitAboveNode`) never reaches `recordedHit`, though B gets the click main gives it.
 func controlGoneVerdict<Element>(_ verdict: StalePointVerdict<Element>, _ reads: StalePointReads<Element>) -> StalePointVerdict<Element>? {
   guard !verdict.refused, verdict.reason != .recordedHit, verdict.identity == .handle, let node = verdict.node,
-        node.actionable == false, !node.pressRecorded, let control = node.control, reads.gone?(control) == true else { return nil }
+        node.actionable == false, !node.pressRecorded, let control = node.control, reads.gone?(control) == true,
+        !hitControlVouches(verdict, reads) else { return nil }
   return StalePointVerdict(reason: .controlGone, node: node, identity: verdict.identity, current: verdict.current, hitRole: verdict.hitRole,
                            hit: verdict.hit, gaps: verdict.gaps, point: verdict.point, windowShift: verdict.windowShift, nodes: verdict.nodes,
                            frameless: verdict.frameless, recorded: verdict.recorded, webAreaReads: verdict.webAreaReads,
                            newElementReads: verdict.newElementReads)
+}
+
+/// #443: whether the control the verdict's live hit lies in (the hit itself, or its nearest ancestor below its document
+/// that acts on its own: an interactive role or AXPress, read now) is another recorded control the screenshot showed at
+/// the point, by its recorded handle (never a match re-created by role and label, which a same-label replacement would
+/// pass), its shown frame holding the point and its frame read now in place. Then that control vouches for the click, as
+/// #305 lets it. `decomove`'s B is the replacement: recorded elsewhere, if at all, so it never vouches.
+func hitControlVouches<Element>(_ verdict: StalePointVerdict<Element>, _ reads: StalePointReads<Element>) -> Bool {
+  guard let hit = verdict.hit, let point = verdict.point else { return false }
+  let meant = CGPoint(x: point.x - verdict.windowShift.dx, y: point.y - verdict.windowShift.dy)
+  for element in [hit] + ancestors(of: hit, reads) {
+    let role = reads.role(element)
+    if role.map(stalePointControlStops.contains) == true { return false }
+    guard role.map(stalePointInteractiveRoles.contains) == true || reads.actions(element)?.contains("AXPress") == true else { continue }
+    guard let live = reads.frame(element) else { return false }
+    return verdict.nodes.contains { recorded in
+      reads.same(recorded.element, element) && recorded.shown.map { holdsPoint($0, meant) } == true
+        && frameDistance(live, recorded.frame.offsetBy(dx: verdict.windowShift.dx, dy: verdict.windowShift.dy)) <= stalePointFrameTolerance
+    }
+  }
+  return false
 }
 
 /// #433: the recorded controls beneath an inert layer at `node`'s point, one of which a click there passes through to:

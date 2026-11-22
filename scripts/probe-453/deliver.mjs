@@ -2,6 +2,7 @@
 // datalist popup and permission bubble, TextEdit's colour-well popover) be delivered to that overlay? The engine (one
 // head, built unmodified) observes and opens the overlay; the kit delivers the click itself, per cell:
 //   engine    the engine's own coordinate click (the baseline: #452 refuses it, appWindowOverPoint)
+//   engineElement  the engine's element click on the observation's node at the picked item's frame, where it has one
 //   post      the engine's mouse recipe (Mouse.swift) rebuilt by the kit, stamped with the overlay's window number and a
 //             point local to it (fields 91/92, CGEventSetWindowLocation), posted to the pid
 //   postAct   the same inside route 3's fake activation by the kit: subtype 1 stamped with the observed window, the
@@ -280,7 +281,7 @@ const MODES = [
   {name: 'shared-front', desktop: 'shared', front: true},
   {name: 'dedicated-behind', desktop: 'dedicated', front: false},
 ];
-const DELIVERIES = {behind: ['engine', 'post', 'postAct', 'postMove', 'axpress', 'axpick'], front: ['engine', 'post', 'postMove', 'axpress', 'axpick', 'hid']};
+const DELIVERIES = {behind: ['engine', 'engineElement', 'post', 'postAct', 'postMove', 'axpress', 'axpick'], front: ['engine', 'engineElement', 'post', 'postMove', 'axpress', 'axpick', 'hid']};
 function cells() {
   const out = [];
   for (const [o, ov] of Object.entries(OVERLAYS)) for (const m of MODES) {
@@ -464,7 +465,7 @@ async function runRow(app, cell, rep) {
     // Whether the observation's tree holds the picked item itself: a node at its frame (within 3 pt), and its label.
     const atPick = sky.nodes.filter(n => n.frame && Array.isArray(row.pick.frame) && Math.abs(n.frame.x - row.pick.frame[0]) <= 3 && Math.abs(n.frame.y - row.pick.frame[1]) <= 3
       && Math.abs(n.frame.width - row.pick.frame[2]) <= 3 && Math.abs(n.frame.height - row.pick.frame[3]) <= 3);
-    row.observation.pickInTree = atPick.map(n => ({role: n.role, label: nodeLabel(n).slice(0, 60)}));
+    row.observation.pickInTree = atPick.map(n => ({role: n.role, label: nodeLabel(n).slice(0, 60), token: n.token ?? null}));
     const {px, screen} = toPixels(sky, row.pick.point);
     row.point = {px, screen, inOverlay: inside(screen, pr)};
     // The overlay between the observation and the click (Q5), the click 1, 2 or 3 s after the observation.
@@ -505,6 +506,12 @@ async function runRow(app, cell, rep) {
     row.clickAfterObsMs = t0 - tObs;
     const d = cell.delivery;
     if (d === 'engine') row.click = brief(await w.execute('click', {pid, x: px.x, y: px.y}));
+    // The engine's element click on the observation's node at the picked item (when its tree holds one).
+    else if (d === 'engineElement') {
+      const token = atPick.find(n => n.token != null)?.token;
+      if (token == null) { row.problem = 'the picked item is not a node of the observation'; return; }
+      row.click = brief(await w.execute('click', {pid, element: token}));
+    }
     else if (d === 'post') row.click = await ask({op: 'post', pid, x: screen.x, y: screen.y, stamp: 'overlay', win});
     else if (d === 'postAct') row.click = await ask({op: 'post', pid, x: screen.x, y: screen.y, stamp: 'overlay', win, act: pop.target.n});
     else if (d === 'postMove') row.click = await ask({op: 'post', pid, x: screen.x, y: screen.y, stamp: 'overlay', win, move: true, ...(mode.front ? {} : {act: pop.target.n})});
@@ -537,7 +544,7 @@ async function runRow(app, cell, rep) {
     const beneath = ev.filter(e => ['click', 'pointerdown', 'mousedown'].includes(e.type) && e.load === row.loadObserved).map(e => `${e.type}:${e.id}`);
     row.reachedBeneath = beneath.length > 0 || (ov.app === 'textedit' && row.caretBefore != null && JSON.stringify(caretAfter?.range) !== JSON.stringify(row.caretBefore));
     row.frontChanged = row.after.front !== row.frontAtObs;
-    if (row.click?.error && d === 'engine') row.landing = `refused:${row.click.error}`;
+    if (row.click?.error && d.startsWith('engine')) row.landing = `refused:${row.click.error}`;
     else if (row.click?.error) row.landing = `kitError:${row.click.error}`;
     else if (ov.taken(ctx)) { row.landing = 'taken'; row.takenBy = 'load'; if (ov.takenRow) row.takenRow = ov.takenRow(ctx); }
     // The address field's evidence, beside the page's: unfocused and showing the picked row's URL (Chrome's display form,

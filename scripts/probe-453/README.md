@@ -677,3 +677,45 @@ run 45066234145; on c8858c2a, `popover-shared-behind-click-1` of run 45057158194
   record: the same swatch was pressed and confirmed on c8858c2a, which had no whole-subtree check. The descendant (a
   child read that failed, or children left out, under an AXButton) would show in the engine's own record or in a kit
   run that keeps the swatch's subtree with its `children` count.
+
+### Preview: fix d1e7d318 (ruling 1082's row-selection wave), reps 1
+
+Run https://github.com/SSFSKIM/cua/actions/runs/45073546905, kit 13b07a32, 18 rows. The kit now keeps each row's
+recorded chain at the point (`recordedChain`): every observed node whose frame holds the point, by depth, with the
+wire's fields (role, subrole, frame, title, description, value, actions, flags, children count, token). The wire
+carries no `recorded`, `subtreeRecorded` or `childrenLeaf`.
+
+| kind | shared-behind | shared-front | dedicated-behind | `overlayClick.row` / `refusedBy` |
+|---|---|---|---|---|
+| omnibox row | confirmed, taken | confirmed, taken | confirmed, taken | row AXStaticText 515,236 426×40 |
+| omnibox re-laid out | refused `labelChanged` | refused `labelChanged` | refused `labelChanged` | refusedBy AXStaticText:labelChanged; nothing taken, the row at the point had changed 3/3 |
+| datalist row | refused `notARow` | refused `notARow` | refused `notARow` | row AXGroup 471,228 156×188; refusedBy AXGroup:notARow |
+| permission Allow, Block (behind) | confirmed, taken | (frontmost prompt: the observed window, out of scope) | confirmed, taken | row AXButton |
+| popover swatch | confirmed, colour changed | confirmed, colour changed | confirmed, colour changed | row AXButton 13×13 |
+
+Nothing else moved:
+- frontmost changed 0/16 and key window changed 0/16 in shared and dedicated mode;
+- window over the cover 0/12;
+- wrong row 0/18, false ok 0, false confirmed 0.
+
+**The datalist's recorded chain at the point** (depth, role, frame; the overlay window's part only):
+
+| depth | role | frame | label | actions | children |
+|---|---|---|---|---|---|
+| 2 | AXGroup | 467,220 164×202 | – | – | 1 |
+| 3 | AXList "Autofill" | 471,228 156×188 | title and description "Autofill" | AXPress | 1 |
+| 4 | **AXGroup** | 471,228 156×188 | – | – | 1 |
+| 5 | AXScrollArea | 471,228 156×188 | – | – | 2 |
+| 6 | AXGroup | 471,228 156×188 | – | – | 1 |
+| 7 | AXGroup | 471,228 156×188 | – | – | 5 |
+| 8 | AXStaticText | 475,268 148×36 | value "apricot" | AXPress | 1 |
+| 9 | AXStaticText | 475,268 148×36 | value "apricot" | AXPress | 0 |
+
+How this reads:
+- The AXList's own child on the chain is a wrapper AXGroup the size of the whole list (depth 4). The fix takes that
+  group as the row, and it is not a row role. The option rows sit three levels further down, as children of the
+  depth-7 AXGroup (5 children).
+- The outer "apricot" (depth 8) is the element the spike's bare AXPress took 15/15.
+
+**The omnibox's chain:** AXWebArea "Omnibox Popup" (7) › AXGroup (8) › AXList (9, 4 children) › **AXStaticText**
+(10, AXPress, AXShowMenu, AXScrollToVisible; the row) › AXGroup/AXEmptyGroup (11, 410×40).

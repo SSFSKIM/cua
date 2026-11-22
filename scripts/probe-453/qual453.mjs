@@ -486,7 +486,9 @@ const KINDS = {
       await sleep(900);
     },
     pick: (sky, pr) => { const xs = nodesIn(sky, pr).filter(n => ['AXButton', 'AXLink', 'AXRow', 'AXCell', 'AXListBoxOption', 'AXMenuItem', 'AXRadioButton'].includes(n.role) && nodeLabel(n));
-      return asPick(xs.find(n => !/close|settings/i.test(nodeLabel(n))) ?? xs[0]); },
+      // Tab search's rows are AXStaticText in its web area (smoke 45057158194): the widest, else a button or link.
+      const rows = nodesIn(sky, pr).filter(n => n.role === 'AXStaticText' && nodeLabel(n).length > 20);
+      return asPick(widest(rows) ?? xs.find(n => !/close|settings/i.test(nodeLabel(n))) ?? xs[0]); },
     effect: ctx => ctx.after.overlay == null ? 'closed' : null},
   // Parity: #458's TextEdit font pop-up and #463's <input list> arrow; the effect is the menu or list opened.
   font: {app: 'textedit', overlay: false, open: async () => {},
@@ -509,7 +511,7 @@ if (SPIKE) for (const m of Object.keys(MODES)) {
   if (m !== 'shared-front') for (const kind of ['omnibox', 'datalist', 'permission']) sc(kind, 'kitpost', 5);
 }
 if (!SPIKE && !ORDER) for (const m of Object.keys(MODES)) {
-  cell('omnibox', m, 'click', 6); cell('omnibox', m, 'p-element', 5); cell('omnibox', m, 'relayout', 8);
+  cell('omnibox', m, 'click', 6); cell('omnibox', m, 'p-element', 5); cell('omnibox', m, 'relayout', 20);
   cell('datalist', m, 'click', 6); cell('datalist', m, 'p-element', 5); cell('datalist', m, 'relayout', 6);
   cell('permission', m, 'allow', 5); cell('permission', m, 'block', 5); cell('permission', m, 'p-element', 6); cell('permission', m, 'relayout', 6);
   cell('popover', m, 'click', 6);
@@ -519,7 +521,7 @@ cell('page', 'shared-behind', 'p-page', 5);
 cell('underclosed', 'shared-behind', 'p-underclosed', 5);
 cell('omnibox', 'shared-behind', 'p-forced', 5);
 cell('omnibox', 'shared-behind', 'p-drag', 5);
-cell('siteinfo', 'shared-front', 'p-unknown', 5);
+cell('siteinfo', 'shared-behind', 'p-unknown', 5);
 cell('font', 'shared-behind', 'p-font', 5);
 cell('inputlist', 'shared-behind', 'p-inputlist', 5);
 }
@@ -581,6 +583,9 @@ async function runRow(app, cell, rep) {
     if (!row.pick) { row.problem = 'no item in the observation'; row.overlayNodes = pr ? nodesIn(sky, pr).slice(0, 40).map(n => [n.role, nodeLabel(n).slice(0, 60), winArr(n.frame)]) : null; return; }
     if (['p-element', 'o-element'].includes(cell.how) && row.pick.token == null) { row.problem = 'the item has no token'; return; }
     const {px, screen} = toPixels(sky, row.pick.point);
+    if (pr) row.recordedAtPoint = sky.nodes.filter(n => big(n.frame) && inside(screen, n.frame) && inside(screen, pr))
+      .sort((a, b) => a.frame.width * a.frame.height - b.frame.width * b.frame.height).slice(0, 6)
+      .map(n => [n.role, nodeLabel(n).slice(0, 60), winArr(n.frame)]);
     row.point = {px, screen, inOverlay: pr ? inside(screen, pr) : null};
     // #453's re-laid-out case: one more character typed through the engine, after the screenshot, before the click.
     if (cell.how === 'relayout') {
@@ -591,6 +596,15 @@ async function runRow(app, cell, rep) {
     const left = tObs + row.delayMs - 300 - Date.now(); if (left > 0) await sleep(left);
     const now = await ask({op: 'overlay', pid, window: winArr(wf)});
     row.overlayAtClick = ovWin(now);
+    // The omnibox re-laid out (ruling 1072, decisive): the row the screenshot showed at the point (the pick) beside the row
+    // the popup holds there now, read from its AX rows (a tree walk, no hit-test), and after the click the row taken.
+    if (cell.how === 'relayout' && cell.kind === 'omnibox') {
+      const rs = await ask({op: 'rows', pid, window: winArr(wf)});
+      const at = (rs.elements ?? []).filter(e => e.row && Array.isArray(e.frame) && inside(screen, rect(e.frame)))
+        .sort((a, b) => a.frame[2] * a.frame[3] - b.frame[2] * b.frame[3])[0];
+      row.atPoint = {shown: row.pick.text.slice(0, 160), shownPath: row.pick.path, now: at ? String(at.text ?? '').slice(0, 160) : null,
+        nowPath: at ? pathOf(at.text) : null, rows: (rs.elements ?? []).filter(e => e.row).length, readMs: rs.ms};
+    }
     const coverPid = mode.front ? null : app.cover();
     const ord = await ask({op: 'order'});
     const coverWin = coverPid ? (ord.windows ?? []).find(x => x.pid === coverPid)?.n ?? -1 : -1;
@@ -670,6 +684,7 @@ async function runRow(app, cell, rep) {
     row.reachedBeneath = k.overlay === false ? null : beneath.length > 0 || (cell.app === 'textedit' && row.caretBefore != null && JSON.stringify(caretAfter?.range) !== JSON.stringify(row.caretBefore));
     const ctx = {row, ev, loads: row.after.loads, page, pick: row.pick, after: row.after, omniAfter, openerBefore: row.openerBefore, openerAfter, menus: row.windows.menusMax > 0};
     const eff = k.effect(ctx);
+    if (row.atPoint) row.atPoint.taken = ctx.loads.find(l => /\/results/.test(l))?.replace(/^https?:\/\/[^/]+/, '') ?? (ctx.omniAfter && !ctx.omniAfter.focused ? `address:${ctx.omniAfter.value}` : null);
     row.effect = eff ?? (row.reachedBeneath ? `beneath:${[...new Set(beneath)].join(',')}` : row.after.loads.length ? `navigated:${row.after.loads.join(',')}`
       : k.overlay !== false && !ovWin(after) ? 'dismissed' : 'nothing');
   } catch (e) { row.exception = String(e?.stack || e).slice(0, 1500); }

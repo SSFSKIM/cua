@@ -72,6 +72,12 @@ for (const file of process.argv.slice(2)) {
     const rl = results.filter(r => r.click && r.how === 'relayout' && r.kind === kind && !r.observedIsOverlay);
     if (rl.length) console.log(`- re-laid-out ${kind}: refused ${tally(rl.filter(r => r.click.error).map(r => r.click.overlayClick?.refused ?? r.click.error))}, the recorded row taken ${rl.filter(r => ok(r) && tookIt(r)).length}, a neighbour taken ${rl.filter(r => /^wrongRow/.test(r.effect ?? '')).length} (must be 0), other ${rl.filter(r => !r.click.error && !tookIt(r) && !/^wrongRow/.test(r.effect ?? '')).length} (of ${rl.length}; the list or prompt changed before the click in ${rl.filter(r => r.relaidOut ? r.relaidOut.window != null : JSON.stringify(r.overlayAtObs?.bounds) !== JSON.stringify(r.overlayAtClick?.bounds) || r.overlayAtObs?.n !== r.overlayAtClick?.n).length})`);
   }
+  const ap = results.filter(r => r.atPoint && r.click);
+  if (ap.length) {
+    console.log(`- omnibox re-laid out, the row at the point: shown in the screenshot vs held now: changed in ${ap.filter(r => r.atPoint.nowPath !== r.atPoint.shownPath).length}/${ap.length} (now ${tally(ap.map(r => r.atPoint.nowPath === r.atPoint.shownPath ? 'same row' : r.atPoint.now == null ? 'no row' : 'another row'))}); pressed/taken: ${tally(ap.map(r => r.atPoint.taken == null ? `${r.click.error ?? 'ok'}, nothing taken` : r.atPoint.taken === r.atPoint.shownPath ? `${r.click.error ?? 'ok'}, the shown row` : `${r.click.error ?? 'ok'}, ANOTHER ROW ${r.atPoint.taken}`))}`);
+    const bad = ap.filter(r => r.atPoint.taken != null && r.atPoint.taken !== r.atPoint.shownPath);
+    if (bad.length) console.log(`  - wrong rows: ${bad.map(r => `${r.label}: shown ${r.atPoint.shownPath}, at the point now ${r.atPoint.nowPath}, taken ${r.atPoint.taken}`).join('; ')}`);
+  }
   console.log(`- false ok (answered ok, not taken): ${falseOk.length}${falseOk.length ? ` (${falseOk.map(r => `${r.label} ${r.effect}`).join(', ')})` : ''}`);
   console.log(`- false confirmed (overlayClick confirmed, not taken): ${falseConfirmed.length}${falseConfirmed.length ? ` (${falseConfirmed.map(r => r.label).join(', ')})` : ''}`);
   console.log(`- refused but taken anyway: ${missed.length}${missed.length ? ` (${missed.map(r => r.label).join(', ')})` : ''}`);

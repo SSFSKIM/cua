@@ -240,3 +240,46 @@ since `release_sync.rs` and `pointer.rs` are still untouched.
 - 9fb61c32: 0 in 100.
 
 On the shipped handle tail that is 0 in 200 (one-sided 95% upper bound 1.5%), counting both heads' tails as one form.
+
+## 10. The final head ba5b0438 (ruling 1032; `arm64/handle-final`)
+
+The head is ba5b043834ce8239936743ec8de395deca15bd43.
+- **The binary measured** is the arm64 artifact of linux-engine.yml run 44964231636 (publish=false), sha256
+  `dd74e19b44596f992dd120b13fbbe8021a7ca0af581c07496f5cee8f5edbcf1e`, which equals the sum sent with the head. It
+  reads `cua-engine 0.4.3 (ba5b043834ce)`.
+
+**Carry-over.** `git diff --stat 9fb61c32 ba5b0438`:
+
+```
+ native/linux-engine/src/engine/handle.rs | 438 ++++++++++++++++++++++---------
+ native/linux-engine/tests/live_device.rs |   8 +-
+ 2 files changed, 314 insertions(+), 132 deletions(-)
+```
+
+So handle plain-long and inzone-out carry over from f15e1f09 (section 7). Items 1–4 and 6 carry over from f9d1f86b,
+since `release_sync.rs` and `pointer.rs` are untouched from f9d1f86b to ba5b0438.
+
+**The set.** Plan `t132-handle-long`, 4 rounds of 25 at arm64 twice the load. The `off` control is the same binary with
+`--drag-dnd-release-sync off`, 8 a round, interleaved.
+
+| lane | cell | n | false ok | stale | honest unconfirmed | Chrome activated after the release | ended on the no-drop image / accept / other | late-take rows |
+|---|---|---:|---:|---:|---:|---:|---|---:|
+| final | long-left | 100 | **0** | **0** | 100 | 0 | 99 / 0 / 1 | 0 |
+| off | long-left | 32 | 0 | 0 | 32 | 0 | 32 / 0 / 0 | 0 |
+
+`--stats` `handle.release_sync`:
+
+| lane | tail ran | not run, and why | motions | interrupted_unconfirmed | stopped_for_motion | added ms p50 / p95 / max |
+|---|---:|---|---|---:|---:|---|
+| final | 100 / 100 | – | 4 on every drag | 0 of 100 | 0 of 100 | 20.6 / 26.1 / 30.0 |
+| off | 0 / 32 | 32: "the form is off" | – | 0 of 32 | 0 of 32 | – |
+
+`take_after_the_sample` is no longer recorded at this head. Late takes are the after-release watch's now, and no row
+in the set has a late take (neither the harness's `late_take` signal nor a late drag-and-drop notice).
+
+**Handle long-left on the handle tail across the heads:**
+- f15e1f09: 0 in 100;
+- 9fb61c32: 0 in 100;
+- ba5b0438: 0 in 100.
+
+That is 0 in 300 (one-sided 95% upper bound 1.0%), where 0.4.2's handle end gave 1 in 100 (f9d1f86b).

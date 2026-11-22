@@ -45,7 +45,9 @@ for (const lane of lanes) {
         activation: r.signals?.activation_after_release_ms ?? null, cursor_end: { bd1d: 'nodrop', '1dc3': 'accept' }[prev] ?? 'other', confirmed_by: r.after_release?.confirmed_by ?? null,
         gap: r.wall && r.hold ? r.wall.release_ms - r.wall.press_ms - r.hold.path_ms : NaN, after_take_ms: r.after_take?.release_after_take_ms ?? null, keepalives: r.hold?.keepalives ?? null, sync, joined: Boolean(st), ms: r.ms,
         // a handle end's tail (ruling 1026, f15e1f09 on): `--stats` `handle.release_sync`
-        handle_tail: r.handle?.release_sync ?? st?.handle?.release_sync ?? null });
+        handle_tail: r.handle?.release_sync ?? st?.handle?.release_sync ?? null,
+        // a late take: the harness's signal, or a late drag and drop reported (ruling 1032: the after-release watch's)
+        late: r.signals?.late_take === true || /a late drag and drop/.test(String(r.notice ?? '') + String(r.reply_notice ?? '')) });
     }
   }
   const v = chromeDropVerdict(rows, { plan: judgePlan });
@@ -73,8 +75,8 @@ for (const cell of cells) for (const lane of lanes) {
 const tails = all.filter((r) => r.handle_tail);
 if (tails.length) {
   console.log('\nThe handle end\'s tail (`--stats` `handle.release_sync`, ruling 1026):\n');
-  console.log('| lane | cell | handle drags with a record | tail ran | not run, and why | motions (count: drags) | one-point handles | take_after_the_sample (true / recorded) | stopped_for_motion (true / recorded) | added ms p50 / p95 / max |');
-  console.log('|---|---|---:|---:|---|---|---:|---|---|---|');
+  console.log('| lane | cell | handle drags with a record | tail ran | not run, and why | motions (count: drags) | one-point handles | take_after_the_sample (true / recorded) | stopped_for_motion (true / recorded) | interrupted_unconfirmed (true / recorded) | late-take rows | added ms p50 / p95 / max |');
+  console.log('|---|---|---:|---:|---|---|---:|---|---|---|---:|---|');
   for (const cell of cells) for (const lane of lanes) {
     const rs = tails.filter((r) => r.lane === lane && r.cell === cell);
     if (!rs.length) continue;
@@ -83,7 +85,7 @@ if (tails.length) {
     for (const r of rs.filter((x) => x.handle_tail.ran !== true)) why[r.handle_tail.why_not ?? 'none given'] = (why[r.handle_tail.why_not ?? 'none given'] ?? 0) + 1;
     const motions = {};
     for (const r of ran) motions[r.handle_tail.motions] = (motions[r.handle_tail.motions] ?? 0) + 1;
-    console.log(`| ${lane} | ${cell} | ${rs.length} | ${ran.length} | ${Object.entries(why).map(([k, v]) => `${v}: ${k}`).join('; ') || '–'} | ${Object.entries(motions).map(([k, v]) => `${k}: ${v}`).join(', ') || '–'} | ${ran.filter((r) => r.handle_tail.one_point).length} | ${rs.filter((r) => r.handle_tail.take_after_the_sample === true).length} / ${rs.filter((r) => 'take_after_the_sample' in r.handle_tail).length} | ${rs.filter((r) => r.handle_tail.stopped_for_motion === true).length} / ${rs.filter((r) => 'stopped_for_motion' in r.handle_tail).length} | ${tri(ran.map((r) => r.handle_tail.added_ms).filter(Number.isFinite))} |`);
+    console.log(`| ${lane} | ${cell} | ${rs.length} | ${ran.length} | ${Object.entries(why).map(([k, v]) => `${v}: ${k}`).join('; ') || '–'} | ${Object.entries(motions).map(([k, v]) => `${k}: ${v}`).join(', ') || '–'} | ${ran.filter((r) => r.handle_tail.one_point).length} | ${rs.filter((r) => r.handle_tail.take_after_the_sample === true).length} / ${rs.filter((r) => 'take_after_the_sample' in r.handle_tail).length} | ${rs.filter((r) => r.handle_tail.stopped_for_motion === true).length} / ${rs.filter((r) => 'stopped_for_motion' in r.handle_tail).length} | ${rs.filter((r) => r.handle_tail.interrupted_unconfirmed === true).length} / ${rs.filter((r) => 'interrupted_unconfirmed' in r.handle_tail).length} | ${rs.filter((r) => r.late).length} | ${tri(ran.map((r) => r.handle_tail.added_ms).filter(Number.isFinite))} |`);
   }
 }
 console.log('\nThe judge per lane (H7.1 `chromeDropVerdict`, the lane\'s rows of every round together):\n');

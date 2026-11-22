@@ -23,6 +23,8 @@ final class PopUpPointTests: XCTestCase {
     var actions: [String]? = ["AXShowMenu", "AXPress"]
     var frame: CGRect?
     var expanded: Bool?
+    /// What its AXDOMClassList read answers: AppKit's is unsupported (#469's measurement).
+    var viewClass: PopUpViewClass = .unsupported
     /// Its AXParent read fails now.
     var parentFails = false
     /// Runs as its AXExpanded is read (time passing in a read).
@@ -59,7 +61,8 @@ final class PopUpPointTests: XCTestCase {
 
   private var reads: PopUpReads<Node> {
     PopUpReads(role: { $0.role }, parent: { $0.parentFails ? nil : $0.parent }, children: { $0.children }, enabled: { $0.enabled }, actions: { $0.actions },
-               frame: { $0.frame }, expanded: { node in node.onExpandedRead?(); return node.expanded }, same: { $0 === $1 })
+               frame: { $0.frame }, expanded: { node in node.onExpandedRead?(); return node.expanded }, same: { $0 === $1 },
+               viewClass: { $0.viewClass })
   }
 
   private func windows() -> [ListedWindow]? {
@@ -86,6 +89,7 @@ final class PopUpPointTests: XCTestCase {
     let popup = Node("AXPopUpButton", frame: selectFrame, parent: group)
     popup.actions = ["AXPress", "AXShowMenu", "AXScrollToVisible"]
     popup.expanded = false
+    popup.viewClass = .answered  // measured: AXDOMClassList [] (#469)
     let option = Node("AXMenuItem", frame: CGRect(x: 416, y: 159, width: 57, height: 19))  // recorded, not a live child
     var verdict = StalePointVerdict<Node>(reason: .hitAboveNode, node: recorded(option, ancestor: 2), current: option, point: selectPoint)
     verdict.nodes = [recorded(web), recorded(group, ancestor: 0), recorded(popup, ancestor: 1), recorded(option, ancestor: 2)]
@@ -957,6 +961,93 @@ final class PopUpPointTests: XCTestCase {
     guard case .kept(.disabled, _) = decide(hit: scene.arrow, scene.verdict, at: arrowPoint) else { return XCTFail("main's path") }
     scene.arrow.enabled = nil
     guard case .kept(.disabled, _) = decide(hit: scene.arrow, scene.verdict, at: arrowPoint) else { return XCTFail("unread: main's path") }
+  }
+
+  // MARK: #469: a browser view's pop-up button keeps main's path
+
+  /// Chrome's toolbar as #469's signal run measured it (scripts/probe-337/README.md §"#469 signal" at 4f8c58d1): window >
+  /// AXToolbar > the app menu (`BrowserAppMenuButton`) and site information (`LocationIconView`), and tab search
+  /// (`TabStripFlatEdgeButton`) in the tab strip outside the toolbar; no web area above any, no children while closed,
+  /// AXExpanded not reading, AXDOMClassList answering. The record holds the window, the toolbar and the buttons; the
+  /// guard's node is the one clicked.
+  private func chromeToolbar(_ name: String) -> (popup: Node, verdict: StalePointVerdict<Node>, point: CGPoint) {
+    let window = Node("AXWindow")
+    let toolbar = Node("AXToolbar", parent: window)
+    let frames = ["app menu": CGRect(x: 980, y: 77, width: 34, height: 34), "site information": CGRect(x: 520, y: 81, width: 26, height: 26),
+                  "tab search": CGRect(x: 408, y: 38, width: 28, height: 28)]
+    let frame = frames[name]!
+    let popup = Node("AXPopUpButton", frame: frame, parent: name == "tab search" ? window : toolbar)
+    popup.actions = ["AXPress", "AXShowMenu"]
+    popup.viewClass = .answered
+    let point = CGPoint(x: frame.midX, y: frame.midY)
+    let at = name == "tab search" ? 0 : 1
+    var verdict = StalePointVerdict<Node>(reason: .sameElement, node: recorded(popup, ancestor: at), current: popup, point: point)
+    verdict.nodes = [recorded(window), recorded(toolbar, ancestor: 0), recorded(popup, ancestor: at)]
+    return (popup, verdict, point)
+  }
+
+  /// Site information and tab search open a layer-0 bubble that the AXPress brings to the front over the person's window
+  /// (#463's run 44959835166: Chrome frontmost 6/6 each, answering a false `clickUnconfirmed`); no attribute read before
+  /// the press tells them from the app menu but its view class, which is not allowlisted (ruling 1036). All three keep
+  /// main's posted click, `kept: "browserView"`, with nothing held or pressed and no window list read.
+  func testChromesToolbarPopUpsKeepMainsPostedClickWithNothingPressed() throws {
+    for name in ["site information", "tab search", "app menu"] {
+      let scene = chromeToolbar(name)
+      let decision = decide(hit: scene.popup, scene.verdict, at: scene.point)
+      guard case .kept(.browserView, let role) = decision else { XCTFail("\(name): browserView, not \(decision)"); continue }
+      XCTAssertEqual(role, "AXPopUpButton")
+      var meta = freshMeta()
+      XCTAssertFalse(try click(decision, meta: &meta, held: { XCTFail("\(name): nothing held") }) { _, _ in
+        XCTFail("\(name): nothing performed"); return .success
+      }, "\(name): main's path posts it")
+      XCTAssertEqual(wire(meta)?["kept"] as? String, "browserView")
+      XCTAssertNil(meta.inputRoute, "\(name): left to main's route")
+    }
+    XCTAssertEqual(listReads, 0, "decided before the window list is read")
+  }
+
+  /// The two that #458 keeps pressing, with their measured view-class reads: a page's `<select>` answers AXDOMClassList
+  /// (an empty list) and is still pressed, the web area deciding it; TextEdit's font pop-up answers unsupported and is
+  /// still pressed and confirmed.
+  func testASelectAndAnAppKitPopUpAreStillPressedAndConfirmed() throws {
+    let page = select()
+    XCTAssertEqual(page.popup.viewClass, .answered)
+    let pageDecision = decide(hit: page.popup, page.verdict, at: selectPoint)
+    guard case .press = pageDecision else { return XCTFail("the <select> pressed, not \(pageDecision)") }
+    var meta = freshMeta()
+    XCTAssertTrue(try click(pageDecision, meta: &meta) { button, _ in
+      button.expanded = true
+      self.list = [self.selectMenu, self.appWindow, self.person]
+      return .success
+    })
+    XCTAssertEqual(wire(meta)?["effect"] as? String, "confirmed")
+    let font = font()
+    XCTAssertEqual(font.popup.viewClass, .unsupported)
+    list = [person, appWindow]
+    let fontDecision = decide(hit: font.popup, font.verdict, at: fontPoint)
+    guard case .press = fontDecision else { return XCTFail("TextEdit's pop-up pressed, not \(fontDecision)") }
+    meta = freshMeta()
+    XCTAssertTrue(try click(fontDecision, meta: &meta) { _, _ in
+      self.list = [self.fontMenu, self.appWindow, self.person]
+      return .success
+    })
+    XCTAssertEqual(wire(meta)?["effect"] as? String, "confirmed")
+  }
+
+  /// An AXDOMClassList read that fails for any reason but unsupported (no value, cannot complete, a timeout) may be a
+  /// browser view's: main's path, `kept: "viewClassUnread"`, nothing pressed.
+  func testAnAmbiguousViewClassReadKeepsMainsPath() throws {
+    XCTAssertEqual(popUpViewClass(.success), .answered)
+    XCTAssertEqual(popUpViewClass(.attributeUnsupported), .unsupported)
+    for error in [AXError.noValue, .cannotComplete, .failure, .apiDisabled] { XCTAssertEqual(popUpViewClass(error), .unread, "\(error)") }
+    let scene = font()
+    scene.popup.viewClass = .unread
+    let decision = decide(hit: scene.popup, scene.verdict, at: fontPoint)
+    guard case .kept(.viewClassUnread, _) = decision else { return XCTFail("main's, not \(decision)") }
+    var meta = freshMeta()
+    XCTAssertFalse(try click(decision, meta: &meta, held: { XCTFail("nothing held") }) { _, _ in XCTFail("nothing performed"); return .success })
+    XCTAssertEqual(wire(meta)?["kept"] as? String, "viewClassUnread")
+    XCTAssertEqual(listReads, 0)
   }
 
   // MARK: The review of 7e5bb454..67cf8b26 (the hard bar)

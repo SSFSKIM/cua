@@ -576,7 +576,7 @@ error    {code: number (the vendor's codes where mapped; -10005 otherwise), mess
   popUpClick: #458's coordinate click on a closed pop-up button, on its result and its errors once the guard kept the
     point and #454's step left it (and on #282's element route when it pressed a `<select>`): {role ("AXPopUpButton" |
     "AXComboBox"), kept? ("noSignal" | "notRecorded" | "notHit" | "ancestryUnread" | "disabled" | "open" |
-    "windowsUnread" | "noAction" | "frontmost": main's path was kept, and why), refused? ("noAction": a native combo
+    "windowsUnread" | "noAction" | "frontmost" | "browserView" | "viewClassUnread": main's path was kept, and why), refused? ("noAction": a native combo
     box whose arrow has no AXPress, the app not frontmost), delivery? ("action": the click delivered as the pop-up
     button's or the combo box's arrow's AXPress, by the element click's route, inputRoute 3 or 1, no pointer event; set
     as the action is dispatched), action? ("AXPress"), arrow? (true: the combo box's arrow was pressed), effect?
@@ -7472,6 +7472,37 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   window's cover, `complete` as the whole order, the others not counted, no input check before the raise, the AX result
   ignored, no time-left check between the raise and the read, or after the read.
   Date/Author: 2026-11-21, cursor235's implementer for #458.
+- Decision (#469, ruling 1036, 2026-11-21, `fix/469-popup-menu-only`, plugin 0.28.27; narrows #458's entries above;
+  PopUpPoint.swift): **outside a web page, #458's AXPress goes only to a pop-up button whose AXDOMClassList is
+  unsupported (AppKit's); one whose AXDOMClassList reads, a Chromium or Electron view's, keeps main's posted click.**
+  #463's measurement (kit `probe/463-measure`, scripts/probe-337/README.md §"#463" at 7915cade, run 44959835166) found
+  two of Chrome's toolbar AXPopUpButtons, site information and tab search, open a layer-0 bubble, not a menu: #458's
+  press made Chrome frontmost (6/6 each), left the person's front window covered, and answered a false
+  `clickUnconfirmed`, where main's posted click had not activated Chrome. The signal run (§"#469 signal" at 4f8c58d1, run
+  44970638020, 4 rows per app, each value stable) found no generic pre-press attribute that separates them: AXHasPopup
+  and AXPopupValue `menu` hold for tab search as for the app menu; only the view class (`BrowserAppMenuButton` against
+  `TabStripFlatEdgeButton`, `LocationIconView`) and AXCustomContent tell the app menu apart. Every AppKit pop-up
+  measured (TextEdit, Script Editor, Finder) answers −25205 (attribute unsupported) to AXDOMClassList, and every AppKit
+  AXPopUpButton pressed in #458's and #463's runs opened a menu. The rule (`popUpPoint`, the `.native` place, pop-up
+  buttons only): AXDOMClassList read on the control; `attributeUnsupported` presses as before; any value read keeps
+  main's path (`popUpClick.kept: "browserView"`), Chrome's app menu included, which is not allowlisted by its class name
+  and goes back to the posted click (accepted for now); any other error, no value included, keeps main's path too
+  (`kept: "viewClassUnread"`), since an element that has the attribute may fail to read it. A page's `<select>` is
+  decided by its web area and recorded option as before (its AXDOMClassList, an empty list, is never consulted); the
+  combo box's arrow, an unread ancestry (`ancestryUnread`), the 1.5 s wait, the effect check and the focused-window
+  restore are unchanged. The read is made before the enabled, expanded and window-list reads, so a kept browser view
+  reads no window list. The model-facing sentence now names the supported set positively, wherever a browser view's
+  pop-up sits (a bubble's dropdowns too): "A click on a closed pop-up button in a native app (not one of a
+  Chromium-based app's own buttons), a web page's `<select>`, or a combo box's arrow, …", in agent-cursor.md, the
+  documentation test and the parity oracle; the surface inventory and PROVENANCE.md record it.
+  Proven offline (`PopUpPointTests`, 34 tests): Chrome's site information, tab search and app menu, built from the
+  measured shapes, keep main's path with nothing held or pressed and no window list read; a `<select>` (AXDOMClassList
+  answering) and TextEdit's pop-up (unsupported) are still pressed and confirmed; an AXDOMClassList read that fails
+  other than as unsupported keeps main's path, and the live mapping sends no value, cannot complete, failure and API
+  disabled there. With the fix reverted the browser-view and ambiguous-read tests fail (5 failures); the view class
+  consulted in a page too fails the `<select>` tests (7); unsupported kept too fails the AppKit tests (31); no value read
+  as unsupported fails the mapping test.
+  Date/Author: 2026-11-21, cursor235's implementer for #469.
 
 - Decision (#456, 2026-11-20, `fix/456-recheck-overlay`, plugin 0.28.25; amends #452's entry and #296's
   `StalePointGate`): **the element route's recheck after its wait runs #452's same-app overlay rule on its own fresh,

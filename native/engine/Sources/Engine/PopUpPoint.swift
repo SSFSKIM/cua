@@ -22,7 +22,9 @@ import Foundation
 // delivery's, `deliverPointer`), unlike the posted click, whose delivery guard restores the order after the menu has
 // opened and so closes it.
 //
-// Which controls (the kit's shapes): AppKit's AXPopUpButton, its ancestry established outside every web page; Chrome's
+// Which controls (the kit's shapes): AppKit's AXPopUpButton, its ancestry established outside every web page and its
+// AXDOMClassList unsupported (#469, ruling 1036: a Chromium view's pop-up button, whose AXDOMClassList reads, may open a
+// bubble that the press brings to the front, so it keeps main's path, `browserView`); Chrome's
 // `<select>`, an AXPopUpButton in the page that has no AXMenu child while closed (125/125 rows) but whose options the
 // observation records under it, the deepest recorded node at the point being one of them (`hitAboveNode`, recorded
 // AXMenuItem, 15/15), which a page's ARIA pop-up button does not have; and a native AXComboBox's arrow, which hit-tests
@@ -66,6 +68,22 @@ struct PopUpReads<Element> {
   /// AXExpanded; nil when it does not read (AppKit's pop-up button has none).
   var expanded: (Element) -> Bool?
   var same: (Element, Element) -> Bool
+  /// Whether AXDOMClassList reads (#469): a Chromium view's does, AppKit's answers attribute-unsupported.
+  var viewClass: (Element) -> PopUpViewClass
+}
+
+/// What a pop-up button's AXDOMClassList read answers (#469's measurement, scripts/probe-337/README.md §"#469 signal" at
+/// 4f8c58d1, run 44970638020): every Chrome view answers it, with a value (`BrowserAppMenuButton`, `LocationIconView`,
+/// `TabStripFlatEdgeButton`; a page's `<select>` an empty list); every AppKit pop-up button (TextEdit, Script Editor,
+/// Finder) answers −25205, attribute unsupported. Any other error (no value, cannot complete, a timeout) is neither.
+enum PopUpViewClass: Equatable { case answered, unsupported, unread }
+
+func popUpViewClass(_ error: AXError) -> PopUpViewClass {
+  switch error {
+  case .success: return .answered
+  case .attributeUnsupported: return .unsupported
+  default: return .unread
+  }
 }
 
 private func popUpFrame(_ element: AXUIElement) -> CGRect? { frame(of: element) }
@@ -75,7 +93,8 @@ extension PopUpReads where Element == AXUIElement {
     PopUpReads(role: { attribute($0, kAXRoleAttribute) as? String }, parent: { elementAttribute($0, kAXParentAttribute) },
                children: childrenRead, enabled: { (attribute($0, kAXEnabledAttribute) as? NSNumber)?.boolValue },
                actions: { establishedActionNames(of: $0) }, frame: popUpFrame,
-               expanded: { (attribute($0, kAXExpandedAttribute) as? NSNumber)?.boolValue }, same: { CFEqual($0, $1) })
+               expanded: { (attribute($0, kAXExpandedAttribute) as? NSNumber)?.boolValue }, same: { CFEqual($0, $1) },
+               viewClass: { popUpViewClass(copyAttribute($0, "AXDOMClassList").error) })
   }
 }
 
@@ -181,6 +200,12 @@ enum PopUpKept: String, Equatable {
   case noAction
   /// A combo box with no action of its own in the frontmost app, where the posted click opens its list.
   case frontmost
+  /// A pop-up button outside every web page whose AXDOMClassList reads: a Chromium or Electron view, whose AXPress may
+  /// open a bubble rather than a menu (#469: Chrome's site information and tab search).
+  case browserView
+  /// A pop-up button outside every web page whose AXDOMClassList read failed other than as unsupported, so it may be a
+  /// browser view.
+  case viewClassUnread
 }
 
 /// What a click is delivered to: the element pressed (the pop-up button, or the combo box's arrow), the control whose
@@ -241,7 +266,17 @@ func popUpPoint<Element>(hit: Element?, recorded: RecordedPopUp<Element>?, point
   case .web:
     // Chrome's `<select>`, its options recorded under it; a page's ARIA pop-up button or combo box is the page's own.
     guard kind == .popUpButton, recorded.holdsOption else { return .notPopUp }
-  case .native: break
+  case .native:
+    // #469 (ruling 1036): outside a page, only AppKit's pop-up button is pressed, the one whose AXDOMClassList is
+    // unsupported; a Chromium view's (Chrome's toolbar: site information and tab search open a bubble, which the press
+    // brings to the front over the person's window) keeps main's posted click, its app menu included.
+    if kind == .popUpButton {
+      switch reads.viewClass(control) {
+      case .unsupported: break
+      case .answered: return .kept(.browserView, role: role)
+      case .unread: return .kept(.viewClassUnread, role: role)
+      }
+    }
   }
   guard reads.enabled(control) == true else { return .kept(.disabled, role: role) }
   guard reads.expanded(control) != true else { return .kept(.open, role: role) }

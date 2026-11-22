@@ -557,7 +557,9 @@ const KINDS = {
     effect: ctx => ctx.menus ? 'opened' : null},
 };
 const CELLS = [];
-const cell = (kind, mode, how, reps) => CELLS.push({name: `${kind}/${mode}/${how}`, kind, mode: MODES[mode], how, reps, app: KINDS[kind].app});
+// --cellreps N gives every cell N rows (with --only, one cell measured at a chosen count; --reps still caps).
+const CELL_REPS = Number(arg('cellreps') || 0);
+const cell = (kind, mode, how, reps) => CELLS.push({name: `${kind}/${mode}/${how}`, kind, mode: MODES[mode], how, reps: CELL_REPS || reps, app: KINDS[kind].app});
 if (ORDER) {
   for (const m of ['shared-behind', 'dedicated-behind']) { cell('page', m, 'o-click', 10); cell('page', m, 'o-element', 10); cell('note', m, 'o-type', 5); }
   cell('omnibox', 'dedicated-behind', 'p-element', 10);

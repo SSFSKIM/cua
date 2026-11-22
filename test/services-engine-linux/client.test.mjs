@@ -12,8 +12,8 @@ const client = (t, engine, options = {}) => {
   return made;
 };
 
-test('MIN_ENGINE_VERSION is M5\'s release, 0.4.2; versions read from the --version line and compare numerically', () => {
-  assert.equal(MIN_ENGINE_VERSION, '0.4.2');
+test('MIN_ENGINE_VERSION is M5\'s release, 0.4.3; versions read from the --version line and compare numerically', () => {
+  assert.equal(MIN_ENGINE_VERSION, '0.4.3');
   assert.equal(engineVersionOf('cua-engine 0.3.0 (9381f166e106)'), '0.3.0');
   assert.equal(engineVersionOf('cua-engine 1.12.4 (local)\n'), '1.12.4');
   for (const line of ['', 'sky_linux 0.3.0', 'cua-engine 0.3 (x)', 'cua-engine v0.3.0 (x)']) assert.equal(engineVersionOf(line), null, line);
@@ -24,10 +24,10 @@ test('MIN_ENGINE_VERSION is M5\'s release, 0.4.2; versions read from the --versi
 });
 
 test('an engine older than MIN_ENGINE_VERSION is refused before it is started, with the sentence naming the remedy', async t => {
-  const engine = fakeLinuxEngine(t, {version: 'cua-engine 0.4.1 (7522dcb8fb8c)'});
+  const engine = fakeLinuxEngine(t, {version: 'cua-engine 0.4.2 (9371d2348cf8)'});
   const made = client(t, engine);
-  await assert.rejects(made.request('list_windows', {}), {message: 'cua-engine 0.4.1 is older than 0.4.2, which this cua needs; run cua install --engine'});
-  await assert.rejects(made.capabilities(), {message: /^cua-engine 0\.4\.1 is older than 0\.4\.2/});
+  await assert.rejects(made.request('list_windows', {}), {message: 'cua-engine 0.4.2 is older than 0.4.3, which this cua needs; run cua install --engine'});
+  await assert.rejects(made.capabilities(), {message: /^cua-engine 0\.4\.2 is older than 0\.4\.3/});
   assert.deepEqual(engine.spawns(), [], 'no server was started');
 });
 

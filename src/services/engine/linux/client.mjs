@@ -5,7 +5,9 @@
 // MIN_ENGINE_VERSION, the oldest whose wire and behaviour this service relies on (0.4.0: `animated_action`, which the settle
 // reads; 0.4.1: an Electron drop settled before its release, so its ok is never a drop that did not land; 0.4.2: a
 // Chromium-family drag held until its page can take it, so a drag Chrome refused never answers as a plain one, and the
-// hold's notice beside the ok), or one whose version line it cannot read; nothing is spawned then. It spawns
+// hold's notice beside the ok; 0.4.3: a long Chrome drag and a Chrome source's drag-handle end released on a tail that
+// refreshes Chrome's drop status at the path's end, so under load a drop Chrome made where the path had already left
+// never answers as made, #459), or one whose version line it cannot read; nothing is spawned then. It spawns
 // `<engine> server --desktop <mode>` and sends `capabilities` as the new process's first request, keeping that process's
 // answer. A request may carry a check of the report, made against the process the request is then written to. Requests
 // made while it starts wait for it, in call order.
@@ -25,7 +27,7 @@
 import {execFile, spawn} from 'node:child_process';
 import {heldRecordStdio} from './held-record.mjs';
 
-export const MIN_ENGINE_VERSION = '0.4.2';
+export const MIN_ENGINE_VERSION = '0.4.3';
 const STDERR_TAIL = 8192;
 const VERSION_TIMEOUT_MS = 5000;
 const REMEDY = 'run cua install --engine';

@@ -69,15 +69,6 @@ jobs:
       - name: Apps
         run: |
           bash scripts/probe-316/install.sh chrome
-          if [ "$KIT" = qual463 ]; then
-            if [ -n "$REPS" ]; then extra+=(--reps "$REPS"); fi
-            if [ -n "$CONTROLS" ]; then extra+=(--controls "$CONTROLS"); fi
-            if [ -n "$MODES" ]; then extra+=(--modes "$MODES"); fi
-            P463_ENGINE_REF="$ENGINE_SHA" P463_ENGINE_LABEL="$LABEL" node scripts/probe-463/qual463.mjs --engine "$RUNNER_TEMP/eng/release/cua-engine" \
-              --tool "$RUNNER_TEMP/tool463" --out "$RUNNER_TEMP/probe-463" --budget 150 "${extra[@]}"
-            node scripts/probe-463/reader463.mjs "$RUNNER_TEMP/probe-463/results.json" | tee "$RUNNER_TEMP/probe-463/summary.txt"
-            exit 0
-          fi
           if [ "$KIT" = qual469 ]; then npm ci --prefix scripts/probe-463/electron --no-audit --no-fund; fi
           for d in com.apple.TextEdit com.apple.ScriptEditor2 com.apple.calculator; do
             defaults write "$d" ApplePersistenceIgnoreState -bool YES
@@ -101,6 +92,15 @@ jobs:
         shell: bash
         run: |
           extra=()
+          if [ "$KIT" = qual463 ]; then
+            if [ -n "$REPS" ]; then extra+=(--reps "$REPS"); fi
+            if [ -n "$CONTROLS" ]; then extra+=(--controls "$CONTROLS"); fi
+            if [ -n "$MODES" ]; then extra+=(--modes "$MODES"); fi
+            P463_ENGINE_REF="$ENGINE_SHA" P463_ENGINE_LABEL="$LABEL" node scripts/probe-463/qual463.mjs --engine "$RUNNER_TEMP/eng/release/cua-engine" \
+              --tool "$RUNNER_TEMP/tool463" --out "$RUNNER_TEMP/probe-463" --budget 150 "${extra[@]}"
+            node scripts/probe-463/reader463.mjs "$RUNNER_TEMP/probe-463/results.json" | tee "$RUNNER_TEMP/probe-463/summary.txt"
+            exit 0
+          fi
           if [ "$KIT" = qual469 ]; then
             if [ -n "$REPS" ]; then extra+=(--reps "$REPS"); fi
             if [ -n "$CONTROLS" ]; then extra+=(--controls "$CONTROLS"); fi

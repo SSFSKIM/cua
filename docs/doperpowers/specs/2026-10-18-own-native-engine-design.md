@@ -7491,9 +7491,10 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   decided by its web area and recorded option as before (its AXDOMClassList, an empty list, is never consulted); the
   combo box's arrow, an unread ancestry (`ancestryUnread`), the 1.5 s wait, the effect check and the focused-window
   restore are unchanged. The read is made before the enabled, expanded and window-list reads, so a kept browser view
-  reads no window list. The model-facing sentence gains "(other than a button in a browser's own toolbar or tab
-  strip)" in agent-cursor.md, the documentation test and the parity oracle; the surface inventory and PROVENANCE.md
-  record it.
+  reads no window list. The model-facing sentence now names the supported set positively, wherever a browser view's
+  pop-up sits (a bubble's dropdowns too): "A click on a closed pop-up button in a native app (not one of a
+  Chromium-based app's own buttons), a web page's `<select>`, or a combo box's arrow, …", in agent-cursor.md, the
+  documentation test and the parity oracle; the surface inventory and PROVENANCE.md record it.
   Proven offline (`PopUpPointTests`, 34 tests): Chrome's site information, tab search and app menu, built from the
   measured shapes, keep main's path with nothing held or pressed and no window list read; a `<select>` (AXDOMClassList
   answering) and TextEdit's pop-up (unsupported) are still pressed and confirmed; an AXDOMClassList read that fails

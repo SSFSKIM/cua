@@ -51,6 +51,7 @@ for (const k of ['input', 'change']) document.addEventListener(k, e => send(k, {
 const run = c => { if (c === 'reload') location.replace('/'); if (c.startsWith('goto:')) location.replace(c.slice(5)); if (c.startsWith('push:')) location.href = c.slice(5); };
 (async () => { for (;;) { try { const r = await fetch('/cmd?load=' + load, {cache: 'no-store'}); const j = await r.json(); if (j.cmd) run(j.cmd); } catch (e) { await new Promise(r => setTimeout(r, 500)); } } })();
 addEventListener('load', () => send('ready', {}));
+addEventListener('pageshow', e => { if (e.persisted) send('ready', {restored: true}); });
 })();</script>`;
 const PAGE = `<!doctype html><html lang="en" translate="no"><head><meta charset="utf-8"><meta name="google" content="notranslate"><title>probe463 page</title>
 <style>body{font:15px -apple-system,Helvetica,sans-serif;margin:0} .a{position:absolute;left:16px} input{font-size:15px}

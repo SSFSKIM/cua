@@ -122,7 +122,9 @@ export function stalePointOf(reply){
     // #433's fix: the recorded control beneath the node that the guard judged too, and how it was found (absent on main).
     underlyingRole:role(sp.underlyingRole),underlyingIdentity:sp.underlyingIdentity==='handle'||sp.underlyingIdentity==='recreated'?sp.underlyingIdentity:sp.underlyingIdentity==null?null:'other',
     // #443's fix: for controlGone, the role of the recorded control found gone (absent on main).
-    controlRole:role(sp.controlRole)};
+    controlRole:role(sp.controlRole),
+    // #442's fix: whether the guard hit-tested again after its wait, and whether the answer changed (absent on main).
+    hitCorrection:['same','changed','none'].includes(sp.hitCorrection)?sp.hitCorrection:sp.hitCorrection==null?null:'other'};
 }
 // #433 (ruling 909): the guard's refusal sentence, the engine's own error message on the owned fixture, captured for an
 // overlay cell's refusal only; control characters dropped, at most 600 characters.
@@ -211,7 +213,7 @@ export function summarize(rows){
       // #433: what the record held at the point, and the controls the click reached (`none` for the page itself).
       recorded:tally(v.map(r=>r.guard?.recordedRole??'none')),
       underlying:tally(v.map(r=>r.guard?.underlyingRole?`${r.guard.underlyingRole}:${r.guard.underlyingIdentity??'none'}`:'none')),
-      control:tally(v.map(r=>r.guard?.controlRole??'none')),
+      control:tally(v.map(r=>r.guard?.controlRole??'none')),hitCorrection:tally(v.map(r=>r.guard?.hitCorrection??'none')),
       reached:tally(v.map(r=>[...new Set(eventsOf(r).map(e=>e.link))].sort().join('+')||'nothing')),route:tally(v.map(r=>r.route??'none')),
       landed:v.filter(r=>r.landed).length,wrong:v.filter(r=>r.verdict==='wrong-target').length,
       presentationLost:v.filter(r=>r.presentationHeld===false).length,guardMs:quantiles(v.map(r=>r.guard?.ms)),
@@ -366,6 +368,20 @@ export function gates(rows,{coverage:cov,units:all=UNITS,minPairs=MIN_PAIRS}){
         mainKept:paired.filter(r=>mate(r).guard?.verdict==='kept').length,mainWrong:main.filter(r=>pred(r.cell)&&r.verdict==='wrong-target').length,
         controlRole:tally(list.map(r=>r.guard?.controlRole??'none')),perUnit:perUnit(pred,miss),
         elsewhere:tally(elsewhere.map(r=>unitKey(r))),elsewhereLanded:elsewhere.filter(r=>mate(r)?.verdict==='kept-landed').length,examples:brief(miss)};})(),
+    // #442: another control on top under the inert layer (kind refuse): every valid fix row refused, nothing reached, at
+    // least the usable-pairs bar of fix rows per unit; the reasons and the fix's hitCorrection reported.
+    otherOnTop:(()=>{const pred=c=>CELLS[c].kind==='refuse',list=fix.filter(r=>pred(r.cell)),miss=list.filter(r=>r.verdict!=='refused');
+      const thin=unitsWhere(pred).filter(u=>of(fix,u).length<minPairs).map(unitKey);
+      return {pass:!unitsWhere(pred).length||list.length>0&&everyUnit(pred)&&miss.length===0&&thin.length===0,rows:list.length,failed:miss.length,thin,
+        reasons:tally(list.map(r=>r.guard?.reason??'none')),hitCorrection:tally(list.map(r=>r.guard?.hitCorrection??'none')),
+        mainWrong:main.filter(r=>pred(r.cell)&&r.verdict==='wrong-target').length,mainKeptOk:main.filter(r=>pred(r.cell)&&r.guard?.verdict==='kept').length,
+        perUnit:perUnit(pred,miss),examples:brief(miss)};})(),
+    // #442: the fix review's false-refusal shapes (kind shape), as main row for row, reason included.
+    shapeAsMain:asMainGate(c=>CELLS[c].kind==='shape'),
+    // #442: every valid fix row refused otherControlOnTop outside the refuse cells (reported; a keep cell's fails its own
+    // gate), and how many of those main kept and landed.
+    otherOnTopElsewhere:(()=>{const x=rows.filter(r=>r.head==='fix'&&r.valid&&CELLS[r.cell].kind!=='refuse'&&r.guard?.reason==='otherControlOnTop');
+      return {informational:true,pass:true,rows:x.length,perUnit:tally(x.map(unitKey)),mainKeptLanded:x.filter(r=>mate(r)?.verdict==='kept-landed').length};})(),
     twinUnrecorded:twinGate(c=>UNRECORDED.has(c)),
     twinFrameless:twinGate(c=>FRAMELESS.has(c)),
     keptAsMain:asMainGate(c=>CELLS[c].kind==='keep'&&!OVERLAY.has(c),{mustKeep:true}),

@@ -51,7 +51,7 @@ export async function startPlatform({lane,home,helper,cover,stage}){
       const bin=cft+'/Contents/MacOS/Google Chrome for Testing';
       if(!existsSync(bin))throw Error('CfT unavailable');
       app=owned(bin,['--user-data-dir='+profile,'--no-first-run','--no-default-browser-check','--disable-search-engine-choice-screen',
-        '--disable-features=Translate','--lang=en-US','--window-position=400,30','--window-size=620,700',fx.url],{...env,HOME:process.env.HOME});
+        '--disable-features=Translate','--disable-popup-blocking','--lang=en-US','--window-position=400,30','--window-size=620,700',fx.url],{...env,HOME:process.env.HOME});
       pid=app.pid;version=plistVersion(cft);
     }else throw Error('unknown lane');
     stage('target-ready');

@@ -65,13 +65,13 @@ function cover(kind,extra=0){
     d.style.cssText=(i?'position:absolute;left:0;top:0;width:100%;height:100%':place)+through;
     if(inner)inner.append(d);else outer=d;inner=d;
   }
-  inner.id='veil';slots[0].append(outer);
+  inner.id='veil';slots[0].append(outer);coverOuter=outer;
   return outer;
 }
 // #442's rival, button B (page name \`twin\`), A's box: \`slide\`, in the second row, drawn under the veil (z-index 1 against
 // the veil's 2), which mark slides over A by a transform; \`stack\`, a later sibling of A in its row, A stacked above it
 // (z-index 1 against 0), which mark leaves alone and removes A.
-let rival=null;
+let rival=null,coverOuter=null,pop=null;
 function rivalOf(spec){
   const b=document.createElement('button');b.type='button';b.id='rival';b.className='l';b.textContent=spec.rival==='slide'?'Compose':'Close';
   slots[0].style.position='relative';
@@ -108,7 +108,8 @@ let behind=null;
 function run(c){
   if(c.op==='prepare'){
     const spec=CELLS[c.cell];if(!spec)throw Error('cell');
-    trial=c.trial;cell=c.cell;marked=null;twins=[];mover=null;drafts=null;behind=null;back=null;rival=null;
+    trial=c.trial;cell=c.cell;marked=null;twins=[];mover=null;drafts=null;behind=null;back=null;rival=null;coverOuter=null;
+    if(pop){try{pop.close();}catch{}pop=null;}  // #442's popupwait: the last trial's popup window
     // The cap filler is kept across consecutive cap trials (only the twin's row is rebuilt): rebuilding 6,000 nodes every
     // trial left both Chromium lanes' page unanswering after 15 repetitions (run 44611947576).
     slots=[row(),row(),row()];nav.replaceChildren(...slots);
@@ -227,9 +228,22 @@ function run(c){
       if(spec.behind){behind=document.createElement('button');behind.type='button';behind.textContent='Close';
         behind.style.cssText='position:absolute;left:0;top:0;width:'+target.offsetWidth+'px;height:64px;z-index:-1;border:0;background:#eee;color:#999';
         slots[0].style.position='relative';slots[0].append(behind);}
+      // #442's overflowlink: the target overflowing a 20 px wide parent, unclipped.
+      if(spec.narrow){const box=document.createElement('span');box.style.cssText='display:inline-block;width:20px;white-space:nowrap';
+        target.replaceWith(box);box.append(target);}
+      // #442's deepfront: button F over the target's box, under DEEP nested groups (past the walk's depth cap).
+      if(spec.front==='deep'){slots[0].style.position='relative';
+        const f=document.createElement('button');f.type='button';f.id='front';f.className='l';f.textContent='Close';
+        f.style.cssText='display:block;width:100%;height:100%;box-sizing:border-box;background:#eee';let inner=f;
+        for(let i=0;i<DEEP;i++){const d=document.createElement('div');d.setAttribute('role','group');d.style.cssText='width:100%;height:100%';d.append(inner);inner=d;}
+        inner.style.cssText='position:absolute;left:'+target.offsetLeft+'px;top:'+target.offsetTop+'px;width:'+target.offsetWidth+'px;height:'+target.offsetHeight+'px;z-index:1';
+        slots[0].append(inner);twins=[f];}
       if(spec.rival)rivalOf(spec);
       if(spec.overlap)overlap();else if(spec.cover==='deco')deco();
-      else if(spec.cover){const veil=cover(spec.cover,spec.parent?2:0);if(spec.rival)veil.style.zIndex='2';}
+      else if(spec.cover){const veil=cover(spec.cover,spec.parent?2:0);if(spec.rival||spec.front)veil.style.zIndex='2';
+        // #442's scrimhidden: an aria-hidden child of the scrim over the whole row.
+        if(spec.hiddenChild){const h=document.createElement('span');h.setAttribute('aria-hidden','true');
+          h.style.cssText='position:absolute;left:0;top:0;width:100%;height:100%;display:block';document.getElementById('veil').append(h);}}
     }
     if(document.activeElement&&document.activeElement!==document.body)document.activeElement.blur();
     clicks=[];
@@ -239,8 +253,11 @@ function run(c){
   if(c.op==='mark'){
     const spec=CELLS[cell],before=geometry(),clicksBeforeMark=clicks.length;
     if(spec.rival==='slide'){const a=target.getBoundingClientRect(),r=rival.getBoundingClientRect();
-      rival.style.transform='translate('+(a.left-r.left)+'px,'+(a.top-r.top)+'px)';}
+      rival.style.transform='translate('+(a.left-r.left)+'px,'+(a.top-r.top)+'px)';
+      if(spec.veilInto)rival.append(coverOuter);}  // #442's veilinto: the veil moved into B as it slides over
+    else if(spec.rival==='stack'&&spec.widen)target.style.paddingRight=(32+spec.widen)+'px';  // #442's widen
     else if(spec.rival==='stack')target.remove();
+    else if(spec.recover){coverOuter.remove();cover(spec.cover);}  // #442's rescrim: a new scrim, the same box
     else if(spec.move){slots[0].replaceChildren(archive);slots[1].replaceChildren(target);}
     else if(spec.twin==='list')slots[0].remove();
     else if(spec.overlay){
@@ -282,6 +299,9 @@ function run(c){
   // (\`stack\`, paint order; pointer-events:none layers are skipped), and every control whose box holds the point (\`boxes\`,
   // document order, whatever covers it). Closed names: the page's, \`back\` for the overlap cells' back link, \`overlay\` for a
   // cover layer, \`page\` for anything else.
+  // #442's popupwait: a popup window of the page's own over the screen point (\`x\`, \`y\`: its top-left), \`delay\` ms on.
+  if(c.op==='popup'){setTimeout(()=>{try{pop=window.open('about:blank','pw','popup,left='+c.x+',top='+c.y+',width=240,height=160');}catch{}},c.delay);
+    return {trial,armed:true};}
   if(c.op==='probe'){
     const t0=performance.now(),x=c.x,y=c.y;
     const named=el=>{if(!el||!el.closest)return 'page';const k=el.closest('a,button');if(k)return k===back?'back':nameOf(k);return el.closest('[data-cover]')?'overlay':'page';};
@@ -291,7 +311,7 @@ function run(c){
       return r.width>0&&r.height>0&&x>=r.left&&x<=r.right&&y>=r.top&&y<=r.bottom;}).map(el=>el===back?'back':nameOf(el));
     return {trial,top,stack,boxes,ms:Math.round((performance.now()-t0)*100)/100};
   }
-  if(c.op==='read')return {trial,clicks:clicks.slice(),present:!!target&&target.isConnected,sameNode:!!target&&target===marked,
+  if(c.op==='read')return {trial,clicks:clicks.slice(),present:!!target&&target.isConnected,sameNode:!!target&&target===marked,popped:!!pop&&!pop.closed,
     text:target?target.textContent:null};
   throw Error('op');
 }

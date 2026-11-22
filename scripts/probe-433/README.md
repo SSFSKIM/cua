@@ -727,3 +727,40 @@ A cell gives refused / kept-and-landed rows, per lane (cft · safari · electron
   - Every cell whose first answer was the overlay group over a control (`overcontrol`, `bgbutton`, `overlaprow/link`, `twincover`, `slideover`, `siblingstack`) was corrected before 80 ms on every row: by 42 ms at most on CfT, 61 ms on Electron.
   - No non-scrim row still read the overlay group at 80 ms.
 - **The ticket's cells under the rule:** `slideover` is refused on every row, cold (inferred) and warm, on all three lanes (60 + 60). `siblingstack` is kept on every row (B is a recorded control).
+
+## #442 qual
+
+The fix is `fix/442-other-control-on-top` (from main `5580ac20`; ruling 1073, narrowed by ruling 1078). The same branch and workflow, mode `qualify`, with main and fix interleaved, cold and warm. Not yet counted: the narrowing wave and its review come first. Each lane stays under 500 rows, and one run is in flight at a time.
+
+```sh
+# QA: the refuse cells, siblingstack, the review's shapes, decomove and popupwait; then the same cells warm
+gh workflow run probe-442-measure.yml --ref probe/442-measure -f main="$MAIN_SHA" -f fix="$FIX_SHA" -f mode=qualify -f reps=10 -f hits=cold -f cells=slideover,siblingstack,veilinto,overflowlink,deepfront,rescrim,scrimhidden,widen,decomove,popupwait
+gh workflow run probe-442-measure.yml --ref probe/442-measure -f main="$MAIN_SHA" -f fix="$FIX_SHA" -f mode=qualify -f reps=10 -f hits=warm -f cells=slideover,siblingstack,veilinto,overflowlink,deepfront,rescrim,scrimhidden,widen
+# QB: #433's and #443's overlay cells, cold; then the overlay keeps warm
+gh workflow run probe-442-measure.yml --ref probe/442-measure -f main="$MAIN_SHA" -f fix="$FIX_SHA" -f mode=qualify -f reps=10 -f hits=cold -f cells=overcontrol,bgbutton,rebuildunder,overlapinto,overlaprow,rolechange,scrim,twincover,tipremount,twinunder,stickyscroll,nounder
+gh workflow run probe-442-measure.yml --ref probe/442-measure -f main="$MAIN_SHA" -f fix="$FIX_SHA" -f mode=qualify -f reps=10 -f hits=warm -f cells=overcontrol,bgbutton,rebuildunder,overlapinto,overlaprow,rolechange,scrim,twincover
+# QC: the keep cells, #340's and #431's twins, cold
+gh workflow run probe-442-measure.yml --ref probe/442-measure -f main="$MAIN_SHA" -f fix="$FIX_SHA" -f mode=qualify -f reps=10 -f hits=cold -f cells=retext,plain,like,remount,textbehind,btnremount,tableremount,tablecellremount
+gh workflow run probe-442-measure.yml --ref probe/442-measure -f main="$MAIN_SHA" -f fix="$FIX_SHA" -f mode=qualify -f reps=10 -f hits=cold -f cells=inbox,reltime,shrink,linksave,moved,linkmono,right,centre,twin,twincap
+# Tables: node scripts/probe-433/tables.mjs <dir> <label> (verdicts per head, the fix's {hitCorrection}, stalePoint.ms p50/p95, popupwait by delay)
+```
+
+Rows per lane: QA cold 360 (380 on CfT and Electron, with popupwait), QA warm 320, QB cold 460, QB warm 320, QC 300 and 400.
+
+What the qual adds to the #442 kit:
+- **Kinds** (`cells.mjs`):
+  - `refuse`: `slideover`, `veilinto`. Every valid fix row must be refused and reach nothing (gate `otherOnTop`); the reasons and the fix's `hitCorrection` are reported.
+  - `shape`: the review's false-refusal shapes. Each must answer as main row for row, reason included (gate `shapeAsMain`).
+  - `report`: `popupwait`, run and reported only.
+  - `siblingstack` stays `asMain` under an overlay (gate `overlayAsMain`, as main row for row: the declared limit).
+  - Every keep cell keeps its own gate from before: `overlayKept`, `keptAsMain`, `othersAsMain`, `twinAsMain`, and `decoGone` for `decomove`.
+  - `otherOnTopElsewhere` reports any fix row refused `otherControlOnTop` outside the refuse cells, and how many of those main kept and landed.
+- **The review's shapes**, all under the record's inert layer at the point:
+  - `veilinto` (expected: refuse): as `slideover`, and `mark` also moves the veil into B as B slides over.
+  - `overflowlink`: the target overflows a 20 px wide parent (no clip), with the text point in the overflow. A page cannot make the parent's accessibility read fail, so this is built without that part.
+  - `deepfront`: button F ("Close", the target's box) drawn over the target under the veil, nested 220 groups down, so the walk's depth cut leaves F out of the record. The screenshot shows F on top and nothing changes; both heads reach F.
+  - `rescrim`: the scrim re-created whole in place.
+  - `scrimhidden`: the scrim holds an `aria-hidden` child over the row, which Chromium may hit but does not list.
+  - `widen`: siblingstack's two candidates, with the front one (the target) widened 10 px on its right.
+- **`popupwait`** (CfT and Electron, link point): the page opens a popup window over the point (`window.open`; CfT runs with `--disable-popup-blocking` on every cell) 0, 20, 40, 60, 90 or 150 ms after the harness's command, which it sends just before the click, by repetition. Rows record `popupDelay` and whether the popup was open by the read. The popup may take the app frontmost, so `presentationHeld` may be false on these rows.
+- **Meta:** every row records the fix's `stalePoint.hitCorrection`, and `tables.mjs` adds it per unit as `{changed n, same n, none n}`. `controlRole` on `otherControlOnTop` is the role of the control on top.

@@ -8,7 +8,7 @@ import {join} from 'node:path';
 import {execFileSync} from 'node:child_process';
 import {Wire} from './wire.mjs';
 import {owned,stop,pause,environment,startPlatform,startHelper} from './platform.mjs';
-import {LANES,CELLS,recordedRole,controlRole,unitKey,unitsForLane,isReportOnly,repsOf,plan,pointFor} from './cells.mjs';
+import {POPUP_DELAYS,LANES,CELLS,recordedRole,controlRole,unitKey,unitsForLane,isReportOnly,repsOf,plan,pointFor} from './cells.mjs';
 import {signalsOf,cssPoint} from './signals.mjs';
 import {outcomeOf,stalePointOf,sentenceOf,routeOf,findLink,uncoveredBy,labelledOf,nodeAt,overlayAt,landingOf,delta,score,summarize,coverage,judge} from './check.mjs';
 
@@ -103,7 +103,7 @@ async function main(){
     for(const c of cells){
       const e=engines[c.head],app=e.appPath,spec=CELLS[c.cell];
       let s='engine-attach',attested=false,armed=false,observeFailed=false,observed=null,found=null,placed=null,mark=null,click=null,read=null,
-        after=null,reobserved=false,witness=null,invalid=null,exercised=null,walk=null,observeTries=0,gap,prep=null;
+        after=null,reobserved=false,witness=null,invalid=null,exercised=null,walk=null,observeTries=0,gap,prep=null,popupDelay=null;
       // #442: the page's truth and accessibility's live reading at the point, after the observation and before the click.
       const sig={};
       try{
@@ -182,6 +182,11 @@ async function main(){
           s='witness-before-action';
           if(!await platform.witness())throw stepError('witness-before-action');
           attested=true;
+          // #442's popupwait: the page opens a popup window over the point \`popupDelay\` ms after this command, sent just
+          // before the click, so that it may arrive while the fix waits to hit-test again.
+          if(spec.popup){s='popup';popupDelay=POPUP_DELAYS[c.rep%POPUP_DELAYS.length];
+            const pr=await platform.command({op:'popup',trial,delay:popupDelay,x:Math.round(placed.screen.x-100),y:Math.round(placed.screen.y-60)});
+            if(pr.error||pr.trial!==trial)throw stepError('popup');}
           s='click';
           click=await e.call('click',{app,x:placed.px.x,y:placed.px.y});
           // The page's log until a click reaches the target (or 1.5 s), then once more 300 ms later.
@@ -224,7 +229,7 @@ async function main(){
         ...(mode==='discover'&&gap!==undefined?{gap}:{}),observeTries,dom:mark?{text:delta(mark.before?.textRect,mark.after?.textRect),link:delta(mark.before?.link,mark.after?.link),twin:delta(mark.before?.link,mark.twin)}:null,walk,
         frames:found?{text:found.text?.frame??null,link:found.link.frame,point:placed?.screen??null}:null,
         presentationHeld:witness?.held??null,observeMs:observed?.ms??null,clickMs:click?.ms??null,
-        css:sig.css??null,signals:sig.nodes?signalsOf({spec,nodes:sig.nodes,point:sig.point,pre:sig.pre,post:sig.post,after:sig.after,warm:sig.warm,domPre:sig.domPre,
+        ...(spec.popup?{popupDelay,popped:read?.popped??null}:{}),css:sig.css??null,signals:sig.nodes?signalsOf({spec,nodes:sig.nodes,point:sig.point,pre:sig.pre,post:sig.post,after:sig.after,warm:sig.warm,domPre:sig.domPre,
           domPost:sig.domPost,clicks:read?.clicks}):null};
       rows.push(row);
       // A report-only unit's rows never move the abort streak.

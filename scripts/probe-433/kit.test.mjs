@@ -35,7 +35,9 @@ test('plans: ten per unit to measure, twenty per head interleaved to qualify', (
   const q = plan({mode: 'qualify', heads: ['main', 'fix']});
   assert.equal(q.length, 2 * 20 * UNITS.length);
   assert.deepEqual([...new Set(q.filter((_, i) => i % 2 === 0).map(r => r.head))].sort(), ['fix', 'main']);
-  for (const c of Object.values(CELLS)) assert.ok(['twin', 'keep', 'big', 'asMain'].includes(c.kind));
+  for (const c of Object.values(CELLS)) assert.ok(['twin', 'keep', 'big', 'asMain', 'refuse', 'shape', 'report'].includes(c.kind));
+  // A report cell runs report-only at every point it plans.
+  for (const [k, c] of Object.entries(CELLS)) if (c.kind === 'report') assert.deepEqual(c.reportOnlyAt, c.at ?? AT, k);
   // A twin carries the target's label, so the topmost of those reading it is the target.
   for (const c of Object.values(CELLS)) if (c.kind === 'twin') assert.ok((c.before === c.after || c.twin === 'deco') && ['move', 'list', 'cap', 'deep', 'swap', 'cover', 'row', 'wide', 'hidden', 'deco'].includes(c.twin));
   // Every cell's text before and after is distinct from the other links', so the observation finds it alone.
@@ -127,7 +129,7 @@ test('replies: outcome, the guard\'s record on a refusal and on a success, the r
     stalePoint: {verdict: 'refused', reason: 'nodeGone', recordedRole: 'AXStaticText', hitRole: 'AXStaticText', ms: 1.2}}}};
   assert.equal(outcomeOf(refused), 'screenChangedSinceScreenshot');
   assert.deepEqual(stalePointOf(refused), {verdict: 'refused', reason: 'nodeGone', identity: null, recordedRole: 'AXStaticText',
-    hitRole: 'AXStaticText', ms: 1.2, rechecked: false, underlyingRole: null, underlyingIdentity: null, controlRole: null});
+    hitRole: 'AXStaticText', ms: 1.2, rechecked: false, underlyingRole: null, underlyingIdentity: null, controlRole: null, hitCorrection: null});
   // #433's fix: the control beneath, and how it was found.
   const under = stalePointOf({result: {meta: {stalePoint: {verdict: 'kept', reason: 'sameElement', recordedRole: 'AXGroup', underlyingRole: 'AXLink', underlyingIdentity: 'recreated'}}}});
   assert.equal(under.underlyingRole, 'AXLink'); assert.equal(under.underlyingIdentity, 'recreated');
@@ -207,10 +209,11 @@ function rows(verdictFor, extra = () => ({}), units = UNITS) {
 // Main as phase 1 measured it: the twins clicked, the text that changes width and the changes of meaning refused at the
 // text, the moved link refused at both points, the rest kept and landed.
 // Main carries #431: it refuses the framed twins and lands on the frameless ones and on twincover's (#433).
-const mainOf = r => CELLS[r.cell].kind === 'twin' ? (CELLS[r.cell].cover || FRAMELESS.has(r.cell) ? 'wrong-target' : 'refused') : ['scrim', 'nounder'].includes(r.cell) ? 'kept-missed'
+// #442: main lands on B in the refuse cells; the fix refuses them.
+const mainOf = r => CELLS[r.cell].kind === 'refuse' ? 'wrong-target' : CELLS[r.cell].kind === 'twin' ? (CELLS[r.cell].cover || FRAMELESS.has(r.cell) ? 'wrong-target' : 'refused') : ['scrim', 'nounder'].includes(r.cell) ? 'kept-missed'
   : ['linksave', 'moved', 'linkmono'].includes(r.cell) || ['inbox', 'reltime', 'shrink', 'right', 'centre'].includes(r.cell) && r.at === 'text'
     ? 'refused' : 'kept-landed';
-const good = r => r.head === 'fix' && CELLS[r.cell].kind === 'twin' ? 'refused' : mainOf(r);
+const good = r => r.head === 'fix' && ['twin', 'refuse'].includes(CELLS[r.cell].kind) ? 'refused' : mainOf(r);
 const planned = list => list.reduce((o, r) => (o[`${r.head}/${unitKey(r)}`] = (o[`${r.head}/${unitKey(r)}`] ?? 0) + 1, o), {});
 const at = (cell, pt, rep, v) => r => r.head === 'fix' && r.cell === cell && (!pt || r.at === pt) && (rep == null || r.rep === rep) ? v : good(r);
 
@@ -223,7 +226,7 @@ test('gates pass a fix that refuses every twin and answers as main elsewhere, an
   // A moved target's own handle refuses frameMoved, which the swap cells count with nodeGone; no other twin does.
   const swapMoved = rows(good, r => r.head === 'fix' && r.cell.startsWith('twinswap') ? {guard: {verdict: 'refused', reason: 'frameMoved'}} : {});
   assert.equal(gates(swapMoved, {coverage: cov}).twinRefused.pass, true);
-  assert.equal(g.noWrongTarget.mainWrong, 13 * 20 + 20);  // decomove, gated from #443, at both points
+  assert.equal(g.noWrongTarget.mainWrong, 13 * 20 + 20 + 80);  // decomove, gated from #443, and #442's slideover and veilinto, at both points
   // #443: decomove refuses controlGone wherever main kept; any other refusal reason there fails; where main refused
   // (Safari's nodeGone), the fix answers as main, reason included; a controlGone elsewhere is reported.
   assert.equal(g.decoGone.pass, true); assert.equal(g.decoGone.controlGone, 40); assert.deepEqual(g.decoGone.controlRole, {AXLink: 40});
@@ -249,7 +252,7 @@ test('gates pass a fix that refuses every twin and answers as main elsewhere, an
   // The builder's cost cells (#433) are reported only, outside the gates' rows.
   const costRows = ok.filter(r => r.head === 'fix' && ['stickyscroll', 'tipremount', 'twinunder'].includes(r.cell)).length;
   assert.equal(costRows, 3 * 2 * 20); assert.ok(['stickyscroll', 'tipremount', 'twinunder'].every(c => g.reportOnly.perUnit[c + '/link']));
-  assert.deepEqual(g.guardMs.fix, {n: ok.length / 2 - costRows, p50: 4, p95: 4, max: 4});
+  assert.deepEqual(g.guardMs.fix, {n: ok.length / 2 - ok.filter(r => r.head === 'fix' && isReportOnly(r)).length, p50: 4, p95: 4, max: 4});
   // Only a guard that judged the overlay counts: a fix row with no guard record, or another recorded role, fails; too few
   // rows recording the overlay on either head leave the gate inconclusive.
   assert.equal(gates(rows(at('twincover', 'text', 4, 'no-guard')), {coverage: cov}).overlayTwin.pass, false);
@@ -570,4 +573,20 @@ test('#442: the record\'s controls at the point, innermost, by role and by the e
   assert.deepEqual(s.stack.pre, {paintTop: 'target', treeLast: 'twin', treeAgrees: false, visible: {target: true, twin: true}});
   assert.equal(s.stack.post, null); assert.equal(s.c.agrees, true); assert.deepEqual(s.ax.after.grid, {overlay: 1});
   assert.deepEqual(s.ax.after.seq, ['overlay@0', 'twin@12']); assert.equal(s.ax.pre.grid, undefined); assert.equal(s.ax.warm, null);
+});
+
+test('#442: the refuse cells must refuse every fix row; the review\'s shapes answer as main; otherControlOnTop elsewhere is reported', () => {
+  const ok = rows(good), cov = coverage(ok, {planned: planned(ok), heads: ['main', 'fix']});
+  const g = gates(ok, {coverage: cov});
+  assert.equal(g.otherOnTop.pass, true); assert.equal(g.otherOnTop.rows, 2 * 2 * 20); assert.equal(g.otherOnTop.mainWrong, 80);
+  assert.equal(g.shapeAsMain.pass, true); assert.equal(g.otherOnTopElsewhere.rows, 0);
+  // A slideover fix row that lands on B fails; so does one kept and missed.
+  assert.equal(gates(rows(at('slideover', 'text', 3, 'wrong-target')), {coverage: cov}).otherOnTop.pass, false);
+  assert.equal(gates(rows(at('veilinto', 'link', 0, 'kept-missed')), {coverage: cov}).otherOnTop.pass, false);
+  // A shape refused on the fix where main kept fails its gate, and the refusal is reported beside.
+  const shapeRefused = rows(at('widen', 'text', 1, 'refused'), r => r.head === 'fix' && r.cell === 'widen' && r.at === 'text' && r.rep === 1
+    ? {guard: {verdict: 'refused', reason: 'otherControlOnTop', recordedRole: 'AXGroup'}} : {});
+  const s = gates(shapeRefused, {coverage: cov});
+  assert.equal(s.shapeAsMain.pass, false); assert.equal(s.otherOnTopElsewhere.rows, 1); assert.equal(s.otherOnTopElsewhere.mainKeptLanded, 1);
+  assert.equal(stalePointOf({result: {meta: {stalePoint: {verdict: 'kept', reason: 'sameElement', hitCorrection: 'changed'}}}}).hitCorrection, 'changed');
 });

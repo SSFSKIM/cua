@@ -17,7 +17,9 @@ const cell=(lane,u,h)=>{
   const v=lanes[lane].rows.filter(r=>r.valid&&r.head===h&&unitKey(r)===unitKey(u));if(!v.length)return null;
   const main=tally(v.map(r=>`${r.verdict} ${r.guard?.reason??'-'}`)).map(([k,n])=>`${k} ${n}`).join(', ');
   const gone=tally(v.filter(r=>r.guard?.controlRole).map(r=>r.guard.controlRole)).map(([k,n])=>`${k} ${n}`).join(', ');
-  return main+(gone?` [${gone}]`:'');
+  // #442's fix: whether the guard hit-tested again and the answer changed (\`{changed n, same n, none n}\`).
+  const corr=tally(v.filter(r=>r.guard?.hitCorrection).map(r=>r.guard.hitCorrection)).map(([k,n])=>`${k} ${n}`).join(', ');
+  return main+(gone?` [${gone}]`:'')+(corr?` {${corr}}`:'');
 };
 console.log(`| Unit | ${order.flatMap(l=>heads.map(h=>`${l}: ${h}`)).join(' | ')} |`);
 console.log(`|---|${order.flatMap(()=>heads.map(()=>'---|')).join('')}`);
@@ -34,3 +36,11 @@ for(const l of order)for(const h of heads){
 console.log('\n| Run | Lane | Image | Browser | Rows | Abort | Gates failing |\n|---|---|---|---|---|---|---|');
 for(const l of order){const s=lanes[l].status,failing=Object.entries(s.gates??{}).filter(([,g])=>!g.informational&&!g.pass).map(([k])=>k);
   console.log(`| ${label} | ${l} | ${s.image??'?'} | ${s.version??'?'} | ${s.completed}/${s.planned} | ${s.abort??'none'} | ${s.gates?failing.join(', ')||'none':'–'} |`);}
+// #442's popupwait: per lane, head and delay, the guard's verdict and reason, and how many rows had the popup open by the read.
+const pops=order.flatMap(l=>lanes[l].rows.filter(r=>r.valid&&r.popupDelay!=null).map(r=>({...r,lane:l})));
+if(pops.length){
+  console.log('\n| Lane | Head | Popup delay ms | Verdicts | Popup open at the read |\n|---|---|---|---|---|');
+  for(const k of [...new Set(pops.map(r=>`${r.lane}|${r.head}|${r.popupDelay}`))]){const [l,h,d]=k.split('|');
+    const v=pops.filter(r=>r.lane===l&&r.head===h&&String(r.popupDelay)===d);
+    console.log(`| ${l} | ${h} | ${d} | ${tally(v.map(r=>`${r.verdict} ${r.guard?.reason??'-'}`)).map(([x,n])=>`${x} ${n}`).join(', ')} | ${v.filter(r=>r.popped).length}/${v.length} |`);}
+}

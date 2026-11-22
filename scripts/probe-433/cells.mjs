@@ -23,6 +23,11 @@ export const LANES=['cft','safari','electron'];
 //   container). Reported (`bigPage`), never part of the pass: how often a large page costs a re-creation its click.
 // - asMain: every other cell answers as main does (#340's: the text that grows, shrinks or changes meaning, the moved
 //   link; refusals on main at the text where the text's width changes).
+// - refuse (#442): another live control comes on top of the recorded target under an inert layer; the fix must refuse
+//   every row and reach nothing (gate `otherOnTop`).
+// - shape (#442, the fix review's false-refusal shapes): each answers as main row for row, reason included (gate
+//   `shapeAsMain`).
+// - report (#442): run and reported only (`reportOnlyAt` every point).
 // `style` gives the link a width the change keeps (`tabular`: a fixed width with tabular digits; `mono`: monospace;
 // `right` and `centre`: a fixed width with the text aligned right or centred).
 // `control: 'button'` builds the target (and its twin) as buttons; a button exposes no text child, so only the control
@@ -121,8 +126,30 @@ export const CELLS={
   //   up over A by a transform (its element and AX object survive; A not removed, unchanged).
   // - siblingstack: button B ("Close", A's box), a later sibling of A in A's row; CSS stacks A (z-index 1) above B (0), so
   //   the record holds both at the point; mark removes A.
-  slideover:{kind:'asMain',before:'Inbox',after:'Inbox',cover:'veil',rival:'slide',records:'AXGroup'},
+  // #442's qualification gates slideover (kind refuse) and keeps siblingstack as main (the declared limit, overlayAsMain).
+  slideover:{kind:'refuse',before:'Inbox',after:'Inbox',cover:'veil',rival:'slide',records:'AXGroup'},
   siblingstack:{kind:'asMain',before:'Inbox',after:'Inbox',cover:'veil',rival:'stack',records:'AXGroup'},
+  // #442's qualification, the fix review's shapes, all under the record's inert layer at the point:
+  // - veilinto (refuse): as slideover, and mark also moves the veil into B as B slides over A.
+  // - overflowlink: the target overflowing a 20 px wide parent (no clip), the text point in the overflow; nothing changes.
+  //   (The review's shape has the parent's read fail, which a page cannot cause.)
+  // - deepfront: button F ("Close", the target's box) drawn over the target under the veil, nested DEEP groups down, so
+  //   the walk's depth cut leaves F out of the record; the screenshot shows F on top and nothing changes (both heads reach
+  //   F, logged as `twin`).
+  // - rescrim: the scrim re-created whole in place (a new element, the same box).
+  // - scrimhidden: the scrim holding an aria-hidden child over the row, which Chromium may hit but does not list; nothing
+  //   changes.
+  // - widen: siblingstack's two candidates, and mark widens the front one (the target) by 10 px on its right instead of
+  //   removing it; the click lands on the target.
+  veilinto:{kind:'refuse',before:'Inbox',after:'Inbox',cover:'veil',rival:'slide',veilInto:true,records:'AXGroup'},
+  overflowlink:{kind:'shape',before:'Inbox',after:'Inbox',cover:'veil',narrow:true,records:'AXGroup'},
+  deepfront:{kind:'shape',before:'Inbox',after:'Inbox',cover:'veil',front:'deep',records:'AXGroup'},
+  rescrim:{kind:'shape',before:'Inbox',after:'Inbox',cover:'scrim',recover:true,records:'AXGroup'},
+  scrimhidden:{kind:'shape',before:'Inbox',after:'Inbox',cover:'scrim',hiddenChild:true,records:'AXGroup'},
+  widen:{kind:'shape',before:'Inbox',after:'Inbox',cover:'veil',rival:'stack',widen:10,records:'AXGroup'},
+  // A popup window of the app's own opened over the point while the fix waits to hit-test again (Chromium only; the page's
+  // window.open, `popup`: the delay after the harness's command sweeps POPUP_DELAYS by repetition). Reported only.
+  popupwait:{kind:'report',before:'Inbox',after:'Inbox',cover:'veil',popup:true,lanes:['cft','electron'],records:'AXGroup',at:['link'],reportOnlyAt:['link']},
   inbox:{kind:'asMain',before:'Inbox',after:'Inbox (3)'},
   reltime:{kind:'asMain',before:'1 minute ago',after:'2 minutes ago'},
   shrink:{kind:'asMain',before:'Inbox (12)',after:'Inbox'},
@@ -148,6 +175,8 @@ export const WIDE=150;
 // control's AXStaticText near its start; `link`, in the control's left padding, outside its text (the record takes the
 // control itself).
 export const AT=['text','link'];
+// popupwait's delays (ms) from the harness's popup command, which it sends just before the click, by repetition.
+export const POPUP_DELAYS=[0,20,40,60,90,150];
 export const controlRole=cell=>CELLS[cell].control==='button'?'AXButton':'AXLink';
 // The role the record takes at the unit's point: the overlay's for #433's cells (`records`), else the text's or the control's.
 export const recordedRole=(cell,at)=>CELLS[cell].records??(at==='text'?'AXStaticText':controlRole(cell));

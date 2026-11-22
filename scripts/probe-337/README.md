@@ -1136,3 +1136,133 @@ bubble buttons had answered with Finder frontmost at 1.8 s, and the transient wa
   is closed again by the shared-behind restore on both engines (main 2/10, fix 7/10 seen; up 0 on both), as #463 found
   for menus. Dedicated keeps it up 5/5. No frontmost change on either engine.
 - **#458's cells and parity are unchanged:** all 105 rows identical on main and the fix.
+
+## #463 qual: main 9c6368ce against fix/463-transient-ui 2e2952ee
+
+**Engines.**
+- Fix: head 2e2952ee6010a06b8e24a785a0334b5f2da3be6e. It is 0c370d1ac with main merged in; the engine code is identical, and
+  the tree differs only by #469's evidence file.
+- Main: 9c6368ce1ad976d4f99c94dd76703168c57ecab6, which is 1a1956b2 plus #469 (merged as e2cde75a). The fix is stacked on
+  #469, so this pairing isolates #463's change. The #469 cells' comparison with 1a1956b2 is §"#469 qual".
+
+**Kit.** `scripts/probe-463/qual463.mjs` (reader `reader463.mjs`; workflow `probe-463.yml` with `kit: qual463`), engines
+built unmodified. The layout is a (Finder F1 > F2 > the app's window(s) > Calculator; read back as built in 480/480 rows).
+- Cells: #463's 12 controls (§"#463"), each clicked by the engine at the control the observation recorded, in
+  shared-behind, shared-front and dedicated-behind, 5 rows each.
+- Parity (shared-behind, 5 each):
+  - TextEdit's bold toggle (a plain AppKit button);
+  - Chrome's Back (after a pushed navigation) and a page link;
+  - the page's `<select>` and TextEdit's font pop-up (#458/#469 deliveries), and the font-size combo box's arrow;
+  - an open menu's item (#454: the kit's AXPress opens the font menu, then the engine clicks the next item);
+  - a click on TextEdit's text (the caret should land on that line);
+  - `<input list>` clicked on its text rather than its arrow;
+  - right clicks with the app frontmost: the text view's and the page's, in the shared-front cells.
+
+**Per row.** The kit records:
+- the watch's new windows, sampled every 10 ms;
+- Finder's AXFocusedWindow and AXMainWindow, every ~5 ms;
+- `lsappinfo front` read back to back for 4 s (frontmost "transient" means any read other than before the click; "end"
+  means the last read), with the delivery guard's `frontmostRestored` beside it;
+- the window order at 1.8 s, and the cell's own effect.
+
+"F1 covered" in shared-front rows is the app's own window, which the layout puts over F1 in that mode.
+
+**Runs** (Google Chrome 157.0.8103.79, macOS 26.7.2, image 20261117.0516.1, kit 9a237c05, 240 rows each, no problems):
+- fix 2e2952ee: https://github.com/SSFSKIM/cua/actions/runs/44983600954
+- main 9c6368ce: https://github.com/SSFSKIM/cua/actions/runs/44987874604
+- smoke, fix 2e2952ee, 48 rows, kit 967ea5e3: https://github.com/SSFSKIM/cua/actions/runs/44982406819. Its Back effect was
+  unread, because the page came back from the back-forward cache; the kit now reports `pageshow`.
+
+A first smoke on 0c370d1ac (run 44982115084) never ran: the kit was wired into the wrong workflow step. Artifacts are in
+`~/.local/share/probe-463/run-<id>/`.
+
+### #463's cells, main 9c6368ce / fix 2e2952ee
+
+"UI": open / closed before 1.8 s / still up at 1.8 s, of 5 rows. "Front": the frontmost app changed transient / end (lsappinfo,
+or the guard's `frontmostRestored`). Finder's focused window never left F1, in any row of either run.
+
+| control | mode | main: answer; UI; front | fix: answer [popUpClick]; UI; front |
+|---|---|---|---|
+| TextEdit `list style` (AXMenuButton) | shared-behind | ok; 5 / **5** / 0; 0 / 0 | ok [menuButton AXPress **confirmed**]; 5 / **0** / **5**; 0 / 0 |
+| | shared-front | ok; up 5; 0 | ok [kept frontmost]; up 5; 0 |
+| | dedicated-behind | ok; 1 / 1 / 0; 0 | ok [menuButton AXPress confirmed]; up **5**; 0 |
+| TextEdit `document actions` | shared-behind | ok; up 5; 0 | ok [kept disabled: the button reads AXEnabled false]; up 5; 0 |
+| | shared-front / dedicated | ok; up 5 / 5 | ok [kept frontmost / disabled]; up 5 / 5 |
+| TextEdit text view, right click | shared-behind | ok; 1 / 1 / 0 (4: nothing); 0 | **`backgroundClickRefused`** [refused rightClick], nothing posted, nothing opened |
+| | shared-front | ok; up 5 | ok; up 5 |
+| | dedicated-behind | ok; 1 / 1 / 0 | ok; nothing 0/5 (main's path) |
+| TextEdit `text color` well | shared-behind | ok; 5 / **5** / 0; 0 | ok [colorWell AXPress **confirmed**]; up **5**; 0 |
+| | shared-front | ok; up 5 | ok [kept frontmost]; up 5 |
+| | dedicated-behind | ok; nothing 0/5 | ok [colorWell AXPress confirmed]; up **5** |
+| Chrome app menu | shared-behind | ok [kept browserView]; up 5; 0 / 0 | **refused** [browserView], nothing posted, nothing opened |
+| | front / dedicated | ok [kept browserView]; up 5 / 5; 0 | the same as main |
+| Chrome profile | shared-behind | ok; 2 / 1 / 1; **2** / 0 | **refused** [browserView]; nothing; 0 / 0 |
+| | dedicated-behind | ok; up 5; **5 / 5** Chrome | ok; up 5; **5 / 5** Chrome (main's path) |
+| Chrome star (#471) | shared-behind | ok; 3 / 3 / 0; 2 / 0 | ok; 3 / 3 / 0 (2: nothing); **4** / 0 |
+| | dedicated-behind | ok; 1 / 0 / 1; **5 / 5** | ok; nothing 0/5; **5 / 5** (main's path) |
+| Chrome site information | shared-behind | ok [kept browserView]; 3 / 3 / 0; **4** / 0 | **refused** [browserView]; nothing; 0 / 0 |
+| | dedicated-behind | ok [kept]; nothing 0/5; **5 / 5** | the same (main's path) |
+| Chrome tab search | shared-behind | ok [kept browserView]; 3 / 2 / 1; **4** / 0 | **refused** [browserView]; nothing; 0 / 0 |
+| | dedicated-behind | ok [kept]; up 5; **5 / 5** | the same |
+| Chrome page, right click | shared-behind | ok; 1 / 0 / 1 (4: nothing); 0 | **refused** [rightClick]; nothing |
+| | shared-front / dedicated | ok; up 5 / 5 | ok; up 5 / 4 (1: nothing) |
+| `<input list>` arrow | shared-behind | ok route 1 (#282's `focusField`); nothing 0/5 | ok [datalist AXPress **confirmed**]; up **5** |
+| | shared-front | ok; up 5 | ok [kept frontmost]; up 5 |
+| | dedicated-behind | ok; nothing 0/5 | ok [datalist AXPress confirmed]; up **5** |
+| `<input type=date>` icon | shared-behind | ok (#282's AXPress); up 5 | the same |
+| | front / dedicated | ok; nothing 0/5 / 0/5 | the same |
+| `<input type=color>` | shared-behind | `backgroundClickRefused` (#282's webArea) | the same |
+| | front / dedicated | ok; up 5 / nothing 0/5 | the same |
+
+In one fix row of `list style` shared-behind, the order restore after the press stopped at its bound
+(`restored.stopped: bound`, `complete: false`). The answer said so ("the person's front window could not be put back in
+front of TextEdit's window"). F1 was still the top window at 1.8 s.
+
+### Parity, shared-behind (main / fix, 5 rows each)
+
+| cell | main | fix |
+|---|---|---|
+| TextEdit bold | ok route 3, toggled 5/5 | the same |
+| Chrome Back | ok, navigated back 5/5 | the same |
+| page link | ok (`AXPress:webArea`), navigated 5/5 | the same |
+| page `<select>` | ok [AXPress confirmed], menu up 5/5 | the same |
+| TextEdit font pop-up | ok [AXPress confirmed], up 5/5 | the same |
+| combo box arrow | ok [AXPress confirmed], list up 5/5 | the same |
+| open menu's item (#454) | ok route 1, taken 5/5 | the same |
+| text view click | ok, caret on the line 5/5 | the same |
+| `<input list>` on its text | ok route 1 (`focusField`), list not opened 0/5 | **ok [datalist AXPress confirmed], list up 5/5** (the fix's named change) |
+| right click, app frontmost (TextEdit / page) | ok, menu up 5 / 5 | the same |
+
+### The bar (ruling 1036), fix 2e2952ee
+
+- **Closed by the restore on the delivered kinds: 0/35 behind.** Each answered confirmed with the UI up at 1.8 s (main: closed
+  10/10 shared-behind, opened 1/15 in dedicated):
+
+  | delivered kind | shared-behind | dedicated-behind |
+  |---|---|---|
+  | `list style` | 0/5 | 0/5 |
+  | colour well | 0/5 | 0/5 |
+  | `<input list>` arrow | 0/5 | 0/5 |
+  | `<input list>` text | 0/5 | - |
+- **Frontmost changes behind:** the fix has 24 transient and 20 at the end, in 175 behind rows; main has 32 and 20. The
+  focused window changed in 0/175 on both. Every frontmost change is a Chrome toolbar button kept on main's path:
+  - the star, shared-behind: transient 4/5, end 0/5 (#471);
+  - dedicated-behind: profile, star, site information and tab search, 5/5 each, end 5/5, the same as main.
+
+  Shared-behind has no other change: site information, tab search and the profile go 4/5, 4/5 and 2/5 transient on main
+  to 0/5, because they are now refused.
+- **Refused cells: 35/35 rows posted nothing, opened nothing and moved nothing on the page.** They are TextEdit's and the
+  page's right clicks, the app menu, the profile, site information and tab search (`browserView`), and `<input type=color>`
+  (#282, unchanged). Each answer names the ways through:
+  - "bring the app to the front first, or use keys, or … performSecondaryAction with "Show Menu" on that element";
+  - and, for browser views, the same family of sentence.
+- **Parity:** nothing main delivered is refused or changed. The one change, `<input list>` on its text, now opens the list;
+  that is the fix's named delivery.
+- **False confirmed: 0** on both. **False unconfirmed: 0** on both.
+- **False ok** (ok while the UI closed before 1.8 s or never opened):
+  - Main: 86, among them `list style` and the colour well behind, 5/5 closed each.
+  - Fix: 36. All are in cells the fix leaves on main's path:
+    - the star (shared-behind 3 closed and 2 nothing; dedicated 5 nothing);
+    - dedicated mode's right clicks (TextEdit 5, page 1) and site information (5);
+    - `<input type=date>` frontmost and dedicated (5 and 5) and `<input type=color>` dedicated (5), which open nothing on
+      main either.

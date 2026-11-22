@@ -173,3 +173,32 @@ Just before the click (1.1 to 3.2 s after the observation), three application hi
   - The post is the only one that took the datalist, and it takes every Chrome overlay in every mode.
   - A combined rule fits all 0-side-effect cells measured: AXPress where the node lists it, else the stamped post.
     Its one known miss is the datalist row, which lists AXPress and does nothing (frontmost only, where a post takes it).
+
+## #453 qual: main dfe6f443 against fix/453-overlay-click (parked, not run)
+
+State on 2026-11-21: **built, not smoked, no hosted run.** #453 was parked behind #443 (design ruling 1059) before
+the first dispatch. The fix branch's head was also about to move (the review's fix wave on b8bb5115: more refusals, an
+observation-time re-read of the overlay's rows, confirmation only by the overlay closing, no `rowGone`), so the fix run
+needs that head anyway.
+
+Kit: `qual453.mjs` (its header lists the cells), reader `qual-reader.mjs`, and the workflow `probe-453.yml` with
+`kit: qual453` and a `label`. Dispatch one engine head per run. Pass `reps` empty for each cell's own row count (191
+rows); the input's default of 6 caps them. A smoke is `reps: 1`, 34 rows. What it does that `deliver.mjs` did not:
+- Every click is the engine's own: a coordinate click, an element click by the node's token, a forced route
+  (`spikeRoute: '3'`) or a drag.
+- The item is picked from the engine's observation, from its nodes inside the overlay's CG window. The kit makes no
+  hit-test or AX row read before the click, because Chromium's first hit-test answers the web area and a kit hit-test
+  would prime the engine's.
+- The `<datalist>` opens by the engine's click on the field's arrow (#463's AXPress behind), so it is measured behind too.
+- The permission cells read the origin's state after the click (`navigator.permissions`, beaconed), Allow and Block.
+- Frontmost is `lsappinfo front`, read back to back for 4 s (transient and end), beside the key-window watch and the
+  window list.
+
+Left for the qual:
+- Smoke on the current fix head and fix what the smoke shows. Untested so far:
+  - the observation's node labels for each overlay's row (the pick regexes);
+  - whether the datalist opens behind by the arrow click;
+  - site information's bubble as the unknown-kind parity cell;
+  - the Allow label on Chrome 157.
+- Then the full runs, main dfe6f443 and the fix head the coordinator names. Add the tables here, each labelled with its
+  engine SHA.

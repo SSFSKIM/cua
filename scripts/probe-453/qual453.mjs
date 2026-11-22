@@ -7,7 +7,7 @@
 //                      recorded row: refused, the same text taken, or another row taken (which must never happen)
 //   datalist/click, datalist/p-element   the page's <datalist> list (opened by the engine's click on the field's arrow,
 //                      #463's AXPress behind), its second row
-//   permission/allow, permission/block, permission/p-element   Chrome's geolocation prompt on a fresh origin; the site's
+//   permission/allow, permission/block, permission/p-element   Chrome's Web MIDI prompt on a fresh origin; the site's
 //                      permission state read after (the element cell alternates Block and Allow)
 //   popover/click      TextEdit's colour-well popover, a swatch
 // and parity (shared-behind unless named): a page button with no overlay (p-page), a page button under the omnibox popup
@@ -65,7 +65,7 @@ async function sampleFront(ms) {
 }
 const bundleOf = asn => (sh('lsappinfo', ['info', '-only', 'bundleid', asn]).out.match(/"CFBundleIdentifier"="([^"]*)"/) || [])[1] ?? asn;
 
-// ---- the page (deliver.mjs's, with a button under the omnibox popup's area and the geolocation permission's state) ----
+// ---- the page (deliver.mjs's, with a button under the omnibox popup's area and the Web MIDI permission's state) ----
 const SCRIPT = `<script>(() => { const load = Math.random().toString(36).slice(2, 10);
 const send = (type, extra) => navigator.sendBeacon('/ev', JSON.stringify({load, origin: location.origin, path: location.pathname, type, t: Date.now(), ...extra}));
 const idOf = t => { const e = t && t.closest ? t.closest('[id]') : null; return e ? e.id : (t && t.tagName) || null; };
@@ -74,8 +74,8 @@ for (const k of ['input', 'change']) document.addEventListener(k, e => send(k, {
 const run = c => { if (c === 'reload') location.replace('/'); if (c.startsWith('goto:')) location.replace(c.slice(5)); };
 (async () => { for (;;) { try { const r = await fetch('/cmd?load=' + load, {cache: 'no-store'}); const j = await r.json(); if (j.cmd) run(j.cmd); } catch (e) { await new Promise(r => setTimeout(r, 500)); } } })();
 document.addEventListener('prerenderingchange', () => send('activated', {}));
-const perm = () => navigator.permissions.query({name: 'geolocation'}).then(p => { send('perm', {state: p.state}); p.onchange = () => send('perm', {state: p.state}); }).catch(() => {});
-addEventListener('load', () => { send('ready', {prerendering: Boolean(document.prerendering)}); if (location.pathname === '/geo') { perm(); navigator.geolocation.getCurrentPosition(() => send('geo', {ok: true}), e => send('geo', {code: e.code})); } });
+const perm = () => navigator.permissions.query({name: 'midi'}).then(p => { send('perm', {state: p.state}); p.onchange = () => send('perm', {state: p.state}); }).catch(e => send('perm', {error: String(e)}));
+addEventListener('load', () => { send('ready', {prerendering: Boolean(document.prerendering)}); if (location.pathname === '/perm') { perm(); navigator.requestMIDIAccess().then(() => send('req', {ok: true}), e => send('req', {error: e.name})); } });
 })();</script>`;
 const PAGE = `<!doctype html><html lang="en" translate="no"><head><meta charset="utf-8"><meta name="google" content="notranslate"><title>probe453 page</title>
 <style>body{font:15px -apple-system,Helvetica,sans-serif;margin:0} .a{position:absolute;left:16px}</style></head>
@@ -91,7 +91,7 @@ const results_ = path => `<!doctype html><html lang="en"><head><meta charset="ut
 const events = [];
 let pollers = [], queued = null;
 function serve(req, res) {
-  if (req.method === 'GET' && (req.url === '/' || req.url.startsWith('/?') || req.url.startsWith('/results') || req.url.startsWith('/geo'))) {
+  if (req.method === 'GET' && (req.url === '/' || req.url.startsWith('/?') || req.url.startsWith('/results') || req.url.startsWith('/perm'))) {
     res.writeHead(200, {'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store'});
     res.end(req.url.startsWith('/results') ? results_(req.url.split('?')[0]) : PAGE);
     return;
@@ -385,9 +385,9 @@ const KINDS = {
     open: async c => {
       const origin = await freshOrigin();
       const prev = lastReady()?.load ?? null;
-      sendCmd(`goto:${origin}/geo`);
+      sendCmd(`goto:${origin}/perm`);
       c.row.origin = origin;
-      if (!(await newLoad(prev, 12_000))) throw new Error('the /geo page did not load');
+      if (!(await newLoad(prev, 12_000))) throw new Error('the /perm page did not load');
       await sleep(1800);
     },
     pick: (sky, pr, want) => {
@@ -395,12 +395,16 @@ const KINDS = {
       const re = want === 'allow' ? /^allow\b/i : /never allow|^block$|don.?t allow/i;
       return asPick(buttons.find(n => re.test(nodeLabel(n))), {want, buttons: buttons.map(nodeLabel)});
     },
-    // The origin's permission state after (its last change beaconed), and the geolocation answer.
+    // The origin's permission state after (its last change beaconed; every change kept) and requestMIDIAccess's answer.
+    // Web MIDI, not geolocation: a runner's macOS has Location Services off, so Chrome answers geolocation's Allow with
+    // the state `denied` and a "Location is turned off" bubble, and the first Allow brought Chrome to the front (smoke
+    // 45045858141). MIDI's prompt has no macOS layer.
     effect: ctx => {
-      const st = [...ctx.ev].reverse().find(e => e.type === 'perm' && e.state !== 'prompt')?.state ?? null;
-      const geo = ctx.ev.find(e => e.type === 'geo');
-      ctx.row.permission = {state: st, geo: geo ? (geo.ok ? 'position' : `code ${geo.code}`) : null};
-      const got = st === 'granted' || (geo && geo.code !== 1) ? 'allow' : st === 'denied' || geo?.code === 1 ? 'block' : null;
+      const states = ctx.ev.filter(e => e.type === 'perm').map(e => e.state ?? e.error);
+      const st = [...ctx.ev].reverse().find(e => e.type === 'perm' && e.state && e.state !== 'prompt')?.state ?? null;
+      const req = ctx.ev.find(e => e.type === 'req');
+      ctx.row.permission = {state: st, states, request: req ? (req.ok ? 'granted' : req.error) : null};
+      const got = st === 'granted' || req?.ok ? 'allow' : st === 'denied' || req?.error === 'NotAllowedError' ? 'block' : null;
       return got == null ? null : got === ctx.pick.want ? 'taken' : `wrongRow:${got}`;
     },
   },
@@ -422,7 +426,16 @@ const KINDS = {
     pick: sky => asPick(pageNode(sky, /^Under$/, ['AXButton'])), effect: ctx => ctx.page.some(e => e.startsWith('click:u1')) ? 'clicked' : null},
   // Parity: site information's bubble, an overlay of no listed kind (frontmost: AXPress on its button raises Chrome
   // behind, #469), one of its buttons.
-  siteinfo: {app: 'chrome', open: async c => c.toolOpen({roles: ['AXPopUpButton', 'AXButton', 'AXMenuButton'], any: 'site information'}, 'AXPress'),
+  // Opened by the engine's click on the toolbar's node (the kit's AX walk of Chrome's windows did not reach it, smoke
+  // 45045858141).
+  siteinfo: {app: 'chrome', open: async (c, sky0) => {
+      const top = sky0.window.frame.y + 110;
+      const n = sky0.nodes.find(n => big(n.frame) && n.frame.y < top && ['AXPopUpButton', 'AXButton', 'AXMenuButton'].includes(n.role) && /site information|connection is|not secure/i.test(nodeLabel(n)));
+      if (!n) { c.row.toolbar = sky0.nodes.filter(n => big(n.frame) && n.frame.y < top).map(n => [n.role, nodeLabel(n).slice(0, 60)]).slice(0, 40); throw new Error('no site information button in the observation'); }
+      c.row.opener = [n.role, nodeLabel(n)];
+      await c.clickAt(fcentre(n.frame), sky0);
+      await sleep(900);
+    },
     pick: (sky, pr) => { const xs = nodesIn(sky, pr).filter(n => ['AXButton', 'AXLink'].includes(n.role) && nodeLabel(n));
       return asPick(xs.find(n => !/close|settings/i.test(nodeLabel(n))) ?? xs[0]); },
     effect: ctx => ctx.after.overlay == null ? 'closed' : null},
@@ -489,10 +502,14 @@ async function runRow(app, cell, rep) {
     row.window = wf;
     row.loadObserved = lastReady()?.load ?? null;
     const ov = await ask({op: 'overlay', pid, window: winArr(wf)});
-    row.overlayAtObs = ov.popup ?? null;
     if (!ov.target) { row.problem = 'the observed window is not on screen'; return; }
-    const pr = rect(ov.popup?.bounds);
-    if (k.overlay !== false && !pr) { row.problem = 'no overlay at the re-observation'; return; }
+    // An overlay the window list puts behind the browser window while it shows over it (the tool's `behind`) is taken
+    // for an overlay row only, and marked.
+    row.overlayListedBehind = k.overlay !== false && !ov.popup && Boolean(ov.behind);
+    const ovWin = o => o?.popup ?? (row.overlayListedBehind ? o?.behind : null) ?? null;
+    row.overlayAtObs = ovWin(ov);
+    const pr = rect(row.overlayAtObs?.bounds);
+    if (k.overlay !== false && !pr) { row.problem = 'no overlay at the re-observation'; row.otherWindows = ov.others ?? null; return; }
     row.nodesInOverlay = pr ? nodesIn(sky, pr).length : 0;
     const want = cell.kind === 'permission' ? (cell.how === 'p-element' ? (rep % 2 ? 'block' : 'allow') : cell.how) : null;
     row.pick = k.pick(sky, pr, want);
@@ -505,7 +522,7 @@ async function runRow(app, cell, rep) {
     row.delayMs = DELAYS[(rep - 1) % DELAYS.length];
     const left = tObs + row.delayMs - 300 - Date.now(); if (left > 0) await sleep(left);
     const now = await ask({op: 'overlay', pid, window: winArr(wf)});
-    row.overlayAtClick = now.popup ?? null;
+    row.overlayAtClick = ovWin(now);
     const coverPid = mode.front ? null : app.cover();
     const ord = await ask({op: 'order'});
     const coverWin = coverPid ? (ord.windows ?? []).find(x => x.pid === coverPid)?.n ?? -1 : -1;
@@ -537,7 +554,7 @@ async function runRow(app, cell, rep) {
     const page = [...new Set(ev.filter(e => ['click', 'pointerdown', 'mousedown', 'focusin', 'submit'].includes(e.type)).map(e => `${e.type}:${e.id}${e.load === row.loadObserved ? '' : '@other'}`))];
     row.after = {loads: ev.filter(e => (e.type === 'ready' && !e.prerendering) || e.type === 'activated').map(e => `${e.origin}${e.path}`), page,
       changes: ev.filter(e => ['input', 'change'].includes(e.type)).map(e => `${e.type}:${e.id}=${e.value}`),
-      overlay: after.popup ? {n: after.popup.n, layer: after.popup.layer, bounds: after.popup.bounds} : null, opener: openerAfter,
+      overlay: ovWin(after) ? {n: ovWin(after).n, layer: ovWin(after).layer, bounds: ovWin(after).bounds} : null, opener: openerAfter,
       omnibox: omniAfter ? {value: omniAfter.value, focused: omniAfter.focused} : null, caret: caretAfter?.range ?? null};
     // The frontmost app through the row, and the person's key and main window (the cover's; Chrome's own when frontmost).
     row.front = {before: bundleOf(asn0), reads: fr.reads, off: fr.changes.filter(x => x[1] !== asn0).map(x => [x[0] - t0, bundleOf(x[1])]),
@@ -548,7 +565,7 @@ async function runRow(app, cell, rep) {
     const fk = f => (Array.isArray(f) ? f.map(Math.round).join(',') : String(f));
     row.key = {samples: ps.length, reads: watch.personReads, changed: ps.some(x => fk(x[1]) !== fk(ps[0][1]) || fk(x[2]) !== fk(ps[0][2])), first: ps[0] ?? null, changes: ps.slice(1, 8)};
     // The window list: the observed window over the cover, and the start's windows (but the overlay's) reordered.
-    const skipN = new Set([ov.popup?.n, now.popup?.n].filter(n => n != null));
+    const skipN = new Set([ovWin(ov)?.n, ovWin(now)?.n].filter(n => n != null));
     let cur = null; const orders = [];
     for (const x of watch.samples ?? []) { if (Array.isArray(x[3])) cur = x[3]; if (cur) orders.push(cur.filter(n => !skipN.has(n))); }
     const first = orders[0] ?? [];
@@ -559,7 +576,7 @@ async function runRow(app, cell, rep) {
     const ctx = {row, ev, loads: row.after.loads, page, pick: row.pick, after: row.after, omniAfter, openerBefore: row.openerBefore, openerAfter, menus: row.windows.menusMax > 0};
     const eff = k.effect(ctx);
     row.effect = eff ?? (row.reachedBeneath ? `beneath:${[...new Set(beneath)].join(',')}` : row.after.loads.length ? `navigated:${row.after.loads.join(',')}`
-      : k.overlay !== false && !after.popup ? 'dismissed' : 'nothing');
+      : k.overlay !== false && !ovWin(after) ? 'dismissed' : 'nothing');
   } catch (e) { row.exception = String(e?.stack || e).slice(0, 1500); }
   finally {
     w?.close(); save();

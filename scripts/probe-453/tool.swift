@@ -957,7 +957,23 @@ func wantedRect(_ q: [String: Any]) -> CGRect? {
 func overlayNow(_ q: [String: Any]) -> [String: Any] {
   guard let pid = (q["pid"] as? NSNumber)?.int32Value, let wanted = wantedRect(q) else { return ["error": "args"] }
   let o = findOverlay(pid, wanted)
-  return ["target": o.target ?? NSNull(), "popup": o.pop ?? NSNull()]
+  var out: [String: Any] = ["target": o.target ?? NSNull(), "popup": o.pop ?? NSNull()]
+  // No window of the app's listed over the target: the app's other windows (a bubble listed behind its browser window
+  // while it shows over it, as Chrome's permission prompt frontmost), `behind` the first one inside the target's bounds.
+  if o.target != nil, o.pop == nil {
+    let list = (CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]) ?? []
+    var others: [[String: Any]] = []
+    for (i, w) in list.enumerated() where ((w[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value ?? 0) == pid {
+      let b = rectOf(w), n = (w[kCGWindowNumber as String] as? NSNumber)?.intValue ?? 0
+      guard n != (o.target?["n"] as? Int) else { continue }
+      let r: [String: Any] = ["i": i, "n": n, "layer": (w[kCGWindowLayer as String] as? NSNumber)?.intValue ?? 0, "bounds": wire(b),
+                              "alpha": (w[kCGWindowAlpha as String] as? NSNumber)?.doubleValue ?? 1]
+      others.append(r)
+      if out["behind"] == nil, b.width >= 20, b.height >= 20, wanted.insetBy(dx: -2, dy: -2).contains(b) { out["behind"] = r }
+    }
+    out["others"] = others
+  }
+  return out
 }
 /// The overlay's AX root: one of the app's windows or children (or the opener's menu, a window's sheet) whose frame lies
 /// in the overlay's bounds and covers half of it, else an AXPopover inside one of the app's windows (outside web areas)

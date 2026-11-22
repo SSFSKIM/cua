@@ -479,6 +479,8 @@ if (SPIKE) for (const m of Object.keys(MODES)) {
   const sc = (kind, how, reps) => cell(kind, m, how, Math.min(reps, SPIKE_REPS));
   for (const kind of ['omnibox', 'permission', 'popover']) { sc(kind, 'axpress', 10); sc(kind, kind === 'permission' ? 'block' : 'click', 5); }
   sc('datalist', 'axpress', 5);
+  // The kit's stamped post beside them, behind, for the window order in this harness (ruling 1069's question).
+  if (m !== 'shared-front') for (const kind of ['omnibox', 'datalist', 'permission']) sc(kind, 'kitpost', 5);
 }
 if (!SPIKE && !ORDER) for (const m of Object.keys(MODES)) {
   cell('omnibox', m, 'click', 6); cell('omnibox', m, 'p-element', 5); cell('omnibox', m, 'relayout', 8);
@@ -548,7 +550,7 @@ async function runRow(app, cell, rep) {
     const pr = rect(row.overlayAtObs?.bounds) ?? (row.observedIsOverlay ? rect(ov.target.bounds) : null);
     if (k.overlay !== false && !pr) { row.problem = 'no overlay at the re-observation'; row.otherWindows = ov.others ?? null; return; }
     row.nodesInOverlay = pr ? nodesIn(sky, pr).length : 0;
-    const want = cell.kind === 'permission' ? (cell.how === 'p-element' ? (rep % 2 ? 'block' : 'allow') : cell.how === 'axpress' ? (rep % 3 === 1 ? 'allow' : 'block') : cell.how) : null;
+    const want = cell.kind === 'permission' ? (cell.how === 'p-element' ? (rep % 2 ? 'block' : 'allow') : cell.how === 'axpress' ? (rep % 3 === 1 ? 'allow' : 'block') : cell.how === 'kitpost' ? 'block' : cell.how) : null;
     row.pick = k.pick(sky, pr, want);
     if (!row.pick) { row.problem = 'no item in the observation'; row.overlayNodes = pr ? nodesIn(sky, pr).slice(0, 40).map(n => [n.role, nodeLabel(n).slice(0, 60), winArr(n.frame)]) : null; return; }
     if (['p-element', 'o-element'].includes(cell.how) && row.pick.token == null) { row.problem = 'the item has no token'; return; }
@@ -575,7 +577,14 @@ async function runRow(app, cell, rep) {
     const mark = events.length;
     const t0 = Date.now();
     row.clickAfterObsMs = t0 - tObs;
-    if (cell.how === 'axpress') {
+    if (cell.how === 'kitpost') {
+      // deliver.mjs's `post` (run C's 0/84 raised): the kit's down/up stamped with the overlay's window number at a point
+      // local to it, postToPid, from the kit's own process, so the window-order watch reads it in this harness too.
+      const o = row.overlayAtClick;
+      const p = o ? await ask({op: 'post', pid, x: screen.x, y: screen.y, stamp: 'overlay', win: [o.n, ...o.bounds]}) : {error: 'no overlay at the click'};
+      row.post = p;
+      row.click = {error: p.error ?? null, message: null, route: 'kit post', overlayClick: null, stalePoint: null, popUpClick: null, frontmostRestored: null, posted: !p.error};
+    } else if (cell.how === 'axpress') {
       const p = await ask({op: 'pressrow', pid, window: winArr(wf), frame: row.pick.frame, role: row.pick.role, own: row.observedIsOverlay}, 15_000);
       row.press = p;
       row.click = {error: p.error ?? (p.result !== 0 ? `AXError ${p.result}` : null), message: null, route: 'kit AXPress', overlayClick: null, stalePoint: null, popUpClick: null, frontmostRestored: null, posted: true};

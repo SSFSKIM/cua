@@ -7566,6 +7566,35 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   the refusals in dedicated mode too (1), #282's route keeping every press (1), a right click pressed rather than
   shown (1), the record's web area ignored (1).
   Date/Author: 2026-11-21, cursor235's implementer for #463.
+- Decision (#463, the review of 1a1956b2..5364c10b, reviewer-medium, 2026-11-21; amends the entry above): four
+  corrections, each tested and each test failing with its fix reverted. (1) The action itself may bring the target app
+  to the front (an app's own action; Chrome's toolbar AXPress did), which the person-input watch read as `personInput`,
+  so the click answered a silent ok. Now `PopUpPersonSignals.activated` tells the target app become frontmost with no
+  input of the person's since the press (input at the press itself counts as theirs) from the person's own switch: it is
+  recorded (`popUpClick.activated: true`), nothing is restored (cua never takes the front from an app), and a confirmed
+  open answers success with the note "<App>'s menu is open, but opening it brought <App> to the front over the person's
+  window, and cua does not take the front back from an app. Tell the person if that is in their way." (the noun per
+  kind). Success, not `clickUnconfirmed`: what the click was for did open, and `clickUnconfirmed` asks for an
+  observation before a retry, which would only repeat the activation; the note says what changed for the person. An
+  unconfirmed one adds "The action brought <App> to the front over the person's window." to its sentence. (2) AXShowMenu
+  takes the element and not the point, and a text element's context menu acts on the word or selection under the click,
+  so the menu it opens may be for other text: a right click behind on AppKit text (`contextMenuTextRoles`: #283's
+  editable roles and AXStaticText) is refused in shared mode, `popUpClick.refused: "textElement"`, "<App>'s context menu
+  for text acts on the text under the pointer, which no accessibility action can aim at, and a right click cua sends
+  while <App> is not the frontmost app does not leave the menu open. Nothing was sent. Ask the person to bring <App> to
+  the front first, or use keys instead: select the text with selectText, then use <App>'s keyboard shortcuts or its menu
+  bar by its elements."; dedicated mode keeps the posted one. The measured cell, TextEdit's text view, is now this
+  refusal; Show Menu remains for AppKit elements that are not text, a shape no cell measured. (3) The web right-click
+  refusal reads the record's web area before it needs a live hit, and `recordedNodeInWebArea` reads the record's own
+  `ScreenshotNode.webArea` too, so a late or missing hit, or a node under a frameless web area, never posts it. (4) An
+  `<input list>` needs the live hit's role to be AXComboBox, not only the recorded one. The model-facing sentences say a
+  right click on native text is refused and that the answer says when the action brought the app to the front.
+  Shipped with (tech-debt-tracker.md): the menu button's and colour well's effect accepts any new window of the app's at
+  the control, so an unrelated one appearing there during the wait would confirm.
+  Proven offline (`PopUpPointTests`, 52 tests): reverted one at a time (5 mutations), each fails one test: the
+  activation not told from input, a right click on text shown, the record's web area read only with a live hit, its
+  own web area field ignored, the live hit's role not read.
+  Date/Author: 2026-11-21, cursor235's implementer for #463.
 
 - Decision (#456, 2026-11-20, `fix/456-recheck-overlay`, plugin 0.28.25; amends #452's entry and #296's
   `StalePointGate`): **the element route's recheck after its wait runs #452's same-app overlay rule on its own fresh,

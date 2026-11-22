@@ -21,7 +21,13 @@
 // the one before; end: the last), the person's key and main window every ~5 ms (the cover's; Chrome's own when frontmost),
 // and the window list every 10 ms (the observed window over the cover, the start's windows reordered).
 //
-//   node scripts/probe-453/qual453.mjs --engine <bin> --tool <bin> --out <dir> [--reps cap] [--only re,re] [--budget minutes]
+// With --spike (#453's AXPress spike, ruling 1067; README "#453 spike"): the kit's bare AXPress on the recorded row's own
+// element (tool op `pressrow`: the element at the row's recorded frame under the overlay's AX root, no hit-test, no
+// ancestor) on the omnibox row, the permission prompt's Block (Allow every third row), the popover swatch and the datalist
+// row, 10 rows per kind and mode (datalist 5), beside main's coordinate click on the same row (5). Each row adds the
+// overlay's window sampled every 10 ms (`life`), and the browser window listed over the cover's, transient and at the end.
+//
+//   node scripts/probe-453/qual453.mjs --engine <bin> --tool <bin> --out <dir> [--spike] [--reps cap] [--only re,re] [--budget minutes]
 // Runs only on a GitHub-hosted runner: it launches, places and closes its own apps.
 import {spawn, spawnSync, execFile} from 'node:child_process';
 import {createServer} from 'node:http';
@@ -38,6 +44,13 @@ const OUT = arg('out'), TOOL = arg('tool'), ENGINE = arg('engine');
 const REPS = Number(arg('reps') || 99);
 const ONLY = list('only')?.map(s => new RegExp(s));
 const BUDGET_MS = Number(arg('budget') ?? 140) * 60_000;
+const SPIKE = process.argv.includes('--spike');
+// --order (ruling 1069): main's own background input with Chrome behind the cover, for window order: a page click by
+// coordinate (route 3), an element click by ID on a page button (route 1), the element click on an omnibox row in
+// dedicated-behind, and type_text plus press_key into a page field (route 2', keys). --spikereps caps the spike's cells
+// only, so one run can carry the order cells in full and the spike's as a smoke.
+const ORDER = process.argv.includes('--order');
+const SPIKE_REPS = Number(arg('spikereps') || 99);
 const WATCH_MS = 3000, FRONT_MS = 4000;
 const STARTED = Date.now();
 mkdirSync(join(OUT, 'screens'), {recursive: true});
@@ -71,7 +84,7 @@ const send = (type, extra) => navigator.sendBeacon('/ev', JSON.stringify({load, 
 const idOf = t => { const e = t && t.closest ? t.closest('[id]') : null; return e ? e.id : (t && t.tagName) || null; };
 for (const k of ['pointerdown', 'mousedown', 'click', 'focusin', 'submit']) document.addEventListener(k, e => send(k, {id: idOf(e.target), trusted: e.isTrusted}), true);
 for (const k of ['input', 'change']) document.addEventListener(k, e => send(k, {id: idOf(e.target), value: e.target.value ?? null}), true);
-const run = c => { if (c === 'reload') location.replace('/'); if (c.startsWith('goto:')) location.replace(c.slice(5)); };
+const run = c => { if (c === 'reload') location.replace('/'); if (c.startsWith('goto:')) location.replace(c.slice(5)); if (c.startsWith('focus:')) { const e = document.getElementById(c.slice(6)); if (e) { e.focus(); send('focused', {id: c.slice(6), ok: document.activeElement === e}); } } };
 (async () => { for (;;) { try { const r = await fetch('/cmd?load=' + load, {cache: 'no-store'}); const j = await r.json(); if (j.cmd) run(j.cmd); } catch (e) { await new Promise(r => setTimeout(r, 500)); } } })();
 document.addEventListener('prerenderingchange', () => send('activated', {}));
 const perm = () => navigator.permissions.query({name: 'midi'}).then(p => { send('perm', {state: p.state}); p.onchange = () => send('perm', {state: p.state}); }).catch(e => send('perm', {error: String(e)}));
@@ -83,6 +96,7 @@ const PAGE = `<!doctype html><html lang="en" translate="no"><head><meta charset=
 <h3 class="a" style="top:2px;margin:0">probe453 page</h3>
 <div class="a" style="top:80px"><input id="fruit" list="fruits" aria-label="Fruit" autocomplete="off" size="20"><datalist id="fruits"><option value="apple"></option><option value="apricot"></option><option value="avocado"></option><option value="banana"></option></datalist></div>
 <div class="a" style="top:110px;left:330px"><button id="u1" type="button">Under</button></div>
+<div class="a" style="top:300px"><input id="note" aria-label="Note" autocomplete="off" size="20"></div>
 <div class="a" style="top:440px"><button id="b1" type="button">Alpha</button> <button id="b2" type="button">Beta</button> <button id="b3" type="button">Gamma</button></div>
 </div>${SCRIPT}</body></html>`;
 const results_ = path => `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>probe453 ${path.replace(/[^a-z0-9/-]/gi, '')}</title><style>body{font:15px -apple-system,Helvetica,sans-serif;margin:16px}</style></head>
@@ -192,6 +206,8 @@ function toolProcess() {
 const {t: tool, ask} = toolProcess();
 // The second tool: the overlay's life and the window watch run on it while the first one, or the engine, acts.
 const {t: watcher, ask: ask2} = toolProcess();
+// The third: the overlay's window sampled through the delivery (the spike's lifetime).
+const {t: lifer, ask: ask3} = toolProcess();
 
 // ---- shared steps -------------------------------------------------------------------------------------------------
 const errName = r => r?.error ? (r.error.data?.errorName ?? r.error.data?.name ?? r.error.errorName ?? r.error.name ?? r.error.code ?? 'error') : null;
@@ -422,6 +438,12 @@ const KINDS = {
   // Parity: no overlay, a page button.
   page: {app: 'chrome', overlay: false, open: async () => {}, pick: sky => asPick(pageNode(sky, /^Beta$/, ['AXButton'])),
     effect: ctx => ctx.page.some(e => e.startsWith('click:b2')) ? 'clicked' : null},
+  // Order (--order): a plain page field, focused by the page's own script (no event), typed into through the engine.
+  note: {app: 'chrome', overlay: false,
+    open: async c => { const mark = events.length; sendCmd('focus:note'); for (let i = 0; i < 30 && !events.slice(mark).some(e => e.type === 'focused'); i++) await sleep(100);
+      c.row.noteFocused = events.slice(mark).find(e => e.type === 'focused')?.ok ?? null; await sleep(300); },
+    pick: sky => asPick(pageNode(sky, /^Note/, ['AXTextField'])),
+    effect: ctx => { const v = [...ctx.ev].reverse().find(e => e.type === 'input' && e.id === 'note')?.value; return v == null ? null : /qz/.test(v) ? 'typed' : `typed:${v}`; }},
   // Parity: the omnibox popup opened and closed (Escape twice), then a page button where its rows had been.
   underclosed: {app: 'chrome', overlay: false, open: async c => { await OMNI.open(c); await c.key('Escape'); await c.key('Escape'); },
     pick: sky => asPick(pageNode(sky, /^Under$/, ['AXButton'])), effect: ctx => ctx.page.some(e => e.startsWith('click:u1')) ? 'clicked' : null},
@@ -449,12 +471,22 @@ const KINDS = {
 };
 const CELLS = [];
 const cell = (kind, mode, how, reps) => CELLS.push({name: `${kind}/${mode}/${how}`, kind, mode: MODES[mode], how, reps, app: KINDS[kind].app});
-for (const m of Object.keys(MODES)) {
+if (ORDER) {
+  for (const m of ['shared-behind', 'dedicated-behind']) { cell('page', m, 'o-click', 10); cell('page', m, 'o-element', 10); cell('note', m, 'o-type', 5); }
+  cell('omnibox', 'dedicated-behind', 'p-element', 10);
+}
+if (SPIKE) for (const m of Object.keys(MODES)) {
+  const sc = (kind, how, reps) => cell(kind, m, how, Math.min(reps, SPIKE_REPS));
+  for (const kind of ['omnibox', 'permission', 'popover']) { sc(kind, 'axpress', 10); sc(kind, kind === 'permission' ? 'block' : 'click', 5); }
+  sc('datalist', 'axpress', 5);
+}
+if (!SPIKE && !ORDER) for (const m of Object.keys(MODES)) {
   cell('omnibox', m, 'click', 6); cell('omnibox', m, 'p-element', 5); cell('omnibox', m, 'relayout', 8);
   cell('datalist', m, 'click', 6); cell('datalist', m, 'p-element', 5);
   cell('permission', m, 'allow', 5); cell('permission', m, 'block', 5); cell('permission', m, 'p-element', 6);
   cell('popover', m, 'click', 6);
 }
+if (!SPIKE && !ORDER) {
 cell('page', 'shared-behind', 'p-page', 5);
 cell('underclosed', 'shared-behind', 'p-underclosed', 5);
 cell('omnibox', 'shared-behind', 'p-forced', 5);
@@ -462,10 +494,11 @@ cell('omnibox', 'shared-behind', 'p-drag', 5);
 cell('siteinfo', 'shared-front', 'p-unknown', 5);
 cell('font', 'shared-behind', 'p-font', 5);
 cell('inputlist', 'shared-behind', 'p-inputlist', 5);
+}
 
 // ---- one row ------------------------------------------------------------------------------------------------------
 const results = [];
-const config = {kit: 'probe-453 qual453', engineRef: process.env.P453_ENGINE_REF ?? null, label: process.env.P453_ENGINE_LABEL ?? null, reps: REPS,
+const config = {kit: SPIKE || ORDER ? 'probe-453 spike453' : 'probe-453 qual453', spike: SPIKE, order: ORDER, spikeReps: SPIKE_REPS, engineRef: process.env.P453_ENGINE_REF ?? null, label: process.env.P453_ENGINE_LABEL ?? null, reps: REPS,
   macOS: sh('sw_vers', []).out.replace(/\s+/g, ' '), commit: process.env.GITHUB_SHA ?? null, image: process.env.ImageVersion ?? null, url: URL_};
 const save = () => writeFileSync(join(OUT, 'results.json'), JSON.stringify({config, results}, null, 1));
 /// The engine's answer: its error, and the meta the reader needs (#453's overlayClick, #452's stalePoint, #458's
@@ -515,10 +548,10 @@ async function runRow(app, cell, rep) {
     const pr = rect(row.overlayAtObs?.bounds) ?? (row.observedIsOverlay ? rect(ov.target.bounds) : null);
     if (k.overlay !== false && !pr) { row.problem = 'no overlay at the re-observation'; row.otherWindows = ov.others ?? null; return; }
     row.nodesInOverlay = pr ? nodesIn(sky, pr).length : 0;
-    const want = cell.kind === 'permission' ? (cell.how === 'p-element' ? (rep % 2 ? 'block' : 'allow') : cell.how) : null;
+    const want = cell.kind === 'permission' ? (cell.how === 'p-element' ? (rep % 2 ? 'block' : 'allow') : cell.how === 'axpress' ? (rep % 3 === 1 ? 'allow' : 'block') : cell.how) : null;
     row.pick = k.pick(sky, pr, want);
     if (!row.pick) { row.problem = 'no item in the observation'; row.overlayNodes = pr ? nodesIn(sky, pr).slice(0, 40).map(n => [n.role, nodeLabel(n).slice(0, 60), winArr(n.frame)]) : null; return; }
-    if (cell.how === 'p-element' && row.pick.token == null) { row.problem = 'the item has no token'; return; }
+    if (['p-element', 'o-element'].includes(cell.how) && row.pick.token == null) { row.problem = 'the item has no token'; return; }
     const {px, screen} = toPixels(sky, row.pick.point);
     row.point = {px, screen, inOverlay: pr ? inside(screen, pr) : null};
     // #453's re-laid-out case: one more character typed through the engine, after the screenshot, before the click.
@@ -534,12 +567,23 @@ async function runRow(app, cell, rep) {
     if (cell.app === 'textedit') row.caretBefore = (await ask({op: 'caret', pid, window: winArr(wf)}))?.range ?? null;
     const asn0 = await frontAsn();
     const fronting = sampleFront(FRONT_MS);
+    const watchT0 = Date.now();
     const watching = ask2({op: 'watch', pid, ms: WATCH_MS, target: ov.target.n, user: coverWin, skip: [], person: coverPid ?? pid}, 20_000);
+    const lifeT0 = Date.now();
+    const living = SPIKE ? ask3({op: 'life', pid, window: winArr(wf), ms: 1800, every: 10, rows: false}, 20_000) : null;
     await sleep(120);
     const mark = events.length;
     const t0 = Date.now();
     row.clickAfterObsMs = t0 - tObs;
-    if (cell.how === 'p-element') row.click = answer(await w.execute('click', {pid, element: row.pick.token}));
+    if (cell.how === 'axpress') {
+      const p = await ask({op: 'pressrow', pid, window: winArr(wf), frame: row.pick.frame, role: row.pick.role, own: row.observedIsOverlay}, 15_000);
+      row.press = p;
+      row.click = {error: p.error ?? (p.result !== 0 ? `AXError ${p.result}` : null), message: null, route: 'kit AXPress', overlayClick: null, stalePoint: null, popUpClick: null, frontmostRestored: null, posted: true};
+    } else if (cell.how === 'o-type') {
+      const a = await w.execute('type_text', {pid, text: 'qz'}); await sleep(150);
+      const b = await w.execute('press_key', {pid, key: 'Left'});
+      row.click = {...answer(a.error ? a : b), steps: [answer(a), answer(b)]};
+    } else if (cell.how === 'p-element' || cell.how === 'o-element') row.click = answer(await w.execute('click', {pid, element: row.pick.token}));
     else if (cell.how === 'p-forced') row.click = answer(await w.execute('click', {pid, x: px.x, y: px.y, spikeRoute: '3'}));
     else if (cell.how === 'p-drag') {
       const to = toPixels(sky, {x: screen.x, y: screen.y + 250}).px;
@@ -554,6 +598,14 @@ async function runRow(app, cell, rep) {
     const omniAfter = cell.kind === 'omnibox' ? await ask({op: 'omnibox', pid}) : null;
     const caretAfter = cell.app === 'textedit' ? await ask({op: 'caret', pid, window: winArr(wf)}) : null;
     const watch = await watching;
+    if (living) {
+      const life = await living, off = t0 - lifeT0;
+      const goneOf = d => row.observedIsOverlay ? d === 'notarget' : d === 'none' || d === 'notarget';
+      const first = (life.events ?? [])[0];
+      const gone = (life.events ?? []).find(e => e[1] === 'w' && goneOf(e[2]));
+      row.life = {shownAtStart: Boolean(first && !goneOf(first[2])), goneMs: gone ? Math.round(gone[0] - off) : null, reads: life.reads, windows: life.windows,
+        events: (life.events ?? []).slice(0, 6).map(e => [Math.round(e[0] - off), typeof e[2] === 'string' ? e[2] : e[2]?.n])};
+    }
     const fr = await fronting;
     const page = [...new Set(ev.filter(e => ['click', 'pointerdown', 'mousedown', 'focusin', 'submit'].includes(e.type)).map(e => `${e.type}:${e.id}${e.load === row.loadObserved ? '' : '@other'}`))];
     row.after = {loads: ev.filter(e => (e.type === 'ready' && !e.prerendering) || e.type === 'activated').map(e => `${e.origin}${e.path}`), page,
@@ -573,7 +625,8 @@ async function runRow(app, cell, rep) {
     let cur = null; const orders = [];
     for (const x of watch.samples ?? []) { if (Array.isArray(x[3])) cur = x[3]; if (cur) orders.push(cur.filter(n => !skipN.has(n))); }
     const first = orders[0] ?? [];
-    row.windows = {aboveMs: watch.aboveMs, firstAbove: watch.firstAbove, reordered: orders.some(o => { const common = o.filter(n => first.includes(n)); return common.join(',') !== first.filter(n => common.includes(n)).join(','); }),
+    row.windows = {aboveMs: watch.aboveMs, firstAbove: watch.firstAbove, firstAboveAfterClick: watch.firstAbove == null ? null : Math.round(watch.firstAbove - (t0 - watchT0)),
+      aboveAtStart: (watch.samples ?? [])[0]?.[2] === true, aboveAtEnd: watch.aboveAtEnd === true, reordered: orders.some(o => { const common = o.filter(n => first.includes(n)); return common.join(',') !== first.filter(n => common.includes(n)).join(','); }),
       menusMax: Math.max(0, ...(watch.samples ?? []).map(s => s[1])), menusEnd: (watch.samples ?? []).slice(-1)[0]?.[1] ?? 0};
     const beneath = ev.filter(e => ['click', 'pointerdown', 'mousedown'].includes(e.type) && e.load === row.loadObserved).map(e => `${e.type}:${e.id}`);
     row.reachedBeneath = k.overlay === false ? null : beneath.length > 0 || (cell.app === 'textedit' && row.caretBefore != null && JSON.stringify(caretAfter?.range) !== JSON.stringify(row.caretBefore));
@@ -615,5 +668,5 @@ config.engineStderr = engineErr.slice(-4000);
 config.minutes = Math.round((Date.now() - STARTED) / 600) / 100;
 save();
 engine?.kill('SIGKILL');
-tool.stdin.end(); watcher.stdin.end(); for (const s of servers) s.close();
+tool.stdin.end(); watcher.stdin.end(); lifer.stdin.end(); for (const s of servers) s.close();
 process.exit(0);

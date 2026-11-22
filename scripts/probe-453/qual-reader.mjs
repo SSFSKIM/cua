@@ -12,8 +12,31 @@ const answerOf = r => {
 };
 // The fix's overlay cells; a p- cell (parity, including the element click by ID that ruling 1066 cut from the fix) expects main's answer.
 const OVERLAY_CELLS = /^(omnibox|datalist|permission|popover)\/[^/]+\/(?!p-)/;
+const pct = (xs, q) => { const v = xs.filter(x => typeof x === 'number').sort((a, b) => a - b); return v.length ? Math.round(v[Math.min(v.length - 1, Math.floor(q * v.length))]) : '-'; };
+const isTaken = r => /^(taken|changed|clicked|typed$|opened)/.test(r.effect ?? '');
+/// The spike's and the order measure's table (ruling 1069: the window listed over the cover's is part of the bar, beside
+/// frontmost and the key window; ruling 1070: a raise fails only in shared mode, in dedicated it is recorded).
+function spikeTable(results) {
+  const groups = new Map();
+  for (const r of results) { const k = `${r.cell}${r.observedIsOverlay ? ' (prompt observed as the window)' : ''}`; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(r); }
+  console.log('| cell | rows | answer | taken | frontmost changed, transient / end | key/main window changed | window over the cover, transient / end | first over, ms after the click (p50) | AXPress result | AXPress ms p50 / max | overlay gone, ms after (p50) | problems |');
+  console.log('|---|---|---|---|---|---|---|---|---|---|---|---|');
+  for (const [k, rs] of groups) {
+    const m = rs.filter(r => r.click), n = m.length, behind = !/shared-front/.test(k);
+    console.log(`| ${k} | ${n}/${rs.length} | ${tally(m.map(answerOf))} | ${m.filter(isTaken).length}/${n} | ${m.filter(r => r.front?.transient).length}/${n} / ${m.filter(r => r.front?.endChanged).length}/${n} | ${m.filter(r => r.key?.changed).length}/${n} | ${behind ? `${m.filter(r => r.windows?.aboveMs > 0).length}/${n} / ${m.filter(r => r.windows?.aboveAtEnd).length}/${n}` : 'n/a'} | ${behind ? pct(m.map(r => r.windows?.firstAboveAfterClick), 0.5) : '-'} | ${m.some(r => r.press) ? tally(m.filter(r => r.press).map(r => r.press.error ?? `${r.press.result}${r.press.sameRole ? '' : ' (other role)'}`)) : '-'} | ${m.some(r => r.press) ? `${pct(m.map(r => r.press?.actionMs), 0.5)} / ${pct(m.map(r => r.press?.actionMs), 1)}` : '-'} | ${m.some(r => r.life) ? `${pct(m.map(r => r.life?.goneMs), 0.5)} (${m.filter(r => r.life?.goneMs == null).length} stayed)` : '-'} | ${tally(rs.filter(r => !r.click).map(r => r.problem ?? r.exception?.split('\n')[0] ?? '?'))} |`);
+  }
+  const perm = results.filter(r => r.permission);
+  if (perm.length) console.log(`\n- permission state after: ${tally(perm.map(r => `${r.cell.split('/').slice(1).join('/')} ${r.pick?.want}->${r.permission.state ?? '-'}/${r.permission.request ?? '-'}`))}`);
+  const wrong = results.filter(r => /^wrongRow/.test(r.effect ?? ''));
+  console.log(`- wrong row: ${wrong.length}${wrong.length ? ` (${wrong.map(r => `${r.label} ${r.effect}`).join(', ')})` : ''}\n`);
+}
 for (const file of process.argv.slice(2)) {
   const {config, results} = JSON.parse(readFileSync(file, 'utf8'));
+  if (config.spike || config.order) {
+    console.log(`## ${config.label ?? ''} engine ${config.engineRef}  (${config.chrome}; ${config.macOS}; image ${config.image}; kit ${config.commit}; ${results.length} rows, ${config.minutes} min${config.budgetStop ? ', budget stop' : ''}${config.spikeReps < 99 ? `, spike reps ${config.spikeReps}` : ''})\n`);
+    spikeTable(results);
+    continue;
+  }
   console.log(`## ${config.label ?? ''} engine ${config.engineRef}  (${config.chrome}; ${config.macOS}; image ${config.image}; kit ${config.commit}; ${results.length} rows, ${config.minutes} min${config.budgetStop ? ', budget stop' : ''})\n`);
   const groups = new Map();
   for (const r of results) { if (!groups.has(r.cell)) groups.set(r.cell, []); groups.get(r.cell).push(r); }

@@ -1086,6 +1086,37 @@ func press(_ q: [String: Any]) -> [String: Any] {
   return ["hit": describe(c[0]), "pressed": d, "up": i, "actions": acts[i], "listed": acts[i].contains(action), "result": result,
           "findMs": r1(found - t0), "actionMs": r1(nowMs() - found)]
 }
+/// {"op":"pressrow","pid","window","frame","role","own"}: #453 spike's bare AXPress on the recorded row's own element:
+/// under the overlay's AX root (the window listed over `window`; with `own`, the observed window itself, Chrome's
+/// frontmost prompt), the first element breadth-first of `role` whose frame is within 2 pt of `frame`, else of any role;
+/// AXPress performed on exactly it, no ancestor, no hit-test. Answers what it pressed, the AXError and both latencies.
+func pressRow(_ q: [String: Any]) -> [String: Any] {
+  let t0 = nowMs()
+  guard let pid = (q["pid"] as? NSNumber)?.int32Value, let wanted = wantedRect(q), let fa = q["frame"] as? [Double], fa.count == 4 else { return ["error": "args"] }
+  let want = CGRect(x: fa[0], y: fa[1], width: fa[2], height: fa[3]), wantRole = q["role"] as? String
+  let o = findOverlay(pid, wanted)
+  let rect: CGRect
+  if o.pop != nil { rect = o.rect }
+  else if (q["own"] as? Bool) == true, let b = o.target?["bounds"] as? [Double], b.count == 4 { rect = CGRect(x: b[0], y: b[1], width: b[2], height: b[3]) }
+  else { return ["error": "no overlay", "findMs": r1(nowMs() - t0)] }
+  guard let (root, how) = overlayRoot(pid, rect) else { return ["error": "no root", "findMs": r1(nowMs() - t0)] }
+  let close = { (f: CGRect) -> Bool in abs(f.minX - want.minX) <= 2 && abs(f.minY - want.minY) <= 2 && abs(f.width - want.width) <= 2 && abs(f.height - want.height) <= 2 }
+  var queue: [(AXUIElement, Int)] = [(root, 0)], head = 0, byRole: AXUIElement? = nil, anyRole: AXUIElement? = nil
+  while head < queue.count && queue.count < 600 && byRole == nil {
+    let (e, depth) = queue[head]; head += 1
+    if let f = frameOf(e), close(f) {
+      if role(e) == wantRole { byRole = e } else if anyRole == nil { anyRole = e }
+    }
+    if depth < 24 { for k in elements(attr(e, kAXChildrenAttribute)) { queue.append((k, depth + 1)) } }
+  }
+  guard let e = byRole ?? anyRole else { return ["error": "no element at the frame", "visited": head, "rootBy": how, "findMs": r1(nowMs() - t0)] }
+  var d = describe(e); d["text"] = textOf(e, depth: 2)
+  let acts = actionList(e)
+  let found = nowMs()
+  let result = AXUIElementPerformAction(prepare(e), kAXPressAction as CFString).rawValue
+  return ["pressed": d, "sameRole": byRole != nil, "actions": acts, "listed": acts.contains(kAXPressAction as String), "rootBy": how,
+          "visited": head, "result": result, "findMs": r1(found - t0), "actionMs": r1(nowMs() - found)]
+}
 /// {"op":"life","pid","window","ms","every","rows"}: the overlay sampled every `every` ms for `ms`: each change of its
 /// window (number, layer, bounds, alpha; "none" when none is listed) and, with `rows`, of its AX rows (the row-sized
 /// elements under its AX root: text and frame), as [ms, "w"|"r", data]; how many reads, how long the AX reads took.
@@ -1210,6 +1241,7 @@ while let line = readLine() {
   case "overlay": emit(overlayNow(q))
   case "rows": emit(rowsOp(q))
   case "press": emit(press(q))
+  case "pressrow": emit(pressRow(q))
   case "identify": emit(identify(q))
   case "life": emit(life(q))
   case "omnibox": emit(omnibox(q))

@@ -27,6 +27,10 @@ on:
         description: The README's label for this head (main, fix)
         type: string
         default: ''
+      flags:
+        description: 'qual453 only: extra flags (--spike, --order, --spikereps N; README "#453 spike")'
+        type: string
+        default: ''
 permissions:
   contents: read
 jobs:
@@ -45,6 +49,7 @@ jobs:
       ONLY: ${{ inputs.only }}
       KIT: ${{ inputs.kit }}
       LABEL: ${{ inputs.label }}
+      FLAGS: ${{ inputs.flags }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -76,6 +81,8 @@ jobs:
           if [ -n "$ONLY" ]; then extra+=(--only "$ONLY"); fi
           if [ "$KIT" = qual453 ]; then
             if [ -n "$REPS" ]; then extra+=(--reps "$REPS"); fi
+            [[ "$FLAGS" =~ ^[-a-z0-9\ ]*$ ]]
+            read -r -a flags <<< "$FLAGS"; extra+=("${flags[@]}")
             P453_ENGINE_REF="$ENGINE_SHA" P453_ENGINE_LABEL="$LABEL" node scripts/probe-453/qual453.mjs --engine "$RUNNER_TEMP/eng-main/release/cua-engine" \
               --tool "$RUNNER_TEMP/tool453" --out "$RUNNER_TEMP/probe-453" --budget 140 "${extra[@]}"
             node scripts/probe-453/qual-reader.mjs "$RUNNER_TEMP/probe-453/results.json" | tee "$RUNNER_TEMP/probe-453/summary.txt"

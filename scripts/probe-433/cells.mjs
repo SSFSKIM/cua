@@ -162,6 +162,12 @@ export const CELLS={
   textoutside:{kind:'shape',before:'Inbox',after:'Inbox',cover:'veil',outsideText:true,records:'AXGroup'},
   parentpad:{kind:'shape',before:'Inbox',after:'Inbox',cover:'veil',pad:true,aim:'pad',at:['link'],records:'AXGroup'},
   contentsfront:{kind:'shape',before:'Inbox',after:'Inbox',cover:'veil',front:'contents',records:'AXGroup'},
+  // Ruling 1080: two recorded links under the veil at the point, front link A (the target, z-index 1) and link C
+  // ("Close", A's box, z-index 0); mark relabels A ("Inbox" to "Sent"), C unchanged. #433's first survivor is the later
+  // of the two in tree order: C (relabelfront: C after A, both heads sameElement) or A (relabelfirst: C before A, both
+  // heads relabelled). As main row for row.
+  relabelfront:{kind:'shape',before:'Inbox',after:'Sent',cover:'veil',rival:'stack',rivalLink:true,relabel:true,records:'AXGroup'},
+  relabelfirst:{kind:'shape',before:'Inbox',after:'Sent',cover:'veil',rival:'stack',rivalLink:true,rivalFirst:true,relabel:true,records:'AXGroup'},
   // A popup window of the app's own opened over the point while the fix waits to hit-test again (Chromium only; the page's
   // window.open, `popup`: the delay after the harness's command sweeps POPUP_DELAYS by repetition). Reported only.
   popupwait:{kind:'report',before:'Inbox',after:'Inbox',cover:'veil',popup:true,lanes:['cft','electron'],records:'AXGroup',at:['link'],reportOnlyAt:['link']},

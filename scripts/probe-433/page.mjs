@@ -74,12 +74,14 @@ function cover(kind,extra=0){
 // (z-index 1 against 0), which mark leaves alone and removes A.
 let rival=null,coverOuter=null,pop=null;
 function rivalOf(spec){
-  const b=document.createElement('button');b.type='button';b.id='rival';b.className='l';b.textContent=spec.rival==='slide'?'Compose':'Close';
+  const b=document.createElement(spec.rivalLink?'a':'button');if(spec.rivalLink)b.href='#rival';else b.type='button';
+  b.id='rival';b.className='l';b.textContent=spec.rival==='slide'?'Compose':'Close';
   slots[0].style.position='relative';
   const w=target.offsetWidth,h=target.offsetHeight,box='width:'+w+'px;height:'+h+'px;box-sizing:border-box;background:#eee';
   if(spec.rival==='slide'){b.style.cssText='position:relative;z-index:1;'+box;slots[1].prepend(b);}
   else{target.style.position='relative';target.style.zIndex='1';
-    b.style.cssText='position:absolute;left:'+target.offsetLeft+'px;top:'+target.offsetTop+'px;z-index:0;'+box;slots[0].append(b);}
+    b.style.cssText='position:absolute;left:'+target.offsetLeft+'px;top:'+target.offsetTop+'px;z-index:0;'+box;
+    if(spec.rivalFirst)slots[0].prepend(b);else slots[0].append(b);}
   twins=[b];rival=b;
 }
 // #433's decomove (and #443's rolechange): an inert decoration nested WRAP groups deep inside the target, the size of
@@ -271,6 +273,7 @@ function run(c){
       rival.style.transform='translate('+(a.left-r.left)+'px,'+(a.top-r.top)+'px)';
       if(spec.veilInto)rival.append(coverOuter);}  // #442's veilinto: the veil moved into B as it slides over
     else if(spec.rival==='stack'&&spec.widen)target.style.paddingRight=(32+spec.widen)+'px';  // #442's widen
+    else if(spec.rival==='stack'&&spec.relabel)target.textContent=spec.after;  // ruling 1080: A relabelled, C unchanged
     else if(spec.rival==='stack'&&spec.shrink){target.style.padding='0';target.style.width='20px';}  // shrinkfront
     else if(spec.front==='contents'){const f=twins[0],t=f.firstChild,b=JSON.parse(f.dataset.box);  // contentsfront: F takes a box of its own, in place
       f.style.cssText='display:block;position:absolute;left:'+b.l+'px;top:'+b.t+'px;width:'+b.w+'px;height:'+b.h+'px;z-index:1;background:#eee';

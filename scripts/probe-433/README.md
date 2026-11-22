@@ -736,7 +736,7 @@ The fix is `fix/442-other-control-on-top` (from main `5580ac20`; ruling 1073, na
 # QA1: the refuse cells, siblingstack, decomove and popupwait, cold; QA2: the review's and ruling 1079's shapes, cold;
 # QAw: the refuse cells, siblingstack and the shapes, warm
 gh workflow run probe-442-measure.yml --ref probe/442-measure -f main="$MAIN_SHA" -f fix="$FIX_SHA" -f mode=qualify -f reps=10 -f hits=cold -f cells=slideover,siblingstack,veilinto,decomove,popupwait
-gh workflow run probe-442-measure.yml --ref probe/442-measure -f main="$MAIN_SHA" -f fix="$FIX_SHA" -f mode=qualify -f reps=10 -f hits=cold -f cells=overflowlink,deepfront,rescrim,scrimhidden,widen,shrinkfront,textoutside,contentsfront,parentpad
+gh workflow run probe-442-measure.yml --ref probe/442-measure -f main="$MAIN_SHA" -f fix="$FIX_SHA" -f mode=qualify -f reps=10 -f hits=cold -f cells=overflowlink,deepfront,rescrim,scrimhidden,widen,shrinkfront,textoutside,contentsfront,parentpad,relabelfront,relabelfirst
 gh workflow run probe-442-measure.yml --ref probe/442-measure -f main="$MAIN_SHA" -f fix="$FIX_SHA" -f mode=qualify -f reps=10 -f hits=warm -f cells=slideover,siblingstack,veilinto,overflowlink,deepfront,rescrim,scrimhidden,widen,shrinkfront,textoutside,contentsfront,parentpad
 # QB: #433's and #443's overlay cells, cold; then the overlay keeps warm
 gh workflow run probe-442-measure.yml --ref probe/442-measure -f main="$MAIN_SHA" -f fix="$FIX_SHA" -f mode=qualify -f reps=10 -f hits=cold -f cells=overcontrol,bgbutton,rebuildunder,overlapinto,overlaprow,rolechange,scrim,twincover,tipremount,twinunder,stickyscroll,nounder
@@ -747,7 +747,7 @@ gh workflow run probe-442-measure.yml --ref probe/442-measure -f main="$MAIN_SHA
 # Tables: node scripts/probe-433/tables.mjs <dir> <label> (verdicts per head, the fix's {hitCorrection}, stalePoint.ms p50/p95, popupwait by delay)
 ```
 
-Rows per lane: QA1 160 (180 on CfT and Electron, with popupwait), QA2 340, QAw 460, QB cold 460, QB warm 320, QC 300 and 400.
+Rows per lane: QA1 160 (180 on CfT and Electron, with popupwait), QA2 420, QAw 460, QB cold 460, QB warm 320, QC 300 and 400.
 
 What the qual adds to the #442 kit:
 - **Kinds** (`cells.mjs`):
@@ -770,5 +770,10 @@ What the qual adds to the #442 kit:
   - `parentpad` (#305's edge, link point only): the link sits in a parent with 16 px of left padding, and a `::before` extends 12 px out into that padding. The point is 6 pt left of the link's frame. Nothing changes.
   - `contentsfront`: link F ("Close", `display: contents`, so it has no box of its own at the observation) has a positioned span that covers the target's box on top. `mark` gives F a box of its own over the same place, and both heads reach F. The row records F's frame at the observation (`frontFrame`), so it shows what each browser lists for a control with no box: a strictly unplaced frame (0,0,0,0) is what the ruling names, and a page can only try for it.
   - Not built: a wrapper whose actions read unknown at the observation (`controlUnknown`), which page content cannot cause; and the review's overflowing link "whose parent read fails" (`overflowlink` builds the overflow alone).
+- **Ruling 1080's rows** (kind `shape`, cold only): two recorded links under the veil at the point. Front link A is the target (`z-index` 1); link C ("Close", A's box) sits behind it at `z-index` 0. `mark` relabels A ("Inbox" to "Sent") and leaves C unchanged. #433's first survivor is the later of the two in tree order:
+  - `relabelfront`: C after A, so C is the first survivor; expected `sameElement` on both heads.
+  - `relabelfirst`: C before A, so A is the first survivor; expected `relabelled` on both heads.
+  
+  Both are judged as main row for row, and the tables show main's and the fix's verdicts side by side.
 - **`popupwait`** (CfT and Electron, link point): the page opens a popup window over the point (`window.open`; CfT runs with `--disable-popup-blocking` on every cell) 0, 20, 40, 60, 90 or 150 ms after the harness's command, which it sends just before the click, by repetition. Rows record `popupDelay` and whether the popup was open by the read. The popup may take the app frontmost, so `presentationHeld` may be false on these rows.
 - **Meta:** every row records the fix's `stalePoint.hitCorrection`, and `tables.mjs` adds it per unit as `{changed n, same n, none n}`. `controlRole` on `otherControlOnTop` is the role of the control on top.

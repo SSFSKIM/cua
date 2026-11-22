@@ -45,7 +45,12 @@ import {createConnection} from 'node:net';
 import {mkdirSync, writeFileSync, rmSync} from 'node:fs';
 import {join} from 'node:path';
 import {createInterface} from 'node:readline';
+import {createHash} from 'node:crypto';
+import {pathToFileURL} from 'node:url';
 import {launch, placePid, version} from '../probe-316/browser.mjs';
+// Ruling 1074: every observation rendered to the model's text by the engine head's own renderer (the workflow passes
+// the head's src/services/engine/render.mjs), so the text, its shape and its time can be compared main against fix.
+const RENDER = process.env.P453_RENDER ? await import(pathToFileURL(process.env.P453_RENDER).href).catch(e => { console.error('probe-453 qual: renderer', e); return null; }) : null;
 
 if (process.env.RUNNER_ENVIRONMENT !== 'github-hosted') { console.error('probe-453 qual: runs only on a GitHub-hosted runner'); process.exit(2); }
 const arg = name => { const i = process.argv.indexOf(`--${name}`); return i > 0 ? process.argv[i + 1] : undefined; };
@@ -228,11 +233,29 @@ function brief(r) {
   return {error: errName(r), message: r?.error ? String(r.error.message ?? '') : null, route: m.inputRoute ?? null,
     stalePoint: m.stalePoint ?? null, posted: m.startedAt != null};
 }
+let currentRow = null;
+// The text as compared across heads: the kit's ports, the result pages' ages and the screenshot's file name made constant.
+const normalText = t => String(t).replace(/127\.0\.0\.1:\d+/g, '127.0.0.1:PORT').replace(/\b\d+ (secs?|mins?|seconds?|minutes?) ago\b/g, 'N ago')
+  .replace(/cua-engine-[0-9A-Za-z-]+\.(jpg|png)/g, 'SHOT');
+const keysOf = o => o && typeof o === 'object' && !Array.isArray(o) ? Object.keys(o).sort() : null;
 async function observe(w, pid, label) {
   const shots = join(OUT, 'shots', fileName(label)); mkdirSync(shots, {recursive: true});
+  const t0 = Date.now();
   const r = await w.execute('get_app_state', {pid, includeScreenshot: true, outputDirectory: shots});
+  const ms = Date.now() - t0;
   if (r.error) throw new Error(`get_app_state: ${JSON.stringify(r.error).slice(0, 400)}`);
-  return r.result;
+  const sky = r.result;
+  if (currentRow) {
+    let text = null;
+    try { if (RENDER) text = normalText(RENDER.render(sky, RENDER.advanceNumbering(null, sky))); } catch (e) { text = `render error: ${e}`; }
+    const timings = Object.fromEntries(Object.entries(sky.timings ?? {}).filter(([, v]) => typeof v === 'number'));
+    const nodeKeys = [...new Set((sky.nodes ?? []).flatMap(n => Object.keys(n)))].sort();
+    (currentRow.observations ??= []).push({label, ms, timings, nodes: sky.nodes?.length ?? null,
+      shape: {top: keysOf(sky), screenshot: keysOf(sky.screenshot), window: keysOf(sky.window), node: nodeKeys},
+      textLength: text?.length ?? null, textHash: text ? createHash('sha1').update(text).digest('hex').slice(0, 12) : null,
+      text: currentRow.how?.startsWith('p-') ? text : null});
+  }
+  return sky;
 }
 const nodeLabel = n => [n.title, n.description, n.value, n.placeholder].filter(v => typeof v === 'string' && v).join(' | ');
 function toPixels(sky, p) {
@@ -544,6 +567,7 @@ async function runRow(app, cell, rep) {
   const k = KINDS[cell.kind], mode = cell.mode;
   const lab = `${cell.name.replace(/\//g, '-')}-${rep}`;
   const row = {label: lab, cell: cell.name, kind: cell.kind, how: cell.how, app: cell.app, mode: mode.name, desktop: mode.desktop, front: mode.front, rep, steps: []};
+  currentRow = row;
   results.push(row);
   let w;
   try {

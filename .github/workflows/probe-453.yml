@@ -83,7 +83,7 @@ jobs:
             if [ -n "$REPS" ]; then extra+=(--reps "$REPS"); fi
             [[ "$FLAGS" =~ ^[-a-z0-9\ ]*$ ]]
             read -r -a flags <<< "$FLAGS"; extra+=("${flags[@]}")
-            P453_ENGINE_REF="$ENGINE_SHA" P453_ENGINE_LABEL="$LABEL" node scripts/probe-453/qual453.mjs --engine "$RUNNER_TEMP/eng-main/release/cua-engine" \
+            P453_ENGINE_REF="$ENGINE_SHA" P453_ENGINE_LABEL="$LABEL" P453_RENDER="$RUNNER_TEMP/src-main/src/services/engine/render.mjs" node scripts/probe-453/qual453.mjs --engine "$RUNNER_TEMP/eng-main/release/cua-engine" \
               --tool "$RUNNER_TEMP/tool453" --out "$RUNNER_TEMP/probe-453" --budget 140 "${extra[@]}"
             node scripts/probe-453/qual-reader.mjs "$RUNNER_TEMP/probe-453/results.json" | tee "$RUNNER_TEMP/probe-453/summary.txt"
             exit 0

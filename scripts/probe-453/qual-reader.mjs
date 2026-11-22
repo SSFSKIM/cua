@@ -106,3 +106,44 @@ if (files.length > 1) {
   }
   console.log('');
 }
+// Ruling 1074: the observation, main against fix. Per head the observations' time (the kit's wall clock around
+// get_app_state, and the engine's screenshotWindowsListed and total timings where they reach the result), p50/p95; the
+// result's shape (keys of the Skyshot, its screenshot, window and nodes); then across heads the shape's difference and the
+// parity cells' rendered text (the model's view, each head rendered by its own renderer), lines one head has that the
+// other never shows.
+{
+  const all = process.argv.slice(2).map(f => JSON.parse(readFileSync(f, 'utf8'))).filter(f => !f.config.spike && !f.config.order);
+  const obsOf = f => f.results.flatMap(r => (r.observations ?? []).map(o => ({...o, cell: r.cell, how: r.how})).filter(o => !/^warm-/.test(o.label)));
+  const q = (xs, p) => { const v = xs.filter(x => typeof x === 'number').sort((a, b) => a - b); return v.length ? Math.round(v[Math.min(v.length - 1, Math.floor(p * v.length))] * 10) / 10 : '-'; };
+  const timingKeys = os => [...new Set(os.flatMap(o => Object.keys(o.timings ?? {})))];
+  if (all.some(f => obsOf(f).length)) {
+    console.log('### Observations (ruling 1074)\n');
+    console.log('| head | observations | wall ms p50 / p95 | screenshotWindowsListed ms p50 / p95 | total timing p50 / p95 | render errors |');
+    console.log('|---|---|---|---|---|---|');
+    for (const f of all) {
+      const os = obsOf(f);
+      const total = timingKeys(os).find(k => /^(total|totalMs|getAppState)$/i.test(k));
+      console.log(`| ${f.config.label ?? f.config.engineRef} | ${os.length} | ${q(os.map(o => o.ms), 0.5)} / ${q(os.map(o => o.ms), 0.95)} | ${q(os.map(o => o.timings?.screenshotWindowsListed), 0.5)} / ${q(os.map(o => o.timings?.screenshotWindowsListed), 0.95)} | ${total ? `${q(os.map(o => o.timings[total]), 0.5)} / ${q(os.map(o => o.timings[total]), 0.95)} (${total})` : '-'} | ${os.filter(o => /^render error/.test(o.text ?? '')).length} |`);
+    }
+    if (all.length > 1) {
+      const [base, ...rest] = all;
+      const shapeOf = f => { const s = {}; for (const o of obsOf(f)) for (const [k, v] of Object.entries(o.shape ?? {})) for (const x of v ?? []) (s[k] ??= new Set()).add(x); return s; };
+      const sb = shapeOf(base);
+      for (const f of rest) {
+        const sf = shapeOf(f), lab = f.config.label ?? f.config.engineRef;
+        const diff = Object.keys({...sb, ...sf}).map(k => { const add = [...(sf[k] ?? [])].filter(x => !sb[k]?.has(x)), gone = [...(sb[k] ?? [])].filter(x => !sf[k]?.has(x)); return add.length || gone.length ? `${k}: +${add.join(',') || '-'} −${gone.join(',') || '-'}` : null; }).filter(Boolean);
+        console.log(`\n- result shape, ${lab} against ${base.config.label}: ${diff.length ? diff.join('; ') : 'the same keys'}`);
+        const tk = timingKeys(obsOf(f)).filter(k => !timingKeys(obsOf(base)).includes(k));
+        console.log(`- timing keys only on ${lab}: ${tk.join(', ') || 'none'}`);
+        const linesOf = x => new Set(obsOf(x).filter(o => o.text).flatMap(o => o.text.split('\n').map(l => l.replace(/^\t*\d+ /, '').trim()).filter(Boolean)));
+        const lb = linesOf(base), lf = linesOf(f);
+        const onlyF = [...lf].filter(l => !lb.has(l)), onlyB = [...lb].filter(l => !lf.has(l));
+        console.log(`- parity cells' rendered text: ${obsOf(f).filter(o => o.text).length} observations on ${lab}, ${obsOf(base).filter(o => o.text).length} on ${base.config.label}; lines only on ${lab}: ${onlyF.length}${onlyF.length ? ` (${onlyF.slice(0, 8).map(l => JSON.stringify(l.slice(0, 100))).join(', ')})` : ''}; only on ${base.config.label}: ${onlyB.length}${onlyB.length ? ` (${onlyB.slice(0, 8).map(l => JSON.stringify(l.slice(0, 100))).join(', ')})` : ''}`);
+        const owners = ['Google Chrome', 'TextEdit', 'Finder', 'cua-engine', 'Dock', 'Window Server'];
+        const ownerLines = onlyF.filter(l => owners.some(o => l.includes(o)));
+        console.log(`- new in the model's view on ${lab} (lines naming a window owner that ${base.config.label} never shows): ${ownerLines.length ? `yes: ${ownerLines.slice(0, 4).map(l => JSON.stringify(l.slice(0, 100))).join(', ')}` : 'no'}`);
+      }
+    }
+    console.log('');
+  }
+}

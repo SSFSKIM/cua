@@ -427,7 +427,12 @@ extension Engine {
         // #453: the overlay windows still over the observed one, their rows read again after the image.
         let started = overlaysAtStart.map(\.number)
         let still = appWindowsOver(observedNumber, pid: capturePid, list: onScreenWindowList()).filter { started.contains($0.number) }
-        let stability = timings.time("overlayStability") { overlayStableWindows(record.0.nodes, over: still, reads: .live) }
+        // Bounded by what is left of the observation (the review of 07d487d8, finding 8): a window not read through in
+        // time stays unstable, and the screenshot still answers.
+        let budget = min(overlayDecisionBudgetMs, deadline - monotonicMilliseconds())
+        let stability = timings.time("overlayStability") {
+          overlayStableWindows(record.0.nodes, over: still, reads: .live(appPid: capturePid, budgetMs: budget))
+        }
         observed.overlayStable = stability.stable
         timings.set("overlayStable", stability.stable.count)
         timings.set("overlayRowsReread", stability.read)

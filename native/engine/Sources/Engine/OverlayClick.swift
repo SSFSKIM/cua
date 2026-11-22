@@ -13,18 +13,19 @@ import Foundation
 // permission bubble and the AppKit popover; nothing on the datalist). So where #452 would refuse, the click is delivered
 // into the overlay when the row the app's hit-test reaches at the point (descended from the overlay's web area, whose
 // first answer it is in Chrome) is a node the observation recorded and the screenshot showed there, the only control the
-// record holds at the point in that overlay, reached through nothing but inert content, still reading its recorded text
-// at its recorded frame, enabled, in an overlay window the screenshot's window list held and whose rows held still around
-// the screenshot (`overlayStableWindows`), of a kind this file lists (`OverlayKind`). Identity is the recorded node's,
-// never the point's alone: a list re-laid out since (one more character typed re-lays the omnibox's rows 2 to 4 times
-// within about 250 ms, its window number unchanged) whose row under the point now reads other text is refused. Chromium's
-// overlays take the stamped post, with no activation and no hold; an AppKit popover takes AXPress on the recorded node.
-// The decision runs again just before the click goes (the window's bounds and the hit read anew), and the whole decision
-// is bounded in time (`overlayDecisionBudgetMs`). The click succeeds only once the overlay's window has left the screen,
-// read for `overlayConfirmMs`; otherwise it answers `clickUnconfirmed`. Anything else keeps #452's refusal unchanged.
-// #456's rechecks after an element route's wait apply the same rule (`StalePointGate.overlay`), and an element click on a
-// row of such an overlay (#470) takes the same kind's route, the row checked against what the observation recorded for
-// its ID. Everything reads through closures, so the rule is unit-tested over fakes.
+// record holds at the point anywhere in that overlay, reached through nothing that acts on its own, still in the control
+// it was recorded in (#443's rule), still reading its recorded text at its recorded frame, enabled, in an overlay window
+// the screenshot's window list held and whose items held still around the screenshot (`overlayStableWindows`), of a kind
+// this file lists (`OverlayKind`). Identity is the recorded node's, never the point's alone: a list re-laid out since (one
+// more character typed re-lays the omnibox's rows 2 to 4 times within about 250 ms, its window number unchanged) whose row
+// under the point now reads other text is refused. Chromium's overlays take the stamped post, with no activation and no
+// hold; an AppKit popover takes AXPress on the recorded node. The decision runs again just before the click goes, the
+// overlay found anew from a fresh hit-test as #452 finds it, and every decision is bounded in time
+// (`overlayDecisionBudgetMs`). The click succeeds only once the overlay's window has left the screen, read for
+// `overlayConfirmMs`; otherwise it answers `clickUnconfirmed`. Anything else keeps #452's refusal unchanged. #456's
+// rechecks after an element route's wait apply the same rule (`StalePointGate.overlay`). An element click (by ID) on such
+// a row keeps the element click's own path (design ruling 1066; #470). Everything reads through closures, so the rule is
+// unit-tested over fakes.
 
 /// The overlays a click is delivered into, each a switch of its own (`delivers`); any other refuses as #452 does.
 enum OverlayKind: String, CaseIterable, Equatable {
@@ -72,18 +73,13 @@ let overlaySampleMs: Double = 20
 /// children's frames that may read.
 let overlayDescentLevels = 24
 let overlayDescentReads = 200
-/// How long one decision may read (the hit's descent, its ancestry, the row's reads), each read bounded by what is left
-/// (`boundedMessagingTimeout`); past it the click is refused (`timedOut`). The kit's reads: a hit chain with text about
-/// 20 ms (40 at most), a full read of the popup's rows 14 to 18 ms (45 at most).
+/// How long one decision may read (the hit-test, the overlay's window, the hit's descent and ancestry, the row's reads),
+/// each AX read bounded by what is left (`boundedMessagingTimeout`); past it the click is refused (`timedOut`). The kit's
+/// reads: a hit chain with text about 20 ms (40 at most), a full read of the popup's rows 14 to 18 ms (45 at most). The
+/// observation's stability pass (`overlayStableWindows`) has the same bound, cut to what is left of the observation.
 let overlayDecisionBudgetMs: Double = 250
-/// The roles of content that does not act on its own when it lists no AXPress (a group), or whatever it lists (a text, an
-/// image: Chromium lists AXPress on every text): what may lie between the hit and the row it belongs to.
-let overlayInertRoles: Set<String> = ["AXStaticText", "AXImage", "AXGroup"]
-/// The roles that hold rows rather than being one: an element click (#470) on one is never posted at its middle.
-let overlayContainerRoles: Set<String> = [
-  "AXGroup", "AXList", "AXScrollArea", "AXWebArea", "AXWindow", "AXSheet", "AXPopover", "AXGrid", "AXTable", "AXOutline",
-  "AXSplitGroup", "AXToolbar", "AXTabGroup", "AXLayoutArea", "AXApplication",
-]
+/// How many elements the stability pass reads of one overlay's live tree; past it the overlay is not stable.
+let overlayStableElementLimit = 400
 /// How far a recorded overlay row's frame may lie from its re-read after the screenshot (`overlayStableWindows`), and a
 /// recorded node's frame from the overlay window's bounds for it to be the overlay's root.
 let overlayFrameTolerance: CGFloat = 1
@@ -157,11 +153,11 @@ struct OverlayChain<Element> {
 /// above, up to `overlayDescentLevels` and `overlayDescentReads`), then read up to its AXWindow; nil when the chain reads
 /// to no window or the decision's time ran out (`OverlayReads.left`). Chrome's first hit-test at an omnibox row answers the
 /// popup's web area; the row lies below it.
-func overlayChain<Element>(from hit: Element, at point: CGPoint, descends: Bool = true, reads: OverlayReads<Element>) -> OverlayChain<Element>? {
+func overlayChain<Element>(from hit: Element, at point: CGPoint, reads: OverlayReads<Element>) -> OverlayChain<Element>? {
   let stale = reads.stale
   var deepest = hit
   var budget = overlayDescentReads
-  descent: for _ in 0..<(descends ? overlayDescentLevels : 0) {
+  descent: for _ in 0..<overlayDescentLevels {
     guard !reads.expired, let children = stale.children(deepest), !children.isEmpty else { break }
     for child in children.reversed() {
       guard budget > 0, !reads.expired else { break descent }
@@ -191,20 +187,19 @@ func overlayChain<Element>(from hit: Element, at point: CGPoint, descends: Bool 
   return nil
 }
 
-/// Whether an element between the hit and its row is inert content of the row (finding 1 of the review of
-/// dfe6f443..b8bb5115): a text or an image whatever it lists, or a group that lists no AXPress (its actions read).
-func overlayInert<Element>(_ element: Element, role: String?, reads: OverlayReads<Element>) -> Bool {
-  guard let role, overlayInertRoles.contains(role) else { return false }
-  guard role == "AXGroup" else { return true }
-  guard let actions = reads.stale.actions(element) else { return false }
+/// Whether an element the hit passes between its leaf and the row it belongs to acts on nothing of its own (the reviews'
+/// finding 1, then finding 5 of the review of 07d487d8): its role and action names read, of no interactive role, listing
+/// no AXPress, whatever its role (an AXStaticText that lists AXPress acts: Chrome's omnibox rows are such texts).
+func overlayPassive<Element>(_ element: Element, role: String?, reads: OverlayReads<Element>) -> Bool {
+  guard let role, !stalePointInteractiveRoles.contains(role), let actions = reads.stale.actions(element) else { return false }
   return !actions.contains("AXPress")
 }
 
-/// The browser's own sign that a window holding `omniboxPopupTitle`'s page is its address-bar popup (the review's
-/// finding 8): the app's focused element is a text field outside any web page and outside the overlay, lying inside the
-/// overlay window's bounds above the popup's page, as the WebUI popup draws around the location bar (the measurement:
-/// the focused "Address and search bar" inside the popup's bounds, above its web area, 288/288 omnibox rows). An
-/// extension's popup carrying the title holds no focused location bar.
+/// The browser's own sign that a window holding `omniboxPopupTitle`'s page is its address-bar popup (finding 8 of the
+/// review of dfe6f443..b8bb5115): the app's focused element is a text field outside any web page and outside the overlay,
+/// lying inside the overlay window's bounds above the popup's page, as the WebUI popup draws around the location bar (the
+/// measurement: the focused "Address and search bar" inside the popup's bounds, above its web area, 288/288 omnibox rows).
+/// An extension's popup carrying the title holds no focused location bar.
 func omniboxLocationBar<Element>(_ chain: OverlayChain<Element>, webArea: Element, window: ListedWindow, reads: OverlayReads<Element>) -> Bool {
   let stale = reads.stale
   guard let field = reads.focused(), stale.role(field) == "AXTextField", let frame = stale.frame(field),
@@ -247,14 +242,34 @@ func overlayKind<Element>(_ chain: OverlayChain<Element>, by: AppWindowSignal, c
   }
 }
 
+/// #452's way of finding the window of the app's over the point from a hit-test's place, which the delivery's last check
+/// takes anew (finding 6 of the review of 07d487d8, as `guardedPointVerdict` does): a hit in another window of the app's
+/// that the list shows covering the point (`hitWindowCovers`), or a hit in a popover of the observed window with a window
+/// of the app's over it at the point (`appWindowOverPoint`); nil otherwise.
+func overlayFromHit(_ place: PointHitPlace, point: CGPoint, observed: CGWindowID?, pid: pid_t, list: [ListedWindow])
+  -> (window: ListedWindow, by: AppWindowSignal)? {
+  switch place {
+  case .otherWindow(let number?):
+    guard hitWindowCovers(number, point: point, target: observed, list: list), let window = list.first(where: { $0.number == number }) else {
+      return nil
+    }
+    return (window, .axHit)
+  case .observedWindow(inPopover: true):
+    guard let observed, let window = appWindowOverPoint(point, target: observed, pid: pid, list: list) else { return nil }
+    return (window, .popover)
+  default:
+    return nil
+  }
+}
+
 /// Why a click into an overlay was not delivered, #452's refusal standing (the meta's `overlayClick.refused`).
 enum OverlayRefusal: String, Equatable {
   /// The overlay's window is not listed now, or the hit-test answered nothing in it.
   case unread
   /// The screenshot's window list did not hold the overlay's window: another overlay than the one it showed.
   case otherWindow
-  /// The overlay's recorded rows were not seen to hold still around the screenshot (`overlayStableWindows`): the image
-  /// may show other rows than the record.
+  /// The overlay's recorded items were not seen to hold still around the screenshot (`overlayStableWindows`): the image
+  /// may show other items than the record.
   case unsettled
   /// Not one of `OverlayKind`'s overlays.
   case unknownKind
@@ -264,10 +279,14 @@ enum OverlayRefusal: String, Equatable {
   case notRecorded
   /// The record holds a node deeper at the point, inside the one the hit reaches, which the hit does not reach.
   case deeperRecorded
-  /// The record holds another control at the point in the overlay, beside the row (one over another).
+  /// The record holds another control at the point in the overlay, beside the row (one over another), or the overlay's
+  /// extent in the record (its root, framed as the window) cannot be found to look.
   case overlapping
   /// Something between the hit and the row acts on its own (a button inside a suggestion).
   case notInert
+  /// #443's rule: the row, or the node the hit reaches, lies now in another control than the one it was recorded in, that
+  /// one gone.
+  case controlGone
   /// The recorded node carries no text, and no recorded row around it does alone.
   case unlabelled
   /// The row reads other text than the observation recorded (a list re-laid out since), or its text does not read.
@@ -277,19 +296,15 @@ enum OverlayRefusal: String, Equatable {
   case disabled
   /// An AppKit popover's row lists no AXPress.
   case noAction
-  /// #470: the element clicked by its ID is a container of the overlay's rows, or carries no text, not a row or button.
-  case notItself
-  /// #470: the hit at the element's point does not reach it in its window.
-  case notReached
   /// The decision ran out of time (`overlayDecisionBudgetMs`).
   case timedOut
-  /// The decision run again just before the click (`deliverOverlayClick`'s `revalidate`) no longer names the same row in
-  /// the same window.
+  /// The decision run again just before the click (`deliverOverlayClick`'s `revalidate`) no longer finds the same overlay
+  /// by the same signal, or no longer names the same row in it.
   case changed
 }
 
-/// A row a click is delivered to: its overlay's kind and window, the row (the recorded node carrying the text; the
-/// element clicked by ID for #470) and, for AXPress, the element pressed.
+/// A row a click is delivered to: its overlay's kind and window, the row (the recorded node carrying the text) and, for
+/// AXPress, the element pressed.
 struct OverlayTarget<Element> {
   let kind: OverlayKind
   let window: ListedWindow
@@ -313,7 +328,8 @@ enum OverlayDecision<Element> {
 
 /// What #453's rule reads at a coordinate click's point beyond the live tree: the point now and the observed window's shift
 /// since the screenshot, the signal #452 refused by, the overlay's and the observed window's listing now, the screenshot's
-/// window list, the overlay windows whose rows held still around it, its record, and whether the app is Chromium's.
+/// window list, the overlay windows whose items held still around it, its record (framed nodes and frameless ones, which
+/// #443's rule looks the recorded control up among), and whether the app is Chromium's.
 struct OverlayPointContext<Element> {
   let point: CGPoint
   var shift: CGVector = .zero
@@ -323,7 +339,26 @@ struct OverlayPointContext<Element> {
   let recordedWindows: Set<CGWindowID>?
   var stableWindows: Set<CGWindowID> = []
   let nodes: [ScreenshotNode<Element>]
+  var frameless: [ScreenshotNode<Element>] = []
   let chromium: Bool
+}
+
+/// The record's roots of an overlay whose window has `bounds`: each node framed as the window (within
+/// `overlayFrameTolerance`) whose recorded parent is not.
+func overlayRecordRoots<Element>(_ nodes: [ScreenshotNode<Element>], bounds: CGRect) -> Set<Int> {
+  func near(_ frame: CGRect) -> Bool { frameDistance(frame, bounds) <= overlayFrameTolerance }
+  return Set(nodes.indices.filter { near(nodes[$0].frame) && !(nodes[$0].ancestor.map { near(nodes[$0].frame) } ?? false) })
+}
+
+/// Whether the recorded node at `index` is one of `roots` or lies below one.
+func overlayRecordIn<Element>(_ index: Int, roots: Set<Int>, _ nodes: [ScreenshotNode<Element>]) -> Bool {
+  var current: Int? = index
+  var levels = 0
+  while let at = current, at < nodes.count, levels <= stalePointAncestorLevels {
+    if roots.contains(at) { return true }
+    (current, levels) = (nodes[at].ancestor, levels + 1)
+  }
+  return false
 }
 
 /// #453's decision where #452 refused a coordinate click (`appWindowOverPoint`), `hit` the hit-test's own answer: refused
@@ -381,20 +416,31 @@ private func overlayPointJudged<Element>(hit: Element?, _ context: OverlayPointC
   }
   guard nodes[row].labelsUnread.isEmpty, let recordedLabel = overlayRecordedLabel(nodes[row]) else { return .refuse(.unlabelled, kind: kind) }
   guard let rowAt = chainIndex(nodes[row].element), rowAt >= foundAt else { return .refuse(.notRecorded, kind: kind) }
-  // Everything the hit passes below the row is inert content of it (finding 1): a new button inside a suggestion refuses.
-  guard (0..<rowAt).allSatisfy({ overlayInert(inside[$0], role: chain.roles[$0], reads: reads) }) else { return .refuse(.notInert, kind: kind) }
-  // The record's own winner at the point, whatever the hit (finding 3): no other recorded control of the overlay holds
-  // it beside the row (neither the row's ancestor nor inside it), so a control over the row that has gone never lets
-  // the one under it pass. The overlay's part of the record is the subtree of the row's highest recorded ancestor that
-  // the hit's chain passes.
+  // Nothing the hit passes below the row acts on its own: a new button, or a text that lists AXPress, inside a suggestion
+  // refuses.
+  guard (0..<rowAt).allSatisfy({ overlayPassive(inside[$0], role: chain.roles[$0], reads: reads) }) else { return .refuse(.notInert, kind: kind) }
+  // The record's own winner at the point, whatever the hit: no other recorded control anywhere in the overlay (the
+  // subtree of its recorded root, framed as its window: finding 4 of the review of 07d487d8, a sibling branch of the
+  // popover or the window included) holds it beside the row (neither the row's ancestor nor inside it), so a control over
+  // the row that has gone never lets the one under it pass. No root found: the overlay's extent is unknown, refused.
+  let roots = overlayRecordRoots(nodes, bounds: window.bounds)
+  guard overlayRecordIn(row, roots: roots, nodes) else { return .refuse(.overlapping, kind: kind) }
   let rowAncestry = ancestry(row)
-  let top = rowAncestry.last(where: { chainIndex(nodes[$0].element) != nil }) ?? row
   let beside = nodes.indices.contains { index in
-    guard index != row, holds(nodes[index]), nodes[index].actionable != false, !rowAncestry.contains(index) else { return false }
-    let above = ancestry(index)
-    return (index == top || above.contains(top)) && !above.contains(row)
+    guard index != row, holds(nodes[index]), nodes[index].actionable != false, !rowAncestry.contains(index),
+          overlayRecordIn(index, roots: roots, nodes) else { return false }
+    return !ancestry(index).contains(row)
   }
   guard !beside else { return .refuse(.overlapping, kind: kind) }
+  // #443's rule on the nodes the click is judged by (finding 1 of the review of 07d487d8): an inert node found on its own
+  // handle whose recorded control is confirmed gone and which lies in another control now refuses, as the stale-point
+  // guard refuses it in the observed window (`controlGoneVerdict`).
+  for index in Set([found, row]) {
+    let probe = StalePointVerdict(reason: .sameElement, node: nodes[index], identity: .handle, current: nodes[index].element,
+                                  hit: inside.first, point: context.point, windowShift: context.shift, nodes: nodes,
+                                  frameless: context.frameless)
+    if controlGoneVerdict(probe, stale) != nil { return .refuse(.controlGone, kind: kind) }
+  }
   for index in Set([found, row]) {
     let node = nodes[index]
     guard !stale.isGone(node.element), let live = stale.frame(node.element),
@@ -431,44 +477,74 @@ func overlayLabelNow<Element>(_ element: Element, role: String, reads: StalePoin
   return nil
 }
 
-/// The overlay windows whose recorded rows held still around the screenshot (the review's finding 2): for each window of
-/// the app's over the observed one (`over`), the record's overlay root (the node framed as the window's bounds whose
-/// recorded parent is not) and every node carrying text in its subtree read again (frame and label) after the capture,
-/// each the same as recorded. The observation that asks for this walks the tree before it captures the image (Skyshot.swift),
-/// so a row read the same before and after the image was the same in it. A window with no such root, no text in it, or
-/// any read that differs or fails, is not stable. Answers the windows and how many nodes were read.
-func overlayStableWindows<Element>(_ nodes: [ScreenshotNode<Element>], over: [ListedWindow], reads: StalePointReads<Element>)
+/// The delivery's last check (findings 6 and 9 of the review of 07d487d8): within the decision's time (`reads.left`), a
+/// fresh hit-test at the point (`hit`, bounded by that time) gives the overlay anew by #452's own signals
+/// (`overlayFromHit` over the window list read now, `list`), which must be the same window found the same way as the
+/// target's; then the decision (`decide`, given that hit's answer, the window as listed now and the signal) must name the
+/// same row. Answers the window as listed now, whose number and bounds the post is stamped with; nil otherwise, nothing
+/// read once the time is spent.
+func overlayRevalidated<Element>(_ target: OverlayTarget<Element>, point: CGPoint, observed: CGWindowID?, pid: pid_t,
+                                 reads: OverlayReads<Element>, hit: () -> WindowHit<Element>?, list: () -> [ListedWindow]?,
+                                 decide: (Element?, ListedWindow, AppWindowSignal) -> OverlayDecision<Element>) -> ListedWindow? {
+  guard !reads.expired, let fresh = hit(), !reads.expired, let windows = list(),
+        let found = overlayFromHit(fresh.place, point: point, observed: observed, pid: pid, list: windows),
+        found.window.number == target.window.number, found.by == target.by,
+        case .deliver(let again) = decide(fresh.answered, found.window, found.by), reads.stale.same(again.row, target.row) else { return nil }
+  return found.window
+}
+
+/// The overlay windows whose recorded items held still around the screenshot (finding 2 of the review of
+/// dfe6f443..b8bb5115, finding 3 of the review of 07d487d8): for each window of the app's over the observed one (`over`),
+/// the record's overlay roots (`overlayRecordRoots`), whose recorded subtree must be whole (`subtreeRecorded`), and the
+/// live tree under each read again after the capture: the same elements, by handle (an item added over a recorded one
+/// since the walk, which the image would show, makes it unstable; the order a list draws in is not in the tree, so two of
+/// the same items swapping places is caught by their frames), every framed one at its recorded frame, every one carrying
+/// text reading it. The observation that asks for this walks the tree before it captures the image (Skyshot.swift), so
+/// items the same before and after the image were the same in it. Bounded by `reads.left` (finding 8): a window not
+/// finished in time, past `overlayStableElementLimit`, with no root, or with any read that differs or fails, is not
+/// stable. Answers the windows and how many elements were read.
+func overlayStableWindows<Element>(_ nodes: [ScreenshotNode<Element>], over: [ListedWindow], reads: OverlayReads<Element>)
   -> (stable: Set<CGWindowID>, read: Int) {
+  let stale = reads.stale
   var stable: Set<CGWindowID> = []
   var read = 0
-  func near(_ frame: CGRect, _ bounds: CGRect) -> Bool { frameDistance(frame, bounds) <= overlayFrameTolerance }
-  for window in over {
-    let roots = Set(nodes.indices.filter { index in
-      near(nodes[index].frame, window.bounds) && !(nodes[index].ancestor.map { near(nodes[$0].frame, window.bounds) } ?? false)
-    })
+  windows: for window in over {
+    let roots = overlayRecordRoots(nodes, bounds: window.bounds)
     guard !roots.isEmpty else { continue }
-    func inSubtree(_ index: Int) -> Bool {
-      var current: Int? = index
-      var levels = 0
-      while let at = current, at < nodes.count, levels <= stalePointAncestorLevels {
-        if roots.contains(at) { return true }
-        (current, levels) = (nodes[at].ancestor, levels + 1)
-      }
-      return false
-    }
-    let rows = nodes.indices.filter { inSubtree($0) && overlayRecordedLabel(nodes[$0]) != nil }
-    guard !rows.isEmpty else { continue }
-    var same = true
-    for index in rows {
+    let recorded = nodes.indices.filter { overlayRecordIn($0, roots: roots, nodes) }
+    guard recorded.allSatisfy({ nodes[$0].subtreeRecorded }) else { continue }
+    // The live tree under each root: every element, framed ones compared with the record's framed nodes.
+    var live: [Element] = []
+    var queue = roots.sorted().map { nodes[$0].element }
+    var head = 0
+    while head < queue.count {
+      guard !reads.expired, queue.count <= overlayStableElementLimit else { continue windows }
+      let element = queue[head]
+      head += 1
       read += 1
-      let node = nodes[index]
-      guard let live = reads.frame(node.element), frameDistance(live, node.frame) <= overlayFrameTolerance,
-            node.labelsUnread.isEmpty, overlayLabelNow(node.element, role: node.role, reads: reads) == overlayRecordedLabel(node) else {
-        same = false
-        break
+      guard let frame = stale.frame(element) else {
+        if reads.expired || stale.isGone(element) { continue windows }
+        guard let children = stale.children(element) else { continue windows }
+        queue.append(contentsOf: children)
+        continue
       }
+      _ = frame
+      live.append(element)
+      guard let children = stale.children(element) else { continue windows }
+      queue.append(contentsOf: children)
     }
-    if same { stable.insert(window.number) }
+    guard live.count == recorded.count, recorded.allSatisfy({ index in live.contains { stale.same($0, nodes[index].element) } }) else {
+      continue
+    }
+    for index in recorded {
+      guard !reads.expired else { continue windows }
+      let node = nodes[index]
+      guard let frame = stale.frame(node.element), frameDistance(frame, node.frame) <= overlayFrameTolerance, node.labelsUnread.isEmpty else {
+        continue windows
+      }
+      if let label = overlayRecordedLabel(node), overlayLabelNow(node.element, role: node.role, reads: stale) != label { continue windows }
+    }
+    stable.insert(window.number)
   }
   return (stable, read)
 }
@@ -481,77 +557,6 @@ func appWindowsOver(_ target: CGWindowID?, pid: pid_t, list: [ListedWindow]) -> 
   return list[..<observed].filter { $0.owner == pid && $0.alpha > 0 && $0.bounds.intersects(bounds) }
 }
 
-/// What #470's rule makes of an element click: not an overlay's row (the element click's own path), delivered, or
-/// refused (an overlay of a listed kind whose row cannot be checked or has changed: never left to route 3).
-enum OverlayElementDecision<Element> {
-  case notOverlay
-  case deliver(OverlayTarget<Element>)
-  case refuse(OverlayRefusal, kind: OverlayKind?, window: ListedWindow?)
-}
-
-/// #470: an element click (`element`, by its ID, with the label and frame the observation recorded for it, `recorded`)
-/// on a row of an overlay: the element's own ancestry read to its window, not the observed one (`observed`, listed now as
-/// `observedNumber`), or through an AXPopover of it, an overlay of a listed kind covering the element's clickable point;
-/// else `notOverlay`. Then, the overlay recognised, the element must be a row or button itself (a role that holds no rows,
-/// carrying text: finding 5), read its recorded label and frame (finding 4: Chrome reuses a row's element for another
-/// suggestion), be enabled, and be what the hit at its point reaches through nothing but inert content (findings 1 and 5),
-/// listing AXPress for AXPress; else refused. Out of time anywhere: refused (`timedOut`).
-func overlayElement<Element>(_ element: Element, recorded: (label: String?, frame: CGRect?), hit: () -> Element?, point: CGPoint,
-                             observed: Element, observedNumber: CGWindowID?, pid: pid_t, list: () -> [ListedWindow], chromium: Bool,
-                             reads: OverlayReads<Element>, number: (Element) -> CGWindowID?) -> OverlayElementDecision<Element> {
-  let decision = overlayElementJudged(element, recorded: recorded, hit: hit, point: point, observed: observed, observedNumber: observedNumber,
-                                      pid: pid, list: list, chromium: chromium, reads: reads, number: number)
-  guard reads.expired else { return decision }
-  switch decision {
-  case .notOverlay: return .refuse(.timedOut, kind: nil, window: nil)
-  case .deliver(let target): return .refuse(.timedOut, kind: target.kind, window: target.window)
-  case .refuse(_, let kind, let window): return .refuse(.timedOut, kind: kind, window: window)
-  }
-}
-
-private func overlayElementJudged<Element>(_ element: Element, recorded: (label: String?, frame: CGRect?), hit: () -> Element?,
-                                           point: CGPoint, observed: Element, observedNumber: CGWindowID?, pid: pid_t,
-                                           list: () -> [ListedWindow], chromium: Bool, reads: OverlayReads<Element>,
-                                           number: (Element) -> CGWindowID?) -> OverlayElementDecision<Element> {
-  let stale = reads.stale
-  guard let own = overlayChain(from: element, at: point, descends: false, reads: reads),
-        !stale.same(own.root, observed) || own.popover != nil else { return .notOverlay }
-  let list = list()
-  let by: AppWindowSignal
-  let window: ListedWindow
-  if stale.same(own.root, observed) {
-    guard let observedNumber, let over = appWindowOverPoint(point, target: observedNumber, pid: pid, list: list) else { return .notOverlay }
-    (by, window) = (.popover, over)
-  } else {
-    guard let overNumber = number(own.root), hitWindowCovers(overNumber, point: point, target: observedNumber, list: list),
-          let over = list.first(where: { $0.number == overNumber }) else { return .notOverlay }
-    (by, window) = (.axHit, over)
-  }
-  guard let kind = overlayKind(own, by: by, chromium: chromium, overlay: window,
-                               observedLayer: observedNumber.flatMap { number in list.first { $0.number == number }?.layer }, reads: reads),
-        kind.delivers else { return .notOverlay }
-  func refuse(_ why: OverlayRefusal) -> OverlayElementDecision<Element> { .refuse(why, kind: kind, window: window) }
-  guard let role = stale.role(element), !overlayContainerRoles.contains(role),
-        let labelNow = overlayLabelNow(element, role: role, reads: stale) else { return refuse(.notItself) }
-  guard let label = recorded.label, label == labelNow else { return refuse(.textChanged) }
-  guard let frame = recorded.frame, let live = stale.frame(element), frameDistance(live, frame) <= stalePointFrameTolerance else {
-    return refuse(.frameMoved)
-  }
-  guard reads.enabled(element) != false else { return refuse(.disabled) }
-  guard let hit = hit(), let chain = overlayChain(from: hit, at: point, reads: reads), stale.same(chain.root, own.root) else {
-    return refuse(.notReached)
-  }
-  let inside = Array(chain.inside(by))
-  guard let at = inside.firstIndex(where: { stale.same($0, element) }) else { return refuse(.notReached) }
-  guard (0..<at).allSatisfy({ overlayInert(inside[$0], role: chain.roles[$0], reads: reads) }) else { return refuse(.notInert) }
-  var target = OverlayTarget(kind: kind, window: window, by: by, row: element)
-  if kind.route == .press {
-    guard stale.actions(element)?.contains("AXPress") == true else { return refuse(.noAction) }
-    target.pressed = element
-  }
-  return .deliver(target)
-}
-
 /// The events' target for the stamped post: the point, the overlay's own window number and its frame, so the window
 /// location is local to the overlay (Mouse.swift `stampWindow`), posted to `pid`.
 func overlayPostTarget(_ point: CGPoint, window: ListedWindow, pid: pid_t) -> ClickTarget {
@@ -559,13 +564,13 @@ func overlayPostTarget(_ point: CGPoint, window: ListedWindow, pid: pid_t) -> Cl
 }
 
 /// What the delivery's effect read: the overlay's window left the screen, or it did not in time. The row's element
-/// dying is no evidence (the review's finding 7: an overlay refreshing its rows destroys them while it stays open).
+/// dying is no evidence (finding 7 of the review of dfe6f443..b8bb5115: an overlay refreshing its rows destroys them while
+/// it stays open).
 enum OverlayEffect: String, Equatable { case closed, unconfirmed }
 
 /// The meta's `overlayClick` (#453, value-free): the overlay's window, the signal #452 found it by, its kind, and either
 /// the route that carried the click and its effect (with the AXError of an AXPress that was not success, the reads and the
-/// milliseconds from the delivery to the last read) or why #452's refusal stood. `from` is `element` for #470's element
-/// click.
+/// milliseconds from the delivery to the last read) or why #452's refusal stood.
 struct OverlayClickRecord: Equatable {
   let window: CGWindowID
   let by: AppWindowSignal
@@ -576,7 +581,6 @@ struct OverlayClickRecord: Equatable {
   var actionError: Int32?
   var polls = 0
   var ms: Double?
-  var element = false
 
   var wire: [String: Any] {
     var wire: [String: Any] = ["window": Int(window), "by": by.rawValue]
@@ -587,18 +591,18 @@ struct OverlayClickRecord: Equatable {
     if let actionError { wire["actionError"] = Int(actionError) }
     if polls > 0 { wire["polls"] = polls }
     if let ms { wire["ms"] = (ms * 1000).rounded() / 1000 }
-    if element { wire["from"] = "element" }
     return wire
   }
 }
 
-/// The delivery and its effect: first the decision again (`revalidate`, finding 6: the hit and the overlay's bounds read
-/// anew, answering the window as listed now only when it names the same row in the same window; otherwise `changed` and
-/// `refusal` thrown, nothing sent), then `beforeDispatch` (the request's deadline, the owner's checks, the in-flight check,
-/// the cursor), then the stamped post by route 2′ (`post`, given `overlayPostTarget`'s target with the bounds read anew;
-/// no activation, no hold) or AXPress by route 1 (`perform`; an error other than a messaging timeout is `actionFailed`),
-/// then the overlay's window (`windowShown`, nil when the list does not read: unknown, never closed) read at once and every
-/// `overlaySampleMs` for up to `overlayConfirmMs`: gone, it answers; otherwise `clickUnconfirmed`.
+/// The delivery and its effect: first the last check (`revalidate`, `overlayRevalidated`: the overlay found anew from a
+/// fresh hit-test, answering the window as listed now only when it is the same window, found the same way, naming the same
+/// row; otherwise `changed` and `refusal` thrown, nothing sent), then `beforeDispatch` (the request's deadline, the
+/// owner's checks, the in-flight check, the cursor), then the stamped post by route 2′ (`post`, given
+/// `overlayPostTarget`'s target with that window's number and bounds; no activation, no hold) or AXPress by route 1
+/// (`perform`; an error other than a messaging timeout is `actionFailed`), then the overlay's window (`windowShown`, nil
+/// when the list does not read: unknown, never closed) read at once and every `overlaySampleMs` for up to
+/// `overlayConfirmMs`: gone, it answers; otherwise `clickUnconfirmed`.
 func deliverOverlayClick<Element>(_ target: OverlayTarget<Element>, point: CGPoint, owner: pid_t, app: String,
                                   windowShown: (CGWindowID) -> Bool?, now: () -> Double, sleep: (Double) -> Void,
                                   revalidate: () -> ListedWindow?, refusal: EngineError, beforeDispatch: () throws -> Void,
@@ -648,24 +652,6 @@ func overlayClickUnconfirmed(app: String, route: OverlayRoute) -> EngineError {
     "The click could not be confirmed: it was \(how), but that window was not seen to close. Observe the app with get_app_state before any retry, and never retry blindly.")
 }
 
-/// #470's refusal: the element clicked by its ID lies in a window of the app's own over its window, of a kind a click is
-/// sent into, but cannot be checked as the row or button the observation listed. The name is #452's, a window of the
-/// app's over the observed one. Nothing was sent.
-func overlayElementRefused(app: String, _ why: OverlayRefusal) -> EngineError {
-  let cause: String
-  switch why {
-  case .notItself: cause = "the element is the list or panel that holds its rows, not one of its rows or buttons"
-  case .textChanged, .frameMoved, .changed: cause = "the element no longer reads or sits as the last observation listed it"
-  case .disabled: cause = "the element is disabled"
-  case .notReached, .notInert: cause = "something else of that window lies at the element's point"
-  case .noAction: cause = "the element takes no action"
-  case .timedOut: cause = "the app did not answer in time"
-  default: cause = "it cannot be checked there"
-  }
-  return EngineError(name: "appWindowOverPoint",
-    "\(app) shows this element in a window of its own over its window (a suggestion list, popup or prompt), and a click on it is sent to that window only when it is still the row or button the last observation listed; here \(cause). Nothing was sent. Call getAXState() again and click the row or button by its new ID, or use keys (the arrow keys and Return for a suggestion list, Escape to close it).")
-}
-
 /// The route's own way out once a check's refusal was replaced by the overlay's delivery (`StalePointGate.overlay`): the
 /// click is carried, and the route acts on nothing of its own; the click answers success with the meta it reached.
 struct OverlayClickDelivered: Error {}
@@ -673,21 +659,24 @@ struct OverlayClickDelivered: Error {}
 extension Engine {
   /// #453 at a coordinate click #452 refused (`verdict`, `appWindowOverPoint`): the decision over the connection's last
   /// screenshot of the app, recorded in the meta, and when it delivers, the delivery (`deliverOverlayClick`) with the
-  /// deferred settle armed, the decision run again on a fresh hit-test in `observed` and a fresh window list just before.
-  /// True when carried (an unconfirmed one throws); false leaves #452's refusal to stand.
+  /// deferred settle armed, its last check (`overlayRevalidated`) a fresh hit-test in `observed` and a fresh window list,
+  /// all within one decision's time. True when carried (an unconfirmed one throws); false leaves #452's refusal to stand.
   func overlayPointClick(_ verdict: StalePointVerdict<AXUIElement>, point: CGPoint, shift: CGVector, observed: AXUIElement,
                          observedWindow: CGWindowID?, app: ResolvedApp, appPid: pid_t, guarding: InterventionGuard,
                          context: ExecutionContext, meta: inout InputMeta) throws -> Bool {
     guard verdict.reason == .appWindowOverPoint, let number = verdict.overWindow, let by = verdict.overBy else { return false }
     let screenshot = context.connection.observedScreenshot(app: app)
     let chromium = webAccessibility.pageEngine(app.appPath) == .chromium
-    func decide(_ answered: AXUIElement?, _ overlay: ListedWindow?, _ observedLayer: Int?) -> OverlayDecision<AXUIElement> {
+    func decide(_ answered: AXUIElement?, _ overlay: ListedWindow?, _ signal: AppWindowSignal, _ observedLayer: Int?,
+                _ reads: OverlayReads<AXUIElement>) -> OverlayDecision<AXUIElement> {
       overlayPoint(hit: answered, OverlayPointContext(
-        point: point, shift: shift, by: by, overlay: overlay, observedLayer: observedLayer, recordedWindows: screenshot?.windowList,
-        stableWindows: screenshot?.overlayStable ?? [], nodes: screenshot?.nodes ?? [], chromium: chromium),
-        reads: .live(appPid: appPid, budgetMs: overlayBudget(context)))
+        point: point, shift: shift, by: signal, overlay: overlay, observedLayer: observedLayer, recordedWindows: screenshot?.windowList,
+        stableWindows: screenshot?.overlayStable ?? [], nodes: screenshot?.nodes ?? [], frameless: screenshot?.frameless ?? [],
+        chromium: chromium), reads: reads)
     }
-    let decision = signposted("click.overlay") { decide(verdict.overAnswered, verdict.overListed, verdict.observedListed?.layer) }
+    let decision = signposted("click.overlay") {
+      decide(verdict.overAnswered, verdict.overListed, by, verdict.observedListed?.layer, .live(appPid: appPid, budgetMs: overlayBudget(context)))
+    }
     switch decision {
     case .refuse(let why, let kind):
       meta.overlayClick = OverlayClickRecord(window: number, by: by, kind: kind, refused: why)
@@ -695,54 +684,26 @@ extension Engine {
     case .deliver(let target):
       try armingSettle(&meta, acted: { context.connection.markActed(app) }) { meta in
         try overlayDelivery(target, point: point, observedWindow: observedWindow, app: app, appPid: appPid, guarding: guarding,
-                            context: context, refusal: appWindowOverPointRefusal(app: app.displayName), revalidate: {
-          let answered = hitTestOutcome(window: observed, pid: appPid, at: point, now: monotonicMilliseconds).answered
-          let list = onScreenWindowList()
-          let again = decide(answered, list.first { $0.number == target.window.number },
-                             observedWindow.flatMap { observed in list.first { $0.number == observed }?.layer })
-          guard case .deliver(let fresh) = again, CFEqual(fresh.row, target.row) else { return nil }
-          return fresh.window
-        }, meta: &meta)
-      }
-      return true
-    }
-  }
-
-  /// #470 at an element click: the element's clickable point, the hit there, and the windows as listed now, with the
-  /// label and frame its ID was recorded with (`entry`); delivered by its overlay kind's route, refused when the overlay
-  /// is recognised but the row cannot be checked (never left to route 3). True when carried; false keeps the element
-  /// click's path.
-  func overlayElementClick(_ pointing: ElementPointing, entry: LineageEntry, app: ResolvedApp, appPid: pid_t, guarding: InterventionGuard,
-                           context: ExecutionContext, meta: inout InputMeta) throws -> Bool {
-    guard let point = pointing.point else { return false }
-    let application = prepare(AXUIElementCreateApplication(appPid))
-    guard let observed = primaryWindow(of: application) else { return false }
-    let observedNumber = windowNumber(of: observed, pid: appPid, readFrame: { frame(of: observed) })
-    let owner = pointing.owner
-    let identity = entry.identity
-    let recorded = (label: stalePointLabel(title: identity.title, description: identity.description,
-                                           value: identity.role == "AXStaticText" && !identity.valueUnread && !identity.valueFailed ? identity.value : nil),
-                    frame: entry.frame)
-    let chromium = webAccessibility.pageEngine(app.appPath) == .chromium
-    func decide() -> OverlayElementDecision<AXUIElement> {
-      overlayElement(pointing.element, recorded: recorded, hit: { hitTest(application: owner, at: point) }, point: point, observed: observed,
-                     observedNumber: observedNumber, pid: appPid, list: onScreenWindowList, chromium: chromium,
-                     reads: .live(appPid: appPid, budgetMs: overlayBudget(context)),
-                     number: { window in windowNumber(of: window, pid: owner, readFrame: { frame(of: window) }) })
-    }
-    switch signposted("click.overlayElement", decide) {
-    case .notOverlay: return false
-    case .refuse(let why, let kind, let window):
-      meta.inputRoute = kind?.route == .press ? .action : .plainPost
-      meta.overlayClick = OverlayClickRecord(window: window?.number ?? 0, by: kind == .appKitPopover ? .popover : .axHit, kind: kind,
-                                             refused: why, element: true)
-      throw overlayElementRefused(app: app.displayName, why)
-    case .deliver(let target):
-      try armingSettle(&meta, acted: { context.connection.markActed(app) }) { meta in
-        try overlayDelivery(target, point: point, observedWindow: observedNumber, app: app, appPid: appPid, guarding: guarding,
-                            context: context, element: true, refusal: overlayElementRefused(app: app.displayName, .changed), revalidate: {
-          guard case .deliver(let fresh) = decide(), CFEqual(fresh.row, target.row) else { return nil }
-          return fresh.window
+                            context: context, refusal: appWindowOverPointRefusal(app: app.displayName), revalidate: { [self] in
+          // One decision's time for the hit-test, the window's resolution and the decision alike (finding 9).
+          let started = monotonicMilliseconds()
+          let budget = overlayBudget(context)
+          let reads = OverlayReads<AXUIElement>.live(appPid: appPid, budgetMs: budget)
+          let bounded = BoundedAXRead(left: reads.left)
+          let application = prepare(AXUIElementCreateApplication(appPid))
+          var windows: [ListedWindow]?
+          return overlayRevalidated(target, point: point, observed: observedWindow, pid: appPid, reads: reads, hit: {
+            windowHit(application: application, window: observed, at: point, elementAt: { root, at in
+              bounded(root) { elementAtPosition(root, at) } ?? (.cannotComplete, nil)
+            }, role: reads.stale.role, parent: reads.stale.parent, same: { CFEqual($0, $1) }, number: { other, _ in
+              bounded(other) { windowNumber(of: other, pid: appPid, readFrame: { frame(of: other, before: started + budget, now: monotonicMilliseconds) }) }
+            }, now: monotonicMilliseconds)
+          }, list: {
+            windows = onScreenWindowListRead()
+            return windows
+          }, decide: { answered, overlay, signal in
+            decide(answered, overlay, signal, observedWindow.flatMap { observed in windows?.first { $0.number == observed }?.layer }, reads)
+          })
         }, meta: &meta)
       }
       return true
@@ -754,14 +715,14 @@ extension Engine {
     min(overlayDecisionBudgetMs, Double(context.deadline - unixMilliseconds()))
   }
 
-  /// The delivery, live: the decision run again (`revalidate`), the row's own process checked against the forbidden list
-  /// and registered as one the action drives, an earlier action's after-action watch ended, the in-flight check, the agent
+  /// The delivery, live: the last check (`revalidate`), the row's own process checked against the forbidden list and
+  /// registered as one the action drives, an earlier action's after-action watch ended, the in-flight check, the agent
   /// cursor at the point, then the kind's route (`deliverOverlayClick`), the posted click noted for #359's ordering.
   private func overlayDelivery(_ target: OverlayTarget<AXUIElement>, point: CGPoint, observedWindow: CGWindowID?, app: ResolvedApp,
-                               appPid: pid_t, guarding: InterventionGuard, context: ExecutionContext, element: Bool = false,
+                               appPid: pid_t, guarding: InterventionGuard, context: ExecutionContext,
                                refusal: EngineError, revalidate: () -> ListedWindow?, meta: inout InputMeta) throws {
     let owner = ownerPid(of: target.row, fallback: appPid)
-    var record = OverlayClickRecord(window: target.window.number, by: target.by, kind: target.kind, element: element)
+    var record = OverlayClickRecord(window: target.window.number, by: target.by, kind: target.kind)
     defer { meta.overlayClick = record }
     try deliverOverlayClick(target, point: point, owner: owner, app: app.displayName, windowShown: { number in
       onScreenWindowIDs().map { $0.contains(number) }

@@ -10,7 +10,7 @@ import XCTest
 // page "Omnibox Popup", whose first hit-test answers the web area), the `<datalist>` popup (Chromium's autofill list in a
 // layer-999 window), the permission bubble (an alert dialog in a layer-0 window) and TextEdit's colour-well popover (an
 // AXPopover in the document window's tree, with a window of its own in the list). Then #456's rechecks (`StalePointGate`'s
-// overlay rule) and #470's element click on such a row.
+// overlay rule). An element click (by ID) on such a row keeps its own path (ruling 1066, #470).
 
 final class OverlayClickTests: XCTestCase {
   private final class Node {
@@ -576,26 +576,54 @@ final class OverlayClickTests: XCTestCase {
                                         reads: reads)), .unsettled)
   }
 
-  /// Finding 2's evidence: the overlay's root is the node framed as its window, every node carrying text below it read
-  /// again after the image; any that reads another text or frame, or a window with no such root, is not stable.
-  func testTheOverlaysRowsAreStableOnlyWhenTheyReadTheSameAfterTheImage() {
+
+  /// Finding 2's evidence (and finding 3 of the review of 07d487d8): the overlay's root is the node framed as its window;
+  /// the live tree under it read again after the image must hold the same elements, each at its recorded frame and text.
+  /// A row re-laid out, a row moved, an item added over a recorded one, or a window with no such root, is not stable.
+  func testTheOverlaysItemsAreStableOnlyWhenTheyReadTheSameAfterTheImage() {
     let scene = omnibox()
     let page = Node("AXWebArea", rect(400, 120, 620, 589), title: "probe453 page", parent: browser)
     _ = Node("AXButton", rect(420, 470, 80, 30), title: "Alpha", parent: page)
     let nodes = record([browser, scene.window])
     let elsewhere = ListedWindow(number: 77, owner: pid, layer: 0, bounds: rect(30, 30, 50, 50))
-    let same = overlayStableWindows(nodes, over: [scene.listed, elsewhere], reads: reads.stale)
+    let same = overlayStableWindows(nodes, over: [scene.listed, elsewhere], reads: reads)
     XCTAssertEqual(same.stable, [39], "no root framed as window 77: not stable")
-    XCTAssertEqual(same.read, 4, "the web area's title and the three rows, nothing of the page")
+    XCTAssertEqual(same.read, 13, "the popup's 13 elements, nothing of the page")
     scene.rows[2].value = "http://127.0.0.1:49171/results-a search, 3 of 3"
-    XCTAssertEqual(overlayStableWindows(nodes, over: [scene.listed], reads: reads.stale).stable, [], "a row re-laid out after the walk")
+    XCTAssertEqual(overlayStableWindows(nodes, over: [scene.listed], reads: reads).stable, [], "a row re-laid out after the walk")
     scene.rows[2].value = "http://127.0.0.1:49171/results- search, 3 of 3"
     scene.rows[0].frame = rect(515, 117.5, 426, 40)
-    XCTAssertEqual(overlayStableWindows(nodes, over: [scene.listed], reads: reads.stale).stable, [], "a row moved")
+    XCTAssertEqual(overlayStableWindows(nodes, over: [scene.listed], reads: reads).stable, [], "a row moved")
+    scene.rows[0].frame = rect(515, 116, 426, 40)
+    XCTAssertEqual(overlayStableWindows(nodes, over: [scene.listed], reads: reads).stable, [39], "as recorded again")
     XCTAssertEqual(appWindowsOver(31, pid: pid, list: [scene.listed, elsewhere, browserWindow]).map(\.number), [39],
                    "only the app's windows over the observed one")
     XCTAssertEqual(appWindowsOver(31, pid: pid, list: [scene.listed]).count, 0, "the observed window unlisted")
   }
+
+  /// Finding 3 of the review of 07d487d8: an item added after the walk over a recorded row (which the image, taken after
+  /// the walk, shows) leaves every recorded handle reading as recorded; the live tree's membership tells it.
+  func testAnItemAddedOverARecordedRowAfterTheWalkIsNotStable() {
+    let scene = omnibox()
+    let nodes = record([scene.window])
+    _ = Node("AXStaticText", rect(515, 156, 426, 40), value: "a new suggestion", actions: ["AXPress"], parent: scene.list)
+    XCTAssertEqual(overlayStableWindows(nodes, over: [scene.listed], reads: reads).stable, [])
+  }
+
+  /// Finding 8 of the review of 07d487d8: the stability pass stops reading once its time is spent; the window stays
+  /// unstable.
+  func testTheStabilityPassStopsWhenItsTimeIsSpent() {
+    let scene = omnibox()
+    let nodes = record([scene.window])
+    timeLeftReads = 0
+    let spent = overlayStableWindows(nodes, over: [scene.listed], reads: reads)
+    XCTAssertEqual(spent.stable, [])
+    XCTAssertEqual(spent.read, 0, "nothing read once no time is left")
+    timeLeftReads = 5
+    XCTAssertEqual(overlayStableWindows(nodes, over: [scene.listed], reads: reads).stable, [], "run out midway")
+    timeLeftReads = nil
+  }
+
 
   /// Finding 3: the record held a control over the row at the point (a sibling stacked on it); it has gone, and the hit
   /// reaches the row under it, which the screenshot did not show there on top: refused.
@@ -652,7 +680,7 @@ final class OverlayClickTests: XCTestCase {
     _ = page
   }
 
-  /// Finding 9: the decision's reads stop once its time is spent, and the click is refused (`timedOut`), whatever was found.
+  /// The decision's reads stop once its time is spent, and the click is refused (`timedOut`), whatever was found.
   func testADecisionOutOfTimeIsRefused() {
     let scene = omnibox()
     let nodes = record([scene.window])
@@ -660,126 +688,130 @@ final class OverlayClickTests: XCTestCase {
     timeLeftReads = 2
     XCTAssertEqual(refusal(overlayPoint(hit: scene.webArea, pointContext(nodes, overlay: scene.listed, point: rowPoint), reads: reads)), .timedOut)
     XCTAssertEqual(readsWhenSpent, 0, "the descent reads nothing once the time is spent")
-    timeLeftReads = 3
-    let browserNode = Node(kAXWindowRole, browserWindow.bounds)
-    let decision = elementDecision(scene.rows[1], hit: scene.webArea, point: rowPoint, observed: browserNode, list: [scene.listed, browserWindow])
-    guard case .refuse(.timedOut, _, _) = decision else { return XCTFail("refused, never left to route 3: \(decision)") }
     timeLeftReads = nil
   }
 
-  // MARK: #470: the element click on an overlay's row
+  // MARK: The review of 07d487d8
 
-  private func elementDecision(_ element: Node, recorded: (label: String?, frame: CGRect?)? = nil, hit: Node?, point: CGPoint, observed: Node,
-                               observedNumber: CGWindowID = 31, list: [ListedWindow], chromium: Bool = true,
-                               hits: UnsafeMutablePointer<Int>? = nil, lists: UnsafeMutablePointer<Int>? = nil) -> OverlayElementDecision<Node> {
-    let label = stalePointLabel(title: element.title, description: element.description, value: element.role == "AXStaticText" ? element.value : nil)
-    return overlayElement(element, recorded: recorded ?? (label, element.frame), hit: { hits?.pointee += 1; return hit }, point: point,
-                          observed: observed, observedNumber: observedNumber, pid: pid, list: { lists?.pointee += 1; return list }, chromium: chromium, reads: reads,
-                          number: { window in
-      window === observed ? observedNumber : list.first { $0.number != observedNumber && $0.bounds == window.frame }?.number
-    })
-  }
-
-  private func elementTarget(_ element: Node, recorded: (label: String?, frame: CGRect?)? = nil, hit: Node?, point: CGPoint, observed: Node,
-                             observedNumber: CGWindowID = 31, list: [ListedWindow], chromium: Bool = true) -> OverlayTarget<Node>? {
-    guard case .deliver(let target) = elementDecision(element, recorded: recorded, hit: hit, point: point, observed: observed,
-                                                      observedNumber: observedNumber, list: list, chromium: chromium) else { return nil }
-    return target
-  }
-
-  private func elementRefusal(_ decision: OverlayElementDecision<Node>) -> OverlayRefusal? {
-    if case .refuse(let why, _, _) = decision { return why }
-    return nil
-  }
-
-  /// The permission bubble's button clicked by its element: the post to the bubble's window (it was posted by route 3 and
-  /// did nothing, 10/10), the omnibox row's likewise (route 3 raised Chrome over the person's window in dedicated mode,
-  /// and shared mode refused it), the popover's swatch by AXPress.
-  func testAnElementClickOnAnOverlaysRowTakesItsKindsRoute() {
-    let browser = Node(kAXWindowRole, browserWindow.bounds)
+  /// Finding 1: #443's rule on the overlay's node. A labelled text that does not act on its own (no AXPress) inside the
+  /// bubble's button; the button died and another, labelled otherwise, adopted the text in its place. The stale-point
+  /// guard refuses that as `controlGone`; the overlay's rule refuses it too, never delivering into the other button.
+  func testATextAdoptedByAnotherButtonAfterItsOwnDiedIsRefused() {
     let bubble = permissionBubble()
-    let byElement = elementTarget(bubble.never, hit: bubble.never, point: bubble.point, observed: browser, list: [bubble.listed, browserWindow])
-    XCTAssertEqual(byElement?.kind, .permissionBubble)
-    XCTAssertEqual(byElement?.route, .post)
-    XCTAssertEqual(byElement?.window.number, 132)
-    let scene = omnibox()
-    let row = elementTarget(scene.rows[1], hit: scene.webArea, point: rowPoint, observed: browser, list: [scene.listed, browserWindow])
-    XCTAssertEqual(row?.kind, .omniboxPopup)
-    XCTAssertTrue(row?.row === scene.rows[1])
-    let swatch = popover()
-    let observed = ListedWindow(number: 832, owner: pid, layer: 0, bounds: rect(400, 31, 620, 679))
-    let pressed = elementTarget(swatch.swatch, hit: swatch.swatch, point: swatch.point, observed: swatch.window, observedNumber: 832,
-                                list: [swatch.listed, observed], chromium: false)
-    XCTAssertEqual(pressed?.kind, .appKitPopover)
-    XCTAssertTrue(pressed?.pressed === swatch.swatch)
+    let text = Node("AXStaticText", rect(549, 329, 264, 20), value: "Never allow", actions: [], parent: bubble.never)
+    let nodes = record([bubble.window])
+    XCTAssertTrue(nodes.first { $0.element === text }?.control === bubble.never, "the record's conversion names the button")
+    let adopter = Node("AXButton", rect(541, 321, 280, 36), title: "Allow", description: "Allow", actions: ["AXPress"], parent: bubble.never.parent)
+    bubble.never.gone = true
+    bubble.never.parent?.children.removeAll { $0 === bubble.never }
+    bubble.never.children = []
+    text.parent = adopter
+    adopter.children = [text]
+    let point = CGPoint(x: 681, y: 339)
+    XCTAssertEqual(refusal(overlayPoint(hit: text, pointContext(nodes, overlay: bubble.listed, point: point), reads: reads)), .controlGone)
+    // The stale-point guard's own verdict on the same scene, as the observed window's rule.
+    let verdict = stalePointVerdict(at: point, nodes: nodes, hit: text, reads: reads.stale)
+    XCTAssertEqual(verdict.reason, .controlGone)
   }
 
-  /// An element click outside any overlay, or in one of no listed kind, keeps the element click's path; one in the
-  /// observed window reads no hit.
-  func testAnElementClickElsewhereKeepsItsPath() {
-    let browser = Node(kAXWindowRole, browserWindow.bounds)
-    let button = Node("AXButton", rect(600, 400, 80, 30), title: "Reload", actions: ["AXPress"], parent: browser)
-    var hits = 0
-    var lists = 0
-    guard case .notOverlay = elementDecision(button, hit: button, point: CGPoint(x: 640, y: 415), observed: browser, list: [browserWindow],
-                                             hits: &hits, lists: &lists) else { return XCTFail("the observed window's button") }
-    XCTAssertEqual(hits + lists, 0, "no hit-test, descent or window list for a click in the observed window")
+  /// Finding 4: the overlap check covers the whole recorded overlay. A control in a sibling branch of the popover (beside
+  /// its grid of swatches) that the record held over the swatch, gone since, refuses; so does one in a sibling branch of a
+  /// Chromium window beside the dialog; and a record holding no node framed as the window cannot be looked through.
+  func testTheOverlapCheckCoversTheWholeRecordedOverlay() {
+    let scene = popover()
+    let popoverNode = scene.swatch.parent!.parent!
+    let over = Node("AXButton", rect(440, 190, 40, 25), title: "Show Colours", actions: ["AXPress"], parent: popoverNode)
+    let nodes = record([scene.window])
+    over.gone = true
+    popoverNode.children.removeAll { $0 === over }
+    XCTAssertEqual(refusal(overlayPoint(hit: scene.swatch, pointContext(nodes, overlay: scene.listed, by: .popover, point: scene.point,
+                                                                       chromium: false), reads: reads)), .overlapping)
+    let bubble = permissionBubble()
+    let side = Node("AXGroup", rect(521, 300, 320, 77), parent: bubble.window)
+    let stacked = Node("AXButton", rect(541, 321, 280, 36), title: "Allow this time", actions: ["AXPress"], parent: side)
+    let recorded = record([bubble.window])
+    stacked.gone = true
+    side.children = []
+    XCTAssertEqual(refusal(overlayPoint(hit: bubble.never, pointContext(recorded, overlay: bubble.listed, point: bubble.point), reads: reads)),
+                   .overlapping, "a sibling branch of the window")
+    let fresh = popover()
+    fresh.swatch.parent!.parent!.frame = rect(393, 95, 225, 242)  // no node framed as the popover's window
+    XCTAssertEqual(refusal(overlayPoint(hit: fresh.swatch, pointContext(record([fresh.window]), overlay: fresh.listed, by: .popover,
+                                                                       point: fresh.point, chromium: false), reads: reads)), .overlapping)
+  }
+
+  /// Finding 5: an unrecorded text that lists AXPress on the hit's path below the row acts on its own, whatever its role
+  /// (Chrome's omnibox rows are such texts): refused.
+  func testAnUnrecordedTextListingAXPressBelowTheRowIsRefused() {
     let scene = omnibox()
-    scene.webArea.title = "Extension"
-    guard case .notOverlay = elementDecision(scene.rows[1], hit: scene.webArea, point: rowPoint, observed: browser,
-                                             list: [scene.listed, browserWindow]) else { return XCTFail("an unknown kind") }
-    scene.webArea.title = omniboxPopupTitle
-    guard case .notOverlay = elementDecision(scene.rows[1], hit: scene.webArea, point: rowPoint, observed: browser, list: [browserWindow]) else {
-      return XCTFail("the overlay's window not listed over the point")
+    let nodes = record([scene.window])
+    _ = Node("AXStaticText", rect(927, 160, 12, 30), value: "x", actions: ["AXPress"], parent: scene.rows[1])
+    XCTAssertEqual(refusal(overlayPoint(hit: scene.webArea, pointContext(nodes, overlay: scene.listed, point: CGPoint(x: 933, y: 176)),
+                                        reads: reads)), .notInert)
+  }
+
+  private func freshHit(_ place: PointHitPlace, _ answered: Node?) -> WindowHit<Node> { WindowHit(element: nil, place: place, answered: answered) }
+
+  /// Finding 6: the last check finds the overlay anew from a fresh hit-test's place, as #452 does: the same window by the
+  /// same signal, covering the point in the list read then, with the same row; the window it answers is the one read then.
+  func testTheLastCheckFindsTheOverlayAnewFromTheFreshHit() {
+    let scene = omnibox()
+    let nodes = record([scene.window])
+    guard case .deliver(let target) = overlayPoint(hit: scene.webArea, pointContext(nodes, overlay: scene.listed, point: rowPoint), reads: reads) else {
+      return XCTFail("delivered")
     }
+    func check(_ place: PointHitPlace, list: [ListedWindow], answered: Node? = nil) -> ListedWindow? {
+      overlayRevalidated(target, point: rowPoint, observed: 31, pid: pid, reads: reads, hit: { self.freshHit(place, answered ?? scene.webArea) },
+                         list: { list }, decide: { answered, overlay, signal in
+        overlayPoint(hit: answered, OverlayPointContext(point: self.rowPoint, by: signal, overlay: overlay, observedLayer: 0,
+                                                        recordedWindows: [31, 39], stableWindows: [39], nodes: nodes, chromium: true), reads: self.reads)
+      })
+    }
+    let moved = ListedWindow(number: 39, owner: pid, layer: 0, bounds: rect(500, 56, 458, 258))
+    XCTAssertEqual(check(.otherWindow(39), list: [moved, browserWindow]), moved, "the window as listed now")
+    XCTAssertNil(check(.otherWindow(40), list: [ListedWindow(number: 40, owner: pid, layer: 0, bounds: scene.listed.bounds), browserWindow]),
+                 "another window")
+    XCTAssertNil(check(.observedWindow(inPopover: false), list: [scene.listed, browserWindow]), "the hit in the observed window now")
+    XCTAssertNil(check(.observedWindow(inPopover: true), list: [scene.listed, browserWindow]), "found by the other signal")
+    XCTAssertNil(check(.otherWindow(39), list: [browserWindow, scene.listed]), "no longer in front of the observed window")
+    XCTAssertNil(check(.otherWindow(39), list: [ListedWindow(number: 39, owner: pid, layer: 0, bounds: rect(499, 56, 100, 50)), browserWindow]),
+                 "no longer over the point")
+    XCTAssertNil(check(.unread, list: [scene.listed, browserWindow]), "no signal")
+    XCTAssertNil(check(.otherWindow(39), list: [scene.listed, browserWindow], answered: scene.rows[0]), "another row answered")
   }
 
-  /// Once the overlay is recognised, a row that cannot be checked is refused, never left to route 3: the point reaching
-  /// another button, a disabled one, and (findings 4 and 5) a row reading other text or sitting elsewhere than its ID was
-  /// recorded with, and the list or dialog holding the rows rather than a row or button.
-  func testAnElementClickOnARecognisedOverlayThatCannotBeCheckedIsRefused() {
-    let browser = Node(kAXWindowRole, browserWindow.bounds)
-    let bubble = permissionBubble()
-    let list = [bubble.listed, browserWindow]
-    XCTAssertEqual(elementRefusal(elementDecision(bubble.never, hit: bubble.allow, point: bubble.point, observed: browser, list: list)), .notReached)
-    bubble.never.enabled = false
-    XCTAssertEqual(elementRefusal(elementDecision(bubble.never, hit: bubble.never, point: bubble.point, observed: browser, list: list)), .disabled)
+  /// Finding 9: the last check's hit-test and window list are inside the decision's time: spent before it, nothing is read;
+  /// spent by the hit-test, no window list is read; either way nothing is sent.
+  func testTheLastCheckReadsNothingOnceItsTimeIsSpent() {
     let scene = omnibox()
-    let omnibox = [scene.listed, browserWindow]
-    // Chrome reused the row's element for the next suggestion: the ID was recorded with another text.
-    XCTAssertEqual(elementRefusal(elementDecision(scene.rows[1], recorded: ("probe453 page http://127.0.0.1:49171/results-gamma, 2 of 3",
-                                                                             scene.rows[1].frame), hit: scene.webArea, point: rowPoint,
-                                                  observed: browser, list: omnibox)), .textChanged)
-    XCTAssertEqual(elementRefusal(elementDecision(scene.rows[1], recorded: (scene.rows[1].value, rect(515, 196, 426, 40)), hit: scene.webArea,
-                                                  point: rowPoint, observed: browser, list: omnibox)), .frameMoved)
-    XCTAssertEqual(elementRefusal(elementDecision(scene.rows[1], recorded: (nil, scene.rows[1].frame), hit: scene.webArea, point: rowPoint,
-                                                  observed: browser, list: omnibox)), .textChanged, "no recorded text to check")
-    // The list, posted at its middle, would take whichever row lies there.
-    scene.list.title = "Suggestions"
-    XCTAssertEqual(elementRefusal(elementDecision(scene.list, hit: scene.webArea, point: CGPoint(x: 728, y: 176), observed: browser, list: omnibox)),
-                   .notItself)
-    let dialog = bubble.never.parent!.parent!.parent!.parent!.parent!
-    XCTAssertEqual(elementRefusal(elementDecision(dialog, hit: bubble.never, point: CGPoint(x: 681, y: 244), observed: browser, list: list)),
-                   .notItself)
-  }
-
-  /// The refusal's sentence names the cause and the ways through.
-  func testTheElementRefusalSaysWhy() {
-    let refusal = overlayElementRefused(app: "Google Chrome", .notItself)
-    XCTAssertEqual(refusal.errorName, "appWindowOverPoint")
-    XCTAssertTrue(refusal.message.contains("not one of its rows or buttons"))
-    XCTAssertTrue(refusal.message.contains("Nothing was sent."))
+    guard case .deliver(let target) = overlayPoint(hit: scene.webArea, pointContext(record([scene.window]), overlay: scene.listed, point: rowPoint),
+                                                   reads: reads) else { return XCTFail("delivered") }
+    var hits = 0, lists = 0
+    func check() -> ListedWindow? {
+      overlayRevalidated(target, point: rowPoint, observed: 31, pid: pid, reads: reads, hit: {
+        hits += 1
+        return self.freshHit(.otherWindow(39), scene.webArea)
+      }, list: { lists += 1; return [scene.listed, self.browserWindow] }, decide: { _, _, _ in .deliver(target) })
+    }
+    timeLeftReads = 0
+    XCTAssertNil(check())
+    XCTAssertEqual(hits + lists, 0)
+    timeLeftReads = 1
+    XCTAssertNil(check())
+    XCTAssertEqual(hits, 1)
+    XCTAssertEqual(lists, 0, "the hit-test spent the time: no window list read")
+    timeLeftReads = nil
+    XCTAssertEqual(check(), scene.listed)
   }
 
   // MARK: The meta
 
-  func testTheRecordsWireForARefusalAndAnElementClick() {
+  func testTheRecordsWire() {
     XCTAssertEqual(OverlayClickRecord(window: 39, by: .axHit, kind: .omniboxPopup, refused: .textChanged).wire as NSDictionary,
                    ["window": 39, "by": "axHit", "kind": "omniboxPopup", "refused": "textChanged"])
-    XCTAssertEqual(OverlayClickRecord(window: 132, by: .axHit, kind: .permissionBubble, route: .post, effect: .closed, polls: 2, ms: 20,
-                                      element: true).wire as NSDictionary,
-                   ["window": 132, "by": "axHit", "kind": "permissionBubble", "route": "post", "effect": "closed", "polls": 2, "ms": 20,
-                    "from": "element"])
+    XCTAssertEqual(OverlayClickRecord(window: 132, by: .axHit, kind: .permissionBubble, route: .post, effect: .closed, polls: 2, ms: 20).wire
+                   as NSDictionary,
+                   ["window": 132, "by": "axHit", "kind": "permissionBubble", "route": "post", "effect": "closed", "polls": 2, "ms": 20])
     XCTAssertEqual(Set(OverlayKind.allCases.filter(\.delivers)), Set(OverlayKind.allCases), "every listed kind is on")
   }
 }

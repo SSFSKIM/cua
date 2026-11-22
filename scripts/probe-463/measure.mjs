@@ -69,6 +69,7 @@ input[list]::-webkit-calendar-picker-indicator{opacity:1;display:block}</style><
 <div class="a" style="top:90px"><input id="date" type="date" aria-label="When" value="2026-11-21"></div>
 <div class="a" style="top:140px"><input id="color" type="color" aria-label="Hue" value="#3366cc" style="width:60px;height:30px"></div>
 <div id="blank" class="a" style="top:190px;width:300px;height:160px">Blank area for the context menu.</div>
+<div class="a" style="top:370px"><select id="sel" aria-label="Choice"><option>One</option><option>Two</option><option>Three</option></select></div>
 </div>${SCRIPT}</body></html>`;
 
 const events = [];
@@ -263,6 +264,8 @@ const LINES = Array.from({length: 22}, (_, i) => `Line ${String(i + 1).padStart(
 const rtf = lines => `{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0 Helvetica;}}\\f0\\fs28\n${lines.map(l => `${l}\\par`).join('\n')}\n}`;
 const teFile = join(OUT, 'p463.rtf'), teFile2 = join(OUT, 'p463-second.rtf');
 writeFileSync(teFile, rtf(LINES)); writeFileSync(teFile2, rtf(['The second window']));
+const seFile = join(OUT, 'p463.applescript'), seFile2 = join(OUT, 'p463-second.applescript');
+writeFileSync(seFile, LINES.map(l => `-- ${l}`).join('\n') + '\nreturn 1\n'); writeFileSync(seFile2, '-- the second window\nreturn 2\n');
 const bounds = f => `{${f.x}, ${f.y}, ${f.x + f.w}, ${f.y + f.h}}`;
 const skip = () => [engine?.pid].filter(Boolean);
 const orderNow = async () => ((await ask({op: 'order', skip: skip()})).windows ?? []);
@@ -512,8 +515,52 @@ async function run() {
   }
 }
 
+// ---- #469: the closed buttons' attributes, the app behind (layout a, shared), no input sent ---------------------------
+// Per row: the reset, one observation (it turns Chrome's accessibility on), the window list's app windows above layer 0
+// (none expected: every button closed), then tool.swift `axdump` of the app (and, on a row, of Finder and Calculator).
+const SIGNAL = process.argv.includes('--signal');
+const DUMP_ROLES = ['AXPopUpButton', 'AXMenuButton', 'AXComboBox'];
+async function signalRow(app, appName, rep) {
+  const row = {label: `signal-${appName}-${rep}`, kind: 'signal', app: appName, rep};
+  results.push(row);
+  let w;
+  try {
+    await ask({op: 'forget'});
+    const notes = await app.reset(false);
+    row.layoutBuilt = notes.find(x => x?.layout) ?? null;
+    const pid = app.pid();
+    w = await connect('shared');
+    const sky = await observe(w, pid, `${row.label}-obs`);
+    row.observed = sky.nodes.filter(n => DUMP_ROLES.includes(n.role) || (n.role === 'AXButton' && n.frame && n.frame.y < sky.window.frame.y + 130))
+      .map(n => [n.role, label(n).slice(0, 60), n.frame && winArr(n.frame).map(Math.round), n.actions ?? null]);
+    const pop = await ask({op: 'popup', pid, window: winArr(sky.window.frame)});
+    row.openAbove = (pop.appWindows ?? []).filter(x => x.layer > 0 && x.bounds?.[2] >= 20 && x.bounds?.[3] >= 20).map(x => [x.layer, x.bounds]);
+    row.front = frontmost();
+    row.dump = await ask({op: 'axdump', pid, roles: DUMP_ROLES, buttonsOutsideWeb: true}, 120_000);
+    if (rep === 1) {
+      for (const [name, other] of [['Finder', pidOf('Finder')], ['Calculator', pidOf('Calculator')]]) {
+        if (!config.otherDumps[name] && other) config.otherDumps[name] = await ask({op: 'axdump', pid: other, roles: DUMP_ROLES, buttonsOutsideWeb: true}, 120_000);
+      }
+    }
+  } catch (e) { row.exception = String(e?.stack || e).slice(0, 1500); }
+  finally {
+    w?.close(); save();
+    log(`${row.label}: ${row.exception?.split('\n')[0] ?? `elements ${row.dump?.elements?.length} visited ${row.dump?.visited} ms ${row.dump?.ms} openAbove ${JSON.stringify(row.openAbove)} front ${row.front} layout ${row.layoutBuilt?.ok}`}`);
+  }
+}
+async function signalRun() {
+  config.chrome = version('stable');
+  config.otherDumps = {};
+  const reps = Math.min(REPS, 4);
+  for (const appName of ['chrome', 'textedit', 'scripteditor']) {
+    const app = appName === 'chrome' ? chromeApp() : appName === 'textedit' ? docApp('TextEdit', 'TextEdit', teFile, teFile2) : docApp('Script Editor', 'Script Editor', seFile, seFile2);
+    for (let rep = 1; rep <= reps; rep++) await signalRow(app, appName, rep);
+    await app.close();
+  }
+}
+
 log('config', JSON.stringify(config));
-try { await run(); } catch (e) { config.exception = String(e?.stack || e).slice(0, 2000); log('EXCEPTION', config.exception); }
+try { await (SIGNAL ? signalRun() : run()); } catch (e) { config.exception = String(e?.stack || e).slice(0, 2000); log('EXCEPTION', config.exception); }
 config.engineStderr = engineErr.slice(-4000);
 config.minutes = Math.round((Date.now() - STARTED) / 600) / 100;
 save();

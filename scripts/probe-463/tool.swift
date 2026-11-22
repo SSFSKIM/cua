@@ -976,6 +976,71 @@ func closeExtra(_ q: [String: Any]) -> [String: Any] {
   return ["closed": done, "left": left]
 }
 
+/// #469: an attribute value as text: a string, number or boolean as itself; an element as its role (and subrole); an array
+/// as its count and its first 12 items; an AXValue (point, size, rect, range) by its fields; anything else by its type.
+func valueText(_ v: CFTypeRef?) -> Any {
+  guard let v else { return NSNull() }
+  let t = CFGetTypeID(v)
+  if t == CFStringGetTypeID() { return short(v as? String) }
+  if t == CFAttributedStringGetTypeID() { return short((v as! NSAttributedString).string) }
+  if t == CFBooleanGetTypeID() { return CFBooleanGetValue((v as! CFBoolean)) }
+  if t == CFNumberGetTypeID() { return (v as! NSNumber).doubleValue }
+  if t == CFURLGetTypeID() { return short((v as! URL).absoluteString) }
+  if t == AXUIElementGetTypeID() { let e = v as! AXUIElement; return "<\(role(e))\(str(e, kAXSubroleAttribute).map { "/\($0)" } ?? "")>" }
+  if t == CFArrayGetTypeID() {
+    let xs = v as! [AnyObject]
+    return ["count": xs.count, "items": xs.prefix(12).map { valueText($0 as CFTypeRef) }] as [String: Any]
+  }
+  if t == AXValueGetTypeID() {
+    let a = v as! AXValue
+    switch AXValueGetType(a) {
+    case .cgPoint: var p = CGPoint.zero; AXValueGetValue(a, .cgPoint, &p); return "point \(r1(p.x)),\(r1(p.y))"
+    case .cgSize: var s = CGSize.zero; AXValueGetValue(a, .cgSize, &s); return "size \(r1(s.width))x\(r1(s.height))"
+    case .cgRect: var r = CGRect.zero; AXValueGetValue(a, .cgRect, &r); return "rect \(wire(r))"
+    case .cfRange: var r = CFRange(); AXValueGetValue(a, .cfRange, &r); return "range \(r.location),\(r.length)"
+    default: return "axvalue"
+    }
+  }
+  return "type \(CFCopyTypeIDDescription(t) as String? ?? "?")"
+}
+/// {"op":"axdump","pid","roles":[...],"buttonsOutsideWeb":bool,"cap":n}: every element of the app's windows (breadth-first,
+/// into web areas, at most `cap` visited) whose role is in `roles`, plus, with `buttonsOutsideWeb`, every AXButton outside a
+/// web area; for each, every attribute it names with its value, the named-or-not extras #469 asks about, its parameterized
+/// attribute names, its action names, its children's roles and its parent chain's roles (to the window). Reads only.
+let extraAttributes = ["AXHasPopup", "AXPopupValue", "AXSubrole", "AXRoleDescription", "AXDOMClassList", "AXIdentifier", "AXDOMIdentifier",
+                       "AXExpanded", "AXValue", "AXTitle", "AXDescription", "AXHelp", "AXShownMenu", "AXMenuItemPrimaryUIElement", "AXEnabled"]
+func axdump(_ q: [String: Any]) -> [String: Any] {
+  guard let pid = (q["pid"] as? NSNumber)?.int32Value, let roles = q["roles"] as? [String] else { return ["error": "args"] }
+  let cap = (q["cap"] as? NSNumber)?.intValue ?? 20000
+  let buttons = (q["buttonsOutsideWeb"] as? Bool) == true
+  let t0 = nowMs()
+  let app = prepare(AXUIElementCreateApplication(pid))
+  var queue: [(AXUIElement, Int, Bool)] = elements(attr(app, kAXWindowsAttribute)).map { ($0, 0, false) }, head = 0
+  var out: [[String: Any]] = []
+  while head < queue.count && queue.count < cap {
+    let (e, depth, inWeb) = queue[head]; head += 1
+    let r = role(e)
+    if roles.contains(r) || (buttons && !inWeb && r == "AXButton") {
+      var names: CFArray?
+      AXUIElementCopyAttributeNames(e, &names)
+      let named = (names as? [String]) ?? []
+      var attrs: [String: Any] = [:]
+      for n in named where n != "AXChildrenInNavigationOrder" { attrs[n] = valueText(attr(e, n)) }
+      var extras: [String: Any] = [:]
+      for n in extraAttributes { var v: CFTypeRef?; let err = AXUIElementCopyAttributeValue(e, n as CFString, &v); extras[n] = err == .success ? valueText(v) : "err \(err.rawValue)" }
+      var params: CFArray?
+      AXUIElementCopyParameterizedAttributeNames(e, &params)
+      let kids = elements(attr(e, kAXChildrenAttribute))
+      out.append(["role": r, "depth": depth, "inWebArea": inWeb, "frame": wire(frameOf(e)), "names": named, "attributes": attrs, "extras": extras,
+                  "parameterized": (params as? [String]) ?? [], "actions": actionList(e),
+                  "children": kids.prefix(12).map { "\(role($0))\(str($0, kAXSubroleAttribute).map { "/\($0)" } ?? "")" }, "childCount": kids.count,
+                  "chain": chain(e).dropFirst().map { "\(role($0))\(str($0, kAXSubroleAttribute).map { "/\($0)" } ?? "")" }])
+    }
+    if depth < 60 { for k in elements(attr(e, kAXChildrenAttribute)) { queue.append((k, depth + 1, inWeb || r == "AXWebArea")) } }
+  }
+  return ["elements": out, "visited": head, "ms": r1(nowMs() - t0)]
+}
+
 while let line = readLine() {
   guard let data = line.data(using: .utf8), let q = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { emit(["error": "bad request"]); continue }
   textWindowFrame = (q["window"] as? [Double]).flatMap { $0.count == 4 ? CGRect(x: $0[0], y: $0[1], width: $0[2], height: $0[3]) : nil }
@@ -1008,6 +1073,7 @@ while let line = readLine() {
   case "arrange": emit(arrange(q))
   case "front": emit(frontWindow(q))
   case "closeExtra": emit(closeExtra(q))
+  case "axdump": emit(axdump(q))
   default: emit(["error": "unknown op"])
   }
 }

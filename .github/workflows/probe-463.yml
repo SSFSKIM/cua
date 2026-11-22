@@ -32,6 +32,10 @@ on:
         description: comma list (shared-behind, dedicated-behind, shared-front); empty runs all
         type: string
         default: ''
+      signal:
+        description: '#469: dump the closed buttons attributes instead (yes or empty)'
+        type: string
+        default: ''
 permissions:
   contents: read
 jobs:
@@ -51,6 +55,7 @@ jobs:
       CONTROLS: ${{ inputs.controls }}
       ROUTES: ${{ inputs.routes }}
       MODES: ${{ inputs.modes }}
+      SIGNAL: ${{ inputs.signal }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -59,7 +64,7 @@ jobs:
       - name: Apps
         run: |
           bash scripts/probe-316/install.sh chrome
-          for d in com.apple.TextEdit com.apple.calculator; do
+          for d in com.apple.TextEdit com.apple.ScriptEditor2 com.apple.calculator; do
             defaults write "$d" ApplePersistenceIgnoreState -bool YES
             defaults write "$d" NSQuitAlwaysKeepsWindows -bool NO
           done
@@ -85,9 +90,11 @@ jobs:
           if [ -n "$CONTROLS" ]; then extra+=(--controls "$CONTROLS"); fi
           if [ -n "$ROUTES" ]; then extra+=(--routes "$ROUTES"); fi
           if [ -n "$MODES" ]; then extra+=(--modes "$MODES"); fi
+          if [ "$SIGNAL" = yes ]; then extra+=(--signal); fi
           P463_ENGINE_REF="$ENGINE_SHA" P463_ENGINE_LABEL="$LABEL" node scripts/probe-463/measure.mjs --engine "$RUNNER_TEMP/eng/release/cua-engine" \
             --tool "$RUNNER_TEMP/tool463" --out "$RUNNER_TEMP/probe-463" --budget 145 "${extra[@]}"
-          node scripts/probe-463/reader.mjs "$RUNNER_TEMP/probe-463/results.json" | tee "$RUNNER_TEMP/probe-463/summary.txt"
+          if [ "$SIGNAL" = yes ]; then reader=signal-reader.mjs; else reader=reader.mjs; fi
+          node "scripts/probe-463/$reader" "$RUNNER_TEMP/probe-463/results.json" | tee "$RUNNER_TEMP/probe-463/summary.txt"
       - name: Upload
         if: always()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0

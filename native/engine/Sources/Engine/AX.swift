@@ -55,6 +55,17 @@ func present(_ value: Any?) -> CFTypeRef? {
   return ref
 }
 
+/// #453 (ruling 1083): whether a batched fetch's slot explicitly says the attribute is absent: an error placeholder of
+/// kAXErrorNoValue or kAXErrorAttributeUnsupported. A missing slot or a null one says nothing.
+func absentSlot(_ value: Any?) -> Bool {
+  guard let value else { return false }
+  let ref = value as CFTypeRef
+  guard CFGetTypeID(ref) == AXValueGetTypeID(), AXValueGetType(ref as! AXValue) == .axError else { return false }
+  var error = AXError.success
+  guard AXValueGetValue(ref as! AXValue, .axError, &error) else { return false }
+  return error == .noValue || error == .attributeUnsupported
+}
+
 /// Whether a batched fetch's slot holds a failed read: an error placeholder whose error is not the attribute's absence
 /// (kAXErrorNoValue, kAXErrorAttributeUnsupported), so the element may carry a value this read could not get.
 func failedSlot(_ value: Any?) -> Bool {

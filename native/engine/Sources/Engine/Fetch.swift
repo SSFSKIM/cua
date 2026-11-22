@@ -52,8 +52,8 @@ struct ElementData {
   /// Whether AXChildren was read: false when its slot held an error or nothing, which decodes as no children (#330's
   /// rule dL then cannot tell a child the page added from one this read missed).
   var childrenRead: Bool
-  /// #453 (ruling 1082): AXChildren is absent (kAXErrorAttributeUnsupported or kAXErrorNoValue), not failed: a leaf,
-  /// whose children are all known (none). A read that failed otherwise (a timeout, any other AXError) is neither.
+  /// #453 (rulings 1082, 1083): AXChildren's slot explicitly said absent (kAXErrorAttributeUnsupported or
+  /// kAXErrorNoValue): a leaf, whose children are all known (none). A failed read, a null slot or none at all is not.
   var childrenLeaf = false
   /// The attributes whose read failed with an error other than their absence (`failedSlot`): each decodes as none, as
   /// an absent one does, and #298's stale-point record tells the two apart for the label's attributes.
@@ -79,7 +79,7 @@ struct ElementData {
   var classificationFailed = false
 
   /// Decodes one element's attribute values, keyed by attribute name, and the names whose read failed.
-  init(values: [String: CFTypeRef], unreadable: Set<String> = []) {
+  init(values: [String: CFTypeRef], unreadable: Set<String> = [], absent: Set<String> = []) {
     self.unreadable = unreadable
     func string(_ name: String) -> String? { values[name].flatMap(stringValue) }
     func flag(_ name: String) -> Bool? { bool(values[name]) }
@@ -110,7 +110,7 @@ struct ElementData {
     frame = point(values["AXPosition"]).flatMap { origin in size(values["AXSize"]).map { CGRect(origin: origin, size: $0) } }
     children = elementList(values["AXChildren"])
     childrenRead = values["AXChildren"].map { CFGetTypeID($0) == CFArrayGetTypeID() } ?? false
-    childrenLeaf = values["AXChildren"] == nil && !unreadable.contains("AXChildren")
+    childrenLeaf = values["AXChildren"] == nil && absent.contains("AXChildren")
   }
 }
 
@@ -189,9 +189,7 @@ func fetchAttributesAsTimed(_ element: AXUIElement, _ names: [String]) -> Attrib
   let error = AXUIElementCopyMultipleAttributeValues(element, names as CFArray, AXCopyMultipleAttributeOptions(rawValue: 0), &values)
   guard error == .success, let slots = values as? [Any], slots.count == names.count else { return nil }
   var read = AttributeRead()
-  for (name, slot) in zip(names, slots) {
-    if let value = present(slot) { read.values[name] = value } else if failedSlot(slot) { read.unreadable.insert(name) }
-  }
+  for (name, slot) in zip(names, slots) { read.decode(name, slot) }
   return read
 }
 
@@ -200,6 +198,15 @@ func fetchAttributesAsTimed(_ element: AXUIElement, _ names: [String]) -> Attrib
 struct AttributeRead {
   var values: [String: CFTypeRef] = [:]
   var unreadable: Set<String> = []
+  /// #453 (ruling 1083): the names whose slot explicitly said the attribute is absent (`absentSlot`).
+  var absent: Set<String> = []
+
+  /// One slot of a batched reply: its value, or a failed read, or an explicit absence; a null slot is none of them.
+  mutating func decode(_ name: String, _ slot: Any?) {
+    if let value = present(slot) { values[name] = value } else if failedSlot(slot) { unreadable.insert(name) } else if absentSlot(slot) {
+      absent.insert(name)
+    }
+  }
 }
 
 /// The roles a password field can have when its subrole cannot be read (ruling 1ea561bc:813): a text-entry role.
@@ -286,7 +293,8 @@ class ElementSource: @unchecked Sendable {
     let classified = valueClassification(read)
     // A closed element's value attributes never reach the decoding (which would keep, convert or bound them).
     let kept = Set(names).subtracting(classified.closed ? valueAttributes : [])
-    var data = ElementData(values: read.values.filter { kept.contains($0.key) }, unreadable: read.unreadable.intersection(kept))
+    var data = ElementData(values: read.values.filter { kept.contains($0.key) }, unreadable: read.unreadable.intersection(kept),
+                           absent: read.absent.intersection(kept))
     if classified.closed { ElementSource.markClosed(&data, classified) } else {
       data.valueUnread = !readsValue
       data.valueFailed = readsValue && read.unreadable.contains(kAXValueAttribute)

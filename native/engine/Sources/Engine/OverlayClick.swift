@@ -13,8 +13,9 @@ import Foundation
 // found again by a hit-test or a search: the hit-test #452 already took only says where the overlay's subtree starts in
 // the record (the outermost element of its chain, up to the overlay's AXWindow or AXPopover, that the record holds by
 // handle), and the row is the deepest recorded node of that subtree whose shown frame held the point, or, where the chain
-// down to it passes an AXList or AXGrid, that container's child on the chain (ruling 1082), of a row's role for its kind,
-// its own children and those of its descendants at the point read (or absent: a leaf) and recorded. Two such nodes not nested, no recorded subtree or row, or a row whose handle
+// down to it passes an AXList or AXGrid, that container's child on the chain (ruling 1082) over only inert or repeated
+// nodes inside it at the point (ruling 1083), of a row's role for its kind, its whole recorded subtree's children read (or
+// explicitly absent: a leaf) and recorded under it. Two such nodes not nested, no recorded subtree or row, or a row whose handle
 // is dead or reads another role, another label part, a frame more than 2 pt from the recorded one after the window's
 // shift, or disabled, keeps main's refusal; so does any read of those that fails, and the identity is read again just
 // before the press. The press posts no mouse event and activates nothing. The click succeeds once the overlay's window
@@ -106,8 +107,15 @@ enum OverlayRefusal: String, Equatable {
   case notOneOverlay
   /// The deepest recorded node at the point is not of a row's role for the overlay's kind (a list's or dialog's padding).
   case notARow
-  /// The walk did not record the row's subtree whole (a child read that failed, or children left out).
+  /// The walk did not record the row's subtree whole (a child read that failed, or children left out), or its list's
+  /// children (`containerNotRecorded`).
   case partlyRecorded
+  /// The list's child at the point is not the row on the chain (its own shown frame does not hold the point).
+  case rowNotAtPoint
+  /// The record holds a frameless element between the list and the row: no direct edge from the one to the other.
+  case notDirectChild
+  /// Something inside the row at the point acts on its own and is not the row repeated (the omnibox's remove button).
+  case actionableDescendant
 }
 
 /// The row a click is carried to: the overlay's kind, window and the signal #452 found it by, and the row's recorded node,
@@ -240,6 +248,8 @@ func overlayIdentityRefusal<Element>(_ row: ScreenshotNode<Element>, shift: CGVe
 /// process.
 struct OverlayRecord<Element> {
   var nodes: [ScreenshotNode<Element>]
+  /// The record's frameless elements, whose own children the row's coverage reads too (ruling 1083).
+  var frameless: [ScreenshotNode<Element>] = []
   var windows: [ListedWindow]?
   var observedWindow: CGWindowID?
   var pid: pid_t
@@ -268,9 +278,10 @@ func overlayPoint<Element>(_ verdict: StalePointVerdict<Element>, answered: Elem
   guard verdict.reason == .appWindowOverPoint, let window = verdict.overWindow, let by = verdict.overBy, let point = verdict.point else {
     return .notOverlay
   }
-  func refuse(_ why: OverlayRefusal, _ kind: OverlayKind? = nil, row: Int? = nil, blame: Int? = nil, reason: String? = nil) -> OverlayPoint<Element> {
+  func refuse(_ why: OverlayRefusal, _ kind: OverlayKind? = nil, row: Int? = nil, blame: Int? = nil, blameNode: ScreenshotNode<Element>? = nil,
+              reason: String? = nil) -> OverlayPoint<Element> {
     var note = OverlayNote(row: row.map { OverlayNodeNote(nodes[$0]) })
-    if let blame { note.refusedBy = (nodes[blame].role, reason ?? why.rawValue) }
+    if let blamed = blameNode ?? blame.map({ nodes[$0] }) { note.refusedBy = (blamed.role, reason ?? why.rawValue) }
     return .refuse(why, kind: kind, window: window, by: by, note: note)
   }
   let stale = reads.stale
@@ -313,24 +324,37 @@ func overlayPoint<Element>(_ verdict: StalePointVerdict<Element>, answered: Elem
   // the chain, whatever lies inside it at the point (Chromium's omnibox row text over its unlabelled group, the datalist's
   // option text over its inner text): the element its AXPress takes. Two of its children at the point: refused. With no
   // list or grid (the permission bubble), the deepest node.
+  // Ruling 1083 narrows it: the container's children all recorded; its one child at the point the row, its direct child
+  // in the record; and the row promoted only over what lies inside it at the point that is inert or a duplicate of it.
   var rowIndex = deepest
   if let at = path.firstIndex(where: { overlayRowContainerRoles.contains(nodes[$0].role) }) {
     let container = path[at]
-    rowIndex = at + 1 < path.count ? path[at + 1] : container
+    guard nodes[container].children == .whole else {
+      return refuse(.partlyRecorded, kind, blame: container, reason: "containerNotRecorded")
+    }
     let atPoint = nodes.indices.filter { nodes[$0].ancestor == container && nodes[$0].shown.map({ holdsPoint($0, shown) }) == true }
     guard atPoint.count <= 1 else { return refuse(.notNested, kind, blame: container, reason: "rowsOverlap") }
+    rowIndex = at + 1 < path.count ? path[at + 1] : container
+    if rowIndex != container {
+      guard atPoint == [rowIndex] else { return refuse(.rowNotAtPoint, kind, row: rowIndex, blame: rowIndex) }
+      guard nodes[rowIndex].parentFramed else { return refuse(.notDirectChild, kind, row: rowIndex, blame: rowIndex) }
+      let inside = nodes.indices.filter { nodes[$0].shown.map({ holdsPoint($0, shown) }) == true && ancestry($0).contains(rowIndex) }
+      if let acting = inside.first(where: { !overlayInert(nodes[$0]) && !overlayDuplicate(nodes[$0], of: nodes[rowIndex]) }) {
+        return refuse(.actionableDescendant, kind, row: rowIndex, blame: acting)
+      }
+    }
   }
   // Every recorded node of the overlay at the point lies on one chain (none beside another).
   guard rows.allSatisfy({ $0 == deepest || above.contains($0) }) else { return refuse(.notNested, kind) }
   let row = nodes[rowIndex]
   // A row of the kind, never its list's or dialog's padding.
   guard kind.rowRoles.contains(row.role) else { return refuse(.notARow, kind, row: rowIndex, blame: rowIndex) }
-  // The row's own children read (or absent: a leaf) and all recorded, and so for each recorded descendant of it whose
-  // frame holds the point; other descendants do not block (ruling 1082).
-  let blocking = [rowIndex] + nodes.indices.filter { holdsPoint(nodes[$0].frame, shown) && ancestry($0).contains(rowIndex) }
-    .sorted { nodes[$0].depth < nodes[$1].depth }
-  if let partial = blocking.first(where: { nodes[$0].children != .whole }) {
-    return refuse(.partlyRecorded, kind, row: rowIndex, blame: partial, reason: nodes[partial].children.rawValue)
+  // The row's whole recorded subtree, framed and frameless (ruling 1083): every element's own children read (or
+  // explicitly absent: a leaf) and all recorded under it.
+  func inRow(_ node: ScreenshotNode<Element>) -> Bool { node.ancestor.map { $0 == rowIndex || ancestry($0).contains(rowIndex) } ?? false }
+  let subtree = ([row] + nodes.filter(inRow) + record.frameless.filter(inRow)).sorted { $0.depth < $1.depth }
+  if let partial = subtree.first(where: { $0.children != .whole }) {
+    return refuse(.partlyRecorded, kind, row: rowIndex, blameNode: partial, reason: partial.children.rawValue)
   }
   if let why = overlayIdentityRefusal(row, shift: shift, reads: reads) { return refuse(why, kind, row: rowIndex, blame: rowIndex) }
   return .deliver(OverlayTarget(kind: kind, window: window, by: by, row: row, shift: shift))
@@ -338,6 +362,19 @@ func overlayPoint<Element>(_ verdict: StalePointVerdict<Element>, answered: Elem
 
 /// The containers whose child on the chain is the row (ruling 1082).
 let overlayRowContainerRoles: Set<String> = ["AXList", "AXGrid"]
+
+/// Whether a recorded node does not act on its own (ruling 1083): its role and action names read, of no interactive role,
+/// AXPress not among its actions (#433's inert layer).
+func overlayInert<Element>(_ node: ScreenshotNode<Element>) -> Bool { node.actionable == false && !node.pressRecorded }
+
+/// Whether a recorded node repeats the row (ruling 1083; the datalist option's inner text): the same role, the same
+/// recorded label parts, every one read, and a frame within `stalePointFrameTolerance` of the row's.
+func overlayDuplicate<Element>(_ node: ScreenshotNode<Element>, of row: ScreenshotNode<Element>) -> Bool {
+  func text(_ value: String?) -> String? { value.flatMap { $0.isEmpty ? nil : $0 } }
+  return node.role == row.role && node.labelsUnread.isEmpty && row.labelsUnread.isEmpty && text(node.title) == text(row.title)
+    && text(node.description) == text(row.description) && text(node.value) == text(row.value)
+    && frameDistance(node.frame, row.frame) <= stalePointFrameTolerance
+}
 
 /// The meta's `overlayClick` (#453, value-free): the overlay's window, the signal #452 found it by and its kind; then
 /// either the route that carried the click (`route: "action"`, set once the AXPress is dispatched) and whether its effect
@@ -453,7 +490,7 @@ extension Engine {
                          context: ExecutionContext, meta: inout InputMeta) throws -> Bool {
     let reads = OverlayReads<AXUIElement>.live
     let screenshot = context.connection.observedScreenshot(app: app)
-    let record = OverlayRecord<AXUIElement>(nodes: screenshot?.nodes ?? [], windows: screenshot?.windowsListed,
+    let record = OverlayRecord<AXUIElement>(nodes: screenshot?.nodes ?? [], frameless: screenshot?.frameless ?? [], windows: screenshot?.windowsListed,
                                             observedWindow: screenshot?.windowNumber, pid: appPid)
     let decision = signposted("click.overlay") {
       overlayPoint(verdict, answered: answered, record: record, shift: shift, chromium: webAccessibility.pageEngine(app.appPath) == .chromium,

@@ -120,6 +120,9 @@ struct ScreenshotNode<Element> {
   /// #453 (ruling 1082): whether the walk read its AXChildren (or found the attribute absent: a leaf) and recorded every
   /// child it listed (`ScreenshotChildren`), by handle where the listed children are known, else by their count.
   var children: ScreenshotChildren = .whole
+  /// #453 (ruling 1083): whether its recorded parent is itself framed, so `ancestor` names its direct parent (no
+  /// frameless element recorded between them).
+  var parentFramed = false
 }
 
 /// What the record holds of a node's own children (#453, ruling 1082).
@@ -237,6 +240,13 @@ func screenshotRecord<Element>(_ reads: [ScreenshotNodeRead<Element>], key: ((El
   var recordedChildren: [Int: Int] = [:]
   for read in reads { if let parent = read.parent { recordedChildren[parent, default: 0] += 1 } }
   let members = key.map { key in Set(reads.map { key($0.element) }) }
+  /// #453 (ruling 1083): each read's recorded children by handle, along the record's own parent edges: a child listed by
+  /// one element and recorded under another is not recorded for the first.
+  let childrenByParent: [Int: Set<AnyHashable>]? = key.map { key in
+    var byParent: [Int: Set<AnyHashable>] = [:]
+    for read in reads { if let parent = read.parent { byParent[parent, default: []].insert(key(read.element)) } }
+    return byParent
+  }
   // Children come after their parents, so a backward pass sees a node's whole subtree before the node.
   var incomplete: Set<Int> = []
   /// The reads whose recorded subtree is not whole (#431's `regionCovered`): one of them, or one below, read no
@@ -255,7 +265,14 @@ func screenshotRecord<Element>(_ reads: [ScreenshotNodeRead<Element>], key: ((El
     } else {
       listedRecorded = (recordedChildren[read.number] ?? 0) >= read.childCount
     }
-    ownChildren[read.number] = !(read.childrenRead || read.childrenLeaf) ? .unread : listedRecorded ? .whole : .notAllRecorded
+    let ownRecorded: Bool
+    if let childrenByParent, let key, let children = read.children {
+      let recordedHere = childrenByParent[read.number] ?? []
+      ownRecorded = children.allSatisfy { recordedHere.contains(key($0)) }
+    } else {
+      ownRecorded = (recordedChildren[read.number] ?? 0) >= read.childCount
+    }
+    ownChildren[read.number] = read.childrenLeaf ? .whole : !read.childrenRead ? .unread : ownRecorded ? .whole : .notAllRecorded
     if !read.childrenRead || !listedRecorded { broken.insert(read.number) }
     if broken.contains(read.number), let parent = read.parent { broken.insert(parent) }
     if (recordedChildren[read.number] ?? 0) < read.childCount { incomplete.insert(read.number) }
@@ -280,6 +297,8 @@ func screenshotRecord<Element>(_ reads: [ScreenshotNodeRead<Element>], key: ((El
   var regionRoots: [Int: Int] = [:]
   var nodes: [ScreenshotNode<Element>] = []
   nodes.reserveCapacity(reads.count)
+  /// The reads recorded with a frame (#453's `parentFramed`).
+  var framedReads: Set<Int> = []
   var frameless: [ScreenshotNode<Element>] = []
   for read in reads {
     let webArea = read.role == "AXWebArea" ? read.element : read.parent.flatMap { webAreas[$0] }
@@ -341,16 +360,21 @@ func screenshotRecord<Element>(_ reads: [ScreenshotNodeRead<Element>], key: ((El
                      regionCovered: !broken.contains(regionRoot), controlAbove: controlAbove,
                      pressRecorded: read.actions.contains("AXPress"))
     }
+    let parentFramed = read.parent.map { framedReads.contains($0) } ?? false
     guard let frame = own else {
       framed[read.number] = ancestor
       var unframed = node(frame: .null, shown: nil)
       (unframed.thinGap, unframed.gapsBelow) = (false, [])
+      unframed.children = ownChildren[read.number] ?? .unread
+      unframed.parentFramed = parentFramed
       frameless.append(unframed)
       continue
     }
     framed[read.number] = nodes.count
     var recorded = node(frame: frame, shown: cut(frame).flatMap { $0.isNull || $0.width <= 0 || $0.height <= 0 ? nil : $0 })
     recorded.children = ownChildren[read.number] ?? .unread
+    recorded.parentFramed = parentFramed
+    framedReads.insert(read.number)
     nodes.append(recorded)
   }
   return (nodes, frameless)

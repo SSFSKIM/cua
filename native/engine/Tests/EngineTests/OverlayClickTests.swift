@@ -28,6 +28,8 @@ final class OverlayClickTests: XCTestCase {
     var labelFails = false
     /// Held strongly (no child links, so no cycle): an overlay the record lacks still reads up to its window.
     var parent: Node?
+    /// Whether the walk read AXPress among its actions.
+    var press = false
 
     init(_ role: String, title: String? = nil, description: String? = nil, value: String? = nil, subrole: String? = nil,
          frame: CGRect? = nil, parent: Node? = nil) {
@@ -65,6 +67,9 @@ final class OverlayClickTests: XCTestCase {
                                 value: node.role == "AXStaticText" ? node.value : nil, editableAncestor: nil, labelsUnread: [],
                                 frame: node.frame!, shown: node.frame, depth: depth, subtreeRecorded: true)
     record.ancestor = ancestor
+    record.parentFramed = ancestor != nil
+    record.actionable = stalePointInteractiveRoles.contains(node.role) || node.press
+    record.pressRecorded = node.press
     return record
   }
 
@@ -95,6 +100,8 @@ final class OverlayClickTests: XCTestCase {
     /// The elements whose AXChildren read failed at the observation, and those with a listed child left out of the record.
     var partial: [Node] = []
     var missing: [Node] = []
+    /// The record's frameless elements.
+    var frameless: [ScreenshotNode<Node>] = []
   }
 
   /// The browser window and, under the popup, a deeper page link at the same point (deeper in the record than any of the
@@ -141,6 +148,7 @@ final class OverlayClickTests: XCTestCase {
     let second = Node("AXStaticText", value: "probe /results-beta http://127.0.0.1/results-beta, 2 of 2",
                       frame: CGRect(x: 100, y: 140, width: 426, height: 40), parent: list)
     let secondInner = Node("AXGroup", frame: CGRect(x: 108, y: 140, width: 410, height: 40), parent: second)
+    (first.press, second.press) = (true, true)
     let at = append([popup, page, scroll, group, list, first, firstInner], to: &nodes, under: 0, depth: 1)
     let beside = append([second], to: &nodes, under: at[4], depth: 6)
     append([secondInner], to: &nodes, under: beside[0], depth: 7)
@@ -161,6 +169,7 @@ final class OverlayClickTests: XCTestCase {
     let list = Node("AXList", title: "Autofill", frame: CGRect(x: 95, y: 95, width: 440, height: 90), parent: group)
     let apricot = Node("AXStaticText", value: "apricot", frame: CGRect(x: 100, y: 100, width: 426, height: 40), parent: list)
     let apricotInner = Node("AXStaticText", value: "apricot", frame: CGRect(x: 100, y: 100, width: 426, height: 40), parent: apricot)
+    (apricot.press, apricotInner.press) = (true, true)
     let banana = Node("AXStaticText", value: "banana", frame: CGRect(x: 100, y: 140, width: 426, height: 40), parent: list)
     let at = append([popup, root, scroll, group, list, apricot, apricotInner], to: &nodes, under: 0, depth: 1)
     append([banana], to: &nodes, under: at[4], depth: 6)
@@ -193,6 +202,7 @@ final class OverlayClickTests: XCTestCase {
     let red = Node("AXButton", description: "rgb 1 0 0 1", frame: CGRect(x: 100, y: 100, width: 13, height: 13), parent: grid)
     let blue = Node("AXButton", description: "rgb 0 0 1 1", frame: CGRect(x: 115, y: 100, width: 13, height: 13), parent: grid)
     (red.enabled, blue.enabled) = (.enabled, .enabled)
+    (red.press, blue.press) = (true, true)
     var nodes: [ScreenshotNode<Node>] = []
     let at = append([window, scroll, text, popover, grid, red], to: &nodes, under: nil, depth: 0)
     append([blue], to: &nodes, under: at[4], depth: 5)
@@ -209,7 +219,7 @@ final class OverlayClickTests: XCTestCase {
       if scene.missing.contains(where: { $0 === node.element }) { node.children = .notAllRecorded }
       return node
     }
-    let record = OverlayRecord(nodes: nodes, windows: scene.windows, observedWindow: 28, pid: 501)
+    let record = OverlayRecord(nodes: nodes, frameless: scene.frameless, windows: scene.windows, observedWindow: 28, pid: 501)
     return overlayPoint(scene.verdict, answered: answered ?? scene.answered, record: record, shift: shift, chromium: scene.chromium, reads: reads)
   }
 
@@ -330,25 +340,126 @@ final class OverlayClickTests: XCTestCase {
     guard case .deliver = decide(elsewhere) else { return XCTFail("another row's coverage is not the row's") }
   }
 
-  /// Ruling 1082: the omnibox row's remove button. Listed by the row and left unread out of the record, the row's own
-  /// children are not whole: refused. Recorded, with its own children unread but away from the point: no block. At the
-  /// point with its children unread: refused.
-  func testARowWhoseRemoveButtonWentUnreadRefuses() {
+  /// Ruling 1083, items 1 and 3: the omnibox row's remove button. Listed by the row and left out of the record: refused.
+  /// Recorded with its own children unread, even away from the point: refused (the row's whole subtree). Fully recorded
+  /// and at the point: a distinct control inside the row, so the row is not promoted over it (`actionableDescendant`).
+  /// Fully recorded and away from the point: delivered.
+  func testARowWhoseRemoveButtonWentUnreadOrLiesAtThePointRefuses() {
     var unrecorded = omnibox()
     unrecorded.missing = [unrecorded.row]
     XCTAssertEqual(refusal(decide(unrecorded)), .partlyRecorded)
-    var recordedAway = omnibox()
-    let rowAt = recordedAway.nodes.firstIndex { $0.element === recordedAway.row }!
-    let remove = Node("AXButton", description: "Remove suggestion", frame: CGRect(x: 519, y: 108, width: 6, height: 20), parent: recordedAway.row)
-    recordedAway.nodes.append(recorded(remove, depth: 7, ancestor: rowAt))
-    recordedAway.partial = [remove]
-    guard case .deliver(let target) = decide(recordedAway) else { return XCTFail("a descendant away from the point does not block") }
-    XCTAssertTrue(target.row.element === recordedAway.row)
-    var atPoint = recordedAway
+    var withRemove = omnibox()
+    let rowAt = withRemove.nodes.firstIndex { $0.element === withRemove.row }!
+    let remove = Node("AXButton", description: "Remove suggestion", frame: CGRect(x: 519, y: 108, width: 6, height: 20), parent: withRemove.row)
+    remove.press = true
+    withRemove.nodes.append(recorded(remove, depth: 7, ancestor: rowAt))
+    guard case .deliver(let target) = decide(withRemove) else { return XCTFail("a fully recorded button away from the point does not block") }
+    XCTAssertTrue(target.row.element === withRemove.row)
+    var unreadAway = withRemove
+    unreadAway.partial = [remove]
+    let away = decide(unreadAway)
+    XCTAssertEqual(refusal(away), .partlyRecorded, "its children unread, away from the point")
+    XCTAssertEqual(note(away)?.refusedBy?.role, "AXButton")
+    XCTAssertEqual(note(away)?.refusedBy?.reason, "childrenUnread")
+    var atPoint = withRemove
     atPoint.verdict.point = CGPoint(x: 522, y: 115)
     let decision = decide(atPoint)
-    XCTAssertEqual(refusal(decision), .partlyRecorded, "the remove button at the point, its children unread")
+    XCTAssertEqual(refusal(decision), .actionableDescendant, "the remove button at the point")
     XCTAssertEqual(note(decision)?.refusedBy?.role, "AXButton")
+    XCTAssertEqual(note(decision)?.refusedBy?.reason, "actionableDescendant")
+  }
+
+  /// Ruling 1083, item 1: the row is promoted over a node inside it at the point only when that node is inert or repeats
+  /// it (the datalist's inner text: same role, label parts and frame). An inner text reading otherwise, and acting, refuses.
+  func testTheRowIsPromotedOnlyOverInertOrRepeatedNodes() {
+    guard case .deliver = decide(datalist()) else { return XCTFail("the inner text repeats the option") }
+    var other = datalist()
+    let at = other.nodes.firstIndex { $0.element === other.inner }!
+    other.nodes[at] = recordedCopy(other.nodes[at], value: "apricot jam")
+    XCTAssertEqual(refusal(decide(other)), .actionableDescendant, "another label")
+    var moved = datalist()
+    let movedAt = moved.nodes.firstIndex { $0.element === moved.inner }!
+    moved.nodes[movedAt] = recordedCopy(moved.nodes[movedAt], frame: CGRect(x: 100, y: 100, width: 420, height: 40))
+    XCTAssertEqual(refusal(decide(moved)), .actionableDescendant, "another frame, past 2 pt")
+    var acting = omnibox()
+    let groupAt = acting.nodes.firstIndex { $0.element === acting.inner }!
+    acting.nodes[groupAt].pressRecorded = true
+    XCTAssertEqual(refusal(decide(acting)), .actionableDescendant, "the omnibox's inner group acting")
+  }
+
+  /// Ruling 1083, item 2: the row's own shown frame must hold the point: a row whose shown part misses the point while the
+  /// group inside it holds it refuses.
+  func testTheRowItselfMustHoldThePoint() {
+    var scene = omnibox()
+    let at = scene.nodes.firstIndex { $0.element === scene.row }!
+    scene.nodes[at] = recordedCopy(scene.nodes[at], shown: CGRect(x: 100, y: 100, width: 426, height: 10))
+    let decision = decide(scene)
+    XCTAssertEqual(refusal(decision), .rowNotAtPoint)
+    XCTAssertEqual(note(decision)?.refusedBy?.role, "AXStaticText")
+  }
+
+  /// Ruling 1083, item 3: a frameless element inside the row whose children went unread refuses too.
+  func testAFramelessDescendantUnreadRefuses() {
+    var scene = omnibox()
+    let rowAt = scene.nodes.firstIndex { $0.element === scene.row }!
+    var wrapper = ScreenshotNode(element: Node("AXGroup", parent: scene.row), role: "AXGroup", title: nil, description: nil, subrole: nil,
+                                 value: nil, editableAncestor: nil, labelsUnread: [], frame: .null, shown: nil, depth: 7, subtreeRecorded: true)
+    wrapper.ancestor = rowAt
+    scene.frameless = [wrapper]
+    guard case .deliver = decide(scene) else { return XCTFail("a whole frameless wrapper does not block") }
+    scene.frameless[0].children = .unread
+    let decision = decide(scene)
+    XCTAssertEqual(refusal(decision), .partlyRecorded)
+    XCTAssertEqual(note(decision)?.refusedBy?.role, "AXGroup")
+  }
+
+  /// Ruling 1083, item 4: the list's own children not all recorded refuses (`containerNotRecorded`).
+  func testAListWhoseChildrenAreNotAllRecordedRefuses() {
+    var scene = omnibox()
+    let list = scene.nodes.first { $0.role == "AXList" }!.element
+    scene.missing = [list]
+    let decision = decide(scene)
+    XCTAssertEqual(refusal(decision), .partlyRecorded)
+    XCTAssertEqual(note(decision)?.refusedBy?.role, "AXList")
+    XCTAssertEqual(note(decision)?.refusedBy?.reason, "containerNotRecorded")
+  }
+
+  /// Ruling 1083, item 5: a frameless element recorded between the grid and the swatch (AXGrid > frameless AXRow >
+  /// AXButton) leaves no direct edge from the one to the other: refused. The record marks the edge.
+  func testARowBehindAFramelessElementRefuses() {
+    var scene = popover()
+    let at = scene.nodes.firstIndex { $0.element === scene.row }!
+    scene.nodes[at].parentFramed = false
+    XCTAssertEqual(refusal(decide(scene)), .notDirectChild)
+    let reads = [ScreenshotNodeRead(element: 0, number: 0, parent: nil, depth: 0, role: "AXGrid", title: nil, description: nil,
+                                    frame: CGRect(x: 0, y: 0, width: 100, height: 100), actions: [], childCount: 1),
+                 ScreenshotNodeRead(element: 1, number: 1, parent: 0, depth: 1, role: "AXRow", title: nil, description: nil, frame: nil,
+                                    actions: [], childCount: 1),
+                 ScreenshotNodeRead(element: 2, number: 2, parent: 1, depth: 2, role: "AXButton", title: nil, description: nil,
+                                    frame: CGRect(x: 0, y: 0, width: 13, height: 13), actions: ["AXPress"], childCount: 0),
+                 ScreenshotNodeRead(element: 3, number: 3, parent: 0, depth: 1, role: "AXButton", title: nil, description: nil,
+                                    frame: CGRect(x: 20, y: 0, width: 13, height: 13), actions: ["AXPress"], childCount: 0)]
+    let record = screenshotRecord(reads)
+    XCTAssertEqual(record.nodes.map(\.parentFramed), [false, false, true], "the grid, the swatch behind the row, the swatch under the grid")
+  }
+
+  /// Ruling 1083, item 6: a child the row lists but which the record holds under another parent is not recorded for the
+  /// row (its own children `childrenNotRecorded`), while #431's region coverage, which looks children up anywhere in the
+  /// record, is unchanged.
+  func testAChildRecordedUnderAnotherParentIsNotRecordedForTheRow() {
+    let key: (Int) -> AnyHashable = { AnyHashable($0) }
+    let reads = [ScreenshotNodeRead(element: 0, number: 0, parent: nil, depth: 0, role: "AXList", title: nil, description: nil,
+                                    frame: CGRect(x: 0, y: 0, width: 100, height: 100), actions: [], childCount: 2, children: [1, 2]),
+                 ScreenshotNodeRead(element: 1, number: 1, parent: 0, depth: 1, role: "AXStaticText", title: nil, description: nil,
+                                    frame: CGRect(x: 0, y: 0, width: 100, height: 40), actions: ["AXPress"], childCount: 1, children: [3]),
+                 ScreenshotNodeRead(element: 2, number: 2, parent: 0, depth: 1, role: "AXStaticText", title: nil, description: nil,
+                                    frame: CGRect(x: 0, y: 40, width: 100, height: 40), actions: ["AXPress"], childCount: 1, children: [3]),
+                 ScreenshotNodeRead(element: 3, number: 3, parent: 2, depth: 2, role: "AXButton", title: nil, description: nil,
+                                    frame: CGRect(x: 80, y: 40, width: 10, height: 10), actions: ["AXPress"], childCount: 0, children: [])]
+    let record = screenshotRecord(reads, key: key)
+    XCTAssertEqual(record.nodes[1].children, .notAllRecorded, "row 1 lists the button, recorded under row 2")
+    XCTAssertEqual(record.nodes[2].children, .whole)
+    XCTAssertTrue(record.nodes[1].regionCovered, "#431's coverage finds the button anywhere in the record, as before")
   }
 
   /// Ruling 1082, the leaf line, from the AX error AXChildren's slot answered through the record: kAXErrorAttributeUnsupported
@@ -357,8 +468,13 @@ final class OverlayClickTests: XCTestCase {
   func testTheLeafLineOnAXChildrensError() {
     func children(after error: AXError) -> ScreenshotChildren {
       var code = error
-      let slot = AXValueCreate(.axError, &code)!
-      let data = ElementData(values: present(slot).map { ["AXChildren": $0] } ?? [:], unreadable: failedSlot(slot) ? ["AXChildren"] : [])
+      return children(slot: AXValueCreate(.axError, &code)!)
+    }
+    /// The slot decoded as a batched read decodes it (`AXAttributeRead.decode`), nil for a reply with no AXChildren entry.
+    func children(slot: Any?) -> ScreenshotChildren {
+      var attributes = AttributeRead()
+      if let slot { attributes.decode("AXChildren", slot) }
+      let data = ElementData(values: attributes.values, unreadable: attributes.unreadable, absent: attributes.absent)
       let read = ScreenshotNodeRead(element: 1, number: 0, parent: nil, depth: 0, role: "AXButton", title: nil, description: nil,
                                     frame: CGRect(x: 100, y: 100, width: 13, height: 13), actions: ["AXPress"], childCount: data.children.count,
                                     childrenRead: data.childrenRead, childrenLeaf: data.childrenLeaf)
@@ -368,6 +484,8 @@ final class OverlayClickTests: XCTestCase {
     for error in [AXError.cannotComplete, .failure, .illegalArgument, .apiDisabled, .notImplemented] {
       XCTAssertEqual(children(after: error), .unread, "\(error.rawValue): unread")
     }
+    XCTAssertEqual(children(slot: kCFNull), .unread, "a null slot (ruling 1083)")
+    XCTAssertEqual(children(slot: nil), .unread, "no AXChildren entry at all (ruling 1083)")
     XCTAssertEqual(screenshotRecord([ScreenshotNodeRead(element: 1, number: 0, parent: nil, depth: 0, role: "AXButton", title: nil, description: nil,
                                                         frame: .zero, actions: [], childCount: 0, childrenRead: true)]).nodes[0].children, .whole, "an empty list read")
     let leaf = popover()
@@ -646,12 +764,16 @@ final class OverlayClickTests: XCTestCase {
   }
 
   private func recordedCopy(_ n: ScreenshotNode<Node>, title: String?? = .none, subrole: String?? = .none, frame: CGRect? = nil,
-                            labelsUnread: Set<StalePointLabelPart>? = nil)
+                            labelsUnread: Set<StalePointLabelPart>? = nil, value: String?? = .none, shown: CGRect? = nil)
     -> ScreenshotNode<Node> {
     var copy = ScreenshotNode(element: n.element, role: n.role, title: title ?? n.title, description: n.description, subrole: subrole ?? n.subrole,
-                              value: n.value, editableAncestor: nil, labelsUnread: labelsUnread ?? n.labelsUnread, frame: frame ?? n.frame, shown: frame ?? n.shown,
-                              depth: n.depth, subtreeRecorded: n.subtreeRecorded)
+                              value: value ?? n.value, editableAncestor: nil, labelsUnread: labelsUnread ?? n.labelsUnread, frame: frame ?? n.frame,
+                              shown: shown ?? frame ?? n.shown, depth: n.depth, subtreeRecorded: n.subtreeRecorded)
     copy.ancestor = n.ancestor
+    copy.parentFramed = n.parentFramed
+    copy.actionable = n.actionable
+    copy.pressRecorded = n.pressRecorded
+    copy.children = n.children
     return copy
   }
 

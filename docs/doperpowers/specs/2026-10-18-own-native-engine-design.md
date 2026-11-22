@@ -7901,6 +7901,27 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   skipped), 0 failures; the service test file 44/44.
   Date/Author: 2026-11-22, cursor235's builder for #453.
 
+- Decision (#453, ruling 1083, the final wave, no review after it; amends the entry above): a focused review found 4 P1
+  and 3 P2, each only adding refusals; all fixed. (1) The row is promoted to the list's or grid's child only over nodes
+  inside it at the point that are inert (role and actions read, no interactive role, no AXPress: #433's inert layer) or
+  repeat it (same role, same recorded label parts, frame within 2 pt: the datalist's inner text); a distinct control
+  there, the omnibox's remove button, refuses (`actionableDescendant`). (2) The container's one child at the point must
+  be the row on the chain; none refuses (`rowNotAtPoint`). (3) Coverage is the row's whole recorded subtree again,
+  framed and frameless: any element of it whose own children are unread or not all recorded refuses. (4) The
+  container's own children must all be recorded (`partlyRecorded`, `containerNotRecorded`). (5) The row must be the
+  container's direct child in the record (`ScreenshotNode.parentFramed`); a frameless element between them refuses
+  (`notDirectChild`). (6) A node's own children are looked for along the record's parent edges, so a child it lists but
+  the record holds under another parent is not recorded for it; #330's and #431's coverage inputs are unchanged. (7) A
+  leaf is only an AXChildren slot that explicitly answered kAXErrorAttributeUnsupported or kAXErrorNoValue
+  (`absentSlot`, `AttributeRead.absent`, `ElementData.childrenLeaf`); a null slot or a missing entry is unread.
+  Inertness reads AXPress and the interactive roles, not every action name: Chromium lists AXShowMenu and
+  AXScrollToVisible on plain groups, which a press does not reach.
+  Proven offline (`OverlayClickTests`, 37): a test per item, each failing with its fix reverted alone; the datalist's
+  outer text, the omnibox's row text and the popover's swatch still deliver with their trees whole and leaf children;
+  the remove button recorded with its children unread away from the point now refuses. 1644 swift tests (1 skipped),
+  0 failures; the service test file 44/44.
+  Date/Author: 2026-11-22, cursor235's builder for #453.
+
 ## Outcomes & Retrospective
 
 Pending for the initiative — written at finish. M1a's interim account (2026-10-20) follows; the full record is `docs/doperpowers/specs/2026-10-18-own-native-engine-m1a-report.md`.

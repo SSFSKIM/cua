@@ -174,16 +174,16 @@ Just before the click (1.1 to 3.2 s after the observation), three application hi
   - A combined rule fits all 0-side-effect cells measured: AXPress where the node lists it, else the stamped post.
     Its one known miss is the datalist row, which lists AXPress and does nothing (frontmost only, where a post takes it).
 
-## #453 qual: main dfe6f443 against fix/453-overlay-click (parked, not run)
+## #453 qual: main 5580ac20 against fix/453-overlay-click (smoked, paused)
 
-State on 2026-11-21: **built, not smoked, no hosted run.** #453 was parked behind #443 (design ruling 1059) before
-the first dispatch. The fix branch's head was also about to move (the review's fix wave on b8bb5115: more refusals, an
-observation-time re-read of the overlay's rows, confirmation only by the overlay closing, no `rowGone`), so the fix run
-needs that head anyway.
+State on 2026-11-22: **two smokes run (reps 1, preview only), kit fixed after them, the changed cells not yet
+re-smoked; paused** while the design session decides whether to park #453 again (the focused review of the fix found
+P1s). No counted run. Main is 5580ac20 (#443 included); the fix head smoked is 07d487d8.
 
-Kit: `qual453.mjs` (its header lists the cells), reader `qual-reader.mjs`, and the workflow `probe-453.yml` with
+Kit: `qual453.mjs` (its header lists the cells), reader `qual-reader.mjs`, the workflow `probe-453.yml` with
 `kit: qual453` and a `label`. Dispatch one engine head per run. Pass `reps` empty for each cell's own row count (191
-rows); the input's default of 6 caps them. A smoke is `reps: 1`, 34 rows. What it does that `deliver.mjs` did not:
+rows); the input's default of 6 caps them. A smoke is `reps: 1`, 34 rows, about 6 minutes of measuring. What it does
+that `deliver.mjs` did not:
 - Every click is the engine's own: a coordinate click, an element click by the node's token, a forced route
   (`spikeRoute: '3'`) or a drag.
 - The item is picked from the engine's observation, from its nodes inside the overlay's CG window. The kit makes no
@@ -193,12 +193,48 @@ rows); the input's default of 6 caps them. A smoke is `reps: 1`, 34 rows. What i
 - The permission cells read the origin's state after the click (`navigator.permissions`, beaconed), Allow and Block.
 - Frontmost is `lsappinfo front`, read back to back for 4 s (transient and end), beside the key-window watch and the
   window list.
+- The element click by ID on an overlay row is a parity cell (`p-element`), expecting main's answer: ruling 1066 cut
+  #470 from the fix.
 
-Left for the qual:
-- Smoke on the current fix head and fix what the smoke shows. Untested so far:
-  - the observation's node labels for each overlay's row (the pick regexes);
-  - whether the datalist opens behind by the arrow click;
-  - site information's bubble as the unknown-kind parity cell;
-  - the Allow label on Chrome 157.
-- Then the full runs, main dfe6f443 and the fix head the coordinator names. Add the tables here, each labelled with its
-  engine SHA.
+### Smokes (preview, reps 1; Chrome 157.0.8103.79, macOS 26.7.2, image 20261117.0516.1)
+
+- Fix 07d487d8, kit 64d595cd: https://github.com/SSFSKIM/cua/actions/runs/45045858141 (34 rows).
+- Main 5580ac20, kit 0a7fc83a: https://github.com/SSFSKIM/cua/actions/runs/45047231711 (34 rows).
+
+What they showed (one row per cell, so a direction, not a count):
+- **Fix, delivered and taken:** omnibox row by coordinate (3 modes, route 2′, `closed`), datalist row (3 modes; it
+  opens behind by the arrow click), geolocation Block (2 behind modes), TextEdit popover swatch (3 modes, AXPress
+  `closed`). Main refused every one `appWindowOverPoint`.
+- **Re-laid-out (cell 6):** the fix refused `textChanged` 3/3, main `appWindowOverPoint` 3/3. No other row taken.
+- **Fix, the browser window listed over the cover's in every Chrome behind row it delivered** (10/10: omnibox,
+  datalist, permission, shared-behind and dedicated-behind), from about 30 to 80 ms into the click to the end of the
+  3 s watch, the window order changed. Frontmost and the key window did not change. Main's refusals moved nothing;
+  `deliver.mjs`'s own stamped post took the same rows with 0/84 raised (run C), so the engine's delivery differs from
+  the kit's there. TextEdit's popover (AXPress) raised nothing. The p-font row (#458, route 3 AXPress) lists the
+  window over the cover for about 35 ms on both heads.
+- **Parity:** p-page and p-underclosed clicked, p-forced and p-drag refused `appWindowOverPoint`, p-inputlist and
+  p-font opened, on both heads. The element click (fix 07d487d8 still carrying #470): the fix refused omnibox and datalist rows
+  `textChanged` and took the permission button by post; main refused the omnibox row behind (`backgroundClickRefused`),
+  took it by route 3 front and dedicated (dedicated: the window over the cover), dismissed the datalist row behind and
+  took it front and dedicated.
+- No row reached the page beneath on either head.
+
+Kit fixes after the smokes (kit 0a7fc83a, then the head of this branch):
+- **Permission: geolocation replaced by Web MIDI.** The runner's macOS has Location Services off: Chrome answers
+  geolocation's Allow with the state `denied` and a "Location is turned off in system settings" bubble (the "Allowed"
+  chip shows: Allow was taken, the kit read `wrongRow:block`), and the first Allow brought Chrome to the front. MIDI's
+  prompt ("Block", "Allow") has no macOS layer. Its Block label is read whole as `Block | Block` (the regex fixed after
+  the main smoke).
+- **Permission frontmost:** the engine observes the prompt as the window itself (it is Chrome's focused window), so no
+  overlay lies over the observed window. The row now runs as a plain click in that window (`observedIsOverlay`).
+- **Unknown kind (p-unknown):** Chrome 157 lists no site information button for `http://127.0.0.1`; the cell opens
+  Tab search's bubble by the engine's click on its toolbar button and clicks one of its items.
+- The tool's `overlay` op also answers a window of the app's listed behind the observed one (`behind`, marked
+  `overlayListedBehind`); the smokes needed it nowhere.
+
+Left before the counted runs:
+- Re-smoke the changed cells on both heads (`only: permission,siteinfo`): MIDI's prompt behind and frontmost, the
+  Allow and Block reading, and Tab search as the unknown kind.
+- Then the full runs, main 5580ac20 and the fix head the coordinator names (each under 500 rows), and #443's
+  `decomove` rows on the fix head through `probe/443-qual` (CfT and Electron, `controlGone` expected, plus a couple of
+  #433 keep cells as a control). Add the tables here, each labelled with its engine SHA.

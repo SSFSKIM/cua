@@ -46,6 +46,8 @@ for (const file of process.argv.slice(2)) {
   console.log(`- false confirmed (overlayClick closed or rowGone, not taken): ${falseConfirmed.length}${falseConfirmed.length ? ` (${falseConfirmed.map(r => r.label).join(', ')})` : ''}`);
   console.log(`- refused but taken anyway: ${missed.length}${missed.length ? ` (${missed.map(r => r.label).join(', ')})` : ''}`);
   console.log(`- reached the window beneath: ${ov.filter(r => r.reachedBeneath).length}/${ov.length}`);
+  const own = results.filter(r => r.observedIsOverlay && r.click);
+  console.log(`- overlay observed as the window itself (frontmost prompt): ${own.length}${own.length ? ` (${tally(own.map(r => r.cell))})` : ''}`);
   const behind = results.filter(r => r.overlayListedBehind);
   console.log(`- overlay listed behind the browser window while shown: ${behind.length}${behind.length ? ` (${tally(behind.map(r => r.cell))})` : ''}`);
   const perm = results.filter(r => r.permission);

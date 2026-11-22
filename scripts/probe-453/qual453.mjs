@@ -392,7 +392,8 @@ const KINDS = {
     },
     pick: (sky, pr, want) => {
       const buttons = nodesIn(sky, pr).filter(n => n.role === 'AXButton');
-      const re = want === 'allow' ? /^allow\b/i : /never allow|^block$|don.?t allow/i;
+      // Web MIDI's prompt names its buttons "Block" and "Allow" (each label read twice: "Block | Block").
+      const re = want === 'allow' ? /^allow\b/i : /^(never allow|block|don.?t allow)\b/i;
       return asPick(buttons.find(n => re.test(nodeLabel(n))), {want, buttons: buttons.map(nodeLabel)});
     },
     // The origin's permission state after (its last change beaconed; every change kept) and requestMIDIAccess's answer.
@@ -426,17 +427,17 @@ const KINDS = {
     pick: sky => asPick(pageNode(sky, /^Under$/, ['AXButton'])), effect: ctx => ctx.page.some(e => e.startsWith('click:u1')) ? 'clicked' : null},
   // Parity: site information's bubble, an overlay of no listed kind (frontmost: AXPress on its button raises Chrome
   // behind, #469), one of its buttons.
-  // Opened by the engine's click on the toolbar's node (the kit's AX walk of Chrome's windows did not reach it, smoke
-  // 45045858141).
+  // Tab search's bubble (a web area in a window of its own, not the omnibox popup), opened by the engine's click on its
+  // toolbar button. Chrome 157 lists no site information button for http://127.0.0.1 (smoke 45047231711).
   siteinfo: {app: 'chrome', open: async (c, sky0) => {
       const top = sky0.window.frame.y + 110;
-      const n = sky0.nodes.find(n => big(n.frame) && n.frame.y < top && ['AXPopUpButton', 'AXButton', 'AXMenuButton'].includes(n.role) && /site information|connection is|not secure/i.test(nodeLabel(n)));
-      if (!n) { c.row.toolbar = sky0.nodes.filter(n => big(n.frame) && n.frame.y < top).map(n => [n.role, nodeLabel(n).slice(0, 60)]).slice(0, 40); throw new Error('no site information button in the observation'); }
+      const n = sky0.nodes.find(n => big(n.frame) && n.frame.y < top && ['AXPopUpButton', 'AXButton', 'AXMenuButton'].includes(n.role) && /^tab search\b/i.test(nodeLabel(n)));
+      if (!n) { c.row.toolbar = sky0.nodes.filter(n => big(n.frame) && n.frame.y < top).map(n => [n.role, nodeLabel(n).slice(0, 60)]).slice(0, 40); throw new Error('no Tab search button in the observation'); }
       c.row.opener = [n.role, nodeLabel(n)];
       await c.clickAt(fcentre(n.frame), sky0);
       await sleep(900);
     },
-    pick: (sky, pr) => { const xs = nodesIn(sky, pr).filter(n => ['AXButton', 'AXLink'].includes(n.role) && nodeLabel(n));
+    pick: (sky, pr) => { const xs = nodesIn(sky, pr).filter(n => ['AXButton', 'AXLink', 'AXRow', 'AXCell', 'AXListBoxOption', 'AXMenuItem', 'AXRadioButton'].includes(n.role) && nodeLabel(n));
       return asPick(xs.find(n => !/close|settings/i.test(nodeLabel(n))) ?? xs[0]); },
     effect: ctx => ctx.after.overlay == null ? 'closed' : null},
   // Parity: #458's TextEdit font pop-up and #463's <input list> arrow; the effect is the menu or list opened.
@@ -506,9 +507,12 @@ async function runRow(app, cell, rep) {
     // An overlay the window list puts behind the browser window while it shows over it (the tool's `behind`) is taken
     // for an overlay row only, and marked.
     row.overlayListedBehind = k.overlay !== false && !ov.popup && Boolean(ov.behind);
-    const ovWin = o => o?.popup ?? (row.overlayListedBehind ? o?.behind : null) ?? null;
+    const ovWin = o => o?.popup ?? (row.overlayListedBehind ? o?.behind : null) ?? (row.observedIsOverlay ? o?.target : null) ?? null;
     row.overlayAtObs = ovWin(ov);
-    const pr = rect(row.overlayAtObs?.bounds);
+    // Frontmost, the engine observes Chrome's permission prompt as the window itself (it is the focused window): the
+    // click is then a plain click in the observed window, no overlay over it (smoke 45047231711). Marked, and run so.
+    row.observedIsOverlay = k.overlay !== false && !row.overlayAtObs && wf.width * wf.height < WIN.w * WIN.h / 2;
+    const pr = rect(row.overlayAtObs?.bounds) ?? (row.observedIsOverlay ? rect(ov.target.bounds) : null);
     if (k.overlay !== false && !pr) { row.problem = 'no overlay at the re-observation'; row.otherWindows = ov.others ?? null; return; }
     row.nodesInOverlay = pr ? nodesIn(sky, pr).length : 0;
     const want = cell.kind === 'permission' ? (cell.how === 'p-element' ? (rep % 2 ? 'block' : 'allow') : cell.how) : null;

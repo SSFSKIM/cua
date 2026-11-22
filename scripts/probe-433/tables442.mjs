@@ -5,6 +5,7 @@ import {readdirSync,readFileSync,existsSync} from 'node:fs';
 import {join} from 'node:path';
 import {LANES,UNITS,unitKey} from './cells.mjs';
 import {quantiles} from './check.mjs';
+import {topAsLogged} from './signals.mjs';
 
 const [dir,label='run']=process.argv.slice(2);
 const load=(d,f)=>existsSync(join(dir,d,f))?JSON.parse(readFileSync(join(dir,d,f),'utf8')):null;
@@ -38,7 +39,8 @@ for(const l of order)for(const u of units){const v=rowsOf(l,u).filter(r=>r.signa
   const st=k=>{const x=S.map(s=>s.stack?.[k]).filter(Boolean);return x.length?count(x,s=>s.treeAgrees):'–';};
   const hides=S.flatMap(s=>['pre','post'].map(k=>s.stack?.[k]).filter(Boolean)).filter(s=>Object.entries(s.visible??{}).some(([n,vis])=>n!==s.paintTop&&vis===false)).length;
   const pierce=post.filter(p=>(p.hitFromChain??[]).some(h=>!/>(overlay|nothing|AX)/.test(h))).length;
-  const agree=S.filter(s=>s.c?.agrees!=null);
+  // Recomputed from the row's facts (a cover layer or the page is \`none\` in the page's log).
+  const agree=S.filter(s=>s.dom?.post&&s.recipient&&s.recipient!=='nothing').map(s=>({c:{agrees:topAsLogged(s.dom.post.top)===s.recipient}}));
   console.log(`| ${l} | ${unitKey(u)} | ${tally(v.map(r=>r.guard?.hitRole??'none'))} | ${seq('warm')}${tmax('warm')} | ${seq('after')}${tmax('after')} | ${tally(post.map(p=>p.hit))} | ${tally(post.map(p=>p.hitFromWeb))} | ${Object.entries(grid).sort((a,b)=>b[1]-a[1]).map(([k,n])=>`${k} ${n}`).join(', ')||'–'} | ${pierce}/${post.length} | ${st('pre')} | ${st('post')} | ${hides} | ${tally(S.map(s=>s.c?.top??'?'))} | ${agree.length?count(agree,s=>s.c.agrees):'–'} |`);}
 
 console.log(`\n#### Exposure: rows main kept and landed on the target that each rule would refuse (engine ${engine})\n\nUnder an inert node at the point (the record's), (a) the live set at the click differs from the record's (\`rec\`) or from the live set read after the observation (\`live\`); (b) the record holds two or more unrelated controls at the point and one of them is not found in place at the click (\`b\`; \`b eng\` counts the overlap by the engine's rule, role or AXPress, with the same trigger); and on any row, (c) elementFromPoint at the click names another control than the target (\`c\`).\n`);

@@ -526,3 +526,18 @@ What #442 adds to #443's kit:
 ### Smoke on main `5580ac204f1a2a5cd6a36186d658087060690e5f` (not counted: hits read before the click)
 
 [Run 45049284454](https://github.com/SSFSKIM/cua/actions/runs/45049284454), kit `66ca85ec`, 2 per unit, every row valid, no abort. Its signals table is the kit's check only; its verdicts are warm-ish on the Chromium lanes (the grid ended 8 pt off the point).
+
+| Unit | cft | safari | electron |
+|---|---|---|---|
+| retext/text | kept sameElement 2; on target 2 | kept sameElement 2; on target 2 | kept sameElement 2; on target 2 |
+| retext/link | kept sameElement 2; on target 2 | kept sameElement 2; on target 2 | kept sameElement 2; on target 2 |
+| overcontrol/text | kept recordedHit 2; on target 2 | kept nonInteractiveHit 2; on target 2 | kept nonInteractiveHit 2; on target 2 |
+| overcontrol/link | kept recordedHit 2; on target 2 | kept recordedHit 2; on target 2 | kept recordedHit 2; on target 2 |
+| bgbutton/text | kept recordedHit 2; on target 2 | kept nonInteractiveHit 2; on target 2 | kept nonInteractiveHit 2; on target 2 |
+| bgbutton/link | kept recordedHit 2; on target 2 | kept recordedHit 2; on target 2 | kept recordedHit 2; on target 2 |
+| overlapinto/text | kept sameElement 1, refused nodeGone 1; on target 1, nothing 1 | refused nodeGone 2; on nothing 2 | refused nodeGone 2; on nothing 2 |
+| overlapinto/link | kept sameElement 2; on target 2 | refused nodeGone 2; on nothing 2 | kept sameElement 2; on target 2 |
+| slideover/text | refused pressedOther 2; on nothing 2 | refused interactiveHit 2; on nothing 2 | kept nonInteractiveHit 2; on twin 2 |
+| slideover/link | refused interactiveHit 2; on nothing 2 | refused interactiveHit 2; on nothing 2 | refused interactiveHit 2; on nothing 2 |
+| siblingstack/text | kept recordedHit 2; on twin 2 | kept recordedHit 2; on twin 2 | kept nonInteractiveHit 2; on twin 2 |
+| siblingstack/link | kept recordedHit 2; on twin 2 | kept recordedHit 2; on twin 2 | kept recordedHit 2; on twin 2 |

@@ -104,6 +104,7 @@ export function recipientOf(clicks){
   const c=list.find(x=>x?.type==='click')??list[0];
   return c?(CLOSED.has(c.link)?c.link:'other'):'nothing';
 }
+export const topAsLogged=t=>t==='overlay'||t==='page'?'none':t;
 // The page's paint order at the point, controls only (top first): what draws on top among the controls there.
 const paintControls=dom=>dom?dom.stack.filter(n=>!['overlay','page'].includes(n)):[];
 // Per row: the record's controls, the live walks before the change (after the observation) and before the click, the
@@ -145,7 +146,8 @@ export function signalsOf({spec={},nodes,point,pre,post,after,warm,domPre,domPos
       visibleSame:ax.post?.visible&&ax.post?.full?names(ax.post.visible.role)===names(ax.post.full.role):null},
     b:{overlap:record?record.role.length>=2:null,overlapEngine:record?record.engine.length>=2:null},
     stack:{pre:stackAt(ax.pre,dom.pre),post:stackAt(ax.post,dom.post)},
-    c:{top:dom.post?.top??null,agrees:dom.post&&recipient&&recipient!=='nothing'?dom.post.top===recipient:null},
+    // The page's log names no control (\`none\`) where the click lands on a cover layer or the page itself.
+    c:{top:dom.post?.top??null,agrees:dom.post&&recipient&&recipient!=='nothing'?topAsLogged(dom.post.top)===recipient:null},
   };
 }
 // The CSS point for a screen point, through the target's box: the page's own (CSS px, at prepare) and its AX frame at the

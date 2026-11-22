@@ -2724,6 +2724,26 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
     - Counted drop-signals rows don't carry the tail's `release_sync` record, so the gate's reading is derived by 993's rule. c-cost.mjs's 0.4.2 rule misreads late in-floor releases.
     - On x64 under load, the in-floor release came up to ~7 ms past the floor (350–357.3 ms after the take), a time cost only.
 
+- Decision (2026-11-22, M5, T10 refreshed at linux-engine 0.4.3; the design session's rulings 1056, 1062 and 1063): the flip is built and checked live on both arches. It merges only on the owner's yes, at close-out.
+  - **Branches** (task 137):
+    - `m5-main-merge-2` 460df13a: feat 28f22e8a plus main dfe6f443 (0.28.28).
+    - `m5-t10-r3`: A 7cb308cd adds the default-selection mode and F5, with vendor still the default. B f99f727f is the flip, with the plugin at 0.29.0.
+  - **CI:** ci-gate is GREEN 8/8 on all six heads, before and after main moved.
+  - **The fallback homes under MIN 0.4.3:**
+    - none;
+    - previous (0.4.2);
+    - released (0.4.0, which main's released plugin still pins);
+    - older (0.3.0);
+    - unrecorded.
+    0.4.1 is a unit row only, since it was only ever pinned on feat.
+  - **The live checks**, on private displays in run-owned homes with PINNED_RULE=enforce, ran on the twins 8f070d5c and 51f6b281, before main reached dfe6f443.
+    - A: the default mode fails as required, "selects vendor (default)".
+    - B, on x64 and arm64 alike: default R3 13/13 and R4 20/20 with no sky_linux; the five fallback homes 9/9 each, answered by the vendor; explicit R3 11/11 and R4 18/18; R1 and R2 PASS.
+  - **No rerun on f99f727f (1062).** Outside `.claude-plugin/`, B′ minus B changes the same 11 files with identical added and removed lines as main's 9c6368ce..dfe6f443. Only context and placement differ, and the one runtime-facing oracle change is gated to macOS.
+  - **A's fallback probes are a negative control (1063 (1)).** The r3 brief said they must pass, and that was the brief's error. Before the flip, vendor is the ordinary default, so there is no fallback warning to observe. The pre-flight puts the positive proof on B, and tasks 86 and 110 saw the same.
+  - **F5a's boundary (1063 (2)).** An executable whose hash equals the current pin's asset is read as the pin's version, whatever `install.json` says. It is written into F5a's text in the pre-flight.
+  - **The reach of main's new commits:** only d44a4fe1 (#441, `install.mjs download()`'s failure path) touches a Linux path. The table goes to the design session once, after the window (1056).
+
 ## Outcomes & Retrospective
 
 Written per milestone as each lands; the whole-plan retrospective at finish. The execution record (tasks, reviews, friction) is `docs/doperpowers/specs/2026-10-28-own-linux-engine-report.md`.

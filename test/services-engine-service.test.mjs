@@ -593,6 +593,26 @@ test('#296: the stale-point guard\'s verdict rides as cua/stalePoint, and its re
   assert.deepEqual(meta['cua/actionInterval'], {startedAt: null, endedAt: null}, 'nothing posted');
 });
 
+test('#453: an overlay row\'s click rides as cua/overlayClick, carried or with #452\'s refusal standing, reset by the next call', async t => {
+  const carried = {window: 49, by: 'axHit', kind: 'omniboxPopup', route: 'action', confirmed: true, polls: 3, ms: 41.2};
+  const refused = {window: 49, by: 'axHit', kind: 'permissionBubble', refused: 'labelChanged'};
+  const sentence = 'Google Chrome has a window of its own over the one the screenshot showed at this point (a suggestion list, popup or panel), and a click here would reach the window under it, not what the screenshot shows. Nothing was sent. Use keys instead (the arrow keys and Return for a suggestion list, Escape to close it), or call getAXState() and click an element it lists.';
+  let refuse = false;
+  const {getApp, call, meta} = await session(t, {handlers: {'execute:click': () => {
+    if (refuse) throw new EngineFailure(-10005, sentence, 'appWindowOverPoint', {meta: {...INPUT_META, inputRoute: null, startedAt: null, endedAt: null, overlayClick: refused}});
+    return {meta: {...INPUT_META, inputRoute: 'action', overlayClick: carried}};
+  }}});
+  const {app} = await getApp('TextEdit');
+  await call(() => app.click([300, 120]));
+  assert.deepEqual(meta['cua/overlayClick'], carried);
+  assert.equal(meta['cua/inputRoute'], 'action');
+  await call(() => app.getAXState({emit: false}));
+  assert.equal(meta['cua/overlayClick'], null, 'reset by the next call');
+  refuse = true;
+  await assert.rejects(call(() => app.click([300, 120])), error => error.errorName === 'appWindowOverPoint');
+  assert.deepEqual(meta['cua/overlayClick'], refused);
+});
+
 test('#328: a scroll\'s confirmation rides as cua/scroll, its at-end note reaches the tool result\'s text, and scrollUnconfirmed and the out-of-screenshot refusal reach the model with their sentence, name and meta', async t => {
   const moved = {container: 'scrollArea', outcome: 'moved', moved: 120, by: 'content', polls: 3, readMs: 4.1, ms: 49.2, walked: 61};
   const atEnd = {container: 'scrollArea', outcome: 'atEnd', atEnd: true, endBefore: true, barBefore: 1, polls: 0, readMs: 3, ms: 3.2, walked: 40};

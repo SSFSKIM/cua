@@ -56,7 +56,9 @@
 //   window frame used and the one read just before the events, numbers only), cua/pointerEstablish (#288: a left
 //   click's establishment of a Chromium page tree not yet seen, {ms, webAreaFound, rehits}), and cua/stalePoint (#296: the
 //   stale-point guard at a coordinate click's or drag's point, {verdict "kept" | "refused", reason, identity?,
-//   recordedRole?, hitRole?, ms, rechecked?, afterActivation?}, roles only). cua/afterActionRepairs rides on
+//   recordedRole?, hitRole?, ms, rechecked?, afterActivation?}, roles only), and cua/overlayClick (#453: a coordinate
+//   click on a row of the app's own overlay carried by the row's AXPress, {window, by, kind, route "action", confirmed},
+//   or why #452's refusal stood, {window, by, kind?, refused}, value-free). cua/afterActionRepairs rides on
 //   input results and on observations alike once the connection's after-action watch has repaired (#200: the repairs
 //   route 3's watch made after an action had answered, the connection's total and the last actions', each keyed by its
 //   delivery's postedAt). cua/serviceMs is the wrapper's (src/services/sky.mjs).
@@ -131,6 +133,7 @@ const PER_CALL = {
   'cua/activationGuardMs': null, 'cua/activationClick': null, 'cua/activationClickKind': null, 'cua/activationJoin': null, 'cua/pointUnconfirmed': null, 'cua/intervention': null, 'cua/entered': null, 'cua/routeAdvice': null, 'cua/observation': null,
   'cua/delivery': null, 'cua/afterActionRepairs': null, 'cua/paste': null, 'cua/elementClick': null, 'cua/coordinateClick': null,
   'cua/pointerEstablish': null, 'cua/stalePoint': null, 'cua/scroll': null, 'cua/typeReadback': null, 'cua/keyEffect': null, 'cua/menu': null,
+  'cua/overlayClick': null,
 };
 // The methods whose success may carry the engine's `note` (the paste route's unconfirmed paste, #187; a click into a
 // background web page's text field that focused it instead, #283; a scroll whose content was already at its end, #328;
@@ -145,9 +148,11 @@ const NOTE_CHARS = 500;
 // the container under the point read before and after the wheel, the move seen, the end, the fallback's bar write, #328;
 // `typeReadback`: a type_text's read-back of the focused field (keyed or, #361, pasted), confirmed or why not, its
 // cost, and on a mismatch both lengths, value-free, #354; `keyEffect`: "unconfirmed" on a press_key that posted, whose keys' effect is not
-// confirmed, #354; `menu`: a Show Menu's confirmation, where the new menu was seen or that none was, and the wait, #374).
+// confirmed, #354; `menu`: a Show Menu's confirmation, where the new menu was seen or that none was, and the wait, #374;
+// `overlayClick`: a coordinate click on a row of the app's own overlay, carried by the row's AXPress and whether the
+// overlay closed, or why #452's refusal stood, {window, by, kind?, route?, confirmed?, refused?, ...}, #453).
 const OPTIONAL_INPUT_META = ['activationGuardMs', 'activationClick', 'activationClickKind', 'activationJoin', 'pointUnconfirmed', 'intervention', 'entered', 'routeAdvice', 'delivery', 'afterActionRepairs', 'paste',
-  'elementClick', 'coordinateClick', 'pointerEstablish', 'stalePoint', 'scroll', 'typeReadback', 'keyEffect', 'menu'];
+  'elementClick', 'coordinateClick', 'pointerEstablish', 'stalePoint', 'scroll', 'typeReadback', 'keyEffect', 'menu', 'overlayClick'];
 
 // The Skyshot timings the native matrix keeps per call (scripts/native-matrix/lane.mjs engineMetaOf), so a row on a
 // web-shaped app shows how its observations went: whether the app is web-shaped and Chromium's, the application

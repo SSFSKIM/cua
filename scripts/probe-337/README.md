@@ -1046,3 +1046,93 @@ Every other Chrome attribute is the same across the app menu, tab search and sit
 - **A signal measured after the press is available.** The UI's own window kind (layer 101 for a menu, layer 0 for a
   bubble) is what #458's effect check already reads. That is why tab search and site information answer
   `clickUnconfirmed`.
+
+## #469 qual: main 1a1956b2 against fix/469-popup-menu-only 88c24213
+
+Kit `scripts/probe-463/qual469.mjs` (reader `reader469.mjs`; workflow `probe-463.yml` with `kit: qual469`), one engine
+head per dispatch, built unmodified. The fix keeps main's posted click (`popUpClick.kept: browserView`) for an
+AXPopUpButton outside a web page whose AXDOMClassList reads.
+
+Cells, all with the app behind the person's Finder windows:
+- Chrome's site information, tab search and app menu, in shared-behind (10 rows) and dedicated-behind (5).
+- **Electron**: the image has no Electron app, so the kit builds one, as probe/433-qual's Electron lane did
+  (`scripts/probe-463/electron`, Electron 44.4.5 / Chromium 152, sandboxed, a preload bridge). Its window's page has a
+  toolbar with an `aria-haspopup="menu"` button whose click opens the app's native menu (`Menu.popup`, an NSMenu at layer
+  101), and a `<select>`. Electron's toolbar is page content: the button is an AXPopUpButton inside the web area. It is
+  never a native view, so the fix's rule does not reach it.
+- #458's pop-ups, ported from probe/458-qual: TextEdit's font pop-up, Script Editor's language pop-up and Chrome's
+  `<select>`. They run in layout a (shared-behind 8 rows, dedicated-behind 5) and layouts b, c and d (shared-behind, 6
+  each); every layout read back as built (340/340).
+- Parity: TextEdit's font-size combo box on its arrow, and the page's plain button Beta (6 each).
+
+What each row records:
+- **Frontmost**: `lsappinfo front`, read back to back from the click for 4 s (at least 139 reads per row). "Transient" means
+  any read other than the app before the click; "end" means the last read. Beside it is the engine's own
+  `delivery.frontmostRestored`: its guard saw the app become frontmost and put the person's app back.
+- **Focused window**: Finder's AXFocusedWindow and AXMainWindow, every ~5 ms through the row.
+- **F1 covered**: a layer-0 window in front of F1 that overlaps it, at 1.8 s.
+
+The 5 ms watch's AX focused application also follows an open menu's tracking. So it reads TextEdit or Chrome whenever a
+menu is open, while LaunchServices still says Finder; it is kept in the summaries and not used as the frontmost reading.
+
+Runs (Google Chrome 157.0.8103.79, macOS 26.7.2, image 20261117.0516.1, kit ec7e0c02, 170 rows each, no setup failures):
+- fix 88c24213990c01b35cefe13a2460ec2165980d7d: https://github.com/SSFSKIM/cua/actions/runs/44974548214
+- main 1a1956b2b7f749ccd1f8389fdc31566cd7b79a35: https://github.com/SSFSKIM/cua/actions/runs/44977678919
+- smoke, fix, 26 rows: https://github.com/SSFSKIM/cua/actions/runs/44973711131 (kit 52b23a1b). Its frontmost reading was
+  the AX one only, which led to the `lsappinfo` reading above.
+
+Artifacts are in `~/.local/share/probe-463/run-<id>/`.
+
+### Chrome's toolbar and the Electron fixture, main / fix
+
+| cell | answer [popUpClick] main / fix | UI open / up at 1.8 s, main / fix | frontmost changed, transient / end, main / fix | F1 covered, main / fix |
+|---|---|---|---|---|
+| site information, shared-behind | `clickUnconfirmed` [AXPress unconfirmed] 10 / ok route 3 [**kept browserView**] 10 | 10 / 10 bubble / **5 / 0** (opened and closed) | **10 / 10** Chrome / **10 / 0** (lsappinfo 4, the guard's `frontmostRestored` 8; back to Finder in all 10) | **10/10** / **0/10** |
+| tab search, shared-behind | `clickUnconfirmed` 10 / ok [kept browserView] 10 | 10 / 10 / **4 / 1** | **10 / 10** / **7 / 0** (lsappinfo 1, `frontmostRestored` 7) | **10/10** / **0/10** |
+| app menu, shared-behind | ok [AXPress confirmed] 10 / ok [kept browserView] 10 | 10 / 10 menu / 10 / 10 | 0 / 0 / 0 / 0 | 0/10 / 0/10 |
+| site information, dedicated-behind | `clickUnconfirmed` 5 / ok [kept browserView] 5 | 5 / 5 / **0 / 0** | 5 / 5 / 5 / 5 Chrome | 5/5 / 5/5 |
+| tab search, dedicated-behind | `clickUnconfirmed` 5 / ok [kept browserView] 5 | 5 / 5 / 5 / 5 | 5 / 5 / 5 / 5 Chrome | 5/5 / 5/5 |
+| app menu, dedicated-behind | ok [AXPress confirmed] 5 / ok [kept browserView] 5 | 5 / 5 / 5 / 5 | 0 / 0 (one empty `lsappinfo` read on main, not a change) / 0 / 0 | **0/5 / 5/5** (the app's window over F1) |
+| Electron menu button, shared-behind | ok route 3, no `popUpClick` (a page node) 10 / 10 | 2 / 0 / 7 / 0 (the menu opened and closed: #463) | 0 / 0 / 0 / 0 | 0/10 / 0/10 |
+| Electron menu button, dedicated-behind | ok 5 / 5 | 5 / 5 / 5 / 5 | 0 / 0 / 0 / 0 | 5/5 / 5/5 |
+| Electron `<select>`, shared-behind | ok route 3, no `popUpClick` 5 / 5 | 4 / 0 / 3 / 0 (opened and closed) | 0 / 0 / 0 / 0 | 0/5 / 0/5 |
+
+In the fix's shared-behind site-information and tab-search rows, the delivery guard's `frontmostRestored` and
+`repairedAfterRelease` say how the transient went. Chrome became frontmost and the guard put Finder back, inside a guard of
+133–757 ms (68–352 ms after the hold's release where it was repaired after it). `lsappinfo` saw Chrome first 85–241 ms
+after the click. This is main's posted click for these buttons, as before #458. In #463's measurement the profile and star
+bubble buttons had answered with Finder frontmost at 1.8 s, and the transient was not read there.
+
+### #458's cells and parity, main / fix (identical)
+
+| cell | rows | answer (both) | open and up at 1.8 s | frontmost changed (lsappinfo), transient / end | F1 covered |
+|---|---|---|---|---|---|
+| font, layouts a, b, c, d (shared) and a (dedicated) | 31 | ok route 3, `popUpClick` AXPress confirmed | 31/31 both | 0 / 0 both | 0/31 both |
+| language, the same | 31 | ok, AXPress confirmed | 31/31 both | 0 / 0 both | 0/31 both |
+| select, the same | 31 | ok, AXPress confirmed (shared: `action:AXPress:webArea`) | 31/31 both | 0 / 0 both | 0/31 both |
+| combo box arrow, shared-behind | 6 | ok, AXPress confirmed | 6/6 both (its list, L0 70×250) | 0 / 0 | 0/6 |
+| page button Beta, shared-behind | 6 | ok, `action:AXPress:webArea` | - | 0 / 0 | 0/6 |
+
+**Focused window.** Finder's focused and main window stayed F1 in every sample of every row, on both engines (340/340).
+
+### Reading
+
+- **The regression is gone at the end of the click.**
+  - Site information and tab search behind no longer leave Chrome frontmost: 0/10 each on the fix, against 10/10 on
+    main.
+  - They no longer leave F1 covered: 0/10 against 10/10.
+  - The answer is now ok (kept `browserView`) instead of the false `clickUnconfirmed`.
+- **The frontmost app still changes for a moment on the fix:** site information 10/10 and tab search 7/10. Chrome comes
+  forward about 100–250 ms in, and route 3's guard puts Finder back before the row ends. That is main's posted click for
+  these buttons. So "frontmost changed 0" holds at the end of the click but not through it.
+- **The bubble is closed again on the fix** (site information open 5/10, up 0; tab search open 4/10, up 1). That is #463's
+  restore-closes-transient-UI case, now returned for these two buttons, and the answer is ok.
+- **The app menu loses #458's confirmation, but still opens and stays up behind** (10/10 shared, by the posted click).
+  In dedicated mode the posted click raises Chrome's window over F1 (5/5), where main's press did not (0/5). Chrome does not
+  become frontmost there in either.
+- **Dedicated mode makes Chrome frontmost for both bubble buttons on both engines (5/5 each).** The fix does not change
+  that; it is not a #458 effect.
+- **The Electron toolbar pop-up is page content**, so neither engine takes #458's path for it. Its native menu opens and
+  is closed again by the shared-behind restore on both engines (main 2/10, fix 7/10 seen; up 0 on both), as #463 found
+  for menus. Dedicated keeps it up 5/5. No frontmost change on either engine.
+- **#458's cells and parity are unchanged:** 99/99 identical on main and the fix.

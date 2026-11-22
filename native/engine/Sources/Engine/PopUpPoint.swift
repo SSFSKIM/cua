@@ -54,19 +54,17 @@ import Foundation
 //   at any layer (its pull-down is a layer-101 menu; `document actions` a layer-0 popover that opens 0.5–1.5 s in, so it
 //   may answer unconfirmed while it opens late);
 // - AppKit's AXColorWell: AXPress, confirmed the same way (its popover is a layer-0 window);
-// - a right click (`contextMenuPoint`) on an AppKit element outside every page and not text: AXShowMenu, confirmed by a
-//   layer-101 menu;
 // - a page's `<input list>` (`datalistPoint`): the element click's route (its focus hold, then AXPress; the bare AXPress
 //   opened nothing, 0/3), confirmed by Chrome's suggestion window, layer 999.
 // And refused, nothing sent, in shared mode with the app not frontmost, naming the ways through (`backgroundClickRefused`,
-// `popUpClick.refused`): a right click in a web page (no element action opens a page's context menu behind), a right
-// click on AppKit text (AXShowMenu cannot aim at the word under the click; TextEdit's text view is one), and a
-// Chromium view's own button outside every page that advertises a popup, an AXPopUpButton (the app menu, tab search, site
+// `popUpClick.refused`): every right click (`contextMenuPoint`; no element action opens a context menu at a point, so
+// none can stand in for it), and a Chromium view's own button outside every page that advertises a popup, an AXPopUpButton (the app menu, tab search, site
 // information) or an AXButton whose AXHasPopup reads true (the profile button), whose AXPress opens the bubble but brings
 // the app to the front over the person's window. A plain Chromium button (Back, Reload: AXHasPopup false) keeps main's
 // click, and so does the bookmark star, which no attribute tells from Back. Dedicated mode keeps main's posted click for
 // what shared mode refuses: nobody's window is there to cover, it lets the window come forward (#282), and nothing puts the
-// order back, so the posted click left the page's context menu and the profile bubble up (3/3 each).
+// order back, so the posted click left the page's context menu and the profile bubble up (3/3 each); frontmost, the
+// posted one stays up (5/5).
 // An action that brings the app to the front itself is recorded and said in the answer (`popUpClick.activated`), never
 // a silent ok (the review of 1a1956b2..5364c10b).
 
@@ -146,13 +144,11 @@ enum PopUpControl: String, Equatable {
   case menuButton
   /// #463: AppKit's AXColorWell (TextEdit's `text color`), whose AXPress opens its colour popover.
   case colorWell
-  /// #463: the element a right click hits, AppKit's, whose AXShowMenu opens its context menu.
-  case contextMenu
   /// #463: a page's `<input list>`, whose element click opens its suggestion list.
   case datalist
 
   /// The action the click is carried by.
-  var action: String { self == .contextMenu ? kAXShowMenuAction : kAXPressAction }
+  var action: String { kAXPressAction }
 }
 
 /// How near the combo box's trailing edge its arrow's frame ends, in points.
@@ -285,18 +281,14 @@ enum PopUpRefusal: String, Equatable {
   /// #463 (ruling 1039): a Chromium view's own button outside every page that advertises a popup, the app not frontmost
   /// in shared mode.
   case browserView
-  /// #463: a right click in a web page, the app not frontmost in shared mode.
-  case webArea
-  /// #463 (the review of 1a1956b2..5364c10b, item 2): a right click on an AppKit text element, the app not frontmost in
-  /// shared mode.
-  case textElement
+  /// #463 (the re-review of 5364c10b..6a702ccf): any right click, the app not frontmost in shared mode.
+  case rightClick
 
   func error(app: String) -> EngineError {
     switch self {
     case .noAction: return popUpComboRefused(app: app)
     case .browserView: return browserPopUpRefused(app: app)
-    case .webArea: return webContextMenuRefused(app: app)
-    case .textElement: return textContextMenuRefused(app: app)
+    case .rightClick: return rightClickRefused(app: app)
     }
   }
 }
@@ -336,20 +328,20 @@ func isOpenAtControl(_ window: ListedWindow, kind: PopUpControl, pids: Set<pid_t
 }
 
 /// Whether a window new since the press can be what it opened, a window of the app's showing something: a pop-up
-/// button's menu and a context menu (#463) at the menu layer; a combo box's list at any layer (TextEdit's: a new layer-0
+/// button's menu at the menu layer; a combo box's list at any layer (TextEdit's: a new layer-0
 /// window above the document window, 20/20, run 44888938314); a menu button's menu or popover and a colour well's popover
 /// at any layer (#463: `list style`'s menu at 101, `document actions`' and the colour well's popovers at 0); an `<input
 /// list>`'s suggestions at `datalistWindowLayer` (#463).
 func isOpenedWindow(_ window: ListedWindow, kind: PopUpControl, pids: Set<pid_t>) -> Bool {
   switch kind {
-  case .popUpButton, .contextMenu: return isMenuWindow(window, pids: pids)
+  case .popUpButton: return isMenuWindow(window, pids: pids)
   case .comboBoxArrow, .menuButton, .colorWell: return pids.contains(window.owner) && window.alpha > 0
   case .datalist: return pids.contains(window.owner) && window.layer == datalistWindowLayer && window.alpha > 0
   }
 }
 
-/// Whether the observation recorded `element` at the point (#463's agreement for a right click's element and a browser
-/// view's button, as `recordedPopUp`'s is for a pop-up button): the deepest recorded node there (its handle now or the
+/// Whether the observation recorded `element` at the point (#463's agreement for a browser view's button, as
+/// `recordedPopUp`'s is for a pop-up button): the deepest recorded node there (its handle now or the
 /// recorded one), one of its recorded ancestors, or the recorded control beneath it (`underlying`).
 func recordedHolds<Element>(_ verdict: StalePointVerdict<Element>, same: @escaping (Element, Element) -> Bool) -> (Element) -> Bool {
   var held: [Element] = []
@@ -364,21 +356,6 @@ func recordedHolds<Element>(_ verdict: StalePointVerdict<Element>, same: @escapi
   }
   if let control = verdict.underlying { held.append(control.element) }
   return { element in held.contains { same($0, element) } }
-}
-
-/// Whether the deepest recorded node at the point is an AXWebArea or lies in one by the record (#463: a page point whose
-/// hit-test answers a coarse view that walks to the window, before Chrome's page tree is exposed, #288).
-func recordedNodeInWebArea<Element>(_ verdict: StalePointVerdict<Element>) -> Bool {
-  guard let node = verdict.node else { return false }
-  // The record's own web area (`ScreenshotNode.webArea`), which a frameless web area's descendants carry too.
-  if node.role == "AXWebArea" || node.webArea != nil { return true }
-  var index = node.ancestor
-  var levels = 0
-  while let at = index, at < verdict.nodes.count, levels < stalePointAncestorLevels {
-    if verdict.nodes[at].role == "AXWebArea" { return true }
-    (index, levels) = (verdict.nodes[at].ancestor, levels + 1)
-  }
-  return false
 }
 
 /// #458's decision (design ruling 977): `hit` is what the app's hit-test answered at the point (`WindowHit.answered` of
@@ -489,45 +466,17 @@ func datalistPoint<Element>(_ field: Element, recorded: RecordedPopUp<Element>, 
   return .press(PopUpTarget(element: field, control: field, kind: .datalist, role: role, near: near, before: list))
 }
 
-/// The roles whose context menu acts on the text under the click (the review of 1a1956b2..5364c10b, item 2): text entry
-/// (#283's editable roles) and static text, whose selectable labels offer the same menu.
-let contextMenuTextRoles: Set<String> = webAreaEditableRoles.union([kAXStaticTextRole])
-
-/// #463: a right click (`mouse_button: right`, one click) at a kept point, the app not frontmost (frontmost, its posted
-/// right click's context menu stays up, 5/5: main's path, nothing read). In a web page by the hit's walk or the record
-/// (`recordedInWebArea`): refused in shared mode, since no element action opens a page's context menu behind (the engine's
-/// Show Menu and the kit's AXShowMenu 0/8 on Chrome's page) and the posted one closes it (4/6); dedicated mode keeps the
-/// posted right click, which left the page's menu up (3/3). The record's web area decides first, with or without a live
-/// hit (the review of 1a1956b2..5364c10b, item 3), so a late or missing hit never posts it. Outside every page, on an
-/// AppKit element (AXDOMClassList unsupported) that the observation recorded at the point and that advertises
-/// AXShowMenu: carried by its AXShowMenu, confirmed by a menu window of the app's at the element. Except on text (item
-/// 2): AXShowMenu takes the element and not the point, and a text element's context menu acts on the word or selection
-/// under the click, so the menu it opens may be for other text; a right click there (`contextMenuTextRoles`) is refused
-/// in shared mode (`textElement`; TextEdit's text view, where the posted one's menu closed 6/6), and dedicated mode keeps
-/// the posted one. Signals that disagree, a Chromium view's element, an ancestry or window list that does not read, and
-/// an element with no AXShowMenu keep main's path, said in `popUpClick.kept`.
-func contextMenuPoint<Element>(hit: Element?, recordedAt: (Element) -> Bool, recordedInWebArea: Bool, point: CGPoint, pids: Set<pid_t>,
-                               reads: PopUpReads<Element>, shared: Bool, frontmost: () -> Bool,
-                               windows: () -> [ListedWindow]?) -> PopUpPoint<Element> {
-  guard !frontmost() else { return .notPopUp }
-  if recordedInWebArea { return shared ? .refuse(.webArea, role: hit.flatMap(reads.role) ?? "AXWebArea") : .notPopUp }
-  guard let hit else { return .notPopUp }
-  let role = reads.role(hit) ?? ""
-  let walk = webAreaWalk(hit, role: reads.role, parent: reads.parent)
-  if walk == .inside || walk == .aboveWebArea { return shared ? .refuse(.webArea, role: role) : .notPopUp }
-  guard walk == .outside else { return .kept(.ancestryUnread, role: role) }
-  switch reads.viewClass(hit) {
-  case .unsupported: break
-  case .answered: return .kept(.browserView, role: role)
-  case .unread: return .kept(.viewClassUnread, role: role)
-  }
-  if contextMenuTextRoles.contains(role) { return shared ? .refuse(.textElement, role: role) : .notPopUp }
-  guard recordedAt(hit) else { return .kept(.notRecorded, role: role) }
-  guard reads.actions(hit)?.contains(kAXShowMenuAction) == true else { return .kept(.noAction, role: role) }
-  let near = (reads.frame(hit) ?? CGRect(origin: point, size: .zero)).insetBy(dx: -popUpMenuMargin, dy: -popUpMenuMargin)
-  guard let list = windows() else { return .kept(.windowsUnread, role: role) }
-  guard !list.contains(where: { isMenuWindow($0, pids: pids) && $0.bounds.intersects(near) }) else { return .kept(.open, role: role) }
-  return .press(PopUpTarget(element: hit, control: hit, kind: .contextMenu, role: role, near: near, before: list))
+/// #463 (the re-review of 5364c10b..6a702ccf, which drops the design's AXShowMenu delivery): a right click (`mouse_button:
+/// right`, one click) at a kept point, the app not frontmost, in shared mode, is refused with nothing sent, whatever it
+/// hits, text or not, page or native, and with or without a live hit. Route 3's release closes the posted one's context
+/// menu (TextEdit's text view 6/6, Chrome's page 4/6), and no element action can stand in for it: AXShowMenu takes an
+/// element and no point, so nothing shows the menu it opens is the one the point would open (a text view's acts on the
+/// word under the click, a row's may depend on the column), and on a page it opens none (0/8). The model names an
+/// element's own menu itself, with Show Menu on that element. Frontmost (its posted menu stays up, 5/5) and in dedicated
+/// mode (the page's menu stayed up, 3/3) main's path stands, unrecorded.
+func contextMenuPoint<Element>(hit: Element?, reads: PopUpReads<Element>, shared: Bool, frontmost: () -> Bool) -> PopUpPoint<Element> {
+  guard shared, !frontmost() else { return .notPopUp }
+  return .refuse(.rightClick, role: hit.flatMap(reads.role) ?? "")
 }
 
 /// The person's windows in front of the app's window (`appWindow`), front to back: layer 0, showing something, of another
@@ -744,9 +693,9 @@ func popUpRestoreOrder<Window>(_ persons: [ListedWindow], appWindow: CGWindowID,
   return ended(nil, complete: covered(focused, by: appWindow, in: final) == false)
 }
 /// The meta's `popUpClick` (#458, value-free): the control's role; and either why main's path was kept (`kept`), the
-/// refusal (`refused`: `noAction`, a combo box whose arrow has no action; #463's `browserView` and `webArea`), or the click
+/// refusal (`refused`: `noAction`, a combo box whose arrow has no action; #463's `browserView` and `rightClick`), or the click
 /// delivered as the control's action (`delivery: "action"`, set once the action is dispatched; `kind` what it was carried
-/// as, #463, and `action` the action, AXPress or a right click's AXShowMenu; `arrow: true` for a combo box's arrow) with its effect,
+/// as, #463, and `action` the action, AXPress; `arrow: true` for a combo box's arrow) with its effect,
 /// whether the baseline before the press read (`baselineUnread`), the window seen to open, the restore of the person's
 /// window order when the open had raised the app's window over it (`restored`), the action's AXError when it was not
 /// success, the reads and the milliseconds from the action's return to the open.
@@ -893,8 +842,8 @@ func popUpAwaitOpen<Element>(_ target: PopUpTarget<Element>, before: [ListedWind
 }
 
 /// #458's step in a coordinate click, after the stale-point guard kept the point (and after #454's) and before anything
-/// is posted: the decision carried out. True when it carried the click (the control's action performed, AXPress or #463's
-/// AXShowMenu, and the open seen; an unconfirmed one throws), so the caller posts nothing; a refusal throws with nothing
+/// is posted: the decision carried out. True when it carried the click (the control's AXPress performed and the open
+/// seen; an unconfirmed one throws), so the caller posts nothing; a refusal throws with nothing
 /// sent; false leaves
 /// the click to main's path, `kept`'s reason in the meta. Before the press the request's deadline is checked, then
 /// `hold` runs (the press owner's forbidden check, the element click's focus hold when `route` is 3, and the stale-point
@@ -1012,7 +961,6 @@ func popUpUnconfirmed(app: String, kind: PopUpControl = .popUpButton, activated:
   case .comboBoxArrow: (carried, seen) = ("the combo box's arrow's AXPress action", "no list was seen to open at the combo box")
   case .menuButton: (carried, seen) = ("the menu button's AXPress action", "no menu or panel was seen to open at the button")
   case .colorWell: (carried, seen) = ("the colour well's AXPress action", "no panel was seen to open at it")
-  case .contextMenu: (carried, seen) = ("the element's Show Menu action (AXShowMenu)", "no context menu was seen to open at it")
   case .datalist: (carried, seen) = ("the field's AXPress action", "its suggestion list was not seen to open")
   }
   let closes = kind == .popUpButton || kind == .comboBoxArrow ? "the menu it opens" : "what it opens"
@@ -1031,7 +979,6 @@ func popUpActivatedNote(app: String, kind: PopUpControl) -> String {
 func popUpOpenedNoun(_ kind: PopUpControl) -> String {
   switch kind {
   case .popUpButton, .comboBoxArrow, .menuButton: return "menu"
-  case .contextMenu: return "context menu"
   case .colorWell: return "panel"
   case .datalist: return "suggestion list"
   }
@@ -1059,19 +1006,12 @@ func browserPopUpRefused(app: String) -> EngineError {
     "\(app)'s own button here opens a menu or panel, which a click cua sends while \(app) is not the frontmost app does not leave open, and its accessibility action would bring \(app) to the front over the person's window. Nothing was sent. Ask the person to bring \(app) to the front first, or reach the same command another way: a keyboard shortcut, or \(app)'s menu bar by its elements.")
 }
 
-/// #463: a right click in a web page, the app not frontmost in shared mode: the posted one's context menu is closed as
-/// route 3 lets the app go, and no accessibility action opens a page's context menu behind.
-func webContextMenuRefused(app: String) -> EngineError {
+/// #463 (the re-review of 5364c10b..6a702ccf): a right click, the app not frontmost in shared mode: the posted one's
+/// context menu is closed as route 3 lets the app go, and no accessibility action opens one at a point. The ways through:
+/// the person, keys, or the model's own Show Menu on the element it means.
+func rightClickRefused(app: String) -> EngineError {
   EngineError(name: "backgroundClickRefused",
-    "\(app)'s web page does not keep a context menu open for a right click cua sends while \(app) is not the frontmost app, and no accessibility action opens one there. Nothing was sent. Ask the person to bring \(app) to the front first, or act on the page without its context menu: click the element by its ID, or use keys.")
-}
-
-/// #463 (the review of 1a1956b2..5364c10b, item 2): a right click on text in a native app, the app not frontmost in shared
-/// mode: the posted one's context menu is closed as route 3 lets the app go, and Show Menu cannot aim at the text under
-/// the click.
-func textContextMenuRefused(app: String) -> EngineError {
-  EngineError(name: "backgroundClickRefused",
-    "\(app)'s context menu for text acts on the text under the pointer, which no accessibility action can aim at, and a right click cua sends while \(app) is not the frontmost app does not leave the menu open. Nothing was sent. Ask the person to bring \(app) to the front first, or use keys instead: select the text with selectText, then use \(app)'s keyboard shortcuts or its menu bar by its elements.")
+    "\(app) does not keep a context menu open for a right click cua sends while \(app) is not the frontmost app, and no accessibility action opens one at a point. Nothing was sent. Ask the person to bring \(app) to the front first, or use keys, or, for an element's own menu, call performSecondaryAction with \"Show Menu\" on that element by its ID.")
 }
 
 /// The control opened its menu or list between the decision and the press (during the focus hold): pressing it would
@@ -1081,7 +1021,7 @@ func popUpOpenedSince(_ kind: PopUpControl = .popUpButton) -> EngineError {
   case .popUpButton, .comboBoxArrow:
     return EngineError(name: "screenChangedSinceScreenshot",
       "The screen changed since the screenshot: the pop-up button at this point now shows its menu open, and a press would close it. The button was not pressed. Take a new screenshot or call getAXState() to see the menu's items before clicking one.")
-  case .menuButton, .colorWell, .contextMenu, .datalist:
+  case .menuButton, .colorWell, .datalist:
     return EngineError(name: "screenChangedSinceScreenshot",
       "The screen changed since the screenshot: the control at this point now shows its menu or list open, and its action would close it. Nothing was pressed. Take a new screenshot or call getAXState() to see the items before clicking one.")
   }
@@ -1093,7 +1033,7 @@ func popUpDeadlinePassed(_ kind: PopUpControl = .popUpButton) -> EngineError {
   case .popUpButton, .comboBoxArrow:
     return EngineError(name: "timeoutReached",
       "timeoutReached: the request's deadline passed before the pop-up button's AXPress action was sent. The button was not pressed.")
-  case .menuButton, .colorWell, .contextMenu, .datalist:
+  case .menuButton, .colorWell, .datalist:
     return EngineError(name: "timeoutReached",
       "timeoutReached: the request's deadline passed before the control's \(kind.action) action was sent. Nothing was pressed.")
   }

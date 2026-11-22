@@ -38,7 +38,7 @@ for (const file of process.argv.slice(2)) {
   console.log(`- frontmost changed, transient: ${clicked.filter(r => r.front?.transient).length}/${clicked.length}; at the end: ${clicked.filter(r => r.front?.endChanged).length}/${clicked.length}`);
   console.log(`- key or main window changed: ${clicked.filter(r => r.key?.changed).length}/${clicked.length}`);
   const raised = clicked.filter(r => r.windows?.aboveMs > 0);
-  console.log(`- observed window listed over the cover's (behind rows), window order changed: ${raised.length}/${clicked.filter(r => !r.front).length}${raised.length ? ` (${tally(raised.map(r => r.cell))})` : ''}`);
+  console.log(`- observed window listed over the cover's (behind rows), window order changed: ${raised.length}/${clicked.filter(r => r.mode.endsWith("behind")).length}${raised.length ? ` (${tally(raised.map(r => r.cell))})` : ''}`);
   console.log(`- wrong row: ${wrong.length}/${clicked.length}${wrong.length ? ` (${wrong.map(r => `${r.label} ${r.effect}`).join(', ')})` : ''}`);
   const rl = results.filter(r => r.click && r.how === 'relayout');
   console.log(`- re-laid-out: refused ${rl.filter(r => r.click.error).length}, same text taken ${rl.filter(r => ok(r) && tookIt(r)).length}, different row taken ${rl.filter(r => /^wrongRow/.test(r.effect ?? '')).length}, other ${rl.filter(r => !r.click.error && !tookIt(r) && !/^wrongRow/.test(r.effect ?? '')).length} (of ${rl.length})`);

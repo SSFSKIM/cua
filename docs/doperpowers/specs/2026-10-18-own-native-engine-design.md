@@ -8067,6 +8067,41 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   the service test file 44/44.
   Date/Author: 2026-11-22, cursor235's builder for #442.
 
+### M4 re-cut (2026-11-23, branch `feat/117-m4-recut` from main b1b15484)
+
+M4 is ported by task from `feat/117-m4` (a8c3bc1c, closed PR #211) onto today's main, per the M4/M5 pre-flight
+(`docs/doperpowers/specs/2026-10-18-own-native-engine-m4m5-preflight.md`, revision 3, on `docs/117-progress`), tasks T1
+to T7. Where M4's code met a later decision on main, the later decision won; each such place is named below.
+
+- Decision (T1, install on macOS; amends M4.1): `cua install` builds and signs the macOS engine when it is selected
+  or `--engine` asks, and **stops at a pending build**: it never sends `approve`, launches the engine or captures, so an
+  ordinary or CI install raises no permission or capture prompt, before or after the default flip. Approval stays
+  the explicit `cua engine approve` with the owner at the console (the design's install text and M4.1 already said so;
+  the pre-flight's revision 2 wrongly had install approve, corrected in revision 3 by the design session's ruling). A
+  test proves neither a plain install nor `install --engine` sends `approve`, launches anything, prompts or writes
+  `approved.json`.
+  Rationale: approval makes the prompting requests and a capture, which only the owner can answer.
+  Date/Author: 2026-11-23, M4 re-cut controller (T1).
+- Decision (T1; later decision kept): `--engine` has one meaning on both platforms, "cua's engine is required": on Linux
+  it is #171's flag unchanged; on macOS it builds whatever the setting selects and only with it does a build failure
+  fail the install. #171 refused the flag on macOS; only that refusal is replaced. Other platforms refuse it.
+  `--engine-sign adhoc` and `--sign-wait` (with `CUA_SIGN_WAIT_MS`, read only when the engine step runs) are macOS
+  only, as `cua engine build`'s are. The macOS engine step runs last, after Node (Linux's stays before Node). Without
+  `--engine`, an unreadable setting is a warning (`invalid_setting`) and the install stands (M4 let it throw after the
+  runtime was in place; the design says only `--engine` makes the engine step fail the install). A failed default build
+  is reported on stdout as Linux reports its engine step (M4 wrote a stderr warning). The JSON `engine` field on macOS
+  is `{skipped: 'not_selected'}`, `{status: 'warn', code, message, hint}` or `{status: 'pass', …build, approved}`, with
+  `approved` read without launching anything.
+  Rationale: finding 7 of the pre-flight: `cua install --engine` was Linux's and the macOS selection's sentence named it.
+  Date/Author: 2026-11-23, M4 re-cut controller (T1).
+- Decision (T1): the selection's `engine_not_installed` sentence (`launch.mjs`) and doctor's matching repl-host
+  sentence name both steps: `cua install --engine` builds the engine pending, then `cua engine approve` with the owner
+  at the console. The harness acquisition installs (native-baseline's prepare, the remote endpoint, the selection
+  device, browser parity's capability home) pin `CUA_NATIVE_ENGINE=vendor` on their install step, so an ambient
+  selection or identity never builds an engine under a scratch home. `hosted.sh`, `hosted-gate.sh` (T4) and the
+  acceptance scripts (T3) are left to their tasks.
+  Date/Author: 2026-11-23, M4 re-cut controller (T1).
+
 ## Outcomes & Retrospective
 
 Pending for the initiative — written at finish. M1a's interim account (2026-10-20) follows; the full record is `docs/doperpowers/specs/2026-10-18-own-native-engine-m1a-report.md`.

@@ -10,8 +10,8 @@ import XCTest
 // for names and inlined file-private helpers: at 0d19fdfa (#519's base, which main 82ac93f3 equals for every consumer
 // that chooses a target), and #453's row check at 82ac93f3 (#519's strict read).
 //
-// #520 adds the value read now: through #405's classification, in one batch with the role and the subrole, and only where
-// the record holds evidence for it. Main read it raw with a single read and never classified it. So the static text's
+// #520 (ruling 1157) replaces each raw read of the value now, where main made it, by one classified sample: the role, the
+// subrole and the value in one batch. Main read it raw with a single read and never classified it. So the static text's
 // value now is not a logical slot handed to both sides alike: it is a world (`ValueWorld`) of three independent inputs,
 // its element's classification (which main never read), the kind of its slot, and how a batch answers an unsupported
 // attribute (AXUIElement.h allows an error placeholder or kCFNull there, where a single read answers
@@ -20,7 +20,8 @@ import XCTest
 //
 // A consumer that chooses a target either answers as main did, or, where an unread value decided it, marks the whole
 // verdict refused (`StalePointUnreadValue`), never another candidate; a consumer that refuses the target already chosen
-// agrees only where main agreed. No label the head returns comes from a value it did not read open.
+// agrees only where main agreed. The head reads the value exactly as often as main does (each counted on its own side),
+// and no label it returns comes from a value it did not read open.
 
 /// One label slot as the app answers it.
 private enum Slot: CaseIterable {
@@ -47,7 +48,7 @@ private enum Slot: CaseIterable {
 /// unsupported attribute.
 private struct ValueWorld: CustomStringConvertible {
   enum Classification: CaseIterable { case open, secure, roleFailed, subroleFailed, subroleNull, requestFailed }
-  enum Kind: CaseIterable { case absent, unsupported, empty, open, delete, failed, null, nonText }
+  enum Kind: CaseIterable { case absent, unsupported, empty, open, attributed, delete, failed, null, nonText }
   /// How a batch answers an unsupported attribute: an error placeholder, or kCFNull (AXUIElement.h:228).
   enum Form { case placeholder, null }
   let classification: Classification
@@ -62,7 +63,11 @@ private struct ValueWorld: CustomStringConvertible {
   /// A button's: it has no value label.
   static let none = ValueWorld(classification: .open, kind: .absent, form: .placeholder)
 
-  var text: String? { kind == .empty ? "" : kind == .open ? "Open" : kind == .delete ? "Delete" : nil }
+  var text: String? { kind == .empty ? "" : kind == .open || kind == .attributed ? "Open" : kind == .delete ? "Delete" : nil }
+
+  /// The slot's value where it holds text: a string, or for `attributed` an attributed string (AXStaticText's AXValue in
+  /// AppKit and WebKit may be either).
+  var textValue: CFTypeRef { kind == .attributed ? NSAttributedString(string: text!) : text! as CFString }
 
   /// Main's single read of AXValue (`copyAttribute`): its value and error, whatever the classification.
   var single: (value: CFTypeRef?, error: AXError) {
@@ -72,7 +77,7 @@ private struct ValueWorld: CustomStringConvertible {
     case .failed: return (nil, .cannotComplete)
     case .null: return (kCFNull, .success)
     case .nonText: return (nonTextLabelSlot, .success)
-    case .empty, .open, .delete: return (text! as CFString, .success)
+    case .empty, .open, .attributed, .delete: return (textValue, .success)
     }
   }
 
@@ -85,7 +90,7 @@ private struct ValueWorld: CustomStringConvertible {
     case .failed: value = axErrorSlot(.cannotComplete)
     case .null: value = kCFNull as Any
     case .nonText: value = nonTextLabelSlot
-    case .empty, .open, .delete: value = text! as CFString
+    case .empty, .open, .attributed, .delete: value = textValue
     }
     let subrole: Any
     switch classification {
@@ -109,8 +114,9 @@ private final class Elem {
   let role: String
   var live: [StalePointLabelPart: Slot]
   var world: ValueWorld
-  /// How many times the head read the value now (#520: never without evidence).
+  /// How many times the head read the value now (`classifiedValue`), and main (its single raw reads): ruling 1157, equal.
   var valueReads = 0
+  var mainValueReads = 0
   let frame = CGRect(x: 20, y: 100, width: 120, height: 40)
   init(_ role: String, _ live: [StalePointLabelPart: Slot], _ world: ValueWorld = .none) { (self.role, self.live, self.world) = (role, live, world) }
 }
@@ -183,12 +189,21 @@ private var headReads: StalePointReads<Elem> { StalePointReads<Elem>(
 /// AXValue included, whatever the element's classification; `value` as `liveLabel` read it (none unless a text).
 private var mainReads: StalePointReads<Elem> {
   func single(_ element: Elem, _ part: StalePointLabelPart) -> (value: CFTypeRef?, error: AXError) {
-    part == .value ? element.world.single : singleRead(element.live[part] ?? .absent)
+    guard part == .value else { return singleRead(element.live[part] ?? .absent) }
+    element.mainValueReads += 1
+    return element.world.single
   }
   return StalePointReads<Elem>(
     role: { $0.role }, frame: { $0.frame }, parent: { _ in nil }, children: { _ in nil },
     title: { $0.live[.title]?.text }, description: { $0.live[.description]?.text },
-    value: { element in element.world.single.value.flatMap { $0 as? String } },
+    // `liveLabel`: a successful read's string, or an attributed string's text; none for anything else.
+    value: { element in
+      let read = single(element, .value)
+      guard read.error == .success, let value = read.value else { return nil }
+      if CFGetTypeID(value) == CFStringGetTypeID() { return value as? String }
+      if CFGetTypeID(value) == CFAttributedStringGetTypeID() { return (value as! NSAttributedString).string }
+      return nil
+    },
     label: { element, part in
       let read = single(element, part)
       return stalePointLabelRead(read.value, read.error)
@@ -372,24 +387,28 @@ final class LabelMonotonicityTests: XCTestCase {
       let element = Elem(role, live)
       let (head, main) = (headNode(element, recorded), mainNode(element, recorded))
       for world in role == "AXStaticText" ? ValueWorld.all : [.none] {
-        (element.world, element.valueReads) = (world, 0)
+        (element.world, element.valueReads, element.mainValueReads) = (world, 0, 0)
         body(element, head, main, "\(role) \(recorded) → \(live), \(world)")
       }
     }
   }
 
-  /// Rule 3 (evidence-only) and rule 1 (never quoted): the value is read now only where the record holds non-empty text
-  /// or null for it, and a label the head answers is a title or description read now, or a value it read open.
-  private func checkReadsAndQuotes(_ element: Elem, _ head: ScreenshotNode<Elem>, label: String?, _ what: String) {
-    if element.valueReads > 0, !stalePointValueEvidence(head) { XCTFail("\(what): the value read without evidence") }
+  /// Ruling 1157 and rule 1 (never quoted): the head sampled the value exactly as often as main read it, each counted on
+  /// its own side over the same consumer, and a label the head answers is a title or description read now, or a value
+  /// it read open. The counters are reset.
+  private func checkReadsAndQuotes(_ element: Elem, label: String?, _ what: String) {
+    if element.valueReads != element.mainValueReads {
+      XCTFail("\(what): the value read \(element.valueReads) times, main \(element.mainValueReads)")
+    }
+    (element.valueReads, element.mainValueReads) = (0, 0)
     guard let label else { return }
     let quotable = [element.live[.title]?.text, element.live[.description]?.text] + (element.world.readOpen ? [element.world.text] : [])
     if !quotable.contains(label) { XCTFail("\(what): \"\(label)\" quoted from a value not read open") }
   }
 
-  /// A whole-verdict refusal may come only from a value unread: never from one read open where the record holds evidence.
-  private func checkRefusedWhole(_ element: Elem, _ head: ScreenshotNode<Elem>, _ what: String) {
-    if element.world.readOpen, stalePointValueEvidence(head) { XCTFail("\(what): a value read open refused the verdict whole") }
+  /// A whole-verdict refusal may come only from a value unread, never from one read open.
+  private func checkRefusedWhole(_ element: Elem, _ what: String) {
+    if element.world.readOpen { XCTFail("\(what): a value read open refused the verdict whole") }
   }
 
   /// The consumers that choose a target, on each combination and value world: #298 `relabelledLabel` (#433's candidate
@@ -405,31 +424,32 @@ final class LabelMonotonicityTests: XCTestCase {
         let mainLabel = mainRelabelledLabel(main, mainReads)
         if reads.unreadValue.decided {
           if label != nil || role != "AXStaticText" { XCTFail("\(what): relabel refused whole but answered \(label ?? "nil")") }
-          checkRefusedWhole(element, head, what)
+          checkRefusedWhole(element, what)
           tally["relabel: whole, main \(mainLabel == nil ? "kept" : "refused")", default: 0] += 1
         } else if label != mainLabel {
           XCTFail("\(what): relabel \(label ?? "nil"), main \(mainLabel ?? "nil")")
         }
-        checkReadsAndQuotes(element, head, label: label, what)
+        checkReadsAndQuotes(element, label: label, what)
 
         if controlDiffers(element, from: head, windowShift: .zero, headReads)
             != mainControlDiffers(element, from: main, windowShift: .zero, mainReads) { XCTFail("\(what): controlDiffers") }
 
-        element.valueReads = 0
+        // As `recreatedHandle` reads it: the value sampled where main read it (a recorded value), after the title and the
+        // description; `recordedHitAtPoint` samples it for any AXStaticText, which only adds reads the comparison ignores.
         let match = headReads
-        let agreed = stalePointLiveLabelsAgree(head, title: match.title(element), description: match.description(element)) {
-          match.liveValue(element, recorded: head)
-        }
+        let (title, description) = (match.title(element), match.description(element))
+        let agreed = stalePointLiveLabelsAgree(head, title: title, description: description,
+                                               value: head.value == nil ? nil : match.readValue(element))
         let mainAgreed = mainLabelsAgree(recordedTitle: main.title, recordedDescription: main.description, recordedValue: main.value,
                                          title: mainReads.title(element), description: mainReads.description(element),
                                          value: main.value == nil ? nil : mainReads.value(element))
         if let agreed {
           if agreed != mainAgreed { XCTFail("\(what): the re-created match \(agreed), main \(mainAgreed)") }
         } else {
-          checkRefusedWhole(element, head, what)
+          checkRefusedWhole(element, what)
           tally["match: whole, main \(mainAgreed ? "agreed" : "disagreed")", default: 0] += 1
         }
-        checkReadsAndQuotes(element, head, label: nil, what)
+        checkReadsAndQuotes(element, label: nil, what)
       }
     }
     // Each kind of whole refusal is reached, over a keep of main's as over a refusal.
@@ -452,24 +472,26 @@ final class LabelMonotonicityTests: XCTestCase {
   // The consumers that refuse the target already chosen only add refusals.
 
   /// #453 `overlayLabelsAgree` (agreeing presses): the head agrees only where main 82ac93f3 agreed, and so where
-  /// 0d19fdfa did; it reads the value only where the record holds evidence and never past an unread one. Among the rows
-  /// it refuses that main pressed: the value now classified closed, a batch's kCFNull, and a value recorded empty or absent.
+  /// 0d19fdfa did; it samples the value exactly where main read it, and never passes an unread one. Among the rows it
+  /// refuses that main pressed: the value now classified closed, and its slot unread (a batch's kCFNull, main's null or
+  /// none).
   func testOverlayLabelsAgreeOnlyWhereMainAgreed() {
     var refused: [String: Int] = [:]
     for role in ["AXButton", "AXStaticText"] {
       cases(role) { element, head, main, what in
         let agrees = overlayLabelsAgree(head, reads: headReads)
         let mainAgrees = mainStrictOverlayLabelsAgree(head, reads: mainReads)
+        checkReadsAndQuotes(element, label: nil, what)
         if agrees, !(mainAgrees && mainOverlayLabelsAgree(main, reads: mainReads)) { XCTFail("\(what): pressed where main refused") }
         if agrees, !element.world.readOpen, role == "AXStaticText" { XCTFail("\(what): pressed on a value not read open") }
-        checkReadsAndQuotes(element, head, label: nil, what)
         if mainAgrees, !agrees, role == "AXStaticText" {
-          let why = element.world.classification != .open ? "closed" : element.world.readOpen ? "no evidence" : "slot unread"
+          let why = element.world.classification != .open ? "closed" : element.world.readOpen ? "read open" : "slot unread"
           refused[why, default: 0] += 1
         }
       }
     }
-    for why in ["closed", "no evidence", "slot unread"] { XCTAssertGreaterThan(refused[why] ?? 0, 0, why) }
+    XCTAssertNil(refused["read open"], "a value read open refuses only where main refused")
+    for why in ["closed", "slot unread"] { XCTAssertGreaterThan(refused[why] ?? 0, 0, why) }
   }
 
   /// Ruling 1152's trap, on its own: a row whose title agrees and whose value was null at the observation, its AXValue now

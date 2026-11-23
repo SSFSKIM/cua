@@ -218,14 +218,14 @@ private func overlayLabelParts(_ role: String) -> [StalePointLabelPart] {
 /// side only disagrees; and with every part passed over nothing was compared, which disagrees too (the review of
 /// 435420cc..17930e20, P1: a row null in all its parts is never pressed unchecked). #519 (rulings 1146, 1151): read
 /// strictly (`ScreenshotNode.strictLabel`, `StalePointReads.readStrictLabel`), so a part whose value is no text, then or
-/// now, disagrees: the chosen row is refused, never another chosen. #520: the value is read through #405's
-/// classification, only where the record holds evidence (`StalePointReads.liveValue`); unread, it disagrees. A batch's
+/// now, disagrees: the chosen row is refused, never another chosen. #520 (ruling 1157): where main read the value, one
+/// classified sample in its place (`StalePointReads.readValue`); unread, it disagrees, as main's failed read did. A batch's
 /// kCFNull is unread, never null, so a value null then never passes over a value now unsupported.
 func overlayLabelsAgree<Element>(_ node: ScreenshotNode<Element>, reads: StalePointReads<Element>) -> Bool {
   func text(_ value: String?) -> String? { value.flatMap { $0.isEmpty ? nil : $0 } }
   func readNow(_ part: StalePointLabelPart) -> StalePointLabelRead? {
     guard part == .value else { return reads.readStrictLabel(node.element, part) }
-    switch reads.liveValue(node.element, recorded: node) {
+    switch reads.readValue(node.element) {
     case .text(let text): return .text(text)
     case .nonText: return .nonText
     case .unread: return nil

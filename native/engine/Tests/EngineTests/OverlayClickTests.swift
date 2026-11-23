@@ -718,7 +718,7 @@ final class OverlayClickTests: XCTestCase {
   /// #520 (ruling 1152): an option whose title agrees and whose AXValue is unsupported now, which the batch answers with
   /// kCFNull, classified open, is refused `labelChanged`: kCFNull is unread, never null. Recorded null, main's single read
   /// answered none and refused too, where kCFNull taken for null would pass over the null/null pair and press. Recorded
-  /// absent, the record holds no evidence for the value, so it is not read and the row refuses; main pressed.
+  /// absent, the batch's kCFNull is unread all the same and the row refuses, where main's single read said none and pressed.
   func testARowWhoseValueIsNowUnsupportedIsRefused() {
     for recordedNull in [true, false] {
       let scene = datalist { node in

@@ -33,6 +33,8 @@ private final class Node {
   var valueWithheld = false
   /// #520: how many times its value was read now (`StalePointReads.classifiedValue`).
   var valueReads = 0
+  /// #520's review of e9c6c51c: runs on each read of its frame (what the app does meanwhile).
+  var onFrameRead: (() -> Void)?
   /// Its role or its action names fail to read now (the review of b2f00ad5..25b23fbb, P2 2).
   var roleUnread = false
   var actionsUnread = false
@@ -84,7 +86,10 @@ private final class Node {
 }
 
 private var reads: StalePointReads<Node> {
-  StalePointReads<Node>(role: { $0.roleUnread ? nil : $0.role }, frame: { $0.frameUnread ? nil : $0.frame },
+  StalePointReads<Node>(role: { $0.roleUnread ? nil : $0.role }, frame: { node in
+                                            node.onFrameRead?()
+                                            return node.frameUnread ? nil : node.frame
+                                          },
                                           parent: { $0.parentUnread ? nil : $0.parent },
                                           children: { $0.childrenUnreadNow ? nil : $0.children },
                                           // A failed or null read answers none, as the live seam's `attribute` does.
@@ -5491,11 +5496,10 @@ final class OtherControlOnTopTests: XCTestCase {
   }
 }
 
-/// #520 (rulings 1150, 1151, 1152): a static text's value read now goes through #405's classification, in one batch with
-/// its role and subrole (`StalePointReads.classifiedValue`), and only where the record holds evidence for it
-/// (`stalePointValueEvidence`). An unread value is never compared or quoted; where a consumer that chooses a target needed
-/// it, the whole verdict refuses (`valueUnread`), never another target. The fake reads the value through the real batch
-/// decoder (`batchValueRead`).
+/// #520 (rulings 1150, 1151, 1152, 1157): where main read a static text's value raw, one classified sample is read in its
+/// place: its role, subrole and value in one batch (`StalePointReads.classifiedValue`). An unread value is never compared
+/// or quoted; where a consumer that chooses a target needed it, the whole verdict refuses (`valueUnread`), never another
+/// target. The fake reads the value through the real batch decoder (`batchValueRead`).
 final class ClassifiedValueTests: XCTestCase {
   private let point = CGPoint(x: 60, y: 110)
   private let secret = "hunter2 correct horse"
@@ -5543,24 +5547,16 @@ final class ClassifiedValueTests: XCTestCase {
     let message = stalePointOutcome(verdict, ms: 0, reads: reads).refusal?.message ?? ""
     XCTAssertFalse(message.contains("hunter2"), message)
     XCTAssertTrue(message.contains("the AXStaticText now lies on top at this point, over the AXLink \"Archive\""), message)
+    XCTAssertEqual(top.valueReads, 1, "one sample, where main read the value")
     top.secureNow = false
     XCTAssertTrue(stalePointOutcome(verdict, ms: 0, reads: reads).refusal?.message.contains("AXStaticText \"\(secret)\"") == true)
-    // A value the record held none of is not read for the sentence.
-    let blank = Node("AXStaticText", CGRect(x: 300, y: 340, width: 120, height: 20))
-    blank.actions = ["AXPress"]
-    window.add(blank)
-    let again = recorded(window)
-    blank.value = secret
-    (verdict.nodes, verdict.onTop) = (again, blank)
-    blank.valueReads = 0
-    XCTAssertFalse(stalePointOutcome(verdict, ms: 0, reads: reads).refusal?.message.contains("hunter2") == true)
-    XCTAssertEqual(blank.valueReads, 0)
   }
 
-  /// Rule 3, evidence-only: a text recorded with the title "Open" and its value withheld (#405 closed it then), whose title
-  /// and description are gone now: its value is not read, so not compared or quoted, and the verdict refuses whole. Main
-  /// read the value and refused `relabelled`, quoting it.
-  func testAValueWithheldAtTheObservationIsNeverReadNow() {
+  /// A text recorded with the title "Open" and its value withheld (#405 closed it then), whose title and description are
+  /// gone now: the value is sampled once, where main read it. Secure now, it is unread: the verdict refuses whole and
+  /// nothing is quoted (main refused `relabelled` quoting it). Open now, the rule is main's: refused `relabelled`, quoting
+  /// the value read open.
+  func testAValueWithheldAtTheObservationIsQuotedOnlyReadOpenNow() {
     let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 600, height: 400))
     let text = Node("AXStaticText", CGRect(x: 20, y: 100, width: 120, height: 20), title: "Open", value: secret)
     text.valueWithheld = true
@@ -5568,20 +5564,16 @@ final class ClassifiedValueTests: XCTestCase {
     let nodes = recorded(window)
     XCTAssertNil(nodes.last?.value)
     XCTAssertEqual(nodes.last?.label(.value), .unreadable, "withheld: unread in the record")
-    text.title = nil
-    text.valueReads = 0
+    (text.title, text.secureNow, text.valueReads) = (nil, true, 0)
     let refused = stalePointVerdict(at: point, nodes: nodes, hit: text, reads: reads)
     XCTAssertEqual(refused.reason, .valueUnread)
-    XCTAssertEqual(text.valueReads, 0, "never read")
+    XCTAssertEqual(text.valueReads, 1)
     XCTAssertFalse(stalePointOutcome(refused, ms: 0, reads: reads).refusal?.message.contains("hunter2") == true)
-    // Recorded empty, the same.
-    let empty = Node("AXStaticText", CGRect(x: 20, y: 100, width: 120, height: 20), title: "Open", value: "")
-    let other = Node("AXWindow", CGRect(x: 0, y: 0, width: 600, height: 400))
-    other.add(empty)
-    let emptyNodes = recorded(other)
-    (empty.title, empty.value, empty.valueReads) = (nil, secret, 0)
-    XCTAssertEqual(stalePointVerdict(at: point, nodes: emptyNodes, hit: empty, reads: reads).reason, .valueUnread)
-    XCTAssertEqual(empty.valueReads, 0)
+    (text.secureNow, text.valueReads) = (false, 0)
+    let open = stalePointVerdict(at: point, nodes: nodes, hit: text, reads: reads)
+    XCTAssertEqual(open.reason, .relabelled)
+    XCTAssertEqual(open.labelNow, secret)
+    XCTAssertEqual(text.valueReads, 1)
   }
 
   /// #433's loop never moves on for an unread value: two recorded controls beneath an inert veil at the point, a text that
@@ -5667,6 +5659,36 @@ final class ClassifiedValueTests: XCTestCase {
     XCTAssertEqual(stalePointPressVerdict(again, kept, reads: reads).reason, .recordedHit)
     again.secureNow = true
     XCTAssertEqual(stalePointPressVerdict(again, kept, reads: reads).reason, .valueUnread)
+  }
+
+  /// The review of 82ac93f3..e9c6c51c (P1, ruling 1157): #305's sample is taken where main read the value, right after the
+  /// title and the description, never later. Two recorded texts at one frame under one button: the first alive with a
+  /// description, the second gone, recorded "Open". The element pressed is a replacement reading "Delete", which turns to
+  /// "Open" while the first text's frame is read. Main read "Delete" before that frame and refused `pressedOther`; a sample
+  /// taken after it would read "Open" and press it as the second text's `recordedHit`.
+  func testTheRecordedHitSamplesTheValueWhereMainReadIt() {
+    let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 600, height: 400))
+    let button = Node("AXButton", CGRect(x: 10, y: 90, width: 300, height: 60), title: "Go")
+    let frame = CGRect(x: 20, y: 100, width: 120, height: 20)
+    let first = Node("AXStaticText", frame, description: "Icon")
+    let second = Node("AXStaticText", frame, value: "Open")
+    window.add(button)
+    button.add(first)
+    button.add(second)
+    let (nodes, frameless, members) = walkRecord(window)
+    let node = nodes.first { $0.element === button }!
+    let kept = StalePointVerdict(reason: .sameElement, node: node, identity: .handle, current: button, hit: button, point: point,
+                                 nodes: nodes, frameless: frameless, recorded: members)
+    second.destroy()
+    let replacement = Node("AXStaticText", frame, value: "Delete")
+    button.add(replacement)
+    first.onFrameRead = { replacement.value = "Open" }
+    let judged = stalePointPressVerdict(replacement, kept, reads: reads)
+    XCTAssertEqual(judged.reason, .pressedOther, "main's: the value read before the first text's frame")
+    XCTAssertEqual(replacement.valueReads, 1)
+    // Read "Open" from the start, it is the second text's recorded hit, as on main.
+    first.onFrameRead = nil
+    XCTAssertEqual(stalePointPressVerdict(replacement, kept, reads: reads).reason, .recordedHit)
   }
 
   /// The live read (`stalePointClassifiedValueRead`): the slot decoded only where the same batch classifies the element

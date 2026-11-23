@@ -399,10 +399,13 @@ export function removeLaunchDirs(launch) {
 
 // The own host's Linux sandbox settings: the pinned helper for this home and architecture (placed by `cua install`; its
 // bytes are checked by the connection's preflight and before each child, not here) and, with the computer surface, the
-// network for the trusted worker alone.
+// network for the trusted worker alone. The helper is named by its path as the kernel resolves it, outside the vendor's
+// tree (outsideVendorTree), so the host checks and runs the file the preflight checked (sandbox.mjs guardedLinuxHelper);
+// one that leads into the tree keeps its spelling, which the preflight then refuses, and nothing in the tree is named.
 function linuxSandboxEnv(home, arch, surfaces) {
   const helper = helperFor({home, arch});
-  return {CUA_REPL_SANDBOX_HELPER: helper.path, CUA_REPL_SANDBOX_HELPER_SHA256: helper.sha256, ...(surfaces.includes('computer') ? {CUA_REPL_WORKER_NETWORK: 'enabled'} : {})};
+  const path = outsideVendorTree(helper.path, home).real ?? helper.path;
+  return {CUA_REPL_SANDBOX_HELPER: path, CUA_REPL_SANDBOX_HELPER_SHA256: helper.sha256, ...(surfaces.includes('computer') ? {CUA_REPL_WORKER_NETWORK: 'enabled'} : {})};
 }
 
 // The REPL host a launch with `surfaces` on `platform` runs, and why -> {host: 'cua' | 'vendor', reason}, plus, for

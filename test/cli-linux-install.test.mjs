@@ -16,6 +16,7 @@ import {main} from '../src/cli.mjs';
 import {CuaError} from '../src/runtime/errors.mjs';
 import {CUA_ENTRY, RELEASES_DIR, linuxRelease, loadLinuxRuntime, loadPins, ownInstaller, selectPin} from '../src/runtime/manifest.mjs';
 import {openConnection} from '../src/mcp/connection.mjs';
+import {guardedLinuxHelper} from '../src/runtime/sandbox.mjs';
 import {SCRATCH_HOME} from './helpers/scratch-home.mjs';
 import {fakeManagedNode, fakeModuleTree} from './fixtures/own-linux-runtime.mjs';
 import {shortScratch} from './fixtures/runtime-fixture.mjs';
@@ -453,6 +454,22 @@ test('a helper the sessions refuse is remedied by this cua\'s installer with its
   placed.deps.linuxHelper = () => { throw new CuaError('sandbox_unavailable', `cua's Linux sandbox helper ${HELPER(other)} has SHA-256 x, not the pinned y; it is not run, and nothing was started`, {hint: `remove ${dirname(HELPER(other))} and run \`cua install\` to place the pinned helper again`}); };
   const foreign = await installJson(placed.deps);
   assert.equal(foreign.report.sessions.why.browser.hint, `stop any \`cua serve\` using it, move ${dirname(HELPER(other))} aside, then ${RELEASE_HINT}`);
+});
+
+test('a helper path that is a link into the vendor\'s tree: the readiness refuses it as a session does, naming the link to move aside, and reads nothing it leads to', async t => {
+  const home = scratchHome(t);
+  const planted = join(home, 'runtimes', 'codex-linux-sandbox');
+  mkdirSync(dirname(planted), {recursive: true});
+  writeFileSync(planted, 'helper');
+  mkdirSync(dirname(HELPER(home)), {recursive: true});
+  symlinkSync(planted, HELPER(home));
+  const {deps} = installers(home, {down: new Set(['helper'])});
+  deps.linuxHelper = ({home: real}) => guardedLinuxHelper({home: real, path: HELPER(real), sha256: 'e'.repeat(64), verifyHelper: () => assert.fail('nothing in the tree is verified')});
+  const {report} = await installJson(deps);
+  assert.equal(report.sessions.browser, false);
+  assert.equal(report.sessions.why.browser.code, 'sandbox_unavailable');
+  assert.match(report.sessions.why.browser.message, /vendor's tree/);
+  assert.equal(report.sessions.why.browser.hint, `stop any \`cua serve\` using it, move ${HELPER(home)} aside, then ${RELEASE_HINT}`);
 });
 
 test('a current.json that is a link, to a pointer or to nothing, is named to be moved aside as doctor names it', async t => {

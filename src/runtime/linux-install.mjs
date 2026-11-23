@@ -51,7 +51,8 @@ import {loadNodePins, nodeDistName, selectNodePin} from './managed-node.mjs';
 import {loadEnginePin} from './linux-engine.mjs';
 import {desktopModeFor, nativeEngineSetting, ownHostNode, replHostFor} from './launch.mjs';
 import {settingsFrom} from '../mcp/server.mjs';
-import {helperFor, sha256Of, linuxHelper as verifiedLinuxHelper} from '../sandbox/linux.mjs';
+import {helperFor, sha256Of} from '../sandbox/linux.mjs';
+import {installedLinuxHelper} from './sandbox.mjs';
 import {describeLeftovers, describeRemoval, findCodexLeftovers, removeCodexLeftovers} from './codex-leftovers.mjs';
 
 const failure = (error, code) => (error instanceof CuaError
@@ -75,7 +76,7 @@ function requestedLanes(values, env) {
 export async function installLinux({values, home, env = process.env, host = {platform: 'linux', arch: process.arch}, say = () => {}, progress = () => {}, onProgress,
   linuxRuntime = () => loadLinuxRuntime({host}), installModules = installModuleTree, installHelper = installSandboxHelper, installNode: nodeInstaller = installNode,
   installEngine = installLinuxEngine, installRuntime: vendorInstaller = installRuntime, enginePin = loadEnginePin, pins: loadVendorPins = loadPins, nodePins = loadNodePins,
-  resolveOwnNode = () => ownHostNode({ambient: env, home, platform: 'linux', arch: host.arch}), linuxHelper = verifiedLinuxHelper, engine: engineInputs}) {
+  resolveOwnNode = () => ownHostNode({ambient: env, home, platform: 'linux', arch: host.arch}), linuxHelper = installedLinuxHelper, engine: engineInputs}) {
   const pinsOf = () => vendorPinsOf(loadVendorPins);
   const release = linuxRelease(linuxRuntime(), host.arch);
   const installer = ownInstaller({release});
@@ -228,6 +229,8 @@ const once = resolve => {
 function checkedHelper({home, host, linuxHelper, installer}) {
   try { linuxHelper({home: realHome(home), arch: host.arch}); } catch (error) {
     if (!(error instanceof CuaError)) throw error;
+    // A link into the vendor's tree is named as the check names it, and what it leads to is never read here either.
+    if (error.context?.blocking) throw new CuaError(error.code, error.message, {hint: `stop any \`cua serve\` using it, move ${error.context.blocking} aside, then ${installer.hint}`});
     const {path, sha256} = helperFor({home: realHome(home), arch: host.arch});
     let foreign;
     try { foreign = sha256Of(readFileSync(path)) !== sha256; } catch (cause) { foreign = cause.code !== 'ENOENT'; }

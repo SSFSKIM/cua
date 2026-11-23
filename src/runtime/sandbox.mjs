@@ -20,7 +20,8 @@ import {pathToFileURL} from 'node:url';
 import {fail} from './errors.mjs';
 import {USERNS_REMEDY, bwrapUserns} from './linux-desktop.mjs';
 import {homeLayout} from './layout.mjs';
-import {verifyHelper as verifyLinuxHelper} from '../sandbox/linux.mjs';
+import {helperFor, verifyHelper as verifyLinuxHelper} from '../sandbox/linux.mjs';
+import {ownInstaller} from './installer.mjs';
 import {outsideVendorTree} from './vendor-tree.mjs';
 import {xdgApplicationRoots} from '../repl-host/launch-services.mjs';
 
@@ -279,6 +280,24 @@ function assertVendorLauncher(path) {
     {hint: 'restore cua\'s checkout (bin/cua-codex-compat), or set CUA_SHIM_SANDBOX=disabled to run without a sandbox openly'});
 }
 
+// The Linux sandbox helper at `path` as every check and every launch takes it (#171 M6a; the pre-flight's §3.5): resolved
+// as the kernel resolves it and kept out of the vendor's tree of the real cua home `home` (outsideVendorTree), then
+// verified at that resolution (src/sandbox/linux.mjs verifyHelper) -> {path: the resolution, sha256}, the path a launch
+// names and runs. One that leads into the tree is refused before anything there is read (sandbox_unavailable), naming
+// the link to move aside (`context.blocking`), since the installer would take the place it leads to as the helper.
+export function guardedLinuxHelper({home, path, sha256, verifyHelper = verifyLinuxHelper}) {
+  const at = typeof path === 'string' && isAbsolute(path) ? outsideVendorTree(path, home) : {};
+  if (at.lead) {
+    const blocking = at.links[0] ?? path;
+    fail('sandbox_unavailable', `cua's Linux sandbox helper ${path} leads to ${at.lead}, under the vendor's tree, which is no part of cua's: it is neither read nor run, and nothing was started`,
+      {hint: `move ${blocking} aside, then run \`${ownInstaller().command}\` to place the pinned helper`, context: {blocking}});
+  }
+  return verifyHelper({path: at.real ?? path, sha256});
+}
+// The pinned helper `cua install` placed in the real cua home `home` for `arch`, as guardedLinuxHelper takes it: doctor's
+// sandbox.launcher row and install's readiness check it as a session does.
+export const installedLinuxHelper = ({home, arch}) => guardedLinuxHelper({home, ...helperFor({home, arch})});
+
 // Linux: cua's sandbox helper (src/sandbox/linux.mjs) confines both children of a scoped or default launch, so before
 // anything starts the launch's helper must be the pinned one (the bytes `cua install` placed, checked against the pin
 // again: `verifyHelper`), and bubblewrap must be able to create an unprivileged user namespace (`probe`, doctor's
@@ -288,7 +307,8 @@ function assertVendorLauncher(path) {
 export const SANDBOX_UNAVAILABLE_HINT = `${USERNS_REMEDY}; install bubblewrap if it is missing; or set CUA_SHIM_SANDBOX=disabled to run without a sandbox openly`;
 export async function assertSandboxConfines(mode, {platform, launch, probe = bwrapUserns, verifyHelper = verifyLinuxHelper}) {
   if (mode === 'disabled' || platform !== 'linux') return;
-  verifyHelper({path: launch.env.CUA_REPL_SANDBOX_HELPER, sha256: launch.env.CUA_REPL_SANDBOX_HELPER_SHA256});
+  guardedLinuxHelper({home: launch.sandboxHelperRoot ? dirname(launch.sandboxHelperRoot) : undefined,
+    path: launch.env.CUA_REPL_SANDBOX_HELPER, sha256: launch.env.CUA_REPL_SANDBOX_HELPER_SHA256, verifyHelper});
   const found = await probe();
   if (found.status === 'pass') return;
   const why = found.status === 'missing' ? 'bubblewrap (bwrap) is not installed'

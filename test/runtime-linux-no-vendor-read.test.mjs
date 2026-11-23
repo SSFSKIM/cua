@@ -5,61 +5,32 @@
 // computer session and a browser-only one, in a home whose vendor tree is installed and whose PATH leads to the vendor
 // tree's bin. Its negative control is the Node lookup this cua still runs on macOS (ownHostNode's darwin branch, the
 // Linux one before M6a), which must be recorded stat-ing the vendor's bin/node. The traced live cell (§5.2, E1) is the
-// check on reads by any route the recorder does not wrap.
+// check on reads by any route the recorder does not wrap. The recorder (./helpers/vendor-tree-recorder.mjs) notes each
+// path as the call reaches it, through links and PATH, and also watches a real `cua serve` from its first line.
 import './helpers/scratch-home.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import childProcess from 'node:child_process';
+import {spawn, spawnSync} from 'node:child_process';
 import {syncBuiltinESMExports} from 'node:module';
-import {dirname, join, relative, isAbsolute} from 'node:path';
-import {fileURLToPath} from 'node:url';
+import {dirname, join, relative} from 'node:path';
+import {fileURLToPath, pathToFileURL} from 'node:url';
 import {buildLaunch, nativeEngineFor, ownHostNode, replHostFor, SKY_SERVICE, BROWSER_SERVICE} from '../src/runtime/launch.mjs';
-import {resolveRuntime} from '../src/runtime/manifest.mjs';
-import {assertSandboxFits} from '../src/runtime/sandbox.mjs';
+import {linuxRelease, loadLinuxRuntime, resolveRuntime} from '../src/runtime/manifest.mjs';
+import {assertSandboxConfines, assertSandboxFits} from '../src/runtime/sandbox.mjs';
+import {useRuntime} from '../src/runtime/install.mjs';
+import {inspectRuntime} from '../src/runtime/doctor.mjs';
+import {helperFor} from '../src/sandbox/linux.mjs';
+import {projectRoot} from '../src/secrets/project.mjs';
 import {MIN_ENGINE_VERSION} from '../src/services/engine/linux/client.mjs';
 import {forgeActiveRuntime, scratchUserHome, shortScratch} from './fixtures/runtime-fixture.mjs';
 import {fakeInstalledEngine, fakeManagedNode, fakeModuleTree} from './fixtures/own-linux-runtime.mjs';
+import {inVendorTree, recorded, startRecording, within} from './helpers/vendor-tree-recorder.mjs';
+
+const REPO = fileURLToPath(new URL('..', import.meta.url));
 
 const LINUX = {platform: 'linux', arch: 'x64'};
 const SESSION = '6f1c2d3e-0000-4000-8000-0000000006a3';
-
-// Every path a call names: strings, file URLs and buffers among its arguments, and the strings of an argument list.
-const pathsOf = args => args.flatMap(arg => (typeof arg === 'string' ? [arg] : arg instanceof URL ? [fileURLToPath(arg)] : Buffer.isBuffer(arg) ? [arg.toString()]
-  : Array.isArray(arg) ? arg.filter(item => typeof item === 'string') : []));
-
-// Runs `fn` with every function of node:fs, fs.promises and node:child_process wrapped to note the paths it is given,
-// the ESM bindings refreshed so the modules under test call the wrappers -> [{call, path}].
-function recorded(fn) {
-  const seen = [];
-  const restore = [];
-  const wrap = (owner, name, label = name) => {
-    const original = owner[name];
-    if (typeof original !== 'function' || /^[A-Z]/.test(name)) return;
-    const wrapper = function (...args) {
-      for (const path of pathsOf(args)) seen.push({call: label, path});
-      return original.apply(this, args);
-    };
-    Object.assign(wrapper, original);
-    owner[name] = wrapper;
-    restore.push(() => { owner[name] = original; });
-  };
-  for (const name of Object.keys(fs)) wrap(fs, name);
-  wrap(fs.realpathSync, 'native', 'realpathSync.native');
-  wrap(fs.realpath, 'native', 'realpath.native');
-  for (const name of Object.keys(fs.promises)) wrap(fs.promises, name, `promises.${name}`);
-  for (const name of Object.keys(childProcess)) wrap(childProcess, name);
-  syncBuiltinESMExports();
-  try {
-    fn();
-  } finally {
-    for (const undo of restore.reverse()) undo();
-    syncBuiltinESMExports();
-  }
-  return seen;
-}
-
-const within = (path, root) => { const rel = relative(root, path); return rel === '' || (!isAbsolute(rel) && !rel.startsWith('..')); };
 
 // A home as `cua install` leaves it after M6a, the vendor tree kept beside it: the module tree, the managed Node, an
 // engine recorded at the minimum, and the vendor's release with an executable bin/node.
@@ -94,7 +65,7 @@ for (const surfaces of [['computer'], ['browser']]) {
     const seen = recorded(() => { opened = session(h, surfaces); });
     assert.ok(seen.length > 0, 'the recorder saw the open\'s own reads');
     assert.ok(seen.some(({path}) => within(path, join(h.home, 'modules'))), 'it saw the module tree\'s check');
-    assert.deepEqual(seen.filter(({path}) => within(path, h.runtimes)), [], 'nothing under runtimes/');
+    assert.deepEqual(inVendorTree(seen, h.home), [], 'nothing under runtimes/');
     // and the launch names no such path to the runtime: no value of its environment, no trusted code path, no root
     const {launch} = opened;
     for (const [name, value] of Object.entries(launch.env)) assert.ok(!value.includes(h.runtimes), `${name} names the vendor tree: ${value}`);
@@ -110,7 +81,7 @@ for (const surfaces of [['computer'], ['browser']]) {
 test('the negative control: the Node lookup this cua still runs on macOS, the Linux one before M6a, is recorded stat-ing the vendor\'s bin/node', t => {
   const h = homeWithVendorTree(t);
   const seen = recorded(() => ownHostNode({ambient: h.ambient, home: h.home, platform: 'darwin'}));
-  assert.ok(seen.some(({call, path}) => call === 'statSync' && path === h.vendorNode), JSON.stringify(seen.filter(({path}) => within(path, h.runtimes))));
+  assert.ok(seen.some(({call, path}) => call === 'statSync' && path === h.vendorNode), JSON.stringify(inVendorTree(seen, h.home)));
 });
 
 // ---- the overrides and the managed parts, each a way into the tree (#171 M6a, task 149's fix wave 1) ----
@@ -120,7 +91,7 @@ function refusedWithoutReading(h, fn, code) {
   let error;
   const seen = recorded(() => { try { fn(); } catch (caught) { error = caught; } });
   assert.equal(error?.code, code, error?.message ?? 'not refused');
-  return {error, inTree: seen.filter(({path}) => within(path, h.runtimes))};
+  return {error, inTree: inVendorTree(seen, h.home)};
 }
 const selectEngine = (h, env) => nativeEngineFor({env: {HOME: h.ambient.HOME, ...env}, platform: 'linux', arch: LINUX.arch, home: h.home});
 const linuxNode = (h, ambient, versionOf = () => 'v24.22.0') => ownHostNode({ambient, home: h.home, platform: 'linux', arch: LINUX.arch, versionOf});
@@ -173,7 +144,7 @@ test('an accepted CUA_LINUX_ENGINE_BIN through a link a lexical reading would pl
   const ambient = {...h.ambient, CUA_NATIVE_ENGINE: 'cua', CUA_LINUX_ENGINE_BIN: link};
   let opened;
   const seen = recorded(() => { opened = session({...h, ambient}, ['computer']); });
-  assert.deepEqual(seen.filter(({path}) => within(path, h.runtimes)), []);
+  assert.deepEqual(inVendorTree(seen, h.home), []);
   assert.equal(opened.launch.env.CUA_ENGINE_BIN, engine, 'the launch runs the file selection approved');
 });
 
@@ -187,7 +158,7 @@ test('an installed engine reached through such a link: its guarded resolution is
   assert.equal(fs.realpathSync.native(join(h.home, 'engine', 'linux', 'cua-engine')), engine);
   let opened;
   const seen = recorded(() => { opened = session(h, ['computer']); });
-  assert.deepEqual(seen.filter(({path}) => within(path, h.runtimes)), []);
+  assert.deepEqual(inVendorTree(seen, h.home), []);
   assert.equal(opened.launch.env.CUA_ENGINE_BIN, engine);
 });
 
@@ -218,4 +189,167 @@ test('the installed engine\'s install record linked into the tree: refused, noth
     assert.deepEqual(inTree, [], error.message);
     assert.match(error.message, /vendor's tree/);
   }
+});
+
+// ---- the whole-branch review's findings (#171 M6a, task 156) ----
+
+// Runs the async `fn` recorded -> {error, seen}.
+async function recordedAsync(fn) {
+  const recording = startRecording();
+  let error, seen;
+  try { await fn(); } catch (caught) { error = caught; } finally { seen = recording.stop(); }
+  return {error, seen};
+}
+
+// The vendor's tree moved to another volume, <home>/runtimes left as a link to it.
+function relocateTree(t, h) {
+  const volume = shortScratch('cua-volume-');
+  t.after(volume.cleanup);
+  const physical = join(fs.realpathSync(volume.dir), 'vendor-runtimes');
+  fs.cpSync(h.runtimes, physical, {recursive: true});
+  fs.rmSync(h.runtimes, {recursive: true});
+  fs.symlinkSync(physical, h.runtimes);
+  return {physical, vendorNode: join(physical, relative(h.runtimes, h.vendorNode))};
+}
+
+test('a vendor tree relocated behind a runtimes link: CUA_NODE and CUA_LINUX_ENGINE_BIN naming its files by their physical path are refused, nothing there touched', t => {
+  const h = homeWithVendorTree(t);
+  const {vendorNode} = relocateTree(t, h);
+  const engine = join(dirname(vendorNode), 'cua-engine');
+  fs.writeFileSync(engine, `#!/bin/sh\necho "cua-engine ${MIN_ENGINE_VERSION} (0123456789ab)"\n`, {mode: 0o755});
+  const probed = [];
+  const node = refusedWithoutReading(h, () => linuxNode(h, {CUA_NODE: vendorNode}, path => { probed.push(path); return 'v24.22.0'; }), 'invalid_setting');
+  assert.deepEqual(node.inTree, [], node.error.message);
+  assert.match(node.error.message, /vendor's tree/);
+  assert.deepEqual(probed, [], 'the version probe was never handed a path');
+  for (const env of [{CUA_NATIVE_ENGINE: 'cua'}, {}]) {
+    const selected = refusedWithoutReading(h, () => selectEngine(h, {...env, CUA_LINUX_ENGINE_BIN: engine}), 'invalid_setting');
+    assert.deepEqual(selected.inTree, [], selected.error.message);
+  }
+  // and the ordinary sessions, PATH leading to the relocated bin, open with nothing of it touched
+  const ambient = {...h.ambient, PATH: `${dirname(vendorNode)}:/usr/bin:/bin`};
+  for (const surfaces of [['computer'], ['browser']]) assert.deepEqual(inVendorTree(recorded(() => session({...h, ambient}, surfaces)), h.home), [], surfaces[0]);
+});
+
+// The pinned helper's installed path a link into the tree: its bytes are neither read nor run, by the connection's
+// preflight or by doctor's row, and the remedy names the link to move aside.
+test('the sandbox helper\'s installed path linked into the tree: the preflight refuses it, nothing there read, and doctor says the same', async t => {
+  const h = homeWithVendorTree(t);
+  const {path} = helperFor({home: h.home, arch: LINUX.arch});
+  const planted = join(h.runtimes, 'codex-linux-sandbox');
+  fs.writeFileSync(planted, '#!/bin/sh\nexit 0\n', {mode: 0o755});
+  fs.mkdirSync(dirname(path), {recursive: true});
+  fs.symlinkSync(planted, path);
+  for (const surfaces of [['browser'], ['computer']]) {
+    const {error, seen} = await recordedAsync(async () => {
+      const {launch} = session(h, surfaces);
+      assert.ok(!Object.values(launch.env).some(value => value.includes(h.runtimes)), 'the launch names no path in the tree');
+      await assertSandboxConfines('scoped', {platform: 'linux', launch, probe: async () => ({status: 'pass'})});
+    });
+    assert.equal(error?.code, 'sandbox_unavailable', error?.message ?? 'not refused');
+    assert.deepEqual(inVendorTree(seen, h.home), [], surfaces[0]);
+    assert.match(error.message, /vendor's tree/);
+    assert.ok(error.hint.startsWith(`move ${path} aside, then`), error.hint);
+  }
+  const {checks} = await inspectRuntime({home: h.home, env: {HOME: h.ambient.HOME, DISPLAY: ':9'}, host: LINUX, verifySignatures: () => assert.fail('codesign'),
+    inspectHelper: () => assert.fail('the native socket helper'), inspectSecrets: async () => ({dir: '/nowhere', exists: false}),
+    inspectLinux: async () => [], inspectChrome: async () => [], inspectAgent: async () => [], readLinuxCapabilities: async () => null});
+  const row = checks.find(check => check.name === 'sandbox.launcher');
+  assert.equal(row.status, 'fail', row.detail);
+  assert.match(row.detail, new RegExp(`vendor's tree.*move ${path} aside`));
+});
+
+// `cua serve`, the real stdio entry point, with the vendor tree's bin first on PATH and a git there: from its first line
+// to the end of a browser-only session's open, nothing under runtimes/ is opened, stat-ed, listed or run. The project
+// lookup for the secret store runs git (src/secrets/project.mjs), which that PATH would find in the tree.
+test('a real cua serve with the vendor tree\'s bin first on PATH runs nothing there: the project lookup\'s git, the open', {skip: process.platform !== 'linux' && 'cua serve takes its Linux branch only on Linux'}, async t => {
+  const h = homeWithVendorTree(t);
+  fs.writeFileSync(join(dirname(h.vendorNode), 'git'), '#!/bin/sh\nexit 1\n', {mode: 0o755});
+  const out = join(h.home, 'recorded.json');
+  const preload = pathToFileURL(join(REPO, 'test', 'helpers', 'vendor-tree-preload.mjs')).href;
+  const child = spawn(process.execPath, ['--import', preload, join(REPO, 'bin', 'cua.mjs'), 'serve'], {
+    cwd: REPO, stdio: ['pipe', 'pipe', 'pipe'], env: {...h.ambient, CUA_HOME: h.home, CUA_SHIM_SURFACES: 'browser', CUA_RECORDED_OUT: out}});
+  let stdout = '', stderr = '', exited = false;
+  child.stdout.on('data', chunk => { stdout += chunk; });
+  child.stderr.on('data', chunk => { stderr += chunk; });
+  const exit = new Promise(resolve => child.on('exit', () => { exited = true; resolve(); }));
+  child.stdin.on('error', () => {});
+  child.stdin.write(`${JSON.stringify({jsonrpc: '2.0', id: 1, method: 'initialize', params: {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 'no-vendor-read', version: '0'}}})}\n`);
+  // The home holds no sandbox helper, so the open ends at the preflight, which refuses it: the whole open
+  // before it, the project lookup first, is what the recorder watches.
+  for (let i = 0; i < 400 && !exited && !stdout.includes('"id":1'); i++) await new Promise(r => setTimeout(r, 25));
+  child.stdin.end();
+  await exit;
+  assert.match(stdout + stderr, /sandbox_unavailable|"id":1/, 'serve reached the preflight');
+  const seen = JSON.parse(fs.readFileSync(out, 'utf8'));
+  assert.ok(seen.some(({path}) => within(path, join(h.home, 'modules'))), 'the recorder saw the open');
+  assert.ok(seen.some(({call}) => call === 'execFileSync' || call === 'spawnSync'), 'and the project lookup');
+  assert.deepEqual(inVendorTree(seen, h.home), []);
+});
+
+test('the project lookup on Linux skips a PATH entry in the vendor\'s tree, as spelled or by its real path, and asks a git outside it', t => {
+  const h = homeWithVendorTree(t);
+  const bin = dirname(h.vendorNode);
+  fs.writeFileSync(join(bin, 'git'), '#!/bin/sh\nexit 1\n', {mode: 0o755});
+  const outside = join(h.home, 'outside');
+  fs.mkdirSync(outside);
+  fs.symlinkSync(bin, join(outside, 'bin'));   // the same directory, spelled outside the tree
+  const hostGit = spawnSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], {cwd: REPO, encoding: 'utf8'});
+  for (const PATH of [`${bin}:/usr/bin:/bin`, `${join(outside, 'bin')}:/usr/bin:/bin`]) {
+    let root;
+    const seen = recorded(() => { root = projectRoot(REPO, {env: {PATH}, platform: 'linux', home: h.home}); });
+    assert.deepEqual(inVendorTree(seen, h.home), [], PATH);
+    if (hostGit.status === 0) assert.equal(root, dirname(hostGit.stdout.trim()), 'a git outside the tree answered');
+  }
+});
+
+// `cua runtime use` on Linux reads and writes the pointer only where install would: a link or a FIFO at current.json is
+// named to be moved aside, never followed, read or blocked on.
+const RELEASE = linuxRelease(loadLinuxRuntime({host: LINUX}), LINUX.arch);
+
+test('cua runtime use on Linux: a current.json that is a link into the tree is refused, nothing there read, the link left', async t => {
+  const h = homeWithVendorTree(t);
+  const pointer = join(h.home, 'current.json');
+  const planted = join(h.runtimes, 'current.json');
+  fs.writeFileSync(planted, JSON.stringify({schema: 1, release: RELEASE}));
+  fs.rmSync(pointer);
+  fs.symlinkSync(planted, pointer);
+  const {error, seen} = await recordedAsync(() => useRuntime({home: h.home, release: RELEASE, host: LINUX}));
+  assert.equal(error?.code, 'target_occupied', error?.message ?? 'not refused');
+  assert.ok(error.hint.startsWith(`move ${pointer} aside, then`), error.hint);
+  assert.deepEqual(inVendorTree(seen, h.home), []);
+  assert.equal(fs.readlinkSync(pointer), planted);
+});
+
+// A vendor pin that does not parse is the vendor's lane's problem: `runtime use` of this cua's own release resolves the
+// derived name first and reads no vendor pin, and only a different name is classified against them.
+test('cua runtime use on Linux: a malformed vendor pin does not block this cua\'s own release; another name is classified against the pins', async t => {
+  const h = homeWithVendorTree(t);
+  const pins = fileURLToPath(new URL('../runtime/releases/', import.meta.url));
+  const readFileSync = fs.readFileSync;
+  fs.readFileSync = function (path, ...rest) {
+    return typeof path === 'string' && `${dirname(path)}/` === pins && path.endsWith('.json') ? '{"malformed": ' : readFileSync.call(this, path, ...rest);
+  };
+  syncBuiltinESMExports();
+  try {
+    const used = await useRuntime({home: h.home, release: RELEASE, host: LINUX});
+    assert.equal(used.release, RELEASE);
+    await assert.rejects(useRuntime({home: h.home, release: '26.928.40906-linux-x64', host: LINUX}), {code: 'invalid_pin'});
+  } finally {
+    fs.readFileSync = readFileSync;
+    syncBuiltinESMExports();
+  }
+});
+
+test('cua runtime use on Linux: a FIFO at current.json is refused at once, never opened', {skip: spawnSync('mkfifo', ['--help']).error && 'no mkfifo'}, t => {
+  const h = homeWithVendorTree(t);
+  fs.rmSync(join(h.home, 'current.json'));
+  assert.equal(spawnSync('mkfifo', [join(h.home, 'current.json')]).status, 0);
+  // In a child, so a FIFO opened for reading blocks it and not this test's process.
+  const script = `import {useRuntime} from ${JSON.stringify(pathToFileURL(join(REPO, 'src', 'runtime', 'install.mjs')).href)};
+try { await useRuntime({home: ${JSON.stringify(h.home)}, release: ${JSON.stringify(RELEASE)}, host: ${JSON.stringify(LINUX)}}); console.log('used'); }
+catch (error) { console.log(error.code); }`;
+  const run = spawnSync(process.execPath, ['--input-type=module', '-e', script], {encoding: 'utf8', timeout: 10_000, env: {...process.env, HOME: h.ambient.HOME}});
+  assert.equal(run.signal, null, 'it did not block on the FIFO');
+  assert.equal(run.stdout.trim(), 'target_occupied', run.stderr);
 });

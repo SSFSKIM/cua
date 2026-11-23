@@ -80,11 +80,10 @@ import {engineDirectory, installedFrom, readApprovedLocation, shortBuild} from '
 import {defaultEngineRecords, defaultInspectEngine, engineCheck} from './doctor-engine.mjs';
 import {homeLayout, realHome} from './layout.mjs';
 import {BROWSER_SERVICE, BROWSER_SERVICE_IMPL_DIR, COMPAT_EXECUTABLE, compatExecutable, CUA_API_DIR, CUA_API_DOCS_DIR, REPL_HOST_DIR, SANDBOX_DIR, SERVICE_SUPPORT_DIRS, SKY_SERVICE, NODE_FLOOR, ownHostNode, replHostFor} from './launch.mjs';
-import {SANDBOX_CONFLICT_HINT, assertDenyListShape, describeConflicts, protectedPaths, sandboxConflicts, sandboxModeFrom, scopedWriteRoots} from './sandbox.mjs';
+import {SANDBOX_CONFLICT_HINT, assertDenyListShape, describeConflicts, installedLinuxHelper, protectedPaths, sandboxConflicts, sandboxModeFrom, scopedWriteRoots} from './sandbox.mjs';
 import {xdgApplicationRoots} from '../repl-host/launch-services.mjs';
 import {denyListFor} from '../sandbox/policy.mjs';
 import {SEATBELT_EXEC} from '../sandbox/seatbelt.mjs';
-import {linuxHelper as verifiedLinuxHelper} from '../sandbox/linux.mjs';
 import {loadPins, selectPin, locateRuntime, ownInstaller, recoveryHint, vendorPinsOf} from './manifest.mjs';
 import {linuxRuntimeChecks} from './doctor-linux-runtime.mjs';
 import {checkLayout, checkVendorManifest, checkIpc, verifyCodeSignatures, ipcVersionsIn} from './checks.mjs';
@@ -116,6 +115,7 @@ function helperCheck({home, arch, linuxHelper}) {
     return result('sandbox.launcher', 'pass', `cua's own sandbox confines the children: the pinned helper ${helper.path} (SHA-256 ${helper.sha256}); no Codex CLI is launched`);
   } catch (error) {
     if (!(error instanceof CuaError)) throw error;
+    if (error.context?.blocking) return result('sandbox.launcher', 'fail', `${error.message}; ${error.hint}`);
     return result('sandbox.launcher', 'fail', `${error.message}; run \`${ownInstaller().command}\` to place the pinned helper (one there that is not the pinned helper is never `
       + 'replaced in place: stop any `cua serve` using it and remove its directory first), or set CUA_SHIM_SANDBOX=disabled to run without a sandbox openly');
   }
@@ -129,7 +129,7 @@ function launcherCheck({sandboxExec, compat, node}) {
   return result('sandbox.launcher', 'pass', `cua's own sandbox confines the children: ${sandboxExec} for cua's own host, and on the vendor host ${compat}${node ? ` on ${node}` : ''}; no Codex CLI is launched`);
 }
 
-export async function inspectRuntime({home, env = process.env, live = false, pins, host = {platform: process.platform, arch: process.arch}, verifySignatures = verifyCodeSignatures, inspectHelper = inspectNativeHelper, inspectSecrets = inspectSecretStore, inspectLinux = linuxDesktopChecks, inspectChrome = defaultInspectChrome, inspectAgent = defaultInspectAgent, sweep = sweepRun, resolveOwnNode, engine, inspectEngine = defaultInspectEngine, readEngineRecords = defaultEngineRecords, inspectLinuxEngine, readLinuxCapabilities, launcher = {sandboxExec: SEATBELT_EXEC, compat: COMPAT_EXECUTABLE}, linuxHelper = verifiedLinuxHelper, linuxRuntime, loadPins: loadVendorPins = loadPins}) {
+export async function inspectRuntime({home, env = process.env, live = false, pins, host = {platform: process.platform, arch: process.arch}, verifySignatures = verifyCodeSignatures, inspectHelper = inspectNativeHelper, inspectSecrets = inspectSecretStore, inspectLinux = linuxDesktopChecks, inspectChrome = defaultInspectChrome, inspectAgent = defaultInspectAgent, sweep = sweepRun, resolveOwnNode, engine, inspectEngine = defaultInspectEngine, readEngineRecords = defaultEngineRecords, inspectLinuxEngine, readLinuxCapabilities, launcher = {sandboxExec: SEATBELT_EXEC, compat: COMPAT_EXECUTABLE}, linuxHelper = installedLinuxHelper, linuxRuntime, loadPins: loadVendorPins = loadPins}) {
   if (live) throw new Error(`inspectRuntime is passive; live probes are separate explicit scripts (${LIVE_PROBE})`);
   // On Linux the vendor's pins describe only the vendor's tree: pins this checkout cannot parse or read (manifest.mjs
   // vendorPinsOf) fail that row alone (runtime.vendor), and a vendor selection with that error; the leftovers scan goes

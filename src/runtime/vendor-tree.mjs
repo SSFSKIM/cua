@@ -1,6 +1,7 @@
 // The vendor's tree kept out of every own lookup (#171 M6a; the pre-flight's §3.3, §3.5): the Node lookup and the engine
-// lookup (src/runtime/launch.mjs) and the scoped preflight's walk of the engine's lookup path (src/runtime/sandbox.mjs).
-import {lstatSync, readlinkSync} from 'node:fs';
+// lookup (src/runtime/launch.mjs), the sandbox helper's path and the scoped preflight's walk of the engine's lookup path
+// (src/runtime/sandbox.mjs), and the git the secret store's project lookup runs (src/secrets/project.mjs).
+import {accessSync, constants, lstatSync, readlinkSync, statSync} from 'node:fs';
 import {dirname, isAbsolute, join, resolve} from 'node:path';
 import {realHome} from './layout.mjs';
 
@@ -17,11 +18,16 @@ import {realHome} from './layout.mjs';
 // As the kernel does, it requires every component it passes through to be a directory: one followed by more of the path
 // (a `..`, or the `.` a trailing slash stands for, included) that is not is {notDirectory} (ENOTDIR), never skipped or
 // climbed out of. {real} also carries `links`: where each symbolic link it followed lies (its directory's real path and
-// its name), for the scoped preflight, which refuses one a cell could re-point (src/runtime/sandbox.mjs).
+// its name), for the scoped preflight, which refuses one a cell could re-point (src/runtime/sandbox.mjs). {lead} carries
+// the links followed before it too, the first of them the one inside the home that leads away, for a remedy to name.
+//
+// The tree is kept out wherever it lies: <home>/runtimes as spelled and under the home's real path, and, when that entry
+// is itself a link (the tree moved to another volume), where it leads, so the tree's files are refused by their physical
+// path too (vendorTreeRoots).
 export function outsideVendorTree(path, home) {
-  const roots = home === undefined ? [] : [...new Set([join(resolve(home), 'runtimes'), join(realHome(home), 'runtimes')])];
+  const roots = home === undefined ? [] : vendorTreeRoots(home);
   const inTree = candidate => roots.some(root => candidate === root || candidate.startsWith(`${root}/`));
-  if (inTree(resolve(path))) return {lead: resolve(path)};
+  if (inTree(resolve(path))) return {lead: resolve(path), links: []};
   let pending = pathComponents(path);
   let current = '/';
   const links = [];
@@ -30,7 +36,7 @@ export function outsideVendorTree(path, home) {
     if (part === '.') continue;                                  // `current` is a directory: entering it required that
     if (part === '..') { current = dirname(current); continue; }
     const next = join(current, part);
-    if (inTree(next)) return {lead: next};
+    if (inTree(next)) return {lead: next, links};
     let stat;
     try { stat = lstatSync(next); } catch { return {missing: next}; }
     if (stat.isSymbolicLink()) {
@@ -45,6 +51,26 @@ export function outsideVendorTree(path, home) {
     current = next;
   }
   return {real: current, links};
+}
+// The executable `command` as a PATH lookup finds it (`pathVariable`, the caller's PATH), with every entry that is, or
+// leads, into the vendor's tree of the cua home `home` skipped before anything there is touched -> the real path of the
+// first one found (the path to run, which is the one checked), or null. Only absolute entries are searched.
+export function executableOutsideVendorTree(command, pathVariable, home) {
+  for (const dir of (pathVariable ?? '').split(':')) {
+    if (!isAbsolute(dir)) continue;
+    const {real} = outsideVendorTree(join(dir, command), home);
+    try { if (real && statSync(real).isFile()) { accessSync(real, constants.X_OK); return real; } } catch { /* the next entry */ }
+  }
+  return null;
+}
+
+// The roots of the vendor's tree of the cua home `home`: <home>/runtimes as spelled, under the home's real path, and
+// where each of those resolves, when it exists, by the same kernel-faithful walk (guarding nothing). Finding that reads
+// the runtimes entry itself (its lstat, and its target when it is a link) and the directories it leads through, never
+// anything inside the tree.
+function vendorTreeRoots(home) {
+  const spelled = [...new Set([join(resolve(home), 'runtimes'), join(realHome(home), 'runtimes')])];
+  return [...new Set([...spelled, ...spelled.map(root => outsideVendorTree(root).real).filter(Boolean)])];
 }
 // A path's components as the kernel walks them: empty ones dropped, and a trailing slash kept as the `.` it means.
 const pathComponents = path => [...path.split('/').filter(part => part !== ''), ...(path.endsWith('/') && path.replace(/\/+$/, '') !== '' ? ['.'] : [])];

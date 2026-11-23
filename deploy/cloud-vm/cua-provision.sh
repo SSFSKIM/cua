@@ -27,16 +27,27 @@ set -euo pipefail
 checkout=/opt/cua cache=/var/cache/cua
 EXTENSION_ID=jkejaaijdfpohkdhankllbekkhmnippb   # cua's own extension (CUA_EXTENSION_ID, src/chrome/extension.mjs)
 
-# cua install, then its one-line summary; a failed install stops here. Plain, it installs cua's own runtime (its module
-# tree, sandbox helper and Node) and cua's engine, and tries the vendor's tree from the pin's URL, which a working
-# device does not need (#171 M6a); `vendor_placed` says whether that tree is in place.
+# Provisioning stops at a step: the checklist (saying why) and doctor's report are written and printed. A vendor deb that
+# cannot be had once cua's own runtime is installed and registered leaves a working device (stop_early, exit 0); a
+# failed install of cua's own runtime does not (stop_failed, exit 1, which cloud-init reports).
+stop_early() { log "$1"; checklist "$1"; doctor; cat "$state/checklist.txt"; exit 0; }
+stop_failed() { log "$1"; checklist "$1"; doctor; cat "$state/checklist.txt"; exit 1; }
+
+# cua install, then its one-line summary. Plain, it installs cua's own runtime (its module tree, sandbox helper and
+# Node) and cua's engine, and tries the vendor's tree from the pin's URL, which a working device does not need (#171
+# M6a); its failure fails the provisioning, with the install's error and its remedy. With --archive it is the vendor's
+# deb, after registration: its failure stops there, the device working. `vendor_placed` says whether that tree is in
+# place.
 install_cua() {
-  local out code=0
+  local out code=0 why
   log "cua install${1:+ $*}"
   out="$(as_user cua install "$@" --json)" || code=$?
   jq -c '{ok, release, changed, sessions}' <<<"$out" || printf '%s\n' "$out"
   vendor_placed="$(jq -r 'if .vendor.release then 1 else 0 end' <<<"$out" 2>/dev/null || echo 0)"
-  ((code == 0)) || stop_early "cua install${1:+ $*} failed (exit $code): $(jq -r '.error.message // "see its output above"' <<<"$out" 2>/dev/null || echo 'see its output above'); run cua-provision.sh again"
+  ((code == 0)) && return 0
+  why="$(jq -r '[.error.message, .error.hint] | map(select(. != null)) | join("; ") | if . == "" then "see its output above" else . end' <<<"$out" 2>/dev/null || echo 'see its output above')"
+  if (($#)); then stop_early "cua install${1:+ $*} failed (exit $code): $why; then run cua-provision.sh again"; fi
+  stop_failed "cua install failed (exit $code): $why; then run cua-provision.sh again"
 }
 
 # Register cua's Chrome host (io.github.ssfskim.cua names the launcher in cua's home), then the profile `me`, bound to
@@ -107,13 +118,14 @@ fetch_deb() {
   chmod 0644 "$deb"
 }
 
-# Steps 8 and 9: cua's own runtime and its registration, as under CUA_DEB=none; then, only where CUA_DEB asks for the
-# vendor's tree (for CUA_NATIVE_ENGINE=vendor) and cua install did not place it, the deb and the install that requires it.
+# Steps 8 and 9: cua's own runtime and its registration, as under CUA_DEB=none; then, where CUA_DEB asks for the vendor's
+# tree (for CUA_NATIVE_ENGINE=vendor), the deb and the install that requires it. Only a `pin` request that cua install
+# already met from the pin's own URL is skipped: a mirror or an upload is the operator's source, fetched and checked.
 provision_cua() {
   install_cua
   register_cua
   [[ "$CUA_DEB" != none ]] || return 0
-  if ((vendor_placed)); then log "the vendor's tree is in place (cua install fetched it from the pin's URL)"; return 0; fi
+  if [[ "$CUA_DEB" == pin ]] && ((vendor_placed)); then log "the vendor's tree is in place (cua install fetched it from the pin's URL)"; return 0; fi
   fetch_deb
   install_cua --archive "$deb"
 }
@@ -381,8 +393,6 @@ doctor() {
   log "doctor (exit $code):"
   jq -r '.checks[] | "  \(.status)\t\(.name)"' /var/log/cua-provision.json
 }
-stop_early() { log "$1"; checklist "$1"; doctor; cat "$state/checklist.txt"; exit 0; }
-
 # 8 and 9. cua: its own runtime (cua install), its Chrome host and the profile `me`; then, where CUA_DEB asks for it,
 # the vendor's deb and `cua install --archive` (provision_cua, above).
 provision_cua

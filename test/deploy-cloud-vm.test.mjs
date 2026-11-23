@@ -51,13 +51,14 @@ test('render.sh: defaults, a mirror URL, and a local deb meaning the operator up
 });
 
 // The install steps of cua-provision.sh, sourced (it returns before its first step) and run with stubs: `cua` records
-// its arguments and answers `install --json` as told, `curl` fails as an unreachable server does, and as_user, log and
-// stop_early stand in for the root-only ones. Chrome's profile, its extension and its host's socket are there, so the
-// waits end at once.
-function provision(t, {deb, install = {ok: true, vendor: {failed: {code: 'download_failed'}}}, installExit = 0}) {
+// its arguments and answers `install --json` as told, `curl` fails as an unreachable server does, and as_user, log,
+// checklist and doctor stand in for the root-only ones; the script's own stops run, and their exit status is the
+// provisioning's. Chrome's profile, its extension and its host's socket are there, so the waits end at once.
+function provision(t, {deb, install = {ok: true, vendor: {failed: {code: 'download_failed'}}}, installExit = 0, status = 0}) {
   const scratch = mkdtempSync(join(tmpdir(), 'cua-provision-'));
   t.after(() => rmSync(scratch, {recursive: true, force: true}));
-  const bin = join(scratch, 'bin'), home = join(scratch, 'home'), cache = join(scratch, 'cache'), log = join(scratch, 'calls.log');
+  const bin = join(scratch, 'bin'), home = join(scratch, 'home'), cache = join(scratch, 'cache'), state = join(scratch, 'state'), log = join(scratch, 'calls.log');
+  mkdirSync(state);
   mkdirSync(bin);
   mkdirSync(cache);
   mkdirSync(join(home, '.config', 'google-chrome', 'Default', 'Extensions', CUA_EXTENSION_ID), {recursive: true});
@@ -67,15 +68,16 @@ function provision(t, {deb, install = {ok: true, vendor: {failed: {code: 'downlo
   stub('cua', 'if [[ "$1" == install ]]; then printf \'%s\\n\' "$CUA_INSTALL_JSON"; exit "$CUA_INSTALL_EXIT"; fi; exit 0');
   stub('curl', 'echo "curl: (6) Could not resolve host" >&2; exit 6');
   const script = `source '${dir}cua-provision.sh'
-cache='${cache}' home='${home}' CUA_DEB='${deb}' CUA_DEB_WAIT=5
+cache='${cache}' home='${home}' state='${state}' CUA_DEB='${deb}' CUA_DEB_WAIT=5
 as_user() { HOME='${home}' "$@"; }
 log() { printf 'log %s\\n' "$*" >>'${log}'; }
-stop_early() { printf 'stop %s\\n' "$1" >>'${log}'; exit 0; }
+checklist() { printf 'stop %s\\n' "$1" >>'${log}'; printf '%s\\n' "$1" >'${state}/checklist.txt'; }
+doctor() { :; }
 pin_of_host() { echo '26.928.40906-linux-x64 https://example.invalid/chatgpt_26.928.40906_amd64.deb ${'0'.repeat(64)}'; }
 provision_cua
 echo done >>'${log}'`;
   const run = spawnSync('bash', ['-c', script], {encoding: 'utf8', env: {...process.env, PATH: `${bin}:${process.env.PATH}`, CUA_INSTALL_JSON: JSON.stringify(install), CUA_INSTALL_EXIT: String(installExit)}});
-  assert.equal(run.status, 0, run.stdout + run.stderr);
+  assert.equal(run.status, status, run.stdout + run.stderr);
   return {calls: readFileSync(log, 'utf8').split('\n').filter(line => /^(cua|curl|stop|done)\b/.test(line)), stdout: run.stdout, cache};
 }
 const REGISTERED = ['cua install --json', 'cua chrome register', 'cua profiles add me --chrome-profile Default', 'cua profiles bind me'];
@@ -96,11 +98,22 @@ test('cua-provision.sh with CUA_DEB=pin and no reachable deb: the own runtime fi
       + `${cache}/upload.deb and set CUA_DEB=upload, or run cua-provision.sh again`]);
 });
 
-test('cua-provision.sh: a vendor tree cua install already placed is not fetched again; a failed cua install stops before registering', {skip: noJq}, t => {
-  const placed = provision(t, {deb: 'pin', install: {ok: true, vendor: {release: '26.928.40906-linux-x64', changed: true}}});
+test('cua-provision.sh: a vendor tree cua install already placed is not fetched again for `pin`; an explicit mirror is still fetched and checked', {skip: noJq}, t => {
+  const vendor = {ok: true, vendor: {release: '26.928.40906-linux-x64', changed: true}};
+  const placed = provision(t, {deb: 'pin', install: vendor});
   assert.deepEqual(placed.calls, [...REGISTERED, 'done']);
-  const failed = provision(t, {deb: 'none', install: {ok: false, error: {code: 'download_failed', message: 'cua\'s module tree was not installed: could not fetch'}}, installExit: 1});
-  assert.deepEqual(failed.calls, ['cua install --json', 'stop cua install failed (exit 1): cua\'s module tree was not installed: could not fetch; run cua-provision.sh again']);
+  const mirror = provision(t, {deb: 'https://mirror.example/chatgpt_26.928.40906_amd64.deb', install: vendor});
+  assert.deepEqual(mirror.calls.slice(REGISTERED.length).map(line => line.split(' ')[0]), ['curl', 'stop'], 'the operator\'s source, then its check');
+  assert.match(mirror.calls.at(-2), / https:\/\/mirror\.example\/chatgpt_26\.928\.40906_amd64\.deb$/);
+});
+
+// Fix wave 1: a failed install of cua's own runtime is a failed provisioning (cloud-init reports it), with the install's
+// error and its remedy in the checklist; nothing is registered on a device that has no runtime.
+test('cua-provision.sh: a failed install of cua\'s own runtime stops before registering and exits nonzero, keeping the error and its remedy', {skip: noJq}, t => {
+  const failed = provision(t, {deb: 'none', installExit: 1, status: 1,
+    install: {ok: false, error: {code: 'download_failed', message: 'cua\'s module tree was not installed: could not fetch', hint: 'run `node /opt/cua/bin/cua.mjs install` again'}}});
+  assert.deepEqual(failed.calls, ['cua install --json',
+    'stop cua install failed (exit 1): cua\'s module tree was not installed: could not fetch; run `node /opt/cua/bin/cua.mjs install` again; then run cua-provision.sh again']);
 });
 
 test('render.sh: the cua extension from the Store or a self-hosted update URL; the repository from a URL or an uploaded bundle', () => {

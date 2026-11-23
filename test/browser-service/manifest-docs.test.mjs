@@ -33,9 +33,10 @@ test('the browser documentation: the selected browser with the service marker, t
   const lines = text.split('\n');
   assert.equal(lines[0], '# Selected Browser');
   assert.deepEqual(lines.slice(1, 5), ['- Name: cua', '- Type: extension', '- ID: 1', '- Service: cua browser service 9.8.7']);
-  assert.ok(text.includes('# Tab Cleanup'), 'extension guidance is included');
+  assert.ok(text.includes('# Session Naming Guidance'), 'extension guidance is included');
+  assert.match(text, /\n- `tab-cleanup-chrome`: your tabs close when the turn ends unless marked/, 'and extension lookups are listed');
   assert.ok(!text.includes('# In-app Browser Tab Mentions'), 'guidance for other backend types is not');
-  assert.match(text, /# Additional Documentation\n.*\n- `browser-troubleshooting`: read when/);
+  assert.match(text, /# Additional Documentation\n.*\n(?:- .*\n)*- `browser-troubleshooting`: read when/);
   assert.match(text, /## Browser Capabilities\n- `viewport`: Controls an explicit browser viewport override/);
   assert.match(text, /## Tab Capabilities\n- None/);
   assert.match(text, /# API Reference\n/);
@@ -69,7 +70,8 @@ test('named documents: read when listed, refused otherwise; a required document 
 
 test('the API reference states cua\'s evaluate and budgets: the main world, no replay, 3 s by default up to 120 s, 0 one attempt', async () => {
   const docs = new Documentation({apiManifest: API_MANIFEST, disabledMemberIds: new Set(), serviceVersion: '9.8.7'});
-  const text = await docs.readBrowser(EXTENSION);
+  await docs.readBrowser(EXTENSION);
+  const text = await docs.read('api-reference');
   assert.doesNotMatch(text, /read-only (?:page |DOM )?scope|read-only JavaScript/i, 'no read-only evaluate scope');
   assert.match(text, /\/\/ timeoutMs on locator, wait and evaluate calls is a per-phase budget in milliseconds: 3000 by default, at most 120000; 0 makes one attempt of at most 3000\./);
   for (const member of ['evaluate<TResult, TArg>(pageFunction: PlaywrightEvaluateFunction', 'evaluate<TResult, TArg>(pageFunction: LocatorEvaluateFunction', 'evaluateAll<TResult, TArg>']) {
@@ -87,8 +89,11 @@ test('the browser documentation teaches cua\'s service: the Chrome rules, the li
   const docs = new Documentation({apiManifest: API_MANIFEST, disabledMemberIds: new Set(), serviceVersion: '9.8.7'});
   const text = await docs.readBrowser(EXTENSION);
   const guide = DOCUMENTS['cua-browser-service'];
-  assert.ok(text.includes(guide), 'the guidance is included in every browser\'s documentation');
-  assert.ok(text.indexOf(guide) < text.indexOf('# API Use'), 'ahead of the vendor\'s API use guidance');
+  // Since #494 the guidance is looked up by name, behind a pointer that states its rules, ahead of the vendor's API use.
+  assert.equal(await docs.read('cua-browser-service'), guide);
+  const pointer = text.split('\n').find(line => line.startsWith('- `cua-browser-service`: '));
+  assert.match(pointer, /DOM-only.*`tab\.playwright` locators.*focusable element.*budget per phase.*once and is never re-run/);
+  assert.ok(text.indexOf(pointer) < text.indexOf('- `api-use-behavior`: '), 'ahead of the vendor\'s API use guidance');
   // The Chrome rules.
   assert.match(guide, /DOM-only/);
   assert.match(guide, /`tab\.playwright` locators/);
@@ -127,9 +132,16 @@ test('the browser documentation teaches cua\'s service: the Chrome rules, the li
 
 test('the vendor\'s guidance is kept where it still holds, and loses what belongs to OpenAI\'s products or to prompts cua does not make', async () => {
   const docs = new Documentation({apiManifest: API_MANIFEST, disabledMemberIds: new Set(), serviceVersion: '9.8.7'});
-  const text = await docs.readBrowser(EXTENSION);
-  for (const heading of ['# Browser Safety', '# Agent Confirmations Policy', '# Session Naming Guidance', '# External Browser Tab Claiming', '# Tab Cleanup', '# Browser Control Interruption', '# API Use'])
-    assert.ok(text.includes(heading), heading);
+  const firstUse = await docs.readBrowser(EXTENSION);
+  for (const heading of ['# Agent Confirmations Policy', '# Session Naming Guidance', '# External Browser Tab Claiming']) assert.ok(firstUse.includes(heading), heading);
+  // Looked up by name since #494, each behind its pointer.
+  const lookups = {'browser-safety': '# Browser Safety', 'tab-cleanup-chrome': '# Tab Cleanup', 'browser-control-interruption': '# Browser Control Interruption', 'api-use-behavior': '# API Use'};
+  for (const [name, heading] of Object.entries(lookups)) {
+    assert.ok(!firstUse.includes(heading), heading);
+    assert.ok(firstUse.includes(`\n- \`${name}\`: `), name);
+    assert.ok((await docs.read(name)).startsWith(heading), name);
+  }
+  const text = [firstUse, ...await Promise.all([...Object.keys(lookups), 'api-reference'].map(name => docs.read(name)))].join('\n\n');
   assert.doesNotMatch(text, /may prompt user approval/, 'history asks no approval');
   assert.match(DOCUMENTS['api-use-behavior'], /Call `browser\.history\(\)` only when necessary for the request, never speculatively/);
   assert.doesNotMatch(text, /plugin:\/\/|openai-bundled|openai-curated/, 'no Codex app tab mentions');

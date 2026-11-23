@@ -346,17 +346,23 @@ test('a caller may make more doctor rows informational: reported, never gating, 
 // probe-secrets records them with (scripts/probe/fail-closed.mjs), from a passing observation, and probe-secrets' own
 // source is checked to record through them.
 test('the fail-closed phase passes on the steps probe-secrets now records, and stays BLOCKED on the old inventory alone', async () => {
-  const {SECRETS_OFF, STORE_UNREADABLE, failClosedSteps, refusedLaunchResult} = await import('../scripts/probe/fail-closed.mjs');
+  const {SECRETS_OFF, STORE_UNREADABLE, closeStep, failClosedSteps, refusedLaunchResult} = await import('../scripts/probe/fail-closed.mjs');
+  const {closeSecretSession} = await import('../scripts/probe/secrets-session.mjs');
   const source = readFileSync(new URL('../scripts/probe-secrets.mjs', import.meta.url), 'utf8');
-  for (const call of ['record(failClosedStep(tag, method)', 'record(closeStep(tag)', 'refusedLaunchResult(tag, {', 'failClosedConnection(SECRETS_OFF,', 'refusedConnection(STORE_UNREADABLE,'])
+  for (const call of ['record(failClosedStep(tag, method)', 'refusedLaunchResult(tag, {', 'failClosedConnection(SECRETS_OFF,', 'refusedConnection(STORE_UNREADABLE,'])
     assert.ok(source.includes(call), `probe-secrets records through ${call}`);
   const phase = PROBE_SECRETS_PHASES.find(p => p.name.startsWith('live: fail closed before any input'));
   assert.deepEqual(phase.items, [6, 7]);
   const refused = refusedLaunchResult(STORE_UNREADABLE, {answered: false, exit: {code: 1}, stderr: 'cua: the secret store (secret store /h/s) could not be read (EACCES), ... [sandbox_state_invalid]\n',
     delivered: 0, expected: 'sandbox_state_invalid', names: ['the secret store', '/h/s']});
   assert.equal(refused.status, 'PASS', refused.detail);
-  const emitted = [...failClosedSteps(SECRETS_OFF).map(name => ({name, status: 'PASS', detail: ''})), refused];
+  const substitutions = failClosedSteps(SECRETS_OFF).filter(name => name !== closeStep(SECRETS_OFF))
+    .map(name => ({name, status: 'PASS', detail: ''}));
+  const closed = await closeSecretSession({close: async () => ({code: 0})}, closeStep(SECRETS_OFF));
+  const emitted = [...substitutions, closed, refused];
   assert.equal(inventoryCheck(phase.name, emitted, phase.steps).status, 'PASS');
+  const forced = await closeSecretSession({close: async () => ({code: 0, forced: true})}, closeStep(SECRETS_OFF));
+  assert.equal(inventoryCheck(phase.name, [...substitutions, forced, refused], phase.steps).status, 'FAIL');
   // The pre-M1 steps for the unreadable store no longer satisfy the phase.
   const old = [...failClosedSteps(SECRETS_OFF), ...failClosedSteps(STORE_UNREADABLE)].map(name => ({name, status: 'PASS', detail: ''}));
   assert.equal(inventoryCheck(phase.name, old, phase.steps).status, 'BLOCKED');
@@ -377,6 +383,28 @@ test('research-tree references: code lines count, citations in comments do not',
   const tree = ['codex', 'app', 'src'].join('-');  // assembled: this file is itself in the scan
   const text = [`// see ~/${tree}/readable/x`, ` * in /Users/x/${tree}/y`, `# ${tree}`, `const dir = '/Users/x/${tree}';`, `read(p); // ${tree} cited`, `run('${tree}') // here`].join('\n');
   assert.deepEqual(researchTreeLines(text, tree), [4, 6]);
+});
+
+test('the prompting Accessibility skip is accepted off hosted runners, never where its test should run', () => {
+  // services-engine-real.test.mjs deliberately avoids prompting on an owner's console, including the self-hosted mini.
+  const reason = 'calls the prompting Accessibility request: GitHub-hosted runners only (RUNNER_ENVIRONMENT=github-hosted)';
+  const tally = skipReasons(`ok 1 - safe coverage\nok 2 - untrusted engine # SKIP ${reason}\n`);
+  const totals = {tests: 2, pass: 1, fail: 0, cancelled: 0, skipped: 1, todo: 0};
+  for (const env of [{}, {GITHUB_ACTIONS: 'true'}, {GITHUB_ACTIONS: 'true', RUNNER_ENVIRONMENT: 'self-hosted'}]) {
+    const skips = judgeSkips(tally, {env, platform: 'darwin'});
+    assert.deepEqual(skips, {accepted: [{reason, count: 1}], other: []});
+    assert.deepEqual(suiteVerdict({code: 0, totals, skips}), {
+      status: 'PASS', reason: `1/2 passed; declared skips not applicable on this host: 1 × "${reason}"`,
+    });
+    assert.equal(suiteVerdict({code: 0, totals: {...totals, tests: 1, pass: 0}, skips}).status, 'BLOCKED', 'a declared skip alone is not executed coverage');
+  }
+  const hosted = judgeSkips(tally, {env: {GITHUB_ACTIONS: 'true', RUNNER_ENVIRONMENT: 'github-hosted'}, platform: 'darwin'});
+  assert.deepEqual(hosted, {accepted: [], other: [{reason, count: 1}]});
+  assert.equal(suiteVerdict({code: 0, totals, skips: hosted}).status, 'BLOCKED');
+  for (const unknownReason of [reason + ' changed', 'this runner grants the engine Accessibility, so the untrusted path cannot be reached here']) {
+    const skips = judgeSkips(skipReasons(`ok 1 - untrusted engine # SKIP ${unknownReason}`), {env: {}, platform: 'darwin'});
+    assert.equal(suiteVerdict({code: 0, totals, skips}).status, 'BLOCKED', 'no broader Accessibility exemption');
+  }
 });
 
 test('declared skips (#157): exact reasons, only while their gate is absent, listed with counts; any other skip blocks', () => {
@@ -407,7 +435,7 @@ test('declared skips (#157): exact reasons, only while their gate is absent, lis
   assert.match(blocked.reason, /not declared: 1 × "the own kernel needs Node 24/);
   assert.equal(suiteVerdict({code: 0, totals: {...totals, skipped: 4, pass: 1}, skips: onMac}).status, 'BLOCKED');
   assert.equal(suiteVerdict({code: 0, totals: {...totals, todo: 1, pass: 1}, skips: onMac}).status, 'BLOCKED');
-  assert.ok(DECLARED_SKIPS.every(d => [d.researchTree, d.onlyOn, d.dependency].filter(Boolean).length === 1));
+  assert.ok(DECLARED_SKIPS.every(d => [d.researchTree, d.onlyOn, d.dependency, d.onlyRunnerEnvironment].filter(Boolean).length === 1));
   // A package-gated skip: accepted only in a checkout without that package.
   const ws = skipReasons('ok 1 - relay # SKIP needs the ws package: run npm ci');
   const wsTotals = {tests: 2, pass: 1, fail: 0, cancelled: 0, skipped: 1, todo: 0};

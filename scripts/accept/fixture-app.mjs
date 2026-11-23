@@ -13,6 +13,7 @@
 // process's environment is not the witness here: ps -E shows nothing of a platform app's environment (Finder, Terminal,
 // TextEdit on macOS 26 and 27), so a marker passed through `open` could not be read back.
 import {execFileSync} from 'node:child_process';
+import {windowInventory} from './window-close.mjs';
 
 // ps in the C locale and in UTC: `lstart` carries no UTC offset, so local time would be ambiguous in a fall-back hour.
 const run = (cmd, args) => execFileSync(cmd, args, {encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], env: {...process.env, LC_ALL: 'C', TZ: 'UTC'}, timeout: 10_000});
@@ -91,13 +92,33 @@ export async function restoreFront(previous, {frontmost, activate = id => run('/
 // is what the run recorded: {before (pids), front (bundle id or null), launch ({pid, at} from captureLaunch, or null)}.
 // `alone` must be exactly true, the caller's positive confirmation that the app holds no window but the fixture's; without
 // it nothing is signalled and a live recorded launch is returned as `leftRunning`. `pids` is read only to report which
-// processes running before are still there; it never selects anything to quit.
-// -> {launch, live, alone, quit, remaining, leftRunning, keptBefore, front}.
-export async function cleanUpFixtureApp({name, bundle, run: started, alone = false, pids = () => pidsOf(name), launchOf: launch = pid => launchOf(pid), quit = quitOwned, frontmost, activate, sleep}) {
-  const live = isSameLaunch(started.launch, {launchOf: launch});
-  const confirmed = alone === true;
+// processes running before are still there; it never selects anything to quit. When `readWindows` is supplied, quitting
+// requires both the caller's confirmed document close and a fresh list with no window at all. The list is still reported
+// after an unconfirmed close, and the process identity is rechecked after the read. Off-screen windows can be restored
+// owner documents even at the run's own launch, so none is classified as internal (#196). Evidence is numbers/bounds only.
+// -> {launch, live, alone, quit, remaining, leftRunning, keptBefore, front, windowCheck?}.
+export async function cleanUpFixtureApp({name, bundle, run: started, alone = false, readWindows, pids = () => pidsOf(name), launchOf: launch = pid => launchOf(pid), quit = quitOwned, frontmost, activate, sleep}) {
+  let live = isSameLaunch(started.launch, {launchOf: launch});
+  let confirmed = alone === true;
+  let windowCheck = null;
+  if (live && readWindows) {
+    let windows;
+    try { windows = await readWindows(); } catch { windows = null; }
+    const inventory = windows && windowInventory(windows);
+    const foreign = windows?.some(w => w.ownerPid !== started.launch.pid);
+    confirmed = confirmed && Boolean(windows && windows.length === 0);
+    windowCheck = {status: confirmed ? 'PASS' : 'BLOCKED',
+      detail: !inventory ? 'window list unreadable' : foreign ? 'window belongs to another PID' : inventory.visible.length ? 'on-screen window remains'
+        : inventory.offScreenCount ? 'off-screen window remains; ownership cannot be inferred from visibility or launch time'
+          : !confirmed ? 'the fixture document close was not confirmed' : 'no window remains',
+      offScreenCount: inventory?.offScreenCount ?? null, offScreenBounds: inventory?.offScreenBounds ?? null,
+      remainingCount: windows?.length ?? null,
+      remainingWindows: windows?.map(w => ({number: w.number,
+        bounds: Object.fromEntries(['x', 'y', 'width', 'height'].map(key => [key, w.bounds?.[key] ?? null]))})) ?? null};
+    live = isSameLaunch(started.launch, {launchOf: launch});  // the window probe may have taken time
+  }
   const {quit: quitPids, remaining} = live && confirmed ? await quit([started.launch.pid]) : {quit: [], remaining: []};
   const running = pids();
   const front = await restoreFront(started.front, {frontmost, app: bundle, ...(activate ? {activate} : {}), ...(sleep ? {sleep} : {})});
-  return {launch: started.launch ?? null, live, alone: confirmed, quit: quitPids, remaining, leftRunning: live && !confirmed ? started.launch.pid : null, keptBefore: started.before.filter(pid => running.includes(pid)), front};
+  return {launch: started.launch ?? null, live, alone: confirmed, quit: quitPids, remaining, leftRunning: live && !confirmed ? started.launch.pid : null, keptBefore: started.before.filter(pid => running.includes(pid)), front, ...(windowCheck ? {windowCheck} : {})};
 }

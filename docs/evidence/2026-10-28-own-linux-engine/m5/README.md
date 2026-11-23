@@ -475,7 +475,7 @@ still stops) is planned on #432 after M5 ([Decision Log](../../../doperpowers/sp
     seen in L4d's and L4a's test cells (part 3).
   - **#459** (P2): the long Chrome drag and drop's residual bound, 1.5% (part 3).
   - **#487** (P2): an Electron drop in dedicated mode, with the request naming a window other than the press window,
-    settles on that window's rest, not Electron's, so it can answer ok on a stale accept; fixed in 0.4.4. **#488**
+    settles on that window's rest, not Electron's, so it can answer ok on a stale accept; its fix is planned for 0.4.4. **#488**
     (P3): a handle end that already sees an Electron take can answer a landed drop unconfirmed.
   - **#468**, **#474**, **#457**, **#460** (P3): the confirmation's read order, the unshipped accept lane, #358's
     margin and the coverage gaps (part 3).

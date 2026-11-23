@@ -12,15 +12,16 @@
 - This pre-flight ran no cua code, wrote to no cua home and touched no ticket. It read the code, read `V/`, and made
   read-only requests to the npm registry: metadata for seven packages, and the `classic-level` 3.0.0 tarball, whose
   members were listed and one hashed (`~/.local/share/cua-171/m6a-preflight/`).
-- **Revision 2.** The first draft is 06e3c3e0. This one folds in an adversarial review's eleven findings, each in the
-  section it belongs to.
+- **Revision 3.** The first draft is 06e3c3e0. Revision 2 (f7b9bcd9) folded in an adversarial review's eleven
+  findings, each in the section it belongs to. This one folds in the four items its re-review left: the engine
+  override's exclusion, the import witness, what an open binds of the engine (F2), and one ordering.
 - Loop tasks continue M5's numbering, from task 140. "T" numbers are this document's rows. The build's branch is
   `feat/171-m6a` from main.
 - The plan below is written on the recommendations of §7. Each task says what a different ruling changes.
 
 ## 0. What the reading found
 
-Fourteen findings shape the plan.
+Fifteen findings shape the plan.
 
 1. **The vendor module tree has two users, not one.** Cells resolve package imports from it
    (`src/runtime/launch.mjs` L295; `src/repl-host/kernel.mjs` L299–303). cua itself loads `classic-level` from it, in
@@ -84,6 +85,12 @@ Fourteen findings shape the plan.
 14. **The cloud provisioner needs the vendor's deb before it calls cua.** It fetches or waits for the deb and can
     stop there (`deploy/cloud-vm/cua-provision.sh` L286–322), then always passes `--archive` (L325). `CUA_DEB` is
     required, and `render.sh` defaults it to `pin` (L26; `test/deploy-cloud-vm.test.mjs` L44) (§4.4).
+15. **An open keeps the engine's pathname, not its bytes.** `cua install` renames a new engine over
+    `engine/linux/cua-engine` (`placeLinuxEngine`, `src/runtime/linux-engine.mjs` L159–172). A connection resolves its
+    selection once, at the open, and launches later and again after an idle stop (`src/mcp/connection.mjs` L104–112).
+    The service checks only the version floor of what it starts (`src/services/engine/linux/client.mjs` L50–62). So
+    an install between the open and a launch changes the engine that runs. The other three parts sit in directories
+    named by their version, tag or lock and are never replaced in place (F2).
 
 ## 1. The module inventory
 
@@ -193,8 +200,9 @@ dashes, since it names the handshake directory (`src/mcp/connection.mjs` L145). 
 name, which starts with digits (manifest.mjs L87–91). It is read at sight in `current.json`, in doctor and in evidence,
 where a digest would need a lookup. A change to any of the four fields changes it (L157).
 
-**What the name means:** the parts a session here runs on. A session runs on exactly them, or on a part a named
-override put in its place, which doctor shows as a warning (§3.4, F2a).
+**What the name means:** this cua's definition of the Linux runtime, which `cua install` places. A home may run a
+Node or an engine behind its pin, at or above that part's minimum, or a part a named override put in its place.
+Doctor tells each apart from the pin with a warning (§3.4, F2, F2a).
 
 ## 3. Resolution and launch
 
@@ -223,9 +231,9 @@ so an idle relaunch uses the same tree. The header's first paragraph (L4–5) is
 
 | Where | Today | After |
 |---|---|---|
-| `ownHostNode` (L602–616), on Linux | the first Node 24 among `CUA_NODE`, the managed Node, the node running cua and `PATH`; the `PATH` lookup is eager (L606–607) | two candidates, each asked for only when its turn comes. `CUA_NODE`, the named override. Else the managed Node **at the record's version**, whose bytes its install record names (`managedNode`, managed-node.mjs L165–175). Without either: `runtime_not_installed`, "its Node `<version>` is not installed", with `ownInstaller`'s hint. The node running cua and `PATH` are no longer candidates on Linux (F2a). darwin unchanged |
-| The vendor's Node | nothing excludes it | a candidate whose path as given, or whose real path, lies under `<home>/runtimes/` is refused before it is run or probed: `invalid_setting` for `CUA_NODE`, naming the path and why |
-| `linuxEngineFor` (L510–533), cua's engine | an explicit selection takes whatever is installed; the default takes any recorded release at or above `MIN_ENGINE_VERSION` | either selection takes the pinned engine (the file's bytes are the pin's asset, `inspectLinuxEngine`, linux-engine.mjs L180), or a named override: `CUA_LINUX_ENGINE_BIN`, or a recorded local build. Otherwise refused: `engine_not_installed`, `engine_outdated` ("cua-engine `<found>` is not the `<pinned>` this cua pins") or `engine_unrecorded`, each with the installer's hint and `--engine` (F2, F3) |
+| `ownHostNode` (L602–616), on Linux | the first Node 24 among `CUA_NODE`, the managed Node, the node running cua and `PATH`; the `PATH` lookup is eager (L606–607) | two candidates, each asked for only when its turn comes. `CUA_NODE`, the named override. Else the managed Node: one cua installed, its bytes the ones its install record names (`managedNode`, managed-node.mjs L165–175), at or above `NODE_FLOOR`. It runs at the record's version or behind it, and doctor warns when it is behind (F2). Without either: `runtime_not_installed`, "its Node is not installed", with `ownInstaller`'s hint. The node running cua and `PATH` are no longer candidates on Linux (F2a). darwin unchanged |
+| The vendor tree as a source of a Node or an engine | nothing excludes it: `CUA_NODE` and `CUA_LINUX_ENGINE_BIN` take any executable (L603, L513–518), and the installed engine's path is followed wherever its links lead (`installedLinuxEngine`, linux-engine.mjs L131) | one rule for the Node lookup and the engine lookup: a path that as given, or by its real path, lies under `<home>/runtimes/` is refused before it is stat-ed, run or probed. `invalid_setting` for `CUA_NODE` and for `CUA_LINUX_ENGINE_BIN`, naming the path and why; `engine_not_installed` for an installed engine whose path leads there. An override may replace a pinned part; it never makes `runtimes/` a dependency of an own lane |
+| `linuxEngineFor` (L510–533), cua's engine | an explicit selection takes whatever is installed; the default takes any recorded release at or above `MIN_ENGINE_VERSION` | either selection takes a recorded release at or above `MIN_ENGINE_VERSION`, by the version its bytes bear out (`verifiedLinuxEngineVersion`, linux-engine.mjs L199): the pinned one, or one behind or ahead of the pin, of which doctor warns. Or a named override: `CUA_LINUX_ENGINE_BIN`, or a recorded local build. Otherwise refused at the open: `engine_not_installed`, `engine_outdated` (below the minimum) or `engine_unrecorded`, each with the installer's hint and `--engine` (F2, F3). An explicit selection of an engine below the minimum is refused at the open too, where today its first request is |
 | `linuxEngineFor`, vendor selected (L512) | returns `{engine: 'vendor'}` and checks nothing | resolves the tree through a `vendor` seam (default `vendorLinuxRuntime` for `home` and the host's architecture) and carries `vendor: {release, bin, service, moduleDir}`. Tree absent or damaged: `engine_not_installed`, "`CUA_NATIVE_ENGINE=vendor` selects the vendor's engine, and its release `<release>` is not installed in `<home>`", with the installer's hint (the `engine.json` wording for a `settings` selection) |
 | `linuxEngineFor`, the default with no usable engine (L525, L529, L530) | the vendor's engine, status `warn` | the refusals of the row above (F3) |
 | `buildLaunch`, the trusted code paths (L292) | the vendor module tree, on every launch | on Linux: cua's own code only. With the vendor's engine, also `vendor.moduleDir`, which that service imports from. The ModuleTree is not trusted code: nothing trusted imports from it. darwin unchanged |
@@ -237,30 +245,48 @@ so an idle relaunch uses the same tree. The header's first paragraph (L4–5) is
 
 Unchanged: `replHostFor` (L412), `linuxSandboxEnv` (L381), `desktopModeFor` (L551), and every darwin branch.
 
+**What an open binds of the engine** (finding 15). A pathname, as today. Under F2's minimum the guarantee is "a
+compatible engine", not "these bytes":
+
+- an install that replaces the engine between a connection's open and its first launch, or while it is idle, swaps
+  one recorded release for another, and the relaunch runs the newer file. That is today's behaviour;
+- the service asks whatever it starts for its version before the first request, at every start, and refuses one
+  below the minimum (client.mjs L50–62), so the minimum holds for the executable that runs, whatever the open saw;
+- this is stated in the README's Linux part and logged in `tech-debt-tracker.md` (T7, T9).
+
+A strict ruling of F2 could not leave it so, and F2 says what it would then take.
+
 **Browser-only sessions.** `replHostFor` asks for an engine only with the computer surface (L421), so a browser-only
 launch resolves the record, the Node and the helper's path, and names the ModuleTree (L160). It needs no engine and no
 vendor tree, and it opens with `CUA_NATIVE_ENGINE=vendor` set and the tree absent.
 
 ### 3.4 What a session requires, and what may stand in for it (F2, F2a)
 
-The pinned part is the ordinary path. An override is a setting the user or the harness names; nothing else stands in.
+The ordinary path is a part cua installed, its bytes the recorded ones, at or above that part's minimum. Below the
+minimum, or without the part, the session is refused. Behind the pin and at or above the minimum, it runs and doctor
+warns. An override is a setting the user or the harness names; nothing else stands in.
 
-| Part | Needed by | The ordinary path | Named overrides | Refusal |
-|---|---|---|---|---|
-| The module tree | every session | the tree of this cua's lock, installed and structurally whole (`resolveRuntime`) | none | `runtime_not_installed`; `layout_invalid` |
-| Node | every session | the managed Node at the record's version, its bytes the recorded ones (`ownHostNode`) | `CUA_NODE`, never a path under `runtimes/` | `runtime_not_installed`; `repl_host_node` for a `CUA_NODE` that is absent or below 24 |
-| The sandbox helper | every session but a `disabled` one | the pinned helper's bytes at its pinned path, checked at every launch (`assertSandboxConfines`, sandbox.mjs L280; `verifyHelper`, linux.mjs L88; unchanged) | `CUA_SHIM_SANDBOX=disabled`, which runs no helper | `sandbox_unavailable` |
-| cua's engine | computer sessions on cua's engine | the pinned engine's bytes (`linuxEngineFor`) | `CUA_LINUX_ENGINE_BIN`; a recorded local build | `engine_not_installed`, `engine_outdated`, `engine_unrecorded` |
-| The vendor tree | computer sessions with the vendor selection | the pinned release, installed (`vendorLinuxRuntime`) | none | `engine_not_installed` |
+| Part | Needed by | Its minimum | Behind the pin | Named overrides | Refusal |
+|---|---|---|---|---|---|
+| The module tree | every session | the tree of this cua's lock, installed and structurally whole (`resolveRuntime`). It is addressed by the lock, so the minimum is the pin | – | none | `runtime_not_installed`; `layout_invalid` |
+| Node | every session | a managed Node at or above `NODE_FLOOR`, its bytes the recorded ones (`ownHostNode`) | runs; `runtime.node` warns | `CUA_NODE` | `runtime_not_installed`; `repl_host_node` for a `CUA_NODE` that is absent or below 24 |
+| The sandbox helper | every session but a `disabled` one | the pinned helper's bytes at its pinned path, checked at every launch (`assertSandboxConfines`, sandbox.mjs L280; `verifyHelper`, linux.mjs L88; unchanged). It is what confines, so the minimum is the pin | – | `CUA_SHIM_SANDBOX=disabled`, which runs no helper | `sandbox_unavailable` |
+| cua's engine | computer sessions on cua's engine | a recorded release at or above `MIN_ENGINE_VERSION` (`linuxEngineFor`; the service again at each start) | runs; `engine` warns | `CUA_LINUX_ENGINE_BIN`; a recorded local build | `engine_not_installed`, `engine_outdated`, `engine_unrecorded` |
+| The vendor tree | computer sessions with the vendor selection | the pinned release, installed (`vendorLinuxRuntime`) | – | none | `engine_not_installed` |
 
-Every refusal names `ownInstaller`'s command. Doctor reports an override in force as `warn`, naming it (§4.5).
+- No override may be, or lead to, a path under `runtimes/` (§3.3).
+- Every refusal names `ownInstaller`'s command. Doctor reports an override in force, and a part behind its pin, as
+  `warn`, naming it (§4.5).
+- A minimum moves as `MIN_ENGINE_VERSION` moves today: the pull request that makes cua rely on a newer part raises
+  it (L140).
 
 ### 3.5 "No vendor tree read", and how it is shown
 
 **What is guaranteed.** On a session's open and launch, with any selection but `vendor`, cua opens, stats, lists and
-runs nothing under `<home>/runtimes/`, and names no such path to its children. `cua profiles list`, `bind` and `open`
-are covered, since they launch through the same code. `cua install` and `cua doctor` read the tree by design until
-M6b: they place it and report it.
+runs nothing under `<home>/runtimes/`, and names no such path to its children. No override brings it back: a
+`CUA_NODE` or a `CUA_LINUX_ENGINE_BIN` that is, or leads, under `runtimes/` is refused by its spelling and by its real
+path, before anything there is touched (§3.3). `cua profiles list`, `bind` and `open` are covered, since they launch
+through the same code. `cua install` and `cua doctor` read the tree by design until M6b: they place it and report it.
 
 **Shown with the tree present, not only with it gone.** A removed tree shows that no read is needed. It does not show
 that none is attempted, and a read inside a `try` would pass unseen.
@@ -405,9 +431,9 @@ installed on its own, and the exit status follows the lane the home asks for (F4
 | `platform` | the vendor pin for the host (L132–133) | "linux-`<arch>`: cua's own runtime `<release>`", from the record. An `invalid_pin` fails it |
 | `runtime.installed` | the pointer's vendor release and its root (L142–143) | `pass`: the common parts are installed and the pointer names this release. `warn`: sessions resolve, and the pointer names a vendor release or another own release. `fail`: `runtime_not_installed`. Each names `ownInstaller`'s command |
 | `runtime.modules` (new) | – | `verifyModuleTree`: every package's digest and every native file's hash. `fail` names the first few that differ |
-| `runtime.node` (new) | – | `pass`: the pinned Node is installed and active. `warn`: `CUA_NODE` stands in for it. `fail`: neither |
+| `runtime.node` (new) | – | `pass`: the pinned Node is installed and active. `warn`: a managed Node behind the pin runs, naming both versions; or `CUA_NODE` stands in. `fail`: neither |
 | `sandbox.launcher` | the pinned helper (L108–116) | unchanged: it is the helper part's row |
-| `engine` | cua's engine against its pin; the fallback as `warn` (`src/runtime/doctor-engine.mjs` L228–230) | `pass`: the pinned engine. `warn`: a local build or `CUA_LINUX_ENGINE_BIN`. `fail`: the refusals of §3.3, and a vendor selection whose tree is absent |
+| `engine` | cua's engine against its pin; the fallback as `warn` (`src/runtime/doctor-engine.mjs` L228–230) | `pass`: the pinned engine. `warn`: a recorded release behind or ahead of the pin, at or above the minimum, naming both versions; a local build; `CUA_LINUX_ENGINE_BIN`. `fail`: the refusals of §3.3, and a vendor selection whose tree is absent |
 | `runtime.files`, `runtime.vendor-manifest`, `runtime.ipc`, `runtime.signatures` | the vendor tree (L149–165) | one row, `runtime.vendor`: `pass` when the tree is installed and verifies ("kept for `CUA_NATIVE_ENGINE=vendor`"), `skip` when it is absent, `fail` when it is damaged. M6b deletes it (L206) |
 | `sandbox` | protects the vendor module tree (L330) | protects the ModuleTree and `modules/` |
 
@@ -444,11 +470,13 @@ host, so the existing Linux-host tests keep resolving.
 | Pointer absent, unreadable, or another own name; parts installed | resolves | same |
 | darwin: locate and resolve | as before | same |
 | **The recorder** (§3.5): a default computer session and a browser-only one, the vendor tree present, the vendor `bin` on `PATH` | no path under `runtimes/` opened, stat-ed, listed or run; today's `ownHostNode` fails the same test | `test/runtime-linux-no-vendor-read.test.mjs` (new) |
-| The Node: the managed one at the record's version; an older managed version; none | used; `runtime_not_installed`; `runtime_not_installed`. The node running cua and `PATH` are never tried | `test/runtime-linux-launch.test.mjs` |
+| The Node: the managed one at the record's version; a managed one behind it; one whose bytes are not its record's; none | used; used, and doctor warns; `runtime_not_installed` twice. The node running cua and `PATH` are never tried | `test/runtime-linux-launch.test.mjs` |
 | `CUA_NODE`: a good Node; one under `runtimes/`; a symlink outside that leads there | used, and doctor warns; `invalid_setting` for both, with no probe run | same |
+| `CUA_LINUX_ENGINE_BIN`: a good engine; a path under `runtimes/`; a symlink outside that leads there. And an installed `engine/linux/cua-engine` that is a link into `runtimes/` | used, and doctor warns; `invalid_setting` for both, with nothing there stat-ed or run; `engine_not_installed` for the installed link | `test/runtime-linux-engine-selection.test.mjs`; the recorder's test |
 | A Linux computer launch on cua's engine | no value of its environment, no trusted code path and no root in the launch record lies under `runtimes/`; the module base is the ModuleTree | same |
 | A browser-only launch with no engine installed and no vendor tree | builds; names Node, the ModuleTree and the helper only | same |
-| The engine: the pinned bytes; a recorded older release; a newer one; a local build; `CUA_LINUX_ENGINE_BIN`; unrecorded bytes; none. Under the default and under an explicit `cua` | selected; `engine_outdated` twice; selected, twice, and doctor warns; `engine_unrecorded`; `engine_not_installed` | `test/runtime-linux-engine-selection.test.mjs`; the oracle, `scripts/repl-parity/selection.mjs` L51–57 and its test |
+| The engine: the pinned bytes; a recorded release behind the pin and at or above the minimum; one ahead of the pin; one below the minimum; a local build; unrecorded bytes; none. Under the default and under an explicit `cua` | selected; selected and doctor warns, twice; `engine_outdated` at the open; selected and doctor warns; `engine_unrecorded`; `engine_not_installed` | `test/runtime-linux-engine-selection.test.mjs`; the oracle, `scripts/repl-parity/selection.mjs` L51–57 and its test |
+| The engine replaced after the open, before the first launch and again between an idle stop and the relaunch: by another release at or above the minimum; by one below it | the launch runs the file now at the path; the service refuses the one below the minimum before any request. The stated behaviour of §3.3, held by test | `test/services-engine-linux/`, `test/serve-lazy.test.mjs` |
 | The vendor selection, tree installed | `OAI_SKY_LINUX_BIN`, the vendor service, the vendor `node_modules` trusted; the module base still the ModuleTree | `test/runtime-linux-launch.test.mjs`; `test/linux-secrets.test.mjs` |
 | The vendor selection, tree absent, by environment and by `engine.json` | `engine_not_installed`, naming the installer | `test/runtime-linux-engine-selection.test.mjs` |
 | A scoped launch whose run directory overlaps `modules/` | `sandbox_conflict` | `test/mcp-sandbox.test.mjs` |
@@ -481,10 +509,12 @@ the serve:
   `src/runtime/linux-desktop.mjs` L107);
 - `CUA_SHIM_SANDBOX` unset, so the mode is `scoped`. The driver refuses to start under any other.
 
-Before any cell, `cua doctor --json` must show `display`, `accessibility.bus`, `accessibility.enabled`,
-`sandbox.userns` and `sandbox.launcher` as `pass`. `accessibility.enabled` is `warn` when the property is false or
-unread (L121–123 of that file), and a `warn` stops the run. A launch copies exactly these variables to the runtime
-(`desktopSessionEnv`, L37–44).
+Before any cell, `cua doctor --json` must show the four rows of the environment as `pass`: `display`,
+`accessibility.bus`, `accessibility.enabled` and `sandbox.userns`. `accessibility.enabled` is `warn` when the property
+is false or unread (L121–123 of that file), and a `warn` stops the run. A launch copies exactly these variables to the
+runtime (`desktopSessionEnv`, L37–44). `sandbox.launcher` is not among them: an empty home has no helper until E0
+installs one. It is checked after each home's install (E0, U2), and no session cell starts in a home where it does not
+pass.
 
 **The fixtures.**
 
@@ -506,11 +536,18 @@ unread (L121–123 of that file), and a `warn` stops the run. A launch copies ex
   - `sharp` resizes an image `pngjs` made, and `classic-level` writes and reads a key in the session's temp, which
     load each architecture's native code inside the sandbox;
   - **where each import really loaded from.** `import.meta.resolve` gives back the specifier for a package
-    (kernel.mjs L345–347), so it shows nothing. Three witnesses are read in the cell instead: the files Node's
-    CommonJS cache holds after the imports (`createRequire(…).cache`'s keys), which covers the five CommonJS packages
-    and their dependencies; the stack of an error raised inside `pixelmatch`, an ES module, by a call with mismatched
-    sizes; and `/proc/self/maps` for the mapped `.node` and `libvips` files. Every path must lie under
-    `modules/<lock>/` and none under `runtimes/`;
+    (kernel.mjs L345–347), so it shows nothing. The kernel resolves with the conditions `node` and `import` (L309,
+    L482–484). By each package's `package.json` in `V/`, three of the six entries are then ES modules,
+    `playwright/index.mjs`, `sharp/dist/index.mjs` and `pixelmatch/index.js`, and three are CommonJS,
+    `pngjs/lib/png.js`, `jpeg-js/index.js` and `classic-level/index.js`. A CommonJS dependency or a mapped library
+    does not identify the entry that imported it, so the entry itself is witnessed, twice:
+    - *selected:* the cell makes the kernel's own call for each specifier, `createRequire` from
+      `<base>/__node_repl__.cjs` and `resolve` with those conditions (L363–370, L482–484), over the base it reads from
+      its own environment. Each selected path is reported. It must be the entry named above and lie under
+      `modules/<lock>/`;
+    - *opened:* in the traced run, the kernel's process must open each of those six paths, and nothing under
+      `runtimes/`.
+    `/proc/self/maps` is read for the native `.node` and `libvips` files only, which it does identify;
   - `end_task`; no run entry left.
 - **The confinement step,** shared by the smoke and the browser-only fixture, replaces the smoke's present one for
   these runs (finding 11). Its targets are the X server's socket, the session bus's actual socket (parsed from
@@ -525,9 +562,9 @@ unread (L121–123 of that file), and a `warn` stops the run. A launch copies ex
 
 | Cell | Home | State | Step | Passing means |
 |---|---|---|---|---|
-| E0 | empty | – | `cua install` at the head | Exit 0. The tree, helper, Node and engine placed. The pointer is the derived name. `cua doctor --json` is ok: `runtime.installed`, `runtime.modules` and `runtime.node` pass; `engine` shows the pinned version, the pin's hash and service `cua` |
+| E0 | empty | – | `cua install` at the head | Exit 0. The tree, helper, Node and engine placed. The pointer is the derived name. `cua doctor --json` is ok: `runtime.installed`, `runtime.modules`, `runtime.node` and `sandbox.launcher` pass; `engine` shows the pinned version, the pin's hash and service `cua` |
 | E1 | E | vendor tree present | the item 1 smoke and the item 6 witness, once plain and once under `strace -f` for file and exec calls | Every step passes. No `sky_linux` at any sample. The engine child is the home's `cua-engine`. In the traced run, no call of the serve's process tree names a path under `runtimes/`; the processes traced are listed, and a run whose trace lacks the kernel or the worker does not pass this cell |
-| E2 | E | present | the browser-only session, plain and traced; the loader | Every step passes. Every witnessed path is under `modules/<lock>/`. No engine process at any sample |
+| E2 | E | present | the browser-only session, plain and traced; the loader | Every step passes. Each of the six selected entries is the one named, under `modules/<lock>/`, and in the traced run the kernel opened each. The native files mapped are under `modules/<lock>/`. No engine process at any sample |
 | E3 | E | `runtimes/` moved out of the home | E1 and E2, plain | as E1 and E2 |
 | E4 | E | moved out | a computer session with `CUA_NATIVE_ENGINE=vendor`, then with `"engine": "vendor"` | The open is refused `engine_not_installed`, naming the installer. Nothing is launched. Doctor's `engine` row fails with the sentence. A browser-only session with the variable set still passes |
 | E5 | E | moved back | the vendor selection: list the apps, bind a harness gedit, read its tree; no input (M5's fallback observation) | The engine child is this home's `sky_linux_<arch>`, behind the vendor service, and no `cua-engine` runs. A cell's import still loads from `modules/<lock>/`. This is the rollback (L340) |
@@ -563,8 +600,9 @@ before M6a. A difference above about 50 ms is a finding for the design session.
   - The log and the artifact carry labels, outcomes, counts and scratch paths, as `sandbox-live`'s do.
 - Neither venue needs a `:0` sitting.
 
-**The venue pilot,** in wave 0, on main, before any M6a code exists: the wrapper, doctor's five rows, the item 1 smoke
-with the new confinement step, and a traced run, on both legs. It answers four questions: whether bubblewrap gets its
+**The venue pilot,** in wave 0, on main, before any M6a code exists: the wrapper, doctor's four environment rows,
+today's install, then `sandbox.launcher`, the item 1 smoke with the new confinement step, and a traced run, on both
+legs. It answers four questions: whether bubblewrap gets its
 user namespace there; whether gedit's tree is served on the private bus; whether the positive controls connect and the
 kernel is refused; whether `strace -f` follows the helper's children. A no on the first three that the recipe cannot
 fix sends arm64 back to a VM, which is the design session's call and cost. A no on the fourth means the traced cells
@@ -601,13 +639,13 @@ arm64 the run's id and its artifact.
 |---|---|---|---|---|
 | T1 | **The ModuleTree** (§4.2). The package file, the lock, the provenance and the pin-time script. The closure. The tarball reader. The installer, the payload record and the two checks. `homeLayout` gains `modules` | `runtime/modules/` (`package.json`, `package-lock.json`, `provenance.json`), `scripts/modules-pin.mjs`, `src/runtime/module-tree.mjs` (new), `src/runtime/tarball.mjs` (new), `src/runtime/layout.mjs`, `src/runtime/install.mjs` (the SHA-512 check), `package.json` (`files`), `test/runtime-module-tree.test.mjs`, `test/runtime-tarball.test.mjs`, `test/modules-pin.test.mjs`, `test/package-contents.test.mjs` | the pinned x64 deb, for the pin-time run | **ModuleTree**, which #117 M6 reuses: `loadModuleLock() → {hash, packages}`, `moduleClosure(lock, host)`, `installModuleTree({home, lock, host, fetch, dir}) → {root, moduleDir, lock, changed}`, `readModuleTree(home, lock, host)`, `checkModuleTree(root, record)`, `verifyModuleTree(root, record)`. Failing-first tests for §5.1's first ten rows, on a fixture registry. `provenance.json` as the script wrote it against the real deb, reviewed. **If F1 is ruled for `npm ci`:** the provenance, the closure test and the payload record stay; the installer's body runs npm with `--ignore-scripts` through an injected `run` and then checks the tree against the provenance; the tarball reader goes |
 | T2 | **The record and resolution** (§2, §3.1), with `ownInstaller`. `fakeInstalledHome` for a Linux host. `linux-engine-pin.mjs` writes the record's engine version | `runtime/linux-runtime.json`, `src/runtime/manifest.mjs`, `src/runtime/checks.mjs`, `scripts/linux-engine-pin.mjs`, `test/runtime-linux-record.test.mjs`, `test/runtime-manifest.test.mjs`, `test/linux-engine-pin.test.mjs`, `test/fixtures/` | T1 | `loadLinuxRuntime`, `linuxRelease`, `vendorLinuxRuntime`, `ownInstaller`; Linux `locateRuntime` and `resolveRuntime`. §5.1's record, name and resolution rows; darwin unchanged |
-| T3 | **Launch and selection** (§3.2–3.5): the Linux Node, the vendor exclusion, the engine's pin, the vendor selection, the trusted paths, the recorder test | `src/runtime/launch.mjs`, `src/runtime/sandbox.mjs`, `src/mcp/connection.mjs` (its header), `scripts/repl-parity/selection.mjs`, `test/runtime-linux-launch.test.mjs`, `test/runtime-linux-engine-selection.test.mjs`, `test/runtime-linux-no-vendor-read.test.mjs`, `test/linux-secrets.test.mjs`, `test/services-sky-linux-launch.test.mjs`, `test/mcp-sandbox.test.mjs`, `test/repl-parity/selection-oracle.test.mjs` | T2 | §5.1's recorder, Node, launch and selection rows. Every darwin row of `test/runtime-launch.test.mjs` unchanged. **If F2a keeps a tolerance** (the node running cua, or an engine at or above `MIN_ENGINE_VERSION`): that candidate stays, behind the vendor exclusion, and doctor warns. **If F3 keeps the fallback:** the default cases take the vendor tree when it is installed and refuse when it is not |
+| T3 | **Launch and selection** (§3.2–3.5): the Linux Node, the vendor exclusion for both lookups, the engine's minimum at the open, the vendor selection, the trusted paths, the recorder test | `src/runtime/launch.mjs`, `src/runtime/sandbox.mjs`, `src/mcp/connection.mjs` (its header), `scripts/repl-parity/selection.mjs`, `test/runtime-linux-launch.test.mjs`, `test/runtime-linux-engine-selection.test.mjs`, `test/runtime-linux-no-vendor-read.test.mjs`, `test/linux-secrets.test.mjs`, `test/services-sky-linux-launch.test.mjs`, `test/mcp-sandbox.test.mjs`, `test/repl-parity/selection-oracle.test.mjs` | T2 | §5.1's recorder, Node, override, launch, selection and engine-swap rows. Every darwin row of `test/runtime-launch.test.mjs` unchanged. **If F2 is ruled strict:** the Node and the engine must be the pinned ones; the engine moves to an immutable directory per digest, its digest is named to the service and checked before each start, and the swap row becomes two tests that must run the original bytes or refuse (F2 has the cost; T4 and T5 follow the new path). **If F2a keeps the node running cua:** that candidate stays, behind the vendor exclusion, and doctor warns. **If F3 keeps the fallback:** the default cases take the vendor tree when it is installed and refuse when it is not |
 | T4 | **Install, migration, doctor, the provisioner** (§4.1, §4.3–4.5) | `src/cli.mjs` (install, `runtime use`), `src/runtime/install.mjs`, `src/runtime/doctor.mjs`, `src/runtime/doctor-engine.mjs`, `deploy/cloud-vm/{cua-provision.sh,render.sh,create-hetzner.sh}`, `test/cli.test.mjs`, `test/runtime-linux-install.test.mjs`, `test/runtime-linux-doctor.test.mjs`, `test/doctor-engine-linux.test.mjs`, `test/deploy-cloud-vm.test.mjs`, `test/profiles-commands.test.mjs` | T1, T2; §3.3's refusal codes, which T3 builds beside it | §5.1's install, failure-injection, provisioner and doctor rows. macOS install and doctor unchanged |
 | T5 | **The harnesses follow** (finding 13). repl-parity: the provenance's Node (the managed one on Linux), the engine judge's vendor path through `vendorLinuxRuntime`, the archive cache's module tarballs and `--modules-dir`. native-baseline: the runtime root. **The capability home:** its source is the resolved own parts, not `runtimes/<pointer>`; a managed home is installed from the cache, a local one copies the own parts; the fresh home is checked by resolving it. The `fallback` part: the five shaped homes now expect the refusal, by doctor and by a refused open, with no session. Whatever reads `cua install --json`'s `release`, `root` or `source` | `scripts/repl-parity/{provenance,engine-answered,archive-cache}.mjs`, `scripts/native-baseline/remote.mjs`, `scripts/browser-parity/capability-home.mjs`, `scripts/linux-engine-gate/suites.sh`, `scripts/accept/{linux-fallback,linux-selection}.mjs`, `scripts/probe-secrets.mjs` (a label), `test/repl-parity/`, `test/native-baseline/`, `test/browser-parity/`, `test/harness-home.test.mjs`, `test/accept-linux-selection.test.mjs` | T3, T4 | Tests for each, the capability home's whole preparation among them. R1 run once on x64 as a development run. Reviewed for false greens first, as every harness change since M4 |
 | T6 | **The driver, the fixtures and the workflow** (§5.2). In wave 0: the wrapper, the confinement step, the workflow and the venue pilot, on main. Then the item 6 witness, the browser-only fixture and the driver, piloted on both venues | `scripts/accept/{linux-runtime,linux-browser-only,linux-text,linux-confinement}.mjs`, `scripts/accept/linux-native.mjs` (its confinement step), `.github/workflows/linux-runtime.yml`, `test/accept-linux-runtime.test.mjs`, `test/accept-linux-native.test.mjs`, `test/accept-scripts-load.test.mjs` | F8's ruling for the pilot; T4 for the driver | The venue pilot's report on its four questions. Each judge's negative control by test: a doubled or altered text, a kernel that connects, a listener that accepted, a path under `runtimes/` in a trace or a witness. A pilot of every cell on both venues. Reviewed for false greens first |
-| T7 | **Docs and the bump.** README's Linux part (L1086–1110 of the README: the two engines, what `cua install` places, the parts and their overrides); its Install part and the plugin's update step (L104–109), with the installer the refusal names; its Configuration part and its licence note; `deploy/cloud-vm/README.md` (`CUA_DEB`); the plugin's description and 0.29.0 to 0.30.0 | `README.md`, `deploy/cloud-vm/README.md`, `.claude-plugin/plugin.json` | – | Each sentence checked against the code at the head. The bump under L218's conditions |
+| T7 | **Docs and the bump.** README's Linux part (L1086–1110 of the README: the two engines, what `cua install` places, the parts with their minimums and overrides, and that an install during a session changes the engine its next launch runs); its Install part and the plugin's update step (L104–109), with the installer the refusal names; its Configuration part and its licence note; `deploy/cloud-vm/README.md` (`CUA_DEB`); the plugin's description and 0.29.0 to 0.30.0 | `README.md`, `deploy/cloud-vm/README.md`, `.claude-plugin/plugin.json` | – | Each sentence checked against the code at the head. The bump under L218's conditions |
 | T8 | **Acceptance 12, counted** (§5.2), at the frozen head on both venues, with the x64 regression | evidence `m6a/` | the frozen head: T1–T6 | Every cell passes by the driver's own judge. `m6a/README.md` with the cell table, the SHA, the arm64 run's id, and F10's credit stated with its check |
-| T9 | **Close-out.** The spec folded: Progress, a Decision Log entry for each ruling of §7, Surprises, Outcomes. A line in #117's spec that the ModuleTree landed here, with any departure from N L204. The whole-branch review by `doperpowers:reviewer-high` (L217). `ci-gate`. The pull request, its body listing every macOS-visible change, the one install every Linux home needs and the command for it | the two specs, the report, `tech-debt-tracker.md` | T7, T8 | The review clean. `ci-gate` GREEN with `test` and `sandbox-live` among those that ran. `MERGEABLE` |
+| T9 | **Close-out.** The spec folded: Progress, a Decision Log entry for each ruling of §7, Surprises, Outcomes. A line in #117's spec that the ModuleTree landed here, with any departure from N L204. The whole-branch review by `doperpowers:reviewer-high` (L217). `ci-gate`. The pull request, its body listing every macOS-visible change, the one install every Linux home needs and the command for it | the two specs, the report, `tech-debt-tracker.md` (the engine swap of §3.3; C10) | T7, T8 | The review clean. `ci-gate` GREEN with `test` and `sandbox-live` among those that ran. `MERGEABLE` |
 
 **Order.** Each task is reviewed clean before what consumes it runs.
 
@@ -636,8 +674,8 @@ arm64 the run's id and its artifact.
 | T9 | 6–10 |
 
 About three and a half days to the pull request with no cut. Plan for one fix round from the hosted pilot: four to
-four and a half. A venue that falls back to a VM adds the VM's day. Not counted: usage stops, and the hosted macOS
-queue for `ci-gate`.
+four and a half. A venue that falls back to a VM adds the VM's day, and a strict ruling of F2 adds about a day for
+the engine's new layout. Not counted: usage stops, and the hosted macOS queue for `ci-gate`.
 
 ## 7. Design forks, for the design session to rule
 
@@ -648,13 +686,13 @@ rest can be confirmed while wave 0 runs.
 | F | Question | Recommendation | Why, and what the other choice costs |
 |---|---|---|---|
 | **F1** | How is the ModuleTree installed? (a) `npm ci --omit=dev`, the design text (N L204). (b) cua fetches each tarball of the closure, checks its length and SHA-512 and unpacks it itself. (c) A prebuilt tree per architecture, published and attested by this repository as the helper and the engine are | **(b)** | Whichever is ruled, the lock is authenticated at pin time against the vendor archive's lockfile (§4.2; finding 6). Finding 5: the managed Node has no npm, so (a) runs whatever npm the machine has, under the user's npm settings, and needs `--ignore-scripts` to keep `classic-level`'s install script from running. A machine without npm cannot install, and a plugin copy could not install its own runtime (F9). Its real path cannot be unit-tested, where (b) takes a fake `fetch` like every other installer and controls what a tarball may write. (b) keeps one discipline for all four parts: a pinned URL, a pinned length and hash checked before anything reads the bytes, staging, one rename. It costs about 400 lines with the reader and the pin-time script, and a departure from N L204, which #117 M6 inherits. (c) is the most hermetic, one download and the same bytes everywhere, but cua would redistribute third-party packages, among them libvips under the LGPL: an owner's decision, with #120 |
-| **F2** | What must be installed for a session to resolve? | **What L158 says: each part the session needs, present and matching its pin** (§3.4). Every session needs the module tree, the pinned Node and, unless it runs `disabled`, the pinned helper. A computer session also needs its lane's engine. Only a named override stands in for a part (F2a) | Findings 3 and 4. It ends the silent paths: a session on the node that happens to run cua, on a `PATH` Node, on the vendor's Node, or on an engine release this cua does not pin. Its cost is that any pin that moves refuses the sessions that need that part until the installer runs again: every session for a Node, helper or lock bump, computer sessions for an engine bump. The engine's pin moved three times during M5. F9's named installer makes the remedy one command |
-| **F2a** | Which named overrides stand, and which tolerances end? | **Stand:** `CUA_NODE` (never a path under `runtimes/`), `CUA_LINUX_ENGINE_BIN`, a recorded local build from `cua engine build`, `CUA_SHIM_SANDBOX=disabled`. Doctor warns of each. **End on Linux:** the node running cua and `node` on `PATH` as Node candidates; an engine release other than the pin, at or above `MIN_ENGINE_VERSION` or not. `cua install --no-node` stays, and its sessions then need `CUA_NODE` | The four that stand are asked for by name and the harness and the engine's development use them. The two that end are not asked for by anyone. Keeping the engine tolerance (M5's F5a) is the softer choice: an engine bump would not refuse computer sessions, a second engine version would be in play, and L158 would hold for three parts of four. Keeping the node running cua would let `--no-node` homes run without `CUA_NODE`, behind the vendor exclusion |
+| **F2** | What must be installed for a session to resolve, and how close to its pin must each part be? L158 says "each part present and matching its pin" | **A minimum for each part** (§3.4). Each part a session needs must be one cua installed, with the bytes its record names, at or above that part's minimum: refused below it or without it; run, with a doctor warning, when behind the pin. The minimum is the pin for the module tree and the helper, `NODE_FLOOR` for the managed Node, and `MIN_ENGINE_VERSION` for the engine. Only a named override stands in for a part (F2a). L158's words are amended at the fold (C3) | **Three views.** The adversarial review read L158 as written, every part at its pin, and revision 2 recommended that. The coordinator's view: a pin move that refuses every session needing the moved part, until a manual install the plugin never runs, is a heavy recurring cost, and a per-part minimum, refusing below it and warning in doctor when behind the pin, keeps the vendor-free guarantee without that cost. **Mine is now the coordinator's, and it is the recommendation.** The engine's pin moved three times during M5, and the plugin follows `main` and installs nothing (README L104–109), so strict pins turn each engine release into refused computer sessions on every Linux home. `MIN_ENGINE_VERSION` already states what must not run, and the pull request that makes the service rely on a newer engine raises it (L140). What the review's findings needed holds either way (findings 3 and 4): nothing unrecorded runs, the node running cua and `PATH` are gone, a missing part refuses, and no path under `runtimes/` serves an own lane. **What the minimum costs.** A home can run a Node or an engine behind the pin until its next install, so acceptance speaks for the pin and doctor for the home. And the engine's guarantee is a compatible engine, not these bytes: an install between a connection's open and a launch swaps one for another, as today (finding 15; §3.3), which is said in the README and logged. **If strict is ruled.** Every session runs the pinned bytes or a named override, and the engine must then be bound to them, since a pathname replaced in place is not: an immutable directory per digest under `engine/linux/`, never written twice; the digest named to the service and checked before each start; and tests for open, an install, first use, and for open, idle, relaunch, each of which must run the original bytes or refuse before any other engine runs. Its cost is the recurring refusals above, a new engine layout that the installer, `cua engine build`, doctor, the README, acceptance item 9's path and the harness's readers of the engine's path all follow, a prune for superseded engines, and about a day |
+| **F2a** | Which named overrides stand? | **Stand:** `CUA_NODE` and `CUA_LINUX_ENGINE_BIN`, neither ever a path that is, or leads, under `runtimes/`; a recorded local build from `cua engine build`; `CUA_SHIM_SANDBOX=disabled`. Doctor warns of each. **End on Linux:** the node running cua and `node` on `PATH` as Node candidates. `cua install --no-node` stays, and its sessions then need `CUA_NODE` | The four that stand are asked for by name, and the harness and the engine's development use them. An override may replace a pinned part; it may not make the vendor tree a dependency of an own lane, so the Node lookup and the engine lookup carry the same exclusion (§3.3). The two that end are asked for by no one and are the silent path the review found. Keeping the node running cua would let `--no-node` homes run without `CUA_NODE`, behind the exclusion: a part nobody installed and no record names |
 | **F3** | M5's F5 and F5a: the default with no usable engine keeps the vendor's engine | **It becomes a refusal** naming the installer and `--engine`: `engine_not_installed`, `engine_outdated`, `engine_unrecorded` | Finding 7: the fallback reads the vendor tree under the default, which L161 excludes. #117 does the same at its M6 (N L192, "from M6: refused"). F5 existed so that an update would not break a home that had not installed; M6a requires an install in any case (F9), and that install places the engine. A sentence naming the fix is better than a silent move to an engine whose text input fails. Keeping the fallback while the tree is present leaves a second reader of the vendor tree for M6b to remove |
 | **F4** | `cua install`'s order, and what a failed step does | **Common parts first; each lane on its own; every step attempted; the exit status follows the requested lane** (§4.1) | Finding 8. A failed engine download must not leave a home without its Node or without the rollback. A failed vendor download must fail the command for a home set to `vendor`, whose refusal names that command, and must not fail it for a home that never asked. The simpler rule, every step fatal, makes both servers a dependency of every install |
 | **F5** | Under `CUA_NATIVE_ENGINE=vendor`, which module tree do cells import from? | **cua's ModuleTree, as under the default.** The vendor tree gives the engine, its service and that service's own imports | One variable between the two engine lanes of R1, and the ModuleTree exercised on both. The other choice, today's launch whole, also keeps `@oai/*` importable there |
 | **F6** | `@oai/*`, `@statsig/*` and `corepack` stop being importable in cells | **A declared difference,** stated in the README | They are the vendor's code, its telemetry client and its Node's tool. cua's text names none. The ModuleTree could carry the two public ones if the design session wants the importable set unchanged; each would then need its own line in the provenance |
-| **F7** | How deep is the browser-only check? | **The session; a `cua.listBrowsers` call the browser service answers; the six imports, each witnessed to its real path, with `sharp` and `classic-level` run natively; the confinement step with its controls; the profile map's loader. No tab** | M6a changes what a browser-only launch resolves and imports, not the browser route, and the liveness call shows the service is loaded and answering from the own parts. A tab needs a harness Chrome with cua's extension and a bound profile on each venue, which no Linux harness has yet, and on x64 the VM's Chrome is on `:0` |
+| **F7** | How deep is the browser-only check? | **The session; a `cua.listBrowsers` call the browser service answers; the six imports, each entry witnessed as selected and as opened, with `sharp` and `classic-level` run natively; the confinement step with its controls; the profile map's loader. No tab** | M6a changes what a browser-only launch resolves and imports, not the browser route, and the liveness call shows the service is loaded and answering from the own parts. A tab needs a harness Chrome with cua's extension and a bound profile on each venue, which no Linux harness has yet, and on x64 the VM's Chrome is on `:0` |
 | **F8** | The arm64 venue. (i) A workflow of cua's own, or a ci-kit lane? (ii) May its upgraded home fetch the vendor deb on the runner? L186 says the vendor package is not fetched in CI. (iii) What if the venue pilot fails? | **(i) cua's own dispatch-only workflow, both legs.** A lasting gate is the M5 pre-flight's F7 ticket and CI-opt's. **(ii) Yes, on this dispatch-only lane. (iii) An arm64 VM, as M5 used, on the design session's word** | (i) Finding 11. The venue is plausible and not established until the pilot passes. (ii) The upgrade through the older cua's real install is what a user meets (U0 to U2), and arm64 has no other venue. L186 was written for comparisons against the vendor, and the hosted macOS gates already install from the vendor's macOS archive (`.github/ci-kit.yml`, `sandbox-live` and `parity-browser`). If no: the upgraded home is built without the vendor step, as L162 states it, U1 cannot run there, and the venue pilot waits for T4 |
 | **F9** | The upgrade. After the update every Linux home needs one install, and until then every session is refused (L159). Which command does the refusal name? | **This cua's own installer, by absolute path, with the release it installs** (§3.1, §4.3). The README's update step says the same. `cua install`, unqualified, is named nowhere on Linux | Finding 9: a `cua` on `PATH` from an older checkout succeeds and fixes nothing. The plugin copy can install its own runtime, since the install needs no npm (F1). The other choices: tell the user to update the checkout first, which leaves two versions to keep in step; or have `cua serve` install at start, which puts downloads in a session's open and was not asked for |
 | **F10** | Acceptance 12's computer session is "items 1 and 6" (L205). Item 6's own suites are V1 and V4, on `:0`, against the engine directly. What does M6a run? | **Credit M5's item 6 evidence, and repeat a named witness.** The credit holds only while the engine and its service are the bytes M5 accepted: at the frozen head, the engine pin's two hashes are M5's, and `native/linux-engine/` and `src/services/engine/linux/` do not differ from da7585c3. T8 records the command and its output. The witness is `linux-text.mjs` on both architectures in every home state, with R4 and R1's two text cases on x64 (§5.2). The ASCII smoke is never called item 6 | Finding 12. V1 and V4 never pass through resolution or launch, so rerunning them would re-prove the engine and show nothing of M6a. What M6a can break is the path from the own parts to the engine: the launch, the service's module, the binary the install placed. The witness covers that with item 6's own string. It does not cover Chrome's textarea and address bar, the paste safety cases or the bus trace, which are credited. Running V1 and V4 instead needs a `:0` sitting on x64 and has no arm64 machine. If the engine pin has moved by the freeze, the credit is to that release's own acceptance, or it fails and the suites run |
@@ -665,7 +703,7 @@ rest can be confirmed while wave 0 runs.
 |---|---|---|---|
 | C1 | `classic-level` goes "into cua's own dependencies" and the Touches name `package.json`; the Interfaces put it in the ModuleTree | N L204, L342 against N L640, L511 | The ModuleTree. A plugin checkout has no `node_modules`, so a root dependency would not load there, and the loader's call is unchanged. `package.json` changes only its `files` |
 | C2 | The record's four values repeat the four pins | L157, L511 | Kept as the spec says, bound at load and by test, and written by the pin script (§2). Deriving the record from the pins with no file would also work; it is simpler and cannot drift, and loses the one reviewable statement of the runtime |
-| C3 | L158 requires every part; L160 says a browser-only session needs no engine | L158, L160 | "Each part the session needs" (§3.4, F2) |
+| C3 | L158 requires every part, at its pin; L160 says a browser-only session needs no engine; F2 recommends a minimum where L158 says the pin | L158, L160 | "Each part the session needs", at or above its minimum (§3.4). The fold rewords L158 to F2's ruling: the minimum, or the pin with the engine bound to its bytes |
 | C4 | The spec does not say whether the pointer still selects | L157, L159 | It records (§4.3) |
 | C5 | An older cua sharing a home fails on the derived name, and its `cua install` does not serve the newer one | manifest.mjs L160–164; README L104–109 | The named installer (F9). Said in the pull request and the README |
 | C6 | `cua install --engine` is described as installing the engine on its own; the code runs every step and only makes the engine required | README L1094 against cli.mjs L170–172 | T7 words it as §4.1 does: it requests the engine's lane |
@@ -705,9 +743,10 @@ rest can be confirmed while wave 0 runs.
 - The tarballs' lengths, and that every one of them holds only files and directories under one top directory.
 - That the recorder sees every read these modules make. It wraps the synchronous and callback functions and
   `fs.promises`; a read through another route would escape it, and the traced live cell is the check on that.
-- The three import witnesses in a cell: that the CommonJS cache is reachable there as `own-sandbox.mjs`'s probe
-  reaches `createRequire` (L101, L116), that `pixelmatch` raises from its own file, and that `/proc/self/maps` is
-  readable in the kernel as `/proc/self/environ` is (L106).
+- The import witness. The six entries are read off each package's `exports`, `main` and `type` in `V/`; no
+  resolution was run. That a cell can make the kernel's call is by `own-sandbox.mjs`'s probe, which reaches
+  `createRequire` and `/proc/self/environ` (L101, L106, L116); that `/proc/self/maps` is as readable is assumed. The
+  "opened" half depends on the trace reaching the kernel's process.
 - That `oracle.mjs` reads gedit's field on the runner with `busctl` alone.
 - `sharp` and `classic-level` loading inside the sandbox from `modules/`. They load today from `runtimes/`, and the
   Linux deny list treats the two alike by reading.

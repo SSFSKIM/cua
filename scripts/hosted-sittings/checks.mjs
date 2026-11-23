@@ -12,14 +12,23 @@
 //                structure) or ran through passes; samples with no verdict (./native-matrix/front-key.mjs: activation,
 //                unread, alert) and none observed is NO VERDICT; anything else is a driver failure
 //   selection    sitting E's lane: the expected exit, with the judge's own report (`report`, removed before the step,
-//                so it is this run's) of `lane` showing its default home's selection: before the flip the vendor's
-//                engine on the vendor's host, on the flip cua's on cua's
+//                so it is this run's) of `lane` holding an observation of every home (macos-selection.mjs HOMES),
+//                each selected as the ref expects (expectedHome): before the flip the vendor's default in every home,
+//                on the flip cua's engine on cua's host in the default home and each fallback's own reason elsewhere
 // deps: {exit, logText() (the step's log), readJson(path) (null when unreadable), exists(path)}. -> [status, reason].
+import {HOMES} from '../accept/macos-selection.mjs';
 import {sampleCause} from '../native-matrix/front-key.mjs';
 
 const NO_VERDICT_CAUSES = new Set(['activation', 'unread', 'alert']);
 const VERDICT_LINE = /^VERDICT: (PASS|FAIL|NO VERDICT|OWNER)\b/gm;
 const firstProblem = record => record.error ?? record.problems?.[0] ?? 'no reason recorded';
+// Sitting E: what each home of HOMES must select in the ref the step runs on (src/runtime/launch.mjs nativeEngineFor and
+// macosComputerHost). Before the flip the vendor's default holds whatever the home holds; on the flip the default home
+// selects cua's engine on cua's host and each fallback keeps the vendor's, engine and host, for its own reason.
+const PRE_FLIP = Object.freeze({selected: 'vendor', reason: 'default', host: 'vendor', hostReason: 'macos_native_peer_requires_vendor'});
+const expectedHome = (kind, flipped) => (!flipped ? PRE_FLIP : HOMES[kind].expect === 'cua' ? {selected: 'cua', reason: 'default', host: 'cua', hostReason: 'cua_engine'}
+  : {selected: 'vendor', reason: HOMES[kind].expect, host: 'vendor', hostReason: HOMES[kind].expect});
+const selectionWords = s => `the ${s.selected} engine (${s.reason}) on the ${s.host} host (${s.hostReason})`;
 const noRecord = (path, exit) => ['FAIL', `runtime error: no record at ${path} (exit ${exit})`];
 
 export const CHECKS = Object.freeze({
@@ -57,11 +66,20 @@ export const CHECKS = Object.freeze({
     const report = readJson(step.report);
     if (!report) return ['FAIL', `no report at ${step.report}: the exit (${exit}) is not its judge's`];
     if (report.lane !== step.lane) return ['FAIL', `the report is the ${report.lane} lane's, not the ${step.lane} lane's`];
-    const home = report.homes?.default;
-    const seen = `the default home selects the ${home?.selected ?? 'no'} engine on the ${home?.host?.host ?? 'no'} host`;
-    const want = step.expect === 0 ? 'cua' : 'vendor', verdict = step.expect === 0 ? 'PASS' : 'FAIL';
+    const flipped = step.expect === 0, verdict = flipped ? 'PASS' : 'FAIL', wrong = flipped ? 'not the flip' : 'not the expected red';
     if (report.verdict !== verdict) return ['FAIL', `the judge's verdict is ${report.verdict}, expected ${verdict}`];
-    if (home?.selected !== want || home?.host?.host !== want) return ['FAIL', `${step.expect === 0 ? 'not the flip' : 'not the expected red'}: ${seen}`];
-    return ['PASS', `the judge's ${verdict}: ${seen}`];
+    const homes = report.homes ?? {};
+    const unobserved = Object.keys(HOMES).filter(kind => !homes[kind]?.selected || !homes[kind]?.host?.host);
+    if (unobserved.length) {
+      const problems = unobserved.map(kind => homes[kind]?.problem).filter(Boolean);
+      return ['FAIL', `${wrong}: no observation of the ${unobserved.join(', ')} home${unobserved.length > 1 ? 's' : ''}${problems.length ? ` (${problems.join('; ')})` : ''}`];
+    }
+    for (const kind of Object.keys(HOMES)) {
+      const want = expectedHome(kind, flipped), home = homes[kind];
+      const seen = {selected: home.selected, reason: home.reason, host: home.host.host, hostReason: home.host.reason};
+      if (Object.keys(want).some(key => seen[key] !== want[key])) return ['FAIL', `${wrong}: the ${kind} home selects ${selectionWords(seen)}, not ${selectionWords(want)}`];
+    }
+    return ['PASS', `the judge's ${verdict}: ${flipped ? `the default home selects ${selectionWords(expectedHome('default', true))}, and each fallback home keeps the vendor's for its reason`
+      : `every home (${Object.keys(HOMES).join(', ')}) selects ${selectionWords(PRE_FLIP)}`}`];
   },
 });

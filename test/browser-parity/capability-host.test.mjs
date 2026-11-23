@@ -156,9 +156,11 @@ test('on Linux a source home cua\'s own runtime does not resolve in is refused, 
   };
   assert.throws(() => prepareCapabilityHome({source: source.dir, platform: 'linux', arch: 'x64'}), refusal);
   // Something at the tree's path that is no install of this lock: the remedy names it, to be moved aside first.
-  const {root} = fakeModuleTree(source.dir, {platform: 'linux', arch: 'x64'});
+  const {realpathSync} = await import('node:fs');
+  const tree = fakeModuleTree(source.dir, {platform: 'linux', arch: 'x64'});
   writePointer(source.dir, release);
-  writeFileSync(join(root, 'install.json'), '{}');
+  writeFileSync(join(tree.root, 'install.json'), '{}');
+  const root = realpathSync(tree.root);   // as resolution names it (macOS's /tmp is /private/tmp)
   assert.throws(() => prepareCapabilityHome({source: source.dir, platform: 'linux', arch: 'x64'}), error => {
     assert.ok(error.message.includes(`move ${root} aside, then ${installer.hint}`), error.message);
     assert.equal(error.hint, `stop any \`cua serve\` using it, move ${root} aside, then ${installer.hint}`);

@@ -33,8 +33,14 @@ const GRANTS = [{client: CLIENTS.engine, bundle: '/Users/runner/Library/Applicat
 const quoted = spec(`- Decision (2026-11-24, revoked): the entry "${DECISION_MARKER}" no longer holds.\n`);
 // An example of the bullet, not the bullet: inside a fence (``` or ~~~, at any indent) or as indented code.
 const fenced = spec(`${OTHER}\nAn example of the form:\n\n\`\`\`\n${O0}\`\`\`\n`);
-const tildes = spec(`${OTHER}\n  ~~~markdown\n${O0}  ~~~\n`);
+const tildes = spec(`${OTHER}\n~~~markdown\n${O0}~~~\n`);
 // The heading and the bullet both inside one fence: an example of a Decision Log, not the spec's.
+// Fences the scanner cannot place without a full CommonMark parser are refused as ambiguous (fix wave 4's review): a
+// closer indented four or more inside a top-level fence (literal content, which would leave the rest fenced), a fence
+// that opens on a list marker before the Decision Log, and such a list fence whose indented closer reads as an opener.
+const indentedCloser = `# Design\n\n\`\`\`\nexample\n    \`\`\`\n## Decision Log\n\n${O0}\`\`\`\n`;
+const listFence = `# Design\n\n- \`\`\`js\n  code\n  \`\`\`\n\n## Decision Log\n\n${O0}`;
+const listCloser = `# Design\n\n1. an example:\n   ~~~\n   x\n   ~~~\n\n## Decision Log\n\n${O0}`;
 const fencedHeading = `# Design\n\n\`\`\`markdown\n## Decision Log\n\n${O0}\`\`\`\n`;
 const indented = spec(`${OTHER}\nThe form:\n\n${O0.split('\n').map(line => (line ? `    ${line}` : line)).join('\n')}`);
 const outside = `## Notes\n\n${O0}\n## Decision Log\n\n${OTHER}`;
@@ -47,6 +53,9 @@ const refusals = {
   'the marker outside the Decision Log section': [{...HOSTED, decisionLog: () => ({sha: SHA, text: outside})}, /refused: .*O0.*no entry of its own/],
   'the marker only in a ``` fenced example': [{...HOSTED, decisionLog: () => ({sha: SHA, text: fenced})}, /refused: .*O0.*no entry of its own/],
   'the marker only in a ~~~ fenced example': [{...HOSTED, decisionLog: () => ({sha: SHA, text: tildes})}, /refused: .*O0.*no entry of its own/],
+  'a closer indented four spaces inside a top-level fence': [{...HOSTED, decisionLog: () => ({sha: SHA, text: indentedCloser})}, /refused: .*fences are ambiguous/],
+  'a fence opening on a list marker before the Decision Log': [{...HOSTED, decisionLog: () => ({sha: SHA, text: listFence})}, /refused: .*fences are ambiguous/],
+  'a list item\'s fence whose closer looks like an opener': [{...HOSTED, decisionLog: () => ({sha: SHA, text: listCloser})}, /refused: .*fences are ambiguous/],
   'the heading and the entry only in a fenced example': [{...HOSTED, decisionLog: () => ({sha: SHA, text: fencedHeading})}, /refused: .*no "## Decision Log" section/],
   'the marker only in indented code': [{...HOSTED, decisionLog: () => ({sha: SHA, text: indented})}, /refused: .*O0.*no entry of its own/],
   'no Decision Log section': [{...HOSTED, decisionLog: () => ({sha: SHA, text: O0})}, /refused: .*no "## Decision Log" section/],

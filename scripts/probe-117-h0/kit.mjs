@@ -50,7 +50,9 @@ const cuaEnv = (extra = {}) => ({...process.env, CUA_HOME, CUA_SHIM_PERSIST: 'se
 const json = text => { try { return JSON.parse(text); } catch {} for (const l of text.trim().split('\n').reverse()) { try { return JSON.parse(l); } catch {} } return null; };
 function cua(args, {env = {}, timeout = 15 * 60_000} = {}) {
   const r = sh(process.execPath, [CLI, ...args], {env: cuaEnv(env), timeout});
-  return {code: r.code, ms: r.ms, json: json(r.stdout), stderrTail: r.stderr.trim().split('\n').slice(-6).join('\n')};
+  const lines = r.stderr.trim().split('\n');
+  return {code: r.code, ms: r.ms, json: json(r.stdout), stderrTail: lines.slice(-6).join('\n'),
+    ...(r.code ? {stderrKey: lines.filter(l => /error:|Assertion|assert|Stack dump|Program arguments|While |Please submit|crash/i.test(l)).slice(0, 12).map(l => l.slice(0, 300))} : {})};
 }
 
 // The engine's own report of its grants (the running engine's `status`), through `cua engine status --json`.
@@ -250,7 +252,20 @@ await step('context', async () => {
 await step('step6-tcc-readonly', async () => ({rowsBefore: readRows(), writability: writability()}));
 
 await step('setup', async () => {
-  const build = cua(['engine', 'build', '--sign', 'adhoc', '--json'], {timeout: 30 * 60_000});
+  // The image's default toolchain first; when it fails, each other Xcode on the image (DEVELOPER_DIR, for the build
+  // only), so the run says which toolchains build the engine and goes on with the first that does.
+  const builds = [];
+  let build = cua(['engine', 'build', '--sign', 'adhoc', '--json'], {timeout: 30 * 60_000});
+  builds.push({developerDir: sh('/usr/bin/xcode-select', ['-p']).stdout.trim(), swift: sh('/usr/bin/xcrun', ['swift', '--version']).stdout.trim().split('\n')[0], code: build.code, ms: build.ms, ...(build.code ? {stderrKey: build.stderrKey, stderrTail: build.stderrTail} : {})});
+  if (build.code !== 0) {
+    for (const app of readdirSync('/Applications').filter(n => /^Xcode_[\d.]+\.app$/.test(n)).sort()) {
+      const dir = `/Applications/${app}/Contents/Developer`;
+      if (builds.some(b => b.developerDir === dir)) continue;
+      const attempt = cua(['engine', 'build', '--sign', 'adhoc', '--json'], {env: {DEVELOPER_DIR: dir}, timeout: 30 * 60_000});
+      builds.push({developerDir: dir, swift: sh('/usr/bin/xcrun', ['swift', '--version'], {env: {...process.env, DEVELOPER_DIR: dir}}).stdout.trim().split('\n')[0], code: attempt.code, ms: attempt.ms, ...(attempt.code ? {stderrKey: attempt.stderrKey, stderrTail: attempt.stderrTail} : {})});
+      if (attempt.code === 0) { build = attempt; break; }
+    }
+  }
   const install = cua(['install', '--json'], {timeout: 15 * 60_000});
   const helpers = [];
   const walk = (dir, depth) => {
@@ -268,6 +283,7 @@ await step('setup', async () => {
   const chrome = ssh(`place-chrome --cache '${SCENE_RUN}-cache'`, 900_000);
   const electron = ssh(`build-electron --cache '${SCENE_RUN}-cache'`, 900_000);
   return {
+    engineBuilds: builds,
     engineBuild: {code: build.code, ms: build.ms, build: build.json?.build, signature: build.json?.signature, bundlePath: build.json?.bundlePath, stderr: build.code ? build.stderrTail : undefined},
     install: {code: install.code, ms: install.ms, release: install.json?.release, stderr: install.code ? install.stderrTail : undefined},
     runtimeApps: helpers, chrome, electron,
@@ -307,7 +323,9 @@ await step('stepC-probes-no-rows', async () => probeModes());
 let child = null;
 await step('step3-child-relay', async () => {
   const logFd = openSync(join(OUT, 'step3-engine-stderr.txt'), 'w');
+  if (!existsSync(ENGINE_EXE)) { closeSync(logFd); throw new Error(`no engine at ${ENGINE_EXE} (the build failed)`); }
   child = spawn(ENGINE_EXE, [], {stdio: ['ignore', logFd, logFd], detached: true, env: {...process.env}});
+  child.on('error', e => log(`child relay: ${err(e)}`));
   closeSync(logFd);
   const grants = await untilRunning();
   const observed = await sessionStep('s3', {CUA_NATIVE_ENGINE: 'cua'}, [

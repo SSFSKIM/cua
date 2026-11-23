@@ -456,3 +456,14 @@ test('#259\'s cell end to end on fakes: the scroll the caret at the end made, th
   const stuck = record259({item: ITEMS_259.click, prepare: {ok: true, value: {ready: true, point: [1, 2]}}, caret: {ok: true, value: {ready: false, reason: 'a selection is left in the field'}}});
   assert.match(stuck.invalid, /a selection is left in the field/);
 });
+
+test('#526: a prepare or read-back that stopped on an ambiguous value leaves the record no verdict (ambiguousReadback), never a fail', () => {
+  const ambiguous = {ok: false, error: 'ambiguousReadback: the value cannot be read from the text (a multi-line value followed by another part)'};
+  const ready = {ok: true, value: {ready: true, point: [1, 2]}}, click = {ok: true, value: {threw: false}};
+  const read = clickRecord188({item: 'x', engine: 'cua', part: 'ii', prepare: ready, before: {range: END_RANGE}, click, after: {range: END_RANGE}, read: ambiguous});
+  assert.equal(read.invalid, 'ambiguousReadback');
+  assert.equal(read.outcome, null);
+  assert.equal(clickRecord188({item: 'x', engine: 'cua', part: 'i', prepare: ambiguous}).invalid, 'ambiguousReadback');
+  // Any other failure keeps its own words.
+  assert.equal(clickRecord188({item: 'x', engine: 'cua', part: 'i', prepare: {ok: false, error: 'boom'}}).invalid, 'the prepare cell failed');
+});

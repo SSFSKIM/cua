@@ -209,8 +209,9 @@ test('#526 review 4: an ambiguous value is never equal or unchanged: selectionEv
   // The cells' plain refuses an ambiguous reading, so TextEdit's click check (plain(after) === __m.before) fails
   // visibly rather than comparing "[object Object]" with itself.
   const {prelude} = await import('../../scripts/native-matrix/matrix-cells.mjs');
-  const plain = new Function(`${/const plain = [^\n]*/.exec(prelude(null))[0]}\nreturn plain;`)();
-  assert.throws(() => plain({ambiguous: true}), /cannot be read/);
+  const source = prelude(null);
+  const plain = new Function(`${/class AmbiguousReadback [^\n]*/.exec(source)[0]}\n${/const plain = [^\n]*/.exec(source)[0]}\nreturn plain;`)();
+  assert.throws(() => plain({ambiguous: true}), error => error.name === 'AmbiguousReadback' && /^ambiguousReadback: .*cannot be read/.test(error.message));
   assert.equal(plain('**a**'), 'a');
 });
 

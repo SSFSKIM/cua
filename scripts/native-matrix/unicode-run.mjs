@@ -14,7 +14,7 @@
 // the user window under the composition and the per-context preference, where the oracle reads the user window around
 // each act and the composition's row also requires the user's field to keep its value. The mid-switch row schedules the
 // probe's switch inside its typeText, as the probe cells schedule their keystrokes (./probe-plan.mjs).
-import {sha256Hex} from './matrix-text.mjs';
+import {readbackCause, sha256Hex} from './matrix-text.mjs';
 import {userWindowOf} from './oracle.mjs';
 import {emptyFieldCell, fieldCheckCell, intervalOf, nextPreMs, postValidity, PRE_MS, PROBE_ATTEMPTS, PROBE_LEAD_MS, probeProblem, EMPTY_HASH, scheduledActCell} from './probe-plan.mjs';
 import {activate, alertCheck, caseRow, device, focusOf, js, mark, push, quiet, read, sendKeys} from './steps.mjs';
@@ -123,14 +123,14 @@ async function behindUser(ctx, field, user) {
   await quiet(ctx, field);
   await quiet(ctx, user);
   const driven = await js(ctx, 'harness', `unicode:prepare:${field}`, emptyFieldCell(field));
-  if (!driven.ok || !driven.value?.ready) return {invalid: `the field was not prepared (${driven.error ?? driven.value?.reason ?? 'no reason'})`};
+  if (!driven.ok || !driven.value?.ready) return {invalid: readbackCause(driven) ?? `the field was not prepared (${driven.error ?? driven.value?.reason ?? 'no reason'})`};
   const front = activate(ctx, user);
   if (!front?.ok) return {invalid: `the user window (${user}) did not come to the front`};
   if (!useSource(ctx, ABC, `composing@${user}:end`)) return {invalid: `${notHeld(ABC, user)}: a composition left in the user window could not be ended`};
   const korean = koreanIn(ctx, user, `composing@${user}`);
   if (korean) return {invalid: `no composition in progress: ${korean}`};
   const prepared = await js(ctx, 'harness', `unicode:prepare:${user}`, emptyFieldCell(user));
-  if (!prepared.ok || !prepared.value?.ready) return {invalid: `the user window's field was not prepared (${prepared.error ?? prepared.value?.reason ?? 'no reason'})`};
+  if (!prepared.ok || !prepared.value?.ready) return {invalid: readbackCause(prepared) ?? `the user window's field was not prepared (${prepared.error ?? prepared.value?.reason ?? 'no reason'})`};
   const userWindow = userWindowOf(read(ctx).reading, ctx.records[user].pid);
   if (!userWindow) return {invalid: `the user window (${user}) was not in front`};
   const f0 = read(ctx, focusOf(userWindow));
@@ -229,7 +229,7 @@ async function midSwitchAttempt(ctx, r, {preMs, key}) {
   const span = x => { if (x?.at) { from ??= x.at[0]; to = x.at[1]; } return x; };
   const end = (row, extra = {}) => { if (from !== null) mark(ctx, 'row', key, [from, to]); return {row, ...extra}; };
   const prepared = span(await ctx.lane.js(emptyFieldCell(field)));
-  if (!prepared.ok || !prepared.value?.ready) return end({invalid: `not prepared: ${prepared.error ?? prepared.value?.reason ?? 'no reason'}`});
+  if (!prepared.ok || !prepared.value?.ready) return end({invalid: readbackCause(prepared) ?? `not prepared: ${prepared.error ?? prepared.value?.reason ?? 'no reason'}`});
   alertCheck(ctx, `before ${r.id}`);
   const started = device(ctx, ['probe', 'input-source', '--source', KOREAN_2SET, '--lead', String(PROBE_LEAD_MS)]);
   let act = null, finished = null;
@@ -239,8 +239,9 @@ async function midSwitchAttempt(ctx, r, {preMs, key}) {
   } finally { finished = device(ctx, ['probe', 'finish']); }
   if (!act) return end({invalid: 'the key guard did not send the action'});
   alertCheck(ctx, `after ${r.id}`);
-  if (!act.ok) return end({invalid: 'the act cell failed', error: act.error});
+  if (!act.ok) return end({invalid: readbackCause(act) ?? 'the act cell failed', error: act.error});
   const check = span(await ctx.lane.js(fieldCheckCell(field, null, 'unicode.midSwitch.check')));
+  if (readbackCause(check)) return end({invalid: readbackCause(check), error: check.error});
   const entered = act.engine?.entered ?? null, switchedAt = finished?.answer?.selectedAt;
   const interval = intervalOf(ctx.engine, act);
   const stopped = act.value.threw === true && INPUT_SOURCE_CHANGED.test(act.value.message ?? '');

@@ -43,6 +43,7 @@ import {caseCells, prelude} from '../native-matrix/matrix-cells.mjs';
 import {ownedFocus, ownedPids} from '../native-matrix/matrix-device.mjs';
 import {accountActivations, judgeInterference, ownedReading, userWindowOf} from '../native-matrix/oracle.mjs';
 import {CASES, caseId, ELECTRON_FIELD_LAYOUT, FIELD_LINES, focusVerdict, PASTED, TYPED} from '../native-matrix/plan.mjs';
+import {readbackCause} from '../native-matrix/matrix-text.mjs';
 import {textViewOf} from '../native-matrix/residue-device.mjs';
 import {SCENES} from '../repl-parity/scenes-mac.mjs';
 import {LATIN_SOURCE} from './input-source.mjs';
@@ -143,7 +144,7 @@ export function row188({spec, prepare = null, front = null, act = null, after = 
   const background = spec.regime === 'background', value = prepare?.value ?? null;
   let invalid = null, focusReadBy = null;
   if (!prepare) invalid = 'the prepare cell was not sent';
-  else if (!prepare.ok) invalid = 'the prepare cell failed';
+  else if (!prepare.ok) invalid = readbackCause(prepare) ?? 'the prepare cell failed';
   else if (value?.ready !== true) invalid = `not prepared: ${value?.reason ?? 'no reason'}`;
   else if (value.focus) {
     const verdict = focusVerdict(value.focus, prepare.meta?.observation ?? null);
@@ -153,8 +154,8 @@ export function row188({spec, prepare = null, front = null, act = null, after = 
   if (invalid === null && background && !front?.userWindow) invalid = 'the user window was not in front before the action';
   else if (invalid === null && background && front.watcher !== true) invalid = 'the activation watcher was not running before the action';
   if (invalid === null && !act) invalid = 'the key guard did not send the action\'s keys';
-  else if (invalid === null && !act.ok) invalid = 'the act cell failed';
-  if (invalid === null && !check?.ok) invalid = 'the check cell failed';
+  else if (invalid === null && !act.ok) invalid = readbackCause(act) ?? 'the act cell failed';
+  if (invalid === null && !check?.ok) invalid = readbackCause(check) ?? 'the check cell failed';
   else if (invalid === null && check.value?.invalid) invalid = String(check.value.invalid);
   if (invalid === null && background && after?.watcher !== true) invalid = 'the activation watcher was not running after the action';
   // The oracle reads a missing focus as not judged: a background row passes only on a reading of the user window's focus.
@@ -343,8 +344,9 @@ const word = v => (typeof v === 'string' && v.length <= 80 ? v : null);
 // enumerations only. `before`, `after`: the probe's readings ({range, focusedIsTextArea, error}).
 export function clickRecord188({item, engine, part, prepare = null, before = null, click = null, after = null, read = null, expected = part === 'i' ? WORD_RANGE : END_RANGE}) {
   const ready = prepare?.ok === true && prepare.value?.ready === true;
-  const invalid = !prepare ? 'the prepare cell was not sent' : !prepare.ok ? 'the prepare cell failed' : !ready ? `not prepared: ${word(prepare.value?.reason) ?? 'no reason'}`
-    : !click ? 'the click was not sent' : !click.ok ? 'the click cell failed' : click.value?.threw ? `the click threw${click.value.errorName ? ` (${word(click.value.errorName)})` : ''}` : null;
+  const invalid = !prepare ? 'the prepare cell was not sent' : !prepare.ok ? readbackCause(prepare) ?? 'the prepare cell failed' : !ready ? `not prepared: ${word(prepare.value?.reason) ?? 'no reason'}`
+    : !click ? 'the click was not sent' : !click.ok ? 'the click cell failed' : click.value?.threw ? `the click threw${click.value.errorName ? ` (${word(click.value.errorName)})` : ''}`
+      : readbackCause(read);   // the read-back stopped on an ambiguous value: no verdict, never a fail
   const rangeBefore = rangeOf(before?.range), rangeAfter = rangeOf(after?.range);
   const r = read?.ok ? read.value ?? null : null;
   const afterRead = r && {selectedLength: num(r.selectedLength), sameWord: r.sameWord === true, valueIntact: r.valueIntact === true, focusedByTrailer: r.focusedByTrailer === true};

@@ -20,6 +20,7 @@ import {
 } from './probe-plan.mjs';
 import {requeryCell} from './matrix-cells.mjs';
 import {typeIntoList} from './plan.mjs';
+import {readbackCause} from './matrix-text.mjs';
 import {activate, alertCheck, device, focusOf, js, mark, push, quiet, read, sendKeys, Stop, userFront, waitQuiet} from './steps.mjs';
 
 const j = JSON.stringify;
@@ -73,7 +74,7 @@ function spanOf(ctx, key) {
 // A precondition that did not hold, as the row: with the focus probe's reading when that was what failed (why it did not
 // name the window, ./matrix-device.mjs ownedFocus), recorded and never judged.
 const precondition = ({invalid, focus}) => (focus === undefined ? {invalid} : {invalid, focus});
-const failed = (r, what) => (!r?.ok ? `${what} failed${r?.error ? `: ${String(r.error).slice(0, 200)}` : ''}` : null);
+const failed = (r, what) => (!r?.ok ? readbackCause(r) ?? `${what} failed${r?.error ? `: ${String(r.error).slice(0, 200)}` : ''}` : null);
 const detectionOff = act => (act?.engine?.intervention === 'off' ? 'intervention detection is off on the engine (no Input Monitoring grant): the cell cannot be judged' : null);
 
 // The user window in front with its typing field emptied and focused, read back by the focus probe. -> {userWindow,
@@ -132,9 +133,10 @@ async function concurrentAttempt(ctx, driven, {lead, id, key}) {
   if (!before) return span.end({invalid: 'the user window was not in front before the action'});
   if (!act) return span.end({invalid: 'the key guard did not send the action'});
   alertCheck(ctx, `after ${id}`);
-  if (!act.ok) return span.end({invalid: 'the act cell failed', error: act.error});
+  if (!act.ok) return span.end({invalid: readbackCause(act) ?? 'the act cell failed', error: act.error});
   const after = read(ctx, focusOf(userWindow));
   const check = span.add(await ctx.lane.js(concurrentCheckCell(driven)));
+  if (readbackCause(check)) return span.end({invalid: readbackCause(check), error: check.error});
   const interval = intervalOf(ctx.engine, act);
   const postedAt = probe.answer?.postedAt;
   const userLanded = after.focus?.named === true && after.focus.valueHash === USER_HASH;
@@ -275,7 +277,7 @@ async function firesAttempt(ctx, {lead, id, key}) {
   const probe = await withKeystroke(ctx, {window, scene},
     scheduled => typing(ctx, span, scene, scheduledActCell(scene, {at: scheduled - preMs, act: `await __app.typeText(${j(LONG_TEXT)});`, tag: 'intervention.act'}), {key, when: id}));
   const act = probe.result;
-  if (!act?.ok) return span.end({invalid: act ? 'the act cell failed' : 'the key guard did not send the action', ...(act?.error ? {error: act.error} : {})});
+  if (!act?.ok) return span.end({invalid: act ? readbackCause(act) ?? 'the act cell failed' : 'the key guard did not send the action', ...(act?.error ? {error: act.error} : {})});
   const interval = intervalOf(ctx.engine, act), postedAt = probe.answer?.postedAt;
   const fired = refusedWith(act.value, USER_CHANGED);
   const base = {inCellMs: act.value.actMs, wallMs: act.wallMs, inputRoute: act.route,
@@ -292,6 +294,7 @@ async function firesAttempt(ctx, {lead, id, key}) {
   delete ctx.posted[scene];
   const again = await typing(ctx, span, scene, scheduledActCell(scene, {act: 'await __app.typeText("x");', tag: 'intervention.again'}), {key, when: `${id} again`});
   const landed = span.add(await ctx.lane.js(endsWithCell(scene, 'x')));
+  if (readbackCause(landed)) return span.end({...base, ok: false, invalid: readbackCause(landed), error: landed.error});
   const outcome = {...base.outcome, refusedNext: next?.ok === true && refusedWith(next.value, USER_CHANGED), nextErrorName: next?.value?.errorName ?? null, nextMessage: next?.value?.message ?? null,
     nothingPosted: h1 !== null && h1 === h2, requeried: requeried.ok === true, againLanded: again?.ok === true && !again.value.threw && landed.value?.landed === true};
   return span.end({...base, ok: fired && outcome.refusedNext && outcome.nothingPosted && outcome.requeried && outcome.againLanded, outcome});
@@ -311,7 +314,7 @@ async function preActionAttempt(ctx, {lead, id, key}) {
   const probe = await withKeystroke(ctx, {window, scene},
     scheduled => typing(ctx, span, scene, scheduledActCell(scene, {at: scheduled + delay, act: 'await __app.typeText("x");', tag: 'preaction.act'}), {key, when: id}));
   const act = probe.result;
-  if (!act?.ok) return span.end({invalid: act ? 'the act cell failed' : 'the key guard did not send the action', ...(act?.error ? {error: act.error} : {})});
+  if (!act?.ok) return span.end({invalid: act ? readbackCause(act) ?? 'the act cell failed' : 'the key guard did not send the action', ...(act?.error ? {error: act.error} : {})});
   const after = read(ctx, focusOf(window));
   const postedAt = probe.answer?.postedAt, receivedAt = ctx.engine === 'cua' ? act.engine?.receivedAt : act.value.callAt;
   const refused = refusedWith(act.value, STILL_INTERACTING), nothingPosted = after.focus?.named === true && after.focus.valueHash === USER_HASH;

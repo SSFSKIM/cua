@@ -104,7 +104,7 @@ import {POPUP_OPEN_PATH} from '../native-matrix/fixtures/scene-page.mjs';
 import {clipboardDigest, probeStatus, startWatch, stopWatch} from '../native-matrix/live-device.mjs';
 import {compiled} from '../native-matrix/matrix-device.mjs';
 import {prelude} from '../native-matrix/matrix-cells.mjs';
-import {sha256Hex} from '../native-matrix/matrix-text.mjs';
+import {readbackCause, sha256Hex} from '../native-matrix/matrix-text.mjs';
 import {TEXT_FIELDS} from '../native-matrix/plan.mjs';
 import {EMPTY_HASH, emptyField, fieldCheck} from '../native-matrix/probe-plan.mjs';
 import {COMPOSITION, KOREAN_2SET, UNICODE_STRINGS} from '../native-matrix/unicode-plan.mjs';
@@ -553,11 +553,11 @@ export function rowRecord({spec, prepare = null, act = null, check = null, page 
   const invalid = personTouched ? `person-touched: ${touchText(personTouched)}`
     : disturbed ? 'an earlier row of the block disturbed the user window\'s composition'
     : !prepare ? 'the driven field was not prepared (no answer)'
-      : !prepare.ok ? `the prepare cell failed: ${prepare.error}`
+      : !prepare.ok ? readbackCause(prepare) ?? `the prepare cell failed: ${prepare.error}`
         : prepare.value?.ready !== true ? `not prepared: ${prepare.value?.reason ?? 'no reason'}`
           : !act ? 'the act was not sent'
-            : !act.ok ? `the act cell failed: ${act.error}`
-              : !check?.ok ? `the read-back failed: ${check?.error ?? 'no answer'}`
+            : !act.ok ? readbackCause(act) ?? `the act cell failed: ${act.error}`
+              : !check?.ok ? readbackCause(check) ?? `the read-back failed: ${check?.error ?? 'no answer'}`
                 : check.value?.invalid ? `the read-back: ${check.value.invalid}`
                   : page && !page.mid ? 'no page counters before the act: the row\'s counter evidence is incomplete'
                   : background && spec.engine === 'cua' && !freshActivation(meta) ? 'no fresh activation (no activationGuardMs, or focusEnforcement.activated false): the act ran under a held activation'

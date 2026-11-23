@@ -345,3 +345,38 @@ test('the matrix retains bind and refusal guard snapshots in row-indexed evidenc
   assert.deepEqual(result.meta.activationGuards.map(g => ({scene: g.scene, beforeRow: g.beforeRow, ok: g.ok, windowOrder: g.windowOrder})),
     [{scene: 'finder', beforeRow: 0, ok: false, windowOrder}]);
 });
+
+// #526: a cell whose read-back is ambiguous (a multi-line value followed by another part, which the cells' `plain`
+// refuses with AmbiguousReadback) is no verdict with the named cause `ambiguousReadback`: never a fail, never an error
+// that stops the run, and the next case still runs. The check cell's own code runs here for real, on such a text.
+test('#526: a case whose read-back is ambiguous is no verdict (ambiguousReadback), the run goes on, and nothing counts it as a fail', async () => {
+  const check = cellsOf('textedit', 'click', 'element').check;
+  const AMBIGUOUS = 'Window: "cua-scene.rtf", App: TextEdit.\n0 standard window cua-scene.rtf\n\t1 text entry area (settable) ID: First Text View, Value: one\\ntwo, Details: d\n';
+  const runReal = async code => {
+    const saved = {apps: globalThis.__apps, rendering: globalThis.__axRendering, m: globalThis.__m, repl: globalThis.nodeRepl};
+    const writes = [];
+    Object.assign(globalThis, {__apps: {textedit: {getAXState: async () => AMBIGUOUS}}, __axRendering: 'cua', __m: {ready: true, threw: null, errorName: null, before: 'one\ntwo'}, nodeRepl: {write: text => { writes.push(String(text)); }}});
+    try { await new (async () => {}).constructor(code)(); } finally {
+      Object.assign(globalThis, {__apps: saved.apps, __axRendering: saved.rendering, __m: saved.m, nodeRepl: saved.repl});
+    }
+    // The cell's own result line, among whatever else the lane's wrapping writes.
+    return writes.flatMap(w => w.split('\n')).find(line => line.startsWith('CUA_NATIVE_BASELINE ')) ?? null;
+  };
+  let ran = 0;
+  const {code, result} = await runWith({cell: async text => (text.includes(check) ? (ran++, {cellOutput: await runReal(text)}) : null)});
+  assert.equal(ran, 1, 'the case\'s check cell ran once, for real');
+  assert.equal(code, 0, 'the run went on to its end');
+  assert.deepEqual(validateCellResult(result), []);
+  const rows = result.rows.filter(r => r.section === 'method');
+  const at = rows.findIndex(r => r.method === 'click' && r.case === 'element');
+  const row = rows[at];
+  assert.equal(row.invalid, 'ambiguousReadback');
+  assert.equal(row.ok, false);
+  assert.match(row.error, /^ambiguousReadback: /);
+  // The next case ran and was judged as before.
+  const next = rows[at + 1];
+  assert.ok(next && next.invalid === undefined && next.ok === true, JSON.stringify(next));
+  // Nothing counts it as a fail: the row is invalid, kept out of the verdict.
+  assert.notEqual(result.verdict, 'fail');
+  assert.equal(rows.filter(r => r.invalid === 'ambiguousReadback').length, 1);
+});

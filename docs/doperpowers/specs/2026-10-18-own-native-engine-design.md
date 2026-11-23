@@ -8969,6 +8969,16 @@ to T7. Where M4's code met a later decision on main, the later decision won; eac
       `valueAmbiguous: true`), never `false`; a refusal's watch keys its readings with `readingKey`, which gives none
       for an ambiguous one, so "unchanged" cannot hold. The cursor sitting's control reads are checkboxes and buttons,
       single-line, and only recorded.
+    - From design (PR #559): a cell that stops on an ambiguous value is NO VERDICT with the named cause
+      `ambiguousReadback`, never a fail and never an error that stops the sitting. Traced before the change: the cell
+      wrapper (`scripts/native-baseline/cells.mjs` `cell`) already caught the throw as `{ok: false, error}`, and every
+      runner already made such a row invalid (no verdict, the run going on), but under a generic cause ("the check cell
+      failed"); two read-backs (probe-run's concurrent check and endsWith landing, unicode-run's mid-switch check) went on
+      to judge a failed check as a plain outcome. Now `plain` throws `AmbiguousReadback` (its message opens with the
+      cause), `readbackCause` (`matrix-text.mjs`) names it, and every runner maps it: the matrix's `caseRow` (method and
+      Unicode rows), probe-run, unicode-run, and the cursor sitting's items 187 and 188 (whose judges give an invalid
+      record INVALID, never FAIL). `test/native-matrix/run.test.mjs` runs the check cell's own code on an ambiguous text
+      through the real run: the row is `ambiguousReadback`, the next case runs, the run's verdict is not a fail.
   Date/Author: 2026-11-23, cursor235's builder for #526.
 
 ## Outcomes & Retrospective

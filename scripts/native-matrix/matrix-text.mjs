@@ -77,6 +77,11 @@ export function valueOfIndex(ax, index, {rendering = globalThis.__axRendering, d
   if (!cua || !decoded) return rest;
   return rest.replace(/\\(?:n|r|u(?:000b|000c|001c|001d|001e|0085|2028|2029))/g, e => (e === '\\n' ? '\n' : e === '\\r' ? '\r' : String.fromCharCode(parseInt(e.slice(2), 16))));
 }
+// The named cause of a cell that stopped on an ambiguous value (the cells' `plain` throws AmbiguousReadback, whose
+// message opens with it): the row is no verdict with this cause, never a fail, and the run goes on. Controller-side,
+// not embedded. -> 'ambiguousReadback' for such a cell answer ({ok: false, error}), else null.
+export const AMBIGUOUS_READBACK = 'ambiguousReadback';
+export const readbackCause = result => (result && result.ok === false && /^ambiguousReadback\b/.test(String(result.error ?? '')) ? AMBIGUOUS_READBACK : null);
 // A watch's key: the readings as JSON, or null when any is ambiguous, so a watch that cannot be read is never unchanged.
 export function readingKey(values) {
   return values.some(value => value?.ambiguous === true) ? null : JSON.stringify(values);

@@ -42,7 +42,8 @@ const indexOfRowCell = ${indexOfRowCell.toString()};
 ${sceneHead(scene)}
 const panel = ax => /ID: open-panel\\b/.test(lineOfIndex(ax, 0) ?? "");
 const count = (text, part) => String(text ?? "").split(part).length - 1;
-const plain = text => { if (text?.ambiguous === true) throw new Error("the value cannot be read from the text (a multi-line value followed by another part)"); return String(text ?? "").replace(/\\*\\*/g, ""); };
+class AmbiguousReadback extends Error { constructor() { super("ambiguousReadback: the value cannot be read from the text (a multi-line value followed by another part)"); this.name = "AmbiguousReadback"; } }
+const plain = text => { if (text?.ambiguous === true) throw new AmbiguousReadback(); return String(text ?? "").replace(/\\*\\*/g, ""); };
 const nonce = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 const refusedAs = sentence => typeof globalThis.__m?.threw === "string" && new RegExp(sentence).test(globalThis.__m.threw);
 const jpegSize = shot => {

@@ -28,8 +28,10 @@ export async function runWith({engine = 'cua', plan = planOf('background', {scen
       if (method === 'tools/call' && lane) lane(params.arguments.code);
       const answer = await request(method, params);
       if (method !== 'tools/call') return answer;
-      const value = cell ? cell(params.arguments.code) : null;
-      const text = value ? `CUA_NATIVE_BASELINE ${JSON.stringify({ok: true, value, inCellMs: 1})}\n${AT_MARKER}${JSON.stringify([clock(), clock()])}` : answer.content[0].text;
+      // `cell` may answer a value (the cell ran ok) or {cellOutput}: the line a cell's own code wrote, run for real.
+      const value = cell ? await cell(params.arguments.code) : null;
+      const line = value?.cellOutput ?? `CUA_NATIVE_BASELINE ${JSON.stringify({ok: true, value, inCellMs: 1})}`;
+      const text = value ? `${line}\n${AT_MARKER}${JSON.stringify([clock(), clock()])}` : answer.content[0].text;
       calls.push({code: params.arguments.code, at: JSON.parse(text.split('\n').find(l => l.startsWith(AT_MARKER)).slice(AT_MARKER.length))});
       return {...answer, content: [{type: 'text', text}], _meta: {...answer._meta, ...(value?._meta ?? {})}};
     };

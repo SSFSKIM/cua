@@ -90,7 +90,7 @@ How to see it: on the mini, with the plugin at the release this work ships, run 
   - [ ] T3 — `accept-native`.
   - [x] (2026-11-23) T4 — The hosted gate builds the bundle (94f405ee, ceb45873, review fix 6237d0e2; reviewed clean after two rounds; the hosted run on the pull request is still owed).
   - [x] (2026-11-23) T5 — The window-frame probe and PR #199 (df48af00, 532d3db9, review fixes 28a0506b, f22b7ace, 908dbc6c; reviewed clean after four rounds; #199 superseded; live proof in M5's pilot).
-  - [ ] T6 — Docs.
+  - [x] (2026-11-23) T6 — Docs: README and `docs/onboarding-new-mac.md` (install, signing, approval, permissions) and the engine's model rules in `src/mcp/surface.mjs` (e844445b, review fixes a9a55472, c9d6409e; reviewed clean after two rounds, the last one-paragraph fix checked by the controller against its finding).
   - [x] (2026-11-23) T7 — Records: M4's entries, report and evidence; hold 10's evidence (dd9e3729, 357cff86, c4971d18, 7cd333f8, de0feaeb; all 47 and 103 files in after the owner-content check and the design session's ruling on the account path; reviewed clean).
 
 ## Scope, inheritance and evidence

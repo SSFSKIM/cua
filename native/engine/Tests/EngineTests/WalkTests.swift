@@ -44,6 +44,8 @@ final class FakeTree {
   var actionsUnread: Set<Int> = []
   /// Attributes whose read fails with an error other than absence, by id (their slots decode as none).
   var unreadableAttributes: [Int: Set<String>] = [:]
+  /// #500: attributes whose slot holds kCFNull, by id (decoded as the batched read decodes one).
+  var nullAttributes: [Int: Set<String>] = [:]
   /// Every request answers all an element carries, asked for or not (#405's stub of a careless app).
   var answersEverything = false
   /// Elements whose classification-only requests (role and subrole alone) fail as a whole (#405).
@@ -89,7 +91,12 @@ final class FakeSource: ElementSource, @unchecked Sendable {
     // `answersEverything`: the app's answer carries what it holds, asked for or not (the source must keep only what it asked).
     if !tree.answersEverything { values = values.filter { names.contains($0.key) } }
     tree.answered?(id, names)
-    return AttributeRead(values: values, unreadable: unreadable)
+    var read = AttributeRead(values: values, unreadable: unreadable)
+    for name in names where tree.nullAttributes[id]?.contains(name) == true {
+      read.values.removeValue(forKey: name)
+      read.decode(name, kCFNull)
+    }
+    return read
   }
 
   /// Everything the fake element carries.

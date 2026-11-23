@@ -58,6 +58,9 @@ struct ElementData {
   /// The attributes whose read failed with an error other than their absence (`failedSlot`): each decodes as none, as
   /// an absent one does, and #298's stale-point record tells the two apart for the label's attributes.
   var unreadable: Set<String> = []
+  /// #500 (ruling 1131): the attributes whose slot held kCFNull (`AttributeRead.null`): each decodes as none, and the
+  /// stale-point record keeps the label's apart from a failed read and from an absence (`ScreenshotNode.labelsNull`).
+  var null: Set<String> = []
   /// #390: read by a source that does not read AXValue (`ElementSource.readsValue` false), so `value` says nothing of the
   /// element's value; an identity made from it leaves the value out of its match. #405: so is a password field's.
   var valueUnread = false
@@ -79,8 +82,9 @@ struct ElementData {
   var classificationFailed = false
 
   /// Decodes one element's attribute values, keyed by attribute name, and the names whose read failed.
-  init(values: [String: CFTypeRef], unreadable: Set<String> = [], absent: Set<String> = []) {
+  init(values: [String: CFTypeRef], unreadable: Set<String> = [], absent: Set<String> = [], null: Set<String> = []) {
     self.unreadable = unreadable
+    self.null = null
     func string(_ name: String) -> String? { values[name].flatMap(stringValue) }
     func flag(_ name: String) -> Bool? { bool(values[name]) }
     role = string("AXRole") ?? "AXUnknown"
@@ -200,11 +204,15 @@ struct AttributeRead {
   var unreadable: Set<String> = []
   /// #453 (ruling 1083): the names whose slot explicitly said the attribute is absent (`absentSlot`).
   var absent: Set<String> = []
+  /// #500 (ruling 1131): the names whose slot held kCFNull (`nullSlot`): unknown, not absent, kept apart from `unreadable`.
+  var null: Set<String> = []
 
-  /// One slot of a batched reply: its value, or a failed read, or an explicit absence; a null slot is none of them.
+  /// One slot of a batched reply: its value, or a failed read, or an explicit absence, or a null slot.
   mutating func decode(_ name: String, _ slot: Any?) {
     if let value = present(slot) { values[name] = value } else if failedSlot(slot) { unreadable.insert(name) } else if absentSlot(slot) {
       absent.insert(name)
+    } else if nullSlot(slot) {
+      null.insert(name)
     }
   }
 }
@@ -294,7 +302,7 @@ class ElementSource: @unchecked Sendable {
     // A closed element's value attributes never reach the decoding (which would keep, convert or bound them).
     let kept = Set(names).subtracting(classified.closed ? valueAttributes : [])
     var data = ElementData(values: read.values.filter { kept.contains($0.key) }, unreadable: read.unreadable.intersection(kept),
-                           absent: read.absent.intersection(kept))
+                           absent: read.absent.intersection(kept), null: read.null.intersection(kept))
     if classified.closed { ElementSource.markClosed(&data, classified) } else {
       data.valueUnread = !readsValue
       data.valueFailed = readsValue && read.unreadable.contains(kAXValueAttribute)

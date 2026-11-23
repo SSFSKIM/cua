@@ -8546,6 +8546,113 @@ to T7. Where M4's code met a later decision on main, the later decision won; eac
   No hosted live-rate measurement is needed: each kept change only refuses a target already chosen.
   Date/Author: 2026-11-23, cursor235's builder for #519.
 
+- Decision (#520, rulings 1150, 1151 and 1152, 2026-11-23, `fix/520-classified-value`): a static text's AXValue read now
+  as a label goes through #405's classification, and only where the record holds evidence for it. An unread value is
+  never compared, decoded or quoted. Where a consumer that chooses a target needed it, the whole verdict refuses, never
+  another target. Before this, the stale-point checks read the value raw (`liveLabel`, `reads.value`, and the `label` and
+  `strictLabel` single reads), with no role or subrole beside it. A text whose subrole had since turned secure was
+  compared as identity evidence and quoted in a refusal sentence (#519's review, ruling 1151).
+  The rule:
+  1. The read (`StalePointReads.classifiedValue`, `stalePointClassifiedValueRead`). One batch of the role, the subrole
+     and AXValue (`classifiedRead`), and the slot decoded only where that same reply classifies the element open. A
+     closed or failed classification (#405, #501), a failed request, a failed slot and a kCFNull slot are
+     `StalePointValueRead.unread`. A batch may answer kCFNull for an unsupported attribute (AXUIElement.h:228), where
+     main's single read answered kAXErrorAttributeUnsupported, none. The two cannot be told apart, so the batch's kCFNull
+     is never null (ruling 1152). Live, the raw `label` and `strictLabel` reads now read the title and the description
+     only, and `liveLabel` reads no value.
+  2. Evidence only (`stalePointValueEvidence`, at the read boundary `StalePointReads.liveValue`). The value is read only
+     where the recorded node is an AXStaticText whose value slot held non-empty text or kCFNull. A value withheld, failed,
+     no text, empty or absent then is not read: `.unread`, nothing sent to the app.
+  3. Whole refusal (`StalePointUnreadValue`, reason `valueUnread`). Each verdict (`stalePointVerdict`,
+     `stalePointPressVerdict`) gives its reads a fresh flag. A consumer that chooses a target and needs an unread value sets
+     it and goes on. The verdict then becomes `valueUnread`: the recorded node at the point and the hit, nothing the unread
+     value chose (no identity, control beneath or control on top). Its sentence names only the recorded node: "The screen
+     may have changed since the screenshot: the text of an element at this point cannot be read now, so the <node> the
+     screenshot showed there cannot be confirmed."
+  No target-selection logic changes: every consumer's own rule is main's, read through the classified value.
+  The consumers of a live label value, on main (82ac93f3) and now:
+  - #298 `relabelledLabel` on the node's own handle (`recordedNodeVerdict`). Chooses no target here, but its keep feeds
+    #433's and #442's checks. Main: the value read raw; a failed read kept. Now: classified and gated. Where the rule
+    consults the value and it is unread, the whole verdict refuses. Over a recorded null in the first walk the value is
+    no longer read, since the value is the last part and main kept whatever it read.
+  - #433's loop and #442's named candidate (`underlyingRefusal`, through `relabelledLabel`). Chooses the control beneath.
+    Main: a relabelled first control was refused and the next one taken. Now: an unread value refuses the whole verdict,
+    never the next control. Outcome: whole refusal.
+  - #296's and #433's re-created match (`recreatedHandle`, `stalePointLiveLabelsAgree`). Chooses among candidates. Main:
+    `reads.value` raw, compared by words where neither side has a title or description. Now: read only where it decides.
+    Unread there, the whole verdict refuses, unless #298's edited-text exemption already takes the candidate, as it did on
+    main whatever the value. Outcome: whole refusal, or main's answer.
+  - #305's recorded hit (`recordedHitAtPoint`, in #296's verdict, #442's `movedOverPoint` and the element route's
+    `stalePointPressVerdict`). Chooses which recorded node vouches for the hit. Main: `reads.value` raw, once. Now: read
+    once, lazily, where a node's comparison needs it. Unread there, the whole verdict refuses. Outcome: whole refusal.
+  - #453's row (`overlayLabelsAgree`). Refuses the row already chosen and chooses none. Main (#519's strict read): a
+    single raw read, kCFNull null. Now: classified and gated, and an unread value disagrees: `labelChanged`. Outcome: the
+    row refused; no whole-verdict flag needed.
+  - #443's `controlDiffers`, #431's twin search, `overlayDuplicate`, #454's menu title: read titles and descriptions now,
+    or the record only. Unchanged.
+  - #442's sentence (`stalePointOutcome`, `otherControlOnTop`). Names the control on top by its labels read now. Main:
+    `reads.value(top)` raw for an AXStaticText. Now: quoted only as read open through the classification, against a record
+    of that control holding evidence, else the control is named by its role. Verdict unchanged.
+  - The other refusal sentences: `relabelled` quotes `labelNow`, which can only come from a value read open now; every
+    other sentence names recorded labels (classified by the walk) or the hit's title and description.
+  - Not a label read, left as main: #454's pop-up confirmation (`MenuItemReads.value`), which reads a menu's control's
+    AXValue after the press to see the option taken, compares it with the item's title and quotes nothing.
+  The invariant (ruling 1150): on the same inputs a verdict is main's, or a refusal (`valueUnread`, or `labelChanged` for
+  #453). The target is never changed, and a refusal never becomes a press. The flag is the only path from an unread value
+  to a verdict, so no candidate-selection loop sees "unread" and moves on. The two places a flagged verdict could have
+  pressed are guarded too: a `valueUnread` verdict is not #452's `appWindowOverPoint`, so #453 never runs on it; and its
+  sentence needs no node, so a refusal is never lost.
+  Over-refusals accepted (each is a refusal where main kept, so the invariant holds):
+  - A value unread where main's answer would not have depended on it: a recorded null, or a counterpart null.
+  - A static text row or text whose recorded value was empty or absent, now consulted.
+  - A batch's kCFNull, where main's single read said none.
+  How it is proven:
+  - The oracle (`LabelMonotonicityTests`, extended). Frozen copies of main's functions: 0d19fdfa's (which 82ac93f3
+    equals for relabel, `controlDiffers`, the twin search and the lenient match, `mainLabelsAgree` now among them), and
+    82ac93f3's strict `overlayLabelsAgree`. The value now is no longer a logical slot handed to both sides alike, but a
+    world of three independent inputs:
+    - the element's classification: open, secure subrole, role failed, subrole failed, subrole null, request failed;
+    - the value slot's kind: absent, unsupported, empty, "Open", "Delete", failed, null, no text;
+    - the batch's form for an unsupported attribute: an error placeholder or kCFNull.
+    Main's side reads the single read's answer (`stalePointLabelRead`, `stalePointStrictLabelRead`, and `liveLabel`'s
+    text) whatever the classification. The head's side reads the batch through the real decoder (`AttributeRead.decode`,
+    `classifiedRead`, `stalePointClassifiedValueRead`).
+    - A button: title and description each absent, empty, "Open", "Delete", failed, null or no text, at the screenshot and
+      now (7^4).
+    - An AXStaticText: title and description each absent, "Open", failed, null or no text, then and now (5^4); the
+      recorded value absent, empty, "Open", "Delete", failed, null, no text or withheld (8); and the 54 value worlds now.
+      That makes 270,000 cases.
+    - Checked on each: relabel and the re-created match are main's, or flag a whole refusal; `controlDiffers` is main's;
+      `overlayLabelsAgree` agrees only where both main copies agree, and only on a value read open. The value is never read
+      without evidence, and no label answered comes from a value not read open. A whole refusal never comes from a value
+      read open with evidence. Each kind of whole refusal is reached over a keep of main's and over a refusal: relabel
+      15,846 and 2,874, the match 22,016 and 2,560. #453 refuses rows main pressed: 490 closed, 54 without evidence, 26
+      with the slot unread.
+    - Not covered by the oracle: the record-to-record checks (the twin search, `overlayDuplicate`, the menu), which read
+      no live value and keep #519's tests.
+  - Through target selection (`ClassifiedValueTests`), each against main's verdict on the same fixture: #433's loop
+    (main relabelled the text and kept the button beneath; now the whole verdict refuses, never the button), #296's
+    re-created match (main took the farther candidate; now it refuses), #305 at the press (main `recordedHit`). Also the
+    now-secure text with no title or description (main refused `relabelled` quoting the password), #442's sentence (main
+    quoted it), and the evidence-only read (a title "Open", the value withheld, title and description gone now: the value
+    is never read, and main quoted it).
+  - #453 (`OverlayClickTests`): #519's closed-value test `testARowWhoseValueNowClassifiesClosedIsRefused`, and ruling
+    1152's batch kCFNull (a title that agrees, open classification, AXValue unsupported): refused whether the value was null
+    or absent then.
+  - Red on main: the new tests were run on 82ac93f3 with only the new names stubbed in, behaving as main. Nine tests fail
+    with 18 assertions: main's `relabelled` quoting the password, the button beneath, the farther candidate, `recordedHit`,
+    the quoted sentence, and #453 pressing on the closed value and on the value absent then. Ruling 1152's recorded-null case
+    passes on 82ac93f3, because main's single read refused it. It fails, with its oracle twin, when the head maps the
+    batch's unread value to null, as #519's read did.
+  - Mutation checks, each caught: no evidence gate; relabel or the re-created match or #305 not refusing whole; no
+    conversion in either verdict; #453 passing over an unread value; #442's sentence reading raw; kCFNull read as none.
+  - One flipped assertion on main's tests (`UnreadableLabelTests`): a text recorded "Save" whose value read fails now was
+    kept (`sameElement`). It now refuses `valueUnread`.
+  - 1736 swift tests (1 skipped), 0 failures. The release build passes on Xcode 27.2.
+  Not measured live: how often a live batch answers kCFNull or a failed subrole for a static text. Each such answer now
+  refuses where it decides, and nothing is pressed that main did not press.
+  Date/Author: 2026-11-23, cursor235's builder for #520.
+
 ## Outcomes & Retrospective
 
 Pending for the initiative — written at finish. M1a's interim account (2026-10-20) follows; the full record is `docs/doperpowers/specs/2026-10-18-own-native-engine-m1a-report.md`.

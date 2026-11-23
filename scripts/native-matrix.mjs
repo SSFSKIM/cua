@@ -24,12 +24,14 @@
 //   node scripts/native-matrix.mjs compare <vendor-dir> <cua-dir> [--out comparison.md]
 //     Every result under the two directories judged (./native-matrix/summary.mjs; only full matrix runs count, three
 //     complete attested runs per side, each run number's vendor and cua runs of one hold, one commit and one approved
-//     build, every manifest row present): VERDICT PASS (exit 0), OWNER (exit 3:
+//     build, every manifest row present and every judged cell with three runs a side that have a verdict; the declared
+//     departures of ./native-matrix/expected/departures.json applied): VERDICT PASS (exit 0), OWNER (exit 3:
 //     nothing failed, the owner's calls remain: a missed speed beat, finding parity, a declared self-activating family),
 //     NO VERDICT (exit 4: nothing failed, proof is missing; it blocks M5 as a failure does) or FAIL (exit 1).
 //   node scripts/native-matrix.mjs summary <dir>... [--out summary.md]
-//     The method table, the per-scene speed table and the three-point section, written to --out (default
-//     <first dir>/summary.md): Acceptance 7's docs/evidence/<sitting date>-own-native-engine/summary.md.
+//     The three-point report (speed, finding elements, not interfering, what changes for a user, not judged, NO VERDICT
+//     by cell) and the method table, written to --out (default <first dir>/summary.md): Acceptance 7's
+//     docs/evidence/<sitting date>-own-native-engine/summary.md.
 //   node scripts/native-matrix.mjs cleanup --device <alias> [--run <device dir>] [--preparation <file>] [--dry-run]
 //     What a run that died leaves: the live hold's recovery and put-back, then the approved home's cleanup.
 //

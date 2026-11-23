@@ -17,12 +17,11 @@
 //               (NOT_JUDGED, ruling 1119)
 // and one pressKey row, `r k`, under the Latin and the Korean source, which must enter `rk` under Latin and compose 가
 // under Korean 2-Set engaged (PRESS_KEY, ruling 1119). Every row is read back inside its cell and compared by SHA-256
-// with the expected string. A failed row with a named cause is declared in
-// the expected file (EXPECTED_FILE), per row id and engine, never silently absorbed: a declaration no failed row needed
-// is itself named (applyDeclarations' `unused`).
-import * as fs from 'node:fs';
+// with the expected string; a mismatch is a failed row. Nothing here declares a row: the matrix's one declaration
+// mechanism is R3's declared-departures file (./departures.mjs), which may name a Unicode row only where cua refused or
+// answered unconfirmed and the vendor answered ok, and never the pressKey row.
 import {ABC, KOREAN_2SET} from './live-checks.mjs';
-import {exclusionOf, NOT_JUDGED} from './not-judged.mjs';
+import {NOT_JUDGED} from './not-judged.mjs';
 import {emptyField, fieldCheck} from './probe-plan.mjs';
 import {TYPED} from './plan.mjs';
 
@@ -42,7 +41,7 @@ export const UNICODE_METHODS = Object.freeze(['typeText', 'paste']);
 // keeps its exact-text contract: its rows expect the string sent under either source.
 export const PRESS_KEY = Object.freeze({id: 'rk', keys: 'r k', expected: Object.freeze({latin: 'rk', korean: '가'})});
 const pressKeyString = condition => Object.freeze({id: PRESS_KEY.id, keys: PRESS_KEY.keys, text: PRESS_KEY.expected[condition]});
-// Whether a Unicode row id is the pressKey row's, which no declaration covers (ruling 1119).
+// Whether a Unicode row id is the pressKey row's, which no departure may name (ruling 1119).
 export const isPressKeyRow = id => typeof id === 'string' && id.endsWith(`/pressKey.${PRESS_KEY.id}`);
 // The conditions whose rows run and are reported but are out of every verdict (./not-judged.mjs).
 export {NOT_JUDGED};
@@ -57,7 +56,6 @@ export const UNICODE_USERS = Object.freeze({textedit: 'electron', chrome: 'texte
 export const COMPOSITION = Object.freeze({key: 'r', composed: 'ㄱ'});
 export const CONDITIONS = Object.freeze(['latin', 'midSwitch', 'korean', 'composing', 'perContext']);
 export const UNICODE_PLAN = Object.freeze({fields: UNICODE_FIELDS, conditions: CONDITIONS});
-export const EXPECTED_FILE = new URL('./expected/unicode.json', import.meta.url);
 
 // A row's id: `<field>/<condition>[@<user>]/<method>.<string>`.
 export const unicodeRowId = ({field, condition, user = null, method, string}) => `${field}/${condition}${user ? `@${user}` : ''}/${method}.${string.id}`;
@@ -85,39 +83,4 @@ export function unicodeRowsOf(plan) {
     }
   }
   return out;
-}
-
-// ---- the expected file --------------------------------------------------------------------------------------------------
-
-// The declarations, each checked. -> [{id, engine, kind, cause}].
-export function parseDeclarations(json) {
-  const list = Array.isArray(json?.declarations) ? json.declarations : [];
-  const seen = new Set();
-  for (const d of list) {
-    if (!(typeof d?.id === 'string' && ['vendor', 'cua'].includes(d.engine) && typeof d.kind === 'string' && d.kind && typeof d.cause === 'string' && d.cause)) {
-      throw new Error(`${EXPECTED_FILE.pathname}: a declaration needs an id, an engine, a kind and a cause (${JSON.stringify(d).slice(0, 120)})`);
-    }
-    if (isPressKeyRow(d.id)) {
-      throw new Error(`${EXPECTED_FILE.pathname}: ${d.id} cannot be declared: r k composes as the active input method composes it, and a row that composes otherwise fails (ruling 1119)`);
-    }
-    const key = `${d.id}\0${d.engine}`;
-    if (seen.has(key)) throw new Error(`${EXPECTED_FILE.pathname}: ${d.id} on ${d.engine} is declared twice`);
-    seen.add(key);
-  }
-  return list.map(({id, engine, kind, cause}) => ({id, engine, kind, cause}));
-}
-export const readDeclarations = (file = EXPECTED_FILE) => parseDeclarations(JSON.parse(fs.readFileSync(file, 'utf8')));
-
-// The declarations applied to the Unicode rows, in place: a valid row that is not ok gets its engine's declaration; an
-// excluded row (NOT_JUDGED) is judged by nothing, so it needs none. -> {unused: the declarations no row needed}.
-export function applyDeclarations(rows, declarations) {
-  const used = new Set();
-  for (const row of rows) {
-    if (row.section !== 'unicode' || row.invalid || exclusionOf(row) || row.ok) continue;
-    const d = declarations.find(x => x.id === row.id && x.engine === row.engine);
-    if (!d) continue;
-    row.declared = {kind: d.kind, cause: d.cause};
-    used.add(d);
-  }
-  return {unused: declarations.filter(d => !used.has(d))};
 }

@@ -1,10 +1,11 @@
 // The Korean and Unicode matrix's plan (scripts/native-matrix/unicode-plan.mjs; the spec's Verification system part 6,
-// Acceptance 4): its strings, its rows in run order under each condition, the cases' acts and keys, and the expected
-// file's declarations applied to failed rows only, never silently.
+// Acceptance 4): its strings, its rows in run order under each condition and the cases' acts and keys. It declares
+// nothing: R3's declared-departures file (scripts/native-matrix/departures.mjs) is the matrix's one place.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {sha256Hex} from '../../scripts/native-matrix/matrix-text.mjs';
-import {applyDeclarations, CONDITIONS, NOT_JUDGED, parseDeclarations, readDeclarations, UNICODE_FIELDS, UNICODE_STRINGS, UNICODE_USERS, unicodeCase, unicodeRowsOf, UNICODE_PLAN} from '../../scripts/native-matrix/unicode-plan.mjs';
+import * as unicodePlan from '../../scripts/native-matrix/unicode-plan.mjs';
+import {CONDITIONS, isPressKeyRow, NOT_JUDGED, UNICODE_FIELDS, UNICODE_STRINGS, UNICODE_USERS, unicodeCase, unicodeRowsOf, UNICODE_PLAN} from '../../scripts/native-matrix/unicode-plan.mjs';
 
 test('the strings are part 6\'s eight and Acceptance 4\'s, the combining one as e plus U+0301 and the lines one with a real newline', () => {
   assert.deepEqual(UNICODE_STRINGS.map(s => s.text), ['The quick brown fox jumps over the lazy dog.', '한글 테스트', 'ㄱㄴㄷ', '가나다 abc 123', '😀 이모지', 'é', '日本語',
@@ -68,39 +69,15 @@ test('the pressKey row r k expects rk under the Latin source and 가 under engag
   }
 });
 
-test('the expected file: a declaration excuses a failed valid row of its engine only, and one nothing needed is named', () => {
-  const declarations = [{id: 'chrome/latin/typeText.combining', engine: 'cua', kind: 'normalization', cause: 'the page composes e and U+0301 into é'},
-    {id: 'textedit/latin/typeText.latin', engine: 'vendor', kind: 'x', cause: 'not needed'}];
-  const rows = [
-    {section: 'unicode', id: 'chrome/latin/typeText.combining', engine: 'cua', ok: false},
-    {section: 'unicode', id: 'chrome/latin/typeText.combining', engine: 'vendor', ok: false},
-    {section: 'unicode', id: 'textedit/latin/typeText.latin', engine: 'vendor', ok: true},
-    {section: 'unicode', id: 'chrome/latin/typeText.combining', engine: 'cua', ok: false, invalid: 'not prepared', sample: 2},
-  ];
-  const {unused} = applyDeclarations(rows, declarations);
-  assert.deepEqual(rows[0].declared, {kind: 'normalization', cause: 'the page composes e and U+0301 into é'});
-  assert.equal(rows[1].declared, undefined, 'another engine\'s row');
-  assert.equal(rows[2].declared, undefined, 'a passing row needs none');
-  assert.equal(rows[3].declared, undefined, 'an invalid row is never declared');
-  assert.deepEqual(unused.map(d => d.id), ['textedit/latin/typeText.latin']);
-  for (const d of readDeclarations()) assert.ok(d.id && ['vendor', 'cua'].includes(d.engine) && d.kind && d.cause, JSON.stringify(d));
-  assert.throws(() => parseDeclarations({declarations: [{id: 'x'}]}), /needs an id, an engine, a kind and a cause/);
-  assert.throws(() => parseDeclarations({declarations: [declarations[0], declarations[0]]}), /twice/);
-  // A pressKey row that composes otherwise fails and cannot be declared (ruling 1119), on either engine.
-  for (const engine of ['vendor', 'cua']) {
-    assert.throws(() => parseDeclarations({declarations: [{id: 'chrome/korean/pressKey.rk', engine, kind: 'composition', cause: 'composes otherwise'}]}),
-      /chrome\/korean\/pressKey\.rk cannot be declared: .*ruling 1119/);
-  }
+test('the Unicode plan declares nothing: its expected file is retired for R3\'s departures file, and pressKey stays undeclarable there', () => {
+  for (const name of ['readDeclarations', 'parseDeclarations', 'applyDeclarations', 'EXPECTED_FILE']) assert.equal(unicodePlan[name], undefined, name);
+  assert.ok(isPressKeyRow('chrome/korean/pressKey.rk') && isPressKeyRow('textedit/latin/pressKey.rk'));
+  assert.ok(!isPressKeyRow('chrome/korean/typeText.hangul'));
 });
 
 // #185, ruling 1119: the per-context rows run and report, out of every verdict, with the ruling's cause.
-test('the per-context rows still run, out of the judged matrix with ruling 1119\'s cause, and are never declared', () => {
+test('the per-context rows still run, out of the judged matrix with ruling 1119\'s cause', () => {
   assert.deepEqual(Object.keys(NOT_JUDGED), ['perContext']);
   assert.match(NOT_JUDGED.perContext, /ruling 1119.*stored per-context preference does not show live behaviour.*focusing each window, which non-interference forbids/);
   assert.equal(unicodeRowsOf(UNICODE_PLAN).filter(r => r.condition === 'perContext').length, 3 * 9 * 2, 'they stay in the plan');
-  const id = 'chrome/perContext@textedit/typeText.hangul';
-  const rows = [{section: 'unicode', id, engine: 'cua', ok: false, excluded: NOT_JUDGED.perContext}];
-  const {unused} = applyDeclarations(rows, [{id, engine: 'cua', kind: 'x', cause: 'y'}]);
-  assert.equal(rows[0].declared, undefined);
-  assert.deepEqual(unused.map(d => d.id), [id]);
 });

@@ -19,14 +19,14 @@ import {userWindowOf} from './oracle.mjs';
 import {emptyFieldCell, fieldCheckCell, intervalOf, nextPreMs, postValidity, PRE_MS, PROBE_ATTEMPTS, PROBE_LEAD_MS, probeProblem, EMPTY_HASH, scheduledActCell} from './probe-plan.mjs';
 import {exclusionOf} from './not-judged.mjs';
 import {activate, alertCheck, caseRow, device, focusOf, js, mark, push, quiet, read, sendKeys, Stop} from './steps.mjs';
-import {ABC, applyDeclarations, COMPOSITION, CONDITIONS, INPUT_SOURCE_CHANGED, KOREAN_2SET, readDeclarations, UNICODE_USERS, unicodeCase, unicodeRowsOf} from './unicode-plan.mjs';
+import {ABC, COMPOSITION, CONDITIONS, INPUT_SOURCE_CHANGED, KOREAN_2SET, UNICODE_USERS, unicodeCase, unicodeRowsOf} from './unicode-plan.mjs';
 
 const j = JSON.stringify;
 // A reading that follows an action asynchronously (a web view's value after a key, an app's input source after its
 // activation) is taken up to this many times, this far apart, before its condition is said not to have held.
 export const SETTLE_READS = 4, SETTLE_READ_MS = 250;
 
-// The section: every row of `plan` ({fields, conditions}), then the expected file's declarations applied to them.
+// The section: every row of `plan` ({fields, conditions}), as read; the judge applies any declared departure (./departures.mjs).
 export async function unicodeSection(ctx, plan) {
   const rows = unicodeRowsOf(plan);
   const first = ctx.rows.length;
@@ -54,8 +54,6 @@ export async function unicodeSection(ctx, plan) {
     // when the section stopped part-way.
     for (const row of ctx.rows.slice(first)) { const cause = exclusionOf(row); if (cause) row.excluded = cause; }
   }
-  const {unused} = applyDeclarations(ctx.rows.slice(first), readDeclarations());
-  ctx.meta.unicode.unusedDeclarations = unused.map(({id, engine}) => ({id, engine}));
 }
 
 // A source selected through the probe and read back, with the keyboard layout read beside it. -> whether it holds.

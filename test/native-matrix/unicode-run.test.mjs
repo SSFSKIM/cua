@@ -53,7 +53,7 @@ test('cell korean --scene textedit: every row in run order under its source, Acc
   const composing = matrixSteps(steps, 'probe').find(a => a[1] === 'keystroke');
   assert.deepEqual([composing[composing.indexOf('--text') + 1], composing[composing.indexOf('--mode') + 1]], ['r', 'ansiKeys']);
   assert.ok(result.rows.filter(r => r.condition === 'composing').every(r => r.user === 'electron' && r.outcome.userKept === true && r.interference?.ok === true));
-  assert.deepEqual(result.meta.unicode.unusedDeclarations, []);
+  assert.equal(result.meta.unicode.unusedDeclarations, undefined, 'the run applies no declaration: the judge applies the departures file');
 });
 
 test('the mid-switch row: a switch outside the typing is retried; a typing the switch did not stop, or a field not holding the entered count, fails', async () => {

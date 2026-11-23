@@ -73,6 +73,14 @@ test('every field a row needs is checked by name', () => {
   assert.deepEqual(rowProblems(row({inputRoute: null})), []);
 });
 
+test('a row\'s front/key readings conform to ./front-key.mjs\'s contract, or the result does not conform', () => {
+  const app = 'com.apple.TextEdit';
+  const frontKey = {apps: [app], activate: {app, front: true, key: true}, before: {front: app, key: app}, after: {front: app, key: null}};
+  assert.deepEqual(rowProblems(row({frontKey})), []);
+  assert.ok(rowProblems(row({frontKey: {...frontKey, activate: {app, front: 'yes', key: true}}})).some(p => p.includes('row.frontKey.activate.front')));
+  assert.ok(validateCellResult(base({rows: [row({frontKey: {apps: []}})]})).some(p => p.includes('rows[0].frontKey.apps')));
+});
+
 test('a result whose verdict does not follow from its rows, or that repeats a row, does not conform', () => {
   const lying = {...base(), verdict: 'pass', rows: [row({ok: false})]};
   assert.ok(validateCellResult(lying).some(p => /does not follow/.test(p)));

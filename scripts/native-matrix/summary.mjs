@@ -1,69 +1,78 @@
 // The native matrix's judgment and report (docs/doperpowers/specs/2026-10-18-own-native-engine-design.md, Verification
-// system parts 4 and 5, Acceptance 7): every CellResult under one or more directories (./cell-result.mjs; the matrix's
-// own runs and any cell implemented elsewhere, M2a's residue on the live harness, M2b.3's probe cells), pooled by
-// engine, judged and written as the method table, the per-scene speed table and the three-point section.
-// `native-matrix.mjs summary <dir>` writes summary.md; `compare <vendor-dir> <cua-dir>` prints the verdict; both judge
-// alike (judge).
+// system parts 4 and 5, Acceptance 7; the M4/M5 pre-flight's §7, "The judge's rule for a row that differs", "No valid
+// pair, no verdict" and "The three-point report"): every CellResult under one or more directories (./cell-result.mjs; the
+// matrix's own runs and any cell implemented elsewhere, M2a's residue on the live harness, M2b.3's probe cells), pooled by
+// engine, judged and written as the report. `native-matrix.mjs summary <dir>` writes summary.md; `compare <vendor-dir>
+// <cua-dir>` prints the verdict; both judge alike (judge).
 //
-// The rules:
+// The rules (each cell's verdict from both engines' samples is ./cell-verdict.mjs's):
+// - A sample has a verdict only with good front/key readings and no invalid reason (./front-key.mjs: an alert front or
+//   key, a failed activate step, a hosted run's sample without readings, rulings 1136 and 1141). A sample without one is
+//   NO VERDICT: never a pass, never a fail, counted per cell by its cause.
+// - No valid pair, no verdict (ruling 1116): where the verdict rests on the vendor's answer, a cua sample with no vendor
+//   sample with a verdict from the same run has none.
+// - A cell qualifies with three runs a side (RUNS_PER_SIDE) every sample of which has a verdict; one that does not has
+//   no verdict, and the manifest's cells that do not qualify are missing proof (the manifest is checked for validity,
+//   not only presence).
 // - Method rows (section 'method', id `<target>/<regime>/<method>.<case>`). Frontmost: the vendor's outcome is the
 //   reference, sample for sample (the run number): cua is worse on a sample where the vendor passed and cua did not;
-//   better where cua passed and the vendor did not. Background: the fixture's ground truth is the reference, so every
-//   valid cua sample passes. A row with no valid cua sample has no verdict, which blocks as a failure does.
+//   better where cua passed and the vendor did not. Background: the fixture's ground truth is the reference. Differs is
+//   judged on the row's own check (`ok`): cua answering ok with its effect verified where the vendor failed is better
+//   (S L225, "equal or better"); cua answering ok where the reference is a refusal fails its check.
+// - The declared departures (R3 as ruled 1108, ./departures.mjs): cua refused or answered unconfirmed where the vendor
+//   answered ok, the pair observed, each entry citing its Decision Log entry; listed under "What changes for a user".
+//   Everything else that differs fails; an entry of another kind is itself a failure; one no sample needed is named for
+//   the owner. A declaration carried on a full run's own row excuses nothing (the file is the one place).
 // - Speed rows (section 'speed', id `<scene>/<op>`, ok meaning measured): the in-cell medians and p95s, the beat being
 //   cua's median at most 90% of the vendor's with its p95 not worse; a missed beat is the owner's fork at M5, not a failure.
-// - Finding rows (section 'finding', ok meaning measured): per scene the targets resolved (in every valid sample), the
+// - Finding rows (section 'finding', ok meaning measured): per scene the targets resolved (in every counted sample), the
 //   titled share and the ID count (medians); cua not lower on any measure and its resolved sum higher passes; not lower
 //   with the sum equal is parity, the owner's call; lower on any measure fails.
 // - Interference (the `interference` of background method rows, launch rows, concurrent-use rows and the Unicode
-//   matrix's rows behind a user window): cua at 100%, a row with a declared cause (a self-activating family, an
-//   accepted route 4) listed for the owner rather than passed; the vendor's score recorded beside it.
-// - Launch rows (section 'launch'): the launch worked (`ok`) judged as a background method row is, apart from their
-//   interference: a valid cua sample that did not launch is worse, none valid is no verdict.
+//   matrix's rows behind a user window, on samples with a verdict): cua at 100%, a row with a declared cause (a
+//   self-activating family, an accepted route 4) listed for the owner rather than passed; the vendor's score beside it.
+// - Launch rows (section 'launch'): the launch worked (`ok`) judged as a background method row is.
 // - The probe cells (sections 'concurrent' and 'intervention', ./probe-run.mjs) and the Korean and Unicode matrix
-//   ('unicode', ./unicode-run.mjs), rows of every full run: each judged against its own outcome as a background method
-//   row is (the cell's rule, not the vendor's result, is the reference; the vendor's is recorded beside it): a valid
-//   cua sample that failed blocks, none valid is no verdict; a declared Unicode row is the owner's to read, and a
-//   declaration of the expected file no full run needed is named for the owner. The pressKey row (r k, ruling 1119)
-//   is judged on both engines' raw outcomes (judgePressKey): a valid vendor sample that read otherwise fails it too,
-//   the engines differing, and a declaration carried on its evidence is missing proof, never an excuse.
-// - Not judged (./not-judged.mjs, ruling 1119: the per-context rows, by section and condition): rows that run and are
-//   reported but a ruling put out of the judged matrix. They are outside the manifest and every judgment (method,
-//   interference, declarations, the verdict), whatever they read and whether or not the run marked them `excluded`; an
-//   `excluded` mark on any other row takes nothing out (the reader refuses the result; the judge names it). The report
-//   lists each of the plan's with its cause and what both engines read, or that no lane recorded it, under "Not judged".
+//   ('unicode', ./unicode-run.mjs): each judged against its own outcome as a background method row is. The pressKey row
+//   (r k, ruling 1119) is judged on both engines' raw outcomes (./cell-verdict.mjs judgePressKey), and no departure may
+//   name it.
+// - Not judged (./not-judged.mjs, ruling 1119: the per-context rows, by section and condition): outside the manifest and
+//   every judgment, listed with their cause under "Not judged".
 // - Any other cell (the settle cell, M2a's residue): each cell's verdict per engine as its rows give it
 //   (./cell-result.mjs verdictOf), listed.
 //
 // What counts (the proof): only the whole matrix's results (cell 'matrix', meta.planId 'full') feed the tables; a
-// narrowed matrix cell (`cell method --scene …`) is listed and not counted. The full runs must form one proof: at least
-// RUNS_PER_SIDE complete, attested runs per engine, one device, one OS, one host and one engine build per engine; each
-// run number's vendor and cua runs one hold (meta.sitting, the lanes' --sitting), one commit and one approved engine
-// build, so every pair of samples compared was measured together (the run numbers may span holds: hold 2a's runs 1
-// and 2, hold 2b's run 3); no (section, id, engine, sample) twice, and every row of the manifest (manifestOf) in
-// every run, built only from a run whose own metadata says what it holds (a positive meta.run and meta.samples, an
-// attested lane naming its host and engine); every valid background or launch row carries its oracle reading. Whatever
-// is missing is NO VERDICT, which blocks M5 as a failure does but is not one. What the matrix does not run on a shared
-// Mac (./plan.mjs OWNER_OPTIONS) is listed as the owner's option, outside the verdict.
+// narrowed matrix cell is listed and not counted. The full runs must form one proof: at least RUNS_PER_SIDE complete,
+// attested runs per engine, one device, one OS, one host and one engine build per engine; each run number's vendor and
+// cua runs one hold, one commit and one approved engine build; no (section, id, engine, sample) twice; every row of the
+// manifest (./manifest.mjs) in every run, built only from a run whose own metadata says what it holds; every judged
+// cell qualifying; every counted background or launch row carrying its oracle reading; the shared device mode, the
+// default, wherever a run records its mode (meta.desktopMode). Whatever is missing is NO VERDICT, which blocks M5 as a
+// failure does but is not one. What the matrix does not run on a shared Mac (./plan.mjs OWNER_OPTIONS) is listed as the
+// owner's option, outside the verdict.
 //
-// The verdict: FAIL when something was judged worse, lower or interfering; else NO VERDICT when proof is missing; else
-// OWNER when only the owner's calls remain; else PASS.
+// The verdict: FAIL when something was judged worse, lower or interfering, or the departures file holds an entry of
+// another kind; else NO VERDICT when proof is missing; else OWNER when only the owner's calls remain; else PASS (the
+// declared departures listed beside it).
 import {stats} from '../native-baseline/summary.mjs';
-import {SCENES} from '../repl-parity/scenes-mac.mjs';
 import {readCellResults} from './cell-result.mjs';
-import {CASES, caseId, ENGINE_METHOD, METHODS, NOT_APPLICABLE, OWNER_OPTIONS, SCENE_OF, TARGETS} from './plan.mjs';
+import {findingSamples, judgeCell, judgeSpeed} from './cell-verdict.mjs';
+import {departureProblems, readDepartures, usableDepartures} from './departures.mjs';
+import {NO_VERDICT_CAUSES, sampleCause} from './front-key.mjs';
+import {cellsOf, manifestOf} from './manifest.mjs';
+import {ENGINE_METHOD, METHODS, NOT_APPLICABLE, OWNER_OPTIONS, TARGETS} from './plan.mjs';
 import {MATRIX_CELLS} from './registry.mjs';
-import {probeRowsOf} from './probe-run.mjs';
 import {FULL_PLAN} from './run.mjs';
 import {exclusionOf, unicodeConditionOf} from './not-judged.mjs';
-import {CONDITIONS, isPressKeyRow, NOT_JUDGED, readDeclarations, UNICODE_FIELDS, unicodeRowsOf} from './unicode-plan.mjs';
+import {CONDITIONS, isPressKeyRow, NOT_JUDGED, UNICODE_FIELDS, unicodeRowsOf} from './unicode-plan.mjs';
 
-export const BEAT = 0.9;
+export {BEAT, judgeMethod, judgePressKey, judgeSpeed} from './cell-verdict.mjs';
+export {manifestOf, SPEED_OPS} from './manifest.mjs';
 export const RUNS_PER_SIDE = 3;
-export const SPEED_OPS = Object.freeze(['getAXState', 'getScreenshot', 'listApps']);
+export const SHARED_MODE = 'shared';
 const SCENE_IDS = ['textedit', 'finder', 'chrome', 'electron'];
 const round = n => (n === null || n === undefined ? null : Math.round(n * 10) / 10);
-const SECTION_NAMES = {concurrent: 'concurrent use', intervention: 'intervention', unicode: 'unicode'};
+const SECTION_NAMES = {method: 'method', launch: 'launch', concurrent: 'concurrent use', intervention: 'intervention', unicode: 'unicode'};
 
 // Every CellResult under `dirs`, with what keeps any of them from being read. -> {results: [{path, result}], problems}.
 export function readResults(dirs) {
@@ -73,26 +82,6 @@ export function readResults(dirs) {
     else results.push({path: `${dir}/${path}`, result});
   }
   return {results, problems};
-}
-
-// Every row one full matrix run must hold (FULL_PLAN): the method cases of both regimes, the speed ops of every scene
-// (`samples` each), the finding rows of every scene (its ten targets, the lines and the ID count), the launch rows, the
-// probe cells' rows and the Unicode matrix's.
-// `run` is the run's number (meta.run), the sample of its method, finding and launch rows. -> [{section, id, sample}].
-export function manifestOf({run, samples}, plan = FULL_PLAN) {
-  const out = [];
-  for (const target of plan.frontmost) for (const c of CASES[target]) out.push({section: 'method', id: caseId(target, 'frontmost', c), sample: run});
-  for (const {driven, user} of plan.background) for (const c of CASES[driven]) out.push({section: 'method', id: caseId(driven, 'background', c, user), sample: run});
-  const scenes = [...new Set(plan.frontmost.filter(t => t !== 'openPanel').map(t => SCENE_OF[t]))];
-  if (plan.speed) for (const scene of scenes) for (const op of SPEED_OPS) for (let i = 1; i <= samples; i++) out.push({section: 'speed', id: `${scene}/${op}`, sample: (run - 1) * samples + i});
-  if (plan.finding) for (const scene of scenes) {
-    for (const t of SCENES[scene].targets) out.push({section: 'finding', id: `${scene}/target.${t.id}`, sample: run});
-    out.push({section: 'finding', id: `${scene}/lines`, sample: run}, {section: 'finding', id: `${scene}/ids`, sample: run});
-  }
-  for (const {scene, user} of plan.launch) out.push({section: 'launch', id: `${scene}/background/launch@${user}`, sample: run});
-  for (const {section, id} of probeRowsOf(plan)) out.push({section, id, sample: run});
-  if (plan.unicode) for (const {id, condition} of unicodeRowsOf(plan.unicode)) if (!Object.hasOwn(NOT_JUDGED, condition)) out.push({section: 'unicode', id, sample: run});
-  return out;
 }
 
 const sampleCounts = rows => { const valid = rows.filter(r => !r.invalid); return {ok: valid.filter(r => r.ok === true).length, valid: valid.length, invalid: rows.length - valid.length}; };
@@ -108,19 +97,6 @@ function notJudgedOf(excluded, plan = FULL_PLAN) {
   }).sort((a, b) => a.id.localeCompare(b.id));
 }
 
-// pressKey's r k (ruling 1119): composed by the active input method, so judged on the raw outcomes of both engines,
-// never on a declaration. A valid cua sample that did not read the expected text fails the row; a valid vendor sample
-// that did not, the engines composing differently, fails it too, whatever cua's samples were; otherwise no valid cua
-// sample is no verdict. -> judgeMethod's shape, with `differs` when the vendor's lane composed otherwise.
-export function judgePressKey(vendorRows, cuaRows) {
-  const raw = rows => rows.map(({declared, ...rest}) => rest);
-  const judged = judgeMethod('background', raw(vendorRows), raw(cuaRows));
-  const valid = rows => rows.filter(r => !r.invalid);
-  if (valid(cuaRows).some(r => r.ok !== true)) return {...judged, verdict: 'worse'};
-  if (valid(vendorRows).some(r => r.ok !== true)) return {...judged, verdict: 'worse', differs: true};
-  return judged.verdict === 'better' ? {...judged, verdict: 'equal'} : judged;
-}
-
 // What a full run's own metadata must say before its manifest can be built. -> [sentence].
 function metadataProblems(result) {
   const out = [];
@@ -134,7 +110,8 @@ function metadataProblems(result) {
   return out;
 }
 
-// Whether the full runs are one proof (the module's header). -> [missing proof, each a sentence].
+// Whether the full runs are one proof (the module's header), apart from each cell's qualification. -> [missing proof,
+// each a sentence].
 export function proofProblems(full) {
   const missing = [];
   const one = (what, values) => {
@@ -184,61 +161,43 @@ export function proofProblems(full) {
   const keys = full.flatMap(({result}) => result.rows.map(r => `${r.section} ${r.id} ${r.engine} ${r.sample}`));
   const repeated = [...new Set(keys.filter((k, i) => keys.indexOf(k) !== i))];
   if (repeated.length) missing.push(`${repeated.length} row(s) appear twice in the full runs (${repeated.slice(0, 3).join(', ')}${repeated.length > 3 ? ', …' : ''})`);
+  for (const [mode, n] of groupCount(full.map(({result}) => result.meta?.desktopMode).filter(m => m !== undefined && m !== SHARED_MODE))) {
+    missing.push(`${n} full run(s) record the device mode ${mode}: the matrix is judged in the shared device mode (R3)`);
+  }
   return missing;
 }
 
 const groupBy = (items, key) => { const out = new Map(); for (const item of items) { const k = key(item); if (!out.has(k)) out.set(k, []); out.get(k).push(item); } return out; };
+const groupCount = values => [...groupBy(values, v => v)].map(([v, list]) => [v, list.length]);
 
-// One method row's verdict from both engines' samples. -> {verdict: 'equal'|'better'|'worse'|'no-verdict', vendor, cua, routes}.
-export function judgeMethod(regime, vendorRows, cuaRows) {
-  const valid = rows => rows.filter(r => !r.invalid);
-  const v = valid(vendorRows), c = valid(cuaRows);
-  const passes = r => r.ok === true || r.declared !== undefined;
-  const count = rows => ({ok: rows.filter(passes).length, valid: rows.length, invalid: 0});
-  const vendor = {...count(v), invalid: vendorRows.length - v.length}, cua = {...count(c), invalid: cuaRows.length - c.length};
-  const routes = {vendor: [...new Set(v.map(r => r.inputRoute ?? null))], cua: [...new Set(c.map(r => r.inputRoute ?? null))]};
-  if (!c.length) return {verdict: 'no-verdict', vendor, cua, routes};
-  if (regime === 'background') return {verdict: c.every(passes) ? (v.length && v.some(r => !passes(r)) ? 'better' : 'equal') : 'worse', vendor, cua, routes};
-  const bySample = new Map(v.map(r => [r.sample ?? 1, r]));
-  let worse = false, better = false;
-  for (const row of c) {
-    const reference = bySample.get(row.sample ?? 1);
-    if (!reference) { if (!passes(row)) worse = true; continue; }
-    if (passes(reference) && !passes(row)) worse = true;
-    if (!passes(reference) && passes(row)) better = true;
-  }
-  return {verdict: worse ? 'worse' : better ? 'better' : 'equal', vendor, cua, routes};
-}
-
-// One speed op's comparison. -> {vendor: stats, cua: stats, deltaPct, beat: true|false|null}.
-export function judgeSpeed(vendorRows, cuaRows) {
-  const times = rows => rows.filter(r => r.ok && !r.invalid).map(r => r.inCellMs);
-  const vendor = stats(times(vendorRows)), cua = stats(times(cuaRows));
-  if (!vendor || !cua) return {vendor, cua, deltaPct: null, beat: null};
-  return {vendor, cua, deltaPct: round(((cua.median - vendor.median) / vendor.median) * 100), beat: cua.median <= BEAT * vendor.median && cua.p95 <= vendor.p95};
-}
-
-// One scene's finding measures for one engine. -> {resolved, found, share, ids, targets} or null without a sample.
+// One scene's finding measures for one engine, over its samples with a verdict. -> {resolved, found, share, ids,
+// targets} or null without a sample.
 export function findingMeasures(rows) {
-  const valid = rows.filter(r => !r.invalid);
-  const targets = groupBy(valid.filter(r => /\/target\./.test(r.id)), r => r.id);
+  const targets = groupBy(rows.filter(r => /\/target\./.test(r.id)), r => r.id);
   if (!targets.size) return null;
   const all = (list, key) => list.every(r => r.outcome?.[key] === true);
   const resolved = [...targets.values()].filter(list => all(list, 'resolved')).length;
   const found = [...targets.values()].filter(list => all(list, 'found')).length;
-  const lines = valid.filter(r => r.id.endsWith('/lines')).map(r => (r.outcome?.lines ? r.outcome.named / r.outcome.lines : null));
-  const ids = valid.filter(r => r.id.endsWith('/ids')).map(r => r.outcome?.ids);
+  const lines = rows.filter(r => r.id.endsWith('/lines')).map(r => (r.outcome?.lines ? r.outcome.named / r.outcome.lines : null));
+  const ids = rows.filter(r => r.id.endsWith('/ids')).map(r => r.outcome?.ids);
   return {resolved, found, share: round((stats(lines)?.median ?? 0) * 1000) / 1000, ids: stats(ids)?.median ?? 0, targets: targets.size};
 }
 
-// The judgment of everything read. `problems`: results that could not be read, missing proof. -> {problems, runs,
-// narrowed, methods, launch, speed, finding, interference, probe, unicode, notJudged, others, owner, blocking, missing,
-// verdict}.
-export function judge(results, problems = []) {
+// The rows the non-interference oracle judges: background method rows, launch rows, the probe cells' concurrent-use rows
+// (the user window in front, the sheet variant's among them) and the Unicode matrix's rows behind a user window.
+const oracleJudges = r => (r.section === 'method' && r.regime === 'background') || r.section === 'launch' || r.section === 'concurrent'
+  || (r.section === 'unicode' && r.id.split('/')[1]?.includes('@'));
+
+// The judgment of everything read. `problems`: results that could not be read, missing proof; `departures`: the
+// declared-departures file's entries (./departures.mjs). -> {problems, runs, narrowed, methods, launch, speed, finding,
+// findingVerdict, interference, interferencePass, probe, unicode, notJudged, departures, cells, others, owner, blocking,
+// missing, options, desktop, verdict}.
+export function judge(results, problems = [], {departures: entries = readDepartures()} = {}) {
   const own = ({result}) => Boolean(MATRIX_CELLS[result.cell]);
   const full = results.filter(r => own(r) && r.result.cell === 'matrix' && r.result.meta?.planId === 'full');
   const narrowed = results.filter(r => own(r) && !full.includes(r)).map(({path, result}) => ({path, cell: result.cell, planId: result.meta?.planId ?? null}));
-  const all = full.flatMap(({result}) => result.rows.map(row => ({...row, cell: result.cell})));
+  // Each row tagged with its run's number (the pairing key) and whether that run is hosted (./front-key.mjs).
+  const all = full.flatMap(({result}) => result.rows.map(row => ({...row, cell: result.cell, run: result.meta?.run, hosted: result.meta?.hosted === true})));
   // The rows a ruling put out of the judged matrix go to the not-judged list and nowhere else.
   const rows = all.filter(r => !exclusionOf(r));
   const notJudged = full.length ? notJudgedOf(all.filter(r => exclusionOf(r))) : [];
@@ -246,82 +205,94 @@ export function judge(results, problems = []) {
   for (const {result} of full) runs[result.lanes[0]?.engine] = (runs[result.lanes[0]?.engine] ?? 0) + 1;
   const missingProof = [...problems, ...proofProblems(full)];
   // Marks the rules do not allow, on results that reached the judge without the reader's check: an `excluded` mark on a
-  // row no ruling puts out (the row is judged as it read), a declaration on pressKey evidence (judged on its raw outcome).
+  // row no ruling puts out (the row is judged as it read), a declaration on a full run's row (judged on its raw outcome).
   const misMarked = all.filter(r => r.excluded !== undefined && !exclusionOf(r)).length;
   if (misMarked) missingProof.push(`${misMarked} row(s) of the full runs are marked excluded, which only ruling 1119's per-context rows may be: they are judged as they read`);
-  for (const r of all.filter(x => x.section === 'unicode' && isPressKeyRow(x.id) && x.declared !== undefined)) {
-    missingProof.push(`unicode: ${r.id} on ${r.engine} (sample ${r.sample ?? 1}) carries a declaration, which no pressKey row may (ruling 1119): its raw outcome is judged`);
+  for (const r of rows.filter(x => x.declared !== undefined)) {
+    missingProof.push(r.section === 'unicode' && isPressKeyRow(r.id)
+      ? `unicode: ${r.id} on ${r.engine} (sample ${r.sample ?? 1}) carries a declaration, which no pressKey row may (ruling 1119): its raw outcome is judged`
+      : `${r.section}: ${r.id} on ${r.engine} (sample ${r.sample ?? 1}) carries a declaration, which no row of the matrix may (R3: the declared-departures file is the one place): its raw outcome is judged`);
   }
   for (const {result, path} of results) {
     if (!result.complete && !narrowed.some(n => n.path === path)) missingProof.push(`${path}: ${result.cell} is ${result.verdict === 'refused' ? 'refused' : 'incomplete'}${result.problems.length ? ` (${result.problems.join('; ')})` : ''}`);
   }
+  const departureFailures = departureProblems(entries).map(p => `departures: ${p}`);
+  const byRow = new Map(usableDepartures(entries).map(e => [`${e.section} ${e.id}`, e]));
+  const options = section => id => ({departure: byRow.get(`${section} ${id}`) ?? null, required: RUNS_PER_SIDE, oracle: oracleJudges});
+  const sides = list => [list.filter(r => r.engine === 'vendor'), list.filter(r => r.engine === 'cua')];
 
   // Methods.
-  const methodRows = rows.filter(r => r.section === 'method');
   const methods = [];
-  for (const [id, list] of groupBy(methodRows, r => r.id)) {
+  for (const [id, list] of groupBy(rows.filter(r => r.section === 'method'), r => r.id)) {
     const [target, regime] = id.split('/');
-    methods.push({id, target, regime, method: list[0].method, case: list[0].case, ...judgeMethod(regime, list.filter(r => r.engine === 'vendor'), list.filter(r => r.engine === 'cua'))});
+    methods.push({id, section: 'method', target, regime, method: list[0].method, case: list[0].case, ...judgeCell(regime === 'frontmost' ? 'reference' : 'own', ...sides(list), options('method')(id))});
   }
   methods.sort((a, b) => a.id.localeCompare(b.id));
 
   // Speed.
-  const speedRows = rows.filter(r => r.section === 'speed');
   const speed = [];
-  for (const [id, list] of groupBy(speedRows, r => r.id)) {
+  for (const [id, list] of groupBy(rows.filter(r => r.section === 'speed'), r => r.id)) {
     const [scene, op] = [id.slice(0, id.indexOf('/')), id.slice(id.indexOf('/') + 1)];
-    speed.push({id, scene, op, ...judgeSpeed(list.filter(r => r.engine === 'vendor'), list.filter(r => r.engine === 'cua'))});
+    speed.push({id, section: 'speed', scene, op, ...judgeSpeed(...sides(list), {required: RUNS_PER_SIDE})});
   }
   speed.sort((a, b) => a.id.localeCompare(b.id));
 
-  // Finding.
+  // Finding: each row's samples with a verdict, then per scene.
+  const findingRows = [];
+  for (const [id, list] of groupBy(rows.filter(r => r.section === 'finding'), r => r.id)) findingRows.push({id, section: 'finding', ...findingSamples(...sides(list), {required: RUNS_PER_SIDE})});
   const finding = SCENE_IDS.map(scene => {
-    const of = engine => findingMeasures(rows.filter(r => r.section === 'finding' && r.engine === engine && r.id.startsWith(`${scene}/`)));
-    return {scene, vendor: of('vendor'), cua: of('cua')};
+    const mine = findingRows.filter(f => f.id.startsWith(`${scene}/`));
+    return {scene, vendor: findingMeasures(mine.flatMap(f => f.vendor)), cua: findingMeasures(mine.flatMap(f => f.cua)), qualifies: mine.every(f => f.account.qualifies)};
   }).filter(f => f.vendor || f.cua);
   const measured = finding.filter(f => f.vendor && f.cua);
   const lower = measured.filter(f => ['resolved', 'share', 'ids'].some(k => f.cua[k] < f.vendor[k]));
   const sum = engine => measured.reduce((n, f) => n + f[engine].resolved, 0);
-  const findingVerdict = !measured.length || measured.length < finding.length ? 'no-verdict' : lower.length ? 'fail' : sum('cua') > sum('vendor') ? 'pass' : 'parity';
+  // Lower on the paired samples is shown whether or not every row qualifies, as a method sample proven worse is.
+  const findingVerdict = !measured.length || measured.length < finding.length ? 'no-verdict' : lower.length ? 'fail' : finding.some(f => !f.qualifies) ? 'no-verdict'
+    : sum('cua') > sum('vendor') ? 'pass' : 'parity';
 
-  // Interference: background method rows, launch rows, the probe cells' concurrent-use rows (the user window in front,
-  // the sheet variant's among them) and the Unicode matrix's rows behind a user window (`<field>/<condition>@<user>/…`);
-  // a valid one without its reading is missing proof.
-  const applicable = r => !r.invalid && ((r.section === 'method' && r.regime === 'background') || r.section === 'launch' || r.section === 'concurrent'
-    || (r.section === 'unicode' && r.id.split('/')[1]?.includes('@')));
+  // Interference, on the oracle's rows with a verdict; one without its reading is missing proof.
+  const applicable = r => oracleJudges(r) && !sampleCause(r);
   for (const engine of ['vendor', 'cua']) {
     const unread = rows.filter(r => r.engine === engine && applicable(r) && !r.interference).length;
     if (unread) missingProof.push(`not interfering: ${unread} valid background or launch row(s) on ${engine} carry no oracle reading`);
   }
-  const judged = engine => rows.filter(r => r.engine === engine && applicable(r) && r.interference);
+  const judgedRows = engine => rows.filter(r => r.engine === engine && applicable(r) && r.interference);
   const interference = Object.fromEntries(['vendor', 'cua'].map(engine => {
-    const list = judged(engine);
+    const list = judgedRows(engine);
     const declared = r => r.interference.declared;
     return [engine, {rows: list.length, ok: list.filter(r => r.interference.ok).length, route4: list.filter(r => r.interference.route4 && declared(r)?.kind !== 'route4-accepted').length,
       declared: list.filter(r => !r.interference.ok && declared(r)).map(r => ({id: r.id, ...declared(r)})),
       failed: list.filter(r => !r.interference.ok && !declared(r)).map(r => ({id: r.id, frontmost: r.interference.frontmost, topWindow: r.interference.topWindow, focus: r.interference.focus ?? null,
         activations: r.interference.activations, route4: r.interference.route4}))}];
   }));
-  // The launch path's outcome, apart from its interference.
-  const launch = [];
-  for (const [id, list] of groupBy(rows.filter(r => r.section === 'launch'), r => r.id)) {
-    launch.push({id, ...judgeMethod('background', list.filter(r => r.engine === 'vendor'), list.filter(r => r.engine === 'cua'))});
-  }
-  launch.sort((a, b) => a.id.localeCompare(b.id));
 
-  // The probe cells and the Unicode matrix, each row against its own outcome; the pressKey row by judgePressKey.
+  // The launch path, the probe cells and the Unicode matrix, each against its own outcome; the pressKey row by its rule.
   const byOwnOutcome = sections => {
     const out = [];
     for (const [id, list] of groupBy(rows.filter(r => sections.includes(r.section)), r => r.id)) {
-      const judgeRow = list[0].section === 'unicode' && isPressKeyRow(id) ? judgePressKey : (v, c) => judgeMethod('background', v, c);
-      out.push({id, section: list[0].section, ...judgeRow(list.filter(r => r.engine === 'vendor'), list.filter(r => r.engine === 'cua'))});
+      const section = list[0].section;
+      out.push({id, section, ...judgeCell(section === 'unicode' && isPressKeyRow(id) ? 'pressKey' : 'own', ...sides(list), options(section)(id))});
     }
     return out.sort((a, b) => a.id.localeCompare(b.id));
   };
+  const launch = byOwnOutcome(['launch']);
   const probe = byOwnOutcome(['concurrent', 'intervention']);
   const unicode = byOwnOutcome(['unicode']);
-  const failedUnicode = new Set(rows.filter(r => r.section === 'unicode' && !r.invalid && r.ok !== true).map(r => `${r.id}\0${r.engine}`));
-  const unneeded = full.length ? readDeclarations().filter(d => !failedUnicode.has(`${d.id}\0${d.engine}`)) : [];
+
+  // The declared departures observed: every entry that covered a sample, and those no sample needed.
+  const judgedCells = [...methods, ...launch, ...probe, ...unicode];
+  const applied = judgedCells.filter(c => c.declared > 0).map(c => ({...byRow.get(`${c.section} ${c.id}`), samples: c.declared}));
+  const unneeded = full.length ? [...byRow.values()].filter(e => !applied.some(a => a.section === e.section && a.id === e.id)) : [];
+
+  // Every judged cell of the manifest: its samples with and without a verdict, and whether it qualifies.
+  const found = new Map([...judgedCells, ...speed].map(c => [`${c.section} ${c.id}`, {verdict: c.section === 'speed' ? (c.beat === null ? 'no-verdict' : c.beat ? 'beat' : 'missed') : c.verdict, account: c.account}]));
+  for (const f of findingRows) found.set(`${f.section} ${f.id}`, {verdict: f.account.qualifies ? 'measured' : 'no-verdict', account: f.account});
+  const empty = {vendor: {verdicts: 0, runs: 0, noVerdict: {}}, cua: {verdicts: 0, runs: 0, noVerdict: {}}, qualifies: false};
+  const cells = cellsOf().map(({section, id}) => {
+    const c = found.get(`${section} ${id}`) ?? {verdict: 'no-verdict', account: empty};
+    return {section, id, verdict: c.verdict, account: c.account, qualifies: c.account.qualifies};
+  });
 
   // Other cells (implemented elsewhere), by cell and engine.
   const others = [];
@@ -333,53 +304,59 @@ export function judge(results, problems = []) {
     }
   }
 
-  const methodFails = methods.filter(m => m.verdict === 'worse'), methodUnproven = methods.filter(m => m.verdict === 'no-verdict');
   const interferencePass = interference.cua.rows > 0 && interference.cua.failed.length === 0 && interference.cua.declared.length === 0;
   const speedMisses = speed.filter(s => s.beat === false);
-  const speedUnmeasured = speed.filter(s => s.beat === null);
-  // Rows not ok with a declared cause (./cell-result.mjs counts): never silent, each the owner's to read.
-  const declaredRows = rows.filter(r => !r.invalid && r.ok !== true && r.declared && !(r.section === 'unicode' && isPressKeyRow(r.id)));
   const owner = [
-    ...declaredRows.map(r => `declared: ${r.section} ${r.id} on ${r.engine}: ${r.declared.kind}: ${r.declared.cause}`),
     ...speedMisses.map(s => `speed: ${s.id} missed the 10% beat (cua ${round(s.cua.median)} ms against ${round(s.vendor.median)} ms, p95 ${round(s.cua.p95)} against ${round(s.vendor.p95)})`),
     ...(findingVerdict === 'parity' ? ['finding elements: parity on the resolved sum (the owner decides)'] : []),
     ...interference.cua.declared.map(d => `not interfering: ${d.id}: ${d.cause}`),
-    ...unneeded.map(d => `unicode: the expected file declares ${d.id} on ${d.engine}, which no full run needed: remove it`),
+    ...unneeded.map(e => `departures: the file declares ${e.section} ${e.id}, which no sample of the full runs needed: remove it`),
   ];
   const blocking = [
-    ...methodFails.map(m => `method: ${m.id} is worse on cua`),
+    ...departureFailures,
+    ...methods.filter(m => m.verdict === 'worse').map(m => `method: ${m.id} is worse on cua`),
     ...launch.filter(l => l.verdict === 'worse').map(l => `launch: ${l.id} did not launch on cua`),
     ...(findingVerdict === 'fail' ? lower.map(f => `finding elements: ${f.scene} is lower on cua`) : []),
     ...interference.cua.failed.map(f => `not interfering: ${f.id} failed on cua`),
     ...[...probe, ...unicode].filter(r => r.verdict === 'worse').map(r => (r.differs ? `${r.section}: ${r.id} composes otherwise on the vendor: the engines differ (ruling 1119)` : `${r.section}: ${r.id} failed on cua`)),
     ...others.filter(o => o.engine === 'cua' && o.verdict === 'fail').map(o => `${o.cell}: fail on cua`),
   ];
+  // A judged cell with no counted cua sample is named; every cell that does not qualify is counted once and listed
+  // under NO VERDICT by cell.
+  const unproven = judgedCells.filter(c => c.verdict === 'no-verdict' && c.cua.valid === 0).map(c => {
+    const unpaired = (c.account.cua.noVerdict.unpaired ?? 0) > 0;
+    return `${SECTION_NAMES[c.section]}: ${c.id} ${unpaired ? 'has no cua sample with a valid vendor sample of its run (ruling 1116)' : 'has no valid cua sample'}`;
+  });
+  const unqualified = cells.filter(c => !c.qualifies);
   const missing = [
     ...missingProof,
-    ...methodUnproven.map(m => `method: ${m.id} has no valid cua sample`),
-    ...launch.filter(l => l.verdict === 'no-verdict').map(l => `launch: ${l.id} has no valid cua sample`),
-    ...[...probe, ...unicode].filter(r => r.verdict === 'no-verdict').map(r => `${SECTION_NAMES[r.section]}: ${r.id} has no valid cua sample`),
-    ...(findingVerdict === 'no-verdict' ? ['finding elements: a scene has no measure on one engine'] : []),
+    ...unproven,
+    ...(unqualified.length ? [`${unqualified.length} cell(s) do not qualify: fewer than ${RUNS_PER_SIDE} runs with a verdict on a side (NO VERDICT by cell)`] : []),
+    ...(findingVerdict === 'no-verdict' ? ['finding elements: a scene has no measure on one engine, or a finding row does not qualify'] : []),
     ...(interference.cua.rows === 0 ? ['not interfering: no background row was judged on cua'] : []),
-    ...speedUnmeasured.map(s => `speed: ${s.id} has no measure on one engine`),
+    ...speed.filter(s => !s.vendor || !s.cua).map(s => `speed: ${s.id} has no measure on one engine`),
     ...others.filter(o => o.engine === 'cua' && o.verdict !== 'pass' && o.verdict !== 'fail').map(o => `${o.cell}: ${o.verdict} on cua`),
   ];
+  const desktop = {recorded: groupCount(full.map(({result}) => result.meta?.desktopMode).filter(m => m !== undefined)), unrecorded: full.filter(({result}) => result.meta?.desktopMode === undefined).length,
+    hosted: full.filter(({result}) => result.meta?.hosted === true).length, full: full.length};
   const verdict = blocking.length ? 'FAIL' : missing.length ? 'NO VERDICT' : owner.length ? 'OWNER' : 'PASS';
-  return {problems: missingProof, runs, narrowed, methods, launch, speed, finding, findingVerdict, interference, interferencePass, probe, unicode, notJudged, others, owner, blocking, missing,
-    options: OWNER_OPTIONS.map(o => ({...o})), verdict};
+  return {problems: missingProof, runs, narrowed, methods, launch, speed, finding, findingVerdict, interference, interferencePass, probe, unicode, notJudged, departures: applied, cells, others, owner,
+    blocking, missing, options: OWNER_OPTIONS.map(o => ({...o})), desktop, verdict};
 }
 
 // ---- the report ---------------------------------------------------------------------------------------------------------
 
-const MARK = {equal: 'equal', better: 'better', worse: '**worse**', 'no-verdict': '**no verdict**'};
+const MARK = {equal: 'equal', better: 'better', declared: 'declared', worse: '**worse**', 'no-verdict': '**no verdict**', beat: 'beat', missed: 'missed', measured: 'measured'};
 const ms = n => (n === null || n === undefined ? '-' : (Math.round(n * 10) / 10).toFixed(1));
 const counts = c => `${c.ok}/${c.valid}${c.invalid ? ` (+${c.invalid} invalid)` : ''}`;
+const verdictCounts = c => `${c.ok}/${c.valid}${c.invalid ? ` (+${c.invalid} no verdict)` : ''}`;
 const routeText = list => list.map(r => (r === null ? '-' : String(r))).join(', ');
+const causesText = noVerdict => Object.entries(noVerdict).map(([k, n]) => `${k} ${n}`).join(', ') || '-';
 
 // The method table: the 11 methods against the four scenes and the Open panel, each cell the worst verdict of its cases
 // per regime (front/back), n/a with the plan's reason in a note.
 export function methodTable(methods) {
-  const rank = ['equal', 'better', 'no-verdict', 'worse'];
+  const rank = ['equal', 'better', 'declared', 'no-verdict', 'worse'];
   const worst = list => list.reduce((a, m) => (rank.indexOf(m.verdict) > rank.indexOf(a) ? m.verdict : a), 'better');
   const cell = (target, method) => {
     if (NOT_APPLICABLE[target]?.[method]) return 'n/a';
@@ -394,10 +371,19 @@ export function methodTable(methods) {
   return lines.join('\n');
 }
 
+// The device mode and venue line (R3: the matrix runs in the shared device mode, the default, and the report says so).
+function desktopLine(d) {
+  const parts = [];
+  if (d.recorded.length) parts.push(`${d.recorded.map(([m]) => m).join(', ')}${d.recorded.every(([m]) => m === SHARED_MODE) ? ' (the default)' : ''}, recorded by ${d.unrecorded ? `${d.full - d.unrecorded} full run(s)` : 'every full run'}`);
+  if (d.unrecorded) parts.push(`not recorded by ${d.unrecorded} full run(s) (the default, ${SHARED_MODE}, is the rule)`);
+  return `Device mode: ${parts.join('; ') || 'no full run'}; hosted: ${d.hosted} of ${d.full} full runs.`;
+}
+
 export function renderSummary(j, {title = 'Native matrix summary'} = {}) {
-  const note = {OWNER: ' (nothing failed; the owner\'s calls below remain)', 'NO VERDICT': ' (nothing failed, but the proof below is missing: it blocks M5 as a failure does)'};
+  const departures = j.departures.length ? ` (${j.departures.length} declared departure${j.departures.length === 1 ? '' : 's'}: What changes for a user)` : '';
+  const note = {PASS: departures, OWNER: ` (nothing failed; the owner's calls below remain)${departures}`, 'NO VERDICT': ' (nothing failed, but the proof below is missing: it blocks M5 as a failure does)'};
   const out = [`# ${title}`, '', `Verdict: **${j.verdict}**${note[j.verdict] ?? ''}`, '',
-    `Full matrix runs: ${j.runs.vendor} vendor, ${j.runs.cua} cua (${RUNS_PER_SIDE} per side are the rule).`, ''];
+    `Full matrix runs: ${j.runs.vendor} vendor, ${j.runs.cua} cua (${RUNS_PER_SIDE} per side are the rule).`, desktopLine(j.desktop), ''];
   if (j.blocking.length) out.push('## Blocking', '', ...j.blocking.map(b => `- ${b}`), '');
   if (j.missing.length) out.push('## Missing proof (no verdict)', '', ...j.missing.map(b => `- ${b}`), '');
   if (j.options.length) out.push('## Owner options (not run; not part of the verdict)', '', ...j.options.map(o => `- ${o.option} (${o.section} ${o.id}): ${o.reason}`), '');
@@ -405,45 +391,81 @@ export function renderSummary(j, {title = 'Native matrix summary'} = {}) {
 
   out.push('## The three points', '');
   const beats = j.speed.filter(s => s.beat === true).length;
-  out.push(`- **Speed**: ${beats} of ${j.speed.length} measured ops beat the vendor by at least 10% with p95 not worse; ${j.speed.filter(s => s.beat === false).length} missed (the owner's fork), ${j.speed.filter(s => s.beat === null).length} unmeasured.`);
+  out.push(`- **Speed**: ${beats} of ${j.speed.length} measured ops beat the vendor by at least 10% with p95 not worse; ${j.speed.filter(s => s.beat === false).length} missed (the owner's fork), ${j.speed.filter(s => s.beat === null).length} unmeasured or not qualified.`);
   const sum = engine => j.finding.reduce((n, f) => n + (f[engine]?.resolved ?? 0), 0);
   out.push(`- **Finding elements**: ${j.findingVerdict}; resolved targets vendor ${sum('vendor')}, cua ${sum('cua')} of ${j.finding.reduce((n, f) => n + (f.vendor?.targets ?? f.cua?.targets ?? 0), 0)}.`);
   const share = engine => (j.interference[engine].rows ? `${Math.round((j.interference[engine].ok / j.interference[engine].rows) * 1000) / 10}% (${j.interference[engine].ok}/${j.interference[engine].rows})` : 'no rows');
   out.push(`- **Not interfering**: cua ${share('cua')}, vendor ${share('vendor')}; cua route-4 actions outside accepted families: ${j.interference.cua.route4}; declared for the owner: ${j.interference.cua.declared.length}.`);
-  const passing = list => list.filter(r => ['equal', 'better'].includes(r.verdict)).length;
+  out.push(`- **What changes for a user**: ${j.departures.length} declared departure(s) (R3).`);
+  const passing = list => list.filter(r => ['equal', 'better', 'declared'].includes(r.verdict)).length;
   out.push(`- **Concurrent use and intervention**: ${passing(j.probe)} of ${j.probe.length} rows pass on cua (concurrent use and its sheet variant, intervention fires, the pre-action refusal).`);
   const notJudged = j.notJudged.length ? `; ${j.notJudged.length} ${[...new Set(j.notJudged.map(n => n.condition))].join(', ')} rows are not judged (below)` : '';
-  out.push(`- **Korean and Unicode**: ${passing(j.unicode)} of ${j.unicode.length} rows pass on cua${notJudged}.`, '');
-
-  out.push('## Methods', '', methodTable(j.methods), '', 'F: frontmost regime (the vendor\'s outcome is the reference, sample for sample); B: background regime (the fixture\'s ground truth). n/a: no meaningful target on that scene, on both engines:', '');
-  for (const target of TARGETS) for (const [method, reason] of Object.entries(NOT_APPLICABLE[target] ?? {})) out.push(`- ${target} ${ENGINE_METHOD[method]}: ${reason}`);
-  out.push('', '| row | verdict | vendor ok | cua ok | vendor route | cua route |', '|---|---|---|---|---|---|');
-  for (const m of j.methods) out.push(`| ${m.id} | ${MARK[m.verdict]} | ${counts(m.vendor)} | ${counts(m.cua)} | ${routeText(m.routes.vendor)} | ${routeText(m.routes.cua)} |`);
-  out.push('');
+  out.push(`- **Korean and Unicode**: ${passing(j.unicode)} of ${j.unicode.length} rows pass on cua${notJudged}.`);
+  const without = side => j.cells.reduce((n, c) => n + Object.values(c.account[side].noVerdict).reduce((a, b) => a + b, 0), 0);
+  out.push(`- **NO VERDICT**: ${without('cua')} cua and ${without('vendor')} vendor sample(s) without a verdict; ${j.cells.filter(c => !c.qualifies).length} of ${j.cells.length} cells do not qualify.`, '');
 
   out.push('## Speed (in-cell ms)', '');
   for (const scene of SCENE_IDS) {
     const list = j.speed.filter(s => s.scene === scene);
     if (!list.length) continue;
     out.push(`### ${scene}`, '', '| op | vendor median | vendor p95 | cua median | cua p95 | change | beat |', '|---|---|---|---|---|---|---|');
-    for (const s of list) out.push(`| ${s.op} | ${ms(s.vendor?.median)} | ${ms(s.vendor?.p95)} | ${ms(s.cua?.median)} | ${ms(s.cua?.p95)} | ${s.deltaPct === null ? '-' : `${s.deltaPct > 0 ? '+' : ''}${s.deltaPct}%`} | ${s.beat === null ? 'unmeasured' : s.beat ? 'yes' : '**no**'} |`);
+    for (const s of list) out.push(`| ${s.op} | ${ms(s.vendor?.median)} | ${ms(s.vendor?.p95)} | ${ms(s.cua?.median)} | ${ms(s.cua?.p95)} | ${s.deltaPct === null ? '-' : `${s.deltaPct > 0 ? '+' : ''}${s.deltaPct}%`} | ${s.beat !== null ? (s.beat ? 'yes' : '**no**') : s.provisional === null ? 'unmeasured' : `not qualified (${s.provisional ? 'yes' : 'no'} as sampled)`} |`);
     out.push('');
   }
 
   out.push('## Finding elements', '', '| scene | vendor resolved | cua resolved | vendor titled share | cua titled share | vendor ID count | cua ID count |', '|---|---|---|---|---|---|---|');
-  for (const f of j.finding) out.push(`| ${f.scene} | ${f.vendor?.resolved ?? '-'}/${f.vendor?.targets ?? '-'} | ${f.cua?.resolved ?? '-'}/${f.cua?.targets ?? '-'} | ${f.vendor?.share ?? '-'} | ${f.cua?.share ?? '-'} | ${f.vendor?.ids ?? '-'} | ${f.cua?.ids ?? '-'} |`);
+  for (const f of j.finding) out.push(`| ${f.scene}${f.qualifies ? '' : ' (not qualified)'} | ${f.vendor?.resolved ?? '-'}/${f.vendor?.targets ?? '-'} | ${f.cua?.resolved ?? '-'}/${f.cua?.targets ?? '-'} | ${f.vendor?.share ?? '-'} | ${f.cua?.share ?? '-'} | ${f.vendor?.ids ?? '-'} | ${f.cua?.ids ?? '-'} |`);
+  out.push('');
+
+  out.push('## Not interfering', '', 'The background, launch, concurrent-use and behind-a-user-window Unicode rows with a verdict, by the oracle (the front app, the top window, the focus, activations, the route).', '');
+  for (const engine of ['cua', 'vendor']) {
+    const i = j.interference[engine];
+    out.push(`- ${engine}: ${share(engine)}${i.failed.length ? `; failed: ${i.failed.map(f => `${f.id} (${[!f.frontmost && 'frontmost changed', !f.topWindow && 'top window changed', f.focus === false && 'focus left the user window', f.activations && `${f.activations} activation(s)`, f.route4 && 'route 4'].filter(Boolean).join(', ')})`).join('; ')}` : ''}${i.declared.length ? `; declared: ${i.declared.map(d => `${d.id} (${d.kind})`).join('; ')}` : ''}`);
+  }
+  out.push('');
+
+  out.push('## What changes for a user', '', 'The places where cua refuses or answers unconfirmed where the vendor answered ok (R3), each declared with its Decision Log entry; nothing else can be here.', '');
+  if (j.departures.length) for (const d of j.departures) out.push(`- ${d.section} ${d.id}: the vendor answered ok, cua ${d.cua.answer} ("${d.cua.sentence}") in ${d.samples} sample(s); ${d.decision}`);
+  else out.push('No declared departure was observed in these runs.');
+  out.push('');
+
+  if (j.notJudged.length) {
+    out.push('## Not judged', '', 'The plan\'s rows a ruling put out of the judged matrix: they run and are reported, and count as neither pass nor fail, nor as missing proof. cua ok/valid, then the vendor\'s; "not recorded" where that lane has no sample of the row, which is distinct from an invalid sample.', '');
+    const recorded = c => (c.valid + c.invalid ? counts(c) : 'not recorded');
+    for (const [condition, list] of groupBy(j.notJudged, n => n.condition)) {
+      out.push(`### ${condition}`, '', list[0].cause, '', '| row | cua ok | vendor ok |', '|---|---|---|');
+      for (const n of list) out.push(`| ${n.id} | ${recorded(n.cua)} | ${recorded(n.vendor)} |`);
+      out.push('');
+    }
+  }
+
+  out.push('## NO VERDICT by cell', '');
+  const listed = j.cells.filter(c => !c.qualifies || Object.keys(c.account.vendor.noVerdict).length || Object.keys(c.account.cua.noVerdict).length);
+  if (!j.runs.vendor && !j.runs.cua) out.push('No full run: no cell has a verdict.');
+  else if (!listed.length) out.push(`No cell has a NO VERDICT sample, and every cell qualifies (${RUNS_PER_SIDE} runs with a verdict on each side).`);
+  else {
+    out.push(`Each judged cell with a sample without a verdict, or with fewer than ${RUNS_PER_SIDE} runs every sample of which has one on a side (the triple's requirement), which does not qualify and is missing proof. A sample without a verdict is never a pass and never a fail. Its causes: ${Object.entries(NO_VERDICT_CAUSES).map(([k, v]) => `${k}, ${v}`).join('; ')}. Runs are those with a verdict, against the ${RUNS_PER_SIDE} required.`, '',
+      '| cell | verdict | vendor runs | cua runs | vendor no verdict | cua no verdict | qualifies |', '|---|---|---|---|---|---|---|');
+    for (const c of listed) out.push(`| ${c.section} ${c.id} | ${MARK[c.verdict] ?? c.verdict} | ${c.account.vendor.runs} of ${RUNS_PER_SIDE} | ${c.account.cua.runs} of ${RUNS_PER_SIDE} | ${causesText(c.account.vendor.noVerdict)} | ${causesText(c.account.cua.noVerdict)} | ${c.qualifies ? 'yes' : 'no'} |`);
+  }
+  out.push('');
+
+  out.push('## Methods', '', methodTable(j.methods), '', 'F: frontmost regime (the vendor\'s outcome is the reference, sample for sample); B: background regime (the fixture\'s ground truth). n/a: no meaningful target on that scene, on both engines:', '');
+  for (const target of TARGETS) for (const [method, reason] of Object.entries(NOT_APPLICABLE[target] ?? {})) out.push(`- ${target} ${ENGINE_METHOD[method]}: ${reason}`);
+  out.push('', '| row | verdict | vendor ok | cua ok | vendor route | cua route |', '|---|---|---|---|---|---|');
+  for (const m of j.methods) out.push(`| ${m.id} | ${MARK[m.verdict]} | ${verdictCounts(m.vendor)} | ${verdictCounts(m.cua)} | ${routeText(m.routes.vendor)} | ${routeText(m.routes.cua)} |`);
   out.push('');
 
   if (j.launch.length) {
     out.push('## Launch path', '', '| row | verdict | vendor ok | cua ok |', '|---|---|---|---|');
-    for (const l of j.launch) out.push(`| ${l.id} | ${MARK[l.verdict]} | ${counts(l.vendor)} | ${counts(l.cua)} |`);
+    for (const l of j.launch) out.push(`| ${l.id} | ${MARK[l.verdict]} | ${verdictCounts(l.vendor)} | ${verdictCounts(l.cua)} |`);
     out.push('');
   }
 
   if (j.probe.length) {
     out.push('## Concurrent use and intervention', '', 'Each row against its own outcome (the user\'s keystroke kept, userIntervened, the refusal); the vendor\'s recorded beside it.', '',
       '| row | verdict | vendor ok | cua ok |', '|---|---|---|---|');
-    for (const r of j.probe) out.push(`| ${r.id} | ${MARK[r.verdict]} | ${counts(r.vendor)} | ${counts(r.cua)} |`);
+    for (const r of j.probe) out.push(`| ${r.id} | ${MARK[r.verdict]} | ${verdictCounts(r.vendor)} | ${verdictCounts(r.cua)} |`);
     out.push('');
   }
   if (j.unicode.length) {
@@ -461,22 +483,6 @@ export function renderSummary(j, {title = 'Native matrix summary'} = {}) {
       out.push('');
     }
   }
-  if (j.notJudged.length) {
-    out.push('## Not judged', '', 'The plan\'s rows a ruling put out of the judged matrix: they run and are reported, and count as neither pass nor fail, nor as missing proof. cua ok/valid, then the vendor\'s; "not recorded" where that lane has no sample of the row, which is distinct from an invalid sample.', '');
-    const recorded = c => (c.valid + c.invalid ? counts(c) : 'not recorded');
-    for (const [condition, list] of groupBy(j.notJudged, n => n.condition)) {
-      out.push(`### ${condition}`, '', list[0].cause, '', '| row | cua ok | vendor ok |', '|---|---|---|');
-      for (const n of list) out.push(`| ${n.id} | ${recorded(n.cua)} | ${recorded(n.vendor)} |`);
-      out.push('');
-    }
-  }
-
-  out.push('## Not interfering', '');
-  for (const engine of ['cua', 'vendor']) {
-    const i = j.interference[engine];
-    out.push(`- ${engine}: ${share(engine)}${i.failed.length ? `; failed: ${i.failed.map(f => `${f.id} (${[!f.frontmost && 'frontmost changed', !f.topWindow && 'top window changed', f.focus === false && 'focus left the user window', f.activations && `${f.activations} activation(s)`, f.route4 && 'route 4'].filter(Boolean).join(', ')})`).join('; ')}` : ''}${i.declared.length ? `; declared: ${i.declared.map(d => `${d.id} (${d.kind})`).join('; ')}` : ''}`);
-  }
-  out.push('');
   if (j.narrowed.length) {
     out.push('## Narrowed matrix cells (listed, not counted)', '', ...j.narrowed.map(n => `- ${n.path}: ${n.cell} (${n.planId ?? 'no plan id'})`), '');
   }

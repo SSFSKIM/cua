@@ -23,7 +23,10 @@
 //   problems   [string]: why it is not complete, each a bounded sentence
 //   rows       [Row]
 //   putBack    optional, the put-back's answer ({ok, ...})
-//   meta       optional, anything the cell keeps about its context (never screen content)
+//   meta       optional, anything the cell keeps about its context (never screen content). A full matrix run's (cell
+//              'matrix', planId 'full') carries, among the rest, `hosted` (true on a GitHub-hosted runner: its judged
+//              rows then need their front/key readings, ./front-key.mjs) and `desktopMode` (the device mode it ran in,
+//              'shared' the default and the only one the matrix is judged in, R3)
 //
 // Row (one judged sample):
 //   section    which part of the summary it feeds (SECTIONS): 'method' (part 4), 'speed' (part 5's speed), 'finding'
@@ -53,14 +56,22 @@
 //   outcome    optional, what was read back: booleans, numbers, error names, bounded sentences; never accessibility
 //              text, titles or values of windows the run does not own
 //   interference   optional, part 5's oracle on the row (./oracle.mjs): {ok, frontmost, topWindow, activations, route4}
-//   declared   optional, the declared cause of a row that is not ok, which keeps it from failing the verdict (a vendor
-//              defect the cell exists to show, an expected difference): {kind, cause}. Never silent: the summary lists
-//              every declared row that is not ok. The oracle's own declarations (an owner-accepted route 4, a family
-//              that activates itself at launch) are `interference.declared`, and do not excuse the row's outcome.
+//   frontKey   optional, the front/key readings around the sample and its activate step's own check: {apps, activate:
+//              {app, front, key}, before: {front, key}, after: {front, key}}, the contract and its reading in
+//              ./front-key.mjs (an alert front or key, a failed activation, readings missing on a hosted run: the sample
+//              has no verdict, rulings 1136 and 1141)
+//   declared   optional, the declared cause of a row that is not ok, which keeps it from failing its own cell's verdict
+//              (a vendor defect the cell exists to show; the settle cell's from the native-mac suite's expected file):
+//              {kind, cause}. Never on a full matrix run's row: the matrix's one declaration mechanism is the judge's
+//              declared-departures file (./departures.mjs, R3), and the judge names a declaration carried on a full
+//              run's row as missing proof and judges the row as it read. The oracle's own declarations (an
+//              owner-accepted route 4, a family that activates itself at launch) are `interference.declared`, and do
+//              not excuse the row's outcome.
 //   error      optional, a bounded sentence (at most 300 characters)
 // Anything else a row carries is kept and ignored by the summary.
 import * as fs from 'node:fs';
 import {join} from 'node:path';
+import {frontKeyProblems} from './front-key.mjs';
 import {exclusionOf} from './not-judged.mjs';
 
 export const CELL_RESULT_SCHEMA = 'native-matrix-cell-1';
@@ -118,6 +129,7 @@ export function rowProblems(row, at = 'row') {
   if (row.error !== undefined && !(typeof row.error === 'string' && row.error.length <= ERROR_CHARS)) out.push(`${at}.error is not a sentence of at most ${ERROR_CHARS} characters`);
   if (row.interference !== undefined && typeof row.interference?.ok !== 'boolean') out.push(`${at}.interference.ok is not a boolean`);
   if (row.declared !== undefined && !(isString(row.declared?.kind) && isString(row.declared?.cause))) out.push(`${at}.declared needs a kind and a cause`);
+  if (row.frontKey !== undefined) out.push(...frontKeyProblems(row.frontKey, `${at}.frontKey`));
   return out;
 }
 

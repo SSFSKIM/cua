@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import {cuaCli, runOnboarding, STAGES} from '../../scripts/hosted-sittings/onboarding.mjs';
 import {EXPECTED, judgeOnboarding} from '../../scripts/hosted-sittings/onboarding-judge.mjs';
 import {CLIENTS, SERVICES} from '../../scripts/hosted-sittings/tcc.mjs';
+import {TIMEOUT_SENTENCE} from '../../src/repl-host/supervisor.mjs';
 
 const HOSTED = {env: {RUNNER_ENVIRONMENT: 'github-hosted'}, platform: 'darwin'};
 const BUNDLE = '/Users/runner/Library/Application Support/cua/engine/cua Engine.app';
@@ -15,6 +16,7 @@ const ATTEST = {engine: 'cua', version: '0.3.0', build: 'b'.repeat(64)};
 const PANES = {accessibility: 'Accessibility', screenRecording: 'Screen & System Audio Recording'};
 const APPROVAL = {jsonrpc: '2.0', id: 'e1', method: 'elicitation/create', params: {message: 'Allow Computer Use to use "TextEdit"?', mode: 'form',
   requestedSchema: {type: 'object', properties: {}}, _meta: {connector_id: 'computer-use', codex_approval_kind: 'mcp_tool_call', tool_params: {app: 'com.apple.TextEdit'}}}};
+const TEXTEDIT = 'com.apple.TextEdit', ALERT = 'com.apple.UserNotificationCenter';
 const CONFIRMATION = {jsonrpc: '2.0', id: 'e2', method: 'elicitation/create', params: {message: 'Type ready once the owner granted it', mode: 'form', requestedSchema: {type: 'object', properties: {answer: {type: 'string'}}}}};
 
 // The product as M4 built it, over a TCC table the doubles of grantRows and revokeRows edit. `fault` bends one behaviour.
@@ -28,11 +30,23 @@ function fakeProduct(fault = {}) {
   if (fault.stoppedAtStart) engine = null;   // the setup stops the engine after its approve
   const launch = () => { engine = {pid: nextPid++, grants: grantsNow()}; };   // a row is read at launch only (H0)
   const decision = {entry: 'O0', commit: 'c'.repeat(40)};
+  let jsCount = 0, alertShown = false;
+  // The screen around each cell: TextEdit (pid 500) front and key, unless a fault puts an alert or another app there.
+  const screen = {
+    activate: () => {},
+    sample: () => {
+      if (fault.noActivation) return {front: 'com.apple.finder', keyOwnerPid: 300, appPid: 500, alertPids: []};
+      if (fault.alertAfterJs === jsCount && !alertShown) { alertShown = true; return {front: ALERT, keyOwnerPid: 900, appPid: 500, alertPids: [900]}; }
+      return {front: TEXTEDIT, keyOwnerPid: 500, appPid: 500, alertPids: []};
+    },
+  };
+  const saves = [];
   const grant = (grants, deps) => {
     assert.equal(deps.env.RUNNER_ENVIRONMENT, 'github-hosted');
     assert.deepEqual(grants.map(g => [g.client, g.bundle]), [[CLIENTS.engine, BUNDLE]]);
     log.push(['grant', grants[0].services.join('+')]);
     for (const s of grants[0].services) rows.add(s);
+    if (fault.baselineMoved && grants[0].services.includes('screenRecording')) launch();   // another restart before the retry
     return {decision, rows: [{client: CLIENTS.engine, granted: grants[0].services}], missing: fault.grantMissing ? [`${CLIENTS.engine} accessibility`] : []};
   };
   const revoke = ({client, services}, deps) => {
@@ -52,7 +66,8 @@ function fakeProduct(fault = {}) {
       engine = null;
       return json({ok: true, ...(was ? {wasRunning: true, pid: was.pid} : {wasRunning: false})});
     }
-    if (command === 'engine status') return json({bundlePath: BUNDLE, running: Boolean(engine), status: engine ? {pid: engine.pid, connections: open, build: ATTEST.build, ...engine.grants} : null});
+    const extra = fault.extraConnection && log.at(-2)?.join(' ') === 'grant screenRecording' ? 1 : 0;
+    if (command === 'engine status') return json({bundlePath: BUNDLE, running: Boolean(engine), status: engine ? {pid: engine.pid, connections: open + extra, build: ATTEST.build, ...engine.grants} : null});
     if (command === 'doctor') {
       const g = engine?.grants ?? {};
       const missing = Object.entries(PANES).filter(([key]) => !g[key]).map(([, pane]) => `${pane} not granted`);
@@ -78,7 +93,9 @@ function fakeProduct(fault = {}) {
       js: async code => {
         const call = code.includes('getScreenshot') ? 'screenRecording' : 'accessibility';
         log.push(['js', call]);
-        if (fault.timeout === call && log.filter(e => e[0] === 'js').length <= 2) return {timedOut: true};
+        jsCount++;
+        if (fault.timeoutAtJs === jsCount) return {timedOut: true};
+        if (fault.productTimeoutAtJs === jsCount) return {result: {isError: true, content: [{type: 'text', text: TIMEOUT_SENTENCE}]}};
         if (!approved) { assert.equal(onServerRequest(CONFIRMATION).action, 'decline'); approved = onServerRequest(APPROVAL).action === 'accept'; }
         if (!engine) launch();
         if (owed === engine.pid && !fault.noRelaunch) { launch(); owed = null; }   // client.mjs relaunchForPermissions
@@ -89,11 +106,12 @@ function fakeProduct(fault = {}) {
         const payload = call === 'screenRecording' ? {onboarding: true, bytes: 48_213} : {onboarding: true, bound: true};
         return {result: {content: [{type: 'text', text: `${JSON.stringify(payload)}`}], _meta: {'cua/nativeEngine': fault.vendor ? {engine: 'vendor', version: '1.0', build: 'r'} : ATTEST}}};
       },
-      close: async () => { log.push(['close']); open--; return {code: 0}; },
+      close: () => { log.push(['close']); open--; return fault.closeHangs ? new Promise(() => {}) : Promise.resolve({code: 0}); },
     };
   };
   const prepare = async () => ({serveEnv: {CUA_NATIVE_ENGINE: 'cua', CUA_HOME: '/Users/runner/Library/Application Support/cua'}, expected: ATTEST, bundlePath: BUNDLE, selection: {host: 'cua', reason: 'cua_engine'}});
-  return {log, deps: {...HOSTED, prepare, grant, revoke, cli, connect, sleep: async () => {}, now: () => 1_700_000_000_000, log: () => {}}};
+  return {log, saves, deps: {...HOSTED, prepare, grant, revoke, cli, connect, screen, save: record => saves.push(structuredClone(record)), sleep: async () => {}, now: () => 1_700_000_000_000, log: () => {},
+    ...(fault.closeHangs ? {closeMs: 20} : {})}};
 }
 const run = async fault => { const product = fakeProduct(fault); return {product, record: await runOnboarding(product.deps)}; };
 
@@ -107,7 +125,7 @@ test('the stages: none, Accessibility, Screen Recording added, then Input Monito
   assert.deepEqual(product.log.map(e => e.join(' ')), [
     'revoke accessibility+screenRecording+inputMonitoring+postEvent', 'cli engine stop', 'connect', ...calls,
     'close', 'grant accessibility', 'cli engine stop', 'connect', ...calls,
-    'grant screenRecording', ...calls,
+    'grant screenRecording', 'cli engine status', ...calls,
     'close', 'grant inputMonitoring+postEvent', 'cli engine stop', 'connect', ...calls, 'close']);
   assert.equal(record.complete, true);
   assert.equal(record.problem, null);
@@ -122,7 +140,8 @@ test('a relaunch at every stage: cua engine stop and a fresh session, or, for Sc
   assert.deepEqual([none.calls[0].statusAfter.pid, ax.relaunch.stop.pid, ax.calls[0].statusAfter.pid], [101, 101, 102]);
   // Accessibility only: the bind's refusal arms the owed relaunch, which the capture makes (still no grant: refused again).
   assert.deepEqual(ax.calls.map(c => c.statusAfter.pid), [102, 103]);
-  assert.deepEqual(sr.relaunch.before, {pid: 103, connections: 1});
+  assert.deepEqual(sr.relaunch.before, {pid: 103, connections: 1}, 're-read just before the retry');
+  assert.equal(sr.relaunch.refusedBy, 103, 'the engine that last refused Screen Recording in the stage before');
   assert.deepEqual(sr.calls.map(c => c.statusAfter.pid), [104, 104], 'the recovery: the product relaunched once, on the first observation after the grant');
   assert.equal(full.calls[0].statusAfter.pid, 105);
 });
@@ -160,16 +179,65 @@ test('it never writes an operator\'s confirmation: no engine approve, every CLI 
   assert.throws(() => cli(['engine', 'approve']), /never runs cua engine approve/);
 });
 
-test('a call the product holds past its bound is recorded as a wait, and the driver moves on to the next stage', async () => {
-  const {product, record} = await run({timeout: 'accessibility'});
-  assert.equal(record.stages[0].calls[0].completion, 'timeout');
-  assert.equal(record.stages[0].calls[0].waited, true);
+test('a transport timeout is a wait, and the session is uncertain: no further cell on it; the next stage opens a fresh one', async () => {
+  const {product, record} = await run({timeoutAtJs: 1});
+  const [first, second] = record.stages[0].calls;
+  assert.deepEqual([first.completion, first.waited, first.waitedBy], ['timeout', true, 'transport']);
+  assert.deepEqual([second.sent, second.skipped], [false, 'the session was abandoned after a call with no answer']);
+  assert.equal(product.log.filter(e => e[0] === 'js').length, 1 + 2 + 2 + 2, 'nothing more sent on the uncertain session');
   assert.equal(record.complete, true);
   assert.deepEqual(record.stages.map(s => s.id), STAGES.map(s => s.id));
-  assert.ok(product.log.some(e => e.join(' ') === 'grant accessibility'));
   const [status, reason] = judgeOnboarding(record);
   assert.equal(status, 'NO VERDICT');
   assert.match(reason, /none: accessibility call: no answer within .* nothing answered it/);
+});
+
+test('the own host\'s deadline reply (execution timed out, kernel reset) is a wait too, not a refusal; the session stays in use', async () => {
+  const {product, record} = await run({productTimeoutAtJs: 1});
+  const [first, second] = record.stages[0].calls;
+  assert.deepEqual([first.completion, first.waited, first.waitedBy], ['timeout', true, 'product deadline']);
+  assert.equal(second.sent, true);
+  assert.equal(product.log.filter(e => e[0] === 'js').length, 8);
+  assert.match(judgeOnboarding(record).join(' '), /^NO VERDICT none: accessibility call: no answer within/);
+});
+
+test('a wait in the Accessibility stage leaves its session uncertain: the Screen Recording stage is not set, the full stage runs on a fresh session', async () => {
+  const {product, record} = await run({timeoutAtJs: 3});
+  const sr = record.stages[2];
+  assert.match(sr.problem, /the session of the stage before was abandoned after a call with no answer/);
+  assert.deepEqual(sr.calls, []);
+  assert.ok(product.log.map(e => e.join(' ')).join(',').includes('grant screenRecording,close,grant inputMonitoring+postEvent,cli engine stop,connect'), 'its rows written, then the full stage as usual');
+  assert.equal(record.complete, true);
+  assert.match(judgeOnboarding(record).join(' '), /^NO VERDICT .*screenRecording: not set: the session of the stage before was abandoned/);
+});
+
+test('ruling 1141 around each cell: TextEdit activated and front and key first, else the cell is not sent; an alert front or key after it is recorded', async () => {
+  const {record} = await run();
+  assert.deepEqual(record.stages[2].calls[1].frontKey, {activate: {app: TEXTEDIT, front: true, key: true},
+    before: {front: TEXTEDIT, keyOwnerPid: 500, state: 'clear'}, after: {front: TEXTEDIT, keyOwnerPid: 500, state: 'clear'}});
+  const blocked = (await run({noActivation: true})).record;
+  const call = blocked.stages[0].calls[0];
+  assert.deepEqual([call.sent, call.skipped, call.frontKey.activate, call.frontKey.after], [false, 'activation', {app: TEXTEDIT, front: false, key: false}, null]);
+  assert.match(judgeOnboarding(blocked).join(' '), /^NO VERDICT none: accessibility call: activation: TextEdit did not take front and key/);
+});
+
+test('an otherwise successful capture with the capture alert frontmost is NO VERDICT, never a pass', async () => {
+  const {record} = await run({alertAfterJs: 6});
+  const capture = record.stages[2].calls[1];
+  assert.deepEqual([capture.screenshotBytes, capture.frontKey.after.state], [48_213, 'alert']);
+  const [status, reason] = judgeOnboarding(record);
+  assert.equal(status, 'NO VERDICT');
+  assert.match(reason, /screenRecording: screenRecording call: alert: com\.apple\.UserNotificationCenter front or key/);
+});
+
+test('the record is saved before cleanup, and a cleanup that never ends is bounded and recorded', async () => {
+  const {product, record} = await run({closeHangs: true});
+  assert.equal(record.complete, true);
+  assert.equal(record.cleanup.stuck, true);
+  const beforeCleanup = product.saves.find(saved => saved.complete && saved.cleanup === null);
+  assert.ok(beforeCleanup, 'the complete record was saved before the last cleanup began');
+  assert.deepEqual(beforeCleanup.stages.map(s => s.id), STAGES.map(s => s.id));
+  assert.equal(product.saves.at(-1).cleanup.stuck, true, 'and again after it');
 });
 
 test('a stage that cannot be set stops the run, recorded: the engine stays busy at its relaunch', async () => {
@@ -264,4 +332,44 @@ test('stage none from the engine the setup left stopped: the stop finds none run
   assert.deepEqual(record.stages[0].relaunch.stop, {ok: true, wasRunning: false, pid: null, code: null, attempts: 1});
   assert.equal(record.stages[0].relaunched, true);
   assert.equal(judgeOnboarding(record)[0], 'PASS');
+});
+
+test('missing evidence never passes and never throws: an empty record, malformed stages or calls, no read-back, no relaunch proof', async () => {
+  const {record} = await run();
+  const nv = (mutate, why) => {
+    const copy = structuredClone(record);
+    mutate(copy);
+    let verdict;
+    assert.doesNotThrow(() => { verdict = judgeOnboarding(copy); }, why.source);
+    assert.equal(verdict[0], 'NO VERDICT', `${why.source}: ${verdict[1]}`);
+    assert.match(verdict[1], why);
+  };
+  nv(r => { r.stages = []; }, /incomplete: 4 stage\(s\) not run/);
+  nv(r => { r.stages.pop(); }, /incomplete: 1 stage\(s\) not run/);
+  nv(r => { r.stages[1].calls = null; }, /accessibility: malformed: calls/);
+  nv(r => { r.stages[1].calls.pop(); }, /accessibility: malformed: calls/);
+  nv(r => { delete r.stages[0].calls[0].resultPresent; }, /none: malformed: accessibility call's resultPresent/);
+  nv(r => { r.stages[0].calls[1].frontKey = undefined; }, /none: malformed: screenRecording call's frontKey/);
+  nv(r => { r.stages[0].rows.removed = null; }, /none: not set: the rows' read-back is not recorded/);
+  nv(r => { r.stages[3].rows.granted.rows[0].granted = ['inputMonitoring']; }, /full: not set: the rows' read-back is not recorded/);
+  nv(r => { r.stages[1].relaunch.stop.ok = false; }, /accessibility: not set: the relaunch is not shown/);
+  nv(r => { r.stages[3].relaunched = false; }, /full: not set: the relaunch is not shown/);
+  nv(r => { r.stages[2] = null; }, /malformed/);
+});
+
+test('an unattested call is judged apart: its attested sibling\'s wrong permission still FAILs', async () => {
+  const {record} = await run({screenRecordingFirst: true});
+  record.stages[0].calls[1].nativeEngine = null;
+  const [status, reason] = judgeOnboarding(record);
+  assert.equal(status, 'FAIL');
+  assert.match(reason, /none: accessibility call: cua\/permission screenRecording, expected accessibility/);
+});
+
+test('stage (c)\'s baseline is read just before the retry: a pid other than the one that refused, or another connection, is missing proof', async () => {
+  const moved = judgeOnboarding((await run({baselineMoved: true})).record);
+  assert.equal(moved[0], 'NO VERDICT', moved[1]);
+  assert.match(moved[1], /screenRecording: not set: the engine before the retry \(pid 104\) is not the one that refused Screen Recording \(pid 103\)/);
+  const busy = judgeOnboarding((await run({extraConnection: true})).record);
+  assert.equal(busy[0], 'NO VERDICT', busy[1]);
+  assert.match(busy[1], /screenRecording: not set: 2 connections at the engine before the retry/);
 });

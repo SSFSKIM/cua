@@ -154,5 +154,5 @@ test('T3b\'s staged onboarding is read by its record and judged stage by stage; 
   const step = {record: '/o/onboarding.json'};
   assert.deepEqual(check('onboarding', step, 1), ['NO VERDICT', 'no onboarding record at /o/onboarding.json (exit 1)']);
   assert.deepEqual(check('onboarding', step, 0, {[step.record]: {kind: 'hosted-onboarding', hosted: true, complete: false, problem: 'the driver stopped: no lane', stages: []}}),
-    ['NO VERDICT', 'incomplete: the driver stopped: no lane; 4 stage(s) not run']);
+    ['NO VERDICT', 'incomplete: 4 stage(s) not run (the driver stopped: no lane)']);
 });

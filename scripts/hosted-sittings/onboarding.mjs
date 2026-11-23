@@ -10,29 +10,47 @@
 //   none             every row of cua's engine removed; `cua engine stop`, then a fresh session launches it
 //   accessibility    Accessibility granted; `cua engine stop`, a fresh session
 //   screenRecording  Screen Recording added; the product's own relaunch: the stage before refused Screen Recording on
-//                    this connection, which owes one relaunch at the next observation (src/services/engine/client.mjs)
+//                    this connection, which owes one relaunch at the next observation (src/services/engine/client.mjs).
+//                    The engine's pid and connections are read again just before the retry (as accept-native item 14
+//                    reads them, scripts/accept/onboarding.mjs 'pre-relaunch'), so the judge compares the replacement
+//                    with the engine that refused
 //   full             Input Monitoring and post events added last, so the run ends with H0's row set, the setup's;
 //                    `cua engine stop`, a fresh session
-// At each: a bind of TextEdit (an observation, which checks Accessibility first) and a capture (which needs Screen
-// Recording), the engine's status read after each (the capabilities and the pid that tells a relaunch), then doctor.
-// Recorded per call: the answer's allowlisted facts (scripts/accept/onboarding.mjs replyFacts), its cua/permission, its
-// cua/nativeEngine attestation, whether a refusal carries the grant's steps and the approved bundle's path
-// (permissionGuidance), and the error's text (a runner holds no owner content).
+// At each: a bind of TextEdit (an observation, which checks Accessibility first) and a bind then a capture (the capture
+// needs Screen Recording; in a stage without the grants it fails at the bind), the engine's status read after each (the
+// capabilities and the pid that tells a relaunch), then doctor. Recorded per call: the answer's allowlisted facts
+// (scripts/accept/onboarding.mjs replyFacts), its cua/permission, its cua/nativeEngine attestation, whether a refusal
+// carries the grant's steps and the approved bundle's path (permissionGuidance), and the error's text (a runner holds no
+// owner content).
+//
+// Rulings 1136 and 1141 around every cell (replayd's capture alert may stay up on a runner, and a window capture can
+// succeed behind it): TextEdit is activated and must take front and key first, or the cell is not sent; front and key
+// are read before and after it (`frontKey`, with scripts/probe/approval-cycles.mjs screenState's reading of a system
+// prompt), and the judge makes a failed activation, an alert or an unread sample NO VERDICT.
 //
 // It never writes an operator's confirmation: it runs no `cua engine approve`, every CLI it runs has its input closed (a
 // product that waits for an operator reads end of input), and it declines every elicitation but the bound app's
-// approval, which a client answers (the hosted harnesses' rule, pre-flight item 2). A call the product holds past its
-// bound is recorded as a wait, and the run goes on to the next stage. A stage whose rows, relaunch or session cannot be
-// set stops the run, recorded. Refuses off a GitHub-hosted macOS runner before anything else.
+// approval, which a client answers (the hosted harnesses' rule, pre-flight item 2). A call the product holds is a wait,
+// in either form: the own host's deadline reply (TIMEOUT_SENTENCE: the execution timed out and the kernel was reset, so
+// the session is still sound) or no answer at the transport, after which the session is uncertain and nothing more is
+// sent on it; the run goes on to the next stage. A stage whose rows, relaunch or session cannot be set stops the run,
+// recorded. The record is saved (`save`) after every stage and before cleanup, and every close is bounded, so a cleanup
+// that never ends loses nothing. Refuses off a GitHub-hosted macOS runner before anything else.
 import {spawnSync} from 'node:child_process';
+import {mkdtempSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {settingsFrom} from '../../src/mcp/server.mjs';
 import {defaultHome} from '../../src/runtime/layout.mjs';
 import {resolveRuntime} from '../../src/runtime/manifest.mjs';
+import {TIMEOUT_SENTENCE} from '../../src/repl-host/supervisor.mjs';
+import {FRONT_WINDOW_SCRIPT, localFrontmost} from '../accept/key-guard.mjs';
 import {TEXTEDIT_BUNDLE} from '../accept/lib.mjs';
 import {openSession, resultText} from '../accept/mcp-session.mjs';
 import {doctorFacts, permissionGuidance, replyFacts} from '../accept/onboarding.mjs';
-import {isAppApproval} from '../probe/lib.mjs';
+import {ALERT_APPS, screenState} from '../probe/approval-cycles.mjs';
+import {isAppApproval, lsappinfoPid} from '../probe/lib.mjs';
 import {pinLane, selectLane} from '../probe/pinned-engine.mjs';
 import {assertGithubHosted} from './runner.mjs';
 import {CLIENTS, grantRows, revokeRows, SERVICES} from './tcc.mjs';
@@ -45,6 +63,11 @@ const STOP_RETRY_MS = 1_000;
 // Before the product's own relaunch: the status and doctor connections closed at the engine, which refuses the
 // relaunch's shutdown while another client is connected (client.mjs: the observation then fails with no relaunch).
 const SETTLE_MS = 1_000;
+// A session's close (end_task, then the server's exit) bounded: one that never ends is recorded and left.
+const CLOSE_MS = 30_000;
+// The activate step's own check: re-read this often, half a second apart, until TextEdit is front and key.
+const ACTIVATE_READS = 6;
+const ACTIVATE_RETRY_MS = 500;
 
 const ALL = Object.keys(SERVICES);
 export const STAGES = Object.freeze([
@@ -91,19 +114,47 @@ function statusFacts(result) {
     accessibility: bool(s?.accessibility), screenRecording: bool(s?.screenRecording), inputMonitoring: bool(s?.inputMonitoring), canPostHid: bool(s?.canPostHid)};
 }
 
-// One call's record: the allowlisted facts, the attestation, the refusal's guidance for the grant it names, the error's text.
+// One call's record: the allowlisted facts, the attestation, the refusal's guidance for the grant it names, the error's
+// text. A wait in either form (the own host's deadline reply, or no answer at the transport) is `waited`, never a refusal.
 function callFacts(id, reply, bundlePath) {
   const facts = replyFacts(reply);
   const meta = reply?.result?._meta ?? {};
   const attested = meta['cua/nativeEngine'];
   const data = payloadOf(reply);
+  const deadline = facts.isError === true && resultText(reply).includes(TIMEOUT_SENTENCE);
+  const waitedBy = reply?.timedOut === true ? 'transport' : deadline ? 'product deadline' : null;
   const permission = facts.metadata.permission;
-  return {id, ...facts, waited: reply?.timedOut === true, bound: data?.bound === true ? true : null,
+  return {id, sent: true, skipped: null, ...facts, ...(waitedBy ? {completion: 'timeout'} : {}), waited: waitedBy !== null, waitedBy,
+    bound: data?.bound === true ? true : null,
     nativeEngine: attested && typeof attested === 'object' ? {engine: text(attested.engine), version: text(attested.version), build: text(attested.build)} : null,
     errorName: text(meta['cua/errorName']),
-    guidance: permission === 'accessibility' || permission === 'screenRecording' ? permissionGuidance(reply, {permission, bundlePath}) : null,
+    guidance: !waitedBy && (permission === 'accessibility' || permission === 'screenRecording') ? permissionGuidance(reply, {permission, bundlePath}) : null,
     errorText: facts.isError ? resultText(reply).slice(0, 600) : reply?.error ? String(reply.error.message ?? '').slice(0, 600) : null};
 }
+// A cell not sent (its activation did not take, or its session is uncertain): the same fields, nothing answered.
+const unsent = (id, skipped) => ({...callFacts(id, {}, null), sent: false, skipped, completion: 'not sent', resultPresent: false});
+
+// The screen as one sample, for the activate check and the readings around a cell: the frontmost app, the owner of the
+// top on-screen window (the key's proxy, as #216's witness reads it, scripts/approval-cycles.mjs), the system prompts'
+// pids, TextEdit's pid. The FrontWindowProbe is compiled once (interpreted when swiftc fails). -> {activate(), sample()}.
+function localScreen() {
+  let probe = null;
+  const front = () => {
+    if (probe === null) {
+      const binary = join(mkdtempSync(join(tmpdir(), 'cua-onboarding-')), 'front-window');
+      probe = spawnSync('/usr/bin/swiftc', ['-O', '-o', binary, FRONT_WINDOW_SCRIPT], {encoding: 'utf8'}).status === 0 ? [binary, []] : ['/usr/bin/swift', [FRONT_WINDOW_SCRIPT]];
+    }
+    try { return JSON.parse(spawnSync(probe[0], [...probe[1], 'front'], {encoding: 'utf8', timeout: 120_000}).stdout); } catch { return null; }
+  };
+  const pidOf = bundle => lsappinfoPid(spawnSync('/usr/bin/lsappinfo', ['info', '-only', 'pid', '-app', bundle], {encoding: 'utf8'}).stdout ?? '');
+  return {
+    activate: () => { spawnSync('/usr/bin/open', ['-b', TEXTEDIT_BUNDLE]); },
+    sample: () => ({front: localFrontmost(), keyOwnerPid: integer(front()?.topWindow?.ownerPid), appPid: pidOf(TEXTEDIT_BUNDLE), alertPids: ALERT_APPS.map(pidOf).filter(pid => pid !== null)}),
+  };
+}
+// A sample as the record keeps it: front, the key's owner and screenState's reading ('clear', 'alert' or 'unread').
+const reading = sample => ({front: text(sample?.front), keyOwnerPid: integer(sample?.keyOwnerPid), state: screenState(sample)});
+const tookFrontKey = sample => ({front: sample?.front === TEXTEDIT_BUNDLE, key: integer(sample?.keyOwnerPid) !== null && sample.keyOwnerPid === sample.appPid});
 
 // The run's lane: cua's engine pinned explicitly, the launcher's selection and the attestation its results must carry.
 function prepareLane(env) {
@@ -116,26 +167,48 @@ function prepareLane(env) {
   return {serveEnv: {...serveEnv, CUA_SHIM_PERSIST: 'session', CUA_SHIM_SECRETS: 'off'}, expected, bundlePath: selection.engine.app.bundlePath, selection: {host: selection.host, reason: selection.reason}};
 }
 
+const ABANDONED = 'the session was abandoned after a call with no answer';
+
 // deps: {env, platform, prepare() -> {serveEnv, expected, bundlePath, selection}, grant (./tcc.mjs grantRows), revoke
 // (revokeRows), cli(args) (cuaCli's, over the lane's serveEnv by default), connect(onServerRequest) -> {initialize, js(code,
-// ms), close}, sleep(ms), now, log}. -> the record: {kind, hosted, startedAt, finishedAt, complete, problem, app, expected,
-// bundlePath, selection, decision, elicitations: {accepted, declined}, stages: [{id, rows, relaunch, relaunched, calls,
-// status, doctor, problem}]}.
+// ms), close}, screen {activate(), sample()} (localScreen's), save(record) (after every stage, before cleanup and after it),
+// closeMs, sleep(ms), now, log}. -> the record: {kind, hosted, startedAt, finishedAt, complete, problem, app, expected,
+// bundlePath, selection, decision, elicitations: {accepted, declined}, cleanup, stages: [{id, rows, relaunch, relaunched,
+// calls, status, doctor, problem, closed}]}.
 export async function runOnboarding({env = process.env, platform = process.platform, prepare = async () => prepareLane(env), grant = grantRows, revoke = revokeRows,
-  cli = null, connect = null, sleep = ms => new Promise(resolve => setTimeout(resolve, ms)), now = Date.now, log = line => process.stderr.write(`${line}\n`)} = {}) {
+  cli = null, connect = null, screen = null, save = () => {}, closeMs = CLOSE_MS, sleep = ms => new Promise(resolve => setTimeout(resolve, ms)), now = Date.now,
+  log = line => process.stderr.write(`${line}\n`)} = {}) {
   assertGithubHosted(env, platform, 'the staged onboarding');
   const record = {kind: 'hosted-onboarding', hosted: true, startedAt: new Date(now()).toISOString(), finishedAt: null, complete: false, problem: null,
-    app: TEXTEDIT_BUNDLE, expected: null, bundlePath: null, selection: null, decision: null, elicitations: {accepted: 0, declined: 0}, stages: []};
+    app: TEXTEDIT_BUNDLE, expected: null, bundlePath: null, selection: null, decision: null, elicitations: {accepted: 0, declined: 0}, cleanup: null, stages: []};
+  const keep = () => { try { save(record); } catch (error) { log(`hosted-sittings: onboarding: the record could not be saved (${error.message})`); } };
   const answer = msg => {
     if (isAppApproval(msg, TEXTEDIT_BUNDLE)) { record.elicitations.accepted++; return {action: 'accept', content: {}}; }
     record.elicitations.declined++;
     return {action: 'decline'};
   };
-  let session = null;
+  // The session, and whether it may still be used (not after a call with no answer at the transport: it may still run).
+  let session = null, uncertain = false;
   const closeSession = async () => {
     const closing = session;
     session = null;
-    try { return await closing.close(); } catch (error) { return {error: error.message}; }
+    uncertain = false;
+    let timer;
+    const bound = new Promise(resolve => { timer = setTimeout(() => resolve({stuck: true, detail: `no close within ${closeMs} ms`}), closeMs); });
+    try { return await Promise.race([Promise.resolve().then(() => closing.close()), bound]); } catch (error) { return {error: error.message}; } finally { clearTimeout(timer); }
+  };
+  const sc = screen ?? localScreen();
+  // The activate step and its own check (ruling 1141): TextEdit brought forward, then read until it is front and key.
+  const activateApp = async () => {
+    sc.activate();
+    let sample;
+    for (let i = 0; i < ACTIVATE_READS; i++) {
+      sample = sc.sample();
+      const took = tookFrontKey(sample);
+      if (took.front && took.key) break;
+      if (i < ACTIVATE_READS - 1) await sleep(ACTIVATE_RETRY_MS);
+    }
+    return {sample, activate: {app: TEXTEDIT_BUNDLE, ...tookFrontKey(sample)}};
   };
   try {
     const lane = await prepare();
@@ -150,14 +223,15 @@ export async function runOnboarding({env = process.env, platform = process.platf
       return doctor && typeof doctor === 'object' ? {received: true, ...doctorFacts(doctor)} : {received: false, problem: `exit ${result.status}`};
     };
     // The rows before the first stage: the setup's (H0's set, every service).
-    let previous = ALL, lastStatus = null;
+    let previous = ALL, prior = null;
     for (const stage of STAGES) {
       const entry = {id: stage.id, rows: {set: stage.rows, removed: null, granted: null, problem: null}, relaunch: {method: stage.relaunch}, relaunched: null, calls: [], status: null, doctor: null, problem: null, closed: null};
       record.stages.push(entry);
       const stop = why => { entry.problem = why; throw Object.assign(new Error(`${stage.id}: ${why}`), {recorded: true}); };
       log(`hosted-sittings: onboarding ${stage.id}: rows ${stage.rows.join(', ') || 'none'}, relaunch by ${stage.relaunch}`);
+      const abandoned = uncertain;
       if (stage.relaunch !== 'product' && session) entry.closed = await closeSession();
-      // The rows first, then the relaunch (H0's order): removed where the stage has fewer than the setup's, added where it has more.
+      // The rows first, then the relaunch (H0's order): removed where the stage has fewer than the stage before, added where it has more.
       try {
         const removing = previous.filter(key => !stage.rows.includes(key));
         const adding = stage.rows.filter(key => !previous.includes(key));
@@ -193,30 +267,56 @@ export async function runOnboarding({env = process.env, platform = process.platf
           session = open(answer);
           await session.initialize();
         } catch (error) { stop(`the session could not be opened (${error.message})`); }
+      } else if (!session || abandoned) {
+        // The product's relaunch is owed on the stage before's connection only: without it this stage cannot be set. Its
+        // rows stay written, so the stage after builds on them.
+        entry.problem = `the session of the stage before was ${abandoned ? 'abandoned after a call with no answer' : 'closed'}`;
+        log(`hosted-sittings: onboarding ${stage.id}: not set (${entry.problem})`);
+        keep();
+        continue;
       } else {
-        entry.relaunch.before = {pid: lastStatus?.pid ?? null, connections: lastStatus?.connections ?? null};
+        // The engine that refused Screen Recording last on this connection, and the engine just before the retry, read
+        // after the status and doctor connections had time to close, and given time again after this read (the engine
+        // refuses the relaunch's shutdown while another client is connected).
+        const refusing = prior?.calls?.filter(c => c.sent).at(-1);
+        entry.relaunch.refusedBy = refusing?.isError === true && refusing.metadata?.permission === 'screenRecording' ? refusing.statusAfter?.pid ?? null : null;
+        await sleep(SETTLE_MS);
+        const before = readStatus();
+        entry.relaunch.before = {pid: before.pid ?? null, connections: before.connections ?? null};
         await sleep(SETTLE_MS);
       }
       for (const call of CALLS) {
-        const reply = await session.js(call.code, CALL_MS);
-        const facts = callFacts(call.id, reply, lane.bundlePath);
+        let facts;
+        if (uncertain) facts = {...unsent(call.id, ABANDONED), frontKey: null};
+        else {
+          const {sample, activate} = await activateApp();
+          if (!activate.front || !activate.key) facts = {...unsent(call.id, 'activation'), frontKey: {activate, before: reading(sample), after: null}};
+          else {
+            const reply = await session.js(call.code, CALL_MS);
+            facts = {...callFacts(call.id, reply, lane.bundlePath), frontKey: {activate, before: reading(sample), after: reading(sc.sample())}};
+            if (facts.waitedBy === 'transport') uncertain = true;
+          }
+        }
         facts.statusAfter = readStatus();
         entry.calls.push(facts);
-        log(`hosted-sittings: onboarding ${stage.id} ${call.id}: ${facts.waited ? 'no answer (a wait)' : facts.isError ? `refused (${facts.metadata.permission ?? facts.errorName ?? 'error'})` : 'answered'}`);
+        log(`hosted-sittings: onboarding ${stage.id} ${call.id}: ${!facts.sent ? `not sent (${facts.skipped})` : facts.waited ? `no answer (a wait: ${facts.waitedBy})` : facts.isError ? `refused (${facts.metadata.permission ?? facts.errorName ?? 'error'})` : 'answered'}`);
       }
       entry.status = entry.calls.at(-1).statusAfter;
-      lastStatus = entry.status;
-      const first = entry.calls[0].statusAfter.pid ?? null;
+      const first = entry.calls.map(c => c.statusAfter.pid).find(pid => Number.isSafeInteger(pid)) ?? null;
       const was = stage.relaunch === 'product' ? entry.relaunch.before.pid : entry.relaunch.stop.pid;
       entry.relaunched = first === null ? null : first !== was;
       entry.doctor = readDoctor();
+      prior = entry;
+      keep();
     }
     record.complete = true;
   } catch (error) {
     record.problem = error.recorded ? error.message : `the driver stopped: ${error.message}`;
-  } finally {
-    if (session) await closeSession();
-    record.finishedAt = new Date(now()).toISOString();
   }
+  // Saved before cleanup, so a cleanup that never ends loses nothing; then the cleanup, bounded, and saved again.
+  keep();
+  record.cleanup = session ? await closeSession() : {closed: 'no session open'};
+  record.finishedAt = new Date(now()).toISOString();
+  keep();
   return record;
 }

@@ -962,15 +962,19 @@ rows for named services, and no other client's. `grantRows` can now name the ser
 |---|---|---|
 | `none` | all four removed | `cua engine stop` (the setup already stopped the engine after its approve, so this usually finds none running); a fresh session launches the engine |
 | `accessibility` | Accessibility added | the same |
-| `screenRecording` | Screen Recording added | the product's own: the stage before refused Screen Recording on this connection, which owes one relaunch at its next observation (`client.mjs`). The same session is kept |
+| `screenRecording` | Screen Recording added | the product's own: the stage before refused Screen Recording on this connection, which owes one relaunch at its next observation (`client.mjs`). The same session is kept. The engine's pid and connections are read again just before the retry, as accept-native item 14 does |
 | `full` | Input Monitoring and post events added last | as `none`. The run ends with H0's row set, the setup's |
 
 At each stage, the driver makes two `js` calls on the scratch document:
 
 - a bind of TextEdit, an observation, which checks Accessibility first;
-- a capture (`getScreenshot`), which needs Screen Recording.
+- a bind then a capture (`getScreenshot`). The capture needs Screen Recording, but in a stage without the grants the
+  call fails at the bind.
 
-After each call it reads `cua engine status`. After both calls it reads `cua doctor`.
+Around every call (rulings 1136 and 1141), the driver first activates TextEdit and checks that it took front and key;
+if it did not, the call is not sent. It reads front and key again after the call. The readings use #216's witness's
+reading of the screen: the frontmost app, the top window's owner and the system prompts' pids (`screenState`). After
+each call it reads `cua engine status`. After both calls it reads `cua doctor`.
 
 ### What it records
 
@@ -978,7 +982,8 @@ The record goes to `onboarding.json`. For each stage it holds:
 
 - the rows removed or granted, as read back;
 - the relaunch: the stop's answer and its attempts (an `engine_busy` is retried five times, a second apart), or, for the
-  product's relaunch, the pid and the connection count before it;
+  product's relaunch, the pid that last refused Screen Recording and the pid and connection count read just before the
+  retry;
 - whether the engine's pid changed;
 - for each call:
   - the answer's allowlisted facts, through accept-native item 14's `replyFacts`;
@@ -987,6 +992,8 @@ The record goes to `onboarding.json`. For each stage it holds:
   - `cua/errorName`;
   - whether a refusal carries the grant's steps and the approved bundle's path (`permissionGuidance`);
   - the error's text;
+  - front and key: the activate check, and the readings before and after;
+  - whether it waited, and how;
   - the status after the call;
 - the capabilities: Accessibility, Screen Recording, Input Monitoring, `canPostHid` and the pid;
 - doctor's engine row and its permissions (`doctorFacts`).
@@ -997,19 +1004,29 @@ It never writes an operator's confirmation:
 - Every CLI runs with its input closed, so a product that waits for an operator reads end of input.
 - It declines every elicitation except TextEdit's app approval, which an MCP client answers. Both counts are recorded.
 
-A call that the product holds past its 60-second bound is recorded as a wait, and the driver moves on. If a stage's
-rows, relaunch or session cannot be set, the run stops there, and the record says why. A run that stops leaves the
-rows as its last stage set them. Nothing after it in sitting D needs them.
+A call the product holds is recorded as a wait, never a refusal, in either form:
+
+- The own host's deadline reply ("js execution timed out; kernel reset, rerun your request", `TIMEOUT_SENTENCE`). The
+  host has ended the execution, so the session stays in use.
+- No answer at the transport. The call may still be running, so nothing more is sent on that session. Its remaining
+  cell is recorded as not sent. If that session is the one the Screen Recording stage needs, that stage is recorded as
+  not set, its rows are still written, and the full stage runs on a fresh session.
+
+If a stage's rows, relaunch or session cannot be set, the run stops there, and the record says why. A run that stops
+leaves the rows as its last stage set them. Nothing after it in sitting D needs them.
+
+The record is saved after every stage and again before cleanup. Each session's close is bounded at 30 s, and a close
+that never ends is recorded as `stuck`. The CLI then exits with the record already written.
 
 ### What the check expects
 
 The check is `onboarding`, in `checks.mjs`, through `onboarding-judge.mjs`. Each expectation comes from M4's code:
 
-| Stage | Bind | Capture | Capabilities | doctor's engine row |
+| Stage | Bind | Bind then capture | Capabilities | doctor's engine row |
 |---|---|---|---|---|
-| `none` | refused, `cua/permission` `accessibility` | refused, `accessibility` | AX false, SR false | `fail` |
-| `accessibility` | refused, `screenRecording`, with "a relaunch of the engine is pending" | refused, `screenRecording` | AX true, SR false | `fail` |
-| `screenRecording` | answered, on an engine the product relaunched (the pid changed) | answered, screenshot bytes > 0 | AX true, SR true | `pass` or `warn` |
+| `none` | refused, `cua/permission` `accessibility` | refused at the bind, `accessibility` | AX false, SR false | `fail` |
+| `accessibility` | refused, `screenRecording`, with "a relaunch of the engine is pending" | refused at the bind, `screenRecording` | AX true, SR false | `fail` |
+| `screenRecording` | answered, on an engine the product relaunched: the engine before the retry is the one that refused, with only the test's connection, and the one after it is another | answered, screenshot bytes > 0 | AX true, SR true | `pass` or `warn` |
 | `full` | answered | answered | AX, SR, Input Monitoring and `canPostHid` true | `pass` or `warn`, intervention on |
 
 The citations:
@@ -1019,7 +1036,8 @@ The citations:
   2026-10-22).
 - **The refusal.** `Permissions.swift` writes the sentence, which matches `grantSteps` in `engine.mjs` word for word.
   The service sets `cua/permission`.
-- **The recovery.** `client.mjs`'s `relaunchForPermissions`.
+- **The recovery.** `client.mjs`'s `relaunchForPermissions`, judged as accept-native item 14 judges it
+  (`scripts/accept/onboarding.mjs`, "service relaunch recovery").
 - **The doctor row.** `GRANT_EFFECT` in `doctor-engine.mjs`. Its permissions must equal the engine's status, and its
   "intervention detection off" must match Input Monitoring.
 
@@ -1027,9 +1045,9 @@ The citations:
 
 | Verdict | When |
 |---|---|
-| **PASS** | Every stage behaved as expected, and every result attests the run's cua build. |
+| **PASS** | All four stages are recorded, and each shows positive evidence: rows read back, the relaunch shown, every cell sent and answered with TextEdit front and key and no alert around it, the expected answers, and every result attesting the run's cua build. |
 | **FAIL** | Any of: a refusal names the wrong grant; a refusal lacks the steps or the bundle's path; a call answers without its grant; a call is refused with its grants present; the product does not relaunch for the Screen Recording grant; doctor's row or permissions are wrong. |
-| **NO VERDICT** | Any of: no record, or an ambiguous one; a run that did not finish; a result answered on another engine (the vendor's on the cua side, state 1, or any build but the run's); a result with no attestation; rows not written or not honoured (a capability that does not match the stage's rows); a relaunch that could not be made, or another connection open at the product's relaunch; a call with no answer; unread status or doctor; no Screen Recording refusal seen before the recovery stage. |
+| **NO VERDICT** | Any of: no record, or a malformed or ambiguous one (the judge never throws on a record); fewer than four stages, or a run that did not finish; rows not read back; a relaunch not shown; a cell not sent, or with TextEdit not front and key, or an alert front or key around it (ruling 1141); a result answered on another engine (the vendor's on the cua side, state 1, or any build but the run's); a result with no attestation; rows not written or not honoured (a capability that does not match the stage's rows); a relaunch that could not be made; before the product's relaunch, an engine other than the one that refused, or another connection; a call with no answer; unread status or doctor; no Screen Recording refusal seen before the recovery stage. |
 
 The order follows ruling 1149, as the `record` check does:
 
@@ -1038,15 +1056,21 @@ The order follows ruling 1149, as the `record` check does:
 2. Then any FAIL.
 3. Then any other missing proof, including a result with no attestation.
 
+Each cell is judged on its own. A cell without proof is NO VERDICT for itself, and its sibling in the same stage is
+still judged.
+
 The driver exits 0 when every stage ran, 1 when it stopped, and 2 when refused (off a GitHub-hosted macOS runner, before
 anything is touched). The sitting's verdict is the check's, not the driver's exit.
 
 ### Tests
 
 - `test/hosted-sittings/onboarding.test.mjs` uses a fake product that answers as M4's code does. It covers the stage
-  sequence, a relaunch at every stage, what is recorded, the refusal of any operator confirmation, a wait recorded and
-  passed over, a stage that cannot be set, and the refusal off a runner. It also covers the judge: PASS, five FAIL
-  cases, and the NO VERDICT cases.
+  sequence, a relaunch at every stage, what is recorded, the refusal of any operator confirmation, both forms of wait
+  (the host's deadline reply and a transport timeout, after which the session is not used again), a stage that cannot
+  be set, the front and key readings, an otherwise successful capture with the alert frontmost, a cleanup that never
+  ends, and the refusal off a runner. It also covers the judge: PASS, five FAIL cases, the NO VERDICT cases, malformed
+  and empty records, an unattested cell beside a failing sibling, and a moved or busy baseline before the product's
+  relaunch.
 - `tcc.test.mjs`: every guard refusal applies to `revokeRows` too, with zero store calls. Removal touches only the named
   rows of cua's engine, in the system database. It refuses the vendor's helper, any other app and any unknown service.
   A grant can name its services.

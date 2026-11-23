@@ -5754,3 +5754,85 @@ extension OtherControlOnTopTests {
     }
   }
 }
+
+/// #481's restart (ruling 1130), on #500's null-aware record (ruling 1131): the route's label check compares like with
+/// like, part by part (`ScreenshotNode.label`, `stalePointLabelPair`). A part null on both sides is passed over, null on
+/// one side only is unknown, and the route presses only when at least one part was compared with text on both sides and
+/// every compared part agrees.
+extension OtherControlOnTopTests {
+  /// The `overcontrol` route with A's label parts `then` null at the screenshot and `now` null after it, A's title and
+  /// description set to `title` and `description` at the screenshot and to `liveTitle` and `liveDescription` after it.
+  /// The route's check answers twice: at the decision (`routed`, whether the verdict carries A as `routeControl`) and at
+  /// the press, on A's record forced in as the route's (`dispatch`, `routeDispatchRefusal`'s reason, nil: pressed).
+  private func nullSlotRoute(then: Set<StalePointLabelPart>, now: Set<StalePointLabelPart>, title: String?, description: String?,
+                             liveTitle: String?, liveDescription: String?)
+    -> (record: ScreenshotNode<Node>?, routed: Bool, dispatch: StalePointReason?) {
+    let page = Page()
+    (page.a.title, page.a.description, page.a.null) = (title, description, then)
+    let verdict = judged(page, at: atLink, corrected: { $0.aText }) { page in
+      (page.a.title, page.a.description, page.a.null) = (liveTitle, liveDescription, now)
+      return page.veil
+    }.verdict
+    XCTAssertTrue(verdict.underlying?.element === page.a, "#433 judges A beneath the veil by its handle")
+    var forced = verdict
+    (forced.routeControl, forced.routeControlSource, forced.routeRecord) = (page.a, .beneath, verdict.underlying)
+    return (verdict.underlying, verdict.routeControl === page.a, routeDispatchRefusal(forced, reads)?.reason)
+  }
+
+  /// The parked P1 (the final review of 88d9ead0): the screenshot's title slot answered CFNull, its description "Delete",
+  /// and A's title reads "Delete" now. The record keeps the title null (#500), so the description is never compared with
+  /// the live title: not routed at the decision, and refused at the press.
+  func testTheParkedP1ACFNullScreenshotTitleIsNeverPressed() {
+    let route = nullSlotRoute(then: [.title], now: [], title: nil, description: "Delete", liveTitle: "Delete", liveDescription: "Delete")
+    XCTAssertEqual(route.record?.label(.title), .null, "the screenshot's CFNull title is recorded unknown, never absent")
+    XCTAssertFalse(route.routed, "not routed at the decision")
+    XCTAssertEqual(route.dispatch, .labelUnread, "refused at the press")
+  }
+
+  /// Every label part null on either side, or on both: nothing compared with text on both sides, so nothing vouches.
+  func testEveryLabelPartNullOnEitherSideRefuses() {
+    let all: Set<StalePointLabelPart> = [.title, .description]
+    for (name, then, now) in [("at the screenshot", all, []), ("now", [], all), ("on both sides", all, all)]
+      as [(String, Set<StalePointLabelPart>, Set<StalePointLabelPart>)] {
+      let route = nullSlotRoute(then: then, now: now, title: "Open", description: nil, liveTitle: "Open", liveDescription: nil)
+      XCTAssertFalse(route.routed, name)
+      XCTAssertEqual(route.dispatch, .labelUnread, name)
+    }
+  }
+
+  /// One part compared like with like, text on both sides and the same, the others null on both sides: pressed. The
+  /// same part read otherwise now is relabelled (#433's test refuses it first at the decision).
+  func testOneLikeWithLikeMatchBesideNullPartsPresses() {
+    let matched = nullSlotRoute(then: [.title], now: [.title], title: nil, description: "Open", liveTitle: nil, liveDescription: "Open")
+    XCTAssertTrue(matched.routed, "the description compared, the title null on both sides")
+    XCTAssertNil(matched.dispatch)
+    let byTitle = nullSlotRoute(then: [.description], now: [.description], title: "Open", description: nil, liveTitle: "Open",
+                                liveDescription: nil)
+    XCTAssertTrue(byTitle.routed, "the title compared, the description null on both sides")
+    XCTAssertNil(byTitle.dispatch)
+    let changed = nullSlotRoute(then: [.title], now: [.title], title: nil, description: "Open", liveTitle: nil, liveDescription: "Delete")
+    XCTAssertFalse(changed.routed)
+    XCTAssertEqual(changed.dispatch, .relabelled)
+  }
+
+  /// A part null now where the screenshot read it, the first label part or a later one: unknown, refused.
+  func testALiveNullWhereTheRecordHadAValueRefuses() {
+    for (name, now, description) in [("the title", [.title], nil), ("the description", [.description], "Go"),
+                                     ("the title, the description matching", [.title], "Go")]
+      as [(String, Set<StalePointLabelPart>, String?)] {
+      let route = nullSlotRoute(then: [], now: now, title: "Open", description: description, liveTitle: "Open",
+                                liveDescription: description)
+      XCTAssertFalse(route.routed, name)
+      XCTAssertEqual(route.dispatch, .labelUnread, name)
+    }
+  }
+
+  /// The route's strict read: a slot answering kCFNull is null, as #500's read answers it (so a part null on both sides
+  /// passes over); one answering a value that is no text stays unknown, never absent.
+  func testTheStrictReadAnswersNullForCFNull() {
+    XCTAssertEqual(stalePointStrictLabelRead(kCFNull, .success), .null)
+    XCTAssertEqual(stalePointStrictLabelRead(42 as CFNumber, .success), .unreadable)
+    XCTAssertEqual(stalePointStrictLabelRead("Open" as CFString, .success), .text("Open"))
+    XCTAssertEqual(stalePointStrictLabelRead(nil, .noValue), .text(nil))
+  }
+}

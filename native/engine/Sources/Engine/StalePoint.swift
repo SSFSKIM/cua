@@ -252,9 +252,10 @@ func stalePointLabelRead(_ value: CFTypeRef?, _ error: AXError) -> StalePointLab
   }
 }
 
-/// #481 (ruling 1127): `stalePointLabelRead`, but a value that is not text (CFNull, a number) is unknown, not absent.
+/// #481 (rulings 1127, 1130): `stalePointLabelRead`, kCFNull included (`.null`, #500), but any other value that is not
+/// text (a number) is unknown, not absent.
 func stalePointStrictLabelRead(_ value: CFTypeRef?, _ error: AXError) -> StalePointLabelRead {
-  guard error == .success, let value else { return stalePointLabelRead(value, error) }
+  guard error == .success, let value, CFGetTypeID(value) != CFNullGetTypeID() else { return stalePointLabelRead(value, error) }
   return labelText(value).map { .text($0) } ?? .unreadable
 }
 
@@ -1337,8 +1338,8 @@ func correctedRouteControl<Element>(_ control: Element, hit: Element, node: Scre
 /// - its role read now is one the route presses (`webAreaPressableRoles`), else `nodeGone` (gone or replaced);
 /// - its frame reads (`frameUnread`) and holds `point` (`frameMoved`);
 /// - its parents read now reach its recorded web area (`ScreenshotNode.webArea`, #316's `liesIn`), else `otherWebArea`;
-/// - its label is the recorded one (`routeLabelCheck`): an unknown slot or a failed read is `labelUnread`, another label
-///   `relabelled` with the label it reads now.
+/// - its label is the recorded one (`routeLabelCheck`, like with like): an unknown part, a null one on one side, or no
+///   part compared is `labelUnread`, another label `relabelled` with the label it reads now.
 /// The route runs it as the last step before the press, on every path (`pressAfterFinalCheck`'s `lastCheck`), whatever
 /// waited before; the decision runs it to choose the route.
 func routeDispatchCheck<Element>(_ record: ScreenshotNode<Element>, at point: CGPoint,
@@ -1358,33 +1359,28 @@ func routeDispatchCheck<Element>(_ record: ScreenshotNode<Element>, at point: CG
 /// What `routeLabelCheck` found.
 enum RouteLabel: Equatable { case confirmed, unknown, changed(String?) }
 
-/// #481 (rulings 1123, 1127): the control's label read now against the recorded one: the first non-empty of its title,
-/// then description (then an AXStaticText's value), as #298's `relabelledLabel` reads it, with the same words; both
-/// sides empty is the same label. A slot unread at the observation, a read that fails now, or a slot answering anything
-/// but text (`StalePointReads.strictLabel`: CFNull included) is unknown, never absent.
+/// #481 (rulings 1123, 1127, 1130): the control's label read now against the recorded one, part by part and like with
+/// like (#500, ruling 1131: `ScreenshotNode.label`, `stalePointLabelPair`): its title, its description (and an
+/// AXStaticText's value). A part null on both sides is passed over; a part unread at the observation or now
+/// (`StalePointReads.strictLabel`: a value that is no text), or null on one side only, is unknown; a part whose text,
+/// by its words and an empty one counting as none, differs is changed, with what it reads now. Confirmed only when no
+/// part is unknown or changed and at least one part was compared, read on both sides and not null: a label one side
+/// took from a part the other read null is never compared with another part (the final review of 88d9ead0, P1).
 func routeLabelCheck<Element>(_ record: ScreenshotNode<Element>, _ reads: StalePointReads<Element>) -> RouteLabel {
   let parts: [StalePointLabelPart] = record.role == "AXStaticText" ? [.title, .description, .value] : [.title, .description]
-  var was: String?
+  var compared = false
   for part in parts {
-    if record.labelsUnread.contains(part) { return .unknown }
-    if let text = nonEmpty(part == .title ? record.title : part == .description ? record.description : record.value) {
-      was = text
-      break
+    let live = reads.strictLabel?(record.element, part) ?? reads.readLabel(record.element, part)
+    switch stalePointLabelPair(record.label(part), live) {
+    case .next: continue
+    case .unknown: return .unknown
+    case let .texts(was, now):
+      let (was, now) = (nonEmpty(was), nonEmpty(now.map(bounded)))
+      guard was.map(stalePointLabelWords) == now.map(stalePointLabelWords) else { return .changed(now) }
+      compared = true
     }
   }
-  var now: String?
-  for part in parts {
-    guard case .text(let text) = reads.strictLabel?(record.element, part) ?? reads.readLabel(record.element, part) else { return .unknown }
-    if let text = nonEmpty(text.map(bounded)) {
-      now = text
-      break
-    }
-  }
-  switch (was, now) {
-  case (nil, nil): return .confirmed
-  case let (was?, now?): return stalePointLabelWords(was) == stalePointLabelWords(now) ? .confirmed : .changed(now)
-  default: return .changed(now)
-  }
+  return compared ? .confirmed : .unknown
 }
 
 /// #481 (ruling 1127): the refusal of the route's control from `routeDispatchCheck`, as #433's refusal of a control under

@@ -1,0 +1,5 @@
+2026-11-23T11:41:33Z item 3 ended: 2026-11-23T11:41:32Z handle-long: end exit 0 load=16.63 14.44 12.55
+2026-11-23T11:43:16Z item 4 (t487.sh) exit 0
+2026-11-23T11:43:16Z t147-dev: c4b8b764 task 147: development plan t147-left, t14-floor left alone (ruling 1140; VM-local, never pushed)
+2026-11-23T11:49:29Z item 5 (floor-left) exit 0
+2026-11-23T11:49:29Z chain done

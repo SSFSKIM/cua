@@ -8942,6 +8942,18 @@ to T7. Where M4's code met a later decision on main, the later decision won; eac
   - A declared limit (ruling 1182), #561's and #555's: the renderer leaves a literal backslash as it is,
     so on cua's lane a page's literal `\n` text and a real break print alike and the decoder reads both as a break. No
     current scene puts a backslash in a value.
+  - Ruling 1183, the scoped review's fix round, one rule for the readers: match only at a real part start, decode only
+    a real final Value part, and on cua's lane a Value part holding an escape the reader did not decode is read as its
+    raw escaped remainder, so an exact check fails, never a prefix. On cua's lane a line holding an escape is read
+    only by its first line (the text before its first escape, the vendor's element line): `indexOfTarget` matches a
+    name ended by a comma there, or a final `Value:` part's first line ended by the escape; `valueOfIndex` gives no
+    value for a `Value: ` after an escape (it may sit in another part's continuation), decodes a final escaped Value
+    part, and reads one with a later part as its raw remainder. The parity runner's bind (`native-mac.mjs`) now passes
+    the lane's engine, as the matrix's and the cursor sitting's do, so a fresh cua lane finds TextEdit's target in
+    cua's golden. The goldens judge's parse keeps a focused trailer's final LF (a value ending in a break) instead of
+    stripping it as a tree's terminator. Tested through the real cells (`multiline-lanes.test.mjs`) and through the
+    parity runner's own bind and action cells on the checked-in cua TextEdit golden (`native-mac-run.test.mjs`). The
+    fence readers accepting a longer fence anywhere in vendor output is #561's.
   Date/Author: 2026-11-23, cursor235's builder for #526.
 
 ## Outcomes & Retrospective

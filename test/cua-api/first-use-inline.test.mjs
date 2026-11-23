@@ -135,18 +135,22 @@ test('every lookup the macOS core points to reads its moved section, and every o
   const asked = [];
   const agent = {documentation: {get: async name => { asked.push(name); return `SERVICE ${name}`; }}};
   serve_lookups(agent, create_documentation(read_documentation, MACOS));
-  const agentDocumentation = agent.documentation;
+  const {get} = agent.documentation;   // detached, as the client's bound get works
   for (const name of pointed) {
-    const text = await agentDocumentation.get(name);
+    const text = await get(name);
     assert.ok(text.length > 0 && whole.includes(`\n${text}`), `${name}: a section of the core without lookups`);
     assert.ok(!(await create_documentation(read_documentation, MACOS).read_core()).includes(text), `${name}: not inline`);
   }
   assert.deepEqual(asked, []);
-  assert.equal(await agentDocumentation.get('browser-safety'), 'SERVICE browser-safety');
-  // Where the core has no pointer (no macOS computer surface), the name is the service's to answer or refuse.
-  const elsewhere = {documentation: {get: async name => `SERVICE ${name}`}};
-  serve_lookups(elsewhere, create_documentation(read_documentation, {linuxEngine: () => true}));
-  assert.equal(await elsewhere.documentation.get(pointed[0]), `SERVICE ${pointed[0]}`);
+  assert.equal(await get('browser-safety'), 'SERVICE browser-safety');
+  // Where the core has no pointer (browser alone, a Linux computer surface, or no get to look up with), the client's
+  // documentation object is left as it is, and the name is the service's to answer or refuse.
+  for (const options of [{}, {linuxEngine: () => true}, {agentCursor: () => true, lookups: () => false}]) {
+    const own = {get: async name => `SERVICE ${name}`};
+    const elsewhere = {documentation: own};
+    serve_lookups(elsewhere, create_documentation(read_documentation, options));
+    assert.equal(elsewhere.documentation, own);
+  }
   // Every section moved: the core without lookups is the cursor paragraph and the sections, nothing else.
   const sections = await Promise.all(pointed.map(name => read_documentation(name)));
   const cursor = (await read_documentation('agent-cursor')).split('\n\n')[0];

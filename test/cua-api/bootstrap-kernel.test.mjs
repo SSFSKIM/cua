@@ -32,24 +32,25 @@ const SKY = {
     get_window_state: {window: {id: 3, app: 'gedit'}, ax_tree_source: 'at_spi', ax_tree: {id: 'n1', role: 'frame', name: 'Editor', children: []}, screenshots: []}},
 };
 
-// `setupError`: Sky's setup is refused with this message (the trusted service failing at setup).
-function reply(target, services, setupError) {
+// `setupError`: Sky's setup is refused with this message (the trusted service failing at setup). `disabled`: the
+// browser service's disabled member ids.
+function reply(target, services, setupError, disabled = []) {
   return message => {
     if (message.type !== 'trusted_service_request') return undefined;
     services.push(message.service === 'sky' ? message.request.type === 'setup' ? 'sky.setup' : `sky.${message.request.method}` : `browser.${message.request.method === 'setup' ? 'setup' : message.request.params.type}`);
     if (setupError !== undefined && message.service === 'sky' && message.request.type === 'setup') return {type: 'trusted_service_response', id: message.id, ok: false, error: setupError};
     const answer = message.service === 'sky'
       ? SKY[target][message.request.type === 'setup' ? 'setup' : message.request.method]
-      : message.request.method === 'setup' ? {apiManifest: API_MANIFEST, disabledMemberIds: []} : browserAnswer(message.request.params);
+      : message.request.method === 'setup' ? {apiManifest: API_MANIFEST, disabledMemberIds: disabled} : browserAnswer(message.request.params);
     return {type: 'trusted_service_response', id: message.id, ok: true, value: answer ?? null};
   };
 }
 
-function facadeKernel(t, {surfaces = 'browser,computer', target = 'mac', setupError} = {}) {
+function facadeKernel(t, {surfaces = 'browser,computer', target = 'mac', setupError, disabled} = {}) {
   const kernel = startKernel(t, {node, env: {CUA_REPL_JS_BANNER: CUA_BOOTSTRAP_BANNER, CUA_REPL_TRUSTED_RPC_ENABLED: '1',
     CUA_REPL_UNTRUSTED_ENV_ALLOWLIST: 'CUA_REPL_ENABLED_SURFACES,CUA_REPL_BROWSER_ENV', ...(surfaces === null ? {} : {CUA_REPL_ENABLED_SURFACES: surfaces})}});
   const services = [];
-  const exec = async (code, requestMeta) => (await kernel.exec(code, {requestMeta, reply: reply(target, services, setupError)})).result;
+  const exec = async (code, requestMeta) => (await kernel.exec(code, {requestMeta, reply: reply(target, services, setupError, disabled)})).result;
   return {exec, services};
 }
 
@@ -75,9 +76,25 @@ test('on macOS agent.documentation.get reads the agent cursor\'s lookups itself 
   assert.equal(ok(await exec('nodeRepl.write(JSON.stringify([Object.keys(agent.documentation), typeof agent.documentation.get]));')).output, '[[],"function"]', 'shaped as the client\'s');
   ok(await exec('await agent.documentation.get("screenshots");'));
   assert.deepEqual(services.slice(-1), ['browser.get_documentation']);
+  // Detached from its object, as the client's bound get is.
+  assert.equal(ok(await exec('const {get} = agent.documentation; nodeRepl.write(await get("macos/typing"));')).output, doc('macos/typing.md'), 'a detached get');
+  ok(await exec('await get("screenshots");'));
+  assert.deepEqual(services.slice(-1), ['browser.get_documentation'], 'a detached get passes other names on');
   const computerOnly = facadeKernel(t, {surfaces: 'computer'});
   const first = ok(await computerOnly.exec('nodeRepl.write(typeof agent);'));
   assert.deepEqual([first.output, first.named_outputs], ['undefined', [MAC_COMPUTER_ONLY_CORE]]);
+});
+
+test('with no lookups to serve, agent.documentation is the client\'s own; with its get disabled, the macOS core carries the detail inline', {skip}, async t => {
+  for (const surfaces of ['browser', 'browser,computer']) {
+    const {exec, services} = facadeKernel(t, {surfaces, target: 'linux'});
+    const kept = ok(await exec('const {get} = agent.documentation; nodeRepl.write(agent.documentation.constructor.name); await get("macos/typing");'));
+    assert.equal(kept.output, 'Documentation', `${surfaces}: the client's object`);
+    assert.deepEqual(services.slice(-1), ['browser.get_documentation'], `${surfaces}: a detached get reaches the service`);
+  }
+  const {exec} = facadeKernel(t, {disabled: ['Documentation.get']});
+  const first = ok(await exec('nodeRepl.write(typeof agent.documentation.get);'));
+  assert.deepEqual([first.output, first.named_outputs], ['undefined', [MAC_COMPUTER_ONLY_CORE]], 'no pointer to a lookup that cannot be read');
 });
 
 test('a selected browser\'s documents come before the state; emit:false suppresses only the value; rewriteDocumentation skips the same requestMeta', {skip}, async t => {

@@ -29,7 +29,7 @@
 // then one pointer per lookup (AGENT_CURSOR_LOOKUPS, docs/cua-api/macos/), each stating its rule. The lookups are
 // read through `agent.documentation.get(name)`, answered here (serve_lookups) ahead of the browser service, so they
 // exist exactly where the pointers do: with `lookups()` true, which the facade answers from the browser surface (its
-// `agent`). Without it the core carries the cursor paragraph (agent-cursor.md's first) and every lookup's text in
+// `agent`, whose client's `agent.documentation.get` is there and not disabled). Without it the core carries the cursor paragraph (agent-cursor.md's first) and every lookup's text in
 // their place, the document as it read before #503.
 import {readFile} from 'node:fs/promises';
 
@@ -70,6 +70,8 @@ export function create_documentation(read, {agentCursor = () => false, linuxEngi
       const policy = confirmationPolicyOverride(globalThis.nodeRepl?.requestMeta) ?? await read('confirmations');
       return policy === '' ? core : `${core}\n${policy}`;
     },
+    // Whether the core points to the lookups, so that `agent.documentation.get` must answer them.
+    serves_lookups: () => agentCursor() && lookups(),
     // -> the text of a lookup the core points to, or undefined for every other name.
     async lookup(name) {
       return agentCursor() && lookups() && AGENT_CURSOR_LOOKUPS.includes(name) ? await read(name) : undefined;
@@ -78,21 +80,14 @@ export function create_documentation(read, {agentCursor = () => false, linuxEngi
   };
 }
 
-// `agent.documentation.get(name)` answers the core's lookups itself and passes every other name to the browser
-// service. The client's agent is a view that caches its methods by name, so its documentation object is replaced, by
-// one that, as the client's, has no own enumerable member.
+// Where the core points to the lookups, `agent.documentation.get(name)` answers them itself and passes every other
+// name to the client's own `get`; elsewhere the client's documentation object is left as it is. The client's agent is a
+// view that caches its methods by name, so its documentation object is replaced, by one whose `get`, as the client's,
+// is not enumerable and works detached from it.
 export function serve_lookups(agent, documentation) {
-  agent.documentation = new LookupDocumentation(documentation, agent.documentation);
-}
-
-class LookupDocumentation {
-  #documentation;
-  #service;
-  constructor(documentation, service) {
-    this.#documentation = documentation;
-    this.#service = service;
-  }
-  async get(name) {
-    return (await this.#documentation.lookup(name)) ?? await this.#service.get(name);
-  }
+  if (!documentation.serves_lookups()) return;
+  const service = agent.documentation.get;
+  const served = {};
+  Object.defineProperty(served, 'get', {value: async name => (await documentation.lookup(name)) ?? await service(name), writable: true, configurable: true});
+  agent.documentation = served;
 }

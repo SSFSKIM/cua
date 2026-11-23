@@ -574,6 +574,8 @@ struct StalePointVerdict<Element> {
   /// and #442's corrected hit lies in it (`correctedRouteControl`); nil, the route is main's, from the action's own hit,
   /// which the verdict keeps.
   var routeControl: Element?
+  /// #481 (ruling 1109): which recorded control `routeControl` is, the meta's `stalePoint.routeControl`.
+  var routeControlSource: StalePointRouteControl?
   var refused: Bool { reason.refuses }
 }
 
@@ -1206,7 +1208,9 @@ func otherControlOnTopVerdict<Element>(_ kept: StalePointVerdict<Element>, corre
   func keptRouting(_ kept: StalePointVerdict<Element>) -> StalePointVerdict<Element> {
     guard verdict.hitCorrection == .changed else { return kept }
     var routed = kept
-    routed.routeControl = correctedRouteControl(control, hit: hit, node: node, kept, reads)
+    if let (pressed, source) = correctedRouteControl(control, hit: hit, node: node, kept, reads) {
+      (routed.routeControl, routed.routeControlSource) = (pressed, source)
+    }
     return routed
   }
   // #433's candidates beneath the layer: the one the hit names, passing #433's test, is the control beneath. One that
@@ -1240,16 +1244,20 @@ func otherControlOnTopVerdict<Element>(_ kept: StalePointVerdict<Element>, corre
 /// A control the record lacks (a new wrapper, a front control the walk cut) can never qualify, nor one inside a node the
 /// record holds incompletely.
 func correctedRouteControl<Element>(_ control: Element, hit: Element, node: ScreenshotNode<Element>, _ kept: StalePointVerdict<Element>,
-                                    _ reads: StalePointReads<Element>) -> Element? {
+                                    _ reads: StalePointReads<Element>) -> (control: Element, source: StalePointRouteControl)? {
   guard let point = kept.point, let area = node.webArea, liesIn(hit, area, reads).inside,
         let role = reads.role(control), webAreaPressableRoles.contains(role) else { return nil }
-  if kept.underlyingIdentity == .handle, let beneath = kept.underlying, reads.same(beneath.element, control) { return control }
+  if kept.underlyingIdentity == .handle, let beneath = kept.underlying, reads.same(beneath.element, control) { return (control, .beneath) }
   guard let own = node.control, reads.same(own, control),
         let recorded = kept.nodes.first(where: { reads.same($0.element, own) }) else { return nil }
   let judged = underlyingRefusal(recorded, at: point, windowShift: kept.windowShift, hit: hit, nodes: kept.nodes, frameless: kept.frameless,
                                  recorded: kept.recorded, reads)
-  return judged.refusal == nil && judged.identity == .handle ? control : nil
+  return judged.refusal == nil && judged.identity == .handle ? (control, .node) : nil
 }
+
+/// #481 (ruling 1109): the source of the control the route pressed from the corrected hit: #433's control beneath the
+/// inert layer (`beneath`) or the node's own recorded control (`node`).
+enum StalePointRouteControl: String, Equatable { case node, beneath }
 
 /// #442: a refusal of a kept verdict, carrying what it judged (#433's check included) and the hit's correction.
 private func refusal<Element>(of kept: StalePointVerdict<Element>, reason: StalePointReason,
@@ -1835,6 +1843,8 @@ struct StalePointRecord: Equatable {
   /// (`StalePointVerdict.routeControl`); stamped by the route on whatever record stands when it ends, so a later check's
   /// record keeps it. Absent: the route, if any, came from the action's own hit.
   var routeHit: String?
+  /// #481 (ruling 1109): with `routeHit`, which recorded control was pressed (`StalePointRouteControl`), stamped the same way.
+  var routeControl: String?
 
   init<Element>(_ verdict: StalePointVerdict<Element>, ms: Double, rechecked: Bool = false) {
     self.verdict = verdict.refused ? .refused : .kept
@@ -1875,6 +1885,7 @@ struct StalePointRecord: Equatable {
     if let controlRole { wire["controlRole"] = controlRole }
     if let hitCorrection { wire["hitCorrection"] = hitCorrection.rawValue }
     if let routeHit { wire["routeHit"] = routeHit }
+    if let routeControl { wire["routeControl"] = routeControl }
     if rechecked { wire["rechecked"] = true }
     if afterActivation { wire["afterActivation"] = true }
     return wire

@@ -8151,6 +8151,15 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   failures.
   Date/Author: 2026-11-23, cursor235's builder for #481.
 
+- Decision (#481, ruling 1109, 2026-11-23; amends the entry above): design confirmed the reading of ruling 1106 above
+  (#433's control beneath qualifies as the node's own recorded control does) and the dropped gate. The meta now names
+  the pressed control's source, so the qualification can count each: `stalePoint.routeControl` is `beneath` (#433's
+  control beneath) or `node` (the node's own recorded control), beside `routeHit: "corrected"`. It is stamped in the
+  same place and with the same throw-safety (the route's defer). The service forwards `stalePoint` whole
+  (`OPTIONAL_INPUT_META`), so the field reaches the result unchanged. The tests assert each source. 1665 swift tests, 0
+  failures.
+  Date/Author: 2026-11-23, cursor235's builder for #481.
+
 ## Outcomes & Retrospective
 
 Pending for the initiative — written at finish. M1a's interim account (2026-10-20) follows; the full record is `docs/doperpowers/specs/2026-10-18-own-native-engine-m1a-report.md`.

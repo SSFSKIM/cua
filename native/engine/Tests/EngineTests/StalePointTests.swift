@@ -5338,6 +5338,7 @@ extension OtherControlOnTopTests {
       XCTAssertFalse(verdict.refused, corrected)
       XCTAssertEqual(verdict.hitCorrection, .changed)
       XCTAssertTrue(verdict.routeControl === page.a, corrected)
+      XCTAssertEqual(verdict.routeControlSource, .beneath, "#433's control beneath")
       XCTAssertTrue(verdict.hit === page.veil, "the verdict keeps the action's own hit")
       XCTAssertEqual(verdict.hitRole, "AXGroup")
       let route = routed(verdict, first: page.veil)
@@ -5349,8 +5350,9 @@ extension OtherControlOnTopTests {
     XCTAssertNil(routed(StalePointVerdict<Node>(reason: .sameElement, hit: main.veil), first: main.veil).control,
                  "from the veil the route finds no control")
     var record = StalePointRecord(StalePointVerdict<Node>(reason: .sameElement), ms: 0)
-    record.routeHit = "corrected"
+    (record.routeHit, record.routeControl) = ("corrected", StalePointRouteControl.beneath.rawValue)
     XCTAssertEqual(record.wire["routeHit"] as? String, "corrected")
+    XCTAssertEqual(record.wire["routeControl"] as? String, "beneath")
   }
 
   /// No veil: the record takes A's text at the point, its recorded control A. The first hit is the list (main:
@@ -5367,6 +5369,7 @@ extension OtherControlOnTopTests {
       XCTAssertEqual(verdict.reason, .nonInteractiveHit)
       XCTAssertTrue(verdict.hit === page.list)
       XCTAssertTrue(relabelled ? verdict.routeControl == nil : verdict.routeControl === page.a, "relabelled \(relabelled)")
+      XCTAssertEqual(verdict.routeControlSource, relabelled ? nil : .node, "the node's own recorded control")
     }
   }
 

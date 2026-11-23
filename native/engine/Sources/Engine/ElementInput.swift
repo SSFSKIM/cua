@@ -466,11 +466,13 @@ extension Engine {
   ///
   /// `corrected` (#481, ruling 1106; `StalePointVerdict.routeControl`): the recorded control #442's corrected hit lies
   /// in, pressed by its handle with no walk from the hit; the route then stamps `stalePoint.routeHit: "corrected"` on the
-  /// record that stands when it ends. Nil: the control is resolved from `hit`, as on main.
+  /// record that stands when it ends, with `routeControl` (`correctedSource`: `node` or `beneath`). Nil: the control is
+  /// resolved from `hit`, as on main.
   func webAreaPress(_ hit: AXUIElement, button: MouseButton, count: Int, point: CGPoint, windowID: CGWindowID?, app: ResolvedApp,
                     appPid: pid_t, guarding: InterventionGuard, context: ExecutionContext,
                     stalePoint: StalePointGate<AXUIElement>? = nil,
-                    popUpPress: PopUpPressChecks? = nil, corrected: AXUIElement? = nil) -> ((inout InputMeta) throws -> Void)? {
+                    popUpPress: PopUpPressChecks? = nil, corrected: AXUIElement? = nil,
+                    correctedSource: StalePointRouteControl? = nil) -> ((inout InputMeta) throws -> Void)? {
     guard button == .left, count == 1 else { return nil }
     let engine = webAccessibility.pageEngine(app.appPath)
     var walk: [String] = []
@@ -513,7 +515,12 @@ extension Engine {
     let control = resolved.control
     return { [self] meta in
       // #481: whatever check's record stands at the end (a refusal's included) says the route came from the corrected hit.
-      defer { if pressingCorrected != nil { meta.stalePoint?.routeHit = "corrected" } }
+      defer {
+        if pressingCorrected != nil {
+          meta.stalePoint?.routeHit = "corrected"
+          meta.stalePoint?.routeControl = correctedSource?.rawValue
+        }
+      }
       let generation = processGeneration(launchDate: app.running?.launchDate, pid: appPid)
       let freshSince = webAccessibility.freshSince(pid: appPid, launched: generation)
       let fresh = webAreaAccessibilityFresh(freshSince: freshSince,

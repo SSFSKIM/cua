@@ -703,7 +703,7 @@ extension Engine {
           // keep the action's own hit.
           let elementRoute = webAreaPress(hit, button: button, count: count, point: placed.point, windowID: windowID, app: app,
                                           appPid: appPid, guarding: guarding, context: context, stalePoint: gate, popUpPress: checks,
-                                          corrected: stale.verdict.routeControl)
+                                          corrected: stale.verdict.routeControl, correctedSource: stale.verdict.routeControlSource)
           if let target = webAreaPopUp, let checks, let elementRoute {
             // Decided: the press takes the pointer's place outright, whatever the activation would click (an Electron
             // page's in-window activation point included), never a posted click behind it.

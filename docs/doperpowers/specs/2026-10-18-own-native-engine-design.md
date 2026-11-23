@@ -8075,6 +8075,14 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   the service test file 44/44.
   Date/Author: 2026-11-22, cursor235's builder for #442.
 
+- Decision (2026-11-23, the owner: TCC rows may be written by kits on GitHub-hosted runners only, never on any of the
+  owner's Macs (O0; ruling 1111)): a kit that writes a TCC row refuses, before any write, unless
+  `RUNNER_ENVIRONMENT=github-hosted`, and cites this entry where it writes. It amends "TCC is never edited by
+  automation" (Plan of Work, constraints) for GitHub-hosted runners alone; on every Mac of the owner's the rule stands.
+  Rationale: the M4 and M5 pre-flight (R1, R5) needs the vendor's helper and cua's bundle granted on a runner for the
+  vendor comparison and the staged onboarding to run hosted; a runner is disposable and holds nothing of the owner's.
+  Date/Author: 2026-11-23, the owner (relayed by the design session as ruling 1111); recorded by cursor235's H0 lane (#175).
+
 ## Outcomes & Retrospective
 
 Pending for the initiative — written at finish. M1a's interim account (2026-10-20) follows; the full record is `docs/doperpowers/specs/2026-10-18-own-native-engine-m1a-report.md`.

@@ -127,6 +127,15 @@ H0's pass); a witness not yet cleared is prepared and named in its gate's dispos
   nothing in this wave builds or depends on pre-record code (ruling 1136's writer is not reused yet). The guard
   pattern for later is `probe/117-h0` f28ce0db (tccWrite guarded before any store access, an injectable STORE, a spy
   test).
+- 2026-11-23, ruling 1141 (spec Decision Log on `docs/117-progress` b3588b5a): pre-recording replayd's approval does
+  not prevent the alert (run 45163139714: replayd read the entries and alerted anyway), so no kit writes replayd's
+  store and H0's replayd code (`probe/117-h0`, `scripts/probe-117-h0/`) is not reused. The hosted condition is "alert
+  up, scene activated first", under the alert-frontmost rule unchanged: front and key are sampled around each judged
+  cell, a cell with the alert frontmost is NO VERDICT, and NO VERDICT never counts as a pass. The activate step checks
+  that it took front and key before the cell runs; if not, NO VERDICT, not FAIL. T10's hosted qualification reports
+  each cell's NO VERDICT count beside its verdicts; a cell with too few verdicts does not qualify, and the numbers go
+  to the design session for the owner. In that run, keystroke ×2, Finder and TextEdit activation and the probe modes
+  passed with the alert up.
 - 2026-11-23, new judge rule (the design session): the judge checks that no alert was frontmost during any judged
   cell; a cell with an alert frontmost is NO VERDICT, never a pass. It belongs to T10's oracle, with a test.
 - 2026-11-23, scope change (the design session, ruling 1117 releasing on H0's pass): this wave also takes T10 (with

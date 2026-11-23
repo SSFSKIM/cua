@@ -8926,12 +8926,12 @@ to T7. Where M4's code met a later decision on main, the later decision won; eac
   - Ruling 1179, the split: this entry's branch is the product part (the renderer, the documentation sentence, the
     fence, the judges' departure) and the minimum harness support that has to travel with it. The ambiguity machinery
     of a multi-line value followed by another part (the readers' `{ambiguous}`, the no-verdict cause and its mapping
-    through every runner and judge) is the reader ticket's, whose branch starts at `fix/526-multiline-value` 3cd20c39.
+    through every runner and judge) is #561's, whose branch starts at `fix/526-multiline-value` 3cd20c39.
   - The harness support, lane-aware and nothing more. The run's bind records the lane (`goldens-cells.mjs` `BIND(scene,
     app, engine)`, `globalThis.__axRendering`; the matrix's run and the cursor sitting's sessions pass their engine).
     `matrix-text.mjs` `valueOfIndex` decodes, on cua's lane only, a multi-line value that is its line's last part
     (nothing `, ` after `Value: `), and only the escapes the renderer emits; every other value reads exactly as on main,
-    so a multi-line value followed by another part is cut at its first `, ` (the reader ticket's residue).
+    so a multi-line value followed by another part is cut at its first `, ` (#561's residue).
     `scenes-mac-text.mjs` `indexOfTarget` ends a name at such an escape only on cua's lane, only in the `Value:` part
     and only when that value ends its line; every other part and the vendor's lane match exactly as before.
     `selectedTextOf` and `live-checks.mjs` `vendorSelectedText` read a fence of three backticks or more. Ruling 1182:
@@ -8939,7 +8939,7 @@ to T7. Where M4's code met a later decision on main, the later decision won; eac
     fails a check, and is never found as a target, never a match (tests in `matrix-text.test.mjs`,
     `scenes-mac.test.mjs` and `multiline-lanes.test.mjs`, which runs #187's and #188's cells and TextEdit's document
     cells for real on both lanes).
-  - A declared limit (ruling 1182), the reader ticket's and #555's: the renderer leaves a literal backslash as it is,
+  - A declared limit (ruling 1182), #561's and #555's: the renderer leaves a literal backslash as it is,
     so on cua's lane a page's literal `\n` text and a real break print alike and the decoder reads both as a break. No
     current scene puts a backslash in a value.
   Date/Author: 2026-11-23, cursor235's builder for #526.

@@ -47,7 +47,16 @@ H0's pass); a witness not yet cleared is prepared and named in its gate's dispos
 - [x] T8d — reviewed 2026-11-23 (a6ef751ea..643a4dd33, fixes 430fe9bf4..8cbe919b0, four rounds); #216 stays open
   until the twenty-cycle witness runs in T10's pilot or O10.
 - [x] T10a (the judge) — reviewed clean 2026-11-23 (527c85376, fixes 28122c80b, 8f4a72eb8, d7d7ff628).
-- [ ] T10b′ (the harness on a runner, built; its pilot after M4 merges)
+- [x] T10b′ part 1 (the recordings) — reviewed 2026-11-23 (6dbb411..c08c575, fixes 73f1244..72f9246, 2cb6c2da0,
+  d50d4c891; four rounds). Part 2 (the hosted plumbing) — reviewed 2026-11-23 (534fda0..61f121bfa, fixes
+  14711a7bf..9bc53a9c1, 58ce12e43..ac1ee65f2, eb1944dd4..00dcbc17c, 29058c799..2885a7704; four review rounds, the
+  last small wave checked by the controller: diff read, hosted-sittings and native-matrix 590/590). Nothing has run on
+  a runner yet: the pilot (each sitting once, smallest form) follows 1149.
+- [x] Main merged in 2026-11-23: M4 and #516 (4c922d067, `engineVersion` 0.3.0), #518 (0584604ca); merge-review fixes
+  311d308c2 (the pending slot authoritative) and 28fd8d1f3; reviewed clean. The flip follows by merges 8e1cac60a,
+  0b98a5a6f, with T11b's docs pass fad980e0d.
+- [ ] Ruling 1148 on the flip (8f27f3ce8, 2cc24ed9f, 29e514437; review round 1 found five Important, fix in flight).
+- [ ] Ruling 1149 on `m5/1149` (the lanes assert the cua side's engine attestation; in flight).
 - [ ] T3b
 - [ ] T8e
 - [x] T11a — reviewed 2026-11-23 (61743b1da, fixes dbde89ba4, 46d5bb93b) on `feat/117-m5`.
@@ -70,6 +79,18 @@ H0's pass); a witness not yet cleared is prepared and named in its gate's dispos
   `cua/interruption`).
 - 2026-11-23, T9: `test/serve-lazy.test.mjs` "the record is the runtime's raw answers…" fails on the untouched base as
   well; not this wave's.
+- 2026-11-23, T10b′ part 2: H0's readings cannot identify replayd's capture alert (no title, text or size were
+  recorded), so the hosted hold is a bound (at most two UserNotificationCenter windows) and not an identification;
+  the pilot records each such window's title presence and size so a later wave can narrow it.
+- 2026-11-23, the main merge: M5's pending reader dropped a pending-slot bundle whose build equals approved.json's,
+  which M4's re-signing under another identity produces; once M4's own pending clause was dropped in the merge, doctor
+  lost that pending build (fixed, 311d308c2: the dedicated slot is authoritative, the hash exclusion is the legacy
+  layout's only).
+- 2026-11-23, the flip: a plain `cua install` builds cua's engine there (M4's install builds whatever the setting
+  selects, and the flip selects cua's), so "no approved cua engine" is every Mac's first-run state between the flip's
+  install and the first approve (ruling 1148). `scripts/accept/maws-features.mjs`'s literalVendor step assumed the
+  default meant the vendor's host and breaks after the flip on a Mac with an approved engine (fixed under 1149: it
+  pins the vendor engine and checks its attestation).
 
 ## Decision Log
 
@@ -247,6 +268,38 @@ H0's pass); a witness not yet cleared is prepared and named in its gate's dispos
   refuses contradictory rows. `finder/frontmost/typeText.typeSelect` now records cua's `typeUnconfirmed` and fails
   until a departure is declared for it (T13's disposition). `meta.desktopMode` is the constant `shared`;
   `meta.hosted` comes from the runner's environment.
+- 2026-11-23, ruling 1149 (the design session): "no lane reaches the fallback" is asserted in the runs, not only
+  arranged: every parity, acceptance and hosted-sitting run checks the cua side's `_meta['cua/nativeEngine']`, and a
+  cua side attesting the vendor's engine makes the row or run NO VERDICT naming that cause, never a pass. Accepted
+  scoping (the controller's, confirmed): Linux's lanes keep the trusted worker's engine-process witness as their
+  attestation (#171 owns that contract; the never-a-pass rule binds it); a lane with no NO VERDICT state complies by a
+  refusal naming the cause; sittings A, B and C map a wrong-engine attestation to NO VERDICT in the hosted checks; the
+  repl-parity selection lane keeps its oracle's FAIL, selection being what it judges. maws-features' literalVendor
+  step pins `CUA_NATIVE_ENGINE=vendor` and checks the vendor attestation.
+- 2026-11-23, ruling 1148 (the design session): build-on-install stays at the flip, and "no approved cua engine" is
+  designed as the normal first-run state. With the vendor runtime present the session keeps the vendor engine and
+  says so once per connection, on the first successful js or js_reset result (a text item after the runtime's own,
+  and the same string in `_meta['cua/engineNotice']`), and doctor says the same: reason first (not built; build
+  failed: <cause>; build <id> built, awaiting approve; a pending build below the minimum), then the remedy (approve,
+  or `cua install --engine` then approve). Without the runtime the macOS lane refuses with the same reason and remedy.
+  A failed build's install warning names the cause and what serves meanwhile, and the install succeeds. The line stays
+  off judged and parity output. Built on `feat/117-m5-flip` only (the notice exists only where cua's engine is the
+  default); its remedy function also serves launch.mjs's explicit `engine_not_installed` refusal, and the repl-parity
+  selection lane asserts the notice.
+- 2026-11-23, T10b′ part 2's review (the controller): the O0 authorization the TCC writer needs is pinned at
+  preparation, not looked up by the writer. The workflow's pin step fetches the design spec at the entry's own commit
+  (db775127652e; `decision_commit` may name a later one only if it is in that commit's history or reachable from a
+  `docs/117-progress` tip this run fetched) into a run-owned file; the writer reads only that file, runs no git, and
+  needs the entry as a bullet of its own inside `## Decision Log`, outside any code fence. The hosted guard
+  (`RUNNER_ENVIRONMENT=github-hosted`, macOS) is checked before anything is read, proven by a spy that throws if the
+  Decision Log is read off-host (ruling 1137). A sample taken while the capture alert held a key is NO VERDICT
+  (`alert`) by its explicit hold mark, whatever a later reading shows (1141); a fixture whose cleanup the alert held is
+  reset before the next sample or the run stops collecting, and that stop is NO VERDICT. Sitting exits follow the
+  judge's codes: 0 PASS, 1 FAIL, 3 OWNER, 4 NO VERDICT, 5 INCOMPLETE; a pilot whose judges give only the expected NO
+  VERDICT reads "PILOT COMPLETED WITHOUT ACCEPTANCE PROOF".
+- 2026-11-23, main moved twice (the design session): #518 (#501, plugin 0.29.10, engine Fetch/StalePoint/Walk) is
+  merged in after M4's merge, and so will #519 be; the plugin version stays main's and the next free one is taken only
+  at the pull request.
 - 2026-11-23, after M4 merged (d38630f9; the design session): origin/main is merged into `feat/117-m5` (no rebase),
   conflicts resolved by the logged merge notes, and every Decision Log entry from both sides kept (#502, #500 with
   #507, M4's block); `engineVersion` moves to 0.3.0 in that merge commit so the pilot tests the version that ships,

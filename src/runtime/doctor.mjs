@@ -219,7 +219,7 @@ const REPL_HOST_REASONS = {
   explicit: ({host}) => `CUA_REPL_HOST=${host}`,
   macos_native_peer_requires_vendor: () => 'the computer surface on macOS with the vendor engine, whose helper accepts only the vendor host\'s node_repl as a peer',
   cua_engine: () => 'CUA_REPL_HOST is unset, and cua\'s engine runs on cua\'s own host (CUA_REPL_HOST=vendor runs it on the vendor host, comparison A\'s lane)',
-  engine_not_installed: () => 'the default engine is cua\'s, but no approved engine is installed on this Mac, so this session keeps the vendor host and engine until one is: run `cua install --engine` (or `cua engine build`, then `cua engine approve` with the owner at the console)',
+  engine_not_installed: () => 'the default engine is cua\'s, but no approved engine is installed on this Mac, so this session keeps the vendor host and engine until one is: run `cua install --engine`, which builds it pending approval, then approve it with `cua engine approve` with the owner at the console',
   linux: () => 'CUA_REPL_HOST is unset, and cua\'s own host is the only one on Linux (the browser surface, if on, uses cua\'s browser service; the vendor host is retired there, #115)',
   browser_only: () => `CUA_REPL_HOST is unset, and cua's own host is the default for a browser-only session; ${ROLLBACK}`,
   own_host_node_unavailable: ({nodeTried}) => `CUA_REPL_HOST is unset, and this session would default to cua's own host, but cua's own host needs Node ${NODE_FLOOR} or later and none was found (${nodeTried.join(', ')}), so it keeps the vendor host. To move it to cua's own host, run \`cua install\` (it installs the pinned Node ${NODE_FLOOR} for it under $CUA_HOME/node), install Node ${NODE_FLOOR} or later yourself, or set CUA_NODE to the absolute path of one`,

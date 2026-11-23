@@ -256,7 +256,7 @@ async function macRun(t, {frontmost = () => 'com.apple.TextEdit', app = textEdit
   let code, refusal = null;
   try {
     code = await run({device: 'mini', out, host, engine, approvedEngine: ENGINE_BUNDLE, approvedRuntime: home, activateMs, ...plan,
-      io: {remote, controllerLoad:()=> 'controller load', device: () => device, connect: options => fakeClient(options, cua, state), env}});
+      io: {remote, controllerLoad:()=> 'controller load', device: () => device, connect: options => fakeClient(options, cua, state), env, vmIdentity: () => ({platformUuid: 'P', bootedAt: 'B'})}});
   } catch (error) { refusal = error; }
   const meta = existsSync(join(out, 'meta.json')) ? metaOf(out) : null, rows = existsSync(join(out, 'results.jsonl')) ? results(out) : [];
   return {code, refusal, meta, rows, app, state, frontmosts, home, activations: () => activations};
@@ -290,7 +290,7 @@ test('a macOS vendor-host run keeps the TextEdit baseline\'s sequence and attest
 // T10b′: on a GitHub-hosted runner the device's own record of the run is its attestation (meta.runner), and the run's
 // install is the approved runtime and engine; the device and the controller must agree on the run.
 const HOSTED_ENV = {RUNNER_ENVIRONMENT: 'github-hosted', GITHUB_RUN_ID: '45144483807', GITHUB_RUN_ATTEMPT: '1'};
-const hostedRecord = (id = '45144483807') => home => ({kind: 'github-hosted', image: {name: 'macos26', version: '20261117.0516.1'}, run: {id, attempt: '1'},
+const hostedRecord = (id = '45144483807') => home => ({kind: 'github-hosted', image: {name: 'macos26', version: '20261117.0516.1'}, run: {id, attempt: '1'}, vm: {id: 'vm-1', platformUuid: 'P', bootedAt: 'B'},
   install: {home, release: '26.928.40906-darwin-arm64'}, engine: {bundle: ENGINE_BUNDLE, build: BUILD, engineVersion: '0.2.0'}});
 test('a hosted run records the runner the device attests; a stale record or a controller off the runner refuses', async t => {
   const hosted = await macRun(t, {runner: hostedRecord(), env: HOSTED_ENV});

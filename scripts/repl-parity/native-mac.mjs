@@ -160,7 +160,7 @@ export async function runNativeMac(options, io) {
       hardware: pre.hardware ?? null, os: pre.os ?? null, display: pre.display ?? null});
     // On a GitHub-hosted runner the device's own record of this job's run (../hosted-sittings/runner.mjs), its install
     // the approved runtime and engine the lane serves: meta.hosted and meta.runner, which the diff holds equal.
-    Object.assign(meta, hostedRunOf(pre.runner ?? null, io.env ?? process.env, {approvedRuntime, approvedEngine}));
+    Object.assign(meta, hostedRunOf(pre.runner ?? null, io.env ?? process.env, {approvedRuntime, approvedEngine, ...(io.vmIdentity ? {controllerVm: io.vmIdentity} : {})}));
     const scenesPreflight = ops.scenes(['preflight', '--run', ctx.run]);
     if (scenesPreflight.refusals?.length) throw new Error(`the scenes refuse: ${scenesPreflight.refusals.map(r => r.message).join('; ')}`);
 

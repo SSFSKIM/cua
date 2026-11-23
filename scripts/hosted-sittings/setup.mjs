@@ -15,6 +15,7 @@
 //   record              the runner's record, which every harness's preflight reads and attests (./runner.mjs)
 // Each step gates the next. It refuses off a GitHub-hosted macOS runner before running anything.
 import {spawnSync} from 'node:child_process';
+import {randomUUID} from 'node:crypto';
 import {existsSync, mkdirSync, realpathSync, writeFileSync} from 'node:fs';
 import {dirname, join} from 'node:path';
 import {BUNDLE_NAME} from '../../src/runtime/engine-bundle.mjs';
@@ -24,7 +25,7 @@ import {bundleIdentity} from '../../src/services/engine/client.mjs';
 import {engineToApprove, hostedApprove} from './approve.mjs';
 import {loopbackSshArgs} from '../repl-parity/loopback-ssh.mjs';
 import {DEVICE} from './plan.mjs';
-import {assertGithubHosted, runnerRecord, runnerRecordPath} from './runner.mjs';
+import {assertGithubHosted, runnerRecord, runnerRecordPath, vmIdentity} from './runner.mjs';
 import {CLIENTS, grantRows} from './tcc.mjs';
 
 export const PARITY_CLONE_IN_HOME = 'Developer/GitHub/cua-parity';
@@ -35,11 +36,12 @@ const failIf = (condition, detail) => { if (condition) throw new StepFailed(deta
 
 // deps: {env, platform, home (the account's), checkout (the job's), commit (the tested one), engineArchive (the build
 // job's, or null to build here), exec(command, args, options) -> {status, stdout, stderr}, runtimeOf(cuaHome),
-// engineOf(home), identityOf(bundle), realpath, exists, vendorRunning(app), grant, approve, write(path, record), log}.
+// engineOf(home), identityOf(bundle), vmOf() (./runner.mjs vmIdentity), newId() (the setup's own VM id), realpath,
+// exists, vendorRunning(app), grant, approve, write(path, record), log}.
 // -> {ok, steps: [{step, ok, detail}], approve, record, approved: {runtime, engine}}.
 export async function hostedSetup({env = process.env, platform = process.platform, home = env.HOME, checkout = process.cwd(), commit, engineArchive = null,
   exec = (command, args, options) => spawnSync(command, args, {encoding: 'utf8', cwd: checkout, ...options}),
-  runtimeOf = cuaHome => locateRuntime({home: cuaHome}), engineOf = engineToApprove, identityOf = bundleIdentity, realpath = realpathSync, exists = existsSync,
+  runtimeOf = cuaHome => locateRuntime({home: cuaHome}), engineOf = engineToApprove, identityOf = bundleIdentity, vmOf = vmIdentity, newId = randomUUID, realpath = realpathSync, exists = existsSync,
   vendorRunning = app => spawnSync('pgrep', ['-f', `${app}/Contents/MacOS/`]).status === 0, grant = grantRows,
   approve = deps => hostedApprove(deps), write = (path, record) => { mkdirSync(dirname(path), {recursive: true}); writeFileSync(path, `${JSON.stringify(record, null, 2)}\n`); },
   log = line => process.stderr.write(`${line}\n`)} = {}) {
@@ -98,7 +100,9 @@ export async function hostedSetup({env = process.env, platform = process.platfor
     }],
     ['record', () => {
       const engine = realpath(join(home, ENGINE_DIRECTORY_IN_HOME, BUNDLE_NAME));
-      report.record = runnerRecord(env, {install: {home: realpath(cuaHome), release: runtime.release}, engine: {bundle: engine, ...identityOf(engine)}});
+      const machine = vmOf();
+      failIf(!machine, 'this VM could not be read (its platform UUID and boot time): the record would attest no machine');
+      report.record = runnerRecord(env, {install: {home: realpath(cuaHome), release: runtime.release}, engine: {bundle: engine, ...identityOf(engine)}, vm: {id: newId(), ...machine}});
       write(runnerRecordPath(home), report.record);
       report.approved = {runtime: report.record.install.home, engine};
       return runnerRecordPath(home);

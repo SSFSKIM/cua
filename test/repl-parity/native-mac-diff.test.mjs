@@ -205,10 +205,13 @@ test('checkPair: one sitting, one checkout, one approved engine, the vendor-engi
 test('checkPair on a hosted runner: both lanes are one job\'s run, each attested by its device (T10b′ part 2)', () => {
   const root = scratch();
   const run = (name, engine, meta) => loadNativeMacRun(writeRun(join(root, name), {engine, meta}));
-  const runner = id => ({hosted: true, runner: {kind: 'github-hosted', image: {name: 'macos26', version: '20261117.0516.1'}, run: {id, attempt: '1'},
+  const runner = id => ({hosted: true, runner: {kind: 'github-hosted', image: {name: 'macos26', version: '20261117.0516.1'}, run: {id, attempt: '1'}, vm: {id: 'vm-1', platformUuid: 'P', bootedAt: 'B'},
     install: {home: '/h', release: 'r'}, engine: {bundle: '/b/cua Engine.app', build: 'b', engineVersion: '0.2.0'}}});
   assert.doesNotThrow(() => checkPair(run('v', 'vendor', runner('7')), run('c', 'cua', runner('7')), {declarations}));
-  assert.throws(() => checkPair(run('v2', 'vendor', runner('7')), run('c2', 'cua', runner('8')), {declarations}), /two hosted runs \(macos26 20261117\.0516\.1, run 7 attempt 1; .*run 8 attempt 1\): one sitting is one job's run/);
+  assert.throws(() => checkPair(run('v2', 'vendor', runner('7')), run('c2', 'cua', runner('8')), {declarations}), /two hosted runs \(macos26 20261117\.0516\.1, run 7 attempt 1, VM vm-1; .*run 8 attempt 1, VM vm-1\): one sitting is one job's run/);
+  const otherVm = {hosted: true, runner: {...runner('7').runner, vm: {id: 'vm-2', platformUuid: 'Q', bootedAt: 'B'}}};
+  assert.throws(() => checkPair(run('v5', 'vendor', runner('7')), run('c5', 'cua', otherVm), {declarations}), /run 7 attempt 1, VM vm-1; .*run 7 attempt 1, VM vm-2\): one sitting is one job's run/,
+    'one attempt\'s sittings are several VMs: two never pair');
   assert.throws(() => checkPair(run('v3', 'vendor', runner('7')), run('c3', 'cua', {hosted: true}), {declarations}), /records no hosted runner/);
   assert.throws(() => checkPair(run('v4', 'vendor', runner('7')), run('c4', 'cua'), {declarations}), /records no hosted runner/);
 });

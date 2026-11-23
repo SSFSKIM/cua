@@ -110,7 +110,7 @@ const runLane = async ({engine, host = engine, device = fakeDevice(), lane, cont
   const out = join(scratch(), engine);
   lane ??= fakeLane(device, {engine, host});
   const code = await runNativeMac({device: 'mini', host, engine, approvedRuntime: APPROVED_RUNTIME, approvedEngine: APPROVED_ENGINE, commit: COMMIT, sitting: 'hold-2b', out, ...options},
-    {ops: device.ops, connect: lane.connect, controllerCheckout: () => controller, log: () => {}, ...(interrupt ? {interrupt} : {}), env});
+    {ops: device.ops, connect: lane.connect, controllerCheckout: () => controller, log: () => {}, ...(interrupt ? {interrupt} : {}), env, vmIdentity: () => ({platformUuid: 'P', bootedAt: 'B'})});
   const meta = fs.existsSync(join(out, 'meta.json')) ? JSON.parse(fs.readFileSync(join(out, 'meta.json'), 'utf8')) : null;
   return {code, out, meta, device, lane};
 };
@@ -153,7 +153,7 @@ test('a lane through the facade on the four scenes: texts kept only after cua\'s
 });
 
 test('a hosted lane records the runner its device attests; another job\'s record leaves the lane incomplete (T10b′ part 2)', async () => {
-  const record = id => ({kind: 'github-hosted', image: {name: 'macos26', version: '20261117.0516.1'}, run: {id, attempt: '1'},
+  const record = id => ({kind: 'github-hosted', image: {name: 'macos26', version: '20261117.0516.1'}, run: {id, attempt: '1'}, vm: {id: 'vm-1', platformUuid: 'P', bootedAt: 'B'},
     install: {home: APPROVED_RUNTIME, release: RELEASE}, engine: {bundle: APPROVED_ENGINE, build: BUILD, engineVersion: '0.2.0'}});
   const env = {RUNNER_ENVIRONMENT: 'github-hosted', GITHUB_RUN_ID: '7', GITHUB_RUN_ATTEMPT: '1'};
   const hosted = await runLane({engine: 'vendor', device: fakeDevice({preflight: {runner: record('7')}}), env});

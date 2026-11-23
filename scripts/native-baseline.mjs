@@ -225,7 +225,7 @@ async function runPrepared({device, out, host, engine, approvedEngine, approvedR
   }
   // On a GitHub-hosted runner (T10b′, ./hosted-sittings/runner.mjs): the device's own record of this job's run, whose
   // install must be the approved runtime and engine the run was given. Off a runner, neither.
-  const hostedRun = pre.platform === 'darwin' ? hostedRunOf(pre.runner ?? null, io.env ?? process.env, {approvedRuntime, ...(approvedEngine ? {approvedEngine} : {})}) : {hosted: false, runner: null};
+  const hostedRun = pre.platform === 'darwin' ? hostedRunOf(pre.runner ?? null, io.env ?? process.env, {approvedRuntime, ...(approvedEngine ? {approvedEngine} : {}), ...(io.vmIdentity ? {controllerVm: io.vmIdentity} : {})}) : {hosted: false, runner: null};
   // A Linux computer run (#171): the executable its engine must run from in the run's home (the preflight's), and the
   // engine processes seen below the run's serves (ctx.observeEngines), judged when the run ends (engine.mjs).
   if (pre.platform === 'linux' && surface === 'computer') {

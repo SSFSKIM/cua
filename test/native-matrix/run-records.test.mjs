@@ -37,7 +37,7 @@ test('a hosted run: every judged row carries its front/key readings and the acti
 
 // T10b′ part 2: the device's own record of the job's run is the run's hosted attestation (meta.runner), the run's install
 // its approved runtime and engine; a record of another run, or a controller off the runner, leaves the run incomplete.
-const RECORD = {kind: 'github-hosted', image: {name: 'macos26', version: '20261117.0516.1'}, run: {id: '7', attempt: '1'},
+const RECORD = {kind: 'github-hosted', image: {name: 'macos26', version: '20261117.0516.1'}, run: {id: '7', attempt: '1'}, vm: {id: 'vm-1', platformUuid: 'P', bootedAt: 'B'},
   install: {home: '/H', release: '26.0-dry'}, engine: {bundle: '/A/cua Engine.app', build: 'b', engineVersion: '0.2.0'}};
 const attesting = record => ({preflight: (base, a) => ({...base(a), runner: record})});
 test('a hosted run records the runner the device attests; another run\'s record or a controller off the runner stops it', async () => {

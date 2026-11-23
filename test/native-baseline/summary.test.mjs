@@ -95,17 +95,17 @@ test('an incomplete run or one that disagrees on commit, release or service is a
 
 // The hosted runner's attestation (T10b′): on a GitHub-hosted runner the machine is one job's VM, named by its image, run
 // and attempt, with the run's own install and engine build; every run of a directory names the same one.
-const RUNNER = {kind: 'github-hosted', image: {name: 'macos26', version: '20261117.0516.1'}, run: {id: '45144483807', attempt: '1'},
+const RUNNER = {kind: 'github-hosted', image: {name: 'macos26', version: '20261117.0516.1'}, run: {id: '45144483807', attempt: '1'}, vm: {id: 'vm-1', platformUuid: 'P', bootedAt: 'B'},
   install: {home: '/Users/runner/Library/Application Support/cua', release: '26.928.40906-darwin-arm64'},
   engine: {bundle: '/Users/runner/Library/Application Support/cua/engine/cua Engine.app', build: 'c'.repeat(64), engineVersion: '0.2.0'}};
 test('a hosted run attests its runner, and the runs of one directory name one runner', t => {
   const hosted = (n, runner = RUNNER) => meta(n, {hosted: true, runner});
   const one = summarize(readRuns(fixture(t, [hosted(1), hosted(2), hosted(3)])));
   assert.deepEqual(one.problems, []);
-  assert.equal(one.attestation.runner, 'GitHub-hosted macos26 20261117.0516.1, run 45144483807 attempt 1; the run\'s install 26.928.40906-darwin-arm64 at /Users/runner/Library/Application Support/cua; its engine build cccccccccccc (cua 0.2.0)');
-  assert.match(renderMarkdown(one), /\| Hosted runner \| GitHub-hosted macos26 20261117\.0516\.1, run 45144483807 attempt 1;/);
+  assert.equal(one.attestation.runner, 'GitHub-hosted macos26 20261117.0516.1, run 45144483807 attempt 1, VM vm-1; the run\'s install 26.928.40906-darwin-arm64 at /Users/runner/Library/Application Support/cua; its engine build cccccccccccc (cua 0.2.0)');
+  assert.match(renderMarkdown(one), /\| Hosted runner \| GitHub-hosted macos26 20261117\.0516\.1, run 45144483807 attempt 1, VM vm-1;/);
   const two = summarize(readRuns(fixture(t, [hosted(1), hosted(2), hosted(3, {...RUNNER, run: {id: '45144483999', attempt: '1'}})])));
-  assert.ok(two.problems.some(p => /^run-3 differs in runner \(GitHub-hosted macos26 20261117\.0516\.1, run 45144483999 attempt 1;/.test(p)), two.problems.join('\n'));
+  assert.ok(two.problems.some(p => /^run-3 differs in runner \(GitHub-hosted macos26 20261117\.0516\.1, run 45144483999 attempt 1, VM vm-1;/.test(p)), two.problems.join('\n'));
   const unattested = summarize(readRuns(fixture(t, [hosted(1, null), hosted(2, null), hosted(3, null)])));
   assert.ok(unattested.problems.includes('run-1 ran on a GitHub-hosted runner but records no runner (meta.runner): its machine and install are unattested'), unattested.problems.join('\n'));
   assert.equal(summarize(readRuns(fixture(t))).attestation.runner, null, 'a run off a hosted runner attests none');

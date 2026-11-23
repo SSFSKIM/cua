@@ -29,6 +29,7 @@ function spies({fail = null, vendorUp = false, approved = true, missing = []} = 
     runtimeOf: home => { calls.push({kind: 'runtime', home}); return {release: 'r1', home, paths: {skyServiceApp: SKY}}; },
     engineOf: () => ENGINE,
     identityOf: () => ({build: 'b'.repeat(40), engineVersion: '0.5.0'}),
+    vmOf: () => ({platformUuid: '5F2C1A9E-1D2B-4C3D-8E4F-0123456789AB', bootedAt: '2026-11-23T09:58:12.000Z'}), newId: () => 'setup-1',
     realpath: path => path,
     vendorRunning: app => { calls.push({kind: 'vendor-running', app}); return vendorUp; },
     grant: grants => { calls.push({kind: 'grant', clients: grants.map(g => g.client)}); return {rows: [], missing}; },
@@ -71,6 +72,7 @@ test('on a runner: the loopback device, the harness checkout, the install and en
   assert.deepEqual(record.run, {id: '45144483807', attempt: '1'});
   assert.deepEqual(record.install, {home: CUA_HOME, release: 'r1'});
   assert.deepEqual(record.engine, {bundle: ENGINE, build: 'b'.repeat(40), engineVersion: '0.5.0'});
+  assert.deepEqual(record.vm, {id: 'setup-1', platformUuid: '5F2C1A9E-1D2B-4C3D-8E4F-0123456789AB', bootedAt: '2026-11-23T09:58:12.000Z'}, 'the VM the setup ran on, under the setup\'s own id');
   assert.deepEqual(report.approved, {runtime: CUA_HOME, engine: ENGINE});
 });
 

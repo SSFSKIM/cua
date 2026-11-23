@@ -253,7 +253,7 @@ async function runOnce(options, io) {
     Object.assign(meta, {commit: pre.commit, hardware: pre.hardware ?? null, os: pre.os ?? null, display: pre.display ?? null});
     // On a GitHub-hosted runner the device's own record of this job's run (../hosted-sittings/runner.mjs): meta.hosted
     // from both sides, meta.runner the run's attestation, its install the approved runtime and engine this run serves.
-    Object.assign(meta, hostedRunOf(pre.runner ?? null, io.env ?? process.env, {approvedRuntime, approvedEngine}));
+    Object.assign(meta, hostedRunOf(pre.runner ?? null, io.env ?? process.env, {approvedRuntime, approvedEngine, ...(io.vmIdentity ? {controllerVm: io.vmIdentity} : {})}));
 
     const scenes = scenesOf(plan);
     meta.fixtures = {

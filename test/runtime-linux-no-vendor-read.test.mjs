@@ -177,17 +177,22 @@ test('the managed Node\'s pointer or install record linked into the tree: refuse
   }
 });
 
-test('the installed engine\'s install record linked into the tree: refused, nothing there read', t => {
-  const h = homeWithVendorTree(t);
-  const own = join(h.home, 'engine', 'linux', 'install.json');
-  const planted = join(h.runtimes, 'engine-record.json');
-  fs.copyFileSync(own, planted);
-  fs.rmSync(own);
-  fs.symlinkSync(planted, own);
-  for (const env of [{}, {CUA_NATIVE_ENGINE: 'cua'}]) {
-    const {error, inTree} = refusedWithoutReading(h, () => selectEngine(h, env), 'engine_not_installed');
-    assert.deepEqual(inTree, [], error.message);
-    assert.match(error.message, /vendor's tree/);
+// The installer would take the place such a link leads to as the engine's, so the remedy names the link to move aside
+// first (task 156), and the installer refuses it the same way (test/linux-engine.test.mjs).
+test('the installed engine, its install record or its directory linked into the tree: refused, nothing there read, the link named to move aside before the installer', t => {
+  for (const name of ['install.json', 'cua-engine', '']) {
+    const h = homeWithVendorTree(t);
+    const own = join(h.home, 'engine', 'linux', name);
+    const planted = join(h.runtimes, `planted-${name || 'linux'}`);
+    fs.cpSync(own, planted, {recursive: true});
+    fs.rmSync(own, {recursive: true});
+    fs.symlinkSync(planted, own.replace(/\/$/, ''));
+    for (const env of [{}, {CUA_NATIVE_ENGINE: 'cua'}]) {
+      const {error, inTree} = refusedWithoutReading(h, () => selectEngine(h, env), 'engine_not_installed');
+      assert.deepEqual(inTree, [], error.message);
+      assert.match(error.message, /vendor's tree/);
+      assert.ok(error.message.includes(`: move ${own.replace(/\/$/, '')} aside, then install this cua's engine with \`node `), `${name || 'the directory'}: ${error.message}`);
+    }
   }
 });
 

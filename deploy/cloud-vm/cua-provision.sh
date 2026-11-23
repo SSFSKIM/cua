@@ -12,7 +12,8 @@
 #                it), or, once cua's own runtime is installed and registered, `pin` (the pin's own URL), an https URL (a
 #                mirror; the bytes must still match the pin) or `upload` (the operator copies it to
 #                /var/cache/cua/upload.deb; the script waits up to CUA_DEB_WAIT seconds for it), then stops at that
-#                step where the deb cannot be had
+#                step where the deb cannot be had. A CUA_REF older than M6a runs from the deb, so for it the deb comes
+#                first and the provisioning fails without it
 #   CUA_RELAY    optional wss:// relay URL: enrol the device there and install the agent as a systemd user unit
 #   CUA_EXTENSION      where Chrome force-installs cua's extension from: `hosted` (default), the self-hosted CRX named
 #                      by CUA_EXTENSION_URL's update manifest, or `store` (the Chrome Web Store listing)
@@ -32,6 +33,9 @@ EXTENSION_ID=jkejaaijdfpohkdhankllbekkhmnippb   # cua's own extension (CUA_EXTEN
 # failed install of cua's own runtime does not (stop_failed, exit 1, which cloud-init reports).
 stop_early() { log "$1"; checklist "$1"; doctor; cat "$state/checklist.txt"; exit 0; }
 stop_failed() { log "$1"; checklist "$1"; doctor; cat "$state/checklist.txt"; exit 1; }
+# How the deb's own steps stop, and what they say is already in place: for a checkout older than M6a, whose runtime is
+# the deb, they fail the provisioning (provision_cua sets them).
+deb_stop=stop_early deb_state="cua's own runtime is installed and registered; "
 
 # cua install, then its one-line summary. Plain, it installs cua's own runtime (its module tree, sandbox helper and
 # Node) and cua's engine, and tries the vendor's tree from the pin's URL, which a working device does not need (#171
@@ -46,7 +50,7 @@ install_cua() {
   vendor_placed="$(jq -r 'if .vendor.release then 1 else 0 end' <<<"$out" 2>/dev/null || echo 0)"
   ((code == 0)) && return 0
   why="$(jq -r '[.error.message, .error.hint] | map(select(. != null)) | join("; ") | if . == "" then "see its output above" else . end' <<<"$out" 2>/dev/null || echo 'see its output above')"
-  if (($#)); then stop_early "cua install${1:+ $*} failed (exit $code): $why; then run cua-provision.sh again"; fi
+  if (($#)); then "$deb_stop" "cua install${1:+ $*} failed (exit $code): $why; then run cua-provision.sh again"; fi
   stop_failed "cua install failed (exit $code): $why; then run cua-provision.sh again"
 }
 
@@ -101,16 +105,16 @@ fetch_deb() {
         up="$cache/upload.deb"
         log "waiting up to ${CUA_DEB_WAIT}s for $up (copied there by the operator)"
         for _ in $(seq "$((CUA_DEB_WAIT / 5))"); do [[ -f "$up" || -e "$up.failed" ]] && break; sleep 5; done
-        if [[ -e "$up.failed" ]]; then rm -f "$up.failed"; stop_early "the copy of the deb to $up failed: copy it there again, then run cua-provision.sh again"; fi
-        [[ -f "$up" ]] || stop_early "no deb at $up: copy ${pin_url##*/} there, then run cua-provision.sh again"
-        echo "$pin_sha  $up" | sha256sum -c --status || { rm -f "$up"; stop_early "the uploaded $up does not match the sha256 of the pin for $release (removed)"; }
+        if [[ -e "$up.failed" ]]; then rm -f "$up.failed"; "$deb_stop" "the copy of the deb to $up failed: copy it there again, then run cua-provision.sh again"; fi
+        [[ -f "$up" ]] || "$deb_stop" "no deb at $up: copy ${pin_url##*/} there, then run cua-provision.sh again"
+        echo "$pin_sha  $up" | sha256sum -c --status || { rm -f "$up"; "$deb_stop" "the uploaded $up does not match the sha256 of the pin for $release (removed)"; }
         mv "$up" "$deb"
         ;;
       *)
         url="$CUA_DEB"; [[ "$url" == pin ]] && url="$pin_url"
         log "download $url"
-        curl -fL --retry 3 --silent --show-error -o "$deb.part" "$url" || { rm -f "$deb.part"; stop_early "could not download $url: cua's own runtime is installed and registered; copy the pinned deb to the VM's $cache/upload.deb and set CUA_DEB=upload, or run cua-provision.sh again"; }
-        echo "$pin_sha  $deb.part" | sha256sum -c --status || { rm -f "$deb.part"; stop_early "$url does not match the pin's sha256 for $release (removed)"; }
+        curl -fL --retry 3 --silent --show-error -o "$deb.part" "$url" || { rm -f "$deb.part"; "$deb_stop" "could not download $url: ${deb_state}copy the pinned deb to the VM's $cache/upload.deb and set CUA_DEB=upload, or run cua-provision.sh again"; }
+        echo "$pin_sha  $deb.part" | sha256sum -c --status || { rm -f "$deb.part"; "$deb_stop" "$url does not match the pin's sha256 for $release (removed)"; }
         mv "$deb.part" "$deb"
         ;;
     esac
@@ -121,7 +125,16 @@ fetch_deb() {
 # Steps 8 and 9: cua's own runtime and its registration, as under CUA_DEB=none; then, where CUA_DEB asks for the vendor's
 # tree (for CUA_NATIVE_ENGINE=vendor), the deb and the install that requires it. Only a `pin` request that cua install
 # already met from the pin's own URL is skipped: a mirror or an upload is the operator's source, fetched and checked.
+# A checkout older than M6a (CUA_REF before it: no runtime/linux-runtime.json) has no runtime of its own; its install
+# is the deb's, so a supplied deb is had and installed first, as that checkout's provisioner did, and under none its
+# plain install fetches the pin's URL itself.
 provision_cua() {
+  if [[ ! -f "$checkout/runtime/linux-runtime.json" ]]; then
+    deb_stop=stop_failed deb_state=''
+    if [[ "$CUA_DEB" != none ]]; then fetch_deb; install_cua --archive "$deb"; else install_cua; fi
+    register_cua
+    return 0
+  fi
   install_cua
   register_cua
   [[ "$CUA_DEB" != none ]] || return 0

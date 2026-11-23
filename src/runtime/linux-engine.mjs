@@ -19,6 +19,8 @@ import {fileURLToPath} from 'node:url';
 import {fail} from './errors.mjs';
 import {homeLayout, realHome} from './layout.mjs';
 import {findTool} from './tools.mjs';
+import {ownInstaller} from './installer.mjs';
+import {outsideVendorTree} from './vendor-tree.mjs';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 export const ENGINE_PIN_FILE = join(REPO_ROOT, 'runtime', 'engine', 'linux-engine.json');
@@ -135,10 +137,22 @@ export function writeEngineRecord(home, record) {
   }
 }
 
+// The engine, its record, or a directory above them in the real cua home `home`, that leads into the vendor's tree is
+// refused by every session (launch.mjs linuxEngineFor), so an install neither reads it as the installed engine nor
+// writes through it: target_occupied, naming the link to move aside first, as the session's refusal does (#171 M6a).
+export function assertEnginePathsOutsideVendorTree(home) {
+  for (const path of [linuxEnginePath(home), recordPath(home)]) {
+    const {lead, links} = outsideVendorTree(path, home);
+    if (lead) fail('target_occupied', `${path} leads to ${lead}, under the vendor's tree, and cua does not install its engine through it`,
+      {hint: `move ${links[0] ?? path} aside, then run \`${ownInstaller().command} --engine\``});
+  }
+}
+
 // Moves `staged` (a verified file in the home's staging directory, on the same volume) to the engine's path with one
 // rename, 0755 in a 0755 directory, then writes `record`. A running engine keeps the file it was started from. A
-// directory at the path is refused (target_occupied) and left as it is.
+// directory at the path is refused (target_occupied) and left as it is, and so is a link into the vendor's tree.
 export function placeLinuxEngine({home, staged, record}) {
+  assertEnginePathsOutsideVendorTree(home);
   const path = linuxEnginePath(home);
   mkdirSync(linuxEngineDir(home), {recursive: true, mode: 0o755});
   let existing = null;

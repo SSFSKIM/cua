@@ -60,7 +60,7 @@ import {moduleRecoveryHint, verifyModuleTree} from './module-tree.mjs';
 import {verifyCodeSignatures, verifyRuntimeTree} from './checks.mjs';
 import {findTool, requireTools} from './tools.mjs';
 import {helperAsset, helperDir, helperPath, loadHelperPin, sha256Of} from '../sandbox/linux.mjs';
-import {ENGINE_BINARY, engineAsset, inspectLinuxEngine, linuxEnginePath, loadEnginePin, placeLinuxEngine, readEngineRecord, refuseUnpinned, writeEngineRecord} from './linux-engine.mjs';
+import {ENGINE_BINARY, assertEnginePathsOutsideVendorTree, engineAsset, inspectLinuxEngine, linuxEnginePath, loadEnginePin, placeLinuxEngine, readEngineRecord, refuseUnpinned, writeEngineRecord} from './linux-engine.mjs';
 import {buildEngine, engineDirectory, installedEngine} from './engine.mjs';
 import {signWaitMs} from './engine-sign.mjs';
 import {nativeEngineSetting} from './launch.mjs';
@@ -382,6 +382,7 @@ export async function installLinuxEngine({home, pin = loadEnginePin(), fetch = g
   const real = realHome(home, {create: true});
   const record = {build: 'pinned', version: pin.version, release: pin.release, sha256: asset.sha256, source: asset.url};
   const answer = changed => ({path: linuxEnginePath(real), version: pin.version, release: pin.release, sha256: asset.sha256, changed});
+  assertEnginePathsOutsideVendorTree(real);
   const placed = inspectLinuxEngine({home: real, arch: host.arch, pin});
   if (placed.current && lstatSync(placed.path).isFile()) {
     const recorded = readEngineRecord(real);

@@ -7,7 +7,8 @@
 // already there verified. Everything runs in scratch homes against the fixture registry; nothing is downloaded.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {createRequire} from 'node:module';
+import fs from 'node:fs';
+import {createRequire, syncBuiltinESMExports} from 'node:module';
 import {spawnSync} from 'node:child_process';
 import {appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, truncateSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
@@ -171,9 +172,10 @@ for (const host of [LINUX_X64, LINUX_ARM64]) test(`an install into an empty home
   assert.equal(written.source, 'download');
   assert.deepEqual(written.packages.map(p => p.path), closure);
   for (const p of written.packages) {
-    assert.deepEqual(Object.keys(p).sort(), ['digest', 'files', 'name', 'path', 'version']);
+    assert.deepEqual(Object.keys(p).sort(), ['digest', 'files', 'manifestSize', 'name', 'path', 'version']);
     assert.match(p.digest, /^[0-9a-f]{64}$/);
     assert.ok(p.files >= 1);
+    assert.equal(p.manifestSize, readFileSync(join(root, p.path, 'package.json')).length, `${p.path}: its package.json's size`);
   }
   const natives = written.natives.map(n => n.path);
   assert.ok(natives.includes('node_modules/lev/prebuilds/linux-x64/lev.node') && natives.includes('node_modules/lev/prebuilds/linux-arm64/lev.armv8.node'), 'lev holds both prebuilds');
@@ -356,6 +358,41 @@ test('the connection\'s check needs every package.json', async t => {
   const {root} = await install(s);
   rmSync(join(root, 'node_modules/alpha/package.json'));
   assert.throws(() => checkModuleTree(root, record(root)), expectCode('layout_invalid', /alpha/));
+});
+
+// Each manifest's size is recorded at install and compared at the open, as the native files' are (task 156).
+test('the connection\'s check refuses a package.json truncated or emptied, by its recorded size', async t => {
+  for (const length of [0, 5]) {
+    const s = setup(t);
+    const {root} = await install(s);
+    truncateSync(join(root, 'node_modules/alpha/package.json'), length);
+    assert.throws(() => checkModuleTree(root, record(root)), expectCode('layout_invalid', /node_modules\/alpha\/package\.json is \d+ bytes, recorded as \d+/), `${length} bytes`);
+  }
+});
+
+// A file or directory the full check cannot read is damage it names, with the tree to move aside and the installer,
+// never a raw filesystem error and never an empty directory (task 156). Unreadable by fault injection, since a test run
+// as root reads any mode.
+test('a module file or directory the full check cannot read is a verification failure naming the tree, and the reinstall refuses it the same way', async t => {
+  for (const [name, at, call] of [['a file', 'node_modules/alpha/index.js', 'readFileSync'], ['a directory', 'node_modules/alpha', 'readdirSync'], ['a container', 'node_modules', 'readdirSync']]) {
+    const s = setup(t);
+    const {root} = await install(s);
+    const target = join(root, at);
+    const original = fs[call];
+    fs[call] = function (path, ...rest) {
+      if (path === target) throw Object.assign(new Error(`EACCES: permission denied, open '${path}'`), {code: 'EACCES', path});
+      return original.call(this, path, ...rest);
+    };
+    syncBuiltinESMExports();
+    try {
+      assert.throws(() => verifyModuleTree(root, record(root)), error => error.code === 'module_tree_invalid' && error.message.includes(at)
+        && error.message.includes('EACCES') && error.hint.includes(`remove ${root}`), name);
+      await assert.rejects(install(s), error => error.code === 'module_tree_invalid' && error.hint.includes(`remove ${root}`), name);
+    } finally {
+      fs[call] = original;
+      syncBuiltinESMExports();
+    }
+  }
 });
 
 test('readModuleTree: null with nothing there, or with a tree whose record is not this lock\'s and host\'s', async t => {

@@ -45,7 +45,8 @@ case "${1:-}" in
   --bus-stage)
     # Inside the bus: accessibility on, then the command.
     shift; [ "$1" = -- ] && shift
-    enable="$(node --input-type=module -e "import {A11Y_ENABLE_COMMAND} from '$repo/src/runtime/linux-desktop.mjs'; process.stdout.write(A11Y_ENABLE_COMMAND)")"
+    # The module's path is an argument, imported by its file URL: never part of the program's source.
+    enable="$(node --input-type=module -e 'import {pathToFileURL} from "node:url"; const {A11Y_ENABLE_COMMAND} = await import(pathToFileURL(process.argv[1]).href); process.stdout.write(A11Y_ENABLE_COMMAND)' "$repo/src/runtime/linux-desktop.mjs")"
     # shellcheck disable=SC2086 # the command is doctor's, one word per argument, none quoted
     $enable > /dev/null
     exec "$@"

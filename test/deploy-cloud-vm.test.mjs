@@ -6,6 +6,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
+import {createHash} from 'node:crypto';
 import {chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -54,13 +55,20 @@ test('render.sh: defaults, a mirror URL, and a local deb meaning the operator up
 // its arguments and answers `install --json` as told, `curl` fails as an unreachable server does, and as_user, log,
 // checklist and doctor stand in for the root-only ones; the script's own stops run, and their exit status is the
 // provisioning's. Chrome's profile, its extension and its host's socket are there, so the waits end at once.
-function provision(t, {deb, install = {ok: true, vendor: {failed: {code: 'download_failed'}}}, installExit = 0, status = 0}) {
+// `checkout` is an M6a checkout (its runtime/linux-runtime.json there) unless `older`; `upload` is a deb the operator
+// copied, whose SHA-256 the pin then names.
+function provision(t, {deb, install = {ok: true, vendor: {failed: {code: 'download_failed'}}}, installExit = 0, status = 0, older = false, upload}) {
   const scratch = mkdtempSync(join(tmpdir(), 'cua-provision-'));
   t.after(() => rmSync(scratch, {recursive: true, force: true}));
   const bin = join(scratch, 'bin'), home = join(scratch, 'home'), cache = join(scratch, 'cache'), state = join(scratch, 'state'), log = join(scratch, 'calls.log');
+  const checkout = join(scratch, 'checkout');
   mkdirSync(state);
   mkdirSync(bin);
   mkdirSync(cache);
+  mkdirSync(join(checkout, 'runtime'), {recursive: true});
+  if (!older) writeFileSync(join(checkout, 'runtime', 'linux-runtime.json'), '{}');
+  if (upload !== undefined) writeFileSync(join(cache, 'upload.deb'), upload);
+  const pinSha = upload === undefined ? '0'.repeat(64) : createHash('sha256').update(upload).digest('hex');
   mkdirSync(join(home, '.config', 'google-chrome', 'Default', 'Extensions', CUA_EXTENSION_ID), {recursive: true});
   mkdirSync(join(home, '.local', 'share', 'cua', 'chrome', 'b'), {recursive: true});
   writeFileSync(join(home, '.local', 'share', 'cua', 'chrome', 'b', 'h.sock'), '');
@@ -68,12 +76,12 @@ function provision(t, {deb, install = {ok: true, vendor: {failed: {code: 'downlo
   stub('cua', 'if [[ "$1" == install ]]; then printf \'%s\\n\' "$CUA_INSTALL_JSON"; exit "$CUA_INSTALL_EXIT"; fi; exit 0');
   stub('curl', 'echo "curl: (6) Could not resolve host" >&2; exit 6');
   const script = `source '${dir}cua-provision.sh'
-cache='${cache}' home='${home}' state='${state}' CUA_DEB='${deb}' CUA_DEB_WAIT=5
+cache='${cache}' home='${home}' state='${state}' checkout='${checkout}' CUA_DEB='${deb}' CUA_DEB_WAIT=5
 as_user() { HOME='${home}' "$@"; }
 log() { printf 'log %s\\n' "$*" >>'${log}'; }
 checklist() { printf 'stop %s\\n' "$1" >>'${log}'; printf '%s\\n' "$1" >'${state}/checklist.txt'; }
 doctor() { :; }
-pin_of_host() { echo '26.928.40906-linux-x64 https://example.invalid/chatgpt_26.928.40906_amd64.deb ${'0'.repeat(64)}'; }
+pin_of_host() { echo '26.928.40906-linux-x64 https://example.invalid/chatgpt_26.928.40906_amd64.deb ${pinSha}'; }
 provision_cua
 echo done >>'${log}'`;
   const run = spawnSync('bash', ['-c', script], {encoding: 'utf8', env: {...process.env, PATH: `${bin}:${process.env.PATH}`, CUA_INSTALL_JSON: JSON.stringify(install), CUA_INSTALL_EXIT: String(installExit)}});
@@ -105,6 +113,27 @@ test('cua-provision.sh: a vendor tree cua install already placed is not fetched 
   const mirror = provision(t, {deb: 'https://mirror.example/chatgpt_26.928.40906_amd64.deb', install: vendor});
   assert.deepEqual(mirror.calls.slice(REGISTERED.length).map(line => line.split(' ')[0]), ['curl', 'stop'], 'the operator\'s source, then its check');
   assert.match(mirror.calls.at(-2), / https:\/\/mirror\.example\/chatgpt_26\.928\.40906_amd64\.deb$/);
+});
+
+// A checkout older than M6a (no runtime/linux-runtime.json) installs from the vendor's deb, so a supplied deb is had
+// first and its failure fails the provisioning, as that checkout's own provisioner did; under none its plain install
+// fetches the pin's URL itself (task 156).
+test('cua-provision.sh for a checkout older than M6a: a supplied deb first, then its install, then the registration; none installs plainly', {skip: noJq}, t => {
+  const uploaded = provision(t, {deb: 'upload', older: true, upload: 'the deb'});
+  assert.deepEqual(uploaded.calls, [`cua install --archive ${uploaded.cache}/chatgpt_26.928.40906_amd64.deb --json`, ...REGISTERED.slice(1), 'done']);
+  const unreachable = provision(t, {deb: 'pin', older: true, status: 1});
+  assert.deepEqual(unreachable.calls, [
+    `curl -fL --retry 3 --silent --show-error -o ${unreachable.cache}/chatgpt_26.928.40906_amd64.deb.part https://example.invalid/chatgpt_26.928.40906_amd64.deb`,
+    `stop could not download https://example.invalid/chatgpt_26.928.40906_amd64.deb: copy the pinned deb to the VM's ${unreachable.cache}/upload.deb and set CUA_DEB=upload, or run cua-provision.sh again`]);
+  const failed = provision(t, {deb: 'upload', older: true, upload: 'the deb', installExit: 1, status: 1, install: {ok: false, error: {code: 'archive_hash_mismatch', message: 'no'}}});
+  assert.deepEqual(failed.calls.slice(1), [`stop cua install --archive ${failed.cache}/chatgpt_26.928.40906_amd64.deb failed (exit 1): no; then run cua-provision.sh again`]);
+  assert.deepEqual(provision(t, {deb: 'none', older: true}).calls, [...REGISTERED, 'done']);
+});
+
+// The same deb for an M6a checkout comes after its own runtime is installed and registered.
+test('cua-provision.sh for an M6a checkout: an uploaded deb comes after the own runtime and its registration', {skip: noJq}, t => {
+  const {calls, cache} = provision(t, {deb: 'upload', upload: 'the deb'});
+  assert.deepEqual(calls, [...REGISTERED, `cua install --archive ${cache}/chatgpt_26.928.40906_amd64.deb --json`, 'done']);
 });
 
 // Fix wave 1: a failed install of cua's own runtime is a failed provisioning (cloud-init reports it), with the install's

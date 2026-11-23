@@ -355,6 +355,19 @@ test('a helper step that failed fails the install; with CUA_SHIM_SANDBOX=disable
   assert.deepEqual(opened(open.report), {browser: true, cua: true, vendor: true});
 });
 
+// serve refuses a CUA_BROWSER_BACKENDS that is not a list of absolute socket paths when its surfaces include the browser
+// (src/chrome/client-mode.mjs configuredBackends), so a browser-only session does not open; a computer-only one does.
+test('a CUA_BROWSER_BACKENDS serve refuses: the browser-only session does not open, naming it; computer sessions still do', async t => {
+  const home = scratchHome(t);
+  const {deps} = installers(home);
+  deps.env = {...deps.env, CUA_BROWSER_BACKENDS: 'relative.sock'};
+  const {status, report} = await installJson(deps);
+  assert.equal(status, 0, 'every part is installed');
+  assert.deepEqual(opened(report), {browser: false, cua: true, vendor: true});
+  assert.equal(report.sessions.why.browser.code, 'invalid_setting');
+  assert.match(report.sessions.why.browser.message, /CUA_BROWSER_BACKENDS must list absolute socket paths/);
+});
+
 test('an engine setting that cannot be read is reported, and no computer session opens; the install itself succeeds', async t => {
   const home = scratchHome(t);
   const {deps} = installers(home);

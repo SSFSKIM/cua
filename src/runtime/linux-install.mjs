@@ -51,6 +51,7 @@ import {loadNodePins, nodeDistName, selectNodePin} from './managed-node.mjs';
 import {loadEnginePin} from './linux-engine.mjs';
 import {desktopModeFor, nativeEngineSetting, ownHostNode, replHostFor} from './launch.mjs';
 import {settingsFrom} from '../mcp/server.mjs';
+import {configuredBackends} from '../chrome/client-mode.mjs';
 import {helperFor, sha256Of} from '../sandbox/linux.mjs';
 import {installedLinuxHelper} from './sandbox.mjs';
 import {describeLeftovers, describeRemoval, findCodexLeftovers, removeCodexLeftovers} from './codex-leftovers.mjs';
@@ -187,7 +188,7 @@ function movePointer(home, release, complete) {
 }
 
 // Which sessions open, resolved as `cua serve` resolves them (the header) -> {browser, computer, engine, alternate, why}.
-// A computer session needs what a browser-only one needs first.
+// A computer session needs what a browser-only one needs first, but CUA_BROWSER_BACKENDS, which only the browser reads.
 function readiness({home, env, host, installer, resolveOwnNode, linuxHelper, engine}) {
   const why = {};
   const opens = (name, run) => {
@@ -197,13 +198,15 @@ function readiness({home, env, host, installer, resolveOwnNode, linuxHelper, eng
   const select = (ambient, surfaces) => replHostFor({platform: 'linux', arch: host.arch, surfaces, ambient, home, resolveOwnNode: node, engine});
   let selected = null;
   try { selected = nativeEngineSetting({env, platform: 'linux'}).engine; } catch (error) { if (!(error instanceof CuaError)) throw error; }
-  const browser = opens('browser', () => {
+  const common = opens('browser', () => {
     const {sandbox} = settingsFrom(env, {platform: 'linux'});
     resolveRuntime({home, host});
     select(env, ['browser']);
     if (sandbox !== 'disabled') checkedHelper({home, host, linuxHelper, installer});
   });
-  if (!browser) return {browser, computer: false, engine: selected, alternate: null, why};
+  if (!common) return {browser: false, computer: false, engine: selected, alternate: null, why};
+  // serve refuses a CUA_BROWSER_BACKENDS it cannot use when the browser is among its surfaces, and only then.
+  const browser = opens('browser', () => configuredBackends(env));
   const computerOn = ambient => () => {
     const chosen = select(ambient, ['computer']).engine;
     if (chosen.engine === 'cua') desktopModeFor({env: ambient});

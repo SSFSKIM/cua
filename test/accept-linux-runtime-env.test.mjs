@@ -3,13 +3,16 @@
 // fresh and the run's, and CUA_HOME is the run's and fresh too, since the secret store follows HOME.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, statSync, symlinkSync} from 'node:fs';
+import {spawnSync} from 'node:child_process';
+import {existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
+import {fileURLToPath} from 'node:url';
 import {BUS_VARS, DROPPED_VARS} from '../scripts/linux-engine-diff/app-env.mjs';
 import {prepareRun, runEnvironment, shellLines} from '../scripts/accept/linux-runtime-env.mjs';
 
 const RUN = '/w/run';
+const REPO = fileURLToPath(new URL('..', import.meta.url));
 const none = () => false;
 
 test('the run\'s homes: HOME, the XDG directories, the runtime directory and CUA_HOME, all under the run', () => {
@@ -88,5 +91,25 @@ test('the run directory may exist (the workflow writes into it first); only the 
     assert.doesNotThrow(() => prepareRun({run, env: {}}));
   } finally {
     rmSync(run, {recursive: true, force: true});
+  }
+});
+
+// The bus stage asks doctor's module for its accessibility command by the module's path as an argument, never spliced
+// into the program's source: a checkout whose path holds quotes still runs (task 156).
+test('the bus stage takes doctor\'s accessibility command from a checkout whose path holds quotes', () => {
+  const scratch = realpathSync(mkdtempSync(join(tmpdir(), 'cua-env-')));
+  try {
+    const checkout = join(scratch, 'it\'s a "checkout"');
+    mkdirSync(checkout);
+    for (const part of ['scripts', 'src']) symlinkSync(join(REPO, part), join(checkout, part));
+    const stubs = join(scratch, 'bin');
+    mkdirSync(stubs);
+    writeFileSync(join(stubs, 'dbus-send'), '#!/bin/sh\nexit 0\n', {mode: 0o755});
+    const run = spawnSync('bash', [join(checkout, 'scripts', 'accept', 'linux-runtime-env.sh'), '--bus-stage', '--', 'printf', 'ran'],
+      {encoding: 'utf8', env: {...process.env, PATH: `${stubs}:${process.env.PATH}`}});
+    assert.equal(run.status, 0, run.stderr);
+    assert.equal(run.stdout, 'ran');
+  } finally {
+    rmSync(scratch, {recursive: true, force: true});
   }
 });

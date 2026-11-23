@@ -575,13 +575,15 @@ function linuxEngineFor({env, arch, home, defaultEngine, config, installed, inst
   }
   const lookup = linuxEnginePath(cuaHome());
   const record = join(dirname(lookup), ENGINE_RECORD);
-  const refuse = (code, why) => fail(code, `${source} selects cua's own engine, and ${why}: install this cua's engine with \`${installer.command} --engine\` (or a local build with \`cua engine build\`), or set CUA_NATIVE_ENGINE=vendor for the vendor engine`, {hint: installer.hint});
+  const refuse = (code, why, first = '') => fail(code, `${source} selects cua's own engine, and ${why}: ${first}install this cua's engine with \`${installer.command} --engine\` (or a local build with \`cua engine build\`), or set CUA_NATIVE_ENGINE=vendor for the vendor engine`, {hint: installer.hint});
   // Every path the installed engine's lookup reads, the engine and its install record, resolved once and kept out of
   // the tree; what follows (the executable check, the record and digest check, the launch, the preflight) uses only what
-  // these resolved.
+  // these resolved. A link that leads there is named to be moved aside first: the installer refuses to install through
+  // it (install.mjs installLinuxEngine).
   const [engineAt, recordAt] = [lookup, record].map(path => {
     const resolved = outsideVendorTree(path, cuaHome());
-    if (resolved.lead) refuse('engine_not_installed', `${path === lookup ? 'the engine' : 'the install record of the engine'} installed in this cua home (${path}) ${intoTree(path, resolved.lead)}, which is no part of cua's`);
+    if (resolved.lead) refuse('engine_not_installed', `${path === lookup ? 'the engine' : 'the install record of the engine'} installed in this cua home (${path}) ${intoTree(path, resolved.lead)}, which is no part of cua's`,
+      `move ${resolved.links[0] ?? path} aside, then `);
     return resolved;
   });
   const found = installed ? installed() : engineAt.real && executableFile(engineAt.real) ? {path: engineAt.real, lookup, links: engineAt.links} : null;

@@ -284,6 +284,17 @@ test('runtime.node: a Node pointer that is not a file, or a pinned path that is 
   assert.ok(blocked.detail.endsWith(`move ${join(occupied.home, 'node', RECORD.node.version)} aside, then ${RELEASE_HINT}`), blocked.detail);
 });
 
+// The recorded bytes without their execute bit: node-install keeps that tree and refuses it (its version probe fails),
+// so the installer alone repairs nothing; the mode fix, or the version's directory to move aside, comes first.
+test('runtime.node: a managed bin/node that lost its execute bit names the mode fix, or its version directory to move aside, before the installer', async t => {
+  const {home, pin} = await linuxHome(t);
+  chmodSync(NODE_BIN(home), 0o644);
+  const row = byName(await doctor(home, pin))['runtime.node'];
+  assert.equal(row.status, 'fail');
+  assert.ok(row.detail.endsWith(`; ${NODE_BIN(home)} is not executable, and the installer never repairs it in place: restore its mode with \`chmod 755 ${NODE_BIN(home)}\`, `
+    + `or stop any \`cua serve\` using it, move ${join(home, 'node', RECORD.node.version)} aside, then ${RELEASE_HINT}`), row.detail);
+});
+
 test('runtime.vendor: a damaged tree fails with its recovery; a runtimes/ that is a file, or a link to nothing, fails naming it', async t => {
   const {home, pin} = await linuxHome(t);
   rmSync(join(home, 'runtimes', pin.release, 'install.json'));

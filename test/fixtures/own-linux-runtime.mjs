@@ -25,7 +25,7 @@ export function fakeModuleTree(home, host, {lock = loadModuleLock()} = {}) {
     mkdirSync(join(root, path), {recursive: true});
     writeFileSync(join(root, path, 'package.json'), bytes);
     const digest = sha256(JSON.stringify([['package.json', bytes.length, sha256(bytes)]]));
-    return {path, name, version, files: 1, digest};
+    return {path, name, version, files: 1, digest, manifestSize: bytes.length};
   });
   const record = {schema: 1, lock: lock.hash, platform: target.platform, arch: target.arch, packages, natives: [], source: 'fixture', installedAt: '2026-11-23T00:00:00.000Z'};
   writeFileSync(join(root, 'install.json'), `${JSON.stringify(record, null, 2)}\n`);

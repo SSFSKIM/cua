@@ -16,7 +16,7 @@
 // The install fetches each tarball of the closure at its pinned length into staging (or takes a local copy, still
 // checked), checks its SHA-512 before anything reads it, unpacks it with cua's own reader (src/runtime/tarball.mjs) and
 // records the payload as it is written: install.json holds, for each package, its file count and a digest over every
-// file it unpacked, and every native file (.node, .so, .dylib) with its size and SHA-256. The tree moves into place with
+// file it unpacked and its package.json's size, and every native file (.node, .so, .dylib) with its size and SHA-256. The tree moves into place with
 // one rename. Two checks read that record: checkModuleTree, at every connection, stats each package.json and each
 // native file against its size; verifyModuleTree recomputes every digest and finds anything added. A tree that
 // verifies makes the install a no-op; one that does not is refused and never repaired in place, since a running session
@@ -255,7 +255,7 @@ const RECORD_KEYS = ['schema', 'lock', 'platform', 'arch', 'packages', 'natives'
 function validRecord(record) {
   const keysAre = (value, keys) => isObject(value) && Object.keys(value).length === keys.length && keys.every(key => key in value);
   return keysAre(record, RECORD_KEYS) && record.schema === 1 && Array.isArray(record.packages) && Array.isArray(record.natives)
-    && record.packages.every(p => keysAre(p, ['path', 'name', 'version', 'files', 'digest']) && PACKAGE_PATH.test(p.path) && Number.isSafeInteger(p.files) && HEX64.test(p.digest))
+    && record.packages.every(p => keysAre(p, ['path', 'name', 'version', 'files', 'digest', 'manifestSize']) && PACKAGE_PATH.test(p.path) && Number.isSafeInteger(p.files) && HEX64.test(p.digest) && Number.isSafeInteger(p.manifestSize))
     && record.natives.every(n => keysAre(n, ['path', 'size', 'sha256']) && insidePackage(n.path, record.packages) && Number.isSafeInteger(n.size) && HEX64.test(n.sha256));
 }
 
@@ -298,7 +298,7 @@ function notRealOnTheWay(root, rel, known) {
   return null;
 }
 
-// The connection's check: every package's package.json and every native file, by a stat against the recorded size,
+// The connection's check: every package's package.json and every native file, by a stat against its recorded size,
 // each reached through real directories only. `release`, the runtime the tree belongs to, is named in the remedy.
 export function checkModuleTree(root, record, {release} = {}) {
   const problems = [];
@@ -310,11 +310,12 @@ export function checkModuleTree(root, record, {release} = {}) {
   };
   if (!isRealDirectory(root)) problems.push(`${root} is not a real directory`);
   else {
-    for (const {path} of record.packages) {
+    for (const {path, manifestSize} of record.packages) {
       if (!reachable(path)) continue;
       let stat;
       try { stat = lstatSync(join(root, path, 'package.json')); } catch { stat = null; }
       if (!stat?.isFile()) problems.push(`${path}/package.json is missing`);
+      else if (stat.size !== manifestSize) problems.push(`${path}/package.json is ${stat.size} bytes, recorded as ${manifestSize}`);
     }
     for (const native of record.natives) {
       if (!reachable(dirname(native.path))) continue;
@@ -342,7 +343,8 @@ function packageFiles(root, path, nested, problems) {
       const child = rel ? `${rel}/${entry.name}` : entry.name;
       if (entry.isDirectory()) { if (!nested.has(child)) walk(child); }
       else if (entry.isFile()) {
-        const bytes = readFileSync(join(root, path, child));
+        let bytes;
+        try { bytes = readFileSync(join(root, path, child)); } catch (error) { problems.push(`${path}/${child} is not readable (${error.code ?? error.message})`); continue; }
         files.push({path: child, size: bytes.length, sha256: sha256(bytes)});
       } else problems.push(`${path}/${child} is not a regular file`);
     }
@@ -366,7 +368,7 @@ export function verifyModuleTree(root, record) {
   }
   const scan = rel => {
     let entries;
-    try { entries = readdirSync(join(root, rel), {withFileTypes: true}); } catch { return; }
+    try { entries = readdirSync(join(root, rel), {withFileTypes: true}); } catch (error) { problems.push(`${rel || root} cannot be listed (${error.code ?? error.message})`); return; }
     for (const entry of entries) {
       const path = rel ? `${rel}/${entry.name}` : entry.name;
       if (!rel && path === MODULE_RECORD_FILE) continue;
@@ -456,7 +458,8 @@ export async function installModuleTree({home, lock = loadModuleLock(), host = m
       const dest = join(tree, pkg.path);
       if (pathExists(dest)) fail('tarball_invalid', `${pkg.path} would be written over files another package placed`);
       const {files} = unpackTarball(bytes, dest);
-      recorded.push({path: pkg.path, name: pkg.name, version: pkg.version, files: files.length, digest: payloadDigest(files)});
+      // the reader refuses a package without a top-level package.json (tarball.mjs), so its size is always there
+      recorded.push({path: pkg.path, name: pkg.name, version: pkg.version, files: files.length, digest: payloadDigest(files), manifestSize: files.find(f => f.path === 'package.json').size});
       for (const file of files) if (NATIVE_FILE.test(file.path)) natives.push({path: `${pkg.path}/${file.path}`, size: file.size, sha256: file.sha256});
     }
     const record = {schema: 1, lock: lock.hash, platform: host.platform, arch: host.arch, packages: recorded, natives: natives.sort(byPath),

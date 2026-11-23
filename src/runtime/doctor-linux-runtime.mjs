@@ -26,7 +26,8 @@
 // refuses to replace what is there (a tree or a Node cua did not install as recorded, a pointer that is not a file), the
 // exact path to move aside first; then this cua's own installer by its absolute path, with the release it installs
 // (manifest.mjs ownInstaller; ruling 1110). Nothing here launches anything.
-import {lstatSync, realpathSync} from 'node:fs';
+import {accessSync, constants, lstatSync, realpathSync} from 'node:fs';
+import {join} from 'node:path';
 import {CuaError} from './errors.mjs';
 import {readPointer, realHome} from './layout.mjs';
 import {RESTORE_PINS, isRealDirectory, linuxRelease, loadLinuxRuntime, locateRuntime, ownInstaller, pointerObstruction, resolveRuntime, vendorLinuxRuntime} from './manifest.mjs';
@@ -41,6 +42,7 @@ const outcome = run => caught(() => ({value: run()}), error => ({refused: error}
 const older = (a, b) => { const x = a.split('.').map(Number), y = b.split('.').map(Number); for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] < y[i]; return false; };
 const present = path => { try { lstatSync(path); return true; } catch { return false; } };
 const real = path => { try { return realpathSync(path); } catch { return path; } };
+const executable = path => { try { accessSync(path, constants.X_OK); return true; } catch { return false; } };
 
 // -> {rows, runtime, stop}: `runtime` is what sessions resolve (null when they cannot), `stop` that the record itself
 // failed. `resolveNode` is the session's Node lookup (doctor's one resolution, shared with repl.host), `linuxHelper` the
@@ -107,6 +109,11 @@ function nodeRow({home, env, host, release, pinned, installer, node}) {
     if (env.CUA_NODE) return result('runtime.node', 'fail', hint ? `${message}; ${hint}` : message);
     const blocking = nodeBlockers(realHome(home), {version: pinned, ...host});
     if (blocking.length) return result('runtime.node', 'fail', `${message}; it is never repaired in place: stop any \`cua serve\` using it, move ${blocking.join(' and ')} aside, then ${ownInstaller({release}).hint}`);
+    // The recorded bytes without their execute bit: node-install keeps that install and refuses it, so its mode first.
+    const dir = nodeLayout(realHome(home)).version(pinned);
+    const bin = join(dir, 'bin', 'node');
+    if (present(bin) && !executable(bin)) return result('runtime.node', 'fail', `${message}; ${bin} is not executable, and the installer never repairs it in place: `
+      + `restore its mode with \`chmod 755 ${bin}\`, or stop any \`cua serve\` using it, move ${dir} aside, then ${ownInstaller({release}).hint}`);
     return result('runtime.node', 'fail', hint ? `${message}; ${hint}` : `${message}; run ${installer}`);
   }
   if (env.CUA_NODE) return result('runtime.node', 'warn', `CUA_NODE=${env.CUA_NODE} (${node.value}) runs sessions here in place of the pinned Node ${pinned}, a named override`);

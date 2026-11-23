@@ -817,9 +817,9 @@ test('#367: a window off screen or on another Space: the state says so in one li
 
 test('a declined app fails "Computer Use was not approved to use <app>" with nothing observed; a forbidden one the vendor\'s sentence with nothing asked', async t => {
   const declined = await session(t, {answer: () => ({action: 'decline', content: null, _meta: null})});
-  await assert.rejects(declined.getApp('TextEdit'), {message: 'Computer Use was not approved to use TextEdit'});
+  await assert.rejects(declined.getApp('TextEdit'), {message: 'Computer Use was not approved to use TextEdit: the client declined the approval request; it is not asked again on this connection.'});
   assert.equal(declined.meta['cua/engineMs'], null, 'the policy\'s resolve_app is not the declined call\'s round trip');
-  await assert.rejects(declined.getApp('TextEdit'), {message: 'Computer Use was not approved to use TextEdit'});
+  await assert.rejects(declined.getApp('TextEdit'), {message: 'Computer Use was not approved to use TextEdit: it was declined earlier on this connection, so it was not asked again.'}, 'the repeat names the connection\'s memory (#216)');
   assert.deepEqual(declined.engine.executes().map(p => p.method), ['resolve_app'], 'nothing past the policy');
   assert.equal(declined.record.asked.length, 1, 'the decline is remembered for the connection');
 

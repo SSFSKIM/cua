@@ -101,7 +101,7 @@ test('the real engine through the facade: a forbidden app is refused with the ve
 test('the real engine through the facade: a declined app fails "Computer Use was not approved to use Finder" before anything observes it', {skip: finderSkip}, async t => {
   const s = await session(t);
   if (!s) return;
-  await assert.rejects(s.sky.get_app_state({app: 'com.apple.finder', disableDiff: true}), {message: 'Computer Use was not approved to use Finder'});
+  await assert.rejects(s.sky.get_app_state({app: 'com.apple.finder', disableDiff: true}), {message: 'Computer Use was not approved to use Finder: the client declined the approval request; it is not asked again on this connection.'});
   assert.equal(s.asked.length, 1);
   assert.deepEqual(s.asked[0].meta.tool_params, {app: 'com.apple.finder'}, 'the approval names the bundle the engine resolved');
 });

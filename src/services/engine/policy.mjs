@@ -10,7 +10,8 @@
 //   5. a resolved bundle on the forbidden list is refused here too, with the same sentence;
 //   6. the approval is asked on every call through nodeRepl.createElicitation, with the vendor's message and meta
 //      (`tool_params.app` the resolved bundle id, which the host's per-connection memory keys on and answers repeats
-//      from: src/repl-host/elicitation.mjs), and anything but accept fails `Computer Use was not approved to use <app>`;
+//      from: src/mcp/approval-memory.mjs), and anything but accept fails `Computer Use was not approved to use <app>`,
+//      followed by where the refusal came from (notApproved, #216);
 //   7. the action runs on a frozen copy of the input whose `app` is the resolved path, the bound identity.
 //
 // The lists are data, below: the forbidden list (password managers and the keychain; system security processes) and
@@ -77,6 +78,26 @@ export function approvalRequest({toolName, target, callId, risk = riskOf(target.
   };
 }
 
+// The refusal of an approval answered with anything but accept (#216): the vendor's sentence, then where the answer came
+// from, so a refusal is never read as one a person gave, nor a cancel as a decline. A decline the connection remembered
+// carries the vendor host's mark (`content.source`, src/mcp/approval-memory.mjs PERSISTED_STATE_SOURCE): it was given
+// earlier on this connection and the client was not asked. A decline or a cancel without it is the client's answer to
+// this request; the client may be a person, a hook answering for them, or the client itself (Claude Code 2.1.330 answers
+// decline when an Elicitation hook blocks, and cancel when the request is aborted, refused by its own limits or its
+// handler fails; docs/evidence/2026-11-23-own-native-engine/gates/216.md). A declined app is remembered for the connection
+// and a cancelled one is asked again, as the memory does; neither sentence suggests a way around the answer.
+const PERSISTED_STATE_SOURCE = 'computer-use-persisted-state';
+export function notApproved(displayName, answer) {
+  const refused = `Computer Use was not approved to use ${displayName}`;
+  if (answer?.action === 'decline') {
+    return answer.content?.source === PERSISTED_STATE_SOURCE
+      ? `${refused}: it was declined earlier on this connection, so it was not asked again.`
+      : `${refused}: the client declined the approval request; it is not asked again on this connection.`;
+  }
+  if (answer?.action === 'cancel') return `${refused}: the client cancelled the approval request without an answer.`;
+  return refused;
+}
+
 // The response meta naming the app a call works on (null: none yet), as the vendor's policy sets it.
 export function toolSurface(bundleIdentifier) {
   return {
@@ -141,7 +162,7 @@ export function createPolicy({nodeRepl, resolve}) {
     const refused = refusal(target.bundleIdentifier);
     if (refused) throw new Error(refused);
     const answer = await createElicitation(approvalRequest({toolName, target, callId: toolCallId(nodeRepl)}));
-    if (answer?.action !== 'accept') throw new Error(`Computer Use was not approved to use ${target.displayName}`);
+    if (answer?.action !== 'accept') throw new Error(notApproved(target.displayName, answer));
     return fn(checkedInput(checked, target.appPath), target);
   }
 
@@ -217,7 +238,7 @@ export function createLinuxPolicy({nodeRepl, listWindows}) {
     if (!scope) return;
     const createElicitation = required(nodeRepl, 'createElicitation');
     const answer = await createElicitation(linuxApprovalRequest({...scope, callId: toolCallId(nodeRepl)}));
-    if (answer?.action !== 'accept') throw new Error(`Computer Use was not approved to use ${scope.display}`);
+    if (answer?.action !== 'accept') throw new Error(notApproved(scope.display, answer));
   }
 
   return {approve};

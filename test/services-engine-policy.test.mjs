@@ -123,11 +123,19 @@ test('withPolicy: the tool surface reset then named, the approval asked on every
   assert.deepEqual(chrome.meta.at(-1), {'codex/toolSurface': {app: {appId: 'com.google.Chrome', kind: 'appId'}, kind: 'computerUse'}, 'codex/computerUseChrome': true});
 });
 
-test('withPolicy: anything but accept fails "Computer Use was not approved to use <app>" and runs nothing', async () => {
-  for (const action of ['decline', 'cancel']) {
-    const {policy} = policyFor({answer: () => ({action, content: null, _meta: null})});
+test('withPolicy: anything but accept fails "Computer Use was not approved to use <app>", saying where the answer came from (#216), and runs nothing', async () => {
+  const remembered = {source: 'computer-use-persisted-state'};
+  for (const [answer, why] of [
+    [{action: 'decline', content: null}, ': the client declined the approval request; it is not asked again on this connection.'],
+    [{action: 'decline', content: remembered}, ': it was declined earlier on this connection, so it was not asked again.'],
+    [{action: 'cancel', content: null}, ': the client cancelled the approval request without an answer.'],
+    [{action: 'cancel', content: remembered}, ': the client cancelled the approval request without an answer.'],
+    [{action: 'reject', content: null}, ''],
+    [undefined, ''],
+  ]) {
+    const {policy} = policyFor({answer: () => (answer ? {...answer, _meta: null} : answer)});
     let ran = false;
-    await assert.rejects(policy.withPolicy('get_app_state', {app: 'TextEdit'}, () => { ran = true; }), error => error.message === 'Computer Use was not approved to use TextEdit');
+    await assert.rejects(policy.withPolicy('get_app_state', {app: 'TextEdit'}, () => { ran = true; }), {message: `Computer Use was not approved to use TextEdit${why}`}, JSON.stringify(answer));
     assert.equal(ran, false);
   }
 });

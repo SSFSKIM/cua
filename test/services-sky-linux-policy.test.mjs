@@ -121,10 +121,10 @@ test('every method that reads or drives a window asks, keyed by the app sky_linu
 });
 
 test('anything but accept fails "Computer Use was not approved to use <app>" and delivers nothing', async () => {
-  for (const action of ['decline', 'cancel']) {
+  for (const [action, why] of [['decline', ': the client declined the approval request; it is not asked again on this connection.'], ['cancel', ': the client cancelled the approval request without an answer.']]) {
     const {service, delivered} = linux({answer: () => ({action, content: null, _meta: null})});
     const error = await rejection(service.handleRpc(execute('click', {window: GEDIT, x: 1, y: 2})));
-    assert.equal(error.message, 'Computer Use was not approved to use org.gnome.gedit');
+    assert.equal(error.message, `Computer Use was not approved to use org.gnome.gedit${why}`);
     assert.deepEqual(delivered(), []);
   }
 });
@@ -220,7 +220,7 @@ test('launch_app asks keyed by its app id once sky_linux lists it, then launches
   assert.deepEqual([missing.asked, missing.launched], [[], []]);
 
   const declined = linux({apps, env: d.env, answer: () => ({action: 'decline', content: null, _meta: null})});
-  await assert.rejects(declined.service.handleRpc(execute('launch_app', {app: 'org.gnome.gedit.desktop'})), {message: 'Computer Use was not approved to use org.gnome.gedit.desktop'});
+  await assert.rejects(declined.service.handleRpc(execute('launch_app', {app: 'org.gnome.gedit.desktop'})), {message: 'Computer Use was not approved to use org.gnome.gedit.desktop: the client declined the approval request; it is not asked again on this connection.'});
   assert.deepEqual(declined.launched, []);
 
   // Any other launch_app shape still goes to the vendor, behind the approval of the app it names; one naming none is refused.
@@ -240,7 +240,7 @@ test('secrets on Linux: the wrapper\'s own refusals come before the approval; a 
   assert.deepEqual([refused.asked, refused.reads, refused.delivered()], [[], [], []]);
 
   const declined = linux({answer: () => ({action: 'decline', content: null, _meta: null})});
-  assert.equal((await rejection(declined.service.handleRpc(execute('type_text', {window: GEDIT, text: REF})))).message, 'Computer Use was not approved to use org.gnome.gedit');
+  assert.equal((await rejection(declined.service.handleRpc(execute('type_text', {window: GEDIT, text: REF})))).message, 'Computer Use was not approved to use org.gnome.gedit: the client declined the approval request; it is not asked again on this connection.');
   assert.deepEqual([declined.reads, declined.delivered()], [[], []], 'a declined app reads no secret');
 
   const accepted = linux();

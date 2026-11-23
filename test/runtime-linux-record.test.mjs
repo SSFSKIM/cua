@@ -198,7 +198,7 @@ test('the release name changes with each field and with the architecture, and is
   const record = checkedIn();
   const base = linuxRelease(record, 'x64');
   const names = new Set([base, linuxRelease(record, 'arm64')]);
-  for (const [part, field, value] of [['modules', 'lock', `${'0'.repeat(11)}1${record.modules.lock.slice(12)}`], ['node', 'version', '24.23.0'], ['sandbox', 'upstreamTag', 'rust-v0.164.0'], ['engine', 'version', '0.4.4']]) {
+  for (const [part, field, value] of [['modules', 'lock', `${'0'.repeat(11)}1${record.modules.lock.slice(12)}`], ['node', 'version', '24.23.0'], ['sandbox', 'upstreamTag', 'rust-v0.164.0'], ['engine', 'version', '9.9.9']]) {
     const moved = structuredClone(record);
     moved[part][field] = value;
     names.add(linuxRelease(moved, 'x64'));

@@ -532,17 +532,17 @@ test('cua runtime use on Linux: the derived release verifies its tree again and 
 
 // ---- macOS ----
 
-test('on macOS cua install is the vendor\'s release, then Node, as before: no module tree, no lanes', async () => {
+test('on macOS cua install is the vendor\'s release, then Node, then the macOS engine step, as on main: no module tree, no lanes', async () => {
   const calls = [];
   const pin = selectPin(loadPins(), {platform: 'darwin', arch: 'arm64'});
   const deps = {home: '/fixture/home', platform: 'darwin', pins: () => [pin], nodePins: () => [],
     installRuntime: async ({manifest}) => { calls.push(['runtime', manifest.release]); return {release: manifest.release, root: '/fixture/runtime', changed: false, record: {source: 'download'}}; },
     installModules: async () => assert.fail('no module tree on macOS'), installEngine: async () => assert.fail('no Linux engine on macOS'),
-    installHelper: async () => assert.fail('no Linux helper on macOS')};
+    installHelper: async () => assert.fail('no Linux helper on macOS'), installMacosEngine: async () => ({skipped: 'not_selected'})};
   // The darwin pin is selected for the process's own host; a host without one has nothing to install.
   if (process.platform !== 'darwin' || process.arch !== 'arm64') deps.pins = () => [{...pin, platform: process.platform, arch: process.arch}];
   const run = await cli(['install', '--no-node', '--json'], deps);
   assert.equal(run.status, 0, run.stderr);
   assert.deepEqual(calls, [['runtime', pin.release]]);
-  assert.deepEqual(JSON.parse(run.stdout), {ok: true, release: pin.release, root: '/fixture/runtime', changed: false, source: 'download', node: {skipped: 'no_node'}});
+  assert.deepEqual(JSON.parse(run.stdout), {ok: true, release: pin.release, root: '/fixture/runtime', changed: false, source: 'download', engine: {skipped: 'not_selected'}, node: {skipped: 'no_node'}});
 });

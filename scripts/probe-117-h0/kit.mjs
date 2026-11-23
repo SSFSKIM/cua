@@ -1,0 +1,403 @@
+// #117 H0 (#175): can a GitHub-hosted macOS runner run cua's engine bundle and the vendor's helper live, with TCC rows
+// the job writes? The spike of docs/doperpowers/specs/2026-10-18-own-native-engine-m4m5-preflight.md §4 (on
+// docs/117-progress), steps 1 to 4 and 6 to 10; step 5 (the runner labels) is its own dispatch (the workflow's `label`
+// mode). No product change: it runs main's `cua engine build --sign adhoc`, `cua install`, `cua serve`, `cua engine
+// approve`, `cua doctor` and scripts/repl-parity/scenes-mac.mjs as they stand, and records what each answers.
+//
+//   node scripts/probe-117-h0/kit.mjs <out> <cua-home> <scene-run> <display-tool>
+//
+// Part 1 (steps 1 to 4, 6) writes no TCC row. Part 2 (steps 7 to 10) writes rows only through ./tcc.mjs, whose one
+// writer refuses unless RUNNER_ENVIRONMENT=github-hosted and the owner's yes (O0) is in the spec's Decision Log.
+// Every step runs and is recorded even when an earlier one failed. Evidence: <out>/steps.json, the observations' trees
+// (*.txt) and screenshots (*.jpg|png), the TCC row dumps. The runner is disposable; nothing of an owner's is on it.
+import {spawn, spawnSync} from 'node:child_process';
+import {closeSync, copyFileSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, statSync, writeFileSync} from 'node:fs';
+import {homedir} from 'node:os';
+import {join} from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {openSession, resultText} from '../accept/mcp-session.mjs';
+import {watchCaptureAlerts, enginePaths, engineDirectory} from '../../src/runtime/engine.mjs';
+import {BUNDLE_ID as ENGINE_BUNDLE_ID, EXECUTABLE} from '../../src/runtime/engine-bundle.mjs';
+import {readRows, writability, grantRows, revokeRows, restartTccd} from './tcc.mjs';
+
+if (process.env.RUNNER_ENVIRONMENT !== 'github-hosted' || process.platform !== 'darwin') {
+  console.error('probe-117-h0: refused: a disposable GitHub-hosted macOS runner only');
+  process.exit(2);
+}
+const [OUT, CUA_HOME, SCENE_RUN, DISPLAY_TOOL] = process.argv.slice(2);
+const ROOT = fileURLToPath(new URL('../..', import.meta.url));
+const CLI = join(ROOT, 'bin/cua.mjs');
+const PATHS = enginePaths(engineDirectory(homedir()));
+const ENGINE_EXE = join(PATHS.bundle, 'Contents', 'MacOS', EXECUTABLE);
+const SCENES = {textedit: 'com.apple.TextEdit', finder: 'com.apple.finder', chrome: 'com.google.chrome.for.testing', electron: 'io.github.ssfskim.cua.fixture.electron'};
+const APPS = new Set(Object.values(SCENES));
+mkdirSync(OUT, {recursive: true});
+
+const record = {};
+const save = () => writeFileSync(join(OUT, 'steps.json'), JSON.stringify(record, null, 2) + '\n');
+const log = line => console.log(`h0: ${line}`);
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+const err = e => String(e?.message ?? e).slice(0, 500);
+
+function sh(cmd, args, {env = process.env, timeout = 120_000, input} = {}) {
+  const started = Date.now();
+  const r = spawnSync(cmd, args, {env, encoding: 'utf8', timeout, maxBuffer: 64 * 1024 * 1024, ...(input === undefined ? {stdio: ['ignore', 'pipe', 'pipe']} : {input})});
+  return {code: r.status, signal: r.signal, stdout: r.stdout ?? '', stderr: r.stderr ?? '', ms: Date.now() - started, ...(r.error ? {error: r.error.code ?? r.error.message} : {})};
+}
+const cuaEnv = (extra = {}) => ({...process.env, CUA_HOME, CUA_SHIM_PERSIST: 'session', CUA_SHIM_SECRETS: 'off', ...extra});
+const json = text => { try { return JSON.parse(text.trim().split('\n').filter(l => l.startsWith('{')).at(-1)); } catch { return null; } };
+function cua(args, {env = {}, timeout = 15 * 60_000} = {}) {
+  const r = sh(process.execPath, [CLI, ...args], {env: cuaEnv(env), timeout});
+  return {code: r.code, ms: r.ms, json: json(r.stdout), stderrTail: r.stderr.trim().split('\n').slice(-6).join('\n')};
+}
+
+// The engine's own report of its grants (the running engine's `status`), through `cua engine status --json`.
+function engineGrants() {
+  const r = cua(['engine', 'status', '--json'], {timeout: 60_000});
+  const s = r.json?.status;
+  return s ? {running: true, pid: s.pid, accessibility: s.accessibility, screenRecording: s.screenRecording, inputMonitoring: s.inputMonitoring, canPostHid: s.canPostHid, bundlePath: s.bundlePath, build: s.build}
+    : {running: false, approved: r.json?.approved ?? null, exists: r.json?.exists ?? null, code: r.code, stderr: r.stderrTail};
+}
+async function untilRunning(ms = 20_000) {
+  for (const end = Date.now() + ms; Date.now() < end; await sleep(500)) { const g = engineGrants(); if (g.running) return g; }
+  return engineGrants();
+}
+function stopEngine() { const r = cua(['engine', 'stop', '--json'], {timeout: 60_000}); return {code: r.code, ...(r.json ?? {}), stderr: r.code ? r.stderrTail : undefined}; }
+async function launchLS() {
+  const opened = sh('/usr/bin/open', ['-n', '-g', '-a', PATHS.bundle]);
+  return {open: opened.code, ...(opened.code ? {openStderr: opened.stderr.slice(0, 300)} : {}), grants: await untilRunning()};
+}
+async function relaunchLS() { const stopped = stopEngine(); return {stopped, ...await launchLS()}; }
+// Whose child the running engine is: launchd's (pid 1, a LaunchServices launch) or this job's.
+const parentOf = pid => { const r = sh('/bin/ps', ['-o', 'ppid=,comm=', '-p', String(pid)]); return r.stdout.trim(); };
+
+// approved.json as `cua engine approve` would write it, from pending.json's build and identity: the kit's stand-in where
+// no one can approve (part 1), so a session can select cua's engine. Never written over a real approval of this build.
+function harnessApproval() {
+  const pending = JSON.parse(readFileSync(PATHS.pending, 'utf8'));
+  if (existsSync(PATHS.approved)) {
+    const approved = JSON.parse(readFileSync(PATHS.approved, 'utf8'));
+    if (approved.build === pending.build && approved.identity === pending.identity) return {written: false, approved: 'present'};
+  }
+  writeFileSync(PATHS.approved, JSON.stringify({build: pending.build, identity: pending.identity, approvedAt: new Date().toISOString(), harness: 'probe-117-h0'}, null, 2) + '\n', {mode: 0o600});
+  return {written: true, build: pending.build};
+}
+
+function doctorRows(env) {
+  const r = cua(['doctor', '--json'], {env, timeout: 180_000});
+  const checks = r.json?.checks ?? [];
+  return {code: r.code, rows: checks.filter(c => /engine|native|helper|permission|grant/i.test(c.name)).map(c => ({name: c.name, status: c.status, detail: String(c.detail).slice(0, 600)})), engine: r.json?.engine ?? null};
+}
+
+// ---- sessions ----
+
+const b64 = `const __b64 = bytes => { if (typeof Buffer !== 'undefined') return Buffer.from(bytes).toString('base64'); let s = ''; for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000)); return btoa(s); };`;
+const cellLine = reply => {
+  if (reply.timedOut) return {timedOut: true};
+  const text = resultText(reply);
+  const line = text.split('\n').reverse().find(l => l.startsWith('{"h0"'));
+  if (line) { try { return {...JSON.parse(line), isError: Boolean(reply.result?.isError)}; } catch {} }
+  return {cellError: text.split('\n').filter(Boolean).slice(-3).join(' | ').slice(0, 600) || reply.error?.message || 'no output', isError: true};
+};
+
+async function openServe(name, env) {
+  const elicitations = [];
+  const s = openSession({args: [CLI, 'serve'], env: cuaEnv(env), clientName: `h0-${name}`, onServerRequest: msg => {
+    const app = msg.params?._meta?.tool_params?.app ?? null;
+    const accept = msg.method === 'elicitation/create' && APPS.has(app) && /^Allow Computer Use to use /.test(String(msg.params?.message));
+    elicitations.push({method: msg.method, app, message: String(msg.params?.message ?? '').slice(0, 160), answer: accept ? 'accept' : 'decline'});
+    return accept ? {action: 'accept', content: {}} : {action: 'decline'};
+  }});
+  const opened = {name, elicitations};
+  try {
+    await s.initialize();
+    const first = await s.js('nodeRepl.write(JSON.stringify({h0: "ready"}))', 120_000);
+    opened.firstCell = cellLine(first);
+    opened.attestation = first.result?._meta?.['cua/nativeEngine'] ?? null;
+    opened.host = first.result?._meta ? Object.fromEntries(Object.entries(first.result._meta).filter(([k]) => /host|engine/i.test(k))) : null;
+  } catch (e) { opened.openError = err(e); }
+  return {s, opened};
+}
+async function closeServe(s) { try { return await s.close(); } catch (e) { return {error: err(e)}; } }
+
+// One observation of `bundle` on an open session: bind, the tree, the screenshot, replayd's capture alerts around it.
+// With `click`, a regexp naming a line of the tree: one element click on it, then the tree again.
+async function observe(s, label, bundle, {click} = {}) {
+  const watch = watchCaptureAlerts();
+  const watchReady = await watch.ready;
+  const started = Date.now();
+  const reply = await s.js(`${b64}
+const __r = {h0: true};
+try { globalThis.__app = await cua.getApp(${JSON.stringify(bundle)}); __r.bound = true; } catch (e) { __r.bindError = String(e?.message ?? e); }
+if (__r.bound) {
+  try { __r.tree = await __app.getAXState({emit: false, disableDiffing: true}); } catch (e) { __r.treeError = String(e?.message ?? e); }
+  try { const __s = await __app.getScreenshot({emit: false}); __r.shot = {bytes: __s.length, png: __s[0] === 0x89, b64: __b64(__s)}; } catch (e) { __r.shotError = String(e?.message ?? e); }
+}
+nodeRepl.write(JSON.stringify(__r));`, 120_000);
+  const out = {label, bundle, ms: Date.now() - started, ...cellLine(reply), attestation: reply.result?._meta?.['cua/nativeEngine'] ?? null};
+  if (typeof out.tree === 'string') {
+    writeFileSync(join(OUT, `${label}.txt`), out.tree);
+    out.treeLines = out.tree.split('\n').length;
+    out.window = /^Window: "([^"]*)"/m.exec(out.tree)?.[1] ?? null;
+    delete out.tree;
+  }
+  if (out.shot) {
+    const file = `${label}.${out.shot.png ? 'png' : 'jpg'}`;
+    writeFileSync(join(OUT, file), Buffer.from(out.shot.b64, 'base64'));
+    out.shot = {bytes: out.shot.bytes, file};
+  }
+  if (click && out.bound) {
+    const tree = existsSync(join(OUT, `${label}.txt`)) ? readFileSync(join(OUT, `${label}.txt`), 'utf8') : '';
+    const line = tree.split('\n').find(l => click.test(l));
+    const index = line ? Number(/^[~+-]?[\t ]*(\d+) /.exec(line)?.[1]) : null;
+    if (Number.isInteger(index)) {
+      const clicked = await s.js(`const __r = {h0: true};
+try { __r.result = await __app.click(${index}); __r.ok = true; } catch (e) { __r.clickError = String(e?.message ?? e); }
+try { const __t = await __app.getAXState({emit: false, disableDiffing: true}); __r.after = __t.split('\\n').filter(l => /First Text View|focused|selected/i.test(l)).slice(0, 4).join('\\n'); } catch (e) { __r.afterError = String(e?.message ?? e); }
+nodeRepl.write(JSON.stringify(__r));`, 120_000);
+      out.click = {index, target: line.trim().slice(0, 160), ...cellLine(clicked)};
+    } else out.click = {skipped: 'no element in the tree matches the click target'};
+  }
+  const alerts = await watch.stop();
+  out.captureAlerts = {watched: watchReady && alerts.intact, alerts: alerts.alerts};
+  log(`${label}: bound ${Boolean(out.bound)}, tree ${out.treeLines ?? out.treeError ?? out.bindError ?? out.cellError ?? (out.timedOut ? 'timed out' : '?')}, screenshot ${out.shot?.bytes ?? out.shotError ?? '-'}, alerts ${out.captureAlerts.alerts}${out.click ? `, click ${out.click.ok ? 'ok' : out.click.clickError ?? out.click.skipped ?? out.click.cellError}` : ''}`);
+  return out;
+}
+
+async function sessionStep(name, env, targets) {
+  const {s, opened} = await openServe(name, env);
+  const observations = [];
+  if (!opened.openError) for (const t of targets) observations.push(await observe(s, `${name}-${t.label}`, t.bundle, t));
+  opened.exit = await closeServe(s);
+  opened.stderrTail = s.stderr.trim().split('\n').slice(-8).join('\n').slice(0, 1500);
+  return {session: opened, observations};
+}
+const TEXT_AREA = /First Text View/;
+
+async function step(key, fn) {
+  log(`---- ${key}`);
+  const started = Date.now();
+  try { record[key] = {...await fn(), ms: Date.now() - started}; } catch (e) { record[key] = {...(record[key] ?? {}), error: err(e), stack: String(e?.stack ?? '').slice(0, 800), ms: Date.now() - started}; log(`${key} threw: ${err(e)}`); }
+  save();
+}
+
+// ---- the scenes, over the loopback device (ssh hosted-macos) ----
+
+const ssh = (args, timeout = 300_000) => {
+  const r = sh('/usr/bin/ssh', ['-o', 'BatchMode=yes', 'hosted-macos', `cd '${ROOT}' && node scripts/repl-parity/scenes-mac.mjs ${args}`], {timeout});
+  return {code: r.code, ms: r.ms, out: json(r.stdout) ?? r.stdout.slice(0, 400), ...(r.code ? {stderr: r.stderr.slice(-400)} : {})};
+};
+
+// ---- the run ----
+
+await step('context', async () => {
+  const mainSha = sh('/usr/bin/git', ['-C', ROOT, 'merge-base', 'HEAD', 'origin/main']).stdout.trim();
+  const kitOnly = sh('/usr/bin/git', ['-C', ROOT, 'diff', '--name-only', mainSha, 'HEAD']).stdout.trim().split('\n').filter(Boolean);
+  const display = sh(DISPLAY_TOOL, []);
+  return {
+    kit: process.env.GITHUB_SHA, run: process.env.GITHUB_RUN_ID, mainSha, diffFromMain: kitOnly,
+    image: {os: process.env.ImageOS, version: process.env.ImageVersion, arch: process.env.RUNNER_ARCH, label: process.env.H0_LABEL},
+    swVers: sh('/usr/bin/sw_vers', []).stdout.trim(), node: process.version, user: process.env.USER,
+    display: json(display.stdout) ?? {error: display.stderr.slice(0, 300)},
+    consoleUser: sh('/usr/bin/stat', ['-f', '%Su', '/dev/console']).stdout.trim(),
+    managerName: sh('/bin/launchctl', ['managername']).stdout.trim(),
+  };
+});
+await step('step6-tcc-readonly', async () => ({rowsBefore: readRows(), writability: writability()}));
+
+await step('setup', async () => {
+  const build = cua(['engine', 'build', '--sign', 'adhoc', '--json'], {timeout: 30 * 60_000});
+  const install = cua(['install', '--json'], {timeout: 15 * 60_000});
+  const helpers = [];
+  const walk = (dir, depth) => {
+    if (depth > 7) return;
+    let entries; try { entries = readdirSync(dir, {withFileTypes: true}); } catch { return; }
+    for (const e of entries) {
+      const p = join(dir, e.name);
+      if (e.isDirectory() && e.name.endsWith('.app')) {
+        const id = sh('/usr/bin/plutil', ['-extract', 'CFBundleIdentifier', 'raw', '-o', '-', join(p, 'Contents', 'Info.plist')]).stdout.trim();
+        helpers.push({path: p, bundleId: id});
+      } else if (e.isDirectory() && !e.isSymbolicLink()) walk(p, depth + 1);
+    }
+  };
+  walk(CUA_HOME, 0);
+  const chrome = ssh(`place-chrome --cache '${SCENE_RUN}-cache'`, 900_000);
+  const electron = ssh(`build-electron --cache '${SCENE_RUN}-cache'`, 900_000);
+  return {
+    engineBuild: {code: build.code, ms: build.ms, build: build.json?.build, signature: build.json?.signature, bundlePath: build.json?.bundlePath, stderr: build.code ? build.stderrTail : undefined},
+    install: {code: install.code, ms: install.ms, release: install.json?.release, stderr: install.code ? install.stderrTail : undefined},
+    runtimeApps: helpers, chrome, electron,
+  };
+});
+const chromeApp = record.setup?.chrome?.out?.app ?? record.setup?.chrome?.out?.appPath;
+const electronApp = record.setup?.electron?.out?.appPath;
+
+await step('step4-scenes', async () => {
+  mkdirSync(SCENE_RUN, {recursive: true, mode: 0o700});
+  const preflight = ssh(`preflight --run '${SCENE_RUN}'`);
+  const up = {};
+  up.textedit = ssh(`up textedit --run '${SCENE_RUN}'`);
+  up.finder = ssh(`up finder --run '${SCENE_RUN}'`);
+  up.chrome = chromeApp ? ssh(`up chrome --run '${SCENE_RUN}' --chrome-app '${chromeApp}'`) : {skipped: 'no Chrome for Testing placed'};
+  up.electron = electronApp ? ssh(`up electron --run '${SCENE_RUN}' --electron-app '${electronApp}'`) : {skipped: 'no Electron fixture built'};
+  const shot = sh('/usr/sbin/screencapture', ['-x', join(OUT, 'step4-desktop.png')]);
+  return {preflight, up, desktopCapture: {code: shot.code, stderr: shot.stderr.slice(0, 200)}, display: json(sh(DISPLAY_TOOL, []).stdout)};
+});
+
+// Part 1, step 1: the bundle at the approved location, its own TCC client through LaunchServices, no rows.
+await step('step1-bundle-no-rows', async () => {
+  const launched = await launchLS();
+  const parent = launched.grants.pid ? parentOf(launched.grants.pid) : null;
+  const approval = harnessApproval();
+  const doctor = doctorRows({CUA_NATIVE_ENGINE: 'cua'});
+  const observed = await sessionStep('s1', {CUA_NATIVE_ENGINE: 'cua'}, [{label: 'textedit', bundle: SCENES.textedit}]);
+  const after = engineGrants();
+  return {launched, parent, harnessApproval: approval, doctor, ...observed, grantsAfter: after, stopped: stopEngine()};
+});
+
+// Part 1, step 3: the child relay. The bundle's executable started by this job (the engine at the socket beside the
+// bundle, under the job's grants), then a cua serve session on cua's own host that finds it there.
+let child = null;
+await step('step3-child-relay', async () => {
+  const logFd = openSync(join(OUT, 'step3-engine-stderr.txt'), 'w');
+  child = spawn(ENGINE_EXE, [], {stdio: ['ignore', logFd, logFd], detached: true, env: {...process.env}});
+  closeSync(logFd);
+  const grants = await untilRunning();
+  const observed = await sessionStep('s3', {CUA_NATIVE_ENGINE: 'cua'}, [
+    {label: 'textedit', bundle: SCENES.textedit, click: TEXT_AREA},
+    {label: 'finder', bundle: SCENES.finder},
+    {label: 'chrome', bundle: SCENES.chrome},
+    {label: 'electron', bundle: SCENES.electron},
+  ]);
+  return {childPid: child.pid, grants, sameProcess: grants.pid === child.pid, parent: grants.pid ? parentOf(grants.pid) : null, ...observed, grantsAfter: engineGrants(), stopped: stopEngine()};
+});
+if (child && child.exitCode === null) { try { child.kill('SIGTERM'); } catch {} }
+
+// Part 1, step 2: the vendor's helper with no rows: a CUA_NATIVE_ENGINE=vendor session binding TextEdit.
+await step('step2-vendor-no-rows', async () => {
+  const doctor = doctorRows({CUA_NATIVE_ENGINE: 'vendor'});
+  const observed = await sessionStep('s2', {CUA_NATIVE_ENGINE: 'vendor'}, [{label: 'textedit', bundle: SCENES.textedit, click: TEXT_AREA}]);
+  const helperProcs = sh('/bin/ps', ['-axo', 'pid=,ppid=,comm=']).stdout.split('\n').filter(l => /Sky|CUAService|computer-use/i.test(l)).map(l => l.trim());
+  return {doctor, ...observed, helperProcesses: helperProcs};
+});
+const vendorHelpers = () => sh('/bin/ps', ['-axo', 'pid=,comm=']).stdout.split('\n').map(l => l.trim()).filter(l => l.includes(CUA_HOME) && /\.app\//.test(l));
+
+// ---- Part 2: TCC rows (./tcc.mjs's guarded writer) ----
+
+const ENGINE_ALL = ['accessibility', 'screenRecording', 'inputMonitoring', 'postEvent'];
+const bundleOf = () => PATHS.bundle;
+
+// Step 7: does tccd honour a row the job writes? Accessibility for the engine, user database first, then system.
+await step('step7-tccd-honours', async () => {
+  const out = {};
+  out.baseline = await relaunchLS();
+  out.userRow = grantRows({client: ENGINE_BUNDLE_ID, bundle: bundleOf(), services: ['accessibility'], db: 'user'});
+  await sleep(1000);
+  out.afterUserRowLive = engineGrants();
+  out.afterUserRowRelaunch = await relaunchLS();
+  revokeRows({client: ENGINE_BUNDLE_ID, services: ['accessibility'], db: 'user'});
+  out.systemRow = grantRows({client: ENGINE_BUNDLE_ID, bundle: bundleOf(), services: ['accessibility'], db: 'system'});
+  await sleep(1000);
+  out.afterSystemRowLive = engineGrants();
+  out.afterSystemRowRelaunch = await relaunchLS();
+  if (out.afterSystemRowRelaunch.grants.accessibility !== true) {
+    out.tccdRestart = restartTccd();
+    await sleep(2000);
+    out.afterRestartRelaunch = await relaunchLS();
+  }
+  out.rows = readRows();
+  out.honoured = {user: out.afterUserRowRelaunch.grants.accessibility === true || out.afterUserRowLive.accessibility === true,
+    systemLive: out.afterSystemRowLive.accessibility === true, systemRelaunch: out.afterSystemRowRelaunch.grants.accessibility === true,
+    systemAfterRestart: out.afterRestartRelaunch?.grants.accessibility ?? null};
+  return out;
+});
+const needsRestart = record['step7-tccd-honours']?.honoured && !record['step7-tccd-honours'].honoured.systemRelaunch && record['step7-tccd-honours'].honoured.systemAfterRestart === true;
+async function settle() { if (needsRestart) { restartTccd(); await sleep(2000); } }
+
+// Step 8: cua's bundle with all its rows: grants after a relaunch, `cua engine approve` with nobody at the console, then
+// a session through the product's own launch (no engine running: the service launches it).
+await step('step8-bundle-rows', async () => {
+  const out = {};
+  out.rowsWritten = grantRows({client: ENGINE_BUNDLE_ID, bundle: bundleOf(), services: ENGINE_ALL});
+  await settle();
+  out.relaunch = await relaunchLS();
+  const approve = sh(process.execPath, [CLI, 'engine', 'approve', '--json'], {env: cuaEnv(), timeout: 300_000});
+  out.approve = {code: approve.code, ms: approve.ms, json: json(approve.stdout), stderr: approve.stderr.trim().split('\n').slice(-10).join('\n')};
+  out.approvedJson = existsSync(PATHS.approved) ? JSON.parse(readFileSync(PATHS.approved, 'utf8')) : null;
+  if (!out.approvedJson || out.approvedJson.harness) out.note = 'approve did not write approved.json; the harness approval from step 1 stands for the session';
+  out.stoppedBeforeSession = stopEngine();
+  out.doctor = doctorRows({CUA_NATIVE_ENGINE: 'cua'});
+  out.stoppedAfterDoctor = stopEngine();
+  Object.assign(out, await sessionStep('s8', {CUA_NATIVE_ENGINE: 'cua'}, [
+    {label: 'textedit', bundle: SCENES.textedit, click: TEXT_AREA},
+    {label: 'finder', bundle: SCENES.finder},
+    {label: 'chrome', bundle: SCENES.chrome},
+    {label: 'electron', bundle: SCENES.electron},
+  ]));
+  out.grantsAfter = engineGrants();
+  out.parent = out.grantsAfter.pid ? parentOf(out.grantsAfter.pid) : null;
+  out.stopped = stopEngine();
+  return out;
+});
+
+// Step 9: the vendor's helper with rows for every app bundle in the installed runtime that is its helper.
+await step('step9-vendor-rows', async () => {
+  const out = {};
+  const apps = (record.setup?.runtimeApps ?? []).filter(a => /sky|CUAService|computer/i.test(a.bundleId));
+  out.helpers = apps;
+  out.rowsWritten = apps.flatMap(a => { try { return grantRows({client: a.bundleId, bundle: a.path, services: ENGINE_ALL}); } catch (e) { return [{client: a.bundleId, error: err(e)}]; } });
+  await settle();
+  // A helper left running from step 2 would keep its no-grant decision: stop only processes run from this run's home.
+  out.stoppedHelpers = vendorHelpers().map(l => { const pid = Number(l.split(' ')[0]); try { process.kill(pid, 'SIGTERM'); return pid; } catch { return null; } });
+  await sleep(2000);
+  out.doctor = doctorRows({CUA_NATIVE_ENGINE: 'vendor'});
+  Object.assign(out, await sessionStep('s9', {CUA_NATIVE_ENGINE: 'vendor'}, [
+    {label: 'textedit', bundle: SCENES.textedit, click: TEXT_AREA},
+    {label: 'finder', bundle: SCENES.finder},
+    {label: 'chrome', bundle: SCENES.chrome},
+    {label: 'electron', bundle: SCENES.electron},
+  ]));
+  out.rows = readRows();
+  return out;
+});
+
+// Step 10: the onboarding stages by rows (R5): none, Accessibility only, Screen Recording added, the relaunch. At each:
+// the engine's grants, doctor's engine row, one observation, and what `cua engine approve` says with nobody there.
+async function stage(name, {relaunch}) {
+  const out = {};
+  if (relaunch) out.relaunch = await relaunchLS(); else { const g = engineGrants(); out.grants = g.running ? g : (await launchLS()).grants; }
+  out.grantsBeforeObservation = engineGrants();
+  Object.assign(out, await sessionStep(`s10-${name}`, {CUA_NATIVE_ENGINE: 'cua'}, [{label: 'textedit', bundle: SCENES.textedit}]));
+  out.grantsAfterObservation = engineGrants();
+  return out;
+}
+await step('step10-onboarding', async () => {
+  const out = {};
+  revokeRows({client: ENGINE_BUNDLE_ID, services: ENGINE_ALL});
+  out.restartForNone = restartTccd();
+  await sleep(2000);
+  out.none = await stage('none', {relaunch: true});
+  out.none.doctor = doctorRows({CUA_NATIVE_ENGINE: 'cua'});
+  out.accessibilityRow = grantRows({client: ENGINE_BUNDLE_ID, bundle: bundleOf(), services: ['accessibility']});
+  await settle();
+  out.accessibilityOnly = await stage('ax', {relaunch: false});
+  out.accessibilityOnly.doctor = doctorRows({CUA_NATIVE_ENGINE: 'cua'});
+  out.screenRecordingRow = grantRows({client: ENGINE_BUNDLE_ID, bundle: bundleOf(), services: ['screenRecording']});
+  await settle();
+  out.screenRecordingAdded = await stage('sr', {relaunch: false});
+  out.relaunched = await stage('relaunch', {relaunch: true});
+  out.relaunched.doctor = doctorRows({CUA_NATIVE_ENGINE: 'cua'});
+  const approve = sh(process.execPath, [CLI, 'engine', 'approve', '--json'], {env: cuaEnv(), timeout: 300_000});
+  out.approveAtEnd = {code: approve.code, json: json(approve.stdout), stderr: approve.stderr.trim().split('\n').slice(-10).join('\n')};
+  out.rows = readRows();
+  out.stopped = stopEngine();
+  return out;
+});
+
+await step('teardown', async () => {
+  const down = ssh(`down all --run '${SCENE_RUN}'`);
+  const alerts = sh('/usr/bin/log', ['show', '--last', '90m', '--style', 'ndjson', '--predicate', 'process == "replayd" AND eventMessage CONTAINS "[SCAlert "']);
+  const lines = alerts.stdout.split('\n').filter(l => l.startsWith('{') && l.includes('SCAlert'));
+  return {down, replaydSCAlertLinesLast90m: lines.length, rowsAtEnd: readRows()};
+});
+log('done');

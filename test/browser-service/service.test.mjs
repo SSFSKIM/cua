@@ -93,8 +93,33 @@ test('browsers: listed in the vendor\'s shape, selected by id, type or family, b
   assert.equal((await execute(service, {type: 'get_browser_for_url', url: 'https://example.com/'})).id, listed[0].id);
   const missing = await rejection(execute(service, {type: 'get_browser', id: '999'}));
   assert.equal(missing.code, 'browser_not_found');
-  assert.equal(missing.message, 'Browser is not available: 999');
+  assert.equal(missing.message, `Browser is not available: 999. Browser ids: "${listed[0].id}"; profiles_list keys: none.`);
   assert.equal((await rejection(execute(service, {type: 'list_tabs'}))).message, 'Browser ID must be provided');
+});
+
+// The call's profiles_list keys, as the proxy puts them on its request metadata (src/mcp/server.mjs).
+const withKeys = (runtime, keys) => {
+  const turn = Object.getOwnPropertyDescriptor(runtime, 'requestMeta').get;
+  Object.defineProperty(runtime, 'requestMeta', {configurable: true, get: () => ({...turn.call(runtime), 'cua/browserKeys': keys})});
+};
+
+test('browsers: a profiles_list key selects the browser carrying its instance; a miss names the ids and the live keys (#493)', async t => {
+  const {service, runtime: first} = await serviceOnHost(t);
+  withKeys(first, {personal: 'instance-elsewhere', work: null});
+  await service.handleRpc({method: 'setup', params: {environment: 'codex-app'}});
+  const [listed] = await execute(service, {type: 'list_browsers'});
+  const away = await rejection(execute(service, {type: 'get_browser', id: 'personal'}));
+  assert.equal(away.code, 'browser_not_found');
+  assert.equal(away.message, `Browser is not available: personal. Browser ids: "${listed.id}"; profiles_list keys: none.`, 'a key whose instance is not listed is a miss, and is not offered');
+
+  const {service: keyed, ext: other, runtime} = await serviceOnHost(t);
+  withKeys(runtime, {personal: other.instanceId});
+  await keyed.handleRpc({method: 'setup', params: {environment: 'codex-app'}});
+  const [browser] = await execute(keyed, {type: 'list_browsers'});
+  const selected = await execute(keyed, {type: 'get_browser', id: 'personal'});
+  assert.equal(selected.id, browser.id);
+  assert.deepEqual(selected, await execute(keyed, {type: 'get_browser', id: browser.id}), 'the key\'s selection is the id\'s, unchanged');
+  assert.equal((await rejection(execute(keyed, {type: 'get_browser', id: 'iab'}))).message, `Browser is not available: iab. Browser ids: "${browser.id}"; profiles_list keys: "personal".`);
 });
 
 test('the launch\'s disabled capabilities are left out of a selected browser', async t => {

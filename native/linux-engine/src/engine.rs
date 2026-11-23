@@ -1102,7 +1102,10 @@ mod stats_line_tests {
 
     fn counts() -> SettleCounts {
         let mut counts = SettleCounts::default();
-        counts.count(&Settle::interrupted(Sync::Unasked, SecondRest::Needless), false);
+        counts.count(
+            &Settle::interrupted(Sync::Unasked, SecondRest::Needless, std::time::Duration::ZERO),
+            false,
+        );
         counts.activation_confirmed_a_failed_settle();
         counts
     }

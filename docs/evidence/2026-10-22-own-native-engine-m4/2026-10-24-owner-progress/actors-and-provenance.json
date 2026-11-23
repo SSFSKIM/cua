@@ -1,0 +1,12 @@
+{
+  "source": "original reports and executor putback JSON fetched unchanged from /tmp/cua-m4.u5B2eG/",
+  "actors": {
+    "console": "coordinator via SSH PTY/FIFO",
+    "axAndSrAdds": "coordinator through cua-remote at owner request, reported by coordinator",
+    "observations": "owner answers, reported by coordinator",
+    "manualRevocation": "terminal confirmation retained; UI actor not independently inferred",
+    "guiPutback": "coordinator reports IM re-added ON/Later, disposable TextEdit doc deleted unsaved and app quit, System Settings quit",
+    "enginePutback": "executor protocol-stopped PID26404 then narrow cold status/read/stop; no GUI"
+  },
+  "qualification": "Both attempts remain BLOCKED. d0c completed model-facing permission errors, warm diagnostic, same-connection recovery and independent post-recovery input checks. Owner input observation expired under shared15-minute budget; explicit IM grant, approval, final grants/input and harness cleanup stages were not reached. Separate putback is not a substitute PASS for those stages."
+}

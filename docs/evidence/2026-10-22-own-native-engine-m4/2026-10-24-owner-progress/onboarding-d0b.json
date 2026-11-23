@@ -1,0 +1,156 @@
+{
+  "scenario": "accept-native",
+  "status": "BLOCKED",
+  "suiteQualification": "The hosted Node 24 gate is the unit-suite authority (#198). Local whole-suite failures remain FAIL and need per-failure classification; no environmental exception promotes an item to PASS.",
+  "options": {
+    "freshOnboarding": true,
+    "liveSecrets": false,
+    "liveTextedit": false,
+    "callerSecretKey": false,
+    "items": [
+      14
+    ],
+    "engine": {
+      "engine": "cua",
+      "pinnedBy": "--engine"
+    }
+  },
+  "release": null,
+  "home": "$CUA_HOME",
+  "host": "darwin-arm64",
+  "node": "v24.22.0",
+  "startedAt": "2026-10-24T09:28:19.321Z",
+  "finishedAt": "2026-10-24T09:31:09.000Z",
+  "summary": {
+    "14": "BLOCKED"
+  },
+  "connectionDirectoriesLeft": 0,
+  "items": [
+    {
+      "id": 14,
+      "title": "Fresh permission onboarding: OWNER revocation, model errors, staged grants and relaunch recovery",
+      "status": "BLOCKED",
+      "checks": [
+        {
+          "name": "preconditions",
+          "status": "PASS",
+          "detail": "approved engine verified; no live engine connection or TextEdit to disturb"
+        },
+        {
+          "name": "manual revocation",
+          "status": "PASS",
+          "detail": "terminal confirmed (revoked); UI actor not inferred; harness did not perform the UI step"
+        },
+        {
+          "name": "manual revocation",
+          "status": "BLOCKED",
+          "detail": "needs exactly one on-screen TextEdit window for the manually prepared blank document"
+        },
+        {
+          "name": "Accessibility error reaches the model",
+          "status": "BLOCKED",
+          "detail": "not reached; no pass inferred"
+        },
+        {
+          "name": "all three grants absent",
+          "status": "BLOCKED",
+          "detail": "not reached; no pass inferred"
+        },
+        {
+          "name": "manual Accessibility grant",
+          "status": "BLOCKED",
+          "detail": "not reached; no pass inferred"
+        },
+        {
+          "name": "Screen Recording error reaches the model",
+          "status": "BLOCKED",
+          "detail": "not reached; no pass inferred"
+        },
+        {
+          "name": "AX-only intervention diagnostic",
+          "status": "BLOCKED",
+          "detail": "not reached; no pass inferred"
+        },
+        {
+          "name": "manual Screen Recording grant",
+          "status": "BLOCKED",
+          "detail": "not reached; no pass inferred"
+        },
+        {
+          "name": "service relaunch recovery",
+          "status": "BLOCKED",
+          "detail": "not reached; no pass inferred"
+        },
+        {
+          "name": "owner recovery prompt observation",
+          "status": "BLOCKED",
+          "detail": "not reached; no pass inferred"
+        },
+        {
+          "name": "post-recovery input",
+          "status": "BLOCKED",
+          "detail": "not reached; no pass inferred"
+        },
+        {
+          "name": "owner input prompt observation",
+          "status": "BLOCKED",
+          "detail": "not reached; no pass inferred"
+        },
+        {
+          "name": "post-recovery input: capability stability",
+          "status": "BLOCKED",
+          "detail": "not reached; no pass inferred"
+        },
+        {
+          "name": "post-recovery input: input completion",
+          "status": "BLOCKED",
+          "detail": "not reached; no pass inferred"
+        },
+        {
+          "name": "post-recovery input: metadata",
+          "status": "BLOCKED",
+          "detail": "not reached; no pass inferred"
+        },
+        {
+          "name": "post-recovery input: doctor",
+          "status": "BLOCKED",
+          "detail": "not reached; no pass inferred"
+        },
+        {
+          "name": "manual Input Monitoring grant",
+          "status": "BLOCKED",
+          "detail": "not reached; no pass inferred"
+        },
+        {
+          "name": "engine approval",
+          "status": "BLOCKED",
+          "detail": "not reached; no pass inferred"
+        },
+        {
+          "name": "final grants and approved build",
+          "status": "BLOCKED",
+          "detail": "not reached; no pass inferred"
+        },
+        {
+          "name": "intervention on",
+          "status": "BLOCKED",
+          "detail": "not reached; no pass inferred"
+        },
+        {
+          "name": "manual TextEdit cleanup",
+          "status": "BLOCKED",
+          "detail": "not reached; no pass inferred"
+        }
+      ],
+      "evidence": {
+        "ownerWindow": "Reserve approximately 15 minutes continuously for item 14: remove the three entries and open a blank TextEdit document (4); grant Accessibility and verify warm-process detection-off diagnostics (2); grant Screen Recording with Later and observe recovery alerts (3); check input against the fresh process’s listen capability and observe alerts (1); grant Input Monitoring (1); approve, check and close only the disposable document without saving (4). Settings and fixture steps are manual; only the owner answers system alerts. This does not authorize a coordinator to operate Settings. An absent Input Monitoring row does not establish listen capability after relaunch; capability and metadata consistency does not prove physical intervention delivery.",
+        "windows": [],
+        "cells": [],
+        "statuses": [],
+        "doctors": [],
+        "recoveryPrompts": [],
+        "checkoutBuild": "d0b2fa133f4005e3f5fdb72e2ac7c96f5845f93550e1bd1a95879bb5a462513f"
+      }
+    }
+  ]
+}

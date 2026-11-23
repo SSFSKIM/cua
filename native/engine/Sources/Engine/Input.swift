@@ -211,10 +211,13 @@ struct InputMeta {
   }
 }
 
-/// Attaches `meta` to an error (the wire's `meta` member, beside code, message and errorName).
+/// Attaches `meta` to an error (the wire's `meta` member, beside code, message and errorName), in place of any meta it
+/// had, except the permission boundary's marker (Permissions.swift), which an input method's permissionsPending keeps.
 func withMeta(_ error: EngineError, _ meta: InputMeta) -> EngineError {
   var error = error
-  error.extra["meta"] = meta.wire
+  var wire = meta.wire
+  if let permission = (error.extra["meta"] as? [String: Any])?["permission"] { wire["permission"] = permission }
+  error.extra["meta"] = wire
   return error
 }
 
@@ -583,7 +586,9 @@ extension Engine {
         let stale = signposted("click.stalePoint") {
           stalePointGuard(at: placed.point, windowOrigin: placed.windowFrame.origin, windowID: windowID, hit: pointerHit,
                           place: latest.outcome.place, hitMs: latest.outcome.ms,
-                          rehit: latest.rehit, app: app, appPid: appPid, context: context)
+                          rehit: latest.rehit, hitTest: { hitTestOutcome(window: placed.window, pid: appPid, at: placed.point, now: monotonicMilliseconds) },
+                          app: app,
+                          appPid: appPid, context: context)
         }
         meta.stalePoint = stale.record
         pointer.staleRefusal = stale.refusal

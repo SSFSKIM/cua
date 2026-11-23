@@ -134,7 +134,9 @@ export const PROFILES_LIST_TOOL = {
 const MAWS_RULE = '- In MAWS: cua.getBrowser() with no id is this session\'s in-app browser (key maws). Use a Chrome profile only when the user names one.';
 // The same rule in js's own rules, which an agent reads without ever loading profiles_list (#368). The no-call
 // exemption names the in-app browser and comes before the Chrome sentence, so it cannot be read as covering Chrome.
-const JS_MAWS_RULE = '- In MAWS: cua.getBrowser() with no id is this session\'s in-app browser (key maws), the pane the user watches; use it for any page, and it needs no profiles_list call. Use a Chrome profile only when the user names one, and then follow profiles_list\'s rules.';
+// It also names the browsers cua serves here (#493): profiles_list's keys select a browser as its ids do, and the
+// vendor host's own text (below, not cua's to edit) offers an "iab" browser and its visible option, which MAWS lacks.
+const JS_MAWS_RULE = '- In MAWS: cua.getBrowser() with no id is this session\'s in-app browser (key maws); its tabs show in the session\'s Browser panel, which the user watches. Use it for any page; it needs no profiles_list call. Where a browser id goes, "maws" or another profiles_list key works too; there is no "iab" browser, and visible does not apply: leave it out. Use a Chrome profile only when the user names one, and then follow profiles_list\'s rules.';
 function profilesListTool(inAppBrowser) {
   const [select, ...rest] = BROWSER_RULES;
   const rules = inAppBrowser ? [select.replace(' Never pick or bind a profile for the user.', ''), MAWS_RULE, ...rest] : [select, ...rest];
@@ -237,12 +239,31 @@ export function withFeedbackNote(notes, feedbackDir) {
 // "observe, act, verify" rule covers. On x64 (#58, Ubuntu 24.04, the same gedit and GTK builds) typeText did not crash
 // gedit but threw "editable Paste did not insert text"; pressKey typed on both, so the rule holds on both architectures.
 const JS_TITLE = 'Host rules (cua), before the documentation below:';
-const COMPUTER_RULES = [
+// On macOS the text rule follows the engine as on Linux (below) (#117 M4; the own native engine spec's "Input" and
+// "Install, signing and permissions"). cua's typeText keys what a reliably read Latin layout can, sends the rest as
+// Unicode and Return, and pastes under any other input source (native/engine Routes.swift textRoute), so the vendor's
+// workaround is not needed. A {{secret:…}} is never pasted, and is keyed only under a Latin layout the engine reads
+// reliably (Routes.swift textRoute; otherwise concealedInputUnavailable, nothing entered), so setValue comes first and
+// saying so up front saves the refused call. A missing grant fails permissionsPending, whose name the model never sees:
+// the trusted worker forwards only the message, "Computer Use server error -10014: cua Engine needs <pane>: …" with
+// the by-hand steps (native/engine Permissions.swift), so the rule quotes that sentence's start and makes the steps the
+// user's to take, since a model driving the Mac could otherwise open System Settings itself. The budget is tight: with the computer surface
+// alone the runtime's js description is 1,511 characters and Claude Code cuts at 2,048, which leaves cua's engine about
+// 200 characters for its lines (test/mcp-browser-surface.test.mjs checks it).
+const macosComputerRules = engineRules => [
   '- Prefer accessibility element indexes; coordinates are screenshot pixels (apply the host\'s downscale); role names are in the system language.',
   '- Drop a quit app\'s handle: getAXState() relaunches it.',
-  '- typeText drops characters the layout cannot key (emoji); paste those and multiline text.',
+  ...engineRules,
   '- If REPL state is confused, js_reset and rebind; never also use osascript.',
 ];
+const COMPUTER_RULES = {
+  vendor: macosComputerRules(['- typeText drops characters the layout cannot key (emoji); paste those and multiline text.']),
+  cua: macosComputerRules([
+    '- typeText enters any text under any input source.',
+    '- A {{secret:KEY}}: setValue, or typeText under a Latin layout; never paste.',
+    '- "cua Engine needs …": the user grants it, not you; then retry.',
+  ]),
+};
 // The Linux text rule F2 measured (above) is the vendor engine's. With cua's own Linux engine (#171; its spec's Decision Log, M5 pre-flight) the
 // same calls insert exact text through one verified paste, and an app that ignores background input is refused on a
 // shared desktop with nothing sent ("<App> does not accept background input; ..."), so the rule follows the engine the
@@ -264,10 +285,10 @@ const LINUX_COMPUTER_RULES = {
 const BROWSER_POINTER = '- Chrome: follow the rules in profiles_list\'s description (DOM-only tabs, per-phase budgets up to 120 s, evaluate in the page, slow createBrowserTab).';
 
 // `engine`: the native engine the connection selected (launch.mjs nativeEngineFor's `engine`), which decides the
-// Linux text rule above.
+// engine's rules above on either platform; any other value, or none, keeps the vendor's.
 export function jsRulesFor(surfaces, {platform = process.platform, engine, inAppBrowser = false} = {}) {
-  const computer = !surfaces.includes('computer') ? []
-    : platform === 'linux' ? LINUX_COMPUTER_RULES[engine === 'cua' ? 'cua' : 'vendor'] : COMPUTER_RULES;
+  const rules = platform === 'linux' ? LINUX_COMPUTER_RULES : COMPUTER_RULES;
+  const computer = !surfaces.includes('computer') ? [] : rules[engine === 'cua' ? 'cua' : 'vendor'];
   return [JS_TITLE, ...computer, ...(surfaces.includes('browser') ? [...(inAppBrowser ? [JS_MAWS_RULE] : []), BROWSER_POINTER] : [])].join('\n');
 }
 

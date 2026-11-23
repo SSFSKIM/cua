@@ -5,7 +5,7 @@ let serverApiVersion = "cua-engine-1"
 
 /// The package's version. The assembler (`src/runtime/engine-bundle.mjs`, `cua engine build`) reads it from this line
 /// for the bundle's CFBundleShortVersionString, so the two can never disagree.
-let engineVersion = "0.1.0"
+let engineVersion = "0.2.0"
 
 /// The Info.plist key the assembler embeds `build` under: the hash of the native/engine source tree plus the assembler,
 /// so two bundles with the same `build` are the same program.

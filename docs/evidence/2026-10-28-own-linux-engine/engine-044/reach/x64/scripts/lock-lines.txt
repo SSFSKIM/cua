@@ -1,0 +1,21 @@
+2026-11-23T10:09:22Z wait h9-x64 load=0.82 1.52 1.26 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task148/setup.sh
+2026-11-23T10:09:22Z acquire h9-x64 load=0.82 1.52 1.26 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task148/setup.sh
+2026-11-23T10:09:54Z release h9-x64 status=0 load=1.67 1.66 1.32 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task148/setup.sh
+2026-11-23T10:09:54Z wait h9-x64 load=1.67 1.66 1.32 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task148/check-home.sh
+2026-11-23T10:09:54Z acquire h9-x64 load=1.67 1.66 1.32 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task148/check-home.sh
+2026-11-23T10:09:59Z release h9-x64 status=0 load=1.54 1.63 1.31 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task148/check-home.sh
+2026-11-23T10:10:35Z wait h9-x64 load=1.76 1.65 1.33 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task148/step.sh H1
+2026-11-23T10:10:35Z acquire h9-x64 load=1.76 1.65 1.33 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task148/step.sh H1
+2026-11-23T10:29:31Z release h9-x64 status=0 load=0.39 0.45 0.71 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task148/step.sh H1
+2026-11-23T10:29:31Z wait h9-x64 load=0.39 0.45 0.71 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task148/step.sh H2
+2026-11-23T10:32:39Z acquire h9-x64 load=2.66 1.98 1.29 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task148/step.sh H2
+2026-11-23T10:52:27Z release h9-x64 status=0 load=0.55 0.42 0.65 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task148/step.sh H2
+2026-11-23T10:52:27Z wait h9-x64 load=0.55 0.42 0.65 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task148/step.sh L4a
+2026-11-23T10:52:27Z acquire h9-x64 load=0.55 0.42 0.65 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task148/step.sh L4a
+2026-11-23T11:12:22Z release h9-x64 status=0 load=16.55 16.43 12.34 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task148/step.sh L4a
+2026-11-23T11:12:22Z wait h9-x64 load=16.55 16.43 12.34 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task148/step.sh L4d
+2026-11-23T11:12:29Z acquire h9-x64 load=14.53 16.00 12.25 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task148/step.sh L4d
+2026-11-23T11:35:25Z release h9-x64 status=0 load=16.22 17.08 15.35 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task148/step.sh L4d
+2026-11-23T11:36:20Z wait h9-x64 load=6.74 14.29 14.50 render-host=none :: bash -c 
+2026-11-23T11:36:20Z acquire h9-x64 load=6.74 14.29 14.50 render-host=none :: bash -c 
+2026-11-23T11:44:46Z release h9-x64 status=0 load=17.33 16.70 15.65 render-host=none :: bash -c 

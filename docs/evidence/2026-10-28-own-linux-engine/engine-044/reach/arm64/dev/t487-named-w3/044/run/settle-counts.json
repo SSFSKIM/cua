@@ -1,0 +1,345 @@
+{
+ "kind": "settle-counts",
+ "processes": [
+  {
+   "harness_pid": 1421779,
+   "run": "dev-t147-w3-t487-named-044-load2",
+   "opt_in": false,
+   "started": "2026-11-23T13:02:54.600Z",
+   "finished": "2026-11-23T13:07:30.813Z",
+   "engines": [
+    {
+     "lane": "reader",
+     "pid": 1421829,
+     "build": "unidentified",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-044/engine/linux/cua-engine",
+     "argv": [
+      "server"
+     ],
+     "stats": null,
+     "stats_file": null,
+     "lines": 0,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": false,
+     "sent": {
+      "list_windows": 16,
+      "get_window_state": 224
+     },
+     "drop_settles": null,
+     "recorded": "no stats: not recorded"
+    },
+    {
+     "lane": "cua:named-gtk4",
+     "pid": 1422243,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-044/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--desktop",
+      "dedicated",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 31,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 10,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua:named-gtk4",
+     "pid": 1422488,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-044/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--desktop",
+      "dedicated",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 31,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 10,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua:named-gtk4",
+     "pid": 1422744,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-044/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--desktop",
+      "dedicated",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 31,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 10,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua:named-gtk4",
+     "pid": 1422994,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-044/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--desktop",
+      "dedicated",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 31,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 10,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua:named-gtk4",
+     "pid": 1423257,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-044/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--desktop",
+      "dedicated",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 31,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 10,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua:named-gtk4",
+     "pid": 1423518,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-044/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--desktop",
+      "dedicated",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 31,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 10,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua:named-gtk4",
+     "pid": 1423767,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-044/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--desktop",
+      "dedicated",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 31,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 10,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua:named-gtk4",
+     "pid": 1424005,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-044/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--desktop",
+      "dedicated",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 31,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 10,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua:named-gtk4",
+     "pid": 1424258,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-044/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--desktop",
+      "dedicated",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 31,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 10,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    },
+    {
+     "lane": "cua:named-gtk4",
+     "pid": 1424503,
+     "build": "cua",
+     "bin": "/Users/new/.local/share/cua-171/m5/home-arm64-044/engine/linux/cua-engine",
+     "argv": [
+      "server",
+      "--desktop",
+      "dedicated",
+      "--stats"
+     ],
+     "stats": "asked",
+     "stats_file": null,
+     "lines": 31,
+     "unparsable": 0,
+     "ended": true,
+     "settle_final": true,
+     "sent": {
+      "drag": 10,
+      "list_windows": 10,
+      "preflight": 10
+     },
+     "drop_settles": {
+      "entered": 10,
+      "second_rest": 0,
+      "settle_failed_activation_confirmed": 0,
+      "skipped": 0,
+      "unsettled": 0
+     },
+     "recorded": "recorded"
+    }
+   ]
+  }
+ ]
+}

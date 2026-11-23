@@ -1,0 +1,8 @@
+SyntaxError: The requested module '../../scripts/linux-engine-diff/drop-signals.mjs' does not provide an export named 'namedAim'
+ℹ fail 4
+ℹ pass 28
+✖ failing tests:
+✖ test/linux-engine-diff/named-source.test.mjs (120.449598ms)
+✖ the drop's settle count comes from the stats lines matched to its own requests, never the engine's last counter (1.545048ms)
+✖ wave 4, P2 1: two snapshots from one stats line, {before 19, after 19, entered 0, before_from 12, after_from 12}, settle removed, fails (0.475676ms)
+✖ wave 4, P2 2: a counted run whose candidate's attestation is absent, or attests no subject of its digest, does not stand (78.542721ms)

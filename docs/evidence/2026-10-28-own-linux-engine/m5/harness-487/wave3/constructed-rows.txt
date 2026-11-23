@@ -1,0 +1,7 @@
+P1 2, a lost stats line {4,4,0}, landed, no settle record: #487 fails at 4e0ba0a9 0, now 1
+P2 3, cua_version 0.4.3 on a run whose candidate is 0.4.4, rests missing: #487 fails at 4e0ba0a9 0, now 1
+P2 4, {before 0, after 1, entered 0}, no record: #487 fails at 4e0ba0a9 0, now 1
+P2 5, a plain drag's settle moved into handle.drop_cursor: #487 fails at 4e0ba0a9 0, now 2
+P2 6, 560 drops reading zero, no records: #487 fails at 4e0ba0a9 0, now 1
+P1 1, the press for (530, 128): from xdotool's (962, 284) at {"x":529,"y":106}, from xwininfo's (961, 262) at {"x":530,"y":128}
+P1 1, a named drop with no aim record: unproven at 4e0ba0a9 [], now ["aim"]

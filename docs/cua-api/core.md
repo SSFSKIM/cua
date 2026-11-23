@@ -135,7 +135,7 @@ declare const cua: {
 
   /** Select without opening a tab. Use the returned browserId with createBrowserTab. */
   getBrowser(options?: GetBrowserOptions): Promise<Browser>;
-  /** Apply options before opening the tab; omitted settings stay unchanged, unsupported settings throw. */
+  /** Apply options before opening the tab; omitted settings stay unchanged, unsupported settings throw, except `visible` on a browser without the visibility capability, which is ignored and noted in the result. */
   createBrowserTab(
     browserId: string,
     url?: string,

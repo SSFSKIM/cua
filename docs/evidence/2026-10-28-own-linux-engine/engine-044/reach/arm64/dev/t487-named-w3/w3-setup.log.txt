@@ -1,0 +1,8 @@
+2026-11-23T13:02:13Z df / avail 98G
+2026-11-23T13:02:42Z setup t147-w3 exit 0
+2026-11-23T13:02:42Z electron present: v44.9.0
+2026-11-23T13:02:42Z native/linux-engine as at H9
+2026-11-23T13:02:42Z home-arm64-044: sha256 f54b2aeb8e00676a9f521410156c9bdd1b578e2308724013eef2eb6145c7da3e, the pin f54b2aeb8e00676a9f521410156c9bdd1b578e2308724013eef2eb6145c7da3e: equal; cua-engine 0.4.4 (23f342178d94)
+2026-11-23T13:02:47Z check --pinned home-arm64-044 exit 0: "engine_tree":{"path":"native/linux-engine","commit":"23f342178d94f81fc37a95124e818f8238b36ef0","equal":true}
+2026-11-23T13:02:47Z home-arm64-043: sha256 dd74e19b44596f992dd120b13fbbe8021a7ca0af581c07496f5cee8f5edbcf1e, 0.4.3's pin dd74e19b44596f992dd120b13fbbe8021a7ca0af581c07496f5cee8f5edbcf1e: equal; cua-engine 0.4.3 (ba5b043834ce)
+2026-11-23T13:02:47Z w3-setup done

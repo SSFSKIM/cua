@@ -1,0 +1,1782 @@
+{
+  "complete": true,
+  "verdict": "fail",
+  "problems": [],
+  "putBack": {
+    "ok": true,
+    "stopped": true,
+    "steps": {
+      "finder-teardown": {
+        "ok": true,
+        "steps": 6
+      },
+      "scenes-down": {
+        "ok": true,
+        "down": true
+      },
+      "engine-stop": {
+        "ok": true,
+        "wasRunning": true,
+        "pid": 41849
+      },
+      "apps-check": {
+        "ok": true,
+        "running": {
+          "textedit": 0,
+          "chromeForTesting": 0,
+          "electronFixture": 0
+        }
+      },
+      "finder-check": {
+        "ok": true,
+        "runWindowGone": true,
+        "windowsAsAtBegin": true,
+        "keysAsSaved": true
+      },
+      "front-app": {
+        "ok": true,
+        "bundleId": "com.apple.Terminal",
+        "reactivated": true,
+        "inFront": true
+      }
+    }
+  },
+  "diagnostic": {
+    "variants": [
+      "forced1",
+      "forced3",
+      "held3",
+      "natural",
+      "natural-empty"
+    ],
+    "sectionBudgetMs": 240000,
+    "planTagAvailable": false,
+    "axFocusedSource": "Skyshot node flag (missing AXFocused becomes false)",
+    "independentTrials": false,
+    "seededSelection": true,
+    "freshFieldControl": "natural-empty"
+  },
+  "rows": [
+    {
+      "section": "route-ab",
+      "id": "electron/background/focus.forced1@finder",
+      "engine": "cua",
+      "sample": 1,
+      "scene": "electron",
+      "user": "finder",
+      "regime": "background",
+      "method": "click",
+      "case": "field-focus",
+      "variant": "forced1",
+      "ok": false,
+      "connectionCheck": {
+        "connections": 1
+      },
+      "seed": {
+        "ready": true,
+        "selectedTextPresent": true
+      },
+      "focus": {
+        "appOwned": true,
+        "appPid": 462,
+        "named": true,
+        "valueHash": null
+      },
+      "countersBefore": {
+        "seq": 16,
+        "at": 1792791002500,
+        "counts": {
+          "appDidBecomeActive": 2,
+          "appDidResignActive": 2,
+          "windowFocus": 2,
+          "windowBlur": 2,
+          "pageFocus": 2,
+          "pageBlur": 2,
+          "textFocus": 2,
+          "textBlur": 2
+        }
+      },
+      "before": {
+        "ready": true,
+        "fieldIndex": 5,
+        "focusedIndex": null,
+        "focusedIsField": false,
+        "selectedTextPresent": false,
+        "selectedCount": 0
+      },
+      "sidecars": [
+        {
+          "stage": "before",
+          "countersBefore": {
+            "seq": 16,
+            "at": 1792791002500,
+            "counts": {
+              "appDidBecomeActive": 2,
+              "appDidResignActive": 2,
+              "windowFocus": 2,
+              "windowBlur": 2,
+              "pageFocus": 2,
+              "pageBlur": 2,
+              "textFocus": 2,
+              "textBlur": 2
+            }
+          },
+          "reading": {
+            "source": "cua-skyshot",
+            "preparation": {
+              "launched": false,
+              "reopened": false,
+              "noOpenVerified": true
+            },
+            "fieldFound": true,
+            "axFocused": true,
+            "focusable": true,
+            "actions": [
+              "AXPress",
+              "AXShowMenu",
+              "AXScrollToVisible"
+            ],
+            "focusedIsField": false,
+            "focusedRead": false,
+            "focusedRole": null,
+            "selectedTextPresent": false,
+            "focusRead": "AXError -25212"
+          },
+          "countersAfter": {
+            "seq": 16,
+            "at": 1792791002500,
+            "counts": {
+              "appDidBecomeActive": 2,
+              "appDidResignActive": 2,
+              "windowFocus": 2,
+              "windowBlur": 2,
+              "pageFocus": 2,
+              "pageBlur": 2,
+              "textFocus": 2,
+              "textBlur": 2
+            }
+          },
+          "countersMoved": false
+        },
+        {
+          "stage": "after",
+          "countersBefore": {
+            "seq": 16,
+            "at": 1792791002500,
+            "counts": {
+              "appDidBecomeActive": 2,
+              "appDidResignActive": 2,
+              "windowFocus": 2,
+              "windowBlur": 2,
+              "pageFocus": 2,
+              "pageBlur": 2,
+              "textFocus": 2,
+              "textBlur": 2
+            }
+          },
+          "reading": {
+            "source": "cua-skyshot",
+            "preparation": {
+              "launched": false,
+              "reopened": false,
+              "noOpenVerified": true
+            },
+            "fieldFound": true,
+            "axFocused": true,
+            "focusable": true,
+            "actions": [
+              "AXPress",
+              "AXShowMenu",
+              "AXScrollToVisible"
+            ],
+            "focusedIsField": false,
+            "focusedRead": false,
+            "focusedRole": null,
+            "selectedTextPresent": false,
+            "focusRead": "AXError -25212"
+          },
+          "countersAfter": {
+            "seq": 16,
+            "at": 1792791002500,
+            "counts": {
+              "appDidBecomeActive": 2,
+              "appDidResignActive": 2,
+              "windowFocus": 2,
+              "windowBlur": 2,
+              "pageFocus": 2,
+              "pageBlur": 2,
+              "textFocus": 2,
+              "textBlur": 2
+            }
+          },
+          "countersMoved": false
+        }
+      ],
+      "axBefore": {
+        "source": "cua-skyshot",
+        "preparation": {
+          "launched": false,
+          "reopened": false,
+          "noOpenVerified": true
+        },
+        "fieldFound": true,
+        "axFocused": true,
+        "focusable": true,
+        "actions": [
+          "AXPress",
+          "AXShowMenu",
+          "AXScrollToVisible"
+        ],
+        "focusedIsField": false,
+        "focusedRead": false,
+        "focusedRole": null,
+        "selectedTextPresent": false,
+        "focusRead": "AXError -25212"
+      },
+      "inputRoute": 1,
+      "inCellMs": 17.227584000000206,
+      "at": [
+        1792791009571,
+        1792791009589
+      ],
+      "threw": false,
+      "error": "null",
+      "engineMeta": {
+        "actionInterval": {
+          "endedAt": 1792791009587,
+          "startedAt": 1792791009587
+        },
+        "receivedAt": 1792791009574,
+        "hidIdleMs": null,
+        "entered": null,
+        "intervention": null,
+        "observation": null,
+        "activationGuardMs": null,
+        "activationClick": null
+      },
+      "clickPlan": {
+        "reported": null,
+        "requested": "action",
+        "consistentWith": "AX action"
+      },
+      "actAt": [
+        1792791009571,
+        1792791009589
+      ],
+      "after": {
+        "fieldIndex": 5,
+        "focusedIndex": null,
+        "focusedIsField": false,
+        "selectedTextPresent": false,
+        "selectedCount": 0
+      },
+      "countersAfter": {
+        "seq": 16,
+        "at": 1792791002500,
+        "counts": {
+          "appDidBecomeActive": 2,
+          "appDidResignActive": 2,
+          "windowFocus": 2,
+          "windowBlur": 2,
+          "pageFocus": 2,
+          "pageBlur": 2,
+          "textFocus": 2,
+          "textBlur": 2
+        }
+      },
+      "axAfter": {
+        "source": "cua-skyshot",
+        "preparation": {
+          "launched": false,
+          "reopened": false,
+          "noOpenVerified": true
+        },
+        "fieldFound": true,
+        "axFocused": true,
+        "focusable": true,
+        "actions": [
+          "AXPress",
+          "AXShowMenu",
+          "AXScrollToVisible"
+        ],
+        "focusedIsField": false,
+        "focusedRead": false,
+        "focusedRole": null,
+        "selectedTextPresent": false,
+        "focusRead": "AXError -25212"
+      },
+      "later": {
+        "fieldIndex": 5,
+        "focusedIndex": null,
+        "focusedIsField": false,
+        "selectedTextPresent": false,
+        "selectedCount": 0
+      },
+      "countersLater": {
+        "seq": 16,
+        "at": 1792791002500,
+        "counts": {
+          "appDidBecomeActive": 2,
+          "appDidResignActive": 2,
+          "windowFocus": 2,
+          "windowBlur": 2,
+          "pageFocus": 2,
+          "pageBlur": 2,
+          "textFocus": 2,
+          "textBlur": 2
+        }
+      },
+      "countersBeforeRelease": {
+        "seq": 16,
+        "at": 1792791002500,
+        "counts": {
+          "appDidBecomeActive": 2,
+          "appDidResignActive": 2,
+          "windowFocus": 2,
+          "windowBlur": 2,
+          "pageFocus": 2,
+          "pageBlur": 2,
+          "textFocus": 2,
+          "textBlur": 2
+        }
+      },
+      "focusAfter": {
+        "appOwned": true,
+        "appPid": 462,
+        "named": true,
+        "valueHash": null
+      },
+      "countersAfterRelease": {
+        "seq": 16,
+        "at": 1792791002500,
+        "counts": {
+          "appDidBecomeActive": 2,
+          "appDidResignActive": 2,
+          "windowFocus": 2,
+          "windowBlur": 2,
+          "pageFocus": 2,
+          "pageBlur": 2,
+          "textFocus": 2,
+          "textBlur": 2
+        }
+      },
+      "release": {
+        "released": true,
+        "held": false,
+        "resignAdvanced": false,
+        "balanced": true,
+        "outstandingAtRelease": false
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "route-ab",
+      "id": "electron/background/focus.forced3@finder",
+      "engine": "cua",
+      "sample": 1,
+      "scene": "electron",
+      "user": "finder",
+      "regime": "background",
+      "method": "click",
+      "case": "field-focus",
+      "variant": "forced3",
+      "ok": false,
+      "connectionCheck": {
+        "connections": 1
+      },
+      "seed": {
+        "ready": true,
+        "selectedTextPresent": true
+      },
+      "focus": {
+        "appOwned": true,
+        "appPid": 462,
+        "named": true,
+        "valueHash": null
+      },
+      "countersBefore": {
+        "seq": 24,
+        "at": 1792791022467,
+        "counts": {
+          "appDidBecomeActive": 3,
+          "appDidResignActive": 3,
+          "windowFocus": 3,
+          "windowBlur": 3,
+          "pageFocus": 3,
+          "pageBlur": 3,
+          "textFocus": 3,
+          "textBlur": 3
+        }
+      },
+      "before": {
+        "ready": true,
+        "fieldIndex": 5,
+        "focusedIndex": null,
+        "focusedIsField": false,
+        "selectedTextPresent": false,
+        "selectedCount": 0
+      },
+      "sidecars": [
+        {
+          "stage": "before",
+          "countersBefore": {
+            "seq": 24,
+            "at": 1792791022467,
+            "counts": {
+              "appDidBecomeActive": 3,
+              "appDidResignActive": 3,
+              "windowFocus": 3,
+              "windowBlur": 3,
+              "pageFocus": 3,
+              "pageBlur": 3,
+              "textFocus": 3,
+              "textBlur": 3
+            }
+          },
+          "reading": {
+            "source": "cua-skyshot",
+            "preparation": {
+              "launched": false,
+              "reopened": false,
+              "noOpenVerified": true
+            },
+            "fieldFound": true,
+            "axFocused": true,
+            "focusable": true,
+            "actions": [
+              "AXPress",
+              "AXShowMenu",
+              "AXScrollToVisible"
+            ],
+            "focusedIsField": false,
+            "focusedRead": false,
+            "focusedRole": null,
+            "selectedTextPresent": false,
+            "focusRead": "AXError -25212"
+          },
+          "countersAfter": {
+            "seq": 24,
+            "at": 1792791022467,
+            "counts": {
+              "appDidBecomeActive": 3,
+              "appDidResignActive": 3,
+              "windowFocus": 3,
+              "windowBlur": 3,
+              "pageFocus": 3,
+              "pageBlur": 3,
+              "textFocus": 3,
+              "textBlur": 3
+            }
+          },
+          "countersMoved": false
+        },
+        {
+          "stage": "after",
+          "countersBefore": {
+            "seq": 32,
+            "at": 1792791028718,
+            "counts": {
+              "appDidBecomeActive": 4,
+              "appDidResignActive": 4,
+              "windowFocus": 4,
+              "windowBlur": 4,
+              "pageFocus": 4,
+              "pageBlur": 4,
+              "textFocus": 4,
+              "textBlur": 4
+            }
+          },
+          "reading": {
+            "source": "cua-skyshot",
+            "preparation": {
+              "launched": false,
+              "reopened": false,
+              "noOpenVerified": true
+            },
+            "fieldFound": true,
+            "axFocused": true,
+            "focusable": true,
+            "actions": [
+              "AXPress",
+              "AXShowMenu",
+              "AXScrollToVisible"
+            ],
+            "focusedIsField": false,
+            "focusedRead": false,
+            "focusedRole": null,
+            "selectedTextPresent": false,
+            "focusRead": "AXError -25212"
+          },
+          "countersAfter": {
+            "seq": 32,
+            "at": 1792791028718,
+            "counts": {
+              "appDidBecomeActive": 4,
+              "appDidResignActive": 4,
+              "windowFocus": 4,
+              "windowBlur": 4,
+              "pageFocus": 4,
+              "pageBlur": 4,
+              "textFocus": 4,
+              "textBlur": 4
+            }
+          },
+          "countersMoved": false
+        }
+      ],
+      "axBefore": {
+        "source": "cua-skyshot",
+        "preparation": {
+          "launched": false,
+          "reopened": false,
+          "noOpenVerified": true
+        },
+        "fieldFound": true,
+        "axFocused": true,
+        "focusable": true,
+        "actions": [
+          "AXPress",
+          "AXShowMenu",
+          "AXScrollToVisible"
+        ],
+        "focusedIsField": false,
+        "focusedRead": false,
+        "focusedRole": null,
+        "selectedTextPresent": false,
+        "focusRead": "AXError -25212"
+      },
+      "inputRoute": 3,
+      "inCellMs": 82.85862500000076,
+      "at": [
+        1792791028618,
+        1792791028701
+      ],
+      "threw": false,
+      "error": "null",
+      "engineMeta": {
+        "actionInterval": {
+          "endedAt": 1792791028699,
+          "startedAt": 1792791028699
+        },
+        "receivedAt": 1792791028622,
+        "hidIdleMs": null,
+        "entered": null,
+        "intervention": null,
+        "observation": null,
+        "activationGuardMs": 48.141,
+        "activationClick": "posted"
+      },
+      "clickPlan": {
+        "reported": null,
+        "requested": "synthesized",
+        "consistentWith": "synthesized click"
+      },
+      "actAt": [
+        1792791028618,
+        1792791028701
+      ],
+      "after": {
+        "fieldIndex": 5,
+        "focusedIndex": null,
+        "focusedIsField": false,
+        "selectedTextPresent": false,
+        "selectedCount": 0
+      },
+      "countersAfter": {
+        "seq": 32,
+        "at": 1792791028718,
+        "counts": {
+          "appDidBecomeActive": 4,
+          "appDidResignActive": 4,
+          "windowFocus": 4,
+          "windowBlur": 4,
+          "pageFocus": 4,
+          "pageBlur": 4,
+          "textFocus": 4,
+          "textBlur": 4
+        }
+      },
+      "axAfter": {
+        "source": "cua-skyshot",
+        "preparation": {
+          "launched": false,
+          "reopened": false,
+          "noOpenVerified": true
+        },
+        "fieldFound": true,
+        "axFocused": true,
+        "focusable": true,
+        "actions": [
+          "AXPress",
+          "AXShowMenu",
+          "AXScrollToVisible"
+        ],
+        "focusedIsField": false,
+        "focusedRead": false,
+        "focusedRole": null,
+        "selectedTextPresent": false,
+        "focusRead": "AXError -25212"
+      },
+      "later": {
+        "fieldIndex": 5,
+        "focusedIndex": null,
+        "focusedIsField": false,
+        "selectedTextPresent": false,
+        "selectedCount": 0
+      },
+      "countersLater": {
+        "seq": 32,
+        "at": 1792791028718,
+        "counts": {
+          "appDidBecomeActive": 4,
+          "appDidResignActive": 4,
+          "windowFocus": 4,
+          "windowBlur": 4,
+          "pageFocus": 4,
+          "pageBlur": 4,
+          "textFocus": 4,
+          "textBlur": 4
+        }
+      },
+      "countersBeforeRelease": {
+        "seq": 32,
+        "at": 1792791028718,
+        "counts": {
+          "appDidBecomeActive": 4,
+          "appDidResignActive": 4,
+          "windowFocus": 4,
+          "windowBlur": 4,
+          "pageFocus": 4,
+          "pageBlur": 4,
+          "textFocus": 4,
+          "textBlur": 4
+        }
+      },
+      "focusAfter": {
+        "appOwned": true,
+        "appPid": 462,
+        "named": true,
+        "valueHash": null
+      },
+      "countersAfterRelease": {
+        "seq": 32,
+        "at": 1792791028718,
+        "counts": {
+          "appDidBecomeActive": 4,
+          "appDidResignActive": 4,
+          "windowFocus": 4,
+          "windowBlur": 4,
+          "pageFocus": 4,
+          "pageBlur": 4,
+          "textFocus": 4,
+          "textBlur": 4
+        }
+      },
+      "release": {
+        "released": true,
+        "held": false,
+        "resignAdvanced": false,
+        "balanced": true,
+        "outstandingAtRelease": false
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "route-ab",
+      "id": "electron/background/focus.held3@finder",
+      "engine": "cua",
+      "sample": 1,
+      "scene": "electron",
+      "user": "finder",
+      "regime": "background",
+      "method": "click",
+      "case": "field-focus",
+      "variant": "held3",
+      "ok": true,
+      "connectionCheck": {
+        "connections": 1
+      },
+      "seed": {
+        "ready": true,
+        "selectedTextPresent": true
+      },
+      "focus": {
+        "appOwned": true,
+        "appPid": 462,
+        "named": true,
+        "valueHash": null
+      },
+      "countersBefore": {
+        "seq": 40,
+        "at": 1792791040044,
+        "counts": {
+          "appDidBecomeActive": 5,
+          "appDidResignActive": 5,
+          "windowFocus": 5,
+          "windowBlur": 5,
+          "pageFocus": 5,
+          "pageBlur": 5,
+          "textFocus": 5,
+          "textBlur": 5
+        }
+      },
+      "before": {
+        "ready": true,
+        "fieldIndex": 5,
+        "focusedIndex": null,
+        "focusedIsField": false,
+        "selectedTextPresent": false,
+        "selectedCount": 0
+      },
+      "sidecars": [
+        {
+          "stage": "before",
+          "countersBefore": {
+            "seq": 40,
+            "at": 1792791040044,
+            "counts": {
+              "appDidBecomeActive": 5,
+              "appDidResignActive": 5,
+              "windowFocus": 5,
+              "windowBlur": 5,
+              "pageFocus": 5,
+              "pageBlur": 5,
+              "textFocus": 5,
+              "textBlur": 5
+            }
+          },
+          "reading": {
+            "source": "cua-skyshot",
+            "preparation": {
+              "launched": false,
+              "reopened": false,
+              "noOpenVerified": true
+            },
+            "fieldFound": true,
+            "axFocused": true,
+            "focusable": true,
+            "actions": [
+              "AXPress",
+              "AXShowMenu",
+              "AXScrollToVisible"
+            ],
+            "focusedIsField": false,
+            "focusedRead": false,
+            "focusedRole": null,
+            "selectedTextPresent": false,
+            "focusRead": "AXError -25212"
+          },
+          "countersAfter": {
+            "seq": 40,
+            "at": 1792791040044,
+            "counts": {
+              "appDidBecomeActive": 5,
+              "appDidResignActive": 5,
+              "windowFocus": 5,
+              "windowBlur": 5,
+              "pageFocus": 5,
+              "pageBlur": 5,
+              "textFocus": 5,
+              "textBlur": 5
+            }
+          },
+          "countersMoved": false
+        },
+        {
+          "stage": "after-primer",
+          "countersBefore": {
+            "seq": 45,
+            "at": 1792791046719,
+            "counts": {
+              "appDidBecomeActive": 6,
+              "appDidResignActive": 5,
+              "windowFocus": 6,
+              "windowBlur": 5,
+              "pageFocus": 6,
+              "pageBlur": 5,
+              "textFocus": 6,
+              "textBlur": 6
+            }
+          },
+          "reading": {
+            "source": "cua-skyshot",
+            "preparation": {
+              "launched": false,
+              "reopened": false,
+              "noOpenVerified": true
+            },
+            "fieldFound": true,
+            "axFocused": false,
+            "focusable": true,
+            "actions": [
+              "AXPress",
+              "AXShowMenu",
+              "AXScrollToVisible"
+            ],
+            "focusedIsField": false,
+            "focusedRead": true,
+            "focusedRole": "AXButton",
+            "selectedTextPresent": false,
+            "focusRead": null
+          },
+          "countersAfter": {
+            "seq": 45,
+            "at": 1792791046719,
+            "counts": {
+              "appDidBecomeActive": 6,
+              "appDidResignActive": 5,
+              "windowFocus": 6,
+              "windowBlur": 5,
+              "pageFocus": 6,
+              "pageBlur": 5,
+              "textFocus": 6,
+              "textBlur": 6
+            }
+          },
+          "countersMoved": false
+        },
+        {
+          "stage": "after",
+          "countersBefore": {
+            "seq": 46,
+            "at": 1792791050342,
+            "counts": {
+              "appDidBecomeActive": 6,
+              "appDidResignActive": 5,
+              "windowFocus": 6,
+              "windowBlur": 5,
+              "pageFocus": 6,
+              "pageBlur": 5,
+              "textFocus": 7,
+              "textBlur": 6
+            }
+          },
+          "reading": {
+            "source": "cua-skyshot",
+            "preparation": {
+              "launched": false,
+              "reopened": false,
+              "noOpenVerified": true
+            },
+            "fieldFound": true,
+            "axFocused": true,
+            "focusable": true,
+            "actions": [
+              "AXPress",
+              "AXShowMenu",
+              "AXScrollToVisible"
+            ],
+            "focusedIsField": true,
+            "focusedRead": true,
+            "focusedRole": "AXTextArea",
+            "selectedTextPresent": false,
+            "focusRead": null
+          },
+          "countersAfter": {
+            "seq": 46,
+            "at": 1792791050342,
+            "counts": {
+              "appDidBecomeActive": 6,
+              "appDidResignActive": 5,
+              "windowFocus": 6,
+              "windowBlur": 5,
+              "pageFocus": 6,
+              "pageBlur": 5,
+              "textFocus": 7,
+              "textBlur": 6
+            }
+          },
+          "countersMoved": false
+        }
+      ],
+      "axBefore": {
+        "source": "cua-skyshot",
+        "preparation": {
+          "launched": false,
+          "reopened": false,
+          "noOpenVerified": true
+        },
+        "fieldFound": true,
+        "axFocused": true,
+        "focusable": true,
+        "actions": [
+          "AXPress",
+          "AXShowMenu",
+          "AXScrollToVisible"
+        ],
+        "focusedIsField": false,
+        "focusedRead": false,
+        "focusedRole": null,
+        "selectedTextPresent": false,
+        "focusRead": "AXError -25212"
+      },
+      "primer": {
+        "inputRoute": 3,
+        "inCellMs": 62.840416999999434,
+        "at": [
+          1792791046659,
+          1792791046722
+        ],
+        "threw": false,
+        "error": null,
+        "engineMeta": {
+          "actionInterval": {
+            "endedAt": 1792791046720,
+            "startedAt": 1792791046719
+          },
+          "receivedAt": 1792791046661,
+          "hidIdleMs": null,
+          "entered": null,
+          "intervention": null,
+          "observation": null,
+          "activationGuardMs": 40.437,
+          "activationClick": "posted"
+        }
+      },
+      "countersAfterPrime": {
+        "seq": 45,
+        "at": 1792791046719,
+        "counts": {
+          "appDidBecomeActive": 6,
+          "appDidResignActive": 5,
+          "windowFocus": 6,
+          "windowBlur": 5,
+          "pageFocus": 6,
+          "pageBlur": 5,
+          "textFocus": 6,
+          "textBlur": 6
+        }
+      },
+      "afterPrime": {
+        "fieldIndex": 5,
+        "focusedIndex": 13,
+        "focusedIsField": false,
+        "selectedTextPresent": false,
+        "selectedCount": 0
+      },
+      "axAfterPrime": {
+        "source": "cua-skyshot",
+        "preparation": {
+          "launched": false,
+          "reopened": false,
+          "noOpenVerified": true
+        },
+        "fieldFound": true,
+        "axFocused": false,
+        "focusable": true,
+        "actions": [
+          "AXPress",
+          "AXShowMenu",
+          "AXScrollToVisible"
+        ],
+        "focusedIsField": false,
+        "focusedRead": true,
+        "focusedRole": "AXButton",
+        "selectedTextPresent": false,
+        "focusRead": null
+      },
+      "beforeClick": {
+        "ready": true,
+        "fieldIndex": 5,
+        "focusedIndex": 13,
+        "focusedIsField": false,
+        "selectedTextPresent": false,
+        "selectedCount": 0
+      },
+      "inputRoute": 3,
+      "inCellMs": 12.190833000000566,
+      "at": [
+        1792791050331,
+        1792791050344
+      ],
+      "threw": false,
+      "error": "null",
+      "engineMeta": {
+        "actionInterval": {
+          "endedAt": 1792791050340,
+          "startedAt": 1792791050340
+        },
+        "receivedAt": 1792791050333,
+        "hidIdleMs": null,
+        "entered": null,
+        "intervention": null,
+        "observation": null,
+        "activationGuardMs": null,
+        "activationClick": null
+      },
+      "clickPlan": {
+        "reported": null,
+        "requested": "synthesized",
+        "consistentWith": "synthesized click"
+      },
+      "actAt": [
+        1792791050331,
+        1792791050344
+      ],
+      "after": {
+        "fieldIndex": 5,
+        "focusedIndex": 5,
+        "focusedIsField": true,
+        "selectedTextPresent": false,
+        "selectedCount": 0
+      },
+      "countersAfter": {
+        "seq": 46,
+        "at": 1792791050342,
+        "counts": {
+          "appDidBecomeActive": 6,
+          "appDidResignActive": 5,
+          "windowFocus": 6,
+          "windowBlur": 5,
+          "pageFocus": 6,
+          "pageBlur": 5,
+          "textFocus": 7,
+          "textBlur": 6
+        }
+      },
+      "axAfter": {
+        "source": "cua-skyshot",
+        "preparation": {
+          "launched": false,
+          "reopened": false,
+          "noOpenVerified": true
+        },
+        "fieldFound": true,
+        "axFocused": true,
+        "focusable": true,
+        "actions": [
+          "AXPress",
+          "AXShowMenu",
+          "AXScrollToVisible"
+        ],
+        "focusedIsField": true,
+        "focusedRead": true,
+        "focusedRole": "AXTextArea",
+        "selectedTextPresent": false,
+        "focusRead": null
+      },
+      "later": {
+        "fieldIndex": 5,
+        "focusedIndex": 5,
+        "focusedIsField": true,
+        "selectedTextPresent": false,
+        "selectedCount": 0
+      },
+      "countersLater": {
+        "seq": 46,
+        "at": 1792791050342,
+        "counts": {
+          "appDidBecomeActive": 6,
+          "appDidResignActive": 5,
+          "windowFocus": 6,
+          "windowBlur": 5,
+          "pageFocus": 6,
+          "pageBlur": 5,
+          "textFocus": 7,
+          "textBlur": 6
+        }
+      },
+      "countersBeforeRelease": {
+        "seq": 46,
+        "at": 1792791050342,
+        "counts": {
+          "appDidBecomeActive": 6,
+          "appDidResignActive": 5,
+          "windowFocus": 6,
+          "windowBlur": 5,
+          "pageFocus": 6,
+          "pageBlur": 5,
+          "textFocus": 7,
+          "textBlur": 6
+        }
+      },
+      "focusAfter": {
+        "appOwned": true,
+        "appPid": 462,
+        "named": true,
+        "valueHash": null
+      },
+      "countersAfterRelease": {
+        "seq": 50,
+        "at": 1792791057494,
+        "counts": {
+          "appDidBecomeActive": 6,
+          "appDidResignActive": 6,
+          "windowFocus": 6,
+          "windowBlur": 6,
+          "pageFocus": 6,
+          "pageBlur": 6,
+          "textFocus": 7,
+          "textBlur": 7
+        }
+      },
+      "release": {
+        "released": true,
+        "held": true,
+        "resignAdvanced": true,
+        "balanced": true,
+        "outstandingAtRelease": true
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "route-ab",
+      "id": "electron/background/focus.natural@finder",
+      "engine": "cua",
+      "sample": 1,
+      "scene": "electron",
+      "user": "finder",
+      "regime": "background",
+      "method": "click",
+      "case": "field-focus",
+      "variant": "natural",
+      "ok": false,
+      "connectionCheck": {
+        "connections": 1
+      },
+      "seed": {
+        "ready": true,
+        "selectedTextPresent": true
+      },
+      "focus": {
+        "appOwned": true,
+        "appPid": 462,
+        "named": true,
+        "valueHash": null
+      },
+      "countersBefore": {
+        "seq": 58,
+        "at": 1792791061955,
+        "counts": {
+          "appDidBecomeActive": 7,
+          "appDidResignActive": 7,
+          "windowFocus": 7,
+          "windowBlur": 7,
+          "pageFocus": 7,
+          "pageBlur": 7,
+          "textFocus": 8,
+          "textBlur": 8
+        }
+      },
+      "before": {
+        "ready": true,
+        "fieldIndex": 5,
+        "focusedIndex": null,
+        "focusedIsField": false,
+        "selectedTextPresent": false,
+        "selectedCount": 0
+      },
+      "sidecars": [
+        {
+          "stage": "before",
+          "countersBefore": {
+            "seq": 58,
+            "at": 1792791061955,
+            "counts": {
+              "appDidBecomeActive": 7,
+              "appDidResignActive": 7,
+              "windowFocus": 7,
+              "windowBlur": 7,
+              "pageFocus": 7,
+              "pageBlur": 7,
+              "textFocus": 8,
+              "textBlur": 8
+            }
+          },
+          "reading": {
+            "source": "cua-skyshot",
+            "preparation": {
+              "launched": false,
+              "reopened": false,
+              "noOpenVerified": true
+            },
+            "fieldFound": true,
+            "axFocused": true,
+            "focusable": true,
+            "actions": [
+              "AXPress",
+              "AXShowMenu",
+              "AXScrollToVisible"
+            ],
+            "focusedIsField": false,
+            "focusedRead": false,
+            "focusedRole": null,
+            "selectedTextPresent": false,
+            "focusRead": "AXError -25212"
+          },
+          "countersAfter": {
+            "seq": 58,
+            "at": 1792791061955,
+            "counts": {
+              "appDidBecomeActive": 7,
+              "appDidResignActive": 7,
+              "windowFocus": 7,
+              "windowBlur": 7,
+              "pageFocus": 7,
+              "pageBlur": 7,
+              "textFocus": 8,
+              "textBlur": 8
+            }
+          },
+          "countersMoved": false
+        },
+        {
+          "stage": "after",
+          "countersBefore": {
+            "seq": 62,
+            "at": 1792791068352,
+            "counts": {
+              "appDidBecomeActive": 8,
+              "appDidResignActive": 7,
+              "windowFocus": 8,
+              "windowBlur": 7,
+              "pageFocus": 8,
+              "pageBlur": 7,
+              "textFocus": 9,
+              "textBlur": 8
+            }
+          },
+          "reading": {
+            "source": "cua-skyshot",
+            "preparation": {
+              "launched": false,
+              "reopened": false,
+              "noOpenVerified": true
+            },
+            "fieldFound": true,
+            "axFocused": true,
+            "focusable": true,
+            "actions": [
+              "AXPress",
+              "AXShowMenu",
+              "AXScrollToVisible"
+            ],
+            "focusedIsField": true,
+            "focusedRead": true,
+            "focusedRole": "AXTextArea",
+            "selectedTextPresent": true,
+            "focusRead": null
+          },
+          "countersAfter": {
+            "seq": 62,
+            "at": 1792791068352,
+            "counts": {
+              "appDidBecomeActive": 8,
+              "appDidResignActive": 7,
+              "windowFocus": 8,
+              "windowBlur": 7,
+              "pageFocus": 8,
+              "pageBlur": 7,
+              "textFocus": 9,
+              "textBlur": 8
+            }
+          },
+          "countersMoved": false
+        }
+      ],
+      "axBefore": {
+        "source": "cua-skyshot",
+        "preparation": {
+          "launched": false,
+          "reopened": false,
+          "noOpenVerified": true
+        },
+        "fieldFound": true,
+        "axFocused": true,
+        "focusable": true,
+        "actions": [
+          "AXPress",
+          "AXShowMenu",
+          "AXScrollToVisible"
+        ],
+        "focusedIsField": false,
+        "focusedRead": false,
+        "focusedRole": null,
+        "selectedTextPresent": false,
+        "focusRead": "AXError -25212"
+      },
+      "inputRoute": 3,
+      "inCellMs": 79.11933400000271,
+      "at": [
+        1792791068313,
+        1792791068393
+      ],
+      "threw": false,
+      "error": "null",
+      "engineMeta": {
+        "actionInterval": {
+          "endedAt": 1792791068391,
+          "startedAt": 1792791068391
+        },
+        "receivedAt": 1792791068315,
+        "hidIdleMs": null,
+        "entered": null,
+        "intervention": null,
+        "observation": null,
+        "activationGuardMs": 64.572,
+        "activationClick": "posted"
+      },
+      "clickPlan": {
+        "reported": null,
+        "requested": "natural",
+        "consistentWith": "held AX action OR synthesized click"
+      },
+      "actAt": [
+        1792791068313,
+        1792791068393
+      ],
+      "after": {
+        "fieldIndex": 5,
+        "focusedIndex": null,
+        "focusedIsField": false,
+        "selectedTextPresent": true,
+        "selectedCount": 0
+      },
+      "countersAfter": {
+        "seq": 62,
+        "at": 1792791068352,
+        "counts": {
+          "appDidBecomeActive": 8,
+          "appDidResignActive": 7,
+          "windowFocus": 8,
+          "windowBlur": 7,
+          "pageFocus": 8,
+          "pageBlur": 7,
+          "textFocus": 9,
+          "textBlur": 8
+        }
+      },
+      "axAfter": {
+        "source": "cua-skyshot",
+        "preparation": {
+          "launched": false,
+          "reopened": false,
+          "noOpenVerified": true
+        },
+        "fieldFound": true,
+        "axFocused": true,
+        "focusable": true,
+        "actions": [
+          "AXPress",
+          "AXShowMenu",
+          "AXScrollToVisible"
+        ],
+        "focusedIsField": true,
+        "focusedRead": true,
+        "focusedRole": "AXTextArea",
+        "selectedTextPresent": true,
+        "focusRead": null
+      },
+      "later": {
+        "fieldIndex": 5,
+        "focusedIndex": null,
+        "focusedIsField": false,
+        "selectedTextPresent": true,
+        "selectedCount": 0
+      },
+      "countersLater": {
+        "seq": 62,
+        "at": 1792791068352,
+        "counts": {
+          "appDidBecomeActive": 8,
+          "appDidResignActive": 7,
+          "windowFocus": 8,
+          "windowBlur": 7,
+          "pageFocus": 8,
+          "pageBlur": 7,
+          "textFocus": 9,
+          "textBlur": 8
+        }
+      },
+      "countersBeforeRelease": {
+        "seq": 62,
+        "at": 1792791068352,
+        "counts": {
+          "appDidBecomeActive": 8,
+          "appDidResignActive": 7,
+          "windowFocus": 8,
+          "windowBlur": 7,
+          "pageFocus": 8,
+          "pageBlur": 7,
+          "textFocus": 9,
+          "textBlur": 8
+        }
+      },
+      "focusAfter": {
+        "appOwned": true,
+        "appPid": 462,
+        "named": true,
+        "valueHash": null
+      },
+      "countersAfterRelease": {
+        "seq": 66,
+        "at": 1792791076128,
+        "counts": {
+          "appDidBecomeActive": 8,
+          "appDidResignActive": 8,
+          "windowFocus": 8,
+          "windowBlur": 8,
+          "pageFocus": 8,
+          "pageBlur": 8,
+          "textFocus": 9,
+          "textBlur": 9
+        }
+      },
+      "release": {
+        "released": true,
+        "held": true,
+        "resignAdvanced": true,
+        "balanced": true,
+        "outstandingAtRelease": true
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "route-ab",
+      "id": "electron/background/focus.natural-empty@finder",
+      "engine": "cua",
+      "sample": 1,
+      "scene": "electron",
+      "user": "finder",
+      "regime": "background",
+      "method": "click",
+      "case": "field-focus",
+      "variant": "natural-empty",
+      "ok": true,
+      "connectionCheck": {
+        "connections": 1
+      },
+      "seed": {
+        "ready": true,
+        "selectedTextPresent": false
+      },
+      "focus": {
+        "appOwned": true,
+        "appPid": 462,
+        "named": true,
+        "valueHash": null
+      },
+      "countersBefore": {
+        "seq": 74,
+        "at": 1792791079699,
+        "counts": {
+          "appDidBecomeActive": 9,
+          "appDidResignActive": 9,
+          "windowFocus": 9,
+          "windowBlur": 9,
+          "pageFocus": 9,
+          "pageBlur": 9,
+          "textFocus": 10,
+          "textBlur": 10
+        }
+      },
+      "before": {
+        "ready": true,
+        "fieldIndex": 5,
+        "focusedIndex": null,
+        "focusedIsField": false,
+        "selectedTextPresent": false,
+        "selectedCount": 0
+      },
+      "sidecars": [
+        {
+          "stage": "before",
+          "countersBefore": {
+            "seq": 74,
+            "at": 1792791079699,
+            "counts": {
+              "appDidBecomeActive": 9,
+              "appDidResignActive": 9,
+              "windowFocus": 9,
+              "windowBlur": 9,
+              "pageFocus": 9,
+              "pageBlur": 9,
+              "textFocus": 10,
+              "textBlur": 10
+            }
+          },
+          "reading": {
+            "source": "cua-skyshot",
+            "preparation": {
+              "launched": false,
+              "reopened": false,
+              "noOpenVerified": true
+            },
+            "fieldFound": true,
+            "axFocused": true,
+            "focusable": true,
+            "actions": [
+              "AXPress",
+              "AXShowMenu",
+              "AXScrollToVisible"
+            ],
+            "focusedIsField": false,
+            "focusedRead": false,
+            "focusedRole": null,
+            "selectedTextPresent": false,
+            "focusRead": "AXError -25212"
+          },
+          "countersAfter": {
+            "seq": 74,
+            "at": 1792791079699,
+            "counts": {
+              "appDidBecomeActive": 9,
+              "appDidResignActive": 9,
+              "windowFocus": 9,
+              "windowBlur": 9,
+              "pageFocus": 9,
+              "pageBlur": 9,
+              "textFocus": 10,
+              "textBlur": 10
+            }
+          },
+          "countersMoved": false
+        },
+        {
+          "stage": "after",
+          "countersBefore": {
+            "seq": 78,
+            "at": 1792791085852,
+            "counts": {
+              "appDidBecomeActive": 10,
+              "appDidResignActive": 9,
+              "windowFocus": 10,
+              "windowBlur": 9,
+              "pageFocus": 10,
+              "pageBlur": 9,
+              "textFocus": 11,
+              "textBlur": 10
+            }
+          },
+          "reading": {
+            "source": "cua-skyshot",
+            "preparation": {
+              "launched": false,
+              "reopened": false,
+              "noOpenVerified": true
+            },
+            "fieldFound": true,
+            "axFocused": true,
+            "focusable": true,
+            "actions": [
+              "AXPress",
+              "AXShowMenu",
+              "AXScrollToVisible"
+            ],
+            "focusedIsField": true,
+            "focusedRead": true,
+            "focusedRole": "AXTextArea",
+            "selectedTextPresent": false,
+            "focusRead": null
+          },
+          "countersAfter": {
+            "seq": 78,
+            "at": 1792791085852,
+            "counts": {
+              "appDidBecomeActive": 10,
+              "appDidResignActive": 9,
+              "windowFocus": 10,
+              "windowBlur": 9,
+              "pageFocus": 10,
+              "pageBlur": 9,
+              "textFocus": 11,
+              "textBlur": 10
+            }
+          },
+          "countersMoved": false
+        }
+      ],
+      "axBefore": {
+        "source": "cua-skyshot",
+        "preparation": {
+          "launched": false,
+          "reopened": false,
+          "noOpenVerified": true
+        },
+        "fieldFound": true,
+        "axFocused": true,
+        "focusable": true,
+        "actions": [
+          "AXPress",
+          "AXShowMenu",
+          "AXScrollToVisible"
+        ],
+        "focusedIsField": false,
+        "focusedRead": false,
+        "focusedRole": null,
+        "selectedTextPresent": false,
+        "focusRead": "AXError -25212"
+      },
+      "inputRoute": 3,
+      "inCellMs": 97.18633299999055,
+      "at": [
+        1792791085823,
+        1792791085920
+      ],
+      "threw": false,
+      "error": "null",
+      "engineMeta": {
+        "actionInterval": {
+          "endedAt": 1792791085919,
+          "startedAt": 1792791085918
+        },
+        "receivedAt": 1792791085825,
+        "hidIdleMs": null,
+        "entered": null,
+        "intervention": null,
+        "observation": null,
+        "activationGuardMs": 78.651,
+        "activationClick": "posted"
+      },
+      "clickPlan": {
+        "reported": null,
+        "requested": "natural",
+        "consistentWith": "held AX action OR synthesized click"
+      },
+      "actAt": [
+        1792791085823,
+        1792791085920
+      ],
+      "after": {
+        "fieldIndex": 5,
+        "focusedIndex": 5,
+        "focusedIsField": true,
+        "selectedTextPresent": false,
+        "selectedCount": 0
+      },
+      "countersAfter": {
+        "seq": 78,
+        "at": 1792791085852,
+        "counts": {
+          "appDidBecomeActive": 10,
+          "appDidResignActive": 9,
+          "windowFocus": 10,
+          "windowBlur": 9,
+          "pageFocus": 10,
+          "pageBlur": 9,
+          "textFocus": 11,
+          "textBlur": 10
+        }
+      },
+      "axAfter": {
+        "source": "cua-skyshot",
+        "preparation": {
+          "launched": false,
+          "reopened": false,
+          "noOpenVerified": true
+        },
+        "fieldFound": true,
+        "axFocused": true,
+        "focusable": true,
+        "actions": [
+          "AXPress",
+          "AXShowMenu",
+          "AXScrollToVisible"
+        ],
+        "focusedIsField": true,
+        "focusedRead": true,
+        "focusedRole": "AXTextArea",
+        "selectedTextPresent": false,
+        "focusRead": null
+      },
+      "later": {
+        "fieldIndex": 5,
+        "focusedIndex": 5,
+        "focusedIsField": true,
+        "selectedTextPresent": false,
+        "selectedCount": 0
+      },
+      "countersLater": {
+        "seq": 78,
+        "at": 1792791085852,
+        "counts": {
+          "appDidBecomeActive": 10,
+          "appDidResignActive": 9,
+          "windowFocus": 10,
+          "windowBlur": 9,
+          "pageFocus": 10,
+          "pageBlur": 9,
+          "textFocus": 11,
+          "textBlur": 10
+        }
+      },
+      "countersBeforeRelease": {
+        "seq": 78,
+        "at": 1792791085852,
+        "counts": {
+          "appDidBecomeActive": 10,
+          "appDidResignActive": 9,
+          "windowFocus": 10,
+          "windowBlur": 9,
+          "pageFocus": 10,
+          "pageBlur": 9,
+          "textFocus": 11,
+          "textBlur": 10
+        }
+      },
+      "focusAfter": {
+        "appOwned": true,
+        "appPid": 462,
+        "named": true,
+        "valueHash": null
+      },
+      "countersAfterRelease": {
+        "seq": 82,
+        "at": 1792791094983,
+        "counts": {
+          "appDidBecomeActive": 10,
+          "appDidResignActive": 10,
+          "windowFocus": 10,
+          "windowBlur": 10,
+          "pageFocus": 10,
+          "pageBlur": 10,
+          "textFocus": 11,
+          "textBlur": 11
+        }
+      },
+      "release": {
+        "released": true,
+        "held": true,
+        "resignAdvanced": true,
+        "balanced": true,
+        "outstandingAtRelease": true
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    }
+  ]
+}

@@ -157,18 +157,29 @@ pub fn second_rest(before: Sync, rest: Duration, since_first_ping: Duration) -> 
 pub struct Settle {
     pub before: Sync,
     pub second_rest: SecondRest,
+    /// The rest taken after the first sync (and again for a second rest): the one passed to the watch.
+    pub rest: Duration,
     pub after: Sync,
 }
 
 impl Settle {
     /// A settle cut short after its first sync and rest, by a revisit that failed: it entered the branch, with its rest
     /// choice, and settles nothing (the review of task 101, 6).
-    pub fn interrupted(before: Sync, second_rest: SecondRest) -> Settle {
+    pub fn interrupted(before: Sync, second_rest: SecondRest, rest: Duration) -> Settle {
         Settle {
             before,
             second_rest,
+            rest,
             after: Sync::Unasked,
         }
+    }
+
+    /// The settle's first half on `cursor` ([`crate::drop_cursor::DropCursorWatch::sync_and_rest`]): the sync, then
+    /// `rest` (twice when the answer came late and both fit), kept with the rest it took. Until the caller's revisit and
+    /// second sync fill `after` it is [`Settle::interrupted`]'s.
+    pub fn begin(cursor: &mut (impl crate::drop_cursor::DropCursorWatch + ?Sized), rest: Duration) -> Settle {
+        let (before, second_rest) = cursor.sync_and_rest(rest);
+        Settle::interrupted(before, second_rest, rest)
     }
 
     /// Whether the application answered both syncs inside the bound. When it did not, an unconfirmed drop says so.
@@ -184,13 +195,15 @@ impl Settle {
         settled(steps, self.before, self.after, placed)
     }
 
-    /// The `--stats` record, beside the cursor's (`drop_cursor.settle`). `settle_failed_activation_confirmed` starts
+    /// The `--stats` record, beside the cursor's (`drop_cursor.settle`), with the rest the settle took (`rest_ms`,
+    /// ruling 1102). `settle_failed_activation_confirmed` starts
     /// false; the engine turns it true once the activation of a Chrome destination confirmed an unsettled drop
     /// ([`mark_activation_confirmed`]).
     pub fn record(&self, steps: &[Step], placed: bool) -> Value {
         json!({
             "before_rest": self.before.record(),
             "second_rest": self.second_rest.name(),
+            "rest_ms": self.rest.as_millis() as u64,
             "after_motion": self.after.record(),
             "settled": self.settled(steps, placed),
             "settle_failed_activation_confirmed": false,
@@ -526,6 +539,7 @@ mod tests {
             let settle = Settle {
                 before,
                 second_rest,
+                rest: REST,
                 after: AFTER,
             };
             assert_eq!(
@@ -540,6 +554,7 @@ mod tests {
         let skipped = Settle {
             before,
             second_rest: SecondRest::Skipped,
+            rest: REST,
             after: AFTER,
         };
         assert_eq!(
@@ -553,6 +568,7 @@ mod tests {
         let settle = |before, after| Settle {
             before,
             second_rest: SecondRest::Needless,
+            rest: REST,
             after,
         };
         assert!(settle(BEFORE, AFTER).answered());
@@ -587,6 +603,7 @@ mod tests {
         let taken = Settle {
             before: answered(40),
             second_rest: SecondRest::Taken,
+            rest: REST,
             after: AFTER,
         };
         assert_eq!(
@@ -594,6 +611,7 @@ mod tests {
             json!({
                 "before_rest": { "answered": true, "ms": 40.0 },
                 "second_rest": "taken",
+                "rest_ms": 30,
                 "after_motion": { "answered": true, "ms": 1.0 },
                 "settled": true,
                 "settle_failed_activation_confirmed": false,
@@ -609,6 +627,7 @@ mod tests {
         let skipped = Settle {
             before: answered(100),
             second_rest: SecondRest::Skipped,
+            rest: REST,
             after: Sync::Unanswered { token: 42 },
         };
         assert_eq!(skipped.record(&steps, true)["second_rest"], json!("skipped"));
@@ -618,6 +637,7 @@ mod tests {
             &Settle {
                 before: BEFORE,
                 second_rest: SecondRest::Needless,
+                rest: REST,
                 after: AFTER,
             },
             true,
@@ -628,7 +648,7 @@ mod tests {
         );
         // the review of task 101 (6): a revisit that failed after the first ping and the rest still entered the branch,
         // with its rest choice, and ended unsettled
-        let interrupted = Settle::interrupted(answered(50), SecondRest::Taken);
+        let interrupted = Settle::interrupted(answered(50), SecondRest::Taken, REST);
         assert_eq!(interrupted.after, Sync::Unasked);
         assert!(!interrupted.settled(&steps, true));
         counts.count(&interrupted, interrupted.settled(&steps, true));
@@ -638,6 +658,34 @@ mod tests {
             counts.record(),
             json!({ "entered": 4, "second_rest": 2, "skipped": 1, "unsettled": 2, "settle_failed_activation_confirmed": 1 })
         );
+    }
+
+    /// Ruling 1102 (b): a settle records the rest it took, the one passed to the watch (`rest_ms`), for a drag's end and
+    /// a handle's alike, both of which begin it here.
+    #[test]
+    fn a_settle_records_the_rest_its_watch_took() {
+        use crate::drop_cursor::{AtRelease, DropCursorWatch};
+        struct Watch(Vec<Duration>);
+        impl DropCursorWatch for Watch {
+            fn sync(&mut self, _: Duration) -> Sync {
+                unreachable!("the first half asks once, with its rest")
+            }
+            fn sync_and_rest(&mut self, rest: Duration) -> (Sync, SecondRest) {
+                self.0.push(rest);
+                (answered(5), SecondRest::Needless)
+            }
+            fn at_release(&mut self, _: Option<u32>) -> AtRelease {
+                unreachable!("no release here")
+            }
+        }
+        for rest in [REST, Duration::ZERO, ms(17)] {
+            let mut watch = Watch(Vec::new());
+            let settle = Settle::begin(&mut watch, rest);
+            assert_eq!(watch.0, vec![rest]);
+            assert_eq!(settle.rest, rest);
+            assert_eq!(settle.after, Sync::Unasked, "the second half is the caller's");
+            assert_eq!(settle.record(&[], true)["rest_ms"], json!(rest.as_millis() as u64));
+        }
     }
 
     #[test]

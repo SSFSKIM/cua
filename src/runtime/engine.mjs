@@ -4,17 +4,21 @@
 //
 // The approved location is fixed, inside the default home and moved by no CUA_HOME: ~/Library/Application Support/cua/
 // engine/, holding `cua Engine.app` with engine.sock, engine.lock, usage.json, pending.json and approved.json beside it,
-// and the build's scratch, staging and previous bundle. Every session and harness serves the approved bundle in place;
-// only buildEngine replaces it, and only approveEngine (with the owner at the console when a grant or a capture
-// confirmation needs answering) writes approved.json. A bundle whose build or signature differs from approved.json's
-// is pending, not installed.
+// the pending slot `pending/cua Engine.app`, promoting.json (the approve lock), the build an approve claimed
+// (`claimed/cua Engine.app`), candidate.json (a promoted engine a rollback could not stop), and the build's scratch,
+// staging and previous bundle. Every session and harness serves the bundle at the approved path in place. A build
+// never takes away a working engine (design ruling 1118): buildEngine puts its bundle in the pending slot, leaving the
+// approved bundle, approved.json and the running engine alone, and only approveEngine (with the owner at the console
+// when a grant or a capture confirmation needs answering) promotes it into the approved path, puts the previous bundle
+// back if the approval does not complete, and writes approved.json. A bundle whose build or signature differs from
+// approved.json's is not installed.
 //
 // Nothing here ever signals the engine: it is stopped only by the `shutdown` request, which it refuses while another
 // connection is open. The signing identity is never printed (pre-flight item 2): pending.json and approved.json hold
 // it as device state, and everything returned or logged carries only the signature's kind and whether it matches the
 // configured identity.
 import {createConnection} from 'node:net';
-import {chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync} from 'node:fs';
+import {chmodSync, existsSync, linkSync, mkdirSync, readFileSync, realpathSync, renameSync, rmdirSync, rmSync, writeFileSync} from 'node:fs';
 import {homedir} from 'node:os';
 import {join} from 'node:path';
 import {spawn} from 'node:child_process';
@@ -43,6 +47,18 @@ export function enginePaths(dir = engineDirectory()) {
     bundle: join(dir, BUNDLE_NAME),
     socket: join(dir, 'engine.sock'),
     pending: join(dir, 'pending.json'),
+    // The pending slot (design ruling 1118): a build waiting beside the approved bundle for `cua engine approve`.
+    pendingDir: join(dir, 'pending'),
+    pendingBundle: join(dir, 'pending', BUNDLE_NAME),
+    // The approve lock, {pid} (takeApproveLock): one naming a process that is gone is an approve killed mid-way.
+    promoting: join(dir, 'promoting.json'),
+    // The pending build an approve took out of the slot to promote (claimPending), so a build published meanwhile
+    // cannot take its place.
+    claimedDir: join(dir, 'claimed'),
+    claimedBundle: join(dir, 'claimed', BUNDLE_NAME),
+    // The promoted engine a rolled-back approve could not stop, {pid, build} (restore): the next build or approve stops
+    // it once it is idle (stopLeftCandidate).
+    candidate: join(dir, 'candidate.json'),
     approved: join(dir, 'approved.json'),
     staging: join(dir, 'staging'),
     previous: join(dir, 'previous'),
@@ -181,12 +197,21 @@ export function installedEngine({dir = engineDirectory(), runSync} = {}) {
   return installedFrom({dir, onDisk, approved});
 }
 
+// The build in the pending slot, from its Info.plist alone (no codesign): {build, builtAt, bundlePath}, builtAt
+// pending.json's when it names this build, else null; null when the slot holds no bundle.
+function pendingSlot(paths) {
+  let identity;
+  try { identity = bundleIdentity(paths.pendingBundle); } catch { return null; }
+  const record = readRecord(paths.pending);
+  return {build: identity.build ?? null, builtAt: record?.build === identity.build ? record.builtAt ?? null : null, bundlePath: paths.pendingBundle};
+}
+
 // The approved location read once (the bundle on disk with its signature, which carries the SHA-1 and the subject and
-// is never printed; approved.json's and pending.json's records), for a caller that needs both installedFrom's answer and
-// inspectEngine's read with one codesign (doctor).
+// is never printed; approved.json's record; the pending slot's build), for a caller that needs both installedFrom's
+// answer and inspectEngine's read with one codesign (doctor).
 export function readApprovedLocation({dir = engineDirectory(), runSync} = {}) {
   const paths = enginePaths(dir);
-  return {dir, onDisk: bundleOnDisk(paths.bundle, runSync), approved: readRecord(paths.approved), pending: readRecord(paths.pending)};
+  return {dir, onDisk: bundleOnDisk(paths.bundle, runSync), approved: readRecord(paths.approved), pending: pendingSlot(paths)};
 }
 
 // installedEngine's answer from a location already read.
@@ -195,15 +220,16 @@ export function installedFrom({dir, onDisk, approved}) {
   return {bundlePath: enginePaths(dir).bundle, engineVersion: onDisk.engineVersion, build: onDisk.build, approvedAt: approved.approvedAt};
 }
 
-// The bundle on disk with its signature, and approved.json's and pending.json's records: `ctx.location` when the caller
-// read it already (readApprovedLocation, for this same directory), else read here.
+// The bundle on disk with its signature, approved.json's record and the pending slot's build: `ctx.location` when the
+// caller read it already (readApprovedLocation, for this same directory), else read here.
 function bundleFacts(ctx) {
   if (ctx.location) return ctx.location;
   const {paths} = ctx;
-  return {onDisk: bundleOnDisk(paths.bundle, ctx.runSync), approved: readRecord(paths.approved), pending: readRecord(paths.pending)};
+  return {onDisk: bundleOnDisk(paths.bundle, ctx.runSync), approved: readRecord(paths.approved), pending: pendingSlot(paths)};
 }
 
-// The bundle, approved.json's and pending.json's state, and the running engine's status answer (null when none runs).
+// The bundle, approved.json's state, the build pending beside it, and the running engine's status answer (null when
+// none runs).
 export async function engineStatus(deps) {
   const ctx = context(deps);
   return statusReport(ctx, bundleFacts(ctx), await statusOf(ctx));
@@ -220,7 +246,7 @@ function statusReport(ctx, {onDisk, approved, pending}, status) {
     approved: approval(onDisk, approved),
     approvedBuild: approved?.build ?? null,
     approvedAt: approved?.approvedAt ?? null,
-    pending: pending ? {build: pending.build ?? null, builtAt: pending.builtAt ?? null} : null,
+    pending,
     running: Boolean(status),
     status,
     cursor: cursorSwitch(ctx, status),
@@ -298,18 +324,17 @@ function bundleIdOf(bundle) {
   try { return plistString(readFileSync(join(bundle, 'Contents', 'Info.plist'), 'utf8'), 'CFBundleIdentifier'); } catch { return null; }
 }
 
-// The approved location's records as files only, with no codesign and no connection: whether a bundle is there, and
-// approved.json's and pending.json's builds and times (never their identity). What doctor says about an engine that is
-// not selected.
+// The approved location's records as files only, with no codesign and no connection: whether a bundle is there,
+// approved.json's build and time (never its identity), and the build pending beside it. What doctor says about an
+// engine that is not selected.
 export function engineRecords({dir = engineDirectory()} = {}) {
   const paths = enginePaths(dir);
   const approved = readRecord(paths.approved);
-  const pending = readRecord(paths.pending);
   return {
     bundlePath: paths.bundle,
     exists: existsSync(paths.bundle),
     approved: approved ? {build: approved.build ?? null, approvedAt: approved.approvedAt ?? null} : null,
-    pending: pending ? {build: pending.build ?? null, builtAt: pending.builtAt ?? null} : null,
+    pending: pendingSlot(paths),
   };
 }
 
@@ -317,14 +342,32 @@ export function engineRecords({dir = engineDirectory()} = {}) {
 
 const tail = text => lastLines(text, {count: 12, separator: '\n'});
 
-// Builds, assembles and signs the engine in staging, then replaces the approved bundle; an engine already busy refuses
-// before the build starts. The running engine is stopped
-// with `shutdown` first (a `busy` answer fails the build with the bundle, approved.json and the engine untouched and the
-// staged bundle discarded), then the old bundle is moved aside and the staged one into place (two renames), and
-// pending.json is written. A bundle whose build already matches and whose signature is the one asked for is left as it
-// is. `identity`: 'adhoc', or undefined for the configured identity (an identity string is taken as given);
-// `signOptions` reaches signBundle (its GUI-session job's uid, node, temp directory and bound).
-// -> {bundlePath, engineVersion, build, signature: {kind, identityMatches}, changed, stopped: {pid} | null}.
+// A failed build's detail: the first error block (20 lines from the first line naming an error or a failed assertion)
+// and the last 12 lines, as one run when they meet and with the gap counted when they do not, each line cut at 300
+// characters. A compiler crash prints its assertion before a long stack dump, which the tail alone lost.
+const ERROR_LINE = /\berror:|fatal error|assertion\b.*\bfailed/i;
+export function buildFailureDetail(text) {
+  const lines = String(text ?? '').trim().split('\n').map(line => line.length > 300 ? `${line.slice(0, 299)}…` : line);
+  const tailStart = Math.max(0, lines.length - 12);
+  const first = lines.findIndex(line => ERROR_LINE.test(line));
+  const blockEnd = first + 20;
+  const kept = first === -1 || first >= tailStart ? lines.slice(tailStart)
+    : blockEnd >= tailStart ? lines.slice(first)
+    : [...lines.slice(first, blockEnd), `… (${tailStart - blockEnd} lines omitted)`, ...lines.slice(tailStart)];
+  return kept.join('\n') || 'no detail';
+}
+
+// Builds, assembles and signs the engine in staging, then moves it into the pending slot beside the approved bundle
+// (one rename, replacing an older pending build) and writes pending.json (design ruling 1118). The bundle at the
+// approved path, approved.json and the running engine are never touched: no status, no shutdown, no swap, so a working
+// engine keeps serving, a busy one does not block a build, and `cua engine approve` promotes the build when the owner
+// is at the console. Nothing to do when the bundle at the approved path already is this build signed as asked (a copy
+// of it pending beside it, same build and identity, is redundant and discarded; a different pending build is kept), or
+// the pending slot already holds it. A promote cut short is recovered first (recoverInterruptedPromote). `identity`:
+// 'adhoc', or undefined for the configured identity (an identity string is taken as given); `signOptions` reaches
+// signBundle (its GUI-session job's uid, node, temp directory and bound).
+// -> {bundlePath (where the build is), engineVersion, build, signature: {kind, identityMatches}, changed, pending}:
+// `pending` true when the build waits in the slot for `cua engine approve`.
 export async function buildEngine({identity, scratchPath, sourceRoot = ENGINE_SOURCE, signOptions = {}, ...deps} = {}) {
   const ctx = context(deps);
   const {paths, log} = ctx;
@@ -333,17 +376,28 @@ export async function buildEngine({identity, scratchPath, sourceRoot = ENGINE_SO
   const configured = adhoc ? configuredIdentity({env: ctx.env}) : wanted;
   const build = engineBuild({sourceRoot});
   const version = engineVersion(sourceRoot);
+  recoverInterruptedPromote(ctx);
+  if (!alive(readRecord(paths.promoting)?.pid)) await stopLeftCandidate(ctx);
 
-  const current = bundleOnDisk(paths.bundle, ctx.runSync);
   const signedAsAsked = signature => (adhoc ? signature?.kind === 'adhoc' : identityMatches(signature, wanted) === true);
+  const current = bundleOnDisk(paths.bundle, ctx.runSync);
   if (current.exists && current.build === build && signedAsAsked(current.signature)) {
+    const slot = pendingSlot(paths);
+    if (slot) {
+      const redundant = slot.build === build && recordedIdentity(bundleOnDisk(paths.pendingBundle, ctx.runSync).signature) === recordedIdentity(current.signature);
+      if (redundant) {
+        discardPending(paths);
+        log('discarded the copy of this build pending beside it: the bundle at the approved path already is this build');
+      } else log(`build ${shortBuild(slot.build)} is still pending beside it (cua engine approve to use it)`);
+    }
     log(`cua's engine build ${shortBuild(build)} is already at ${paths.bundle}; nothing to do`);
-    return {bundlePath: paths.bundle, engineVersion: current.engineVersion, build, signature: signatureReport(current.signature, configured), changed: false, stopped: null};
+    return {bundlePath: paths.bundle, engineVersion: current.engineVersion, build, signature: signatureReport(current.signature, configured), changed: false, pending: false};
   }
-  // A busy engine refuses now, before the build, the staging and the signing cost anything (#237); an engine that is not
-  // running is not busy. The swap's own check (stop, below) stays the authority against a client that connects meanwhile.
-  const running = await statusOf(ctx);
-  if (running?.connections > 0) busy(running.pid, running.connections, running.holders);
+  const waiting = bundleOnDisk(paths.pendingBundle, ctx.runSync);
+  if (waiting.exists && waiting.build === build && signedAsAsked(waiting.signature)) {
+    log(`cua's engine build ${shortBuild(build)} is already pending at ${paths.pendingBundle}; nothing to do (cua engine approve to use it)`);
+    return {bundlePath: paths.pendingBundle, engineVersion: waiting.engineVersion, build, signature: signatureReport(waiting.signature, configured), changed: false, pending: true};
+  }
 
   mkdirSync(paths.dir, {recursive: true, mode: 0o700});
   chmodSync(paths.dir, 0o700);
@@ -352,38 +406,34 @@ export async function buildEngine({identity, scratchPath, sourceRoot = ENGINE_SO
   const compiled = await ctx.run('swift', ['build', '-c', 'release', '--package-path', sourceRoot, '--scratch-path', scratch], {timeout: BUILD_TIMEOUT_MS});
   if (compiled.code !== 0) {
     if (compiled.error === 'ENOENT') fail('engine_build_failed', 'swift is not installed, so cua\'s engine cannot be built', {hint: 'install Xcode (or its command line tools: xcode-select --install), then run cua engine build again'});
-    fail('engine_build_failed', `swift build failed (exit ${compiled.code}):\n${tail(`${compiled.stdout}\n${compiled.stderr}`)}`, {hint: 'the approved bundle is unchanged'});
+    fail('engine_build_failed', `swift build failed (exit ${compiled.code}):\n${buildFailureDetail(`${compiled.stdout}\n${compiled.stderr}`)}`, {hint: 'the approved bundle is unchanged'});
   }
 
   rmSync(paths.staging, {recursive: true, force: true});
   mkdirSync(paths.staging, {recursive: true, mode: 0o700});
   const staged = assembleBundle({executable: join(scratch, 'release', EXECUTABLE), out: paths.staging, version, build});
   let signature;
-  let stopped;
   try {
     log(adhoc ? 'signing ad hoc' : 'signing with the configured identity');
     await signBundle(staged, {identity: adhoc ? 'adhoc' : identity, env: ctx.env, run: ctx.run, sleep: ctx.sleep, now: ctx.now, ...signOptions});
     signature = readSignature(staged, ctx.runSync ? {runSync: ctx.runSync} : {});
     if (!recordedIdentity(signature))
       fail('engine_sign_failed', signature ? `the staged bundle's signature could not be read after signing (${signature.reason})` : 'the staged bundle reads as unsigned after signing');
-    stopped = await stop(ctx);
-    if (stopped.wasRunning) log(`stopped the running engine (pid ${stopped.pid})`);
-  } catch (error) {
+    discardPending(paths);
+    mkdirSync(paths.pendingDir, {recursive: true, mode: 0o700});
+    renameSync(staged, paths.pendingBundle);
+  } finally {
     rmSync(paths.staging, {recursive: true, force: true});
-    throw error;
   }
-
-  rmSync(paths.previous, {recursive: true, force: true});
-  const hadBundle = existsSync(paths.bundle);
-  if (hadBundle) renameSync(paths.bundle, paths.previous);
-  try { renameSync(staged, paths.bundle); } catch (error) {
-    if (hadBundle) renameSync(paths.previous, paths.bundle);
-    throw error;
-  }
-  rmSync(paths.staging, {recursive: true, force: true});
   writeRecord(paths.pending, {build, identity: recordedIdentity(signature), builtAt: new Date(ctx.now()).toISOString()});
-  log(`installed cua's engine ${shortBuild(build)} at ${paths.bundle}, pending approval (cua engine approve)`);
-  return {bundlePath: paths.bundle, engineVersion: version, build, signature: signatureReport(signature, configured), changed: true, stopped: stopped.wasRunning ? {pid: stopped.pid} : null};
+  log(`built cua's engine ${shortBuild(build)} at ${paths.pendingBundle}, beside the approved bundle, which is unchanged: a new build is pending; cua engine approve to use it`);
+  return {bundlePath: paths.pendingBundle, engineVersion: version, build, signature: signatureReport(signature, configured), changed: true, pending: true};
+}
+
+// The pending slot emptied: its bundle and pending.json.
+function discardPending(paths) {
+  rmSync(paths.pendingDir, {recursive: true, force: true});
+  rmSync(paths.pending, {force: true});
 }
 
 // ---- approveEngine ----
@@ -396,7 +446,8 @@ const GRANTS = [
 
 const steps = (grant, bundle) => `cua Engine needs ${grant.pane}: at the console, open System Settings → Privacy & Security → ${grant.pane}, `
   + `click "+", press ⌘⇧G and enter ${bundle}, then switch it on${grant.note ? ` (${grant.note})` : ''}`;
-// The three grants and their by-hand steps, for doctor's engine row.
+// The three grants and their by-hand steps, for doctor's engine row; the engine's permissionsPending sentences say the
+// same words (native/engine Permissions.swift).
 export {GRANTS as ENGINE_GRANTS, steps as grantSteps};
 
 function sameEngine(status, bundle, onDisk) {
@@ -407,9 +458,11 @@ function sameEngine(status, bundle, onDisk) {
     fail('engine_mismatch', `the running engine's build ${shortBuild(status.build)} is not the bundle's ${shortBuild(onDisk.build)}`, {hint: 'stop it with cua engine stop, then approve again'});
 }
 
-async function launch(ctx, {notPid = null} = {}) {
-  const opened = await ctx.run(OPEN, ['-n', '-g', '-a', ctx.paths.bundle]);
-  if (opened.code !== 0) fail('engine_launch_failed', `open -n -g -a ${ctx.paths.bundle} failed (exit ${opened.code}): ${tail(opened.stderr)}`);
+// `foreground`: without -g, for the foreground approve alone (approveEngine's).
+async function launch(ctx, {notPid = null, foreground = false} = {}) {
+  const args = ['-n', ...(foreground ? [] : ['-g']), '-a', ctx.paths.bundle];
+  const opened = await ctx.run(OPEN, args);
+  if (opened.code !== 0) fail('engine_launch_failed', `open ${args.join(' ')} failed (exit ${opened.code}): ${tail(opened.stderr)}`);
   const status = await poll(ctx, async () => { const s = await statusOf(ctx); return s && s.pid !== notPid ? s : null; }, LAUNCH_WAIT_MS);
   if (!status) fail('engine_launch_failed', `the engine launched from ${ctx.paths.bundle} did not answer within ${LAUNCH_WAIT_MS / 1000} s`,
     {hint: 'it logs why it stopped: log show --last 10m --info --predicate \'subsystem == "io.github.ssfskim.cua.engine"\''});
@@ -426,11 +479,12 @@ async function awaitGrants(ctx, missing) {
   const pending = () => fail('engine_grant_pending', `${missing.map(grant => grant.pane).join(', ')} still reads false for cua Engine, and no one at this terminal confirmed it`,
     {hint: 'with the owner at the console, grant it by hand as the steps above say, then run cua engine approve again from a terminal'});
   for (const started = ctx.now(); ;) {
+    interrupted(ctx);
     const status = await statusOf(ctx);
     if (status && missing.every(grant => status[grant.key] === true)) return 'status';
     if (answered) return answer === null ? pending() : isAbort(answer) ? 'aborted' : 'operator';
     if (ctx.now() - started >= GRANT_WAIT_MS) pending();
-    await Promise.race([ctx.sleep(POLL_MS), asked]);
+    await Promise.race([ctx.sleep(POLL_MS), asked, ctx.whenInterrupted]);
   }
 }
 
@@ -458,23 +512,308 @@ async function watchedApprove(ctx) {
 // macOS has not seen, so replayd's log is watched around both (an SCAlert line, or a capture the watch missed, means the
 // console may hold a confirmation: approved.json waits for the operator's word, and with no terminal the approve fails
 // naming the console); on the relaunched engine's `captured: true`, approved.json {build, identity, approvedAt}.
-// With every grant true and no confirmation it needs no one at the Mac. -> {approved, reason?, grants, build, approvedAt?, captureConfirmation}.
-export async function approveEngine(deps) {
+// With every grant true and no confirmation it needs no one at the Mac. `foreground: true` (`cua engine approve
+// --foreground`) is M4's opt-in lead for an owner at the console: the first approve, whose requests may prompt, goes to an
+// engine launched in the foreground (`open -n -a`), replacing an idle matching engine already running, since a
+// background LSUIElement launch has no window the prompt can attach to (the Design's U7). It promises no prompt, so the
+// by-hand steps still lead; the post-grant relaunch and every other launch stay background.
+// With a build pending beside the approved bundle (design ruling 1118), approve first promotes it: the pending build is
+// claimed out of the slot (claimPending) and read there, the running engine is stopped (refused while another
+// connection is open, the claimed build going back), the approved bundle moved aside to `previous` and the claimed one
+// into the approved path; then the loop above runs on it. A build published meanwhile stays pending for its own approve. If that approval does not complete (it fails, the
+// operator aborts, `signal` aborts it (Ctrl-C), or the relaunched engine captures nothing), the promote is rolled back
+// (restore): approved.json unchanged, the previous bundle back at the approved path, the build pending again unless a
+// newer build took the slot meanwhile. Once approved, only what this approve promoted is cleared: the slot's emptied
+// directory, and pending.json while it is still this publication's record (its build, identity and builtAt). A promoted
+// engine an earlier rollback could not stop is stopped first, once it is idle. With no pending build, the loop runs on the bundle at
+// the approved path, as before. Approval is exclusive (takeApproveLock, before the slot is read), and a promote an
+// earlier approve left cut short is recovered first.
+// -> {approved, reason?, grants, build, approvedAt?, captureConfirmation, rollback?: restore's answer}.
+// `promote: false` approves only the bundle already at the approved path: a pending build, read under the lock, is
+// refused (engine_pending_build) rather than promoted. `expectedBuild` refuses (engine_unexpected_build) a bundle at
+// the approved path of another build, before anything is launched or prompted. Both are for a caller that must
+// approve exactly the build it tested (acceptance item 14, scripts/accept/onboarding.mjs).
+export async function approveEngine({foreground = false, signal, promote = true, expectedBuild = null, ...deps} = {}) {
   const ctx = context({operator: {next: () => Promise.resolve(null)}, watchCaptureAlerts, ...deps});
+  ctx.signal = signal;
+  ctx.whenInterrupted = new Promise(resolve => {
+    if (!signal) return;
+    if (signal.aborted) resolve();
+    else signal.addEventListener('abort', resolve, {once: true});
+  });
+  takeApproveLock(ctx);
+  try { return await approveExclusively(ctx, {foreground, promotes: promote, expectedBuild}); } finally { rmSync(ctx.paths.promoting, {force: true}); }
+}
+
+// One approve holds promoting.json {pid} from before it reads the pending slot until it returns, so a second `cua
+// engine approve` can neither approve a promoted bundle in place nor promote over the first's `previous`: it is refused,
+// naming the first. The marker is written whole under a name of this approve's own and then hard-linked to
+// promoting.json, which fails if the name exists: the name never appears without its holder, so a second approve can
+// never read a live lock as empty and take it over. A marker whose pid is gone is an approve killed mid-way: taken
+// over (its promote, if cut short, is recovered next). Builds never take it.
+let lockSerial = 0;
+function takeApproveLock(ctx) {
+  const {paths, log} = ctx;
+  mkdirSync(paths.dir, {recursive: true, mode: 0o700});
+  const marker = `${paths.promoting}.${process.pid}.${++lockSerial}.tmp`;
+  writeFileSync(marker, JSON.stringify({pid: process.pid}) + '\n', {mode: 0o600});
+  try {
+    for (let attempt = 0; ; attempt++) {
+      try { linkSync(marker, paths.promoting); return; } catch (error) { if (error.code !== 'EEXIST') throw error; }
+      const holder = readRecord(paths.promoting)?.pid ?? null;
+      if (attempt > 0 || alive(holder))
+        fail('engine_approve_in_progress', `another cua engine approve (pid ${holder ?? 'unknown'}) is in progress on this Mac`,
+          {hint: 'finish that one, or press Ctrl-C at its terminal (that puts the previous engine back), then run cua engine approve again'});
+      log(`a cua engine approve (pid ${holder ?? 'unknown'}) ended without finishing; taking over from it`);
+      rmSync(paths.promoting, {force: true});
+    }
+  } finally { rmSync(marker, {force: true}); }
+}
+
+// approveEngine's body, under its lock.
+async function approveExclusively(ctx, {foreground, promotes, expectedBuild}) {
+  const {paths} = ctx;
+  recoverInterruptedPromote(ctx, {lockHeld: true});
+  await stopLeftCandidate(ctx);
+  if (!promotes) {
+    const waiting = pendingSlot(paths);
+    if (waiting) fail('engine_pending_build', `build ${shortBuild(waiting.build)} is pending beside the approved engine, and this approve does not promote`,
+      {hint: 'run cua engine approve to promote it, or remove it, then run this again'});
+    return approveAtPath(ctx, {foreground, expectedBuild});
+  }
+  const claim = claimPending(ctx);
+  if (!claim) return approveAtPath(ctx, {foreground, expectedBuild});
+  const promoted = await promote(ctx, claim);
+  let result;
+  try { result = await approveAtPath(ctx, {foreground, expectedBuild}); } catch (error) {
+    await restore(ctx, promoted);
+    throw error;
+  }
+  if (!result.approved) return {...result, rollback: await restore(ctx, promoted)};
+  try { rmdirSync(paths.pendingDir); } catch { /* a build published meanwhile is in it, or it is gone */ }
+  if (claim.record && sameRecord(readRecord(paths.pending), claim.record)) rmSync(paths.pending, {force: true});
+  return result;
+}
+
+const sameRecord = (a, b) => Boolean(a && b) && a.build === b.build && a.identity === b.identity && a.builtAt === b.builtAt;
+
+// The pending build taken out of the slot into the approve's own place (paths.claimedBundle) before anything waits, so
+// the bundle approve inspects is the one it promotes: a build published while the running engine stops lands in the
+// emptied slot and stays pending for its own approve. pending.json is read before the claim and kept as this
+// publication's record only when it names this bundle's build and identity, so approve's success removes that record
+// and never a newer publication's. One whose signature cannot be read, or that is unsigned, is refused and goes back
+// (unclaim). -> {build, record} | null when nothing is pending.
+function claimPending(ctx) {
+  const {paths} = ctx;
+  const record = readRecord(paths.pending);
+  mkdirSync(paths.claimedDir, {recursive: true, mode: 0o700});
+  try { renameSync(paths.pendingBundle, paths.claimedBundle); } catch (error) {
+    try { rmdirSync(paths.claimedDir); } catch { /* not empty: left for recovery */ }
+    if (error.code === 'ENOENT') return null;
+    throw error;
+  }
+  let onDisk, identity;
+  try {
+    onDisk = bundleOnDisk(paths.claimedBundle, ctx.runSync);
+    if (!onDisk.exists) fail('engine_not_built', `the bundle pending at ${paths.pendingBundle} has no readable Info.plist`, {hint: 'rebuild it: cua install --engine (or cua engine build)'});
+    identity = signedIdentity(onDisk, paths.pendingBundle);
+  } catch (error) { unclaim(paths); throw error; }
+  return {build: onDisk.build, record: record?.build === onDisk.build && record?.identity === identity ? record : null};
+}
+
+// The claimed build given back to the slot, or dropped when a build published meanwhile holds it (that newer one
+// supersedes it, as a build's own publication would have). -> whether it is pending again.
+function unclaim(paths) {
+  const back = intoFreeSlot(paths, paths.claimedBundle);
+  try { rmdirSync(paths.claimedDir); } catch { /* gone already */ }
+  return back;
+}
+
+// `bundle` moved into the pending slot if the slot is free, else removed. -> whether it is pending.
+function intoFreeSlot(paths, bundle) {
+  if (!existsSync(paths.pendingBundle)) {
+    try {
+      mkdirSync(paths.pendingDir, {recursive: true, mode: 0o700});
+      renameSync(bundle, paths.pendingBundle);
+      return true;
+    } catch { /* the slot taken meanwhile */ }
+  }
+  rmSync(bundle, {recursive: true, force: true});
+  return false;
+}
+
+// Throws once `cua engine approve` is interrupted (its signal aborted): the promote's rollback runs as for any failure.
+function interrupted(ctx) {
+  if (ctx.signal?.aborted) fail('engine_approve_interrupted', 'cua engine approve was interrupted; approved.json was not written',
+    {hint: 'run cua engine approve again, with the owner at the console'});
+}
+
+// The identity a bundle's signature records; refuses one whose signature cannot be read, or that is unsigned.
+function signedIdentity(onDisk, bundle) {
+  if (onDisk.signature?.kind === 'unreadable')
+    fail('engine_signature_unreadable', `the signature of the bundle at ${bundle} could not be read (${onDisk.signature.reason}), so approve cannot tell which build and identity it would approve`,
+      {hint: 'codesign may be blocked behind a prompt at the console: see to it there, then run cua engine approve again'});
+  const identity = recordedIdentity(onDisk.signature);
+  if (!identity) fail('engine_not_built', `the bundle at ${bundle} is not signed`, {hint: 'rebuild it: cua install --engine (or cua engine build)'});
+  return identity;
+}
+
+// The claimed build into the approved path: the running engine stopped first (busy refuses, and the claimed build goes
+// back to the slot), the approved bundle to `previous`, the claimed one into its place. -> {hadBundle, previousBuild,
+// build}.
+async function promote(ctx, claim) {
+  const {paths, log} = ctx;
+  let stopped;
+  try { stopped = await stop(ctx); } catch (error) { unclaim(paths); throw error; }
+  if (stopped.wasRunning) log(`stopped the running engine (pid ${stopped.pid}) to put the pending build in place`);
+  let previousBuild = null;
+  try { previousBuild = bundleIdentity(paths.bundle).build ?? null; } catch { /* no bundle at the approved path */ }
+  rmSync(paths.previous, {recursive: true, force: true});
+  const hadBundle = existsSync(paths.bundle);
+  if (hadBundle) renameSync(paths.bundle, paths.previous);
+  try { renameSync(paths.claimedBundle, paths.bundle); } catch (error) {
+    if (hadBundle) renameSync(paths.previous, paths.bundle);
+    unclaim(paths);
+    throw error;
+  }
+  try { rmdirSync(paths.claimedDir); } catch { /* gone already */ }
+  log(`promoted the pending build ${shortBuild(claim.build)} into ${paths.bundle}${hadBundle ? ` (build ${shortBuild(previousBuild)} kept aside until this approval completes)` : ''}`);
+  return {hadBundle, previousBuild, build: claim.build};
+}
+
+// The bundles of a promote put back, the approved one first whatever else fails: the bundle at the approved path is
+// moved out of the way to a name of this process's, `previous` back into the approved path, and only then the moved
+// bundle into the pending slot if the slot is free; a build published there meanwhile keeps it, and the moved one is
+// dropped. Files only. -> {previousRestored, pendingAgain: true | false (dropped) | null (nothing was at the path)}.
+function putBack(paths, {hadPrevious}) {
+  const moved = join(paths.dir, `promoted.${process.pid}`);
+  const hadCandidate = existsSync(paths.bundle);
+  if (hadCandidate) {
+    rmSync(moved, {recursive: true, force: true});
+    renameSync(paths.bundle, moved);
+  }
+  if (hadPrevious) renameSync(paths.previous, paths.bundle);
+  if (!hadCandidate) return {previousRestored: hadPrevious, pendingAgain: null};
+  return {previousRestored: hadPrevious, pendingAgain: intoFreeSlot(paths, moved)};
+}
+
+// Whether a process with this pid is alive (one of another user's counts).
+function alive(pid) {
+  if (!Number.isSafeInteger(pid) || pid <= 0) return false;
+  try { process.kill(pid, 0); return true; } catch (error) { return error.code === 'EPERM'; }
+}
+
+// A promote cut short (the process killed between its renames, or during the approval after it): `previous` is the
+// approved bundle while the approved path holds another bundle or none, judged by build and signature as approval()
+// judges (a re-signed copy of the same build is another bundle), and no live approve holds the lock (promoting.json
+// absent, or naming a pid that is gone; `lockHeld` when the caller holds it). The approved bundle is put back
+// (putBack), so a kill -9 never leaves the Mac without its approved engine past the next approve or build. Files only:
+// an engine still running from the moved bundle is left alone (approve's promote stops it; a session refuses its
+// build). The build-only check comes first, so the usual case reads no signature. A build the killed approve had
+// claimed and not yet promoted then goes back to the slot (unclaim). -> whether there was one to recover.
+function recoverInterruptedPromote(ctx, {lockHeld = false} = {}) {
+  const recovered = recoverPrevious(ctx, {lockHeld});
+  const {paths, log} = ctx;
+  if (!existsSync(paths.claimedBundle) || (!lockHeld && alive(readRecord(paths.promoting)?.pid))) return recovered;
+  let claimed = null;
+  try { claimed = bundleIdentity(paths.claimedBundle).build ?? null; } catch { /* unreadable: its build unknown */ }
+  log(unclaim(paths) ? `recovered an interrupted approve: build ${shortBuild(claimed)} is pending again`
+    : `recovered an interrupted approve: build ${shortBuild(claimed)} was dropped, since a newer build holds the pending slot`);
+  return true;
+}
+
+function recoverPrevious(ctx, {lockHeld}) {
+  const {paths, log} = ctx;
+  const approved = readRecord(paths.approved);
+  const buildAt = path => { try { return bundleIdentity(path).build ?? null; } catch { return null; } };
+  if (!approved?.build || buildAt(paths.previous) !== approved.build) return false;
+  if (!lockHeld && alive(readRecord(paths.promoting)?.pid)) return false;
+  if (approval(bundleOnDisk(paths.previous, ctx.runSync), approved) !== true) return false;
+  if (approval(bundleOnDisk(paths.bundle, ctx.runSync), approved) !== false) return false;
+  const candidate = buildAt(paths.bundle);
+  const {pendingAgain} = putBack(paths, {hadPrevious: true});
+  log(`recovered an interrupted promote: the approved build ${shortBuild(approved.build)} is back at ${paths.bundle}`
+    + (candidate === null ? '' : pendingAgain ? `, and build ${shortBuild(candidate)} is pending again` : `; build ${shortBuild(candidate)} was dropped, since a newer build holds the pending slot`));
+  return true;
+}
+
+// promote undone: the promoted engine stopped if it runs, then the bundles put back (putBack) either way.
+// A promoted engine that refuses the stop (a session connected to it) still runs from the moved bundle and holds the
+// engine's socket until it stops. Sessions check only its version and build against the bundle at the approved path,
+// so one of another build is refused, while the same build re-signed under another identity (`servesSessions`) keeps
+// serving new sessions: either is reported, not hidden. Once the previous bundle is back, candidate.json names it
+// (`recorded`), so the next build or approve stops it once it is idle (stopLeftCandidate); with its pid unknown or the
+// record unsaved, only the owner's cua engine stop retires it.
+// -> {previousRestored, pendingAgain, candidateRunning: {pid, servesSessions, recorded} | null}.
+async function restore(ctx, {hadBundle, previousBuild, build}) {
+  const {paths, log} = ctx;
+  let candidateRunning = null;
+  try { await stop(ctx); } catch (error) {
+    if (!(error instanceof CuaError)) throw error;
+    let pid = null;
+    try { pid = (await statusOf(ctx))?.pid ?? null; } catch { /* unreadable: the pid stays unknown */ }
+    candidateRunning = {pid, servesSessions: hadBundle && build === previousBuild, recorded: false};
+    log(`could not stop the promoted engine: ${error.message}`);
+  }
+  const {previousRestored, pendingAgain} = putBack(paths, {hadPrevious: hadBundle});
+  // Only after the previous bundle is back: a record that cannot be saved costs the automatic stop, never the restore.
+  if (candidateRunning?.pid != null) {
+    try { writeRecord(paths.candidate, {pid: candidateRunning.pid, build}); candidateRunning.recorded = true; } catch (error) {
+      log(`could not record the promoted engine for the next build or approve to stop (${error.code ?? error.message})`);
+    }
+  }
+  const where = previousRestored ? `the approved build ${shortBuild(previousBuild)} is back at ${paths.bundle}` : 'no approved engine was in place before it';
+  const slot = pendingAgain === null ? null : pendingAgain ? `build ${shortBuild(build)} is pending again (cua engine approve to retry)`
+    : `build ${shortBuild(build)} was dropped, since a build published meanwhile holds the pending slot`;
+  log(`rolled the promote back: ${where}${slot ? `; ${slot}` : ''}`);
+  if (candidateRunning) log(candidateRunningText(candidateRunning));
+  return {previousRestored, pendingAgain, candidateRunning};
+}
+
+// The promoted engine still running after the rollback, in the owner's words: the automatic stop is promised only for
+// one recorded in candidate.json.
+export const candidateRunningText = ({pid, servesSessions = false, recorded = false}) => `the promoted build's engine (${pid === null ? 'pid unknown' : `pid ${pid}`}) still runs and holds the engine's socket, `
+  + (servesSessions ? 'and, being the restored bundle\'s build (sessions check the build, not the signature), it keeps serving new sessions until it stops'
+    : 'so sessions refuse its build until it stops')
+  + `: run cua engine stop once it is idle${recorded ? ' (the next cua engine build or approve also stops it then)' : ''}, and the next session launches the bundle now at the approved path`;
+
+// The promoted engine a rolled-back approve could not stop (candidate.json, restore's), stopped once it is idle: only
+// while it is still the engine answering at the socket (its pid and build) and has no other connection; a busy one is
+// left serving. The record goes once that engine is stopped or no longer answers.
+async function stopLeftCandidate(ctx) {
+  const {paths, log} = ctx;
+  const left = readRecord(paths.candidate);
+  if (!left) return;
+  try {
+    const status = await statusOf(ctx);
+    if (status && status.pid === left.pid && status.build === left.build) {
+      await stop(ctx, {pid: left.pid});
+      log(`stopped the promoted build's engine (pid ${left.pid}) that a rolled-back approve left running`);
+    }
+  } catch (error) { if (error instanceof CuaError) return; throw error; }
+  rmSync(paths.candidate, {force: true});
+}
+
+// The approve loop on the bundle at the approved path.
+async function approveAtPath(ctx, {foreground, expectedBuild = null}) {
   const {paths, log} = ctx;
   const onDisk = bundleOnDisk(paths.bundle, ctx.runSync);
-  if (!onDisk.exists) fail('engine_not_built', `no engine bundle at ${paths.bundle}`, {hint: 'build it first: cua engine build'});
-  const identity = recordedIdentity(onDisk.signature);
-  if (onDisk.signature?.kind === 'unreadable')
-    fail('engine_signature_unreadable', `the signature of the bundle at ${paths.bundle} could not be read (${onDisk.signature.reason}), so approve cannot tell which build and identity it would approve`,
-      {hint: 'codesign may be blocked behind a prompt at the console: see to it there, then run cua engine approve again'});
-  if (!identity) fail('engine_not_built', `the bundle at ${paths.bundle} is not signed`, {hint: 'rebuild it: cua engine build'});
+  if (!onDisk.exists) fail('engine_not_built', `no engine bundle at ${paths.bundle}`, {hint: 'build it first: cua install --engine (or cua engine build)'});
+  if (expectedBuild && onDisk.build !== expectedBuild)
+    fail('engine_unexpected_build', `the bundle at ${paths.bundle} is build ${shortBuild(onDisk.build)}, not the expected ${shortBuild(expectedBuild)}`, {hint: 'approve the expected build, or build it first'});
+  const identity = signedIdentity(onDisk, paths.bundle);
 
   let status = await statusOf(ctx);
-  if (!status) {
-    log('the engine is not running: launching it (open -n -g -a)');
-    status = await launch(ctx);
+  if (status && foreground) {
+    sameEngine(status, paths.bundle, onDisk);
+    const stopped = await stop(ctx, {pid: status.pid});
+    log('foreground approve: relaunching the idle engine in the foreground (open -n -a)');
+    status = await launch(ctx, {notPid: stopped.pid ?? null, foreground: true});
+  } else if (!status) {
+    log(`the engine is not running: launching it (open -n ${foreground ? '' : '-g '}-a)`);
+    status = await launch(ctx, {foreground});
   }
+  interrupted(ctx);
   sameEngine(status, paths.bundle, onDisk);
   if (status.connections > 0) fail('engine_busy', `the engine (pid ${status.pid}) has ${others(status.connections, status.holders)}; approve runs with no other client`, {hint: 'run it again once no session uses the engine'});
 
@@ -491,9 +830,11 @@ export async function approveEngine(deps) {
     if (outcome === 'aborted') return {approved: false, reason: 'aborted at the terminal', grants, build: onDisk.build};
   }
 
+  interrupted(ctx);
   const stopped = await stop(ctx);
   log('relaunching the engine so it takes its grants (open -n -g -a)');
   const relaunched = await launch(ctx, {notPid: stopped.pid ?? null});
+  interrupted(ctx);
   sameEngine(relaunched, paths.bundle, onDisk);
 
   watched.push(await watchedApprove(ctx));
@@ -513,11 +854,13 @@ export async function approveEngine(deps) {
     log(alerts > 0 ? 'replayd shows a screen capture confirmation for cua Engine on the console: the owner answers it (Allow).'
       : 'replayd\'s log could not be watched through a capture, so a screen capture confirmation may be on the console: the owner checks and answers it (Allow).');
     log('Press Enter here once it is answered (n to abort).');
-    const line = await ctx.operator.next();
+    const line = await Promise.race([ctx.operator.next(), ctx.whenInterrupted]);
+    interrupted(ctx);
     if (line === null) fail('engine_capture_confirmation', 'a screen capture confirmation for cua Engine may be waiting on this Mac\'s console, and no one at this terminal confirmed it was answered',
       {hint: 'with the owner at the console, run cua engine approve again from a terminal; approved.json was not written'});
     if (isAbort(line)) return {approved: false, reason: 'aborted at the terminal', grants: final, build: onDisk.build, captureConfirmation};
   }
+  interrupted(ctx);
   const approvedAt = new Date(ctx.now()).toISOString();
   writeRecord(paths.approved, {build: onDisk.build, identity, approvedAt});
   log(`approved cua's engine ${shortBuild(onDisk.build)} (approved.json written)`);
@@ -528,11 +871,12 @@ export async function approveEngine(deps) {
 
 // Lines typed at `input` (stdin), one per question; null once it has ended (no terminal, or EOF). Each question
 // discards lines typed before it and replaces a question left unanswered, so a stray Enter never answers a question
-// no one has seen yet.
-export function lineReader(input = process.stdin) {
+// no one has seen yet. `onInterrupt` hears the reader's own SIGINT (Ctrl-C read from the input itself).
+export function lineReader(input = process.stdin, {onInterrupt} = {}) {
   let ended = false;
   let waiting = null;
   const reader = createInterface({input, terminal: false});
+  if (onInterrupt) reader.on('SIGINT', onInterrupt);
   reader.on('line', line => { if (waiting) { const w = waiting; waiting = null; w(line); } });
   reader.on('close', () => { ended = true; if (waiting) { const w = waiting; waiting = null; w(null); } });
   return {

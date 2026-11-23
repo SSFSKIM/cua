@@ -1,0 +1,9 @@
+wrote /Users/new/.local/share/cua-171/task148/commands.txt
+== H1
+/Users/new/.local/share/cua-171/locked.sh h9-x64 /usr/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/t148-x64/scripts/linux-engine-gate/gate.mjs run H1 --pinned /Users/new/.local/share/cua-171/m5/home-x64-044 --out /Users/new/.local/share/cua-171/m5/out-x64-h9
+== H2
+/Users/new/.local/share/cua-171/locked.sh h9-x64 /usr/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/t148-x64/scripts/linux-engine-gate/gate.mjs run H2 --pinned /Users/new/.local/share/cua-171/m5/home-x64-044 --out /Users/new/.local/share/cua-171/m5/out-x64-h9
+== L4a
+/Users/new/.local/share/cua-171/locked.sh h9-x64 /usr/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/t148-x64/scripts/linux-engine-gate/gate.mjs run L4a --pinned /Users/new/.local/share/cua-171/m5/home-x64-044 --out /Users/new/.local/share/cua-171/m5/out-x64-h9
+== L4d
+/Users/new/.local/share/cua-171/locked.sh h9-x64 /usr/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/t148-x64/scripts/linux-engine-gate/gate.mjs run L4d --pinned /Users/new/.local/share/cua-171/m5/home-x64-044 --out /Users/new/.local/share/cua-171/m5/out-x64-h9

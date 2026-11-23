@@ -11,7 +11,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {cellResult, writeCellResult} from '../../scripts/native-matrix/cell-result.mjs';
-import {isCaretRow} from '../../scripts/native-matrix/plan.mjs';
+import {isCaretRow, isPointerdownRow} from '../../scripts/native-matrix/plan.mjs';
 import {FULL_PLAN} from '../../scripts/native-matrix/run.mjs';
 import {judgeCell} from '../../scripts/native-matrix/cell-verdict.mjs';
 import {judge, judgeMethod, judgeSpeed, manifestOf, readResults, renderSummary} from '../../scripts/native-matrix/summary.mjs';
@@ -66,6 +66,8 @@ function fullRun(engine, run, {axMs = 40, resolved = 10, tweak = rows => rows, m
       if (regime === 'background') row.interference = {ok: true, frontmost: true, topWindow: true, focus: true, activations: 0, route4: false};
       // A caret row (#258, #259) carries the device's reading of the field, the same on both engines here.
       if (isCaretRow(id)) row.outcome = {valueKept: true, range: {location: 25, length: 0}, collapsed: true, line: 2, column: 5};
+      // A pointerdown row (ruling 1168) carries its count's rise, one on both engines here (the vendor's must be one).
+      if (isPointerdownRow(id)) row.outcome = {pointerDownOnce: true, rose: 1};
     }
     if (section === 'launch' || section === 'concurrent' || (section === 'unicode' && id.split('/')[1].includes('@'))) {
       row.interference = {ok: true, frontmost: true, topWindow: true, focus: true, activations: 0, route4: false};
@@ -140,6 +142,38 @@ test('a caret row (#258, #259) is equal only with the vendor\'s reading, even wh
   const other = judged({vendor: {resolved: 9}, cua: {tweak: set('electron/frontmost/click.button', {outcome: {pressedOnce: true, extra: 1}})}});
   assert.equal(other.methods.find(m => m.id === 'electron/frontmost/click.button').verdict, 'equal');
   assert.equal(judged({vendor: {resolved: 9}}).methods.find(m => m.id === POINT).verdict, 'equal');
+});
+
+// Ruling 1168 (#534): the pointerdown cells are frontmost rows judged against the vendor's; cua's counter unchanged where
+// the vendor's rose blocks the sitting, and no declaration answers for it.
+test('ruling 1168: a pointerdown cell where cua\'s press reached no pointer handler and the vendor\'s did FAILs, declared or not', () => {
+  const missed = {ok: false, outcome: {pointerDownOnce: false, rose: 0}}, once = {ok: true, outcome: {pointerDownOnce: true, rose: 1}};
+  for (const id of ['chrome/frontmost/click.pointerdown', 'electron/frontmost/click.pointerdown']) {
+    const worse = judged({vendor: {resolved: 9, tweak: set(id, once)}, cua: {tweak: set(id, missed)}});
+    assert.equal(worse.verdict, 'FAIL');
+    assert.ok(worse.blocking.includes(`method: ${id} is worse on cua`), worse.blocking.join('; '));
+    const declared = judged({vendor: {resolved: 9, tweak: set(id, once)}, cua: {tweak: set(id, {...missed, outcome: {...missed.outcome, threw: 'The click could not be confirmed', errorName: 'clickUnconfirmed', unchanged: true}})},
+      departures: [{section: 'method', id, vendor: {answer: 'ok'}, cua: {answer: 'unconfirmed', errorName: 'clickUnconfirmed', sentence: 'The click could not be confirmed'}, decision: 'Decision Log, a made-up entry'}]});
+    assert.equal(declared.verdict, 'FAIL');
+    assert.equal(declared.methods.find(m => m.id === id).verdict, 'worse');
+    // Both counts unchanged: the vendor's real click did not register, so the cell is NO VERDICT (never equal), its
+    // reason named in the summary.
+    const broken = judged({vendor: {resolved: 9, tweak: set(id, missed)}, cua: {tweak: set(id, missed)}});
+    const cell = broken.methods.find(m => m.id === id);
+    assert.equal(cell.verdict, 'no-verdict');
+    assert.deepEqual(cell.account.cua.noVerdict, {reference: 3});
+    assert.notEqual(broken.verdict, 'PASS');
+    assert.match(renderSummary(broken), new RegExp(`- method ${id}, run 1: the reference side did not register the pointerdown \\(the vendor's click: its count unchanged\\)`));
+    // The headline names the vendor's missing proof, never cua's.
+    assert.ok(broken.missing.includes(`method: ${id} has no vendor sample that registered the pointerdown (ruling 1168)`), broken.missing.join('\n'));
+    assert.ok(!broken.missing.some(p => p === `method: ${id} has no valid cua sample`));
+    // A cua sample of its own cause beside them keeps the general line.
+    const mixed = judged({vendor: {resolved: 9, tweak: set(id, missed)}, cua: {tweak: (rows, run) => set(id, run === 1 ? {...missed, invalid: 'not ready'} : missed)(rows)}});
+    assert.ok(mixed.missing.includes(`method: ${id} has no valid cua sample`), mixed.missing.join('\n'));
+  }
+  const both = judged({vendor: {axMs: 50, resolved: 9, tweak: rows => rows.map(r => (/click\.pointerdown$/.test(r.id) ? {...r, ...once} : r))}, cua: {axMs: 40, tweak: rows => rows.map(r => (/click\.pointerdown$/.test(r.id) ? {...r, ...once} : r))}});
+  assert.equal(both.methods.find(m => m.id === 'chrome/frontmost/click.pointerdown').verdict, 'equal');
+  assert.equal(both.verdict, 'PASS');
 });
 
 // Ruling 1149: a full run whose lane attests another engine than its rows measure is no measurement of its side. The cua

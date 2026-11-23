@@ -7,6 +7,8 @@
 //   --cua-fixture-user-data=<dir>   the user-data directory; without it the app makes a scratch one itself under the
 //                                   temporary directory, so a launch by the engine (no arguments) is in its fixed state
 //   --cua-fixture-bounds=x,y,w,h    the window's frame in points; else the default below
+//   --cua-fixture-page=pointerdown  the page loaded with ?page=pointerdown, under which the renderer adds the
+//                                   pointerdown-only button (ruling 1168; the native matrix's run alone passes it)
 //
 // The side-effect counters (./counters.js) live in the user-data directory as cua-fixture-counters.json: the app's
 // activation events and the window's focus events counted here, the page's and the text field's reported by the
@@ -66,6 +68,7 @@ app.whenReady().then(() => {
   window.on('focus', () => counters.bump('windowFocus'));
   window.on('blur', () => counters.bump('windowBlur'));
   window.once('ready-to-show', () => window.showInactive());
-  window.loadFile(path.join(__dirname, 'index.html'));
+  const pointerdown = argument('cua-fixture-page') === 'pointerdown';
+  window.loadFile(path.join(__dirname, 'index.html'), pointerdown ? {query: {page: 'pointerdown'}} : {});
 });
 app.on('window-all-closed', () => app.quit());

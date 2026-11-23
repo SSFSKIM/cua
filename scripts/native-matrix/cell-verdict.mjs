@@ -86,14 +86,17 @@ const VERDICTS = ['worse', 'equal', 'better', 'honest', 'declared', 'shared'];
 // field alike, since a caret elsewhere is a difference a model meets whether or not each side met its own check).
 // `departure`: the row's declared departure, if any; `oracle(row)`: whether the non-interference oracle judges the row;
 // `pairable(run)`: whether the run's pair is one proof; `planned(run)`: the row's planned samples in a run;
-// `acceptance`: the row is an acceptance item's.
+// `acceptance`: the row is an acceptance item's. `reference(vendorRow)`: why a vendor sample with a verdict cannot be
+// the reference for its run's cua sample (ruling 1168's pointerdown cell: the vendor's real click must register exactly
+// one pointer down, else the scene, not cua, is in question), or null; such a pair has no verdict (`reference`), its
+// reason listed (`unreferenced`).
 // -> {verdict, vendor: {ok, valid, invalid}, cua: {…}, declared, shared: [sample], honest: [sample], routes, account,
-// differs?}.
-export function judgeCell(mode, vendorRows, cuaRows, {departure = null, required = 1, oracle = () => false, pairable = all, planned = unknown, acceptance = false} = {}) {
+// differs?, unreferenced?: [{run, reason}]}.
+export function judgeCell(mode, vendorRows, cuaRows, {departure = null, required = 1, oracle = () => false, pairable = all, planned = unknown, acceptance = false, reference = null} = {}) {
   const vendorByRun = groupBy(vendorRows.filter(r => !causeOf(r) && pairable(runOf(r))), runOf);
   const held = r => !oracle(r) || r.interference?.ok === true;
   const fixed = mode === 'absolute' || mode === 'pressKey';
-  const outcomes = new Map(), notes = new Map();
+  const outcomes = new Map(), notes = new Map(), unreferenced = [];
   const failed = (c, v) => {
     // A proven change of the user's value (the rows behind a user window) fails on its own: no departure, pair or
     // shared failure answers for it.
@@ -119,6 +122,8 @@ export function judgeCell(mode, vendorRows, cuaRows, {departure = null, required
     const own = causeOf(c);
     if (own) { outcomes.set(c, own); continue; }
     const v = vendorByRun.get(runOf(c))?.[0] ?? null;
+    const unfit = v && reference ? reference(v) : null;
+    if (unfit) { outcomes.set(c, 'reference'); unreferenced.push({run: runOf(c), reason: unfit}); continue; }
     // 'reading': a pair missing either side's reading has no verdict (ruling 1141), never a difference.
     if (mode === 'reading' && v && !(hasReading(v) && hasReading(c))) { outcomes.set(c, 'unread'); continue; }
     if (passes(c)) outcomes.set(c, ['reference', 'pressKey', 'reading'].includes(mode) && !v ? 'unpaired' : v && !passes(v) && mode !== 'pressKey' ? 'better'
@@ -141,7 +146,8 @@ export function judgeCell(mode, vendorRows, cuaRows, {departure = null, required
   const routes = {vendor: [...new Set(vendorCounted.map(r => r.inputRoute ?? null))], cua: [...new Set(cuaRows.filter(r => !causeOf(r)).map(r => r.inputRoute ?? null))]};
   return {verdict, vendor: tally(vendorCounted, vendorRows), cua: tally(counted, cuaRows), declared: of('declared').length,
     shared: of('shared').map(r => ({run: runOf(r), answer: answerOf(r), length: r.outcome?.length ?? null, expectedLength: r.outcome?.expectedLength ?? null})),
-    honest: of('honest').map(r => ({run: runOf(r), ...notes.get(r)})), routes, account, ...(differs ? {differs: true} : {})};
+    honest: of('honest').map(r => ({run: runOf(r), ...notes.get(r)})), routes, account, ...(differs ? {differs: true} : {}),
+    ...(unreferenced.length ? {unreferenced} : {})};
 }
 
 // One method row's verdict: frontmost against the vendor's outcome, background against the fixture's ground truth.

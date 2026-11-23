@@ -11,3 +11,21 @@ window.addEventListener('focus', () => count('page-focus'));
 window.addEventListener('blur', () => count('page-blur'));
 document.getElementById('text').addEventListener('focus', () => count('text-focus'));
 document.getElementById('text').addEventListener('blur', () => count('text-blur'));
+
+// The pointerdown page (ruling 1168; ./main.js --cua-fixture-page=pointerdown, the native matrix's alone): inline after
+// the fixture's button (no height added, after every field in the Tab order), a button whose only handler is
+// `pointerdown` (no click handler) and its own count beside it, as the Chrome scene page's (../scene-page.mjs
+// POINTERDOWN). Without the flag the DOM is index.html's alone.
+if (new URLSearchParams(location.search).get('page') === 'pointerdown') {
+  const button = document.createElement('button'), status = document.createElement('span');
+  button.id = 'pointer';
+  button.type = 'button';
+  button.textContent = 'Pointer target';
+  status.id = 'pointer-status';
+  status.setAttribute('role', 'status');
+  status.setAttribute('aria-label', 'Pointer status');
+  status.textContent = 'Pointer downs: 0';
+  document.getElementById('button').after(' ', button, ' ', status);
+  let downs = 0;
+  button.addEventListener('pointerdown', () => { downs += 1; status.textContent = `Pointer downs: ${downs}`; });
+}

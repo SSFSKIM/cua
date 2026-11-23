@@ -20,7 +20,7 @@ test('the shared page is byte-identical to the one every earlier record used', (
   assert.equal(sha256(PAGE_HTML), '67d628ac5fbb8568140649e3ae68d0558e0940495b00275864a708b94b53ba84');
   assert.equal(sha256(CSP), '6af8ad1d6acfb72ceebd4eadcfa1a86c636ce261e381d09b29431e27d170aa99');
   assert.equal(sha256(SCRIPT), '1795a24d8619bd7c548947d659eadd07ee0663263efa4d34bad94a3749d6f706');
-  assert.deepEqual(PAGE_VARIANTS, ['shared', 'counters', 'popup']);
+  assert.deepEqual(PAGE_VARIANTS, ['shared', 'counters', 'popup', 'pointerdown']);
 });
 
 test('the counters page is the shared DOM plus one script, and its CSP adds only that script\'s hash', () => {

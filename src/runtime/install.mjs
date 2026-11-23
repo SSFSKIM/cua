@@ -60,8 +60,9 @@ import {ENGINE_BINARY, engineAsset, inspectLinuxEngine, linuxEnginePath, loadEng
 import {buildEngine, engineDirectory, installedEngine} from './engine.mjs';
 import {signWaitMs} from './engine-sign.mjs';
 import {buildFailureCause} from './engine-build-failure.mjs';
-import {belowMinimum} from '../services/engine/client.mjs';
-import {nativeEngineSetting} from './launch.mjs';
+import {pendingEngine, pendingMeetsMinimum} from './engine-minimum.mjs';
+import {MIN_ENGINE_VERSION as MIN_MACOS_ENGINE_VERSION} from '../services/engine/client.mjs';
+import {nativeEngineSetting, replHostFor} from './launch.mjs';
 
 // What unpacking a deb runs, and the package each comes from.
 const DEB_TOOLS = {ar: 'binutils', tar: 'tar', xz: 'xz-utils'};
@@ -379,21 +380,35 @@ export async function installLinuxEngine({home, pin = loadEnginePin(), fetch = g
 // setting's read (`config`, `defaultEngine`); `build`, `installed` (the approved engine, read from the files and the
 // signature only) and `engine` (the engine module's own deps) are test seams.
 // A warning (design ruling 1148) carries the failure's short `cause` (engine-build-failure.mjs, as `cua doctor` and a
-// session's first js result give it) and `serves`, the engine sessions keep until a build is approved: the approved
-// one when it is at least the service's minimum, else the vendor's.
-// -> {skipped: 'not_selected'} | {status: 'warn', code, message, hint?, cause, serves: {engine: 'vendor'} | {engine: 'cua',
-// build}} | {status: 'pass', ...buildEngine's answer, approved: whether this build is the approved engine}.
+// session's first js result give it); `serves`, what a macOS computer session gets until a build is approved, as its own
+// selection decides it (launch.mjs replHostFor, with the approved engine and the own host's Node as they are now):
+// {engine: 'cua', build} (an approved build still serves), {engine: 'vendor', reason} (the default's fallback, or an
+// explicit vendor host), or {refused: code} (an explicit selection of cua's engine with none usable); and `pending`, a
+// build from an earlier build still pending beside it that meets the minimum ({build, engineVersion}, which `cua engine
+// approve` takes now), else null. `home` (the cua home, where the own host's Node is found), `resolveOwnNode` and
+// `pending` are seams for tests, as `build` and `installed` are.
+// -> {skipped: 'not_selected'} | {status: 'warn', code, message, hint?, cause, serves, pending} | {status: 'pass',
+// ...buildEngine's answer, approved: whether this build is the approved engine}.
 export async function installMacosEngine({explicit = false, sign, signWait, env = process.env, selection = {}, build = buildEngine, installed = installedEngine,
-  engine = {}, log = () => {}} = {}) {
+  engine = {}, log = () => {}, home, resolveOwnNode, pending = dir => pendingEngine({dir})} = {}) {
   const serves = dir => {
-    let app = null;
-    try { app = installed({dir, runSync: engine.runSync}); } catch { app = null; }
-    return app && !belowMinimum(app.engineVersion) ? {engine: 'cua', build: app.build} : {engine: 'vendor'};
+    try {
+      const session = replHostFor({platform: 'darwin', surfaces: ['computer'], ambient: env, home, ...(resolveOwnNode ? {resolveOwnNode} : {}),
+        engine: {...selection, installed: () => installed({dir, runSync: engine.runSync}), pending: () => pending(dir), buildFailure: () => null}});
+      return session.engine?.engine === 'cua' ? {engine: 'cua', build: session.engine.app.build} : {engine: 'vendor', reason: session.reason};
+    } catch (error) {
+      if (!(error instanceof CuaError)) throw error;
+      return {refused: error.code};
+    }
+  };
+  const approvable = dir => {
+    const found = pending(dir);
+    return pendingMeetsMinimum(found, MIN_MACOS_ENGINE_VERSION) ? {build: found.build, engineVersion: found.engineVersion} : null;
   };
   // A failed build (`dir`, the engine directory it built in) says its cause and what serves; a setting that cannot be
   // read, which refuses sessions as it refuses the build, says only itself.
   const reported = (error, dir) => ({status: 'warn', code: error.code, message: error.message, ...(error.hint ? {hint: error.hint} : {}),
-    ...(dir ? {cause: buildFailureCause(error, {home: env.HOME || homedir()}), serves: serves(dir)} : {})});
+    ...(dir ? {cause: buildFailureCause(error, {home: env.HOME || homedir()}), serves: serves(dir), pending: approvable(dir)} : {})});
   if (!explicit) {
     let setting;
     try { setting = nativeEngineSetting({env, ...selection}); } catch (error) { return reported(classified(error, 'invalid_setting')); }

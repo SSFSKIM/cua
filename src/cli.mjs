@@ -279,7 +279,7 @@ async function install(args, {installRuntime: runtimeInstaller = installRuntime,
   if (platform === 'darwin') {
     const remedy = `${result.release} is installed and active; for the engine, run cua install --engine again`;
     try {
-      macosEngine = await macosEngineInstaller({explicit: values.engine === true, sign: values['engine-sign'], signWait: values['sign-wait'], env,
+      macosEngine = await macosEngineInstaller({explicit: values.engine === true, sign: values['engine-sign'], signWait: values['sign-wait'], env, home,
         log: line => process.stderr.write(`${line}\n`)});
     } catch (error) {
       if (!(error instanceof CuaError)) throw error;
@@ -876,13 +876,22 @@ const signatureText = ({kind, identityMatches, reason}) => (kind === null ? 'uns
 // detail follows it.
 function failedBuildRemedy(warning, release) {
   const fix = buildFailureFix(warning);
-  const using = warning.serves.engine === 'cua' ? 'to use the new build' : 'to use cua\'s engine';
-  return `${using}, ${fix ? `${fix}, then ` : ''}run \`cua install --engine\`, then \`cua engine approve\` with the owner at the console; ${release} is installed and active`;
+  const using = warning.pending ? 'to retry this build' : warning.serves.engine === 'cua' ? 'to use the new build' : 'to use cua\'s engine';
+  const now = warning.pending ? `build ${shortBuild(warning.pending.build)} (version ${warning.pending.engineVersion}), from an earlier build, is pending: \`cua engine approve\` with the owner at the console takes it now; ` : '';
+  return `${now}${using}, ${fix ? `${fix}, then ` : ''}run \`cua install --engine\`, then \`cua engine approve\` with the owner at the console; ${release} is installed and active`;
+}
+// What a macOS computer session gets meanwhile (installMacosEngine's `serves`).
+const SERVES_WORDS = {
+  own_host_node_unavailable: 'sessions keep the vendor engine, since cua\'s own host finds no Node 24 (`cua install` without --no-node places one), until it does',
+};
+function servesText({serves}) {
+  if (serves.refused) return `macOS computer sessions are refused (${serves.refused}) until a build is approved`;
+  if (serves.engine === 'cua') return `sessions keep the approved build ${shortBuild(serves.build)} until a newer build is approved`;
+  return SERVES_WORDS[serves.reason] ?? 'sessions keep the vendor engine until a build is approved';
 }
 function failedBuildText(warning) {
-  const keeps = warning.serves.engine === 'cua' ? `the approved build ${shortBuild(warning.serves.build)} until a newer build is approved` : 'the vendor engine until a build is approved';
   const detail = warning.message.split('\n').slice(1).join('\n');
-  return `cua's engine was not built: ${warning.cause} (${warning.code}); sessions keep ${keeps}; ${warning.hint}${detail ? `\n${detail}` : ''}`;
+  return `cua's engine was not built: ${warning.cause} (${warning.code}); ${servesText(warning)}; ${warning.hint}${detail ? `\n${detail}` : ''}`;
 }
 
 const engineBuildText = built => (built.changed ? `built cua's engine ${shortBuild(built.build)} at ${built.bundlePath}, ${signatureText(built.signature)}`

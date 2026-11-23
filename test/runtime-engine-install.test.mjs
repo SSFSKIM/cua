@@ -22,7 +22,7 @@ const manifest = {release: 'fixture', platform: process.platform, arch: process.
 // A darwin (or `platform`) install with every installer stubbed. The engine step is the real installMacosEngine with
 // its build and approval read doubled: `build` answers as given, `installed` is the approved engine (null: none), and
 // `events` records the steps.
-function fixture(t, {env = {}, platform = 'darwin', build = async () => built, installed = () => null} = {}) {
+function fixture(t, {env = {}, platform = 'darwin', build = async () => built, installed = () => null, pending = () => null, resolveOwnNode = () => '/fixture/node24/bin/node'} = {}) {
   const scratch = shortScratch('cua-install-eng-');
   t.after(scratch.cleanup);
   const events = [], builds = [];
@@ -31,7 +31,7 @@ function fixture(t, {env = {}, platform = 'darwin', build = async () => built, i
     installRuntime: async () => { events.push('runtime'); return {release: 'fixture', root: '/fixture/runtime', changed: true, record: {source: 'archive'}}; },
     installHelper: async () => { events.push('helper'); return {path: '/fixture/helper', changed: true}; },
     installMacosEngine: options => installMacosEngine({...options,
-      build: async buildOptions => { events.push('engine'); builds.push(buildOptions); return build(buildOptions); }, installed})};
+      build: async buildOptions => { events.push('engine'); builds.push(buildOptions); return build(buildOptions); }, installed, pending, resolveOwnNode})};
   return {deps, events, builds, settings(value) {
     const dir = join(scratch.dir, '.config/cua'); mkdirSync(dir, {recursive: true});
     writeFileSync(join(dir, 'engine.json'), JSON.stringify(value));
@@ -105,7 +105,7 @@ test('a failed build under the selection is reported and the install succeeds; w
       } else {
         assert.equal(answer.engine.status, 'warn');
         assert.equal(answer.engine.cause, error.code ? 'no signing identity is configured' : 'engine_install_failed: error: compiler unavailable');
-        assert.deepEqual(answer.engine.serves, {engine: 'vendor'});
+        assert.deepEqual(answer.engine.serves, {refused: 'engine_not_installed'}, 'CUA_NATIVE_ENGINE=cua with none approved: sessions are refused');
         assert.match(refusal.hint, /run `cua install --engine`, then `cua engine approve` with the owner at the console; fixture is installed and active$/);
       }
     }
@@ -124,24 +124,41 @@ test('the install warning on a failed build names the cause, the engine sessions
     [new CuaError('engine_build_failed', 'swift build failed (exit 1):\n/src/Foo.swift:1:1: error: cannot find type \'Bar\' in scope', {hint: 'the approved bundle is unchanged'}),
       'compile error (swift build exit 1): cannot find type \'Bar\' in scope', ''],
   ]) {
-    const r = await invoke(fixture(t, {env: {CUA_NATIVE_ENGINE: 'cua'}, build: async () => { throw error; }}).deps);
+    // The default (cua's engine since the flip), none approved: the default keeps the vendor engine.
+    const r = await invoke(fixture(t, {build: async () => { throw error; }}).deps);
     assert.equal(r.status, 0, r.stderr);
     const [line, ...rest] = r.stdout.split('\n').filter(text => text.startsWith('cua\'s engine') || text.startsWith('/src'));
     assert.equal(line, `cua's engine was not built: ${cause} (${error.code}); sessions keep the vendor engine until a build is approved; to use cua's engine, ${fix}${REMEDY}; fixture is installed and active`);
     if (cause.startsWith('compile error')) assert.deepEqual(rest, ['/src/Foo.swift:1:1: error: cannot find type \'Bar\' in scope'], 'the compiler\'s detail follows the line');
   }
+  const xcode = () => { throw new CuaError('engine_build_failed', 'swift is not installed, so cua\'s engine cannot be built'); };
+  const APPROVED = {bundlePath: '/e/cua Engine.app', engineVersion: '0.3.0', build: 'b'.repeat(64)};
+  const engineOf = async (options, args = ['--json']) => JSON.parse((await invoke(fixture(t, {build: async () => xcode(), ...options}).deps, args)).stdout).engine;
+  const lineOf = async options => (await invoke(fixture(t, {build: async () => xcode(), ...options}).deps)).stdout.split('\n').find(text => text.startsWith('cua\'s engine'));
   // A previously approved build still serves (ruling 1118): the warning says so.
-  const approved = fixture(t, {env: {CUA_NATIVE_ENGINE: 'cua'}, installed: () => ({bundlePath: '/e/cua Engine.app', engineVersion: '0.3.0', build: 'b'.repeat(64)}),
-    build: async () => { throw new CuaError('engine_build_failed', 'swift is not installed, so cua\'s engine cannot be built'); }});
-  const json = await invoke(approved.deps, ['--json']);
-  assert.equal(json.status, 0);
-  assert.deepEqual(JSON.parse(json.stdout).engine.serves, {engine: 'cua', build: 'b'.repeat(64)});
-  const text = await invoke(approved.deps);
-  assert.match(text.stdout, /^cua's engine was not built: Xcode is not installed \(no swift\) \(engine_build_failed\); sessions keep the approved build bbbbbbbbbbbb until a newer build is approved; to use the new build, install Xcode/m);
+  assert.deepEqual((await engineOf({installed: () => APPROVED})).serves, {engine: 'cua', build: APPROVED.build});
+  assert.match(await lineOf({installed: () => APPROVED}), /^cua's engine was not built: Xcode is not installed \(no swift\) \(engine_build_failed\); sessions keep the approved build bbbbbbbbbbbb until a newer build is approved; to use the new build, install Xcode/);
   // One below the service's minimum does not serve: sessions keep the vendor engine.
-  const old = fixture(t, {env: {CUA_NATIVE_ENGINE: 'cua'}, installed: () => ({bundlePath: '/e/cua Engine.app', engineVersion: '0.1.0', build: 'b'.repeat(64)}),
-    build: async () => { throw new CuaError('engine_identity_missing', 'none'); }});
-  assert.deepEqual(JSON.parse((await invoke(old.deps, ['--json'])).stdout).engine.serves, {engine: 'vendor'});
+  assert.deepEqual((await engineOf({installed: () => ({...APPROVED, engineVersion: '0.1.0'})})).serves, {engine: 'vendor', reason: 'engine_outdated'});
+  // The effective outcome, as a session's selection gives it (launch.mjs replHostFor), not the bundle's eligibility alone.
+  // An explicit selection of cua's engine with none approved: sessions are refused, never given the vendor engine.
+  for (const env of [{CUA_NATIVE_ENGINE: 'cua'}, {CUA_REPL_HOST: 'cua'}]) {
+    assert.deepEqual((await engineOf({env})).serves, {refused: 'engine_not_installed'}, JSON.stringify(env));
+    assert.match(await lineOf({env}), /; macOS computer sessions are refused \(engine_not_installed\) until a build is approved; to use cua's engine, install Xcode/, JSON.stringify(env));
+  }
+  // A usable approved build, but no Node 24 for cua's own host (--no-node): the default serves the vendor engine.
+  const noNode = () => { throw Object.assign(new CuaError('repl_host_node', 'no Node 24'), {tried: ['/usr/bin/node (v22.0.0)']}); };
+  assert.deepEqual((await engineOf({installed: () => APPROVED, resolveOwnNode: noNode})).serves, {engine: 'vendor', reason: 'own_host_node_unavailable'});
+  assert.match(await lineOf({installed: () => APPROVED, resolveOwnNode: noNode}),
+    /; sessions keep the vendor engine, since cua's own host finds no Node 24 \(`cua install` without --no-node places one\), until it does; to use cua's engine, install Xcode/);
+  // An earlier build pending that meets the minimum: approving it is the way now, apart from retrying this build.
+  const earlier = {build: 'c'.repeat(64), engineVersion: '0.3.0', bundlePath: '/e/pending/cua Engine.app', builtAt: '2026-11-22T00:00:00.000Z'};
+  const withPending = await engineOf({pending: () => earlier});
+  assert.deepEqual(withPending.pending, {build: earlier.build, engineVersion: '0.3.0'});
+  assert.match(await lineOf({pending: () => earlier}),
+    /; sessions keep the vendor engine until a build is approved; build cccccccccccc \(version 0\.3\.0\), from an earlier build, is pending: `cua engine approve` with the owner at the console takes it now; to retry this build, install Xcode .*, then run `cua install --engine`, then `cua engine approve`/);
+  // One below the minimum is not offered.
+  assert.equal((await engineOf({pending: () => ({...earlier, engineVersion: '0.1.0'})})).pending, null);
 });
 
 test('a setting that cannot be read is the engine step\'s failure, reported without --engine', async t => {
@@ -173,7 +190,7 @@ test('the Node step finishes before the engine step; a failed Node step never st
 test('the real builder refuses a missing identity before compiling: reported under the selection, fatal with --engine', async t => {
   for (const explicit of [false, true]) {
     const f = fixture(t, {env: {CUA_NATIVE_ENGINE: 'cua'}});
-    f.deps.installMacosEngine = options => installMacosEngine({...options, installed: () => assert.fail('nothing was built')});
+    f.deps.installMacosEngine = options => installMacosEngine({...options, installed: () => null, resolveOwnNode: () => '/fixture/node24/bin/node'});
     const r = await invoke(f.deps, [...(explicit ? ['--engine'] : []), '--json']);
     assert.equal(r.status, explicit ? 1 : 0, r.stderr);
     const answer = JSON.parse(r.stdout);

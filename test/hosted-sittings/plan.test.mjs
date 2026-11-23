@@ -136,8 +136,12 @@ test('C: the matrix, three runs a side with vendor and cua alternating per run n
     ['observation', '/w/out/save-sheet/vendor/run-1/result.json', 'textedit/intervention.saveSheet', false],
     ['report', '/w/out/summary.md', null, false],
     ['verdict', null, null, true]]);
+  // Each run needs the one before it, through the alternation: a run that left a scene up fails, and the next is SKIP
+  // rather than started into what it left (pilot B's Finder window).
+  assert.deepEqual(runs.map(s => s.needs ?? []), [[], ['matrix-vendor-1'], ['matrix-cua-1'], ['matrix-vendor-2'], ['matrix-cua-2'], ['matrix-vendor-3']]);
   const pilot = plan('c', {pilot: true});
   assert.deepEqual(pilot.steps.filter(s => s.id.startsWith('matrix-')).map(s => s.id), ['matrix-vendor-1', 'matrix-cua-1'], 'the pilot: one run pair');
+  assert.deepEqual(pilot.steps.filter(s => s.id.startsWith('matrix-')).map(s => s.needs ?? []), [[], ['matrix-vendor-1']], 'the pilot\'s pair chained the same way, after the focus timing it does not need');
   assert.deepEqual(pilot.steps.filter(s => s.id.startsWith('save-sheet-')).map(s => [argOf(s, '--runs'), s.records]),
     [['1', ['/w/out/save-sheet/vendor/run-1/result.json']], ['1', ['/w/out/save-sheet/cua/run-1/result.json']]], 'the pilot\'s cell: exactly one run a lane, and that run\'s record checked');
   assert.equal(pilot.steps[0].id, 'focus-timing', 'the pilot times the focus probe before anything else runs');

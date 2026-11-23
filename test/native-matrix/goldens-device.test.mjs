@@ -628,7 +628,7 @@ test('a failed Finder frame probe retains stage diagnostics through activation e
   const activation = await activateScene('finder', {run: runDir, io: {
     activateApp: () => {}, frontmostProcess: () => ({pid: record.pid, bundleId: 'com.apple.finder'}), enginePids: () => [],
     windowOrder: () => [{ownerPid: record.pid, ownerName: 'Finder', number: record.window.number, bounds: record.window.bounds}],
-    appWindows: () => [{number: record.window.number, bounds: record.window.bounds, onScreen: true}], now: io.now, sleep: io.sleep,
+    now: io.now, sleep: io.sleep,
   }});
   assert.equal(activation.ok, true);
   assert.deepEqual(activation.framePin.diagnostic, expected);
@@ -802,7 +802,7 @@ for (const raises of [true, false]) {
     const calls = [];
     io.activate = (_id, dir) => activateScene('finder', {run: dir, io: {
       activateApp: () => {}, frontmostProcess: () => ({pid: 402, bundleId: 'com.apple.finder'}), enginePids: () => [],
-      windowOrder: () => order, appWindows: () => [own], now: io.now, sleep: io.sleep,
+      windowOrder: () => order, now: io.now, sleep: io.sleep,
       showFolder: (app, folder) => { calls.push({app, folder}); if (raises) order = [own, blocker]; },
     }});
     io.frontmost = () => ({pid: 402, topWindow: order[0]});
@@ -835,7 +835,7 @@ for (const engineKnown of [true, false]) {
     const unskipped = skipPids => [panel, own].filter(w => !skipPids.includes(w.ownerPid));
     io.activate = (_id, dir) => activateScene('finder', {run: dir, boundMs: 0, io: {
       activateApp: () => {}, frontmostProcess: () => ({pid: 402, bundleId: 'com.apple.finder'}), enginePids,
-      windowOrder: ({skipPids = []} = {}) => unskipped(skipPids), appWindows: () => [own], now: io.now, sleep: io.sleep, showFolder: () => {},
+      windowOrder: ({skipPids = []} = {}) => unskipped(skipPids), now: io.now, sleep: io.sleep, showFolder: () => {},
     }});
     // The front-window probe as front-window.swift answers it: the frontmost process, and the first window not skipped.
     io.frontmost = engineFreeFrontmost({enginePids,

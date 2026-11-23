@@ -91,8 +91,14 @@ function sittingC(ctx) {
   const lane = engine => ['--device', DEVICE, '--host', engine, '--engine', engine, ...approvedArgs(ctx), '--sitting', sitting];
   if (ctx.pilot) steps.push({id: 'focus-timing', label: 'the focus probe\'s cost on this runner', kind: 'pilot',
     argv: ['node', 'scripts/hosted-sittings.mjs', 'focus-timing', '--approved-engine', ctx.approvedEngine, '--out', `${ctx.out}/focus-timing.json`]});
+  // Each matrix run needs the one before it to have passed, as A's runs and B's cua lane do: a run that could not bring a
+  // scene down (a Finder window it left, pilot B) fails, and the next run, of either engine, is never started into it.
+  const runSteps = [];
   for (let i = 1; i <= runs; i++) for (const engine of ['vendor', 'cua']) {
+    const before = runSteps.at(-1);
+    runSteps.push(`matrix-${engine}-${i}`);
     steps.push({id: `matrix-${engine}-${i}`, label: `the matrix on ${engine}'s host and engine, run ${i}`, kind: 'run', check: 'record', record: `${ctx.out}/${engine}/run-${i}/result.json`, engine,
+      ...(before ? {needs: [before]} : {}),
       ...(engine === 'cua' ? {pair: `${ctx.out}/vendor/run-${i}/result.json`} : {}), argv: matrix('run', ...lane(engine), '--out', `${ctx.out}/${engine}`, '--run-number', String(i))});
   }
   // #212's cell asks for its runs (one in the pilot), and its check reads every one of their records.

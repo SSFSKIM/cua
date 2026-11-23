@@ -13,7 +13,7 @@ import {
   SCENE_IDS, SCENES, PAIRS, BACKGROUND_PAIRINGS, CONCURRENT_USE, CONCURRENT_USE_SHEET, userWindowFor, refusals,
   ownedProcesses, documentWindows, refusingWindows, finderFolderFiles, textEditDocument, describeScenes, FINDER_TYPING_NAME, TEXTEDIT_STYLED_LINE, TEXTEDIT_MARKDOWN_CAP,
   upScene, downScene, preflight, readState, TEXTEDIT_HOLD_MS, reactivateApp, chromeArgs, chromeArgsProblems, chromePreferences, electronArgs, sceneCommand, exitCodeFor,
-  setupSteps, teardownSteps, teardownFor, activateScene, restoreFinder, finderBaseline, fixedStateProblems, finderOwned, isSceneWindow, FINDER_FILES_MODIFIED, readPageLoaded, parse, defaultIo,
+  setupSteps, teardownSteps, teardownFor, activateScene, restoreFinder, finderBaseline, RESTORE_ROUNDS, RESTORE_SETTLE_MS, fixedStateProblems, finderOwned, isSceneWindow, FINDER_FILES_MODIFIED, readPageLoaded, parse, defaultIo,
 } from '../../scripts/repl-parity/scenes-mac.mjs';
 import {indexOfTarget, indexOfRowCell, actionIndex, windowTitleOf} from '../../scripts/repl-parity/scenes-mac-text.mjs';
 import {parseAsns, parseAppInfo, awaitOwnLaunch, stopRecorded, readFinderPreferences, writeFinderPreference, openApp, activateApp, activateProcess, enginePids, ACTIVATE_PROCESS_SCRIPT} from '../../scripts/repl-parity/scenes-mac-device.mjs';
@@ -289,8 +289,8 @@ function fakeDevice({running = [], windows = {}, finderPid = 736, finderHidden =
     enginePids: () => [],
     windowOrder: () => {
       const top = io.front?.topWindow;
-      if (!top) return [];
       const own = (windows[finderPid] ?? []).filter(w => w.onScreen !== false).map(w => ({...w, ownerPid: finderPid}));
+      if (!top) return own;
       return top.ownerPid === finderPid ? own : [top, ...own];
     },
     activateApp: app => {
@@ -1143,7 +1143,7 @@ test('a key Finder will not take back keeps the scene down false and the saved r
   const {reason, ...preferences} = down.preferences;
   assert.deepEqual(preferences, {restored: false, wrote: ['ShowSidebar'], remaining: ['ShowSidebar'], savedAt, visibleRestored: true});
   assert.equal(down.reason, reason);
-  assert.equal(io.writes.length, 3, 'written again each round, RESTORE_ROUNDS times');
+  assert.equal(io.writes.length, RESTORE_ROUNDS, 'written again each round, RESTORE_ROUNDS times');
   assert.ok(readSavedPreferences(io.savedPreferencesFile));
   assert.equal(exitCodeFor(down), 1);
   io.preferences.ShowSidebar = true;   // the owner, or Finder, put it back
@@ -1205,7 +1205,9 @@ test('activate says why the run\'s Finder window is not on top, and raises it on
   const io = fakeDevice();
   const finder = await upScene('finder', {run, io});
   io.showFolder = (...args) => io.calls.push(['show', ...args]);
-  // Another process's window above Finder's: attempt the exact folder raise, but do not exempt the blocker.
+  // Another process's window above Finder's, before the activation as after it: attempt the exact folder raise, but do
+  // not exempt the blocker.
+  io.front = {pid: 736, bundleId: 'com.apple.finder', topWindow: {ownerPid: 4242, number: 77}};
   io.activateApp = app => { io.calls.push(['activate', app]); io.front = {pid: 736, bundleId: 'com.apple.finder', topWindow: {ownerPid: 4242, number: 77}}; };
   const overlay = await activateScene('finder', {run, io});
   assert.equal(overlay.ok, false);
@@ -1244,6 +1246,22 @@ test('activate finder sends nothing while the run\'s window is not on screen: go
   assert.match(gone.reason, /not on screen/);
   assert.deepEqual(io.calls.filter(c => c[0] === 'activate' || c[0] === 'show'), [], 'Finder was neither activated nor asked to show a folder');
   assert.equal(exitCodeFor(gone), 1);
+  // The refusal keeps the same device-side evidence as every activation: the on-screen order it read.
+  const logged = fs.readFileSync(join(run, 'activation-guards.jsonl'), 'utf8').trim().split('\n').map(line => JSON.parse(line)).at(-1);
+  assert.deepEqual([logged.ok, logged.reason, logged.windowOrder.runWindowFound], [false, gone.reason, false]);
+}));
+
+// One on-screen reading before Finder's activation decides whether to activate, and stands for the first poll: an
+// activation that holds at once reads the window order once, as before the check was added.
+test('activate finder reads the window order once when the run\'s window is already in front', async () => withRun(async run => {
+  const io = fakeDevice();
+  await upScene('finder', {run, io});
+  const order = io.windowOrder;
+  let reads = 0;
+  io.windowOrder = args => { reads++; return order(args); };
+  const front = await activateScene('finder', {run, io});
+  assert.equal(front.ok, true);
+  assert.equal(reads, 1);
 }));
 
 test('teardown steps for finder are none once the run\'s window is gone: nothing to toggle, nothing to close, nothing activated', async () => withRun(async run => {
@@ -1277,23 +1295,27 @@ test('down finder stays false while Finder shows a window on screen that is not 
 // process, later than the toggle that changed them, so a read straight after the write can pass while Finder's own
 // write is still to land, or fail while it is landing (pilot B's first take-down: ShowSidebar, right after the
 // teardown's toggle-back; its retry seconds later read back).
-const savedRecord = (io, saved) => {
+const savedRecord = (io, saved, extra = {}) => {
   fs.mkdirSync(join(io.savedPreferencesFile, '..'), {recursive: true});
-  fs.writeFileSync(io.savedPreferencesFile, JSON.stringify({saved: {ShowSidebar: saved, ShowStatusBar: null, ShowPathbar: null}, savedAt: 'T0', schema: FINDER_RECORD_SCHEMA}));
+  fs.writeFileSync(io.savedPreferencesFile, JSON.stringify({saved: {ShowSidebar: saved, ShowStatusBar: null, ShowPathbar: null}, savedAt: 'T0', schema: FINDER_RECORD_SCHEMA, ...extra}));
 };
 test('restore-finder reads each key back after a settle, writing again what Finder\'s own late write undid', async () => {
-  for (const saved of [true, false, null]) {
+  // A record with no visible state, and a trusted one whose window chrome a teardown restored: both end once read back.
+  for (const extra of [{}, {visible: {sidebar: true, statusBar: false, pathBar: false}, visibleRestoredAt: 'T1'}]) for (const saved of [true, false, null]) {
     const runs = saved === true ? false : true;
     // Finder's own write of the run's value lands once, after the restore's first write.
     const io = fakeDevice({preferences: {ShowSidebar: runs, ShowStatusBar: null, ShowPathbar: null}});
-    savedRecord(io, saved);
+    savedRecord(io, saved, extra);
     let late = true;
-    const sleep = io.sleep;
-    io.sleep = async ms => { await sleep(ms); if (late && io.writes.length) { io.preferences.ShowSidebar = runs; late = false; } };
+    const sleep = io.sleep, slept = [];
+    io.sleep = async ms => { slept.push(ms); await sleep(ms); if (late && io.writes.length) { io.preferences.ShowSidebar = runs; late = false; } };
     const out = await restoreFinder({io});
     assert.equal(out.preferences.restored, true, `saved ${saved}`);
+    if (extra.visible) assert.equal(out.preferences.visibleRestored, true);
     assert.deepEqual(io.writes, [['ShowSidebar', saved], ['ShowSidebar', saved]], `written again after Finder's late write (saved ${saved})`);
+    assert.deepEqual(slept, [RESTORE_SETTLE_MS, RESTORE_SETTLE_MS, RESTORE_SETTLE_MS], 'a settle after each write and one confirming round');
     assert.equal(io.preferences.ShowSidebar, saved);
+    assert.equal(readSavedPreferences(io.savedPreferencesFile), null, 'the record is cleared once every key reads back');
     // A key that reads as the owner's at first, which Finder's pending write then changes, is caught by the settle.
     const quiet = fakeDevice({preferences: {ShowSidebar: saved, ShowStatusBar: null, ShowPathbar: null}});
     savedRecord(quiet, saved);

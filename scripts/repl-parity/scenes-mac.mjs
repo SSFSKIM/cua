@@ -633,19 +633,16 @@ const recordOf = (id, run) => {
 // `boundMs` until the frontmost process is the run's, by pid, and for Finder until the run's window (by its number) is
 // its top window. When Finder is in front with any layer-0 window above the run's, the run's folder is opened
 // again (`open -a Finder <folder>`), once: Finder brings the window already showing that folder to the front and
-// touches no other. Only while the run's window is on screen, since otherwise the open would make a new window.
+// touches no other. Only while the run's window is on screen, since otherwise the open would make a new window. Nor is
+// Finder activated at all unless one on-screen reading before the activation shows the run's window: an activated
+// Finder with no window on screen opens a new one (pilot B). That reading also serves the first poll, so Finder's
+// activation costs no extra probe: an activation puts no other process's window above Finder's, so the run's window on
+// top before it is on top after it once Finder is frontmost; but a raise waits for a reading taken after it.
 // -> {scene, ok, frontmost, topWindow?, raised?, runWindow?, reason?, windowOrder?, framePin?}; ok false names what was in front instead and,
 // for Finder, where the run's window stood (`runWindow`: its place among Finder's on-screen windows, front first, and
 // its bounds; null when it is not among them), nothing guessed.
 export async function activateScene(id, {run, io = defaultIo(), boundMs = 5000, pollMs = 250}) {
   const record = recordOf(id, run), finder = sceneOf(id).id === 'finder';
-  if (finder && !finderRunWindow(io, record)?.onScreen) {
-    const result = {scene: id, ok: false, frontmost: null, runWindow: null,
-      reason: 'the run\'s Finder window is not on screen (closed, minimized or on another Space): Finder is not activated, since an activated Finder with no window on screen opens a new one'};
-    fs.appendFileSync(join(run, 'activation-guards.jsonl'), JSON.stringify({at: io.now(), ...result}) + '\n', {mode: 0o600});
-    return result;
-  }
-  io.activateApp(record.app);
   // The engine's own windows (the agent cursor's display-wide panel, #235, ordered above the window it acts in and never
   // key) are passed over, as every front reading of the harness passes over them; any other process's window counts.
   const skipPids = io.enginePids();
@@ -657,9 +654,18 @@ export async function activateScene(id, {run, io = defaultIo(), boundMs = 5000, 
     fs.appendFileSync(join(run, 'activation-guards.jsonl'), JSON.stringify({at: io.now(), ...result}) + '\n', {mode: 0o600});
     return result;
   };
+  if (finder) {
+    order = io.windowOrder({skipPids});
+    if (!order.some(w => w.ownerPid === record.pid && w.number === record.window.number && w.onScreen !== false)) return finish({scene: id, ok: false, frontmost: null, runWindow: null,
+      reason: 'the run\'s Finder window is not on screen (closed, minimized or on another Space): Finder is not activated, since an activated Finder with no window on screen opens a new one'});
+  }
+  io.activateApp(record.app);
+  let readBefore = finder;
   for (const t0 = io.now(); ;) {
     frontmost = io.frontmostProcess();
-    if (finder) order = io.windowOrder({skipPids});
+    const fresh = !readBefore;
+    if (finder && fresh) order = io.windowOrder({skipPids});
+    readBefore = false;
     if (frontmost?.pid === record.pid) {
       if (!finder) return {scene: id, ok: true, frontmost};
       // One CGWindowList snapshot supplies both the top and the run's position. Separate front/per-app reads can
@@ -669,7 +675,7 @@ export async function activateScene(id, {run, io = defaultIo(), boundMs = 5000, 
         return finish({scene: id, ok: true, frontmost, topWindow: {ownerPid: topWindow.ownerPid, number: topWindow.number, bounds: topWindow.bounds}, ...(raised ? {raised} : {})});
       const index = order.findIndex(w => w.ownerPid === record.pid && w.number === record.window.number);
       // Raising is a single attempt, not an exemption: even a run-owned blocker must be gone on a later CG read.
-      if (!raised && index > 0 && order[index].onScreen !== false) { io.showFolder(record.app, record.folder); raised = true; }
+      if (!raised && fresh && index > 0) { io.showFolder(record.app, record.folder); raised = true; }
     }
     if (io.now() - t0 >= boundMs) break;
     await io.sleep(pollMs);
@@ -686,9 +692,10 @@ export async function activateScene(id, {run, io = defaultIo(), boundMs = 5000, 
   return finish({scene: id, ok: false, frontmost, ...(blocker ? {blocker} : {}), ...(raised ? {raised} : {}), runWindow: place,
     reason: `the run's Finder is frontmost but its top window is not the run's window: ${reason}`});
 }
-// The run's Finder window among Finder's document windows as the device reads them now ({number, bounds, onScreen}),
-// or null when it is gone.
-const finderRunWindow = (io, record) => documentWindows(io.appWindows(record.pid)).find(w => w.number === record.window.number) ?? null;
+// The run's Finder window among Finder's document windows (`windows`, as appWindows reads them: {number, bounds,
+// onScreen}), or null when it is gone.
+const runWindowIn = (windows, record) => windows.find(w => w.number === record.window.number) ?? null;
+const finderRunWindow = (io, record) => runWindowIn(documentWindows(io.appWindows(record.pid)), record);
 // The run's place among Finder's windows within that SAME on-screen ordering, never a second reading.
 const runWindowPlace = (windows, record) => {
   const shown = windows.filter(w => w.ownerPid === record.pid), order = shown.findIndex(w => w.number === record.window.number);
@@ -761,6 +768,9 @@ export async function restoreFinder({io = defaultIo()} = {}) {
   if (!record) return {preferences: {restored: true, wrote: [], remaining: [], saved: false}};
   let current = io.finderPreferences();
   const distrust = savedRecordDistrust(record, current), wrote = new Set();
+  // Each round writes every key that differs, waits the settle and reads all three again. It ends at the first round
+  // that wrote nothing and whose settled reading matched the owner's values (so a successful restore takes one round
+  // past its last write), or after RESTORE_ROUNDS rounds, whatever the last reading says.
   for (let round = 1; ; round++) {
     const writes = preferenceWrites(current, record.saved);
     for (const {key, value} of writes) { io.writeFinderPreference(key, value); wrote.add(key); }
@@ -800,13 +810,13 @@ export async function downScene(id, {run, io = defaultIo()}) {
   }
   let result;
   if (id === 'finder') {
-    const open = documentWindows(io.appWindows(record.pid)).some(w => w.number === record.window.number);
+    const windows = documentWindows(io.appWindows(record.pid)), open = Boolean(runWindowIn(windows, record));
     const {preferences} = await restoreFinder({io});
     const kept = preferences.saved === false ? {} : {preferences};
     // The preflight refused any window of Finder's on screen at up that was new since the sitting's snapshot, so one new
     // now (the run's gone) is a window the run left or one opened during it: never closed here, since only the run's
     // window is the run's. The owner's windows of the snapshot are not counted (./finder-baseline.mjs).
-    const left = open ? [] : newFinderWindows(refusingWindows(documentWindows(io.appWindows(record.pid))), readFinderBaseline(io.finderBaselineFile));
+    const left = open ? [] : newFinderWindows(refusingWindows(windows), readFinderBaseline(io.finderBaselineFile));
     const residue = left.map(w => w.number);
     const reasons = [
       ...(residue.length ? [`Finder has a window on screen that is not the run's and was not there when the sitting began (${left.map(windowText).join('; ')}); close it, then run down finder again`] : []),

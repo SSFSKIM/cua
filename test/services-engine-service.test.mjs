@@ -20,6 +20,7 @@ import {createEngineClient} from '../src/services/engine/client.mjs';
 import {METHODS, createService, cursorParams} from '../src/services/engine/service.mjs';
 import {WINDOW_PLACEMENT} from '../src/services/engine/render.mjs';
 import {infoPlist} from '../scripts/spike/engine/assemble.mjs';
+import {ENGINE_GRANTS, grantSteps} from '../src/runtime/engine.mjs';
 
 const APPS = {
   TextEdit: {appPath: '/System/Applications/TextEdit.app', bundleIdentifier: 'com.apple.TextEdit', displayName: 'TextEdit', isRunning: true, pid: 501},
@@ -118,7 +119,7 @@ async function session(t, {handlers = {}, answer = () => ({action: 'accept', con
     const state = await call(() => sky.get_app_state({app, disableDiff: true}));
     return {state, app: bind_mac_app(sky, state.app)};
   };
-  return {engine, sky, service, wrapper, record, meta, trees, call, getApp, dir: s.dir, shot};
+  return {engine, sky, service, wrapper, record, meta, trees, call, getApp, nodeRepl, dir: s.dir, shot};
 }
 
 const appStates = engine => engine.executes().filter(p => p.method === 'get_app_state');
@@ -798,10 +799,72 @@ test('a declined app fails "Computer Use was not approved to use <app>" with not
   assert.equal(forbidden.record.elicitations.length, 0);
 });
 
-test('the untrusted engine: without the Accessibility grant, its permissionsPending reaches the model with its sentence', async t => {
-  const sentence = 'cua Engine needs the Accessibility permission: allow "cua Engine" in System Settings > Privacy & Security > Accessibility, then retry.';
-  const {getApp} = await session(t, {handlers: {'execute:get_app_state': () => { throw new EngineFailure(-10014, sentence, 'permissionsPending'); }}});
+test('the untrusted engine: its Accessibility permissionsPending reaches the model with the grant\'s steps and rides as cua/permission; the grant applies without a restart', async t => {
+  const sentence = `${grantSteps(ENGINE_GRANTS[0], '/approved/cua Engine.app')}, then retry.`;
+  let granted = false;
+  const {getApp, call, meta, engine, sky} = await session(t, {handlers: {'execute:get_app_state': () => {
+    if (!granted) throw new EngineFailure(-10014, sentence, 'permissionsPending', {meta: {permission: 'accessibility'}});
+    return scene(APPS.TextEdit);
+  }}});
   await assert.rejects(getApp('TextEdit'), {message: `Computer Use server error -10014: ${sentence}`});
+  assert.equal(meta['cua/permission'], 'accessibility');
+  assert.equal(meta['cua/actionInterval'], null, 'an observation\'s error carries no input meta');
+  granted = true;
+  await getApp('TextEdit');
+  assert.equal(meta['cua/permission'], null, 'the marker does not stand on the next result');
+  assert.equal(engine.received.some(r => r.method === 'shutdown'), false);
+  await call(() => sky.list_apps());
+  assert.equal(meta['cua/permission'], null);
+});
+
+test('an input\'s permissionsPending carries cua/permission beside its input meta', async t => {
+  const sentence = `${grantSteps(ENGINE_GRANTS[0], '/approved/cua Engine.app')}, then retry.`;
+  const {getApp, call, meta} = await session(t, {handlers: {'execute:click': () => {
+    throw new EngineFailure(-10014, sentence, 'permissionsPending', {meta: {...INPUT_META, permission: 'accessibility'}});
+  }}});
+  const {app} = await getApp('TextEdit');
+  await assert.rejects(call(() => app.click(1)), {message: `Computer Use server error -10014: ${sentence}`});
+  assert.equal(meta['cua/permission'], 'accessibility');
+  assert.equal(meta['cua/inputRoute'], INPUT_META.inputRoute);
+});
+
+test('Screen Recording: no text-only fallback, its marker rides on each refusal, busy repeats the guidance, and the next screenshot once free relaunches the engine once', async t => {
+  const sentence = `${grantSteps(ENGINE_GRANTS[1], '/approved/cua Engine.app')}; a relaunch of the engine is pending before screenshots can use it. Retry after granting it.`;
+  let granted = true;
+  let busy = true;
+  const s = await session(t, {handlers: {
+    'execute:get_app_state': () => {
+      if (!granted) throw new EngineFailure(-10014, sentence, 'permissionsPending', {meta: {permission: 'screenRecording'}});
+      return scene(APPS.TextEdit);
+    },
+    shutdown: () => {
+      if (busy) throw new EngineFailure(-10005, 'busy', 'busy', {connections: 1});
+      setImmediate(() => s.engine.stop());
+      return {};
+    },
+  }});
+  const {app} = await s.getApp('TextEdit');
+  granted = false;
+  await assert.rejects(s.call(() => app.getAXState({emit: false})), {message: `Computer Use server error -10014: ${sentence}`});
+  assert.equal(s.meta['cua/permission'], 'screenRecording');
+  assert.equal(s.engine.received.some(r => r.method === 'shutdown'), false, 'the first failure does not restart the engine');
+  assert.ok(appStates(s.engine).every(request => request.args.includeScreenshot === true), 'a text observation still asks for the capture');
+  await assert.rejects(s.call(() => app.getScreenshot()), {message: `Computer Use server error -10014: ${sentence}`});
+  assert.equal(s.meta['cua/permission'], 'screenRecording', 'busy repeats the marker too');
+  assert.equal(appStates(s.engine).length, 2, 'busy never observes again on the engine that failed');
+  busy = false;
+  let launches = 0;
+  s.nodeRepl.launchServices.openApplication = async ({applicationPath}) => {
+    assert.equal(applicationPath, s.nodeRepl.env.CUA_ENGINE_APP);
+    launches++;
+    await startFakeEngine(t, join(s.dir, 'engine.sock'), {handlers: {
+      'execute:get_app_state': () => scene(APPS.TextEdit, {lineage: 'after-relaunch', screenshot: {url: pathToFileURL(s.shot).href, width: 600, height: 400, scale: 1}}),
+    }});
+  };
+  await s.call(() => app.getScreenshot());
+  assert.equal(launches, 1);
+  assert.equal(s.meta['cua/permission'], null);
+  assert.equal(s.meta['cua/nativeEngine'].build, 'b1');
 });
 
 test('the kept identity: a new pid drops it so the next call resolves again; a new bundle is never shown, the call redone once; a vanished app is resolved again', async t => {

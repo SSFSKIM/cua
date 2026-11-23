@@ -67,11 +67,21 @@ test('engine build refuses a sign wait that is not a whole number of ms up to 30
   assert.equal(JSON.parse(overridden.stdout).error.code, 'engine_identity_missing', 'the flag\'s valid wait is used; the build goes on to the identity');
 });
 
-test('engine approve with no bundle refuses, naming cua engine build', onMac, t => {
-  const r = cua(t, ['engine', 'approve']);
-  assert.equal(r.status, 1);
-  assert.match(r.stderr, /\[engine_not_built\]/);
-  assert.match(r.stderr, /cua engine build/);
+test('engine approve with no bundle refuses, naming cua engine build, with or without --foreground', onMac, t => {
+  for (const args of [['engine', 'approve'], ['engine', 'approve', '--foreground']]) {
+    const r = cua(t, args);
+    assert.equal(r.status, 1, args.join(' '));
+    assert.match(r.stderr, /\[engine_not_built\]/);
+    assert.match(r.stderr, /cua engine build/);
+  }
+});
+
+test('--foreground is engine approve\'s alone', t => {
+  for (const command of ['build', 'status', 'stop']) {
+    const r = cua(t, ['engine', command, '--foreground']);
+    assert.equal(r.status, 2, command);
+    assert.match(r.stderr, /usage: cua/);
+  }
 });
 
 test('the status lines say whether the signature is the configured identity without naming it', () => {

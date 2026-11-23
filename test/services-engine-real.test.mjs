@@ -113,6 +113,7 @@ test('the untrusted engine: with no Accessibility grant, an approved observation
   const status = await s.client.status();
   if (status.accessibility) { t.skip('this runner grants the engine Accessibility, so the untrusted path cannot be reached here'); return; }
   await assert.rejects(s.sky.get_app_state({app: 'com.apple.finder', disableDiff: true}), error =>
-    error.message.startsWith('Computer Use server error -10014: cua Engine needs the Accessibility permission')
-    && error.message.includes('System Settings > Privacy & Security > Accessibility'));
+    error.message.startsWith('Computer Use server error -10014: cua Engine needs Accessibility: ')
+    && error.message.includes('System Settings → Privacy & Security → Accessibility, click "+"')
+    && error.meta?.permission === 'accessibility');
 });

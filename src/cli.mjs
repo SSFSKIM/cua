@@ -89,8 +89,10 @@ ${darwin ? `  engine build [--sign adhoc] [--sign-wait <ms>] [--json]      build
                                                                over SSH the sign waits 45 s for the console's keychain prompt
                                                                (--sign-wait or CUA_SIGN_WAIT_MS, up to 1800000: the attended
                                                                first sign on a Mac, e.g. 600000)
-  engine approve [--json]                                      approve the built engine: its grants (the owner at the console
-                                                               when one is missing), a relaunch and one capture, then approved
+  engine approve [--foreground] [--json]                       approve the built engine: its grants (the owner at the console
+                                                               when one is missing), a relaunch and one capture, then approved;
+                                                               --foreground makes the grant requests from a foreground launch,
+                                                               which may let macOS show their prompts (the steps still lead)
   engine status [--json]                                       the engine's bundle, signature, approval and running grants,
                                                                and whether the agent cursor is on
   engine stop [--json]                                         stop the running engine (refused while a session uses it)
@@ -918,7 +920,7 @@ async function engine(args, deps = {}) {
   const platform = deps.platform ?? process.platform;
   const [command, ...rest] = args;
   if (!ENGINE_COMMANDS.includes(command)) throw new UsageError(`engine takes ${ENGINE_COMMANDS.join(', ')}`);
-  const {values} = parse(rest, command === 'build' ? {sign: {type: 'string'}, 'sign-wait': {type: 'string'}} : {});
+  const {values} = parse(rest, command === 'build' ? {sign: {type: 'string'}, 'sign-wait': {type: 'string'}} : command === 'approve' ? {foreground: {type: 'boolean'}} : {});
   if (values.sign !== undefined && values.sign !== 'adhoc') throw new UsageError('engine build takes --sign adhoc or no --sign (the configured identity)');
   if (platform === 'linux') return linuxEngineCommand(command, values, deps);
   if (platform !== 'darwin') fail('engine_macos_only', 'cua\'s native engine is for macOS and Linux', {hint: `this host is ${platform}`});
@@ -941,7 +943,7 @@ async function engine(args, deps = {}) {
   }
   const operator = deps.operator ?? lineReader(process.stdin);
   try {
-    const approved = await approveEngine({...deps, operator, log});
+    const approved = await approveEngine({...deps, operator, log, foreground: values.foreground === true});
     print(values.json ? {ok: approved.approved, ...approved} : approved.approved
       ? `approved cua's engine ${shortBuild(approved.build)} at ${approved.approvedAt}`
       : `not approved: ${approved.reason}`);

@@ -396,7 +396,8 @@ const GRANTS = [
 
 const steps = (grant, bundle) => `cua Engine needs ${grant.pane}: at the console, open System Settings → Privacy & Security → ${grant.pane}, `
   + `click "+", press ⌘⇧G and enter ${bundle}, then switch it on${grant.note ? ` (${grant.note})` : ''}`;
-// The three grants and their by-hand steps, for doctor's engine row.
+// The three grants and their by-hand steps, for doctor's engine row; the engine's permissionsPending sentences say the
+// same words (native/engine Permissions.swift).
 export {GRANTS as ENGINE_GRANTS, steps as grantSteps};
 
 function sameEngine(status, bundle, onDisk) {
@@ -407,9 +408,11 @@ function sameEngine(status, bundle, onDisk) {
     fail('engine_mismatch', `the running engine's build ${shortBuild(status.build)} is not the bundle's ${shortBuild(onDisk.build)}`, {hint: 'stop it with cua engine stop, then approve again'});
 }
 
-async function launch(ctx, {notPid = null} = {}) {
-  const opened = await ctx.run(OPEN, ['-n', '-g', '-a', ctx.paths.bundle]);
-  if (opened.code !== 0) fail('engine_launch_failed', `open -n -g -a ${ctx.paths.bundle} failed (exit ${opened.code}): ${tail(opened.stderr)}`);
+// `foreground`: without -g, for the foreground approve alone (approveEngine's).
+async function launch(ctx, {notPid = null, foreground = false} = {}) {
+  const args = ['-n', ...(foreground ? [] : ['-g']), '-a', ctx.paths.bundle];
+  const opened = await ctx.run(OPEN, args);
+  if (opened.code !== 0) fail('engine_launch_failed', `open ${args.join(' ')} failed (exit ${opened.code}): ${tail(opened.stderr)}`);
   const status = await poll(ctx, async () => { const s = await statusOf(ctx); return s && s.pid !== notPid ? s : null; }, LAUNCH_WAIT_MS);
   if (!status) fail('engine_launch_failed', `the engine launched from ${ctx.paths.bundle} did not answer within ${LAUNCH_WAIT_MS / 1000} s`,
     {hint: 'it logs why it stopped: log show --last 10m --info --predicate \'subsystem == "io.github.ssfskim.cua.engine"\''});
@@ -458,8 +461,13 @@ async function watchedApprove(ctx) {
 // macOS has not seen, so replayd's log is watched around both (an SCAlert line, or a capture the watch missed, means the
 // console may hold a confirmation: approved.json waits for the operator's word, and with no terminal the approve fails
 // naming the console); on the relaunched engine's `captured: true`, approved.json {build, identity, approvedAt}.
-// With every grant true and no confirmation it needs no one at the Mac. -> {approved, reason?, grants, build, approvedAt?, captureConfirmation}.
-export async function approveEngine(deps) {
+// With every grant true and no confirmation it needs no one at the Mac. `foreground: true` (`cua engine approve
+// --foreground`) is M4's opt-in lead for an owner at the console: the first approve, whose requests may prompt, goes to an
+// engine launched in the foreground (`open -n -a`), replacing an idle matching engine already running, since a
+// background LSUIElement launch has no window the prompt can attach to (the Design's U7). It promises no prompt, so the
+// by-hand steps still lead; the post-grant relaunch and every other launch stay background.
+// -> {approved, reason?, grants, build, approvedAt?, captureConfirmation}.
+export async function approveEngine({foreground = false, ...deps} = {}) {
   const ctx = context({operator: {next: () => Promise.resolve(null)}, watchCaptureAlerts, ...deps});
   const {paths, log} = ctx;
   const onDisk = bundleOnDisk(paths.bundle, ctx.runSync);
@@ -471,9 +479,14 @@ export async function approveEngine(deps) {
   if (!identity) fail('engine_not_built', `the bundle at ${paths.bundle} is not signed`, {hint: 'rebuild it: cua engine build'});
 
   let status = await statusOf(ctx);
-  if (!status) {
-    log('the engine is not running: launching it (open -n -g -a)');
-    status = await launch(ctx);
+  if (status && foreground) {
+    sameEngine(status, paths.bundle, onDisk);
+    const stopped = await stop(ctx, {pid: status.pid});
+    log('foreground approve: relaunching the idle engine in the foreground (open -n -a)');
+    status = await launch(ctx, {notPid: stopped.pid ?? null, foreground: true});
+  } else if (!status) {
+    log(`the engine is not running: launching it (open -n ${foreground ? '' : '-g '}-a)`);
+    status = await launch(ctx, {foreground});
   }
   sameEngine(status, paths.bundle, onDisk);
   if (status.connections > 0) fail('engine_busy', `the engine (pid ${status.pid}) has ${others(status.connections, status.holders)}; approve runs with no other client`, {hint: 'run it again once no session uses the engine'});

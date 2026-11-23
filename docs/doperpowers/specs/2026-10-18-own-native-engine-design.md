@@ -8649,8 +8649,9 @@ to T7. Where M4's code met a later decision on main, the later decision won; eac
     - The Markdown's re-classification (`ElementSource.markdown`): unchanged; only AXTextArea and AXTextField reach it.
     - The Lineage identity: `valueUnread` and `classificationFailed` false, so the value counts and the identity
       matches across handles, not only for the same one.
-    - StalePoint: `screenshotLabelsUnknown` withholds nothing and #520's `valueOpen` is true, so a refusal may quote the
-      recorded value. A group's value is no label, so no verdict changes.
+    - StalePoint: `screenshotLabelsUnknown` withholds nothing and #520's `valueOpen` is true. That bit is all that
+      changes: the record keeps a value only for an AXStaticText (`screenshotLabelValue`), so a group's record holds
+      none, and no refusal sentence or verdict changes.
     - `classifiedRead`: select_text reads the group's value instead of refusing it secure, and the focused group's
       selected text prints in the trailer.
     - `valueReadClosed`: paste's `focusedEffectReading` is not secure. select_text's Markdown guard is unchanged, since
@@ -8677,6 +8678,25 @@ to T7. Where M4's code met a later decision on main, the later decision won; eac
       custom-role and unreadable-role assertion passes there.
     - 1740 swift tests (1 skipped), 0 failures. The release build passes on Xcode 27.2.
     - No Finder golden is checked in. Pilot B is the only check, and it is judged again on the fixed engine.
+  Date/Author: 2026-11-23, cursor235's builder for #525.
+
+- Decision (#525, the review of 893e19d7..271aa18a, 2026-11-23; amends the entry above): the attributed-string read
+  needs a text role in the batch that classifies the element just before it, not only in the observed role.
+  (P2) An element observed as an AXTextField can answer AXGroup with a null or failed subrole in that batch. On main
+  the batch closed it, and nothing more was read. Under the entry above it is open. The walk's
+  `ElementSource.markdown` and select_text's `selectionSearchText` checked the text role against the observed role
+  alone and took the fresh batch only for closed or open, so both went on to request `AXAttributedStringForRange` of
+  the group. The walk then rendered the group's text as the old field's Markdown, and select_text used it to choose a
+  range.
+  - The fix: `markdownEligible` requires the fresh batch's role (`readbackBatchRole`) to be in `markdownRoles`, now
+    shared by the walk and select_text. Otherwise nothing more is read: the walk returns no Markdown and keeps the
+    open data, and select_text searches the plain value alone. Ordinary group values stay open.
+  - The proof: `NeverSecureRoleTests.testAFieldThatTurnsIntoAGroupBeforeTheMarkdownReadIsNotReadAsText` runs two
+    batches, field then group, for a null and a failed subrole, through both readers. On 271aa18a's sources it fails
+    with 4 assertions: one attributed read each in the walk and in select_text, for both slots. A field still a field
+    is read as before.
+  - (P3) The StalePoint line of the consumer list above is corrected: only `valueOpen` changes, and no refusal text.
+  - 1741 swift tests (1 skipped), 0 failures. The release build passes on Xcode 27.2.
   Date/Author: 2026-11-23, cursor235's builder for #525.
 
 ## Outcomes & Retrospective

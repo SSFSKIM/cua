@@ -25,6 +25,8 @@ const PLUTIL = '/usr/bin/plutil';
 // Thin (64-bit, either byte order) and universal Mach-O.
 const MACHO_MAGICS = new Set(['feedfacf', 'cffaedfe', 'cafebabe', 'bebafeca']);
 
+// The kind of signer pending.json records, never the signer: an identity's fingerprint stays out of the gate's public log.
+const signerKind = identity => (identity === 'adhoc' ? 'adhoc' : identity == null || identity === '' ? 'missing' : 'not ad hoc');
 const readJson = path => { try { return JSON.parse(readFileSync(path, 'utf8')); } catch { return null; } };
 function infoPlist(bundle, runSync) {
   const read = runSync(PLUTIL, ['-convert', 'json', '-o', '-', join(bundle, 'Contents', 'Info.plist')], {encoding: 'utf8'});
@@ -80,7 +82,7 @@ export function verifyEngineBundle({answer, dir, expected, runSync = spawnSync})
 
   const pending = readJson(paths.pending);
   check('pending.json names this build, ad hoc', pending?.build === expected.build && pending?.identity === 'adhoc',
-    pending ? `build ${pending.build}, identity ${pending.identity}` : 'missing or unreadable');
+    pending ? `build ${pending.build}, identity ${signerKind(pending.identity)}` : 'missing or unreadable');
   check('nothing approved: no bundle at the approved path, no approved.json', !existsSync(paths.bundle) && !existsSync(paths.approved),
     `bundle at the approved path ${existsSync(paths.bundle)}, approved.json ${existsSync(paths.approved)}`);
   return checks;

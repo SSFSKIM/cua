@@ -117,3 +117,24 @@ test('the command prints a PASS or FAIL line per check and exits 1 when the buil
   assert.match(run.stdout, /^FAIL the build answered pending in the slot beside the approved path/m);
   assert.match(run.stdout, /^engine-gate: \d+ of \d+ checks failed$/m);
 });
+
+// The gate's log is public: an identity-signed record's signer (a certificate's fingerprint) is never printed.
+test('a pending.json that is not ad hoc fails its check naming the kind, never the signer', t => {
+  const work = shortScratch('cua-vb-');
+  t.after(work.cleanup);
+  const dir = join(work.dir, 'engine');
+  mkdirSync(dir, {recursive: true});
+  const build = 'a'.repeat(64);
+  const unread = () => ({status: 1, stdout: '', stderr: ''});
+  const detail = identity => {
+    writeFileSync(join(dir, 'pending.json'), JSON.stringify({build, ...(identity === undefined ? {} : {identity}), builtAt: 'now'}));
+    const checks = verifyEngineBundle({answer: null, dir, expected: {build, engineVersion: '1.2.3'}, runSync: unread});
+    const c = checks.find(c => c.label === 'pending.json names this build, ad hoc');
+    assert.equal(c.ok, identity === 'adhoc');
+    return c.detail;
+  };
+  const fingerprint = 'F'.repeat(40);
+  assert.equal(detail(fingerprint), `build ${build}, identity not ad hoc`);
+  assert.equal(detail(undefined), `build ${build}, identity missing`);
+  assert.equal(detail('adhoc'), `build ${build}, identity adhoc`);
+});

@@ -8950,6 +8950,21 @@ to T7. Where M4's code met a later decision on main, the later decision won; eac
     - The join's trim is Foundation's set exactly, read from `CharacterSet.whitespacesAndNewlines` on macOS 27: U+0009–
       U+000D, U+0020, U+0085, U+00A0, U+1680, U+2000–U+200B, U+2028, U+2029, U+202F, U+205F, U+3000. Unicode's Z*
       lacks U+200B, so a cell holding only a zero-width space no longer adds an empty line to the join.
+  - The re-review of 8ecf39a79..276ff60bf, fixed:
+    - The cursor sitting's bind now passes the engine `openDriven` holds, so item 188's multi-line read-back is decoded
+      on cua's lane.
+    - The header folds back only the lines right after it, before any line the parse consumed (a diff's `Removed
+      element IDs:`); a title holding such a line is a difference.
+    - Where the vendor's element line, header or trailer needs an escape or a longer fence, only that form is cua's:
+      cua printing the vendor's raw form (a raw LF in the focused trailer, three backticks inside a three-backtick
+      fence) is a difference, never accepted by the raw comparison first.
+    - `valueOfIndex` reads where the value ends by the renderer's grammar: the labelled parts in their order, short
+      before long, so only short Details, Placeholder, ID or Secondary Actions, then long parts, follow a short value,
+      and only long parts after Value follow a long one (`second, Rows: unassigned` is a value). Where the grammar
+      allows several readings, it answers `{ambiguous: true, candidates}` instead of a prefix; a settable number's type
+      in the flags settles it, and `valueMatches` settles it by the value a cell expects. `fieldReading` gives no value
+      for an ambiguous one. The matrix's existing reads compare a single reading, so an element whose value is followed
+      by such a part now fails visibly there rather than reading a guessed prefix.
   Date/Author: 2026-11-23, cursor235's builder for #526.
 
 ## Outcomes & Retrospective

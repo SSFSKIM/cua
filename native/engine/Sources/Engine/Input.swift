@@ -364,8 +364,11 @@ func deliverPointer(to pid: pid_t, route: InputRoute, activation: FakeActivation
 /// Typed text keyed unit by unit (the spec's Design, "Text"): the input source checked before every event and after the
 /// last, the intervention guard between units (never between a key down and its key up), `pause` after every event. The
 /// meta's interval runs from the first event to the last one posted, and `entered` counts the UTF-16 units entered,
-/// stopped or not, unless the request is concealed. `beforeUnit` runs before each unit's guard (#354's checkpoint before
-/// a key, TypeReadback.swift), so a stop there leaves the unit unsent and the guard runs after its wait.
+/// stopped or not, unless the request is concealed. A unit is entered once its key down is posted, the event the app
+/// inserts its text on (#186): a source switch seen before that unit's key up or flags restore counts it, so the count
+/// is the field's committed prefix and a model resuming from it types nothing twice. `beforeUnit` runs before each
+/// unit's guard (#354's checkpoint before a key, TypeReadback.swift), so a stop there leaves the unit unsent and the
+/// guard runs after its wait.
 func keyText(_ units: [TypedUnit], concealed: Bool, checkSource: (_ entered: Int, _ total: Int) throws -> Void,
              beforeUnit: (_ index: Int) throws -> Void = { _ in },
              checkIntervention: () throws -> Void, post: (KeyEvent) -> Bool, pause: () -> Void, meta: inout InputMeta) throws {
@@ -378,9 +381,9 @@ func keyText(_ units: [TypedUnit], concealed: Bool, checkSource: (_ entered: Int
     for spec in unit.events {
       try checkSource(entered, total)
       guard meta.posting({ post(spec) }) else { throw EngineError(name: "eventCreationFailed", "A key event could not be created.") }
+      if spec.kind == .down { entered += unit.consumed }
       pause()
     }
-    entered += unit.consumed
   }
   try checkSource(entered, total)
 }

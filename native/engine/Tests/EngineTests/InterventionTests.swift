@@ -406,6 +406,31 @@ final class KeyedSequenceStopTests: XCTestCase {
     XCTAssertEqual(meta.entered, 2)
   }
 
+  /// #186: a switch seen before any event, the check after the last included, stops with a count equal to the field's
+  /// committed prefix: a unit is in the field once its key down is posted, so a switch seen before its key up or its
+  /// flags restore counts it, and one seen before its key down does not. Both the meta and the sentence's count.
+  func testASourceChangeAtEveryEventBoundaryCountsTheFieldsCommittedPrefix() {
+    let typed = units(2) + [TypedUnit(press: nil, text: [0xD83D, 0xDE00], consumed: 2)] + units(1)
+    let checks = typed.count * 4 + 1  // before every event, and after the last
+    for switchedBefore in 0..<checks {
+      var meta = meta()
+      var checked = 0
+      var reported: Int?
+      var downs = 0
+      XCTAssertThrowsError(try keyText(typed, concealed: false,
+                                       checkSource: { entered, _ in
+                                         defer { checked += 1 }
+                                         if checked >= switchedBefore { reported = entered; throw EngineError(name: "inputSourceChanged", "changed") }
+                                       },
+                                       checkIntervention: {}, post: { if $0.kind == .down { downs += 1 }; return true }, pause: {}, meta: &meta)) { error in
+        XCTAssertEqual((error as? EngineError)?.errorName, "inputSourceChanged")
+      }
+      let committed = typed.prefix(downs).reduce(0) { $0 + $1.consumed }
+      XCTAssertEqual(meta.entered, committed, "switch seen at check \(switchedBefore)")
+      XCTAssertEqual(reported, committed, "the sentence's count, switch seen at check \(switchedBefore)")
+    }
+  }
+
   /// press_key: the check runs between presses of a sequence, so `cmd+a Delete` stops before Delete.
   func testAKeySequenceStopsBetweenPresses() {
     var meta = meta()

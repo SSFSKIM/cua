@@ -4,6 +4,7 @@
 // alert in front, and the judge over what each connection recorded. An approval is judged by behaviour (what the client
 // was asked, whether a bind was refused for approval) and by the call's `cua/approval` result meta, which on cua's own
 // host carries the connection's stamp (who answered, the connection's opaque id, the runtime generation).
+import {attestationProblem} from './lib.mjs';
 
 const NOT_APPROVED = 'Computer Use was not approved to use ';
 // System prompts that take the front (scripts/mini-rules.mjs SYSTEM_PROMPTS): replayd's capture alert is
@@ -192,3 +193,23 @@ export function judgeApprovalCycles({cycles, idleAt = 10, connections = [], comp
   const verdict = problems.length ? 'fail' : unproven.length ? 'no verdict' : 'pass';
   return {verdict, ok: verdict === 'pass', problems, inconclusive: unproven, detail: details.join(' | ')};
 }
+
+// Ruling 1149: a bind's result `_meta` against the attestation the witness expects, cua's engine on its approved build.
+// -> null when it attests it; else the error that stops the run, NO VERDICT (`noVerdict`), since another engine
+// answered (the vendor's: state 1) or none is shown, and nothing of cua's engine was measured by that bind.
+export function attestationStop(meta, expected) {
+  const problem = attestationProblem(meta, expected);
+  return problem && Object.assign(new Error(`refused on the attestation: ${problem}`), {noVerdict: true});
+}
+
+// The run's verdict: the judge's (`judged`, judgeApprovalCycles over what was recorded, `complete` false when the run
+// stopped), or, for a run that stopped (`stopped` {message, noVerdict}), a fail for any stop that is not NO VERDICT's
+// (no answer, a protocol error) and else NO VERDICT unless what it did observe fails it. -> the judge's, with the stop.
+export function stoppedVerdict(judged, stopped) {
+  if (!stopped) return judged;
+  const verdict = !stopped.noVerdict ? 'fail' : judged.verdict === 'pass' ? 'no verdict' : judged.verdict;
+  return {...judged, verdict, ok: false, stopped: stopped.message};
+}
+
+// The line the hosted sitting's `verdict` check reads (scripts/hosted-sittings/checks.mjs).
+export const verdictLine = verdict => `VERDICT: ${verdict.toUpperCase()}`;

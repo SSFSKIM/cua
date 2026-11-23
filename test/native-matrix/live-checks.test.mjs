@@ -7,7 +7,7 @@ import * as fs from 'node:fs';
 import {
   ABC, FIRST_LINE, KOREAN_2SET, LAST_LINE, NEVER_OBSERVED, allSelected, alertWatch, enablementOf, failureOf, finderCheck, firstLineBold,
   bundlePids, compositionGuard, compositionReading, frontAppAction, inputSourceVerdict, liveRefusals, menuBarItem, menuComparison, menuItemAt, menuItemLabel, minimizeButton, minimizedVerdict,
-  RECOVERY_BOUNDS, parseJournal, parseProcessTable, parsePerContext, putBackBoundMs, recoverBoundMs, recoveryPlan, pasteVerdict, perContextRestore, putBackPlan, restoreTarget, textArea, vendorMenuBarIndex, vendorMenuItem, vendorSelectedText, vendorTextAreaIndex,
+  RECOVERY_BOUNDS, parseJournal, parseProcessTable, pendingLaunches, parsePerContext, putBackBoundMs, recoverBoundMs, recoveryPlan, pasteVerdict, perContextRestore, putBackPlan, restoreTarget, textArea, vendorMenuBarIndex, vendorMenuItem, vendorSelectedText, vendorTextAreaIndex,
 } from '../../scripts/native-matrix/live-checks.mjs';
 import {SkyComputerUseError} from '../../src/services/engine/protocol.mjs';
 
@@ -381,10 +381,15 @@ test('parseProcessTable and parseJournal: ps\'s lstart and the journal\'s rows r
   assert.deepEqual(table, [
     {pid: 100, ppid: 1, uid: 501, start: 'Tue Oct 21 10:00:00 2026', command: 'node scripts/native-matrix/live-device.mjs paste --run /r'},
     {pid: 101, ppid: 100, uid: 501, start: 'Wed Oct 1 09:05:07 2026', command: '/usr/bin/swift x.swift'}]);
-  assert.deepEqual(parseJournal('cli\t100\tTue Oct 21 10:00:00 2026\tlive-device.mjs paste\nprobe\t-\t-\tkeystroke\n\nbad\nprobe\tpending\t-\tinput-source#a1\n'), [
+  assert.deepEqual(parseJournal('cli\t100\tTue Oct 21 10:00:00 2026\tlive-device.mjs paste\nprobe\t-\t-\tkeystroke\n\nbad\nprobe\tpending\t-\tinput-source#a1\n'
+    + 'probe\tpending:4321\tTue Oct 21  9:59:58 2026\twindow-frame#b2\n'), [
     {kind: 'cli', pid: 100, start: 'Tue Oct 21 10:00:00 2026', label: 'live-device.mjs paste'},
     {kind: 'probe', pid: null, start: null, label: 'keystroke'},
-    {kind: 'probe', pid: null, start: null, label: 'input-source#a1'}]);
+    {kind: 'probe', pid: null, start: null, label: 'input-source#a1', pending: true, launcher: null},
+    {kind: 'probe', pid: null, start: null, label: 'window-frame#b2', pending: true, launcher: {pid: 4321, start: 'Tue Oct 21 9:59:58 2026'}}]);
+  // Pending until a later row of its label resolves it, to a pid or to `-`.
+  assert.deepEqual(pendingLaunches(parseJournal('probe\tpending:1\tT\ta#1\nprobe\tpending:1\tT\tb#2\nprobe\t-\t-\ta#1\nprobe\tpending\t-\tc#3\n')),
+    [{label: 'b#2', launcher: {pid: 1, start: 'T'}}, {label: 'c#3', launcher: null}]);
 });
 
 test('recoveryPlan: only journaled pids whose start time still matches are stopped; an in-flight scene up is awaited; anything else is listed, untouched', () => {
@@ -436,7 +441,8 @@ test('recoveryPlan: only journaled pids whose start time still matches are stopp
 test('the recovery\'s bound covers its waits and every put-back step with the stop after it', () => {
   const b = RECOVERY_BOUNDS;
   assert.equal(putBackBoundMs(b), 8 * (b.stepMs + 2 * b.stepKillMs + 2 * b.killMs));
-  assert.equal(recoverBoundMs(b), 4 * b.killMs + b.sceneUpWaitMs + b.probeWaitMs + putBackBoundMs(b));
+  // Two probe waits: the pending launches established, then any unidentified probe of the bundle out.
+  assert.equal(recoverBoundMs(b), 4 * b.killMs + b.sceneUpWaitMs + 2 * b.probeWaitMs + putBackBoundMs(b));
 });
 
 // The approved engine's processes (#235: its agent cursor's panels are windows of the resident engine), by their command

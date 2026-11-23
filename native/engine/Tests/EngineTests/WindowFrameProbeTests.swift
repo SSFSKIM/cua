@@ -262,7 +262,11 @@ final class WindowFrameProbeTests: XCTestCase {
     func source() -> WindowFrameSource<Int> {
       WindowFrameSource(
         trusted: { self.trusted }, allowedPID: { _ in self.allowed },
-        windows: { _ in self.selections += 1; return self.windows },
+        windows: { _ in
+          self.selections += 1
+          guard let windows = self.windows else { return .unavailable }
+          return windowFrameList(count: windows.count) { windows }
+        },
         identity: { self.identityReads.append($0); return self.identities[$0] },
         cgFrame: { _, _ in self.reads += 1; let value = self.cg; self.afterRead?(); return value },
         canSetFrame: { _ in self.settable },
@@ -625,6 +629,25 @@ final class WindowFrameProbeTests: XCTestCase {
     let oversized = runWindowFrame(request, source: tree.source())
     XCTAssertEqual(diagnostic(oversized)["reason"] as? String, "limit-exceeded")
     XCTAssertEqual((oversized.wire(for: request)["excludedEntries"] as? [[String: Any]])?.count, 0)
+  }
+
+  // The live adapter's list decision: an AXWindows array over the bound keeps its count (limit-exceeded, with the count)
+  // and is never materialized; a list whose elements do not match its count is unavailable, never a shorter list.
+  func testTheWindowListKeepsAnOversizedCountWithoutMaterializingIt() {
+    var materialized = 0
+    guard case .oversized(let count) = windowFrameList(count: 4_000, { materialized += 1; return [Int]() }) else {
+      return XCTFail("an oversized list is not oversized")
+    }
+    XCTAssertEqual(count, 4_000)
+    XCTAssertEqual(materialized, 0, "an oversized list is never materialized")
+    guard case .elements(let elements) = windowFrameList(count: 2, { [1, 2] }) else { return XCTFail("a bounded list") }
+    XCTAssertEqual(elements, [1, 2])
+    guard case .unavailable = windowFrameList(count: 3, { [1, 2] }) else { return XCTFail("a malformed list is unavailable") }
+    guard case .unavailable = windowFrameList(count: 2, { () -> [Int]? in nil }) else { return XCTFail("an unreadable list is unavailable") }
+    let tree = Tree(); tree.windows = Array(1...129)
+    let result = runWindowFrame(request, source: tree.source())
+    XCTAssertEqual(diagnostic(result)["reason"] as? String, "limit-exceeded")
+    XCTAssertEqual(diagnostic(result)["windowCount"] as? Int, 129)
   }
 
   func testUnknownIdentityIdentifiesTheOriginalEntryWithoutDisclosingOtherWindowIdentity() throws {

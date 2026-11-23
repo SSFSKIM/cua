@@ -97,11 +97,27 @@ struct WindowFrameIdentity: Equatable {
   let window: CGWindowID
 }
 
+// The app's AXWindows as the probe takes it: unreadable, over the 128-entry bound (its count kept, the list never
+// materialized), or the bounded list. A valid empty list is `elements([])`, distinct from an unavailable one.
+enum WindowFrameList<Element> {
+  case unavailable
+  case oversized(Int)
+  case elements([Element])
+}
+
+// The decision on a list of `count` entries: over the bound it is oversized without `materialize` running; a list whose
+// elements do not number `count` (a malformed array) is unavailable, so it can never hide an ambiguous element.
+func windowFrameList<Element>(count: Int, _ materialize: () -> [Element]?) -> WindowFrameList<Element> {
+  guard count <= 128 else { return .oversized(count) }
+  guard let elements = materialize(), elements.count == count else { return .unavailable }
+  return .elements(elements)
+}
+
 // Dependency seam for the fake-tree tests, like the closures used by TextViewProbe's searches.
 struct WindowFrameSource<Element> {
   var trusted: () -> Bool
   var allowedPID: (pid_t) -> Bool
-  var windows: (pid_t) -> [Element]?
+  var windows: (pid_t) -> WindowFrameList<Element>
   var identity: (Element) -> WindowFrameIdentity?
   var cgFrame: (pid_t, CGWindowID) -> CGRect?
   var canSetFrame: (Element) -> Bool
@@ -261,9 +277,13 @@ func runWindowFrame<Element>(_ request: WindowFrameRequest, source: WindowFrameS
   // This CG read both proves the owner/number pair and establishes the WindowServer connection
   // BEFORE AX reads, important for probes launched via open (the FocusProbe connection pattern).
   guard let initial = sample(.initial) else { return refuse(.initialIdentity, .cgWindowUnavailable) }
-  guard let windows = source.windows(request.pid) else { return refuse(.windowList, .unavailable, readBack: initial) }
+  let windows: [Element]
+  switch source.windows(request.pid) {
+  case .unavailable: return refuse(.windowList, .unavailable, readBack: initial)
+  case .oversized(let count): return refuse(.windowList, .limitExceeded, readBack: initial, windowCount: count)
+  case .elements(let list): windows = list
+  }
   guard !windows.isEmpty else { return refuse(.windowList, .empty, readBack: initial, windowCount: 0) }
-  guard windows.count <= 128 else { return refuse(.windowList, .limitExceeded, readBack: initial, windowCount: windows.count) }
   let wanted = WindowFrameIdentity(pid: request.pid, window: request.window)
   var candidates: [(index: Int, element: Element)] = []
   for (index, element) in windows.enumerated() {
@@ -368,15 +388,8 @@ private func liveWindowFrameSource() -> WindowFrameSource<AXUIElement> {
     windows: { pid in
       let app = prepare(AXUIElementCreateApplication(pid))
       let read = copyAttribute(app, kAXWindowsAttribute)
-      guard read.error == .success, let value = read.value, CFGetTypeID(value) == CFArrayGetTypeID() else { return nil }
-      let array = value as! CFArray
-      let count = CFArrayGetCount(array)
-      // nil means no usable bounded list (AX error, malformed value or excessive count).
-      // Preserve a valid empty array so it is distinguishable from an unavailable list.
-      guard count <= 128 else { return nil }
-      let windows = elementList(value)
-      guard windows.count == count else { return nil } // malformed array must not hide an ambiguous element
-      return windows.map(prepare)
+      guard read.error == .success, let value = read.value, CFGetTypeID(value) == CFArrayGetTypeID() else { return .unavailable }
+      return windowFrameList(count: CFArrayGetCount((value as! CFArray))) { elementList(value).map(prepare) }
     },
     identity: { element in
       let owner = pid(of: element)

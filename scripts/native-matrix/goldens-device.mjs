@@ -59,7 +59,7 @@ import {
   unmarkVisibleRestored,
 } from '../repl-parity/scenes-mac-finder.mjs';
 import {actionIndex} from '../repl-parity/scenes-mac-text.mjs';
-import {frontWindow, appWindows} from '../repl-parity/scenes-mac-device.mjs';
+import {appWindows, enginePids, frontWindow} from '../repl-parity/scenes-mac-device.mjs';
 import {finderStepEvidence, frameProbeTrace} from './finder-step-evidence.mjs';
 import {frontmostFromProbe, sendIfFrontmost} from '../accept/key-guard.mjs';
 
@@ -309,6 +309,11 @@ export function engineNodeRepl({connect = createConnection, open = app => execFi
   };
 }
 
+// The key guard's front reading on this Mac: the frontmost process and its top window, passing over the approved engine's
+// own windows (the agent cursor's display-wide panel, #235, ordered above the window it acts in and never key), as the
+// scenes' activation does (scenes-mac.mjs activateScene); a window of any other process is still the top window.
+export const engineFreeFrontmost = ({frontWindow, enginePids}) => () => frontmostFromProbe(frontWindow({skipPids: enginePids()}));
+
 const defaultIo = () => ({
   appWindows,
   installed: () => installedEngine(),
@@ -324,7 +329,7 @@ const defaultIo = () => ({
     const live = await import('./live-device.mjs');
     return live.settleProbes({run, io: live.defaultIo(run)});
   },
-  frontmost: () => frontmostFromProbe(frontWindow()),
+  frontmost: engineFreeFrontmost({frontWindow, enginePids: () => enginePids()}),
   teardown: (id, run) => teardownFor(id, {run}),
   sleep: sleepFor,
   now: Date.now,

@@ -13,7 +13,7 @@ import {DESELECT_ALL_KEY, FINDER_CHROME, readSavedPreferences, saveOriginalPrefe
 import {SCENES, activateScene, setupSteps, teardownSteps} from '../../scripts/repl-parity/scenes-mac.mjs';
 import {EventEmitter} from 'node:events';
 import {frameProbeTrace} from '../../scripts/native-matrix/finder-step-evidence.mjs';
-import {RESET_MAY_CLEAR, SCREENSHOT_DIR, SETTLE_BOUND_MS, SETTLE_INTERVAL_MS, act, engineCheck, engineNodeRepl, goldenForm, main, observe, runSteps, settledState, stateDigest, verify} from '../../scripts/native-matrix/goldens-device.mjs';
+import {RESET_MAY_CLEAR, SCREENSHOT_DIR, SETTLE_BOUND_MS, SETTLE_INTERVAL_MS, act, engineCheck, engineFreeFrontmost, engineNodeRepl, goldenForm, main, observe, runSteps, settledState, stateDigest, verify} from '../../scripts/native-matrix/goldens-device.mjs';
 
 const GOLDENS = new URL('../native-goldens/', import.meta.url);
 const shot = (scene, name) => JSON.parse(fs.readFileSync(new URL(`${scene}/${name}`, GOLDENS), 'utf8'));
@@ -816,6 +816,38 @@ for (const raises of [true, false]) {
       assert.equal(finder.pressed.length, start, 'owned blocker still refuses all teardown input');
     }
     assert.deepEqual(calls, [{app: record.app, folder: record.folder}]);
+  });
+}
+
+// The agent cursor (#235) after the cua lane's last click in Finder: the engine's display-wide panel is the top layer-0
+// window. Activation and the key guard's front reading both pass over the approved engine's windows, so teardown's keys
+// go; a window of any other process still refuses them.
+for (const engineKnown of [true, false]) {
+  test(`Finder teardown with the engine's cursor panel on top: activation and each guarded key pass over it (${engineKnown ? 'the engine' : 'another process'})`, async () => {
+    const finder = finderEngine({state: {sidebar: true, statusBar: true, pathBar: false}, drawn: {sidebar: true, statusBar: true, pathBar: false}});
+    const {run, io, record} = finderRun(finder);
+    await run('setup');
+    const start = finder.pressed.length;
+    const ENGINE = 4242;
+    const panel = {ownerPid: ENGINE, ownerName: 'cua-engine', number: 501, bounds: {x: 0, y: 0, width: 1440, height: 900}, onScreen: true};
+    const own = {ownerPid: 402, ownerName: 'Finder', number: 7, bounds: record.window.bounds, onScreen: true};
+    const enginePids = () => (engineKnown ? [ENGINE] : []);
+    const unskipped = skipPids => [panel, own].filter(w => !skipPids.includes(w.ownerPid));
+    io.activate = (_id, dir) => activateScene('finder', {run: dir, boundMs: 0, io: {
+      activateApp: () => {}, frontmostProcess: () => ({pid: 402, bundleId: 'com.apple.finder'}), enginePids,
+      windowOrder: ({skipPids = []} = {}) => unskipped(skipPids), now: io.now, sleep: io.sleep, showFolder: () => {},
+    }});
+    // The front-window probe as front-window.swift answers it: the frontmost process, and the first window not skipped.
+    io.frontmost = engineFreeFrontmost({enginePids,
+      frontWindow: ({skipPids = []} = {}) => ({frontmost: {pid: 402, bundleId: 'com.apple.finder'}, topWindow: unskipped(skipPids)[0] ?? null})});
+    if (engineKnown) {
+      await run('teardown');
+      assert.equal(finder.pressed.at(-1), 'super+w');
+      assert.deepEqual(finder.drawn, {sidebar: true, statusBar: true, pathBar: false});
+    } else {
+      await assert.rejects(run('teardown'), /another process's window is on top: cua-engine/);
+      assert.equal(finder.pressed.length, start, 'a window of another process still refuses all teardown input');
+    }
   });
 }
 

@@ -229,7 +229,7 @@ test("a landed move is classed by this trial's own dragend, never by an earlier 
  * L4a's judge: the plan the residue is for (`t17-fix3`), as the dispatcher passes it, with the run's engine version
  * (its meta row's) as the stored rows' 0.4.3, whose settle records predate #487's rest check (settle-rest.test.mjs).
  */
-const fix3 = (rows, opts) => electronDropVerdict(rows, { cuaVersion: META.cua_version, ...opts, plan: 't17-fix3' });
+const fix3 = (rows, opts) => electronDropVerdict(rows, { meta: META, ...opts, plan: 't17-fix3' });
 
 /** A cell at twice the load: `n` drops, the first `honest` of them honest unconfirmed non-landings, the rest landed and ok. */
 const residueCell = (n, honest, { lane = 'cua:handle', load = 'load2', cell = 'plain' } = {}) =>
